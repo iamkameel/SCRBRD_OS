@@ -56,6 +56,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { GRANTABLE_ROLES, roleGrants } from "../packages/policy/src/roles.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4372);
 const API_PORT = port(8912);
@@ -108,6 +109,7 @@ async function open(apiBase = API, viewport = { width: 1280, height: 900 }) {
   const ctx = await browser.newContext({ viewport });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -136,7 +138,7 @@ async function signIn(page, email, password = "") {
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   if (password) await page.fill("#login-password", password);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return /Match Centre|Dashboard/i.test(await text(page));
 }
 /** To Management → Users, waiting for the list to be drawn rather than for a clock. */
@@ -358,13 +360,13 @@ try {
   const af = await floors(off.page, '[data-testid="audit-log"]');
   ok("the log is on the 12px and 44px floors", af.small.length === 0 && af.taps.length === 0, af.small.concat(af.taps).slice(0, 4).join(" | "));
   await tid(off.page, "audit-kind").selectOption("access");
-  await off.page.waitForTimeout(1200);
+  await afterReads(off.page, 1200);
   const kinds = await off.page.locator('[data-testid="audit-row"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")));
   ok("filtered by kind, it lists that kind alone", kinds.length > 0 && kinds.every((k) => k === "access"), kinds.join());
   // Roles granted as well as ended (db/80): the seed's appointments were made
   // by nobody, and the tab says the system made them.
   await tid(off.page, "audit-kind").selectOption("role");
-  await off.page.waitForTimeout(1200);
+  await afterReads(off.page, 1200);
   const roleKinds = await off.page.locator('[data-testid="audit-row"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")));
   const roleText = await tid(off.page, "audit-log").innerText().catch(() => "");
   ok("filtered to roles, it lists roles alone", roleKinds.length > 0 && roleKinds.every((k) => k === "role"), roleKinds.join());
@@ -420,7 +422,7 @@ try {
   ok("...and every control in it is 44px", dfl.taps.length === 0, dfl.taps.slice(0, 5).join(" | "));
   await tid(off.page, "enrol-team").selectOption("2XI");
   await tid(off.page, "enrol-submit").click({ timeout: 5000 });
-  await off.page.waitForTimeout(2200);
+  await afterReads(off.page, 2200);
   ok("the dialog closes on the server's yes", await off.page.locator('[role="dialog"]').count() === 0);
   ok("...and says what was done", /Added Coach \(2XI\) to A Wessels's account/.test(await tid(off.page, "people-notice").innerText().catch(() => "")));
   const wAfter = await chips(rowOf(off.page, WESSELS));
@@ -454,7 +456,7 @@ try {
   ok("it asks for a reason before it will end anything", await tid(again.page, "end-role-confirm").isDisabled());
   await tid(again.page, "end-role-reason").fill("Moved to umpiring this term only");
   await tid(again.page, "end-role-confirm").click({ timeout: 5000 });
-  await again.page.waitForTimeout(2200);
+  await afterReads(again.page, 2200);
   ok("...and says what was done", /Ended Coach \(2XI\) for A Wessels/.test(await tid(again.page, "people-notice").innerText().catch(() => "")));
   const wEnded = await chips(rowOf(again.page, WESSELS));
   ok("the coach role now reads ended; the scorer role is untouched", wEnded.some((c) => c.role === "coach" && /ended/.test(c.text))
@@ -485,7 +487,7 @@ try {
     await route.continue({ postData: JSON.stringify({ ...body, role: "medical" }) });
   });
   await tid(again.page, "enrol-submit").click({ timeout: 5000 });
-  await again.page.waitForTimeout(1800);
+  await afterReads(again.page, 1800);
   ok("the post went out, with the role swapped for one she cannot grant", sent?.role === "official" && sent?.email === "coach2@example.invalid", JSON.stringify(sent));
   const err = tid(again.page, "enrol-error");
   const said = await err.innerText().catch(() => "");
@@ -518,10 +520,10 @@ try {
   await tid(again.page, "enrol-role").selectOption("scorer");
   ok("a sign-in code is asked for by default for a new account", await tid(again.page, "enrol-code").isChecked());
   await tid(again.page, "enrol-submit").click({ timeout: 5000 });
-  await again.page.waitForTimeout(2200);
+  await afterReads(again.page, 2200);
   ok("the code comes back once", await tid(again.page, "issued-code").count() === 1 && (await tid(again.page, "issued-code").innerText()).trim().length >= 6);
   await click(again.page, /^Done$/, 4000);
-  await again.page.waitForTimeout(1500);
+  await afterReads(again.page, 1500);
   ok("...and the new person is on the list with the role", (await chips(rowOf(again.page, newEmail))).some((c) => c.role === "scorer" && c.state === "live"));
   const created = await q(`select u.id, count(a.id)::int as n from app_user u left join role_assignment a on a.person_id = u.id where u.email = $1 group by u.id`, [newEmail]);
   ok("...and Postgres holds the account with that one appointment", created.length === 1 && created[0].n === 1, JSON.stringify(created));
@@ -533,7 +535,7 @@ try {
   await tid(again.page, "enrol-role").selectOption("official");
   await tid(again.page, "enrol-code").uncheck();
   await tid(again.page, "enrol-submit").click({ timeout: 5000 });
-  await again.page.waitForTimeout(2200);
+  await afterReads(again.page, 2200);
   ok("an email that already belongs to someone gets the role on their account", (await accountsFor(WESSELS)).length === 1
      && (await heldIn(WESSELS)).some((a) => a.role === "official" && a.active));
   await again.ctx.close();
@@ -587,7 +589,7 @@ try {
     r.onerror = () => reject(r.error);
   }));
   await gk.page.reload({ waitUntil: "networkidle" });
-  await gk.page.waitForTimeout(1200);
+  await afterReads(gk.page, 1200);
   const gkTabs = await tabsShown(gk.page);
   ok("his tabs are what the policy says: Ground tasks, and no Users, Squad, Fixtures, Broadcast or Audit",
      JSON.stringify(gkTabs) === JSON.stringify(tabsFor("facilities")) && JSON.stringify(gkTabs) === JSON.stringify(["grounds"]), gkTabs.join());
@@ -616,7 +618,7 @@ try {
   ok("Add user is offered to it", await tid(pf1.page, "add-user").count() === 1);
   ok("...and it is not told it cannot assign roles", await tid(pf1.page, "people-readonly").count() === 0);
   await tid(pf1.page, "add-user").click({ timeout: 5000 }).catch(() => {});
-  await pf1.page.waitForTimeout(800);
+  await afterReads(pf1.page, 800);
   const pfSchools = await tid(pf1.page, "enrol-school").locator("option").evaluateAll((os) => os.map((o) => o.textContent.trim()).filter((t) => !/^Choose/.test(t))).catch(() => []);
   ok("the form asks which school, offering every school on the platform", pfSchools.includes("Hilton College") && pfSchools.includes("Westville Boys' High"), pfSchools.join());
   ok("...and picks none for it: a tenant-less account is never guessed into a school",
@@ -636,7 +638,7 @@ try {
   await tid(pf1.page, "enrol-school").selectOption(WES).catch(() => {});
   ok("...and is enabled once Westville is chosen", await tid(pf1.page, "enrol-submit").isEnabled().catch(() => false));
   await tid(pf1.page, "enrol-submit").click({ timeout: 5000 }).catch(() => {});
-  await pf1.page.waitForTimeout(2200);
+  await afterReads(pf1.page, 2200);
   ok("the server says yes and the dialog closes", await pf1.page.locator('[role="dialog"]').count() === 0
      && /Opened an account for P Walkcoach as Coach \(U15A\)/.test(await tid(pf1.page, "people-notice").innerText().catch(() => "")));
   const pfDb = await q(`select a.role, a.team_code, a.school_id::text as school, a.active, a.created_by from role_assignment a
@@ -672,7 +674,7 @@ try {
   await tid(pf2.page, "enrol-code").uncheck().catch(() => {});
   ok("Settings' Enrol is enabled for it once a school is chosen", await tid(pf2.page, "enrol-submit").isEnabled().catch(() => false));
   await tid(pf2.page, "enrol-submit").click({ timeout: 5000 }).catch(() => {});
-  await pf2.page.waitForTimeout(2200);
+  await afterReads(pf2.page, 2200);
   ok("...and the scorer is appointed at Westville",
      (await q(`select a.role from role_assignment a join app_user u on u.id = a.person_id where u.email = $1 and a.school_id = $2 and a.active`, [pfScorer, WES])).some((a) => a.role === "scorer"));
   ok("no console errors in Settings", pf2.errors.length === 0, pf2.errors.join(" | "));
@@ -684,7 +686,7 @@ try {
   ok("...and reaches Management → Users", await toUsers(own.page));
   ok("Add user is offered", await tid(own.page, "add-user").count() === 1);
   await tid(own.page, "add-user").click({ timeout: 5000 }).catch(() => {});
-  await own.page.waitForTimeout(800);
+  await afterReads(own.page, 800);
   const ownOffered = await tid(own.page, "enrol-role").locator("option").evaluateAll((os) => os.map((o) => o.value).filter(Boolean)).catch(() => []);
   ok("every school role is offered, and neither platform key: those belong to no school",
      JSON.stringify([...ownOffered].sort()) === JSON.stringify(atSchool(GRANTABLE_ROLES.superadmin))
@@ -700,7 +702,7 @@ try {
   await tid(own.page, "enrol-email").fill(ownMedic).catch(() => {});
   await tid(own.page, "enrol-code").uncheck().catch(() => {});
   await tid(own.page, "enrol-submit").click({ timeout: 5000 }).catch(() => {});
-  await own.page.waitForTimeout(2200);
+  await afterReads(own.page, 2200);
   ok("a clinical appointment the office may not make is made, at Westville",
      (await q(`select a.role from role_assignment a join app_user u on u.id = a.person_id where u.email = $1 and a.school_id = $2 and a.active`, [ownMedic, WES])).some((a) => a.role === "medical"));
   ok("no console errors on the owner's session", own.errors.length === 0, own.errors.join(" | "));
@@ -741,7 +743,7 @@ try {
     await route.continue({ postData: JSON.stringify({ ...JSON.parse(req.postData() || "{}"), role: "medical" }) });
   });
   await tid(wes.page, "enrol-submit").click({ timeout: 5000 });
-  await wes.page.waitForTimeout(1800);
+  await afterReads(wes.page, 1800);
   ok("a medical appointment forced past the picker is refused by the server, in words",
      (await tid(wes.page, "enrol-error").getAttribute("data-code").catch(() => "")) === "not_permitted"
      && /you may not do that here/i.test(await tid(wes.page, "enrol-error").innerText().catch(() => "")));
@@ -787,7 +789,7 @@ try {
     });
     await tid(rq.page, `request-grant-${noSide.id}`).click({ timeout: 5000 });
     const refused = tid(rq.page, `request-refused-${noSide.id}`);
-    await refused.waitFor({ timeout: 6000 }).catch(() => {});
+    await refused.waitFor({ timeout: 15000 }).catch(() => {});
     ok("a refused grant is said on its own row, as an alert", await refused.count() === 1 && (await refused.getAttribute("role")) === "alert"
        && await tid(rq.page, `request-row-${noSide.id}`).locator(`[data-testid="request-refused-${noSide.id}"]`).count() === 1);
     const refusedText = (await refused.innerText().catch(() => "")).trim();
@@ -800,7 +802,7 @@ try {
     await q(`update role_request set state = 'declined', decided_by = $2, decided_at = now() where id = $1`, [answered.id, registrarId]);
     await tid(rq.page, `request-decline-${answered.id}`).click({ timeout: 5000 });
     const late = tid(rq.page, `request-refused-${answered.id}`);
-    await late.waitFor({ timeout: 6000 }).catch(() => {});
+    await late.waitFor({ timeout: 15000 }).catch(() => {});
     // The refusal is drawn at once; the row leaves when the list has been read again.
     await tid(rq.page, `request-row-${answered.id}`).waitFor({ state: "detached", timeout: 6000 }).catch(() => {});
     ok("a request answered first is refused in words, as an alert, though its row has left the list",
@@ -811,14 +813,17 @@ try {
     await q(`delete from role_request where id = $1`, [vanished.id]);
     await tid(rq.page, `request-grant-${vanished.id}`).click({ timeout: 5000 });
     const lost = tid(rq.page, `request-refused-${vanished.id}`);
-    await lost.waitFor({ timeout: 6000 }).catch(() => {});
+    await lost.waitFor({ timeout: 15000 }).catch(() => {});
     ok("a request that no longer exists is said so",
        await lost.count() === 1 && /could not be found/.test(await lost.innerText().catch(() => "")), await lost.innerText().catch(() => "(none)"));
 
     // 4. A grant that goes through: the line comes after the server's reply.
+    // (Every line in this section is drawn only once the server has answered
+    // the write, so each wait is on that reply, with 15 s as everywhere else
+    // in the walks: 6 s ran out under load in shard 3 on 22 Oct.)
     await tid(rq.page, `request-grant-${named.id}`).click({ timeout: 5000 });
     const done = tid(rq.page, `request-done-${named.id}`);
-    await done.waitFor({ timeout: 6000 }).catch(() => {});
+    await done.waitFor({ timeout: 15000 }).catch(() => {});
     ok("a grant says what happened, in a status line", await done.count() === 1 && (await done.getAttribute("role")) === "status"
        && (await done.innerText().catch(() => "")).trim() === "Granted: Coach at 1XI.", await done.innerText().catch(() => "(none)"));
     const grantedTo = await heldBy(named.person);
@@ -827,12 +832,12 @@ try {
 
     // 5. The one that was refused, granted properly this time; and a decline.
     await tid(rq.page, `request-grant-${noSide.id}`).click({ timeout: 5000 });
-    await tid(rq.page, `request-done-${noSide.id}`).waitFor({ timeout: 6000 }).catch(() => {});
+    await tid(rq.page, `request-done-${noSide.id}`).waitFor({ timeout: 15000 }).catch(() => {});
     ok("the refused request, tried again with its side, is granted and the refusal is gone",
        (await tid(rq.page, `request-done-${noSide.id}`).innerText().catch(() => "")).trim() === "Granted: Coach at 1XI."
        && await tid(rq.page, `request-refused-${noSide.id}`).count() === 0 && await stateOf(noSide.id) === "granted");
     await tid(rq.page, `request-decline-${toDecline.id}`).click({ timeout: 5000 }).catch(() => {});
-    await tid(rq.page, `request-done-${toDecline.id}`).waitFor({ timeout: 6000 }).catch(() => {});
+    await tid(rq.page, `request-done-${toDecline.id}`).waitFor({ timeout: 15000 }).catch(() => {});
     ok("a decline says 'Declined.' after the reply, and the database agrees",
        (await tid(rq.page, `request-done-${toDecline.id}`).innerText().catch(() => "")).trim() === "Declined." && await stateOf(toDecline.id) === "declined" && (await heldBy(toDecline.person)).length === 0);
     ok("no console errors", rq.errors.length === 0, rq.errors.join(" | "));
@@ -847,7 +852,7 @@ try {
   ok("the registrar signs in", await signIn(ph.page, "registrar@example.invalid"));
   ok("...and reaches the list", await toUsers(ph.page));
   await ph.page.setViewportSize({ width: 390, height: 844 });
-  await ph.page.waitForTimeout(800);
+  await afterReads(ph.page, 800);
   // The shell clips its own overflow, so the document never scrolls sideways
   // whatever is drawn; what is asked instead is that nothing in the list is
   // drawn past the edge of the screen.
@@ -871,7 +876,7 @@ try {
   const none = await open();
   ok("the registrar signs in", await signIn(none.page, "registrar@example.invalid") && await toUsers(none.page));
   await tid(none.page, "mgmt-tab-grounds").click({ timeout: 5000 });
-  await none.page.waitForTimeout(1500);
+  await afterReads(none.page, 1500);
   ok("nothing is invented to fill the space", await none.page.locator('[data-testid="ground-duty"]').count() === 0);
   ok("...one plain line says so", (await tid(none.page, "ground-duties-none").innerText().catch(() => "")).trim() === "No fixtures are coming up at your grounds.");
   ok("no console errors", none.errors.length === 0, none.errors.join(" | "));

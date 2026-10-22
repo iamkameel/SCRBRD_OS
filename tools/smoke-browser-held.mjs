@@ -45,6 +45,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5293);
 const API_PORT = port(8793);
@@ -103,6 +104,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext();
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -181,7 +183,7 @@ function attributed(log, evs) {
 
 async function openFixture() {
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   const opened = await page.evaluate(() => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
@@ -191,10 +193,10 @@ async function openFixture() {
     }
     return false;
   });
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   // Let the pad offer its log and the server answer.
-  await page.waitForTimeout(3500);
+  await afterReads(page, 3500);
   return opened;
 }
 async function exitScorer() {
@@ -218,7 +220,7 @@ try {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
 
   const device = await page.evaluate(() => localStorage.getItem("scrbrd:device-id"));
@@ -298,7 +300,7 @@ try {
   await page.waitForTimeout(500);
   await page.locator("input[placeholder*='Bowler name' i]").last().fill("B Botha");
   await click(/^Go$/, 2000);
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   const s1 = await serverLog();
   ok("the right bowler reached the server", s1.rows.some((r) => r.kind === "bowler" && r.payload?.bowler === "B Botha"));
 
@@ -311,7 +313,7 @@ try {
   await page.waitForTimeout(300);
   ok("recording again asks first", await tid("held-confirm").count() === 1);
   await confirmYes();
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   ok("nothing is held", await tid("held-empty").count() === 1);
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
@@ -355,7 +357,7 @@ try {
   await confirmYes();
   ok("nothing is held", await tid("held-empty").count() === 1);
   await page.keyboard.press("Escape");
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   ok("the pill says Sent", /\bSent\b/.test(await text()));
 
   const s3 = await serverLog();

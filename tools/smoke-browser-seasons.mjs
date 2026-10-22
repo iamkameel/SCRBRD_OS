@@ -38,6 +38,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4345);
 const API_PORT = port(8845);
@@ -80,6 +81,7 @@ async function open() {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -105,7 +107,7 @@ async function signIn(page, who) {
   await page.waitForTimeout(500);
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return /Match Centre|Dashboard/i.test(await text(page));
 }
 async function nav(page, label) {
@@ -115,13 +117,13 @@ async function nav(page, label) {
     const s = page.locator('[data-testid="home-competitions-section-leagues"]');
     if (!(await s.count())) return false;
     try { await s.click({ timeout: 6000 }); } catch { return false; }
-    await page.waitForTimeout(1500);
+    await afterReads(page, 1500);
     return true;
   }
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 const archive = (page) => page.locator('[data-testid="season-history"]');
@@ -141,7 +143,7 @@ try {
   ok("the director of sport signs in", await signIn(dos.page, /sarah@example\.invalid|Director/));
   ok("the Leagues screen opens", await nav(dos.page, /Leagues/));
   ok("the History tab is offered", await click(dos.page, /^History$/i, 4000));
-  await dos.page.waitForTimeout(1200);
+  await afterReads(dos.page, 1200);
   ok("the archive renders", await archive(dos.page).count() === 1);
 
   group("Every seeded school season is on the list, the current one marked");
@@ -166,7 +168,7 @@ try {
 
   group("Choosing a season with nothing recorded shows an honest empty state, not 2026's rows left over");
   ok("2025 is chosen", await seasonBtn(dos.page, "2025").click().then(() => true).catch(() => false));
-  await dos.page.waitForTimeout(900);
+  await afterReads(dos.page, 900);
   const y2025 = await archive(dos.page).innerText();
   if (DEBUG) console.log("[debug] archive on 2025:\n" + y2025);
   ok("no competitions are claimed for 2025", /No competitions recorded for 2025/.test(y2025), y2025.slice(0, 400));
@@ -176,7 +178,7 @@ try {
 
   group("Choosing 2026 again brings its competition and fixtures straight back");
   ok("2026 is chosen again", await seasonBtn(dos.page, "2026").click().then(() => true).catch(() => false));
-  await dos.page.waitForTimeout(900);
+  await afterReads(dos.page, 900);
   const back = await archive(dos.page).innerText();
   ok("the league is back", /KZN Schools T20 League/.test(back));
   ok("the fixtures are back", (await dos.page.locator('[data-testid^="season-fixture-"]').count()) === 4);

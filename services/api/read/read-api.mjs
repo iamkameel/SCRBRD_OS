@@ -3530,6 +3530,18 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
   const params = def.params ? def.params(query) : [];
   const module = OWNER_OF_READ[resource];
   return runAsPrincipal(pool, secret, bearer, async client => {
+    // NO JIT FOR A GOVERNED READ. Postgres compiles a query to machine code
+    // when its estimated cost passes jit_above_cost (100 000), and every read
+    // here runs through row-level security whose policies call app_can() and
+    // the ball log's per-row functions, each costed at 100. So the estimates
+    // run to hundreds of thousands on a few hundred rows: `career` over the
+    // Awards walk's 545 balls was estimated at 455 547, and spent 1.4 s of its
+    // 2.2 s compiling 1 581 functions before reading a row (EXPLAIN ANALYZE,
+    // 21 Oct 2026). Compiling is CPU, so on a loaded runner it was what pushed
+    // the read past the web client's 10 s abort. A read this size never earns
+    // the compile back. Transaction-local, so it ends with this read, and it
+    // changes how expressions run, never the plan or a single row.
+    await client.query("set local jit = off");
     // THE MODULE GATE, and it is here because this is the only door.
     //
     // Every governed read in the product goes through this function, so a

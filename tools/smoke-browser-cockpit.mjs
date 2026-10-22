@@ -65,6 +65,7 @@ import { ATTACK, PLAY, captainLogs, fixConditions } from "./fixture-captain.mjs"
 import { writeEvents } from "./fixture-matchcentre.mjs";
 import { entryTable, LOAD_SENTENCE } from "../apps/web/src/lib/cockpit.js";
 import { NEVER_ON_THE_COCKPIT } from "../apps/web/src/lib/cockpitNever.js";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4380);
 const API_PORT = port(8980);
@@ -145,6 +146,7 @@ async function open({ viewport = DESK, scheme = "light", reduced = false } = {})
   if (SA_LATE) await ctx.clock.install({ time: browserNow() });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [], refusals = [], scripts = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   // Which scripts the page fetched, seen from outside it. Not the page's own
@@ -176,14 +178,14 @@ async function signIn(page, email) {
   await page.waitForTimeout(500);
   await page.locator("#login-email").fill(email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   return (await tid(page, "os-main").count()) === 1;
 }
 async function go(page, key) {
   const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1600);
+  await afterReads(page, 1600);
   return true;
 }
 /** The staff Match Centre, a fixture open. */
@@ -192,7 +194,7 @@ async function openMatch(page, id) {
   const btn = tid(page, `mc-open-${id}`);
   if (!(await btn.count())) return false;
   await btn.click({ timeout: 5000 });
-  await page.waitForTimeout(1800);
+  await afterReads(page, 1800);
   return (await tid(page, "match-view").count()) === 1;
 }
 const tabIds = (page) => page.$$eval('[data-testid^="mc-tab-"]', (els) => els.map((e) => e.getAttribute("data-testid").replace("mc-tab-", "")));
@@ -255,7 +257,7 @@ async function floors(page, within = '[data-testid="os-main"], [data-testid="sig
 /** A reload loses the session on purpose (the token lives in memory): sign in again and come back to the Coach tab. */
 async function backTo(page, email, id, drawer = true) {
   await page.reload({ waitUntil: "networkidle" });
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   // The reload drops the token: the app comes back as its demonstration, and the coach signs in again.
   if ((await tid(page, "demo-banner").count()) > 0) { await click(page, /^Sign in$/i); await page.waitForTimeout(500); await signIn(page, email); }
   const opened = await openMatch(page, id);
@@ -416,7 +418,7 @@ try {
     ok("a parent: no card on Home", (await tid(s.page, "day-matchday").count()) === 0);
     await go(s.page, "fixtures");
     await tid(s.page, `live-row-${FIELD}`).click({ timeout: 4000 }).catch(() => {});
-    await s.page.waitForTimeout(2000);
+    await afterReads(s.page, 2000);
     const tabs = await tabIds(s.page);
     ok("a parent: the live match has the six tabs and no Coach", tabs.length > 0 && !tabs.includes("coach"), tabs.join());
     await s.ctx.close();
@@ -425,7 +427,7 @@ try {
     ok("a pupil: no card on Home", (await tid(p.page, "day-matchday").count()) === 0);
     await go(p.page, "mymatches");
     await tid(p.page, `live-row-${FIELD}`).click({ timeout: 4000 }).catch(() => {});
-    await p.page.waitForTimeout(2000);
+    await afterReads(p.page, 2000);
     const tabs2 = await tabIds(p.page);
     ok("a pupil: the live match has the six tabs and no Coach", tabs2.length > 0 && !tabs2.includes("coach"), tabs2.join());
     await p.ctx.close();
@@ -602,7 +604,7 @@ try {
     await a.waitFor({ timeout: 6000 }).catch(() => {});
     const label = await a.innerText().catch(() => "");
     await a.click({ timeout: 4000 }).catch(() => {});
-    await c.page.waitForTimeout(2500);
+    await afterReads(c.page, 2500);
     ok(`${rule}'s link "${label}" ${what}`, label !== "" && await check() && (await tid(c.page, "signals").count()) === 0, `${label} → ${await c.page.$eval('[data-testid="os-main"]', (e) => e.getAttribute("data-page")).catch(() => "?")}`);
   };
   const pageIs = (k) => async () => (await c.page.$eval('[data-testid="os-main"]', (e) => e.getAttribute("data-page")).catch(() => "")) === k;
@@ -703,7 +705,7 @@ try {
   const cardCount = Number((await inner(d.page, "matchday-count")).match(/\d+/)?.[0]);
   ok("...the side in a line: ten named, five to chase, two restricted", /10 named/.test(await inner(d.page, "matchday-side")) && /2 restricted/.test(await inner(d.page, "matchday-side")), await inner(d.page, "matchday-side"));
   await tid(d.page, "matchday-signals").click({ timeout: 4000 });
-  await d.page.waitForTimeout(3500);
+  await afterReads(d.page, 3500);
   ok("one tap on the count opens the Coach tab of that fixture, with the drawer open", await tid(d.page, "mc-coach").count() === 1 && await tid(d.page, "signals").count() === 1);
   const drawerOpen = Number((await inner(d.page, "signals-count")).match(/\d+/)?.[0]);
   ok(`...and the card's count (${cardCount}) is the drawer's (${drawerOpen})`, cardCount === drawerOpen);
@@ -740,7 +742,7 @@ try {
     ok(`two cards: nothing under 12px (${f6.small.length}), nothing tapped under 44px (${f6.tiny.length})`, f6.small.length === 0 && f6.tiny.length === 0, [...f6.small, ...f6.tiny].slice(0, 4).join(" · "));
     await c2.locator('[data-testid="matchday-open"]').click({ timeout: 4000 });
     await l.page.waitForFunction(() => document.querySelector('[data-testid="mc-coach"]'), null, { timeout: 12000 }).catch(() => {});
-    await l.page.waitForTimeout(800);
+    await afterReads(l.page, 800);
     const mv = await inner(l.page, "match-view");
     ok("tapping the second card opens THAT fixture's Coach tab", await tid(l.page, "mc-coach").count() === 1 && /Michaelhouse/.test(mv) && !/Verify Cockpit XI/.test(mv), mv.slice(0, 160));
     await l.ctx.close();
@@ -762,7 +764,7 @@ try {
     ok("five fixtures in the week: three cards, tonight first, in order", (await ids()).join() === [DAY, X[0], X[1]].join(), (await ids()).join());
     const tog = tid(f.page, "matchday-later-toggle");
     ok("...and the other two fold under 'Later · 2 fixtures', closed", /Later · 2 fixtures/.test(await tog.innerText()) && await tog.getAttribute("aria-expanded") === "false", await tog.innerText());
-    await f.page.waitForTimeout(1500);
+    await afterReads(f.page, 1500);
     ok("...a folded fixture makes none of its reads until it is opened", !asked.some((u) => u.includes(`matchId=${MICH}`) || u.includes(`matchId=${X[2]}`) || u.includes(`/matches/${MICH}/`)));
     const f7 = await floors(f.page, '[data-testid="day-matchday"], [data-testid="matchday-later"]');
     ok(`the fold: nothing under 12px (${f7.small.length}), nothing tapped under 44px (${f7.tiny.length})`, f7.small.length === 0 && f7.tiny.length === 0, [...f7.small, ...f7.tiny].slice(0, 4).join(" · "));
@@ -790,12 +792,12 @@ try {
     ok("tonight's fixture is a group, and the duty count line is the roster's", await tid(r.page, `readiness-fixture-${DAY}`).count() === 1 && await tid(r.page, `readiness-covered-${DAY}`).count() === 1);
     const coveredText = (await inner(r.page, `readiness-covered-${DAY}`)).trim();
     await r.page.setViewportSize(PHONE);
-    await r.page.waitForTimeout(700);
+    await afterReads(r.page, 700);
     const f8 = await floors(r.page);
     ok(`at 390: nothing under 12px (${f8.small.length}), every row at least 44px (${f8.tiny.length})`, f8.small.length === 0 && f8.tiny.length === 0, [...f8.small, ...f8.tiny].slice(0, 4).join(" · "));
     ok("...Michaelhouse's group names the umpire that is on record as not a blocker, and a missing scorer as one", /No scorer on record/.test(await tid(r.page, `readiness-fixture-${MICH}`).innerText()) && !/No umpire on record/.test(await tid(r.page, `readiness-fixture-${MICH}`).innerText()));
     await r.page.locator(`[data-testid="queue-group"][data-match="${MICH}"] [data-rule="O4"] button`).first().click({ timeout: 4000 });
-    await r.page.waitForTimeout(1500);
+    await afterReads(r.page, 1500);
     const box = await tid(r.page, "match-details").boundingBox().catch(() => null);
     ok("tapping a row opens that fixture's duties, on the Match Centre", await tid(r.page, "os-main").getAttribute("data-page") === "matches"
        && await tid(r.page, "match-details").getAttribute("data-match") === MICH && await tid(r.page, "duty-roster").count() === 1);
@@ -805,7 +807,7 @@ try {
     ok("back on To resolve, tonight's row opens its own fixture", await go(r.page, "readiness"));
     await r.page.waitForFunction(() => { const q = document.querySelector('[data-testid="queue"]'); return q && !/Reading/.test(q.innerText); }, null, { timeout: 30000 }).catch(() => {});
     await r.page.locator(`[data-testid="queue-group"][data-match="${DAY}"] [data-rule="O4"] button`).first().click({ timeout: 4000 });
-    await r.page.waitForTimeout(1500);
+    await afterReads(r.page, 1500);
     ok("...tonight's: its details, not Michaelhouse's", await tid(r.page, "match-details").getAttribute("data-match") === DAY && await tid(r.page, "match-details").count() === 1);
     const rosterText = (await inner(r.page, "duty-covered")).trim();
     ok(`...and its duty roster says what the row said ("${coveredText}")`, rosterText === coveredText, rosterText);

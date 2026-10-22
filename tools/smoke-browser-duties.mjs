@@ -24,6 +24,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4354);
 const API_PORT = port(8854);
@@ -70,6 +71,7 @@ async function open() {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [], reasons = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -100,14 +102,14 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return /Match Centre|Dashboard/i.test(await text(page));
 }
 async function nav(page, id) {
   const l = tid(page, `nav-${id}`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /** Officials → the named person's card. */
@@ -116,7 +118,7 @@ async function openOfficial(page, name) {
   const b = page.locator("button", { hasText: name }).first();
   if (!(await b.count())) return false;
   await b.click({ timeout: 6000 });
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   return true;
 }
 const panel = (page, dutyId) => page.locator(`[data-testid="duty-authority"][data-duty="${dutyId}"]`);
@@ -167,7 +169,7 @@ try {
   await panel(office.page, D).locator('[data-testid="duty-reason"]').fill(REASON);
   await confirm.click({ timeout: 6000 });
   ok("with a reason, it is drawn suspended", await settle(office.page, D, "suspended"));
-  await office.page.waitForTimeout(800);
+  await afterReads(office.page, 800);
   ok("...the office sees its own reason", (await text(office.page)).includes(REASON));
   const [open1] = await dbq(`select reason, suspended_by from duty_suspension where duty_id = $1 and lifted_at is null`, [D]);
   ok("...and the database holds it, with who", open1?.reason === REASON && !!open1?.suspended_by, JSON.stringify(open1));
