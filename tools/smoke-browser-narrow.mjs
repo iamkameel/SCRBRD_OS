@@ -34,6 +34,7 @@ import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { buildMatchCentreFixture } from "./fixture-matchcentre.mjs";
 import { narrowAudit, tabPath } from "./a11y-narrow.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5420);
 const API_PORT = port(8920);
@@ -86,6 +87,7 @@ async function open({ width, scheme, zoom = 1 }) {
     isMobile: true, hasTouch: true, colorScheme: scheme });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
@@ -165,7 +167,7 @@ try {
           // The Match Centre's live fixture: every tab, and the Coach tab.
           await mnav(page, "matches");
           await page.locator(`[data-testid="mc-open-${fx.live}"]`).click({ timeout: 6000 }).catch(() => {});
-          await page.waitForTimeout(1800);
+          await afterReads(page, 1800);
           ok(`${label} coach: the live fixture opens`, await page.locator('[data-testid="match-view"]').count() === 1);
           for (const t of ["summary", "scorecard", "commentary", "partnerships", "analytics", "details"]) {
             await page.locator(`[data-testid="mc-tab-${t}"]`).click({ timeout: 4000 }).catch(() => {});
