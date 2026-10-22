@@ -1603,7 +1603,6 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     // count in the over, with five to the batting side (`notInOver`); and
     // who was chosen to face next (`facesNext`) where the Laws give a choice.
     const evs=deliveryEvents({curIn,before,freeHit,type,value,shot,seg,zone,approach,placement,shortRun,nbType,facesNext,disallowed,notInOver});
-    const ev=evs[0];
     const after=project(...evs);
     const endedOver=after.balls>before.balls&&after.balls%6===0;
     const endedInnings=after.complete;
