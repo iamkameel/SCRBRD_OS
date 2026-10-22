@@ -6621,6 +6621,8 @@ BEGIN
     ARRAY['gc',      'guardian',    HIL::text, '',     ''],     -- C's, the newcomer's
     ARRAY['gm',      'guardian',    HIL::text, '',     ''],     -- M's, and the lift's driver
     ARRAY['aboy',    'player',      HIL::text, '15XI', c_a::text],
+    ARRAY['mboy',    'player',      HIL::text, '15XI', c_m::text],   -- M himself: a team-mate who never moved
+    ARRAY['cboy',    'player',      HIL::text, '19XI', c_c::text],   -- C himself: joined the 19XI at t-10
     ARRAY['coach41', 'coach',       HIL::text, '15XI', ''],
     ARRAY['coach42', 'coach',       HIL::text, '19XI', ''],
     ARRAY['spec',    'spectator',   HIL::text, '',     ''],
@@ -26685,12 +26687,17 @@ $v49$;
   --                its earlier rows (f42a, its bus, nets, post, balls: Q2);
   --                loses the 15XI's after the move (f41n, its bus, nets, the
   --                post and plan of now). A himself: the same old season by
-  --                (5), his new side whole by his `player` row (1), and NOT
-  --                his old side's posts and plans (db/117 header §4: a gap
-  --                for Kameel, not built)
+  --                (5), his new side whole by his `player` row (1), and his
+  --                old side's post and plan of his time on it (n41a, p41a),
+  --                not the ones after he left (n41n, p41n) (Kameel, 22 Oct
+  --                2026: news_post_read_old_side)
+  --   (old posts)  news_own_old_side() answers true for A alone, and only at
+  --                the 15XI post and plan dated inside his closed rows
   --   (unchanged)  every other reader reads exactly what he read before the
-  --                move: the newcomer's and M's mothers, both coaches, the
-  --                school-wide spectator, the office
+  --                move: the newcomer's and M's mothers, M and C themselves
+  --                (a team-mate on the 15XI and a boy who joined the 19XI
+  --                later gain nothing from the old-side read), both coaches,
+  --                the school-wide spectator, the office
   --   (seats)      A's seat on the lift to f41n (after the move, the side he
   --                left) is void, ended by the office; his seat to f41s (his
   --                name on its sheet) and M's seat to f41n stand; the driver
@@ -26713,6 +26720,11 @@ $v49$;
   --   (undo)       a move back the same day (§3.3): four rows, both kept; his
   --                mother reads the 15XI's from t-10 on again and the 19XI's
   --                t-10 day only; the voided seat stays void (no un-void)
+  --   (import)     the import's day (import_joined_on(), Kameel 22 Oct 2026):
+  --                a boy new to the books with no date in the file joins his
+  --                side on the school season's start; with a date, on it; a
+  --                boy already on the books moved by the file, today; a day
+  --                still to come is refused
   --   (doors)      the void trigger enabled beside db/08's and db/112's;
   --                side_on() and side_day() scrbrd_app's alone; my_sides()
   --                returns the spans; no job on a clock (§8.3 item 12)
@@ -26735,10 +26747,14 @@ $v49$;
     bad    text;
     t      date := sa_today();
     ZERO   uuid := '00000000-0000-0000-0000-000000000000';
+    v_season date;
+    v_new  uuid;
+    v_dated uuid;
   BEGIN
     OFFICE := (z->>'office')::uuid; A := (z->>'a')::uuid; G := (z->>'g')::uuid; GM := (z->>'gm')::uuid;
     ABOY := (z->>'aboy')::uuid;
     FX := ARRAY(SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^f4');
+    SELECT s.starts_on INTO v_season FROM season_for(sa_today(), 'school') s;
 
     -- ── (before) ──
     PERFORM _assert(_v117_fact('rows', A) = '14XI:-90..-60 15XI:-60..',
@@ -26752,7 +26768,7 @@ $v49$;
       got := _v117_reads(z);
       PERFORM _assert(got = want, format('§94 (before): the %s reads %s, the design gives %s', k, got, want));
     END LOOP;
-    FOREACH k IN ARRAY ARRAY['gc', 'gm', 'coach41', 'coach42', 'spec', 'office'] LOOP
+    FOREACH k IN ARRAY ARRAY['gc', 'gm', 'mboy', 'cboy', 'coach41', 'coach42', 'spec', 'office'] LOOP
       PERFORM _as((z->>k)::uuid);
       v_before := v_before || jsonb_build_object(k, _v117_reads(z));
     END LOOP;
@@ -26779,14 +26795,36 @@ $v49$;
     -- ── (after) ──
     FOR k, want IN SELECT * FROM (VALUES
         ('g',    'fixtures [f41a f41d f41s f41w f42d f42n f43b] trips [t41a] training [s41a s42d s42n] posts [n41a n42n p41a] balls [f41a]'),
-        ('aboy', 'fixtures [f41a f41d f41s f41w f42a f42d f42n f43b] trips [t41a t42a] training [s41a s42a s42d s42n] posts [n42a n42n] balls [f41a f42a]')) x LOOP
+        ('aboy', 'fixtures [f41a f41d f41s f41w f42a f42d f42n f43b] trips [t41a t42a] training [s41a s42a s42d s42n] posts [n41a n42a n42n p41a] balls [f41a f42a]')) x LOOP
       PERFORM _as((z->>k)::uuid);
       got := _v117_reads(z);
       PERFORM _assert(got = want, format('§94 (after): the %s reads %s, the design gives %s', k, got, want));
     END LOOP;
 
+    -- ── (old posts) ──
+    -- A reads his old side's post and plan of his time on it, and not the
+    -- ones after he left; and by the new read alone.
+    PERFORM _as(ABOY);
+    PERFORM _assert(EXISTS (SELECT 1 FROM news_post WHERE id = (z->>'n41a')::uuid)
+                    AND EXISTS (SELECT 1 FROM news_post WHERE id = (z->>'p41a')::uuid)
+                    AND NOT EXISTS (SELECT 1 FROM news_post WHERE id = (z->>'n41n')::uuid)
+                    AND NOT EXISTS (SELECT 1 FROM news_post WHERE id = (z->>'p41n')::uuid),
+      '§94 (old posts): A does not read his old side''s post and plan of his time on it, or reads one from after he left');
+    PERFORM _assert(NOT app_can('news.read', '11111111-1111-1111-1111-111111111111'::uuid, '15XI', ZERO, ZERO)
+                    AND NOT news_plan_reach('11111111-1111-1111-1111-111111111111'::uuid, '15XI', t - 30),
+      '§94 (old posts): A reads the 15XI''s posts by a rule other than his old side''s (the test proves nothing)');
+    -- Whom news_own_old_side() answers for, over every team post: A alone,
+    -- at the 15XI post and plan inside his closed rows.
+    FOREACH k IN ARRAY ARRAY['aboy', 'mboy', 'cboy', 'g', 'gm', 'gc', 'coach41', 'coach42', 'spec', 'office'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      SELECT coalesce(string_agg(coalesce(_v106_label(z, p.id), p.id::text), ' ' ORDER BY coalesce(_v106_label(z, p.id), p.id::text)), '') INTO got
+        FROM _v117_posts() p WHERE news_own_old_side(p.school, p.team, p.day);
+      want := CASE k WHEN 'aboy' THEN 'n41a p41a' ELSE '' END;
+      PERFORM _assert(got = want, format('§94 (old posts): news_own_old_side() is true for the %s at [%s], the design gives [%s]', k, got, want));
+    END LOOP;
+
     -- ── (unchanged) ──
-    FOREACH k IN ARRAY ARRAY['gc', 'gm', 'coach41', 'coach42', 'spec', 'office'] LOOP
+    FOREACH k IN ARRAY ARRAY['gc', 'gm', 'mboy', 'cboy', 'coach41', 'coach42', 'spec', 'office'] LOOP
       PERFORM _as((z->>k)::uuid);
       got := _v117_reads(z);
       PERFORM _assert(got = v_before->>k, format('§94 (unchanged): the %s read %s before the move and %s after', k, v_before->>k, got));
@@ -26891,6 +26929,44 @@ $v49$;
                     AND _v117_fact('about_him', A) = v_about,
       '§94 (undo): the move back un-voided the seat, told someone again, or changed a link or consent');
 
+    -- ── (import) ──
+    -- As the import writes a row: the office, app.effective_on set from
+    -- import_joined_on() before the write (services/api/io/import-api.mjs).
+    PERFORM _as(OFFICE);
+    PERFORM _assert(import_joined_on(false, NULL) = v_season AND import_joined_on(true, NULL) IS NULL
+                    AND import_joined_on(false, t - 20) = t - 20 AND import_joined_on(true, t - 20) = t - 20,
+      format('§94 (import): import_joined_on() gives %s, %s, %s, %s',
+             import_joined_on(false, NULL), import_joined_on(true, NULL), import_joined_on(false, t - 20), import_joined_on(true, t - 20)));
+    -- a new boy, no date in the file: the season's start
+    PERFORM set_config('app.effective_on', coalesce(import_joined_on(false, NULL)::text, ''), true);
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES ('11111111-1111-1111-1111-111111111111'::uuid, '15XI', 'Verify OneOneSeven Imported', 1174, 'batter',
+            make_date(extract(year FROM t)::int - 15, 3, 1)) RETURNING id INTO v_new;
+    -- a new boy, a date in the file
+    PERFORM set_config('app.effective_on', coalesce(import_joined_on(false, t - 20)::text, ''), true);
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES ('11111111-1111-1111-1111-111111111111'::uuid, '15XI', 'Verify OneOneSeven Dated', 1175, 'batter',
+            make_date(extract(year FROM t)::int - 15, 3, 1)) RETURNING id INTO v_dated;
+    -- M, on the books, moved by the file with no date: today, as before
+    PERFORM set_config('app.effective_on', coalesce(import_joined_on(true, NULL)::text, ''), true);
+    UPDATE player SET team_code = '19XI' WHERE id = (z->>'m')::uuid;
+    PERFORM set_config('app.effective_on', '', true);
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v117_fact('rows', v_new) = format('15XI:%s..', v_season - t),
+      format('§94 (import): a new boy with no date has %s, not the season''s start (%s)', _v117_fact('rows', v_new), v_season - t));
+    PERFORM _assert(_v117_fact('rows', v_dated) = '15XI:-20..',
+      format('§94 (import): a new boy with a date has %s, not the file''s day', _v117_fact('rows', v_dated)));
+    PERFORM _assert(_v117_fact('rows', (z->>'m')::uuid) = '15XI:-60..0 19XI:0..',
+      format('§94 (import): a boy moved by the file with no date has %s, not a move today', _v117_fact('rows', (z->>'m')::uuid)));
+    -- a day still to come is refused
+    PERFORM _as(OFFICE);
+    BEGIN
+      PERFORM import_joined_on(false, t + 1);
+      PERFORM _assert(false, '§94 (import): a joined_on still to come was accepted');
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    PERFORM set_config('app.user_id', '', true);
+
     -- ── (doors) ──
     PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'player'::regclass AND tgname = 'player_move_voids_seats' AND tgenabled = 'O')
                     AND NOT has_function_privilege('scrbrd_app', to_regprocedure('player_move_voids_seats()'), 'EXECUTE')
@@ -26902,7 +26978,12 @@ $v49$;
                     AND (SELECT position('my_own_side_fixtures()' IN pg_get_expr(p.polqual, p.polrelid)) > 0
                            FROM pg_policy p WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_read')
                     AND (SELECT position('sa_date(training_session.starts_at)' IN pg_get_expr(p.polqual, p.polrelid)) > 0
-                           FROM pg_policy p WHERE p.polrelid = 'training_session'::regclass AND p.polname = 'training_session_read'),
+                           FROM pg_policy p WHERE p.polrelid = 'training_session'::regclass AND p.polname = 'training_session_read')
+                    AND has_function_privilege('scrbrd_app', to_regprocedure('news_own_old_side(uuid,text,date)'), 'EXECUTE')
+                    AND NOT has_function_privilege('public', to_regprocedure('news_own_old_side(uuid,text,date)'), 'EXECUTE')
+                    AND NOT has_function_privilege('public', to_regprocedure('import_joined_on(boolean,date)'), 'EXECUTE')
+                    AND EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = 'news_post'::regclass
+                                   AND p.polname = 'news_post_read_old_side' AND p.polpermissive AND p.polcmd = 'r'),
       '§94 (doors): the void trigger, the helpers'' grants, my_sides()''s spans or the dated policies are not what db/117 wrote');
     PERFORM _assert(to_regclass('cron.job') IS NULL, '§94 (doors): a job runs on a clock (cron.job exists)');
   END;

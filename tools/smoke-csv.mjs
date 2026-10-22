@@ -207,6 +207,40 @@ try {
        (await q(`select team_code from player where full_name = 'New Boy One'`))[0].team_code === "U15A");
   }
 
+  group("A boy's first side is dated: the season's start, or the file's day (db/117, Kameel 22 Oct)");
+  {
+    const membership = async (name) => (await q(
+      `select m.team_code, m.joined_on::text j, m.left_on::text l from team_membership m join player p on p.id = m.player_id
+        where p.full_name = $1 order by m.joined_on, m.left_on nulls last, m.id`, [name]))
+      .map((r) => `${r.team_code}:${r.j}..${r.l ?? ""}`).join(" ");
+    const [{ season, today, ago }] = await q(
+      `select s.starts_on::text season, sa_today()::text today, (sa_today() - 30)::text ago
+         from season_for(sa_today(), 'school') s`);
+    ok("a new boy imported with no date joined his side on the season's start",
+       (await membership("New Boy One")) === `U15A:${season}..`, await membership("New Boy One"));
+
+    const dated = await importCsv("players", office, {
+      csv: `full_name,team_code,born,joined_on\nDated Boy,U15A,2011-04-07,${ago}\n`, schoolId: HIL, commit: true });
+    ok("a new boy with a date in the file", dated.body?.committed === true && dated.body?.inserted === 1, JSON.stringify(dated.body));
+    ok("...joined his side on that day", (await membership("Dated Boy")) === `U15A:${ago}..`, await membership("Dated Boy"));
+
+    const moved = await importCsv("players", office, {
+      csv: "full_name,team_code\nNew Boy Two,U16A\n", schoolId: HIL, commit: true });
+    ok("a boy on the books moved by the file with no date", moved.body?.committed === true && moved.body?.updated === 1);
+    ok("...moves today, as before",
+       (await membership("New Boy Two")) === `U15A:${season}..${today} U16A:${today}..`, await membership("New Boy Two"));
+
+    const ahead = await importCsv("players", office, {
+      csv: "full_name,team_code,born,joined_on\nFuture Boy,U15A,2011-04-07,2099-01-01\n", schoolId: HIL, commit: true });
+    ok("a joined_on still to come is refused on its line, and nothing is written",
+       ahead.body?.committed === false && (ahead.body?.errors ?? []).some((e) => e.line === 2 && /still to come/.test(e.message))
+       && (await q(`select count(*)::int c from player where full_name = 'Future Boy'`))[0].c === 0, JSON.stringify(ahead.body));
+    const badDay = await importCsv("players", office, {
+      csv: "full_name,team_code,born,joined_on\nWrong Day Boy,U15A,2011-04-07,01/02/2026\n", schoolId: HIL });
+    ok("...and a day/month date is not guessed",
+       (badDay.body?.errors ?? []).some((e) => e.column === "joined_on"), JSON.stringify(badDay.body));
+  }
+
   group("Every mistake at once, with the line numbers from their spreadsheet");
   {
     const messy =

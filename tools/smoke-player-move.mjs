@@ -22,8 +22,8 @@
  *   6. After the move his mother still reads the 1XI's fixture, bus, nets,
  *      plan and balls of last month (D1), not the 1XI's bus ahead, and none
  *      of the U16B's rows from before he joined (Q2); he keeps the same
- *      season's fixture, bus, nets and balls, but not its plan (db/117
- *      header §4, reported to Kameel).
+ *      season's fixture, bus, nets, balls and plan (db/117 header §4:
+ *      Kameel, 22 October 2026, his old side's posts and plans of his time).
  *   7. The move voided his mother's seat on a lift to the 1XI's fixture
  *      ahead (SR-4), kept the one to the match whose sheet names him, and
  *      told her and the driver once each.
@@ -240,11 +240,12 @@ try {
     ok("after it, she still reads the 1XI's fixture, bus, nets, plan and balls of last month, not its bus ahead, and nothing of the U16B's before he joined",
        g === "fixtures [fPast] trips [tPast] training [sPast] plans [pPast] balls [fPast:6]", g);
     const b = await readsDated(boy);
-    // He keeps his old season's fixture, bus, nets and balls by branch (5);
-    // the U16B's past is his by his `player` role, as every team-mate's; the
-    // 1XI's plan of last month is not his (db/117 header §4: reported).
-    ok("he still reads the 1XI's fixture, bus, nets and balls of last month, and the U16B's fixture as one of its players",
-       b === "fixtures [fNewPast fPast] trips [tPast] training [sPast] plans [] balls [fPast:6]", b);
+    // He keeps his old season's fixture, bus, nets and balls by branch (5),
+    // and its plan of last month by news_post_read_old_side (db/117 §4,
+    // Kameel 22 October 2026); the U16B's past is his by his `player` role,
+    // as every team-mate's.
+    ok("he still reads the 1XI's fixture, bus, nets, plan and balls of last month, and the U16B's fixture as one of its players",
+       b === "fixtures [fNewPast fPast] trips [tPast] training [sPast] plans [pPast] balls [fPast:6]", b);
   }
 
   group("7 · The move voided his mother's seat to the side he left, and told her");

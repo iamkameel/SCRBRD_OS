@@ -625,6 +625,10 @@ SELECT
         AND to_regprocedure('my_own_side_fixtures()') IS NOT NULL
         AND to_regprocedure('news_plan_reach(uuid,text,date)') IS NOT NULL
         AND to_regprocedure('player_move_voids_seats()') IS NOT NULL
+        AND to_regprocedure('news_own_old_side(uuid,text,date)') IS NOT NULL
+        AND to_regprocedure('import_joined_on(boolean,date)') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('news_post') AND p.polname = 'news_post_read_old_side')
         AND position('side_reach_on(' IN coalesce((SELECT prosrc FROM pg_proc
                       WHERE oid = to_regprocedure('side_reach(text,uuid,text,uuid)')), '')) > 0
         AND EXISTS (SELECT 1 FROM pg_trigger t
@@ -641,6 +645,8 @@ SELECT
                          WHERE p.oid IN (to_regprocedure('side_on(uuid,uuid,date)'),
                                          to_regprocedure('side_reach_on(text,uuid,text,uuid,date)'),
                                          to_regprocedure('my_own_side_fixtures()'),
+                                         to_regprocedure('news_own_old_side(uuid,text,date)'),
+                                         to_regprocedure('import_joined_on(boolean,date)'),
                                          to_regprocedure('player_move_voids_seats()'))
                            AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A family keeps the side's season",
