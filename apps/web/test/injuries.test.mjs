@@ -10,7 +10,10 @@
  */
 import { readFileSync } from "node:fs";
 import { INJURIES } from "../src/data/mock.js";
-import { PHASE_WORDS, SEVERITY_WORDS, injuryCounts, phaseWord, severityWord } from "../src/lib/injury.js";
+import {
+  NEXT_REVIEW_SHORTCUTS, PHASE_WORDS, REASON_ORDER, REFUSAL, SEVERITY_WORDS, addDaysIso, hasLeftSchool, injuryCounts, injurySay,
+  isOpenInjury, phaseWord, reasonLine, saToday, seenWord, severityWord,
+} from "../src/lib/injury.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
@@ -81,5 +84,30 @@ group("the fixture's own counts");
 const m = injuryCounts(INJURIES, { natureTier: true, now: new Date() });
 ok("mock: 1 injured, 3 rehabilitating, 4 out", m.injured === 1 && m.rehab === 3 && m.out === 4, m);
 
+group("slice B: dates, words and refusals");
+ok("the shortcuts are +7 and +14", NEXT_REVIEW_SHORTCUTS.join() === "7,14");
+ok("addDaysIso crosses a month and a year", addDaysIso("2026-10-28", 7) === "2026-11-04" && addDaysIso("2026-12-25", 14) === "2027-01-08");
+ok("saToday is the South African date, not UTC's (22:30 UTC is already tomorrow there)",
+   saToday(new Date("2026-10-15T22:30:00Z")) === "2026-10-16" && saToday(new Date("2026-10-15T21:30:00Z")) === "2026-10-15");
+const fmt = (d) => `<${d}>`;
+ok("every reason has a sentence, and they are the physio's alone",
+   REASON_ORDER.every((r) => reasonLine({ reason: r, dueOn: "2026-10-01", daysOver: 3 }, fmt).length > 5));
+ok("overdue says how many days; a single day is singular",
+   reasonLine({ reason: "overdue", dueOn: "2026-10-01", daysOver: 3 }, fmt).includes("3 days")
+   && /1 day\b(?!s)/.test(reasonLine({ reason: "overdue", dueOn: "2026-10-01", daysOver: 1 }, fmt)));
+ok("no reason sentence names a child or a diagnosis", REASON_ORDER.every((r) => !/\b(he|boy|[A-Z][a-z]+ [A-Z][a-z]+)\b/.test(reasonLine({ reason: r, daysOver: 2 }, fmt).replace(/^[A-Z]/, "x"))));
+ok("the refusals are plain sentences that name nobody", Object.values(REFUSAL).every((w) => w.endsWith(".") && w.length > 10));
+ok("a code the screen does not know is said plainly, with its code", injurySay({ code: "weird", status: 422 }) === "Not saved. The server said weird.");
+ok("no network says nothing was saved", /Nothing was saved/.test(injurySay({})));
+ok("next_review_in_past has its own sentence", /today or later/.test(injurySay({ code: "next_review_in_past", status: 422 })));
+ok("Object.prototype keys are no refusal", /server said/.test(injurySay({ code: "constructor", status: 422 })));
+ok("outside the physio's screen a look is 'Seen by the physio', and the first is 'Recorded'",
+   seenWord(true) === "Recorded" && seenWord(false) === "Seen by the physio" && !/review/i.test(seenWord(true) + seenWord(false)));
+ok("an injury is open until cleared; with no phase read, restricted decides",
+   isOpenInjury({ phase: "rehab" }) && !isOpenInjury({ phase: "cleared" }) && isOpenInjury({ phase: null, restricted: true }) && !isOpenInjury({ phase: null, restricted: false }));
+ok("left the school: only an explicit true from the injuries read marks", hasLeftSchool({ leftSchool: true }));
+ok("...NULL is no mark (still enrolled, or a reader who cannot read his memberships), never 'at school'",
+   !hasLeftSchool({ leftSchool: null }) && !hasLeftSchool({ leftSchool: false }) && !hasLeftSchool({}) && !hasLeftSchool(null) && !hasLeftSchool(undefined));
+ok("...and a date alone is not the mark", !hasLeftSchool({ leftOn: "2026-10-01" }));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
