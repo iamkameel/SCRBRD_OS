@@ -414,7 +414,13 @@ export const READ_QUERIES = {
     // It is also what aligns this screen with Squad, Profiles and the passport:
     // a passport is keyed on the PLAYER, so without this link there is no way
     // to get from an account to the record it belongs to.
-    text: `select id, school_id, email, name, role, active, last_seen_at, teams, player_id
+    //
+    // A PUPIL'S LOGIN EMAIL IS THE OFFICE'S (db/118): app_user_email_seen()
+    // answers it to the pupil himself and to a holder of user.role.assign or
+    // guardian.link.manage at his school, and NULL to every other user.read
+    // holder (finance, sponsorship). An adult's email is unchanged.
+    text: `select id, school_id, app_user_email_seen(id, school_id, email) as email,
+                  name, role, active, last_seen_at, teams, player_id
              from app_user
             where active
             order by name`,
@@ -440,7 +446,9 @@ export const READ_QUERIES = {
   // {date}" to the office and nothing more to a reader who holds user.read
   // alone: for them, and for an account disabled before db/90, it is null.
   accounts: {
-    text: `select id, school_id, email, name, role, active, last_seen_at, teams, player_id,
+    // A pupil's email as in `users` (db/118).
+    text: `select id, school_id, app_user_email_seen(id, school_id, email) as email,
+                  name, role, active, last_seen_at, teams, player_id,
                   id = app_user_id() as mine,
                   (select max(c.changed_at) from account_status_change c where c.user_id = app_user.id) as status_changed_at
              from app_user

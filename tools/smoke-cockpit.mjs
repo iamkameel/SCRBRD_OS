@@ -490,6 +490,41 @@ try {
     ok("...nor read what it holds for review", held.status !== 200 || (held.body?.rows ?? []).length === 0, held.raw);
   }
 
+  // ══ 7 ══
+  group("7 · a retirement's reason stays at the boy's school (db/118; away visibility §4)");
+  {
+    // A fixture of its own, last, so no count above moves. Our opener and
+    // their batter each retire hurt; a boy the pad knows only by a typed name
+    // retires hurt; our opener later retires out (a dismissal, with its W).
+    const { parent, awayParent, log } = families;
+    const RET = await fixture({ hhmm: "16:00", opponent: "Westville Boys' High 1XI (retirements)", shared: true });
+    const TYPED = "A Typed Visitor";
+    const retire = async (seq, batter, reason, out = false) => q(
+      `insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                               client_seq, client_ts, kind, ball_type, dismissal, payload)
+       values ($1, $2, $3, 0, 1, $4, 'walk-cockpit', $5, $3, now(), 'retire', $6, $7, $8)`,
+      [RET, HIL, seq, SCORER, `ck-${++key}`, out ? "W" : null, out ? "retired_out" : null, JSON.stringify({ batter, reason })]);
+    await retire(1, WHITFIELD, "hurt");
+    await retire(2, AWAYBAT, "hurt");
+    await retire(3, TYPED, "hurt");
+    await retire(4, WHITFIELD, "out", true);
+    /** reason by seq, as this reader reads the log */
+    const reasons = async (tok) => Object.fromEntries(((await log(tok, RET)) ?? []).map((e) => [e.seq, e.payload?.reason]));
+    const ourCoach = await reasons(coach), theirCoach = await reasons(wes);
+    ok("our coach reads our opener retired hurt", ourCoach[1] === "hurt", ourCoach);
+    ok("...and their batter's retirement as 'not out'", ourCoach[2] === "not out", ourCoach);
+    ok("...and a typed name's as 'not out', since he is at no school of ours", ourCoach[3] === "not out", ourCoach);
+    ok("Westville's coach reads our opener's retirement as 'not out'", theirCoach[1] === "not out", theirCoach);
+    ok("...and his own batter retired hurt", theirCoach[2] === "hurt", theirCoach);
+    ok("a retirement that is a dismissal keeps its reason for both", ourCoach[4] === "out" && theirCoach[4] === "out");
+    const fam = await reasons(awayParent), ourFam = await reasons(parent);
+    ok("the Westville guardian reads our opener's as 'not out', his son's as hurt", fam[1] === "not out" && fam[2] === "hurt", fam);
+    ok("our guardian reads our opener's as our school does", ourFam[1] === "hurt" && ourFam[2] === "not out", ourFam);
+    const raw = JSON.stringify((await log(wes, RET)) ?? []);
+    ok("...and the word 'hurt' rides on no Hilton boy's event the visitors read",
+       !((await log(wes, RET)) ?? []).some((e) => e.payload?.batter === WHITFIELD && /hurt/.test(JSON.stringify(e))), raw.slice(0, 300));
+  }
+
   ok("the server logged no errors", serverErr.join("").trim() === "", serverErr.join("").slice(0, 600));
 } catch (e) {
   fail++;
