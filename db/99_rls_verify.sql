@@ -23801,11 +23801,13 @@ $v49$;
       PERFORM _as(u);
       SELECT string_agg(format('%s/%s', p.school, p.team), ' ') INTO bad
         FROM _v106_plans() p
-       WHERE (news_plan_reach(p.school, p.team) OR news_sheet_reach(p.fixture, p.school, p.team)) IS DISTINCT FROM
+       -- since db/117 the side on the plan's day (its fixture's), as
+       -- news_post_plan_side and news_post_team_side ask it
+       WHERE (news_plan_reach(p.school, p.team, side_day(p.fixture)) OR news_sheet_reach(p.fixture, p.school, p.team)) IS DISTINCT FROM
              (app_can('news.read', p.school, p.team, ZERO, ZERO) AND fixture_end_reach('team.read', p.fixture, p.school, p.team));
       PERFORM _assert(bad IS NULL, format('§83 (agree): for the guardian %s db/101''s plan reach and fixture_end_reach() answer apart at %s', u, bad));
       n := n + (SELECT count(*) FROM _v106_plans() p
-                 WHERE news_sheet_reach(p.fixture, p.school, p.team) AND NOT news_plan_reach(p.school, p.team));
+                 WHERE news_sheet_reach(p.fixture, p.school, p.team) AND NOT news_plan_reach(p.school, p.team, side_day(p.fixture)));
     END LOOP;
     PERFORM _assert(n > 0, '§83 (agree): no guardian reaches a plan by the sheet alone: the sheet comparison proves nothing');
 
