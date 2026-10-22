@@ -6801,6 +6801,10 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 CREATE OR REPLACE FUNCTION _seed_118_surname(p_player uuid, p_surname text) RETURNS void AS $$
   UPDATE player SET surname = p_surname WHERE id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A full name written with punctuation in it ("Zungu, S", "Mary-Anne ...").
+CREATE OR REPLACE FUNCTION _seed_118_name(p_player uuid, p_full_name text) RETURNS void AS $$
+  UPDATE player SET full_name = p_full_name WHERE id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/118 (section 93) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -26477,6 +26481,9 @@ $v49$;
   --             reader with no fixture.read at the retiring boy's school,
   --             and as written to one with it; a retired-out keeps its
   --             reason; a typed name is at no school; nothing else moves
+  --   (scan)    and a word of a name written with punctuation ("Zungu, S",
+  --             "Mary-Anne")
+  --   (suspension) a Law 41 suspension's ground, as a bowler change's reason
   --   (bowler)  a bowler change keeps its reason for a reader with
   --             fixture.read at the bowler's school, and loses it (the
   --             change itself kept) for the other school and a typed name
@@ -26506,6 +26513,18 @@ $v49$;
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
     VALUES ('team', HIL, '2XI', 'Zwelithini', 'zwelithini', now()) RETURNING id INTO v_post91;
     PERFORM _assert(news_public_check(v_post91) = 1, '§93 (scan): the stored surname was not read');
+    -- A name written with a comma, and a hyphenated first name: each word is
+    -- a word of his name.
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _seed_118_name(P_ADULT, 'Zungu, S');
+    PERFORM _seed_118_name(P_U13, 'Mary-Anne Mkhwanazi');
+    PERFORM _as(U_C2_91);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Zungu', 'zungu', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 1, '§93 (scan): a surname written "Zungu," was not found');
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Anne', 'anne', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 1, '§93 (scan): half of "Mary-Anne" was not found');
 
     -- (email)
     PERFORM _as(U_BURSAR);   -- finance and sponsorship: user.read, nothing more
@@ -26547,6 +26566,12 @@ $v49$;
       '§93 (bowler): Westville''s coach lost why his own bowler was replaced');
     PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, NULL, jsonb_build_object('bowler', P_PILLAY::text, 'reason', 'suspended')) ? 'reason'),
       '§93 (bowler): a Hilton bowler named in the payload carried his reason to Westville');
+    -- A Law 41 suspension: Westville reads that a Hilton bowler was suspended,
+    -- and for how long, not on what ground.
+    v_pay := ball_event_payload_seen(M_OTHER, 'bowler_suspended', NULL, P_PILLAY, jsonb_build_object('reason', 'beamers', 'scope', 'match'));
+    PERFORM _assert(NOT (v_pay ? 'reason') AND v_pay->>'scope' = 'match',
+      format('§93 (suspension): Westville''s coach read the ground of a Hilton bowler''s suspension, or lost its scope: %s', v_pay));
+    v_pay := jsonb_build_object('batter', P_PILLAY, 'reason', 'hurt');
     PERFORM _as(U_C2_91);
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'hurt',
       '§93 (retire): Hilton''s coach lost his own boy''s reason');
@@ -26554,6 +26579,8 @@ $v49$;
       '§93 (retire): a typed name read as hurt');
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_PILLAY, jsonb_build_object('reason', 'injury'))->>'reason' = 'injury',
       '§93 (bowler): Hilton''s coach lost why his own bowler was replaced');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'bowler_suspended', NULL, P_PILLAY, jsonb_build_object('reason', 'beamers', 'scope', 'match'))->>'reason' = 'beamers',
+      '§93 (suspension): Hilton''s coach lost the ground of his own bowler''s suspension');
     PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_WES, jsonb_build_object('reason', 'injury')) ? 'reason'),
       '§93 (bowler): Hilton''s coach read why a Westville bowler was replaced');
     PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, NULL, jsonb_build_object('bowler', 'A Typed Bowler', 'reason', 'injury')) ? 'reason'),

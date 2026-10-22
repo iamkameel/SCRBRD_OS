@@ -404,8 +404,8 @@ group("E. The home page refuses a post naming a pupil by any part of his name (d
   const sql = readFileSync(new URL("../../../db/118_privacy_followups.sql", import.meta.url), "utf8");
   const scan = sql.slice(sql.indexOf("CREATE OR REPLACE FUNCTION news_public_names"), sql.indexOf("REVOKE ALL ON FUNCTION news_public_names"));
   ok("the scan reads the full name, the known-as and the stored surname", /ARRAY\[p\.full_name, p\.known_as, p\.surname\]/.test(scan));
-  ok("...and every word of the full name of three letters or more", /regexp_split_to_table\(btrim\(coalesce\(p\.full_name/.test(scan)
-     && /\[\^\[:alpha:\]\]', '', 'g'\)\) >= 3/.test(scan));
+  ok("...and every word of the full name of three letters or more, split on anything not a letter",
+     /regexp_split_to_table\(btrim\(coalesce\(p\.full_name, ''\)\), '\[\^\[:alpha:\]\]\+'\)/.test(scan) && /length\(t\) >= 3/.test(scan));
   ok("...whole-word and case-blind", /~\*/.test(scan) && /\(\^\|\[\^\[:alnum:\]\]\)/.test(scan));
   for (const [what, _body] of [["a surname alone", "PILLAY bowled beautifully on Saturday."],
                               ["a first name alone", "Well batted, james: the first of the season."]]) {
