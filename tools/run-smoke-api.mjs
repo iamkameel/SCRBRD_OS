@@ -238,6 +238,11 @@ const WALKS = [
   // db/108 and tools/sql/fix-player-without-team.sql, pasted in the order
   // DEPLOYING.md gives, on a database holding a team-less pupil role.
   "player-team",
+  // db/112 over HTTP: the office moves a pupil and his `player` role follows
+  // him (ended on the old side, made on the new, never on no side); he reads
+  // his new side's fixtures, nets, plan and balls and none of his old side's,
+  // bar the one match he plays up into, every ball of it; his mother agrees.
+  "player-move",
   // The gaps db/10 and db/11 could only warn about, and the one write route
   // that closes the first of them.
   "dob-gaps",
@@ -409,6 +414,13 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // SCRBRD-110 phase 1 (db/60): the health-monitoring consent on Settings → Me,
   // the eighteen card, and the sign-up row — both themes, 12px and 44px.
   "browser-consent",
+  // GA-I19 slice B (db/111): the Injuries screens. The physio's Reviews due, the
+  // Record and Review forms (next review required, +7 and +14, clearing asks
+  // first), the left-the-school mark; the coach and the director read it with
+  // no review word, note or count and never ask for the worklist; the
+  // principal reads status only; the parent's and the boy's Health history;
+  // 12px, 44px, Daylight, reduced motion.
+  "browser-injuries",
   // Playing conditions, phase 1 (db/61, SCRBRD-114): a fixture arranged in a
   // league pre-filled from its conditions; the pad's words; the bowled after
   // a no-ball standing where the league says no free hit.

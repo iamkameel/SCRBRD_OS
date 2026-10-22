@@ -1647,6 +1647,101 @@ runs as the caller); `injury_reviews` returns `is_recording` (the review
 `injury_record()` wrote at the recording).
 <!-- ── end db/111 ── -->
 
+<!-- ── db/112: a moved pupil follows his new side; a boy playing up reads his match's balls ── -->
+#### A moved pupil follows his new side (db/112)
+
+`db/112_assignment_follows_side.sql` is SR-1 of `docs/design/SEASON_ROLLOVER.md`
+(§1.2, §8; Kameel decided its questions on 15 October 2026, as recommended),
+with the playing-up ball log (Kameel, 15 October 2026: yes).
+
+**What was wrong.** A pupil's side is stored on his `player` row and again on
+his `player` role. Moving him (`POST /api/players/:id/team`, or the CSV
+import) changed only the first, so after a move he kept reading his **old**
+side's fixtures, plans, nets and bus as one of its players, and none of his
+new side's, while his parent read the new side.
+
+**What it does.**
+- A new trigger on `player`, `player_assignment_follows_side`, runs when a
+  boy's side changes. Every live `player` role of **his own accounts** (his
+  account's `player_id`, or a verified self-access link naming him) at his
+  school follows it. The old role is **ended** (kept, stamped with who moved
+  him and when) and a new one is made on the new side. db/01 forbids
+  re-pointing a role, so it is ended and made again rather than edited. A
+  move to **no side** ends the role and makes none: a live `player` role never
+  names no side (db/108's CHECK). A guardian's, a coach's and every other role,
+  and every link, are never touched. Nobody is sent a notice.
+- **A one-time correction**, in the paste: any live `player` role that
+  disagrees with the boy's side today is put right by the same rule. Its
+  NOTICE names each one ("corrected N boy(s): ended …, opened …") or says
+  "nothing to correct". On the seed it finds nothing: R Pillay's role is on
+  his side, and spectator@'s account is no boy's. **Production's count is
+  unknown until the paste: read the NOTICE and keep it.** A second paste
+  finds none.
+- `ball_event_read` gains a fourth branch, `my_own_sheet_fixtures()`: a boy
+  playing up (on an older side's sheet, not withdrawn, at his own school's
+  end) reads that match's balls, as he already reads the fixture (db/106).
+  Not another match of the older side's; a withdrawn boy reads none. db/100's
+  three branches and `my_child_fixtures()` are unchanged, so a parent reads
+  what she read before.
+
+**What it does to a live database.** Six new functions, all `SECURITY
+DEFINER` with a pinned path: five that only the owner may call (the trigger's
+`player_assignment_follows_side()`, `player_assignment_carry()`,
+`player_own_accounts()`, `player_assignment_disagreements()`,
+`player_assignment_correct()`), and `my_own_sheet_fixtures()`, which
+`scrbrd_app` may call and `PUBLIC` may not. One trigger on `player`.
+`ball_event_read` is dropped and made again with the fourth branch, guarded:
+the file stops if the policy in place is not db/100's. The correction locks
+`role_assignment` (`SHARE ROW EXCLUSIVE`, ten-second `lock_timeout`) for one
+block. No table, column, index, table grant or capability changes. db/01,
+db/08's history trigger, db/108's CHECK and `role_request_grant_as()` are
+not touched. The file checks itself. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 112` after 111 (it needs db/100,
+db/106 and db/108), read its NOTICE, then the verify bundle (§89 is its
+proof). The summary row "A moved pupil follows his new side" should read OK.
+**Schema first**: an API built with it refuses to start without db/112
+(`expected-migrations.json`). The API itself needs nothing new: the move
+route writes `player.team_code` as before, and the trigger does the rest.
+<!-- ── end db/112 ── -->
+
+<!-- ── db/113: a correction takes back what it falsified ── -->
+#### A voided ball withdraws the notices it caused (db/113)
+
+`db/113_correction_retracts_notices.sql` is GA-I36 slice A2 with
+NOTIFICATIONS slice S5. Before it, a fifty reached on a ball later voided kept
+its "Fifty for D Erasmus" notice for ever: the scorecard said 46 and the
+side's Notices said fifty. The same was true of a hundred, a five-for, a
+hat-trick, a career mark and a bowling-directive breach. Now a void (the pad's
+undo or an approved amendment) re-asks each notice its ball could have caused.
+A notice that no longer holds is withdrawn through db/89's
+`notification_retract()`: it leaves every list, opens as a stub, and one
+notice, "A notice was withdrawn", goes to exactly the people who had the
+original. A breach that no longer holds is hidden from the workload screens
+and from `workload()`'s count, and the row is kept. A mark that is reached
+again returns in place. It is the same notice with its figure brought up to
+date, and nothing new is sent. A void, or a released held ball, also drops
+the fixture's public page from the cache at commit.
+
+**What it does to a live database.** It adds two columns to `bowling_breach`
+(`retracted_at` and `notice_id`), one to `milestone_notice` (`notice_id`), one
+RESTRICTIVE read policy on `bowling_breach`, three triggers on `ball_event`
+(two on a void, and `public_data_changed` on a void or a released ball), and
+five functions, none of them callable by the application. It restates
+`milestone_notify()`, `bowling_breach_watch()` and `workload()` (db/60's, with
+one line added). It backfills the two `notice_id` links where exactly one
+notification matches, and the output names the counts. Nothing is retracted
+on the paste: a notice standing on a ball voided before it stays as it was.
+Nothing is dropped. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 113` after 89 and 91 (it calls
+db/89's `notification_retract()`), then the verify bundle (§90 is its proof).
+The summary row "A correction takes back what it falsified" should read OK.
+**Schema first**: an API built with it refuses to start without db/113
+(`expected-migrations.json`). No route or screen changes. Notices already
+shows withdrawn rows and stubs (S1).
+<!-- ── end db/113 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

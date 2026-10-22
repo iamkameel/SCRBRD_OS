@@ -564,6 +564,43 @@ SELECT
                          WHERE p.oid = to_regprocedure('injury_record(uuid,text,text,date,boolean,date,date,boolean,text,uuid)')
                            AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "The physio records and reviews an injury",
+  -- db/112: a moved pupil's player role follows his side (SR-1), never to no
+  -- side; and a boy playing up reads the balls of the match he is picked for.
+  -- Only to_regprocedure()/to_regclass(), so the row reads PROBLEM rather
+  -- than failing the query on a database without db/112.
+  CASE WHEN to_regprocedure('player_assignment_follows_side()') IS NOT NULL
+        AND to_regprocedure('player_assignment_carry(uuid,uuid,text)') IS NOT NULL
+        AND to_regprocedure('player_assignment_disagreements()') IS NOT NULL
+        AND to_regprocedure('my_own_sheet_fixtures()') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_trigger t
+                     WHERE t.tgrelid = to_regclass('player') AND t.tgname = 'player_assignment_follows_side'
+                       AND t.tgfoid = to_regprocedure('player_assignment_follows_side()') AND t.tgenabled = 'O')
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('ball_event') AND p.polname = 'ball_event_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%my_child_fixtures()%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%my_own_sheet_fixtures()%')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('my_own_sheet_fixtures()'), 'EXECUTE')
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('player_assignment_carry(uuid,uuid,text)'), 'EXECUTE')
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('player_assignment_carry(uuid,uuid,text)'),
+                                         to_regprocedure('player_assignment_follows_side()'),
+                                         to_regprocedure('my_own_sheet_fixtures()'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+        -- no live player role of a boy's own account sits on another side
+        AND NOT EXISTS (SELECT 1 FROM role_assignment a
+                          JOIN app_user u ON u.id = a.person_id
+                          JOIN player p ON p.id = u.player_id AND p.school_id = a.school_id
+                         WHERE a.role = 'player' AND a.active AND a.fixture_id IS NULL AND a.expires_at IS NULL
+                           AND a.team_code IS DISTINCT FROM p.team_code)
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A moved pupil follows his new side",
+  -- db/113: a void takes back the milestone and breach notices it falsified,
+  -- and a re-reached mark returns in place (GA-I36 A2, NOTIFICATIONS S5).
+  CASE WHEN to_regprocedure('milestone_retract()') IS NOT NULL
+        AND to_regprocedure('bowling_breach_retract()') IS NOT NULL
+        AND to_regprocedure('notification_unretract(uuid)') IS NOT NULL
+        AND to_regprocedure('milestone_notify_as(uuid,text,uuid,smallint,integer,boolean)') IS NOT NULL
+        AND to_regprocedure('milestone_still_holds(uuid,text,uuid,smallint,integer)') IS NOT NULL
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A correction takes back what it falsified",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
