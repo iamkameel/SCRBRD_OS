@@ -1,6 +1,9 @@
 
 import { Fragment, useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
+import { holdsAsHeld } from "../lib/held.js";
+import { signedIn } from "../lib/api.js";
+import { PlanList, PlanEditor, RegisterSheet } from "./training/PlanRegister.jsx";
 import { D, T, textOn, themed } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, Pill, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
@@ -46,7 +49,18 @@ function TrainingView({ role }) {
   // only: the insert is refused by the drill policy regardless of what is
   // drawn here, and the form says so in the server's words when it is.
   const drillSchools = schoolsWhere("team.manage");
-  const attending = (s) => REGISTER.filter((a) => a.sessionId === s.id && a.status !== "absent").map((a) => a.playerId);
+  // Who was there: present or late. Excused and absent are not "attending"; an
+  // old `injured` row reads as excused (GA-I26a AH-D9), so it is not counted.
+  const attending = (s) => REGISTER.filter((a) => a.sessionId === s.id && (a.status === "present" || a.status === "late")).map((a) => a.playerId);
+  // A session's plan, keyed to the drill library (GA-I26a §1.3): the side's
+  // noticeboard, read under team.read, naming no boy.
+  const planRead = useLive("training_plan", role, sessionNonce);
+  const planFailed = readState(planRead, { what: "the session plans" }).state === "failed";
+  const [planning, setPlanning] = useState(null);       // the session whose plan is open
+  const [registering, setRegistering] = useState(null); // the session whose register is open
+  // Plan and register are written under team.training.run (what the routes
+  // ask); a signed-out demo has no session to write with.
+  const canRun = signedIn() && holdsAsHeld(role, "team.training.run");
   const [view, setView] = useState("schedule");
   const [addModal, setAddModal] = useState(false);
   const canEdit = holdsCapability(role,"team.manage");   // the training API writes under team.manage
@@ -97,6 +111,10 @@ function TrainingView({ role }) {
         <Card sx={{marginBottom:"12px"}}><ReadState compact read={registerSaid} testId="register-read-state" onRetry={()=>setSessionNonce(n=>n+1)}/></Card>
       )}
 
+      {view==="schedule"&&planFailed&&(
+        <Card sx={{marginBottom:"12px"}}><ReadState compact read={readState(planRead,{what:"the session plans"})} testId="plan-read-state" onRetry={()=>setSessionNonce(n=>n+1)}/></Card>
+      )}
+
       {view==="schedule"&&(
         <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
           {TRAINING_SESSIONS.map(s=>{
@@ -128,17 +146,22 @@ function TrainingView({ role }) {
                       <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>attending</div>
                     </div>
                   </div>
-                  <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"8px"}}>
-                    {(s.drills??[]).map(d=><Pill key={d} color={typeCol}>{d}</Pill>)}
-                  </div>
+                  <PlanList lines={planRead.rows.filter(l=>l.sessionId===s.id)} other={s.drills??[]}/>
                   {s.notes&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,fontStyle:"italic",background:D.surf2,padding:"7px 10px",borderRadius:D.sm}}><Icon name="notebook-pen"/> {s.notes}</div>}
                   <div style={{display:"flex",gap:"4px",marginTop:"10px"}}>
                     {roll.map(pid=>{
                       const p=PLAYERS.find(pl=>pl.id===pid) ?? { name: REGISTER.find(a=>a.playerId===pid)?.name };
                       return p?.name?<div key={pid} title={p.name}><Avatar name={p.name} size={24} color={D.emerald}/></div>:null;
                     })}
-                    {canEdit&&<button style={{width:"24px",height:"24px",borderRadius:"50%",background:D.surf3,border:`1px dashed ${D.border}`,cursor:"pointer",color:D.textMuted,fontSize:"12px",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>}
                   </div>
+                  {canRun&&(
+                    <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginTop:"10px"}}>
+                      <button type="button" data-testid={`plan-open-${s.id}`} className="pressBtn" onClick={()=>setPlanning(s)}
+                        style={{minHeight:"44px",minWidth:"44px",padding:"0 14px",borderRadius:D.pill,cursor:"pointer",border:`1px solid ${D.border}`,background:"transparent",color:D.textSecondary,fontFamily:D.body,fontSize:"12px"}}>Plan</button>
+                      <button type="button" data-testid={`register-open-${s.id}`} className="pressBtn" onClick={()=>setRegistering(s)}
+                        style={{minHeight:"44px",minWidth:"44px",padding:"0 14px",borderRadius:D.pill,cursor:"pointer",border:`1px solid ${D.border}`,background:"transparent",color:D.textSecondary,fontFamily:D.body,fontSize:"12px"}}>Register</button>
+                    </div>
+                  )}
                 </div>
               </Card>
             );
@@ -167,6 +190,16 @@ function TrainingView({ role }) {
             ))}
           </div>
         </div>
+      )}
+
+      {planning&&(
+        <PlanEditor session={planning} plan={planRead.rows.filter(l=>l.sessionId===planning.id)} drills={LIVE_DRILLS}
+          onClose={()=>setPlanning(null)} onDone={()=>{setPlanning(null);setSessionNonce(n=>n+1);}}/>
+      )}
+      {registering&&(
+        <RegisterSheet session={registering} register={REGISTER}
+          roster={PLAYERS.filter(p=>p.team===registering.team&&p.school===registering.school)}
+          onClose={()=>setRegistering(null)} onDone={()=>{setRegistering(null);setSessionNonce(n=>n+1);}}/>
       )}
 
       {addModal&&(

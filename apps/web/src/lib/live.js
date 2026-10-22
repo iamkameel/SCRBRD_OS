@@ -1176,6 +1176,55 @@ function asSkill(r) {
            score: r.score, live: true };
 }
 
+/**
+ * One score in a boy's history (GA-I26a §4.1): a withdrawn one comes back too,
+ * and says who took it back and why. `by` is the assessor's name; whether it
+ * is worded "R Pillay, coach" or "your coach" is the screen's choice, not a
+ * disclosure (the side reads the coach table anyway).
+ */
+function asSkillPoint(r) {
+  return { id: r.id, playerId: r.player_id, assessedOn: String(r.assessed_on).slice(0, 10),
+           category: r.category, metric: r.metric, score: r.score,
+           by: r.assessed_by_name || null, withdrawn: !!r.withdrawn_at,
+           withdrawnBy: r.withdrawn_by_name || null, reason: r.withdrawn_reason || null, live: true };
+}
+
+/** A target (GA-I26a §1.2). Met-or-not is the server's: `reachedOn` is read, never worked out here. */
+function asTarget(r) {
+  const day = (v) => (v ? String(v).slice(0, 10) : null);
+  return { id: r.id, playerId: r.player_id, category: r.category, metric: r.metric, target: r.target_score,
+           setOn: day(r.set_on), dueOn: day(r.due_on), setBy: r.set_by_name || null,
+           drillId: r.drill_id ?? null, drillName: r.drill_name ?? null, noteId: r.note_id ?? null,
+           fromScore: r.from_score ?? null, fromWithdrawn: !!r.from_withdrawn,
+           latest: r.standing_score ?? null, latestOn: day(r.standing_on), reachedOn: day(r.reached_on),
+           withdrawn: !!r.withdrawn_at, reason: r.withdrawn_reason || null, live: true };
+}
+
+/** One discipline's "since the last look" (GA-I26a §4.2): counts of what he attended, the plan, his targets. */
+function asSince(r) {
+  const day = (v) => (v ? String(v).slice(0, 10) : null);
+  return { playerId: r.player_id, discipline: r.discipline, anchor: day(r.anchor), windowFrom: day(r.window_from),
+           sessions: r.sessions ?? null, registered: r.registered ?? null, present: r.present ?? null, late: r.late ?? null,
+           drills: (r.drills ?? []).map((d) => ({ id: d.drillId, name: d.name, times: d.times })),
+           targets: (r.targets ?? []).map((t) => ({ id: t.id, category: t.category, metric: t.metric, target: t.target_score,
+             setOn: day(t.set_on), dueOn: day(t.due_on), drillId: t.drillId ?? null, drillName: t.drillName ?? null,
+             drillRan: t.drillRan ?? 0, drillAttended: t.drillAttended ?? 0 })),
+           live: true };
+}
+
+/** A coaching point: a note carrying the pointer to the score it stood on. Staff-tier; never the boy's. */
+function asPoint(r) {
+  return { id: r.id, playerId: r.player_id, body: r.body, observedOn: r.observed_on ? String(r.observed_on).slice(0, 10) : null,
+           author: r.author_name || null, read: r.evidence_read, skillId: r.evidence_params?.skillId ?? null,
+           withdrawn: !!r.withdrawn_at, live: true };
+}
+
+/** One drill on a session's plan: it names no boy. */
+function asPlanLine(r) {
+  return { sessionId: r.session_id, position: r.position, drillId: r.drill_id, name: r.name, category: r.category,
+           minutes: r.minutes, ownMinutes: r.default_minutes === false, live: true };
+}
+
 function asAttendance(r) {
   return { sessionId: r.session_id, playerId: r.player_id, name: r.full_name,
            status: r.status, live: true };
@@ -1309,6 +1358,11 @@ const ADAPT = {
   my_children: asChild,
   match_squad: asSquadLine,
   skills: asSkill,
+  skills_history: asSkillPoint,
+  targets: asTarget,
+  development_since: asSince,
+  coaching_points: asPoint,
+  training_plan: asPlanLine,
   career: asCareer,
   career_by_season: asSeasonCareer,
   ratings: asRating,
@@ -1705,6 +1759,31 @@ export function useRatings(role, nonce = 0) {
 export function useNotes(role, playerId, nonce = 0) {
   const { rows, live, loading, error, status, disabled } = useLive("notes", role, nonce);
   return { notes: rows.filter((n) => !playerId || n.playerId === playerId), rows, live, loading, error, status, disabled: disabled ?? null };
+}
+
+/**
+ * One boy's history, or his targets, or his "since the last look": a read
+ * that names the boy, and so is never made without him.
+ *
+ * `useLive` with no player id would ask for EVERY boy's history (the reads
+ * take `playerId` as optional) and log a read against each; here no id, no
+ * session or a reader who may not read it (`enabled` false) is no request at
+ * all. Rows are held to the boy asked for, so a late answer for the last boy
+ * selected is never drawn under the next. Signed out there is no mock twin:
+ * a judgement of a named child, invented for a demo, reads like a real one.
+ */
+const IDLE = { rows: [], live: false, loading: false, error: null, status: null, disabled: null };
+export function useBoyRead(resource, role, playerId, nonce = 0, enabled = true) {
+  const on = signedIn() && !!playerId && enabled;
+  const [state, setState] = useState(on ? { ...IDLE, loading: true } : IDLE);
+  useEffect(() => {
+    if (!on) { setState(IDLE); return; }
+    let cancelled = false;
+    setState((s) => ({ ...s, loading: true }));
+    readOnce(resource, readQuery({ playerId })).then((next) => { if (!cancelled) setState({ ...next, disabled: next.disabled ?? null }); });
+    return () => { cancelled = true; };
+  }, [on, resource, role, playerId, nonce]);
+  return { ...state, rows: state.rows.filter((r) => r.playerId === playerId) };
 }
 
 export function useRows(resource, role, nonce = 0) { return useLive(resource, role, nonce).rows; }
