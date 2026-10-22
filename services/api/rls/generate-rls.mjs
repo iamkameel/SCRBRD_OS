@@ -438,9 +438,9 @@ export const WITHDRAWN_SINCE_01 = {
   // Q10: the league reads its own fixtures' records, through
   // competition_discipline_records() and competition.discipline.read.
   competitionadmin: [{ after: "officiating.registry.manage", capability: "discipline.read" }],
-  // GA-I19 D3 (Kameel, 2026-10-15): the principal reads an injury at the
-  // status tier only; db/111 withdraws the nature tier.
-  principal: [{ after: "medical.status.read", capability: "medical.nature.read" }],
+  // (GA-I19 D3 had db/111 withdraw the principal's medical.nature.read;
+  // READERS Q9, 21 Oct 2026, later, keeps it, and db/116 restores it. db/01's
+  // row stands, so nothing is recorded here.)
 };
 
 /**
@@ -867,7 +867,8 @@ export function tablesAddedIn(file) {
 
 /**
  * A later table's read exception as its own file shipped it, when a later
- * file narrowed it — the same discipline as MASKED_SINCE_09 for a later
+ * file narrowed it (`now`: what tables.mjs says runs since, or null when the
+ * exception is gone altogether) — the same discipline as MASKED_SINCE_09 for a later
  * table: tables.mjs is the truth for the client, the tests and a fresh
  * install's next generated file; the generated block in the table's own file
  * keeps being emitted exactly as it shipped; the db/NN named re-emits the
@@ -875,15 +876,24 @@ export function tablesAddedIn(file) {
  *
  * SCRBRD-140 D14: "anybody signed in" stopped meaning "somebody a school
  * enrolled" when sign-up opened, so load_unit's open read is app_enrolled().
- * @type {Readonly<Record<string, { file: string, shipped: string }>>}
+ *
+ * READERS_child_data Q2 (Kameel, 21 Oct 2026): audit.read opens the access
+ * log and the audit screen's own reads, so scorebook_import (the card, with
+ * the confirmer's notes) loses the auditor's arm; its revisions keep theirs.
+ * @type {Readonly<Record<string, { file: string, shipped: string, now: string | null }>>}
  */
 export const NARROWED_SINCE = Object.freeze({
-  load_unit: { file: "81_signup_google.sql", shipped: "app_user_id() IS NOT NULL" },
+  load_unit: { file: "81_signup_google.sql", shipped: "app_user_id() IS NOT NULL", now: "app_enrolled()" },
+  scorebook_import: {
+    file: "116_readers_privacy.sql",
+    shipped: "app_can('audit.read', scorebook_import.school_id, scorebook_import.team_code, '00000000-0000-0000-0000-000000000000'::uuid, scorebook_import.match_id)",
+    now: null,
+  },
 });
 
 /** @param {string} table @param {TableDef} def @returns {TableDef} */
 function asShippedIn(table, def) {
-  const n = /** @type {Record<string, { file: string, shipped: string }>} */ (NARROWED_SINCE)[table];
+  const n = /** @type {Record<string, { file: string, shipped: string, now: string | null }>} */ (NARROWED_SINCE)[table];
   return n ? { ...def, visibleWhen: n.shipped } : def;
 }
 

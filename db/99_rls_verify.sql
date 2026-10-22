@@ -13712,11 +13712,13 @@ BEGIN
       SELECT * INTO r FROM scorebook_page_open(I, 1);
       PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('db/63 (zeros): %s opened a page', got));
     END LOOP;
-    -- (page) the principal audits the card and its history, never a page
+    -- (page) the principal audits the card's history, never a page; and,
+    -- since db/116 (READERS Q2: audit.read opens the access log and the audit
+    -- screen's own reads), not the import row with the confirmer's notes
     PERFORM _as(U_HEAD_M);
-    PERFORM _assert((SELECT count(*) FROM scorebook_import WHERE id = I) = 1
+    PERFORM _assert((SELECT count(*) FROM scorebook_import WHERE id = I) = 0
                     AND (SELECT count(*) FROM scorebook_import_revision WHERE import_id = I) >= 4,
-      'db/63 (page): the principal does not read the card and its revisions');
+      'db/63 (page): the principal reads the import row (READERS Q2), or not its revisions');
     PERFORM _assert((SELECT count(*) FROM scorebook_import_page) = 0, 'db/63 (page): the principal reads a page''s row');
     SELECT * INTO r FROM scorebook_page_open(I, 1);
     PERFORM _assert(NOT r.ok, 'db/63 (page): the principal opened a page');
@@ -14516,9 +14518,10 @@ BEGIN
       'db/66: the read is not a revision by the person who pressed Read');
     PERFORM _assert((SELECT checked FROM scorebook_import_revision WHERE import_id = I AND version = r.version) = '{}'::jsonb,
       format('db/66 (ticks): the read card starts ticked: %s', (SELECT checked FROM scorebook_import_revision WHERE import_id = I AND version = r.version)));
-    -- The principal (audit.read) reads the processing record with the card; a parent reads neither.
+    -- The principal (audit.read) no longer reads the import row since db/116
+    -- (READERS Q2); a parent reads neither.
     PERFORM _as(U_HEAD_M);
-    PERFORM _assert((SELECT jsonb_array_length(read_by) FROM scorebook_import WHERE id = I) = 1, 'db/66: the principal cannot read the processing record');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM scorebook_import WHERE id = I), 'db/66: the principal (audit.read) reads the processing record (READERS Q2)');
     PERFORM _as(U_PARENT);
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM scorebook_import WHERE id = I), 'db/66: a parent reads the processing record');
     PERFORM _as(U_SCORER);
@@ -24891,9 +24894,11 @@ $v49$;
   --              his availability as, and nothing of the phase; 20XI's coach,
   --              the team-mate, a scorer, a follower, Westville's physio and
   --              the DSO read none. And injury_masked's new columns, by tier
-  --   (principal) the status tier alone (D3, Kameel 2026-10-15): of the
-  --              injury row its restriction, its dates and his fitness word;
-  --              no type, severity, phase, next review or emergency mark
+  --   (principal) status and nature (READERS Q9, 21 Oct 2026, later than
+  --              D3; db/116 restores medical.nature.read): of the injury row
+  --              its type, severity, phase, next review and emergency mark
+  --              with its restriction, dates and his fitness word; never the
+  --              clinical details tier (the note, the author)
   --   (worklist) the physio's list: one reason each — overdue, return
   --              passed, due, no return date, new — in that order, with the
   --              clock; a quiet open injury is not on it; a boy who left is
@@ -24940,8 +24945,8 @@ $v49$;
   --              the mother-physio's list holding her son's two)
   --   (record)   injury_record() writing is_recording false (red at the recording)
   --   (left)     injury_left_on() as a definer (red at 20XI's coach, given the date)
-  --   (tiers)    the principal's medical.nature.read row added back (red at the
-  --              principal: 5 phases and 4 next reviews where 0 were expected)
+  --   (tiers)    [db/111's: the principal's medical.nature.read row added
+  --              back. Since db/116 (READERS Q9) that row is the decided state.]
   --   (sg12)     the boy's name in the words (red at D10's words); the stamp
   --              guard removed (red at made severe a second time); the
   --              "becomes" rule removed (red at the injury already serious)
@@ -25151,7 +25156,8 @@ $v49$;
         ('physio', 5, 5, 2, 5), ('parent', 5, 5, 2, 5), ('boy', 5, 5, 2, 5),
         ('coach', 5, 5, 0, 0), ('assistant', 5, 5, 0, 0), ('manager', 5, 5, 0, 0), ('director', 5, 5, 0, 0),
         ('office', 5, 5, 0, 0), ('fitness', 5, 5, 0, 0),
-        ('principal', 5, 0, 0, 0), ('enquirer', 5, 0, 0, 0),
+        -- READERS Q9 (db/116): the principal reads the nature tier again.
+        ('principal', 5, 5, 0, 0), ('enquirer', 5, 0, 0, 0),
         ('coach20', 0, 0, 0, 0), ('mate', 0, 0, 0, 0), ('scorer', 0, 0, 0, 0), ('follower', 0, 0, 0, 0),
         ('wesphysio', 0, 0, 0, 0), ('dso', 0, 0, 0, 0)) AS x(who, r, ph, nt, b) LOOP
       PERFORM _as(CASE WHEN k = 'dso' THEN U_DSO ELSE (y->>k)::uuid END);
@@ -25180,21 +25186,23 @@ $v49$;
                k, c_rows, c_next, c_phase, c_by, c_note, c_status));
     END LOOP;
 
-    -- ── (principal) the status tier alone (D3; Kameel, 2026-10-15) ──
-    -- That the boy is out, since when and until when, and his fitness word;
-    -- never what is wrong, how bad, the phase or the physio's next date.
+    -- ── (principal) status and nature (READERS Q9, 21 Oct 2026; db/116) ──
+    -- That the boy is out, since when and until when, his fitness word, and
+    -- what is wrong, how bad, the phase and the physio's next date; never the
+    -- clinical details tier.
     PERFORM _as((y->>'principal')::uuid);
     SELECT count(*)::int, count(injury_type)::int + count(severity)::int + count(phase)::int
                           + count(next_review_on)::int + count(emergency_services)::int,
            count(restricted)::int + count(rtw_date)::int + count(date_injured)::int
       INTO c_rows, c_phase, c_status
       FROM injury_masked WHERE id = I_RECUR;
-    PERFORM _assert(c_rows = 1 AND c_phase = 0 AND c_status = 3,
-      format('§88 (principal): the principal reads the recurrence as %s row, %s nature columns and %s of 3 status columns', c_rows, c_phase, c_status));
+    PERFORM _assert(c_rows = 1 AND c_phase = 5 AND c_status = 3,
+      format('§88 (principal): the principal reads the recurrence as %s row, %s of 5 nature columns and %s of 3 status columns', c_rows, c_phase, c_status));
     SELECT fitness INTO got FROM player_masked WHERE id = BOY;
     PERFORM _assert(got = 'injured', format('§88 (principal): the principal reads the boy''s fitness as %s, not injured', coalesce(got, 'null')));
-    PERFORM _assert(NOT app_can('medical.nature.read', V_HIL, '12XI', BOY, '00000000-0000-0000-0000-000000000000'::uuid),
-      '§88 (principal): the principal holds medical.nature.read');
+    PERFORM _assert(app_can('medical.nature.read', V_HIL, '12XI', BOY, '00000000-0000-0000-0000-000000000000'::uuid)
+                    AND NOT app_can('medical.details.read', V_HIL, '12XI', BOY, '00000000-0000-0000-0000-000000000000'::uuid),
+      '§88 (principal): the principal lacks medical.nature.read (READERS Q9), or holds medical.details.read');
 
     -- ── (worklist) ──
     PERFORM _as(U_PHYSIO);
@@ -26328,6 +26336,10 @@ $v49$;
                                                  'scouting_candidates()'::regprocedure)
                                    AND x.grantee = 0 AND x.privilege_type = 'EXECUTE'),
       '§91 (A5): a passport door, trip_contacts() or scouting_candidates() is still PUBLIC''s');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                                 WHERE p.oid = 'recognition(uuid)'::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'recognition(uuid)', 'EXECUTE'),
+      '§91 (A5): recognition() is PUBLIC''s, or not the application''s');
     PERFORM _assert(has_function_privilege('scrbrd_app', 'scouting_candidates()', 'EXECUTE'),
       '§91 (A5): the application lost scouting_candidates()');
 

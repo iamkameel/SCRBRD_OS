@@ -10,8 +10,9 @@
 --
 -- WHAT CHANGES, by decision
 --
---   Q2  `audit.read` opens the access log and nothing else. A reason stays
---       under the capability of the act that wrote it (§2):
+--   Q2  `audit.read` opens the access log and the audit screen's own reads
+--       (READERS §4, conflict 2) and nothing else. A reason stays under the
+--       capability of the act that wrote it (§2):
 --         scoring_amendment_read      the reason and the decider's note:
 --                                     the requester and scoring.amend.approve
 --         role_assignment_ending_read why a role was ended: user.role.assign
@@ -21,13 +22,16 @@
 --                                     capability; the director of sport and
 --                                     every other audit.read holder lose it
 --         school_register_rows()      the staff register: user.role.assign
---       Checked and KEPT, each the log itself and carrying no reason about a
---       person: access_log (the log), scoring_audit (who held the pen; no free
---       text), support_access (the platform's own reads into a school: the
---       record the school audits them by, its reason written FOR the school),
---       audit_log() (the log's door, which selects no free text: db/80), and
---       the scorebook importer's audit (SCRBRD-120 §4.5: the card and its
---       revisions, a scorecard and who typed it, never a page).
+--         scorebook_import_read       the card, with the confirmer's
+--                                     returned_note and confirm_note:
+--                                     scoring.import.read (the generated
+--                                     policy without its auditor's arm;
+--                                     NARROWED_SINCE in generate-rls.mjs)
+--       Checked and KEPT, what audit_log() (db/79, db/80) draws on:
+--       access_log (the log), scoring_audit (who held the pen; no free text),
+--       support_access (the platform's own reads into a school: the record
+--       the school audits them by, its reason written FOR the school), and
+--       scorebook_import_revision (each card as it stood, who and when).
 --   Q3  A departed pupil's clinical record (§3): a RESTRICTIVE cut on
 --       `injury` and on its reviews (`injury_review`, db/111), false for a pupil who has left the row's school unless the
 --       reader is the office (player.profile.manage, school-wide) or reaches
@@ -78,17 +82,22 @@
 --       the office at his school, and the office or a coach at a school his
 --       family named — never a team-mate, a pupil, a parent or anybody else
 --       who merely holds player.profile.read; and passport(), passport_name(),
---       passport_open(), trip_contacts() and scouting_candidates() are the
---       application's to call, not PUBLIC's (A5).
+--       passport_open(), trip_contacts(), scouting_candidates() and
+--       recognition() are the application's to call, not PUBLIC's (A5).
 --
---   Q4, Q9: no code (the code stands). Q14: no route serves a pupil the log
+--   Q9  The principal reads an injury's status and nature (§1): "the code
+--       stands", decided after GA-I19 D3, whose db/111 had withdrawn
+--       medical.nature.read from him. db/116 puts the row back.
+--
+--   Q4: no code (the code stands). Q14: no route serves a pupil the log
 --   (selfaccess holds no audit.read; separation.test.mjs holds it). Q15: the
 --   guardian bundle holds no discipline.read; nothing here gives a parent a
 --   disciplinary record. HELD, not built: the guardian's player.identity.read
 --   (Q16's other half).
 --
 -- db/01 and db/09 do not move: services/api/rls/generate-rls.mjs records the
--- three withdrawals (WITHDRAWN_SINCE_01) and the two new capabilities
+-- three withdrawals (WITHDRAWN_SINCE_01; the principal's db/111 entry is gone,
+-- since his db/01 row is restored here) and the two new capabilities
 -- (ADDED_SINCE_01), and rls.test.mjs holds this file to both.
 
 
@@ -121,6 +130,10 @@ DELETE FROM role_capability WHERE role = 'selfaccess' AND capability = 'player.i
 DELETE FROM role_capability WHERE role = 'transportcoordinator' AND capability = 'player.emergency.read';
 -- Q10: no standing read of a school's conduct file.
 DELETE FROM role_capability WHERE role = 'competitionadmin' AND capability = 'discipline.read';
+-- Q9: "the code stands: the principal reads status and nature" (21 Oct 2026,
+-- later than GA-I19 D3, which had db/111 withdraw the nature tier). The head
+-- reads what an injury is and its phase; never the clinical details tier.
+INSERT INTO role_capability (role, capability) VALUES ('principal', 'medical.nature.read') ON CONFLICT DO NOTHING;
 
 -- The three narrow doors: the catalogue row and one role_capability row per
 -- holder in roles.mjs (ADDED_SINCE_01; rls.test.mjs holds the list to the
@@ -196,6 +209,14 @@ CREATE POLICY guardian_link_ending_read ON guardian_link_ending
                 '00000000-0000-0000-0000-000000000000'::uuid,
                 '00000000-0000-0000-0000-000000000000'::uuid)
   );
+
+-- scorebook_import: the generated policy (tables.mjs) without the auditor's
+-- arm that db/63 shipped. Its RESTRICTIVE cuts (support, reach, pad guard)
+-- are db/63's and stay; scorebook_reach() still lets an auditor at the
+-- fixture's school through to the revisions, which keep their arm.
+DROP POLICY IF EXISTS scorebook_import_read ON scorebook_import;
+CREATE POLICY scorebook_import_read ON scorebook_import
+  FOR SELECT USING (app_can('scoring.import.read', scorebook_import.school_id, scorebook_import.team_code, '00000000-0000-0000-0000-000000000000'::uuid, scorebook_import.match_id));
 
 -- school_register_rows(): db/92's, without the auditor's door (SCRBRD-140
 -- P2-D14, "Changed 21 Oct 2026": user.role.assign at the school, through
@@ -1197,11 +1218,12 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- is_family_of(), which say no to nobody signed in, so this is defence in
 -- depth, as db/59 grants its public reads to scrbrd_app alone.
 -- scouting_candidates() is db/08's, unchanged but for who may call it.
+-- recognition(), re-written in §9, was db/89's grant TO PUBLIC too.
 DO $passport_grants$
 DECLARE f text; r text;
 BEGIN
   FOREACH f IN ARRAY ARRAY['passport(uuid)', 'passport_name(uuid)', 'passport_open(uuid)', 'trip_contacts(uuid)',
-                           'scouting_candidates()'] LOOP
+                           'scouting_candidates()', 'recognition(uuid)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
     FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
@@ -1270,16 +1292,21 @@ BEGIN
     RAISE EXCEPTION 'db/116: a coach or a parent holds discipline.read';
   END IF;
 
-  -- §2, Q2: no read policy names audit.read but the log's (access_log), the
-  -- pen's (scoring_audit), the support sessions' and the scorebook audit's.
+  -- §2, Q2: no read policy names audit.read but what audit_log() draws on:
+  -- the log's (access_log), the pen's (scoring_audit), the support sessions'
+  -- and the scorebook import's revisions. Not the card itself.
   SELECT count(*) INTO n FROM pg_policies
    WHERE schemaname = 'public' AND cmd IN ('SELECT', 'ALL') AND qual LIKE '%audit.read%'
      AND (tablename, policyname) NOT IN (('access_log', 'access_log_read'), ('scoring_audit', 'audit_read'),
                                          ('support_access', 'support_access_read'),
-                                         ('scorebook_import', 'scorebook_import_read'),
                                          ('scorebook_import_revision', 'scorebook_import_revision_read'));
   IF n <> 0 THEN
     RAISE EXCEPTION 'db/116: % read polic(ies) still name audit.read beside a reason', n;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'scorebook_import'
+                    AND policyname = 'scorebook_import_read' AND qual LIKE '%scoring.import.read%'
+                    AND qual NOT LIKE '%audit.read%') THEN
+    RAISE EXCEPTION 'db/116: scorebook_import_read is missing, or still opens to audit.read';
   END IF;
   IF (SELECT prosrc FROM pg_proc WHERE oid = 'school_register_rows(uuid,text)'::regprocedure) LIKE '%audit.read%' THEN
     RAISE EXCEPTION 'db/116: school_register_rows() still opens to audit.read';
@@ -1316,7 +1343,7 @@ BEGIN
     RAISE EXCEPTION 'db/116: passport_open() still opens to player.profile.read';
   END IF;
   FOREACH f IN ARRAY ARRAY['passport(uuid)', 'passport_name(uuid)', 'passport_open(uuid)', 'trip_contacts(uuid)',
-                           'scouting_candidates()'] LOOP
+                           'scouting_candidates()', 'recognition(uuid)'] LOOP
     IF NOT has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE')
        OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
                    WHERE p.oid = f::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN

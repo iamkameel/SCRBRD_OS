@@ -618,7 +618,6 @@ SELECT
                          WHERE schemaname = 'public' AND cmd IN ('SELECT', 'ALL') AND qual LIKE '%audit.read%'
                            AND (tablename, policyname) NOT IN (('access_log', 'access_log_read'), ('scoring_audit', 'audit_read'),
                                                                ('support_access', 'support_access_read'),
-                                                               ('scorebook_import', 'scorebook_import_read'),
                                                                ('scorebook_import_revision', 'scorebook_import_revision_read')))
         AND (SELECT count(*) FROM pg_policies
               WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
@@ -630,10 +629,11 @@ SELECT
         AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
                          WHERE p.oid IN (to_regprocedure('passport(uuid)'), to_regprocedure('passport_name(uuid)'),
                                          to_regprocedure('passport_open(uuid)'), to_regprocedure('trip_contacts(uuid)'),
-                                         to_regprocedure('scouting_candidates()'))
+                                         to_regprocedure('scouting_candidates()'), to_regprocedure('recognition(uuid)'))
                            AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
         AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'notification_kind_known'
                        AND pg_get_constraintdef(oid) LIKE '%compromise%')
+        AND EXISTS (SELECT 1 FROM role_capability WHERE role = 'principal' AND capability = 'medical.nature.read')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Who reads a child's data",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'

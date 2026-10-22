@@ -523,8 +523,11 @@ group("READERS Q2  audit.read opens the access log, and no reason");
       else if (m[6]) fns.set(m[6], m[8]);
     }
   }
+  // What audit_log() draws on (READERS §4, conflict 2: "the access log and
+  // the audit screen's own reads"). Not the scorebook card, which carries the
+  // confirmer's notes: db/116 re-emits its policy without the auditor's arm.
   const ALLOWED = new Set(["access_log.access_log_read", "scoring_audit.audit_read",
-    "support_access.support_access_read", "scorebook_import.scorebook_import_read",
+    "support_access.support_access_read",
     "scorebook_import_revision.scorebook_import_revision_read"]);
   const naming = [...live].filter(([, body]) => /FOR\s+(SELECT|ALL)\b/.test(body) && /'audit\.read'/.test(body))
     .map(([k]) => k);
@@ -534,7 +537,9 @@ group("READERS Q2  audit.read opens the access log, and no reason");
   for (const k of ["scoring_amendment.scoring_amendment_read", "role_assignment_ending.role_assignment_ending_read",
                    "account_status_change.account_status_change_read",
                    // db/109's revocation reasons, re-written by db/116 (Q2 names them).
-                   "guardian_link_ending.guardian_link_ending_read"])
+                   "guardian_link_ending.guardian_link_ending_read",
+                   // the scorebook card (db/63's generated policy, re-emitted by db/116).
+                   "scorebook_import.scorebook_import_read"])
     ok(`...${k} is still there, and reads its reason under the act's own capability`,
        live.has(k) && !/'audit\.read'/.test(live.get(k) ?? ""));
   ok("...and the staff register's door asks user.role.assign alone",
