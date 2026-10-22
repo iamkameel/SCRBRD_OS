@@ -179,7 +179,7 @@ function PassportBoard({ me, role, c, careerRead, onRetry }) {
         <div style={{ display: "flex", gap: T.space.lg, flexWrap: "wrap", ...T.role.figure.md, color: T.board.figure }}>
           <span>AVG {stat(c?.avg)}</span><span>SR {stat(c?.sr)}</span><span>ECON {stat(c?.econ)}</span>
         </div>
-        {!careerAnswered && <ReadState compact read={careerSaid} onRetry={onRetry} testId="passport-career-read-state"/>}
+        {!careerAnswered && <ReadState compact onBoard read={careerSaid} onRetry={onRetry} testId="passport-career-read-state"/>}
         {cap && <span style={{ ...T.role.body, fontSize: "14px", color: T.board.dim }}>Cap {cap.capNo} · {me.team} · first {humanDate(cap.firstOn)}</span>}
       </section>
   );

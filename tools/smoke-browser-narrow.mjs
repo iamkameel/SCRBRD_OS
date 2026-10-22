@@ -102,12 +102,16 @@ async function signIn(page, email) {
   await page.waitForSelector('[data-testid="os-main"]', { timeout: 10000 }).catch(() => {});
   await page.waitForTimeout(1500);
 }
-const loaded = (page) => page.waitForFunction(() => !/Loading|Reading/.test(document.body.innerText), null, { timeout: 8000 }).catch(() => {});
+// A screen is judged once what it reads has answered: no "Loading…" or
+// "Reading…" sentence left (15 s bound, as everywhere in the walks; 8 s let
+// the passport's "Reading your career figures…" be judged mid-read on a
+// loaded runner, #170), and no request to the API still on the wire.
+const loaded = (page) => page.waitForFunction(() => !/Loading|Reading/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
 
 /** One screen, held to every list. */
 async function check(page, label, screen, { root = null } = {}) {
   await loaded(page);
-  await page.waitForTimeout(400);
+  await afterReads(page, 400);
   const r = await narrowAudit(page, { root });
   ok(`${label} ${screen}: the screen is on the page`, r.found);
   for (const k of /** @type {const} */ (Object.keys(WORDS))) {
