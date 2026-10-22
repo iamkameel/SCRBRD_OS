@@ -831,7 +831,8 @@ export function parLeaks(body) {
       return;
     }
     if (v === null || typeof v !== "object" || Array.isArray(v)) { out.push(`${at}: not an object`); return; }
-    for (const k of Object.keys(v)) if (!(k in rule.keys)) out.push(`${at}.${k}: not on the list`);
+    // The path to it, never the key's own name: a key nobody listed may be one.
+    for (const k of Object.keys(v)) if (!(k in rule.keys)) out.push(`${at}: a key not on the list`);
     for (const [k, r] of Object.entries(rule.keys)) walk(/** @type {any} */ (v)[k], r, `${at}.${k}`);
   };
   walk(body, { keys: PAR_SHAPE }, "par");

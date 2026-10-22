@@ -515,11 +515,12 @@ const on = await serve({});
   {
     const base = /** @type {any} */ (pj ?? {});
     const leak = (/** @type {(b: any) => void} */ f) => { const b = structuredClone(base); f(b); return parLeaks(b); };
-    ok("parLeaks: a name riding in a key nobody listed is found", leak((b) => { b.venue.name = "D Erasmus"; }).some((x) => /venue\.name: not on the list/.test(x)));
+    ok("parLeaks: a name riding in a key nobody listed is found", leak((b) => { b.venue.name = "D Erasmus"; }).some((x) => /^par\.venue: a key not on the list$/.test(x))
+       && !leak((b) => { b.venue.name = "D Erasmus"; }).some((x) => /name|Erasmus/.test(x)));
     ok("...a cell of the table, a resource, R₁ beside the DLS par",
-       leak((b) => { b.dls = { parAt: 3, status: "ok", tableId: null, cells: [[60, 2, 160]] }; }).some((x) => /dls\.cells/.test(x))
-       && leak((b) => { b.track[0].resource = 400; }).some((x) => /track\[0\]\.resource/.test(x))
-       && leak((b) => { b.dls = { parAt: 3, status: "ok", tableId: null, resources: { first: 400 } }; }).some((x) => /dls\.resources/.test(x)));
+       leak((b) => { b.dls = { parAt: 3, status: "ok", tableId: null, cells: [[60, 2, 160]] }; }).some((x) => /^par\.dls: a key not on the list$/.test(x))
+       && leak((b) => { b.track[0].resource = 400; }).some((x) => /^par\.track\[0\]: a key not on the list$/.test(x))
+       && leak((b) => { b.dls = { parAt: 3, status: "ok", tableId: null, resources: { first: 400 } }; }).some((x) => /^par\.dls: a key not on the list$/.test(x)));
     ok("...a word where a figure belongs, and a word nobody listed", leak((b) => { b.venue.parAt = "Erasmus"; }).length > 0
        && leak((b) => { b.rrr = { now: 1, threeOversAgo: 1, trend: "D Erasmus" }; }).length > 0 && leak((b) => { b.trackOf = "names"; }).length > 0);
     ok("...a table id that is not an id", leak((b) => { b.dls = { parAt: 3, status: "ok", tableId: "Hilton College" }; }).length > 0);

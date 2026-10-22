@@ -93,7 +93,9 @@ export async function rewardFigures(client, { teamCode = null } = {}) {
   });
   out.sort((a, b) => b.figure - a.figure || a.name.localeCompare(b.name));
   out.forEach((r, i) => { r.rank = i + 1; });
-  // The school the figures were read at, for the access log: never part of
-  // a row, which is the figure and a rank and nothing else.
-  return { ok: true, rows: out, school: rows.find((r) => r.school_id)?.school_id ?? null };
+  // Each boy's school, for the access log: never part of a row, which is the
+  // figure and a rank and nothing else.
+  /** @type {Record<string, string | null>} */
+  const schoolOf = Object.fromEntries(rows.map((r) => [r.id, r.school_id ?? null]));
+  return { ok: true, rows: out, schoolOf };
 }
