@@ -3648,13 +3648,15 @@ export async function readResource(pool, secret, bearer, resource, query = {}, o
     }
     // A FILE ABOUT PEOPLE IS ON THE RECORD, whatever columns it carries. A
     // roster file with its masked columns dropped discloses no watched column,
-    // and is still every child's name leaving the platform. One row, naming
-    // them, with no fields: what left is the file.
+    // and is still every child's name leaving the platform. One row per school
+    // the rows came from, naming them, with no fields: what left is the file.
     if (opts.file && !logged && idCol && rows.length) {
-      const school = rows.find((r) => r.school_id)?.school_id ?? null;
-      await client.query(
-        `select log_restricted_read($1, $2::uuid[], $3::text[], $4::uuid)`,
-        [resource, idsIn(rows), [], school]);
+      for (const school of new Set(rows.map((r) => r.school_id ?? null))) {
+        const theirs = rows.filter((r) => (r.school_id ?? null) === school);
+        await client.query(
+          `select log_restricted_read($1, $2::uuid[], $3::text[], $4::uuid)`,
+          [resource, idsIn(theirs), [], school]);
+      }
     }
     return rows;
   });

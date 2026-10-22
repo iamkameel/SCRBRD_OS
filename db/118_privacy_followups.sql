@@ -12,8 +12,9 @@
 --    five", "D Erasmus 52*") or a first name alone ("Well done Dylan") passed
 --    the scan, and the scan is the only check: the approver is told a count,
 --    never which name. It now also reads the stored surname (db/47) and every
---    token of the full name of three letters or more, whole-word and
---    case-blind, and refuses on any hit. The surname particles (van, der, de,
+--    word of the full name of three letters or more, split on anything
+--    that is not a letter ("Erasmus, D" gives Erasmus; "Mary-Anne" gives
+--    Mary and Anne), whole-word and case-blind, and refuses on any hit. The surname particles (van, der, de,
 --    …) are not names on their own and are not scanned as tokens; the full
 --    name and the surname that carry them still are. It still answers a
 --    count and never a name, and is still no definer and nobody's to call.
@@ -50,7 +51,10 @@
 --    recorded with why: injury, or suspended. The other school of the
 --    fixture sees that the bowler changed, never why: the same function
 --    drops `reason` from a `bowler` event for a reader with no fixture.read
---    at the bowler's school. A bowler the pad knows only by a typed name is
+--    at the bowler's school. A Law 41 suspension (`bowler_suspended`) is
+--    treated alike: its ground is a conduct matter (db/59), so the other
+--    school reads that he was suspended and for how long (`scope`), never
+--    on what ground; the fold reads a suspension with no reason the same. A bowler the pad knows only by a typed name is
 --    at no school here, and his reason reaches nobody through the log. The
 --    public projection already keeps only who bowls (public/redact.mjs), and
 --    the Match Centre's scorecard and commentary say no reason; the pad's
@@ -58,13 +62,14 @@
 --
 -- GRANTS. app_user_email_seen() and ball_event_payload_seen() are definers
 -- (they look up a pupil's assignments and a boy's school past the caller's
--- own policies), executable by scrbrd_app only, never PUBLIC.
+-- own policies), executable by scrbrd_app only: never PUBLIC, nor a
+-- managed host's anon/authenticated roles.
 -- news_public_names() keeps db/83's grants: none.
 
 -- ── 1 · The scan ───────────────────────────────────────────────────
 /**
  * How many of the post's school's pupils its title and body name, by full
- * name, known-as, surname, or any token of the full name of three letters or
+ * name, known-as, surname, or any word of the full name of three letters or
  * more (surname particles aside), whole-word and case-blind. Internal: not a
  * definer, called only from inside db/83's definers (as their owner).
  */
@@ -80,8 +85,8 @@ CREATE OR REPLACE FUNCTION news_public_names(p_post uuid) RETURNS integer AS $$
                 WHERE length(btrim(coalesce(x, ''))) >= 2
                UNION
                SELECT t
-                 FROM regexp_split_to_table(btrim(coalesce(p.full_name, '')), '\s+') AS t
-                WHERE length(regexp_replace(t, '[^[:alpha:]]', '', 'g')) >= 3
+                 FROM regexp_split_to_table(btrim(coalesce(p.full_name, '')), '[^[:alpha:]]+') AS t
+                WHERE length(t) >= 3
                   AND lower(t) NOT IN ('van', 'von', 'der', 'den', 'des', 'del', 'dos', 'das', 'ten', 'ter')) AS c
         WHERE (n.title || E'\n' || n.body) ~* (
                 '(^|[^[:alnum:]])'
@@ -144,7 +149,8 @@ GRANT EXECUTE ON FUNCTION app_user_email_seen(uuid, uuid, text) TO scrbrd_app;
 CREATE OR REPLACE FUNCTION ball_event_payload_seen(p_match uuid, p_kind text, p_ball_type text, p_bowler uuid, p_payload jsonb)
 RETURNS jsonb AS $$
   SELECT CASE
-    WHEN p_payload IS NULL OR NOT (p_payload ? 'reason') OR p_kind IS NULL OR p_kind NOT IN ('retire', 'bowler') THEN p_payload
+    WHEN p_payload IS NULL OR NOT (p_payload ? 'reason') OR p_kind IS NULL
+         OR p_kind NOT IN ('retire', 'bowler', 'bowler_suspended') THEN p_payload
     -- A retirement that is a dismissal is on the scorecard, reason and all.
     WHEN p_kind = 'retire' AND p_ball_type = 'W' AND p_payload->>'reason' IN ('out', 'timed_out') THEN p_payload
     -- The reader holds fixture.read at the school of the boy the reason is about.
@@ -154,7 +160,8 @@ RETURNS jsonb AS $$
                     AND app_can('fixture.read', p.school_id, '*'::text,
                                 '00000000-0000-0000-0000-000000000000'::uuid, p_match)) THEN p_payload
     WHEN p_kind = 'retire' THEN jsonb_set(p_payload, '{reason}', to_jsonb('not out'::text))
-    -- A bowler change: that the bowler changed, never why.
+    -- A bowler change or a suspension: that it happened (and a suspension's
+    -- scope), never why.
     ELSE p_payload - 'reason'
   END
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -163,9 +170,29 @@ REVOKE ALL ON FUNCTION ball_event_payload_seen(uuid, text, text, uuid, jsonb) FR
 GRANT EXECUTE ON FUNCTION ball_event_payload_seen(uuid, text, text, uuid, jsonb) TO scrbrd_app;
 
 
+-- ── A managed host's API roles reach none of it ────────────────────
+DO $managed$
+DECLARE r text; f text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      FOREACH f IN ARRAY ARRAY['app_user_email_seen(uuid,uuid,text)', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)',
+                               'news_public_names(uuid)'] LOOP
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
+      END LOOP;
+    END IF;
+  END LOOP;
+END $managed$;
+
+
 -- ── Checks ─────────────────────────────────────────────────────────
 DO $check$
 BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles g WHERE g.rolname IN ('anon', 'authenticated')
+               AND (has_function_privilege(g.oid, 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
+                    OR has_function_privilege(g.oid, 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE'))) THEN
+    RAISE EXCEPTION 'db/118: a managed host''s API role can call a definer here';
+  END IF;
   IF has_function_privilege('scrbrd_app', 'news_public_names(uuid)'::regprocedure, 'EXECUTE')
      OR (SELECT prosecdef FROM pg_proc WHERE oid = 'news_public_names(uuid)'::regprocedure) THEN
     RAISE EXCEPTION 'db/118: news_public_names() is callable by the application, or is a definer';
