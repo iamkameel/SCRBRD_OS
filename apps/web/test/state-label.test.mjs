@@ -1,6 +1,8 @@
 /**
- * The honesty labels (GA-I21): demo, practice, read only. One component
- * (ui/stateLabel.jsx), the same words wherever the state is shown.
+ * The honesty labels (GA-I21): demo, practice, read only — and, since the
+ * official result (OFFICIAL_RESULT D11, D12, db/114), provisional, under
+ * review and official. One component (ui/stateLabel.jsx), the same words
+ * wherever the state is shown.
  *
  * Held here:
  *
@@ -8,8 +10,9 @@
  *     a reason ("why") follows the words where one is given
  *   - the practice words are the practice screens' own, unchanged, and the
  *     practice test ids stay (practice-label, practice-saved)
- *   - there is no "official": a match's status has no such value and a result
- *     is read from the log (db/69), so the component does not offer one
+ *   - "official" is a state the server gives (db/114's match_official_state()),
+ *     never a match's status: the component says it, and the public page
+ *     never draws "Under review" (Q3)
  *   - nothing is drawn under 12px, in the component or in the practice label
  *   - the screens use it: the shell's banner, the Match Centre header, the
  *     Settings badge and the four read-only panels, with no ad-hoc "Demonstration"
@@ -36,17 +39,26 @@ const plain = (w) => typeof w === "string" && /\s/.test(w) && !/_/.test(w);
 
 group("Each state says its words");
 {
-  ok("three kinds, in the order the brief names them", STATE_KINDS.join(",") === "demo,practice,readonly", STATE_KINDS.join(","));
-  ok("there is no official kind: a result is read from the log, not stored", !("official" in STATE_WORDS) && !STATE_KINDS.includes("official"));
+  ok("six kinds: the brief's three, then the result's three (D12)",
+     STATE_KINDS.join(",") === "demo,practice,readonly,provisional,review,official", STATE_KINDS.join(","));
+  ok("the result's words are D11's", STATE_WORDS.provisional === "Provisional" && STATE_WORDS.review === "Under review"
+     && STATE_WORDS.official === "Official result");
   const demo = renderToStaticMarkup(h(StateLabel, { kind: "demo" }));
   ok("demo says Demo", text(demo) === "Demo" && /data-state="demo"/.test(demo) && /data-testid="state-label-demo"/.test(demo), demo);
   const prac = renderToStaticMarkup(h(StateLabel, { kind: "practice" }));
   ok("practice says the practice words", text(prac) === "Practice match · kept on this phone", prac);
   const ro = renderToStaticMarkup(h(StateLabel, { kind: "readonly" }));
   ok("read only says Read only", text(ro) === "Read only" && /data-state="readonly"/.test(ro), ro);
-  ok("each has an icon beside the words (colour is never the only signal)", [demo, prac, ro].every((x) => /<svg/.test(x)));
+  const off = renderToStaticMarkup(h(StateLabel, { kind: "official", why: "confirmed 20:15, 11 Oct" }));
+  ok("official says Official result, and when", text(off) === "Official result · confirmed 20:15, 11 Oct" && /data-state="official"/.test(off), off);
+  const prov = renderToStaticMarkup(h(StateLabel, { kind: "provisional" }));
+  const rev = renderToStaticMarkup(h(StateLabel, { kind: "review" }));
+  ok("each has an icon beside the words (colour is never the only signal)", [demo, prac, ro, off, prov, rev].every((x) => /<svg/.test(x)));
   ok("the words are the table's", STATE_KINDS.every((k) => text(renderToStaticMarkup(h(StateLabel, { kind: k }))) === STATE_WORDS[k]));
-  ok("a kind nobody knows draws nothing, not a guess", renderToStaticMarkup(h(StateLabel, { kind: "official" })) === "" && renderToStaticMarkup(h(StateLabel, {})) === "");
+  ok("a kind nobody knows draws nothing, not a guess", renderToStaticMarkup(h(StateLabel, { kind: "verified" })) === "" && renderToStaticMarkup(h(StateLabel, {})) === "");
+  const pub = read("../src/public/PublicMatch.jsx");
+  ok("the public page draws provisional or official, and never Under review (Q3)",
+     /<StateLabel/.test(pub) && !/kind="review"|"review"/.test(pub) && /publicOfficial\(/.test(pub));
 }
 
 group("The reason follows the words");

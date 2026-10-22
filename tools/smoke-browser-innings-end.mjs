@@ -44,6 +44,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4330);
 const API_PORT = port(8799);
@@ -86,6 +87,7 @@ const dbq = async (text, params) => (await pool.query(text, params)).rows;
 
 const browser = await chromium.launch({ ...launchOptions() });
 const page = await browser.newPage();
+watchReads(page);
 await offline(page.context());
 
 const errors = [];
@@ -204,11 +206,16 @@ try {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
 
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  // Wait for the fixtures read to answer, rather than a fixed 1.2 s: on a
+  // loaded runner the list had not drawn yet and the walk judged an empty
+  // screen ("the 1XI fixture offers the scorer", then every later check).
+  // The check below still finds the one card and judges it as before.
+  await page.waitForFunction(() => [...document.querySelectorAll("button")]
+    .some((b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "")), null, { timeout: 15000 }).catch(() => {});
 
   const highWaterRow = (await dbq(`select coalesce(max(id), 0) as high from ball_event`))[0];
   const highWater = highWaterRow.high;

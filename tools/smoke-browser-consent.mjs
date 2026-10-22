@@ -43,6 +43,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4359);
 const API_PORT = port(8896);
@@ -94,6 +95,7 @@ async function open(theme = "floodlit") {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -121,7 +123,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
   return /Match Centre|Dashboard/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
@@ -131,7 +133,7 @@ async function toMe(page) {
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await page.waitForTimeout(1000);
   try { await page.locator("#settings-tab-me").click({ timeout: 4000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /** Every text node under the element, and every control, measured as drawn. */
@@ -220,7 +222,7 @@ try {
   ok("...the card is back: \"Not now\" was this device only",
      (await tid(another.page, `health-consent-prompt-${PILLAY}`).count()) === 1);
   await tid(another.page, `health-consent-prompt-yes-${PILLAY}`).click();
-  await another.page.waitForTimeout(1500);
+  await afterReads(another.page, 1500);
   let firstRecs = await records(PILLAY);
   ok("Yes calls the same endpoint the switch does: the database holds her yes",
      firstRecs.length === 1 && firstRecs[0].given_by === "guardian" && firstRecs[0].open, JSON.stringify(firstRecs));
@@ -250,7 +252,7 @@ try {
   ok("nothing in it is set under 12px", f.small.length === 0, f.small.slice(0, 4).join(" · "));
   ok("nothing pressed in it is under 44px", f.tiny.length === 0, f.tiny.slice(0, 4).join(" · "));
   await sw.click();
-  await parent.page.waitForTimeout(1500);
+  await afterReads(parent.page, 1500);
   ok("one switch turns it on", (await sw.getAttribute("aria-checked").catch(() => null)) === "true"
      && /On — agreed by you/.test(await tid(parent.page, `health-consent-state-${PILLAY}`).innerText().catch(() => "")));
   let recs = await records(PILLAY);
@@ -266,7 +268,7 @@ try {
   ok("the question has no type under 12px and no control under 44px", fc.small.length === 0 && fc.tiny.length === 0,
      [...fc.small, ...fc.tiny].slice(0, 4).join(" · "));
   await tid(parent.page, "health-consent-stop").click();
-  await parent.page.waitForTimeout(1500);
+  await afterReads(parent.page, 1500);
   recs = await records(PILLAY);
   ok("she confirms: off, and the database holds the withdrawal",
      (await sw.getAttribute("aria-checked").catch(() => null)) === "false" && recs.length === 1 && recs[0].end_reason === "withdrawn",
@@ -282,7 +284,7 @@ try {
   ok("Settings → Me opens", await toMe(declines.page));
   ok("the card is there before she answers", (await tid(declines.page, `health-consent-prompt-${PILLAY}`).count()) === 1);
   await tid(declines.page, `health-consent-prompt-no-${PILLAY}`).click();
-  await declines.page.waitForTimeout(1500);
+  await afterReads(declines.page, 1500);
   const declineRecs = await records(PILLAY);
   ok("No calls the same endpoint: the database holds a refusal, already closed",
      declineRecs.length === 1 && declineRecs[0].given_by === "guardian" && declineRecs[0].end_reason === "refused" && !declineRecs[0].open,
@@ -344,7 +346,7 @@ try {
   ok("the card has no type under 12px and no control under 44px", fe.small.length === 0 && fe.tiny.length === 0,
      [...fe.small, ...fe.tiny].slice(0, 4).join(" · "));
   await tid(sipho.page, "eighteen-yes").click();
-  await sipho.page.waitForTimeout(1800);
+  await afterReads(sipho.page, 1800);
   recs = await records(SIPHO);
   ok("he says yes for himself: the database holds his own record", recs.some((r) => r.given_by === "self" && r.open), JSON.stringify(recs));
   ok("...and the card is gone", (await tid(sipho.page, "eighteen-card").count()) === 0);

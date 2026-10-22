@@ -30,6 +30,7 @@ import { Health, TheirRecord } from "./childfile.jsx";
 import { MyLiftLine } from "../lifts.jsx";
 import { CaptainCard } from "./captain.jsx";
 import { TodoCard } from "./todo.jsx";
+import { Compare } from "../compare.jsx";
 
 /** The pupil himself, in the shape the shared cards take: his own player row. */
 function useSelf(role) {
@@ -104,7 +105,9 @@ export function PupilMatches({ role }) {
 
 // ── S3 · Passport ──────────────────────────────────────
 
-const TABS = [["season", "Season"], ["career", "Career"], ["wheel", "Wheel"], ["honours", "Honours"]];
+// "Compare" is GA-I24-I25 D10 (Q1, Kameel 8 Oct 2026): himself against one
+// team-mate on his own side, figures only, the floor, no verdict.
+const TABS = [["season", "Season"], ["career", "Career"], ["wheel", "Wheel"], ["honours", "Honours"], ["compare", "Compare"]];
 const hand = (h) => (h === "L" ? "left-hand bat" : h === "R" ? "right-hand bat" : null);
 
 /** One figure on the passport board: the figure in the figure face, its name under it. */
@@ -154,6 +157,7 @@ export function PupilPassport({ role }) {
         {tab === "career" && <CareerTab me={me} role={role} career={c} careerRead={careerRead} onRetry={() => setNonce((n) => n + 1)}/>}
         {tab === "wheel" && <CareerWagonWheel player={{ id: me.id, name: me.name, batHand: me.batHand }} role={role}/>}
         {tab === "honours" && <HonoursTab me={me} role={role}/>}
+        {tab === "compare" && <Compare role={role} self={{ id: me.id, name: me.name, team: me.team, school: me.school }}/>}
       </div>
     </Page>
   );
@@ -179,7 +183,7 @@ function PassportBoard({ me, role, c, careerRead, onRetry }) {
         <div style={{ display: "flex", gap: T.space.lg, flexWrap: "wrap", ...T.role.figure.md, color: T.board.figure }}>
           <span>AVG {stat(c?.avg)}</span><span>SR {stat(c?.sr)}</span><span>ECON {stat(c?.econ)}</span>
         </div>
-        {!careerAnswered && <ReadState compact read={careerSaid} onRetry={onRetry} testId="passport-career-read-state"/>}
+        {!careerAnswered && <ReadState compact onBoard read={careerSaid} onRetry={onRetry} testId="passport-career-read-state"/>}
         {cap && <span style={{ ...T.role.body, fontSize: "14px", color: T.board.dim }}>Cap {cap.capNo} · {me.team} · first {humanDate(cap.firstOn)}</span>}
       </section>
   );

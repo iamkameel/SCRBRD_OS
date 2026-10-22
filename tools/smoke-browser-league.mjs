@@ -56,6 +56,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5393);
 const API_PORT = port(8897);
@@ -111,6 +112,7 @@ async function open(theme = "floodlit", viewport = { width: 1280, height: 900 })
   const ctx = await browser.newContext({ viewport });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   lastPage = page;
   const errors = [];
   page.on("dialog", (d) => { d.dismiss().catch(() => {}); });
@@ -143,7 +145,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return (await page.locator("nav button").count()) > 0;
 }
 /** Every read the page has asked for has come back (and a moment for what it did with it). */
@@ -171,7 +173,7 @@ async function nav(page, label) {
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /** Every text node under the root, and every control, measured as drawn. */
@@ -240,7 +242,7 @@ try {
   await tid(org.page, "lw-format").selectOption("T20");
   await shot(org.page, "1-league");
   await tap(org.page, "lw-league-next");
-  await org.page.waitForTimeout(800);
+  await afterReads(org.page, 800);
   ok("the league is made and step 2 opens", await has(org.page, "lw-entrants") && /was made/.test(await said(org.page, "lw-status")), await said(org.page, "lw-status"));
   const [made] = await dbq(`select id, school_id, format, age_group, gender, level from competition where name = $1`, [LEAGUE_NAME]);
   ok("...a T20 league with no organising school, for the 1XI", made && made.school_id === null && made.format === "T20" && made.age_group === "1XI" && made.gender === "boys", JSON.stringify(made));
@@ -288,7 +290,13 @@ try {
      `${await said(hil.page, "nav-invites-badge")} | ${await tid(hil.page, "nav-competitions").getAttribute("aria-label")}`);
   ok("...the badge's own text is 12px at the least", (await tid(hil.page, "nav-invites-badge").evaluate((n) => parseFloat(getComputedStyle(n).fontSize))) >= 12);
   await tap(hil.page, "invitation-accept");
+  // The first answer must land before the second tap. With a fixed 350 ms
+  // between them, a slow answer left the first row on screen, the second tap
+  // pressed the same row's button again, and the 2XI stayed "invited" (seen
+  // on the shard-4 list: "2 accepted, 1 declined, 1 waiting").
+  await hil.page.waitForFunction(() => document.querySelectorAll('[data-testid="invitation"]').length === 1, null, { timeout: 15000 }).catch(() => {});
   await tap(hil.page, "invitation-accept");
+  await hil.page.waitForFunction(() => document.querySelectorAll('[data-testid="invitation"]').length === 0, null, { timeout: 15000 }).catch(() => {});
   ok("Hilton accepts both; the page says so", (await tid(hil.page, "invitation").count()) === 0 && /is now in Walk Schools League/.test(await said(hil.page, "invitations-status")), await said(hil.page, "invitations-status"));
   await settled(hil.page);
   ok("...and the badge goes with them", !(await has(hil.page, "nav-invites-badge")) && (await tid(hil.page, "nav-competitions").getAttribute("aria-label")) === null);
@@ -305,7 +313,7 @@ try {
   await w1.locator('[data-testid="invitation-accept"]').click(); await wes.page.waitForTimeout(700);
   await w2.locator('[data-testid="invitation-decline"]').click(); await wes.page.waitForTimeout(300);
   ok("declining asks once, in the page, first", await has(wes.page, "invitation-decline-confirm") && (await wes.page.locator("button", { hasText: /Decline the invitation/ }).count()) === 1);
-  await tap(wes.page, "invitation-decline-yes"); await wes.page.waitForTimeout(700);
+  await tap(wes.page, "invitation-decline-yes"); await afterReads(wes.page, 700);
   ok("Westville accepts its 1st XI and declines its 2nd XI", /declined Walk Schools League/.test(await said(wes.page, "invitations-status")) && (await tid(wes.page, "invitation").count()) === 0, await said(wes.page, "invitations-status"));
   await settled(wes.page);
   ok("...and none once both are answered", !(await has(wes.page, "nav-invites-badge")));
@@ -315,7 +323,7 @@ try {
   await wes.ctx.close().catch(() => {});
 
   await tap(org.page, "lw-refresh");
-  await org.page.waitForTimeout(800);
+  await afterReads(org.page, 800);
   ok("back in the wizard: 3 accepted, 1 declined, 0 waiting", /3 accepted, 1 declined, 0 waiting/.test(await said(org.page, "lw-entrant-summary")), await said(org.page, "lw-entrant-summary"));
   ok("a declined side may be invited again", await has(org.page, "lw-invite-again"));
 
@@ -326,7 +334,7 @@ try {
      && /Start from the MCC Laws and platform defaults/.test(await said(org.page, "lw-start-defaults")) && /Copy from another league/.test(await said(org.page, "lw-start-copy")));
   ok("copying with no league chosen is not offered", await tid(org.page, "lw-start-copy").isDisabled());
   await tap(org.page, "lw-start-defaults");
-  await org.page.waitForTimeout(1200);
+  await afterReads(org.page, 1200);
   ok("started: the checklist is drawn, every catalogue key a row", await has(org.page, "lw-checklist-count")
      && (await org.page.locator('[data-testid^="lw-row-"]').count()) >= 20, await said(org.page, "lw-checklist-count"));
   const b13 = org.page.locator('[data-testid="lw-row-bowling.limit|U13"]');
@@ -365,7 +373,7 @@ try {
   await org.page.locator('[data-testid="pc-editor-points.draw"] [data-testid="pc-f-value"]').fill("1");
   await org.page.locator('[data-testid="pc-editor-points.draw"] [data-testid="pc-status-confirmed"]').click();
   await org.page.locator('[data-testid="pc-editor-points.draw"] [data-testid="pc-save"]').click();
-  await org.page.waitForTimeout(700);
+  await afterReads(org.page, 700);
   ok("a confirmed figure with no citation is refused, in words", /must say where it comes from/.test(await said(org.page, "pc-error-citation")), await said(org.page, "pc-error-citation"));
   await org.page.locator('[data-testid="pc-editor-points.draw"] [data-testid="pc-cancel"]').click();
   await tap(org.page, "lw-tick-all");
@@ -385,13 +393,13 @@ try {
   await fill(org.page, "lw-effective", today);
   await tap(org.page, "lw-publish");
   await tap(org.page, "lw-publish-yes");
-  await org.page.waitForTimeout(700);
+  await afterReads(org.page, 700);
   ok("publishing for today is refused, in words", /after today|Choose tomorrow or later/.test(await said(org.page, "lw-publish-error")), await said(org.page, "lw-publish-error"));
   await tap(org.page, "lw-publish-no");
   await fill(org.page, "lw-effective", dayOf(1));
   await tap(org.page, "lw-publish");
   await tap(org.page, "lw-publish-yes");
-  await org.page.waitForTimeout(1200);
+  await afterReads(org.page, 1200);
   ok("published from tomorrow, and the page offers the planner", await has(org.page, "lw-open-planner") && /is published, from/.test(await said(org.page, "lw-published")), await said(org.page, "lw-next"));
   const [pubSet] = await dbq(`select status, effective_from::text as eff from condition_set where competition_id = $1`, [C]);
   ok("the database: published, effective tomorrow", pubSet?.status === "published" && pubSet.eff === dayOf(1), JSON.stringify(pubSet));
@@ -445,11 +453,11 @@ try {
   group("D. The fixture planner");
   await tap(org.page, "lw-open-planner");
   await tid(org.page, "pl-root").waitFor({ timeout: 8000 }).catch(() => {});
-  await org.page.waitForTimeout(1200);
+  await afterReads(org.page, 1200);
   ok("\"Open the fixture planner\" opens this league's planner", await has(org.page, "pl-root") && /Walk Schools League/.test(await said(org.page, "pl-heading")), await said(org.page, "pl-heading"));
   await fill(org.page, "pl-from", dayOf(7));
   await fill(org.page, "pl-to", dayOf(30));
-  await org.page.waitForTimeout(1200);
+  await afterReads(org.page, 1200);
   ok("the inputs list the six slots the grounds offered", (await tid(org.page, "pl-window").count()) === 6, await said(org.page, "pl-windows"));
   ok("...the closure is outside these days, so it is not listed", /No ground is closed in these days/.test(await said(org.page, "pl-closures")));
   ok("only the three sides that accepted are drawn", /3 sides have accepted/.test(await said(org.page, "pl-entrants-note")), await said(org.page, "pl-entrants-note"));
@@ -458,7 +466,7 @@ try {
   await tap(org.page, "pl-format-knockout");
   ok("a knockout offers the seed order", (await tid(org.page, "pl-seed").count()) === 3);
   await tap(org.page, "pl-generate");
-  await org.page.waitForTimeout(1200);
+  await afterReads(org.page, 1200);
   ok("the knockout's bracket is drawn", await has(org.page, "pl-bracket") && (await tid(org.page, "pl-bracket-match").count()) === 2, await said(org.page, "pl-summary"));
   ok("a later round shows \"Winner of R1 · Match 2\"", /Winner of R1 · Match \d/.test(await said(org.page, "pl-bracket-round-2")), await said(org.page, "pl-bracket-round-2"));
   ok("the bye is told", /has a bye in round 1/.test(await said(org.page, "pl-byes")), await said(org.page, "pl-byes"));
@@ -470,7 +478,7 @@ try {
   await tap(org.page, "pl-format-double_round_robin");
   await fill(org.page, "pl-rule-restMinutes", 14400);
   await tap(org.page, "pl-generate");
-  await org.page.waitForTimeout(1200);
+  await afterReads(org.page, 1200);
   const unsched = await tid(org.page, "pl-unscheduled").count();
   ok("with ten days' rest, some fixtures have no slot", unsched >= 1, await said(org.page, "pl-summary"));
   ok("...each with its reasons in plain words", /would not have its rest/.test(await said(org.page, "pl-unscheduled")), await said(org.page, "pl-unscheduled"));
@@ -489,7 +497,7 @@ try {
   await tap(org.page, "pl-format-round_robin");
   await fill(org.page, "pl-rule-restMinutes", "");
   await tap(org.page, "pl-generate");
-  await org.page.waitForTimeout(1200);
+  await afterReads(org.page, 1200);
   ok("a round robin of three: three fixtures, all placed", /3 fixtures, 3 placed, 0 without a slot/.test(await said(org.page, "pl-summary")) && (await tid(org.page, "pl-fixture").count()) === 3, await said(org.page, "pl-summary"));
   ok("the list is grouped by round", await has(org.page, "pl-group-r1") && await has(org.page, "pl-group-r3"));
   await tap(org.page, "pl-view-day");
@@ -499,7 +507,7 @@ try {
   const firstId = await firstFixture.getAttribute("data-fixture");
   const firstSlot = await firstFixture.locator('[data-testid="pl-slot"]').innerText();
   await firstFixture.locator('[data-testid="pl-lock"]').click();
-  await org.page.waitForTimeout(900);
+  await afterReads(org.page, 900);
   ok("one fixture is locked in place", (await org.page.locator('[data-testid="pl-fixture"][data-locked="yes"]').count()) === 1 && /Locked in place/.test(await said(org.page, "pl-status")), await said(org.page, "pl-status"));
   await tap(org.page, "pl-regenerate");
   await org.page.waitForTimeout(1200);
@@ -507,10 +515,10 @@ try {
   ok("regenerating makes a new version and keeps the lock where it was",
      /Version 3|Version 4/.test(await said(org.page, "pl-draw")) && (await again.getAttribute("data-locked")) === "yes" && (await again.locator('[data-testid="pl-slot"]').innerText()) === firstSlot, await said(org.page, "pl-status"));
   await again.locator('[data-testid="pl-unlock"]').click();
-  await org.page.waitForTimeout(800);
+  await afterReads(org.page, 800);
   ok("a locked fixture can be unlocked", (await org.page.locator('[data-testid="pl-fixture"][data-locked="yes"]').count()) === 0);
   await org.page.locator(`[data-testid="pl-fixture"][data-fixture="${firstId}"] [data-testid="pl-lock"]`).click();
-  await org.page.waitForTimeout(800);
+  await afterReads(org.page, 800);
   const vBeforePublish = await dbq(`select version, state from fixture_plan where competition_id = $1 order by version`, [C]);
   await shot(org.page, "8-draw");
   const fDraw = await floors(org.page, "pl-root");
@@ -520,7 +528,7 @@ try {
   await tap(org.page, "pl-publish");
   ok("publishing asks once, in the page, first", await has(org.page, "pl-publish-confirm"));
   await tap(org.page, "pl-publish-yes");
-  await org.page.waitForTimeout(2500);
+  await afterReads(org.page, 2500);
   ok("the report says three were created", /3 created, 0 already made, 0 refused, 0 held back/.test(await said(org.page, "pl-report-counts")), await said(org.page, "pl-report-counts"));
   ok("...fixture by fixture", (await org.page.locator('[data-testid="pl-result"][data-outcome="created"]').count()) === 3);
   const matches = await dbq(`select school_id, team_code, away_school_id, away_team_code, format, overs from match where competition_id = $1`, [C]);
@@ -547,7 +555,7 @@ try {
   await org.page.waitForTimeout(600);
   ok("the league offers a \"Fixture planner\" tab", await has(org.page, "league-tab-planner"));
   await tap(org.page, "league-tab-planner");
-  await org.page.waitForTimeout(1500);
+  await afterReads(org.page, 1500);
   ok("...which shows the versions and the published draw", await has(org.page, "pl-root") && await has(org.page, "pl-versions"), await said(org.page, "pl-root"));
   await org.ctx.close().catch(() => {});
 
@@ -590,7 +598,7 @@ try {
   await tap(again1.page, "lw-league-next");
   await again1.page.waitForTimeout(800);
   await tap(again1.page, "lw-save-return");
-  await again1.page.waitForTimeout(1200);
+  await afterReads(again1.page, 1200);
   ok("leaving after step 1 goes back to Competitions", !(await has(again1.page, "lw-root")) && (await again1.page.locator("button", { hasText: /Walk Cup Two/ }).count()) >= 1);
   await again1.page.locator("button", { hasText: /Walk Cup Two/ }).first().click();
   await again1.page.waitForTimeout(500);
@@ -600,7 +608,7 @@ try {
   const fMark = await floors(again1.page, "league-setup-state");
   ok("...the marker is 12px at the least", floorsOk(fMark), floorsWhy(fMark));
   await tap(again1.page, "finish-setup");
-  await again1.page.waitForTimeout(1500);
+  await afterReads(again1.page, 1500);
   ok("\"Finish setting up\" reopens it at step 2, the first not done", /Step 2 of 4: Entrants/.test(await said(again1.page, "lw-root")), (await said(again1.page, "lw-root")).slice(0, 200));
   await tid(again1.page, "lw-step-1").click();
   await again1.page.waitForTimeout(400);
@@ -611,7 +619,7 @@ try {
   // copy from another league: nothing in force yet (the first league's starts tomorrow)
   await again1.page.locator('[data-testid="lw-copy-source"]').selectOption({ label: LEAGUE_NAME }).catch(() => {});
   await tap(again1.page, "lw-start-copy").catch(() => {});
-  await again1.page.waitForTimeout(800);
+  await afterReads(again1.page, 800);
   ok("copying a league with nothing in force today is refused, in words", /no playing conditions in force today/.test(await said(again1.page, "lw-conditions-error")), await said(again1.page, "lw-conditions-error"));
   ok("no console errors (come back)", again1.errors.length === 0, again1.errors.join(" | "));
   await again1.ctx.close().catch(() => {});
@@ -671,7 +679,7 @@ try {
   ok("the organiser signs in on a phone", await signIn(ph.page, "league@example.invalid"));
   await nav(ph.page, /^Competitions\d*$/);
   await ph.page.setViewportSize({ width: 390, height: 844 });
-  await ph.page.waitForTimeout(1200);
+  await afterReads(ph.page, 1200);
   const hasNew = await has(ph.page, "new-competition");
   ok("\"+ New Competition\" is reachable at 390 wide", hasNew);
   if (hasNew) {
@@ -697,7 +705,7 @@ try {
   await nav(day.page, /^Competitions\d*$/);
   await day.page.locator("button", { hasText: new RegExp(LEAGUE_NAME) }).first().click().catch(() => {});
   await tap(day.page, "open-planner").catch(() => {});
-  await day.page.waitForTimeout(1500);
+  await afterReads(day.page, 1500);
   const theme = await day.page.evaluate(() => document.documentElement.dataset.theme);
   const fDay = await floors(day.page, "pl-root");
   ok("in Daylight the planner is light, with the same floors", theme === "daylight" && /rgb\((2[0-9]{2}|1[89][0-9]), /.test(fDay.bg) && floorsOk(fDay), `${theme} ${fDay.bg} ${floorsWhy(fDay)}`);
@@ -705,7 +713,7 @@ try {
   // The wizard, from a league still part-made (the walk's league is complete by now).
   await day.page.locator("button", { hasText: /Walk Cup Two/ }).first().click();
   await tap(day.page, "finish-setup");
-  await day.page.waitForTimeout(1200);
+  await afterReads(day.page, 1200);
   const fDayW = await floors(day.page, "lw-root");
   ok("in Daylight the wizard has the same floors", floorsOk(fDayW), floorsWhy(fDayW));
   ok("no console errors (Daylight)", day.errors.length === 0, day.errors.join(" | "));

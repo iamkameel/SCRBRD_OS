@@ -553,7 +553,7 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
 const DOMAIN_LABEL = {
   player: "Players", fixture: "Fixtures", team: "Teams", scoring: "Scoring",
   medical: "Medical", clearance: "Clearances", transport: "Transport",
-  facility: "Grounds", competition: "Competitions", news: "News",
+  facility: "Grounds", competition: "Competitions", result: "Results", news: "News",
   sponsorship: "Sponsorship", invoice: "Finance", user: "People",
   school: "School", platform: "Platform", analytics: "Analytics",
   opposition: "Opposition", scouting: "Scouting", officiating: "Officials",

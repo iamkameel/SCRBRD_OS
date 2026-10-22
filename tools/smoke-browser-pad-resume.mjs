@@ -34,6 +34,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5311);
 const API_PORT = port(8814);
@@ -79,6 +80,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext();
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -243,12 +245,12 @@ const signInFromLanding = async () => {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   return /Match Centre|Dashboard/i.test(await text());
 };
 const openFixture = async () => {
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   const opened = await page.evaluate(() => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
@@ -258,7 +260,7 @@ const openFixture = async () => {
     }
     return false;
   });
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   return opened;
 };
 
@@ -284,7 +286,7 @@ try {
   await tap("toss-won-home");
   await tap("toss-decision-bat");
   await tap("toss-confirm");
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   ok("the scorer is on the pad", await onPad());
   let tapped = 0;
   for (const f of ["1", "4"]) if (await score(f)) tapped++;
@@ -306,7 +308,7 @@ try {
   const boardA = await board();
   sent.length = 0;
   await page.reload({ waitUntil: "networkidle" });
-  await page.waitForTimeout(3000);
+  await afterReads(page, 3000);
   ok("the pad reopens with the same score", await until(async () => (await board()) === boardA, 10000), `${await board()} v ${boardA}`);
   ok("...and says nothing about signing in", await until(async () => !/Sign in/i.test((await banner()).text), 6000), JSON.stringify(await banner()));
   ok("scoring goes on", (await onPad()) && await score("2"));
@@ -350,7 +352,7 @@ try {
              select id, school_id, 0, 1, $2, $3, 'pad-resume-held-1', '{}'::jsonb, 'walk' from match where id = $1`, [MATCH, scorerId, device]);
   sent.length = 0;
   await page.reload({ waitUntil: "networkidle" });
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   ok("after a reload the pill says the server holds one of this phone's balls for review",
      await until(async () => (await pill()) === "For review 1", 15000), await pill());
   ok("...read through the pad's own route, signed with the phone's key",
@@ -358,7 +360,7 @@ try {
   // A supervisor settles it; the next read says so.
   await dbq(`update ball_event_quarantine set resolved_at = now(), resolution = 'rejected' where idempotency_key = 'pad-resume-held-1'`);
   await page.reload({ waitUntil: "networkidle" });
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   ok("once it is settled, a reload says Sent again — the pill is the server's count, not a memory",
      await until(async () => (await pill()) === "Sent", 15000), await pill());
 
@@ -372,7 +374,7 @@ try {
   ok("...which ends the phone's credential", (await credentials()).every((c) => c.revoked_reason !== null));
   const beforeD = await serverIds();
   await page.reload({ waitUntil: "networkidle" });
-  await page.waitForTimeout(3000);
+  await afterReads(page, 3000);
   ok("the pad says scoring has ended on this phone, and why", await until(async () => {
     const b = await banner();
     return b.reason === "pad_ended" && /Scoring ended for today on this phone — sign in to continue/.test(b.text) && /released this match/.test(b.text);
@@ -381,7 +383,7 @@ try {
   ok("the phone forgot the key", (await padStore()) === null, JSON.stringify(await padStore()));
   ok("a ball scored now is kept on the phone", (await onPad()) && await score("0"));
   ok("...the state line says so", await until(async () => /^Saved on this phone · 1 to send$/.test(await pill()), 6000), await pill());
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   ok("...and nothing is sent", same(await serverIds(), beforeD));
   ok("the match stays released", (await dbq(`select state from scoring_session where match_id = $1`, [MATCH]))[0]?.state === "idle");
 

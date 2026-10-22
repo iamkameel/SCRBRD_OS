@@ -567,7 +567,7 @@ export default function SCRBRD_OS() {
           {!signedIn() && (
             <div role="status" data-testid="demo-banner" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"12px",padding:"6px 16px",background:clr(D.amber,0.14),borderBottom:`1px solid ${D.amber}`,fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>
               <div style={{display:"flex",alignItems:"center",flexWrap:"wrap",gap:"0 8px"}}><StateLabel kind="demo" compact/><span>Nothing on these screens is a school's, and nothing is saved.</span></div>
-              <button onClick={()=>setAppState("login")} className="pressBtn" data-testid="demo-banner-signin" style={{padding:"3px 10px",borderRadius:D.pill,border:`1px solid ${D.amber}`,background:"transparent",color:D.textPrimary,fontFamily:D.head,fontSize:"12px",fontWeight:700,cursor:"pointer"}}>Sign in</button>
+              <button onClick={()=>setAppState("login")} className="pressBtn" data-testid="demo-banner-signin" style={{padding:"3px 10px",minHeight:"44px",borderRadius:D.pill,border:`1px solid ${D.amber}`,background:"transparent",color:D.textPrimary,fontFamily:D.head,fontSize:"12px",fontWeight:700,cursor:"pointer"}}>Sign in</button>
             </div>
           )}
           {personaHeader

@@ -1040,9 +1040,48 @@ function asSquadLine(r) {
 }
 
 function asInjury(r) {
+  // Dates are day-only (a calendar date has no time and no zone). The tier of
+  // each column is the server's: nextReviewOn and emergencyServices are the
+  // nature tier, recordedBy and notes the clinical tier, and arrive null where
+  // the reader does not hold them (GA-I19 D3). Screens draw nextReviewOn only
+  // for medical.write (D5): it is the physio's clock, not anybody else's.
   return { id: r.id, player: r.player_id, type: r.injury_type, severity: r.severity,
-           dateInj: r.date_injured, rtw: r.rtw_date, phase: r.phase,
-           restricted: r.restricted, notes: r.notes, physio: r.physio, live: true };
+           dateInj: r.date_injured ? String(r.date_injured).slice(0, 10) : r.date_injured,
+           rtw: r.rtw_date ? String(r.rtw_date).slice(0, 10) : r.rtw_date, phase: r.phase,
+           restricted: r.restricted, notes: r.notes, physio: r.physio,
+           nextReviewOn: r.next_review_on ? String(r.next_review_on).slice(0, 10) : null,
+           emergencyServices: r.emergency_services ?? null, recordedBy: r.recorded_by ?? null,
+           recursInjury: r.recurs_injury_id ?? null, school: r.school_id ?? null, recordedAt: r.created_at ?? null,
+           // The day he left the injury's school, and whether he did (status tier). NULL
+           // is "not known to this reader" as much as "still enrolled": a screen marks
+           // only on a true, and never reads NULL as "at school".
+           leftOn: r.left_on ? String(r.left_on).slice(0, 10) : null, leftSchool: r.left_school === true ? true : null,
+           live: true };
+}
+
+/**
+ * One review of an injury: a dated look, and the state it left him in
+ * (db/111, injury_review_masked). `phase`, `nextReviewOn` are the nature tier
+ * and `note`, `by` the clinical tier, null where the reader may not read
+ * them; `restricted` and `rtw` are the status tier.
+ */
+function asInjuryReview(r) {
+  return { id: r.id, injury: r.injury_id, player: r.player_id, at: r.reviewed_at,
+           restricted: r.restricted_after, rtw: r.rtw_date_after ? String(r.rtw_date_after).slice(0, 10) : null,
+           phase: r.phase_after ?? null,
+           nextReviewOn: r.next_review_on ? String(r.next_review_on).slice(0, 10) : null,
+           note: r.note ?? null, by: r.reviewed_by ?? null, isRecording: r.is_recording === true, live: true };
+}
+
+/**
+ * One row of the physio's worklist (db/111 injury_worklist()): an open injury,
+ * the one reason it is on her list and its clock. Only a medical.write holder
+ * is ever sent one (D3), and nothing but her list draws it (D5).
+ */
+function asWorkItem(r) {
+  const d = (v) => (v ? String(v).slice(0, 10) : null);
+  return { injury: r.injury_id, player: r.player_id, reason: r.reason, since: d(r.since), dueOn: d(r.due_on),
+           daysOver: Number(r.days_over ?? 0), live: true };
 }
 
 /**
@@ -1135,6 +1174,55 @@ function asSkill(r) {
   return { playerId: r.player_id, name: r.full_name, team: r.team_code,
            assessedOn: r.assessed_on, category: r.category, metric: r.metric,
            score: r.score, live: true };
+}
+
+/**
+ * One score in a boy's history (GA-I26a §4.1): a withdrawn one comes back too,
+ * and says who took it back and why. `by` is the assessor's name; whether it
+ * is worded "R Pillay, coach" or "your coach" is the screen's choice, not a
+ * disclosure (the side reads the coach table anyway).
+ */
+function asSkillPoint(r) {
+  return { id: r.id, playerId: r.player_id, assessedOn: String(r.assessed_on).slice(0, 10),
+           category: r.category, metric: r.metric, score: r.score,
+           by: r.assessed_by_name || null, withdrawn: !!r.withdrawn_at,
+           withdrawnBy: r.withdrawn_by_name || null, reason: r.withdrawn_reason || null, live: true };
+}
+
+/** A target (GA-I26a §1.2). Met-or-not is the server's: `reachedOn` is read, never worked out here. */
+function asTarget(r) {
+  const day = (v) => (v ? String(v).slice(0, 10) : null);
+  return { id: r.id, playerId: r.player_id, category: r.category, metric: r.metric, target: r.target_score,
+           setOn: day(r.set_on), dueOn: day(r.due_on), setBy: r.set_by_name || null,
+           drillId: r.drill_id ?? null, drillName: r.drill_name ?? null, noteId: r.note_id ?? null,
+           fromScore: r.from_score ?? null, fromWithdrawn: !!r.from_withdrawn,
+           latest: r.standing_score ?? null, latestOn: day(r.standing_on), reachedOn: day(r.reached_on),
+           withdrawn: !!r.withdrawn_at, reason: r.withdrawn_reason || null, live: true };
+}
+
+/** One discipline's "since the last look" (GA-I26a §4.2): counts of what he attended, the plan, his targets. */
+function asSince(r) {
+  const day = (v) => (v ? String(v).slice(0, 10) : null);
+  return { playerId: r.player_id, discipline: r.discipline, anchor: day(r.anchor), windowFrom: day(r.window_from),
+           sessions: r.sessions ?? null, registered: r.registered ?? null, present: r.present ?? null, late: r.late ?? null,
+           drills: (r.drills ?? []).map((d) => ({ id: d.drillId, name: d.name, times: d.times })),
+           targets: (r.targets ?? []).map((t) => ({ id: t.id, category: t.category, metric: t.metric, target: t.target_score,
+             setOn: day(t.set_on), dueOn: day(t.due_on), drillId: t.drillId ?? null, drillName: t.drillName ?? null,
+             drillRan: t.drillRan ?? 0, drillAttended: t.drillAttended ?? 0 })),
+           live: true };
+}
+
+/** A coaching point: a note carrying the pointer to the score it stood on. Staff-tier; never the boy's. */
+function asPoint(r) {
+  return { id: r.id, playerId: r.player_id, body: r.body, observedOn: r.observed_on ? String(r.observed_on).slice(0, 10) : null,
+           author: r.author_name || null, read: r.evidence_read, skillId: r.evidence_params?.skillId ?? null,
+           withdrawn: !!r.withdrawn_at, live: true };
+}
+
+/** One drill on a session's plan: it names no boy. */
+function asPlanLine(r) {
+  return { sessionId: r.session_id, position: r.position, drillId: r.drill_id, name: r.name, category: r.category,
+           minutes: r.minutes, ownMinutes: r.default_minutes === false, live: true };
 }
 
 function asAttendance(r) {
@@ -1265,9 +1353,16 @@ const ADAPT = {
   sponsor_categories: asSponsorCategory,
   sponsorships: asSponsorship,
   injuries: asInjury,
+  injury_reviews: asInjuryReview,
+  injury_worklist: asWorkItem,
   my_children: asChild,
   match_squad: asSquadLine,
   skills: asSkill,
+  skills_history: asSkillPoint,
+  targets: asTarget,
+  development_since: asSince,
+  coaching_points: asPoint,
+  training_plan: asPlanLine,
   career: asCareer,
   career_by_season: asSeasonCareer,
   ratings: asRating,
@@ -1664,6 +1759,31 @@ export function useRatings(role, nonce = 0) {
 export function useNotes(role, playerId, nonce = 0) {
   const { rows, live, loading, error, status, disabled } = useLive("notes", role, nonce);
   return { notes: rows.filter((n) => !playerId || n.playerId === playerId), rows, live, loading, error, status, disabled: disabled ?? null };
+}
+
+/**
+ * One boy's history, or his targets, or his "since the last look": a read
+ * that names the boy, and so is never made without him.
+ *
+ * `useLive` with no player id would ask for EVERY boy's history (the reads
+ * take `playerId` as optional) and log a read against each; here no id, no
+ * session or a reader who may not read it (`enabled` false) is no request at
+ * all. Rows are held to the boy asked for, so a late answer for the last boy
+ * selected is never drawn under the next. Signed out there is no mock twin:
+ * a judgement of a named child, invented for a demo, reads like a real one.
+ */
+const IDLE = { rows: [], live: false, loading: false, error: null, status: null, disabled: null };
+export function useBoyRead(resource, role, playerId, nonce = 0, enabled = true) {
+  const on = signedIn() && !!playerId && enabled;
+  const [state, setState] = useState(on ? { ...IDLE, loading: true } : IDLE);
+  useEffect(() => {
+    if (!on) { setState(IDLE); return; }
+    let cancelled = false;
+    setState((s) => ({ ...s, loading: true }));
+    readOnce(resource, readQuery({ playerId })).then((next) => { if (!cancelled) setState({ ...next, disabled: next.disabled ?? null }); });
+    return () => { cancelled = true; };
+  }, [on, resource, role, playerId, nonce]);
+  return { ...state, rows: state.rows.filter((r) => r.playerId === playerId) };
 }
 
 export function useRows(resource, role, nonce = 0) { return useLive(resource, role, nonce).rows; }

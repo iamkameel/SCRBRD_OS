@@ -54,6 +54,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5381);
 const API_PORT = port(8881);
@@ -115,6 +116,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -217,7 +219,7 @@ try {
   await click(/^Sign In$/, 5000);
   await page.waitForTimeout(2200);
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   const opened = await page.evaluate(() => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {

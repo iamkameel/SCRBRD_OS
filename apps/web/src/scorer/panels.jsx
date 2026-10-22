@@ -281,7 +281,7 @@ function IntelPanel({inn,overs,target,isChase}){
         </div>
         <div style={{display:"flex",gap:"3px",alignItems:"center"}}>
           <button onClick={()=>setAuto(p=>!p)} className="pressBtn" style={{
-            padding:"3px 8px",borderRadius:D.pill,cursor:"pointer",fontFamily:D.head,fontSize:"9px",
+            minWidth:"44px",minHeight:"44px",padding:"3px 8px",borderRadius:D.pill,cursor:"pointer",fontFamily:D.head,fontSize:"12px",
             border:`1px solid ${auto?D.emerald+"44":D.border}`,background:"transparent",
             color:auto?D.emerald:D.textMuted,transition:"background-color .2s, border-color .2s, color .2s, transform 150ms ease-out",
           }} aria-label={auto?"Pause the cards":"Play the cards"}><Icon name={auto?"pause":"play"}/></button>
@@ -296,7 +296,7 @@ function IntelPanel({inn,overs,target,isChase}){
             <div key={i} style={{background:D.surf0,border:`1px solid ${chip.c?`${chip.c}28`:D.border}`,
               borderRadius:D.md,padding:"9px 14px",display:"flex",flexDirection:"column",alignItems:"center",minWidth:"58px",gap:"3px"}}>
               <span style={{fontFamily:D.mono,fontSize:"19px",fontWeight:500,color:chip.c||D.textPrimary,lineHeight:1,letterSpacing:"-0.01em"}}>{chip.v}</span>
-              <span style={{fontFamily:D.head,fontSize:"8.5px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted}}>{chip.l}</span>
+              <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted}}>{chip.l}</span>
             </div>
           ))}
         </div>
@@ -309,15 +309,17 @@ function IntelPanel({inn,overs,target,isChase}){
       <div style={{padding:"8px 16px",borderTop:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"8px",background:`${D.surf0}55`}}>
         <div style={{display:"flex",gap:"4px",flex:1,flexWrap:"wrap"}}>
           {cards.map((c,i)=>(
-            <button key={i} onClick={()=>{setIdx(i);setAuto(false);}} style={{
-              width:i===idx?"18px":"6px",height:"6px",borderRadius:"4px",border:"none",cursor:"pointer",padding:0,
-              background:i===idx?card.accent:`${D.textMuted}30`,transition:"background-color .3s, border-color .3s, color .3s, width .3s",
-            }}/>
+            // The dot is drawn small and tapped large: a 44px target around a 6px mark, named for its place (I32).
+            <button key={i} onClick={()=>{setIdx(i);setAuto(false);}} aria-label={`Card ${i+1} of ${cards.length}`} aria-current={i===idx?"true":undefined} style={{
+              minWidth:"44px",minHeight:"44px",display:"flex",alignItems:"center",justifyContent:"center",
+              background:"transparent",border:"none",cursor:"pointer",padding:0,
+            }}><span aria-hidden="true" style={{display:"block",width:i===idx?"18px":"6px",height:"6px",borderRadius:"4px",
+              background:i===idx?card.accent:`${D.textMuted}30`,transition:"background-color .3s, border-color .3s, color .3s, width .3s"}}/></button>
           ))}
         </div>
-        <span style={{color:D.textMuted,fontSize:"9px",fontFamily:D.mono,flexShrink:0}}>{idx+1}/{cards.length}</span>
+        <span style={{color:D.textMuted,fontSize:"12px",fontFamily:D.mono,flexShrink:0}}>{idx+1}/{cards.length}</span>
         {sig.flags.slice(0,2).map(f=>(
-          <Badge key={f} color={D.orange} sx={{fontSize:"7.5px",padding:"2px 6px"}}>{f.replace(/_/g," ")}</Badge>
+          <Badge key={f} color={D.orange} sx={{fontSize:"12px",padding:"2px 6px"}}>{f.replace(/_/g," ")}</Badge>
         ))}
       </div>
     </div>

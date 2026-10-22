@@ -63,6 +63,7 @@ import { cellPaths } from "@scrbrd/scoring";
 import { baseCard, TYPED } from "../packages/scoring/test/scorebook-cards.mjs";
 import { jpegWithMetadata, pngWithMetadata } from "../services/api/io/test-images.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5394);
 const API_PORT = port(8894);
@@ -129,6 +130,7 @@ async function open(theme = "floodlit", viewport = { width: 1280, height: 1000 }
   const ctx = await browser.newContext({ viewport });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   allErrors.push(errors);
   const dialogs = [];
@@ -161,14 +163,14 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return (await page.locator("nav button").count()) > 0;
 }
 async function nav(page, label) {
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /** Matches → the fixture's card, opened to its side panel. */
@@ -180,7 +182,7 @@ async function toFixture(page, id) {
   await card.waitFor({ timeout: 8000 }).catch(() => {});
   if (!(await card.count())) return false;
   await card.click();
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   return true;
 }
 /** Every text node under the root, and every control, measured as drawn. */
@@ -245,21 +247,21 @@ try {
   const off = await open();
   ok("the scorer signs in", await signIn(off.page, "scorer@example.invalid"));
   ok("Matches → the played fixture's panel", await toFixture(off.page, M));
-  await off.page.waitForTimeout(800);
+  await afterReads(off.page, 800);
   ok("with the module off, the scorer is offered nothing (the API answers module: false)", (await tid(off.page, "scorebook-panel").count()) === 0 && (await tid(off.page, "sb-start").count()) === 0);
   await off.ctx.close().catch(() => {});
   await dbq(`insert into feature_grant (key, school_id, granted, note) values ('scorebook_import', $1, true, 'smoke-browser-scorebook')`, [HIL]);
   const pa = await open();
   ok("a parent signs in", await signIn(pa.page, "parent@example.invalid"));
   const parentSees = await toFixture(pa.page, M);
-  await pa.page.waitForTimeout(800);
+  await afterReads(pa.page, 800);
   ok("with the module on, a parent sees the fixture and no scorebook entry point", parentSees && (await tid(pa.page, "scorebook-panel").count()) === 0 && (await tid(pa.page, "sb-start").count()) === 0);
   ok("no console errors (parent)", pa.errors.length === 0, pa.errors.join(" | "));
   await pa.ctx.close().catch(() => {});
   const hd = await open();
   ok("the principal signs in", await signIn(hd.page, "principal@example.invalid"));
   const headSees = await toFixture(hd.page, M);
-  await hd.page.waitForTimeout(800);
+  await afterReads(hd.page, 800);
   ok("the principal (audit only) sees the fixture and no scorebook entry point", headSees && (await tid(hd.page, "scorebook-panel").count()) === 0);
   await hd.ctx.close().catch(() => {});
 
@@ -290,7 +292,7 @@ try {
   ok("two pages are stored, under the school and the import", (await dbq(`select 1 from scorebook_import_page where import_id = $1`, [I.id])).length === 2
      && readdirSync(join(STORE, HIL, I.id)).length === 2);
   await tid(p, "sb-thumb-2").waitFor({ timeout: 5000 }).catch(() => {});
-  await p.waitForTimeout(800);
+  await afterReads(p, 800);
   ok("both pages are shown as thumbnails, from memory (blob URLs)", (await p.locator('[data-testid^="sb-thumb-img-"]').count()) === 2
      && (await p.$$eval('[data-testid^="sb-thumb-img-"]', (im) => im.every((i) => i.src.startsWith("blob:")))));
   await tap(p, "sb-thumb-2");
@@ -394,7 +396,7 @@ try {
   await p.waitForTimeout(300);
   ok("with every cell ticked the count is complete", /^(\d+) of \1 cells checked$/.test(await said(p, "sb-progress")), await said(p, "sb-progress"));
   await tap(p, "sb-save");
-  await p.waitForTimeout(700);
+  await afterReads(p, 700);
   ok("Save keeps it: 'Saved', and the database holds the card and every tick", /^Saved/.test(await said(p, "sb-status")) && /All changes are saved/.test(await said(p, "sb-dirty")), await said(p, "sb-status"));
   const saved = (await call(`/api/scorebook/${I.id}`, { token: scorerTok })).body;
   ok("...as a card the API reads: 75 for 2, opposition names in the typed map only, none unchecked",
@@ -409,13 +411,13 @@ try {
   ok("(the coach saves the same import first)", other.status === 200, JSON.stringify(other.body));
   await put(p, "0.extras.wides", 4);
   await tap(p, "sb-save");
-  await p.waitForTimeout(900);
+  await afterReads(p, 900);
   ok("a stale save is refused in words, and the latest is loaded rather than overwritten", /changed by someone else since you opened it/.test(await said(p, "sb-status")) && !/version_conflict/.test(await said(p, "sb-status"))
      && (await tid(p, "sb-in-0.extras.wides").inputValue()) === "3", await said(p, "sb-status"));
 
   // submit
   await tap(p, "sb-submit");
-  await p.waitForTimeout(1500);
+  await afterReads(p, 1500);
   ok("submitted: the state and the words say so, and the card can no longer be edited", (await tid(p, "sb-root").getAttribute("data-state")) === "submitted" && /^Submitted/.test(await said(p, "sb-status"))
      && (await p.locator('[data-testid^="sb-in-"]').count()) === 0, await said(p, "sb-status"));
   ok("...in the database, by the scorer", (await dbq(`select state, submitted_by from scorebook_import where id = $1`, [I.id]))[0].state === "submitted");
@@ -439,7 +441,7 @@ try {
      && (await tid(d, `sb-open-${I.id}`).innerText()) === "Review and confirm" && (await tid(d, "sb-start").count()) === 0);
   await tap(d, `sb-open-${I.id}`);
   await tid(d, "sb-confirm").waitFor({ timeout: 6000 }).catch(() => {});
-  await d.waitForTimeout(1000);
+  await afterReads(d, 1000);
   ok("the confirm screen: the card read-only beside the pages", (await tid(d, "sb-confirm").count()) === 1 && (await tid(d, "sb-photos").count()) === 1 && (await d.locator('[data-testid^="sb-in-"]').count()) === 0);
   const readTxt = await text(d);
   ok("...our boys by name from the roster, the opposition's as typed, the figures as the book gave them",
@@ -458,7 +460,7 @@ try {
   ok("a return needs a reason of ten characters, in words", /at least ten characters/.test(await said(d, "sb-status")) && !/note_required/.test(await said(d, "sb-status")), await said(d, "sb-status"));
   await tid(d, "sb-return-note").fill("Bowler three conceded one more; check the wides");
   await tap(d, "sb-return-send");
-  await d.waitForTimeout(1000);
+  await afterReads(d, 1000);
   ok("returned with a note: the state says so", (await tid(d, "sb-root").getAttribute("data-state")) === "returned" && /^Returned to the scorer/.test(await said(d, "sb-status")));
   ok("...and she could not have changed a figure: there was never an input", (await d.locator('[data-testid^="sb-in-"]').count()) === 0);
   await dr.ctx.close().catch(() => {});
@@ -469,11 +471,11 @@ try {
   ok("the way in is 'Continue the import'", (await tid(p, `sb-open-${I.id}`).innerText()) === "Continue the import");
   await tap(p, `sb-open-${I.id}`);
   await tid(p, "sb-review").waitFor({ timeout: 6000 }).catch(() => {});
-  await p.waitForTimeout(800);
+  await afterReads(p, 800);
   ok("the review screen opens on the card, with the director's note at the top", /Bowler three conceded one more/.test(await said(p, "sb-returned-note")) && (await tid(p, "sb-in-0.total").inputValue()) === "75");
   await put(p, "0.extras.wides", 4); await put(p, "0.bowling.1.runs", 35); await put(p, "0.total", 76);
   await tap(p, "sb-submit");
-  await p.waitForTimeout(1800);
+  await afterReads(p, 1800);
   ok("corrected and submitted again", (await tid(p, "sb-root").getAttribute("data-state")) === "submitted" && (await dbq(`select state from scorebook_import where id = $1`, [I.id]))[0].state === "submitted", await said(p, "sb-status"));
   ok("the revision chain shows both people", (await dbq(`select distinct actor_id from scorebook_import_revision where import_id = $1`, [I.id])).length >= 2);
   await sc.ctx.close().catch(() => {});
@@ -482,7 +484,7 @@ try {
   const e = dr2.page;
   ok("the director of sport signs in again", await signIn(e, "sarah@example.invalid"));
   ok("Matches → the fixture → Review and confirm", await toFixture(e, M) && (await (async () => { await tid(e, `sb-open-${I.id}`).waitFor({ timeout: 6000 }).catch(() => {}); await tap(e, `sb-open-${I.id}`); await tid(e, "sb-confirm").waitFor({ timeout: 6000 }).catch(() => {}); return true; })()));
-  await e.waitForTimeout(800);
+  await afterReads(e, 800);
   ok("she sees the corrected card", /76 for 2 in 8 overs/.test(await said(e, "sb-read-total-0")), await said(e, "sb-read-total-0"));
   await tap(e, "sb-confirm-go");
   ok("Confirm asks first, in the page, and says what it does", /completes the match|cannot be undone/.test(await said(e, "sb-confirm-ask")) && (await tid(e, "sb-confirm-yes").count()) === 1);
@@ -490,7 +492,7 @@ try {
   ok("'Not yet' changes nothing", (await dbq(`select state from scorebook_import where id = $1`, [I.id]))[0].state === "submitted");
   await tap(e, "sb-confirm-go");
   await tap(e, "sb-confirm-yes");
-  await e.waitForTimeout(2000);
+  await afterReads(e, 2000);
   ok("confirmed: the screen says the innings are in the record", (await tid(e, "sb-root").getAttribute("data-state")) === "confirmed" && /Confirmed\. The innings are now in the match's record/.test(await said(e, "sb-status")), await said(e, "sb-status"));
   const keys = (await dbq(`select idempotency_key, kind from ball_event where match_id = $1 order by seq`, [M]));
   ok("exactly three events, under the derived keys, and the match is complete", keys.length === 3 && keys.map((k) => k.idempotency_key).join() === ["start", "summary", "end"].map((k) => `scorebook:${I.id}:0:${k}`).join()
@@ -504,7 +506,7 @@ try {
   await tap(e, `mc-open-${M}`);
   await tid(e, "match-view").waitFor({ timeout: 6000 }).catch(() => {});
   await tap(e, "mc-tab-scorecard");
-  await e.waitForTimeout(800);
+  await afterReads(e, 800);
   ok("the match's scorecard: the innings says it is from the scorebook", /From the scorebook/.test(await said(e, "mc-from-scorebook")), await said(e, "mc-from-scorebook"));
   ok("...with its batting as the book gave it: a figure not given is a dash, and extras not given are dashes", (await tid(e, "mc-bat-row").count()) === 4 && /NB 0 · WD 4 · B 1 · LB 0 · PEN 0/.test(await said(e, "mc-extras")), await said(e, "mc-extras"));
   ok("...a book that added up carries no footnote", (await tid(e, "mc-scorebook-footnote").count()) === 0);
@@ -525,17 +527,17 @@ try {
   const f = dr3.page;
   ok("the director of sport signs in", await signIn(f, "sarah@example.invalid"));
   ok("Matches → the second fixture → Review and confirm", await toFixture(f, M2) && (await (async () => { await tid(f, `sb-open-${o2.body.id}`).waitFor({ timeout: 6000 }).catch(() => {}); await tap(f, `sb-open-${o2.body.id}`); await tid(f, "sb-confirm").waitFor({ timeout: 6000 }).catch(() => {}); return true; })()));
-  await f.waitForTimeout(800);
+  await afterReads(f, 800);
   ok("the card carries its footnote, in words", /differ from its total by 3 runs/.test(await said(f, "sb-read-footnote-0")), await said(f, "sb-read-footnote-0"));
   ok("with no pages the screen says so, and is still usable", /No pages have been added yet/.test(await said(f, "sb-no-pages")));
   ok("confirming asks her to acknowledge the difference: a tick", (await tid(f, "sb-ack").count()) === 1);
   await tap(f, "sb-confirm-go"); await tap(f, "sb-confirm-yes");
-  await f.waitForTimeout(1200);
+  await afterReads(f, 1200);
   ok("without the tick the API refuses, in words, and nothing is written", /Tick that you have seen the difference/.test(await said(f, "sb-status")) && !/unreconciled_not_acknowledged/.test(await said(f, "sb-status"))
      && (await dbq(`select count(*)::int as n from ball_event where match_id = $1`, [M2]))[0].n === 0, await said(f, "sb-status"));
   await tid(f, "sb-ack").check();
   await tap(f, "sb-confirm-yes");
-  await f.waitForTimeout(2000);
+  await afterReads(f, 2000);
   ok("acknowledged, it is confirmed", (await tid(f, "sb-root").getAttribute("data-state")) === "confirmed" && (await dbq(`select state from scorebook_import where id = $1`, [o2.body.id]))[0].state === "confirmed", await said(f, "sb-status"));
   ok("...and the read-only card says the confirmer acknowledged it", /acknowledged that the book's figures do not add up/.test(await said(f, "sb-confirmed")), await said(f, "sb-confirmed"));
   await tap(f, "sb-back");
@@ -543,7 +545,7 @@ try {
   await tap(f, `mc-open-${M2}`);
   await tid(f, "match-view").waitFor({ timeout: 6000 }).catch(() => {});
   await tap(f, "mc-tab-scorecard");
-  await f.waitForTimeout(800);
+  await afterReads(f, 800);
   ok("its scorecard says from the scorebook, with the footnote", /From the scorebook/.test(await said(f, "mc-from-scorebook")) && /differ from its total by 3/.test(await said(f, "mc-scorebook-footnote")), await said(f, "mc-scorebook-footnote"));
   await dr3.ctx.close().catch(() => {});
 
@@ -559,7 +561,7 @@ try {
   const g = ow.page;
   ok("the owner's key signs in", await signIn(g, "owner@example.invalid"));
   ok("Matches → the third fixture → Review and confirm", await toFixture(g, M3) && (await (async () => { await tid(g, `sb-open-${o3.body.id}`).waitFor({ timeout: 6000 }).catch(() => {}); await tap(g, `sb-open-${o3.body.id}`); await tid(g, "sb-confirm").waitFor({ timeout: 6000 }).catch(() => {}); return true; })()));
-  await g.waitForTimeout(800);
+  await afterReads(g, 800);
   ok("she is told why: the API's own words for cannot_confirm_your_own", /You worked on this card, so you cannot confirm or return it/.test(await said(g, "sb-cannot-confirm-why")) && !/cannot_confirm_your_own/.test(await text(g)), await said(g, "sb-cannot-confirm-why"));
   ok("...and there is no dead button: no Confirm, no Return", (await tid(g, "sb-confirm-go").count()) === 0 && (await tid(g, "sb-return-go").count()) === 0);
   ok("(the API agrees)", (await call(`/api/scorebook/${o3.body.id}/confirm`, { method: "POST", token: ownerTok, body: {} })).body?.error === "cannot_confirm_your_own");
@@ -581,7 +583,7 @@ try {
   const k = lg.page;
   ok("the league's administrator signs in", await signIn(k, "league@example.invalid"));
   ok("Matches → the league fixture → Review and confirm", await toFixture(k, ML) && (await (async () => { await tid(k, `sb-open-${oL.body.id}`).waitFor({ timeout: 6000 }).catch(() => {}); await tap(k, `sb-open-${oL.body.id}`); await tid(k, "sb-confirm").waitFor({ timeout: 6000 }).catch(() => {}); return true; })()));
-  await k.waitForTimeout(800);
+  await afterReads(k, 800);
   const readL = await said(k, "sb-read-0");
   ok("the card names the school's boys to him, though he reads no roster of theirs", readL.includes(names[P[0]]) && readL.includes(names[P[5]]) && !/name not shown/.test(readL), readL.slice(0, 300));
   ok("he may decide it: Confirm and Return are offered", (await tid(k, "sb-confirm-go").count()) === 1 && (await tid(k, "sb-return-go").count()) === 1);
@@ -619,7 +621,7 @@ try {
     if (!(await tid(rp, `sb-open-${RI}`).count())) return false;
     await tap(rp, `sb-open-${RI}`);
     await tid(rp, "sb-root").waitFor({ timeout: 6000 }).catch(() => {});
-    await rp.waitForTimeout(800);
+    await afterReads(rp, 800);
     if (await tid(rp, "sb-step-card").count()) await tap(rp, "sb-step-card");
     return true;
   };
@@ -684,7 +686,7 @@ try {
   await tickEverything(rp);
   await rp.waitForTimeout(300);
   await tap(rp, "sb-submit");
-  await rp.waitForTimeout(1500);
+  await afterReads(rp, 1500);
   ok("every cell ticked by the person, the card submitted", /Submitted/.test(await said(rp, "sb-status")) && (await tid(rp, "sb-root").getAttribute("data-state")) === "submitted", await said(rp, "sb-status"));
   const rrow = (await dbq(`select state, read_by from scorebook_import where id = $1`, [RI]))[0];
   ok("(the processing record: the replay, both pages, the scorer)", rrow.state === "submitted" && rrow.read_by?.length === 1 && rrow.read_by[0].pageHashes.length === 2
@@ -737,7 +739,7 @@ try {
   const y = day.page;
   ok("the director of sport signs in, in Daylight", await signIn(y, "sarah@example.invalid"));
   ok("Matches → the third fixture → Review and confirm (as the owner's, not hers to confirm... she may)", await toFixture(y, M3) && (await (async () => { await tid(y, `sb-open-${o3.body.id}`).waitFor({ timeout: 6000 }).catch(() => {}); await tap(y, `sb-open-${o3.body.id}`); await tid(y, "sb-confirm").waitFor({ timeout: 6000 }).catch(() => {}); return true; })()));
-  await y.waitForTimeout(800);
+  await afterReads(y, 800);
   const theme = await y.evaluate(() => document.documentElement.dataset.theme);
   const fDay = await floors(y, "sb-root");
   ok("the theme is Daylight and the page is light", theme === "daylight" && /rgb\((2[0-9]{2}|1[89][0-9]), /.test(fDay.bg), `${theme} ${fDay.bg}`);

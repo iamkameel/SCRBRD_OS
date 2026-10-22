@@ -275,16 +275,16 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                 {/* One of the two reads failed: what is listed is not the whole week. */}
                 {reads?.week?.state === "partial" && <ReadState read={reads.week} onRetry={onRetry} compact testId="week-read-state"/>}
                 {holds("fixture.read") && weekMatches.map((m) => (
-                  <div key={m.id} data-testid={`week-fixture-${m.id}`} style={{ display: "flex", alignItems: "baseline", gap: T.space.sm }}>
+                  <div key={m.id} data-testid={`week-fixture-${m.id}`} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: `${T.space.xs} ${T.space.sm}` }}>
                     <Icon name="trophy"/>
-                    <span style={{ ...T.role.body, color: T.content.primary, flex: 1 }}>{m.homeTeam} v {m.awayTeam}</span>
+                    <span style={{ ...T.role.body, color: T.content.primary, flex: "1 1 8em", minWidth: 0, overflowWrap: "anywhere" }}>{m.homeTeam} v {m.awayTeam}</span>
                     <span style={{ ...T.role.body, color: T.content.secondary }}>{humanDateTime(m.date, m.time)}</span>
                   </div>
                 ))}
                 {holds("team.read") && weekTraining.map((s) => (
-                  <div key={s.id} data-testid={`week-training-${s.id}`} style={{ display: "flex", alignItems: "baseline", gap: T.space.sm }}>
+                  <div key={s.id} data-testid={`week-training-${s.id}`} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: `${T.space.xs} ${T.space.sm}` }}>
                     <Icon name="dumbbell"/>
-                    <span style={{ ...T.role.body, color: T.content.primary, flex: 1 }}>{s.title}</span>
+                    <span style={{ ...T.role.body, color: T.content.primary, flex: "1 1 8em", minWidth: 0, overflowWrap: "anywhere" }}>{s.title}</span>
                     <span style={{ ...T.role.body, color: T.content.secondary }}>{humanDate(s.date)}{s.time ? ` · ${s.time}` : ""}</span>
                   </div>
                 ))}

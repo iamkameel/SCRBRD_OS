@@ -17,6 +17,17 @@
  *   POST /api/points-adjustments/:id/withdraw           with a note
  *   POST /api/matches/:id/playing-conditions/refix-table  a played match's table figures
  *
+ * OFFICIAL_RESULT S1 (db/114; docs/design/OFFICIAL_RESULT.md §4):
+ *   GET  /api/matches/:id/official                      provisional · under review · official,
+ *                                                       as the reader may read it, and what he may do
+ *   POST /api/matches/:id/confirm                       make the result official (result.confirm, D5)
+ *   POST /api/matches/:id/dispute                       { note } within the window (D7)
+ *   POST /api/results/disputes/:id/clear                { note } the organiser; a friendly's other hand
+ *   POST /api/results/confirmations/:id/withdraw        { note } the confirmer, within the window (D14)
+ *   GET  /api/results/to-confirm                        the reader's results to confirm or settle
+ *   Each write tells the public cache once committed (onChange, I36 N2's
+ *   hook; polling, no hub), and db/114's trigger tells every other instance.
+ *
  * Every refusal is { error: <reason>, detail? }: 403 not_permitted (which never
  * says whether the thing exists), 422 for the rest, each named by db/69.
  */
@@ -58,17 +69,42 @@ export function resultOut(row, names, reasons = true) {
   };
 }
 
-/** @param {RouteDeps} deps @returns {Record<string, Handler | IdHandler>} */
-export function resultsRoutes({ pool, secret }) {
+/**
+ * A match_official_state() row (db/114) as the screens read it. A reader who
+ * is not staff gets the public words' facts only: the state (never
+ * under_review), when it was confirmed or reopened (db/114 says nothing else
+ * to him).
+ * @param {any} r  @param {string} id
+ */
+export function officialOut(r, id) {
+  return {
+    matchId: id, state: r.state, staff: r.staff === true,
+    confirmationId: r.confirmation_id ?? null, confirmedAt: r.confirmed_at ?? null, confirmedAs: r.confirmed_as ?? null,
+    headSeq: r.head_seq ?? null, windowClosesAt: r.window_closes_at ?? null,
+    disputedAt: r.disputed_at ?? null, disputedAs: r.disputed_as ?? null, disputeNote: r.dispute_note ?? null,
+    disputeClearedAt: r.dispute_cleared_at ?? null,
+    wasOfficialAt: r.was_official_at ?? null, lapsedAt: r.lapsed_at ?? null, lapsedReason: r.lapsed_reason ?? null,
+    withdrawnAt: r.withdrawn_at ?? null, withdrawnNote: r.withdrawn_note ?? null,
+    blockedBy: r.blocked_by ?? null, confirmer: r.confirmer ?? null,
+    confirmRefusal: r.confirm_refusal ?? null,
+    may: { confirm: r.can_confirm === true, dispute: r.can_dispute === true, clear: r.can_clear === true,
+           withdraw: r.can_withdraw === true },
+  };
+}
+
+/** @param {RouteDeps & {onChange?: (note: {k: string, id?: string}) => void}} deps @returns {Record<string, Handler | IdHandler>} */
+export function resultsRoutes({ pool, secret, onChange }) {
   /** @param {(req: any) => Promise<unknown>} fn @returns {IdHandler} */
   const handle = (fn) => async (req, res) => {
     try { res.json(await fn(req)); }
     catch (/** @type {any} */ e) {
       if (e.code === "42501") return res.status(403).json({ error: "not_permitted" });
-      if (e.code === "23514") return res.status(422).json({ error: "value_invalid", detail: e.message });
+      // A CHECK refused it: the code, never the database's own words.
+      if (e.code === "23514") return res.status(422).json({ error: "value_invalid" });
       if (e.code === "22P02") return res.status(400).json({ error: "malformed" });
       const status = e.status || 500;
-      if (status >= 500) console.error("results →", safeErr(e));
+      // A server error says nothing of itself to the caller: no message, no detail.
+      if (status >= 500) { console.error("results →", safeErr(e)); return res.status(status).json({ error: "error" }); }
       res.status(status).json({ error: e.message || "error", ...(e.detail !== undefined ? { detail: e.detail } : {}) });
     }
   };
@@ -76,6 +112,15 @@ export function resultsRoutes({ pool, secret }) {
   const as = (req) => req.headers?.authorization;
   /** @param {any} req */
   const idOf = (req) => { const id = String(req.params?.id ?? ""); if (!UUID.test(id)) throw err("not_found", 404); return id; };
+  /** Committed: the fixture's public entry and the tables drop now (db/114). @param {string | null | undefined} match */
+  const changed = (match) => {
+    if (!match) return;
+    onChange?.({ k: "match", id: String(match).toLowerCase() });
+    onChange?.({ k: "competition" });
+  };
+  /** The match a confirmation row names, as the doors leave it (owner-free: the plain column). @param {any} client @param {string} id */
+  const matchOfConfirmation = async (client, id) =>
+    (await client.query(`select match_id from match_result_confirmation where id = $1`, [id])).rows[0]?.match_id ?? null;
 
   return {
     // GET /api/matches/:id/result
@@ -211,6 +256,8 @@ export function resultsRoutes({ pool, secret }) {
           basis: st[0]?.basis ?? null, order: st[0]?.table_order ?? ["points", "wins", "nrr"],
           headToHeadListed: st[0]?.head_to_head_listed === true,
           overRateKind: m[0]?.over_rate ?? "none", canAdjust: m[0]?.manage === true,
+          // OFFICIAL_RESULT (db/114): how many of the counted results are not official.
+          provisionalResults: st[0]?.provisional_results ?? 0,
           rows: st.map((s) => ({
             entrantId: s.entrant_id, divisionId: s.division_id ?? null, division: s.division_name ?? null,
             side: s.display_name, schoolId: s.school_id, teamCode: s.team_code,
@@ -263,6 +310,99 @@ export function resultsRoutes({ pool, secret }) {
         return { ok: true };
       });
     }),
+
+    // ── OFFICIAL_RESULT S1 (db/114) ──
+    // GET /api/matches/:id/official
+    //   → { matchId, state, staff, confirmationId, confirmedAt, confirmedAs, headSeq, windowClosesAt,
+    //       disputedAt, disputedAs, disputeNote, disputeClearedAt, wasOfficialAt, lapsedAt, lapsedReason,
+    //       withdrawnAt, withdrawnNote, blockedBy, confirmer, confirmRefusal,
+    //       may: { confirm, dispute, clear, withdraw }, home, away }
+    //   state: not_finished · provisional · under_review (staff only) · official.
+    //   403 not_permitted for a reader of neither side nor the competition.
+    official: handle(async (req) => {
+      const id = idOf(req);
+      return runAsPrincipal(pool, secret, as(req), async (client) => {
+        const { rows } = await client.query(`select * from match_official_state($1)`, [id]);
+        if (!rows.length) throw err("not_permitted", 403);
+        const { rows: m } = await client.query(
+          `select coalesce(fixture_side_label(m.school_id, m.team_code), m.team_code, 'Home') as home,
+                  coalesce(fixture_side_label(m.away_school_id, m.away_team_code), m.opponent) as away
+             from match m where m.id = $1`, [id]);
+        return { ...officialOut(rows[0], id), home: m[0]?.home ?? null, away: m[0]?.away ?? null };
+      });
+    }),
+
+    // POST /api/matches/:id/confirm → { ok, id }
+    //   refusals: not_permitted (403), support_session, not_finished, innings_unsealed, amendment_pending,
+    //             ball_held, already_official, you_wrote_this_log
+    confirm: handle(async (req) => {
+      const id = idOf(req);
+      const out = await runAsPrincipal(pool, secret, as(req), async (client) => {
+        const { rows } = await client.query(`select * from match_result_confirm($1)`, [id]);
+        const r = answer(rows[0]);
+        return { ok: true, id: r.confirmation_id };
+      });
+      changed(id);
+      return out;
+    }),
+
+    // POST /api/matches/:id/dispute { note } → { ok, id }
+    //   refusals: not_permitted (403), support_session, note_required, not_official, already_disputed,
+    //             window_closed, cannot_dispute_your_own
+    dispute: handle(async (req) => {
+      const id = idOf(req);
+      const out = await runAsPrincipal(pool, secret, as(req), async (client) => {
+        const { rows } = await client.query(`select * from match_result_dispute($1, $2)`, [id, req.body?.note ?? null]);
+        const r = answer(rows[0]);
+        return { ok: true, id: r.confirmation_id };
+      });
+      changed(id);
+      return out;
+    }),
+
+    // POST /api/results/disputes/:id/clear { note } → { ok }   (:id is the confirmation the dispute stands on)
+    //   refusals: not_permitted (403), support_session, note_required, not_disputed, not_standing,
+    //             cannot_clear_your_own
+    clearDispute: handle(async (req) => {
+      const id = idOf(req);
+      let match = null;
+      const out = await runAsPrincipal(pool, secret, as(req), async (client) => {
+        const { rows } = await client.query(`select * from match_result_dispute_clear($1, $2)`, [id, req.body?.note ?? null]);
+        answer(rows[0]);
+        match = await matchOfConfirmation(client, id);
+        return { ok: true };
+      });
+      changed(match);
+      return out;
+    }),
+
+    // POST /api/results/confirmations/:id/withdraw { note } → { ok }
+    //   refusals: not_permitted (403), support_session, note_required, not_standing, window_closed
+    withdrawConfirmation: handle(async (req) => {
+      const id = idOf(req);
+      let match = null;
+      const out = await runAsPrincipal(pool, secret, as(req), async (client) => {
+        const { rows } = await client.query(`select * from match_result_confirmation_withdraw($1, $2)`, [id, req.body?.note ?? null]);
+        answer(rows[0]);
+        match = await matchOfConfirmation(client, id);
+        return { ok: true };
+      });
+      changed(match);
+      return out;
+    }),
+
+    // GET /api/results/to-confirm
+    //   → { rows: [{ matchId, startsAt, status, home, away, competitionId, kind, blockedBy, windowClosesAt, disputedAt }] }
+    //   kind: confirm (he may, now) · blocked (he would but for blockedBy) · review (a dispute he may settle, or his).
+    toConfirm: handle(async (req) =>
+      runAsPrincipal(pool, secret, as(req), async (client) => {
+        const { rows } = await client.query(`select * from results_to_confirm()`);
+        return { rows: rows.map((r) => ({
+          matchId: r.match_id, startsAt: r.starts_at, status: r.status, home: r.home_label, away: r.away_label,
+          competitionId: r.competition_id ?? null, kind: r.kind, blockedBy: r.blocked_by ?? null,
+          windowClosesAt: r.window_closes_at ?? null, disputedAt: r.disputed_at ?? null })) };
+      })),
+    // ── end OFFICIAL_RESULT S1 ──
 
     // POST /api/matches/:id/playing-conditions/refix-table { setId, reason } → { ok }
     //   refusals: not_permitted, support_session, reason_required, no_document, set_invalid

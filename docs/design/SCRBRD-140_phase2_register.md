@@ -209,6 +209,8 @@ path nobody could walk.
 | What the DSO sees | nothing by standing (SAFEGUARDING_DSO §1); the register is not a safeguarding record |
 | The notice to the office | names the adult who joined, the role, the side; no child (§2.3) |
 
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q2):** the register is read under `user.role.assign` at the school only. `audit.read` no longer opens it, so the "or `audit.read`" in the "Who reads it" row above does not apply.
+
 ### 1.8 Retention (P2-D13, Kameel decides as information officer)
 
 An unclaimed row is personal information about someone who may never sign in. Ninety days after
@@ -237,6 +239,8 @@ call, as `safeguarding_purge_due()` set the precedent (SAFEGUARDING_DSO.md:550-5
 
 Every one `SECURITY DEFINER`, `search_path` pinned (DEPLOYING.md:1131), granted to `scrbrd_app`
 only where the table says so, revoked from `anon`/`authenticated` as db/81:730-739 does.
+
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q2):** `school_register_rows(p_school, p_state)` is granted to `user.role.assign` at the school only; the `audit.read` in its row above is removed.
 
 ---
 
@@ -522,6 +526,8 @@ beside 2 or after, as Kameel decides (item 5 at the top). Nothing merges before 
 | **P2-D15** | When the join screen shows | **When `app_enrolled()` is false, not when `school_id` is null** | the ex-coach kept his `school_id`; the warning needs a path |
 | **P2-D16** | The pilot's staff | **Phase 1's path; no bulk staff import before 15 October** — *Kameel decides* | a dozen taps on one afternoon; no third grant path in freeze week |
 | **P2-D17** | Files | **`db/92` the register; `db/93` the notice and cooldown; neither before the pilot** — *whether `db/93` ships beside `db/92`: Kameel decides* | each can wait without holding the other |
+
+**Changed 21 Oct 2026 (Kameel, READERS_child_data Q2):** P2-D14 is decided as **`user.role.assign` at the school, through functions; no policy; never the claimant, a pad or the public.** `audit.read` is removed from it. The adults' work emails stay one school's business.
 
 ### 9.2 Assumptions
 

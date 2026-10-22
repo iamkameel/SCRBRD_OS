@@ -68,7 +68,14 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   2026-10-14, gap analysis GA-I26a: what a coach records about a child's
   skills over time and the drills that follow; who may read it, the child,
   his parents, other coaches; how long it is kept; and the coaching points
-  of coach cards slice 2 that stand on it).
+  of coach cards slice 2 that stand on it) and incidents and breaches (added
+  2026-10-21: what counts as a breach of children's data under POPIA section
+  22, who decides and who is told, the Information Regulator, the school and
+  families, and when; the match-day outage fallback to the paper scorebook and
+  the importer; and what the audit log must keep to answer for it) and who
+  sees a child's data (added 2026-10-21: one map, across every design, of who
+  may read each piece of a child's data and under what condition; where two
+  designs disagree; and the questions for Kameel that settle each one).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
@@ -78,6 +85,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   so it does not spend its budget exploring. Kameel may allow two at once for
   a day (he did on 2026-10-07: account lifecycle beside recognition).
 - Reviewing another agent's work stays with Opus.
+- **A read-only audit when Kameel asks** (added 2026-10-21, Kameel): beside
+  design, Fable may audit code it is given a reading list for, such as a
+  red-team of everything that reaches a child's data. It writes a findings
+  document; it does not fix, build, run tests or search beyond the list.
+  Opus fixes from the findings. One audit at a time, on Kameel's say each time.
 
 ### Opus 5.5 (`model: "opus"`) — where a mistake is expensive or silent
 
@@ -125,8 +137,12 @@ the work itself:
 2. **After Kameel decides:** Haiku records the decision in the design doc, the
    backlog, the roadmap and the gap analysis plan, word for word as decided.
 3. **After a merge:** Haiku updates the status rows the merge closes (roadmap,
-   gap analysis plan, `DEPLOYING.md`'s paste list where a migration shipped).
-   It doesn't touch `db/SHIPPED.sha256`; that stays with the lead.
+   gap analysis plan, the backlog `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`,
+   `DEPLOYING.md`'s paste list where a migration shipped). In the backlog, a
+   closed entry is struck through with the PR and commit that closed it, never
+   deleted; a slice of an entry is marked partly done (added 2026-10-21,
+   Kameel, after 80 merges went unrecorded there). It doesn't touch
+   `db/SHIPPED.sha256`; that stays with the lead.
 4. **Gap lists:** where a plan says "gaps to list" (for example, acceptance
    evidence against the walks we have), Haiku lists them and Opus decides what
    to build.
@@ -156,6 +172,49 @@ see a limit coming, so the rule is a cadence, not a trigger:
   is down (`pg_ctlcluster 16 main start`), resume each stopped agent with a
   message rather than starting it afresh, and re-read the board before
   anything else.
+
+## Pacing to the usage window
+
+Added 2026-10-22 (Kameel), after two limits in one night stopped every agent
+and the restarts burned more tokens re-reading than the work cost: manage the
+spend so a limit is not hit, rather than recovering after it.
+
+**Measure against the plan's own limits** (Kameel, 22 Oct). The plan has a
+five-hour window and a weekly window. Subagents draw on the same allowance as
+the lead. Claude Code sends both windows to the status line as `rate_limits`:
+percent used and reset time. The project's status line
+(`tools/claude/statusline.mjs`) saves them to
+`~/.claude/scrbrd-usage/rate-limits.json` and shows them as "5h 42% · wk 31%".
+`node tools/claude/usage.mjs --plan` prints them with the pacing step they
+call for. Switch the status line on in `.claude/settings.local.json` (a
+`statusLine` running `node tools/claude/statusline.mjs`, `refreshInterval` 60)
+so it refreshes while the lead waits on agents. Only if no figure has been
+recorded, pace by tokens instead: `usage.mjs --since <window start>`. A window
+lasted two to three hours at five to seven agents, about 220k to 460k output.
+
+- **Default load: three builders at once** (two Opus and one Sonnet), plus Haiku
+  for maps and records. More only on Kameel's say, for a named window.
+- **Measure at every hourly sweep** and before starting any agent
+  (`usage.mjs --plan`). Put the five-hour and weekly percentages and the reset
+  time on the Build Board's headline.
+- **Five-hour window at 50%:** start nothing new; let running agents finish
+  their current step.
+- **At 75%, at Claude Code's own 85% warning, or in a window's last hour:**
+  every running agent commits and pushes, and the lowest-priority ones pause
+  with a three-line note of where they stopped. One Opus at most keeps going.
+  Say so to Kameel in one line.
+- **Weekly window at 80%:** tell Kameel, and run at most two builders until it
+  resets. A weekly limit stops everything for days, not hours.
+- **One Fable agent costs a window's margin on its own:** start one only early in
+  a window, and nothing else heavy beside it.
+- **After a limit or a restart,** don't relaunch everything at the reset. Resume
+  by message where the agent still exists, which is far cheaper than a fresh
+  agent. A fresh agent gets a brief that names its branch's last commit and
+  what is left, so it doesn't re-read what is done. Start at most two in the
+  first hour after a reset.
+- **Don't burn on waiting:** no agent watches CI in a loop or idles on a lock.
+  CI is checked at the sweep, and a builder whose proof is queued on the
+  database lock stops and reports, rather than waiting.
 
 ## Design skills
 

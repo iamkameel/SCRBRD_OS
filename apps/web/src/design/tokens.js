@@ -811,6 +811,9 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
 .live-dot{width:6px;height:6px;border-radius:50%;background:${T.brand.green};animation:livePulse 1.2s ease infinite}
 @keyframes livePulse{0%,100%{box-shadow:0 0 0 0 ${T.brand.green}66}50%{box-shadow:0 0 0 6px transparent}}
 .skill-bar{transition:width .6s cubic-bezier(.34,1.56,.64,1)}
+/* A history strip's hairline draws in 200ms; under reduced motion it is simply there (GA-I26a §4.4). */
+@keyframes hairDraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+.os-hair{stroke-dasharray:1;animation:hairDraw .2s ease-out both}
 .tab-active{position:relative}
 .tab-active::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:2px;background:${T.light.cobalt};border-radius:2px}
 
@@ -892,6 +895,9 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
   border-radius:${T.radius.sm};
   box-shadow:0 0 0 4px ${T.focus.halo};
 }
+/* A placeholder is text and reads at 4.5:1: the browser's own grey is 3.7:1 on a field in daylight, and a dim white
+   on one under lights. Full strength, because Firefox draws it at half (I32). */
+::placeholder{color:${T.content.tertiary};opacity:1}
 /* Never remove the ring without replacing it. */
 :focus:not(:focus-visible){outline:none}
 
@@ -899,6 +905,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
    Without it, reaching the scoring pad means tabbing through the whole of
    the navigation on every page. */
 .skip-link{position:absolute;left:-9999px;top:0;z-index:10000;
+  display:flex;align-items:center;min-height:44px;
   padding:10px 16px;border-radius:0 0 ${T.radius.md} 0;background:${T.focus.ring};color:${inkOn(T.focus.ring)};
   font-family:${T.type.head};font-size:12px;font-weight:700;text-decoration:none}
 .skip-link:focus{left:0}
@@ -935,6 +942,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
   .mc-moment,.mc-moment-big{animation:none!important}
   .os-panel-in{animation:none!important}
   .os-tick{transition:none!important}
+  .os-hair{animation:none!important}
 }
 /* The same block, by the ground display's own setting (SCRBRD-133 §4.3): a
    TV's browser has no system setting anybody can reach, so the setup's
@@ -945,6 +953,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
 :root[data-reduce-motion] .os-board-flip,:root[data-reduce-motion] .os-insight-in,:root[data-reduce-motion] .mc-moment,
 :root[data-reduce-motion] .mc-moment-big,:root[data-reduce-motion] .os-panel-in{animation:none!important}
 :root[data-reduce-motion] .os-tick{transition:none!important}
+:root[data-reduce-motion] .os-hair{animation:none!important}
 
 /* ── ScrbrdOS responsive layer — mobile first ── */
 html{-webkit-text-size-adjust:100%}
@@ -955,6 +964,7 @@ button{touch-action:manipulation}
 .os-bottomnav{position:fixed;left:0;right:0;bottom:0;z-index:400;display:none;gap:2px;
   background:${T.glass.film};backdrop-filter:${T.glass.blur};-webkit-backdrop-filter:${T.glass.blur};
   border-top:1px solid ${T.glass.edge};padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+.os-drawer:focus:not(:focus-visible){outline:none}
 .os-drawer-scrim{position:fixed;inset:0;z-index:490;background:${T.glass.scrim}}
 .os-drawer{position:fixed;left:0;right:0;bottom:0;z-index:500;background:${T.surface.overlay};
   border-top:1px solid ${T.line.normal};border-radius:20px 20px 0 0;max-height:78vh;overflow-y:auto;
@@ -968,7 +978,7 @@ button{touch-action:manipulation}
   .os-shell{--g-4:repeat(2,1fr);--g-5:repeat(3,1fr)}
 }
 @media(max-width:880px){
-  .os-shell{--g-side-r:1fr;--g-side-l:1fr;--g-4:repeat(2,1fr);--g-5:repeat(2,1fr);
+  .os-shell{--g-side-r:minmax(0,1fr);--g-side-l:minmax(0,1fr);--g-4:repeat(2,1fr);--g-5:repeat(2,1fr);
     --g-league:1.7fr repeat(6,minmax(28px,1fr))}
   .os-main{padding:14px 12px calc(92px + env(safe-area-inset-bottom))!important}
   .os-kbd,.os-username{display:none!important}
@@ -980,6 +990,22 @@ button{touch-action:manipulation}
 }
 @media(max-width:640px){
   .os-shell{--g-2:1fr;--g-3:1fr}
+  /* The search is its icon on a phone, still named by its aria-label, so the bar's other three controls keep their 44px (I32). */
+  .os-search{flex:0 0 auto!important;justify-content:center}
+  .os-search-text{display:none}
+}
+/* A phone at 200% zoom is under 200px wide: the bars wrap into a second row rather than run off the screen, and the
+   page leaves room under the taller bottom bar (I32). */
+@media(max-width:300px){
+  .os-topbar{height:auto!important;flex-wrap:wrap;padding:4px 8px!important;gap:4px 8px!important}
+  .os-bottomnav{flex-wrap:wrap}
+  .os-main{padding-bottom:calc(172px + env(safe-area-inset-bottom))!important}
+  /* A scorecard's six columns do not fit 188px: the table scrolls inside its own box instead of the names going to nothing. */
+  .mc-table{overflow-x:auto!important}
+  .mc-table>*{min-width:340px}
+  .os-board-total,.os-board-card-total{font-size:36px!important}
+  /* The wheel is under 140px across: the positions around its rim would sit on one another, and the field still says them in a sentence. */
+  [data-testid="field-labels"] [data-rim]{display:none}
 }
 /* §10 item 6 — a side's full name where there is room, its short code
    (school.code, "HIL 1XI") where there is not. Both are in the page; one

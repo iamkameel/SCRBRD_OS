@@ -35,6 +35,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5481);
 const API_PORT = port(5482);
@@ -79,6 +80,7 @@ async function open() {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -105,7 +107,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return (await tid(page, "os-main").count()) === 1;
 }
 /**
@@ -126,14 +128,14 @@ async function openDemo(role) {
       put.onsuccess = () => resolve("ok"); put.onerror = () => reject(put.error);
     };
   }), role);
-  await c.page.reload({ waitUntil: "networkidle" }); await c.page.waitForTimeout(1500);
+  await c.page.reload({ waitUntil: "networkidle" }); await afterReads(c.page, 1500);
   return c;
 }
 async function go(page, nav) {
   const l = tid(page, `nav-${nav}`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1600);
+  await afterReads(page, 1600);
   return true;
 }
 /**
@@ -205,7 +207,7 @@ try {
   group("Logistics → Equipment is the kit register and nothing else");
   ok("Logistics opens", await go(dir.page, "logistics"));
   ok("the equipment tab opens", await click(dir.page, /^equipment$/i, 4000));
-  await dir.page.waitForTimeout(1500);
+  await afterReads(dir.page, 1500);
   const eqText = await main(dir.page);
   ok("the real kit register is drawn", await tid(dir.page, "kit-register").count() === 1);
   ok("no hard-coded inventory", !/Match Balls \(Dukes\)|Batting Helmets \(Adult\)|AED Defibrillator|Boundary Rope/.test(eqText));
@@ -221,8 +223,11 @@ try {
   ok("an injury can be read (the detail panel opens)", /Injury Report/.test(injText));
   ok("no Update Progress, Clear for Training or Refer to Physio", !/Update Progress|Clear for Training|Refer to Physio/.test(injText));
   ok("no Log Injury button or form", !/Log Injury/.test(injText) && await dir.page.locator('[role="dialog"], input[type="date"]').count() === 0);
-  ok("one plain line says recording is coming", /Recording and updating injuries is coming\./.test(injText)
-     && await tid(dir.page, "injury-writes-coming").count() === 1);
+  // GA-I19 slice B: recording is the physio's now (tools/smoke-browser-injuries.mjs
+  // walks it); the director holds no medical.write, so he is offered no way to.
+  ok("the 'recording is coming' line is gone, and the director is offered no Record or Review",
+     !/is coming/.test(injText) && await tid(dir.page, "injury-writes-coming").count() === 0
+     && await tid(dir.page, "record-injury-open").count() === 0 && await tid(dir.page, "review-open").count() === 0);
 
   // ── 4. Global search ──────────────────────────────────────────────
   group("Global search finds only the platform's own schools when signed in");
@@ -230,7 +235,7 @@ try {
     await tid(dir.page, "topbar-search").click({ timeout: 6000 });
     await dir.page.waitForTimeout(400);
     await dir.page.fill('input[aria-label="Search, or ask Stats-Magic"]', qs);
-    await dir.page.waitForTimeout(1000);
+    await afterReads(dir.page, 1000);
     const n = await tid(dir.page, "search-school").count();
     const t = n ? await tid(dir.page, "search-school").first().innerText() : "";
     await dir.page.keyboard.press("Escape");
@@ -274,13 +279,13 @@ try {
   }
   ok("...naming the fixture", /Cleanup Walk XI/.test(await sa.innerText()));
   await tid(dir.page, "set-availability-doubtful").click();
-  await dir.page.waitForTimeout(1800);
+  await afterReads(dir.page, 1800);
   const [row] = await q(`select status from match_availability where match_id = $1 and player_id = $2`, [m.id, PILLAY]);
   ok("it saves: the database holds his answer", row?.status === "doubtful", JSON.stringify(row));
   ok("...and the screen says so, from the server's re-read", /marked doubtful/.test(await sa.innerText())
      && /doubtful/i.test(await tid(dir.page, "set-availability-state").innerText()));
   await tid(dir.page, "set-availability-available").click();
-  await dir.page.waitForTimeout(1800);
+  await afterReads(dir.page, 1800);
   ok("a second answer replaces the first",
      (await q(`select status from match_availability where match_id = $1 and player_id = $2`, [m.id, PILLAY]))[0]?.status === "available");
   const af = await floors(dir.page, "set-availability");
@@ -300,7 +305,7 @@ try {
   const to = await side.evaluate((el) => [...el.options].find((o) => o.value === "2XI")?.value ?? [...el.options].find((o) => o.value !== el.value)?.value);
   await side.selectOption(to);
   await tid(dir.page, "edit-side-save").click();
-  await dir.page.waitForTimeout(2000);
+  await afterReads(dir.page, 2000);
   const [moved] = await q(`select team_code from player where id = $1`, [PILLAY]);
   ok("moving him changes his side in the database", moved?.team_code === to, JSON.stringify(moved));
   await q(`update player set team_code = '1XI' where id = $1`, [PILLAY]);
@@ -336,28 +341,28 @@ try {
   ok("Profiles opens (demo)", await go(demo.page, "profiles"));
   const rp = demo.page.locator('[data-testid^="roster-player-"]').first();
   await rp.click({ timeout: 5000 }).catch(() => {});
-  await demo.page.waitForTimeout(800);
+  await afterReads(demo.page, 800);
   const profText = await main(demo.page);
   ok("a profile is open", /overview/i.test(profText) && await rp.count() === 1);
   ok("no school is named where the read names none (no Hilton College fallback)", !/Hilton College/i.test(profText), profText.match(/.{20}Hilton College.{10}/i)?.[0]);
 
   ok("Logistics opens (demo)", await go(demo.page, "logistics"));
   await click(demo.page, /^equipment$/i, 4000);
-  await demo.page.waitForTimeout(800);
+  await afterReads(demo.page, 800);
   const dEq = await main(demo.page);
   ok("the demonstration shows no fixed inventory either", !/Match Balls \(Dukes\)|Total Line Items/.test(dEq) && /Sign in to see the kit register/.test(dEq));
 
   // The sample registry may stay in a demonstration.
   await tid(demo.page, "topbar-search").click({ timeout: 6000 });
   await demo.page.fill('input[aria-label="Search, or ask Stats-Magic"]', "Kearsney");
-  await demo.page.waitForTimeout(800);
+  await afterReads(demo.page, 800);
   ok("search in a demonstration still has the sample schools", await tid(demo.page, "search-school").count() === 1);
   await demo.page.keyboard.press("Escape");
 
   // ── 3. Skills ─────────────────────────────────────────────────────
   group("Skills' axis reads 1 and 20 at 12px");
   ok("Skills opens (demo)", await go(demo.page, "skills"));
-  await demo.page.waitForTimeout(800);
+  await afterReads(demo.page, 800);
   const sk = await main(demo.page);
   ok("no invented target", !/Target: 90/.test(sk) && !/Target/.test(sk));
   const axes = demo.page.locator('[data-testid="skill-axis"]');

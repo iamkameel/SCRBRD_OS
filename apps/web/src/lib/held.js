@@ -100,3 +100,20 @@ export function passportConsentReader(assignments = profile()?.assignments ?? []
   if (!assignments.length || familyOf(assignments).size > 0) return "family";
   return assignments.some((a) => !FAMILY_LINKS.includes(a.role) && roleGrants(a.role, "guardian.link.manage")) ? "office" : null;
 }
+
+/**
+ * Does the person hold this capability through an assignment that could reach
+ * THIS player? An assignment about named people (`selfaccess`, `guardian`)
+ * reaches only the players it names, so a pupil who holds
+ * `player.development.read` for himself does not hold it for the team-mate he
+ * taps in a list. Presentation only, as above: it decides whether a screen
+ * asks, and the server decides what it answers. In the demo, rbac's answer.
+ * @param {string} role  @param {string} capability  @param {string | null | undefined} playerId
+ * @param {{ role?: string, subjects?: string[] }[]} [assignments]  the session's by default (the test passes them)
+ */
+export function holdsForPlayer(role, capability, playerId, assignments = profile()?.assignments ?? []) {
+  if (!assignments.length) return holdsCapability(role, capability);
+  if (!playerId) return false;
+  return assignments.some((a) => !!a.role && roleGrants(a.role, capability)
+    && (!(a.subjects?.length) || a.subjects.includes(playerId)));
+}

@@ -98,6 +98,11 @@ export function validateAssessment(body) {
  */
 export async function recordAssessment(pool, secret, bearer, playerId, body) {
   const rows = validateAssessment(body);
+  // Undated, it is the day it is in South Africa (sa_today(), db/08), not the
+  // database's UTC current_date: a coach rating a boy between midnight and
+  // 02:00 was filed on yesterday, which moved the "since the last look"
+  // window (development_since, whose window opens at the anchor day's SA
+  // midnight) back a day, and with it the sessions it counts.
   const assessedOn = body?.assessedOn || null;
   const note = body?.note ?? null;
 
@@ -107,7 +112,7 @@ export async function recordAssessment(pool, secret, bearer, playerId, body) {
       const res = await client.query(
         `insert into player_skill
            (player_id, assessed_on, assessed_by, category, metric, score, note)
-         values ($1, coalesce($2::date, current_date), app_user_id(), $3, $4, $5, $6)
+         values ($1, coalesce($2::date, sa_today()), app_user_id(), $3, $4, $5, $6)
          on conflict (player_id, assessed_on, category, metric) where withdrawn_at is null
          do update set score = excluded.score,
                        note = excluded.note
@@ -181,7 +186,7 @@ export async function recordNote(pool, secret, bearer, playerId, body) {
       `insert into development_note
          (player_id, school_id, author_id, body, about_discipline, adjustment, observed_on)
        select $1, player_school($1), app_user_id(), $2, $3, $4,
-              coalesce($5::date, current_date)
+              coalesce($5::date, sa_today())
         where player_school($1) is not null
        returning id, observed_on`,
       [playerId, n.text, n.discipline, n.adjustment, n.observedOn]);

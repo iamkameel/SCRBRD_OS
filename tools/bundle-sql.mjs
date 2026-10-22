@@ -601,6 +601,20 @@ SELECT
         AND to_regprocedure('milestone_notify_as(uuid,text,uuid,smallint,integer,boolean)') IS NOT NULL
         AND to_regprocedure('milestone_still_holds(uuid,text,uuid,smallint,integer)') IS NOT NULL
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A correction takes back what it falsified",
+  -- db/114: a result is official when a standing confirmation names the log's
+  -- head and the result's hash (OFFICIAL_RESULT S1).
+  CASE WHEN to_regclass('match_result_confirmation') IS NOT NULL
+        AND to_regclass('match_result_confirmation_standing') IS NOT NULL
+        AND to_regprocedure('match_result_confirm(uuid)') IS NOT NULL
+        AND to_regprocedure('match_confirmable(uuid)') IS NOT NULL
+        AND to_regprocedure('match_result_dispute(uuid,text)') IS NOT NULL
+        AND to_regprocedure('match_result_dispute_clear(uuid,text)') IS NOT NULL
+        AND to_regprocedure('match_result_confirmation_withdraw(uuid,text)') IS NOT NULL
+        AND to_regprocedure('match_official_state(uuid)') IS NOT NULL
+        AND to_regprocedure('results_to_confirm()') IS NOT NULL
+        AND to_regprocedure('result_lapse(uuid,text)') IS NOT NULL
+        AND to_regprocedure('match_verified(uuid)') IS NOT NULL
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A result is official when a second hand confirms it",
   -- db/115: a family's consents are the family's (REACH R-B, O5/O6). The
   -- passport consent is read by the family and the office it names; the
   -- scouting decision by the family, his office and his own side's coach.

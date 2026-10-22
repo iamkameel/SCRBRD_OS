@@ -19,6 +19,7 @@ import { HeaderScores } from "./scores.jsx";
 import { liveSuperOverLine, matchInningsOf, superOverCommentary } from "../../lib/superOver.js";
 import { Quiet } from "./bits.jsx";
 import { ConfirmScorecardPrompt, OnwardLinks, PreTossCard, RevisionBanner } from "./fulltime.jsx";
+import { OfficialLine, OfficialPanel, useOfficial } from "./official.jsx";
 import { liveRefreshMs, useMoments, useTicker } from "./live.js";
 import { BigScreen } from "./bigscreen.jsx";
 import { CaptainTab } from "./captainTab.jsx";
@@ -439,6 +440,10 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // actually carries, off the innings the board is showing.
   const notice = revisionNotice(boardInn);
   const isLive = match.status === "live";
+  // OFFICIAL_RESULT (db/114): provisional, under review (staff) or official —
+  // the server's state for a finished fixture, read again as the log moves.
+  const official = useOfficial(match, !!match.live && !log.demo && !isLive && match.status !== "upcoming", log.events?.length ?? 0);
+  const [officialStep, setOfficialStep] = useState(/** @type {string | null} */ (null));
 
   // What the Scorecard's rows open to, which only a signed-in reader has
   // (scorecard.jsx takes these rather than importing them, so the public page
@@ -462,7 +467,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
     onNav, onOpenDuties };
 
   return (
-    <div className="os-page" data-testid="match-view" data-match={match.id}>
+    <div className="os-page" data-testid="match-view" data-match={match.id} style={{ minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: T.space.sm, flexWrap: "wrap", marginBottom: T.space.md }}>
         <button type="button" onClick={onClose} data-testid="mc-back" className="pressBtn os-state"
           style={{ minHeight: "44px", padding: `0 ${T.space.md}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
@@ -508,6 +513,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
         </h1>
         {played.length > 0 && <HeaderScores match={match} played={played} corrected={corrected}/>}
         {result && <p data-testid="mc-result" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{result}</p>}
+        {!log.demo && <OfficialLine official={official} names={{ home: sides.home.full, away: sides.away.full }}/>}
         {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
         {!log.demo && <CorrectedChip at={correctedAt(fixes)} lines={correctionLines}/>}
         {!log.demo && <StaleLine stale={log.stale} refreshing={log.refreshing} failed={log.failed} okAt={log.okAt} onRefresh={log.refresh}/>}
@@ -522,7 +528,8 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
       </header>
       {sheet && staffScreen && !log.demo && log.events && (
         <CorrectionsSheet match={match} events={log.events} fold={log.fold} commentary={commentary} list={corrections.list}
-          onClose={() => setSheet(false)} onDecided={() => { corrections.reload(); log.refresh(); }}/>
+          official={official.data?.state === "official" || official.data?.state === "under_review"}
+          onClose={() => setSheet(false)} onDecided={() => { corrections.reload(); log.refresh(); official.reload(); }}/>
       )}
 
       {!log.loading && !log.error && (
@@ -537,7 +544,9 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
           {match.status === "complete" && !log.demo && (
             <>
               <OnwardLinks match={match} sides={sides} matches={matches} onOpenFixture={onOpenFixture} onTeamResults={onTeamResults}/>
-              <ConfirmScorecardPrompt match={match} role={role} commentary={commentary} innings={played} onFiled={corrections.reload}/>
+              <OfficialPanel official={official} step={officialStep} setStep={setOfficialStep} result={result}/>
+              <ConfirmScorecardPrompt match={match} role={role} commentary={commentary} innings={played} onFiled={corrections.reload}
+                official={official.data} onConfirm={() => setOfficialStep("confirm")}/>
             </>
           )}
         </div>

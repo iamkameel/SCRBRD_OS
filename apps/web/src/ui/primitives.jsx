@@ -20,19 +20,19 @@ const Card = ({ children, sx, className="card-hover", onClick, ...rest }) => (
 
 // `icon` on a card or an empty state is a name from ui/icons.jsx.
 const KPICard = ({ label, value, sub, icon, color=D.indigo, trend }) => (
-  <Card sx={{padding:"16px 18px",cursor:"default"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-      <div>
-        <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:"8px"}}>{label}</div>
+  <Card sx={{padding:"16px 18px",cursor:"default"}} data-testid="kpi-card">
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
+      <div style={{minWidth:0}}>
+        <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:"8px",overflowWrap:"anywhere"}}>{label}</div>
         <div style={{fontFamily:D.mono,fontSize:"26px",fontWeight:500,color:textOn(color),lineHeight:1}}>{value}</div>
-        {sub&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"5px"}}>{sub}</div>}
+        {sub&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"5px"}}>{sub}</div>}
       </div>
       <div style={{width:"38px",height:"38px",borderRadius:D.md,background:color+"18",border:`1px solid ${color}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"18px",flexShrink:0,color:textOn(color)}}>{isIcon(icon) ? <Icon name={icon}/> : icon}</div>
     </div>
     {trend!==undefined&&(
       <div style={{marginTop:"10px",display:"flex",alignItems:"center",gap:"5px"}}>
-        <span style={{color:trend>=0?D.emerald:D.rose,fontFamily:D.mono,fontSize:"11px"}}>{trend>=0?"▲":"▼"} {Math.abs(trend)}%</span>
-        <span style={{color:D.textMuted,fontSize:"11px",fontFamily:D.body}}>vs last month</span>
+        <span style={{color:trend>=0?D.emerald:D.rose,fontFamily:D.mono,fontSize:"12px"}}>{trend>=0?"▲":"▼"} {Math.abs(trend)}%</span>
+        <span style={{color:D.textMuted,fontSize:"12px",fontFamily:D.body}}>vs last month</span>
       </div>
     )}
   </Card>
@@ -62,10 +62,11 @@ const Btn = ({ children, onClick, variant="primary", size="md", disabled, ...res
     : variant==="danger"?inkOn(D.rose)
     : D.textPrimary;
   const pad = size==="sm"?"5px 12px":size==="lg"?"12px 24px":"8px 18px";
-  const fs  = size==="sm"?"11px":size==="lg"?"14px":"12px";
+  // §3.2 and §3.5: 12px at the least, and 44px to tap, at every size (I32). "sm" was 11px and 28px.
+  const fs  = size==="sm"?"12px":size==="lg"?"14px":"12px";
   return (
     <button onClick={onClick} disabled={disabled} className="pressBtn" {...rest} style={{
-      padding:pad,borderRadius:D.pill,border:`1px solid ${variant==="ghost"?D.border:"transparent"}`,
+      minHeight:"44px",padding:pad,borderRadius:D.pill,border:`1px solid ${variant==="ghost"?D.border:"transparent"}`,
       background:bg,color:col,cursor:disabled?"not-allowed":"pointer",fontFamily:D.head,
       fontSize:fs,fontWeight:700,letterSpacing:"0.04em",opacity:disabled?0.4:1,
       boxShadow:variant==="primary"?`0 2px 12px ${D.indigo}33`:"none",
@@ -317,17 +318,24 @@ function RadarChart({ data, max, color=D.indigo, size=160, caption }) {
 const READ_ICON = { loading: "hourglass", failed: "triangle-alert", partial: "triangle-alert",
                     forbidden: "lock", disabled: "ban", unassessed: "target", stale: "hourglass" };
 
-const ReadState = ({ read, onRetry, icon, compact = false, testId = "read-state" }) => {
+const ReadState = ({ read, onRetry, icon, compact = false, onBoard = false, testId = "read-state" }) => {
   const { state, sentence, retry } = read;
   if (state === "ok" || !sentence) return null;
   const bad = state === "failed" || state === "partial";
+  // ON THE BOARD (T.board), which is black in both themes, the page's muted
+  // text is the wrong ink: daylight's tertiary (#5e6857) read 3.32:1 on the
+  // board's face at 320px (browser-narrow, #170). The board's own inks are
+  // fixed and clear 4.5:1 in both themes: dim (6.34:1) for a read still on
+  // the wire, the painted figure (17.86:1) for a failure, which still says
+  // so in words and as role="alert".
+  const ink = onBoard ? (bad ? T.board.figure : T.board.dim) : (bad ? D.roseText : D.textMuted);
   const glyph = READ_ICON[state] ?? icon ?? "—";
   return (
     <div data-testid={testId} data-state={state}
       role={bad ? "alert" : state === "loading" ? "status" : undefined}
       style={{ padding: compact ? "10px 14px" : "32px 16px", textAlign: "center",
                fontFamily: D.body, fontSize: "13px", lineHeight: 1.5,
-               color: bad ? D.roseText : D.textMuted,
+               color: ink,
                display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
       {!compact && (
         <div style={{ fontSize: "20px", opacity: 0.7 }} aria-hidden="true">

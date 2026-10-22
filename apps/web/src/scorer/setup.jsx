@@ -48,11 +48,11 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
   const SUBSTEP_LABELS=["Batting Order","Openers","Opening Bowler"];
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
+    <div style={{display:"flex",flexDirection:"column",gap:"16px",minWidth:0}}>
       {/* Sub-step tabs */}
-      <div style={{display:"flex",gap:"4px"}}>
+      <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
         {SUBSTEP_LABELS.map((l,i)=>(
-          <button type="button" key={i} disabled={i>=subStep} aria-current={i===subStep?"step":undefined} style={{flex:1,textAlign:"center",padding:"7px 4px",minHeight:"44px",borderRadius:D.md,cursor:i<subStep?"pointer":"default",
+          <button type="button" key={i} disabled={i>=subStep} aria-current={i===subStep?"step":undefined} style={{flex:"1 1 auto",textAlign:"center",padding:"7px 4px",minHeight:"44px",borderRadius:D.md,cursor:i<subStep?"pointer":"default",
             background:i===subStep?D.indigo+"20":i<subStep?D.emerald+"10":"transparent",
             border:`1px solid ${i===subStep?D.indigo+"55":i<subStep?D.emerald+"33":D.border}`,
             fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",
@@ -202,7 +202,7 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
           {/* Filter input */}
           <input value={bowlerFilter} onChange={e=>setBowlerFilter(e.target.value)} aria-label="Search bowlers"
             placeholder="Filter bowlers…"
-            style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
+            style={{background:D.surf2,border:`1px solid ${D.textMuted}`,borderRadius:D.md,
               color:D.textPrimary,fontSize:"16px",fontFamily:D.body,padding:"8px 12px",minHeight:"44px",width:"100%"}}/>
           <div style={{display:"flex",flexDirection:"column",gap:"3px",maxHeight:"300px",overflowY:"auto",overscrollBehavior:"contain"}}>
             {bowlerCandidates.map(name=>{

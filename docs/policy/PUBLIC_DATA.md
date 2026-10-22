@@ -87,12 +87,14 @@ be placed on the list, or the test fails.
 - **C1 Who:** a verified guardian, recorded per child. The school may record it from
   its own admission forms, naming the form and the date. This is a consent of its own,
   separate from the guardian-link consent that governs processing at all.
+  *Changed 21 Oct 2026 (Kameel, READERS_child_data Q7):* From his twelfth birthday a pupil may refuse his own name on public pages; his refusal stands whatever a guardian says. His 'yes' counts from eighteen.
 - **C2 Before anyone decides:** not named.
 - **C3 Withdrawal:** takes effect everywhere at once, past pages included. The record
   of the consent is end-dated, never deleted.
 - **C4 Age groups:** the same rule at every age. A school can also switch names off for
   any age group it chooses (the overlay's `name_display = 'none'` already does this for
   one fixture).
+  *Changed 21 Oct 2026 (Kameel, READERS_child_data Q7):* From his twelfth birthday a pupil may refuse his own name on public pages; his refusal stands whatever a guardian says. His 'yes' counts from eighteen.
 - **C5 A child who must never appear:** a never-public mark that authorised staff can
   set. It overrides every consent, and no page shows or records the reason.
 - **C6 Turning 18:** his own consent counts from his birthday. Until he gives it, his

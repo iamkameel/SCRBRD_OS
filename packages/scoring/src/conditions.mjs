@@ -114,6 +114,11 @@ export const CONDITION = Object.freeze({
   "nrr.method":                           key({ part: "table", type: "enum", values: ["standard"], platformDefault: "standard", readers: ["table"], sort: 120 }),
   "table.order":                          key({ part: "table", type: "list", values: ["points", "wins", "nrr", "head_to_head", "fewer_losses"], platformDefault: ["points", "wins", "nrr"], readers: ["table"], sort: 130 }),
   "over_rate.kind":                       key({ part: "table", type: "enum", values: ["none", "points", "runs"], platformDefault: "none", readers: ["table"], sort: 140 }),
+  // OFFICIAL_RESULT D4, Q1, Q2 (db/114): who confirms a result, and the days
+  // a confirmation may be disputed. No platform default: a document without
+  // them reads the organiser and 7 (result_confirmer_of(), result_dispute_days()).
+  "results.confirmed_by":                 key({ part: "table", type: "enum", values: ["organiser", "home_school", "either_school"], readers: ["sql"], sort: 150 }),
+  "results.dispute_days":                 key({ part: "table", type: "int", unit: "days", readers: ["sql"], sort: 151 }),
   "eligibility.age_on":                   key({ part: "sheet", type: "date", readers: ["selection", "sql"], sort: 200 }),
   "eligibility.max_age_open":             key({ part: "sheet", type: "int", unit: "years", readers: ["selection", "sql"], sort: 210 }),
   "eligibility.bona_fide_scholar":        key({ part: "sheet", type: "bool", platformDefault: false, readers: ["selection", "pad"], sort: 220 }),

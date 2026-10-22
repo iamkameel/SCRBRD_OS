@@ -44,6 +44,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5341);
 const API_PORT = port(8841);
@@ -118,6 +119,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -201,15 +203,38 @@ const basicPad = async () => {
   if (!(await has("basic-pad"))) { await tap("pad-menu").catch(() => {}); await tap("pad-basic-scoring").catch(() => {}); }
   await page.waitForTimeout(300);
 };
-/** Let the outbox send and the server answer. */
-// 2.6 s for the pad to send what it just recorded, and then, while its pill
-// still says "Sending N", up to 10 s more. A fixed 2.6 s alone was short when
-// the runner was busy: the short run's two rows had not reached the server
-// ("the server has two more rows, in order" and the API's total behind the
-// board, 2 runs of 3 here).
+/**
+ * This match's events still waiting in the pad's outbox (packages/sync: an
+ * `evt:` key per unsent event, under `<match>:<device>:`, deleted once the
+ * server has acknowledged it). -1 when the store cannot be read.
+ */
+const outboxPending = () => page.evaluate((prefix) => new Promise((resolve) => {
+  const req = indexedDB.open("scrbrd-outbox", 1);
+  req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains("queue")) req.result.createObjectStore("queue"); };
+  req.onerror = () => resolve(-1);
+  req.onsuccess = () => {
+    const db = req.result;
+    const k = db.transaction("queue", "readonly").objectStore("queue").getAllKeys();
+    k.onsuccess = () => { db.close(); resolve(k.result.filter((x) => String(x).startsWith(prefix) && String(x).includes(":evt:")).length); };
+    k.onerror = () => { db.close(); resolve(-1); };
+  };
+}), `${MATCH}:`).catch(() => -1);
+/**
+ * Let the outbox send and the server answer: until nothing of this match is
+ * left unsent, twice in a row (15 s bound). A fixed 2.6 s used to stand here,
+ * and under load the server's row count was taken before the last ball had
+ * synced, so a later slice of the log was judged one row early.
+ */
 const settle = async () => {
+  // Never less than the 2.6 s this replaces: an event tapped a moment ago may
+  // not have reached the outbox yet, and an empty outbox then says nothing.
   await page.waitForTimeout(2600);
-  await page.waitForFunction(() => !/\bSending \d+/.test(document.body.innerText), null, { timeout: 10000 }).catch(() => {});
+  const until = Date.now() + 15000;
+  let empty = 0;
+  while (Date.now() < until && empty < 2) {
+    await page.waitForTimeout(200);
+    empty = (await outboxPending()) === 0 ? empty + 1 : 0;
+  }
 };
 
 /** The board, the server's rows and the API's live score say the same. */
@@ -286,10 +311,10 @@ try {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   const opened = await page.evaluate(() => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
@@ -397,7 +422,7 @@ try {
   const first = parseBoard(await board());
   const firstLive = (await agree("first innings over", 0)).live;
   await tap("review-confirm");
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   ok("the break sheet says the chase opens on the credit",
      /Michaelhouse start their innings on 5 \(penalty runs\)/.test(await said("innings2-penalty-note")), await said("innings2-penalty-note"));
   const breakTarget = Number(((await page.locator('[role="dialog"]').first().innerText().catch(() => "")) || "").match(/need\s*\n?\s*(\d+)/i)?.[1]);

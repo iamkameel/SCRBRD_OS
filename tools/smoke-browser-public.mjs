@@ -40,6 +40,7 @@ import { buildPublicFixture, EXPECTED, HIL } from "./fixture-public.mjs";
 import { writeEvents } from "./fixture-matchcentre.mjs";
 import { ball, batters, bowler, inningsStart, BALL_TYPE } from "@scrbrd/scoring";
 import { RATE } from "../services/api/public/public-api.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const PORT = port(8848);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -84,6 +85,7 @@ async function visit(/** @type {string} */ path, { width = 1280, init = null } =
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, extraHTTPHeaders: { "x-forwarded-for": `10.84.0.${++ipN}` } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   if (init) await page.addInitScript(init);
   const errors = [];
   const requests = [];
@@ -263,7 +265,7 @@ try {
     ok("a fresh load says nothing", (await said()) === "");
     ok("the chase's board has no \"At this rate\": it shows the required rate", /Need \d+ off \d+/.test(await tid(lv.page, "mc-board-sub").innerText().catch(() => ""))
        && !/At this rate/.test(await tid(lv.page, "mc-board-sub").innerText().catch(() => "")));
-    await lv.page.waitForTimeout(6500);
+    await afterReads(lv.page, 6500);
     ok("...and a re-read or two with nothing new says nothing either", (await said()) === "", await said());
 
     await put(1, ball({ type: BALL_TYPE.RUN, value: 4 }));
@@ -325,6 +327,39 @@ try {
     await r.ctx.close();
   }
 
+  group("9. Official or provisional, and never \"under review\" (OFFICIAL_RESULT D11, Q3; db/114)");
+  {
+    const label = async (page) => {
+      await page.waitForSelector('[data-testid="public-match"]', { timeout: 10000 }).catch(() => {});
+      await page.waitForFunction(() => !!document.querySelector('[data-testid="public-official"] [data-state]'), null, { timeout: 8000 }).catch(() => {});
+      return { state: await page.locator('[data-testid="public-official"] [data-state]').getAttribute("data-state").catch(() => null),
+               words: (await tid(page, "public-official").innerText().catch(() => "")).replace(/\s+/g, " ").trim() };
+    };
+    const a = await visit(`/live/${pub2}`);
+    const before = await label(a.page);
+    ok("a finished fixture nobody has confirmed: Provisional", before.state === "provisional" && /^Provisional$/.test(before.words.trim()), JSON.stringify(before));
+    await a.ctx.close();
+    // Made official as the owner here: the door, its rules and its refusals are db/99 §91's and smoke-official's.
+    const [{ id: conf }] = await q(`insert into match_result_confirmation (match_id, head_seq, result_hash, confirmed_by, confirmed_as, window_closes_at)
+      select $1, match_head_seq($1), (select r.result_hash from match_result_compute($1) r), $2, 'home_school', now() + interval '7 days' returning id`, [pub2, SARAH]);
+    const b = await visit(`/live/${pub2}`);
+    const after = await label(b.page);
+    ok("confirmed: Official result, and when — never who", after.state === "official" && /^Official result · confirmed \d\d:\d\d/.test(after.words.trim())
+       && !/director|principal|school|Sarah|Mokoena/i.test(after.words), JSON.stringify(after));
+    const box = await b.page.locator('[data-testid="public-official"] [data-state]').evaluate((e) => parseFloat(getComputedStyle(e).fontSize)).catch(() => 0);
+    ok("...at 12px or more, in a polite live region", box >= 12 && (await tid(b.page, "public-official").getAttribute("aria-live")) === "polite", box);
+    await b.ctx.close();
+    await q(`update match_result_confirmation set disputed_by = $2, disputed_at = now(), disputed_as = 'away_school',
+             dispute_note = 'Verify: a dispute the public must never read' where id = $1`, [conf, SARAH]);
+    const c = await visit(`/live/${pub2}`);
+    const under = await label(c.page);
+    const all = await text(c.page);
+    ok("disputed: the public page reads Provisional, and no word of a review, a dispute or its note",
+       under.state === "provisional" && !/review|dispute|never read/i.test(all), JSON.stringify(under));
+    ok("no console errors (official)", a.errors.length + b.errors.length + c.errors.length === 0, [...a.errors, ...b.errors, ...c.errors].join(" | "));
+    await c.ctx.close();
+  }
+
   group("5. Not published is not found");
   {
     await as(SARAH, `select * from fixture_publish($1, 'home', false)`, [pub2]);
@@ -347,6 +382,7 @@ try {
     const codes = await Promise.all(Array.from({ length: RATE.burst + 10 }, hit));
     const answered = codes.filter((c) => c === 200).length;
     const page = await ctx.newPage();
+    watchReads(page);
     await page.setExtraHTTPHeaders({ "x-forwarded-for": "10.84.9.9" });
     // The page itself, opened with the bucket empty: drained again first,
     // each try, so a token that refilled since does not let it through.
