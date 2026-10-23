@@ -137,8 +137,17 @@ async function go(page, key) {
 async function openMatch(page, id) {
   if (!(await go(page, "matches"))) return false;
   const btn = tid(page, `mc-open-${id}`);
+  // Match Centre draws a fixture's card only once its reads answer (matches,
+  // staff, grounds, competitions, weather), and on the first opening those
+  // queue behind the previous screen's: 1.4-2.3 s measured, against the fixed
+  // wait before this look. Give the card up to 10 s to be drawn; one that is
+  // never drawn is judged exactly as before.
+  await btn.first().waitFor({ timeout: 10000 }).catch(() => {});
   if (!(await btn.count())) return false;
   await btn.click({ timeout: 5000 });
+  // The fixture's view is drawn once its chunk and reads arrive, which a busy
+  // runner can take past the fixed wait below: give it up to 10 s first.
+  await tid(page, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
   await afterReads(page, 1800);
   return (await tid(page, "match-view").count()) === 1;
 }
@@ -237,8 +246,20 @@ try {
   await tid(c.page, `pick-twelfth-${boy["12"]}`).click();
   ok("a twelfth man is named", (await tid(c.page, `pick-twelfth-${boy["12"]}`).getAttribute("aria-pressed")) === "true"
     && /twelfth man: Verify Pick 12/.test(await inner(c.page, "pick-side-foot")));
+  // After a save the Coach tab asks its reads again (useCockpit's reload) and
+  // keeps showing the old side until the last of them answers: the sheet's
+  // readiness, then a matchups and a matchup_coverage read for each of the
+  // eleven boys now on it. That took 2 s here, and the check below judged at
+  // 0.8 s, so it read "No sheet has been published". Wait for the reload's
+  // own reads (sent after the click), whatever they answer.
+  const t0 = Date.now();
+  const reloadReads = [];
+  const onAnswer = (r) => { if (/\/api\/read\/(readiness\?matchId=|matchup_coverage\?)/.test(r.url())) reloadReads.push(`${r.url().split("/api/read/")[1].split("?")[0]} ${r.status()} @${Date.now() - t0}ms`); };
+  c.page.on("response", onAnswer);
   await tid(c.page, "pick-side-save").click();
   await c.page.waitForFunction(() => !document.querySelector('[data-testid="pick-side"]'), null, { timeout: 8000 }).catch(() => {});
+  for (let i = 0; i < 150 && !(reloadReads.some((x) => x.startsWith("readiness")) && reloadReads.filter((x) => x.startsWith("matchup_coverage")).length >= 11); i++) await c.page.waitForTimeout(100);
+  c.page.off("response", onAnswer);
   ok("saved: the dialog closes", await tid(c.page, "pick-side").count() === 0);
   const want1 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => `Verify Pick ${num(i)}|${i === 1 ? 11 : i === 11 ? 1 : i}|false`);
   const have1 = await side(M);
@@ -248,7 +269,7 @@ try {
   await afterReads(c.page, 800);
   const sideText = await inner(c.page, "coach-side");
   ok("the Coach tab shows the sheet, with no reload", (await c.page.evaluate(() => window.__marker)) === "same page"
-    && await tid(c.page, `coach-side-${boy["11"]}`).count() === 1 && await tid(c.page, `coach-side-${boy["12"]}`).count() === 1 && !/No sheet has been published/.test(sideText), sideText.slice(0, 200));
+    && await tid(c.page, `coach-side-${boy["11"]}`).count() === 1 && await tid(c.page, `coach-side-${boy["12"]}`).count() === 1 && !/No sheet has been published/.test(sideText), `${sideText.slice(0, 160)} · reload: ${reloadReads.length ? `${reloadReads[0]} … ${reloadReads.at(-1)} (${reloadReads.length})` : "none answered"}`);
   ok("...in batting order: number 1 first, the twelfth last", await c.page.$$eval('[data-testid^="coach-side-"][data-state]', (els) => els.map((e) => e.getAttribute("data-testid"))).then((ids) => ids[0] === `coach-side-${boy["11"]}` && ids.at(-1) === `coach-side-${boy["12"]}`));
   ok("...its foot counts twelve named", /^12 named/.test(await inner(c.page, "coach-side-foot")));
   ok("...and the button now says Change the side", (await inner(c.page, "pick-side-open")).trim() === "Change the side");

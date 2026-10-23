@@ -140,8 +140,17 @@ async function openMatch(page, id) {
   await page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
   await page.waitForTimeout(1500);
   const btn = tid(page, `mc-open-${id}`);
+  // Match Centre draws a fixture's card only once its reads answer (matches,
+  // staff, grounds, competitions, weather), and on the first opening those
+  // queue behind the previous screen's: 1.4-2.3 s measured, against the fixed
+  // wait before this look. Give the card up to 10 s to be drawn; one that is
+  // never drawn is judged exactly as before.
+  await btn.first().waitFor({ timeout: 10000 }).catch(() => {});
   if (!(await btn.count())) return false;
   await btn.click({ timeout: 5000 });
+  // The fixture's view is drawn once its chunk and reads arrive, which a busy
+  // runner can take past the fixed wait below: give it up to 10 s first.
+  await tid(page, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
   await afterReads(page, 1800);
   return (await tid(page, "match-view").count()) === 1;
 }
@@ -650,7 +659,9 @@ try {
   ok("filed, and says so", await until(sc.page, () => /with the director of sport .*until it is approved/i.test(document.querySelector('[data-testid="mc-confirm-said"]')?.textContent ?? ""), 6000),
      await tid(sc.page, "mc-confirm-said").innerText().catch(() => "∅"));
   await tid(sc.page, "mc-confirm-ok").click();
-  await sc.page.waitForTimeout(300);
+  // Judged on a fixed 300 ms after the click, which a busy runner can miss
+  // (1 run of 2 here): wait up to 3 s for the prompt to go, then judge.
+  await until(sc.page, () => !document.querySelector('[data-testid="mc-confirm-prompt"]'), 3000);
   ok('"Looks right" dismisses the prompt — on this device only; nothing is written for it', await tid(sc.page, "mc-confirm-prompt").count() === 0);
   ok("no console errors (scorer)", sc.errors.length === 0, sc.errors.join(" | "));
   await sc.ctx.close();
