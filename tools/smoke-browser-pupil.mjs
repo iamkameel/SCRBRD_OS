@@ -301,9 +301,21 @@ try {
 
   group("Passport: his figures, on the board; the Wheel tab");
   ok("Passport opens", await go(s.page, "passport"));
-  ok("the board: his 34 runs from the scorebook innings", (await inner(s.page, "passport-runs")).trim() === "34");
-  ok("...and his average, figures first", /AVG 34/.test(await inner(s.page, "passport-board")));
-  ok("the season tab carries his season", /34 runs/.test(await inner(s.page, "passport-panel-season")));
+  // The board and the season tab say "Reading your career figures…" and
+  // "Reading your seasons…" until career and career_by_season answer. go()
+  // judges on a fixed 1.8 s, and those reads take longer than that here (as
+  // the pupil, 2.3 s for career on this machine, 1.8 s of it the
+  // JIT compiling the RLS-heavy plan, measured with EXPLAIN
+  // ANALYZE), so the checks read the placeholder. Wait for both reads to
+  // answer, whatever they say; a read that fails leaves its own words, which
+  // the checks below then print.
+  await s.page.waitForFunction(() => !/Reading your (career figures|seasons)/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+  const runsSaid = await inner(s.page, "passport-runs");
+  ok("the board: his 34 runs from the scorebook innings", runsSaid.trim() === "34", `${runsSaid} · ${(await inner(s.page, "passport-board")).replace(/\n/g, " / ")}`);
+  const boardSaid = await inner(s.page, "passport-board");
+  ok("...and his average, figures first", /AVG 34/.test(boardSaid), boardSaid.replace(/\n/g, " / "));
+  const seasonSaid = await inner(s.page, "passport-panel-season");
+  ok("the season tab carries his season", /34 runs/.test(seasonSaid), seasonSaid.replace(/\n/g, " / "));
   await tid(s.page, "passport-tab-wheel").click({ timeout: 4000 }).catch(() => {});
   await afterReads(s.page, 1500);
   ok("the Wheel tab draws his own wheel (SCRBRD-102)", await tid(s.page, "career-wagon-wheel").count() === 1);

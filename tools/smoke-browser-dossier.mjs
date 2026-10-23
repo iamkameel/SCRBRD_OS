@@ -177,6 +177,13 @@ async function nav(page, label) {
 /** Open the dossier for one fixture from Match Centre. */
 async function openDossier(page, matchId) {
   const btn = page.locator(`[data-testid="dossier-open-${matchId}"]`);
+  // The button is drawn on the fixture's card once Match Centre's reads have
+  // answered; nav() gives it a fixed 1.5 s, and when the list came later the
+  // count below saw no button, the walk said the dossier did not open and the
+  // next check waited 30 s on a panel that was never asked for. Give the card
+  // up to 10 s to draw it. A reader the fixture is not for still gets no
+  // button, only later.
+  await btn.first().waitFor({ timeout: 10000 }).catch(() => {});
   if (!(await btn.count())) return false;
   // The dossier says "Reading…" until its two reads answer. A fixed 1.8 s
   // judged that placeholder whenever they took longer (PR #167's shard 2/4,

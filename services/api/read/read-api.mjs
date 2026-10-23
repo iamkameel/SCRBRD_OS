@@ -2178,9 +2178,11 @@ export const READ_QUERIES = {
    * it. A consent the person who gave it cannot inspect is a consent in name,
    * which is the whole reason this read exists.
    *
-   * No filtering here. The table's own policy asks player.profile.read against
-   * the boy, so a guardian sees their own children, a coach sees his side, and
-   * a scout sees nothing he was not already going to see.
+   * No filtering here. The table's own policy (db/115, REACH R-B) is the
+   * boy's family, the office at his school and his own side's coach
+   * (player.development.read at his side), so a guardian sees their own
+   * children, a pupil his own decision and no team-mate's, a coach his side's,
+   * and a scout nothing.
    */
   scouting_consent: {
     text: `select c.player_id, p.full_name, p.team_code, c.consent_state, c.decided_at,
@@ -2191,6 +2193,9 @@ export const READ_QUERIES = {
             order by p.full_name`,
   },
 
+  // The schools a family has named for a boy's record. Read by his family and
+  // by the office of the school a row names (db/115, REACH R-B: "office
+  // only"); the receiving coach reads the passport above, not these rows.
   passport_consents: {
     text: `select c.id, c.player_id, passport_name(c.player_id) as full_name, c.to_school_id, s.name as to_school, c.granted_at, c.withdrawn_at
              from passport_consent c
