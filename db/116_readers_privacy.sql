@@ -71,8 +71,10 @@
 --       reaches is cut, for a reader who is a pupil, to the sheet: the boys
 --       named on a fixture's match_squad, their names, order and styles. Not
 --       the school's roster, honours, side history, milestones, the training
---       register, kit, passports or scouting consents. His own side's reach,
---       through his `player` role, and his own record are untouched.
+--       register, kit, passports or scouting consents (the two consents
+--       closed to every pupil since by db/115, which this keeps as a second
+--       lock). His own side's reach, through his `player` role, and his own
+--       record are untouched.
 --   Q16 A child's ID number (§1): selfaccess loses player.identity.read.
 --   A1  The passport (§9b; the red-team audit of 21 Oct 2026, finding A1,
 --       through the lead): passport() no longer carries a boy's skill
@@ -983,8 +985,10 @@ END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, pu
 --   milestone_notice    every fifty and five-for noticed
 --   training_attendance the register: present, late, excused
 --   equipment_issue     the kit issued to him
---   passport_consent    which school his family has named (as that school)
---   player_scouting_consent  whether his family was asked about scouts
+--   passport_consent    which school his family has named (as that school);
+--                       closed since by db/115 (office only, REACH R-B)
+--   player_scouting_consent  whether his family was asked about scouts;
+--                       closed since by db/115 (REACH O6)
 --   recognition()       honours, caps and milestones, in one shape
 --   passport_open()     his passport
 --   match_squad         the sheet: who is named, in what order
@@ -1079,7 +1083,16 @@ CREATE POLICY equipment_issue_pupil_standing_only ON equipment_issue AS RESTRICT
                player_team(equipment_issue.player_id), equipment_issue.player_id, NULL::uuid)
   );
 
--- passport_consent: the family's own arm (is_family_of(), db/08) stays whole.
+-- The two consents. db/115 (REACH R-B, O5/O6) has since rewritten their
+-- permissive reads: the family (is_family_of()), the office of the school
+-- the row names (guardian.link.manage there) and, for scouting, his own
+-- side's coach (player.development.read). None of those is player.profile.read,
+-- so a pupil scorer no longer reaches either through his fixture; these two
+-- stay as a second lock behind db/115, in case a permissive arm is added
+-- later. They refuse only a reader who is a pupil, so the office and the
+-- coach db/115 lets in are not touched; and the family's own arm,
+-- is_family_of() (db/08), stays whole in both, so a pupil reads his own
+-- through his self-access link whatever else he holds.
 DROP POLICY IF EXISTS passport_consent_pupil_standing_only ON passport_consent;
 CREATE POLICY passport_consent_pupil_standing_only ON passport_consent AS RESTRICTIVE
   FOR SELECT USING (
@@ -1093,6 +1106,7 @@ DROP POLICY IF EXISTS player_scouting_consent_pupil_standing_only ON player_scou
 CREATE POLICY player_scouting_consent_pupil_standing_only ON player_scouting_consent AS RESTRICTIVE
   FOR SELECT USING (
     NOT (SELECT app_reader_is_pupil())
+    OR is_family_of(player_scouting_consent.player_id)
     OR app_can('player.profile.read', player_school(player_scouting_consent.player_id),
                player_team(player_scouting_consent.player_id), player_scouting_consent.player_id, NULL::uuid)
   );
