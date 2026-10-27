@@ -36,6 +36,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5301);
 const API_PORT = port(8801);
@@ -108,14 +109,14 @@ async function signIn(page, who) {
   await page.waitForTimeout(500);
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return /Match Centre|Dashboard/i.test(await text(page));
 }
 async function nav(page, label) {
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 

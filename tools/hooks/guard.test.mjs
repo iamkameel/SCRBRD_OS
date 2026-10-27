@@ -81,7 +81,7 @@ const frozen = migrationFiles(DB)
 // (The count is not asserted — the numbering has a gap at db/03, which was
 // never written, so N-1 files reach db/N.)
 ok(`db/${FROZEN_THROUGH} exists, so the frozen range ends on a real file`,
-   frozen.some((f) => Number(f.slice(0, 2)) === FROZEN_THROUGH),
+   frozen.some((f) => migrationNumber(f) === FROZEN_THROUGH),
    `top of db/ is ${frozen.at(-1)}`);
 {
   // `frozen` empty would make "all of them were refused" true and mean

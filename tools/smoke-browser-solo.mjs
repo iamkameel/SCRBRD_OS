@@ -52,6 +52,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5631);
 const API_PORT = port(5632);
@@ -106,6 +107,7 @@ async function open({ width = 1280, height = 900 } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height }, ...(width < 500 ? { isMobile: true, hasTouch: true } : {}) });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(`console.error: ${m.text()}`); });
@@ -127,10 +129,17 @@ async function signIn(page, email) {
   await page.waitForTimeout(500);
   await page.locator("#login-email").fill(email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   return (await tid(page, "os-main").count()) === 1;
 }
-async function go(page, key) {
+/**
+ * Open a screen. By default it waits for the screen's reads to answer, so
+ * nothing is judged mid-read. `{ inFlight: true }` keeps the old fixed 1.6 s
+ * instead: for a check that judges the screen WHILE a read is held on
+ * purpose (a gated route), where waiting for the reads would wait out the
+ * client's own abort and judge the failure, not the loading state.
+ */
+async function go(page, key, { inFlight = false } = {}) {
   const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
   if (!(await l.count())) {
     // On a phone the less-used screens sit in the drawer under More.
@@ -140,7 +149,8 @@ async function go(page, key) {
   const m = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"], [data-testid="drawer-${key}"]`).first();
   if (!(await m.count())) return false;
   try { await m.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1600);
+  if (inFlight) await page.waitForTimeout(1600);
+  else await afterReads(page, 1600);
   return true;
 }
 const wait = (page, id, ms = 6000) => tid(page, id).first().waitFor({ state: "visible", timeout: ms }).then(() => true, () => false);
@@ -359,7 +369,7 @@ try {
   await tid(dirc.page, `squad-card-${BEKKER}`).click({ timeout: 6000 }).catch(() => {});
   await dirc.page.waitForTimeout(600);
   await tid(dirc.page, "player-edit-profile").click({ timeout: 4000 }).catch(() => {});
-  await dirc.page.waitForTimeout(1500);
+  await afterReads(dirc.page, 1500);
   ok("the director is on Edit Profile", await tid(dirc.page, "edit-profile").count() === 1);
   ok("...and is not offered Guardian links (she does not hold the capability)", await tid(dirc.page, "guardian-links").count() === 0 && !/Guardian links/.test(await inner(dirc.page, "edit-profile")));
   // READERS_child_data Q2 (db/116): a link's ending, and its reason, are
@@ -392,7 +402,7 @@ try {
   let release2; const gate2 = new Promise((r) => { release2 = r; });
   // Left in place: once the gate is open every later read passes straight through.
   await co.page.route("**/api/read/vehicles**", async (route) => { await gate2; await route.continue(); });
-  ok("Logistics opens", await go(co.page, "logistics"));
+  ok("Logistics opens", await go(co.page, "logistics", { inFlight: true }));
   ok("while the fleet is read, the panel says so and offers nothing to book", await wait(co.page, "transport-book-loading", 4000) && await tid(co.page, "transport-add-vehicle-open").count() === 0);
   release2();
   ok("the Book a bus panel is offered to the coordinator", await wait(co.page, "transport-book"));
@@ -522,7 +532,7 @@ try {
   const dir2 = await open(); all.push(dir2);
   ok("the director of sport signs in", await signIn(dir2.page, "sarah@example.invalid"));
   ok("Logistics opens (director)", await go(dir2.page, "logistics"));
-  await dir2.page.waitForTimeout(800);
+  await afterReads(dir2.page, 800);
   ok("the director sees the transport page and is not offered Book a bus", await tid(dir2.page, "os-main").count() === 1 && /upcoming away trips/i.test(await inner(dir2.page, "os-main")) && await tid(dir2.page, "transport-book").count() === 0 && await tid(dir2.page, "transport-add-vehicle-open").count() === 0);
   const dirToken = await login("sarah@example.invalid", "device-solo-dir");
   const forcedVehicle = await call("/api/vehicles", { method: "POST", token: dirToken, body: { schoolId: HIL, registration: "SOLO FORCED", description: "x", kind: "minibus", capacity: 10 } });
@@ -552,7 +562,7 @@ try {
   ok("the coach signs in", await signIn(me.page, SELF));
   ok("Settings opens", await go(me.page, "settings"));
   await me.page.getByRole("tab", { name: /^Me/ }).click();
-  await me.page.waitForTimeout(800);
+  await afterReads(me.page, 800);
   ok("Sign out everywhere is on Me, beside Ways to sign in", await wait(me.page, "sign-out-everywhere") && await tid(me.page, "sign-ins").count() === 1);
   ok("it says what it does before it is pressed", /every phone, tablet and computer/.test(await inner(me.page, "sign-out-everywhere")));
   ok("the question has not been asked yet", await tid(me.page, "sign-out-everywhere-confirm").count() === 0);
@@ -577,7 +587,7 @@ try {
   // OK: this device follows the server.
   await tid(me.page, "sign-out-everywhere-yes").click();
   await me.page.waitForSelector("#login-email, [data-testid='login-email']", { timeout: 8000 }).catch(() => {});
-  await me.page.waitForTimeout(800);
+  await afterReads(me.page, 800);
   ok("once the server answers OK, this device is signed out: the sign-in screen is shown", await tid(me.page, "os-main").count() === 0 && (await me.page.locator("#login-email").count() > 0 || /Sign In|Log in|Continue with Google/i.test(await me.page.$eval("body", (e) => e.innerText))));
   const e1 = await epoch();
   ok("the database moved the epoch, for this person, by this person, and says why", e1.epoch === e0.epoch + 1 && e1.reason === "signed_out_everywhere" && e1.bumped_by === selfId, JSON.stringify(e1));

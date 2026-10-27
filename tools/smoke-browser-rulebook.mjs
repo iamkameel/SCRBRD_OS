@@ -30,6 +30,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4351);
 const API_PORT = port(8851);
@@ -75,6 +76,7 @@ async function open() {
   const ctx = await browser.newContext();
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -101,14 +103,14 @@ async function signIn(page, who) {
   await page.waitForTimeout(500);
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return /Match Centre|Dashboard/i.test(await text(page));
 }
 async function nav(page, id) {
   const l = tid(page, `nav-${id}`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 
@@ -127,7 +129,7 @@ try {
   const dos = await open();
   ok("the director of sport signs in", await signIn(dos.page, /sarah@example\.invalid|Director/));
   ok("the rulebook opens", await nav(dos.page, "rulebook"));
-  await dos.page.waitForTimeout(800);
+  await afterReads(dos.page, 800);
   const book = await tid(dos.page, "rulebook").innerText().catch(() => "");
   if (DEBUG) console.log("[debug] rulebook:\n" + book.slice(0, 1500));
   ok("Medical & Safety is offered as a category of platform clauses",
@@ -160,7 +162,7 @@ try {
 
   group("The load panel cites the clause beside a real seeded bowler's limit");
   ok("the Training screen opens", await nav(dos.page, "training"));
-  await dos.page.waitForTimeout(1000);
+  await afterReads(dos.page, 1000);
   ok("the load panel is drawn for the director of sport", await tid(dos.page, "load-panel").count() === 1);
   const row = await tid(dos.page, `load-row-${KHUMALO}`).innerText().catch(() => "");
   if (DEBUG) console.log("[debug] Khumalo row:\n" + row);

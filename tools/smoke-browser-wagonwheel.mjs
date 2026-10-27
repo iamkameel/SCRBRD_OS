@@ -40,6 +40,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5351);
 const API_PORT = port(8851);
@@ -109,6 +110,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -241,10 +243,10 @@ try {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   const opened = await page.evaluate(() => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
@@ -379,7 +381,7 @@ try {
   await page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
   await page.waitForTimeout(1500);
   await tid(`mc-open-${MATCH}`).first().click({ timeout: 5000 }).catch(() => {});
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   ok("the match opens", await has("match-view"));
   await tap("mc-tab-analytics").catch(() => {});
   await page.waitForTimeout(800);
@@ -423,7 +425,7 @@ try {
   // ── E ────────────────────────────────────────────────────────
   group("E. An old sector-era ball of the left-hander's is worded for him");
   await tap("mc-tab-commentary").catch(() => {});
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   const lines = await page.locator('[data-testid="mc-line"]').evaluateAll((els) => els.map((e) => e.innerText));
   const sector = lines.find((l) => /Naidoo/.test(l) && /cut/.test(l) && /(one run|a single|they take one)/.test(l));
   ok(`the screen's sector 3, for him, is point: "${sector}"`, !!sector && /cut to point/.test(sector) && !/square leg/.test(sector), lines.slice(0, 6).join(" | "));
@@ -433,7 +435,7 @@ try {
   // ── F ────────────────────────────────────────────────────────
   group("F. SCRBRD-102: the wagon-wheel analysis panel — a filter, a chip, sides and areas");
   await tap("mc-tab-analytics").catch(() => {});
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   balls = await serverBalls();   // re-read: E's sector-era row went in by SQL, after the last fetch
   const panel = '[data-testid="wagon-analysis"]';
   await page.locator(panel).scrollIntoViewIfNeeded({ timeout: 4000 }).catch(() => {});

@@ -40,6 +40,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4392);
 const API_PORT = port(8934);
@@ -91,6 +92,7 @@ async function open({ apiBase = API, viewport = { width: 1280, height: 900 }, re
   const ctx = await browser.newContext({ viewport, reducedMotion });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -119,7 +121,7 @@ async function signIn(page, email, password = "") {
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   if (password) await page.fill("#login-password", password);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return /Match Centre|Dashboard/i.test(await text(page));
 }
 async function toUsers(page) {
@@ -334,7 +336,7 @@ try {
   const ph = await open({ reducedMotion: "reduce" });
   ok("the office signs in", await signIn(ph.page, OFFICE) && await toUsers(ph.page));
   await ph.page.setViewportSize({ width: 390, height: 844 });
-  await ph.page.waitForTimeout(800);
+  await afterReads(ph.page, 800);
   const pid = await idOf(ph.page, COACH);
   await tid(ph.page, `account-disable-${pid}`).click({ timeout: 5000 });
   await ph.page.waitForTimeout(300);

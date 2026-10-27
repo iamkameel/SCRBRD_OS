@@ -2229,9 +2229,11 @@ export const READ_QUERIES = {
    * it. A consent the person who gave it cannot inspect is a consent in name,
    * which is the whole reason this read exists.
    *
-   * No filtering here. The table's own policy asks player.profile.read against
-   * the boy, so a guardian sees their own children, a coach sees his side, and
-   * a scout sees nothing he was not already going to see.
+   * No filtering here. The table's own policy (db/115, REACH R-B) is the
+   * boy's family, the office at his school and his own side's coach
+   * (player.development.read at his side), so a guardian sees their own
+   * children, a pupil his own decision and no team-mate's, a coach his side's,
+   * and a scout nothing.
    */
   scouting_consent: {
     text: `select c.player_id, p.full_name, p.team_code, c.consent_state, c.decided_at,
@@ -2242,6 +2244,9 @@ export const READ_QUERIES = {
             order by p.full_name`,
   },
 
+  // The schools a family has named for a boy's record. Read by his family and
+  // by the office of the school a row names (db/115, REACH R-B: "office
+  // only"); the receiving coach reads the passport above, not these rows.
   passport_consents: {
     text: `select c.id, c.player_id, passport_name(c.player_id) as full_name, c.to_school_id, s.name as to_school, c.granted_at, c.withdrawn_at
              from passport_consent c
@@ -3581,6 +3586,18 @@ export async function readResource(pool, secret, bearer, resource, query = {}) {
   const params = def.params ? def.params(query) : [];
   const module = OWNER_OF_READ[resource];
   return runAsPrincipal(pool, secret, bearer, async client => {
+    // NO JIT FOR A GOVERNED READ. Postgres compiles a query to machine code
+    // when its estimated cost passes jit_above_cost (100 000), and every read
+    // here runs through row-level security whose policies call app_can() and
+    // the ball log's per-row functions, each costed at 100. So the estimates
+    // run to hundreds of thousands on a few hundred rows: `career` over the
+    // Awards walk's 545 balls was estimated at 455 547, and spent 1.4 s of its
+    // 2.2 s compiling 1 581 functions before reading a row (EXPLAIN ANALYZE,
+    // 21 Oct 2026). Compiling is CPU, so on a loaded runner it was what pushed
+    // the read past the web client's 10 s abort. A read this size never earns
+    // the compile back. Transaction-local, so it ends with this read, and it
+    // changes how expressions run, never the plan or a single row.
+    await client.query("set local jit = off");
     // THE MODULE GATE, and it is here because this is the only door.
     //
     // Every governed read in the product goes through this function, so a

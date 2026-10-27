@@ -438,12 +438,19 @@ try {
     ok("his mother names Westville", granted.status === 200);
     ok("Westville's coach reads his passport on the screen",
        ((await api(`/api/read/passport?playerId=${PILLAY}`, { token: wesCoach })).body?.rows ?? []).length > 0);
-    ok("...and the consent naming them",
-       ((await api("/api/read/passport_consents", { token: wesCoach })).body?.rows ?? []).length === 1);
+    // REACH R-B, db/115 (Kameel, 16 Oct 2026: "office only"): the consent
+    // row is the family's and the named school's office's; Westville's coach
+    // reads the passport above and not the consent. The export refusal is
+    // asked of the office, who holds the rows, and of the coach as before.
+    ok("...and its office the consent naming them",
+       ((await api("/api/read/passport_consents", { token: wesAdmin })).body?.rows ?? []).length === 1);
+    ok("...which the coach does not read",
+       ((await api("/api/read/passport_consents", { token: wesCoach })).body?.rows ?? []).length === 0);
     ok("THE PASSPORT DOES NOT LEAVE AS A FILE",
        (await exportRaw("passport", wesCoach, `?playerId=${PILLAY}`)).status === 403);
     ok("...nor the list of consents naming another school's boys",
-       (await exportRaw("passport_consents", wesCoach)).status === 403);
+       (await exportRaw("passport_consents", wesAdmin)).status === 403
+       && (await exportRaw("passport_consents", wesCoach)).status === 403);
     // It carries his coach's ratings, which do not leave as a file from the
     // Skills screen either (AH-D4): the same rule by the other door.
     ok("...nor at his own school, where it carries his ratings",

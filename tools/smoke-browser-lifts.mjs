@@ -49,6 +49,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5471);
 const API_PORT = port(5472);
@@ -94,6 +95,7 @@ async function open() {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -120,7 +122,7 @@ async function signIn(page, email) {
   const re = new RegExp(email.replace(/[.]/g, "\\."));
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   // Staff land on the Dashboard; a parent or a pupil lands in their own app (step 4).
   return /Match Centre|Dashboard/i.test(await text(page)) || (await tid(page, "persona-bar").count()) === 1;
 }
@@ -128,7 +130,7 @@ async function go(page, nav) {
   const l = tid(page, `nav-${nav}`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1600);
+  await afterReads(page, 1600);
   return true;
 }
 async function settingsTab(page, id) {
@@ -136,7 +138,7 @@ async function settingsTab(page, id) {
   const t = page.locator(`#settings-tab-${id}`);
   if (!(await t.count())) return false;
   await t.click({ timeout: 6000 });
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 /**
@@ -149,7 +151,7 @@ async function toFixture(page, matchId) {
   if (!(await go(page, "fixtures")) && !(await go(page, "mymatches"))) return false;
   const row = tid(page, `fixture-row-${matchId}`).first();
   try { await row.waitFor({ timeout: 6000 }); await row.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 async function liftsOn(page, matchId) {
@@ -157,7 +159,7 @@ async function liftsOn(page, matchId) {
   const panel = tid(page, "lifts-panel");
   try { await panel.waitFor({ timeout: 6000 }); } catch { return false; }
   const sel = panel.locator("select").first();
-  if (await sel.count()) { await sel.selectOption(matchId).catch(() => {}); await page.waitForTimeout(1200); }
+  if (await sel.count()) { await sel.selectOption(matchId).catch(() => {}); await afterReads(page, 1200); }
   return true;
 }
 /** Text under 12px and controls under 44px, inside one block, as drawn. */
@@ -227,7 +229,7 @@ try {
   ok("...she chooses her number from her son's contact card", await radio.count() === 1);
   await radio.check();
   await tid(drv.page, "lift-declare-submit").click();
-  await drv.page.waitForTimeout(1500);
+  await afterReads(drv.page, 1500);
   ok("...and may drive, in the car she declared", /may offer lifts.*Fortuner.*ND 123 456/.test(await tid(drv.page, "lift-standing").innerText()));
   const df = await floors(drv.page, "lift-declaration-panel");
   ok("the declaration keeps the floors", df.small.length === 0 && df.tiny.length === 0, [...df.small, ...df.tiny].join(" · "));
@@ -240,7 +242,7 @@ try {
   ok("...the form offers both ways by default", /Offer both ways/.test(await tid(drv.page, "lift-form-submit").innerText()));
   await tid(drv.page, "lift-form-note").fill("silver Fortuner, by the scoreboard");
   await tid(drv.page, "lift-form-submit").click();
-  await drv.page.waitForTimeout(1800);
+  await afterReads(drv.page, 1800);
   ok("...and her two driver's cards appear", await drv.page.locator('[data-testid^="lift-driver-card-"]').count() === 2,
      await tid(drv.page, "lift-form-said").innerText().catch(() => ""));
   const [out] = await q(`select id from lift_offer where match_id = $1 and leg = 'out'`, [m.id]);
@@ -258,7 +260,7 @@ try {
      && /T Bekker/.test(offerText) && !/Whitfield,|James|Cele/.test(offerText));
   ok("...told he would be the only other boy in the car", /only other boy in the car/.test(offerText));
   await fam.page.locator(`[data-testid^="lift-ask-${out?.id}-"]`).first().click();
-  await fam.page.waitForTimeout(1500);
+  await afterReads(fam.page, 1500);
   ok("she asks, and the seat reads as waiting for the driver",
      /waiting for the driver/i.test(await tid(fam.page, `lift-offer-${out?.id}`).innerText()));
   const ff = await floors(fam.page, "lifts-panel");
@@ -274,7 +276,7 @@ try {
   await card.locator('[data-testid^="lift-pick-"]').first().check();
   ok("...ticked alone, he is named the only other boy", /only other boy/.test(await card.innerText()));
   await tid(drv.page, `lift-accept-${out?.id}`).click();
-  await drv.page.waitForTimeout(1500);
+  await afterReads(drv.page, 1500);
   ok("...accepted", /confirmed/i.test(await tid(drv.page, `lift-driver-card-${out?.id}`).innerText()),
      `${await tid(drv.page, `lift-driver-card-${out?.id}`).innerText()} | ${JSON.stringify(await q(`select state, guardian_ok_version, driver_ok_version from lift_seat where offer_id = $1`, [out?.id]))}`);
   await go(fam.page, "settings");
@@ -313,7 +315,7 @@ try {
   ok("...one 'Ask for a seat', for himself", await ask.count() === 1
      && await self.locator('[data-testid^="lift-ask-"]').count() === 2);
   await ask.click();
-  await boy.page.waitForTimeout(1500);
+  await afterReads(boy.page, 1500);
   ok("he asks, and his seat reads as waiting for the driver",
      /waiting for the driver/i.test(await tid(boy.page, `lift-offer-${out?.id}`).innerText()));
   const [ps] = await q(`select consent_by from lift_seat where offer_id = $1 and player_id = $2 and state = 'requested'`, [out?.id, PILLAY]);
@@ -321,12 +323,12 @@ try {
   const bf = await floors(boy.page, "lifts-self");
   ok("the pupil's block keeps the floors", bf.small.length === 0 && bf.tiny.length === 0, [...bf.small, ...bf.tiny].join(" · "));
   await tid(boy.page, `lift-withdraw-${out?.id}-${PILLAY}`).click();
-  await boy.page.waitForTimeout(1500);
+  await afterReads(boy.page, 1500);
   ok("...and withdraws it", (await q(`select state from lift_seat where offer_id = $1 and player_id = $2`, [out?.id, PILLAY]))[0]?.state === "withdrawn");
   await q(`update player set born = $2::date where id = $1`, [PILLAY, pillayBorn]);
   await go(boy.page, "settings");
   await toFixture(boy.page, m.id);
-  await boy.page.waitForTimeout(1500);
+  await afterReads(boy.page, 1500);
   ok("at sixteen again, his fixture has no lifts block",
      await tid(boy.page, "lifts-self").count() === 0 && await tid(boy.page, "lifts-panel").count() === 0);
 
@@ -386,7 +388,7 @@ try {
   await tid(drv.page, `lift-left-${DOUT}`).click();
   await drv.page.waitForTimeout(1200);
   await tid(drv.page, `lift-handover-${sOut}`).click();
-  await drv.page.waitForTimeout(1200);
+  await afterReads(drv.page, 1200);
   ok("she marks him in, the lift as left, and him handed over", /In the car .*Handed over/.test(await tid(drv.page, `lift-day-marks-${sOut}`).innerText().catch(() => "")),
      await tid(drv.page, `lift-day-marks-${sOut}`).innerText().catch(() => ""));
   const dcf = await floors(drv.page, `lift-day-driver-${DOUT}`);
@@ -402,11 +404,11 @@ try {
   const ef = await floors(co.page, `lift-expected-${d.id}`);
   ok("the expected list keeps the floors", ef.small.length === 0 && ef.tiny.length === 0, [...ef.small, ...ef.tiny].join(" · "));
   await tid(co.page, `lift-with-us-${sOut}`).click();
-  await co.page.waitForTimeout(1500);
+  await afterReads(co.page, 1500);
   ok("he says \"with us\"", (await q(`select acknowledged_at from lift_seat where id = $1`, [sOut]))[0]?.acknowledged_at != null
      && await tid(co.page, `lift-with-us-${sOut}`).count() === 0);
   await tid(drv.page, `lift-arrived-${DOUT}`).click();
-  await drv.page.waitForTimeout(1500);
+  await afterReads(drv.page, 1500);
   ok("the driver arrives and the way there is done", (await q(`select state from lift_offer where id = $1`, [DOUT]))[0]?.state === "done");
 
   // The way home: both in, left; T Bekker handed over, R Pillay not collected.
@@ -416,7 +418,7 @@ try {
   await tid(drv.page, `lift-handover-${sBack}`).click();
   await drv.page.waitForTimeout(1000);
   await tid(drv.page, `lift-notcollected-${sBoy}`).click();
-  await drv.page.waitForTimeout(1200);
+  await afterReads(drv.page, 1200);
   ok("on the way home she hands T Bekker over and marks R Pillay not collected",
      (await q(`select handover_kind from lift_seat where id = $1`, [sBoy]))[0]?.handover_kind === "not_collected");
 
@@ -432,7 +434,7 @@ try {
   const ff2 = await floors(fam.page, `lift-day-family-${DBACK}`);
   ok("the family's day card keeps the floors", ff2.small.length === 0 && ff2.tiny.length === 0, [...ff2.small, ...ff2.tiny].join(" · "));
   await tid(fam.page, `lift-collected-${sBack}`).click();
-  await fam.page.waitForTimeout(1500);
+  await afterReads(fam.page, 1500);
   ok("she confirms she has him", (await q(`select acknowledged_by from lift_seat where id = $1`, [sBack]))[0]?.acknowledged_by != null
      && /Received/.test(await tid(fam.page, `lift-day-marks-${sBack}`).innerText().catch(() => "")));
 
@@ -447,12 +449,12 @@ try {
   ok("the exceptions keep the floors", xf.small.length === 0 && xf.tiny.length === 0, [...xf.small, ...xf.tiny].join(" · "));
   await tid(off.page, `lift-resolution-${sBoy}`).selectOption("school_office");
   await tid(off.page, `lift-resolve-${sBoy}`).click();
-  await off.page.waitForTimeout(1500);
+  await afterReads(off.page, 1500);
   ok("she resolves it: with the school office, and the line goes",
      (await q(`select resolution from lift_seat where id = $1`, [sBoy]))[0]?.resolution === "school_office"
      && await tid(off.page, `lift-exception-${sBoy}`).count() === 0);
   await tid(drv.page, `lift-arrived-${DBACK}`).click();
-  await drv.page.waitForTimeout(1500);
+  await afterReads(drv.page, 1500);
   ok("the driver arrives home and the way home is done", (await q(`select state from lift_offer where id = $1`, [DBACK]))[0]?.state === "done");
   await q(`update player set born = $2::date where id = $1`, [PILLAY, pillayBorn]);
 
@@ -470,7 +472,7 @@ try {
   const pf2 = await floors(off.page, "lift-purge-panel");
   ok("the purge list keeps the floors", pf2.small.length === 0 && pf2.tiny.length === 0, [...pf2.small, ...pf2.tiny].join(" · "));
   await tid(off.page, `lift-purge-${oldOffer.id}`).click();
-  await off.page.waitForTimeout(1500);
+  await afterReads(off.page, 1500);
   ok("she purges it, and a row of counts remains", (await q(`select count(*)::int n from lift_offer where id = $1`, [oldOffer.id]))[0].n === 0
      && (await q(`select count(*)::int n from lift_purge_log where school_id = $1`, [HIL]))[0].n >= 1);
 
@@ -479,7 +481,7 @@ try {
   await grant(false);
   await go(fam.page, "settings");
   await toFixture(fam.page, m.id);
-  await fam.page.waitForTimeout(1500);
+  await afterReads(fam.page, 1500);
   ok("Bekker's fixture has no lifts block", await tid(fam.page, "lifts-panel").count() === 0);
 
   for (const [who, c] of [["principal", head], ["driver", drv], ["family", fam], ["office", off], ["coach", co], ["pupil", boy]]) {
