@@ -4,7 +4,7 @@
 --
 -- HAND-WRITTEN. Five small rules about children's data, in four functions,
 -- each proved by db/99 §95. No table changes; nothing here widens a read.
--- Rules 1, 2, 3 and 5 carry Kameel's answers of 28 October 2026 to the
+-- Each rule carries Kameel's answers of 28 October 2026 to the
 -- red-team of that day (READERS_child_data §7, the decisions of 28 Oct).
 --
 -- 1. THE PUBLIC NEWS SCAN READS EVERY PART OF A NAME (PUBLIC_DATA §1 rules
