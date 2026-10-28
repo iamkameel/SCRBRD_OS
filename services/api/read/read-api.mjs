@@ -434,10 +434,11 @@ export const READ_QUERIES = {
   // one row per school, naming the accounts that came back.
   //
   // `status_changed_at` (slice 2, db/90): when the account last changed state,
-  // read from account_status_change under ITS policy (user.invite or
-  // audit.read at the school, never the person), so People says "disabled
-  // {date}" to the office and nothing more to a reader who holds user.read
-  // alone: for them, and for an account disabled before db/90, it is null.
+  // read from account_status_change under ITS policy (user.invite at the
+  // school, never the person; audit.read no longer opens it, READERS Q2,
+  // db/116), so People says "disabled {date}" to the office and nothing more
+  // to a reader who holds user.read alone: for them, and for an account
+  // disabled before db/90, it is null.
   accounts: {
     text: `select id, school_id, email, name, role, active, last_seen_at, teams, player_id,
                   id = app_user_id() as mine,
@@ -461,7 +462,9 @@ export const READ_QUERIES = {
    * parent, a coach and the DSO (who holds neither: SAFEGUARDING §1 item 2;
    * she reads a family through safeguarding_family(), inside a concern) get
    * nothing. `ending_reason` comes through guardian_link_ending's own policy
-   * (D13): guardian.link.manage, or audit.read without safeguarding.concern.read.
+   * (D13): guardian.link.manage alone since db/116 (READERS_child_data Q2:
+   * audit.read opens the access log and no reason). A reader who holds
+   * user.role.assign and not that reads the link revoked, with no ending.
    *
    * NEVER PLATFORM-WIDE (Kameel, 15 October 2026): a platform-wide holder
    * (the platform administrator, the owner's key) reads a child's links only
@@ -878,15 +881,12 @@ export const READ_QUERIES = {
    * no longer says what for, which discloses the fact and withholds the only
    * part that would let a reader weigh it.
    *
-   * LEFT JOIN on player, not JOIN, and the difference is load-bearing.
-   * `competitionadmin` holds discipline.read and no player capability at all,
-   * so the join's own row-level security yields nothing for them — an INNER
-   * join would silently return an empty list to the one reader the
-   * platform-wide arm of this policy exists for, and it would look like a
-   * school with a clean record rather than a refusal. What comes back instead
-   * is the record without the child's name, which is exactly the line
-   * player.profile.read draws: the matter is the league's business and the
-   * roster is the school's.
+   * LEFT JOIN on player, not JOIN. A reader who holds discipline.read and
+   * not player.profile.read over the boy (the owner's key is the only such
+   * reader since READERS_child_data Q10 took the league's discipline.read
+   * away, db/116) gets the record without the child's name rather than an
+   * empty list that looks like a clean record. The league reads its own
+   * fixtures' records through `competition_discipline` below.
    *
    * `playerId`, optional, narrows to one child — which is how the Conduct tab
    * on a boy's profile asks. It is a narrowing, never a widening (RLS has
@@ -912,6 +912,57 @@ export const READ_QUERIES = {
       }
       return [id];
     },
+  },
+
+  /**
+   * A LEAGUE'S CONDUCT RECORDS (READERS_child_data Q10, Kameel, 21 Oct 2026;
+   * db/116). The records that arose from a fixture in a competition the
+   * reader organises, through competition_discipline_records(): the umpire's
+   * report on its own match, never a school's file and never a matter filed
+   * without a fixture. competition.discipline.read at the competition's
+   * organiser is the gate, inside the function; nothing here filters.
+   *
+   * The function writes the log itself (logsItself): one row per school
+   * whose children it names, under that school, so each school's auditor
+   * sees the league's read of its boys in its own log. `competitionId`,
+   * optional, narrows to one competition; without it, every competition the
+   * reader organises.
+   */
+  competition_discipline: {
+    text: `select id, player_id, full_name, school_id, school_name, match_id, competition_id,
+                  opponent, starts_at, occurred_on, body, state, outcome, created_at, updated_at
+             from competition_discipline_records($1::uuid)`,
+    params: (q) => {
+      const id = q?.competitionId || null;
+      if (id && !UUID_RE.test(id)) {
+        const e = /** @type {DressedError} */ (new Error("bad_param:competitionId")); e.status = 400; throw e;
+      }
+      return [id];
+    },
+    logsItself: true,
+  },
+
+  /**
+   * A COACH'S OWN SIDE'S CONDUCT RECORDS (READERS_child_data Q5, Kameel,
+   * 21 Oct 2026: "own side, logged"; db/116). Through side_discipline_records():
+   * the records of the boys on the side his assignment names, as each boy
+   * stands today, never a boy who has left. discipline.side.read is the gate,
+   * inside the function; a coach holds no discipline.read. The function writes
+   * the log itself (logsItself), one row per school per call that returns a
+   * record. `playerId`, optional, narrows to one boy.
+   */
+  side_discipline: {
+    text: `select id, player_id, full_name, team_code, school_id, match_id,
+                  occurred_on, body, state, outcome, created_at, updated_at
+             from side_discipline_records($1::uuid)`,
+    params: (q) => {
+      const id = q?.playerId || null;
+      if (id && !UUID_RE.test(id)) {
+        const e = /** @type {DressedError} */ (new Error("bad_param:playerId")); e.status = 400; throw e;
+      }
+      return [id];
+    },
+    logsItself: true,
   },
 
   // The newsfeed. Same rule as every read here: the policy on news_post has
@@ -3666,6 +3717,11 @@ export function liveResources() { return Object.keys(READ_QUERIES); }
 export const NOT_EXPORTED = Object.freeze(new Set([
   "skills", "skills_history", "ratings", "notes", "coaching_points", "targets", "development_since",
   "opposition_squad", "opposition_context", "passport", "passport_consents", "scouting_candidates",
+  // A league's read of other schools' boys' conduct (db/116): the standing
+  // file the narrow door exists to prevent.
+  "competition_discipline",
+  // A coach's read of his side's conduct (db/116): read on a screen, not filed.
+  "side_discipline",
 ]));
 
 /**

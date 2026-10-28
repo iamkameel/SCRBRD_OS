@@ -212,6 +212,19 @@ group("H. The template a school downloads is a file the importer accepts");
   ok("...with no column the importer does not read", mapped.unknown.length === 0);
   const checked = def.resolve?.(mapped.rows[0].values, null);
   ok("...and a new player from it passes the birth-date rule", checked?.ok === true);
+
+  // db/117 (Kameel, 22 October 2026): the day a boy joined the side the row
+  // names, read as a date and never guessed, and handed to the database's
+  // import_joined_on() before the row's write, which db/08's trigger reads.
+  ok("joined_on is a column of the template", def.template.includes("joined_on") && !!def.spec.joined_on);
+  const dated = mapRows(parseCsv("full_name,team_code,born,joined_on\nA,1XI,2011-04-07,2026-02-01\n"), def.spec);
+  ok("...a date in it is read as given", dated.errors.length === 0 && dated.rows[0]?.values.joined_on === "2026-02-01");
+  const guessed = mapRows(parseCsv("full_name,team_code,born,joined_on\nA,1XI,2011-04-07,01/02/2026\n"), def.spec);
+  ok("...a day/month one is refused on its column", guessed.errors.some((e) => e.column === "joined_on"));
+  const blank = mapRows(parseCsv("full_name,team_code,born\nA,1XI,2011-04-07\n"), def.spec);
+  ok("...and a file without it is still a file", blank.errors.length === 0 && blank.rows[0]?.values.joined_on === null);
+  ok("...and the write is dated by import_joined_on(), set for every row",
+     /set_config\('app\.effective_on', coalesce\(import_joined_on\(\$1, \$2\)::text, ''\), true\)/.test(def.joinedOn ?? ""));
 }
 
 group("I. Guardians: each row is enrolment, and the import refuses rather than guesses");

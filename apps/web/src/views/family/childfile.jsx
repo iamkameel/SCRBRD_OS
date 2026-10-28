@@ -181,8 +181,14 @@ const SAY = {
  * the `players` read, masked per row by the policy. The ID number is behind
  * a tap and never in a list: it is level 4 and a phone is left on tables.
  * The one place a date of birth is drawn — her own child, on her own screen.
+ *
+ * `self`: the pupil's own Me. His ID number is never drawn there, not even
+ * behind a tap (READERS_child_data Q16, 21 Oct 2026): selfaccess no longer
+ * holds player.identity.read (db/116), and the office gives it to him on
+ * request. The row is left out, not shown as "Not on record", which would be
+ * untrue.
  */
-export function TheirRecord({ child, role }) {
+export function TheirRecord({ child, role, self = false }) {
   const { rows, loading, error } = useLive("players", role);
   const p = rows.find((r) => r.id === child.id) ?? null;
   const [showId, setShowId] = useState(false);
@@ -207,7 +213,7 @@ export function TheirRecord({ child, role }) {
             <dd style={{ ...T.role.body, color: T.content.primary, margin: 0 }}>{v}</dd>
           </div>
         ))}
-        {p.idNumber !== undefined && (
+        {!self && p.idNumber !== undefined && (
           <div style={{ display: "grid", gridTemplateColumns: "minmax(110px, 150px) 1fr", gap: T.space.md, alignItems: "center" }}>
             <dt style={{ ...T.role.label, color: T.content.secondary }}>ID number</dt>
             <dd style={{ margin: 0 }}>

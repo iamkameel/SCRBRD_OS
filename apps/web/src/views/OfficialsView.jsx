@@ -96,7 +96,7 @@ function DutyAuthority({ appointment: a, canAssign, live, suspension, onDone }) 
     <div data-testid="duty-authority" data-duty={a.id} data-state={state}
          style={{ padding: "0 13px 10px", display: "flex", flexDirection: "column", gap: "6px" }}>
       {a.suspended && (
-        <div style={{ fontFamily: D.body, fontSize: "11px", color: D.roseText }}>
+        <div style={{ fontFamily: D.body, fontSize: "12px", color: D.roseText }}>
           Suspended — this duty's authority grants nothing until it is lifted.
           {suspension && ` ${suspension.suspendedBy ?? "The office"}: “${suspension.reason}”`}
         </div>
@@ -285,7 +285,7 @@ function OfficialsView({ role }) {
                 <button key={d} onClick={() => { setDuty(d); setSel(null); }} className="pressBtn"
                   style={{ padding: "6px 13px", borderRadius: D.pill, cursor: "pointer",
                     background: on ? c + "18" : D.surf1, border: `1px solid ${on ? c + "44" : D.border}`,
-                    fontFamily: D.head, fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em",
+                    fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.06em",
                     color: on ? D.textPrimary : D.textMuted }}>
                   {d === "all" ? "ALL" : <><Icon name={DUTY[d].icon}/> {DUTY[d].label.toUpperCase()}</>}
                 </button>
@@ -304,7 +304,7 @@ function OfficialsView({ role }) {
             <div className="sc-grid-2" style={{ alignItems: "start" }}>
               <Card>
                 <div style={{ padding: "13px 16px", borderBottom: `1px solid ${D.border}` }}>
-                  <span style={{ fontFamily: D.head, fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em",
+                  <span style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.1em",
                     textTransform: "uppercase", color: D.textMuted }}>
                     {shown.length} {shown.length === 1 ? "official" : "officials"}
                   </span>
@@ -324,7 +324,7 @@ function OfficialsView({ role }) {
                             color: D.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {p.name}
                           </div>
-                          <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted,
+                          <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {[...p.duties].map((d) => DUTY[d]?.label ?? d).join(" · ")}
                             {p.duties.size === 0 && p.registered ? "Has not stood yet" : ""}
@@ -360,14 +360,14 @@ function OfficialsView({ role }) {
                       {/* An account link is shown as a fact, not as a contact
                           card: an official's email is their own, and this
                           screen is about who stood, not how to reach them. */}
-                      <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted, marginTop: "2px" }}>
+                      <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginTop: "2px" }}>
                         {selected.personId ? "Has an account on SCRBRD" : "No account — named on the appointment"}
                       </div>
                     </div>
                   </div>
                   {canManage && live && selected.registered && (
                     <div data-testid="official-manage" style={{ marginTop: "12px", padding: "12px", borderRadius: D.md, border: `1px solid ${D.border}`, background: D.surf2 }}>
-                      <div style={{ fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: D.textMuted, marginBottom: "8px" }}>Accreditation</div>
+                      <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: D.textMuted, marginBottom: "8px" }}>Accreditation</div>
                       <Select label="Level" value={accredit.level} onChange={(v) => setAccredit((a) => ({ ...a, level: v }))}
                               options={Object.entries(LEVEL).map(([value, l]) => ({ value, label: l.label }))}/>
                       <Input label="Valid from" type="date" value={accredit.validFrom} onChange={(v) => setAccredit((a) => ({ ...a, validFrom: v }))}/>
@@ -402,7 +402,7 @@ function OfficialsView({ role }) {
                     <Pill color={D.textMuted}><Icon name="calendar-days"/> Last {when(selected.lastAt)}</Pill>
                   </div>
 
-                  <div style={{ fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em",
+                  <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.1em",
                     textTransform: "uppercase", color: D.textMuted, margin: "0 0 8px" }}>
                     Appointments ({selected.fixtures})
                   </div>
@@ -427,7 +427,7 @@ function OfficialsView({ role }) {
                                     separate question with its own answer. */}
                                 {fx ? `${fx.homeTeam} vs ${fx.awayTeam}` : "A fixture"}
                               </div>
-                              <div style={{ fontFamily: D.body, fontSize: "10px", color: D.textMuted }}>
+                              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
                                 {fx?.date ?? when(a.appointedAt)}{fx?.venue ? ` · ${fx.venue}` : ""}
                               </div>
                             </div>

@@ -107,7 +107,7 @@ function CompetitionsView({ role, homeBar = null }) {
             background:comp?.id===c.id?D.amber+"14":"transparent",cursor:"pointer",textAlign:"left",
           }}>
             <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:comp?.id===c.id?600:400,color:comp?.id===c.id?D.textPrimary:D.textSecondary}}>{c.name}</div>
-            <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginTop:"2px",textTransform:"uppercase"}}>{c.type} · {c.format} · {c.ageGroup}</div>
+            <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,marginTop:"2px",textTransform:"uppercase"}}>{c.type} · {c.format} · {c.ageGroup}</div>
           </button>
         ))}
       </div>
@@ -138,7 +138,7 @@ function CompetitionsView({ role, homeBar = null }) {
                 <div>
                   <div style={{padding:"10px 16px",background:D.surf2,display:"grid",gridTemplateColumns:"var(--g-league,2fr 1fr 1fr 1fr 1fr 1fr 1fr)",gap:"8px"}}>
                     {["Team","P","W","L","NR","Pts","NRR"].map(h=>(
-                      <div key={h} style={{fontFamily:D.mono,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.06em",textAlign:h==="Team"?"left":"center"}}>{h}</div>
+                      <div key={h} style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.06em",textAlign:h==="Team"?"left":"center"}}>{h}</div>
                     ))}
                   </div>
                   {comp.table.map((t,i)=>(
@@ -161,8 +161,8 @@ function CompetitionsView({ role, homeBar = null }) {
                   <div style={{display:"flex",gap:"8px"}}>
                     {comp.rounds.map(r=>(
                       <div key={r} style={{padding:"8px 16px",borderRadius:D.md,background:comp.currentRound===r?D.amber+"18":D.surf2,border:`1px solid ${comp.currentRound===r?D.amber+"44":D.border}`,textAlign:"center"}}>
-                        <div style={{fontFamily:D.mono,fontSize:"11px",fontWeight:700,color:comp.currentRound===r?D.amber:D.textMuted}}>{r}</div>
-                        {comp.currentRound===r&&<div style={{fontFamily:D.body,fontSize:"9px",color:D.amber,marginTop:"3px"}}>Current</div>}
+                        <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:comp.currentRound===r?D.amber:D.textMuted}}>{r}</div>
+                        {comp.currentRound===r&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.amber,marginTop:"3px"}}>Current</div>}
                       </div>
                     ))}
                   </div>
@@ -181,9 +181,9 @@ function CompetitionsView({ role, homeBar = null }) {
                 <Card key={m.id} sx={{padding:"12px 16px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
                     <StatusDot status={m.status}/>
-                    <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,flexShrink:0}}>{m.date}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,flexShrink:0}}>{m.date}</span>
                     <span style={{flex:1,fontFamily:D.body,fontSize:"12px",fontWeight:500,color:D.textPrimary}}>{m.homeTeam} vs {m.awayTeam}</span>
-                    {m.result&&<span style={{fontFamily:D.body,fontSize:"11px",color:m.result.includes("Hilton")?D.emerald:D.rose}}>{m.result}</span>}
+                    {m.result&&<span style={{fontFamily:D.body,fontSize:"12px",color:m.result.includes("Hilton")?D.emerald:D.rose}}>{m.result}</span>}
                     {m.status==="upcoming"&&<Badge color={D.sky}>upcoming</Badge>}
                   </div>
                 </Card>
@@ -196,32 +196,32 @@ function CompetitionsView({ role, homeBar = null }) {
               <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"12px"}}>Hilton Performance</div>
               {[["Matches Played","5"],["Wins","4"],["Losses","1"],["Run Rate","+1.24"],["Highest Score","186/6"],["Lowest Score","142/3"]].map(([l,v])=>(
                 <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${D.border}`}}>
-                  <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{l}</span>
-                  <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textPrimary,fontWeight:500}}>{v}</span>
+                  <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{l}</span>
+                  <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textPrimary,fontWeight:500}}>{v}</span>
                 </div>
               ))}
             </Card>
             <Card sx={{padding:"14px"}}>
               <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"12px"}}>Top Performers</div>
               <div style={{marginBottom:"10px"}}>
-                <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"6px"}}>BATTING</div>
+                <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"6px"}}>BATTING</div>
                 {PLAYERS.filter(p=>p.team==="1XI").sort((a,b)=>b.avg-a.avg).slice(0,3).map((p,i)=>(
                   <div key={p.id} style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}}>
-                    <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted,width:"14px"}}>{i+1}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,width:"14px"}}>{i+1}</span>
                     <Avatar name={p.name} size={24} color={D.sky}/>
-                    <span style={{flex:1,fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{p.name.split(" ").pop()}</span>
-                    <span style={{fontFamily:D.mono,fontSize:"11px",color:D.amber,fontWeight:500}}>{p.avg}</span>
+                    <span style={{flex:1,fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{p.name.split(" ").pop()}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",color:D.amber,fontWeight:500}}>{p.avg}</span>
                   </div>
                 ))}
               </div>
               <div>
-                <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"6px"}}>BOWLING</div>
+                <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"6px"}}>BOWLING</div>
                 {PLAYERS.filter(p=>p.team==="1XI"&&p.wkts>0).sort((a,b)=>b.wkts-a.wkts).slice(0,3).map((p,i)=>(
                   <div key={p.id} style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}}>
-                    <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted,width:"14px"}}>{i+1}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,width:"14px"}}>{i+1}</span>
                     <Avatar name={p.name} size={24} color={D.violet}/>
-                    <span style={{flex:1,fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{p.name.split(" ").pop()}</span>
-                    <span style={{fontFamily:D.mono,fontSize:"11px",color:D.violetText,fontWeight:500}}>{p.wkts}wkts</span>
+                    <span style={{flex:1,fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{p.name.split(" ").pop()}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",color:D.violetText,fontWeight:500}}>{p.wkts}wkts</span>
                   </div>
                 ))}
               </div>

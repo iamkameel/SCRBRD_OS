@@ -105,7 +105,7 @@ export function PublishPanel({ matchId, role, schools = null }) {
       {sides.find((s) => s.side === "home")?.published && pagesOn !== false && (
         <GroundDisplaySetup matchId={matchId} sides={sides}/>
       )}
-      {said && <div role="alert" data-testid="publish-refused" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginTop: "8px" }}>{said}</div>}
+      {said && <div role="alert" data-testid="publish-refused" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose), marginTop: "8px" }}>{said}</div>}
     </Card>
   );
 }

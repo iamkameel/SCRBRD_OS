@@ -69,7 +69,7 @@ ticket takes a SCRBRD number, and that number is noted here.
 | I12 | Notification read receipts persist per person, and counts agree everywhere | Sonnet + Opus review | done · merged #97 (2026-10-08), db/89 live |
 | I13 | The scorer's preparation and resume home, with appointments | Opus | done · merged #95 |
 | I14–I16 | Acceptance evidence on a real database: cross-school and child refusals, two-device offline scoring, the deployed revision, a backup restore | Opus | 13 of 18 covered, plus 9, 12, 14 closed by #99 (2026-10-08); 16 and 17 wait for the backup drill |
-| I17 | Push: a supported FCM token refresh, or "unavailable" stated plainly | Opus | not for the pilot (Kameel, 15 Oct) |
+| I17 | Push: a supported FCM token refresh, or "unavailable" stated plainly | Opus | not for the pilot (Kameel, 15 Oct). Changed 23 Oct 2026 (Kameel): notifications S2–S5, push included, before the pilot; see NOTIFICATIONS.md. |
 | I19 | Medical review worklist, only if clinical work is in pilot scope | Fable (SCRBRD-110 family) | in scope; design approved; slice 0 merged (#101); #120 merged; slices A+C (#166, db/111 live) and B (#172) in the wave 3 merges, 21 Oct; slices A+C merged #166 and B merged #172 (22 Oct); db/111 live |
 | I20 | The parent's action list per child | Fable (redesign step 4); design started 7 Oct | design approved; A0 merged #81; A1 merged #106; the rest later |
 | I21 | Honesty labels (demo / practice / read-only / official), and success messages that reflect the actual acknowledgement | Sonnet | done · merged #91 and #98 (2026-10-08); "official" waits for the official result design's slice 1; S1 merged #182 (22 Oct), db/114 live on both databases |

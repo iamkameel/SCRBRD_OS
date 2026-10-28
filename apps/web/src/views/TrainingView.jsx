@@ -92,7 +92,7 @@ function TrainingView({ role }) {
                 <button key={v} onClick={()=>setView(v)} className="pressBtn" style={{
                   padding:"5px 14px",borderRadius:D.pill,border:"none",cursor:"pointer",
                   background:view===v?D.gradLive:"transparent",
-                  color:view===v?T.light.ink:D.textMuted,fontFamily:D.head,fontSize:"10px",fontWeight:700,
+                  color:view===v?T.light.ink:D.textMuted,fontFamily:D.head,fontSize:"12px",fontWeight:700,
                   letterSpacing:"0.06em",textTransform:"capitalize",
                 }}>{v}</button>
               ))}
@@ -129,7 +129,7 @@ function TrainingView({ role }) {
                   <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
                     <div style={{width:"48px",textAlign:"center",flexShrink:0,padding:"6px",background:typeCol+"14",borderRadius:D.md,border:`1px solid ${typeCol}22`}}>
                       <div style={{fontFamily:D.mono,fontSize:"15px",fontWeight:700,color:typeCol}}>{new Date(s.date).getDate()}</div>
-                      <div style={{fontFamily:D.body,fontSize:"8px",color:D.textMuted,textTransform:"uppercase"}}>{new Date(s.date).toLocaleString("en",{month:"short"})}</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,textTransform:"uppercase"}}>{new Date(s.date).toLocaleString("en",{month:"short"})}</div>
                     </div>
                     <div style={{flex:1}}>
                       <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"3px"}}>
@@ -137,17 +137,17 @@ function TrainingView({ role }) {
                         {isToday&&<Badge color={D.emerald}>Today</Badge>}
                         <Badge color={typeCol}>{s.type}</Badge>
                       </div>
-                      <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
                         {s.team} · {s.time} · {s.duration}min · {s.venue} · {coach?.name||"Coach"}
                       </div>
                     </div>
                     <div style={{textAlign:"center"}}>
                       <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.amber}}>{registerFailed?"—":roll.length}</div>
-                      <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>attending</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>attending</div>
                     </div>
                   </div>
                   <PlanList lines={planRead.rows.filter(l=>l.sessionId===s.id)} other={s.drills??[]}/>
-                  {s.notes&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,fontStyle:"italic",background:D.surf2,padding:"7px 10px",borderRadius:D.sm}}><Icon name="notebook-pen"/> {s.notes}</div>}
+                  {s.notes&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,fontStyle:"italic",background:D.surf2,padding:"7px 10px",borderRadius:D.sm}}><Icon name="notebook-pen"/> {s.notes}</div>}
                   <div style={{display:"flex",gap:"4px",marginTop:"10px"}}>
                     {roll.map(pid=>{
                       const p=PLAYERS.find(pl=>pl.id===pid) ?? { name: REGISTER.find(a=>a.playerId===pid)?.name };
@@ -181,10 +181,10 @@ function TrainingView({ role }) {
                   <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{d.name}</span>
                   <Badge color={typeColor(d.category)}>{d.category}</Badge>
                 </div>
-                <p style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,lineHeight:1.5,marginBottom:"10px"}}>{d.desc}</p>
+                <p style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,lineHeight:1.5,marginBottom:"10px"}}>{d.desc}</p>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <Pill color={typeColor(d.category)}><Icon name="timer"/> {d.duration}min</Pill>
-                  {canEdit&&<button style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"11px",color:D.sky}}>Add to session</button>}
+                  {canEdit&&<button style={{background:"none",border:"none",cursor:"pointer",fontFamily:D.body,fontSize:"12px",color:D.sky}}>Add to session</button>}
                 </div>
               </Card>
             ))}
@@ -216,7 +216,7 @@ function TrainingView({ role }) {
             <Select label="Venue" value={ns.venue} onChange={(v)=>setNs(x=>({...x,venue:v}))} options={["Nets 1-3","Nets 4-5","Nets 6-7","Main Field","No.1 Ground"]}/>
           </div>
           <Input label="Notes" value={ns.notes} onChange={(v)=>setNs(x=>({...x,notes:v}))} placeholder="Session objectives and focus areas..."/>
-          {nsSaid&&<div role="alert" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.rose),marginBottom:"8px"}}>{nsSaid}</div>}
+          {nsSaid&&<div role="alert" style={{fontFamily:D.body,fontSize:"12px",color:textOn(D.rose),marginBottom:"8px"}}>{nsSaid}</div>}
           <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
             <Btn variant="ghost" onClick={()=>{setAddModal(false);setNsSaid("");}}>Cancel</Btn>
             <Btn onClick={async ()=>{
@@ -253,36 +253,36 @@ function LoadPanel({ rows }) {
       <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
         <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Bowling & training load</div>
         <Badge color={flagged?D.rose:D.emerald}>{flagged?`${flagged} to look at`:"nothing flagged"}</Badge>
-        <span style={{marginLeft:"auto",fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>overs this week · this month · longest spell · sessions</span>
+        <span style={{marginLeft:"auto",fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>overs this week · this month · longest spell · sessions</span>
       </div>
       <div style={{overflowX:"auto"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontFamily:D.body,fontSize:"11px"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontFamily:D.body,fontSize:"12px"}}>
           <tbody>
             {rows.map(r=>(
               <Fragment key={r.playerId}>
               <tr data-testid={`load-row-${r.playerId}`} style={{borderTop:`1px solid ${D.border}`}}>
                 <td style={{padding:"6px 8px",color:D.textPrimary,fontWeight:600,whiteSpace:"nowrap"}}>{r.name}
-                  <span style={{marginLeft:"6px",fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{r.ageBand}{r.pace&&r.maxSpell?` · ${r.maxSpell}/${r.maxDay}`:""}</span>
+                  <span style={{marginLeft:"6px",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{r.ageBand}{r.pace&&r.maxSpell?` · ${r.maxSpell}/${r.maxDay}`:""}</span>
                   {r.clause&&<button type="button" data-testid={`load-clause-${r.playerId}`}
                     aria-expanded={openClause===r.playerId}
                     onClick={()=>setOpenClause(openClause===r.playerId?null:r.playerId)}
                     title={`${r.clause.code} — ${r.clause.title}`}
                     style={{marginLeft:"6px",padding:"1px 6px",borderRadius:D.pill,cursor:"pointer",
-                      border:`1px solid ${D.border}`,background:"transparent",fontFamily:D.mono,fontSize:"9px",color:D.textSecondary}}>
+                      border:`1px solid ${D.border}`,background:"transparent",fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>
                     {r.clause.code} · {r.clause.title}</button>}</td>
                 <td style={{padding:"6px 8px",fontFamily:D.mono,color:D.textSecondary,whiteSpace:"nowrap"}}>{r.overs7d} · {r.overs28d} · {r.longestSpell7d}</td>
                 <td style={{padding:"6px 8px",fontFamily:D.mono,color:D.textSecondary,whiteSpace:"nowrap"}}>{r.sessions7d} ({r.minutes7d}m)</td>
                 <td style={{padding:"6px 8px"}}>
-                  <span style={{fontFamily:D.mono,fontSize:"9px",textTransform:"uppercase",padding:"2px 7px",borderRadius:D.pill,
+                  <span style={{fontFamily:D.mono,fontSize:"12px",textTransform:"uppercase",padding:"2px 7px",borderRadius:D.pill,
                     background:(LOAD_TONE[r.loadState]??D.textMuted)+"14",border:`1px solid ${(LOAD_TONE[r.loadState]??D.textMuted)}33`,color:textOn(LOAD_TONE[r.loadState]??D.textMuted)}}>{r.loadState}{r.acwr!=null?` ${r.acwr}`:""}</span>
-                  {r.breaches28d>0&&<span style={{marginLeft:"6px",fontFamily:D.mono,fontSize:"9px",color:D.roseText}}>{r.breaches28d} directive breach{r.breaches28d>1?"es":""}</span>}
+                  {r.breaches28d>0&&<span style={{marginLeft:"6px",fontFamily:D.mono,fontSize:"12px",color:D.roseText}}>{r.breaches28d} directive breach{r.breaches28d>1?"es":""}</span>}
                 </td>
               </tr>
               {r.clause&&openClause===r.playerId&&(
                 <tr data-testid={`load-clause-text-${r.playerId}`}>
                   <td colSpan={4} style={{padding:"4px 8px 10px",color:D.textSecondary,lineHeight:1.5,whiteSpace:"normal"}}>
-                    <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textPrimary}}>
-                      {r.clause.code} · {r.clause.title} <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,fontWeight:400}}>{r.clause.severity}</span></div>
+                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>
+                      {r.clause.code} · {r.clause.title} <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,fontWeight:400}}>{r.clause.severity}</span></div>
                     <div style={{marginTop:"2px"}}>{r.clause.body}</div>
                   </td>
                 </tr>
@@ -333,7 +333,7 @@ function AddDrill({ schools, onAdded }) {
         <Select label="Category" value={category} onChange={setCategory} options={CATEGORIES}/>
         <Input label="Minutes" value={minutes} onChange={setMinutes} type="number" placeholder="20"/>
       </div>
-      {said&&<div role="alert" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.rose),marginBottom:"8px"}}>{said}</div>}
+      {said&&<div role="alert" style={{fontFamily:D.body,fontSize:"12px",color:textOn(D.rose),marginBottom:"8px"}}>{said}</div>}
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
         <Btn variant="ghost" size="sm" onClick={()=>{setOpen(false);setSaid("");}}>Cancel</Btn>
         <Btn size="sm" onClick={add} disabled={busy||name.trim().length<3||!schoolId}>Add it</Btn>

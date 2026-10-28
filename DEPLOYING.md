@@ -1888,6 +1888,150 @@ start without db/115 (`expected-migrations.json`). No route changes; the
 Settings Passport and scouting cards say plainly whose list it is.
 <!-- ── end db/115 ── -->
 
+#### Who reads a child's data (db/116)
+
+`db/116_readers_privacy.sql` builds the decisions of
+`docs/design/READERS_child_data.md` §7 that need SQL: Kameel's sixteen calls
+of 21 October 2026, and two findings of that day's red-team audit (A1, A5).
+Each narrows who reads a piece of a child's data to the people whose job
+needs it, and logs the reads that remain sensitive.
+
+**What it does to a live database.** It replaces read policies and functions,
+adds two capabilities (`discipline.side.read`, `competition.discipline.read`)
+and the `compromise` notice kind, and withdraws three role grants. It refuses
+to run unless the database is the one it was written against (its section 0),
+and a second paste changes nothing. No table is dropped and no row deleted.
+**What people notice after the paste:**
+- **Reasons stay with the act.** Why an account was disabled, why a role or a
+  parent's link was ended, and why a ball was amended are read by whoever may
+  do that act. `audit.read` (the director of sport among others) keeps the
+  access log and the audit screen, not the reasons.
+- **A boy who has left** (Q3): his old school's physio no longer reads his
+  injuries. The office and his family still do; re-enrolment reopens it.
+- **Conduct** (Q5, Q10): a coach reads his own side's discipline records,
+  every read logged; a league reads only its own fixtures' records, logged
+  in the child's school's log. No parent reads a disciplinary record.
+- **A pupil's own "no"** to his name in public counts from twelve (Q7).
+- **A concern about the other school's boy** (Q11) goes to that boy's DSO;
+  the reporter's DSO is told one exists, with no name.
+- **The transport coordinator** (Q12) reads emergency numbers only on a
+  trip he runs, on its day, each read logged.
+- **A pupil who scores** (Q13) reads the sheet (names, order and styles of
+  the boys named), not either school's roster, honours or records.
+- **A boy's ID number** (Q16) is no longer readable through his own link.
+- **The passport** (A1) no longer carries skill ratings or who gave them, and
+  only his family, a coach or the office at his school, or the office or a
+  coach at a school his family named, opens it.
+- **The principal** reads an injury's status and nature again (Q9).
+
+Paste `node tools/bundle-sql.mjs --apply 116` after 115, then the verify
+bundle (§93 is its proof). The summary row "Who reads a child's data" should
+read OK. **Schema first**: the API built with it refuses to start without
+db/116 (`expected-migrations.json`).
+<!-- ── end db/116 ── -->
+
+<!-- ── db/117: a family keeps the season of the side a boy was on; a move voids his seats ── -->
+#### A family keeps the side's season, and a move voids his seats (db/117)
+
+`db/117_rollover_dated_side.sql` is S2 of `docs/design/SEASON_ROLLOVER.md`
+(SR-2 and SR-4; Kameel's D1 and Q2 of 15 October 2026). It follows db/112.
+
+**What was wrong.** Every read a family has of a side's rows asked "is this
+the boy's side **now**". On the day the school moved a boy from U14A to U15A,
+his mother lost U14A's whole season (the fixtures she watched, their
+scorecards, balls, buses, nets, posts and plans) and gained U15A's whole
+past, which she never had a child in. A seat on a lift to a fixture of the
+side he had left stayed booked.
+
+**What it does.**
+- **His side on the row's day.** `side_on(player, school, day)` reads his
+  dated memberships (db/08's `team_membership`). A fixture, its satellites,
+  its ball log and its buses are dated by the fixture's day; a nets session
+  by its own day; a team post by when it was published; a plan by its
+  fixture's day. Today is a day like any other, so a reader with no move
+  reads exactly what she read before. A boy who joins a side does **not**
+  thereby read its fixtures from before he joined (Q2). The sheet branches
+  (a boy named to play) are unchanged.
+- **The moved boy himself** reads his old side's season (fixtures, balls,
+  buses, nets), asked at his own side. He also reads its team posts and
+  plans dated within his time on it (Kameel, 22 October 2026). That is one
+  new permissive read, `news_post_read_old_side`, through
+  `news_own_old_side()`: the reader is the boy himself, the side is one he
+  has **left** (a closed membership row), and the post's day falls inside
+  his time there. A team-mate, his family (who already read them by the
+  side rule) and a boy who joined the side later gain nothing from it.
+- **The import dates a new boy's first side** (Kameel, 22 October 2026).
+  The players file has an optional `joined_on` column. Blank, a boy new to
+  the books joins his side on the school season's start (1 January), so a
+  squad loaded in March does not hide its families January's fixtures. With
+  a date, he joins on that day (never a day still to come). A boy already
+  on the books whom the file moves is dated today, as before. The add route
+  is unchanged.
+- **No membership begins before this season's start** (Kameel, 22 October
+  2026). A guard on `team_membership` (`team_membership_floor`, before
+  insert) checks every membership row a person's write opens, whichever
+  door wrote it (the move route's backdate, the import's `joined_on`, the
+  add route), against `membership_joined_floor()`: the school season's
+  start, 1 January. A day before it is refused with a message naming the
+  day and the floor (the move route answers 422 `invalid_move`; the import
+  refuses the row on its line). Rows the owner writes with nobody signed in
+  (the seed's dated rows, a backfill) are not refused. Existing rows are not
+  touched.
+- **SR-4.** A trigger on `player`, `player_move_voids_seats`, runs when a
+  boy's side or school changes. Each live seat (requested, invited or
+  confirmed; never a boarded one) of his on a lift to a fixture of the side
+  he left, dated **after** the move's day and still to come (a backdated
+  move leaves a lift already driven alone), that he no longer reaches (not
+  his new side's, and he is not on its sheet) is voided. The driver is told
+  "a seat was withdrawn" (never why); the family is told the seat was
+  withdrawn because he is no longer on that side; the lone-passenger rule is
+  asked of the offer. The CSV import runs it too.
+- Staff, a pupil through his `player` role, a spectator, the office and a
+  driver read exactly what they read before.
+
+**Existing rows.** No row is written. But a boy typed in or imported after
+his season began has a first membership dated the day of the typing (db/98
+dates the pilot's to 15 January; the import and the add route do not).
+After the paste, his family no longer reaches, by the side, that side's
+fixtures dated before that day; the sheet still gives every fixture he was
+named on. The remedy is to type the boy in dated. Boys imported after this
+paste are dated from the season's start.
+
+**What it does to a live database.** One index on `team_membership`
+(`player_id, school_id, joined_on DESC`; not built `CONCURRENTLY`, so the
+table is locked for the build, which is a moment on a school's rows). Thirteen
+new functions: `sa_date()` (anyone may call it, as `sa_today()`),
+`side_on()`, `side_day()`, `side_reach_on()`, `news_post_day()`,
+`news_plan_reach(uuid,text,date)`, `my_own_side_fixtures()`,
+`news_own_old_side()`, `import_joined_on()`, `membership_joined_floor()`,
+`membership_floor_refusal()` (all for `scrbrd_app`, none for `PUBLIC`),
+and two triggers' functions, `player_move_voids_seats()` and
+`team_membership_floor()` (their owner's alone), with their triggers on
+`player` and `team_membership`. One new permissive read policy on `news_post`,
+`news_post_read_old_side`.
+`side_reach()`, `my_fixture_ends()`, `my_child_fixtures()`,
+`news_plan_reach(uuid,text)`, `news_team_notice_reach()`,
+`news_notice_reach()` and `plan_author_name()` are replaced in place,
+signatures and grants kept. `my_sides()` changes its result, so it and
+`training_session_read` are dropped and made again in the same transaction.
+`ball_event_read` is dropped and made again with a fifth branch, guarded:
+the file stops if the policy in place is not db/112's. `news_post_plan_side`
+and `news_post_team_side` are altered in place, every clause kept, with the
+old-side branch added. No table, column, row, capability or write policy
+changes; db/01, db/09, `app_can()`,
+db/08's and db/112's triggers and `lift_my_sides()` are not touched. The
+file checks itself. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 117` after 116 (it needs db/96,
+db/100, db/101, db/103, db/106 and db/112, and db/70's and db/76's lift
+doors), then the verify bundle (§94 is its proof). The summary row "A
+family keeps the side's season" should read OK. **Schema first**: an API
+built with it refuses to start without db/117 (`expected-migrations.json`).
+The move route writes `player.team_code` as before, and the trigger does
+the rest. The players import, deployed with this, asks `import_joined_on()`
+before each row, so it needs db/117 in place.
+<!-- ── end db/117 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh
