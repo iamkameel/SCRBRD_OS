@@ -7415,17 +7415,33 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 --       and whether it names a boy: a seed account where one holds it, else
 --       the lowest id (so every role, by both branches (1) and (2));
 --   (c) everyone whose live assignment names, or whose own account is, a boy
---       with a dated history: more than one membership row, or a closed one
---       (the boys whose side a day can change, from any section).
+--       with a dated history (more than one membership row, or a closed one:
+--       a boy whose side a day can change, from any section) on a side one of
+--       the compared fixtures belongs to (_v117_dated_on_rows(): the stage's
+--       and the seed's), so a person whose answer on those rows a day can
+--       change.
 -- Everyone else holds assignments of a class (b) already asks, about boys
--- whose side no day changes; §83 and §89 ask every person the same
--- policy-against-helper questions under db/117's live definitions.
+-- whose side on the compared rows no day changes; §83 and §89 ask every
+-- person the same policy-against-helper questions under db/117's live
+-- definitions.
+CREATE OR REPLACE FUNCTION _v117_dated_on_rows(z jsonb) RETURNS uuid[] AS $$
+  WITH rx AS (SELECT m.school_id AS s, m.team_code AS t FROM match m
+               WHERE m.id = ANY (ARRAY(SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^f4') || _v106_seed_matches())
+              UNION
+              SELECT m.away_school_id, m.away_team_code FROM match m
+               WHERE m.away_school_id IS NOT NULL
+                 AND m.id = ANY (ARRAY(SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^f4') || _v106_seed_matches())),
+       dated AS (SELECT m.player_id FROM team_membership m GROUP BY m.player_id
+                  HAVING count(*) > 1 OR bool_or(m.left_on IS NOT NULL))
+  SELECT coalesce(array_agg(DISTINCT m.player_id), '{}') FROM team_membership m JOIN rx ON rx.s = m.school_id AND rx.t = m.team_code
+   WHERE m.player_id IN (SELECT player_id FROM dated)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 CREATE OR REPLACE FUNCTION _v117_people(z jsonb) RETURNS uuid[] AS $$
   WITH a AS (SELECT r.id, r.person_id, r.role,
                     EXISTS (SELECT 1 FROM assignment_subject g WHERE g.assignment_id = r.id) AS named
                FROM role_assignment r WHERE r.active),
-       dated AS (SELECT m.player_id FROM team_membership m GROUP BY m.player_id
-                  HAVING count(*) > 1 OR bool_or(m.left_on IS NOT NULL))
+       dated AS (SELECT unnest(_v117_dated_on_rows(z)) AS player_id)
   SELECT coalesce(array_agg(p ORDER BY p), '{}') FROM (
     SELECT a.person_id AS p FROM a WHERE a.person_id IN (SELECT value::uuid FROM jsonb_each_text(z)
                                                           WHERE value ~ '^[0-9a-f]{8}-[0-9a-f]{4}-')
@@ -7441,17 +7457,13 @@ CREATE OR REPLACE FUNCTION _v117_people(z jsonb) RETURNS uuid[] AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- How many of _v117_people()'s come by (c) from outside the stage: the
--- earlier sections' moved boys and their families.
+-- earlier sections' moved boys on the compared sides, and their families.
 CREATE OR REPLACE FUNCTION _v117_people_dated_beyond(z jsonb) RETURNS int AS $$
   SELECT count(*)::int FROM unnest(_v117_people(z)) p
    WHERE p::text NOT IN (SELECT value FROM jsonb_each_text(z))
      AND (EXISTS (SELECT 1 FROM role_assignment r JOIN assignment_subject g ON g.assignment_id = r.id
-                   WHERE r.active AND r.person_id = p
-                     AND g.player_id IN (SELECT m.player_id FROM team_membership m GROUP BY m.player_id
-                                          HAVING count(*) > 1 OR bool_or(m.left_on IS NOT NULL)))
-          OR EXISTS (SELECT 1 FROM app_user u WHERE u.id = p
-                       AND u.player_id IN (SELECT m.player_id FROM team_membership m GROUP BY m.player_id
-                                            HAVING count(*) > 1 OR bool_or(m.left_on IS NOT NULL))))
+                   WHERE r.active AND r.person_id = p AND g.player_id = ANY (_v117_dated_on_rows(z)))
+          OR EXISTS (SELECT 1 FROM app_user u WHERE u.id = p AND u.player_id = ANY (_v117_dated_on_rows(z))))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/117 (section 94) ─────────────────────────────────────────────
 
