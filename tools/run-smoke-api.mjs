@@ -349,8 +349,9 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // the scorecard, the career read and the public page say the same score.
   "browser-wicket-on-extra",
   // Recognition R2: the pad's moments are the facts' (deriveFacts): every
-  // milestone a ball earns, a run out breaking a hat-trick, a wicket ball
-  // that earns two playing both; the six wickets stored as tapped.
+  // milestone a ball earns (a fifty and the side's 50 on one six), a run out
+  // breaking a hat-trick, a wicket ball's ALL OUT queued behind it; every
+  // ball stored as tapped.
   "browser-pad-moments",
   // SCRBRD-078/075/079: a scorer's day with poor signal — the pad loads and
   // reloads with none, says "sign in to send", retries its claim, sends the

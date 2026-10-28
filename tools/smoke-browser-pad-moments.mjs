@@ -6,23 +6,30 @@
  * The pad's moments on the board used to come from its own counter beside the
  * fold (detectMilestone()), which showed only the first milestone a ball
  * earned. They are now deriveFacts()'s moments, read after the event is
- * emitted (apps/web/src/scorer/milestones.js). One over by one bowler, all
- * wickets, through the pad's own wicket sheet:
+ * emitted (apps/web/src/scorer/milestones.js). The seeded 1XI is a side of
+ * five, so four wickets are all out (the fold's wicketsToEnd). Through the
+ * pad's own keys and wicket sheet:
  *
- *   1  bowled                 WICKET!
- *   2  bowled                 WICKET!, HAT-TRICK BALL
- *   3  run out                WICKET! and no hat-trick: a run out after two
- *                             wickets is the side's, not the bowler's (Q8)
- *   4  bowled                 WICKET!
- *   5  bowled                 WICKET!, HAT-TRICK BALL
- *   6  bowled                 WICKET!, FIFER!, HAT-TRICK!: a wicket ball that
- *                             earns two plays both, in order, behind the wicket
+ *   over 1   six sixes to the opener: SIX! each, his 36
+ *   over 2   a single, then the opener's three sixes: the third brings up his
+ *            fifty and the side's 50 on one ball, SIX! | FIFTY! | 50!, the
+ *            fifty an achievement (the milestone pin, dashed, and the word
+ *            Tentative, spec §13), the side's 50 nobody's; then two dots
+ *   over 3   bowled                 WICKET!
+ *            bowled                 WICKET! | HAT-TRICK BALL
+ *            run out                WICKET! and no hat-trick: a run out after
+ *                                   two wickets is the side's, not the
+ *                                   bowler's (Q8)
+ *            bowled                 WICKET! | ALL OUT!: a wicket ball that
+ *                                   earns another moment plays it behind the
+ *                                   wicket (the engine's wicket path kept one)
  *
- * An achievement's flash carries the milestone pin, dashed, and the word
- * Tentative (spec §13); the hat-trick ball, nobody's honour, carries neither.
- * The screen reader's line says the last of them. And the moments are display
- * only: the server stored six balls, each the wicket the scorer tapped, and
- * the board, the server's fold and match_live_score agree.
+ * (The facts' case of two milestones on one wicket ball, a fifer and a
+ * hat-trick, needs five of one bowler's wickets, more than this side has:
+ * apps/web/test/board.test.mjs holds it through the same queue.) The screen
+ * reader's line says the last moment of each ball. And the moments are
+ * display only: the server stored every ball as tapped, and the board, the
+ * server's fold and match_live_score agree.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-pad-moments.mjs
@@ -153,27 +160,35 @@ const makeReady = async () => {
 /**
  * Every flash the board shows for one ball, however briefly (each is gone in
  * 600ms): its words, whether it carries the pin, dashed or not, and the word
- * Tentative. And every line the screen reader's polite region says.
+ * Tentative. And every line the screen reader's polite region says from here
+ * on (not the last ball's, which it keeps).
+ *
+ * A queued moment is the same flash element with new words (React keeps the
+ * node), so a flash is counted when its words change, not when a node
+ * appears.
  */
 const watchFlashes = () => page.evaluate(() => {
   const w = /** @type {any} */ (window);
   w.__flashes = [];
   w.__said = [];
-  w.__seen = new WeakSet();
+  w.__cur = null;
+  w.__lastSaid = document.querySelector('[data-testid="pad-moment"]')?.textContent ?? "";
   w.__obs?.disconnect();
   w.__obs = new MutationObserver(() => {
-    for (const el of document.querySelectorAll('[data-testid="board-flash"]')) {
-      if (w.__seen.has(el)) continue;
-      w.__seen.add(el);
-      const pin = el.querySelector('[data-testid="badge-pin"]');
+    const el = document.querySelector('[data-testid="board-flash"]');
+    const label = el?.querySelector('[data-testid="board-flash-label"]')?.textContent ?? null;
+    if (label == null) w.__cur = null;
+    else if (label !== w.__cur) {
+      w.__cur = label;
+      const pin = el?.querySelector('[data-testid="badge-pin"]');
       w.__flashes.push({
-        label: el.querySelector('[data-testid="board-flash-label"]')?.textContent ?? "",
+        label,
         pin: !!pin, dashed: pin?.getAttribute("data-tentative") === "true" && !!pin?.querySelector("[stroke-dasharray]"),
-        tentative: el.querySelector('[data-testid="board-flash-tentative"]')?.textContent ?? "",
+        tentative: el?.querySelector('[data-testid="board-flash-tentative"]')?.textContent ?? "",
       });
     }
     const said = document.querySelector('[data-testid="pad-moment"]')?.textContent ?? "";
-    if (said && w.__said.at(-1) !== said) w.__said.push(said);
+    if (said && said !== w.__lastSaid) { w.__lastSaid = said; w.__said.push(said); }
   });
   w.__obs.observe(document.body, { subtree: true, childList: true, characterData: true });
 });
@@ -181,21 +196,26 @@ const flashes = async () => /** @type {{label: string, pin: boolean, dashed: boo
   (await page.evaluate(() => /** @type {any} */ (window).__flashes));
 const said = async () => /** @type {string[]} */ (await page.evaluate(() => /** @type {any} */ (window).__said));
 
-/** One wicket through the pad's sheet; then the moments it played. */
-async function wicket(/** @type {string} */ mode) {
+/** One delivery through the pad (`act` taps it); then the moments it played. */
+async function delivery(/** @type {string} */ what, /** @type {() => Promise<void>} */ act) {
   await makeReady();
   await watchFlashes();
-  await tap("key-wicket");
-  await tap(`wicket-mode-${mode}`);
-  if (mode === "run_out") await tap("wicket-who-striker");
-  await tap("wicket-confirm");
+  await act();
   // Three flashes at most, 600ms each, played one after another.
   await page.waitForTimeout(2600);
   const f = await flashes();
   const s = await said();
-  if (DEBUG) console.log(`[debug] ${mode}:`, JSON.stringify(f), JSON.stringify(s));
+  if (DEBUG) console.log(`[debug] ${what}:`, JSON.stringify(f), JSON.stringify(s));
   return { f, labels: f.map((x) => x.label).join(" | "), s };
 }
+const run = (/** @type {number} */ n) => delivery(`run ${n}`, () => tap(n === 0 ? "key-dot" : `run-${n}`));
+/** One wicket through the pad's sheet. */
+const wicket = (/** @type {string} */ mode) => delivery(mode, async () => {
+  await tap("key-wicket");
+  await tap(`wicket-mode-${mode}`);
+  if (mode === "run_out") await tap("wicket-who-striker");
+  await tap("wicket-confirm");
+});
 
 try {
   for (let i = 0; i < 80; i++) {
@@ -216,18 +236,23 @@ try {
   await click(/^Sign In$/, 5000);
   await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
-  await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await afterReads(page, 1200);
-  const opened = await page.evaluate(() => {
-    const isBtn = (/** @type {Element} */ b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
-    for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
-      let card = /** @type {Element} */ (b);
-      while (card.parentElement && [...card.parentElement.querySelectorAll("button")].filter(isBtn).length === 1) card = card.parentElement;
-      if (/Michaelhouse/i.test(card.textContent || "")) { b.click(); return true; }
-    }
-    return false;
-  });
+  // The fixture list can still be arriving on a cold API: asked again, up to three times.
+  let opened = false;
+  for (let i = 0; i < 3 && !opened; i++) {
+    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+    await afterReads(page, 1200 + i * 1500);
+    opened = await page.evaluate(() => {
+      const isBtn = (/** @type {Element} */ b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
+      for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
+        let card = /** @type {Element} */ (b);
+        while (card.parentElement && [...card.parentElement.querySelectorAll("button")].filter(isBtn).length === 1) card = card.parentElement;
+        if (/Michaelhouse/i.test(card.textContent || "")) { b.click(); return true; }
+      }
+      return false;
+    });
+  }
   ok("the 1XI fixture offers the scorer", opened);
+  if (!opened && DEBUG) console.log("[debug] Match Centre:\n" + (await text()).slice(0, 1500));
   await page.waitForTimeout(2500);
   await clearBlockers();
   if (!(await tid("basic-pad").count())) { await tid("pad-menu").click({ timeout: 2500 }).catch(() => {}); await tid("pad-basic-scoring").click({ timeout: 2500 }).catch(() => {}); }
@@ -235,37 +260,48 @@ try {
   ok("the scorer opens on the pad", /\bDOT\b/i.test(await text()));
   ok("the openers and the bowler are named on the pad's own sheets", await makeReady());
 
-  group("One over, six wickets: every moment the facts say, and nothing else");
+  group("Over 1: six sixes, a flash each and nothing more");
+  for (let i = 1; i <= 6; i++) {
+    const six = await run(6);
+    ok(`six ${i}: SIX!, nothing more (${six.labels})`, six.labels === "SIX!", six.labels);
+  }
+
+  group("Over 2: his fifty and the side's 50 on one ball, both, in order");
+  await run(1);
+  await run(6);
+  const s48 = await run(6);
+  ok(`48, the side 49: no milestone yet (${s48.labels})`, s48.labels === "SIX!", s48.labels);
+  const fifty = await run(6);
+  ok(`the six that brings up both: SIX! | FIFTY! | 50! (${fifty.labels})`, fifty.labels === "SIX! | FIFTY! | 50!", fifty.labels);
+  const pin = fifty.f.find((x) => x.label === "FIFTY!");
+  ok("...the fifty an achievement: the pin, dashed, and the word Tentative", !!pin && pin.pin && pin.dashed && pin.tentative === "Tentative", JSON.stringify(pin));
+  ok("...the six and the side's 50 carry none", fifty.f.filter((x) => x.label !== "FIFTY!").every((x) => !x.pin && !x.tentative));
+  ok(`...and the screen reader is told each, the fifty tentative (${fifty.s.join(" | ")})`,
+     fifty.s.some((x) => /^FIFTY\. .+ reaches 50\. Tentative$/.test(x)) && /^50\. .+ reach 50$/.test(fifty.s.at(-1) ?? ""), fifty.s.join(" | "));
+  await run(0);
+  await run(0);
+
+  group("Over 3: the hat-trick ball, a run out that breaks it, all out");
   const w1 = await wicket("bowled");
   ok(`1. bowled: the wicket, and nothing more (${w1.labels})`, w1.labels === "WICKET!", w1.labels);
   const w2 = await wicket("bowled");
   ok(`2. bowled: two in two, the hat-trick ball (${w2.labels})`, w2.labels === "WICKET! | HAT-TRICK BALL", w2.labels);
   ok("...nobody's honour: no pin, no Tentative", w2.f.every((x) => !x.pin && !x.tentative));
-  ok(`...and the screen reader is told (${w2.s.at(-1)})`, w2.s.at(-1) === "HAT-TRICK BALL. A Nel — two in two", w2.s.join(" | "));
+  ok(`...and the screen reader is told (${w2.s.at(-1)})`, /^HAT-TRICK BALL\. .+ — two in two$/.test(w2.s.at(-1) ?? ""), w2.s.join(" | "));
   const w3 = await wicket("run_out");
   ok(`3. a run out after two wickets calls no hat-trick (${w3.labels})`, w3.labels === "WICKET!" && !/HAT-TRICK/.test(w3.s.join(" ")), `${w3.labels} / ${w3.s.join(" | ")}`);
   const w4 = await wicket("bowled");
-  ok(`4. bowled, after the run out: no hat-trick ball either (${w4.labels})`, w4.labels === "WICKET!", w4.labels);
-  const w5 = await wicket("bowled");
-  ok(`5. bowled: on a hat-trick again (${w5.labels})`, w5.labels === "WICKET! | HAT-TRICK BALL", w5.labels);
-  const w6 = await wicket("bowled");
-  ok(`6. bowled: his fifth and the hat-trick on one ball, both, in order (${w6.labels})`,
-     w6.labels === "WICKET! | FIFER! | HAT-TRICK!", w6.labels);
-  const ach = w6.f.filter((x) => x.label !== "WICKET!");
-  ok("...each an achievement: the pin, dashed, and the word Tentative", ach.length === 2 && ach.every((x) => x.pin && x.dashed && x.tentative === "Tentative"),
-     JSON.stringify(ach));
-  ok("...the wicket itself carries none", w6.f[0] && !w6.f[0].pin && !w6.f[0].tentative);
-  ok(`...the screen reader says the last, tentative (${w6.s.at(-1)})`, w6.s.at(-1) === "HAT-TRICK. A Nel — three in three. Tentative", w6.s.join(" | "));
+  ok(`4. bowled, the fourth of a side of five: WICKET! | ALL OUT!, in order (${w4.labels})`, w4.labels === "WICKET! | ALL OUT!", w4.labels);
+  ok(`...no hat-trick ball after the run out (${w4.s.join(" | ")})`, !/HAT-TRICK/.test(w4.s.join(" ")));
 
-  group("Display only: the server stored the six wickets the scorer tapped");
+  group("Display only: the server stored every ball the scorer tapped");
   await page.waitForTimeout(2500);
   const s = await serverLog(0);
-  const balls = s.rows.filter((r) => r.kind === "ball");
-  ok(`six balls stored, each the wicket tapped (${balls.map((r) => `${r.ball_type}:${r.dismissal}`).join(",")})`,
-     balls.length === 6 && balls.map((r) => `${r.ball_type}:${r.dismissal}`).join(",") === "W:bowled,W:bowled,W:run_out,W:bowled,W:bowled,W:bowled");
-  ok("the server's fold: six down off six balls, five of them the bowler's", s.inn.wickets === 6 && s.inn.balls === 6
-     && s.inn.bowlers.find((/** @type {any} */ b) => b.id === "A Nel")?.wickets === 5, boardOf(s.inn));
-  // The board, after the over, behind whatever sheet is open.
+  const balls = s.rows.filter((r) => r.kind === "ball").map((r) => r.ball_type === "W" ? `W:${r.dismissal}` : String(r.value));
+  const tapped = ["6", "6", "6", "6", "6", "6", "1", "6", "6", "6", "0", "0", "W:bowled", "W:bowled", "W:run_out", "W:bowled"];
+  ok(`sixteen balls stored, each as tapped (${balls.join(",")})`, balls.join(",") === tapped.join(","));
+  ok("the server's fold: 55 for 4 off 16 balls, all out", s.inn.runs === 55 && s.inn.wickets === 4 && s.inn.balls === 16 && s.inn.complete === true, boardOf(s.inn));
+  // The board, behind the innings review that is now open.
   const b = await board();
   ok(`the board and the server's fold agree (${b})`, b === boardOf(s.inn), `board ${b} / server ${boardOf(s.inn)}`);
   const [live] = await dbq(`select runs::int, wickets::int, legal_balls::int from match_live_score where match_id = $1 and innings = 0`, [MATCH]);
