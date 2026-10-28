@@ -28320,9 +28320,14 @@ $v49$;
     PERFORM _assert(news_public_check(v_post91) = 1, '§95 (two letters): a two-letter first name alone was not caught');
     PERFORM _assert(news_public_word(v_post91) = 'Jo',
       format('§95 (two letters): the author was told %s, not the word Jo', news_public_word(v_post91)));
+    -- No other word of this post may be a staged boy's name: "Away" is one
+    -- (§75's and §77's Westville 'Verify ... Away ...' boys), which is the designed
+    -- common-word refusal, not this case.
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
-    VALUES ('team', HIL, '2XI', 'Away', 'The 2XI travel to Johannesburg on Saturday', now()) RETURNING id INTO v_post91;
-    PERFORM _assert(news_public_check(v_post91) = 0, '§95 (two letters): "Jo" was found inside "Johannesburg"');
+    VALUES ('team', HIL, '2XI', 'Fixtures', 'The 2XI travel to Johannesburg on Saturday', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 0,
+      format('§95 (two letters): the post was refused on the word %s ("Jo" must not be found inside "Johannesburg")',
+             coalesce(news_public_word(v_post91), '(none)')));
     -- An opponent's boy (Kameel, 22 Oct): Westville's D Mkhize, with a
     -- Hilton-Westville fixture tomorrow. The author is told the word of his
     -- post that matched, as he wrote it; somebody else is told nothing.
