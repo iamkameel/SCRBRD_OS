@@ -27702,21 +27702,36 @@ $v49$;
   --                name on its sheet), his seat to x41p (after the move's day
   --                but already past) and M's seat to f41n stand; the driver
   --                and A's mother are each told, once
-  --   (literal)    for every person holding an assignment and every staged or
-  --                seed fixture, fixture_reach() under fixture.read and
-  --                transport.read equals §2.10's rule spelled out with
-  --                side_on() over every boy (_v117_lit_fixture); for every
-  --                session side_reach_on() equals it on the session's day;
-  --                and db/106's spelling (player.team_code, _v106_lit_fixture)
-  --                answers APART for A's mother at f41a and f42a (the
-  --                rewrite did something)
-  --   (shape)      for every person, match_read admits exactly fixture_reach()
-  --                (and db/41's driver), trip_read the §83 formula,
-  --                training_session_read side_reach_on() on the session's
-  --                day, the log the fixtures match_read gives, and for every
-  --                guardian my_child_fixtures() is match_read; for every
-  --                team post, news_plan_reach() on its day is news.read and
+  --   (literal)    for every person of _v117_people() (the stage; one holder
+  --                of every class of live assignment, its role and whether
+  --                it names a boy; and every reader of a boy with a dated
+  --                history on a side of the fixtures compared) and every
+  --                staged or seed fixture, fixture_reach() under fixture.read
+  --                and transport.read equals §2.10's rule spelled out with
+  --                side_on() over every boy ever on the side
+  --                (_v117_lit_fixture); for every session side_reach_on()
+  --                equals it on the session's day; and db/106's spelling
+  --                (player.team_code, _v106_lit_fixture) answers APART for
+  --                A's mother at f41a and f42a (the rewrite did something)
+  --   (shape)      for the same people: match_read admits exactly
+  --                fixture_reach() (and db/41's driver) on the staged and
+  --                seed fixtures, trip_read the §83 formula on every trip,
+  --                training_session_read side_reach_on() on every session's
+  --                day, the ball log the fixtures match_read gives on those
+  --                fixtures' balls, and for each guardian among them
+  --                my_child_fixtures() is match_read; for every team post,
+  --                news_plan_reach() on its day is news.read and
   --                side_reach_on('team.read') on that day
+  --                Until 28 Oct 2026 these two asked every person the file
+  --                had staged by then (some 430) and, in (shape), every
+  --                fixture with balls and every ball: about 55 minutes of the
+  --                verify. §83 and §89 still ask every person the same
+  --                policy-against-helper questions, under db/117's live
+  --                definitions. Falsified on 28 Oct 2026: side_reach_on()'s
+  --                named branch swapped for the side now, for every boy
+  --                (red at (literal), for the stage's mother) and for boys
+  --                outside the stage only (red at (literal), for an earlier
+  --                section's moved boy's mother, whom rule (c) brings in).
   --   (undo)       a move back the same day (§3.3): four rows, both kept; his
   --                mother reads the 15XI's from t-10 on again and the 19XI's
   --                t-10 day only; the voided seat stays void (no un-void)
