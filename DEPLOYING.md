@@ -1930,6 +1930,43 @@ read OK. **Schema first**: the API built with it refuses to start without
 db/116 (`expected-migrations.json`).
 <!-- ── end db/116 ── -->
 
+<!-- ── db/120: alerts a person may switch off ── -->
+#### Alerts a person may switch off (db/120)
+
+`db/120_notification_prefs.sql` is NOTIFICATIONS slice S4 (D20, D21), as
+Kameel decided it on 7 October 2026. **A person may stop an alert reaching
+his phone** for a kind of notice (notices from the school and the side,
+milestones and honours, fixtures moved or cancelled, availability questions,
+lift seats), and a parent for one of those about one of his children. It is
+his own setting and nobody else's: no role, no office and no administrator
+can set it for him, and a row about a child is accepted only from that
+child's verified family. **Safety and welfare notices, notices about a
+person's own account, injuries and breach notices can never be switched off**,
+and anything urgent always reaches the phone. **It quiets the phone only:**
+every notice still appears in Notices, on the badge and in a parent's list of
+things to do. **A pupil's alerts wait between 21:00 and 06:00** (South African
+time) and arrive at six; urgent ones come through at any hour. SCRBRD sets
+those hours, not the school and not the pupil.
+
+**What it does to a live database.** It adds one empty table
+(`notification_pref`) with row security on and three policies (the person's
+own rows; a child only through `is_family_of()`), no delete, and two functions
+that answer for the caller alone (`my_alert_choices()`, `my_push_quiet_hours()`).
+No other table, column, row, policy or grant changes. It refuses to run
+before db/116, and a second paste changes nothing. **Nothing changes on a
+phone at the paste:** the push worker that reads these settings is slice S3,
+not yet built; until then the settings are kept and shown, and apply from the
+day it ships.
+
+Paste `node tools/bundle-sql.mjs --apply 120` after the files before it (the
+bundle names the one it needs first), then the verify bundle (§95 is its
+proof). The summary row "Alerts a person may switch off" should read OK.
+**Schema first**: the API built with it refuses to start without db/120
+(`expected-migrations.json`). It serves `POST /api/notifications/prefs` and
+`GET /api/read/my_notification_prefs`, and Settings → Me gains "What reaches
+your phone".
+<!-- ── end db/120 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

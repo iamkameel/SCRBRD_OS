@@ -668,6 +668,17 @@ SELECT
                        AND pg_get_constraintdef(oid) LIKE '%compromise%')
         AND EXISTS (SELECT 1 FROM role_capability WHERE role = 'principal' AND capability = 'medical.nature.read')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Who reads a child's data",
+  -- db/120: push switched off per kind or per child, the person's own rows
+  -- only (a child only his family's), never safeguarding, welfare or system;
+  -- a pupil's quiet hours asked of the caller alone (NOTIFICATIONS S4).
+  CASE WHEN to_regclass('notification_pref') IS NOT NULL
+        AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('notification_pref'))
+        AND (SELECT count(*) FROM pg_policy WHERE polrelid = to_regclass('notification_pref')) = 3
+        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'notification_pref_mutable_kind'
+                       AND pg_get_constraintdef(oid) !~ '(safeguarding|welfare|system)')
+        AND to_regprocedure('my_alert_choices()') IS NOT NULL
+        AND to_regprocedure('my_push_quiet_hours()') IS NOT NULL
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Alerts a person may switch off",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

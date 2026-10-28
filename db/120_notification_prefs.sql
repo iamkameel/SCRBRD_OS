@@ -14,8 +14,7 @@
 -- ORDER. The design puts S4 after S3 (the outbox and the worker). S3 is not
 -- built yet, so this file builds what stands without it: the table, the
 -- reads, and the decision as a pure function S3's worker will call. Until
--- S3, nothing is pushed by a worker and a preference changes nothing on a
--- phone; the screen says so in its words.
+-- S3 calls it, a preference is kept and read back and changes no phone.
 --
 -- ── 1 · WHAT A PREFERENCE IS (D20) ─────────────────────────────────
 -- A person's "do not push me this" for one kind of notice, or for one kind
