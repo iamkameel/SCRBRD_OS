@@ -7499,6 +7499,40 @@ CREATE OR REPLACE FUNCTION _seed_118_fixture(p_home uuid, p_away uuid) RETURNS v
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
   VALUES (p_home, '1XI', p_away, '1XI', 'Verify 118 opponents', now() + interval '1 day', 'cricket', 'T20', 20, 'scheduled');
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Kameel, 28 Oct 2026 ("Only its own competitions: refuse a platform-wide
+-- caller"): a league at each school, each organising one competition, and a
+-- third competition nobody organises. One Hilton-Westville fixture in each,
+-- and a conduct record from each: Hilton's league fixture carries one about
+-- a Hilton boy and one about a Westville boy, so its read is logged at both.
+CREATE OR REPLACE FUNCTION _seed_118_league() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  P_H uuid := 'aaaaaaaa-0000-0000-0000-000000000005';   -- R Pillay, Hilton
+  P_W uuid := 'bbbbbbbb-0000-0000-0000-000000000001';   -- D Mkhize, Westville
+  BY  uuid := '88888888-0000-0000-0000-00000000000c';   -- the office files them
+  ids jsonb; c uuid; f uuid; v uuid; k text;
+BEGIN
+  ids := _v71_people('v118', ARRAY[
+    ARRAY['hilleague', 'competitionadmin', HIL::text, '', ''],
+    ARRAY['wesleague', 'competitionadmin', WES::text, '', '']]);
+  FOREACH k IN ARRAY ARRAY['hil', 'wes', 'none'] LOOP
+    INSERT INTO competition (school_id, name, comp_type, format, level)
+    VALUES (CASE k WHEN 'hil' THEN HIL WHEN 'wes' THEN WES END, 'Verify 118 League ' || k, 'league', 'T20', 'school')
+    RETURNING id INTO c;
+    INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+    VALUES (CASE k WHEN 'wes' THEN WES ELSE HIL END, '1XI', CASE k WHEN 'wes' THEN HIL ELSE WES END, '1XI',
+            'Verify 118 league fixture ' || k, now() - interval '2 days', 'cricket', 'T20', 20, 'scheduled', c)
+    RETURNING id INTO f;
+    INSERT INTO disciplinary_record (player_id, school_id, match_id, recorded_by, body)
+    VALUES (P_H, HIL, f, BY, 'v118: dissent at the ' || k || ' league fixture') RETURNING id INTO v;
+    ids := ids || jsonb_build_object('c_' || k, c, 'r_' || k, v);
+  END LOOP;
+  INSERT INTO disciplinary_record (player_id, school_id, match_id, recorded_by, body)
+  VALUES (P_W, WES, (SELECT m.id FROM match m WHERE m.competition_id = (ids->>'c_hil')::uuid), BY,
+          'v118: dissent at the hil league fixture, the other side') RETURNING id INTO v;
+  RETURN ids || jsonb_build_object('r_hil_w', v);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/118 (section 95) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -27410,10 +27444,11 @@ $v49$;
   --                  is refused, and so is any other kind but system;
   --                  system to the thirteen-year-old is as it was
   --   (Q10 league)   the league reads no disciplinary_record row; through
-  --                  competition_discipline_records() it reads r1 and r2
-  --                  (its competition's fixture, both schools) and not r3
-  --                  (no competition); one access_log row per school; another
-  --                  school's league reads none; the office reads none there
+  --                  competition_discipline_records() it reads none of r1,
+  --                  r2 (a competition with no organiser) or r3 (no
+  --                  competition), being platform-wide (db/118; §95 proves
+  --                  the school-scoped league), and nothing is logged;
+  --                  another school's league reads none; the office none
   --   (Q5 coach)     the 16XI coach reads h's records through
   --                  side_discipline_records() (r1, r3), not the table; the
   --                  read is logged; the 15XI coach reads none until h moves
@@ -27564,19 +27599,23 @@ $v49$;
     got := _v116_notice((y->>'office')::uuid, 'gossip');
     PERFORM _assert(got = '23514:notification_kind_known', format('§93 (Q8 notice): a kind outside the list answered %s', got));
 
-    -- (Q10 league)
+    -- (Q10 league). db/116 let this platform-wide league read r1 and r2
+    -- through its door. db/118 (Kameel, 28 Oct 2026: "Only its own
+    -- competitions: refuse a platform-wide caller") closes the door to a
+    -- platform-wide caller, and this competition names no organiser, which
+    -- opens it to nobody: it reads nothing, and nothing is logged. §95 proves
+    -- a school-scoped league reads its own competition's records, logged per
+    -- school.
     PERFORM _as(U_LEAGUE);
     SELECT count(*) INTO n FROM disciplinary_record WHERE id IN ((y->>'r1')::uuid, (y->>'r2')::uuid, (y->>'r3')::uuid);
     PERFORM _assert(n = 0, format('§93 (Q10 league): the league read %s disciplinary_record row(s) by standing', n));
     got := (SELECT string_agg(z.x, ',' ORDER BY z.x) FROM (SELECT CASE r.id WHEN (y->>'r1')::uuid THEN 'r1' WHEN (y->>'r2')::uuid THEN 'r2' WHEN (y->>'r3')::uuid THEN 'r3' END AS x
               FROM competition_discipline_records((y->>'c')::uuid) r) z);
-    PERFORM _assert(got = 'r1,r2', format('§93 (Q10 league): through its door the league read %s', coalesce(got, 'nothing')));
+    PERFORM _assert(got IS NULL, format('§93 (Q10 league): through its door the platform-wide league read %s (db/118)', got));
     SELECT count(*) INTO n FROM competition_discipline_records(NULL) r WHERE r.id = (y->>'r3')::uuid;
     PERFORM _assert(n = 0, '§93 (Q10 league): the league read a record from a match in no competition');
-    PERFORM _assert(_v116_fact('logged', U_LEAGUE, HIL) LIKE '%' || (y->>'h') || '%'
-                    AND _v116_fact('logged', U_LEAGUE, WES) LIKE '%' || (y->>'a') || '%'
-                    AND _v116_fact('logged', U_LEAGUE, HIL) NOT LIKE '%' || (y->>'a') || '%',
-      format('§93 (Q10 league): the reads were not logged per school: Hilton %s, Westville %s',
+    PERFORM _assert(_v116_fact('logged', U_LEAGUE, HIL) = '0:' AND _v116_fact('logged', U_LEAGUE, WES) = '0:',
+      format('§93 (Q10 league): a read that returned nothing was logged: Hilton %s, Westville %s',
              _v116_fact('logged', U_LEAGUE, HIL), _v116_fact('logged', U_LEAGUE, WES)));
     FOREACH got IN ARRAY ARRAY['wesleague', 'office'] LOOP
       PERFORM _as((y->>got)::uuid);
@@ -28221,7 +28260,18 @@ $v49$;
   --   (bowler)  a bowler change keeps its reason for a reader with
   --             fixture.read at the bowler's school, and loses it (the
   --             change itself kept) for the other school and a typed name
-  --   (doors)   the two definers are the application's and not PUBLIC's
+  --   (two letters) a two-letter first name alone is caught, and the
+  --             author told it; "Jo" is not found inside "Johannesburg"
+  --   (email)   and the director of sport and the platform account read
+  --             NULL; the principal reads it (the office alone, 28 Oct)
+  --   (retire)  and a team-mate at his school reads "hurt" (Q1 as built)
+  --   (platform) the league account and the owner's key read "not out", no
+  --             bowler change's reason and no suspension's ground
+  --   (league)  a platform-wide league and the owner's key read no conduct
+  --             record; a school-scoped league reads its own competition's,
+  --             logged per school, and no other; a competition nobody
+  --             organises opens to nobody
+  --   (doors)   the three definers are the application's and not PUBLIC's
   --
   -- Falsified once each, by replacing a function in the database and
   -- watching the section go red at its own assertion: the surname column
@@ -28231,7 +28281,7 @@ $v49$;
   DECLARE
     U_C2_91  uuid := '88888888-0000-0000-0000-00000000000a';   -- 2XI coach, Hilton
     U_WCOACH uuid := '88888888-0000-0000-0000-00000000001a';   -- 1XI coach, Westville
-    P91 uuid; v_email text; v_pay jsonb; v_post91 uuid;
+    P91 uuid; v_email text; v_pay jsonb; v_post91 uuid; z jsonb; got text; n int;
     P_PILLAY uuid := 'aaaaaaaa-0000-0000-0000-000000000005';
   BEGIN
     -- (scan) as the 2XI coach writes and asks; the director of sport approves.
@@ -28259,6 +28309,20 @@ $v49$;
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
     VALUES ('team', HIL, '2XI', 'Anne', 'anne', now()) RETURNING id INTO v_post91;
     PERFORM _assert(news_public_check(v_post91) = 1, '§95 (scan): half of "Mary-Anne" was not found');
+    -- (two letters) Kameel, 28 Oct 2026: "Catch two-letter names too". A
+    -- first name of two letters alone is caught; whole-word, so "Jo" is not
+    -- found inside "Johannesburg".
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _seed_118_name(P_U13, 'Jo Mkhwanazi');
+    PERFORM _as(U_C2_91);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Well played', 'Well played Jo, a fine fifty', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 1, '§95 (two letters): a two-letter first name alone was not caught');
+    PERFORM _assert(news_public_word(v_post91) = 'Jo',
+      format('§95 (two letters): the author was told %s, not the word Jo', news_public_word(v_post91)));
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Away', 'The 2XI travel to Johannesburg on Saturday', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 0, '§95 (two letters): "Jo" was found inside "Johannesburg"');
     -- An opponent's boy (Kameel, 22 Oct): Westville's D Mkhize, with a
     -- Hilton-Westville fixture tomorrow. The author is told the word of his
     -- post that matched, as he wrote it; somebody else is told nothing.
@@ -28291,6 +28355,21 @@ $v49$;
     PERFORM _as(U_WES_ADM);
     PERFORM _assert(app_user_email_seen(U_SELF, HIL, 'x@example.invalid') IS NULL,
       '§95 (email): Westville''s office read a Hilton pupil''s email');
+    -- Kameel, 28 Oct 2026: "The office alone, as A4 says". The director of
+    -- sport appoints staff (user.role.assign) and reads the pupil's account
+    -- with no email on it; so does the platform account; the principal,
+    -- who holds guardian.link.manage, reads it.
+    PERFORM _as(U_SARAH);
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
+    PERFORM _assert(v_email IS NULL, format('§95 (email): the director of sport read a pupil''s login email (%s)', v_email));
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_C2_91;
+    PERFORM _assert(v_email = 'coach2@example.invalid', format('§95 (email): the director of sport lost an adult''s email (%s)', v_email));
+    PERFORM _as(U_PLAT);
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
+    PERFORM _assert(v_email IS NULL, format('§95 (email): the platform account read a pupil''s login email (%s)', v_email));
+    PERFORM _as(U_HEAD_M);
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
+    PERFORM _assert(v_email = 'pillay@example.invalid', format('§95 (email): the principal lost a pupil''s email (%s)', v_email));
 
     -- (retire)
     v_pay := jsonb_build_object('batter', P_PILLAY, 'reason', 'hurt');
@@ -28338,12 +28417,77 @@ $v49$;
     PERFORM _as(U_REGISTRAR);
     PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'hurt',
       '§95 (retire): the office at his school lost the reason');
+    -- Q1 as built (Kameel, 28 Oct 2026: "Everyone at his school (as
+    -- built)"): a team-mate at his school, with his player role's
+    -- fixture.read, reads "hurt" too.
+    PERFORM _as(U_PUPIL);
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'hurt',
+      '§95 (retire): a reader at his school lost the reason (Q1: the school is the boundary)');
+    -- (platform) Kameel, 28 Oct 2026: a platform-wide caller never unmasks.
+    -- The league account and the owner's key hold fixture.read on an
+    -- assignment naming no school, which app_can() passes for every school.
+    FOREACH z IN ARRAY ARRAY[to_jsonb(U_LEAGUE), to_jsonb(U_OWNER)] LOOP
+      PERFORM _as((z #>> '{}')::uuid);
+      PERFORM _assert(app_is_platform_wide(), format('§95 (platform): %s is not platform-wide', z));
+      got := ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason';
+      PERFORM _assert(got = 'not out', format('§95 (platform): a platform-wide caller read a retirement as %s', got));
+      PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_PILLAY, jsonb_build_object('reason', 'injury')) ? 'reason'),
+        '§95 (platform): a platform-wide caller read why a bowler was replaced');
+      PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler_suspended', NULL, P_PILLAY, jsonb_build_object('reason', 'beamers', 'scope', 'match')) ? 'reason'),
+        '§95 (platform): a platform-wide caller read the ground of a suspension');
+      PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', 'W', NULL, jsonb_build_object('batter', P_PILLAY, 'reason', 'out'))->>'reason' = 'out',
+        '§95 (platform): a retired-out lost its reason for a platform-wide caller');
+    END LOOP;
+
+    -- (league) Kameel, 28 Oct 2026: "Only its own competitions: refuse a
+    -- platform-wide caller". The seed's league account is platform-wide, and
+    -- so is the owner's key: neither reads any conduct record through the
+    -- door, whichever competition is asked. A league scoped to Hilton reads
+    -- its own competition's two records (a Hilton boy's and a Westville
+    -- boy's), logged in each boy's school, and nothing of Westville's league
+    -- or of the competition nobody organises; Westville's league reads its
+    -- own. The competition nobody organises opens to nobody.
+    PERFORM set_config('app.user_id', '', true);
+    z := _seed_118_league();
+    FOREACH got IN ARRAY ARRAY[U_LEAGUE::text, U_OWNER::text] LOOP
+      PERFORM _as(got::uuid);
+      SELECT count(*) INTO n FROM competition_discipline_records(NULL);
+      PERFORM _assert(n = 0, format('§95 (league): a platform-wide caller read %s conduct record(s)', n));
+      SELECT count(*) INTO n FROM (SELECT 1 FROM competition_discipline_records((z->>'c_hil')::uuid)
+                                   UNION ALL SELECT 1 FROM competition_discipline_records((z->>'c_wes')::uuid)
+                                   UNION ALL SELECT 1 FROM competition_discipline_records((z->>'c_none')::uuid)) q;
+      PERFORM _assert(n = 0, format('§95 (league): a platform-wide caller read %s record(s) of a named competition', n));
+      PERFORM _assert(_v116_fact('logged', got::uuid, HIL) = '0:',
+        format('§95 (league): a platform-wide read that returned nothing was logged (%s)', _v116_fact('logged', got::uuid, HIL)));
+    END LOOP;
+    PERFORM _as((z->>'hilleague')::uuid);
+    PERFORM _assert(NOT app_is_platform_wide(), '§95 (league): Hilton''s league is platform-wide');
+    got := (SELECT string_agg(x.k, ',' ORDER BY x.k) FROM (
+              SELECT CASE r.id WHEN (z->>'r_hil')::uuid THEN 'r_hil' WHEN (z->>'r_hil_w')::uuid THEN 'r_hil_w'
+                               WHEN (z->>'r_wes')::uuid THEN 'r_wes' WHEN (z->>'r_none')::uuid THEN 'r_none' ELSE 'other' END AS k
+                FROM competition_discipline_records(NULL) r) x);
+    PERFORM _assert(got = 'r_hil,r_hil_w', format('§95 (league): Hilton''s league read %s, not its own competition''s two', coalesce(got, 'nothing')));
+    SELECT count(*) INTO n FROM competition_discipline_records((z->>'c_wes')::uuid);
+    PERFORM _assert(n = 0, format('§95 (league): Hilton''s league read %s of Westville''s league''s records', n));
+    SELECT count(*) INTO n FROM competition_discipline_records((z->>'c_none')::uuid);
+    PERFORM _assert(n = 0, format('§95 (league): a competition nobody organises opened %s record(s) to Hilton''s league', n));
+    PERFORM _assert(_v116_fact('logged', (z->>'hilleague')::uuid, HIL) LIKE '%' || P_PILLAY::text || '%'
+                    AND _v116_fact('logged', (z->>'hilleague')::uuid, WES) LIKE '%' || P_WES::text || '%'
+                    AND _v116_fact('logged', (z->>'hilleague')::uuid, HIL) NOT LIKE '%' || P_WES::text || '%',
+      format('§95 (league): the reads were not logged per school: Hilton %s, Westville %s',
+             _v116_fact('logged', (z->>'hilleague')::uuid, HIL), _v116_fact('logged', (z->>'hilleague')::uuid, WES)));
+    PERFORM _as((z->>'wesleague')::uuid);
+    got := (SELECT string_agg(CASE r.id WHEN (z->>'r_wes')::uuid THEN 'r_wes' ELSE 'other' END, ',')
+              FROM competition_discipline_records(NULL) r);
+    PERFORM _assert(got = 'r_wes', format('§95 (league): Westville''s league read %s, not its own competition''s one', coalesce(got, 'nothing')));
 
     -- (doors)
     PERFORM _assert(NOT has_function_privilege('public', 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
                     AND NOT has_function_privilege('public', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE')
                     AND has_function_privilege('scrbrd_app', 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
-                    AND has_function_privilege('scrbrd_app', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE'),
+                    AND has_function_privilege('scrbrd_app', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'competition_discipline_records(uuid)'::regprocedure, 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'competition_discipline_records(uuid)'::regprocedure, 'EXECUTE'),
       '§95 (doors): the definers are not the application''s alone');
   END;
   PERFORM set_config('app.user_id', '', true);

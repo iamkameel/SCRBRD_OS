@@ -225,7 +225,12 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
             <Avatar name={p.name} size={40} color={p.status === "active" ? (ROLES[liveRoles(p)[0]?.role ?? p.role]?.color ?? D.indigo) : D.textMuted}/>
             <div style={{ flex: "1 1 220px", minWidth: 0 }}>
               <div style={{ fontFamily: D.body, fontSize: "15px", fontWeight: 600, color: p.status === "active" ? D.textPrimary : D.textMuted }}>{p.name}</div>
-              <div style={{ fontFamily: D.mono, fontSize: "13px", color: D.textMuted, overflowWrap: "anywhere" }}>{p.email}</div>
+              {/* A pupil's login email is the office's and the principal's alone
+                  (db/118; Kameel, 28 Oct 2026): any other reader gets the row
+                  with no email, and is told so rather than shown a blank. */}
+              {p.email
+                ? <div style={{ fontFamily: D.mono, fontSize: "13px", color: D.textMuted, overflowWrap: "anywhere" }}>{p.email}</div>
+                : <div data-testid="email-withheld" style={{ fontFamily: D.body, fontSize: "13px", color: D.textMuted }}>Email shown to the school office only</div>}
               <div style={{ fontFamily: D.body, fontSize: "13px", color: D.textMuted, marginTop: "2px" }}>
                 {/* The state in words, never by colour alone: a disabled account
                     cannot sign in, and keeps every role it holds. */}
@@ -272,7 +277,10 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
                 ))}
               </div>
             )}
-            {mayAddTo(p) && (
+            {/* Add role posts the account's email, so it is offered only where
+                this reader was given one: a pupil's account is the office's to
+                add a role to. */}
+            {mayAddTo(p) && !!p.email && (
               <FormBtn variant="ghost" data-testid={`add-role-${p.id}`} aria-label={`Add a role for ${p.name}`}
                        onClick={() => { setNotice(null); setDialog({ kind: "role", person: p }); }}>Add role</FormBtn>
             )}

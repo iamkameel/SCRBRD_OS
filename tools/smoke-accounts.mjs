@@ -131,17 +131,26 @@ try {
   ok("...and reading only himself writes nothing to the log", (await accountsLogged(U_COACH)).length === 0);
   ok("signed out, the read is refused", (await api("/api/read/accounts")).status === 401);
   // A pupil's login email is the office's (db/118): finance and sponsorship
-  // hold user.read and read the account, with no email on it.
+  // hold user.read and read the account, with no email on it. And the
+  // director of sport, who appoints staff (user.role.assign) but holds no
+  // guardian.link.manage: "The office alone, as A4 says" (Kameel, 28 Oct
+  // 2026). The principal holds it, and reads it.
   {
     const PUPIL = "88888888-0000-0000-0000-000000000009";   // R Pillay's own account
     const bursar = await tokenFor("bursar@example.invalid");   // finance and sponsorship
+    const director = await tokenFor("sarah@example.invalid");  // director of sport
+    const head = await tokenFor("principal@example.invalid");  // principal
     for (const resource of ["users", "accounts"]) {
-      const fin = ((await read(bursar, resource)).body?.rows ?? []);
-      const pupil = fin.find((r) => r.id === PUPIL), adult = fin.find((r) => r.id === U_COACH);
-      ok(`finance reads the pupil's account in ${resource}, with no email on it`, !!pupil && pupil.email === null);
-      ok("...and an adult's account with its email", !!adult && /@example\.invalid$/.test(adult.email ?? ""));
+      for (const [who, token] of [["finance", bursar], ["the director of sport", director]]) {
+        const rows = ((await read(token, resource)).body?.rows ?? []);
+        const pupil = rows.find((r) => r.id === PUPIL), adult = rows.find((r) => r.id === U_COACH);
+        ok(`${who} reads the pupil's account in ${resource}, with no email on it`, !!pupil && pupil.email === null);
+        ok("...and an adult's account with its email", !!adult && /@example\.invalid$/.test(adult.email ?? ""));
+      }
       ok("...while the office reads the pupil's email",
          ((await read(office, resource)).body?.rows ?? []).find((r) => r.id === PUPIL)?.email === "pillay@example.invalid");
+      ok("...and so does the principal",
+         ((await read(head, resource)).body?.rows ?? []).find((r) => r.id === PUPIL)?.email === "pillay@example.invalid");
     }
     const self = await tokenFor("pillay@example.invalid");
     ok("the pupil reads his own email", ((await read(self, "accounts")).body?.rows ?? [])[0]?.email === "pillay@example.invalid");
