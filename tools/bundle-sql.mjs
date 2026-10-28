@@ -517,11 +517,13 @@ SELECT
   -- db/109: every ending of a guardian link is recorded with a kind (and the
   -- office's reason), read by the office and never by the guardian or the
   -- DSO by standing; db/08's door without a kind or a reason is closed.
+  -- db/116 (READERS Q2) re-wrote the read policy to guardian.link.manage
+  -- alone: no auditor reads the office's reason.
   CASE WHEN to_regclass('guardian_link_ending') IS NOT NULL
         AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('guardian_link_ending'))
         AND EXISTS (SELECT 1 FROM pg_policy p
                      WHERE p.polrelid = to_regclass('guardian_link_ending') AND p.polname = 'guardian_link_ending_read'
-                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%app_user_id()%safeguarding.concern.read%')
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%app_user_id()%guardian.link.manage%')
         AND NOT has_table_privilege('scrbrd_app', to_regclass('guardian_link_ending'), 'INSERT')
         AND has_function_privilege('scrbrd_app', to_regprocedure('guardian_link_revoke(uuid,text,text)'), 'EXECUTE')
         AND NOT has_function_privilege('scrbrd_app', to_regprocedure('guardian_link_revoke(uuid,uuid,text)'), 'EXECUTE')
@@ -615,6 +617,57 @@ SELECT
         AND to_regprocedure('result_lapse(uuid,text)') IS NOT NULL
         AND to_regprocedure('match_verified(uuid)') IS NOT NULL
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A result is official when a second hand confirms it",
+  -- db/115: a family's consents are the family's (REACH R-B, O5/O6). The
+  -- passport consent is read by the family and the office it names; the
+  -- scouting decision by the family, his office and his own side's coach.
+  -- Neither reads player.profile.read any more (db/08's reach). Only
+  -- to_regprocedure()/to_regclass(), so the row reads PROBLEM rather than
+  -- failing the query on a database without db/115.
+  CASE WHEN to_regprocedure('is_family_of(uuid)') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('passport_consent') AND p.polname = 'passport_consent_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%is_family_of(player_id)%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%guardian.link.manage%'
+                       AND pg_get_expr(p.polqual, p.polrelid) NOT LIKE '%player.profile.read%')
+        AND EXISTS (SELECT 1 FROM pg_policy p
+                     WHERE p.polrelid = to_regclass('player_scouting_consent') AND p.polname = 'player_scouting_consent_read'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%is_family_of(player_id)%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%guardian.link.manage%'
+                       AND pg_get_expr(p.polqual, p.polrelid) LIKE '%player.development.read%'
+                       AND pg_get_expr(p.polqual, p.polrelid) NOT LIKE '%player.profile.read%')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A family's consents are the family's",
+  -- db/116: who reads a child's data (READERS_child_data Q2–Q16, 21 Oct
+  -- 2026, and the red-team's A1, A5, A7). audit.read opens no reason; the
+  -- coach, the league and the transport coordinator read through logged
+  -- doors; a departed boy's clinical record is cut from staff; a pupil
+  -- scorer reads the sheet; the passport carries no rating and opens to
+  -- the family, a coach or the office; a pupil holds no ID-number read.
+  CASE WHEN NOT EXISTS (SELECT 1 FROM role_capability WHERE (role, capability) IN
+                          (('selfaccess', 'player.identity.read'), ('transportcoordinator', 'player.emergency.read'),
+                           ('competitionadmin', 'discipline.read'), ('coach', 'discipline.read')))
+        AND (SELECT count(*) FROM role_capability
+              WHERE capability IN ('competition.discipline.read', 'transport.manifest.read', 'discipline.side.read')) = 6
+        AND NOT EXISTS (SELECT 1 FROM pg_policies
+                         WHERE schemaname = 'public' AND cmd IN ('SELECT', 'ALL') AND qual LIKE '%audit.read%'
+                           AND (tablename, policyname) NOT IN (('access_log', 'access_log_read'), ('scoring_audit', 'audit_read'),
+                                                               ('support_access', 'support_access_read'),
+                                                               ('scorebook_import_revision', 'scorebook_import_revision_read')))
+        AND (SELECT count(*) FROM pg_policies
+              WHERE schemaname = 'public' AND permissive = 'RESTRICTIVE'
+                AND policyname IN ('injury_departed_cut', 'injury_review_departed_cut', 'player_pupil_sheet_only')) = 3
+        AND to_regprocedure('competition_discipline_records(uuid)') IS NOT NULL
+        AND to_regprocedure('side_discipline_records(uuid)') IS NOT NULL
+        AND (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport(uuid)')) !~ '(player_skill|''rating'')'
+        AND (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport_open(uuid)')) NOT LIKE '%player.profile.read%'
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                         WHERE p.oid IN (to_regprocedure('passport(uuid)'), to_regprocedure('passport_name(uuid)'),
+                                         to_regprocedure('passport_open(uuid)'), to_regprocedure('trip_contacts(uuid)'),
+                                         to_regprocedure('scouting_candidates()'), to_regprocedure('recognition(uuid)'))
+                           AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'notification_kind_known'
+                       AND pg_get_constraintdef(oid) LIKE '%compromise%')
+        AND EXISTS (SELECT 1 FROM role_capability WHERE role = 'principal' AND capability = 'medical.nature.read')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Who reads a child's data",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

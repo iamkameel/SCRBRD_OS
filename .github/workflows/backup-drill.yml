@@ -62,11 +62,16 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U scrbrd -d scrbrd"
           --health-interval 2s --health-timeout 3s --health-retries 30
-    env:
-      DUMP: ${{ runner.temp }}/scrbrd.dump
-      COUNTS: ${{ runner.temp }}/scrbrd.counts.json
-      SEALED: ${{ runner.temp }}/out/scrbrd.dump.enc
+    # The runner context is not allowed in a job's env (GitHub refuses the
+    # whole file, and every push showed a failed run with no jobs), so the
+    # paths are set by the first step instead.
     steps:
+      - name: Paths
+        run: |
+          echo "DUMP=$RUNNER_TEMP/scrbrd.dump" >> "$GITHUB_ENV"
+          echo "COUNTS=$RUNNER_TEMP/scrbrd.counts.json" >> "$GITHUB_ENV"
+          echo "SEALED=$RUNNER_TEMP/out/scrbrd.dump.enc" >> "$GITHUB_ENV"
+
       - name: The secrets are set
         env:
           SRC: ${{ secrets.SCRBRD_PROD_OWNER_URL }}

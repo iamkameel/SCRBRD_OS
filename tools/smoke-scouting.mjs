@@ -195,19 +195,38 @@ try {
        !(await consentOf(parent)).some((r) => r.player_id === OTHER));
     // Stronger than "not this boy", because "not this boy" would also pass on a
     // read that was broken. A scout sees NOTHING here: the table's policy asks
-    // player.profile.read against the child, and a scout's accreditation does
-    // not reach one. That matters beyond tidiness — a scout who could read
+    // for the child's family, his school's office or his own side's coach
+    // (db/115), and a scout's accreditation is none of those. That matters beyond tidiness — a scout who could read
     // these rows would learn which families had said no, which is the one
     // thing a family declining should never reveal to the person declined.
     ok("a scout reads no consent rows at all, not merely none for this boy",
        (await consentOf(scoutTok)).length === 0, `${(await consentOf(scoutTok)).length} rows`);
     // A coach DOES see his own side's decisions, which is the policy working as
-    // written rather than an oversight: he holds player.profile.read for those
-    // boys, and a coach about to recommend one to a scout is better off knowing
+    // written rather than an oversight: he holds player.development.read for
+    // those boys (db/115; player.profile.read until then, which also let his
+    // side's pupils in), and a coach about to recommend one to a scout is better off knowing
     // the family already said no.
     const coachSees = await consentOf(coach);
     ok("a coach sees the decision for a boy in his own side",
        coachSees.some((r) => r.player_id === R_PILLAY), `${coachSees.length} rows`);
+    // REACH R-B, db/115 (Kameel, 16 Oct 2026: "keep the coach"): the
+    // family, the office at his school and his own side's coach, and nobody
+    // else. Before it the policy asked player.profile.read, which a pupil's
+    // `player` role holds across his side, so every team-mate read it (O6).
+    const otherSide = await consentOf(await login("coach2@example.invalid"));   // 2XI coach
+    ok("another side's coach reads no decision of this boy's",
+       !otherSide.some((r) => r.player_id === R_PILLAY), `${otherSide.length} rows`);
+    const mate = await consentOf(await login("spectator@example.invalid"));      // a 1XI pupil, his team-mate
+    ok("a team-mate reads no consent rows at all", mate.length === 0, `${mate.length} rows`);
+    const elsewhere = await consentOf(await login("coach.wes@example.invalid")); // Westville's 1XI coach
+    ok("the same side's coach at another school reads none of them",
+       !elsewhere.some((r) => r.player_id === R_PILLAY), `${elsewhere.length} rows`);
+    const office = await consentOf(admin);
+    ok("the office at his school reads it",
+       office.some((r) => r.player_id === R_PILLAY && r.consent_state === "withdrawn"), `${office.length} rows`);
+    const self = await consentOf(await login("pillay@example.invalid"));
+    ok("...and so does the boy himself, his own and nobody else's",
+       self.length === 1 && self[0].player_id === R_PILLAY, `${self.length} rows`);
     ok("no token, no consent read", [401, 403].includes((await api("/api/read/scouting_consent")).status));
 
     // No restore here, deliberately. This walk is not idempotent and never was

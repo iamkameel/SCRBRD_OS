@@ -16,9 +16,9 @@
  *      medical.write; and a physio who is the boy's mother (Q6).
  *   3. THE REVIEW. A step to rehab, refused without a next review (Q10) and
  *      when clearing names one; nobody else may; an injury that is not there.
- *   4. THE TIERS, through `injury_reviews`: the coach and the director read
- *      the phase and never the note; the principal reads the status tier
- *      alone (D3); the boy's parent and the boy read the note; a pupil and
+ *   4. THE TIERS, through `injury_reviews`: the coach, the director and the
+ *      principal (READERS Q9, db/116) read the phase and never the note; the
+ *      boy's parent and the boy read the note; a pupil and
  *      another side's coach read nothing.
  *   5. THE WORKLIST: the physio's alone, each row with its reason; nobody
  *      else holds a row of it; both reads are logged.
@@ -27,7 +27,9 @@
  *   7. SG-12: a severe injury tells the DSO, naming nobody; the coach is not
  *      told that.
  *   8. LEFT: the `injuries` read marks a boy who left the school, for the
- *      readers of his row, and `injury_reviews` marks the recording.
+ *      office, and `injury_reviews` marks the recording; the physio, his
+ *      coach and the head read nothing of it once he has gone (READERS Q3,
+ *      db/116).
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-injury.mjs
@@ -180,15 +182,16 @@ try {
   ok("...and never the note or who wrote it", coachSees.every((r) => r.note == null && r.reviewed_by == null));
   const dirSees = await by(director);
   ok("the director reads the phase and never the note", dirSees.length === 2 && dirSees.every((r) => r.phase_after && r.note == null && r.reviewed_by == null));
-  // The principal: the status tier alone (D3; Kameel, 2026-10-15).
+  // The principal: status and nature (READERS_child_data Q9, Kameel, 21 Oct
+  // 2026, later than GA-I19 D3; db/116 restores medical.nature.read).
   const headSees = await by(principal);
-  ok("the principal reads that each review happened and what it left him as, and not the phase",
-     headSees.length === 2 && headSees.every((r) => r.reviewed_at && r.restricted_after === true && r.phase_after == null
-                                                     && r.next_review_on == null && r.note == null));
+  ok("the principal reads each review's phase and clock, and never the note or who wrote it",
+     headSees.length === 2 && headSees.every((r) => r.reviewed_at && r.restricted_after === true && r.phase_after
+                                                     && r.next_review_on && r.note == null && r.reviewed_by == null));
   const headRow = (await rows("injuries", principal)).find((r) => r.id === ID);
-  ok("...and of the injury, that he is out and until when, and not what or how bad",
+  ok("...and of the injury, that he is out, until when, what and how bad",
      headRow && headRow.restricted === true && headRow.rtw_date && headRow.date_injured
-     && headRow.injury_type == null && headRow.severity == null && headRow.phase == null && headRow.next_review_on == null,
+     && headRow.injury_type && headRow.severity && headRow.phase && headRow.next_review_on,
      JSON.stringify(headRow));
   ok("...and his fitness word", (await rows("players", principal)).find((p) => p.id === WHITFIELD)?.fitness === "rehab");
   ok("another side's coach reads none", (await by(coach2)).length === 0);
@@ -247,15 +250,23 @@ try {
   ok("...though he is told the injury, as before", (await rows("notifications", coach)).some((n) => n.subject_id === sev.body?.id && n.title === "Injury recorded"));
 
   // ── 8. Left the school ─────────────────────────────────────────
-  group("8. A boy who leaves is marked, for every reader of his row");
+  group("8. A boy who leaves is marked for the office, and cut from the staff who treated him");
   const stayed = (await rows("injuries", coach)).find((r) => r.id === ID);
   ok("a boy still at school is not marked", stayed?.left_school === false && stayed?.left_on == null, JSON.stringify(stayed));
   await q(`update team_membership set left_on = sa_today() where player_id = $1 and left_on is null`, [NAIDOO]);
   const today = (await q(`select sa_today()::text d`))[0].d;
-  for (const [who, token] of [["the physio", physio], ["his coach", coach], ["the principal", principal]]) {
-    const r = (await rows("injuries", token)).find((x) => x.id === sev.body?.id);
-    ok(`${who} reads him as left the school today`, r?.left_school === true && String(r?.left_on).slice(0, 10) === today, JSON.stringify(r && { left: r.left_school, on: r.left_on }));
-  }
+  // READERS_child_data Q3 (Kameel, 21 Oct 2026; db/116): ACCOUNT_LIFECYCLE
+  // Q9 governs a departed boy's clinical record over GA-I19 D11. The office
+  // and his family read it, marked; the physio, his coach and the head (not
+  // the office's key) are cut, until he enrols again.
+  const office = await login("registrar@example.invalid");
+  const r = (await rows("injuries", office)).find((x) => x.id === sev.body?.id);
+  ok("the office reads him as left the school today", r?.left_school === true && String(r?.left_on).slice(0, 10) === today, JSON.stringify(r && { left: r.left_school, on: r.left_on }));
+  for (const [who, token] of [["the physio", physio], ["his coach", coach], ["the principal", principal]])
+    ok(`${who} reads no injury of a boy who has left`, !(await rows("injuries", token)).some((x) => x.id === sev.body?.id));
+  const reviewsOf = async (token) => (await api(`/api/read/injury_reviews?injuryId=${sev.body?.id}`, { token })).body?.rows ?? [];
+  ok("...nor its reviews, which the office still reads",
+     (await reviewsOf(physio)).length === 0 && (await reviewsOf(office)).length > 0);
   ok("...and a pupil still reads no row of his", !(await rows("injuries", pupil)).some((x) => x.id === sev.body?.id));
 } catch (e) {
   ok(`the injury walk threw: ${e.message?.slice(0, 160)}`, false);

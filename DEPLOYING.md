@@ -1420,6 +1420,7 @@ should read OK). **Schema first**: the API built with it refuses to start
 without db/106 (`expected-migrations.json`), and its `matches` read asks
 `my_fixture_ends()` which end the reader is at.
 <!-- ── end db/106 ── -->
+
 <!-- ── db/107: the officials register and the grant notes, closed ── -->
 #### The officials register is its keeper's; a school's plan is its own (db/107)
 
@@ -1849,6 +1850,85 @@ confirms them.
   as a two-hand change after a seal. What a void's payload says counts for
   nothing, because the pad can write it.
 <!-- ── end db/114 ── -->
+
+<!-- ── db/115: a family's consents are the family's ── -->
+#### A family's consents are the family's (db/115)
+
+`db/115_family_consents.sql` is REACH group R-B (O5, O6), with Kameel's two
+decisions of 16 October 2026. **The passport consent** (a family naming the
+school a boy's record may travel to) was readable by everybody at the
+receiving school who could read any player there: its coaches, its pupils and
+every parent. Each saw another family's child, by name, and the school his
+record was going to. Now the family reads it, and the office of the school it
+names (the principal and the school administrator: `guardian.link.manage`).
+The receiving coach no longer reads the consent row. He still opens the boy's
+passport once it has been granted, exactly as before (`passport()` is
+unchanged). **The scouting decision** (whether accredited scouts may see a
+boy) was readable by everybody holding `player.profile.read` over him, which
+included every pupil on his side. Now the family reads it, the office at his
+school, and his own side's coach (the coach, the assistant coach and the
+director of sport, through `player.development.read`). His team-mates, other
+sides' coaches, the team manager, scorers, the physio and scouts read nothing.
+
+**What it does to a live database.** It replaces two read policies
+(`passport_consent_read`, `player_scouting_consent_read`) and comments them,
+and refuses to run if either is not what db/08 left (or this file's own). No
+table, column, row, function or grant changes. The write policies are
+db/08's, and the closing check proves it. A second paste changes nothing.
+**One behaviour changes on the paste:** a receiving school's coach who opens
+Settings → Passport now sees no consents, and the screen says the list
+belongs to the family and the office. A pupil sees his own scouting decision
+and no team-mate's.
+
+Paste `node tools/bundle-sql.mjs --apply 115` after 114 (the bundle names the
+one it needs first), then the verify
+bundle (§92 is its proof). The summary row "A family's consents are the
+family's" should read OK. **Schema first**: the API built with it refuses to
+start without db/115 (`expected-migrations.json`). No route changes; the
+Settings Passport and scouting cards say plainly whose list it is.
+<!-- ── end db/115 ── -->
+
+#### Who reads a child's data (db/116)
+
+`db/116_readers_privacy.sql` builds the decisions of
+`docs/design/READERS_child_data.md` §7 that need SQL: Kameel's sixteen calls
+of 21 October 2026, and two findings of that day's red-team audit (A1, A5).
+Each narrows who reads a piece of a child's data to the people whose job
+needs it, and logs the reads that remain sensitive.
+
+**What it does to a live database.** It replaces read policies and functions,
+adds two capabilities (`discipline.side.read`, `competition.discipline.read`)
+and the `compromise` notice kind, and withdraws three role grants. It refuses
+to run unless the database is the one it was written against (its section 0),
+and a second paste changes nothing. No table is dropped and no row deleted.
+**What people notice after the paste:**
+- **Reasons stay with the act.** Why an account was disabled, why a role or a
+  parent's link was ended, and why a ball was amended are read by whoever may
+  do that act. `audit.read` (the director of sport among others) keeps the
+  access log and the audit screen, not the reasons.
+- **A boy who has left** (Q3): his old school's physio no longer reads his
+  injuries. The office and his family still do; re-enrolment reopens it.
+- **Conduct** (Q5, Q10): a coach reads his own side's discipline records,
+  every read logged; a league reads only its own fixtures' records, logged
+  in the child's school's log. No parent reads a disciplinary record.
+- **A pupil's own "no"** to his name in public counts from twelve (Q7).
+- **A concern about the other school's boy** (Q11) goes to that boy's DSO;
+  the reporter's DSO is told one exists, with no name.
+- **The transport coordinator** (Q12) reads emergency numbers only on a
+  trip he runs, on its day, each read logged.
+- **A pupil who scores** (Q13) reads the sheet (names, order and styles of
+  the boys named), not either school's roster, honours or records.
+- **A boy's ID number** (Q16) is no longer readable through his own link.
+- **The passport** (A1) no longer carries skill ratings or who gave them, and
+  only his family, a coach or the office at his school, or the office or a
+  coach at a school his family named, opens it.
+- **The principal** reads an injury's status and nature again (Q9).
+
+Paste `node tools/bundle-sql.mjs --apply 116` after 115, then the verify
+bundle (§93 is its proof). The summary row "Who reads a child's data" should
+read OK. **Schema first**: the API built with it refuses to start without
+db/116 (`expected-migrations.json`).
+<!-- ── end db/116 ── -->
 
 ### 5 · Cloud Run, the first time
 
