@@ -7,8 +7,9 @@
  * parent and a boy each actually see and can do:
  *
  *   1. THE PHYSIO. "Reviews due" is her list, drawn for her alone, one reason
- *      a row; a boy who has left the school is off it and marked on the
- *      Injuries list. The Record form refuses an empty form in words and puts
+ *      a row; a boy who has left the school is off it, and off her Injuries
+ *      list too (READERS_child_data Q3, db/116: the office and his family
+ *      read a departed boy's clinical record, not the staff who treated him). The Record form refuses an empty form in words and puts
  *      focus on the field, wants a next-review date (+7 and +14 set it) and
  *      saves one injury, its recording, and nothing else. The Review form
  *      steps him to rehabilitating on a named next review, and clearing him
@@ -18,8 +19,8 @@
  *      word, no clinical note, no count, no worklist and no form: no request
  *      for the worklist is ever made. The coach's notice says a thing
  *      happened and, unopened, names nobody and no injury.
- *   3. THE PRINCIPAL reads status only: that a boy is out and until when, no
- *      phase word, no type, no note.
+ *   3. THE PRINCIPAL reads status and nature, as the director does (READERS
+ *      Q9, db/116): the phase in the school's words and the injury, no note.
  *   4. THE PARENT reads her child's Health history in the school's three
  *      words, with the physio's note on a tap, and the boy reads his own.
  *   5. Nothing the walk draws is under 12px or tapped under 44px, the
@@ -206,8 +207,8 @@ try {
   ok("...one row for each of the seed's open injuries, each with its one reason",
      SEED_INJ.every((id) => rowIds.includes(id)) && (await P.$$eval('[data-testid^="review-due-"]', (els) => els.every((e) => e.getAttribute("data-reason")))), rowIds.join());
   ok("...a boy who has left the school is not on it", !rowIds.includes(LEAVER_INJ));
-  ok("...but is on the Injuries list, marked left the school",
-     (await inner(P, `left-school-${LEAVER_INJ}`)).toLowerCase().includes("left the school"));
+  ok("...nor on her Injuries list: a departed boy's record is the office's (READERS Q3, db/116)",
+     await tid(P, `injury-${LEAVER_INJ}`).count() === 0 && await tid(P, `left-school-${LEAVER_INJ}`).count() === 0);
   ok("the old 'is coming' line is gone", await tid(P, "injury-writes-coming").count() === 0 && !/is coming/.test(await main(P)));
   const navText = await P.locator('[data-testid="nav-injuries"]').first().innerText().catch(() => "?");
   ok("no count on the Injuries nav item, not even for her", !/\d/.test(navText) && (await P.locator('[data-testid="nav-injuries"] [data-testid$="badge"]').count()) === 0, navText);
@@ -329,10 +330,6 @@ try {
   ok("...its history, which had no recording, calls it a review, not a recording",
      /Review/.test(await inner(P, "injury-history")) && !/Recorded/.test(await inner(P, "injury-history")));
 
-  // The boy who left.
-  await tid(P, `injury-${LEAVER_INJ}`).click();
-  await afterReads(P, 1200);
-  ok("a boy who left: the report says so, and that he is not on her list", /left the school[\s\S]*not on your list/.test(await inner(P, "injury-detail")));
   const fd = await floors(P, '[data-testid="injury-detail"], ul[aria-label="Injuries"], [data-testid="reviews-due"]');
   ok(`her screen: nothing under 12px (${fd.small.length}), nothing tapped under 44px (${fd.tiny.length})`, fd.small.length === 0 && fd.tiny.length === 0, [...fd.small, ...fd.tiny].slice(0, 4).join(" · "));
   ok("no page error, no client-side scoping", p.errors.length === 0 && p.refusals.length === 0, [...p.errors, ...p.refusals].join(" | "));
@@ -386,6 +383,8 @@ try {
        && !t.includes(secrets.notes.slice(0, 25)) && !t.includes(FAMILY_NOTE) && !/eccentric/i.test(t));
     ok("...but the history of the physio's looks, with dates", /Seen by the physio/.test(await inner(C, "injury-history")) && (await C.locator('[data-testid="history-row"]').count()) >= 1);
     ok("...and no clock: no next date of the physio's", !/next/i.test(await inner(C, "injury-history")));
+    // The director holds player.profile.manage school-wide, the office's key
+    // (READERS Q3, db/116), so she still reads a departed boy's row, marked.
     if (who === "director") ok("...a boy who has left the school is marked so (the injuries read says it, status tier)", await tid(C, `left-school-${LEAVER_INJ}`).count() === 1);
     if (who === "coach") ok("...a coach's own side only: the boy who left is no longer in it, so no row and no mark", await tid(C, `injury-${LEAVER_INJ}`).count() === 0);
     const nav = await C.locator('[data-testid="nav-injuries"]').first().innerText().catch(() => "?");
@@ -401,8 +400,8 @@ try {
     await c.ctx.close();
   }
 
-  // ── 3. The principal: status only ───────────────────────────────
-  group("3. The principal reads status only");
+  // ── 3. The principal: status and nature (READERS Q9, db/116) ─────
+  group("3. The principal reads status and nature, never the note");
   const pr = await open();
   const R = pr.page;
   ok("the principal signs in", await signIn(R, "principal@example.invalid"));
@@ -411,13 +410,15 @@ try {
   await tid(R, `injury-${PILLAY_INJ}`).click({ timeout: 5000 }).catch(() => {});
   await afterReads(R, 1500);
   const rt = await main(R);
-  ok("a boy is out, and until when: the Out tile and the return date", /\bout\b/i.test(rt) && !/Rehabilitating/.test(rt) && /Restricted/.test(rt) && /RTW/.test(rt));
-  ok("...no phase, no kind of injury, no note", !/Phase:\s*(Injured|Rehabilitating|Cleared)/.test(rt) && /Details withheld/.test(rt) && !/hamstring/i.test(rt)
-     && await tid(R, "injury-clinical-notes").count() === 0 && !rt.includes(FAMILY_NOTE));
+  ok("the injury and its phase are there, in the school's words", /Rehabilitating/.test(rt) && /Grade 2 hamstring strain/.test(rt));
+  ok("...no clinical note, the seed's or the physio's", await tid(R, "injury-clinical-notes").count() === 0 && await tid(R, "history-note").count() === 0
+     && !rt.includes(secrets.notes.slice(0, 25)) && !rt.includes(FAMILY_NOTE));
   ok("...no 'review' word, no worklist, no forms", !/review/i.test(rt) && pr.worklist.length === 0 && await tid(R, "reviews-due").count() === 0 && await tid(R, "record-injury-open").count() === 0);
   const hist = await inner(R, "injury-history");
-  ok("...the history says only that he was seen, and what it left him as", /Seen by the physio/.test(hist) && /Restricted/.test(hist) && !/Rehabilitating|Injured|Cleared/.test(hist), hist);
-  ok("...a boy who has left the school is marked so, at the status tier too", await tid(R, `left-school-${LEAVER_INJ}`).count() === 1);
+  ok("...the history of the physio's looks, and no clock", /Seen by the physio/.test(hist) && !/next/i.test(hist), hist);
+  // Not the office's key: since db/116 (READERS Q3) the head reads no row of
+  // a boy who has left.
+  ok("...a boy who has left the school is not on his list", await tid(R, `injury-${LEAVER_INJ}`).count() === 0);
   ok("no page error", pr.errors.length === 0 && pr.refusals.length === 0, [...pr.errors, ...pr.refusals].join(" | "));
   await pr.ctx.close();
 

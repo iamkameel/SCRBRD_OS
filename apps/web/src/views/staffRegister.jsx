@@ -4,7 +4,6 @@ import { ROLES } from "../design/roles.js";
 import { D, T, textOn } from "../design/tokens.js";
 import { Card, EmptyState } from "../ui/primitives.jsx";
 import { api, signedIn } from "../lib/api.js";
-import { schoolsWhere } from "../lib/session.js";
 import { holdsCapability } from "../rbac/index.js";
 import { grantableFor, useAssignableSchools } from "./enrol.jsx";
 import {
@@ -30,9 +29,10 @@ import {
  * expired rows" when any are due.
  *
  * WHAT THIS SCREEN DECIDES: nothing about authority. The tab is drawn for
- * whoever holds user.role.assign or audit.read (an auditor reads the list,
- * and sees no upload, no Withdraw and no Clear); register_upload() and its
- * neighbours decide again on every call. Nothing of the file is kept here: it
+ * whoever holds user.role.assign (READERS_child_data Q2, 21 Oct 2026, db/116:
+ * audit.read opens the access log and nothing else, so an auditor no longer
+ * reads the list); register_upload() and its neighbours decide again on
+ * every call. Nothing of the file is kept here: it
  * is read in the browser, sent, and dropped with the page, and the report is
  * drawn from what the server answered. The register holds adults only.
  *
@@ -40,11 +40,9 @@ import {
  */
 
 /** Can this person see the register at all? A courtesy: the server decides. */
-// The DSO holds audit.read (db/57) but not the register: school_register_rows()
-// refuses whoever also holds safeguarding.concern.read (db/92), so the panel is
-// not drawn for them either.
-export const canSeeRegister = (role) => holdsCapability(role, "user.role.assign")
-  || (holdsCapability(role, "audit.read") && !holdsCapability(role, "safeguarding.concern.read"));
+// The office's key alone: school_register_rows() asks user.role.assign at the
+// school and nothing else (db/116), so an auditor and a DSO are not drawn it.
+export const canSeeRegister = (role) => holdsCapability(role, "user.role.assign");
 
 const LABEL = () => ({ display: "block", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted,
                        letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "6px" });
@@ -65,9 +63,8 @@ export function StaffRegisterPanel({ role }) {
 
 function RegisterLive({ role }) {
   const assign = useAssignableSchools();
-  const auditing = schoolsWhere("audit.read");
-  // Every school this person may open the register at; those they may write at are `assign.schools`.
-  const schools = [...assign.schools, ...auditing.filter((a) => !assign.schools.some((s) => s.id === a.id))];
+  // Every school this person may open the register at: where they hold the office's key.
+  const schools = assign.schools;
   const [schoolId, setSchoolId] = useState("");
   const school = schools.find((s) => s.id === schoolId)?.id ?? schools[0]?.id ?? "";
   const mayWrite = assign.schools.some((s) => s.id === school);

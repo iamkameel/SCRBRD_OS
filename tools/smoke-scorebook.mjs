@@ -9,7 +9,8 @@
  *   B. The photos: JPEG or PNG only, stripped of their metadata before they
  *      are stored; read only by the two roles at the school, each read on
  *      access_log; a parent, a pupil, another school and the principal
- *      (audit.read: the card, never a page) see none
+ *      (audit.read: the card's history in the audit log, never a page, nor
+ *      the import row since db/116) see none
  *   C. The card: saved as a card and nothing else; every cell ticked before a
  *      submit; the arithmetic in words
  *   D. Two people: the confirmer cannot save; a revision author and a
@@ -213,10 +214,13 @@ try {
   }
   ok("...and none of those reads was logged as a read", (await accessRows(I)).length === before + 2);
   ok("signed out: nothing", (await api(`/api/scorebook/${I}/pages/1`)).status >= 400);
-  { const hg = await api(`/api/scorebook/${I}`, { token: head });
-    ok("the principal reads the card and its history (audit.read), and is given no name by the import",
-       hg.status === 200 && Object.keys(hg.body?.names ?? { x: 1 }).length === 0, JSON.stringify(hg.body?.names));
-    ok("...nor the name of anybody in its history", hg.body?.revisions?.length > 0 && hg.body.revisions.every((r) => r.actorId && r.actorName === null)); }
+  // READERS_child_data Q2 (db/116): audit.read opens the access log and the
+  // audit screen's own reads, so the principal reads the card's history in the
+  // audit log (scorebook_import_revision) and not the import itself, which
+  // carries the confirmer's notes.
+  ok("the principal (audit.read) reads no import (403)", (await api(`/api/scorebook/${I}`, { token: head })).status === 403);
+  ok("...while its revisions are still his to audit",
+     (await q(`select count(*)::int n from scorebook_import_revision where import_id = $1`, [I]))[0].n > 0);
   for (const [who, t] of [["a parent", parent], ["a pupil", pupil], ["another school's coach", wes]]) {
     ok(`${who} reads no import`, (await api(`/api/scorebook/${I}`, { token: t })).status === 403);
   }
@@ -228,6 +232,8 @@ try {
   ok("the scorer is told write and read, the module on", await mayOf(scorer) === "true:write+read", await mayOf(scorer));
   ok("the director of sport confirm and read", await mayOf(sarah) === "true:confirm+read", await mayOf(sarah));
   ok("the principal (audit.read) none of the three, and still lists", await mayOf(head) === "true:", await mayOf(head));
+  ok("...but is listed no import (READERS Q2, db/116)",
+     ((await api(`/api/matches/${M}/scorebook`, { token: head })).body?.imports ?? [1]).length === 0);
   for (const [who, t] of [["a parent", parent], ["a pupil", pupil], ["the league's administrator, on a friendly", league]]) ok(`${who} may do nothing: 403`, await mayOf(t) === 403, await mayOf(t));
   ok("...and the league's administrator reads no friendly's import, and no page of it",
      (await api(`/api/scorebook/${I}`, { token: league })).status === 403 && (await api(`/api/scorebook/${I}/pages/1`, { token: league })).status === 403);
