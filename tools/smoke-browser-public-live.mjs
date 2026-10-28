@@ -344,7 +344,8 @@ try {
   ok(`no pupil's name, typed name, date of birth, contact, home or mark reason in any of the ${all.length} responses`,
      hits.length === 0, [...new Set(hits)].slice(0, 12).join(" | "));
   const health = [...json, ...html].flatMap((r) => {
-    let words = /** @type {string[]} */ ([]);
+    /** @type {string[]} */
+    let words;
     try { words = valuesIn(JSON.parse(r.body)); } catch { words = [r.body.replace(/<script[\s\S]*?<\/script>/g, "")]; }
     return words.filter((w) => N23.test(w)).map((w) => `${r.path}: ${w.match(N23)?.[0]}`);
   });
