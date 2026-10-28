@@ -99,16 +99,47 @@ export function BoardFlash({ event, onDone }) {
   }, [event]);
   if (!event?.label) return null;
   const B = T.board;
+  const labelStyle = { ...T.role.label, fontSize: "16px", lineHeight: 1.2, letterSpacing: "0.08em", color: B.lime, whiteSpace: "nowrap" };
+  const chip = { background: B.face, padding: `2px ${T.space.sm}`, borderRadius: T.radius.sm };
   return (
     <div data-testid="board-flash" aria-hidden="true" className="os-board-flash"
       style={{ position: "absolute", inset: 0, pointerEvents: "none", borderRadius: T.radius.lg,
         boxShadow: `inset 0 0 0 3px ${B.lime}`, display: "flex", alignItems: "flex-start", justifyContent: "flex-start",
         padding: `${T.space.xs} ${T.space.sm}` }}>
-      <span data-testid="board-flash-label" style={{ ...T.role.label, fontSize: "16px", lineHeight: 1.2, letterSpacing: "0.08em",
-        color: B.lime, background: B.face, padding: `2px ${T.space.sm}`, borderRadius: T.radius.sm, whiteSpace: "nowrap" }}>
-        {event.label}
-      </span>
+      {event.badge === "pin" ? (
+        // An achievement (Recognition R2, spec §13): the milestone pin, in the
+        // flash's one colour, dashed while tentative, with its word beside it.
+        <span data-testid="board-flash-achievement" style={{ ...chip, display: "inline-flex", alignItems: "center", gap: T.space.xs, color: B.lime }}>
+          <MilestonePin tentative={event.tentative === true}/>
+          <span data-testid="board-flash-label" style={labelStyle}>{event.label}</span>
+          {event.tentative === true && (
+            <span data-testid="board-flash-tentative" style={{ ...T.role.label, fontSize: "12px", lineHeight: 1.2, letterSpacing: "0.04em",
+              color: B.lime, whiteSpace: "nowrap" }}>Tentative</span>
+          )}
+        </span>
+      ) : (
+        <span data-testid="board-flash-label" style={{ ...labelStyle, ...chip }}>
+          {event.label}
+        </span>
+      )}
     </div>
+  );
+}
+
+/**
+ * The milestone pin (spec §13's badge for an achievement): monochrome, drawn
+ * in the text's colour, its ring dashed while the milestone is tentative and
+ * solid once confirmed. Always beside its words; never alone.
+ */
+export function MilestonePin({ tentative = true, size = 18 }) {
+  return (
+    <svg data-testid="badge-pin" data-tentative={tentative ? "true" : "false"} width={size} height={size} viewBox="0 0 18 18"
+      aria-hidden="true" focusable="false" style={{ flexShrink: 0, display: "block" }}>
+      <circle cx="9" cy="9" r="8" fill="none" stroke="currentColor" strokeWidth="1.25" strokeDasharray={tentative ? "2.5 2" : undefined}/>
+      <path d="M9 4.25a3 3 0 0 1 3 3c0 2.25-3 5.75-3 5.75s-3-3.5-3-5.75a3 3 0 0 1 3-3z" fill="none" stroke="currentColor"
+        strokeWidth="1.25" strokeLinejoin="round"/>
+      <circle cx="9" cy="7.25" r="1" fill="currentColor"/>
+    </svg>
   );
 }
 
