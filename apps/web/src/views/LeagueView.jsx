@@ -185,7 +185,7 @@ function LeagueView({ role, homeBar = null }) {
                   <thead>
                     <tr style={{background:D.surf2}}>
                       {["#","Team","P","W","L","NR","Pts","NRR","Form","Action"].map(h=>(
-                        <th key={h} style={{padding:"10px 12px",fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",textAlign:h==="Team"?"left":"center",whiteSpace:"nowrap"}}>{h}</th>
+                        <th key={h} style={{padding:"10px 12px",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",textAlign:h==="Team"?"left":"center",whiteSpace:"nowrap"}}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -198,7 +198,7 @@ function LeagueView({ role, homeBar = null }) {
                         <tr key={t.team} style={{borderTop:`1px solid ${D.border}`,background:isHilton?D.indigo+"08":"transparent"}}>
                           <td style={{padding:"11px 12px",textAlign:"center"}}>
                             <div style={{width:"24px",height:"24px",borderRadius:"50%",background:i===0?D.amber+"22":D.surf2,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto"}}>
-                              <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:700,color:i===0?D.amber:D.textMuted}}>{i+1}</span>
+                              <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:i===0?D.amber:D.textMuted}}>{i+1}</span>
                             </div>
                           </td>
                           <td style={{padding:"11px 12px"}}>
@@ -212,7 +212,7 @@ function LeagueView({ role, homeBar = null }) {
                             <td key={k} style={{padding:"11px 12px",textAlign:"center"}}>
                               {isEdit&&k!=="P"?(
                                 <input type="number" aria-label={`${t.team} — ${k}`} defaultValue={t[k]} onChange={e=>setTableEdit(prev=>({...prev,[t.team]:{...prev[t.team],[k]:Number(e.target.value)}}))}
-                                  style={{width:"40px",background:D.surf2,border:`1px solid ${D.borderMed}`,borderRadius:D.sm,padding:"3px 6px",fontFamily:D.mono,fontSize:"11px",color:D.textPrimary,textAlign:"center"}}/>
+                                  style={{width:"40px",background:D.surf2,border:`1px solid ${D.borderMed}`,borderRadius:D.sm,padding:"3px 6px",fontFamily:D.mono,fontSize:"12px",color:D.textPrimary,textAlign:"center"}}/>
                               ):(
                                 <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{t[k]}</span>
                               )}
@@ -226,14 +226,14 @@ function LeagueView({ role, homeBar = null }) {
                             <div style={{display:"flex",gap:"2px",justifyContent:"center"}}>
                               {Array.from({length:t.P},(_,j)=>j<t.W?"W":j<t.W+t.L?"L":"N").map((r,j)=>(
                                 <div key={j} style={{width:"12px",height:"12px",borderRadius:"2px",background:r==="W"?D.emerald+"44":r==="L"?D.rose+"44":D.amber+"44",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                                  <span style={{fontFamily:D.mono,fontSize:"9px",fontWeight:700,color:r==="W"?D.emerald:r==="L"?D.rose:D.amber}}>{r}</span>
+                                  <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:r==="W"?D.emerald:r==="L"?D.rose:D.amber}}>{r}</span>
                                 </div>
                               ))}
                             </div>
                           </td>
                           <td style={{padding:"11px 12px",textAlign:"center"}}>
                             {canEdit&&isEdit&&(
-                              <button onClick={()=>setEditRow(null)} style={{background:D.emerald+"18",border:`1px solid ${D.emerald}33`,borderRadius:D.sm,padding:"3px 8px",cursor:"pointer",color:D.emerald,fontFamily:D.body,fontSize:"10px"}}>Save</button>
+                              <button onClick={()=>setEditRow(null)} style={{background:D.emerald+"18",border:`1px solid ${D.emerald}33`,borderRadius:D.sm,padding:"3px 8px",cursor:"pointer",color:D.emerald,fontFamily:D.body,fontSize:"12px"}}>Save</button>
                             )}
                           </td>
                         </tr>
@@ -255,14 +255,14 @@ function LeagueView({ role, homeBar = null }) {
               <div style={{display:"flex",gap:"16px",overflowX:"auto",paddingBottom:"8px"}}>
                 {comp.bracket.map(round=>(
                   <div key={round.round} style={{minWidth:"220px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.amber,letterSpacing:"0.06em",marginBottom:"10px"}}>{round.round}</div>
+                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.amber,letterSpacing:"0.06em",marginBottom:"10px"}}>{round.round}</div>
                     <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
                       {round.fixtures.map((f,i)=>(
                         <div key={i} style={{padding:"10px 12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${f.status==="complete"?D.emerald+"22":D.border}`}}>
-                          <div style={{fontFamily:D.body,fontSize:"11px",fontWeight:500,color:f.status==="complete"?D.textPrimary:D.textSecondary,marginBottom:"4px"}}>{f.home}</div>
-                          <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginBottom:"4px"}}>VS</div>
-                          <div style={{fontFamily:D.body,fontSize:"11px",fontWeight:500,color:f.status==="complete"?D.textPrimary:D.textSecondary,marginBottom:"6px"}}>{f.away}</div>
-                          {f.result&&<div style={{fontFamily:D.body,fontSize:"10px",color:f.result.includes("Hilton")?D.emerald:D.amber,fontStyle:"italic"}}>{f.result}</div>}
+                          <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:f.status==="complete"?D.textPrimary:D.textSecondary,marginBottom:"4px"}}>{f.home}</div>
+                          <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,marginBottom:"4px"}}>VS</div>
+                          <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:f.status==="complete"?D.textPrimary:D.textSecondary,marginBottom:"6px"}}>{f.away}</div>
+                          {f.result&&<div style={{fontFamily:D.body,fontSize:"12px",color:f.result.includes("Hilton")?D.emerald:D.amber,fontStyle:"italic"}}>{f.result}</div>}
                           {!f.result&&f.status!=="pending"&&<Badge color={D.sky}>Upcoming</Badge>}
                           {f.status==="pending"&&<Badge color={D.textMuted}>TBD</Badge>}
                         </div>
@@ -287,7 +287,7 @@ function LeagueView({ role, homeBar = null }) {
                     <div style={{display:"flex",gap:"16px",alignItems:"center",flexWrap:"wrap"}}>
                       <div style={{flex:1}}>
                         <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,marginBottom:"3px"}}>{m.homeTeam} <span style={{color:D.textMuted,fontSize:"12px",fontWeight:400}}>vs</span> {m.awayTeam}</div>
-                        <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name="calendar"/> {m.date} · <Icon name="map-pin"/> {m.venue}</div>
+                        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}><Icon name="calendar"/> {m.date} · <Icon name="map-pin"/> {m.venue}</div>
                       </div>
                       {w&&<WeatherChip w={w} status={m.status} compact/>}
                       {m.transport?.bus&&<Pill color={D.lime}><Icon name="bus"/> {m.transport.depart}</Pill>}
@@ -311,7 +311,7 @@ function LeagueView({ role, homeBar = null }) {
                     <Badge color={m.result?.includes("Hilton")?D.emerald:D.rose}>{m.result?.includes("Hilton")?"W":"L"}</Badge>
                     <div style={{flex:1}}>
                       <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{m.homeTeam} vs {m.awayTeam}</div>
-                      <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{m.date} · {m.venue}</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{m.date} · {m.venue}</div>
                     </div>
                     {m.scorecard&&(
                       <div style={{display:"flex",gap:"8px",fontFamily:D.mono,fontSize:"12px"}}>
@@ -320,7 +320,7 @@ function LeagueView({ role, homeBar = null }) {
                         {m.scorecard.away&&<span style={{color:D.textSecondary}}>{m.scorecard.away.score} ({m.scorecard.away.overs})</span>}
                       </div>
                     )}
-                    <div style={{fontFamily:D.body,fontSize:"11px",color:m.result?.includes("Hilton")?D.emerald:D.amber,fontStyle:"italic"}}>{m.result}</div>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:m.result?.includes("Hilton")?D.emerald:D.amber,fontStyle:"italic"}}>{m.result}</div>
                     {canEdit&&<Btn size="sm" variant="ghost">Edit</Btn>}
                   </div>
                 </Card>
@@ -342,19 +342,19 @@ function LeagueView({ role, homeBar = null }) {
                 <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}><Icon name="bat"/> Top Batters — {comp.ageGroup}</div>
                 {topBat.map((p,i)=>(
                   <div key={p.id} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px"}}>
-                    <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,width:"16px"}}>{i+1}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,width:"16px"}}>{i+1}</span>
                     <Avatar name={p.name} size={28} color={D.sky}/>
                     <div style={{flex:1}}>
                       <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:D.textPrimary}}>{p.name}</div>
-                      <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.team}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{p.team}</div>
                     </div>
                     <div style={{textAlign:"right"}}>
                       <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:700,color:p.avg>=40?D.emerald:D.sky}}>{p.avg}</div>
-                      <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>avg</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>avg</div>
                     </div>
                     <div style={{textAlign:"right"}}>
                       <div style={{fontFamily:D.mono,fontSize:"13px",color:D.amber}}>{stat(p.sr)}</div>
-                      <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>SR</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>SR</div>
                     </div>
                   </div>
                 ))}
@@ -363,19 +363,19 @@ function LeagueView({ role, homeBar = null }) {
                 <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}><Icon name="ball"/> Top Bowlers — {comp.ageGroup}</div>
                 {topBowl.map((p,i)=>(
                   <div key={p.id} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px"}}>
-                    <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,width:"16px"}}>{i+1}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,width:"16px"}}>{i+1}</span>
                     <Avatar name={p.name} size={28} color={D.violet}/>
                     <div style={{flex:1}}>
                       <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:D.textPrimary}}>{p.name}</div>
-                      <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.team}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{p.team}</div>
                     </div>
                     <div style={{textAlign:"right"}}>
                       <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:700,color:D.roseText}}>{p.wkts}</div>
-                      <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>wkts</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>wkts</div>
                     </div>
                     <div style={{textAlign:"right"}}>
                       <div style={{fontFamily:D.mono,fontSize:"13px",color:p.econ<=6.5?D.emerald:D.amber}}>{p.econ}</div>
-                      <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>econ</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>econ</div>
                     </div>
                   </div>
                 ))}
@@ -508,24 +508,24 @@ function LiveLadder({ rows, comp }) {
       </div>
       {groups.map(g=>(
         <div key={g.key} data-testid={`ladder-${g.key}`}>
-          <div style={{padding:"8px 16px",background:D.surf2,fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted}}>{g.label}</div>
+          <div style={{padding:"8px 16px",background:D.surf2,fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted}}>{g.label}</div>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead><tr>
                 {["#","Team","P","W","L","T","D","NR","Pts","NRR"].map(h=>(
-                  <th key={h} style={{padding:"8px 12px",fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",textAlign:h==="Team"?"left":"center"}}>{h}</th>
+                  <th key={h} style={{padding:"8px 12px",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",textAlign:h==="Team"?"left":"center"}}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
                 {g.rows.map((t,i)=>(
                   <tr key={t.id} style={{borderTop:`1px solid ${D.border}`}}>
-                    <td style={{padding:"9px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"11px",fontWeight:700,color:(t.rank??i+1)===1?D.amber:D.textMuted}}>{t.rank??i+1}</td>
+                    <td style={{padding:"9px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:(t.rank??i+1)===1?D.amber:D.textMuted}}>{t.rank??i+1}</td>
                     <td style={{padding:"9px 12px",fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>{t.name}</td>
                     {[t.played,t.wins,t.losses,t.ties??0,t.draws,t.noResult].map((v,j)=>(
                       <td key={j} style={{padding:"9px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{v}</td>
                     ))}
                     <td style={{padding:"9px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"14px",fontWeight:700,color:D.textPrimary}}>{t.points}</td>
-                    <td style={{padding:"9px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{t.nrr==null?"—":Number(t.nrr).toFixed(3)}</td>
+                    <td style={{padding:"9px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{t.nrr==null?"—":Number(t.nrr).toFixed(3)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -581,26 +581,26 @@ function RankedList({ testId, icon, title, color, rows, primary, primaryLabel, s
     <Card data-testid={testId}>
       <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
         <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>{icon&&<Icon name={icon}/>} {title}</div>
-        {sub&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"2px"}}>{sub}</div>}
+        {sub&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{sub}</div>}
       </div>
       {rows.length===0
         ? <div style={{padding:"20px 14px",textAlign:"center",fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{empty ?? "Nobody on record for this scope yet."}</div>
         : rows.map((p,i)=>(
           <div key={p.id} data-testid={`${testId}-row`} data-player={p.id} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px"}}>
-            <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,width:"16px"}}>{i+1}</span>
+            <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,width:"16px"}}>{i+1}</span>
             <Avatar name={p.name} size={28} color={color}/>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:D.textPrimary,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
-              <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.team}</div>
+              <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{p.team}</div>
             </div>
             <div style={{textAlign:"right"}}>
               <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:700,color}}>{primary(p)}</div>
-              {primaryLabel&&<div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>{primaryLabel}</div>}
+              {primaryLabel&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{primaryLabel}</div>}
             </div>
             {secondary&&(
               <div style={{textAlign:"right"}}>
                 <div style={{fontFamily:D.mono,fontSize:"13px",color:D.textSecondary}}>{secondary(p) ?? "—"}</div>
-                {secondaryLabel&&<div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>{secondaryLabel}</div>}
+                {secondaryLabel&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{secondaryLabel}</div>}
               </div>
             )}
           </div>

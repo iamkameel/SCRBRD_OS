@@ -50,7 +50,7 @@ function AttributeRow({ group, attr, value, current, onChange }) {
       <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
         <div style={{flex:1,fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{label}</div>
         {current!=null&&(
-          <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>was {current}</span>
+          <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>was {current}</span>
         )}
         <input type="range" min={SCALE_MIN} max={SCALE_MAX} step={1}
           value={shown ?? SCALE_MIN}
@@ -64,9 +64,9 @@ function AttributeRow({ group, attr, value, current, onChange }) {
       </div>
       {a&&(
         <div style={{display:"flex",gap:"7px",alignItems:"flex-start",marginTop:"5px"}}>
-          <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,flexShrink:0,paddingTop:"1px"}}>{a.point}+</span>
+          <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,flexShrink:0,paddingTop:"1px"}}>{a.point}+</span>
           {a.status==="draft"&&<Badge color={D.amber}>draft</Badge>}
-          <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,lineHeight:1.4}}>{a.text}</span>
+          <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,lineHeight:1.4}}>{a.text}</span>
         </div>
       )}
     </div>
@@ -186,7 +186,7 @@ function SkillsView({ role }) {
         {/* Player list */}
         <Card sx={{padding:"0"}}>
           <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
-            <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>SELECT PLAYER</div>
+            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>SELECT PLAYER</div>
           </div>
           <div style={{maxHeight:"calc(100vh - 200px)",overflowY:"auto"}}>
             {listed.map(p=>{
@@ -202,14 +202,14 @@ function SkillsView({ role }) {
                 }}>
                   <Avatar name={p.name} size={32} color={selPlayer.id===p.id?D.violet:D.textMuted}/>
                   <div style={{flex:1,textAlign:"left"}}>
-                    <div style={{fontFamily:D.body,fontSize:"11px",fontWeight:selPlayer.id===p.id?600:400,color:selPlayer.id===p.id?D.textPrimary:D.textSecondary}}>{p.name.split(" ").pop()}</div>
-                    <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{p.team}</div>
+                    <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:selPlayer.id===p.id?600:400,color:selPlayer.id===p.id?D.textPrimary:D.textSecondary}}>{p.name.split(" ").pop()}</div>
+                    <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{p.team}</div>
                     {!s&&<div data-testid={`unassessed-${p.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Not assessed yet</div>}
                   </div>
                   {s&&(
                   <div style={{textAlign:"center"}}>
                     <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:progressColorForScore(overall)}}>{overall}</div>
-                    <div style={{fontFamily:D.body,fontSize:"8px",color:D.textMuted}}>OVR</div>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>OVR</div>
                   </div>
                   )}
                 </button>
@@ -238,7 +238,7 @@ function SkillsView({ role }) {
                     return (
                       <div key={cat} style={{textAlign:"center"}}>
                         <div style={{fontFamily:D.mono,fontSize:"18px",fontWeight:700,color:SKILL_COLORS[cat]||D.indigo}}>{avg}</div>
-                        <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted,textTransform:"capitalize"}}>{cat}</div>
+                        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,textTransform:"capitalize"}}>{cat}</div>
                       </div>
                     );
                   })}
@@ -256,7 +256,7 @@ function SkillsView({ role }) {
           )}
           {rating&&(BATTING_OR_BOWLING.some(d=>rating[d]?.value!=null))&&(
             <Card sx={{padding:"16px",marginBottom:"14px"}}>
-              <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>RATING</div>
+              <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>RATING</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:"14px"}}>
                 {BATTING_OR_BOWLING.filter(d=>rating[d]?.value!=null).map(d=>{
                   const r=rating[d];
@@ -270,9 +270,9 @@ function SkillsView({ role }) {
                   return (
                     <div key={d} style={{border:`1px solid ${D.border}`,borderRadius:D.md,padding:"12px"}}>
                       <div style={{display:"flex",alignItems:"baseline",gap:"8px",marginBottom:"8px"}}>
-                        <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,textTransform:"capitalize"}}>{d}</div>
+                        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,textTransform:"capitalize"}}>{d}</div>
                         <div style={{fontFamily:D.mono,fontSize:"22px",fontWeight:700,color:progressColorForScore(r.value)}}>{r.value}</div>
-                        <div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>/ {SCALE_MAX}</div>
+                        <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>/ {SCALE_MAX}</div>
                         {drift!=null&&drift!==0&&(
                           <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:driftColor}}>
                             {drift>0?"▲":"▼"}{Math.abs(drift)}
@@ -282,23 +282,23 @@ function SkillsView({ role }) {
                       <div style={{display:"flex",gap:"14px",marginBottom:"8px"}}>
                         <div>
                           <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:600,color:D.textSecondary}}>{r.coach??"—"}</div>
-                          <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>COACH</div>
+                          <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>COACH</div>
                         </div>
                         <div>
                           <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:600,color:D.textSecondary}}>{r.performance??"—"}</div>
-                          <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>MATCH DATA</div>
+                          <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>MATCH DATA</div>
                         </div>
                         <div>
                           <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:600,color:D.textSecondary}}>{r.sample||0}</div>
-                          <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>DELIVERIES</div>
+                          <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>DELIVERIES</div>
                         </div>
                       </div>
                       {/* Said in words as well as numbers. The explanation is
                           composed on the server so every reader is told the
                           same thing. */}
-                      <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,lineHeight:1.45}}>{r.explanation}</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,lineHeight:1.45}}>{r.explanation}</div>
                       {r.anchoredOn&&(
-                        <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginTop:"6px"}}>
+                        <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,marginTop:"6px"}}>
                           ANCHORED {r.anchoredOn} · {r.attributes} ATTRIBUTE{r.attributes===1?"":"S"}
                         </div>
                       )}
@@ -319,7 +319,7 @@ function SkillsView({ role }) {
           {(notes.length>0||canEdit)&&(
             <Card sx={{padding:"16px",marginBottom:"14px"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
-                <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>
+                <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>
                   DEVELOPMENT NOTES · COACHING STAFF ONLY
                 </div>
                 {canEdit&&<Btn size="sm" onClick={()=>{setWriteError(null);setNoting(true);}}>+ Note</Btn>}
@@ -329,7 +329,7 @@ function SkillsView({ role }) {
                   <div key={n.id} style={{borderLeft:`2px solid ${n.adjustment?(n.adjustment>0?D.emerald:D.rose):D.border}`,paddingLeft:"12px"}}>
                     <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5}}>{n.body}</div>
                     <div style={{display:"flex",alignItems:"center",gap:"8px",marginTop:"5px"}}>
-                      <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>
+                      <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>
                         {n.author||"—"} · {n.observedOn}{n.revised?" · REVISED":""}
                       </span>
                       {/* The signal, stated. The prose is never parsed: if a
@@ -358,13 +358,13 @@ function SkillsView({ role }) {
           {assessing&&(
             <Modal title={`Assessment — ${selPlayer.name}`} width="640px"
                    onClose={()=>{setAssessing(false);setDraft({});}}>
-              <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"12px",lineHeight:1.5}}>
+              <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"12px",lineHeight:1.5}}>
                 Rate only what you watched. Anything left untouched keeps the score it already
                 has — a partial assessment is the normal case, not an incomplete one.
               </div>
               {Object.entries(TREE).map(([group,attrs])=>(
                 <div key={group} style={{marginBottom:"16px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.08em",
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.08em",
                                color:SKILL_COLORS[group]||D.indigo,textTransform:"uppercase",marginBottom:"4px"}}>{group}</div>
                   {attrs.map(attr=>(
                     <AttributeRow key={attr} group={group} attr={attr}
@@ -375,7 +375,7 @@ function SkillsView({ role }) {
                 </div>
               ))}
               {writeError&&(
-                <div style={{fontFamily:D.mono,fontSize:"11px",color:D.roseText,marginBottom:"10px"}}>{writeError}</div>
+                <div style={{fontFamily:D.mono,fontSize:"12px",color:D.roseText,marginBottom:"10px"}}>{writeError}</div>
               )}
               <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
                 <Btn size="sm" disabled={busy||!Object.keys(draft).length} onClick={async()=>{
@@ -399,7 +399,7 @@ function SkillsView({ role }) {
           {noting&&(
             <Modal title={`Development note — ${selPlayer.name}`}
                    onClose={()=>{setNoting(false);setNoteText("");setNoteDisc("");setNoteAdj("");}}>
-              <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"12px",lineHeight:1.5}}>
+              <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"12px",lineHeight:1.5}}>
                 Coaching staff and leadership only. Not visible to the player or their parent.
               </div>
               <textarea value={noteText} onChange={(e)=>setNoteText(e.target.value)} rows={5}
@@ -411,7 +411,7 @@ function SkillsView({ role }) {
                   meant to move a rating has to say which discipline and by how
                   much — and the form says that out loud rather than letting a
                   coach assume the words did it. */}
-              <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,margin:"12px 0 6px",lineHeight:1.5}}>
+              <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,margin:"12px 0 6px",lineHeight:1.5}}>
                 Optional. Nothing reads the text — if this note should move a rating, say which and by how much.
               </div>
               <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
@@ -431,7 +431,7 @@ function SkillsView({ role }) {
                 </select>
               </div>
               {writeError&&(
-                <div style={{fontFamily:D.mono,fontSize:"11px",color:D.roseText,margin:"10px 0"}}>{writeError}</div>
+                <div style={{fontFamily:D.mono,fontSize:"12px",color:D.roseText,margin:"10px 0"}}>{writeError}</div>
               )}
               <div style={{display:"flex",gap:"8px",alignItems:"center",marginTop:"14px"}}>
                 <Btn size="sm" disabled={busy||!noteText.trim()} onClick={async()=>{

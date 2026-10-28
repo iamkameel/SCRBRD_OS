@@ -76,7 +76,7 @@ function FieldsView({ role, onNav }) {
     const bounceColor = p.bounce?.includes("True")?D.emerald:p.bounce?.includes("Lively")?D.amber:p.bounce?.includes("low")?D.rose:D.sky;
     return (
       <div style={{background:D.surf2,borderRadius:D.lg,padding:"16px",border:`1px solid ${D.border}`,marginBottom:"14px"}}>
-        <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>PITCH VISUAL — STRIP {p.num}</div>
+        <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>PITCH VISUAL — STRIP {p.num}</div>
         {/* Pitch diagram */}
         <div style={{display:"flex",justifyContent:"center",marginBottom:"14px"}}>
           <svg viewBox="0 0 80 220" style={{width:"60px",height:"165px"}}>
@@ -120,13 +120,13 @@ function FieldsView({ role, onNav }) {
             ["Seam Move", p.seamMovement||"—",D.amber],
           ].map(([l,v,c])=>(
             <div key={l} style={{padding:"7px 10px",background:D.surf3,borderRadius:D.sm}}>
-              <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted,marginBottom:"3px"}}>{l}</div>
-              <div style={{fontFamily:D.mono,fontSize:"11px",fontWeight:600,color:textOn(c)}}>{v}</div>
+              <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"3px"}}>{l}</div>
+              <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:textOn(c)}}>{v}</div>
             </div>
           ))}
         </div>
-        {p.history&&<div style={{marginTop:"10px",fontFamily:D.body,fontSize:"10px",color:D.textMuted,background:D.surf3,padding:"7px 10px",borderRadius:D.sm}}><Icon name="chart-column"/> {p.history}</div>}
-        {p.lastRolled&&<div style={{marginTop:"6px",fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>Last rolled: {p.lastRolled}</div>}
+        {p.history&&<div style={{marginTop:"10px",fontFamily:D.body,fontSize:"12px",color:D.textMuted,background:D.surf3,padding:"7px 10px",borderRadius:D.sm}}><Icon name="chart-column"/> {p.history}</div>}
+        {p.lastRolled&&<div style={{marginTop:"6px",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>Last rolled: {p.lastRolled}</div>}
       </div>
     );
   };
@@ -190,17 +190,17 @@ function FieldsView({ role, onNav }) {
                   {selGround.lights&&<Badge color={D.amber}><Icon name="lightbulb"/> Lights</Badge>}
                   {selGround.homeTo?.map(t=><Badge key={t} color={D.sky}>{t}</Badge>)}
                 </div>
-                {selGround.orientation&&<div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}><Icon name="compass"/> Orientation: {selGround.orientation}</div>}
-                {selGround.dimensions&&<div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}><Icon name="ruler"/> {selGround.dimensions.straight}m straight · {selGround.dimensions.squareLeg}m sq-leg · {selGround.dimensions.squareOff}m sq-off</div>}
+                {selGround.orientation&&<div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}><Icon name="compass"/> Orientation: {selGround.orientation}</div>}
+                {selGround.dimensions&&<div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}><Icon name="ruler"/> {selGround.dimensions.straight}m straight · {selGround.dimensions.squareLeg}m sq-leg · {selGround.dimensions.squareOff}m sq-off</div>}
               </div>
               {gk&&(
                 <div style={{padding:"10px 12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`,minWidth:"150px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"6px"}}>GROUNDSKEEPER</div>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"6px"}}>GROUNDSKEEPER</div>
                   <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
                     <Avatar name={gk.name} size={28} color={D.teal}/>
                     <div>
-                      <div style={{fontFamily:D.body,fontSize:"11px",fontWeight:600,color:D.textPrimary}}>{gk.name.split(" ").slice(-1)[0]}</div>
-                      <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted}}>{gk.phone}</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>{gk.name.split(" ").slice(-1)[0]}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{gk.phone}</div>
                     </div>
                   </div>
                 </div>
@@ -218,7 +218,7 @@ function FieldsView({ role, onNav }) {
             if (!gc) return null;
             const row = (l, v, unit = "") =>
               <div key={l} style={{padding:"7px 0",borderBottom:`1px solid ${D.border}`}}>
-                <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginBottom:"2px"}}>{l}</div>
+                <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"2px"}}>{l}</div>
                 <div style={{fontFamily:D.mono,fontSize:"12px",color:v==null?D.textMuted:D.textPrimary}}>
                   {v == null ? "— not measured" : `${v}${unit}`}
                 </div>
@@ -226,10 +226,10 @@ function FieldsView({ role, onNav }) {
             return (
               <Card sx={{padding:"14px 16px",marginBottom:"14px"}}>
                 <div style={{display:"flex",alignItems:"baseline",gap:"9px",marginBottom:"10px",flexWrap:"wrap"}}>
-                  <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>
                     GROUND CONDITION
                   </div>
-                  <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>
+                  <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
                     recorded {gc.reportedAt ? String(gc.reportedAt).slice(0,10) : "—"}
                   </span>
                 </div>
@@ -246,7 +246,7 @@ function FieldsView({ role, onNav }) {
                 </div>
                 {gc.notes && (
                   <div style={{marginTop:"10px",padding:"9px 11px",background:D.surf2,borderRadius:D.md,
-                    border:`1px solid ${D.border}`,fontFamily:D.body,fontSize:"11px",color:D.textSecondary,lineHeight:1.5}}>
+                    border:`1px solid ${D.border}`,fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5}}>
                     {gc.notes}
                   </div>
                 )}
@@ -310,10 +310,10 @@ function FieldsView({ role, onNav }) {
               <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"12px"}}>
                 {surface.length>0&&(
                   <Card sx={{padding:"14px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SURFACE</div>
+                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SURFACE</div>
                     {surface.map(([l,v])=>(
                       <div key={l} style={{padding:"6px 0",borderBottom:`1px solid ${D.border}`}}>
-                        <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginBottom:"2px"}}>{l}</div>
+                        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"2px"}}>{l}</div>
                         <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>{v}</div>
                       </div>
                     ))}
@@ -321,15 +321,15 @@ function FieldsView({ role, onNav }) {
                 )}
                 {!!summary&&(
                   <Card sx={{padding:"14px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>PITCH SUMMARY</div>
+                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>PITCH SUMMARY</div>
                     {strips.map((p,i)=>(
                       <div key={i} style={{padding:"7px 0",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                        <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>Strip {p.num} — {p.surface}</span>
+                        <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>Strip {p.num} — {p.surface}</span>
                         <Badge color={condC(p.condition)}>{p.condition}</Badge>
                       </div>
                     ))}
-                    {selGround.capacity&&<div style={{marginTop:"8px",fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>Capacity: {selGround.capacity.toLocaleString()} spectators</div>}
-                    {selGround.notes&&<div style={{marginTop:"8px",fontFamily:D.body,fontSize:"10px",color:D.textMuted,fontStyle:"italic"}}>{selGround.notes}</div>}
+                    {selGround.capacity&&<div style={{marginTop:"8px",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>Capacity: {selGround.capacity.toLocaleString()} spectators</div>}
+                    {selGround.notes&&<div style={{marginTop:"8px",fontFamily:D.body,fontSize:"12px",color:D.textMuted,fontStyle:"italic"}}>{selGround.notes}</div>}
                   </Card>
                 )}
               </div>
@@ -344,7 +344,7 @@ function FieldsView({ role, onNav }) {
                     padding:"6px 14px",borderRadius:D.pill,cursor:"pointer",
                     border:`1px solid ${selPitch===i?D.amber+"55":D.border}`,
                     background:selPitch===i?D.amber+"12":"transparent",
-                    fontFamily:D.body,fontSize:"11px",color:selPitch===i?D.amber:D.textMuted,
+                    fontFamily:D.body,fontSize:"12px",color:selPitch===i?D.amber:D.textMuted,
                   }}>Strip {p.num}</button>
                 ))}
               </div>
@@ -363,7 +363,7 @@ function FieldsView({ role, onNav }) {
               {selGround.equipment&&Object.entries(selGround.equipment).map(([k,v])=>(
                 <div key={k} style={{padding:"10px 12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,textTransform:"capitalize"}}>{k.replace(/([A-Z])/g," $1")}</span>
-                  <span style={{fontFamily:D.mono,fontSize:"11px",color:D.sky}}>{v}</span>
+                  <span style={{fontFamily:D.mono,fontSize:"12px",color:D.sky}}>{v}</span>
                 </div>
               ))}
             </div>
@@ -377,7 +377,7 @@ function FieldsView({ role, onNav }) {
                   {selGround.prepSchedule.split(".").filter(s=>s.trim()).map((step,i)=>(
                     <div key={i} style={{display:"flex",gap:"10px",alignItems:"flex-start",padding:"9px 12px",background:D.surf2,borderRadius:D.md}}>
                       <div style={{width:"22px",height:"22px",borderRadius:"50%",background:D.teal+"20",border:`1px solid ${D.teal}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                        <span style={{fontFamily:D.mono,fontSize:"10px",color:D.teal,fontWeight:700}}>{i+1}</span>
+                        <span style={{fontFamily:D.mono,fontSize:"12px",color:D.teal,fontWeight:700}}>{i+1}</span>
                       </div>
                       <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{step.trim()}</span>
                     </div>
@@ -485,7 +485,7 @@ function PitchReportModal({ ground, fixtures, role, onClose, said = null, onRetr
             <Select label="Pace rating (1–10)" value={form.paceRating ?? ""} onChange={set("paceRating")} data-testid="pitch-report-paceRating"
               options={[{ value: "", label: "— not recorded" }, ...Array.from({ length: 10 }, (_, i) => String(i + 1))]}/>
           </div>
-          <label style={{display:"block",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>Notes</label>
+          <label style={{display:"block",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>Notes</label>
           <textarea data-testid="pitch-report-notes" value={form.notes ?? ""} onChange={(e)=>set("notes")(e.target.value)} rows={3}
             style={{width:"100%",padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
               color:D.textPrimary,fontFamily:D.body,fontSize:"13px",boxSizing:"border-box",resize:"vertical",marginBottom:"14px"}}/>

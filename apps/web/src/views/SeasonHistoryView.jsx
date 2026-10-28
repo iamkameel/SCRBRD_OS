@@ -92,14 +92,14 @@ function SignedInSeasonHistory({ role, selected, setSelected }) {
               <span style={{ fontFamily: D.head, fontSize: "13px", fontWeight: active.id === s.id ? 700 : 500, color: active.id === s.id ? D.textPrimary : D.textSecondary }}>{s.label}</span>
               {s.current && <Badge color={D.emerald} data-testid="season-current">Current</Badge>}
             </div>
-            <div style={{ fontFamily: D.mono, fontSize: "9px", color: D.textMuted, marginTop: "2px" }}>{s.startsOn} – {s.endsOn}</div>
+            <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted, marginTop: "2px" }}>{s.startsOn} – {s.endsOn}</div>
           </button>
         ))}
       </div>
 
       <div style={{ display: "grid", gap: "16px" }}>
         <div>
-          <div style={{ fontFamily: D.head, fontSize: "11px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>
+          <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>
             Competitions in {active.label}
           </div>
           {comps.length === 0
@@ -112,7 +112,7 @@ function SignedInSeasonHistory({ role, selected, setSelected }) {
         </div>
 
         <div>
-          <div style={{ fontFamily: D.head, fontSize: "11px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>
+          <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>
             Fixtures in {active.label}
           </div>
           {matches.length === 0
@@ -123,7 +123,7 @@ function SignedInSeasonHistory({ role, selected, setSelected }) {
                   <Card key={m.id} sx={{ padding: "12px 16px" }} data-testid={`season-fixture-${m.id}`}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                       <StatusDot status={m.status} />
-                      <span style={{ fontFamily: D.mono, fontSize: "11px", color: D.textMuted, flexShrink: 0 }}>{m.date}</span>
+                      <span style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted, flexShrink: 0 }}>{m.date}</span>
                       <span style={{ flex: 1, fontFamily: D.body, fontSize: "12px", fontWeight: 500, color: D.textPrimary }}>{m.homeTeam} vs {m.awayTeam}</span>
                       <Badge color={m.status === "complete" ? D.textMuted : D.sky}>{m.status}</Badge>
                     </div>
@@ -146,7 +146,7 @@ function SeasonCompetition({ comp, role, season }) {
       <div style={{ padding: "12px 16px", borderBottom: ladder.length ? `1px solid ${D.border}` : "none", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: D.textPrimary }}>{comp.name}</div>
-          <div style={{ fontFamily: D.mono, fontSize: "10px", color: D.textMuted, marginTop: "2px" }}>{comp.type} · {comp.format} · {comp.ageGroup}</div>
+          <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted, marginTop: "2px" }}>{comp.type} · {comp.format} · {comp.ageGroup}</div>
           {ladder.length > 0 && (
             <div style={{ marginTop: "6px" }}>
               <SourceLine testid={`source-line-season-ladder-${comp.id}`}
@@ -162,19 +162,19 @@ function SeasonCompetition({ comp, role, season }) {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr>
               {["#", "Team", "P", "W", "L", "Pts", "NRR"].map(h => (
-                <th key={h} style={{ padding: "8px 12px", fontFamily: D.head, fontSize: "9px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", textAlign: h === "Team" ? "left" : "center" }}>{h}</th>
+                <th key={h} style={{ padding: "8px 12px", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.06em", textTransform: "uppercase", textAlign: h === "Team" ? "left" : "center" }}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
               {ladder.map((t, i) => (
                 <tr key={t.id} style={{ borderTop: `1px solid ${D.border}` }}>
-                  <td style={{ padding: "8px 12px", textAlign: "center", fontFamily: D.mono, fontSize: "11px", fontWeight: 700, color: i === 0 ? D.amber : D.textMuted }}>{i + 1}</td>
+                  <td style={{ padding: "8px 12px", textAlign: "center", fontFamily: D.mono, fontSize: "12px", fontWeight: 700, color: i === 0 ? D.amber : D.textMuted }}>{i + 1}</td>
                   <td style={{ padding: "8px 12px", fontFamily: D.body, fontSize: "12px", color: D.textPrimary }}>{t.name}</td>
                   {[t.played, t.wins, t.losses].map((v, j) => (
                     <td key={j} style={{ padding: "8px 12px", textAlign: "center", fontFamily: D.mono, fontSize: "12px", color: D.textSecondary }}>{v}</td>
                   ))}
                   <td style={{ padding: "8px 12px", textAlign: "center", fontFamily: D.mono, fontSize: "13px", fontWeight: 700, color: D.textPrimary }}>{t.points}</td>
-                  <td style={{ padding: "8px 12px", textAlign: "center", fontFamily: D.mono, fontSize: "11px", color: D.textSecondary }}>{t.nrr == null ? "—" : Number(t.nrr).toFixed(3)}</td>
+                  <td style={{ padding: "8px 12px", textAlign: "center", fontFamily: D.mono, fontSize: "12px", color: D.textSecondary }}>{t.nrr == null ? "—" : Number(t.nrr).toFixed(3)}</td>
                 </tr>
               ))}
             </tbody>

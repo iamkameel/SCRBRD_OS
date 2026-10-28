@@ -103,7 +103,7 @@ function QuarantinePanel({ matchId, role }) {
         <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textPrimary, marginBottom: "6px" }}>
           Quarantined balls
         </div>
-        <div style={{ fontFamily: D.body, fontSize: "11px", color: state.error ? textOn(D.rose) : D.textMuted }}>
+        <div style={{ fontFamily: D.body, fontSize: "12px", color: state.error ? textOn(D.rose) : D.textMuted }}>
           {state.loading ? "Loading…" : `Could not load quarantine (${state.error}).`}
         </div>
       </Card>
@@ -136,12 +136,12 @@ function QuarantinePanel({ matchId, role }) {
     <Card sx={{ padding: "14px", marginTop: "12px" }} data-testid="quarantine-panel">
       <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "8px" }}>
         <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textPrimary }}>Quarantined balls</div>
-        <div style={{ fontFamily: D.mono, fontSize: "9px", color: D.textMuted }} data-testid="quarantine-count">
+        <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted }} data-testid="quarantine-count">
           {state.rows.length} waiting
         </div>
       </div>
       {state.rows.length === 0 ? (
-        <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted }}>Nothing waiting for review.</div>
+        <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>Nothing waiting for review.</div>
       ) : (
         state.rows.map((row) => (
           <div key={row.id} data-testid={`quarantine-${row.id}`}
@@ -149,12 +149,12 @@ function QuarantinePanel({ matchId, role }) {
             <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>
               {describeBall(row.body)}
             </div>
-            <div style={{ fontFamily: D.mono, fontSize: "10px", color: D.textMuted, marginTop: "2px" }}>
+            <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted, marginTop: "2px" }}>
               Sent by {row.scorer_name || "unknown"} · epoch {row.submitted_epoch} (now {row.current_epoch ?? "—"}) · {when(row.quarantined_at)}
             </div>
             {said[row.id] && (
               <div role="alert" data-testid={`quarantine-${row.id}-refused`}
-                   style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginTop: "5px" }}>
+                   style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose), marginTop: "5px" }}>
                 {said[row.id]?.text ?? said[row.id]}
               </div>
             )}
