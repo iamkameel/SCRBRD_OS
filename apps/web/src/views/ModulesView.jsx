@@ -107,7 +107,7 @@ function ModulesView({ role }) {
               {r.locked && <Badge color={D.amber}><Icon name="lock"/> Locked by the platform</Badge>}
             </div>
             {r.reason && (
-              <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted, marginTop: "4px" }}>
+              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginTop: "4px" }}>
                 {r.reason}
               </div>
             )}
@@ -141,7 +141,7 @@ function ModulesView({ role }) {
                     style={{ padding: "4px 10px", borderRadius: D.pill,
                       background: D.surf2, border: `1px solid ${D.border}`,
                       cursor: canSuppress ? "pointer" : "default",
-                      fontFamily: D.body, fontSize: "11px", color: D.textSecondary }}>
+                      fontFamily: D.body, fontSize: "12px", color: D.textSecondary }}>
                     {h.personName || "Someone"}{canSuppress ? " ✕" : ""}
                   </button>
                 ))}
@@ -187,9 +187,9 @@ function ModulesView({ role }) {
   const Section = ({ title, sub, list }) => (
     <Card style={{ marginBottom: "18px" }}>
       <div style={{ padding: "13px 16px" }}>
-        <div style={{ fontFamily: D.head, fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em",
+        <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.1em",
           textTransform: "uppercase", color: D.textMuted }}>{title}</div>
-        <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted, marginTop: "2px" }}>{sub}</div>
+        <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginTop: "2px" }}>{sub}</div>
       </div>
       {list.map((r) => <Row key={r.key} r={r}/>)}
     </Card>
@@ -318,7 +318,7 @@ function HideFromPerson({ module, role, schoolId, onClose, onDone }) {
               borderTop: i === 0 ? "none" : `1px solid ${D.border}`,
               background: sel === u.id ? D.indigo + "14" : "transparent", border: "none" }}>
             <span style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary }}>{u.name}</span>
-            <span style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted }}>{u.role}</span>
+            <span style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>{u.role}</span>
           </button>
         ))}
       </div>

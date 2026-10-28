@@ -5,7 +5,7 @@
 -- HAND-WRITTEN: one function re-created, its grants narrowed, nothing else.
 -- The finding is the Opus review of #176 (db/115, REACH R-B), which made
 -- is_family_of() the family's only way into passport_consent and
--- player_scouting_consent, to read and to write. Its proof is db/99 §98; the
+-- player_scouting_consent, to read and to write. Its proof is db/99 §96; the
 -- API walks are tools/smoke-passport.mjs and tools/smoke-scouting.mjs.
 --
 -- ── 1 · THE GAP ────────────────────────────────────────────────────
@@ -48,8 +48,10 @@
 --
 -- ── 3 · EVERY CALLER, AND WHAT MOVES FOR EACH ──────────────────────
 -- `git grep is_family_of` over db/, services/, packages/, apps/ and tools/,
--- and pg_proc/pg_policy/pg_views on a database at db/114 (and db/115). Nothing
--- outside db/ calls it; no view names it.
+-- and pg_proc/pg_policy/pg_views on a database at db/114 (and db/115), read
+-- again at db/117 for db/116 (27 Oct 2026, the Opus review of this file) and
+-- with db/120, which came after it. Nothing outside db/ calls it; no view
+-- names it.
 --   passport_consent_read (db/08; db/115)    the family's read: narrows. A
 --     guardian whose assignment or link has ended or not begun, or any family
 --     member on a pad's credential, reads no consent through it. The office's
@@ -59,10 +61,26 @@
 --   player_scouting_consent_read (db/115, where applied)  the family's read:
 --     narrows the same way. The office and coach terms are untouched. Not on a
 --     database without db/115, where db/08's policy does not call it.
---   passport_open() (db/08), and through it passport() and passport_name()
---     the family no longer opens the passport on a dead link or on a pad. The
---     boy's own school (player.profile.read) and a school the family named
---     (a live consent) open it exactly as before.
+--   passport_consent_pupil_standing_only, player_scouting_consent_pupil_
+--   standing_only (db/116, RESTRICTIVE, SELECT)  the second lock that lets
+--     a pupil past only as the boy's family or on a standing
+--     player.profile.read: narrows the same way. A pupil whose self-access
+--     link has ended, or who is on a pad, is cut here as well as by db/115's
+--     permissive terms, which ask this function too. Nobody who is not a
+--     pupil is touched (the cut opens with NOT app_reader_is_pupil()).
+--   passport_open() (db/116, re-written from db/08's), and through it
+--     passport() and passport_name() (db/116)  the family no longer opens the
+--     passport on a dead link or on a pad. Its staff arms are db/116's, not
+--     db/08's player.profile.read: at his own school team.select or
+--     player.profile.manage over him, or guardian.link.manage there (the
+--     office); at a school the family named while the consent is live, that
+--     school's guardian.link.manage or team.select. Every one is app_can(),
+--     which reads the same dates and refuses a pad, and none moves here.
+--   notification_pref_insert, notification_pref_update (db/120, after this
+--     file)  a parent's per-child "do not push me this" may be written, and
+--     flipped, only while he is the boy's family: narrows the same way. A
+--     row whose link has since ended stays his to read (person_id alone) and
+--     no longer his to change. db/120 requires this file first.
 --   injury_writer_is_family() (db/111), and through it injury_write_refusal(),
 --     injury_record(), injury_review_record() and injury_worklist()
 --     NO CHANGE. It is is_family_of() OR any guardian or self-access link the

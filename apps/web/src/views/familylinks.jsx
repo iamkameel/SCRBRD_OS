@@ -66,7 +66,7 @@ export function FamilyLinks({ role, player }) {
                   {l.relationship ? <span style={{ fontWeight: 400, color: D.textSecondary }}> · {l.relationship}</span> : null}
                 </p>
                 {l.guardianEmail && <p style={{ ...dNote(), overflowWrap: "anywhere" }}>{l.guardianEmail}</p>}
-                <p style={dNote()} data-testid="family-link-state">{linkStateWords(l)}</p>
+                <p style={dNote()} data-testid="family-link-state">{linkStateWords(l, { readsEndings: mayRevoke })}</p>
                 <p style={dNote()}>
                   {l.createdAt ? `Linked ${l.createdAt}${l.createdBy ? ` by ${l.createdBy}` : ""}` : ""}
                   {l.verifiedAt ? ` · verified ${l.verifiedAt}${l.verifiedBy ? ` by ${l.verifiedBy}` : ""}` : ""}

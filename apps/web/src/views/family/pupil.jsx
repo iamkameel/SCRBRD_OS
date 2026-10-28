@@ -289,7 +289,7 @@ export function PupilMe({ role, onNav }) {
       <Card label="My ratings" testid="me-ratings"><MyRatings me={me} role={role}/></Card>
       <Card label="My record" testid="me-record"
         aside={!show.record && <Action testid="me-record-show" onClick={() => setShow((s) => ({ ...s, record: true }))}>Show</Action>}>
-        {show.record ? <TheirRecord child={me} role={role}/> : <Line quiet>Your date of birth, address and ID number, as the school holds them.</Line>}
+        {show.record ? <TheirRecord child={me} role={role} self/> : <Line quiet>Your date of birth and address, as the school holds them. For your ID number, ask the school office.</Line>}
       </Card>
       <Card label="Conduct matters" testid="me-conduct"
         aside={!show.conduct && <Action testid="me-conduct-show" onClick={() => setShow((s) => ({ ...s, conduct: true }))}>Show</Action>}>

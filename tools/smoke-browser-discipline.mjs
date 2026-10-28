@@ -153,6 +153,12 @@ async function openConduct(page) {
 async function toMatch(page, matchId) {
   if (!(await nav(page, "matches"))) return false;
   const card = tid(page, `match-card-${matchId}`).first();
+  // Match Centre draws a fixture's card only once its reads answer (matches,
+  // staff, grounds, competitions, weather), and on the first opening those
+  // queue behind the previous screen's: 1.4-2.3 s measured, against the fixed
+  // wait before this look. Give the card up to 10 s to be drawn; one that is
+  // never drawn is judged exactly as before.
+  await card.waitFor({ timeout: 10000 }).catch(() => {});
   if (!(await card.count())) return false;
   await card.click({ timeout: 6000 });
   await afterReads(page, 1500);

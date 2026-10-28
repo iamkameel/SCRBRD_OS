@@ -138,15 +138,15 @@ function LogisticsView({ role, section = null, onNav }) {
                       {/* Timing block */}
                       <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
                         <div style={{padding:"10px 14px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`,textAlign:"center",minWidth:"70px"}}>
-                          <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"4px"}}>DEPARTS</div>
+                          <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"4px"}}>DEPARTS</div>
                           <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.sky}}>{clock(trip?.departAt)}</div>
                         </div>
                         <div style={{padding:"10px 14px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`,textAlign:"center",minWidth:"70px"}}>
-                          <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"4px"}}>RETURNS</div>
+                          <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"4px"}}>RETURNS</div>
                           <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.emerald}}>{clock(trip?.returnAt)}</div>
                         </div>
                         <div style={{padding:"10px 14px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.border}`,textAlign:"center",minWidth:"70px"}}>
-                          <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"4px"}}>SEATS</div>
+                          <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"4px"}}>SEATS</div>
                           <div style={{fontFamily:D.mono,fontSize:"16px",fontWeight:700,color:D.amber}}>{trip?.seatsTaken??"—"}</div>
                         </div>
                       </div>
@@ -163,7 +163,7 @@ function LogisticsView({ role, section = null, onNav }) {
                             <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>
                               {driver?.name??trip.driverName??"No driver named yet"}
                             </div>
-                            <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{driver?.phone??""}</div>
+                            <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{driver?.phone??""}</div>
                           </div>
                         </div>
                         {/* Where the bus is, in the server's own word. */}
@@ -177,7 +177,7 @@ function LogisticsView({ role, section = null, onNav }) {
                             <div style={{width:"1px",height:"32px",background:D.border}}/>
                             <div>
                               <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:textOn(D.lime)}}>{vehicle.reg}</div>
-                              <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{vehicle.description} · {vehicle.capacity} seats{vehicle.condition?<> · <span style={{color:condColor(vehicle.condition)}}>{vehicle.condition}</span></>:null}</div>
+                              <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{vehicle.description} · {vehicle.capacity} seats{vehicle.condition?<> · <span style={{color:condColor(vehicle.condition)}}>{vehicle.condition}</span></>:null}</div>
                             </div>
                           </>
                         )}
@@ -198,7 +198,7 @@ function LogisticsView({ role, section = null, onNav }) {
                       return (
                         <div style={{marginTop:"12px",padding:"14px",background:D.surf2,borderRadius:D.md,border:`1px solid ${D.teal}22`}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
-                            <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.teal,letterSpacing:"0.08em"}}>TRAVEL MANIFEST — {allPassengers.length} PASSENGERS</div>
+                            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.teal,letterSpacing:"0.08em"}}>TRAVEL MANIFEST — {allPassengers.length} PASSENGERS</div>
                             {/* Against the VEHICLE's capacity, not against a
                                 seat count somebody typed. The bus holds what
                                 the bus holds, and the database refuses a trip
@@ -211,16 +211,16 @@ function LogisticsView({ role, section = null, onNav }) {
                           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:"6px"}}>
                             {allPassengers.map((p,i)=>(
                               <div key={i} style={{display:"flex",alignItems:"center",gap:"7px",padding:"6px 8px",background:D.surf1,borderRadius:D.sm}}>
-                                <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,width:"16px"}}>{i+1}</span>
+                                <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,width:"16px"}}>{i+1}</span>
                                 <Avatar name={p.name} size={22} color={p.type==="Coach"?D.emerald:D.sky}/>
                                 <div>
-                                  <div style={{fontFamily:D.body,fontSize:"10px",fontWeight:500,color:D.textPrimary,lineHeight:1.2}}>{p.name.split(" ").slice(-1)[0]}</div>
-                                  <div style={{fontFamily:D.mono,fontSize:"8px",color:p.type==="Coach"?D.emerald:D.textMuted}}>{p.type}</div>
+                                  <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:D.textPrimary,lineHeight:1.2}}>{p.name.split(" ").slice(-1)[0]}</div>
+                                  <div style={{fontFamily:D.mono,fontSize:"12px",color:p.type==="Coach"?D.emerald:D.textMuted}}>{p.type}</div>
                                 </div>
                               </div>
                             ))}
                           </div>
-                          <div style={{marginTop:"10px",fontFamily:D.body,fontSize:"10px",color:D.textMuted,fontStyle:"italic"}}>
+                          <div style={{marginTop:"10px",fontFamily:D.body,fontSize:"12px",color:D.textMuted,fontStyle:"italic"}}>
                             <Icon name="triangle-alert"/> All players must have signed indemnity forms. Medical kit carried by {STAFF.find(s=>s.role==="medical"&&s.active)?.name||"medical staff"}.
                           </div>
                         </div>
@@ -273,19 +273,19 @@ function LogisticsView({ role, section = null, onNav }) {
                   <div style={{marginBottom:"10px"}}>
                     {g.pitches.filter(p=>p.condition!=="Resting"&&p.condition!=="Maintenance").map(p=>(
                       <div key={p.num} style={{padding:"5px 8px",background:D.surf2,borderRadius:D.sm,marginBottom:"4px",display:"flex",justifyContent:"space-between"}}>
-                        <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>Strip {p.num}</span>
+                        <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>Strip {p.num}</span>
                         <Badge color={p.condition==="Match-ready"?D.emerald:p.condition==="Good"?D.sky:D.amber}>{p.condition}</Badge>
                       </div>
                     ))}
                   </div>
                 )}
-                {todayMatches.length>0&&<div style={{marginBottom:"8px",padding:"6px 10px",background:D.emerald+"10",borderRadius:D.sm,border:`1px solid ${D.emerald}22`}}><span style={{fontFamily:D.body,fontSize:"11px",color:D.emerald}}><Icon name="stumps"/> Match today: {todayMatches[0].homeTeam} vs {todayMatches[0].awayTeam}</span></div>}
-                {upcomingMatchesG.length>0&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"8px"}}>Next match: {upcomingMatchesG[0].date}</div>}
+                {todayMatches.length>0&&<div style={{marginBottom:"8px",padding:"6px 10px",background:D.emerald+"10",borderRadius:D.sm,border:`1px solid ${D.emerald}22`}}><span style={{fontFamily:D.body,fontSize:"12px",color:D.emerald}}><Icon name="stumps"/> Match today: {todayMatches[0].homeTeam} vs {todayMatches[0].awayTeam}</span></div>}
+                {upcomingMatchesG.length>0&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"8px"}}>Next match: {upcomingMatchesG[0].date}</div>}
                 {gk&&(
                   <div style={{display:"flex",alignItems:"center",gap:"7px",marginTop:"8px",paddingTop:"8px",borderTop:`1px solid ${D.border}`}}>
                     <Avatar name={gk.name} size={24} color={D.teal}/>
-                    <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{gk.name}</span>
-                    <span style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginLeft:"auto"}}><Icon name="sprout"/> GK</span>
+                    <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{gk.name}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,marginLeft:"auto"}}><Icon name="sprout"/> GK</span>
                   </div>
                 )}
               </Card>
@@ -347,10 +347,10 @@ function KitRegister({ role }) {
   return (
     <Card sx={{padding:"14px",marginBottom:"12px"}} data-testid="kit-register">
       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>The kit register</div>
-      <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"10px"}}>
+      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"10px"}}>
         What the school holds, and who has it. A boy keeps it until he gives it back.
       </div>
-      {said&&<div role="alert" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.rose),marginBottom:"8px"}}>{said}</div>}
+      {said&&<div role="alert" style={{fontFamily:D.body,fontSize:"12px",color:textOn(D.rose),marginBottom:"8px"}}>{said}</div>}
       {KIT.map(eq=>{
         const out = openFor(eq);
         const spare = eq.quantity - (eq.out ?? 0);
@@ -359,7 +359,7 @@ function KitRegister({ role }) {
             <div style={{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
               <div style={{flex:1,minWidth:"170px"}}>
                 <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary}}>{eq.label}</div>
-                <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>
+                <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>
                   {eq.kind} · {eq.out ?? 0} of {eq.quantity} out{eq.condition?` · ${eq.condition}`:""}
                 </div>
               </div>
@@ -374,7 +374,7 @@ function KitRegister({ role }) {
             </div>
             {out.map(i=>(
               <div key={i.id} style={{display:"flex",alignItems:"center",gap:"8px",paddingTop:"6px"}}>
-                <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,flex:1}}>{i.name} since {i.issuedOn}</span>
+                <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,flex:1}}>{i.name} since {i.issuedOn}</span>
                 {canKeep&&<Btn variant="ghost" size="sm" onClick={()=>act(`/api/equipment-issues/${i.id}/return`)}>Given back</Btn>}
               </div>
             ))}

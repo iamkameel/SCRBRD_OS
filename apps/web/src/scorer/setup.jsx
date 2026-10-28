@@ -411,14 +411,14 @@ function SquadBuilder({teamKey, selected11, setSelected11, twelfthMan, setTwelft
         <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,
           color:xi===11?D.emerald:xi>11?D.rose:D.amber}}>{xi}/11 selected</div>
         {twelfthMan&&<Badge color={D.violet}>12th: {twelfthMan.split(" ").pop()}</Badge>}
-        {xi===11&&!twelfthMan&&<span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>select a 12th man below</span>}
+        {xi===11&&!twelfthMan&&<span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>select a 12th man below</span>}
         {xi===11&&twelfthMan&&<Badge color={D.emerald}>Squad complete ✓</Badge>}
         <button onClick={()=>{
           const auto=team.players.slice(0,11).map(p=>p.name);
           setSelected11(auto);setBattingOrder(auto);setTwelfthMan(team.players[11]?.name||null);
         }} className="pressBtn" style={{marginLeft:"auto",padding:"4px 10px",borderRadius:D.pill,
           border:`1px solid ${D.border}`,background:"transparent",cursor:"pointer",
-          fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>Auto-pick XI</button>
+          fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Auto-pick XI</button>
       </div>
       {/* Player list */}
       <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
@@ -440,19 +440,19 @@ function SquadBuilder({teamKey, selected11, setSelected11, twelfthMan, setTwelft
                 background:inXI?`${accent}20`:is12th?`${D.violet}20`:D.surf3,
                 border:`1px solid ${inXI?accent+"44":is12th?D.violet+"44":D.border}`,
                 display:"flex",alignItems:"center",justifyContent:"center",
-                fontFamily:D.mono,fontSize:"10px",fontWeight:600,
+                fontFamily:D.mono,fontSize:"12px",fontWeight:600,
                 color:inXI?textOn(accent):is12th?D.violet:D.textMuted}}>
                 {inXI?xiPos+1:is12th?"12":"·"}
               </div>
               <span style={{flex:1,fontFamily:D.body,fontSize:"13px",fontWeight:inXI?600:400,
                 color:inXI?D.textPrimary:D.textSecondary}}>{player.name}</span>
               <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-                <Badge color={rc} sx={{fontSize:"8px",padding:"2px 6px"}}>{player.role}</Badge>
+                <Badge color={rc} sx={{fontSize:"12px",padding:"2px 6px"}}>{player.role}</Badge>
                 {!inXI&&(
                   <button onClick={e=>setAs12th(player.name,e)} className="pressBtn" style={{
                     padding:"3px 8px",borderRadius:D.pill,border:`1px solid ${is12th?D.violet+"55":D.border}`,
                     background:is12th?`${D.violet}18`:"transparent",cursor:"pointer",
-                    fontFamily:D.head,fontSize:"8px",fontWeight:700,color:is12th?D.violet:D.textMuted,
+                    fontFamily:D.head,fontSize:"12px",fontWeight:700,color:is12th?D.violet:D.textMuted,
                     letterSpacing:"0.06em"}}>12th</button>
                 )}
               </div>
@@ -465,7 +465,7 @@ function SquadBuilder({teamKey, selected11, setSelected11, twelfthMan, setTwelft
         <div style={{marginTop:"4px"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"8px"}}>
             <Lbl sx={{color:accent}}>Batting Order</Lbl>
-            <span style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>≡ drag to reorder</span>
+            <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>≡ drag to reorder</span>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
             {battingOrder.map((name,i)=>{
@@ -496,11 +496,11 @@ function SquadBuilder({teamKey, selected11, setSelected11, twelfthMan, setTwelft
                   <div style={{width:"20px",height:"20px",borderRadius:"50%",flexShrink:0,
                     background:i<2?`${D.emerald}18`:i>=8?`${D.orange}18`:`${accent}10`,
                     display:"flex",alignItems:"center",justifyContent:"center",
-                    fontFamily:D.mono,fontSize:"10px",color:i<2?D.emerald:i>=8?D.orange:D.textMuted}}>
+                    fontFamily:D.mono,fontSize:"12px",color:i<2?D.emerald:i>=8?D.orange:D.textMuted}}>
                     {i+1}
                   </div>
                   <span style={{flex:1,fontFamily:D.body,fontSize:"12px",fontWeight:i<2?600:400,color:D.textPrimary}}>{name}</span>
-                  <Badge color={rc} sx={{fontSize:"8px"}}>{ri?.role||"—"}</Badge>
+                  <Badge color={rc} sx={{fontSize:"12px"}}>{ri?.role||"—"}</Badge>
                 </div>
               );
             })}

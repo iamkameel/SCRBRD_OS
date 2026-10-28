@@ -238,8 +238,8 @@ function OnboardingFlow({ onComplete }) {
                   }}>
                     <span style={{fontSize:"20px",flexShrink:0,marginTop:"1px",color:data.role===r.id?D.indigoText:T.content.secondary}}><Icon name={r.icon}/></span>
                     <div>
-                      <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:data.role===r.id?D.indigoText:T.content.primary}}>{r.label}</div>
-                      <div style={{fontFamily:D.body,fontSize:"10px",color:T.content.tertiary,marginTop:"2px",lineHeight:1.4}}>{r.desc}</div>
+                      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:data.role===r.id?D.indigoText:T.content.primary}}>{r.label}</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:T.content.tertiary,marginTop:"2px",lineHeight:1.4}}>{r.desc}</div>
                     </div>
                   </button>
                 ))}
@@ -264,7 +264,7 @@ function OnboardingFlow({ onComplete }) {
                   }}>
                     <div style={{flex:1}}>
                       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:data.schoolId===s.id?D.indigoText:T.content.primary}}>{s.name}</div>
-                      <div style={{fontFamily:D.mono,fontSize:"10px",color:T.content.tertiary,marginTop:"2px"}}>{s.city} · {s.province} · {s.type}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"12px",color:T.content.tertiary,marginTop:"2px"}}>{s.city} · {s.province} · {s.type}</div>
                     </div>
                     {data.schoolId===s.id&&<span style={{color:D.indigoText,fontSize:"16px"}}>✓</span>}
                   </button>
@@ -288,15 +288,15 @@ function OnboardingFlow({ onComplete }) {
             <div>
               <div style={{fontFamily:D.head,fontSize:"20px",fontWeight:800,color:T.content.primary,textAlign:"center",marginBottom:"6px"}}>Your Profile</div>
               {data.role&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"8px",marginBottom:"18px"}}>
-                <span style={{padding:"4px 12px",borderRadius:D.pill,background:`${ri.color||D.indigo}18`,border:`1px solid ${ri.color||D.indigo}33`,fontFamily:D.head,fontSize:"11px",fontWeight:700,color:ri.color||D.indigoText,display:"inline-flex",alignItems:"center",gap:"5px"}}>{ri.icon&&<Icon name={ri.icon}/>} {ri.label}</span>
-                {data.schoolCustom&&<span style={{fontFamily:D.mono,fontSize:"10px",color:T.content.tertiary}}>{data.schoolCustom}</span>}
+                <span style={{padding:"4px 12px",borderRadius:D.pill,background:`${ri.color||D.indigo}18`,border:`1px solid ${ri.color||D.indigo}33`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:ri.color||D.indigoText,display:"inline-flex",alignItems:"center",gap:"5px"}}>{ri.icon&&<Icon name={ri.icon}/>} {ri.label}</span>
+                {data.schoolCustom&&<span style={{fontFamily:D.mono,fontSize:"12px",color:T.content.tertiary}}>{data.schoolCustom}</span>}
               </div>}
               {[
                 {label:"Full Name",       key:"name",   type:"text",  placeholder:"e.g. James Whitfield",      required:true},
                 {label:"Email Address",   key:"email",  type:"email", placeholder:"james@school.co.za",         required:live},
               ].map(f=>(
                 <div key={f.key} style={{marginBottom:"14px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"6px"}}>{f.label}{f.required&&" *"}</div>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"6px"}}>{f.label}{f.required&&" *"}</div>
                   <input value={data[f.key]} type={f.type} onChange={e=>set(f.key,e.target.value)} placeholder={f.placeholder} style={INP}/>
                 </div>
               ))}
@@ -312,19 +312,19 @@ function OnboardingFlow({ onComplete }) {
                 {label:"Jersey Number",     key:"jersey", placeholder:"e.g. 7"},
               ].map(f=>(
                 <div key={f.key} style={{marginBottom:"14px"}}>
-                  <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"6px"}}>{f.label}</div>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"6px"}}>{f.label}</div>
                   <input value={data[f.key]} onChange={e=>set(f.key,e.target.value)} placeholder={f.placeholder} style={INP}/>
                 </div>
               ))}
               <div style={{marginBottom:"14px"}}>
-                <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"8px"}}>Batting / Bowling Role</div>
+                <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"8px"}}>Batting / Bowling Role</div>
                 <div style={{display:"grid",gridTemplateColumns:"var(--g-3,repeat(3,1fr))",gap:"6px"}}>
                   {["Batsman","Bowler","All-rounder","Wicketkeeper","Opening Bat","Pace Bowler"].map(r=>(
-                    <button key={r} onClick={()=>set("playerRole",r)} className="pressBtn" style={{padding:"8px 6px",borderRadius:"8px",cursor:"pointer",border:`1px solid ${data.playerRole===r?`${D.indigo}80`:T.line.subtle}`,background:data.playerRole===r?`${D.indigo}24`:"transparent",fontFamily:D.head,fontSize:"10px",fontWeight:600,color:data.playerRole===r?D.indigoText:T.content.secondary}}>{r}</button>
+                    <button key={r} onClick={()=>set("playerRole",r)} className="pressBtn" style={{padding:"8px 6px",borderRadius:"8px",cursor:"pointer",border:`1px solid ${data.playerRole===r?`${D.indigo}80`:T.line.subtle}`,background:data.playerRole===r?`${D.indigo}24`:"transparent",fontFamily:D.head,fontSize:"12px",fontWeight:600,color:data.playerRole===r?D.indigoText:T.content.secondary}}>{r}</button>
                   ))}
                 </div>
               </div>
-              {live&&<div style={{marginTop:"12px",fontFamily:D.body,fontSize:"11px",color:T.content.tertiary,lineHeight:1.5}}>
+              {live&&<div style={{marginTop:"12px",fontFamily:D.body,fontSize:"12px",color:T.content.tertiary,lineHeight:1.5}}>
                 These travel with your request — whoever approves it sees them, so your team and role are on record from the start.
               </div>}
             </div>
@@ -338,7 +338,7 @@ function OnboardingFlow({ onComplete }) {
                 Optionally name your child. Nobody at your school can be searched from here before your account exists — whoever approves your
                 request will match this to the right player.
               </div>
-              <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"8px"}}>Child’s Name</div>
+              <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"8px"}}>Child’s Name</div>
               <input value={data.playerLink} onChange={e=>set("playerLink",e.target.value)} placeholder="e.g. James Whitfield" style={INP}/>
               {/* SCRBRD-092's "one sign-up flow, separate consents", for
                   health monitoring (SCRBRD-110 §7). A consent is given through
@@ -371,7 +371,7 @@ function OnboardingFlow({ onComplete }) {
                     <div style={{fontSize:"22px",width:"34px",textAlign:"center",flexShrink:0,color:T.content.secondary}}><Icon name={t.icon}/></div>
                     <div>
                       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:T.content.primary}}>{t.t}</div>
-                      <div style={{fontFamily:D.body,fontSize:"11px",color:T.content.tertiary,marginTop:"2px"}}>{t.d}</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:T.content.tertiary,marginTop:"2px"}}>{t.d}</div>
                     </div>
                   </div>
                 ))}
@@ -398,7 +398,7 @@ function OnboardingFlow({ onComplete }) {
             ? <button onClick={()=>onComplete(null, "", null, { requested:true })} className="pressBtn" style={{padding:"11px 22px",borderRadius:"14px",cursor:"pointer",background:"transparent",border:`1px solid ${T.line.normal}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:T.content.tertiary}}>← Sign in instead</button>
             : <button onClick={()=>{setStep(s=>s-1);}} disabled={sending} className="pressBtn" style={{padding:"11px 22px",borderRadius:"14px",cursor:sending?"not-allowed":"pointer",background:"transparent",border:`1px solid ${T.line.normal}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:T.content.tertiary,opacity:sending?0.5:1}}>← Back</button>}
           <div style={{flex:1}}/>
-          <div style={{fontFamily:D.mono,fontSize:"10px",color:T.content.tertiary}}>{step+1} / {steps.length}</div>
+          <div style={{fontFamily:D.mono,fontSize:"12px",color:T.content.tertiary}}>{step+1} / {steps.length}</div>
           <button onClick={handleNext} disabled={(!canAdvance()&&stepId!=="tour")||sending} className="pressBtn" style={{
             padding:"11px 26px",borderRadius:"14px",cursor:(canAdvance()||stepId==="tour")&&!sending?"pointer":"not-allowed",
             background:(canAdvance()||stepId==="tour")&&!sending?T.light.action:T.fill.track,

@@ -731,6 +731,39 @@ for the owner's key, a platform administrator, a school administrator and a two-
 > cannot, from the browser.
 **Regression risk:** LOW
 
+## Match page grammar — from the ESPNcricinfo audits (added 2026-10-23)
+
+Plan, evidence and per-item acceptance: `docs/design/CRICINFO_GAP_PLAN.md` §6. Decided by Kameel
+2026-10-23 (§9 there). Every gap below was checked against `main` @ `37f5884`. **Haiku: reconcile
+these against the Product completeness and Polish entries above before any builder starts**; where
+one duplicates an existing entry, strike the `CRI-*` line and point at the older ID.
+
+**Sprint 0 — walks only, no screen changes (approved):**
+- **CRI-0.1** — Design brief: decided, `DESIGN_DIRECTION.md` stands. Open only for the claude.ai Project brief (Kameel).
+- **CRI-0.2** — Screenshot set, 360/390/768/1440px, both themes. Accept: set under `audit/`, a note per clipped element.
+- **CRI-0.3** — Public live page walk (SCRBRD-083, `PUBLIC_DATA.md`). Accept: mounted or not recorded; no child identity in the payload; `SCREEN_MAP.md` corrected.
+- **CRI-0.4** — Offline sync walk. Accept: no duplicate events; "Held N" counts down to zero.
+- **CRI-0.5** — Type and touch floors. Evidence: `AnalyticsView.jsx:37,41,43,142,156` at 8–10px. Accept: nothing under 12px or 44px.
+
+**Sprint 1 — before the next Pilot Match:**
+- **CRI-1.1** — `Board`: last-wicket and "updated · sync" rows. Evidence: `ui/board.jsx:214` has no last-wicket prop.
+- **CRI-1.2** — `statusSentence()` shared by fixture list, board and push. Evidence: `scores.jsx` prints innings lines only.
+- **CRI-1.3** — Tabs Summary, Scorecard, Commentary + More; a route per tab. Evidence: `MatchView.jsx:60–66`.
+- **CRI-1.4** — "Enter scoring" on the match page, authorised scorer only. Policy test required first.
+- **CRI-1.5** — Scorecard dismissal → that ball in Commentary; back restores state.
+- **CRI-1.6** — Sticky scorecard header and scroll cue at 360px.
+- **CRI-1.7** — Summary becomes the result view after full time.
+- **CRI-1.8** — Win probability from the par line, labelled "par estimate" (decided 2026-10-23).
+
+**Sprint 2:** CRI-2.1 commentary chips and over jump · CRI-2.2 `sourceLine` and capture coverage on every chart ·
+CRI-2.3 chart-to-delivery drill-down · CRI-2.4 reader freshness and low-bandwidth mode · CRI-2.5 three spectator charts.
+
+**Sprint 3 (after pilot evidence):** CRI-3.1 notifications S2–S5 with follow and a Result-only default ·
+CRI-3.2 tap-to-passport · CRI-3.3 match impact as PoM suggestion (after recognition §7 scoring fixes) ·
+CRI-3.4 StatsMagic (the Analytics Explorer, renamed by Kameel 2026-10-28; SCRBRD's counterpart of Cricinfo's Statsguru), one Fable design pass (allowed 2026-10-23).
+
+**Regression risk:** MEDIUM (Sprint 1 touches `MatchView.jsx` and `Board`, which every walk reads)
+
 ## Documentation
 
 ### ~~SCRBRD-019~~ — CLOSED — `DEPLOYING.md`: production changes go in new `db/NN` files only
@@ -4045,6 +4078,7 @@ Kameel, after a look at beta-2's four cockpits (`iamkameel/scrbrd-beta-2`, `Coac
 - **Who's out and the XI:** availability and the squad read. Workload only as SCRBRD-110 allows a coach.
 - **Not carried over:**
   - win probability and a 0–100 pressure index (SCRBRD-133 D4 says par gap and rate trend instead);
+  - Changed 23 Oct 2026 (Kameel): superseded by CRICINFO_GAP_PLAN.md decision 5 and CRI-1.8: a win estimate is shown from the existing par line, labelled "par estimate" on every surface, and recalibrated once pilot ball logs exist.
   - ball speed, the pitch landing map (SCRBRD-108), false shots;
   - "threat levels".
 - **Who builds:** Sonnet, screens over existing reads, then Opus reviews. No migration unless a read is missing.

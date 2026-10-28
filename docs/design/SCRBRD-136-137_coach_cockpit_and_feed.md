@@ -24,6 +24,8 @@ A coach on a Saturday has three questions: *who have I got*, *what is the match 
 
 **Not carried over from beta-2:** win probability, a 0–100 pressure index, threat levels, ball speed, false shots, a pitch rating, "workload risk 86%", "+18% win equity". Each is a number nobody measured (§5).
 
+Changed 23 Oct 2026 (Kameel): superseded by CRICINFO_GAP_PLAN.md decision 5 and CRI-1.8: a win estimate is shown from the existing par line, labelled "par estimate" on every surface, and recalibrated once pilot ball logs exist.
+
 **Phase A needs no migration.** Sonnet builds the tab, the card and the drawer over existing reads; Opus reviews every screen because minors' data is on it. Phase B is three small Opus items: one read (`bowler_day`), one table (`signal_ack`), and the `effective_limits()` line when SCRBRD-110 phase 3 lands.
 
 ---
@@ -277,7 +279,7 @@ Threshold words: *the fixture's day* is `sa_today()` on the match's `starts_at`;
 
 | beta-2 figure | verdict | why |
 |---|---|---|
-| win probability | **confirmed out** | 133 D4: par gap and rate trend instead, both provable from the log; a probability needs a model nobody fitted |
+| win probability | **confirmed out** | 133 D4: par gap and rate trend instead, both provable from the log; a probability needs a model nobody fitted. Changed 23 Oct 2026 (Kameel): superseded by CRICINFO_GAP_PLAN.md decision 5 and CRI-1.8: a win estimate is shown from the existing par line, labelled "par estimate" on every surface, and recalibrated once pilot ball logs exist. |
 | 0–100 pressure index | **confirmed out** | `signals.js`'s `pressure` is a heuristic with chosen weights (+18 for four dots, +22 for two wickets…); it stays the pad's private cue and goes on no coach surface |
 | threat levels per batter | **confirmed out** | invented; the matchup's balls, runs and dismissals *are* the evidence, said as counts (S5) |
 | ball speed | **confirmed out** | no speed gun; `pace_reading` (110 phase 4) is a nets asset under `player.workload.read`, never a match-day figure |

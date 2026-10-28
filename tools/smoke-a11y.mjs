@@ -81,12 +81,16 @@ const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
  * step 3c on: the shell and nothing of its own.
  */
 const TYPE_FLOOR_CEILING = {
+  // CRI-0.5 (2026-10-28): every text size under 12px in apps/web/src raised to
+  // the floor (CRICINFO_GAP_PLAN.md). login, dashboard, Match Centre, the match
+  // view, Analytics and Career measured at the counts below; the one left on
+  // each is in the shared shell, the same element on every screen.
   // The public home page (home.html): 0 since the cinematic page (2026-10-07).
   landing:     0,
-  login:       13,
-  dashboard:   10,
-  matchcentre: 10,
-  matchview:   10,
+  login:       0,
+  dashboard:   1,
+  matchcentre: 1,
+  matchview:   1,
   pad:         0,
   // Step 3b: the pad again, after an over is recorded, so the chips on the
   // board are on screen and counted. 0, like the pad.
@@ -117,8 +121,8 @@ const TYPE_FLOOR_CEILING = {
   // screens these two primitives share inherits it, and Career — the one
   // screen this walk had already found sub-floor instances on — drops
   // straight to the 18-item shell, matching Analytics.
-  analytics:   10,
-  career:      10,
+  analytics:   1,
+  career:      1,
   // SCRBRD-138 phase A (2026-10-02): the captain's view, on a phone, against
   // the walk's own API (tools/a11y-captain-mock.mjs). The card on a pupil's
   // Home, the section on his fixture, and the Captain tab fielding, batting

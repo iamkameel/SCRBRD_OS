@@ -56,7 +56,7 @@ nothing in OS today.
 | Phase | Job | AG routes | OS status |
 |---|---|---|---|
 | Before season | Browse leagues, divisions, schools | `browse-leagues`, `browse-divisions`, `divisions`, `directory/leagues/[id]`, `schools`, `schools/[id]` | **missing** — OS has no public, unauthenticated directory; `LeagueView`/`CompetitionsView` are behind sign-in |
-| Match day | Watch a live match (no login) | `live/[fixtureId]` (`PublicLiveMatchCenter`) | **missing** — OS's live scoring fold (`up3`, Match Centre) is read behind role capabilities, not exposed publicly |
+| Match day | Watch a live match (no login) | `live/[fixtureId]` (`PublicLiveMatchCenter`) | **has, switched off by default** — `/live/:id` and `/scorecard/:id` (`apps/web/src/public/PublicMatch.jsx`, the Match Centre's six tabs) and the ground display `/display/:id`, served signed out by `services/api/public/public-api.mjs` from db/59's redacted reads once a school publishes the fixture, and reached from the home page's card once it lists. Off (one 404) unless `PUBLIC_PAGES=on`; `render.yaml` leaves it unset. Walks: `browser-public` (the name rule), `browser-public-live` (CRI-0.3: the seed's fixture scored live, every response scanned for a child's identity) |
 | Match day | Broadcast overlay (score bug for a stream/OBS) | `broadcast/[matchId]` (chroma-key lower-third overlay) | **missing** — no broadcast-overlay output anywhere in OS |
 | Reference | Laws of the game | `rulebook` | **has** — `apps/web/src/views/RulebookView.jsx`, clauses drawn by category/severity/age (`up15`) |
 
@@ -195,10 +195,11 @@ capabilities already granted and no table behind them; sponsor read/manage exist
 there's no reporting/export screen for a bursar or director of sport to hand to a
 finance committee. Needed by: school admin, finance role, sponsorship role.
 
-**Public-facing / unauthenticated screens don't exist.** League/division browsing,
+**Public-facing / unauthenticated screens are thin.** League/division browsing,
 a public live-match view, and a broadcast overlay are all things AG builds for
-spectators, parents without accounts, and media, and OS has none of them — everything
-in OS sits behind a signed-in role. Needed by: parents/spectators without accounts,
+spectators, parents without accounts, and media. OS now has the public live-match
+view and scorecard (`/live/:id`, `/scorecard/:id`, SCRBRD-083, switched off unless
+`PUBLIC_PAGES=on`; CRI-0.3), and no public league browsing. Needed by: parents/spectators without accounts,
 league admins wanting a public results board, media wanting a stream overlay.
 
 **Voice scoring and a standalone match calculator are missing from the scoring

@@ -8,7 +8,9 @@
  * who may.
  *
  *   public_name_consent_set()  a verified guardian for his own child; the pupil
- *                              from eighteen; the office (guardian.link.manage)
+ *                              his "no" from twelve and his "yes" from eighteen
+ *                              (db/116: not_yet_twelve, not_yet_eighteen,
+ *                              answered 422); the office (guardian.link.manage)
  *                              on a named guardian's behalf, from a form for a
  *                              "yes", on the family's word for a "no"
  *   player_never_public_set()  player.public.withhold (principal, school

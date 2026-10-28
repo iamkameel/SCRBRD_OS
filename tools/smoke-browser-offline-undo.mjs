@@ -204,6 +204,11 @@ const onPad = async () => {
 const openFixture = async () => {
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
   await afterReads(page, 1200);
+  // Match Centre draws the fixture's card and its scoring button once its
+  // reads answer, which on a first opening can take a while:
+  // wait up to 10 s for a scoring button, then search exactly as before.
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "")),
+    null, { timeout: 10000 }).catch(() => {});
   const opened = await page.evaluate(() => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
@@ -251,7 +256,11 @@ const backOnPad = async () => {
 const score = async (face) => {
   const before = await board();
   if (!(await click(new RegExp(`^${face}$`), 2500))) return false;
+  // The board redraws once the pad has folded the ball; judged on a fixed
+  // 600 ms, a busy runner missed it (the first tap, in shard 3/4 here, with
+  // every check after it red). Give it up to 5 s, then judge as before.
   await page.waitForTimeout(600);
+  for (let t = 0; t < 4400 && (await board()) === before; t += 200) await page.waitForTimeout(200);
   return (await board()) !== before;
 };
 /** Wait for the pill to say something, up to `ms`. */

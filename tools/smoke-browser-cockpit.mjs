@@ -192,8 +192,17 @@ async function go(page, key) {
 async function openMatch(page, id) {
   if (!(await go(page, "matches"))) return false;
   const btn = tid(page, `mc-open-${id}`);
+  // Match Centre draws a fixture's card only once its reads answer (matches,
+  // staff, grounds, competitions, weather), and on the first opening those
+  // queue behind the previous screen's: 1.4-2.3 s measured, against the fixed
+  // wait before this look. Give the card up to 10 s to be drawn; one that is
+  // never drawn is judged exactly as before.
+  await btn.first().waitFor({ timeout: 10000 }).catch(() => {});
   if (!(await btn.count())) return false;
   await btn.click({ timeout: 5000 });
+  // The fixture's view is drawn once its chunk and reads arrive, which a busy
+  // runner can take past the fixed wait below: give it up to 10 s first.
+  await tid(page, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
   await afterReads(page, 1800);
   return (await tid(page, "match-view").count()) === 1;
 }
