@@ -532,6 +532,7 @@ Decided 21 Oct 2026 (Kameel). Each line states what governs. The designs named i
 - **Q6 · As recommended.** D3 governs: a withdrawn honour is absent for the DSO, who reaches it through the audit on a concern. RECOGNITION's matrix corrected.
 - **Q7 · As recommended.** PUBLIC_DATA C1 and C4 gain the sentence: "From his twelfth birthday a pupil may refuse his own name on public pages; his refusal stands whatever a guardian says. His 'yes' counts from eighteen."
 - **Q8 · As recommended.** The SG-9 trigger admits a `recipient_id` naming a pupil for `system` and `compromise` only, and only at 18 or more. INCIDENTS D8 corrected.
+- Clarified 22 Oct 2026 (Kameel): system notices reach a pupil at any age; the 18-or-more bar applies to compromise (breach) notices only.
 - **Q9 · As recommended.** The code stands: the principal reads status and nature; the head reads what the office reads. GA-I19 D3 corrected.
 - **Q10 · As recommended (READERS only).** `competitionadmin`'s `discipline.read` is scoped to records arising from its own competition's fixtures, through a definer read, logged.
 - **Q11 · As recommended (READERS only).** A concern about the other school's child routes by the child's school when the reporter names a boy on the other side's sheet; the reporter's own DSO is told a concern exists, with no name.
@@ -540,6 +541,9 @@ Decided 21 Oct 2026 (Kameel). Each line states what governs. The designs named i
 - **Q14 · As recommended (READERS only).** A pupil's "who read my record" is shown from 18 only in v1; under 18 it goes through the parent.
 - **Q15 · As recommended (READERS only).** The parent's disciplinary record is deferred to the information officer's next sign-off; the app never shows a parent a record it holds about her child without telling her one exists, so the letter stays the channel and the app stays silent.
 - **Q16 · As recommended (READERS only).** A child's own ID number is never drawn on a screen; the right of access is met by the office on request.
+
+Decided 22 Oct 2026 (Kameel): a mid-over bowler change's reason stays with the bowler's own school; the other school sees that he changed, never why. Surname particles (van, der, du) stay out of the public news name check when they stand alone.
+Applied by the lead (22 Oct 2026), reversible by Kameel: the same rule covers a Law 41 suspension's ground, which db/59 treats as a conduct matter, so the other school sees the suspension but not its reason (db/118, PR #193).
 
 ---
 
