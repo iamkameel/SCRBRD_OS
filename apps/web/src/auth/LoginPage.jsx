@@ -341,9 +341,9 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
           <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"6px"}}>
             {(live ? PILOT_ACCOUNTS : DEMO_ACCOUNTS).map(d=>(
               <button key={d.email} onClick={()=>{setEmail(d.email);setPassword(d.pw||"");setError("");}} className="pressBtn"
-                style={{padding:"7px 10px",borderRadius:"8px",cursor:"pointer",background:T.fill.panel,border:`1px solid ${T.line.subtle}`,textAlign:"left"}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:"12px",fontWeight:700,color:T.content.secondary,display:"flex",alignItems:"center",gap:"5px"}}><Icon name={ROLES[d.role]?.icon}/> {d.label}</div>
-                <div style={{fontFamily:"'DM Mono',monospace",fontSize:"12px",color:T.content.tertiary,marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>
+                style={{minWidth:0,padding:"7px 10px",borderRadius:"8px",cursor:"pointer",background:T.fill.panel,border:`1px solid ${T.line.subtle}`,textAlign:"left"}}>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:"12px",fontWeight:700,color:T.content.secondary,display:"flex",alignItems:"center",gap:"5px",minWidth:0}}><Icon name={ROLES[d.role]?.icon}/> {d.label}</div>
+                <div style={{fontFamily:"'DM Mono',monospace",fontSize:"12px",color:T.content.tertiary,marginTop:"2px",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>
               </button>
             ))}
           </div>
