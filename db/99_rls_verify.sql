@@ -7411,9 +7411,10 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 --   (a) everyone this section stages (the moved boy, his mother, the
 --       newcomer's and the stayer's families and the boys themselves, both
 --       coaches, the spectator, the office);
---   (b) one holder of every class of live assignment, a class being its role
---       and whether it names a boy: a seed account where one holds it, else
---       the lowest id (so every role, by both branches (1) and (2));
+--   (b) one holder of every class of live assignment the stage holds none
+--       of, a class being its role and whether it names a boy: a seed account
+--       where one holds it, else the lowest id (so with (a) every role is
+--       asked, by both branches (1) and (2));
 --   (c) everyone whose live assignment names, or whose own account is, a boy
 --       with a dated history (more than one membership row, or a closed one:
 --       a boy whose side a day can change, from any section) on a side one of
@@ -7447,6 +7448,9 @@ CREATE OR REPLACE FUNCTION _v117_people(z jsonb) RETURNS uuid[] AS $$
                                                           WHERE value ~ '^[0-9a-f]{8}-[0-9a-f]{4}-')
     UNION
     (SELECT DISTINCT ON (a.role, a.named) a.person_id FROM a
+      WHERE (a.role, a.named) NOT IN (SELECT s.role, s.named FROM a s
+                                       WHERE s.person_id IN (SELECT value::uuid FROM jsonb_each_text(z)
+                                                              WHERE value ~ '^[0-9a-f]{8}-[0-9a-f]{4}-'))
       ORDER BY a.role, a.named, (a.person_id::text NOT LIKE '88888888-%'), a.person_id::text)
     UNION
     SELECT a.person_id FROM a JOIN assignment_subject g ON g.assignment_id = a.id
@@ -7455,6 +7459,19 @@ CREATE OR REPLACE FUNCTION _v117_people(z jsonb) RETURNS uuid[] AS $$
     SELECT u.id FROM app_user u WHERE u.player_id IN (SELECT player_id FROM dated) AND u.id IN (SELECT person_id FROM a)
   ) x
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Fresh planner statistics at §94's start, after its stage. The verify is one transaction,
+-- so the tables hold every earlier section's rows (5,000 balls, 190 fixtures,
+-- 430 people) on statistics last gathered at the seed; the loops' plans,
+-- built on those, cost about five times what the same loops cost on the same
+-- rows analysed (measured 28 Oct 2026). ANALYZE counts this transaction's
+-- own rows, and its statistics roll back with everything else at the end.
+-- It changes no answer, only the plans. The owner's: scrbrd_app may not.
+CREATE OR REPLACE FUNCTION _v117_fresh_stats() RETURNS void AS $$
+BEGIN
+  ANALYZE match, match_squad, player, team_membership, role_assignment, assignment_subject, app_user,
+          ball_event, trip, training_session, news_post, lift_offer, lift_seat;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- How many of _v117_people()'s come by (c) from outside the stage: the
 -- earlier sections' moved boys on the compared sides, and their families.
@@ -27725,7 +27742,11 @@ $v49$;
   --                Until 28 Oct 2026 these two asked every person the file
   --                had staged by then (some 430) and, in (shape), every
   --                fixture with balls and every ball: about 55 minutes of the
-  --                verify. §83 and §89 still ask every person the same
+  --                verify; and inside the verify's one transaction their
+  --                plans ran on the seed's statistics, about five times the
+  --                cost on analysed rows, so the section analyses first
+  --                (_v117_fresh_stats(): rolled back with the rest, no answer
+  --                changes). §83 and §89 still ask every person the same
   --                policy-against-helper questions, under db/117's live
   --                definitions. Falsified on 28 Oct 2026: side_reach_on()'s
   --                named branch swapped for the side now, for every boy
@@ -27791,6 +27812,7 @@ $v49$;
     XM := (z->>'day_move')::date - t;
     XS := greatest(XM + 1, -5);   -- a day after the move back, so the rows read in one order
     XD := greatest(v_season - t, -20);
+    PERFORM _v117_fresh_stats();
 
     -- ── (before) ──
     PERFORM _assert(_v117_fact('rows', A) = '14XI:-90..-60 15XI:-60..',
