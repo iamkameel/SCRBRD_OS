@@ -11544,6 +11544,10 @@ BEGIN
     -- 'fixture.read' is the capability its notices require of their reader.
     -- Not the application's to call (only db/72's triggers call it), so no
     -- credential reaches it.
+    -- my_alert_choices (db/120, NOTIFICATIONS S4): app_holds('fixture.read')
+    -- to offer the caller his own "fixtures moved" switch; answers nothing at
+    -- all under a pad credential (`AND NOT app_pad_scoped()` before it asks),
+    -- takes no argument and reads no one but the caller.
     -- my_child_fixtures (db/100): the fixtures the caller's own live links'
     -- children are on, asked of app_can('fixture.read', …, <the child>, …).
     -- Under pad scope app_can() answers only the credential's own match, so
@@ -11565,7 +11569,7 @@ BEGIN
     -- name a boy on that sheet; refused outright under a pad credential
     -- (`AND NOT app_pad_scoped()` before it asks).
     PERFORM _assert(detail = 'competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
-                             || 'match_playing_conditions,match_result_readable,my_child_fixtures,my_own_sheet_fixtures,pad_resume_issue,pad_resume_reclaim,progression_check,'
+                             || 'match_playing_conditions,match_result_readable,my_alert_choices,my_child_fixtures,my_own_sheet_fixtures,pad_resume_issue,pad_resume_reclaim,progression_check,'
                              || 'result_official_notices,result_staff,safeguarding_concern_raise,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
       format('db/50 (definers): the definer functions asking a pad capability by name are %s — a new one needs looking at', detail));
