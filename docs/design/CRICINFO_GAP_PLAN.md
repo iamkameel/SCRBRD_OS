@@ -77,7 +77,7 @@ this backlog. New items go into `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`, not on
 | G13 Tap-to-passport | L10, UX-12 | Partial | Player profile with recognition rows | Sheet over the scorecard; scope-checked link per row |
 | G14 Impact score as PoM suggestion | L11 | Missing | Indices in `rating.mjs` | Match impact with reasoning, gated on `RECOGNITION_spec_v0.2.md` §7 fixes |
 | G15 Innings-break and result states | L12 | Partial | `fulltime.jsx`, `spectator.jsx` | Hero shows the result sentence (shares G3); Summary replaces Live |
-| G16 Guided Analytics Explorer | UX-11, 4.6 | Missing | `compare.jsx`, career reads | Question-led chips; saved views keeping scope; after the pilot |
+| G16 StatsMagic (the guided Analytics Explorer) | UX-11, 4.6 | Missing | `compare.jsx`, career reads | Question-led chips; saved views keeping scope; after the pilot |
 
 Dropped: the Lessons items "replace flag emoji with crests" (prototype artefact; the repo uses
 `SideName` and colour tokens) and "remove `DynamicBar` rotation" (already true of `Board`).
@@ -102,7 +102,7 @@ Dropped: the Lessons items "replace flag emoji with crests" (prototype artefact;
 | 0 · Walks (about a week, no screen changes) | Brief settled; 360/390px screenshot set; public-page and sync walks; type-floor sweep | Walks recorded |
 | 1 · Grammar (before the next Pilot Match) | Hero contract; status sentence; role-fitted tabs; scorecard to ball; result state; par-line win estimate | Parent and scorer acceptance walks green |
 | 2 · Explorable | Commentary chips; coverage labels; chart drill-down; sync and low-bandwidth | One full match scored and followed live |
-| 3 · Differentiate (after pilot evidence) | Follow and alerts; tap-to-passport; impact score; Explorer design pass | — |
+| 3 · Differentiate (after pilot evidence) | Follow and alerts; tap-to-passport; impact score; StatsMagic design pass | — |
 
 ## 6. Work items
 
@@ -149,7 +149,7 @@ Backlog IDs `CRI-*` are in `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`.
 | CRI-3.1 | Notifications S2–S5; follow child → team → school → competition; Result-only default; pinned matches. Changed 23 Oct 2026 (Kameel): S2–S5 before the pilot, not after; see NOTIFICATIONS.md. | `NOTIFICATIONS.md`, `db/`, `services/api/`, home | Opus policy, Sonnet screens | Push is a pointer; preferences walk green |
 | CRI-3.2 | Tap-to-passport sheet, scope-checked | `scorecard.jsx`, `tabs-core.jsx`, profile view, `packages/policy` | Opus | Parent own child; coach squad; public nothing |
 | CRI-3.3 | Match impact as the PoM suggestion, with reasoning | `packages/scoring/src/rating.mjs`, recognition | Opus | After bowler-credit and dismissed-batter fixes merge |
-| CRI-3.4 | Analytics Explorer: one Fable design pass (allowed 2026-10-23), then Opus | `views/compare.jsx`, `views/AnalyticsView.jsx` | Fable, then Opus | Design doc for Kameel; build on his say |
+| CRI-3.4 | StatsMagic (the Analytics Explorer): one Fable design pass (allowed 2026-10-23), then Opus | `views/compare.jsx`, `views/AnalyticsView.jsx` | Fable, then Opus | Design doc for Kameel; build on his say |
 
 ## 7. Risks and dependencies
 
@@ -180,3 +180,12 @@ and the score.
 5. **Win probability:** shown now from the existing par line, labelled a par estimate; recalibrated
    once pilot ball logs exist.
 6. **Analytics Explorer:** one Fable design pass allowed in Sprint 3.
+7. **StatsMagic** (Kameel, 2026-10-28): SCRBRD's counterpart of Cricinfo's Statsguru is
+   called StatsMagic, and it is the Analytics Explorer of G16 and CRI-3.4, renamed:
+   question-led chips and saved views over SCRBRD's own data, each keeping its
+   reader's scope. Same place in the plan: one Fable design pass in Sprint 3, after
+   the pilot. §8 stands: no dense Statsguru-style forms.
+   The name is already in the app: Global Search's question box (`askStatsMagic()` in
+   `apps/web/src/lib/ai.js`, `POST /api/ai/stats-magic`, `services/api/ai/ai-service.mjs`)
+   answers a plain question from the reader's own read path, names masked before the
+   model sees them. The Explorer grows from it; the design pass starts there.
