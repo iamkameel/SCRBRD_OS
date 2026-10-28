@@ -412,61 +412,6 @@ try {
      ro2.inn.striker != null && ro2.inn.striker !== S && ro2.inn.striker !== N);
   ok("...with the run the striker's", ro2.inn.batsmen.find((b) => b.id === S)?.runs === (hitNb.inn.batsmen.find((b) => b.id === S)?.runs ?? 0) + 1);
 
-  // ── The Laws audit of 28 Oct 2026: F1 and F5 ─────────────────
-  group("The Laws audit F1: a run out with no run completed, the batters crossed — the end settles who faces");
-  /** The next man in: from the squad when one is left, else a typed name. */
-  const nextMan = async () => {
-    if (/Available to Bat/i.test(await text())) { await clearBlockers(); return true; }
-    const f = page.locator('input[aria-label="Player name"]');
-    if (!(await f.count())) return false;
-    await f.fill(`Audit Batter ${Date.now() % 1000}`);
-    await page.locator('[role="dialog"] button:not([disabled])', { hasText: /^Go$/ }).first().click({ timeout: 2000 });
-    await page.waitForTimeout(600);
-    await clearBlockers();
-    return true;
-  };
-  {
-    await makeReady();
-    const before = await agree("before the quick single");
-    const S1 = before.inn.striker, N1 = before.inn.nonStriker;
-    await click(/Wicket/, 2500);
-    await tap("wicket-mode-run_out");
-    await tap("wicket-who-striker");
-    ok("no run completed, and it asks the end", await tid("wicket-end").count() === 1);
-    await tap("wicket-end-bowler");
-    await tap("wicket-confirm");
-    await page.waitForTimeout(600);
-    ok("the batting-order sheet asks for the next man", await nextMan(), (await text()).slice(0, 300));
-    const q1 = await agree("after the striker run out at the bowler's end");
-    const w1 = q1.rows.filter((r) => r.kind === "ball" && r.ball_type === "W").at(-1);
-    ok("the server stored no run and the bowler's end", (w1?.value ?? 0) === 0 && w1?.payload?.outAt === "bowler_end", JSON.stringify(w1?.payload));
-    ok("...the survivor crossed: he is on strike at the striker's end", q1.inn.striker === N1 && S1 !== N1);
-    ok("...and the new batter is at the bowler's end, the one left empty",
-       q1.inn.nonStriker != null && q1.inn.nonStriker !== S1 && q1.inn.nonStriker !== N1);
-  }
-  group("The Laws audit F5: run out going for a second bye — the bye is a bye");
-  {
-    await makeReady();
-    const before = await agree("before the bye");
-    const S2 = before.inn.striker;
-    const strikerRuns = before.inn.batsmen.find((b) => b.id === S2)?.runs ?? 0;
-    await click(/Wicket/, 2500);
-    await tap("wicket-mode-run_out");
-    await tap("wicket-who-nonstriker");
-    await tap("wicket-runs-1");
-    ok("one run completed: it asks whose", await tid("wicket-runs-from").count() === 1);
-    await tap("wicket-runs-from-byes");
-    await tap("wicket-end-striker");
-    await tap("wicket-confirm");
-    await page.waitForTimeout(600);
-    await nextMan();
-    const q2 = await agree("after the run out going for a second bye");
-    const w2 = q2.rows.filter((r) => r.kind === "ball" && r.ball_type === "W").at(-1);
-    ok("the server stored the bye: one run, nbRuns byes", w2?.value === 1 && w2?.payload?.nbRuns === "byes", JSON.stringify(w2?.payload));
-    ok("...one bye in the extras, and none of it the striker's",
-       q2.inn.extras.bye === before.inn.extras.bye + 1 && q2.inn.batsmen.find((b) => b.id === S2)?.runs === strikerRuns);
-  }
-
   // ── Every delivery names its players; the career read counts them ──
   group("Every delivery names who faced it and who bowled it — the no-ball and wicket sheets' too");
   const ballRows = ro2.rows.filter((r) => r.kind === "ball");
@@ -661,6 +606,65 @@ try {
   const wAfter = (await dbq(`select count(*)::int as n from ball_event where match_id = $1 and kind = 'ball' and ball_type = 'W'`, [MATCH]))[0].n;
   ok(`...and one wicket was recorded, not two (${wBefore} -> ${wAfter})`, wAfter === wBefore + 1 && en.inn.wickets === st2.inn.wickets + 1,
      `${wBefore} -> ${wAfter}; fold ${st2.inn.wickets} -> ${en.inn.wickets}`);
+
+  // ── The Laws audit of 28 Oct 2026: F1 and F5, in the second innings ──
+  // (Its batters are typed in: no squad of five to run out of.)
+  group("The Laws audit F1: a run out with no run completed, the batters crossed — the end settles who faces");
+  /** The next man in: from the squad when one is left, else a typed name. */
+  const nextMan = async () => {
+    const f = page.locator('input[aria-label="Player name"]');
+    if (!(await f.count())) {
+      if (/Available to Bat/i.test(await text())) { await clearBlockers(); return true; }
+      return false;
+    }
+    await f.fill(`Audit Batter ${Date.now() % 1000}`);
+    await page.locator('[role="dialog"] button:not([disabled])', { hasText: /^Go$/ }).first().click({ timeout: 2000 });
+    await page.waitForTimeout(600);
+    await clearBlockers();
+    return true;
+  };
+  {
+    await makeReady();
+    const before = await agree("before the quick single", 1);
+    const S1 = before.inn.striker, N1 = before.inn.nonStriker;
+    await click(/Wicket/, 2500);
+    await tap("wicket-mode-run_out");
+    await tap("wicket-who-striker");
+    ok("no run completed, and it asks the end", await tid("wicket-end").count() === 1);
+    await tap("wicket-end-bowler");
+    await tap("wicket-confirm");
+    await page.waitForTimeout(600);
+    ok("the batting-order sheet asks for the next man", await nextMan(), (await text()).slice(0, 300));
+    const q1 = await agree("after the striker run out at the bowler's end", 1);
+    const w1 = q1.rows.filter((r) => r.kind === "ball" && r.ball_type === "W").at(-1);
+    ok("the server stored no run and the bowler's end", (w1?.value ?? 0) === 0 && w1?.payload?.outAt === "bowler_end", JSON.stringify(w1?.payload));
+    ok("...the survivor crossed: he is on strike at the striker's end", q1.inn.striker === N1 && S1 !== N1);
+    ok("...and the new batter is at the bowler's end, the one left empty",
+       q1.inn.nonStriker != null && q1.inn.nonStriker !== S1 && q1.inn.nonStriker !== N1,
+       `striker ${q1.inn.striker} non-striker ${q1.inn.nonStriker} (S1 ${S1}, N1 ${N1}); ${(await text()).slice(0, 200)}`);
+  }
+  group("The Laws audit F5: run out going for a second bye — the bye is a bye");
+  {
+    await makeReady();
+    const before = await agree("before the bye", 1);
+    const S2 = before.inn.striker;
+    const strikerRuns = before.inn.batsmen.find((b) => b.id === S2)?.runs ?? 0;
+    await click(/Wicket/, 2500);
+    await tap("wicket-mode-run_out");
+    await tap("wicket-who-nonstriker");
+    await tap("wicket-runs-1");
+    ok("one run completed: it asks whose", await tid("wicket-runs-from").count() === 1);
+    await tap("wicket-runs-from-byes");
+    await tap("wicket-end-striker");
+    await tap("wicket-confirm");
+    await page.waitForTimeout(600);
+    await nextMan();
+    const q2 = await agree("after the run out going for a second bye", 1);
+    const w2 = q2.rows.filter((r) => r.kind === "ball" && r.ball_type === "W").at(-1);
+    ok("the server stored the bye: one run, nbRuns byes", w2?.value === 1 && w2?.payload?.nbRuns === "byes", JSON.stringify(w2?.payload));
+    ok("...one bye in the extras, and none of it the striker's",
+       q2.inn.extras.bye === before.inn.extras.bye + 1 && q2.inn.batsmen.find((b) => b.id === S2)?.runs === strikerRuns);
+  }
 
   ok("no console errors on the pad", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {
