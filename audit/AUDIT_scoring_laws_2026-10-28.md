@@ -200,3 +200,11 @@ Word for word from the board:
 - **Q7:** no "one short" key (F6): recording the runs made and swapping ends by hand is the convention, which needs F3 fixed.
 
 Plain bugs, no decision needed: F3 (a swap of ends wipes the partnership), F5 (a run out that completed a bye or leg bye credits the run to the striker and the bowler, in engine, pad and SQL), F8 and F9 as described above where the fix is clear.
+
+## 7 · Follow-ups left open (the review of the fixes, 28 Oct)
+
+The Opus review passed the fixes (`claude/wip-laws-fixes`, db/121) with blocking items B1, B2 and should-fix S1–S4, all made on the branch. These three it named are left, each for its own change:
+
+- **A third innings sealed for time opens a fourth-innings break.** A Two-Day's third innings that ends because time ran out (not all out, not declared) still leads the pad to the break before a fourth innings, which the match has no time for.
+- **The follow-on's 100-run lead (Law 14.1.1).** The pad offers the follow-on whenever the side batting first leads (`firstInningsLead() > 0`), not only when it leads by the 100 runs a two-day match needs.
+- **A fourth innings after an innings win.** The pad does not offer one (`inningsDecided()`), but how a log that holds one anyway is read and shown is not settled.

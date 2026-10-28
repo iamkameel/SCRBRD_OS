@@ -2051,21 +2051,35 @@ ball of the innings is the one every career reads, not the pad's stamp.
 **What it does to a live database.** It replaces `ball_runs_off_bat()`,
 `ball_runs_to_bowler()`, `ball_on_free_hit()`, `match_result_compute()`,
 `player_batting_since()`, `opposition_squad()`, `public_match_log()`,
-`public_shot_sectors()` and the views `player_batting_career`,
+`public_shot_sectors()`, `milestone_retract()` (db/113's, its hold check
+moved into `milestone_recheck()`) and the views `player_batting_career`,
 `player_batting_by_season` and `ball_event_live`, each with its columns,
 owner and grants as they were; adds `ball_boundary()`, `ball_gives_free_hit()`,
 the table `ball_event_rejudged` (read under its ball's own policy, never by a
-pad credential, no write grant) and its one door
-`scoring_amendment_rejudge()`. It refuses to run unless each object is what
-the earlier file wrote or this file's own (its section 0), and a second paste
-changes nothing. No row is rewritten. **What moves on the paste:** a stored
-wicket off the ball after a waist-high no-ball or a beamer, which was saved as
-a free hit, now stands; a bowler's dismissal just after a delivery marked not
-in the over that followed a no-ball is now saved; a chase won ahead of par
-reads "by N runs" and, if its result was confirmed (db/114), it lapses to be
-confirmed again (its hash changed). None of these is in the pilot's data.
-**An amendment approved before this paste is not re-judged** until the next
-amendment on its match; there are none in the pilot.
+pad credential, no write grant), its one door `scoring_amendment_rejudge()`
+(which names only a batter of the innings with a player row, and then re-runs
+the milestone notices on the re-judged log: a fifty it takes away is taken
+back, one it makes is noticed "after a correction.") and `milestone_recheck()`
+(granted to nobody). It refuses to run unless each object is what the earlier
+file wrote or this file's own (its section 0: a function by its body, a view
+by the md5 of its definition), and a second paste changes nothing. No row is
+rewritten. **What moves on the paste:** a stored wicket off the ball after a
+waist-high no-ball or a beamer, which was saved as a free hit, now stands; a
+bowler's dismissal just after a delivery marked not in the over that followed
+a no-ball is now saved; a chase won ahead of par reads "by N runs" and, if its
+result was confirmed (db/114), it lapses to be confirmed again (its hash
+changed). The pad has stored each no-ball's kind since 27 September 2026, so
+a database may hold the first two, and the rule is not date-gated (Kameel's
+decision). **An amendment approved before this paste is not re-judged** until
+the next amendment on its match.
+
+**Run the precheck first, and stop if it returns any row.** Paste
+`tools/sql/laws121-precheck.sql` into the SQL Editor as the database's owner:
+one SELECT, it writes nothing. It lists each match holding a stored
+dismissal the free-hit rule moves (`now_stands`, `now_saved`), by fixture
+date, school and side, with no names. **No rows: go on. Any row: do not paste
+db/121; take the rows to Kameel.** db/99 §98 runs the same query and proves a
+seeded database holds none.
 
 Paste `node tools/bundle-sql.mjs --apply 121` after 120 (db/118 to db/120,
 and their proofs §95 to §97, are on branches not yet merged), then the verify bundle (§98 is

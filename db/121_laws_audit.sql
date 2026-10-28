@@ -50,10 +50,18 @@
 --       ONE THING MOVES ON THE PASTE: a stored wicket off the ball after a
 --       waist-high no-ball or a beamer (nbType height or beamer), which was
 --       saved as a free hit, now stands — in every SQL wicket count, the live
---       score and the handover check, as the fold now counts it. And a
---       bowler's dismissal right after a fair delivery marked notInOver that
---       followed a no-ball, which stood, is now saved. No pilot match holds
---       either; a database that does is told by db/99 §98's count.
+--       score and the handover check, as the fold now counts it (and the
+--       pad, which never brought a new batter in, has nobody for the balls
+--       after it). And a bowler's dismissal right after a fair delivery
+--       marked notInOver that followed a no-ball, which stood, is now saved.
+--       The pad has stored nbType since 27 Sep 2026, so a database may hold
+--       either. The rule is not date-gated (Kameel decided it plainly).
+--
+--       RUN tools/sql/laws121-precheck.sql FIRST, AS THE OWNER. It is one
+--       SELECT, and counts those dismissals by match (fixture date, school,
+--       side; no names). IF IT RETURNS ANY ROW, STOP: do not paste this
+--       file, and take the rows to Kameel. db/99 §98 runs the same query and
+--       proves a seeded database holds none.
 --   F10 A chase terminated ahead of the umpires' par is won by the runs it is
 --       ahead (Q3), not by the wickets in hand.
 --         match_result_compute()  db/73's, that one arm. A result already
@@ -80,6 +88,16 @@
 --       readable), and never by a scoring device's pad credential (the pad
 --       guard). An amendment approved before this file is not re-judged
 --       until the next one on its match (DEPLOYING.md, db/121).
+--         milestone_recheck()     new (§6): the void's hold check, run again
+--                                 by the re-judging on the strikers it wrote,
+--                                 with the batters' marks it makes (a fifty
+--                                 the re-judged log takes away is taken back;
+--                                 one it makes is noticed, "after a
+--                                 correction.")
+--         milestone_retract()     db/113's, its step 1 that same function
+--       scoring_amendment_rejudge() names only a batter of the innings (on
+--       its rows, or in its squad) with a player row; anything else is
+--       refused in words.
 --
 -- NOT HERE (no SQL needs them): F1 (the end on every run out: payload.outAt
 -- decides which end empties, never who is out), F2 (a Two-Day's third and
@@ -88,9 +106,10 @@
 --
 -- IDENTICAL SHAPE. Every object replaced keeps its columns, types, order,
 -- attributes, owner and grants (CREATE OR REPLACE; db/87's, db/78's, db/71's,
--- db/73's and db/54's statements as they stand but for the lines marked
--- db/121). REFUSES TO RUN unless each is what the earlier file wrote, or this
--- file's own (§0). Idempotent: a second paste changes nothing.
+-- db/73's, db/54's and db/113's statements as they stand but for the lines
+-- marked db/121). REFUSES TO RUN unless each is what the earlier file wrote,
+-- or this file's own (§0): a function by its body, a view by the md5 of its
+-- definition. Idempotent: a second paste changes nothing.
 
 
 -- ── 0 · What this file stands on ───────────────────────────────────
@@ -108,24 +127,49 @@ DECLARE
     ['player_batting_since(uuid,timestamp with time zone)', 'ball_runs_off_bat(b.ball_type, b.value, b.payload) = 4', 'ball_boundary('],
     ['opposition_squad(uuid)',                  'ball_runs_off_bat(b.ball_type, b.value, b.payload) = 4',         'ball_boundary('],
     ['public_match_log(uuid,integer)',          '''place''',                                                     '''boundary'''],
-    ['public_shot_sectors(uuid)',               'b.ball_type IN (''run'', ''W'')',                               'db/121']];
+    ['public_shot_sectors(uuid)',               'b.ball_type IN (''run'', ''W'')',                               'db/121'],
+    -- db/113's milestone_retract(), by its md5 (review B1: §6 redefines it).
+    ['milestone_retract()',                     '46b171c9b5de2523ac89538e645b5b6a',                               'db/121']];
+  -- A view keeps no source: its definition as the server reads it back,
+  -- md5(pg_get_viewdef()), the earlier file's or this file's (taken on
+  -- Postgres 16). A server whose deparse spaces or brackets it otherwise
+  -- (another major version) is read by the same md5 with the spacing and
+  -- the brackets taken out and the case folded: every name, operator and
+  -- constant still counts. Either pins the definition; a substring of it
+  -- did not (the review's S4).
+  VIEW_BASES CONSTANT text[][] := ARRAY[
+    -- view,                      md5: earlier,                       this file's;                        normalised: earlier,                this file's
+    ['player_batting_career',    '2d5dfc4b6b601a71dd4b3ab6c3d8ed0a', '7527fda715b26b7a24c042908bbff1b8', '18b87047d913b1cdb45133e20ac88688', '022c96f4df0149c99287636af01c2f33'],
+    ['player_batting_by_season', '6cf68523a14d5ac94a1d0a317545b211', '9ca51647408476142bd0f5e950f9108e', 'c110d76813b55f52164e529b2f05b40c', '29e697fa723d7c21d92177d835595cb0'],
+    ['ball_event_live',          'a2783f6bed0425bf55c5e5b54fccea36', '4618aeab505ce9ea9bdd2ec08ca6bed5', '23b25b5f91be969333e4e163f9d26343', '2adf337ed62990f2b8c5d39eefbe6fba']];
+  v regclass;
+  h_def text;
+  h_norm text;
   k int;
 BEGIN
   IF to_regclass('scoring_amendment') IS NULL OR to_regprocedure('scoring_amendment_decide(uuid,boolean,text)') IS NULL
      OR to_regprocedure('pad_scope_guard_install(regclass)') IS NULL OR to_regprocedure('ball_is_wicket(text,text)') IS NULL
-     OR to_regprocedure('ball_counts_in_over(text,jsonb)') IS NULL OR to_regprocedure('match_free_hits_apply(uuid)') IS NULL THEN
-    RAISE EXCEPTION 'db/121: db/38, db/50, db/54, db/69 or db/87 is missing; apply them first';
+     OR to_regprocedure('ball_counts_in_over(text,jsonb)') IS NULL OR to_regprocedure('match_free_hits_apply(uuid)') IS NULL
+     OR to_regprocedure('public_ref_uuid(text)') IS NULL OR to_regprocedure('public_json_array(jsonb)') IS NULL
+     OR to_regprocedure('milestone_notify_as(uuid,text,uuid,smallint,integer,boolean)') IS NULL
+     OR to_regprocedure('milestone_still_holds(uuid,text,uuid,smallint,integer)') IS NULL THEN
+    RAISE EXCEPTION 'db/121: db/38, db/50, db/54, db/59, db/69, db/87 or db/113 is missing; apply them first';
   END IF;
   FOR k IN 1 .. array_length(FUNCTION_BASES, 1) LOOP
     SELECT p.prosrc INTO src FROM pg_proc p WHERE p.oid = to_regprocedure(FUNCTION_BASES[k][1]);
-    IF src IS NULL OR (position(FUNCTION_BASES[k][2] IN src) = 0 AND position(FUNCTION_BASES[k][3] IN src) = 0) THEN
+    IF src IS NULL OR (position(FUNCTION_BASES[k][2] IN src) = 0 AND position(FUNCTION_BASES[k][3] IN src) = 0
+                       AND md5(src) IS DISTINCT FROM FUNCTION_BASES[k][2]) THEN
       bad := bad || FUNCTION_BASES[k][1] || ' ';
     END IF;
   END LOOP;
-  -- A view keeps no comment: its definition, read back.
-  IF position('ball_is_wicket' IN coalesce(pg_get_viewdef('player_batting_career'::regclass), '')) = 0 THEN bad := bad || 'player_batting_career '; END IF;
-  IF position('ball_is_wicket' IN coalesce(pg_get_viewdef('player_batting_by_season'::regclass), '')) = 0 THEN bad := bad || 'player_batting_by_season '; END IF;
-  IF position('super_over' IN coalesce(pg_get_viewdef('ball_event_live'::regclass), '')) = 0 THEN bad := bad || 'ball_event_live '; END IF;
+  FOR k IN 1 .. array_length(VIEW_BASES, 1) LOOP
+    v := to_regclass(VIEW_BASES[k][1]);
+    h_def := CASE WHEN v IS NOT NULL THEN md5(pg_get_viewdef(v)) END;
+    h_norm := CASE WHEN v IS NOT NULL THEN md5(regexp_replace(lower(pg_get_viewdef(v)), '[[:space:]()]+', '', 'g')) END;
+    IF v IS NULL OR NOT (h_def IN (VIEW_BASES[k][2], VIEW_BASES[k][3]) OR h_norm IN (VIEW_BASES[k][4], VIEW_BASES[k][5])) THEN
+      bad := bad || VIEW_BASES[k][1] || ' ';
+    END IF;
+  END LOOP;
   IF bad <> '' THEN
     RAISE EXCEPTION 'db/121: not what the earlier files wrote (nor this file''s): %— the base is wrong', bad;
   END IF;
@@ -890,12 +934,26 @@ SELECT b.id, b.match_id, b.school_id, b.seq, b.epoch, b.innings,
 -- are kept, the rest of that stretch's earlier re-judging is cleared. The
 -- fold is the API's (services/api/write/rejudge.mjs); SQL cannot run it,
 -- and does not trust anyone else's.
+--
+-- What it takes (the review's S2): a striker the fold names must be a batter
+-- of that innings — stamped on one of its rows as striker or non-striker, or
+-- in its innings_start's squad — and a player SCRBRD holds a row for (NULL is
+-- a typed name, as on ball_event). Anything else is refused, the whole
+-- approval with it, in words, before a row is written.
+--
+-- And then (the review's B1): the milestone notices of that innings follow
+-- the re-judged log, through milestone_recheck() (§6). The void's own check
+-- (milestone_retract(), on the void's insert) ran before these rows existed,
+-- on the stamps; this one runs on the strikers the careers now read.
 CREATE OR REPLACE FUNCTION scoring_amendment_rejudge(p_amendment uuid, p_rows jsonb)
 RETURNS integer AS $$
 DECLARE
   a scoring_amendment%ROWTYPE;
   t record;
   n integer;
+  v_bad uuid;
+  v_batters uuid[];
+  v_players uuid[];
 BEGIN
   SELECT * INTO a FROM scoring_amendment x WHERE x.id = p_amendment;
   IF NOT FOUND OR a.state <> 'approved' OR a.applied_key IS NULL
@@ -907,6 +965,44 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'scoring_amendment_rejudge: the amendment''s target is not in its match' USING ERRCODE = '22023';
   END IF;
+
+  -- db/121 (review S2): who may be named. A player row first, so a fold's
+  -- id SCRBRD has no row for is a refusal in words, not a foreign key.
+  SELECT x.striker_id INTO v_bad
+    FROM jsonb_to_recordset(coalesce(p_rows, '[]'::jsonb)) AS x(seq integer, striker_id uuid)
+   WHERE x.striker_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM player p WHERE p.id = x.striker_id)
+   LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION 'scoring_amendment_rejudge: the fold puts % on strike, and SCRBRD holds no player row for that id', v_bad
+      USING ERRCODE = '22023', HINT = 'A batter whose name was typed is null on the row, not an id.';
+  END IF;
+  SELECT array_agg(DISTINCT z.u) INTO v_batters FROM (
+    SELECT b.striker_id AS u FROM ball_event b WHERE b.match_id = a.match_id AND b.innings = t.innings
+    UNION SELECT b.non_striker_id FROM ball_event b WHERE b.match_id = a.match_id AND b.innings = t.innings
+    UNION SELECT public_ref_uuid(coalesce(e.member ->> 'id', e.member #>> '{}'))
+            FROM ball_event b
+            CROSS JOIN LATERAL jsonb_array_elements(public_json_array(b.payload -> 'squad')) AS e(member)
+           WHERE b.match_id = a.match_id AND b.innings = t.innings AND b.kind = 'innings_start'
+  ) z WHERE z.u IS NOT NULL;
+  SELECT x.striker_id INTO v_bad
+    FROM jsonb_to_recordset(coalesce(p_rows, '[]'::jsonb)) AS x(seq integer, striker_id uuid)
+   WHERE x.striker_id IS NOT NULL AND NOT (x.striker_id = ANY (coalesce(v_batters, '{}'::uuid[])))
+   LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION 'scoring_amendment_rejudge: % is not a batter of innings % of this match (on none of its rows, and not in its squad)', v_bad, t.innings
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- Whose figures may move: everyone on strike in the stretch, before the
+  -- re-judging and after it (review B1).
+  SELECT array_agg(DISTINCT z.u) INTO v_players FROM (
+    SELECT b.striker_id AS u FROM ball_event b
+     WHERE b.match_id = a.match_id AND b.innings = t.innings AND b.kind = 'ball' AND b.seq >= t.seq
+    UNION SELECT r.striker_id FROM ball_event_rejudged r JOIN ball_event b ON b.match_id = r.match_id AND b.seq = r.seq
+     WHERE r.match_id = a.match_id AND b.innings = t.innings AND b.seq > t.seq
+    UNION SELECT x.striker_id FROM jsonb_to_recordset(coalesce(p_rows, '[]'::jsonb)) AS x(seq integer, striker_id uuid)
+  ) z WHERE z.u IS NOT NULL;
+
   DELETE FROM ball_event_rejudged r USING ball_event b
    WHERE r.match_id = a.match_id AND b.match_id = r.match_id AND b.seq = r.seq
      AND b.innings = t.innings AND b.seq > t.seq;
@@ -919,13 +1015,121 @@ BEGIN
   ON CONFLICT (match_id, seq) DO UPDATE SET striker_id = EXCLUDED.striker_id, amendment_id = EXCLUDED.amendment_id,
                                             rejudged_at = EXCLUDED.rejudged_at;
   GET DIAGNOSTICS n = ROW_COUNT;
+
+  PERFORM milestone_recheck(a.match_id, t.innings, coalesce(v_players, '{}'::uuid[]), true);
   RETURN n;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION scoring_amendment_rejudge(uuid, jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION scoring_amendment_rejudge(uuid, jsonb) TO scrbrd_app;
 
 
--- ── 6 · The rules, as the fold's tables have them (laws-audit.test.mjs) ──
+-- ══════════════════════════════════════════════════════════════════
+-- §6 · F4's re-judging reaches the milestone notices (the review's B1)
+-- ══════════════════════════════════════════════════════════════════
+-- The void inside scoring_amendment_decide() fires milestone_retract()
+-- (db/113) on its insert: it judged milestone_still_holds() on the stamps,
+-- before scoring_amendment_rejudge() wrote who faced, and its step 2 said a
+-- void never adds a run, which a re-judged striker makes false (a single
+-- voided puts the next ball's runs on the other batter). So a fifty the
+-- re-judging takes away stayed, and one it makes was never noticed.
+--
+-- milestone_recheck(): db/113's step 1, one rule for both callers — every
+-- live notice of the match, and the players' career notices wherever they
+-- were noticed: does its mark still hold? If not, it is taken back as a
+-- correction (N4). With p_batting (the re-judging's call), then: each
+-- player's innings and career runs as the log now reads them — a fifty or a
+-- hundred in the innings, a career mark this match crossed — noticed
+-- "…, after a correction.", or the notice taken back earlier returned in
+-- place (milestone_notify_as(), D19, D20). Never in a super over (db/71).
+-- Runs as its definer callers; granted to nobody.
+CREATE OR REPLACE FUNCTION milestone_recheck(p_match uuid, p_innings smallint, p_players uuid[], p_batting boolean)
+RETURNS void AS $$
+DECLARE
+  r record;
+  p uuid;
+  t integer;
+  v_runs bigint;
+  v_career bigint;
+  v_here bigint;
+BEGIN
+  -- 1. Does each mark still hold? (db/113 §7 step 1, as it stood.)
+  FOR r IN
+    SELECT mn.player_id, mn.kind, mn.match_id, mn.innings, mn.value, mn.notice_id
+      FROM milestone_notice mn
+     WHERE mn.retracted_at IS NULL
+       AND (mn.match_id = p_match
+            OR (mn.player_id = ANY (p_players) AND mn.kind IN ('career_runs', 'career_wickets')))
+     ORDER BY mn.noticed_at, mn.kind, mn.player_id
+       FOR UPDATE
+  LOOP
+    IF NOT milestone_still_holds(r.player_id, r.kind, r.match_id, r.innings, r.value) THEN
+      UPDATE milestone_notice SET retracted_at = now()
+       WHERE player_id = r.player_id AND kind = r.kind AND match_id = r.match_id AND innings = r.innings;
+      IF r.notice_id IS NOT NULL THEN
+        PERFORM notification_retract(r.notice_id, 'correction', true);
+      END IF;
+    END IF;
+  END LOOP;
+
+  -- 2. What the re-judged log holds that it did not: the batters' marks.
+  IF NOT p_batting OR innings_super_over_of(p_match, p_innings) IS NOT NULL THEN RETURN; END IF;
+  FOREACH p IN ARRAY p_players LOOP
+    v_runs := innings_runs_off_bat(p, p_match, p_innings);
+    IF v_runs >= 50 THEN PERFORM milestone_notify_as(p, 'fifty', p_match, p_innings, v_runs::integer, true); END IF;
+    IF v_runs >= 100 THEN PERFORM milestone_notify_as(p, 'hundred', p_match, p_innings, v_runs::integer, true); END IF;
+    v_career := career_runs_off_bat(p);
+    SELECT coalesce(sum(ball_runs_off_bat(b.ball_type, b.value, b.payload)), 0) INTO v_here
+      FROM ball_event_career b WHERE b.match_id = p_match AND b.kind = 'ball' AND b.striker_id = p;
+    FOREACH t IN ARRAY ARRAY[500, 1000, 2000, 5000] LOOP
+      IF v_career >= t AND v_career - v_here < t
+         AND NOT EXISTS (SELECT 1 FROM milestone_notice mn
+                          WHERE mn.player_id = p AND mn.kind = 'career_runs' AND mn.value = t AND mn.retracted_at IS NULL) THEN
+        PERFORM milestone_notify_as(p, 'career_runs', p_match, 0::smallint, t, true);
+      END IF;
+    END LOOP;
+  END LOOP;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION milestone_recheck(uuid, smallint, uuid[], boolean) FROM PUBLIC;
+
+-- milestone_retract: db/113's, its step 1 milestone_recheck()'s (the same
+-- rule, moved), its step 2's note put right. Its trigger stands as db/113
+-- made it; nothing it does moved.
+CREATE OR REPLACE FUNCTION milestone_retract() RETURNS trigger AS $$
+DECLARE
+  t ball_event%ROWTYPE;
+  v_w integer;
+BEGIN
+  /* db/121: step 1 is milestone_recheck(); the re-judging runs it again (review B1) */
+  SELECT * INTO t FROM ball_event b WHERE b.match_id = NEW.match_id AND b.idempotency_key = NEW.payload->>'target';
+  IF NOT FOUND OR t.kind = 'void' THEN RETURN NULL; END IF;
+
+  -- 1. Every live notice of this match, and the voided ball's players'
+  --    career notices wherever they were noticed: does its mark still hold?
+  PERFORM milestone_recheck(NEW.match_id, t.innings, array_remove(ARRAY[t.striker_id, t.bowler_id, t.dismissed_id], NULL), false);
+
+  -- 2. What the corrected history holds that it did not. On the stamps a
+  --    void adds no run; but it can make the bowler's wicket stand or close
+  --    his hat-trick's gap. His innings only, never a super over (db/71).
+  --    When an amendment's void moves who faced the balls after it (F4),
+  --    the runs it moves are noticed by scoring_amendment_rejudge(), which
+  --    runs milestone_recheck() on the re-judged log.
+  IF t.bowler_id IS NOT NULL AND innings_super_over_of(t.match_id, t.innings) IS NULL THEN
+    SELECT f.wickets INTO v_w FROM bowler_innings_figures f
+     WHERE f.player_id = t.bowler_id AND f.match_id = t.match_id AND f.innings = t.innings;
+    IF coalesce(v_w, 0) >= 5 THEN
+      PERFORM milestone_notify_as(t.bowler_id, 'five_for', t.match_id, t.innings, 5, true);
+    END IF;
+    IF EXISTS (SELECT 1 FROM bowler_hat_trick h
+                WHERE h.player_id = t.bowler_id AND h.match_id = t.match_id AND h.innings = t.innings) THEN
+      PERFORM milestone_notify_as(t.bowler_id, 'hat_trick', t.match_id, t.innings, 3, true);
+    END IF;
+  END IF;
+  RETURN NULL;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION milestone_retract() FROM PUBLIC;
+
+
+-- ── 7 · The rules, as the fold's tables have them (laws-audit.test.mjs) ──
 DO $check$
 BEGIN
   IF NOT (ball_runs_off_bat('W', 1, '{"nbRuns":"byes"}') = 0 AND ball_runs_off_bat('W', 2, '{"nbRuns":"leg_byes"}') = 0
@@ -952,5 +1156,11 @@ BEGIN
      OR EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'ball_event_rejudged'::regclass AND polpermissive AND polcmd <> 'r')
      OR position('ball_event_rejudged' IN pg_get_viewdef('ball_event_live'::regclass)) = 0 THEN
     RAISE EXCEPTION 'db/121 (F4): ball_event_rejudged is not read-only behind RLS, or ball_event_live does not read it';
+  END IF;
+  IF has_function_privilege('scrbrd_app', 'milestone_recheck(uuid,smallint,uuid[],boolean)', 'EXECUTE')
+     OR has_function_privilege('public', 'milestone_recheck(uuid,smallint,uuid[],boolean)', 'EXECUTE')
+     OR position('milestone_recheck(' IN (SELECT prosrc FROM pg_proc WHERE oid = 'scoring_amendment_rejudge(uuid,jsonb)'::regprocedure)) = 0
+     OR position('milestone_recheck(' IN (SELECT prosrc FROM pg_proc WHERE oid = 'milestone_retract()'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'db/121 (review B1): milestone_recheck() is callable by the application, or the void and the re-judging do not both run it';
   END IF;
 END $check$;

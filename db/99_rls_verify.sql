@@ -7495,7 +7495,8 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- no-ball of no recorded kind; 30 W bowled. Innings 2, for F7 and F5 (all
 -- stamped A): 40 run 4; 41 run 4 not a boundary (all run); 42 run 6 not a
 -- boundary (overthrows); 43 no-ball, 6 off the bat; 44 W run out, one run
--- completed, a bye, B out at the striker's end.
+-- completed, a bye, B out at the striker's end. And M2, for the review's B1
+-- (below, at its rows).
 CREATE OR REPLACE FUNCTION _v121_stage() RETURNS jsonb AS $$
 DECLARE
   HIL uuid := '11111111-1111-1111-1111-111111111111';
@@ -7504,6 +7505,11 @@ DECLARE
   V_B uuid := 'aaaaaaaa-0000-0000-0000-00000000121b';
   V_C uuid := 'aaaaaaaa-0000-0000-0000-00000000121c';
   am  uuid;
+  M2  uuid := '77777777-0000-0000-0000-000000121002';
+  V_D uuid := 'aaaaaaaa-0000-0000-0000-00000000121d';
+  V_E uuid := 'aaaaaaaa-0000-0000-0000-00000000121e';
+  V_F uuid := 'aaaaaaaa-0000-0000-0000-00000000121f';
+  am2 uuid;
 BEGIN
   INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
     (V_A, HIL, '2XI', 'V121 Opener',  121, 'batter', (current_date - interval '16 years')::date),
@@ -7544,8 +7550,100 @@ BEGIN
   INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
   VALUES (M, HIL, 'v121:4', 'Verify 121: the single was a dead ball', '88888888-0000-0000-0000-000000000006')
   RETURNING id INTO am;
-  RETURN jsonb_build_object('m', M, 'a', V_A, 'b', V_B, 'c', V_C, 'am', am);
+  -- The review's B1: M2, D and E bat, F bowls, as stamped. 4–15 D twelve
+  -- fours (48); 16 D a single (49); 17–28 E twelve fours (48); 29 E a
+  -- single (49) — the dead ball; 30 D two (51: D's fifty is noticed as it
+  -- is scored). The amendment voids 29; the route's re-judging puts 30 on E
+  -- (E kept the strike): D 49, E 50.
+  INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (V_D, HIL, '2XI', 'V121 Fourth',  124, 'batter', (current_date - interval '16 years')::date),
+    (V_E, HIL, '2XI', 'V121 Fifth',   125, 'batter', (current_date - interval '16 years')::date),
+    (V_F, HIL, '2XI', 'V121 Sixth',   126, 'bowler', (current_date - interval '16 years')::date);
+  INSERT INTO match (id, school_id, team_code, opponent, starts_at, format, overs, status) VALUES
+    (M2, HIL, '2XI', 'Verify 121 B1', '2026-10-25 09:00:00+02', 'T20', 20, 'complete');
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                          striker_id, non_striker_id, bowler_id, payload)
+  SELECT M2, HIL, x.k, 1, 0, '88888888-0000-0000-0000-000000000006'::uuid, 'verify-121b',
+         'v121b:' || x.k, x.k, now(), x.kind, x.bt, x.v, x.st, x.ns, x.bw, x.pl
+    FROM (VALUES
+      (1, 'innings_start', NULL::text, NULL::smallint, NULL::uuid, NULL::uuid, NULL::uuid,
+          '{"battingTeam":"Hilton 2XI","bowlingTeam":"Verify 121 B1","overs":20}'::jsonb),
+      (2, 'batters', NULL, NULL, V_D, V_E, NULL, '{}'::jsonb),
+      (3, 'bowler',  NULL, NULL, NULL, NULL, V_F, '{}'::jsonb)) AS x(k, kind, bt, v, st, ns, bw, pl)
+  UNION ALL
+  SELECT M2, HIL, g, 1, 0, '88888888-0000-0000-0000-000000000006'::uuid, 'verify-121b',
+         'v121b:' || g, g, now(), 'ball', 'run',
+         (CASE WHEN g IN (16, 29) THEN 1 WHEN g = 30 THEN 2 ELSE 4 END)::smallint,
+         CASE WHEN g BETWEEN 17 AND 29 THEN V_E ELSE V_D END,
+         CASE WHEN g BETWEEN 17 AND 29 THEN V_D ELSE V_E END, V_F, '{}'::jsonb
+    FROM generate_series(4, 30) g
+   ORDER BY 3;
+  INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+  VALUES (M2, HIL, 'v121b:29', 'Verify 121: E''s single was a dead ball', '88888888-0000-0000-0000-000000000006')
+  RETURNING id INTO am2;
+  RETURN jsonb_build_object('m', M, 'a', V_A, 'b', V_B, 'c', V_C, 'am', am,
+                            'm2', M2, 'd', V_D, 'e', V_E, 'am2', am2);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A match's milestone notices, as the owner reads them: "<who> <kind>
+-- <live|retracted> <the notification's body>" for each, in order.
+CREATE OR REPLACE FUNCTION _v121_notices(p_match uuid, p_names jsonb) RETURNS text AS $$
+  SELECT coalesce(string_agg(coalesce(p_names ->> mn.player_id::text, '?') || ' ' || mn.kind || ' '
+                             || CASE WHEN mn.retracted_at IS NULL THEN 'live' ELSE 'retracted' END
+                             || CASE WHEN n.id IS NULL THEN '' WHEN n.retracted_at IS NULL THEN ' (notice up)' ELSE ' (notice down)' END
+                             || ': ' || coalesce(n.body, '-'),
+                             '; ' ORDER BY coalesce(p_names ->> mn.player_id::text, '?'), mn.kind), '')
+    FROM milestone_notice mn LEFT JOIN notification n ON n.id = mn.notice_id
+   WHERE mn.match_id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The review's B2: tools/sql/laws121-precheck.sql's query, word for word
+-- between its markers (rejudge.test.mjs holds the two the same).
+CREATE OR REPLACE FUNCTION _v121_precheck()
+RETURNS TABLE (match_id uuid, fixture_date date, school text, side text, now_stands integer, now_saved integer) AS $$
+-- precheck:begin
+WITH w AS (
+  -- A bowler's dismissal on a delivery, in a match whose format gives free
+  -- hits: the dismissals a free hit saves (dismissal_stands_on_free_hit()).
+  SELECT x.match_id,
+         -- The old rule (db/54): the last earlier live delivery of the innings
+         -- that was not a wide was a no-ball, of any kind.
+         coalesce((SELECT p.ball_type IS NOT DISTINCT FROM 'Nb'
+                     FROM ball_event_live p
+                    WHERE p.match_id = x.match_id AND p.innings = x.innings AND p.seq < x.seq
+                      AND p.kind = 'ball' AND p.ball_type IS DISTINCT FROM 'Wd'
+                    ORDER BY p.seq DESC LIMIT 1), false) AS old_free_hit,
+         -- The new (db/121): the last earlier live delivery of the innings that
+         -- counts in the over or earns a free hit (a no-ball of nbType
+         -- front_foot, or of none recorded) was a no-ball.
+         coalesce((SELECT p.ball_type IS NOT DISTINCT FROM 'Nb'
+                     FROM ball_event_live p
+                    WHERE p.match_id = x.match_id AND p.innings = x.innings AND p.seq < x.seq
+                      AND p.kind = 'ball'
+                      AND (ball_counts_in_over(p.ball_type, p.payload)
+                           OR (p.ball_type = 'Nb' AND coalesce(p.payload ->> 'nbType', 'front_foot') = 'front_foot'))
+                    ORDER BY p.seq DESC LIMIT 1), false) AS new_free_hit
+    FROM ball_event_live x
+   WHERE x.kind = 'ball'
+     AND ball_is_wicket(x.ball_type, x.dismissal)
+     AND NOT dismissal_stands_on_free_hit(x.dismissal)
+     AND match_free_hits_apply(x.match_id)
+)
+SELECT w.match_id,
+       (m.starts_at AT TIME ZONE 'Africa/Johannesburg')::date               AS fixture_date,
+       s.code                                                               AS school,
+       m.team_code                                                          AS side,
+       count(*) FILTER (WHERE w.old_free_hit AND NOT w.new_free_hit)::int   AS now_stands,
+       count(*) FILTER (WHERE w.new_free_hit AND NOT w.old_free_hit)::int   AS now_saved
+  FROM w
+  JOIN match m  ON m.id = w.match_id
+  JOIN school s ON s.id = m.school_id
+ WHERE w.old_free_hit <> w.new_free_hit
+ GROUP BY w.match_id, m.starts_at, s.code, m.team_code
+ ORDER BY 2, 3, 4, 1
+-- precheck:end
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/121 (section 98) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -28232,11 +28330,22 @@ $v49$;
   --         are A's, 7 B's, in ball_event_live and every career reader; a
   --         reader who may not read the match reads none of it; anybody but
   --         the approver, in the approving transaction, is refused
+  --   (S2)  the door names only a batter of the innings (the bowler is
+  --         refused) with a player row (an id with none is refused in words)
+  --   (B1)  on M2 the re-judging reaches the milestone notices both ways: D's
+  --         fifty, which the void alone left standing on the stamps, is taken
+  --         back; E's, which the re-judged log makes, is noticed "after a
+  --         correction."
+  --   (B2)  tools/sql/laws121-precheck.sql's query (_v121_precheck()) finds
+  --         no match beside this section's whose stored dismissals db/121
+  --         moves — the seeded database holds none — and on this section's
+  --         match the one of each it planted (21 now stands, 24 now saved)
   --
   -- Falsified, each change made as the owner before this file ran:
   --   ball_runs_off_bat()'s 'W' arm put back (db/40's)  → (F5) red
   --   ball_on_free_hit() put back (db/54's)              → (Q2) red: 21 saved
   --   ball_event_live put back (db/71's)                 → (F4) red: 5 is B's
+  --   milestone_recheck() made to do nothing             → (B1) red: D's fifty stays
   DECLARE
     y   jsonb := _v121_stage();
     M   uuid;  V_A uuid;  V_B uuid;  V_C uuid;  am uuid;
@@ -28244,6 +28353,7 @@ $v49$;
     r   record;
     n   integer;
     U_STRANGER uuid := 'dddddddd-0000-0000-0000-000000000121';
+    names jsonb;
   BEGIN
     M := (y->>'m')::uuid; V_A := (y->>'a')::uuid; V_B := (y->>'b')::uuid; V_C := (y->>'c')::uuid; am := (y->>'am')::uuid;
 
@@ -28261,9 +28371,31 @@ $v49$;
     PERFORM _assert(got = '21=out,24=saved,27=saved,30=saved',
       format('§98 (Q2, F11): the wickets on the free-hit fixture read %s', got));
 
+    -- (B2) the precheck: the seeded database holds no dismissal the rule
+    -- moves; this section's own match holds the one of each it planted
+    SELECT count(*) INTO n FROM _v121_precheck() x WHERE x.match_id <> M;
+    PERFORM _assert(n = 0, format('§98 (B2): the precheck finds %s match(es) beside this section''s whose stored dismissals db/121 moves', n));
+    SELECT x.now_stands || '/' || x.now_saved INTO got FROM _v121_precheck() x WHERE x.match_id = M;
+    PERFORM _assert(got = '1/1', format('§98 (B2): the precheck reads this section''s match %s (21 now stands, 24 now saved: 1/1)', got));
+
     -- (F4) the amendment, approved, and the balls after it re-judged
     SELECT d.ok, d.reason INTO r FROM scoring_amendment_decide(am, true, NULL) d;
     PERFORM _assert(r.ok, format('§98 (F4): the superadmin could not approve the scorer''s amendment (%s)', r.reason));
+    -- (S2) the door names only a batter of the innings with a player row
+    BEGIN
+      PERFORM scoring_amendment_rejudge(am, jsonb_build_array(jsonb_build_object('seq', 5, 'striker_id', V_C)));
+      PERFORM _assert(false, '§98 (S2): the re-judging put the bowler, no batter of the innings, on strike');
+    EXCEPTION WHEN invalid_parameter_value THEN
+      GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+      PERFORM _assert(got LIKE '%is not a batter of innings 0%', format('§98 (S2): the bowler was refused in other words: %s', got));
+    END;
+    BEGIN
+      PERFORM scoring_amendment_rejudge(am, jsonb_build_array(jsonb_build_object('seq', 5, 'striker_id', 'eeeeeeee-0000-0000-0000-000000000121')));
+      PERFORM _assert(false, '§98 (S2): the re-judging wrote an id SCRBRD holds no player row for');
+    EXCEPTION WHEN invalid_parameter_value THEN
+      GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+      PERFORM _assert(got LIKE '%holds no player row%', format('§98 (S2): an id with no player row was refused in other words: %s', got));
+    END;
     PERFORM _as(U_SCORER);
     BEGIN
       PERFORM scoring_amendment_rejudge(am, '[]'::jsonb);
@@ -28284,6 +28416,30 @@ $v49$;
     PERFORM _as(U_OWNER);
     SELECT count(*) INTO n FROM ball_event_rejudged WHERE match_id = M;
     PERFORM _assert(n = 3, format('§98 (F4): the control read %s re-judged row(s), not 3', n));
+
+    -- (B1) the re-judging reaches the milestone notices, both ways: D's
+    -- fifty, which the re-judged log takes away, is taken back; E's, which
+    -- it makes, is noticed after a correction
+    names := jsonb_build_object(y->>'d', 'D', y->>'e', 'E');
+    got := _v121_notices((y->>'m2')::uuid, names);
+    PERFORM _assert(got = 'D fifty live (notice up): Fifty (51) against Verify 121 B1.',
+      format('§98 (B1): before the amendment M2''s notices read %s', got));
+    SELECT d.ok, d.reason INTO r FROM scoring_amendment_decide((y->>'am2')::uuid, true, NULL) d;
+    PERFORM _assert(r.ok, format('§98 (B1): the superadmin could not approve the second amendment (%s)', r.reason));
+    got := _v121_notices((y->>'m2')::uuid, names);
+    PERFORM _assert(got = 'D fifty live (notice up): Fifty (51) against Verify 121 B1.',
+      format('§98 (B1): the void alone, on the stamps, moved M2''s notices: %s', got));
+    SELECT scoring_amendment_rejudge((y->>'am2')::uuid, jsonb_build_array(jsonb_build_object('seq', 30, 'striker_id', y->>'e'))) INTO n;
+    PERFORM _assert(n = 1, format('§98 (B1): %s ball(s) re-judged on M2 (expected 1: 30)', n));
+    got := _v121_notices((y->>'m2')::uuid, names);
+    PERFORM _assert(got = 'D fifty retracted (notice down): Fifty (51) against Verify 121 B1.; E fifty live (notice up): Fifty (50) against Verify 121 B1, after a correction.',
+      format('§98 (B1): after the re-judging M2''s notices read %s', got));
+    SELECT (SELECT x.runs FROM player_batting_since((y->>'d')::uuid, NULL) x) || '/'
+        || (SELECT x.runs FROM player_batting_since((y->>'e')::uuid, NULL) x) INTO got;
+    PERFORM _assert(got = '49/50', format('§98 (B1): D and E''s runs read %s after the re-judging (49/50)', got));
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'milestone_recheck(uuid,smallint,uuid[],boolean)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'milestone_recheck(uuid,smallint,uuid[],boolean)', 'EXECUTE'),
+      '§98 (B1, doors): milestone_recheck() is callable by the application or PUBLIC');
 
     -- (F4, F5, F7) every figure, through the career readers
     SELECT x.runs || '/' || x.balls_faced || ' 4s ' || x.fours || ' 6s ' || x.sixes INTO got FROM player_batting_since(V_A, NULL) x;

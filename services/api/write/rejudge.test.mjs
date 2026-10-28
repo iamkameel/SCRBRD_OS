@@ -4,6 +4,7 @@
 import { toRow } from "@scrbrd/scoring";
 import { inningsStart, batters, bowler, ball, voidEvent } from "@scrbrd/scoring";
 import { rejudgedStrikers } from "./rejudge.mjs";
+import { readFileSync } from "node:fs";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d); } };
@@ -38,5 +39,18 @@ const base = [inningsStart({ battingTeam: "H", bowlingTeam: "W" }), batters({ st
   const got = rejudgedStrikers(r, {}, { innings: 0, afterSeq: 4 });
   ok("a typed name faced it: not attributable, NULL", JSON.stringify(got) === JSON.stringify([{ seq: 5, striker_id: null }]), JSON.stringify(got));
 }
+{
+  // The review's B2: db/99 §98 runs the precheck's query word for word, so a
+  // seeded database's zero is the query the lead runs on production.
+  const marked = (file) => {
+    const t = readFileSync(new URL(file, import.meta.url), "utf8");
+    const a = t.indexOf("-- precheck:begin"), b = t.indexOf("-- precheck:end");
+    return a >= 0 && b > a ? t.slice(a, b) : null;
+  };
+  const tool = marked("../../../tools/sql/laws121-precheck.sql"), verify = marked("../../../db/99_rls_verify.sql");
+  ok("the precheck's query is marked in tools/sql/laws121-precheck.sql", tool != null && tool.includes("ball_event_live"));
+  ok("db/99 §98's copy is the precheck's query, word for word", tool != null && tool === verify);
+}
+
 console.log(`\nrejudge: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
