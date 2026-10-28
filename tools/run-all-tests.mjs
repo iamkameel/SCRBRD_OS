@@ -13,6 +13,8 @@ const SUITES = [
   ["laws-spec","packages/scoring/test/laws-spec.test.mjs"],
   // The Laws audit of 28 Oct 2026: each finding's scenario, as Kameel decided it.
   ["laws-audit","packages/scoring/test/laws-audit.test.mjs"],
+  // ...and F4's server half: which later balls an amendment re-judges (db/121).
+  ["rejudge",  "services/api/write/rejudge.test.mjs"],
   ["design",   "apps/web/test/design.test.mjs"],
   ["analytics","apps/web/test/analytics.test.mjs"],
   ["home-routing","apps/web/test/home-routing.test.mjs"],

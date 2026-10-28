@@ -89,7 +89,7 @@ import {
   MatchFold, deriveInnings, deriveMatch, toRow, fromRow, isLegal, normaliseDismissal, chargedToBowler, runsOffBat,
   inningsStart, inningsEnd, inningsSummary, batters, bowler, ball, newEventId, retire, RETIRE_REASON, lawsRefusal,
 } from "@scrbrd/scoring";
-import { countsInOver, NOT_IN_OVER, keeperOf, isKeeperRef, isWicketBall } from "@scrbrd/scoring";
+import { countsInOver, NOT_IN_OVER, keeperOf, isKeeperRef, isWicketBall, boundaryHit } from "@scrbrd/scoring";
 import { resultFromRow } from "@scrbrd/scoring";   // SCRBRD-130 R1
 import { deriveFacts, FACT_KIND } from "@scrbrd/scoring";   // Recognition R1
 import { matchFoldContext, EVENT_COLUMNS } from "../services/api/write/events-api.mjs";
@@ -847,8 +847,9 @@ function expected(byInnings) {
           if (counts) m.balls++;
           if (counts && value === 0) m.dots++;
           m.runs += runsOffBat(x);
-          if ((type === "run" || type === "Nb") && runsOffBat(x) === 4) m.fours++;
-          if ((type === "run" || type === "Nb") && runsOffBat(x) === 6) m.sixes++;
+          // A boundary, not any four or six off the bat (the Laws audit F7, db/121).
+          if (boundaryHit(x) === 4) m.fours++;
+          if (boundaryHit(x) === 6) m.sixes++;
         }
       }
     }

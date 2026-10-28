@@ -24,7 +24,8 @@ import { MatchFold, fromRow, isPlayerId } from "@scrbrd/scoring";
  * The balls after `afterSeq` in `innings` whose striker, as the fold gives it
  * over the log `rows` (the match's ball_event rows in seq order, voids
  * included), is not the one stamped on the row. A striker SCRBRD holds no row
- * for — a typed name — is `null`, as ball_event.striker_id has it.
+ * for — a typed name — is `null`, as ball_event.striker_id has it. A ball the
+ * fold has nobody on strike for is left as stamped.
  *
  * @param {Record<string, any>[]} rows
  * @param {import("@scrbrd/scoring").FoldContext} ctx
@@ -42,6 +43,10 @@ export function rejudgedStrikers(rows, ctx, { innings, afterSeq }) {
   for (const e of inn?.ballLog ?? []) {
     const seq = /** @type {any} */ (e).seq;
     if (typeof seq !== "number" || !stamped.has(seq)) continue;
+    // A fold that does not know who is on strike (no batters event before
+    // the ball: a log written by hand, or from elsewhere) re-judges nothing:
+    // the stamp is the only word there is.
+    if (e.strikerId == null) continue;
     const faced = isPlayerId(e.strikerId) ? /** @type {string} */ (e.strikerId).toLowerCase() : null;
     const stamp = stamped.get(seq);
     if (faced !== (stamp == null ? null : String(stamp).toLowerCase())) out.push({ seq, striker_id: faced });

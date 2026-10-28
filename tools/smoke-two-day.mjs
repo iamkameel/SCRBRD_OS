@@ -163,7 +163,7 @@ try {
      [s0, s1, s2].every((x) => x.refused.length === 0), JSON.stringify([s0.refused, s1.refused, s2.refused]));
   const rn = await api(`/api/matches/${N.id}/result`, { token: sarah });
   ok("GET /result: Hilton won by an innings and 3 runs", rn.body?.result?.outcome === "home_win" && rn.body.result.marginKind === "innings"
-     && rn.body.result.marginValue === 3, show(rn));
+     && rn.body.result.margin === 3, show(rn));
   const n3 = innings(3, "1XI", "Smoke Two-Day Follow-On", HIL_XI, OPP_XI, [1]);
   const s3 = await pn.post(n3);
   ok("a fourth innings' ball is refused: match_decided", JSON.stringify(s3.refused).includes("match_decided"), JSON.stringify(s3.refused));
