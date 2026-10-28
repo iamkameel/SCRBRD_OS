@@ -162,6 +162,8 @@ const TYPE_FLOOR_CEILING = {
   signupnoschool: 0,
   signupme:       0,
   signupclaims:   0,
+  // NOTIFICATIONS S4: Me's What reaches your phone (the same walk). Born at 0.
+  alertprefs:     0,
   // Practice Match, phase 1 (2026-10-02): every screen of it, on a phone —
   // the way in and the Resume card on the scorer's start screen, the six
   // steps of the setup, the pad's title bar with its label, the weather
@@ -227,6 +229,8 @@ const TAP_FLOOR_CEILING = {
   signupnoschool: 0,
   signupme:       0,
   signupclaims:   0,
+  // NOTIFICATIONS S4: Me's What reaches your phone (the same walk). Born at 0.
+  alertprefs:     0,
   // Practice Match, phase 1: everything on these screens is tapped one-handed
   // in a field, and none of it is under 44px.
   practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
@@ -280,7 +284,7 @@ const CONTRAST_CEILING = {
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
               planblock: 0, planrow: 0, plancomposer: 0, planrefusal: 0, plancoach: 0,
               cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, cockpitlivedrawer: 0, cockpittrail: 0, pickside: 0,
-              signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0,
+              signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0, alertprefs: 0,
               display1080: 0, display768: 0, display390: 0,
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
               practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
@@ -291,7 +295,7 @@ const CONTRAST_CEILING = {
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
               planblock: 0, planrow: 0, plancomposer: 0, planrefusal: 0, plancoach: 0,
               cockpithome: 0, cockpitday: 0, cockpitlive: 0, cockpitdrawer: 0, cockpitlivedrawer: 0, cockpittrail: 0, pickside: 0,
-              signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0,
+              signuplogin: 0, signupclaim: 0, signupnoschool: 0, signupme: 0, signupclaims: 0, alertprefs: 0,
               display1080: 0, display768: 0, display390: 0,
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
               practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
@@ -344,6 +348,8 @@ const EMOJI_CEILING = {
   signupnoschool: 0,
   signupme:       0,
   signupclaims:   0,
+  // NOTIFICATIONS S4: Me's What reaches your phone (the same walk). Born at 0.
+  alertprefs:     0,
   // SCRBRD-133 G1: the ground display (it has no controls at all).
   display1080: 0,
   display768:  0,
@@ -1235,6 +1241,14 @@ async function signupWalk(theme) {
     await page.locator('[data-testid="sign-in-remove"]').first().click({ timeout: 4000 }).catch(() => {});
     ok("Me carries Ways to sign in, with the remove question open", await page.locator('[data-testid="sign-ins"]').count() === 1 && await page.locator('[data-testid="sign-in-remove-confirm"]').count() === 1);
     await check(page, "signupme", '[data-testid="sign-ins"]');
+    // NOTIFICATIONS S4: What reaches your phone, on the same Me — all his
+    // notices and his son's, each a switch with its name, the locked kinds in words.
+    await page.waitForSelector('[data-testid="alert-prefs"] [role="switch"]', { timeout: 6000 }).catch(() => {});
+    ok("Me carries What reaches your phone: six switches, grouped, and the kinds always on in words",
+       await page.locator('[data-testid="alert-prefs"] [role="switch"]').count() === 6
+       && await page.locator('[data-testid="alert-prefs"] h4').count() === 2
+       && /Always on: safety and welfare notices\./.test(await page.locator('[data-testid="alert-prefs-always"]').innerText({ timeout: 2000 }).catch(() => "")));
+    await check(page, "alertprefs", '[data-testid="alert-prefs"]');
     await ctx.close();
 
     // The Claims list, as the office.

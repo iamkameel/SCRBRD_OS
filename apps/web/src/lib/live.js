@@ -673,6 +673,16 @@ function asDevice(r) {
 }
 
 /**
+ * One of my own alert switches (NOTIFICATIONS D20, db/120): a kind, or a kind
+ * about one of my children, and whether it reaches my phone. `quietHours` is
+ * whether SCRBRD holds my medium alerts overnight (a pupil, D21).
+ */
+function asAlertChoice(r) {
+  return { kind: r.kind, subjectPlayerId: r.subject_player_id ?? null, playerName: r.player_name ?? null,
+           push: r.push !== false, quietHours: r.quiet_hours === true, live: true };
+}
+
+/**
  * Who to ring for a child, one row per contact in priority order. The same
  * shape serves the manifest read, where rows carry the child's name too.
  */
@@ -1338,6 +1348,7 @@ const ADAPT = {
   rulebook_clauses: asClause,
   roster_on: asRosterOn,
   my_devices: asDevice,
+  my_notification_prefs: asAlertChoice,
   memberships: asMembership,
   opposition_context: asOppositionContext,
   opposition_squad: asOppositionPlayer,

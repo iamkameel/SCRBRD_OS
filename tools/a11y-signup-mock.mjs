@@ -39,6 +39,15 @@ export function signupApi() {
       account_active: true, school_id: HIL, presented_email: "parent.other@example.invalid", provider: "google.com", requested_at: "2026-10-02T08:00:00Z", last_requested_at: "2026-10-02T09:00:00Z" }],
     my_features: () => [{ key: "analytics", kind: "module", label: "Analytics", enabled: true }, { key: "sport_cricket", kind: "sport", label: "Cricket", enabled: true }],
     sports: () => [{ code: "cricket", label: "Cricket", engine: "scoring", flag_key: "sport_cricket", enabled: true, fixtures: 0 }],
+    // NOTIFICATIONS S4: Me's "What reaches your phone", for a coach whose own
+    // son is at the school, so the walk sees the kinds for all his notices and
+    // one child's group. Invented; the server decides the real list (db/120).
+    my_notification_prefs: () => handle.who !== "coach" ? [] : [
+      { kind: "notice", subject_player_id: null, player_name: null, push: true, quiet_hours: false },
+      { kind: "recognition", subject_player_id: null, player_name: null, push: false, quiet_hours: false },
+      { kind: "fixture", subject_player_id: null, player_name: null, push: true, quiet_hours: false },
+      ...["recognition", "availability", "lift"].map((kind) => ({ kind, subject_player_id: "aaaaaaaa-0000-0000-0000-000000000005",
+        player_name: "R Pillay", push: kind !== "lift", quiet_hours: false }))],
   };
 
   const handle = Object.assign((/** @type {string} */ method, /** @type {string} */ pathname) => {

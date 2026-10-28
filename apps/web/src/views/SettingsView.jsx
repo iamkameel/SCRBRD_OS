@@ -13,6 +13,7 @@ import { passportConsentReader, readsScoutingOf } from "../lib/held.js";
 import { api, signedIn } from "../lib/api.js";
 import { ceilingWords } from "../lib/ceilingWords.js";
 import { disablePush, enablePush, pushSupported } from "../lib/push.js";
+import { AlertPrefsSection } from "./alertPrefs.jsx";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
 import { SupportAccessPanel } from "./support.jsx";
@@ -785,6 +786,8 @@ function MeTab({ role, onSignOut }) {
 
       <BoundariesSection role={role}/>
       <AlertsSection role={role}/>
+      {/* NOTIFICATIONS D20, D21: which alerts reach the phone, a parent's per child. */}
+      <AlertPrefsSection role={role}/>
       <MyClearancesSection role={role}/>
     </div>
   );
