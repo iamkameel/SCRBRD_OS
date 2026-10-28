@@ -7520,6 +7520,8 @@ BEGIN
     INSERT INTO competition (school_id, name, comp_type, format, level)
     VALUES (CASE k WHEN 'hil' THEN HIL WHEN 'wes' THEN WES END, 'Verify 118 League ' || k, 'league', 'T20', 'school')
     RETURNING id INTO c;
+    INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES
+      (c, HIL, '1XI', 'Hilton 1'), (c, WES, '1XI', 'Westville 1');
     INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id)
     VALUES (CASE k WHEN 'wes' THEN WES ELSE HIL END, '1XI', CASE k WHEN 'wes' THEN HIL ELSE WES END, '1XI',
             'Verify 118 league fixture ' || k, now() - interval '2 days', 'cricket', 'T20', 20, 'scheduled', c)
