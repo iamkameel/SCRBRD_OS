@@ -27,8 +27,10 @@ const sast = (/** @type {string} */ wall) => new Date(`${wall}+02:00`);
 const NOON = sast("2026-10-28T12:00:00");
 const adult = { prefs: [], quietHours: false };
 const pupil = { prefs: [], quietHours: true };
-const medium = (/** @type {string} */ kind, about = null) => ({ kind, urgency: /** @type {const} */ ("medium"), subject_person_id: about });
-const high = (/** @type {string} */ kind, about = null) => ({ kind, urgency: /** @type {const} */ ("high"), subject_person_id: about });
+/** @param {string} kind @param {string | null} [about] */
+const medium = (kind, about = null) => ({ kind, urgency: /** @type {const} */ ("medium"), subject_person_id: about });
+/** @param {string} kind @param {string | null} [about] */
+const high = (kind, about = null) => ({ kind, urgency: /** @type {const} */ ("high"), subject_person_id: about });
 
 // ═══════════════════════════════════════════════════════════════════
 group("D3 — urgency first: low never, high always");

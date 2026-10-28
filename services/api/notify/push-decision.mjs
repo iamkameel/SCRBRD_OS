@@ -68,9 +68,8 @@ export function governingPref(notice, prefs) {
   if (!MUTABLE_KINDS.includes(notice.kind)) return null;
   const about = notice.subject_person_id ?? null;
   const mine = prefs.filter((p) => p.kind === notice.kind);
-  return (about && mine.find((p) => p.subject_player_id === about))
-      ?? mine.find((p) => (p.subject_player_id ?? null) === null)
-      ?? null;
+  const aboutHim = about ? mine.find((p) => p.subject_player_id === about) : undefined;
+  return aboutHim ?? mine.find((p) => (p.subject_player_id ?? null) === null) ?? null;
 }
 
 /**
