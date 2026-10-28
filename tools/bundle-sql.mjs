@@ -710,7 +710,7 @@ SELECT
   -- a boundary (F7); the free hit follows a front-foot no-ball only, and a
   -- delivery not in the over leaves it (Q2, F11); who faced, re-judged after
   -- an amendment, read through ball_event_live, behind RLS, written by one
-  -- door (F4).
+  -- door (F4), which re-runs the milestone notices (milestone_recheck()).
   CASE WHEN to_regclass('ball_event_rejudged') IS NOT NULL
         AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('ball_event_rejudged'))
         AND NOT has_table_privilege('scrbrd_app', to_regclass('ball_event_rejudged'), 'INSERT')
@@ -720,6 +720,9 @@ SELECT
         AND to_regprocedure('ball_boundary(text,integer,jsonb)') IS NOT NULL
         AND to_regprocedure('ball_gives_free_hit(text,jsonb)') IS NOT NULL
         AND position('ball_gives_free_hit' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('ball_on_free_hit(uuid,smallint,integer)'))) > 0
+        AND to_regprocedure('milestone_recheck(uuid,smallint,uuid[],boolean)') IS NOT NULL
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('milestone_recheck(uuid,smallint,uuid[],boolean)'), 'EXECUTE')
+        AND position('milestone_recheck(' IN coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('scoring_amendment_rejudge(uuid,jsonb)')), '')) > 0
        THEN 'OK' ELSE 'PROBLEM' END                             AS "The Laws audit's fixes",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
