@@ -9,7 +9,7 @@
  * another family's child refused; a body naming somebody else writes the
  * caller's own row; safeguarding, welfare and system refused in words; a
  * per-child row for a kind never about a child refused; and Notices the same
- * before and after a mute. db/99 §95 proves the table's rules beneath it;
+ * before and after a mute. db/99 §97 proves the table's rules beneath it;
  * services/api/notify/push-decision.test.mjs proves what a row does to a push.
  *
  *   node tools/smoke-notification-prefs.mjs

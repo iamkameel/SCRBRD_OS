@@ -14,13 +14,13 @@
  * or a parent's action list; the answer says so, so the screen can.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
-import { KINDS, MUTABLE_KINDS, PER_CHILD_KINDS } from "@scrbrd/policy/notifications";
+import { ALWAYS_ON_WORDS, KINDS, MUTABLE_KINDS, PER_CHILD_KINDS } from "@scrbrd/policy/notifications";
 /** @import { ApiRequest, Handler, Pool } from "../api-types.mjs" */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The words for a kind that is always pushed when it matters (D20). */
-export const ALWAYS_ON = "Always on: safety and welfare notices.";
+/** The words for a kind that is always pushed when it matters (D20): the policy's one copy. */
+export const ALWAYS_ON = ALWAYS_ON_WORDS;
 
 /** @param {string} code @param {number} [status] @param {string} [detail] */
 const err = (code, status = 400, detail = undefined) =>

@@ -19,6 +19,7 @@ import { useState } from "react";
 import { D, T, inkOn } from "../design/tokens.js";
 import { useLive } from "../lib/live.js";
 import { api } from "../lib/api.js";
+import { ALWAYS_ON_WORDS } from "@scrbrd/policy/notifications";
 
 /** What each switch is called: for all your notices, and for one child. */
 export const ALERT_WORDS = Object.freeze({
@@ -28,7 +29,8 @@ export const ALERT_WORDS = Object.freeze({
   availability: "Questions about availability",
   lift:         "Lift seats",
 });
-export const ALWAYS_ON_WORDS = "Always on: safety and welfare notices.";
+// The route's refusal says the same sentence: one copy, in the policy package.
+export { ALWAYS_ON_WORDS };
 export const ALWAYS_ON_MORE = "Anything urgent, and notices about your own account, always reach your phone.";
 export const PUSH_ONLY_WORDS = "Switching one off quiets your phone only. Every notice still appears in Notices, on the badge and in your list of things to do.";
 export const QUIET_WORDS = "Between 21:00 and 06:00 your alerts wait until the morning; urgent ones still come through. SCRBRD sets these hours for every pupil.";
@@ -37,7 +39,7 @@ const text = (size = 13, color = D.textSecondary) => ({ fontFamily: D.body, font
 
 /** Why a switch did not move, in words. */
 function refusal(/** @type {any} */ e) {
-  if (e?.status === 403) return "That child isn't linked to your account, so alerts about that child can't be changed here.";
+  if (e?.status === 403) return "Your account can't change that alert. Nothing has changed.";
   if (e?.code === "kind_locked") return e.detail || ALWAYS_ON_WORDS;
   if (e?.status) return "That change was refused. Nothing has changed.";
   return "SCRBRD couldn't be reached. Nothing has changed; try again.";
@@ -82,10 +84,14 @@ export function AlertPrefsSection({ role }) {
     finally { setBusy(false); }
   };
 
-  const all = rows.filter((r) => !r.subjectPlayerId);
+  // The read always answers one row, so quiet hours are known even when
+  // there is no switch to offer (a pupil whose kinds are all always on): a
+  // row with no kind carries the quiet-hours answer alone.
+  const switches = rows.filter((r) => r.kind);
+  const all = switches.filter((r) => !r.subjectPlayerId);
   /** @type {Map<string, { name: string, rows: any[] }>} */
   const byChild = new Map();
-  for (const r of rows.filter((x) => x.subjectPlayerId)) {
+  for (const r of switches.filter((x) => x.subjectPlayerId)) {
     if (!byChild.has(r.subjectPlayerId)) byChild.set(r.subjectPlayerId, { name: r.playerName || "Your child", rows: [] });
     byChild.get(r.subjectPlayerId)?.rows.push(r);
   }
@@ -102,7 +108,7 @@ export function AlertPrefsSection({ role }) {
 
       {error ? <p role="alert" style={{ ...text(13, T.semantic.criticalText), marginTop: "12px" }}>Your alert settings couldn't be read just now. Nothing has changed.</p>
         : loading && rows.length === 0 ? null
-        : rows.length === 0 ? <p style={{ ...text(), marginTop: "12px" }}>Nothing you receive can be switched off here.</p>
+        : switches.length === 0 ? <p style={{ ...text(), marginTop: "12px" }}>Nothing you receive can be switched off here.</p>
         : (
           <div style={{ marginTop: "8px" }}>
             {all.length > 0 && byChild.size > 0 && <h4 style={groupHead}>All your notices</h4>}

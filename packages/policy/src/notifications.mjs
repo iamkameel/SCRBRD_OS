@@ -105,3 +105,19 @@ export const PER_CHILD_KINDS = Object.freeze(["recognition", "availability", "li
  * go at `to`. Platform-fixed: not a school's setting, not the pupil's.
  */
 export const QUIET_HOURS = Object.freeze({ from: 21, to: 6, timeZone: "Africa/Johannesburg" });
+
+/**
+ * D2: the kinds that get no quiet hours. A welfare referral and a
+ * safeguarding share are medium, and D2's table gives both "no preference, no
+ * quiet hours": they reach a pupil's phone at any hour, as their high
+ * notices do. (A pupil holds neither capability today, so this is the rule
+ * said before the first one reaches him, not a change he will notice.)
+ */
+export const NO_QUIET_HOURS_KINDS = Object.freeze(["welfare", "safeguarding"]);
+
+/**
+ * D20: the one sentence for what can never be switched off, said by the
+ * route that refuses a locked kind and by the screen that lists the
+ * switches. One copy, so the two cannot drift.
+ */
+export const ALWAYS_ON_WORDS = "Always on: safety and welfare notices.";

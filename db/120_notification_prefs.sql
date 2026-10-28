@@ -6,7 +6,7 @@
 -- HAND-WRITTEN: one table, governed by identity like device_push_token
 -- (db/08), and two read doors. The design is docs/design/NOTIFICATIONS.md
 -- §8 (D20, D21) and §11's S4 row, decided by Kameel on 7 October 2026; on 23
--- October he confirmed S2–S5 before the pilot. Its proof is db/99 §95; the
+-- October he confirmed S2–S5 before the pilot. Its proof is db/99 §97; the
 -- API walk is tools/smoke-notification-prefs.mjs; the decision the push
 -- worker takes at D13 step 5 is services/api/notify/push-decision.mjs, with
 -- its unit test beside it.
@@ -22,7 +22,7 @@
 -- the badge or a parent's action list: no read, view or policy in the
 -- product reads this table but the screen that sets it and the worker that
 -- sends (GA-I20 D2: the first thing a filter hides is a consent nobody
--- answered). db/99 §95 proves a muted notice is still in my_notifications.
+-- answered). db/99 §97 proves a muted notice is still in my_notifications.
 --
 -- The worker applies a row to MEDIUM notices only. LOW is never pushed and
 -- HIGH is always pushed (D3), whatever a row says. A row with a child applies
@@ -48,8 +48,12 @@
 -- Identity-governed, like device_push_token (db/08): your own rows, and no
 -- capability, no role, no administrative override. Nobody mutes somebody
 -- else's phone. A row about a child is yours only if you are his family as
--- db/08's is_family_of() says (a verified guardian or self-access link of
--- yours), checked on INSERT and on UPDATE. Never deleted: the default
+-- is_family_of() says since db/119: a verified guardian or self-access link
+-- of yours, on an assignment and a link both live today, and never on a
+-- pad's credential. It is checked on INSERT and on UPDATE, so once a link
+-- has ended (by date or by the office) the row about that child stays his
+-- to read and is no longer his to change. db/119 is required first (§0).
+-- Never deleted: the default
 -- privileges (db/06) grant SELECT, INSERT, UPDATE; "on" again is push = true.
 -- A row's key (person, kind, child) never moves; a trigger refuses it.
 --
@@ -80,10 +84,12 @@
 -- WHAT IT CHANGES ON A LIVE DATABASE
 --   table      + notification_pref (empty), RLS on, three policies (own rows;
 --                a child only through is_family_of()) and db/50's three
---                RESTRICTIVE pad guards; no DELETE
+--                RESTRICTIVE pad guards; no DELETE; nothing for PUBLIC, nor
+--                for a managed host's anon and authenticated
 --   triggers   + notification_pref_stamp (BEFORE INSERT OR UPDATE)
 --   functions  + my_push_quiet_hours(), my_alert_choices() (definers, the
---                caller's own; the application's to call)
+--                caller's own; the application's to call, and not PUBLIC's,
+--                anon's or authenticated's)
 -- No other table, column, row, policy or grant moves. A second paste changes
 -- nothing.
 --
@@ -94,7 +100,13 @@
 
 
 -- ── 0 · What this file stands on ──────────────────────────────────
+-- db/116's notice kinds, and db/119's is_family_of(): the family's term in
+-- the insert and update policies below must read a live link and refuse a
+-- pad, not db/08's dateless one. Its body is compared as db/119 compares it
+-- (every run of whitespace folded to one space, md5), so this refuses on a
+-- database still at db/08's, and on any is_family_of() nobody has read.
 DO $guard$
+DECLARE v_md5 text;
 BEGIN
   IF to_regprocedure('is_family_of(uuid)') IS NULL
      OR to_regprocedure('person_is_pupil(uuid)') IS NULL
@@ -106,6 +118,11 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'notification_kind_known'
                     AND pg_get_constraintdef(oid) LIKE '%compromise%') THEN
     RAISE EXCEPTION 'db/120: notification_kind_known does not have db/116''s kinds; apply db/116 first';
+  END IF;
+  SELECT md5(regexp_replace(btrim(p.prosrc), '\s+', ' ', 'g')) INTO v_md5
+    FROM pg_proc p WHERE p.oid = to_regprocedure('is_family_of(uuid)');
+  IF v_md5 IS DISTINCT FROM 'df3d415fd2f319b8c92009ae94a52c81' THEN   -- db/119's
+    RAISE EXCEPTION 'db/120: is_family_of() is not db/119''s (md5 % of its folded body); apply db/119 first, so a child''s preference needs a live link', v_md5;
   END IF;
 END $guard$;
 
@@ -242,9 +259,27 @@ REVOKE ALL ON FUNCTION my_alert_choices() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION my_alert_choices() TO scrbrd_app;
 
 
+-- ── 5 · Not a managed host's API roles ──────────────────────────────
+-- On a managed host the platform's anon and authenticated get privileges on
+-- new tables and functions by default, directly and not through PUBLIC
+-- (db/29), so they are taken back by name where those roles exist, as db/105,
+-- db/109, db/111, db/116 and db/119 do.
+DO $revoke_platform_roles$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('REVOKE ALL ON notification_pref FROM %I', r);
+      EXECUTE format('REVOKE ALL ON FUNCTION my_alert_choices() FROM %I', r);
+      EXECUTE format('REVOKE ALL ON FUNCTION my_push_quiet_hours() FROM %I', r);
+    END IF;
+  END LOOP;
+END $revoke_platform_roles$;
+
+
 -- ── Refuse to commit a file that did not do what it says ───────────
 DO $check$
-DECLARE v_n int; v_q text;
+DECLARE v_n int; v_q text; r text;
 BEGIN
   IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'notification_pref'::regclass) THEN
     RAISE EXCEPTION 'db/120: row security is off on notification_pref';
@@ -280,6 +315,21 @@ BEGIN
      OR NOT has_function_privilege('scrbrd_app', 'my_push_quiet_hours()', 'EXECUTE') THEN
     RAISE EXCEPTION 'db/120: the application cannot call its two doors';
   END IF;
+  -- Nothing for PUBLIC, nor for a managed host's API roles where they exist.
+  IF has_function_privilege('public', 'my_alert_choices()', 'EXECUTE')
+     OR has_function_privilege('public', 'my_push_quiet_hours()', 'EXECUTE')
+     OR EXISTS (SELECT 1 FROM pg_class c, aclexplode(c.relacl) x
+                 WHERE c.oid = 'notification_pref'::regclass AND x.grantee = 0) THEN
+    RAISE EXCEPTION 'db/120: PUBLIC holds a privilege on notification_pref or its two doors';
+  END IF;
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r)
+       AND (has_table_privilege(r, 'notification_pref', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+            OR has_function_privilege(r, 'my_alert_choices()', 'EXECUTE')
+            OR has_function_privilege(r, 'my_push_quiet_hours()', 'EXECUTE')) THEN
+      RAISE EXCEPTION 'db/120: % holds a privilege on notification_pref or its two doors', r;
+    END IF;
+  END LOOP;
   IF pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conname = 'notification_pref_mutable_kind'))
      ~ '(safeguarding|welfare|system|injury|compromise)' THEN
     RAISE EXCEPTION 'db/120: a kind that is never muted may have a preference';

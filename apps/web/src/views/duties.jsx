@@ -76,7 +76,7 @@ function DutyRoster({ matchId, role }) {
     <Card sx={{ padding: "14px", marginTop: "12px" }} data-testid="duty-roster">
       <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "8px" }}>
         <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textPrimary }}>Match-day duties</div>
-        <div style={{ fontFamily: D.mono, fontSize: "9px", color: D.textMuted }} data-testid="duty-covered">
+        <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted }} data-testid="duty-covered">
           {covered} of {SLOTS.length} on record
         </div>
       </div>
@@ -86,26 +86,26 @@ function DutyRoster({ matchId, role }) {
           <div key={slot.key} data-testid={`duty-${slot.key}`}
                style={{ display: "flex", alignItems: "baseline", gap: "10px", padding: "6px 0",
                         borderTop: `1px solid ${D.border}`, flexWrap: "wrap" }}>
-            <div style={{ flex: "0 0 130px", fontFamily: D.body, fontSize: "11px", color: D.textSecondary }}>{slot.label}</div>
+            <div style={{ flex: "0 0 130px", fontFamily: D.body, fontSize: "12px", color: D.textSecondary }}>{slot.label}</div>
             {here.length === 0
               ? <span data-testid={`duty-${slot.key}-none`}
-                      style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted }}>nothing on record</span>
+                      style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>nothing on record</span>
               : <div style={{ flex: 1, minWidth: "160px", display: "grid", gap: "2px" }}>
                   {here.map((r, i) => (
                     <div key={`${r.duty}-${i}`} style={{ display: "flex", alignItems: "baseline", gap: "8px", flexWrap: "wrap" }}>
-                      <span style={{ fontFamily: D.body, fontSize: "11px", color: D.textPrimary }}>{r.who || r.detail || "—"}</span>
+                      <span style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary }}>{r.who || r.detail || "—"}</span>
                       <span data-testid={`duty-${slot.key}-state`}
-                            style={{ fontFamily: D.mono, fontSize: "9px", textTransform: "uppercase",
+                            style={{ fontFamily: D.mono, fontSize: "12px", textTransform: "uppercase",
                                      color: TONE[r.state] ?? D.textMuted }}>
                         {STATE_WORD[r.state] ?? r.state}
                       </span>
                       {r.status && <span data-testid={`duty-${slot.key}-status`} data-status={r.status}
                             title="Where this appointment stands — not what it permits"
-                            style={{ fontFamily: D.mono, fontSize: "9px", textTransform: "uppercase",
+                            style={{ fontFamily: D.mono, fontSize: "12px", textTransform: "uppercase",
                                      color: STATUS_TONE[r.status] ?? D.textMuted }}>
                         · {STATUS_WORD[r.status] ?? r.status}
                       </span>}
-                      {r.who && r.detail && <span style={{ fontFamily: D.mono, fontSize: "9px", color: D.textMuted }}>{r.detail}</span>}
+                      {r.who && r.detail && <span style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted }}>{r.detail}</span>}
                     </div>
                   ))}
                 </div>}

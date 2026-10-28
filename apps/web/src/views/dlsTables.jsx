@@ -146,7 +146,7 @@ function DlsTablesLive() {
         </div>
         <div style={{ maxWidth: "620px" }}>
           <label style={{ display: "block", marginBottom: "14px" }}>
-            <span style={{ display: "block", fontFamily: D.head, fontSize: "10px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em",
+            <span style={{ display: "block", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em",
                            textTransform: "uppercase", marginBottom: "5px" }}>CSV file</span>
             <input type="file" accept=".csv,text/csv,text/plain" onChange={pick} data-testid="dls-file"
                    style={{ fontFamily: D.body, fontSize: "13px", color: D.textPrimary, minHeight: "44px" }}/>

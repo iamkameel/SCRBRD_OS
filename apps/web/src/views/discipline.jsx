@@ -55,14 +55,14 @@ const field = () => ({
   border: `1px solid ${D.border}`, color: D.textPrimary, fontFamily: D.body, fontSize: "12px",
   boxSizing: "border-box",
 });
-const label = () => ({ fontFamily: D.head, fontSize: "10px", fontWeight: 700, color: D.textMuted,
+const label = () => ({ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted,
                 letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "6px" });
 
 function Refused({ said, testid }) {
   if (!said) return null;
   return (
     <div role="alert" data-testid={testid}
-         style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginTop: "6px" }}>
+         style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose), marginTop: "6px" }}>
       {said}
     </div>
   );
@@ -98,9 +98,9 @@ function Matter({ m, fixture, canProgress, onChanged }) {
   return (
     <div data-testid={`conduct-matter-${m.id}`} style={{ padding: "12px 0", borderTop: `1px solid ${D.border}` }}>
       <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", marginBottom: "6px" }}>
-        <span style={{ fontFamily: D.mono, fontSize: "11px", color: D.textPrimary }}>{m.occurredOn ?? "—"}</span>
+        <span style={{ fontFamily: D.mono, fontSize: "12px", color: D.textPrimary }}>{m.occurredOn ?? "—"}</span>
         <Badge color={tone} data-testid={`conduct-state-${m.id}`}>{m.state}</Badge>
-        <span style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary }}>
+        <span style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary }}>
           {m.matchId ? (fixture ? `At the fixture v ${fixture.awayTeam} · ${fixture.date ?? ""}` : "At a fixture you cannot see")
                      : "School matter — no fixture"}
         </span>
@@ -109,7 +109,7 @@ function Matter({ m, fixture, canProgress, onChanged }) {
            data-testid={`conduct-body-${m.id}`}>
         {m.body}
       </div>
-      <div style={{ fontFamily: D.mono, fontSize: "10px", color: D.textMuted, marginTop: "4px" }}>
+      <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted, marginTop: "4px" }}>
         Recorded by {m.recordedBy ?? "someone whose account you cannot see"}
       </div>
       {m.outcome && (
@@ -174,7 +174,7 @@ function RecordMatter({ playerId, onFiled }) {
         <input type="date" value={on} onChange={(e) => setOn(e.target.value)} aria-label="When it happened"
           data-testid="conduct-record-date" style={{ ...field(), width: "auto" }}/>
         <Btn size="sm" disabled={busy} onClick={submit} data-testid="conduct-record-submit">Record</Btn>
-        {filed && <span data-testid="conduct-record-done" style={{ fontFamily: D.body, fontSize: "11px", color: D.emerald }}>Recorded.</span>}
+        {filed && <span data-testid="conduct-record-done" style={{ fontFamily: D.body, fontSize: "12px", color: D.emerald }}>Recorded.</span>}
       </div>
       <Refused said={said} testid="conduct-record-refused"/>
     </Card>
@@ -213,22 +213,22 @@ function ConductTab({ player, role }) {
         <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "4px" }}>
           <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textPrimary }}>Disciplinary record</div>
           {!loading && !error && (
-            <div style={{ fontFamily: D.mono, fontSize: "9px", color: D.textMuted }} data-testid="conduct-count">
+            <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted }} data-testid="conduct-count">
               {mine.length} {mine.length === 1 ? "matter" : "matters"}
             </div>
           )}
         </div>
-        <div style={{ fontFamily: D.body, fontSize: "10px", color: D.textMuted, marginBottom: "6px" }}>
+        <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginBottom: "6px" }}>
           Staff only. Every read of this record is on the school's own access log.
         </div>
         {loading ? (
-          <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted }}>Loading…</div>
+          <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>Loading…</div>
         ) : error ? (
-          <div role="alert" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose) }} data-testid="conduct-error">
+          <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose) }} data-testid="conduct-error">
             Could not load the record ({error}). Nothing is shown rather than a list that may be incomplete.
           </div>
         ) : mine.length === 0 ? (
-          <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted }} data-testid="conduct-empty">
+          <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }} data-testid="conduct-empty">
             No matters on record that you can see.
           </div>
         ) : (
@@ -356,16 +356,16 @@ function ReportIncident({ match, role }) {
       </div>
       {done && (
         <div role="status" data-testid="incident-recorded"
-             style={{ fontFamily: D.body, fontSize: "11px", color: D.emerald, marginTop: "6px" }}>
+             style={{ fontFamily: D.body, fontSize: "12px", color: D.emerald, marginTop: "6px" }}>
           Recorded — the school has it.
         </div>
       )}
       {open && (
         <div style={{ marginTop: "8px" }}>
           {who.loading ? (
-            <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted }}>Loading who played…</div>
+            <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>Loading who played…</div>
           ) : who.error ? (
-            <div role="alert" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose) }}>
+            <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose) }}>
               Could not load who played ({who.error}).
             </div>
           ) : (
@@ -377,7 +377,7 @@ function ReportIncident({ match, role }) {
                 {who.people.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
               </select>
               {who.from === "log" && (
-                <div style={{ fontFamily: D.body, fontSize: "10px", color: D.textMuted, marginTop: "4px", lineHeight: 1.4 }}>
+                <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginTop: "4px", lineHeight: 1.4 }}>
                   Your appointment does not include the team sheet, so players are named by their part in
                   the ball log. Anyone not in it — a fielder, a substitute — report to the school directly.
                 </div>
@@ -387,7 +387,7 @@ function ReportIncident({ match, role }) {
                 aria-label="What happened" data-testid="incident-body"
                 placeholder="Your account, as you saw it."
                 style={{ ...field(), resize: "vertical" }}/>
-              <div style={{ fontFamily: D.body, fontSize: "10px", color: D.textMuted, marginTop: "4px" }}>
+              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginTop: "4px" }}>
                 Filed against this fixture{match.date ? `, dated ${match.date}` : ""}. Once sent, it is readable by the school and not by you.
               </div>
               <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>

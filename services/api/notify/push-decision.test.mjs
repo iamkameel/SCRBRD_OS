@@ -3,7 +3,7 @@
  * D13 step 5, D3, D20, D21 (NOTIFICATIONS S4): whether a phone is told now,
  * at 06:00, or not at all — and that a preference never hides a notice.
  *
- * Pure, with no database: the clock is an argument. db/99 §95 proves the
+ * Pure, with no database: the clock is an argument. db/99 §97 proves the
  * table's rules (own rows, locked kinds, a child only his family's) and that
  * a muted notice is still in my_notifications; tools/smoke-notification-prefs.mjs
  * walks the two routes.
@@ -12,7 +12,7 @@
  */
 import { readFileSync } from "node:fs";
 import { pushDecision, quietHoursEnd, governingPref, recipientAs } from "./push-decision.mjs";
-import { KINDS, MUTABLE_KINDS } from "@scrbrd/policy/notifications";
+import { KINDS, MUTABLE_KINDS, NO_QUIET_HOURS_KINDS } from "@scrbrd/policy/notifications";
 import { READ_QUERIES } from "../read/read-api.mjs";
 
 let pass = 0, fail = 0;
@@ -111,6 +111,10 @@ group("D21 — a pupil's quiet hours, 21:00 to 06:00 Africa/Johannesburg");
      pushDecision(medium("fixture"), mutedPupil, at22).action === "skip");
   ok("the hours are read on the Johannesburg clock, not the machine's: 19:30 UTC is 21:30 there",
      pushDecision(medium("notice"), pupil, new Date("2026-10-28T19:30:00Z")).action === "hold");
+  // D2: a welfare referral and a safeguarding share are medium, with no quiet hours.
+  ok("a pupil's medium welfare referral and safeguarding share at 22:00 are sent, not held",
+     ["welfare", "safeguarding"].every((k) => pushDecision(medium(k), pupil, at22).action === "send")
+     && JSON.stringify(NO_QUIET_HOURS_KINDS) === JSON.stringify(["welfare", "safeguarding"]));
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -131,7 +135,7 @@ group("D20 — a preference never hides a notice");
     .filter(([, q]) => /notification_pref|my_alert_choices/.test(q.text)).map(([name]) => name);
   ok("one read in the API reads a preference: the person's own settings",
      mentions.length === 1 && mentions[0] === "my_notification_prefs"
-     && /from my_alert_choices\(\)/.test(READ_QUERIES.my_notification_prefs?.text ?? ""), mentions);
+     && /join my_alert_choices\(\)/.test(READ_QUERIES.my_notification_prefs?.text ?? ""), mentions);
   const v89 = readFileSync(new URL("../../../db/89_notification_contract.sql", import.meta.url), "utf8");
   ok("my_notifications (db/89) is not built over a preference", !/notification_pref/.test(v89));
   // pushDecision returns one of three actions and none of them is "hide".

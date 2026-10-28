@@ -112,5 +112,7 @@
   "114_official_result.sql",
   "115_family_consents.sql",
   "116_readers_privacy.sql",
+  "117_rollover_dated_side.sql",
+  "119_family_of_live.sql",
   "120_notification_prefs.sql"
 ]

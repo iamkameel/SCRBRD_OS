@@ -760,7 +760,7 @@ CRI-2.3 chart-to-delivery drill-down · CRI-2.4 reader freshness and low-bandwid
 
 **Sprint 3 (after pilot evidence):** CRI-3.1 notifications S2–S5 with follow and a Result-only default ·
 CRI-3.2 tap-to-passport · CRI-3.3 match impact as PoM suggestion (after recognition §7 scoring fixes) ·
-CRI-3.4 Analytics Explorer, one Fable design pass (allowed 2026-10-23).
+CRI-3.4 StatsMagic (the Analytics Explorer, renamed by Kameel 2026-10-28; SCRBRD's counterpart of Cricinfo's Statsguru), one Fable design pass (allowed 2026-10-23).
 
 **Regression risk:** MEDIUM (Sprint 1 touches `MatchView.jsx` and `Board`, which every walk reads)
 
@@ -4078,6 +4078,7 @@ Kameel, after a look at beta-2's four cockpits (`iamkameel/scrbrd-beta-2`, `Coac
 - **Who's out and the XI:** availability and the squad read. Workload only as SCRBRD-110 allows a coach.
 - **Not carried over:**
   - win probability and a 0–100 pressure index (SCRBRD-133 D4 says par gap and rate trend instead);
+  - Changed 23 Oct 2026 (Kameel): superseded by CRICINFO_GAP_PLAN.md decision 5 and CRI-1.8: a win estimate is shown from the existing par line, labelled "par estimate" on every surface, and recalibrated once pilot ball logs exist.
   - ball speed, the pitch landing map (SCRBRD-108), false shots;
   - "threat levels".
 - **Who builds:** Sonnet, screens over existing reads, then Opus reviews. No migration unless a read is missing.

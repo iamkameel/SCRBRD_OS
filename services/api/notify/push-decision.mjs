@@ -12,7 +12,9 @@
  *   high    always pushed, at any hour, whatever a preference says (D3)
  *   medium  skipped when a matching preference says off (D20); otherwise,
  *           for a pupil between 21:00 and 06:00 Africa/Johannesburg, held
- *           and sent at 06:00 (D21); otherwise sent now
+ *           and sent at 06:00 (D21), except a welfare referral or a
+ *           safeguarding share, which D2 gives no quiet hours; otherwise
+ *           sent now
  *
  * A muted notice is skipped, not held: a preference outranks the hours. A
  * row about one child applies only to notices about that child; a row for
@@ -24,7 +26,7 @@
  * Pure: the clock is an argument, nothing is read. recipientAs() is the one
  * read, made by the caller inside the recipient's own principal.
  */
-import { MUTABLE_KINDS, QUIET_HOURS } from "@scrbrd/policy/notifications";
+import { MUTABLE_KINDS, NO_QUIET_HOURS_KINDS, QUIET_HOURS } from "@scrbrd/policy/notifications";
 
 /**
  * @typedef {{ kind: string, urgency: "low" | "medium" | "high", subject_person_id?: string | null }} PushNotice
@@ -83,7 +85,7 @@ export function pushDecision(notice, recipient, now = new Date()) {
   if (notice.urgency === "high") return { action: "send" };
   if (notice.urgency !== "medium") return { action: "skip", reason: "low" };
   if (governingPref(notice, recipient.prefs)?.push === false) return { action: "skip", reason: "muted" };
-  if (recipient.quietHours) {
+  if (recipient.quietHours && !NO_QUIET_HOURS_KINDS.includes(notice.kind)) {
     const until = quietHoursEnd(now);
     if (until) return { action: "hold", until };
   }

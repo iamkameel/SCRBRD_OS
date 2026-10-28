@@ -678,7 +678,9 @@ function asDevice(r) {
  * whether SCRBRD holds my medium alerts overnight (a pupil, D21).
  */
 function asAlertChoice(r) {
-  return { kind: r.kind, subjectPlayerId: r.subject_player_id ?? null, playerName: r.player_name ?? null,
+  // kind null: no switch, only the quiet-hours answer (the read's one row
+  // when nothing may be switched off).
+  return { kind: r.kind ?? null, subjectPlayerId: r.subject_player_id ?? null, playerName: r.player_name ?? null,
            push: r.push !== false, quietHours: r.quiet_hours === true, live: true };
 }
 

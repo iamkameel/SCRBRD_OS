@@ -2511,9 +2511,16 @@ export const READ_QUERIES = {
    * badge and the summary are my_notifications, whatever is switched off
    * here (push-decision.test.mjs holds that).
    */
+  //
+  // ALWAYS ONE ROW AT LEAST. Quiet hours are the caller's whether or not any
+  // switch is offered, so the read starts from my_push_quiet_hours() and
+  // joins the switches to it: a pupil with nothing to switch off still reads
+  // one row, its kind null, saying his hours. Under a pad's credential both
+  // answer nothing (the route refuses first).
   my_notification_prefs: {
-    text: `select c.kind, c.subject_player_id, c.player_name, c.push, c.quiet_hours
-             from my_alert_choices() c`,
+    text: `select c.kind, c.subject_player_id, c.player_name, c.push, q.quiet_hours
+             from (select my_push_quiet_hours() as quiet_hours) q
+             left join my_alert_choices() c on true`,
   },
 
   /**
