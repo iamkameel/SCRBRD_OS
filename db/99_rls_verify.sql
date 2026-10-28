@@ -27363,12 +27363,16 @@ $v49$;
   --              his preferences, writes none and changes none, is offered no
   --              switch, and is told of no quiet hours
   --
-  -- To falsify, each change made to db/120 and the section run against it;
-  -- the label that should go red first:
-  --   notification_pref_read as `true`             → (own): gb reads ga's rows
-  --   the insert policy without is_family_of()     → (child): ga writes a row about B
-  --   'welfare' in notification_pref_mutable_kind  → (locked): welfare is accepted
-  --   pad_scope_select on notification_pref true  → (pad): ga reads his rows on a pad
+  -- Falsified on 28 Oct 2026, each change made as the owner before this
+  -- section ran (the section alone, cut from this file), each red the first:
+  --   notification_pref_read as `true`             → (own) red: gb reads 2 of
+  --                                                   ga's preferences
+  --   the insert policy without is_family_of()     → (child) red: ga wrote a
+  --                                                   preference about B
+  --   'welfare' in notification_pref_mutable_kind  → (locked) red: a welfare
+  --                                                   preference was accepted
+  --   pad_scope_select on notification_pref true  → (pad) red: ga reads 2 of
+  --                                                   his preferences on a pad
   DECLARE
     y   jsonb := _v120_stage();
     ga  uuid;
