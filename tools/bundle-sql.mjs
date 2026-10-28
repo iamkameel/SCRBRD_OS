@@ -673,7 +673,9 @@ SELECT
   -- a pupil's quiet hours asked of the caller alone (NOTIFICATIONS S4).
   CASE WHEN to_regclass('notification_pref') IS NOT NULL
         AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('notification_pref'))
-        AND (SELECT count(*) FROM pg_policy WHERE polrelid = to_regclass('notification_pref')) = 3
+        AND (SELECT count(*) FROM pg_policy WHERE polrelid = to_regclass('notification_pref') AND polpermissive) = 3
+        AND (SELECT count(*) FROM pg_policy WHERE polrelid = to_regclass('notification_pref') AND NOT polpermissive
+              AND polname IN ('pad_scope_select', 'pad_scope_insert', 'pad_scope_update')) = 3
         AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'notification_pref_mutable_kind'
                        AND pg_get_constraintdef(oid) !~ '(safeguarding|welfare|system)')
         AND to_regprocedure('my_alert_choices()') IS NOT NULL

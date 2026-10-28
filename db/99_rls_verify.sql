@@ -27355,12 +27355,16 @@ $v49$;
   --   (choices)  my_alert_choices(): ga per child, the pupil and the coach per
   --              kind, each the caller's own; a link ended takes the child off
   --              and his row can no longer be changed
+  --   (pad)      under a pad's resume credential (db/50) a person reads none of
+  --              his preferences, writes none and changes none, is offered no
+  --              switch, and is told of no quiet hours
   --
   -- To falsify, each change made to db/120 and the section run against it;
   -- the label that should go red first:
   --   notification_pref_read as `true`             → (own): gb reads ga's rows
   --   the insert policy without is_family_of()     → (child): ga writes a row about B
   --   'welfare' in notification_pref_mutable_kind  → (locked): welfare is accepted
+  --   pad_scope_select on notification_pref true  → (pad): ga reads his rows on a pad
   DECLARE
     y   jsonb := _v120_stage();
     ga  uuid;
@@ -27461,6 +27465,28 @@ $v49$;
     PERFORM _assert(n = 1, format('§95 (hidden): ga muted recognition for A and his notice about A reads %s rows in my_notifications', n));
     SELECT count(*) INTO n FROM notification WHERE id = (y->>'N')::uuid;
     PERFORM _assert(n = 1, '§95 (hidden): the notice is gone from ga''s notification read');
+
+    -- (pad) the same people, under a pad's resume credential
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', gen_random_uuid()::text, true);
+    SELECT count(*) INTO n FROM notification_pref;
+    PERFORM _assert(n = 0, format('§95 (pad): ga reads %s of his preferences on a pad', n));
+    BEGIN
+      INSERT INTO notification_pref (person_id, kind, push) VALUES (ga, 'fixture', false);
+      PERFORM _assert(false, '§95 (pad): ga wrote a preference on a pad');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    UPDATE notification_pref SET push = true;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 0, format('§95 (pad): ga changed %s preference(s) on a pad', n));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM my_alert_choices()), '§95 (pad): ga is offered switches on a pad');
+    PERFORM _as((y->>'pupil')::uuid);
+    PERFORM _assert(NOT my_push_quiet_hours(), '§95 (pad): the pupil is told of quiet hours on a pad');
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+    PERFORM _as(ga);
+    SELECT count(*) INTO n FROM notification_pref WHERE NOT push;
+    PERFORM _assert(n = 2, format('§95 (pad): off the pad ga reads %s of his two rows off', n));
 
     -- (quiet)
     PERFORM _assert(NOT my_push_quiet_hours(), '§95 (quiet): a guardian has quiet hours');

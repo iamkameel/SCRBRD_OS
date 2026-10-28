@@ -63,7 +63,7 @@
 -- 06:00. Platform-fixed: no column, no setting, not the school's and not the
 -- pupil's. person_is_pupil() is internal (REVOKEd from PUBLIC), so the
 -- worker and the screen ask my_push_quiet_hours(), which answers for the
--- caller and nobody else.
+-- caller and nobody else (and, under a pad's credential, nothing: false).
 --
 -- ── 5 · WHAT THE SCREEN OFFERS ─────────────────────────────────────
 -- my_alert_choices(): the switches D20 gives this person, from their live
@@ -79,7 +79,8 @@
 --
 -- WHAT IT CHANGES ON A LIVE DATABASE
 --   table      + notification_pref (empty), RLS on, three policies (own rows;
---                a child only through is_family_of()); no DELETE
+--                a child only through is_family_of()) and db/50's three
+--                RESTRICTIVE pad guards; no DELETE
 --   triggers   + notification_pref_stamp (BEFORE INSERT OR UPDATE)
 --   functions  + my_push_quiet_hours(), my_alert_choices() (definers, the
 --                caller's own; the application's to call)
@@ -171,6 +172,11 @@ CREATE POLICY notification_pref_update ON notification_pref
            WITH CHECK (person_id = app_user_id()
                        AND (subject_player_id IS NULL OR is_family_of(subject_player_id)));
 
+-- And, like every table behind RLS since db/50, closed to a pad's resume
+-- credential: the house's RESTRICTIVE pad_scope_<cmd> guard, NOT
+-- app_pad_scoped(), on each command a policy above admits.
+SELECT pad_scope_guard_install('notification_pref'::regclass) AS pad_guards;
+
 -- db/06's default privileges gave the application SELECT, INSERT, UPDATE and
 -- nothing else; said here too, so a later default cannot widen it.
 REVOKE DELETE, TRUNCATE, REFERENCES, TRIGGER ON notification_pref FROM scrbrd_app;
@@ -182,7 +188,7 @@ REVOKE ALL ON notification_pref FROM PUBLIC;
 -- worker asks it as each recipient (D13 step 5, under withPrincipal); the
 -- screen asks it to say the hours.
 CREATE OR REPLACE FUNCTION my_push_quiet_hours() RETURNS boolean AS $$
-  SELECT app_user_id() IS NOT NULL AND coalesce(person_is_pupil(app_user_id()), false)
+  SELECT app_user_id() IS NOT NULL AND NOT app_pad_scoped() AND coalesce(person_is_pupil(app_user_id()), false)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION my_push_quiet_hours() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION my_push_quiet_hours() TO scrbrd_app;
@@ -244,9 +250,17 @@ BEGIN
     RAISE EXCEPTION 'db/120: row security is off on notification_pref';
   END IF;
   -- Three permissive policies, each the caller's own, and nothing else.
-  SELECT count(*) INTO v_n FROM pg_policy p WHERE p.polrelid = 'notification_pref'::regclass;
+  SELECT count(*) INTO v_n FROM pg_policy p WHERE p.polrelid = 'notification_pref'::regclass AND p.polpermissive;
   IF v_n <> 3 THEN
-    RAISE EXCEPTION 'db/120: notification_pref has % policies, not three', v_n;
+    RAISE EXCEPTION 'db/120: notification_pref has % permissive policies, not three', v_n;
+  END IF;
+  -- And db/50's pad guard on each: RESTRICTIVE, NOT app_pad_scoped().
+  SELECT count(*) INTO v_n FROM pg_policy p
+   WHERE p.polrelid = 'notification_pref'::regclass AND NOT p.polpermissive
+     AND (p.polname, p.polcmd) IN (('pad_scope_select', 'r'), ('pad_scope_insert', 'a'), ('pad_scope_update', 'w'))
+     AND coalesce(pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid)) ~ '^\(?NOT app_pad_scoped\(\)\)?$';
+  IF v_n <> 3 THEN
+    RAISE EXCEPTION 'db/120: notification_pref has % of its three pad guards (db/50)', v_n;
   END IF;
   SELECT pg_get_expr(p.polqual, p.polrelid) INTO v_q FROM pg_policy p
    WHERE p.polrelid = 'notification_pref'::regclass AND p.polname = 'notification_pref_read' AND p.polcmd = 'r';
