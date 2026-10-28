@@ -80,6 +80,7 @@ import { disciplineRoutes } from "./write/discipline-api.mjs";
 import { sessionRoutes } from "./realtime/session-routes.mjs";
 import { deviceRoutes, notificationRoutes, transportFor } from "./notify/push-api.mjs";
 import { receiptRoutes } from "./notify/receipts-api.mjs";
+import { prefRoutes } from "./notify/prefs-api.mjs";
 import { rewardWeightRoutes } from "./rewards/weights-api.mjs";
 import { fixtureRoutes } from "./write/fixture-api.mjs";
 import { ownerRecoveryRoutes } from "./write/owner-recovery-api.mjs";
@@ -445,6 +446,8 @@ const devices  = deviceRoutes({ pool, secret: SECRET });
 const notices  = notificationRoutes({ pool, secret: SECRET, transport: pushOut });
 // Opening a notice and marking notices read (NOTIFICATIONS.md D17).
 const receipts = receiptRoutes({ pool, secret: SECRET });
+// Switching push off or on for a kind, or a kind about one child (D20, db/120).
+const prefs    = prefRoutes({ pool, secret: SECRET });
 // The rewards algorithm's coefficients. Write-only by design — see
 // services/api/rewards/weights-api.mjs for why there is no matching read.
 const rewards  = rewardWeightRoutes({ pool, secret: SECRET });
@@ -1129,6 +1132,10 @@ const SCOUT_ROUTES = [
   [/^\/api\/notifications$/,                               "POST", notices.publish],
   // Every notice in the reader's list, marked read: his own receipts only.
   [/^\/api\/notifications\/read-all$/,                      "POST", receipts.readAll],
+  // Push off or on again for one kind, or one kind about one child: his own
+  // row only, a child only his family's (db/120). Push only — Notices and the
+  // badge show the same either way. NOT module-gated, like the devices.
+  [/^\/api\/notifications\/prefs$/,                        "POST", prefs.set],
   // The fixture itself. NOT module-gated: arranging a match is the product,
   // not a module somebody may switch off — and the sport it is in is gated in
   // the database, which catches a seed and an import too.

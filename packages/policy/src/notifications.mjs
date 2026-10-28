@@ -87,3 +87,21 @@ export const NOTICE_URGENCY = Object.freeze(["low", "medium"]);
  */
 export const isTiered = (n) =>
   n.tiered ?? (n.required_capability != null && n.required_capability !== "news.read");
+
+/**
+ * D20 (db/120): the kinds a person may switch push off for — the union of
+ * D20's "may switch off" column — and, of those, the ones a parent may switch
+ * off for one child (the kinds that are ever about one child). Every other
+ * kind is always pushed when it is medium or high: safeguarding, welfare and
+ * system as D20 says; injury, which D20 offers to nobody; and compromise
+ * (db/116). db/120's two CHECKs carry the same lists, and
+ * packages/policy/test/notifications.test.mjs fails if they disagree.
+ */
+export const MUTABLE_KINDS = Object.freeze(["notice", "recognition", "fixture", "availability", "lift"]);
+export const PER_CHILD_KINDS = Object.freeze(["recognition", "availability", "lift"]);
+
+/**
+ * D21: a pupil's medium pushes wait between these hours on this clock, and
+ * go at `to`. Platform-fixed: not a school's setting, not the pupil's.
+ */
+export const QUIET_HOURS = Object.freeze({ from: 21, to: 6, timeZone: "Africa/Johannesburg" });

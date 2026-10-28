@@ -2501,6 +2501,22 @@ export const READ_QUERIES = {
   },
 
   /**
+   * MY ALERT SWITCHES (NOTIFICATIONS D20, D21; db/120). The kinds this
+   * person receives that they may stop being pushed, each with its state,
+   * a parent's per child; and whether a pupil's quiet hours apply to them.
+   * my_alert_choices() answers for the caller alone: there is no version of
+   * this read for anybody else, as there is none of my_devices.
+   *
+   * Push only. Nothing else in this file reads a preference: Notices, the
+   * badge and the summary are my_notifications, whatever is switched off
+   * here (push-decision.test.mjs holds that).
+   */
+  my_notification_prefs: {
+    text: `select c.kind, c.subject_player_id, c.player_name, c.push, c.quiet_hours
+             from my_alert_choices() c`,
+  },
+
+  /**
    * The same switches with their reasons shown, for an administrator's screen.
    *
    * Three levels reported SEPARATELY rather than collapsed. "Analytics is off"
