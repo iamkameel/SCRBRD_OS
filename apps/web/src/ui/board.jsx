@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { T, contrast } from "../design/tokens.js";
 import { Icon } from "./icons.jsx";
+import { freshnessWords } from "../lib/announce.js";
 
 /**
  * THE BOARD — the score, drawn one way everywhere (DESIGN_DIRECTION §1).
@@ -45,6 +46,15 @@ import { Icon } from "./icons.jsx";
  *   compact     the scorer's pad: 4px less above and below, and above the
  *               batters, so the pad's keys stay above the bottom bar on a
  *               phone (§4 rule 1). Nothing is dropped
+ *   lastWicket  { name, dismissal, runs, balls } — CRI-1.1, a fixed row:
+ *               "Last wicket  R Naidoo c Smith b Jones 34 (25)", from the
+ *               fold (scorer/boardData.js lastWicketOf), in the fold's names
+ *   updated     { at, status, held } — CRI-1.1, a fixed row at the foot:
+ *               "Updated 4 s ago · Live · Held 2" (lib/announce.js
+ *               freshnessWords). Only its own words tick, once a second, and
+ *               nothing moves: a cut, never an animation, so reduced motion
+ *               has nothing to stop. A screen that cannot say how fresh it is
+ *               passes none
  */
 
 /**
@@ -211,8 +221,40 @@ export function Insight({ lines = [], testid = "board-insight" }) {
   );
 }
 
+/**
+ * The text of the last-wicket row, without its label: "R Naidoo c Smith b
+ * Jones 34 (25)". Pure (board.test.mjs).
+ * @param {{name: string, dismissal: string, runs?: number, balls?: number | null}} w
+ */
+export function lastWicketText(w) {
+  return `${w.name} ${w.dismissal} ${w.runs ?? 0}${w.balls != null ? ` (${w.balls})` : ""}`;
+}
+
+/**
+ * The freshness row's words, ticking. Its own state, so the once-a-second
+ * tick re-renders these words and nothing else on the board; a tick that
+ * would say the same words changes nothing (React drops an equal state).
+ * Not a live region: a screen reader is not told the time every second.
+ */
+export function Freshness({ at = null, status = null, held = null, testid = "board-updated" }) {
+  const [said, setSaid] = useState(() => freshnessWords({ at, status, held }));
+  useEffect(() => {
+    setSaid(freshnessWords({ at, status, held }));
+    if (at == null) return undefined;
+    const t = setInterval(() => setSaid(freshnessWords({ at, status, held })), 1000);
+    return () => clearInterval(t);
+  }, [at, status, held]);
+  if (!said) return null;
+  return (
+    <p data-testid={testid} style={{ margin: 0, fontFamily: T.type.body, fontSize: "13px", lineHeight: 1.35, color: T.board.dim,
+      fontVariantNumeric: "tabular-nums" }}>
+      {said}
+    </p>
+  );
+}
+
 export function Board({ team, total, wickets, overs, sub, batters = [], partnership, bowler, thisOver = [], insight, compact = false,
-  size = "pad", testid = "board", extra = null }) {
+  size = "pad", testid = "board", extra = null, lastWicket, updated }) {
   // On the pad the total is figure.board, 56 on a phone and 72 on a tablet;
   // the size comes from `.os-board-total` because an inline style cannot say
   // "from 768px". On a card it is figure.lg.
@@ -313,6 +355,21 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
               {thisOver.map((b, i) => <Chip key={i} mark={b}/>)}
             </div>
           )}
+        </div>
+      )}
+
+      {/* CRI-1.1: the fixed rows — the last wicket, then how fresh the board
+          is. Under the over and above the rotating line, so neither moves
+          when the other changes. */}
+      {(lastWicket || (updated && (updated.at != null || updated.status || updated.held))) && (
+        <div style={{ borderTop: `1px solid ${B.rule}`, marginTop: T.space.sm, paddingTop: compact ? T.space.xs : T.space.sm, display: "grid", gap: "2px" }}>
+          {lastWicket && (
+            <p data-testid={`${testid}-last-wicket`} style={{ margin: 0, fontFamily: T.type.body, fontSize: "13px", lineHeight: 1.35, color: B.figure,
+              overflowWrap: "anywhere", fontVariantNumeric: "tabular-nums" }}>
+              <span style={{ color: B.dim }}>Last wicket</span>{" "}{lastWicketText(lastWicket)}
+            </p>
+          )}
+          {updated && <Freshness at={updated.at ?? null} status={updated.status ?? null} held={updated.held ?? null} testid={`${testid}-updated`}/>}
         </div>
       )}
 

@@ -5,7 +5,7 @@ import { deriveMatch, fromRow } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
 import { api, signedIn } from "../../lib/api.js";
 import { useRows, useWeather } from "../../lib/live.js";
-import { boardInnings, inningsPhase, matchLine, nameBook, resultText, revisionNotice, sidesOf, teamOf } from "../../lib/matchCentre.js";
+import { boardInnings, matchLine, nameBook, resultText, revisionNotice, sidesOf, statusSentence, teamOf } from "../../lib/matchCentre.js";
 import { seedCompletedMatch } from "../../scorer/seed.js";
 import { PlayerProfileModal, parseBalls, parseScore, teamSquad } from "../shared.jsx";
 import { can, filterRecord } from "../../rbac/index.js";
@@ -15,7 +15,7 @@ import { Icon } from "../../ui/icons.jsx";
 import { ErrorBoundary } from "../../ui/ErrorBoundary.jsx";
 import { AnalyticsTab, CommentaryTab, DetailsTab, PartnershipsTab, SummaryTab } from "./tabs.jsx";
 import { ScorecardTab } from "./scorecard.jsx";
-import { HeaderScores } from "./scores.jsx";
+import { HeaderScores, StatusLine } from "./scores.jsx";
 import { liveSuperOverLine, matchInningsOf, superOverCommentary } from "../../lib/superOver.js";
 import { Quiet } from "./bits.jsx";
 import { ConfirmScorecardPrompt, OnwardLinks, PreTossCard, RevisionBanner } from "./fulltime.jsx";
@@ -359,8 +359,9 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   const sides = sidesOf(match);
   const comp = COMPETITIONS.find((c) => c.id === match.competition);
   const weather = WEATHER[match.id] ?? null;
-  const phase = inningsPhase(played, log.result);
-  const line = matchLine({ match, competition: comp?.name ?? null, weather, phase: log.demo ? null : phase });
+  // The match's state is the status sentence's (CRI-1.2), under the scores,
+  // so the line under it no longer says the innings as well.
+  const line = matchLine({ match, competition: comp?.name ?? null, weather });
 
   // The commentary: the shared generator, over the same log the scorecard
   // folds, with the names the log carries. Health and discipline are not
@@ -399,6 +400,8 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   const settled = !!log.result && !liveSO
     && !(log.result.outcome === "tie" && log.result.decidedBy === null && log.fold?.conditions?.["result.tie_break"] === "super_over");
   const over = settled || match.status === "complete";
+  // CRI-1.2: where the match stands, in one sentence — the list's card says it the same way.
+  const status = statusSentence(match, { innings: played, result: log.result }, { result });
   // One quiet `correction` line each, team-level, never a moment card.
   const told = useMemo(() => withCorrectionLines(commentary, log.events ?? [], fixes, over), [commentary, log.events, fixes, over]);
   const corrected = useMemo(() => inningsWords(log.events ?? [], fixes, log.innings), [log.events, fixes, log.innings]);
@@ -512,7 +515,8 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
           {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
         </h1>
         {played.length > 0 && <HeaderScores match={match} played={played} corrected={corrected}/>}
-        {result && <p data-testid="mc-result" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{result}</p>}
+        {/* CRI-1.2: where the match stands, in the sentence its card in the list says too. */}
+        <StatusLine st={status} except={["upcoming"]}/>
         {!log.demo && <OfficialLine official={official} names={{ home: sides.home.full, away: sides.away.full }}/>}
         {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
         {!log.demo && <CorrectedChip at={correctedAt(fixes)} lines={correctionLines}/>}

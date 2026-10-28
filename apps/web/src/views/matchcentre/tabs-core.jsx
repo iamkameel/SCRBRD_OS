@@ -85,7 +85,7 @@ function InningsBreakCard({ match, innings, overs }) {
 // `fold`, the log and its context, for the chase's rates; `settled`, play has
 // decided it.
 export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns, quietMoments = false,
-                             venueLine = null, rainLine = null, par = null, events = null, fold = null, settled = false }) {
+                             venueLine = null, rainLine = null, par = null, events = null, fold = null, settled = false, okAt = null }) {
   const { index, atBreak } = boardInnings(innings, result ? {} : null);
   const inn = innings[index];
   const chase = innings.length >= 2 && inn === innings[1];
@@ -110,12 +110,16 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   const side = teamOf(match, inn.battingTeam);
   const insight = !props ? [] : boardInsights(inn, { target, overs: inOvers });
   const latest = [...commentary].reverse().filter((c) => c.kind !== "over_end").slice(0, 3);
+  // CRI-1.1: how fresh the board is, while the match is being played — `okAt`
+  // is the page's last good read of the log. Once play has decided it the
+  // page stops reading the log on a clock (GA-I36 §7), and an age would only grow.
+  const updated = match.status === "live" && !settled && okAt != null ? { at: okAt, status: "Live" } : undefined;
   return (
     <div style={{ display: "grid", gap: T.space.lg }} data-testid="mc-summary">
       {props && (
         <div style={{ position: "relative" }}>
           <Board {...props} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="mc-board"
-            insight={insight.length ? insight : undefined}
+            insight={insight.length ? insight : undefined} updated={updated}
             extra={track ? <RateTrack track={track} testid="mc-rate-track" textStyle={{ fontFamily: T.type.body, fontSize: "13px" }}
               palette={{ line: T.board.dim, bar: T.board.lime, dot: T.board.figure, text: T.board.dim, gap: T.board.lime }}/> : null}/>
           <MomentMark moment={moment} announce={!quietMoments}/>

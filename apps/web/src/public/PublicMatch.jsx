@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
-import { boardInnings, inningsPhase, matchLine, revisionNotice, sidesOf } from "../lib/matchCentre.js";
+import { boardInnings, matchLine, revisionNotice, sidesOf, statusSentence, tossWords } from "../lib/matchCentre.js";
 import { humanDateTime } from "../lib/format.js";
 import { SummaryTab, CommentaryTab, PartnershipsTab } from "../views/matchcentre/tabs-core.jsx";
 import { InningsToggle, ScorecardTab } from "../views/matchcentre/scorecard.jsx";
-import { HeaderScores } from "../views/matchcentre/scores.jsx";
+import { HeaderScores, StatusLine } from "../views/matchcentre/scores.jsx";
 import { matchInningsOf } from "../lib/superOver.js";
 import { Panel, Quiet } from "../views/matchcentre/bits.jsx";
 import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
@@ -215,10 +215,7 @@ function TeamWheel({ sectors, most }) {
 
 /** Match details: the header's facts, and no official, weather or pitch report (§9 Q5). */
 function PublicDetailsTab({ match, result }) {
-  const sides = sidesOf(match);
-  const toss = match.tossWonBy && match.tossDecision
-    ? `${(match.tossWonBy === "home" ? sides.home : sides.away).full} won the toss and chose to ${match.tossDecision === "bowl" ? "bowl" : "bat"}`
-    : null;
+  const toss = tossWords(match);
   const rows = [
     ["Format", [match.format, match.overs ? `${match.overs} overs a side` : null].filter(Boolean).join(" · ") || null],
     ["Start", match.date ? humanDateTime(match.date, match.time ?? null) : null],
@@ -290,12 +287,14 @@ export function PublicMatch({ matchId, view }) {
 
   const sides = sidesOf(match);
   const isLive = match.status === "live";
-  const phase = inningsPhase(played, folded?.result);
-  const line = matchLine({ match, competition: null, weather: null, phase });
+  // CRI-1.2: the status sentence says where the match stands; the line under it does not say it again.
+  const line = matchLine({ match, competition: null, weather: null });
+  const st = statusSentence(match, folded ? { innings: played, result: folded.result } : null, { result });
   const notice = revisionNotice(boardInn);
   const ctx = { match, innings: played, result, commentary: fixes?.commentary ?? commentary, events, fold: data.fold, par: data.par, settled: story?.settled ?? false,
     demo: false, overs: match.overs || 20,
     inningsSel, setInningsSel: setPicked, phone, setTab, moment, overSummary, shownRuns,
+    okAt: data.okAt,        // CRI-1.1: the board's "Updated 4 s ago · Live"
     quietMoments: true };   // the region below says it; the moment is drawn, not said twice
 
   return (
@@ -325,7 +324,7 @@ export function PublicMatch({ matchId, view }) {
             {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
           </h1>
           {played.length > 0 && <HeaderScores match={match} played={played} corrected={fixes?.corrected}/>}
-          {result && <p data-testid="mc-result" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{result}</p>}
+          <StatusLine st={st} except={["upcoming"]}/>
           {/* OFFICIAL_RESULT D11, Q3: "Provisional" or "Official result · confirmed 20:15, 11 Oct" — the
               time only, never who, never a reason, and never "Under review" (the server says a disputed
               result is not official). Announced when a poll changes it. */}

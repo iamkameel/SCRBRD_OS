@@ -118,6 +118,13 @@ const SUITES = [
   // The Match Centre's own derivations (redesign step 3c): sides named in
   // full and by code, the match line, the scorecard's parts, the break.
   ["match-centre",      "apps/web/test/match-centre.test.mjs"],
+  // CRI-1.2: where a fixture stands, in one sentence per state — the list's
+  // card and the match's header ask the one function (statusSentence).
+  ["status-sentence",   "apps/web/test/status-sentence.test.mjs"],
+  // CRI-1.1: the board's last-wicket and freshness rows, from the fold, held
+  // to literal markup and the same on the pad, the Match Centre and the
+  // public page (whose row says the fold's labels, never a name).
+  ["board-rows",        "apps/web/test/board-rows.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I36 A0/A1: a correction read off the log (the chip, the line, the
   // innings it moved), the effect folded before a decision, and 300 random
   // logs whose fold with voids equals the fold without the voided rows.
