@@ -101,7 +101,7 @@ const TH = ({ children, align = "left" }) => (
 );
 const TD = ({ children, align = "left", mono, sx }) => (
   <td style={{ padding: "10px 12px", textAlign: align, verticalAlign: "middle",
-               fontFamily: mono ? D.mono : D.body, fontSize: mono ? "10px" : "12px",
+               fontFamily: mono ? D.mono : D.body, fontSize: "12px",
                color: mono ? D.textMuted : D.textPrimary, ...sx }}>{children}</td>
 );
 

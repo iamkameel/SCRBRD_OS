@@ -35,14 +35,16 @@ function AnalyticsView({ role }) {
     return (
       <div>
         {label&&<div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px",textTransform:"uppercase"}}>{label}</div>}
-        <div style={{display:"flex",gap:"4px",alignItems:"flex-end",height:px(height)}}>
+        <div style={{overflowX:"auto"}}>
+        <div style={{display:"flex",gap:"4px",alignItems:"flex-end",height:px(height+40)}}>
           {data.map((d,i)=>(
-            <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",height:"100%",justifyContent:"flex-end"}}>
-              <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:colorFn?colorFn(d.v):D.textMuted}}>{d.v}</div>
+            <div key={i} style={{flex:"1 0 52px",display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",height:"100%",justifyContent:"flex-end"}}>
+              <div style={{flexShrink:0,fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:colorFn?colorFn(d.v):D.textMuted}}>{d.v}</div>
               <div style={{width:"100%",borderRadius:"3px 3px 0 0",background:colorFn?colorFn(d.v):D.indigo,height:`${(d.v/mx)*100}%`,minHeight:2,opacity:0.85,transition:"height .5s"}}/>
-              <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,textAlign:"center",maxWidth:"40px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.l}</div>
+              <div style={{flexShrink:0,fontFamily:D.mono,fontSize:"12px",color:D.textMuted,textAlign:"center",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.l}</div>
             </div>
           ))}
+        </div>
         </div>
       </div>
     );
