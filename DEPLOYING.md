@@ -1930,6 +1930,49 @@ read OK. **Schema first**: the API built with it refuses to start without
 db/116 (`expected-migrations.json`).
 <!-- ── end db/116 ── -->
 
+<!-- ── db/121: the Laws audit of 28 October 2026 ── -->
+#### The Laws audit's fixes (db/121)
+
+`db/121_laws_audit.sql` is the SQL half of the scoring fixes Kameel decided on
+28 October 2026 (`audit/AUDIT_scoring_laws_2026-10-28.md` §6). The fold moved
+first (`packages/scoring`); this file makes every SQL reader agree with it
+again. **A run out going for a second bye** (F5): the bye is a bye, not the
+striker's run and not the bowler's. **A four or a six is a boundary** (F7): four
+all run, or runs with overthrows, are the runs and no boundary (the pad's new
+"Runs, not a boundary"). **The free hit follows a front-foot no-ball only**
+(Q2), and a delivery that does not count in the over leaves it for the next
+(F11). **A chase ended on the umpires' par, ahead of it, is won by the runs it
+is ahead** (F10), not by wickets. **An amendment re-judges who faced** (F4):
+when an older ball is voided, the batter the fold puts on strike for each later
+ball of the innings is the one every career reads, not the pad's stamp.
+
+**What it does to a live database.** It replaces `ball_runs_off_bat()`,
+`ball_runs_to_bowler()`, `ball_on_free_hit()`, `match_result_compute()`,
+`player_batting_since()`, `opposition_squad()`, `public_match_log()`,
+`public_shot_sectors()` and the views `player_batting_career`,
+`player_batting_by_season` and `ball_event_live`, each with its columns,
+owner and grants as they were; adds `ball_boundary()`, `ball_gives_free_hit()`,
+the table `ball_event_rejudged` (read under its ball's own policy, never by a
+pad credential, no write grant) and its one door
+`scoring_amendment_rejudge()`. It refuses to run unless each object is what
+the earlier file wrote or this file's own (its section 0), and a second paste
+changes nothing. No row is rewritten. **What moves on the paste:** a stored
+wicket off the ball after a waist-high no-ball or a beamer, which was saved as
+a free hit, now stands; a bowler's dismissal just after a delivery marked not
+in the over that followed a no-ball is now saved; a chase won ahead of par
+reads "by N runs" and, if its result was confirmed (db/114), it lapses to be
+confirmed again (its hash changed). None of these is in the pilot's data.
+**An amendment approved before this paste is not re-judged** until the next
+amendment on its match; there are none in the pilot.
+
+Paste `node tools/bundle-sql.mjs --apply 121` after 116 (db/117 to db/120 are
+on branches not yet merged; renumber at merge), then the verify bundle (§96 is
+its proof). The summary row "The Laws audit's fixes" should read OK. **Schema
+first**: the API built with it refuses to start without db/121
+(`expected-migrations.json`): its amendment route calls
+`scoring_amendment_rejudge()`, and its public log serves `boundary`.
+<!-- ── end db/121 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

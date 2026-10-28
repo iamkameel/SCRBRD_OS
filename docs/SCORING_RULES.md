@@ -299,9 +299,14 @@ every amendment. In practice the one the Laws add is that the start of an
 innings is never voided (`void_foundation`): the SQL function already answers
 a missing, voided or void target as `no_such_live_delivery`. A refusal writes
 nothing, leaves the request pending, and answers
-`{ ok: false, reason: "laws_refused", law, text }`. The balls bowled after an
-amended delivery are not re-judged; whether a correction should re-judge them
-is a product decision.
+`{ ok: false, reason: "laws_refused", law, text }`. **The balls bowled after an
+amended delivery are re-judged for who faced** (Kameel, 28 October 2026, the
+Laws audit Q5, F4): the fold already replays them, and in the approval's own
+transaction the route hands SQL the striker the fold now gives each ball after
+the target in its innings, where it is not the pad's stamp
+(`services/api/write/rejudge.mjs`, db/121's `scoring_amendment_rejudge()`).
+`ball_event_live` reads that striker, so every career agrees with the
+scorecard. Nothing re-judges the batters event that followed a voided wicket.
 
 ### A value the record cannot hold is refused per event
 
@@ -845,3 +850,39 @@ On the pad, the wide's and the no-ball's runs panel has a **Wicket** toggle (the
 with it on, the runs key opens the wicket sheet offering only that extra's ways out, and one event is recorded. Pro
 mode's one-tap WIDE takes no runs and no wicket, as before. `replay.test.mjs` group P, `laws.test.mjs` group S,
 `tools/smoke-fold-figures.mjs`, db/99 §66 and `smoke-browser-wicket-on-extra` prove it.
+
+## The Laws audit of 28 October 2026
+
+`audit/AUDIT_scoring_laws_2026-10-28.md`, and Kameel's decisions (its §6). Each rule below is in the fold
+(`packages/scoring`), held by `packages/scoring/test/laws-audit.test.mjs`, and where SQL needs it in db/121 (db/99
+§96; `tools/smoke-fold-figures.mjs` and `tools/smoke-free-hit.mjs` hold SQL to the fold).
+
+- **The end on every run out (F1, Q6).** The pad asks *out at the striker's end or the bowler's end?* whatever the runs
+  completed: going for a quick single the batters may have crossed with none completed, and only the end the wicket
+  was broken at says which end is empty (Law 38.4). `outAt` was already the fold's; the pad now always sends it.
+- **A Two-Day is scored live (F2, Q1).** With `format.innings_per_side` = 2 the match is decided only when the fourth
+  innings is complete, or the third is all out still behind (an innings win); the second and third innings are no
+  chase and carry no target. The pad runs all four: the break before the second and third, the follow-on choice
+  before the third when the side batting first leads, the fourth's target (what it trails by, plus one), and
+  *Declare the innings* in any match with no free hit (a declaration or timed match).
+- **A change of ends keeps the partnership (F3).** See Partnerships.
+- **Who faced, after an amendment (F4, Q5).** See *An approved amendment meets the Laws*.
+- **A wicket ball's byes (F5).** A `W` may carry `nbRuns: "byes" | "leg_byes"`, as a no-ball does: the runs completed
+  before a run out, or off a free hit a bowled dismissal did not stand on (F9), were not off the bat. They are byes or
+  leg byes, not the striker's and not the bowler's; the ball is still one he faced. `runsOffBat()`, `runsToBowler()`;
+  db/121's `ball_runs_off_bat()`, `ball_runs_to_bowler()`. The wicket sheet asks *whose runs?* when any were completed.
+- **Fours and sixes are boundaries (F7, Q4).** `boundary: false` on a run or a no-ball: four all run, or two and four
+  overthrows, are the runs and no four or six. `boundaryHit()`; db/121's `ball_boundary()`. A delivery without the
+  field reads as keyed: the 4 and 6 keys say "Four, boundary" and "Six, maximum". The pad's menu has *Runs, not a
+  boundary* (4 to 7).
+- **Obstructing the field (F8).** The sheet asks who (either batter, Law 37.1.1) and the runs completed before the
+  obstruction, none when it stopped a catch (37.5.2). Which end empties after an obstruction with runs completed is
+  the dismissed batter's own end, as before.
+- **A bowled free hit, the batters running (F9).** The sheet, on a free hit, asks the runs completed off a dismissal
+  that does not stand and whose they were; the fold rotates the strike on odd runs for a W the free hit saved.
+- **Ahead of par (F10, Q3).** A chase sealed `abandoned` above the umpires' par is won by the runs it is ahead.
+- **The free hit (Q2, F11).** §6.
+- **The fall of wickets (F13, Q8).** A wicket on the sixth ball of the fifth over falls at 4.6 (`fowOvers()`); off a
+  wide or a no-ball at the overs bowled so far; a retirement at the last ball bowled.
+- **Not built:** a "one short" key (F6, Q7: record the runs made and change ends by hand, which F3 now keeps safe); a
+  ball released from quarantine re-judged (F14, not decided).

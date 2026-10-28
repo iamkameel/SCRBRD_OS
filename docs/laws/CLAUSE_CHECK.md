@@ -467,7 +467,9 @@ edition on `innings_start`). That is a design decision for Opus before any item 
 - **Must:** when the obstruction prevented a catch, the pad asks which of the two the fielding captain chose. If it
   was the non-striker, the pad places the incoming batter at the non-striker's end. No runs count: `value` 0, with any
   5-run award standing. A separate gap, not new in the 4th: under 37.1.1 either batter can be out Obstructing the
-  field, and the sheet cannot record the non-striker.
+  field, and the sheet cannot record the non-striker. **Closed 28 Oct 2026** (the Laws audit, F8): the wicket sheet
+  asks who on every obstruction, and the runs completed before it (none when it stopped a catch, 37.5.2)
+  (`apps/web/src/scorer/wicketAsks.js`).
 
 ### 6. Penalty runs after the result (Laws 41.17.2, 16.6.1, 16.7)
 
@@ -631,6 +633,29 @@ The assertions compare against the stripped words, so they pass either way.
 
 Leave lines 3576–3602 and 3994 as they are. They record what a screen said at the time, and which numbers were then
 still to verify.
+
+## The Laws audit of 28 October 2026
+
+`audit/AUDIT_scoring_laws_2026-10-28.md` (read-only, 14 findings) and Kameel's decisions on it (its §6). Where a
+rule moved:
+
+| Law | Finding | Was | Now |
+|---|---|---|---|
+| 38.4, 18.12.1.2 | F1 | The end asked only on a run out that completed runs; with none, the dismissed batter's pre-ball end emptied, wrong whenever they had crossed | The end asked on every run out (Q6). A log without it reads as before |
+| 13, 16 | F2 | `decided()` refused every ball after the second innings; a Two-Day could not be scored past it | Two innings a side: decided when the fourth is complete or the third all out still behind (`matchDecided()`); the pad runs all four, declares, offers the follow-on (Q1) |
+| (scorebook) | F3 | A change of ends started a new partnership from nothing | The same two swapped keep their partnership |
+| 18 | F4 | After an amendment voided an older ball, SQL kept the pad's stamped striker for every later ball | The route re-judges who faced from the fold; SQL reads it (db/121, Q5) |
+| 18.10, 23, 38.5 | F5 | A run out's completed byes or leg byes were the striker's and the bowler's | A wicket ball carries `nbRuns`, as a no-ball does |
+| 19.8 | F7 | Any four or six off the bat was a boundary | Boundaries only: `boundary: false` for all-run fours and overthrows (Q4) |
+| 37.1.1, 37.5 | F8 | An obstruction off a fair ball was always the striker's, with no runs | Who, and the runs completed, asked |
+| (condition) | F9 | Runs off a bowled free hit could not be recorded, and would have been the striker's | Recorded, byes or leg byes as asked; the strike changes on odd runs |
+| (condition) | F10 | A chase ended ahead of par won "by N wickets" | "By N runs" ahead of par (Q3, the ICC's) |
+| 17.3.2.5 | F11 | A delivery not in the over spent the free hit | It leaves the free hit for the next (Q9) |
+| (condition) | Q2, F12 | A free hit after every no-ball; the pad's note said height and beamer | After a front-foot no-ball only (a no-ball of no recorded kind as before); the note says front foot |
+| (scorebook) | F13 | A wicket on an over's last ball fell at 5.0 | 4.6 (Q8) |
+
+Not changed: F6 (a short run has no key; recording the runs made and changing ends by hand is the convention, Q7,
+which F3 makes safe) and F14 (a ball released from quarantine; not decided).
 
 ## Sources
 

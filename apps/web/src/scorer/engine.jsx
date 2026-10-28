@@ -1917,8 +1917,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     if(asks(seal))return;
     emit(...evs,seal);
     setModal(null);
-    if(curIn===0){setCurIn(1);setModal("innings2");}
-    else setScreen("result");
+    afterMatchInnings(curIn);
   };
   // ── end SCRBRD-130 R1 ──
 
