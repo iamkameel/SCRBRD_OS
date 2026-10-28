@@ -175,6 +175,8 @@ ok("PUBLIC_EVENT_FIELDS is exactly the reviewed list", JSON.stringify(PUBLIC_EVE
   batters: ["striker", "nonStriker", "captainConsent"],
   bowler: ["bowler"],
   ball: ["type", "value", "striker", "nonStriker", "bowler", "dismissal", "fielder", "dismissed", "freeHit", "nbRuns", "nbType", "outAt", "facesNext", "notInOver",
+         // db/121 (the Laws audit F7): only ever false, runs that did not reach the boundary
+         "boundary",
          // SCRBRD-139 (db/78): the shot, and where it went as a word
          "shot", "area"],
   penalty: ["runs", "toBattingTeam", "reason"],

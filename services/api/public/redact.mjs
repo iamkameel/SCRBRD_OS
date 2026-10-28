@@ -85,6 +85,8 @@ export const PUBLIC_EVENT_FIELDS = Object.freeze({
   bowler:        Object.freeze(["bowler"]),
   ball:          Object.freeze(["type", "value", "striker", "nonStriker", "bowler", "dismissal", "fielder", "dismissed",
                                 "freeHit", "nbRuns", "nbType", "outAt", "facesNext", "notInOver",
+                                // db/121 (the Laws audit F7): runs that did not reach the boundary
+                                "boundary",
                                 // SCRBRD-139 (db/78): the shot, and where it went as a word
                                 "shot", "area"]),
   penalty:       Object.freeze(["runs", "toBattingTeam", "reason"]),
@@ -377,6 +379,9 @@ function keep(kind, f, src, { who, squadOf, secret, matchId }) {
       return int(v) ?? undefined;
     case "toBattingTeam": case "freeHit":
       return typeof v === "boolean" ? v : undefined;
+    // Only ever false: runs that did not reach the rope (boundaryHit()).
+    case "boundary":
+      return v === false ? false : undefined;
     case "captainConsent":
       return v === true ? true : undefined;
     case "type":

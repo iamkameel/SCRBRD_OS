@@ -153,7 +153,11 @@ function generated(no, overs) {
       if (rnd() < 0.12) b.undo();                // the wicket taken back
       else if (after.wickets > st.wickets) { if (rnd() < 0.1) b.timedOut(); b.fill(); }
     } else if (r < 0.10) {
-      b.deliver({ type: "Nb", value: pick([0, 0, 1, 4, 6]), ...(rnd() < 0.2 ? { nbRuns: pick(["byes", "leg_byes"]) } : {}) });
+      b.deliver({ type: "Nb", value: pick([0, 0, 1, 4, 6]), ...(rnd() < 0.2 ? { nbRuns: pick(["byes", "leg_byes"]) } : {}),
+                  // The kind of no-ball (Kameel, 28 Oct 2026, the Laws audit Q2, db/121):
+                  // only a front-foot one, or one of no recorded kind, earns the free
+                  // hit. On a stream of its own, so every innings is otherwise the one it was.
+                  ...nbKind() });
       if (rnd() < 0.12) b.undo();                // the no-ball taken back: no free hit
     } else if (r < 0.16) b.deliver({ type: "Wd", value: pick([0, 0, 1, 4]) });
     else if (r < 0.20) b.deliver({ type: pick(["B", "LB"]), value: pick([1, 2, 4]) });
@@ -186,12 +190,23 @@ function scripted(no, /** @type {string[]} */ steps) {
     else if (kind === "B") b.deliver({ type: "B", value: 1 });
     else if (kind === "run") b.deliver({ type: "run", value: 0 });
     else if (kind === "void") b.undo();
+    // The Laws audit (db/121): a no-ball of a recorded kind (Q2), and a fair
+    // delivery that does not count in the over (F11).
+    else if (kind === "NbH") b.deliver({ type: "Nb", value: 0, nbType: "height" });
+    else if (kind === "NbB") b.deliver({ type: "Nb", value: 0, nbType: "beamer" });
+    else if (kind === "NbF") b.deliver({ type: "Nb", value: 0, nbType: "front_foot" });
+    else if (kind === "NIO") b.deliver({ type: "run", value: 0, notInOver: "illegal_fielding" });
     else if (kind === "retireW") b.retireOut();
     else if (kind === "W") b.wicket(mode, end === "ns");
     if (b.now().wickets > before && steps[i + 1] !== "void") b.fill();
   });
   return b.ev;
 }
+
+// The kind of a generated no-ball (Q2, db/121), on a stream of its own.
+let s9 = 2828;
+const rnd9 = () => (s9 = (s9 * 1103515245 + 12345) % 2147483648) / 2147483648;
+const nbKind = () => { const r = rnd9(); return r < 0.4 ? {} : r < 0.7 ? { nbType: "front_foot" } : r < 0.85 ? { nbType: "height" } : { nbType: "beamer" }; };
 
 // Named edges: [steps, wickets the fold must count, what it proves].
 const EDGES = [
@@ -211,6 +226,13 @@ const EDGES = [
   [["W:bowled", "W:caught", "Nb", "W:lbw"],     2, "a saved ball breaks a hat-trick"],
   [["run", "Nb"],                               0, "an innings that ends on a no-ball..."],
   [["W:bowled"],                                1, "...gives the next innings no free hit"],
+  // The Laws audit of 28 Oct 2026 (db/121): Q2, front-foot no-balls only; F11.
+  [["NbH", "W:bowled"],                         1, "Q2: no free hit after a waist-high no-ball: bowled stands"],
+  [["NbB", "W:caught"],                         1, "...nor after a beamer"],
+  [["NbF", "W:lbw"],                            0, "a front-foot no-ball earns one"],
+  [["NbF", "NbB", "W:bowled"],                  0, "a beamer on a free hit leaves the free hit for the next ball"],
+  [["NbF", "NIO", "W:stumped"],                 0, "F11: a delivery not in the over leaves the free hit for the next"],
+  [["NbH", "NIO", "W:bowled"],                  1, "...and earns none of its own"],
 ];
 
 // ── Expectations, from the fold ──────────────────────────────────

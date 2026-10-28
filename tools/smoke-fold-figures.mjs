@@ -92,7 +92,8 @@ import {
 import { countsInOver, NOT_IN_OVER, keeperOf, isKeeperRef, isWicketBall } from "@scrbrd/scoring";
 import { resultFromRow } from "@scrbrd/scoring";   // SCRBRD-130 R1
 import { deriveFacts, FACT_KIND } from "@scrbrd/scoring";   // Recognition R1
-import { matchFoldContext } from "../services/api/write/events-api.mjs";
+import { matchFoldContext, EVENT_COLUMNS } from "../services/api/write/events-api.mjs";
+import { rejudgeAfterAmendment } from "../services/api/write/rejudge.mjs";   // the Laws audit F4, db/121
 import { baseCard, TYPED as BOOK_TYPED } from "../packages/scoring/test/scorebook-cards.mjs";
 // SCRBRD-114 phase 3a: the logs a result is proved on (result.test.mjs folds the same).
 import { RESULT_LOGS, RESULT_SIDES, RESULT_NAMES, RESULT_STARTS_AT } from "../packages/scoring/test/result-logs.mjs";
@@ -103,6 +104,8 @@ const PORT = port(8875);
 const BASE = `http://127.0.0.1:${PORT}`;
 const DB = ownerUrl();
 const HIL = "11111111-1111-1111-1111-111111111111";
+// The director of sport (scoring.amend.approve), who approves the F4 amendment.
+const U_DIRECTOR = "88888888-0000-0000-0000-000000000007";
 const WES = "22222222-2222-2222-2222-222222222222";
 // A complete fixture with a toss and no seeded deliveries; nothing else in
 // this walk's reset writes to it.
@@ -559,6 +562,23 @@ function scripted(/** @type {number} */ no, /** @type {string[]} */ steps, /** @
                   ...(who === "ns" ? { dismissed: at.nonStriker } : {}), ...(end ? { outAt: end } : {}) });
     }
     else if (k === "void") b.undo();
+    // ── The Laws audit (28 Oct 2026, db/121) ──
+    // ROb:st|ns:runs:end:byes|leg_byes  a run out after runs that were byes or leg byes (F5)
+    else if (k === "ROb") {
+      const at = b.now();
+      const [, , , , whose] = step.split(":");
+      b.deliver({ type: "W", value: Number(c), dismissal: "run_out", nbRuns: whose,
+                  ...(a === "ns" ? { dismissed: at.nonStriker } : {}), outAt: d });
+    }
+    // WB:method:runs:byes  a bowler's dismissal on a free hit, the batters running byes (F9)
+    else if (k === "WB") b.deliver({ type: "W", value: Number(c), dismissal: a, nbRuns: d });
+    // runNB:n, NbNB:n  runs off the bat that did not reach the rope (F7)
+    else if (k === "runNB") b.deliver({ type: "run", value: Number(a), boundary: false });
+    else if (k === "NbNB") b.deliver({ type: "Nb", value: Number(a), boundary: false, nbType: "front_foot" });
+    // NbT:runs:kind  a no-ball of a recorded kind (Q2: only front_foot earns a free hit)
+    else if (k === "NbT") b.deliver({ type: "Nb", value: Number(a), nbType: c });
+    // NIO:runs  a fair delivery that does not count in the over (F11)
+    else if (k === "NIO") b.deliver({ type: "run", value: Number(a), notInOver: "illegal_fielding" });
     if (b.now().wickets > before) b.fill();
   }
   return b.ev;
@@ -693,6 +713,24 @@ const RECOGNITION_EDGE = [
   "run:1", "run:6", "run:6", "run:6", "run:6", "run:6",
   "run:1", "run:6", "run:6", "run:6", "run:6", "run:0",
 ];
+
+// The Laws audit of 28 Oct 2026 (db/121), each finding SQL mirrors, written
+// out; after every innings above, so their numbers and ids are what they were.
+const AUDIT_EDGES = [
+  [["run:0", "ROb:ns:1:striker_end:byes", "run:0", "ROb:st:1:bowler_end:leg_byes", "ROb:ns:2:bowler_end:byes", "run:1"],
+   [P1, P2, P3, HIL_1XI[3], HIL_1XI[4]],
+   "F5: run outs going for a second bye or leg bye: the runs completed are byes, not the striker's or the bowler's"],
+  [["run:4", "runNB:4", "runNB:6", "run:6", "NbNB:4", "Nb:6", "runNB:5", "runNB:7"], [P1, P2, P3],
+   "F7: an all-run four, two and four overthrows, a no-ball run for four: runs and no boundary; a struck four and six are"],
+  [["NbT:0:height", "W:bowled", "NbT:0:beamer", "W:caught", "NbT:0:front_foot", "NIO:0", "W:lbw",
+    "NbT:0:front_foot", "NbT:0:beamer", "W:bowled", "run:0", "NbT:1:height", "run:0"], [P1, P2, P3, HIL_1XI[3], HIL_1XI[4]],
+   "Q2/F11: no free hit after a waist-high no-ball or a beamer (the wickets stand); a delivery not in the over, or a beamer, on a free hit leaves it for the next (saved)"],
+  [["NbT:0:front_foot", "WB:bowled:1:byes", "run:0", "NbT:0:front_foot", "WB:stumped:2:byes", "run:1"], [P1, P2, P3],
+   "F9: bowled and stumped on a free hit, the batters running byes: not out, byes, the strike changed"],
+];
+// F4: an amendment voids the first ball, a single; every ball after it is
+// re-judged (rejudge.mjs, db/121). The fold puts P1 on strike for the four.
+const F4_EDGE = ["run:1", "run:4", "run:1", "run:2", "W:bowled", "run:3", "run:0"];
 
 // ── Expectations, from the fold ──────────────────────────────────
 /** @param {Map<string, any>} m @param {string} k @param {() => any} init */
@@ -949,6 +987,30 @@ async function writeLogs(logs, scorer, matchId = MATCH) {
   } catch (err) { await c.query("ROLLBACK").catch(() => {}); throw err; } finally { c.release(); }
 }
 
+/**
+ * An amendment voiding `targetKey`, as the route makes one (events-api.mjs
+ * amendmentRoutes().decide): filed by the scorer, decided by the director of
+ * sport inside one transaction, then rejudgeAfterAmendment() — db/121's
+ * scoring_amendment_rejudge() — in that same transaction.
+ * @param {string} targetKey @param {string} requester
+ */
+async function amendAndRejudge(targetKey, requester) {
+  const c = await pool.connect();
+  try {
+    await c.query("BEGIN");
+    await c.query(`select set_config('app.user_id', $1, true)`, [U_DIRECTOR]);
+    const [a] = (await c.query(`insert into scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+                                values ($1, $2, $3, 'The single was a dead ball', $4) returning id`,
+                               [MATCH, HIL, targetKey, requester])).rows;
+    const [d] = (await c.query(`select * from scoring_amendment_decide($1, true, null)`, [a.id])).rows;
+    if (!d?.ok) { await c.query("ROLLBACK"); return { ok: false, reason: d?.reason }; }
+    const ctx = await matchFoldContext(c, MATCH);
+    const rejudged = await rejudgeAfterAmendment(c, a.id, MATCH, EVENT_COLUMNS, ctx);
+    await c.query("COMMIT");
+    return { ok: true, rejudged };
+  } catch (err) { await c.query("ROLLBACK").catch(() => {}); throw err; } finally { c.release(); }
+}
+
 /** One raw INSERT as the owner, outside any lift: the door's own answer. */
 async function tryInsert(/** @type {string} */ matchId, /** @type {number} */ seq, /** @type {Record<string, any>} */ cols, scorer) {
   try {
@@ -1107,7 +1169,23 @@ try {
   const recognitionNo = no;
   edgeInnings.push({ no, what: "a hundred from 98 by a six; a five-for with a hat-trick across a wide, a run out and a stumping off a wide" });
   logs.push(scripted(no, RECOGNITION_EDGE, [P1, P2, P3, HIL_1XI[4], ...OTHERS]));
+  // The Laws audit (db/121): after every innings above.
+  for (const [steps, order, what] of AUDIT_EDGES) {
+    no++; edgeInnings.push({ no, what: /** @type {string} */ (what) });
+    logs.push(scripted(no, /** @type {string[]} */ (steps), /** @type {string[]} */ (order)));
+  }
+  no++;
+  const f4No = no;
+  edgeInnings.push({ no, what: "F4: an amendment voids an older single; who faced every later ball is re-judged" });
+  const f4Log = scripted(no, F4_EDGE, [P1, P2, P3]);
+  const f4Target = f4Log.find((x) => x.kind === "ball")?.id;
+  logs.push(f4Log);
   const lifted = await writeLogs(logs, scorer);
+  // The amendment, as the route makes it: requested by the scorer, approved
+  // by the director of sport, the void judged and the balls after it
+  // re-judged in the approval's transaction.
+  const f4 = await amendAndRejudge(f4Target, scorer);
+  ok("F4: the approval wrote its void and re-judged the balls after it", f4.ok && f4.rejudged > 0, JSON.stringify(f4));
   console.log(lifted ? "  (the door lifted for the legacy rows, and put back)" : "  (no door to lift: the code before db/43)");
 
   // ── The fold, over the rows as the database holds them ──
@@ -1119,6 +1197,20 @@ try {
   const byInnings = new Map();
   fold.view().innings.forEach((inn, k) => byInnings.set(k, inn));
   const e = expected(byInnings);
+
+  group("F4 (the Laws audit, db/121): after an amendment, who faced each later ball is the fold's");
+  {
+    const f4Fold = byInnings.get(f4No);
+    const want = new Map((f4Fold?.ballLog ?? []).map((/** @type {any} */ x) => [x.seq, isId(x.strikerId) ? x.strikerId : null]));
+    const live = await q(`select seq, striker_id from ball_event_live where match_id = $1 and innings = $2 and kind = 'ball' order by seq`, [MATCH, f4No]);
+    const stamped = await q(`select seq, striker_id from ball_event where match_id = $1 and innings = $2 and kind = 'ball' order by seq`, [MATCH, f4No]);
+    const differs = stamped.filter((r) => want.has(r.seq) && want.get(r.seq) !== r.striker_id).length;
+    ok(`ball_event_live's striker is the fold's on every live ball (${live.length})`,
+       live.length === want.size && live.every((r) => want.get(r.seq) === r.striker_id),
+       JSON.stringify(live.map((r) => [r.seq, r.striker_id, want.get(r.seq)])));
+    ok(`...where the pad's stamp is not, on ${differs} of them (it would have been the stamp before db/121)`, differs > 0);
+    ok("...the four after the voided single is P1's in the fold", f4Fold?.ballLog?.[0]?.strikerId === P1 && f4Fold?.ballLog?.[0]?.value === 4);
+  }
 
   group(`The fold, over ${logs.length} innings (${EDGES.length} written by hand) and ${rows.length} events`);
   const c = e.cases;

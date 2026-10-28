@@ -50,10 +50,15 @@ const UNRECORDED_COLUMNS = `coalesce(unrec.innings_without_balls, 0)::int      a
 // the reducer reads — so a query cannot restate the law differently.
 const NOT_THE_BOWLERS = [...NON_DELIVERY].map((d) => `'${d}'`).join(", ");
 // Runs that are the striker's, as SQL over ball_event `b`: runsOffBat() in
-// packages/scoring. A no-ball's are, unless payload.nbRuns says byes or leg
-// byes (SCRBRD-068); a no-ball recorded before that has no nbRuns and was hit.
-const OFF_THE_BAT_SQL = `(b.ball_type in ('run','W') or (b.ball_type = 'Nb'
+// packages/scoring. A no-ball's and a wicket ball's are, unless payload.nbRuns
+// says byes or leg byes (SCRBRD-068; the Laws audit F5, db/121); one recorded
+// before that has no nbRuns and was hit.
+const OFF_THE_BAT_SQL = `(b.ball_type = 'run' or (b.ball_type in ('Nb','W')
   and coalesce(b.payload->>'nbRuns', '') not in (${[...NB_RUNS_VALUES].map((v) => `'${v}'`).join(", ")})))`;
+// A boundary, not any four or six off the bat (boundaryHit(); the Laws audit
+// F7, db/121's ball_boundary()): runs that did not reach the rope carry
+// payload.boundary = false.
+const BOUNDARY_SQL = `coalesce(b.payload->>'boundary', '') <> 'false'`;
 
 // resource → query. `masked: true` documents (and lets tests assert) that the
 // query reads a masking view. `params` maps request query → SQL params.
@@ -2644,8 +2649,8 @@ export const READ_QUERIES = {
                   -- The batter's fours and sixes, as the fold and the phases
                   -- count them: off the bat. Counting every ball worth four
                   -- called four byes, and five wides, a boundary.
-                  count(*) filter (where b.value = 4 and b.ball_type <> 'W' and ${OFF_THE_BAT_SQL})::int as fours,
-                  count(*) filter (where b.value = 6 and b.ball_type <> 'W' and ${OFF_THE_BAT_SQL})::int as sixes,
+                  count(*) filter (where b.value = 4 and b.ball_type <> 'W' and ${OFF_THE_BAT_SQL} and ${BOUNDARY_SQL})::int as fours,
+                  count(*) filter (where b.value = 6 and b.ball_type <> 'W' and ${OFF_THE_BAT_SQL} and ${BOUNDARY_SQL})::int as sixes,
                   -- A dismissal the free hit saved is not one: the fold's
                   -- rule, ball_wicket_stands() in db/42, which is what every
                   -- SQL wicket count asks. A wicket with no method is not the

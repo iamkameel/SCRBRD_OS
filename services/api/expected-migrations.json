@@ -111,5 +111,6 @@
   "113_correction_retracts_notices.sql",
   "114_official_result.sql",
   "115_family_consents.sql",
-  "116_readers_privacy.sql"
+  "116_readers_privacy.sql",
+  "121_laws_audit.sql"
 ]
