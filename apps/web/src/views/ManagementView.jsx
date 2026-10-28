@@ -88,18 +88,18 @@ function ManagementView({ role, onDirectoryChanged }) {
               <div key={team} style={{borderRadius:D.lg,border:`1px solid ${D.border}`,background:D.surf1,overflow:"hidden"}}>
                 <div style={{padding:"12px 18px",borderBottom:`1px solid ${D.border}`,background:`${D.indigo}08`,display:"flex",alignItems:"center",gap:"10px"}}>
                   <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:800,color:D.textPrimary}}><Icon name="bat"/> Hilton {team}</span>
-                  <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>{players.length} players</span>
-                  {canEditPlayers&&<button className="pressBtn" style={{marginLeft:"auto",padding:"4px 12px",borderRadius:D.pill,cursor:"pointer",background:`${D.indigo}18`,border:`1px solid ${D.indigo}44`,fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.indigoText}}>+ Add Player</button>}
+                  <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{players.length} players</span>
+                  {canEditPlayers&&<button className="pressBtn" style={{marginLeft:"auto",padding:"4px 12px",borderRadius:D.pill,cursor:"pointer",background:`${D.indigo}18`,border:`1px solid ${D.indigo}44`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.indigoText}}>+ Add Player</button>}
                 </div>
                 {players.map(p=>(
                   <div key={p.id} style={{display:"flex",alignItems:"center",gap:"12px",padding:"8px 18px",borderBottom:`1px solid ${D.border}44`}}>
                     <div style={{width:"26px",height:"26px",borderRadius:"50%",background:`${D.indigo}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"11px",flexShrink:0,color:D.indigoText}}><Icon name={p.role==="WK"?"gloves":"bat"}/></div>
                     <div style={{flex:1}}>
-                      <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary}}>{p.name}{p.isCaptain&&<span style={{color:D.amber,fontSize:"10px",marginLeft:"6px"}}>© Cap</span>}</div>
-                      <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{p.role} · Age {p.age}</div>
+                      <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary}}>{p.name}{p.isCaptain&&<span style={{color:D.amber,fontSize:"12px",marginLeft:"6px"}}>© Cap</span>}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{p.role} · Age {p.age}</div>
                     </div>
-                    {p.injuryStatus&&<span style={{padding:"2px 8px",borderRadius:D.pill,background:`${D.rose}18`,border:`1px solid ${D.rose}33`,fontFamily:D.head,fontSize:"8px",fontWeight:700,color:D.roseText}}>{p.injuryStatus==="injured"?<><Icon name="bandage"/> Injured</>:<><Icon name="rotate-ccw"/> Rehab</>}</span>}
-                    {canEditPlayers&&<button className="pressBtn" style={{padding:"3px 10px",borderRadius:D.pill,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"9px",color:D.textMuted}}>Edit</button>}
+                    {p.injuryStatus&&<span style={{padding:"2px 8px",borderRadius:D.pill,background:`${D.rose}18`,border:`1px solid ${D.rose}33`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.roseText}}>{p.injuryStatus==="injured"?<><Icon name="bandage"/> Injured</>:<><Icon name="rotate-ccw"/> Rehab</>}</span>}
+                    {canEditPlayers&&<button className="pressBtn" style={{padding:"3px 10px",borderRadius:D.pill,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",color:D.textMuted}}>Edit</button>}
                   </div>
                 ))}
               </div>
@@ -113,17 +113,17 @@ function ManagementView({ role, onDirectoryChanged }) {
         <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"8px"}}>
             <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}><Icon name="calendar"/> Upcoming Fixtures</div>
-            {canAddFixtures&&<button className="pressBtn" style={{padding:"6px 14px",borderRadius:D.pill,cursor:"pointer",background:`${D.indigo}18`,border:`1px solid ${D.indigo}44`,fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.indigoText}}>+ Add Fixture</button>}
+            {canAddFixtures&&<button className="pressBtn" style={{padding:"6px 14px",borderRadius:D.pill,cursor:"pointer",background:`${D.indigo}18`,border:`1px solid ${D.indigo}44`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.indigoText}}>+ Add Fixture</button>}
           </div>
           {MATCHES.filter(m=>m.status==="upcoming").map(m=>(
             <div key={m.id} style={{borderRadius:D.lg,border:`1px solid ${D.border}`,background:D.surf1,padding:"14px 18px",display:"flex",alignItems:"center",gap:"14px",flexWrap:"wrap"}}>
               <div style={{flex:1,minWidth:"160px"}}>
                 <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{m.home} vs {m.away}</div>
-                <div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,marginTop:"2px"}}>{m.date} · {m.format} · {m.venue}</div>
+                <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{m.date} · {m.format} · {m.venue}</div>
               </div>
               <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
-                <span style={{padding:"3px 10px",borderRadius:D.pill,background:`${D.sky}18`,border:`1px solid ${D.sky}33`,fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.sky}}>{m.competition}</span>
-                {canEditFixtures&&<button className="pressBtn" style={{padding:"3px 10px",borderRadius:D.pill,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"9px",color:D.textMuted}}><Icon name="pencil"/> Edit</button>}
+                <span style={{padding:"3px 10px",borderRadius:D.pill,background:`${D.sky}18`,border:`1px solid ${D.sky}33`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.sky}}>{m.competition}</span>
+                {canEditFixtures&&<button className="pressBtn" style={{padding:"3px 10px",borderRadius:D.pill,cursor:"pointer",background:"transparent",border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",color:D.textMuted}}><Icon name="pencil"/> Edit</button>}
               </div>
             </div>
           ))}
@@ -137,15 +137,15 @@ function ManagementView({ role, onDirectoryChanged }) {
             <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.roseText,marginBottom:"12px"}}><Icon name="radio-tower"/> Send Broadcast Alert</div>
             <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
               <div>
-                <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginBottom:"6px"}}>Recipients</div>
+                <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginBottom:"6px"}}>Recipients</div>
                 <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
                   {["All","Players","Parents","Coaches","Staff"].map(r=>(
-                    <button key={r} className="pressBtn" style={{padding:"5px 12px",borderRadius:D.pill,cursor:"pointer",background:r==="All"?`${D.rose}18`:"transparent",border:`1px solid ${r==="All"?D.rose+"55":D.border}`,fontFamily:D.head,fontSize:"9px",fontWeight:700,color:r==="All"?D.rose:D.textMuted}}>{r}</button>
+                    <button key={r} className="pressBtn" style={{padding:"5px 12px",borderRadius:D.pill,cursor:"pointer",background:r==="All"?`${D.rose}18`:"transparent",border:`1px solid ${r==="All"?D.rose+"55":D.border}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:r==="All"?D.rose:D.textMuted}}>{r}</button>
                   ))}
                 </div>
               </div>
               <div style={{borderRadius:D.md,border:`1px solid ${D.border}`,background:D.surf2,padding:"10px 14px",fontFamily:D.body,fontSize:"12px",color:D.textMuted,minHeight:"60px"}}>Type broadcast message here…</div>
-              <button className="pressBtn" style={{alignSelf:"flex-start",padding:"8px 18px",borderRadius:D.pill,cursor:"pointer",background:D.rose,border:"none",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:inkOn(D.rose)}}><Icon name="radio-tower"/> Send Broadcast</button>
+              <button className="pressBtn" style={{alignSelf:"flex-start",padding:"8px 18px",borderRadius:D.pill,cursor:"pointer",background:D.rose,border:"none",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:inkOn(D.rose)}}><Icon name="radio-tower"/> Send Broadcast</button>
             </div>
           </div>
         </div>

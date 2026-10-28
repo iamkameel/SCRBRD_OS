@@ -60,7 +60,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
           <div key={g.key} role="group" aria-labelledby={`nav-group-${g.key}`} data-testid={`nav-group-${g.key}`}>
             {collapsed
               ? (gi>0&&<div aria-hidden="true" style={{height:"1px",background:D.border,margin:"6px 12px"}}/>)
-              : <div id={`nav-group-${g.key}`} style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,padding:gi>0?"12px 20px 4px":"4px 20px 4px"}}>{g.label}</div>}
+              : <div id={`nav-group-${g.key}`} style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,padding:gi>0?"12px 20px 4px":"4px 20px 4px"}}>{g.label}</div>}
             {collapsed&&<span id={`nav-group-${g.key}`} hidden>{g.label}</span>}
             {g.items.map(key=>{
               const m = NAV_META[key];
@@ -130,9 +130,9 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
                   same pair the other way up, because there it is a control for
                   changing role and the role is the subject; here it is a
                   statement of who is signed in. */}
-              <div style={{fontFamily:T.type.body,fontSize:"11px",fontWeight:600,color:T.content.primary,
+              <div style={{fontFamily:T.type.body,fontSize:"12px",fontWeight:600,color:T.content.primary,
                            overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName || rc.label}</div>
-              <div style={{fontFamily:T.type.body,fontSize:"10px",color:rc.color,
+              <div style={{fontFamily:T.type.body,fontSize:"12px",color:rc.color,
                            overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{rc.label}</div>
             </div>
           </div>
@@ -159,7 +159,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
         {/* Kept, because "what version are you on?" is the first question of
             every support conversation — but demoted from its own bordered
             block to one line nobody has to read. */}
-        {!collapsed&&<div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,letterSpacing:"0.06em",padding:"8px 8px 0"}}>SCRBRD v{pkg.version} · CricketOS</div>}
+        {!collapsed&&<div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,letterSpacing:"0.06em",padding:"8px 8px 0"}}>SCRBRD v{pkg.version} · CricketOS</div>}
       </div>
     </div>
   );

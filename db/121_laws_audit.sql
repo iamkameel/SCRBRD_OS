@@ -7,7 +7,7 @@
 -- 2026. The fold moved first (packages/scoring: events.mjs, replay.mjs,
 -- laws.mjs; packages/scoring/test/laws-audit.test.mjs); this file is the same
 -- rules in SQL, so every reader of ball_event agrees with the fold again. Its
--- proof is db/99 §96; tools/smoke-fold-figures.mjs and tools/smoke-free-hit.mjs
+-- proof is db/99 §98; tools/smoke-fold-figures.mjs and tools/smoke-free-hit.mjs
 -- hold SQL to the fold over generated logs, a case for each finding.
 --
 -- WHAT CHANGES ON A LIVE DATABASE, by finding
@@ -53,7 +53,7 @@
 --       score and the handover check, as the fold now counts it. And a
 --       bowler's dismissal right after a fair delivery marked notInOver that
 --       followed a no-ball, which stood, is now saved. No pilot match holds
---       either; a database that does is told by db/99 §96's count.
+--       either; a database that does is told by db/99 §98's count.
 --   F10 A chase terminated ahead of the umpires' par is won by the runs it is
 --       ahead (Q3), not by the wickets in hand.
 --         match_result_compute()  db/73's, that one arm. A result already

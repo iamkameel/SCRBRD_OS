@@ -366,6 +366,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // credential and sends by itself, nobody signed in; force-released, it
   // stops in words; signed in again, it goes on.
   "browser-pad-resume",
+  // CRI-0.4: the signal drops after ball 2 of an over; six deliveries (a
+  // wide, a wicket, the over's end) are held and counted on the pill, then
+  // drain by themselves: none lost, none twice, the board, the server's fold
+  // and match_live_score agree. Again across a reload with no signal.
+  "browser-sync-drop",
   // GA-I13: the scorer's home — appointed first, a fixture another device
   // holds, a match resumed after a reload with its unsent events counted,
   // the empty state, and a coach kept on the day sheet.
@@ -426,6 +431,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // name; the analytics switch starts nothing there; a listed fixture's card
   // with no ground, nofollow, landing on /live/:id.
   "browser-home",
+  // CRI-0.3: the seed's own fixture, scored live, reached signed out from the
+  // home page; every response the browser receives (shells, bundles, every
+  // /api/public/ body) scanned for a seeded pupil's name, date of birth,
+  // contact or home, a typed name, a mark's reason, health words, coordinates.
+  "browser-public-live",
   // SCRBRD-142 phase 2's switch and Fields → Add ground: the director of sport lists
   // the school and the public list carries (then drops) a published fixture, the
   // panel's line follows; a one-side publisher's switch is disabled with its
@@ -611,7 +621,7 @@ const WEIGHTS = {
   "browser-offline-day": 80, "browser-playing-conditions-screen": 70,
   "browser-public": 70, "browser-cleanup": 70, "browser-suspension": 70,
   "browser-laws4": 70, "browser-handover": 60, "browser-handover-offline": 70, "browser-support": 60,
-  "browser-pad-resume": 60, "browser-dossier": 60, "browser-offline-undo": 50,
+  "browser-pad-resume": 60, "browser-sync-drop": 60, "browser-dossier": 60, "browser-offline-undo": 50,
   "browser-wagonwheel": 50, "browser-results": 50, "browser-drs": 50,
   "browser-safeguarding": 50, "browser-playing-conditions": 50,
   "browser-innings-end": 40, "browser-toss": 40, "browser-dayof": 40,

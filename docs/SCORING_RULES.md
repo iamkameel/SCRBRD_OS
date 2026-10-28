@@ -855,7 +855,7 @@ mode's one-tap WIDE takes no runs and no wicket, as before. `replay.test.mjs` gr
 
 `audit/AUDIT_scoring_laws_2026-10-28.md`, and Kameel's decisions (its §6). Each rule below is in the fold
 (`packages/scoring`), held by `packages/scoring/test/laws-audit.test.mjs`, and where SQL needs it in db/121 (db/99
-§96; `tools/smoke-fold-figures.mjs` and `tools/smoke-free-hit.mjs` hold SQL to the fold).
+§98; `tools/smoke-fold-figures.mjs` and `tools/smoke-free-hit.mjs` hold SQL to the fold).
 
 - **The end on every run out (F1, Q6).** The pad asks *out at the striker's end or the bowler's end?* whatever the runs
   completed: going for a quick single the batters may have crossed with none completed, and only the end the wicket

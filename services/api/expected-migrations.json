@@ -112,5 +112,6 @@
   "114_official_result.sql",
   "115_family_consents.sql",
   "116_readers_privacy.sql",
+  "117_rollover_dated_side.sql",
   "121_laws_audit.sql"
 ]

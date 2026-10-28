@@ -61,8 +61,8 @@ const SUPPORT_ROLES = POLICY_ROLES.filter((r) =>
 
 const MINUTES = [15, 30, 60, 120, 240];
 const H = () => ({ fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: D.textPrimary });
-const SUB = () => ({ fontFamily: D.body, fontSize: "11px", color: D.textMuted, lineHeight: 1.5 });
-const MONO = () => ({ fontFamily: D.mono, fontSize: "10px", color: D.textMuted });
+const SUB = () => ({ fontFamily: D.body, fontSize: "12px", color: D.textMuted, lineHeight: 1.5 });
+const MONO = () => ({ fontFamily: D.mono, fontSize: "12px", color: D.textMuted });
 const clock = (t) => (t ? new Date(t).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" }) : "—");
 const roleLabel = (r) => ROLES[r]?.label ?? r;
 
@@ -161,14 +161,14 @@ function SupportAccessLive({ role }) {
         <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>
           {s.schoolName ?? "A school"} as {roleLabel(s.role)}
         </div>
-        <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary }}>{s.reason}</div>
+        <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary }}>{s.reason}</div>
         <div style={MONO()}>
           began {clock(s.startedAt)} · {s.live
             ? <>until {clock(s.expiresAt)} · <Countdown expiresAt={s.expiresAt} onZero={again}/></>
             : s.endedAt ? `ended ${clock(s.endedAt)}${s.endedByName ? ` by ${s.endedByName}` : ""}`
             : `ran out at ${clock(s.expiresAt)}`}
         </div>
-        {endSaid[s.id] && <div role="alert" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginTop: "4px" }}>{endSaid[s.id]}</div>}
+        {endSaid[s.id] && <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose), marginTop: "4px" }}>{endSaid[s.id]}</div>}
       </div>
       <Badge color={s.live ? D.amber : D.textMuted}>{s.live ? "Live now" : "Over"}</Badge>
       {s.live && <Btn size="sm" variant="danger" onClick={() => end(s)} data-testid="support-end">End now</Btn>}
@@ -197,8 +197,8 @@ function SupportAccessLive({ role }) {
           </div>
           <Input label="Reason — the school reads this" value={form.reason} onChange={set("reason")} data-testid="support-reason"
                  placeholder="e.g. ticket 4411: roster import failing at this school"/>
-          {refused && <div role="alert" data-testid="support-refused" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginBottom: "8px" }}>{refused}</div>}
-          {begun && <div role="status" data-testid="support-begun" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.emerald), marginBottom: "8px" }}>{begun}</div>}
+          {refused && <div role="alert" data-testid="support-refused" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose), marginBottom: "8px" }}>{refused}</div>}
+          {begun && <div role="status" data-testid="support-begun" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.emerald), marginBottom: "8px" }}>{begun}</div>}
           <Btn size="sm" onClick={begin} disabled={busy} data-testid="support-begin">{busy ? "Beginning…" : "Begin session"}</Btn>
         </div>
       </Card>

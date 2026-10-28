@@ -37,7 +37,7 @@ const Metric = ({ label, value, unit, sub, tone, size = "md", trend, ...rest }) 
     <div {...rest}>
       {label && (
         <div style={{
-          fontFamily: T.type.head, fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em",
+          fontFamily: T.type.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.1em",
           textTransform: "uppercase", color: T.content.tertiary, marginBottom: T.space.sm,
         }}>{label}</div>
       )}
@@ -56,7 +56,7 @@ const Metric = ({ label, value, unit, sub, tone, size = "md", trend, ...rest }) 
         {trend !== undefined && trend !== null && <Trend value={trend}/>}
       </div>
       {sub && (
-        <div style={{ fontFamily: T.type.body, fontSize: "11px", color: T.content.tertiary, marginTop: "5px" }}>
+        <div style={{ fontFamily: T.type.body, fontSize: "12px", color: T.content.tertiary, marginTop: "5px" }}>
           {sub}
         </div>
       )}
@@ -93,7 +93,7 @@ const Trend = ({ value, goodWhen = "up", suffix = "%" }) => {
              : good ? T.semantic.positive
              : textOn(T.semantic.critical);
   return (
-    <span style={{ fontFamily: T.type.mono, fontSize: "11px", color: tone, whiteSpace: "nowrap" }}>
+    <span style={{ fontFamily: T.type.mono, fontSize: "12px", color: tone, whiteSpace: "nowrap" }}>
       <span aria-hidden="true">{value === 0 ? "▬" : rising ? "▲" : "▼"}</span>
       {" "}{Math.abs(value)}{suffix}
       <span className="sr-only">{rising ? " increase" : " decrease"}</span>
@@ -187,7 +187,7 @@ const StatusPill = ({ status = "upcoming", children }) => {
       display: "inline-flex", alignItems: "center", gap: "6px",
       padding: "3px 10px", borderRadius: T.radius.pill,
       background: `${s.tone}14`, border: `1px solid ${s.tone}2e`,
-      fontFamily: T.type.head, fontSize: "10px", fontWeight: 700,
+      fontFamily: T.type.head, fontSize: "12px", fontWeight: 700,
       letterSpacing: "0.06em", textTransform: "uppercase", color: read,
     }}>
       {s.dot
@@ -219,7 +219,7 @@ const SegmentedControl = ({ options, value, onChange, label }) => (
             padding: "6px 14px", borderRadius: T.radius.pill, border: "none", cursor: "pointer",
             background: selected ? T.surface.interactive : "transparent",
             color: selected ? T.content.primary : T.content.tertiary,
-            fontFamily: T.type.head, fontSize: "11px", fontWeight: 700, whiteSpace: "nowrap",
+            fontFamily: T.type.head, fontSize: "12px", fontWeight: 700, whiteSpace: "nowrap",
           }}>{o.label ?? o}</button>
       );
     })}

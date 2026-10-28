@@ -89,7 +89,7 @@ const fieldStyle = () => ({
 
 function Field({ text, children }) {
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontFamily: D.body, fontSize: "10px", color: D.textMuted }}>
+    <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
       {text}
       {children}
     </label>
@@ -149,16 +149,16 @@ function DrsPanelBody({ matchId, role }) {
     <Card sx={{ padding: "14px", marginTop: "12px" }} data-testid="drs-panel">
       <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginBottom: "8px" }}>
         <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textPrimary }}>DRS reviews</div>
-        <div style={{ fontFamily: D.mono, fontSize: "9px", color: D.textMuted }} data-testid="drs-count">
+        <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted }} data-testid="drs-count">
           {rows.length} recorded
         </div>
       </div>
       {loading ? (
-        <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted }}>Loading…</div>
+        <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>Loading…</div>
       ) : error ? (
-        <div style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose) }}>Could not load reviews ({error}).</div>
+        <div style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose) }}>Could not load reviews ({error}).</div>
       ) : rows.length === 0 ? (
-        <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted }}>No reviews recorded for this match.</div>
+        <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>No reviews recorded for this match.</div>
       ) : (
         rows.map((r) => (
           <div key={r.ballSeq} data-testid={`drs-review-${r.ballSeq}`}
@@ -166,20 +166,20 @@ function DrsPanelBody({ matchId, role }) {
             <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>
               Ball {r.ballSeq} — {label(r.calledBy)} review: {label(r.onField)} → {label(r.outcome)}
             </div>
-            <div style={{ fontFamily: D.mono, fontSize: "10px", color: D.textMuted, marginTop: "2px" }}>
+            <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted, marginTop: "2px" }}>
               Known by {label(r.evidenceSource)}
               {(r.pitching || r.impact || r.wickets) &&
                 ` · Pitching ${label(r.pitching)} · Impact ${label(r.impact)} · Wickets ${label(r.wickets)}`}
             </div>
             {r.notes && (
-              <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary, marginTop: "4px" }}>{r.notes}</div>
+              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary, marginTop: "4px" }}>{r.notes}</div>
             )}
           </div>
         ))
       )}
       {canRecord && (
         <form onSubmit={submit} style={{ marginTop: "12px", paddingTop: "12px", borderTop: `1px solid ${D.border}` }}>
-          <div style={{ fontFamily: D.head, fontSize: "10px", fontWeight: 700, color: D.textPrimary, letterSpacing: "0.06em", marginBottom: "8px" }}>
+          <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textPrimary, letterSpacing: "0.06em", marginBottom: "8px" }}>
             RECORD A REVIEW
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: "8px" }}>
@@ -242,7 +242,7 @@ function DrsPanelBody({ matchId, role }) {
                     style={{ ...fieldStyle(), marginTop: "8px", minHeight: "48px", resize: "vertical" }} />
           {said && (
             <div role="alert" data-testid="drs-form-refused"
-                 style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginTop: "6px" }}>
+                 style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose), marginTop: "6px" }}>
               {said}
             </div>
           )}
