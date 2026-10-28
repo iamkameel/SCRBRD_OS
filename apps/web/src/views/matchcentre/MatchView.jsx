@@ -400,8 +400,9 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   const settled = !!log.result && !liveSO
     && !(log.result.outcome === "tie" && log.result.decidedBy === null && log.fold?.conditions?.["result.tie_break"] === "super_over");
   const over = settled || match.status === "complete";
-  // CRI-1.2: where the match stands, in one sentence — the list's card says it the same way.
-  const status = statusSentence(match, { innings: played, result: log.result }, { result });
+  // CRI-1.2: where the match stands, in one sentence — the list's card asks the same function. A
+  // demonstration's innings are a reconstruction, so its sentence is the fixture's own, as the card's is.
+  const status = statusSentence(match, log.demo ? null : { innings: played, result: log.result }, { result });
   // One quiet `correction` line each, team-level, never a moment card.
   const told = useMemo(() => withCorrectionLines(commentary, log.events ?? [], fixes, over), [commentary, log.events, fixes, over]);
   const corrected = useMemo(() => inningsWords(log.events ?? [], fixes, log.innings), [log.events, fixes, log.innings]);
