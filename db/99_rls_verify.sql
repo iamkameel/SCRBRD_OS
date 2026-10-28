@@ -7510,7 +7510,7 @@ DECLARE
   WES uuid := '22222222-2222-2222-2222-222222222222';
   P_H uuid := 'aaaaaaaa-0000-0000-0000-000000000005';   -- R Pillay, Hilton
   P_W uuid := 'bbbbbbbb-0000-0000-0000-000000000001';   -- D Mkhize, Westville
-  BY  uuid := '88888888-0000-0000-0000-00000000000c';   -- the office files them
+  V_BY uuid := '88888888-0000-0000-0000-00000000000c';   -- the office files them
   ids jsonb; c uuid; f uuid; v uuid; k text;
 BEGIN
   ids := _v71_people('v118', ARRAY[
@@ -7525,11 +7525,11 @@ BEGIN
             'Verify 118 league fixture ' || k, now() - interval '2 days', 'cricket', 'T20', 20, 'scheduled', c)
     RETURNING id INTO f;
     INSERT INTO disciplinary_record (player_id, school_id, match_id, recorded_by, body)
-    VALUES (P_H, HIL, f, BY, 'v118: dissent at the ' || k || ' league fixture') RETURNING id INTO v;
+    VALUES (P_H, HIL, f, V_BY, 'v118: dissent at the ' || k || ' league fixture') RETURNING id INTO v;
     ids := ids || jsonb_build_object('c_' || k, c, 'r_' || k, v);
   END LOOP;
   INSERT INTO disciplinary_record (player_id, school_id, match_id, recorded_by, body)
-  VALUES (P_W, WES, (SELECT m.id FROM match m WHERE m.competition_id = (ids->>'c_hil')::uuid), BY,
+  VALUES (P_W, WES, (SELECT m.id FROM match m WHERE m.competition_id = (ids->>'c_hil')::uuid), V_BY,
           'v118: dissent at the hil league fixture, the other side') RETURNING id INTO v;
   RETURN ids || jsonb_build_object('r_hil_w', v);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
