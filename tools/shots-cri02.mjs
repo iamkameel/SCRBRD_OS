@@ -205,15 +205,34 @@ const record = (screen, kind, what, where) => {
 const files = [];
 const KINDS = ["sideways", "offscreen", "clipped", "overlap", "small", "tiny", "weak"];
 
+/** The shell around every screen (sidebar, bottom bar, top bar): its findings are the same on each, so they are written once. */
+const isShell = (item) => /<button (nav-|mnav-|sidebar-)/.test(item) || /"Cricket▾"|<span> "▾"/.test(item);
+
 async function measure(page, screen, width, theme) {
   await loaded(page);
   await afterReads(page, 400);
   const r = await narrowAudit(page, {});
+  // What the audit does not list: a box that scrolls sideways with its content cut at the edge until it is scrolled
+  // (a tab strip, a table), which a person may not know is there.
+  r.scrolls = await page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll("*")) {
+      const cs = getComputedStyle(el);
+      if (!/(auto|scroll)/.test(cs.overflowX) || el.scrollWidth <= el.clientWidth + 1) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1 || cs.display === "none") continue;
+      const t = el.getAttribute("data-testid");
+      const text = (el.getAttribute("aria-label") || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 40);
+      out.push(`<${el.tagName.toLowerCase()}${t ? ` ${t}` : ""}${el.getAttribute("role") ? ` role=${el.getAttribute("role")}` : ""}> "${text}" content ${el.scrollWidth}px in a ${el.clientWidth}px box`);
+    }
+    return out;
+  });
   const where = `${width} ${theme}`;
-  for (const k of KINDS) {
+  for (const k of [...KINDS, "scrolls"]) {
     for (const item of r[k]) {
-      if (k === "clipped") record(screen, /\(ellipsis\)/.test(item) ? "ellipsis" : "clipped", item.replace(/ \(ellipsis\)$/, ""), where);
-      else record(screen, k, item, where);
+      const scr = isShell(item) ? "shell" : screen;
+      if (k === "clipped") record(scr, /\(ellipsis\)/.test(item) ? "ellipsis" : "clipped", item.replace(/ \(ellipsis\)$/, ""), where);
+      else record(scr, k, item, where);
     }
   }
   return r;
@@ -275,12 +294,13 @@ try {
     offscreen: "Off the screen (text or a tap target outside it, with no scroller of its own)",
     clipped: "Clipped or truncated without an ellipsis",
     ellipsis: "Truncated with an ellipsis (information, not a fault)",
+    scrolls: "Scrolls sideways, content cut at the edge until scrolled",
     overlap: "Drawn over something else that reads or taps",
     small: "Text under 12px",
     tiny: "Tap target under 44px",
     weak: "Contrast below WCAG (text 4.5:1, large 3:1, edges and icons 3:1)",
   };
-  const order = ["sideways", "offscreen", "clipped", "overlap", "small", "tiny", "weak", "ellipsis"];
+  const order = ["sideways", "offscreen", "clipped", "scrolls", "overlap", "small", "tiny", "weak", "ellipsis"];
   const wOrder = (s) => { const [w, t] = s.split(" "); return Number(w) * 10 + (t === "Daylight" ? 0 : 1); };
   const md = [];
   md.push("# CRI-0.2 screenshot set: what clips");
@@ -290,7 +310,7 @@ try {
   md.push(`- Screens: ${SCREENS.filter(want).join(", ")}. Widths: ${WIDTHS.join(", ")}. Themes: Daylight (colour scheme light), Floodlit (dark).`);
   md.push("- Data: the seed plus tools/fixture-matchcentre.mjs's live fixture (Hilton College 1XI v Westville Boys' High 1XI, ten overs, second innings under way). Invented names only. The Match Centre is read as the seeded director of sport, the pad as the seeded scorer.");
   md.push("- Measured in the page by `narrowAudit` (tools/a11y-narrow.mjs), the narrow walk's own audit, with its floors: 12px text, 44px taps. Widths 360 and 390 are drawn as a touch phone, 768 and 1440 as a desktop; the 44px tap floor is the phone floor, so on 768 and 1440 read the \"tap target\" lists as secondary.");
-  md.push(`- Pictures are PNG, or JPEG at quality 70 where the PNG ran over about 300 KB; a page taller than ${MAX_H}px is cut at ${MAX_H}px. The shell scrolls its main, so the viewport is grown to the content's height before each picture.`);
+  md.push(`- Pictures are PNG, or JPEG at quality 70 where the PNG ran over about 300 KB; a page taller than ${MAX_H}px is cut at ${MAX_H}px. The shell scrolls its main, so the viewport is grown to the content's height before each picture; on a phone the fixed bottom bar is therefore drawn at the foot of the picture, over the last content, not at the foot of the first screen.`);
   md.push("- Each line is one element, written as the audit describes it, with the width and theme it was seen at. Identical elements are merged. Lines are capped at 25 per kind per screen; the count is given.");
   md.push("");
   md.push("## Pictures");
@@ -299,11 +319,23 @@ try {
   md.push("|---|---|---|---|---|---|");
   for (const f of files) md.push(`| ${NAMES[f.screen]} | ${f.width} | ${f.theme} | ${f.file} | ${(f.bytes / 1024).toFixed(0)} KB | ${f.cut ? `cut at ${MAX_H}px of ${f.pageHeight}` : ""} |`);
   md.push("");
-  for (const screen of SCREENS.filter(want)) {
+  md.push("## Seen in the pictures, not measured");
+  md.push("");
+  md.push("Read off the 360 and 390 pictures by eye; the audit above does not flag these. They are layout facts for Sprint 1, not faults of the floors.");
+  md.push("");
+  md.push("- Match header (Summary, Scorecard, Commentary), 360 and 390: the title \"Hilton College 1XI v Westville Boys' High 1XI\" wraps and leaves \"1XI\" alone on a line; the \"Corrected\" note appears twice (a line under the score and a chip under the venue); the header, its buttons and the tab strip take about 450px before any score content, which is most of the first screen.");
+  md.push("- Tab strip, 360 and 390: seven tabs scroll sideways and the Commentary label is cut at the right edge (\"Commentar\") with no fade or arrow to say there is more; Partnerships, Analytics and Match details are off screen.");
+  md.push("- Scorecard, 360 and 390: 11 batters' rows with \"Did not bat\" each take a full row, so the bowling card and fall of wickets sit below the second screen; the dismissal line wraps to two lines (\"c P Govender b P Govender\").");
+  md.push("- Commentary, every width: grouped by over, newest over first, with an end-of-over summary line, but no filter (wickets, boundaries, an over) and no jump to an over; the whole match is one scroll (5168px at 1440). At 1440 the column runs the full content width (about 950px), so a commentary line sits far from its ball number. On a phone the Summary label is cut on the left when the Commentary tab is selected (the strip has scrolled to it).");
+  md.push("- Fixtures list, 360: the three buttons of an upcoming card wrap onto two rows (\"Dossier\" alone); opponents are shortened to codes (\"WES 1XI\", \"WBH\") on some cards and written in full on others.");
+  md.push("- Pad, 360 and 390: the match title in the header wraps to two or three lines and pushes the board down; the board's team name wraps (\"WESTVILLE BOYS' HIGH / 1XI\"). At 768 and 1440 the pad is the phone layout in a wider column, with empty space either side.");
+  md.push("");
+  NAMES.shell = "Shell around every screen (sidebar, bottom bar, top bar)";
+  for (const screen of [...SCREENS.filter(want), "shell"]) {
     md.push(`## ${NAMES[screen]}`);
     md.push("");
     const by = found[screen] ?? {};
-    const shotsFor = files.filter((f) => f.screen === screen).length;
+    const shotsFor = screen === "shell" ? 1 : files.filter((f) => f.screen === screen).length;
     if (!shotsFor) { md.push("No picture was taken.", ""); continue; }
     let any = false;
     for (const kind of order) {
