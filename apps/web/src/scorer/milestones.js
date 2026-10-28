@@ -81,8 +81,17 @@ function wordsOf(m, nameOf) {
 export function ballMilestones(a) {
   // A cue that cannot be worked out is no cue: the over's sheet, the
   // innings' review and the next ball never wait on, or fall over with, it.
-  try { return milestonesOf(a); } catch { return []; }
+  // Said once, as a warning (not an error: nothing failed that a scorer
+  // needs), so a throw in the facts is not silent.
+  try { return milestonesOf(a); } catch (e) {
+    if (!warned) {
+      warned = true;
+      try { console.warn("[scrbrd] the pad's milestones could not be read; no cue shown", e); } catch { /* no console */ }
+    }
+    return [];
+  }
 }
+let warned = false;
 
 function milestonesOf({ events, curIn, evs, ctx = {}, before, after }) {
   if (!evs?.length) return [];

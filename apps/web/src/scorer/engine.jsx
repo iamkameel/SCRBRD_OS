@@ -53,7 +53,7 @@ import { fmtOv, isOut } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
 import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
 import { projectMatch } from "./chartData.js";
-import { FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, buildEventCfg, momentQueue, momentWords, wicketMomentCfg } from "./panels.jsx";
+import { FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, ballWords, buildEventCfg, momentQueue, wicketMomentCfg } from "./panels.jsx";
 import { ballMilestones } from "./milestones.js";
 import { ScoringBlocked, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
@@ -358,13 +358,27 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   // FLASH_MS (pad.jsx BoardFlash) — never an overlay over the keys.
   const[eventOverlay,setEventOverlay]=useState(null);
   // Its words, for a screen reader: kept after the flash has gone, so the
-  // polite live region has something to say when it gets round to it.
+  // polite live region has something to say when it gets round to it. Set
+  // ONCE per ball, every moment the ball played in one line (ballWords), not
+  // rewritten as each flash plays: a reader that announces only the latest
+  // text would lose all but the last (Recognition R2 review, S2).
   const[moment,setMoment]=useState("");
-  // Milestone queue — show one at a time
+  // Milestone queue — the board shows one at a time
   const milestoneQRef=useRef([]);
-  const playMoment=(cfg)=>{
-    setEventOverlay(cfg);
-    if(cfg?.label)setMoment(momentWords(cfg));
+  const playMoment=(cfg)=>setEventOverlay(cfg);
+  /** A ball's moments, in order (momentQueue): the first on the board, the
+   *  rest queued behind it, all of them said once. */
+  const playBall=(q)=>{
+    if(!q.length)return;
+    milestoneQRef.current=q.slice(1);
+    setEventOverlay(q[0]);
+    setMoment(ballWords(q));
+  };
+  /** No moment left to play or to say: an undone ball's (S1). */
+  const dropMoments=()=>{
+    milestoneQRef.current=[];
+    setEventOverlay(null);
+    setMoment("");
   };
   // Free hit: true after a height/front-foot no-ball
   const[freeHit,setFreeHit]=useState(false);
@@ -1330,7 +1344,6 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     const t=setTimeout(()=>{
       const next=milestoneQRef.current.shift();
       setEventOverlay(next||null);
-      if(next?.label)setMoment(momentWords(next));
     },1500);
     return()=>clearTimeout(t);
   },[eventOverlay]);
@@ -1453,6 +1466,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
       withdrawalsRef.current.add(w);
     }
     if(undone.action!=="none")setEvents(undone.log);
+    // The undone ball's moments go with it: a milestone still queued (a
+    // four's FIFTY! behind its FOUR!) must not flash, or be said, for a ball
+    // that is no longer there (Recognition R2 review, S1).
+    if(undone.action!=="none")dropMoments();
     if(undone.discard)engine?.discardHeld(undone.discard).catch(()=>{});
     resetHub();
     setModal(null);
@@ -1622,10 +1639,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     // (end of over/innings), overlays are non-blocking so the blur never
     // covers the sheet underneath (momentQueue).
     const q=momentQueue({ballValue:type==="run"?value:null,miles,modalPending:endedInnings||endedOver});
-    if(q.length>0){
-      milestoneQRef.current=q.slice(1);
-      playMoment(q[0]);
-    }
+    playBall(q);
     setFreeHit(after.freeHit);
     if(endedInnings)setModal("inningsReview");
     else if(endedOver){setModalCtx({lastBowlerId});setModal("newOver");}
@@ -1655,8 +1669,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     emit(ev);
     setSelSeg(null);setSelShot(null);setScoringCtx(null);setModalCtx({});
     scoreKeyRef.current++;setHubStage(0);setHubShot(null);
-    milestoneQRef.current=[];
-    playMoment({...buildEventCfg("W",null),noBlur:true});
+    playBall([{...buildEventCfg("W",null),noBlur:true}]);
     if(after.complete)setModal("inningsReview");
     else if(keepModal)return;
     else if(after.striker==null||after.nonStriker==null)setModal("newBatsman");
@@ -1714,9 +1727,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
       // from the log the event was just appended to: a wicket the free hit
       // saved is none of them, because the fold says so.
       const miles=ballMilestones({events,curIn,evs:[ev],ctx:scoringCtxRef.current,before,after});
-      const q=momentQueue({wicket:wicketMomentCfg(stood),miles,modalPending:true});
-      milestoneQRef.current=q.slice(1);
-      playMoment(q[0]);
+      playBall(momentQueue({wicket:wicketMomentCfg(stood),miles,modalPending:true}));
     }
     setFreeHit(after.freeHit);
     if(endedInnings)setModal("inningsReview");

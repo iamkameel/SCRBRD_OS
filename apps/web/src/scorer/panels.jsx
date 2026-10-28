@@ -597,6 +597,13 @@ function momentQueue({ballValue=null,wicket=null,miles=[],modalPending=false}){
 /** A moment in words, for the live region: "FOUR. Boundary", "HAT-TRICK BALL. K Naidoo — two in two",
  *  "FIFTY. K Naidoo reaches 50. Tentative" (an achievement's cue is tentative, spec §8, and says so). */
 const momentWords=(cfg)=>`${cfg.label.replace(/!+$/,"")}${cfg.sub?`. ${cfg.sub}`:""}${cfg.tentative?". Tentative":""}`;
+/** A ball's moments in words, once, in order, for the live region (Recognition R2 review, S2):
+ *  "SIX. Maximum! FIFTY. K Naidoo reaches 50. Tentative. 50. Hilton reach 50". One moment is
+ *  its own words, as it always was. */
+const ballWords=(q)=>{
+  const parts=q.filter(c=>c?.label).map(momentWords);
+  return parts.map((p,i)=>i<parts.length-1&&!/[.!?]$/.test(p)?`${p}.`:p).join(" ");
+};
 
 /* ═══════════════════════════════════════════════════════
    INNINGS OVER BANNER — SCRBRD-038
@@ -744,4 +751,4 @@ function PartnershipCard({inn}){
   );
 }
 
-export { CommentaryCard, FreeHitBanner, InningsOverBanner, IntelPanel, PartnershipCard, ScorecardPanel, WagonWheel, buildEventCfg, momentQueue, momentWords, wicketMomentCfg };
+export { CommentaryCard, FreeHitBanner, InningsOverBanner, IntelPanel, PartnershipCard, ScorecardPanel, WagonWheel, ballWords, buildEventCfg, momentQueue, momentWords, wicketMomentCfg };

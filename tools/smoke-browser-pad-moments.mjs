@@ -11,7 +11,9 @@
  * pad's own keys and wicket sheet:
  *
  *   over 1   six sixes to the opener: SIX! each, his 36
- *   over 2   a single, then the opener's three sixes: the third brings up his
+ *   over 2   a single, two sixes, then a six undone at once: its FIFTY! and
+ *            50! never flash and the live region is cleared (review S1);
+ *            then the six again, the third of the over, bringing up his
  *            fifty and the side's 50 on one ball, SIX! | FIFTY! | 50!, the
  *            fifty an achievement (the milestone pin, dashed, and the word
  *            Tentative, spec §13), the side's 50 nobody's; then two dots
@@ -286,13 +288,24 @@ try {
   await run(6);
   const s48 = await run(6);
   ok(`48, the side 49: no milestone yet (${s48.labels})`, s48.labels === "SIX!", s48.labels);
+  // Review S1: the six that would bring up both, undone at once. Its FIFTY!
+  // and 50! go with it: neither flashes, and the live region is cleared.
+  const undone = await delivery("six, undone", async () => {
+    await tid("run-6").first().click({ timeout: 4000 });
+    await tid("key-undo").first().click({ timeout: 4000 });
+  });
+  ok(`a six undone at once: its FIFTY! and 50! never flash (${undone.labels})`, !/FIFTY|50!/.test(undone.labels), undone.labels);
+  const heardNow = ((await tid("pad-moment").first().textContent().catch(() => "")) || "").trim();
+  ok(`...and the live region no longer holds them ("${heardNow}")`, !/FIFTY|reach 50/.test(heardNow), heardNow);
+  ok(`...the board is back on 49 (${await board()})`, /^49 for 0, /.test(await board()), await board());
   const fifty = await run(6);
   ok(`the six that brings up both: SIX! | FIFTY! | 50! (${fifty.labels})`, fifty.labels === "SIX! | FIFTY! | 50!", fifty.labels);
   const pin = fifty.f.find((x) => x.label === "FIFTY!");
   ok("...the fifty an achievement: the pin, dashed, and the word Tentative", !!pin && pin.pin && pin.dashed && pin.tentative === "Tentative", JSON.stringify(pin));
   ok("...the six and the side's 50 carry none", fifty.f.filter((x) => x.label !== "FIFTY!").every((x) => !x.pin && !x.tentative));
-  ok(`...and the screen reader is told each, the fifty tentative (${fifty.s.join(" | ")})`,
-     fifty.s.some((x) => /^FIFTY\. .+ reaches 50\. Tentative$/.test(x)) && /^50\. .+ reach 50$/.test(fifty.s.at(-1) ?? ""), fifty.s.join(" | "));
+  // Review S2: the ball's moments are said once, in one line, in order.
+  ok(`...and the screen reader is told all three in one line, the fifty tentative (${fifty.s.join(" | ")})`,
+     fifty.s.length === 1 && /^SIX\. Maximum! FIFTY\. .+ reaches 50\. Tentative\. 50\. .+ reach 50$/.test(fifty.s[0]), fifty.s.join(" | "));
   await run(0);
   await run(0);
 
@@ -302,7 +315,7 @@ try {
   const w2 = await wicket("bowled");
   ok(`2. bowled: two in two, the hat-trick ball (${w2.labels})`, w2.labels === "WICKET! | HAT-TRICK BALL", w2.labels);
   ok("...nobody's honour: no pin, no Tentative", w2.f.every((x) => !x.pin && !x.tentative));
-  ok(`...and the screen reader is told (${w2.s.at(-1)})`, /^HAT-TRICK BALL\. .+ — two in two$/.test(w2.s.at(-1) ?? ""), w2.s.join(" | "));
+  ok(`...and the screen reader is told (${w2.s.at(-1)})`, /^WICKET\. Out\. HAT-TRICK BALL\. .+ — two in two$/.test(w2.s.at(-1) ?? ""), w2.s.join(" | "));
   const w3 = await wicket("run_out");
   ok(`3. a run out after two wickets calls no hat-trick (${w3.labels})`, w3.labels === "WICKET!" && !/HAT-TRICK/.test(w3.s.join(" ")), `${w3.labels} / ${w3.s.join(" | ")}`);
   const w4 = await wicket("bowled");
@@ -312,9 +325,12 @@ try {
   group("Display only: the server stored every ball the scorer tapped");
   await page.waitForTimeout(2500);
   const s = await serverLog(0);
-  const balls = s.rows.filter((r) => r.kind === "ball").map((r) => r.ball_type === "W" ? `W:${r.dismissal}` : String(r.value));
+  // The undone six is gone from the log: withdrawn before it was sent, or voided.
+  const voided = new Set(s.evs.filter((e) => e.kind === "void").map((e) => /** @type {any} */ (e).target));
+  const balls = s.evs.filter((e) => e.kind === "ball" && !voided.has(e.id))
+    .map((e) => { const x = /** @type {any} */ (e); return x.type === "W" ? `W:${x.dismissal}` : String(x.value); });
   const tapped = ["6", "6", "6", "6", "6", "6", "1", "6", "6", "6", "0", "0", "W:bowled", "W:bowled", "W:run_out", "W:bowled"];
-  ok(`sixteen balls stored, each as tapped (${balls.join(",")})`, balls.join(",") === tapped.join(","));
+  ok(`sixteen balls stand, each as tapped (${balls.join(",")})`, balls.join(",") === tapped.join(","));
   ok("the server's fold: 55 for 4 off 16 balls, all out", s.inn.runs === 55 && s.inn.wickets === 4 && s.inn.balls === 16 && s.inn.complete === true, boardOf(s.inn));
   // The board, behind the innings review that is now open.
   const b = await board();

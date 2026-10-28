@@ -601,6 +601,7 @@ const WEIGHTS = {
   "browser-superover": 140, "browser-display": 120, "browser-retire": 110,
   "browser-held": 100, "browser-consent": 100, "browser-pad-laws": 100,
   "browser-penalty": 100, "browser-padfeel": 100, "browser-discipline": 100,
+  "browser-pad-moments": 80,
   "browser-cockpit": 100, "browser-management": 90, "browser-rain": 80,
   "browser-offline-day": 80, "browser-playing-conditions-screen": 70,
   "browser-public": 70, "browser-cleanup": 70, "browser-suspension": 70,

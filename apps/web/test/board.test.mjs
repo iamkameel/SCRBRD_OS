@@ -323,6 +323,33 @@ group("The pad's moments read the facts (Recognition R2; the hat-trick ball, §1
      !!htb && !/badge-pin/.test(html(h(BoardFlash, { event: buildEventCfg(null, htb), onDone() {} })))
      && momentWords(buildEventCfg(null, htb)) === "HAT-TRICK BALL. K Naidoo — two in two", htb && momentWords(buildEventCfg(null, htb)));
 
+  // The live region is set once per ball, every moment in one line (S2): a
+  // reader that announces only the latest text loses nothing.
+  const { ballWords } = await import("../src/scorer/panels.jsx");
+  ok("a ball's moments are said once, in order, the fifty tentative",
+     ballWords(q6) === "SIX. Maximum! FIFTY. Batter 1 reaches 50. Tentative. 50. Hilton reach 50", ballWords(q6));
+  ok("...one moment is its own words, as it always was", ballWords([buildEventCfg(4, null)]) === "FOUR. Boundary"
+     && ballWords([{ label: "NOT OUT: FREE HIT", sub: null }]) === "NOT OUT: FREE HIT");
+  ok("...the wicket ball's two after the wicket", ballWords(qw) === "WICKET. Out. FIFER. K Naidoo takes 5 wickets. Tentative. HAT-TRICK. K Naidoo — three in three. Tentative",
+     ballWords(qw));
+
+  // An undone ball takes its moments with it (S1): undoLastBall drops the
+  // queue, the flash and the line, so a FIFTY! queued behind a FOUR! never
+  // plays, or is said, for a ball that is gone. The engine is a component
+  // too large to render here; its source is held to it, and the browser walk
+  // (smoke-browser-pad-moments) undoes a ball that earned two.
+  {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("../src/scorer/engine.jsx", import.meta.url), "utf8");
+    const fn = (name) => { const i = src.indexOf(`const ${name}=`); return i < 0 ? "" : src.slice(i, src.indexOf("\n  };", i)); };
+    const drop = fn("dropMoments");
+    ok("dropMoments empties the queue, the flash and the live region's line",
+       /milestoneQRef\.current=\[\]/.test(drop) && /setEventOverlay\(null\)/.test(drop) && /setMoment\(""\)/.test(drop), drop);
+    ok("...and undoLastBall calls it when it takes a ball back", /if\(undone\.action!=="none"\)dropMoments\(\);/.test(fn("undoLastBall")));
+    ok("the line is set once per ball (playBall), never by the queue's drain", /setMoment\(ballWords\(q\)\)/.test(fn("playBall"))
+       && !/setMoment/.test(fn("onOverlayDone")) && (src.match(/setMoment\(/g) ?? []).length === 2);
+  }
+
 }
 {
   // The scorer's scorecard: a batter stumped off a wide before he faced a
