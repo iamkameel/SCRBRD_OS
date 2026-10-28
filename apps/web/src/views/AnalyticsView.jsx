@@ -34,13 +34,13 @@ function AnalyticsView({ role }) {
     const mx = maxVal || Math.max(...data.map(d=>d.v), 1);
     return (
       <div>
-        {label&&<div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px",textTransform:"uppercase"}}>{label}</div>}
+        {label&&<div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px",textTransform:"uppercase"}}>{label}</div>}
         <div style={{display:"flex",gap:"4px",alignItems:"flex-end",height:px(height)}}>
           {data.map((d,i)=>(
             <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:"3px",height:"100%",justifyContent:"flex-end"}}>
-              <div style={{fontFamily:D.mono,fontSize:"9px",color:colorFn?colorFn(d.v):D.textMuted}}>{d.v}</div>
+              <div style={{fontFamily:D.mono,fontSize:"12px",fontWeight:600,color:colorFn?colorFn(d.v):D.textMuted}}>{d.v}</div>
               <div style={{width:"100%",borderRadius:"3px 3px 0 0",background:colorFn?colorFn(d.v):D.indigo,height:`${(d.v/mx)*100}%`,minHeight:2,opacity:0.85,transition:"height .5s"}}/>
-              <div style={{fontFamily:D.mono,fontSize:"8px",color:D.textMuted,textAlign:"center",maxWidth:"40px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.l}</div>
+              <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,textAlign:"center",maxWidth:"40px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.l}</div>
             </div>
           ))}
         </div>
@@ -139,7 +139,7 @@ function AnalyticsView({ role }) {
               <thead>
                 <tr style={{background:D.surf2}}>
                   {["Player","Role","Hand","Avg","SR","Wkts","Econ","Form","Status"].map(h=>(
-                    <th key={h} style={{padding:"9px 12px",fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",textAlign:h==="Player"?"left":"center",whiteSpace:"nowrap"}}>{h}</th>
+                    <th key={h} style={{padding:"9px 12px",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",textAlign:h==="Player"?"left":"center",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -153,12 +153,12 @@ function AnalyticsView({ role }) {
                           <Avatar name={p.name} size={26} color={rCol}/>
                           <div>
                             <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:D.textPrimary}}>{p.name}</div>
-                            {p.cap&&<span style={{fontFamily:D.mono,fontSize:"9px",color:D.amber}}>({p.cap})</span>}
+                            {p.cap&&<span style={{fontFamily:D.mono,fontSize:"12px",color:D.amber}}>({p.cap})</span>}
                           </div>
                         </div>
                       </td>
                       <td style={{padding:"10px 12px",textAlign:"center"}}><Badge color={rCol}>{p.role}</Badge></td>
-                      <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"11px",color:p.batHand==="L"?D.amber:D.sky}}>{p.batHand}HB</td>
+                      <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:p.batHand==="L"?D.amber:D.sky}}>{p.batHand}HB</td>
                       <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",fontWeight:500,color:p.avg>=40?D.emerald:p.avg>=25?D.sky:D.amber}}>{p.avg}</td>
                       <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:p.sr>=130?D.emerald:p.sr>=100?D.sky:D.amber}}>{stat(p.sr)}</td>
                       <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:p.wkts>=15?D.rose:p.wkts>=8?D.violet:D.textMuted}}>{p.wkts||"—"}</td>
@@ -167,7 +167,7 @@ function AnalyticsView({ role }) {
                         <div style={{display:"flex",gap:"2px"}}>
                           {p.form.slice(-5).map((v,j)=>(
                             <div key={j} style={{width:"13px",height:"13px",borderRadius:"2px",background:v===0?D.rose+"55":v>=5?D.amber+"66":D.emerald+"44",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                              <span style={{fontFamily:D.mono,fontSize:"9px",color:v===0?D.rose:v>=5?D.amber:D.emerald,fontWeight:700}}>{v===0?"W":v}</span>
+                              <span style={{fontFamily:D.mono,fontSize:"12px",color:v===0?D.rose:v>=5?D.amber:D.emerald,fontWeight:700}}>{v===0?"W":v}</span>
                             </div>
                           ))}
                         </div>
@@ -242,9 +242,9 @@ function HeadToHead({ role, teamFilter }) {
             <div style={{flex:1,minWidth:"150px"}}>
               <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,marginBottom:"3px"}}>
                 {r.title || r.opponent}
-                {r.title&&<span style={{fontFamily:D.body,fontSize:"11px",fontWeight:400,color:D.textMuted}}> · {r.opponent}</span>}
+                {r.title&&<span style={{fontFamily:D.body,fontSize:"12px",fontWeight:400,color:D.textMuted}}> · {r.opponent}</span>}
               </div>
-              <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
+              <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
                 Last played {day(r.lastPlayed)}{r.sinceYear?` · contested since ${r.sinceYear}`:""}
               </div>
             </div>
@@ -252,7 +252,7 @@ function HeadToHead({ role, teamFilter }) {
               {[["P",r.played,D.textMuted],["W",r.won,D.emerald],["L",r.lost,D.rose],["T",r.tied,D.amber],["?",r.undecided,D.textMuted]].map(([l,v,c])=>(
                 <div key={l} style={{textAlign:"center",padding:"7px 10px",background:D.surf2,borderRadius:D.md,minWidth:"36px"}}>
                   <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:700,color:c}}>{v}</div>
-                  <div style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>{l}</div>
+                  <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{l}</div>
                 </div>
               ))}
             </div>
@@ -260,21 +260,21 @@ function HeadToHead({ role, teamFilter }) {
               {/* Over the DECIDED games, and the denominator is stated. A
                   percentage over `played` would silently count a fixture
                   nobody can judge as one we did not win. */}
-              <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginBottom:"4px"}}>
+              <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"4px"}}>
                 Win rate {r.decided?`of ${r.decided} decided`:""}
               </div>
               {r.winPct==null ? (
-                <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>Not decidable — no toss on record</div>
+                <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Not decidable — no toss on record</div>
               ) : (
                 <>
                   <ProgressBar pct={r.winPct} color={r.winPct>=60?D.emerald:r.winPct>=40?D.amber:D.rose}/>
-                  <div style={{fontFamily:D.mono,fontSize:"10px",marginTop:"2px",color:r.winPct>=60?D.emerald:r.winPct>=40?D.amber:D.roseText}}>{r.winPct}%</div>
+                  <div style={{fontFamily:D.mono,fontSize:"12px",marginTop:"2px",color:r.winPct>=60?D.emerald:r.winPct>=40?D.amber:D.roseText}}>{r.winPct}%</div>
                 </>
               )}
             </div>
           </div>
           {r.undecided>0&&(
-            <div style={{fontFamily:D.body,fontSize:"10px",color:D.amber,marginTop:"8px"}}>
+            <div style={{fontFamily:D.body,fontSize:"12px",color:D.amber,marginTop:"8px"}}>
               {r.undecided===r.played
                 ? `No toss is recorded for ${r.played===1?"this fixture":"any of these"}, so the scores are known and the winner is not.`
                 : `${r.undecided} of these ${r.played} had no toss recorded, so the scores are known and the winner is not.`}
@@ -284,7 +284,7 @@ function HeadToHead({ role, teamFilter }) {
             <div style={{display:"flex",gap:"5px",marginTop:"10px",flexWrap:"wrap"}}>
               {r.recent.map((g,i)=>(
                 <span key={i} title={`${day(g.startsAt)} · ${g.team} · ${dash(g.firstRuns)} v ${dash(g.secondRuns)}`}
-                  style={{padding:"2px 8px",borderRadius:D.pill,fontFamily:D.mono,fontSize:"9px",
+                  style={{padding:"2px 8px",borderRadius:D.pill,fontFamily:D.mono,fontSize:"12px",
                           background:(RESULT_TONE[g.result]??D.textMuted)+"18",
                           border:`1px solid ${(RESULT_TONE[g.result]??D.textMuted)}30`,
                           color:RESULT_TONE[g.result]===D.rose?D.roseText:(RESULT_TONE[g.result]??D.textMuted)}}>
@@ -357,12 +357,12 @@ function Matchups({ role }) {
         <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}} role="group" aria-label="Whose match-ups">
           <button type="button" onClick={()=>setBatter("")} aria-pressed={batter===""} className="pressBtn"
             style={{padding:"4px 12px",borderRadius:D.pill,cursor:"pointer",border:`1px solid ${batter===""?D.sky:D.border}`,
-                    background:"transparent",fontFamily:D.mono,fontSize:"10px",color:batter===""?D.textPrimary:D.textMuted}}>Everyone</button>
+                    background:"transparent",fontFamily:D.mono,fontSize:"12px",color:batter===""?D.textPrimary:D.textMuted}}>Everyone</button>
           {batters.map(([id,name])=>(
             <button key={id} type="button" onClick={()=>setBatter(id)} aria-pressed={batter===id} className="pressBtn"
               data-testid={`matchup-batter-${id}`}
               style={{padding:"4px 12px",borderRadius:D.pill,cursor:"pointer",border:`1px solid ${batter===id?D.sky:D.border}`,
-                      background:"transparent",fontFamily:D.mono,fontSize:"10px",color:batter===id?D.textPrimary:D.textMuted}}>{name}</button>
+                      background:"transparent",fontFamily:D.mono,fontSize:"12px",color:batter===id?D.textPrimary:D.textMuted}}>{name}</button>
           ))}
         </div>
       )}
@@ -376,7 +376,7 @@ function Matchups({ role }) {
               <thead>
                 <tr style={{background:D.surf2}}>
                   {["Batter","Bowler","Style","Balls","Runs","SR","Dots","4s","6s","Out"].map(h=>(
-                    <th key={h} style={{padding:"9px 12px",fontFamily:D.head,fontSize:"9px",fontWeight:700,color:D.textMuted,
+                    <th key={h} style={{padding:"9px 12px",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,
                                         letterSpacing:"0.08em",textTransform:"uppercase",
                                         textAlign:h==="Batter"||h==="Bowler"||h==="Style"?"left":"right",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
@@ -388,7 +388,7 @@ function Matchups({ role }) {
                       data-testid={`matchup-${p.batterId}-${p.bowlerId}`}>
                     <td style={{padding:"9px 12px",fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>{p.batterName}</td>
                     <td style={{padding:"9px 12px",fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{p.bowlerName}</td>
-                    <td style={{padding:"9px 12px",fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{p.bowlingStyle??"—"}</td>
+                    <td style={{padding:"9px 12px",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{p.bowlingStyle??"—"}</td>
                     <td style={{padding:"9px 12px",textAlign:"right",fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{p.balls}</td>
                     <td style={{padding:"9px 12px",textAlign:"right",fontFamily:D.mono,fontSize:"12px",color:D.textPrimary}}>{p.runs}</td>
                     {/* A strike rate off a handful of balls is noise, so it is
@@ -400,7 +400,7 @@ function Matchups({ role }) {
                     <td style={{padding:"9px 12px",textAlign:"right",fontFamily:D.mono,fontSize:"12px",
                                 color:p.balls<12?D.textMuted:p.strikeRate>=130?D.emerald:p.strikeRate>=100?D.sky:D.amber}}>
                       {p.strikeRate==null?"—":p.strikeRate.toFixed(1)}
-                      {p.balls<12&&<span style={{fontSize:"9px",color:D.textMuted}}> thin</span>}
+                      {p.balls<12&&<span style={{fontSize:"12px",color:D.textMuted}}> thin</span>}
                     </td>
                     <td style={{padding:"9px 12px",textAlign:"right",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{p.dots}</td>
                     <td style={{padding:"9px 12px",textAlign:"right",fontFamily:D.mono,fontSize:"12px",color:D.indigoText}}>{p.fours}</td>
@@ -483,14 +483,14 @@ function Phases({ role }) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"12px"}} data-testid="phases">
       <div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"center"}}>
-        <span style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:".08em",
+        <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:".08em",
                       textTransform:"uppercase",color:D.textMuted,marginRight:"4px"}}>Fixture</span>
         {played.slice(0, 8).map((m) => (
           <button key={m.id} type="button" onClick={()=>setMatchId(m.id)} aria-pressed={chosen===m.id}
             className="pressBtn" data-testid={`phases-match-${m.id}`}
             style={{padding:"4px 12px",borderRadius:D.pill,cursor:"pointer",
                     border:`1px solid ${chosen===m.id?D.sky:D.border}`,background:"transparent",
-                    fontFamily:D.mono,fontSize:"10px",color:chosen===m.id?D.textPrimary:D.textMuted}}>
+                    fontFamily:D.mono,fontSize:"12px",color:chosen===m.id?D.textPrimary:D.textMuted}}>
             {m.awayTeam} · {m.date}
           </button>
         ))}
@@ -519,7 +519,7 @@ function Phases({ role }) {
         <div key={inn.innings} data-testid={`phases-innings-${inn.innings}`}>
           <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,margin:"4px 0 8px"}}>
             {inn.innings===1?"First innings":"Second innings"}
-            {inn.innings===2&&<span style={{fontFamily:D.body,fontSize:"11px",fontWeight:400,color:D.textMuted}}>
+            {inn.innings===2&&<span style={{fontFamily:D.body,fontSize:"12px",fontWeight:400,color:D.textMuted}}>
               {" "}· measured against the first
             </span>}
           </div>
@@ -533,7 +533,7 @@ function Phases({ role }) {
               if (!ph.played) {
                 return (
                   <Card key={k} sx={{padding:"10px 16px"}} data-testid={`phase-${inn.innings}-${k}`}>
-                    <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
                       {`${ph.label} — this innings was too short to have one.`}
                     </div>
                   </Card>
@@ -543,12 +543,12 @@ function Phases({ role }) {
                 <Card key={k} sx={{padding:"14px 16px"}} data-testid={`phase-${inn.innings}-${k}`}>
                   <div style={{display:"flex",alignItems:"baseline",gap:"10px",marginBottom:"12px",flexWrap:"wrap"}}>
                     <span style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:textOn(tone)}}>{ph.label}</span>
-                    <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>overs {ph.overs}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>overs {ph.overs}</span>
                     <span style={{flex:1}}/>
                     <span style={{fontFamily:D.mono,fontSize:"18px",fontWeight:700,color:D.textPrimary}}>
                       {ph.runs}<span style={{fontSize:"12px",color:D.textMuted}}>/{ph.wickets}</span>
                     </span>
-                    <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted}}>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>
                       {ph.runRate==null?"— no balls":`${ph.runRate} RPO`}
                     </span>
                   </div>
@@ -577,7 +577,7 @@ function Phases({ role }) {
                   {ph.par!=null&&(
                     <div style={{marginTop:"10px",paddingTop:"10px",borderTop:`1px solid ${D.border}`,
                                  display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
-                      <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
+                      <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
                         {`They made ${ph.par} in this phase.`}
                       </span>
                       <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,
