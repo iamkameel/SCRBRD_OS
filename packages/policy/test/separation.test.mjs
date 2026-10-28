@@ -513,6 +513,105 @@ ok("§21.10  holding a commercial capability never carries a sensitive one with 
      gates.length === GATE_CEILING, `${gates.length} found; set GATE_CEILING to that`);
 }
 
+// ── READERS · who reads a child's data (Kameel, 21 Oct 2026) ──
+// docs/design/READERS_child_data.md §7, Decisions; db/116. Each assertion is
+// a decision that a one-line change to roles.mjs or a policy would undo.
+//
+// Q2: `audit.read` opens the access log and nothing else. A reason stays
+// under the capability of the act that wrote it, so no read policy names
+// audit.read but the log's own: the access log, the pen's log, the support
+// sessions (the platform's reads into a school) and the scorebook import's
+// audit (the card and its revisions, never a page). Read from the migrations
+// as they stand at the end, in order: a policy dropped and re-created by a
+// later file is judged by its last text. Falsified by putting db/90's
+// `OR app_can('audit.read', …)` arm back into db/116's account_status_change_read
+// (the allow-list below names the policy and the group goes red).
+group("READERS Q2  audit.read opens the access log, and no reason");
+{
+  const DB = join(ROOT, "db");
+  const files = readdirSync(DB).filter((f) => /^\d{2,3}_.*\.sql$/.test(f) && !/^9[89]_/.test(f))
+    .sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+  /** @type {Map<string, string>} table.policy → its last CREATE text */
+  const live = new Map();
+  /** @type {Map<string, string>} function name → its last body */
+  const fns = new Map();
+  for (const f of files) {
+    const text = readFileSync(join(DB, f), "utf8")
+      // A comment is not a policy: strip line comments before reading.
+      .split("\n").map((l) => l.replace(/--.*$/, "")).join("\n");
+    const re = /DROP POLICY IF EXISTS\s+(\w+)\s+ON\s+(\w+)|CREATE POLICY\s+(\w+)\s+ON\s+(\w+)([\s\S]*?);|CREATE OR REPLACE FUNCTION\s+(\w+)\s*\(([\s\S]*?)\$\$([\s\S]*?)\$\$/g;
+    for (const m of text.matchAll(re)) {
+      if (m[1]) live.delete(`${m[2]}.${m[1]}`);
+      else if (m[3]) live.set(`${m[4]}.${m[3]}`, m[5]);
+      else if (m[6]) fns.set(m[6], m[8]);
+    }
+  }
+  // What audit_log() draws on (READERS §4, conflict 2: "the access log and
+  // the audit screen's own reads"). Not the scorebook card, which carries the
+  // confirmer's notes: db/116 re-emits its policy without the auditor's arm.
+  const ALLOWED = new Set(["access_log.access_log_read", "scoring_audit.audit_read",
+    "support_access.support_access_read",
+    "scorebook_import_revision.scorebook_import_revision_read"]);
+  const naming = [...live].filter(([, body]) => /FOR\s+(SELECT|ALL)\b/.test(body) && /'audit\.read'/.test(body))
+    .map(([k]) => k);
+  ok(`the read policies that name audit.read are the log's alone (${naming.length} found)`,
+     naming.every((k) => ALLOWED.has(k)) && naming.includes("access_log.access_log_read"),
+     naming.filter((k) => !ALLOWED.has(k)).join(" "));
+  for (const k of ["scoring_amendment.scoring_amendment_read", "role_assignment_ending.role_assignment_ending_read",
+                   "account_status_change.account_status_change_read",
+                   // db/109's revocation reasons, re-written by db/116 (Q2 names them).
+                   "guardian_link_ending.guardian_link_ending_read",
+                   // the scorebook card (db/63's generated policy, re-emitted by db/116).
+                   "scorebook_import.scorebook_import_read"])
+    ok(`...${k} is still there, and reads its reason under the act's own capability`,
+       live.has(k) && !/'audit\.read'/.test(live.get(k) ?? ""));
+  ok("...and the staff register's door asks user.role.assign alone",
+     fns.has("school_register_rows") && !/audit\.read/.test(fns.get("school_register_rows") ?? "")
+       && /'user\.role\.assign'/.test(fns.get("school_register_rows") ?? ""));
+  // The red-team's A1 (db/116): the passport carries no coach's judgement and
+  // opens on a coach's or the office's capability, never on the roster read
+  // a team-mate holds.
+  ok("A1  passport() carries no rating, and passport_open() does not open on player.profile.read",
+     fns.has("passport") && !/player_skill|'rating'/.test(fns.get("passport") ?? "")
+       && fns.has("passport_open") && !/player\.profile\.read/.test(fns.get("passport_open") ?? ""));
+  ok("the parser is not reading nothing: it found db/09's injury_read and db/08's access_log_read",
+     live.has("injury.injury_read") && live.has("access_log.access_log_read"));
+  // The model half: no table in tables.mjs reads under audit.read but the
+  // scorebook import's audit.
+  ok("the DSO holds audit.read and none of the capabilities a reason sits under",
+     caps("dso").includes("audit.read")
+       && reach("dso", ["user.invite", "user.role.assign", "guardian.link.manage", "scoring.amend.approve"]).length === 0,
+     reach("dso", ["user.invite", "user.role.assign", "guardian.link.manage", "scoring.amend.approve"]).join(","));
+}
+
+// Q10, Q12, Q14, Q15, Q16: the bundles the decisions narrowed.
+group("READERS Q10–Q16  the narrowed reads stay narrow");
+{
+  ok("Q10  the league holds no discipline.read: a school's conduct file is not a league's",
+     !caps("competitionadmin").includes("discipline.read"));
+  ok("...it reads its own fixtures' records through competition.discipline.read, held by it and the owner's key alone",
+     holders("competition.discipline.read").join() === "superadmin,competitionadmin",
+     holders("competition.discipline.read").join(" "));
+  ok("Q12  the transport coordinator holds no standing read of every family's numbers",
+     !caps("transportcoordinator").includes("player.emergency.read"));
+  ok("...he reads a trip's manifest on the day through transport.manifest.read, his and the owner's key's alone",
+     holders("transport.manifest.read").join() === "superadmin,transportcoordinator",
+     holders("transport.manifest.read").join(" "));
+  ok("Q5   a coach holds no discipline.read: his side's records come through side_discipline_records(), logged",
+     !caps("coach").includes("discipline.read") && !caps("assistantcoach").includes("discipline.read"));
+  ok("...through discipline.side.read, held by the coach and the owner's key alone",
+     holders("discipline.side.read").join() === "superadmin,coach", holders("discipline.side.read").join(" "));
+  ok("...a team-scoped role, so his own side is the whole of its reach", TEAM_SCOPED_ROLES.includes("coach"));
+  ok("Q14  a pupil reads no access log: neither of his bundles holds audit.read (from eighteen, through its own door, when built)",
+     !caps("player").includes("audit.read") && !caps("selfaccess").includes("audit.read"));
+  ok("Q15  a parent reads no disciplinary record: the letter stays the channel",
+     !caps("guardian").includes("discipline.read"));
+  ok("Q16  a child's own ID number is never drawn on his screen: selfaccess holds no player.identity.read",
+     !caps("selfaccess").includes("player.identity.read"));
+  ok("...and the office still holds it, so his right of access is met on request",
+     caps("schooladmin").includes("player.identity.read"));
+}
+
 // ── The boundary, told to the person standing at it ──────
 //
 // SCRBRD-033. boundaries(role) is the same separation these rules assert,

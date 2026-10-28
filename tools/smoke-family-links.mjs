@@ -186,7 +186,12 @@ try {
      && mumRow.ending_reason === WHY && mumRow.ended_by_name === "B Naicker" && !!mumRow.ending_on, JSON.stringify(mumRow));
   ok("...and his standing: one verified link left", after.every((x) => x.live_links === 1 && x.standing === "active"));
   const sarahRow = ((await links(sarah, S.boy)).body?.rows ?? []).find((x) => x.link_id === S.l_mum);
-  ok("the director of sport (audit.read) reads the kind and the reason", sarahRow?.ending_kind === "custody" && sarahRow?.ending_reason === WHY);
+  // READERS_child_data Q2 (db/116): audit.read opens the access log and no
+  // reason; the office's words about a family are guardian.link.manage's.
+  // She still reads the link (user.role.assign), revoked, with no ending row.
+  ok("the director of sport (audit.read, no guardian.link.manage) reads the link revoked, and neither the kind nor the reason",
+     !!sarahRow && sarahRow.verification_state === "revoked" && sarahRow.ending_kind == null && sarahRow.ending_reason == null,
+     JSON.stringify(sarahRow));
 
   // ── 3b. The platform administrator (Kameel, 15 October 2026) ─────
   group("The platform administrator reads a child's links only inside a support session at his school");

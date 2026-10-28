@@ -131,20 +131,64 @@ try {
   ok("a coach reads nothing", (await read(coach)).length === 0);
   ok("the other school's office reads nothing", (await read(wesAdm)).length === 0);
 
-  group("A competition administrator reads across schools, and is stamped for it");
+  // READERS_child_data Q10 (Kameel, 21 Oct 2026; db/116): the league holds no
+  // discipline.read. Held platform-wide, as this account is, it read every
+  // conduct record at every school. It reads the records that arose from a
+  // fixture in a competition it organises, through competition_discipline,
+  // and each read is filed in the log of the school whose child it named.
+  group("A competition administrator reads its own fixtures' records, and is stamped for it");
   await q(`delete from access_log`);
-  const seen = await read(league);
-  ok("the league reads a record at a school it does not belong to",
-     seen.some((r) => r.id === row.id));
-  // The name is player.profile.read's to give and the league does not hold it.
-  // The read query LEFT JOINs the player for exactly this reason: an inner
-  // join would have returned an empty list instead of a nameless record.
-  ok("...without the child's name", seen.every((r) => r.full_name === null));
-  const platform = await q(`select * from access_log where resource = 'disciplinary_records'`);
-  ok("every cross-school read is on the record, with no extra wiring",
-     platform.length === 1 && platform[0].platform_wide === true);
-  ok("...filed in the school whose child was read",
-     platform[0].school_id === "11111111-1111-1111-1111-111111111111");
+  ok("the league reads no school's file by standing", (await read(league)).length === 0);
+  const leagueDoor = async (token) => (await api("/api/read/competition_discipline", { token })).body?.rows ?? [];
+  ok("...nor, through its own door, a record from a match in no competition",
+     !(await leagueDoor(league)).some((r) => r.id === row.id));
+  // A league fixture of the seed's league account (competition school NULL:
+  // the platform's own), with a record filed from it, removed at the end.
+  const [{ id: C_LEAGUE }] = await q(
+    `insert into competition (school_id, name, comp_type, format, age_group, gender, level, season_id)
+     values (null, 'Smoke Discipline League', 'league', 'T20', '1XI', 'boys', 'school', season_named('2026', 'school'))
+     returning id`);
+  await q(`insert into competition_entrant (competition_id, school_id, team_code, display_name)
+           values ($1, '11111111-1111-1111-1111-111111111111', '1XI', 'Hilton 1')`, [C_LEAGUE]);
+  const [{ id: M_LEAGUE }] = await q(
+    `insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+     values ('11111111-1111-1111-1111-111111111111', '1XI', 'Smoke League Opponent', now() - interval '1 day',
+             'cricket', 'T20', 20, 'scheduled', $1) returning id`, [C_LEAGUE]);
+  try {
+    ok("the director of sport files a matter from the league fixture",
+       (await file(P_SELF, head, { body: "Dissent in a league match.", matchId: M_LEAGUE })).status === 200);
+    const theirs = await leagueDoor(league);
+    ok("the league reads it through its door, with the boy's name and his school",
+       theirs.some((r) => r.match_id === M_LEAGUE && r.player_id === P_SELF && r.full_name === "R Pillay")
+       && theirs.every((r) => r.competition_id !== null));
+    const stamped = await q(`select * from access_log where resource = 'competition_discipline_records'`);
+    ok("...and the read is on the record, filed in the school whose child was read",
+       stamped.length === 1 && stamped[0].school_id === "11111111-1111-1111-1111-111111111111"
+       && (stamped[0].record_ids ?? []).includes(P_SELF) && (stamped[0].fields ?? []).includes("body"));
+    ok("the school's office reads nothing through the league's door", (await leagueDoor(office)).length === 0);
+    ok("...and it is not a file to export",
+       [403, 404, 400].includes((await api("/api/export/competition_discipline", { token: league })).status));
+  } finally {
+    await q(`delete from disciplinary_record where match_id = $1`, [M_LEAGUE]);
+    await q(`delete from match where id = $1`, [M_LEAGUE]);
+    await q(`delete from competition_entrant where competition_id = $1`, [C_LEAGUE]);
+    await q(`delete from competition where id = $1`, [C_LEAGUE]);
+  }
+
+  // READERS_child_data Q5 (Kameel, 21 Oct 2026: "own side, logged"; db/116):
+  // the coach reads the records of the boys on his own side through
+  // side_discipline, never the table, and every read is logged.
+  group("A coach reads his own side's records through his own door, logged");
+  await q(`delete from access_log`);
+  const sideDoor = async (token) => (await api("/api/read/side_discipline", { token })).body?.rows ?? [];
+  const his = await sideDoor(coach);
+  ok("the 1XI coach reads Pillay's record", his.some((r) => r.id === row.id && r.player_id === P_SELF));
+  ok("...and only his own side's boys", his.every((r) => r.team_code === "1XI"));
+  const coachLog = await q(`select * from access_log where resource = 'side_discipline_records'`);
+  ok("...and the read is on the record, naming the boy",
+     coachLog.length === 1 && (coachLog[0].record_ids ?? []).includes(P_SELF));
+  ok("medical staff read nothing through it", (await sideDoor(medic)).length === 0);
+  ok("the boy reads nothing through it (his own record is his own read)", (await sideDoor(pupil)).length === 0);
 
   group("...and so is an ordinary school-side read");
   await q(`delete from access_log`);

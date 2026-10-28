@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * NOTIFICATIONS.md D1, D2, D5: the lists in packages/policy/src/notifications.mjs
- * are the lists db/89_notification_contract.sql CHECKs, and the per-kind
+ * are the lists db/89_notification_contract.sql CHECKs (as the last migration
+ * to write each re-wrote it: db/116 for the kinds and the lives), and the per-kind
  * contract (how long a notice lives, which word retracts it) is the one the
  * migration's functions enforce. Read from the file, so a kind added to one
  * and not the other fails here before a database is involved.
@@ -14,7 +15,7 @@
  *
  *   node packages/policy/test/notifications.test.mjs
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { KINDS, SUBJECT_KINDS, RETRACTION_KINDS, CONTRACT, NOTICE_URGENCY, RESULT_NOTICES, isTiered } from "../src/notifications.mjs";
@@ -22,6 +23,23 @@ import { KINDS, SUBJECT_KINDS, RETRACTION_KINDS, CONTRACT, NOTICE_URGENCY, RESUL
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const DB = process.env.SCRBRD_DB_DIR ?? join(ROOT, "db");
 const SQL = readFileSync(join(DB, "89_notification_contract.sql"), "utf8");
+// A later migration may write a list again (db/116 added `compromise` to the
+// kinds and its life): what runs is the LAST file, in migration order, that
+// writes it. The migrations, by number (98 and 99 are not migrations).
+const MIGRATIONS = readdirSync(DB).filter((f) => /^\d{2,3}_.*\.sql$/.test(f) && !/^9[89]_/.test(f))
+  .sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+/** The text of the last migration that contains `marker`, and its name. */
+const latest = (/** @type {string} */ marker) => {
+  for (const f of [...MIGRATIONS].reverse()) {
+    const text = readFileSync(join(DB, f), "utf8");
+    if (text.includes(marker)) return { file: f, text };
+  }
+  return { file: "(none)", text: "" };
+};
+const KIND_SQL = latest("ADD CONSTRAINT notification_kind_known");
+const LIFE_SQL = latest("CREATE OR REPLACE FUNCTION notification_life");
+const RETRACT_SQL = latest("CREATE OR REPLACE FUNCTION notification_retract(");
+const SUBJECT_SQL = latest("ADD CONSTRAINT notification_subject_kind_known");
 
 let pass = 0, fail = 0;
 const ok = (/** @type {string} */ n, /** @type {unknown} */ c, d = "") => {
@@ -63,12 +81,15 @@ const retractRules = (/** @type {string} */ sql) => {
 // ═══════════════════════════════════════════════════════════════════
 group("D1 — the kinds: one list, here and in the CHECK");
 // ═══════════════════════════════════════════════════════════════════
-const kinds = checkList(SQL, "notification_kind_known", "kind");
-ok("db/89 carries notification_kind_known", Array.isArray(kinds));
+const kinds = checkList(KIND_SQL.text, "notification_kind_known", "kind");
+ok(`the last migration to write notification_kind_known (${KIND_SQL.file}) carries it`, Array.isArray(kinds));
 ok("...and it is KINDS exactly", kinds && same(kinds, KINDS), `${kinds} vs ${KINDS}`);
-ok("nine kinds, with notice among them", KINDS.length === 9 && KINDS.includes("notice"));
-// The backfill's own count names the same nine (the DO block repeats them).
-const kindBlock = SQL.slice(SQL.indexOf("DO $kind$"), SQL.indexOf("END $kind$"));
+ok("ten kinds, with notice and compromise among them",
+   KINDS.length === 10 && KINDS.includes("notice") && KINDS.includes("compromise"));
+ok("db/89's own list was the first nine, so no stored row fails the wider one",
+   (checkList(SQL, "notification_kind_known", "kind") ?? []).every((k) => KINDS.includes(k)));
+// The count of rows outside it names the same list (the DO block repeats them).
+const kindBlock = KIND_SQL.text.slice(KIND_SQL.text.indexOf("DO $kind$"), KIND_SQL.text.indexOf("END $kind$"));
 const notIn = kindBlock.match(/WHERE kind NOT IN \(([^)]*)\)/)?.[1];
 ok("...and the paste's count of rows outside it reads the same list",
    !!notIn && same([...notIn.matchAll(/'([^']+)'/g)].map((x) => x[1]), KINDS));
@@ -76,7 +97,7 @@ ok("...and the paste's count of rows outside it reads the same list",
 // ═══════════════════════════════════════════════════════════════════
 group("D5 — the subjects: welfare and news joined the list");
 // ═══════════════════════════════════════════════════════════════════
-const subjects = checkList(SQL, "notification_subject_kind_known", "subject_kind");
+const subjects = checkList(SUBJECT_SQL.text, "notification_subject_kind_known", "subject_kind");
 ok("db/89 carries notification_subject_kind_known", Array.isArray(subjects));
 ok("...and it is SUBJECT_KINDS exactly", subjects && same(subjects, SUBJECT_KINDS), `${subjects} vs ${SUBJECT_KINDS}`);
 ok("welfare and news are subjects", SUBJECT_KINDS.includes("welfare") && SUBJECT_KINDS.includes("news"));
@@ -91,7 +112,7 @@ group("D18 — the retraction words");
 // ═══════════════════════════════════════════════════════════════════
 const words = checkList(SQL, "notification_retraction_kind", "retraction_kind");
 ok("db/89's CHECK names the three words, as RETRACTION_KINDS", words && same(words, RETRACTION_KINDS));
-const rules = retractRules(SQL);
+const rules = retractRules(RETRACT_SQL.text);
 const byWord = (/** @type {string} */ w) => Object.keys(CONTRACT).filter((k) => CONTRACT[k].retract.includes(w));
 ok("a correction is for recognition and welfare, in both places",
    same(rules.correction ?? [], byWord("correction")), `${rules.correction} vs ${byWord("correction")}`);
@@ -103,8 +124,8 @@ ok("a safeguarding notice is never retracted, in both places",
 // ═══════════════════════════════════════════════════════════════════
 group("D2 — how long each kind lives");
 // ═══════════════════════════════════════════════════════════════════
-ok("CONTRACT has exactly the nine kinds", same(Object.keys(CONTRACT), KINDS));
-const arms = lifeArms(SQL);
+ok("CONTRACT has exactly the ten kinds", same(Object.keys(CONTRACT), KINDS));
+const arms = lifeArms(LIFE_SQL.text);
 for (const [kind, { lives }] of Object.entries(CONTRACT)) {
   const arm = arms[kind] ?? "";
   const want = typeof lives === "number"
@@ -147,12 +168,14 @@ group("OFFICIAL_RESULT: the fixture kind's words for a result (db/114)");
 // ═══════════════════════════════════════════════════════════════════
 group("The checks can fail");
 // ═══════════════════════════════════════════════════════════════════
-const wrong = SQL.replace("'lift', 'notice')) NOT VALID", "'lift', 'notice', 'gossip')) NOT VALID");
-ok("a tenth kind in the migration is seen", wrong !== SQL && !same(checkList(wrong, "notification_kind_known", "kind") ?? [], KINDS));
-const wrongLife = SQL.replace("WHEN 'recognition'  THEN p_from + interval '180 days'", "WHEN 'recognition'  THEN p_from + interval '18 days'");
-ok("a changed life is seen", wrongLife !== SQL && lifeArms(wrongLife).recognition !== arms.recognition);
-const wrongRetract = SQL.replace("n.kind NOT IN ('recognition', 'welfare')", "n.kind NOT IN ('recognition', 'welfare', 'injury')");
-ok("a wider correction is seen", wrongRetract !== SQL && !same(retractRules(wrongRetract).correction ?? [], byWord("correction")));
+const wrong = KIND_SQL.text.replace("'notice', 'compromise')) NOT VALID", "'notice', 'compromise', 'gossip')) NOT VALID");
+ok("an eleventh kind in the migration is seen", wrong !== KIND_SQL.text && !same(checkList(wrong, "notification_kind_known", "kind") ?? [], KINDS));
+const wrongLife = LIFE_SQL.text.replace("WHEN 'recognition'  THEN p_from + interval '180 days'", "WHEN 'recognition'  THEN p_from + interval '18 days'");
+ok("a changed life is seen", wrongLife !== LIFE_SQL.text && lifeArms(wrongLife).recognition !== arms.recognition);
+const wrongRetract = RETRACT_SQL.text.replace("n.kind NOT IN ('recognition', 'welfare')", "n.kind NOT IN ('recognition', 'welfare', 'injury')");
+ok("a wider correction is seen", wrongRetract !== RETRACT_SQL.text && !same(retractRules(wrongRetract).correction ?? [], byWord("correction")));
+// The latest file is the one read: an older text that disagrees is not.
+ok("the kinds are read from db/116, which wrote them last", KIND_SQL.file === "116_readers_privacy.sql");
 
 console.log("\n" + "─".repeat(52));
 console.log(`NOTIFICATIONS: ${pass} passed, ${fail} failed`);

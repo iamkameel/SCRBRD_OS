@@ -479,7 +479,10 @@ export function publicName(facts) {
  * guardian's records govern, including the one given while he was a minor,
  * which carries on past his birthday. A record he made before eighteen is not
  * a competent consent: it names nobody, and it does not displace his
- * guardian's either. (A child who must never appear, at any age, is C5's
+ * guardian's either — EXCEPT his "no" from his twelfth birthday (PUBLIC_DATA
+ * C1, C4, Changed 21 Oct 2026; READERS_child_data Q7), which
+ * public_name_facts() marks competent (db/116), so his records govern and his
+ * refusal stands whatever a guardian says, until his own "yes" at eighteen. (A child who must never appear, at any age, is C5's
  * business, not a consent record's.)
  *
  * THE LATEST RECORD GOVERNS. Consent is versioned: a new version starts as the
