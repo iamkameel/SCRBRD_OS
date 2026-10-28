@@ -115,7 +115,7 @@ Backlog IDs `CRI-*` are in `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`.
 | --- | --- | --- | --- | --- |
 | CRI-0.1 | ~~Settle the design brief~~ — decided 2026-10-23. Remaining: rewrite or withdraw the claude.ai Project brief | Project description (Kameel) | Kameel | Project brief matches `DESIGN_DIRECTION.md` |
 | CRI-0.2 | Screenshot set of Match Centre, Scorecard, Commentary, pad, fixtures at 360/390/768/1440px, Daylight and Floodlit | existing browser walks | Sonnet | Set under `audit/` with a note per clipped element |
-| CRI-0.3 | Public live page walk: mounted? any child identity in the payload? | `spectator.jsx`, `SCRBRD-083_public_pages.md`, `docs/policy/PUBLIC_DATA.md` | Opus | Result recorded; `SCREEN_MAP.md` row corrected |
+| CRI-0.3 | Public live page walk: mounted? any child identity in the payload? | `spectator.jsx`, `SCRBRD-083_public_pages.md`, `docs/policy/PUBLIC_DATA.md` | Opus | Result recorded; `SCREEN_MAP.md` row corrected. walk: browser-public-live; result: mounted at `/live/:id` (with `/scorecard/:id`, `/display/:id`) behind `PUBLIC_PAGES=on`, reached from `/`; no child's identity in any of 83 signed-out responses (28/28) |
 | CRI-0.4 | Sync walk: lose signal mid-over, score six balls, regain; no duplicates; "Held N" counts down | `scorer/syncBanner.jsx`, `packages/sync/` | Opus | Walk green or defect filed |
 | CRI-0.5 | Type-floor sweep: every `fontSize` < 12px and tap target < 44px | `apps/web/src/**` (`AnalyticsView.jsx:37,41,43,142,156` known) | Haiku lists, Sonnet fixes | Zero under-floor values; bundle check green |
 

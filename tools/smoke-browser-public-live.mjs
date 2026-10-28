@@ -9,8 +9,9 @@
  *
  *   1. Is it mounted? From the home page at `/`, a signed-out visitor taps a
  *      listed fixture's card and lands on /live/:id, which draws the seed's
- *      Hilton 1XI v Michaelhouse, scored live while he watches; /scorecard/:id
- *      and the pavilion display /display/:id answer too.
+ *      Hilton 1XI v Michaelhouse, scored live while he watches (a ball written
+ *      after the page opened reaches it on its next log read); /scorecard/:id
+ *      and the pavilion display /display/:id (which reads ?since=) answer too.
  *   2. Does anything it SENDS carry a child's identity? Every response the
  *      browser receives on its own origin — the HTML shells, the bundles, the
  *      CSS, every /api/public/ JSON body, the home page's strip and news —
@@ -37,8 +38,10 @@
  *      clean result is a scan that could have failed.
  *
  * Falsified 2026-10-28: services/api/public/public-api.mjs's header route
- * made to add the home captain's full name to /api/public/matches/:id — the
- * walk failed on that route and that word; restored, green.
+ * made to add a full name from public_match_people() to
+ * /api/public/matches/:id (as `captain`) — the scan failed on that route for
+ * both fixtures, naming the player row and the kind, never the value (27/28);
+ * restored, 28/28.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-public-live.mjs
@@ -75,7 +78,7 @@ const SEED_ID = "^(aaaaaaaa|bbbbbbbb)-0000-0000-0000-";
 const TYPED = ["Nathan Pretorius", "Kyle Venter", "Liam Gutteridge"];
 const MARK_REASON = "a protection order from the family court";
 const COACH2 = "88888888-0000-0000-0000-00000000000a";    // the 2XI coach: news.publish.team at Hilton
-const NEWS_TITLE = "Second XI through to the final";
+const NEWS_TITLE = "Under-15s win the festival plate";
 
 let pass = 0, fail = 0;
 const ok = (/** @type {string} */ n, /** @type {unknown} */ c, d = "") => { if (c) { pass++; if (DEBUG) console.log("  ✓", n); } else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 600)}` : ""); } };
@@ -183,6 +186,13 @@ const scan = (/** @type {string} */ body, /** @type {{what: string, re: RegExp}[
 };
 
 const browser = await chromium.launch({ ...launchOptions() });
+/**
+ * What this walk changed in the shared database, put back: the browser set
+ * runs on one database, and smoke-browser-public counts …-0002 as a fixture
+ * nobody published, smoke-browser-home a Hilton that does not list.
+ * @type {() => Promise<void>}
+ */
+let putBack = async () => {};
 
 try {
   for (let i = 0; i < 80; i++) {
@@ -194,6 +204,8 @@ try {
   group("0. The seed's fixture, published and scored live");
   // Two of the seed's boys get a verified guardian of their own, the way
   // db/99 §25 and fixture-public.mjs make one, and consent through the door.
+  /** @type {Record<string, string>} */
+  const guardianOf = {};
   for (const key of /** @type {const} */ (["whitfield", "bekker"])) {
     const uid = (await q(`insert into app_user (school_id, email, name, role) values ($1, $2, 'A Guardian', 'guardian') returning id`,
       [HIL, `guardian.live.${key}@example.invalid`]))[0].id;
@@ -202,6 +214,7 @@ try {
                                              consent_state, consent_version, consent_at, created_by, valid_from)
              values ($1, $2, 'parent', 'verified', $3, now() - interval '30 days', 'granted', 'popia-2026-01', now() - interval '30 days', $3,
                      current_date - 30)`, [asg, P[key], uid]);
+    guardianOf[key] = uid;
     const [c] = await as(uid, `select ok, reason from public_name_consent_set($1, true, 'public-names-2026-09')`, [P[key]]);
     ok(`the guardian of the seed's ${key === "whitfield" ? "first" : "second"} 1XI boy consents`, c?.ok === true, c?.reason);
   }
@@ -247,6 +260,16 @@ try {
   await as(COACH2, `select * from news_public_request($1)`, [post]);
   const [appr] = await as(SARAH, `select * from news_public_approve($1)`, [post]);
   ok("a team's news post is approved for the home page", appr?.ok === true, appr?.reason);
+  putBack = async () => {
+    await as(SARAH, `select * from news_public_withdraw($1)`, [post]);
+    await as(SARAH, `select * from public_listing_set($1, false)`, [HIL]);
+    for (const id of [LIVE, DONE]) await as(SARAH, `select * from fixture_publish($1, 'home', false)`, [id]);
+    await as(SARAH, `select * from player_never_public_end($1)`, [P.bekker]);
+    for (const [key, uid] of Object.entries(guardianOf)) {
+      await as(uid, `select * from public_name_consent_set($1, false, 'public-names-2026-09')`, [P[/** @type {keyof typeof P} */ (key)]]);
+    }
+    await q(`update match set status = 'scheduled', starts_at = now() + interval '3 days' where id = $1`, [LIVE]);
+  };
 
   const { needles, skipped } = await needlesFrom();
   const players = Number((await q(`select count(*) as c from player where id::text ~ $1`, [SEED_ID]))[0].c);
@@ -313,10 +336,17 @@ try {
          rows.includes("J Whitfield") && rows.filter((x) => x === "Batter").length >= 3, rows.join(" | "));
     }
   }
-  // A ball arrives while he watches: the page's ?since= read is captured too.
+  // A ball arrives while he watches. /live re-reads the whole log on its poll
+  // (PublicMatch.jsx: every max(5 s, liveRefreshMs())), from the API's 5 s live
+  // cache; the ground display is the one that reads ?since= (reads.js), and its
+  // reads are captured below. So: the next log read whose `last` holds the new ball.
+  const seqNew = log.length + 1;
   await writeEvents(q, LIVE, [at(ball({ type: BALL_TYPE.RUN, value: 4, shot: "cut", ...placementFromTap({ angle: 250, radius: 1 }) }))], log.length);
-  const since = await page.waitForResponse((r) => /\/api\/public\/matches\/[^/]+\/log\?since=/.test(r.url()), { timeout: 20000 }).then(() => true, () => false);
-  ok("a ball scored while he watches arrives by the page's ?since= read", since);
+  const arrived = await page.waitForResponse(async (r) => {
+    if (!/\/api\/public\/matches\/[^/]+\/log(\?|$)/.test(r.url())) return false;
+    try { return Number((await r.json()).last) >= seqNew; } catch { return false; }
+  }, { timeout: 30000 }).then(() => true, () => false);
+  ok("a ball scored while he watches reaches the page on its next log read", arrived);
   await afterReads(page, 1500);
 
   for (const path of [`/scorecard/${LIVE}`, `/scorecard/${DONE}`, `/display/${LIVE}`]) {
@@ -365,6 +395,7 @@ try {
   fail++;
   console.log("  ✗ the walk threw:", /** @type {any} */ (e)?.stack ?? e);
 } finally {
+  await putBack().catch((e) => { fail++; console.log("  ✗ putting the database back threw:", e?.message ?? e); });
   await browser.close();
   api.kill();
   await owner.end();
