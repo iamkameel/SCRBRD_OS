@@ -3997,6 +3997,8 @@ DLS line and a venue-par line on the signed-out public page (design §9, departu
 
 ### SCRBRD-132 — Prototype leftovers: invented data and dead controls (2026-10-01)
 
+**Partly done 2026-10-22:** Wave B, injury routes: the physio's injury screens (the Record and Review forms, reviews due, the review history) and the family's health history on the child's file (GA-I19 slice B, over #166's API) (#172, `ecbbf30`).
+
 The full list, ranked, with the clean-up plan and Kameel's decisions, is `audit/PROTOTYPE_LEFTOVERS.md`.
 
 - **Wave A (Sonnet, screens):** in progress. Invented audit entries come down; ground tasks are read from duties; the Equipment copy is removed in favour of the kit register; real school names; the Skills axis is 1–20; Management tabs follow capabilities; Squad availability and profile edits; dead injury buttons hidden; Fields drawing fixed. Management users show all roles, with Add role.
@@ -4035,6 +4037,8 @@ The full list, ranked, with the clean-up plan and Kameel's decisions, is `audit/
 **Decided (Kameel, 2026-10-02):** D1–D16 as the design recommends. Build G1 (the ground display, no migration) first, then G2 (par and pressure), then G3 (moving charts, moment cards, the over strip).
 
 **Built: G2, par and pressure, merged #88 (2026-10-08), with db/88.**
+
+**Partly done 2026-10-22 (design):** `docs/design/BROADCAST_3D_plan.md` (lead): what the 3D project offers, and a 3D view in phases B1–B4 after the flat wheel (B0); its six questions decided 22 Oct, as recommended (#191).
 
 Kameel: the app should be "dynamic, data-rich, informative, immersive, interesting and visually stimulating". The build order is confirmed. Fable designs first, in `docs/design/SCRBRD-133_immersive_match_centre.md`; Fable's list gained this topic with Kameel's say.
 
@@ -4113,6 +4117,8 @@ beta-2's Intelligence drawer has five fixed cards, among them "+18% win equity",
 **Partly done 2026-10-15:** Captain's plan screens (SCRBRD-138 phase B, B5–B7): write, read, report and withdraw the plan (#152).
 
 **Partly done 2026-10-15:** db/103: the plan names its author to the side; a fixture's plan read past the 100-post cap (#158).
+
+**Partly done 2026-10-22:** db/110: the coach's draft plan, with change, delete and send again (#165).
 
 **Decided (Kameel, 2026-10-02):** D1–D11 as the design recommends. Phase A (the view over reads that exist, no migration) first; phase B (the coach's plan to the side) after.
 
@@ -4769,6 +4775,8 @@ unique index). `GUARDIAN_APP_URL` is set from CSA's material. The information of
 **Partly done 2026-10-21:** REACH R-C + R-D: officials' records closed (db/107); a pupil's role names his side (db/108) (#162).
 
 **Partly done 2026-10-21:** REACH R-A: a family reads only its child's side's fixtures, buses and training (db/106) (#167).
+
+**Partly done 2026-10-22:** SR-1 (db/112), season rollover: a moved pupil follows his new side, and a boy playing up reads his match's balls (#171, `184976c`).
 
 **Partly done 2026-10-23:** REACH R-B: the consents read narrowed: passport consent is the office's alone, scouting consent stays with his side's coach (db/115) (#176, `37f5884`).
 
