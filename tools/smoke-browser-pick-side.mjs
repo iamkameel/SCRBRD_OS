@@ -43,6 +43,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4390);
 const API_PORT = port(8990);
@@ -98,6 +99,7 @@ async function open({ width = 1280, height = 900, theme = "floodlit" } = {}) {
     ...(width < 500 ? { isMobile: true, hasTouch: true } : {}) });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [], posts = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -122,22 +124,31 @@ async function signIn(page, email) {
   await page.waitForTimeout(500);
   await page.locator("#login-email").fill(email);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   return (await tid(page, "os-main").count()) === 1;
 }
 async function go(page, key) {
   const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1600);
+  await afterReads(page, 1600);
   return true;
 }
 async function openMatch(page, id) {
   if (!(await go(page, "matches"))) return false;
   const btn = tid(page, `mc-open-${id}`);
+  // Match Centre draws a fixture's card only once its reads answer (matches,
+  // staff, grounds, competitions, weather), and on the first opening those
+  // queue behind the previous screen's: 1.4-2.3 s measured, against the fixed
+  // wait before this look. Give the card up to 10 s to be drawn; one that is
+  // never drawn is judged exactly as before.
+  await btn.first().waitFor({ timeout: 10000 }).catch(() => {});
   if (!(await btn.count())) return false;
   await btn.click({ timeout: 5000 });
-  await page.waitForTimeout(1800);
+  // The fixture's view is drawn once its chunk and reads arrive, which a busy
+  // runner can take past the fixed wait below: give it up to 10 s first.
+  await tid(page, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
+  await afterReads(page, 1800);
   return (await tid(page, "match-view").count()) === 1;
 }
 async function coachTab(page) {
@@ -235,18 +246,30 @@ try {
   await tid(c.page, `pick-twelfth-${boy["12"]}`).click();
   ok("a twelfth man is named", (await tid(c.page, `pick-twelfth-${boy["12"]}`).getAttribute("aria-pressed")) === "true"
     && /twelfth man: Verify Pick 12/.test(await inner(c.page, "pick-side-foot")));
+  // After a save the Coach tab asks its reads again (useCockpit's reload) and
+  // keeps showing the old side until the last of them answers: the sheet's
+  // readiness, then a matchups and a matchup_coverage read for each of the
+  // eleven boys now on it. That took 2 s here, and the check below judged at
+  // 0.8 s, so it read "No sheet has been published". Wait for the reload's
+  // own reads (sent after the click), whatever they answer.
+  const t0 = Date.now();
+  const reloadReads = [];
+  const onAnswer = (r) => { if (/\/api\/read\/(readiness\?matchId=|matchup_coverage\?)/.test(r.url())) reloadReads.push(`${r.url().split("/api/read/")[1].split("?")[0]} ${r.status()} @${Date.now() - t0}ms`); };
+  c.page.on("response", onAnswer);
   await tid(c.page, "pick-side-save").click();
   await c.page.waitForFunction(() => !document.querySelector('[data-testid="pick-side"]'), null, { timeout: 8000 }).catch(() => {});
+  for (let i = 0; i < 150 && !(reloadReads.some((x) => x.startsWith("readiness")) && reloadReads.filter((x) => x.startsWith("matchup_coverage")).length >= 11); i++) await c.page.waitForTimeout(100);
+  c.page.off("response", onAnswer);
   ok("saved: the dialog closes", await tid(c.page, "pick-side").count() === 0);
   const want1 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => `Verify Pick ${num(i)}|${i === 1 ? 11 : i === 11 ? 1 : i}|false`);
   const have1 = await side(M);
   ok("the database holds the side in that order, with the twelfth and no number for him",
     have1.length === 12 && have1[0] === "Verify Pick 11|1|false" && have1[10] === "Verify Pick 01|11|false" && have1[11] === "Verify Pick 12|null|true"
     && want1.every((w) => have1.includes(w)), have1.join(" ; "));
-  await c.page.waitForTimeout(800);
+  await afterReads(c.page, 800);
   const sideText = await inner(c.page, "coach-side");
   ok("the Coach tab shows the sheet, with no reload", (await c.page.evaluate(() => window.__marker)) === "same page"
-    && await tid(c.page, `coach-side-${boy["11"]}`).count() === 1 && await tid(c.page, `coach-side-${boy["12"]}`).count() === 1 && !/No sheet has been published/.test(sideText), sideText.slice(0, 200));
+    && await tid(c.page, `coach-side-${boy["11"]}`).count() === 1 && await tid(c.page, `coach-side-${boy["12"]}`).count() === 1 && !/No sheet has been published/.test(sideText), `${sideText.slice(0, 160)} · reload: ${reloadReads.length ? `${reloadReads[0]} … ${reloadReads.at(-1)} (${reloadReads.length})` : "none answered"}`);
   ok("...in batting order: number 1 first, the twelfth last", await c.page.$$eval('[data-testid^="coach-side-"][data-state]', (els) => els.map((e) => e.getAttribute("data-testid"))).then((ids) => ids[0] === `coach-side-${boy["11"]}` && ids.at(-1) === `coach-side-${boy["12"]}`));
   ok("...its foot counts twelve named", /^12 named/.test(await inner(c.page, "coach-side-foot")));
   ok("...and the button now says Change the side", (await inner(c.page, "pick-side-open")).trim() === "Change the side");
@@ -259,7 +282,7 @@ try {
   await signIn(d.page, "u14coach@example.invalid");
   await go(d.page, "matches");
   await tid(d.page, `match-card-${M}`).click({ position: { x: 14, y: 14 } });
-  await d.page.waitForTimeout(800);
+  await afterReads(d.page, 800);
   ok("the fixture's Match Details has Pick the side", await tid(d.page, "pick-side-entry").count() === 1);
   await tid(d.page, "pick-side-entry").click();
   ok("it opens", await dialog(d.page));
@@ -274,7 +297,7 @@ try {
   ok("he is in the draft at number 3", (await tid(d.page, `pick-no-${boy.old}`).inputValue()) === "3");
   d.posts.length = 0;
   await tid(d.page, "pick-side-save").click();
-  await d.page.waitForTimeout(1200);
+  await afterReads(d.page, 1200);
   const refused = await inner(d.page, `pick-note-${boy.old}`);
   ok("the screen is still open", await tid(d.page, "pick-side").count() === 1);
   ok("the trigger's own words are beside him", /Verify Pick Old is \d+ on 1 January and cannot play U14A: the limit is 14/.test(refused), refused);
@@ -292,7 +315,7 @@ try {
   ok("both boys on number 5 are named", /same batting number/.test(await inner(d.page, `pick-note-${boy["04"]}`)) && /same batting number/.test(await inner(d.page, `pick-note-${boy["05"]}`)));
   d.posts.length = 0;
   await tid(d.page, "pick-side-save").click();
-  await d.page.waitForTimeout(800);
+  await afterReads(d.page, 800);
   ok("the foot says it in the route's words", /Two boys have the same batting number\. Each number goes to one boy\. Nothing was saved\./.test(await inner(d.page, "pick-side-said")));
   ok("no request reached the squad route", d.posts.length === 0, d.posts.join(" | "));
   ok("the database is unchanged", JSON.stringify(await side(M)) === JSON.stringify(before));
@@ -326,7 +349,7 @@ try {
   ok("the 1XI coach signs in", await signIn(o.page, "coach@example.invalid"));
   await go(o.page, "matches");
   const there = await tid(o.page, `match-card-${M}`).count();
-  if (there) { await tid(o.page, `match-card-${M}`).click({ position: { x: 14, y: 14 } }); await o.page.waitForTimeout(700); }
+  if (there) { await tid(o.page, `match-card-${M}`).click({ position: { x: 14, y: 14 } }); await afterReads(o.page, 700); }
   ok("he is offered no Pick the side in Match Details", await tid(o.page, "pick-side-entry").count() === 0, `card on his list: ${there}`);
   if (there && await openMatch(o.page, M)) {
     ok("...and the fixture has no Coach tab for him", await tid(o.page, "mc-tab-coach").count() === 0 && await tid(o.page, "pick-side-open").count() === 0);
@@ -455,7 +478,7 @@ try {
   ok("the elder is in the draft, marked from 1XI", await tid(u.page, `pick-${ELDER}`).getAttribute("data-picked") === "xi" && (await inner(u.page, `pick-from-${ELDER}`)).trim() === "from 1XI");
   u.posts.length = 0;
   await tid(u.page, "pick-side-save").click();
-  await u.page.waitForTimeout(1200);
+  await afterReads(u.page, 1200);
   const refused8 = await inner(u.page, `pick-note-${ELDER}`);
   ok("the trigger's own words are beside him", /Verify Up Elder is \d+ on 1 January and cannot play U14A: the limit is 14/.test(refused8), refused8);
   ok("...nobody else carries a note, the screen stays open, one request was made", await u.page.locator('[data-testid^="pick-note-"]').count() === 1 && await tid(u.page, "pick-side").count() === 1 && u.posts.length === 1);

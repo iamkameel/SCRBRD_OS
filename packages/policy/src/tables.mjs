@@ -321,12 +321,16 @@ export const TABLES = {
   // session) and db/50's pad guard.
   scorebook_import: {
     // The import and its card. Read by the two roles that work on it
-    // (scoring.import.read: the typist's and the confirmer's), and by a
-    // school's auditors — the card and its history, never the photos.
+    // (scoring.import.read: the typist's and the confirmer's). Not by a
+    // school's auditors since db/116 (READERS_child_data Q2: audit.read opens
+    // the access log and the audit screen's own reads; the card carries the
+    // confirmer's returned_note and confirm_note, which are the act's): they
+    // read its history through scorebook_import_revision, which audit_log()
+    // draws on. db/63's generated block keeps the arm it shipped with
+    // (NARROWED_SINCE in generate-rls.mjs); db/116 re-emits the policy.
     read:  "scoring.import.read",
     write: "scoring.import.write",
     anchors: { school: "school_id", team: "team_code", fixture: "match_id" },
-    visibleWhen: "app_can('audit.read', scorebook_import.school_id, scorebook_import.team_code, '00000000-0000-0000-0000-000000000000'::uuid, scorebook_import.match_id)",
     masked: {},
   },
   scorebook_import_page: {

@@ -41,6 +41,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5327);
 const API_PORT = port(8827);
@@ -122,6 +123,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext();
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = /** @type {string[]} */ ([]);
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -215,10 +217,10 @@ try {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   const opened = await page.evaluate(() => {
     const isBtn = (/** @type {Element} */ b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
@@ -363,6 +365,7 @@ try {
   const pctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, extraHTTPHeaders: { "x-forwarded-for": "10.87.0.1" } });
   await offline(pctx);
   const pub = await pctx.newPage();
+  watchReads(pub);
   const pubErrors = /** @type {string[]} */ ([]);
   pub.on("pageerror", (e) => pubErrors.push(`pageerror: ${e.message}`));
   pub.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) pubErrors.push(`console.error: ${m.text()}`); });

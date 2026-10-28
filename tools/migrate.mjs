@@ -90,6 +90,37 @@ if (args.has("--reset") && !LOCAL_HOSTS.has(hostOf(URL))
   process.exit(2);
 }
 
+// The verifier's membership in scrbrd_app, with SET, granted persistently —
+// only on this machine. See the --verify step below for why. Anywhere that is
+// not local it is refused, never attempted: there is no override, because no
+// remote database needs it (db/99 grants it there inside its own transaction).
+//
+// "Local" here is narrower than --reset's rule: this machine's loopback only
+// (not the compose service `db`), and never on CI. CI's database is on
+// 127.0.0.1 too (ci.yml's Verifier, backup-drill.yml's restored copy), and it
+// must behave exactly as before: db/99's grant inside its own transaction,
+// gone at its ROLLBACK. GitHub Actions sets CI and GITHUB_ACTIONS.
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+function grantVerifierMembership() {
+  if (process.env.CI || process.env.GITHUB_ACTIONS) {
+    console.log("  not persisting the verifier's role membership on CI: db/99 grants it inside its own transaction, as before.");
+    return;
+  }
+  if (!LOOPBACK.has(hostOf(URL))) {
+    console.log(`  refusing to persist the verifier's role membership on ${hostOf(URL) || "an unparseable DATABASE_URL"}: not this machine's database. db/99 grants it inside its own transaction, as on CI and production.`);
+    return;
+  }
+  psql(["-c", `DO $persist$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_auth_members m
+                  WHERE m.roleid = (SELECT oid FROM pg_roles WHERE rolname = 'scrbrd_app')
+                    AND m.member = (SELECT oid FROM pg_roles WHERE rolname = current_user)
+                    AND m.set_option) THEN
+    EXECUTE format('GRANT scrbrd_app TO %I WITH SET TRUE', current_user);
+  END IF;
+END $persist$;`], "verifier's role membership (local cluster, kept)");
+}
+
 // --reset-objects is the managed-host path, and a managed host is exactly
 // where the real records are. It used to have no guard at all (GA-I02): the
 // same host rule now, with its own override, named for what it does — it
@@ -200,5 +231,21 @@ if (args.has("--seed")) {
 
 if (args.has("--verify")) {
   console.log("\nVerifying RLS against the live database…");
-  psql(["-f", join(DB_DIR, "99_rls_verify.sql")], "99_rls_verify.sql");
+  // ON THIS MACHINE ONLY: the verifier's role membership, granted once and
+  // kept. db/99 is one transaction, and a GRANT inside it holds a row of the
+  // cluster-wide pg_auth_members until its ROLLBACK, so every other
+  // worktree's verify on the same cluster queued behind it for a whole run
+  // (21 Oct 2026: 43 minutes waiting before one started). db/99 now grants
+  // nothing when the membership is already there. Persisting it is a
+  // privilege change, so it is made only on this machine's loopback, never on
+  // CI, and refused anywhere else (grantVerifierMembership); on CI and production
+  // db/99 grants it inside its own transaction and the ROLLBACK takes it away,
+  // as before.
+  grantVerifierMembership();
+  // JIT off for the session, as readResource() has it for every read. The
+  // verifier's statements pass the same RLS policies, so their cost estimates
+  // pass jit_above_cost on a few rows and each one compiled before it ran: the
+  // whole file took 35 min here with JIT and 19.5 min without (21 Oct 2026).
+  // A SET, not a startup option, so a session pooler passes it through.
+  psql(["-c", "SET jit = off", "-f", join(DB_DIR, "99_rls_verify.sql")], "99_rls_verify.sql");
 }

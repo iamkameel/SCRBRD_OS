@@ -277,6 +277,13 @@ export const CAPABILITIES = {
   // ── Conduct ──
   "discipline.read":             "See disciplinary matters",
   "discipline.write":            "Record and progress disciplinary matters",
+  // READERS_child_data Q5 (Kameel, 21 Oct 2026: "own side, logged"; db/116):
+  // a coach reads the conduct records of the boys on his own side, and every
+  // read is logged. Not discipline.read, which is a school's whole file: this
+  // opens side_discipline_records() alone, anchored on each boy's CURRENT
+  // side, so a boy moved at a rollover takes his record to his new coach. No
+  // table policy names it.
+  "discipline.side.read":        "Read the disciplinary records of the boys on your own side",
 
   // ── Safeguarding (CSA Safeguarding Policy; docs/design/SAFEGUARDING_DSO.md) ──
   // Held by the `dso` role and by NOBODY else — not the principal, not the
@@ -293,6 +300,12 @@ export const CAPABILITIES = {
   "transport.read":              "See transport arrangements",
   "transport.manage":            "Plan trips, vehicles and drivers",
   "transport.drive":             "Operate an assigned trip",
+  // READERS_child_data Q12 (Kameel, 21 Oct 2026; db/116): the transport
+  // coordinator's reach into a family's numbers. Not player.emergency.read,
+  // which is a standing read of every child's contacts at the school: this
+  // opens trip_contacts() for the boys on one trip, on the day it runs, and
+  // nothing else — no table policy names it.
+  "transport.manifest.read":     "Read who to ring for the boys on a trip you coordinate, on the day it runs",
   // ── SCRBRD-124: parent lift clubs (db/70) ──
   // Not a trip: a family's car, arranged between families, which the school
   // facilitates and does not operate. Four capabilities, because the four
@@ -337,6 +350,12 @@ export const CAPABILITIES = {
   // play. Its own capability, not competition.manage: the figures a match is
   // folded under are a different act from naming a division (db/61).
   "competition.conditions.manage": "Set a competition's playing conditions",
+  // READERS_child_data Q10 (Kameel, 21 Oct 2026; db/116): a league's reach
+  // into conduct. Not discipline.read, which reads a school's whole file (and,
+  // held platform-wide, every school's): this opens
+  // competition_discipline_records() for the records that arose from its own
+  // competition's fixtures, every read logged, and no table policy names it.
+  "competition.discipline.read": "Read the disciplinary records arising from your own competition's fixtures",
   // STANDING BEHIND A RESULT (OFFICIAL_RESULT, db/114): confirming a finished
   // match's result, so that it reads "Official result", disputing a
   // confirmation within its window, and clearing a dispute. One name for the
@@ -556,6 +575,8 @@ export const LEVEL = Object.freeze({
 
   // ── Conduct ──
   "discipline.read": 3, "discipline.write": 3,
+  // The same record, narrower in reach, not in kind.
+  "discipline.side.read": 3,
 
   // ── Safeguarding ──
   // A concern has no safe tier beneath it: the account, who it is about and
@@ -572,6 +593,8 @@ export const LEVEL = Object.freeze({
   // the school's own text.
   "transport.lift.arrange": 2, "transport.lift.oversee": 2,
   "transport.lift.receive": 1, "transport.lift.policy": 1,
+  // A family's numbers, as player.emergency.read is; narrower in reach, not in kind.
+  "transport.manifest.read": 2,
   "facility.read": 0, "facility.manage": 1,
 
   // ── Money ──
@@ -584,6 +607,8 @@ export const LEVEL = Object.freeze({
   "competition.read": 0, "competition.manage": 1,
   // A league's rules: no person's data in them (design §7.3).
   "competition.conditions.manage": 1,
+  // A conduct record about a named child, as discipline.read is.
+  "competition.discipline.read": 3,
   // A result names sides, never a boy (db/114); a dispute's note is the
   // sensitive part, and it is read through its function alone.
   "result.confirm": 1,

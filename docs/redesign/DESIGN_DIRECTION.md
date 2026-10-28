@@ -445,6 +445,18 @@ The 500 KB entry ceiling and the offline behaviour are non-negotiable throughout
 5. **The day sheet replaces the KPI dashboard** (§5).
 6. **The board is always black**, in both themes, everywhere the score appears (§1).
 
+### Confirmed and extended (Kameel, 2026-10-23)
+
+After the ESPNcricinfo audits (`docs/design/CRICINFO_GAP_PLAN.md`):
+
+7. **This document stands** over the claude.ai Project brief (Material 3, glass, navy and
+   neon gradients, a floating Stadium Bar). That brief is to be rewritten to match or withdrawn.
+8. **The prototypes** `scrbrd_os.jsx`, `cricket_os.jsx` and `scrbrd.jsx` are superseded,
+   reference only.
+9. **The match page's tabs** are Summary, Scorecard, Commentary, plus More.
+10. **Win probability** is shown from the existing par line, labelled a par estimate, and
+    recalibrated once pilot ball logs exist.
+
 ### Measured before step 1 (2026-09-25)
 
 In `apps/web/src`, outside `design/tokens.js`: 160 hex colour literals and 126

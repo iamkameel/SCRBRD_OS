@@ -45,6 +45,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5391);
 const API_PORT = port(8891);
@@ -106,6 +107,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -196,7 +198,7 @@ const basicPad = async () => {
 };
 const openScorer = async (matchId) => {
   await page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   const opened = await page.evaluate((id) => {
     const card = document.querySelector(`[data-testid="match-card-${id}"]`);
     const b = [...(card?.querySelectorAll("button") ?? [])].find((x) => /Start Scoring|Open Live Scorer/i.test(x.textContent || ""));
@@ -269,7 +271,7 @@ try {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
 
   // ── A ────────────────────────────────────────────────────────
@@ -462,7 +464,7 @@ try {
   await page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
   await page.waitForTimeout(1500);
   await tap(`mc-open-${M.id}`);
-  await page.waitForTimeout(1800);
+  await afterReads(page, 1800);
   ok("the Match Centre opens the cup match", await has("match-view"));
   ok("the header: the result as the server words it", /^Match tied; the first super over tied; .+ won the second$/.test(await said("mc-result")), await said("mc-result"));
   const scores = await page.evaluate(() => ({
@@ -504,7 +506,7 @@ try {
   // ── H ────────────────────────────────────────────────────────
   group("H. A league tie: no button, and the words why");
   await page.locator('[data-testid="mc-back"]').first().click({ timeout: 4000 }).catch(() => {});
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   ok("the friendly fixture offers the scorer", await openScorer(G.id));
   await fillCrease();
   await balls([1, 1, 1, 1, 1, 1]);
@@ -531,6 +533,7 @@ try {
   const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, extraHTTPHeaders: { "x-forwarded-for": "10.91.0.1" } });
   await offline(pctx);
   const pub = await pctx.newPage();
+  watchReads(pub);
   const pubErrors = [];
   pub.on("pageerror", (e) => pubErrors.push(`pageerror: ${e.message}`));
   pub.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) pubErrors.push(`console.error: ${m.text()}`); });

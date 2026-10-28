@@ -309,6 +309,9 @@ const SUITES = [
   // GA-I07: Squad and Analytics open on the person's own side, and a gate
   // answers from the roles held, as the menu does.
   ["team-context", "apps/web/test/team-context.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // REACH R-B (db/115): the consent cards list and word what the reader is
+  // shown — his family's, his office's, his own side's — and no team-mate's.
+  ["consent-readers", "apps/web/test/consent-readers.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I30: one home per domain (Competitions, Transport, Grounds). For every
   // role, a home's sections and links are the menu's own answer for their
   // source destination, and a role that reaches none of a home's parts has no

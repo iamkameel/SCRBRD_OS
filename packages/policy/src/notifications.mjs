@@ -3,14 +3,22 @@
  *
  * docs/design/NOTIFICATIONS.md D1: the lists live here and every other place
  * reads them. db/89_notification_contract.sql carries the same lists as
- * CHECKs, and packages/policy/test/notifications.test.mjs reads that file and
- * fails if the two disagree.
+ * CHECKs (the kinds and the lives as db/116 re-wrote them), and
+ * packages/policy/test/notifications.test.mjs reads the latest file that
+ * writes each and fails if the two disagree.
  */
 
-/** D1: what a notice is. Nine, and nothing else. */
+/**
+ * D1: what a notice is. Ten, and nothing else. `compromise` joined on 21 Oct
+ * 2026 (INCIDENTS_AND_BREACHES D9; READERS_child_data Q8; db/116): a notice
+ * that a child's data was, or may have been, seen by somebody who should not
+ * have seen it. With `system`, the one kind the system itself writes to one
+ * pupil — and only to a pupil of eighteen or more, his own data subject; under
+ * eighteen his guardians are told (SG-9, db/116's trigger).
+ */
 export const KINDS = Object.freeze([
   "injury", "recognition", "welfare", "safeguarding", "system",
-  "availability", "fixture", "lift", "notice",
+  "availability", "fixture", "lift", "notice", "compromise",
 ]);
 
 /** D5: what a notice may be about. `welfare` and `news` arrived with db/89. */
@@ -44,6 +52,9 @@ export const CONTRACT = Object.freeze({
   fixture:      Object.freeze({ lives: "start+7", retract: Object.freeze(["superseded"]) }),
   lift:         Object.freeze({ lives: "meet+1",  retract: Object.freeze([]) }),
   notice:       Object.freeze({ lives: 60,        retract: Object.freeze(["withdrawn"]) }),
+  // Two years, with the register; never taken back (a later fact is a second
+  // notice): INCIDENTS D9.
+  compromise:   Object.freeze({ lives: 730,       retract: Object.freeze([]) }),
 });
 
 /**
