@@ -112,13 +112,17 @@ on the event, and `describeDismissal()` renders proper scorecard notation.
 The artifact tracked a free-hit banner in UI state but did not apply the rule to
 dismissals. A free hit now saves the batter from every mode of dismissal except
 those that stand on a free hit — run out, and the other non-delivery
-dismissals — and is consumed by the next legal delivery. Only in a limited-overs match: a declaration or timed match
-has no free hit (SCRBRD-113, below).
+dismissals — and is consumed by the next delivery that counts in the over. Only in a limited-overs match: a declaration or timed match
+has no free hit (SCRBRD-113, below). **Since 28 October 2026 (Kameel, the Laws audit Q2) only a front-foot no-ball
+earns one** — not a waist-high full toss, not a beamer; a no-ball whose kind was not recorded earns one as it always
+did. A wide, a no-ball that earns none, and a fair delivery that does not count in the over (17.3.2.5; Q9) leave a
+pending free hit for the next ball. `givesFreeHit()` in `events.mjs`; db/121's `ball_on_free_hit()`.
 
 **In SQL (db/42).** Every SQL reader of `ball_event` that counts a wicket asks `ball_wicket_stands()`, the fold's
 rule in SQL: a W ball on a free hit stands only when its method is one of `NON_DELIVERY` (run out, handled the ball,
 obstructing the field, hit the ball twice, timed out, retired out). Whether a ball is on a free hit is
-`ball_on_free_hit()`: the last earlier delivery of the innings that was not a wide, voids excluded, was a no-ball.
+`ball_on_free_hit()`: the last earlier delivery of the innings that counts in the over or earns a free hit (db/121;
+a wide, a no-ball that earns none and a delivery not in the over are passed over), voids excluded, was a no-ball.
 The live score, the handover check (`scoring_verify_takeover`), a batter's dismissals, innings and breakdown, a
 bowler's figures, hat-trick, breakdown and milestones, the opposition's figures and the matchups read all agree with
 the fold; `tools/smoke-free-hit.mjs` holds them to it over generated logs.
@@ -147,7 +151,9 @@ Kept deliberately, listed so a future reader does not "fix" them back:
 Measured as the run *delta* while a pair is together, so extras are included —
 which is how partnerships are actually reported. Balls counts legal deliveries.
 The artifact summed `value` only, which under-reported any partnership that
-included extras.
+included extras. A change of ends — a `batters` event naming the same two swapped — is the same partnership and keeps
+what it has added (the Laws audit, F3, 28 October 2026: it used to start a new one from nothing, and the runs before
+the swap belonged to no partnership). A new batter is a new partnership, as always.
 
 ---
 
@@ -192,7 +198,7 @@ Refused, with the reason named:
 | A bowler replaced during an over says why: injury or suspension (Law 17.7.1) | SCRBRD-080 |
 | A bowler the umpires suspended does not bowl again in the innings — for ball tampering, in the match, later innings included; a suspension names the bowler on (or of the last ball), a reason from the list and the scope that reason carries | SCRBRD-094 item 2 |
 | Whoever is out on a wicket must be one of the two batting | AntiGravity |
-| No ball once the second innings is complete — the match is decided | AntiGravity `recordBallAction` |
+| No ball once the match is decided: one innings a side, the second innings complete; two innings a side (a Two-Day), the fourth complete or the third all out still behind (an innings win). Until 28 October 2026 (the Laws audit, F2) the second innings decided every match, and a Two-Day could not be scored past it | AntiGravity `recordBallAction`; `matchDecided()` in `laws.mjs` |
 | An innings starts only when the one before it has ended (by the laws or a seal) | new, from the model |
 | No play in an innings once a later one has a delivery | new |
 | A dismissed batter does not come back; retired hurt may, and retired out only with the opposing captain's consent — either only at the fall of a wicket or another batter's retirement since he went (Law 25.4) | new; the timing and the consent SCRBRD-071 |
@@ -330,6 +336,8 @@ Taken by the product owner on the rules the commit-time Laws check left open.
    the over may not bowl the next (already enforced as "or parts thereof"). Built as SCRBRD-080.
 3. **Run out with runs completed — ask which end.** One extra question on a run out that completed runs: out at the
    striker's end or the bowler's end (Law 38.4). The fold places the survivor from that. Built as SCRBRD-069.
+   **Asked on every run out since 28 October 2026** (Kameel, the Laws audit Q6, F1): with no run completed the
+   batters may still have crossed.
 4. **No-ball byes — fix the model.** A no-ball records runs off the bat and runs not off the bat separately; only
    the first is the batter's (Law 21.15, Law 23). Old events replay unchanged. Built as SCRBRD-068; its scoring
    corrected to the current Code on 2026-09-27 (db/52, below).
@@ -346,13 +354,14 @@ does the server (`out_at_unknown`).
 **The fold.** When the wicket stands and the end is recorded, that end is empty and the survivor is at the other one —
 whoever `dismissed` names (the striker by default). With runs completed the batters have crossed (Law 18), so the
 pre-ball crease no longer says which end is which; the end does. The end-of-over change of ends applies after, as for
-any wicket. With no end recorded — every log before this, and a run out with no run completed, which the pad does not
-ask about — the dismissed batter's end before the ball empties, exactly as before. The runs completed are credited as
-they always were (the striker's, charged to the bowler).
+any wicket. With no end recorded — every log before this, and before 28 October 2026 a run out with no run completed,
+which the pad did not ask about — the dismissed batter's end before the ball empties, exactly as before; that is right
+only when the batters had not crossed (the Laws audit, F1). The runs completed are the striker's, charged to the
+bowler, unless the wicket ball's `nbRuns` says they were byes or leg byes (F5, below).
 
-**The pad.** On a run out the wicket sheet asks who is out, how many runs were completed first (0–3), and — when any
-were — *Out at the striker's end or the bowler's end?*; it will not confirm until that is answered. The new batter is
-sent to the end that is empty.
+**The pad.** On a run out the wicket sheet asks who is out, how many runs were completed first (0–3), whose those runs
+were (off the bat, byes, leg byes), and — on every run out since 28 October 2026 — *Out at the striker's end or the
+bowler's end?*; it will not confirm until that is answered. The new batter is sent to the end that is empty.
 
 This was `laws-spec.test.mjs`'s last KNOWN_GAP; it is now group E there, both ends.
 
@@ -714,9 +723,10 @@ walking straight back, as the pad's sheet never offered it.
 ## What kind of no-ball (`nbType`)
 
 The pad's no-ball sheet always asked front foot, full toss height or beamer, and passed the answer to `ball()` — which
-dropped it. `ball()` now keeps it (`NB_TYPE`, on a no-ball only; omitted when not asked). The fold decides nothing by it:
-every no-ball in a limited-overs match is followed by a free hit (§6), and the pad's free-hit banner now reads that from the fold, as after any
-ball (it used to appear only for height and beamers). A short run off a no-ball asks the kind too.
+dropped it. `ball()` now keeps it (`NB_TYPE`, on a no-ball only; omitted when not asked). Since 28 October 2026 it
+decides the free hit: only a front-foot no-ball in a limited-overs match is followed by one (§6; `FREE_HIT_NB_TYPES`),
+and the pad's no-ball panel says "Free hit on the next ball." for exactly that kind; the post-ball banner reads the
+fold, as after any ball. A short run off a no-ball asks the kind too.
 
 ## The Laws' 4th Edition (SCRBRD-113)
 
@@ -784,7 +794,7 @@ correction, applied to every match by its stored format. A limited-overs match (
 format) gives a free hit after a no-ball; a declaration or timed match, of one day or more, does not. `freeHitsApply(format)`
 (`packages/scoring/src/format.mjs`) answers it and the fold stamps it on the innings (`inn.freeHits`); the Laws check,
 the pad's banner and no-ball sheet, and the commentary read the fold. A match with **no format** keeps today's
-behaviour: a free hit after every no-ball. "One-Day Declaration" was added to the fixture screen's formats (a one-day
+behaviour: a free hit after a no-ball (since 28 October 2026 a front-foot one, §6). "One-Day Declaration" was added to the fixture screen's formats (a one-day
 timed match). SQL asks `free_hits_apply()` of `match.format` inside `ball_on_free_hit()` (db/54), so every reader of a
 wicket stands a bowled off the ball after a no-ball in a declaration match.
 

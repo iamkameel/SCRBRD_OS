@@ -35,7 +35,7 @@
 
 import { superOverNumber } from "./events.mjs";
 import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, RUN_OUT_END, SUSPENSION_SCOPE, runsOffBat, inningsEnd } from "./events.mjs";
-import { NB_RUNS, runsToBowler } from "./events.mjs";
+import { NB_RUNS, runsToBowler, boundaryHit, givesFreeHit } from "./events.mjs";
 import { countsInOver, FACES_NEXT, isWicketBall } from "./events.mjs";
 import { lawsEdition, LAWS_EDITION } from "./edition.mjs";
 import { conditionsOf, freeHit, oversPerInnings } from "./conditions.mjs";
@@ -330,6 +330,16 @@ function withEdition(ctx, events) {
 /** Overs in cricket's odd base: 17 legal balls is 2.5 overs.
  *  @param {number} balls */
 export const fmtOvers = (balls) => `${Math.floor(balls / 6)}.${balls % 6}`;
+
+/**
+ * Where a wicket fell, in overs (Kameel, 28 Oct 2026, the Laws audit Q8,
+ * F13): the ball it fell on, as published scorecards write it — the sixth
+ * ball of the fifth over is 4.6, not 5.0. `balls` is the legal balls bowled
+ * with that ball counted; with none bowled it is 0.0. Only the fall of
+ * wickets reads it; the innings' own overs stay fmtOvers().
+ * @param {number} balls
+ */
+export const fowOvers = (balls) => (balls > 0 && balls % 6 === 0 ? `${balls / 6 - 1}.6` : fmtOvers(balls));
 
 /**
  * Is an over under way, with a bowler on — has a delivery of the over the
@@ -690,6 +700,7 @@ function inningsFolder(ctx = {}, carried = 0) {
 
       case KIND.BATTERS: {
         const hadPair = inn.striker != null && inn.nonStriker != null;
+        const pairBefore = [inn.striker, inn.nonStriker];
         // With the opposing captain's consent, a batter who retired out is
         // named: his wicket is taken back before he takes his end.
         if (ev.captainConsent === true) {
@@ -698,8 +709,14 @@ function inningsFolder(ctx = {}, carried = 0) {
         if (ev.striker != null) { resume(batterFor(ev.striker)); inn.striker = ev.striker; }
         if (ev.nonStriker != null) { resume(batterFor(ev.nonStriker)); inn.nonStriker = ev.nonStriker; }
         // Opening the innings, or a new arrival after a wicket: either way the
-        // pair changed, so a fresh partnership starts here.
-        if (!hadPair || ev.striker != null || ev.nonStriker != null) openPartnership();
+        // pair changed, so a fresh partnership starts here. The same two
+        // swapped — a change of ends, the pad's correction of who is on
+        // strike — is the same partnership, and keeps what it has (the Laws
+        // audit, F3: a swap used to wipe the runs added so far).
+        const samePair = hadPair && inn.striker != null && inn.nonStriker != null
+          && pairBefore.includes(inn.striker) && pairBefore.includes(inn.nonStriker);
+        if (samePair) inn.curPartner = { ...inn.curPartner, bat1: inn.striker, bat2: inn.nonStriker };
+        else if (!hadPair || ev.striker != null || ev.nonStriker != null) openPartnership();
         break;
       }
 
@@ -814,7 +831,9 @@ function inningsFolder(ctx = {}, carried = 0) {
           const outBat = batterFor(ev.batter);
           inn.wickets += 1;
           if (outBat) { outBat.status = BAT_STATUS.OUT; outBat.dismissal = DISMISSAL_LABEL[how].toLowerCase(); }
-          const fowEntry = { runs: inn.runs, wickets: inn.wickets, batsman: outBat?.name ?? "?", overs: fmtOvers(inn.balls) };
+          // At the last ball bowled (F13): retired out after the fifth over's
+          // last ball is 4.6.
+          const fowEntry = { runs: inn.runs, wickets: inn.wickets, batsman: outBat?.name ?? "?", overs: fowOvers(inn.balls) };
           inn.fow.push(fowEntry);
           // The over the next delivery is in — where a phase breakdown files it.
           const nbw = { over: Math.floor(inn.balls / 6), batter: ev.batter ?? null, dismissal: how };
@@ -948,8 +967,10 @@ function inningsFolder(ctx = {}, carried = 0) {
             // A no-ball is a ball faced even when no run is scored off it.
             if (bat) {
               bat.balls += 1; bat.runs += offBat;
-              if (offBat === 4) bat.fours += 1;
-              if (offBat === 6) bat.sixes += 1;
+              // A boundary, not any four or six off the bat (F7).
+              const bnd = boundaryHit(ev);
+              if (bnd === 4) bat.fours += 1;
+              if (bnd === 6) bat.sixes += 1;
             }
             break;
           }
@@ -964,19 +985,33 @@ function inningsFolder(ctx = {}, carried = 0) {
             if (bat) bat.balls += 1;
             break;                         // nor are leg byes
 
-          case BALL_TYPE.WICKET:
-            inn.runs += v; bowlerCharged = v;
-            if (bat) { bat.balls += 1; bat.runs += v; }
+          case BALL_TYPE.WICKET: {
+            // The runs completed before a run out (Law 18.11, 38.5) — or
+            // off a free hit a bowled dismissal did not stand on — are the
+            // striker's and the bowler's when they came off the bat, and
+            // byes or leg byes, neither his nor the bowler's, when `nbRuns`
+            // says so (the Laws audit, F5 and F9). runsOffBat() and
+            // runsToBowler() are the rule, as for a no-ball.
+            const offBat = runsOffBat(ev);
+            inn.runs += v; bowlerCharged = runsToBowler(ev);
+            if (ev.nbRuns === NB_RUNS.LEG_BYES) inn.extras.legBye += v - offBat;
+            else inn.extras.bye += v - offBat;
+            if (bat) { bat.balls += 1; bat.runs += offBat; }
             break;
+          }
 
-          default: // BALL_TYPE.RUN
+          default: { // BALL_TYPE.RUN
             inn.runs += v; bowlerCharged = v;
             if (bat) {
               bat.balls += 1; bat.runs += v;
-              if (v === 4) bat.fours += 1;
-              if (v === 6) bat.sixes += 1;
+              // A boundary, not any four or six (F7): an all-run four, or
+              // two and four overthrows, carries `boundary: false`.
+              const bnd = boundaryHit(ev);
+              if (bnd === 4) bat.fours += 1;
+              if (bnd === 6) bat.sixes += 1;
             }
             break;
+          }
         }
 
         if (counts) inn.balls += 1;
@@ -1018,9 +1053,12 @@ function inningsFolder(ctx = {}, carried = 0) {
             const k = inn.keeper == null ? null : inn.keepers.find((x) => x.id === inn.keeper);
             if (k && mode === DISMISSAL.STUMPED) k.stumpings += 1;
             else if (k && mode === DISMISSAL.CAUGHT && isKeeperRef(inn.keeper, keeperName, ev.fielder)) k.catches += 1;
+            // The ball it fell on (F13): the sixth of the fifth over is 4.6.
+            // A wicket off a wide or a no-ball is no ball of the over, and
+            // falls at the overs bowled so far.
             inn.fow.push({
               runs: inn.runs, wickets: inn.wickets,
-              batsman: outBat?.name ?? "?", overs: fmtOvers(inn.balls),
+              batsman: outBat?.name ?? "?", overs: counts ? fowOvers(inn.balls) : fmtOvers(inn.balls),
             });
             closePartnership();
             // Which end is now empty. With the end recorded (SCRBRD-069, a
@@ -1046,16 +1084,20 @@ function inningsFolder(ctx = {}, carried = 0) {
         // batter was out at, when the event says), and the incoming batter's
         // by the next `batters` event. That holds for a wicket on a wide or a
         // no-ball that stood; one a free hit saved is the extra it was, and
-        // its runs rotate as that extra's would.
-        if (type !== BALL_TYPE.WICKET && !wicketStood && v % 2 === 1) rotate();
+        // its runs rotate as that extra's would — a W the free hit saved
+        // too: the batters ran (F9), and the ball was not dead.
+        if (!wicketStood && v % 2 === 1) rotate();
         if (counts && inn.balls % 6 === 0) { rotate(); inn.bowler = null; }
 
-        // Free hit is set by a no-ball — in a match whose format gives one
-        // (inn.freeHits; a declaration or timed match does not) — and
-        // consumed by the next legal delivery, by its type: a fair delivery
-        // that does not count in the over (17.3.2.5) was still the free-hit
-        // ball bowled, as SQL's ball_wicket_stands() reads it too.
-        inn.freeHit = type === BALL_TYPE.NO_BALL ? inn.freeHits : (legal ? false : inn.freeHit);
+        // Free hit is set by a front-foot no-ball (givesFreeHit(): Kameel,
+        // 28 Oct 2026, the Laws audit Q2; a no-ball of no recorded kind as
+        // always) — in a match whose format gives one (inn.freeHits; a
+        // declaration or timed match does not) — and consumed by the next
+        // delivery that counts in the over. A wide, a no-ball that earns
+        // none, and a fair delivery that does not count (17.3.2.5; Q9, F11)
+        // leave it for the next: none was the free hit bowled. db/121's
+        // ball_on_free_hit() reads the same.
+        inn.freeHit = givesFreeHit(ev) ? inn.freeHits : (counts ? false : inn.freeHit);
 
         // Who faces next, where the Laws let someone choose (FACES_NEXT,
         // SCRBRD-113): placed last, after the change of ends at an over's
@@ -1885,7 +1927,11 @@ export function describeResult(innings, o = {}) {
       if (typeof fewest === "number" && Number.isInteger(fewest) && fewest > 0 && Math.floor(b.balls / 6) < fewest) {
         return none(OUTCOME.NO_RESULT);
       }
-      if (b.runs > b.par) return win(b, MARGIN_KIND.WICKETS, inHand(b));
+      // Ahead of par is won by the runs it is ahead (Kameel, 28 Oct 2026,
+      // the Laws audit Q3, F10: the ICC's convention under DLS), not by the
+      // wickets in hand — the chase was not completed. db/121's
+      // match_result_compute() says the same.
+      if (b.runs > b.par) return win(b, MARGIN_KIND.RUNS, b.runs - b.par);
       if (b.runs === b.par) return none(OUTCOME.TIE);
       return win(a, MARGIN_KIND.RUNS, b.par - b.runs);
     }

@@ -61,7 +61,7 @@
 import { KIND, BALL_TYPE, ILLEGAL, NB_RUNS, RUN_OUT_END, DISMISSAL, INNINGS_END_REASON, PENALTY_REASON,
   penaltyReasonWords, BOWLER_CHANGE_REASON, normaliseDismissal, normalisePenaltyReason, runsOffBat } from "./events.mjs";
 import { deriveMatch, foldSteps, penaltyCredits, retirementDismissal, isMaiden, fmtOvers, isKeeperRef, keeperOf } from "./replay.mjs";
-import { countsInOver, isWicketBall } from "./events.mjs";
+import { countsInOver, isWicketBall, boundaryHit } from "./events.mjs";
 import { deriveFacts, MOMENT_KIND } from "./facts.mjs";   // Recognition R1: the milestones are the facts'
 import { positionName, sectorOf, batHandOf, SECTORS } from "./placement.mjs";
 import { SHOT_WORDS, NO_STROKE, SECTOR_WORDS } from "./words.mjs";
@@ -891,12 +891,14 @@ function deliveryLine(ev, entry, c) {
         const what = ev.nbRuns === NB_RUNS.BYES ? plural(v, "bye") : plural(v, "leg bye");
         return { kind: COMMENTARY_KIND.BALL, text: `${line(`no-ball, and ${words(v)} ${what} off it`)}.${free}` };
       }
+      // Off the bat, a four or a six only when it was the boundary (F7).
+      const bnd = boundaryHit(ev);
       const off = runsOffBat(ev);
       const body = off === 0 ? "no-ball"
-        : (off === 4 || off === 6) && sa ? `no-ball, ${shotPhrase(entry, off === 6 ? "over" : "through", hand)} for ${words(off)}`
-          : off === 4 || off === 6 ? `no-ball, and ${words(off)} off the bat`
+        : bnd != null && sa ? `no-ball, ${shotPhrase(entry, bnd === 6 ? "over" : "through", hand)} for ${words(bnd)}`
+          : bnd != null ? `no-ball, and ${words(bnd)} off the bat`
             : `no-ball, ${sa ? `${sa}, ` : ""}and they run ${words(off)}`;
-      return { kind: off === 6 ? COMMENTARY_KIND.SIX : off === 4 ? COMMENTARY_KIND.FOUR : COMMENTARY_KIND.BALL, text: `${line(body)}.${free}` };
+      return { kind: bnd === 6 ? COMMENTARY_KIND.SIX : bnd === 4 ? COMMENTARY_KIND.FOUR : COMMENTARY_KIND.BALL, text: `${line(body)}.${free}` };
     }
     case BALL_TYPE.BYE:
     case BALL_TYPE.LEG_BYE: {
@@ -957,7 +959,9 @@ function deliveryLine(ev, entry, c) {
       return { kind: COMMENTARY_KIND.WICKET, text: `${line(body)}. ${gone} ${score}${free}` };
     }
     default: {
-      if (v === 4 || v === 6) {
+      // A boundary (F7). Four or six that did not reach the rope — all run,
+      // or with overthrows — is told as the runs they are.
+      if (boundaryHit(ev) != null) {
         const p = shotPhrase(entry, v === 6 ? "over" : "through", hand);
         // With the shot or the place, the stroke first: "driven through cover
         // for four" (Kameel, 2026-10-01), as a no-ball struck for four reads.
@@ -969,7 +973,8 @@ function deliveryLine(ev, entry, c) {
         : v === 1 ? choose(key, "one", ["one run", "a single", "they take one"])
           : v === 2 ? choose(key, "two", ["two runs", "they come back for two"])
             : v === 3 ? choose(key, "three", ["three runs", "they run three"])
-              : `${words(v)} runs`;
+              : ev.boundary === false ? `${words(v)} runs, not to the boundary`
+                : `${words(v)} runs`;
       return { kind: COMMENTARY_KIND.BALL, text: `${line(join(sa, runs))}.` };
     }
   }
