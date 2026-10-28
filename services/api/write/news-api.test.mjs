@@ -398,14 +398,15 @@ group("D. Changing and throwing away an unsent plan (db/110, Kameel 15 Oct)");
 
 group("E. The home page refuses a post naming a pupil by any part of his name (db/83, db/118)");
 {
-  // The scan is SQL (news_public_names(), db/118; db/99 §62 and §93 run it
+  // The scan is SQL (news_public_names(), db/118; db/99 §62 and §95 run it
   // against the seeded pupils). Here: the scan reads every part of a name,
   // and the route says the refusal as a count, never a name.
   const sql = readFileSync(new URL("../../../db/118_privacy_followups.sql", import.meta.url), "utf8");
   const scan = sql.slice(sql.indexOf("CREATE OR REPLACE FUNCTION news_public_hits"), sql.indexOf("REVOKE ALL ON FUNCTION news_public_hits"));
   ok("the scan reads the full name, the known-as and the stored surname", /ARRAY\[p\.full_name, p\.known_as, p\.surname\]/.test(scan));
-  ok("...and every word of the full name of three letters or more, split on anything not a letter",
-     /regexp_split_to_table\(btrim\(coalesce\(p\.full_name, ''\)\), '\[\^\[:alpha:\]\]\+'\)/.test(scan) && /length\(t\) >= 3/.test(scan));
+  ok("...and every word of the full name of two letters or more (Kameel, 28 Oct), split on anything not a letter",
+     /regexp_split_to_table\(btrim\(coalesce\(p\.full_name, ''\)\), '\[\^\[:alpha:\]\]\+'\)/.test(scan) && /length\(t\) >= 2/.test(scan)
+     && !/length\(t\) >= 3/.test(scan));
   ok("...whole-word and case-blind", /'\(\?:\^\|\[\^\[:alnum:\]\]\)\('/.test(scan) && /, 'i'\) AS m/.test(scan));
   ok("...over the post's school's boys and those of the schools it has fixtures with, either way, in a window",
      /m\.school_id = post\.school_id OR m\.away_school_id = post\.school_id/.test(scan)

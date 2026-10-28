@@ -416,9 +416,11 @@ export const READ_QUERIES = {
     // to get from an account to the record it belongs to.
     //
     // A PUPIL'S LOGIN EMAIL IS THE OFFICE'S (db/118): app_user_email_seen()
-    // answers it to the pupil himself and to a holder of user.role.assign or
-    // guardian.link.manage at his school, and NULL to every other user.read
-    // holder (finance, sponsorship). An adult's email is unchanged.
+    // answers it to the pupil himself and to a holder of guardian.link.manage
+    // at his school (the office, the principal), and NULL to every other
+    // user.read holder (finance, sponsorship, and the director of sport, who
+    // appoints staff: Kameel, 28 Oct 2026, "The office alone, as A4 says").
+    // An adult's email is unchanged.
     text: `select id, school_id, app_user_email_seen(id, school_id, email) as email,
                   name, role, active, last_seen_at, teams, player_id
              from app_user
