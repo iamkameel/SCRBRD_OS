@@ -28,7 +28,10 @@
  *      The pad reopens from disk unattached (the API token was in memory):
  *      the pill reads "Saved on this phone · 3 to send" and the banner says
  *      "No signal. 3 balls are saved on this device and will send when
- *      there is a connection." The outbox and the log survived the reload.
+ *      there is a connection." — or, where the page believes it has signal
+ *      and the server does not answer (GitHub's runner), "Could not reach
+ *      the server — trying again. 3 balls are saved on this device." Either
+ *      way no action. The outbox and the log survived the reload.
  *   E. The signal comes back: the pad re-attaches with its resume credential
  *      (SCRBRD-078 option B; or a sign-in, if it has none) and drains. The
  *      same checks as C.
@@ -442,10 +445,20 @@ try {
   if (DEBUG) console.log("[debug] after the offline reload:", wordD, JSON.stringify(bannerD));
   ok(`the pill reads "Saved on this phone · ${qD.length} to send" (unattached: the token was in memory)`,
      wordD === `Saved on this phone · ${qD.length} to send`, wordD);
-  ok("the banner says so, in one sentence and with no action",
-     bannerD?.reason === "offline" && bannerD.text === `No signal. ${qD.length} balls are saved on this device and will send when there is a connection.`
-       && !(await tid("sync-signin").count()) && !(await tid("sync-retry").count()),
+  // Which of two true states a pad that cannot send reports after an offline
+  // reload depends on the runner: "offline" where navigator.onLine is false,
+  // "unreachable" where the page thinks it has signal and the server does not
+  // answer (GitHub's runner, PR #199). Each has its own sentence in
+  // syncBanner.jsx, and neither offers an action: there is nothing to press.
+  const BANNER_D = {
+    offline: `No signal. ${qD.length} balls are saved on this device and will send when there is a connection.`,
+    unreachable: `Could not reach the server — trying again. ${qD.length} balls are saved on this device.`,
+  };
+  console.log(`  (after the offline reload the pad said "${bannerD?.reason}")`);
+  ok(`the banner says so, in its one sentence for "${bannerD?.reason}"`,
+     bannerD != null && Object.hasOwn(BANNER_D, String(bannerD.reason)) && bannerD.text === BANNER_D[/** @type {"offline"|"unreachable"} */ (bannerD.reason)],
      JSON.stringify(bannerD));
+  ok("...with no action", (await tid("sync-banner").locator("button").count()) === 0, JSON.stringify(bannerD));
   ok("the server has none of the three", (await serverRows()).length === padBeforeD.length);
 
   group("E. The signal returns after the reload: the pad re-attaches and drains");
