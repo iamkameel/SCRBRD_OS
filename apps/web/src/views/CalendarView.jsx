@@ -75,7 +75,7 @@ function CalendarView({ role, onNav }) {
             <button onClick={()=>setMonthOffset(o=>o-1)} className="pressBtn" style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,padding:"5px 12px",cursor:"pointer",color:D.textSecondary,fontSize:"14px"}}>‹</button>
             <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary,minWidth:"160px",textAlign:"center"}}>{monthName}</span>
             <button onClick={()=>setMonthOffset(o=>o+1)} className="pressBtn" style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,padding:"5px 12px",cursor:"pointer",color:D.textSecondary,fontSize:"14px"}}>›</button>
-            <button onClick={()=>setMonthOffset(0)} className="pressBtn" style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.pill,padding:"5px 14px",cursor:"pointer",color:D.textMuted,fontFamily:D.body,fontSize:"11px"}}>Today</button>
+            <button onClick={()=>setMonthOffset(0)} className="pressBtn" style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.pill,padding:"5px 14px",cursor:"pointer",color:D.textMuted,fontFamily:D.body,fontSize:"12px"}}>Today</button>
           </div>
         }/>
 
@@ -86,7 +86,7 @@ function CalendarView({ role, onNav }) {
         {[["Match – Live",D.emerald],["Match – Upcoming",D.sky],["Match – Complete",D.textMuted],["Training",D.violet]].map(([l,c])=>(
           <div key={l} style={{display:"flex",alignItems:"center",gap:"6px"}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:c}}/>
-            <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{l}</span>
+            <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{l}</span>
           </div>
         ))}
       </div>
@@ -96,7 +96,7 @@ function CalendarView({ role, onNav }) {
           {/* Day headers */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",background:D.surf2,borderBottom:`1px solid ${D.border}`}}>
             {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
-              <div key={d} style={{padding:"10px 4px",textAlign:"center",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.06em"}}>{d}</div>
+              <div key={d} style={{padding:"10px 4px",textAlign:"center",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.06em"}}>{d}</div>
             ))}
           </div>
           {/* Calendar grid */}
@@ -125,7 +125,7 @@ function CalendarView({ role, onNav }) {
                     background: isToday ? D.indigo : "transparent",
                     display:"flex", alignItems:"center", justifyContent:"center", marginBottom:"4px",
                   }}>
-                    <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:isToday?700:400,color:isToday?inkOn(D.indigo):D.textSecondary}}>{day}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:isToday?700:400,color:isToday?inkOn(D.indigo):D.textSecondary}}>{day}</span>
                   </div>
                   <div style={{display:"flex",flexDirection:"column",gap:"2px"}}>
                     {events.slice(0,3).map((ev,i)=>{
@@ -142,11 +142,11 @@ function CalendarView({ role, onNav }) {
                           display:"flex", alignItems:"center", gap:"3px",
                         }}>
                           <div style={{width:4,height:4,borderRadius:"50%",background:col,flexShrink:0}}/>
-                          <span style={{fontFamily:D.body,fontSize:"9px",color:col,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"68px"}}>{label}</span>
+                          <span style={{fontFamily:D.body,fontSize:"12px",color:col,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"68px"}}>{label}</span>
                         </div>
                       );
                     })}
-                    {events.length>3&&<span style={{fontFamily:D.mono,fontSize:"8px",color:D.textMuted}}>+{events.length-3} more</span>}
+                    {events.length>3&&<span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>+{events.length-3} more</span>}
                   </div>
                 </div>
               );
@@ -162,7 +162,7 @@ function CalendarView({ role, onNav }) {
                 <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary}}>
                   {new Date(selDay+"T12:00").toLocaleDateString("en-ZA",{weekday:"long",day:"numeric",month:"long"})}
                 </div>
-                <div style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>{selEvents.length} event{selEvents.length!==1?"s":""}</div>
+                <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{selEvents.length} event{selEvents.length!==1?"s":""}</div>
               </div>
               <button onClick={()=>setSelDay(null)} style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"16px"}}>✕</button>
             </div>
@@ -176,14 +176,14 @@ function CalendarView({ role, onNav }) {
                   <div key={i} style={{marginBottom:"12px",padding:"12px",background:ev.status==="live"?D.emerald+"0a":D.surf2,borderRadius:D.md,border:`1px solid ${ev.status==="live"?D.emerald+"33":D.border}`}}>
                     <div style={{display:"flex",gap:"6px",marginBottom:"8px",flexWrap:"wrap"}}>
                       <Badge color={ev.status==="live"?D.emerald:ev.status==="complete"?D.textMuted:D.sky}>{ev.status}</Badge>
-                      <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}><Icon name="stumps"/> Match</span>
+                      <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}><Icon name="stumps"/> Match</span>
                     </div>
                     <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary,marginBottom:"3px"}}>{ev.homeTeam}</div>
-                    <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"3px"}}>vs {ev.awayTeam}</div>
-                    <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginBottom:"8px"}}><Icon name="map-pin"/> {ev.venue}</div>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"3px"}}>vs {ev.awayTeam}</div>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"8px"}}><Icon name="map-pin"/> {ev.venue}</div>
                     {w&&<WeatherChip w={w} status={ev.status} compact/>}
                     {ev.transport?.bus&&(
-                      <div style={{marginTop:"6px",fontFamily:D.mono,fontSize:"10px",color:textOn(D.lime)}}><Icon name="bus"/> Bus {ev.transport.depart}</div>
+                      <div style={{marginTop:"6px",fontFamily:D.mono,fontSize:"12px",color:textOn(D.lime)}}><Icon name="bus"/> Bus {ev.transport.depart}</div>
                     )}
                   </div>
                 );
@@ -193,11 +193,11 @@ function CalendarView({ role, onNav }) {
                 <div key={i} style={{marginBottom:"12px",padding:"12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${typeCol}22`}}>
                   <div style={{display:"flex",gap:"6px",marginBottom:"6px"}}>
                     <Badge color={typeCol}>{ev.type}</Badge>
-                    <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}><Icon name="dumbbell"/> Training</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}><Icon name="dumbbell"/> Training</span>
                   </div>
                   <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary,marginBottom:"3px"}}>{ev.title}</div>
-                  <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{ev.team} · {ev.time} · {ev.duration}min</div>
-                  <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}><Icon name="map-pin"/> {ev.venue}</div>
+                  <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{ev.team} · {ev.time} · {ev.duration}min</div>
+                  <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}><Icon name="map-pin"/> {ev.venue}</div>
                 </div>
               );
             })}
