@@ -3,7 +3,8 @@
  * b J Jones 34 (25)") and how fresh it is ("Updated 4 s ago · Live · Held 2")
  * — worked out from the fold (scorer/boardData.js lastWicketOf, lib/announce.js
  * freshnessWords) and drawn by the one Board (ui/board.jsx) the pad, the Match
- * Centre and the public page all draw.
+ * Centre and the public page all draw. The pad draws neither row: its keys
+ * must stay above the bottom bar on a 390×844 phone (§4 rule 1).
  *
  * Snapshots: each row's markup is held to a literal, and the same props give
  * the same row on all three surfaces. The public page's fold is made from a
@@ -99,11 +100,11 @@ const UPDATED_ROW = '<p data-testid="board-updated" style="margin:0;font-family:
   const held = html(h(Board, { ...props, updated: { at, status: "Live", held: 2 } }));
 
   const padRow = rowOf(pad, "board-last-wicket");
-  ok("the pad's row: \"Last wicket R Naidoo c S Smith b J Jones 4 (3)\"", textOf(padRow) === "Last wicket R Naidoo c S Smith b J Jones 4 (3)", textOf(padRow));
+  ok("a compact board's row: \"Last wicket R Naidoo c S Smith b J Jones 4 (3)\"", textOf(padRow) === "Last wicket R Naidoo c S Smith b J Jones 4 (3)", textOf(padRow));
   ok("...its markup, held to a literal (one <p>, the label dim, 13px body type)", padRow === LAST_WICKET_ROW, padRow ?? "");
-  ok("the same row, byte for byte, on the pad, the Match Centre's card and a board with a freshness row",
+  ok("the same row, byte for byte, on a compact board, the Match Centre's card and a board with a freshness row",
      padRow === rowOf(centre, "board-last-wicket") && padRow === rowOf(held, "board-last-wicket"));
-  ok("the pad passes no freshness: no \"Updated\" row on it (its sync pill under the board says Held N)",
+  ok("a board given no `updated` draws no \"Updated\" row",
      rowOf(pad, "board-updated") === null && !/Updated/.test(pad));
   const fresh = rowOf(centre, "board-updated");
   ok("the Match Centre's row: \"Updated 4 s ago · Live\"", textOf(fresh) === "Updated 4 s ago · Live", textOf(fresh));
@@ -117,6 +118,18 @@ const UPDATED_ROW = '<p data-testid="board-updated" style="margin:0;font-family:
      && (bare.match(/border-top:1px solid/g) ?? []).length === (pad.match(/border-top:1px solid/g) ?? []).length - 1);
   ok("an empty `updated` draws no row", rowOf(html(h(Board, { total: 1, wickets: 0, updated: {} })), "board-updated") === null
      && !/border-top/.test(html(h(Board, { total: 1, wickets: 0, updated: {} }))));
+}
+
+group("The pad: the board without the last-wicket row (its keys stay above the bar)");
+{
+  const { PadBoard } = await import("../src/scorer/pad.jsx");
+  const inn = deriveInnings(ids([...open, ball({ value: 4 }), ball({ value: 0 }),
+    ball({ type: BALL_TYPE.WICKET, dismissal: "caught", fielder: "S Smith" })]));
+  const padHtml = html(h(PadBoard, { inn, match: { overs: 20 }, target: null }));
+  ok("the pad's board draws the score", /data-testid="board-runs"[^>]*>4</.test(padHtml) && /data-testid="pad-board"/.test(padHtml));
+  ok("...and no last-wicket row, and no freshness row: not one row more than before CRI-1.1",
+     !/board-last-wicket|board-updated|Last wicket|Updated/.test(padHtml));
+  ok("...though its props carry the last wicket (the other screens draw it)", lastWicketText(boardFromInnings(inn).lastWicket) === "R Naidoo c S Smith b J Jones 4 (3)");
 }
 
 group("The public page: the row says the fold's labels, never a name");
