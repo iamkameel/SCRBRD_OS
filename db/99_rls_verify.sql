@@ -7129,15 +7129,15 @@ CREATE OR REPLACE FUNCTION _v121_stage() RETURNS jsonb AS $$
 DECLARE
   HIL uuid := '11111111-1111-1111-1111-111111111111';
   M   uuid := '77777777-0000-0000-0000-000000121001';
-  A   uuid := 'aaaaaaaa-0000-0000-0000-00000000121a';
-  B   uuid := 'aaaaaaaa-0000-0000-0000-00000000121b';
-  C   uuid := 'aaaaaaaa-0000-0000-0000-00000000121c';
+  V_A uuid := 'aaaaaaaa-0000-0000-0000-00000000121a';
+  V_B uuid := 'aaaaaaaa-0000-0000-0000-00000000121b';
+  V_C uuid := 'aaaaaaaa-0000-0000-0000-00000000121c';
   am  uuid;
 BEGIN
   INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-    (A, HIL, '2XI', 'V121 Opener',  121, 'batter', (current_date - interval '16 years')::date),
-    (B, HIL, '2XI', 'V121 Partner', 122, 'batter', (current_date - interval '16 years')::date),
-    (C, HIL, '2XI', 'V121 Seamer',  123, 'bowler', (current_date - interval '16 years')::date);
+    (V_A, HIL, '2XI', 'V121 Opener',  121, 'batter', (current_date - interval '16 years')::date),
+    (V_B, HIL, '2XI', 'V121 Partner', 122, 'batter', (current_date - interval '16 years')::date),
+    (V_C, HIL, '2XI', 'V121 Seamer',  123, 'bowler', (current_date - interval '16 years')::date);
   INSERT INTO match (id, school_id, team_code, opponent, starts_at, format, overs, status) VALUES
     (M, HIL, '2XI', 'Verify 121', '2026-10-24 09:00:00+02', 'T20', 20, 'complete');
   INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
@@ -7147,33 +7147,33 @@ BEGIN
          'v121:' || x.k, x.k, now(), x.kind, x.bt, x.v, x.st, x.ns, x.bw, x.out, x.dis, x.pl
     FROM (VALUES
       ( 1, 0, 'innings_start', NULL,  NULL, NULL::uuid, NULL::uuid, NULL::uuid, NULL::uuid, NULL, '{"battingTeam":"Hilton 2XI","bowlingTeam":"Verify 121","overs":20}'::jsonb),
-      ( 2, 0, 'batters', NULL,  NULL, A,    B,    NULL, NULL, NULL,       '{}'::jsonb),
-      ( 3, 0, 'bowler',  NULL,  NULL, NULL, NULL, C,    NULL, NULL,       '{}'::jsonb),
-      ( 4, 0, 'ball',    'run', 1,    A,    B,    C,    NULL, NULL,       '{}'::jsonb),
-      ( 5, 0, 'ball',    'run', 4,    B,    A,    C,    NULL, NULL,       '{}'::jsonb),
-      ( 6, 0, 'ball',    'run', 1,    B,    A,    C,    NULL, NULL,       '{}'::jsonb),
-      ( 7, 0, 'ball',    'run', 2,    A,    B,    C,    NULL, NULL,       '{}'::jsonb),
-      (20, 1, 'ball',    'Nb',  0,    B,    A,    C,    NULL, NULL,       '{"nbType":"height"}'::jsonb),
-      (21, 1, 'ball',    'W',   0,    B,    A,    C,    NULL, 'bowled',   '{}'::jsonb),
-      (22, 1, 'ball',    'Nb',  0,    B,    A,    C,    NULL, NULL,       '{"nbType":"front_foot"}'::jsonb),
-      (23, 1, 'ball',    'run', 0,    B,    A,    C,    NULL, NULL,       '{"notInOver":"illegal_fielding"}'::jsonb),
-      (24, 1, 'ball',    'W',   0,    B,    A,    C,    NULL, 'lbw',      '{}'::jsonb),
-      (25, 1, 'ball',    'Nb',  0,    B,    A,    C,    NULL, NULL,       '{"nbType":"front_foot"}'::jsonb),
-      (26, 1, 'ball',    'Nb',  0,    B,    A,    C,    NULL, NULL,       '{"nbType":"beamer"}'::jsonb),
-      (27, 1, 'ball',    'W',   0,    B,    A,    C,    NULL, 'caught',   '{}'::jsonb),
-      (28, 1, 'ball',    'run', 0,    B,    A,    C,    NULL, NULL,       '{}'::jsonb),
-      (29, 1, 'ball',    'Nb',  0,    B,    A,    C,    NULL, NULL,       '{}'::jsonb),
-      (30, 1, 'ball',    'W',   0,    B,    A,    C,    NULL, 'bowled',   '{}'::jsonb),
-      (40, 2, 'ball',    'run', 4,    A,    B,    C,    NULL, NULL,       '{}'::jsonb),
-      (41, 2, 'ball',    'run', 4,    A,    B,    C,    NULL, NULL,       '{"boundary":false}'::jsonb),
-      (42, 2, 'ball',    'run', 6,    A,    B,    C,    NULL, NULL,       '{"boundary":false}'::jsonb),
-      (43, 2, 'ball',    'Nb',  6,    A,    B,    C,    NULL, NULL,       '{"nbType":"front_foot"}'::jsonb),
-      (44, 2, 'ball',    'W',   1,    A,    B,    C,    B,    'run_out',  '{"nbRuns":"byes","outAt":"striker_end"}'::jsonb)
+      ( 2, 0, 'batters', NULL,  NULL, V_A,    V_B,    NULL, NULL, NULL,       '{}'::jsonb),
+      ( 3, 0, 'bowler',  NULL,  NULL, NULL, NULL, V_C,    NULL, NULL,       '{}'::jsonb),
+      ( 4, 0, 'ball',    'run', 1,    V_A,    V_B,    V_C,    NULL, NULL,       '{}'::jsonb),
+      ( 5, 0, 'ball',    'run', 4,    V_B,    V_A,    V_C,    NULL, NULL,       '{}'::jsonb),
+      ( 6, 0, 'ball',    'run', 1,    V_B,    V_A,    V_C,    NULL, NULL,       '{}'::jsonb),
+      ( 7, 0, 'ball',    'run', 2,    V_A,    V_B,    V_C,    NULL, NULL,       '{}'::jsonb),
+      (20, 1, 'ball',    'Nb',  0,    V_B,    V_A,    V_C,    NULL, NULL,       '{"nbType":"height"}'::jsonb),
+      (21, 1, 'ball',    'W',   0,    V_B,    V_A,    V_C,    NULL, 'bowled',   '{}'::jsonb),
+      (22, 1, 'ball',    'Nb',  0,    V_B,    V_A,    V_C,    NULL, NULL,       '{"nbType":"front_foot"}'::jsonb),
+      (23, 1, 'ball',    'run', 0,    V_B,    V_A,    V_C,    NULL, NULL,       '{"notInOver":"illegal_fielding"}'::jsonb),
+      (24, 1, 'ball',    'W',   0,    V_B,    V_A,    V_C,    NULL, 'lbw',      '{}'::jsonb),
+      (25, 1, 'ball',    'Nb',  0,    V_B,    V_A,    V_C,    NULL, NULL,       '{"nbType":"front_foot"}'::jsonb),
+      (26, 1, 'ball',    'Nb',  0,    V_B,    V_A,    V_C,    NULL, NULL,       '{"nbType":"beamer"}'::jsonb),
+      (27, 1, 'ball',    'W',   0,    V_B,    V_A,    V_C,    NULL, 'caught',   '{}'::jsonb),
+      (28, 1, 'ball',    'run', 0,    V_B,    V_A,    V_C,    NULL, NULL,       '{}'::jsonb),
+      (29, 1, 'ball',    'Nb',  0,    V_B,    V_A,    V_C,    NULL, NULL,       '{}'::jsonb),
+      (30, 1, 'ball',    'W',   0,    V_B,    V_A,    V_C,    NULL, 'bowled',   '{}'::jsonb),
+      (40, 2, 'ball',    'run', 4,    V_A,    V_B,    V_C,    NULL, NULL,       '{}'::jsonb),
+      (41, 2, 'ball',    'run', 4,    V_A,    V_B,    V_C,    NULL, NULL,       '{"boundary":false}'::jsonb),
+      (42, 2, 'ball',    'run', 6,    V_A,    V_B,    V_C,    NULL, NULL,       '{"boundary":false}'::jsonb),
+      (43, 2, 'ball',    'Nb',  6,    V_A,    V_B,    V_C,    NULL, NULL,       '{"nbType":"front_foot"}'::jsonb),
+      (44, 2, 'ball',    'W',   1,    V_A,    V_B,    V_C,    V_B,    'run_out',  '{"nbRuns":"byes","outAt":"striker_end"}'::jsonb)
     ) AS x(k, i, kind, bt, v, st, ns, bw, out, dis, pl);
   INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
   VALUES (M, HIL, 'v121:4', 'Verify 121: the single was a dead ball', '88888888-0000-0000-0000-000000000006')
   RETURNING id INTO am;
-  RETURN jsonb_build_object('m', M, 'a', A, 'b', B, 'c', C, 'am', am);
+  RETURN jsonb_build_object('m', M, 'a', V_A, 'b', V_B, 'c', V_C, 'am', am);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/121 (section 96) ─────────────────────────────────────────────
 
@@ -27380,13 +27380,13 @@ $v49$;
   --   ball_event_live put back (db/71's)                 → (F4) red: 5 is B's
   DECLARE
     y   jsonb := _v121_stage();
-    M   uuid;  A uuid;  B uuid;  C uuid;  am uuid;
+    M   uuid;  V_A uuid;  V_B uuid;  V_C uuid;  am uuid;
     got text;
     r   record;
     n   integer;
     U_STRANGER uuid := 'dddddddd-0000-0000-0000-000000000121';
   BEGIN
-    M := (y->>'m')::uuid; A := (y->>'a')::uuid; B := (y->>'b')::uuid; C := (y->>'c')::uuid; am := (y->>'am')::uuid;
+    M := (y->>'m')::uuid; V_A := (y->>'a')::uuid; V_B := (y->>'b')::uuid; V_C := (y->>'c')::uuid; am := (y->>'am')::uuid;
 
     -- (F5) the rules
     PERFORM _assert(ball_runs_off_bat('W', 1, '{"nbRuns":"byes"}') = 0 AND ball_runs_off_bat('W', 1, '{"nbRuns":"leg_byes"}') = 0
@@ -27413,10 +27413,10 @@ $v49$;
     END;
     PERFORM _as(U_OWNER);
     SELECT scoring_amendment_rejudge(am, jsonb_build_array(
-             jsonb_build_object('seq', 5, 'striker_id', A), jsonb_build_object('seq', 6, 'striker_id', A),
-             jsonb_build_object('seq', 7, 'striker_id', B), jsonb_build_object('seq', 44, 'striker_id', B))) INTO n;
+             jsonb_build_object('seq', 5, 'striker_id', V_A), jsonb_build_object('seq', 6, 'striker_id', V_A),
+             jsonb_build_object('seq', 7, 'striker_id', V_B), jsonb_build_object('seq', 44, 'striker_id', V_B))) INTO n;
     PERFORM _assert(n = 3, format('§96 (F4): %s ball(s) re-judged (expected 3: 5, 6, 7; 44 is another innings)', n));
-    SELECT string_agg(b.seq || '=' || CASE b.striker_id WHEN A THEN 'A' WHEN B THEN 'B' ELSE '?' END, ',' ORDER BY b.seq) INTO got
+    SELECT string_agg(b.seq || '=' || CASE b.striker_id WHEN V_A THEN 'A' WHEN V_B THEN 'B' ELSE '?' END, ',' ORDER BY b.seq) INTO got
       FROM ball_event_live b WHERE b.match_id = M AND b.innings = 0 AND b.kind = 'ball';
     PERFORM _assert(got = '5=A,6=A,7=B', format('§96 (F4): ball_event_live''s strikers read %s (the fold: 5=A,6=A,7=B)', got));
     PERFORM _as(U_STRANGER);
@@ -27427,13 +27427,13 @@ $v49$;
     PERFORM _assert(n = 3, format('§96 (F4): the control read %s re-judged row(s), not 3', n));
 
     -- (F4, F5, F7) every figure, through the career readers
-    SELECT x.runs || '/' || x.balls_faced || ' 4s ' || x.fours || ' 6s ' || x.sixes INTO got FROM player_batting_since(A, NULL) x;
+    SELECT x.runs || '/' || x.balls_faced || ' 4s ' || x.fours || ' 6s ' || x.sixes INTO got FROM player_batting_since(V_A, NULL) x;
     PERFORM _assert(got = '25/7 4s 2 6s 1', format('§96 (F4, F5, F7): A''s batting reads %s (the fold: 25/7 4s 2 6s 1)', got));
-    SELECT x.runs || '/' || x.balls_faced || ' 4s ' || x.fours || ' 6s ' || x.sixes INTO got FROM player_batting_career x WHERE x.player_id = A;
+    SELECT x.runs || '/' || x.balls_faced || ' 4s ' || x.fours || ' 6s ' || x.sixes INTO got FROM player_batting_career x WHERE x.player_id = V_A;
     PERFORM _assert(got = '25/7 4s 2 6s 1', format('§96 (F7): player_batting_career reads A %s', got));
-    SELECT x.runs || '/' || x.balls_faced INTO got FROM player_batting_since(B, NULL) x;
+    SELECT x.runs || '/' || x.balls_faced INTO got FROM player_batting_since(V_B, NULL) x;
     PERFORM _assert(got = '2/12', format('§96 (F4): B''s batting reads %s (the fold: 2/12)', got));
-    SELECT x.runs_conceded || ' w ' || x.wickets INTO got FROM player_bowling_since(C, NULL) x;
+    SELECT x.runs_conceded || ' w ' || x.wickets INTO got FROM player_bowling_since(V_C, NULL) x;
     PERFORM _assert(got = '33 w 1', format('§96 (F5, Q2): C''s bowling reads %s (the fold: 33 w 1)', got));
   END;
   PERFORM set_config('app.user_id', '', true);

@@ -414,6 +414,17 @@ try {
 
   // ── The Laws audit of 28 Oct 2026: F1 and F5 ─────────────────
   group("The Laws audit F1: a run out with no run completed, the batters crossed — the end settles who faces");
+  /** The next man in: from the squad when one is left, else a typed name. */
+  const nextMan = async () => {
+    if (/Available to Bat/i.test(await text())) { await clearBlockers(); return true; }
+    const f = page.locator('input[aria-label="Player name"]');
+    if (!(await f.count())) return false;
+    await f.fill(`Audit Batter ${Date.now() % 1000}`);
+    await page.locator('[role="dialog"] button:not([disabled])', { hasText: /^Go$/ }).first().click({ timeout: 2000 });
+    await page.waitForTimeout(600);
+    await clearBlockers();
+    return true;
+  };
   {
     await makeReady();
     const before = await agree("before the quick single");
@@ -425,8 +436,7 @@ try {
     await tap("wicket-end-bowler");
     await tap("wicket-confirm");
     await page.waitForTimeout(600);
-    ok("the batting-order sheet asks for the next man", /Available to Bat/i.test(await text()));
-    await clearBlockers();
+    ok("the batting-order sheet asks for the next man", await nextMan(), (await text()).slice(0, 300));
     const q1 = await agree("after the striker run out at the bowler's end");
     const w1 = q1.rows.filter((r) => r.kind === "ball" && r.ball_type === "W").at(-1);
     ok("the server stored no run and the bowler's end", (w1?.value ?? 0) === 0 && w1?.payload?.outAt === "bowler_end", JSON.stringify(w1?.payload));
@@ -449,7 +459,7 @@ try {
     await tap("wicket-end-striker");
     await tap("wicket-confirm");
     await page.waitForTimeout(600);
-    await clearBlockers();
+    await nextMan();
     const q2 = await agree("after the run out going for a second bye");
     const w2 = q2.rows.filter((r) => r.kind === "ball" && r.ball_type === "W").at(-1);
     ok("the server stored the bye: one run, nbRuns byes", w2?.value === 1 && w2?.payload?.nbRuns === "byes", JSON.stringify(w2?.payload));
