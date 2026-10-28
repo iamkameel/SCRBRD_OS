@@ -261,7 +261,9 @@ const pillSays = async (/** @type {RegExp} */ re, ms = 12000) => {
 };
 /** Wait for the board to move off `before`, up to 5 s. */
 const boardMoves = async (/** @type {string} */ before) => {
+  const t0 = Date.now();
   for (let t = 0; t < 5000 && (await board()) === before; t += 200) await page.waitForTimeout(200);
+  if (DEBUG && Date.now() - t0 > 1500) console.log(`[debug] the board took ${Date.now() - t0} ms to move (bound 5000)`);
   return (await board()) !== before;
 };
 
@@ -288,11 +290,15 @@ const watchPill = () => page.evaluate(() => {
   const w = /** @type {any} */ (window);
   w.__pillSeen = [];
   clearInterval(w.__pillTimer);
-  w.__pillTimer = setInterval(() => {
+  const look = () => {
     const el = document.querySelector('[aria-label^="Sync status:"]');
     const word = (el?.getAttribute("aria-label")?.match(/^Sync status: ([^.]*)\./)?.[1] ?? "").trim();
     if (word && w.__pillSeen.at(-1) !== word) w.__pillSeen.push(word);
-  }, 25);
+  };
+  // The word before the signal returns, read now: the first tick is 25 ms
+  // away, and the drain can start inside it.
+  look();
+  w.__pillTimer = setInterval(look, 25);
 });
 const pillSeen = async () => /** @type {string[]} */ (await page.evaluate(() => { const w = /** @type {any} */ (window); clearInterval(w.__pillTimer); return w.__pillSeen ?? []; }));
 /** The count a pill word carries ("Held 6" → 6, "Sent" → 0); null for a word with none. */
@@ -407,7 +413,9 @@ try {
   group("C. The signal returns: the outbox drains by itself, and the server agrees");
   await watchPill();
   await ctx.setOffline(false);
+  const t0C = Date.now();
   ok("the pill reaches \"Sent\" with no reload and nobody pressing anything", await pillSays(/^Sent$/, 20000), await pill());
+  if (DEBUG) console.log(`[debug] C drained in ${Date.now() - t0C} ms (bound 20000)`);
   await afterReads(page, 600);
   const seenC = await pillSeen();
   if (DEBUG) console.log("[debug] pill while draining:", seenC.join(" → "));
@@ -445,7 +453,9 @@ try {
   await ctx.setOffline(false);
   // With its resume credential (SCRBRD-078 option B) the pad re-attaches by
   // itself; without one, the banner's own sign-in is what a scorer presses.
+  const t0E = Date.now();
   let sentE = await pillSays(/^Sent$/, 15000);
+  if (DEBUG) console.log(`[debug] E drained in ${Date.now() - t0E} ms (bound 15000)`);
   let signedInE = false;
   if (!sentE && (await tid("sync-signin").count())) {
     signedInE = true;
