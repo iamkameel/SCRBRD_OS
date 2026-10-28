@@ -130,6 +130,21 @@ const clearBlockers = async () => {
     const next = page.locator("button:not([disabled])", { hasText: /Next\s*$/i });
     if (await next.count()) { try { await next.first().click({ timeout: 1500 }); } catch { /* next pass */ } await page.waitForTimeout(500); continue; }
     const body = await text();
+    // The over's end: the likely bowler if one may bowl, else a second
+    // bowler named (only A Nel has bowled, and he bowled the last over).
+    if (/Over \d+ Complete/i.test(body)) {
+      const choice = page.locator('[data-testid="bowler-choice"]:not([disabled])');
+      if (await choice.count()) { try { await choice.first().click({ timeout: 1500 }); } catch { /* next pass */ } await page.waitForTimeout(600); continue; }
+      const field = page.locator("input[aria-label='Bowler name'], input[placeholder*='name' i], input[placeholder*='Search bowler' i]").last();
+      if (await field.count()) {
+        try {
+          await field.fill("B Zulu");
+          await page.locator("button:not([disabled])", { hasText: /^Go$/ }).first().click({ timeout: 1500 });
+        } catch { /* next pass */ }
+        await page.waitForTimeout(600);
+        continue;
+      }
+    }
     if (/Opening Bowler/i.test(body)) {
       const field = page.locator("input[placeholder*='name' i], input[placeholder*='Search bowler' i]").last();
       if (await field.count()) {
@@ -148,7 +163,7 @@ const makeReady = async () => {
   for (let i = 0; i < 6; i++) {
     await clearBlockers();
     if (!/Can't score yet/i.test(await text()) && !(await tid("scoring-blocked-fix").count())) {
-      if (!/Batting Order|Opening Bowler/i.test(await text())) return true;
+      if (!/Batting Order|Opening Bowler|Over \d+ Complete/i.test(await text())) return true;
       continue;
     }
     try { await tid("scoring-blocked-fix").first().click({ timeout: 2000 }); } catch { /* next pass */ }
