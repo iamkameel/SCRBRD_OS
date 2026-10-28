@@ -27356,11 +27356,11 @@ $v49$;
   --              kind, each the caller's own; a link ended takes the child off
   --              and his row can no longer be changed
   --
-  -- Falsified on 28 Oct 2026, each change made to db/120 and the section run
-  -- against it, each red the first:
-  --   notification_pref_read as `true`             → (own) red: gb reads ga's 2 rows
-  --   the insert policy without is_family_of()     → (child) red: ga wrote a row about B
-  --   'welfare' in notification_pref_mutable_kind  → (locked) red: welfare was accepted
+  -- To falsify, each change made to db/120 and the section run against it;
+  -- the label that should go red first:
+  --   notification_pref_read as `true`             → (own): gb reads ga's rows
+  --   the insert policy without is_family_of()     → (child): ga writes a row about B
+  --   'welfare' in notification_pref_mutable_kind  → (locked): welfare is accepted
   DECLARE
     y   jsonb := _v120_stage();
     ga  uuid;

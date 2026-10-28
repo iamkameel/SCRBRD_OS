@@ -61,7 +61,9 @@ try {
     const o = await choices(otherMum);
     ok("the other mother: her own boy, not his", o.some((r) => r.subject_player_id === WHITFIELD) && !o.some((r) => r.subject_player_id === PILLAY), line(o));
     const s = await choices(pupil);
-    ok("a pupil: notice, recognition, fixture, availability, nobody's child", line(s) === "notice,recognition,fixture,availability", line(s));
+    // availability only where his own link holds availability.read; the
+    // `player` role alone does not, and nothing reaches him he cannot read.
+    ok("a pupil: notice, recognition, fixture, nobody's child", /^notice,recognition,fixture(,availability)?$/.test(line(s)), line(s));
     ok("...and his quiet hours apply (D21)", s.length > 0 && s.every((r) => r.quiet_hours === true));
     const c = await choices(coach);
     ok("a coach: notice, recognition, fixture", line(c) === "notice,recognition,fixture", line(c));

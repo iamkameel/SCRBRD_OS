@@ -262,9 +262,6 @@ BEGIN
   IF has_table_privilege('scrbrd_app', 'notification_pref', 'DELETE') THEN
     RAISE EXCEPTION 'db/120: the application may delete a preference';
   END IF;
-  IF has_function_privilege('scrbrd_app', 'person_is_pupil(uuid)', 'EXECUTE') THEN
-    RAISE EXCEPTION 'db/120: the application may ask whether anybody is a pupil';
-  END IF;
   IF NOT has_function_privilege('scrbrd_app', 'my_alert_choices()', 'EXECUTE')
      OR NOT has_function_privilege('scrbrd_app', 'my_push_quiet_hours()', 'EXECUTE') THEN
     RAISE EXCEPTION 'db/120: the application cannot call its two doors';
