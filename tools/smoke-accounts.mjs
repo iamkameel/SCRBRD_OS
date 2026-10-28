@@ -187,7 +187,9 @@ try {
   ok("the preview says his devices are gone", (await preview(office, U_COACH)).body?.sessions === 0);
   const stamp = (rows2) => rows2.find((x) => x.id === U_COACH)?.status_changed_at ?? null;
   ok("accounts carries the date of the change to the office", !!stamp(after));
-  ok("...and to the principal (audit.read)", !!stamp((await read(principal, "accounts")).body?.rows ?? []));
+  // READERS_child_data Q2 (db/116): audit.read opens the access log and no
+  // reason; the disable is user.invite's act, which the principal does not hold.
+  ok("...not to the principal (audit.read alone)", !stamp((await read(principal, "accounts")).body?.rows ?? []));
   const bursar = await tokenFor("bursar@example.invalid", "bursar-desk");
   const bursarRows = (await read(bursar, "accounts")).body?.rows ?? [];
   ok("...not to the bursar, who holds user.read alone: he sees the account, not when",

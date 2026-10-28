@@ -185,7 +185,7 @@ function SquadView({ role }) {
                     <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary,lineHeight:1.2}}>
                       {p.name} {p.cap==="c"?"(c)":p.cap==="vc"?"(vc)":""}
                     </div>
-                    <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginTop:"2px"}}>{p.age}y · {p.batHand}HB · {p.bowlArm==="L"?"LA":"RA"}{p.bowlStyle}</div>
+                    <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{p.age}y · {p.batHand}HB · {p.bowlArm==="L"?"LA":"RA"}{p.bowlStyle}</div>
                   </div>
                 </div>
                 <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"8px"}}>
@@ -195,17 +195,17 @@ function SquadView({ role }) {
                 <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"4px"}}>
                   <div style={{textAlign:"center",padding:"5px",background:D.surf2,borderRadius:D.sm}}>
                     <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.sky}}>{stat(p.avg)}</div>
-                    <div style={{fontFamily:D.body,fontSize:"8px",color:D.textMuted}}>avg</div>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>avg</div>
                   </div>
                   {p.wkts>0?(
                     <div style={{textAlign:"center",padding:"5px",background:D.surf2,borderRadius:D.sm}}>
                       <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.violetText}}>{stat(p.wkts)}</div>
-                      <div style={{fontFamily:D.body,fontSize:"8px",color:D.textMuted}}>wkts</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>wkts</div>
                     </div>
                   ):(
                     <div style={{textAlign:"center",padding:"5px",background:D.surf2,borderRadius:D.sm}}>
                       <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.amber}}>{stat(p.sr)}</div>
-                      <div style={{fontFamily:D.body,fontSize:"8px",color:D.textMuted}}>SR</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>SR</div>
                     </div>
                   )}
                 </div>
@@ -221,7 +221,7 @@ function SquadView({ role }) {
                 <Avatar name={selected.name} size={48} color={roleColor(selected.role)}/>
                 <div>
                   <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary}}>{selected.name}</div>
-                  <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>{selected.team} · Age {selected.age}</div>
+                  <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{selected.team} · Age {selected.age}</div>
                 </div>
               </div>
               <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"16px"}}>✕</button>
@@ -233,31 +233,31 @@ function SquadView({ role }) {
               <Badge color={selected.bowlArm==="L"?D.violet:D.emerald}>{selected.bowlArm==="L"?"LA":"RA"}{selected.bowlStyle}</Badge>
             </div>
             <div style={{marginBottom:"14px"}}>
-              <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px"}}>SEASON STATS</div>
+              <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px"}}>SEASON STATS</div>
               <div style={{display:"grid",gridTemplateColumns:"var(--g-3,1fr 1fr 1fr)",gap:"6px"}}>
                 {[["AVG",stat(selected.avg),D.sky],["SR",stat(selected.sr),D.amber],["WKTS",stat(selected.wkts),D.violet],["ECON",stat(selected.econ),D.emerald],["AGE",selected.age,D.textMuted],[selected.cap?"ROLE":"",(selected.cap||"").toUpperCase()||"-",D.amber]].filter(([l])=>l).map(([l,v,c])=>(
                   <div key={l} style={{textAlign:"center",padding:"7px 4px",background:D.surf2,borderRadius:D.sm}}>
                     <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:500,color:c}}>{v}</div>
-                    <div style={{fontFamily:D.body,fontSize:"8px",color:D.textMuted,marginTop:"2px"}}>{l}</div>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{l}</div>
                   </div>
                 ))}
               </div>
             </div>
             <div style={{marginBottom:"14px"}}>
-              <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px"}}>RECENT FORM</div>
+              <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px"}}>RECENT FORM</div>
               <div style={{display:"flex",gap:"4px"}}>
                 {(selected.form ?? []).map((v,i)=>{
                   const bg = v===0?D.rose+"4d":v>=5?D.amber+"44":v>=3?D.emerald+"33":D.sky+"22";
                   const tc = v===0?D.rose:v>=5?D.amber:v>=3?D.emerald:D.sky;
                   return <div key={i} style={{flex:1,textAlign:"center",padding:"5px 2px",borderRadius:D.sm,background:bg}}>
-                    <span style={{fontFamily:D.mono,fontSize:"11px",fontWeight:700,color:tc}}>{v===0?"W":v}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:tc}}>{v===0?"W":v}</span>
                   </div>;
                 })}
               </div>
             </div>
             {!SKILLS_MATRIX[selected.id]&&(
               <div>
-                <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS SNAPSHOT</div>
+                <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS SNAPSHOT</div>
                 {/* No assessment is not a radar of zeros: it says so, or says the read did not come. */}
                 <ReadState testId="squad-skills-read-state" onRetry={retryRoster} compact icon="target"
                   read={readStateFor(skillsRead, [], { what: "skills assessments", mayRead: holdsAsHeld(role, "player.development.read") })}/>
@@ -265,7 +265,7 @@ function SquadView({ role }) {
             )}
             {SKILLS_MATRIX[selected.id]&&(
               <div>
-                <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS SNAPSHOT</div>
+                <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS SNAPSHOT</div>
                 <div style={{display:"flex",justifyContent:"center"}}>
                   {/* One axis per category the ratings carry, the mean of its
                       1-20 ratings on the chart's 0-100 scale. Naming a
@@ -320,7 +320,7 @@ function SquadView({ role }) {
               <div style={{fontFamily:D.body,fontSize:"13px",fontWeight:600,color:D.textPrimary,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                 {np.fullName.trim()||"His name, as it will appear"}
               </div>
-              <div style={{fontFamily:D.mono,fontSize:"9px",color:D.textMuted,marginTop:"2px"}}>
+              <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>
                 {teamLabel(npTeam)}
                 {npAge!=null&&` · ${npAge}y (${npBand})`}
                 {np.battingStyle&&` · ${np.battingStyle}HB`}
@@ -342,7 +342,7 @@ function SquadView({ role }) {
                   the team is picked, instead of leaving a school to discover
                   a boy was ineligible only when he is selected for a match. */}
               {npAge!=null&&(
-                <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"-8px",marginBottom:"12px"}}>
+                <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"-8px",marginBottom:"12px"}}>
                   {npAge} on the season's cut-off · school band <b style={{color:D.textSecondary}}>{npBand}</b>
                 </div>
               )}
@@ -357,19 +357,19 @@ function SquadView({ role }) {
               <Input label="ID number (or use the date above)" value={np.idNumber}
                      onChange={(v)=>setNp(n=>({...n,idNumber:v}))} placeholder="13 digits"/>
               {npDob&&npDob.ok===false&&(
-                <div data-testid="add-player-dob-note" role="alert" style={{fontFamily:D.body,fontSize:"10px",
+                <div data-testid="add-player-dob-note" role="alert" style={{fontFamily:D.body,fontSize:"12px",
                   color:textOn(D.rose),marginTop:"-8px",marginBottom:"12px"}}>
                   {BIRTH_DATE_MESSAGE[npDob.reason] || npDob.reason}
                 </div>
               )}
               {npDob&&npDob.ok&&npDob.source==="id_number"&&(
-                <div data-testid="add-player-dob-note" style={{fontFamily:D.body,fontSize:"10px",
+                <div data-testid="add-player-dob-note" style={{fontFamily:D.body,fontSize:"12px",
                   color:D.textMuted,marginTop:"-8px",marginBottom:"12px"}}>
                   Born <b style={{color:D.textSecondary}}>{npDob.born}</b>, read from the ID number.
                 </div>
               )}
               {npDob&&npDob.ok&&npDob.warning&&(
-                <div data-testid="add-player-dob-warning" style={{fontFamily:D.body,fontSize:"10px",
+                <div data-testid="add-player-dob-warning" style={{fontFamily:D.body,fontSize:"12px",
                   color:D.amber,marginTop:"-8px",marginBottom:"12px"}}>
                   {BIRTH_DATE_MESSAGE[npDob.warning]}
                 </div>
@@ -381,14 +381,14 @@ function SquadView({ role }) {
 
           <Select label="Team" value={npTeam} onChange={(v)=>setNp(n=>({...n,teamCode:v}))} options={teamOptions}/>
           {npEligible===false&&(
-            <div role="alert" data-testid="age-eligibility-note" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.amber),
+            <div role="alert" data-testid="age-eligibility-note" style={{fontFamily:D.body,fontSize:"12px",color:textOn(D.amber),
               background:D.amber+"14",border:`1px solid ${D.amber}33`,borderRadius:D.sm,padding:"8px 10px",marginTop:"-8px",marginBottom:"14px"}}>
               He turns {npAge} before the season's cut-off, which is too old for {teamLabel(npTeam)} — the office may still
               enter him here, but he will not be eligible when this team is picked for a fixture.
             </div>
           )}
           {squadClash&&(
-            <div role="alert" data-testid="squad-no-clash-note" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.amber),
+            <div role="alert" data-testid="squad-no-clash-note" style={{fontFamily:D.body,fontSize:"12px",color:textOn(D.amber),
               background:D.amber+"14",border:`1px solid ${D.amber}33`,borderRadius:D.sm,padding:"8px 10px",marginTop:"-8px",marginBottom:"14px"}}>
               No {np.squadNo} is already {squadClash.name}'s on {teamLabel(npTeam)}.
             </div>
@@ -398,7 +398,7 @@ function SquadView({ role }) {
             options={[{value:"batter",label:"Batter"},{value:"bowler",label:"Bowler"},{value:"allrounder",label:"Allrounder"},{value:"keeper",label:"Keeper"}]}/>
 
           <div style={{marginBottom:"14px"}}>
-            <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"6px"}}>Batting Hand</div>
+            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"6px"}}>Batting Hand</div>
             <SegmentedControl label="Batting hand" value={np.battingStyle} onChange={(v)=>setNp(n=>({...n,battingStyle:v}))}
               options={[{value:"R",label:"Right"},{value:"L",label:"Left"}]}/>
           </div>
@@ -409,19 +409,19 @@ function SquadView({ role }) {
           {showBowling&&(
             <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"12px",marginBottom:"14px"}}>
               <div>
-                <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"6px"}}>Bowling Arm</div>
+                <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"6px"}}>Bowling Arm</div>
                 <SegmentedControl label="Bowling arm" value={np.bowlingArm} onChange={(v)=>setNp(n=>({...n,bowlingArm:v}))}
                   options={[{value:"R",label:"Right"},{value:"L",label:"Left"}]}/>
               </div>
               <div>
-                <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"6px"}}>Pace / Spin</div>
+                <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"6px"}}>Pace / Spin</div>
                 <SegmentedControl label="Bowling pace or spin" value={np.bowlingStyle} onChange={(v)=>setNp(n=>({...n,bowlingStyle:v}))}
                   options={[{value:"F",label:"Fast"},{value:"M",label:"Medium"},{value:"S",label:"Spin"}]}/>
               </div>
             </div>
           )}
 
-          {npSaid&&<div role="alert" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.rose),marginBottom:"8px"}}>{npSaid}</div>}
+          {npSaid&&<div role="alert" style={{fontFamily:D.body,fontSize:"12px",color:textOn(D.rose),marginBottom:"8px"}}>{npSaid}</div>}
           <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
             <Btn variant="ghost" onClick={()=>{setAddModal(false);setNpSaid("");}}>Cancel</Btn>
             <Btn onClick={async ()=>{

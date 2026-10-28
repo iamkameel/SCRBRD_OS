@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { batHandOf, chargedToBowler, isWicketBall, normaliseDismissal, placementFromTap, screenAngle, suspensionWords } from "@scrbrd/scoring";
+import { batHandOf, placementFromTap, screenAngle, suspensionWords } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
 import { rulesOf } from "@scrbrd/scoring";
 import { nameBook } from "../lib/matchCentre.js";
@@ -13,6 +13,7 @@ import { ALL_SHOTS_FLAT, fetchAICommentary } from "./shots.js";
 import { Badge, BallDot, Card, Lbl, SignalBar } from "./ui.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { isSuperOver, pairPlace, superOverCommentary, superOverTitle } from "../lib/superOver.js";
+import { latestMilestones } from "./milestones.js";
 
 
 /* ═══════════════════════════════════════════════════════
@@ -433,66 +434,6 @@ function ScorecardPanel({innings,idx}){
   );
 }
 
-// Detect milestones on a ball
-// `inn` is the PRE-ball snapshot (updInn's updater is deferred by React),
-// so post-ball values must be derived from the committed ball itself.
-function detectMilestone(ball,inn){
-  const bat=inn?.batsmen.find(b=>b.id===ball.striker);
-  const bow=inn?.bowlers.find(b=>b.id===ball.bowler);
-  const milestones=[];
-  if(bat&&ball.type!=="W"&&ball.type!=="Wd"&&ball.type!=="Nb"){
-    const credit=ball.type==="run"?(ball.value||0):0; // byes/leg-byes don't credit the batter
-    const prev=bat.runs, cur=bat.runs+credit;
-    if(prev<50&&cur>=50)milestones.push({type:"fifty",label:"FIFTY!",sub:bat.name+" reaches 50",color:D.sky,icon:"bat"});
-    if(prev<100&&cur>=100)milestones.push({type:"century",label:"CENTURY!",sub:bat.name+" — 100 not out",color:D.amber,icon:"medal"});
-    if(prev<150&&cur>=150)milestones.push({type:"150",label:"150!",sub:bat.name+" on 150",color:D.amber,icon:"flame"});
-    if(prev<200&&cur>=200)milestones.push({type:"200",label:"DOUBLE!",sub:bat.name+" — 200 runs!",color:D.amber,icon:"crown"});
-  }
-  // A wicket that stood: a W, or one on a wide or a no-ball (isWicketBall()),
-  // not one a free hit saved (a log entry says so; the pad's caller passes
-  // no method then).
-  if(bow&&isWicketBall(ball)&&!ball.freeHitSaved){
-    const wkts=(bow.wickets||0)+1; // including this dismissal
-    // His fifth only when this one is his (chargedToBowler): a run out off a
-    // no-ball, now recordable, is the side's wicket and not the bowler's.
-    const his=ball.dismissal!=null&&chargedToBowler(normaliseDismissal(ball.dismissal));
-    if(wkts===5&&his)milestones.push({type:"fifer",label:"FIFER!",sub:bow.name+" takes 5 wickets",color:D.roseText,icon:"ball"});
-    // A hat-trick is three of the bowler's balls of the over running: a
-    // wicket on a wide or a no-ball (Law 22.9, 21.17) neither makes one nor
-    // puts him on one, as the commentary and SQL's bowler_hat_trick read it.
-    // And each of the three his (chargedToBowler) and standing: a run out
-    // or a free hit's save between makes no hat-trick.
-    const ofOver=ball.type!=="Wd"&&ball.type!=="Nb";
-    const mine=(b)=>b?.type==="W"&&!b.freeHitSaved&&b.bowler===bow.id&&chargedToBowler(normaliseDismissal(b.dismissal));
-    if(wkts>=3&&ofOver&&his){
-      const legal=(inn?.ballLog||[]).filter(b=>b.type!=="Wd"&&b.type!=="Nb").slice(-2);
-      if(legal.length===2&&legal.every(mine))
-        milestones.push({type:"hattrick",label:"HAT-TRICK!",sub:bow.name+" — 3 in a row!",color:D.roseText,icon:"sparkles"});
-    }
-    if((inn?.wickets||0)+1>=10)milestones.push({type:"allout",label:"ALL OUT!",sub:(inn?.battingTeam||"")+" all out",color:D.roseText,icon:"bails-off"});
-    // Tier 3 (DESIGN_DIRECTION §10): the HAT-TRICK BALL joins the interrupt —
-    // this overlay queue is the one the pad already has. Two of the bowler's
-    // wickets off his last two legal balls, not three (that is the hat-trick
-    // itself), with the innings still going. Only a wicket that is the
-    // bowler's counts: a run out on the second ball puts no one on a hat-trick.
-    // A caller that does not say how the batter was out is not trusted with it.
-    else if(ofOver){
-      const legal=(inn?.ballLog||[]).filter(b=>b.type!=="Wd"&&b.type!=="Nb").slice(-2);
-      if(ball.dismissal!=null&&chargedToBowler(normaliseDismissal(ball.dismissal))&&mine(legal.at(-1))&&!mine(legal.at(-2)))
-        milestones.push({type:"hattrickball",label:"HAT-TRICK BALL",sub:bow.name+" — two in two",color:D.roseText,icon:"sparkles"});
-    }
-  }
-  // Team milestones — total includes extras
-  if(inn){
-    const added=(ball.type==="Wd"||ball.type==="Nb")?1+(ball.value||0):(ball.value||0);
-    const prevRuns=inn.runs, postRuns=inn.runs+added;
-    [50,100,150,200,250,300,350,400].forEach(n=>{
-      if(prevRuns<n&&postRuns>=n)milestones.push({type:"team"+n,label:n+"!",sub:inn.battingTeam+" reach "+n,color:D.indigoText,icon:"bat"});
-    });
-  }
-  return milestones.length>0?milestones[0]:null;
-}
-
 /* ═══════════════════════════════════════════════════════
    COMMENTARY CARD  (top-level, used inside Score tab)
 ═══════════════════════════════════════════════════════ */
@@ -526,7 +467,10 @@ function CommentaryCard({inn,innings,events}){
     if(!lastBallKey||!inn||aiLines[lastBallKey])return;
     setLoading(true);
     const latestBall=inn.ballLog[inn.ballLog.length-1];
-    const mile=detectMilestone(latestBall,inn);
+    // The milestone the ball brought up, as the pad's moment reads it: the
+    // facts', from the log (Recognition R2, milestones.js).
+    const at=(innings??[]).indexOf(inn);
+    const mile=at<0?null:(latestMilestones(events??[],at,rulesOf(innings))[0]??null);
     fetchAICommentary(latestBall,inn,mile?mile.label:null).then(line=>{
       if(line)setAiLines(prev=>({...prev,[lastBallKey]:line}));
       setLoading(false);
@@ -617,10 +561,13 @@ function CommentaryCard({inn,innings,events}){
 ═══════════════════════════════════════════════════════ */
 // Build event config from ball value or milestone object
 function buildEventCfg(ballValue,milestone){
+  // A milestone is words and, for an achievement, its badge (spec §13: the
+  // milestone pin, dashed while tentative). No colour of its own: the board's
+  // flash is one accent for every moment (pad.jsx BoardFlash).
   if(milestone)return{
-    label:milestone.label,sub:milestone.sub,
-    color:milestone.color,bg:milestone.color+"08",
-    icon:milestone.icon,isMilestone:true,
+    label:milestone.label,sub:milestone.sub,isMilestone:true,
+    ...(milestone.badge?{badge:milestone.badge}:{}),
+    ...(milestone.tentative?{tentative:true}:{}),
   };
   if(ballValue===4)return{label:"FOUR!",sub:"Boundary",color:D.sky,glow:clr(D.sky,.5),bg:clr(D.sky,.06)};
   if(ballValue===6)return{label:"SIX!",sub:"Maximum!",color:D.amber,glow:clr(D.amber,.6),bg:clr(D.amber,.06)};
@@ -634,8 +581,30 @@ function buildEventCfg(ballValue,milestone){
 function wicketMomentCfg(stood){
   return stood?buildEventCfg("W",null):{label:"NOT OUT: FREE HIT",sub:null};
 }
-/** A moment in words, for the live region: "FOUR. Boundary", "HAT-TRICK BALL. K Naidoo — two in two". */
-const momentWords=(cfg)=>`${cfg.label.replace(/!+$/,"")}${cfg.sub?`. ${cfg.sub}`:""}`;
+/**
+ * What a delivery plays on the board, in order (Recognition R2): the wicket
+ * (`wicket`, its cfg) or a four or a six (`ballValue`), then EVERY milestone
+ * it brought up (milestones.js), not the first only. The pad plays the first
+ * and queues the rest; each is its own flash. Non-blocking (`noBlur`) when a
+ * sheet is about to open, so nothing covers it. Display only.
+ */
+function momentQueue({ballValue=null,wicket=null,miles=[],modalPending=false}){
+  const q=[];
+  if(wicket)q.push(wicket);
+  else if(ballValue===4||ballValue===6)q.push(buildEventCfg(ballValue,null));
+  for(const m of miles)q.push(buildEventCfg(null,m));
+  return modalPending?q.map(c=>({...c,noBlur:true})):q;
+}
+/** A moment in words, for the live region: "FOUR. Boundary", "HAT-TRICK BALL. K Naidoo — two in two",
+ *  "FIFTY. K Naidoo reaches 50. Tentative" (an achievement's cue is tentative, spec §8, and says so). */
+const momentWords=(cfg)=>`${cfg.label.replace(/!+$/,"")}${cfg.sub?`. ${cfg.sub}`:""}${cfg.tentative?". Tentative":""}`;
+/** A ball's moments in words, once, in order, for the live region (Recognition R2 review, S2):
+ *  "SIX. Maximum! FIFTY. K Naidoo reaches 50. Tentative. 50. Hilton reach 50". One moment is
+ *  its own words, as it always was. */
+const ballWords=(q)=>{
+  const parts=q.filter(c=>c?.label).map(momentWords);
+  return parts.map((p,i)=>i<parts.length-1&&!/[.!?]$/.test(p)?`${p}.`:p).join(" ");
+};
 
 /* ═══════════════════════════════════════════════════════
    INNINGS OVER BANNER — SCRBRD-038
@@ -783,4 +752,4 @@ function PartnershipCard({inn}){
   );
 }
 
-export { CommentaryCard, FreeHitBanner, InningsOverBanner, IntelPanel, PartnershipCard, ScorecardPanel, WagonWheel, buildEventCfg, detectMilestone, momentWords, wicketMomentCfg };
+export { CommentaryCard, FreeHitBanner, InningsOverBanner, IntelPanel, PartnershipCard, ScorecardPanel, WagonWheel, ballWords, buildEventCfg, momentQueue, momentWords, wicketMomentCfg };

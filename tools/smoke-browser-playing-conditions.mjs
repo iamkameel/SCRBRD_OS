@@ -30,6 +30,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5391);
 const API_PORT = port(8891);
@@ -83,6 +84,7 @@ async function open(viewport = { width: 1280, height: 800 }) {
   const ctx = await browser.newContext({ viewport });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -107,14 +109,14 @@ async function signIn(page, who) {
   await page.waitForTimeout(500);
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return /Match Centre|Dashboard/i.test(await text(page));
 }
 async function nav(page, label) {
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   return true;
 }
 
@@ -159,7 +161,7 @@ try {
   await dos.page.locator('input[placeholder="e.g. Michaelhouse 1st XI"]').fill(OPPONENT);
   await dos.page.locator('input[type="date"]').first().fill(d3);
   await comp.selectOption({ label: "KZN Schools T20 League" });
-  await dos.page.waitForTimeout(1200);   // the version in force that day is read
+  await afterReads(dos.page, 1200);   // the version in force that day is read
   const note = await dos.page.locator('[data-testid="fixture-prefill"]').innerText().catch(() => "");
   ok("choosing it pre-fills the format and overs, and says from which version", /KZN Schools T20 2026\/27 v1/.test(note), note);
   const overs = await dos.page.locator('input[type="number"]').first().inputValue().catch(() => "");
@@ -167,7 +169,7 @@ try {
   ok("...T20 at 25 overs", format === "T20" && overs === "25", `${format} ${overs}`);
   ok("the preview says so", /T20 · 25 overs/.test(await dos.page.locator('[data-testid="fixture-preview"]').innerText()));
   ok("he arranges it", await click(dos.page, /Arrange Fixture/, 4000));
-  await dos.page.waitForTimeout(1500);
+  await afterReads(dos.page, 1500);
   const [m] = await dbq(`select id, competition_id, format, overs from match where opponent = $1`, [OPPONENT]);
   ok("the fixture is stored in the league, at 25 overs", m?.competition_id === LEAGUE && m?.overs === 25 && m?.format === "T20", JSON.stringify(m));
   ok("no console errors (director of sport)", dos.errors.length === 0, dos.errors.join(" | "));
@@ -196,6 +198,13 @@ try {
   };
   ok("the scorer signs in", await signIn(page, /Scorer/));
   await nav(page, /Match Centre/);
+  // Match Centre draws a fixture's card and its scoring button only once its reads answer (matches,
+  // staff, grounds, competitions, weather), and on the first opening those
+  // queue behind the previous screen's: 1.4-2.3 s measured, against the fixed
+  // wait before this look. Give the card up to 10 s to be drawn; one that is
+  // never drawn is judged exactly as before.
+  await page.waitForFunction((opp) => [...document.querySelectorAll("button")].some((b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || ""))
+    && document.body.textContent.includes(opp), OPPONENT, { timeout: 10000 }).catch(() => {});
   const opened = await page.evaluate((opp) => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
@@ -233,10 +242,10 @@ try {
   await tap("key-wicket");
   await tap("wicket-mode-bowled");
   await tap("wicket-confirm");
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   ok("the bowled after the no-ball stands: the next batter is asked for", await typeBatter());
   for (let i = 0; i < 5; i++) { await tap("run-0", 3000); await page.waitForTimeout(150); }
-  await page.waitForTimeout(2800);
+  await afterReads(page, 2800);
   const [live] = await dbq(`select wickets, legal_balls from match_live_score where match_id = $1 and innings = 0`, [MATCH]);
   ok("the API's live score has the wicket: no free hit in this league", Number(live?.wickets) === 1 && Number(live?.legal_balls) === 6, JSON.stringify(live));
   const [fixed] = await dbq(`select set_version, doc->'play'->>'format.free_hit' as fh from match_conditions where match_id = $1`, [MATCH]);

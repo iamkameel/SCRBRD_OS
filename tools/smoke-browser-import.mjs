@@ -46,6 +46,7 @@ import pg from "pg";
 import { roleGrants } from "../packages/policy/src/roles.mjs";
 import { IMPORTS } from "../services/api/io/import-api.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4386);
 const API_PORT = port(8917);
@@ -93,6 +94,7 @@ async function open(apiBase = API, viewport = { width: 1280, height: 900 }) {
   const ctx = await browser.newContext({ viewport, acceptDownloads: true });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -120,7 +122,7 @@ async function signIn(page, email, password = "") {
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   if (password) await page.fill("#login-password", password);
   await click(page, /^Sign In$/, 5000);
-  await page.waitForTimeout(2000);
+  await afterReads(page, 2000);
   return /Match Centre|Dashboard/i.test(await text(page));
 }
 /** To a sidebar destination, by the nav's own test id. */
@@ -298,7 +300,7 @@ try {
   const sideBtn = sq.page.locator("button", { hasText: /^U14A$/ }).first();
   ok("the side the file named is a tab on Squad", await sideBtn.count() === 1);
   await sideBtn.click({ timeout: 5000 });
-  await sq.page.waitForTimeout(800);
+  await afterReads(sq.page, 800);
   const squadText = await text(sq.page);
   ok("the three imported boys appear on Squad", NAMES.every((n) => squadText.includes(n)), NAMES.filter((n) => !squadText.includes(n)).join(" | "));
 

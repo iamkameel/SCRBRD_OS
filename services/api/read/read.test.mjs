@@ -65,6 +65,10 @@ group("A. Reads run under a principal transaction");
   // The session states identity and nothing else; authority is looked up.
   ok("no app.role is set at all", !log.some(l => l.text.includes("app.role")));
   ok("all config transaction-local", log.filter(l => l.text.includes("set_config")).every(l => /, true\)/.test(l.text)));
+  // JIT compiling cost `career` 1.4 s of 2.2 s on the Awards walk's data.
+  const jit = texts.indexOf("set local jit = off");
+  ok("JIT is off for the read, transaction-local, before the query runs",
+     jit > texts.indexOf("BEGIN") && jit < log.findIndex(l => l.text.includes("from match")));
   ok("connection released back to pool", client.released === true);
 }
 

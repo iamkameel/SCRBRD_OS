@@ -67,6 +67,11 @@ group("A link, in words");
   }
   ok("revoked before db/109: no reason recorded, said so",
      /no reason recorded/.test(linkStateWords(asChildLink(row({ live: false, verification_state: "revoked", valid_until: "2026-01-01" })))));
+  // READERS_child_data Q2 (db/116): a reader without guardian.link.manage gets
+  // no ending row, so he is not told that none exists.
+  { const w = linkStateWords(asChildLink(row({ live: false, verification_state: "revoked", valid_until: "2026-01-01" })), { readsEndings: false });
+    ok("revoked, read without guardian.link.manage: the office's to read, never 'no reason recorded'",
+       /office's to read/.test(w) && !/no reason recorded/.test(w), w); }
 }
 
 group("Revoke…, offered and not");

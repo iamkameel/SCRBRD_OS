@@ -86,6 +86,10 @@ export const NAMED_NOT_EXPORTED = Object.freeze([
   "child_links",
   // His figures across matches (GA-I24-I25 D9: compare exports nothing).
   "career", "career_by_season", "matchups", "matchup_coverage",
+  // His conduct (db/116): a league's read of its competition's records, the
+  // standing file the narrow door exists to prevent, and a coach's read of
+  // his side's, read on a screen and not filed.
+  "competition_discipline", "side_discipline",
 ]);
 
 /**

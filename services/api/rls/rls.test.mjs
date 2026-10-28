@@ -280,10 +280,11 @@ group("C2. Tables added after db/09 shipped (SCRBRD-110)");
     const own = readFileSync(join(DB_DIR, /** @type {Record<string, string>} */ (TABLES_ADDED_SINCE_09)[table]), "utf8");
     const policy = own.match(new RegExp(`CREATE POLICY ${table}_read ON ${table}[\\s\\S]*?;`))?.[0] ?? "";
     ok(`${table}: its own file still reads as it shipped (${n.shipped})`, policy.includes(n.shipped));
-    ok(`...tables.mjs says what runs now`, TABLES[table]?.visibleWhen === "app_enrolled()" && !policy.includes("app_enrolled()"));
+    ok(`...tables.mjs says what runs now (${n.now ?? "no exception"})`,
+       (TABLES[table]?.visibleWhen ?? null) === n.now && (n.now === null || !policy.includes(n.now)));
     const later = existsSync(join(DB_DIR, n.file)) ? readFileSync(join(DB_DIR, n.file), "utf8") : "";
     ok(`...${n.file} exists, the API expects it, and it narrows ${table}_read`,
-       expected.includes(n.file) && later.includes(`'${table}_read'`) && later.includes("app_enrolled()"));
+       expected.includes(n.file) && later.includes(`'${table}_read'`) && (n.now === null || later.includes(n.now)));
   }
   // It can fail: an edit inside the block is seen.
   const file = Object.values(TABLES_ADDED_SINCE_09)[0];

@@ -145,13 +145,13 @@ function NewsView({ role }) {
             <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px",flexWrap:"wrap"}}>
               <Badge color={TIER[n.scope]?.tone || D.textMuted}>{n.audience}</Badge>
               {n.draft && <Badge color={D.amber}>Draft</Badge>}
-              <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"10px",color:D.textMuted}}>
+              <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>
                 {n.at ? new Date(n.at).toLocaleDateString() : ""}
               </span>
             </div>
             <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>{n.title}</div>
             <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{n.body}</div>
-            <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginTop:"8px"}}>{n.author}</div>
+            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"8px"}}>{n.author}</div>
             <PublicRow n={n} busy={!!busy} onDoor={door} error={publicError?.id===n.id ? publicError.text : null}/>
           </Card>
         ))}
@@ -201,7 +201,7 @@ function NewsView({ role }) {
           </label>
           {error && (
             <div data-testid="news-error" role="alert" style={{marginBottom:"10px",padding:"8px 10px",borderRadius:D.sm,
-              background:D.rose+"14",border:`1px solid ${D.rose}33`,fontFamily:D.body,fontSize:"11px",color:textOn(D.rose)}}>{error}</div>
+              background:D.rose+"14",border:`1px solid ${D.rose}33`,fontFamily:D.body,fontSize:"12px",color:textOn(D.rose)}}>{error}</div>
           )}
           <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
             <Btn variant="ghost" onClick={()=>{setComposing(false);setError(null);}}>Cancel</Btn>

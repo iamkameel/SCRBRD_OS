@@ -53,6 +53,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5307);
 const API_PORT = port(8807);
@@ -98,6 +99,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext();
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -228,12 +230,12 @@ const signInFromLanding = async () => {
   await page.waitForTimeout(600);
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
+  await afterReads(page, 2200);
   return /Match Centre|Dashboard/i.test(await text());
 };
 const openFixture = async () => {
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   const opened = await page.evaluate(() => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
@@ -243,7 +245,7 @@ const openFixture = async () => {
     }
     return false;
   });
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   return opened;
 };
 /** Cut the innings to one over, from the pad's Revise sheet (in the pad menu since step 2). */
@@ -262,7 +264,7 @@ const playOutTheOver = async (faces) => {
   const open = await until(async () => (await tid("innings-review").count()) > 0, 5000);
   if (!open) return false;
   await tap("review-confirm");
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   return true;
 };
 
@@ -308,14 +310,14 @@ try {
   group("B. The page loads with no signal: the pad reopens, the toss is answered, and play goes on");
   await ctx.setOffline(true);
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(3000);
+  await afterReads(page, 3000);
   ok("the pad of the live fixture reopens with no signal (SCRBRD-078)", await until(async () => (await tid("toss-sheet").count()) === 1
      || /\bDOT\b|Revise/.test(await text()), 8000), (await text()).slice(0, 200));
   ok("the toss is asked again: this device never had an answer", (await tid("toss-sheet").count()) === 1);
   await tap("toss-won-home");
   await tap("toss-decision-bat");
   await tap("toss-confirm");
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   const tossQueued = await outboxKeys();
   ok("the toss answered with no signal is queued on disk (SCRBRD-075)", tossQueued?.includes(`${device}:toss:pending`), JSON.stringify(tossQueued));
   ok("the scorer is on the pad", await onPad());
@@ -326,7 +328,7 @@ try {
   let tapped = 0;
   for (const f of ["1", "4", "0"]) if (await score(f)) tapped++;
   ok("three balls with no signal", tapped === 3, tapped);
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   const pB = await padIds();
   const qB = (await outboxKeys())?.filter((k) => k.includes(":evt:")) ?? [];
   ok("every event is in the pad's saved log AND queued in the outbox", pB.length >= 7 && qB.length === pB.length, `${pB.length} v ${qB.length}`);
@@ -335,12 +337,12 @@ try {
 
   group("C. Reloaded, still with no signal: the pad reopens with its log");
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(3000);
+  await afterReads(page, 3000);
   ok("the pad reopens with the same score", await until(async () => (await board()) === boardB, 8000), `${await board()} v ${boardB}`);
   ok("...and its saved log is the one before the reload", same(await padIds(), pB));
   ok("the toss is not asked again", (await tid("toss-sheet").count()) === 0);
   ok("scoring goes on", (await onPad()) && await score("2"));
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   const pC = await padIds();
   const qC = (await outboxKeys())?.filter((k) => k.includes(":evt:")) ?? [];
   ok("the new ball is saved and queued too", pC.length === pB.length + 1 && qC.length === pC.length, `${pC.length} / ${qC.length}`);
@@ -360,7 +362,7 @@ try {
   const cut = (route) => route.abort("internetdisconnected");
   await page.route(`${API}/api/matches/*/session/claim`, cut);
   await tap("sync-signin");
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   ok("the sign-in is the real one: no demo is offered (SCRBRD-078)", (await tid("login-demo").count()) === 0 && /Sign in to send/.test(await text()),
      (await text()).slice(0, 200));
   await click(/Scorer/, 4000);
@@ -414,7 +416,7 @@ try {
   ok("the umpires cut the first innings to one over", await reviseToOneOver());
   ok("...the over is played out and the innings closed", await playOutTheOver(["1", "0", "2", "0", "0", "0"]));
   ok("the second innings starts from the break", await click(/Start 2nd Innings/, 4000));
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   ok("...on the pad", await onPad());
   ok("the chase is cut to one over too", await reviseToOneOver());
   ok("...played out and closed: the match is over", await playOutTheOver(["0", "0", "0", "0", "0", "0"]));
@@ -426,7 +428,7 @@ try {
   ok("...and only then: the server has the whole log, id for id", sF.length > pE.length && same(sF, pF), `${sF.length} v ${pF.length}`);
   ok("...two innings closed on the server", (await dbq(`select count(*)::int n from ball_event where match_id = $1 and kind = 'innings_end'`, [MATCH]))[0].n === 2);
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(3500);
+  await afterReads(page, 3500);
   // The sign-in in E earned this phone a resume credential again, so the
   // reopened pad re-attaches by itself: the comparison before its claim
   // marks the server's events sent (storage, for a moment), and the finished

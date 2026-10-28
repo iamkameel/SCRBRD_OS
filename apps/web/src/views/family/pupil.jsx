@@ -183,7 +183,7 @@ function PassportBoard({ me, role, c, careerRead, onRetry }) {
         <div style={{ display: "flex", gap: T.space.lg, flexWrap: "wrap", ...T.role.figure.md, color: T.board.figure }}>
           <span>AVG {stat(c?.avg)}</span><span>SR {stat(c?.sr)}</span><span>ECON {stat(c?.econ)}</span>
         </div>
-        {!careerAnswered && <ReadState compact read={careerSaid} onRetry={onRetry} testId="passport-career-read-state"/>}
+        {!careerAnswered && <ReadState compact onBoard read={careerSaid} onRetry={onRetry} testId="passport-career-read-state"/>}
         {cap && <span style={{ ...T.role.body, fontSize: "14px", color: T.board.dim }}>Cap {cap.capNo} · {me.team} · first {humanDate(cap.firstOn)}</span>}
       </section>
   );
@@ -289,7 +289,7 @@ export function PupilMe({ role, onNav }) {
       <Card label="My ratings" testid="me-ratings"><MyRatings me={me} role={role}/></Card>
       <Card label="My record" testid="me-record"
         aside={!show.record && <Action testid="me-record-show" onClick={() => setShow((s) => ({ ...s, record: true }))}>Show</Action>}>
-        {show.record ? <TheirRecord child={me} role={role}/> : <Line quiet>Your date of birth, address and ID number, as the school holds them.</Line>}
+        {show.record ? <TheirRecord child={me} role={role} self/> : <Line quiet>Your date of birth and address, as the school holds them. For your ID number, ask the school office.</Line>}
       </Card>
       <Card label="Conduct matters" testid="me-conduct"
         aside={!show.conduct && <Action testid="me-conduct-show" onClick={() => setShow((s) => ({ ...s, conduct: true }))}>Show</Action>}>

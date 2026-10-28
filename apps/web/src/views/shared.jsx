@@ -148,16 +148,16 @@ function PlayerProfileModal({ player, role, skills = {}, onClose, onFullProfile 
   const Stat = ({l,v,c}) => (
     <div style={{flex:1,minWidth:"70px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,padding:"8px 6px",textAlign:"center"}}>
       <div style={{fontFamily:D.mono,fontSize:"15px",fontWeight:700,color:c||D.textPrimary}}>{v??"–"}</div>
-      <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginTop:"2px"}}>{l}</div>
+      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginTop:"2px"}}>{l}</div>
     </div>
   );
   const SkillBar = ({l,v}) => (
     <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"5px"}}>
-      <span style={{fontFamily:D.body,fontSize:"10px",color:D.textSecondary,width:"84px",textTransform:"capitalize"}}>{l}</span>
+      <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,width:"84px",textTransform:"capitalize"}}>{l}</span>
       <div style={{flex:1,height:"5px",borderRadius:D.pill,background:D.surf3,overflow:"hidden"}}>
         <div style={{width:`${v}%`,height:"100%",borderRadius:D.pill,background:v>=75?D.emerald:v>=55?D.indigo:D.amber}}/>
       </div>
-      <span style={{fontFamily:D.mono,fontSize:"10px",color:D.textMuted,width:"22px",textAlign:"right"}}>{v}</span>
+      <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,width:"22px",textAlign:"right"}}>{v}</span>
     </div>
   );
   const vitals = [
@@ -177,7 +177,7 @@ function PlayerProfileModal({ player, role, skills = {}, onClose, onFullProfile 
         </div>
         <div style={{minWidth:0}}>
           <div style={{fontFamily:D.head,fontSize:"16px",fontWeight:800,color:D.textPrimary}}>
-            {player.name}{player.cap==="c"&&<span style={{marginLeft:"6px",fontFamily:D.mono,fontSize:"10px",color:D.amber}}>©</span>}
+            {player.name}{player.cap==="c"&&<span style={{marginLeft:"6px",fontFamily:D.mono,fontSize:"12px",color:D.amber}}>©</span>}
           </div>
           <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginTop:"4px"}}>
             <Pill color={D.indigo}>{player.team}</Pill>
@@ -194,12 +194,12 @@ function PlayerProfileModal({ player, role, skills = {}, onClose, onFullProfile 
       {vitals.length>0&&(
         <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginBottom:"12px"}}>
           {vitals.map(([l,v])=>(
-            <div key={l}><span style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted}}>{l} </span>
-            <span style={{fontFamily:D.body,fontSize:"11px",color:D.textPrimary}}>{v}</span></div>
+            <div key={l}><span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted}}>{l} </span>
+            <span style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary}}>{v}</span></div>
           ))}
         </div>
       )}
-      {stripped&&<div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted,marginBottom:"12px"}}><Icon name="lock"/> Some personal details are hidden for your role.</div>}
+      {stripped&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"12px"}}><Icon name="lock"/> Some personal details are hidden for your role.</div>}
       {/* Season + career stats */}
       <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"12px"}}>
         <Stat l="Avg" v={player.avg} c={D.emerald}/>
@@ -213,14 +213,14 @@ function PlayerProfileModal({ player, role, skills = {}, onClose, onFullProfile 
       {/* Recent form */}
       {player.seasonForm&&player.seasonForm.length>0&&(
         <>
-          <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginBottom:"6px"}}>Recent form</div>
+          <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginBottom:"6px"}}>Recent form</div>
           <div style={{border:`1px solid ${D.border}`,borderRadius:D.lg,overflow:"hidden",marginBottom:"12px"}}>
             {player.seasonForm.slice(-5).reverse().map((f,i)=>(
               <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 12px",borderTop:i?`1px solid ${D.border}`:"none"}}>
-                <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>vs {f.opp}</span>
+                <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>vs {f.opp}</span>
                 <span style={{display:"flex",gap:"10px",alignItems:"center"}}>
-                  <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textPrimary}}>{f.runs} runs{f.wkts?` · ${f.wkts}w`:""}</span>
-                  <span style={{fontFamily:D.head,fontSize:"9px",fontWeight:800,color:f.result==="W"?D.emerald:D.rose}}>{f.result}</span>
+                  <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textPrimary}}>{f.runs} runs{f.wkts?` · ${f.wkts}w`:""}</span>
+                  <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:800,color:f.result==="W"?D.emerald:D.rose}}>{f.result}</span>
                 </span>
               </div>
             ))}
@@ -229,20 +229,20 @@ function PlayerProfileModal({ player, role, skills = {}, onClose, onFullProfile 
       )}
       {/* Attributes */}
       <div style={{display:"flex",alignItems:"baseline",gap:"8px",marginBottom:"6px"}}>
-        <div style={{fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted}}>Attributes</div>
-        {!sk.assessed&&<span style={{fontFamily:D.body,fontSize:"9px",color:D.textMuted}}>estimated — no coach assessment yet</span>}
+        <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted}}>Attributes</div>
+        {!sk.assessed&&<span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>estimated — no coach assessment yet</span>}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"12px",marginBottom:"14px"}}>
         {Object.entries(sk.data).map(([grp,vals])=>(
           <div key={grp} style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.lg,padding:"10px 12px"}}>
-            <div style={{fontFamily:D.head,fontSize:"8px",fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:D.textSecondary,marginBottom:"7px"}}>{grp}</div>
+            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:D.textSecondary,marginBottom:"7px"}}>{grp}</div>
             {Object.entries(vals).map(([k,v])=><SkillBar key={k} l={k} v={v}/>)}
           </div>
         ))}
       </div>
       {canFull&&onFullProfile&&(
         <button onClick={()=>onFullProfile(player.id)} className="pressBtn" style={{width:"100%",padding:"11px",borderRadius:D.lg,cursor:"pointer",
-          background:D.indigo+"18",border:`1px solid ${D.indigo}44`,color:D.textPrimary,fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.08em"}}>
+          background:D.indigo+"18",border:`1px solid ${D.indigo}44`,color:D.textPrimary,fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.08em"}}>
           OPEN FULL PROFILE →
         </button>
       )}

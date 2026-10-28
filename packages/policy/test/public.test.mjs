@@ -731,6 +731,16 @@ group("C6: turning eighteen");
      name({ consents: [guardian(), pupil({ competent: false, endedOn: "2026-08-02" })] }) === "D Erasmus");
   ok("his own consent dated after the day served has not begun, so his guardian's still stands",
      name({ consents: [guardian(), pupil({ givenOn: "2026-10-01", endedOn: "2026-10-01" })] }) === "D Erasmus");
+  // READERS_child_data Q7 (PUBLIC_DATA C1, C4, Changed 21 Oct 2026): from his
+  // twelfth birthday his "no" counts, and stands whatever a guardian says.
+  // public_name_facts() marks that refusal competent (db/116); this is what
+  // the rule then does with it.
+  ok("his refusal at thirteen outweighs his guardian's yes on file",
+     name({ consents: [guardian({ givenOn: "2026-01-15" }), pupil({ givenOn: "2026-08-01", endedOn: "2026-08-01" })] })
+       === "Batter");
+  ok("...and his guardian's yes given after it",
+     name({ consents: [pupil({ givenOn: "2026-08-01", endedOn: "2026-08-01" }), guardian({ givenOn: "2026-09-01" })] })
+       === "Batter");
   ok("his withdrawal at eighteen reaches his U14 scorecards too (C3 and C6 together)",
      publicName(/** @type {NameFacts} */ (/** @type {unknown} */ ({
        ...NAMED, consents: [guardian({ givenOn: "2022-02-01" }), pupil({ endedOn: "2026-09-01" })], matchOn: "2022-03-05",

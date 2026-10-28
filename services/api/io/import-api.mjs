@@ -42,6 +42,10 @@ import { parseCsv, mapRows, asText, asDate, asInt, asOneOf, asEmail, asPhone } f
  * @property {(school: string | undefined, v: Record<string, any>) => unknown[]} [params]
  * @property {(v: Record<string, any>, existing: any) => ({ ok: true, warning?: string, column?: undefined, message?: undefined }
  *                                                          | { ok: false, column: string, message: string, warning?: undefined })} [resolve]
+ * @property {string} [joinedOn]  SQL setting app.effective_on for the row's write, from
+ *                                 ($1) whether the row is already on the books and ($2) the
+ *                                 file's date or null: the day db/08's trigger dates a
+ *                                 membership the row opens (db/117).
  * @property {string} [mayImport]  SQL answering one boolean `ok` for the school ($1): may this
  *                                 caller import this kind at all. Asked once, before any row.
  * @property {(client: Db, school: string | undefined, v: Record<string, any>,
@@ -139,17 +143,23 @@ export const IMPORTS = {
       email:         { parse: asEmail },
       phone:         { parse: asPhone },
       hometown:      { parse: asText(80) },
+      // The day he joined the side the row names, when the school knows it.
+      // Not a player column: it dates the membership db/08's trigger writes.
+      // Blank, a NEW boy's first side is dated from the season's start, and a
+      // boy already on the books moved by the file is dated today, as before
+      // (Kameel, 22 October 2026; db/117's import_joined_on()).
+      joined_on:     { parse: asDate },
     },
     // The template a school is given. Exactly the columns above, in an order
     // that reads like a team sheet rather than like a table definition.
     template: ["full_name", "team_code", "squad_no", "playing_role",
                "batting_style", "bowling_arm", "bowling_style", "born", "id_number",
-               "email", "phone", "hometown"],
+               "email", "phone", "hometown", "joined_on"],
     // One value per template column, each one the parser accepts. The route's
     // old fallback row had ten values for twelve columns and spelled the hand
     // "right", so a school that copied it got four errors on its first line.
     // csv.test.mjs reads this row through the spec, so the two cannot drift.
-    example: "A Botha,1XI,7,batter,R,R,M,2011-04-07,,,,",
+    example: "A Botha,1XI,7,batter,R,R,M,2011-04-07,,,,,",
     /**
      * One row, matched on the name — and refusing to guess when it cannot.
      *
@@ -208,6 +218,11 @@ export const IMPORTS = {
                     phone = coalesce($12, phone),
                     hometown = coalesce($13, hometown)
               where id = $14 and school_id = $1 returning id`,
+    // Asked before each row's write, so the membership the row opens carries
+    // the day the school gives, or the season's start for a new boy. Set for
+    // every row: the setting lives for the whole file's transaction, and a
+    // row with no date must not inherit the previous row's.
+    joinedOn: `select set_config('app.effective_on', coalesce(import_joined_on($1, $2)::text, ''), true)`,
     params: (school, v) => [school, v.full_name, v.team_code, v.squad_no, v.playing_role,
                             v.batting_style, v.bowling_arm, v.bowling_style, v.born, v.id_number,
                             v.email, v.phone, v.hometown],
@@ -467,6 +482,7 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
                           message: BIRTH_DATE_MESSAGE[checked.warning] ?? checked.warning });
         }
         const resolved = /** @type {NonNullable<ImportDef["params"]>} */ (def.params)(schoolId, values);
+        if (def.joinedOn) await client.query(def.joinedOn, [found.rowCount === 1, values.joined_on ?? null]);
         const r = found.rowCount === 1
           ? await client.query(/** @type {string} */ (def.update), [...resolved, found.rows[0].id])
           : await client.query(/** @type {string} */ (def.insert), resolved);

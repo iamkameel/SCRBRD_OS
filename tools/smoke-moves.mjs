@@ -93,16 +93,34 @@ try {
   ok("there is a boy outside the 1XI to promote", !!boy);
   const FROM = boy?.team_code;
 
+  // The walk's days, from this season and today, not from a calendar year:
+  // the move route may not reach before this season's start (db/117's floor,
+  // Kameel 22 October 2026), so fixed 2026 dates would be refused from 2027.
+  // MOVE: a month back, never before the season's start or the seed's first
+  // memberships, and two days before today at the latest; EARLY: the day
+  // before it; AFTER: between it and today; BEFORE: before the seed's season.
+  const addDays = (/** @type {string} */ d, /** @type {number} */ n) =>
+    new Date(Date.parse(d + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+  const span = (/** @type {string} */ a, /** @type {string} */ b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+  const [{ floor }] = await q(`select s.starts_on::text floor from season_for(sa_today(), 'school') s`);
+  const lo = [floor, SEASON_START].sort().at(-1);
+  const MOVE = [[addDays(today, -30), lo].sort().at(-1), addDays(today, -2)].sort()[0];
+  const EARLY = addDays(MOVE, -1);
+  const AFTER = addDays(MOVE, Math.floor(span(MOVE, today) / 2));
+  const BEFORE = addDays(SEASON_START, -14);
+  ok("the walk's days are in order", BEFORE < SEASON_START && EARLY < MOVE && MOVE < AFTER && AFTER < today && MOVE >= floor,
+     `${BEFORE} ${EARLY} ${MOVE} ${AFTER} ${today} (floor ${floor})`);
+
   group("A move has a date, and it can be in the past");
   {
-    const r = await move(boy.id, head, { teamCode: "1XI", effectiveOn: "2026-03-01" });
+    const r = await move(boy.id, head, { teamCode: "1XI", effectiveOn: MOVE });
     ok("the director of sport can move him", r.status === 200);
-    ok("...and is told when it took effect", String(r.body?.effectiveOn).slice(0, 10) === "2026-03-01");
+    ok("...and is told when it took effect", String(r.body?.effectiveOn).slice(0, 10) === MOVE);
     ok("...and where he came from, and when he left it",
-       r.body?.previous?.teamCode === FROM && String(r.body?.previous?.leftOn).slice(0, 10) === "2026-03-01");
+       r.body?.previous?.teamCode === FROM && String(r.body?.previous?.leftOn).slice(0, 10) === MOVE);
     const s = await spells(boy.id);
-    ok("his old side's spell closed on the move date, not today", s[0]?.team_code === FROM && s[0]?.l === "2026-03-01");
-    ok("the 1XI spell opened on it", s[1]?.team_code === "1XI" && s[1]?.j === "2026-03-01" && s[1]?.l === null);
+    ok("his old side's spell closed on the move date, not today", s[0]?.team_code === FROM && s[0]?.l === MOVE);
+    ok("the 1XI spell opened on it", s[1]?.team_code === "1XI" && s[1]?.j === MOVE && s[1]?.l === null);
     ok("the column agrees", (await q(`select team_code from player where id = $1`, [boy.id]))[0].team_code === "1XI");
     // The route wrote nothing to team_membership itself — the stamp on the
     // row is the trigger's, from the session, and it names the mover.
@@ -112,9 +130,9 @@ try {
 
   group("It cannot reach before the side it closes, and never into the future");
   {
-    const early = await move(boy.id, head, { teamCode: FROM, effectiveOn: "2026-02-01" });
+    const early = await move(boy.id, head, { teamCode: FROM, effectiveOn: EARLY });
     ok("a backdate before his current side began is refused", early.status === 422);
-    ok("...naming the date it collided with", /2026-03-01/.test(early.body?.detail ?? ""));
+    ok("...naming the date it collided with", (early.body?.detail ?? "").includes(MOVE));
     ok("...and nothing changed", (await spells(boy.id)).length === 2
        && (await q(`select team_code from player where id = $1`, [boy.id]))[0].team_code === "1XI");
     ok("a future date is refused", (await move(boy.id, head, { teamCode: FROM, effectiveOn: "2999-01-01" })).status === 400);
@@ -132,22 +150,22 @@ try {
 
   group("Who was in the side on a date");
   {
-    ok("in February he was in his old side", (await rosterOn(FROM, "2026-02-01", head)).some((r) => r.player_id === boy.id));
-    ok("...and not in the 1XI",              !(await rosterOn("1XI", "2026-02-01", head)).some((r) => r.player_id === boy.id));
-    ok("in March he was in the 1XI",         (await rosterOn("1XI", "2026-03-15", head)).some((r) => r.player_id === boy.id));
-    ok("...and not in his old side",         !(await rosterOn(FROM, "2026-03-15", head)).some((r) => r.player_id === boy.id));
+    ok("the day before the move he was in his old side", (await rosterOn(FROM, EARLY, head)).some((r) => r.player_id === boy.id));
+    ok("...and not in the 1XI",              !(await rosterOn("1XI", EARLY, head)).some((r) => r.player_id === boy.id));
+    ok("after the move he was in the 1XI",       (await rosterOn("1XI", AFTER, head)).some((r) => r.player_id === boy.id));
+    ok("...and not in his old side",         !(await rosterOn(FROM, AFTER, head)).some((r) => r.player_id === boy.id));
     ok("today he is back in his old side",   (await rosterOn(FROM, today, head)).some((r) => r.player_id === boy.id));
     ok("...and not in the 1XI any more",     !(await rosterOn("1XI", today, head)).some((r) => r.player_id === boy.id));
-    ok("before the season there was no side at all", (await rosterOn("1XI", "2026-01-01", head)).length === 0);
+    ok("before the season there was no side at all", (await rosterOn("1XI", BEFORE, head)).length === 0);
     // The question the column could never answer: two different XIs.
-    const feb = (await rosterOn("1XI", "2026-02-01", head)).map((r) => r.player_id).sort();
-    const mar = (await rosterOn("1XI", "2026-03-15", head)).map((r) => r.player_id).sort();
-    ok("the 1XI in February and the 1XI in March are different sides", JSON.stringify(feb) !== JSON.stringify(mar) && mar.length === feb.length + 1);
+    const feb = (await rosterOn("1XI", EARLY, head)).map((r) => r.player_id).sort();
+    const mar = (await rosterOn("1XI", AFTER, head)).map((r) => r.player_id).sort();
+    ok("the 1XI before the move and after it are different sides", JSON.stringify(feb) !== JSON.stringify(mar) && mar.length === feb.length + 1);
     ok("the read is scoped like the roster: a spectator sees no side on any date",
-       (await rosterOn("1XI", "2026-03-15", watcher)).length === 0);
+       (await rosterOn("1XI", AFTER, watcher)).length === 0);
     ok("...and a coach sees only his own side's",
-       (await rosterOn("1XI", "2026-03-15", coach)).length > 0
-       && (await rosterOn(FROM, "2026-02-01", coach)).length === 0);
+       (await rosterOn("1XI", AFTER, coach)).length > 0
+       && (await rosterOn(FROM, EARLY, coach)).length === 0);
   }
 
   group("Who may move him");

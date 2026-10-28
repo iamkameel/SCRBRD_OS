@@ -26,6 +26,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4325);
 const API_PORT = port(8794);
@@ -71,6 +72,7 @@ const dbq = async (text, params) => (await pool.query(text, params)).rows;
 
 const browser = await chromium.launch({ ...launchOptions() });
 const page = await browser.newPage();
+watchReads(page);
 await offline(page.context());
 
 const errors = [];
@@ -158,7 +160,7 @@ try {
 
   group("Opening a real fixture");
   await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-  await page.waitForTimeout(1200);
+  await afterReads(page, 1200);
   ok("the fixture list came from the server", !/Demonstration fixtures/i.test(await text()));
 
   // A high-water mark, not just a count. The assertions below are about the
@@ -228,7 +230,7 @@ try {
   ok("no errors while scoring", errors.length === errsBefore);
 
   // Give the outbox a moment; it flushes on record and retries on a timer.
-  await page.waitForTimeout(4000);
+  await afterReads(page, 4000);
   const rows = await dbq(
     `select kind, ball_type, value, device_id, epoch, bowler_id, striker_id, payload
        from ball_event where id > $1 order by id`, [highWater]);
@@ -286,7 +288,7 @@ try {
   // four (5) and a wide (1): the fold's 23. The old worm said 13.
   ok(`the board counts the extras (${boardText})`, boardRuns === 23);
   await page.locator('[data-testid="pad-tabs"] button', { hasText: /Analysis/ }).first().click({ timeout: 4000 }).catch(() => {});
-  await page.waitForTimeout(800);
+  await afterReads(page, 800);
   const worm = await page.evaluate(() => {
     const line = document.querySelector('[data-testid="worm-line"][data-innings="0"]');
     if (!line) return null;

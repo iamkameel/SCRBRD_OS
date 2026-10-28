@@ -45,11 +45,15 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(4328);
 const API_PORT = port(8797);
 const API = `http://127.0.0.1:${API_PORT}`;
 const DEBUG = !!process.env.BROWSER_DECK_DEBUG;
+// A generous bound on a wait for data or a render, never a fixed sleep: the
+// wait ends the moment the screen is in the state the check judges.
+const WAIT = 15000;
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 
 let pass = 0, fail = 0;
@@ -85,6 +89,7 @@ const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext({ viewport: { width: 1380, height: 860 } });
 await offline(ctx);
 const page = await ctx.newPage();
+watchReads(page);
 const errors = [], refusals = [], sceneRequests = [], requests = [];
 page.on("pageerror", (e) => errors.push(e.message));
 page.on("console", (m) => {
@@ -132,12 +137,12 @@ try {
   // Not on the pilot's account list — it is not a school role — so the
   // address is typed, the way the login page allows.
   await page.locator('input[type="email"]').first().fill("platform@example.invalid");
-  ok("Platform Ops signs in", await click(/^Sign In$/, 5000) && (await page.waitForTimeout(2000), /Dashboard|Match Centre/i.test(await text())));
+  ok("Platform Ops signs in", await click(/^Sign In$/, 5000) && (await afterReads(page, 2000), /Dashboard|Match Centre/i.test(await text())));
   ok("the three.js chunk has not been fetched yet", sceneRequests.length === 0, sceneRequests[0]);
   const navBtn = page.locator("nav button", { hasText: /Pitch Deck/ }).first();
   ok("Pitch Deck is on the menu", await navBtn.count() === 1);
   await navBtn.click({ timeout: 6000 }).catch(() => {});
-  await page.waitForTimeout(2500);
+  await afterReads(page, 2500);
   ok("the deck is on screen", await count('[data-testid="deck"]') === 1);
   ok("...and only now was the three.js chunk fetched, once", sceneRequests.length === 1, sceneRequests.join(", "));
 
@@ -150,10 +155,10 @@ try {
      initial === "webgl" ? (await count('[data-testid="deck-stage"] canvas')) === 1 && (await count('[data-testid="deck-stage"] svg')) === 0
                          : (await count('[data-testid="deck-stage"] svg')) === 1 && (await count('[data-testid="deck-stage"] canvas')) === 0);
   await page.locator('[data-testid="deck-3d-toggle"]').click();
-  await page.waitForTimeout(700);
+  await afterReads(page, 700);
   ok("3D off swaps in the flat wheel", (await stageMode()) === "fallback" && (await count('[data-testid="deck-stage"] svg')) === 1 && (await count('[data-testid="deck-stage"] canvas')) === 0);
   await page.locator('[data-testid="deck-3d-toggle"]').click();
-  await page.waitForTimeout(1500);
+  await afterReads(page, 1500);
   ok("3D on restores what the browser had", (await stageMode()) === initial, await stageMode());
   ok("...without fetching the library again", sceneRequests.length === 1);
 
@@ -210,11 +215,19 @@ try {
   ok("no filter chip is offered for a line the wheel cannot draw", (await count('[data-testid="deck-key-W"]')) === 0);
 
   await deck().locator('[data-testid="deck-dot-school"]').click();
-  await page.waitForTimeout(1800);
+  await page.locator('[data-testid="deck"][data-slide="school"]').waitFor({ timeout: WAIT }).catch(() => {});
   ok("the school slide is reached from its dot (it has no digit)", (await slideNow()) === "school");
+  // The slide says "Reading…" until GET /api/read/summary answers. A fixed
+  // 1.8 s judged that placeholder whenever the read was slower: on a freshly
+  // reset database (no statistics yet) Postgres JIT-compiled it for 10 s
+  // (21 Oct 2026, fixed in readResource()). Wait for the read to answer —
+  // live, refused or failed — then judge what it drew.
+  await page.locator('[data-testid="deck-summary-source"]:not(:has-text("Reading"))')
+    .waitFor({ timeout: WAIT }).catch(() => {});
   const summary = page.locator('[data-testid="deck-summary"]');
-  ok("the school slide's figures came from the server, not the demo", (await summary.getAttribute("data-live")) === "true");
-  ok("...and say what they are scoped to", /summary read/i.test(await page.locator('[data-testid="deck-summary-source"]').innerText()));
+  const source = await page.locator('[data-testid="deck-summary-source"]').innerText().catch(() => "");
+  ok("the school slide's figures came from the server, not the demo", (await summary.getAttribute("data-live")) === "true", source);
+  ok("...and say what they are scoped to", /summary read/i.test(source), source);
 
   await deck().locator('[data-testid="deck-dot-roadmap"]').click();
   await page.waitForTimeout(1200);
@@ -231,7 +244,20 @@ try {
   // Real components, on data built in the browser, in frames nobody can
   // operate. Every id below is one the component itself carries, so a slide
   // that quietly turned into a picture, or into a hand-drawn mock, fails here.
-  const goTo = async (id) => { await deck().locator(`[data-testid="deck-dot-${id}"]`).click(); await page.waitForTimeout(1300); };
+  // The slide is judged once it is the deck's slide and its entrance has run:
+  // a control measured mid-entrance (scaled) read 43px under load. Looping
+  // animations never finish, so only finite ones are waited for.
+  const goTo = async (id) => {
+    await deck().locator(`[data-testid="deck-dot-${id}"]`).click();
+    await page.waitForTimeout(1300);
+    await page.locator(`[data-testid="deck"][data-slide="${id}"]`).waitFor({ timeout: WAIT }).catch(() => {});
+    await page.evaluate((ms) => Promise.race([
+      Promise.all(document.getAnimations()
+        .filter((a) => Number.isFinite(a.effect?.getComputedTiming?.().endTime))
+        .map((a) => a.finished.catch(() => {}))),
+      new Promise((r) => setTimeout(r, ms)),
+    ]), WAIT).catch(() => {});
+  };
   const inertFrames = () => page.evaluate(() => [...document.querySelectorAll('[data-testid="deck"] .deck-dev')].map((f) => ({
     id: f.getAttribute("data-testid"), inert: f.querySelector(".deck-dev-screen")?.inert === true,
     events: getComputedStyle(f.querySelector(".deck-dev-screen")).pointerEvents })));

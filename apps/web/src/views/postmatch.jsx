@@ -101,7 +101,7 @@ function PostMatchReport({ match, role, onClose, onNavProfile, matches, onOpenFi
     <Modal title="Post-Match Report" onClose={onClose} width="880px">
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginBottom: "10px" }} className="os-print-hide">
         <button onClick={() => window.print()} className="pressBtn" data-testid="pmr-print"
-          style={{ padding: "6px 14px", borderRadius: D.pill, border: `1px solid ${D.borderMed}`, background: D.surf2, color: D.textPrimary, fontFamily: D.head, fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", cursor: "pointer" }}>
+          style={{ padding: "6px 14px", borderRadius: D.pill, border: `1px solid ${D.borderMed}`, background: D.surf2, color: D.textPrimary, fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.06em", cursor: "pointer" }}>
           <Icon name="printer"/> Print
         </button>
       </div>
@@ -111,7 +111,7 @@ function PostMatchReport({ match, role, onClose, onNavProfile, matches, onOpenFi
           <div style={{ fontFamily: D.head, fontSize: "17px", fontWeight: 800, color: D.textPrimary }}>
             {match.homeTeam} <span style={{ color: D.textMuted, fontSize: "12px" }}>vs</span> {match.awayTeam}
           </div>
-          <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted, marginTop: "2px" }}>
+          <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginTop: "2px" }}>
             {match.date}{match.venue ? ` · ${match.venue}` : ""}
           </div>
           <div style={{ marginTop: "8px" }}>
@@ -154,7 +154,7 @@ function PostMatchReport({ match, role, onClose, onNavProfile, matches, onOpenFi
             <div style={{ display: "flex", flexDirection: "column", gap: "4px" }} data-testid="pmr-key-moments">
               {moments.map((m, i) => (
                 <div key={i} style={{ display: "flex", gap: "8px", alignItems: "baseline", fontFamily: D.body, fontSize: "12px", color: D.textSecondary }}>
-                  <span style={{ fontFamily: D.mono, fontSize: "10px", color: D.textMuted, minWidth: "56px" }}>
+                  <span style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted, minWidth: "56px" }}>
                     {innings.length > 1 ? `Inn ${m.innings + 1}` : ""}{m.over ? ` · ov ${m.over}` : ""}
                   </span>
                   <span>{momentIcon(m.kind)} {m.label}</span>
@@ -172,7 +172,7 @@ function PostMatchReport({ match, role, onClose, onNavProfile, matches, onOpenFi
           <PhaseCard key={p.innings} phases={p.phases} inningsNum={p.innings} inningsLabel={`Innings ${p.innings}`} />
         ))}
         {phasesState.error && (
-          <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted, marginTop: "8px" }}>
+          <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginTop: "8px" }}>
             Phase breakdown unavailable ({phasesState.error}).
           </div>
         )}
@@ -197,7 +197,7 @@ const momentIcon = (kind) => MOMENT_ICON[kind] ? <Icon name={MOMENT_ICON[kind]}/
 function Section({ title, children }) {
   return (
     <div style={{ marginTop: "18px" }}>
-      <div style={{ fontFamily: D.head, fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: D.textMuted, marginBottom: "8px" }}>{title}</div>
+      <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: D.textMuted, marginBottom: "8px" }}>{title}</div>
       {children}
     </div>
   );
@@ -209,9 +209,9 @@ function FigureCard({ label, value, sub, color, onClick }) {
     <Tag onClick={onClick ?? undefined} className={onClick ? "pressBtn" : undefined}
       style={{ flex: 1, minWidth: "180px", textAlign: onClick ? "left" : "center", cursor: onClick ? "pointer" : "default",
         background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.lg, padding: "12px 14px" }}>
-      <div style={{ fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.textMuted }}>{label}</div>
+      <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.textMuted }}>{label}</div>
       <div style={{ fontFamily: D.mono, fontSize: "20px", fontWeight: 700, color: color ?? D.textPrimary, marginTop: "4px" }}>{value}</div>
-      <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary, marginTop: "2px" }}>{sub}</div>
+      <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary, marginTop: "2px" }}>{sub}</div>
     </Tag>
   );
 }
@@ -221,44 +221,44 @@ function InningsCard({ inn, index, onNavProfile }) {
   return (
     <Section title={`Innings ${index + 1}${inn.battingTeam ? ` — ${inn.battingTeam}` : ""}`}>
       <div style={{ fontFamily: D.mono, fontSize: "15px", fontWeight: 700, color: D.textPrimary, marginBottom: "10px" }}>
-        {inn.runs}/{inn.wickets} <span style={{ fontSize: "11px", color: D.textMuted, fontWeight: 400 }}>({fmtOvers(inn.balls)} ov{inn.complete ? "" : ", in progress"})</span>
+        {inn.runs}/{inn.wickets} <span style={{ fontSize: "12px", color: D.textMuted, fontWeight: 400 }}>({fmtOvers(inn.balls)} ov{inn.complete ? "" : ", in progress"})</span>
       </div>
 
-      <div style={{ fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.textMuted, margin: "10px 0 4px" }}>Batting</div>
+      <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.textMuted, margin: "10px 0 4px" }}>Batting</div>
       {inn.batsmen?.length ? (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }} data-testid={`pmr-batting-${index}`}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }} data-testid={`pmr-batting-${index}`}>
           <thead><tr style={{ borderBottom: `1px solid ${D.border}` }}>
             {["Batter", "R", "B", "4s", "6s", "SR", ""].map((h) => (
-              <th key={h} style={{ textAlign: h === "Batter" || h === "" ? "left" : "right", padding: "4px 6px", fontFamily: D.head, fontSize: "9px", color: D.textMuted }}>{h}</th>
+              <th key={h} style={{ textAlign: h === "Batter" || h === "" ? "left" : "right", padding: "4px 6px", fontFamily: D.head, fontSize: "12px", color: D.textMuted }}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
             {inn.batsmen.map((b) => (
               <tr key={b.id} style={{ borderBottom: `1px solid ${D.border}` }}>
                 <td style={{ padding: "4px 6px", color: D.textPrimary }}>
-                  {onNavProfile && b.id ? <button onClick={() => onNavProfile(b.id)} className="pressBtn" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: D.sky, fontFamily: D.body, fontSize: "11px" }}>{b.name}</button> : b.name}
+                  {onNavProfile && b.id ? <button onClick={() => onNavProfile(b.id)} className="pressBtn" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: D.sky, fontFamily: D.body, fontSize: "12px" }}>{b.name}</button> : b.name}
                 </td>
                 <td style={{ padding: "4px 6px", textAlign: "right", fontFamily: D.mono }}>{b.runs}</td>
                 <td style={{ padding: "4px 6px", textAlign: "right", fontFamily: D.mono }}>{b.balls}</td>
                 <td style={{ padding: "4px 6px", textAlign: "right", fontFamily: D.mono }}>{b.fours}</td>
                 <td style={{ padding: "4px 6px", textAlign: "right", fontFamily: D.mono }}>{b.sixes}</td>
                 <td style={{ padding: "4px 6px", textAlign: "right", fontFamily: D.mono }}>{b.balls ? ((b.runs / b.balls) * 100).toFixed(1) : "—"}</td>
-                <td style={{ padding: "4px 6px", color: D.textMuted, fontSize: "10px" }}>{b.status === "out" ? b.dismissal : "not out"}</td>
+                <td style={{ padding: "4px 6px", color: D.textMuted, fontSize: "12px" }}>{b.status === "out" ? b.dismissal : "not out"}</td>
               </tr>
             ))}
           </tbody>
         </table>
       ) : (
-        <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted }}>No batting figures recorded for this innings.</div>
+        <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>No batting figures recorded for this innings.</div>
       )}
-      <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary, marginTop: "6px" }}>Extras {extrasSum}</div>
+      <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary, marginTop: "6px" }}>Extras {extrasSum}</div>
 
-      <div style={{ fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.textMuted, margin: "12px 0 4px" }}>Bowling</div>
+      <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.textMuted, margin: "12px 0 4px" }}>Bowling</div>
       {inn.bowlers?.length ? (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }} data-testid={`pmr-bowling-${index}`}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }} data-testid={`pmr-bowling-${index}`}>
           <thead><tr style={{ borderBottom: `1px solid ${D.border}` }}>
             {["Bowler", "O", "M", "R", "W", "Econ"].map((h) => (
-              <th key={h} style={{ textAlign: h === "Bowler" ? "left" : "right", padding: "4px 6px", fontFamily: D.head, fontSize: "9px", color: D.textMuted }}>{h}</th>
+              <th key={h} style={{ textAlign: h === "Bowler" ? "left" : "right", padding: "4px 6px", fontFamily: D.head, fontSize: "12px", color: D.textMuted }}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
@@ -275,13 +275,13 @@ function InningsCard({ inn, index, onNavProfile }) {
           </tbody>
         </table>
       ) : (
-        <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted }}>No bowling figures recorded for this innings.</div>
+        <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>No bowling figures recorded for this innings.</div>
       )}
 
       {inn.fow?.length > 0 && (
         <>
-          <div style={{ fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.textMuted, margin: "12px 0 4px" }}>Fall of wickets</div>
-          <div style={{ fontFamily: D.mono, fontSize: "11px", color: D.textSecondary, lineHeight: 1.8 }} data-testid={`pmr-fow-${index}`}>
+          <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.textMuted, margin: "12px 0 4px" }}>Fall of wickets</div>
+          <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textSecondary, lineHeight: 1.8 }} data-testid={`pmr-fow-${index}`}>
             {inn.fow.map((f, i) => <span key={i}>{i > 0 && "  ·  "}{f.runs}/{f.wickets} ({f.batsman}, {f.overs})</span>)}
           </div>
         </>
@@ -289,10 +289,10 @@ function InningsCard({ inn, index, onNavProfile }) {
 
       {inn.partnerships?.length > 0 && (
         <>
-          <div style={{ fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.textMuted, margin: "12px 0 4px" }}>Partnerships</div>
+          <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.textMuted, margin: "12px 0 4px" }}>Partnerships</div>
           <div style={{ display: "flex", flexDirection: "column", gap: "2px" }} data-testid={`pmr-partnerships-${index}`}>
             {inn.partnerships.map((p, i) => (
-              <div key={i} style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary }}>
+              <div key={i} style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary }}>
                 {p.wicket ? `${p.wicket}${ordinal(p.wicket)} wkt` : "unbroken"}: {p.bat1} &amp; {p.bat2} — {p.runs} ({fmtOvers(p.balls)} ov)
               </div>
             ))}
@@ -314,10 +314,10 @@ function PhaseCard({ phases, inningsNum, inningsLabel }) {
   if (!phases) return null;
   return (
     <Section title={`${inningsLabel} — phase breakdown`}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }} data-testid={`pmr-phases-${inningsNum}`}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }} data-testid={`pmr-phases-${inningsNum}`}>
         <thead><tr style={{ borderBottom: `1px solid ${D.border}` }}>
           {["Phase", "Overs", "Runs", "Wkts", "Run rate", "vs par"].map((h) => (
-            <th key={h} style={{ textAlign: h === "Phase" ? "left" : "right", padding: "4px 6px", fontFamily: D.head, fontSize: "9px", color: D.textMuted }}>{h}</th>
+            <th key={h} style={{ textAlign: h === "Phase" ? "left" : "right", padding: "4px 6px", fontFamily: D.head, fontSize: "12px", color: D.textMuted }}>{h}</th>
           ))}
         </tr></thead>
         <tbody>

@@ -166,6 +166,10 @@ try {
   // A Westville pupil, whose wheel at our ground is his.
   const AWAYBAT = (await q(`insert into player (school_id, team_code, full_name, squad_no, playing_role, born)
                             values ($1, '1XI', 'V Cockpit Away Bat', 84, 'batter', $2) returning id`, [WES, born]))[0].id;
+  // Named to their sides at the start of term, not on the day the walk ran:
+  // since db/117 a family reads a side's fixture only from the day the boy
+  // joined it (SEASON_ROLLOVER Q2), and yesterday's away fixture is below.
+  await q(`update team_membership set joined_on = joined_on - 30 where player_id = any($1::uuid[])`, [[QUICK, SPIN, THEIRS, AWAYBAT]]);
   ok("the walk's quick is U15 this school year", (await q(`select age_band($1::date) b`, [born]))[0].b === "U15");
   // The two staff the seed does not have, appointed to the 1XI as the office would.
   for (const [email, name, role] of [["assist.ck@example.invalid", "A Assistant", "assistantcoach"], ["manager.ck@example.invalid", "T Manager", "teammanager"]]) {

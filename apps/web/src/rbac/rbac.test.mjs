@@ -329,7 +329,10 @@ group("The Conduct tab is drawn for staff readers only");
   const { roleGrants } = await import("@scrbrd/policy/roles");
   const readers = Object.keys(SHELL).filter(readsConduct).map((r) => SHELL[r].aliasOf ?? r);
   const writers = Object.keys(SHELL).filter(filesConduct).map((r) => SHELL[r].aliasOf ?? r);
-  const STAFF_READERS = ["superadmin", "principal", "directorofsport", "schooladmin", "competitionadmin"];
+  // Not competitionadmin since READERS_child_data Q10 (db/116): a league reads
+  // its own fixtures' records through competition_discipline_records(), not a
+  // school's Conduct tab.
+  const STAFF_READERS = ["superadmin", "principal", "directorofsport", "schooladmin"];
   const WRITERS = ["superadmin", "directorofsport", "official"];
   ok(`exactly the staff readers are drawn it (${[...new Set(readers)].sort().join(",")})`,
      [...new Set(readers)].sort().join() === [...STAFF_READERS].sort().join());
@@ -341,7 +344,7 @@ group("The Conduct tab is drawn for staff readers only");
      (SHELL.player.also ?? []).some((r) => roleGrants(r, "discipline.read")));
   for (const r of ["player", "selfaccess", "guardian"])
     ok(`a ${r} is not drawn the Conduct tab`, !readsConduct(r));
-  for (const r of ["coach", "assistantcoach", "scorer", "medical", "official", "spectator"])
+  for (const r of ["coach", "assistantcoach", "scorer", "medical", "official", "spectator", "competitionadmin"])
     ok(`a ${r} is not drawn the Conduct tab`, !readsConduct(r));
   // The umpire files and cannot read back — the asymmetry db/25 is built on.
   ok("an official may file but is not drawn the record", filesConduct("official") && !readsConduct("official"));

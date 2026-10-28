@@ -50,6 +50,7 @@ import pg from "pg";
 import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const PORT = port(8852);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -103,6 +104,7 @@ async function visitor() {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, extraHTTPHeaders: { "x-forwarded-for": `10.85.0.${++ipN}` } });
   await offline(ctx);
   const page = await ctx.newPage();
+  watchReads(page);
   const errors = /** @type {string[]} */ ([]);
   const requests = /** @type {{url: string, auth: string | null}[]} */ ([]);
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
@@ -163,15 +165,15 @@ try {
     v.page.on("request", (r) => { if (FIREBASE.test(r.url())) google.push(r.url()); });
     const sw = v.page.locator('[data-testid="analytics-consent"]');
     ok("the switch is in the footer, and off", (await sw.count()) === 1 && (await sw.getAttribute("aria-checked")) === "false");
-    await sw.click({ timeout: 4000 }); await v.page.waitForTimeout(1500);
+    await sw.click({ timeout: 4000 }); await afterReads(v.page, 1500);
     ok("turned on, it says on", (await sw.getAttribute("aria-checked")) === "true");
     ok("...and the home page made no Firebase or Google request", google.length === 0, google.slice(0, 3).join(" | "));
-    await v.page.goto(`${BASE}/app`, { waitUntil: "networkidle" }); await v.page.waitForTimeout(2000);
+    await v.page.goto(`${BASE}/app`, { waitUntil: "networkidle" }); await afterReads(v.page, 2000);
     ok("the app at /app, on the device that said yes, starts the SDK", google.length > 0, "no Firebase request at /app after consent");
     await v.page.goto(`${BASE}/`, { waitUntil: "networkidle" });
     await v.page.locator('[data-testid="analytics-consent"]').click({ timeout: 4000 }); await v.page.waitForTimeout(500);
     const before = google.length;
-    await v.page.goto(`${BASE}/app`, { waitUntil: "networkidle" }); await v.page.waitForTimeout(1500);
+    await v.page.goto(`${BASE}/app`, { waitUntil: "networkidle" }); await afterReads(v.page, 1500);
     ok("off again, the app's next boot starts nothing", google.length === before, google.slice(before, before + 3).join(" | "));
   }
 
@@ -266,10 +268,11 @@ try {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: "reduce", extraHTTPHeaders: { "x-forwarded-for": `10.85.0.${++ipN}` } });
     await offline(ctx);
     const page = await ctx.newPage();
+    watchReads(page);
     const errors = /** @type {string[]} */ ([]);
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
-    await page.waitForTimeout(800);
+    await afterReads(page, 800);
     const still = await page.evaluate(() => {
       const hidden = [];
       for (const el of document.querySelectorAll("main section, main li, main article, main figure, main h1, main h2, main p")) {
@@ -401,6 +404,7 @@ try {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, extraHTTPHeaders: { "x-forwarded-for": `10.85.1.${++ipN}` } });
       await offline(ctx);
       const page = await ctx.newPage();
+      watchReads(page);
       const errors = /** @type {string[]} */ ([]);
       page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
       page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(`console.error: ${m.text()}`); });
