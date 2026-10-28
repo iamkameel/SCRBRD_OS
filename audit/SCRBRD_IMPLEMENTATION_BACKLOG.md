@@ -4078,6 +4078,7 @@ Kameel, after a look at beta-2's four cockpits (`iamkameel/scrbrd-beta-2`, `Coac
 - **Who's out and the XI:** availability and the squad read. Workload only as SCRBRD-110 allows a coach.
 - **Not carried over:**
   - win probability and a 0–100 pressure index (SCRBRD-133 D4 says par gap and rate trend instead);
+  - Changed 23 Oct 2026 (Kameel): superseded by CRICINFO_GAP_PLAN.md decision 5 and CRI-1.8: a win estimate is shown from the existing par line, labelled "par estimate" on every surface, and recalibrated once pilot ball logs exist.
   - ball speed, the pitch landing map (SCRBRD-108), false shots;
   - "threat levels".
 - **Who builds:** Sonnet, screens over existing reads, then Opus reviews. No migration unless a read is missing.

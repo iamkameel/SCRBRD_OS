@@ -92,7 +92,7 @@ Dropped: the Lessons items "replace flag emoji with crests" (prototype artefact;
 | First sprint | Ship the grammar together | Walk before redesign | Both, in order: Sprint 0 walks, then the grammar |
 | Scorecard | Freeze to Cricinfo columns | Present; QA semantics | No rebuild |
 | Analytics surface | Three public charts | Keep all, add coverage | Spectator gets three; coach keeps the suite with coverage labels |
-| Notifications | Result only by default | Decided model, quiet hours | `NOTIFICATIONS.md` with a Result-only default |
+| Notifications | Result only by default | Decided model, quiet hours | `NOTIFICATIONS.md` with a Result-only default. Changed 23 Oct 2026 (Kameel): S2–S5 before the pilot, not after; see NOTIFICATIONS.md. |
 | Who builds | — | — | `CLAUDE.md` routing |
 
 ## 5. Roadmap
@@ -146,7 +146,7 @@ Backlog IDs `CRI-*` are in `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`.
 
 | ID | Item | Files | Tier | Closes when |
 | --- | --- | --- | --- | --- |
-| CRI-3.1 | Notifications S2–S5; follow child → team → school → competition; Result-only default; pinned matches | `NOTIFICATIONS.md`, `db/`, `services/api/`, home | Opus policy, Sonnet screens | Push is a pointer; preferences walk green |
+| CRI-3.1 | Notifications S2–S5; follow child → team → school → competition; Result-only default; pinned matches. Changed 23 Oct 2026 (Kameel): S2–S5 before the pilot, not after; see NOTIFICATIONS.md. | `NOTIFICATIONS.md`, `db/`, `services/api/`, home | Opus policy, Sonnet screens | Push is a pointer; preferences walk green |
 | CRI-3.2 | Tap-to-passport sheet, scope-checked | `scorecard.jsx`, `tabs-core.jsx`, profile view, `packages/policy` | Opus | Parent own child; coach squad; public nothing |
 | CRI-3.3 | Match impact as the PoM suggestion, with reasoning | `packages/scoring/src/rating.mjs`, recognition | Opus | After bowler-credit and dismissed-batter fixes merge |
 | CRI-3.4 | Analytics Explorer: one Fable design pass (allowed 2026-10-23), then Opus | `views/compare.jsx`, `views/AnalyticsView.jsx` | Fable, then Opus | Design doc for Kameel; build on his say |
