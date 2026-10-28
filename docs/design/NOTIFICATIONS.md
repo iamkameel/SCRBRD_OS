@@ -1,6 +1,6 @@
 # Notifications — one model for the whole app
 
-**Decided 2026-10-07 (Kameel): approved as recommended; S0 (lock the hand-written notice route) built now, S1–S5 after the pilot.** S0 built (#90, merged 2026-10-08). Pulled forward 2026-10-08 (Kameel): S1–S5 now, not after the pilot. S1 built (#97, merged 2026-10-08; db/89 live).
+**Decided 2026-10-07 (Kameel): approved as recommended; S0 (lock the hand-written notice route) built now, S1–S5 after the pilot.** S0 built (#90, merged 2026-10-08). Pulled forward 2026-10-08 (Kameel): S1–S5 now, not after the pilot. S1 built (#97, merged 2026-10-08; db/89 live). Confirmed 23 Oct 2026 (Kameel): S2–S5 before the pilot, including S3 push, superseding the 15 Oct note that push was not for the pilot.
 
 Design for Kameel's review (Fable, 2026-10-07). Only S0 is built (#90, merged 2026-10-08). Opus
 builds from it; Sonnet takes the screens over the routes once they exist.
@@ -408,6 +408,8 @@ a `notification` directly.
 ## 8. Quiet hours and preferences
 
 ### D20 · Preferences govern push only. Notices shows what RLS delivers.
+
+**Read 28 Oct 2026 (Kameel, as built in S4):** (1) only the five kinds the table below offers can be switched off; `injury` and `compromise` stay always on. (2) A switch is offered only for a kind the person receives, so a pupil holding only the `player` role has no `availability` switch. (3) Where a parent has a row for the kind and a row for one child, the child's row wins.
 
 STEP4 P5 stands. A preference never hides a row from Notices, the badge or the
 parent's action list (GA-I20 D2: the first thing a filter hides is a consent

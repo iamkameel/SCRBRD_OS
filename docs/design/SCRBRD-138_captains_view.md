@@ -216,7 +216,7 @@ The result words, both innings' lines, the over strip in full, his bowlers' fina
 | another school's children beyond the public label | the opposition dossier is `opposition.read`, staff-only, off by default: **a captain never reads it**, nor any per-player read of another school |
 | the coach's cockpit (SCRBRD-136) | it carries workload and availability; the "View full coach cockpit" button does not exist |
 | PII, date of birth, emergency contacts | not in `player`; the fixture's umpires are adults and are named |
-| a win probability, a pressure index, a "threat level", a false-shot rate | 133 D4 and 136: figures nobody measured; no data |
+| a win probability, a pressure index, a "threat level", a false-shot rate | 133 D4 and 136: figures nobody measured; no data. Changed 23 Oct 2026 (Kameel): superseded by CRICINFO_GAP_PLAN.md decision 5 and CRI-1.8: a win estimate is shown from the existing par line, labelled "par estimate" on every surface, and recalibrated once pilot ball logs exist. |
 | a photo | none exist (A8 of PUBLIC_DATA) |
 
 Where a boy asks the screen for one of these, the answer is `boundaries("player")` rendered as help, as the family screens do.
@@ -286,7 +286,7 @@ Every figure in `CaptainCockpitView.tsx` and `CaptainTacticalCockpit.tsx` is typ
 | the coach's directive inbox, confidence %, sample size, Accept/Dismiss | **declined**; the plan to the side replaces it (§5.2) | SG-9; `db/57` refuses a pupil recipient; the % is invented; a boy does not "dismiss" an adult in an app |
 | the over planner: intent v execution per ball, "adherence 80%" | dropped | intent is recorded nowhere; a fifteen-year-old is not scored on adherence |
 | the one-tap decision logger and timeline with "impact" | dropped; a captain's post-match note is a phase C question (D6) | field changes are not data; "impact" is a story |
-| the aggression slider, the bowling-plan select, win probability, "apply & broadcast tactics" | dropped | 133 D4 parks win probability; "broadcast" is a message to children; sliders that move a made-up number |
+| the aggression slider, the bowling-plan select, win probability, "apply & broadcast tactics" | dropped | 133 D4 parks win probability; "broadcast" is a message to children; sliders that move a made-up number. Changed 23 Oct 2026 (Kameel): superseded by CRICINFO_GAP_PLAN.md decision 5 and CRI-1.8: a win estimate is shown from the existing par line, labelled "par estimate" on every surface, and recalibrated once pilot ball logs exist. |
 | "View full coach cockpit" | **never** | SCRBRD-136 carries workload and availability |
 
 ---
