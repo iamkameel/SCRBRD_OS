@@ -10,7 +10,7 @@ import {
 } from "@scrbrd/scoring";
 import { lawsEdition, conditionsOf, describeResult, isWicketBall } from "@scrbrd/scoring";
 import {
-  chaseOf, eligibilityNotes, isSuperOver, pairPlace, superOverChaseStart, superOverFirstStart, superOverInPlay,
+  chaseOf, eligibilityNotes, matchChaseOf, isSuperOver, pairPlace, superOverChaseStart, superOverFirstStart, superOverInPlay,
   superOverOffer, superOversOf, superOverTitle, NOT_RECORDED_WORDS, UMPIRES_DECIDE_WORDS,
 } from "../lib/superOver.js";
 import { SuperOverOffer, SuperOverSheet } from "./superOverSheet.jsx";
@@ -1976,8 +1976,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     if(modal==="revise")return (
       <RevisionSheet
         overs={inn?.overs??match?.overs??20}
-        target={curIn===1?(inn?.target??((innings[0]?.runs||0)+1)):null}
-        isChase={curIn===1}
+        target={matchChaseOf(innings,curIn)?.target??null}
+        isChase={matchChaseOf(innings,curIn)!=null}
         onClose={()=>setModal(null)}
         onConfirm={reviseInnings}/>
     );
@@ -2074,12 +2074,12 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     if(modal==="stop")return <StopSheet onConfirm={stopPlay} onClose={()=>setModal(null)}/>;
     if(modal==="resume"&&inn)return (
       <ResumeSheet overs={inn.overs??match?.overs??20} minOvers={Math.ceil((inn.balls??0)/6)}
-        isChase={curIn===1} target={curIn===1?(inn.target??null):null}
+        isChase={matchChaseOf(innings,curIn)!=null} target={matchChaseOf(innings,curIn)!=null?(inn.target??null):null}
         propose={proposeDls} why={dlsWhy??"offline"}
         onConfirm={resumePlay} onClose={()=>setModal(null)}/>
     );
     if(modal==="rainEnd"&&inn)return (
-      <RainEndSheet isChase={curIn===1} runs={inn.runs} wickets={inn.wickets} balls={inn.balls}
+      <RainEndSheet isChase={matchChaseOf(innings,curIn)!=null} runs={inn.runs} wickets={inn.wickets} balls={inn.balls}
         propose={proposeDls} why={dlsWhy??"offline"}
         onConfirm={endInningsRain} onClose={()=>setModal(null)}/>
     );
@@ -2615,7 +2615,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
               onTakeOver={()=>setModal("handover")}/>}
             {/* SCRBRD-130 R1: while play is stopped, the banner says where and
                 offers the two ways on; it replaces the blocked panel's words. */}
-            {activeTab==="score"&&!modal&&stopped&&<RainBanner stopped={stopped} isChase={curIn===1}
+            {activeTab==="score"&&!modal&&stopped&&<RainBanner stopped={stopped} isChase={matchChaseOf(innings,curIn)!=null}
               onResume={()=>setModal("resume")} onEnd={()=>setModal("rainEnd")}/>}
             {activeTab==="score"&&!modal&&!stopped&&<ScoringBlocked readiness={readiness} onFix={fixBlock}
               cause={readiness.ready?null:likelyCause(readiness.blocked[0]?.code,{inn})}/>}

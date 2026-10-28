@@ -4,7 +4,7 @@
  *
  * Every case here failed against main before its fix (16ebe23), and the name
  * says which finding it is. The pad's half of F1 (asking the end on every run
- * out) is apps/web/test/run-out-end.test.mjs; SQL's half of F4, F5, F7 and the
+ * out) is apps/web/test/wicket-asks.test.mjs; SQL's half of F4, F5, F7 and the
  * front-foot free hit is db/121's proof and tools/smoke-fold-figures.mjs.
  */
 import {
@@ -129,8 +129,8 @@ group("F4 · an amendment's void: who faced the later balls is the fold's");
   const inn = deriveInnings([...open(), b1, b2, voidEvent({ target: b1.id })]);
   ok("F4 after the void, ball 2 was A's: the fold re-judges it", inn.ballLog[0].strikerId === "p1" && bat(inn, "p1").runs === 4);
   ok("F4 ...and the stamp on the event, which SQL read, says B", inn.ballLog[0].striker === "p2");
-  // db/121 is how SQL agrees: services/api/write/restamp.mjs re-stamps from
-  // this same fold (restamp.test.mjs).
+  // db/121 is how SQL agrees: services/api/write/rejudge.mjs re-judges from
+  // this same fold (rejudge.test.mjs).
 }
 
 // ── F5 · a run out going for a second bye: the bye is a bye ──

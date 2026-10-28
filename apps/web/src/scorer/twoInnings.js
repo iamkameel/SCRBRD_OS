@@ -4,7 +4,7 @@
  * → the result; a match whose playing conditions say two innings a side
  * (`format.innings_per_side` = 2) runs all four, as the Laws check now lets
  * it (laws.mjs matchDecided()). This is the pad's half, pure, so a test can
- * hold it (apps/web/test/two-innings.test.mjs):
+ * hold it (apps/web/test/wicket-asks.test.mjs):
  *
  *   twoInningsMatch(conditions)   is it one
  *   nextInningsPlan(innings, i)   who bats in match innings i (1, 2 or 3),

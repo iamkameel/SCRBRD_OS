@@ -27,6 +27,7 @@
  * the scorer records what happened.
  */
 import { PAIR_STATE, REFUSAL_TEXT, lawsRefusal, inningsStart, pairState } from "@scrbrd/scoring";
+import { nextInningsPlan, twoInningsMatch } from "../scorer/twoInnings.js";
 
 /** One over a side, and the loss of two wickets ends the innings (§3.2). */
 export const SUPER_OVER_OVERS = 1;
@@ -80,8 +81,21 @@ export function pairPlace(innings, i) {
 }
 
 /**
- * The chase innings `i` is: its target and the innings it chases, or null for
- * a first innings. The match's second innings and a super over's second.
+ * Is this a match of two innings a side (a Two-Day)? The frozen conditions
+ * the fold carries on every innings (`inn.conditions`, twoInnings.js
+ * twoInningsMatch()), or, folded without them, a third match innings.
+ * @param {any[]} innings
+ */
+export const twoInningsPlayed = (innings = []) =>
+  innings.some((x) => twoInningsMatch(x?.conditions)) || matchInningsOf(innings).length > 2;
+
+/**
+ * The chase innings `i` is: its target and the innings it chases, or null
+ * for an innings that chases nothing. One innings a side: the match's second
+ * innings, and a super over's second. Two innings a side (the Laws audit F2,
+ * S1): the fourth only — its target the runs it trails by over the three
+ * before it, plus one (twoInnings.js nextInningsPlan()); the second and the
+ * third chase nothing. Every screen's "chase" asks this.
  * @param {any[]} innings @param {number} i
  * @returns {{target: number, of: number} | null}
  */
@@ -91,8 +105,20 @@ export function chaseOf(innings, i) {
   if (isSuperOver(inn)) {
     return pairPlace(innings, i) === "second" ? { target: inn.target ?? (innings[i - 1].runs + 1), of: i - 1 } : null;
   }
+  if (twoInningsPlayed(innings)) {
+    return i === 3 ? { target: inn.target ?? nextInningsPlan(innings, 3)?.target ?? 1, of: 2 } : null;
+  }
   return i === 1 ? { target: inn.target ?? ((innings[0]?.runs ?? 0) + 1), of: 0 } : null;
 }
+
+/**
+ * The match's own chase at innings `i`: chaseOf(), but null for a super
+ * over, whose board is its own block (superOverBlock()). What the pad's
+ * board, the Match Centre, the captain's and the coach's boards, the charts
+ * and the rain sheets ask.
+ * @param {any[]} innings @param {number} i
+ */
+export const matchChaseOf = (innings, i) => (isSuperOver(innings[i]) ? null : chaseOf(innings, i));
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const upperFirst = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);

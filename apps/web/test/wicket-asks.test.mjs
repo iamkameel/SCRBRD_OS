@@ -11,6 +11,8 @@ import { wicketAsks, wicketDetail } from "../src/scorer/wicketAsks.js";
 import { nbFreeHit } from "../src/scorer/extras.js";
 import { deliveryOf, deliveryEvents } from "../src/scorer/delivery.js";
 import { nextInningsPlan, inningsDecided, twoInningsMatch, firstInningsLead } from "../src/scorer/twoInnings.js";
+import { chaseOf, matchChaseOf, twoInningsPlayed } from "../src/lib/superOver.js";
+import { breakPanel } from "../src/display/data.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
@@ -100,6 +102,24 @@ ok("F12 ...not a waist-high full toss, not a beamer", nbFreeHit("height") === fa
     { ...batters({ striker: "a1", nonStriker: "a2" }), innings: 2 }, { ...bowler({ bowler: "x" }), innings: 2 }, R(2, 2),
     { ...inningsEnd({ reason: "declared", confirmed: { runs: 2, wickets: 0, balls: 1 } }), innings: 2 }], C);
   ok("F2 a declaration in the third: a fourth innings follows", dec.innings[2].complete && inningsDecided(dec.innings) === false);
+
+  // ── S1 · only the fourth innings is a chase (chaseOf(), every screen's) ──
+  const two = deriveMatch(log.filter((e) => e.innings <= 1), C).innings;
+  ok("S1 a Two-Day's second innings chases nothing (the conditions say two a side)", chaseOf(two, 1) === null && matchChaseOf(two, 1) === null);
+  ok("S1 ...and its break after the first innings says no target", twoInningsPlayed(two.slice(0, 1))
+     && breakPanel({ homeTeam: "Hilton", opponent: "Kearsney" }, two.slice(0, 1)).words.endsWith("to bat"));
+  const four = [...log, start(3, p3.battingTeam, p3.bowlingTeam, p3.squad, p3.bowlingSquad, { target: p3.target }),
+    { ...batters({ striker: "b1", nonStriker: "b2" }), innings: 3 }, { ...bowler({ bowler: "x" }), innings: 3 }, R(3, 1)];
+  const all = deriveMatch(four, C).innings;
+  ok("S1 the third chases nothing, the fourth chases 10", chaseOf(all, 2) === null && chaseOf(all, 3)?.target === 10 && chaseOf(all, 3)?.of === 2);
+  // The innings_start's target dropped: the fourth's is still the runs behind, plus one.
+  const bare = deriveMatch(four.map((e) => (e.innings === 3 && e.kind === "innings_start" ? { ...e, target: undefined } : e)), C).innings;
+  ok("S1 ...worked out when the innings_start carries none", chaseOf(bare, 3)?.target === 10);
+  const noDoc = deriveMatch(four, {}).innings;
+  ok("S1 folded without its conditions, a third innings still says two a side", chaseOf(noDoc, 1) === null && chaseOf(noDoc, 3)?.target === 10);
+  const one = deriveMatch([start(0, "Hilton", "Kearsney", SA, SB), ...allOut(0, SA, 10), start(1, "Kearsney", "Hilton", SB, SA)], {}).innings;
+  ok("S1 one innings a side: the second is the chase, as before", chaseOf(one, 1)?.target === 11 && matchChaseOf(one, 1)?.target === 11
+     && breakPanel({ homeTeam: "Hilton", opponent: "Kearsney" }, one.slice(0, 1)).words.includes("need 11 to win"));
 }
 
 console.log(`\nwicket-asks: ${pass} passed, ${fail} failed`);
