@@ -81,9 +81,9 @@ const TABS = [
 // screen is a padded one; an explicit padding in sx still wins.
 const Panel = ({ sx, ...rest }) => <Card sx={{ padding: "16px", ...sx }} {...rest}/>;
 const H = () => ({ fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: D.textPrimary });
-const SUB = () => ({ fontFamily: D.body, fontSize: "11px", color: D.textMuted, lineHeight: 1.5 });
-const MONO = () => ({ fontFamily: D.mono, fontSize: "10px", color: D.textMuted });
-const EYEBROW = () => ({ fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: D.textMuted });
+const SUB = () => ({ fontFamily: D.body, fontSize: "12px", color: D.textMuted, lineHeight: 1.5 });
+const MONO = () => ({ fontFamily: D.mono, fontSize: "12px", color: D.textMuted });
+const EYEBROW = () => ({ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: D.textMuted });
 
 const CardHead = ({ title, sub, aside }) => (
   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", flexWrap: "wrap", marginBottom: sub ? "12px" : "10px" }}>
@@ -96,18 +96,18 @@ const CardHead = ({ title, sub, aside }) => (
 );
 
 const TH = ({ children, align = "left" }) => (
-  <th style={{ padding: "9px 12px", fontFamily: D.head, fontSize: "9px", fontWeight: 700, color: D.textMuted,
+  <th style={{ padding: "9px 12px", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted,
                letterSpacing: "0.08em", textTransform: "uppercase", textAlign: align, whiteSpace: "nowrap" }}>{children}</th>
 );
 const TD = ({ children, align = "left", mono, sx }) => (
   <td style={{ padding: "10px 12px", textAlign: align, verticalAlign: "middle",
-               fontFamily: mono ? D.mono : D.body, fontSize: mono ? "10px" : "12px",
+               fontFamily: mono ? D.mono : D.body, fontSize: "12px",
                color: mono ? D.textMuted : D.textPrimary, ...sx }}>{children}</td>
 );
 
 const SmallBtn = ({ children, sx, ...rest }) => (
   <button {...rest} style={{ background: "none", border: `1px solid ${D.border}`, borderRadius: D.sm,
-    padding: "3px 9px", cursor: rest.disabled ? "default" : "pointer", fontFamily: D.body, fontSize: "10px",
+    padding: "3px 9px", cursor: rest.disabled ? "default" : "pointer", fontFamily: D.body, fontSize: "12px",
     color: D.textSecondary, ...sx }}>{children}</button>
 );
 
@@ -265,10 +265,10 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
                     style={{ display: "inline-flex", alignItems: "center", gap: "7px",
                       padding: "6px 16px", borderRadius: D.pill, cursor: "pointer",
                       border: `1px solid ${on ? D.violet + "55" : D.border}`, background: on ? D.violet + "14" : "transparent",
-                      fontFamily: D.body, fontSize: "11px", fontWeight: on ? 700 : 400, color: on ? D.violet : D.textMuted }}>
+                      fontFamily: D.body, fontSize: "12px", fontWeight: on ? 700 : 400, color: on ? D.violet : D.textMuted }}>
               {t.label}
               {n > 0 && (
-                <span aria-label={`${n} to attend to`} style={{ fontFamily: D.mono, fontSize: "9px", fontWeight: 700,
+                <span aria-label={`${n} to attend to`} style={{ fontFamily: D.mono, fontSize: "12px", fontWeight: 700,
                   padding: "1px 6px", borderRadius: D.pill, background: D.amber + "22", color: textOn(D.amber) }}>{n}</span>
               )}
             </button>
@@ -323,18 +323,18 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
           <Input label="ID number (optional)" value={captureValue.idNumber}
                  onChange={(v) => setCaptureValue((p) => ({ ...p, idNumber: v }))} placeholder="13 digits"/>
           {captureCheck && captureCheck.ok === false && (
-            <div data-testid="capture-dob-note" role="alert" style={{ marginTop: "8px", fontFamily: D.body, fontSize: "10px", color: D.roseText }}>
+            <div data-testid="capture-dob-note" role="alert" style={{ marginTop: "8px", fontFamily: D.body, fontSize: "12px", color: D.roseText }}>
               {BIRTH_DATE_MESSAGE[captureCheck.reason] || captureCheck.reason}
             </div>
           )}
           {captureCheck && captureCheck.ok && captureCheck.source === "id_number" && (
-            <div style={{ marginTop: "8px", fontFamily: D.body, fontSize: "10px", color: D.textMuted }}>
+            <div style={{ marginTop: "8px", fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
               Born <b style={{ color: D.textSecondary }}>{captureCheck.born}</b>, read from the ID number.
             </div>
           )}
           {captureError && (
             <div data-testid="capture-dob-error" role="alert" style={{ marginTop: "10px", padding: "8px 10px", borderRadius: D.sm,
-              background: D.rose + "14", border: `1px solid ${D.rose}33`, fontFamily: D.body, fontSize: "11px", color: D.roseText }}>
+              background: D.rose + "14", border: `1px solid ${D.rose}33`, fontFamily: D.body, fontSize: "12px", color: D.roseText }}>
               {BIRTH_DATE_MESSAGE[captureError] || ENROL_MESSAGE[captureError] || captureError}
             </div>
           )}
@@ -406,10 +406,10 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
                   {...(canEdit ? { onClick: () => onEnrolFor(p), title: `Enrol ${p.name}` } : {})}
                   style={{ display: "inline-flex", alignItems: "center", gap: "6px",
                     padding: "4px 10px", borderRadius: D.pill, background: D.amber + "14", border: `1px solid ${D.amber}33`,
-                    fontFamily: D.body, fontSize: "11px", color: D.textSecondary, cursor: canEdit ? "pointer" : "default" }}>
+                    fontFamily: D.body, fontSize: "12px", color: D.textSecondary, cursor: canEdit ? "pointer" : "default" }}>
                   <Avatar name={p.name} size={18} color={D.amber}/>
                   {p.name}
-                  <span style={{ ...MONO(), fontSize: "9px" }}>{p.team}</span>
+                  <span style={{ ...MONO(), fontSize: "12px" }}>{p.team}</span>
                 </Tag>
               );
             })}
@@ -439,10 +439,10 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
                     {...(canEdit ? { onClick: () => onCapture({ playerId: p.playerId, name: p.name }), title: `Capture ${p.name}'s date of birth` } : {})}
                     style={{ display: "inline-flex", alignItems: "center", gap: "6px",
                       padding: "4px 10px", borderRadius: D.pill, background: D.rose + "14", border: `1px solid ${D.rose}33`,
-                      fontFamily: D.body, fontSize: "11px", color: D.textSecondary, cursor: canEdit ? "pointer" : "default" }}>
+                      fontFamily: D.body, fontSize: "12px", color: D.textSecondary, cursor: canEdit ? "pointer" : "default" }}>
                     <Avatar name={p.name} size={18} color={D.rose}/>
                     {p.name}
-                    <span style={{ ...MONO(), fontSize: "9px" }}>{p.team}</span>
+                    <span style={{ ...MONO(), fontSize: "12px" }}>{p.team}</span>
                   </Tag>
                 );
               })}
@@ -450,7 +450,7 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
           )}
           {linkEnded.length > 0 && (
             <>
-              <div style={{ ...H(), fontSize: "11px", marginBottom: "4px" }}>
+              <div style={{ ...H(), fontSize: "12px", marginBottom: "4px" }}>
                 Guardian access ended for want of it — {linkEnded.length}
               </div>
               <div style={{ ...SUB(), marginBottom: "10px" }}>
@@ -462,8 +462,8 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
                     style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap",
                       padding: "6px 10px", borderRadius: D.sm, background: D.amber + "0c", border: `1px solid ${D.amber}22` }}>
                     <Avatar name={g.name} size={18} color={D.amber}/>
-                    <span style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary }}>{g.name}</span>
-                    <span style={{ ...MONO(), fontSize: "9px" }}>
+                    <span style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary }}>{g.name}</span>
+                    <span style={{ ...MONO(), fontSize: "12px" }}>
                       {g.relationship} · {g.guardianName || g.guardianEmail || "unknown guardian"} · ended {g.endedOn}
                     </span>
                     {canEdit && (
@@ -521,7 +521,7 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
                         </TD>
                         <TD><Badge color={rc?.color || D.textMuted}>{rc?.icon && <Icon name={rc.icon}/>} {rc?.label ?? u.role}</Badge></TD>
                         {manySchools && <TD mono>{schoolName.get(u.school) ?? "—"}</TD>}
-                        <TD sx={{ color: D.textSecondary, fontSize: "11px" }}>{linkedName(u) ?? "—"}</TD>
+                        <TD sx={{ color: D.textSecondary, fontSize: "12px" }}>{linkedName(u) ?? "—"}</TD>
                         <TD align="center" mono title={u.lastLogin ? new Date(u.lastLogin).toLocaleString() : undefined}>{ago(u.lastLogin)}</TD>
                         <TD align="center"><Badge color={u.status === "active" ? D.emerald : D.rose}>{u.status}</Badge></TD>
                         <TD align="center">
@@ -617,25 +617,25 @@ function RolesTab({ users, grantable }) {
                                     display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", flexShrink: 0, color: rc.color }}><Icon name={rc.icon}/></div>
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontFamily: D.head, fontSize: "13px", fontWeight: 700, color: rc.color }}>{rc.label}</div>
-                        <div style={{ ...MONO(), fontSize: "9px" }}>
+                        <div style={{ ...MONO(), fontSize: "12px" }}>
                           {n} capabilit{n === 1 ? "y" : "ies"} · {rc.nav.length} screens · {held} account{held === 1 ? "" : "s"}
                         </div>
                       </div>
                       {mine && <Badge color={D.violet}>You can appoint</Badge>}
                     </div>
-                    <div style={{ ...MONO(), fontSize: "9px", marginBottom: "9px", letterSpacing: "0.04em" }}>{scopeNote(r)}</div>
+                    <div style={{ ...MONO(), fontSize: "12px", marginBottom: "9px", letterSpacing: "0.04em" }}>{scopeNote(r)}</div>
                     {doms.length === 0
                       ? <div style={SUB()}>No capabilities.</div>
                       : doms.map(([dom, list2]) => (
                           <details key={dom} style={{ padding: "2px 0" }}>
                             <summary style={{ cursor: "pointer", listStyle: "none", display: "flex", alignItems: "center", gap: "7px",
-                                              fontFamily: D.body, fontSize: "11px", color: D.textSecondary, lineHeight: 1.5 }}>
+                                              fontFamily: D.body, fontSize: "12px", color: D.textSecondary, lineHeight: 1.5 }}>
                               <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: rc.color, flexShrink: 0 }}/>
                               {DOMAIN_LABEL[dom] ?? dom}
-                              <span style={{ ...MONO(), fontSize: "9px" }}>· {list2.length}</span>
+                              <span style={{ ...MONO(), fontSize: "12px" }}>· {list2.length}</span>
                             </summary>
                             <div style={{ padding: "2px 0 4px 12px", display: "flex", flexWrap: "wrap", gap: "4px" }}>
-                              {list2.map((c) => <code key={c} style={{ ...MONO(), fontSize: "9px", padding: "1px 6px", borderRadius: D.pill, background: D.surf2, border: `1px solid ${D.border}` }}>{c}</code>)}
+                              {list2.map((c) => <code key={c} style={{ ...MONO(), fontSize: "12px", padding: "1px 6px", borderRadius: D.pill, background: D.surf2, border: `1px solid ${D.border}` }}>{c}</code>)}
                             </div>
                           </details>
                         ))}
@@ -764,7 +764,7 @@ function MeTab({ role, onSignOut }) {
                     <div style={{ fontSize: "18px", lineHeight: 1, color: rc?.color || D.textPrimary }}>{rc?.icon ? <Icon name={rc.icon}/> : "•"}</div>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: rc?.color || D.textPrimary }}>{rc?.label ?? a.role}</div>
-                      <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary }}>{a.school ? (a.schoolName || "This school") : "Platform-wide — every school"}</div>
+                      <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary }}>{a.school ? (a.schoolName || "This school") : "Platform-wide — every school"}</div>
                       <div style={MONO()}>{[a.team && `side ${a.team}`, a.season, a.fixture && "one fixture"].filter(Boolean).join(" · ") || scopeNote(a.role)}</div>
                     </div>
                   </div>
@@ -890,7 +890,7 @@ function AlertsSection({ role }) {
               </div>
             : <Badge color={D.amber}>Not supported</Badge>}/>
       {said && (
-        <div role="status" style={{ marginBottom: "12px", padding: "9px 12px", borderRadius: D.md, fontFamily: D.body, fontSize: "11px", lineHeight: 1.5,
+        <div role="status" style={{ marginBottom: "12px", padding: "9px 12px", borderRadius: D.md, fontFamily: D.body, fontSize: "12px", lineHeight: 1.5,
           background: (said.ok ? D.emerald : D.amber) + "12", border: `1px solid ${(said.ok ? D.emerald : D.amber)}33`,
           color: said.ok ? D.emerald : D.amber }}>{said.text}</div>
       )}
@@ -968,7 +968,7 @@ function ScoutingConsentSection({ role, players: offered }) {
     <Panel sx={{ marginTop: "16px" }} data-testid="scouting-consent-section">
       <CardHead title="Seen by scouts"
         sub="Only an accredited scout, only with a family's yes, and only ever the cricket record. A boy nobody has decided for is not shown — there is no default yes here."/>
-      {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginBottom: "8px" }}>{said}</div>}
+      {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose), marginBottom: "8px" }}>{said}</div>}
       {players.length === 0
         ? <EmptyState icon="telescope" message={offered.length === 0 ? "No player to decide for."
             : "Not yours to see. A boy's scouting decision is read by his family, his school's office and his own coach."}/>
@@ -980,12 +980,12 @@ function ScoutingConsentSection({ role, players: offered }) {
                    style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: `1px solid ${D.border}` }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{p.name}</div>
-                  <div style={{ fontFamily: D.body, fontSize: "10px", color: D.textMuted }}>
+                  <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
                     {c ? `${c.state} ${c.decidedAt ?? ""}${c.decidedBy ? ` · ${c.decidedBy}` : ""}`.trim() : "no decision recorded"}
                   </div>
                 </div>
                 <span data-testid={`scouting-state-${p.id}`}
-                      style={{ fontFamily: D.mono, fontSize: "9px", textTransform: "uppercase",
+                      style={{ fontFamily: D.mono, fontSize: "12px", textTransform: "uppercase",
                                color: on ? textOn(D.emerald) : D.textMuted }}>
                   {on ? "shown to scouts" : "not shown"}
                 </span>
@@ -1049,17 +1049,17 @@ function PassportTab({ role, only = null }) {
         </select>
         <Btn onClick={grant} disabled={!playerId || !schoolId}>Name this school</Btn>
       </div>
-      {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "11px", color: textOn(D.rose), marginBottom: "8px" }}>{said}</div>}
+      {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose), marginBottom: "8px" }}>{said}</div>}
       {rows.length === 0
         ? <EmptyState icon="stamp" message={PASSPORT_NONE[passportConsentReader() ?? "none"]}/>
         : [...open, ...closed].map((r) => (
           <div key={r.id} data-testid={`passport-consent-${r.id}`} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: `1px solid ${D.border}`, opacity: r.withdrawnAt ? 0.6 : 1 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{r.name} → {r.toSchoolName ?? "a school"}</div>
-              <div style={{ fontFamily: D.body, fontSize: "10px", color: D.textMuted }}>named {day(r.grantedAt)}{r.withdrawnAt ? ` · withdrawn ${day(r.withdrawnAt)}` : ""}</div>
+              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>named {day(r.grantedAt)}{r.withdrawnAt ? ` · withdrawn ${day(r.withdrawnAt)}` : ""}</div>
             </div>
             {r.withdrawnAt
-              ? <span style={{ fontFamily: D.mono, fontSize: "9px", textTransform: "uppercase", color: D.textMuted }}>withdrawn</span>
+              ? <span style={{ fontFamily: D.mono, fontSize: "12px", textTransform: "uppercase", color: D.textMuted }}>withdrawn</span>
               : <Btn variant="ghost" onClick={() => withdraw(r.id)}>Withdraw</Btn>}
           </div>
         ))}
@@ -1193,7 +1193,7 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
           ].map(([l, v]) => (
             <div key={l} style={{ padding: "8px 10px", borderRadius: D.sm, background: D.surf2 + "66", border: `1px solid ${D.border}` }}>
               <div style={EYEBROW()}>{l}</div>
-              <div style={{ fontFamily: D.mono, fontSize: "11px", color: D.textPrimary, marginTop: "3px" }}>{v}</div>
+              <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textPrimary, marginTop: "3px" }}>{v}</div>
             </div>
           ))}
         </div>
@@ -1268,12 +1268,12 @@ function AuditSection({ role }) {
             <div key={s.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: `1px solid ${D.border}`, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: "200px" }}>
                 <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{s.actorName ?? "Platform support"} as {ROLES[s.role]?.label ?? s.role}</div>
-                <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary }}>{s.reason}</div>
+                <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary }}>{s.reason}</div>
                 <div style={MONO()}>began {ago(s.startedAt)} · {s.endedAt ? `ended ${ago(s.endedAt)}${s.endedByName ? ` by ${s.endedByName}` : ""}` : s.live ? `until ${new Date(s.expiresAt).toLocaleTimeString()}` : "expired"}</div>
               </div>
               <Badge color={s.live ? D.amber : D.textMuted}>{s.live ? "Live now" : "Over"}</Badge>
               {s.live && canEnd && <Btn size="sm" variant="danger" onClick={() => endSession(s)} data-testid="school-support-end">End now</Btn>}
-              {endSaid[s.id] && <div role="alert" style={{ flexBasis: "100%", fontFamily: D.body, fontSize: "11px", color: D.roseText }}>{endSaid[s.id]}</div>}
+              {endSaid[s.id] && <div role="alert" style={{ flexBasis: "100%", fontFamily: D.body, fontSize: "12px", color: D.roseText }}>{endSaid[s.id]}</div>}
             </div>
           ))}
       </Panel>
@@ -1358,12 +1358,12 @@ function RoadmapTab() {
                   <div style={{ fontFamily: D.body, fontSize: "13px", fontWeight: 600, color: D.textPrimary, flex: 1 }}>{up.title}</div>
                   <Badge color={catCol(up.category)}>{up.category}</Badge>
                 </div>
-                <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary, lineHeight: 1.5, marginBottom: "10px" }}>{up.desc}</div>
+                <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary, lineHeight: 1.5, marginBottom: "10px" }}>{up.desc}</div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                   <div style={MONO()}>
                     {up.priority} priority · effort <span style={{ color: up.effort === "Low" ? D.emerald : up.effort === "Medium" ? D.amber : textOn(D.rose) }}>{up.effort}</span>
                   </div>
-                  <span style={{ fontFamily: D.mono, fontSize: "10px", color: STATUS_TONE[st] }}>{STATUS_LABEL[st]}</span>
+                  <span style={{ fontFamily: D.mono, fontSize: "12px", color: STATUS_TONE[st] }}>{STATUS_LABEL[st]}</span>
                 </div>
               </Panel>
             ))}

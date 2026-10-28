@@ -143,7 +143,7 @@ function SponsorsView({ role }) {
             <div className="sc-grid-2" style={{ alignItems: "start" }}>
               <Card>
                 <div style={{ padding: "13px 16px", borderBottom: `1px solid ${D.border}` }}>
-                  <span style={{ fontFamily: D.head, fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em",
+                  <span style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.1em",
                     textTransform: "uppercase", color: D.textMuted }}>
                     {sponsors.rows.length} {sponsors.rows.length === 1 ? "sponsor" : "sponsors"}
                   </span>
@@ -163,7 +163,7 @@ function SponsorsView({ role }) {
                         <span style={{ display: "flex", alignItems: "center", justifyContent: "center",
                           width: "48px", height: "34px", borderRadius: D.sm, flexShrink: 0,
                           background: s.logoBg || D.surf3, border: `1px solid ${D.border}`,
-                          fontFamily: D.head, fontSize: "8px", fontWeight: 800, letterSpacing: "0.04em",
+                          fontFamily: D.head, fontSize: "12px", fontWeight: 800, letterSpacing: "0.04em",
                           color: inkOn(s.logoBg || D.surf3), overflow: "hidden", whiteSpace: "nowrap" }}>
                           {s.logoText || s.name.slice(0, 8).toUpperCase()}
                         </span>
@@ -173,7 +173,7 @@ function SponsorsView({ role }) {
                             textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {s.name}
                           </div>
-                          <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted }}>
+                          <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
                             {s.category.replace(/_/g, " ")}
                             {mine.length ? ` · ${mine.length} placement${mine.length === 1 ? "" : "s"}` : " · not placed"}
                           </div>
@@ -195,7 +195,7 @@ function SponsorsView({ role }) {
                     <span style={{ display: "flex", alignItems: "center", justifyContent: "center",
                       width: "70px", height: "48px", borderRadius: D.md, flexShrink: 0,
                       background: selected.logoBg || D.surf3, border: `1px solid ${D.borderMed}`,
-                      fontFamily: D.head, fontSize: "10px", fontWeight: 800, color: inkOn(selected.logoBg || D.surf3),
+                      fontFamily: D.head, fontSize: "12px", fontWeight: 800, color: inkOn(selected.logoBg || D.surf3),
                       overflow: "hidden", whiteSpace: "nowrap" }}>
                       {selected.logoText || selected.name.slice(0, 8).toUpperCase()}
                     </span>
@@ -203,7 +203,7 @@ function SponsorsView({ role }) {
                       <div style={{ fontFamily: D.head, fontSize: "17px", fontWeight: 800, color: D.textPrimary }}>
                         {selected.name}
                       </div>
-                      <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted, marginTop: "2px" }}>
+                      <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginTop: "2px" }}>
                         {selected.category.replace(/_/g, " ")}
                       </div>
                     </div>
@@ -212,7 +212,7 @@ function SponsorsView({ role }) {
                   {selected.categoryPermitted === false && (
                     <div style={{ padding: "11px 13px", borderRadius: D.md, marginBottom: "14px",
                       background: D.rose + "12", border: `1px solid ${D.rose}33` }}>
-                      <div style={{ fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em",
+                      <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.1em",
                         textTransform: "uppercase", color: D.roseText, marginBottom: "4px" }}>
                         This category may not be placed on school sport
                       </div>
@@ -224,7 +224,7 @@ function SponsorsView({ role }) {
 
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
                     marginBottom: "8px" }}>
-                    <span style={{ fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em",
+                    <span style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.1em",
                       textTransform: "uppercase", color: D.textMuted }}>
                       Placements ({(bySponsor.get(selected.id) ?? []).length})
                     </span>
@@ -262,7 +262,7 @@ function SponsorsView({ role }) {
                               </Badge>
                             </div>
                             <div style={{ display: "flex", gap: "16px", flexWrap: "wrap",
-                              fontFamily: D.mono, fontSize: "11px", color: D.textSecondary }}>
+                              fontFamily: D.mono, fontSize: "12px", color: D.textSecondary }}>
                               <span>{d.startsOn} → {d.endsOn}</span>
                               {/* Confidential vs Not recorded — see
                                   entitledToTerms above for why the two must
@@ -283,7 +283,7 @@ function SponsorsView({ role }) {
                   )}
 
                   {!entitledToTerms && (bySponsor.get(selected.id) ?? []).length > 0 && (
-                    <div style={{ marginTop: "10px", fontFamily: D.body, fontSize: "11px", color: D.textMuted }}>
+                    <div style={{ marginTop: "10px", fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
                       Contract values are held by the finance office. This screen never received them.
                     </div>
                   )}
@@ -371,7 +371,7 @@ function SignSponsor({ categories, schools, onClose, onDone }) {
           confirm something they cannot change. */}
       {schools.length > 1 && (
         <div style={{ marginBottom: "14px" }}>
-          <span style={{ display: "block", fontFamily: D.head, fontSize: "10px", fontWeight: 700,
+          <span style={{ display: "block", fontFamily: D.head, fontSize: "12px", fontWeight: 700,
             color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "6px" }}>
             School
           </span>
@@ -393,7 +393,7 @@ function SignSponsor({ categories, schools, onClose, onDone }) {
       <Input label="Sponsor name" value={name} onChange={setName} placeholder="Ridgeway Bank"/>
 
       <div style={{ marginBottom: "14px" }}>
-        <span style={{ display: "block", fontFamily: D.head, fontSize: "10px", fontWeight: 700,
+        <span style={{ display: "block", fontFamily: D.head, fontSize: "12px", fontWeight: 700,
           color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "6px" }}>
           Category
         </span>
@@ -416,7 +416,7 @@ function SignSponsor({ categories, schools, onClose, onDone }) {
         {refused.length > 0 && (
           <div style={{ border: `1px solid ${D.border}`, borderRadius: D.lg, overflow: "hidden" }}>
             <div style={{ padding: "8px 12px", background: D.surf0,
-              fontFamily: D.head, fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em",
+              fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.1em",
               textTransform: "uppercase", color: D.textMuted }}>
               Not available on school sport
             </div>
@@ -427,7 +427,7 @@ function SignSponsor({ categories, schools, onClose, onDone }) {
                   textDecoration: "line-through" }}>
                   {c.name.replace(/_/g, " ")}
                 </div>
-                <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted, marginTop: "2px" }}>
+                <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginTop: "2px" }}>
                   {c.note}
                 </div>
               </div>
@@ -449,11 +449,11 @@ function SignSponsor({ categories, schools, onClose, onDone }) {
         <span style={{ display: "flex", alignItems: "center", justifyContent: "center",
           width: "88px", height: "40px", borderRadius: D.sm,
           background: /^#[0-9a-fA-F]{6}$/.test(logoBg) ? logoBg : D.surf3,
-          border: `1px solid ${D.border}`, fontFamily: D.head, fontSize: "9px",
+          border: `1px solid ${D.border}`, fontFamily: D.head, fontSize: "12px",
           fontWeight: 800, color: inkOn(/^#[0-9a-fA-F]{6}$/.test(logoBg) ? logoBg : D.surf3), overflow: "hidden", whiteSpace: "nowrap" }}>
           {logoText || (name ? name.slice(0, 8).toUpperCase() : "BOARD")}
         </span>
-        <span style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted }}>
+        <span style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
           How it appears on an overlay.
         </span>
       </div>
@@ -514,7 +514,7 @@ function PlaceSponsor({ sponsor, entitledToTerms, onClose, onDone }) {
   return (
     <Modal title={`Place ${sponsor.name}`} onClose={onClose} width="560px">
       <div style={{ marginBottom: "14px" }}>
-        <span style={{ display: "block", fontFamily: D.head, fontSize: "10px", fontWeight: 700,
+        <span style={{ display: "block", fontFamily: D.head, fontSize: "12px", fontWeight: 700,
           color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "6px" }}>
           Surface
         </span>
@@ -531,7 +531,7 @@ function PlaceSponsor({ sponsor, entitledToTerms, onClose, onDone }) {
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: "block", fontFamily: D.body, fontSize: "12px",
                     fontWeight: 600, color: D.textPrimary }}>{p.label}</span>
-                  <span style={{ display: "block", fontFamily: D.body, fontSize: "11px",
+                  <span style={{ display: "block", fontFamily: D.body, fontSize: "12px",
                     color: D.textMuted }}>{p.sub}</span>
                 </span>
               </button>
@@ -555,7 +555,7 @@ function PlaceSponsor({ sponsor, entitledToTerms, onClose, onDone }) {
       </div>
       {!entitledToTerms && (
         <div style={{ marginTop: "-4px", marginBottom: "14px", fontFamily: D.body,
-          fontSize: "11px", color: D.textMuted }}>
+          fontSize: "12px", color: D.textMuted }}>
           You can record the terms here and will not see them again — contract values are
           readable only by the finance office.
         </div>
