@@ -7281,19 +7281,23 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- What the caller reads of the stage, under his own row security: each
--- table by the stage's labels, sorted.
+-- table by the stage's labels, sorted. Each table is asked for the stage's ids
+-- as `= ANY (array of uuid)`: that comparison is leakproof, so the planner may
+-- probe the index under the table's row security rather than run the policy
+-- over every row (by §94, every earlier section's rows: 5,000 balls). The
+-- answer is the same; only the plan changes.
 CREATE OR REPLACE FUNCTION _v117_reads(z jsonb) RETURNS text AS $$
   SELECT format('fixtures [%s] trips [%s] training [%s] posts [%s] balls [%s]',
     (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, m.id) l FROM match m
-       WHERE m.id::text IN (SELECT value FROM jsonb_each_text(z) WHERE key ~ '^f4')) x),
+       WHERE m.id = ANY (ARRAY(SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^f4'))) x),
     (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, v.id) l FROM trip v
-       WHERE v.id::text IN (SELECT value FROM jsonb_each_text(z) WHERE key ~ '^t4')) x),
+       WHERE v.id = ANY (ARRAY(SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^t4'))) x),
     (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, s.id) l FROM training_session s
-       WHERE s.id::text IN (SELECT value FROM jsonb_each_text(z) WHERE key ~ '^s4')) x),
+       WHERE s.id = ANY (ARRAY(SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^s4'))) x),
     (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT _v106_label(z, n.id) l FROM news_post n
-       WHERE n.id::text IN (SELECT value FROM jsonb_each_text(z) WHERE key ~ '^[np]4')) x),
+       WHERE n.id = ANY (ARRAY(SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^[np]4'))) x),
     (SELECT coalesce(string_agg(l, ' ' ORDER BY l), '') FROM (SELECT DISTINCT _v106_label(z, b.match_id) l FROM ball_event b
-       WHERE b.match_id::text IN (SELECT value FROM jsonb_each_text(z) WHERE key ~ '^f4')) x))
+       WHERE b.match_id = ANY (ARRAY(SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^f4'))) x))
 $$ LANGUAGE sql STABLE;
 
 -- §2.10's rule, spelled out apart from the build, with side_on(): every boy
@@ -7310,11 +7314,22 @@ CREATE OR REPLACE FUNCTION _v117_self(p_player uuid) RETURNS boolean AS $$
                     AND g.player_id = p_player AND g.verification_state = 'verified'
                     AND g.valid_from <= current_date AND (g.valid_until IS NULL OR g.valid_until > current_date))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The boys asked are those with any membership row on the side at the school
+-- (the join): side_on() still decides the day, and a boy never on the side
+-- answers nothing from it, so the answer is the same as asking every boy at
+-- the school; it only spares side_on() for the rest (by §94, some 130 boys
+-- at Hilton for every fixture and session asked).
 CREATE OR REPLACE FUNCTION _v117_lit_side(p_cap text, p_school uuid, p_team text, p_fixture uuid, p_on date) RETURNS boolean AS $$
   SELECT app_can(p_cap, p_school, p_team, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, p_fixture)
-      OR EXISTS (SELECT 1 FROM player p WHERE p.school_id = p_school AND p_team IN (SELECT side_on(p.id, p_school, p_on))
+      OR EXISTS (SELECT 1 FROM player p
+                   JOIN (SELECT DISTINCT tm.player_id FROM team_membership tm
+                          WHERE tm.school_id = p_school AND tm.team_code = p_team) c ON c.player_id = p.id
+                  WHERE p.school_id = p_school AND p_team IN (SELECT side_on(p.id, p_school, p_on))
                     AND app_can(p_cap, p_school, p_team, p.id, p_fixture))
-      OR EXISTS (SELECT 1 FROM player p WHERE p.school_id = p_school AND p_team IN (SELECT side_on(p.id, p_school, p_on))
+      OR EXISTS (SELECT 1 FROM player p
+                   JOIN (SELECT DISTINCT tm.player_id FROM team_membership tm
+                          WHERE tm.school_id = p_school AND tm.team_code = p_team) c ON c.player_id = p.id
+                  WHERE p.school_id = p_school AND p_team IN (SELECT side_on(p.id, p_school, p_on))
                     AND _v117_self(p.id) AND app_can(p_cap, p.school_id, p.team_code, p.id, p_fixture))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v117_lit_fixture(p_cap text, p_match uuid) RETURNS boolean AS $$
@@ -7388,6 +7403,55 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 CREATE OR REPLACE FUNCTION _v117_posts() RETURNS TABLE (id uuid, school uuid, team text, day date) AS $$
   SELECT n.id, n.school_id, n.team_code, news_post_day(n.kind, n.fixture_id, n.published_at)
     FROM news_post n WHERE n.scope = 'team'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The people §94 (literal) and (shape) ask, by a set rule rather than every
+-- person the file has staged by then (some 430 at §94, which made the two
+-- loops the bulk of the whole verify's time). Read as the owner:
+--   (a) everyone this section stages (the moved boy, his mother, the
+--       newcomer's and the stayer's families and the boys themselves, both
+--       coaches, the spectator, the office);
+--   (b) one holder of every class of live assignment, a class being its role
+--       and whether it names a boy: a seed account where one holds it, else
+--       the lowest id (so every role, by both branches (1) and (2));
+--   (c) everyone whose live assignment names, or whose own account is, a boy
+--       with a dated history: more than one membership row, or a closed one
+--       (the boys whose side a day can change, from any section).
+-- Everyone else holds assignments of a class (b) already asks, about boys
+-- whose side no day changes; §83 and §89 ask every person the same
+-- policy-against-helper questions under db/117's live definitions.
+CREATE OR REPLACE FUNCTION _v117_people(z jsonb) RETURNS uuid[] AS $$
+  WITH a AS (SELECT r.id, r.person_id, r.role,
+                    EXISTS (SELECT 1 FROM assignment_subject g WHERE g.assignment_id = r.id) AS named
+               FROM role_assignment r WHERE r.active),
+       dated AS (SELECT m.player_id FROM team_membership m GROUP BY m.player_id
+                  HAVING count(*) > 1 OR bool_or(m.left_on IS NOT NULL))
+  SELECT coalesce(array_agg(p ORDER BY p), '{}') FROM (
+    SELECT a.person_id AS p FROM a WHERE a.person_id IN (SELECT value::uuid FROM jsonb_each_text(z)
+                                                          WHERE value ~ '^[0-9a-f]{8}-[0-9a-f]{4}-')
+    UNION
+    (SELECT DISTINCT ON (a.role, a.named) a.person_id FROM a
+      ORDER BY a.role, a.named, (a.person_id::text NOT LIKE '88888888-%'), a.person_id::text)
+    UNION
+    SELECT a.person_id FROM a JOIN assignment_subject g ON g.assignment_id = a.id
+     WHERE g.player_id IN (SELECT player_id FROM dated)
+    UNION
+    SELECT u.id FROM app_user u WHERE u.player_id IN (SELECT player_id FROM dated) AND u.id IN (SELECT person_id FROM a)
+  ) x
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- How many of _v117_people()'s come by (c) from outside the stage: the
+-- earlier sections' moved boys and their families.
+CREATE OR REPLACE FUNCTION _v117_people_dated_beyond(z jsonb) RETURNS int AS $$
+  SELECT count(*)::int FROM unnest(_v117_people(z)) p
+   WHERE p::text NOT IN (SELECT value FROM jsonb_each_text(z))
+     AND (EXISTS (SELECT 1 FROM role_assignment r JOIN assignment_subject g ON g.assignment_id = r.id
+                   WHERE r.active AND r.person_id = p
+                     AND g.player_id IN (SELECT m.player_id FROM team_membership m GROUP BY m.player_id
+                                          HAVING count(*) > 1 OR bool_or(m.left_on IS NOT NULL)))
+          OR EXISTS (SELECT 1 FROM app_user u WHERE u.id = p
+                       AND u.player_id IN (SELECT m.player_id FROM team_membership m GROUP BY m.player_id
+                                            HAVING count(*) > 1 OR bool_or(m.left_on IS NOT NULL))))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/117 (section 94) ─────────────────────────────────────────────
 
@@ -27669,6 +27733,8 @@ $v49$;
     OFFICE uuid;
     A uuid; G uuid; GM uuid; ABOY uuid;
     FX     uuid[];
+    RX     uuid[];
+    RB     uuid[];
     ppl    uuid[];
     got    text;
     want   text;
@@ -27795,7 +27861,11 @@ $v49$;
       format('§94 (seats): the driver was told [%s], A''s mother [%s]', _v117_fact('lift_notices', GM), _v117_fact('lift_notices', G)));
 
     -- ── (literal) ──
-    ppl := _v106_people();
+    -- The people are _v117_people()'s rule (its header): the stage, one
+    -- holder of every class of assignment, and everyone linked to a boy with
+    -- a dated history. The rows are what they were: the stage's fixtures and
+    -- the seed's, under both capabilities, and every session.
+    ppl := _v117_people(z);
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
       SELECT string_agg(format('%s/%s', coalesce(_v106_label(z, x.f), x.f::text), x.cap), ' ') INTO bad
@@ -27814,11 +27884,17 @@ $v49$;
       '§94 (literal): db/106''s spelling (the side now) and the dated rule do not answer apart for A''s mother at f41a and f42a');
 
     -- ── (shape) ──
+    -- The same people as (literal). The fixtures are (literal)'s, the stage's
+    -- and the seed's (RX), which hold balls of their own (RB): the ball log is
+    -- compared on those fixtures' balls, not on every ball the file has
+    -- scored by now. Every trip, session and team post, as before.
+    RX := FX || _v106_seed_matches();
+    RB := ARRAY(SELECT x FROM unnest(RX) x WHERE x = ANY (_v106_ball_matches()));
     n := 0;
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
       SELECT string_agg(coalesce(_v106_label(z, x), x::text), ' ') INTO bad
-        FROM unnest(FX || _v106_ball_matches()) x
+        FROM unnest(RX) x
        WHERE EXISTS (SELECT 1 FROM match m WHERE m.id = x)
              IS DISTINCT FROM (fixture_reach('fixture.read', x) OR x IN (SELECT trip_driven_matches()));
       PERFORM _assert(bad IS NULL, format('§94 (shape): for %s match_read and fixture_reach() answer apart at %s', u, left(bad, 300)));
@@ -27837,11 +27913,11 @@ $v49$;
                                AND (coalesce(x.driver_id = app_user_id(), false) OR NOT trip_fixture_driver_only(x.match_id)));
       PERFORM _assert(bad IS NULL, format('§94 (shape): for %s trip_read and fixture_end_reach() answer apart at %s', u, left(bad, 300)));
       SELECT string_agg(x::text, ' ') INTO bad
-        FROM (((SELECT DISTINCT b.match_id FROM ball_event b)
-               EXCEPT (SELECT m.id FROM match m WHERE m.id = ANY (_v106_ball_matches()) AND NOT trip_fixture_driver_only(m.id)))
+        FROM (((SELECT DISTINCT b.match_id FROM ball_event b WHERE b.match_id = ANY (RB))
+               EXCEPT (SELECT m.id FROM match m WHERE m.id = ANY (RB) AND NOT trip_fixture_driver_only(m.id)))
               UNION ALL
-              ((SELECT m.id FROM match m WHERE m.id = ANY (_v106_ball_matches()) AND NOT trip_fixture_driver_only(m.id))
-               EXCEPT (SELECT DISTINCT b.match_id FROM ball_event b))) d(x);
+              ((SELECT m.id FROM match m WHERE m.id = ANY (RB) AND NOT trip_fixture_driver_only(m.id))
+               EXCEPT (SELECT DISTINCT b.match_id FROM ball_event b WHERE b.match_id = ANY (RB)))) d(x);
       PERFORM _assert(bad IS NULL, format('§94 (shape): %s reads balls apart from match_read at %s', u, left(bad, 300)));
       SELECT string_agg(coalesce(_v106_label(z, p.id), p.id::text), ' ') INTO bad
         FROM _v117_posts() p
@@ -27849,7 +27925,7 @@ $v49$;
              (app_can('news.read', p.school, p.team, ZERO, ZERO) AND side_reach_on('team.read', p.school, p.team, ZERO, p.day));
       PERFORM _assert(bad IS NULL, format('§94 (shape): for %s news_plan_reach() and side_reach_on() answer apart at posts %s', u, left(bad, 300)));
     END LOOP;
-    FOREACH u IN ARRAY _v106_guardians_only() LOOP
+    FOREACH u IN ARRAY ARRAY(SELECT x FROM unnest(_v106_guardians_only()) x WHERE x = ANY (ppl)) LOOP
       PERFORM _as(u);
       PERFORM _assert(
         (SELECT coalesce(array_agg(x ORDER BY x), '{}') FROM unnest(my_child_fixtures()) x)
@@ -27857,8 +27933,12 @@ $v49$;
         format('§94 (shape): for the guardian %s my_child_fixtures() and match_read give different fixtures', u));
       n := n + cardinality(my_child_fixtures());
     END LOOP;
-    PERFORM _assert(n > 10 AND cardinality(ppl) > 20 AND (SELECT count(*) FROM _v117_posts()) >= 6,
-      format('§94 (shape): %s guardian fixtures, %s people, %s posts compared: it proves nothing', n, cardinality(ppl), (SELECT count(*) FROM _v117_posts())));
+    PERFORM _assert(n > 10 AND cardinality(ppl) > 20 AND (SELECT count(*) FROM _v117_posts()) >= 6
+                    AND cardinality(RB) >= 3 AND _v117_people_dated_beyond(z) > 0
+                    AND ARRAY[OFFICE, G, GM, ABOY, (z->>'gc')::uuid, (z->>'mboy')::uuid, (z->>'cboy')::uuid,
+                              (z->>'coach41')::uuid, (z->>'coach42')::uuid, (z->>'spec')::uuid] <@ ppl,
+      format('§94 (shape): %s guardian fixtures, %s people (%s linked to a dated boy beyond the stage), %s posts, %s fixtures with balls compared, or the stage is not all asked: it proves nothing',
+             n, cardinality(ppl), _v117_people_dated_beyond(z), (SELECT count(*) FROM _v117_posts()), cardinality(RB)));
 
     -- ── (undo) ──
     PERFORM _as(OFFICE);
