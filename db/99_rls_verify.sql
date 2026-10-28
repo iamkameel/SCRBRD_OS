@@ -7112,6 +7112,46 @@ EXCEPTION WHEN check_violation THEN
   RETURN '23514:' || coalesce(nullif(v_con, ''), 'trigger');
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/116 (section 93) ─────────────────────────────────────────────
+-- ┌── db/120 (section 95). NOTIFICATIONS S4: push switched off, own rows only.
+-- Invented, as the owner. Two Hilton boys on the 18XI, A and B, each with his
+-- own guardian (ga, gb); a pupil whose account is A's own record (so
+-- person_is_pupil() is true for him); the side's coach. One medium
+-- recognition notice about A, addressed to ga, as the family's sealed notice
+-- is (D7).
+CREATE OR REPLACE FUNCTION _v120_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
+  ids jsonb; c_a uuid; c_b uuid; n uuid;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '18XI', 'Verify OneTwenty Able', 1201, 'batter', U15) RETURNING id INTO c_a;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '18XI', 'Verify OneTwenty Bold', 1202, 'bowler', U15) RETURNING id INTO c_b;
+  ids := _v71_people('v120', ARRAY[
+    ARRAY['ga',    'guardian', HIL::text, '',     ''],
+    ARRAY['gb',    'guardian', HIL::text, '',     ''],
+    ARRAY['pupil', 'player',   HIL::text, '18XI', c_a::text],
+    ARRAY['coach', 'coach',    HIL::text, '18XI', '']]);
+  PERFORM _v100_link((ids->>'ga')::uuid, HIL, c_a);
+  PERFORM _v100_link((ids->>'gb')::uuid, HIL, c_b);
+  INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
+                            required_capability, subject_person_id, recipient_id)
+  VALUES (HIL, '18XI', 'team', 'recognition', 'medium', 'Verify 120', 'Verify 120: a fifty',
+          'news.read', c_a, (ids->>'ga')::uuid)
+  RETURNING id INTO n;
+  RETURN ids || jsonb_build_object('A', c_a, 'B', c_b, 'N', n);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What the caller is offered, as one line: kind, @A or @B for a child, (off).
+CREATE OR REPLACE FUNCTION _v120_choices(y jsonb) RETURNS text AS $$
+  SELECT coalesce(string_agg(c.kind
+           || CASE c.subject_player_id WHEN (y->>'A')::uuid THEN '@A' WHEN (y->>'B')::uuid THEN '@B'
+                                       ELSE CASE WHEN c.subject_player_id IS NULL THEN '' ELSE '@?' END END
+           || CASE WHEN c.push THEN '' ELSE '(off)' END, ','), '')
+    FROM my_alert_choices() c
+$$ LANGUAGE sql STABLE;
+-- └── db/120 (section 95) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -27291,6 +27331,173 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 93
   -- └── db/116 (section 93) ──────────────────────────────────────────
+  -- ┌── db/120 (section 95) ──────────────────────────────────────────
+  -- ── 95. Push switched off, own rows only (db/120, NOTIFICATIONS S4) ──
+  -- D20: a person's own preference, per kind or per kind and child; never
+  -- safeguarding, welfare or system (nor injury or compromise, db/120 §2);
+  -- push only. D21: a pupil's quiet hours, asked of the caller alone.
+  -- Staged by _v120_stage(); every read and write below is the caller's own.
+  --
+  -- What each label holds:
+  --   (own)      a guardian writes and reads his own rows; another guardian,
+  --              the pupil and the coach read none of them
+  --   (others)   nobody writes a row in another person's name, moves his own
+  --              to another person, or changes another's
+  --   (child)    a row about a child only for his family: ga for A, not B;
+  --              not the coach of A's side; a row never moves to another child
+  --   (locked)   safeguarding, welfare, system, injury, compromise, an unknown
+  --              kind, and a per-child row for a kind never about a child,
+  --              are each refused by a CHECK
+  --   (one)      one row per person, kind and child; no DELETE
+  --   (hidden)   nothing: ga muted the kind and the child, and the notice about
+  --              A is still in his my_notifications
+  --   (quiet)    my_push_quiet_hours() is true for the pupil alone
+  --   (choices)  my_alert_choices(): ga per child, the pupil and the coach per
+  --              kind, each the caller's own; a link ended takes the child off
+  --              and his row can no longer be changed
+  --
+  -- Falsified on 28 Oct 2026, each change made to db/120 and the section run
+  -- against it, each red the first:
+  --   notification_pref_read as `true`             → (own) red: gb reads ga's 2 rows
+  --   the insert policy without is_family_of()     → (child) red: ga wrote a row about B
+  --   'welfare' in notification_pref_mutable_kind  → (locked) red: welfare was accepted
+  DECLARE
+    y   jsonb := _v120_stage();
+    ga  uuid;
+    k   text;
+    n   int;
+    got text;
+  BEGIN
+    ga := (y->>'ga')::uuid;
+    -- (own)
+    PERFORM _as(ga);
+    INSERT INTO notification_pref (person_id, kind, push) VALUES (ga, 'notice', false);
+    INSERT INTO notification_pref (person_id, kind, subject_player_id, push) VALUES (ga, 'recognition', (y->>'A')::uuid, false);
+    SELECT count(*) INTO n FROM notification_pref;
+    PERFORM _assert(n = 2, format('§95 (own): ga reads %s of his two preferences', n));
+    PERFORM _assert((SELECT updated_at FROM notification_pref WHERE kind = 'notice') IS NOT NULL, '§95 (own): no time on his row');
+    FOREACH k IN ARRAY ARRAY['gb', 'pupil', 'coach'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT count(*) INTO n FROM notification_pref WHERE person_id = ga;
+      PERFORM _assert(n = 0, format('§95 (own): %s reads %s of ga''s preferences', k, n));
+    END LOOP;
+
+    -- (others)
+    PERFORM _as((y->>'gb')::uuid);
+    BEGIN
+      INSERT INTO notification_pref (person_id, kind, push) VALUES (ga, 'fixture', false);
+      PERFORM _assert(false, '§95 (others): gb wrote a preference in ga''s name');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    UPDATE notification_pref SET push = true WHERE person_id = ga;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 0, format('§95 (others): gb changed %s of ga''s preferences', n));
+    INSERT INTO notification_pref (person_id, kind, push) VALUES ((y->>'gb')::uuid, 'fixture', false);
+    BEGIN
+      UPDATE notification_pref SET person_id = ga WHERE kind = 'fixture';
+      PERFORM _assert(false, '§95 (others): gb moved his own preference to ga');
+    EXCEPTION WHEN insufficient_privilege OR check_violation THEN NULL;
+    END;
+    PERFORM _as(ga);
+    SELECT count(*) INTO n FROM notification_pref WHERE NOT push;
+    PERFORM _assert(n = 2, format('§95 (others): ga''s two rows read %s off after gb''s tries', n));
+
+    -- (child)
+    BEGIN
+      INSERT INTO notification_pref (person_id, kind, subject_player_id, push) VALUES (ga, 'availability', (y->>'B')::uuid, false);
+      PERFORM _assert(false, '§95 (child): ga wrote a preference about B, who is not his');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      UPDATE notification_pref SET subject_player_id = (y->>'B')::uuid WHERE kind = 'recognition';
+      PERFORM _assert(false, '§95 (child): ga moved his row about A onto B');
+    EXCEPTION WHEN insufficient_privilege OR check_violation THEN NULL;
+    END;
+    PERFORM _as((y->>'coach')::uuid);
+    BEGIN
+      INSERT INTO notification_pref (person_id, kind, subject_player_id, push) VALUES ((y->>'coach')::uuid, 'lift', (y->>'A')::uuid, false);
+      PERFORM _assert(false, '§95 (child): A''s coach wrote a preference about A');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    PERFORM _as((y->>'gb')::uuid);
+    INSERT INTO notification_pref (person_id, kind, subject_player_id, push) VALUES ((y->>'gb')::uuid, 'lift', (y->>'B')::uuid, false);
+
+    -- (locked)
+    PERFORM _as(ga);
+    FOREACH k IN ARRAY ARRAY['safeguarding', 'welfare', 'system', 'injury', 'compromise', 'gossip'] LOOP
+      BEGIN
+        INSERT INTO notification_pref (person_id, kind, push) VALUES (ga, k, false);
+        PERFORM _assert(false, format('§95 (locked): a %s preference was accepted', k));
+      EXCEPTION WHEN check_violation THEN NULL;
+      END;
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['notice', 'fixture'] LOOP
+      BEGIN
+        INSERT INTO notification_pref (person_id, kind, subject_player_id, push) VALUES (ga, k, (y->>'A')::uuid, false);
+        PERFORM _assert(false, format('§95 (locked): a per-child %s preference was accepted', k));
+      EXCEPTION WHEN check_violation THEN NULL;
+      END;
+    END LOOP;
+
+    -- (one)
+    BEGIN
+      INSERT INTO notification_pref (person_id, kind, push) VALUES (ga, 'notice', true);
+      PERFORM _assert(false, '§95 (one): a second notice preference for ga');
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+    INSERT INTO notification_pref (person_id, kind, push) VALUES (ga, 'notice', true)
+      ON CONFLICT (person_id, kind, (coalesce(subject_player_id, '00000000-0000-0000-0000-000000000000'::uuid)))
+      DO UPDATE SET push = excluded.push;
+    PERFORM _assert((SELECT push FROM notification_pref WHERE kind = 'notice'), '§95 (one): on again did not take');
+    UPDATE notification_pref SET push = false WHERE kind = 'notice';
+    BEGIN
+      DELETE FROM notification_pref WHERE kind = 'notice';
+      PERFORM _assert(false, '§95 (one): the application deleted a preference');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- (hidden) muted for the kind and for A, and still his to read
+    SELECT count(*) INTO n FROM my_notifications WHERE id = (y->>'N')::uuid;
+    PERFORM _assert(n = 1, format('§95 (hidden): ga muted recognition for A and his notice about A reads %s rows in my_notifications', n));
+    SELECT count(*) INTO n FROM notification WHERE id = (y->>'N')::uuid;
+    PERFORM _assert(n = 1, '§95 (hidden): the notice is gone from ga''s notification read');
+
+    -- (quiet)
+    PERFORM _assert(NOT my_push_quiet_hours(), '§95 (quiet): a guardian has quiet hours');
+    PERFORM _as((y->>'pupil')::uuid);
+    PERFORM _assert(my_push_quiet_hours(), '§95 (quiet): the pupil has no quiet hours');
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert(NOT my_push_quiet_hours(), '§95 (quiet): a coach has quiet hours');
+
+    -- (choices)
+    PERFORM _as(ga);
+    got := _v120_choices(y);
+    PERFORM _assert(got = 'notice(off),fixture,recognition@A(off),availability@A,lift@A', format('§95 (choices): ga is offered %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM my_alert_choices() WHERE quiet_hours), '§95 (choices): ga is told of quiet hours');
+    PERFORM _as((y->>'gb')::uuid);
+    got := _v120_choices(y);
+    PERFORM _assert(got = 'notice,fixture(off),recognition@B,availability@B,lift@B(off)', format('§95 (choices): gb is offered %s', got));
+    PERFORM _as((y->>'pupil')::uuid);
+    got := _v120_choices(y);
+    PERFORM _assert(got = 'notice,recognition,fixture', format('§95 (choices): the pupil is offered %s', got));
+    PERFORM _assert((SELECT bool_and(quiet_hours) FROM my_alert_choices()), '§95 (choices): the pupil is not told of his quiet hours');
+    PERFORM _as((y->>'coach')::uuid);
+    got := _v120_choices(y);
+    PERFORM _assert(got = 'notice,recognition,fixture', format('§95 (choices): the coach is offered %s', got));
+    -- The link ends: A leaves ga's switches, and his row about A is fixed.
+    PERFORM _revoke(ga);
+    PERFORM _as(ga);
+    got := _v120_choices(y);
+    PERFORM _assert(got = '', format('§95 (choices): with his link ended ga is offered %s', got));
+    BEGIN
+      UPDATE notification_pref SET push = true WHERE kind = 'recognition';
+      PERFORM _assert(false, '§95 (choices): ga changed his row about A after his link ended');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 95
+  -- └── db/120 (section 95) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
