@@ -8,7 +8,7 @@ import {
   DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, BOWLER_CHANGE_REASON, isMidOver, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
   lastUndoableIndex, likelyCause, keeper as keeperEvent, keeperOf,
 } from "@scrbrd/scoring";
-import { lawsEdition, conditionsOf, describeResult, isWicketBall } from "@scrbrd/scoring";
+import { lawsEdition, conditionsOf, describeResult, isWicketBall, boundaryHit } from "@scrbrd/scoring";
 import {
   chaseOf, eligibilityNotes, matchChaseOf, isSuperOver, pairPlace, superOverChaseStart, superOverFirstStart, superOverInPlay,
   superOverOffer, superOversOf, superOverTitle, NOT_RECORDED_WORDS, UMPIRES_DECIDE_WORDS,
@@ -2771,7 +2771,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
                   {(inn?.overLog||[]).map((ov,oi)=>{
                     const ovRuns=ov.balls.reduce((s,b)=>s+(b.value||0),0);
                     const hasWkt=ov.balls.some(isOut);
-                    const hasBnd=ov.balls.some(b=>b.value===4||b.value===6);
+                    const hasBnd=ov.balls.some(b=>boundaryHit(b)!=null);
                     return (
                       <div key={oi} style={{minWidth:"130px",background:D.surf2,borderRadius:D.md,padding:"10px 12px",
                         border:`1px solid ${hasWkt?D.rose+"30":hasBnd?D.indigo+"25":D.border}`}}>

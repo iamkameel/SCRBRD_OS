@@ -7,7 +7,7 @@
  * (@scrbrd/scoring's deriveMatch), and a thing the fold does not have is left
  * out rather than guessed.
  */
-import { runsOffBat, resultWords, isWicketBall } from "@scrbrd/scoring";
+import { boundaryHit, runsOffBat, resultWords, isWicketBall } from "@scrbrd/scoring";
 import { parseTeam, teamLabel } from "@scrbrd/policy/teams";
 import { humanDateTime } from "./format.js";
 import { superOverInPlay, superOverTitle } from "./superOver.js";
@@ -126,6 +126,13 @@ export function boardInnings(innings = [], result = null) {
   const atBreak = inningsPhase(innings, result) === "Innings break";
   return { index: atBreak ? 0 : Math.max(0, innings.length - 1), atBreak };
 }
+
+/**
+ * An innings' boundaries, the Analytics tab's figure: its fours and sixes to
+ * the rope, as the engine judges each (boundaryHit(), the Laws audit F7) — an
+ * all-run four, or runs with overthrows, is none. @param {any} inn
+ */
+export const boundaryCount = (inn) => (inn?.ballLog ?? []).filter((b) => boundaryHit(b) != null).length;
 
 /** The age group of a side: "U16", or "1st XI" for an open side. @param {string | null | undefined} team */
 export function ageGroupOf(team) {

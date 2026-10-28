@@ -13,6 +13,7 @@ import { deliveryOf, deliveryEvents } from "../src/scorer/delivery.js";
 import { nextInningsPlan, inningsDecided, twoInningsMatch, firstInningsLead } from "../src/scorer/twoInnings.js";
 import { chaseOf, matchChaseOf, twoInningsPlayed } from "../src/lib/superOver.js";
 import { breakPanel } from "../src/display/data.js";
+import { boundaryCount } from "../src/lib/matchCentre.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
@@ -68,6 +69,19 @@ ok("F12 ...not a waist-high full toss, not a beamer", nbFreeHit("height") === fa
   ok("F7 ...every other delivery is the event it always was", !("boundary" in deliveryOf({ type: "run", value: 4 })) && !("boundary" in deliveryOf({ type: "B", value: 4, notBoundary: true })));
   const [ev] = deliveryEvents({ curIn: 0, before: null, freeHit: false, type: "run", value: 6, notBoundary: true });
   ok("F7 ...and through ball(): six runs, boundary false", ev.value === 6 && ev.boundary === false);
+}
+
+// ── F7 (S3) · an all-run four on the scorecard and the Match Centre ──
+{
+  const sq = [{ id: "p1", name: "A" }, { id: "p2", name: "B" }];
+  const m = deriveMatch([inningsStart({ battingTeam: "H", bowlingTeam: "K", squad: sq }), batters({ striker: "p1", nonStriker: "p2" }), bowler({ bowler: "w1" }),
+    ball({ type: BALL_TYPE.RUN, value: 4, boundary: false })], {});
+  const inn = m.innings[0], a = inn.batsmen.find((x) => x.id === "p1");
+  ok("S3 an all-run four: 4 runs, 0 fours on the scorecard", a.runs === 4 && a.fours === 0 && a.sixes === 0);
+  ok("S3 ...and 0 boundaries in the Match Centre", boundaryCount(inn) === 0);
+  const hit = deriveMatch([inningsStart({ battingTeam: "H", bowlingTeam: "K", squad: sq }), batters({ striker: "p1", nonStriker: "p2" }), bowler({ bowler: "w1" }),
+    ball({ type: BALL_TYPE.RUN, value: 4 }), ball({ type: BALL_TYPE.NO_BALL, value: 6 }), ball({ type: BALL_TYPE.RUN, value: 6, boundary: false })], {}).innings[0];
+  ok("S3 a four, a no-ball hit for six, and six with overthrows: 2 boundaries", boundaryCount(hit) === 2);
 }
 
 // ── F2 · a Two-Day's four innings ──
