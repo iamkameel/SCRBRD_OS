@@ -760,7 +760,7 @@ CRI-2.3 chart-to-delivery drill-down · CRI-2.4 reader freshness and low-bandwid
 
 **Sprint 3 (after pilot evidence):** CRI-3.1 notifications S2–S5 with follow and a Result-only default ·
 CRI-3.2 tap-to-passport · CRI-3.3 match impact as PoM suggestion (after recognition §7 scoring fixes) ·
-CRI-3.4 Analytics Explorer, one Fable design pass (allowed 2026-10-23).
+CRI-3.4 StatsMagic (the Analytics Explorer, renamed by Kameel 2026-10-28; SCRBRD's counterpart of Cricinfo's Statsguru), one Fable design pass (allowed 2026-10-23).
 
 **Regression risk:** MEDIUM (Sprint 1 touches `MatchView.jsx` and `Board`, which every walk reads)
 
