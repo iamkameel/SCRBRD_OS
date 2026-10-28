@@ -1209,6 +1209,19 @@ export function ballsOfOvers(text) {
 }
 
 /**
+ * The legal balls a fall of wickets' overs stands for: fowOvers() writes the
+ * sixth ball of an over as .6 (4.6 is the 30th ball), which ballsOfOvers()
+ * refuses, rightly, for an innings' own overs. Null for anything else.
+ * @param {unknown} text
+ * @returns {number | null}
+ */
+export function ballsOfFow(text) {
+  if (typeof text !== "string") return null;
+  const m = /^(\d{1,3})(?:\.([0-6]))?$/.exec(text.trim());
+  return m ? Number(m[1]) * 6 + Number(m[2] ?? 0) : null;
+}
+
+/**
  * Fold the event log into a complete innings.
  *
  * @param {LogEvent[]} [events]  ordered event log (see events.mjs)

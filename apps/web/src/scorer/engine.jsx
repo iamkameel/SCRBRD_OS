@@ -57,7 +57,8 @@ import { FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, ball
 import { ballMilestones } from "./milestones.js";
 import { ScoringBlocked, ScoringPanel } from "./scoring.jsx";
 import { SetupScreen } from "./setup.jsx";
-import { BattingOrderSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, RevisionSheet, ShotSelectorSheet, WicketSheet, WideSheet } from "./sheets.jsx";
+import { BattingOrderSheet, DeclareSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NextInningsSheet, NoBallSheet, NotBoundarySheet, RevisionSheet, ShotSelectorSheet, WicketSheet, WideSheet } from "./sheets.jsx";
+import { firstInningsLead, inningsDecided, nextInningsPlan, twoInningsMatch } from "./twoInnings.js";
 import { INT_TEAMS } from "./teams.js";
 import { endOf, mayType, onlyNamedWords, sidesFor, sideWords } from "./side.js";
 import { BallDot, Btn, CaptureProfilePicker, Card, GS, Glass, Lbl } from "./ui.jsx";
@@ -626,6 +627,11 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   // May one start now, and if not, why: asked of the engine and of the
   // match's own playing conditions (lib/superOver.js), never guessed here.
   const matchConditions=conditionsOf(scoringCtxRef.current);
+  // A Two-Day: two innings a side, all four scored live (Kameel, 28 Oct
+  // 2026, the Laws audit F2; twoInnings.js). The break before each match
+  // innings after the first: the second and third are no chase, the fourth is.
+  const twoInn=twoInningsMatch(matchConditions);
+  const breakFor=(i)=>twoInn&&i<3?"nextInnings":"innings2";
   const offer=useMemo(
     ()=>superOverOffer({innings,events,conditions:matchConditions}),
     // The conditions arrive with ctxVersion; the fold with the log.
@@ -1160,7 +1166,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     switch(b?.code){
       case SCORING_BLOCK.NO_INNINGS:
         if(chaseSlot){setModal("superOverChase");return;}
-        if(curIn===1){setModal("innings2");return;}
+        if(curIn===1||(twoInn&&curIn>1&&curIn<4&&!isSuperOver(innings[curIn-1]))){setModal(breakFor(curIn));return;}
         if(!match?.team1)return;
         if(!tossRef.current){setModal("toss");return;}
         openFirstInnings(tossRef.current.batsFirst);
@@ -1302,10 +1308,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     emit(nb);
     setSelSeg(null);setModal(null);scoreKeyRef.current++;
     hapticTick();
-    // The free hit is the fold's (every no-ball is followed by one,
-    // SCORING_RULES §6), read from the projection as after any ball — it
-    // used to be set here only for a height no-ball or a beamer, so a
-    // front-foot no-ball's free hit had no banner.
+    // The free hit is the fold's (a front-foot no-ball is followed by one,
+    // SCORING_RULES §6; Kameel, 28 Oct 2026), read from the projection as
+    // after any ball.
     setFreeHit(project(nb).freeHit);
   };
 
@@ -1384,8 +1389,33 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     // A super over's first innings is followed by its chase; its second ends
     // the pair (SCRBRD-114 phase 3b). The match's own: the break, then the result.
     if(isSuperOver(inn)&&pairPlace(innings,curIn)==="first"){setCurIn(curIn+1);setModal("superOverChase");}
-    else if(!isSuperOver(inn)&&curIn===0){setCurIn(1);setModal("innings2");}
+    else afterMatchInnings(curIn);
+  };
+
+  // What follows a match innings once it is sealed: the break before the
+  // next, or the result. One innings a side, the second ends it; two innings
+  // a side (twoInn), the fourth does, or the third when it was an innings win
+  // (inningsDecided(), the Laws check's own test).
+  const afterMatchInnings=(i)=>{
+    if(isSuperOver(innings[i]))setScreen("result");
+    else if(i===0){setCurIn(1);setModal(breakFor(1));}
+    else if(twoInn&&i===1){setCurIn(2);setModal(breakFor(2));}
+    else if(twoInn&&i===2&&!inningsDecided(innings)){setCurIn(3);setModal(breakFor(3));}
     else setScreen("result");
+  };
+
+  // A declaration (Law 15): the batting captain closes the innings. The one
+  // ending a scorer declares rather than the Laws derive, so it is sealed as
+  // the scorer confirms it, with the figures the sheet showed. Offered in a
+  // match with no free hit — a declaration or timed match, a Two-Day among
+  // them (the Laws audit, F2: a Two-Day could not be scored without one).
+  const declareInnings=()=>{
+    if(!inn||inn.complete)return;
+    const seal=sealInnings(inn,INNINGS_END_REASON.DECLARED);
+    if(asks(seal))return;
+    emit(seal);
+    setModal(null);
+    afterMatchInnings(curIn);
   };
 
   // The button on the result screen and on the pad: open the first innings of
@@ -1588,7 +1618,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
    * one-tap pad, which never asks where the ball went) get an explicit
    * "not required" rather than a silent blank.
    */
-  const commitBall=(type,value,shot,seg,zone,approach,placement,{shortRun=false,nbType=null,facesNext=null,disallowed=null,notInOver=null}={})=>{
+  const commitBall=(type,value,shot,seg,zone,approach,placement,{shortRun=false,nbType=null,facesNext=null,disallowed=null,notInOver=null,notBoundary=false}={})=>{
     // Every delivery comes through here, including the hub's stage-2 paths
     // that were only checked at stage 0. The same answer the pad shows.
     if(!readiness.ready||padLock)return;
@@ -1619,7 +1649,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     // offence on the pitch (`disallowed`), and for a delivery that does not
     // count in the over, with five to the batting side (`notInOver`); and
     // who was chosen to face next (`facesNext`) where the Laws give a choice.
-    const evs=deliveryEvents({curIn,before,freeHit,type,value,shot,seg,zone,approach,placement,shortRun,nbType,facesNext,disallowed,notInOver});
+    const evs=deliveryEvents({curIn,before,freeHit,type,value,shot,seg,zone,approach,placement,shortRun,nbType,facesNext,disallowed,notInOver,notBoundary});
     const after=project(...evs);
     const endedOver=after.balls>before.balls&&after.balls%6===0;
     const endedInnings=after.complete;
@@ -1638,7 +1668,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     // The four or six first, then each milestone. If a modal is about to open
     // (end of over/innings), overlays are non-blocking so the blur never
     // covers the sheet underneath (momentQueue).
-    const q=momentQueue({ballValue:type==="run"?value:null,miles,modalPending:endedInnings||endedOver});
+    // Runs that did not reach the rope are no FOUR or SIX card (F7).
+    const q=momentQueue({ballValue:type==="run"&&!notBoundary?value:null,miles,modalPending:endedInnings||endedOver});
     playBall(q);
     setFreeHit(after.freeHit);
     if(endedInnings)setModal("inningsReview");
@@ -1690,9 +1721,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     // credited are all decided by the replay. The fielder in particular used to
     // be dropped from the log entirely, so a replayed scorecard could never
     // render "c Botha b Mkhize".
-    // A run out carries the runs completed before it, who was out when it
-    // was not the striker, and — when runs were completed — the end the
-    // wicket was put down at (SCRBRD-069), which the fold empties.
+    // A run out carries the runs completed before it and whose they were,
+    // who was out when it was not the striker, and the end the wicket was put
+    // down at (SCRBRD-069; asked on every run out since the Laws audit, F1),
+    // which the fold empties.
     // Where the ball went: the whole placement when the pad or the hub captured
     // one (a point, or "didn't travel"), else the bare seg and zone as before.
     const offExtra=modalCtx?.extra??null;
@@ -1704,6 +1736,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
       ...crease(inn),
       ...(extra.dismissed?{dismissed:extra.dismissed}:{}),
       ...(extra.outAt?{outAt:extra.outAt}:{}),
+      // Whose the runs completed were, when not off the bat (the Laws audit,
+      // F5 and F9): a run out going for a second bye, byes off a free hit.
+      ...(extra.nbRuns?{nbRuns:extra.nbRuns}:{}),
       // Who the fielding captain chose to face after an obstruction that
       // stopped a catch (4th Edition, SCRBRD-113): the fold places him.
       ...(extra.facesNext?{facesNext:extra.facesNext}:{})});
@@ -2003,6 +2038,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
         onClose={()=>setModal(null)}/>
     );
 
+    // The Laws audit, F7: runs off the bat that did not reach the rope.
+    if(modal==="notBoundary")return (
+      <NotBoundarySheet
+        onRuns={n=>{setModal(null);commitBall("run",n,null,null,null,hubApproach,undefined,{notBoundary:true});}}
+        onClose={()=>setModal(null)}/>
+    );
+
     if(modal==="penalty"||modal==="shortRun"){
       const nameOf=id=>id==null?null:(inn?.batsmen?.find(b=>b.id===id)?.name??inn?.bowlers?.find(b=>b.id===id)?.name??String(id));
       return (
@@ -2112,7 +2154,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
           nonStriker={inn?.nonStriker!=null?{id:inn.nonStriker,name:inn.batsmen.find(b=>b.id===inn.nonStriker)?.name??String(inn.nonStriker)}:null}
           fieldingSquad={fieldingSquad}
           edition={lawsEdition({innings,events})}
-          keeper={keeperNow} twelfth={fieldingTwelfth} extra={modalCtx?.extra??null}
+          keeper={keeperNow} twelfth={fieldingTwelfth} extra={modalCtx?.extra??null} freeHit={!!inn?.freeHit}
           onClose={()=>{setModal(null);setModalCtx({});setScoringCtx(null);setSelShot(null);resetHub();}}
           onConfirm={(mode,fielder,extra)=>{confirmWicket(mode,fielder,extra);}}/>
       );
@@ -2203,6 +2245,52 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
         onFixLastBall={()=>{undoLastBall();setModal(null);}}
         onClose={()=>setModal(null)}/>
     );
+
+    if(modal==="declare"&&inn)return (
+      <DeclareSheet runs={inn.runs} wickets={inn.wickets} team={inn.battingTeam}
+        onDeclare={declareInnings} onClose={()=>setModal(null)}/>
+    );
+
+    // A Two-Day's second or third innings (twoInnings.js): no chase. The
+    // third asks who bats — the side that batted first, or, the follow-on
+    // enforced, the side that batted second again.
+    if(modal==="nextInnings"&&twoInn&&(curIn===1||curIn===2)){
+      const lead=firstInningsLead(innings);
+      return (
+        <NextInningsSheet inningsNo={curIn+1} innings={innings} followOnOffered={curIn===2&&lead>0} lead={lead}
+          plan={(followOn)=>nextInningsPlan(innings,curIn,{followOn})}
+          declared={innings[curIn]?.declaredProfile??innings[0]?.declaredProfile??null}
+          onClose={()=>setModal(null)}
+          onStart={(captureProfile,followOn)=>{
+            const p=nextInningsPlan(innings,curIn,{followOn});
+            if(!p)return;
+            emit(inningsStart({battingTeam:p.battingTeam,bowlingTeam:p.bowlingTeam,teamKey:p.teamKey,bowlingTeamKey:p.bowlingTeamKey,
+              squad:p.squad,bowlingSquad:p.bowlingSquad,twelfthMan:p.twelfthMan,
+              overs:innings[curIn]?.overs||innings[0]?.overs||match?.overs||20,
+              captureProfile:captureProfile??undefined}));
+            setModal("opener");
+          }}/>
+      );
+    }
+
+    // A Two-Day's fourth innings is the chase: its side and its target are
+    // the plan's (the runs it trails by, plus one).
+    if(modal==="innings2"&&twoInn&&curIn===3){
+      const p=nextInningsPlan(innings,3);
+      if(p)return (
+        <Innings2Sheet target={p.target} teamName={p.battingTeam} overs={innings[2]?.overs||match?.overs||20}
+          declared={innings[3]?.declaredProfile??innings[0]?.declaredProfile??null}
+          title="Fourth innings" startLabel="Start the 4th innings →"
+          onClose={()=>setModal(null)}
+          onStart={(captureProfile,umpires)=>{
+            emit(inningsStart({battingTeam:p.battingTeam,bowlingTeam:p.bowlingTeam,teamKey:p.teamKey,bowlingTeamKey:p.bowlingTeamKey,
+              squad:p.squad,bowlingSquad:p.bowlingSquad,twelfthMan:p.twelfthMan,
+              overs:umpires?.overs??(innings[2]?.overs||match?.overs||20),
+              target:umpires?.target??p.target,captureProfile:captureProfile??undefined}));
+            setModal("opener");
+          }}/>
+      );
+    }
 
     if(modal==="innings2")return (
       <Innings2Sheet
@@ -2435,10 +2523,19 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
                   hint={isSuperOver(inn)?"A super over is not shortened. If it cannot be finished, it is left incomplete.":"Rain, or the umpires' decision"}
                   disabled={isSuperOver(inn)}
                   onClick={()=>{close();setModal("revise");}}/>
+                {inn&&!inn.complete&&!isSuperOver(inn)&&inn.freeHits===false&&(
+                  <MenuItem testid="pad-declare" label="Declare the innings" hint={`The captain closes the innings at ${inn.runs} for ${inn.wickets}.`}
+                    onClick={()=>{close();setModal("declare");}}/>
+                )}
                 <MenuItem testid="pad-penalty" label="Penalty runs" hint="Five runs the umpires award to either side"
                   onClick={()=>{close();setModal("penalty");}}/>
                 <MenuItem testid="pad-short-run" label="Short run" hint="The umpire gave five to the fielding side. The ball counts, with no runs."
                   onClick={()=>{close();setModal("shortRun");}}/>
+                {/* The Laws audit, F7 (Kameel, 28 Oct 2026): a four or a six
+                    is a boundary. Four all run, or runs with overthrows, are
+                    the runs and no boundary. */}
+                <MenuItem testid="pad-not-boundary" label="Runs, not a boundary" hint="All run, or with overthrows: the runs count, but no four or six."
+                  onClick={()=>{close();if(guardReady())setModal("notBoundary");}}/>
                 <MenuItem testid="pad-suspend" label="Umpire suspended the bowler" hint="He may not bowl again. Another bowler finishes the over."
                   onClick={()=>{close();setModal("suspend");}}/>
                 <MenuItem testid="pad-retire-hurt" label="Batter retired hurt" hint="Not out, and not a wicket. He may come back later. Then choose who comes in."

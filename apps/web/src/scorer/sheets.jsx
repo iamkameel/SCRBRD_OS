@@ -12,7 +12,8 @@ import { batterChoices, bowlerChoices, unavailableWords } from "./prompts.js";
 import { KeeperRow } from "./keeperSheet.jsx";
 import { OFF_SIDE_ASK, OFF_SIDE_MARK, OFF_SIDE_WHY, offSide } from "./side.js";
 import { Proposal, useProposal } from "./rainSheet.jsx";
-import { extraOf } from "./extras.js";
+import { extraOf, NB_FROM, nbFreeHit } from "./extras.js";
+import { wicketAsks, wicketDetail } from "./wicketAsks.js";
 
 /* ═══════════════════════════════════════════════════════
    SHOT SELECTOR SHEET
@@ -75,7 +76,7 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
     {id:"front_foot",label:"Front Foot",sub:"Bowler overstepped the crease",
       note:"Off a no ball a batter can be out only run out, hit the ball twice, or obstructing the field"},
     {id:"height",label:"Waist-high Full Toss",sub:"Passed above waist height without landing",
-      note:"Same dismissals as front foot. Free hit applies in limited overs."},
+      note:"Same dismissals as front foot."},
     {id:"beamer",label:"Beamer (Dangerous)",sub:"Full toss above waist — dangerous delivery",
       note:"Umpire warning issued. Bowler may be removed. Same dismissal rules apply."},
   ];
@@ -97,16 +98,20 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
           <div style={{color:D.textSecondary,fontSize:"12px",fontFamily:D.body,lineHeight:1.5}}>
             {types.find(t=>t.id===nbType)?.note}
           </div>
-          {/* Every no-ball, whatever its kind: the fold gives the free hit
-              (SCORING_RULES §6), so the sheet says so for each. */}
-          {/* The fold's answer (inn.freeHits): a free hit is a limited-overs
+          {/* A front-foot no-ball earns the free hit (Kameel, 28 Oct 2026,
+              the Laws audit Q2): nbFreeHit() is the fold's own rule. And the
+              fold's answer (inn.freeHits): a free hit is a limited-overs
               playing condition, not given in a declaration or timed match
               (SCRBRD-113). */}
-          {freeHits?(
-            <div style={{marginTop:"6px",color:D.orange,fontSize:"12px",fontFamily:D.body,fontWeight:500}}>
+          {freeHits?(nbFreeHit(nbType)?(
+            <div data-testid="nb-sheet-free-hit" style={{marginTop:"6px",color:D.orange,fontSize:"12px",fontFamily:D.body,fontWeight:500}}>
               <Icon name="zap"/> Free hit on the next delivery
             </div>
           ):(
+            <div data-testid="nb-sheet-no-free-hit" style={{marginTop:"6px",color:D.textSecondary,fontSize:"12px",fontFamily:D.body}}>
+              No free hit: only a front-foot no ball earns one.
+            </div>
+          )):(
             <div data-testid="nb-no-free-hit" style={{marginTop:"6px",color:D.textSecondary,fontSize:"12px",fontFamily:D.body}}>
               No free hit in this match: the no ball is its run and another delivery.
             </div>
@@ -854,7 +859,7 @@ function CustomBatEntry({onSend}){
  * not ask the runs again; the rest (who, the end, the fielder) is as for any
  * wicket.
  */
-function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition=3,keeper=null,twelfth=null,extra=null,onClose,onConfirm}){
+function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition=3,keeper=null,twelfth=null,extra=null,freeHit=false,onClose,onConfirm}){
   const offExtra=extra?dismissalsOffExtra(extra.type):null;
   const[mode,setMode]=useState(offExtra?DISMISSAL.RUN_OUT:DISMISSAL.BOWLED);
   // An obstruction that stopped a catch (4th Edition, from 1 October 2026;
@@ -881,16 +886,19 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
   // engine still reads it, for old logs and pre-2017 scorecards (Kameel,
   // 2026-09-27).
   const modes=Object.keys(DISMISSAL_LABEL).filter(m=>m!==DISMISSAL.TIMED_OUT&&m!==DISMISSAL.HANDLED_BALL&&(!offExtra||offExtra.has(m)));
-  // A run out: who, how many runs were completed first, and — when some
-  // were, so the batters have crossed (Law 18) — at which end the wicket was
-  // put down (Law 38.4). That end is the one left empty (SCRBRD-069).
-  // Off an extra the runs were asked with it: they are the runs completed.
+  // A run out: who, how many runs were completed first and whose they were,
+  // and — on every run out (Kameel, 28 Oct 2026; the Laws audit F1) — at
+  // which end the wicket was put down (Law 38.4). That end is the one left
+  // empty (SCRBRD-069). Off an extra the runs were asked with it: they are
+  // the runs completed. wicketAsks() is the rule (F1, F5, F8, F9).
   const[ownRuns,setRuns]=useState(0);
   const runs=offExtra?extra.runs:ownRuns;
+  const[from,setFrom]=useState(null);
   const[end,setEnd]=useState(null);
   const isRunOut=mode===DISMISSAL.RUN_OUT;
-  const asksWho=(mode===DISMISSAL.RETIRED_OUT||isRunOut||(offExtra&&mode===DISMISSAL.OBSTRUCTING_FIELD))&&striker&&nonStriker;
-  const asksEnd=isRunOut&&runs>0;
+  const asks=wicketAsks({mode,offExtra:!!offExtra,freeHit,stopped,runs,pair:!!striker&&!!nonStriker});
+  const asksWho=asks.who;
+  const asksEnd=asks.end;
   const needsFielder=mode===DISMISSAL.CAUGHT||mode===DISMISSAL.RUN_OUT;
   const isStumped=mode===DISMISSAL.STUMPED;
   // The keeper on the record (SCRBRD-126): a stumping is his, and the
@@ -906,7 +914,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
     setFielder("");
     setFielderFilter("");
     setWho(striker?.id??null);
-    setRuns(0);setEnd(null);
+    setRuns(0);setEnd(null);setFrom(null);
     setStopped(false);setFaces(null);
     if(m===DISMISSAL.STUMPED&&wkName)setFielder(wkName);
   };
@@ -950,12 +958,28 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
           )}
         </div>
       )}
-      {isRunOut&&!offExtra&&(
+      {asks.savedOnFreeHit&&(
+        <div data-testid="wicket-free-hit" style={{color:D.textPrimary,fontSize:"13px",fontFamily:D.body,marginBottom:"12px"}}>
+          Free hit: not out {DISMISSAL_LABEL[mode]?.toLowerCase()}. The ball is still live, so any runs they completed count.
+        </div>
+      )}
+      {asks.runs&&(
         <div style={{marginBottom:"12px"}}>
-          <Lbl sx={{marginBottom:"7px"}}>Runs completed before the run out</Lbl>
+          <Lbl sx={{marginBottom:"7px"}}>{isRunOut?"Runs completed before the run out":asks.savedOnFreeHit?"Runs completed":"Runs completed before the obstruction"}</Lbl>
           <div style={{display:"flex",gap:"7px"}}>
             {[0,1,2,3].map(r=>(
-              <button key={r} data-testid={`wicket-runs-${r}`} onClick={()=>{setRuns(r);if(r===0)setEnd(null);}} className="pressBtn" style={pill(runs===r)}>{r}</button>
+              <button key={r} data-testid={`wicket-runs-${r}`} onClick={()=>{setRuns(r);if(r===0)setFrom(null);}} className="pressBtn" style={pill(runs===r)}>{r}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {asks.whose&&(
+        <div data-testid="wicket-runs-from" role="radiogroup" aria-label="Whose runs?" style={{marginBottom:"12px"}}>
+          <Lbl sx={{marginBottom:"7px"}}>Whose runs?</Lbl>
+          <div style={{display:"flex",gap:"7px"}}>
+            {NB_FROM.map(f=>(
+              <button key={f.label} type="button" role="radio" aria-checked={from===f.id} data-testid={`wicket-runs-from-${f.id??"bat"}`}
+                onClick={()=>setFrom(f.id)} className="pressBtn" style={pill(from===f.id)}>{f.label}</button>
             ))}
           </div>
         </div>
@@ -968,7 +992,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
             <button data-testid="wicket-end-bowler" onClick={()=>setEnd("bowler_end")} className="pressBtn" style={pill(end==="bowler_end")}>Bowler's end</button>
           </div>
           <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"6px"}}>
-            The batters crossed for the runs; the end where the wicket was broken is the one left empty.
+            The end where the wicket was broken is the one left empty, whether or not they had crossed.
           </div>
         </div>
       )}
@@ -977,7 +1001,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
           <Lbl sx={{marginBottom:"7px"}}>Did the obstruction stop a catch?</Lbl>
           <div style={{display:"flex",gap:"7px"}}>
             <button data-testid="wicket-catch-no" onClick={()=>{setStopped(false);setFaces(null);}} className="pressBtn" style={pill(!stopped)}>No</button>
-            <button data-testid="wicket-catch-yes" onClick={()=>setStopped(true)} className="pressBtn" style={pill(stopped)}>Yes</button>
+            <button data-testid="wicket-catch-yes" onClick={()=>{setStopped(true);setRuns(0);setFrom(null);}} className="pressBtn" style={pill(stopped)}>Yes</button>
           </div>
           {stopped&&(
             <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"6px"}}>
@@ -1051,8 +1075,8 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
       <div style={{display:"flex",gap:"10px",marginTop:"4px"}}>
         <Btn variant="ghost" sx={{flex:1,minHeight:"48px",fontSize:"15px",borderRadius:D.md}} onClick={onClose}>Cancel</Btn>
         <Btn variant="danger" sx={{flex:2,minHeight:"48px",fontSize:"16px",borderRadius:D.md}} data-testid="wicket-confirm" disabled={(asksEnd&&!end)||(asksFaces&&!faces)}
-          onClick={()=>{if(asksEnd&&!end)return;if(asksFaces&&!faces)return;onConfirm(mode,displayFielder,{dismissed:asksWho&&who!==striker?.id?who:null,
-            runs:isRunOut?runs:0,outAt:asksEnd?end:null,facesNext:asksFaces?faces:null});}}>Confirm Out</Btn>
+          onClick={()=>{if(asksEnd&&!end)return;if(asksFaces&&!faces)return;
+            onConfirm(mode,displayFielder,wicketDetail(asks,{who,strikerId:striker?.id??null,runs,from,end,faces,asksFaces}));}}>Confirm Out</Btn>
       </div>
     </Sheet>
   );
@@ -1401,4 +1425,102 @@ function InningsReviewSheet({inn,inningsNo,label=null,onConfirm,onFixLastBall,on
   );
 }
 
-export { BattingOrderSheet, CustomBatEntry, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NoBallSheet, RevisionSheet, ShotSelectorSheet, WicketSheet, WideSheet };
+/* ═══════════════════════════════════════════════════════
+   A TWO-DAY'S SECOND AND THIRD INNINGS (the Laws audit, F2)
+═══════════════════════════════════════════════════════ */
+/**
+ * The break before a Two-Day's second or third innings: no chase, so no
+ * target. The third asks who bats — the side that batted first, or the side
+ * that batted second again, when the captain who leads enforces the
+ * follow-on (Law 14; offered only when the side that batted first leads).
+ * `plan(followOn)` is twoInnings.js nextInningsPlan() for this innings.
+ */
+function NextInningsSheet({inningsNo,innings,plan,followOnOffered=false,lead=0,declared=null,onClose,onStart}){
+  const[profile,setProfile]=useState(declared);
+  const[followOn,setFollowOn]=useState(false);
+  const p=plan(followOn);
+  const [i0,i1]=innings;
+  const line=inningsNo===2&&i0?`${i0.battingTeam} made ${i0.runs} for ${i0.wickets}.`
+    :inningsNo===3&&i0&&i1?(lead>0?`${i0.battingTeam} lead by ${lead} on first innings.`:lead<0?`${i1.battingTeam} lead by ${-lead} on first innings.`:"Level on first innings."):null;
+  const pill=(on)=>({flex:1,minHeight:"44px",padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"15px",fontWeight:500,
+    border:"1px solid "+(on?D.indigo+"66":D.border),background:on?D.indigo+"1a":D.surf2,color:on?D.textPrimary:D.textSecondary});
+  return (
+    <Sheet title="Innings Break" accent={D.indigo} onClose={onClose}>
+      <div style={{textAlign:"center",padding:"20px 0 24px"}}>
+        {line&&<div data-testid="next-innings-lead" style={{fontFamily:T.type.body,fontSize:"15px",lineHeight:1.4,color:T.content.primary,margin:"0 0 12px"}}>{line}</div>}
+        <div style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted,marginBottom:"8px"}}>Innings {inningsNo}</div>
+        <div data-testid="next-innings-team" style={{fontFamily:T.type.body,fontSize:"24px",fontWeight:600,color:T.content.primary,marginBottom:"20px"}}>
+          {p?.battingTeam??"—"} to bat
+        </div>
+        {followOnOffered&&i0&&i1&&(
+          <div data-testid="next-innings-follow-on" role="radiogroup" aria-label="Who bats in the third innings?" style={{textAlign:"left",maxWidth:"360px",margin:"0 auto 16px"}}>
+            <Lbl sx={{marginBottom:"7px"}}>Who bats now?</Lbl>
+            <div style={{display:"flex",gap:"7px"}}>
+              <button type="button" role="radio" aria-checked={!followOn} data-testid="next-innings-bat-again" onClick={()=>setFollowOn(false)} className="pressBtn" style={pill(!followOn)}>{i0.battingTeam}</button>
+              <button type="button" role="radio" aria-checked={followOn} data-testid="next-innings-follow-on-yes" onClick={()=>setFollowOn(true)} className="pressBtn" style={pill(followOn)}>{i1.battingTeam} follow on</button>
+            </div>
+          </div>
+        )}
+        <div style={{textAlign:"left",maxWidth:"360px",margin:"0 auto 20px"}}>
+          <CaptureProfilePicker value={profile} onChange={setProfile}/>
+        </div>
+        <Btn variant="primary" size="lg" disabled={!p} sx={{borderRadius:D.md,minWidth:"220px"}} data-testid="next-innings-start"
+          onClick={()=>p&&onStart(profile,followOn)}>{`Start innings ${inningsNo} →`}</Btn>
+      </div>
+    </Sheet>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   A DECLARATION (Law 15)
+═══════════════════════════════════════════════════════ */
+/** The batting captain closes the innings; confirmed with the figures it is sealed with. */
+function DeclareSheet({runs,wickets,team,onDeclare,onClose}){
+  return (
+    <Sheet title="Declare the innings" accent={D.indigo} onClose={onClose}>
+      <div style={{paddingTop:"12px",display:"grid",gap:"14px"}}>
+        <div data-testid="declare-figures" style={{fontFamily:D.body,fontSize:"15px",lineHeight:1.4,color:D.textPrimary}}>
+          {team} declare at {runs} for {wickets}. The innings closes, and the next one follows.
+        </div>
+        <div style={{display:"flex",gap:"10px"}}>
+          <Btn variant="ghost" sx={{flex:1,minHeight:"48px"}} onClick={onClose}>Cancel</Btn>
+          <Btn variant="primary" sx={{flex:2,minHeight:"48px"}} data-testid="declare-confirm" onClick={onDeclare}>Declare</Btn>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   RUNS, NOT A BOUNDARY (the Laws audit, F7)
+═══════════════════════════════════════════════════════ */
+/**
+ * A four or a six is a boundary (Kameel, 28 Oct 2026): the pad's 4 and 6
+ * keys say "Four, boundary" and "Six, maximum". Runs off the bat that did not
+ * reach the rope — four all run, or runs with overthrows (Law 19.8) — are
+ * recorded here: the runs are the striker's and the bowler's as always, and
+ * no four or six (the event's `boundary: false`). Five and seven, which the
+ * run keys never offered, are here too. One tap records, as a run key does.
+ */
+function NotBoundarySheet({onRuns,onClose}){
+  return (
+    <Sheet title="Runs, not a boundary" accent={D.sky} onClose={onClose}>
+      <div style={{paddingTop:"10px",display:"grid",gap:"12px"}}>
+        <div style={{color:D.textSecondary,fontSize:"14px",fontFamily:D.body,lineHeight:1.4}}>
+          All run, or with overthrows. The runs count to the batter; it is not a four or a six.
+        </div>
+        <div role="group" aria-label="Runs off the bat" style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:"8px"}}>
+          {[4,5,6,7].map(n=>(
+            <button key={n} type="button" data-testid={`not-boundary-${n}`} aria-label={`${n} runs, not a boundary`}
+              className="pressBtn" onClick={()=>onRuns(n)}
+              style={{minHeight:"56px",borderRadius:D.md,border:"1px solid "+D.border,background:D.surf2,color:D.textPrimary,
+                fontFamily:D.body,fontSize:"24px",fontWeight:600,cursor:"pointer"}}>{n}</button>
+          ))}
+        </div>
+        <Btn variant="ghost" full onClick={onClose} data-testid="not-boundary-cancel" sx={{minHeight:"48px"}}>Cancel</Btn>
+      </div>
+    </Sheet>
+  );
+}
+
+export { BattingOrderSheet, CustomBatEntry, DeclareSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NextInningsSheet, NoBallSheet, NotBoundarySheet, RevisionSheet, ShotSelectorSheet, WicketSheet, WideSheet };
