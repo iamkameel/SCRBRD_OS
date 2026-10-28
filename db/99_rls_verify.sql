@@ -7533,6 +7533,12 @@ BEGIN
           'v118: dissent at the hil league fixture, the other side') RETURNING id INTO v;
   RETURN ids || jsonb_build_object('r_hil_w', v);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The support sessions a person still holds, wound past their hour (as
+-- _expire_support() does one), so a later case asks him as himself and not
+-- as the role a session lent him.
+CREATE OR REPLACE FUNCTION _seed_118_end_support(p_actor uuid) RETURNS void AS $$
+  SELECT _expire_support(s.id) FROM support_access s WHERE s.actor_id = p_actor;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/118 (section 95) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -28369,6 +28375,11 @@ $v49$;
     PERFORM _assert(v_email IS NULL, format('§95 (email): the director of sport read a pupil''s login email (%s)', v_email));
     SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_C2_91;
     PERFORM _assert(v_email = 'coach2@example.invalid', format('§95 (email): the director of sport lost an adult''s email (%s)', v_email));
+    -- The platform account as itself: SCRBRD-012's third support session (ticket
+    -- 4413) is still live and lends it the office's role at Hilton, under
+    -- which it reads what the office reads, on the school's record (db/22).
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _seed_118_end_support(U_PLAT);
     PERFORM _as(U_PLAT);
     SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
     PERFORM _assert(v_email IS NULL, format('§95 (email): the platform account read a pupil''s login email (%s)', v_email));
