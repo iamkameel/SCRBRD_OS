@@ -32,22 +32,22 @@ function Clause({ c }) {
     <div id={`clause-${c.code}`} data-testid={`clause-${c.code}`}
       style={{borderRadius:D.md,border:`1px solid ${D.border}`,background:D.surf1,padding:"14px 18px",display:"flex",flexDirection:"column",gap:"8px"}}>
       <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
-        <span style={{fontFamily:D.mono,fontSize:"10px",fontWeight:700,color:D.textMuted}}>{c.code}</span>
+        <span style={{fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:D.textMuted}}>{c.code}</span>
         <span style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary}}>{c.title}</span>
         <Badge color={tone} data-testid={`clause-severity-${c.code}`}>{c.severity}</Badge>
       </div>
       <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}} data-testid={`clause-ages-${c.code}`}>
         {c.ages.length
-          ? c.ages.map(a=><span key={a} style={{fontFamily:D.mono,fontSize:"10px",padding:"1px 7px",borderRadius:D.pill,border:`1px solid ${D.border}`,color:D.textSecondary}}>{bandLabel(a)}</span>)
-          : <span style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>Not tied to an age band</span>}
+          ? c.ages.map(a=><span key={a} style={{fontFamily:D.mono,fontSize:"12px",padding:"1px 7px",borderRadius:D.pill,border:`1px solid ${D.border}`,color:D.textSecondary}}>{bandLabel(a)}</span>)
+          : <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Not tied to an age band</span>}
       </div>
       <div style={{fontFamily:D.body,fontSize:"13px",color:D.textSecondary,lineHeight:1.6}}>{c.body}</div>
       {c.limits.length>0&&(
-        <div data-testid={`clause-limits-${c.code}`} style={{fontFamily:D.mono,fontSize:"11px",color:D.textPrimary}}>
+        <div data-testid={`clause-limits-${c.code}`} style={{fontFamily:D.mono,fontSize:"12px",color:D.textPrimary}}>
           {c.limits.map(limitText).join(" · ")}
         </div>
       )}
-      <div style={{fontFamily:D.body,fontSize:"10px",color:D.textMuted}}>{c.source}</div>
+      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{c.source}</div>
     </div>
   );
 }
@@ -136,11 +136,11 @@ function RulebookView({ role }) {
       display:"flex",alignItems:"center",gap:"6px",padding:"7px 14px",borderRadius:D.pill,
       cursor:"pointer",border:`1px solid ${open===id?D.amber+"66":D.border}`,
       background:open===id?`${D.amber}18`:"transparent",
-      fontFamily:D.head,fontSize:"10px",fontWeight:700,letterSpacing:"0.05em",
+      fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.05em",
       color:open===id?D.amber:D.textMuted,transition:"background-color .18s, border-color .18s, color .18s, transform 150ms ease-out",
     }}>{label}</button>
   );
-  const groupLabel = (t) => <div style={{fontFamily:D.mono,fontSize:"9px",letterSpacing:"0.08em",textTransform:"uppercase",color:D.textMuted,marginTop:"14px"}}>{t}</div>;
+  const groupLabel = (t) => <div style={{fontFamily:D.mono,fontSize:"12px",letterSpacing:"0.08em",textTransform:"uppercase",color:D.textMuted,marginTop:"14px"}}>{t}</div>;
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"20px"}} data-testid="rulebook">
@@ -157,7 +157,7 @@ function RulebookView({ role }) {
         <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"6px"}}>
           {categories.map(c=>tab(`cat:${c}`, <><Icon name={CATEGORY_ICON[c] ?? "pin"}/>{c}</>))}
           {!categories.length&&(
-            <span data-testid="rulebook-clauses-empty" style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>
+            <span data-testid="rulebook-clauses-empty" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>
               {clauses.loading ? "Loading…"
                 : clauses.error ? "The platform's clauses could not be loaded."
                 : !clauses.live ? "Sign in to read the platform's clauses."
@@ -187,10 +187,10 @@ function RulebookView({ role }) {
           <div style={{fontFamily:D.head,fontSize:"16px",fontWeight:800,color:D.textPrimary}}>
             <Icon name={section.icon}/> {section.title}
           </div>
-          <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted}}>A general summary kept in the app for reference. Unlike the platform's clauses, these are not stored or cited anywhere.</div>
+          <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>A general summary kept in the app for reference. Unlike the platform's clauses, these are not stored or cited anywhere.</div>
           {section.rules.map((r,i)=>(
             <div key={i} style={{borderRadius:D.md,border:`1px solid ${D.border}`,background:D.surf1,padding:"14px 18px",display:"flex",alignItems:"flex-start",gap:"12px"}}>
-              <div style={{width:"22px",height:"22px",borderRadius:"50%",background:`${D.amber}18`,border:`1px solid ${D.amber}33`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:D.mono,fontSize:"10px",fontWeight:700,color:D.amber,flexShrink:0,marginTop:"1px"}}>{i+1}</div>
+              <div style={{width:"22px",height:"22px",borderRadius:"50%",background:`${D.amber}18`,border:`1px solid ${D.amber}33`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:D.mono,fontSize:"12px",fontWeight:700,color:D.amber,flexShrink:0,marginTop:"1px"}}>{i+1}</div>
               <div style={{fontFamily:D.body,fontSize:"13px",color:D.textSecondary,lineHeight:1.6}}>{r.rule}</div>
             </div>
           ))}

@@ -179,7 +179,7 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
     { label: "Date", done: !!date },
   ];
 
-  const lbl = { display:"block",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"};
+  const lbl = { display:"block",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"};
 
   return (
     <Modal title="Arrange a Fixture" onClose={onClose} width="800px">
@@ -199,7 +199,7 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
                 <button key={m} onClick={()=>setAwayMode(m)} className="pressBtn" style={{
                   flex:1,padding:"6px 10px",borderRadius:D.pill,border:"none",cursor:"pointer",
                   background:awayMode===m?D.gradLive:"transparent",color:awayMode===m?T.light.ink:D.textMuted,
-                  fontFamily:D.head,fontSize:"10px",fontWeight:700,
+                  fontFamily:D.head,fontSize:"12px",fontWeight:700,
                 }}>{l}</button>
               ))}
             </div>
@@ -221,7 +221,7 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
                 padding:"5px 12px",borderRadius:D.pill,cursor:"pointer",
                 border:`1px solid ${date===dateStr(q.d)?D.violet+"55":D.border}`,
                 background:date===dateStr(q.d)?D.violet+"14":"transparent",
-                fontFamily:D.body,fontSize:"11px",color:date===dateStr(q.d)?D.violet:D.textMuted,
+                fontFamily:D.body,fontSize:"12px",color:date===dateStr(q.d)?D.violet:D.textMuted,
               }}>{q.label}</button>
             ))}
           </div>
@@ -232,7 +232,7 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
 
           <Select label="Venue" value={groundId} onChange={setGroundId}
             options={[{value:"",label:"Not recorded"}, ...grounds.map(g=>({value:g.id,label:g.name}))]}/>
-          {clash&&<div style={{fontFamily:D.body,fontSize:"11px",color:D.amber,marginTop:"-8px",marginBottom:"12px"}}>
+          {clash&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.amber,marginTop:"-8px",marginBottom:"12px"}}>
             <Icon name="triangle-alert"/> Another fixture is already down for {ground.name} that day.</div>}
 
           {competitions.length>0&&(
@@ -240,7 +240,7 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
               options={[{value:"",label:"A friendly"}, ...competitions.map(c=>({value:c.id,label:c.name}))]}/>
           )}
           {prefilled&&(
-            <div data-testid="fixture-prefill" style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary,marginTop:"-8px",marginBottom:"12px"}}>
+            <div data-testid="fixture-prefill" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,marginTop:"-8px",marginBottom:"12px"}}>
               {prefilled.title
                 ? `Format and overs from ${prefilled.title} v${prefilled.version}, in force that day. Change them if the day's match differs.`
                 : "No playing conditions are published for that day yet: the platform's defaults apply."}
@@ -256,16 +256,16 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
         <div style={{flex:"1 1 300px",minWidth:"280px"}}>
           <div style={{position:"sticky",top:0}}>
             <Card sx={{padding:"18px",background:`linear-gradient(160deg,${D.violet}0d,${D.surf1})`}} data-testid="fixture-preview">
-              <div style={{fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:"14px",textAlign:"center"}}>Matchday</div>
+              <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:"14px",textAlign:"center"}}>Matchday</div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"14px",marginBottom:"16px"}}>
                 <div style={{textAlign:"center"}}>
                   <Avatar name={teamCode||"?"} size={44} color={D.emerald}/>
-                  <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textPrimary,marginTop:"6px"}}>{teamCode||"Your side"}</div>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginTop:"6px"}}>{teamCode||"Your side"}</div>
                 </div>
-                <div style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,fontWeight:700}}>VS</div>
+                <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,fontWeight:700}}>VS</div>
                 <div style={{textAlign:"center"}}>
                   <Avatar name={awayLabel||"?"} size={44} color={D.rose}/>
-                  <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.textPrimary,marginTop:"6px",maxWidth:"110px"}}>{awayLabel||"Opponent"}</div>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginTop:"6px",maxWidth:"110px"}}>{awayLabel||"Opponent"}</div>
                 </div>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:"8px",fontFamily:D.body,fontSize:"12px",color:D.textSecondary,borderTop:`1px solid ${D.border}`,paddingTop:"12px"}}>
@@ -277,7 +277,7 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
             </Card>
             <div data-testid="fixture-checklist" style={{marginTop:"14px",display:"flex",flexDirection:"column",gap:"6px"}}>
               {checklist.map(c=>(
-                <div key={c.label} style={{display:"flex",alignItems:"center",gap:"8px",fontFamily:D.body,fontSize:"11px",color:c.done?D.emerald:D.textMuted}}>
+                <div key={c.label} style={{display:"flex",alignItems:"center",gap:"8px",fontFamily:D.body,fontSize:"12px",color:c.done?D.emerald:D.textMuted}}>
                   <span>{c.done?"✓":"○"}</span>{c.label}
                 </div>
               ))}
@@ -286,7 +286,7 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
         </div>
       </div>
 
-      {said&&<div role="alert" data-testid="fixture-refused" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.rose),marginTop:"14px"}}>{said}</div>}
+      {said&&<div role="alert" data-testid="fixture-refused" style={{fontFamily:D.body,fontSize:"12px",color:textOn(D.rose),marginTop:"14px"}}>{said}</div>}
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"16px"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={submit} disabled={!ready||busy} data-testid="fixture-submit">{busy?"Arranging…":"Arrange Fixture"}</Btn>
@@ -345,7 +345,7 @@ function RescheduleFixture({ match, grounds, onChanged }) {
       </div>
       <Select label="New venue" value={groundId} onChange={setGroundId}
         options={[{value:"",label:"Leave as is"}, ...grounds.map(g=>({value:g.id,label:g.name}))]}/>
-      {said&&<div role="alert" data-testid="fixture-reschedule-refused" style={{fontFamily:D.body,fontSize:"11px",color:textOn(D.rose),marginBottom:"8px"}}>{said}</div>}
+      {said&&<div role="alert" data-testid="fixture-reschedule-refused" style={{fontFamily:D.body,fontSize:"12px",color:textOn(D.rose),marginBottom:"8px"}}>{said}</div>}
       <div style={{display:"flex",gap:"8px",justifyContent:"space-between",flexWrap:"wrap"}}>
         <Btn size="sm" variant="danger" disabled={busy} onClick={()=>amend({ status: "abandoned" })} data-testid="fixture-call-off">Call it off</Btn>
         <div style={{display:"flex",gap:"8px"}}>

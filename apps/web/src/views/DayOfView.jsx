@@ -162,7 +162,7 @@ function DriverDayView({ role }) {
 
       {todays.length > 0 && (
         <>
-          <div style={{ fontFamily: D.head, fontSize: "11px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "8px" }}>
+          <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "8px" }}>
             Today
           </div>
           {todays.map((t) => <TripCard key={t.id} trip={t} fixture={fixtureOf(t)} onMarked={() => setNonce((n) => n + 1)}/>)}
@@ -171,7 +171,7 @@ function DriverDayView({ role }) {
 
       {upcoming.length > 0 && (
         <>
-          <div style={{ fontFamily: D.head, fontSize: "11px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", margin: "18px 0 8px" }}>
+          <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", margin: "18px 0 8px" }}>
             Coming up
           </div>
           {upcoming.map((t) => (
@@ -242,7 +242,7 @@ function QuickPitchForm({ matchId, role, onSaved }) {
   return (
     <div data-testid="gk-pitch-form" style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
       {filed && (
-        <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted, marginBottom: "8px" }}>
+        <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginBottom: "8px" }}>
           Already filed today at {hm(filed.reportedAt)} — saving again replaces it.
         </div>
       )}
@@ -252,7 +252,7 @@ function QuickPitchForm({ matchId, role, onSaved }) {
       ))}
       <Select label="Covers on" value={form.coversOn ?? ""} onChange={set("coversOn")} data-testid="gk-pitch-coversOn"
         options={[{ value: "", label: "— not recorded" }, { value: "true", label: "On" }, { value: "false", label: "Off" }]}/>
-      <label style={{ display: "block", fontFamily: D.head, fontSize: "10px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "5px" }}>
+      <label style={{ display: "block", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "5px" }}>
         Notes
       </label>
       <textarea data-testid="gk-pitch-notes" value={form.notes ?? ""} onChange={(e) => set("notes")(e.target.value)} rows={3}

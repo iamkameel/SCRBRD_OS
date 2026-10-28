@@ -93,7 +93,7 @@ const day = (t) => (t ? new Date(t).toLocaleDateString("en-ZA", { day: "numeric"
 const dayTime = (t) => (t ? new Date(t).toLocaleString("en-ZA", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—");
 
 const TH = ({ children, right }) => (
-  <th style={{ textAlign: right ? "right" : "left", padding: "6px 8px", fontFamily: D.head, fontSize: "9px",
+  <th style={{ textAlign: right ? "right" : "left", padding: "6px 8px", fontFamily: D.head, fontSize: "12px",
                fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: D.textMuted,
                borderBottom: `1px solid ${D.borderMed}`, whiteSpace: "nowrap" }}>{children}</th>
 );
@@ -109,14 +109,14 @@ function Withheld({ evidence }) {
   return (
     <span title={`Withheld: ${e.label}`}>
       <span style={{ color: D.textMuted }}>—</span>
-      <span style={{ fontFamily: D.body, fontSize: "10px", color: e.tone, marginLeft: "5px" }}>{e.label}</span>
+      <span style={{ fontFamily: D.body, fontSize: "12px", color: e.tone, marginLeft: "5px" }}>{e.label}</span>
     </span>
   );
 }
 
 function EvidencePill({ evidence }) {
   const e = EVIDENCE[evidence] ?? EVIDENCE.none;
-  return <span style={{ fontFamily: D.body, fontSize: "10px", color: e.tone }}>{e.label}</span>;
+  return <span style={{ fontFamily: D.body, fontSize: "12px", color: e.tone }}>{e.label}</span>;
 }
 
 /**
@@ -155,7 +155,7 @@ function OppositionDossier({ match, role, onClose }) {
         {!ctx.loading && !head && (
           <div data-testid="dossier-none">
             <EmptyState icon="lock" message="No dossier for you on this fixture."/>
-            <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textMuted, textAlign: "center", maxWidth: "460px", margin: "0 auto", lineHeight: 1.6 }}>
+            <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, textAlign: "center", maxWidth: "460px", margin: "0 auto", lineHeight: 1.6 }}>
               A dossier is for the coaching staff of the side actually playing, inside the window before the match.
             </div>
           </div>
@@ -171,7 +171,7 @@ function OppositionDossier({ match, role, onClose }) {
               {head.reason === "not_yet_open" && head.opensAt && (
                 <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.sky, marginTop: "12px" }}>Opens {dayTime(head.opensAt)}</div>
               )}
-              <div style={{ fontFamily: D.mono, fontSize: "10px", color: D.textMuted, marginTop: "14px" }}>
+              <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted, marginTop: "14px" }}>
                 {/* Deliberately no counts here: a shut window that said how
                     much there WOULD be to read has disclosed it. The server
                     returns null for both and this says nothing in their place. */}
@@ -192,7 +192,7 @@ function OppositionDossier({ match, role, onClose }) {
             </MetricGroup>
 
             <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
-              <div style={{ fontFamily: D.head, fontSize: "11px", fontWeight: 700, color: D.textPrimary }}>
+              <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textPrimary }}>
                 Their squad <span style={{ color: D.textMuted }}>({squad.rows.length})</span>
               </div>
               <span style={{ flex: 1 }}/>
@@ -202,7 +202,7 @@ function OppositionDossier({ match, role, onClose }) {
                           data-testid={`dossier-sort-${k}`}
                           style={{ padding: "4px 10px", borderRadius: D.pill, cursor: "pointer",
                                    border: `1px solid ${sort === k ? D.sky : D.border}`, background: "transparent",
-                                   fontFamily: D.mono, fontSize: "10px", color: sort === k ? D.textPrimary : D.textMuted }}>{l}</button>
+                                   fontFamily: D.mono, fontSize: "12px", color: sort === k ? D.textPrimary : D.textMuted }}>{l}</button>
                 ))}
               </div>
             </div>
@@ -228,7 +228,7 @@ function OppositionDossier({ match, role, onClose }) {
                       <tr key={p.playerId} data-testid={`dossier-player-${p.playerId}`}>
                         <TD tone={D.textPrimary}>
                           {p.name}
-                          <div style={{ fontFamily: D.mono, fontSize: "9px", color: D.textMuted }}>
+                          <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted }}>
                             {[p.battingStyle, p.bowlingStyle].filter(Boolean).join(" · ") || "style not recorded"}
                           </div>
                         </TD>
@@ -253,9 +253,9 @@ function OppositionDossier({ match, role, onClose }) {
 
             <div style={{ marginTop: "14px", padding: "10px 12px", borderRadius: D.md,
                           border: `1px solid ${D.border}`, background: D.surf2 }}>
-              <div style={{ fontFamily: D.head, fontSize: "10px", fontWeight: 700, letterSpacing: ".08em",
+              <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: ".08em",
                             color: D.textMuted, textTransform: "uppercase", marginBottom: "5px" }}>What this is, and what it is not</div>
-              <div style={{ fontFamily: D.body, fontSize: "11px", color: D.textSecondary, lineHeight: 1.6 }}>
+              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary, lineHeight: 1.6 }}>
                 Cricket columns only: what the ball log says about how each boy has batted and bowled, across their own
                 fixtures. Nothing about a child's person is here and none of it is available — not a date of birth, not a
                 guardian, not a note, not a fitness state. A figure withheld is withheld because the log is too thin to

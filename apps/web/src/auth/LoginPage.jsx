@@ -240,7 +240,7 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
 
           <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"20px"}}>
             <div style={{flex:1,height:"1px",background:T.fill.track}}/>
-            <span style={{fontFamily:"'DM Mono',monospace",fontSize:"10px",color:T.content.tertiary}}>or email</span>
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:"12px",color:T.content.tertiary}}>or email</span>
             <div style={{flex:1,height:"1px",background:T.fill.track}}/>
           </div>
           </>}
@@ -302,7 +302,7 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
               {/* A real <label htmlFor>, not a styled div. The div looked the
                   same and did none of the work: no accessible name, no click
                   target, nothing for voice control to say. */}
-              <label htmlFor={f.id} style={{display:"block",fontFamily:"'Syne',sans-serif",fontSize:"10px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"6px"}}>{f.label}</label>
+              <label htmlFor={f.id} style={{display:"block",fontFamily:"'Syne',sans-serif",fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary,marginBottom:"6px"}}>{f.label}</label>
               <input id={f.id} value={f.value} type={f.type} autoComplete={f.autoComplete}
                 onChange={e=>f.onChange(e.target.value)}
                 onKeyDown={e=>e.key==="Enter"&&handleLogin()}
@@ -335,21 +335,21 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
             sign-in: on production every one of them is refused, and a coach
             who taps one is told to find a code instead. */}
         {(live === false || devLogin) && <div style={{marginTop:"20px",borderRadius:"14px",border:`1px solid ${clr(T.brand.blue,0.2)}`,background:clr(T.brand.blue,0.05),padding:"16px"}}>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.brand.blueText,marginBottom:"10px"}}>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.brand.blueText,marginBottom:"10px"}}>
             {live ? "✦ Pilot accounts — click to fill" : "✦ Demo accounts — click to fill"}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"6px"}}>
             {(live ? PILOT_ACCOUNTS : DEMO_ACCOUNTS).map(d=>(
               <button key={d.email} onClick={()=>{setEmail(d.email);setPassword(d.pw||"");setError("");}} className="pressBtn"
                 style={{padding:"7px 10px",borderRadius:"8px",cursor:"pointer",background:T.fill.panel,border:`1px solid ${T.line.subtle}`,textAlign:"left"}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:"10px",fontWeight:700,color:T.content.secondary,display:"flex",alignItems:"center",gap:"5px"}}><Icon name={ROLES[d.role]?.icon}/> {d.label}</div>
-                <div style={{fontFamily:"'DM Mono',monospace",fontSize:"9px",color:T.content.tertiary,marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:"12px",fontWeight:700,color:T.content.secondary,display:"flex",alignItems:"center",gap:"5px"}}><Icon name={ROLES[d.role]?.icon}/> {d.label}</div>
+                <div style={{fontFamily:"'DM Mono',monospace",fontSize:"12px",color:T.content.tertiary,marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>
               </button>
             ))}
           </div>
           {/* Said out loud, because a demo that looks like the product is how
               someone comes to believe a roster on screen is their school's. */}
-          <div style={{fontFamily:"'DM Mono',monospace",fontSize:"9px",color:T.content.tertiary,marginTop:"10px",lineHeight:1.5}}>
+          <div style={{fontFamily:"'DM Mono',monospace",fontSize:"12px",color:T.content.tertiary,marginTop:"10px",lineHeight:1.5}}>
             {live === null ? "Checking for a server…"
               : live ? "Signed in against the live API. Data is real and permission-checked."
                      : "No server reachable — demonstration data only. Nothing is saved beyond this device."}

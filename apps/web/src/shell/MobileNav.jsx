@@ -57,7 +57,7 @@ function SportSwitcher() {
       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,marginBottom:"6px"}}>ScrbrdOS · Sport</div>
       <button onClick={()=>setOpen(!open)} className="pressBtn" style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",borderRadius:D.md,background:D.emerald+"10",border:`1px solid ${D.emerald}28`,cursor:"pointer"}}>
         <span style={{fontSize:"14px",color:D.emerald}}><Icon name={SPORT_ICON[current.code] ?? "shirt"}/></span>
-        <span style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,color:D.emerald}}>{current.label}</span>
+        <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.emerald}}>{current.label}</span>
         <span style={{marginLeft:"auto",fontSize:"9px",color:D.textMuted}}>{open?"▴":"▾"}</span>
       </button>
       {open&&(
@@ -69,7 +69,7 @@ function SportSwitcher() {
             <button key={s.code} disabled={!s.enabled} onClick={()=>setOpen(false)} className="pressBtn" style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"9px 12px",background:s.enabled?tone+"10":"transparent",border:"none",cursor:s.enabled?"pointer":"default",opacity:s.enabled?1:.55}}>
               <span style={{fontSize:"13px",color:s.enabled?D.textPrimary:D.textSecondary}}><Icon name={SPORT_ICON[s.code] ?? "shirt"}/></span>
               <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:s.enabled?600:400,color:s.enabled?D.textPrimary:D.textSecondary}}>{s.label}</span>
-              <span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"9px",fontWeight:700,letterSpacing:"0.1em",color:tone,background:tone+"16",border:`1px solid ${tone}30`,borderRadius:D.pill,padding:"2px 6px"}}>{b.text}</span>
+              <span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",color:tone,background:tone+"16",border:`1px solid ${tone}30`,borderRadius:D.pill,padding:"2px 6px"}}>{b.text}</span>
             </button>);
           })}
         </div>

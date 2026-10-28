@@ -402,7 +402,7 @@ function NoMatchesPanel({ matches, filter, teamFilter, onOpen }) {
         cursor:"pointer",textAlign:"left",fontFamily:D.body,fontSize:"12px",color:D.textPrimary,
       }}>
         <span><SideName side={sides.home}/> v <SideName side={sides.away}/></span>
-        <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textMuted,whiteSpace:"nowrap"}}>{humanDate(m.date)}</span>
+        <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,whiteSpace:"nowrap"}}>{humanDate(m.date)}</span>
       </button>
     );
   };
@@ -411,13 +411,13 @@ function NoMatchesPanel({ matches, filter, teamFilter, onOpen }) {
       <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,marginBottom:"14px"}}>{heading}</div>
       <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"16px"}}>
         <div>
-          <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,letterSpacing:"0.08em",color:D.textMuted,marginBottom:"8px"}}>UPCOMING FIXTURES</div>
+          <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.08em",color:D.textMuted,marginBottom:"8px"}}>UPCOMING FIXTURES</div>
           {upcoming.length
             ? <div style={{display:"grid",gap:"6px"}}>{upcoming.map(m=><Row key={m.id} m={m}/>)}</div>
             : <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Nothing scheduled.</div>}
         </div>
         <div>
-          <div style={{fontFamily:D.head,fontSize:"11px",fontWeight:700,letterSpacing:"0.08em",color:D.textMuted,marginBottom:"8px"}}>RECENT RESULTS</div>
+          <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.08em",color:D.textMuted,marginBottom:"8px"}}>RECENT RESULTS</div>
           {recent.length
             ? <div style={{display:"grid",gap:"6px"}}>{recent.map(m=><Row key={m.id} m={m}/>)}</div>
             : <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>No results yet.</div>}

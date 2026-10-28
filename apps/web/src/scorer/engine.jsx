@@ -2641,7 +2641,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
                              b.type==="LB"?`Leg Bye, ${b.value} run${b.value!==1?"s":""}`:
                              `${b.value} run${b.value!==1?"s":""}`}
                           </div>
-                          <div style={{fontFamily:D.body,fontSize:"11px",color:D.textMuted,marginTop:"2px",display:"flex",gap:"8px",flexWrap:"wrap"}}>
+                          <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px",display:"flex",gap:"8px",flexWrap:"wrap"}}>
                             {shot&&<span style={{color:shot.color}}>{shot.label}</span>}
                             {where&&<span><Icon name="map-pin"/> {where}</span>}
                             <span style={{color:D.textMuted}}>Over {(b.over||0)+1}.{(b.ballInOver||0)+1}</span>
@@ -2670,7 +2670,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
                         border:`1px solid ${hasWkt?D.rose+"30":hasBnd?D.indigo+"25":D.border}`}}>
                         <div style={{display:"flex",justifyContent:"space-between",marginBottom:"7px",alignItems:"center"}}>
                           <Lbl>Ov {ov.over+1}</Lbl>
-                          <span style={{fontFamily:D.mono,fontSize:"11px",color:D.textSecondary}}>{ovRuns}r{hasWkt?" W":""}</span>
+                          <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{ovRuns}r{hasWkt?" W":""}</span>
                         </div>
                         <div style={{display:"flex",gap:"3px",flexWrap:"wrap"}}>
                           {ov.balls.map((b,bi)=><BallDot key={bi} ball={b} size={22}/>)}

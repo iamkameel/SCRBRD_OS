@@ -119,8 +119,8 @@ const ProgressBar = ({ pct, color=D.indigo, height=4 }) => (
 const SkillBar = ({ label, value, color=D.indigo }) => (
   <div style={{marginBottom:"8px"}}>
     <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-      <span style={{fontFamily:D.body,fontSize:"11px",color:D.textSecondary}}>{label}</span>
-      <span style={{fontFamily:D.mono,fontSize:"11px",color:textOn(color)}}>{value}</span>
+      <span style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{label}</span>
+      <span style={{fontFamily:D.mono,fontSize:"12px",color:textOn(color)}}>{value}</span>
     </div>
     <ProgressBar pct={value} color={color}/>
   </div>
@@ -129,7 +129,7 @@ const SkillBar = ({ label, value, color=D.indigo }) => (
 const Pill = ({ children, color=D.indigo, onClick }) => (
   <span onClick={onClick} style={{
     display:"inline-flex",alignItems:"center",padding:"3px 10px",borderRadius:D.pill,
-    fontFamily:D.body,fontSize:"11px",fontWeight:500,cursor:onClick?"pointer":"default",
+    fontFamily:D.body,fontSize:"12px",fontWeight:500,cursor:onClick?"pointer":"default",
     background:color+"15",border:`1px solid ${color}28`,color:textOn(color),
   }}>{children}</span>
 );
@@ -216,7 +216,7 @@ const Input = ({ label, value, onChange, type="text", placeholder, small, ...res
   const id = useId();
   return (
   <div style={{marginBottom:small?"0":"14px"}}>
-    {label&&<label htmlFor={id} style={{display:"block",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>{label}</label>}
+    {label&&<label htmlFor={id} style={{display:"block",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>{label}</label>}
     <input id={id} type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
       {...(label ? {} : { "aria-label": placeholder })}
       {...rest}
@@ -244,7 +244,7 @@ const Select = ({ label, value, onChange, options, ...rest }) => {
   const id = useId();
   return (
   <div style={{marginBottom:"14px"}}>
-    {label&&<label htmlFor={id} style={{display:"block",fontFamily:D.head,fontSize:"10px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>{label}</label>}
+    {label&&<label htmlFor={id} style={{display:"block",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>{label}</label>}
     <select id={id} value={value} onChange={e=>onChange(e.target.value)} {...rest}
       style={{width:"100%",padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
         color:D.textPrimary,fontFamily:D.body,fontSize:"13px"}}>
