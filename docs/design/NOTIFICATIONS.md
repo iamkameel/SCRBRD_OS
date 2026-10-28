@@ -409,6 +409,8 @@ a `notification` directly.
 
 ### D20 · Preferences govern push only. Notices shows what RLS delivers.
 
+**Read 28 Oct 2026 (Kameel, as built in S4):** (1) only the five kinds the table below offers can be switched off; `injury` and `compromise` stay always on. (2) A switch is offered only for a kind the person receives, so a pupil holding only the `player` role has no `availability` switch. (3) Where a parent has a row for the kind and a row for one child, the child's row wins.
+
 STEP4 P5 stands. A preference never hides a row from Notices, the badge or the
 parent's action list (GA-I20 D2: the first thing a filter hides is a consent
 nobody answered).
