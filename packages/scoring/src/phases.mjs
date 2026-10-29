@@ -60,7 +60,7 @@
  * nothing to be level with. A card that says "14 behind where they were" is
  * worth more than one that says "par: 48" and cannot say why.
  */
-import { isLegal, BALL_TYPE, runsOffBat } from "./events.mjs";
+import { isLegal, BALL_TYPE, boundaryHit } from "./events.mjs";
 import { countsInOver, isWicketBall } from "./events.mjs";
 
 /** @import { Innings } from "./replay.mjs" */
@@ -245,10 +245,12 @@ export function derivePhases(inn, { opposing = null } = {}) {
     // 4s and 6s columns disagreed.
     // Byes or leg byes off a no-ball are not (SCRBRD-068): runsOffBat() is
     // the fold's own answer to "whose were they".
+    // And a boundary, not any four or six (the Laws audit, F7): boundaryOf()
+    // leaves out runs that did not reach the rope, as the fold does.
     if (type === BALL_TYPE.RUN || type === BALL_TYPE.NO_BALL) {
-      const offBat = runsOffBat(b);
-      if (offBat === 4) acc.fours += 1;
-      if (offBat === 6) acc.sixes += 1;
+      const bnd = boundaryHit(b);
+      if (bnd === 4) acc.fours += 1;
+      if (bnd === 6) acc.sixes += 1;
     }
     // A wicket is a W ball the fold let stand, or a wicket on a wide or a
     // no-ball (isWicketBall(), Law 22.9 and 21.17). Not "a ball with a

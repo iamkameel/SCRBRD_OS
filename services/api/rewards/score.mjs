@@ -52,7 +52,7 @@ gate as (
   select e.school_id, e.team_code, sum(e.won)::numeric / nullif(sum(e.played), 0) as win_ratio
     from competition_entrant e join competition c on c.id = e.competition_id
    where c.season_id = (select id from season_for(sa_today(), 'school')) group by 1, 2)
-select b.id, b.full_name, b.team_code,
+select b.id, b.full_name, b.team_code, b.school_id,
        coalesce((select json_agg(json_build_object('runs', pm.runs, 'wickets', pm.wickets)) from per_match pm where pm.player_id = b.id), '[]') as matches,
        (select avg(l.score) from latest l where l.player_id = b.id) as rating,
        (select count(*) from latest l where l.player_id = b.id and l.assessed_on > sa_today() - 90) as rated_metrics,
@@ -93,5 +93,9 @@ export async function rewardFigures(client, { teamCode = null } = {}) {
   });
   out.sort((a, b) => b.figure - a.figure || a.name.localeCompare(b.name));
   out.forEach((r, i) => { r.rank = i + 1; });
-  return { ok: true, rows: out };
+  // Each boy's school, for the access log: never part of a row, which is the
+  // figure and a rank and nothing else.
+  /** @type {Record<string, string | null>} */
+  const schoolOf = Object.fromEntries(rows.map((r) => [r.id, r.school_id ?? null]));
+  return { ok: true, rows: out, schoolOf };
 }

@@ -3,6 +3,7 @@ import { T } from "../../design/tokens.js";
 import { api, signedIn } from "../../lib/api.js";
 import { useLive } from "../../lib/live.js";
 import { boardInnings, teamOf } from "../../lib/matchCentre.js";
+import { matchChaseOf } from "../../lib/superOver.js";
 import { endOf } from "../../lib/family.js";
 import { bowlerRows, inningsOf, matchupTypes, matchupWords, nextIn, notYetBowled, overStory, planOf, planRead, sheetOf } from "../../lib/captain.js";
 import { Board } from "../../ui/board.jsx";
@@ -140,8 +141,9 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
   // The Board, as the Summary draws it (the second line is the chase line as built).
   const { index } = boardInnings(innings, result ? {} : null);
   const inn = innings[index];
-  const chase = innings.length >= 2 && inn === innings[1];
-  const target = chase ? (innings[1].target ?? innings[0].runs + 1) : null;
+  const chaseNow = matchChaseOf(innings, index);
+  const chase = chaseNow != null;
+  const target = chaseNow?.target ?? null;
   const inOvers = inn.overs ?? overs;
   const projected = decided ? null : atThisRate(inn, { overs: inOvers, chasing: chase, format: match.format });
   const props = boardFromInnings(inn, { target, overs: inOvers, projected });

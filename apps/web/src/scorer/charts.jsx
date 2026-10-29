@@ -10,6 +10,7 @@ import { batHandOf, hasPoint, positionName, screenAngle, shotDensity, directiona
 import { Icon } from "../ui/icons.jsx";
 import { ChartTable } from "../ui/ChartTable.jsx";
 import { chaseEndWords, projectInnings, projectMatch, runRates } from "./chartData.js";
+import { matchChaseOf } from "../lib/superOver.js";
 
 /* ═══════════════════════════════════════════════════════
    INTEL DASHBOARD TAB
@@ -619,9 +620,10 @@ function AnalysisDashboard({inn,match,curIn,innings,events=null}){
   const overs=match?.overs||20;
   // The target the fold has (the innings break's, or the umpires' revision),
   // else the first innings' runs and one.
-  const target=inn?.target??(curIn===1?(innings[0]?.runs||0)+1:null);
+  const chase=matchChaseOf(innings,curIn);
+  const target=chase?(inn?.target??chase.target):(inn?.target??null);
   const proj=projectMatch(innings,{events,overs:match?.overs})[curIn]??null;
-  const isChase=curIn===1;
+  const isChase=chase!=null;
   const sig=buildSignals(inn,overs,target,isChase);
   const[activeView,setActiveView]=useState("charts");
   return (

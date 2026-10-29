@@ -14,7 +14,7 @@ import { pickTeam, teamsOf } from "../src/lib/teamContext.js";
 import { holdsAsHeld } from "../src/lib/held.js";
 import { holdsCapability } from "../src/rbac/index.js";
 import { navForRoles } from "../src/design/roles.js";
-import { NAV_CAPABILITY } from "../src/design/roles.js";
+import { NAV_CAPABILITY, navGrants } from "../src/design/roles.js";
 import { roleGrants } from "@scrbrd/policy/roles";
 
 let pass = 0, fail = 0;
@@ -76,7 +76,7 @@ ok("nothing held (the demo): the badge role answers, exactly as before", holdsAs
 ok("it agrees with the menu: every destination the held set reaches is one a held role's capability grants", (() => {
   const held = ["guardian", "coach"];
   const nav = navForRoles(held);
-  return nav.every((k) => NAV_CAPABILITY[k] === null || held.some((r) => roleGrants(r, NAV_CAPABILITY[k])));
+  return nav.every((k) => NAV_CAPABILITY[k] === null || held.some((r) => navGrants(r, k)));
 })());
 const dash = readFileSync(new URL("../src/views/DashboardView.jsx", import.meta.url), "utf8");
 const skv = readFileSync(new URL("../src/views/SkillsView.jsx", import.meta.url), "utf8");

@@ -51,6 +51,9 @@ group("A fifty, read off the ball log rather than guessed from the total");
   // Twelve legal balls before the milestone ball, which is itself the 13th
   // legal ball — over 2, ball 1 (1-indexed within the over): fmtOvers(13) = "2.1".
   ok("the milestone lands on the ball that actually crossed it, not the last ball bowled", over === "2.1", over);
+  // F13 (the Laws audit, Q8): on the sixth ball of the second over it is 1.6, not 2.0.
+  const at12 = deriveInnings([...events.slice(0, 2), ...Array.from({ length: 11 }, () => battersBall("A", 4)).flat(), ...battersBall("A", 6)]);
+  ok("F13 a fifty on the last ball of an over reads 1.6, as the fall of wickets does", milestoneOver(at12, "A", 50) === "1.6", milestoneOver(at12, "A", 50));
 
   const moments = keyMoments([inn]);
   ok("a fifty is on the key-moments feed", moments.some((m) => m.kind === "fifty" && /A Player/.test(m.label)), moments);

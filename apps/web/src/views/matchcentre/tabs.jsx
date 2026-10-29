@@ -4,7 +4,7 @@ import { T } from "../../design/tokens.js";
 import { api, signedIn } from "../../lib/api.js";
 import { humanDateTime } from "../../lib/format.js";
 import { WeatherChip } from "../shared.jsx";
-import { teamOf } from "../../lib/matchCentre.js";
+import { boundaryCount, teamOf } from "../../lib/matchCentre.js";
 import { BatsmanChart, BowlerChart, ManhattanChart, ShotHeatMap, ShotSpider, ShotWheel, WormChart } from "../../scorer/charts.jsx";
 import { projectMatch } from "../../scorer/chartData.js";
 import { WagonAnalysisPanel } from "../../scorer/wagonAnalysisPanel.jsx";
@@ -38,7 +38,8 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs,
   const offered = inn.batsmen.filter((b) => b.balls > 0 && (!focus || focus.has(b.id)));
   const legal = inn.ballLog.filter((b) => b.type !== "Wd" && b.type !== "Nb");
   const dots = legal.filter((b) => (b.type ?? "run") === "run" && b.value === 0).length;
-  const bnds = legal.filter((b) => (b.type ?? "run") === "run" && (b.value === 4 || b.value === 6)).length;
+  // Fours and sixes are boundaries (the Laws audit F7): the engine's one test.
+  const bnds = boundaryCount(inn);
   const cfg = { overs };
   // The worm and the bars from one projection of the fold and its log (GA-I05).
   const proj = projectMatch(innings, { events, overs });

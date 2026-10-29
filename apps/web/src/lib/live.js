@@ -290,6 +290,8 @@ function asNewsPost(r) {
     mayTakeDown: r.may_take_down === true,
     publicState: r.public_state ?? null,
     publicNames: r.public_names == null ? null : Number(r.public_names),
+    // The word of the post that matched (db/118): the post's own word, never whose name.
+    publicWord: typeof r.public_word === "string" ? r.public_word : null,
     // The coach's plan (db/96, SCRBRD-138 phase B): a post is a 'post' or a
     // 'plan', and a plan names the fixture and the side it is for. `noticeId`
     // is the live plan's notice, for the block's Report (lib/captain.js planOf).
@@ -670,6 +672,18 @@ function asDevice(r) {
            registeredAt: r.registered_at, lastSeenAt: r.last_seen_at,
            retiredAt: r.retired_at, retiredReason: r.retired_reason,
            tokenTail: r.token_tail, active: r.retired_at == null, live: true };
+}
+
+/**
+ * One of my own alert switches (NOTIFICATIONS D20, db/120): a kind, or a kind
+ * about one of my children, and whether it reaches my phone. `quietHours` is
+ * whether SCRBRD holds my medium alerts overnight (a pupil, D21).
+ */
+function asAlertChoice(r) {
+  // kind null: no switch, only the quiet-hours answer (the read's one row
+  // when nothing may be switched off).
+  return { kind: r.kind ?? null, subjectPlayerId: r.subject_player_id ?? null, playerName: r.player_name ?? null,
+           push: r.push !== false, quietHours: r.quiet_hours === true, live: true };
 }
 
 /**
@@ -1338,6 +1352,7 @@ const ADAPT = {
   rulebook_clauses: asClause,
   roster_on: asRosterOn,
   my_devices: asDevice,
+  my_notification_prefs: asAlertChoice,
   memberships: asMembership,
   opposition_context: asOppositionContext,
   opposition_squad: asOppositionPlayer,
