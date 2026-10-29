@@ -4,12 +4,13 @@
 -- ══════════════════════════════════════════════════════════════════
 --
 -- HAND-WRITTEN. Four decisions Kameel made on 29 October 2026 on the Build
--- Board, each quoted as given, in one file. Its proof is db/99 §99; the API
+-- Board, and a fifth that afternoon on the open point the first left (1b),
+-- each quoted as given, in one file. Its proof is db/99 §99; the API
 -- walks are tools/smoke-passport.mjs, smoke-scouting.mjs, smoke-enrol.mjs,
 -- smoke-signup.mjs, smoke-accounts.mjs, smoke-family-links.mjs,
 -- smoke-plan-drafts.mjs and smoke-player-move.mjs; the browser walk is
 -- tools/smoke-browser-management.mjs (People: Add role on a pupil's account).
--- Eight functions are replaced, each guarded by the md5 of the body it was
+-- Nine functions are replaced, each guarded by the md5 of the body it was
 -- written against (whitespace folded, as db/118, db/119 and db/121 guard);
 -- three are new. No table, column, policy or row changes.
 --
@@ -78,6 +79,40 @@
 -- the family), then inserts; db/08's trigger stamps that withdrawal with the
 -- new giver, who has replaced it. A scouting decision is one row per boy and
 -- scouting_consent_set() overwrites it, giver and all.
+--
+-- ── 1b · "LET A BOY OF EIGHTEEN RECORD HIS OWN SCOUTING YES OR NO" ────
+-- (Kameel, 29 October 2026, 15:11 SAST, on the open point §1 left: the
+-- reasoning's "a boy who turns eighteen gives his own consent" had no door
+-- for scouting, because db/08's scouting_consent_set() takes a guardian only.)
+-- scouting_consent_set() now accepts, beside his guardian, the boy himself
+-- through his own self-access link, once he is eighteen. Each arm asks what
+-- consent_giver_live() asks of the giver, so a decision it records is in force
+-- the moment it is written:
+--   his guardian  a `guardian` assignment, active and in its dates, not
+--                 expired, not suspended; a verified link to the boy in its
+--                 dates today; processing consent granted on it (db/08's rule:
+--                 the narrower decision never ahead of the broader one);
+--   the boy       a `selfaccess` assignment the same, his `self` link the same,
+--                 its processing consent granted, and his birth date on file
+--                 with majority_on(born) <= sa_today() (db/62's eighteen, the
+--                 test person_pupil_of_age() makes, db/116).
+-- Never on a pad's credential. A boy under eighteen is refused
+-- `not_yet_eighteen`; anybody else, a guardian whose link has ended included,
+-- `not_a_consented_guardian` as before. His own decision is recorded with him
+-- as decided_by, so consent_giver_live() holds for him: a lapsed guardian yes
+-- followed by his own leaves one row, his, in force. The two arms narrow
+-- db/08's guardian test by the assignment's own liveness (active, dates,
+-- expiry, suspension), which it never read: a guardian whose assignment was
+-- revoked while the link's dates stood could still say yes, a yes that
+-- consent_giver_live() would then never count. EXECUTE moves from PUBLIC
+-- (db/08) to scrbrd_app alone.
+-- The passport path, for comparison: db/08's passport_consent policies ask
+-- is_family_of() alone, so a pupil's own live self-access link names a school
+-- at any age; it reads no birth date. That is unchanged here.
+-- The screen: Settings → Passport draws the scouting decision beside the
+-- passport consent for the same boys (SettingsView.jsx), so the boy who may
+-- name a school for himself is offered his own scouting choice there too; a
+-- refusal is said in words.
 --
 -- ── 2 · "CLOSE BOTH DOORS, AND ADD-ROLE USES THE ACCOUNT ID." ─────────
 -- (email-doors; extending Kameel's 28 October answer, "The office alone, as
@@ -160,6 +195,10 @@
 --     call (owner only)
 --   function passport_consent_in_force(uuid), scouting_consent_in_force(uuid):
 --     new definers, scrbrd_app's alone
+--   function scouting_consent_set(uuid,boolean) (db/08): body replaced (§1b);
+--     a boy of eighteen on his own live self-access link may record his own
+--     scouting decision; a guardian whose assignment is no longer live may
+--     not; EXECUTE from PUBLIC to scrbrd_app alone
 --   function passport_open(uuid) (db/116), scouting_candidates() (db/08):
 --     bodies replaced (§1); a named school stops opening the passport, and a
 --     scout stops seeing the boy, on the paste, wherever the consent's giver's
@@ -192,6 +231,7 @@ BEGIN
   FOR r IN SELECT * FROM (VALUES
       ('passport_open(uuid)',          '426f91567b99785310185b5ebfd42346', 'c8b7b4705b983c329663836e49ace9d3',       'db/116'),
       ('scouting_candidates()',        '533f1ccd3304a3e8bb1e29637a3fec3f', 'ed6190c75c6fa4290962c414fbbbefb1', 'db/08'),
+      ('scouting_consent_set(uuid,boolean)', '898a4915b3972ed71c19bbe635d99d01', '71b868ef399b6fa87d7fcadcb8970bc0', 'db/08'),
       ('role_requester(uuid)',         '991ca8bf0de42d29b36108573dc3a8ef', '857f0abb653308c38daa7e17d7b94999',      'db/81'),
       ('pending_claims()',             '9eb59cdbe26f1d8b4905a351b042d3fc', 'd76db45e4ce4a1781888a98915076fa7',      'db/81'),
       ('account_sign_ins(uuid)',       'cf8f7322926c64e6d9b78ac88e34c1df', '39004443afcccbc50880d1984514a430',    'db/81'),
@@ -326,6 +366,70 @@ CREATE OR REPLACE FUNCTION scouting_consent_in_force(p_player uuid) RETURNS bool
           OR app_can('player.development.read', player_school(c.player_id), player_team(c.player_id),
                      c.player_id, '00000000-0000-0000-0000-000000000000'::uuid))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+/**
+ * db/08's one door to a scouting decision, with the boy of eighteen beside
+ * his guardian (Kameel, 29 October 2026: "Let a boy of eighteen record his
+ * own scouting yes or no"). See (1b) above. Still no administrative
+ * override: the office, a coach, the director of sport answer
+ * not_a_consented_guardian, as before. The write is db/08's, line for line:
+ * the caller is decided_by.
+ */
+CREATE OR REPLACE FUNCTION scouting_consent_set(
+  p_player  uuid,
+  p_granted boolean
+) RETURNS TABLE (ok boolean, reason text) AS $$
+DECLARE
+  v_me uuid := app_user_id();
+BEGIN
+  IF v_me IS NULL OR app_pad_scoped() THEN
+    RETURN QUERY SELECT false, 'not_a_consented_guardian'; RETURN;
+  END IF;
+  -- Consent to being scouted rests on top of consent to be processed at all
+  -- (g.consent_state = 'granted'), never ahead of it, on either arm. Each
+  -- arm's link is live today in consent_giver_live()'s words.
+  IF NOT EXISTS (
+    SELECT 1 FROM assignment_subject g
+      JOIN role_assignment a ON a.id = g.assignment_id
+      JOIN player p ON p.id = g.player_id
+     WHERE g.player_id = p_player
+       AND a.person_id = v_me AND a.active
+       AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+       AND (a.expires_at IS NULL OR a.expires_at > now())
+       AND NOT EXISTS (SELECT 1 FROM duty_suspension d
+                        WHERE d.assignment_id = a.id AND d.lifted_at IS NULL)
+       AND g.verification_state = 'verified'
+       AND g.consent_state = 'granted'
+       AND g.valid_from <= current_date
+       AND (g.valid_until IS NULL OR g.valid_until > current_date)
+       AND (a.role = 'guardian'
+            -- The boy himself, through his own link, once he is eighteen.
+            OR (a.role = 'selfaccess' AND g.relationship = 'self'
+                AND p.born IS NOT NULL AND majority_on(p.born) <= sa_today()))
+  ) THEN
+    -- His own live link, but not yet eighteen: said as that.
+    IF EXISTS (SELECT 1 FROM assignment_subject g
+                 JOIN role_assignment a ON a.id = g.assignment_id
+                 JOIN player p ON p.id = g.player_id
+                WHERE g.player_id = p_player AND a.person_id = v_me AND a.active
+                  AND a.role = 'selfaccess' AND g.relationship = 'self'
+                  AND g.verification_state = 'verified'
+                  AND (g.valid_until IS NULL OR g.valid_until > current_date)
+                  AND (p.born IS NULL OR majority_on(p.born) > sa_today())) THEN
+      RETURN QUERY SELECT false, 'not_yet_eighteen'; RETURN;
+    END IF;
+    RETURN QUERY SELECT false, 'not_a_consented_guardian'; RETURN;
+  END IF;
+
+  INSERT INTO player_scouting_consent (player_id, consent_state, decided_by, decided_at)
+       VALUES (p_player, CASE WHEN p_granted THEN 'granted' ELSE 'withdrawn' END,
+               v_me, now())
+  ON CONFLICT (player_id) DO UPDATE
+       SET consent_state = excluded.consent_state,
+           decided_by = excluded.decided_by, decided_at = excluded.decided_at;
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 
 -- ══════════════════════════════════════════════════════════════════
@@ -531,7 +635,7 @@ DECLARE f text; r text;
 BEGIN
   FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'scouting_candidates()', 'passport_consent_in_force(uuid)',
                            'scouting_consent_in_force(uuid)', 'role_requester(uuid)', 'pending_claims()',
-                           'account_sign_ins(uuid)'] LOOP
+                           'account_sign_ins(uuid)', 'scouting_consent_set(uuid,boolean)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
   END LOOP;
@@ -544,7 +648,8 @@ BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'scouting_candidates()', 'passport_consent_in_force(uuid)',
                                'scouting_consent_in_force(uuid)', 'role_requester(uuid)', 'pending_claims()',
-                               'account_sign_ins(uuid)', 'consent_giver_live(uuid,uuid)', 'news_public_hits(uuid)',
+                               'account_sign_ins(uuid)', 'scouting_consent_set(uuid,boolean)',
+                               'consent_giver_live(uuid,uuid)', 'news_public_hits(uuid)',
                                'player_team_membership_log()', 'player_move_voids_seats()'] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
       END LOOP;
@@ -561,7 +666,8 @@ BEGIN
   -- the internal two do not become ones.
   FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'scouting_candidates()', 'passport_consent_in_force(uuid)',
                            'scouting_consent_in_force(uuid)', 'role_requester(uuid)', 'pending_claims()',
-                           'account_sign_ins(uuid)', 'player_team_membership_log()', 'player_move_voids_seats()'] LOOP
+                           'account_sign_ins(uuid)', 'scouting_consent_set(uuid,boolean)',
+                           'player_team_membership_log()', 'player_move_voids_seats()'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f::regprocedure AND p.prosecdef
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))) THEN
       RAISE EXCEPTION 'db/122: % is not SECURITY DEFINER with a pinned search_path', f;
@@ -576,7 +682,7 @@ BEGIN
   -- Who may call what.
   FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'scouting_candidates()', 'passport_consent_in_force(uuid)',
                            'scouting_consent_in_force(uuid)', 'role_requester(uuid)', 'pending_claims()',
-                           'account_sign_ins(uuid)'] LOOP
+                           'account_sign_ins(uuid)', 'scouting_consent_set(uuid,boolean)'] LOOP
     IF NOT has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE')
        OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
                    WHERE p.oid = f::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN
@@ -621,6 +727,17 @@ BEGIN
   IF consent_giver_live(NULL, gen_random_uuid()) OR consent_giver_live(gen_random_uuid(), gen_random_uuid()) THEN
     RAISE EXCEPTION 'db/122: consent_giver_live() said yes about nobody';
   END IF;
+  -- §1b: the boy of eighteen beside his guardian, both on a live link with
+  -- processing consent, never on a pad, recording the caller as the giver.
+  SELECT btrim(regexp_replace(prosrc, '\s+', ' ', 'g')) INTO v_src
+    FROM pg_proc WHERE oid = 'scouting_consent_set(uuid,boolean)'::regprocedure;
+  IF position('a.role = ''selfaccess'' AND g.relationship = ''self'' AND p.born IS NOT NULL AND majority_on(p.born) <= sa_today()' IN v_src) = 0
+     OR position('app_pad_scoped()' IN v_src) = 0 OR position('g.consent_state = ''granted''' IN v_src) = 0
+     OR position('a.person_id = v_me AND a.active' IN v_src) = 0 OR position('''not_yet_eighteen''' IN v_src) = 0
+     OR position('decided_by = excluded.decided_by' IN v_src) = 0 OR position('guardian.link.manage' IN v_src) > 0 THEN
+    RAISE EXCEPTION 'db/122: scouting_consent_set() is not the guardian-or-the-boy-of-eighteen door this file writes';
+  END IF;
+
   -- db/116's check still holds: the passport opens to no player.profile.read.
   IF (SELECT prosrc FROM pg_proc WHERE oid = 'passport_open(uuid)'::regprocedure) LIKE '%player.profile.read%' THEN
     RAISE EXCEPTION 'db/122: passport_open() opens to player.profile.read';

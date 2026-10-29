@@ -2232,10 +2232,13 @@ news check no longer refuses a post for the words de, du, le, la, da or di
 alone; a two-letter first name is still caught. **"The school's day (SAST),
 everywhere."** A move typed with no date is dated by Johannesburg's day, not
 the database's (UTC), so a move between midnight and two is no longer dated
-yesterday.
+yesterday. **"Let a boy of eighteen record his own scouting yes or no."** From
+his eighteenth birthday a pupil decides for himself, on his own account,
+whether scouts may see him; until then it stays his parent's or guardian's.
 
 **What it does to a live database.** It replaces `passport_open()`,
-`scouting_candidates()`, `role_requester()`, `pending_claims()`,
+`scouting_candidates()`, `scouting_consent_set()` (now the application's alone,
+no longer PUBLIC's), `role_requester()`, `pending_claims()`,
 `account_sign_ins()`, `news_public_hits()`, `player_team_membership_log()` and
 `player_move_voids_seats()`, each with its owner, grants, SECURITY DEFINER and
 pinned search path as they were, and adds `consent_giver_live()` (granted to

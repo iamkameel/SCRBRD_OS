@@ -956,6 +956,12 @@ function AlertsSection({ role }) {
 // boys whose decision this reader is shown, so that a team-mate's absent row
 // is never drawn as "no decision recorded"; a reader shown none is told whose
 // it is, rather than handed an empty list that reads as "nobody decided".
+// The door's refusals, in words (db/122: a boy of eighteen records his own
+// decision; under eighteen it is his guardian's).
+const SCOUTING_REFUSAL = {
+  not_yet_eighteen: "You can decide this for yourself from your eighteenth birthday. Until then it is your parent's or guardian's decision.",
+  not_a_consented_guardian: "Only his parent or guardian decides this, or the boy himself once he is eighteen. The school cannot decide it for a family.",
+};
 function ScoutingConsentSection({ role, players: offered }) {
   const [nudge, setNudge] = useState(0);
   const [said, setSaid] = useState("");
@@ -965,7 +971,7 @@ function ScoutingConsentSection({ role, players: offered }) {
   const set = async (playerId, granted) => {
     setSaid("");
     try { await api(`/api/players/${playerId}/scouting-consent`, { method: "POST", body: { granted } }); setNudge((n) => n + 1); }
-    catch (e) { setSaid(e.message || "Refused."); }
+    catch (e) { setSaid(SCOUTING_REFUSAL[e?.code] || e.message || "Refused."); }
   };
   return (
     <Panel sx={{ marginTop: "16px" }} data-testid="scouting-consent-section">
