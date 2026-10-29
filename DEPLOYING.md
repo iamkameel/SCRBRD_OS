@@ -2235,6 +2235,10 @@ the database's (UTC), so a move between midnight and two is no longer dated
 yesterday. **"Let a boy of eighteen record his own scouting yes or no."** From
 his eighteenth birthday a pupil decides for himself, on his own account,
 whether scouts may see him; until then it stays his parent's or guardian's.
+**"Under eighteen, only his guardian; at eighteen, he does it himself."** The
+same for his passport: a pupil under eighteen no longer names a school for his
+own record, or withdraws one; his parent or guardian does (two new RESTRICTIVE
+write policies on `passport_consent`, and `passport_consent_writer_ok()`).
 
 **What it does to a live database.** It replaces `passport_open()`,
 `scouting_candidates()`, `scouting_consent_set()` (now the application's alone,

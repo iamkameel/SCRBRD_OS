@@ -1030,10 +1030,17 @@ function PassportTab({ role, only = null }) {
   const players = onlyIds ? allPlayers.filter((p) => onlyIds.has(p.id)) : allPlayers;
   const rows = useLive("passport_consents", role, nudge).rows.filter((r) => !onlyIds || onlyIds.has(r.playerId));
   useEffect(() => { let off = false; api("/api/schools").then((r) => { if (!off && r?.rows) setSchools(r.rows); }).catch(() => {}); return () => { off = true; }; }, []);
+  // A pupil's own record (his self-access link): under eighteen his guardian
+  // decides where it travels; from eighteen he does (db/122, Kameel 29 Oct
+  // 2026: "Under eighteen, only his guardian; at eighteen, he does it
+  // himself"). The server decides; this only says so in words.
+  const ownRecords = new Set((profile()?.assignments ?? []).filter((a) => a.role === "selfaccess")
+    .flatMap((a) => (Array.isArray(a.liveSubjects) ? a.liveSubjects : a.subjects) ?? []));
+  const OWN_RECORD_WORDS = "Until you are eighteen, your parent or guardian decides which school your record goes to. From your eighteenth birthday you decide it yourself.";
   const grant = async () => {
     setSaid("");
     try { await api("/api/passport/consent", { method: "POST", body: { playerId, schoolId } }); setSchoolId(""); setNudge((n) => n + 1); }
-    catch (e) { setSaid(e.message || "Refused."); }
+    catch (e) { setSaid(ownRecords.has(playerId) && e?.status === 403 ? OWN_RECORD_WORDS : (e.message || "Refused.")); }
   };
   const withdraw = async (id) => {
     setSaid("");
@@ -1058,6 +1065,9 @@ function PassportTab({ role, only = null }) {
         </select>
         <Btn onClick={grant} disabled={!playerId || !schoolId}>Name this school</Btn>
       </div>
+      {ownRecords.has(playerId) && (
+        <div data-testid="passport-own-record" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginBottom: "8px" }}>{OWN_RECORD_WORDS}</div>
+      )}
       {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose), marginBottom: "8px" }}>{said}</div>}
       {rows.length === 0
         ? <EmptyState icon="stamp" message={PASSPORT_NONE[passportConsentReader() ?? "none"]}/>

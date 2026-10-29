@@ -4,7 +4,8 @@
 -- ══════════════════════════════════════════════════════════════════
 --
 -- HAND-WRITTEN. Four decisions Kameel made on 29 October 2026 on the Build
--- Board, and a fifth that afternoon on the open point the first left (1b),
+-- Board, and two more that afternoon on the open points the first left (1b,
+-- 1c),
 -- each quoted as given, in one file. Its proof is db/99 §99; the API
 -- walks are tools/smoke-passport.mjs, smoke-scouting.mjs, smoke-enrol.mjs,
 -- smoke-signup.mjs, smoke-accounts.mjs, smoke-family-links.mjs,
@@ -12,7 +13,8 @@
 -- tools/smoke-browser-management.mjs (People: Add role on a pupil's account).
 -- Nine functions are replaced, each guarded by the md5 of the body it was
 -- written against (whitespace folded, as db/118, db/119 and db/121 guard);
--- three are new. No table, column, policy or row changes.
+-- four are new, with two RESTRICTIVE write policies on passport_consent (1c).
+-- No table, column or row changes.
 --
 -- ── 1 · "THE CONSENT LAPSES WHEN THE LINK THAT GAVE IT ENDS." ─────────
 -- (fam-ended-consent; the reasoning given: a boy who turns eighteen gives his
@@ -106,13 +108,31 @@
 -- revoked while the link's dates stood could still say yes, a yes that
 -- consent_giver_live() would then never count. EXECUTE moves from PUBLIC
 -- (db/08) to scrbrd_app alone.
--- The passport path, for comparison: db/08's passport_consent policies ask
--- is_family_of() alone, so a pupil's own live self-access link names a school
--- at any age; it reads no birth date. That is unchanged here.
 -- The screen: Settings → Passport draws the scouting decision beside the
 -- passport consent for the same boys (SettingsView.jsx), so the boy who may
 -- name a school for himself is offered his own scouting choice there too; a
 -- refusal is said in words.
+--
+-- ── 1c · "UNDER EIGHTEEN, ONLY HIS GUARDIAN; AT EIGHTEEN, HE DOES IT
+--         HIMSELF" ──────────────────────────────────────────────────────
+-- (Kameel, 29 October 2026, 16:57 SAST, on the passport point §1b raised:
+-- db/08's passport_consent_insert and passport_consent_update ask
+-- is_family_of() alone, so a pupil's own live self-access link named a
+-- school for his record, or withdrew one, at any age; nothing read his birth
+-- date.) Two RESTRICTIVE policies on passport_consent, one FOR INSERT and one
+-- FOR UPDATE, ask passport_consent_writer_ok(boy) beside db/08's permissive
+-- writes (which stay as db/08 and db/115 wrote and check them):
+--   his guardian  a `guardian` assignment and verified link to the boy, both
+--                 live today (is_family_of()'s words), at any age of the boy;
+--   the boy       his `selfaccess` assignment and `self` link, the same, once
+--                 majority_on(born) <= sa_today() (§1b's test);
+-- never on a pad. So under eighteen only a live guardian names a school or
+-- withdraws one; from his eighteenth birthday he does it himself (and his
+-- guardian, while her link lives, still may). Reading is untouched: the boy
+-- still reads his own consents through is_family_of() (db/115, db/116). The
+-- grant route (kit-api.mjs) is the policies' caller: a minor's own attempt is
+-- refused not_permitted, and Settings → Passport says, in words, that his
+-- guardian decides until he is eighteen.
 --
 -- ── 2 · "CLOSE BOTH DOORS, AND ADD-ROLE USES THE ACCOUNT ID." ─────────
 -- (email-doors; extending Kameel's 28 October answer, "The office alone, as
@@ -195,6 +215,10 @@
 --     call (owner only)
 --   function passport_consent_in_force(uuid), scouting_consent_in_force(uuid):
 --     new definers, scrbrd_app's alone
+--   function passport_consent_writer_ok(uuid): new definer, scrbrd_app's; policy
+--     passport_consent_writer_of_age_insert, _update: new RESTRICTIVE writes
+--     (§1c); a pupil under eighteen no longer names or withdraws a school for
+--     his own record; a guardian and a boy of eighteen as before
 --   function scouting_consent_set(uuid,boolean) (db/08): body replaced (§1b);
 --     a boy of eighteen on his own live self-access link may record his own
 --     scouting decision; a guardian whose assignment is no longer live may
@@ -212,7 +236,8 @@
 --     (db/117): bodies replaced (§4); rows already written keep their dates
 -- Every replaced function keeps its owner, volatility, SECURITY DEFINER where
 -- it had it, a pinned search_path and its grants (re-stated below). No
--- table, column, policy or row is changed. A second paste changes nothing.
+-- table, column or row is changed; the only policies are §1c's two. A second
+-- paste changes nothing.
 --
 -- SCHEMA FIRST. The read API's `passport_consents` and `scouting_consent`
 -- select the two in-force definers, so this file goes before the API built
@@ -432,6 +457,46 @@ BEGIN
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 
+/**
+ * May the caller record or withdraw a passport consent for p_player: his
+ * live guardian, or the boy himself on his live self-link once he is
+ * eighteen (Kameel, 29 October 2026: "Under eighteen, only his guardian; at
+ * eighteen, he does it himself"). See (1c) above. The two RESTRICTIVE write
+ * policies below ask it; a definer, because the caller cannot read every
+ * assignment and link it reads.
+ */
+CREATE OR REPLACE FUNCTION passport_consent_writer_ok(p_player uuid) RETURNS boolean AS $$
+  SELECT NOT app_pad_scoped() AND EXISTS (
+    SELECT 1 FROM role_assignment a
+    JOIN assignment_subject s ON s.assignment_id = a.id
+    JOIN player p ON p.id = s.player_id
+   WHERE a.person_id = app_user_id() AND a.active
+     AND (a.role = 'guardian'
+          -- The boy himself, through his own link, once he is eighteen.
+          OR (a.role = 'selfaccess' AND s.relationship = 'self'
+              AND p.born IS NOT NULL AND majority_on(p.born) <= sa_today()))
+     AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+     AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+     AND (a.expires_at IS NULL OR a.expires_at > now())
+     AND NOT EXISTS (SELECT 1 FROM duty_suspension d
+                      WHERE d.assignment_id = a.id AND d.lifted_at IS NULL)
+     AND s.player_id = p_player AND s.verification_state = 'verified'
+     AND s.valid_from <= current_date
+     AND (s.valid_until IS NULL OR s.valid_until > current_date))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+DROP POLICY IF EXISTS passport_consent_writer_of_age_insert ON passport_consent;
+CREATE POLICY passport_consent_writer_of_age_insert ON passport_consent AS RESTRICTIVE
+  FOR INSERT WITH CHECK (passport_consent_writer_ok(player_id));
+DROP POLICY IF EXISTS passport_consent_writer_of_age_update ON passport_consent;
+CREATE POLICY passport_consent_writer_of_age_update ON passport_consent AS RESTRICTIVE
+  FOR UPDATE USING (passport_consent_writer_ok(player_id)) WITH CHECK (passport_consent_writer_ok(player_id));
+COMMENT ON POLICY passport_consent_writer_of_age_insert ON passport_consent IS
+  'Under eighteen, only his guardian; at eighteen, he does it himself (Kameel, 29 Oct 2026; db/122 1c).';
+COMMENT ON POLICY passport_consent_writer_of_age_update ON passport_consent IS
+  'Under eighteen, only his guardian; at eighteen, he does it himself (Kameel, 29 Oct 2026; db/122 1c).';
+
+
 -- ══════════════════════════════════════════════════════════════════
 -- §2 · The last doors to a pupil's login email
 -- ══════════════════════════════════════════════════════════════════
@@ -635,7 +700,7 @@ DECLARE f text; r text;
 BEGIN
   FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'scouting_candidates()', 'passport_consent_in_force(uuid)',
                            'scouting_consent_in_force(uuid)', 'role_requester(uuid)', 'pending_claims()',
-                           'account_sign_ins(uuid)', 'scouting_consent_set(uuid,boolean)'] LOOP
+                           'account_sign_ins(uuid)', 'scouting_consent_set(uuid,boolean)', 'passport_consent_writer_ok(uuid)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
   END LOOP;
@@ -648,7 +713,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'scouting_candidates()', 'passport_consent_in_force(uuid)',
                                'scouting_consent_in_force(uuid)', 'role_requester(uuid)', 'pending_claims()',
-                               'account_sign_ins(uuid)', 'scouting_consent_set(uuid,boolean)',
+                               'account_sign_ins(uuid)', 'scouting_consent_set(uuid,boolean)', 'passport_consent_writer_ok(uuid)',
                                'consent_giver_live(uuid,uuid)', 'news_public_hits(uuid)',
                                'player_team_membership_log()', 'player_move_voids_seats()'] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
@@ -666,7 +731,7 @@ BEGIN
   -- the internal two do not become ones.
   FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'scouting_candidates()', 'passport_consent_in_force(uuid)',
                            'scouting_consent_in_force(uuid)', 'role_requester(uuid)', 'pending_claims()',
-                           'account_sign_ins(uuid)', 'scouting_consent_set(uuid,boolean)',
+                           'account_sign_ins(uuid)', 'scouting_consent_set(uuid,boolean)', 'passport_consent_writer_ok(uuid)',
                            'player_team_membership_log()', 'player_move_voids_seats()'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f::regprocedure AND p.prosecdef
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))) THEN
@@ -682,7 +747,7 @@ BEGIN
   -- Who may call what.
   FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'scouting_candidates()', 'passport_consent_in_force(uuid)',
                            'scouting_consent_in_force(uuid)', 'role_requester(uuid)', 'pending_claims()',
-                           'account_sign_ins(uuid)', 'scouting_consent_set(uuid,boolean)'] LOOP
+                           'account_sign_ins(uuid)', 'scouting_consent_set(uuid,boolean)', 'passport_consent_writer_ok(uuid)'] LOOP
     IF NOT has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE')
        OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
                    WHERE p.oid = f::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN
@@ -736,6 +801,26 @@ BEGIN
      OR position('a.person_id = v_me AND a.active' IN v_src) = 0 OR position('''not_yet_eighteen''' IN v_src) = 0
      OR position('decided_by = excluded.decided_by' IN v_src) = 0 OR position('guardian.link.manage' IN v_src) > 0 THEN
     RAISE EXCEPTION 'db/122: scouting_consent_set() is not the guardian-or-the-boy-of-eighteen door this file writes';
+  END IF;
+
+  -- §1c: the two RESTRICTIVE write policies, asking the writer test.
+  IF (SELECT count(*) FROM pg_policy p
+       WHERE p.polrelid = 'passport_consent'::regclass AND NOT p.polpermissive
+         AND ((p.polname = 'passport_consent_writer_of_age_insert' AND p.polcmd = 'a'
+               AND pg_get_expr(p.polwithcheck, p.polrelid) = 'passport_consent_writer_ok(player_id)')
+           OR (p.polname = 'passport_consent_writer_of_age_update' AND p.polcmd = 'w'
+               AND pg_get_expr(p.polqual, p.polrelid) = 'passport_consent_writer_ok(player_id)'
+               AND pg_get_expr(p.polwithcheck, p.polrelid) = 'passport_consent_writer_ok(player_id)'))) <> 2 THEN
+    RAISE EXCEPTION 'db/122: passport_consent''s two RESTRICTIVE write policies are not this file''s';
+  END IF;
+  SELECT btrim(regexp_replace(prosrc, '\s+', ' ', 'g')) INTO v_src
+    FROM pg_proc WHERE oid = 'passport_consent_writer_ok(uuid)'::regprocedure;
+  IF position('a.role = ''selfaccess'' AND s.relationship = ''self'' AND p.born IS NOT NULL AND majority_on(p.born) <= sa_today()' IN v_src) = 0
+     OR position('NOT app_pad_scoped()' IN v_src) = 0 OR position('s.valid_until IS NULL OR s.valid_until > current_date' IN v_src) = 0 THEN
+    RAISE EXCEPTION 'db/122: passport_consent_writer_ok() is not the guardian-or-the-boy-of-eighteen test';
+  END IF;
+  IF passport_consent_writer_ok(gen_random_uuid()) THEN
+    RAISE EXCEPTION 'db/122: passport_consent_writer_ok() said yes about nobody';
   END IF;
 
   -- db/116's check still holds: the passport opens to no player.profile.read.

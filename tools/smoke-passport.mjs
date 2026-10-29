@@ -39,6 +39,10 @@ try {
     // him and no coach's or office's capability, so the passport stays shut.
     ok("a team-mate reads none", !!mate && (await passport(PILLAY, mate)).length === 0);
     ok("a coach cannot consent for a boy", [403, 401].includes((await consent(coach, PILLAY, WES)).status));
+    // db/122 (Kameel, 29 Oct 2026): "Under eighteen, only his guardian; at
+    // eighteen, he does it himself". R Pillay is sixteen.
+    ok("nor, at sixteen, the boy himself: his guardian decides until he is eighteen",
+       (await consent(boy, PILLAY, WES)).status === 403);
     ok("another family cannot consent for him", [403, 401].includes((await consent(otherMum, PILLAY, WES)).status));
     ok("the other school cannot help itself", [403, 401].includes((await consent(wes, PILLAY, WES)).status));
     const c = await consent(parent, PILLAY, WES);

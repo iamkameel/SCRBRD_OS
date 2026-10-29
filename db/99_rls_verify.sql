@@ -7908,6 +7908,9 @@ DECLARE
 BEGIN
   INSERT INTO school (code, name, kind, province) VALUES ('V122X', 'Verify OneTwentyTwo College', 'school', 'KwaZulu-Natal')
   RETURNING id INTO X;
+  INSERT INTO school (code, name, kind, province) VALUES ('V122Z', 'Verify OneTwentyTwo Academy', 'school', 'KwaZulu-Natal')
+  RETURNING id INTO v;
+  z := z || jsonb_build_object('Z', v);
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
     (HIL, '16XI', 'Verify OneTwentyTwo Consent', 1221, 'batter', U15) RETURNING id INTO c_c;
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
@@ -29100,8 +29103,13 @@ $v49$;
     END LOOP;
     PERFORM _as((y->>'live')::uuid);
     PERFORM _assert(_v119_name_x(y) = 'written', '§96 (live): the live guardian could not name school X');
+    -- Since db/122 (1c, Kameel 29 Oct 2026: "Under eighteen, only his
+    -- guardian; at eighteen, he does it himself") the boy, fifteen, may not
+    -- withdraw it himself; his live guardian does.
     PERFORM _as((y->>'fboy')::uuid);
-    PERFORM _assert(_v119_withdraw(y, (y->>'X')::uuid) = 1, '§96 (live): the boy could not withdraw school X');
+    PERFORM _assert(_v119_withdraw(y, (y->>'X')::uuid) = 0, '§96 (live): the boy of fifteen withdrew school X himself');
+    PERFORM _as((y->>'live')::uuid);
+    PERFORM _assert(_v119_withdraw(y, (y->>'X')::uuid) = 1, '§96 (live): the live guardian could not withdraw school X');
     PERFORM _assert(_v119_owner_passport(y) = 'WES,X(w)', format('§96 (live): the owner reads [%s]', _v119_owner_passport(y)));
 
     -- (ended), (early)
@@ -29583,6 +29591,10 @@ $v49$;
   --              then refused; Y, eighteen, records his own yes on his
   --              self-access link: one row for him, his, in force. C, fifteen,
   --              on his own live link, is refused not_yet_eighteen
+  --   (age)      "Under eighteen, only his guardian; at eighteen, he does it
+  --              himself": C, fifteen, on his own live link, names no school
+  --              and withdraws none; Y, eighteen, names one himself and
+  --              withdraws it; D's live guardian names one for him
   --   (readers)  the in-force answers are NULL to a reader of neither row (a
   --              Westville parent, the scout, the mother once her link ended)
   --              and on a pad
@@ -29612,6 +29624,8 @@ $v49$;
   --                                             a lapsed yes
   --   scouting_consent_set() as db/08 wrote it → (eighteen): Y, eighteen, was
   --                                             refused his own yes
+  --   the two RESTRICTIVE write policies dropped → (age): C, fifteen, named a
+  --                                             school for himself
   --   role_requester() as db/81 wrote it      → (email): the director of
   --                                             sport read E's address
   --   pending_claims() as db/81 wrote it      → (email): ... E's claim's addresses
@@ -29739,6 +29753,37 @@ $v49$;
     PERFORM _assert(has_function_privilege('scrbrd_app', 'scouting_consent_set(uuid,boolean)', 'EXECUTE')
                     AND NOT has_function_privilege('public', 'scouting_consent_set(uuid,boolean)', 'EXECUTE'),
       '§99 (eighteen): scouting_consent_set() is not the application''s alone');
+
+    -- (age)
+    PERFORM _as((y->>'cboy')::uuid);
+    got := 'written';
+    BEGIN
+      INSERT INTO passport_consent (player_id, to_school_id) VALUES (C, (y->>'Z')::uuid);
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'refused', '§99 (age): the boy of fifteen named a school for himself');
+    UPDATE passport_consent SET withdrawn_at = now() WHERE player_id = C AND withdrawn_at IS NULL;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    PERFORM _assert(v_n = 0, format('§99 (age): the boy of fifteen withdrew %s consent(s) himself', v_n));
+    PERFORM _assert(_v122_reads(y) >= 1, '§99 (age): the boy of fifteen no longer reads his own consents');
+    PERFORM _as((y->>'yboy')::uuid);
+    got := 'written';
+    BEGIN
+      INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'Y')::uuid, (y->>'Z')::uuid);
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'written', '§99 (age): the boy of eighteen could not name a school himself');
+    UPDATE passport_consent SET withdrawn_at = now() WHERE player_id = (y->>'Y')::uuid AND withdrawn_at IS NULL;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    PERFORM _assert(v_n = 1, format('§99 (age): the boy of eighteen withdrew %s consent(s), not his one', v_n));
+    PERFORM _as((y->>'gd')::uuid);
+    got := 'written';
+    BEGIN
+      INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'D')::uuid, (y->>'Z')::uuid);
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'written', '§99 (age): a live guardian could not name a school for her son of thirteen');
+    PERFORM set_config('app.user_id', '', true);
 
     -- (readers)
     PERFORM _as((y->>'wesparent')::uuid);
