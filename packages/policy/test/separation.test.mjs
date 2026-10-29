@@ -43,7 +43,7 @@
  *   node packages/policy/test/separation.test.mjs
  */
 import { ROLES, ROLE_CAPABILITIES, SCORING_ROLES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, boundaries, mayGrantRole } from "../src/roles.mjs";
-import { ALL_CAPABILITIES, SENSITIVE, PLATFORM_ONLY } from "../src/capabilities.mjs";
+import { ALL_CAPABILITIES, LEVEL, SENSITIVE, PLATFORM_ONLY } from "../src/capabilities.mjs";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -349,6 +349,32 @@ group("WL  Workload and wellness: his staff and him, never a team-mate");
      mayGrantRole("directorofsport", "fitness") && !mayGrantRole("schooladmin", "fitness"));
   ok("fitness holds a school, like medical: not a team, not a child",
      !TEAM_SCOPED_ROLES.includes("fitness") && !SUBJECT_SCOPED_ROLES.includes("fitness"));
+}
+
+// ── UP · The union passport: named selectors only (db/124) ──
+// Kameel, 29 Oct 2026: "CSA Schools/Provincial Union will be able to access a
+// child's full passport ... Named selectors and the schools cricket manager
+// only, every read logged." The capability opens passport() and nothing
+// else; held by the union selector, and by the owner's key only because its
+// bundle is every capability (db/124's reader test refuses a platform-wide
+// caller). Being a competition organiser opens nothing. Falsified by adding
+// passport.union.read to competitionadmin: the second check goes red.
+group("UP  The union passport: the named selectors, never the organiser");
+{
+  ok("passport.union.read is a capability, at the passport's tier (2)",
+     ALL_CAPABILITIES.includes("passport.union.read") && LEVEL["passport.union.read"] === 2);
+  ok("held by the union selector and the owner's key, and by nobody else",
+     holders("passport.union.read").sort().join() === "superadmin,unionselector", holders("passport.union.read").join());
+  ok("a competition organiser does not hold it", !caps("competitionadmin").includes("passport.union.read"));
+  ok("the union selector holds the passport and the school read, nothing of the roster or the body",
+     caps("unionselector").slice().sort().join() === "passport.union.read,school.read", caps("unionselector").join());
+  ok("...nor anything sensitive but the passport",
+     caps("unionselector").filter((c) => LEVEL[c] >= 2).join() === "passport.union.read");
+  ok("a principal (the union's) appoints one; the office, the director of sport and the organiser do not",
+     mayGrantRole("principal", "unionselector") && !mayGrantRole("schooladmin", "unionselector")
+       && !mayGrantRole("directorofsport", "unionselector") && !mayGrantRole("competitionadmin", "unionselector"));
+  ok("a union selector holds an institution, not a team or a child",
+     !TEAM_SCOPED_ROLES.includes("unionselector") && !SUBJECT_SCOPED_ROLES.includes("unionselector"));
 }
 
 // ── LIFT · Families arrange, the school facilitates (SCRBRD-124, db/70) ──

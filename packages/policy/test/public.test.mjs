@@ -425,6 +425,8 @@ const HAND_WRITTEN_SINCE_47 = {
   development_target: {},
   // db/109: how and why a guardian's link ended is never public as a whole (N4).
   guardian_link_ending: {},
+  // db/124: which union opened a boy's passport is never public as a whole (N5).
+  passport_union_read: {},
 };
 
 /** The db/NN files from 47 on, which is where hand-written pupil tables are held to this. */

@@ -2279,6 +2279,15 @@ export const READ_QUERIES = {
              left join lateral (select ps.name from public_schools() ps where ps.id = c.to_school_id) s on true
             order by c.withdrawn_at nulls first, c.granted_at desc`,
   },
+  // Who at a union looked at his passport, and when (db/124, Kameel 29 Oct
+  // 2026: "Named selectors and the schools cricket manager only, every read
+  // logged"), for every boy the caller is family of on a live link: his
+  // guardians and the boy himself. Nobody else is answered; the definer
+  // decides. The log itself is written by passport() and passport_name().
+  passport_union_reads: {
+    text: `select player_id, read_at, reader_name, reader_role, organisation, what
+             from passport_union_reads()`,
+  },
 
   /* Which roles must hold which checks. Platform reference data. */
   clearance_requirements: {

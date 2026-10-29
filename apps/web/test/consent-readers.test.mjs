@@ -79,5 +79,21 @@ ok("a refused withdrawal is said in words, on a 403",
 ok("...and the boy's own words say he may take a name back at any age",
    /You can take a school's name back yourself at any time\./.test(settings));
 
+// db/124 (Kameel, 29 Oct 2026: "Named selectors and the schools cricket
+// manager only, every read logged"; so his family can see who looked).
+group("The union passport: who looked, for his family; another province's union, said");
+ok("the card reads who at a union looked, narrowed to the child on a Family card",
+   /useLive\("passport_union_reads", role, nudge\)\.rows\.filter\(\(r\) => !onlyIds \|\| onlyIds\.has\(r\.playerId\)\)/.test(settings));
+ok("...and draws it for his family alone",
+   /const forFamily = passportConsentReader\(\) === "family";/.test(settings) && /\{forFamily && \(\s*<div data-testid="passport-union-reads"/.test(settings));
+ok("...naming the reader, his role, the union and the day",
+   /\{r\.readerName\} \(\{r\.readerRole\}\), \{r\.organisation\} · \{day\(r\.readAt\)\}/.test(settings));
+ok("...and none is said, not left blank", /UNION_READS_NONE = "No union has opened his passport\."/.test(settings));
+ok("a union that is not his is refused in words",
+   /e\?\.code === "not_his_union"/.test(settings) && /PASSPORT_NOT_HIS_UNION = "That union is not his\./.test(settings));
+const live = readFileSync(new URL("../src/lib/live.js", import.meta.url), "utf8");
+ok("the read has an adapter", /passport_union_reads: asPassportUnionRead,/.test(live)
+   && /readerName: r\.reader_name, readerRole: r\.reader_role,\s*organisation: r\.organisation/.test(live));
+
 console.log(`\n${fail ? "✗" : "✓"} consent-readers: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

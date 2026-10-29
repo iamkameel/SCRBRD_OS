@@ -271,6 +271,12 @@ export const NEVER_PUBLIC = Object.freeze({
   // were, and the office's words about a family (a custody order, most of
   // all). Never on a page, never to the parent (D13); the whole table.
   guardian_link_ending: "N4",
+
+  // ── db/124, the union passport ──
+  // N5. Which union's selectors opened a boy's passport, and when: a
+  // union's interest in a named child, the scouting class. His family's to
+  // see, never a page's; the whole table.
+  passport_union_read: "N5",
 });
 
 /**

@@ -902,6 +902,11 @@ function asPassportConsent(r) {
   return { id: r.id, playerId: r.player_id, name: r.full_name, toSchool: r.to_school_id, toSchoolName: r.to_school,
            grantedAt: r.granted_at, withdrawnAt: r.withdrawn_at, lapsed: !r.withdrawn_at && r.in_force === false, live: true };
 }
+/** db/124: one read of his passport by a union's named reader, for his family. */
+function asPassportUnionRead(r) {
+  return { playerId: r.player_id, readAt: r.read_at, readerName: r.reader_name, readerRole: r.reader_role,
+           organisation: r.organisation, what: r.what, live: true };
+}
 /**
  * SCRBRD-055. `granted` is derived from the state rather than sent as a
  * boolean on purpose: the table's vocabulary is 'granted' | 'withdrawn', and a
@@ -1335,6 +1340,7 @@ const ADAPT = {
   drills: asDrill,
   passport: asPassportLine,
   passport_consents: asPassportConsent,
+  passport_union_reads: asPassportUnionRead,
   scouting_consent: asScoutingConsent,
   match_duties: asDuty,
   drs_reviews: asDrsReview,
