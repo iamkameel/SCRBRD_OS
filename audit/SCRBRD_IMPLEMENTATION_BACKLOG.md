@@ -362,6 +362,8 @@ already built and are unchanged by this pass.
 - [ ] `grep -c "run ?out" packages/scoring/src` → 0
 **Regression risk:** MEDIUM
 
+- **Laws audit of 28 Oct, db/121** — **Done 2026-10-29** (#208 via #211, commit 0da75d4): the SQL half of the scoring fixes Kameel decided on 28 Oct (items F4, F5, F7, F10, F11 and Q2 of `audit/AUDIT_scoring_laws_2026-10-28.md` §6), so every SQL reader agrees with the fold again.
+
 ## Deployment
 
 ### ~~SCRBRD-008~~ — CLOSED
@@ -665,6 +667,8 @@ because this was already in place. No new code needed; only this entry was stale
 **Acceptance:** `db/99_rls_verify.sql` asserts the reader distinction live, in both directions,
 for the owner's key, a platform administrator, a school administrator and a two-school assignment.
 
+- **Privacy follow-ups, db/118** — **Done 2026-10-29** (#193 via #211, commit 0da75d4): a news post naming a boy by his surname or a word of his name is refused at approval, and the author is told which word matched, never which boy; a pupil's login email is the office's, read by the pupil and by the office and principal only; a retirement's reason, a bowler change's reason and a suspension's ground stay at the boy's own school; the league reads only its own competitions' conduct records; CSV exports follow the policy list in `packages/policy/src/exports.mjs`, so the roster leaves without its masked columns, and only the roster and the fixtures leave as files.
+
 ## Product completeness
 
 ### ~~SCRBRD-016~~ — CLOSED — Reduced-overs support
@@ -731,6 +735,9 @@ for the owner's key, a platform administrator, a school administrator and a two-
 > cannot, from the browser.
 **Regression risk:** LOW
 
+- **Skills rewards, par refusals and Training, 2026-10-29** — **Done 2026-10-29** (#194 via #211, commit 0da75d4): rewards behind the Skills module, logged per school; a par refusal logs the rule it refused under; Training on the team manager's menu; the Skills history browser walk (GA-I26a A3).
+- **Skills history walk, flaky fixed** — **Done 2026-10-29** (#210, commit 3a63fbd): the walk waits for the since-the-last-look read after a save, and no longer reads the stale panel.
+
 ## Match page grammar — from the ESPNcricinfo audits (added 2026-10-23)
 
 Plan, evidence and per-item acceptance: `docs/design/CRICINFO_GAP_PLAN.md` §6. Decided by Kameel
@@ -740,8 +747,8 @@ one duplicates an existing entry, strike the `CRI-*` line and point at the older
 
 **Sprint 0 — walks only, no screen changes (approved):**
 - **CRI-0.1** — Design brief: decided, `DESIGN_DIRECTION.md` stands. Open only for the claude.ai Project brief (Kameel). **Partly done 2026-10-23:** `DESIGN_DIRECTION.md` §9 decisions 7–10 recorded: this direction stands over the Project brief (#196, `e98828e`).
-- **CRI-0.2** — Screenshot set, 360/390/768/1440px, both themes. Accept: set under `audit/`, a note per clipped element.
-- **CRI-0.3** — Public live page walk (SCRBRD-083, `PUBLIC_DATA.md`). Accept: mounted or not recorded; no child identity in the payload; `SCREEN_MAP.md` corrected.
+- ~~**CRI-0.2** — Screenshot set, 360/390/768/1440px, both themes. Accept: set under `audit/`, a note per clipped element.~~ **Done 2026-10-28** (#203, commit 150892e): fixtures, summary, scorecard, commentary and pad at four widths in both themes, under `audit/cri02-screens/`, with `NOTES.md` on what clips.
+- ~~**CRI-0.3** — Public live page walk (SCRBRD-083, `PUBLIC_DATA.md`). Accept: mounted or not recorded; no child identity in the payload; `SCREEN_MAP.md` corrected.~~ **Done 2026-10-28** (#200, commit fb77c7c): the signed-out walk finds no seeded pupil's identity in any response (28/28), and `SCREEN_MAP.md` records the public live page as had, switched off by default.
 - ~~**CRI-0.4** — Offline sync walk. Accept: no duplicate events; "Held N" counts down to zero.~~ **Closed 2026-10-28** in `30bc9c0` (#199): `browser-sync-drop` (`tools/smoke-browser-sync-drop.mjs`), 83/0. Kameel, 28 Oct: the walk checks that the count never rises, not a countdown.
 - **CRI-0.5** — Type and touch floors. Evidence: `AnalyticsView.jsx:37,41,43,142,156` at 8–10px. Accept: nothing under 12px or 44px. **Partly done 2026-10-28:** the 12px type floor on every text size (#197, `0151821`); the 44px touch floor is not in that PR.
 
@@ -763,6 +770,10 @@ CRI-3.2 tap-to-passport · CRI-3.3 match impact as PoM suggestion (after recogni
 CRI-3.4 StatsMagic (the Analytics Explorer, renamed by Kameel 2026-10-28; SCRBRD's counterpart of Cricinfo's Statsguru), one Fable design pass (allowed 2026-10-23).
 
 **Partly done 2026-10-28:** CRI-3.1 decision recorded (#198, `6d23aa0`): notifications S2–S5 come before the pilot, S3 push included (Kameel, 23 Oct). Nothing built; the Sprint 3 placement above is superseded.
+
+**Partly done 2026-10-29:** CRI-3.1 notifications S4, db/120 (#205 via #211, commit 0da75d4): a person may switch off the alerts that reach his phone, and a parent may do so for his child; welfare, safeguarding, account, injury and breach notices stay on; a pupil's phone alerts wait from 21:00 to 06:00. S3, the push, is not built.
+
+**Partly done 2026-10-29:** CRI-3.4 StatsMagic design, Fable's pass with Kameel's 29 Oct answers, all ten questions as recommended (#207, commit beed8b3). Design only; the build is open.
 
 **Regression risk:** MEDIUM (Sprint 1 touches `MatchView.jsx` and `Board`, which every walk reads)
 
@@ -798,6 +809,9 @@ CRI-3.4 StatsMagic (the Analytics Explorer, renamed by Kameel 2026-10-28; SCRBRD
 > scrbrd-supabase-verify.sql — ALL RLS LIVE ASSERTIONS PASSED → only then merge/deploy the code
 > that needs it`, plus the three-guards explanation this closure's SCRBRD-019 note also cites.
 **Regression risk:** LOW
+
+- **Records of 28 Oct** — **Done 2026-10-28** (#195, commit b9a9bfc): Kameel's 22 Oct decisions recorded in the docs.
+- **Android skills for a Capacitor shell** — **Done 2026-10-29** (#209, commit 5c5ff25): six of Google's Android skills under `.claude/skills`, chosen by Kameel on 27 Oct, each with its Apache 2.0 licence beside it; the other 30 stay out.
 
 ---
 
@@ -3345,6 +3359,7 @@ keys: after the upgrade a re-offered, already-acknowledged ball reads as unsent 
   refused at commit (`mid_over_no_reason`); old logs replay. Not built: Law 41 says a suspended bowler does not bowl
   again in the innings — nothing refuses him yet (a further product decision). **Built 2026-09-27** as SCRBRD-094
   item 2 (`bowler_suspended`); an over shared after an injury is now a maiden for neither bowler.
+  **Partly done 2026-10-29:** the reason stays at the boy's own school; any reader outside it sees the change with no reason (db/118, #193 via #211, commit 0da75d4).
 - **SCRBRD-081 — Timed out and retired out are not deliveries.** A non-ball dismissal event; over count and bowler figures unaffected; old logs replay unchanged. P2.
   **Built 2026-09-24:** a `retire` marked `type: "W"` (docs/SCORING_RULES.md, "Timed out and retired out"). Left
   open: the career views (db/02, db/13) and the dismissal breakdown (db/26) read `kind = 'ball'`, so these
@@ -4779,6 +4794,8 @@ unique index). `GUARDIAN_APP_URL` is set from CSA's material. The information of
 **Partly done 2026-10-22:** SR-1 (db/112), season rollover: a moved pupil follows his new side, and a boy playing up reads his match's balls (#171, `184976c`).
 
 **Partly done 2026-10-23:** REACH R-B: the consents read narrowed: passport consent is the office's alone, scouting consent stays with his side's coach (db/115) (#176, `37f5884`).
+
+**Partly done 2026-10-29:** a family's way in: a parent whose link has ended no longer reads his child's passport consents or opens his passport; the link must be live today (db/119, `is_family_of()`) (#205 via #211, commit 0da75d4).
 
 **Priority:** P1 · **Domain:** Families / Privacy · **Type:** design (Fable, `docs/design/STEP4_parent_pupil.md`,
 decided by Kameel 2026-09-27), built by Opus
