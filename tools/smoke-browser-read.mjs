@@ -276,6 +276,17 @@ try {
   // the Settings screen's own PassportTab, as it is), and takes it back. The
   // gate itself is walked at the API (tools/smoke-passport.mjs); this is the
   // screen doing exactly what the family asked, nothing more.
+  // db/124 (Kameel, 29 Oct 2026): his union is named from the same list, and
+  // his family sees who at it looked. The union and its named selector are
+  // the owner's to stage; the list is read when Consents opens.
+  const KZN = (await owner.query(`insert into school (code, name, kind, province) values ('BRKZN', 'Browser KZN Union', 'union', 'KwaZulu-Natal')
+                                   on conflict do nothing returning id`)).rows[0]?.id
+           ?? (await owner.query(`select id from school where kind = 'union' and lower(btrim(province)) = 'kwazulu-natal'`)).rows[0].id;
+  const KZN_NAME = (await owner.query(`select name from school where id = $1`, [KZN])).rows[0].name;
+  {
+    const sel = (await owner.query(`insert into app_user (school_id, email, name, role) values ($1, 'selector.browser@example.invalid', 'Browser Selector', 'unionselector') returning id`, [KZN])).rows[0].id;
+    await owner.query(`insert into role_assignment (person_id, role, school_id) values ($1, 'unionselector', $2)`, [sel, KZN]);
+  }
   await ptid(`family-open-consents-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
   await afterReads(parent.page, 1500);
   ok("Consents opens the passport and scouting consents as they are",
@@ -292,6 +303,25 @@ try {
   ok("they take it back", await click(parent.page, /^Withdraw$/));
   await afterReads(parent.page, 1500);
   ok("...and the row says withdrawn", /withdrawn/i.test(await text(parent.page)));
+  ok("no union has looked, and it says so", /No union has opened his passport\./.test(await ptid("passport-union-reads").innerText().catch(() => "")));
+  const unionOption = await parent.page.$eval('select[aria-label="Which school"]', (el, n) => [...el.options].find((o) => o.text === n)?.value, KZN_NAME);
+  ok("his union is offered from the same list", unionOption === KZN);
+  if (unionOption) await parent.page.selectOption('select[aria-label="Which school"]', unionOption);
+  ok("they name his union", await click(parent.page, /Name this school/));
+  await afterReads(parent.page, 1500);
+  ok("...and the grant names it", (await text(parent.page)).includes(KZN_NAME));
+  {
+    // The union's named selector opens his passport (the API walk proves the
+    // gate; this is the read the family is then shown).
+    const tok = (await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "selector.browser@example.invalid", deviceId: "device-browser-selector" }) })).json())?.token;
+    const lines = (await (await fetch(`${API}/api/read/passport?playerId=${PILLAY}`, { headers: { authorization: `Bearer ${tok}` } })).json())?.rows ?? [];
+    ok("the union's selector reads his passport", lines.length > 0);
+  }
+  ok("they take the union's name back", await click(parent.page, /^Withdraw$/));
+  await afterReads(parent.page, 1500);
+  const looked = await ptid("passport-union-reads").innerText().catch(() => "");
+  ok("...and the card says who at which union looked", /Browser Selector \(Union Selector\)/.test(looked) && looked.includes(KZN_NAME), looked);
 
   // ── P3: a declaration, from the fixture, lands where the coach reads it ──
   // A fixture with an explicit date, far enough ahead to be "coming up"
