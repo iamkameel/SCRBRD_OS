@@ -170,19 +170,12 @@ export function leagueSetupState({ entrants, sets }) {
 
 // ── Invitations waiting (the shell's badge) ───────────────────────
 
-/**
- * How many of the invitations the API listed are still waiting for an answer.
- * The API lists only those, but a row that says otherwise is not counted.
- * @param {unknown} rows
- */
-export function invitationsWaiting(rows) {
-  return Array.isArray(rows) ? rows.filter((r) => r && (r.status ?? "invited") === "invited").length : 0;
-}
-
-/** "1 league invitation waiting", "3 league invitations waiting", or "" for none. @param {number} n */
-export function invitationsWords(n) {
-  return n > 0 ? `${n} league invitation${n === 1 ? "" : "s"} waiting` : "";
-}
+// The count and its words live in their own leaf module so the shell's badge
+// (lib/invitations.js, the sidebar, the phone's nav: all in the entry graph)
+// does not carry this whole module into every visitor's first download
+// (29 Oct, the entry trim: ~11 KB).
+import { invitationsWaiting, invitationsWords } from "./invitationCount.js";
+export { invitationsWaiting, invitationsWords };
 
 // ── Checklist rows (wizard, step 3) ───────────────────────────────
 

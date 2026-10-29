@@ -28,8 +28,10 @@ import { couldNotRead } from "./readState.js";
 
 const HOUR = 3600e3;
 
-/** The capability a claim asks for (db/33). */
-export const SCORE_CAPABILITY = "scoring.start";
+// The landing decision and the capability it asks for live in a leaf module,
+// so App.jsx does not carry this one into every visitor's first download.
+import { SCORE_CAPABILITY, scorerLanding } from "./scorerLanding.js";
+export { SCORE_CAPABILITY, scorerLanding };
 
 /** How many fixtures the list fans the per-fixture roster read out to; the rest are counted, not drawn. */
 export const SHOWN = 8;
@@ -40,21 +42,6 @@ export const SHOWN = 8;
  * "held by another device" read two minutes ago may no longer be true.
  */
 export const SESSION_MAX_AGE_MS = 2 * 60e3;
-
-/**
- * Does this account land on the scorer's home rather than the day sheet?
- *
- * By capability, never by role name (ADR 0003): it may start scoring, and it
- * neither picks a side (team.select) nor reads a side's roster
- * (player.roster.read). That is the scorer's bundle and no other today: the
- * coach, assistant coach, sports admin and director of sport, who also score,
- * keep the day sheet and its match-day card. A person holding a scorer role
- * beside a coaching one keeps the day sheet too: the roles held are asked.
- * @param {(capability: string) => boolean} holds  holdsAsHeld bound to the badge role
- */
-export function scorerLanding(holds) {
-  return holds(SCORE_CAPABILITY) && !holds("team.select") && !holds("player.roster.read");
-}
 
 /** The fixture's start in ms, or null. @param {any} m */
 export function startOf(m) {
