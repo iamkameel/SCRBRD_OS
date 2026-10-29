@@ -2213,6 +2213,37 @@ first**: the API built with it refuses to start without db/121
 `scoring_amendment_rejudge()`, and its public log serves `boundary`.
 <!-- ── end db/121 ── -->
 
+<!-- ── db/123: a side's notices reach the side ── -->
+#### A side's notices reach the side (db/123)
+
+`db/123_reach_notices.sql` is REACH group R-E (O-N), as Kameel decided it on
+14 October 2026. **A notice to a side that names no child** — "team sheet
+published", "training moved", "result reopened", a knockout's side changed,
+an injury availability line — **now reaches that side only**: its staff, its
+players, school-wide staff, a spectator the office admitted, and the parents
+of boys on it. Until now every parent at the school read every side's. A
+notice about a child still reaches his family; a notice to one person still
+reaches him alone; school notices, safeguarding notices and a post's notice
+(db/101's) are unchanged. Nobody gains a notice.
+
+**What it does to a live database.** One RESTRICTIVE read policy on
+`notification` (`notification_follows_side`), and `notification_report()`
+(db/101's) re-emitted in place with the same clause, so a parent of another
+side who is handed a side notice's id is told it is not there. No table,
+column, row or grant changes; db/09's read policy is not touched. It refuses
+to run before db/117 (the dated `side_reach()`) or on a
+`notification_report()` that is not db/101's, and a second paste changes
+nothing. **What a parent sees changes at the paste:** Notices and the badge
+lose other sides' notices.
+
+Paste `node tools/bundle-sql.mjs --apply 123` after 121 (and after 122 where
+it is in the same paste list), then the verify bundle (§100 is its proof).
+The summary row "A side's notices reach the side" should read OK. **Schema
+first**: the API built with it refuses to start without db/123
+(`expected-migrations.json`). No route or screen needs it to work; the
+screens read what the server gives.
+<!-- ── end db/123 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

@@ -756,6 +756,15 @@ SELECT
         AND NOT has_function_privilege('scrbrd_app', to_regprocedure('milestone_recheck(uuid,smallint,uuid[],boolean)'), 'EXECUTE')
         AND position('milestone_recheck(' IN coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('scoring_amendment_rejudge(uuid,jsonb)')), '')) > 0
        THEN 'OK' ELSE 'PROBLEM' END                             AS "The Laws audit's fixes",
+  -- db/123: a notice with a team and no child follows the side (REACH R-E):
+  -- read only by whom side_reach() admits, and the report door asks the same.
+  CASE WHEN EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'notification'
+                     AND policyname = 'notification_follows_side' AND permissive = 'RESTRICTIVE' AND cmd = 'SELECT'
+                     AND qual LIKE '%side_reach(required_capability, school_id, team_code,%')
+        AND position('OR side_reach(n.required_capability, n.school_id, n.team_code, ZERO)' IN
+                     coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('notification_report(uuid)')), '')) > 0
+        AND NOT has_function_privilege('public', to_regprocedure('notification_report(uuid)'), 'EXECUTE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A side's notices reach the side",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
