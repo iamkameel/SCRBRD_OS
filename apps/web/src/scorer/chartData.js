@@ -1,4 +1,4 @@
-import { KIND, ballsOfOvers, countsInOver, foldSteps, isLegal, penaltyCredits } from "@scrbrd/scoring";
+import { KIND, ballsOfFow, countsInOver, foldSteps, isLegal, penaltyCredits } from "@scrbrd/scoring";
 import { isOut } from "./format.js";
 
 /**
@@ -173,7 +173,8 @@ export function projectInnings(inn, { events = null, opening = null, overs } = {
   /** @type {WormWicket[]} */
   const wickets = [];
   for (const f of Array.isArray(inn.fow) ? inn.fow : []) {
-    const ball = ballsOfOvers(f?.overs);
+    // 4.6 is the 30th ball (the Laws audit, F13: fowOvers()).
+    const ball = ballsOfFow(f?.overs);
     if (ball == null || typeof f?.runs !== "number") continue;
     const bat = (inn.batsmen || []).find((/** @type {any} */ p) => p.name === f.batsman);
     wickets.push({ ball, runs: f.runs, n: wickets.length + 1, name: f.batsman ?? "Wicket", how: bat?.dismissal ?? "" });

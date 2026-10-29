@@ -404,14 +404,15 @@ function ScorecardPanel({innings,idx}){
           </div>
         ))}
         {/* A bowler replaced during an over, and why (SCRBRD-080). A log from
-            before the pad asked has no reason, and says so. */}
+            before the pad asked has no reason, and a reader outside the
+            bowler's school is not given it (db/118): either way, none shown. */}
         {(i.bowlerChanges||[]).length>0&&(
           <div data-testid="bowler-changes" style={{padding:"7px 14px",display:"flex",flexDirection:"column",gap:"3px"}}>
             {i.bowlerChanges.map((c,ci)=>{
               const nm=id=>i.bowlers.find(b=>b.id===id)?.name??id??"?";
               return (
                 <span key={ci} style={{color:D.textMuted,fontSize:"12px",fontFamily:D.body}}>
-                  Over {c.over+1}.{c.ballInOver}: {nm(c.to)} took over from {nm(c.from)}{c.reason?` (${c.reason==="suspended"?"suspended":"injured"})`:" (reason not recorded)"}
+                  Over {c.over+1}.{c.ballInOver}: {nm(c.to)} took over from {nm(c.from)}{c.reason?` (${c.reason==="suspended"?"suspended":"injured"})`:" (no reason shown)"}
                 </span>
               );
             })}

@@ -263,6 +263,40 @@ try {
     await holder.query("rollback").catch(() => {});
     holder.release();
   }
+
+  group("The Laws audit F4 (db/121): the approval re-judges who faced the balls after the corrected one");
+  // Innings 5 of the finished match: A and B open; 9201 a single (stamped
+  // A), 9202 a four (stamped B), 9203 a single (stamped B), 9204 two
+  // (stamped A). The single at 9201 was a dead ball: voided, the fold has A
+  // facing the four and the next single, and B the two.
+  const P_B = "aaaaaaaa-0000-0000-0000-000000000002";
+  const rowsF4 = [
+    [9200, "batters", null, null, P_BAT, P_B],
+    [9201, "ball", "run", 1, P_BAT, P_B],
+    [9202, "ball", "run", 4, P_B, P_BAT],
+    [9203, "ball", "run", 1, P_B, P_BAT],
+    [9204, "ball", "run", 2, P_BAT, P_B],
+  ];
+  for (const [seq, kind, type, value, st, ns] of rowsF4) {
+    await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                                     idempotency_key, client_seq, client_ts, kind, ball_type, value, striker_id, non_striker_id)
+             values ($1, $2, $3, 1, 5, $4, 'device-amend', $5, $3, now(), $6, $7, $8, $9, $10)`,
+            [MATCH, HIL, seq, U_SCORER, `f4-${seq}`, kind, type, value, st, ns]);
+  }
+  const f4 = await ask(MATCH, scorer, { targetKey: "f4-9201", reason: "The single was a dead ball." });
+  const f4d = await decide(f4.body?.id, head, { approve: true });
+  ok("the amendment is approved, and says it re-judged three balls", f4d.body?.ok === true && f4d.body?.rejudged === 3, JSON.stringify(f4d.body));
+  const live = await q(`select seq, striker_id from ball_event_live where match_id = $1 and innings = 5 and kind = 'ball' order by seq`, [MATCH]);
+  ok("ball_event_live: the four and the single A's, the two B's (the fold's), not the pad's stamps",
+     live.map((r) => `${r.seq}:${r.striker_id === P_BAT ? "A" : r.striker_id === P_B ? "B" : "?"}`).join(",") === "9202:A,9203:A,9204:B",
+     JSON.stringify(live));
+  const inn5 = await q(`select player_id, runs, balls_faced from player_innings where match_id = $1 and innings = 5 order by player_id`, [MATCH]);
+  ok("player_innings: A 5 off 2, B 2 off 1", inn5.map((r) => `${r.player_id === P_BAT ? "A" : "B"} ${r.runs}/${r.balls_faced}`).join(", ") === "A 5/2, B 2/1",
+     JSON.stringify(inn5));
+  ok("...the stamps themselves are as the pad wrote them (the log is append-only)",
+     (await q(`select striker_id from ball_event where match_id = $1 and idempotency_key = 'f4-9202'`, [MATCH]))[0]?.striker_id === P_B);
+  const rj = await q(`select count(*)::int n, bool_and(amendment_id = $2) mine from ball_event_rejudged where match_id = $1`, [MATCH, f4.body?.id]);
+  ok("...and the re-judging names its amendment", rj[0]?.n === 3 && rj[0]?.mine === true, JSON.stringify(rj));
 } catch (e) {
   fail++;
   console.log("\n  ✗ the walk threw:", e.message);

@@ -338,7 +338,7 @@ const segment = (on) => ({ minHeight: "44px", padding: `0 ${T.space.xs}`, fontSi
  * right above the strip, over the phase keys it does not need (the strip
  * draws it, so it follows the strip wherever a small phone docks it). The
  * likely runs are marked and focused; a tap on any runs key records. The no-ball also
- * asks its type — a height no-ball or a beamer is a free hit — and whose the
+ * asks its type — a front-foot no-ball is a free hit (the fold's rule) — and whose the
  * runs are, each already on its commonest answer, as the no-ball sheet asked.
  */
 function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true, wicketable = false }) {

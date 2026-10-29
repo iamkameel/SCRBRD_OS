@@ -7483,6 +7483,385 @@ CREATE OR REPLACE FUNCTION _v117_people_dated_beyond(z jsonb) RETURNS int AS $$
           OR EXISTS (SELECT 1 FROM app_user u WHERE u.id = p AND u.player_id = ANY (_v117_dated_on_rows(z))))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/117 (section 94) ─────────────────────────────────────────────
+-- ┌── db/118 (section 95) ──────────────────────────────────────────────
+-- A stored surname that is not in the boy's full name, as the owner writes
+-- it, so the scan is seen to read the column itself. Rolled back with
+-- everything else.
+CREATE OR REPLACE FUNCTION _seed_118_surname(p_player uuid, p_surname text) RETURNS void AS $$
+  UPDATE player SET surname = p_surname WHERE id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A full name written with punctuation in it ("Zungu, S", "Mary-Anne ...").
+CREATE OR REPLACE FUNCTION _seed_118_name(p_player uuid, p_full_name text) RETURNS void AS $$
+  UPDATE player SET full_name = p_full_name WHERE id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A fixture tomorrow between two schools, as the office would write it.
+CREATE OR REPLACE FUNCTION _seed_118_fixture(p_home uuid, p_away uuid) RETURNS void AS $$
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (p_home, '1XI', p_away, '1XI', 'Verify 118 opponents', now() + interval '1 day', 'cricket', 'T20', 20, 'scheduled');
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Kameel, 28 Oct 2026 ("Only its own competitions: refuse a platform-wide
+-- caller"): a league at each school, each organising one competition, and a
+-- third competition nobody organises. One Hilton-Westville fixture in each,
+-- and a conduct record from each: Hilton's league fixture carries one about
+-- a Hilton boy and one about a Westville boy, so its read is logged at both.
+CREATE OR REPLACE FUNCTION _seed_118_league() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  P_H uuid := 'aaaaaaaa-0000-0000-0000-000000000005';   -- R Pillay, Hilton
+  P_W uuid := 'bbbbbbbb-0000-0000-0000-000000000001';   -- D Mkhize, Westville
+  V_BY uuid := '88888888-0000-0000-0000-00000000000c';   -- the office files them
+  ids jsonb; c uuid; f uuid; v uuid; k text;
+BEGIN
+  ids := _v71_people('v118', ARRAY[
+    ARRAY['hilleague', 'competitionadmin', HIL::text, '', ''],
+    ARRAY['wesleague', 'competitionadmin', WES::text, '', '']]);
+  FOREACH k IN ARRAY ARRAY['hil', 'wes', 'none'] LOOP
+    INSERT INTO competition (school_id, name, comp_type, format, level)
+    VALUES (CASE k WHEN 'hil' THEN HIL WHEN 'wes' THEN WES END, 'Verify 118 League ' || k, 'league', 'T20', 'school')
+    RETURNING id INTO c;
+    INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name) VALUES
+      (c, HIL, '1XI', 'Hilton 1'), (c, WES, '1XI', 'Westville 1');
+    INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+    VALUES (CASE k WHEN 'wes' THEN WES ELSE HIL END, '1XI', CASE k WHEN 'wes' THEN HIL ELSE WES END, '1XI',
+            'Verify 118 league fixture ' || k, now() - interval '2 days', 'cricket', 'T20', 20, 'scheduled', c)
+    RETURNING id INTO f;
+    INSERT INTO disciplinary_record (player_id, school_id, match_id, recorded_by, body)
+    VALUES (P_H, HIL, f, V_BY, 'v118: dissent at the ' || k || ' league fixture') RETURNING id INTO v;
+    ids := ids || jsonb_build_object('c_' || k, c, 'r_' || k, v);
+  END LOOP;
+  INSERT INTO disciplinary_record (player_id, school_id, match_id, recorded_by, body)
+  VALUES (P_W, WES, (SELECT m.id FROM match m WHERE m.competition_id = (ids->>'c_hil')::uuid), V_BY,
+          'v118: dissent at the hil league fixture, the other side') RETURNING id INTO v;
+  RETURN ids || jsonb_build_object('r_hil_w', v);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The support sessions a person still holds, wound past their hour (as
+-- _expire_support() does one), so a later case asks him as himself and not
+-- as the role a session lent him.
+CREATE OR REPLACE FUNCTION _seed_118_end_support(p_actor uuid) RETURNS void AS $$
+  SELECT _expire_support(s.id) FROM support_access s WHERE s.actor_id = p_actor;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/118 (section 95) ─────────────────────────────────────────────
+-- ┌── db/119 (section 96). is_family_of() reads a live link, never on a pad
+-- Invented, as the owner; every name is a placeholder. Boy F on Hilton's
+-- 16XI with his own `player` role and self-access link. His guardians, one
+-- each: `live`; `ended` (her assignment's valid_until today, so ended);
+-- `expired` (her assignment's expires_at passed); `early` (her link begins
+-- tomorrow); `linkend` (her link's valid_until today: db/62's close). `mum`,
+-- a physio at Hilton (`medical`) with a live guardian link to F. `coach`, the
+-- 16XI's coach (team.select over F: db/116's staff arm of passport_open()). A
+-- school X with nobody at it. One passport consent F → Westville, F's
+-- scouting decision (granted), and one honour of his (a passport line).
+CREATE OR REPLACE FUNCTION _v119_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
+  X uuid; F uuid; v_a uuid; ids jsonb; k text;
+BEGIN
+  INSERT INTO school (code, name, kind, province) VALUES ('V119X', 'Verify OneNineteen College', 'school', 'KwaZulu-Natal')
+  RETURNING id INTO X;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '16XI', 'Verify OneNineteen Fam', 1191, 'batter', U15) RETURNING id INTO F;
+  ids := _v71_people('v119', ARRAY[
+    ARRAY['live',    'guardian', HIL::text, '',     ''],
+    ARRAY['ended',   'guardian', HIL::text, '',     ''],
+    ARRAY['expired', 'guardian', HIL::text, '',     ''],
+    ARRAY['early',   'guardian', HIL::text, '',     ''],
+    ARRAY['linkend', 'guardian', HIL::text, '',     ''],
+    ARRAY['fboy',    'player',   HIL::text, '16XI', F::text],
+    ARRAY['mum',     'medical',  HIL::text, '',     ''],
+    ARRAY['coach',   'coach',    HIL::text, '16XI', '']]);
+  FOREACH k IN ARRAY ARRAY['live', 'ended', 'expired', 'early', 'linkend', 'mum'] LOOP
+    PERFORM _v100_link((ids->>k)::uuid, HIL, F);
+  END LOOP;
+  UPDATE role_assignment SET valid_until = current_date
+   WHERE person_id = (ids->>'ended')::uuid AND role = 'guardian';
+  UPDATE role_assignment SET expires_at = now() - interval '1 second'
+   WHERE person_id = (ids->>'expired')::uuid AND role = 'guardian';
+  UPDATE assignment_subject s SET valid_from = current_date + 1
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = (ids->>'early')::uuid AND s.player_id = F;
+  UPDATE assignment_subject s SET valid_until = current_date
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = (ids->>'linkend')::uuid AND s.player_id = F;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'fboy')::uuid, 'selfaccess', HIL)
+  RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (v_a, F, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  INSERT INTO passport_consent (player_id, to_school_id) VALUES (F, WES);
+  INSERT INTO player_scouting_consent (player_id, consent_state) VALUES (F, 'granted');
+  -- One honour, so an open passport() has a line to give.
+  INSERT INTO honour (player_id, school_id, team_code, kind, season_id)
+  VALUES (F, HIL, '16XI', 'captain', (SELECT s.id FROM season_for(sa_today(), 'school') s LIMIT 1));
+  RETURN ids || jsonb_build_object('F', F, 'X', X);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The mother-physio's link to F ends today, as db/62's close ends one.
+CREATE OR REPLACE FUNCTION _v119_end_link(p_person uuid, p_player uuid) RETURNS void AS $$
+  UPDATE assignment_subject s SET valid_until = current_date
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = p_person AND a.role = 'guardian' AND s.player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- F's passport consents as the owner reads them: school, '(w)' when withdrawn.
+CREATE OR REPLACE FUNCTION _v119_owner_passport(y jsonb) RETURNS text AS $$
+  SELECT coalesce(string_agg(t, ',' ORDER BY t), '') FROM (
+    SELECT CASE c.to_school_id WHEN '22222222-2222-2222-2222-222222222222'::uuid THEN 'WES'
+                               WHEN (y->>'X')::uuid THEN 'X' ELSE '?' END
+           || CASE WHEN c.withdrawn_at IS NOT NULL THEN '(w)' ELSE '' END AS t
+      FROM passport_consent c WHERE c.player_id = (y->>'F')::uuid) s
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The same, as the CALLER reads it under his own row security (an invoker).
+CREATE OR REPLACE FUNCTION _v119_passport(y jsonb) RETURNS text AS $$
+  SELECT coalesce(string_agg(t, ',' ORDER BY t), '') FROM (
+    SELECT CASE c.to_school_id WHEN '22222222-2222-2222-2222-222222222222'::uuid THEN 'WES'
+                               WHEN (y->>'X')::uuid THEN 'X' ELSE '?' END
+           || CASE WHEN c.withdrawn_at IS NOT NULL THEN '(w)' ELSE '' END AS t
+      FROM passport_consent c WHERE c.player_id = (y->>'F')::uuid) s
+$$ LANGUAGE sql STABLE;
+
+-- F's scouting decision as the caller reads it ('' when he reads none).
+CREATE OR REPLACE FUNCTION _v119_scouting(y jsonb) RETURNS text AS $$
+  SELECT coalesce(string_agg(c.consent_state, ','), '') FROM player_scouting_consent c WHERE c.player_id = (y->>'F')::uuid
+$$ LANGUAGE sql STABLE;
+
+-- The caller names school X for F; 'written' or 'refused'.
+CREATE OR REPLACE FUNCTION _v119_name_x(y jsonb) RETURNS text AS $$
+BEGIN
+  INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'F')::uuid, (y->>'X')::uuid);
+  RETURN 'written';
+EXCEPTION WHEN insufficient_privilege THEN RETURN 'refused';
+END $$ LANGUAGE plpgsql;
+
+-- The caller withdraws F's consent naming p_school: how many rows moved.
+CREATE OR REPLACE FUNCTION _v119_withdraw(y jsonb, p_school uuid) RETURNS int AS $$
+DECLARE n int;
+BEGIN
+  UPDATE passport_consent SET withdrawn_at = now()
+   WHERE player_id = (y->>'F')::uuid AND to_school_id = p_school AND withdrawn_at IS NULL;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+EXCEPTION WHEN insufficient_privilege THEN RETURN -1;
+END $$ LANGUAGE plpgsql;
+-- └── db/119 (section 96) ─────────────────────────────────────────────
+-- ┌── db/120 (section 97). NOTIFICATIONS S4: push switched off, own rows only.
+-- Invented, as the owner. Two Hilton boys on the 18XI, A and B, each with his
+-- own guardian (ga, gb); a second guardian of A (gend), whose link will end
+-- by its date while his assignment stays live; a pupil whose account is A's
+-- own record (so person_is_pupil() is true for him); the side's coach. One medium
+-- recognition notice about A, addressed to ga, as the family's sealed notice
+-- is (D7).
+CREATE OR REPLACE FUNCTION _v120_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
+  ids jsonb; c_a uuid; c_b uuid; n uuid;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '18XI', 'Verify OneTwenty Able', 1201, 'batter', U15) RETURNING id INTO c_a;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '18XI', 'Verify OneTwenty Bold', 1202, 'bowler', U15) RETURNING id INTO c_b;
+  ids := _v71_people('v120', ARRAY[
+    ARRAY['ga',    'guardian', HIL::text, '',     ''],
+    ARRAY['gb',    'guardian', HIL::text, '',     ''],
+    ARRAY['gend',  'guardian', HIL::text, '',     ''],
+    ARRAY['pupil', 'player',   HIL::text, '18XI', c_a::text],
+    ARRAY['coach', 'coach',    HIL::text, '18XI', '']]);
+  PERFORM _v100_link((ids->>'ga')::uuid, HIL, c_a);
+  PERFORM _v100_link((ids->>'gb')::uuid, HIL, c_b);
+  PERFORM _v100_link((ids->>'gend')::uuid, HIL, c_a);
+  INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
+                            required_capability, subject_person_id, recipient_id)
+  VALUES (HIL, '18XI', 'team', 'recognition', 'medium', 'Verify 120', 'Verify 120: a fifty',
+          'news.read', c_a, (ids->>'ga')::uuid)
+  RETURNING id INTO n;
+  RETURN ids || jsonb_build_object('A', c_a, 'B', c_b, 'N', n);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What the caller is offered, as one line: kind, @A or @B for a child, (off).
+CREATE OR REPLACE FUNCTION _v120_choices(y jsonb) RETURNS text AS $$
+  SELECT coalesce(string_agg(c.kind
+           || CASE c.subject_player_id WHEN (y->>'A')::uuid THEN '@A' WHEN (y->>'B')::uuid THEN '@B'
+                                       ELSE CASE WHEN c.subject_player_id IS NULL THEN '' ELSE '@?' END END
+           || CASE WHEN c.push THEN '' ELSE '(off)' END, ','), '')
+    FROM my_alert_choices() c
+$$ LANGUAGE sql STABLE;
+
+-- The link of p_person's to p_player ends by its date: valid_until yesterday,
+-- as db/62's close or the office's dated end leaves it. Not _revoke(): his
+-- assignment stays active and live.
+CREATE OR REPLACE FUNCTION _v120_end_link(p_person uuid, p_player uuid) RETURNS void AS $$
+  UPDATE assignment_subject s SET valid_until = current_date - 1
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = p_person AND a.role = 'guardian' AND s.player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/120 (section 97) ─────────────────────────────────────────────
+-- ┌── db/121 (section 98). The Laws audit of 28 Oct 2026 (Kameel's decisions).
+-- One complete Hilton 2XI fixture, invented, as the owner. A and B bat (both
+-- Hilton boys, rows of their own), C bowls. Innings 0, for F4: 1 innings
+-- start, 2 batters A/B, 3 bowler C; 4 run 1 (stamped A), 5 run 4 (stamped B),
+-- 6 run 1 (stamped B), 7 run 2 (stamped A) — and a pending amendment, filed
+-- by the scorer, to void 4 (the single was a dead ball). Innings 1, for Q2
+-- and F11 (all stamped B): 20 no-ball, waist high; 21 W bowled; 22 no-ball,
+-- front foot; 23 a fair ball not in the over (illegal fielding); 24 W lbw;
+-- 25 no-ball, front foot; 26 no-ball, beamer; 27 W caught; 28 run 0; 29
+-- no-ball of no recorded kind; 30 W bowled. Innings 2, for F7 and F5 (all
+-- stamped A): 40 run 4; 41 run 4 not a boundary (all run); 42 run 6 not a
+-- boundary (overthrows); 43 no-ball, 6 off the bat; 44 W run out, one run
+-- completed, a bye, B out at the striker's end. And M2, for the review's B1
+-- (below, at its rows).
+CREATE OR REPLACE FUNCTION _v121_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  M   uuid := '77777777-0000-0000-0000-000000121001';
+  V_A uuid := 'aaaaaaaa-0000-0000-0000-00000000121a';
+  V_B uuid := 'aaaaaaaa-0000-0000-0000-00000000121b';
+  V_C uuid := 'aaaaaaaa-0000-0000-0000-00000000121c';
+  am  uuid;
+  M2  uuid := '77777777-0000-0000-0000-000000121002';
+  V_D uuid := 'aaaaaaaa-0000-0000-0000-00000000121d';
+  V_E uuid := 'aaaaaaaa-0000-0000-0000-00000000121e';
+  V_F uuid := 'aaaaaaaa-0000-0000-0000-00000000121f';
+  am2 uuid;
+BEGIN
+  INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (V_A, HIL, '2XI', 'V121 Opener',  121, 'batter', (current_date - interval '16 years')::date),
+    (V_B, HIL, '2XI', 'V121 Partner', 122, 'batter', (current_date - interval '16 years')::date),
+    (V_C, HIL, '2XI', 'V121 Seamer',  123, 'bowler', (current_date - interval '16 years')::date);
+  INSERT INTO match (id, school_id, team_code, opponent, starts_at, format, overs, status) VALUES
+    (M, HIL, '2XI', 'Verify 121', '2026-10-24 09:00:00+02', 'T20', 20, 'complete');
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                          striker_id, non_striker_id, bowler_id, dismissed_id, dismissal, payload)
+  SELECT M, HIL, x.k, 1, x.i, '88888888-0000-0000-0000-000000000006', 'verify-121',
+         'v121:' || x.k, x.k, now(), x.kind, x.bt, x.v, x.st, x.ns, x.bw, x.out, x.dis, x.pl
+    FROM (VALUES
+      ( 1, 0, 'innings_start', NULL,  NULL, NULL::uuid, NULL::uuid, NULL::uuid, NULL::uuid, NULL, '{"battingTeam":"Hilton 2XI","bowlingTeam":"Verify 121","overs":20}'::jsonb),
+      ( 2, 0, 'batters', NULL,  NULL, V_A,    V_B,    NULL, NULL, NULL,       '{}'::jsonb),
+      ( 3, 0, 'bowler',  NULL,  NULL, NULL, NULL, V_C,    NULL, NULL,       '{}'::jsonb),
+      ( 4, 0, 'ball',    'run', 1,    V_A,    V_B,    V_C,    NULL, NULL,       '{}'::jsonb),
+      ( 5, 0, 'ball',    'run', 4,    V_B,    V_A,    V_C,    NULL, NULL,       '{}'::jsonb),
+      ( 6, 0, 'ball',    'run', 1,    V_B,    V_A,    V_C,    NULL, NULL,       '{}'::jsonb),
+      ( 7, 0, 'ball',    'run', 2,    V_A,    V_B,    V_C,    NULL, NULL,       '{}'::jsonb),
+      (20, 1, 'ball',    'Nb',  0,    V_B,    V_A,    V_C,    NULL, NULL,       '{"nbType":"height"}'::jsonb),
+      (21, 1, 'ball',    'W',   0,    V_B,    V_A,    V_C,    NULL, 'bowled',   '{}'::jsonb),
+      (22, 1, 'ball',    'Nb',  0,    V_B,    V_A,    V_C,    NULL, NULL,       '{"nbType":"front_foot"}'::jsonb),
+      (23, 1, 'ball',    'run', 0,    V_B,    V_A,    V_C,    NULL, NULL,       '{"notInOver":"illegal_fielding"}'::jsonb),
+      (24, 1, 'ball',    'W',   0,    V_B,    V_A,    V_C,    NULL, 'lbw',      '{}'::jsonb),
+      (25, 1, 'ball',    'Nb',  0,    V_B,    V_A,    V_C,    NULL, NULL,       '{"nbType":"front_foot"}'::jsonb),
+      (26, 1, 'ball',    'Nb',  0,    V_B,    V_A,    V_C,    NULL, NULL,       '{"nbType":"beamer"}'::jsonb),
+      (27, 1, 'ball',    'W',   0,    V_B,    V_A,    V_C,    NULL, 'caught',   '{}'::jsonb),
+      (28, 1, 'ball',    'run', 0,    V_B,    V_A,    V_C,    NULL, NULL,       '{}'::jsonb),
+      (29, 1, 'ball',    'Nb',  0,    V_B,    V_A,    V_C,    NULL, NULL,       '{}'::jsonb),
+      (30, 1, 'ball',    'W',   0,    V_B,    V_A,    V_C,    NULL, 'bowled',   '{}'::jsonb),
+      (40, 2, 'ball',    'run', 4,    V_A,    V_B,    V_C,    NULL, NULL,       '{}'::jsonb),
+      (41, 2, 'ball',    'run', 4,    V_A,    V_B,    V_C,    NULL, NULL,       '{"boundary":false}'::jsonb),
+      (42, 2, 'ball',    'run', 6,    V_A,    V_B,    V_C,    NULL, NULL,       '{"boundary":false}'::jsonb),
+      (43, 2, 'ball',    'Nb',  6,    V_A,    V_B,    V_C,    NULL, NULL,       '{"nbType":"front_foot"}'::jsonb),
+      (44, 2, 'ball',    'W',   1,    V_A,    V_B,    V_C,    V_B,    'run_out',  '{"nbRuns":"byes","outAt":"striker_end"}'::jsonb)
+    ) AS x(k, i, kind, bt, v, st, ns, bw, out, dis, pl);
+  INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+  VALUES (M, HIL, 'v121:4', 'Verify 121: the single was a dead ball', '88888888-0000-0000-0000-000000000006')
+  RETURNING id INTO am;
+  -- The review's B1: M2, D and E bat, F bowls, as stamped. 4–15 D twelve
+  -- fours (48); 16 D a single (49); 17–28 E twelve fours (48); 29 E a
+  -- single (49) — the dead ball; 30 D two (51: D's fifty is noticed as it
+  -- is scored). The amendment voids 29; the route's re-judging puts 30 on E
+  -- (E kept the strike): D 49, E 50.
+  INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (V_D, HIL, '2XI', 'V121 Fourth',  124, 'batter', (current_date - interval '16 years')::date),
+    (V_E, HIL, '2XI', 'V121 Fifth',   125, 'batter', (current_date - interval '16 years')::date),
+    (V_F, HIL, '2XI', 'V121 Sixth',   126, 'bowler', (current_date - interval '16 years')::date);
+  INSERT INTO match (id, school_id, team_code, opponent, starts_at, format, overs, status) VALUES
+    (M2, HIL, '2XI', 'Verify 121 B1', '2026-10-25 09:00:00+02', 'T20', 20, 'complete');
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, ball_type, value,
+                          striker_id, non_striker_id, bowler_id, payload)
+  SELECT M2, HIL, x.k, 1, 0, '88888888-0000-0000-0000-000000000006'::uuid, 'verify-121b',
+         'v121b:' || x.k, x.k, now(), x.kind, x.bt, x.v, x.st, x.ns, x.bw, x.pl
+    FROM (VALUES
+      (1, 'innings_start', NULL::text, NULL::smallint, NULL::uuid, NULL::uuid, NULL::uuid,
+          '{"battingTeam":"Hilton 2XI","bowlingTeam":"Verify 121 B1","overs":20}'::jsonb),
+      (2, 'batters', NULL, NULL, V_D, V_E, NULL, '{}'::jsonb),
+      (3, 'bowler',  NULL, NULL, NULL, NULL, V_F, '{}'::jsonb)) AS x(k, kind, bt, v, st, ns, bw, pl)
+  UNION ALL
+  SELECT M2, HIL, g, 1, 0, '88888888-0000-0000-0000-000000000006'::uuid, 'verify-121b',
+         'v121b:' || g, g, now(), 'ball', 'run',
+         (CASE WHEN g IN (16, 29) THEN 1 WHEN g = 30 THEN 2 ELSE 4 END)::smallint,
+         CASE WHEN g BETWEEN 17 AND 29 THEN V_E ELSE V_D END,
+         CASE WHEN g BETWEEN 17 AND 29 THEN V_D ELSE V_E END, V_F, '{}'::jsonb
+    FROM generate_series(4, 30) g
+   ORDER BY 3;
+  INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+  VALUES (M2, HIL, 'v121b:29', 'Verify 121: E''s single was a dead ball', '88888888-0000-0000-0000-000000000006')
+  RETURNING id INTO am2;
+  RETURN jsonb_build_object('m', M, 'a', V_A, 'b', V_B, 'c', V_C, 'am', am,
+                            'm2', M2, 'd', V_D, 'e', V_E, 'am2', am2);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A match's milestone notices, as the owner reads them: "<who> <kind>
+-- <live|retracted> <the notification's body>" for each, in order.
+CREATE OR REPLACE FUNCTION _v121_notices(p_match uuid, p_names jsonb) RETURNS text AS $$
+  SELECT coalesce(string_agg(coalesce(p_names ->> mn.player_id::text, '?') || ' ' || mn.kind || ' '
+                             || CASE WHEN mn.retracted_at IS NULL THEN 'live' ELSE 'retracted' END
+                             || CASE WHEN n.id IS NULL THEN '' WHEN n.retracted_at IS NULL THEN ' (notice up)' ELSE ' (notice down)' END
+                             || ': ' || coalesce(n.body, '-'),
+                             '; ' ORDER BY coalesce(p_names ->> mn.player_id::text, '?'), mn.kind), '')
+    FROM milestone_notice mn LEFT JOIN notification n ON n.id = mn.notice_id
+   WHERE mn.match_id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The review's B2: tools/sql/laws121-precheck.sql's query, word for word
+-- between its markers (rejudge.test.mjs holds the two the same).
+CREATE OR REPLACE FUNCTION _v121_precheck()
+RETURNS TABLE (match_id uuid, fixture_date date, school text, side text, now_stands integer, now_saved integer) AS $$
+-- precheck:begin
+WITH w AS (
+  -- A bowler's dismissal on a delivery, in a match whose format gives free
+  -- hits: the dismissals a free hit saves (dismissal_stands_on_free_hit()).
+  SELECT x.match_id,
+         -- The old rule (db/54): the last earlier live delivery of the innings
+         -- that was not a wide was a no-ball, of any kind.
+         coalesce((SELECT p.ball_type IS NOT DISTINCT FROM 'Nb'
+                     FROM ball_event_live p
+                    WHERE p.match_id = x.match_id AND p.innings = x.innings AND p.seq < x.seq
+                      AND p.kind = 'ball' AND p.ball_type IS DISTINCT FROM 'Wd'
+                    ORDER BY p.seq DESC LIMIT 1), false) AS old_free_hit,
+         -- The new (db/121): the last earlier live delivery of the innings that
+         -- counts in the over or earns a free hit (a no-ball of nbType
+         -- front_foot, or of none recorded) was a no-ball.
+         coalesce((SELECT p.ball_type IS NOT DISTINCT FROM 'Nb'
+                     FROM ball_event_live p
+                    WHERE p.match_id = x.match_id AND p.innings = x.innings AND p.seq < x.seq
+                      AND p.kind = 'ball'
+                      AND (ball_counts_in_over(p.ball_type, p.payload)
+                           OR (p.ball_type = 'Nb' AND coalesce(p.payload ->> 'nbType', 'front_foot') = 'front_foot'))
+                    ORDER BY p.seq DESC LIMIT 1), false) AS new_free_hit
+    FROM ball_event_live x
+   WHERE x.kind = 'ball'
+     AND ball_is_wicket(x.ball_type, x.dismissal)
+     AND NOT dismissal_stands_on_free_hit(x.dismissal)
+     AND match_free_hits_apply(x.match_id)
+)
+SELECT w.match_id,
+       (m.starts_at AT TIME ZONE 'Africa/Johannesburg')::date               AS fixture_date,
+       s.code                                                               AS school,
+       m.team_code                                                          AS side,
+       count(*) FILTER (WHERE w.old_free_hit AND NOT w.new_free_hit)::int   AS now_stands,
+       count(*) FILTER (WHERE w.new_free_hit AND NOT w.old_free_hit)::int   AS now_saved
+  FROM w
+  JOIN match m  ON m.id = w.match_id
+  JOIN school s ON s.id = m.school_id
+ WHERE w.old_free_hit <> w.new_free_hit
+ GROUP BY w.match_id, m.starts_at, s.code, m.team_code
+ ORDER BY 2, 3, 4, 1
+-- precheck:end
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/121 (section 98) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -11875,6 +12254,10 @@ BEGIN
     -- 'fixture.read' is the capability its notices require of their reader.
     -- Not the application's to call (only db/72's triggers call it), so no
     -- credential reaches it.
+    -- my_alert_choices (db/120, NOTIFICATIONS S4): app_holds('fixture.read')
+    -- to offer the caller his own "fixtures moved" switch; answers nothing at
+    -- all under a pad credential (`AND NOT app_pad_scoped()` before it asks),
+    -- takes no argument and reads no one but the caller.
     -- my_child_fixtures (db/100): the fixtures the caller's own live links'
     -- children are on, asked of app_can('fixture.read', …, <the child>, …).
     -- Under pad scope app_can() answers only the credential's own match, so
@@ -11895,12 +12278,19 @@ BEGIN
     -- result_staff (db/114): asks 'scoring.edit' among the capabilities that
     -- make a reader "staff" for D11's words, and answers false under pad scope
     -- before it asks anything (NOT app_pad_scoped()); nobody's to call.
+    -- ball_event_payload_seen (db/118): a payload handed in, answered back
+    -- with a retirement's or a bowler change's reason masked unless the
+    -- caller holds fixture.read
+    -- at that boy's school, asked with the event's own match as the
+    -- fixture, and is not platform-wide (READERS Q2, 28 Oct). Under pad
+    -- scope app_can() answers only the credential's own match; it can only
+    -- return the payload it was given, or less.
     -- safeguarding_concern_raise (db/116, READERS Q11): fixture.read on a
     -- fixture between the reporter's school and the other side's boy's, to
     -- name a boy on that sheet; refused outright under a pad credential
     -- (`AND NOT app_pad_scoped()` before it asks).
-    PERFORM _assert(detail = 'competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
-                             || 'match_playing_conditions,match_result_readable,my_child_fixtures,my_own_sheet_fixtures,my_own_side_fixtures,pad_resume_issue,pad_resume_reclaim,progression_check,'
+    PERFORM _assert(detail = 'ball_event_payload_seen,competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
+                             || 'match_playing_conditions,match_result_readable,my_alert_choices,my_child_fixtures,my_own_sheet_fixtures,my_own_side_fixtures,pad_resume_issue,pad_resume_reclaim,progression_check,'
                              || 'result_official_notices,result_staff,safeguarding_concern_raise,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_verify_takeover,trip_fixture_driver_only',
       format('db/50 (definers): the definer functions asking a pad capability by name are %s — a new one needs looking at', detail));
@@ -17297,7 +17687,8 @@ $v49$;
     PERFORM _assert(got = 'l1=home_win,runs,4,play,home l2=home_win,runs,3,play,home l3=away_win,wickets,10,play,away',
       format('db/73 (par): the league''s results read %s', got));
     -- ...and the three outcomes and the no-par no result, on the friendlies:
-    -- level (a tie), above (won by wickets in hand), no par (no result)
+    -- level (a tie), above (won by the runs ahead of par: db/121, Kameel's
+    -- decision of 28 Oct 2026, the Laws audit F10), no par (no result)
     PERFORM _as(U_SARAH);
     SELECT string_agg(x.label || '=' || concat_ws(',', r2.outcome, coalesce(r2.margin_kind, '-'), coalesce(r2.margin::text, '-'),
                       coalesce(r2.winner_side, '-')), ' ' ORDER BY x.label) INTO got
@@ -17305,7 +17696,7 @@ $v49$;
                    ('f4', (ids->>'f4')::uuid), ('f5', (ids->>'f5')::uuid)) AS x(label, m), LATERAL match_result(x.m) r2;
     -- (faced) F4 is F2 under a document asking two overs a side: one over
     -- faced, so no result, though its allotment was two
-    PERFORM _assert(got = 'f1=tie,-,-,- f2=away_win,wickets,10,away f3=no_result,-,-,- f4=no_result,-,-,- f5=in_progress,-,-,-',
+    PERFORM _assert(got = 'f1=tie,-,-,- f2=away_win,runs,2,away f3=no_result,-,-,- f4=no_result,-,-,- f5=in_progress,-,-,-',
       format('db/73 (par, faced): the friendlies read %s', got));
 
     -- (method) the words' suffix: the chase names the method its revised
@@ -19526,7 +19917,8 @@ $v49$;
   --   (sod)       the 2XI coach (no broadcast.publish), Westville's publisher
   --               for Hilton's post, and the director of sport for her own
   --               post cannot approve; the table refuses a requester approving
-  --   (scan)      a post naming a pupil by full name, or by known-as, is
+  --   (scan)      a post naming a pupil by full name, by known-as, by his
+  --               surname alone or by his first name alone (db/118) is
   --               refused names_pupils with a count — and no name anywhere in
   --               the answer; news_public_check() gives the count to the
   --               author and the school's publishers, and nobody else
@@ -19558,14 +19950,16 @@ $v49$;
     U_DOC  uuid := '88888888-0000-0000-0000-000000000003';   -- news.read, nothing else here
     C_POST uuid := '0c000000-0000-0000-0000-000000000003';   -- the league notice (competition)
     D_POST uuid := '0c000000-0000-0000-0000-000000000004';   -- Sarah's draft
-    P1 uuid; P2 uuid; P3 uuid; S1 uuid; v_post uuid;
+    P1 uuid; P2 uuid; P3 uuid; P4 uuid; P5 uuid; S1 uuid; v_post uuid;
     v_ok boolean; v_reason text; v_names int; n int; j jsonb; v_list text;
   BEGIN
     PERFORM _seed_83();
 
     PERFORM _as(U_C2);
+    -- P1 names no school: since db/118 the boys of the schools Hilton plays are
+    -- scanned too, and this file names some of Westville's after their school.
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
-    VALUES ('team', HIL, '2XI', 'Second XI through to the final', 'The side beat Westville by six wickets on Saturday.', now())
+    VALUES ('team', HIL, '2XI', 'Second XI through to the final', 'The side won by six wickets on Saturday.', now())
     RETURNING id INTO P1;
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
     VALUES ('team', HIL, '2XI', 'A hundred on Saturday', 'Well batted, JAMES   whitfield — the first of the season.', now())
@@ -19573,6 +19967,14 @@ $v49$;
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
     VALUES ('team', HIL, '2XI', 'Four wickets', 'Bekks took four for twelve.', now())
     RETURNING id INTO P3;
+    -- db/118: a surname alone, and a first name alone (James Whitfield has no
+    -- known-as), each name one pupil.
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Five for twelve', 'PILLAY bowled beautifully on Saturday.', now())
+    RETURNING id INTO P4;
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Well done', 'Well batted, james: the first of the season.', now())
+    RETURNING id INTO P5;
     PERFORM _as(U_SARAH);
     INSERT INTO news_post (scope, school_id, title, body, published_at)
     VALUES ('school', HIL, 'Pavilion open on Saturday', 'Teas from three.', now())
@@ -19587,7 +19989,7 @@ $v49$;
     SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_request(C_POST) r;
     PERFORM _assert(NOT v_ok AND v_reason = 'scope_not_public', format('§62 (request): a competition post was asked for (%s %s)', v_ok, v_reason));
     PERFORM _as(U_C2);
-    FOREACH v_post IN ARRAY ARRAY[P1, P2, P3] LOOP
+    FOREACH v_post IN ARRAY ARRAY[P1, P2, P3, P4, P5] LOOP
       SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_request(v_post) r;
       PERFORM _assert(v_ok, format('§62 (request): the coach could not ask for %s (%s)', v_post, v_reason));
     END LOOP;
@@ -19619,6 +20021,13 @@ $v49$;
     SELECT r.ok, r.reason, r.names INTO v_ok, v_reason, v_names FROM news_public_approve(P3) r;
     PERFORM _assert(NOT v_ok AND v_reason = 'names_pupils' AND v_names = 1,
       format('§62 (scan): a post naming a pupil by his known-as answered %s %s %s', v_ok, v_reason, v_names));
+    SELECT r.ok, r.reason, r.names, to_jsonb(r) INTO v_ok, v_reason, v_names, j FROM news_public_approve(P4) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'names_pupils' AND v_names = 1,
+      format('§62 (scan): a post naming a pupil by his surname alone answered %s %s %s', v_ok, v_reason, v_names));
+    PERFORM _assert(j::text !~* 'pillay|aaaaaaaa', format('§62 (scan): the surname refusal carries a name: %s', j));
+    SELECT r.ok, r.reason, r.names INTO v_ok, v_reason, v_names FROM news_public_approve(P5) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'names_pupils' AND v_names = 1,
+      format('§62 (scan): a post naming a pupil by his first name alone answered %s %s %s', v_ok, v_reason, v_names));
     PERFORM _assert(news_public_check(P2) = 1 AND news_public_check(P1) = 0, '§62 (scan): the publisher''s check is not 1 and 0');
     PERFORM _as(U_C2);
     PERFORM _assert(news_public_check(P2) = 1, '§62 (scan): the author cannot see his post''s count');
@@ -19647,8 +20056,9 @@ $v49$;
     SELECT string_agg(k, ',' ORDER BY k) INTO v_list FROM jsonb_object_keys(j) k;
     PERFORM _assert(v_list = 'body,id,published_at,school,team_code,title', format('§62 (approve): the read''s columns are %s', v_list));
     PERFORM _assert(strpos(j::text, U_C2::text) = 0, '§62 (approve): the author''s id is in the row');
-    SELECT string_agg(CASE x.id WHEN P1 THEN 'p1' WHEN P2 THEN 'p2' WHEN P3 THEN 'p3' WHEN S1 THEN 's1' END, ',') INTO v_list
-      FROM public_news(20) x WHERE x.id IN (P1, P2, P3, S1);
+    SELECT string_agg(CASE x.id WHEN P1 THEN 'p1' WHEN P2 THEN 'p2' WHEN P3 THEN 'p3' WHEN P4 THEN 'p4' WHEN P5 THEN 'p5'
+                                WHEN S1 THEN 's1' END, ',') INTO v_list
+      FROM public_news(20) x WHERE x.id IN (P1, P2, P3, P4, P5, S1);
     PERFORM _assert(v_list = 'p1', format('§62 (approve): the home page answers %s (only p1 is approved)', v_list));
 
     -- (edited)
@@ -22895,7 +23305,9 @@ $v49$;
     -- (team)
     PERFORM _as((y->>'coach')::uuid);
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
-    VALUES ('team', V_HIL, 'U15A', 'Verify 101 nets', 'Nets at three on Thursday.', now()) RETURNING id INTO T;
+    -- Not 'Verify ...': this file's own pupils are called Verify, and since
+    -- db/118 any word of a pupil's name keeps a post off the home page.
+    VALUES ('team', V_HIL, 'U15A', 'Section 78 nets', 'Nets on Thursday.', now()) RETURNING id INTO T;
     PERFORM _assert(jsonb_array_length(_notices_91(T)) = 1, '§78 (team): the post did not write one notice');
     FOREACH k IN ARRAY ARRAY['aboy', 'aparent', 'coach', 'manager', 'assistant', 'director'] LOOP
       PERFORM _as((y->>k)::uuid);
@@ -22941,7 +23353,7 @@ $v49$;
     SELECT r.ok, r.reason INTO v_ok, v_reason FROM news_public_approve(T) r;
     PERFORM _assert(v_ok, format('§78 (public): the director of sport could not approve the team post (%s)', v_reason));
     PERFORM set_config('app.user_id', '', true);
-    PERFORM _assert((SELECT count(*) FROM public_news(20) x WHERE x.id = T AND x.team_code = 'U15A' AND x.title = 'Verify 101 nets') = 1,
+    PERFORM _assert((SELECT count(*) FROM public_news(20) x WHERE x.id = T AND x.team_code = 'U15A' AND x.title = 'Section 78 nets') = 1,
       '§78 (public): the approved team post is not on the home page');
 
     -- (sheet)
@@ -27365,10 +27777,11 @@ $v49$;
   --                  is refused, and so is any other kind but system;
   --                  system to the thirteen-year-old is as it was
   --   (Q10 league)   the league reads no disciplinary_record row; through
-  --                  competition_discipline_records() it reads r1 and r2
-  --                  (its competition's fixture, both schools) and not r3
-  --                  (no competition); one access_log row per school; another
-  --                  school's league reads none; the office reads none there
+  --                  competition_discipline_records() it reads none of r1,
+  --                  r2 (a competition with no organiser) or r3 (no
+  --                  competition), being platform-wide (db/118; §95 proves
+  --                  the school-scoped league), and nothing is logged;
+  --                  another school's league reads none; the office none
   --   (Q5 coach)     the 16XI coach reads h's records through
   --                  side_discipline_records() (r1, r3), not the table; the
   --                  read is logged; the 15XI coach reads none until h moves
@@ -27519,19 +27932,23 @@ $v49$;
     got := _v116_notice((y->>'office')::uuid, 'gossip');
     PERFORM _assert(got = '23514:notification_kind_known', format('§93 (Q8 notice): a kind outside the list answered %s', got));
 
-    -- (Q10 league)
+    -- (Q10 league). db/116 let this platform-wide league read r1 and r2
+    -- through its door. db/118 (Kameel, 28 Oct 2026: "Only its own
+    -- competitions: refuse a platform-wide caller") closes the door to a
+    -- platform-wide caller, and this competition names no organiser, which
+    -- opens it to nobody: it reads nothing, and nothing is logged. §95 proves
+    -- a school-scoped league reads its own competition's records, logged per
+    -- school.
     PERFORM _as(U_LEAGUE);
     SELECT count(*) INTO n FROM disciplinary_record WHERE id IN ((y->>'r1')::uuid, (y->>'r2')::uuid, (y->>'r3')::uuid);
     PERFORM _assert(n = 0, format('§93 (Q10 league): the league read %s disciplinary_record row(s) by standing', n));
     got := (SELECT string_agg(z.x, ',' ORDER BY z.x) FROM (SELECT CASE r.id WHEN (y->>'r1')::uuid THEN 'r1' WHEN (y->>'r2')::uuid THEN 'r2' WHEN (y->>'r3')::uuid THEN 'r3' END AS x
               FROM competition_discipline_records((y->>'c')::uuid) r) z);
-    PERFORM _assert(got = 'r1,r2', format('§93 (Q10 league): through its door the league read %s', coalesce(got, 'nothing')));
+    PERFORM _assert(got IS NULL, format('§93 (Q10 league): through its door the platform-wide league read %s (db/118)', got));
     SELECT count(*) INTO n FROM competition_discipline_records(NULL) r WHERE r.id = (y->>'r3')::uuid;
     PERFORM _assert(n = 0, '§93 (Q10 league): the league read a record from a match in no competition');
-    PERFORM _assert(_v116_fact('logged', U_LEAGUE, HIL) LIKE '%' || (y->>'h') || '%'
-                    AND _v116_fact('logged', U_LEAGUE, WES) LIKE '%' || (y->>'a') || '%'
-                    AND _v116_fact('logged', U_LEAGUE, HIL) NOT LIKE '%' || (y->>'a') || '%',
-      format('§93 (Q10 league): the reads were not logged per school: Hilton %s, Westville %s',
+    PERFORM _assert(_v116_fact('logged', U_LEAGUE, HIL) = '0:' AND _v116_fact('logged', U_LEAGUE, WES) = '0:',
+      format('§93 (Q10 league): a read that returned nothing was logged: Hilton %s, Westville %s',
              _v116_fact('logged', U_LEAGUE, HIL), _v116_fact('logged', U_LEAGUE, WES)));
     FOREACH got IN ARRAY ARRAY['wesleague', 'office'] LOOP
       PERFORM _as((y->>got)::uuid);
@@ -28150,6 +28567,803 @@ $v49$;
   PERFORM set_config('app.effective_on', '', true);
   -- └── end of section 94
   -- └── db/117 (section 94) ──────────────────────────────────────────
+
+
+  -- ┌── db/118 (section 95) ──────────────────────────────────────────
+  -- Names, login emails, retirements and bowler changes (db/118). Sections
+  -- 92-94 are db/115-117's; 96 and 97 are kept for db/119 and db/120.
+  --
+  --   (scan)    the surname column is read on its own: a pupil whose stored
+  --             surname is not in his full name is still found by it; a
+  --             surname particle alone ("van") names nobody
+  --   (email)   a pupil's login email (linked to a player row, or holding a
+  --             player role) reads NULL to finance and sponsorship, which
+  --             hold user.read; the office (guardian.link.manage) and the
+  --             pupil himself read it; an adult's reads as before; another
+  --             school's office is not this school's
+  --   (retire)  a retirement that is not a dismissal reads "not out" to a
+  --             reader with no fixture.read at the retiring boy's school,
+  --             and as written to one with it; a retired-out keeps its
+  --             reason; a typed name is at no school; nothing else moves
+  --   (scan)    and a word of a name written with punctuation ("Zungu, S",
+  --             "Mary-Anne"), and an opponent's boy (a fixture with his school)
+  --   (word)    the author is told the word of his post that matched, as he
+  --             wrote it; another school's office is told nothing
+  --   (suspension) a Law 41 suspension's ground, as a bowler change's reason
+  --   (bowler)  a bowler change keeps its reason for a reader with
+  --             fixture.read at the bowler's school, and loses it (the
+  --             change itself kept) for the other school and a typed name
+  --   (two letters) a two-letter first name alone is caught, and the
+  --             author told it; "Jo" is not found inside "Johannesburg"
+  --   (email)   and the director of sport and the platform account read
+  --             NULL; the principal reads it (the office alone, 28 Oct)
+  --   (retire)  and a team-mate at his school reads "hurt" (Q1 as built)
+  --   (platform) the league account and the owner's key read "not out", no
+  --             bowler change's reason and no suspension's ground
+  --   (league)  a platform-wide league and the owner's key read no conduct
+  --             record; a school-scoped league reads its own competition's,
+  --             logged per school, and no other; a competition nobody
+  --             organises opens to nobody
+  --   (doors)   the three definers are the application's and not PUBLIC's
+  --
+  -- Falsified once each, by replacing a function in the database and
+  -- watching the section go red at its own assertion: the surname column
+  -- dropped from the scan (scan); the pupil test made to return the email
+  -- (email: finance read it); the school test dropped from the payload
+  -- (retire: Westville read 'hurt').
+  DECLARE
+    U_C2_91  uuid := '88888888-0000-0000-0000-00000000000a';   -- 2XI coach, Hilton
+    U_WCOACH uuid := '88888888-0000-0000-0000-00000000001a';   -- 1XI coach, Westville
+    P91 uuid; v_email text; v_pay jsonb; v_post91 uuid; z jsonb; got text; n int;
+    P_PILLAY uuid := 'aaaaaaaa-0000-0000-0000-000000000005';
+  BEGIN
+    -- (scan) as the 2XI coach writes and asks; the director of sport approves.
+    PERFORM _as(U_C2_91);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Van', 'van', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 0, '§95 (scan): a surname particle alone named a pupil');
+    SELECT p.id INTO P91 FROM player p WHERE p.school_id = HIL AND p.full_name = 'K Dlamini';
+    PERFORM _assert(P91 IS NOT NULL, '§95 (scan): K Dlamini is not seeded at Hilton');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _seed_118_surname(P91, 'Zwelithini');
+    PERFORM _as(U_C2_91);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Zwelithini', 'zwelithini', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 1, '§95 (scan): the stored surname was not read');
+    -- A name written with a comma, and a hyphenated first name: each word is
+    -- a word of his name.
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _seed_118_name(P_ADULT, 'Zungu, S');
+    PERFORM _seed_118_name(P_U13, 'Mary-Anne Mkhwanazi');
+    PERFORM _as(U_C2_91);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Zungu', 'zungu', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 1, '§95 (scan): a surname written "Zungu," was not found');
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Anne', 'anne', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 1, '§95 (scan): half of "Mary-Anne" was not found');
+    -- (two letters) Kameel, 28 Oct 2026: "Catch two-letter names too". A
+    -- first name of two letters alone is caught; whole-word, so "Jo" is not
+    -- found inside "Johannesburg".
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _seed_118_name(P_U13, 'Jo Mkhwanazi');
+    PERFORM _as(U_C2_91);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Well played', 'Well played Jo, a fine fifty', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 1, '§95 (two letters): a two-letter first name alone was not caught');
+    PERFORM _assert(news_public_word(v_post91) = 'Jo',
+      format('§95 (two letters): the author was told %s, not the word Jo', news_public_word(v_post91)));
+    -- No other word of this post may be a staged boy's name: "Away" is one
+    -- (§75's and §77's Westville 'Verify ... Away ...' boys), which is the designed
+    -- common-word refusal, not this case.
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Fixtures', 'The 2XI travel to Johannesburg on Saturday', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) = 0,
+      format('§95 (two letters): the post was refused on the word %s ("Jo" must not be found inside "Johannesburg")',
+             coalesce(news_public_word(v_post91), '(none)')));
+    -- An opponent's boy (Kameel, 22 Oct): Westville's D Mkhize, with a
+    -- Hilton-Westville fixture tomorrow. The author is told the word of his
+    -- post that matched, as he wrote it; somebody else is told nothing.
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _seed_118_fixture(HIL, WES);
+    PERFORM _as(U_C2_91);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL, '2XI', 'Opponents', 'Watch out for mKhize on Saturday', now()) RETURNING id INTO v_post91;
+    PERFORM _assert(news_public_check(v_post91) >= 1, '§95 (scan): a post naming an opponent''s boy was not caught');
+    PERFORM _assert(news_public_word(v_post91) = 'mKhize',
+      format('§95 (word): the author was not told the word as he wrote it (%s)', news_public_word(v_post91)));
+    PERFORM _as(U_WES_ADM);
+    PERFORM _assert(news_public_word(v_post91) IS NULL, '§95 (word): somebody neither the author nor a publisher was told the word');
+    PERFORM _as(U_C2_91);
+
+    -- (email)
+    PERFORM _as(U_BURSAR);   -- finance and sponsorship: user.read, nothing more
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
+    PERFORM _assert(v_email IS NULL, format('§95 (email): finance read a pupil''s login email (%s)', v_email));
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_PUPIL;
+    PERFORM _assert(v_email IS NULL, format('§95 (email): finance read the email of an account holding a player role (%s)', v_email));
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_C2_91;
+    PERFORM _assert(v_email = 'coach2@example.invalid', format('§95 (email): finance lost an adult''s email (%s)', v_email));
+    PERFORM _as(U_REGISTRAR);
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
+    PERFORM _assert(v_email = 'pillay@example.invalid', format('§95 (email): the office lost a pupil''s email (%s)', v_email));
+    PERFORM _as(U_SELF);
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
+    PERFORM _assert(v_email = 'pillay@example.invalid', format('§95 (email): a pupil lost his own email (%s)', v_email));
+    PERFORM _as(U_WES_ADM);
+    PERFORM _assert(app_user_email_seen(U_SELF, HIL, 'x@example.invalid') IS NULL,
+      '§95 (email): Westville''s office read a Hilton pupil''s email');
+    -- Kameel, 28 Oct 2026: "The office alone, as A4 says". The director of
+    -- sport appoints staff (user.role.assign) and reads the pupil's account
+    -- with no email on it; so does the platform account; the principal,
+    -- who holds guardian.link.manage, reads it.
+    PERFORM _as(U_SARAH);
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
+    PERFORM _assert(v_email IS NULL, format('§95 (email): the director of sport read a pupil''s login email (%s)', v_email));
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_C2_91;
+    PERFORM _assert(v_email = 'coach2@example.invalid', format('§95 (email): the director of sport lost an adult''s email (%s)', v_email));
+    -- The platform account as itself: SCRBRD-012's third support session (ticket
+    -- 4413) is still live and lends it the office's role at Hilton, under
+    -- which it reads what the office reads, on the school's record (db/22).
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _seed_118_end_support(U_PLAT);
+    PERFORM _as(U_PLAT);
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
+    PERFORM _assert(v_email IS NULL, format('§95 (email): the platform account read a pupil''s login email (%s)', v_email));
+    PERFORM _as(U_HEAD_M);
+    SELECT app_user_email_seen(u.id, u.school_id, u.email) INTO v_email FROM app_user u WHERE u.id = U_SELF;
+    PERFORM _assert(v_email = 'pillay@example.invalid', format('§95 (email): the principal lost a pupil''s email (%s)', v_email));
+
+    -- (retire)
+    v_pay := jsonb_build_object('batter', P_PILLAY, 'reason', 'hurt');
+    PERFORM _as(U_WCOACH);
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'not out',
+      '§95 (retire): Westville''s coach read a Hilton boy retired hurt');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'batter' = P_PILLAY::text,
+      '§95 (retire): the batter moved');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', 'W', NULL, jsonb_build_object('batter', P_PILLAY, 'reason', 'out'))->>'reason' = 'out',
+      '§95 (retire): a retired-out lost its reason');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, jsonb_build_object('batter', P_WES, 'reason', 'hurt'))->>'reason' = 'hurt',
+      '§95 (retire): Westville''s coach lost his own boy''s reason');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'ball', NULL, NULL, jsonb_build_object('reason', 'injury')) = jsonb_build_object('reason', 'injury'),
+      '§95 (retire): a payload that is not a retirement moved');
+    -- (bowler) A Hilton bowler replaced mid-over because he is injured: the
+    -- change reaches Westville, the reason does not; Westville's own bowler's
+    -- reason reaches Westville.
+    PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_PILLAY, jsonb_build_object('reason', 'injury')) ? 'reason'),
+      '§95 (bowler): Westville''s coach read why a Hilton bowler was replaced');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_WES, jsonb_build_object('reason', 'injury'))->>'reason' = 'injury',
+      '§95 (bowler): Westville''s coach lost why his own bowler was replaced');
+    PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, NULL, jsonb_build_object('bowler', P_PILLAY::text, 'reason', 'suspended')) ? 'reason'),
+      '§95 (bowler): a Hilton bowler named in the payload carried his reason to Westville');
+    -- A Law 41 suspension: Westville reads that a Hilton bowler was suspended,
+    -- and for how long, not on what ground.
+    v_pay := ball_event_payload_seen(M_OTHER, 'bowler_suspended', NULL, P_PILLAY, jsonb_build_object('reason', 'beamers', 'scope', 'match'));
+    PERFORM _assert(NOT (v_pay ? 'reason') AND v_pay->>'scope' = 'match',
+      format('§95 (suspension): Westville''s coach read the ground of a Hilton bowler''s suspension, or lost its scope: %s', v_pay));
+    v_pay := jsonb_build_object('batter', P_PILLAY, 'reason', 'hurt');
+    PERFORM _as(U_C2_91);
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'hurt',
+      '§95 (retire): Hilton''s coach lost his own boy''s reason');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, jsonb_build_object('batter', 'A Typed Name', 'reason', 'hurt'))->>'reason' = 'not out',
+      '§95 (retire): a typed name read as hurt');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_PILLAY, jsonb_build_object('reason', 'injury'))->>'reason' = 'injury',
+      '§95 (bowler): Hilton''s coach lost why his own bowler was replaced');
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'bowler_suspended', NULL, P_PILLAY, jsonb_build_object('reason', 'beamers', 'scope', 'match'))->>'reason' = 'beamers',
+      '§95 (suspension): Hilton''s coach lost the ground of his own bowler''s suspension');
+    PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_WES, jsonb_build_object('reason', 'injury')) ? 'reason'),
+      '§95 (bowler): Hilton''s coach read why a Westville bowler was replaced');
+    PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, NULL, jsonb_build_object('bowler', 'A Typed Bowler', 'reason', 'injury')) ? 'reason'),
+      '§95 (bowler): a typed bowler''s reason reached a reader');
+    -- The office at his school. His own guardian is walked in smoke-cockpit
+    -- (group 7); earlier sections here change that guardian's link.
+    PERFORM _as(U_REGISTRAR);
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'hurt',
+      '§95 (retire): the office at his school lost the reason');
+    -- Q1 as built (Kameel, 28 Oct 2026: "Everyone at his school (as
+    -- built)"): a team-mate at his school, with his player role's
+    -- fixture.read, reads "hurt" too.
+    PERFORM _as(U_PUPIL);
+    PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason' = 'hurt',
+      '§95 (retire): a reader at his school lost the reason (Q1: the school is the boundary)');
+    -- (platform) Kameel, 28 Oct 2026: a platform-wide caller never unmasks.
+    -- The league account and the owner's key hold fixture.read on an
+    -- assignment naming no school, which app_can() passes for every school.
+    FOREACH z IN ARRAY ARRAY[to_jsonb(U_LEAGUE), to_jsonb(U_OWNER)] LOOP
+      PERFORM _as((z #>> '{}')::uuid);
+      PERFORM _assert(app_is_platform_wide(), format('§95 (platform): %s is not platform-wide', z));
+      got := ball_event_payload_seen(M_OTHER, 'retire', NULL, NULL, v_pay)->>'reason';
+      PERFORM _assert(got = 'not out', format('§95 (platform): a platform-wide caller read a retirement as %s', got));
+      PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler', NULL, P_PILLAY, jsonb_build_object('reason', 'injury')) ? 'reason'),
+        '§95 (platform): a platform-wide caller read why a bowler was replaced');
+      PERFORM _assert(NOT (ball_event_payload_seen(M_OTHER, 'bowler_suspended', NULL, P_PILLAY, jsonb_build_object('reason', 'beamers', 'scope', 'match')) ? 'reason'),
+        '§95 (platform): a platform-wide caller read the ground of a suspension');
+      PERFORM _assert(ball_event_payload_seen(M_OTHER, 'retire', 'W', NULL, jsonb_build_object('batter', P_PILLAY, 'reason', 'out'))->>'reason' = 'out',
+        '§95 (platform): a retired-out lost its reason for a platform-wide caller');
+    END LOOP;
+
+    -- (league) Kameel, 28 Oct 2026: "Only its own competitions: refuse a
+    -- platform-wide caller". The seed's league account is platform-wide, and
+    -- so is the owner's key: neither reads any conduct record through the
+    -- door, whichever competition is asked. A league scoped to Hilton reads
+    -- its own competition's two records (a Hilton boy's and a Westville
+    -- boy's), logged in each boy's school, and nothing of Westville's league
+    -- or of the competition nobody organises; Westville's league reads its
+    -- own. The competition nobody organises opens to nobody.
+    PERFORM set_config('app.user_id', '', true);
+    z := _seed_118_league();
+    FOREACH got IN ARRAY ARRAY[U_LEAGUE::text, U_OWNER::text] LOOP
+      PERFORM _as(got::uuid);
+      SELECT count(*) INTO n FROM competition_discipline_records(NULL);
+      PERFORM _assert(n = 0, format('§95 (league): a platform-wide caller read %s conduct record(s)', n));
+      SELECT count(*) INTO n FROM (SELECT 1 FROM competition_discipline_records((z->>'c_hil')::uuid)
+                                   UNION ALL SELECT 1 FROM competition_discipline_records((z->>'c_wes')::uuid)
+                                   UNION ALL SELECT 1 FROM competition_discipline_records((z->>'c_none')::uuid)) q;
+      PERFORM _assert(n = 0, format('§95 (league): a platform-wide caller read %s record(s) of a named competition', n));
+      PERFORM _assert(_v116_fact('logged', got::uuid, HIL) = '0:',
+        format('§95 (league): a platform-wide read that returned nothing was logged (%s)', _v116_fact('logged', got::uuid, HIL)));
+    END LOOP;
+    PERFORM _as((z->>'hilleague')::uuid);
+    PERFORM _assert(NOT app_is_platform_wide(), '§95 (league): Hilton''s league is platform-wide');
+    got := (SELECT string_agg(x.k, ',' ORDER BY x.k) FROM (
+              SELECT CASE r.id WHEN (z->>'r_hil')::uuid THEN 'r_hil' WHEN (z->>'r_hil_w')::uuid THEN 'r_hil_w'
+                               WHEN (z->>'r_wes')::uuid THEN 'r_wes' WHEN (z->>'r_none')::uuid THEN 'r_none' ELSE 'other' END AS k
+                FROM competition_discipline_records(NULL) r) x);
+    PERFORM _assert(got = 'r_hil,r_hil_w', format('§95 (league): Hilton''s league read %s, not its own competition''s two', coalesce(got, 'nothing')));
+    SELECT count(*) INTO n FROM competition_discipline_records((z->>'c_wes')::uuid);
+    PERFORM _assert(n = 0, format('§95 (league): Hilton''s league read %s of Westville''s league''s records', n));
+    SELECT count(*) INTO n FROM competition_discipline_records((z->>'c_none')::uuid);
+    PERFORM _assert(n = 0, format('§95 (league): a competition nobody organises opened %s record(s) to Hilton''s league', n));
+    PERFORM _assert(_v116_fact('logged', (z->>'hilleague')::uuid, HIL) LIKE '%' || P_PILLAY::text || '%'
+                    AND _v116_fact('logged', (z->>'hilleague')::uuid, WES) LIKE '%' || P_WES::text || '%'
+                    AND _v116_fact('logged', (z->>'hilleague')::uuid, HIL) NOT LIKE '%' || P_WES::text || '%',
+      format('§95 (league): the reads were not logged per school: Hilton %s, Westville %s',
+             _v116_fact('logged', (z->>'hilleague')::uuid, HIL), _v116_fact('logged', (z->>'hilleague')::uuid, WES)));
+    PERFORM _as((z->>'wesleague')::uuid);
+    got := (SELECT string_agg(CASE r.id WHEN (z->>'r_wes')::uuid THEN 'r_wes' ELSE 'other' END, ',')
+              FROM competition_discipline_records(NULL) r);
+    PERFORM _assert(got = 'r_wes', format('§95 (league): Westville''s league read %s, not its own competition''s one', coalesce(got, 'nothing')));
+
+    -- (doors)
+    PERFORM _assert(NOT has_function_privilege('public', 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'app_user_email_seen(uuid,uuid,text)'::regprocedure, 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'ball_event_payload_seen(uuid,text,text,uuid,jsonb)'::regprocedure, 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'competition_discipline_records(uuid)'::regprocedure, 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'competition_discipline_records(uuid)'::regprocedure, 'EXECUTE'),
+      '§95 (doors): the definers are not the application''s alone');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 95
+  -- └── db/118 (section 95) ──────────────────────────────────────────
+
+
+  -- ┌── db/119 (section 96) ──────────────────────────────────────────
+  -- ── 96. His family means a link live today (db/119) ──
+  -- The Opus review of #176: is_family_of() read no date and no pad scope.
+  -- Staged by _v119_stage(); every read and write is the caller's own, under
+  -- row security (_v119_passport(), _v119_scouting(), _v119_name_x(),
+  -- _v119_withdraw()). Holds with or without db/115: Westville's consent is
+  -- read by nobody at Hilton through the policies' other terms, and the
+  -- scouting read's other terms are app_can(), which reads the same dates.
+  --
+  -- What each label holds:
+  --   (live)     a live guardian and the boy (self-access) are his family:
+  --              each reads his passport consent and scouting decision; the
+  --              guardian names school X for him and the boy withdraws it
+  --   (ended)    a guardian whose assignment's valid_until is today, one whose
+  --              expires_at has passed, and one whose link ended today (db/62)
+  --              are nobody's family: each reads neither table's row, names no
+  --              school (refused) and withdraws nothing (no row moves)
+  --   (early)    a guardian whose link begins tomorrow: the same
+  --   (pad)      on a pad's credential the live guardian and the boy are
+  --              nobody's family: no read, no write; off the pad, both again
+  --   (passport) passport() and passport_name() (db/116, through
+  --              passport_open()): the live guardian, the boy and his coach
+  --              open them; the ended, expired, link-ended and early
+  --              guardians get no line and no name; on a pad's credential
+  --              nobody does, the coach included (app_can() refuses a pad)
+  --   (physio)   db/111's refusal: the physio who is F's mother may not
+  --              record his injury on her live link, nor once it has ended
+  --              (is_family_of() then says no; injury_writer_is_family() still
+  --              says yes), nor on a pad (not_permitted, and the family test
+  --              still yes)
+  --   (grants)   is_family_of() a pinned, stable definer; EXECUTE for
+  --              scrbrd_app and not PUBLIC, nor anon or authenticated where
+  --              they exist
+  --
+  -- Falsified, each change made as the owner before this section ran (the
+  -- section alone, cut from this file, on 22 Oct 2026); unchanged it passed,
+  -- and each change went red at its label:
+  --   is_family_of() without a.valid_until  → (ended): ended is the boy's family
+  --   is_family_of() without a.expires_at   → (ended): expired is the boy's family
+  --   is_family_of() without s.valid_until  → (ended): linkend is the boy's family
+  --   is_family_of() without s.valid_from   → (early): early is the boy's family
+  --   is_family_of() without the pad test   → (pad): live is the boy's family on a pad
+  --   injury_writer_is_family() as          → (physio): injury_writer_is_family()
+  --     is_family_of() alone                   let her ended link go
+  --   GRANT EXECUTE ... TO PUBLIC           → (grants): is_family_of() is not
+  --                                            scrbrd_app's alone
+  DECLARE
+    y    jsonb := _v119_stage();
+    F    uuid;
+    who  text;
+    T    date := sa_today();
+    v_ok boolean;
+    v_reason text;
+    v_f  oid := to_regprocedure('is_family_of(uuid)');
+    v_n  int;
+  BEGIN
+    F := (y->>'F')::uuid;
+    PERFORM _assert(_v119_owner_passport(y) = 'WES', format('§96: staged consents read [%s]', _v119_owner_passport(y)));
+
+    -- (live)
+    FOREACH who IN ARRAY ARRAY['live', 'fboy'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(is_family_of(F), format('§96 (live): %s is not the boy''s family', who));
+      PERFORM _assert(_v119_passport(y) = 'WES' AND _v119_scouting(y) = 'granted',
+        format('§96 (live): %s reads [%s] and [%s]', who, _v119_passport(y), _v119_scouting(y)));
+    END LOOP;
+    PERFORM _as((y->>'live')::uuid);
+    PERFORM _assert(_v119_name_x(y) = 'written', '§96 (live): the live guardian could not name school X');
+    PERFORM _as((y->>'fboy')::uuid);
+    PERFORM _assert(_v119_withdraw(y, (y->>'X')::uuid) = 1, '§96 (live): the boy could not withdraw school X');
+    PERFORM _assert(_v119_owner_passport(y) = 'WES,X(w)', format('§96 (live): the owner reads [%s]', _v119_owner_passport(y)));
+
+    -- (ended), (early)
+    FOREACH who IN ARRAY ARRAY['ended', 'expired', 'linkend', 'early'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(NOT is_family_of(F),
+        format('§96 (%s): %s is the boy''s family', CASE who WHEN 'early' THEN 'early' ELSE 'ended' END, who));
+      PERFORM _assert(_v119_passport(y) = '' AND _v119_scouting(y) = '',
+        format('§96 (%s): %s reads [%s] and [%s]', CASE who WHEN 'early' THEN 'early' ELSE 'ended' END,
+               who, _v119_passport(y), _v119_scouting(y)));
+      PERFORM _assert(_v119_name_x(y) = 'refused',
+        format('§96 (%s): %s named school X for the boy', CASE who WHEN 'early' THEN 'early' ELSE 'ended' END, who));
+      PERFORM _assert(_v119_withdraw(y, '22222222-2222-2222-2222-222222222222'::uuid) = 0,
+        format('§96 (%s): %s withdrew the boy''s consent', CASE who WHEN 'early' THEN 'early' ELSE 'ended' END, who));
+    END LOOP;
+    PERFORM _assert(_v119_owner_passport(y) = 'WES,X(w)', format('§96 (ended): the owner reads [%s]', _v119_owner_passport(y)));
+
+    -- (pad)
+    FOREACH who IN ARRAY ARRAY['live', 'fboy'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM set_config('app.scope', 'pad', true);
+      PERFORM _assert(NOT is_family_of(F), format('§96 (pad): %s is the boy''s family on a pad', who));
+      PERFORM _assert(_v119_passport(y) = '' AND _v119_scouting(y) = '',
+        format('§96 (pad): %s on a pad reads [%s] and [%s]', who, _v119_passport(y), _v119_scouting(y)));
+      PERFORM _assert(_v119_name_x(y) = 'refused', format('§96 (pad): %s on a pad named school X', who));
+      PERFORM _assert(_v119_withdraw(y, '22222222-2222-2222-2222-222222222222'::uuid) = 0,
+        format('§96 (pad): %s on a pad withdrew the boy''s consent', who));
+      PERFORM set_config('app.scope', '', true);
+      PERFORM _assert(is_family_of(F) AND _v119_passport(y) = 'WES,X(w)',
+        format('§96 (pad): off the pad %s reads [%s]', who, _v119_passport(y)));
+    END LOOP;
+
+    -- (passport)
+    FOREACH who IN ARRAY ARRAY['live:t', 'fboy:t', 'coach:t', 'ended:f', 'expired:f', 'linkend:f', 'early:f'] LOOP
+      PERFORM _as((y->>split_part(who, ':', 1))::uuid);
+      SELECT count(*) INTO v_n FROM passport(F);
+      PERFORM _assert((v_n > 0) = (split_part(who, ':', 2) = 't')
+                      AND (passport_name(F) IS NOT NULL) = (split_part(who, ':', 2) = 't'),
+        format('§96 (passport): %s reads %s passport line(s) and the name %s',
+               split_part(who, ':', 1), v_n, coalesce(passport_name(F), '(none)')));
+      PERFORM set_config('app.scope', 'pad', true);
+      SELECT count(*) INTO v_n FROM passport(F);
+      PERFORM _assert(v_n = 0 AND passport_name(F) IS NULL,
+        format('§96 (passport): %s on a pad reads %s passport line(s) and the name %s',
+               split_part(who, ':', 1), v_n, coalesce(passport_name(F), '(none)')));
+      PERFORM set_config('app.scope', '', true);
+    END LOOP;
+
+    -- (physio)
+    PERFORM _as((y->>'mum')::uuid);
+    PERFORM _assert(is_family_of(F) AND injury_writer_is_family(F), '§96 (physio): the mother-physio''s live link is not family');
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_record(F, 'Shin splints', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'family_cannot_record',
+      format('§96 (physio): on her live link the mother-physio recorded her son''s injury (%s / %s)', v_ok, v_reason));
+    PERFORM _v119_end_link((y->>'mum')::uuid, F);
+    PERFORM _assert(NOT is_family_of(F), '§96 (physio): the mother-physio''s ended link is still is_family_of()');
+    PERFORM _assert(injury_writer_is_family(F), '§96 (physio): injury_writer_is_family() let her ended link go');
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_record(F, 'Shin splints', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'family_cannot_record',
+      format('§96 (physio): on her ended link the mother-physio recorded her son''s injury (%s / %s)', v_ok, v_reason));
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM _assert(injury_writer_is_family(F), '§96 (physio): on a pad injury_writer_is_family() says she is not his mother');
+    SELECT r.ok, r.reason INTO v_ok, v_reason FROM injury_record(F, 'Shin splints', 'minor', T, true, T + 7, T + 7, false, NULL) r;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('§96 (physio): on a pad the mother-physio''s record was answered %s / %s', v_ok, v_reason));
+    PERFORM set_config('app.scope', '', true);
+
+    -- (grants)
+    PERFORM _assert((SELECT p.prosecdef AND p.provolatile = 's'
+                            AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))
+                       FROM pg_proc p WHERE p.oid = v_f),
+      '§96 (grants): is_family_of() is not a pinned, stable definer');
+    PERFORM _assert(has_function_privilege('scrbrd_app', v_f, 'EXECUTE')
+                    AND NOT has_function_privilege('public', v_f, 'EXECUTE')
+                    AND NOT EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolname IN ('anon', 'authenticated')
+                                       AND has_function_privilege(r.oid, v_f, 'EXECUTE')),
+      '§96 (grants): is_family_of() is not scrbrd_app''s alone');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 96
+  -- └── db/119 (section 96) ──────────────────────────────────────────
+  -- ┌── db/120 (section 97) ──────────────────────────────────────────
+  -- ── 97. Push switched off, own rows only (db/120, NOTIFICATIONS S4) ──
+  -- D20: a person's own preference, per kind or per kind and child; never
+  -- safeguarding, welfare or system (nor injury or compromise, db/120 §2);
+  -- push only. D21: a pupil's quiet hours, asked of the caller alone.
+  -- Staged by _v120_stage(); every read and write below is the caller's own.
+  --
+  -- What each label holds:
+  --   (own)      a guardian writes and reads his own rows; another guardian,
+  --              the pupil and the coach read none of them
+  --   (others)   nobody writes a row in another person's name, moves his own
+  --              to another person, or changes another's
+  --   (child)    a row about a child only for his family: ga for A, not B;
+  --              not the coach of A's side; a row never moves to another child
+  --   (locked)   safeguarding, welfare, system, injury, compromise, an unknown
+  --              kind, and a per-child row for a kind never about a child,
+  --              are each refused by a CHECK
+  --   (one)      one row per person, kind and child; no DELETE
+  --   (hidden)   nothing: ga muted the kind and the child, and the notice about
+  --              A is still in his my_notifications
+  --   (quiet)    my_push_quiet_hours() is true for the pupil alone
+  --   (choices)  my_alert_choices(): ga per child, the pupil and the coach per
+  --              kind, each the caller's own; an assignment ended (_revoke())
+  --              takes the child off and his row can no longer be changed
+  --   (ended)    a link ended by its date (valid_until yesterday) under an
+  --              assignment still live (db/119's is_family_of()): gend is
+  --              offered his kinds and not the child, can neither write a new
+  --              row about him nor flip the one he wrote while live (which he
+  --              still reads), and passport_name() no longer names the boy
+  --   (pad)      under a pad's resume credential (db/50) a person reads none of
+  --              his preferences, writes none and changes none, is offered no
+  --              switch, and is told of no quiet hours
+  --
+  -- Falsified on 28 Oct 2026, each change made as the owner before this
+  -- section ran (the section alone, cut from this file), each red the first:
+  --   notification_pref_read as `true`             → (own) red: gb reads 2 of
+  --                                                   ga's preferences
+  --   the insert policy without is_family_of()     → (child) red: ga wrote a
+  --                                                   preference about B
+  --   'welfare' in notification_pref_mutable_kind  → (locked) red: a welfare
+  --                                                   preference was accepted
+  --   pad_scope_select on notification_pref true  → (pad) red: ga reads 2 of
+  --                                                   his preferences on a pad
+  -- (ended) was added on 28 Oct 2026 after the Opus review; its own
+  -- falsification is db/119's: is_family_of() without s.valid_until turns it
+  -- red at "gend flipped his row about A", and my_alert_choices() without its
+  -- s.valid_until turns it red at "gend is offered".
+  DECLARE
+    y   jsonb := _v120_stage();
+    ga  uuid;
+    k   text;
+    n   int;
+    got text;
+  BEGIN
+    ga := (y->>'ga')::uuid;
+    -- (own)
+    PERFORM _as(ga);
+    INSERT INTO notification_pref (person_id, kind, push) VALUES (ga, 'notice', false);
+    INSERT INTO notification_pref (person_id, kind, subject_player_id, push) VALUES (ga, 'recognition', (y->>'A')::uuid, false);
+    SELECT count(*) INTO n FROM notification_pref;
+    PERFORM _assert(n = 2, format('§97 (own): ga reads %s of his two preferences', n));
+    PERFORM _assert((SELECT updated_at FROM notification_pref WHERE kind = 'notice') IS NOT NULL, '§97 (own): no time on his row');
+    FOREACH k IN ARRAY ARRAY['gb', 'pupil', 'coach'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT count(*) INTO n FROM notification_pref WHERE person_id = ga;
+      PERFORM _assert(n = 0, format('§97 (own): %s reads %s of ga''s preferences', k, n));
+    END LOOP;
+
+    -- (others)
+    PERFORM _as((y->>'gb')::uuid);
+    BEGIN
+      INSERT INTO notification_pref (person_id, kind, push) VALUES (ga, 'fixture', false);
+      PERFORM _assert(false, '§97 (others): gb wrote a preference in ga''s name');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    UPDATE notification_pref SET push = true WHERE person_id = ga;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 0, format('§97 (others): gb changed %s of ga''s preferences', n));
+    INSERT INTO notification_pref (person_id, kind, push) VALUES ((y->>'gb')::uuid, 'fixture', false);
+    BEGIN
+      UPDATE notification_pref SET person_id = ga WHERE kind = 'fixture';
+      PERFORM _assert(false, '§97 (others): gb moved his own preference to ga');
+    EXCEPTION WHEN insufficient_privilege OR check_violation THEN NULL;
+    END;
+    PERFORM _as(ga);
+    SELECT count(*) INTO n FROM notification_pref WHERE NOT push;
+    PERFORM _assert(n = 2, format('§97 (others): ga''s two rows read %s off after gb''s tries', n));
+
+    -- (child)
+    BEGIN
+      INSERT INTO notification_pref (person_id, kind, subject_player_id, push) VALUES (ga, 'availability', (y->>'B')::uuid, false);
+      PERFORM _assert(false, '§97 (child): ga wrote a preference about B, who is not his');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      UPDATE notification_pref SET subject_player_id = (y->>'B')::uuid WHERE kind = 'recognition';
+      PERFORM _assert(false, '§97 (child): ga moved his row about A onto B');
+    EXCEPTION WHEN insufficient_privilege OR check_violation THEN NULL;
+    END;
+    PERFORM _as((y->>'coach')::uuid);
+    BEGIN
+      INSERT INTO notification_pref (person_id, kind, subject_player_id, push) VALUES ((y->>'coach')::uuid, 'lift', (y->>'A')::uuid, false);
+      PERFORM _assert(false, '§97 (child): A''s coach wrote a preference about A');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    PERFORM _as((y->>'gb')::uuid);
+    INSERT INTO notification_pref (person_id, kind, subject_player_id, push) VALUES ((y->>'gb')::uuid, 'lift', (y->>'B')::uuid, false);
+
+    -- (locked)
+    PERFORM _as(ga);
+    FOREACH k IN ARRAY ARRAY['safeguarding', 'welfare', 'system', 'injury', 'compromise', 'gossip'] LOOP
+      BEGIN
+        INSERT INTO notification_pref (person_id, kind, push) VALUES (ga, k, false);
+        PERFORM _assert(false, format('§97 (locked): a %s preference was accepted', k));
+      EXCEPTION WHEN check_violation THEN NULL;
+      END;
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['notice', 'fixture'] LOOP
+      BEGIN
+        INSERT INTO notification_pref (person_id, kind, subject_player_id, push) VALUES (ga, k, (y->>'A')::uuid, false);
+        PERFORM _assert(false, format('§97 (locked): a per-child %s preference was accepted', k));
+      EXCEPTION WHEN check_violation THEN NULL;
+      END;
+    END LOOP;
+
+    -- (one)
+    BEGIN
+      INSERT INTO notification_pref (person_id, kind, push) VALUES (ga, 'notice', true);
+      PERFORM _assert(false, '§97 (one): a second notice preference for ga');
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+    INSERT INTO notification_pref (person_id, kind, push) VALUES (ga, 'notice', true)
+      ON CONFLICT (person_id, kind, (coalesce(subject_player_id, '00000000-0000-0000-0000-000000000000'::uuid)))
+      DO UPDATE SET push = excluded.push;
+    PERFORM _assert((SELECT push FROM notification_pref WHERE kind = 'notice'), '§97 (one): on again did not take');
+    UPDATE notification_pref SET push = false WHERE kind = 'notice';
+    BEGIN
+      DELETE FROM notification_pref WHERE kind = 'notice';
+      PERFORM _assert(false, '§97 (one): the application deleted a preference');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- (hidden) muted for the kind and for A, and still his to read
+    SELECT count(*) INTO n FROM my_notifications WHERE id = (y->>'N')::uuid;
+    PERFORM _assert(n = 1, format('§97 (hidden): ga muted recognition for A and his notice about A reads %s rows in my_notifications', n));
+    SELECT count(*) INTO n FROM notification WHERE id = (y->>'N')::uuid;
+    PERFORM _assert(n = 1, '§97 (hidden): the notice is gone from ga''s notification read');
+
+    -- (pad) the same people, under a pad's resume credential
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', gen_random_uuid()::text, true);
+    SELECT count(*) INTO n FROM notification_pref;
+    PERFORM _assert(n = 0, format('§97 (pad): ga reads %s of his preferences on a pad', n));
+    BEGIN
+      INSERT INTO notification_pref (person_id, kind, push) VALUES (ga, 'fixture', false);
+      PERFORM _assert(false, '§97 (pad): ga wrote a preference on a pad');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    UPDATE notification_pref SET push = true;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 0, format('§97 (pad): ga changed %s preference(s) on a pad', n));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM my_alert_choices()), '§97 (pad): ga is offered switches on a pad');
+    PERFORM _as((y->>'pupil')::uuid);
+    PERFORM _assert(NOT my_push_quiet_hours(), '§97 (pad): the pupil is told of quiet hours on a pad');
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+    PERFORM _as(ga);
+    SELECT count(*) INTO n FROM notification_pref WHERE NOT push;
+    PERFORM _assert(n = 2, format('§97 (pad): off the pad ga reads %s of his two rows off', n));
+
+    -- (quiet)
+    PERFORM _assert(NOT my_push_quiet_hours(), '§97 (quiet): a guardian has quiet hours');
+    PERFORM _as((y->>'pupil')::uuid);
+    PERFORM _assert(my_push_quiet_hours(), '§97 (quiet): the pupil has no quiet hours');
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert(NOT my_push_quiet_hours(), '§97 (quiet): a coach has quiet hours');
+
+    -- (choices)
+    PERFORM _as(ga);
+    got := _v120_choices(y);
+    PERFORM _assert(got = 'notice(off),fixture,recognition@A(off),availability@A,lift@A', format('§97 (choices): ga is offered %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM my_alert_choices() WHERE quiet_hours), '§97 (choices): ga is told of quiet hours');
+    PERFORM _as((y->>'gb')::uuid);
+    got := _v120_choices(y);
+    PERFORM _assert(got = 'notice,fixture(off),recognition@B,availability@B,lift@B(off)', format('§97 (choices): gb is offered %s', got));
+    PERFORM _as((y->>'pupil')::uuid);
+    got := _v120_choices(y);
+    PERFORM _assert(got = 'notice,recognition,fixture', format('§97 (choices): the pupil is offered %s', got));
+    PERFORM _assert((SELECT bool_and(quiet_hours) FROM my_alert_choices()), '§97 (choices): the pupil is not told of his quiet hours');
+    PERFORM _as((y->>'coach')::uuid);
+    got := _v120_choices(y);
+    PERFORM _assert(got = 'notice,recognition,fixture', format('§97 (choices): the coach is offered %s', got));
+    -- The link ends: A leaves ga's switches, and his row about A is fixed.
+    PERFORM _revoke(ga);
+    PERFORM _as(ga);
+    got := _v120_choices(y);
+    PERFORM _assert(got = '', format('§97 (choices): with his link ended ga is offered %s', got));
+    BEGIN
+      UPDATE notification_pref SET push = true WHERE kind = 'recognition';
+      PERFORM _assert(false, '§97 (choices): ga changed his row about A after his link ended');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- (ended) gend's link to A ends by its date; his assignment stays live.
+    PERFORM _as((y->>'gend')::uuid);
+    got := _v120_choices(y);
+    PERFORM _assert(got = 'notice,fixture,recognition@A,availability@A,lift@A', format('§97 (ended): while live gend is offered %s', got));
+    INSERT INTO notification_pref (person_id, kind, subject_player_id, push) VALUES ((y->>'gend')::uuid, 'availability', (y->>'A')::uuid, false);
+    PERFORM _assert(passport_name((y->>'A')::uuid) IS NOT NULL, '§97 (ended): while live gend does not open A''s passport');
+    PERFORM _v120_end_link((y->>'gend')::uuid, (y->>'A')::uuid);
+    PERFORM _assert(EXISTS (SELECT 1 FROM role_assignment a WHERE a.person_id = (y->>'gend')::uuid AND a.active
+                               AND (a.valid_until IS NULL OR a.valid_until > current_date)),
+      '§97 (ended): gend''s assignment is not live, so this is not the dated-link case');
+    PERFORM _assert(NOT is_family_of((y->>'A')::uuid), '§97 (ended): gend is still A''s family');
+    got := _v120_choices(y);
+    PERFORM _assert(got = 'notice,fixture', format('§97 (ended): with his link ended gend is offered %s', got));
+    BEGIN
+      INSERT INTO notification_pref (person_id, kind, subject_player_id, push) VALUES ((y->>'gend')::uuid, 'lift', (y->>'A')::uuid, false);
+      PERFORM _assert(false, '§97 (ended): gend wrote a new row about A after his link ended');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      UPDATE notification_pref SET push = true WHERE subject_player_id = (y->>'A')::uuid;
+      PERFORM _assert(false, '§97 (ended): gend flipped his row about A after his link ended');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    SELECT count(*) INTO n FROM notification_pref WHERE subject_player_id = (y->>'A')::uuid AND NOT push;
+    PERFORM _assert(n = 1, format('§97 (ended): gend reads %s of his own row about A (off)', n));
+    PERFORM _assert(passport_name((y->>'A')::uuid) IS NULL, '§97 (ended): with his link ended gend still opens A''s passport');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 97
+  -- └── db/120 (section 97) ──────────────────────────────────────────
+
+  -- ┌── db/121 (section 98) ──────────────────────────────────────────
+  -- ┌── section 98: the Laws audit of 28 Oct 2026 (db/121) ──
+  -- Kameel's decisions (audit/AUDIT_scoring_laws_2026-10-28.md §6), the ones
+  -- with SQL, on _v121_stage()'s fixture:
+  --   (F5)  a run out going for a second bye: the bye is not A's run and not
+  --         C's; the rules' table, as laws-audit.test.mjs has it
+  --   (Q2)  no free hit after a waist-high no-ball (21 bowled stands); one
+  --         after a front-foot no-ball (24 lbw saved, over a delivery not in
+  --         the over: F11) and after one of no recorded kind (30 saved); a
+  --         beamer on a free hit leaves it for the next (27 caught saved)
+  --   (F7)  an all-run four and six with overthrows are no four and no six;
+  --         a struck four and a no-ball's six are
+  --   (F4)  the scorer's amendment approved by the superadmin, 4 voided; the
+  --         route's re-judging handed to scoring_amendment_rejudge(): 5 and 6
+  --         are A's, 7 B's, in ball_event_live and every career reader; a
+  --         reader who may not read the match reads none of it; anybody but
+  --         the approver, in the approving transaction, is refused
+  --   (S2)  the door names only a batter of the innings (the bowler is
+  --         refused) with a player row (an id with none is refused in words)
+  --   (B1)  on M2 the re-judging reaches the milestone notices both ways: D's
+  --         fifty, which the void alone left standing on the stamps, is taken
+  --         back; E's, which the re-judged log makes, is noticed "after a
+  --         correction."
+  --   (B2)  tools/sql/laws121-precheck.sql's query (_v121_precheck()) finds
+  --         no match beside this section's whose stored dismissals db/121
+  --         moves — the seeded database holds none — and on this section's
+  --         match the one of each it planted (21 now stands, 24 now saved)
+  --
+  -- Falsified, each change made as the owner before this file ran:
+  --   ball_runs_off_bat()'s 'W' arm put back (db/40's)  → (F5) red
+  --   ball_on_free_hit() put back (db/54's)              → (Q2) red: 21 saved
+  --   ball_event_live put back (db/71's)                 → (F4) red: 5 is B's
+  --   milestone_recheck() made to do nothing             → (B1) red: D's fifty stays
+  DECLARE
+    y   jsonb := _v121_stage();
+    M   uuid;  V_A uuid;  V_B uuid;  V_C uuid;  am uuid;
+    got text;
+    r   record;
+    n   integer;
+    U_STRANGER uuid := 'dddddddd-0000-0000-0000-000000000121';
+    names jsonb;
+  BEGIN
+    M := (y->>'m')::uuid; V_A := (y->>'a')::uuid; V_B := (y->>'b')::uuid; V_C := (y->>'c')::uuid; am := (y->>'am')::uuid;
+
+    -- (F5) the rules
+    PERFORM _assert(ball_runs_off_bat('W', 1, '{"nbRuns":"byes"}') = 0 AND ball_runs_off_bat('W', 1, '{"nbRuns":"leg_byes"}') = 0
+                    AND ball_runs_off_bat('W', 3, '{}') = 3 AND ball_runs_to_bowler('W', 1, '{"nbRuns":"byes"}') = 0
+                    AND ball_runs_to_bowler('W', 2, '{}') = 2,
+      '§98 (F5): a wicket ball''s byes are the striker''s or the bowler''s');
+
+    -- (Q2, F11) which wickets stand, as the owner of the fixture reads them
+    PERFORM _as(U_OWNER);
+    SELECT string_agg(b.seq || '=' || CASE WHEN ball_wicket_stands(b.match_id, b.innings, b.seq, b.kind, b.ball_type, b.dismissal) THEN 'out' ELSE 'saved' END,
+                      ',' ORDER BY b.seq) INTO got
+      FROM ball_event_live b WHERE b.match_id = M AND b.innings = 1 AND b.ball_type = 'W';
+    PERFORM _assert(got = '21=out,24=saved,27=saved,30=saved',
+      format('§98 (Q2, F11): the wickets on the free-hit fixture read %s', got));
+
+    -- (B2) the precheck: the seeded database holds no dismissal the rule
+    -- moves; this section's own match holds the one of each it planted
+    SELECT count(*) INTO n FROM _v121_precheck() x WHERE x.match_id <> M;
+    PERFORM _assert(n = 0, format('§98 (B2): the precheck finds %s match(es) beside this section''s whose stored dismissals db/121 moves', n));
+    SELECT x.now_stands || '/' || x.now_saved INTO got FROM _v121_precheck() x WHERE x.match_id = M;
+    PERFORM _assert(got = '1/1', format('§98 (B2): the precheck reads this section''s match %s (21 now stands, 24 now saved: 1/1)', got));
+
+    -- (F4) the amendment, approved, and the balls after it re-judged
+    SELECT d.ok, d.reason INTO r FROM scoring_amendment_decide(am, true, NULL) d;
+    PERFORM _assert(r.ok, format('§98 (F4): the superadmin could not approve the scorer''s amendment (%s)', r.reason));
+    -- (S2) the door names only a batter of the innings with a player row
+    BEGIN
+      PERFORM scoring_amendment_rejudge(am, jsonb_build_array(jsonb_build_object('seq', 5, 'striker_id', V_C)));
+      PERFORM _assert(false, '§98 (S2): the re-judging put the bowler, no batter of the innings, on strike');
+    EXCEPTION WHEN invalid_parameter_value THEN
+      GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+      PERFORM _assert(got LIKE '%is not a batter of innings 0%', format('§98 (S2): the bowler was refused in other words: %s', got));
+    END;
+    BEGIN
+      PERFORM scoring_amendment_rejudge(am, jsonb_build_array(jsonb_build_object('seq', 5, 'striker_id', 'eeeeeeee-0000-0000-0000-000000000121')));
+      PERFORM _assert(false, '§98 (S2): the re-judging wrote an id SCRBRD holds no player row for');
+    EXCEPTION WHEN invalid_parameter_value THEN
+      GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+      PERFORM _assert(got LIKE '%holds no player row%', format('§98 (S2): an id with no player row was refused in other words: %s', got));
+    END;
+    PERFORM _as(U_SCORER);
+    BEGIN
+      PERFORM scoring_amendment_rejudge(am, '[]'::jsonb);
+      PERFORM _assert(false, '§98 (F4): the scorer, who did not approve it, re-judged the amendment''s balls');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    PERFORM _as(U_OWNER);
+    SELECT scoring_amendment_rejudge(am, jsonb_build_array(
+             jsonb_build_object('seq', 5, 'striker_id', V_A), jsonb_build_object('seq', 6, 'striker_id', V_A),
+             jsonb_build_object('seq', 7, 'striker_id', V_B), jsonb_build_object('seq', 44, 'striker_id', V_B))) INTO n;
+    PERFORM _assert(n = 3, format('§98 (F4): %s ball(s) re-judged (expected 3: 5, 6, 7; 44 is another innings)', n));
+    SELECT string_agg(b.seq || '=' || CASE b.striker_id WHEN V_A THEN 'A' WHEN V_B THEN 'B' ELSE '?' END, ',' ORDER BY b.seq) INTO got
+      FROM ball_event_live b WHERE b.match_id = M AND b.innings = 0 AND b.kind = 'ball';
+    PERFORM _assert(got = '5=A,6=A,7=B', format('§98 (F4): ball_event_live''s strikers read %s (the fold: 5=A,6=A,7=B)', got));
+    PERFORM _as(U_STRANGER);
+    SELECT count(*) INTO n FROM ball_event_rejudged WHERE match_id = M;
+    PERFORM _assert(n = 0, format('§98 (F4): a reader with no read on the match read %s re-judged row(s)', n));
+    PERFORM _as(U_OWNER);
+    SELECT count(*) INTO n FROM ball_event_rejudged WHERE match_id = M;
+    PERFORM _assert(n = 3, format('§98 (F4): the control read %s re-judged row(s), not 3', n));
+
+    -- (B1) the re-judging reaches the milestone notices, both ways: D's
+    -- fifty, which the re-judged log takes away, is taken back; E's, which
+    -- it makes, is noticed after a correction
+    names := jsonb_build_object(y->>'d', 'D', y->>'e', 'E');
+    got := _v121_notices((y->>'m2')::uuid, names);
+    PERFORM _assert(got = 'D fifty live (notice up): Fifty (51) against Verify 121 B1.',
+      format('§98 (B1): before the amendment M2''s notices read %s', got));
+    SELECT d.ok, d.reason INTO r FROM scoring_amendment_decide((y->>'am2')::uuid, true, NULL) d;
+    PERFORM _assert(r.ok, format('§98 (B1): the superadmin could not approve the second amendment (%s)', r.reason));
+    got := _v121_notices((y->>'m2')::uuid, names);
+    PERFORM _assert(got = 'D fifty live (notice up): Fifty (51) against Verify 121 B1.',
+      format('§98 (B1): the void alone, on the stamps, moved M2''s notices: %s', got));
+    SELECT scoring_amendment_rejudge((y->>'am2')::uuid, jsonb_build_array(jsonb_build_object('seq', 30, 'striker_id', y->>'e'))) INTO n;
+    PERFORM _assert(n = 1, format('§98 (B1): %s ball(s) re-judged on M2 (expected 1: 30)', n));
+    got := _v121_notices((y->>'m2')::uuid, names);
+    PERFORM _assert(got = 'D fifty retracted (notice down): Fifty (51) against Verify 121 B1.; E fifty live (notice up): Fifty (50) against Verify 121 B1, after a correction.',
+      format('§98 (B1): after the re-judging M2''s notices read %s', got));
+    SELECT (SELECT x.runs FROM player_batting_since((y->>'d')::uuid, NULL) x) || '/'
+        || (SELECT x.runs FROM player_batting_since((y->>'e')::uuid, NULL) x) INTO got;
+    PERFORM _assert(got = '49/50', format('§98 (B1): D and E''s runs read %s after the re-judging (49/50)', got));
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'milestone_recheck(uuid,smallint,uuid[],boolean)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'milestone_recheck(uuid,smallint,uuid[],boolean)', 'EXECUTE'),
+      '§98 (B1, doors): milestone_recheck() is callable by the application or PUBLIC');
+
+    -- (F4, F5, F7) every figure, through the career readers
+    SELECT x.runs || '/' || x.balls_faced || ' 4s ' || x.fours || ' 6s ' || x.sixes INTO got FROM player_batting_since(V_A, NULL) x;
+    PERFORM _assert(got = '25/7 4s 2 6s 1', format('§98 (F4, F5, F7): A''s batting reads %s (the fold: 25/7 4s 2 6s 1)', got));
+    SELECT x.runs || '/' || x.balls_faced || ' 4s ' || x.fours || ' 6s ' || x.sixes INTO got FROM player_batting_career x WHERE x.player_id = V_A;
+    PERFORM _assert(got = '25/7 4s 2 6s 1', format('§98 (F7): player_batting_career reads A %s', got));
+    SELECT x.runs || '/' || x.balls_faced INTO got FROM player_batting_since(V_B, NULL) x;
+    PERFORM _assert(got = '2/12', format('§98 (F4): B''s batting reads %s (the fold: 2/12)', got));
+    SELECT x.runs_conceded || ' w ' || x.wickets INTO got FROM player_bowling_since(V_C, NULL) x;
+    PERFORM _assert(got = '33 w 1', format('§98 (F5, Q2): C''s bowling reads %s (the fold: 33 w 1)', got));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 98
+  -- └── db/121 (section 98) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

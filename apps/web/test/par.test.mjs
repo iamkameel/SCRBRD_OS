@@ -348,7 +348,8 @@ const AFTER = overs([4, 4, 4, 4, 4, 1], [0, 0, 0, 0, 0, 4]);
   // worm stopped at the termination with their par as a mark.
   const ended = chase(ctx).play([...TEN, ...RAIN, ...AFTER, { stop: true }, { rev: { par: 102 } }]).seal(ctx, "abandoned");
   const result = deriveMatch(ended.events, ctx).result;
-  ok("ended on a par of 102 at 105: decided by play, Kearsney by 8 wickets (DLS)", /won by 8 wickets \(DLS\)/.test(result?.text ?? ""), result?.text);
+  // Ahead of par is won by the runs ahead (Kameel, 28 Oct, the Laws audit F10).
+  ok("ended on a par of 102 at 105: decided by play, Kearsney by 3 runs (DLS)", /won by 3 runs \(DLS\)/.test(result?.text ?? ""), result?.text);
   const done = screen(ended, { ctx, table: TABLE, result: result?.text ?? null });
   ok("...the second line is the result's words", done.words === result?.text, done.words);
   ok("...the worm: \"Par (umpires) 102\" as a mark, and no calculated line beside it",

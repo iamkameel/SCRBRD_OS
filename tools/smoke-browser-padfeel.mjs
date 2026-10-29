@@ -305,11 +305,13 @@ try {
       ok("the no-ball asks its type and whose the runs are, each on its commonest answer",
          (await attr("nb-type-front_foot", "aria-checked")) === "true" && (await attr("nb-runs-bat", "aria-checked")) === "true");
       ok("...and its runs from 0, the likely one", (await attr("extra-run-0", "data-likely")) === "true" && (await has("extra-run-6")));
+      // Kameel, 28 Oct 2026 (the Laws audit Q2, F12): a front-foot no-ball earns the free hit.
+      ok("a front-foot no-ball says the free hit", /Free hit/i.test(await tid("nb-free-hit").innerText().catch(() => "")));
     } });
   st = await extra("a height no-ball, two leg byes", "key-noball", "extra-run-2", { kind: "Nb", before: st.inn, want: (b) => expected.noBall(b, "height", 2, "leg_byes"),
     setup: async () => {
       await tap("nb-type-height");
-      ok("a height no-ball says the free hit", /Free hit/i.test(await tid("nb-free-hit").innerText().catch(() => "")));
+      ok("a height no-ball says no free hit (only a front-foot one earns it)", !(await has("nb-free-hit")));
       await tap("nb-runs-leg_byes");
     } });
   const striker = st.inn.batsmen.find((b) => b.id === st.inn.striker);

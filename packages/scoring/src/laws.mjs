@@ -52,7 +52,7 @@
  *     umpires allowed it, the scorer records it, and the pad says so in
  *     words; this module reads no condition at all.
  */
-import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, RUN_OUT_ENDS,
+import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, NB_RUNS_TYPES, RUN_OUT_ENDS,
   PENALTY_REASON, PENALTY_REASON_SIDE, normalisePenaltyReason,
   SUSPENSION_REASONS, SUSPENSION_SCOPE } from "./events.mjs";
 import { WITHDRAWN_PENALTY_REASONS } from "./events.mjs";
@@ -103,7 +103,7 @@ export const REFUSAL = Object.freeze({
   NOT_OUT_OFF_NO_BALL:    "not_out_off_no_ball",    // off a no-ball: run out, hit the ball twice, obstructing the field — nothing else
   NOT_NEXT_IN:            "not_next_in",            // timed out: the batter was not the one due in
   // Whose the runs off a no-ball were (SCRBRD-068).
-  NB_RUNS_UNKNOWN:        "nb_runs_unknown",        // not off the bat, byes or leg byes, or not on a no-ball
+  NB_RUNS_UNKNOWN:        "nb_runs_unknown",        // not off the bat, byes or leg byes, or not on a no-ball or a wicket ball
   // Where a batter was out (SCRBRD-069).
   OUT_AT_UNKNOWN:         "out_at_unknown",         // not the striker's or the bowler's end, or not on a wicket
   // Penalty runs (Law 41, SCRBRD-090/094).
@@ -597,7 +597,9 @@ function ballRefusal(innings, inn, i, ev, edition) {
   // (SCRBRD-068). Anything else — or the field on a delivery that is not a
   // no-ball — the fold would read as off the bat, crediting a batter with
   // runs the scorer said were not his.
-  if (ev.nbRuns != null && ((ev.type ?? BALL_TYPE.RUN) !== BALL_TYPE.NO_BALL || !NB_RUNS_VALUES.has(ev.nbRuns))) {
+  // A wicket ball's too (the Laws audit, F5 and F9): a run out going for a
+  // second bye, byes off a free hit a bowled dismissal did not stand on.
+  if (ev.nbRuns != null && (!NB_RUNS_TYPES.has(ev.type ?? BALL_TYPE.RUN) || !NB_RUNS_VALUES.has(ev.nbRuns))) {
     return REFUSAL.NB_RUNS_UNKNOWN;
   }
 
@@ -892,6 +894,29 @@ function scheduledInnings(innings) {
 }
 
 /**
+ * Is the match's own play over — its result decided?
+ *
+ * One innings a side: the second innings complete, as always. Two innings a
+ * side (`format.innings_per_side` = 2, a Two-Day; Kameel, 28 Oct 2026, the
+ * Laws audit Q1, F2 — it used to refuse every ball of the third innings as
+ * "the match was already decided"): the fourth innings complete, or the
+ * third all out still behind — an innings win, describeResult()'s own test,
+ * so the pad and the result cannot disagree about whether there is a fourth.
+ * @param {(Innings | null | undefined)[]} innings
+ */
+function matchDecided(innings) {
+  if (scheduledInnings(innings) !== 4) return innings[1]?.complete === true;
+  if (innings[3]?.complete === true) return true;
+  const [i0, i1, i2] = innings;
+  if (!(i0?.complete && i1?.complete && i2?.complete && i2.endReason === INNINGS_END_REASON.ALL_OUT)) return false;
+  // By the batting side's key, compared as describeResult() compares it.
+  const key = (/** @type {Innings} */ x) => String(x.teamKey ?? x.battingTeam ?? "").trim().toLowerCase();
+  const twice = key(i2);
+  const runs = (/** @type {boolean} */ same) => [i0, i1, i2].filter((x) => (key(x) === twice) === same).reduce((n, x) => n + x.runs, 0);
+  return runs(false) - runs(true) > 0;
+}
+
+/**
  * Is the chase this innings belongs to over? MATCH_DECIDED, redefined
  * (§3.3): a match innings as always — the second innings complete; a super
  * over's innings once its own pair's second innings is complete (won, tied
@@ -904,7 +929,7 @@ function scheduledInnings(innings) {
  * @param {number} i
  */
 function decided(innings, inn, i) {
-  if (inn?.superOver == null) return innings[1]?.complete === true;
+  if (inn?.superOver == null) return matchDecided(innings);
   const first = innings[i - 1]?.superOver === inn.superOver ? i - 1 : i;
   // A super over opened where the pair before it was not tied (an
   // innings_start the Laws would have refused, written from elsewhere):

@@ -705,6 +705,57 @@ SELECT
                                          to_regprocedure('player_move_voids_seats()'))
                            AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A family keeps the side's season",
+  -- db/119: is_family_of() reads a live link, never on a pad, and is the
+  -- application's alone (not PUBLIC's). Only to_regprocedure(), so the row
+  -- reads PROBLEM rather than failing the query on a database without it.
+  -- The body is read with every run of whitespace folded to one space, as
+  -- db/119's own guard reads it, so the row does not hang on the file's
+  -- alignment (its a.valid_until line has two spaces before current_date).
+  CASE WHEN EXISTS (SELECT 1 FROM pg_proc p
+                     CROSS JOIN LATERAL (SELECT regexp_replace(p.prosrc, '\\s+', ' ', 'g') AS src) b
+                     WHERE p.oid = to_regprocedure('is_family_of(uuid)')
+                       AND b.src LIKE '%NOT app_pad_scoped()%'
+                       AND b.src LIKE '%s.valid_from <= current_date%'
+                       AND b.src LIKE '%s.valid_until IS NULL OR s.valid_until > current_date%'
+                       AND b.src LIKE '%a.valid_until IS NULL OR a.valid_until > current_date%'
+                       AND b.src LIKE '%a.expires_at IS NULL OR a.expires_at > now()%'
+                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))
+                       AND NOT has_function_privilege('public', p.oid, 'EXECUTE'))
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "His family means a link live today",
+  -- db/120: push switched off per kind or per child, the person's own rows
+  -- only (a child only his family's), never safeguarding, welfare or system;
+  -- a pupil's quiet hours asked of the caller alone (NOTIFICATIONS S4).
+  CASE WHEN to_regclass('notification_pref') IS NOT NULL
+        AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('notification_pref'))
+        AND (SELECT count(*) FROM pg_policy WHERE polrelid = to_regclass('notification_pref') AND polpermissive) = 3
+        AND (SELECT count(*) FROM pg_policy WHERE polrelid = to_regclass('notification_pref') AND NOT polpermissive
+              AND polname IN ('pad_scope_select', 'pad_scope_insert', 'pad_scope_update')) = 3
+        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'notification_pref_mutable_kind'
+                       AND pg_get_constraintdef(oid) !~ '(safeguarding|welfare|system)')
+        AND to_regprocedure('my_alert_choices()') IS NOT NULL
+        AND to_regprocedure('my_push_quiet_hours()') IS NOT NULL
+        AND NOT has_function_privilege('public', to_regprocedure('my_alert_choices()'), 'EXECUTE')
+        AND NOT has_function_privilege('public', to_regprocedure('my_push_quiet_hours()'), 'EXECUTE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "Alerts a person may switch off",
+  -- db/121: the Laws audit of 28 Oct 2026, as Kameel decided it. A wicket
+  -- ball's byes are not the striker's or the bowler's (F5); a four or six is
+  -- a boundary (F7); the free hit follows a front-foot no-ball only, and a
+  -- delivery not in the over leaves it (Q2, F11); who faced, re-judged after
+  -- an amendment, read through ball_event_live, behind RLS, written by one
+  -- door (F4), which re-runs the milestone notices (milestone_recheck()).
+  CASE WHEN to_regclass('ball_event_rejudged') IS NOT NULL
+        AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('ball_event_rejudged'))
+        AND NOT has_table_privilege('scrbrd_app', to_regclass('ball_event_rejudged'), 'INSERT')
+        AND position('ball_event_rejudged' IN pg_get_viewdef(to_regclass('ball_event_live'))) > 0
+        AND has_function_privilege('scrbrd_app', to_regprocedure('scoring_amendment_rejudge(uuid,jsonb)'), 'EXECUTE')
+        AND ball_runs_off_bat('W', 1, '{"nbRuns":"byes"}') = 0 AND ball_runs_to_bowler('W', 1, '{"nbRuns":"byes"}') = 0
+        AND to_regprocedure('ball_boundary(text,integer,jsonb)') IS NOT NULL
+        AND to_regprocedure('ball_gives_free_hit(text,jsonb)') IS NOT NULL
+        AND position('ball_gives_free_hit' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('ball_on_free_hit(uuid,smallint,integer)'))) > 0
+        AND to_regprocedure('milestone_recheck(uuid,smallint,uuid[],boolean)') IS NOT NULL
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('milestone_recheck(uuid,smallint,uuid[],boolean)'), 'EXECUTE')
+        AND position('milestone_recheck(' IN coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('scoring_amendment_rejudge(uuid,jsonb)')), '')) > 0
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "The Laws audit's fixes",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

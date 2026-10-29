@@ -132,47 +132,76 @@ try {
   ok("the other school's office reads nothing", (await read(wesAdm)).length === 0);
 
   // READERS_child_data Q10 (Kameel, 21 Oct 2026; db/116): the league holds no
-  // discipline.read. Held platform-wide, as this account is, it read every
-  // conduct record at every school. It reads the records that arose from a
-  // fixture in a competition it organises, through competition_discipline,
-  // and each read is filed in the log of the school whose child it named.
-  group("A competition administrator reads its own fixtures' records, and is stamped for it");
+  // discipline.read. It reads the records that arose from a fixture in a
+  // competition it organises, through competition_discipline, and each read
+  // is filed in the log of the school whose child it named. And of 28 Oct
+  // 2026 (db/118): "Only its own competitions: refuse a platform-wide
+  // caller". The seed's league account is platform-wide, so it reads none,
+  // even from a league whose competition names no school; a league account
+  // scoped to the school that organises its competition reads that one's.
+  group("A competition administrator reads its own competitions' records, and is stamped for it");
   await q(`delete from access_log`);
   ok("the league reads no school's file by standing", (await read(league)).length === 0);
   const leagueDoor = async (token) => (await api("/api/read/competition_discipline", { token })).body?.rows ?? [];
   ok("...nor, through its own door, a record from a match in no competition",
      !(await leagueDoor(league)).some((r) => r.id === row.id));
-  // A league fixture of the seed's league account (competition school NULL:
-  // the platform's own), with a record filed from it, removed at the end.
-  const [{ id: C_LEAGUE }] = await q(
-    `insert into competition (school_id, name, comp_type, format, age_group, gender, level, season_id)
-     values (null, 'Smoke Discipline League', 'league', 'T20', '1XI', 'boys', 'school', season_named('2026', 'school'))
-     returning id`);
-  await q(`insert into competition_entrant (competition_id, school_id, team_code, display_name)
-           values ($1, '11111111-1111-1111-1111-111111111111', '1XI', 'Hilton 1')`, [C_LEAGUE]);
-  const [{ id: M_LEAGUE }] = await q(
-    `insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status, competition_id)
-     values ('11111111-1111-1111-1111-111111111111', '1XI', 'Smoke League Opponent', now() - interval '1 day',
-             'cricket', 'T20', 20, 'scheduled', $1) returning id`, [C_LEAGUE]);
+  const HILTON = "11111111-1111-1111-1111-111111111111";
+  // Two league fixtures, each with a record filed from it: one whose
+  // competition names no school (the platform's own), and one Hilton
+  // organises. A Hilton-scoped league account. All removed at the end.
+  const comps = [], fixtures = [];
+  for (const [name, school] of [["Smoke Discipline League", null], ["Smoke Hilton Discipline League", HILTON]]) {
+    const [{ id: c }] = await q(
+      `insert into competition (school_id, name, comp_type, format, age_group, gender, level, season_id)
+       values ($1, $2, 'league', 'T20', '1XI', 'boys', 'school', season_named('2026', 'school'))
+       returning id`, [school, name]);
+    await q(`insert into competition_entrant (competition_id, school_id, team_code, display_name)
+             values ($1, $2, '1XI', 'Hilton 1')`, [c, HILTON]);
+    const [{ id: m }] = await q(
+      `insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+       values ($1, '1XI', 'Smoke League Opponent', now() - interval '1 day',
+               'cricket', 'T20', 20, 'scheduled', $2) returning id`, [HILTON, c]);
+    comps.push(c); fixtures.push(m);
+  }
+  const [M_PLATFORM, M_HILTON] = fixtures;
+  const HL_EMAIL = "smoke.hilton.league@example.invalid";
+  const [{ id: U_HL }] = await q(
+    `with u as (insert into app_user (school_id, email, name, role) values ($1, $2, 'H Leaguesmoke', 'competitionadmin') returning id)
+     insert into role_assignment (person_id, role, school_id) select id, 'competitionadmin', $1 from u returning person_id as id`,
+    [HILTON, HL_EMAIL]);
   try {
-    ok("the director of sport files a matter from the league fixture",
-       (await file(P_SELF, head, { body: "Dissent in a league match.", matchId: M_LEAGUE })).status === 200);
-    const theirs = await leagueDoor(league);
-    ok("the league reads it through its door, with the boy's name and his school",
-       theirs.some((r) => r.match_id === M_LEAGUE && r.player_id === P_SELF && r.full_name === "R Pillay")
-       && theirs.every((r) => r.competition_id !== null));
+    ok("the director of sport files a matter from each league fixture",
+       (await file(P_SELF, head, { body: "Dissent in a league match.", matchId: M_PLATFORM })).status === 200
+       && (await file(P_SELF, head, { body: "Dissent in Hilton's league.", matchId: M_HILTON })).status === 200);
+    const platformWide = await leagueDoor(league);
+    ok("the platform-wide league reads neither, not even its own league's (db/118)",
+       !platformWide.some((r) => r.match_id === M_PLATFORM || r.match_id === M_HILTON));
+    ok("...and the owner's key, platform-wide too, reads neither",
+       !(await leagueDoor(await login("owner@example.invalid"))).some((r) => fixtures.includes(r.match_id)));
+    ok("...and nothing is on the record for reads that returned nothing",
+       (await q(`select 1 from access_log where resource = 'competition_discipline_records'`)).length === 0);
+    const hl = await login(HL_EMAIL);
+    const theirs = await leagueDoor(hl);
+    ok("Hilton's league reads its own competition's record, with the boy's name and his school",
+       theirs.some((r) => r.match_id === M_HILTON && r.player_id === P_SELF && r.full_name === "R Pillay")
+       && theirs.every((r) => r.competition_id === comps[1]));
+    ok("...and not the record from the competition nobody organises", !theirs.some((r) => r.match_id === M_PLATFORM));
     const stamped = await q(`select * from access_log where resource = 'competition_discipline_records'`);
     ok("...and the read is on the record, filed in the school whose child was read",
-       stamped.length === 1 && stamped[0].school_id === "11111111-1111-1111-1111-111111111111"
+       stamped.length === 1 && stamped[0].school_id === HILTON && stamped[0].person_id === U_HL
        && (stamped[0].record_ids ?? []).includes(P_SELF) && (stamped[0].fields ?? []).includes("body"));
     ok("the school's office reads nothing through the league's door", (await leagueDoor(office)).length === 0);
     ok("...and it is not a file to export",
-       [403, 404, 400].includes((await api("/api/export/competition_discipline", { token: league })).status));
+       [403, 404, 400].includes((await api("/api/export/competition_discipline", { token: hl })).status));
   } finally {
-    await q(`delete from disciplinary_record where match_id = $1`, [M_LEAGUE]);
-    await q(`delete from match where id = $1`, [M_LEAGUE]);
-    await q(`delete from competition_entrant where competition_id = $1`, [C_LEAGUE]);
-    await q(`delete from competition where id = $1`, [C_LEAGUE]);
+    await q(`delete from disciplinary_record where match_id = any($1::uuid[])`, [fixtures]);
+    await q(`delete from match where id = any($1::uuid[])`, [fixtures]);
+    await q(`delete from competition_entrant where competition_id = any($1::uuid[])`, [comps]);
+    await q(`delete from competition where id = any($1::uuid[])`, [comps]);
+    await q(`delete from access_log where person_id = $1`, [U_HL]);
+    await q(`delete from session where user_id = $1`, [U_HL]).catch(() => {});
+    await q(`delete from role_assignment where person_id = $1`, [U_HL]).catch(() => {});
+    await q(`delete from app_user where id = $1`, [U_HL]).catch(() => {});
   }
 
   // READERS_child_data Q5 (Kameel, 21 Oct 2026: "own side, logged"; db/116):

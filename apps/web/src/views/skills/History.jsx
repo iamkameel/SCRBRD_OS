@@ -23,7 +23,7 @@ import {
   targetWords, targetProblem, orderDrills, sinceWords, lastLookBy,
 } from "../../lib/assessmentHistory.js";
 import {
-  setTarget, withdrawTarget, withdrawScore, withdrawNote, writeCoachingPoint, writeWords, REASON_MAX, WHY_MAX,
+  setTarget, withdrawTarget, withdrawScore, writeWords, REASON_MAX, WHY_MAX,
 } from "../../lib/development.js";
 
 /** A tap target that meets the floor: 44px each way, 12px type. */
@@ -174,9 +174,9 @@ export function DotSheet({ point, staff, canWrite, points, onClose, onDone }) {
  * prose that becomes a coaching point and does not reach the boy. The same
  * form writes to two tiers, and the label says which words land where.
  *
- * The "why" is written first, as a coaching point standing on his newest
- * standing score; the target then points at it. If the target is refused the
- * point is taken back, so a refusal leaves nothing behind.
+ * The "why" is sent with the target: the server writes it as a coaching
+ * point standing on his newest standing score and the target pointing at it
+ * in one transaction, so a refusal leaves nothing behind.
  */
 export function TargetModal({ role, playerId, category, metric, stood, current, onClose, onDone }) {
   const label = metricWords(metric);
@@ -195,14 +195,13 @@ export function TargetModal({ role, playerId, category, metric, stood, current, 
   const option = (d) => <option key={d.id} value={d.id}>{d.name} · {d.duration} min</option>;
   const save = async () => {
     setBusy(true); setSaid("");
-    let noteId;
     try {
-      if (why.trim()) noteId = (await writeCoachingPoint(playerId, { body: why, skillId: stood.id })).id;
-      await setTarget(playerId, { category, metric, targetScore: score, dueOn: due, drillId, noteId });
+      // One request: the server writes the why and the target together, so a
+      // refused target leaves no reason on his record.
+      await setTarget(playerId, { category, metric, targetScore: score, dueOn: due, drillId,
+                                  ...(why.trim() ? { why, skillId: stood?.id } : {}) });
       onDone();
     } catch (e) {
-      // A refused target leaves no orphan reason on his record.
-      if (noteId) await withdrawNote(noteId).catch(() => {});
       setSaid(writeWords(e));
     } finally { setBusy(false); }
   };

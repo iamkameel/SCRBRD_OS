@@ -152,7 +152,18 @@ export async function sessionProfile(pool, secret, bearer) {
               -- self-access assignment, the holder's own player row. It was
               -- called children, back when the table was named for guardians,
               -- which made the second case look like a guardian of themselves.
-              coalesce(array_agg(g.player_id) filter (where g.player_id is not null), '{}') as subjects
+              coalesce(array_agg(g.player_id) filter (where g.player_id is not null), '{}') as subjects,
+              -- Of those, the links that are verified and live today, in
+              -- db/119's words for is_family_of(): begun, and not ended
+              -- (valid_until after today). The screens that draw what a
+              -- family reads (lib/held.js familyOf) read this; every other
+              -- reader of subjects is unchanged, so a pending or ended link
+              -- still names its boy where a screen says "awaiting the office"
+              -- or "ended".
+              coalesce(array_agg(g.player_id) filter (where g.player_id is not null
+                         and g.verification_state = 'verified'
+                         and g.valid_from <= current_date
+                         and (g.valid_until is null or g.valid_until > current_date)), '{}') as live_subjects
          from role_assignment a
          left join school s on s.id = a.school_id
          left join assignment_subject g on g.assignment_id = a.id
@@ -178,6 +189,8 @@ export async function sessionProfile(pool, secret, bearer) {
         // Non-null only for a support session: when it stops by itself.
         expiresAt: a.expires_at ?? null,
         subjects: a.subjects,
+        // The subjects whose link is verified and live today (is_family_of(), db/119).
+        liveSubjects: a.live_subjects,
         // Kept while the demo vocabulary still says children. Both name the
         // same rows; subjects is the one to read.
         children: a.subjects,

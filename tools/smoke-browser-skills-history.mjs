@@ -62,6 +62,8 @@ const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
 const group = (t) => console.log("\n" + t);
+/** A panel's text on one line, so a failure prints all of it where a log keeps one line. */
+const flat = (s) => String(s ?? "").replace(/\n+/g, " / ");
 
 /** The design's never-words (GA-I26a §7.3), whole words, and the cockpit's own list. */
 const NEVER = /\b(improv\w*|declin\w*|stall\w*|plateau\w*|regress\w*|form|fatigue\w*|injur\w*|absent|absence|missed|rank\w*|percentile)\b/i;
@@ -273,6 +275,11 @@ try {
   ok("...and nothing was left behind", (await q(`select count(*)::int n from development_note where player_id = $1 and evidence_read is not null`, [P_SELF]))[0].n === 0
      && (await q(`select count(*)::int n from development_target where player_id = $1`, [P_SELF]))[0].n === 0);
   await tid(c.page, "target-why").fill("Gets squared up early; work on getting forward to the short ball.");
+  // The save bumps the screen's nonce and every read of the boy goes again in
+  // parallel; the panel keeps its old rows until "since the last look" answers,
+  // and that read is the heaviest. So the panel is judged on THAT answer, armed
+  // before the save so it cannot be missed, not on the target line's read.
+  const sinceAfterSave = c.page.waitForResponse((r) => /\/api\/read\/development_since\b/.test(r.url()) && r.request().method() === "GET", { timeout: 15000 }).catch(() => null);
   const tRes = await clickAndWait(c.page, tid(c.page, "target-save"), /\/api\/players\/[^/]+\/targets$/);
   ok("the target saves", tRes.status() === 200);
   await tid(c.page, "target-form").waitFor({ state: "detached", timeout: 8000 }).catch(() => {});
@@ -295,15 +302,22 @@ try {
 
   group("Since the last look");
   await tid(c.page, "since-batting").waitFor({ timeout: 12000 });
+  const staleTxt = await tid(c.page, "since-batting").innerText();
+  const sinceRes = await sinceAfterSave;
+  ok("the panel is read again after the target saves", sinceRes?.status() === 200, sinceRes ? String(sinceRes.status()) : "no read");
+  // ...and drawn from that answer: the line the target gives the panel.
+  await c.page.locator('[data-testid="since-batting"]', { hasText: /Target: against pace 14/ }).waitFor({ timeout: 12000 }).catch(() => {});
   const sinceTxt = await tid(c.page, "since-batting").innerText();
-  if (DEBUG) console.log("[debug] since-batting:\n" + sinceTxt);
+  const targetLine = sinceTxt.split("\n").find((l) => l.startsWith("Target:")) ?? "(no Target line)";
+  if (DEBUG) console.log(`[debug] since-batting when the target line drew (it had ${/Target:/.test(staleTxt) ? "it already" : "no target line"} before the re-read answered):\n${sinceTxt}`);
   ok("batting names its last look and the coach", new RegExp(`Batting · last looked \\d+ \\w+ \\(${COACH}, coach\\)`).test(sinceTxt), sinceTxt.split("\n")[0]);
-  ok("the sessions the side held", /Since then 1XI held 3 sessions\./.test(sinceTxt), sinceTxt);
-  ok("what he was marked at; a register at one of three is said so", /R Pillay was marked present at 1 \(a register was taken at 1 of 3\)\./.test(sinceTxt), sinceTxt);
-  ok("the drills the plan ran", new RegExp(`Drills on those sessions: ${drill.name} ×1\\.`).test(sinceTxt), sinceTxt);
+  ok("the sessions the side held", /Since then 1XI held 3 sessions\./.test(sinceTxt), flat(sinceTxt));
+  ok("what he was marked at; a register at one of three is said so", /R Pillay was marked present at 1 \(a register was taken at 1 of 3\)\./.test(sinceTxt), flat(sinceTxt));
+  ok("the drills the plan ran", new RegExp(`Drills on those sessions: ${drill.name} ×1\\.`).test(sinceTxt), flat(sinceTxt));
   ok("the target, its drill, how often it ran and how often he was there",
-     new RegExp(`Target: against pace 14, set \\d+ \\w+ — the drill for it, ${drill.name}, ran 1 time; he was there for 1\\.`).test(sinceTxt), sinceTxt);
-  ok("the footer names its source and window", /From the training sessions, the register and the plan; 1XI, \d+ \w+ to today\./.test(sinceTxt));
+     new RegExp(`Target: against pace 14, set \\d+ \\w+ — the drill for it, ${drill.name}, ran 1 time; he was there for 1\\.`).test(sinceTxt),
+     `${targetLine} | the panel: ${flat(sinceTxt)}`);
+  ok("the footer names its source and window", /From the training sessions, the register and the plan; 1XI, \d+ \w+ to today\./.test(sinceTxt), flat(sinceTxt));
   ok("a discipline he was never rated in is not given a number", /Not yet rated for keeping\./.test(await tid(c.page, "since-keeping").innerText()) || await tid(c.page, "since-keeping").count() === 0);
   ok("no word of the panel is under 12px", (await smallestType(c.page, '[data-testid="since-panel"]')) >= 12, await smallestType(c.page, '[data-testid="since-panel"]'));
 

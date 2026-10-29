@@ -27,7 +27,7 @@
  * point-era ball needs no hand at all) and why a sector-era ball's stored
  * `seg` does (it is the screen sector, read back through batterSector()).
  */
-import { SECTORS, sectorOf } from "@scrbrd/scoring";
+import { SECTORS, boundaryHit, sectorOf } from "@scrbrd/scoring";
 import { RIM } from "./field.js";
 
 /**
@@ -154,7 +154,7 @@ export function wagonAnalysis(balls = [], { batHandFor = () => "R", chip = null 
     const v = Number(b.value) || 0;
     sideRuns[/** @type {"off" | "leg"} */ (side)] += v;
     areaRuns[area] += v;
-    if (v === 4 || v === 6) areaBoundaries[area] += 1;
+    if (boundaryHit(b) != null) areaBoundaries[area] += 1;   // F7: to the rope, not any four or six
   }
   const total = sideRuns.off + sideRuns.leg;
   const pct = (n) => (total ? Math.round((n / total) * 1000) / 10 : 0);

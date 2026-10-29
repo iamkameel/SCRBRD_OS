@@ -7,10 +7,10 @@
  * (@scrbrd/scoring's deriveMatch), and a thing the fold does not have is left
  * out rather than guessed.
  */
-import { runsOffBat, resultWords, isWicketBall, formatKind } from "@scrbrd/scoring";
+import { boundaryHit, runsOffBat, resultWords, isWicketBall, formatKind } from "@scrbrd/scoring";
 import { parseTeam, teamLabel } from "@scrbrd/policy/teams";
 import { humanDateTime } from "./format.js";
-import { liveSuperOverLine, superOverInPlay, superOverTitle } from "./superOver.js";
+import { liveSuperOverLine, matchChaseOf, superOverInPlay, superOverTitle, twoInningsPlayed } from "./superOver.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -126,6 +126,13 @@ export function boardInnings(innings = [], result = null) {
   const atBreak = inningsPhase(innings, result) === "Innings break";
   return { index: atBreak ? 0 : Math.max(0, innings.length - 1), atBreak };
 }
+
+/**
+ * An innings' boundaries, the Analytics tab's figure: its fours and sixes to
+ * the rope, as the engine judges each (boundaryHit(), the Laws audit F7) — an
+ * all-run four, or runs with overthrows, is none. @param {any} inn
+ */
+export const boundaryCount = (inn) => (inn?.ballLog ?? []).filter((b) => boundaryHit(b) != null).length;
 
 /** The age group of a side: "U16", or "1st XI" for an open side. @param {string | null | undefined} team */
 export function ageGroupOf(team) {
@@ -334,16 +341,21 @@ export function tossWords(match) {
 
 /**
  * The second innings' target, as the fold has it — the umpires' (or the
- * pad's) where one was written, else one more than the first innings — for
- * a match of one innings a side. Null before there is a second innings. The
- * Summary's board and break card read the same (tabs-core.jsx).
+ * pad's) where one was written, else one more than the first innings — and
+ * none in a match of two innings a side, whose chase is the fourth
+ * (lib/superOver.js chaseOf(), the Laws audit F2). The one copy: the
+ * Summary's board and break card (tabs-core.jsx) and the status sentence.
  * @param {any[]} innings  the match's own innings, in order
  * @returns {number | null}
  */
-export const targetOf = (innings) => (innings.length >= 2 ? (innings[1].target ?? innings[0].runs + 1) : null);
+export const targetOf = (innings) => matchChaseOf(innings, 1)?.target ?? null;
 
-/** Two innings a side (format.innings_per_side = 2, replay.mjs describeResult D11). @param {any} conditions */
-const twoInningsOf = (conditions) => conditions?.["format.innings_per_side"] === 2;
+/**
+ * Two innings a side: the fold's frozen conditions on its innings
+ * (superOver.js twoInningsPlayed()), or the fold context's where a screen
+ * passes them. @param {any[]} played @param {any} conditions
+ */
+const twoInningsOf = (played, conditions) => twoInningsPlayed(played) || conditions?.["format.innings_per_side"] === 2;
 
 /** @param {number} n  @param {string} one  @param {string} many */
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -400,7 +412,7 @@ export function statusSentence(match, fold = null, { result = null } = {}) {
   const toss = tossWords(match);
   const played = innings.filter((i) => i.superOver == null);
   if (played.length) {
-    const now = (twoInningsOf(fold?.conditions) ? twoInnings : inPlay)(match, played, fold?.result ?? null, toss);
+    const now = (twoInningsOf(played, fold?.conditions) ? twoInnings : inPlay)(match, played, fold?.result ?? null, toss);
     // Play stopped: said first, then where the match stands. The banner
     // under the header (RevisionBanner) says why and when, so this does not.
     return played[played.length - 1].stopped ? { state: "stopped", text: `Play stopped · ${now.text}` } : now;
@@ -429,7 +441,7 @@ function inPlay(match, played, result, toss) {
   }
   // One innings a side: the side batting second is chasing.
   if (played.length === 2) {
-    const target = /** @type {number} */ (targetOf(played));
+    const target = targetOf(played) ?? first.runs + 1;
     const side = teamOf(match, inn.battingTeam).full;
     const need = Math.max(0, target - inn.runs);
     const left = timed ? null : Math.max(0, (inn.overs ?? match.overs) * 6 - inn.balls);
@@ -465,7 +477,8 @@ function twoInnings(match, played, _result, toss) {
   if (between) return { state: "innings_break", text: `Innings break: ${lead()}` };
   if (played.length === 1) return { state: "first_innings", text: toss ?? `${side} batting first` };
   if (played.length < 4) return { state: "lead", text: lead() };
-  const target = inn.target ?? (runsFor(inn, false) - (runsFor(inn, true) - inn.runs) + 1);
+  // The fourth innings' target: chaseOf()'s (the fold's, else the runs it trails by over the three before it, plus one).
+  const target = matchChaseOf(played, 3)?.target ?? inn.target ?? (runsFor(inn, false) - (runsFor(inn, true) - inn.runs) + 1);
   return { state: "chase", text: `${side} need ${count(Math.max(0, target - inn.runs), "run", "runs")} to win` };
 }
 
