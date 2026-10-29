@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { T, contrast } from "../../design/tokens.js";
-import { boardInnings, commentaryByOver, inningsBreak, oversOf, teamOf } from "../../lib/matchCentre.js";
+import { boardInnings, commentaryByOver, inningsBreak, oversOf, targetOf, teamOf } from "../../lib/matchCentre.js";
 import { Board, chipFill } from "../../ui/board.jsx";
 import { atThisRate, boardFromInnings } from "../../scorer/boardData.js";
 import { boardInsights } from "../../scorer/signals.js";
@@ -25,8 +25,6 @@ import { Worm } from "../../ui/charts/worm.jsx";
 
 // ── Summary ─────────────────────────────────────────────
 
-/** The target of the second innings, as the fold has it. */
-const targetOf = (innings) => (innings.length >= 2 ? (innings[1].target ?? innings[0].runs + 1) : null);
 
 /** The innings break (§10 item 10, p2): the first innings in four facts. */
 function InningsBreakCard({ match, innings, overs }) {

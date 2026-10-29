@@ -132,6 +132,21 @@ group("The pad: the board without the last-wicket row (its keys stay above the b
   ok("...though its props carry the last wicket (the other screens draw it)", lastWicketText(boardFromInnings(inn).lastWicket) === "R Naidoo c S Smith b J Jones 4 (3)");
 }
 
+group("The screens CRI-1.1 does not cover pass no last wicket");
+{
+  // The coach's tab (SCRBRD-136), the captain's (SCRBRD-138, a governed
+  // surface), the day sheet and the deck's day sheet draw the board from the
+  // fold too; the row on them is a design change for later.
+  const { readFileSync } = await import("node:fs");
+  const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8");
+  for (const [f, needle] of [["views/cockpit/CoachTab.jsx", 'testid="coach-board"'], ["views/matchcentre/captainTab.jsx", 'testid="mc-captain-board"'],
+    ["views/DashboardView.jsx", 'testid="day-board"'], ["scorer/pad.jsx", "compact/>"]]) {
+    const line = src(f).split("\n").find((l) => l.includes("<Board") && l.includes(needle)) ?? "";
+    ok(`${f}: its <Board> passes lastWicket={undefined}`, line.includes("lastWicket={undefined}"), line.trim());
+  }
+  ok("views/pitchdeck/demo.js: the deck's board props carry no last wicket", /lastWicket: undefined/.test(src("views/pitchdeck/demo.js")));
+}
+
 group("The public page: the row says the fold's labels, never a name");
 {
   // The log as /api/public/matches/:id/log sends it: pseudonyms for every

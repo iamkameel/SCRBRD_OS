@@ -402,7 +402,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   const over = settled || match.status === "complete";
   // CRI-1.2: where the match stands, in one sentence — the list's card asks the same function. A
   // demonstration's innings are a reconstruction, so its sentence is the fixture's own, as the card's is.
-  const status = statusSentence(match, log.demo ? null : { innings: played, result: log.result }, { result });
+  const status = statusSentence(match, log.demo ? null : { innings: played, result: log.result, conditions: log.fold?.conditions }, { result });
   // One quiet `correction` line each, team-level, never a moment card.
   const told = useMemo(() => withCorrectionLines(commentary, log.events ?? [], fixes, over), [commentary, log.events, fixes, over]);
   const corrected = useMemo(() => inningsWords(log.events ?? [], fixes, log.innings), [log.events, fixes, log.innings]);

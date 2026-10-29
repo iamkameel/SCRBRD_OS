@@ -57,6 +57,40 @@ const stopped = deriveInnings([...second, ball({ value: 4 }), ball({ value: 2 })
 says("play stopped: said first, then where the match stands", statusSentence({ ...M, status: "live" }, { innings: [inn1Done, stopped] }), "stopped",
      "Play stopped · Westville Boys' High 1XI need 5 runs off 117 balls");
 
+group("A declaration match: no overs to name");
+{
+  const D = { ...M, status: "live", format: "declaration", overs: null };
+  // The fold gives the innings 20 overs by default; the sentence does not take that for a limit.
+  says("the break says the target and no overs", statusSentence(D, { innings: [{ ...inn1Done, overs: 20 }] }), "innings_break",
+       "Innings break: Westville Boys' High 1XI need 11 to win");
+  says("...and the chase no balls", statusSentence(D, { innings: [{ ...inn1Done, overs: 20 }, { ...chase, overs: 20 }] }), "chase",
+       "Westville Boys' High 1XI need 5 runs to win");
+}
+
+group("Two innings a side (format.innings_per_side = 2): the second innings is not a chase");
+{
+  const TWO = { "format.innings_per_side": 2 };
+  const D = { ...M, status: "live", format: "two_day", overs: null, tossWonBy: "home", tossDecision: "bat" };
+  const H = (runs, complete = false) => ({ ...inn1Live, battingTeam: "1XI", teamKey: "1XI", bowlingTeam: "Westville Boys' High 1XI", runs, complete });
+  const W = (runs, complete = false, more = {}) => ({ ...chase, battingTeam: "Westville Boys' High 1XI", teamKey: "Westville Boys' High 1XI",
+    bowlingTeam: "1XI", runs, complete, target: null, ...more });
+  const f = (innings) => ({ innings, result: null, conditions: TWO });
+  says("innings 1: the toss", statusSentence(D, f([H(87)])), "first_innings", "Hilton College 1XI won the toss and chose to bat");
+  says("the first break: the lead of the side that has batted", statusSentence(D, f([H(210, true)])), "innings_break", "Innings break: Hilton College 1XI lead by 210 runs");
+  says("innings 2, behind: trail, never \"need … to win\"", statusSentence(D, f([H(210, true), W(150)])), "lead", "Westville Boys' High 1XI trail by 60 runs");
+  says("innings 2, ahead", statusSentence(D, f([H(210, true), W(230)])), "lead", "Westville Boys' High 1XI lead by 20 runs");
+  says("innings 2, level", statusSentence(D, f([H(210, true), W(210)])), "lead", "Scores level");
+  says("the second break", statusSentence(D, f([H(210, true), W(240, true)])), "innings_break", "Innings break: Westville Boys' High 1XI lead by 30 runs");
+  says("innings 3: the side batting again, against both", statusSentence(D, f([H(210, true), W(240, true), H(100)])), "lead", "Hilton College 1XI lead by 70 runs");
+  says("the third break", statusSentence(D, f([H(210, true), W(240, true), H(100, true)])), "innings_break", "Innings break: Hilton College 1XI lead by 70 runs");
+  says("innings 4: the chase, to pass both of the other side's", statusSentence(D, f([H(210, true), W(240, true), H(100, true), W(40)])), "chase",
+       "Westville Boys' High 1XI need 31 runs to win");
+  says("...the fold's own target where it has one", statusSentence(D, f([H(210, true), W(240, true), H(100, true), W(40, false, { target: 75 })])), "chase",
+       "Westville Boys' High 1XI need 35 runs to win");
+  says("...and the same match without the two-innings condition reads innings 2 as a chase (one innings a side)",
+       statusSentence({ ...D, format: "T20", overs: 20 }, { innings: [H(210, true), W(150)] }), "chase", "Westville Boys' High 1XI need 61 runs off 117 balls");
+}
+
 group("Decided");
 says("the fold's result, in resultText's words", statusSentence({ ...M, status: "live" }, { innings: [inn1Done, chase], result: { winner: "Westville Boys' High 1XI", margin: "4 wickets" } }),
      "result", "Westville Boys' High 1XI won by 4 wickets");

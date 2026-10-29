@@ -289,7 +289,7 @@ export function PublicMatch({ matchId, view }) {
   const isLive = match.status === "live";
   // CRI-1.2: the status sentence says where the match stands; the line under it does not say it again.
   const line = matchLine({ match, competition: null, weather: null });
-  const st = statusSentence(match, folded ? { innings: played, result: folded.result } : null, { result });
+  const st = statusSentence(match, folded ? { innings: played, result: folded.result, conditions: data.fold?.conditions } : null, { result });
   const notice = revisionNotice(boardInn);
   const ctx = { match, innings: played, result, commentary: fixes?.commentary ?? commentary, events, fold: data.fold, par: data.par, settled: story?.settled ?? false,
     demo: false, overs: match.overs || 20,

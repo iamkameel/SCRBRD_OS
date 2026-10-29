@@ -223,7 +223,7 @@ export function Insight({ lines = [], testid = "board-insight" }) {
 
 /**
  * The text of the last-wicket row, without its label: "R Naidoo c Smith b
- * Jones 34 (25)". Pure (board.test.mjs).
+ * Jones 34 (25)". Pure (board-rows.test.mjs).
  * @param {{name: string, dismissal: string, runs?: number, balls?: number | null}} w
  */
 export function lastWicketText(w) {
