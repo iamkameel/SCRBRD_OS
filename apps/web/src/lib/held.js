@@ -46,17 +46,28 @@ export function holdsAsHeld(role, capability, held = heldRoles()) {
  * answer here mislabels a line and grants nothing.
  */
 
-/** The links that make a person a boy's family: db/08's is_family_of() reads these two, verified. */
+/**
+ * The links that make a person a boy's family: is_family_of() reads these
+ * two, verified and live today on a live assignment (db/119; db/08 read no
+ * date). The session lists live assignments only, and, in each one's
+ * liveSubjects, the boys whose link is verified and live today.
+ */
 const FAMILY_LINKS = Object.freeze(["guardian", "selfaccess"]);
 
 /**
  * The boys the signed-in person is family of: the ones his guardian or
- * self-access links name (the session lists only live links).
+ * self-access assignments name through a link verified and live today
+ * (liveSubjects). A pending link, or one that ended by its date, is not
+ * family, so a boy whose decision the server will no longer show is not drawn
+ * as "no decision recorded". `subjects` (every link, any state) stands in
+ * only for an assignment that carries no liveSubjects (a hand-made one in a
+ * test or a mock).
  * @param {any[]} [assignments]  the session's assignments; read from it by default (the test passes them)
  * @returns {Set<string>}
  */
 export function familyOf(assignments = profile()?.assignments ?? []) {
-  return new Set(assignments.filter((a) => FAMILY_LINKS.includes(a.role)).flatMap((a) => a.subjects ?? []));
+  return new Set(assignments.filter((a) => FAMILY_LINKS.includes(a.role))
+    .flatMap((a) => (Array.isArray(a.liveSubjects) ? a.liveSubjects : a.subjects) ?? []));
 }
 
 /**

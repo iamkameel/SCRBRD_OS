@@ -137,9 +137,12 @@ export const NB_RUNS = Object.freeze({ BYES: "byes", LEG_BYES: "leg_byes" });
  * batters have changed ends (Law 18), and the pre-ball crease no longer says
  * which end is empty; this does. The survivor is at the other end.
  *
- * Asked by the pad on a run out that completed runs, and absent otherwise —
- * then, as in every log before this, the dismissed batter's end before the
- * ball is the one that empties.
+ * Asked by the pad on every run out (Kameel, 28 Oct 2026, the Laws audit Q6,
+ * F1): with no run completed the batters may still have crossed — the
+ * striker beaten to the bowler's end going for a quick single — and only the
+ * end says which end is empty. Absent — every log before the pad asked, and
+ * any other producer's — the dismissed batter's end before the ball is the
+ * one that empties, which is right only when they had not crossed.
  */
 export const RUN_OUT_END = Object.freeze({ STRIKER: "striker_end", BOWLER: "bowler_end" });
 /** @typedef {typeof RUN_OUT_END[keyof typeof RUN_OUT_END]} RunOutEnd */
@@ -190,10 +193,12 @@ export const FACES_NEXT_VALUES = new Set(Object.values(FACES_NEXT));
  * What kind of no-ball it was, as the umpire called it and the pad's no-ball
  * sheet asks: over the popping crease, a full toss above waist height, or a
  * dangerous one. Recorded because the scorer saw it (a deliberate front-foot
- * no-ball and a second beamer are grounds for suspending the bowler, Law 41);
- * the fold decides nothing by it — every no-ball is followed by a free hit
- * (§6 of docs/SCORING_RULES.md). Omitted when not asked, so a no-ball
- * recorded before is the event it always was.
+ * no-ball and a second beamer are grounds for suspending the bowler, Law 41),
+ * and since Kameel's decision of 28 Oct 2026 (the Laws audit, Q2) it decides
+ * the free hit: only a front-foot no-ball earns one (givesFreeHit(), below;
+ * §6 of docs/SCORING_RULES.md). Omitted when not asked, so a no-ball
+ * recorded before is the event it always was — and, its kind unknown, it
+ * earns the free hit it always did.
  */
 export const NB_TYPE = Object.freeze({ FRONT_FOOT: "front_foot", HEIGHT: "height", BEAMER: "beamer" });
 /** @typedef {typeof NB_TYPE[keyof typeof NB_TYPE]} NbType */
@@ -202,6 +207,57 @@ export const NB_TYPES = new Set(Object.values(NB_TYPE));
 /** @typedef {typeof NB_RUNS[keyof typeof NB_RUNS]} NbRuns */
 /** @type {ReadonlySet<unknown>}  asked of whatever a producer wrote */
 export const NB_RUNS_VALUES = new Set(Object.values(NB_RUNS));
+/**
+ * The deliveries `nbRuns` may be on: a no-ball (SCRBRD-068), and — the Laws
+ * audit of 28 Oct 2026, F5 and F9 — a wicket ball whose runs completed were
+ * byes or leg byes: a run out going for a second bye, or a bowled free hit
+ * the batters ran byes off. Absent on a wicket ball, its runs are off the
+ * bat, as every wicket ball before this was read.
+ * @type {ReadonlySet<unknown>}
+ */
+export const NB_RUNS_TYPES = new Set([BALL_TYPE.NO_BALL, BALL_TYPE.WICKET]);
+
+/**
+ * WHICH NO-BALLS EARN A FREE HIT (Kameel, 28 Oct 2026, the Laws audit Q2):
+ * a front-foot no-ball, and only that — not a full toss above the waist, not
+ * a beamer. A no-ball whose kind was not recorded (every no-ball before the
+ * pad asked, and any other producer's) earns one, as it always did: the
+ * commonest no-ball by far is the front foot, and a log already scored is
+ * not re-read into wickets that were saved.
+ *
+ * A no-ball that earns none does not spend one either: on a free hit it is
+ * the free hit not yet bowled, and the next delivery is still the free hit
+ * (as a wide on one is). db/121's ball_on_free_hit() is this rule in SQL.
+ * @type {ReadonlySet<unknown>}
+ */
+export const FREE_HIT_NB_TYPES = new Set([NB_TYPE.FRONT_FOOT]);
+/** Does this delivery earn a free hit for the next (where the format gives free hits)?
+ *  @param {{type?: string | null, nbType?: unknown}} ev */
+export const givesFreeHit = (ev) => (ev.type ?? BALL_TYPE.RUN) === BALL_TYPE.NO_BALL
+  && (ev.nbType == null || FREE_HIT_NB_TYPES.has(ev.nbType));
+
+/**
+ * FOURS AND SIXES ARE BOUNDARIES (Kameel, 28 Oct 2026, the Laws audit Q4,
+ * F7): a four is the ball reaching the boundary, a six the ball clearing it.
+ * An all-run four is four runs and no four; two run and four overthrows is
+ * six runs and no six. `boundary: false` on the delivery says so: the runs
+ * are the same runs, only the boundary columns (a batter's 4s and 6s, and
+ * every career, season and record read from them) leave it out.
+ *
+ * The pad's 4 and 6 keys say "Four, boundary" and "Six, maximum", so a
+ * delivery without the field is read as it was keyed — worth four or six off
+ * the bat, it is a boundary. Every ball already scored reads as before.
+ * db/121 asks the same of payload.boundary in every SQL boundary count.
+ * @param {{type?: string | null, value?: number | null, nbRuns?: unknown, boundary?: unknown}} ev
+ * @returns {4 | 6 | null}
+ */
+export function boundaryHit(ev) {
+  const t = ev.type ?? BALL_TYPE.RUN;
+  if (t !== BALL_TYPE.RUN && t !== BALL_TYPE.NO_BALL) return null;
+  if (ev.boundary === false) return null;
+  const off = runsOffBat(ev);
+  return off === 4 ? 4 : off === 6 ? 6 : null;
+}
 
 /**
  * The runs off a delivery that are the striker's. A no-ball's are unless the
@@ -213,7 +269,10 @@ export const NB_RUNS_VALUES = new Set(Object.values(NB_RUNS));
 export function runsOffBat(ev) {
   const t = ev.type ?? BALL_TYPE.RUN;
   if (!OFF_THE_BAT.has(t)) return 0;
-  if (t === BALL_TYPE.NO_BALL && NB_RUNS_VALUES.has(ev.nbRuns)) return 0;
+  // A no-ball's, or a wicket ball's (the Laws audit of 28 Oct 2026, F5: a
+  // run out going for a second bye; F9: byes off a free hit the bowled
+  // dismissal did not stand on), that were byes or leg byes are not his.
+  if ((t === BALL_TYPE.NO_BALL || t === BALL_TYPE.WICKET) && NB_RUNS_VALUES.has(ev.nbRuns)) return 0;
   return ev.value ?? 0;
 }
 
@@ -232,7 +291,9 @@ export function runsToBowler(ev) {
   if (t === BALL_TYPE.WIDE) return 1 + (ev.value ?? 0);
   if (t === BALL_TYPE.NO_BALL) return 1 + runsOffBat(ev);
   if (t === BALL_TYPE.BYE || t === BALL_TYPE.LEG_BYE) return 0;
-  return ev.value ?? 0;
+  // A run or a wicket ball: the runs off the bat — none of a wicket ball's
+  // byes or leg byes (F5).
+  return runsOffBat(ev);
 }
 
 /**
@@ -895,7 +956,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  *   placementSource: string | null, placementNull: string | null,
  *   closePosition: string | null, captureProfile: string | null,
  *   nbRuns?: NbRuns, nbType?: NbType, outAt?: RunOutEnd,
- *   facesNext?: FacesNext, notInOver?: PenaltyReason,
+ *   facesNext?: FacesNext, notInOver?: PenaltyReason, boundary?: false,
  * }} BallEvent
  */
 /**
@@ -912,7 +973,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  *   placementSource?: string | null, placementNull?: string | null,
  *   closePosition?: string | null, captureProfile?: string | null,
  *   nbRuns?: string | null, nbType?: string | null, outAt?: string | null,
- *   facesNext?: string | null, notInOver?: string | null,
+ *   facesNext?: string | null, notInOver?: string | null, boundary?: boolean | null,
  * }} BallInput
  */
 
@@ -1398,16 +1459,33 @@ const checkedType = (t) => {
 
 /**
  * Reject an `nbRuns` the model does not define, or one on a delivery that is
- * not a no-ball: refused where the scorer who chose it can still see it.
+ * not a no-ball or a wicket ball (NB_RUNS_TYPES): refused where the scorer
+ * who chose it can still see it.
  * @param {string | null | undefined} n  @param {BallType} type
  * @returns {NbRuns | null}
  */
 const checkedNbRuns = (n, type) => {
   if (n == null) return null;
-  if (!NB_RUNS_VALUES.has(n) || type !== BALL_TYPE.NO_BALL) {
-    throw new TypeError(`nbRuns ${JSON.stringify(n)} is for a no-ball, one of ${[...NB_RUNS_VALUES].join(", ")}`);
+  if (!NB_RUNS_VALUES.has(n) || !NB_RUNS_TYPES.has(type)) {
+    throw new TypeError(`nbRuns ${JSON.stringify(n)} is for a no-ball or a wicket ball, one of ${[...NB_RUNS_VALUES].join(", ")}`);
   }
   return /** @type {NbRuns} */ (n);
+};
+
+/**
+ * `boundary` is only ever `false` — the runs off the bat did not reach the
+ * rope (boundaryHit()) — and only on a run or a no-ball, the deliveries a
+ * boundary is counted on. Anything else is refused where the scorer can see
+ * it.
+ * @param {unknown} b  @param {BallType} type
+ * @returns {boolean}  whether the delivery carries `boundary: false`
+ */
+const checkedBoundary = (b, type) => {
+  if (b == null) return false;
+  if (b !== false || (type !== BALL_TYPE.RUN && type !== BALL_TYPE.NO_BALL)) {
+    throw new TypeError(`boundary ${JSON.stringify(b)} is only false, on a run or a no-ball: runs that did not reach the boundary`);
+  }
+  return true;
 };
 
 /**
@@ -1493,6 +1571,7 @@ export const ball = (o) => {
   const wicket = checkedWicket(o.dismissal, type);
   const nbRuns = checkedNbRuns(o.nbRuns, type);
   const nbType = checkedNbType(o.nbType, type);
+  const notBoundary = checkedBoundary(o.boundary, type);
   const outAt = checkedOutAt(o.outAt, wicket);
   const facesNext = checkedFacesNext(o.facesNext, wicket);
   const notInOver = checkedNotInOver(o.notInOver, wicket);
@@ -1510,6 +1589,9 @@ export const ball = (o) => {
   // sheet always passed it; the constructor dropped it until now, so no
   // stored no-ball carries it and every one reads as it did.
   ...(nbType ? { nbType } : {}),
+  // Runs off the bat that did not reach the boundary (boundaryHit(), F7).
+  // Omitted otherwise, so every other delivery is the event it always was.
+  ...(notBoundary ? { boundary: false } : {}),
 
   // WHO WAS INVOLVED
   // ────────────────

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { formatKind } from "@scrbrd/scoring";
 import { T, contrast } from "../../design/tokens.js";
 import { boardInnings, commentaryByOver, inningsBreak, oversOf, targetOf, teamOf } from "../../lib/matchCentre.js";
 import { Board, chipFill } from "../../ui/board.jsx";
@@ -7,7 +8,7 @@ import { boardInsights } from "../../scorer/signals.js";
 import { InningsToggle } from "./scorecard.jsx";
 import { CardHead, Panel, Quiet, SideName } from "./bits.jsx";
 import { Highlights, MomentMark, OverSummary } from "./spectator.jsx";
-import { superOverTitle } from "../../lib/superOver.js";
+import { matchChaseOf, superOverTitle, twoInningsPlayed } from "../../lib/superOver.js";
 import { chaseRates, rainTouched, rateTrack, reportFor } from "../../lib/par.js";
 import { wormOf } from "../../lib/chartSeries.js";
 import { RateTrack } from "../../ui/parTrack.jsx";
@@ -30,7 +31,8 @@ import { Worm } from "../../ui/charts/worm.jsx";
 function InningsBreakCard({ match, innings, overs }) {
   const first = innings[0];
   const b = inningsBreak(first);
-  const target = targetOf(innings) ?? first.runs + 1;
+  // A Two-Day's break after the first innings sets no target (chaseOf()).
+  const target = twoInningsPlayed(innings) ? null : (targetOf(innings) ?? first.runs + 1);
   const chasing = teamOf(match, first.bowlingTeam);
   /** @param {{label: string, children: any, testid: string}} p */
   const Fact = ({ label, children, testid }) => (
@@ -51,7 +53,8 @@ function InningsBreakCard({ match, innings, overs }) {
       <div style={{ padding: `${T.space.md} ${T.space.lg}`, display: "grid", gap: T.space.xs }}>
         <span style={{ ...T.role.label, color: T.brand.accentText }}>Innings break</span>
         <p style={{ ...T.role.title.md, color: T.content.primary, margin: 0 }}>
-          <SideName side={chasing}/> need {target} to win from {first.overs ?? overs} overs
+          {target == null ? <><SideName side={chasing}/> to bat</>
+            : <><SideName side={chasing}/> need {target} to win{formatKind(match?.format) === "declaration" ? "" : ` from ${first.overs ?? overs} overs`}</>}
         </p>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)" }}>
@@ -86,15 +89,16 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
                              venueLine = null, rainLine = null, par = null, events = null, fold = null, settled = false, okAt = null }) {
   const { index, atBreak } = boardInnings(innings, result ? {} : null);
   const inn = innings[index];
-  const chase = innings.length >= 2 && inn === innings[1];
-  const chasing = chase && inn?.superOver == null;
+  const chaseNow = matchChaseOf(innings, index);
+  const chase = chaseNow != null;
+  const chasing = chase;
   // The chase's two required rates and their direction: the log's own
   // arithmetic, folded when the log moves, not on every tick of the board.
   const rates = useMemo(() => (chasing ? chaseRates(events ?? [], fold ?? {}, index) : null), [chasing, events, fold, index]);
   const worm = useMemo(() => (inn ? wormOf({ match, played: innings, index, events, overs, report: par }) : null),
     [inn, match, innings, index, events, overs, par]);
   if (!innings.length) return <Quiet testid="mc-summary-empty">Nothing has been scored yet. The board opens with the first ball.</Quiet>;
-  const target = chase ? targetOf(innings) : null;
+  const target = chaseNow?.target ?? null;
   const inOvers = inn.overs ?? overs;
   // "At this rate", in a first innings still being played (scorer/boardData.js
   // says when it is left off); nothing to project once the match is decided.

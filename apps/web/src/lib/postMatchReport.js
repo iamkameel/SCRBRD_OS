@@ -14,7 +14,7 @@
  * asserted against directly (test/postMatchReport.test.mjs) without a
  * database, a browser, or a mock fixture standing in for a real one.
  */
-import { BALL_TYPE, DISMISSAL_LABEL, fmtOvers, isLegal, runsOffBat } from "@scrbrd/scoring";
+import { BALL_TYPE, DISMISSAL_LABEL, fmtOvers, fowOvers, isLegal, runsOffBat } from "@scrbrd/scoring";
 
 /**
  * The best batting line across a whole match — every innings' batsmen pooled,
@@ -59,7 +59,7 @@ export function matchBestBowling(innings = []) {
  * @param {any} inn  one derived innings
  * @param {string} batterId
  * @param {number} threshold  50 or 100
- * @returns {string | null}  "12.3", or null if the total never reaches it
+ * @returns {string | null}  "12.3" (the sixth ball of an over "4.6", F13), or null if the total never reaches it
  */
 export function milestoneOver(inn, batterId, threshold) {
   let runs = 0;
@@ -69,7 +69,9 @@ export function milestoneOver(inn, batterId, threshold) {
     const off = b.strikerId === batterId ? runsOffBat(b) : 0;
     if (off > 0) {
       runs += off;
-      if (runs >= threshold) return fmtOvers(legal ? legalBalls + 1 : legalBalls);
+      // The ball it came on, as the fall of wickets writes it (F13): the
+      // sixth of the fifth over is 4.6, not 5.0.
+      if (runs >= threshold) return fowOvers(legal ? legalBalls + 1 : legalBalls);
     }
     if (legal) legalBalls += 1;
   }

@@ -22,7 +22,7 @@ import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ROLES as POLICY_ROLES, roleGrants } from "@scrbrd/policy/roles";
 import { MODULE_OF_NAV } from "@scrbrd/policy/modules";
-import { NAV_CAPABILITY, NAV_ORDER, PERSONA_ONLY, ROLE_IDENTITY, ROLES, personaFor } from "../src/design/roles.js";
+import { NAV_CAPABILITY, NAV_ORDER, PERSONA_ONLY, ROLE_IDENTITY, ROLES, navGrants, personaFor } from "../src/design/roles.js";
 import { HOMES, HOME_OF, collapseHomes, homeParts } from "../src/design/homes.js";
 import { HomeBar } from "../src/shell/HomeBar.jsx";
 import { useMenu } from "../src/lib/homeNav.js";
@@ -38,7 +38,7 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 const heldBy = (r) => [r, ...(ROLE_IDENTITY[r].also ?? [])];
 /** The capability check, written out from the data: null is everyone's. */
-const holds = (roles, k) => NAV_CAPABILITY[k] === null || roles.some((r) => roleGrants(r, NAV_CAPABILITY[k]));
+const holds = (roles, k) => NAV_CAPABILITY[k] === null || roles.some((r) => navGrants(r, k));
 /** What a role reaches: the menu as it has always been (ROLES[r].nav, Leagues its own entry). */
 const reachFor = (r) => ROLES[r].nav;
 /** What the shell now draws: that reach with each home once (lib/homeNav.js useMenu, on the capability stage). */

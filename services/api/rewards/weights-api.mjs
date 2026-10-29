@@ -27,13 +27,35 @@ export function rewardWeightRoutes({ pool, secret }) {
     // GET /api/rewards?teamCode=   the figures, for the boys this person may read.
     // 409 when the algorithm is incomplete — and it does not say which term,
     // because the list of terms is the shape of the algorithm.
+    //
+    // The figure is the ratings folded into a rank, so it is read as the
+    // ratings are: behind the `skills` module (a school that switched Skills
+    // off is served no figure derived from them), and on the record, one
+    // access_log row per call and school naming the boys whose figures came back.
     figures: async (req, res) => {
       try {
-        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, (client) =>
-          rewardFigures(client, { teamCode: req.query?.teamCode || null }));
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          const { rows: [gate] } = await client.query(`select my_feature_enabled('skills') as on`);
+          if (!gate?.on) throw Object.assign(new Error("module_disabled"), { status: 403, module: "skills" });
+          const r = await rewardFigures(client, { teamCode: req.query?.teamCode || null });
+          // One row per school the boys are at, so each school's auditor sees
+          // the reads of its own boys in its own log.
+          /** @type {Map<string | null, string[]>} */
+          const bySchool = new Map();
+          for (const x of r.rows ?? []) {
+            const s = r.schoolOf?.[x.playerId] ?? null;
+            bySchool.set(s, [...(bySchool.get(s) ?? []), x.playerId]);
+          }
+          for (const [school, ids] of bySchool) {
+            await client.query(`select log_restricted_read($1, $2::uuid[], $3::text[], $4::uuid)`,
+              ["rewards", ids.slice(0, 500), ["figure"], school]);
+          }
+          return r;
+        });
         if (!out.ok) return res.status(409).json({ error: "algorithm_incomplete" });
         res.json({ rows: out.rows });
       } catch (/** @type {any} */ e) {
+        if (e.message === "module_disabled") return res.status(403).json({ error: "module_disabled", module: e.module });
         const status = e.code === "42501" ? 403 : (e.status || 500);
         res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
       }

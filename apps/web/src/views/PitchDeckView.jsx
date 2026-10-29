@@ -15,6 +15,7 @@ import { ROLES, ROLE_CAPABILITIES } from "@scrbrd/policy/roles";
 import { MASKED_TABLES, TABLES } from "@scrbrd/policy/tables";
 import { FEATURES, MODULES, SPORTS } from "@scrbrd/policy/modules";
 import { Icon } from "../ui/icons.jsx";
+import { boundaryHit } from "@scrbrd/scoring";
 import { deviceCss } from "./pitchdeck/Device.jsx";
 
 // ══════════════════════════════════════════════════════
@@ -71,7 +72,7 @@ const DEMO = (() => {
   const side = (s) => zones.filter((z) => z.side === s).reduce((a, z) => a + z.runs, 0);
   return {
     balls, runs: inn.runs, wickets: inn.wickets, legal: legal.length,
-    fours: legal.filter((b) => b.value === 4).length, sixes: legal.filter((b) => b.value === 6).length,
+    fours: balls.filter((b) => boundaryHit(b) === 4).length, sixes: balls.filter((b) => boundaryHit(b) === 6).length,
     dots: legal.filter((b) => b.value === 0 && b.type !== "W").length,
     extras: balls.length - legal.length,
     zones: [...zones].sort((a, b) => b.runs - a.runs), keys, offRuns: side("off"), legRuns: side("leg"),

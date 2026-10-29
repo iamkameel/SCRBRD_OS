@@ -84,7 +84,7 @@ function NewsView({ role }) {
       await api(`/api/news/${id}/public/${action}`, { method: "POST" });
       setNonce(n => n + 1);
     } catch (e) {
-      setPublicError({ id, text: MESSAGE[e?.code] || e?.code || "Could not do that." });
+      setPublicError({ id, text: e?.code === "names_pupils" ? namesPupils(e?.data?.word) : (MESSAGE[e?.code] || e?.code || "Could not do that.") });
     } finally { setBusy(null); }
   };
   const waiting = rows.filter(n => n.publicState === "requested" && n.mayApprove && !n.mine);
@@ -111,7 +111,7 @@ function NewsView({ role }) {
                 <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{n.title}</div>
                 <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.6,whiteSpace:"pre-wrap",margin:"4px 0 8px"}}>{n.body}</div>
                 {n.publicNames>0 && (
-                  <div role="alert" style={{marginBottom:"8px",fontFamily:D.body,fontSize:"12px",color:textOn(D.rose)}}>{MESSAGE.names_pupils}</div>
+                  <div role="alert" data-testid={`news-names-${n.id}`} style={{marginBottom:"8px",fontFamily:D.body,fontSize:"12px",color:textOn(D.rose)}}>{namesPupils(n.publicWord)}</div>
                 )}
                 {publicError?.id===n.id && (
                   <div role="alert" style={{marginBottom:"8px",fontFamily:D.body,fontSize:"12px",color:textOn(D.rose)}}>{publicError.text}</div>
@@ -247,6 +247,10 @@ function PublicRow({ n, busy, onDoor, error }) {
                onClick={()=>onDoor(n.id, action.door)}>{action.label}</Btn>
         </span>
       )}
+      {/* The author is told which word of his own post the office cannot approve (db/118). */}
+      {!error && n.mine && state === "requested" && n.publicNames > 0 && (
+        <div role="alert" data-testid={`news-public-names-${n.id}`} style={{width:"100%",fontFamily:D.body,fontSize:"12px",color:textOn(D.rose)}}>{namesPupils(n.publicWord)}</div>
+      )}
       {error && <div role="alert" style={{width:"100%",fontFamily:D.body,fontSize:"12px",color:textOn(D.rose)}}>{error}</div>}
     </div>
   );
@@ -281,4 +285,13 @@ const MESSAGE = {
   urgency_invalid: "A notice goes to the app, or to phones too; nothing louder.",
 };
 
-export { NewsView };
+/**
+ * The refusal in words, with the word of the post that matched when the
+ * server gives it (db/118): the post's own word, never whose name it is.
+ * @param {string | null | undefined} word
+ */
+const namesPupils = (word) => (typeof word === "string" && word
+  ? `This post names a pupil: "${word}". Public posts talk about sides, not boys — reword it, or keep it on the school's feed.`
+  : MESSAGE.names_pupils);
+
+export { NewsView, namesPupils };

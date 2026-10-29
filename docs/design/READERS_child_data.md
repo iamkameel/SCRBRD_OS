@@ -133,6 +133,8 @@ Nobody else. Agreed everywhere.
 
 Agreed everywhere. One thing undecided: the pupil reading his **own** ID number on his phone (G12).
 
+*28 Oct 2026 (Kameel, R4):* a pupil's **login email** is the office's alone, as A4 says: `guardian.link.manage` at his school (the office and the principal) and the pupil himself. The director of sport and the platform account, who hold `user.role.assign`, read his account with no email on it (db/118 `app_user_email_seen()`).
+
 ### B · This match's figures (the log, the scorecard)
 
 | reader | may | condition | source |
@@ -144,6 +146,8 @@ Agreed everywhere. One thing undecided: the pupil reading his **own** ID number 
 | public | team level and labels | once the school publishes; no official, weather, pitch, note, reason, photo | `SCRBRD-083_public_pages.md:340-360` |
 
 What the log never carries about a boy: age, limit, injury, reason, note (`SCRBRD-136-137_away_visibility.md:140-158`). Agreed everywhere.
+
+*28 Oct 2026 (Kameel, R1 and R2):* a retirement's reason ("retired hurt") and a bowler change's or suspension's reason reach every reader of the log **at the boy's school**, as built: the school is the boundary. Outside it, and for any platform-wide caller (an assignment naming no school: the league account, the owner's key), the log reads "not out" and carries no reason (db/118 `ball_event_payload_seen()`).
 
 ### B2 · Career and season figures, per boy (the dossier)
 
@@ -201,6 +205,8 @@ The captain mark (SR-6) is read as the sheet is and is never public (`SEASON_ROL
 | other school | passport lines only, with `passport_consent` | no | no | never | never | `:103` |
 | league organiser, platform roles | no | | | | | `:104, 106` |
 | public | A5: `is_public` and named by L2; a never-public boy is absent, not "Player" | never | never | never (A3, A11) | never | `:107, 145-157` |
+
+*28 Oct 2026 (Kameel, R3, "Everyone who picks teams (as built)"):* at the receiving school the passport opens to every holder of `team.select` there: the director of sport, the sports administrator, the coaches and the team managers. db/115's and db/116's comments, which say "a coach", stand as shipped.
 
 The citation is read by team-mates and is public only when the boy is named (`RECOGNITION_design.md:113, 155`). Honours stay on the side they were awarded for after a move (SR-8, `SEASON_ROLLOVER.md:352`).
 
@@ -263,6 +269,7 @@ Agreed everywhere. A coaching point never reaches a pupil or a parent (`GA-I27_c
 | coach, assistant, manager | **no** | | `SCRBRD-136-137_coach_cockpit_and_feed.md:197`; `roles.mjs:257-304` |
 | umpire | writes the report | `discipline.write` | `roles.mjs:322` |
 | league organiser | **holds `discipline.read`**; no design says what it reads (G1) | | `roles.mjs:544` |
+| *league organiser, 28 Oct 2026 (R2)* | its own competitions' records only, logged (Q10) | `competition.discipline.read` at the competition's organiser; **a platform-wide caller reads none**, and a competition with no organiser opens to nobody (db/118) | `db/118_privacy_followups.sql` §5 |
 | DSO | no | | `roles.mjs:520` |
 | everyone else, public | never | N3 | `PUBLIC_DATA.md:76` |
 
@@ -532,6 +539,7 @@ Decided 21 Oct 2026 (Kameel). Each line states what governs. The designs named i
 - **Q6 · As recommended.** D3 governs: a withdrawn honour is absent for the DSO, who reaches it through the audit on a concern. RECOGNITION's matrix corrected.
 - **Q7 · As recommended.** PUBLIC_DATA C1 and C4 gain the sentence: "From his twelfth birthday a pupil may refuse his own name on public pages; his refusal stands whatever a guardian says. His 'yes' counts from eighteen."
 - **Q8 · As recommended.** The SG-9 trigger admits a `recipient_id` naming a pupil for `system` and `compromise` only, and only at 18 or more. INCIDENTS D8 corrected.
+- Clarified 22 Oct 2026 (Kameel): system notices reach a pupil at any age; the 18-or-more bar applies to compromise (breach) notices only.
 - **Q9 · As recommended.** The code stands: the principal reads status and nature; the head reads what the office reads. GA-I19 D3 corrected.
 - **Q10 · As recommended (READERS only).** `competitionadmin`'s `discipline.read` is scoped to records arising from its own competition's fixtures, through a definer read, logged.
 - **Q11 · As recommended (READERS only).** A concern about the other school's child routes by the child's school when the reporter names a boy on the other side's sheet; the reporter's own DSO is told a concern exists, with no name.
@@ -540,6 +548,18 @@ Decided 21 Oct 2026 (Kameel). Each line states what governs. The designs named i
 - **Q14 · As recommended (READERS only).** A pupil's "who read my record" is shown from 18 only in v1; under 18 it goes through the parent.
 - **Q15 · As recommended (READERS only).** The parent's disciplinary record is deferred to the information officer's next sign-off; the app never shows a parent a record it holds about her child without telling her one exists, so the letter stays the channel and the app stays silent.
 - **Q16 · As recommended (READERS only).** A child's own ID number is never drawn on a screen; the right of access is met by the office on request.
+
+Decided 22 Oct 2026 (Kameel): a mid-over bowler change's reason stays with the bowler's own school; the other school sees that he changed, never why. Surname particles (van, der, du) stay out of the public news name check when they stand alone.
+Applied by the lead (22 Oct 2026), reversible by Kameel: the same rule covers a Law 41 suspension's ground, which db/59 treats as a conduct matter, so the other school sees the suspension but not its reason (db/118, PR #193).
+
+Decided 28 Oct 2026 (Kameel, through the Build Board), on six questions from that day's red-team of the week's code. Numbered R1–R6 so they are not read as the 21 Oct questions. Each answer is quoted as given.
+
+- **R1 · "Retired hurt" inside the boy's school: "Everyone at his school (as built)".** The school stays the boundary for the unmasked reason; no change to that boundary. Every reader of the log at his school reads it.
+- **R2 · The league account: "Only its own competitions: refuse a platform-wide caller".** `competition_discipline_records()` refuses a platform-wide caller and requires an organiser, so a competition nobody organises opens to nobody; `ball_event_payload_seen()` does not unmask for a platform-wide caller (db/118). A league reads conduct only when its account is scoped to the school that organises its competition.
+- **R3 · The passport at the receiving school: "Everyone who picks teams (as built)".** No code change: `team.select` holders there open it (the director of sport, the sports administrator, the coaches, the team managers).
+- **R4 · A pupil's login email: "The office alone, as A4 says".** `guardian.link.manage` (the office and the principal) and the pupil himself; `user.role.assign` no longer opens it (db/118).
+- **R5 · Spectators and team posts: "As REACH R-G designs it".** No change now.
+- **R6 · Two-letter first names in the public news scan: "Catch two-letter names too".** Every word of a name of two letters or more is scanned, whole-word, so "Jo" is caught and "Johannesburg" is not (db/118). A boy whose name is a common word makes a post using that word refuse: over-blocking by design, recorded in PUBLIC_DATA §5a; it is not to be fixed by weakening the scan.
 
 ---
 

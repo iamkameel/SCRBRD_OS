@@ -159,6 +159,17 @@ below. Kameel confirmed all of them the same day.
   name stored surname-first without a comma ("Khumalo Sipho" → "K Sipho", which
   shows a first name). The step 2 migration adds a stored surname so nothing is
   guessed.
+- **The public news scan** (db/83, db/118) refuses a post sent for public
+  approval when any word of it names a boy of the post's school, or of a school
+  it has a fixture with in the twelve months before or the three after: his
+  full name, known-as or stored surname, or any word of his full name of two
+  letters or more (Kameel, 28 Oct 2026: "Catch two-letter names too"),
+  whole-word and case-blind, so "Jo" is caught and "Johannesburg" is not. It
+  over-blocks by design: a boy whose name is a common word ("Will", "May",
+  "Brown") makes every post using that word refuse, and the author and the
+  school's publishers are told the word. That cost is the price of rule 4 and
+  is accepted; nobody "fixes" it by raising the floor, dropping a column or
+  narrowing the schools scanned.
 - **Not covered by this rule yet:** a pupil who scores (the rule treats scorers as
   adults) — his name as an official needs the same consent.
 

@@ -176,6 +176,8 @@ ok("PUBLIC_EVENT_FIELDS is exactly the reviewed list", JSON.stringify(PUBLIC_EVE
   batters: ["striker", "nonStriker", "captainConsent"],
   bowler: ["bowler"],
   ball: ["type", "value", "striker", "nonStriker", "bowler", "dismissal", "fielder", "dismissed", "freeHit", "nbRuns", "nbType", "outAt", "facesNext", "notInOver",
+         // db/121 (the Laws audit F7): only ever false, runs that did not reach the boundary
+         "boundary",
          // SCRBRD-139 (db/78): the shot, and where it went as a word
          "shot", "area"],
   penalty: ["runs", "toBattingTeam", "reason"],
@@ -516,14 +518,19 @@ const on = await serve({});
   {
     const base = /** @type {any} */ (pj ?? {});
     const leak = (/** @type {(b: any) => void} */ f) => { const b = structuredClone(base); f(b); return parLeaks(b); };
-    ok("parLeaks: a name riding in a key nobody listed is found", leak((b) => { b.venue.name = "D Erasmus"; }).some((x) => /venue\.name: not on the list/.test(x)));
+    ok("parLeaks: a name riding in a key nobody listed is found", leak((b) => { b.venue.name = "D Erasmus"; }).some((x) => /^par\.venue: a key not on the list$/.test(x))
+       && !leak((b) => { b.venue.name = "D Erasmus"; }).some((x) => /name|Erasmus/.test(x)));
     ok("...a cell of the table, a resource, R₁ beside the DLS par",
-       leak((b) => { b.dls = { parAt: 3, status: "ok", tableId: null, cells: [[60, 2, 160]] }; }).some((x) => /dls\.cells/.test(x))
-       && leak((b) => { b.track[0].resource = 400; }).some((x) => /track\[0\]\.resource/.test(x))
-       && leak((b) => { b.dls = { parAt: 3, status: "ok", tableId: null, resources: { first: 400 } }; }).some((x) => /dls\.resources/.test(x)));
+       leak((b) => { b.dls = { parAt: 3, status: "ok", tableId: null, cells: [[60, 2, 160]] }; }).some((x) => /^par\.dls: a key not on the list$/.test(x))
+       && leak((b) => { b.track[0].resource = 400; }).some((x) => /^par\.track\[0\]: a key not on the list$/.test(x))
+       && leak((b) => { b.dls = { parAt: 3, status: "ok", tableId: null, resources: { first: 400 } }; }).some((x) => /^par\.dls: a key not on the list$/.test(x)));
     ok("...a word where a figure belongs, and a word nobody listed", leak((b) => { b.venue.parAt = "Erasmus"; }).length > 0
        && leak((b) => { b.rrr = { now: 1, threeOversAgo: 1, trend: "D Erasmus" }; }).length > 0 && leak((b) => { b.trackOf = "names"; }).length > 0);
     ok("...a table id that is not an id", leak((b) => { b.dls = { parAt: 3, status: "ok", tableId: "Hilton College" }; }).length > 0);
+    ok("...naming the path and the rule, never the value it found",
+       leak((b) => { b.venue.parAt = "D Erasmus"; }).some((x) => /venue\.parAt: fails its rule \(string\)/.test(x))
+       && !leak((b) => { b.venue.parAt = "D Erasmus"; }).some((x) => /Erasmus/.test(x))
+       && !leak((b) => { b.rrr = { now: 1, threeOversAgo: 1, trend: "D Erasmus" }; }).some((x) => /Erasmus/.test(x)));
     ok("...and a fraction where a whole run belongs", leak((b) => { b.venue.parAt = 12.5; }).length > 0 && leak((b) => { b.track[0].parAt = 0.5; }).length > 0);
   }
 

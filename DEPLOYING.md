@@ -2032,6 +2032,187 @@ the rest. The players import, deployed with this, asks `import_joined_on()`
 before each row, so it needs db/117 in place.
 <!-- ── end db/117 ── -->
 
+<!-- ── db/118: names, login emails, retirements and bowler changes ── -->
+#### Names, login emails, retirements and bowler changes (db/118)
+
+**Live on both databases, 29 Oct 2026, pasted from f051a656cf25091b4f4e982d053a80e72eeb6108 and matched against the reference.**
+
+`db/118_privacy_followups.sql` carries Kameel's answers of 22 and 28 October
+2026 to that week's red-team (READERS_child_data, the decisions of 28 Oct).
+Five rules, in four functions; nothing widens a read. **The public news scan
+reads every part of a name:** the stored surname and each word of the full
+name of two letters or more, whole-word and case-blind, for the post's school
+and every school it has a fixture with in the twelve months before or the
+three after; the author and the school's publishers are told which word of
+their own post matched (`news_public_word()`), never which boy. **A pupil's
+login email is the office's:** `app_user_email_seen()` answers it to the pupil
+himself and to holders of `guardian.link.manage` at his school (the office and
+the principal) only. **A retirement's reason, a mid-over bowler change's
+reason and a Law 41 suspension's ground stay at the boy's own school:**
+`ball_event_payload_seen()` masks them for any other reader, and for a
+platform-wide one. **The league reads its own competitions' conduct records
+and no others:** `competition_discipline_records()` (db/116's) is re-created to
+refuse a platform-wide caller and a competition nobody organises.
+
+**What it does to a live database.** Functions only: `news_public_hits()`,
+`news_public_names()` (db/83's, its grants kept: none),
+`news_public_word()`, `app_user_email_seen()`, `ball_event_payload_seen()`
+(definers executable by `scrbrd_app` alone, never `PUBLIC` nor a managed
+host's `anon`/`authenticated`) and `competition_discipline_records()`
+(db/116's grants kept). No table, column, row, policy or other grant. It
+refuses to run without db/22's `app_is_platform_wide()`, db/61's
+`competition_organiser()` and db/116's `competition_discipline_records()`, or
+if that function's body is neither db/116's nor its own; a second paste
+changes nothing. **What moves on the paste:** a news post naming a boy by his
+surname or one word of his name is refused at approval; finance and
+sponsorship (and the director of sport) read a pupil's account with no email;
+the other school's families and spectators read a retirement as "not out" and
+a bowler change with no reason.
+
+**The pilot's league account reads nothing here yet.** The pilot's league
+account (seed `a5510000-…021`) is held platform-wide, so its conduct-records
+view and the retirement reasons return nothing until it is re-scoped to its
+organising school. That is intended (Kameel's 28 Oct decision: "Only its own
+competitions: refuse a platform-wide caller").
+
+Paste `node tools/bundle-sql.mjs --apply 118` after 117, then the verify
+bundle (§95 is its proof). **Schema first**: the API built with it refuses to
+start without db/118 (`expected-migrations.json`). The events read
+(`GET /api/matches/:id/events`), the `users` and `accounts` reads and the news
+approval go through the new functions; the CSV exports follow
+`packages/policy/src/exports.mjs` (the roster without its masked columns, and
+the fixtures; nothing else leaves as a file).
+<!-- ── end db/118 ── -->
+
+<!-- ── db/119: his family means a link live today ── -->
+#### His family means a link live today (db/119)
+
+**Live on both databases, 29 Oct 2026, pasted from 53aa7771eb1c4801d7fcbc40882076ed9ec4b784 and matched against the reference.**
+
+`db/119_family_of_live.sql` re-creates `is_family_of()`, the family's way into
+a boy's passport consents and (with db/115) his scouting decision, and the
+family's way to open his passport. It used to ignore every date: a parent
+whose link had ended (he left school after eighteen, db/62; or the office
+ended it) still read and wrote his passport consents. Now the assignment and
+the link must both be live today, tested exactly as `app_can()` tests them,
+and a scoring pad's session is never anybody's family. The function's
+`search_path` is pinned, and `EXECUTE` is taken back from `PUBLIC` (and from
+`anon` and `authenticated` on Supabase) and given to `scrbrd_app`.
+
+**What it does to a live database.** One function replaced and its grants
+narrowed. No table, column, row or policy. It refuses to run if the function
+in place is not db/08's (or its own). db/111's refusal (a physio who is the
+boy's mother may not record his injury) does not move: it stands on its own
+wider test, which the file checks. A second paste changes nothing. **One
+behaviour changes on the paste:** a parent whose link to a boy has ended no
+longer sees his passport consents or opens his passport. A live family sees no
+difference.
+
+Paste `node tools/bundle-sql.mjs --apply 119` after 118, then
+the verify bundle (§96 is its proof). The
+summary row "His family means a link live today" should read OK. **Schema
+first**: the API built with it refuses to start without db/119
+(`expected-migrations.json`). No route changes.
+<!-- ── end db/119 ── -->
+
+<!-- ── db/120: alerts a person may switch off ── -->
+#### Alerts a person may switch off (db/120)
+
+**Live on both databases, 29 Oct 2026, pasted from b8a54fbff24d177cdca89745dea7a15aa43b6655 and matched against the reference.**
+
+`db/120_notification_prefs.sql` is NOTIFICATIONS slice S4 (D20, D21), as
+Kameel decided it on 7 October 2026. **A person may stop an alert reaching
+his phone** for a kind of notice (notices from the school and the side,
+milestones and honours, fixtures moved or cancelled, availability questions,
+lift seats), and a parent for one of those about one of his children. It is
+his own setting and nobody else's: no role, no office and no administrator
+can set it for him, and a row about a child is accepted only from that
+child's verified family. **Safety and welfare notices, notices about a
+person's own account, injuries and breach notices can never be switched off**,
+and anything urgent always reaches the phone. **It quiets the phone only:**
+every notice still appears in Notices, on the badge and in a parent's list of
+things to do. **A pupil's alerts wait between 21:00 and 06:00** (South African
+time) and arrive at six; urgent ones come through at any hour. SCRBRD sets
+those hours, not the school and not the pupil.
+
+**What it does to a live database.** It adds one empty table
+(`notification_pref`) with row security on and three policies (the person's
+own rows; a child only through `is_family_of()`), no delete, and two functions
+that answer for the caller alone (`my_alert_choices()`, `my_push_quiet_hours()`).
+No other table, column, row, policy or grant changes. It refuses to run
+before db/116 and db/119 (whose `is_family_of()` asks that a parent's link
+be live today), and a second paste changes nothing. **Nothing changes on a
+phone at the paste:** the push worker that reads these settings is slice S3,
+not yet built; until then the settings are kept and shown, and apply from the
+day it ships.
+
+Paste `node tools/bundle-sql.mjs --apply 120` after 119 (the bundle names
+the one it needs first), then the verify bundle (§97 is its
+proof). The summary row "Alerts a person may switch off" should read OK.
+**Schema first**: the API built with it refuses to start without db/120
+(`expected-migrations.json`). It serves `POST /api/notifications/prefs` and
+`GET /api/read/my_notification_prefs`, and Settings → Me gains "What reaches
+your phone".
+<!-- ── end db/120 ── -->
+
+<!-- ── db/121: the Laws audit of 28 October 2026 ── -->
+#### The Laws audit's fixes (db/121)
+
+**Live on both databases, 29 Oct 2026, pasted from 95061ee7824eb0a66e0cf2631bc5ffeb0dfa76d2 and matched against the reference.**
+
+`db/121_laws_audit.sql` is the SQL half of the scoring fixes Kameel decided on
+28 October 2026 (`audit/AUDIT_scoring_laws_2026-10-28.md` §6). The fold moved
+first (`packages/scoring`); this file makes every SQL reader agree with it
+again. **A run out going for a second bye** (F5): the bye is a bye, not the
+striker's run and not the bowler's. **A four or a six is a boundary** (F7): four
+all run, or runs with overthrows, are the runs and no boundary (the pad's new
+"Runs, not a boundary"). **The free hit follows a front-foot no-ball only**
+(Q2), and a delivery that does not count in the over leaves it for the next
+(F11). **A chase ended on the umpires' par, ahead of it, is won by the runs it
+is ahead** (F10), not by wickets. **An amendment re-judges who faced** (F4):
+when an older ball is voided, the batter the fold puts on strike for each later
+ball of the innings is the one every career reads, not the pad's stamp.
+
+**What it does to a live database.** It replaces `ball_runs_off_bat()`,
+`ball_runs_to_bowler()`, `ball_on_free_hit()`, `match_result_compute()`,
+`player_batting_since()`, `opposition_squad()`, `public_match_log()`,
+`public_shot_sectors()`, `milestone_retract()` (db/113's, its hold check
+moved into `milestone_recheck()`) and the views `player_batting_career`,
+`player_batting_by_season` and `ball_event_live`, each with its columns,
+owner and grants as they were; adds `ball_boundary()`, `ball_gives_free_hit()`,
+the table `ball_event_rejudged` (read under its ball's own policy, never by a
+pad credential, no write grant), its one door `scoring_amendment_rejudge()`
+(which names only a batter of the innings with a player row, and then re-runs
+the milestone notices on the re-judged log: a fifty it takes away is taken
+back, one it makes is noticed "after a correction.") and `milestone_recheck()`
+(granted to nobody). It refuses to run unless each object is what the earlier
+file wrote or this file's own (its section 0: a function by its body, a view
+by the md5 of its definition), and a second paste changes nothing. No row is
+rewritten. **What moves on the paste:** a stored wicket off the ball after a
+waist-high no-ball or a beamer, which was saved as a free hit, now stands; a
+bowler's dismissal just after a delivery marked not in the over that followed
+a no-ball is now saved; a chase won ahead of par reads "by N runs" and, if its
+result was confirmed (db/114), it lapses to be confirmed again (its hash
+changed). The pad has stored each no-ball's kind since 27 September 2026, so
+a database may hold the first two, and the rule is not date-gated (Kameel's
+decision). **An amendment approved before this paste is not re-judged** until
+the next amendment on its match.
+
+**Run the precheck first, and stop if it returns any row.** Paste
+`tools/sql/laws121-precheck.sql` into the SQL Editor as the database's owner:
+one SELECT, it writes nothing. It lists each match holding a stored
+dismissal the free-hit rule moves (`now_stands`, `now_saved`), by fixture
+date, school and side, with no names. **No rows: go on. Any row: do not paste
+db/121; take the rows to Kameel.** db/99 §98 runs the same query and proves a
+seeded database holds none.
+
+Paste `node tools/bundle-sql.mjs --apply 121` after 120, then the verify
+bundle (§98 is its proof). The summary row "The Laws audit's fixes" should read OK. **Schema
+first**: the API built with it refuses to start without db/121
+(`expected-migrations.json`): its amendment route calls
+`scoring_amendment_rejudge()`, and its public log serves `boundary`.
+<!-- ── end db/121 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

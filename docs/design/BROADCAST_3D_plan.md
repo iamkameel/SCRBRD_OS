@@ -177,3 +177,5 @@ branding schema, the preview images) are named but not in the repository.
    display and the public page. Until then, our neutral board. Nothing from the hard-coded list.
 6. **The score strip conventions (§6 item 4) on the Board and the ground display?** *Recommendation:* yes, with
    neutral colours until item 5 exists; a Sonnet job with Opus review, folded into SCRBRD-133's remaining phases.
+
+**Decided 22 Oct 2026 (Kameel): as recommended, all six.**

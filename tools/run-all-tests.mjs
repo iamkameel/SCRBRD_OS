@@ -11,6 +11,10 @@ const SUITES = [
   ["authorize","packages/policy/test/authorize.test.mjs"],
   ["scoring",  "packages/scoring/test/replay.test.mjs"],
   ["laws-spec","packages/scoring/test/laws-spec.test.mjs"],
+  // The Laws audit of 28 Oct 2026: each finding's scenario, as Kameel decided it.
+  ["laws-audit","packages/scoring/test/laws-audit.test.mjs"],
+  // ...and F4's server half: which later balls an amendment re-judges (db/121).
+  ["rejudge",  "services/api/write/rejudge.test.mjs"],
   ["design",   "apps/web/test/design.test.mjs"],
   ["analytics","apps/web/test/analytics.test.mjs"],
   ["home-routing","apps/web/test/home-routing.test.mjs"],
@@ -27,6 +31,8 @@ const SUITES = [
   // The plan's word list (SCRBRD-138 phase B §3): SG-10's words in code, the
   // one copy the news route and the composer both read.
   ["words",    "packages/policy/test/words.test.mjs"],
+  // What may leave as a file: the allowlist and the derived refusals, apart.
+  ["exports",  "packages/policy/test/exports.test.mjs"],
   ["rating",   "packages/scoring/test/rating.test.mjs"],
   ["rubric",   "packages/scoring/test/rubric.test.mjs"],
   // GA-I26a §1.5: every attribute pinned to the drill categories that suit it.
@@ -101,6 +107,10 @@ const SUITES = [
   // The pad's Area step records a point, the same event as the Pro hub's for
   // the same tap (SCRBRD-101). Imports pad.jsx, so it needs the transform.
   ["pad-point", "apps/web/test/pad-point.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The pad's half of the Laws audit (28 Oct 2026): the run out's end on every
+  // run out, whose the runs were, obstruction, the free-hit note, runs not a
+  // boundary, a Two-Day's four innings.
+  ["wicket-asks", "apps/web/test/wicket-asks.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["roadmap",  "apps/web/test/roadmap.test.mjs"],
   // Pure derivations behind the Post-Match Report and Season Awards screens
   // (SCRBRD-082/084) — no DOM, no database, just the fold's own shapes.
@@ -372,6 +382,8 @@ const SUITES = [
   // client store holds the list and the count every badge reads.
   ["notif-contract", "packages/policy/test/notifications.test.mjs"],
   ["receipts", "services/api/notify/receipts.test.mjs"],
+  // NOTIFICATIONS S4: D13 step 5 — muted, held to 06:00, sent; nothing hidden.
+  ["push-decision", "services/api/notify/push-decision.test.mjs"],
   // No personal value in a server log (INCIDENTS_AND_BREACHES §9.1, D24):
   // safeErr() over a duplicate email and ID number, and every console call
   // under services/ walked for a DETAIL, an email, a name or a raw message.

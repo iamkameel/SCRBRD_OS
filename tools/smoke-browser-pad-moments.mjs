@@ -230,7 +230,9 @@ const run = (/** @type {number} */ n) => delivery(`run ${n}`, () => tap(n === 0 
 const wicket = (/** @type {string} */ mode) => delivery(mode, async () => {
   await tap("key-wicket");
   await tap(`wicket-mode-${mode}`);
-  if (mode === "run_out") await tap("wicket-who-striker");
+  // The end, asked on every run out (the Laws audit F1): the striker's own,
+  // so the empty end is the one it always was here.
+  if (mode === "run_out") { await tap("wicket-who-striker"); await tap("wicket-end-striker"); }
   await tap("wicket-confirm");
 });
 

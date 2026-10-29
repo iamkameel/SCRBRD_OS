@@ -18,7 +18,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { KINDS, SUBJECT_KINDS, RETRACTION_KINDS, CONTRACT, NOTICE_URGENCY, RESULT_NOTICES, isTiered } from "../src/notifications.mjs";
+import { KINDS, SUBJECT_KINDS, RETRACTION_KINDS, CONTRACT, NOTICE_URGENCY, RESULT_NOTICES, isTiered,
+         MUTABLE_KINDS, PER_CHILD_KINDS, QUIET_HOURS } from "../src/notifications.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const DB = process.env.SCRBRD_DB_DIR ?? join(ROOT, "db");
@@ -40,6 +41,7 @@ const KIND_SQL = latest("ADD CONSTRAINT notification_kind_known");
 const LIFE_SQL = latest("CREATE OR REPLACE FUNCTION notification_life");
 const RETRACT_SQL = latest("CREATE OR REPLACE FUNCTION notification_retract(");
 const SUBJECT_SQL = latest("ADD CONSTRAINT notification_subject_kind_known");
+const PREF_SQL = latest("CONSTRAINT notification_pref_mutable_kind");
 
 let pass = 0, fail = 0;
 const ok = (/** @type {string} */ n, /** @type {unknown} */ c, d = "") => {
@@ -163,6 +165,34 @@ group("OFFICIAL_RESULT: the fixture kind's words for a result (db/114)");
   }
   ok("...to each side's team scope under fixture.read, naming no child",
      /'team', 'fixture', v_urg, v_title, v_body, 'fixture\.read'/.test(body) && !/subject_person_id/.test(body));
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+group("D20, D21 — what may be muted, per kind and per child (db/120)");
+// ═══════════════════════════════════════════════════════════════════
+/** A named table CHECK's quoted list, as written inside CREATE TABLE. */
+const prefList = (/** @type {string} */ sql, /** @type {string} */ name) => {
+  const m = sql.match(new RegExp(`CONSTRAINT ${name} CHECK \\([^']*IN \\(([^)]*)\\)\\)`));
+  return m ? [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]) : null;
+};
+const mutable = prefList(PREF_SQL.text, "notification_pref_mutable_kind");
+const perChild = prefList(PREF_SQL.text, "notification_pref_child_kind");
+ok(`the last migration to write the preference CHECKs (${PREF_SQL.file}) carries both`, Array.isArray(mutable) && Array.isArray(perChild));
+ok("...the kinds a row may name are MUTABLE_KINDS exactly", mutable && same(mutable, MUTABLE_KINDS), `${mutable} vs ${MUTABLE_KINDS}`);
+ok("...the kinds a row about one child may name are PER_CHILD_KINDS exactly", perChild && same(perChild, PER_CHILD_KINDS), `${perChild} vs ${PER_CHILD_KINDS}`);
+ok("safeguarding, welfare and system can never have a row (D20)",
+   ["safeguarding", "welfare", "system"].every((k) => KINDS.includes(k) && !MUTABLE_KINDS.includes(k)));
+ok("every mutable kind is a kind, and every per-child kind is mutable",
+   MUTABLE_KINDS.every((k) => KINDS.includes(k)) && PER_CHILD_KINDS.every((k) => MUTABLE_KINDS.includes(k)));
+ok("a person's notice and a fixture notice are never about one child, so never per child",
+   !PER_CHILD_KINDS.includes("notice") && !PER_CHILD_KINDS.includes("fixture"));
+ok("quiet hours are 21:00 to 06:00 on the Johannesburg clock (D21)",
+   QUIET_HOURS.from === 21 && QUIET_HOURS.to === 6 && QUIET_HOURS.timeZone === "Africa/Johannesburg");
+{
+  const wider = PREF_SQL.text.replace("CHECK (kind IN ('notice',", "CHECK (kind IN ('welfare', 'notice',");
+  ok("a locked kind let into the migration's CHECK is seen",
+     wider !== PREF_SQL.text && !same(prefList(wider, "notification_pref_mutable_kind") ?? [], MUTABLE_KINDS));
 }
 
 // ═══════════════════════════════════════════════════════════════════

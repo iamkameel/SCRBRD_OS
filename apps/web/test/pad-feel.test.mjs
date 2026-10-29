@@ -198,7 +198,7 @@ group("1. Every extra, both ways: the same bytes");
        && /onExtraWicket\("Wd", n\)/.test(pad) && /onExtraWicket=\{openExtraWicket\}/.test(eng));
   }
   ok("engine: commitBall builds through deliveryEvents with the engine's own state",
-     /const evs=deliveryEvents\(\{curIn,before,freeHit,type,value,shot,seg,zone,approach,placement,shortRun,nbType,facesNext,disallowed,notInOver\}\);/.test(eng));
+     /const evs=deliveryEvents\(\{curIn,before,freeHit,type,value,shot,seg,zone,approach,placement,shortRun,nbType,facesNext,disallowed,notInOver,notBoundary\}\);/.test(eng));
   ok("engine: the pad's wide and no-ball are those two", /onWide=\{recordWide\} onNoBall=\{recordNoBall\}/.test(eng));
   ok("pad: an extra's second tap dispatches extraCall() as named",
      /if \(call\.to === "wide"\) onWide\(\.\.\.call\.args\);\s*else if \(call\.to === "noBall"\) onNoBall\(\.\.\.call\.args\);\s*else onCommitDetailed\(\.\.\.call\.args\);/.test(pad)

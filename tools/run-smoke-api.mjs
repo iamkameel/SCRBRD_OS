@@ -81,6 +81,11 @@ const WALKS = [
   // pair scored; the result, the live score, careers and the bowler's day;
   // completion once settled; the signed-out log and header.
   "superover",
+  // ── The Laws audit (28 Oct 2026, F2): a Two-Day scored live ──
+  // All four innings on the real write path: the third is not match_decided,
+  // the fourth chases, the result by wickets; a follow-on innings win
+  // refuses a fourth innings.
+  "two-day",
   // ── SCRBRD-114 phase 3c (db/72): knockout progression ──
   // A cup drawn by the planner and published; the semi-finals played; the
   // final made from their winners with a row for each side; a correction
@@ -157,6 +162,9 @@ const WALKS = [
   // The notification system's missing half: publishing a notice, and getting
   // it onto a phone without re-deciding who may have it.
   "push",
+  // NOTIFICATIONS S4 (db/120): push switched off for a kind, or a kind about
+  // one child, by its owner alone; locked kinds refused; nothing hidden.
+  "notification-prefs",
   // The coach's unsent plan (db/110, Kameel 15 Oct): a draft changed and
   // deleted by its author alone; a plan out with the side kept and not
   // changed; a withdrawn one changed and sent again, never deleted.

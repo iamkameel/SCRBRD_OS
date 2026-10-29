@@ -1,5 +1,9 @@
 import { D } from "../design/tokens.js";
 import { fmtOv, isOut } from "./format.js";
+import { boundaryHit } from "@scrbrd/scoring";
+
+/** A four or a six to the rope, as the engine judges it (boundaryHit(), the Laws audit F7). @param {any} b */
+const isBoundary = (b) => boundaryHit(b) != null;
 
 /* ═══════════════════════════════════════════════════════
    INTELLIGENCE ENGINE
@@ -22,12 +26,13 @@ const buildSignals=(inn,overs,target,isChase)=>{
   const l6=ballLog.slice(-6),l12=ballLog.slice(-12),ll6=ll(6),ll12=ll(12);
   const dotsL6=ll6.filter(b=>b.value===0&&b.type==="run").length;
   const dotsL12=ll12.filter(b=>b.value===0&&b.type==="run").length;
-  const bndsL6=l6.filter(b=>b.value===4||b.value===6).length;
-  const bndsL12=l12.filter(b=>b.value===4||b.value===6).length;
+  // A four or a six is a boundary (the Laws audit F7): the engine's one test.
+  const bndsL6=l6.filter(isBoundary).length;
+  const bndsL12=l12.filter(isBoundary).length;
   const wktsL12=l12.filter(isOut).length;
   const runsL6=l6.reduce((s,b)=>s+(b.value||0),0);
   const runsL12=l12.reduce((s,b)=>s+(b.value||0),0);
-  const lastBndIdx=[...ballLog].reverse().findIndex(b=>b.value===4||b.value===6);
+  const lastBndIdx=[...ballLog].reverse().findIndex(isBoundary);
   const bndDrought=lastBndIdx===-1?balls:lastBndIdx;
   const curBow=bowlers.find(b=>b.id===inn.bowler);
   const curBowEcon=curBow?.balls>0?+(curBow.runs/(curBow.balls/6)).toFixed(2):0;
@@ -78,7 +83,7 @@ const buildNarratives=(sig,lastOver)=>{
   if(lastOver?.balls.length===6){
     const ovR=lastOver.balls.reduce((s,b)=>s+(b.value||0),0);
     const ovW=lastOver.balls.filter(isOut).length;
-    const ovB=lastOver.balls.filter(b=>b.value===4||b.value===6).length;
+    const ovB=lastOver.balls.filter(isBoundary).length;
     const ovD=lastOver.balls.filter(b=>b.value===0&&b.type==="run").length;
     const imp=ovR>=14?"HIGH":ovR>=8?"MED":"LOW";
     const ic=imp==="HIGH"?D.amber:imp==="MED"?D.orange:D.textSecondary;
@@ -162,11 +167,11 @@ const boardInsights = (inn, { target = null, overs = 20 } = {}) => {
     const rr = inn.runs / (inn.balls / 6);
     out.push(`Projected ${Math.round(rr * overs)} at ${rr.toFixed(2)} an over`);
   }
-  // Legal deliveries since the last four or six off the bat.
+  // Legal deliveries since the last boundary (a four or six to the rope, F7).
   let dry = 0;
   for (let i = (inn.ballLog?.length ?? 0) - 1; i >= 0; i--) {
     const b = inn.ballLog[i];
-    if ((b.type === "run" || b.type == null) && (b.value === 4 || b.value === 6)) break;
+    if (isBoundary(b)) break;
     if (b.type !== "Wd" && b.type !== "Nb") dry++;
   }
   if (dry >= 18) out.push(`No boundary for ${dry} balls`);

@@ -1,3 +1,5 @@
+import { givesFreeHit } from "@scrbrd/scoring";
+
 /**
  * An extra in two taps (SCRBRD-100 item 3): the kind, then the runs.
  *
@@ -5,7 +7,7 @@
  * a kind opens its runs in the pad's own space, one of them marked as the
  * likely answer — 0 for a wide or a no-ball, 1 for a bye or a leg bye (the
  * least a bye can be, and the commonest) — and a tap on any of them records.
- * The no-ball asks its type (a height no-ball or a beamer is a free hit) and
+ * The no-ball asks its type (a front-foot no-ball is a free hit) and
  * whose the runs are on the same panel, each already set to the commonest
  * answer, so a front-foot no-ball is still two taps and a height no-ball
  * three.
@@ -50,8 +52,13 @@ export const NB_FROM = Object.freeze([
   { id: "leg_byes", label: "Leg byes" },
 ]);
 export const NB_DEFAULT = Object.freeze({ type: "front_foot", from: null });
-/** A height no-ball or a beamer earns a free hit. */
-export const nbFreeHit = (type) => type === "height" || type === "beamer";
+/**
+ * Whether this kind of no-ball earns a free hit: a front-foot one only
+ * (Kameel, 28 Oct 2026, the Laws audit Q2 and F12), the engine's own rule
+ * (givesFreeHit(), FREE_HIT_NB_TYPES), so the panel's note and the fold's
+ * free hit cannot disagree. It used to say a height no-ball or a beamer.
+ */
+export const nbFreeHit = (type) => givesFreeHit({ type: "Nb", nbType: type });
 
 /**
  * The runs of an extra, in words: its key's accessible name and the

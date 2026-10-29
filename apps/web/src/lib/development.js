@@ -133,12 +133,21 @@ export const WHY_MAX = 200;
  * `noteId` is the coaching point that says why: staff-tier prose the boy does
  * not read.
  */
-export async function setTarget(playerId, { category, metric, targetScore, dueOn, drillId, noteId }) {
+export async function setTarget(playerId, { category, metric, targetScore, dueOn, drillId, noteId, why, skillId }) {
   const n = Number(targetScore);
   if (!TREE[category]?.includes(metric)) throw new Error(`unknown_attribute:${category}.${metric}`);
   if (!Number.isInteger(n) || n < 2 || n > SCALE_MAX) throw new Error("bad_score");
+  // The "why" rides in the same request: the server writes it as a coaching
+  // point and the target in one transaction, so a refusal leaves neither.
+  const text = (why || "").trim();
+  if (text) {
+    if (text.length > WHY_MAX) throw new Error("body_length");
+    if (!skillId) throw new Error("evidence_required");
+    if (NEVER_ON_THE_COCKPIT.test(text)) throw new Error("forbidden_word");
+  }
   return api(`/api/players/${playerId}/targets`, {
-    method: "POST", body: { category, metric, targetScore: n, dueOn: dueOn || undefined, drillId: drillId || undefined, noteId: noteId || undefined },
+    method: "POST", body: { category, metric, targetScore: n, dueOn: dueOn || undefined, drillId: drillId || undefined,
+                            noteId: noteId || undefined, ...(text ? { why: text, skillId } : {}) },
   });
 }
 

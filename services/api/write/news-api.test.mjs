@@ -9,6 +9,7 @@
  * "high" reaches no connection, the one it accepts is the one it inserts,
  * and a withdrawal asks the function, with the post's id and nothing else.
  * db/99 §70 and tools/smoke-push.mjs walk the rest against a real database.
+ * Group E: a post naming a pupil by his surname or first name alone (db/118).
  *
  * And the coach's plan (SCRBRD-138 phase B, db/96; group C): its shape, the
  * 1 000 limit, its words as the gate at publish and at send — a hit returns
@@ -28,6 +29,7 @@
  */
 import { newsRoutes, URGENCY, KINDS, PLAN_BODY_MAX } from "./news-api.mjs";
 import { signToken } from "../auth/auth.mjs";
+import { readFileSync } from "node:fs";
 
 let pass = 0, fail = 0;
 /** @param {string} n @param {unknown} c @param {string} [d] what was seen, on a failure */
@@ -392,6 +394,62 @@ group("D. Changing and throwing away an unsent plan (db/110, Kameel 15 Oct)");
   ok("...and nobody signed in is 403", d4.r.status === 403 && d4.r.body?.error === "not_permitted");
   const badDiscard = await call(routes.discard, undefined, { authorization: BEARER }, { id: "nope" });
   ok("an id that is no uuid is no draft, before any connection", badDiscard.status === 404 && untouchable.touched === false);
+}
+
+group("E. The home page refuses a post naming a pupil by any part of his name (db/83, db/118)");
+{
+  // The scan is SQL (news_public_names(), db/118; db/99 §62 and §95 run it
+  // against the seeded pupils). Here: the scan reads every part of a name,
+  // and the route says the refusal as a count, never a name.
+  const sql = readFileSync(new URL("../../../db/118_privacy_followups.sql", import.meta.url), "utf8");
+  const scan = sql.slice(sql.indexOf("CREATE OR REPLACE FUNCTION news_public_hits"), sql.indexOf("REVOKE ALL ON FUNCTION news_public_hits"));
+  ok("the scan reads the full name, the known-as and the stored surname", /ARRAY\[p\.full_name, p\.known_as, p\.surname\]/.test(scan));
+  ok("...and every word of the full name of two letters or more (Kameel, 28 Oct), split on anything not a letter",
+     /regexp_split_to_table\(btrim\(coalesce\(p\.full_name, ''\)\), '\[\^\[:alpha:\]\]\+'\)/.test(scan) && /length\(t\) >= 2/.test(scan)
+     && !/length\(t\) >= 3/.test(scan));
+  ok("...whole-word and case-blind", /'\(\?:\^\|\[\^\[:alnum:\]\]\)\('/.test(scan) && /, 'i'\) AS m/.test(scan));
+  ok("...over the post's school's boys and those of the schools it has fixtures with, either way, in a window",
+     /m\.school_id = post\.school_id OR m\.away_school_id = post\.school_id/.test(scan)
+     && /interval '12 months'/.test(scan) && /interval '3 months'/.test(scan));
+  // Kameel, 22 Oct: the refusal also tells the author or approver which word
+  // of their own post matched, as the post writes it. Never whose name it is.
+  for (const [what, word] of [["a surname alone", "PILLAY"], ["a first name alone", "james"], ["an opponent's boy", "Mkhize"]]) {
+    /** @type {{ q: string, p: any[] }[]} */
+    const asked = [];
+    const pool = { async connect() { return { async query(/** @type {string} */ q, /** @type {any[]} */ p = []) {
+      asked.push({ q, p });
+      if (q.includes("news_public_approve(")) return { rows: [{ ok: false, reason: "names_pupils", names: 1 }] };
+      if (q.includes("news_public_word(")) return { rows: [{ word }] };
+      return { rows: [{}] };
+    }, release() {} }; } };
+    /** @type {any[]} */
+    const changed = [];
+    const r = await call(newsRoutes({ pool: /** @type {any} */ (pool), secret: SECRET, onChange: (n) => changed.push(n) }).public_approve,
+                         undefined, { authorization: BEARER }, { id: POST });
+    ok(`a post naming ${what} is refused 422 names_pupils, with a count`,
+       r.status === 422 && r.body?.error === "names_pupils" && r.body?.count === 1, JSON.stringify(r.body));
+    ok("...and the word of the post that matched, as the post writes it", r.body?.word === word, JSON.stringify(r.body));
+    ok("...asked of news_public_word() with the post's id, as the caller",
+       asked.some((a) => a.q.includes("news_public_word($1)") && JSON.stringify(a.p) === JSON.stringify([POST])));
+    ok("...and nothing else: no boy's id, full name or school",
+       Object.keys(r.body ?? {}).sort().join() === "count,error,word"
+       && !/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(JSON.stringify(r.body)) && !/school|player|full_name/i.test(JSON.stringify(r.body)));
+    ok("...and the public cache is not told", changed.length === 0);
+  }
+  {
+    // Any other refusal asks for no word.
+    /** @type {string[]} */
+    const asked = [];
+    const pool = { async connect() { return { async query(/** @type {string} */ q) {
+      asked.push(q);
+      if (q.includes("news_public_approve(")) return { rows: [{ ok: false, reason: "own_post", names: null }] };
+      return { rows: [{}] };
+    }, release() {} }; } };
+    const r = await call(newsRoutes({ pool: /** @type {any} */ (pool), secret: SECRET }).public_approve,
+                         undefined, { authorization: BEARER }, { id: POST });
+    ok("another refusal carries no word, and asks for none", r.body?.error === "own_post" && !("word" in (r.body ?? {}))
+       && !asked.some((q) => q.includes("news_public_word(")));
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
