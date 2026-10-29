@@ -636,7 +636,7 @@ group("Role identity");
 // model had never heard of, while fourteen roles that DO carry permissions had
 // no identity at all. Signing in as a director of sport gave ROLES[undefined]
 // and an empty shell.
-const { ROLE_IDENTITY, ROLES, ROLE_FAMILIES, NAV_CAPABILITY, NAV_GROUPS, NAV_GROUP, NAV_ORDER, NAV_META, PERSONA_NAV, PERSONA_ONLY, canonicalRole, groupNav, navForRoles, personaFor } = await import(join(SRC, "design/roles.js"));
+const { ROLE_IDENTITY, ROLES, ROLE_FAMILIES, NAV_CAPABILITY, NAV_GROUPS, NAV_GROUP, NAV_ORDER, NAV_META, PERSONA_NAV, PERSONA_ONLY, canonicalRole, groupNav, navForRoles, personaFor, NAV_ALSO, navGrants } = await import(join(SRC, "design/roles.js"));
 const { ROLES: POLICY_ROLES, roleGrants } = await import("@scrbrd/policy/roles");
 
 ok("every policy role has a visual identity",
@@ -806,7 +806,15 @@ ok("every destination names the capability that governs it",
 const heldBy = (r) => [r, ...(ROLE_IDENTITY[r]?.also ?? [])];
 ok("a role only sees what its capabilities reach",
    POLICY_ROLES.every((r) => ROLES[r].nav.every((d) =>
-     NAV_CAPABILITY[d] === null || heldBy(r).some((h) => roleGrants(h, NAV_CAPABILITY[d])))));
+     NAV_CAPABILITY[d] === null || heldBy(r).some((h) => navGrants(h, d)))));
+// The team manager runs the session (team.training.run) and reads no
+// development: Training is on his menu by the second capability, and only
+// Training is opened that way (GA-I26a AH-D8).
+ok("the team manager's menu has Training, by team.training.run",
+   ROLES.teammanager.nav.includes("training") && !roleGrants("teammanager", NAV_CAPABILITY.training)
+   && roleGrants("teammanager", NAV_ALSO.training));
+ok("...the assistant coach keeps it, by player.development.read", ROLES.assistantcoach.nav.includes("training"));
+ok("...and the second capability opens Training alone", Object.keys(NAV_ALSO).join() === "training");
 ok("...and `also` names only real policy roles",
    Object.values(ROLE_IDENTITY).every((id) => (id.also ?? []).every((r) => POLICY_ROLES.includes(r))));
 // The team role does not read a team-mate's ratings; the boy's own screens

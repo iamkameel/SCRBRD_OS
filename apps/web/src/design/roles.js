@@ -339,10 +339,24 @@ const personaFor = (roles) => {
   return hit ? hit[0] : null;
 };
 
+/**
+ * A second capability that also opens a destination. Training is the
+ * development reader's (its plans and the boy's record beside them) and the
+ * session runner's: the team manager runs the session, its plan and its
+ * register (team.training.run, GA-I26a AH-D8), and reads no development.
+ */
+const NAV_ALSO = { training: "team.training.run" };
+
+/** Does this role open destination `k`: its capability, or the one NAV_ALSO adds. */
+const navGrants = (role, k) => {
+  const cap = NAV_CAPABILITY[k];
+  return cap === null || roleGrants(role, cap) || (Object.hasOwn(NAV_ALSO, k) && roleGrants(role, NAV_ALSO[k]));
+};
+
 /** The destinations a SET of roles reaches: what any of them holds. */
 const navForRoles = (roles) => {
   const held = [...new Set(roles)];
-  const holds = (k) => { const cap = NAV_CAPABILITY[k]; return cap === null || held.some((r) => roleGrants(r, cap)); };
+  const holds = (k) => NAV_CAPABILITY[k] === null || held.some((r) => navGrants(r, k));
   const persona = personaFor(held);
   if (persona) return PERSONA_NAV[persona].bar.filter(holds);
   const beside = new Set(Object.values(PERSONA_NAV)
@@ -425,4 +439,4 @@ const NAV_META = {
   me:           { icon:"id-card", label:"Me"           },
 };
 
-export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, PERSONA_ASIDE, PERSONA_NAV, PERSONA_ONLY, ROLES, ROLE_DAYLIGHT, ROLE_IDENTITY, ROLE_FAMILIES, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles, personaFor };
+export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, PERSONA_ASIDE, PERSONA_NAV, PERSONA_ONLY, ROLES, ROLE_DAYLIGHT, ROLE_IDENTITY, ROLE_FAMILIES, NAV_ALSO, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles, navGrants, personaFor };
