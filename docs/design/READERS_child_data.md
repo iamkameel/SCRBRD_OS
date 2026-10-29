@@ -208,6 +208,8 @@ The captain mark (SR-6) is read as the sheet is and is never public (`SEASON_ROL
 
 *28 Oct 2026 (Kameel, R3, "Everyone who picks teams (as built)"):* at the receiving school the passport opens to every holder of `team.select` there: the director of sport, the sports administrator, the coaches and the team managers. db/115's and db/116's comments, which say "a coach", stand as shipped.
 
+*29 Oct 2026 (Kameel: "CSA Schools/Provincial Union will be able to access a child's full passport"; "With his guardian's consent, as the receiving school's is"; "Named selectors and the schools cricket manager only, every read logged"; built in db/124, not yet pasted):* a union or CSA Schools reads passport lines only, as the other school does, on a passport consent naming his own province's union or the federation, in force. The reader is a `unionselector` (passport.union.read) held at that institution; a competition organiser, the union's office and a platform-wide key open nothing as a union. Every such read is logged (`passport_union_read`, and the access log at his school) and shown to his family on a live link and to the boy himself (`passport_union_reads()`). His public profile does not change.
+
 The citation is read by team-mates and is public only when the boy is named (`RECOGNITION_design.md:113, 155`). Honours stay on the side they were awarded for after a move (SR-8, `SEASON_ROLLOVER.md:352`).
 
 ### F · Injury (status / nature / clinical words; reviews; the worklist)
