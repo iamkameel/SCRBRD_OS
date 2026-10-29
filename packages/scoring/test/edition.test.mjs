@@ -395,7 +395,9 @@ group("E. A delivery that does not count in the over: 24.4, 28.2, 41.4, 41.5 (bo
        && !isMaiden(six.overLog[0].balls));
     const nb = [...open(0), ...at(0, ball({ type: BALL_TYPE.NO_BALL }))];
     const afterNb = deriveInnings([...nb, ...at(0, ...notInOverDelivery({ type: BALL_TYPE.RUN }, "fielder_returning"))]);
-    ok(`${label}: a fair ball that does not count still takes the free hit (by its type, as SQL reads it)`, afterNb.freeHit === false && afterNb.balls === 0);
+    // Kameel, 28 Oct (the Laws audit Q9, F11): it does not count, so it was
+    // not the free hit; the next ball is. SQL's ball_on_free_hit() (db/121) the same.
+    ok(`${label}: a fair ball that does not count keeps the free hit for the next`, afterNb.freeHit === true && afterNb.balls === 0);
     ok(`${label}: a no-ball that does not count: its one run stands, as a no-ball`,
        deriveInnings([...open(0), ...at(0, ...notInOverDelivery({ type: BALL_TYPE.NO_BALL, value: 0 }, "obstructing_batter"))]).runs === 6);
     ok(`${label}: an unknown reason is refused, and one on a wicket`,

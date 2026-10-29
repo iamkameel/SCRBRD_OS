@@ -3,6 +3,7 @@ import { T } from "../../design/tokens.js";
 import { useNav } from "../../lib/features.js";
 import { batHandOf, bowlingLimit } from "@scrbrd/scoring";
 import { boardInnings, sidesOf, teamOf } from "../../lib/matchCentre.js";
+import { matchChaseOf } from "../../lib/superOver.js";
 import { bandLine, bandOfTeam, bowlerRows, matchupTypes, matchupWords, notYetBowled, overStory, pitchWords, sheetOf } from "../../lib/captain.js";
 import {
   LOAD_SENTENCE, busOf, limitWords, liftCounts, ourInnings, saDay, saTime, shortDate, sideFoot, sideRows, spellLines, weatherWords, weekRows, weekWords,
@@ -291,8 +292,9 @@ function Matchups({ reads, sheet }) {
 function DuringAndAfter({ match, gate, innings, overs, result, commentary, phone, decided, fielding, sheet, oursIds, reads, capFor, shownRuns, venueLine }) {
   const { index } = boardInnings(innings, result ? {} : null);
   const inn = innings[index];
-  const chase = innings.length >= 2 && inn === innings[1];
-  const target = chase ? (innings[1].target ?? innings[0].runs + 1) : null;
+  const chaseNow = matchChaseOf(innings, index);
+  const chase = chaseNow != null;
+  const target = chaseNow?.target ?? null;
   const inOvers = inn.overs ?? overs;
   const projected = decided ? null : atThisRate(inn, { overs: inOvers, chasing: chase, format: match.format });
   const props = boardFromInnings(inn, { target, overs: inOvers, projected });

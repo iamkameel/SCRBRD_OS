@@ -45,8 +45,8 @@ export const crease = (i) => ({
  * explicit "not required", or "no contact" for a shot the bat never touched.
  */
 export function deliveryEvents({ curIn, before, freeHit, type, value, shot, seg, zone, approach, placement, shortRun = false, nbType = null,
-  facesNext = null, disallowed = null, notInOver = null }) {
-  const bowled = deliveryOf({ type, value, shot, approach, freeHit, crease: crease(before), seg, zone, placement, nbType });
+  facesNext = null, disallowed = null, notInOver = null, notBoundary = false }) {
+  const bowled = deliveryOf({ type, value, shot, approach, freeHit, crease: crease(before), seg, zone, placement, nbType, notBoundary });
   const delivery = facesNext ? { ...bowled, facesNext } : bowled;
   if (notInOver) return notInOverEvents(curIn, delivery, notInOver);
   if (disallowed) return disallowedEvents(curIn, delivery, disallowed);
@@ -127,7 +127,8 @@ export function placementOf(shot, seg, zone, placement) {
  * @param {{type: string, value: number, shot?: string | null, approach?: string | null, freeHit?: boolean,
  *          crease?: object, seg?: number | null, zone?: string | null, placement?: object | null}} d
  */
-export function deliveryOf({ type, value, shot = null, approach = null, freeHit = false, crease = {}, seg = null, zone = null, placement, nbType = null }) {
+export function deliveryOf({ type, value, shot = null, approach = null, freeHit = false, crease = {}, seg = null, zone = null, placement, nbType = null,
+  notBoundary = false }) {
   return {
     type, value, shot, bowlerApproach: approach || null, freeHit,
     ...crease,
@@ -135,6 +136,11 @@ export function deliveryOf({ type, value, shot = null, approach = null, freeHit 
     // What kind of no-ball, as the no-ball sheet records it (a short run off
     // a no-ball asks it too).
     ...(type === "Nb" && nbType ? { nbType } : {}),
+    // Runs that did not reach the boundary — all run, or with overthrows
+    // (Kameel, 28 Oct 2026, the Laws audit F7): no four or six for the
+    // batter (boundaryHit()). Only from the pad's "Runs, not a boundary";
+    // every other delivery is the event it always was.
+    ...(type === "run" && notBoundary ? { boundary: false } : {}),
   };
 }
 

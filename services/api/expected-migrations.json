@@ -115,5 +115,6 @@
   "117_rollover_dated_side.sql",
   "118_privacy_followups.sql",
   "119_family_of_live.sql",
-  "120_notification_prefs.sql"
+  "120_notification_prefs.sql",
+  "121_laws_audit.sql"
 ]

@@ -2,7 +2,7 @@ import { deriveMatch } from "@scrbrd/scoring";
 import { boardBall, boardFromInnings } from "../scorer/boardData.js";
 import { RR, fmtOv, isOut } from "../scorer/format.js";
 import { boardInnings, inningsBreak, oversOf, revisionNotice, sidesOf, teamOf } from "../lib/matchCentre.js";
-import { chaseOf, matchInningsOf, superOverInPlay, superOverTitle, superOversOf } from "../lib/superOver.js";
+import { chaseOf, matchInningsOf, superOverInPlay, superOverTitle, superOversOf, twoInningsPlayed } from "../lib/superOver.js";
 import { chaseRates, rainTouched, rateTrack, reportFor } from "../lib/par.js";
 
 /**
@@ -257,10 +257,11 @@ export function fallOfWicket(inn) {
 export function breakPanel(match, played) {
   const first = played[0];
   if (!first) return null;
-  const chase = chaseOf(played, 1);
-  const target = chase?.target ?? first.runs + 1;
+  // A Two-Day's break after the first innings sets no target (chaseOf()).
+  const target = twoInningsPlayed(played) ? null : (chaseOf(played, 1)?.target ?? first.runs + 1);
   return {
-    words: `${teamOf(match, first.bowlingTeam).full} need ${target} to win from ${first.overs ?? match?.overs ?? 20} overs`,
+    words: target == null ? `${teamOf(match, first.bowlingTeam).full} to bat`
+      : `${teamOf(match, first.bowlingTeam).full} need ${target} to win from ${first.overs ?? match?.overs ?? 20} overs`,
     line: `${teamOf(match, first.battingTeam).full} ${first.runs}/${first.wickets} (${oversOf(first.balls)})`,
     facts: inningsBreak(first),
   };

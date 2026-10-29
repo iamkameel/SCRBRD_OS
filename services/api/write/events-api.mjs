@@ -28,6 +28,7 @@ import { runAsPrincipal, who } from "../auth/auth-db.mjs";
 import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal, REFUSAL, REFUSAL_TEXT,
          PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE, CONDITION, KIND, conditionsOf } from "@scrbrd/scoring";
 import { safeErr } from "../log-safe.mjs";
+import { rejudgeAfterAmendment } from "./rejudge.mjs";
 /** @import { Pool, ApiRequest, ApiResponse, Handler, IdHandler, IdRequest, RouteDeps, DressedError } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs): pg's
 // carry a SQLSTATE `code` (and `table`, `constraint`, `detail`), this
@@ -779,10 +780,12 @@ export function eventRoutes({ pool, secret }) {
  * (tools/smoke-amend.mjs) approves a non-latest void and refuses an
  * innings_start one, and fails if that order ever changes.
  *
- * What an amendment does to the events AFTER its target — a wicket voided under
- * the batter who came in for it — is not re-judged: the fold replays them as it
- * always has. Deciding that a correction must also re-judge the balls bowled
- * since would be a product decision, not a Law.
+ * What an amendment does to the events AFTER its target: the fold replays them
+ * as it always has, and since Kameel's decision of 28 Oct 2026 (the Laws
+ * audit Q5, F4) the route re-judges who faced each ball after it in its
+ * innings and SQL reads that (rejudge.mjs, db/121). A wicket voided under the
+ * batter who came in for it is still the fold's to read; nothing re-judges
+ * the batters event that followed it.
  *
  * @param {import("@scrbrd/scoring").MatchView} match  the fold of the log before the void
  * @param {import("@scrbrd/scoring").LogEvent} voidEv  the void, as stored
@@ -800,6 +803,7 @@ function amendmentRefusal(match, voidEv) {
  * @property {boolean} ok
  * @property {string | null} reason
  * @property {string | null} [void_key]
+ * @property {number} [rejudged]  balls whose striker the fold re-judged (db/121)
  */
 
 /**
@@ -884,6 +888,13 @@ export function amendmentRoutes({ pool, secret, onChange }) {
         }
         await client.query("release savepoint amendment_decide");
         changed = owner[0]?.match_id ?? null;
+        // Who faced the balls after the corrected one, re-judged (Kameel,
+        // 28 Oct 2026, the Laws audit Q5, F4): the fold of the log with the
+        // void in it, handed to SQL in this same transaction (rejudge.mjs,
+        // db/121's scoring_amendment_rejudge()), so careers read the fold's
+        // striker and not the pad's stamp. Part of the approval: if it fails,
+        // nothing is written.
+        if (changed) out.rejudged = await rejudgeAfterAmendment(client, req.params.id, changed, EVENT_COLUMNS, ctx);
         return out;
       });
       // Committed (runAsPrincipal has returned): the public entry drops now.

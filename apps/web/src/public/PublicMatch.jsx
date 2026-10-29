@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
-import { boardInnings, inningsPhase, matchLine, revisionNotice, sidesOf } from "../lib/matchCentre.js";
+import { boardInnings, boundaryCount, inningsPhase, matchLine, revisionNotice, sidesOf } from "../lib/matchCentre.js";
 import { humanDateTime } from "../lib/format.js";
 import { SummaryTab, CommentaryTab, PartnershipsTab } from "../views/matchcentre/tabs-core.jsx";
 import { InningsToggle, ScorecardTab } from "../views/matchcentre/scorecard.jsx";
@@ -161,7 +161,8 @@ function TeamAnalyticsTab({ match, innings, inningsSel, setInningsSel, sectors }
   if (!inn) return <Quiet testid="mc-analytics-empty">Nothing has been scored yet.</Quiet>;
   const legal = inn.ballLog.filter((b) => b.type !== "Wd" && b.type !== "Nb");
   const dots = legal.filter((b) => (b.type ?? "run") === "run" && b.value === 0).length;
-  const bnds = legal.filter((b) => (b.type ?? "run") === "run" && (b.value === 4 || b.value === 6)).length;
+  // Fours and sixes are boundaries (the Laws audit F7): the engine's one test.
+  const bnds = boundaryCount(inn);
   const mine = (sectors ?? []).filter((s) => s.innings === inningsSel);
   const most = Math.max(1, ...mine.map((s) => s.runs));
   const Kpi = ({ l, v }) => (
