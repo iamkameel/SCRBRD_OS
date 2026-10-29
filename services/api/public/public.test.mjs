@@ -27,6 +27,7 @@ import {
 import { PUBLIC_EVENT_FIELDS, PUBLIC_EVENT_COMMON, projectLog, playerPseudonym, eventPseudonym, nameFor, RETIRED_NOT_OUT, areasOf } from "./redact.mjs";
 import {
   publicPages, PublicCache, RateLimit, clientAddress, shellHtml, THEME_BOOT, NOT_FOUND, LIVE_TTL_MS, SETTLED_TTL_MS, RATE, parLeaks,
+  isPublicPath,
 } from "./public-api.mjs";
 import { publicationRoutes } from "../write/publication-api.mjs";
 import { signToken } from "../auth/auth.mjs";
@@ -560,6 +561,17 @@ const on = await serve({});
   ok("the shell says noindex, nofollow in its header and its meta", all[5].headers["x-robots-tag"] === "noindex, nofollow" && /<meta name="robots" content="noindex, nofollow" \/>/.test(all[5].body));
   ok("the shell names the teams and the score, and nobody", /og:title" content="Hilton College 1XI v Westville Boys&#39; High 1XI · 25\/2"/.test(all[5].body) && leaks(all[5].body).length === 0);
   ok("the scorecard shell asks for the scorecard view", /data-view="scorecard"/.test(all[6].body) && /src="\/public-app.js"/.test(all[6].body));
+  // CRI-1.3: the live page's other tabs are the live shell at their own address; a tab after any other shell, an
+  // unknown tab, and a tab of an unpublished fixture are the one not found.
+  const tabbed = await Promise.all(["commentary", "partnerships", "analytics", "details"].map((t) => on.get(`/live/${M1}/${t}`)));
+  ok("/live/:id/commentary, …/partnerships, …/analytics, …/details: the live shell, no-store, noindex",
+     tabbed.every((x) => x.status === 200 && /data-view="live"/.test(x.body) && /src="\/public-app.js"/.test(x.body)
+       && x.headers["cache-control"] === "no-store" && x.headers["x-robots-tag"] === "noindex, nofollow"), tabbed.map((x) => x.status));
+  const notTabs = [await on.get(`/live/${M2}/commentary`), await on.get(`/scorecard/${M1}/commentary`), await on.get(`/display/${M1}/details`),
+    await on.get(`/table/${M1}/commentary`)];
+  ok("...an unpublished fixture's tab, and a tab after the scorecard, the display or a phase 2 shell: the one 404 page",
+     notTabs.every((x) => x.status === 404 && x.body === ns[0].body && JSON.stringify(x.headers) === JSON.stringify(ns[0].headers)), notTabs.map((x) => x.status));
+  ok("...and a tab the page does not have is not a public path at all", !isPublicPath(`/live/${M1}/coach`) && isPublicPath(`/live/${M1}/analytics`));
   // SCRBRD-133 G1: the ground display's shell, served as the live page's is (D1, D2).
   const disp = await on.get(`/display/${M1}`);
   ok("the ground display's shell answers 200 for a published fixture, no-store", disp.status === 200 && disp.headers["cache-control"] === "no-store");

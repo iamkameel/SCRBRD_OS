@@ -940,6 +940,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
   .card-hover:hover{transform:none}
   .os-insight-in{animation:none!important}
   .mc-moment,.mc-moment-big{animation:none!important}
+  .mc-more-menu{animation:none!important}
   .os-panel-in{animation:none!important}
   .os-tick{transition:none!important}
   .os-hair{animation:none!important}
@@ -952,6 +953,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
   animation-duration:1ms!important;animation-iteration-count:1!important;transition-duration:1ms!important}
 :root[data-reduce-motion] .os-board-flip,:root[data-reduce-motion] .os-insight-in,:root[data-reduce-motion] .mc-moment,
 :root[data-reduce-motion] .mc-moment-big,:root[data-reduce-motion] .os-panel-in{animation:none!important}
+:root[data-reduce-motion] .mc-more-menu{animation:none!important}
 :root[data-reduce-motion] .os-tick{transition:none!important}
 :root[data-reduce-motion] .os-hair{animation:none!important}
 
@@ -1018,6 +1020,10 @@ button{touch-action:manipulation}
 .mc-moment{animation:mcBeat ${T.motion.control} ${T.motion.swift} both}
 .mc-moment-big{animation:interruptIn ${T.motion.interrupt} ${T.motion.ease} both}
 @media(max-width:640px){.mc-full{display:none}.mc-short{display:inline}}
+/* CRI-1.3: the match page's More menu drops from its control, quickly; under reduced motion it is a cut (the
+   blocks above take its animation away). */
+@keyframes mcMenuIn{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}
+.mc-more-menu{animation:mcMenuIn ${T.motion.micro} ${T.motion.ease} both;transform-origin:top right}
 
 /* ── Print (SCRBRD-082) ──────────────────────────────────────────
    Nothing else in the product ships a print stylesheet, so this is one

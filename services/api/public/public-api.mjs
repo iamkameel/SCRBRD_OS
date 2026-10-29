@@ -31,6 +31,8 @@
  *                                         (SCRBRD-114 phase 3a, db/69): sides and
  *                                         figures, never a boy, never a reason (A1)
  *   GET /live/:id, /scorecard/:id         the HTML shells (noindex; OG title)
+ *   GET /live/:id/commentary, …/partnerships, …/analytics, …/details
+ *                                         the live shell again, the page on that tab (CRI-1.3)
  *   GET /display/:id                      the ground display's shell (SCRBRD-133 G1):
  *                                         the same public bundle, its own lazy
  *                                         chunk, reading exactly the three reads
@@ -115,7 +117,13 @@ export const NEWS_KEY = "news";
 export const NEWS_LIMIT = 5;
 /** A published competition's table (SCRBRD-114 phase 3a). */
 const STANDINGS = /^\/api\/public\/competitions\/([^/]+)\/standings$/;
-const SHELL = /^\/(live|scorecard|display|table|fixtures)\/([^/]+)$/;
+/**
+ * The shells, and the live page's tabs (CRI-1.3, apps/web/src/lib/matchTabs.js
+ * PUBLIC_LIVE_TABS): /live/:id/commentary and the like are the same live shell,
+ * the page reading its tab from the address. A tab after any other shell is
+ * the same not found an unknown fixture gets.
+ */
+const SHELL = /^\/(live|scorecard|display|table|fixtures)\/([^/]+)(?:\/(commentary|partnerships|analytics|details))?$/;
 /**
  * The shells served: phase 1's two and the ground display (SCRBRD-133 G1, D1,
  * D2: on exactly when the live page is — the fixture published, read as
@@ -693,7 +701,7 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
     }
     const apiMatch = API.exec(path);
     const id = (shellMatch ? shellMatch[2] : apiMatch?.[1] ?? "").toLowerCase();
-    if (!UUID.test(id) || (shellMatch && !SERVED_SHELLS.has(shellMatch[1])) || (!shellMatch && !apiMatch)) {
+    if (!UUID.test(id) || (shellMatch && (!SERVED_SHELLS.has(shellMatch[1]) || (shellMatch[3] && shellMatch[1] !== "live"))) || (!shellMatch && !apiMatch)) {
       notFound(res, shell, head); return true;
     }
     try {

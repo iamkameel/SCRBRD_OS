@@ -29,6 +29,8 @@ import { scorerLanding } from "./lib/scorerHome.js";
 import { clearSession, loadSession, saveSession } from "./lib/persist.js";
 import { signOut, refreshProfile } from "./lib/session.js";
 import { primaryRole } from "./lib/primaryRole.js";
+import { parseAppPath } from "./lib/matchTabs.js";
+import { navigate } from "./lib/route.js";
 import { ErrorBoundary } from "./ui/ErrorBoundary.jsx";
 import { StateLabel } from "./ui/stateLabel.jsx";
 
@@ -404,6 +406,23 @@ export default function SCRBRD_OS() {
       scorerCfg: c ? { matchId: c.matchId, team1: c.team1, team2: c.team2, teamCode: c.teamCode, overs: c.overs, live: true,
                        ...(c.startsAt ? { startsAt: c.startsAt } : {}), ...(c.format ? { format: c.format } : {}) } : null });
   }, [appState, role, userName, page, scorerOpen, scorerMatchId, scorerResume, scorerPractice, loginForPad]);
+
+  // CRI-1.3: a fixture's address (/app/matches/:id/:tab, lib/matchTabs.js).
+  // Arriving on one, once the person is in, is the Match Centre, which opens
+  // the fixture at that tab if his fixtures read holds it; a role whose
+  // navigation has no Match Centre is left where it lands, at /app. Leaving
+  // the Match Centre for another page leaves its address too.
+  useEffect(() => {
+    if (appState !== "app" || !parseAppPath(window.location.pathname)) return;
+    if ((ROLES[role]?.nav || []).includes("matches")) setPage("matches");
+    else navigate("/app", { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appState, role]);
+  const lastPage = useRef(page);
+  useEffect(() => {
+    if (lastPage.current === "matches" && page !== "matches" && parseAppPath(window.location.pathname)) navigate("/app", { replace: true });
+    lastPage.current = page;
+  }, [page]);
 
   // Counted by the SERVER over the notices it agreed to send this person
   // (my_notifications, db/89), from the one store every badge reads. A badge
