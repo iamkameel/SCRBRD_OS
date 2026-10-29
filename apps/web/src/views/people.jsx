@@ -31,6 +31,8 @@ import { AccountButton } from "./accountactive.jsx";
 //  /api/users, the call Settings → People makes (views/enrol.jsx is the one
 //  form). An email that already belongs to someone at the school gets the new
 //  role on the existing account — that is how a person gets a second role.
+//  "Add role" names the account by its id (db/122), never by an email the
+//  reader may not have been given (a pupil's: db/118).
 //
 //  Ending a role is real (db/77, endrole.jsx), and so are Disable account and
 //  Enable account (db/85, accountactive.jsx): disabling signs the person out
@@ -277,10 +279,10 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
                 ))}
               </div>
             )}
-            {/* Add role posts the account's email, so it is offered only where
-                this reader was given one: a pupil's account is the office's to
-                add a role to. */}
-            {mayAddTo(p) && !!p.email && (
+            {/* Add role names the account by its id (db/122, Kameel 29 Oct
+                2026), so it is offered on a pupil's account too, whose email
+                this reader may not be given (db/118). */}
+            {mayAddTo(p) && (
               <FormBtn variant="ghost" data-testid={`add-role-${p.id}`} aria-label={`Add a role for ${p.name}`}
                        onClick={() => { setNotice(null); setDialog({ kind: "role", person: p }); }}>Add role</FormBtn>
             )}
@@ -310,8 +312,8 @@ export function PeoplePanel({ role, players, onDirectoryChanged }) {
       )}
       {dialog?.kind === "role" && (
         <EnrolModal role={role} players={players} title={`Add a role for ${dialog.person.name}`} submitLabel="Add role" codeByDefault={false}
-                    fixed={{ name: dialog.person.name, email: dialog.person.email, school: dialog.person.school }}
-                    intro={`This adds a role to ${dialog.person.name}'s existing account. Their name and email stay as they are.`}
+                    fixed={{ userId: dialog.person.id, name: dialog.person.name, email: dialog.person.email, school: dialog.person.school }}
+                    intro={`This adds a role to ${dialog.person.name}'s existing account. Their name${dialog.person.email ? " and email stay" : " stays"} as they are.`}
                     onClose={() => setDialog(null)} onEnrolled={enrolled}/>
       )}
       {issued && <IssuedCodeModal issued={issued} onClose={() => setIssued(null)}/>}

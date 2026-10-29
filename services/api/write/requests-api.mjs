@@ -157,6 +157,15 @@ export function requestRoutes({ pool, secret }) {
       })),
 
     // POST /api/users { email, name, role, schoolId, teamCode?, playerId?, note?, withCode? }
+    //                 | { userId, role, schoolId, teamCode?, playerId?, note?, withCode? }
+    //
+    // ADD A ROLE BY THE ACCOUNT (db/122, Kameel 29 Oct 2026: "Close both
+    // doors, and add-role uses the account id"). With `userId` the account is
+    // the one named, read under the caller's own row security (app_user_read,
+    // db/09: the rows People lists him), and its address and name are taken
+    // from it here: a pupil's login email is the office's alone (db/118), so
+    // the director of sport adds a role to his account without being given
+    // it. The address never leaves the server; the answer carries ids only.
     //
     // The office enrolling somebody already on the roster. With `withCode` the
     // login code is issued in the same breath and returned ONCE — there is no
@@ -170,12 +179,20 @@ export function requestRoutes({ pool, secret }) {
     enrol: handle(async (req) => {
       const b = req.body || {};
       const f = fields(b);
-      const email = String(b.email ?? "").trim();
-      const name = String(b.name ?? "").trim();
-      if (name.length < 2) throw err("name_required");
+      const account = b.userId == null || b.userId === "" ? null : String(b.userId);
+      if (account && !UUID.test(account)) throw err("user_invalid");
+      let email = String(b.email ?? "").trim();
+      let name = String(b.name ?? "").trim();
+      if (!account && name.length < 2) throw err("name_required");
       const player = b.playerId == null ? null : String(b.playerId);
       if (player && !UUID.test(player)) throw err("player_invalid");
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        if (account) {
+          const { rows: [u] } = await client.query(`select email, name from app_user where id = $1`, [account]);
+          // An account this caller cannot read is one he cannot add a role to.
+          if (!u) throw err("not_permitted", 403);
+          email = u.email; name = u.name;
+        }
         const { rows } = await client.query(
           `select * from enrol_person($1, $2, $3, $4, $5, $6, $7)`,
           [email, name, f.role, f.school, f.team, player, f.note]);

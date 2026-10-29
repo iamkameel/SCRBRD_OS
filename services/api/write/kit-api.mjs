@@ -70,6 +70,14 @@ export function kitRoutes({ pool, secret }) {
       const b = req.body || {};
       if (!UUID.test(String(b.playerId ?? "")) || !UUID.test(String(b.schoolId ?? ""))) throw err("player_and_school_required");
       return asPrincipal(req, async (c) => {
+        // A consent lapses when the link that gave it ends (db/122, Kameel 29
+        // Oct 2026), but its row stays open, and db/08 allows one open row per
+        // boy and school. A lapsed one naming this school is withdrawn first,
+        // as the caller (db/08's policy: only his family may), so the boy at
+        // eighteen, or his other parent, can give the consent afresh.
+        await c.query(`update passport_consent set withdrawn_at = now()
+                        where player_id = $1 and to_school_id = $2 and withdrawn_at is null
+                          and passport_consent_in_force(id) = false`, [b.playerId, b.schoolId]);
         const { rows } = await c.query(`insert into passport_consent (player_id, to_school_id) values ($1, $2) returning id`, [b.playerId, b.schoolId]);
         if (!rows.length) throw err("not_permitted", 403);
         return { id: rows[0].id };

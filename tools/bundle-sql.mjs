@@ -756,6 +756,23 @@ SELECT
         AND NOT has_function_privilege('scrbrd_app', to_regprocedure('milestone_recheck(uuid,smallint,uuid[],boolean)'), 'EXECUTE')
         AND position('milestone_recheck(' IN coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('scoring_amendment_rejudge(uuid,jsonb)')), '')) > 0
        THEN 'OK' ELSE 'PROBLEM' END                             AS "The Laws audit's fixes",
+  -- db/122: Kameel's four decisions of 29 Oct 2026. A consent is in force
+  -- while its giver's link is live (the passport's named school, the scout);
+  -- a pupil's address through app_user_email_seen() at db/81's three doors;
+  -- the two-letter particles out of the news scan; a move dated sa_today().
+  CASE WHEN to_regprocedure('consent_giver_live(uuid,uuid)') IS NOT NULL
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('consent_giver_live(uuid,uuid)'), 'EXECUTE')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('passport_consent_in_force(uuid)'), 'EXECUTE')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('scouting_consent_in_force(uuid)'), 'EXECUTE')
+        AND position('consent_giver_live(c.granted_by' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport_open(uuid)'))) > 0
+        AND position('consent_giver_live(c.decided_by' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('scouting_candidates()'))) > 0
+        AND position('app_user_email_seen(' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('role_requester(uuid)'))) > 0
+        AND position('app_user_email_seen(' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('pending_claims()'))) > 0
+        AND position('app_user_email_seen(' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('account_sign_ins(uuid)'))) > 0
+        AND position('''de'', ''du'', ''le'', ''la'', ''da'', ''di''' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('news_public_hits(uuid)'))) > 0
+        AND (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('player_team_membership_log()')) !~ 'current_date'
+        AND (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('player_move_voids_seats()')) !~ 'current_date'
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A lapsed consent, a pupil's email, the school's day",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

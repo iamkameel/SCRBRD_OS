@@ -896,8 +896,11 @@ function asPassportLine(r) {
            source: r.source_school, recordedBy: r.recorded_by, confidence: r.confidence, live: true };
 }
 function asPassportConsent(r) {
+  // `lapsed` (db/122): not withdrawn, and no longer in force, because the
+  // link of the person who gave it has ended. A row that says nothing about
+  // it (in_force absent) is not called lapsed.
   return { id: r.id, playerId: r.player_id, name: r.full_name, toSchool: r.to_school_id, toSchoolName: r.to_school,
-           grantedAt: r.granted_at, withdrawnAt: r.withdrawn_at, live: true };
+           grantedAt: r.granted_at, withdrawnAt: r.withdrawn_at, lapsed: !r.withdrawn_at && r.in_force === false, live: true };
 }
 /**
  * SCRBRD-055. `granted` is derived from the state rather than sent as a
@@ -908,7 +911,9 @@ function asPassportConsent(r) {
 function asScoutingConsent(r) {
   return { playerId: r.player_id, name: r.full_name, team: r.team_code,
            state: r.consent_state,
-           granted: r.consent_state === "granted",
+           // A yes whose giver's link has ended is no yes (db/122): `lapsed`.
+           granted: r.consent_state === "granted" && r.in_force !== false,
+           lapsed: r.consent_state === "granted" && r.in_force === false,
            decidedAt: r.decided_at ? String(r.decided_at).slice(0, 10) : null,
            decidedBy: r.decided_by_name ?? null, live: true };
 }

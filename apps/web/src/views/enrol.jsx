@@ -162,9 +162,11 @@ export function FormBtn({ children, variant = "primary", style, ...rest }) {
  *   accountless the part of it with no account yet; a pupil's own account is
  *               for one of these. Omit to offer the whole roster.
  *   initial     { name, email, role, player } to start from
- *   fixed       { name, email, school } — the person already has an account;
- *               the form shows both and will not change them, and the role is
- *               added to that account (the server finds it by the email)
+ *   fixed       { userId, name, email, school } — the person already has an
+ *               account; the form shows both and will not change them, and the
+ *               role is added to that account, named by its id (db/122). Its
+ *               email may be absent: a pupil's is the office's alone (db/118),
+ *               and the form then says so instead of drawing a field.
  *   onEnrolled  ({ out, name }) once the server has said yes
  *
  * `fixed.school` is where the role is added. Otherwise the school is the one
@@ -212,7 +214,8 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
   const choices = (forChild ? players : (accountless ?? players)).filter(here);
   const linked = players.find((p) => p.id === f.player) || null;
 
-  const ready = !!schoolId && f.name.trim().length >= 2 && EMAIL.test(f.email.trim()) && !!f.role
+  const byAccount = !!fixed?.userId;
+  const ready = !!schoolId && f.name.trim().length >= 2 && (byAccount || EMAIL.test(f.email.trim())) && !!f.role
     && (!teamScoped || !!f.team) && (!subjectScoped || !!f.player);
 
   const submit = async () => {
@@ -220,8 +223,8 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
     setBusy(true);
     try {
       const out = await api("/api/users", { method: "POST", body: {
-        email: f.email.trim(),
-        name: f.name.trim(),
+        // An existing account by its id; a new one by the email typed.
+        ...(byAccount ? { userId: fixed.userId } : { email: f.email.trim(), name: f.name.trim() }),
         role: f.role,
         schoolId,
         // A coach's side is the one chosen; a pupil's is his own. A guardian's
@@ -251,8 +254,12 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
       )}
       <TextField label="Full name" value={f.name} onChange={set("name")} placeholder="First Last" readOnly={!!fixed}
                  data-testid="enrol-name" autoComplete="off"/>
-      <TextField label="Email" value={f.email} onChange={set("email")} type="email" placeholder="name@school.co.za"
-                 readOnly={!!fixed} data-testid="enrol-email" autoComplete="off"/>
+      {byAccount && !f.email
+        ? <div data-testid="enrol-email-withheld" style={{ margin: "0 0 14px", fontFamily: D.body, fontSize: "13px", color: D.textMuted }}>
+            Email shown to the school office only. The role is added to this account all the same.
+          </div>
+        : <TextField label="Email" value={f.email} onChange={set("email")} type="email" placeholder="name@school.co.za"
+                     readOnly={!!fixed} data-testid="enrol-email" autoComplete="off"/>}
       <SelectField label="Role" value={f.role} onChange={(v) => setF((p) => ({ ...p, role: v, player: "", team: "" }))}
                    data-testid="enrol-role"
                    options={[{ value: "", label: "Choose a role…" },

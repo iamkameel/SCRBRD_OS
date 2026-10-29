@@ -567,13 +567,26 @@ try {
   ok("...and she has every tab the policy gives a director of sport", JSON.stringify(await tabsShown(dos.page)) === JSON.stringify(tabsFor("directorofsport")), (await tabsShown(dos.page)).join());
   // A pupil's login email is the office's and the principal's (db/118;
   // Kameel, 28 Oct 2026: "The office alone, as A4 says"). She reads his
-  // account without it, is told so in words, and is offered no Add role,
-  // which would post the email she was not given.
+  // account without it, and is told so in words. Add role names the account
+  // by its id (db/122; Kameel, 29 Oct 2026: "Close both doors, and add-role
+  // uses the account id"), so it is offered on his account too, and its form
+  // carries no email either.
   const pupilRow = dos.page.locator('[data-testid="person-row-88888888-0000-0000-0000-000000000009"]');
   ok("...the pupil's account is on her list, with no email on it and words saying whose it is",
      await pupilRow.count() === 1 && await pupilRow.getAttribute("data-email") === null
      && /Email shown to the school office only/.test(await pupilRow.innerText()) && !/pillay@/.test(await pupilRow.innerText()));
-  ok("...and no Add role on it", await pupilRow.locator('[data-testid^="add-role-"]').count() === 0);
+  ok("...and Add role on it, by the account", await pupilRow.locator('[data-testid^="add-role-"]').count() === 1);
+  await pupilRow.locator('[data-testid^="add-role-"]').click({ timeout: 5000 });
+  await dos.page.waitForTimeout(500);
+  const pupilDlg = dos.page.locator('[role="dialog"]');
+  ok("...whose form names him, says whose his email is, and holds no address",
+     await pupilDlg.count() === 1 && /Add a role for R Pillay/.test(await pupilDlg.innerText())
+     && await tid(dos.page, "enrol-email-withheld").count() === 1 && await tid(dos.page, "enrol-email").count() === 0
+     && !/pillay@/.test(await pupilDlg.innerText()));
+  await tid(dos.page, "enrol-role").selectOption("scorer");
+  ok("...and may be sent with a role chosen", !(await tid(dos.page, "enrol-submit").isDisabled()));
+  await pupilDlg.getByText("Cancel", { exact: true }).click({ timeout: 3000 }).catch(() => {});
+  await dos.page.waitForTimeout(300);
   ok("...while an adult's row keeps its email and its Add role",
      await rowOf(dos.page, "coach@example.invalid").count() === 1
      && await rowOf(dos.page, "coach@example.invalid").locator('[data-testid^="add-role-"]').count() === 1);

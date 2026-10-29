@@ -216,6 +216,28 @@ try {
                                            schoolId: WES, teamCode: "U14A" });
   ok("the platform account still enrols an ordinary role at a school", coachWes.status === 200 && !!coachWes.body?.userId);
 
+  group("Add role names the account, not its email (db/122)");
+  // Kameel, 29 Oct 2026: "Close both doors, and add-role uses the account
+  // id". A pupil's login email is the office's alone (db/118), so the
+  // director of sport, who may give a pupil's account the scorer's role, is
+  // not given his address; she names the account by its id, and the server
+  // reads the address itself and never sends it back.
+  const sarah = await login("sarah@example.invalid");   // director of sport, Hilton
+  const PILLAY_ACCOUNT = "88888888-0000-0000-0000-000000000009";
+  const byId = await enrol(sarah, { userId: PILLAY_ACCOUNT, role: "scorer", schoolId: HIL });
+  ok(`the director of sport adds a role to the pupil's account by its id (was ${byId.status} ${byId.body?.error ?? ""})`,
+     byId.status === 200 && byId.body?.userId === PILLAY_ACCOUNT && !!byId.body?.assignmentId);
+  ok("...and the answer carries no address", !JSON.stringify(byId.body).includes("@"));
+  ok("...and the role is on his account, the one she named",
+     (await q(`select count(*)::int n from role_assignment where person_id = $1 and role = 'scorer' and active`, [PILLAY_ACCOUNT]))[0].n === 1);
+  ok("...with no second account made", (await accounts("pillay@example.invalid")) === 1);
+  const unseen = await enrol(sarah, { userId: "88888888-0000-0000-0000-0000000000ff", role: "scorer", schoolId: HIL });
+  ok(`an account she cannot read is not one she can add a role to (was ${unseen.status})`, unseen.status === 403);
+  const coachBy = await enrol(coach, { userId: PILLAY_ACCOUNT, role: "scorer", schoolId: HIL });
+  ok(`nor may a coach, by id any more than by email (was ${coachBy.status})`, coachBy.status === 403);
+  ok("a malformed account id never reaches the database",
+     (await enrol(sarah, { userId: "not-a-uuid", role: "scorer", schoolId: HIL })).status === 400);
+
   group("The roster gap actually closes");
   const after = await q(
     `select count(*)::int n from player p

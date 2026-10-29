@@ -137,14 +137,23 @@
 -- (services/api/write/roster-api.mjs) compared with the server's UTC date,
 -- refusing a move dated today between 00:00 and 02:00; it asks sa_today()
 -- now.
--- THE OTHER current_date IN THE ROLLOVER PATH, found and left (listed for
--- Kameel; each is a link's or an assignment's liveness, spelled as app_can()
--- spells it, so moving one alone would make "live" mean two things):
---   is_family_of() (db/119), app_can() and app_enrolled() (db/50, db/81),
---   player_own_accounts() (db/112, the carry: whose `player` assignment
---   follows the boy), consent_giver_live() (this file, is_family_of()'s
---   words), still_at_school() and the guardian-link close (db/62),
---   lift_my_sides() (db/70). The same rule, read on the same clock, in all.
+-- THE OTHER current_date IN THE ROLLOVER PATH, found (pg_proc, every body
+-- that reads it, on a database at this file) and left, for Kameel: each asks
+-- whether a link or an assignment is live today, spelled as app_can() spells
+-- it, so moving one alone would make "live" mean two things at midnight:
+--   app_can(), app_holds(), app_enrolled(), app_may_grant_at() (db/50,
+--     db/81, db/77): every capability the move route and the carry ask;
+--   player_own_accounts() (db/112): whose `player` assignment the carry
+--     moves with the boy (his self-access link live today);
+--   my_own_boy() (db/106; db/117 branch 5): the moved boy reading his old
+--     side's season;
+--   is_family_of() (db/119) and consent_giver_live() (this file, its words);
+--   guardian_links_reopen_at_school() (db/62, db/109): a boy moved back to a school;
+--   role_assignment_ending_links() (db/109); person_pupil_of_age() (db/116);
+--   lift_live_link(), lift_link_is_live(), lift_family_at() (db/70): whose
+--     seat a move voids is asked of the seat, but who may ask for one is these.
+-- And in db/99 the stages of §94, §96 and §97 end links with current_date,
+-- which the functions above read alike, so they agree at any hour.
 --
 -- WHAT IT CHANGES ON A LIVE DATABASE (production holds test data only)
 --   function consent_giver_live(uuid,uuid): new; not a definer, nobody's to

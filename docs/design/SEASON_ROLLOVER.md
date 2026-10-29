@@ -534,6 +534,8 @@ At most eight; each with a recommendation.
 
 **Decided 22 Oct 2026 (Kameel), as recommended:** (1) a boy moved to another side reads his old side's posts and plans from his time on it; (2) a move to another school leaves the old season with the old school; (3) the import dates a boy from the season's start unless the file gives a date (PR #190).
 
+**Decided 29 Oct 2026 (Kameel, through the Build Board), midnight-date:** "The school's day (SAST), everywhere." A move recorded with no effective day is dated `sa_today()`, Johannesburg's day, in db/08's history trigger and db/117's seat void, and the move route's "not in the future" check asks `sa_today()` too; until then both triggers used `current_date` (the database session's day, UTC), so a move typed between 00:00 and 02:00 SAST was dated yesterday (db/122). The other `current_date` reads on the rollover path are link and assignment liveness, spelled as `app_can()` spells it, and are listed in db/122's header for Kameel.
+
 ---
 
 ## 10 · What this document does not reopen

@@ -984,7 +984,7 @@ function ScoutingConsentSection({ role, players: offered }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{p.name}</div>
                   <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
-                    {c ? `${c.state} ${c.decidedAt ?? ""}${c.decidedBy ? ` · ${c.decidedBy}` : ""}`.trim() : "no decision recorded"}
+                    {c ? `${c.lapsed ? "lapsed: the link of the person who said yes has ended" : c.state} ${c.decidedAt ?? ""}${c.decidedBy ? ` · ${c.decidedBy}` : ""}`.trim() : "no decision recorded"}
                   </div>
                 </div>
                 <span data-testid={`scouting-state-${p.id}`}
@@ -1059,8 +1059,9 @@ function PassportTab({ role, only = null }) {
           <div key={r.id} data-testid={`passport-consent-${r.id}`} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: `1px solid ${D.border}`, opacity: r.withdrawnAt ? 0.6 : 1 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{r.name} → {r.toSchoolName ?? "a school"}</div>
-              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>named {day(r.grantedAt)}{r.withdrawnAt ? ` · withdrawn ${day(r.withdrawnAt)}` : ""}</div>
+              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>named {day(r.grantedAt)}{r.withdrawnAt ? ` · withdrawn ${day(r.withdrawnAt)}` : ""}{r.lapsed ? " · lapsed: the link of the person who named it has ended, so the school no longer opens his record. His family can name it again." : ""}</div>
             </div>
+            {r.lapsed && <span data-testid={`passport-lapsed-${r.id}`} style={{ fontFamily: D.mono, fontSize: "12px", textTransform: "uppercase", color: D.textMuted }}>lapsed</span>}
             {r.withdrawnAt
               ? <span style={{ fontFamily: D.mono, fontSize: "12px", textTransform: "uppercase", color: D.textMuted }}>withdrawn</span>
               : <Btn variant="ghost" onClick={() => withdraw(r.id)}>Withdraw</Btn>}
