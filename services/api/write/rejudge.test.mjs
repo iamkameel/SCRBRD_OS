@@ -7,10 +7,11 @@ import { rejudgedStrikers } from "./rejudge.mjs";
 import { readFileSync } from "node:fs";
 
 let pass = 0, fail = 0;
+/** @param {string} n @param {boolean} c @param {string} [d] */
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d); } };
 const A = "aaaaaaaa-0000-0000-0000-000000000001", B = "aaaaaaaa-0000-0000-0000-000000000002";
-/** Rows as the route reads them: toRow() with seq and the key. */
-const rows = (evs) => evs.map((e, k) => ({ ...toRow({ ...e, innings: e.innings ?? 0 }), seq: k + 1, idempotency_key: `k${k + 1}` }));
+/** Rows as the route reads them: toRow() with seq and the key. @param {any[]} evs */
+const rows = (evs) => evs.map((/** @type {any} */ e, /** @type {number} */ k) => ({ ...toRow({ ...e, innings: e.innings ?? 0 }), seq: k + 1, idempotency_key: `k${k + 1}` }));
 const base = [inningsStart({ battingTeam: "H", bowlingTeam: "W" }), batters({ striker: A, nonStriker: B }), bowler({ bowler: "Bowler" })];
 
 {
@@ -42,7 +43,7 @@ const base = [inningsStart({ battingTeam: "H", bowlingTeam: "W" }), batters({ st
 {
   // The review's B2: db/99 §98 runs the precheck's query word for word, so a
   // seeded database's zero is the query the lead runs on production.
-  const marked = (file) => {
+  const marked = (/** @type {string} */ file) => {
     const t = readFileSync(new URL(file, import.meta.url), "utf8");
     const a = t.indexOf("-- precheck:begin"), b = t.indexOf("-- precheck:end");
     return a >= 0 && b > a ? t.slice(a, b) : null;
