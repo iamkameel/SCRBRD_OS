@@ -26,6 +26,19 @@ group("Family: the boys a guardian or self-access link names");
 ok("a guardian's children and a pupil's own record", [...familyOf([as("guardian", HIL, null, ["a"]), as("selfaccess", HIL, null, ["m"])])].sort().join() === "a,m");
 ok("a granted enquiry names a boy and is not his family", familyOf([as("enquiry", HIL, null, ["a"])]).size === 0);
 ok("a coach is nobody's family", familyOf([as("coach", HIL, "18XI")]).size === 0);
+// db/119: the session's liveSubjects are the links verified and live today.
+const ended = { ...as("guardian", HIL, null, ["a", "m"]), liveSubjects: ["m"] };
+ok("a link that ended by its date, or is pending, is not family (liveSubjects wins)",
+   [...familyOf([ended])].join() === "m");
+ok("...so the ended boy's scouting decision is not drawn, and the live one's is",
+   !readsScoutingOf(A, [ended]) && readsScoutingOf(M, [ended]));
+ok("a guardian whose every link has ended is nobody's family, and reads no passport consent",
+   familyOf([{ ...as("guardian", HIL, null, ["a"]), liveSubjects: [] }]).size === 0
+   && passportConsentReader([{ ...as("guardian", HIL, null, ["a"]), liveSubjects: [] }]) === null);
+const authDb = readFileSync(new URL("../../../services/api/auth/auth-db.mjs", import.meta.url), "utf8");
+ok("the session's liveSubjects are verified, begun and not ended, as is_family_of() asks (db/119)",
+   /g\.verification_state = 'verified'/.test(authDb) && /g\.valid_from <= current_date/.test(authDb)
+   && /g\.valid_until is null or g\.valid_until > current_date/.test(authDb) && /liveSubjects: a\.live_subjects/.test(authDb));
 
 group("The scouting decision: his family, his school's office, his own side's coach");
 const scout = (asg) => [A, M, B, W].filter((p) => readsScoutingOf(p, asg)).map((p) => p.id).join();

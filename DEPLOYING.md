@@ -2032,6 +2032,74 @@ the rest. The players import, deployed with this, asks `import_joined_on()`
 before each row, so it needs db/117 in place.
 <!-- ── end db/117 ── -->
 
+<!-- ── db/119: his family means a link live today ── -->
+#### His family means a link live today (db/119)
+
+`db/119_family_of_live.sql` re-creates `is_family_of()`, the family's way into
+a boy's passport consents and (with db/115) his scouting decision, and the
+family's way to open his passport. It used to ignore every date: a parent
+whose link had ended (he left school after eighteen, db/62; or the office
+ended it) still read and wrote his passport consents. Now the assignment and
+the link must both be live today, tested exactly as `app_can()` tests them,
+and a scoring pad's session is never anybody's family. The function's
+`search_path` is pinned, and `EXECUTE` is taken back from `PUBLIC` (and from
+`anon` and `authenticated` on Supabase) and given to `scrbrd_app`.
+
+**What it does to a live database.** One function replaced and its grants
+narrowed. No table, column, row or policy. It refuses to run if the function
+in place is not db/08's (or its own). db/111's refusal (a physio who is the
+boy's mother may not record his injury) does not move: it stands on its own
+wider test, which the file checks. A second paste changes nothing. **One
+behaviour changes on the paste:** a parent whose link to a boy has ended no
+longer sees his passport consents or opens his passport. A live family sees no
+difference.
+
+Paste `node tools/bundle-sql.mjs --apply 119` after 118 (db/118, held on
+its own branch, goes first when it lands; until then 119 follows 117), then
+the verify bundle (§96 is its proof). The
+summary row "His family means a link live today" should read OK. **Schema
+first**: the API built with it refuses to start without db/119
+(`expected-migrations.json`). No route changes.
+<!-- ── end db/119 ── -->
+
+<!-- ── db/120: alerts a person may switch off ── -->
+#### Alerts a person may switch off (db/120)
+
+`db/120_notification_prefs.sql` is NOTIFICATIONS slice S4 (D20, D21), as
+Kameel decided it on 7 October 2026. **A person may stop an alert reaching
+his phone** for a kind of notice (notices from the school and the side,
+milestones and honours, fixtures moved or cancelled, availability questions,
+lift seats), and a parent for one of those about one of his children. It is
+his own setting and nobody else's: no role, no office and no administrator
+can set it for him, and a row about a child is accepted only from that
+child's verified family. **Safety and welfare notices, notices about a
+person's own account, injuries and breach notices can never be switched off**,
+and anything urgent always reaches the phone. **It quiets the phone only:**
+every notice still appears in Notices, on the badge and in a parent's list of
+things to do. **A pupil's alerts wait between 21:00 and 06:00** (South African
+time) and arrive at six; urgent ones come through at any hour. SCRBRD sets
+those hours, not the school and not the pupil.
+
+**What it does to a live database.** It adds one empty table
+(`notification_pref`) with row security on and three policies (the person's
+own rows; a child only through `is_family_of()`), no delete, and two functions
+that answer for the caller alone (`my_alert_choices()`, `my_push_quiet_hours()`).
+No other table, column, row, policy or grant changes. It refuses to run
+before db/116 and db/119 (whose `is_family_of()` asks that a parent's link
+be live today), and a second paste changes nothing. **Nothing changes on a
+phone at the paste:** the push worker that reads these settings is slice S3,
+not yet built; until then the settings are kept and shown, and apply from the
+day it ships.
+
+Paste `node tools/bundle-sql.mjs --apply 120` after 119 (the bundle names
+the one it needs first), then the verify bundle (§97 is its
+proof). The summary row "Alerts a person may switch off" should read OK.
+**Schema first**: the API built with it refuses to start without db/120
+(`expected-migrations.json`). It serves `POST /api/notifications/prefs` and
+`GET /api/read/my_notification_prefs`, and Settings → Me gains "What reaches
+your phone".
+<!-- ── end db/120 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

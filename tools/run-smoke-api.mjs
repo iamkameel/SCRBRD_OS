@@ -157,6 +157,9 @@ const WALKS = [
   // The notification system's missing half: publishing a notice, and getting
   // it onto a phone without re-deciding who may have it.
   "push",
+  // NOTIFICATIONS S4 (db/120): push switched off for a kind, or a kind about
+  // one child, by its owner alone; locked kinds refused; nothing hidden.
+  "notification-prefs",
   // The coach's unsent plan (db/110, Kameel 15 Oct): a draft changed and
   // deleted by its author alone; a plan out with the side kept and not
   // changed; a withdrawn one changed and sent again, never deleted.

@@ -364,6 +364,8 @@ const SUITES = [
   // client store holds the list and the count every badge reads.
   ["notif-contract", "packages/policy/test/notifications.test.mjs"],
   ["receipts", "services/api/notify/receipts.test.mjs"],
+  // NOTIFICATIONS S4: D13 step 5 — muted, held to 06:00, sent; nothing hidden.
+  ["push-decision", "services/api/notify/push-decision.test.mjs"],
   // No personal value in a server log (INCIDENTS_AND_BREACHES §9.1, D24):
   // safeErr() over a duplicate email and ID number, and every console call
   // under services/ walked for a DETAIL, an email, a name or a raw message.
