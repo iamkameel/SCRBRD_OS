@@ -1,6 +1,6 @@
 # StatsMagic — the guided Analytics Explorer (G16, CRI-3.4)
 
-**Status:** Design (Fable, 2026-10-28), for Kameel's review; nothing here is built. Allowed by `docs/design/CRICINFO_GAP_PLAN.md` CRI-3.4 (23 Oct); named StatsMagic by Kameel on 28 Oct (plan §9 decision 7).
+**Status:** Design (Fable, 2026-10-28). **Decided 29 Oct 2026 (Kameel, on the Build Board): Q1–Q10 as recommended** (§9). Nothing here is built. Allowed by `docs/design/CRICINFO_GAP_PLAN.md` CRI-3.4 (23 Oct); named StatsMagic by Kameel on 28 Oct (plan §9 decision 7).
 **Sits inside:** `docs/design/GA-I24-I25_compare_and_combine.md` (the governing design for combining children's figures; every decision there stands, and §2.4 below names the one place this design extends it), `docs/design/READERS_child_data.md` (the reader map, §7 decisions of 21 and 28 Oct), `docs/policy/PUBLIC_DATA.md`.
 **Source read:** the plan (G16, CRI-3.4, decision 7); the two Cricinfo audits' Statsguru parts (`audit/ESPNCRICINFO_FULL_UX_AUDIT_2026-10-23.md` §4.5–4.6, UX-11, UX-17, §10–11; `audit/ESPNCRICINFO_LESSONS_AUDIT_2026-10-23.md`); `services/api/ai/ai-service.mjs` (`contextFrom`, `statsMagicContext`, `askStatsMagic`, `maskNames`, `TOKEN_RULE`); `apps/web/src/shell/GlobalSearch.jsx` (the question box); `apps/web/src/lib/compare.js`, `views/compare.jsx`, `views/AnalyticsView.jsx`; `tools/smoke-statsmagic.mjs`.
 **Reader:** Kameel on a phone first; then the Opus lead; then whoever builds a slice. Names in the sketches are the seed's (Hilton, Kearsney, D Erasmus, R Pillay, K Naidoo), never a real child's.
@@ -208,7 +208,9 @@ Order: S0 → S1 → S2 → S3 → S4 → S5 → S6. S2 can start on S0 with a f
 
 ---
 
-## 9 · Open questions for Kameel
+## 9 · Questions for Kameel: decided 29 Oct 2026, all ten as recommended
+
+Kameel's answer on the Build Board (29 Oct 2026): "All ten as recommended". Each recommendation below is therefore the decision.
 
 | # | question | recommendation |
 |---|---|---|
