@@ -9,7 +9,7 @@ import { Btn, Card, ReadState, SectionHeader, StatusDot } from "../ui/primitives
 import { WeatherChip } from "./shared.jsx";
 import { MatchView } from "./matchcentre/MatchView.jsx";
 import { SideName } from "./matchcentre/bits.jsx";
-import { sidesOf, upcomingAndRecent } from "../lib/matchCentre.js";
+import { sidesOf, statusSentence, upcomingAndRecent } from "../lib/matchCentre.js";
 import { PostMatchReport } from "./postmatch.jsx";
 import { OppositionDossier } from "./dossier.jsx";
 import { DutyRoster } from "./duties.jsx";
@@ -212,6 +212,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
             const isLive = m.status==="live";
             const isSel = selMatch?.id===m.id;
             const sides = sidesOf(m);
+            const status = statusSentence(m);
             return (
               <Card key={m.id} data-testid={`match-card-${m.id}`} onClick={()=>setSelMatch(isSel?null:m)} sx={{
                 background:isLive?`linear-gradient(135deg,${D.emerald}08,${D.surf1})`:D.surf1,
@@ -232,13 +233,17 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                     </div>
                     <div style={{textAlign:"center"}}>
                       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:800,color:D.textMuted,letterSpacing:"0.06em"}}>VS</div>
-                      {m.result&&<div style={{fontFamily:D.body,fontSize:"12px",color:isLive?D.emerald:D.amber,marginTop:"4px",maxWidth:"120px"}}>{m.result}</div>}
                     </div>
                     <div style={{textAlign:"right"}}>
                       <div style={{fontFamily:D.body,fontSize:"15px",fontWeight:700,color:D.textPrimary,overflowWrap:"anywhere"}}><SideName side={sides.away}/></div>
                       {m.scorecard?.away&&<div style={{...T.role.figure.md,color:D.textPrimary,marginTop:"4px"}}>{m.scorecard.away.score} <span style={{fontSize:"12px",color:D.textMuted}}>({m.scorecard.away.overs})</span></div>}
                     </div>
                   </div>
+                  {/* CRI-1.2: where the fixture stands, in the sentence its own header says. */}
+                  <p data-testid={`mc-card-status-${m.id}`} data-state={status.state}
+                    style={{...T.role.body,fontSize:"14px",fontWeight:600,color:isLive?T.brand.accentText:T.content.primary,margin:"10px 0 0"}}>
+                    {status.text}
+                  </p>
                   <div style={{marginTop:"10px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"6px"}}>
                     <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}><Icon name="map-pin"/> {m.venue}</span>
                     <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>

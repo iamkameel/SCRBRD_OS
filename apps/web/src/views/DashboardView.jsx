@@ -183,7 +183,8 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
           <BentoCard level="a" title="Now" data-testid="day-now">
             {board ? (
               <>
-                <Board {...board} testid="day-board"/>
+                {/* No last-wicket row on the day sheet's board (CRI-1.1 is the Match Centre's and the public page's). */}
+                <Board {...board} lastWicket={undefined} testid="day-board"/>
                 <div style={{ marginTop: T.space.md }}>
                   {holds("scoring.edit")
                     ? <Btn variant="success" onClick={() => onOpenScorer && onOpenScorer(liveMatch)}>Open scorer</Btn>

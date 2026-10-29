@@ -75,7 +75,13 @@ export function PadBoard({ inn, match, target, flash = null, onFlashDone }) {
   if (!props) return null;
   return (
     <div data-testid="pad-board" style={{ position: "relative" }}>
-      <Board {...props} compact/>
+      {/* No last-wicket row on the pad (CRI-1.1): it is the Match Centre's and
+          the public page's. On a 390×844 phone the row pushed the Shot keys
+          under the bottom bar (§4 rule 1), and the scorer recorded that wicket
+          himself; the pad's Scorecard tab has it. Nothing else of the board is
+          dropped, and no freshness row is passed either: the sync pill under
+          the board says Held N. */}
+      <Board {...props} lastWicket={undefined} compact/>
       <BoardFlash event={flash} onDone={onFlashDone}/>
     </div>
   );
