@@ -9,7 +9,7 @@ import { useLive, useRows } from "../lib/live.js";
 import { profile, schoolsWhere } from "../lib/session.js";
 import { useSports } from "../lib/features.js";
 import { holdsCapability } from "../rbac/index.js";
-import { passportConsentReader, readsScoutingOf } from "../lib/held.js";
+import { ownRecordsOf, passportConsentReader, readsScoutingOf } from "../lib/held.js";
 import { api, signedIn } from "../lib/api.js";
 import { ceilingWords } from "../lib/ceilingWords.js";
 import { disablePush, enablePush, pushSupported } from "../lib/push.js";
@@ -1034,8 +1034,7 @@ function PassportTab({ role, only = null }) {
   // decides where it travels; from eighteen he does (db/122, Kameel 29 Oct
   // 2026: "Under eighteen, only his guardian; at eighteen, he does it
   // himself"). The server decides; this only says so in words.
-  const ownRecords = new Set((profile()?.assignments ?? []).filter((a) => a.role === "selfaccess")
-    .flatMap((a) => (Array.isArray(a.liveSubjects) ? a.liveSubjects : a.subjects) ?? []));
+  const ownRecords = ownRecordsOf();
   const OWN_RECORD_WORDS = "Until you are eighteen, your parent or guardian decides which school your record goes to. From your eighteenth birthday you decide it yourself.";
   const grant = async () => {
     setSaid("");
