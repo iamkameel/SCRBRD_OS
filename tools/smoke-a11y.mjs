@@ -52,7 +52,7 @@ import { buildWebForWalk, WEB_TEST_ROOT } from "./web-test-build.mjs";
 import { narrowAudit } from "./a11y-narrow.mjs";
 import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
-import { pickTab } from "./walk-tabs.mjs";
+import { moreMenuKeys, pickTab } from "./walk-tabs.mjs";
 import { afterReads } from "./walk-wait.mjs";
 
 const PORT = port(4331);
@@ -1575,6 +1575,10 @@ async function narrowStaffWalk(theme) {
     await page.waitForTimeout(500);
     ok(`${T_} @${W}: the fixture opens into its own view`, await tid("mc-scorecard").count() === 1);
     await measure(page, theme, "staffscorecard");
+    // The fixture's More menu by keyboard (tabStrip.jsx), as the WAI-ARIA APG's menu button has it (Kameel, 29 Oct):
+    // the arrows move within it, Escape gives focus back to More, Tab and Shift+Tab leave it and close it.
+    ok(`${T_} @${W}: the fixture's tab strip has a More at this width`, await tid("mc-more").count() === 1);
+    for (const c of await moreMenuKeys(page)) ok(`${T_} @${W}: More — ${c.name}`, c.pass, c.detail);
     ok(`${T_} @${W}: no page errors`, errors.length === 0, errors.slice(0, 2).join(" | "));
   } catch (e) {
     ok(`the ${T_} @${W} staff shell walk threw: ${/** @type {any} */ (e).message?.slice(0, 120)}`, false);

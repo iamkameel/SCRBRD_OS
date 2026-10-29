@@ -14,8 +14,10 @@ import { splitTabs } from "../../lib/matchTabs.js";
  * a menu button, More, whose menu holds the rest. The arrow keys run along
  * the tabs and onto More; ArrowDown or ArrowUp on More, or a tap, opens the
  * menu with focus on the tab in use or the first. In the menu the arrows,
- * Home and End move, Tab stays inside it, Escape closes it, and closing gives
- * focus back to More. A tab chosen there is named on More, which then reads
+ * Home and End move; Escape, or a choice, closes it and gives focus back to
+ * More; Tab and Shift+Tab close it and move on from More, as the WAI-ARIA
+ * menu button pattern has it, rather than being kept inside it (Kameel, 29
+ * Oct). A tab chosen there is named on More, which then reads
  * as the selected tab. The menu drops in quickly; with reduced motion it
  * simply appears (menuCss below).
  */
@@ -23,7 +25,7 @@ import { splitTabs } from "../../lib/matchTabs.js";
 /**
  * The menu's motion, drawn with the menu. It is the one animation kept here
  * rather than in GLOBAL_CSS (design/tokens.js), because GLOBAL_CSS is in the
- * signed-in entry graph, which is at its ceiling (tools/check-bundle.mjs), and
+ * signed-in entry graph, which every visitor downloads (tools/check-bundle.mjs), and
  * only a match page ever draws this menu. It keeps GLOBAL_CSS's rule: a cut
  * under prefers-reduced-motion and under the root's data-reduce-motion.
  */
@@ -106,8 +108,11 @@ export function TabStrip({ tabs, tab, setTab, narrow, label }) {
     const list = items(), n = list.length;
     const i = list.indexOf(/** @type {HTMLElement} */ (document.activeElement));
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(true); return; }
-    const to = e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey) ? (i + 1) % n
-      : e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey) ? (i - 1 + n) % n
+    // Tab and Shift+Tab leave the menu, which closes (WAI-ARIA APG, menu button). Focus goes to More first and the
+    // key is left to the browser, so it moves on from More as from any control: Tab to what follows the strip (the
+    // items are tabIndex -1, so not into them), Shift+Tab to the tablist's tab stop.
+    if (e.key === "Tab") { close(true); return; }
+    const to = e.key === "ArrowDown" ? (i + 1) % n : e.key === "ArrowUp" ? (i - 1 + n) % n
       : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : null;
     if (to == null) return;
     e.preventDefault();
