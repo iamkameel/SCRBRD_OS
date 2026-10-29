@@ -19968,11 +19968,14 @@ $v49$;
     SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.parent@example.invalid', md5('v81-code-parent'), 3600) i;
     PERFORM _assert(v_ok, format('§60 (codes): the office could not issue a code to a parent: %s', v_reason));
     -- The director of sport may enrol a pupil (player, and the record that
-    -- comes with it) and not appoint a parent: so she issues the pupil's code
-    -- and not the parent's.
+    -- comes with it) and not appoint a parent. Since db/122 (§1d, Kameel 29
+    -- Oct 2026) a pupil's code is the office's alone, the people shown his
+    -- address: she is told office_only for his, and not_permitted for the
+    -- parent's, as before.
     PERFORM _as((ids->>'u_dos')::uuid);
     SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.pupil@example.invalid', md5('v81-code-pupil'), 3600) i;
-    PERFORM _assert(v_ok, format('§60 (codes): the director of sport could not issue a pupil''s code: %s', v_reason));
+    PERFORM _assert(NOT v_ok AND v_reason = 'office_only',
+      format('§60 (codes): the director of sport, since db/122, was answered %s %s for a pupil''s code', v_ok, v_reason));
     SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.parent@example.invalid', md5('v81-code-parent2'), 3600) i;
     PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
       format('§60 (codes): the director of sport issued herself a parent''s code: %s %s', v_ok, v_reason));

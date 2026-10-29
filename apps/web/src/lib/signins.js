@@ -90,7 +90,7 @@ export function describeClaim(c) {
     // alone (db/118), and the claim is theirs to answer (db/122 §1d). A row
     // that came without them is one this reader may read and not answer, and
     // two blanks are not "the same address".
-    withheld: c.account_email == null || c.presented_email == null,
+    addressesWithheld: c.account_email == null || c.presented_email == null,
     // A different address is worth a second look. The same one is the usual case.
     sameAddress: c.account_email != null && c.presented_email != null
       && String(c.account_email).toLowerCase() === String(c.presented_email).toLowerCase(),

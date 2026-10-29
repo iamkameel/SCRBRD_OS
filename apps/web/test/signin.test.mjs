@@ -285,9 +285,9 @@ group("The office's Claims list");
   // The director of sport reads it with both addresses withheld (db/118).
   const pupils = { ...claim, account_name: "A Pupil", account_email: null, presented_email: null };
   d = describeClaim(pupils);
-  ok("two withheld addresses are not 'the same address'", d.withheld === true && d.sameAddress === false, d);
-  ok("...and one withheld address is withheld too", describeClaim({ ...claim, presented_email: null }).withheld === true);
-  ok("...while a claim with both addresses is not", describeClaim(claim).withheld === false);
+  ok("two withheld addresses are not 'the same address'", d.addressesWithheld === true && d.sameAddress === false, d);
+  ok("...and one withheld address is withheld too", describeClaim({ ...claim, presented_email: null }).addressesWithheld === true);
+  ok("...while a claim with both addresses is not", describeClaim(claim).addressesWithheld === false);
   html = renderToStaticMarkup(h(ClaimRow, { claim: pupils, busy: false }));
   ok("a pupil's claim, addresses withheld: no Confirm, no Decline, no code to issue",
      ["claim-confirm", "claim-code", "claim-decline"].every((t) => !html.includes(`data-testid="${t}"`)), html);

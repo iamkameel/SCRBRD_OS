@@ -47,7 +47,7 @@ export function ClaimRow({ claim, busy, onConfirm, onDecline, onIssueCode }) {
   return (
     <li data-testid="claim" data-claim={c.id} style={{ listStyle: "none", padding: "12px 14px", borderRadius: D.md, border: `1px solid ${D.border}`, background: D.surf2 + "66" }}>
       <div style={{ fontFamily: D.head, fontSize: "14px", fontWeight: 700, color: D.textPrimary }}>{c.name}</div>
-      {c.withheld
+      {c.addressesWithheld
         // A pupil's: no addresses to judge by, so nothing to answer with here
         // (db/122 §1d). Said, not left as an empty row.
         ? <div data-testid="claim-withheld" style={{ ...sub(), marginTop: "4px", maxWidth: "62ch" }}>{CLAIM_WITHHELD}</div>
@@ -58,7 +58,7 @@ export function ClaimRow({ claim, busy, onConfirm, onDecline, onIssueCode }) {
           </>}
       <div style={sub()}>Asked {c.asked}{c.askedAgain ? `, and again ${c.askedAgain}` : ""}</div>
       {c.inactive && <div data-testid="claim-inactive" style={{ ...sub(), color: textOn(D.amber) }}>This account was deactivated. Look harder before you confirm.</div>}
-      {!c.withheld && (
+      {!c.addressesWithheld && (
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "10px" }}>
           <Act disabled={busy} onClick={onConfirm} data-testid="claim-confirm" aria-label={`Confirm ${c.name}'s Google sign-in`}>{busy ? "Working…" : "Confirm it is them"}</Act>
           <Act danger disabled={busy} onClick={onIssueCode} data-testid="claim-code" aria-label={`Issue ${c.name} a code instead`}>Issue a code instead</Act>
