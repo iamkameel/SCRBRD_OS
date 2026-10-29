@@ -107,11 +107,17 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   subagent's output** before it lands on the branch.
 - **Design and architecture** — ADRs, cross-cutting refactors, and debugging
   a failure whose cause is not yet known.
+- **Complex frontend code** (added 2026-10-29, Kameel: "we should always be
+  using Claude Opus 5.5 for complex frontend code generation") — new screens
+  or components with real logic (the Match Centre, the pad, the Board, the
+  status sentence, Cricinfo Sprint 1–2, StatsMagic's explorer), shared UI that
+  many screens draw, and anything that renders a child's data.
 
 ### Sonnet — well-specified, lower-risk work
 
-- Screens over an API that already exists (the roadmap's `partial` items),
-  styling and design-system work.
+- Simple screens over an API that already exists (the roadmap's `partial`
+  items), styling, copy and design-system tweaks. Anything more than that is
+  complex frontend code and goes to Opus (above).
 - Smoke walks and unit tests for behaviour already designed.
 
 ### Haiku (`model: "haiku"`) — searches and docs
@@ -241,4 +247,5 @@ screen. They advise; this repository's rules win where they differ:
   `prefers-reduced-motion` honoured, and the a11y and browser walks green.
 - The existing tokens (`apps/web/src` theme) are the style lock. Do not write a
   second one (`.tastemaker/style-lock.md`) beside them.
-- Routing is unchanged: screens and styling go to Sonnet, review to Opus.
+- Routing: complex frontend code goes to Opus (2026-10-29, above); simple
+  screens and styling go to Sonnet; review to Opus.
