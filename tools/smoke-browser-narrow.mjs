@@ -235,7 +235,11 @@ try {
       ok("360: the strip is Summary, Scorecard, Commentary and More", strip?.names.join(" · ") === "Summary · Scorecard · Commentary · More", strip?.names.join(" · "));
       ok("360: none of them cut, and the strip does not scroll sideways", !!strip && strip.cut.length === 0 && !strip.scrolls, strip?.cut.join(" · "));
       ok("360: each 44px to tap and 12px or more to read", !!strip && strip.floors.length === 0, strip?.floors.join(" · "));
-      const menuOpen = () => page.locator('[data-testid="mc-more-menu"]').waitFor({ timeout: 4000 }).catch(() => {});
+      // Open, and still: drawn, with its drop-in (mcMenuIn, a scale) run out, so what is measured is the menu at rest.
+      const menuOpen = () => page.waitForFunction(() => {
+        const m = document.querySelector('[data-testid="mc-more-menu"]');
+        return !!m && m.getAnimations({ subtree: true }).every((a) => a.playState === "finished");
+      }, null, { timeout: 4000 }).catch(() => {});
       await page.locator('[data-testid="mc-more"]').tap({ timeout: 4000 }).catch(() => {});
       await menuOpen();
       const menu = await measure('[data-testid="mc-more-menu"]');
