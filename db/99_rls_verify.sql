@@ -7979,6 +7979,39 @@ CREATE OR REPLACE FUNCTION _v123_reads(y jsonb, p_keys text[]) RETURNS text AS $
          || '/' ||
          (SELECT count(*) FROM my_notifications m WHERE m.id IN (SELECT (y->>k)::uuid FROM unnest(p_keys) k))
 $$ LANGUAGE sql STABLE;
+
+-- After the read-through (29 Oct 2026). For the caller: the notices among
+-- p_keys that notification_read_side admits and db/09's notification_read,
+-- as it stands in the database (its qual, read from pg_policy), does not.
+-- Each 'key:reader' (p_who) when so; '' when db/09 admits all of them.
+CREATE OR REPLACE FUNCTION _v123_only_side_read(y jsonb, p_keys text[], p_who text) RETURNS text AS $$
+DECLARE k text; v_side boolean; v_db09 boolean; out text := '';
+BEGIN
+  FOREACH k IN ARRAY p_keys LOOP
+    SELECT notice_side_read(n.required_capability, n.school_id, n.team_code, n.kind, n.subject_kind,
+                            n.subject_id, n.subject_person_id, n.recipient_id, n.published_at)
+      INTO v_side FROM notification n WHERE n.id = (y->>k)::uuid;
+    EXECUTE format('SELECT %s FROM notification WHERE id = $1',
+                   (SELECT pg_get_expr(p.polqual, p.polrelid) FROM pg_policy p
+                     WHERE p.polrelid = 'notification'::regclass AND p.polname = 'notification_read'))
+      INTO v_db09 USING (y->>k)::uuid;
+    IF v_side AND NOT coalesce(v_db09, false) THEN
+      out := out || CASE WHEN out = '' THEN '' ELSE ',' END || k || ':' || p_who;
+    END IF;
+  END LOOP;
+  RETURN out;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- OB withdrawn by the school office, as a post's withdrawal takes a notice
+-- back (db/89), now: after V's move off the U16B. The retraction's id.
+CREATE OR REPLACE FUNCTION _v123_retract(y jsonb) RETURNS uuid AS $$
+DECLARE v uuid;
+BEGIN
+  PERFORM set_config('app.user_id', '88888888-0000-0000-0000-00000000000c', true);
+  v := notification_retract((y->>'OB')::uuid, 'withdrawn', true);
+  PERFORM set_config('app.user_id', '', true);
+  RETURN v;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/123 (section 100) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -29513,6 +29546,20 @@ $v49$;
   --                read NB (U17B, t-30: before V joined); V does, through his
   --                player role on the U17B (db/112), as db/117 left his new
   --                side's earlier fixtures and posts
+  -- After the read-through (29 Oct 2026):
+  --   (only-him)   notification_read_side gives a row that db/09's own
+  --                notification_read does not to the boy himself alone: of
+  --                SU, SO, S, T, OB, OA and NB, upboy gains SU and vboy OB,
+  --                and every other reader it admits db/09 already admits.
+  --                db/09's qual is read from pg_policy, so a later file that
+  --                narrows it turns this red until notification_read_side is
+  --                looked at again (db/123's header)
+  --   (retraction) as built, not decided: OB taken back after V's move. The
+  --                retraction is a new row dated by its own day, the old
+  --                side's then, so V and gv do not read "A notice was
+  --                withdrawn"; they still read OB's row, marked taken back,
+  --                which my_notifications leaves off their list (1/0): the
+  --                notice goes from their list without the words
   --
   -- Falsified on 29 Oct 2026 on a database at db/123, each change made as the
   -- owner before this section ran (the section alone, with its staging cut
@@ -29525,6 +29572,10 @@ $v49$;
   --                                                0/0 of MU's notice
   --   notice_follows_side() asking today's side   → (moved) red: vboy reads
   --     (sa_today() for sa_date(p_at))             0/0 of OB
+  --   db/09's notification_read narrowed to        → (only-him) red: the
+  --     leave out notices about a match              U15A coach, a parent and
+  --                                                  a pupil gained SU and SO
+  --                                                  through the side read
   DECLARE
     y   jsonb := _v123_stage();
     k   text;
@@ -29612,6 +29663,26 @@ $v49$;
     PERFORM _as((y->>'vboy')::uuid);
     got := _v123_reads(y, ARRAY['NB']);
     PERFORM _assert(got = '1/1', format('§100 (moved): vboy reads %s of his new side''s earlier notice (1/1, his player role)', got));
+
+    -- (only-him)
+    got := '';
+    FOREACH k IN ARRAY ARRAY['ga', 'gb', 'gc', 'gu', 'gv', 'pupil', 'pupilb', 'coach', 'coachb', 'upboy', 'vboy'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := concat_ws(',', nullif(got, ''), nullif(_v123_only_side_read(y, ARRAY['SU', 'SO', 'S', 'T', 'OB', 'OA', 'NB'], k), ''));
+    END LOOP;
+    PERFORM _assert(got = 'SU:upboy,OB:vboy',
+      format('§100 (only-him): the side read gave rows db/09 does not to [%s], not the two boys alone', got));
+
+    -- (retraction)
+    PERFORM set_config('app.user_id', '', true);
+    y := y || jsonb_build_object('OBR', _v123_retract(y));
+    PERFORM _assert(y->>'OBR' IS NOT NULL, '§100 (retraction): OB was not taken back with words');
+    FOREACH k IN ARRAY ARRAY['vboy', 'gv'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v123_reads(y, ARRAY['OB']) || ' ' || _v123_reads(y, ARRAY['OBR']);
+      PERFORM _assert(got = '1/0 0/0',
+        format('§100 (retraction): as built %s reads %s of OB and its retraction (1/0 0/0: OB''s row, marked taken back and so off his list; the retraction dated by its own day, not his)', k, got));
+    END LOOP;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 100

@@ -35,7 +35,8 @@
 --       db/114 result_official_notices(), to both ends  FOLLOW THE SIDE
 --     db/89 notification_retract() copies the row it withdraws (kind, team,
 --       subject, child, recipient), so "A notice was withdrawn" follows
---       whatever its notice followed
+--       whatever its notice followed, dated by its own day (see RETRACTIONS
+--       below)
 --     notice/news/news.read: db/91 news_post_notice()   exempt (db/96, db/101)
 --     a child named: db/65 availability, db/70/76 lifts, db/113 milestones
 --       and welfare breaches                            unchanged (the child)
@@ -98,8 +99,18 @@
 --       notice_follows_side() of the row. ANDed with every read; nobody gains
 --       a row by it.
 --   notification_read_side      PERMISSIVE, SELECT on notification:
---       notice_side_read() of the row. It reaches only the boy himself, and
---       every restrictive policy still applies to it.
+--       notice_side_read() of the row. It adds a row only for the boy
+--       himself, and every restrictive policy still applies to it. WHY ONLY
+--       HIM, said plainly: branch (b) asks fixture_end_reach(), which also
+--       admits that end's staff and players, a guardian through a boy on its
+--       sheet, and an assignment scoped to that fixture. Each of those is
+--       already admitted by db/09's notification_read (app_can() about
+--       nobody in particular passes a school-wide guardian at every team, and
+--       a fixture-scoped assignment at its fixture), and the restrictive cut
+--       is the same for both paths, so this policy gives them nothing db/09
+--       did not. That rests on db/09 as it stands: a later file that narrows
+--       db/09's notification_read must look at this policy again, or the
+--       readers it narrowed away come back through (b).
 --   db/09's policy is frozen and not touched.
 -- AND CHANGES, with nothing removed
 --   notification_report(notice) (db/101)  re-emitted in place with two
@@ -112,6 +123,21 @@
 --       must be db/101's (its folded md5), each anchor must appear exactly
 --       once, and after the swap the body is the old one with exactly those
 --       clauses and the same rights, settings and grants.
+--
+-- RETRACTIONS, as built (a note; Kameel has not decided it). A retraction
+-- ("A notice was withdrawn", db/89's notification_retract()) is a new row,
+-- published when it is written; it copies its notice's team, kind, subject
+-- and child, not its published_at. notice_follows_side() dates every row by
+-- its own published_at, so a retraction follows the side on the day of the
+-- retraction, not on the notice's day. What that means: a boy who moved off
+-- a side between a notice and its retraction (and his parents through him)
+-- does not get the retraction, which is the old side's on a day he was no
+-- longer on it. He still reads the notice's own row, which was his side's on
+-- its day; it is marked taken back, so my_notifications (db/89) leaves it off
+-- his list, and the notice goes from his list without the words that say
+-- why. Whoever joined the side in between gets the retraction of a notice he
+-- never had. db/99 §100 (retraction) holds this as built. Dating a retraction by the row it retracts is one subselect in
+-- notice_follows_side(); it is left for Kameel to decide.
 --
 -- A SECOND PASTE changes nothing (the functions are replaced with
 -- themselves; the policies are created only if absent and checked as
