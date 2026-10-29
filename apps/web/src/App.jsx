@@ -29,8 +29,6 @@ import { scorerLanding } from "./lib/scorerHome.js";
 import { clearSession, loadSession, saveSession } from "./lib/persist.js";
 import { signOut, refreshProfile } from "./lib/session.js";
 import { primaryRole } from "./lib/primaryRole.js";
-import { parseAppPath } from "./lib/matchTabs.js";
-import { navigate } from "./lib/route.js";
 import { ErrorBoundary } from "./ui/ErrorBoundary.jsx";
 import { StateLabel } from "./ui/stateLabel.jsx";
 
@@ -407,20 +405,25 @@ export default function SCRBRD_OS() {
                        ...(c.startsAt ? { startsAt: c.startsAt } : {}), ...(c.format ? { format: c.format } : {}) } : null });
   }, [appState, role, userName, page, scorerOpen, scorerMatchId, scorerResume, scorerPractice, loginForPad]);
 
-  // CRI-1.3: a fixture's address (/app/matches/:id/:tab, lib/matchTabs.js).
-  // Arriving on one, once the person is in, is the Match Centre, which opens
-  // the fixture at that tab if his fixtures read holds it; a role whose
-  // navigation has no Match Centre is left where it lands, at /app. Leaving
-  // the Match Centre for another page leaves its address too.
+  // CRI-1.3: the Match Centre's address (/app/matches, and a fixture's
+  // /app/matches/:id/:tab, lib/matchTabs.js). Arriving on one, once the person
+  // is in, is the Match Centre, which opens the fixture at that tab if his
+  // fixtures read holds it; a role whose navigation has no Match Centre is
+  // left where it lands, at /app. Leaving the Match Centre for another page
+  // leaves its address too. Nothing else here is listening for the address,
+  // so a plain replaceState does (the Match Centre reads it when it mounts).
+  // Written out rather than imported: the entry graph has a ceiling.
+  const atMatches = () => /^\/app\/matches(\/|$)/.test(window.location.pathname);
+  const toApp = () => window.history.replaceState(window.history.state, "", "/app" + window.location.search);
   useEffect(() => {
-    if (appState !== "app" || !parseAppPath(window.location.pathname)) return;
+    if (appState !== "app" || !atMatches()) return;
     if ((ROLES[role]?.nav || []).includes("matches")) setPage("matches");
-    else navigate("/app", { replace: true });
+    else toApp();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appState, role]);
   const lastPage = useRef(page);
   useEffect(() => {
-    if (lastPage.current === "matches" && page !== "matches" && parseAppPath(window.location.pathname)) navigate("/app", { replace: true });
+    if (lastPage.current === "matches" && page !== "matches" && atMatches()) toApp();
     lastPage.current = page;
   }, [page]);
 

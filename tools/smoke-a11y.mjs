@@ -52,6 +52,7 @@ import { buildWebForWalk, WEB_TEST_ROOT } from "./web-test-build.mjs";
 import { narrowAudit } from "./a11y-narrow.mjs";
 import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
+import { pickTab } from "./walk-tabs.mjs";
 
 const PORT = port(4331);
 const SIGNUP_PORT = port(4332);   // the walk's own build for the sign-in screens (tools/web-test-build.mjs)
@@ -721,7 +722,7 @@ async function captainWalk(theme) {
 
     for (const [screen, id, what] of [["captainfield", MATCH.field, "his side fielding"], ["captainbat", MATCH.bat, "his side batting"]]) {
       await tap(`live-row-${id}`, 1800);
-      await tap("mc-tab-captain", 1200);
+      await pickTab(page, "captain").catch(() => {}); await page.waitForTimeout(1200);   // under More on a phone (CRI-1.3)
       ok(`the Captain tab is drawn, ${what}`, await tid("mc-captain").count() === 1);
       if (screen === "captainfield") {
         ok("...with overs left in the cap's own words beside the bowler on four", (await tid(`mc-captain-cap-${IDS.naidoo}`).innerText({ timeout: 2000 }).catch(() => "")).trim() === "Has bowled his 4 overs");
@@ -740,7 +741,7 @@ async function captainWalk(theme) {
       await tap("mc-back", 700);
     }
     await tap(`played-row-${MATCH.played}`, 1800);
-    await tap("mc-tab-captain", 1500);
+    await pickTab(page, "captain").catch(() => {}); await page.waitForTimeout(1500);
     ok("the Captain tab is drawn, after the match", await tid("mc-captain").count() === 1);
     await check("captainafter");
     ok(`no page errors on the captain's screens`, errors.length === 0, errors.join(" | "));
@@ -942,7 +943,7 @@ async function cockpitWalk(theme) {
 
     await tap("mc-back", 800);
     await tap(`mc-open-${COCKPIT.live}`, 1800);
-    await tap("mc-tab-coach", 2500);
+    await pickTab(page, "coach").catch(() => {}); await page.waitForTimeout(2500);
     ok("the live match has the Coach tab, with the Board and the bowlers' overs left", await tid("coach-board").count() === 1 && await tid("coach-bowlers").count() === 1);
     await check("cockpitlive", '[data-testid="mc-coach"]');
     // Phase B's S2c: the live tab's drawer, with a bowler at the directive's day.
@@ -1850,7 +1851,7 @@ async function walk(theme) {
     // SCRBRD-102: the Analytics tab, on the same fixture — the wagon-wheel
     // analysis panel (scorer/wagonAnalysisPanel.jsx's WagonAnalysisPanel),
     // never opened by this walk before.
-    await page.locator('[data-testid="mc-tab-analytics"]').click({ timeout: 3000 }).catch(() => {});
+    await pickTab(page, "analytics", { timeout: 3000 }).catch(() => {});
     await page.waitForTimeout(700);
     ok("the Match Centre's Analytics tab is drawn", await page.locator('[data-testid="mc-analytics"]').count() === 1);
     // The falsification: a 9px line, pale-on-white text and an emoji in a

@@ -1020,8 +1020,7 @@ button{touch-action:manipulation}
 .mc-moment{animation:mcBeat ${T.motion.control} ${T.motion.swift} both}
 .mc-moment-big{animation:interruptIn ${T.motion.interrupt} ${T.motion.ease} both}
 @media(max-width:640px){.mc-full{display:none}.mc-short{display:inline}}
-/* CRI-1.3: the match page's More menu drops from its control, quickly; under reduced motion it is a cut (the
-   blocks above take its animation away). */
+/* CRI-1.3: the More menu; a cut under reduced motion (above) */
 @keyframes mcMenuIn{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}
 .mc-more-menu{animation:mcMenuIn ${T.motion.micro} ${T.motion.ease} both;transform-origin:top right}
 

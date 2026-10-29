@@ -63,6 +63,7 @@ import { bookCard, writeBookInnings } from "./book-innings.mjs";
 import { capWords } from "@scrbrd/scoring";
 import { ATTACK, buildCaptainFixtures, fixConditions, PLAY } from "./fixture-captain.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { pickTab, tabIds } from "./walk-tabs.mjs";
 
 const WEB_PORT = port(4366);
 const API_PORT = port(8966);
@@ -292,7 +293,7 @@ try {
   await afterReads(s.page, 800);
   const lit = await s.page.$$eval('[data-testid="mc-bat-row"][data-focus="true"]', (els) => els.map((e) => e.innerText));
   ok("the scorecard lights his row, and only his, with a word", lit.length === 1 && /R Pillay/.test(lit[0]) && /\bYou\b/i.test(lit[0]), lit.join(" | "));
-  await tid(s.page, "mc-tab-analytics").click({ timeout: 4000 }).catch(() => {});
+  await pickTab(s.page, "analytics").catch(() => {});
   await afterReads(s.page, 800);
   const whose = await s.page.$$eval('[aria-label="Whose shots"] button', (els) => els.map((e) => e.innerText.trim()));
   ok("Analytics offers a wheel for him only, beside the whole innings", whose.join() === "Whole innings,R Pillay", whose.join());
@@ -451,8 +452,9 @@ try {
     await x.page.waitForTimeout(500);
     await tid(x.page, `live-row-${live}`).click({ timeout: 4000 }).catch(() => {});
     await afterReads(x.page, 2000);
-    out.tab = await tid(x.page, "mc-tab-captain").count() === 1;
-    out.tabs = await x.page.$$eval('[data-testid^="mc-tab-"]', (els) => els.map((e) => e.getAttribute("data-testid").replace("mc-tab-", "")));
+    // CRI-1.3: on a phone his own tab is under More (tools/walk-tabs.mjs reads the strip and the menu).
+    out.tabs = await tabIds(x.page);
+    out.tab = out.tabs.includes("captain");
     out.errors = x.errors.length; out.refusals = x.refusals.length;
     await x.ctx.close();
     return out;
@@ -515,9 +517,10 @@ try {
   await c.page.waitForTimeout(500);
   await tid(c.page, `live-row-${FIELD}`).click({ timeout: 4000 }).catch(() => {});
   await afterReads(c.page, 2200);
-  const tabs = await c.page.$$eval('[data-testid^="mc-tab-"]', (els) => els.map((e) => e.getAttribute("data-testid").replace("mc-tab-", "")));
-  ok("the Match Centre has a Captain tab after the Summary", tabs.join() === "summary,captain,scorecard,commentary,partnerships,analytics,details", tabs.join());
-  await tid(c.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
+  const tabs = await tabIds(c.page);
+  // CRI-1.3: on a phone the strip is Summary, Scorecard, Commentary; his tab leads the More menu.
+  ok("the Match Centre has a Captain tab, leading the More menu", tabs.join() === "summary,scorecard,commentary,captain,partnerships,analytics,details", tabs.join());
+  await pickTab(c.page, "captain").catch(() => {});
   await afterReads(c.page, 1500);
   const field = await c.page.$eval('[data-testid="mc-panel-captain"]', (e) => e.innerText).catch(() => "");
   dbg("FIELDING", field);
@@ -549,7 +552,7 @@ try {
   await c.page.waitForTimeout(500);
   await tid(c.page, `live-row-${BAT}`).click({ timeout: 4000 }).catch(() => {});
   await c.page.waitForTimeout(2200);
-  await tid(c.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
+  await pickTab(c.page, "captain").catch(() => {});
   await afterReads(c.page, 1500);
   const batTab = await c.page.$eval('[data-testid="mc-panel-captain"]', (e) => e.innerText).catch(() => "");
   dbg("BATTING", batTab);
@@ -568,7 +571,7 @@ try {
   await c.page.waitForTimeout(500);
   await tid(c.page, `played-row-${PLAYED}`).click({ timeout: 4000 }).catch(() => {});
   await c.page.waitForTimeout(2200);
-  await tid(c.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
+  await pickTab(c.page, "captain").catch(() => {});
   await afterReads(c.page, 2000);
   const after = await c.page.$eval('[data-testid="mc-panel-captain"]', (e) => e.innerText).catch(() => "");
   dbg("AFTER", after);
@@ -663,7 +666,7 @@ try {
     await go(page, "mymatches");
     await tid(page, `live-row-${BAT}`).click({ timeout: 4000 }).catch(() => {});
     await page.waitForTimeout(2000);
-    await tid(page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
+    await pickTab(page, "captain").catch(() => {});
     await afterReads(page, 1500);
     ok("the device asks for reduced motion", await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches));
     const anims = await page.evaluate(() => {
@@ -707,7 +710,7 @@ try {
     ok("...the Matches list opens his fixture", await go(co.page, "matches") && await tid(co.page, `mc-open-${DAY}`).count() === 1);
     await tid(co.page, `mc-open-${DAY}`).click({ timeout: 5000 }).catch(() => {});
     await co.page.waitForTimeout(1800);
-    await tid(co.page, "mc-tab-coach").click({ timeout: 4000 }).catch(() => {});
+    await pickTab(co.page, "coach").catch(() => {});
     await afterReads(co.page, 1500);
     ok("the Coach tab offers 'Write the plan' and draws no block (none is out)", await tid(co.page, "plan-write").count() === 1 && await tid(co.page, "plan-block").count() === 0);
     await tid(co.page, "plan-write").click({ timeout: 4000 }).catch(() => {});
@@ -825,7 +828,7 @@ try {
     await go(cap.page, "mymatches");
     await tid(cap.page, `played-row-${FIELD}`).click({ timeout: 4000 }).catch(() => {});
     await cap.page.waitForTimeout(2200);
-    await tid(cap.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
+    await pickTab(cap.page, "captain").catch(() => {});
     await afterReads(cap.page, 1500);
     const tabOrder = await orderOf(cap.page);
     ok("the Captain tab has the plan's row after the Board, closed", tabOrder.indexOf("mc-captain-board") > -1 && tabOrder.indexOf("mc-captain-board") < tabOrder.indexOf("mc-captain-plan-row")
@@ -934,7 +937,7 @@ try {
     await go(gone.page, "mymatches");
     await tid(gone.page, `played-row-${FIELD}`).click({ timeout: 4000 }).catch(() => {});
     await gone.page.waitForTimeout(2000);
-    await tid(gone.page, "mc-tab-captain").click({ timeout: 4000 }).catch(() => {});
+    await pickTab(gone.page, "captain").catch(() => {});
     await afterReads(gone.page, 1200);
     ok("...and the Captain tab has no row", await tid(gone.page, "mc-captain-plan-row").count() === 0 && await tid(gone.page, "mc-captain-board").count() === 1);
     await gone.ctx.close();

@@ -49,6 +49,7 @@ import { buildMatchCentreFixture, writeEvents, HIL } from "./fixture-matchcentre
 import { correctionsOf, withCorrectionLines } from "../apps/web/src/lib/corrections.js";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { pickTab } from "./walk-tabs.mjs";
 
 const WEB_PORT = port(5361);
 const API_PORT = port(8961);
@@ -775,13 +776,61 @@ try {
   const shortShown = await ph.page.locator("#mc-panel-summary, [data-testid='mc-scores']").first().evaluate(() =>
     [...document.querySelectorAll("[data-testid='mc-scores'] .mc-short")].filter((e) => getComputedStyle(e).display !== "none").map((e) => e.textContent));
   ok(`the scores name the sides by code (${shortShown.join(", ")})`, shortShown.length === 2 && shortShown[0] === "HIL 1XI", shortShown.join(", "));
+  // CRI-1.3: at 390 the strip is Summary, Scorecard, Commentary and More; the rest are in More's menu.
   for (const t of TABS) {
-    await tab(ph.page, t);
+    await pickTab(ph.page, t).catch(() => {});
+    await ph.page.waitForTimeout(500);
     const wide = await ph.page.evaluate(() => document.documentElement.scrollWidth);
-    ok(`${t}: no sideways scroll at 390 (${wide})`, wide <= 390);
+    ok(`${t}: opened, and no sideways scroll at 390 (${wide})`, wide <= 390 && await tid(ph.page, `mc-panel-${t}`).count() === 1);
   }
   ok("no console errors (phone)", ph.errors.length === 0, ph.errors.join(" | "));
   await ph.ctx.close();
+
+  group("One address per tab (CRI-1.3): a link opens its tab, a tab moves the address, the back button goes back a tab");
+  {
+    const dl = await open();
+    const at = (/** @type {string} */ path) => `http://localhost:${WEB_PORT}${path}`;
+    await dl.page.goto(at(`/app/matches/${fx.live}/commentary`), { waitUntil: "networkidle" });
+    ok("the director of sport, arriving on a link to the fixture's Commentary, signs in", await signIn(dl.page, /sarah@example\.invalid|Director/));
+    await tid(dl.page, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
+    await afterReads(dl.page, 1500);
+    const path = () => new URL(dl.page.url()).pathname;
+    ok("...and the link opens that fixture on its Commentary tab",
+       await tid(dl.page, "match-view").getAttribute("data-match").catch(() => null) === fx.live
+       && await tid(dl.page, "mc-tab-commentary").getAttribute("aria-selected") === "true" && await tid(dl.page, "mc-panel-commentary").count() === 1, path());
+    await tab(dl.page, "scorecard");
+    ok("choosing the Scorecard moves the address to /app/matches/:id/scorecard", path() === `/app/matches/${fx.live}/scorecard`, path());
+    await tab(dl.page, "summary");
+    ok("...and the Summary to the fixture's own", path() === `/app/matches/${fx.live}`, path());
+    await dl.page.goBack();
+    await dl.page.waitForTimeout(500);
+    ok("the back button: the Scorecard again", await tid(dl.page, "mc-tab-scorecard").getAttribute("aria-selected") === "true" && path().endsWith("/scorecard"), path());
+    await dl.page.goBack();
+    await dl.page.waitForTimeout(500);
+    ok("...and again: the Commentary the link opened", await tid(dl.page, "mc-panel-commentary").count() === 1, path());
+    await tid(dl.page, "mc-back").click({ timeout: 4000 }).catch(() => {});
+    await dl.page.waitForTimeout(800);
+    ok("All matches closes the fixture and the address is the list's", await tid(dl.page, "match-view").count() === 0 && path() === "/app/matches", path());
+    await dl.page.goBack();
+    await afterReads(dl.page, 1200);
+    ok("...from which the back button reopens the fixture where it was", await tid(dl.page, "mc-panel-commentary").count() === 1, path());
+    ok("no console errors (links)", dl.errors.length === 0, dl.errors.join(" | "));
+    await dl.ctx.close();
+    const co = await open();
+    await co.page.goto(at(`/app/matches/${fx.live}/coach`), { waitUntil: "networkidle" });
+    await signIn(co.page, /sarah@example\.invalid|Director/);
+    await tid(co.page, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
+    await afterReads(co.page, 1500);
+    ok("a link to the Coach tab opens it for a reader who holds it", await tid(co.page, "mc-tab-coach").getAttribute("aria-selected").catch(() => null) === "true");
+    await co.ctx.close();
+    const sp = await open();
+    await sp.page.goto(at(`/app/matches/${fx.live}/coach`), { waitUntil: "networkidle" });
+    ok("a spectator, on the same link, signs in", await signIn(sp.page, /watcher@example\.invalid|Spectator/));
+    await tid(sp.page, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
+    await afterReads(sp.page, 1500);
+    ok("...and has the fixture on its Summary, with no Coach tab", await tid(sp.page, "mc-panel-summary").count() === 1 && await tid(sp.page, "mc-tab-coach").count() === 0);
+    await sp.ctx.close();
+  }
 
   group("An error boundary: a panel that throws is a card in its own place, and its neighbours stand");
   // The walks run against a production build, where the test hook is compiled

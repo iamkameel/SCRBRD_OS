@@ -35,6 +35,7 @@ import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { buildMatchCentreFixture } from "./fixture-matchcentre.mjs";
 import { narrowAudit, tabPath } from "./a11y-narrow.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { pickTab } from "./walk-tabs.mjs";
 
 const WEB_PORT = port(5420);
 const API_PORT = port(8920);
@@ -173,16 +174,19 @@ try {
           await page.locator(`[data-testid="mc-open-${fx.live}"]`).click({ timeout: 6000 }).catch(() => {});
           await afterReads(page, 1800);
           ok(`${label} coach: the live fixture opens`, await page.locator('[data-testid="match-view"]').count() === 1);
+          // CRI-1.3: on a phone Partnerships, Analytics, Match details and the Coach tab are under More.
           for (const t of ["summary", "scorecard", "commentary", "partnerships", "analytics", "details"]) {
-            await page.locator(`[data-testid="mc-tab-${t}"]`).click({ timeout: 4000 }).catch(() => {});
+            await pickTab(page, t).catch(() => {});
             await page.waitForTimeout(600);
             await check(page, `${label} coach`, `match-${t}`);
           }
-          if (await page.locator('[data-testid="mc-tab-coach"]').count()) {
-            await page.locator('[data-testid="mc-tab-coach"]').click({ timeout: 4000 }).catch(() => {});
+          if (await pickTab(page, "coach").then(() => true, () => false)) {
             await page.waitForTimeout(1800);
             await check(page, `${label} coach`, "match-coach");
           }
+          // Back to the list, so the keyboard pass below starts where it always has (the Match Centre's address is the list's).
+          await page.locator('[data-testid="mc-back"]').click({ timeout: 4000 }).catch(() => {});
+          await page.waitForTimeout(800);
         }
         if (width === 320 && zoom === 1) {
           // The keyboard, from the top of the person's first screen.
@@ -196,6 +200,97 @@ try {
       } finally {
         await ctx.close();
       }
+    }
+  }
+  // ── CRI-1.3: every tab in two taps at 360, with nothing cut ──
+  // The coach has the most tabs (the six and his own). The strip and the menu are measured in the page, as
+  // narrowAudit measures: each control inside the screen and its strip, its words not cut by its own box, 44px
+  // to tap and 12px to read. Then each tab is reached from the Summary, counting the taps.
+  group("Every tab in two taps at 360 (CRI-1.3)");
+  {
+    const { ctx, page, errors } = await open({ width: 360, scheme: "light" });
+    try {
+      await signIn(page, "coach@example.invalid");
+      await mnav(page, "matches");
+      await page.locator(`[data-testid="mc-open-${fx.live}"]`).click({ timeout: 6000 }).catch(() => {});
+      await afterReads(page, 1800);
+      ok("360 coach: the live fixture opens", await page.locator('[data-testid="match-view"]').count() === 1);
+      /** Every control of the strip, or of the open menu, measured where it is drawn. */
+      const measure = (/** @type {string} */ sel) => page.evaluate((sel) => {
+        const box = document.querySelector(sel);
+        if (!box) return null;
+        const W = window.innerWidth, b = box.getBoundingClientRect();
+        const ctrls = [...box.querySelectorAll('[role="tab"], [data-testid="mc-more"], [role="menuitemradio"]')];
+        return {
+          names: ctrls.map((e) => (e.textContent ?? "").trim()),
+          cut: ctrls.filter((e) => { const r = e.getBoundingClientRect(); return r.left < Math.max(0, b.left) - 1 || r.right > Math.min(W, b.right) + 1 || e.scrollWidth > e.clientWidth + 1; })
+            .map((e) => (e.textContent ?? "").trim()),
+          scrolls: box.scrollWidth > box.clientWidth + 1,
+          floors: ctrls.filter((e) => { const r = e.getBoundingClientRect(); return r.height < 44 || r.width < 44 || parseFloat(getComputedStyle(e).fontSize) < 12; })
+            .map((e) => (e.textContent ?? "").trim()),
+          animation: getComputedStyle(box).animationName,
+        };
+      }, sel);
+      const strip = await measure('[data-testid="mc-tabs-row"]');
+      ok("360: the strip is Summary, Scorecard, Commentary and More", strip?.names.join(" · ") === "Summary · Scorecard · Commentary · More", strip?.names.join(" · "));
+      ok("360: none of them cut, and the strip does not scroll sideways", !!strip && strip.cut.length === 0 && !strip.scrolls, strip?.cut.join(" · "));
+      ok("360: each 44px to tap and 12px or more to read", !!strip && strip.floors.length === 0, strip?.floors.join(" · "));
+      await page.locator('[data-testid="mc-more"]').tap({ timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const menu = await measure('[data-testid="mc-more-menu"]');
+      // His own tab leads the menu where his assignment covers this side (lib/cockpit.js cockpitGate); the three follow.
+      const hasCoach = menu?.names[0] === "Coach";
+      ok(`360: More opens ${hasCoach ? "Coach, " : ""}Partnerships, Analytics, Match details`,
+         menu?.names.join(" · ") === [...(hasCoach ? ["Coach"] : []), "Partnerships", "Analytics", "Match details"].join(" · "), menu?.names.join(" · "));
+      ok("360: the menu's items on the screen, uncut, 44px to tap and 12px to read", !!menu && menu.cut.length === 0 && menu.floors.length === 0, [...(menu?.cut ?? []), ...(menu?.floors ?? [])].join(" · "));
+      ok("360: the menu drops in (mcMenuIn)", menu?.animation === "mcMenuIn", menu?.animation);
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(200);
+      ok("360: Escape closes it and gives focus back to More", await page.locator('[data-testid="mc-more-menu"]').count() === 0
+         && await page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "mc-more");
+      await page.keyboard.press("ArrowDown");
+      await page.waitForTimeout(200);
+      ok("360: ArrowDown on More opens it, focus on its first item", await page.evaluate(() => document.activeElement?.getAttribute("role")) === "menuitemradio");
+      await page.keyboard.press("End");
+      ok("...End to its last", await page.evaluate(() => document.activeElement?.textContent?.trim()) === "Match details");
+      for (let i = 0; i < 5; i++) await page.keyboard.press("Tab");
+      ok("...and Tab stays inside it", await page.evaluate(() => !!document.activeElement?.closest('[data-testid="mc-more-menu"]')));
+      await page.keyboard.press("Escape");
+
+      const LABEL = { summary: "Summary", coach: "Coach", scorecard: "Scorecard", commentary: "Commentary", partnerships: "Partnerships", analytics: "Analytics", details: "Match details" };
+      const far = [];
+      for (const t of Object.keys(LABEL).filter((k) => k !== "coach" || hasCoach)) {
+        // From the Summary each time: one tap there, then count.
+        await page.locator('[data-testid="mc-tab-summary"]').tap({ timeout: 4000 }).catch(() => {});
+        await page.waitForTimeout(300);
+        let taps = 0;
+        const direct = page.locator(`[data-testid="mc-tab-${t}"]`);
+        if (await direct.count()) { await direct.tap({ timeout: 4000 }).catch(() => {}); taps = 1; }
+        else {
+          await page.locator('[data-testid="mc-more"]').tap({ timeout: 4000 }).catch(() => {});
+          await page.waitForTimeout(250);
+          await page.locator(`[data-testid="mc-tab-${t}"]`).tap({ timeout: 4000 }).catch(() => {});
+          taps = 2;
+        }
+        await page.waitForTimeout(t === "coach" ? 1200 : 500);
+        const open = await page.locator(`[data-testid="mc-panel-${t}"]`).count() === 1;
+        const said = taps === 2 ? (await page.locator('[data-testid="mc-more"]').innerText().catch(() => "")).trim() : LABEL[t];
+        if (!open || said !== LABEL[t]) far.push(`${t}: ${taps} taps, panel ${open ? "open" : "not open"}, More says "${said}"`);
+        if (taps === 2) {
+          const after = await measure('[data-testid="mc-tabs-row"]');
+          if (!after || after.cut.length) far.push(`${t}: with More naming it, cut: ${after?.cut.join(" · ")}`);
+        }
+      }
+      ok("360: every tab opens in two taps or fewer, and More names the one chosen under it, uncut", far.length === 0, far.join(" | "));
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.locator('[data-testid="mc-more"]').tap({ timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(200);
+      ok("360, reduced motion: the menu simply appears", (await measure('[data-testid="mc-more-menu"]'))?.animation === "none");
+      ok("360 coach: no page errors", errors.length === 0, errors.slice(0, 2).join(" | "));
+    } catch (e) {
+      ok("360: the walk threw", false, /** @type {any} */ (e).message);
+    } finally {
+      await ctx.close();
     }
   }
   ok("the API wrote nothing to stderr", apiErr.join("").trim() === "", apiErr.join("").slice(0, 200));
