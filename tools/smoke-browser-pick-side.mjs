@@ -44,6 +44,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { pickTab } from "./walk-tabs.mjs";
 
 const WEB_PORT = port(4390);
 const API_PORT = port(8990);
@@ -152,7 +153,7 @@ async function openMatch(page, id) {
   return (await tid(page, "match-view").count()) === 1;
 }
 async function coachTab(page) {
-  await tid(page, "mc-tab-coach").click({ timeout: 4000 }).catch(() => {});
+  await pickTab(page, "coach").catch(() => {});
   await page.waitForFunction(() => { const t = document.querySelector('[data-testid="mc-coach"]'); return t && !document.querySelector('[data-testid="mc-coach-loading"]'); }, null, { timeout: 12000 }).catch(() => {});
   await page.waitForTimeout(500);
 }

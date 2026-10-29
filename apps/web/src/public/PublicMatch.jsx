@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { boardInnings, boundaryCount, matchLine, revisionNotice, sidesOf, statusSentence, tossWords } from "../lib/matchCentre.js";
@@ -14,10 +14,16 @@ import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { publicStory, read, readPar } from "./reads.js";
 import { publicOfficial } from "../lib/official.js";
 import { StateLabel } from "../ui/stateLabel.jsx";
+import { TabStrip, panelLabel } from "../views/matchcentre/tabStrip.jsx";
+import { NARROW_PX, parsePublicPath, publicPath, tabOr } from "../lib/matchTabs.js";
+import { navigate, usePath } from "../lib/route.js";
 
 /**
  * THE PUBLIC MATCH PAGE — /live/:match and /scorecard/:match (SCRBRD-083
  * phase 1, docs/design/SCRBRD-083_public_pages.md §2.9, §3.1, §3.2).
+ * Its other tabs are /live/:match/commentary, …/partnerships, …/analytics
+ * and …/details (CRI-1.3, lib/matchTabs.js); on a phone the strip is
+ * Summary, Scorecard and Commentary and the rest are under More.
  *
  * Signed out, always: this bundle has no sign-in, no token and no API client.
  * It reads three things, same-origin, with no credentials:
@@ -119,38 +125,6 @@ function useSectors(matchId, on) {
   return sectors;
 }
 
-function TabBar({ tab, setTab }) {
-  const refs = useRef({});
-  const onKey = (e, i) => {
-    const n = TABS.length;
-    const to = e.key === "ArrowRight" ? (i + 1) % n : e.key === "ArrowLeft" ? (i - 1 + n) % n
-      : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : null;
-    if (to == null) return;
-    e.preventDefault();
-    setTab(TABS[to].id);
-    refs.current[TABS[to].id]?.focus();
-  };
-  return (
-    <div role="tablist" aria-label="Match" data-testid="mc-tabs"
-      style={{ display: "flex", gap: T.space.xs, overflowX: "auto", borderBottom: `1px solid ${T.line.normal}`, margin: `${T.space.lg} 0` }}>
-      {TABS.map((t, i) => {
-        const on = t.id === tab;
-        return (
-          <button key={t.id} ref={(el) => { refs.current[t.id] = el; }} role="tab" type="button"
-            id={`mc-tab-${t.id}`} data-testid={`mc-tab-${t.id}`} aria-selected={on} aria-controls={`mc-panel-${t.id}`}
-            tabIndex={on ? 0 : -1} onClick={() => setTab(t.id)} onKeyDown={(e) => onKey(e, i)} className="os-state"
-            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, flexShrink: 0, cursor: "pointer",
-              background: "transparent", border: "none", borderBottom: `2px solid ${on ? T.brand.accentText : "transparent"}`,
-              marginBottom: "-1px", color: on ? T.content.primary : T.content.secondary,
-              fontFamily: T.type.body, fontSize: "14px", fontWeight: on ? 600 : 500, whiteSpace: "nowrap" }}>
-            {t.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 /**
  * Analytics, team level only (L7): the innings' rates from the fold, and
  * where the side scored its runs, by sector, from the server's aggregate.
@@ -244,8 +218,13 @@ function PublicDetailsTab({ match, result }) {
 export function PublicMatch({ matchId, view }) {
   useTheme();
   const data = usePublicMatch(matchId);
-  const phone = usePhone();
-  const [tab, setTab] = useState(view === "scorecard" ? "scorecard" : "summary");
+  const phone = usePhone(NARROW_PX);
+  // CRI-1.3: the tab is the address's — /live/:id the Summary, /scorecard/:id the Scorecard, /live/:id/commentary
+  // and the like the rest (lib/matchTabs.js) — so a link opens it and the back button goes back a tab.
+  const path = usePath();
+  const asked = parsePublicPath(path);
+  const tab = tabOr(TABS, asked && asked.matchId.toLowerCase() === String(matchId).toLowerCase() ? asked.tab : view === "scorecard" ? "scorecard" : "summary");
+  const setTab = useCallback((/** @type {string} */ t) => navigate(publicPath(matchId, t)), [matchId]);
   const [picked, setPicked] = useState(null);
   const sectors = useSectors(matchId, tab === "analytics" && !data.missing);
 
@@ -348,8 +327,8 @@ export function PublicMatch({ matchId, view }) {
         </div>
         </ErrorBoundary>
 
-        <TabBar tab={tab} setTab={setTab}/>
-        <div role="tabpanel" id={`mc-panel-${tab}`} aria-labelledby={`mc-tab-${tab}`} data-testid={`mc-panel-${tab}`} tabIndex={0} style={{ outline: "none" }}>
+        <TabStrip tabs={TABS} tab={tab} setTab={setTab} narrow={phone} label="Match"/>
+        <div role="tabpanel" id={`mc-panel-${tab}`} aria-labelledby={panelLabel(TABS, tab, phone)} data-testid={`mc-panel-${tab}`} tabIndex={0} style={{ outline: "none" }}>
           <ErrorBoundary key={tab} name={tab === "details" ? "match details" : tab}>
             {tab === "summary" ? <SummaryTab {...ctx}/>
               : tab === "scorecard" ? <ScorecardTab {...ctx}/>

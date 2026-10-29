@@ -405,6 +405,31 @@ export default function SCRBRD_OS() {
                        ...(c.startsAt ? { startsAt: c.startsAt } : {}), ...(c.format ? { format: c.format } : {}) } : null });
   }, [appState, role, userName, page, scorerOpen, scorerMatchId, scorerResume, scorerPractice, loginForPad]);
 
+  // CRI-1.3: the Match Centre's address (/app/matches, and a fixture's
+  // /app/matches/:id/:tab, lib/matchTabs.js). Arriving on one, once the person
+  // is in, is the Match Centre, which opens the fixture at that tab if his
+  // fixtures read holds it; a role whose navigation has no Match Centre is
+  // left where it lands, at /app. Leaving the Match Centre for another page
+  // leaves its address too, and the back button onto one of its entries
+  // (pushed by its tabs) is the Match Centre again, not an address the page
+  // does not show. Nothing else here is listening for the address, so a
+  // plain replaceState does (the Match Centre reads it when it mounts).
+  // Written out rather than imported: the entry graph has a ceiling.
+  const atMatches = () => /^\/app\/matches(\/|$)/.test(window.location.pathname);
+  const toApp = () => window.history.replaceState(window.history.state, "", "/app" + window.location.search);
+  useEffect(() => {
+    if (appState !== "app") return undefined;
+    const go = () => { if (atMatches()) (ROLES[role]?.nav || []).includes("matches") ? setPage("matches") : toApp(); };
+    go();
+    window.addEventListener("popstate", go);
+    return () => window.removeEventListener("popstate", go);
+  }, [appState, role]);
+  const lastPage = useRef(page);
+  useEffect(() => {
+    if (lastPage.current === "matches" && page !== "matches" && atMatches()) toApp();
+    lastPage.current = page;
+  }, [page]);
+
   // Counted by the SERVER over the notices it agreed to send this person
   // (my_notifications, db/89), from the one store every badge reads. A badge
   // is a disclosure: "3 unread" built from rows nobody authorised states a

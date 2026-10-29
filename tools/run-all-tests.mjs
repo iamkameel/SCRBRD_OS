@@ -131,6 +131,9 @@ const SUITES = [
   // CRI-1.2: where a fixture stands, in one sentence per state — the list's
   // card and the match's header ask the one function (statusSentence).
   ["status-sentence",   "apps/web/test/status-sentence.test.mjs"],
+  // CRI-1.3: on a phone Summary, Scorecard and Commentary, the rest under More;
+  // one address per tab, signed in and public, read back both ways.
+  ["match-tabs",        "apps/web/test/match-tabs.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // CRI-1.1: the board's last-wicket and freshness rows, from the fold, held
   // to literal markup and the same on the pad, the Match Centre and the
   // public page (whose row says the fold's labels, never a name).

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useTheme } from "../../design/theme.js";
 import { deriveMatch, fromRow } from "@scrbrd/scoring";
@@ -32,6 +32,8 @@ import { ballLine } from "../../lib/correctionEffect.js";
 import { CorrectedChip, StaleLine } from "./corrected.jsx";
 import { CorrectionsSheet, pendingWords } from "./corrections.jsx";
 import { StateLabel } from "../../ui/stateLabel.jsx";
+import { TabStrip, panelLabel } from "./tabStrip.jsx";
+import { NARROW_PX, tabOr } from "../../lib/matchTabs.js";
 
 /**
  * THE MATCH CENTRE — one fixture, followed (DESIGN_DIRECTION §10, step 3c).
@@ -41,7 +43,9 @@ import { StateLabel } from "../../ui/stateLabel.jsx";
  * match line under the title, and six tabs in the prototype's order —
  * Summary (the Board, with its Tier 2 line), Scorecard (p7–p9), Commentary
  * (the shared generator, SCRBRD-098), Partnerships, Analytics and Match
- * details.
+ * details. On a phone (CRI-1.3) the strip is Summary, Scorecard and
+ * Commentary and the rest are under More (tabStrip.jsx); opened from the
+ * Match Centre, each tab has its own address (lib/matchTabs.js).
  *
  * SIGNED IN. Everything here is read from the match's own ball log —
  * `GET /api/matches/:id/events`, folded by @scrbrd/scoring — the read the
@@ -290,41 +294,6 @@ const CAPTAIN_TAB = { id: "captain", label: "Captain" };
  */
 const COACH_TAB = { id: "coach", label: "Coach" };
 
-/** The tablist: arrow keys move along it, Home and End to its ends (WAI-ARIA tabs). */
-function TabBar({ tab, setTab, tabs = TABS }) {
-  const refs = useRef({});
-  const onKey = (e, i) => {
-    const n = tabs.length;
-    const to = e.key === "ArrowRight" ? (i + 1) % n : e.key === "ArrowLeft" ? (i - 1 + n) % n
-      : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : null;
-    if (to == null) return;
-    e.preventDefault();
-    setTab(tabs[to].id);
-    refs.current[tabs[to].id]?.focus();
-  };
-  return (
-    <div role="tablist" aria-label="Match Centre" data-testid="mc-tabs"
-      style={{ display: "flex", gap: T.space.xs, overflowX: "auto", borderBottom: `1px solid ${T.line.normal}`,
-        margin: `${T.space.lg} 0`, scrollbarWidth: "thin" }}>
-      {tabs.map((t, i) => {
-        const on = t.id === tab;
-        return (
-          <button key={t.id} ref={(el) => { refs.current[t.id] = el; }} role="tab" type="button"
-            id={`mc-tab-${t.id}`} data-testid={`mc-tab-${t.id}`} aria-selected={on} aria-controls={`mc-panel-${t.id}`}
-            tabIndex={on ? 0 : -1} onClick={() => setTab(t.id)} onKeyDown={(e) => onKey(e, i)}
-            className="os-state"
-            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, flexShrink: 0, cursor: "pointer",
-              background: "transparent", border: "none", borderBottom: `2px solid ${on ? T.brand.accentText : "transparent"}`,
-              marginBottom: "-1px", color: on ? T.content.primary : T.content.secondary,
-              fontFamily: T.type.body, fontSize: "14px", fontWeight: on ? 600 : 500, whiteSpace: "nowrap" }}>
-            {t.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 /**
  * `focus` is FAMILY MODE (step 4 G13): the player ids this reader is here for
  * — a parent's child, a pupil himself. Their rows are lit on the scorecard
@@ -333,17 +302,23 @@ function TabBar({ tab, setTab, tabs = TABS }) {
  * not one this reader may open (§2.1 P4). Everything else is the Match Centre
  * as every signed-in reader has it.
  */
-function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDuties = null, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches", captain = null, initialTab = null, initialDrawer = false, initialCorrections = false }) {
+function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDuties = null, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches", captain = null, initialTab = null, initialDrawer = false, initialCorrections = false, route = null }) {
   useTheme();
   const COMPETITIONS = useRows("competitions", role);
   const PLAYERS = useRows("players", role);
   const WEATHER = useWeather(role);
   const log = useMatchLog(match, PLAYERS);
-  const phone = useIsMobile(640);
+  const phone = useIsMobile(NARROW_PX);
   // The Coach tab: signed in, the staff screen (not a family's or the captain's), and a grant on this side.
   const staff = useMemo(() => (signedIn() && !captain && !focus?.length ? cockpitGate(profile()?.assignments, match) : null),
     [match, captain, focus]);
-  const [tab, setTab] = useState(initialTab === "coach" && staff ? "coach" : "summary");
+  // The tabs this reader has: the six, and his own after the Summary where he holds one.
+  const tabs = captain ? [TABS[0], CAPTAIN_TAB, ...TABS.slice(1)] : staff ? [TABS[0], COACH_TAB, ...TABS.slice(1)] : TABS;
+  // CRI-1.3: where the Match Centre gives the fixture an address (`route`, MatchCentreView), the tab is the
+  // address's and choosing one is a new history entry; elsewhere (a family's screen) it is this view's own.
+  const [ownTab, setOwnTab] = useState(initialTab === "coach" && staff ? "coach" : "summary");
+  const tab = tabOr(tabs, route ? route.tab : ownTab);
+  const setTab = route ? route.setTab : setOwnTab;
   // The staff screen: signed in, not a family's or the captain's view.
   const staffScreen = signedIn() && !captain && !focus?.length;
   const corrections = useCorrections(match, staffScreen && !log.demo, log.events?.length ?? 0);
@@ -557,9 +532,9 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
         </div>
       )}
 
-      <TabBar tab={tab} setTab={setTab} tabs={captain ? [TABS[0], CAPTAIN_TAB, ...TABS.slice(1)] : staff ? [TABS[0], COACH_TAB, ...TABS.slice(1)] : TABS}/>
+      <TabStrip tabs={tabs} tab={tab} setTab={setTab} narrow={phone} label="Match Centre"/>
 
-      <div role="tabpanel" id={`mc-panel-${tab}`} aria-labelledby={`mc-tab-${tab}`} data-testid={`mc-panel-${tab}`} tabIndex={0}
+      <div role="tabpanel" id={`mc-panel-${tab}`} aria-labelledby={panelLabel(tabs, tab, phone)} data-testid={`mc-panel-${tab}`} tabIndex={0}
         style={{ outline: "none" }}>
         {log.loading ? <Quiet>Loading the match…</Quiet>
           : log.error ? <Quiet>Could not load this match ({log.error}). This is not the same as there being nothing.</Quiet>

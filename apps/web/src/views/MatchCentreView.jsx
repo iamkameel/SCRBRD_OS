@@ -27,6 +27,8 @@ import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { ScorebookImportView, ScorebookPanel } from "./scorebook.jsx";
 import { clearCoach, peekCoach } from "../lib/cockpitNav.js";
 import { PickSideEntry } from "./cockpit/PickSide.jsx";
+import { APP_MATCHES, appPath, parseAppPath } from "../lib/matchTabs.js";
+import { navigate, usePath } from "../lib/route.js";
 
 // A hand on the page: any of these means the person is steering, so the held scroll below lets go.
 const HAND = ["wheel", "touchstart", "pointerdown", "keydown"];
@@ -70,7 +72,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
     // OFFICIAL_RESULT: a results row opens the fixture, where its Official result panel is.
     if (want.view === "result") { setCoachOn({ tab: null, drawer: false }); setOpenM(m); return; }
     setCoachOn({ tab: "coach", drawer: want.drawer });
-    setOpenM(m);
+    setOpenM(m, "coach");
   }, [MATCHES]);
   const [selMatch, setSelMatch] = useState(null);
   // A fixture opened from Readiness has its details panel scrolled into view once it is drawn (a phone draws it under the list).
@@ -101,13 +103,30 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
   // The fixture open in the Match Centre's own view (views/matchcentre/):
   // the board, the scorecard, the commentary and the rest, in six tabs. It
   // replaced the Scorecard modal (step 3c).
-  const [openM,    setOpenM]    = useState(null);
+  const [openM,    holdM]       = useState(null);
+  // CRI-1.3: an open fixture has an address, /app/matches/:id and one more
+  // segment per tab (lib/matchTabs.js), so a link opens the tab and the back
+  // button goes back a tab, then to the list. Opening and closing go through
+  // the address; the address, moved by the back button or a link, opens or
+  // closes the fixture (the effect below).
+  const path = usePath();
+  const route = parseAppPath(path);
+  const setOpenM = (m, tab = null) => { holdM(m); navigate(m ? appPath(m.id, tab) : APP_MATCHES); };
   // A paper scorebook being imported for a fixture (SCRBRD-120): its own
   // screens, opened from the fixture's side panel.
   const [sbOpen,   setSbOpen]   = useState(null);
   // The Dashboard's match-day card sends the coach to a fixture's Coach tab
   // (SCRBRD-136): taken once the fixtures have loaded, then forgotten.
   const [coachOn, setCoachOn] = useState(/** @type {{tab: string | null, drawer: boolean, corrections?: boolean} | null} */ (null));
+  useEffect(() => {
+    const id = route?.matchId ?? null;
+    if (id === (openM?.id ?? null)) return;
+    if (!id) { holdM(null); setCoachOn(null); return; }
+    // A fixture this person's fixtures read does not hold stays unopened: the list, as for any other.
+    const m = MATCHES.find((x) => x.id === id);
+    if (m) { setSelMatch(null); holdM(m); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route?.matchId, MATCHES]);
   // The Post-Match Report (SCRBRD-082) — a fixture's own screen, opened from
   // its card the same way the Scorecard is. Offered only once a match is
   // complete: a live fixture's report would be reporting on a game still
@@ -157,6 +176,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
     return (
       <MatchView match={fresh} role={role} onClose={() => { setOpenM(null); setCoachOn(null); }} canScoreIt={canScore(role)}
         initialTab={coachOn?.tab ?? null} initialDrawer={coachOn?.drawer ?? false} initialCorrections={coachOn?.corrections ?? false}
+        route={{ tab: route?.matchId === fresh.id ? route.tab : null, setTab: (t) => navigate(appPath(fresh.id, t)) }}
         onOpenScorer={onOpenScorer} onNavProfile={onNavProfile} onNav={onNav} onOpenDuties={openDuties}
         matches={MATCHES} onOpenFixture={openFixture} onTeamResults={teamResults}/>
     );
