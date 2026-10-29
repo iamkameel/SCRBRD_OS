@@ -296,7 +296,7 @@ try {
     ok("...and nothing was read to refuse it", (await q(`select count(*)::int n from access_log`))[0].n === 0);
     const roster = await api("/api/export/players", { token: office });
     ok("the office still exports its roster", roster.status === 200 && String(roster.body).includes("full_name"));
-    ok("the training calendar still exports", (await api("/api/export/training", { token: coach })).status === 200);
+    ok("the fixtures still export", (await api("/api/export/matches", { token: coach })).status === 200);
   }
 } catch (/** @type {any} */ e) {
   ok(`the walk threw: ${e.message?.slice(0, 200)}`, false);

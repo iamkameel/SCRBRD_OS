@@ -565,6 +565,18 @@ try {
   ok("...holds user.role.assign, so Management → Users is hers and offers Add user",
      await toUsers(dos.page) && await tid(dos.page, "add-user").count() === 1);
   ok("...and she has every tab the policy gives a director of sport", JSON.stringify(await tabsShown(dos.page)) === JSON.stringify(tabsFor("directorofsport")), (await tabsShown(dos.page)).join());
+  // A pupil's login email is the office's and the principal's (db/118;
+  // Kameel, 28 Oct 2026: "The office alone, as A4 says"). She reads his
+  // account without it, is told so in words, and is offered no Add role,
+  // which would post the email she was not given.
+  const pupilRow = dos.page.locator('[data-testid="person-row-88888888-0000-0000-0000-000000000009"]');
+  ok("...the pupil's account is on her list, with no email on it and words saying whose it is",
+     await pupilRow.count() === 1 && await pupilRow.getAttribute("data-email") === null
+     && /Email shown to the school office only/.test(await pupilRow.innerText()) && !/pillay@/.test(await pupilRow.innerText()));
+  ok("...and no Add role on it", await pupilRow.locator('[data-testid^="add-role-"]').count() === 0);
+  ok("...while an adult's row keeps its email and its Add role",
+     await rowOf(dos.page, "coach@example.invalid").count() === 1
+     && await rowOf(dos.page, "coach@example.invalid").locator('[data-testid^="add-role-"]').count() === 1);
   await dos.page.locator('[data-testid="add-user"]').click({ timeout: 5000 });
   await dos.page.waitForTimeout(500);
   const dosOffered = await tid(dos.page, "enrol-role").locator("option").evaluateAll((os) => os.map((o) => o.value).filter(Boolean));
