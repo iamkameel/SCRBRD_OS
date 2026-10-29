@@ -146,7 +146,13 @@ export function FamilyMatches({ role }) {
  * One list of notices, newest first, unread first-lit, each saying which
  * child it is about when it names one. What arrives is what RLS delivered
  * (§2.1 P5): nothing is filtered here, because for a parent nothing needs to
- * be — a medical notice about another child cannot reach her.
+ * be — a medical notice about another child cannot reach her, and since
+ * db/123 (REACH R-E) a side's notice with no child ("team sheet published",
+ * "training moved") reaches only the parents of boys on that side. Do not add
+ * a side filter here: the server also gives a boy playing up, and his
+ * parents, the plan's notice of the side he plays for (db/101), which a
+ * filter on the child's own team would hide. Each child's Home card narrows
+ * to that child's side for its own list (lib/family.js noticesFor()).
  *
  * ONE STREAM (NOTIFICATIONS.md D10, S2): a post the side or the school sends
  * is a notice of its own now, written by the post's trigger (db/91), so this

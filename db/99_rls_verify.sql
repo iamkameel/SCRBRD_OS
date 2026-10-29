@@ -8116,6 +8116,157 @@ CREATE OR REPLACE FUNCTION _v122_claims(y jsonb) RETURNS text AS $$
     FROM unnest(ARRAY['eadult', 'epupil']) k
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/122 (section 99) ─────────────────────────────────────────────
+-- ┌── db/123 (section 100). REACH R-E: notices follow the side.
+-- Invented, as the owner. Three Hilton boys, A and C on U15A and B on U13B,
+-- each with his own guardian (ga, gc, gb); A's and B's own accounts (pupil,
+-- pupilb); the U15A and U13B coaches. Five notices at Hilton:
+--   S  "U15A team sheet published"  fixture, fixture.read, U15A, no child
+--   T  "U15A training moved"        notice, training, news.read, U15A, no child
+--   K  a fifty for A                recognition, news.read, U15A, child A
+--   R  for ga alone                 system, news.read, U15A, recipient ga
+--   W  the whole school             system, news.read, no team
+-- Kameel's decisions of 29 Oct (db/123's header):
+--   1. U, a U14A boy (his account upboy, his guardian gu), on the home sheet
+--      of MU, a U15A fixture; MO is another U15A fixture he is not on.
+--      SU "Result reopened" about MU and SO about MO: fixture, fixture.read,
+--      U15A, no child.
+--   2. V (his account vboy, his guardian gv), on the U16B from t-60 and
+--      moved to the U17B at t-10. OB, a U16B notice published at t-30 (while
+--      he was on it); OA, a U16B notice published now (after); NB, a U17B
+--      notice published at t-30 (before he joined it). Each a training notice.
+CREATE OR REPLACE FUNCTION _v123_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
+  U13 date := make_date(extract(year FROM sa_today())::int - 13, 3, 1);
+  U14 date := make_date(extract(year FROM sa_today())::int - 14, 3, 1);
+  t   date := sa_today();
+  ids jsonb; c_a uuid; c_b uuid; c_c uuid; v_s uuid; v_t uuid; v_k uuid; v_r uuid; v_w uuid;
+  c_u uuid; c_v uuid; m_u uuid; m_o uuid; z jsonb := '{}'; k text; tm text; dd int; v_id uuid;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U15A', 'Verify OneTwentyThree Able', 1231, 'batter', U15) RETURNING id INTO c_a;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U13B', 'Verify OneTwentyThree Bold', 1232, 'bowler', U13) RETURNING id INTO c_b;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U15A', 'Verify OneTwentyThree Calm', 1233, 'bowler', U15) RETURNING id INTO c_c;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U14A', 'Verify OneTwentyThree Upward', 1234, 'batter', U14) RETURNING id INTO c_u;
+  -- V joins the U16B at t-60, dated as the move route dates it.
+  PERFORM set_config('app.effective_on', (t - 60)::text, true);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U16B', 'Verify OneTwentyThree Mover', 1235, 'batter', U15) RETURNING id INTO c_v;
+  PERFORM set_config('app.effective_on', '', true);
+  ids := _v71_people('v123', ARRAY[
+    ARRAY['ga',     'guardian', HIL::text, '',     ''],
+    ARRAY['gb',     'guardian', HIL::text, '',     ''],
+    ARRAY['gc',     'guardian', HIL::text, '',     ''],
+    ARRAY['pupil',  'player',   HIL::text, 'U15A', c_a::text],
+    ARRAY['pupilb', 'player',   HIL::text, 'U13B', c_b::text],
+    ARRAY['coach',  'coach',    HIL::text, 'U15A', ''],
+    ARRAY['coachb', 'coach',    HIL::text, 'U13B', ''],
+    ARRAY['gu',     'guardian', HIL::text, '',     ''],
+    ARRAY['upboy',  'player',   HIL::text, 'U14A', c_u::text],
+    ARRAY['gv',     'guardian', HIL::text, '',     ''],
+    ARRAY['vboy',   'player',   HIL::text, 'U16B', c_v::text]]);
+  PERFORM _v100_link((ids->>'gu')::uuid, HIL, c_u);
+  PERFORM _v100_link((ids->>'gv')::uuid, HIL, c_v);
+  -- V moves to the U17B at t-10 (db/112 carries his player role with him).
+  PERFORM set_config('app.effective_on', (t - 10)::text, true);
+  UPDATE player SET team_code = 'U17B' WHERE id = c_v;
+  PERFORM set_config('app.effective_on', '', true);
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U15A', 'Verify OneTwentyThree MU', ((t + 3)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m_u;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U15A', 'Verify OneTwentyThree MO', ((t + 4)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m_o;
+  INSERT INTO match_squad (match_id, player_id, side, batting_no) VALUES (m_u, c_u, 'home', 1);
+  INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body, required_capability,
+                            subject_kind, subject_id)
+  VALUES (HIL, 'U15A', 'team', 'fixture', 'medium', 'Result reopened · MU', 'Verify 123: MU reopened', 'fixture.read', 'match', m_u)
+  RETURNING id INTO v_id;
+  z := z || jsonb_build_object('SU', v_id);
+  INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body, required_capability,
+                            subject_kind, subject_id)
+  VALUES (HIL, 'U15A', 'team', 'fixture', 'medium', 'Result reopened · MO', 'Verify 123: MO reopened', 'fixture.read', 'match', m_o)
+  RETURNING id INTO v_id;
+  z := z || jsonb_build_object('SO', v_id);
+  FOR k, tm, dd IN SELECT * FROM (VALUES ('OB', 'U16B', -30), ('OA', 'U16B', 0), ('NB', 'U17B', -30)) x LOOP
+    INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body, required_capability,
+                              subject_kind, published_at, expires_at)
+    VALUES (HIL, tm, 'team', 'notice', 'low', 'Verify 123 ' || k, 'Verify 123: nets moved', 'news.read', 'training',
+            CASE WHEN dd = 0 THEN now() - interval '1 minute'
+                 ELSE ((t + dd)::timestamp + time '12:00') AT TIME ZONE 'Africa/Johannesburg' END,
+            now() + interval '30 days')
+    RETURNING id INTO v_id;
+    z := z || jsonb_build_object(k, v_id);
+  END LOOP;
+  PERFORM _v100_link((ids->>'ga')::uuid, HIL, c_a);
+  PERFORM _v100_link((ids->>'gb')::uuid, HIL, c_b);
+  PERFORM _v100_link((ids->>'gc')::uuid, HIL, c_c);
+  INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body, required_capability)
+  VALUES (HIL, 'U15A', 'team', 'fixture', 'medium', 'U15A team sheet published', 'Verify 123: the sheet for Saturday',
+          'fixture.read')
+  RETURNING id INTO v_s;
+  INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body, required_capability, subject_kind)
+  VALUES (HIL, 'U15A', 'team', 'notice', 'low', 'U15A training moved', 'Verify 123: nets at four', 'news.read', 'training')
+  RETURNING id INTO v_t;
+  INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body, required_capability, subject_person_id)
+  VALUES (HIL, 'U15A', 'team', 'recognition', 'low', 'Verify 123: a fifty', 'Verify 123: a fifty', 'news.read', c_a)
+  RETURNING id INTO v_k;
+  INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body, required_capability, recipient_id)
+  VALUES (HIL, 'U15A', 'team', 'system', 'medium', 'Verify 123: for you', 'Verify 123: for ga alone', 'news.read',
+          (ids->>'ga')::uuid)
+  RETURNING id INTO v_r;
+  INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body, required_capability)
+  VALUES (HIL, NULL, 'school', 'system', 'low', 'Verify 123: the school', 'Verify 123: to everyone', 'news.read')
+  RETURNING id INTO v_w;
+  RETURN ids || z || jsonb_build_object('A', c_a, 'B', c_b, 'C', c_c, 'U', c_u, 'V', c_v,
+                                         'S', v_s, 'T', v_t, 'K', v_k, 'R', v_r, 'W', v_w);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- How many of p_keys' notices (S, T, K, R, W, SU, SO, OB, OA, NB) the caller reads, through the
+-- table and through my_notifications (the screen's read), as one line.
+CREATE OR REPLACE FUNCTION _v123_reads(y jsonb, p_keys text[]) RETURNS text AS $$
+  SELECT (SELECT count(*) FROM notification n WHERE n.id IN (SELECT (y->>k)::uuid FROM unnest(p_keys) k))
+         || '/' ||
+         (SELECT count(*) FROM my_notifications m WHERE m.id IN (SELECT (y->>k)::uuid FROM unnest(p_keys) k))
+$$ LANGUAGE sql STABLE;
+
+-- After the read-through (29 Oct 2026). For the caller: the notices among
+-- p_keys that notification_read_side admits and db/09's notification_read,
+-- as it stands in the database (its qual, read from pg_policy), does not.
+-- Each 'key:reader' (p_who) when so; '' when db/09 admits all of them.
+CREATE OR REPLACE FUNCTION _v123_only_side_read(y jsonb, p_keys text[], p_who text) RETURNS text AS $$
+DECLARE k text; v_side boolean; v_db09 boolean; out text := '';
+BEGIN
+  FOREACH k IN ARRAY p_keys LOOP
+    SELECT notice_side_read(n.required_capability, n.school_id, n.team_code, n.kind, n.subject_kind,
+                            n.subject_id, n.subject_person_id, n.recipient_id, n.published_at)
+      INTO v_side FROM notification n WHERE n.id = (y->>k)::uuid;
+    EXECUTE format('SELECT %s FROM notification WHERE id = $1',
+                   (SELECT pg_get_expr(p.polqual, p.polrelid) FROM pg_policy p
+                     WHERE p.polrelid = 'notification'::regclass AND p.polname = 'notification_read'))
+      INTO v_db09 USING (y->>k)::uuid;
+    IF v_side AND NOT coalesce(v_db09, false) THEN
+      out := out || CASE WHEN out = '' THEN '' ELSE ',' END || k || ':' || p_who;
+    END IF;
+  END LOOP;
+  RETURN out;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- OB withdrawn by the school office, as a post's withdrawal takes a notice
+-- back (db/89), now: after V's move off the U16B. The retraction's id.
+CREATE OR REPLACE FUNCTION _v123_retract(y jsonb) RETURNS uuid AS $$
+DECLARE v uuid;
+BEGIN
+  PERFORM set_config('app.user_id', '88888888-0000-0000-0000-00000000000c', true);
+  v := notification_retract((y->>'OB')::uuid, 'withdrawn', true);
+  PERFORM set_config('app.user_id', '', true);
+  RETURN v;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/123 (section 100) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -30047,6 +30198,178 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 99
   -- └── db/122 (section 99) ──────────────────────────────────────────
+
+  -- ┌── db/123 (section 100) ─────────────────────────────────────────
+  -- ── 100. Notices follow the side (db/123, REACH R-E) ──
+  -- REACH §6.5: a notice with a team and no child reaches the side
+  -- (side_reach()), a notice about a child his family, a notice to a
+  -- recipient him alone. Staged by _v123_stage(); each count is read through
+  -- the table and through my_notifications ('table/view').
+  --
+  -- What each label holds:
+  --   (side)       S ("U15A team sheet published") and T ("U15A training
+  --                moved") reach ga and gc (U15A parents), A himself and the
+  --                U15A coach; not gb (the U13B parent), not B, not the U13B
+  --                coach
+  --   (child)      K, about A, reaches ga and not gc (same side) nor gb
+  --   (recipient)  R, to ga, reaches ga alone: not gc on his side, not the
+  --                coach (unchanged, db/57)
+  --   (school)     W, a school notice, reaches all three parents and both
+  --                boys (unchanged)
+  --   (report)     notification_report(S): gb is told no_such_notice, as for
+  --                a notice that is not there; ga, who reads it, is told
+  --                not_reportable (a fixture notice is the system's)
+  --   (ended)      ga's link to A ended by its date (valid_until yesterday,
+  --                his assignment still live): S and T no longer reach him
+  --   (up)         decision 1: U, a U14A boy on MU's sheet, and gu read SU,
+  --                MU's notice; neither reads SO (another U15A fixture) nor T
+  --                (U15A's training); gb reads none of SU
+  --   (moved)      decision 2: V moved U16B → U17B at t-10. He and gv read OB
+  --                (U16B, t-30) and not OA (U16B, after the move); gv does not
+  --                read NB (U17B, t-30: before V joined); V does, through his
+  --                player role on the U17B (db/112), as db/117 left his new
+  --                side's earlier fixtures and posts
+  -- After the read-through (29 Oct 2026):
+  --   (only-him)   notification_read_side gives a row that db/09's own
+  --                notification_read does not to the boy himself alone: of
+  --                SU, SO, S, T, OB, OA and NB, upboy gains SU and vboy OB,
+  --                and every other reader it admits db/09 already admits.
+  --                db/09's qual is read from pg_policy, so a later file that
+  --                narrows it turns this red until notification_read_side is
+  --                looked at again (db/123's header)
+  --   (retraction) as built, not decided: OB taken back after V's move. The
+  --                retraction is a new row dated by its own day, the old
+  --                side's then, so V and gv do not read "A notice was
+  --                withdrawn"; they still read OB's row, marked taken back,
+  --                which my_notifications leaves off their list (1/0): the
+  --                notice goes from their list without the words
+  --
+  -- Falsified on 29 Oct 2026 on a database at db/123, each change made as the
+  -- owner before this section ran (the section alone, with its staging cut
+  -- from this file), each red the first:
+  --   DROP POLICY notification_follows_side      → (side) red: gb reads 2/2
+  --                                                of U15A's side notices
+  --   notification_report() at db/101's body     → (report) red: gb was told
+  --                                                not_reportable
+  --   notice_follows_side() without its match arm → (up) red: upboy reads
+  --                                                0/0 of MU's notice
+  --   notice_follows_side() asking today's side   → (moved) red: vboy reads
+  --     (sa_today() for sa_date(p_at))             0/0 of OB
+  --   db/09's notification_read narrowed to        → (only-him) red: the
+  --     leave out notices about a match              U15A coach, a parent and
+  --                                                  a pupil gained SU and SO
+  --                                                  through the side read
+  DECLARE
+    y   jsonb := _v123_stage();
+    k   text;
+    got text;
+    r   record;
+  BEGIN
+    -- (side)
+    FOREACH k IN ARRAY ARRAY['ga', 'gc', 'pupil', 'coach'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v123_reads(y, ARRAY['S', 'T']);
+      PERFORM _assert(got = '2/2', format('§100 (side): %s reads %s of U15A''s two side notices (2/2)', k, got));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['gb', 'pupilb', 'coachb'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v123_reads(y, ARRAY['S', 'T']);
+      PERFORM _assert(got = '0/0', format('§100 (side): U13B''s %s reads %s of U15A''s side notices', k, got));
+    END LOOP;
+
+    -- (child)
+    PERFORM _as((y->>'ga')::uuid);
+    got := _v123_reads(y, ARRAY['K']);
+    PERFORM _assert(got = '1/1', format('§100 (child): A''s guardian reads %s of the notice about A', got));
+    FOREACH k IN ARRAY ARRAY['gc', 'gb'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v123_reads(y, ARRAY['K']);
+      PERFORM _assert(got = '0/0', format('§100 (child): %s reads %s of the notice about A', k, got));
+    END LOOP;
+
+    -- (recipient)
+    PERFORM _as((y->>'ga')::uuid);
+    got := _v123_reads(y, ARRAY['R']);
+    PERFORM _assert(got = '1/1', format('§100 (recipient): ga reads %s of the notice to him', got));
+    FOREACH k IN ARRAY ARRAY['gc', 'gb', 'pupil', 'coach'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v123_reads(y, ARRAY['R']);
+      PERFORM _assert(got = '0/0', format('§100 (recipient): %s reads %s of the notice to ga', k, got));
+    END LOOP;
+
+    -- (school)
+    FOREACH k IN ARRAY ARRAY['ga', 'gb', 'gc', 'pupil', 'pupilb'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v123_reads(y, ARRAY['W']);
+      PERFORM _assert(got = '1/1', format('§100 (school): %s reads %s of the school''s notice', k, got));
+    END LOOP;
+
+    -- (report)
+    PERFORM _as((y->>'gb')::uuid);
+    SELECT * INTO r FROM notification_report((y->>'S')::uuid);
+    PERFORM _assert(NOT r.ok AND r.reason = 'no_such_notice',
+      format('§100 (report): the U13B parent was told %s of U15A''s side notice (no_such_notice)', r.reason));
+    PERFORM _as((y->>'ga')::uuid);
+    SELECT * INTO r FROM notification_report((y->>'S')::uuid);
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_reportable',
+      format('§100 (report): the U15A parent was told %s of his side''s fixture notice (not_reportable)', r.reason));
+
+    -- (ended)
+    PERFORM _v120_end_link((y->>'ga')::uuid, (y->>'A')::uuid);
+    PERFORM _as((y->>'ga')::uuid);
+    got := _v123_reads(y, ARRAY['S', 'T']);
+    PERFORM _assert(got = '0/0', format('§100 (ended): with his link ended ga reads %s of U15A''s side notices', got));
+
+    -- (up)
+    FOREACH k IN ARRAY ARRAY['upboy', 'gu'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v123_reads(y, ARRAY['SU']);
+      PERFORM _assert(got = '1/1', format('§100 (up): %s reads %s of MU''s notice (1/1)', k, got));
+      got := _v123_reads(y, ARRAY['SO', 'T']);
+      PERFORM _assert(got = '0/0', format('§100 (up): %s reads %s of the U15A''s other notices', k, got));
+    END LOOP;
+    PERFORM _as((y->>'gb')::uuid);
+    got := _v123_reads(y, ARRAY['SU']);
+    PERFORM _assert(got = '0/0', format('§100 (up): the U13B parent reads %s of MU''s notice', got));
+
+    -- (moved)
+    FOREACH k IN ARRAY ARRAY['vboy', 'gv'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v123_reads(y, ARRAY['OB']);
+      PERFORM _assert(got = '1/1', format('§100 (moved): %s reads %s of the U16B''s notice from before the move (1/1)', k, got));
+      got := _v123_reads(y, ARRAY['OA']);
+      PERFORM _assert(got = '0/0', format('§100 (moved): %s reads %s of the U16B''s notice from after the move', k, got));
+    END LOOP;
+    PERFORM _as((y->>'gv')::uuid);
+    got := _v123_reads(y, ARRAY['NB']);
+    PERFORM _assert(got = '0/0', format('§100 (moved): gv reads %s of the U17B''s notice from before V joined', got));
+    PERFORM _as((y->>'vboy')::uuid);
+    got := _v123_reads(y, ARRAY['NB']);
+    PERFORM _assert(got = '1/1', format('§100 (moved): vboy reads %s of his new side''s earlier notice (1/1, his player role)', got));
+
+    -- (only-him)
+    got := '';
+    FOREACH k IN ARRAY ARRAY['ga', 'gb', 'gc', 'gu', 'gv', 'pupil', 'pupilb', 'coach', 'coachb', 'upboy', 'vboy'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := concat_ws(',', nullif(got, ''), nullif(_v123_only_side_read(y, ARRAY['SU', 'SO', 'S', 'T', 'OB', 'OA', 'NB'], k), ''));
+    END LOOP;
+    PERFORM _assert(got = 'SU:upboy,OB:vboy',
+      format('§100 (only-him): the side read gave rows db/09 does not to [%s], not the two boys alone', got));
+
+    -- (retraction)
+    PERFORM set_config('app.user_id', '', true);
+    y := y || jsonb_build_object('OBR', _v123_retract(y));
+    PERFORM _assert(y->>'OBR' IS NOT NULL, '§100 (retraction): OB was not taken back with words');
+    FOREACH k IN ARRAY ARRAY['vboy', 'gv'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v123_reads(y, ARRAY['OB']) || ' ' || _v123_reads(y, ARRAY['OBR']);
+      PERFORM _assert(got = '1/0 0/0',
+        format('§100 (retraction): as built %s reads %s of OB and its retraction (1/0 0/0: OB''s row, marked taken back and so off his list; the retraction dated by its own day, not his)', k, got));
+    END LOOP;
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 100
+  -- └── db/123 (section 100) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
