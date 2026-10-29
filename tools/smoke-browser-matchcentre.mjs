@@ -316,9 +316,14 @@ try {
   const title = await tid(p, "mc-title").innerText();
   ok("both sides named in full", /Hilton College 1XI/.test(title) && /Westville Boys' High 1XI/.test(title), title);
   const line = await tid(p, "mc-match-line").innerText();
-  ok(`the match line: age group · ground · start · innings ("${line}")`,
-     /1st XI · Gordon Sherwood Oval · \w{3} \d{1,2} \w{3} · \d\d:\d\d · 2nd innings/.test(line), line);
+  ok(`the match line: age group · ground · start ("${line}")`,
+     /1st XI · Gordon Sherwood Oval · \w{3} \d{1,2} \w{3} · \d\d:\d\d/.test(line), line);
   ok("...one line of body text", await tid(p, "mc-match-line").evaluate((e) => e.tagName === "P" && parseFloat(getComputedStyle(e).fontSize) >= 14));
+  // CRI-1.2: the innings is the status sentence's now (lib/matchCentre.js statusSentence, which the list's cards share).
+  const sentence = await tid(p, "mc-status-line").innerText().catch(() => "");
+  const chaseWords = `Westville Boys' High 1XI need ${inn2.target - inn2.runs} runs off ${60 - inn2.balls} balls`;
+  ok(`the status sentence: "${chaseWords}"`, sentence === chaseWords && await tid(p, "mc-status-line").getAttribute("data-state") === "chase", sentence);
+  ok("...and the match line no longer says the innings as well", !/innings/i.test(line), line);
 
   group("Summary: the Board, with the fold's own figures");
   const total = (await tid(p, "mc-board-total").innerText()).replace(/\s/g, "");
@@ -500,6 +505,9 @@ try {
      && /Hilton College 1XI won the toss and chose to bat/.test(det), det.slice(0, 200));
   await tid(p, "mc-back").click(); await p.waitForTimeout(600);
   ok("All matches goes back to the list", await tid(p, "match-view").count() === 0 && await tid(p, `match-card-${fx.live}`).count() === 1);
+  // CRI-1.2: the card's sentence is the same function's, from the list's own read (no log): the toss it carries.
+  const cardSays = await tid(p, `mc-card-status-${fx.live}`).innerText().catch(() => "");
+  ok(`...its card says where it stands, from the list's read ("${cardSays}")`, cardSays === "Hilton College 1XI won the toss and chose to bat", cardSays);
 
   group("The innings break: the break card on Summary");
   ok("the second fixture opens", await openMatch(p, fx.brk));
@@ -510,7 +518,8 @@ try {
   ok(`top scorer ${top.name} ${top.runs}`, (await tid(p, "ib-top-scorers").innerText()).includes(top.name));
   ok("best bowling, most boundaries, best strike rate", await tid(p, "ib-best-bowling").count() === 1 && await tid(p, "ib-boundaries").count() === 1
      && await tid(p, "ib-strike-rate").count() === 1);
-  ok("the match line says so", /Innings break/.test(await tid(p, "mc-match-line").innerText()));
+  ok("the status sentence says so", new RegExp(`^Innings break: Kearsney College U16A need ${brk.runs + 1} to win`).test(await tid(p, "mc-status-line").innerText().catch(() => "")),
+     await tid(p, "mc-status-line").innerText().catch(() => ""));
   ok("...and a finished innings has no \"At this rate\" on its board", !/At this rate/.test(await tid(p, "mc-board-sub").innerText().catch(() => "")));
   ok("no console errors (desktop)", dos.errors.length === 0, dos.errors.join(" | "));
   await dos.ctx.close();

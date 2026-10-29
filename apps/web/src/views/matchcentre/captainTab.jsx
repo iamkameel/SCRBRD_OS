@@ -157,7 +157,8 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
         {captain.label} · {[me.schoolName, me.team].filter(Boolean).join(" ")}
       </p>
 
-      {props && <Board {...props} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="mc-captain-board"/>}
+      {/* No last-wicket row on the captain's board: what a pupil captain sees is SCRBRD-138's design, and CRI-1.1 does not change it. */}
+      {props && <Board {...props} lastWicket={undefined} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="mc-captain-board"/>}
 
       <PlanRow match={match} role={role} me={me}/>
 

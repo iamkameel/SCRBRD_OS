@@ -83,3 +83,35 @@ export function announceArrivals(fresh, events) {
   const before = says.length > 1 ? says[says.length - 2] : null;
   return before && before.kind !== "over_end" ? `${ballWords(before, evOf(before))}. ${overSummaryText(last)}` : overSummaryText(last);
 }
+
+// ── CRI-1.1: how fresh the board is, in words ──
+
+/**
+ * How long ago, as a board says it: "just now", "4 s ago", "3 min ago",
+ * "2 h ago". Whole units, rounded down; a clock that runs backwards (a phone
+ * whose time is wrong) is "just now", never a negative.
+ * @param {number} ms
+ */
+export function agoShort(ms) {
+  const s = Math.floor(Math.max(0, ms) / 1000);
+  if (s < 1) return "just now";
+  if (s < 60) return `${s} s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min ago`;
+  return `${Math.floor(m / 60)} h ago`;
+}
+
+/**
+ * The board's freshness row: "Updated 4 s ago · Live · Held 2". `at` is when
+ * this screen last had the score from the server (a reader's last good read);
+ * `status` the word the header already uses ("Live"); `held` the balls a pad
+ * has kept on the device, in the pad's own word for them (SyncPill: "Held N").
+ * A part that is not given is left out; nothing given, nothing said.
+ * @param {{at?: number | null, status?: string | null, held?: number | null}} u
+ * @param {number} [now]
+ * @returns {string}
+ */
+export function freshnessWords({ at = null, status = null, held = null } = {}, now = Date.now()) {
+  return [at != null ? `Updated ${agoShort(now - at)}` : null, status || null, held ? `Held ${held}` : null]
+    .filter(Boolean).join(" · ");
+}

@@ -7,10 +7,10 @@
  * (@scrbrd/scoring's deriveMatch), and a thing the fold does not have is left
  * out rather than guessed.
  */
-import { boundaryHit, runsOffBat, resultWords, isWicketBall } from "@scrbrd/scoring";
+import { boundaryHit, runsOffBat, resultWords, isWicketBall, formatKind } from "@scrbrd/scoring";
 import { parseTeam, teamLabel } from "@scrbrd/policy/teams";
 import { humanDateTime } from "./format.js";
-import { superOverInPlay, superOverTitle } from "./superOver.js";
+import { liveSuperOverLine, matchChaseOf, superOverInPlay, superOverTitle, twoInningsPlayed } from "./superOver.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -143,12 +143,13 @@ export function ageGroupOf(team) {
 
 /**
  * The line under the board (§10 item 5): competition · age group · ground ·
- * start · weather · innings. One line of body text; a part the fixture does
- * not have is left out, never shown as a dash.
- * @param {{match: any, competition?: string | null, weather?: any, phase?: string | null}} o
+ * start · weather. One line of body text; a part the fixture does not have
+ * is left out, never shown as a dash. Where the match stands is the status
+ * sentence's (statusSentence, CRI-1.2), not this line's.
+ * @param {{match: any, competition?: string | null, weather?: any}} o
  * @returns {string}
  */
-export function matchLine({ match, competition = null, weather = null, phase = null }) {
+export function matchLine({ match, competition = null, weather = null }) {
   const team = match?.homeLabel ? match?.homeTeam : null;
   const parts = [
     competition,
@@ -156,7 +157,6 @@ export function matchLine({ match, competition = null, weather = null, phase = n
     match?.venue ?? null,
     match?.date ? humanDateTime(match.date, match.time ?? null) : null,
     weather ? [weather.tempC != null ? `${weather.tempC}°` : null, weather.condition ? String(weather.condition).toLowerCase() : null].filter(Boolean).join(" ") || null : null,
-    phase,
   ];
   return parts.filter((p) => p != null && String(p).trim() !== "").join(" · ");
 }
@@ -325,6 +325,161 @@ export function resultText(match, result, { reasons = true } = {}) {
   }
   if (result.winner == null) return result.margin && result.margin !== "tie" ? `Match tied (${result.margin})` : "Match tied";
   return `${teamOf(match, result.winner).full} won by ${result.margin}`;
+}
+
+// ── CRI-1.2: the match's state, in one sentence ──
+
+/**
+ * The toss, in words: "Hilton College 1XI won the toss and chose to bat".
+ * Null when the fixture read carries no toss. @param {any} match
+ */
+export function tossWords(match) {
+  if (!match?.tossWonBy || !match?.tossDecision) return null;
+  const side = sidesOf(match)[match.tossWonBy === "home" ? "home" : "away"];
+  return `${side.full} won the toss and chose to ${match.tossDecision === "bowl" ? "bowl" : "bat"}`;
+}
+
+/**
+ * The second innings' target, as the fold has it — the umpires' (or the
+ * pad's) where one was written, else one more than the first innings — and
+ * none in a match of two innings a side, whose chase is the fourth
+ * (lib/superOver.js chaseOf(), the Laws audit F2). The one copy: the
+ * Summary's board and break card (tabs-core.jsx) and the status sentence.
+ * @param {any[]} innings  the match's own innings, in order
+ * @returns {number | null}
+ */
+export const targetOf = (innings) => matchChaseOf(innings, 1)?.target ?? null;
+
+/**
+ * Two innings a side: the fold's frozen conditions on its innings
+ * (superOver.js twoInningsPlayed()), or the fold context's where a screen
+ * passes them. @param {any[]} played @param {any} conditions
+ */
+const twoInningsOf = (played, conditions) => twoInningsPlayed(played) || conditions?.["format.innings_per_side"] === 2;
+
+/** @param {number} n  @param {string} one  @param {string} many */
+const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * The states a fixture is in, each of which statusSentence() says one way:
+ *
+ *   upcoming       "Starts at 14:00" (or "Not started" with no time)
+ *   toss           "Hilton College 1XI won the toss and chose to bat"
+ *   live           "In play": live, and nothing more is known (the list's read has no log)
+ *   first_innings  the toss's words, or "Hilton College 1XI batting first"
+ *   stopped        "Play stopped · " and where it stands ("Play stopped · Westville … need 45 runs off 34 balls")
+ *   innings_break  "Innings break: Westville Boys' High 1XI need 145 to win from 20 overs"
+ *   chase          "Westville Boys' High 1XI need 45 runs off 34 balls" ("… need 45 runs to win" with no over limit)
+ *   lead           two innings a side, innings 2 or 3: "Westville Boys' High 1XI trail by 20 runs" ("lead by", "Scores level")
+ *   super_over     "Match tied; super over 1 in progress" (lib/superOver.js)
+ *   result         the result's own words (resultText, or the server's)
+ *   abandoned      "Match abandoned"
+ *   complete       "Match over": finished, and no result to word
+ */
+export const STATUS_STATE = Object.freeze(["upcoming", "toss", "live", "first_innings", "stopped", "innings_break", "chase", "lead",
+  "super_over", "result", "abandoned", "complete"]);
+
+/**
+ * Where a fixture stands, in one sentence: what the Match Centre's list
+ * card and the match's header both say, so the two cannot differ (CRI-1.2,
+ * Cricinfo plan G3). Every figure is the fold's; a thing the fold does not
+ * have is not said. The list's read has no log, so a list card passes no
+ * fold and gets the fixture's own facts (its start, its toss, its result);
+ * the header passes the fold and gets the innings too.
+ *
+ * `match.status` is the product's vocabulary (lib/live.js asMatch: a
+ * database 'scheduled' is "upcoming", 'abandoned' is "complete" with
+ * `calledOff`; the public page keeps "abandoned").
+ *
+ * @param {any} match  a fixture row (lib/live.js asMatch, publicLog.js asPublicMatch, or a demo one)
+ * @param {{innings?: any[], result?: any, conditions?: any} | null} [fold]  deriveMatch()'s, where the screen
+ *   has the log, with the fold's `conditions` (two innings a side, `format.innings_per_side`, is read from them)
+ * @param {{result?: string | null}} [o]  `result`: the screen's own words for a decided match (the
+ *   server's, SCRBRD-114 phase 3a), which stand before the fold's
+ * @returns {{state: string, text: string}}
+ */
+export function statusSentence(match, fold = null, { result = null } = {}) {
+  const innings = (fold?.innings ?? []).filter(Boolean);
+  const status = match?.status;
+  // A super over being played: the match is level, not yet decided.
+  const so = liveSuperOverLine(innings, status);
+  if (so) return { state: "super_over", text: so };
+  const words = result ?? resultText(match, fold?.result ?? null)
+    ?? (status !== "live" && typeof match?.result === "string" ? match.result : null);
+  if (match?.calledOff || status === "abandoned") return words ? { state: "result", text: words } : { state: "abandoned", text: "Match abandoned" };
+  if (words) return { state: "result", text: words };
+  if (status === "complete") return { state: "complete", text: "Match over" };
+  const toss = tossWords(match);
+  const played = innings.filter((i) => i.superOver == null);
+  if (played.length) {
+    const now = (twoInningsOf(played, fold?.conditions) ? twoInnings : inPlay)(match, played, fold?.result ?? null, toss);
+    // Play stopped: said first, then where the match stands. The banner
+    // under the header (RevisionBanner) says why and when, so this does not.
+    return played[played.length - 1].stopped ? { state: "stopped", text: `Play stopped · ${now.text}` } : now;
+  }
+  if (toss) return { state: "toss", text: toss };
+  if (status === "live") return { state: "live", text: typeof match?.result === "string" && match.result ? match.result : "In play" };
+  return { state: "upcoming", text: match?.time ? `Starts at ${match.time}` : "Not started" };
+}
+
+/**
+ * statusSentence() for a match with an innings on the log and no result.
+ * @param {any} match  @param {any[]} played  the match's own innings  @param {any} result  @param {string | null} toss
+ * @returns {{state: string, text: string}}
+ */
+function inPlay(match, played, result, toss) {
+  const inn = played[played.length - 1];
+  const first = played[0];
+  // No over limit (a declaration match): no balls to count, no overs to name.
+  // The fold gives every innings 20 overs by default, so its figure is not asked then.
+  const timed = formatKind(match?.format) === "declaration" || !Number.isInteger(inn.overs ?? match?.overs);
+  if (inningsPhase(played, result) === "Innings break") {
+    const target = targetOf(played) ?? first.runs + 1;
+    const overs = timed ? null : played[1]?.overs ?? first.overs ?? match?.overs;
+    const chasing = teamOf(match, first.bowlingTeam).full;
+    return { state: "innings_break", text: `Innings break: ${chasing} need ${target} to win${overs ? ` from ${overs} overs` : ""}` };
+  }
+  // One innings a side: the side batting second is chasing.
+  if (played.length === 2) {
+    const target = targetOf(played) ?? first.runs + 1;
+    const side = teamOf(match, inn.battingTeam).full;
+    const need = Math.max(0, target - inn.runs);
+    const left = timed ? null : Math.max(0, (inn.overs ?? match.overs) * 6 - inn.balls);
+    return { state: "chase", text: `${side} need ${count(need, "run", "runs")}${left != null ? ` off ${count(left, "ball", "balls")}` : " to win"}` };
+  }
+  if (played.length === 1) {
+    return { state: "first_innings", text: toss ?? `${teamOf(match, inn.battingTeam).full} batting first` };
+  }
+  return { state: "first_innings", text: `${teamOf(match, inn.battingTeam).full} batting, innings ${played.length}` };
+}
+
+/**
+ * statusSentence() for two innings a side (format.innings_per_side = 2): the
+ * second innings is not a chase — a side passing the other's first innings
+ * has won nothing yet (replay.mjs describeResult, D11). Innings 2 and 3 say
+ * the lead ("trail by 20 runs"), as a two-day scorer would; the fourth is the
+ * chase, whose target is the fold's where it has one, else the runs it needs
+ * to pass the other side's two. No balls are counted: the time is the limit.
+ * Between innings, the lead of the side that has just batted.
+ * @param {any} match  @param {any[]} played  @param {any} _result  @param {string | null} toss
+ * @returns {{state: string, text: string}}
+ */
+function twoInnings(match, played, _result, toss) {
+  const inn = played[played.length - 1];
+  const keyOf = (/** @type {any} */ x) => String(x?.teamKey ?? x?.battingTeam ?? "").trim().toLowerCase();
+  const runsFor = (/** @type {any} */ x, /** @type {boolean} */ same) => played.filter((y) => (keyOf(y) === keyOf(x)) === same).reduce((n, y) => n + (y.runs ?? 0), 0);
+  const side = teamOf(match, inn.battingTeam).full;
+  const lead = () => {
+    const d = runsFor(inn, true) - runsFor(inn, false);
+    return d === 0 ? "Scores level" : `${side} ${d > 0 ? "lead" : "trail"} by ${count(Math.abs(d), "run", "runs")}`;
+  };
+  const between = inn.complete && played.length < 4;
+  if (between) return { state: "innings_break", text: `Innings break: ${lead()}` };
+  if (played.length === 1) return { state: "first_innings", text: toss ?? `${side} batting first` };
+  if (played.length < 4) return { state: "lead", text: lead() };
+  // The fourth innings' target: chaseOf()'s (the fold's, else the runs it trails by over the three before it, plus one).
+  const target = matchChaseOf(played, 3)?.target ?? inn.target ?? (runsFor(inn, false) - (runsFor(inn, true) - inn.runs) + 1);
+  return { state: "chase", text: `${side} need ${count(Math.max(0, target - inn.runs), "run", "runs")} to win` };
 }
 
 // ── A rain delay or interruption (SCRBRD-100 item 1) ──

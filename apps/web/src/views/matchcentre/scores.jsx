@@ -46,3 +46,23 @@ export function HeaderScores({ match, played, corrected = null }) {
     </div>
   );
 }
+
+/**
+ * Where the match stands, in one sentence (CRI-1.2): lib/matchCentre.js
+ * statusSentence()'s `{state, text}`, drawn the one way on the signed-in
+ * header and the public page's. A decided match keeps the result line's
+ * test id (`mc-result`), as it was before the sentence; every other state is
+ * `mc-status-line`. `except`: states a page leaves to a line of its own (the
+ * header's match line already says when a fixture starts).
+ * @param {{st: {state: string, text: string} | null, except?: string[]}} p
+ */
+export function StatusLine({ st, except = [] }) {
+  if (!st?.text || except.includes(st.state)) return null;
+  const decided = st.state === "result" || st.state === "super_over";
+  return (
+    <p data-testid={decided ? "mc-result" : "mc-status-line"} data-state={st.state}
+      style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>
+      {st.text}
+    </p>
+  );
+}

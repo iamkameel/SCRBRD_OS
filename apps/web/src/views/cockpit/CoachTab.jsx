@@ -309,7 +309,8 @@ function DuringAndAfter({ match, gate, innings, overs, result, commentary, phone
     <>
       {props && (
         <div style={{ gridColumn: "1 / -1", minWidth: 0 }}>
-          <Board {...props} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="coach-board"/>
+          {/* No last-wicket row on the coach's board (CRI-1.1 is the Summary's and the public page's; this surface is SCRBRD-136's). */}
+          <Board {...props} lastWicket={undefined} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="coach-board"/>
           {venueLine?.words && !decided && <p data-testid="coach-par" style={{ ...quiet(), marginTop: T.space.sm }}>{venueLine.words}</p>}
         </div>
       )}

@@ -102,12 +102,60 @@ export function rainLine(inn, target = null) {
 }
 // ── end SCRBRD-130 R1 ──
 
+// ── CRI-1.1: the last wicket, as a fixed row on the board ──
+/** A delivery that counts as a ball of the over. @param {any} b */
+const legalBall = (b) => b.type !== "Wd" && b.type !== "Nb" && b.notInOver !== true;
+
+/**
+ * The last wicket of an innings, as the board's fixed row writes it — "R
+ * Naidoo c Smith b Jones 34 (25)": the batter, the scorecard's own dismissal
+ * line and his figures. Every word is the fold's, so a page whose fold names
+ * a boy by his position (the public page: publicLog.js gives the fold labels,
+ * never names) says the position here too; nothing is looked up.
+ *
+ * The fold's fall of wickets says who went last by name only, so the batter
+ * is found by reference where the fold has one: the last wicket that stood on
+ * a delivery, or the last that fell with none (retired out, timed out) — the
+ * one whose name and point in the innings match the fall of wickets' last
+ * entry. A scorebook innings (no deliveries) falls back to the one batter out
+ * under that name; two out under one name, and no row is drawn rather than a
+ * guess.
+ * @param {any} inn  a folded innings
+ * @returns {{name: string, dismissal: string, runs: number, balls: number | null} | undefined}
+ */
+export function lastWicketOf(inn) {
+  const fow = inn?.fow ?? [];
+  const last = fow[fow.length - 1];
+  if (!last) return undefined;
+  const out = (inn.batsmen ?? []).filter((b) => b.status === "out");
+  const byId = (/** @type {unknown} */ id) => out.find((b) => b.id === id);
+  // The last wicket on a delivery, and the legal balls bowled once it fell.
+  const log = inn.ballLog ?? [];
+  let k = log.length - 1;
+  while (k >= 0 && !isOut(log[k])) k -= 1;
+  const onBall = k >= 0 ? byId(log[k].dismissed ?? log[k].strikerId) : undefined;
+  const ballsThen = k >= 0 ? log.slice(0, k + 1).filter(legalBall).length : null;
+  const nbw = inn.nonBallWickets ?? [];
+  const offBall = nbw.length ? byId(nbw[nbw.length - 1].batter) : undefined;
+  const ballFits = onBall?.name === last.batsman && (last.overs == null || ballsThen == null || fmtOv(ballsThen) === last.overs);
+  let who = ballFits ? onBall : offBall?.name === last.batsman ? offBall : undefined;
+  if (!who) {
+    const named = out.filter((b) => b.name === last.batsman);
+    who = named.length === 1 ? named[0] : undefined;
+  }
+  if (!who || !who.dismissal) return undefined;
+  return { name: who.name, dismissal: who.dismissal, runs: who.runs ?? 0, balls: who.balls ?? null };
+}
+// ── end CRI-1.1 ──
+
 /**
  * Everything the board shows, as Board's props. `inn` is a folded innings
  * (packages/scoring's replay, or the demo's seeded one); `target` and `overs`
  * as the chase line needs them; `par` (SCRBRD-133 G2) on the screens that say
  * par — {report, rates, rained, result, chasing} — and nothing on the pad.
  * A part the fold does not have is left out, and Board draws no row for it.
+ * `lastWicket` (CRI-1.1) is lastWicketOf()'s, on every screen that draws the
+ * board from here, the pad among them.
  */
 export function boardFromInnings(inn, { target = null, overs = 20, projected = null, par = undefined } = {}) {
   if (!inn) return null;
@@ -152,5 +200,7 @@ export function boardFromInnings(inn, { target = null, overs = 20, projected = n
     partnership,
     bowler: bw ? { name: bw.name, wickets: bw.wickets, runs: bw.runs, overs: fmtOv(bw.balls) } : undefined,
     thisOver: thisOver.map(boardBall),
+    // CRI-1.1: "R Naidoo c Smith b Jones 34 (25)", once a wicket has fallen.
+    lastWicket: lastWicketOf(inn),
   };
 }

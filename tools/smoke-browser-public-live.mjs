@@ -349,6 +349,27 @@ try {
   ok("a ball scored while he watches reaches the page on its next log read", arrived);
   await afterReads(page, 1500);
 
+  // CRI-1.1 and CRI-1.2: the board's two fixed rows and the header's status
+  // sentence, read off the page as drawn, hold no name the rule does not
+  // allow. The last wicket is the second boy's — consented, and marked
+  // never-public — caught by a Michaelhouse boy whose name the scorer typed
+  // and bowled by another: the row says each of them by his position, as
+  // the scorecard does.
+  {
+    const rowText = async (/** @type {string} */ id) => ((await page.locator(`[data-testid="${id}"]`).first().innerText().catch(() => "")) || "").trim();
+    const wicket = await rowText("mc-board-last-wicket");
+    const fresh = await rowText("mc-board-updated");
+    const sentence = await rowText("mc-status-line");
+    // The row's words are never printed: a failure names the kind, not the value (as the scan does).
+    ok("the board's last-wicket row is drawn: the never-public boy by his position, the scorecard's line, his figures",
+       /^Last wicket Batter c Fielder b \S.* 0 \(1\)$/.test(wicket));
+    ok(`the board's freshness row: "Updated … · Live" ("${fresh}")`, /^Updated (just now|\d+ s ago|\d+ min ago) · Live$/.test(fresh), fresh);
+    ok("the header's status sentence is drawn", sentence.length > 0 && await page.locator('[data-testid="mc-status-line"]').getAttribute("data-state") !== null);
+    const named = [["the last-wicket row", wicket], ["the freshness row", fresh], ["the status sentence", sentence]]
+      .flatMap(([what, t]) => scan(t, needles).map((n) => `${what}: ${n}`));
+    ok("no pupil's name or typed name in the new rows or the sentence", named.length === 0, [...new Set(named)].slice(0, 6).join(" | "));
+  }
+
   for (const path of [`/scorecard/${LIVE}`, `/scorecard/${DONE}`, `/display/${LIVE}`]) {
     const res = await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
     await afterReads(page, 1200);
