@@ -2306,6 +2306,29 @@ first**: the API built with it refuses to start without db/123
 screens read what the server gives.
 <!-- ── end db/123 ── -->
 
+<!-- ── db/124: the union passport ── -->
+#### The union passport (db/124)
+
+`db/124_union_passport.sql` carries Kameel's decisions of 29 October 2026:
+**"CSA Schools/Provincial Union will be able to access a child's full
+passport"**, **"With his guardian's consent, as the receiving school's is"**,
+and **"Named selectors and the schools cricket manager only, every read
+logged."** A family names the boy's provincial union or CSA Schools on the
+same passport consent it names a school on (under eighteen his guardian; from
+eighteen the boy himself, db/122), and may take it back at any time. The
+union's named selectors and its schools cricket manager, a new role (Union
+Selector) appointed at the union by its principal, then open his passport,
+and nobody else at the union does: a competition organiser opens nothing, nor
+does the union's office. Every such read is recorded, and his family sees who
+at which union looked, and when, under the consents in Settings → Passport.
+His public profile does not change. The summary row "The union passport"
+should read OK. **Schema first**: the API built with it refuses to start
+without db/124 (`expected-migrations.json`): its `passport_union_reads` read
+calls the new definer, and `POST /api/passport/consent` asks
+`passport_consent_recipient_ok()` first. Not to be pasted before Kameel's
+review.
+<!-- ── end db/124 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

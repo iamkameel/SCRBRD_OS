@@ -796,6 +796,19 @@ SELECT
         AND NOT has_function_privilege('public', to_regprocedure('notification_report(uuid)'), 'EXECUTE')
         AND NOT has_function_privilege('public', to_regprocedure('notice_side_read(text,uuid,text,text,text,uuid,uuid,uuid,timestamptz)'), 'EXECUTE')
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A side's notices reach the side",
+  -- db/124: the union passport (Kameel, 29 Oct 2026). A family names his
+  -- union or CSA Schools on the passport consent; its named readers open the
+  -- passport, every read logged and shown to his family; a union is no school.
+  CASE WHEN to_regclass('passport_union_read') IS NOT NULL
+        AND EXISTS (SELECT 1 FROM capability WHERE name = 'passport.union.read')
+        AND (SELECT string_agg(role, ',' ORDER BY role) FROM role_capability WHERE capability = 'passport.union.read') = 'superadmin,unionselector'
+        AND position('passport_union_consent(p_player) IS NOT NULL' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport_open(uuid)'))) > 0
+        AND position('NOT institution_is_union(c.to_school_id)' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport_open(uuid)'))) > 0
+        AND position('passport_union_log(' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport(uuid)'))) > 0
+        AND has_function_privilege('scrbrd_app', to_regprocedure('passport_union_reads()'), 'EXECUTE')
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('passport_union_consent(uuid)'), 'EXECUTE')
+        AND NOT has_table_privilege('scrbrd_app', 'passport_union_read', 'SELECT')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "The union passport",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

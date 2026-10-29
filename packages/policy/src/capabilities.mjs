@@ -388,6 +388,14 @@ export const CAPABILITIES = {
   "opposition.read":             "Read the opposition's playing record ahead of a fixture you are in",
   "scouting.read":               "See scouting reports and watchlists",
   "scouting.write":              "Write scouting reports",
+  // THE UNION PASSPORT (db/124; Kameel, 29 Oct 2026: "Named selectors and the
+  // schools cricket manager only, every read logged"). Opens passport() for a
+  // boy whose family has named this union, or CSA Schools, on a consent in
+  // force, and nothing else: no table policy names it, and only an assignment
+  // AT the union or the federation counts (never a platform-wide one). Held by
+  // `unionselector` alone in the school-side model; a competition organiser
+  // does not hold it.
+  "passport.union.read":         "Open the cricket passport of a boy whose family named your union",
 
   // ── Platform ──
   // Deliberately narrow. Operating the platform is not a licence to browse
@@ -624,6 +632,9 @@ export const LEVEL = Object.freeze({
   "opposition.read": 1,
   // A specific child's talent evaluation, watched externally.
   "scouting.read": 2, "scouting.write": 2,
+  // A named child's cricket record, read from outside his school on his
+  // family's word, every read logged: the passport's own tier.
+  "passport.union.read": 2,
 
   // ── Platform ──
   "platform.health.read": 1, "platform.tenant.manage": 1,

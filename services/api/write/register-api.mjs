@@ -57,7 +57,7 @@ const ROLE_WORDS = {
   official: "Match Official", analyst: "Performance Analyst", scout: "Scout", medical: "Medical Staff",
   fitness: "Strength & Conditioning", transportcoordinator: "Transport Coordinator", driver: "Driver",
   facilities: "Groundskeeper", finance: "Finance Admin", sponsorship: "Sponsorship", media: "Media",
-  competitionadmin: "Competition Admin", dso: "Safeguarding Officer", superadmin: "Super Admin",
+  competitionadmin: "Competition Admin", unionselector: "Union Selector", dso: "Safeguarding Officer", superadmin: "Super Admin",
   platformadmin: "Platform Admin", selfaccess: "My Record", enquiry: "Enquiry Access",
 };
 const roleWords = (/** @type {string} */ role, /** @type {string | null | undefined} */ team) =>
