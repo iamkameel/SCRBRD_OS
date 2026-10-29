@@ -739,11 +739,11 @@ these against the Product completeness and Polish entries above before any build
 one duplicates an existing entry, strike the `CRI-*` line and point at the older ID.
 
 **Sprint 0 — walks only, no screen changes (approved):**
-- **CRI-0.1** — Design brief: decided, `DESIGN_DIRECTION.md` stands. Open only for the claude.ai Project brief (Kameel).
+- **CRI-0.1** — Design brief: decided, `DESIGN_DIRECTION.md` stands. Open only for the claude.ai Project brief (Kameel). **Partly done 2026-10-23:** `DESIGN_DIRECTION.md` §9 decisions 7–10 recorded: this direction stands over the Project brief (#196, `e98828e`).
 - **CRI-0.2** — Screenshot set, 360/390/768/1440px, both themes. Accept: set under `audit/`, a note per clipped element.
 - **CRI-0.3** — Public live page walk (SCRBRD-083, `PUBLIC_DATA.md`). Accept: mounted or not recorded; no child identity in the payload; `SCREEN_MAP.md` corrected.
-- **CRI-0.4** — Offline sync walk. Accept: no duplicate events; "Held N" counts down to zero.
-- **CRI-0.5** — Type and touch floors. Evidence: `AnalyticsView.jsx:37,41,43,142,156` at 8–10px. Accept: nothing under 12px or 44px.
+- ~~**CRI-0.4** — Offline sync walk. Accept: no duplicate events; "Held N" counts down to zero.~~ **Closed 2026-10-28** in `30bc9c0` (#199): `browser-sync-drop` (`tools/smoke-browser-sync-drop.mjs`), 83/0. Kameel, 28 Oct: the walk checks that the count never rises, not a countdown.
+- **CRI-0.5** — Type and touch floors. Evidence: `AnalyticsView.jsx:37,41,43,142,156` at 8–10px. Accept: nothing under 12px or 44px. **Partly done 2026-10-28:** the 12px type floor on every text size (#197, `0151821`); the 44px touch floor is not in that PR.
 
 **Sprint 1 — before the next Pilot Match:**
 - **CRI-1.1** — `Board`: last-wicket and "updated · sync" rows. Evidence: `ui/board.jsx:214` has no last-wicket prop.
@@ -761,6 +761,8 @@ CRI-2.3 chart-to-delivery drill-down · CRI-2.4 reader freshness and low-bandwid
 **Sprint 3 (after pilot evidence):** CRI-3.1 notifications S2–S5 with follow and a Result-only default ·
 CRI-3.2 tap-to-passport · CRI-3.3 match impact as PoM suggestion (after recognition §7 scoring fixes) ·
 CRI-3.4 StatsMagic (the Analytics Explorer, renamed by Kameel 2026-10-28; SCRBRD's counterpart of Cricinfo's Statsguru), one Fable design pass (allowed 2026-10-23).
+
+**Partly done 2026-10-28:** CRI-3.1 decision recorded (#198, `6d23aa0`): notifications S2–S5 come before the pilot, S3 push included (Kameel, 23 Oct). Nothing built; the Sprint 3 placement above is superseded.
 
 **Regression risk:** MEDIUM (Sprint 1 touches `MatchView.jsx` and `Board`, which every walk reads)
 
@@ -4652,6 +4654,8 @@ an under-eighteen pupil sees nothing of his own lift; the watch needs a schedule
 history, invitations).
 <!-- ── end SCRBRD-124 phase 2 ── -->
 
+**Partly done 2026-10-28:** a move voids the boy's live, unboarded seats on lifts to his old side's later fixtures (db/117, `player_move_voids_seats`, the season rollover's SR-4) (#190, `ded9a85`).
+
 ### SCRBRD-125 — Roles scoped to a competition
 **Priority:** P3 (before a second league) · **Domain:** RBAC · **Type:** design + build (found 2026-09-30, SCRBRD-120 §9.4)
 Assignments carry a school, a team and a fixture, but no competition. So a league administrator with no school manages every
@@ -4773,6 +4777,8 @@ unique index). `GUARDIAN_APP_URL` is set from CSA's material. The information of
 **Partly done 2026-10-21:** REACH R-A: a family reads only its child's side's fixtures, buses and training (db/106) (#167).
 
 **Partly done 2026-10-22:** SR-1 (db/112), season rollover: a moved pupil follows his new side, and a boy playing up reads his match's balls (#171, `184976c`).
+
+**Partly done 2026-10-23:** REACH R-B: the consents read narrowed: passport consent is the office's alone, scouting consent stays with his side's coach (db/115) (#176, `37f5884`).
 
 **Priority:** P1 · **Domain:** Families / Privacy · **Type:** design (Fable, `docs/design/STEP4_parent_pupil.md`,
 decided by Kameel 2026-09-27), built by Opus
