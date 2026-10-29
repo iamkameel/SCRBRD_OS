@@ -86,10 +86,19 @@ export function describeClaim(c) {
     askedAgain: c.last_requested_at && c.last_requested_at !== c.requested_at ? day(c.last_requested_at) : null,
     // A deactivated account is the office's to look at harder (§3.3).
     inactive: c.account_active === false,
+    // A pupil's addresses are shown to the school office and the principal
+    // alone (db/118), and the claim is theirs to answer (db/122 §1d). A row
+    // that came without them is one this reader may read and not answer, and
+    // two blanks are not "the same address".
+    withheld: c.account_email == null || c.presented_email == null,
     // A different address is worth a second look. The same one is the usual case.
-    sameAddress: String(c.account_email ?? "").toLowerCase() === String(c.presented_email ?? "").toLowerCase(),
+    sameAddress: c.account_email != null && c.presented_email != null
+      && String(c.account_email).toLowerCase() === String(c.presented_email).toLowerCase(),
   };
 }
+
+/** Said on a claim this reader may read but not answer (db/122 §1d). */
+export const CLAIM_WITHHELD = "This is a pupil's account. Its addresses are shown to the school office and the principal, and they answer this request.";
 
 /** What the office is told after it acts on a claim. */
 export const CLAIM_DONE = Object.freeze({

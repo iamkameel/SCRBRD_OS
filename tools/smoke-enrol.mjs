@@ -238,6 +238,25 @@ try {
   ok("a malformed account id never reaches the database",
      (await enrol(sarah, { userId: "not-a-uuid", role: "scorer", schoolId: HIL })).status === 400);
 
+  group("A pupil's sign-in code is the office's, named by the account (db/122 §1d)");
+  // Kameel, 29 Oct 2026, on the read-through: issuing a pupil's code belongs
+  // to the office alone, the door that reads his address; "Issue a code"
+  // names the account by its id, as Add role does.
+  const invite = (token, body) => api("/api/auth/invite", { method: "POST", token, body });
+  const dosCode = await invite(sarah, { userId: PILLAY_ACCOUNT });
+  ok(`the director of sport is not issued the pupil's code (was ${dosCode.status} ${dosCode.body?.error ?? ""})`,
+     dosCode.status >= 400 && dosCode.body?.error === "office_only" && !dosCode.body?.code);
+  ok("...nor by his address, which she was never given",
+     (await invite(sarah, { email: "pillay@example.invalid" })).body?.error === "office_only");
+  const officeCode = await invite(registrar, { userId: PILLAY_ACCOUNT });
+  ok(`the office issues it, by the account's id (was ${officeCode.status} ${officeCode.body?.error ?? ""})`,
+     officeCode.status === 200 && typeof officeCode.body?.code === "string" && !JSON.stringify(officeCode.body).includes("@"));
+  const dosAdult = await invite(sarah, { userId: "88888888-0000-0000-0000-00000000000a" });
+  ok(`...and the director still issues an adult's she may grant, by id (was ${dosAdult.status} ${dosAdult.body?.error ?? ""})`,
+     dosAdult.status === 200 && typeof dosAdult.body?.code === "string");
+  ok("an account the caller cannot read is refused, by id",
+     (await invite(sarah, { userId: "88888888-0000-0000-0000-0000000000ff" })).body?.error === "not_permitted");
+
   group("The roster gap actually closes");
   const after = await q(
     `select count(*)::int n from player p

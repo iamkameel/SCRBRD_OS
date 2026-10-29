@@ -54,6 +54,8 @@ export const ENROL_MESSAGE = {
   no_result: "The server could not finish this. Nothing was changed.",
   refused: "The server refused this and did not say why. Nothing was changed.",
   missing_token: "You are not signed in.",
+  // db/122 §1d: a pupil's sign-in code is issued by the school office or the principal.
+  office_only: "This is a pupil's account. Only the school office or the principal issues his sign-in code.",
 };
 const UNSAID = "This was not saved. The server refused it for a reason that has no words yet, and nothing was changed.";
 /** The words for a refusal code; a sentence even for a code nobody has written one for. */

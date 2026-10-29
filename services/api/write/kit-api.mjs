@@ -84,10 +84,19 @@ export function kitRoutes({ pool, secret }) {
       });
     }),
     // POST /api/passport/consent/:id/withdraw
-    withdrawConsent: handle(async (req) => asPrincipal(req, async (c) => {
-      const { rowCount } = await c.query(`update passport_consent set withdrawn_at = now() where id = $1 and withdrawn_at is null`, [req.params.id]);
-      return { withdrawn: rowCount };
-    })),
+    //
+    // Anyone of his family on a live link may take a school's name back, the
+    // boy at any age (db/122 §1d). Row security decides; nothing withdrawn is
+    // answered 403, not a quiet 200, so the screen can say why: the caller is
+    // not his family on a live link, or the name was already taken back.
+    withdrawConsent: handle(async (req) => {
+      if (!UUID.test(String(req.params?.id ?? ""))) throw err("not_permitted", 403);
+      return asPrincipal(req, async (c) => {
+        const { rowCount } = await c.query(`update passport_consent set withdrawn_at = now() where id = $1 and withdrawn_at is null`, [req.params.id]);
+        if (!rowCount) throw err("not_permitted", 403);
+        return { withdrawn: rowCount };
+      });
+    }),
     // POST /api/equipment-issues/:id/return
     giveBack: handle(async (req) => asPrincipal(req, async (c) => {
       const { rowCount } = await c.query(`update equipment_issue set returned_on = sa_today() where id = $1 and returned_on is null`, [req.params.id]);

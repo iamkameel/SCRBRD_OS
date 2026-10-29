@@ -270,5 +270,40 @@ group("Magic-link login");
      new Set(Array.from({ length: 50 }, () => newMagicCode(SECRET).raw)).size === 50);
 }
 
+// ── Issue a code by the account (db/122 §1d) ──
+// The screens name the account by its id; the address is read server-side
+// under the caller's own row security, and login_code_issue() decides.
+group("Issue a code by the account");
+{
+  const { issueLoginCode } = await import("./auth-db.mjs");
+  const UID = "88888888-0000-0000-0000-000000000006";
+  /** @param {(t: string, p: any) => any[]} answer */
+  const fakeDb = (answer) => {
+    /** @type {{ text: string, params: any }[]} */
+    const log = [];
+    return { log, db: /** @type {any} */ ({ query: async (/** @type {string} */ text, /** @type {any} */ params) => { log.push({ text, params }); return { rows: answer(text, params) ?? [] }; } }) };
+  };
+  let f = fakeDb((t) => t.includes("from app_user") ? [{ email: "pupil@example.invalid" }]
+                     : t.includes("login_code_issue") ? [{ ok: true, reason: null, expires_at: "2026-11-01T00:00:00Z" }] : []);
+  let out = await issueLoginCode(f.db, SECRET, { userId: UID });
+  ok("by id: the account's address is read under the caller's identity, then the door is asked with it",
+     f.log[0]?.text.includes("from app_user where id = $1") && f.log[0]?.params?.[0] === UID
+     && f.log[1]?.text.includes("login_code_issue($1, $2, $3)") && f.log[1]?.params?.[0] === "pupil@example.invalid");
+  ok("...and the answer carries the code, not the address", out.ok === true && typeof out.code === "string" && !JSON.stringify(out).includes("@"));
+  f = fakeDb((t) => t.includes("login_code_issue") ? [{ ok: false, reason: "office_only" }] : t.includes("from app_user") ? [{ email: "pupil@example.invalid" }] : []);
+  const refused = await issueLoginCode(f.db, SECRET, { userId: UID }).then(() => null, (e) => e);
+  ok("a pupil's code for someone who is not the office: office_only, from the database", refused instanceof AuthError && refused.code === "office_only");
+  f = fakeDb(() => []);
+  const unseen = await issueLoginCode(f.db, SECRET, { userId: UID }).then(() => null, (e) => e);
+  ok("an account the caller cannot read: not_permitted, and the door is never asked",
+     unseen?.code === "not_permitted" && !f.log.some((l) => l.text.includes("login_code_issue")));
+  f = fakeDb(() => []);
+  const bad = await issueLoginCode(f.db, SECRET, { userId: "not-an-id" }).then(() => null, (e) => e);
+  ok("an id that is not one: not_permitted, nothing asked", bad?.code === "not_permitted" && f.log.length === 0);
+  f = fakeDb((t) => t.includes("login_code_issue") ? [{ ok: true, reason: null, expires_at: "2026-11-01T00:00:00Z" }] : []);
+  await issueLoginCode(f.db, SECRET, { email: "coach@example.invalid" });
+  ok("by email, as before: the door is asked with the address given", f.log.length === 1 && f.log[0].params[0] === "coach@example.invalid");
+}
+
 console.log(`\n${"─".repeat(52)}\nAUTH SUITE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

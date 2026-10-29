@@ -148,6 +148,20 @@ group("Disable, enable and the preview (account lifecycle slice 2, db/90)");
        && JSON.stringify(Object.keys(r.body ?? {}).sort()) === JSON.stringify(["detail", "error"]));
   }
 
+  // db/122 §1d (Kameel, 29 Oct 2026): a pupil's claim is answered by the
+  // office alone; confirm and decline pass the database's office_only on,
+  // with its sentence.
+  for (const route of ["confirmClaim", "declineClaim"]) {
+    const fn = route === "confirmClaim" ? "pending_claim_confirm" : "pending_claim_decline";
+    f = fake((q) => q.includes(fn) ? [{ ok: false, reason: "office_only" }] : []);
+    r = await call(f.pool, route, {});
+    ok(`${route}: office_only is a 403 with its sentence`,
+       r.status === 403 && r.body?.error === "office_only" && r.body?.detail === SIGN_IN_REFUSALS.office_only[1]
+       && f.log.some((l) => l.text.includes(`${fn}($1)`)));
+  }
+  ok("...and the sentence says whose it is, and names nobody",
+     /school office or the principal/.test(SIGN_IN_REFUSALS.office_only?.[1] ?? "") && !/@/.test(SIGN_IN_REFUSALS.office_only?.[1] ?? ""));
+
   // D21: a dead token is told the same for every reason.
   f = fake((q) => { if (q.includes("app_session_begin")) throw Object.assign(new Error("session_revoked"), { code: "28000" }); return []; });
   r = await call(f.pool, "disable", { body: { reason: "Phone lost at the ground" } });

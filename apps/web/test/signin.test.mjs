@@ -32,7 +32,7 @@ import { SIGNIN_NOTICE, SIGNIN_NOTICE_TITLE } from "../src/lib/signinNotice.js";
 import {
   KINDS, STAFF_ROLES, RELATIONSHIPS, JOIN_WORDS, PUPIL_UNDER_18, NOTE_MAX, buildRequest, joinWords, parentNote, sentWords,
 } from "../src/lib/joinSchool.js";
-import { describeSignIn, describeClaim, isLastLive, ordered, signInWords, HOW_WORDS, CLAIM_DONE } from "../src/lib/signins.js";
+import { describeSignIn, describeClaim, isLastLive, ordered, signInWords, HOW_WORDS, CLAIM_DONE, CLAIM_WITHHELD } from "../src/lib/signins.js";
 import { JoinSchool } from "../src/auth/NoSchool.jsx";
 import { SignInRow } from "../src/views/signins.jsx";
 import { ClaimRow } from "../src/views/claims.jsx";
@@ -281,6 +281,22 @@ group("The office's Claims list");
   html = renderToStaticMarkup(h(ClaimRow, { claim, busy: true }));
   ok("while it works the buttons are off (one tap, once)", (html.match(/disabled=""/g) ?? []).length === 3, html);
   ok("the office is told what happened", /Confirmed/.test(CLAIM_DONE.confirmed) && /Declined/.test(CLAIM_DONE.declined));
+  // db/122 §1d (Kameel, 29 Oct 2026): a pupil's claim is the office's alone.
+  // The director of sport reads it with both addresses withheld (db/118).
+  const pupils = { ...claim, account_name: "A Pupil", account_email: null, presented_email: null };
+  d = describeClaim(pupils);
+  ok("two withheld addresses are not 'the same address'", d.withheld === true && d.sameAddress === false, d);
+  ok("...and one withheld address is withheld too", describeClaim({ ...claim, presented_email: null }).withheld === true);
+  ok("...while a claim with both addresses is not", describeClaim(claim).withheld === false);
+  html = renderToStaticMarkup(h(ClaimRow, { claim: pupils, busy: false }));
+  ok("a pupil's claim, addresses withheld: no Confirm, no Decline, no code to issue",
+     ["claim-confirm", "claim-code", "claim-decline"].every((t) => !html.includes(`data-testid="${t}"`)), html);
+  ok("...and it says whose it is, in words", html.includes('data-testid="claim-withheld"') && html.includes(CLAIM_WITHHELD.replace(/'/g, "&#x27;")), html);
+  ok("...and draws no 'same address' line", !/the same address|different address/.test(html), html);
+  ok("the claims panel issues a code by the account, not an address",
+     /onIssueCode\?\.\(\{ id: c\.user_id, name: c\.account_name \}\)/.test(src("../src/views/claims.jsx")));
+  ok("...and so does Settings: the invite names the account by its id",
+     /\/api\/auth\/invite", \{ method: "POST", body: \{ userId: u\.id \} \}/.test(src("../src/views/SettingsView.jsx")));
 }
 
 group("Where it sits in the app");

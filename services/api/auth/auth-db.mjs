@@ -56,14 +56,29 @@ export async function mintToken(db, secret, { userId, deviceId }) {
 // The raw code is returned to the ISSUER and never stored. This is the only
 // moment it exists in readable form anywhere.
 //
-// POST /api/auth/invite { email }   (authenticated)
+// POST /api/auth/invite { userId } | { email }   (authenticated)
+//
+// BY THE ACCOUNT (db/122 §1d, Kameel 29 Oct 2026). The screens name the
+// account by its id, as add-role does: a pupil's address is shown to the
+// school office alone (db/118), so a reader who was not given it could not
+// name the account by it. The address is read here, under the caller's own
+// row security (app_user_read, db/09: the accounts People lists him), and
+// never leaves the server. login_code_issue() still decides who may issue
+// the code, and a pupil's is the office's alone (`office_only`).
 /**
  * @param {Db} db  the issuer's own transaction, identity already set
  * @param {string} secret
- * @param {{ email?: string }} args
+ * @param {{ email?: string, userId?: string }} args
  * @param {number} [ttlSec]
  */
-export async function issueLoginCode(db, secret, { email }, ttlSec = CODE_TTL_SEC) {
+export async function issueLoginCode(db, secret, { email, userId }, ttlSec = CODE_TTL_SEC) {
+  if (userId != null && userId !== "") {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(userId))) throw new AuthError("not_permitted");
+    const { rows: [u] } = await db.query(`select email from app_user where id = $1`, [String(userId)]);
+    // An account this caller cannot read is one they cannot issue a code to.
+    if (!u?.email) throw new AuthError("not_permitted");
+    email = u.email;
+  }
   if (!email) throw new AuthError("missing_email");
   const { raw, hash, expiresInSec } = newMagicCode(secret, ttlSec);
   const { rows } = await db.query(

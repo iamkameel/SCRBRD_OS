@@ -65,12 +65,23 @@ try {
     ok("...by the boy's name, which the family's word opens to it", officeSees[0]?.full_name === "R Pillay");
     ok("...not the named school's coach, who reads the passport and not the consent", (await api("/api/read/passport_consents", { token: wes })).body?.rows?.length === 0);
     ok("...nor his own coach at home", (await api("/api/read/passport_consents", { token: coach })).body?.rows?.length === 0);
-    ok("Westville cannot withdraw it", (await api(`/api/passport/consent/${c.body.id}/withdraw`, { method: "POST", token: wes })).body?.withdrawn === 0);
-    ok("...nor can its office, which reads it", (await api(`/api/passport/consent/${c.body.id}/withdraw`, { method: "POST", token: wesOffice })).body?.withdrawn === 0);
+    // Nothing withdrawn is a 403, not a quiet 200 (db/122 §1d), so a screen can say why.
+    const wWes = await api(`/api/passport/consent/${c.body.id}/withdraw`, { method: "POST", token: wes });
+    ok("Westville cannot withdraw it, and is told so", wWes.status === 403 && wWes.body?.error === "not_permitted");
+    ok("...nor can its office, which reads it", (await api(`/api/passport/consent/${c.body.id}/withdraw`, { method: "POST", token: wesOffice })).status === 403);
     ok("his mother withdraws it", (await api(`/api/passport/consent/${c.body.id}/withdraw`, { method: "POST", token: parent })).body?.withdrawn === 1);
     ok("...and Westville reads nothing again", (await passport(PILLAY, wes)).length === 0);
     ok("...a withdrawn consent is not revived", !(await q(`set local role scrbrd_app; update passport_consent set withdrawn_at = null where id = $1`, [c.body.id]).then(() => true).catch(() => false)));
-    ok("...but may be granted again", (await consent(parent, PILLAY, WES)).status === 200 && (await passport(PILLAY, wes)).length > 0);
+    const again = await consent(parent, PILLAY, WES);
+    ok("...but may be granted again", again.status === 200 && (await passport(PILLAY, wes)).length > 0);
+    // db/122 §1d (Kameel, 29 Oct 2026): under eighteen the boy may still take
+    // a name back; naming stays with his guardian.
+    const mine = await api(`/api/passport/consent/${again.body?.id}/withdraw`, { method: "POST", token: boy });
+    ok("the boy, at sixteen, takes Westville's name back himself", mine.status === 200 && mine.body?.withdrawn === 1);
+    ok("...and Westville reads nothing", (await passport(PILLAY, wes)).length === 0);
+    ok("...taking it back twice is a 403, said, not a quiet nothing",
+       (await api(`/api/passport/consent/${again.body?.id}/withdraw`, { method: "POST", token: boy })).status === 403);
+    ok("...and the withdrawal is stamped as his", (await q(`select u.email from passport_consent c join app_user u on u.id = c.withdrawn_by where c.id = $1`, [again.body?.id]))[0]?.email === "pillay@example.invalid");
   }
   group("Provenance is honest about who stood behind a line");
   {

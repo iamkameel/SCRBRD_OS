@@ -760,8 +760,10 @@ SELECT
   -- while its giver's link is live (the passport's named school, the scout);
   -- a pupil's address through app_user_email_seen() at db/81's three doors;
   -- the two-letter particles out of the news scan; a move dated sa_today().
-  CASE WHEN to_regprocedure('consent_giver_live(uuid,uuid)') IS NOT NULL
-        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('consent_giver_live(uuid,uuid)'), 'EXECUTE')
+  -- After the read-through (db/122 §1d): the giver test dated by the
+  -- consent, and a pupil's claim and code the office's alone.
+  CASE WHEN to_regprocedure('consent_giver_live(uuid,uuid,timestamptz)') IS NOT NULL
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('consent_giver_live(uuid,uuid,timestamptz)'), 'EXECUTE')
         AND has_function_privilege('scrbrd_app', to_regprocedure('passport_consent_in_force(uuid)'), 'EXECUTE')
         AND has_function_privilege('scrbrd_app', to_regprocedure('scouting_consent_in_force(uuid)'), 'EXECUTE')
         AND position('consent_giver_live(c.granted_by' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport_open(uuid)'))) > 0
@@ -772,6 +774,9 @@ SELECT
         AND position('''de'', ''du'', ''le'', ''la'', ''da'', ''di''' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('news_public_hits(uuid)'))) > 0
         AND (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('player_team_membership_log()')) !~ 'current_date'
         AND (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('player_move_voids_seats()')) !~ 'current_date'
+        AND position('''office_only''' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('pending_claim_confirm(uuid)'))) > 0
+        AND position('''office_only''' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('pending_claim_decline(uuid)'))) > 0
+        AND position('''office_only''' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('login_code_issue(text,text,integer)'))) > 0
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A lapsed consent, a pupil's email, the school's day",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'

@@ -221,12 +221,14 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
 
   // A fresh code for an account that already exists — through
   // login_code_issue(), which refuses anyone without user.invite at that
-  // school and refuses a code issued to yourself.
+  // school, refuses a code issued to yourself, and keeps a pupil's code for
+  // the school office (db/122 §1d). The account is named by its id, as Add
+  // role names it: a pupil's address is not this reader's to have been given.
   const [coding, setCoding] = useState(null);
   const issueCodeFor = async (u) => {
     setCoding(u.id);
     try {
-      const out = await api("/api/auth/invite", { method: "POST", body: { email: u.email } });
+      const out = await api("/api/auth/invite", { method: "POST", body: { userId: u.id } });
       setIssued({ code: out?.code, expiresAt: out?.expiresAt, name: u.name });
     } catch (e) {
       setIssued({ code: null, error: ENROL_MESSAGE[e?.code] || e?.code || "code_not_issued", name: u.name });
@@ -1013,6 +1015,8 @@ const PASSPORT_NONE = {
   office: "No family has named your school.",
   none: "Not yours to see. Where a boy's record may travel is read by his family and by the office of the school it names.",
 };
+// The withdraw route answers 403 when nothing was withdrawn (db/122 §1d).
+export const PASSPORT_WITHDRAW_REFUSED = "That name was not taken back. Only his family, on a link the school has verified and that is still open, can take a school's name back, and it may already have been taken back.";
 
 // `only` (step 4 P7d): the family app opens this on ONE child's Family card,
 // and narrows the players offered and the grants listed to that child. The
@@ -1035,16 +1039,18 @@ function PassportTab({ role, only = null }) {
   // 2026: "Under eighteen, only his guardian; at eighteen, he does it
   // himself"). The server decides; this only says so in words.
   const ownRecords = ownRecordsOf();
-  const OWN_RECORD_WORDS = "Until you are eighteen, your parent or guardian decides which school your record goes to. From your eighteenth birthday you decide it yourself.";
+  const OWN_RECORD_WORDS = "Until you are eighteen, your parent or guardian decides which school your record goes to. You can take a school's name back yourself at any time. From your eighteenth birthday you decide both.";
   const grant = async () => {
     setSaid("");
     try { await api("/api/passport/consent", { method: "POST", body: { playerId, schoolId } }); setSchoolId(""); setNudge((n) => n + 1); }
     catch (e) { setSaid(ownRecords.has(playerId) && e?.status === 403 ? OWN_RECORD_WORDS : (e.message || "Refused.")); }
   };
+  // Nothing withdrawn is answered 403 (db/122 §1d), so it is said, and the
+  // list is read again in case the row has changed under the reader.
   const withdraw = async (id) => {
     setSaid("");
     try { await api(`/api/passport/consent/${id}/withdraw`, { method: "POST" }); setNudge((n) => n + 1); }
-    catch (e) { setSaid(e.message || "Refused."); }
+    catch (e) { setSaid(e?.status === 403 ? PASSPORT_WITHDRAW_REFUSED : (e.message || "Refused.")); setNudge((n) => n + 1); }
   };
   const sel = { background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "7px 10px", fontFamily: D.body, fontSize: "12px", color: D.textPrimary };
   const open = rows.filter((r) => !r.withdrawnAt), closed = rows.filter((r) => r.withdrawnAt);

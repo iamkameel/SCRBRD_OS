@@ -7894,6 +7894,9 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 --     seat on a lift that another 13XI boy's guardian (drv) offers to a 13XI
 --     fixture: later today (SAST) when it is before noon in Johannesburg,
 --     tomorrow when it is after.
+--   After the read-through (db/122 §1d): school Q, whose coach (qcoach) will
+--     be named on a consent C gave himself at fifteen before db/122; and gp,
+--     a third guardian of C whose verified link carries no processing consent.
 CREATE OR REPLACE FUNCTION _v122_stage() RETURNS jsonb AS $$
 DECLARE
   HIL uuid := '11111111-1111-1111-1111-111111111111';
@@ -7911,6 +7914,9 @@ BEGIN
   INSERT INTO school (code, name, kind, province) VALUES ('V122Z', 'Verify OneTwentyTwo Academy', 'school', 'KwaZulu-Natal')
   RETURNING id INTO v;
   z := z || jsonb_build_object('Z', v);
+  INSERT INTO school (code, name, kind, province) VALUES ('V122Q', 'Verify OneTwentyTwo High', 'school', 'KwaZulu-Natal')
+  RETURNING id INTO v;
+  z := z || jsonb_build_object('Q', v);
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
     (HIL, '16XI', 'Verify OneTwentyTwo Consent', 1221, 'batter', U15) RETURNING id INTO c_c;
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
@@ -7943,12 +7949,18 @@ BEGIN
     ARRAY['gd',        'guardian',        HIL::text, '',     ''],
     ARRAY['drv',       'guardian',        HIL::text, '',     ''],
     ARRAY['yboy',      'player',          HIL::text, '1XI',  c_y::text],
-    ARRAY['yg',        'guardian',        HIL::text, '',     '']]);
+    ARRAY['yg',        'guardian',        HIL::text, '',     ''],
+    ARRAY['qcoach',    'coach',           z->>'Q',   '16XI', ''],
+    ARRAY['gp',        'guardian',        HIL::text, '',     '']]);
   PERFORM _v100_link((ids->>'mum')::uuid, HIL, c_c);
   PERFORM _v100_link((ids->>'dad')::uuid, HIL, c_c);
   PERFORM _v100_link((ids->>'sg')::uuid, HIL, c_s);
   PERFORM _v100_link((ids->>'gd')::uuid, HIL, c_d);
   PERFORM _v100_link((ids->>'drv')::uuid, HIL, c_d2);
+  -- gp's link to C is verified and his processing consent is not on record.
+  PERFORM _v100_link((ids->>'gp')::uuid, HIL, c_c);
+  UPDATE assignment_subject g SET consent_state = 'pending', consent_version = NULL, consent_at = NULL
+    FROM role_assignment a WHERE a.id = g.assignment_id AND a.person_id = (ids->>'gp')::uuid AND g.player_id = c_c;
   -- Y is eighteen, so db/62 would close his guardian's link today; it is
   -- staged open for thirty days, and the section ends it.
   PERFORM _v100_link((ids->>'yg')::uuid, HIL, c_y, 'verified', current_date + 30);
@@ -8020,7 +8032,8 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 CREATE OR REPLACE FUNCTION _v122_fact(p_what text, y jsonb) RETURNS text AS $$
   SELECT CASE p_what
     WHEN 'consents' THEN (SELECT coalesce(string_agg(q.t, ',' ORDER BY q.t), '') FROM (
-           SELECT CASE c.to_school_id WHEN '22222222-2222-2222-2222-222222222222'::uuid THEN 'WES' WHEN (y->>'X')::uuid THEN 'X' ELSE '?' END
+           SELECT CASE c.to_school_id WHEN '22222222-2222-2222-2222-222222222222'::uuid THEN 'WES' WHEN (y->>'X')::uuid THEN 'X'
+                                      WHEN (y->>'Q')::uuid THEN 'Q' ELSE '?' END
                   || '(' || coalesce((SELECT e.k FROM jsonb_each_text(y) e(k, val) WHERE e.val = c.granted_by::text LIMIT 1), '-') || ')'
                   || CASE WHEN c.withdrawn_at IS NOT NULL
                           THEN '(w:' || coalesce((SELECT e.k FROM jsonb_each_text(y) e(k, val) WHERE e.val = c.withdrawn_by::text LIMIT 1), '-') || ')'
@@ -8058,6 +8071,50 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 CREATE OR REPLACE FUNCTION _v122_reads(y jsonb) RETURNS int AS $$
   SELECT count(*)::int FROM passport_consent c WHERE c.player_id = (y->>'C')::uuid
 $$ LANGUAGE sql STABLE;
+
+-- After the read-through (db/122 §1d), as the owner.
+-- A consent C named for himself at fifteen, as db/08 let him before db/122:
+-- school Q, granted by his own account.
+CREATE OR REPLACE FUNCTION _v122_self_consent(y jsonb) RETURNS uuid AS $$
+DECLARE v uuid;
+BEGIN
+  INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'C')::uuid, (y->>'Q')::uuid) RETURNING id INTO v;
+  UPDATE passport_consent SET granted_by = (y->>'cboy')::uuid WHERE id = v;
+  RETURN v;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A guardian's ended link to a boy granted afresh, as guardian_link_establish()
+-- (db/62) grants it: a new subject row on her existing assignment. Written
+-- with clock_timestamp(), so it is younger than every consent this one
+-- transaction wrote (now() stands still inside it).
+CREATE OR REPLACE FUNCTION _v122_relink(p_person uuid, p_player uuid) RETURNS void AS $$
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, created_at)
+  SELECT a.id, p_player, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now(),
+         'granted', 'popia-2026-01', now(), '88888888-0000-0000-0000-00000000000c', clock_timestamp()
+    FROM role_assignment a WHERE a.person_id = p_person AND a.role = 'guardian' AND a.active
+   LIMIT 1;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The office corrects the end instead: the link granted afresh is ended, and
+-- the one that gave the consent is re-opened, in place.
+CREATE OR REPLACE FUNCTION _v122_correct(p_person uuid, p_player uuid) RETURNS void AS $$
+BEGIN
+  UPDATE assignment_subject s SET valid_until = current_date
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = p_person AND a.role = 'guardian' AND s.player_id = p_player
+     AND s.created_at > now();
+  UPDATE assignment_subject s SET valid_until = NULL
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = p_person AND a.role = 'guardian' AND s.player_id = p_player
+     AND s.created_at <= now();
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- E's two claims, as the owner reads them: account:how, '-' while open.
+CREATE OR REPLACE FUNCTION _v122_claims(y jsonb) RETURNS text AS $$
+  SELECT string_agg(k || ':' || coalesce((SELECT c.resolved_how FROM pending_claim c WHERE c.id = (y->>('claim_' || k))::uuid), '-'), ',' ORDER BY k)
+    FROM unnest(ARRAY['eadult', 'epupil']) k
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/122 (section 99) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -29103,13 +29160,8 @@ $v49$;
     END LOOP;
     PERFORM _as((y->>'live')::uuid);
     PERFORM _assert(_v119_name_x(y) = 'written', '§96 (live): the live guardian could not name school X');
-    -- Since db/122 (1c, Kameel 29 Oct 2026: "Under eighteen, only his
-    -- guardian; at eighteen, he does it himself") the boy, fifteen, may not
-    -- withdraw it himself; his live guardian does.
     PERFORM _as((y->>'fboy')::uuid);
-    PERFORM _assert(_v119_withdraw(y, (y->>'X')::uuid) = 0, '§96 (live): the boy of fifteen withdrew school X himself');
-    PERFORM _as((y->>'live')::uuid);
-    PERFORM _assert(_v119_withdraw(y, (y->>'X')::uuid) = 1, '§96 (live): the live guardian could not withdraw school X');
+    PERFORM _assert(_v119_withdraw(y, (y->>'X')::uuid) = 1, '§96 (live): the boy could not withdraw school X');
     PERFORM _assert(_v119_owner_passport(y) = 'WES,X(w)', format('§96 (live): the owner reads [%s]', _v119_owner_passport(y)));
 
     -- (ended), (early)
@@ -29614,6 +29666,20 @@ $v49$;
   --              fixture later today, voided for one tomorrow
   --   (doors)    the readers' definers are scrbrd_app's alone; the giver test
   --              and the scan are nobody's to call
+  -- After the read-through (§1d, Kameel 29 Oct 2026, 21:15: each as
+  -- recommended):
+  --   (self)     Q1: a consent C named for himself at fifteen, before db/122,
+  --              is lapsed: school Q's coach does not open his passport, his
+  --              father reads it lapsed, and the father's grant to Q clears
+  --              it and opens it
+  --   (age)      Q2: C, fifteen, may still take a school's name back
+  --   (relink)   Q4: S's guardian's ended link granted afresh does not bring
+  --              her lapsed yes back; the end corrected in place does
+  --   (consent)  Q8: gp, a verified guardian with no processing consent on
+  --              record, names no school
+  --   (claims)   Q3: the director of sport confirms and declines no pupil's
+  --              claim and issues no pupil's code (office_only); the office
+  --              does both; her adult's claim and code as before
   --
   -- Falsified, each change made as the owner before this section ran (the
   -- section alone, cut from this file with the setup above it, on 29 Oct
@@ -29635,11 +29701,26 @@ $v49$;
   --     wrote it                                  by the session's day
   --   player_move_voids_seats() as db/117     → (sast): the seat's fate was
   --     wrote it                                  decided by the session's day
+  -- And after the read-through, the same way (the section alone, 29 Oct
+  -- 2026), each guard broken once:
+  --   consent_giver_live() without the self-access age → (self): school Q's
+  --                                             coach opened the passport
+  --   the update policy asking writer_ok() again → (age): C, fifteen, could
+  --                                             not take X's name back
+  --   consent_giver_live() without the two dates → (relink): the yes came
+  --                                             back with a link granted afresh
+  --   writer_ok() without processing consent → (consent): gp named a school
+  --   pending_claim_confirm() as db/81 wrote it → (claims): the director
+  --                                             confirmed the pupil's claim
+  --   pending_claim_decline() as db/81 wrote it → (claims): ... declined it
+  --   login_code_issue() without the pupil's rule → (claims): ... was issued
+  --                                             the pupil's code
   DECLARE
     y    jsonb := _v122_stage();
     C    uuid;
     S    uuid;
     v_pc uuid;
+    v_self uuid;
     v_n  int;
     v_ok boolean;
     v_reason text;
@@ -29698,6 +29779,30 @@ $v49$;
       format('§99 (nobody): school X''s office reads %s row(s), in force %s, and opens the passport: %s',
              _v122_reads(y), passport_consent_in_force((y->>'pc_x')::uuid), passport_open(C)));
 
+    -- (self)
+    PERFORM set_config('app.user_id', '', true);
+    v_self := _v122_self_consent(y);
+    PERFORM _as((y->>'qcoach')::uuid);
+    PERFORM _assert(NOT passport_open(C) AND passport_name(C) IS NULL,
+      '§99 (self): on the word C gave himself at fifteen, school Q''s coach opens his passport');
+    PERFORM _as((y->>'dad')::uuid);
+    PERFORM _assert(passport_consent_in_force(v_self) IS FALSE,
+      format('§99 (self): his father reads the consent C gave himself as in force %s, not lapsed', passport_consent_in_force(v_self)));
+    PERFORM _as((y->>'cboy')::uuid);
+    PERFORM _assert(passport_consent_in_force(v_self) IS FALSE, '§99 (self): C reads his own fifteen-year-old''s consent in force');
+    -- His father names Q, as the grant route does: the lapsed row first.
+    PERFORM _as((y->>'dad')::uuid);
+    UPDATE passport_consent SET withdrawn_at = now()
+     WHERE player_id = C AND to_school_id = (y->>'Q')::uuid AND withdrawn_at IS NULL AND passport_consent_in_force(id) = false;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    PERFORM _assert(v_n = 1, format('§99 (self): the father''s grant cleared %s lapsed row(s), not 1', v_n));
+    INSERT INTO passport_consent (player_id, to_school_id) VALUES (C, (y->>'Q')::uuid);
+    PERFORM _as((y->>'qcoach')::uuid);
+    PERFORM _assert(passport_open(C), '§99 (self): on his father''s word school Q''s coach does not open the passport');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v122_fact('consents', y) = 'Q(cboy)(w:dad),Q(dad),WES(dad),WES(mum)(w:dad),X(-)',
+      format('§99 (self): the owner reads [%s]', _v122_fact('consents', y)));
+
     -- (scouts)
     PERFORM _as((y->>'sg')::uuid);
     SELECT s.ok, s.reason INTO v_ok, v_reason FROM scouting_consent_set(S, true) s;
@@ -29719,6 +29824,28 @@ $v49$;
       format('§99 (scouts): the office reads [%s], in force %s', got, scouting_consent_in_force(S)));
     PERFORM _as((y->>'hcoach')::uuid);
     PERFORM _assert(scouting_consent_in_force(S) IS FALSE, '§99 (scouts): his side''s coach does not read the yes lapsed');
+
+    -- (relink)
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v122_relink((y->>'sg')::uuid, S);
+    PERFORM _as((y->>'sg')::uuid);
+    PERFORM _assert(is_family_of(S), '§99 (relink): the link granted afresh is not live, so this proves nothing');
+    PERFORM _as((y->>'hoffice')::uuid);
+    PERFORM _assert(scouting_consent_in_force(S) IS FALSE,
+      '§99 (relink): a link granted afresh brought her lapsed yes back');
+    PERFORM _as((y->>'scout')::uuid);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM scouting_candidates() x WHERE x.player_id = S),
+      '§99 (relink): with her link granted afresh the scout sees him on the old yes');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v122_correct((y->>'sg')::uuid, S);
+    PERFORM _as((y->>'hoffice')::uuid);
+    PERFORM _assert(scouting_consent_in_force(S) IS TRUE,
+      '§99 (relink): the end corrected in place did not bring the yes back');
+    PERFORM _as((y->>'scout')::uuid);
+    PERFORM _assert(EXISTS (SELECT 1 FROM scouting_candidates() x WHERE x.player_id = S),
+      '§99 (relink): with the end corrected the scout does not see him');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v119_end_link((y->>'sg')::uuid, S);
 
     -- (eighteen)
     PERFORM _as((y->>'yg')::uuid);
@@ -29762,9 +29889,11 @@ $v49$;
     EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
     END;
     PERFORM _assert(got = 'refused', '§99 (age): the boy of fifteen named a school for himself');
-    UPDATE passport_consent SET withdrawn_at = now() WHERE player_id = C AND withdrawn_at IS NULL;
+    -- Under eighteen he may still say no (§1d, Q2): X's name, which nobody
+    -- on record gave.
+    UPDATE passport_consent SET withdrawn_at = now() WHERE id = (y->>'pc_x')::uuid AND withdrawn_at IS NULL;
     GET DIAGNOSTICS v_n = ROW_COUNT;
-    PERFORM _assert(v_n = 0, format('§99 (age): the boy of fifteen withdrew %s consent(s) himself', v_n));
+    PERFORM _assert(v_n = 1, format('§99 (age): the boy of fifteen took back %s name(s), not X''s one', v_n));
     PERFORM _assert(_v122_reads(y) >= 1, '§99 (age): the boy of fifteen no longer reads his own consents');
     PERFORM _as((y->>'yboy')::uuid);
     got := 'written';
@@ -29783,6 +29912,19 @@ $v49$;
     EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
     END;
     PERFORM _assert(got = 'written', '§99 (age): a live guardian could not name a school for her son of thirteen');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v122_fact('consents', y) = 'Q(cboy)(w:dad),Q(dad),WES(dad),WES(mum)(w:dad),X(-)(w:cboy)',
+      format('§99 (age): the owner reads [%s]', _v122_fact('consents', y)));
+
+    -- (consent)
+    PERFORM _as((y->>'gp')::uuid);
+    PERFORM _assert(is_family_of(C), '§99 (consent): gp''s verified link is not live, so this proves nothing');
+    got := 'written';
+    BEGIN
+      INSERT INTO passport_consent (player_id, to_school_id) VALUES (C, (y->>'Z')::uuid);
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'refused', '§99 (consent): a guardian with no processing consent on record named a school');
     PERFORM set_config('app.user_id', '', true);
 
     -- (readers)
@@ -29822,6 +29964,30 @@ $v49$;
     SELECT q.email INTO got FROM role_requester((y->>'req_epupil')::uuid) q;
     PERFORM _assert(got = 'v122.epupil@example.invalid', format('§99 (email): the pupil reads his own request with [%s]', got));
 
+    -- (claims)
+    PERFORM _as((y->>'dos')::uuid);
+    SELECT x.ok, x.reason INTO v_ok, v_reason FROM pending_claim_confirm((y->>'claim_epupil')::uuid) x;
+    PERFORM _assert(NOT v_ok AND v_reason = 'office_only',
+      format('§99 (claims): the director of sport confirming the pupil''s claim was answered %s/%s', v_ok, v_reason));
+    SELECT x.ok, x.reason INTO v_ok, v_reason FROM pending_claim_decline((y->>'claim_epupil')::uuid) x;
+    PERFORM _assert(NOT v_ok AND v_reason = 'office_only',
+      format('§99 (claims): the director of sport declining the pupil''s claim was answered %s/%s', v_ok, v_reason));
+    SELECT x.ok, x.reason INTO v_ok, v_reason FROM login_code_issue('v122.epupil@example.invalid', md5('v122-dos-pupil'), 600) x;
+    PERFORM _assert(NOT v_ok AND v_reason = 'office_only',
+      format('§99 (claims): the director of sport issuing the pupil''s code was answered %s/%s', v_ok, v_reason));
+    SELECT x.ok, x.reason INTO v_ok, v_reason FROM login_code_issue('v122.eadult@example.invalid', md5('v122-dos-adult'), 600) x;
+    PERFORM _assert(v_ok, format('§99 (claims): the director of sport was refused the adult''s code (%s)', v_reason));
+    SELECT x.ok, x.reason INTO v_ok, v_reason FROM pending_claim_decline((y->>'claim_eadult')::uuid) x;
+    PERFORM _assert(v_ok, format('§99 (claims): the director of sport was refused the adult''s claim (%s)', v_reason));
+    PERFORM _as((y->>'hoffice')::uuid);
+    SELECT x.ok, x.reason INTO v_ok, v_reason FROM login_code_issue('v122.epupil@example.invalid', md5('v122-office-pupil'), 600) x;
+    PERFORM _assert(v_ok, format('§99 (claims): the office was refused the pupil''s code (%s)', v_reason));
+    SELECT x.ok, x.reason INTO v_ok, v_reason FROM pending_claim_confirm((y->>'claim_epupil')::uuid) x;
+    PERFORM _assert(v_ok, format('§99 (claims): the office could not confirm the pupil''s claim (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v122_claims(y) = 'eadult:declined,epupil:office_confirmed',
+      format('§99 (claims): the owner reads the claims as [%s]', _v122_claims(y)));
+
     -- (particles)
     PERFORM _as(V_C2);
     INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
@@ -29855,17 +30021,25 @@ $v49$;
                     AND NOT has_function_privilege('public', 'passport_consent_in_force(uuid)', 'EXECUTE')
                     AND NOT has_function_privilege('public', 'scouting_consent_in_force(uuid)', 'EXECUTE'),
       '§99 (doors): the in-force answers are not the application''s alone');
-    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'consent_giver_live(uuid,uuid)', 'EXECUTE')
-                    AND NOT has_function_privilege('public', 'consent_giver_live(uuid,uuid)', 'EXECUTE')
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'consent_giver_live(uuid,uuid,timestamptz)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'consent_giver_live(uuid,uuid,timestamptz)', 'EXECUTE')
                     AND NOT has_function_privilege('scrbrd_app', 'news_public_hits(uuid)', 'EXECUTE'),
       '§99 (doors): the giver test or the scan is callable');
     PERFORM _assert((SELECT bool_and(p.prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
                        FROM pg_proc p WHERE p.oid IN ('passport_open(uuid)'::regprocedure, 'scouting_candidates()'::regprocedure,
                                                       'role_requester(uuid)'::regprocedure, 'pending_claims()'::regprocedure,
                                                       'account_sign_ins(uuid)'::regprocedure,
+                                                      'pending_claim_confirm(uuid)'::regprocedure,
+                                                      'pending_claim_decline(uuid)'::regprocedure,
+                                                      'login_code_issue(text,text,integer)'::regprocedure,
                                                       'player_team_membership_log()'::regprocedure,
                                                       'player_move_voids_seats()'::regprocedure)),
       '§99 (doors): a replaced definer lost SECURITY DEFINER or its pinned search_path');
+    PERFORM _assert(has_function_privilege('scrbrd_app', 'pending_claim_confirm(uuid)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'pending_claim_confirm(uuid)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'pending_claim_decline(uuid)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'pending_claim_decline(uuid)', 'EXECUTE'),
+      '§99 (doors): the claim doors are not the application''s alone');
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 99
