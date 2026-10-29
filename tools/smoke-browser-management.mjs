@@ -488,7 +488,9 @@ try {
   });
   await tid(again.page, "enrol-submit").click({ timeout: 5000 });
   await afterReads(again.page, 1800);
-  ok("the post went out, with the role swapped for one she cannot grant", sent?.role === "official" && sent?.email === "coach2@example.invalid", JSON.stringify(sent));
+  // Add role names the account by its id, never by its email (db/122).
+  ok("the post went out, naming the account by its id, with the role swapped for one she cannot grant",
+     sent?.role === "official" && sent?.userId === "88888888-0000-0000-0000-00000000000a" && sent?.email === undefined, JSON.stringify(sent));
   const err = tid(again.page, "enrol-error");
   const said = await err.innerText().catch(() => "");
   ok("the server refused, and the screen says so beside the form", await err.count() === 1 && await again.page.locator('[role="dialog"]').count() === 1, said);
