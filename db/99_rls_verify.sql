@@ -5304,6 +5304,10 @@ BEGIN
   SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
   SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The day a boy last left his side, as the owner reads it.
+CREATE OR REPLACE FUNCTION _v109_left_on(p_player uuid) RETURNS date AS $$
+  SELECT max(m.left_on) FROM team_membership m WHERE m.player_id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- How many contacts a boy has, past RLS (D14: they stay).
 CREATE OR REPLACE FUNCTION _v109_contacts(p_player uuid) RETURNS integer AS $$
   SELECT count(*)::int FROM emergency_contact WHERE player_id = p_player AND active
@@ -26005,7 +26009,10 @@ $v49$;
     -- (adult)
     PERFORM _v109_leave(O);
     e := _v109_ending(L_OLD);
-    PERFORM _assert(e->>'kind' = 'left_school' AND (e->>'ends_on')::date = current_date
+    -- The day he left: the session's, or the day his side began if that is
+    -- later (THE DAY, AT ANY HOUR, above _v60_leave).
+    PERFORM _assert(e->>'kind' = 'left_school' AND (e->>'ends_on')::date = _v109_left_on(O)
+                    AND (e->>'ends_on')::date >= current_date
                     AND e->>'reason' IS NULL AND e->>'ended_by' IS NULL,
       format('§86 (adult): Old left at 19 and Aunt''s link reads %s', e));
 
