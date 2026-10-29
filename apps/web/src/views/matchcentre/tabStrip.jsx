@@ -17,8 +17,20 @@ import { splitTabs } from "../../lib/matchTabs.js";
  * Home and End move, Tab stays inside it, Escape closes it, and closing gives
  * focus back to More. A tab chosen there is named on More, which then reads
  * as the selected tab. The menu drops in quickly; with reduced motion it
- * simply appears (design/tokens.js `.mc-more-menu`).
+ * simply appears (menuCss below).
  */
+
+/**
+ * The menu's motion, drawn with the menu. It is the one animation kept here
+ * rather than in GLOBAL_CSS (design/tokens.js), because GLOBAL_CSS is in the
+ * signed-in entry graph, which is at its ceiling (tools/check-bundle.mjs), and
+ * only a match page ever draws this menu. It keeps GLOBAL_CSS's rule: a cut
+ * under prefers-reduced-motion and under the root's data-reduce-motion.
+ */
+export const menuCss = () => `@keyframes mcMenuIn{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}
+.mc-more-menu{animation:mcMenuIn ${T.motion.micro} ${T.motion.ease} both;transform-origin:top right}
+@media (prefers-reduced-motion: reduce){.mc-more-menu{animation:none!important}}
+:root[data-reduce-motion] .mc-more-menu{animation:none!important}`;
 
 /**
  * The id that labels the open panel: its tab, or More when the tab is in its menu.
@@ -155,6 +167,7 @@ export function TabStrip({ tabs, tab, setTab, narrow, label }) {
           style={{ position: "absolute", right: 0, top: `calc(100% + ${T.space.xs})`, zIndex: 30, minWidth: "min(220px, 100%)", maxWidth: "100%",
             display: "grid", gap: "2px", padding: T.space.xs, background: T.surface.overlay, border: `1px solid ${T.line.normal}`,
             borderRadius: T.radius.md, boxShadow: T.elevation.lg }}>
+          <style>{menuCss()}</style>
           {more.map((t) => {
             const on = t.id === tab;
             return (

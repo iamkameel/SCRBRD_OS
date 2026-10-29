@@ -410,15 +410,19 @@ export default function SCRBRD_OS() {
   // is in, is the Match Centre, which opens the fixture at that tab if his
   // fixtures read holds it; a role whose navigation has no Match Centre is
   // left where it lands, at /app. Leaving the Match Centre for another page
-  // leaves its address too. Nothing else here is listening for the address,
-  // so a plain replaceState does (the Match Centre reads it when it mounts).
+  // leaves its address too, and the back button onto one of its entries
+  // (pushed by its tabs) is the Match Centre again, not an address the page
+  // does not show. Nothing else here is listening for the address, so a
+  // plain replaceState does (the Match Centre reads it when it mounts).
   // Written out rather than imported: the entry graph has a ceiling.
   const atMatches = () => /^\/app\/matches(\/|$)/.test(window.location.pathname);
   const toApp = () => window.history.replaceState(window.history.state, "", "/app" + window.location.search);
   useEffect(() => {
-    if (appState !== "app" || !atMatches()) return;
-    if ((ROLES[role]?.nav || []).includes("matches")) setPage("matches");
-    else toApp();
+    if (appState !== "app") return undefined;
+    const go = () => { if (atMatches()) (ROLES[role]?.nav || []).includes("matches") ? setPage("matches") : toApp(); };
+    go();
+    window.addEventListener("popstate", go);
+    return () => window.removeEventListener("popstate", go);
   }, [appState, role]);
   const lastPage = useRef(page);
   useEffect(() => {

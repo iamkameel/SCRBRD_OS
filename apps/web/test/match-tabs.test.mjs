@@ -12,8 +12,8 @@
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { APP_MATCHES, NARROW_PX, PUBLIC_LIVE_TABS, STRIP_TABS, appPath, parseAppPath, parsePublicPath, publicPath, splitTabs, tabOr } from "../src/lib/matchTabs.js";
-import { TabStrip, panelLabel } from "../src/views/matchcentre/tabStrip.jsx";
-import { GLOBAL_CSS } from "../src/design/tokens.js";
+import { menuCss, TabStrip, panelLabel } from "../src/views/matchcentre/tabStrip.jsx";
+import { GLOBAL_CSS, T } from "../src/design/tokens.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
@@ -97,12 +97,11 @@ const html = (p) => renderToStaticMarkup(h(TabStrip, { setTab: () => {}, label: 
 }
 
 group("The menu's motion");
-ok("it drops in, quickly", /\.mc-more-menu\{animation:mcMenuIn/.test(GLOBAL_CSS) && /@keyframes mcMenuIn/.test(GLOBAL_CSS));
-{
-  const reduced = GLOBAL_CSS.slice(GLOBAL_CSS.indexOf("@media (prefers-reduced-motion: reduce)"));
-  ok("under prefers-reduced-motion it simply appears", /\.mc-more-menu\{animation:none!important\}/.test(reduced.slice(0, reduced.indexOf("\n}\n"))));
-  ok("...and under the ground display's own setting", /:root\[data-reduce-motion\] \.mc-more-menu\{animation:none!important\}/.test(GLOBAL_CSS));
-}
+// Drawn with the menu (tabStrip.jsx menuCss), not in GLOBAL_CSS: the signed-in entry graph is at its ceiling.
+ok("it drops in, quickly", /\.mc-more-menu\{animation:mcMenuIn /.test(menuCss()) && /@keyframes mcMenuIn/.test(menuCss()) && menuCss().includes(T.motion.micro));
+ok("under prefers-reduced-motion it simply appears", /@media \(prefers-reduced-motion: reduce\)\{\.mc-more-menu\{animation:none!important\}\}/.test(menuCss()));
+ok("...and under the root's own setting", /:root\[data-reduce-motion\] \.mc-more-menu\{animation:none!important\}/.test(menuCss()));
+ok("...and the global sheet does not carry it twice", !/mc-more-menu|mcMenuIn/.test(GLOBAL_CSS));
 
 console.log(`\nMATCH TABS: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

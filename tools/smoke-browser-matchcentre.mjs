@@ -779,7 +779,8 @@ try {
   // CRI-1.3: at 390 the strip is Summary, Scorecard, Commentary and More; the rest are in More's menu.
   for (const t of TABS) {
     await pickTab(ph.page, t).catch(() => {});
-    await ph.page.waitForTimeout(500);
+    await tid(ph.page, `mc-panel-${t}`).waitFor({ timeout: 4000 }).catch(() => {});
+    await afterReads(ph.page, 300);
     const wide = await ph.page.evaluate(() => document.documentElement.scrollWidth);
     ok(`${t}: opened, and no sideways scroll at 390 (${wide})`, wide <= 390 && await tid(ph.page, `mc-panel-${t}`).count() === 1);
   }
@@ -795,24 +796,32 @@ try {
     await tid(dl.page, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
     await afterReads(dl.page, 1500);
     const path = () => new URL(dl.page.url()).pathname;
+    /** Until the page is at this path with this tab selected (null: the list), or the bound: what the next check reads. */
+    const settled = (/** @type {string} */ p, /** @type {string | null} */ t) => dl.page.waitForFunction(([p, t]) => location.pathname === p
+      && (t === null ? !document.querySelector('[data-testid="match-view"]') : document.querySelector(`[data-testid="mc-tab-${t}"]`)?.getAttribute("aria-selected") === "true"
+        && !!document.querySelector(`[data-testid="mc-panel-${t}"]`)), [p, t], { timeout: 6000 }).catch(() => {});
+    const FX = `/app/matches/${fx.live}`;
     ok("...and the link opens that fixture on its Commentary tab",
        await tid(dl.page, "match-view").getAttribute("data-match").catch(() => null) === fx.live
        && await tid(dl.page, "mc-tab-commentary").getAttribute("aria-selected") === "true" && await tid(dl.page, "mc-panel-commentary").count() === 1, path());
-    await tab(dl.page, "scorecard");
+    await tid(dl.page, "mc-tab-scorecard").click({ timeout: 4000 }).catch(() => {});
+    await settled(`${FX}/scorecard`, "scorecard");
     ok("choosing the Scorecard moves the address to /app/matches/:id/scorecard", path() === `/app/matches/${fx.live}/scorecard`, path());
-    await tab(dl.page, "summary");
+    await tid(dl.page, "mc-tab-summary").click({ timeout: 4000 }).catch(() => {});
+    await settled(FX, "summary");
     ok("...and the Summary to the fixture's own", path() === `/app/matches/${fx.live}`, path());
     await dl.page.goBack();
-    await dl.page.waitForTimeout(500);
+    await settled(`${FX}/scorecard`, "scorecard");
     ok("the back button: the Scorecard again", await tid(dl.page, "mc-tab-scorecard").getAttribute("aria-selected") === "true" && path().endsWith("/scorecard"), path());
     await dl.page.goBack();
-    await dl.page.waitForTimeout(500);
+    await settled(`${FX}/commentary`, "commentary");
     ok("...and again: the Commentary the link opened", await tid(dl.page, "mc-panel-commentary").count() === 1, path());
     await tid(dl.page, "mc-back").click({ timeout: 4000 }).catch(() => {});
-    await dl.page.waitForTimeout(800);
+    await settled("/app/matches", null);
     ok("All matches closes the fixture and the address is the list's", await tid(dl.page, "match-view").count() === 0 && path() === "/app/matches", path());
     await dl.page.goBack();
-    await afterReads(dl.page, 1200);
+    await settled(`${FX}/commentary`, "commentary");
+    await afterReads(dl.page, 300);
     ok("...from which the back button reopens the fixture where it was", await tid(dl.page, "mc-panel-commentary").count() === 1, path());
     ok("no console errors (links)", dl.errors.length === 0, dl.errors.join(" | "));
     await dl.ctx.close();
