@@ -419,7 +419,6 @@ export default function SCRBRD_OS() {
     if (appState !== "app" || !atMatches()) return;
     if ((ROLES[role]?.nav || []).includes("matches")) setPage("matches");
     else toApp();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appState, role]);
   const lastPage = useRef(page);
   useEffect(() => {
