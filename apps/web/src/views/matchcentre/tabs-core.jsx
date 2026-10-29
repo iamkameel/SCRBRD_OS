@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
+import { formatKind } from "@scrbrd/scoring";
 import { T, contrast } from "../../design/tokens.js";
-import { boardInnings, commentaryByOver, inningsBreak, oversOf, teamOf } from "../../lib/matchCentre.js";
+import { boardInnings, commentaryByOver, inningsBreak, oversOf, targetOf, teamOf } from "../../lib/matchCentre.js";
 import { Board, chipFill } from "../../ui/board.jsx";
 import { atThisRate, boardFromInnings } from "../../scorer/boardData.js";
 import { boardInsights } from "../../scorer/signals.js";
@@ -25,8 +26,6 @@ import { Worm } from "../../ui/charts/worm.jsx";
 
 // ── Summary ─────────────────────────────────────────────
 
-/** The target of the second innings, as the fold has it; none in a Two-Day, whose chase is the fourth (chaseOf()). */
-const targetOf = (innings) => matchChaseOf(innings, 1)?.target ?? null;
 
 /** The innings break (§10 item 10, p2): the first innings in four facts. */
 function InningsBreakCard({ match, innings, overs }) {
@@ -55,7 +54,7 @@ function InningsBreakCard({ match, innings, overs }) {
         <span style={{ ...T.role.label, color: T.brand.accentText }}>Innings break</span>
         <p style={{ ...T.role.title.md, color: T.content.primary, margin: 0 }}>
           {target == null ? <><SideName side={chasing}/> to bat</>
-            : <><SideName side={chasing}/> need {target} to win from {first.overs ?? overs} overs</>}
+            : <><SideName side={chasing}/> need {target} to win{formatKind(match?.format) === "declaration" ? "" : ` from ${first.overs ?? overs} overs`}</>}
         </p>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)" }}>
@@ -87,7 +86,7 @@ function InningsBreakCard({ match, innings, overs }) {
 // `fold`, the log and its context, for the chase's rates; `settled`, play has
 // decided it.
 export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns, quietMoments = false,
-                             venueLine = null, rainLine = null, par = null, events = null, fold = null, settled = false }) {
+                             venueLine = null, rainLine = null, par = null, events = null, fold = null, settled = false, okAt = null }) {
   const { index, atBreak } = boardInnings(innings, result ? {} : null);
   const inn = innings[index];
   const chaseNow = matchChaseOf(innings, index);
@@ -113,12 +112,16 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   const side = teamOf(match, inn.battingTeam);
   const insight = !props ? [] : boardInsights(inn, { target, overs: inOvers });
   const latest = [...commentary].reverse().filter((c) => c.kind !== "over_end").slice(0, 3);
+  // CRI-1.1: how fresh the board is, while the match is being played — `okAt`
+  // is the page's last good read of the log. Once play has decided it the
+  // page stops reading the log on a clock (GA-I36 §7), and an age would only grow.
+  const updated = match.status === "live" && !settled && okAt != null ? { at: okAt, status: "Live" } : undefined;
   return (
     <div style={{ display: "grid", gap: T.space.lg }} data-testid="mc-summary">
       {props && (
         <div style={{ position: "relative" }}>
           <Board {...props} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="mc-board"
-            insight={insight.length ? insight : undefined}
+            insight={insight.length ? insight : undefined} updated={updated}
             extra={track ? <RateTrack track={track} testid="mc-rate-track" textStyle={{ fontFamily: T.type.body, fontSize: "13px" }}
               palette={{ line: T.board.dim, bar: T.board.lime, dot: T.board.figure, text: T.board.dim, gap: T.board.lime }}/> : null}/>
           <MomentMark moment={moment} announce={!quietMoments}/>

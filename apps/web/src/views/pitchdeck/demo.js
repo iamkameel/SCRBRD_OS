@@ -153,7 +153,9 @@ const HILLVIEW = "Hillview College 1st XI";
 
 /** @param {ReturnType<typeof buildMatch>} d  the demonstration match, for the "Now" tile's board */
 export function buildDaySheet(d) {
-  const props = boardFromInnings(d.chasing, { target: d.target, overs: d.overs });
+  // No last-wicket row on the deck's day sheet (CRI-1.1 is the Match Centre's and the public page's).
+  const raw = boardFromInnings(d.chasing, { target: d.target, overs: d.overs });
+  const props = raw ? { ...raw, lastWicket: undefined } : null;
   const insight = boardInsights(d.chasing, { target: d.target, overs: d.overs });
   const next = { id: "deck-next", homeTeam: HOME, awayTeam: ASHDOWN, status: "upcoming", date: day(1), time: "13:00", venue: "Ashdown High, Top Field" };
   return {

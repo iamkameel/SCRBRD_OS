@@ -36,9 +36,9 @@ ok("...and a name that is neither is named as it is", teamOf(live, "Somebody XI"
 
 group("The match line, and where the match is");
 ok("the age group of a side", ageGroupOf("U16B") === "U16" && ageGroupOf("1XI") === "1st XI" && ageGroupOf("Hilton 1st XI") === null);
-ok("competition · age group · ground · start · weather · innings",
-   matchLine({ match: live, competition: "KZN Super League", weather: { tempC: 25, condition: "Sunny" }, phase: "2nd innings" })
-   === "KZN Super League · 1st XI · Gordon Sherwood Oval · Sat 26 Sep · 10:00 · 25° sunny · 2nd innings");
+ok("competition · age group · ground · start · weather (the innings is the status sentence's, CRI-1.2)",
+   matchLine({ match: live, competition: "KZN Super League", weather: { tempC: 25, condition: "Sunny" } })
+   === "KZN Super League · 1st XI · Gordon Sherwood Oval · Sat 26 Sep · 10:00 · 25° sunny");
 ok("a part the fixture does not have is left out, not dashed", matchLine({ match: { homeTeam: "1XI", homeLabel: "Hilton 1XI" } }) === "1st XI");
 const open = [inningsStart({ battingTeam: "1XI", bowlingTeam: "Opp", squad: [{ id: "a", name: "A One" }, { id: "b", name: "B Two" }, { id: "c", name: "C Three" }, { id: "d", name: "D Four" }], overs: 1 }),
   batters({ striker: "a", nonStriker: "b" }), bowler({ bowler: "Typed Bowler" })];
