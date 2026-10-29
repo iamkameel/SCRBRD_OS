@@ -2224,14 +2224,23 @@ players, school-wide staff, a spectator the office admitted, and the parents
 of boys on it. Until now every parent at the school read every side's. A
 notice about a child still reaches his family; a notice to one person still
 reaches him alone; school notices, safeguarding notices and a post's notice
-(db/101's) are unchanged. Nobody gains a notice.
+(db/101's) are unchanged. **The side is the one on the notice's day**
+(Kameel, 29 Oct: "Keep the ones from when he was in that side"): a boy who
+moved, and his parents, keep his old side's notices from while he was on it
+and not the ones after; his parents do not gain the new side's earlier ones.
+**A boy playing up and his parents get that match's notices** (Kameel, 29
+Oct: "Yes: he and his parents get that match's notices too"), and nothing
+else of the side he plays up for. Only the boy himself gains a notice by it.
 
-**What it does to a live database.** One RESTRICTIVE read policy on
-`notification` (`notification_follows_side`), and `notification_report()`
-(db/101's) re-emitted in place with the same clause, so a parent of another
-side who is handed a side notice's id is told it is not there. No table,
-column, row or grant changes; db/09's read policy is not touched. It refuses
-to run before db/117 (the dated `side_reach()`) or on a
+**What it does to a live database.** Two read questions
+(`notice_follows_side()`, `notice_side_read()`), one RESTRICTIVE read policy
+on `notification` (`notification_follows_side`) and one PERMISSIVE
+(`notification_read_side`: the moved or playing-up boy himself, whom db/09's
+read asks at the wrong side), and `notification_report()` (db/101's)
+re-emitted in place with both, so a parent of another side who is handed a
+side notice's id is told it is not there. No table, column or row changes;
+db/09's read policy is not touched. It refuses to run before db/117 (the
+dated `side_reach_on()`, `news_own_old_side()`) or on a
 `notification_report()` that is not db/101's, and a second paste changes
 nothing. **What a parent sees changes at the paste:** Notices and the badge
 lose other sides' notices.
