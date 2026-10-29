@@ -2237,25 +2237,35 @@ his eighteenth birthday a pupil decides for himself, on his own account,
 whether scouts may see him; until then it stays his parent's or guardian's.
 **"Under eighteen, only his guardian; at eighteen, he does it himself."** The
 same for his passport: a pupil under eighteen no longer names a school for his
-own record, or withdraws one; his parent or guardian does (two new RESTRICTIVE
-write policies on `passport_consent`, and `passport_consent_writer_ok()`).
+own record; his parent or guardian does, on a link with processing consent on
+record (two new RESTRICTIVE write policies on `passport_consent`, and
+`passport_consent_writer_ok()`). **After the read-through (29 Oct, 21:15),
+each as recommended:** a consent a boy named for himself while under eighteen
+lapses; under eighteen he may still withdraw one; a link granted afresh does
+not bring a lapsed consent back (a corrected end still does); and a pupil's
+Google claim and sign-in code are the office's and the principal's alone, so
+the director of sport is told so rather than answering one, and "Issue a code"
+names the account by its id.
 
 **What it does to a live database.** It replaces `passport_open()`,
 `scouting_candidates()`, `scouting_consent_set()` (now the application's alone,
 no longer PUBLIC's), `role_requester()`, `pending_claims()`,
-`account_sign_ins()`, `news_public_hits()`, `player_team_membership_log()` and
+`account_sign_ins()`, `pending_claim_confirm()`, `pending_claim_decline()`,
+`news_public_hits()`, `player_team_membership_log()` and
 `player_move_voids_seats()`, each with its owner, grants, SECURITY DEFINER and
-pinned search path as they were, and adds `consent_giver_live()` (granted to
-nobody), `passport_consent_in_force()` and `scouting_consent_in_force()`
-(the application's). It refuses to run unless each function in place is the
+pinned search path as they were; adds one rule to `login_code_issue()`, its
+grants untouched; and adds `consent_giver_live()` (granted to nobody),
+`passport_consent_in_force()` and `scouting_consent_in_force()` (the
+application's). It refuses to run unless each function in place is the
 earlier file's or its own (md5 of its folded body), and a second paste
-changes nothing. No table, column, policy or row changes; production holds
-only test data. **What moves on the paste:** a named school stops opening a
+changes nothing. No table, column or row changes, and two policies are added;
+production holds only test data. **What moves on the paste:** a named school stops opening a
 passport, and a scout stops seeing a boy, wherever the consent's giver's link
 has already ended or no giver is on record (only an owner's seed writes
 none); a pupil's address reads blank to the director of sport on those three
-lists; a news post held back only by a two-letter particle passes its next
-check; moves already recorded keep their dates.
+lists, and she can no longer confirm or decline a pupil's Google claim or
+issue his code; a news post held back only by a two-letter particle passes
+its next check; moves already recorded keep their dates.
 
 Paste `node tools/bundle-sql.mjs --apply 122` after 121, then the verify
 bundle (§99 is its proof). The summary row "A lapsed consent, a pupil's
@@ -2264,7 +2274,9 @@ it refuses to start without db/122 (`expected-migrations.json`): its
 `passport_consents` and `scouting_consent` reads select the two in-force
 functions. `POST /api/users` also takes `{ userId, role, schoolId }`, and
 `POST /api/passport/consent` withdraws a lapsed consent naming the same
-school before it writes the new one.
+school before it writes the new one; `POST /api/passport/consent/:id/withdraw`
+answers 403 when it withdrew nothing; and `POST /api/auth/invite` also takes
+`{ userId }`.
 <!-- ── end db/122 ── -->
 <!-- ── db/123: a side's notices reach the side ── -->
 #### A side's notices reach the side (db/123)
