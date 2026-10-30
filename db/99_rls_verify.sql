@@ -8400,6 +8400,100 @@ BEGIN
   END LOOP;
   RETURN rtrim(v, ',');
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- §101's second part (db/124 §5, Kameel 30 Oct 2026), as the owner:
+--   E, a Hilton 1XI boy eighteen today, whose own account (eself: player and
+--     self-access, both from four years ago) named his union three years ago,
+--     at fifteen, before db/122 shut that door (written here past the writer
+--     policy, as the owner, in his name, and dated back).
+--   R, a Hilton 16XI boy of nineteen, at Hilton from three years ago, whose
+--     guardian (rg, linked from three years ago) named his union two years
+--     ago. _v124_away() then has him leave eighteen months ago, at seventeen,
+--     as the move route would (his membership closed, and db/62's close on
+--     leaving: his link ends on his eighteenth birthday, a year ago);
+--     _v124_back() has him return today (a new membership, and db/62's
+--     reopening in place). The deferred triggers that call those two would
+--     fire only at commit, and this file rolls back, so they are called here.
+CREATE OR REPLACE FUNCTION _v124_stage5(y jsonb) RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  t date := sa_today();
+  c_e uuid; c_r uuid; v_a uuid; v_pe uuid; v_pr uuid; ids jsonb;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '1XI', 'Verify OneTwentyFour Elder', 1243, 'batter', (t - interval '18 years 1 month')::date) RETURNING id INTO c_e;
+  PERFORM set_config('app.effective_on', (t - interval '3 years')::date::text, true);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '16XI', 'Verify OneTwentyFour Returner', 1244, 'bowler', (t - interval '19 years 2 months')::date) RETURNING id INTO c_r;
+  PERFORM set_config('app.effective_on', '', true);
+  ids := _v71_people('v124b', ARRAY[
+    ARRAY['eself', 'player',   HIL::text, '1XI', c_e::text]]);
+  INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v124b.rg@example.invalid', 'V124B Rg', 'guardian')
+  RETURNING id INTO v_a;
+  ids := ids || jsonb_build_object('rg', v_a);
+  -- The two links are dated back, so a consent dated back is no older than
+  -- them (db/122 Q4). An appointment's own date is stamped by its trigger
+  -- (db/01: who and when are not the writer's to say), so it is set aside
+  -- for these two rows, as the owner, and put back.
+  ALTER TABLE role_assignment DISABLE TRIGGER role_assignment_granter;
+  -- E's own link, from four years ago.
+  INSERT INTO role_assignment (person_id, role, school_id, created_at, created_by)
+  VALUES ((ids->>'eself')::uuid, 'selfaccess', HIL, now() - interval '4 years', OFFICE) RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from, created_at)
+  VALUES (v_a, c_e, 'self', 'verified', OFFICE, now() - interval '4 years', 'granted', 'popia-2026-01', now() - interval '4 years',
+          OFFICE, (t - interval '4 years')::date, now() - interval '4 years');
+  -- R's guardian's link, from three years ago, open (he is at school).
+  INSERT INTO role_assignment (person_id, role, school_id, created_at, created_by)
+  VALUES ((ids->>'rg')::uuid, 'guardian', HIL, now() - interval '3 years', OFFICE) RETURNING id INTO v_a;
+  ALTER TABLE role_assignment ENABLE TRIGGER role_assignment_granter;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from, valid_until, created_at)
+  VALUES (v_a, c_r, 'parent', 'verified', OFFICE, now() - interval '3 years', 'granted', 'popia-2026-01', now() - interval '3 years',
+          OFFICE, (t - interval '3 years')::date, NULL, now() - interval '3 years');
+  -- E names his union at fifteen; R's guardian names it two years ago.
+  PERFORM set_config('app.user_id', ids->>'eself', true);
+  INSERT INTO passport_consent (player_id, to_school_id) VALUES (c_e, (y->>'U')::uuid) RETURNING id INTO v_pe;
+  PERFORM set_config('app.user_id', ids->>'rg', true);
+  INSERT INTO passport_consent (player_id, to_school_id) VALUES (c_r, (y->>'U')::uuid) RETURNING id INTO v_pr;
+  PERFORM set_config('app.user_id', '', true);
+  UPDATE passport_consent SET granted_at = now() - interval '3 years' WHERE id = v_pe;
+  UPDATE passport_consent SET granted_at = now() - interval '2 years' WHERE id = v_pr;
+  RETURN ids || jsonb_build_object('E', c_e, 'R', c_r, 'pc_e', v_pe, 'pc_r', v_pr);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- R leaves eighteen months ago, at seventeen: the move closes his
+-- membership, and db/62 dates his guardians' links to the later of that day
+-- and his eighteenth birthday.
+CREATE OR REPLACE FUNCTION _v124_away(y jsonb) RETURNS text AS $$
+DECLARE v_left date := sa_today() - 548;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  UPDATE team_membership SET left_on = v_left WHERE player_id = (y->>'R')::uuid AND left_on IS NULL;
+  PERFORM guardian_links_close_on_leaving((y->>'R')::uuid, v_left);
+  RETURN (SELECT string_agg(coalesce((s.valid_until - sa_today())::text, 'open'), ',') FROM assignment_subject s
+           WHERE s.player_id = (y->>'R')::uuid);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- R comes back today: a new membership at Hilton, and db/62's reopening.
+CREATE OR REPLACE FUNCTION _v124_back(y jsonb) RETURNS text AS $$
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  INSERT INTO team_membership (player_id, school_id, team_code, joined_on, reason)
+  VALUES ((y->>'R')::uuid, '11111111-1111-1111-1111-111111111111', '16XI', sa_today(), 'joined');
+  PERFORM guardian_links_reopen_at_school((y->>'R')::uuid);
+  RETURN (SELECT string_agg(coalesce((s.valid_until - sa_today())::text, 'open'), ',') FROM assignment_subject s
+           WHERE s.player_id = (y->>'R')::uuid);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The office corrects a guardian's end date in place (db/122 §1d Q4): the
+-- same link, live again.
+CREATE OR REPLACE FUNCTION _v124_correct(p_person uuid, p_player uuid) RETURNS void AS $$
+  UPDATE assignment_subject s SET valid_until = NULL
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = p_person AND a.role = 'guardian' AND s.player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/124 (section 101) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -30552,6 +30646,15 @@ $v49$;
   --   (ended)      named again, then his mother's link ends: the consent has
   --                lapsed and the selector is closed; she reads no log; his
   --                father still does, and reads the consent lapsed
+  --   (correct)    the office corrects his mother's end date in place: her
+  --                consent counts again (db/122 §1d Q4, unchanged)
+  -- db/124 §5 (Kameel, 30 Oct 2026, both as recommended):
+  --   (self-age)   a consent E gave himself at fifteen does not count now he
+  --                is eighteen; given again at eighteen, it does
+  --   (reopen)     R's guardian named his union at school; R left at
+  --                seventeen, turned eighteen away (the link ended) and came
+  --                back today (db/62 reopened it in place): the old consent
+  --                stays lapsed; given again after his return, it counts
   --   (doors)      the application's doors are scrbrd_app's alone; the
   --                internal ones nobody's; the log no table read reaches
   --
@@ -30577,6 +30680,12 @@ $v49$;
   --   the scope trigger dropped               → (scope)
   --   passport_union_consent() granted to the application → (doors)
   --   the log granted to the application      → (doors)
+  -- And §5's two (30 Oct 2026, the section alone, each broken and restored):
+  --   consent_giver_live() asking his age today, as db/122 wrote it
+  --                                           → (self-age): E's consent at
+  --                                             fifteen counted at eighteen
+  --   consent_giver_live() without the reopening → (reopen): the old consent
+  --                                             came back with the reopened link
   -- One did not go red, and cannot alone: passport_union_reader_at()'s own
   -- pad test, because app_can() refuses on a pad first; it stays as a second
   -- lock, as db/57's readers keep theirs.
@@ -30784,6 +30893,58 @@ $v49$;
     SELECT count(*) INTO v_n FROM passport_union_reads() WHERE player_id = B;
     PERFORM _assert(v_n = 4, format('§101 (ended): his father reads %s union read(s), not 4', v_n));
     PERFORM _assert(passport_consent_in_force(v_pc) IS FALSE, '§101 (ended): his father does not read the lapsed consent as lapsed');
+
+    -- (correct) the office corrects his mother's end date in place: the same
+    -- link, so her consent counts again (db/122 §1d Q4, unchanged).
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v124_correct((y->>'mum')::uuid, B);
+    PERFORM _as((y->>'sel')::uuid);
+    PERFORM _assert(passport_open(B), '§101 (correct): with his mother''s end corrected in place, the selector does not open it');
+    PERFORM _as((y->>'dad')::uuid);
+    PERFORM _assert(passport_consent_in_force(v_pc) IS TRUE, '§101 (correct): his father reads the revived consent as lapsed');
+
+    -- (self-age) and (reopen): db/124 §5 (Kameel, 30 Oct 2026).
+    PERFORM set_config('app.user_id', '', true);
+    y := y || _v124_stage5(y);
+    -- (self-age) E, eighteen today, named his union himself at fifteen.
+    PERFORM _as((y->>'sel')::uuid);
+    PERFORM _assert(NOT passport_open((y->>'E')::uuid),
+      '§101 (self-age): the consent E gave himself at fifteen counts now he is eighteen');
+    PERFORM _as((y->>'eself')::uuid);
+    PERFORM _assert(passport_consent_in_force((y->>'pc_e')::uuid) IS FALSE,
+      format('§101 (self-age): E reads his fifteen-year-old''s consent in force %s, not lapsed', passport_consent_in_force((y->>'pc_e')::uuid)));
+    -- Given again today, at eighteen, as the grant route does: it counts.
+    UPDATE passport_consent SET withdrawn_at = now()
+     WHERE player_id = (y->>'E')::uuid AND to_school_id = U_ AND withdrawn_at IS NULL AND passport_consent_in_force(id) = false;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    PERFORM _assert(v_n = 1, format('§101 (self-age): E cleared %s lapsed row(s), not 1', v_n));
+    INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'E')::uuid, U_);
+    PERFORM _as((y->>'sel')::uuid);
+    PERFORM _assert(passport_open((y->>'E')::uuid), '§101 (self-age): E''s own consent at eighteen does not open his passport to his union');
+    -- (reopen) R's guardian named his union two years ago, at school.
+    PERFORM _assert(passport_open((y->>'R')::uuid), '§101 (reopen): before he left, the selector does not open R''s passport');
+    PERFORM set_config('app.user_id', '', true);
+    got := _v124_away(y);
+    PERFORM _as((y->>'sel')::uuid);
+    PERFORM _assert(NOT passport_open((y->>'R')::uuid),
+      format('§101 (reopen): his link ended away (ends %s days from today), and the selector still opens it', got));
+    PERFORM set_config('app.user_id', '', true);
+    got := _v124_back(y);
+    PERFORM _assert(got = 'open', format('§101 (reopen): db/62 did not reopen R''s link in place on his return (%s)', got));
+    PERFORM _as((y->>'sel')::uuid);
+    PERFORM _assert(NOT passport_open((y->>'R')::uuid),
+      '§101 (reopen): the link reopened on his return brought back a consent given before it ended');
+    PERFORM _as((y->>'rg')::uuid);
+    PERFORM _assert(passport_consent_in_force((y->>'pc_r')::uuid) IS FALSE,
+      format('§101 (reopen): his guardian reads the old consent in force %s, not lapsed', passport_consent_in_force((y->>'pc_r')::uuid)));
+    -- Given again on the reopened link, as the grant route does: it counts.
+    UPDATE passport_consent SET withdrawn_at = now()
+     WHERE player_id = (y->>'R')::uuid AND to_school_id = U_ AND withdrawn_at IS NULL AND passport_consent_in_force(id) = false;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    PERFORM _assert(v_n = 1, format('§101 (reopen): his guardian cleared %s lapsed row(s), not 1', v_n));
+    INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'R')::uuid, U_);
+    PERFORM _as((y->>'sel')::uuid);
+    PERFORM _assert(passport_open((y->>'R')::uuid), '§101 (reopen): his guardian''s consent given after his return does not open it');
 
     -- (doors)
     PERFORM _assert(has_function_privilege('scrbrd_app', 'passport_union_reads()', 'EXECUTE')

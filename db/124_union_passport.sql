@@ -100,6 +100,50 @@
 --                           when. Never on a pad. Settings → Passport draws
 --                           it under the consents.
 --
+-- ── 5 · WHOSE WORD COUNTS (Kameel, 30 October 2026, both as recommended) ──
+-- db/124 is not pasted and already re-writes the passport consent's doors, so
+-- two decisions on consent_giver_live() (db/122, which every in-force answer
+-- and both consumers ask) are folded in here:
+--   (1) "A passport consent a boy gave himself is tested against his age ON
+--       THE DAY HE GAVE IT, not today." The self-access arm asks
+--       majority_on(born) <= sa_date(p_given_at): granted_at for a passport,
+--       decided_at for a scouting decision (the consumers already pass those).
+--       One he gave at fifteen (before db/122 shut that door) never counts,
+--       not even from his eighteenth birthday; db/122 §1d Q1's note that it
+--       would "count from then" no longer holds.
+--   (2) "A link db/62 reopens in place when a boy returns counts as a fresh
+--       link: a consent given before the link was closed does not come back."
+--       A guardian's consent does not count once he has come back to school,
+--       after the consent was given, from an absence during which his
+--       guardians' links ended (guardian_link_reopened_since()). A corrected
+--       end date by the office still revives it, as db/122 §1d Q4 says: that
+--       is the same link, and no return to school happened.
+--   WHY THE MEMBERSHIP HISTORY, AND NO STAMP. db/62 reopens a link by setting
+--   valid_until back to NULL, and db/109 deletes its ending row as it does,
+--   so the link itself keeps no trace of having ended. Three ways were
+--   weighed:
+--     a stamp (a reopened_at column on assignment_subject): a new column and
+--       a back-fill, a second record of what the moves already record, and a
+--       date that drifts from them if one is edited;
+--     moving created_at on reopening: the existing Q4 test would then do the
+--       rest, but created_at is read as "linked since", beside created_by, on
+--       the family-links screen (child_links); a reopening would re-date the
+--       office's own act and name the wrong day;
+--     reading team_membership (chosen): the moves are the record. The link
+--       ended on the later of the day he left and his eighteenth birthday
+--       (guardian_links_close_on_leaving()'s own date), and was reopened when
+--       a school membership began again after a gap
+--       (team_membership_opens_guardian_links()). So "his links ended while he
+--       was away and came back after this consent" is: a school membership
+--       began after the consent's day, no school membership was open the day
+--       before it, and the later of his last leaving day and his eighteenth
+--       birthday came before it. A boy who left at fifteen and came back at
+--       sixteen kept a live link throughout (it was dated to his birthday,
+--       still ahead), and his family's consent stands; a move between sides or
+--       schools leaves no gap. Computed, not stamped, as db/122's lapse is.
+--   Self-access links are not closed on leaving (db/62 closes guardians'
+--   only), so (2) asks the guardian arm alone.
+--
 -- ── ASKED OF KAMEEL, AND ANSWERED (30 Oct 2026: all seven as
 --    recommended, as built) ─────────────────────────────────────────────
 --   U1  CSA Schools and a provincial union: two lines, one per institution,
@@ -138,6 +182,14 @@
 --   function passport_consent_in_force(uuid) (db/122): body replaced: a union
 --     row's answer is the family's alone
 --   function role_words(text) (db/77): one name added
+--   function consent_giver_live(uuid,uuid,timestamptz) (db/122): body
+--     replaced (§5): a boy's own consent counts only if he was eighteen on
+--     the day he gave it; a guardian's consent does not come back with a link
+--     db/62 reopened on his return after it ended. On the paste, a consent a
+--     boy gave himself under eighteen stops counting at eighteen, and one
+--     given before such a return stops counting; the family gives it again
+--   function guardian_link_reopened_since(uuid,timestamptz): new, nobody's to
+--     call
 --   policies passport_consent_union_family_only (SELECT) and
 --     passport_consent_union_is_his (INSERT): new RESTRICTIVE
 -- No column, no row of anybody's. A second paste changes nothing. Each new
@@ -159,7 +211,9 @@ BEGIN
      OR to_regprocedure('school_union(uuid)') IS NULL OR to_regprocedure('school_federation()') IS NULL
      OR to_regprocedure('app_support_access_id(uuid)') IS NULL OR to_regprocedure('app_is_platform_wide()') IS NULL
      OR to_regprocedure('log_restricted_read(text,uuid[],text[],uuid)') IS NULL
-     OR to_regprocedure('is_family_of(uuid)') IS NULL OR to_regprocedure('player_school(uuid)') IS NULL THEN
+     OR to_regprocedure('is_family_of(uuid)') IS NULL OR to_regprocedure('player_school(uuid)') IS NULL
+     OR to_regprocedure('sa_date(timestamptz)') IS NULL OR to_regprocedure('majority_on(date)') IS NULL
+     OR to_regclass('team_membership') IS NULL THEN
     RAISE EXCEPTION 'db/124: consent_giver_live(), passport_consent_writer_ok() (db/122), school_union(), school_federation() (db/57), app_support_access_id() (db/22), app_is_platform_wide() (db/20), log_restricted_read() or is_family_of() is missing; apply them first';
   END IF;
   FOR r IN SELECT * FROM (VALUES
@@ -167,7 +221,8 @@ BEGIN
       ('passport(uuid)',                  '5a74d545a6c669c9535fa5446fac1427', 'af51b8b92926f6c7e50cc98c8d1e89b6', 'db/116'),
       ('passport_name(uuid)',             'c66de74b0fda2fd755e86c140a6a77c9', 'cee15d920736a7ffecce8943c2c6b0b8',     'db/116'),
       ('passport_consent_in_force(uuid)', '5ba05a756524f94ebad1ca00bd7bfc0d', 'c46388505e757f57fa4ac423c300b13e',  'db/122'),
-      ('role_words(text)',                '2ca3e32d8973caf8a5c69e66ad9b3952', '009daaf01590b760ab0a1c54fde1d565',    'db/77'))
+      ('role_words(text)',                '2ca3e32d8973caf8a5c69e66ad9b3952', '009daaf01590b760ab0a1c54fde1d565',    'db/77'),
+      ('consent_giver_live(uuid,uuid,timestamptz)', '7b574030d541bea9a1b791c972809cc8', '77a2afe09e3720cf1975a58843db6cba', 'db/122'))
       AS x(fn, was, mine, src)
   LOOP
     SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = to_regprocedure(r.fn);
@@ -494,6 +549,82 @@ RETURNS TABLE (player_id uuid, read_at timestamptz, reader_name text, reader_rol
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 
+
+-- ══════════════════════════════════════════════════════════════════
+-- §5 · Whose word counts: his age on the day, and a link reopened afresh
+-- ══════════════════════════════════════════════════════════════════
+/**
+ * Did he come back to school after p_at from an absence long enough for his
+ * guardians' links to have ended? A school membership (team_membership at a
+ * `school`, still_at_school()'s test) that began after the day of p_at, with
+ * no school membership covering the day before it (a gap, not a move), and
+ * the later of the day he last left and his eighteenth birthday before it:
+ * db/62's guardian_links_close_on_leaving() ends a link on exactly that
+ * later day, and guardian_links_reopen_at_school() reopens it in place when
+ * he comes back. The membership history is that record, written by the
+ * moves and never by a person. Internal: not a definer, granted to nobody.
+ */
+CREATE OR REPLACE FUNCTION guardian_link_reopened_since(p_player uuid, p_at timestamptz) RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM team_membership j
+      JOIN school js ON js.id = j.school_id AND js.kind = 'school'
+      JOIN player p ON p.id = j.player_id
+      CROSS JOIN LATERAL (
+        SELECT max(o.left_on) AS last_left
+          FROM team_membership o
+          JOIN school os ON os.id = o.school_id AND os.kind = 'school'
+         WHERE o.player_id = j.player_id AND o.id <> j.id
+           AND o.left_on IS NOT NULL AND o.left_on < j.joined_on) l
+     WHERE j.player_id = p_player
+       AND j.joined_on > sa_date(p_at)
+       -- Away the day before: no other school membership was open then.
+       AND NOT EXISTS (SELECT 1 FROM team_membership o
+                         JOIN school os ON os.id = o.school_id AND os.kind = 'school'
+                        WHERE o.player_id = j.player_id AND o.id <> j.id
+                          AND o.joined_on < j.joined_on
+                          AND (o.left_on IS NULL OR o.left_on >= j.joined_on))
+       -- And his links had ended before he came back.
+       AND l.last_left IS NOT NULL
+       AND greatest(l.last_left, majority_on(p.born)) < j.joined_on)
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+
+/**
+ * db/122's consent_giver_live(), with Kameel's two decisions of 30 October
+ * 2026 (both as recommended), and nothing else moved:
+ *   (1) the boy's own word counts only if he was eighteen ON THE DAY HE GAVE
+ *       IT: majority_on(born) <= sa_date(p_given_at), not sa_today();
+ *   (2) a guardian's link that db/62 reopened in place when he came back to
+ *       school, after it had ended while he was away, is a fresh link: a
+ *       consent given before he came back does not come back with it.
+ * See (5) in the header for why (2) reads the membership history rather
+ * than a stamp. Internal: not a definer, granted to nobody.
+ */
+CREATE OR REPLACE FUNCTION consent_giver_live(p_giver uuid, p_player uuid, p_given_at timestamptz) RETURNS boolean AS $$
+  SELECT p_giver IS NOT NULL AND EXISTS (
+    SELECT 1 FROM role_assignment a
+    JOIN assignment_subject s ON s.assignment_id = a.id
+   WHERE a.person_id = p_giver AND a.active
+     AND a.role IN ('guardian', 'selfaccess')
+     AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+     AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+     AND (a.expires_at IS NULL OR a.expires_at > now())
+     AND NOT EXISTS (SELECT 1 FROM duty_suspension d
+                      WHERE d.assignment_id = a.id AND d.lifted_at IS NULL)
+     AND s.player_id = p_player AND s.verification_state = 'verified'
+     AND s.valid_from <= current_date
+     AND (s.valid_until IS NULL OR s.valid_until > current_date)
+     AND (a.role = 'guardian'
+          -- His own word: eighteen on the day he gave it (db/124, (1)).
+          OR EXISTS (SELECT 1 FROM player p WHERE p.id = s.player_id
+                        AND p.born IS NOT NULL AND majority_on(p.born) <= sa_date(p_given_at)))
+     AND a.created_at <= p_given_at AND s.created_at <= p_given_at
+     -- A guardian's link reopened after it ended while he was away is a
+     -- fresh link (db/124, (2)).
+     AND NOT (a.role = 'guardian' AND guardian_link_reopened_since(s.player_id, p_given_at)))
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+
+
 -- ── Grants ─────────────────────────────────────────────────────────
 -- The application's: the doors it calls and the tests its policies ask.
 -- Nobody's: the reader test, the opening consent, the log writer and the
@@ -509,7 +640,8 @@ BEGIN
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
   END LOOP;
   FOREACH f IN ARRAY ARRAY['passport_union_reader_at(uuid)', 'passport_union_consent(uuid)',
-                           'passport_union_log(uuid,uuid,text)', 'unionselector_assignment_scoped()'] LOOP
+                           'passport_union_log(uuid,uuid,text)', 'unionselector_assignment_scoped()',
+                           'consent_giver_live(uuid,uuid,timestamptz)', 'guardian_link_reopened_since(uuid,timestamptz)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM scrbrd_app', f);
   END LOOP;
@@ -519,7 +651,8 @@ BEGIN
                                'passport_consent_in_force(uuid)', 'institution_is_union(uuid)',
                                'passport_consent_recipient_ok(uuid,uuid)', 'passport_union_reads()',
                                'role_words(text)', 'passport_union_reader_at(uuid)', 'passport_union_consent(uuid)',
-                               'passport_union_log(uuid,uuid,text)', 'unionselector_assignment_scoped()'] LOOP
+                               'passport_union_log(uuid,uuid,text)', 'unionselector_assignment_scoped()',
+                               'consent_giver_live(uuid,uuid,timestamptz)', 'guardian_link_reopened_since(uuid,timestamptz)'] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
       END LOOP;
       EXECUTE format('REVOKE ALL ON TABLE passport_union_read FROM %I', r);
@@ -698,6 +831,36 @@ BEGIN
      AND p.polname IN ('passport_consent_writer_of_age_insert', 'passport_consent_withdraw_by_family');
   IF v_n <> 2 THEN
     RAISE EXCEPTION 'db/124: db/122''s two RESTRICTIVE write policies are gone';
+  END IF;
+  -- §5: the giver test is db/122's with exactly the two changes, nobody's
+  -- to call, not a definer; the reopening test reads the moves.
+  SELECT btrim(regexp_replace(prosrc, '\s+', ' ', 'g')) INTO v_src
+    FROM pg_proc WHERE oid = 'consent_giver_live(uuid,uuid,timestamptz)'::regprocedure;
+  IF position('majority_on(p.born) <= sa_date(p_given_at)' IN v_src) = 0 OR position('sa_today()' IN v_src) > 0
+     OR position('AND NOT (a.role = ''guardian'' AND guardian_link_reopened_since(s.player_id, p_given_at))' IN v_src) = 0
+     OR position('a.created_at <= p_given_at AND s.created_at <= p_given_at' IN v_src) = 0
+     OR position('s.verification_state = ''verified''' IN v_src) = 0
+     OR position('d.lifted_at IS NULL' IN v_src) = 0 THEN
+    RAISE EXCEPTION 'db/124: consent_giver_live() is not db/122''s with the day''s age and the reopening';
+  END IF;
+  SELECT btrim(regexp_replace(prosrc, '\s+', ' ', 'g')) INTO v_src
+    FROM pg_proc WHERE oid = 'guardian_link_reopened_since(uuid,timestamptz)'::regprocedure;
+  IF position('j.joined_on > sa_date(p_at)' IN v_src) = 0
+     OR position('greatest(l.last_left, majority_on(p.born)) < j.joined_on' IN v_src) = 0
+     OR position('(o.left_on IS NULL OR o.left_on >= j.joined_on)' IN v_src) = 0 THEN
+    RAISE EXCEPTION 'db/124: guardian_link_reopened_since() is not a return after his links ended';
+  END IF;
+  FOREACH f IN ARRAY ARRAY['consent_giver_live(uuid,uuid,timestamptz)', 'guardian_link_reopened_since(uuid,timestamptz)'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f::regprocedure AND NOT p.prosecdef AND p.provolatile = 's'
+                      AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
+       OR has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE')
+       OR has_function_privilege('public', f::regprocedure, 'EXECUTE') THEN
+      RAISE EXCEPTION 'db/124: % is a definer, not stable, unpinned, or callable by the application', f;
+    END IF;
+  END LOOP;
+  IF consent_giver_live(NULL, gen_random_uuid(), now()) OR consent_giver_live(gen_random_uuid(), gen_random_uuid(), now())
+     OR guardian_link_reopened_since(gen_random_uuid(), now()) THEN
+    RAISE EXCEPTION 'db/124: the giver test or the reopening said yes about nobody';
   END IF;
   -- And they answer for nobody.
   IF institution_is_union(gen_random_uuid()) OR passport_union_consent(gen_random_uuid()) IS NOT NULL
