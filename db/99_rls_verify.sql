@@ -10543,7 +10543,7 @@ BEGIN
     'a reader without audit.read is told something different about the same duty: ' || coalesce(duty_status(O_SCORER), 'NULL'));
   -- He takes it back once her lease lapses: holding it again is active.
   -- Another device held it, so since db/126 that is a confirmed take-over,
-  -- over the generation he was shown (a plain claim is held_elsewhere, §102).
+  -- over the generation he was shown (a plain claim is held_elsewhere, §103).
   PERFORM _lapse_scoring_lease(M_HANDOVER);
   PERFORM _as(U_SCORER);
   SELECT c.ok INTO v_ok FROM scoring_takeover(M_HANDOVER, 'verify-034-a',
@@ -13007,7 +13007,7 @@ BEGIN
     -- scope before it asks (a credential never takes over).
     -- pad_resume_toss (db/126): the credential's own match's toss, only while
     -- the token is this person's on this device, written under the person's
-    -- scoring.start with the scope lifted for that one write (§102).
+    -- scoring.start with the scope lifted for that one write (§103).
     PERFORM _assert(detail = 'ball_event_payload_seen,competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
                              || 'match_playing_conditions,match_result_readable,my_alert_choices,my_child_fixtures,my_own_sheet_fixtures,my_own_side_fixtures,pad_resume_issue,pad_resume_reclaim,pad_resume_toss,progression_check,'
                              || 'result_official_notices,result_staff,safeguarding_concern_raise,scoring_arm_handover,scoring_claim,'
@@ -13163,7 +13163,7 @@ BEGIN
     -- ── Every way it ends ──
     -- (end-claimed) another phone takes it over after the lease lapsed: the
     -- token moved. Since db/126 that is the confirmed take-over, over the
-    -- generation shown; a plain claim there is held_elsewhere (§102).
+    -- generation shown; a plain claim there is held_elsewhere (§103).
     PERFORM _lapse_scoring_lease(F1);
     PERFORM set_config('app.device_id', 'verify-050-other', true);
     SELECT c.ok INTO v_ok FROM scoring_takeover(F1, 'verify-050-other', (SELECT ss.epoch FROM scoring_session ss WHERE ss.match_id = F1)) c;
@@ -31202,7 +31202,7 @@ $v49$;
   -- └── end of section 101
   -- └── db/124 (section 101) ──────────────────────────────────────────
 
-  -- ── 102. Match-day safety (db/126, Kameel 30 Oct 2026) ──
+  -- ── 103. Match-day safety (db/126, Kameel 30 Oct 2026) ──
   -- "A claim over a match whose token another device held is a confirmed
   -- take-over. It shows the server's last-ball time, and an audit row
   -- records it." "The resume credential may write [the toss]."
@@ -31241,7 +31241,7 @@ $v49$;
     PERFORM _as(U_SCORER);
     PERFORM set_config('app.device_id', DA, true);
     SELECT c.ok, c.epoch INTO v_ok, e0 FROM scoring_claim(F, DA) c;
-    PERFORM _assert(v_ok AND e0 = 1, '§102: the scorer could not claim the fixture');
+    PERFORM _assert(v_ok AND e0 = 1, '§103: the scorer could not claim the fixture');
     INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
                             idempotency_key, client_seq, client_ts, kind, payload)
     VALUES (F, match_school(F), 1, e0, 0, U_SCORER, DA, 'verify:126:1', 1, now(), 'innings_start', '{}'::jsonb);
@@ -31253,17 +31253,17 @@ $v49$;
     PERFORM _as(U_SARAH);
     PERFORM set_config('app.device_id', DB, true);
     SELECT t.ok, t.reason INTO v_ok, v_reason FROM scoring_takeover(F, DB, e0) t;
-    PERFORM _assert(NOT v_ok AND v_reason = 'lease_active', format('§102 (live): a take-over passed a live lease (%s %s)', v_ok, v_reason));
+    PERFORM _assert(NOT v_ok AND v_reason = 'lease_active', format('§103 (live): a take-over passed a live lease (%s %s)', v_ok, v_reason));
 
     -- (held) The lease lapses. Her plain claim — opening the fixture, Try again — is refused by name.
     PERFORM _lapse_scoring_lease(F);
     SELECT c.ok, c.reason, c.epoch INTO v_ok, v_reason, e1 FROM scoring_claim(F, DB) c;
     PERFORM _assert(NOT v_ok AND v_reason = 'held_elsewhere' AND e1 = e0,
-      format('§102 (held): a plain claim over another phone''s lapsed lease answered %s %s %s', v_ok, v_reason, e1));
+      format('§103 (held): a plain claim over another phone''s lapsed lease answered %s %s %s', v_ok, v_reason, e1));
     SELECT count(*) INTO n FROM scoring_session WHERE match_id = F AND holder_device = DA AND epoch = e0;
-    PERFORM _assert(n = 1, '§102 (held): the refused claim disturbed the session');
+    PERFORM _assert(n = 1, '§103 (held): the refused claim disturbed the session');
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM scoring_audit WHERE match_id = F AND event = 'takeover'),
-      '§102 (held): a take-over was audited for a refused claim');
+      '§103 (held): a take-over was audited for a refused claim');
 
     -- (pad-take) Under a pad scope (her credential would be one), never.
     PERFORM set_config('app.scope', 'pad', true);
@@ -31271,21 +31271,21 @@ $v49$;
     SELECT t.reason INTO v_reason FROM scoring_takeover(F, DB, e0) t;
     PERFORM set_config('app.scope', '', true);
     PERFORM set_config('app.match_id', '', true);
-    PERFORM _assert(v_reason = 'not_permitted', format('§102 (pad-take): a credential took over (%s)', v_reason));
+    PERFORM _assert(v_reason = 'not_permitted', format('§103 (pad-take): a credential took over (%s)', v_reason));
 
     -- (moved) Over a generation she was not shown.
     SELECT t.ok, t.reason INTO v_ok, v_reason FROM scoring_takeover(F, DB, e0 - 1) t;
-    PERFORM _assert(NOT v_ok AND v_reason = 'epoch_moved', format('§102 (moved): %s %s', v_ok, v_reason));
+    PERFORM _assert(NOT v_ok AND v_reason = 'epoch_moved', format('§103 (moved): %s %s', v_ok, v_reason));
     SELECT t.ok, t.reason INTO v_ok, v_reason FROM scoring_takeover(F, DB, NULL) t;
-    PERFORM _assert(NOT v_ok AND v_reason = 'epoch_moved', format('§102 (moved): no generation named, %s %s', v_ok, v_reason));
+    PERFORM _assert(NOT v_ok AND v_reason = 'epoch_moved', format('§103 (moved): no generation named, %s %s', v_ok, v_reason));
     SELECT count(*) INTO n FROM scoring_session WHERE match_id = F AND holder_device = DA AND epoch = e0;
-    PERFORM _assert(n = 1, '§102 (moved): a refused take-over disturbed the session');
+    PERFORM _assert(n = 1, '§103 (moved): a refused take-over disturbed the session');
 
     -- (own) Phone A's own lapsed lease is its to take back, as before.
     PERFORM _as(U_SCORER);
     PERFORM set_config('app.device_id', DA, true);
     SELECT c.ok, c.epoch INTO v_ok, e1 FROM scoring_claim(F, DA) c;
-    PERFORM _assert(v_ok AND e1 = e0 + 1, format('§102 (own): the holding phone could not take back its own lapsed lease (%s %s)', v_ok, e1));
+    PERFORM _assert(v_ok AND e1 = e0 + 1, format('§103 (own): the holding phone could not take back its own lapsed lease (%s %s)', v_ok, e1));
     INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
                             idempotency_key, client_seq, client_ts, kind, ball_type, value, payload)
     VALUES (F, match_school(F), 3, e1, 0, U_SCORER, DA, 'verify:126:3', 3, now(), 'ball', 'run', 2, '{}'::jsonb);
@@ -31295,58 +31295,58 @@ $v49$;
     PERFORM _as(U_SARAH);
     PERFORM set_config('app.device_id', DB, true);
     SELECT t.ok, t.epoch INTO v_ok, e0 FROM scoring_takeover(F, DB, e1) t;
-    PERFORM _assert(v_ok AND e0 = e1 + 1, format('§102 (take): the confirmed take-over answered %s %s', v_ok, e0));
+    PERFORM _assert(v_ok AND e0 = e1 + 1, format('§103 (take): the confirmed take-over answered %s %s', v_ok, e0));
     SELECT * INTO r FROM scoring_session WHERE match_id = F;
     PERFORM _assert(r.state = 'active' AND r.holder_device = DB AND r.holder_user_id = U_SARAH AND r.epoch = e0 AND r.lease_until > now(),
-      format('§102 (take): the session after it is %s %s %s', r.state, r.holder_device, r.epoch));
+      format('§103 (take): the session after it is %s %s %s', r.state, r.holder_device, r.epoch));
     SELECT count(*) INTO n FROM scoring_audit WHERE match_id = F AND event = 'takeover';
     SELECT * INTO a FROM scoring_audit WHERE match_id = F AND event = 'takeover';
     PERFORM _assert(n = 1 AND a.actor_id = U_SARAH AND a.from_user = U_SCORER AND a.to_user = U_SARAH AND a.epoch = e0
                     AND a.detail->>'from_device' = DA AND a.detail->>'to_device' = DB
                     AND (a.detail->>'last_seq')::int = 3 AND a.detail->>'last_ball_at' IS NOT NULL AND a.detail->>'lease_lapsed_at' IS NOT NULL,
-      format('§102 (take): the audit is %s rows, %s', n, a.detail));
+      format('§103 (take): the audit is %s rows, %s', n, a.detail));
 
     -- (idle) Force-released (her lease lapsed): idle, and a plain claim takes it, as before.
     PERFORM _lapse_scoring_lease(F);
     SELECT f.ok INTO v_ok FROM scoring_force_release(F) f;
-    PERFORM _assert(v_ok, '§102 (idle): Sarah could not force-release her own lapsed lease');
+    PERFORM _assert(v_ok, '§103 (idle): Sarah could not force-release her own lapsed lease');
     PERFORM _as(U_SCORER);
     PERFORM set_config('app.device_id', DA, true);
     SELECT c.ok INTO v_ok FROM scoring_claim(F, DA) c;
-    PERFORM _assert(v_ok, '§102 (idle): a released match could not be claimed plainly');
+    PERFORM _assert(v_ok, '§103 (idle): a released match could not be claimed plainly');
 
     -- (toss) Phone A's credential on G, with no ball yet.
     PERFORM _scoring_session_reset(G);
     SELECT c.ok, c.epoch INTO v_ok, e1 FROM scoring_claim(G, DA) c;
-    PERFORM _assert(v_ok, '§102 (toss): the scorer could not claim G');
+    PERFORM _assert(v_ok, '§103 (toss): the scorer could not claim G');
     PERFORM set_config('app.scope', 'pad', true);
     PERFORM set_config('app.match_id', G::text, true);
     SELECT * INTO r FROM pad_resume_toss(G, 'away', 'bowl');
     PERFORM _assert(r.ok AND r.won_by = 'away' AND r.decision = 'bowl' AND r.bats_first = 'home',
-      format('§102 (toss): the credential''s toss answered %s %s', r.ok, r.reason));
-    PERFORM _assert(current_setting('app.scope', true) = 'pad', '§102 (toss): the pad scope was not put back after the write');
+      format('§103 (toss): the credential''s toss answered %s %s', r.ok, r.reason));
+    PERFORM _assert(current_setting('app.scope', true) = 'pad', '§103 (toss): the pad scope was not put back after the write');
     -- The table itself is still closed to the credential: the direct write changes nothing.
     BEGIN
       UPDATE match_toss SET decision = 'bat' WHERE match_id = G;
       GET DIAGNOSTICS n = ROW_COUNT;
     EXCEPTION WHEN insufficient_privilege THEN n := 0;
     END;
-    PERFORM _assert(n = 0, '§102 (toss): a credential changed the toss directly');
+    PERFORM _assert(n = 0, '§103 (toss): a credential changed the toss directly');
     -- Another match: refused.
     SELECT * INTO r FROM pad_resume_toss(F, 'home', 'bat');
-    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('§102 (toss): another match''s toss answered %s %s', r.ok, r.reason));
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('§103 (toss): another match''s toss answered %s %s', r.ok, r.reason));
     PERFORM set_config('app.scope', '', true);
     PERFORM set_config('app.match_id', '', true);
     SELECT won_by, decision INTO r FROM match_toss WHERE match_id = G;
-    PERFORM _assert(r.won_by = 'away' AND r.decision = 'bowl', '§102 (toss): the toss written is not the credential''s');
-    PERFORM _assert((SELECT called_by FROM match_toss WHERE match_id = G) = U_SCORER, '§102 (toss): the toss is not called by the scorer');
+    PERFORM _assert(r.won_by = 'away' AND r.decision = 'bowl', '§103 (toss): the toss written is not the credential''s');
+    PERFORM _assert((SELECT called_by FROM match_toss WHERE match_id = G) = U_SCORER, '§103 (toss): the toss is not called by the scorer');
     -- Signed in, as an ordinary write, it is still the scorer's to correct before play.
     -- The token moves (Sarah takes over G): the credential's toss is refused.
     PERFORM _lapse_scoring_lease(G);
     PERFORM _as(U_SARAH);
     PERFORM set_config('app.device_id', DB, true);
     SELECT t.ok INTO v_ok FROM scoring_takeover(G, DB, e1) t;
-    PERFORM _assert(v_ok, '§102 (toss): Sarah could not take G over');
+    PERFORM _assert(v_ok, '§103 (toss): Sarah could not take G over');
     PERFORM _as(U_SCORER);
     PERFORM set_config('app.device_id', DA, true);
     PERFORM set_config('app.scope', 'pad', true);
@@ -31354,33 +31354,33 @@ $v49$;
     SELECT * INTO r FROM pad_resume_toss(G, 'home', 'bat');
     PERFORM set_config('app.scope', '', true);
     PERFORM set_config('app.match_id', '', true);
-    PERFORM _assert(NOT r.ok AND r.reason = 'token_moved', format('§102 (toss): after the take-over the credential''s toss answered %s %s', r.ok, r.reason));
+    PERFORM _assert(NOT r.ok AND r.reason = 'token_moved', format('§103 (toss): after the take-over the credential''s toss answered %s %s', r.ok, r.reason));
     -- Outside pad scope it is not a door at all.
     SELECT * INTO r FROM pad_resume_toss(G, 'home', 'bat');
-    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('§102 (toss): signed in, the pad''s toss door answered %s %s', r.ok, r.reason));
+    PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted', format('§103 (toss): signed in, the pad''s toss door answered %s %s', r.ok, r.reason));
 
     -- (complete) A finished match: match_complete by either door.
     PERFORM _set_match_status(F, 'complete');
     PERFORM _as(U_SARAH);
     PERFORM set_config('app.device_id', DB, true);
     SELECT t.reason INTO v_reason FROM scoring_takeover(F, DB, 1) t;
-    PERFORM _assert(v_reason = 'match_complete', format('§102 (complete): a take-over of a finished match answered %s', v_reason));
+    PERFORM _assert(v_reason = 'match_complete', format('§103 (complete): a take-over of a finished match answered %s', v_reason));
     SELECT c.reason INTO v_reason FROM scoring_claim(F, DB) c;
-    PERFORM _assert(v_reason = 'match_complete', format('§102 (complete): a claim of a finished match answered %s', v_reason));
+    PERFORM _assert(v_reason = 'match_complete', format('§103 (complete): a claim of a finished match answered %s', v_reason));
 
     -- (doors) The application's to call, and nobody else's.
     PERFORM _assert(has_function_privilege('scrbrd_app', 'scoring_takeover(uuid,text,integer)', 'EXECUTE')
                     AND has_function_privilege('scrbrd_app', 'pad_resume_toss(uuid,text,text)', 'EXECUTE')
                     AND NOT has_function_privilege('public', 'scoring_takeover(uuid,text,integer)', 'EXECUTE')
                     AND NOT has_function_privilege('public', 'pad_resume_toss(uuid,text,text)', 'EXECUTE'),
-      '§102 (doors): scoring_takeover() or pad_resume_toss() is not the application''s alone');
+      '§103 (doors): scoring_takeover() or pad_resume_toss() is not the application''s alone');
   END;
   PERFORM set_config('app.user_id', '', true);
   PERFORM set_config('app.device_id', '', true);
   PERFORM set_config('app.scope', '', true);
   PERFORM set_config('app.match_id', '', true);
-  -- └── end of section 102
-  -- └── db/126 (section 102) ──────────────────────────────────────────
+  -- └── end of section 103
+  -- └── db/126 (section 103) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

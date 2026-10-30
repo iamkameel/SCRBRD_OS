@@ -12,7 +12,7 @@
 --      the match silently."
 --   2. "The resume credential may write [the toss]."
 --
--- Its proof is db/99 §102; the walks are tools/smoke-browser-takeover.mjs
+-- Its proof is db/99 §103; the walks are tools/smoke-browser-takeover.mjs
 -- (two phones, a lapsed lease, a confirmed take-over) and
 -- tools/smoke-pad-resume.mjs B (a toss written under the credential alone).
 --

@@ -11,7 +11,7 @@
  *       lead's review, not nowhere
  *
  * The browser walk (tools/smoke-browser-takeover.mjs) drives the real pad;
- * the server's half is db/99 §102 and tools/smoke-pad-resume.mjs B.
+ * the server's half is db/99 §103 and tools/smoke-pad-resume.mjs B.
  *
  *   node apps/web/test/pad-sync.test.mjs
  */
