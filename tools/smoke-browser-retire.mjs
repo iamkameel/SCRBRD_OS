@@ -168,7 +168,14 @@ const nameBowler = async (name) => {
 const sendNext = async () => {
   const next = page.locator('[data-testid="batter-choice"][data-next]:not([disabled])').first();
   if (!(await next.count())) return false;
-  await next.click({ timeout: 2000 }); await page.waitForTimeout(500);
+  // The callers read the server's last event next, so wait for the pad's
+  // write to land rather than a fixed half second (CI, 30 Oct: the last event
+  // was still the retirement when the walk looked). Bounded.
+  const before = (await serverEvents()).length;
+  await next.click({ timeout: 2000 });
+  for (const deadline = Date.now() + 10000; (await serverEvents()).length <= before && Date.now() < deadline;) {
+    await page.waitForTimeout(150);
+  }
   return true;
 };
 /**

@@ -334,7 +334,18 @@ try {
   const fw = tid(c.page, "history-technical-footwork");
   ok("the dot stays on the strip, hollow", await fw.locator('button[data-withdrawn="1"]').count() === 1 && await fw.locator('button[data-testid^="history-dot-"]').count() === 2);
   ok("...and the label says it was withdrawn", /withdrawn/.test((await fw.locator('button[data-withdrawn="1"]').getAttribute("aria-label")) ?? ""));
-  ok("...and the bar is back at the 10 that stands", /\b10\b/.test(await fw.locator("xpath=..").innerText()) && !/\b2\b\s*Poor/.test(await fw.locator("xpath=..").innerText()));
+  // The hollow dot draws at once, from the screen's own state; the bar comes
+  // from the server's re-read, which can land later (CI, 30 Oct: the one
+  // assertion that failed in an otherwise green walk). So poll the bar's text
+  // until it shows the standing 10, bounded, then judge it once.
+  const barBox = fw.locator("xpath=..");
+  const barStands = (t) => /\b10\b/.test(t) && !/\b2\b\s*Poor/.test(t);
+  let barTxt = await barBox.innerText();
+  for (const deadline = Date.now() + 15000; !barStands(barTxt) && Date.now() < deadline;) {
+    await new Promise((r) => setTimeout(r, 150));
+    barTxt = await barBox.innerText().catch(() => barTxt);
+  }
+  ok("...and the bar is back at the 10 that stands", barStands(barTxt), flat(barTxt));
 
   group("Nothing here is a verdict, a miss or a health word");
   const all = await said(c.page);
