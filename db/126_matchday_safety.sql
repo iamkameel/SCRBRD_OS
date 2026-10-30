@@ -261,7 +261,7 @@ BEGIN
   FOREACH f IN ARRAY ARRAY['scoring_takeover(uuid,text,integer)', 'pad_resume_toss(uuid,text,text)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
-    FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
       IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
       END IF;
