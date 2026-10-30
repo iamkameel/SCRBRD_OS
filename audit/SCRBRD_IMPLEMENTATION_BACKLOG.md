@@ -753,14 +753,15 @@ one duplicates an existing entry, strike the `CRI-*` line and point at the older
 - **CRI-0.5** — Type and touch floors. Evidence: `AnalyticsView.jsx:37,41,43,142,156` at 8–10px. Accept: nothing under 12px or 44px. **Partly done 2026-10-28:** the 12px type floor on every text size (#197, `0151821`); the 44px touch floor is not in that PR.
 
 **Sprint 1 — before the next Pilot Match:**
-- **CRI-1.1** — `Board`: last-wicket and "updated · sync" rows. Evidence: `ui/board.jsx:214` has no last-wicket prop.
-- **CRI-1.2** — `statusSentence()` shared by fixture list, board and push. Evidence: `scores.jsx` prints innings lines only.
-- **CRI-1.3** — Tabs Summary, Scorecard, Commentary + More; a route per tab. Evidence: `MatchView.jsx:60–66`.
+- ~~**CRI-1.1** — `Board`: last-wicket and "updated · sync" rows. Evidence: `ui/board.jsx:214` has no last-wicket prop.~~ **Done 2026-10-29** (#206, commit 5a44f4d): the board shows the last wicket and an "updated · sync" row.
+- ~~**CRI-1.2** — `statusSentence()` shared by fixture list, board and push. Evidence: `scores.jsx` prints innings lines only.~~ **Done 2026-10-29** (#206, commit 5a44f4d): one status sentence, shared by the fixture list, the board and push.
+- ~~**CRI-1.3** — Tabs Summary, Scorecard, Commentary + More; a route per tab. Evidence: `MatchView.jsx:60–66`.~~ **Done 2026-10-30** (#213, commit cc48221): on a phone the match page shows Summary, Scorecard and Commentary plus a More menu, and each tab has its own address.
 - **CRI-1.4** — "Enter scoring" on the match page, authorised scorer only. Policy test required first.
 - **CRI-1.5** — Scorecard dismissal → that ball in Commentary; back restores state.
 - **CRI-1.6** — Sticky scorecard header and scroll cue at 360px.
 - **CRI-1.7** — Summary becomes the result view after full time.
 - **CRI-1.8** — Win probability from the par line, labelled "par estimate" (decided 2026-10-23).
+- **Phone More menu: Tab leaves it** — **Done 2026-10-30** (#214, commit a1262cb): on the match page's phone More menu, Tab leaves the menu and closes it, following the WAI-ARIA menu button pattern (a follow-up to CRI-1.3).
 
 **Sprint 2:** CRI-2.1 commentary chips and over jump · CRI-2.2 `sourceLine` and capture coverage on every chart ·
 CRI-2.3 chart-to-delivery drill-down · CRI-2.4 reader freshness and low-bandwidth mode · CRI-2.5 three spectator charts.
@@ -819,6 +820,8 @@ CRI-3.4 StatsMagic (the Analytics Explorer, renamed by Kameel 2026-10-28; SCRBRD
 
 ## Performance optimisation
 - **SCRBRD-020** (also P2 dependency chain) — see above.
+- **Signed-in entry bundle, 500 KB to 441 KB** — **Done 2026-10-30** (#214, commit a1262cb): the signed-in entry bundle is trimmed from 500 KB to 441 KB; the 500 KB ceiling in `tools/check-bundle.mjs` stays.
+- **CI: API walks in parallel shards** — **Done 2026-10-30** (#216, commit f0c672e): CI's API walks run in 4 parallel shards, the database check runs once beside them, and push runs happen on main only. A PR's CI fell from 3 h 40 to about 1 h 30. Speeding up the database check itself (`db/99`) is still open, for next week.
 
 ## Polish
 - ~~**SCRBRD-017**~~ — **CLOSED.** `packages/scoring/test/replay.test.mjs`, new group D: a canonical
