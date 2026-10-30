@@ -22,6 +22,13 @@
  *   node tools/run-smoke-api.mjs --browser --shard 2/4 --list
  *                                           print that slice, run nothing: no
  *                                           database needed
+ *   node tools/run-smoke-api.mjs --shard 3/4
+ *                                           the API set is sliced the same way
+ *   node tools/run-smoke-api.mjs --shard 3/4 --no-rls-verify
+ *                                           skip the live RLS verifier
+ *                                           preamble. CI only, where the
+ *                                           "RLS verifier" job runs it once,
+ *                                           side by side with every shard
  */
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
@@ -632,18 +639,32 @@ const WEIGHTS = {
   "browser-awards": 30, "browser-dismissals": 30, "browser-duties": 30,
   "browser-rulebook": 30, "browser-seasons": 20, "browser-report": 20,
 };
-const weightOf = (w) => WEIGHTS[w] ?? DEFAULT_COST;
-const staleWeights = Object.keys(WEIGHTS).filter((w) => !BROWSER_WALKS.includes(w));
-if (staleWeights.length) {
-  console.error(`\n✗ WEIGHTS names walks that are not in BROWSER_WALKS: ${staleWeights.join(", ")}`);
-  process.exit(1);
+// The same for the API set (WALKS), which CI also runs in shards. Measured
+// from CI run 40890874044 (29 Oct 2026, API walks, one job): almost every
+// walk is its own reset and seed (~17 s) plus a second or two of requests, so
+// the default is 19 s and only the walks well above that are named.
+const API_DEFAULT_COST = 19;
+const API_WEIGHTS = {
+  "free-hit": 170, "fold-figures": 130, "reset-objects": 80, "derby": 40,
+  "rewards": 36, "scorebook": 25, "cockpit": 25, "recognition": 23,
+  "rating": 22, "summary": 22, "workload": 22,
+};
+const weightIn = (pool) => (pool === BROWSER_WALKS
+  ? (w) => WEIGHTS[w] ?? DEFAULT_COST
+  : (w) => API_WEIGHTS[w] ?? API_DEFAULT_COST);
+for (const [name, table, set] of [["WEIGHTS", WEIGHTS, BROWSER_WALKS], ["API_WEIGHTS", API_WEIGHTS, WALKS]]) {
+  const stale = Object.keys(table).filter((w) => !set.includes(w));
+  if (stale.length) {
+    console.error(`\n✗ ${name} names walks that are not in ${set === WALKS ? "WALKS" : "BROWSER_WALKS"}: ${stale.join(", ")}`);
+    process.exit(1);
+  }
 }
 
 // Shard i of n (1-based) of `walks`: heaviest first, each to the lightest shard
 // so far, ties to the lowest shard number and to list order. Nothing random and
 // nothing that depends on the machine, so every job computes the same split and
 // every walk is in exactly one. A shard keeps the list's own order.
-function shardOf(walks, i, n) {
+function shardOf(walks, i, n, weightOf) {
   const load = new Array(n).fill(0);
   const owner = new Map();
   const heaviestFirst = walks.map((w, at) => ({ w, at }))
@@ -664,6 +685,7 @@ function shardOf(walks, i, n) {
 let args = process.argv.slice(2).filter((a) => a !== "--");
 const wantBrowser = args.includes("--browser");
 const listOnly = args.includes("--list");
+const noVerify = args.includes("--no-rls-verify");
 let shard = null;
 {
   const at = args.findIndex((a) => a === "--shard" || a.startsWith("--shard="));
@@ -680,13 +702,14 @@ let shard = null;
     args = args.filter((_, k) => k !== at && !(spaced && k === at + 1));
   }
 }
-const only = args.filter((a) => a !== "--browser" && a !== "--list");
+const only = args.filter((a) => a !== "--browser" && a !== "--list" && a !== "--no-rls-verify");
 const pool = wantBrowser ? BROWSER_WALKS : WALKS;
+const weightOf = weightIn(pool);
 if (only.some((o) => !pool.includes(o))) {
   console.error(`✗ unknown walk: ${only.filter((o) => !pool.includes(o)).join(", ")}`);
   process.exit(1);
 }
-const slice = shard ? shardOf(pool, shard.i, shard.n) : pool;
+const slice = shard ? shardOf(pool, shard.i, shard.n, weightOf) : pool;
 const run = only.length ? slice.filter((w) => only.includes(w)) : slice;
 
 // One walk per line on stdout, the slice's weight on stderr, nothing run.
@@ -712,7 +735,17 @@ const sh = (cmd, args) => spawnSync(cmd, args, { encoding: "utf8", stdio: ["igno
 // and already refuses to start when something is missing. Hard exit rather
 // than a failed line in the summary: if the policies do not hold, what the
 // walks go on to prove about the routes is not worth reading.
-{
+//
+// --no-rls-verify skips it, and exists for CI alone. db/99 had grown to an hour
+// and a half on a runner (29 Oct 2026: 5,407 s here, 3,139–5,491 s in each
+// browser shard), and CI was paying it six times a run: once ahead of the API
+// walks, once more in the Verifier step, and once per browser shard. Now the
+// "RLS verifier" job runs it once, beside the shards, and the "API walks" and
+// "Browser walks" checks both fail when it fails, so a broken policy still
+// turns both red. The difference is that the walks report too.
+if (noVerify) {
+  console.log("· rls-verify      skipped (--no-rls-verify): CI's RLS verifier job runs it");
+} else {
   const v = sh("node", ["tools/migrate.mjs", "--reset", "--seed", "--verify"]);
   if (v.status !== 0) {
     console.error("\n✗ the live RLS verifier failed — not running the walks");
