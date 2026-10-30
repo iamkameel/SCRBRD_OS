@@ -52,7 +52,7 @@ export function sessionRoutes({ pool, secret, hub }) {
   };
 
   return {
-    // POST /matches/:id/session/claim { device }
+    // POST /matches/:id/session/claim { device, takeover?, epoch? }
     //
     // Also reached with a pad resume credential (SCRBRD-078, db/50), whose one
     // claim is its own device's token taken back — pad_resume_reclaim(), which
@@ -76,6 +76,13 @@ export function sessionRoutes({ pool, secret, hub }) {
               `select app_can('scoring.start', match_school($1), match_team($1), NULL, $1) as can`, [id])).rows[0]?.can;
             return { ok: false, reason: can ? "device_mismatch" : "no_capability", epoch: null };
           }
+          // A confirmed take-over (db/126, Kameel 30 Oct 2026): a person who
+          // was shown the server's last ball pressed "Take over" over another
+          // device's lapsed lease. Only over the generation they were shown;
+          // anything else is answered as a plain claim would be.
+          if (req.body?.takeover === true)
+            return (await client.query(`select * from scoring_takeover($1,$2,$3)`,
+                                       [id, req.body?.device, Number.isInteger(req.body?.epoch) ? req.body.epoch : null])).rows[0] || {};
           return (await client.query(`select * from scoring_claim($1,$2)`, [id, req.body?.device])).rows[0] || {};
         });
         res.json(await withBroadcast(id, b, r));

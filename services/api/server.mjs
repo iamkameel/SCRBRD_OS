@@ -55,7 +55,7 @@
  *   node services/api/server.mjs        # PORT=8787 by default
  *
  * A request signed with the pad's resume credential (Authorization:
- * ScrbrdPad …) is answered by servePad() below and nowhere else: five routes,
+ * ScrbrdPad …) is answered by servePad() below and nowhere else: six routes,
  * its own match, and a 403 for every other path before anything is read.
  */
 
@@ -1241,26 +1241,26 @@ async function serveClient(req, res, path) {
 }
 
 /**
- * The five handlers a pad resume credential reaches (pad-resume.mjs
+ * The six handlers a pad resume credential reaches (pad-resume.mjs
  * PAD_ROUTES names them). Each runs as who(req): the principal built here.
  * @type {Record<string, IdHandler>}
  */
 const PAD_HANDLERS = {
   heartbeat: session.heartbeat, claim: session.claim,
-  append: events.append, list: events.list, toss: toss.read,
+  append: events.append, list: events.list, toss: toss.read, tossRecord: toss.record,
 };
 
 /**
  * A request signed with a resume credential, answered here and nowhere else.
  *
- * FIRST the route: a credential is good for five, on its own match, and any
+ * FIRST the route: a credential is good for six, on its own match, and any
  * other path — every read, every write, /api/session, /api/health, a static
  * file — is 403 pad_scope before its body is read or a credential looked up.
  * Then the proof (padPrincipal: the credential, the signature, this request,
  * now, its match, once). Then the handler, with the Authorization header
  * taken away, so a handler that reached for it instead of who(req) would
  * find no identity at all rather than a credential it does not understand.
- * No module gate (none of the five has one) and no Idempotency-Key receipts
+ * No module gate (none of the six has one) and no Idempotency-Key receipts
  * (the events carry their own keys; the heartbeat and claim are not retried
  * blind).
  * @param {IncomingMessage} req @param {ServerResponse} res

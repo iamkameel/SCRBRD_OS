@@ -1349,7 +1349,19 @@ export function tossRoutes({ pool, secret }) {
         if (wonBy !== "home" && wonBy !== "away") throw err("won_by_must_be_home_or_away");
         if (decision !== "bat" && decision !== "bowl") throw err("decision_must_be_bat_or_bowl");
 
-        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const out = await runAsPrincipal(pool, secret, who(req), async (client, principal) => {
+          // Under the pad's resume credential (SCRBRD-078; db/126, Kameel
+          // 30 Oct 2026): the toss queued on a pad with no signal is sent
+          // after the thirty-minute sign-in may have run out. The credential
+          // writes it through pad_resume_toss(), which asks that the token
+          // is still this person's on this device and then writes under the
+          // person's own scoring.start, as below. The table stays closed to
+          // the credential otherwise.
+          if (principal?.scope === "pad") {
+            const p = (await client.query(`select * from pad_resume_toss($1, $2, $3)`, [req.params.id, wonBy, decision])).rows[0];
+            if (!p?.ok) throw err(p?.reason ?? "not_permitted", 403);
+            return { matchId: req.params.id, wonBy: p.won_by, decision: p.decision, batsFirst: p.bats_first, calledAt: p.called_at };
+          }
           // school_id is derived via match_school(), never taken from the
           // caller — same rule as ball_event. A row whose school disagrees
           // with its match is invisible to the read policy.

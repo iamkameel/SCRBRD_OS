@@ -5,7 +5,8 @@
  *
  *   A. Issued on a claim, to the device holding the token — and only then;
  *      the database keeps the public key and a hash, never the id.
- *   B. Good for its match's heartbeat, re-claim, events both ways and toss.
+ *   B. Good for its match's heartbeat, re-claim, events both ways and toss
+ *      both ways (the toss written since db/126, while the token is its own).
  *   C. Refused, live: a replayed jti, a stale time, the wrong key, another
  *      match, another device's batch, a body changed on the way.
  *   D. The scope escape: a validly signed request to EVERY route the server
@@ -157,12 +158,21 @@ try {
   ok("the heartbeat", hb.status === 200 && hb.body?.ok === true && hb.body?.epoch === epoch, JSON.stringify(hb.body));
   const tossNone = await A1.send(`/api/matches/${MATCH}/toss`);
   ok("the toss, before one is recorded: none", tossNone.status === 200 && tossNone.body?.toss === null, JSON.stringify(tossNone.body));
-  const tossPost = await A1.send(`/api/matches/${MATCH}/toss`, { method: "POST", body: { wonBy: "home", decision: "bat" } });
-  ok("recording a toss with the credential: 403 pad_scope (read only)", tossPost.status === 403 && tossPost.body?.error === "pad_scope");
-  ok("...nothing recorded", (await q(`select 1 from match_toss where match_id = $1`, [MATCH])).length === 0);
-  await api(`/api/matches/${MATCH}/toss`, { method: "POST", token: scorerA, body: { wonBy: "home", decision: "bat" } });
+  // db/126 (Kameel, 30 Oct 2026): a toss answered with no signal is sent
+  // after the thirty-minute sign-in may have run out, and every ball waits
+  // behind it. The credential records it, as the person, while the token is
+  // still this phone's.
+  const tossPost = await A1.send(`/api/matches/${MATCH}/toss`, { method: "POST", body: { wonBy: "away", decision: "bowl" } });
+  ok("recording a toss with the credential alone: written", tossPost.status === 200 && tossPost.body?.wonBy === "away"
+     && tossPost.body?.decision === "bowl" && tossPost.body?.batsFirst === "home", JSON.stringify(tossPost.body));
+  const tossRow = (await q(`select t.won_by, t.decision, u.email from match_toss t join app_user u on u.id = t.called_by where t.match_id = $1`, [MATCH]))[0];
+  ok("...called by the scorer the credential belongs to", tossRow?.won_by === "away" && tossRow?.email === "scorer@example.invalid", JSON.stringify(tossRow));
+  const tossBad = await A1.send(`/api/matches/${MATCH}/toss`, { method: "POST", body: { wonBy: "nobody", decision: "bat" } });
+  ok("...a side that is not home or away: refused, 400", tossBad.status === 400, JSON.stringify(tossBad.body));
+  const tossB = await api(`/api/matches/${MATCH}/toss`, { method: "POST", token: scorerB, body: { wonBy: "home", decision: "bat" } });
+  ok("the same scorer signed in on phone B may still correct it before play (the route is unchanged signed in)", tossB.status === 200, JSON.stringify(tossB.body));
   const toss = await A1.send(`/api/matches/${MATCH}/toss`);
-  ok("the toss the scorer recorded signed in, read with the credential",
+  ok("the toss recorded signed in, read with the credential",
      toss.body?.toss?.toss_won_by === "home" && toss.body?.toss?.toss_decision === "bat" && toss.body?.toss?.bats_first === "home", JSON.stringify(toss.body));
 
   const squad = P.map((id, i) => ({ id, name: `Player ${i + 1}` }));
@@ -178,6 +188,9 @@ try {
   ok("...stored as the scorer, on phone A", stored.length === 4 && stored.every((r) => r.device_id === DEV_A && r.email === "scorer@example.invalid"));
   const log = await A1.send(`/api/matches/${MATCH}/events?since=0`);
   ok("the log read back with the credential", log.status === 200 && log.body?.events?.length === 4);
+  const tossLate = await A1.send(`/api/matches/${MATCH}/toss`, { method: "POST", body: { wonBy: "away", decision: "bat" } });
+  ok("a toss with the credential once play has started: 409 toss_locked, as signed in", tossLate.status === 409 && tossLate.body?.error === "toss_locked", JSON.stringify(tossLate.body));
+  ok("...the toss unchanged", (await q(`select won_by from match_toss where match_id = $1`, [MATCH]))[0]?.won_by === "home");
 
   await lapse();
   const re = await A1.send(`/api/matches/${MATCH}/session/claim`, { method: "POST", body: { device: DEV_A } });
@@ -400,8 +413,13 @@ try {
 
   group("F7. The match completes: the credential ends");
   await lapse();
-  const cc = await claim(coachC, DEV_C);
-  ok("the coach claims on phone C", cc.body?.ok === true, JSON.stringify(cc.body));
+  // Phone A held the token and its lease has lapsed: a plain claim from
+  // another phone is refused (db/126); the coach takes it over, confirmed,
+  // over the generation he was shown.
+  const plain = await claim(coachC, DEV_C);
+  ok("the coach's plain claim on phone C over phone A's lapsed lease: held_elsewhere", plain.body?.ok === false && plain.body?.reason === "held_elsewhere", JSON.stringify(plain.body));
+  const cc = await api(`/api/matches/${MATCH}/session/claim`, { method: "POST", token: coachC, body: { device: DEV_C, takeover: true, epoch: plain.body?.epoch } });
+  ok("the coach takes it over on phone C, confirmed", cc.body?.ok === true && cc.body?.epoch === plain.body?.epoch + 1, JSON.stringify(cc.body));
   const { dev: C2 } = await issue(coachC);
   ok("...and is issued one", !!C2);
   const done = await api(`/api/fixtures/${MATCH}`, { method: "POST", token: sarah, body: { status: "complete" } });
