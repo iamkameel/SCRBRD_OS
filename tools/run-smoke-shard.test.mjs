@@ -15,11 +15,13 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 let passed = 0, failed = 0;
+/** @type {(name: string, ok: boolean, detail?: string) => void} */
 const check = (name, ok, detail = "") => {
   if (ok) { passed++; console.log(`  ✓ ${name}`); }
   else { failed++; console.log(`  ✗ ${name}${detail ? `  (${detail})` : ""}`); }
 };
 
+/** @param {string[]} flags */
 const cli = (...flags) => {
   const r = spawnSync("node", ["tools/run-smoke-api.mjs", ...flags, "--list"], { cwd: ROOT, encoding: "utf8" });
   return { status: r.status, walks: r.stdout.split("\n").filter(Boolean), err: r.stderr };
@@ -34,9 +36,13 @@ const onDisk = readdirSync(join(ROOT, "tools"))
 // exactly one of the two sets below.
 const NOT_HERE = ["", "scorer", "persist", "a11y", "demo-cast"];
 
-const sets = {};
-for (const [label, base] of [["api", []], ["browser", ["--browser"]]]) {
+/** @type {{ api: string[], browser: string[] }} */
+const sets = { api: [], browser: [] };
+/** @type {["api" | "browser", string[]][]} */
+const setFlags = [["api", []], ["browser", ["--browser"]]];
+for (const [label, base] of setFlags) {
   console.log(`\n${label} walks`);
+  /** @param {string[]} flags */
   const list = (...flags) => cli(...base, ...flags);
 
   const whole = list();

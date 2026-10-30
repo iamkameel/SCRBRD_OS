@@ -645,15 +645,19 @@ const WEIGHTS = {
 // walk is its own reset and seed (~17 s) plus a second or two of requests, so
 // the default is 19 s and only the walks well above that are named.
 const API_DEFAULT_COST = 19;
+/** @type {Record<string, number>} */
 const API_WEIGHTS = {
   "free-hit": 170, "fold-figures": 130, "reset-objects": 80, "derby": 40,
   "rewards": 36, "scorebook": 25, "cockpit": 25, "recognition": 23,
   "rating": 22, "summary": 22, "workload": 22,
 };
+/** @type {(pool: string[]) => (w: string) => number} */
 const weightIn = (pool) => (pool === BROWSER_WALKS
-  ? (w) => WEIGHTS[w] ?? DEFAULT_COST
+  ? (w) => /** @type {Record<string, number>} */ (WEIGHTS)[w] ?? DEFAULT_COST
   : (w) => API_WEIGHTS[w] ?? API_DEFAULT_COST);
-for (const [name, table, set] of [["WEIGHTS", WEIGHTS, BROWSER_WALKS], ["API_WEIGHTS", API_WEIGHTS, WALKS]]) {
+/** @type {[string, Record<string, number>, string[]][]} */
+const weightTables = [["WEIGHTS", WEIGHTS, BROWSER_WALKS], ["API_WEIGHTS", API_WEIGHTS, WALKS]];
+for (const [name, table, set] of weightTables) {
   const stale = Object.keys(table).filter((w) => !set.includes(w));
   if (stale.length) {
     console.error(`\n✗ ${name} names walks that are not in ${set === WALKS ? "WALKS" : "BROWSER_WALKS"}: ${stale.join(", ")}`);
@@ -665,6 +669,7 @@ for (const [name, table, set] of [["WEIGHTS", WEIGHTS, BROWSER_WALKS], ["API_WEI
 // so far, ties to the lowest shard number and to list order. Nothing random and
 // nothing that depends on the machine, so every job computes the same split and
 // every walk is in exactly one. A shard keeps the list's own order.
+/** @param {string[]} walks @param {number} i @param {number} n @param {(w: string) => number} weightOf */
 function shardOf(walks, i, n, weightOf) {
   const load = new Array(n).fill(0);
   const owner = new Map();
