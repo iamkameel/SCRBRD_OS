@@ -52,7 +52,7 @@ import { buildWebForWalk, WEB_TEST_ROOT } from "./web-test-build.mjs";
 import { narrowAudit } from "./a11y-narrow.mjs";
 import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
-import { pickTab } from "./walk-tabs.mjs";
+import { moreMenuKeys, pickTab } from "./walk-tabs.mjs";
 import { afterReads } from "./walk-wait.mjs";
 
 const PORT = port(4331);
@@ -1575,6 +1575,10 @@ async function narrowStaffWalk(theme) {
     await page.waitForTimeout(500);
     ok(`${T_} @${W}: the fixture opens into its own view`, await tid("mc-scorecard").count() === 1);
     await measure(page, theme, "staffscorecard");
+    // The fixture's More menu by keyboard (tabStrip.jsx), as the WAI-ARIA APG's menu button has it (Kameel, 29 Oct):
+    // the arrows move within it, Escape gives focus back to More, Tab and Shift+Tab leave it and close it.
+    ok(`${T_} @${W}: the fixture's tab strip has a More at this width`, await tid("mc-more").count() === 1);
+    for (const c of await moreMenuKeys(page)) ok(`${T_} @${W}: More — ${c.name}`, c.pass, c.detail);
     ok(`${T_} @${W}: no page errors`, errors.length === 0, errors.slice(0, 2).join(" | "));
   } catch (e) {
     ok(`the ${T_} @${W} staff shell walk threw: ${/** @type {any} */ (e).message?.slice(0, 120)}`, false);
@@ -1830,7 +1834,10 @@ async function walk(theme) {
 
     // Settings → Me carries the theme control (DESIGN_DIRECTION §3.1).
     await page.locator("nav button", { hasText: /Settings/ }).first().click({ timeout: 6000 });
-    await page.waitForTimeout(700);
+    // Waits for the view's own words, not a clock: the view is a lazy chunk, slower than any sleep on a loaded machine.
+    const saidSo = (/** @type {string} */ words) => page.waitForFunction((w) => document.querySelector('[data-testid="view-announcer"]')?.textContent === w,
+      words, { timeout: 8000 }).catch(() => {});
+    await saidSo("Settings, page loaded");
     ok("choosing Settings says \"Settings, page loaded\"", await announcer.textContent() === "Settings, page loaded", await announcer.textContent());
     const afterSettings = await inMain();
     ok("...and moves focus to the main landmark, off the menu item", afterSettings.isMain && afterSettings.tag === "MAIN", JSON.stringify(afterSettings));
@@ -1838,7 +1845,8 @@ async function walk(theme) {
     const afterTab = await inMain();
     ok("...so the next Tab lands on the page's first control", afterTab.inside && !afterTab.isMain, JSON.stringify(afterTab));
     await page.locator('[role="tab"]', { hasText: /^Me$/ }).first().click({ timeout: 4000 }).catch(() => {});
-    await page.waitForTimeout(500);
+    await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "tab" && document.activeElement?.textContent?.trim() === "Me",
+      null, { timeout: 4000 }).catch(() => {});
     const onTab = await page.evaluate(() => document.activeElement?.getAttribute("role") + ":" + document.activeElement?.textContent?.trim());
     await page.waitForTimeout(2500);
     ok("a background refresh of the data moves nothing: focus is where the person left it",
@@ -1854,23 +1862,23 @@ async function walk(theme) {
     ok("...with System chosen on a device that has chosen nothing", settingsChoice?.radios.find((r) => r[0] === "System")?.[1] === "true");
 
     await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-    await page.waitForTimeout(900);
+    await saidSo("Match Centre, page loaded");
     ok("a second view change: the words change to \"Match Centre, page loaded\"", await announcer.textContent() === "Match Centre, page loaded", await announcer.textContent());
     ok("...and focus is on the main landmark again", (await inMain()).isMain);
     await measure(page, theme, "matchcentre");
     // The fixture's own view (step 3c): its Scorecard, the densest tab.
-    await page.locator('[data-testid^="mc-open-"]').first().click({ timeout: 4000 }).catch(() => {});
-    await page.waitForTimeout(900);
-    await page.locator('[data-testid="mc-tab-scorecard"]').click({ timeout: 3000 }).catch(() => {});
-    await page.waitForTimeout(500);
+    await page.locator('[data-testid^="mc-open-"]').first().click({ timeout: 8000 }).catch(() => {});
+    await page.locator('[data-testid="mc-tab-scorecard"]').click({ timeout: 8000 }).catch(() => {});
+    await page.locator('[data-testid="mc-scorecard"]').waitFor({ timeout: 8000 }).catch(() => {});
     ok("the Match Centre opens a fixture into its own view", await page.locator('[data-testid="mc-scorecard"]').count() === 1);
     await measure(page, theme, "matchview");
 
     // SCRBRD-102: the Analytics tab, on the same fixture — the wagon-wheel
     // analysis panel (scorer/wagonAnalysisPanel.jsx's WagonAnalysisPanel),
     // never opened by this walk before.
-    await pickTab(page, "analytics", { timeout: 3000 }).catch(() => {});
-    await afterReads(page, 700);
+    await pickTab(page, "analytics", { timeout: 8000 }).catch(() => {});
+    await page.locator('[data-testid="mc-analytics"]').waitFor({ timeout: 8000 }).catch(() => {});
+    await afterReads(page, 0);
     ok("the Match Centre's Analytics tab is drawn", await page.locator('[data-testid="mc-analytics"]').count() === 1);
     // The falsification: a 9px line, pale-on-white text and an emoji in a
     // control, planted on THIS screen — proving the ratchets below would

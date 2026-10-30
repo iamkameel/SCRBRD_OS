@@ -35,7 +35,7 @@ import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { buildMatchCentreFixture } from "./fixture-matchcentre.mjs";
 import { narrowAudit, tabPath } from "./a11y-narrow.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
-import { pickTab } from "./walk-tabs.mjs";
+import { moreMenuKeys, pickTab } from "./walk-tabs.mjs";
 
 const WEB_PORT = port(5420);
 const API_PORT = port(8920);
@@ -253,14 +253,9 @@ try {
       await page.locator('[data-testid="mc-more-menu"]').waitFor({ state: "detached", timeout: 4000 }).catch(() => {});
       ok("360: Escape closes it and gives focus back to More", await page.locator('[data-testid="mc-more-menu"]').count() === 0
          && await page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "mc-more");
-      await page.keyboard.press("ArrowDown");
-      await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitemradio", null, { timeout: 4000 }).catch(() => {});
-      ok("360: ArrowDown on More opens it, focus on its first item", await page.evaluate(() => document.activeElement?.getAttribute("role")) === "menuitemradio");
-      await page.keyboard.press("End");
-      ok("...End to its last", await page.evaluate(() => document.activeElement?.textContent?.trim()) === "Match details");
-      for (let i = 0; i < 5; i++) await page.keyboard.press("Tab");
-      ok("...and Tab stays inside it", await page.evaluate(() => !!document.activeElement?.closest('[data-testid="mc-more-menu"]')));
-      await page.keyboard.press("Escape");
+      // The rest by keyboard, as the WAI-ARIA APG's menu button has it (Kameel, 29 Oct): the arrows, End and Home move
+      // within the menu, Escape gives focus back to More, and Tab and Shift+Tab leave it and close it, never kept inside.
+      for (const c of await moreMenuKeys(page)) ok(`360: ${c.name}`, c.pass, c.detail);
 
       const LABEL = { summary: "Summary", coach: "Coach", scorecard: "Scorecard", commentary: "Commentary", partnerships: "Partnerships", analytics: "Analytics", details: "Match details" };
       const far = [];

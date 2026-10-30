@@ -97,7 +97,7 @@ const html = (p) => renderToStaticMarkup(h(TabStrip, { setTab: () => {}, label: 
 }
 
 group("The menu's motion");
-// Drawn with the menu (tabStrip.jsx menuCss), not in GLOBAL_CSS: the signed-in entry graph is at its ceiling.
+// Drawn with the menu (tabStrip.jsx menuCss), not in GLOBAL_CSS: every visitor downloads the signed-in entry graph.
 ok("it drops in, quickly", /\.mc-more-menu\{animation:mcMenuIn /.test(menuCss()) && /@keyframes mcMenuIn/.test(menuCss()) && menuCss().includes(T.motion.micro));
 ok("under prefers-reduced-motion it simply appears", /@media \(prefers-reduced-motion: reduce\)\{\.mc-more-menu\{animation:none!important\}\}/.test(menuCss()));
 ok("...and under the root's own setting", /:root\[data-reduce-motion\] \.mc-more-menu\{animation:none!important\}/.test(menuCss()));
