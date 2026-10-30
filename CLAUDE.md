@@ -235,6 +235,16 @@ fresh-context reviewers stress-test it: `/egm:egm-brainstorm`, `/egm:egm-draft`,
 several reviewers, so it runs from the lead (builders cannot spawn agents) and
 is paced like any other agent work. No hooks, no MCP servers.
 
+How we use it (the lead's call, Kameel 30 Oct: "i'll go with your instincts"):
+- **Not before the weekly reset** (Wed 4 Nov 01:00); the week was at 80%.
+- **`egm-review` on each new Fable design** before it reaches Kameel: a cheaper
+  fresh-eyes pass, with reviewers on Sonnet, so his questions arrive already
+  tested. It does not replace Fable's red-team of a migration.
+- **`egm-drift-report` once a fortnight** on the merged designs against the code,
+  to catch a design that no longer says what was built. Haiku records what it finds.
+- Fable keeps the hard design problems listed above. EGM's own brainstorm and
+  draft are not used for them.
+
 ## Design skills
 
 Installed 2026-10-07 (Kameel) to raise SCRBRD's design, UI and UX, in
