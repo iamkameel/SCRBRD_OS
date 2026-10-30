@@ -30,8 +30,12 @@
 name: CI
 
 on:
+  # Pushes run CI on main only (Kameel, 30 Oct). A PR's own pull_request run
+  # checks every commit pushed to its branch, so a second run for the same
+  # commit only queued behind the first. Branches with no PR are proved
+  # locally by their builders and by CI once their PR opens.
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 # A second push supersedes the first. The old run is telling you about a commit
