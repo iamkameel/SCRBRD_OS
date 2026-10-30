@@ -2333,7 +2333,12 @@ Selector) appointed at the union by its principal, then open his passport,
 and nobody else at the union does: a competition organiser opens nothing, nor
 does the union's office. Every such read is recorded, and his family sees who
 at which union looked, and when, under the consents in Settings → Passport.
-His public profile does not change. The summary row "The union passport"
+His public profile does not change. Two consent rules change with it
+(Kameel, 30 October 2026): a consent a boy gave for himself counts only if he
+was eighteen on the day he gave it, and a guardian's consent does not come
+back when a boy returns to school after his guardians' links ended while he
+was away (the family gives it again); an end date the office corrects still
+brings a consent back. The summary row "The union passport"
 should read OK. **Schema first**: the API built with it refuses to start
 without db/124 (`expected-migrations.json`): its `passport_union_reads` read
 calls the new definer, and `POST /api/passport/consent` asks

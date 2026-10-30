@@ -808,6 +808,8 @@ SELECT
         AND has_function_privilege('scrbrd_app', to_regprocedure('passport_union_reads()'), 'EXECUTE')
         AND NOT has_function_privilege('scrbrd_app', to_regprocedure('passport_union_consent(uuid)'), 'EXECUTE')
         AND NOT has_table_privilege('scrbrd_app', 'passport_union_read', 'SELECT')
+        AND position('sa_date(p_given_at)' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('consent_giver_live(uuid,uuid,timestamptz)'))) > 0
+        AND position('guardian_link_reopened_since(' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('consent_giver_live(uuid,uuid,timestamptz)'))) > 0
        THEN 'OK' ELSE 'PROBLEM' END                             AS "The union passport",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
