@@ -8589,7 +8589,13 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 --     plat, a selector at U who also holds a platform-wide organiser's
 --     assignment; sup, a selector at U in a support session at U; selcoach,
 --     a selector at U who coaches SA's U15A; selpar, a selector at U who is
---     PA's guardian.
+--     PA's guardian; scout, an accredited scout at SA and SB, with three
+--     fixtures of overs each for PA and PD (SA) and PB (SB); aoffice, SA's
+--     school administrator.
+--   For the seams audit's call 1 (Kameel, 30 Oct 2026, 21:53 SAST): G, a
+--     Hilton 1XI boy who turned eighteen a month ago, still at school, and
+--     gg, his guardian on a link open from a year ago (made by
+--     _v125_prelinks(), before the sections, as section 101's are).
 -- The consents are named in the section, each by his own family.
 CREATE OR REPLACE FUNCTION _v125_stage() RETURNS jsonb AS $$
 DECLARE
@@ -8597,7 +8603,7 @@ DECLARE
   WES uuid := '22222222-2222-2222-2222-222222222222';
   U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
   U uuid; OU uuid; F uuid; SA uuid; SB uuid; FAR uuid;
-  c_a uuid; c_d uuid; c_a2 uuid; c_n uuid; c_b uuid; c_c uuid; c_x uuid; v_a uuid; ids jsonb;
+  c_a uuid; c_d uuid; c_a2 uuid; c_n uuid; c_b uuid; c_c uuid; c_x uuid; v_a uuid; ids jsonb; i int;
 BEGIN
   PERFORM set_config('app.user_id', '', true);
   SELECT s.id INTO U FROM school s WHERE s.kind = 'union' AND lower(btrim(s.province)) = 'kwazulu-natal' AND s.archived_at IS NULL;
@@ -8653,6 +8659,25 @@ BEGIN
     ((ids->>'selcoach')::uuid, 'unionselector', U),
     ((ids->>'selpar')::uuid, 'unionselector', U);
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'plat')::uuid, 'competitionadmin', NULL);
+  -- The scout reads at both schools; the office is SA's.
+  ids := ids || _v71_people('v125', ARRAY[
+    ARRAY['scout',   'scout',       SA::text, '', ''],
+    ARRAY['aoffice', 'schooladmin', SA::text, '', '']]);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'scout')::uuid, 'scout', SB);
+  INSERT INTO scout_accreditation (person_id, organisation, scout_role, verification_status, verified_by, verified_at)
+  VALUES ((ids->>'scout')::uuid, 'Verify 125 Union', 'regional_selector', 'verified', '88888888-0000-0000-0000-00000000000c', now());
+  -- A body of work for PA and PD (an over each in three fixtures at SA) and
+  -- PB (three at SB), so a scout's yes shows them.
+  FOR i IN 1..3 LOOP
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+    VALUES (SA, 'U15A', 'Verify OneTwentyFive ' || i, now() - make_interval(days => 20 + i), 'cricket', 'T20', 20, 'scheduled')
+    RETURNING id INTO v_a;
+    PERFORM _v71_bowl(v_a, '88888888-0000-0000-0000-00000000000c', ARRAY[c_a, c_d]);
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+    VALUES (SB, 'U15A', 'Verify OneTwentyFive B' || i, now() - make_interval(days => 20 + i), 'cricket', 'T20', 20, 'scheduled')
+    RETURNING id INTO v_a;
+    PERFORM _v71_bowl(v_a, '88888888-0000-0000-0000-00000000000c', ARRAY[c_b]);
+  END LOOP;
   -- sup's support hour at U, written as support_access_begin() would.
   INSERT INTO role_assignment (person_id, role, school_id, active, valid_from, expires_at)
   VALUES ((ids->>'sup')::uuid, 'schooladmin', U, true, current_date, now() + interval '1 hour') RETURNING id INTO v_a;
@@ -8673,7 +8698,8 @@ BEGIN
           '88888888-0000-0000-0000-00000000000c', current_date - 1);
   RETURN ids || jsonb_build_object('U', U, 'OU', OU, 'F', F, 'SA', SA, 'SB', SB, 'FAR', FAR, 'HIL', HIL, 'WES', WES,
                                    'PA', c_a, 'PD', c_d, 'PA2', c_a2, 'PN', c_n, 'PB', c_b, 'PC', c_c, 'PX', c_x,
-                                   'Uname', (SELECT s.name FROM school s WHERE s.id = U));
+                                   'Uname', (SELECT s.name FROM school s WHERE s.id = U))
+             || current_setting('v125.pre')::jsonb;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The key y gives an id, or '?'.
@@ -8781,6 +8807,67 @@ BEGIN
   PERFORM set_config('app.user_id', '', true);
   RETURN v;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- G and his guardian's link, from a year ago, as the owner: setting aside
+-- role_assignment's date stamp is an ALTER TABLE, refused once sections have
+-- left deferred trigger events pending, so this runs before them (as
+-- section 101's _v124_prelinks() does). Ids wait in v125.pre.
+CREATE OR REPLACE FUNCTION _v125_prelinks() RETURNS void AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  t date := sa_today();
+  c_g uuid; v_u uuid; v_a uuid;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '1XI', 'Verify OneTwentyFive Golf', 1258, 'batter', (t - interval '18 years 1 month')::date) RETURNING id INTO c_g;
+  INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v125.gg@example.invalid', 'V125 Gg', 'guardian')
+  RETURNING id INTO v_u;
+  ALTER TABLE role_assignment DISABLE TRIGGER role_assignment_granter;
+  INSERT INTO role_assignment (person_id, role, school_id, created_at, created_by)
+  VALUES (v_u, 'guardian', HIL, now() - interval '1 year', OFFICE) RETURNING id INTO v_a;
+  ALTER TABLE role_assignment ENABLE TRIGGER role_assignment_granter;
+  -- Open past his birthday: he is at school (db/62).
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from, valid_until, created_at)
+  VALUES (v_a, c_g, 'parent', 'verified', OFFICE, now() - interval '1 year', 'granted', 'popia-2026-01', now() - interval '1 year',
+          OFFICE, (t - interval '1 year')::date, NULL, now() - interval '1 year');
+  PERFORM set_config('v125.pre', jsonb_build_object('G', c_g, 'gg', v_u)::text, true);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+DO $v125$ BEGIN PERFORM _v125_prelinks(); END $v125$;
+
+-- A passport consent in p_giver's name, written as the owner past the write
+-- policy, and dated p_at: what a row given on that day looks like.
+CREATE OR REPLACE FUNCTION _v125_consent_as(p_giver uuid, p_player uuid, p_org uuid, p_at timestamptz) RETURNS uuid AS $$
+DECLARE v uuid;
+BEGIN
+  PERFORM set_config('app.user_id', p_giver::text, true);
+  INSERT INTO passport_consent (player_id, to_school_id) VALUES (p_player, p_org) RETURNING id INTO v;
+  PERFORM set_config('app.user_id', '', true);
+  UPDATE passport_consent SET granted_at = p_at WHERE id = v;
+  RETURN v;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A guardian withdraws processing consent on her link (db/00's
+-- assignment_subject.consent_state), as the owner records it.
+CREATE OR REPLACE FUNCTION _v125_processing_withdrawn(p_person uuid, p_player uuid) RETURNS int AS $$
+DECLARE v int;
+BEGIN
+  UPDATE assignment_subject s SET consent_state = 'withdrawn'
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = p_person AND a.role = 'guardian' AND s.player_id = p_player;
+  GET DIAGNOSTICS v = ROW_COUNT;
+  RETURN v;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The scout's access-log rows, as the owner reads them: school:keys+, sorted.
+CREATE OR REPLACE FUNCTION _v125_scout_access(y jsonb, p_reader uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(t, ',' ORDER BY t COLLATE "C"), '') FROM (
+    SELECT _v125_key(y, a.school_id) || ':'
+           || (SELECT string_agg(_v125_key(y, i), '+' ORDER BY _v125_key(y, i) COLLATE "C") FROM unnest(a.record_ids) i) AS t
+      FROM access_log a
+     WHERE a.person_id = p_reader AND a.resource = 'scouting_candidates' AND a.fields = ARRAY['full_name']) x
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/125 (section 102) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -30311,10 +30398,12 @@ $v49$;
   --              Her link ends: the scout no longer sees him; the office reads
   --              the row still 'granted', in force false
   --   (eighteen) "Let a boy of eighteen record his own scouting yes or no":
-  --              Y's guardian says yes, and her link ends (lapsed); she is
-  --              then refused; Y, eighteen, records his own yes on his
-  --              self-access link: one row for him, his, in force. C, fifteen,
-  --              on his own live link, is refused not_yet_eighteen
+  --              Y's guardian's yes is refused (he_is_of_age, db/125 §5 (1),
+  --              Kameel 30 Oct 2026: READERS Q1 stands) and her no recorded;
+  --              her link ends and she is then refused; Y, eighteen, records
+  --              his own yes on his self-access link: one row for him, his,
+  --              in force. C, fifteen, on his own live link, is refused
+  --              not_yet_eighteen
   --   (age)      "Under eighteen, only his guardian; at eighteen, he does it
   --              himself": C, fifteen, on his own live link, names no school
   --              and withdraws none; Y, eighteen, names one himself and
@@ -30520,13 +30609,19 @@ $v49$;
     PERFORM _v119_end_link((y->>'sg')::uuid, S);
 
     -- (eighteen)
+    -- Reversed by db/125 §5 (1) (Kameel, 30 Oct 2026, seams call 1; READERS
+    -- Q1): from his eighteenth birthday his guardian's yes is refused, in
+    -- words; her no is still recorded.
     PERFORM _as((y->>'yg')::uuid);
     SELECT s.ok, s.reason INTO v_ok, v_reason FROM scouting_consent_set((y->>'Y')::uuid, true) s;
-    PERFORM _assert(v_ok, format('§99 (eighteen): his guardian could not say yes on her live link (%s)', v_reason));
+    PERFORM _assert(NOT v_ok AND v_reason = 'he_is_of_age',
+      format('§99 (eighteen): his guardian said yes for the boy of eighteen on her live link (%s/%s)', v_ok, coalesce(v_reason, '-')));
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM scouting_consent_set((y->>'Y')::uuid, false) s;
+    PERFORM _assert(v_ok, format('§99 (eighteen): his guardian''s no was refused on her live link (%s)', v_reason));
     PERFORM set_config('app.user_id', '', true);
     PERFORM _v119_end_link((y->>'yg')::uuid, (y->>'Y')::uuid);
     PERFORM _as((y->>'hoffice')::uuid);
-    PERFORM _assert(scouting_consent_in_force((y->>'Y')::uuid) IS FALSE, '§99 (eighteen): the guardian''s yes did not lapse with her link');
+    PERFORM _assert(scouting_consent_in_force((y->>'Y')::uuid) IS FALSE, '§99 (eighteen): the guardian''s no reads as a yes in force');
     PERFORM _as((y->>'yg')::uuid);
     SELECT s.ok, s.reason INTO v_ok, v_reason FROM scouting_consent_set((y->>'Y')::uuid, false) s;
     PERFORM _assert(NOT v_ok AND v_reason = 'not_a_consented_guardian',
@@ -30941,7 +31036,10 @@ $v49$;
   --   (reopen)     R's guardian named his union at school; R left at
   --                seventeen, turned eighteen away (the link ended) and came
   --                back today (db/62 reopened it in place): the old consent
-  --                stays lapsed; given again after his return, it counts
+  --                stays lapsed. Given again after his return it counted until
+  --                db/125 §5 (1) (Kameel, 30 Oct 2026, seams call 1): he is
+  --                nineteen, so his guardian may no longer give it; she clears
+  --                the lapsed row and her new one is refused
   --   (birthday)   N2: a consent E2 gives himself on his eighteenth
   --                birthday itself counts; one E3 gave the day before his
   --                does not
@@ -30961,6 +31059,8 @@ $v49$;
   --                family still reads the name he read under
   --   (self-appoint) Q7: the union's principal appoints himself its selector
   --                through the policy, and his read is logged by his name
+  --                (E's, on E's own consent at eighteen, since db/125 leaves
+  --                R with none)
   --
   -- Falsified, each change made as the owner before this section ran (the
   -- section alone, cut from this file with the setup above it, on 29 Oct
@@ -31337,31 +31437,38 @@ $v49$;
      WHERE player_id = (y->>'R')::uuid AND to_school_id = U_ AND withdrawn_at IS NULL AND passport_consent_in_force(id) = false;
     GET DIAGNOSTICS v_n = ROW_COUNT;
     PERFORM _assert(v_n = 1, format('§101 (reopen): his guardian cleared %s lapsed row(s), not 1', v_n));
-    INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'R')::uuid, U_);
+    -- db/125 §5 (1): he is nineteen, so his guardian names nothing for him now.
+    BEGIN
+      INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'R')::uuid, U_);
+      v_ok := true;
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
+    END;
+    PERFORM _assert(NOT v_ok, '§101 (reopen): his guardian named his union for him at nineteen (db/125 §5 (1))');
     PERFORM _as((y->>'sel')::uuid);
-    PERFORM _assert(_passport_open((y->>'R')::uuid), '§101 (reopen): his guardian''s consent given after his return does not open it');
+    PERFORM _assert(NOT _passport_open((y->>'R')::uuid), '§101 (reopen): the selector opens R''s passport with no consent of his own');
 
     -- (self-appoint) Q7: the union's principal appoints himself its selector,
     -- through the write policy, and what he then reads is logged by his name.
-    -- R has no line on his passport yet, so the read is his name (passport_name()),
-    -- which opens and logs exactly as passport() does.
+    -- E, whose own consent at eighteen names the union (self-age), is read;
+    -- the read is his name (passport_name()), which opens and logs exactly as
+    -- passport() does. (It was R until db/125 §5 (1) left R with no consent.)
     PERFORM _as((y->>'uhead')::uuid);
-    PERFORM _assert(passport_name((y->>'R')::uuid) IS NULL AND NOT _passport_open((y->>'R')::uuid),
-      '§101 (self-appoint): the union''s principal opens R''s passport before he is its selector');
+    PERFORM _assert(passport_name((y->>'E')::uuid) IS NULL AND NOT _passport_open((y->>'E')::uuid),
+      '§101 (self-appoint): the union''s principal opens E''s passport before he is its selector');
     BEGIN
       INSERT INTO role_assignment (person_id, role, school_id) VALUES ((y->>'uhead')::uuid, 'unionselector', U_);
       v_ok := true;
     EXCEPTION WHEN insufficient_privilege OR check_violation THEN v_ok := false;
     END;
     PERFORM _assert(v_ok, '§101 (self-appoint): the union''s principal could not appoint himself its selector');
-    k := passport_name((y->>'R')::uuid);
+    k := passport_name((y->>'E')::uuid);
     PERFORM set_config('app.user_id', '', true);
-    got := _v124_reads_of((y->>'R')::uuid);
-    PERFORM _assert(k = 'Verify OneTwentyFour Returner' AND got = 'V124 Uhead (Union Selector):name',
-      format('§101 (self-appoint): he reads R''s name as [%s], and R''s log reads [%s]', coalesce(k, '(none)'), got));
-    PERFORM _as((y->>'rg')::uuid);
-    SELECT count(*) INTO v_n FROM passport_union_reads() r WHERE r.player_id = (y->>'R')::uuid AND r.reader_name = 'V124 Uhead';
-    PERFORM _assert(v_n = 1, format('§101 (self-appoint): R''s guardian reads %s line(s) naming the principal', v_n));
+    got := _v124_reads_of((y->>'E')::uuid);
+    PERFORM _assert(k = 'Verify OneTwentyFour Elder' AND got = 'V124 Uhead (Union Selector):name',
+      format('§101 (self-appoint): he reads E''s name as [%s], and E''s log reads [%s]', coalesce(k, '(none)'), got));
+    PERFORM _as((y->>'eself')::uuid);
+    SELECT count(*) INTO v_n FROM passport_union_reads() r WHERE r.player_id = (y->>'E')::uuid AND r.reader_name = 'V124 Uhead';
+    PERFORM _assert(v_n = 1, format('§101 (self-appoint): E reads %s line(s) naming the principal', v_n));
 
     -- (doors)
     PERFORM _assert(has_function_privilege('scrbrd_app', 'passport_union_reads()', 'EXECUTE')
@@ -31449,6 +31556,21 @@ $v49$;
   --              writer
   --   (k)        Q3: consent_giver_live() asks sa_today() in its four link
   --              tests and current_date nowhere
+  -- The seams audit's calls 1, 2 and 4 (Kameel, 30 Oct 2026, 21:53 SAST, as
+  -- recommended), folded into db/125:
+  --   (of-age)   call 1: G is eighteen and at school. His guardian's scouting
+  --              yes is refused (he_is_of_age) and her no recorded; her
+  --              naming his union is refused; a consent she gave before his
+  --              birthday stands (the selector lists him; in force), one in
+  --              her name dated after it does not (CSA Schools' selector does
+  --              not list him; not in force); her withdrawal still counts
+  --   (scout-log) call 2: the accredited scout's read of the candidates
+  --              writes one access_log row per school, naming that school's
+  --              boys (resource scouting_candidates, field full_name)
+  --   (processing) call 4: PD's guardian withdraws processing consent on her
+  --              link: his union's and CSA Schools' selectors no longer list
+  --              him, the scout no longer sees him, and her passport and
+  --              scouting consents read not in force
   --
   -- Falsified (30 Oct 2026, the section alone, each change made as the owner
   -- and restored; unchanged it passed before and after):
@@ -31463,6 +31585,11 @@ $v49$;
   --   passport_union_list() without the filter refusal → (f)
   --   passport_union_log_list() granted to the application → (j)
   --   consent_giver_live() back on current_date   → (k)
+  --   passport_consent_writer_ok() without the guardian's age → (of-age)
+  --   scouting_consent_set() without the guardian's age → (of-age)
+  --   consent_giver_live() without the guardian's age → (of-age)
+  --   scouting_candidates() without its log        → (scout-log)
+  --   consent_giver_live() without processing consent → (processing)
   DECLARE
     y      jsonb := _v125_stage();
     U_     uuid;
@@ -31471,6 +31598,7 @@ $v49$;
     SB_    uuid;
     FAR_   uuid;
     v_pc   uuid;
+    v_pf   uuid;
     v_n    int;
     v_n2   int;
     v_ok   boolean;
@@ -31688,6 +31816,88 @@ $v49$;
     PERFORM _as((y->>'sel')::uuid);
     got := _v125_list(y, U_, SB_, NULL) || '|' || _v125_list(y, U_, NULL, 'U16', 'papa');
     PERFORM _assert(got = '|', format('§102 (c): with his guardian''s link ended yesterday the selector lists [%s]', got));
+
+    -- (of-age) call 1: G turned eighteen a month ago and is at school; gg's
+    -- link is open.
+    PERFORM _as((y->>'gg')::uuid);
+    SELECT s.ok, s.reason INTO v_ok, got FROM scouting_consent_set((y->>'G')::uuid, true) s;
+    PERFORM _assert(NOT v_ok AND got = 'he_is_of_age',
+      format('§102 (of-age): his guardian''s scouting yes at eighteen was answered %s/%s', v_ok, coalesce(got, '-')));
+    SELECT s.ok, s.reason INTO v_ok, got FROM scouting_consent_set((y->>'G')::uuid, false) s;
+    PERFORM _assert(v_ok, format('§102 (of-age): his guardian''s no at eighteen was refused (%s)', got));
+    BEGIN
+      INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'G')::uuid, U_);
+      v_ok := true;
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
+    END;
+    PERFORM _assert(NOT v_ok, '§102 (of-age): his guardian named his union for him at eighteen');
+    -- One she gave two months ago, before his birthday, stands; one in her
+    -- name today (written past the policy, as the owner) does not.
+    PERFORM set_config('app.user_id', '', true);
+    v_pc := _v125_consent_as((y->>'gg')::uuid, (y->>'G')::uuid, U_, now() - interval '2 months');
+    v_pf := _v125_consent_as((y->>'gg')::uuid, (y->>'G')::uuid, F_, now());
+    PERFORM _as((y->>'sel')::uuid);
+    got := _v125_list(y, U_, (y->>'HIL')::uuid, NULL, 'onetwentyfive golf');
+    PERFORM _assert(got = 'G@U', format('§102 (of-age): on her word given before his birthday the selector lists [%s]', got));
+    PERFORM _as((y->>'fsel')::uuid);
+    got := _v125_list(y, F_, (y->>'HIL')::uuid, NULL, 'onetwentyfive golf');
+    PERFORM _assert(got = '', format('§102 (of-age): on her word given at eighteen CSA Schools'' selector lists [%s]', got));
+    PERFORM _as((y->>'gg')::uuid);
+    PERFORM _assert(passport_consent_in_force(v_pc) IS TRUE AND passport_consent_in_force(v_pf) IS FALSE,
+      format('§102 (of-age): she reads her consents in force %s (before his birthday) and %s (after)',
+             passport_consent_in_force(v_pc), passport_consent_in_force(v_pf)));
+    UPDATE passport_consent SET withdrawn_at = now() WHERE id = v_pc AND withdrawn_at IS NULL;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    PERFORM _assert(v_n = 1, '§102 (of-age): his guardian could not withdraw her consent at eighteen');
+    PERFORM _as((y->>'sel')::uuid);
+    got := _v125_list(y, U_, (y->>'HIL')::uuid, NULL, 'onetwentyfive golf');
+    PERFORM _assert(got = '', format('§102 (of-age): after her withdrawal the selector lists [%s]', got));
+
+    -- (scout-log) call 2
+    FOREACH k IN ARRAY ARRAY['ga:PA', 'gd:PD', 'gb:PB'] LOOP
+      PERFORM _as((y->>split_part(k, ':', 1))::uuid);
+      SELECT s.ok, s.reason INTO v_ok, got FROM scouting_consent_set((y->>split_part(k, ':', 2))::uuid, true) s;
+      PERFORM _assert(v_ok, format('§102 (scout-log): %s could not say yes to scouts (%s)', k, got));
+    END LOOP;
+    PERFORM _as((y->>'scout')::uuid);
+    SELECT coalesce(string_agg(_v125_key(y, x.player_id), ',' ORDER BY _v125_key(y, x.player_id) COLLATE "C")
+                      FILTER (WHERE _v125_key(y, x.player_id) <> '?'), ''), count(*)
+      INTO got, v_n FROM scouting_candidates() x;
+    PERFORM _assert(got = 'PA,PB,PD' AND v_n = 3, format('§102 (scout-log): the scout sees [%s] (%s row(s))', got, v_n));
+    PERFORM set_config('app.user_id', '', true);
+    got := _v125_scout_access(y, (y->>'scout')::uuid);
+    PERFORM _assert(got = 'SA:PA+PD,SB:PB', format('§102 (scout-log): the scout''s read is logged as [%s], not one row a school', got));
+    PERFORM _as((y->>'sel')::uuid);
+    SELECT count(*) INTO v_n FROM scouting_candidates();
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(v_n = 0 AND _v125_scout_access(y, (y->>'sel')::uuid) = '',
+      format('§102 (scout-log): a caller with no candidate saw %s and logged [%s]', v_n, _v125_scout_access(y, (y->>'sel')::uuid)));
+
+    -- (processing) call 4: gd withdraws processing consent on her link to PD.
+    PERFORM _as((y->>'sel')::uuid);
+    got := _v125_list(y, U_, SA_, NULL) || '|' || _v125_list(y, F_, SA_, NULL);
+    PERFORM _assert(got = 'PD@U,PA@U|', format('§102 (processing): before, the selector lists [%s]', got));
+    PERFORM set_config('app.user_id', '', true);
+    v_n := _v125_processing_withdrawn((y->>'gd')::uuid, (y->>'PD')::uuid);
+    PERFORM _assert(v_n = 1, format('§102 (processing): %s link(s) withdrawn, not 1', v_n));
+    PERFORM _as((y->>'sel')::uuid);
+    got := _v125_list(y, U_, SA_, NULL);
+    PERFORM _assert(got = 'PA@U', format('§102 (processing): after, the union''s selector lists [%s]', got));
+    PERFORM _as((y->>'fsel')::uuid);
+    got := _v125_list(y, F_, SA_, NULL);
+    PERFORM _assert(got = 'PA2@F', format('§102 (processing): after, CSA Schools'' selector lists [%s]', got));
+    PERFORM _as((y->>'scout')::uuid);
+    SELECT coalesce(string_agg(_v125_key(y, x.player_id), ',' ORDER BY _v125_key(y, x.player_id) COLLATE "C")
+                      FILTER (WHERE _v125_key(y, x.player_id) <> '?'), '')
+      INTO got FROM scouting_candidates() x;
+    PERFORM _assert(got = 'PA,PB', format('§102 (processing): after, the scout sees [%s]', got));
+    PERFORM _as((y->>'aoffice')::uuid);
+    PERFORM _assert(scouting_consent_in_force((y->>'PD')::uuid) IS FALSE,
+      format('§102 (processing): SA''s office reads PD''s scouting yes in force %s', scouting_consent_in_force((y->>'PD')::uuid)));
+    PERFORM _as((y->>'gd')::uuid);
+    SELECT string_agg(coalesce(passport_consent_in_force(c.id)::text, 'null'), ',') INTO got
+      FROM passport_consent c WHERE c.player_id = (y->>'PD')::uuid AND c.withdrawn_at IS NULL;
+    PERFORM _assert(got = 'false,false', format('§102 (processing): she reads PD''s two passport consents in force [%s]', got));
 
     -- (i)
     SELECT array_to_string(p.proargnames[p.pronargs + 1:], ','), array_to_string(p.proargmodes, ''),
