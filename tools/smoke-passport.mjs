@@ -14,7 +14,7 @@ const server = spawn(process.execPath, ["services/api/server.mjs"], { env: { ...
 const serverErr = []; server.stderr.on("data", (d) => serverErr.push(d.toString()));
 const api = async (path, { method = "GET", token, body } = {}) => {
   const res = await fetch(BASE + path, { method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
-  return { status: res.status, body: await res.json().catch(() => null) };
+  return { status: res.status, headers: res.headers, body: await res.json().catch(() => null) };
 };
 const login = async (email) => (await api("/api/auth/dev-login", { method: "POST", body: { email, deviceId: "device-passport" } })).body?.token;
 const passport = async (id, tok) => (await api(`/api/read/passport?playerId=${id}`, { token: tok })).body?.rows ?? [];
@@ -149,10 +149,89 @@ try {
          && (await q(`select count(*)::int as n from access_log where resource = 'passport_union' and $1 = any (record_ids)`, [PILLAY]))[0].n === 1
          && ((await api("/api/read/passport_union_reads", { token: parent })).body?.rows ?? []).length === 1);
     }
+    {
+      // db/125, the union selector's list (docs/design/UNION_SELECTOR_FIND.md
+      // S2; Kameel, 30 Oct 2026, all six as recommended): the boys whose
+      // consent to his union is in force, by school or age group, each row a
+      // logged read his family sees; kept nowhere, and never a file.
+      const hil = (await q(`select school_id from player where id = $1`, [PILLAY]))[0].school_id;
+      const listed = (tok, qs) => api(`/api/read/passport_union_list?${qs}`, { token: tok });
+      const noStore = (r) => /no-store/.test(r.headers?.get("cache-control") ?? "");
+      const what = async () => {
+        const rows = (await api("/api/read/passport_union_reads", { token: parent })).body?.rows ?? [];
+        return { list: rows.filter((r) => r.what === "list").length, passport: rows.filter((r) => r.what === "passport").length };
+      };
+      const orgs = await api("/api/read/passport_union_orgs", { token: sel });
+      ok("the selector reads as a union at his union, and only there, not kept",
+         orgs.status === 200 && orgs.body?.rows?.length === 1 && orgs.body.rows[0].org_id === kzn && noStore(orgs));
+      ok("...the union's organiser at none",
+         ((await api("/api/read/passport_union_orgs", { token: org })).body?.rows ?? []).length === 0);
+      const schools = await api(`/api/read/passport_union_schools?org=${kzn}`, { token: sel });
+      ok("he may filter by his province's schools, not kept",
+         schools.status === 200 && schools.body.rows.some((r) => r.school_id === hil) && !schools.body.rows.some((r) => r.school_id === far) && noStore(schools));
+      const everyone = await listed(sel, `org=${kzn}`);
+      ok("a list of everyone is refused, in words", everyone.status === 422 && everyone.body?.error === "choose_a_school_or_age_group" && noStore(everyone));
+      ok("...and a name alone is no filter", (await listed(sel, `org=${kzn}&q=pillay`)).status === 422);
+      ok("...nor a malformed school", (await listed(sel, `org=${kzn}&school=not-a-uuid`)).status === 400);
+      const before = await what();
+      const l1 = await listed(sel, `org=${kzn}&school=${hil}`);
+      const row = (l1.body?.rows ?? []).find((r) => r.player_id === PILLAY);
+      const name = (await q(`select full_name from player where id = $1`, [PILLAY]))[0].full_name;
+      ok("the selector lists the boy at his school, not kept", l1.status === 200 && !!row && noStore(l1));
+      ok("...his name is passport_name()'s, his school and side, and the union that admits him",
+         row?.name === name && row?.school_name === "Hilton College" && !!row?.team_code && row?.org_id === kzn && !!row?.consent_id);
+      ok("...and no figure: the row is six columns",
+         !!row && Object.keys(row).sort().join(",") === "consent_id,name,org_id,player_id,school_name,team_code");
+      ok("his mother's list of who looked gains the list, and nothing else yet",
+         (await what()).list === before.list + 1 && (await what()).passport === before.passport);
+      ok("...his school's auditors see one list row naming him",
+         (await q(`select count(*)::int as n from access_log where resource = 'passport_union' and fields = '{list}' and $1 = any (record_ids)`, [PILLAY]))[0].n === 1);
+      await passport(PILLAY, sel);
+      ok("opening the passport from the row adds a passport read", (await what()).passport === before.passport + 1);
+      await listed(sel, `org=${kzn}&school=${hil}`);
+      ok("a second list writes a second set of rows", (await what()).list === before.list + 2);
+      ok("a name fragment narrows within the list",
+         ((await listed(sel, `org=${kzn}&school=${hil}&q=pillay`)).body?.rows ?? []).some((r) => r.player_id === PILLAY)
+         && ((await listed(sel, `org=${kzn}&school=${hil}&q=nobody-by-this-name`)).body?.rows ?? []).length === 0);
+      const afterQ = await what();
+      ok("the organiser lists nobody, and nothing is logged",
+         ((await listed(org, `org=${kzn}&school=${hil}`)).body?.rows ?? []).length === 0 && (await what()).list === afterQ.list);
+      const ex = await api(`/api/export/passport_union_list?org=${kzn}&school=${hil}`, { token: sel });
+      ok("the list never leaves as a file", ex.status === 403 && ex.body?.error === "not_exported");
+      ok("...nor the passport", (await api(`/api/export/passport?playerId=${PILLAY}`, { token: sel })).status === 403);
+      ok("...and refusing the file logged no list", (await what()).list === afterQ.list);
+    }
     ok("the family's consents list the union by name",
        ((await api("/api/read/passport_consents", { token: parent })).body?.rows ?? []).some((x) => x.to_school_id === kzn && x.to_school === "Walk KZN Cricket Union" && x.in_force === true));
     ok("the boy, at sixteen, takes the union's name back", (await api(`/api/passport/consent/${u.body?.id}/withdraw`, { method: "POST", token: boy })).body?.withdrawn === 1);
     ok("...and the selector reads nothing again", (await passport(PILLAY, sel)).length === 0);
+    const hilAfter = (await q(`select school_id from player where id = $1`, [PILLAY]))[0].school_id;
+    ok("...nor lists him", !((await api(`/api/read/passport_union_list?org=${kzn}&school=${hilAfter}`, { token: sel })).body?.rows ?? []).some((r) => r.player_id === PILLAY));
+  }
+  // db/125 §5 (1) (Kameel, 30 Oct 2026, the seams audit's call 1; READERS Q1):
+  // from his eighteenth birthday his guardian gives no new yes, for his record
+  // or for scouts; her "no" still counts. Said in words on both routes.
+  group("From his eighteenth birthday the yes is his");
+  {
+    const hil = (await q(`select school_id from player where id = $1`, [PILLAY]))[0].school_id;
+    const office = (await q(`select id from app_user where email = 'registrar@example.invalid'`))[0]?.id
+                ?? (await q(`select person_id as id from role_assignment where role = 'schooladmin' and school_id = $1 limit 1`, [hil]))[0].id;
+    const adult = (await q(`insert into player (school_id, team_code, full_name, squad_no, playing_role, born)
+                            values ($1, '1XI', 'Walk Of Age', 1259, 'batter', ((now() at time zone 'Africa/Johannesburg')::date - interval '18 years 1 month')::date)
+                            returning id`, [hil]))[0].id;
+    const mumId = (await q(`insert into app_user (school_id, email, name, role) values ($1, 'mum.ofage.walk@example.invalid', 'Walk Of Age Mum', 'guardian') returning id`, [hil]))[0].id;
+    const asg = (await q(`insert into role_assignment (person_id, role, school_id) values ($1, 'guardian', $2) returning id`, [mumId, hil]))[0].id;
+    await q(`insert into assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                             consent_state, consent_version, consent_at, created_by, valid_from)
+             values ($1, $2, 'parent', 'verified', $3, now(), 'granted', 'popia-2026-01', now(), $3, current_date - 30)`, [asg, adult, office]);
+    const mum = await login("mum.ofage.walk@example.invalid");
+    const named = await consent(mum, adult, WES);
+    ok("his mother cannot name a school for him at eighteen, and is told why", named.status === 422 && named.body?.error === "he_is_of_age");
+    const yes = await api(`/api/players/${adult}/scouting-consent`, { method: "POST", token: mum, body: { granted: true } });
+    ok("...nor say yes to scouts, told the same", yes.status === 403 && yes.body?.error === "he_is_of_age");
+    const no = await api(`/api/players/${adult}/scouting-consent`, { method: "POST", token: mum, body: { granted: false } });
+    ok("...her no still counts", no.status === 200);
+    ok("...and a boy of sixteen's mother still names a school as before", (await consent(parent, PILLAY, WES)).status === 200);
   }
   group("Provenance is honest about who stood behind a line");
   {
