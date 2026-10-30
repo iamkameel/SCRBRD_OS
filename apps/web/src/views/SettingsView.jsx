@@ -23,7 +23,7 @@ import { ImportPanel, canImport } from "./importer.jsx";
 import { StaffRegisterPanel, canSeeRegister } from "./staffRegister.jsx";
 // The enrolment form, its words and the one-time code card are shared with the
 // Management screen (views/enrol.jsx): one form, one set of refusals in words.
-import { ENROL_MESSAGE, EnrolModal, IssuedCodeModal, grantableFor, issuedFrom } from "./enrol.jsx";
+import { ENROL_MESSAGE, EnrolModal, IssuedCodeModal, PUPILS_BY_OFFICE, grantableFor, issuedFrom, opensPupilAccounts } from "./enrol.jsx";
 import { EighteenCard, HealthConsentPrompt, HealthConsentSection } from "./healthconsent.jsx";
 // SCRBRD-140: the ways a person signs in (Me), and the office's Google claims (People).
 import { WaysToSignIn } from "./signins.jsx";
@@ -161,6 +161,11 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
   // resolves through the same assignments the real name does.
   const canEdit = holdsCapability(role, "user.role.assign");
   const canAudit = holdsCapability(role, "audit.read");
+  // A pupil's account is opened, and his code issued, by the office alone
+  // (db/122 §1d): the readers shown a pupil's address. Everyone on the
+  // no-account card is a pupil, so the director of sport is told who enrols
+  // them instead of being offered a form the server would refuse.
+  const pupilsHere = canEdit && opensPupilAccounts(role);
 
   // Roster people with no account, by the link the accounts read carries.
   // Both sides are already row-scoped in Postgres for this reader, so this
@@ -286,8 +291,8 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
         {tab === "users" && (
           <PeopleTab users={users} players={PLAYERS} staff={STAFF} coaches={COACHES}
                      noAccount={noAccount} noDob={noDob} linkEnded={linkEnded}
-                     canEdit={canEdit} coding={coding}
-                     onEnrol={() => setEnrolWith({ role: "player" })}
+                     canEdit={canEdit} pupilsHere={pupilsHere} coding={coding}
+                     onEnrol={() => setEnrolWith({ role: pupilsHere ? "player" : "" })}
                      onEnrolFor={(p) => setEnrolWith({ name: p.name, role: "player", player: p.id })}
                      onCapture={openCapture} onIssueCode={issueCodeFor}/>
         )}
@@ -359,7 +364,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
 // ══════════════════════════════════════════════════════
 //  PEOPLE — who can sign in, and who cannot yet
 // ══════════════════════════════════════════════════════
-function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded, canEdit, coding,
+function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded, canEdit, pupilsHere, coding,
                      onEnrol, onEnrolFor, onCapture, onIssueCode }) {
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
@@ -399,17 +404,20 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
           <div style={{ ...SUB(), marginBottom: "10px" }}>
             These people appear in Squad and Profiles and hold a passport, but cannot sign in.
             An account is what links the two: without one, nobody can read their own record.
-            {canEdit ? " Choose somebody to open an account for them." : ""}
+            {pupilsHere ? " Choose somebody to open an account for them." : ""}
           </div>
+          {canEdit && !pupilsHere && (
+            <div data-testid="no-account-office" role="note" style={{ ...SUB(), marginBottom: "10px" }}>{PUPILS_BY_OFFICE}</div>
+          )}
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
             {noAccount.map((p) => {
-              const Tag = canEdit ? "button" : "span";
+              const Tag = pupilsHere ? "button" : "span";
               return (
                 <Tag key={p.id} data-testid={`no-account-${p.id}`}
-                  {...(canEdit ? { onClick: () => onEnrolFor(p), title: `Enrol ${p.name}` } : {})}
+                  {...(pupilsHere ? { onClick: () => onEnrolFor(p), title: `Enrol ${p.name}` } : {})}
                   style={{ display: "inline-flex", alignItems: "center", gap: "6px",
                     padding: "4px 10px", borderRadius: D.pill, background: D.amber + "14", border: `1px solid ${D.amber}33`,
-                    fontFamily: D.body, fontSize: "12px", color: D.textSecondary, cursor: canEdit ? "pointer" : "default" }}>
+                    fontFamily: D.body, fontSize: "12px", color: D.textSecondary, cursor: pupilsHere ? "pointer" : "default" }}>
                   <Avatar name={p.name} size={18} color={D.amber}/>
                   {p.name}
                   <span style={{ ...MONO(), fontSize: "12px" }}>{p.team}</span>
@@ -518,7 +526,11 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
                             <Avatar name={u.name} size={30} color={rc?.color || D.textMuted}/>
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontFamily: D.body, fontSize: "12px", fontWeight: 500, color: D.textPrimary, whiteSpace: "nowrap" }}>{u.name}</div>
-                              <div style={{ ...MONO(), whiteSpace: "nowrap" }}>{u.email}</div>
+                              {/* A pupil's address is the office's alone (db/118): any other
+                                  reader gets the row without it, and is told so. */}
+                              {u.email
+                                ? <div style={{ ...MONO(), whiteSpace: "nowrap" }}>{u.email}</div>
+                                : <div data-testid="email-withheld" style={{ ...SUB(), fontSize: "12px" }}>Email shown to the school office only</div>}
                             </div>
                           </div>
                         </TD>
@@ -528,7 +540,10 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
                         <TD align="center" mono title={u.lastLogin ? new Date(u.lastLogin).toLocaleString() : undefined}>{ago(u.lastLogin)}</TD>
                         <TD align="center"><Badge color={u.status === "active" ? D.emerald : D.rose}>{u.status}</Badge></TD>
                         <TD align="center">
-                          {canEdit && (
+                          {/* A pupil's code is the office's to issue (db/122 §1d): not
+                              drawn on a row whose address this reader was not given,
+                              as the Claims screen draws no answer on one. */}
+                          {canEdit && u.email && (
                             <SmallBtn onClick={() => onIssueCode(u)} disabled={coding === u.id} data-testid={`issue-code-${u.id}`}>
                               {coding === u.id ? "…" : "Sign-in code"}
                             </SmallBtn>
