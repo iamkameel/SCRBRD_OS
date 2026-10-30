@@ -798,16 +798,16 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM capability WHERE name = 'passport.union.read' AND NOT platform_only) THEN
     RAISE EXCEPTION 'db/124: passport.union.read is not in the catalogue (or is platform-only)';
   END IF;
-  IF (SELECT string_agg(role, ',' ORDER BY role) FROM role_capability WHERE capability = 'passport.union.read')
+  IF (SELECT string_agg(role, ',' ORDER BY role COLLATE "C") FROM role_capability WHERE capability = 'passport.union.read')
      IS DISTINCT FROM 'superadmin,unionselector' THEN
     RAISE EXCEPTION 'db/124: passport.union.read is held by %, not the union selector and the owner''s key alone',
       (SELECT string_agg(role, ',' ORDER BY role) FROM role_capability WHERE capability = 'passport.union.read');
   END IF;
-  IF (SELECT string_agg(capability, ',' ORDER BY capability) FROM role_capability WHERE role = 'unionselector')
+  IF (SELECT string_agg(capability, ',' ORDER BY capability COLLATE "C") FROM role_capability WHERE role = 'unionselector')
      IS DISTINCT FROM 'passport.union.read,school.read' THEN
     RAISE EXCEPTION 'db/124: the union selector holds more or less than the passport and the school read';
   END IF;
-  IF (SELECT string_agg(granter, ',' ORDER BY granter) FROM role_grantable WHERE role = 'unionselector')
+  IF (SELECT string_agg(granter, ',' ORDER BY granter COLLATE "C") FROM role_grantable WHERE role = 'unionselector')
      IS DISTINCT FROM 'platformadmin,principal,superadmin' THEN
     RAISE EXCEPTION 'db/124: the union selector is appointed by someone other than a principal and the platform''s keys';
   END IF;
@@ -839,7 +839,7 @@ BEGIN
     END IF;
   END LOOP;
   -- The two that write the log are VOLATILE; nothing else here writes.
-  IF (SELECT string_agg(p.oid::regprocedure::text, ',' ORDER BY p.oid::regprocedure::text) FROM pg_proc p
+  IF (SELECT string_agg(p.oid::regprocedure::text, ',' ORDER BY p.oid::regprocedure::text COLLATE "C") FROM pg_proc p
        WHERE p.oid IN ('passport(uuid)'::regprocedure, 'passport_name(uuid)'::regprocedure) AND p.provolatile = 'v')
      IS DISTINCT FROM 'passport(uuid),passport_name(uuid)' THEN
     RAISE EXCEPTION 'db/124: passport() or passport_name() is not VOLATILE, and cannot write its log';
