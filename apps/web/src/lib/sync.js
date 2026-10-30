@@ -38,8 +38,24 @@
  * match is finished, two logs have forked) is said in words and not asked
  * again on a timer. The rules for attaching are packages/sync attach.mjs.
  *
+ * A TAKE-OVER IS A PERSON'S ACT (db/126, Kameel 30 Oct 2026)
+ * ─────────────────────────────────────────────────────────
+ * A claim over a match another device held is refused by the database,
+ * `held_elsewhere`, however long ago its lease lapsed. The pad says so with
+ * the time of the server's last ball and offers "Take over"; only that press
+ * (attach("takeover")) takes it, over the generation shown, and the server
+ * writes an audit row. Opening the fixture, or "Try again", never does.
+ *
  * THE LEASE (SCRBRD-078)
  * ─────────────────────
+ * The server keeps a device's lease for 90 s after the last write it took,
+ * or the last heartbeat. The pad HEARTBEATS while it is attached and the page
+ * is in view (every HEARTBEAT_MS, the match-day audit's B1, Kameel 30 Oct
+ * 2026): a wicket, drinks or the innings break no longer let the lease lapse
+ * under a phone that is still scoring. And while attached it holds a screen
+ * wake lock where the browser has one, so the screen does not lock between
+ * balls (a browser without the Wake Lock API simply goes without).
+ *
  * The server keeps a device's lease for 90 s after the last write it took.
  * A phone that was offline for longer sent everything it had queued straight
  * into quarantine — the lease check failed for the whole batch — and was told
@@ -68,7 +84,7 @@
  * that scoring on this phone has ended until somebody signs in. The rest of
  * the app is signed out throughout: nothing else can use it.
  */
-import { SyncEngine, indexedDbStorage, tryAttach, tossDecision, RETRY } from "@scrbrd/sync";
+import { SyncEngine, indexedDbStorage, tryAttach, tossDecision, padLogFrom, RETRY } from "@scrbrd/sync";
 import { fromRow, tossFromRow } from "@scrbrd/scoring";
 import { api, signedIn } from "./api.js";
 import { deviceId } from "./device.js";
@@ -86,6 +102,13 @@ const REACH_MS = 5000;
  * the trust at once.
  */
 const LEASE_TRUST_MS = 45000;
+/**
+ * How often an attached pad in view tells the server it is still scoring.
+ * The lease is 90 s; SCORING_HANDOVER_SPEC §3 asks for ~20 s, which leaves
+ * three missed beats of room. A beat is skipped when a send has just
+ * refreshed the lease.
+ */
+const HEARTBEAT_MS = 20000;
 
 /**
  * What went wrong with a request, as a reason the pad can say.
@@ -95,6 +118,9 @@ const LEASE_TRUST_MS = 45000;
  * @returns {string}
  */
 export function failureReason(e) {
+  // Our own Error(reason), thrown by send() and the gate with a reason the
+  // pad already says ("unreachable", "pad_ended", …), is that reason.
+  if (e && e.name === "Error" && /^[a-z][a-z_]*$/.test(e.message ?? "") && e.cause !== undefined) return e.message;
   if (e?.name === "ApiError") {
     // The resume credential has ended (SCRBRD-078): only a sign-in changes that.
     if (padEnded(e)) return "pad_ended";
@@ -114,17 +140,19 @@ const online = () => (typeof navigator === "undefined" ? true : navigator.onLine
  * `hooks.padLog()` is the pad's log as it is now; `hooks.adopt(log)` replaces
  * it with the server's; `hooks.restore(orphans)` puts back queued events its
  * saved log lost; `hooks.followToss(serverToss)` re-opens the first innings
- * from the server's toss; `hooks.onStatus(status)` is told everything the pad
- * shows. None of them may throw.
+ * from the server's toss; `hooks.forked(reconcile)` writes the pad's log aside
+ * when it has forked from the server's (P5); `hooks.onStatus(status)` is told
+ * everything the pad shows. None of them may throw.
  */
 export class PadSync {
   /**
    * @param {object} args
    * @param {string} args.matchId
    * @param {string|undefined} args.userId
-   * @param {"open"|"restore"} args.intent
+   * @param {"open"|"restore"|"takeover"} args.intent
    * @param {{padLog: () => any[][], adopt: (log: any[][]) => boolean, restore: (orphans: any[]) => void,
-   *          followToss: (toss: any) => void, onStatus: (s: any) => void}} args.hooks
+   *          followToss: (toss: any) => void, onStatus: (s: any) => void,
+   *          forked?: (reconcile: any) => void | Promise<void>}} args.hooks
    */
   constructor({ matchId, userId, intent, hooks }) {
     this.matchId = matchId;
@@ -161,6 +189,37 @@ export class PadSync {
     this.minting = null;
     this.timer = null;
     this.retryTimer = null;
+    this.hbTimer = null;
+    /** A heartbeat in flight. */
+    this.beating = false;
+    /** The screen wake lock while attached (navigator.wakeLock), and a request in flight. */
+    this.wakeLock = null;
+    this.waking = false;
+    /**
+     * The server's last ball, from the last read of its log: its time
+     * (server_ts, the figure match_live_score.last_ball_at reports) and seq.
+     * @type {{at: string|null, seq: number|null} | null}
+     */
+    this.serverLast = null;
+    /**
+     * A refusal a person may confirm past (db/126): another device held this
+     * match and its lease lapsed. The generation the person is shown, which
+     * is the one "Take over" asks for, and the server's last ball then.
+     * @type {{epoch: number|null, at: string|null, seq: number|null} | null}
+     */
+    this.heldElsewhere = null;
+    /**
+     * The incoming scorer's note (the audit's P4): this device now holds a
+     * match another device scored, and this is how far the server's log got.
+     * Shown until the scorer says they have checked it.
+     * @type {{at: string|null, seq: number|null} | null}
+     */
+    this.takeoverNote = null;
+    /** Why the outbox could not open (P6): this phone cannot queue anything. */
+    this.outboxError = null;
+    /** Balls sent for a person's review (P5/P7) in flight, and why the last try failed. */
+    this.reviewing = null;
+    this.reviewError = null;
     /**
      * Whether the server answered the last time a signed-out pad asked
      * (/api/health, which needs no session): null before it has asked.
@@ -213,26 +272,100 @@ export class PadSync {
       settleToss: (toss) => this.settleToss(toss),
       onChange: () => this.status(),
     });
-    await engine.init();
+    // The outbox not opening is said, not swallowed (the audit's P6): a
+    // storage fault here used to leave the pad saying "On device" all
+    // afternoon, queueing nothing and sending nothing, with nobody told.
+    // The pad still records into its saved log (persist.js); it says that
+    // this phone cannot send, and to score on the other one.
+    try {
+      await engine.init();
+    } catch (e) {
+      if (this.stopped) return null;
+      this.outboxError = /** @type {any} */ (e)?.name || /** @type {any} */ (e)?.message || "storage_fault";
+      this.reason = "outbox_unavailable";
+      this.halted = true;
+      this.status();
+      return null;
+    }
     if (this.stopped) return null;
     this.engine = engine;
     if (typeof window !== "undefined") {
       window.addEventListener("online", this.onOnline);
       window.addEventListener("offline", this.onOffline);
     }
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onVisible);
     this.timer = setInterval(() => {
       if (this.stopped || this.halted || !engine.attached) return;
       if (engine.pendingCount || engine.toss) engine.sync().catch(() => {});
     }, RETRY_MS);
+    this.hbTimer = setInterval(() => { this.heartbeat(); }, HEARTBEAT_MS);
     this.status();
     return engine;
+  }
+
+  /** The page came back into view: the screen lock and the lease, at once. */
+  onVisible = () => {
+    if (this.stopped || typeof document === "undefined" || document.visibilityState !== "visible") return;
+    this.heartbeat({ now: true });
+    this.status();
+  };
+
+  /**
+   * The heartbeat (B1): while attached, not halted, in view and online, tell
+   * the server this device is still scoring. The gate does the asking — a
+   * live lease is extended, this device's own lapsed one is taken back, and
+   * a token another device holds now stops the pad in words — so a beat and
+   * a flush judge the token by one rule. Skipped while a flush is out, or
+   * when a send has just refreshed the lease.
+   * @param {{now?: boolean}} [opts]
+   */
+  async heartbeat({ now = false } = {}) {
+    const engine = this.engine;
+    if (this.stopped || this.halted || !engine?.attached || this.beating || engine.syncing) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    if (!online()) return;
+    if (!now && Date.now() - this.leaseAt < HEARTBEAT_MS - 5000) return;
+    this.beating = true;
+    try {
+      this.leaseAt = 0;
+      const g = await this.gate();
+      if (g.ok && g.epoch != null && g.epoch !== engine.epoch) await engine.attach(g.epoch);
+      if (g.ok && (engine.pendingCount || engine.toss)) engine.sync().catch(() => {});
+    } catch { /* no answer: the next beat, or the next flush, asks again */ }
+    finally { this.beating = false; this.status(); }
+  }
+
+  /**
+   * Hold the screen awake while this device holds the token (Kameel, 30 Oct
+   * 2026: the Wake Lock API, a browser API, not a dependency). The browser
+   * lets it go when the page is hidden; it is asked again when the page is
+   * back. A browser without it, or one that refuses, goes on without it.
+   */
+  holdWake() {
+    if (this.stopped || this.wakeLock || this.waking) return;
+    if (typeof navigator === "undefined" || typeof navigator.wakeLock?.request !== "function") return;
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    this.waking = true;
+    navigator.wakeLock.request("screen").then((lock) => {
+      if (this.stopped || !this.engine?.attached) { lock.release().catch(() => {}); return; }
+      this.wakeLock = lock;
+      lock.addEventListener?.("release", () => { if (this.wakeLock === lock) this.wakeLock = null; });
+    }).catch(() => { /* refused (battery saver, no permission): the pad works without it */ })
+      .finally(() => { this.waking = false; });
+  }
+
+  releaseWake() {
+    const lock = this.wakeLock;
+    this.wakeLock = null;
+    lock?.release?.().catch?.(() => {});
   }
 
   /**
    * Try to take the token and attach. Safe to call at any time: one attempt
    * runs at once, an attached pad does nothing, and a failure for want of
    * the network schedules the next try.
-   * @param {"open"|"restore"} [intent]  a person's "score on this device" passes "open"
+   * @param {"open"|"restore"|"takeover"} [intent]  a person's "score on this device" passes "open";
+   *        "takeover" only from the confirmed Take over (db/126), over heldElsewhere's generation
    */
   attach(intent) {
     if (intent) { this.intent = intent; this.halted = false; }
@@ -253,13 +386,17 @@ export class PadSync {
     if (!online()) { this.reason = "offline"; this.status(); return; }
     this.reason = "attaching"; this.status();
     let r;
+    const intent = this.intent;
+    // A take-over is asked once, for the press that confirmed it: a retry
+    // on a timer, or the next attach, is a plain claim again.
+    if (intent === "takeover") this.intent = "open";
     try {
       r = await tryAttach({
-        engine, intent: this.intent,
+        engine, intent, takeoverEpoch: intent === "takeover" ? (this.heldElsewhere?.epoch ?? null) : null,
         server: {
           probe: (epoch) => this.probe(epoch),
           log: () => this.serverLog(),
-          claim: () => this.claimCall(),
+          claim: (opts) => this.claimCall(opts),
         },
         padLog: () => this.hooks.padLog(),
         adopt: (log) => this.hooks.adopt(log),
@@ -273,10 +410,23 @@ export class PadSync {
     if (r.ok) {
       this.reason = null; this.halted = false; this.attempt = 0;
       this.leaseAt = Date.now();
+      this.heldElsewhere = null;
+      // The incoming scorer is told how far the server got (P4): this device
+      // took the server's log, or the session had moved on since it last
+      // held it — a take-over, a claim after a force-release.
+      if ((r.adopted || r.followed) && this.serverLast?.at) this.takeoverNote = { ...this.serverLast };
       this.status();
       engine.sync().catch(() => {});
       return;
     }
+    if (intent === "takeover" && r.reason === "held_elsewhere") this.intent = "open";
+    if (r.reason === "held_elsewhere") this.heldElsewhere = { epoch: r.sessionEpoch ?? null, ...(this.serverLast ?? { at: null, seq: null }) };
+    // A fork keeps this device's balls for the lead: written aside at once
+    // (Kameel, 30 Oct 2026, as the handover path does), listed in words.
+    if (r.reason === "fork" && r.reconcile) { try { await this.hooks.forked?.(r.reconcile); } catch { /* the banner still lists them */ } }
+    // A finished match takes nothing more into its log; what this device
+    // still has queued goes to the lead's review rather than nowhere (P7).
+    if (r.reason === "match_complete" && engine.pendingCount) this.forReview();
     this.reason = r.reason;
     if (RETRY.has(r.reason)) {
       this.halted = false;
@@ -338,7 +488,12 @@ export class PadSync {
     if (Number.isInteger(r?.quarantined)) {
       this.review = { server: r.quarantined, seen: this.engine?.rejected?.length ?? 0 };
     }
-    return (r?.events ?? []).map(fromRow);
+    const rows = r?.events ?? [];
+    // The server's last ball, as the read gave it (P4, B1): its server time
+    // and seq. fromRow keeps neither — the pad's events do not carry them.
+    const last = [...rows].reverse().find((x) => x?.kind === "ball") ?? null;
+    this.serverLast = last ? { at: last.server_ts ?? null, seq: last.seq ?? null } : { at: null, seq: null };
+    return rows.map(fromRow);
   }
 
   /**
@@ -352,7 +507,16 @@ export class PadSync {
     try { hb = await this.probe(engine.epoch); }
     catch (e) { throw new Error(failureReason(e), { cause: e }); }
     if (hb.ok) { this.leaseAt = Date.now(); return { ok: true }; }
-    if (hb.reason === "match_complete") return this.stop_("match_complete");
+    if (hb.reason === "match_complete") {
+      // A result declared while this pad still had balls to send (P7): they
+      // never reach the log, but they reach the lead — sent for review, where
+      // the server files them under match_complete, rather than kept on this
+      // phone with no road anywhere. The flush stops here; the review send
+      // waits for it.
+      const r = this.stop_("match_complete");
+      if (engine.pendingCount) this.forReview();
+      return r;
+    }
     if (hb.state === "handover_pending" || hb.state === "verifying") return { ok: false, reason: hb.state };
     if (hb.epoch === engine.epoch && hb.state === "active") {
       // Lapsed, and nobody has claimed since: the generation has not moved,
@@ -382,8 +546,65 @@ export class PadSync {
     this.halted = true;
     this.reason = reason;
     this.engine?.detach(reason);
+    this.releaseWake();
     return { ok: /** @type {false} */ (false), reason };
   }
+
+  /**
+   * What this device still has queued, sent for a person's review (P5, P7):
+   * unattached and as stamped, so the server writes it to quarantine, where
+   * the lead sees it, releases it or rejects it. Only after the server has
+   * said the match is complete, or that its log holds another device's
+   * events this one lacks (a fork). One at a time.
+   */
+  forReview() {
+    const engine = this.engine;
+    if (!engine || this.stopped || this.reviewing) return this.reviewing;
+    this.reviewing = (async () => {
+      try { await engine.sendForReview(); this.reviewError = null; }
+      catch (e) { this.reviewError = failureReason(e); }
+      finally { this.reviewing = null; this.status(); }
+    })();
+    this.status();
+    return this.reviewing;
+  }
+
+  /**
+   * A fork, settled from this phone (P5): its balls the server lacks go to
+   * the lead's review (quarantine), its whole log stays written aside (the
+   * fork already did that), and the pad takes the server's log and asks to
+   * score on it — a plain claim, so a take-over is still a person's
+   * confirmed act. Nothing is merged: the balls reach the scorebook only if
+   * the lead releases them, or somebody types them in on the holding phone.
+   */
+  async settleFork() {
+    const engine = this.engine;
+    if (!engine || this.stopped || engine.attached || this.reason !== "fork") return;
+    const r = this.lastAttach?.reconcile;
+    this.reason = "fork_settling"; this.status();
+    try {
+      if (r) await this.hooks.forked?.(r);
+      // The toss this phone answered belongs to the log it sets aside.
+      await engine.setTossAside();
+      if (engine.pendingCount) await engine.sendForReview();
+      // Every ball is the lead's now, or it stays here: a refusal (held) or a
+      // ball the server did not reach keeps the pad on its own log.
+      if (engine.pendingCount) throw new Error("not_all_sent");
+      const server = await this.serverLog();
+      await engine.markSent(server.map((e) => e?.id).filter((id) => id != null));
+      if ((await this.hooks.adopt(padLogFrom(server))) === false) throw new Error("busy");
+    } catch (e) {
+      const m = /** @type {any} */ (e)?.message;
+      this.reviewError = m === "not_all_sent" || m === "busy" ? m : failureReason(e);
+      this.reason = "fork"; this.halted = true; this.status();
+      return;
+    }
+    this.reviewError = null;
+    this.attach("open");
+  }
+
+  /** The incoming scorer has checked the server's last ball against the book. */
+  dismissNote() { this.takeoverNote = null; this.status(); }
 
   /**
    * One batch to the server. A 401 is a session that has ended (a reload, or
@@ -431,18 +652,26 @@ export class PadSync {
     const d = tossDecision({ mine, server, serverHasEvents, log: this.hooks.padLog() });
     if (d.action === "settled") return { settled: /** @type {true} */ (true) };
     if (d.action === "send") {
-      // Recording a toss is not something the resume credential does: it
-      // reads the toss and never writes one. Signed out, the pad asks for a
-      // sign-in and sends nothing behind the toss meanwhile.
-      if (!signedIn()) return { settled: /** @type {false} */ (false), reason: "toss_needs_sign_in" };
+      // Written under whichever credential call() picks: the resume
+      // credential may write its match's toss while the token is this
+      // device's (db/126, Kameel 30 Oct 2026), so a toss answered with no
+      // signal no longer waits for a sign-in that ran out mid-innings. With
+      // neither a credential nor a sign-in, the pad asks for a sign-in.
+      if (!signedIn() && !(await this.padRecord())) return { settled: /** @type {false} */ (false), reason: "toss_needs_sign_in" };
       try {
-        await api(`/api/matches/${this.matchId}/toss`, { method: "POST", body: { wonBy: mine.wonBy, decision: mine.decision } });
+        await this.call(`/api/matches/${this.matchId}/toss`, { method: "POST", body: { wonBy: mine.wonBy, decision: mine.decision } });
         return { settled: /** @type {true} */ (true) };
       } catch (e) {
         // Frozen between the read and the write: something reached the
         // match first. A person settles it; nothing is sent after it.
-        if (e?.status === 409) return this.tossStop({ mine, server: null, serverHasEvents: true }, "toss_locked");
-        throw new Error(failureReason(e), { cause: e });
+        if (/** @type {any} */ (e)?.code === "toss_locked" || (/** @type {any} */ (e)?.status === 409 && !/** @type {any} */ (e)?.code)) {
+          return this.tossStop({ mine, server: null, serverHasEvents: true }, "toss_locked");
+        }
+        // The token moved under the credential: nothing more goes from here.
+        if (/** @type {any} */ (e)?.code === "token_moved") return { settled: /** @type {false} */ (false), reason: this.stop_("token_moved").reason };
+        const why = failureReason(e);
+        if (why === "session_expired" || why === "pad_ended") { this.reason = why; this.halted = true; }
+        throw new Error(why, { cause: e });
       }
     }
     if (d.action === "follow") {
@@ -529,8 +758,9 @@ export class PadSync {
    * is followed by an issue: that is the moment the pad earns a credential,
    * holding the token on this device.
    */
-  async claimCall() {
-    const r = await this.call(`/api/matches/${this.matchId}/session/claim`, { method: "POST", body: { device: deviceId() } });
+  /** @param {{takeover: true, epoch: number|null}} [opts] */
+  async claimCall(opts) {
+    const r = await this.call(`/api/matches/${this.matchId}/session/claim`, { method: "POST", body: { device: deviceId(), ...(opts ?? {}) } });
     if (r?.ok && !this.pad && signedIn()) this.ensurePad();
     return r;
   }
@@ -557,6 +787,7 @@ export class PadSync {
     this.halted = true;
     this.reason = "handed_over";
     this.engine?.detach("handed_over");
+    this.releaseWake();
     this.status();
   }
 
@@ -564,8 +795,11 @@ export class PadSync {
   status() {
     if (this.stopped) return;
     const e = this.engine;
+    if (e?.attached) this.holdWake(); else this.releaseWake();
     this.hooks.onStatus({
       open: !!e,
+      // The outbox could not open (P6): the banner says this phone cannot send.
+      outboxUnavailable: !!this.outboxError,
       attached: !!e?.attached,
       attaching: this.reason === "attaching",
       reason: e?.attached ? (e.lastError ?? null) : this.reason,
@@ -595,16 +829,27 @@ export class PadSync {
       conflict: this.conflict,
       reconcile: this.lastAttach?.reconcile ?? null,
       cleared: !!e?.cleared,
+      // B1/P4: the server's last ball, a take-over a person may confirm, and
+      // the incoming scorer's note.
+      serverLast: this.serverLast,
+      heldElsewhere: this.heldElsewhere,
+      takeoverNote: e?.attached ? this.takeoverNote : null,
+      // P5/P7: balls going to the lead's review, and why the last try did not.
+      reviewing: !!this.reviewing,
+      reviewError: this.reviewError,
     });
   }
 
   stop() {
     this.stopped = true;
     clearInterval(this.timer);
+    clearInterval(this.hbTimer);
     clearTimeout(this.retryTimer);
     if (typeof window !== "undefined") {
       window.removeEventListener("online", this.onOnline);
       window.removeEventListener("offline", this.onOffline);
     }
+    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.onVisible);
+    this.releaseWake();
   }
 }

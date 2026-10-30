@@ -51,6 +51,9 @@ export function indexedDbStorage({ dbName = "scrbrd-outbox", matchId, deviceId }
     });
   };
 
+  /** Every string key that starts with `p`: [p, p + U+FFFF]. @param {string} p */
+  const prefixRange = p => IDBKeyRange.bound(p, p + "\uffff");
+
   /** @type {<R>(r: IDBRequest<R>) => Promise<R>} */
   const reqP = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
 
@@ -58,22 +61,27 @@ export function indexedDbStorage({ dbName = "scrbrd-outbox", matchId, deviceId }
     async put(key, value) { return tx("readwrite", os => os.put(value, ns + key)); },
     async get(key) { return tx("readonly", os => reqP(os.get(ns + key)).then(v => v ?? null)); },
     async delete(key) { return tx("readwrite", os => os.delete(ns + key)); },
+    // Every request of one call is made in the same tick, before anything
+    // is awaited (the match-day audit, P6). A request made from a promise
+    // continuation after the first one answered depends on the transaction
+    // still being active then, which older WebKit does not promise: it
+    // commits, the next request throws TransactionInactiveError, and the
+    // outbox never opens. The keys and the values of one key range, read
+    // side by side, come back in the same (key) order.
     async list(prefix) {
-      return tx("readonly", async os => {
-        const keys = await reqP(os.getAllKeys());
-        const wanted = /** @type {string[]} */ (keys.filter(k => typeof k === "string" && k.startsWith(ns + prefix)));
-        /** @type {{key: string, value: any}[]} */
-        const out = [];
-        for (const k of wanted) out.push({ key: k.slice(ns.length), value: await reqP(os.get(k)) });
-        return out;
+      return tx("readonly", os => {
+        const range = prefixRange(ns + prefix);
+        return Promise.all([reqP(os.getAllKeys(range)), reqP(os.getAll(range))]).then(([keys, values]) => {
+          /** @type {{key: string, value: any}[]} */
+          const out = [];
+          keys.forEach((k, i) => { if (typeof k === "string" && k.startsWith(ns + prefix)) out.push({ key: k.slice(ns.length), value: values[i] }); });
+          return out;
+        });
       });
     },
-    /** Clear this match+device's queue (e.g. after the match is archived). */
+    /** Clear this match+device's queue (e.g. after the match is archived). One request, in the same tick. */
     async clearMatch() {
-      return tx("readwrite", async os => {
-        const keys = await reqP(os.getAllKeys());
-        for (const k of keys) if (typeof k === "string" && k.startsWith(ns)) os.delete(k);
-      });
+      return tx("readwrite", os => os.delete(prefixRange(ns)));
     },
   };
 }

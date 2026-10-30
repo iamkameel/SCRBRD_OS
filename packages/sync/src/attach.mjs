@@ -44,6 +44,12 @@
  *     only lapsed leases stand between the two. Only a person opening the
  *     pad, or pressing "score on this device", claims that.
  *
+ * And one the database refuses that a person may then confirm (db/126,
+ * Kameel 30 Oct 2026): a claim over ANOTHER device's lapsed lease is
+ * `held_elsewhere`, never granted in silence. The pad shows the server's last
+ * ball and offers "Take over"; only that press — intent "takeover", over the
+ * generation the person was shown — takes it (scoring_takeover, audited).
+ *
  * Every refusal is an answer, not a failure: the pad says it in words and
  * does not ask again on a timer (RETRY below is the short list that does).
  */
@@ -152,10 +158,18 @@ export function withOrphans(log, orphans) {
  * @typedef {object} AttachServer
  * @property {(epoch: number|null) => Promise<SessionProbe>} probe
  * @property {() => Promise<any[]>} log       the server's events, in seq order (fromRow)
- * @property {() => Promise<{ok: boolean, reason?: string|null, epoch?: number|null}>} claim
+ * @property {(opts?: {takeover: true, epoch: number|null}) => Promise<{ok: boolean, reason?: string|null, epoch?: number|null}>} claim
  *
- * @typedef {{ok: true, epoch: number, adopted: boolean, restored: number, reason?: undefined, reconcile?: Reconcile}
- *         | {ok: false, reason: string, reconcile?: Reconcile, epoch?: undefined, adopted?: undefined, restored?: undefined}} AttachResult
+ * `claim(opts)`: opts.takeover asks for the confirmed take-over over
+ * generation opts.epoch (db/126 scoring_takeover); without it, a plain claim.
+ *
+ * `followed`: the session had moved on since this device last held it (a
+ * take-over, a claim after a force-release, a first visit to a match another
+ * device scored) — the pad tells the incoming scorer how far the server got.
+ * `sessionEpoch`: on a refusal, the generation the server named (the one a
+ * confirmed take-over is asked over).
+ * @typedef {{ok: true, epoch: number, adopted: boolean, followed: boolean, restored: number, reason?: undefined, reconcile?: Reconcile, sessionEpoch?: undefined}
+ *         | {ok: false, reason: string, reconcile?: Reconcile, sessionEpoch?: number|null, epoch?: undefined, adopted?: undefined, followed?: undefined, restored?: undefined}} AttachResult
  */
 
 /**
@@ -190,10 +204,12 @@ export const RETRY = new Set(["unreachable", "server_error", "busy"]);
  * @param {() => PadLog} args.padLog         the pad's log as it is now
  * @param {(log: PadLog) => boolean | void | Promise<boolean | void>} args.adopt
  * @param {(orphans: OutboxEvent[]) => void | Promise<void>} [args.restore]
- * @param {"open"|"restore"} [args.intent]   "open": a person opened the pad or asked to score here
+ * @param {"open"|"restore"|"takeover"} [args.intent]   "open": a person opened the pad or asked to score
+ *        here; "takeover": a person read the server's last ball and pressed Take over (db/126)
+ * @param {number|null} [args.takeoverEpoch]  the generation that person was shown (held_elsewhere's)
  * @returns {Promise<AttachResult>}
  */
-export async function tryAttach({ engine, server, padLog, adopt, restore, intent = "open" }) {
+export async function tryAttach({ engine, server, padLog, adopt, restore, intent = "open", takeoverEpoch = null }) {
   const probe = await server.probe(engine.heldEpoch);
   if (!probe.ok && (probe.state === "handover_pending" || probe.state === "verifying")) {
     return { ok: false, reason: /** @type {string} */ (probe.state) };
@@ -218,15 +234,19 @@ export async function tryAttach({ engine, server, padLog, adopt, restore, intent
   if (r.orphans.length && restore) await restore(r.orphans);
 
   // Somebody claimed this match after this device last held it. A person
-  // may take it from them (the database still refuses a live lease); a pad
-  // that reopened by itself does not.
+  // may ask for it (the database refuses a live lease, and another device's
+  // lapsed one unless the person confirms a take-over: db/126); a pad that
+  // reopened by itself does not ask at all.
   const movedOn = !probe.ok && probe.state === "active" && probe.epoch != null && probe.epoch !== engine.heldEpoch;
-  if (movedOn && intent !== "open") return { ok: false, reason: "moved_on", reconcile: r };
+  if (movedOn && intent === "restore") return { ok: false, reason: "moved_on", reconcile: r };
+  // The session moved on since this device held it, whatever its state now
+  // (a force-release leaves it idle under a new generation).
+  const followed = probe.epoch != null && probe.epoch !== engine.heldEpoch;
 
-  const c = await server.claim();
-  if (!c.ok || c.epoch == null) return { ok: false, reason: c.reason ?? "claim_refused", reconcile: r };
+  const c = await server.claim(intent === "takeover" ? { takeover: true, epoch: takeoverEpoch } : undefined);
+  if (!c.ok || c.epoch == null) return { ok: false, reason: c.reason ?? "claim_refused", reconcile: r, sessionEpoch: c.epoch ?? null };
   await engine.attach(c.epoch, { rebase: true });
-  return { ok: true, epoch: c.epoch, adopted: r.state === "behind", restored: r.orphans.length, reconcile: r };
+  return { ok: true, epoch: c.epoch, adopted: r.state === "behind", followed, restored: r.orphans.length, reconcile: r };
 }
 
 // ── The toss (SCRBRD-075) ────────────────────────────────────────
