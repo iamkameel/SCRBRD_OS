@@ -91,6 +91,13 @@ ok("...naming the reader, his role, the union and the day",
 ok("...and none is said, not left blank", /UNION_READS_NONE = "No union has opened his passport\."/.test(settings));
 ok("a union that is not his is refused in words",
    /e\?\.code === "not_his_union"/.test(settings) && /PASSPORT_NOT_HIS_UNION = "That union is not his\./.test(settings));
+// db/125 §5 (1) (Kameel, 30 Oct 2026; READERS Q1): a guardian's yes once he
+// is eighteen is refused he_is_of_age on both routes, and said in words on both cards.
+ok("a guardian's yes at eighteen is refused in words, for his record and for scouts",
+   /HE_IS_OF_AGE = "He is eighteen: he gives this consent himself\."/.test(settings)
+   && /he_is_of_age: HE_IS_OF_AGE,/.test(settings)
+   && /e\?\.code === "he_is_of_age" \|\| e\?\.message === "he_is_of_age" \? HE_IS_OF_AGE/.test(settings)
+   && settings.indexOf('export const HE_IS_OF_AGE') < settings.indexOf("const SCOUTING_REFUSAL = {"));
 const live = readFileSync(new URL("../src/lib/live.js", import.meta.url), "utf8");
 ok("the read has an adapter", /passport_union_reads: asPassportUnionRead,/.test(live)
    && /readerName: r\.reader_name, readerRole: r\.reader_role,\s*organisation: r\.organisation/.test(live));
