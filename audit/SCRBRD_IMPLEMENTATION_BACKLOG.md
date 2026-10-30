@@ -668,6 +668,8 @@ because this was already in place. No new code needed; only this entry was stale
 for the owner's key, a platform administrator, a school administrator and a two-school assignment.
 
 - **Privacy follow-ups, db/118** — **Done 2026-10-29** (#193 via #211, commit 0da75d4): a news post naming a boy by his surname or a word of his name is refused at approval, and the author is told which word matched, never which boy; a pupil's login email is the office's, read by the pupil and by the office and principal only; a retirement's reason, a bowler change's reason and a suspension's ground stay at the boy's own school; the league reads only its own competitions' conduct records; CSV exports follow the policy list in `packages/policy/src/exports.mjs`, so the roster leaves without its masked columns, and only the roster and the fixtures leave as files.
+- **News name check: two-letter particles** — **Done 2026-10-30** (#215, commit 81de9e4): two-letter surname particles are skipped by the news check.
+- **Union passport, db/124** — **Done 2026-10-30** (#219, commit 7a3d749): a guardian (or the boy at 18) may name his provincial union or CSA Schools; only a named Union Selector opens it; every read is logged and shown to the family.
 
 ## Product completeness
 
@@ -737,6 +739,7 @@ for the owner's key, a platform administrator, a school administrator and a two-
 
 - **Skills rewards, par refusals and Training, 2026-10-29** — **Done 2026-10-29** (#194 via #211, commit 0da75d4): rewards behind the Skills module, logged per school; a par refusal logs the rule it refused under; Training on the team manager's menu; the Skills history browser walk (GA-I26a A3).
 - **Skills history walk, flaky fixed** — **Done 2026-10-29** (#210, commit 3a63fbd): the walk waits for the since-the-last-look read after a save, and no longer reads the stale panel.
+- **Two browser-walk races, fixed** — **Done 2026-10-30** (#218, commit 76e7de9): the skills-history bar now waits for its re-read; the retire walk (`smoke-browser-retire`) waits for the pad's write.
 
 ## Match page grammar — from the ESPNcricinfo audits (added 2026-10-23)
 
@@ -4155,6 +4158,8 @@ Kameel: to Fable. ADR 0003 keeps captain an attribute, so this is the same scree
 
 **Partly done 2026-10-14:** SCRBRD-140 phase 2: the staff register and the request cooldown (db/92-93) (#140).
 
+**Partly done 2026-10-30:** a pupil's email, Google claim and sign-in code are the office's alone, and pupil enrolment too (db/122) (#215, commit 81de9e4).
+
 Kameel, 2026-10-02: *"Can we use Google OAuth via Firebase? Can users just sign up and then later be linked to their school, or select a school and it must get passed against a school-provided register."* Added to Fable's list the same day ("security isn't cheap"). Design: `docs/design/SCRBRD-140_signup_and_school_linking.md`.
 
 - **Decided (Kameel, 2026-10-02): D1–D14 all as recommended.** Google sign-in through Firebase Auth, the ID token verified by the API itself, ending in today's thirty-minute token; an account with no school sees nothing but itself; staff on the office's register are granted on a verified email, with the uploader's authority re-checked; a parent's claim on a child is free text and the office confirms it; pupils are linked by the office or a verified guardian; D14 narrows the fourteen tables any signed-in account may read today to accounts holding a live assignment.
@@ -4799,6 +4804,12 @@ unique index). `GUARDIAN_APP_URL` is set from CSA's material. The information of
 **Partly done 2026-10-23:** REACH R-B: the consents read narrowed: passport consent is the office's alone, scouting consent stays with his side's coach (db/115) (#176, `37f5884`).
 
 **Partly done 2026-10-29:** a family's way in: a parent whose link has ended no longer reads his child's passport consents or opens his passport; the link must be live today (db/119, `is_family_of()`) (#205 via #211, commit 0da75d4).
+
+**Partly done 2026-10-30:** consents lapse when the giving link ends (db/122) (#215, commit 81de9e4).
+
+**Partly done 2026-10-30:** REACH R-E: a side's notices reach that side's families (db/123) (#215, commit 81de9e4).
+
+**Partly done 2026-10-30:** side moves are dated by the school's day (#215, commit 81de9e4).
 
 **Priority:** P1 · **Domain:** Families / Privacy · **Type:** design (Fable, `docs/design/STEP4_parent_pupil.md`,
 decided by Kameel 2026-09-27), built by Opus
