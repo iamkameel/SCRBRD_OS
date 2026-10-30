@@ -142,7 +142,18 @@ function QuarantinePanel({ matchId, role }) {
       </div>
       {state.rows.length === 0 ? (
         <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>Nothing waiting for review.</div>
-      ) : (
+      ) : (<>
+        {/* Where a released ball lands (the match-day audit's P3; Kameel,
+            30 Oct 2026): at the end of the log, after everything scored
+            since, so the fold credits it to whoever is batting and bowling
+            there. Right only for an innings' last ball(s); otherwise the
+            ball is discarded and re-recorded on the pad, in its place. */}
+        <div data-testid="quarantine-where" style={{ fontFamily: D.body, fontSize: "12px", lineHeight: 1.45, color: D.textPrimary,
+             padding: "8px 10px", marginBottom: "6px", borderRadius: "8px", background: `${D.amber}14`, border: `1px solid ${D.amber}55` }}>
+          A released ball is written at the end of the log, after every ball scored since, and counted for whoever is batting and bowling there.
+          Release it only if it is the last ball (or balls) of an innings. Otherwise discard it, and have the scorer record it on the pad, in its place.
+        </div>
+        {
         state.rows.map((row) => (
           <div key={row.id} data-testid={`quarantine-${row.id}`}
                style={{ padding: "9px 0", borderTop: `1px solid ${D.border}` }}>
@@ -175,8 +186,8 @@ function QuarantinePanel({ matchId, role }) {
               )}
             </div>
           </div>
-        ))
-      )}
+        ))}
+      </>)}
     </Card>
   );
 }

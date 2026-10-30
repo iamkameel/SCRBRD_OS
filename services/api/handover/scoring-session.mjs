@@ -72,6 +72,11 @@ export const REJECT = {
   // for the incoming scorer to verify), not waiting out a lease.
   HANDOVER_PENDING:"handover_pending",
   VERIFYING:       "verifying",
+  // Another device held the token and its lease lapsed (db/126): not an idle
+  // match. Taking it is a person's confirmed act, takeover() — over the
+  // generation they were shown, or EPOCH_MOVED.
+  HELD_ELSEWHERE:  "held_elsewhere",
+  EPOCH_MOVED:     "epoch_moved",
   // The incoming device folded the log under other playing conditions than
   // the match's frozen document (SCRBRD-114). Asked before any figure: a
   // board compared under the wrong rules proves nothing either way.
@@ -129,7 +134,8 @@ export class MatchSession {
 
   // ── token lifecycle ──
   /**
-   * Claim an idle match (or take over an expired lease).
+   * Claim an idle match, or take back this device's own lapsed lease. Another
+   * device's lapsed lease is HELD_ELSEWHERE (db/126): takeover() is the way.
    *
    * Never past a handover (SCRBRD-059, db/28): while one is armed only the
    * device and scorer that armed it may claim — which takes the token back,
@@ -148,15 +154,40 @@ export class MatchSession {
         (this.holder?.deviceId !== deviceId || this.holder?.scorerId !== scorerId)) {
       return { ok: false, reason: REJECT.HANDOVER_PENDING };
     }
+    if (this.state === SESSION.ACTIVE && this.holder && this.holder.deviceId !== deviceId) {
+      return { ok: false, reason: REJECT.HELD_ELSEWHERE, epoch: this.epoch };
+    }
     if (this.state === SESSION.VERIFYING) {
       return { ok: false, reason: REJECT.VERIFYING };
     }
+    return this._take({ scorerId, deviceId, name }, "claim");
+  }
+
+  /**
+   * The confirmed take-over (db/126 scoring_takeover): another device's
+   * lapsed lease, over the generation the person was shown. Anything that is
+   * not that case is answered as claim() answers it.
+   * @param {{ scorerId: string, deviceId: string, role: string, name?: string, epoch: number|null }} who
+   */
+  takeover({ scorerId, deviceId, role, name, epoch }) {
+    if (!this.canScore(role)) return { ok: false, reason: REJECT.NO_CAPABILITY };
+    const elsewhere = this.state === SESSION.ACTIVE && this.holder && this.holder.deviceId !== deviceId && !this._leaseLive();
+    if (!elsewhere) return this.claim({ scorerId, deviceId, role, name });
+    if (epoch !== this.epoch) return { ok: false, reason: REJECT.EPOCH_MOVED, epoch: this.epoch };
+    const from = this.holder;
+    const last = this.events.length ? this.events[this.events.length - 1] : null;
+    return this._take({ scorerId, deviceId, name }, "takeover",
+      { fromScorer: from?.scorerId, fromDevice: from?.deviceId, lastSeq: last?.seq ?? null });
+  }
+
+  /** @param {{scorerId: string, deviceId: string, name?: string}} who @param {string} what @param {object} [detail] */
+  _take({ scorerId, deviceId, name }, what, detail = {}) {
     this.epoch += 1;
     this.holder = { scorerId, deviceId, name };
     this.state = SESSION.ACTIVE;
     this.leaseUntil = this.now() + LEASE_MS;
     this.pendingHandover = null;
-    this._log("claim", { scorerId, deviceId, epoch: this.epoch });
+    this._log(what, { scorerId, deviceId, epoch: this.epoch, ...detail });
     return { ok: true, epoch: this.epoch, state: this.replay() };
   }
 

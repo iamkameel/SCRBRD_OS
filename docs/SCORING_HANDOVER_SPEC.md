@@ -53,7 +53,9 @@ A coach has the capability permanently. The token is exclusive, leased, and tran
 
 **Epoch.** A monotonic integer on the session, incremented on *every* claim, transfer, and force-release. Events carry the epoch they were written under. An event whose epoch ≠ current epoch is stale by definition — this is the mechanism that locks out a replaced device.
 
-**Lease.** The token holder holds a 90-second lease, refreshed by heartbeat (~20s) and by any ball written. An expired lease blocks writes, preventing a "zombie" device from scoring into a match someone else has taken over.
+**Lease.** The token holder holds a 90-second lease, refreshed by heartbeat (~20s) and by any ball written. An expired lease blocks writes, preventing a "zombie" device from scoring into a match someone else has taken over. The pad heartbeats every 20 s while it holds the token and is in view, and holds a screen wake lock where the browser has one (`apps/web/src/lib/sync.js`; the match-day audit's B1, Kameel 30 Oct 2026).
+
+**A lapsed lease is not an idle match** (db/126, Kameel 30 Oct 2026). A plain claim over a session another device held, whose lease has lapsed, is refused as `held_elsewhere`. Taking it is a **confirmed take-over**: the pad shows the server's last ball and offers **Take over scoring**; only that press sends `takeover: true` with the generation shown (`scoring_takeover`), which takes the token over exactly that generation (`epoch_moved` otherwise), never over a live lease, and writes a `takeover` row to `scoring_audit` naming the old holder, the device, when its lease lapsed and the server's last ball. Opening the fixture or **Try again** never takes a match. The device's own lapsed lease is still its own to take back, and a force-released (idle) match is claimed plainly.
 
 ---
 
@@ -114,7 +116,7 @@ Never auto-merge two divergent ball logs. A wrong scorecard that looks authorita
 
 | Endpoint | Purpose | Key failure modes |
 |---|---|---|
-| `POST /matches/:id/session/claim` | Take an idle match | `no_capability`, `lease_active`, `handover_pending` (only the arming device may claim back — a cancel), `verifying` |
+| `POST /matches/:id/session/claim` | Take an idle match; with `{ takeover: true, epoch }`, the confirmed take-over of another device's lapsed lease (db/126) | `no_capability`, `lease_active`, `held_elsewhere` (another device held it: a take-over is a person's confirmed act), `epoch_moved` (a take-over over a generation not shown), `handover_pending` (only the arming device may claim back — a cancel), `verifying` |
 | `POST /matches/:id/session/heartbeat` | Refresh lease (~20s) | `not_token_holder`, `stale_epoch` |
 | `POST /matches/:id/events` | Append ball(s), idempotent | `stale_epoch` (→quarantine), `lease_expired`, `not_token_holder` |
 | `POST /matches/:id/session/handover/arm` | Arm, returns code | `unsynced_work` (+count), `ball_in_flight` |
@@ -160,7 +162,8 @@ Because the log is append-only, a mistake is fixed by a **compensating event**, 
 - **Sync indicator on every ball:** pending vs confirmed. Scorers must be able to see, at a glance, that their work is safe.
 - **Handover blocked state:** never a bare error — always the count and the remedy.
 - **Verification screen:** large, readable figures to check against the physical board; explicit Confirm.
-- **Takeover banner for the incoming scorer:** "You are now scoring. Last ball entered by Alice at 14:32."
+- **Takeover banner for the incoming scorer:** "You are now scoring. Last ball entered by Alice at 14:32." Built (the match-day audit's P4): after a take-over, a claim after a force-release, or a pad that took the server's log, the pad says **You are scoring this match now** with the time of the server's last ball and the board then, until the scorer taps **Checked**. It names no person: the time is what the scorer checks against the book.
+- **A forked pad** (two phones scored one match) lists its balls the server lacks, writes its whole log aside on the phone, and offers **Send them to the lead**: they go to quarantine, never into the log, and the pad takes the server's log. A pad whose match was completed while it still had balls sends them to quarantine too (`match_complete`), and lists them.
 
 ---
 

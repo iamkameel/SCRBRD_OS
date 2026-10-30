@@ -673,18 +673,23 @@ word for word, after Kameel's edits; §12 P1):
 >    innings.
 > 3. **No handover while the server is down.** If the scoring phone dies, the standby
 >    does not claim the match. From that ball the paper book is the only record; the
->    standby writes the time and the over on it and scores on paper.
+>    standby writes the time and the over on it and scores on paper. When the server
+>    is back, the paper balls are typed into the pad, in order, before play moves on
+>    (Kameel, 30 Oct 2026: see "If the scoring phone dies" in the runbook).
 > 4. **Tell [the match-day lead].** The lead decides nothing during play except
 >    whether to suspend the service deliberately (see "The app shows something it
 >    should not"). Play goes on.
 > 5. **When the server returns the balls send by themselves.** Wait for **Sent**. The
 >    pavilion screen catches up on its own.
 > 6. **After the match** the lead opens the scorecard and compares it with the book.
->    If every ball is there, nothing more is done. If balls are missing (a lost or
->    dead phone, balls **For review** that cannot be released, a cleared match), the
->    lead imports the book through the scorebook importer, typed by hand (the reader
->    stays off), and the imported balls carry their source. Either way the lead writes
->    a register entry.
+>    If every ball is there, nothing more is done. If balls are missing from an innings
+>    that was scored live, they are typed into the pad from the book, in order: the
+>    importer refuses any innings with a live ball in it (`laws.mjs` LIVE_INNINGS). The
+>    importer is only for an innings with no live ball at all, typed by hand (the
+>    reader stays off), and the imported balls carry their source. Either way the lead
+>    writes a register entry. *(Amended 30 Oct 2026 on the match-day audit's P2,
+>    Kameel's decision 3: the earlier text promised the importer would fill a gap in a
+>    live innings, which it cannot. A mid-log import is a later design.)*
 >
 > ### The app shows something it should not
 >
@@ -704,8 +709,8 @@ word for word, after Kameel's edits; §12 P1):
 > 1. **Tell [the match-day lead] at once.** The lead or the school office disables that
 >    account and signs it out everywhere.
 > 2. If it was the scoring phone, the lead force-releases the match so the standby
->    can claim it. Balls that had not been sent are on paper only; the standby carries
->    on from the book.
+>    can claim it. Balls that had not been sent are on paper only; the standby types
+>    them into the pad from the book, in order, before carrying on.
 > 3. The register entry says whether the phone was locked, when the account was
 >    disabled, and what was on it.
 

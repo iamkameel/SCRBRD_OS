@@ -257,8 +257,17 @@ group("A plain claim cannot jump a handover (SCRBRD-059)");
   ok("live lease still refused as lease_active", steal.ok === false && steal.reason === REJECT.LEASE_ACTIVE && steal.holder?.deviceId === "dA");
   ok("the holder re-claiming its own live token still succeeds", s.claim({ scorerId:"uA", deviceId:"dA", role:"scorer" }).ok === true);
   advance(LEASE_MS + 1);
-  const lapsed = s.claim({ scorerId:"uB", deviceId:"dB", role:"coach" });
-  ok("a lapsed ACTIVE lease is still claimable", lapsed.ok === true && s.holder?.deviceId === "dB");
+  // db/126 (Kameel, 30 Oct 2026): another device's lapsed lease is not an
+  // idle match. A plain claim is refused by name; the confirmed take-over,
+  // over the generation the person was shown, takes it.
+  const plain = s.claim({ scorerId:"uB", deviceId:"dB", role:"coach" });
+  ok("a lapsed ACTIVE lease held by another device: a plain claim is held_elsewhere",
+     plain.ok === false && plain.reason === REJECT.HELD_ELSEWHERE && plain.epoch === s.epoch && s.holder?.deviceId === "dA");
+  const stale = s.takeover({ scorerId:"uB", deviceId:"dB", role:"coach", epoch: s.epoch - 1 });
+  ok("...a take-over over a generation not shown: epoch_moved", stale.ok === false && stale.reason === REJECT.EPOCH_MOVED && s.holder?.deviceId === "dA");
+  const lapsed = s.takeover({ scorerId:"uB", deviceId:"dB", role:"coach", epoch: plain.epoch });
+  ok("...the confirmed take-over takes it", lapsed.ok === true && s.holder?.deviceId === "dB" && lapsed.epoch === plain.epoch + 1);
+  ok("...and the audit says take-over, from whom", s.audit.at(-1)?.type === "takeover" && s.audit.at(-1)?.fromDevice === "dA");
   // And the handover itself still completes after all that.
   const armed = s.armHandover({ deviceId:"dB", epoch:s.epoch, pendingCount:0 });
   ok("the full handover path still works", armed.ok === true &&
