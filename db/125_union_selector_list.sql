@@ -579,7 +579,7 @@ BEGIN
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM scrbrd_app', f);
   END LOOP;
-  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       FOREACH f IN ARRAY ARRAY['passport_union_orgs()', 'passport_union_schools(uuid)',
                                'passport_union_list(uuid,uuid,text,text)', 'passport_union_log_list(uuid[],uuid[])',
