@@ -53,10 +53,16 @@ export function rosterRoutes({ pool, secret }) {
         if (b.effectiveOn != null && b.effectiveOn !== "") {
           if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.effectiveOn))) throw err("effective_on_invalid");
           on = String(b.effectiveOn);
-          if (on > new Date().toISOString().slice(0, 10)) throw err("effective_on_in_future");
         }
 
         const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          // "Today" is the school's day, sa_today() (db/122, Kameel 29 Oct
+          // 2026: "The school's day (SAST), everywhere"), not the server's UTC
+          // date, which refused a move dated today from 00:00 to 02:00 SAST.
+          if (on) {
+            const { rows: [d] } = await client.query(`select sa_today()::text as today`);
+            if (on > d.today) throw err("effective_on_in_future");
+          }
           // Transaction-local, so nothing outlives this request; unset, the
           // trigger dates the move today.
           await client.query(`select set_config('app.effective_on', $1, true)`, [on ?? ""]);

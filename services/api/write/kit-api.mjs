@@ -70,16 +70,33 @@ export function kitRoutes({ pool, secret }) {
       const b = req.body || {};
       if (!UUID.test(String(b.playerId ?? "")) || !UUID.test(String(b.schoolId ?? ""))) throw err("player_and_school_required");
       return asPrincipal(req, async (c) => {
+        // A consent lapses when the link that gave it ends (db/122, Kameel 29
+        // Oct 2026), but its row stays open, and db/08 allows one open row per
+        // boy and school. A lapsed one naming this school is withdrawn first,
+        // as the caller (db/08's policy: only his family may), so the boy at
+        // eighteen, or his other parent, can give the consent afresh.
+        await c.query(`update passport_consent set withdrawn_at = now()
+                        where player_id = $1 and to_school_id = $2 and withdrawn_at is null
+                          and passport_consent_in_force(id) = false`, [b.playerId, b.schoolId]);
         const { rows } = await c.query(`insert into passport_consent (player_id, to_school_id) values ($1, $2) returning id`, [b.playerId, b.schoolId]);
         if (!rows.length) throw err("not_permitted", 403);
         return { id: rows[0].id };
       });
     }),
     // POST /api/passport/consent/:id/withdraw
-    withdrawConsent: handle(async (req) => asPrincipal(req, async (c) => {
-      const { rowCount } = await c.query(`update passport_consent set withdrawn_at = now() where id = $1 and withdrawn_at is null`, [req.params.id]);
-      return { withdrawn: rowCount };
-    })),
+    //
+    // Anyone of his family on a live link may take a school's name back, the
+    // boy at any age (db/122 §1d). Row security decides; nothing withdrawn is
+    // answered 403, not a quiet 200, so the screen can say why: the caller is
+    // not his family on a live link, or the name was already taken back.
+    withdrawConsent: handle(async (req) => {
+      if (!UUID.test(String(req.params?.id ?? ""))) throw err("not_permitted", 403);
+      return asPrincipal(req, async (c) => {
+        const { rowCount } = await c.query(`update passport_consent set withdrawn_at = now() where id = $1 and withdrawn_at is null`, [req.params.id]);
+        if (!rowCount) throw err("not_permitted", 403);
+        return { withdrawn: rowCount };
+      });
+    }),
     // POST /api/equipment-issues/:id/return
     giveBack: handle(async (req) => asPrincipal(req, async (c) => {
       const { rowCount } = await c.query(`update equipment_issue set returned_on = sa_today() where id = $1 and returned_on is null`, [req.params.id]);

@@ -2252,10 +2252,15 @@ export const READ_QUERIES = {
    * (player.development.read at his side), so a guardian sees their own
    * children, a pupil his own decision and no team-mate's, a coach his side's,
    * and a scout nothing.
+   *
+   * `in_force` (db/122, Kameel 29 Oct 2026: "The consent lapses when the link
+   * that gave it ends"): a yes whose giver's link has since ended still reads
+   * `granted`, as history, with in_force false; scouting_candidates() no
+   * longer counts it.
    */
   scouting_consent: {
     text: `select c.player_id, p.full_name, p.team_code, c.consent_state, c.decided_at,
-                  u.name as decided_by_name
+                  u.name as decided_by_name, scouting_consent_in_force(c.player_id) as in_force
              from player_scouting_consent c
              join player p on p.id = c.player_id
              left join app_user u on u.id = c.decided_by
@@ -2265,8 +2270,11 @@ export const READ_QUERIES = {
   // The schools a family has named for a boy's record. Read by his family and
   // by the office of the school a row names (db/115, REACH R-B: "office
   // only"); the receiving coach reads the passport above, not these rows.
+  // `in_force` (db/122): false for a withdrawn row and for one whose giver's
+  // link has ended (lapsed: it no longer opens the passport).
   passport_consents: {
-    text: `select c.id, c.player_id, passport_name(c.player_id) as full_name, c.to_school_id, s.name as to_school, c.granted_at, c.withdrawn_at
+    text: `select c.id, c.player_id, passport_name(c.player_id) as full_name, c.to_school_id, s.name as to_school, c.granted_at, c.withdrawn_at,
+                  passport_consent_in_force(c.id) as in_force
              from passport_consent c
              left join lateral (select ps.name from public_schools() ps where ps.id = c.to_school_id) s on true
             order by c.withdrawn_at nulls first, c.granted_at desc`,

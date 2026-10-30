@@ -2213,6 +2213,72 @@ first**: the API built with it refuses to start without db/121
 `scoring_amendment_rejudge()`, and its public log serves `boundary`.
 <!-- ── end db/121 ── -->
 
+<!-- ── db/122: four decisions of 29 October 2026 ── -->
+#### A lapsed consent, a pupil's email, the particles, the school's day (db/122)
+
+`db/122_lapsed_consent_and_doors.sql` carries four decisions Kameel made on 29
+October 2026. **"The consent lapses when the link that gave it ends."** A
+passport consent or a yes to scouts counts only while the parent (or the boy)
+who gave it still holds a live link to him: once that link ends, the school
+the family named stops opening his record and scouts stop seeing him. The
+consent stays on his record, shown as lapsed, and his family (the boy himself
+at eighteen) can give it again. **"Close both doors, and add-role uses the
+account id."** A pupil's login email no longer reaches the director of sport
+through the Requests list, the Claims list or an account's sign-ins: only
+the office and the principal read it, as elsewhere since db/118; People's
+"Add role" now names the account, so she can still add a role to a pupil's
+account. **"Skip them, as the three-letter ones are skipped."** The public
+news check no longer refuses a post for the words de, du, le, la, da or di
+alone; a two-letter first name is still caught. **"The school's day (SAST),
+everywhere."** A move typed with no date is dated by Johannesburg's day, not
+the database's (UTC), so a move between midnight and two is no longer dated
+yesterday. **"Let a boy of eighteen record his own scouting yes or no."** From
+his eighteenth birthday a pupil decides for himself, on his own account,
+whether scouts may see him; until then it stays his parent's or guardian's.
+**"Under eighteen, only his guardian; at eighteen, he does it himself."** The
+same for his passport: a pupil under eighteen no longer names a school for his
+own record; his parent or guardian does, on a link with processing consent on
+record (two new RESTRICTIVE write policies on `passport_consent`, and
+`passport_consent_writer_ok()`). **After the read-through (29 Oct, 21:15),
+each as recommended:** a consent a boy named for himself while under eighteen
+lapses; under eighteen he may still withdraw one; a link granted afresh does
+not bring a lapsed consent back (a corrected end still does); and a pupil's
+Google claim and sign-in code are the office's and the principal's alone, so
+the director of sport is told so rather than answering one, and "Issue a code"
+names the account by its id.
+
+**What it does to a live database.** It replaces `passport_open()`,
+`scouting_candidates()`, `scouting_consent_set()` (now the application's alone,
+no longer PUBLIC's), `role_requester()`, `pending_claims()`,
+`account_sign_ins()`, `pending_claim_confirm()`, `pending_claim_decline()`,
+`news_public_hits()`, `player_team_membership_log()` and
+`player_move_voids_seats()`, each with its owner, grants, SECURITY DEFINER and
+pinned search path as they were; adds one rule to `login_code_issue()`, its
+grants untouched; and adds `consent_giver_live()` (granted to nobody),
+`passport_consent_in_force()` and `scouting_consent_in_force()` (the
+application's). It refuses to run unless each function in place is the
+earlier file's or its own (md5 of its folded body), and a second paste
+changes nothing. No table, column or row changes, and two policies are added;
+production holds only test data. **What moves on the paste:** a named school stops opening a
+passport, and a scout stops seeing a boy, wherever the consent's giver's link
+has already ended or no giver is on record (only an owner's seed writes
+none); a pupil's address reads blank to the director of sport on those three
+lists, and she can no longer confirm or decline a pupil's Google claim or
+issue his code; a news post held back only by a two-letter particle passes
+its next check; moves already recorded keep their dates.
+
+Paste `node tools/bundle-sql.mjs --apply 122` after 121, then the verify
+bundle (§99 is its proof). The summary row "A lapsed consent, a pupil's
+email, the school's day" should read OK. **Schema first**: the API built with
+it refuses to start without db/122 (`expected-migrations.json`): its
+`passport_consents` and `scouting_consent` reads select the two in-force
+functions. `POST /api/users` also takes `{ userId, role, schoolId }`, and
+`POST /api/passport/consent` withdraws a lapsed consent naming the same
+school before it writes the new one; `POST /api/passport/consent/:id/withdraw`
+answers 403 when it withdrew nothing; and `POST /api/auth/invite` also takes
+`{ userId }`.
+<!-- ── end db/122 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

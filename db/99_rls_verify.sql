@@ -1332,13 +1332,23 @@ CREATE OR REPLACE FUNCTION _v38_link_open(p uuid, mum uuid) RETURNS boolean AS $
                   WHERE s.player_id = p AND a.person_id = mum AND a.role = 'guardian' AND s.valid_until IS NULL)
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- THE DAY, AT ANY HOUR (db/122 §4). A move the trigger dates itself is dated
+-- sa_today(), Johannesburg's day; a link's liveness is still read on the
+-- session's day (current_date: Q7, left for its own file). From 22:00 to
+-- 24:00 UTC the first is a day ahead. These helpers stage a leaving, a return
+-- and a move on the session's day, the day the link tests read, and never
+-- before the day the membership they close was opened (which may be
+-- sa_today()'s), so the constraint that a side is left after it is joined
+-- holds at every hour and the assertions read one day throughout.
 -- He leaves the school system (his last school membership closes today), and comes back.
 CREATE OR REPLACE FUNCTION _v60_leave(p uuid) RETURNS void AS $$
-  UPDATE team_membership SET left_on = current_date WHERE player_id = p AND left_on IS NULL;
+  UPDATE team_membership SET left_on = greatest(current_date, joined_on) WHERE player_id = p AND left_on IS NULL;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v60_rejoin(p uuid) RETURNS void AS $$
   INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason)
-  SELECT id, school_id, 'cricket', team_code, current_date, 'moved' FROM player WHERE id = p;
+  SELECT id, school_id, 'cricket', team_code,
+         greatest(current_date, (SELECT max(m.left_on) FROM team_membership m WHERE m.player_id = p)), 'moved'
+    FROM player WHERE id = p;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The constructed series, recorded by his coach on the days named (days
@@ -1589,9 +1599,16 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- A move between sides, as the move route makes one: player.team_code, and
 -- db/08's history trigger closes the old membership and opens the new.
+-- Dated on the session's day, never before his open side began (see THE
+-- DAY, AT ANY HOUR, above _v60_leave), as the route dates a move it is given
+-- a day for.
 CREATE OR REPLACE FUNCTION _v62_move(p uuid, team text) RETURNS void AS $$
+BEGIN
+  PERFORM set_config('app.effective_on',
+    greatest(current_date, (SELECT max(m.joined_on) FROM team_membership m WHERE m.player_id = p AND m.left_on IS NULL))::text, true);
   UPDATE player SET team_code = team WHERE id = p;
-$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+  PERFORM set_config('app.effective_on', '', true);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- One guardian's link to one child, as the owner reads it: ended or open, and to when.
 CREATE OR REPLACE FUNCTION _v62_link(p uuid, mum uuid, OUT open boolean, OUT until date) AS $$
@@ -5273,17 +5290,24 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- comes back (a new one opens), and db/62's deferred triggers are fired.
 CREATE OR REPLACE FUNCTION _v109_leave(p_player uuid) RETURNS void AS $$
 BEGIN
-  UPDATE team_membership SET left_on = current_date WHERE player_id = p_player AND left_on IS NULL;
+  -- The session's day, never before the side began (THE DAY, AT ANY HOUR).
+  UPDATE team_membership SET left_on = greatest(current_date, joined_on) WHERE player_id = p_player AND left_on IS NULL;
   SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
   SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v109_return(p_player uuid) RETURNS void AS $$
 BEGIN
   INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason)
-  SELECT p.id, p.school_id, 'cricket', p.team_code, current_date, 'moved' FROM player p WHERE p.id = p_player;
+  SELECT p.id, p.school_id, 'cricket', p.team_code,
+         greatest(current_date, (SELECT max(m.left_on) FROM team_membership m WHERE m.player_id = p_player)), 'moved'
+    FROM player p WHERE p.id = p_player;
   SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
   SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The day a boy last left his side, as the owner reads it.
+CREATE OR REPLACE FUNCTION _v109_left_on(p_player uuid) RETURNS date AS $$
+  SELECT max(m.left_on) FROM team_membership m WHERE m.player_id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- How many contacts a boy has, past RLS (D14: they stay).
 CREATE OR REPLACE FUNCTION _v109_contacts(p_player uuid) RETURNS integer AS $$
   SELECT count(*)::int FROM emergency_contact WHERE player_id = p_player AND active
@@ -6870,6 +6894,10 @@ BEGIN
             'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
   END LOOP;
   INSERT INTO passport_consent (player_id, to_school_id) VALUES (c_a, WES), (c_m, WES), (c_a, X), (c_m, X);
+  -- Each given by the boy's guardian, as her grant stamps it: since db/122 a
+  -- consent is in force only while the link of the person who gave it is live.
+  UPDATE passport_consent SET granted_by = CASE player_id WHEN c_a THEN (ids->>'ga')::uuid ELSE (ids->>'gm')::uuid END
+   WHERE player_id IN (c_a, c_m);
   UPDATE passport_consent SET withdrawn_at = now() WHERE player_id = c_m AND to_school_id = X;
   INSERT INTO player_scouting_consent (player_id, consent_state) VALUES
     (c_a, 'granted'), (c_m, 'withdrawn'), (c_b, 'granted'), (c_w, 'granted');
@@ -7061,6 +7089,9 @@ BEGIN
   VALUES ((ids->>'h')::uuid, current_date - 5, (ids->>'coach')::uuid, 'technical', 'againstPace', 11);
   INSERT INTO passport_consent (player_id, to_school_id, granted_by)
   VALUES ((ids->>'h')::uuid, WES, (ids->>'parent')::uuid);
+  -- db/08's trigger stamps the giver from the session (nobody, here): his
+  -- parent, as her grant would (db/122: a consent with no giver opens nothing).
+  UPDATE passport_consent SET granted_by = (ids->>'parent')::uuid WHERE player_id = (ids->>'h')::uuid AND to_school_id = WES;
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -7862,6 +7893,253 @@ SELECT w.match_id,
 -- precheck:end
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/121 (section 98) ─────────────────────────────────────────────
+-- ┌── db/122 (section 99). Kameel's four decisions of 29 Oct 2026
+-- Invented, as the owner; every name is a placeholder.
+--   C, a Hilton 16XI boy, with two guardians (mum, dad) and his own account
+--     (cboy: player and self-access); a Westville coach and office, who open
+--     his passport once his family names Westville; a Westville parent, who
+--     is nothing to him; Hilton's 16XI coach and office; school X, whose
+--     office will be named on a consent with no giver on record.
+--   S, a Hilton 16XI boy who has bowled an over in each of three past
+--     fixtures (scouting_evidence_threshold() is 3), with a guardian (sg) who
+--     will say yes to scouts; an accredited scout at Hilton.
+--   E, a Hilton 1XI pupil of eighteen (so a sign-in may be written to his
+--     account, db/81's trigger), whose account (epupil) holds only `player`,
+--     a role the director of sport may grant: so she passes db/81's office
+--     rule over it. eadult, a Hilton coach, the adult beside him. Each has an
+--     open Google claim, a linked sign-in and a pending request for the
+--     scorer's role. dos, Hilton's director of sport.
+--   Y, a Hilton 1XI pupil of eighteen with his own account (yboy: player and
+--     self-access, his own link consented) and a guardian (yg) whose link is
+--     live until the section ends it.
+--   The particle boys: six at Hilton whose names carry a two-letter
+--     particle, the first of them "Al de Wet".
+--   D, a Hilton 13XI boy since t-30, with a guardian (gd) who asked for his
+--     seat on a lift that another 13XI boy's guardian (drv) offers to a 13XI
+--     fixture: later today (SAST) when it is before noon in Johannesburg,
+--     tomorrow when it is after.
+--   After the read-through (db/122 §1d): school Q, whose coach (qcoach) will
+--     be named on a consent C gave himself at fifteen before db/122; and gp,
+--     a third guardian of C whose verified link carries no processing consent.
+CREATE OR REPLACE FUNCTION _v122_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  t date := sa_today();
+  U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
+  ADULT date := (sa_today() - interval '18 years 2 months')::date;
+  h int := extract(hour FROM now() AT TIME ZONE 'Africa/Johannesburg')::int;
+  X uuid; c_c uuid; c_s uuid; c_e uuid; c_d uuid; c_d2 uuid; c_y uuid; v uuid; v_a uuid; v_d uuid; v_o uuid; l record;
+  ids jsonb; z jsonb := '{}'; k text; i int; nm text;
+BEGIN
+  INSERT INTO school (code, name, kind, province) VALUES ('V122X', 'Verify OneTwentyTwo College', 'school', 'KwaZulu-Natal')
+  RETURNING id INTO X;
+  INSERT INTO school (code, name, kind, province) VALUES ('V122Z', 'Verify OneTwentyTwo Academy', 'school', 'KwaZulu-Natal')
+  RETURNING id INTO v;
+  z := z || jsonb_build_object('Z', v);
+  INSERT INTO school (code, name, kind, province) VALUES ('V122Q', 'Verify OneTwentyTwo High', 'school', 'KwaZulu-Natal')
+  RETURNING id INTO v;
+  z := z || jsonb_build_object('Q', v);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '16XI', 'Verify OneTwentyTwo Consent', 1221, 'batter', U15) RETURNING id INTO c_c;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '16XI', 'Verify OneTwentyTwo Scouted', 1222, 'bowler', U15) RETURNING id INTO c_s;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '1XI', 'Verify OneTwentyTwo Elder', 1223, 'batter', ADULT) RETURNING id INTO c_e;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '1XI', 'Verify OneTwentyTwo Grown', 1240, 'bowler', ADULT) RETURNING id INTO c_y;
+  PERFORM set_config('app.effective_on', (t - 30)::text, true);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '13XI', 'Verify OneTwentyTwo Mover', 1224, 'batter', make_date(extract(year FROM t)::int - 13, 3, 1)) RETURNING id INTO c_d;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '13XI', 'Verify OneTwentyTwo Stayer', 1225, 'batter', make_date(extract(year FROM t)::int - 13, 3, 1)) RETURNING id INTO c_d2;
+  PERFORM set_config('app.effective_on', '', true);
+  ids := _v71_people('v122', ARRAY[
+    ARRAY['mum',       'guardian',        HIL::text, '',     ''],
+    ARRAY['dad',       'guardian',        HIL::text, '',     ''],
+    ARRAY['cboy',      'player',          HIL::text, '16XI', c_c::text],
+    ARRAY['wescoach',  'coach',           WES::text, '16XI', ''],
+    ARRAY['wesoffice', 'schooladmin',     WES::text, '',     ''],
+    ARRAY['wesparent', 'guardian',        WES::text, '',     ''],
+    ARRAY['hcoach',    'coach',           HIL::text, '16XI', ''],
+    ARRAY['hoffice',   'schooladmin',     HIL::text, '',     ''],
+    ARRAY['xoffice',   'schooladmin',     X::text,   '',     ''],
+    ARRAY['sg',        'guardian',        HIL::text, '',     ''],
+    ARRAY['scout',     'scout',           HIL::text, '',     ''],
+    ARRAY['epupil',    'player',          HIL::text, '1XI',  c_e::text],
+    ARRAY['eadult',    'coach',           HIL::text, '1XI',  ''],
+    ARRAY['dos',       'directorofsport', HIL::text, '',     ''],
+    ARRAY['gd',        'guardian',        HIL::text, '',     ''],
+    ARRAY['drv',       'guardian',        HIL::text, '',     ''],
+    ARRAY['yboy',      'player',          HIL::text, '1XI',  c_y::text],
+    ARRAY['yg',        'guardian',        HIL::text, '',     ''],
+    ARRAY['qcoach',    'coach',           z->>'Q',   '16XI', ''],
+    ARRAY['gp',        'guardian',        HIL::text, '',     '']]);
+  PERFORM _v100_link((ids->>'mum')::uuid, HIL, c_c);
+  PERFORM _v100_link((ids->>'dad')::uuid, HIL, c_c);
+  PERFORM _v100_link((ids->>'sg')::uuid, HIL, c_s);
+  PERFORM _v100_link((ids->>'gd')::uuid, HIL, c_d);
+  PERFORM _v100_link((ids->>'drv')::uuid, HIL, c_d2);
+  -- gp's link to C is verified and his processing consent is not on record.
+  PERFORM _v100_link((ids->>'gp')::uuid, HIL, c_c);
+  UPDATE assignment_subject g SET consent_state = 'pending', consent_version = NULL, consent_at = NULL
+    FROM role_assignment a WHERE a.id = g.assignment_id AND a.person_id = (ids->>'gp')::uuid AND g.player_id = c_c;
+  -- Y is eighteen, so db/62 would close his guardian's link today; it is
+  -- staged open for thirty days, and the section ends it.
+  PERFORM _v100_link((ids->>'yg')::uuid, HIL, c_y, 'verified', current_date + 30);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'yboy')::uuid, 'selfaccess', HIL) RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (v_a, c_y, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'cboy')::uuid, 'selfaccess', HIL) RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (v_a, c_c, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  -- One honour, so an open passport() has a line to give.
+  INSERT INTO honour (player_id, school_id, team_code, kind, season_id)
+  VALUES (c_c, HIL, '16XI', 'captain', (SELECT s.id FROM season_for(sa_today(), 'school') s LIMIT 1));
+  -- A consent naming school X that no giver is on record for (the owner wrote it).
+  INSERT INTO passport_consent (player_id, to_school_id) VALUES (c_c, X) RETURNING id INTO v;
+  z := z || jsonb_build_object('pc_x', v);
+  -- S's body of work: an over in each of three fixtures already played.
+  FOR i IN 1..3 LOOP
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+    VALUES (HIL, '16XI', 'Verify OneTwentyTwo ' || i, now() - make_interval(days => 20 + i), 'cricket', 'T20', 20, 'scheduled')
+    RETURNING id INTO v;
+    PERFORM _v71_bowl(v, OFFICE, ARRAY[c_s]);
+  END LOOP;
+  INSERT INTO scout_accreditation (person_id, organisation, scout_role, verification_status, verified_by, verified_at)
+  VALUES ((ids->>'scout')::uuid, 'Verify 122 Union', 'regional_selector', 'verified', OFFICE, now());
+  -- The two accounts' claims, sign-ins and requests.
+  FOREACH k IN ARRAY ARRAY['epupil', 'eadult'] LOOP
+    INSERT INTO pending_claim (provider, provider_uid, email, user_id)
+    VALUES ('google.com', 'v122-claim-' || k, 'v122.' || k || '.claim@example.invalid', (ids->>k)::uuid) RETURNING id INTO v;
+    z := z || jsonb_build_object('claim_' || k, v);
+    INSERT INTO auth_identity (user_id, provider, provider_uid, email_at_link, linked_how, linked_by)
+    VALUES ((ids->>k)::uuid, 'google.com', 'v122-link-' || k, 'v122.' || k || '.link@example.invalid', 'office_confirmed', OFFICE);
+    INSERT INTO role_request (person_id, role, school_id, note) VALUES ((ids->>k)::uuid, 'scorer', HIL, 'v122') RETURNING id INTO v;
+    z := z || jsonb_build_object('req_' || k, v);
+  END LOOP;
+  -- The particle boys.
+  i := 0;
+  FOREACH nm IN ARRAY ARRAY['Al de Wet', 'Bo du Toit', 'Ek le Roux', 'Ux la Grange', 'Oz da Silva', 'Yi di Marco'] LOOP
+    i := i + 1;
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+      (HIL, '16XI', nm, 1225 + i, 'batter', U15);
+  END LOOP;
+  -- D's lift: a 13XI fixture, later today (SAST) before noon, tomorrow after.
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '13XI', 'Verify OneTwentyTwo lift', CASE WHEN h < 12 THEN now() + interval '1 hour' ELSE now() + interval '24 hours' END,
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO v;
+  z := z || jsonb_build_object('f_lift', v);
+  INSERT INTO lift_driver_declaration (person_id, school_id, vehicle_description, registration, seats, licence_held,
+                                       insured, roadworthy, belts, code_acknowledged, policy_version, expires_on)
+  VALUES ((ids->>'drv')::uuid, HIL, 'V122 red hatch', 'V122 GP', 3, true, true, true, true, true, 1, current_date + 300)
+  RETURNING id INTO v_d;
+  INSERT INTO lift_offer (school_id, match_id, team_code, leg, driver_id, declaration_id, seats, meet_kind, meet_at, fixture_starts_at)
+  SELECT HIL, m.id, '13XI', 'out', (ids->>'drv')::uuid, v_d, 3, 'school', m.starts_at - interval '30 minutes', m.starts_at
+    FROM match m WHERE m.id = v
+  RETURNING id INTO v_o;
+  SELECT g.assignment_id, g.id INTO l FROM assignment_subject g JOIN role_assignment a ON a.id = g.assignment_id
+   WHERE a.person_id = (ids->>'gd')::uuid AND g.player_id = c_d;
+  INSERT INTO lift_seat (offer_id, school_id, match_id, team_code, leg, player_id, consent_by, guardian_assignment_id,
+                         guardian_link_id, requested_by, state)
+  VALUES (v_o, NULL, NULL, NULL, NULL, c_d, 'guardian', l.assignment_id, l.id, (ids->>'gd')::uuid, 'requested')
+  RETURNING id INTO v;
+  RETURN ids || z || jsonb_build_object('C', c_c, 'S', c_s, 'E', c_e, 'D', c_d, 'Y', c_y, 'X', X, 'seat', v, 'h', h);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The facts the readers may not see, as the owner: C's passport consents as
+-- school(giver)[(w)]; D's memberships as side:joined..left, days from today
+-- (SAST); the seat's state.
+CREATE OR REPLACE FUNCTION _v122_fact(p_what text, y jsonb) RETURNS text AS $$
+  SELECT CASE p_what
+    WHEN 'consents' THEN (SELECT coalesce(string_agg(q.t, ',' ORDER BY q.t), '') FROM (
+           SELECT CASE c.to_school_id WHEN '22222222-2222-2222-2222-222222222222'::uuid THEN 'WES' WHEN (y->>'X')::uuid THEN 'X'
+                                      WHEN (y->>'Q')::uuid THEN 'Q' ELSE '?' END
+                  || '(' || coalesce((SELECT e.k FROM jsonb_each_text(y) e(k, val) WHERE e.val = c.granted_by::text LIMIT 1), '-') || ')'
+                  || CASE WHEN c.withdrawn_at IS NOT NULL
+                          THEN '(w:' || coalesce((SELECT e.k FROM jsonb_each_text(y) e(k, val) WHERE e.val = c.withdrawn_by::text LIMIT 1), '-') || ')'
+                          ELSE '' END AS t
+             FROM passport_consent c WHERE c.player_id = (y->>'C')::uuid) q)
+    WHEN 'rows' THEN (SELECT coalesce(string_agg(m.team_code || ':' || (m.joined_on - sa_today()) || '..'
+                                                 || coalesce((m.left_on - sa_today())::text, ''), ' '
+                                                 ORDER BY m.joined_on, m.created_at), '')
+                        FROM team_membership m WHERE m.player_id = (y->>'D')::uuid)
+    WHEN 'seat' THEN (SELECT s.state FROM lift_seat s WHERE s.id = (y->>'seat')::uuid)
+    -- Y's scouting rows: state:giver.
+    WHEN 'scouting' THEN (SELECT coalesce(string_agg(c.consent_state || ':'
+             || coalesce((SELECT e.k FROM jsonb_each_text(y) e(k, val) WHERE e.val = c.decided_by::text LIMIT 1), '-'), ','), '')
+                            FROM player_scouting_consent c WHERE c.player_id = (y->>'Y')::uuid)
+  END
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Move a boy with no effective_on, as the office's route does with the box
+-- left empty, in a session whose own day is not Johannesburg's: the time zone
+-- is set for the one statement and put back.
+CREATE OR REPLACE FUNCTION _v122_move(p_player uuid, p_team text, p_tz text) RETURNS text AS $$
+DECLARE v_tz text := current_setting('TimeZone'); v_day text;
+BEGIN
+  PERFORM set_config('TimeZone', p_tz, true);
+  v_day := current_date::text;
+  PERFORM set_config('app.effective_on', '', true);
+  PERFORM set_config('app.user_id', '88888888-0000-0000-0000-00000000000c', true);
+  UPDATE player SET team_code = p_team WHERE id = p_player;
+  PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('TimeZone', v_tz, true);
+  RETURN v_day;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The caller's read of C's passport consents, under his own row security.
+CREATE OR REPLACE FUNCTION _v122_reads(y jsonb) RETURNS int AS $$
+  SELECT count(*)::int FROM passport_consent c WHERE c.player_id = (y->>'C')::uuid
+$$ LANGUAGE sql STABLE;
+
+-- After the read-through (db/122 §1d), as the owner.
+-- A consent C named for himself at fifteen, as db/08 let him before db/122:
+-- school Q, granted by his own account.
+CREATE OR REPLACE FUNCTION _v122_self_consent(y jsonb) RETURNS uuid AS $$
+DECLARE v uuid;
+BEGIN
+  INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'C')::uuid, (y->>'Q')::uuid) RETURNING id INTO v;
+  UPDATE passport_consent SET granted_by = (y->>'cboy')::uuid WHERE id = v;
+  RETURN v;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A guardian's ended link to a boy granted afresh, as guardian_link_establish()
+-- (db/62) grants it: a new subject row on her existing assignment. Written
+-- with clock_timestamp(), so it is younger than every consent this one
+-- transaction wrote (now() stands still inside it).
+CREATE OR REPLACE FUNCTION _v122_relink(p_person uuid, p_player uuid) RETURNS void AS $$
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, created_at)
+  SELECT a.id, p_player, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now(),
+         'granted', 'popia-2026-01', now(), '88888888-0000-0000-0000-00000000000c', clock_timestamp()
+    FROM role_assignment a WHERE a.person_id = p_person AND a.role = 'guardian' AND a.active
+   LIMIT 1;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The office corrects the end instead: the link granted afresh is ended, and
+-- the one that gave the consent is re-opened, in place.
+CREATE OR REPLACE FUNCTION _v122_correct(p_person uuid, p_player uuid) RETURNS void AS $$
+BEGIN
+  UPDATE assignment_subject s SET valid_until = current_date
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = p_person AND a.role = 'guardian' AND s.player_id = p_player
+     AND s.created_at > now();
+  UPDATE assignment_subject s SET valid_until = NULL
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = p_person AND a.role = 'guardian' AND s.player_id = p_player
+     AND s.created_at <= now();
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- E's two claims, as the owner reads them: account:how, '-' while open.
+CREATE OR REPLACE FUNCTION _v122_claims(y jsonb) RETURNS text AS $$
+  SELECT string_agg(k || ':' || coalesce((SELECT c.resolved_how FROM pending_claim c WHERE c.id = (y->>('claim_' || k))::uuid), '-'), ',' ORDER BY k)
+    FROM unnest(ARRAY['eadult', 'epupil']) k
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/122 (section 99) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -19714,11 +19992,14 @@ $v49$;
     SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.parent@example.invalid', md5('v81-code-parent'), 3600) i;
     PERFORM _assert(v_ok, format('§60 (codes): the office could not issue a code to a parent: %s', v_reason));
     -- The director of sport may enrol a pupil (player, and the record that
-    -- comes with it) and not appoint a parent: so she issues the pupil's code
-    -- and not the parent's.
+    -- comes with it) and not appoint a parent. Since db/122 (§1d, Kameel 29
+    -- Oct 2026) a pupil's code is the office's alone, the people shown his
+    -- address: she is told office_only for his, and not_permitted for the
+    -- parent's, as before.
     PERFORM _as((ids->>'u_dos')::uuid);
     SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.pupil@example.invalid', md5('v81-code-pupil'), 3600) i;
-    PERFORM _assert(v_ok, format('§60 (codes): the director of sport could not issue a pupil''s code: %s', v_reason));
+    PERFORM _assert(NOT v_ok AND v_reason = 'office_only',
+      format('§60 (codes): the director of sport, since db/122, was answered %s %s for a pupil''s code', v_ok, v_reason));
     SELECT i.ok, i.reason INTO v_ok, v_reason FROM login_code_issue('v81.parent@example.invalid', md5('v81-code-parent2'), 3600) i;
     PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
       format('§60 (codes): the director of sport issued herself a parent''s code: %s %s', v_ok, v_reason));
@@ -25728,7 +26009,10 @@ $v49$;
     -- (adult)
     PERFORM _v109_leave(O);
     e := _v109_ending(L_OLD);
-    PERFORM _assert(e->>'kind' = 'left_school' AND (e->>'ends_on')::date = current_date
+    -- The day he left: the session's, or the day his side began if that is
+    -- later (THE DAY, AT ANY HOUR, above _v60_leave).
+    PERFORM _assert(e->>'kind' = 'left_school' AND (e->>'ends_on')::date = _v109_left_on(O)
+                    AND (e->>'ends_on')::date >= current_date
                     AND e->>'reason' IS NULL AND e->>'ended_by' IS NULL,
       format('§86 (adult): Old left at 19 and Aunt''s link reads %s', e));
 
@@ -29364,6 +29648,432 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 98
   -- └── db/121 (section 98) ──────────────────────────────────────────
+  -- ┌── db/122 (section 99) ──────────────────────────────────────────
+  -- ── 99. Kameel's four decisions of 29 Oct 2026 (db/122) ──
+  -- Staged by _v122_stage(); every read and write is the caller's own under
+  -- row security, or a definer the application calls.
+  --
+  -- What each label holds:
+  --   (lapse)    "The consent lapses when the link that gave it ends." The
+  --              mother names Westville: its coach opens C's passport and its
+  --              office reads the consent in force. Her link ends: the coach
+  --              no longer opens it (no line, no name); the office and the
+  --              father still read the row, lapsed (in force false); she reads
+  --              nothing; C's own coach still opens it (his school's arm). The
+  --              father, as the grant route does, withdraws the lapsed row and
+  --              names Westville afresh: the coach opens it again
+  --   (nobody)   a consent with no giver on record opens nothing: school X's
+  --              office reads it lapsed and does not open the passport
+  --   (scouts)   S's guardian says yes through scouting_consent_set(): the
+  --              accredited scout sees him, the office reads the yes in force.
+  --              Her link ends: the scout no longer sees him; the office reads
+  --              the row still 'granted', in force false
+  --   (eighteen) "Let a boy of eighteen record his own scouting yes or no":
+  --              Y's guardian says yes, and her link ends (lapsed); she is
+  --              then refused; Y, eighteen, records his own yes on his
+  --              self-access link: one row for him, his, in force. C, fifteen,
+  --              on his own live link, is refused not_yet_eighteen
+  --   (age)      "Under eighteen, only his guardian; at eighteen, he does it
+  --              himself": C, fifteen, on his own live link, names no school
+  --              and withdraws none; Y, eighteen, names one himself and
+  --              withdraws it; D's live guardian names one for him
+  --   (readers)  the in-force answers are NULL to a reader of neither row (a
+  --              Westville parent, the scout, the mother once her link ended)
+  --              and on a pad
+  --   (email)    "Close both doors": the director of sport reads the pupil
+  --              E's name and no address through role_requester(),
+  --              pending_claims() (account and presented) and
+  --              account_sign_ins(); the adult's addresses as before; the
+  --              office reads E's; E reads his own request's
+  --   (particles) "Skip them, as the three-letter ones are skipped": a post
+  --              of the six two-letter particles alone names nobody; "Al", a
+  --              two-letter first name, is still caught, and told; "de Wet"
+  --              is still caught by the surname
+  --   (sast)     "The school's day (SAST), everywhere": D moved with no date
+  --              in a session whose day is not Johannesburg's is dated
+  --              sa_today() (closed and opened today), and his seat on the
+  --              13XI's lift is voided by Johannesburg's day: kept for a
+  --              fixture later today, voided for one tomorrow
+  --   (doors)    the readers' definers are scrbrd_app's alone; the giver test
+  --              and the scan are nobody's to call
+  -- After the read-through (§1d, Kameel 29 Oct 2026, 21:15: each as
+  -- recommended):
+  --   (self)     Q1: a consent C named for himself at fifteen, before db/122,
+  --              is lapsed: school Q's coach does not open his passport, his
+  --              father reads it lapsed, and the father's grant to Q clears
+  --              it and opens it
+  --   (age)      Q2: C, fifteen, may still take a school's name back
+  --   (relink)   Q4: S's guardian's ended link granted afresh does not bring
+  --              her lapsed yes back; the end corrected in place does
+  --   (consent)  Q8: gp, a verified guardian with no processing consent on
+  --              record, names no school
+  --   (claims)   Q3: the director of sport confirms and declines no pupil's
+  --              claim and issues no pupil's code (office_only); the office
+  --              does both; her adult's claim and code as before
+  --
+  -- Falsified, each change made as the owner before this section ran (the
+  -- section alone, cut from this file with the setup above it, on 29 Oct
+  -- 2026); unchanged it passed, and each change went red at its label:
+  --   passport_open() as db/116 wrote it     → (lapse): the Westville coach
+  --                                             opened the passport on a lapsed consent
+  --   scouting_candidates() as db/08 wrote it → (scouts): the scout saw S on
+  --                                             a lapsed yes
+  --   scouting_consent_set() as db/08 wrote it → (eighteen): Y, eighteen, was
+  --                                             refused his own yes
+  --   the two RESTRICTIVE write policies dropped → (age): C, fifteen, named a
+  --                                             school for himself
+  --   role_requester() as db/81 wrote it      → (email): the director of
+  --                                             sport read E's address
+  --   pending_claims() as db/81 wrote it      → (email): ... E's claim's addresses
+  --   account_sign_ins() as db/81 wrote it    → (email): ... E's sign-in's address
+  --   news_public_hits() as db/118 wrote it   → (particles): the particles named 6
+  --   player_team_membership_log() as db/08   → (sast): D's rows were dated
+  --     wrote it                                  by the session's day
+  --   player_move_voids_seats() as db/117     → (sast): the seat's fate was
+  --     wrote it                                  decided by the session's day
+  -- And after the read-through, the same way (the section alone, 29 Oct
+  -- 2026), each guard broken once:
+  --   consent_giver_live() without the self-access age → (self): school Q's
+  --                                             coach opened the passport
+  --   the update policy asking writer_ok() again → (age): C, fifteen, could
+  --                                             not take X's name back
+  --   consent_giver_live() without the two dates → (relink): the yes came
+  --                                             back with a link granted afresh
+  --   writer_ok() without processing consent → (consent): gp named a school
+  --   pending_claim_confirm() as db/81 wrote it → (claims): the director
+  --                                             confirmed the pupil's claim
+  --   pending_claim_decline() as db/81 wrote it → (claims): ... declined it
+  --   login_code_issue() without the pupil's rule → (claims): ... was issued
+  --                                             the pupil's code
+  DECLARE
+    y    jsonb := _v122_stage();
+    C    uuid;
+    S    uuid;
+    v_pc uuid;
+    v_self uuid;
+    v_n  int;
+    v_ok boolean;
+    v_reason text;
+    got  text;
+    v_h  int;
+    v_day text;
+    V_C2 uuid := '88888888-0000-0000-0000-00000000000a';   -- 2XI coach, Hilton: writes the posts
+    HIL_ uuid := '11111111-1111-1111-1111-111111111111';
+    WES_ uuid := '22222222-2222-2222-2222-222222222222';
+  BEGIN
+    C := (y->>'C')::uuid; S := (y->>'S')::uuid; v_h := (y->>'h')::int;
+
+    -- (lapse)
+    PERFORM _as((y->>'mum')::uuid);
+    INSERT INTO passport_consent (player_id, to_school_id) VALUES (C, WES_) RETURNING id INTO v_pc;
+    PERFORM _as((y->>'wescoach')::uuid);
+    SELECT count(*) INTO v_n FROM passport(C);
+    PERFORM _assert(passport_open(C) AND v_n > 0 AND passport_name(C) IS NOT NULL,
+      format('§99 (lapse): on the mother''s live word the Westville coach opens %s line(s)', v_n));
+    PERFORM _as((y->>'wesoffice')::uuid);
+    PERFORM _assert(passport_consent_in_force(v_pc) IS TRUE, '§99 (lapse): the Westville office does not read the live consent in force');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v119_end_link((y->>'mum')::uuid, C);
+    PERFORM _assert(_v122_fact('consents', y) = 'WES(mum),X(-)', format('§99 (lapse): the owner reads [%s]', _v122_fact('consents', y)));
+    PERFORM _as((y->>'wescoach')::uuid);
+    SELECT count(*) INTO v_n FROM passport(C);
+    PERFORM _assert(NOT passport_open(C) AND v_n = 0 AND passport_name(C) IS NULL,
+      format('§99 (lapse): with the mother''s link ended the Westville coach still opens the passport (%s line(s), name %s)',
+             v_n, coalesce(passport_name(C), '(none)')));
+    FOREACH got IN ARRAY ARRAY['wesoffice', 'dad'] LOOP
+      PERFORM _as((y->>got)::uuid);
+      PERFORM _assert(_v122_reads(y) >= 1 AND passport_consent_in_force(v_pc) IS FALSE,
+        format('§99 (lapse): %s reads %s consent row(s), in force %s', got, _v122_reads(y), passport_consent_in_force(v_pc)));
+    END LOOP;
+    PERFORM _as((y->>'mum')::uuid);
+    PERFORM _assert(_v122_reads(y) = 0 AND passport_consent_in_force(v_pc) IS NULL AND NOT passport_open(C),
+      format('§99 (lapse): the mother, her link ended, reads %s row(s) and in force %s', _v122_reads(y), passport_consent_in_force(v_pc)));
+    PERFORM _as((y->>'hcoach')::uuid);
+    PERFORM _assert(passport_open(C), '§99 (lapse): his own coach lost his passport (the home arm is not the consent''s)');
+    -- The father gives it afresh, as the grant route does (kit-api.mjs).
+    PERFORM _as((y->>'dad')::uuid);
+    UPDATE passport_consent SET withdrawn_at = now()
+     WHERE player_id = C AND to_school_id = WES_ AND withdrawn_at IS NULL AND passport_consent_in_force(id) = false;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    PERFORM _assert(v_n = 1, format('§99 (lapse): the father withdrew %s lapsed row(s), not 1', v_n));
+    INSERT INTO passport_consent (player_id, to_school_id) VALUES (C, WES_);
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v122_fact('consents', y) = 'WES(dad),WES(mum)(w:dad),X(-)',
+      format('§99 (lapse): after the father''s grant the owner reads [%s]', _v122_fact('consents', y)));
+    PERFORM _as((y->>'wescoach')::uuid);
+    PERFORM _assert(passport_open(C), '§99 (lapse): on the father''s live word the Westville coach does not open the passport');
+
+    -- (nobody)
+    PERFORM _as((y->>'xoffice')::uuid);
+    PERFORM _assert(_v122_reads(y) = 1 AND passport_consent_in_force((y->>'pc_x')::uuid) IS FALSE AND NOT passport_open(C),
+      format('§99 (nobody): school X''s office reads %s row(s), in force %s, and opens the passport: %s',
+             _v122_reads(y), passport_consent_in_force((y->>'pc_x')::uuid), passport_open(C)));
+
+    -- (self)
+    PERFORM set_config('app.user_id', '', true);
+    v_self := _v122_self_consent(y);
+    PERFORM _as((y->>'qcoach')::uuid);
+    PERFORM _assert(NOT passport_open(C) AND passport_name(C) IS NULL,
+      '§99 (self): on the word C gave himself at fifteen, school Q''s coach opens his passport');
+    PERFORM _as((y->>'dad')::uuid);
+    PERFORM _assert(passport_consent_in_force(v_self) IS FALSE,
+      format('§99 (self): his father reads the consent C gave himself as in force %s, not lapsed', passport_consent_in_force(v_self)));
+    PERFORM _as((y->>'cboy')::uuid);
+    PERFORM _assert(passport_consent_in_force(v_self) IS FALSE, '§99 (self): C reads his own fifteen-year-old''s consent in force');
+    -- His father names Q, as the grant route does: the lapsed row first.
+    PERFORM _as((y->>'dad')::uuid);
+    UPDATE passport_consent SET withdrawn_at = now()
+     WHERE player_id = C AND to_school_id = (y->>'Q')::uuid AND withdrawn_at IS NULL AND passport_consent_in_force(id) = false;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    PERFORM _assert(v_n = 1, format('§99 (self): the father''s grant cleared %s lapsed row(s), not 1', v_n));
+    INSERT INTO passport_consent (player_id, to_school_id) VALUES (C, (y->>'Q')::uuid);
+    PERFORM _as((y->>'qcoach')::uuid);
+    PERFORM _assert(passport_open(C), '§99 (self): on his father''s word school Q''s coach does not open the passport');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v122_fact('consents', y) = 'Q(cboy)(w:dad),Q(dad),WES(dad),WES(mum)(w:dad),X(-)',
+      format('§99 (self): the owner reads [%s]', _v122_fact('consents', y)));
+
+    -- (scouts)
+    PERFORM _as((y->>'sg')::uuid);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM scouting_consent_set(S, true) s;
+    PERFORM _assert(v_ok, format('§99 (scouts): his guardian could not say yes (%s)', v_reason));
+    PERFORM _as((y->>'scout')::uuid);
+    PERFORM _assert(EXISTS (SELECT 1 FROM scouting_candidates() x WHERE x.player_id = S),
+      '§99 (scouts): on his guardian''s live yes the scout does not see him');
+    PERFORM _assert(scouting_consent_in_force(S) IS NULL, '§99 (readers): the scout is told whether a yes is in force');
+    PERFORM _as((y->>'hoffice')::uuid);
+    PERFORM _assert(scouting_consent_in_force(S) IS TRUE, '§99 (scouts): the office does not read the live yes in force');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v119_end_link((y->>'sg')::uuid, S);
+    PERFORM _as((y->>'scout')::uuid);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM scouting_candidates() x WHERE x.player_id = S),
+      '§99 (scouts): with his guardian''s link ended the scout still sees him');
+    PERFORM _as((y->>'hoffice')::uuid);
+    SELECT string_agg(c.consent_state, ',') INTO got FROM player_scouting_consent c WHERE c.player_id = S;
+    PERFORM _assert(got = 'granted' AND scouting_consent_in_force(S) IS FALSE,
+      format('§99 (scouts): the office reads [%s], in force %s', got, scouting_consent_in_force(S)));
+    PERFORM _as((y->>'hcoach')::uuid);
+    PERFORM _assert(scouting_consent_in_force(S) IS FALSE, '§99 (scouts): his side''s coach does not read the yes lapsed');
+
+    -- (relink)
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v122_relink((y->>'sg')::uuid, S);
+    PERFORM _as((y->>'sg')::uuid);
+    PERFORM _assert(is_family_of(S), '§99 (relink): the link granted afresh is not live, so this proves nothing');
+    PERFORM _as((y->>'hoffice')::uuid);
+    PERFORM _assert(scouting_consent_in_force(S) IS FALSE,
+      '§99 (relink): a link granted afresh brought her lapsed yes back');
+    PERFORM _as((y->>'scout')::uuid);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM scouting_candidates() x WHERE x.player_id = S),
+      '§99 (relink): with her link granted afresh the scout sees him on the old yes');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v122_correct((y->>'sg')::uuid, S);
+    PERFORM _as((y->>'hoffice')::uuid);
+    PERFORM _assert(scouting_consent_in_force(S) IS TRUE,
+      '§99 (relink): the end corrected in place did not bring the yes back');
+    PERFORM _as((y->>'scout')::uuid);
+    PERFORM _assert(EXISTS (SELECT 1 FROM scouting_candidates() x WHERE x.player_id = S),
+      '§99 (relink): with the end corrected the scout does not see him');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v119_end_link((y->>'sg')::uuid, S);
+
+    -- (eighteen)
+    PERFORM _as((y->>'yg')::uuid);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM scouting_consent_set((y->>'Y')::uuid, true) s;
+    PERFORM _assert(v_ok, format('§99 (eighteen): his guardian could not say yes on her live link (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v119_end_link((y->>'yg')::uuid, (y->>'Y')::uuid);
+    PERFORM _as((y->>'hoffice')::uuid);
+    PERFORM _assert(scouting_consent_in_force((y->>'Y')::uuid) IS FALSE, '§99 (eighteen): the guardian''s yes did not lapse with her link');
+    PERFORM _as((y->>'yg')::uuid);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM scouting_consent_set((y->>'Y')::uuid, false) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_a_consented_guardian',
+      format('§99 (eighteen): the guardian, her link ended, was answered %s/%s', v_ok, v_reason));
+    PERFORM _as((y->>'yboy')::uuid);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM scouting_consent_set((y->>'Y')::uuid, true) s;
+    PERFORM _assert(v_ok, format('§99 (eighteen): the boy of eighteen was refused his own yes (%s)', v_reason));
+    PERFORM _assert(scouting_consent_in_force((y->>'Y')::uuid) IS TRUE, '§99 (eighteen): the boy does not read his own yes in force');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v122_fact('scouting', y) = 'granted:yboy',
+      format('§99 (eighteen): Y''s scouting rows read [%s], not one live row of his own', _v122_fact('scouting', y)));
+    PERFORM _as((y->>'hoffice')::uuid);
+    PERFORM _assert(scouting_consent_in_force((y->>'Y')::uuid) IS TRUE, '§99 (eighteen): the office does not read his own yes in force');
+    PERFORM _as((y->>'cboy')::uuid);
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM scouting_consent_set(C, true) s;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_yet_eighteen',
+      format('§99 (eighteen): the boy of fifteen, on his own link, was answered %s/%s', v_ok, v_reason));
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM _as((y->>'yboy')::uuid);
+    SELECT s.ok INTO v_ok FROM scouting_consent_set((y->>'Y')::uuid, false) s;
+    PERFORM _assert(NOT v_ok, '§99 (eighteen): on a pad the boy of eighteen changed his decision');
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(has_function_privilege('scrbrd_app', 'scouting_consent_set(uuid,boolean)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'scouting_consent_set(uuid,boolean)', 'EXECUTE'),
+      '§99 (eighteen): scouting_consent_set() is not the application''s alone');
+
+    -- (age)
+    PERFORM _as((y->>'cboy')::uuid);
+    got := 'written';
+    BEGIN
+      INSERT INTO passport_consent (player_id, to_school_id) VALUES (C, (y->>'Z')::uuid);
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'refused', '§99 (age): the boy of fifteen named a school for himself');
+    -- Under eighteen he may still say no (§1d, Q2): X's name, which nobody
+    -- on record gave.
+    UPDATE passport_consent SET withdrawn_at = now() WHERE id = (y->>'pc_x')::uuid AND withdrawn_at IS NULL;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    PERFORM _assert(v_n = 1, format('§99 (age): the boy of fifteen took back %s name(s), not X''s one', v_n));
+    PERFORM _assert(_v122_reads(y) >= 1, '§99 (age): the boy of fifteen no longer reads his own consents');
+    PERFORM _as((y->>'yboy')::uuid);
+    got := 'written';
+    BEGIN
+      INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'Y')::uuid, (y->>'Z')::uuid);
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'written', '§99 (age): the boy of eighteen could not name a school himself');
+    UPDATE passport_consent SET withdrawn_at = now() WHERE player_id = (y->>'Y')::uuid AND withdrawn_at IS NULL;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    PERFORM _assert(v_n = 1, format('§99 (age): the boy of eighteen withdrew %s consent(s), not his one', v_n));
+    PERFORM _as((y->>'gd')::uuid);
+    got := 'written';
+    BEGIN
+      INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'D')::uuid, (y->>'Z')::uuid);
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'written', '§99 (age): a live guardian could not name a school for her son of thirteen');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v122_fact('consents', y) = 'Q(cboy)(w:dad),Q(dad),WES(dad),WES(mum)(w:dad),X(-)(w:cboy)',
+      format('§99 (age): the owner reads [%s]', _v122_fact('consents', y)));
+
+    -- (consent)
+    PERFORM _as((y->>'gp')::uuid);
+    PERFORM _assert(is_family_of(C), '§99 (consent): gp''s verified link is not live, so this proves nothing');
+    got := 'written';
+    BEGIN
+      INSERT INTO passport_consent (player_id, to_school_id) VALUES (C, (y->>'Z')::uuid);
+    EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'refused', '§99 (consent): a guardian with no processing consent on record named a school');
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (readers)
+    PERFORM _as((y->>'wesparent')::uuid);
+    PERFORM _assert(passport_consent_in_force(v_pc) IS NULL AND scouting_consent_in_force(S) IS NULL,
+      '§99 (readers): a parent who is nothing to them is told whether a consent is in force');
+    PERFORM _as((y->>'wesoffice')::uuid);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM _assert(passport_consent_in_force(v_pc) IS NULL, '§99 (readers): on a pad the office is told whether a consent is in force');
+    PERFORM set_config('app.scope', '', true);
+
+    -- (email)
+    PERFORM _as((y->>'dos')::uuid);
+    SELECT q.name || '|' || coalesce(q.email, '-') INTO got FROM role_requester((y->>'req_epupil')::uuid) q;
+    PERFORM _assert(got = 'V122 Epupil|-', format('§99 (email): the director of sport reads the pupil''s request as [%s]', got));
+    SELECT q.name || '|' || coalesce(q.email, '-') INTO got FROM role_requester((y->>'req_eadult')::uuid) q;
+    PERFORM _assert(got = 'V122 Eadult|v122.eadult@example.invalid', format('§99 (email): the director of sport reads the adult''s request as [%s]', got));
+    SELECT coalesce(string_agg(split_part(coalesce(x.account_email, '-'), '@', 1) || '/' || split_part(coalesce(x.presented_email, '-'), '@', 1),
+                               ',' ORDER BY x.account_name), '') INTO got
+      FROM pending_claims() x WHERE x.user_id IN ((y->>'epupil')::uuid, (y->>'eadult')::uuid);
+    PERFORM _assert(got = 'v122.eadult/v122.eadult.claim,-/-', format('§99 (email): the director of sport reads the claims as [%s]', got));
+    SELECT count(*) INTO v_n FROM account_sign_ins((y->>'epupil')::uuid) x;
+    PERFORM _assert(v_n = 1 AND (SELECT count(x.email_at_link) FROM account_sign_ins((y->>'epupil')::uuid) x) = 0,
+      format('§99 (email): the director of sport reads %s of the pupil''s sign-ins, with an address on %s',
+             v_n, (SELECT count(x.email_at_link) FROM account_sign_ins((y->>'epupil')::uuid) x)));
+    PERFORM _assert((SELECT string_agg(x.email_at_link, ',') FROM account_sign_ins((y->>'eadult')::uuid) x) = 'v122.eadult.link@example.invalid',
+      '§99 (email): the director of sport lost the adult''s sign-in address');
+    PERFORM _as((y->>'hoffice')::uuid);
+    SELECT q.email INTO got FROM role_requester((y->>'req_epupil')::uuid) q;
+    PERFORM _assert(got = 'v122.epupil@example.invalid', format('§99 (email): the office reads the pupil''s request with [%s]', got));
+    SELECT x.account_email || '/' || x.presented_email INTO got FROM pending_claims() x WHERE x.user_id = (y->>'epupil')::uuid;
+    PERFORM _assert(got = 'v122.epupil@example.invalid/v122.epupil.claim@example.invalid',
+      format('§99 (email): the office reads the pupil''s claim as [%s]', got));
+    PERFORM _assert((SELECT string_agg(x.email_at_link, ',') FROM account_sign_ins((y->>'epupil')::uuid) x) = 'v122.epupil.link@example.invalid',
+      '§99 (email): the office does not read the pupil''s sign-in address');
+    PERFORM _as((y->>'epupil')::uuid);
+    SELECT q.email INTO got FROM role_requester((y->>'req_epupil')::uuid) q;
+    PERFORM _assert(got = 'v122.epupil@example.invalid', format('§99 (email): the pupil reads his own request with [%s]', got));
+
+    -- (claims)
+    PERFORM _as((y->>'dos')::uuid);
+    SELECT x.ok, x.reason INTO v_ok, v_reason FROM pending_claim_confirm((y->>'claim_epupil')::uuid) x;
+    PERFORM _assert(NOT v_ok AND v_reason = 'office_only',
+      format('§99 (claims): the director of sport confirming the pupil''s claim was answered %s/%s', v_ok, v_reason));
+    SELECT x.ok, x.reason INTO v_ok, v_reason FROM pending_claim_decline((y->>'claim_epupil')::uuid) x;
+    PERFORM _assert(NOT v_ok AND v_reason = 'office_only',
+      format('§99 (claims): the director of sport declining the pupil''s claim was answered %s/%s', v_ok, v_reason));
+    SELECT x.ok, x.reason INTO v_ok, v_reason FROM login_code_issue('v122.epupil@example.invalid', md5('v122-dos-pupil'), 600) x;
+    PERFORM _assert(NOT v_ok AND v_reason = 'office_only',
+      format('§99 (claims): the director of sport issuing the pupil''s code was answered %s/%s', v_ok, v_reason));
+    SELECT x.ok, x.reason INTO v_ok, v_reason FROM login_code_issue('v122.eadult@example.invalid', md5('v122-dos-adult'), 600) x;
+    PERFORM _assert(v_ok, format('§99 (claims): the director of sport was refused the adult''s code (%s)', v_reason));
+    SELECT x.ok, x.reason INTO v_ok, v_reason FROM pending_claim_decline((y->>'claim_eadult')::uuid) x;
+    PERFORM _assert(v_ok, format('§99 (claims): the director of sport was refused the adult''s claim (%s)', v_reason));
+    PERFORM _as((y->>'hoffice')::uuid);
+    SELECT x.ok, x.reason INTO v_ok, v_reason FROM login_code_issue('v122.epupil@example.invalid', md5('v122-office-pupil'), 600) x;
+    PERFORM _assert(v_ok, format('§99 (claims): the office was refused the pupil''s code (%s)', v_reason));
+    SELECT x.ok, x.reason INTO v_ok, v_reason FROM pending_claim_confirm((y->>'claim_epupil')::uuid) x;
+    PERFORM _assert(v_ok, format('§99 (claims): the office could not confirm the pupil''s claim (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v122_claims(y) = 'eadult:declined,epupil:office_confirmed',
+      format('§99 (claims): the owner reads the claims as [%s]', _v122_claims(y)));
+
+    -- (particles)
+    PERFORM _as(V_C2);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL_, '2XI', 'Tour de France', 'du pain, le chat, la mer, da capo, di tutti', now()) RETURNING id INTO v_pc;
+    PERFORM _assert(news_public_check(v_pc) = 0,
+      format('§99 (particles): a post of the two-letter particles alone named %s, on the word %s',
+             news_public_check(v_pc), coalesce(news_public_word(v_pc), '(none)')));
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL_, '2XI', 'Well done', 'Well done Al', now()) RETURNING id INTO v_pc;
+    PERFORM _assert(news_public_check(v_pc) = 1 AND news_public_word(v_pc) = 'Al',
+      format('§99 (particles): a two-letter first name named %s, on the word %s', news_public_check(v_pc), coalesce(news_public_word(v_pc), '(none)')));
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', HIL_, '2XI', 'Five', 'de Wet took five', now()) RETURNING id INTO v_pc;
+    PERFORM _assert(news_public_check(v_pc) = 1,
+      format('§99 (particles): a surname that carries a particle named %s', news_public_check(v_pc)));
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (sast) Before noon in Johannesburg a session at UTC-12 is a day behind
+    -- it, and the lift is later today; after noon a session at UTC+14 is a day
+    -- ahead, and the lift is tomorrow.
+    v_day := _v122_move((y->>'D')::uuid, '14XI', CASE WHEN v_h < 12 THEN 'Etc/GMT+12' ELSE 'Pacific/Kiritimati' END);
+    PERFORM _assert(v_day::date <> sa_today(), format('§99 (sast): the session''s day %s is Johannesburg''s, so this proves nothing', v_day));
+    PERFORM _assert(_v122_fact('rows', y) = '13XI:-30..0 14XI:0..',
+      format('§99 (sast): D''s sides read %s, not closed and opened on Johannesburg''s day (the session''s was %s)', _v122_fact('rows', y), v_day));
+    PERFORM _assert(_v122_fact('seat', y) = CASE WHEN v_h < 12 THEN 'requested' ELSE 'void' END,
+      format('§99 (sast): at %s:00 SAST D''s seat on the 13XI lift is %s', v_h, _v122_fact('seat', y)));
+
+    -- (doors)
+    PERFORM _assert(has_function_privilege('scrbrd_app', 'passport_consent_in_force(uuid)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'scouting_consent_in_force(uuid)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'passport_consent_in_force(uuid)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'scouting_consent_in_force(uuid)', 'EXECUTE'),
+      '§99 (doors): the in-force answers are not the application''s alone');
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'consent_giver_live(uuid,uuid,timestamptz)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'consent_giver_live(uuid,uuid,timestamptz)', 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', 'news_public_hits(uuid)', 'EXECUTE'),
+      '§99 (doors): the giver test or the scan is callable');
+    PERFORM _assert((SELECT bool_and(p.prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
+                       FROM pg_proc p WHERE p.oid IN ('passport_open(uuid)'::regprocedure, 'scouting_candidates()'::regprocedure,
+                                                      'role_requester(uuid)'::regprocedure, 'pending_claims()'::regprocedure,
+                                                      'account_sign_ins(uuid)'::regprocedure,
+                                                      'pending_claim_confirm(uuid)'::regprocedure,
+                                                      'pending_claim_decline(uuid)'::regprocedure,
+                                                      'login_code_issue(text,text,integer)'::regprocedure,
+                                                      'player_team_membership_log()'::regprocedure,
+                                                      'player_move_voids_seats()'::regprocedure)),
+      '§99 (doors): a replaced definer lost SECURITY DEFINER or its pinned search_path');
+    PERFORM _assert(has_function_privilege('scrbrd_app', 'pending_claim_confirm(uuid)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'pending_claim_confirm(uuid)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'pending_claim_decline(uuid)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'pending_claim_decline(uuid)', 'EXECUTE'),
+      '§99 (doors): the claim doors are not the application''s alone');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 99
+  -- └── db/122 (section 99) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

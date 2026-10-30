@@ -481,8 +481,44 @@ try {
     // A code is randomBytes(24) in base64url (auth/auth.mjs): 32 of A–Z, a–z,
     // 0–9, "-" and "_". The old pattern left out "_", in about 40% of codes.
     ok("Issue a code instead shows the code once", /^[A-Za-z0-9_-]{32}$/.test((await tid(o.page, "issued-code").innerText().catch(() => "")).trim()), await tid(o.page, "issued-code").innerText().catch(() => ""));
-    ok("no page errors on the claim screens", h.errors.length + c2.errors.length + o.errors.length === 0, [...h.errors, ...c2.errors, ...o.errors].join(" | "));
-    await h.ctx.close(); await c2.ctx.close(); await o.ctx.close();
+    // A pupil's claim (db/122 §1d, Kameel 29 Oct 2026): the office and the
+    // principal are shown its addresses and answer it; the director of sport
+    // reads the row without them, is offered no answer, and is told whose it is.
+    const PUPIL_ACCOUNT = "88888888-0000-0000-0000-000000000009";   // R Pillay's own account
+    {
+      const pool = new pg.Pool({ connectionString: ownerUrl() });
+      try {
+        await pool.query(`insert into pending_claim (provider, provider_uid, email, user_id)
+                          values ('google.com', $1, 'pupil.claim@example.invalid', $2)`, [`walk-pupil-claim-${RUN}`, PUPIL_ACCOUNT]);
+      } finally { await pool.end().catch(() => {}); }
+    }
+    const dos = await open({ viewport: DESK });
+    ok("the director of sport signs in", await devSignIn(dos, "sarah@example.invalid"));
+    ok("...and Settings → People opens", await settingsTab(dos.page, "users"));
+    await dos.page.waitForSelector('[data-testid="claims"]', { timeout: 6000 }).catch(() => {});
+    await afterReads(dos.page, 800);
+    const pupilClaim = dos.page.locator(`[data-testid="claim"]`, { hasText: "R Pillay" }).first();
+    ok("the pupil's claim is on her list, with its addresses withheld and words saying whose it is",
+       (await pupilClaim.count()) === 1 && (await pupilClaim.locator('[data-testid="claim-withheld"]').count()) === 1
+       && /school office and the principal/.test(await pupilClaim.innerText()) && !/@/.test(await pupilClaim.innerText()),
+       (await pupilClaim.innerText().catch(() => "")).slice(0, 200));
+    ok("...with no Confirm, no Decline and no code to issue",
+       (await pupilClaim.locator('[data-testid="claim-confirm"], [data-testid="claim-decline"], [data-testid="claim-code"]').count()) === 0);
+    ok("...and not called 'the same address'", !/same address|different address/.test(await pupilClaim.innerText().catch(() => "")));
+    const fld = await floors(dos.page, '[data-testid="claims"]');
+    ok("the withheld row: nothing under 12px, nothing under 44px", fld.small.length === 0 && fld.tiny.length === 0, [...fld.small, ...fld.tiny].join(" | "));
+    const o2 = await open({ viewport: DESK });
+    await devSignIn(o2, "registrar@example.invalid");
+    await settingsTab(o2.page, "users");
+    await o2.page.waitForSelector('[data-testid="claims"]', { timeout: 6000 }).catch(() => {});
+    await afterReads(o2.page, 800);
+    const officePupil = o2.page.locator(`[data-testid="claim"]`, { hasText: "R Pillay" }).first();
+    ok("the office reads the same claim with both addresses, and may answer it",
+       (await officePupil.locator('[data-testid="claim-google"]').innerText().catch(() => "")) === "pupil.claim@example.invalid"
+       && (await officePupil.locator('[data-testid="claim-confirm"]').count()) === 1 && (await officePupil.locator('[data-testid="claim-withheld"]').count()) === 0);
+    ok("no page errors on the claim screens", h.errors.length + c2.errors.length + o.errors.length + dos.errors.length + o2.errors.length === 0,
+       [...h.errors, ...c2.errors, ...o.errors, ...dos.errors, ...o2.errors].join(" | "));
+    await h.ctx.close(); await c2.ctx.close(); await o.ctx.close(); await dos.ctx.close(); await o2.ctx.close();
   }
 
   // ── 5 · Both themes ─────────────────────────────────────────────

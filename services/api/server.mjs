@@ -566,7 +566,7 @@ const EXACT = {
   // the code atomically, and returns a session token for the named device.
   "POST /api/auth/invite": async (body, req) => runAsPrincipal(
     pool, SECRET, req.headers?.authorization,
-    (client) => issueLoginCode(client, SECRET, { email: body?.email })),
+    (client) => issueLoginCode(client, SECRET, { email: body?.email, userId: body?.userId })),
   "POST /api/auth/redeem": async (body) => redeemMagicLink(
     pool, SECRET, { email: body?.email, code: body?.code, deviceId: body?.deviceId }),
   // Sign-in with Google (SCRBRD-140): Google's signed statement, verified

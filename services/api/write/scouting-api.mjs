@@ -521,8 +521,10 @@ export function scoutingRoutes({ pool, secret }) {
   return {
     // POST /players/:id/scouting-consent { granted: boolean }
     //
-    // The check inside scouting_consent_set() is guardian-only, with no
-    // administrative override — see that function for why. This handler adds
+    // The check inside scouting_consent_set() is the boy's guardian, or the
+    // boy himself once he is eighteen (db/122, Kameel 29 Oct 2026), with no
+    // administrative override — see that function for why. A boy under
+    // eighteen is refused not_yet_eighteen. This handler adds
     // one thing the function cannot: rejecting a missing or non-boolean
     // `granted` before it reaches the database, so "withdraw" typed as a
     // string does not silently become truthy.
