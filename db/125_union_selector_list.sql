@@ -74,6 +74,36 @@
 -- child's side; app_can() and the role lookup in the logs keep current_date
 -- until the sweep of every current_date in the schema.
 --
+-- ── 4 · THREE SEAMS CLOSED (Kameel, 30 Oct 2026, 21:53 SAST: calls 1, 2
+--    and 4 of the child-data seams audit, "as recommended") ────────────
+--   (1) A guardian's "yes" once the boy is eighteen (READERS Q1, 21 Oct,
+--       which stands). From his eighteenth birthday (the SA day) a guardian
+--       gives no NEW yes: passport_consent_writer_ok() refuses her naming a
+--       school, his union or CSA Schools, scouting_consent_set() refuses her
+--       yes (he_is_of_age), and consent_giver_live() counts a guardian's word
+--       only if she gave it before his birthday. Her "no" and her withdrawal
+--       still count; a consent she gave before his birthday stands until it
+--       is withdrawn; the boy withdraws at any age (db/122 §1d). The test is
+--       public_name_facts()'s (db/116 §4): her word counts when his date of
+--       birth is unknown or the day she gave it is before majority_on(born),
+--       so the four doors agree.
+--   (2) A scout's read is logged. scouting_candidates() (db/122) becomes
+--       VOLATILE and writes one access_log row per school whose boys it
+--       returned (log_restricted_read('scouting_candidates', ids,
+--       '{full_name}', school)), as the dossier and the union passport are
+--       logged. Its rows are db/122's, line for line. Showing it to the
+--       family is a later slice.
+--   (4) A withdrawn processing consent lapses the passport and scouting
+--       consents its giver gave. The writers already require the giver's
+--       link's processing consent (assignment_subject.consent_state =
+--       'granted'); consent_giver_live() now asks it too, so
+--       passport_consent_in_force(), scouting_consent_in_force() and every
+--       door that asks the giver test (the named school's, the union's and
+--       the list, the scout's) read it as lapsed. One clause in the one
+--       function both in-force answers ask, not one in each.
+--   Not here: call 3 (a family's link after a transfer, db/109) and call 5
+--   (no code).
+--
 -- WHAT IT CHANGES ON A LIVE DATABASE (production holds test data only)
 --   functions passport_union_orgs(), passport_union_schools(uuid),
 --     passport_union_list(uuid,uuid,text,text): new definers, scrbrd_app's
@@ -85,10 +115,21 @@
 --   function consent_giver_live(uuid,uuid,timestamptz) (db/124): body
 --     replaced: sa_today() for current_date in its four link tests. On the
 --     paste a link whose end date is today (SAST) stops counting from SAST
---     midnight, not from 02:00
+--     midnight, not from 02:00. Also (§5): a guardian's word given on or
+--     after his eighteenth birthday, and any word given on a link whose
+--     processing consent is not granted, stop counting on the paste
+--   functions passport_consent_writer_ok(uuid), scouting_consent_set(uuid,
+--     boolean) (db/122): bodies replaced: a guardian's new yes refused from
+--     his eighteenth birthday (§5 (1)); grants unchanged (scrbrd_app's)
+--   function scouting_candidates() (db/122): plpgsql and VOLATILE now, its
+--     rows db/122's, one access_log row per school written before it answers
+--     (§5 (2)); grants unchanged (scrbrd_app's)
 -- No table, column, capability, role or policy. A second paste changes
 -- nothing. db/124 cannot be pasted again after this file: its guard reads
 -- consent_giver_live()'s new body as not its own, and refuses.
+--
+-- THE GUARD keys on pg_proc.prosrc: the md5 of each function's body, its
+-- whitespace folded, must be the shipped file's or this file's.
 
 
 -- ── 0 · Refuse to run against what this file was not written for ───
@@ -109,16 +150,20 @@ BEGIN
       ('passport_union_consent(uuid)',              'd3e4a5e61489746efc568f17be26ea53', 'd3e4a5e61489746efc568f17be26ea53'),
       ('passport_union_reader_at(uuid)',            '43826493881f12b2633ba38ef4cfbada', '43826493881f12b2633ba38ef4cfbada'),
       ('passport_union_log(uuid,uuid,text)',        'f726e7741c32c2d16c48d5d369001e17', 'f726e7741c32c2d16c48d5d369001e17'),
-      ('consent_giver_live(uuid,uuid,timestamptz)', '77a2afe09e3720cf1975a58843db6cba', '656959c1dee1fb04db0625dabc6733c2'))
+      ('consent_giver_live(uuid,uuid,timestamptz)', '77a2afe09e3720cf1975a58843db6cba', '42745e82e50b44392704705a1e35b0eb'),
+      -- db/122's three, re-created in §5 below.
+      ('passport_consent_writer_ok(uuid)',          '5403fca1240284d4e61675d3c508ac92', 'efcc61cb83f096304255b59d8b219896'),
+      ('scouting_consent_set(uuid,boolean)',        '71b868ef399b6fa87d7fcadcb8970bc0', '881d579db81625ce6951989fbe17b215'),
+      ('scouting_candidates()',                     '4665afc95b78b8665e183295a18a4a72', 'da7a582e4c459d4101bddf9ffb67f76e'))
       AS x(fn, was, mine)
   LOOP
     SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = to_regprocedure(r.fn);
     IF v_src IS NULL THEN
-      RAISE EXCEPTION 'db/125: % (db/124) is not there', r.fn;
+      RAISE EXCEPTION 'db/125: % (db/122, db/124) is not there', r.fn;
     END IF;
     v_md5 := md5(regexp_replace(btrim(v_src), '\s+', ' ', 'g'));
     IF v_md5 NOT IN (r.was, r.mine) THEN
-      RAISE EXCEPTION 'db/125: % is not db/124''s or this file''s (md5 % of its folded body); look before building on it', r.fn, v_md5;
+      RAISE EXCEPTION 'db/125: % is not as shipped (db/122, db/124) or this file''s (md5 % of its folded prosrc); look before building on it', r.fn, v_md5;
     END IF;
   END LOOP;
   -- The log's CHECK is db/124's, or this file's widening of it.
@@ -150,9 +195,12 @@ COMMENT ON TABLE passport_union_read IS
 /**
  * db/124's consent_giver_live(), its four link tests on sa_today() (the
  * child's clock, SAST) where they asked current_date (the database's day),
- * and nothing else moved: the boy's own word only if he was eighteen on the
- * day he gave it; a guardian's link reopened after it ended while he was
- * away is a fresh link. Internal: not a definer, granted to nobody.
+ * and two seams closed (§5): a guardian's word only if she gave it before
+ * his eighteenth birthday (public_name_facts()'s test, db/116), and only on
+ * a link whose processing consent is granted. Unchanged: the boy's own word
+ * only if he was eighteen on the day he gave it; a guardian's link reopened
+ * after it ended while he was away is a fresh link. Internal: not a
+ * definer, granted to nobody.
  */
 CREATE OR REPLACE FUNCTION consent_giver_live(p_giver uuid, p_player uuid, p_given_at timestamptz) RETURNS boolean AS $$
   SELECT p_giver IS NOT NULL AND EXISTS (
@@ -166,12 +214,19 @@ CREATE OR REPLACE FUNCTION consent_giver_live(p_giver uuid, p_player uuid, p_giv
      AND NOT EXISTS (SELECT 1 FROM duty_suspension d
                       WHERE d.assignment_id = a.id AND d.lifted_at IS NULL)
      AND s.player_id = p_player AND s.verification_state = 'verified'
+     -- Processing consent first, as both writers ask (db/125 §5 (4)).
+     AND s.consent_state = 'granted'
      AND s.valid_from <= sa_today()
      AND (s.valid_until IS NULL OR s.valid_until > sa_today())
-     AND (a.role = 'guardian'
+     AND ((a.role = 'guardian'
+           -- Her word: given before his eighteenth birthday, or his date of
+           -- birth unknown (db/125 §5 (1), public_name_facts()'s test).
+           AND NOT EXISTS (SELECT 1 FROM player p WHERE p.id = s.player_id
+                              AND p.born IS NOT NULL AND majority_on(p.born) <= sa_date(p_given_at)))
           -- His own word: eighteen on the day he gave it (db/124, (1)).
-          OR EXISTS (SELECT 1 FROM player p WHERE p.id = s.player_id
-                        AND p.born IS NOT NULL AND majority_on(p.born) <= sa_date(p_given_at)))
+          OR (a.role = 'selfaccess'
+              AND EXISTS (SELECT 1 FROM player p WHERE p.id = s.player_id
+                             AND p.born IS NOT NULL AND majority_on(p.born) <= sa_date(p_given_at))))
      AND a.created_at <= p_given_at AND s.created_at <= p_given_at
      -- A guardian's link reopened after it ended while he was away is a
      -- fresh link (db/124, (2)).
@@ -333,14 +388,187 @@ BEGIN
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 
+-- ══════════════════════════════════════════════════════════════════
+-- §5 · Three seams closed (Kameel, 30 Oct 2026, 21:53 SAST)
+-- ══════════════════════════════════════════════════════════════════
+-- (4) is the one clause in consent_giver_live() above (§2); (1)'s third
+-- door is there too. The other two doors of (1), and (2), follow.
+
+/**
+ * db/122's passport_consent_writer_ok(), its guardian arm closed from his
+ * eighteenth birthday (§5 (1)): from that SA day only the boy names a
+ * school, his union or CSA Schools for his record. Every other line is
+ * db/122's. Withdrawing is not asked of it (db/122 §1d): her "no" stands.
+ */
+CREATE OR REPLACE FUNCTION passport_consent_writer_ok(p_player uuid) RETURNS boolean AS $$
+  SELECT NOT app_pad_scoped() AND EXISTS (
+    SELECT 1 FROM role_assignment a
+    JOIN assignment_subject s ON s.assignment_id = a.id
+    JOIN player p ON p.id = s.player_id
+   WHERE a.person_id = app_user_id() AND a.active
+     AND ((a.role = 'guardian'
+           -- His guardian, until his eighteenth birthday (db/125 §5 (1)).
+           AND (p.born IS NULL OR majority_on(p.born) > sa_today()))
+          -- The boy himself, through his own link, once he is eighteen.
+          OR (a.role = 'selfaccess' AND s.relationship = 'self'
+              AND p.born IS NOT NULL AND majority_on(p.born) <= sa_today()))
+     AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+     AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+     AND (a.expires_at IS NULL OR a.expires_at > now())
+     AND NOT EXISTS (SELECT 1 FROM duty_suspension d
+                      WHERE d.assignment_id = a.id AND d.lifted_at IS NULL)
+     AND s.player_id = p_player AND s.verification_state = 'verified'
+     -- Processing consent first, as scouting_consent_set() asks (Q8).
+     AND s.consent_state = 'granted'
+     AND s.valid_from <= current_date
+     AND (s.valid_until IS NULL OR s.valid_until > current_date))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+/**
+ * db/122's scouting_consent_set(), its guardian arm saying yes no longer
+ * from his eighteenth birthday (§5 (1)): she is answered he_is_of_age, and
+ * her "no" is recorded as before. Every other line is db/122's; the caller
+ * is decided_by.
+ */
+CREATE OR REPLACE FUNCTION scouting_consent_set(
+  p_player  uuid,
+  p_granted boolean
+) RETURNS TABLE (ok boolean, reason text) AS $$
+DECLARE
+  v_me uuid := app_user_id();
+BEGIN
+  IF v_me IS NULL OR app_pad_scoped() THEN
+    RETURN QUERY SELECT false, 'not_a_consented_guardian'; RETURN;
+  END IF;
+  -- Consent to being scouted rests on top of consent to be processed at all
+  -- (g.consent_state = 'granted'), never ahead of it, on either arm. Each
+  -- arm's link is live today in consent_giver_live()'s words.
+  IF NOT EXISTS (
+    SELECT 1 FROM assignment_subject g
+      JOIN role_assignment a ON a.id = g.assignment_id
+      JOIN player p ON p.id = g.player_id
+     WHERE g.player_id = p_player
+       AND a.person_id = v_me AND a.active
+       AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+       AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+       AND (a.expires_at IS NULL OR a.expires_at > now())
+       AND NOT EXISTS (SELECT 1 FROM duty_suspension d
+                        WHERE d.assignment_id = a.id AND d.lifted_at IS NULL)
+       AND g.verification_state = 'verified'
+       AND g.consent_state = 'granted'
+       AND g.valid_from <= current_date
+       AND (g.valid_until IS NULL OR g.valid_until > current_date)
+       AND ((a.role = 'guardian'
+             -- His guardian's "no" at any age; her "yes" until his
+             -- eighteenth birthday (db/125 §5 (1)).
+             AND (NOT p_granted OR p.born IS NULL OR majority_on(p.born) > sa_today()))
+            -- The boy himself, through his own link, once he is eighteen.
+            OR (a.role = 'selfaccess' AND g.relationship = 'self'
+                AND p.born IS NOT NULL AND majority_on(p.born) <= sa_today()))
+  ) THEN
+    -- His own live link, but not yet eighteen: said as that.
+    IF EXISTS (SELECT 1 FROM assignment_subject g
+                 JOIN role_assignment a ON a.id = g.assignment_id
+                 JOIN player p ON p.id = g.player_id
+                WHERE g.player_id = p_player AND a.person_id = v_me AND a.active
+                  AND a.role = 'selfaccess' AND g.relationship = 'self'
+                  AND g.verification_state = 'verified'
+                  AND (g.valid_until IS NULL OR g.valid_until > current_date)
+                  AND (p.born IS NULL OR majority_on(p.born) > sa_today())) THEN
+      RETURN QUERY SELECT false, 'not_yet_eighteen'; RETURN;
+    END IF;
+    -- His guardian on a live, consented link saying yes once he is
+    -- eighteen: the yes is his now (db/125 §5 (1)).
+    IF p_granted AND EXISTS (
+         SELECT 1 FROM assignment_subject g
+           JOIN role_assignment a ON a.id = g.assignment_id
+           JOIN player p ON p.id = g.player_id
+          WHERE g.player_id = p_player AND a.person_id = v_me AND a.active
+            AND a.role = 'guardian'
+            AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+            AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+            AND (a.expires_at IS NULL OR a.expires_at > now())
+            AND NOT EXISTS (SELECT 1 FROM duty_suspension d
+                             WHERE d.assignment_id = a.id AND d.lifted_at IS NULL)
+            AND g.verification_state = 'verified' AND g.consent_state = 'granted'
+            AND g.valid_from <= current_date
+            AND (g.valid_until IS NULL OR g.valid_until > current_date)
+            AND p.born IS NOT NULL AND majority_on(p.born) <= sa_today()) THEN
+      RETURN QUERY SELECT false, 'he_is_of_age'; RETURN;
+    END IF;
+    RETURN QUERY SELECT false, 'not_a_consented_guardian'; RETURN;
+  END IF;
+
+  INSERT INTO player_scouting_consent (player_id, consent_state, decided_by, decided_at)
+       VALUES (p_player, CASE WHEN p_granted THEN 'granted' ELSE 'withdrawn' END,
+               v_me, now())
+  ON CONFLICT (player_id) DO UPDATE
+       SET consent_state = excluded.consent_state,
+           decided_by = excluded.decided_by, decided_at = excluded.decided_at;
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+/**
+ * db/122's scouting_candidates(), its rows line for line, VOLATILE now so
+ * it can record the read (§5 (2)): one access_log row per school whose boys
+ * it returned, naming them, resource 'scouting_candidates', field
+ * full_name, so that school's auditors see an accredited scout read its
+ * boys by name, as they see the dossier and the union's reads. Written
+ * before the function returns, so before any row reaches the caller;
+ * log_restricted_read() never fails a read.
+ */
+CREATE OR REPLACE FUNCTION scouting_candidates()
+RETURNS TABLE (
+  player_id uuid, full_name text, school_id uuid, team_code text,
+  playing_role text, batting_style text, bowling_style text,
+  batting_matches bigint, runs bigint, balls_faced bigint,
+  bowling_matches bigint, wickets bigint, runs_conceded bigint, legal_balls bigint
+) AS $$
+#variable_conflict use_column
+DECLARE v_ids uuid[] := '{}'; v_schools uuid[] := '{}'; v_school uuid;
+BEGIN
+  FOR player_id, full_name, school_id, team_code, playing_role, batting_style, bowling_style,
+      batting_matches, runs, balls_faced, bowling_matches, wickets, runs_conceded, legal_balls IN
+    SELECT p.id, p.full_name, p.school_id, p.team_code,
+           p.playing_role, p.batting_style, p.bowling_style,
+           coalesce(bc.matches, 0), bc.runs, bc.balls_faced,
+           coalesce(bw.matches, 0), bw.wickets, bw.runs_conceded, bw.legal_balls
+      FROM player p
+      JOIN player_scouting_consent c ON c.player_id = p.id AND c.consent_state = 'granted'
+                                    -- In force only while the link that gave it is live (db/122).
+                                    AND consent_giver_live(c.decided_by, c.player_id, c.decided_at)
+      LEFT JOIN player_batting_career bc ON bc.player_id = p.id
+      LEFT JOIN player_bowling_career bw ON bw.player_id = p.id
+     WHERE app_can('scouting.read', p.school_id, '*'::text, p.id,
+                   '00000000-0000-0000-0000-000000000000'::uuid)
+       AND EXISTS (SELECT 1 FROM scout_accreditation sa
+                    WHERE sa.person_id = app_user_id()
+                      AND sa.verification_status = 'verified')
+       AND (coalesce(bc.matches, 0) + coalesce(bw.matches, 0)) >= scouting_evidence_threshold()
+  LOOP
+    v_ids := v_ids || player_id;
+    v_schools := v_schools || school_id;
+    RETURN NEXT;
+  END LOOP;
+  -- On the record, one row a school (db/125 §5 (2)).
+  FOR v_school IN SELECT DISTINCT x.s FROM unnest(v_schools) AS x(s) ORDER BY x.s LOOP
+    PERFORM log_restricted_read('scouting_candidates',
+              ARRAY(SELECT x.i FROM unnest(v_ids, v_schools) AS x(i, s) WHERE x.s = v_school ORDER BY x.i),
+              ARRAY['full_name'], v_school);
+  END LOOP;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- ── Grants ─────────────────────────────────────────────────────────
--- The application's: the three doors. Nobody's: the log writer, and the
--- giver test as db/124 left it.
+-- The application's: the three doors, and db/122's three re-created in §5
+-- (as db/116 and db/122 granted them; CREATE OR REPLACE kept that, and this
+-- says it again). Nobody's: the log writer, and the giver test as db/124
+-- left it.
 DO $grants$
 DECLARE f text; r text;
 BEGIN
   FOREACH f IN ARRAY ARRAY['passport_union_orgs()', 'passport_union_schools(uuid)',
-                           'passport_union_list(uuid,uuid,text,text)'] LOOP
+                           'passport_union_list(uuid,uuid,text,text)', 'passport_consent_writer_ok(uuid)',
+                           'scouting_consent_set(uuid,boolean)', 'scouting_candidates()'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
   END LOOP;
@@ -352,7 +580,8 @@ BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       FOREACH f IN ARRAY ARRAY['passport_union_orgs()', 'passport_union_schools(uuid)',
                                'passport_union_list(uuid,uuid,text,text)', 'passport_union_log_list(uuid[],uuid[])',
-                               'consent_giver_live(uuid,uuid,timestamptz)'] LOOP
+                               'consent_giver_live(uuid,uuid,timestamptz)', 'passport_consent_writer_ok(uuid)',
+                               'scouting_consent_set(uuid,boolean)', 'scouting_candidates()'] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
       END LOOP;
     END IF;
@@ -386,6 +615,13 @@ BEGIN
      OR position('s.verification_state = ''verified''' IN v_src) = 0
      OR position('d.lifted_at IS NULL' IN v_src) = 0 THEN
     RAISE EXCEPTION 'db/125: consent_giver_live() is not db/124''s on sa_today()';
+  END IF;
+  -- §5 (1) and (4): a guardian's word only before his eighteenth birthday,
+  -- and only on a link whose processing consent is granted.
+  IF position('AND s.consent_state = ''granted''' IN v_src) = 0
+     OR position('AND NOT EXISTS (SELECT 1 FROM player p WHERE p.id = s.player_id AND p.born IS NOT NULL AND majority_on(p.born) <= sa_date(p_given_at)))' IN v_src) = 0
+     OR position('OR (a.role = ''selfaccess'' AND EXISTS (SELECT 1 FROM player p WHERE p.id = s.player_id AND p.born IS NOT NULL AND majority_on(p.born) <= sa_date(p_given_at))))' IN v_src) = 0 THEN
+    RAISE EXCEPTION 'db/125: consent_giver_live() counts a guardian''s word given at eighteen, or a word on a link without processing consent';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'consent_giver_live(uuid,uuid,timestamptz)'::regprocedure
                     AND NOT p.prosecdef AND p.provolatile = 's'
@@ -482,6 +718,40 @@ BEGIN
     FROM pg_proc WHERE oid = 'passport_union_schools(uuid)'::regprocedure;
   IF position('passport_union_reader_at(o.id)' IN v_src) = 0 OR position('school_union(s.id) = o.id' IN v_src) = 0 THEN
     RAISE EXCEPTION 'db/125: passport_union_schools() is not the union''s schools, to its readers';
+  END IF;
+
+  -- §5 (1): the guardian's new yes closed from his eighteenth birthday on
+  -- both writers; her "no" open on scouting.
+  SELECT btrim(regexp_replace(prosrc, '\s+', ' ', 'g')) INTO v_src
+    FROM pg_proc WHERE oid = 'passport_consent_writer_ok(uuid)'::regprocedure;
+  IF position('AND (p.born IS NULL OR majority_on(p.born) > sa_today()))' IN v_src) = 0
+     OR position('s.consent_state = ''granted''' IN v_src) = 0 THEN
+    RAISE EXCEPTION 'db/125: passport_consent_writer_ok() lets a guardian name a school from his eighteenth birthday';
+  END IF;
+  SELECT btrim(regexp_replace(prosrc, '\s+', ' ', 'g')) INTO v_src
+    FROM pg_proc WHERE oid = 'scouting_consent_set(uuid,boolean)'::regprocedure;
+  IF position('AND (NOT p_granted OR p.born IS NULL OR majority_on(p.born) > sa_today()))' IN v_src) = 0
+     OR position('''he_is_of_age''' IN v_src) = 0 OR position('g.consent_state = ''granted''' IN v_src) = 0 THEN
+    RAISE EXCEPTION 'db/125: scouting_consent_set() takes a guardian''s yes from his eighteenth birthday, or refuses her no';
+  END IF;
+  -- §5 (2): the scout's read is logged, per school, and is still db/122's.
+  SELECT prosrc INTO v_src FROM pg_proc WHERE oid = 'scouting_candidates()'::regprocedure;
+  IF position('PERFORM log_restricted_read(''scouting_candidates'',' IN v_src) = 0
+     OR position('ARRAY[''full_name''], v_school)' IN v_src) = 0
+     OR position('consent_giver_live(c.decided_by, c.player_id, c.decided_at)' IN v_src) = 0
+     OR position('scouting_evidence_threshold()' IN v_src) = 0 OR v_src ~* 'EXCEPTION\s+WHEN' THEN
+    RAISE EXCEPTION 'db/125: scouting_candidates() does not log its read per school, or is not db/122''s';
+  END IF;
+  FOREACH f IN ARRAY ARRAY['passport_consent_writer_ok(uuid)', 'scouting_consent_set(uuid,boolean)', 'scouting_candidates()'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f::regprocedure AND p.prosecdef
+                      AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
+       OR NOT has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE')
+       OR has_function_privilege('public', f::regprocedure, 'EXECUTE') THEN
+      RAISE EXCEPTION 'db/125: % is not a pinned definer the application alone may call', f;
+    END IF;
+  END LOOP;
+  IF (SELECT provolatile FROM pg_proc WHERE oid = 'scouting_candidates()'::regprocedure) <> 'v' THEN
+    RAISE EXCEPTION 'db/125: scouting_candidates() is not VOLATILE, and cannot log';
   END IF;
 
   -- And they answer nobody (the owner, with no caller set).
