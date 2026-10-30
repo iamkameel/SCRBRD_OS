@@ -7,9 +7,6 @@
  */
 import { Suspense, lazy, useState, useEffect, useRef } from "react";
 import { LoginPage } from "./auth/LoginPage.jsx";
-import { OnboardingFlow } from "./auth/OnboardingFlow.jsx";
-// Somebody signed in who holds nothing yet: their requests, and how to ask (SCRBRD-140).
-import { NoSchool } from "./auth/NoSchool.jsx";
 import { NAV_META, ROLES } from "./design/roles.js";
 import { HOME_OF } from "./design/homes.js";
 import { D, GLOBAL_CSS, clr } from "./design/tokens.js";
@@ -25,7 +22,7 @@ import { TopBar } from "./shell/TopBar.jsx";
 import { PersonaBar } from "./shell/PersonaBar.jsx";
 import { personaOf } from "./lib/features.js";
 import { holdsAsHeld } from "./lib/held.js";
-import { scorerLanding } from "./lib/scorerHome.js";
+import { scorerLanding } from "./lib/scorerLanding.js";
 import { clearSession, loadSession, saveSession } from "./lib/persist.js";
 import { signOut, refreshProfile } from "./lib/session.js";
 import { primaryRole } from "./lib/primaryRole.js";
@@ -104,6 +101,13 @@ const PupilHome         = view(() => import("./views/family/pupil.jsx"),      "P
 const PupilMatches      = view(() => import("./views/family/pupil.jsx"),      "PupilMatches");
 const PupilPassport     = view(() => import("./views/family/pupil.jsx"),      "PupilPassport");
 const PupilMe           = view(() => import("./views/family/pupil.jsx"),      "PupilMe");
+// The two auth screens nobody passes through on an ordinary visit (29 Oct,
+// the entry trim): sign-up, and the account that holds no school yet
+// (SCRBRD-140). Both need the network to do anything, so a chunk fetched on
+// first use costs nothing a person could notice; in the entry they cost
+// every visitor ~40 KB. The sign-in page stays static: it is the first paint.
+const OnboardingFlow    = view(() => import("./auth/OnboardingFlow.jsx"),     "OnboardingFlow");
+const NoSchool          = view(() => import("./auth/NoSchool.jsx"),           "NoSchool");
 const loadScorer = () => import("./scorer/index.jsx");
 const ScorerApp  = lazy(loadScorer);
 
@@ -462,12 +466,16 @@ export default function SCRBRD_OS() {
       {/* The same sign-out the shell uses. This one cleared the profile and
           left the persisted session behind, so a reload put the next person
           back where the last one stood. */}
-      <NoSchool name={userName} onSignOut={handleSignOut} onJoined={handleJoined}/>
+      <Suspense fallback={<Loading what="your account"/>}>
+        <NoSchool name={userName} onSignOut={handleSignOut} onJoined={handleJoined}/>
+      </Suspense>
     </>
   );
   if (appState === "onboarding") return (
     <><style>{GLOBAL_CSS}</style>
-      <OnboardingFlow onComplete={handleOnboardComplete}/>
+      <Suspense fallback={<Loading what="sign-up"/>}>
+        <OnboardingFlow onComplete={handleOnboardComplete}/>
+      </Suspense>
     </>
   );
 

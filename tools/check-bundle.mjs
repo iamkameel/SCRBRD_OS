@@ -240,6 +240,10 @@ const OUTSIDE_ENTRY = [
   // GA-I27 §5.1: the coach's evidence trail is the cockpit's first lazy
   // boundary (FeedDrawer.jsx), fetched on the first "Where this comes from".
   ["the evidence trail (EvidenceTrail.jsx)", "evidence-trail-figures"],
+  // 29 Oct, the entry trim (500 KB → 441 KB): sign-up and the account with no
+  // school are fetched on first use (App.jsx); the sign-in page stays static.
+  ["the sign-up flow (OnboardingFlow.jsx)", "signup-health-consent"],
+  ["the account with no school (NoSchool.jsx)", "join-claim-checking"],
 ];
 const others = js.filter((f) => !entryGraph.includes(f)).map((f) => readFileSync(f, "utf8"));
 const entryKB = Math.round(entryGraph.reduce((n, f) => n + statSync(f).size, 0) / 1024);

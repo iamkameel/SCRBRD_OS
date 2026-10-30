@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, signedIn } from "./api.js";
-import { invitationsWaiting } from "./league.js";
+import { invitationsWaiting } from "./invitationCount.js";
 
 const CHANGED = "scrbrd:invitations-changed";
 

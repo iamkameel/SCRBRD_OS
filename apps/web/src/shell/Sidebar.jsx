@@ -3,7 +3,7 @@ import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { NAV_META, ROLES, groupNav } from "../design/roles.js";
 import { useMenu } from "../lib/homeNav.js";
 import { D, T, inkOn } from "../design/tokens.js";
-import { invitationsWords } from "../lib/league.js";
+import { invitationsWords } from "../lib/invitationCount.js";
 import { SportSwitcher } from "./MobileNav.jsx";
 import { Icon } from "../ui/icons.jsx";
 
