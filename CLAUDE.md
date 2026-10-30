@@ -75,7 +75,10 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   the importer; and what the audit log must keep to answer for it) and who
   sees a child's data (added 2026-10-21: one map, across every design, of who
   may read each piece of a child's data and under what condition; where two
-  designs disagree; and the questions for Kameel that settle each one).
+  designs disagree; and the questions for Kameel that settle each one)
+  and access requests (added 2026-10-30, Kameel: a family asking for everything held about their child under POPIA sections 23 and 24; what is
+  included, what is held back, such as other children and a safeguarding concern
+  that must not tip anyone off, who approves, and how fast).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
