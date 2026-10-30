@@ -265,8 +265,9 @@ group("A plain claim cannot jump a handover (SCRBRD-059)");
      plain.ok === false && plain.reason === REJECT.HELD_ELSEWHERE && plain.epoch === s.epoch && s.holder?.deviceId === "dA");
   const stale = s.takeover({ scorerId:"uB", deviceId:"dB", role:"coach", epoch: s.epoch - 1 });
   ok("...a take-over over a generation not shown: epoch_moved", stale.ok === false && stale.reason === REJECT.EPOCH_MOVED && s.holder?.deviceId === "dA");
-  const lapsed = s.takeover({ scorerId:"uB", deviceId:"dB", role:"coach", epoch: plain.epoch });
-  ok("...the confirmed take-over takes it", lapsed.ok === true && s.holder?.deviceId === "dB" && lapsed.epoch === plain.epoch + 1);
+  const shown = plain.epoch ?? null;
+  const lapsed = s.takeover({ scorerId:"uB", deviceId:"dB", role:"coach", epoch: shown });
+  ok("...the confirmed take-over takes it", lapsed.ok === true && s.holder?.deviceId === "dB" && shown != null && lapsed.epoch === shown + 1);
   ok("...and the audit says take-over, from whom", s.audit.at(-1)?.type === "takeover" && s.audit.at(-1)?.fromDevice === "dA");
   // And the handover itself still completes after all that.
   const armed = s.armHandover({ deviceId:"dB", epoch:s.epoch, pendingCount:0 });

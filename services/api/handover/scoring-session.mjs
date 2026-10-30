@@ -56,6 +56,11 @@ export const LEASE_MS      = 90_000;   // token lease; refreshed by heartbeat
 export const GRACE_MS      = 30_000;   // extra slack before force-release allowed
 export const CHECKPOINT_EVERY = 6;     // force a sync attempt each over
 
+/**
+ * What a claim or a take-over answers.
+ * @typedef {{ ok: boolean, reason?: string, epoch?: number, holder?: Holder | null, state?: any }} ClaimResult
+ */
+
 export const REJECT = {
   NO_CAPABILITY:   "no_capability",
   NOT_TOKEN_HOLDER:"not_token_holder",
@@ -143,6 +148,7 @@ export class MatchSession {
    * may, lease or no lease. A stalled verification is recovered by
    * forceRelease(), then a claim of the idle match.
    * @param {{ scorerId: string, deviceId: string, role: string, name?: string }} who
+   * @returns {ClaimResult}
    */
   claim({ scorerId, deviceId, role, name }) {
     if (!this.canScore(role)) return { ok: false, reason: REJECT.NO_CAPABILITY };
@@ -168,6 +174,7 @@ export class MatchSession {
    * lapsed lease, over the generation the person was shown. Anything that is
    * not that case is answered as claim() answers it.
    * @param {{ scorerId: string, deviceId: string, role: string, name?: string, epoch: number|null }} who
+   * @returns {ClaimResult}
    */
   takeover({ scorerId, deviceId, role, name, epoch }) {
     if (!this.canScore(role)) return { ok: false, reason: REJECT.NO_CAPABILITY };
@@ -180,7 +187,10 @@ export class MatchSession {
       { fromScorer: from?.scorerId, fromDevice: from?.deviceId, lastSeq: last?.seq ?? null });
   }
 
-  /** @param {{scorerId: string, deviceId: string, name?: string}} who @param {string} what @param {object} [detail] */
+  /**
+   * @param {{scorerId: string, deviceId: string, name?: string}} who @param {string} what @param {object} [detail]
+   * @returns {ClaimResult}
+   */
   _take({ scorerId, deviceId, name }, what, detail = {}) {
     this.epoch += 1;
     this.holder = { scorerId, deviceId, name };
