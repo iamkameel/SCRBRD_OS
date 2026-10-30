@@ -617,7 +617,8 @@ if (unlisted.length) {
 // named here (browser-cockpit, browser-practice, ...) costs DEFAULT_COST, about
 // the median. Re-measure from a CI log when the shards drift apart. A wrong
 // weight costs balance, never coverage: every walk is in exactly one shard.
-// Each shard also pays the rls-verify preamble (~250 s) and its own setup.
+// Each shard also pays its own setup (on CI, not the rls-verify preamble:
+// --no-rls-verify, and the "RLS verifier" job runs db/99 once).
 const DEFAULT_COST = 70;
 const WEIGHTS = {
   "browser-read": 580,

@@ -16,9 +16,14 @@
 # than "CI failed":
 #
 #   unit     — pure logic. No database, no browser. Fastest signal.
-#   walks    — the API against a real Postgres with RLS enforced.
+#   walks    — the API against a real Postgres with RLS enforced. Cut into
+#              four shards that run side by side (see "API walks" below).
 #   browser  — the client rendering real rows in real Chromium. Cut into four
 #              shards that run side by side (see "Browser walks" below).
+#
+# Beside them, "RLS verifier" runs db/99 once against a database built from
+# nothing. Both "API walks" and "Browser walks" wait for it and fail when it
+# fails, as they did when each walk job ran the verifier itself.
 #
 # They run in parallel; none gates another. A broken browser install must not
 # hide a failing authorisation test.
@@ -106,9 +111,28 @@ jobs:
       - name: Nothing confidential in the bundle
         run: pnpm check:bundle
 
-  walks:
-    name: API walks
+  # The API walks, four shards at a time, as the browser walks below. In one job
+  # they and the verifier took 3 h 40 min (29 Oct 2026, run 40890874044): the
+  # verifier preamble 90 min, 106 walks 40 min, the Verifier step 89 min more.
+  # The walks share nothing but the code under test, so each shard has its own
+  # runner and its own Postgres service container. `--shard i/4` gives each a
+  # fixed slice weighted by API_WEIGHTS in tools/run-smoke-api.mjs, and
+  # tools/run-smoke-shard.test.mjs (in `pnpm test`, so in "Unit suites") holds
+  # every walk to exactly one shard and the two sets to every walk on disk; the
+  # runner itself still refuses to start if a smoke walk exists that no set
+  # names. To change the count, change the matrix AND the `/4` in the job name,
+  # the walks step and the summary's message.
+  #
+  # `--no-rls-verify`: db/99 runs once, in "RLS verifier", not once per shard.
+  #
+  # fail-fast is off on purpose: one red shard must not cancel the other three.
+  api-shard:
+    name: API walks (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     services:
       # The version docker-compose.yml pins. RLS behaviour is the thing under
       # test here, so the major version is not a detail to leave floating.
@@ -142,30 +166,85 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
 
 
-      # Eighteen walks, each against a freshly seeded database. The runner
-      # resets between them and refuses to start if a smoke walk exists on disk
-      # that nothing executes — which is how smoke-squad went unrun for a week.
-      # The two browser walks moved to their own job: they need a built client
-      # and a Chromium, and this job has neither.
-      - name: Walks
-        run: pnpm smoke:api
+      # Each walk against a freshly seeded database. The runner resets between
+      # them and refuses to start if a smoke walk exists on disk that nothing
+      # executes — which is how smoke-squad went unrun for a week. The browser
+      # walks have their own job: they need a built client and a Chromium.
+      - name: Walks (shard ${{ matrix.shard }}/4)
+        run: node tools/run-smoke-api.mjs --shard ${{ matrix.shard }}/4 --no-rls-verify
 
-      # The live policy assertions, db/99, against a database built by the
-      # migrator from nothing — the same file the Supabase verify bundle is
-      # cut from. The walks reset the database between themselves but never
-      # run this; it only ever ran on a laptop.
+  # The live policy assertions, db/99, against a database built by the migrator
+  # from nothing — the same file the Supabase verify bundle is cut from. Its own
+  # job so it runs beside the walks instead of after them; it is the longest
+  # single thing CI does (about 90 min on a runner, 29 Oct 2026).
+  verifier:
+    name: RLS verifier
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: mirror.gcr.io/library/postgres:16-alpine
+        env:
+          POSTGRES_USER: scrbrd
+          POSTGRES_PASSWORD: scrbrd
+          POSTGRES_DB: scrbrd
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U scrbrd -d scrbrd"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      # No version here on purpose: package.json's packageManager field names
+      # the exact pnpm (see the unit job).
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
       - name: Verifier
         run: node tools/migrate.mjs --reset --seed && node tools/migrate.mjs --verify
 
       # Policy is generated from packages/policy/. A hand-edit to the generated
       # file survives until someone regenerates and then silently disappears,
       # which is exactly how match_toss lost row-level security. If regenerating
-      # changes anything, the committed output is stale.
+      # changes anything, the committed output is stale. Reported even when
+      # the verifier failed, so one red step does not hide the other.
       - name: RLS output is current
+        if: ${{ !cancelled() }}
         run: |
           pnpm rls:generate
           git diff --exit-code db/01_authz.sql db/09_rls_policies.sql db/23_authz_time_box.sql db/35_authz_suspension.sql db/39_match_anchor_helpers.sql \
             || { echo "::error::db/01_authz.sql, db/09_rls_policies.sql, db/23_authz_time_box.sql, db/35_authz_suspension.sql or db/39_match_anchor_helpers.sql is stale — run 'pnpm rls:generate' and commit the result"; exit 1; }
+
+  # The one check that stands for the four API shards and the verifier. Branch
+  # protection and our tooling know a check called exactly "API walks", which
+  # was the single job that ran the walks, the verifier and the RLS output
+  # check; it fails now exactly when that job would have. `if: always()` so it
+  # reports when a shard failed or was cancelled instead of showing as
+  # skipped. Anything but success from any of them fails it.
+  walks:
+    name: API walks
+    needs: [api-shard, verifier]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every shard and the verifier passed
+        env:
+          SHARDS: ${{ needs.api-shard.result }}
+          VERIFIER: ${{ needs.verifier.result }}
+        run: |
+          if [ "$SHARDS" != "success" ]; then
+            echo "::error::API walks: the shards finished as '$SHARDS', not 'success'"
+            exit 1
+          fi
+          if [ "$VERIFIER" != "success" ]; then
+            echo "::error::API walks: the RLS verifier finished as '$VERIFIER', not 'success'"
+            exit 1
+          fi
+          echo "All four API shards and the RLS verifier passed."
 
   image:
     name: Production image
@@ -310,8 +389,11 @@ jobs:
       # still filtering a mock in the browser, and that a guardian's screen
       # contains their own child and nobody else's. A view can read through a
       # correct API and still show mock data; only a browser catches that.
+      # `--no-rls-verify`: db/99 runs once, in "RLS verifier", which the
+      # "Browser walks" check also waits for. Each shard used to run it first,
+      # 52 to 91 minutes of every shard (29 Oct 2026).
       - name: Client against the API (shard ${{ matrix.shard }}/4)
-        run: node tools/run-smoke-api.mjs --browser --shard ${{ matrix.shard }}/4
+        run: node tools/run-smoke-api.mjs --browser --shard ${{ matrix.shard }}/4 --no-rls-verify
 
       # Rendering, the scoring pad, persistence and the accessibility floor.
       # No database between them, so they run as one step. Once, on the first
@@ -326,18 +408,25 @@ jobs:
   # so it still reports when a shard failed or was cancelled, instead of
   # showing as skipped, which a required check reads as passing or as missing
   # depending on the setting. Anything but success from the shards fails it.
+  # It also waits for the RLS verifier, which each shard used to run first and
+  # fail on, so a broken policy still turns this check red.
   browser:
     name: Browser walks
-    needs: browser-shard
+    needs: [browser-shard, verifier]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Every shard passed
         env:
           SHARDS: ${{ needs.browser-shard.result }}
+          VERIFIER: ${{ needs.verifier.result }}
         run: |
           if [ "$SHARDS" != "success" ]; then
             echo "::error::Browser walks: the shards finished as '$SHARDS', not 'success'"
             exit 1
           fi
-          echo "All four browser shards passed."
+          if [ "$VERIFIER" != "success" ]; then
+            echo "::error::Browser walks: the RLS verifier finished as '$VERIFIER', not 'success'"
+            exit 1
+          fi
+          echo "All four browser shards and the RLS verifier passed."
