@@ -419,8 +419,9 @@ const SUITES = [
   ["claude-usage", "tools/claude/usage.test.mjs"],
   // The typecheck strict list only grows, and names nothing that is not there.
   ["ts-scope", "tools/typecheck-scope.test.mjs"],
-  // The browser walks' shards: every walk in exactly one, for n = 1 to 6, and
-  // --shard 1/1 is the whole list as it was.
+  // The API and browser walks' shards: every walk in exactly one, for n = 1 to
+  // 6, --shard 1/1 is the whole list as it was, an unknown walk is refused, and
+  // the two sets together are every runnable walk on disk.
   ["smoke-shard", "tools/run-smoke-shard.test.mjs"],
   ["ai",       "services/api/ai/ai.test.mjs"],
   // The scorebook reader (SCRBRD-120 phase 4, D8): the request carries the
