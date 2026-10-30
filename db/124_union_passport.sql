@@ -100,8 +100,8 @@
 --                           when. Never on a pad. Settings → Passport draws
 --                           it under the consents.
 --
--- ── OPEN, FOR KAMEEL (asked, not invented; each built as recommended
---    until he says otherwise) ─────────────────────────────────────────
+-- ── ASKED OF KAMEEL, AND ANSWERED (30 Oct 2026: all seven as
+--    recommended, as built) ─────────────────────────────────────────────
 --   U1  CSA Schools and a provincial union: two lines, one per institution,
 --       as two schools are two lines. A family may name either or both.
 --   U2  The log shows the reader's NAME, his role and the institution, not
