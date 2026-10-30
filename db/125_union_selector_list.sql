@@ -71,8 +71,10 @@
 -- pilot's server), in its four link tests, so between 00:00 and 02:00 SAST a
 -- link that ended "today" still read live. It now asks sa_today() in all
 -- four, and nothing else in it moves. That closes db/124's Q5 for the
--- child's side; app_can() and the role lookup in the logs keep current_date
--- until the sweep of every current_date in the schema.
+-- child's side, and so does the list's own record (passport_union_log_list()
+-- reads the reader's role on sa_today()); app_can() and db/124's
+-- passport_union_log() keep current_date until the sweep of every
+-- current_date in the schema.
 --
 -- ── 4 · THREE SEAMS CLOSED (Kameel, 30 Oct 2026, 21:53 SAST: calls 1, 2
 --    and 4 of the child-data seams audit, "as recommended") ────────────
@@ -297,8 +299,9 @@ BEGIN
             JOIN role_capability rc ON rc.role = a.role AND rc.capability = 'passport.union.read'
            WHERE a.person_id = u.id AND a.school_id = c.to_school_id AND a.active
              AND a.team_code IS NULL AND a.fixture_id IS NULL
-             AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
-             AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+             -- On the child's clock, as consent_giver_live() (db/125 §2).
+             AND (a.valid_from  IS NULL OR a.valid_from  <= sa_today())
+             AND (a.valid_until IS NULL OR a.valid_until >  sa_today())
              AND (a.expires_at IS NULL OR a.expires_at > now())
              AND NOT EXISTS (SELECT 1 FROM duty_suspension d
                               WHERE d.assignment_id = a.id AND d.lifted_at IS NULL)
@@ -703,6 +706,9 @@ BEGIN
     RAISE EXCEPTION 'db/125: passport_union_list() is not db/124''s in-force test, filtered, logged before it answers';
   END IF;
   SELECT prosrc INTO v_src FROM pg_proc WHERE oid = 'passport_union_log_list(uuid[],uuid[])'::regprocedure;
+  IF position('current_date' IN v_src) > 0 OR position('a.valid_until >  sa_today()' IN v_src) = 0 THEN
+    RAISE EXCEPTION 'db/125: passport_union_log_list() reads the reader''s role on the database''s day, not SAST''s';
+  END IF;
   IF position('INSERT INTO passport_union_read' IN v_src) = 0 OR v_src ~* 'EXCEPTION\s+WHEN'
      OR position('reader_name, reader_role' IN v_src) = 0 OR position('u.name' IN v_src) = 0
      OR position('role_words(a.role)' IN v_src) = 0 OR position('''list''' IN v_src) = 0

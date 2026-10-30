@@ -31555,7 +31555,7 @@ $v49$;
   --              not; nobody but scrbrd_app executes the three, nobody the
   --              writer
   --   (k)        Q3: consent_giver_live() asks sa_today() in its four link
-  --              tests and current_date nowhere
+  --              tests and current_date nowhere; nor does the list's record
   -- The seams audit's calls 1, 2 and 4 (Kameel, 30 Oct 2026, 21:53 SAST, as
   -- recommended), folded into db/125:
   --   (of-age)   call 1: G is eighteen and at school. His guardian's scouting
@@ -31946,6 +31946,9 @@ $v49$;
     PERFORM _assert(position('current_date' IN got) = 0
                     AND (length(got) - length(replace(got, 'sa_today()', ''))) / length('sa_today()') = 4,
       '§102 (k): consent_giver_live() still asks current_date, or not sa_today() in its four link tests');
+    SELECT p.prosrc INTO got FROM pg_proc p WHERE p.oid = 'passport_union_log_list(uuid[],uuid[])'::regprocedure;
+    PERFORM _assert(position('current_date' IN got) = 0 AND position('sa_today()' IN got) > 0,
+      '§102 (k): the list''s record reads the reader''s role on the database''s day');
   END;
   PERFORM set_config('app.user_id', '', true);
   PERFORM set_config('app.scope', '', true);
