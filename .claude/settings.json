@@ -1,7 +1,6 @@
-
-
 {
-    "permissions": {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
     "allow": [
       "mcp__github__merge_pull_request",
       "Bash(gh api -X PUT repos/iamkameel/SCRBRD_OS/pulls/*/merge *)",
@@ -9,7 +8,6 @@
       "Bash(gh api -X POST repos/iamkameel/SCRBRD_OS/actions/runs/*/rerun-failed-jobs)"
     ]
   },
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "hooks": {
     "PreToolUse": [
       {
@@ -33,5 +31,16 @@
         ]
       }
     ]
+  },
+  "extraKnownMarketplaces": {
+    "egm": {
+      "source": {
+        "source": "github",
+        "repo": "google/elephant-goldfish-model"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "egm@egm": true
   }
 }

@@ -225,6 +225,16 @@ lasted two to three hours at five to seven agents, about 220k to 460k output.
   CI is checked at the sweep, and a builder whose proof is queued on the
   database lock stops and reports, rather than waiting.
 
+## Plugins
+
+Installed 2026-10-30 (Kameel): Google's Elephant-Goldfish Model (`egm@egm`,
+github.com/google/elephant-goldfish-model, Apache 2.0), at project scope in
+`.claude/settings.json`. It drafts a spec with full context, then has
+fresh-context reviewers stress-test it: `/egm:egm-brainstorm`, `/egm:egm-draft`,
+`/egm:egm-review`, `/egm:egm-resolve`, `/egm:egm-drift-report`. A review spawns
+several reviewers, so it runs from the lead (builders cannot spawn agents) and
+is paced like any other agent work. No hooks, no MCP servers.
+
 ## Design skills
 
 Installed 2026-10-07 (Kameel) to raise SCRBRD's design, UI and UX, in
