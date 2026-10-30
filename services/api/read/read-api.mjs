@@ -87,6 +87,10 @@ const BAND_ORDER = (/** @type {string} */ col) =>
  *                                                           the support sessions): every answer that holds a row
  *                                                           not the reader's own is logged, under this resource;
  *                                                           the function names the ids the query asked about
+ * @property {boolean} [noStore]                             answered with Cache-Control: no-store, so no browser,
+ *                                                           proxy or service worker keeps a copy (a union's list)
+ * @property {readonly string[]} [refuses]                   words the SQL raises as invalid_parameter_value
+ *                                                           (22023); answered 422 with the word, not 500
  */
 
 /** @type {Record<string, ReadQuery>} */
@@ -1284,6 +1288,10 @@ export const READ_QUERIES = {
    */
   scouting_candidates: {
     text: `select * from scouting_candidates()`,
+    // db/125 §5 (2) (Kameel, 30 Oct 2026, seams call 2): the function writes
+    // one access_log row per school whose boys it returned, so the read path
+    // adds none (a platform-wide scout's was a second row).
+    logsItself: true,
   },
 
   /**
@@ -2299,6 +2307,34 @@ export const READ_QUERIES = {
   passport_recipients: {
     text: `select id, name, kind from passport_recipients($1::uuid)`,
     params: q => [req(q, "playerId")],
+  },
+  // A union selector finds the boys whose families named his union
+  // (docs/design/UNION_SELECTOR_FIND.md, db/125, Kameel 30 Oct 2026). The
+  // definers decide everything: who reads as a union (passport_union_reader_at),
+  // which boys (a consent in force to that institution, now), and the record
+  // (every row returned is a 'list' read his family sees, and one access_log
+  // row per school). Nothing is kept: no-store on all three, and the list is
+  // never a file (packages/policy/src/exports.mjs).
+  //   passport_union_orgs     the institutions at which the caller reads
+  //   passport_union_schools  ?org= the schools he may filter by
+  //   passport_union_list     ?org=&school=&ageGroup=&q= the boys; a school or
+  //                           an age group first (choose_a_school_or_age_group)
+  passport_union_orgs: {
+    text: `select org_id, name, kind from passport_union_orgs()`,
+    noStore: true,
+  },
+  passport_union_schools: {
+    text: `select school_id, name from passport_union_schools($1::uuid)`,
+    params: q => [uuidParam(q, "org", true)],
+    noStore: true,
+  },
+  passport_union_list: {
+    text: `select player_id, name, school_name, team_code, org_id, consent_id
+             from passport_union_list($1::uuid, $2::uuid, $3::text, $4::text)`,
+    params: q => [uuidParam(q, "org"), uuidParam(q, "school"), q?.ageGroup || null, q?.q || null],
+    logsItself: true,
+    noStore: true,
+    refuses: ["choose_a_school_or_age_group"],
   },
 
   /* Which roles must hold which checks. Platform reference data. */
@@ -3525,6 +3561,20 @@ function auditLogParams(q) {
   return [school, kinds, instant("since"), instant("before"), beforeKey, limit];
 }
 
+/**
+ * A uuid from the query: absent (null, unless required) or well formed.
+ * @param {Record<string, string> | undefined} q @param {string} key @param {boolean} [required]
+ */
+function uuidParam(q, key, required = false) {
+  const v = q?.[key];
+  if (v === undefined || v === null || v === "") {
+    if (!required) return null;
+    const e = /** @type {DressedError} */ (new Error(`missing_param:${key}`)); e.status = 400; throw e;
+  }
+  if (!UUID_RE.test(String(v))) { const e = /** @type {DressedError} */ (new Error(`bad_param:${key}`)); e.status = 400; throw e; }
+  return v;
+}
+
 /** @param {Record<string, string> | undefined} q @param {string} key */
 function req(q, key) {
   const v = q?.[key];
@@ -3815,6 +3865,15 @@ export async function readResource(pool, secret, bearer, resource, query = {}, o
 export function liveResources() { return Object.keys(READ_QUERIES); }
 
 /**
+ * Is this read answered with Cache-Control: no-store (a union's list, db/125)?
+ * The dispatcher asks before it sends, so the header rides on errors too.
+ * @param {string} resource
+ */
+export function readIsNoStore(resource) {
+  return Object.hasOwn(READ_QUERIES, resource) && READ_QUERIES[resource].noStore === true;
+}
+
+/**
  * The reads the CSV route refuses: a policy list (packages/policy/src/
  * exports.mjs), derived from this file's watched columns and the tables each
  * read's SQL names, plus the reads the policy names. The route serves only the
@@ -3950,6 +4009,14 @@ export function readRoute({ pool, secret }) {
       const rows = await readResource(pool, secret, req.headers?.authorization, /** @type {string} */ (req.params.resource), req.query || {});   // set by the dispatcher, from the path
       res.json({ resource: req.params.resource, rows });
     } catch (/** @type {any} */ e) {
+      // A word the read's SQL refuses with (invalid_parameter_value), said as
+      // that word: the caller asked wrongly, and the server did not fail.
+      const resource = /** @type {string} */ (req.params.resource);
+      const def = Object.hasOwn(READ_QUERIES, resource) ? READ_QUERIES[resource] : undefined;
+      if (e?.code === "22023" && def?.refuses?.includes(e.message)) {
+        res.status(422).json({ error: e.message });
+        return;
+      }
       // `module` rides along on a module refusal so a client can say WHICH
       // one is off instead of rendering "could not load" — a screen that
       // reports a switched-off module as a failure sends somebody looking for

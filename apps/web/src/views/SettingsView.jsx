@@ -976,8 +976,14 @@ function AlertsSection({ role }) {
 // it is, rather than handed an empty list that reads as "nobody decided".
 // The door's refusals, in words (db/122: a boy of eighteen records his own
 // decision; under eighteen it is his guardian's).
+// db/125 §5 (1) (Kameel, 30 Oct 2026; READERS Q1): from his eighteenth
+// birthday his guardian gives no new yes, for his record or for scouts; her
+// "no" and her taking a name back still count.
+export const HE_IS_OF_AGE = "He is eighteen: he gives this consent himself.";
 const SCOUTING_REFUSAL = {
   not_yet_eighteen: "You can decide this for yourself from your eighteenth birthday. Until then it is your parent's or guardian's decision.",
+  // db/125 §5 (1): from his eighteenth birthday a guardian's yes is his to give.
+  he_is_of_age: HE_IS_OF_AGE,
   not_a_consented_guardian: "Only his parent or guardian decides this, or the boy himself once he is eighteen. The school cannot decide it for a family.",
 };
 function ScoutingConsentSection({ role, players: offered }) {
@@ -1090,6 +1096,7 @@ function PassportTab({ role, only = null }) {
     catch (e) {
       setSaid(e?.code === "not_his_union" || e?.message === "not_his_union" ? PASSPORT_NOT_HIS_UNION
         : e?.code === "not_a_school" || e?.message === "not_a_school" ? PASSPORT_NOT_A_SCHOOL
+        : e?.code === "he_is_of_age" || e?.message === "he_is_of_age" ? HE_IS_OF_AGE
         : ownRecords.has(playerId) && e?.status === 403 ? OWN_RECORD_WORDS : (e.message || "Refused."));
     }
   };
