@@ -899,8 +899,18 @@ function asPassportConsent(r) {
   // `lapsed` (db/122): not withdrawn, and no longer in force, because the
   // link of the person who gave it has ended. A row that says nothing about
   // it (in_force absent) is not called lapsed.
+  // `refused` (db/124 §6 Q4): not withdrawn, and naming what a family may no
+  // longer name (a club, an academy, a union that is no longer his). It opens
+  // nothing, for that reason and not a link's ending, so it is not "lapsed".
+  const refused = !r.withdrawn_at && r.recipient_ok === false;
   return { id: r.id, playerId: r.player_id, name: r.full_name, toSchool: r.to_school_id, toSchoolName: r.to_school,
-           grantedAt: r.granted_at, withdrawnAt: r.withdrawn_at, lapsed: !r.withdrawn_at && r.in_force === false, live: true };
+           grantedAt: r.granted_at, withdrawnAt: r.withdrawn_at, refused,
+           lapsed: !r.withdrawn_at && r.in_force === false && !refused, live: true };
+}
+/** db/124: one read of his passport by a union's named reader, for his family. */
+function asPassportUnionRead(r) {
+  return { playerId: r.player_id, readAt: r.read_at, readerName: r.reader_name, readerRole: r.reader_role,
+           organisation: r.organisation, what: r.what, live: true };
 }
 /**
  * SCRBRD-055. `granted` is derived from the state rather than sent as a
@@ -1335,6 +1345,7 @@ const ADAPT = {
   drills: asDrill,
   passport: asPassportLine,
   passport_consents: asPassportConsent,
+  passport_union_reads: asPassportUnionRead,
   scouting_consent: asScoutingConsent,
   match_duties: asDuty,
   drs_reviews: asDrsReview,

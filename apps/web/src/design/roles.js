@@ -121,6 +121,11 @@ const ROLE_IDENTITY = {
   media:                  { label:"Media", icon:"newspaper", color:"#f59ec9", family:"media" },  // 7.58:1
   // competition — running a competition
   competitionadmin:       { label:"Competition Admin", icon:"trophy", color:"#07c8e9", family:"competition" },  // 7.46:1
+  // A union's named selectors and its schools cricket manager (db/124): the
+  // competition family, a lightness step above the organiser's cyan — 12.0 dE
+  // from it, 22.3 from the next nearest, 9.25:1 on the darkest surface,
+  // computed against the table, not chosen by eye.
+  unionselector:          { label:"Union Selector", icon:"clipboard-list", color:"#00e4fc", family:"competition" },  // 9.25:1
   // safeguarding — the Designated Safeguarding Officer (CSA p15–17; db/57).
   // A family of its own: the DSO is nobody's boss, colleague or coach, and
   // the colour should not borrow governance's. Violet-magenta, 29.0 dE from
@@ -165,6 +170,7 @@ const ROLE_DAYLIGHT = {
   sponsorship:          "#464a00",  // 7.47:1
   media:                "#8e3e7c",  // 5.35:1
   competitionadmin:     "#00626d",  // 5.64:1
+  unionselector:        "#004858",  // 8.10:1, 12.1 dE from competitionadmin
   dso:                  "#7a0891",  // 7.37:1, 29.3 dE from its nearest
 };
 

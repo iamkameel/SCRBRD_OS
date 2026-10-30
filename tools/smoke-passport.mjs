@@ -83,6 +83,77 @@ try {
        (await api(`/api/passport/consent/${again.body?.id}/withdraw`, { method: "POST", token: boy })).status === 403);
     ok("...and the withdrawal is stamped as his", (await q(`select u.email from passport_consent c join app_user u on u.id = c.withdrawn_by where c.id = $1`, [again.body?.id]))[0]?.email === "pillay@example.invalid");
   }
+  // db/124 (Kameel, 29 Oct 2026): "CSA Schools/Provincial Union will be able
+  // to access a child's full passport", "With his guardian's consent, as the
+  // receiving school's is", "Named selectors and the schools cricket manager
+  // only, every read logged", so his family can see who looked.
+  group("His union reads his passport on his family's word, named selectors only, every read logged");
+  {
+    const kzn = (await q(`insert into school (code, name, kind, province) values ('WALKKZN', 'Walk KZN Cricket Union', 'union', 'KwaZulu-Natal')
+                           on conflict do nothing returning id`))[0]?.id
+             ?? (await q(`select id from school where kind = 'union' and lower(btrim(province)) = 'kwazulu-natal'`))[0].id;
+    const far = (await q(`insert into school (code, name, kind, province) values ('WALKFAR', 'Walk Far Union', 'union', 'Walk Province') returning id`))[0].id;
+    const person = async (email, name, role, school) => {
+      const id = (await q(`insert into app_user (school_id, email, name, role) values ($1, $2, $3, $4) returning id`, [school, email, name, role]))[0].id;
+      await q(`insert into role_assignment (person_id, role, school_id) values ($1, $2, $3)`, [id, role, school]);
+      return login(email);
+    };
+    const sel = await person("selector.walk@example.invalid", "Walk Selector", "unionselector", kzn);
+    const org = await person("organiser.walk@example.invalid", "Walk Organiser", "competitionadmin", kzn);
+    ok("the union's selector reads nothing of the boy before his family says so", (await passport(PILLAY, sel)).length === 0);
+    const notHis = await consent(parent, PILLAY, far);
+    ok("his mother cannot name another province's union, and is told why", notHis.status === 422 && notHis.body?.error === "not_his_union");
+    ok("...nor, at sixteen, can the boy name his own", (await consent(boy, PILLAY, kzn)).status === 403);
+    // db/124 §6 Q4 (Kameel, 30 Oct 2026): a school, his union or CSA Schools;
+    // a club or an academy is refused until Kameel decides on them.
+    const club = (await q(`insert into school (code, name, kind) values ('WALKCLUB', 'Walk Cricket Club', 'club') returning id`))[0].id;
+    const asClub = await consent(parent, PILLAY, club);
+    ok("his mother cannot name a club, and is told why", asClub.status === 422 && asClub.body?.error === "not_a_school");
+    const offered = (await api(`/api/read/passport_recipients?playerId=${PILLAY}`, { token: parent })).body?.rows ?? [];
+    ok("what she may name is every school, his union and CSA Schools: not the far union, not the club",
+       offered.some((s) => s.id === WES && s.kind === "school") && offered.some((s) => s.id === kzn)
+       && !offered.some((s) => s.id === far || s.id === club) && offered.every((s) => ["school", "union", "federation"].includes(s.kind)));
+    ok("...and nobody but his family is told which union is his",
+       ((await api(`/api/read/passport_recipients?playerId=${PILLAY}`, { token: otherMum })).body?.rows ?? []).length === 0
+       && ((await api(`/api/read/passport_recipients?playerId=${PILLAY}`, { token: wes })).body?.rows ?? []).length === 0);
+    const u = await consent(parent, PILLAY, kzn);
+    ok("his mother names his union", u.status === 200);
+    const seen = await passport(PILLAY, sel);
+    ok("...and its named selector reads his full passport, each line with its source", seen.length > 0 && seen.some((l) => l.family === "cap") && seen.every((l) => l.source_school === "Hilton College" && l.confidence));
+    ok("...the cricket record only", !JSON.stringify(seen).match(/injur|address|id_number|note|rating/i));
+    ok("a competition organiser at the union reads none", (await passport(PILLAY, org)).length === 0);
+    ok("...nor the consent naming the union", ((await api("/api/read/passport_consents", { token: org })).body?.rows ?? []).length === 0);
+    ok("the selector reads none of his profile", ((await api("/api/read/players", { token: sel })).body?.rows ?? []).every((p) => p.id !== PILLAY));
+    const reads = (await api("/api/read/passport_union_reads", { token: parent })).body?.rows ?? [];
+    ok("his mother sees who at which union looked, and when",
+       reads.length === 1 && reads[0].player_id === PILLAY && reads[0].reader_name === "Walk Selector"
+       && reads[0].reader_role === "Union Selector" && reads[0].organisation === "Walk KZN Cricket Union" && !!reads[0].read_at);
+    ok("...and so does the boy himself", ((await api("/api/read/passport_union_reads", { token: boy })).body?.rows ?? []).length === 1);
+    ok("...not another family", ((await api("/api/read/passport_union_reads", { token: otherMum })).body?.rows ?? []).length === 0);
+    ok("...nor the selector, nor his own coach",
+       ((await api("/api/read/passport_union_reads", { token: sel })).body?.rows ?? []).length === 0
+       && ((await api("/api/read/passport_union_reads", { token: coach })).body?.rows ?? []).length === 0);
+    ok("...and the read is in his school's access log",
+       (await q(`select count(*)::int as n from access_log where resource = 'passport_union' and $1 = any (record_ids)`, [PILLAY]))[0].n === 1);
+    {
+      // db/124 §6 Q2 (Kameel, 30 Oct 2026): a selector who is also his coach
+      // reads as his coach, and nothing is written to the union's log.
+      const side = (await q(`select school_id, team_code from player where id = $1`, [PILLAY]))[0];
+      const both = (await q(`insert into app_user (school_id, email, name, role) values ($1, 'coach.selector.walk@example.invalid', 'Walk Coach Selector', 'coach') returning id`, [side.school_id]))[0].id;
+      await q(`insert into role_assignment (person_id, role, school_id, team_code) values ($1, 'coach', $2, $3)`, [both, side.school_id, side.team_code]);
+      await q(`insert into role_assignment (person_id, role, school_id) values ($1, 'unionselector', $2)`, [both, kzn]);
+      const bothTok = await login("coach.selector.walk@example.invalid");
+      ok("a union selector who is also his coach reads his passport", (await passport(PILLAY, bothTok)).length > 0);
+      ok("...as his coach: no union read is written, and his family's list is unchanged",
+         (await q(`select count(*)::int as n from passport_union_read where player_id = $1`, [PILLAY]))[0].n === 1
+         && (await q(`select count(*)::int as n from access_log where resource = 'passport_union' and $1 = any (record_ids)`, [PILLAY]))[0].n === 1
+         && ((await api("/api/read/passport_union_reads", { token: parent })).body?.rows ?? []).length === 1);
+    }
+    ok("the family's consents list the union by name",
+       ((await api("/api/read/passport_consents", { token: parent })).body?.rows ?? []).some((x) => x.to_school_id === kzn && x.to_school === "Walk KZN Cricket Union" && x.in_force === true));
+    ok("the boy, at sixteen, takes the union's name back", (await api(`/api/passport/consent/${u.body?.id}/withdraw`, { method: "POST", token: boy })).body?.withdrawn === 1);
+    ok("...and the selector reads nothing again", (await passport(PILLAY, sel)).length === 0);
+  }
   group("Provenance is honest about who stood behind a line");
   {
     const lines = await passport(WHITFIELD, coach);

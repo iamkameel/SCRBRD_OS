@@ -388,6 +388,26 @@ group("A. Another school's boys do not leave as a file (GA-I24-I25 D9, A1)");
   ok("an ordinary roster export is not refused", !NOT_EXPORTED.has("players"));
 }
 
+group("The union passport's log, for his family (db/124)");
+{
+  // Kameel, 29 Oct 2026: "Named selectors and the schools cricket manager
+  // only, every read logged"; his family sees who looked. The definer decides
+  // who is answered, so the read selects it whole and filters nothing.
+  const def = READ_QUERIES.passport_union_reads;
+  ok("the read exists", !!def);
+  ok("...and selects the family's definer, nothing else",
+     /from passport_union_reads\(\)/.test(def?.text ?? "") && !/passport_union_read\b(?!s)/.test(def?.text ?? ""));
+  ok("...naming the reader, his role, the union and the day",
+     ["reader_name", "reader_role", "organisation", "read_at", "player_id", "what"].every((c) => (def?.text ?? "").includes(c)));
+  ok("...and leaves as no file", NOT_EXPORTED.has("passport_union_reads"));
+  const { pool, log } = fakePool({ "passport_union_reads(": [{ player_id: "p1", read_at: "2026-10-29", reader_name: "A Selector",
+                                                             reader_role: "Union Selector", organisation: "A Union", what: "passport" }] });
+  const rows = await readResource(pool, SECRET, bearer("uParent"), "passport_union_reads", {});
+  ok("its rows come back as the definer gave them", rows.length === 1 && rows[0].reader_name === "A Selector");
+  ok("...and the read writes no access-log row of its own (the definer's log is the record)",
+     !log.some((q) => /log_restricted_read/.test(q.text ?? q)));
+}
+
 group("A. Exports follow the policy's two lists (packages/policy/src/exports.mjs)");
 {
   // THE TWO LISTS HELD APART, with this file's real inputs: a read on the

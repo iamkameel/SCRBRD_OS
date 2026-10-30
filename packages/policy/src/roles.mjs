@@ -105,6 +105,14 @@ const BUNDLES = {
   // any platform-wide assignment, so granting the row back would still read
   // nothing. Still derived, never typed: a new capability outside that
   // domain reaches this key the day it is written.
+  //
+  // `passport.union.read` (db/124) reaches this key the same way, and opens
+  // nothing through it. It is held here only so this derived bundle and the
+  // database's role_capability rows agree. A superadmin assignment names no
+  // school (db/86's check), and db/124's reader test refuses anyone holding a
+  // platform-wide assignment, so the union's door never opens on this key.
+  // The owner's key still reads a passport through its own office arm, as
+  // before db/124, and that read is not a union read.
   superadmin: ALL_CAPABILITIES.filter((c) => !c.startsWith("safeguarding.")),
 
   // ── Platform ──
@@ -553,6 +561,23 @@ const BUNDLES = {
   // (there is no platform-wide DSO) or with a team (a DSO holds the whole
   // institution's concerns). A PDSO is a `dso` at a `union` tenant, the NDSO
   // a `dso` at the `federation` tenant.
+  // ── Union selection ──
+  //
+  // THE UNION'S NAMED SELECTORS AND ITS SCHOOLS CRICKET MANAGER (db/124;
+  // Kameel, 29 Oct 2026: "CSA Schools/Provincial Union will be able to access
+  // a child's full passport ... Named selectors and the schools cricket
+  // manager only, every read logged"). One role for both jobs: each reads the
+  // same thing, a boy's passport once his family has named the union or CSA
+  // Schools, and the log names the person, which is what tells a family who.
+  //
+  // Tenant-scoped, always: db/124 refuses an assignment that names no
+  // institution, names a school (only a `union` or the `federation`), or names
+  // a team or a fixture. NOT competitionadmin's bundle: running a league is
+  // not picking a provincial side, and being an organiser opens nothing.
+  // NOT player.profile.read, nothing of the roster, nothing medical: the
+  // passport is the whole of it, through passport() and its log.
+  unionselector: ["passport.union.read", "school.read"],
+
   dso: [
     "safeguarding.concern.read", "safeguarding.concern.manage",
     "safeguarding.suspend", "safeguarding.authorise",
@@ -686,9 +711,15 @@ export const GRANTABLE_ROLES = Object.freeze({
   // appoints the PDSO or NDSO the same way. Ending the appointment while a
   // concern naming the principal is open is refused by db/57's
   // dso_appointment_guard().
+  //
+  // `unionselector` (db/124): a union's or the federation's principal
+  // appoints its named selectors and its schools cricket manager, as it
+  // appoints the PDSO. A school's principal may hold the same row, and db/124
+  // refuses the appointment at a school: there is no selector of a school's
+  // passports.
   principal: [
     "directorofsport", "sportsadmin", "schooladmin", "medical", "finance", "sponsorship",
-    "coach", "assistantcoach", "teammanager", "facilities", "dso",
+    "coach", "assistantcoach", "teammanager", "facilities", "dso", "unionselector",
   ],
   directorofsport: [
     "coach", "assistantcoach", "teammanager", "scorer", "official",

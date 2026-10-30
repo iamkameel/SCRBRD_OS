@@ -578,6 +578,7 @@ const DOMAIN_LABEL = {
   recognition: "Recognition", discipline: "Discipline", availability: "Availability",
   audit: "Audit", broadcast: "Broadcast", guardian: "Guardians",
   safeguarding: "Safeguarding", wellness: "Wellness", fitness: "Fitness",
+  passport: "Passport",
 };
 const capsOf = (r) => [...(ROLE_CAPABILITIES[r] ?? [])];
 const domainsOf = (r) => {
@@ -1030,6 +1031,19 @@ const PASSPORT_NONE = {
   office: "No family has named your school.",
   none: "Not yours to see. Where a boy's record may travel is read by his family and by the office of the school it names.",
 };
+// db/124: a family names his own province's union or CSA Schools, never another's.
+export const PASSPORT_NOT_HIS_UNION = "That union is not his. A family names the union of his school's province, or CSA Schools.";
+// db/124 §6 Q4 (Kameel, 30 Oct 2026): a school, his own provincial union or
+// CSA Schools; a club or an academy is not offered, and is refused, until
+// Kameel decides on them.
+export const PASSPORT_NOT_A_SCHOOL = "A club or an academy can't be named yet. Name a school, his own provincial union or CSA Schools.";
+export const PASSPORT_WHO_MAY_BE_NAMED = "You can name a school, his own provincial union or CSA Schools. Clubs and academies can't be named yet.";
+// A row naming what may no longer be named (a club, or a union that is no
+// longer his): it opens nothing, and his family may take it back.
+const PASSPORT_REFUSED_ROW = " · no longer opens his record: only a school, his own provincial union or CSA Schools can be named. His family can take this name back.";
+// db/124 (Kameel, 29 Oct 2026: "Named selectors and the schools cricket
+// manager only, every read logged"): who at a union opened his passport.
+const UNION_READS_NONE = "No union has opened his passport.";
 // The withdraw route answers 403 when nothing was withdrawn (db/122 §1d).
 export const PASSPORT_WITHDRAW_REFUSED = "That name was not taken back. Only his family, on a link the school has verified and that is still open, can take a school's name back, and it may already have been taken back.";
 
@@ -1048,7 +1062,22 @@ function PassportTab({ role, only = null }) {
   const onlyIds = only ? new Set(only.map((c) => c.id)) : null;
   const players = onlyIds ? allPlayers.filter((p) => onlyIds.has(p.id)) : allPlayers;
   const rows = useLive("passport_consents", role, nudge).rows.filter((r) => !onlyIds || onlyIds.has(r.playerId));
-  useEffect(() => { let off = false; api("/api/schools").then((r) => { if (!off && r?.rows) setSchools(r.rows); }).catch(() => {}); return () => { off = true; }; }, []);
+  // Who at a union looked (db/124): his family's alone, so drawn for a family.
+  const unionReads = useLive("passport_union_reads", role, nudge).rows.filter((r) => !onlyIds || onlyIds.has(r.playerId));
+  const forFamily = passportConsentReader() === "family";
+  const nameOf = (id) => players.find((p) => p.id === id)?.name ?? rows.find((r) => r.playerId === id)?.name ?? "His record";
+  // What may be named for THIS boy (db/124 §6 Q4): every school, his own
+  // provincial union and CSA Schools, read from the server's own test, so the
+  // list offers nothing the grant would refuse. Read again for each boy.
+  useEffect(() => {
+    let off = false;
+    setSchools([]); setSchoolId("");
+    if (!playerId) return () => { off = true; };
+    api(`/api/read/passport_recipients?playerId=${encodeURIComponent(playerId)}`)
+      .then((r) => { if (!off && r?.rows) setSchools(r.rows); }).catch(() => {});
+    return () => { off = true; };
+  }, [playerId]);
+  const chosenKind = schools.find((s) => s.id === schoolId)?.kind;
   // A pupil's own record (his self-access link): under eighteen his guardian
   // decides where it travels; from eighteen he does (db/122, Kameel 29 Oct
   // 2026: "Under eighteen, only his guardian; at eighteen, he does it
@@ -1058,7 +1087,11 @@ function PassportTab({ role, only = null }) {
   const grant = async () => {
     setSaid("");
     try { await api("/api/passport/consent", { method: "POST", body: { playerId, schoolId } }); setSchoolId(""); setNudge((n) => n + 1); }
-    catch (e) { setSaid(ownRecords.has(playerId) && e?.status === 403 ? OWN_RECORD_WORDS : (e.message || "Refused.")); }
+    catch (e) {
+      setSaid(e?.code === "not_his_union" || e?.message === "not_his_union" ? PASSPORT_NOT_HIS_UNION
+        : e?.code === "not_a_school" || e?.message === "not_a_school" ? PASSPORT_NOT_A_SCHOOL
+        : ownRecords.has(playerId) && e?.status === 403 ? OWN_RECORD_WORDS : (e.message || "Refused."));
+    }
   };
   // Nothing withdrawn is answered 403 (db/122 §1d), so it is said, and the
   // list is read again in case the row has changed under the reader.
@@ -1073,18 +1106,21 @@ function PassportTab({ role, only = null }) {
     <>
       <Panel data-testid="passport-tab">
       <CardHead title="Passport"
-        sub="A boy's cricket record stays with his school until his family names another. Only his cricket record travels: nothing medical, no files, no notes. A family can take a name back at any time."/>
+        sub="A boy's cricket record stays with his school until his family names another school, his provincial union or CSA Schools. Only his cricket record travels: nothing medical, no files, no notes. At a union only its named selectors and schools cricket manager open it, and each time is listed here. A family can take a name back at any time."/>
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginBottom: "12px" }}>
         <select value={playerId} onChange={(e) => setPlayerId(e.target.value)} aria-label="Which player" style={sel}>
           <option value="">Which player?</option>
           {players.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
         <select value={schoolId} onChange={(e) => setSchoolId(e.target.value)} aria-label="Which school" style={sel}>
-          <option value="">Which school?</option>
+          <option value="">{playerId ? "Which school or union?" : "Choose a player first"}</option>
           {schools.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <Btn onClick={grant} disabled={!playerId || !schoolId}>Name this school</Btn>
+        <Btn onClick={grant} disabled={!playerId || !schoolId}>
+          {chosenKind === "union" ? "Name his union" : chosenKind === "federation" ? "Name CSA Schools" : "Name this school"}
+        </Btn>
       </div>
+      <div data-testid="passport-who-may-be-named" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginBottom: "8px" }}>{PASSPORT_WHO_MAY_BE_NAMED}</div>
       {ownRecords.has(playerId) && (
         <div data-testid="passport-own-record" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginBottom: "8px" }}>{OWN_RECORD_WORDS}</div>
       )}
@@ -1095,7 +1131,7 @@ function PassportTab({ role, only = null }) {
           <div key={r.id} data-testid={`passport-consent-${r.id}`} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: `1px solid ${D.border}`, opacity: r.withdrawnAt ? 0.6 : 1 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{r.name} → {r.toSchoolName ?? "a school"}</div>
-              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>named {day(r.grantedAt)}{r.withdrawnAt ? ` · withdrawn ${day(r.withdrawnAt)}` : ""}{r.lapsed ? " · lapsed: the link of the person who named it has ended, so the school no longer opens his record. His family can name it again." : ""}</div>
+              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>named {day(r.grantedAt)}{r.withdrawnAt ? ` · withdrawn ${day(r.withdrawnAt)}` : ""}{r.lapsed ? " · lapsed: the link of the person who named it has ended, so the school no longer opens his record. His family can name it again." : ""}{r.refused ? PASSPORT_REFUSED_ROW : ""}</div>
             </div>
             {r.lapsed && <span data-testid={`passport-lapsed-${r.id}`} style={{ fontFamily: D.mono, fontSize: "12px", textTransform: "uppercase", color: D.textMuted }}>lapsed</span>}
             {r.withdrawnAt
@@ -1103,6 +1139,19 @@ function PassportTab({ role, only = null }) {
               : <Btn variant="ghost" onClick={() => withdraw(r.id)}>Withdraw</Btn>}
           </div>
         ))}
+      {forFamily && (
+        <div data-testid="passport-union-reads" style={{ borderTop: `1px solid ${D.border}`, marginTop: "8px", paddingTop: "8px" }}>
+          <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600, marginBottom: "4px" }}>Who at a union looked</div>
+          {unionReads.length === 0
+            ? <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>{UNION_READS_NONE}</div>
+            : unionReads.map((r, i) => (
+              <div key={`${r.playerId}-${r.readAt}-${i}`} data-testid={`passport-union-read-${r.playerId}`}
+                   style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, padding: "2px 0" }}>
+                {nameOf(r.playerId)}: {r.readerName} ({r.readerRole}), {r.organisation} · {day(r.readAt)}{r.what === "name" ? " · his name only" : ""}
+              </div>
+            ))}
+        </div>
+      )}
       </Panel>
       <ScoutingConsentSection role={role} players={players}/>
     </>

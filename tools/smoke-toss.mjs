@@ -217,9 +217,13 @@ try {
   // are the same shape again: read and written only through db/92's and
   // db/93's functions, which decide who may see a row (an uploader's list, a
   // DSO's lift); a policy would be a second door beside them.
+  // passport_union_read (db/124) is the union passport's read log: written
+  // only by passport_union_log() inside passport()/passport_name(), read only
+  // through passport_union_reads(), which answers the boy's family alone. No
+  // application privilege and no policy, by design (Fable's red-team, 30 Oct).
   const DELIBERATELY_NO_POLICY = new Set(["login_code", "schema_migration", "pad_resume_jti", "dls_resource_table", "dls_resource",
                                           "auth_identity", "pending_claim", "auth_epoch", "auth_session",
-                                          "school_register", "request_cooldown"]);
+                                          "school_register", "request_cooldown", "passport_union_read"]);
   const policyless = (await q(
     `select c.relname, count(p.polname)::int as policies
        from pg_class c

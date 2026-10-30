@@ -2318,6 +2318,71 @@ first**: the API built with it refuses to start without db/123
 screens read what the server gives.
 <!-- ── end db/123 ── -->
 
+<!-- ── db/124: the union passport ── -->
+#### The union passport (db/124)
+
+`db/124_union_passport.sql` carries Kameel's decisions of 29 October 2026:
+**"CSA Schools/Provincial Union will be able to access a child's full
+passport"**, **"With his guardian's consent, as the receiving school's is"**,
+and **"Named selectors and the schools cricket manager only, every read
+logged."** A family names the boy's provincial union or CSA Schools on the
+same passport consent it names a school on (under eighteen his guardian; from
+eighteen the boy himself, db/122), and may take it back at any time. The
+union's named selectors and its schools cricket manager, a new role (Union
+Selector) appointed at the union by its principal, then open his passport,
+and nobody else at the union does: a competition organiser opens nothing, nor
+does the union's office. Every such read is recorded, and his family sees who
+at which union looked, and when, under the consents in Settings → Passport.
+His public profile does not change. Two consent rules change with it
+(Kameel, 30 October 2026): a consent a boy gave for himself counts only if he
+was eighteen on the day he gave it, and a guardian's consent does not come
+back when a boy returns to school after his guardians' links ended while he
+was away (the family gives it again); an end date the office corrects still
+brings a consent back. **After the red-team (Kameel, 30 Oct 2026, 11:06, all
+as recommended):** no route can ask whether a passport is open without the
+read being recorded; a selector who is also the boy's parent, coach or
+school office reads as that, and is not listed as a union reader; the list
+keeps the reader's name and role as they were when he looked, even if his
+account is later renamed or deleted; a family can name a school, his own
+provincial union or CSA Schools, and the screen offers nothing else (a club
+or an academy is refused, in words, until Kameel decides on them); and a
+union's principal may appoint himself its selector, his reads then listed
+under his name.
+
+**What it does to a live database.** It adds the capability
+`passport.union.read`, the role `unionselector` (its two capabilities, and
+who appoints it) and a scope trigger on `role_assignment`; one new table,
+`passport_union_read` (row security on, no privilege for the application;
+the reader's name and role copied in, his account id kept with `ON DELETE
+SET NULL`); the application's new definers `institution_is_union()`,
+`passport_consent_recipient_ok()`, `passport_recipients()` and
+`passport_union_reads()`, and six internal functions granted to nobody. It
+replaces `passport_open()` (now granted to nobody: `passport()` and
+`passport_name()` call it as their owner), `passport()` and `passport_name()`
+(now VOLATILE, logging a union read), `passport_consent_in_force()`,
+`consent_giver_live()` and `role_words()`, each with its owner, SECURITY
+DEFINER and pinned search path as they were; and adds two RESTRICTIVE
+policies on `passport_consent`. It refuses to run unless each function in
+place is the earlier file's or its own (md5 of its folded body), and a second
+paste changes nothing. No column of an existing table and no row of
+anybody's changes; production holds only test data. **What stops counting on
+the paste:** a passport consent a boy gave himself while under eighteen; a
+guardian's consent given before the boy came back to school after his
+guardians' links had ended while he was away; and a consent naming a club,
+an academy, a league or an association, which no longer opens his record to
+that institution. Each reads as not in force (the screen says why), and his
+family names a school again.
+
+Paste `node tools/bundle-sql.mjs --apply 124` after 123, then the verify
+bundle (§101 is its proof). The summary row "The union passport" should read
+OK. **Schema first**: the API built with it refuses to start without db/124
+(`expected-migrations.json`): its `passport_union_reads` and
+`passport_recipients` reads call the new definers, its `passport_consents`
+read asks `passport_consent_recipient_ok()`, and `POST /api/passport/consent`
+asks it first (answering `not_his_union` or `not_a_school`). Not to be
+pasted before Kameel's review.
+<!-- ── end db/124 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

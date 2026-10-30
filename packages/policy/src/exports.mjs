@@ -74,6 +74,8 @@ export const NAMED_NOT_EXPORTED = Object.freeze([
   "skills", "skills_history", "ratings", "notes", "coaching_points", "targets", "development_since",
   // Another school's boys, on a grant that closes.
   "opposition_squad", "opposition_context", "passport", "passport_consents", "scouting_candidates",
+  // Who at a union read his passport (db/124): his family's to see, not a file.
+  "passport_union_reads",
   // A record about a boy's body (PUBLIC_DATA §5a), and his load: read
   // through definers under player.workload.read (level 2), which the table
   // rule cannot see into.

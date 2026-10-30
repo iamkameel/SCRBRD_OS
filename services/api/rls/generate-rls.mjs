@@ -454,6 +454,8 @@ export const ROLES_ADDED_SINCE_01 = {
   dso: "57_safeguarding_dso.sql",
   // The strength-and-conditioning coach (SCRBRD-110 §5, §6.1; phase 1).
   fitness: "60_workload_consent_count.sql",
+  // A union's named selectors and its schools cricket manager (db/124).
+  unionselector: "124_union_passport.sql",
 };
 const roleIn01 = (/** @type {string} */ role) => !(role in ROLES_ADDED_SINCE_01);
 
@@ -536,6 +538,8 @@ export const ADDED_SINCE_01 = {
   "transport.manifest.read":     "116_readers_privacy.sql",
   // Q5: the coach's own side's conduct records, through side_discipline_records().
   "discipline.side.read":        "116_readers_privacy.sql",
+  // ── The union passport (Kameel, 29 Oct 2026): named selectors only (db/124) ──
+  "passport.union.read":         "124_union_passport.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 

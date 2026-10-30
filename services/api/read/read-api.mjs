@@ -2272,12 +2272,33 @@ export const READ_QUERIES = {
   // only"); the receiving coach reads the passport above, not these rows.
   // `in_force` (db/122): false for a withdrawn row and for one whose giver's
   // link has ended (lapsed: it no longer opens the passport).
+  // `recipient_ok` (db/124 §6 Q4): false for a row naming what a family may
+  // no longer name (a club, an academy, or a union that is no longer his),
+  // so the screen says why it opens nothing, not that a link has ended.
   passport_consents: {
     text: `select c.id, c.player_id, passport_name(c.player_id) as full_name, c.to_school_id, s.name as to_school, c.granted_at, c.withdrawn_at,
-                  passport_consent_in_force(c.id) as in_force
+                  passport_consent_in_force(c.id) as in_force,
+                  passport_consent_recipient_ok(c.player_id, c.to_school_id) as recipient_ok
              from passport_consent c
              left join lateral (select ps.name from public_schools() ps where ps.id = c.to_school_id) s on true
             order by c.withdrawn_at nulls first, c.granted_at desc`,
+  },
+  // Who at a union looked at his passport, and when (db/124, Kameel 29 Oct
+  // 2026: "Named selectors and the schools cricket manager only, every read
+  // logged"), for every boy the caller is family of on a live link: his
+  // guardians and the boy himself. Nobody else is answered; the definer
+  // decides. The log itself is written by passport() and passport_name().
+  passport_union_reads: {
+    text: `select player_id, read_at, reader_name, reader_role, organisation, what
+             from passport_union_reads()`,
+  },
+  // What his family may name for his record (db/124 §6 Q4, Kameel 30 Oct
+  // 2026): every school, his own provincial union and CSA Schools; no club or
+  // academy. The definer answers his family alone, by the insert policy's own
+  // test, so the consent's picker offers nothing the server would refuse.
+  passport_recipients: {
+    text: `select id, name, kind from passport_recipients($1::uuid)`,
+    params: q => [req(q, "playerId")],
   },
 
   /* Which roles must hold which checks. Platform reference data. */
