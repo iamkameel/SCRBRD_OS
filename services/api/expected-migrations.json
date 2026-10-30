@@ -116,5 +116,7 @@
   "118_privacy_followups.sql",
   "119_family_of_live.sql",
   "120_notification_prefs.sql",
-  "121_laws_audit.sql"
+  "121_laws_audit.sql",
+  "122_lapsed_consent_and_doors.sql",
+  "123_reach_notices.sql"
 ]

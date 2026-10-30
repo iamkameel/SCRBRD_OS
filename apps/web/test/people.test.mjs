@@ -254,6 +254,24 @@ group("The role picker offers what the caller may grant, and no more");
   ok("a role with no grant list is offered nothing", picks("coach").length === 0 && grantableFor("coach").length === 0);
 }
 
+group("A pupil's account and code are the office's (db/122 §1d)");
+{
+  const draw = (role, extra = {}) => renderToStaticMarkup(h(EnrolModal, { role, players: [], onClose: () => {}, onEnrolled: () => {}, ...extra }));
+  const dos = draw("directorofsport", { initial: { role: "player" } });
+  ok("the director of sport opening a pupil's account is told the office does it",
+     /data-testid="enrol-pupil-office"/.test(dos) && /school office enrols pupils/.test(dos));
+  ok("...is offered no code for it, and cannot send it",
+     !/data-testid="enrol-code"/.test(dos) && /data-testid="enrol-submit"[^>]*disabled/.test(dos));
+  const office = draw("schooladmin", { initial: { role: "player" } });
+  ok("the office is not told so, and keeps the code", !/enrol-pupil-office/.test(office) && /data-testid="enrol-code"/.test(office));
+  const adult = draw("directorofsport", { initial: { role: "coach" } });
+  ok("an adult's enrolment by the director keeps its code", !/enrol-pupil-office/.test(adult) && /data-testid="enrol-code"/.test(adult));
+  const byId = draw("directorofsport", { fixed: { userId: "88888888-0000-0000-0000-000000000009", name: "R Pillay", email: null, school: "s" } });
+  ok("a role added by id to an account whose address she was not given offers no code",
+     /enrol-email-withheld/.test(byId) && !/data-testid="enrol-code"/.test(byId) && /office&#x27;s to issue|office's to issue/.test(byId));
+  ok("office_only is said in words, naming the office", /school office or the principal/.test(enrolWords("office_only")));
+}
+
 group("A refusal is said in words");
 {
   ok("a known code has its sentence", enrolWords("not_permitted") === ENROL_MESSAGE.not_permitted && /may not/.test(enrolWords("not_permitted")));

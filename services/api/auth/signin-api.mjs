@@ -118,6 +118,9 @@ export const SIGN_IN_REFUSALS = {
   no_such_claim:          [404, "That request is not on the list."],
   already_resolved:       [409, "Somebody has already answered that request."],
   cannot_confirm_your_own:[403, "You cannot confirm a sign-in to your own account. Ask a colleague."],
+  // db/122 §1d (Kameel, 29 Oct 2026): a pupil's claim is answered by the
+  // people shown its addresses, the school office and the principal.
+  office_only:            [403, "This is a pupil's account. The school office or the principal answers its sign-in requests."],
   cannot_disable_yourself:[403, "You cannot disable or enable your own account. Ask a colleague at the office."],
   stale_sign_in:          [401, "For your security, sign in with Google again, then add it."],
   // Account lifecycle slice 2 (db/90): disable and enable carry a reason; the

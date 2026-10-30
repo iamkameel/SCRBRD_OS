@@ -9,7 +9,7 @@ import { useLive, useRows } from "../lib/live.js";
 import { profile, schoolsWhere } from "../lib/session.js";
 import { useSports } from "../lib/features.js";
 import { holdsCapability } from "../rbac/index.js";
-import { passportConsentReader, readsScoutingOf } from "../lib/held.js";
+import { ownRecordsOf, passportConsentReader, readsScoutingOf } from "../lib/held.js";
 import { api, signedIn } from "../lib/api.js";
 import { ceilingWords } from "../lib/ceilingWords.js";
 import { disablePush, enablePush, pushSupported } from "../lib/push.js";
@@ -23,7 +23,7 @@ import { ImportPanel, canImport } from "./importer.jsx";
 import { StaffRegisterPanel, canSeeRegister } from "./staffRegister.jsx";
 // The enrolment form, its words and the one-time code card are shared with the
 // Management screen (views/enrol.jsx): one form, one set of refusals in words.
-import { ENROL_MESSAGE, EnrolModal, IssuedCodeModal, grantableFor, issuedFrom } from "./enrol.jsx";
+import { ENROL_MESSAGE, EnrolModal, IssuedCodeModal, PUPILS_BY_OFFICE, grantableFor, issuedFrom, opensPupilAccounts } from "./enrol.jsx";
 import { EighteenCard, HealthConsentPrompt, HealthConsentSection } from "./healthconsent.jsx";
 // SCRBRD-140: the ways a person signs in (Me), and the office's Google claims (People).
 import { WaysToSignIn } from "./signins.jsx";
@@ -161,6 +161,11 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
   // resolves through the same assignments the real name does.
   const canEdit = holdsCapability(role, "user.role.assign");
   const canAudit = holdsCapability(role, "audit.read");
+  // A pupil's account is opened, and his code issued, by the office alone
+  // (db/122 §1d): the readers shown a pupil's address. Everyone on the
+  // no-account card is a pupil, so the director of sport is told who enrols
+  // them instead of being offered a form the server would refuse.
+  const pupilsHere = canEdit && opensPupilAccounts(role);
 
   // Roster people with no account, by the link the accounts read carries.
   // Both sides are already row-scoped in Postgres for this reader, so this
@@ -221,12 +226,14 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
 
   // A fresh code for an account that already exists — through
   // login_code_issue(), which refuses anyone without user.invite at that
-  // school and refuses a code issued to yourself.
+  // school, refuses a code issued to yourself, and keeps a pupil's code for
+  // the school office (db/122 §1d). The account is named by its id, as Add
+  // role names it: a pupil's address is not this reader's to have been given.
   const [coding, setCoding] = useState(null);
   const issueCodeFor = async (u) => {
     setCoding(u.id);
     try {
-      const out = await api("/api/auth/invite", { method: "POST", body: { email: u.email } });
+      const out = await api("/api/auth/invite", { method: "POST", body: { userId: u.id } });
       setIssued({ code: out?.code, expiresAt: out?.expiresAt, name: u.name });
     } catch (e) {
       setIssued({ code: null, error: ENROL_MESSAGE[e?.code] || e?.code || "code_not_issued", name: u.name });
@@ -284,8 +291,8 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
         {tab === "users" && (
           <PeopleTab users={users} players={PLAYERS} staff={STAFF} coaches={COACHES}
                      noAccount={noAccount} noDob={noDob} linkEnded={linkEnded}
-                     canEdit={canEdit} coding={coding}
-                     onEnrol={() => setEnrolWith({ role: "player" })}
+                     canEdit={canEdit} pupilsHere={pupilsHere} coding={coding}
+                     onEnrol={() => setEnrolWith({ role: pupilsHere ? "player" : "" })}
                      onEnrolFor={(p) => setEnrolWith({ name: p.name, role: "player", player: p.id })}
                      onCapture={openCapture} onIssueCode={issueCodeFor}/>
         )}
@@ -357,7 +364,7 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
 // ══════════════════════════════════════════════════════
 //  PEOPLE — who can sign in, and who cannot yet
 // ══════════════════════════════════════════════════════
-function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded, canEdit, coding,
+function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded, canEdit, pupilsHere, coding,
                      onEnrol, onEnrolFor, onCapture, onIssueCode }) {
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
@@ -397,17 +404,20 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
           <div style={{ ...SUB(), marginBottom: "10px" }}>
             These people appear in Squad and Profiles and hold a passport, but cannot sign in.
             An account is what links the two: without one, nobody can read their own record.
-            {canEdit ? " Choose somebody to open an account for them." : ""}
+            {pupilsHere ? " Choose somebody to open an account for them." : ""}
           </div>
+          {canEdit && !pupilsHere && (
+            <div data-testid="no-account-office" role="note" style={{ ...SUB(), marginBottom: "10px" }}>{PUPILS_BY_OFFICE}</div>
+          )}
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
             {noAccount.map((p) => {
-              const Tag = canEdit ? "button" : "span";
+              const Tag = pupilsHere ? "button" : "span";
               return (
                 <Tag key={p.id} data-testid={`no-account-${p.id}`}
-                  {...(canEdit ? { onClick: () => onEnrolFor(p), title: `Enrol ${p.name}` } : {})}
+                  {...(pupilsHere ? { onClick: () => onEnrolFor(p), title: `Enrol ${p.name}` } : {})}
                   style={{ display: "inline-flex", alignItems: "center", gap: "6px",
                     padding: "4px 10px", borderRadius: D.pill, background: D.amber + "14", border: `1px solid ${D.amber}33`,
-                    fontFamily: D.body, fontSize: "12px", color: D.textSecondary, cursor: canEdit ? "pointer" : "default" }}>
+                    fontFamily: D.body, fontSize: "12px", color: D.textSecondary, cursor: pupilsHere ? "pointer" : "default" }}>
                   <Avatar name={p.name} size={18} color={D.amber}/>
                   {p.name}
                   <span style={{ ...MONO(), fontSize: "12px" }}>{p.team}</span>
@@ -516,7 +526,11 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
                             <Avatar name={u.name} size={30} color={rc?.color || D.textMuted}/>
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontFamily: D.body, fontSize: "12px", fontWeight: 500, color: D.textPrimary, whiteSpace: "nowrap" }}>{u.name}</div>
-                              <div style={{ ...MONO(), whiteSpace: "nowrap" }}>{u.email}</div>
+                              {/* A pupil's address is the office's alone (db/118): any other
+                                  reader gets the row without it, and is told so. */}
+                              {u.email
+                                ? <div style={{ ...MONO(), whiteSpace: "nowrap" }}>{u.email}</div>
+                                : <div data-testid="email-withheld" style={{ ...SUB(), fontSize: "12px" }}>Email shown to the school office only</div>}
                             </div>
                           </div>
                         </TD>
@@ -526,7 +540,10 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
                         <TD align="center" mono title={u.lastLogin ? new Date(u.lastLogin).toLocaleString() : undefined}>{ago(u.lastLogin)}</TD>
                         <TD align="center"><Badge color={u.status === "active" ? D.emerald : D.rose}>{u.status}</Badge></TD>
                         <TD align="center">
-                          {canEdit && (
+                          {/* A pupil's code is the office's to issue (db/122 §1d): not
+                              drawn on a row whose address this reader was not given,
+                              as the Claims screen draws no answer on one. */}
+                          {canEdit && u.email && (
                             <SmallBtn onClick={() => onIssueCode(u)} disabled={coding === u.id} data-testid={`issue-code-${u.id}`}>
                               {coding === u.id ? "…" : "Sign-in code"}
                             </SmallBtn>
@@ -956,6 +973,12 @@ function AlertsSection({ role }) {
 // boys whose decision this reader is shown, so that a team-mate's absent row
 // is never drawn as "no decision recorded"; a reader shown none is told whose
 // it is, rather than handed an empty list that reads as "nobody decided".
+// The door's refusals, in words (db/122: a boy of eighteen records his own
+// decision; under eighteen it is his guardian's).
+const SCOUTING_REFUSAL = {
+  not_yet_eighteen: "You can decide this for yourself from your eighteenth birthday. Until then it is your parent's or guardian's decision.",
+  not_a_consented_guardian: "Only his parent or guardian decides this, or the boy himself once he is eighteen. The school cannot decide it for a family.",
+};
 function ScoutingConsentSection({ role, players: offered }) {
   const [nudge, setNudge] = useState(0);
   const [said, setSaid] = useState("");
@@ -965,7 +988,7 @@ function ScoutingConsentSection({ role, players: offered }) {
   const set = async (playerId, granted) => {
     setSaid("");
     try { await api(`/api/players/${playerId}/scouting-consent`, { method: "POST", body: { granted } }); setNudge((n) => n + 1); }
-    catch (e) { setSaid(e.message || "Refused."); }
+    catch (e) { setSaid(SCOUTING_REFUSAL[e?.code] || e.message || "Refused."); }
   };
   return (
     <Panel sx={{ marginTop: "16px" }} data-testid="scouting-consent-section">
@@ -984,7 +1007,7 @@ function ScoutingConsentSection({ role, players: offered }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{p.name}</div>
                   <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
-                    {c ? `${c.state} ${c.decidedAt ?? ""}${c.decidedBy ? ` · ${c.decidedBy}` : ""}`.trim() : "no decision recorded"}
+                    {c ? `${c.lapsed ? "lapsed: the link of the person who said yes has ended" : c.state} ${c.decidedAt ?? ""}${c.decidedBy ? ` · ${c.decidedBy}` : ""}`.trim() : "no decision recorded"}
                   </div>
                 </div>
                 <span data-testid={`scouting-state-${p.id}`}
@@ -1007,6 +1030,8 @@ const PASSPORT_NONE = {
   office: "No family has named your school.",
   none: "Not yours to see. Where a boy's record may travel is read by his family and by the office of the school it names.",
 };
+// The withdraw route answers 403 when nothing was withdrawn (db/122 §1d).
+export const PASSPORT_WITHDRAW_REFUSED = "That name was not taken back. Only his family, on a link the school has verified and that is still open, can take a school's name back, and it may already have been taken back.";
 
 // `only` (step 4 P7d): the family app opens this on ONE child's Family card,
 // and narrows the players offered and the grants listed to that child. The
@@ -1024,15 +1049,23 @@ function PassportTab({ role, only = null }) {
   const players = onlyIds ? allPlayers.filter((p) => onlyIds.has(p.id)) : allPlayers;
   const rows = useLive("passport_consents", role, nudge).rows.filter((r) => !onlyIds || onlyIds.has(r.playerId));
   useEffect(() => { let off = false; api("/api/schools").then((r) => { if (!off && r?.rows) setSchools(r.rows); }).catch(() => {}); return () => { off = true; }; }, []);
+  // A pupil's own record (his self-access link): under eighteen his guardian
+  // decides where it travels; from eighteen he does (db/122, Kameel 29 Oct
+  // 2026: "Under eighteen, only his guardian; at eighteen, he does it
+  // himself"). The server decides; this only says so in words.
+  const ownRecords = ownRecordsOf();
+  const OWN_RECORD_WORDS = "Until you are eighteen, your parent or guardian decides which school your record goes to. You can take a school's name back yourself at any time. From your eighteenth birthday you decide both.";
   const grant = async () => {
     setSaid("");
     try { await api("/api/passport/consent", { method: "POST", body: { playerId, schoolId } }); setSchoolId(""); setNudge((n) => n + 1); }
-    catch (e) { setSaid(e.message || "Refused."); }
+    catch (e) { setSaid(ownRecords.has(playerId) && e?.status === 403 ? OWN_RECORD_WORDS : (e.message || "Refused.")); }
   };
+  // Nothing withdrawn is answered 403 (db/122 §1d), so it is said, and the
+  // list is read again in case the row has changed under the reader.
   const withdraw = async (id) => {
     setSaid("");
     try { await api(`/api/passport/consent/${id}/withdraw`, { method: "POST" }); setNudge((n) => n + 1); }
-    catch (e) { setSaid(e.message || "Refused."); }
+    catch (e) { setSaid(e?.status === 403 ? PASSPORT_WITHDRAW_REFUSED : (e.message || "Refused.")); setNudge((n) => n + 1); }
   };
   const sel = { background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "7px 10px", fontFamily: D.body, fontSize: "12px", color: D.textPrimary };
   const open = rows.filter((r) => !r.withdrawnAt), closed = rows.filter((r) => r.withdrawnAt);
@@ -1052,6 +1085,9 @@ function PassportTab({ role, only = null }) {
         </select>
         <Btn onClick={grant} disabled={!playerId || !schoolId}>Name this school</Btn>
       </div>
+      {ownRecords.has(playerId) && (
+        <div data-testid="passport-own-record" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginBottom: "8px" }}>{OWN_RECORD_WORDS}</div>
+      )}
       {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose), marginBottom: "8px" }}>{said}</div>}
       {rows.length === 0
         ? <EmptyState icon="stamp" message={PASSPORT_NONE[passportConsentReader() ?? "none"]}/>
@@ -1059,8 +1095,9 @@ function PassportTab({ role, only = null }) {
           <div key={r.id} data-testid={`passport-consent-${r.id}`} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: `1px solid ${D.border}`, opacity: r.withdrawnAt ? 0.6 : 1 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{r.name} → {r.toSchoolName ?? "a school"}</div>
-              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>named {day(r.grantedAt)}{r.withdrawnAt ? ` · withdrawn ${day(r.withdrawnAt)}` : ""}</div>
+              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>named {day(r.grantedAt)}{r.withdrawnAt ? ` · withdrawn ${day(r.withdrawnAt)}` : ""}{r.lapsed ? " · lapsed: the link of the person who named it has ended, so the school no longer opens his record. His family can name it again." : ""}</div>
             </div>
+            {r.lapsed && <span data-testid={`passport-lapsed-${r.id}`} style={{ fontFamily: D.mono, fontSize: "12px", textTransform: "uppercase", color: D.textMuted }}>lapsed</span>}
             {r.withdrawnAt
               ? <span style={{ fontFamily: D.mono, fontSize: "12px", textTransform: "uppercase", color: D.textMuted }}>withdrawn</span>
               : <Btn variant="ghost" onClick={() => withdraw(r.id)}>Withdraw</Btn>}

@@ -227,6 +227,11 @@ try {
     const self = await consentOf(await login("pillay@example.invalid"));
     ok("...and so does the boy himself, his own and nobody else's",
        self.length === 1 && self[0].player_id === R_PILLAY, `${self.length} rows`);
+    // db/122 (Kameel, 29 Oct 2026): "Let a boy of eighteen record his own
+    // scouting yes or no". R Pillay is sixteen: his own decision waits.
+    const own = await setConsent(R_PILLAY, await login("pillay@example.invalid"), false);
+    ok("...and, at sixteen, may not yet record his own decision", own.status === 403 && own.body?.error === "not_yet_eighteen",
+       `${own.status} ${own.body?.error}`);
     ok("no token, no consent read", [401, 403].includes((await api("/api/read/scouting_consent")).status));
 
     // No restore here, deliberately. This walk is not idempotent and never was

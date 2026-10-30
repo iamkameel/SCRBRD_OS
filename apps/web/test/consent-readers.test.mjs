@@ -71,6 +71,13 @@ ok("...and a reader shown none is told whose it is", /Not yours to see\. A boy's
 ok("the passport card's empty state is the reader's", /PASSPORT_NONE\[passportConsentReader\(\) \?\? "none"\]/.test(settings)
    && /family: "No school has been named\."/.test(settings) && /office: "No family has named your school\."/.test(settings)
    && /none: "Not yours to see\./.test(settings));
+// db/122 §1d (Kameel, 29 Oct 2026): a withdrawal that withdrew nothing is a
+// 403 from the route, and the card says why instead of saying nothing.
+ok("a refused withdrawal is said in words, on a 403",
+   /setSaid\(e\?\.status === 403 \? PASSPORT_WITHDRAW_REFUSED/.test(settings)
+   && /PASSPORT_WITHDRAW_REFUSED = "That name was not taken back\. Only his family/.test(settings));
+ok("...and the boy's own words say he may take a name back at any age",
+   /You can take a school's name back yourself at any time\./.test(settings));
 
 console.log(`\n${fail ? "✗" : "✓"} consent-readers: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

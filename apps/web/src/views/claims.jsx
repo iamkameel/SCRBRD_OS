@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { D, inkOn, textOn } from "../design/tokens.js";
 import { api } from "../lib/api.js";
-import { CLAIM_DONE, describeClaim, signInWords } from "../lib/signins.js";
+import { CLAIM_DONE, CLAIM_WITHHELD, describeClaim, signInWords } from "../lib/signins.js";
 
 // ══════════════════════════════════════════════════════
 //  SIGN-IN CLAIMS  (Settings → People; SCRBRD-140 §3.3)
@@ -22,6 +22,11 @@ import { CLAIM_DONE, describeClaim, signInWords } from "../lib/signins.js";
 //  Who sees the list is the database's: pending_claims() returns only claims on
 //  accounts the caller may issue a code to, and confirm / decline refuse anyone
 //  else in words (SIGN_IN_REFUSALS). The panel only asks.
+//
+//  A PUPIL'S CLAIM (db/122 §1d, Kameel 29 Oct 2026) is the school office's
+//  and the principal's: they are shown its addresses, and they answer it. The
+//  director of sport reads the row without them, and is told so instead of
+//  being offered an answer she has nothing to judge by.
 // ══════════════════════════════════════════════════════
 
 const sub = () => ({ fontFamily: D.body, fontSize: "13px", lineHeight: 1.5, color: D.textSecondary });
@@ -42,24 +47,33 @@ export function ClaimRow({ claim, busy, onConfirm, onDecline, onIssueCode }) {
   return (
     <li data-testid="claim" data-claim={c.id} style={{ listStyle: "none", padding: "12px 14px", borderRadius: D.md, border: `1px solid ${D.border}`, background: D.surf2 + "66" }}>
       <div style={{ fontFamily: D.head, fontSize: "14px", fontWeight: 700, color: D.textPrimary }}>{c.name}</div>
-      <div style={sub()}>The school has this account as <span data-testid="claim-enrolled" style={{ color: D.textPrimary, overflowWrap: "anywhere" }}>{c.enrolledAs}</span></div>
-      <div style={sub()}>{c.provider} says the person signing in is <span data-testid="claim-google" style={{ color: D.textPrimary, overflowWrap: "anywhere" }}>{c.google}</span>
-        {c.sameAddress ? " (the same address)" : " (a different address: check before you confirm)"}</div>
+      {c.addressesWithheld
+        // A pupil's: no addresses to judge by, so nothing to answer with here
+        // (db/122 §1d). Said, not left as an empty row.
+        ? <div data-testid="claim-withheld" style={{ ...sub(), marginTop: "4px", maxWidth: "62ch" }}>{CLAIM_WITHHELD}</div>
+        : <>
+            <div style={sub()}>The school has this account as <span data-testid="claim-enrolled" style={{ color: D.textPrimary, overflowWrap: "anywhere" }}>{c.enrolledAs}</span></div>
+            <div style={sub()}>{c.provider} says the person signing in is <span data-testid="claim-google" style={{ color: D.textPrimary, overflowWrap: "anywhere" }}>{c.google}</span>
+              {c.sameAddress ? " (the same address)" : " (a different address: check before you confirm)"}</div>
+          </>}
       <div style={sub()}>Asked {c.asked}{c.askedAgain ? `, and again ${c.askedAgain}` : ""}</div>
       {c.inactive && <div data-testid="claim-inactive" style={{ ...sub(), color: textOn(D.amber) }}>This account was deactivated. Look harder before you confirm.</div>}
-      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "10px" }}>
-        <Act disabled={busy} onClick={onConfirm} data-testid="claim-confirm" aria-label={`Confirm ${c.name}'s Google sign-in`}>{busy ? "Working…" : "Confirm it is them"}</Act>
-        <Act danger disabled={busy} onClick={onIssueCode} data-testid="claim-code" aria-label={`Issue ${c.name} a code instead`}>Issue a code instead</Act>
-        <Act danger disabled={busy} onClick={onDecline} data-testid="claim-decline" aria-label={`Decline ${c.name}'s Google sign-in`}>Decline</Act>
-      </div>
+      {!c.addressesWithheld && (
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "10px" }}>
+          <Act disabled={busy} onClick={onConfirm} data-testid="claim-confirm" aria-label={`Confirm ${c.name}'s Google sign-in`}>{busy ? "Working…" : "Confirm it is them"}</Act>
+          <Act danger disabled={busy} onClick={onIssueCode} data-testid="claim-code" aria-label={`Issue ${c.name} a code instead`}>Issue a code instead</Act>
+          <Act danger disabled={busy} onClick={onDecline} data-testid="claim-decline" aria-label={`Decline ${c.name}'s Google sign-in`}>Decline</Act>
+        </div>
+      )}
     </li>
   );
 }
 
 /**
  * The panel. `rows` is the sign_in_claims read; `onChanged` is the cue to read
- * it again; `onIssueCode({ id, email, name })` is the People tab's own code
- * issue (POST /api/auth/invite), whose card shows the code once.
+ * it again; `onIssueCode({ id, name })` is the People tab's own code issue
+ * (POST /api/auth/invite, naming the account by its id), whose card shows the
+ * code once.
  */
 export function ClaimsPanel({ rows, loading, onChanged, onIssueCode, post = api }) {
   const [busy, setBusy] = useState(null);
@@ -89,7 +103,7 @@ export function ClaimsPanel({ rows, loading, onChanged, onIssueCode, post = api 
           {list.map((c) => (
             <ClaimRow key={c.id} claim={c} busy={busy === c.id}
               onConfirm={() => act(c, "confirm")} onDecline={() => act(c, "decline")}
-              onIssueCode={() => onIssueCode?.({ id: c.user_id, email: c.account_email, name: c.account_name })}/>
+              onIssueCode={() => onIssueCode?.({ id: c.user_id, name: c.account_name })}/>
           ))}
         </ul>
       )}

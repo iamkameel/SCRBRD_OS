@@ -2213,6 +2213,111 @@ first**: the API built with it refuses to start without db/121
 `scoring_amendment_rejudge()`, and its public log serves `boundary`.
 <!-- ── end db/121 ── -->
 
+<!-- ── db/122: four decisions of 29 October 2026 ── -->
+#### A lapsed consent, a pupil's email, the particles, the school's day (db/122)
+
+`db/122_lapsed_consent_and_doors.sql` carries four decisions Kameel made on 29
+October 2026. **"The consent lapses when the link that gave it ends."** A
+passport consent or a yes to scouts counts only while the parent (or the boy)
+who gave it still holds a live link to him: once that link ends, the school
+the family named stops opening his record and scouts stop seeing him. The
+consent stays on his record, shown as lapsed, and his family (the boy himself
+at eighteen) can give it again. **"Close both doors, and add-role uses the
+account id."** A pupil's login email no longer reaches the director of sport
+through the Requests list, the Claims list or an account's sign-ins: only
+the office and the principal read it, as elsewhere since db/118; People's
+"Add role" now names the account, so she can still add a role to a pupil's
+account. **"Skip them, as the three-letter ones are skipped."** The public
+news check no longer refuses a post for the words de, du, le, la, da or di
+alone; a two-letter first name is still caught. **"The school's day (SAST),
+everywhere."** A move typed with no date is dated by Johannesburg's day, not
+the database's (UTC), so a move between midnight and two is no longer dated
+yesterday. **"Let a boy of eighteen record his own scouting yes or no."** From
+his eighteenth birthday a pupil decides for himself, on his own account,
+whether scouts may see him; until then it stays his parent's or guardian's.
+**"Under eighteen, only his guardian; at eighteen, he does it himself."** The
+same for his passport: a pupil under eighteen no longer names a school for his
+own record; his parent or guardian does, on a link with processing consent on
+record (two new RESTRICTIVE write policies on `passport_consent`, and
+`passport_consent_writer_ok()`). **After the read-through (29 Oct, 21:15),
+each as recommended:** a consent a boy named for himself while under eighteen
+lapses; under eighteen he may still withdraw one; a link granted afresh does
+not bring a lapsed consent back (a corrected end still does); and a pupil's
+Google claim and sign-in code are the office's and the principal's alone, so
+the director of sport is told so rather than answering one, and "Issue a code"
+names the account by its id.
+
+**What it does to a live database.** It replaces `passport_open()`,
+`scouting_candidates()`, `scouting_consent_set()` (now the application's alone,
+no longer PUBLIC's), `role_requester()`, `pending_claims()`,
+`account_sign_ins()`, `pending_claim_confirm()`, `pending_claim_decline()`,
+`news_public_hits()`, `player_team_membership_log()` and
+`player_move_voids_seats()`, each with its owner, grants, SECURITY DEFINER and
+pinned search path as they were; adds one rule to `login_code_issue()`, its
+grants untouched; and adds `consent_giver_live()` (granted to nobody),
+`passport_consent_in_force()` and `scouting_consent_in_force()` (the
+application's). It refuses to run unless each function in place is the
+earlier file's or its own (md5 of its folded body), and a second paste
+changes nothing. No table, column or row changes, and two policies are added;
+production holds only test data. **What moves on the paste:** a named school stops opening a
+passport, and a scout stops seeing a boy, wherever the consent's giver's link
+has already ended or no giver is on record (only an owner's seed writes
+none); a pupil's address reads blank to the director of sport on those three
+lists, and she can no longer confirm or decline a pupil's Google claim or
+issue his code; a news post held back only by a two-letter particle passes
+its next check; moves already recorded keep their dates.
+
+Paste `node tools/bundle-sql.mjs --apply 122` after 121, then the verify
+bundle (§99 is its proof). The summary row "A lapsed consent, a pupil's
+email, the school's day" should read OK. **Schema first**: the API built with
+it refuses to start without db/122 (`expected-migrations.json`): its
+`passport_consents` and `scouting_consent` reads select the two in-force
+functions. `POST /api/users` also takes `{ userId, role, schoolId }`, and
+`POST /api/passport/consent` withdraws a lapsed consent naming the same
+school before it writes the new one; `POST /api/passport/consent/:id/withdraw`
+answers 403 when it withdrew nothing; and `POST /api/auth/invite` also takes
+`{ userId }`.
+<!-- ── end db/122 ── -->
+<!-- ── db/123: a side's notices reach the side ── -->
+#### A side's notices reach the side (db/123)
+
+`db/123_reach_notices.sql` is REACH group R-E (O-N), as Kameel decided it on
+14 October 2026. **A notice to a side that names no child** — "team sheet
+published", "training moved", "result reopened", a knockout's side changed,
+an injury availability line — **now reaches that side only**: its staff, its
+players, school-wide staff, a spectator the office admitted, and the parents
+of boys on it. Until now every parent at the school read every side's. A
+notice about a child still reaches his family; a notice to one person still
+reaches him alone; school notices, safeguarding notices and a post's notice
+(db/101's) are unchanged. **The side is the one on the notice's day**
+(Kameel, 29 Oct: "Keep the ones from when he was in that side"): a boy who
+moved, and his parents, keep his old side's notices from while he was on it
+and not the ones after; his parents do not gain the new side's earlier ones.
+**A boy playing up and his parents get that match's notices** (Kameel, 29
+Oct: "Yes: he and his parents get that match's notices too"), and nothing
+else of the side he plays up for. Only the boy himself gains a notice by it.
+
+**What it does to a live database.** Two read questions
+(`notice_follows_side()`, `notice_side_read()`), one RESTRICTIVE read policy
+on `notification` (`notification_follows_side`) and one PERMISSIVE
+(`notification_read_side`: the moved or playing-up boy himself, whom db/09's
+read asks at the wrong side), and `notification_report()` (db/101's)
+re-emitted in place with both, so a parent of another side who is handed a
+side notice's id is told it is not there. No table, column or row changes;
+db/09's read policy is not touched. It refuses to run before db/117 (the
+dated `side_reach_on()`, `news_own_old_side()`) or on a
+`notification_report()` that is not db/101's, and a second paste changes
+nothing. **What a parent sees changes at the paste:** Notices and the badge
+lose other sides' notices.
+
+Paste `node tools/bundle-sql.mjs --apply 123` after 121 (and after 122 where
+it is in the same paste list), then the verify bundle (§100 is its proof).
+The summary row "A side's notices reach the side" should read OK. **Schema
+first**: the API built with it refuses to start without db/123
+(`expected-migrations.json`). No route or screen needs it to work; the
+screens read what the server gives.
+<!-- ── end db/123 ── -->
+
 ### 5 · Cloud Run, the first time
 
 ```sh

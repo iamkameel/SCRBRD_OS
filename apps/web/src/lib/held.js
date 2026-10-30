@@ -71,6 +71,18 @@ export function familyOf(assignments = profile()?.assignments ?? []) {
 }
 
 /**
+ * The boys whose record IS the signed-in person: the ones his own self-access
+ * link names, verified and live today. Presentation only: Settings → Passport
+ * says in words that, under eighteen, his guardian decides (db/122).
+ * @param {any[]} [assignments]
+ * @returns {Set<string>}
+ */
+export function ownRecordsOf(assignments = profile()?.assignments ?? []) {
+  return new Set(assignments.filter((a) => a.role === FAMILY_LINKS[1])
+    .flatMap((a) => (Array.isArray(a.liveSubjects) ? a.liveSubjects : a.subjects) ?? []));
+}
+
+/**
  * Does one assignment reach this boy for this capability, as app_can() scopes
  * it: his school, his side (unless the question is school-wide), and, if it
  * names anybody, him.

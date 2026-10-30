@@ -5,6 +5,7 @@ import { ROLES, canonicalRole } from "../design/roles.js";
 import { D, T } from "../design/tokens.js";
 import { Modal } from "../ui/primitives.jsx";
 import { api } from "../lib/api.js";
+import { holdsCapability } from "../rbac/index.js";
 import { reachesEverySchool, schoolsWhere } from "../lib/session.js";
 
 // ══════════════════════════════════════════════════════
@@ -54,6 +55,8 @@ export const ENROL_MESSAGE = {
   no_result: "The server could not finish this. Nothing was changed.",
   refused: "The server refused this and did not say why. Nothing was changed.",
   missing_token: "You are not signed in.",
+  // db/122 §1d: a pupil's account is opened, and his sign-in code issued, by the school office or the principal.
+  office_only: "This is a pupil's account. Only the school office or the principal opens it or issues his sign-in code.",
 };
 const UNSAID = "This was not saved. The server refused it for a reason that has no words yet, and nothing was changed.";
 /** The words for a refusal code; a sentence even for a code nobody has written one for. */
@@ -100,6 +103,19 @@ export function useAssignableSchools() {
  * shouldn't be"). The server refuses it as well (db/86).
  */
 export const PLATFORM_ROLES = ["superadmin", "platformadmin"];
+
+/**
+ * WHO OPENS A PUPIL'S ACCOUNT (db/122 §1d; Kameel, 29 Oct 2026): the school
+ * office and the principal, who are shown a pupil's address
+ * (app_user_email_seen(), db/118: guardian.link.manage at his school). Anyone
+ * else — the director of sport included — still adds a role to his account by
+ * its id, but neither opens it nor issues his code. The server refuses them
+ * `office_only` before writing anything; this only keeps the screens from
+ * offering what would be refused.
+ */
+export const opensPupilAccounts = (role) => holdsCapability(role, "guardian.link.manage");
+/** Said where a pupil's account would have been offered to somebody who may not open one. */
+export const PUPILS_BY_OFFICE = "The school office enrols pupils: a pupil's sign-in email and code are the office's alone.";
 
 /** The roles this role may grant at a school, from the policy's own table. */
 export const grantableFor = (role) => (GRANTABLE_ROLES[canonicalRole(role)] ?? []).filter((r) => !PLATFORM_ROLES.includes(r));
@@ -162,9 +178,11 @@ export function FormBtn({ children, variant = "primary", style, ...rest }) {
  *   accountless the part of it with no account yet; a pupil's own account is
  *               for one of these. Omit to offer the whole roster.
  *   initial     { name, email, role, player } to start from
- *   fixed       { name, email, school } — the person already has an account;
- *               the form shows both and will not change them, and the role is
- *               added to that account (the server finds it by the email)
+ *   fixed       { userId, name, email, school } — the person already has an
+ *               account; the form shows both and will not change them, and the
+ *               role is added to that account, named by its id (db/122). Its
+ *               email may be absent: a pupil's is the office's alone (db/118),
+ *               and the form then says so instead of drawing a field.
  *   onEnrolled  ({ out, name }) once the server has said yes
  *
  * `fixed.school` is where the role is added. Otherwise the school is the one
@@ -212,23 +230,29 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
   const choices = (forChild ? players : (accountless ?? players)).filter(here);
   const linked = players.find((p) => p.id === f.player) || null;
 
-  const ready = !!schoolId && f.name.trim().length >= 2 && EMAIL.test(f.email.trim()) && !!f.role
-    && (!teamScoped || !!f.team) && (!subjectScoped || !!f.player);
+  const byAccount = !!fixed?.userId;
+  // A pupil's new account is the office's to open (db/122 §1d), and an
+  // account whose address this reader was not given is a pupil's, whose code
+  // is the office's: neither is offered, rather than sent to be refused.
+  const pupilByOffice = !byAccount && PUPIL_ROLES.includes(f.role) && !opensPupilAccounts(role);
+  const codeWithheld = byAccount && !f.email;
+  const ready = !!schoolId && f.name.trim().length >= 2 && (byAccount || EMAIL.test(f.email.trim())) && !!f.role
+    && (!teamScoped || !!f.team) && (!subjectScoped || !!f.player) && !pupilByOffice;
 
   const submit = async () => {
     setError(null);
     setBusy(true);
     try {
       const out = await api("/api/users", { method: "POST", body: {
-        email: f.email.trim(),
-        name: f.name.trim(),
+        // An existing account by its id; a new one by the email typed.
+        ...(byAccount ? { userId: fixed.userId } : { email: f.email.trim(), name: f.name.trim() }),
         role: f.role,
         schoolId,
         // A coach's side is the one chosen; a pupil's is his own. A guardian's
         // reach is the child she answers for, not his side, so none is sent.
         teamCode: (teamScoped ? f.team : subjectScoped && !forChild ? linked?.team : "") || undefined,
         playerId: subjectScoped && f.player ? f.player : undefined,
-        withCode: f.withCode === true,
+        withCode: f.withCode === true && !codeWithheld,
       } });
       await onEnrolled?.({ out, name: f.name.trim(), role: f.role, team: teamScoped ? f.team : null });
     } catch (e) {
@@ -251,8 +275,12 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
       )}
       <TextField label="Full name" value={f.name} onChange={set("name")} placeholder="First Last" readOnly={!!fixed}
                  data-testid="enrol-name" autoComplete="off"/>
-      <TextField label="Email" value={f.email} onChange={set("email")} type="email" placeholder="name@school.co.za"
-                 readOnly={!!fixed} data-testid="enrol-email" autoComplete="off"/>
+      {byAccount && !f.email
+        ? <div data-testid="enrol-email-withheld" style={{ margin: "0 0 14px", fontFamily: D.body, fontSize: "13px", color: D.textMuted }}>
+            Email shown to the school office only. The role is added to this account all the same; his sign-in code is the office's to issue.
+          </div>
+        : <TextField label="Email" value={f.email} onChange={set("email")} type="email" placeholder="name@school.co.za"
+                     readOnly={!!fixed} data-testid="enrol-email" autoComplete="off"/>}
       <SelectField label="Role" value={f.role} onChange={(v) => setF((p) => ({ ...p, role: v, player: "", team: "" }))}
                    data-testid="enrol-role"
                    options={[{ value: "", label: "Choose a role…" },
@@ -276,13 +304,21 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
             : "You cannot read this school's roster, so a role for a child cannot be given from here. The school office can give it, or you can under support access."}
         </div>
       )}
-      <label style={{ display: "flex", alignItems: "center", gap: "10px", minHeight: "44px", cursor: "pointer",
-                      fontFamily: D.body, fontSize: "13px", color: D.textSecondary }}>
-        <input type="checkbox" checked={f.withCode === true} data-testid="enrol-code"
-               onChange={(e) => set("withCode")(e.target.checked)}
-               style={{ width: "20px", height: "20px", flexShrink: 0 }}/>
-        Issue a sign-in code now
-      </label>
+      {pupilByOffice && (
+        <div data-testid="enrol-pupil-office" role="note" style={{ margin: "-6px 0 14px", fontFamily: D.body, fontSize: "13px",
+          color: D.textMuted, lineHeight: 1.5 }}>
+          {PUPILS_BY_OFFICE}
+        </div>
+      )}
+      {!codeWithheld && !pupilByOffice && (
+        <label style={{ display: "flex", alignItems: "center", gap: "10px", minHeight: "44px", cursor: "pointer",
+                        fontFamily: D.body, fontSize: "13px", color: D.textSecondary }}>
+          <input type="checkbox" checked={f.withCode === true} data-testid="enrol-code"
+                 onChange={(e) => set("withCode")(e.target.checked)}
+                 style={{ width: "20px", height: "20px", flexShrink: 0 }}/>
+          Issue a sign-in code now
+        </label>
+      )}
       {error && (
         <div data-testid="enrol-error" data-code={error} role="alert" style={{ marginTop: "10px", padding: "10px 12px", borderRadius: D.sm,
           background: D.rose + "14", border: `1px solid ${D.rose}33`, fontFamily: D.body, fontSize: "13px", color: D.roseText }}>

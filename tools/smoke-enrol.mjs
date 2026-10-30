@@ -216,6 +216,75 @@ try {
                                            schoolId: WES, teamCode: "U14A" });
   ok("the platform account still enrols an ordinary role at a school", coachWes.status === 200 && !!coachWes.body?.userId);
 
+  group("Add role names the account, not its email (db/122)");
+  // Kameel, 29 Oct 2026: "Close both doors, and add-role uses the account
+  // id". A pupil's login email is the office's alone (db/118), so the
+  // director of sport, who may give a pupil's account the scorer's role, is
+  // not given his address; she names the account by its id, and the server
+  // reads the address itself and never sends it back.
+  const sarah = await login("sarah@example.invalid");   // director of sport, Hilton
+  const PILLAY_ACCOUNT = "88888888-0000-0000-0000-000000000009";
+  const byId = await enrol(sarah, { userId: PILLAY_ACCOUNT, role: "scorer", schoolId: HIL });
+  ok(`the director of sport adds a role to the pupil's account by its id (was ${byId.status} ${byId.body?.error ?? ""})`,
+     byId.status === 200 && byId.body?.userId === PILLAY_ACCOUNT && !!byId.body?.assignmentId);
+  ok("...and the answer carries no address", !JSON.stringify(byId.body).includes("@"));
+  ok("...and the role is on his account, the one she named",
+     (await q(`select count(*)::int n from role_assignment where person_id = $1 and role = 'scorer' and active`, [PILLAY_ACCOUNT]))[0].n === 1);
+  ok("...with no second account made", (await accounts("pillay@example.invalid")) === 1);
+  const unseen = await enrol(sarah, { userId: "88888888-0000-0000-0000-0000000000ff", role: "scorer", schoolId: HIL });
+  ok(`an account she cannot read is not one she can add a role to (was ${unseen.status})`, unseen.status === 403);
+  const coachBy = await enrol(coach, { userId: PILLAY_ACCOUNT, role: "scorer", schoolId: HIL });
+  ok(`nor may a coach, by id any more than by email (was ${coachBy.status})`, coachBy.status === 403);
+  ok("a malformed account id never reaches the database",
+     (await enrol(sarah, { userId: "not-a-uuid", role: "scorer", schoolId: HIL })).status === 400);
+
+  group("A pupil's sign-in code is the office's, named by the account (db/122 §1d)");
+  // Kameel, 29 Oct 2026, on the read-through: issuing a pupil's code belongs
+  // to the office alone, the door that reads his address; "Issue a code"
+  // names the account by its id, as Add role does.
+  const invite = (token, body) => api("/api/auth/invite", { method: "POST", token, body });
+  const dosCode = await invite(sarah, { userId: PILLAY_ACCOUNT });
+  ok(`the director of sport is not issued the pupil's code (was ${dosCode.status} ${dosCode.body?.error ?? ""})`,
+     dosCode.status >= 400 && dosCode.body?.error === "office_only" && !dosCode.body?.code);
+  ok("...nor by his address, which she was never given",
+     (await invite(sarah, { email: "pillay@example.invalid" })).body?.error === "office_only");
+  const officeCode = await invite(registrar, { userId: PILLAY_ACCOUNT });
+  ok(`the office issues it, by the account's id (was ${officeCode.status} ${officeCode.body?.error ?? ""})`,
+     officeCode.status === 200 && typeof officeCode.body?.code === "string" && !JSON.stringify(officeCode.body).includes("@"));
+  const dosAdult = await invite(sarah, { userId: "88888888-0000-0000-0000-00000000000a" });
+  ok(`...and the director still issues an adult's she may grant, by id (was ${dosAdult.status} ${dosAdult.body?.error ?? ""})`,
+     dosAdult.status === 200 && typeof dosAdult.body?.code === "string");
+  ok("an account the caller cannot read is refused, by id",
+     (await invite(sarah, { userId: "88888888-0000-0000-0000-0000000000ff" })).body?.error === "not_permitted");
+
+  // ...and so is opening his account: POST /api/users refuses her before
+  // enrol_person() writes anything, so no account is left made with no code.
+  const [{ id: UNENROLLED, team_code: UNENROLLED_TEAM }] = await q(
+    `select p.id::text, p.team_code from player p
+      where p.school_id = $1 and p.team_code is not null
+        and not exists (select 1 from app_user u where u.player_id = p.id)
+      order by p.id limit 1`, [HIL]);
+  const dosEnrol = await enrol(sarah, { ...body("v122.pupil@example.invalid", "V Pupil", UNENROLLED, UNENROLLED_TEAM), withCode: true });
+  ok(`the director of sport may not open a pupil's account (was ${dosEnrol.status} ${dosEnrol.body?.error ?? ""})`,
+     dosEnrol.status === 403 && dosEnrol.body?.error === "office_only" && !dosEnrol.body?.code);
+  ok("...nor without a code: the account is the office's to open",
+     (await enrol(sarah, body("v122.pupil@example.invalid", "V Pupil", UNENROLLED, UNENROLLED_TEAM))).body?.error === "office_only");
+  ok("...and neither left an account, or a request, behind",
+     (await accounts("v122.pupil@example.invalid")) === 0 && (await openRequests("v122.pupil@example.invalid")) === 0
+     && (await q(`select count(*)::int n from app_user where player_id = $1`, [UNENROLLED]))[0].n === 0);
+  const rolesBefore = (await q(`select count(*)::int n from role_assignment where person_id = $1`, [PILLAY_ACCOUNT]))[0].n;
+  const codesBefore = (await q(`select count(*)::int n from login_code where user_id = $1`, [PILLAY_ACCOUNT]))[0].n;
+  const dosAddCode = await enrol(sarah, { userId: PILLAY_ACCOUNT, role: "official", schoolId: HIL, withCode: true });
+  ok(`a role by his id WITH a code is refused her too (was ${dosAddCode.status} ${dosAddCode.body?.error ?? ""})`,
+     dosAddCode.status === 403 && dosAddCode.body?.error === "office_only" && !dosAddCode.body?.code);
+  ok("...before anything was written: no role added, no code made",
+     (await q(`select count(*)::int n from role_assignment where person_id = $1`, [PILLAY_ACCOUNT]))[0].n === rolesBefore
+     && (await q(`select count(*)::int n from login_code where user_id = $1`, [PILLAY_ACCOUNT]))[0].n === codesBefore);
+  const dosStaff = await enrol(sarah, { email: "v122.coach@example.invalid", name: "V Coach", role: "coach",
+                                        schoolId: HIL, teamCode: "U13A", withCode: true });
+  ok(`an adult's enrolment by the director, with a code, is unchanged (was ${dosStaff.status} ${dosStaff.body?.error ?? ""})`,
+     dosStaff.status === 200 && !!dosStaff.body?.userId && typeof dosStaff.body?.code === "string");
+
   group("The roster gap actually closes");
   const after = await q(
     `select count(*)::int n from player p
