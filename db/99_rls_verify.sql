@@ -30781,8 +30781,27 @@ $v49$;
   --                                             fifteen counted at eighteen
   --   consent_giver_live() without the reopening → (reopen): the old consent
   --                                             came back with the reopened link
-  -- And §6's (30 Oct 2026, the section alone, each broken and restored):
-  --   §6_FALSIFICATIONS
+  -- And §6's (30 Oct 2026, the section alone, each broken as the owner and
+  -- restored; unchanged it passed before and after):
+  --   passport_open() granted back to the application → (doors)
+  --   passport_open_not_union() granted to the application → (doors)
+  --   passport() logging whenever a union consent admits, as before Q2
+  --                                           → (other-arm): selcoach and
+  --                                             selpar logged as the union
+  --   passport_name() the same                → (other-arm)
+  --   passport_union_reads() reading the account's name now, not the copy
+  --                                           → (family): 0 of 4 by the name
+  --                                             he read under
+  --   passport_consent_recipient_ok() taking anything but a union → (club)
+  --   passport_open_not_union() without the recipient test → (club): the
+  --                                             club's office opened it
+  --   passport_consent_in_force() without the recipient test → (club)
+  --   passport_recipients() without the family test → (club): another
+  --                                             family was offered his union
+  --   consent_giver_live() with < for <=      → (birthday): E2's consent on
+  --                                             his birthday did not count
+  --   consent_giver_live() a day early        → (birthday): E3's counted
+  --   a RESTRICTIVE policy refusing a self-appointment → (self-appoint)
   -- One did not go red, and cannot alone: passport_union_reader_at()'s own
   -- pad test, because app_can() refuses on a pad first; it stays as a second
   -- lock, as db/57's readers keep theirs.
@@ -31087,6 +31106,7 @@ $v49$;
     PERFORM _as((y->>'e3self')::uuid);
     PERFORM _assert(passport_consent_in_force((y->>'pc_e3')::uuid) IS FALSE,
       format('§101 (birthday): E3 reads his consent of the day before his birthday in force %s', passport_consent_in_force((y->>'pc_e3')::uuid)));
+    PERFORM _as((y->>'sel')::uuid);
     -- (reopen) R's guardian named his union two years ago, at school.
     PERFORM _assert(_passport_open((y->>'R')::uuid), '§101 (reopen): before he left, the selector does not open R''s passport');
     PERFORM set_config('app.user_id', '', true);
@@ -31114,20 +31134,22 @@ $v49$;
 
     -- (self-appoint) Q7: the union's principal appoints himself its selector,
     -- through the write policy, and what he then reads is logged by his name.
+    -- R has no line on his passport yet, so the read is his name (passport_name()),
+    -- which opens and logs exactly as passport() does.
     PERFORM _as((y->>'uhead')::uuid);
-    SELECT count(*) INTO v_n FROM passport((y->>'R')::uuid);
-    PERFORM _assert(v_n = 0, format('§101 (self-appoint): the union''s principal opens %s line(s) before he is its selector', v_n));
+    PERFORM _assert(passport_name((y->>'R')::uuid) IS NULL AND NOT _passport_open((y->>'R')::uuid),
+      '§101 (self-appoint): the union''s principal opens R''s passport before he is its selector');
     BEGIN
       INSERT INTO role_assignment (person_id, role, school_id) VALUES ((y->>'uhead')::uuid, 'unionselector', U_);
       v_ok := true;
     EXCEPTION WHEN insufficient_privilege OR check_violation THEN v_ok := false;
     END;
     PERFORM _assert(v_ok, '§101 (self-appoint): the union''s principal could not appoint himself its selector');
-    SELECT count(*) INTO v_n FROM passport((y->>'R')::uuid);
+    k := passport_name((y->>'R')::uuid);
     PERFORM set_config('app.user_id', '', true);
     got := _v124_reads_of((y->>'R')::uuid);
-    PERFORM _assert(v_n > 0 AND got = 'V124 Uhead (Union Selector):passport',
-      format('§101 (self-appoint): he opens %s line(s), and R''s log reads [%s]', v_n, got));
+    PERFORM _assert(k = 'Verify OneTwentyFour Returner' AND got = 'V124 Uhead (Union Selector):name',
+      format('§101 (self-appoint): he reads R''s name as [%s], and R''s log reads [%s]', coalesce(k, '(none)'), got));
     PERFORM _as((y->>'rg')::uuid);
     SELECT count(*) INTO v_n FROM passport_union_reads() r WHERE r.player_id = (y->>'R')::uuid AND r.reader_name = 'V124 Uhead';
     PERFORM _assert(v_n = 1, format('§101 (self-appoint): R''s guardian reads %s line(s) naming the principal', v_n));
