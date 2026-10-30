@@ -31244,7 +31244,10 @@ $v49$;
     PERFORM _assert(v_ok AND e0 = 1, '§102: the scorer could not claim the fixture');
     INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
                             idempotency_key, client_seq, client_ts, kind, payload)
-    VALUES (F, match_school(F), 1, e0, 0, U_SCORER, DA, 'verify:126:1', 1, now(), 'ball', '{}'::jsonb);
+    VALUES (F, match_school(F), 1, e0, 0, U_SCORER, DA, 'verify:126:1', 1, now(), 'innings_start', '{}'::jsonb);
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                            idempotency_key, client_seq, client_ts, kind, ball_type, value, payload)
+    VALUES (F, match_school(F), 2, e0, 0, U_SCORER, DA, 'verify:126:2', 2, now(), 'ball', 'run', 1, '{}'::jsonb);
 
     -- (live) Sarah, phone B, while A's lease is live: a take-over is refused.
     PERFORM _as(U_SARAH);
@@ -31284,8 +31287,8 @@ $v49$;
     SELECT c.ok, c.epoch INTO v_ok, e1 FROM scoring_claim(F, DA) c;
     PERFORM _assert(v_ok AND e1 = e0 + 1, format('§102 (own): the holding phone could not take back its own lapsed lease (%s %s)', v_ok, e1));
     INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-                            idempotency_key, client_seq, client_ts, kind, payload)
-    VALUES (F, match_school(F), 2, e1, 0, U_SCORER, DA, 'verify:126:2', 2, now(), 'ball', '{}'::jsonb);
+                            idempotency_key, client_seq, client_ts, kind, ball_type, value, payload)
+    VALUES (F, match_school(F), 3, e1, 0, U_SCORER, DA, 'verify:126:3', 3, now(), 'ball', 'run', 2, '{}'::jsonb);
     PERFORM _lapse_scoring_lease(F);
 
     -- (take) Shown the new generation, she confirms.
@@ -31300,7 +31303,7 @@ $v49$;
     SELECT * INTO a FROM scoring_audit WHERE match_id = F AND event = 'takeover';
     PERFORM _assert(n = 1 AND a.actor_id = U_SARAH AND a.from_user = U_SCORER AND a.to_user = U_SARAH AND a.epoch = e0
                     AND a.detail->>'from_device' = DA AND a.detail->>'to_device' = DB
-                    AND (a.detail->>'last_seq')::int = 2 AND a.detail->>'last_ball_at' IS NOT NULL AND a.detail->>'lease_lapsed_at' IS NOT NULL,
+                    AND (a.detail->>'last_seq')::int = 3 AND a.detail->>'last_ball_at' IS NOT NULL AND a.detail->>'lease_lapsed_at' IS NOT NULL,
       format('§102 (take): the audit is %s rows, %s', n, a.detail));
 
     -- (idle) Force-released (her lease lapsed): idle, and a plain claim takes it, as before.

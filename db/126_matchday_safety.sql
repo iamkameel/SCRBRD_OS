@@ -192,7 +192,7 @@ BEGIN
   -- The server's last ball as it stood at the take-over: max(server_ts),
   -- the figure match_live_score.last_ball_at reports, read here over every
   -- row whatever the caller may read (SECURITY DEFINER).
-  SELECT max(b.server_ts), max(b.seq) INTO v_at, v_seq FROM ball_event b WHERE b.match_id = p_match;
+  SELECT max(b.server_ts), max(b.seq) INTO v_at, v_seq FROM ball_event b WHERE b.match_id = p_match AND b.kind = 'ball';
   UPDATE scoring_session SET
     state='active', epoch = s.epoch + 1, holder_user_id = app_user_id(),
     holder_device = p_device, lease_until = now() + interval '90 seconds',
