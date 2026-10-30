@@ -120,5 +120,6 @@
   "122_lapsed_consent_and_doors.sql",
   "123_reach_notices.sql",
   "124_union_passport.sql",
+  "125_union_selector_list.sql",
   "126_matchday_safety.sql"
 ]

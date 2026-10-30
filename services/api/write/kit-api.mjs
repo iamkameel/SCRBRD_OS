@@ -81,6 +81,18 @@ export function kitRoutes({ pool, secret }) {
           `select not passport_consent_recipient_ok($1, $2) and passport_consent_writer_ok($1) as refused,
                   institution_is_union($2) as is_union`, [b.playerId, b.schoolId]);
         if (chk?.refused) throw err(chk.is_union ? "not_his_union" : "not_a_school", 422);
+        // His family, on a guardian's link, once he is eighteen: the consent
+        // is his to give now (db/125 §5 (1), Kameel 30 Oct 2026; READERS
+        // Q1), said in words rather than as the insert policy's bare refusal.
+        // The boy himself at eighteen passes the writer test and never gets here.
+        const { rows: [age] } = await c.query(
+          `select not passport_consent_writer_ok($1) and is_family_of($1)
+                  and exists (select 1 from player_masked p
+                               where p.id = $1 and p.born is not null and majority_on(p.born) <= sa_today())
+                  and exists (select 1 from role_assignment a
+                               where a.person_id = app_user_id() and a.role = 'guardian' and a.active) as of_age`,
+          [b.playerId]);
+        if (age?.of_age) throw err("he_is_of_age", 422);
         // A consent lapses when the link that gave it ends (db/122, Kameel 29
         // Oct 2026), but its row stays open, and db/08 allows one open row per
         // boy and school. A lapsed one naming this school is withdrawn first,

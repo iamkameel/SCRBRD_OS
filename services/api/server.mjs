@@ -70,7 +70,7 @@ import { keyedWrite, fingerprint } from "./write/replay.mjs";
 import { AuthError } from "./auth/auth.mjs";
 import { isPadAuthorization, padRoute, padPrincipal, padRefusal, padCredentialRoutes } from "./auth/pad-resume.mjs";
 import { signInRoutes, verifierFromEnv } from "./auth/signin-api.mjs";
-import { readRoute, exportRoute, liveResources } from "./read/read-api.mjs";
+import { readRoute, exportRoute, liveResources, readIsNoStore } from "./read/read-api.mjs";
 import { importRoutes } from "./io/import-api.mjs";
 import { eventRoutes, amendmentRoutes, quarantineRoutes, correctionRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
@@ -1397,8 +1397,12 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && path.startsWith("/api/read/")) {
       const shimmed = shim(res);
+      const resource = decodeURIComponent(path.slice("/api/read/".length));
+      // A union's list and its pickers are kept nowhere (db/125, D7): set
+      // before the answer is written, so writeHead() carries it, error or not.
+      if (readIsNoStore(resource)) res.setHeader("cache-control", "no-store");
       await read({
-        params: { resource: decodeURIComponent(path.slice("/api/read/".length)) },
+        params: { resource },
         query: Object.fromEntries(url.searchParams),
         headers: req.headers,
       }, shimmed);

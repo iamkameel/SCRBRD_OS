@@ -822,6 +822,23 @@ SELECT
         AND position('sa_date(p_given_at)' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('consent_giver_live(uuid,uuid,timestamptz)'))) > 0
         AND position('guardian_link_reopened_since(' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('consent_giver_live(uuid,uuid,timestamptz)'))) > 0
        THEN 'OK' ELSE 'PROBLEM' END                             AS "The union passport",
+  -- db/125: the union selector's list (Kameel, 30 Oct 2026, all six as
+  -- recommended): three doors the application's, the list's record nobody's,
+  -- the log taking 'list', the giver test on the child's clock; and the seams
+  -- audit's calls 1, 2 and 4 (21:53 SAST): a guardian's yes at eighteen
+  -- refused, a scout's read logged, a withdrawn processing consent lapsing.
+  CASE WHEN has_function_privilege('scrbrd_app', to_regprocedure('passport_union_list(uuid,uuid,text,text)'), 'EXECUTE')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('passport_union_orgs()'), 'EXECUTE')
+        AND has_function_privilege('scrbrd_app', to_regprocedure('passport_union_schools(uuid)'), 'EXECUTE')
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('passport_union_log_list(uuid[],uuid[])'), 'EXECUTE')
+        AND position('''list''' IN (SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
+                                     WHERE c.conrelid = to_regclass('passport_union_read') AND c.conname = 'passport_union_read_what_check')) > 0
+        AND position('current_date' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('consent_giver_live(uuid,uuid,timestamptz)'))) = 0
+        AND position('s.consent_state = ''granted''' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('consent_giver_live(uuid,uuid,timestamptz)'))) > 0
+        AND position('he_is_of_age' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('scouting_consent_set(uuid,boolean)'))) > 0
+        AND position('majority_on(p.born) > sa_today()' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport_consent_writer_ok(uuid)'))) > 0
+        AND position('log_restricted_read(''scouting_candidates''' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('scouting_candidates()'))) > 0
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "The union selector's list",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
