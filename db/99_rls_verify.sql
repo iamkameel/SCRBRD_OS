@@ -8573,6 +8573,215 @@ CREATE OR REPLACE FUNCTION _v124_correct(p_person uuid, p_player uuid) RETURNS v
    WHERE a.id = s.assignment_id AND a.person_id = p_person AND a.role = 'guardian' AND s.player_id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/124 (section 101) ─────────────────────────────────────────────
+-- ┌── db/125 (section 102). The union selector's list (Kameel, 30 Oct 2026)
+-- Invented, as the owner; every name is a placeholder.
+--   U, the KwaZulu-Natal union and F, the federation (CSA Schools), found or
+--     made as section 101 does; OU, a union of another province.
+--   SA and SB, two KwaZulu-Natal schools of its own; FAR, a school in OU's
+--     province. HIL and WES are the seed's.
+--   At SA: PA (U15A, "Kilo"), PD (U15A, "Echo"), PA2 (U15B, "Lima") and PN
+--     (U14A, "Mike"); at SB: PB (U15A, "Oscar") and PC (U16A, "Papa"); at
+--     FAR: PX (U15A, "Xray"). Each of fifteen, with a guardian of his own
+--     (ga, gd, ga2, gn, gb, gc, gx); PA also with his own account (paself:
+--     player and self-access).
+--   sel, a union selector at U; fsel, one at CSA Schools; both, one at U and
+--     at CSA Schools (two assignments); org, a competition organiser at U;
+--     plat, a selector at U who also holds a platform-wide organiser's
+--     assignment; sup, a selector at U in a support session at U; selcoach,
+--     a selector at U who coaches SA's U15A; selpar, a selector at U who is
+--     PA's guardian.
+-- The consents are named in the section, each by his own family.
+CREATE OR REPLACE FUNCTION _v125_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  U15 date := make_date(extract(year FROM sa_today())::int - 15, 3, 1);
+  U uuid; OU uuid; F uuid; SA uuid; SB uuid; FAR uuid;
+  c_a uuid; c_d uuid; c_a2 uuid; c_n uuid; c_b uuid; c_c uuid; c_x uuid; v_a uuid; ids jsonb;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  SELECT s.id INTO U FROM school s WHERE s.kind = 'union' AND lower(btrim(s.province)) = 'kwazulu-natal' AND s.archived_at IS NULL;
+  IF U IS NULL THEN
+    INSERT INTO school (code, name, kind, province) VALUES ('V125U', 'Verify OneTwentyFive KZN Union', 'union', 'KwaZulu-Natal')
+    RETURNING id INTO U;
+  END IF;
+  SELECT s.id INTO F FROM school s WHERE s.kind = 'federation';
+  IF F IS NULL THEN
+    INSERT INTO school (code, name, kind) VALUES ('V125F', 'Verify OneTwentyFive CSA Schools', 'federation') RETURNING id INTO F;
+  END IF;
+  INSERT INTO school (code, name, kind, province) VALUES ('V125OU', 'Verify OneTwentyFive Far Union', 'union', 'Verify 125 Province')
+  RETURNING id INTO OU;
+  INSERT INTO school (code, name, kind, province) VALUES ('V125A', 'Verify OneTwentyFive Alpha School', 'school', 'KwaZulu-Natal')
+  RETURNING id INTO SA;
+  INSERT INTO school (code, name, kind, province) VALUES ('V125B', 'Verify OneTwentyFive Bravo School', 'school', 'KwaZulu-Natal')
+  RETURNING id INTO SB;
+  INSERT INTO school (code, name, kind, province) VALUES ('V125X', 'Verify OneTwentyFive Far School', 'school', 'Verify 125 Province')
+  RETURNING id INTO FAR;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (SA, 'U15A', 'Verify OneTwentyFive Kilo', 1251, 'batter', U15) RETURNING id INTO c_a;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (SA, 'U15A', 'Verify OneTwentyFive Echo', 1252, 'bowler', U15) RETURNING id INTO c_d;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (SA, 'U15B', 'Verify OneTwentyFive Lima', 1253, 'batter', U15) RETURNING id INTO c_a2;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (SA, 'U14A', 'Verify OneTwentyFive Mike', 1254, 'batter', U15) RETURNING id INTO c_n;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (SB, 'U15A', 'Verify OneTwentyFive Oscar', 1255, 'batter', U15) RETURNING id INTO c_b;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (SB, 'U16A', 'Verify OneTwentyFive Papa', 1256, 'bowler', U15) RETURNING id INTO c_c;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (FAR, 'U15A', 'Verify OneTwentyFive Xray', 1257, 'batter', U15) RETURNING id INTO c_x;
+  ids := _v71_people('v125', ARRAY[
+    ARRAY['ga',       'guardian',         SA::text,  '',     ''],
+    ARRAY['gd',       'guardian',         SA::text,  '',     ''],
+    ARRAY['ga2',      'guardian',         SA::text,  '',     ''],
+    ARRAY['gn',       'guardian',         SA::text,  '',     ''],
+    ARRAY['gb',       'guardian',         SB::text,  '',     ''],
+    ARRAY['gc',       'guardian',         SB::text,  '',     ''],
+    ARRAY['gx',       'guardian',         FAR::text, '',     ''],
+    ARRAY['paself',   'player',           SA::text,  'U15A', c_a::text],
+    ARRAY['sel',      'unionselector',    U::text,   '',     ''],
+    ARRAY['fsel',     'unionselector',    F::text,   '',     ''],
+    ARRAY['both',     'unionselector',    U::text,   '',     ''],
+    ARRAY['org',      'competitionadmin', U::text,   '',     ''],
+    ARRAY['plat',     'unionselector',    U::text,   '',     ''],
+    ARRAY['sup',      'unionselector',    U::text,   '',     ''],
+    ARRAY['selcoach', 'coach',            SA::text,  'U15A', ''],
+    ARRAY['selpar',   'guardian',         SA::text,  '',     '']]);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES
+    ((ids->>'both')::uuid, 'unionselector', F),
+    ((ids->>'selcoach')::uuid, 'unionselector', U),
+    ((ids->>'selpar')::uuid, 'unionselector', U);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'plat')::uuid, 'competitionadmin', NULL);
+  -- sup's support hour at U, written as support_access_begin() would.
+  INSERT INTO role_assignment (person_id, role, school_id, active, valid_from, expires_at)
+  VALUES ((ids->>'sup')::uuid, 'schooladmin', U, true, current_date, now() + interval '1 hour') RETURNING id INTO v_a;
+  INSERT INTO support_access (actor_id, school_id, role, reason, assignment_id, expires_at)
+  VALUES ((ids->>'sup')::uuid, U, 'schooladmin', 'Verify 125: a support hour at the union', v_a, now() + interval '1 hour');
+  PERFORM _v100_link((ids->>'ga')::uuid,  SA,  c_a);
+  PERFORM _v100_link((ids->>'gd')::uuid,  SA,  c_d);
+  PERFORM _v100_link((ids->>'ga2')::uuid, SA,  c_a2);
+  PERFORM _v100_link((ids->>'gn')::uuid,  SA,  c_n);
+  PERFORM _v100_link((ids->>'gb')::uuid,  SB,  c_b);
+  PERFORM _v100_link((ids->>'gc')::uuid,  SB,  c_c);
+  PERFORM _v100_link((ids->>'gx')::uuid,  FAR, c_x);
+  PERFORM _v100_link((ids->>'selpar')::uuid, SA, c_a);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'paself')::uuid, 'selfaccess', SA) RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (v_a, c_a, 'self', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+          '88888888-0000-0000-0000-00000000000c', current_date - 1);
+  RETURN ids || jsonb_build_object('U', U, 'OU', OU, 'F', F, 'SA', SA, 'SB', SB, 'FAR', FAR, 'HIL', HIL, 'WES', WES,
+                                   'PA', c_a, 'PD', c_d, 'PA2', c_a2, 'PN', c_n, 'PB', c_b, 'PC', c_c, 'PX', c_x,
+                                   'Uname', (SELECT s.name FROM school s WHERE s.id = U));
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The key y gives an id, or '?'.
+CREATE OR REPLACE FUNCTION _v125_key(y jsonb, p_id uuid) RETURNS text AS $$
+  SELECT coalesce((SELECT e.k FROM jsonb_each_text(y) e(k, val) WHERE e.val = p_id::text ORDER BY e.k COLLATE "C" LIMIT 1), '?')
+$$ LANGUAGE sql STABLE;
+
+-- The caller's list, as the application asks it: key@institution, in the
+-- list's own order. Run as the caller (not a definer), so it is the
+-- application's call under the caller's app.user_id.
+CREATE OR REPLACE FUNCTION _v125_list(y jsonb, p_org uuid, p_school uuid, p_age text, p_q text DEFAULT NULL) RETURNS text AS $$
+  SELECT coalesce(string_agg(_v125_key(y, l.player_id) || '@' || _v125_key(y, l.org_id), ',' ORDER BY l.n), '')
+    FROM passport_union_list(p_org, p_school, p_age, p_q) WITH ORDINALITY
+         AS l(player_id, name, school_name, team_code, org_id, consent_id, n)
+$$ LANGUAGE sql VOLATILE;
+
+-- The institutions and the schools the caller is offered: keys, in order;
+-- an id y does not know is left out of the schools (other sections' schools).
+CREATE OR REPLACE FUNCTION _v125_orgs(y jsonb) RETURNS text AS $$
+  SELECT coalesce(string_agg(_v125_key(y, o.org_id), ',' ORDER BY o.n), '')
+    FROM passport_union_orgs() WITH ORDINALITY AS o(org_id, name, kind, n)
+$$ LANGUAGE sql STABLE;
+CREATE OR REPLACE FUNCTION _v125_schools(y jsonb, p_org uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(_v125_key(y, s.school_id), ',' ORDER BY s.n) FILTER (WHERE _v125_key(y, s.school_id) <> '?'), '')
+    FROM passport_union_schools(p_org) WITH ORDINALITY AS s(school_id, name, n)
+$$ LANGUAGE sql STABLE;
+
+-- What the owner reads in the log of the caller's lists: key@institution per
+-- 'list' row, sorted; and its access-log rows: school:keys+, sorted.
+CREATE OR REPLACE FUNCTION _v125_reads(y jsonb, p_reader uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(t, ',' ORDER BY t COLLATE "C"), '') FROM (
+    SELECT _v125_key(y, r.player_id) || '@' || _v125_key(y, r.org_id) AS t
+      FROM passport_union_read r WHERE r.reader_id = p_reader AND r.what = 'list') x
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v125_who(p_reader uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(t, ',' ORDER BY t COLLATE "C"), '') FROM (
+    SELECT DISTINCT r.reader_name || ' (' || r.reader_role || ')' AS t
+      FROM passport_union_read r WHERE r.reader_id = p_reader AND r.what = 'list') x
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v125_consents(p_reader uuid) RETURNS uuid[] AS $$
+  SELECT coalesce(array_agg(r.consent_id ORDER BY r.consent_id), '{}')
+    FROM passport_union_read r WHERE r.reader_id = p_reader AND r.what = 'list'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v125_access(y jsonb, p_reader uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(t, ',' ORDER BY t COLLATE "C"), '') FROM (
+    SELECT _v125_key(y, a.school_id) || ':'
+           || (SELECT string_agg(_v125_key(y, i), '+' ORDER BY _v125_key(y, i) COLLATE "C") FROM unnest(a.record_ids) i) AS t
+      FROM access_log a
+     WHERE a.person_id = p_reader AND a.resource = 'passport_union' AND a.fields = ARRAY['list']) x
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Every list row and list access row, whoever wrote them: "nothing logged".
+CREATE OR REPLACE FUNCTION _v125_total() RETURNS text AS $$
+  SELECT (SELECT count(*) FROM passport_union_read r WHERE r.what = 'list')::text || '/'
+      || (SELECT count(*) FROM access_log a WHERE a.resource = 'passport_union' AND a.fields = ARRAY['list'])::text
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- One boy's 'list' rows, as the owner counts them.
+CREATE OR REPLACE FUNCTION _v125_rows_of(p_player uuid) RETURNS int AS $$
+  SELECT count(*)::int FROM passport_union_read r WHERE r.player_id = p_player AND r.what = 'list'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- (a)'s cross-check, written out independently of db/125: the boys with an
+-- in-force consent (db/124's test) to p_org, at which p_reader holds a live
+-- union selector's appointment, through the same filters.
+CREATE OR REPLACE FUNCTION _v125_direct(p_reader uuid, p_org uuid, p_school uuid, p_age text) RETURNS int AS $$
+  SELECT count(DISTINCT p.id)::int
+    FROM player p
+    JOIN passport_consent c ON c.player_id = p.id
+    JOIN school o ON o.id = c.to_school_id
+   WHERE o.id = p_org AND c.withdrawn_at IS NULL
+     AND consent_giver_live(c.granted_by, c.player_id, c.granted_at)
+     AND o.archived_at IS NULL
+     AND ((o.kind = 'union' AND o.id = school_union(p.school_id))
+          OR (o.kind = 'federation' AND o.id = school_federation()))
+     AND (p_school IS NULL OR p.school_id = p_school)
+     AND (p_age IS NULL OR left(p.team_code, 3) = p_age)
+     AND EXISTS (SELECT 1 FROM role_assignment a
+                  WHERE a.person_id = p_reader AND a.role = 'unionselector' AND a.school_id = o.id AND a.active)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- passport_union_consent() as the owner, for the caller in app.user_id: the
+-- consent the passport would log under (D4).
+CREATE OR REPLACE FUNCTION _v125_union_consent(p_player uuid) RETURNS uuid AS $$
+  SELECT passport_union_consent(p_player)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A consent made later than it was: one minute ahead, so the other is the
+-- earlier (D4). Its giver's link is older than both.
+CREATE OR REPLACE FUNCTION _v125_later(p_consent uuid) RETURNS void AS $$
+  UPDATE passport_consent SET granted_at = now() + interval '1 minute' WHERE id = p_consent;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A guardian's link that ended yesterday (SAST), as the office's end date writes it.
+CREATE OR REPLACE FUNCTION _v125_ended_yesterday(p_person uuid, p_player uuid) RETURNS void AS $$
+  UPDATE assignment_subject s SET valid_until = sa_today() - 1
+    FROM role_assignment a
+   WHERE a.id = s.assignment_id AND a.person_id = p_person AND a.role = 'guardian' AND s.player_id = p_player;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- PX's guardian names a union not his (U), written as the owner in his name,
+-- past the insert policy, which would refuse it: the list must ask too.
+CREATE OR REPLACE FUNCTION _v125_far_consent(y jsonb) RETURNS uuid AS $$
+DECLARE v uuid;
+BEGIN
+  PERFORM set_config('app.user_id', y->>'gx', true);
+  INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'PX')::uuid, (y->>'U')::uuid) RETURNING id INTO v;
+  PERFORM set_config('app.user_id', '', true);
+  RETURN v;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/125 (section 102) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -31191,6 +31400,347 @@ $v49$;
   PERFORM set_config('app.scope', '', true);
   -- └── end of section 101
   -- └── db/124 (section 101) ──────────────────────────────────────────
+  -- ┌── db/125 (section 102) ─────────────────────────────────────────
+  -- ── 102. The union selector's list (db/125, Kameel 30 Oct 2026) ──
+  -- docs/design/UNION_SELECTOR_FIND.md, slice S1: a selector lists only the
+  -- boys whose consent to his institution is in force at the moment he asks,
+  -- by school or age group, each row his name, school and side; every row
+  -- shown is a logged read his family sees. Kameel's six answers (30 Oct
+  -- 2026, 21:05 SAST, all as recommended). Staged by _v125_stage(); every
+  -- call is the caller's own, as the application makes it.
+  --
+  -- What each label holds:
+  --   (orgs)     the institutions each caller reads at: his union, CSA
+  --              Schools, or both; nothing for an organiser, a platform-wide
+  --              caller, a support session or a pad
+  --   (schools)  the schools a selector may filter by: his union's, or every
+  --              school for CSA Schools; none at an institution he does not
+  --              read at
+  --   (f)        a call with neither school nor age group is refused
+  --              (choose_a_school_or_age_group), a name alone too, and an age
+  --              group not of the form U15; a refusal logs nothing
+  --   (a)        the selector at the union lists only the boys whose in-force
+  --              consent names it, in order (school, surname); the count
+  --              equals a direct count over passport_consent with db/124's test
+  --   (g)        each row returned writes exactly one 'list' row, his name and
+  --              role copied in, under the consent the row names, and one
+  --              access_log row per school with every boy's id
+  --   (name)     Q6: a name fragment narrows within the consented set; a boy
+  --              consented elsewhere, unconsented, or nobody reads the same
+  --   (coach)    Q2: a selector who is also a boy's coach, or his guardian,
+  --              is logged for every row as a union read
+  --   (d)        a consent naming CSA Schools appears to its selector and not
+  --              to the province's, and the reverse; another province's
+  --              school's boy never appears to the province, not even on a
+  --              consent naming it written past the insert policy
+  --   (e)        a platform-wide caller, a support session, a pad and a
+  --              competition organiser each get an empty list and no log row
+  --   (dual)     D4: a selector at both, asking for both, sees one row per
+  --              boy, under the consent the passport would log under
+  --   (h)        passport_union_reads() returns the 'list' rows to his
+  --              guardian and to the boy on his own link, and nothing to a
+  --              stranger
+  --   (b)        a withdrawn consent drops the row in the same transaction
+  --   (c)        a giver's link ended yesterday drops it
+  --   (i)        the row is the six columns; the bodies read no born, no
+  --              player_innings, no honour, no style, no passport_name()
+  --   (j)        the three are definers with the pinned path, the writer is
+  --              not; nobody but scrbrd_app executes the three, nobody the
+  --              writer
+  --   (k)        Q3: consent_giver_live() asks sa_today() in its four link
+  --              tests and current_date nowhere
+  --
+  -- Falsified (30 Oct 2026, the section alone, each change made as the owner
+  -- and restored; unchanged it passed before and after):
+  --   passport_union_list() without the log call  → (g)
+  --   passport_union_list() without consent_giver_live() → (c)
+  --   passport_union_list() counting a withdrawn consent → (b)
+  --   passport_union_list() without passport_union_reader_at() → (d): fails
+  --                                             closed, CSA Schools' selector's
+  --                                             list at the union finding no
+  --                                             role to log (reader_role NOT NULL)
+  --   passport_union_list() taking any union, not his school's → (d)
+  --   passport_union_list() without the filter refusal → (f)
+  --   passport_union_log_list() granted to the application → (j)
+  --   consent_giver_live() back on current_date   → (k)
+  DECLARE
+    y      jsonb := _v125_stage();
+    U_     uuid;
+    F_     uuid;
+    SA_    uuid;
+    SB_    uuid;
+    FAR_   uuid;
+    v_pc   uuid;
+    v_n    int;
+    v_n2   int;
+    v_ok   boolean;
+    v_cids uuid[];
+    got    text;
+    v_t    text;
+    k      text;
+  BEGIN
+    U_ := (y->>'U')::uuid; F_ := (y->>'F')::uuid; SA_ := (y->>'SA')::uuid; SB_ := (y->>'SB')::uuid; FAR_ := (y->>'FAR')::uuid;
+
+    -- Each family names the institution, through the write policy.
+    PERFORM _as((y->>'ga')::uuid);
+    INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'PA')::uuid, U_);
+    PERFORM _as((y->>'gd')::uuid);
+    INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'PD')::uuid, U_);
+    INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'PD')::uuid, F_) RETURNING id INTO v_pc;
+    PERFORM _as((y->>'ga2')::uuid);
+    INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'PA2')::uuid, F_);
+    PERFORM _as((y->>'gb')::uuid);
+    INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'PB')::uuid, U_);
+    PERFORM _as((y->>'gc')::uuid);
+    INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'PC')::uuid, U_);
+    PERFORM _as((y->>'gx')::uuid);
+    INSERT INTO passport_consent (player_id, to_school_id) VALUES ((y->>'PX')::uuid, F_);
+    -- PD's CSA Schools consent is the later of his two (D4).
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v125_later(v_pc);
+
+    -- (orgs)
+    FOREACH k IN ARRAY ARRAY['sel', 'fsel', 'both', 'org', 'plat', 'sup', 'gn'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v125_orgs(y);
+      PERFORM _assert(got = CASE k WHEN 'sel' THEN 'U' WHEN 'fsel' THEN 'F' WHEN 'both' THEN 'U,F' ELSE '' END,
+        format('§102 (orgs): %s reads as a union at [%s]', k, got));
+    END LOOP;
+    PERFORM _as((y->>'sel')::uuid);
+    PERFORM set_config('app.scope', 'pad', true);
+    got := _v125_orgs(y);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(got = '', format('§102 (orgs): the selector on a pad reads as a union at [%s]', got));
+
+    -- (schools)
+    PERFORM _as((y->>'sel')::uuid);
+    got := _v125_schools(y, U_);
+    PERFORM _assert(got = 'HIL,SA,SB,WES', format('§102 (schools): the union''s selector may filter by [%s], not its four', got));
+    got := _v125_schools(y, F_);
+    PERFORM _assert(got = '', format('§102 (schools): the union''s selector is offered CSA Schools'' schools [%s]', got));
+    PERFORM _as((y->>'fsel')::uuid);
+    got := _v125_schools(y, F_);
+    PERFORM _assert(got = 'HIL,SA,SB,FAR,WES', format('§102 (schools): CSA Schools'' selector may filter by [%s], not every school', got));
+    PERFORM _as((y->>'org')::uuid);
+    got := _v125_schools(y, U_);
+    PERFORM _assert(got = '', format('§102 (schools): the union''s organiser is offered [%s]', got));
+
+    -- (f)
+    PERFORM set_config('app.user_id', '', true);
+    v_t := _v125_total();
+    PERFORM _as((y->>'sel')::uuid);
+    FOREACH k IN ARRAY ARRAY['none', 'name-only', 'blank', 'not-a-band'] LOOP
+      BEGIN
+        got := CASE k WHEN 'none'       THEN _v125_list(y, U_, NULL, NULL)
+                      WHEN 'name-only'  THEN _v125_list(y, U_, NULL, NULL, 'Kilo')
+                      WHEN 'blank'      THEN _v125_list(y, U_, NULL, '  ', NULL)
+                      ELSE                   _v125_list(y, U_, NULL, '15', NULL) END;
+        v_ok := true;
+      EXCEPTION WHEN invalid_parameter_value THEN
+        GET STACKED DIAGNOSTICS got = MESSAGE_TEXT;
+        v_ok := false;
+      END;
+      PERFORM _assert(NOT v_ok AND got = 'choose_a_school_or_age_group',
+        format('§102 (f): a call with %s was answered, or refused as [%s]', k, got));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v125_total() = v_t, format('§102 (f): a refused call logged (%s, was %s)', _v125_total(), v_t));
+
+    -- (a) and (g): the selector's first list, at SA.
+    PERFORM _as((y->>'sel')::uuid);
+    SELECT coalesce(string_agg(_v125_key(y, l.player_id) || '@' || _v125_key(y, l.org_id)
+                               || '|' || l.name || '|' || l.school_name || '|' || l.team_code, ',' ORDER BY l.n), ''),
+           array_agg(l.consent_id ORDER BY l.consent_id)
+      INTO got, v_cids
+      FROM passport_union_list(U_, SA_, NULL, NULL) WITH ORDINALITY AS l(player_id, name, school_name, team_code, org_id, consent_id, n);
+    PERFORM _assert(got = 'PD@U|Verify OneTwentyFive Echo|Verify OneTwentyFive Alpha School|U15A,'
+                       || 'PA@U|Verify OneTwentyFive Kilo|Verify OneTwentyFive Alpha School|U15A',
+      format('§102 (a): the union''s selector lists SA as [%s]', got));
+    v_n := _v125_direct((y->>'sel')::uuid, U_, SA_, NULL);
+    PERFORM _assert(v_n = 2, format('§102 (a): the direct count over passport_consent at SA is %s, not the list''s 2', v_n));
+    PERFORM set_config('app.user_id', '', true);
+    got := _v125_reads(y, (y->>'sel')::uuid);
+    PERFORM _assert(got = 'PA@U,PD@U', format('§102 (g): the selector''s list of two wrote [%s]', got));
+    got := _v125_who((y->>'sel')::uuid);
+    PERFORM _assert(got = 'V125 Sel (Union Selector)', format('§102 (g): the list rows name the reader as [%s]', got));
+    PERFORM _assert(_v125_consents((y->>'sel')::uuid) = v_cids,
+      '§102 (g): the list rows are not under the consents the list named');
+    got := _v125_access(y, (y->>'sel')::uuid);
+    PERFORM _assert(got = 'SA:PA+PD', format('§102 (g): SA''s access log reads [%s], not one row with both boys', got));
+    -- By age group, across two schools: one log row a boy, one access row a
+    -- school; the count is the direct count.
+    v_t := _v125_total();
+    PERFORM _as((y->>'sel')::uuid);
+    SELECT count(*), count(DISTINCT l.school_name),
+           coalesce(string_agg(_v125_key(y, l.player_id), ',' ORDER BY l.n) FILTER (WHERE _v125_key(y, l.player_id) <> '?'), '')
+      INTO v_n, v_n2, got
+      FROM passport_union_list(U_, NULL, 'u15', NULL) WITH ORDINALITY AS l(player_id, name, school_name, team_code, org_id, consent_id, n);
+    PERFORM _assert(got = 'PD,PA,PB', format('§102 (a): the union''s selector lists U15 as [%s] of this section''s boys', got));
+    PERFORM _assert(v_n = _v125_direct((y->>'sel')::uuid, U_, NULL, 'U15'),
+      format('§102 (a): the U15 list holds %s row(s), the direct count %s', v_n, _v125_direct((y->>'sel')::uuid, U_, NULL, 'U15')));
+    PERFORM set_config('app.user_id', '', true);
+    got := _v125_total();
+    PERFORM _assert(got = (split_part(v_t, '/', 1)::int + v_n)::text || '/' || (split_part(v_t, '/', 2)::int + v_n2)::text,
+      format('§102 (g): a list of %s boy(s) at %s school(s) took the log from %s to %s', v_n, v_n2, v_t, got));
+    PERFORM _assert(_v125_access(y, (y->>'sel')::uuid) LIKE '%SB:PB%',
+      format('§102 (g): SB''s access log does not hold PB''s list row [%s]', _v125_access(y, (y->>'sel')::uuid)));
+
+    -- (name) Q6
+    PERFORM _as((y->>'sel')::uuid);
+    got := _v125_list(y, U_, SA_, NULL, ' KILO ');
+    PERFORM _assert(got = 'PA@U', format('§102 (name): "kilo" at SA lists [%s]', got));
+    got := _v125_list(y, U_, NULL, 'U15', 'oscar');
+    PERFORM _assert(got = 'PB@U', format('§102 (name): "oscar" in U15 lists [%s]', got));
+    FOREACH k IN ARRAY ARRAY['Lima', 'Mike', 'Nobody', '%', '_'] LOOP
+      got := _v125_list(y, U_, SA_, NULL, k);
+      PERFORM _assert(got = '', format('§102 (name): "%s" at SA lists [%s]: a miss must read as nobody', k, got));
+    END LOOP;
+
+    -- (coach) Q2
+    FOREACH k IN ARRAY ARRAY['selcoach', 'selpar'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v125_list(y, U_, SA_, NULL);
+      PERFORM _assert(got = 'PD@U,PA@U', format('§102 (coach): %s lists SA as [%s]', k, got));
+      PERFORM set_config('app.user_id', '', true);
+      got := _v125_reads(y, (y->>k)::uuid) || ' ' || _v125_who((y->>k)::uuid);
+      PERFORM _assert(got = 'PA@U,PD@U ' || upper('v125') || ' ' || initcap(k) || ' (Union Selector)',
+        format('§102 (coach): %s, also PA''s %s, was logged as [%s]', k, CASE k WHEN 'selcoach' THEN 'coach' ELSE 'guardian' END, got));
+    END LOOP;
+
+    -- (d)
+    PERFORM _as((y->>'fsel')::uuid);
+    got := _v125_list(y, F_, SA_, NULL);
+    PERFORM _assert(got = 'PD@F,PA2@F', format('§102 (d): CSA Schools'' selector lists SA as [%s]', got));
+    got := _v125_list(y, F_, FAR_, NULL);
+    PERFORM _assert(got = 'PX@F', format('§102 (d): CSA Schools'' selector lists the far school as [%s]', got));
+    got := _v125_list(y, U_, SA_, NULL);
+    PERFORM _assert(got = '', format('§102 (d): CSA Schools'' selector lists the union''s consents [%s]', got));
+    PERFORM _as((y->>'sel')::uuid);
+    got := _v125_list(y, U_, SA_, 'U15');
+    PERFORM _assert(got = 'PD@U,PA@U', format('§102 (d): the union''s selector lists SA''s U15 as [%s] (PA2 named CSA Schools only)', got));
+    got := _v125_list(y, U_, FAR_, NULL) || '|' || _v125_list(y, F_, SA_, NULL);
+    PERFORM _assert(got = '|', format('§102 (d): the union''s selector lists another province''s school, or CSA Schools'', as [%s]', got));
+    -- ...even on a consent naming his union for a boy whose union it is not,
+    -- written past the insert policy (as the owner, in his guardian's name).
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v125_far_consent(y);
+    PERFORM _as((y->>'sel')::uuid);
+    got := _v125_list(y, U_, FAR_, NULL) || '|' || _v125_list(y, U_, NULL, 'U15', 'xray');
+    PERFORM _assert(got = '|', format('§102 (d): on a consent naming a union not his, its selector lists [%s]', got));
+
+    -- (e)
+    PERFORM set_config('app.user_id', '', true);
+    v_t := _v125_total();
+    FOREACH k IN ARRAY ARRAY['plat', 'sup', 'org', 'pad'] LOOP
+      PERFORM _as((y->>CASE k WHEN 'pad' THEN 'sel' ELSE k END)::uuid);
+      IF k = 'pad' THEN PERFORM set_config('app.scope', 'pad', true); END IF;
+      got := _v125_list(y, U_, SA_, NULL) || '|' || _v125_list(y, NULL, NULL, 'U15');
+      PERFORM set_config('app.scope', '', true);
+      PERFORM _assert(got = '|', format('§102 (e): %s lists [%s]', k, got));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v125_total() = v_t, format('§102 (e): an empty list logged (%s, was %s)', _v125_total(), v_t));
+
+    -- (dual) D4: one row a boy, under the consent the passport would log under.
+    PERFORM _as((y->>'both')::uuid);
+    got := _v125_list(y, NULL, SA_, NULL);
+    PERFORM _assert(got = 'PD@U,PA@U,PA2@F', format('§102 (dual): the selector at both lists SA as [%s]', got));
+    SELECT l.consent_id INTO v_pc FROM passport_union_list(NULL, SA_, NULL, 'echo') l;
+    PERFORM _assert(v_pc = _v125_union_consent((y->>'PD')::uuid),
+      '§102 (dual): PD''s row is not under the consent his passport would log under');
+    got := _v125_list(y, F_, SA_, NULL);
+    PERFORM _assert(got = 'PD@F,PA2@F', format('§102 (dual): the selector at both, asking CSA Schools, lists SA as [%s]', got));
+
+    -- (h)
+    PERFORM set_config('app.user_id', '', true);
+    v_n2 := _v125_rows_of((y->>'PA')::uuid);
+    FOREACH k IN ARRAY ARRAY['ga', 'paself'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT count(*), count(*) FILTER (WHERE r.reader_name = 'V125 Sel' AND r.reader_role = 'Union Selector'
+                                          AND r.organisation = y->>'Uname')
+        INTO v_n, v_n2
+        FROM passport_union_reads() r WHERE r.player_id = (y->>'PA')::uuid AND r.what = 'list';
+      PERFORM _assert(v_n = _v125_rows_of((y->>'PA')::uuid) AND v_n > 0 AND v_n2 = 4,
+        format('§102 (h): %s reads %s of PA''s %s list row(s), %s by the union''s selector by name, role and union (4)',
+               k, v_n, _v125_rows_of((y->>'PA')::uuid), v_n2));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['gn', 'gd', 'sel', 'org'] LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT count(*) INTO v_n FROM passport_union_reads() r WHERE r.player_id = (y->>'PA')::uuid;
+      PERFORM _assert(v_n = 0, format('§102 (h): %s, not PA''s family, reads %s of his union read(s)', k, v_n));
+    END LOOP;
+
+    -- (b)
+    PERFORM _as((y->>'sel')::uuid);
+    got := _v125_list(y, U_, SB_, NULL);
+    PERFORM _assert(got = 'PB@U,PC@U', format('§102 (b): before the withdrawal the selector lists SB as [%s]', got));
+    PERFORM _as((y->>'gb')::uuid);
+    UPDATE passport_consent SET withdrawn_at = now() WHERE player_id = (y->>'PB')::uuid AND withdrawn_at IS NULL;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    PERFORM _assert(v_n = 1, format('§102 (b): PB''s guardian withdrew %s consent(s), not 1', v_n));
+    PERFORM _as((y->>'sel')::uuid);
+    got := _v125_list(y, U_, SB_, NULL);
+    PERFORM _assert(got = 'PC@U', format('§102 (b): after the withdrawal the selector lists SB as [%s]', got));
+
+    -- (c)
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v125_ended_yesterday((y->>'gc')::uuid, (y->>'PC')::uuid);
+    PERFORM _as((y->>'sel')::uuid);
+    got := _v125_list(y, U_, SB_, NULL) || '|' || _v125_list(y, U_, NULL, 'U16', 'papa');
+    PERFORM _assert(got = '|', format('§102 (c): with his guardian''s link ended yesterday the selector lists [%s]', got));
+
+    -- (i)
+    SELECT array_to_string(p.proargnames[p.pronargs + 1:], ','), array_to_string(p.proargmodes, ''),
+           p.prorettype = 'record'::regtype AND p.proretset
+      INTO got, v_t, v_ok
+      FROM pg_proc p WHERE p.oid = 'passport_union_list(uuid,uuid,text,text)'::regprocedure;
+    PERFORM _assert(got = 'player_id,name,school_name,team_code,org_id,consent_id' AND v_t = 'iiiitttttt' AND v_ok,
+      format('§102 (i): passport_union_list() returns [%s] (%s), not the six columns', got, v_t));
+    FOREACH k IN ARRAY ARRAY['passport_union_list(uuid,uuid,text,text)', 'passport_union_log_list(uuid[],uuid[])',
+                             'passport_union_orgs()', 'passport_union_schools(uuid)'] LOOP
+      SELECT p.prosrc INTO got FROM pg_proc p WHERE p.oid = k::regprocedure;
+      PERFORM _assert(got !~* '\m(born|player_innings|bowler_innings_figures|honour|team_cap|player_milestone|batting_style|bowling_style|bowling_arm|passport_name)\M',
+        format('§102 (i): %s reads past the name, the school and the side', k));
+    END LOOP;
+
+    -- (j)
+    FOREACH k IN ARRAY ARRAY['passport_union_orgs()', 'passport_union_schools(uuid)', 'passport_union_list(uuid,uuid,text,text)'] LOOP
+      PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = k::regprocedure AND p.prosecdef
+                                AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
+                      AND has_function_privilege('scrbrd_app', k::regprocedure, 'EXECUTE')
+                      AND NOT has_function_privilege('public', k::regprocedure, 'EXECUTE')
+                      AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                                       WHERE p.oid = k::regprocedure AND x.privilege_type = 'EXECUTE'
+                                         AND x.grantee NOT IN (p.proowner, (SELECT r.oid FROM pg_roles r WHERE r.rolname = 'scrbrd_app'))),
+        format('§102 (j): %s is not a pinned definer the application alone may call', k));
+    END LOOP;
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'passport_union_log_list(uuid[],uuid[])'::regprocedure
+                              AND NOT p.prosecdef AND p.proacl IS NOT NULL
+                              AND NOT EXISTS (SELECT 1 FROM aclexplode(p.proacl) x
+                                               WHERE x.privilege_type = 'EXECUTE' AND x.grantee <> p.proowner)),
+      '§102 (j): the log writer is a definer, or someone but its owner may call it');
+    v_t := _v125_total();
+    PERFORM _as((y->>'sel')::uuid);
+    BEGIN
+      PERFORM passport_union_log_list(ARRAY[(y->>'PA')::uuid], ARRAY[(y->>'PA')::uuid]);
+      v_ok := true;
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
+    END;
+    PERFORM _assert(NOT v_ok, '§102 (j): the application called the log writer');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v125_total() = v_t, '§102 (j): the application wrote the log');
+
+    -- (k) Q3
+    SELECT btrim(regexp_replace(p.prosrc, '\s+', ' ', 'g')) INTO got
+      FROM pg_proc p WHERE p.oid = 'consent_giver_live(uuid,uuid,timestamptz)'::regprocedure;
+    PERFORM _assert(position('current_date' IN got) = 0
+                    AND (length(got) - length(replace(got, 'sa_today()', ''))) / length('sa_today()') = 4,
+      '§102 (k): consent_giver_live() still asks current_date, or not sa_today() in its four link tests');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('app.scope', '', true);
+  -- └── end of section 102
+  -- └── db/125 (section 102) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
