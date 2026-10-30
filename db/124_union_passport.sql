@@ -69,6 +69,8 @@
 --       (passport_consent_recipient_ok()); the route says so in words
 --       (not_his_union). The read arm asks the same at read time, so a boy who
 --       moves to a school in another province closes his old union's door.
+--       Nor is a club or an academy a school (§6 Q4): the same test refuses
+--       anything but a school, his union and CSA Schools (not_a_school).
 --
 -- ── 3 · passport_open() FOR THAT READER ─────────────────────────────
 -- A new arm, passport_union_consent(boy): the in-force consent (not
@@ -85,9 +87,10 @@
 --
 -- ── 4 · EVERY UNION READ LOGGED, AND THE FAMILY SEES IT ──────────────
 -- passport() and passport_name() (db/116) become VOLATILE, and each, when
--- the union arm is what lets the caller in, writes one passport_union_read
--- row before it answers (who, which institution, when, which boy, which
--- consent, and whether it was the passport or only his name), and one
+-- the union arm is the only arm that lets the caller in (§6 Q2), writes one
+-- passport_union_read row before it answers (who, under which role, which
+-- institution, when, which boy, which consent, and whether it was the
+-- passport or only his name), and one
 -- access_log row at his school (log_restricted_read(), resource
 -- 'passport_union'), so his school's own auditors see it in the log they
 -- already read. The passport_union_read insert is not caught: if the log
@@ -164,23 +167,70 @@
 --       each read logged) is a further door, not built.
 --   U7  One role for the named selectors and the schools cricket manager.
 --
+-- ── 6 · AFTER THE RED-TEAM (Kameel, 30 Oct 2026, 11:06: all eight as
+--    recommended) ──────────────────────────────────────────────────────
+--   Q1  passport_open() is no longer the application's to call. It answered
+--       yes or no for a union's selector and wrote nothing, so it was a door
+--       with no record. passport() and passport_name() are the only doors; no
+--       route called it. It stays a definer, called by those two as their
+--       owner (and by db/99 as the owner).
+--   Q2  A read is logged as a union read only when the union arm is the ONLY
+--       arm that lets the caller in. A selector who is also the boy's parent,
+--       his coach or office at his school, or staff at a school his family
+--       named, reads as that, and nothing is written to the union's log. The
+--       other arms are passport_open_not_union(), and passport_open() is that
+--       or the union arm.
+--   Q3  The log copies the reader's name and the role he read under when it
+--       is written, so "who looked" outlives his account: if it is deleted,
+--       reader_id goes to NULL (ON DELETE SET NULL) and the family's view,
+--       which reads only the copies, is unchanged; if it is renamed or
+--       anonymised, the family still reads the name he read under.
+--   Q4  A family names a school (kind 'school'), the boy's own provincial
+--       union, or CSA Schools. A club, an academy, a league or an association
+--       is refused (passport_consent_recipient_ok(), its own word on the
+--       route: not_a_school) until Kameel decides on them. The screen's list
+--       is passport_recipients(boy): the same test, for his family. A consent
+--       already naming one of them (none in the seed; production holds test
+--       data only) stops opening his passport on the paste and reads as not
+--       in force, and the screen says why; his family can take it back.
+--   Q6  "Reopened" is read from his school memberships, not from the link's
+--       own history. So a link the office corrected (its end set back to open)
+--       while he was away, which therefore never ended, still counts as a
+--       fresh link when he comes back to school after his eighteenth birthday
+--       and his last leaving: a consent given before that return needs to be
+--       given again. That is meant: a long absence is the point, however the
+--       link was kept open. Do not "fix" it toward the link's history.
+--   Q7  A union's principal may appoint himself its selector (role_grantable:
+--       principal → unionselector, at his own union, and nothing refuses a
+--       self-appointment). Allowed: the log is the check, since every read he
+--       then makes is recorded under his own name and shown to the family.
+--   Left for later, untouched here: Q5 (link liveness by the database's day
+--   rather than SAST's) and Q8 (logging the owner's key's and a receiving
+--   school's reads).
+--
 -- WHAT IT CHANGES ON A LIVE DATABASE (production holds test data only)
 --   capability passport.union.read; role unionselector (its two capabilities;
 --     appointed by principal, platformadmin, superadmin); superadmin's row
 --   trigger role_assignment_unionselector_scoped: new
 --   table passport_union_read: new, row security on, no privilege for the
---     application (nothing reads or writes it but the definers)
+--     application (nothing reads or writes it but the definers); the reader's
+--     name and role copied in, reader_id ON DELETE SET NULL (§6 Q3)
 --   functions institution_is_union(uuid), passport_consent_recipient_ok(uuid,
---     uuid), passport_union_reads(): new definers, scrbrd_app's alone;
+--     uuid), passport_recipients(uuid), passport_union_reads(): new definers,
+--     scrbrd_app's alone;
 --     passport_union_reader_at(uuid), passport_union_consent(uuid),
---     passport_union_log(uuid,uuid,text), unionselector_assignment_scoped():
---     new, nobody's to call
---   function passport_open(uuid) (db/122): body replaced: the named-school arm
---     skips a union, and the union arm is added
+--     passport_union_log(uuid,uuid,text), unionselector_assignment_scoped(),
+--     passport_open_not_union(uuid): new, nobody's to call
+--   function passport_open(uuid) (db/122): body replaced: db/122's arms move
+--     to passport_open_not_union(), the named-school arm skipping a union and
+--     anything that is not a school, and the union arm is added; no longer
+--     the application's to call (§6 Q1)
 --   function passport(uuid), passport_name(uuid) (db/116): bodies replaced and
---     VOLATILE: they log a union read; every line they return is db/116's
+--     VOLATILE: they log a union read when only the union arm admits the
+--     caller; every line they return is db/116's
 --   function passport_consent_in_force(uuid) (db/122): body replaced: a union
---     row's answer is the family's alone
+--     row's answer is the family's alone, and a row naming what may no longer
+--     be named (a club; a union no longer his) is not in force
 --   function role_words(text) (db/77): one name added
 --   function consent_giver_live(uuid,uuid,timestamptz) (db/122): body
 --     replaced (§5): a boy's own consent counts only if he was eighteen on
@@ -191,10 +241,15 @@
 --   function guardian_link_reopened_since(uuid,timestamptz): new, nobody's to
 --     call
 --   policies passport_consent_union_family_only (SELECT) and
---     passport_consent_union_is_his (INSERT): new RESTRICTIVE
--- No column, no row of anybody's. A second paste changes nothing. Each new
--- policy takes a brief lock on passport_consent; the trigger on
--- role_assignment.
+--     passport_consent_union_is_his (INSERT): new RESTRICTIVE; the second
+--     also refuses a club, an academy, a league or an association (§6 Q4)
+-- No column of an existing table, no row of anybody's. A second paste changes
+-- nothing. Each new policy takes a brief lock on passport_consent; the
+-- trigger on role_assignment. ON THE PASTE these stop counting: a consent a
+-- boy gave himself under eighteen; a guardian's consent given before a
+-- return to school that counts as reopening (§5, §6 Q6); and a consent
+-- naming a club, an academy, a league or an association (§6 Q4). Each reads
+-- as not in force, and the family can name a school again.
 --
 -- SCHEMA FIRST. The read API's `passport_union_reads` selects the new
 -- definer, and the grant route asks passport_consent_recipient_ok(), so this
@@ -217,10 +272,10 @@ BEGIN
     RAISE EXCEPTION 'db/124: consent_giver_live(), passport_consent_writer_ok() (db/122), school_union(), school_federation() (db/57), app_support_access_id() (db/22), app_is_platform_wide() (db/20), log_restricted_read() or is_family_of() is missing; apply them first';
   END IF;
   FOR r IN SELECT * FROM (VALUES
-      ('passport_open(uuid)',             'c90384bf784a087fd550806652195c78', '8e210cbd4fd5aea4d854967f7371d591',     'db/122'),
-      ('passport(uuid)',                  '5a74d545a6c669c9535fa5446fac1427', 'af51b8b92926f6c7e50cc98c8d1e89b6', 'db/116'),
-      ('passport_name(uuid)',             'c66de74b0fda2fd755e86c140a6a77c9', 'cee15d920736a7ffecce8943c2c6b0b8',     'db/116'),
-      ('passport_consent_in_force(uuid)', '5ba05a756524f94ebad1ca00bd7bfc0d', 'c46388505e757f57fa4ac423c300b13e',  'db/122'),
+      ('passport_open(uuid)',             'c90384bf784a087fd550806652195c78', 'a5ef52726ce1ef90d2ac903df440b76d',     'db/122'),
+      ('passport(uuid)',                  '5a74d545a6c669c9535fa5446fac1427', 'ccdc175b39dcc89a59f72fe22bef2ab0', 'db/116'),
+      ('passport_name(uuid)',             'c66de74b0fda2fd755e86c140a6a77c9', '13d03983afbc003d49c6c7aa7c24a1d6',     'db/116'),
+      ('passport_consent_in_force(uuid)', '5ba05a756524f94ebad1ca00bd7bfc0d', '9da20ba494a6e06c48123117ba874092',  'db/122'),
       ('role_words(text)',                '2ca3e32d8973caf8a5c69e66ad9b3952', '009daaf01590b760ab0a1c54fde1d565',    'db/77'),
       ('consent_giver_live(uuid,uuid,timestamptz)', '7b574030d541bea9a1b791c972809cc8', '77a2afe09e3720cf1975a58843db6cba', 'db/122'))
       AS x(fn, was, mine, src)
@@ -325,18 +380,38 @@ CREATE OR REPLACE FUNCTION institution_is_union(p_org uuid) RETURNS boolean AS $
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 /**
- * May a family name this institution for this boy's record? Any school, as
- * before; a union only if it is his (his school's province's, school_union());
- * the federation always; an archived union or federation never. The
- * RESTRICTIVE insert policy below asks it, and the grant route asks it first
- * so it can say why.
+ * May a family name this institution for this boy's record? A school (kind
+ * 'school'), as before; a union only if it is his (his school's province's,
+ * school_union()); the federation always; an archived union or federation
+ * never. Nothing else: a club, an academy, a league or an association is not
+ * a school, and is refused until Kameel decides on them (§6 Q4). The
+ * RESTRICTIVE insert policy below asks it, the grant route asks it first so
+ * it can say why, passport_recipients() lists by it, and the named-school
+ * arm and the in-force answer ask it at read time.
  */
 CREATE OR REPLACE FUNCTION passport_consent_recipient_ok(p_player uuid, p_org uuid) RETURNS boolean AS $$
-  SELECT NOT institution_is_union(p_org)
-      OR EXISTS (SELECT 1 FROM player p, school o
-                  WHERE p.id = p_player AND o.id = p_org AND o.archived_at IS NULL
-                    AND ((o.kind = 'union' AND o.id = school_union(p.school_id))
-                         OR (o.kind = 'federation' AND o.id = school_federation())))
+  SELECT EXISTS (SELECT 1 FROM player p, school o
+                  WHERE p.id = p_player AND o.id = p_org
+                    AND (o.kind = 'school'
+                         OR (o.archived_at IS NULL
+                             AND ((o.kind = 'union' AND o.id = school_union(p.school_id))
+                                  OR (o.kind = 'federation' AND o.id = school_federation())))))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+/**
+ * The institutions his family may name for him, for the consent's picker:
+ * every school, his own provincial union and CSA Schools, by the same test
+ * the insert policy asks. To his family on a live link alone (a guardian, or
+ * the boy himself, is_family_of()); anybody else is answered nothing, since
+ * his union says which province his school is in. Never on a pad.
+ */
+CREATE OR REPLACE FUNCTION passport_recipients(p_player uuid)
+RETURNS TABLE (id uuid, name text, kind text) AS $$
+  SELECT o.id, o.name, o.kind
+    FROM school o
+   WHERE NOT app_pad_scoped() AND is_family_of(p_player)
+     AND passport_consent_recipient_ok(p_player, o.id)
+   ORDER BY o.kind <> 'school', o.name, o.id
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- His union or CSA Schools, never another province's union.
@@ -356,10 +431,13 @@ COMMENT ON POLICY passport_consent_union_family_only ON passport_consent IS
 
 /**
  * db/122's in-force answer, its office arm a school's office only: a row
- * naming a union or the federation is answered to the family alone.
+ * naming a union or the federation is answered to the family alone. A row
+ * naming what may no longer be named (a club, or a union that is no longer
+ * his) is not in force: it opens nothing (§6 Q4).
  */
 CREATE OR REPLACE FUNCTION passport_consent_in_force(p_consent uuid) RETURNS boolean AS $$
   SELECT c.withdrawn_at IS NULL AND consent_giver_live(c.granted_by, c.player_id, c.granted_at)
+         AND passport_consent_recipient_ok(c.player_id, c.to_school_id)
     FROM passport_consent c
    WHERE c.id = p_consent AND NOT app_pad_scoped()
      AND (is_family_of(c.player_id)
@@ -410,12 +488,14 @@ CREATE OR REPLACE FUNCTION passport_union_consent(p_player uuid) RETURNS uuid AS
 $$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
 
 /**
- * db/122's passport_open(): the family's arm and the arms at his own school
- * are db/116's, line for line; the named-school arm is db/122's and skips a
- * union or the federation; the union's named readers come in through their
- * own arm, last.
+ * Every arm of db/122's passport_open() but the union's: the family's arm and
+ * the arms at his own school are db/116's, line for line; the named-school
+ * arm is db/122's, and skips a union or the federation and anything that may
+ * no longer be named (a club). passport() and passport_name() ask it first,
+ * so a reader one of these arms admits is never logged as a union (§6 Q2).
+ * Internal: not a definer, granted to nobody; called as the owner.
  */
-CREATE OR REPLACE FUNCTION passport_open(p_player uuid) RETURNS boolean AS $$
+CREATE OR REPLACE FUNCTION passport_open_not_union(p_player uuid) RETURNS boolean AS $$
   SELECT is_family_of(p_player)
       OR EXISTS (SELECT 1 FROM player p WHERE p.id = p_player
                     AND (app_can('team.select', p.school_id, p.team_code, p.id, NULL::uuid)
@@ -426,14 +506,25 @@ CREATE OR REPLACE FUNCTION passport_open(p_player uuid) RETURNS boolean AS $$
                   WHERE c.player_id = p_player AND c.withdrawn_at IS NULL
                     -- In force only while the link that gave it is live (db/122).
                     AND consent_giver_live(c.granted_by, c.player_id, c.granted_at)
-                    -- A union is not a school: its door is the arm below (db/124).
+                    -- A union is not a school: its door is passport_open()'s
+                    -- union arm (db/124). Nor is a club (§6 Q4).
                     AND NOT institution_is_union(c.to_school_id)
+                    AND passport_consent_recipient_ok(c.player_id, c.to_school_id)
                     AND (app_can('guardian.link.manage', c.to_school_id, '*'::text,
                                  '00000000-0000-0000-0000-000000000000'::uuid, NULL::uuid)
                          OR app_can('team.select', c.to_school_id, '*'::text,
                                     '00000000-0000-0000-0000-000000000000'::uuid, NULL::uuid)))
-      -- His union or CSA Schools, named on a consent in force, to its named
-      -- selectors and schools cricket manager only (db/124).
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+
+/**
+ * db/122's passport_open(): every other arm (passport_open_not_union()), or
+ * his union or CSA Schools named on a consent in force, to its named
+ * selectors and schools cricket manager only (db/124). Not the application's
+ * to call (§6 Q1): it answers a union's selector yes or no and writes
+ * nothing, so passport() and passport_name(), which log, are the doors.
+ */
+CREATE OR REPLACE FUNCTION passport_open(p_player uuid) RETURNS boolean AS $$
+  SELECT passport_open_not_union(p_player)
       OR passport_union_consent(p_player) IS NOT NULL
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -443,12 +534,16 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- ══════════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS passport_union_read (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  player_id  uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
-  reader_id  uuid NOT NULL REFERENCES app_user(id),
-  org_id     uuid NOT NULL REFERENCES school(id),
-  consent_id uuid REFERENCES passport_consent(id) ON DELETE SET NULL,
-  what       text NOT NULL CHECK (what IN ('passport', 'name')),
-  read_at    timestamptz NOT NULL DEFAULT now()
+  player_id   uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  -- Kept for the audit's join; the family reads the two copies below, so
+  -- "who looked" outlives the account (§6 Q3).
+  reader_id   uuid REFERENCES app_user(id) ON DELETE SET NULL,
+  reader_name text NOT NULL,
+  reader_role text NOT NULL,
+  org_id      uuid NOT NULL REFERENCES school(id),
+  consent_id  uuid REFERENCES passport_consent(id) ON DELETE SET NULL,
+  what        text NOT NULL CHECK (what IN ('passport', 'name')),
+  read_at     timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS passport_union_read_player ON passport_union_read (player_id, read_at DESC);
 ALTER TABLE passport_union_read ENABLE ROW LEVEL SECURITY;
@@ -461,14 +556,33 @@ COMMENT ON TABLE passport_union_read IS
 
 /**
  * Write the record of one union read, before the read answers. Not caught:
- * a read whose record cannot be written does not happen. The access-log row
- * at his school is log_restricted_read()'s, which never fails a read. Internal.
+ * a read whose record cannot be written does not happen. The reader's name,
+ * and the role he read under (his live assignment at the institution that
+ * holds passport.union.read), are copied in as they are now (§6 Q3); with no
+ * such name or role the insert fails, and so does the read. The access-log
+ * row at his school is log_restricted_read()'s, which never fails a read.
+ * Internal.
  */
 CREATE OR REPLACE FUNCTION passport_union_log(p_player uuid, p_consent uuid, p_what text) RETURNS void AS $$
 BEGIN
-  INSERT INTO passport_union_read (player_id, reader_id, org_id, consent_id, what)
-  SELECT p_player, app_user_id(), c.to_school_id, c.id, p_what
-    FROM passport_consent c WHERE c.id = p_consent;
+  INSERT INTO passport_union_read (player_id, reader_id, reader_name, reader_role, org_id, consent_id, what)
+  SELECT p_player, u.id, u.name,
+         (SELECT role_words(a.role)
+            FROM role_assignment a
+            JOIN role_capability rc ON rc.role = a.role AND rc.capability = 'passport.union.read'
+           WHERE a.person_id = u.id AND a.school_id = c.to_school_id AND a.active
+             AND a.team_code IS NULL AND a.fixture_id IS NULL
+             AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
+             AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+             AND (a.expires_at IS NULL OR a.expires_at > now())
+             AND NOT EXISTS (SELECT 1 FROM duty_suspension d
+                              WHERE d.assignment_id = a.id AND d.lifted_at IS NULL)
+           ORDER BY a.role, a.created_at, a.id
+           LIMIT 1),
+         c.to_school_id, c.id, p_what
+    FROM passport_consent c
+    JOIN app_user u ON u.id = app_user_id()
+   WHERE c.id = p_consent;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'db/124: a union read of % was not recorded', p_player;
   END IF;
@@ -477,7 +591,9 @@ END $$ LANGUAGE plpgsql VOLATILE SET search_path = pg_catalog, public, pg_temp;
 
 /**
  * db/116's passport(), its lines word for word, VOLATILE now: when the union
- * arm is what lets the caller in, the read is recorded first.
+ * arm is the only arm that lets the caller in, the read is recorded first. A
+ * reader another arm admits (his family, his school, a school named) reads as
+ * that, and no union read is written (§6 Q2).
  */
 CREATE OR REPLACE FUNCTION passport(p_player uuid)
 RETURNS TABLE (family text, label text, value text, on_date date, source_school text,
@@ -485,10 +601,14 @@ RETURNS TABLE (family text, label text, value text, on_date date, source_school 
 DECLARE p player%ROWTYPE; v_union uuid;
 BEGIN
   SELECT * INTO p FROM player WHERE id = p_player;
-  IF NOT FOUND OR NOT passport_open(p_player) THEN RETURN; END IF;
-  -- A union's named reader: on the record before a line is given (db/124).
-  v_union := passport_union_consent(p_player);
-  IF v_union IS NOT NULL THEN PERFORM passport_union_log(p_player, v_union, 'passport'); END IF;
+  IF NOT FOUND THEN RETURN; END IF;
+  IF NOT passport_open_not_union(p_player) THEN
+    -- Only a union's named reader is left: on the record before a line is
+    -- given (db/124), or no line at all.
+    v_union := passport_union_consent(p_player);
+    IF v_union IS NULL THEN RETURN; END IF;
+    PERFORM passport_union_log(p_player, v_union, 'passport');
+  END IF;
   RETURN QUERY
     SELECT 'career', 'Batting', b.runs || ' runs in ' || b.innings || ' innings' || coalesce(', average ' || round(b.average, 1), ''),
            NULL::date, (SELECT name FROM school WHERE id = p.school_id), 'the ball log', 'derived'
@@ -517,16 +637,20 @@ BEGIN
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 /**
- * db/116's passport_name(), VOLATILE now: a union's named reader reading the
- * boy's name is recorded as a read of it.
+ * db/116's passport_name(), VOLATILE now: a union's named reader whom only
+ * the union arm admits, reading the boy's name, is recorded as a read of it
+ * (§6 Q2: his family, his school or a named school reads it unrecorded, as
+ * before).
  */
 CREATE OR REPLACE FUNCTION passport_name(p_player uuid) RETURNS text AS $$
 DECLARE v_name text; v_union uuid;
 BEGIN
-  SELECT full_name INTO v_name FROM player WHERE id = p_player AND passport_open(p_player);
-  IF v_name IS NOT NULL THEN
+  SELECT full_name INTO v_name FROM player WHERE id = p_player;
+  IF v_name IS NULL THEN RETURN NULL; END IF;
+  IF NOT passport_open_not_union(p_player) THEN
     v_union := passport_union_consent(p_player);
-    IF v_union IS NOT NULL THEN PERFORM passport_union_log(p_player, v_union, 'name'); END IF;
+    IF v_union IS NULL THEN RETURN NULL; END IF;
+    PERFORM passport_union_log(p_player, v_union, 'name');
   END IF;
   RETURN v_name;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -534,15 +658,15 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 /**
  * Who at which union looked at his passport, and when: for every boy the
  * caller is family of on a live link (is_family_of(), db/119: a guardian, or
- * the boy himself), never on a pad. The reader's name and role, the
- * institution, the time, and whether it was the passport or his name.
+ * the boy himself), never on a pad. The reader's name and role as the log
+ * copied them when he read (§6 Q3), the institution, the time, and whether
+ * it was the passport or his name.
  */
 CREATE OR REPLACE FUNCTION passport_union_reads()
 RETURNS TABLE (player_id uuid, read_at timestamptz, reader_name text, reader_role text,
                organisation text, what text) AS $$
-  SELECT r.player_id, r.read_at, u.name, role_words('unionselector'), o.name, r.what
+  SELECT r.player_id, r.read_at, r.reader_name, r.reader_role, o.name, r.what
     FROM passport_union_read r
-    JOIN app_user u ON u.id = r.reader_id
     JOIN school o ON o.id = r.org_id
    WHERE NOT app_pad_scoped() AND is_family_of(r.player_id)
    ORDER BY r.read_at DESC, r.id
@@ -632,14 +756,17 @@ $$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
 DO $grants$
 DECLARE f text; r text;
 BEGIN
-  FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'passport(uuid)', 'passport_name(uuid)',
+  FOREACH f IN ARRAY ARRAY['passport(uuid)', 'passport_name(uuid)',
                            'passport_consent_in_force(uuid)', 'institution_is_union(uuid)',
-                           'passport_consent_recipient_ok(uuid,uuid)', 'passport_union_reads()',
-                           'role_words(text)'] LOOP
+                           'passport_consent_recipient_ok(uuid,uuid)', 'passport_recipients(uuid)',
+                           'passport_union_reads()', 'role_words(text)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
   END LOOP;
-  FOREACH f IN ARRAY ARRAY['passport_union_reader_at(uuid)', 'passport_union_consent(uuid)',
+  -- passport_open() among them since §6 Q1: db/116 and db/122 granted it to
+  -- the application, and this takes it back.
+  FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'passport_open_not_union(uuid)',
+                           'passport_union_reader_at(uuid)', 'passport_union_consent(uuid)',
                            'passport_union_log(uuid,uuid,text)', 'unionselector_assignment_scoped()',
                            'consent_giver_live(uuid,uuid,timestamptz)', 'guardian_link_reopened_since(uuid,timestamptz)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
@@ -649,8 +776,9 @@ BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'passport(uuid)', 'passport_name(uuid)',
                                'passport_consent_in_force(uuid)', 'institution_is_union(uuid)',
-                               'passport_consent_recipient_ok(uuid,uuid)', 'passport_union_reads()',
-                               'role_words(text)', 'passport_union_reader_at(uuid)', 'passport_union_consent(uuid)',
+                               'passport_consent_recipient_ok(uuid,uuid)', 'passport_recipients(uuid)',
+                               'passport_union_reads()', 'role_words(text)', 'passport_open_not_union(uuid)',
+                               'passport_union_reader_at(uuid)', 'passport_union_consent(uuid)',
                                'passport_union_log(uuid,uuid,text)', 'unionselector_assignment_scoped()',
                                'consent_giver_live(uuid,uuid,timestamptz)', 'guardian_link_reopened_since(uuid,timestamptz)'] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
@@ -696,13 +824,14 @@ BEGIN
   -- tests are definers, the internal three are not.
   FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'passport(uuid)', 'passport_name(uuid)',
                            'passport_consent_in_force(uuid)', 'institution_is_union(uuid)',
-                           'passport_consent_recipient_ok(uuid,uuid)', 'passport_union_reads()'] LOOP
+                           'passport_consent_recipient_ok(uuid,uuid)', 'passport_recipients(uuid)',
+                           'passport_union_reads()'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f::regprocedure AND p.prosecdef
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))) THEN
       RAISE EXCEPTION 'db/124: % is not SECURITY DEFINER with a pinned search_path', f;
     END IF;
   END LOOP;
-  FOREACH f IN ARRAY ARRAY['passport_union_reader_at(uuid)', 'passport_union_consent(uuid)',
+  FOREACH f IN ARRAY ARRAY['passport_union_reader_at(uuid)', 'passport_union_consent(uuid)', 'passport_open_not_union(uuid)',
                            'passport_union_log(uuid,uuid,text)', 'unionselector_assignment_scoped()', 'role_words(text)'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f::regprocedure AND NOT p.prosecdef
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))) THEN
@@ -717,16 +846,19 @@ BEGIN
   END IF;
 
   -- Who may call what.
-  FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'passport(uuid)', 'passport_name(uuid)',
+  FOREACH f IN ARRAY ARRAY['passport(uuid)', 'passport_name(uuid)',
                            'passport_consent_in_force(uuid)', 'institution_is_union(uuid)',
-                           'passport_consent_recipient_ok(uuid,uuid)', 'passport_union_reads()', 'role_words(text)'] LOOP
+                           'passport_consent_recipient_ok(uuid,uuid)', 'passport_recipients(uuid)',
+                           'passport_union_reads()', 'role_words(text)'] LOOP
     IF NOT has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE')
        OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
                    WHERE p.oid = f::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN
       RAISE EXCEPTION 'db/124: % is executable by PUBLIC, or not by scrbrd_app', f;
     END IF;
   END LOOP;
-  FOREACH f IN ARRAY ARRAY['passport_union_reader_at(uuid)', 'passport_union_consent(uuid)',
+  -- passport_open() among them (§6 Q1): a yes or no with no record.
+  FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'passport_open_not_union(uuid)',
+                           'passport_union_reader_at(uuid)', 'passport_union_consent(uuid)',
                            'passport_union_log(uuid,uuid,text)', 'unionselector_assignment_scoped()'] LOOP
     IF has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE')
        OR has_function_privilege('public', f::regprocedure, 'EXECUTE') THEN
@@ -737,9 +869,11 @@ BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       FOREACH f IN ARRAY ARRAY['passport_open(uuid)', 'passport(uuid)', 'passport_name(uuid)',
                                'passport_consent_in_force(uuid)', 'institution_is_union(uuid)',
-                               'passport_consent_recipient_ok(uuid,uuid)', 'passport_union_reads()',
-                               'role_words(text)', 'passport_union_reader_at(uuid)', 'passport_union_consent(uuid)',
-                               'passport_union_log(uuid,uuid,text)', 'unionselector_assignment_scoped()'] LOOP
+                               'passport_consent_recipient_ok(uuid,uuid)', 'passport_recipients(uuid)',
+                               'passport_union_reads()', 'role_words(text)', 'passport_open_not_union(uuid)',
+                               'passport_union_reader_at(uuid)', 'passport_union_consent(uuid)',
+                               'passport_union_log(uuid,uuid,text)', 'unionselector_assignment_scoped()',
+                               'consent_giver_live(uuid,uuid,timestamptz)', 'guardian_link_reopened_since(uuid,timestamptz)'] LOOP
         IF has_function_privilege(r, f::regprocedure, 'EXECUTE') THEN
           RAISE EXCEPTION 'db/124: % can execute %', r, f;
         END IF;
@@ -758,17 +892,32 @@ BEGIN
      OR has_table_privilege('scrbrd_app', 'passport_union_read', 'DELETE') THEN
     RAISE EXCEPTION 'db/124: the union read log is readable or writable past its definers';
   END IF;
+  -- §6 Q3: the reader's name and role are copied in, and the account may go
+  -- without taking the row (or the family's record of it) with it.
+  IF (SELECT count(*) FROM pg_attribute WHERE attrelid = 'passport_union_read'::regclass
+        AND attname IN ('reader_name', 'reader_role') AND attnotnull AND NOT attisdropped) <> 2
+     OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'passport_union_read'::regclass AND contype = 'f'
+                       AND confrelid = 'app_user'::regclass AND confdeltype = 'n')
+     OR (SELECT attnotnull FROM pg_attribute WHERE attrelid = 'passport_union_read'::regclass AND attname = 'reader_id') THEN
+    RAISE EXCEPTION 'db/124: the union read log does not keep the reader''s name and role for as long as the row';
+  END IF;
 
   -- §3: the named-school arm skips a union; the union arm asks the named
   -- reader at the institution the consent names, in force, his own union or
   -- the federation; the reader test refuses a pad, a support session and a
   -- platform-wide caller; db/116's and db/122's checks still hold.
   SELECT btrim(regexp_replace(prosrc, '\s+', ' ', 'g')) INTO v_src FROM pg_proc WHERE oid = 'passport_open(uuid)'::regprocedure;
+  IF v_src IS DISTINCT FROM 'SELECT passport_open_not_union(p_player) OR passport_union_consent(p_player) IS NOT NULL' THEN
+    RAISE EXCEPTION 'db/124: passport_open() is not the other arms or the union arm';
+  END IF;
+  SELECT btrim(regexp_replace(prosrc, '\s+', ' ', 'g')) INTO v_src FROM pg_proc WHERE oid = 'passport_open_not_union(uuid)'::regprocedure;
   IF position('AND NOT institution_is_union(c.to_school_id)' IN v_src) = 0
-     OR position('OR passport_union_consent(p_player) IS NOT NULL' IN v_src) = 0
+     OR position('AND passport_consent_recipient_ok(c.player_id, c.to_school_id)' IN v_src) = 0
      OR position('consent_giver_live(c.granted_by, c.player_id, c.granted_at)' IN v_src) = 0
+     OR position('is_family_of(p_player)' IN v_src) = 0
+     OR v_src LIKE '%passport_union_consent%'
      OR v_src LIKE '%player.profile.read%' OR v_src LIKE '%passport.union.read%' THEN
-    RAISE EXCEPTION 'db/124: passport_open() is not db/122''s with the union arm and the named-school arm''s cut';
+    RAISE EXCEPTION 'db/124: passport_open_not_union() is not db/122''s arms with the named-school arm''s cut';
   END IF;
   SELECT btrim(regexp_replace(prosrc, '\s+', ' ', 'g')) INTO v_src FROM pg_proc WHERE oid = 'passport_union_consent(uuid)'::regprocedure;
   IF position('c.withdrawn_at IS NULL' IN v_src) = 0
@@ -792,24 +941,32 @@ BEGIN
   END IF;
   -- §4: both reads write the log when the union arm lets the caller in, and
   -- the passport carries no rating (db/116's check).
+  -- §6 Q2: only when no other arm admits the caller, and before an answer.
   FOREACH f IN ARRAY ARRAY['passport(uuid)', 'passport_name(uuid)'] LOOP
     SELECT prosrc INTO v_src FROM pg_proc WHERE oid = f::regprocedure;
-    IF position('v_union := passport_union_consent(p_player);' IN v_src) = 0
+    IF position('IF NOT passport_open_not_union(p_player) THEN' IN v_src) = 0
+       OR position('v_union := passport_union_consent(p_player);' IN v_src) < position('IF NOT passport_open_not_union(p_player) THEN' IN v_src)
+       OR position('PERFORM passport_union_log(p_player, v_union, ' IN v_src) < position('v_union := passport_union_consent(p_player);' IN v_src)
        OR position('PERFORM passport_union_log(p_player, v_union, ' IN v_src) = 0
-       OR position('passport_open(p_player)' IN v_src) = 0 THEN
-      RAISE EXCEPTION 'db/124: % does not record a union read', f;
+       OR v_src LIKE '%passport_open(p_player)%' THEN
+      RAISE EXCEPTION 'db/124: % does not record a union read, or records one another arm let in', f;
     END IF;
   END LOOP;
   IF (SELECT prosrc FROM pg_proc WHERE oid = 'passport(uuid)'::regprocedure) ~ '(player_skill|''rating'')' THEN
     RAISE EXCEPTION 'db/124: passport() carries a rating';
   END IF;
   SELECT prosrc INTO v_src FROM pg_proc WHERE oid = 'passport_union_log(uuid,uuid,text)'::regprocedure;
-  IF position('INSERT INTO passport_union_read' IN v_src) = 0 OR v_src ~* 'EXCEPTION\s+WHEN' THEN
+  IF position('INSERT INTO passport_union_read' IN v_src) = 0 OR v_src ~* 'EXCEPTION\s+WHEN'
+     OR position('reader_name, reader_role' IN v_src) = 0 OR position('u.name' IN v_src) = 0
+     OR position('role_words(a.role)' IN v_src) = 0 THEN
     RAISE EXCEPTION 'db/124: passport_union_log() does not write the log, or swallows a failure to';
   END IF;
   SELECT btrim(regexp_replace(prosrc, '\s+', ' ', 'g')) INTO v_src FROM pg_proc WHERE oid = 'passport_union_reads()'::regprocedure;
   IF position('NOT app_pad_scoped() AND is_family_of(r.player_id)' IN v_src) = 0 THEN
     RAISE EXCEPTION 'db/124: passport_union_reads() answers someone other than his family on a live link';
+  END IF;
+  IF position('r.reader_name, r.reader_role' IN v_src) = 0 OR v_src LIKE '%app_user%' THEN
+    RAISE EXCEPTION 'db/124: passport_union_reads() reads the reader''s account now, not the name the log copied';
   END IF;
   -- §2: the union row's readers are his family; the office arm of the
   -- in-force answer is a school's.
@@ -824,6 +981,23 @@ BEGIN
   IF position('AND NOT institution_is_union(c.to_school_id)' IN
               (SELECT prosrc FROM pg_proc WHERE oid = 'passport_consent_in_force(uuid)'::regprocedure)) = 0 THEN
     RAISE EXCEPTION 'db/124: passport_consent_in_force() answers a union''s office';
+  END IF;
+  -- §6 Q4: a school, his union or CSA Schools; nothing else named counts.
+  SELECT btrim(regexp_replace(prosrc, '\s+', ' ', 'g')) INTO v_src
+    FROM pg_proc WHERE oid = 'passport_consent_recipient_ok(uuid,uuid)'::regprocedure;
+  IF position('(o.kind = ''school''' IN v_src) = 0 OR position('institution_is_union' IN v_src) > 0
+     OR v_src ~ '''(club|academy|league|association)''' THEN
+    RAISE EXCEPTION 'db/124: passport_consent_recipient_ok() lets a family name something that is not a school, his union or CSA Schools';
+  END IF;
+  IF position('AND passport_consent_recipient_ok(c.player_id, c.to_school_id)' IN
+              btrim(regexp_replace((SELECT prosrc FROM pg_proc WHERE oid = 'passport_consent_in_force(uuid)'::regprocedure), '\s+', ' ', 'g'))) = 0 THEN
+    RAISE EXCEPTION 'db/124: passport_consent_in_force() reads a consent naming a club as in force';
+  END IF;
+  SELECT btrim(regexp_replace(prosrc, '\s+', ' ', 'g')) INTO v_src
+    FROM pg_proc WHERE oid = 'passport_recipients(uuid)'::regprocedure;
+  IF position('NOT app_pad_scoped() AND is_family_of(p_player)' IN v_src) = 0
+     OR position('passport_consent_recipient_ok(p_player, o.id)' IN v_src) = 0 THEN
+    RAISE EXCEPTION 'db/124: passport_recipients() is not his family''s, or not the insert policy''s test';
   END IF;
   -- db/122's writer rules still stand beside the new ones.
   SELECT count(*) INTO v_n FROM pg_policy p
@@ -864,7 +1038,9 @@ BEGIN
   END IF;
   -- And they answer for nobody.
   IF institution_is_union(gen_random_uuid()) OR passport_union_consent(gen_random_uuid()) IS NOT NULL
-     OR passport_union_reader_at(gen_random_uuid()) OR NOT passport_consent_recipient_ok(gen_random_uuid(), gen_random_uuid()) THEN
-    RAISE EXCEPTION 'db/124: a union test said yes about nobody, or no to a school';
+     OR passport_union_reader_at(gen_random_uuid()) OR passport_consent_recipient_ok(gen_random_uuid(), gen_random_uuid())
+     OR passport_open_not_union(gen_random_uuid()) OR passport_open(gen_random_uuid())
+     OR EXISTS (SELECT 1 FROM passport_recipients(gen_random_uuid())) THEN
+    RAISE EXCEPTION 'db/124: a union or recipient test said yes about nobody';
   END IF;
 END $check$;

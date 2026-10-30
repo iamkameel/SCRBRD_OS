@@ -105,6 +105,14 @@ const BUNDLES = {
   // any platform-wide assignment, so granting the row back would still read
   // nothing. Still derived, never typed: a new capability outside that
   // domain reaches this key the day it is written.
+  //
+  // `passport.union.read` (db/124) reaches this key the same way, and opens
+  // nothing through it. It is held here only so this derived bundle and the
+  // database's role_capability rows agree. A superadmin assignment names no
+  // school (db/86's check), and db/124's reader test refuses anyone holding a
+  // platform-wide assignment, so the union's door never opens on this key.
+  // The owner's key still reads a passport through its own office arm, as
+  // before db/124, and that read is not a union read.
   superadmin: ALL_CAPABILITIES.filter((c) => !c.startsWith("safeguarding.")),
 
   // ── Platform ──

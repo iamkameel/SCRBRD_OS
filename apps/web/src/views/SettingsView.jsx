@@ -1033,6 +1033,14 @@ const PASSPORT_NONE = {
 };
 // db/124: a family names his own province's union or CSA Schools, never another's.
 export const PASSPORT_NOT_HIS_UNION = "That union is not his. A family names the union of his school's province, or CSA Schools.";
+// db/124 §6 Q4 (Kameel, 30 Oct 2026): a school, his own provincial union or
+// CSA Schools; a club or an academy is not offered, and is refused, until
+// Kameel decides on them.
+export const PASSPORT_NOT_A_SCHOOL = "A club or an academy can't be named yet. Name a school, his own provincial union or CSA Schools.";
+export const PASSPORT_WHO_MAY_BE_NAMED = "You can name a school, his own provincial union or CSA Schools. Clubs and academies can't be named yet.";
+// A row naming what may no longer be named (a club, or a union that is no
+// longer his): it opens nothing, and his family may take it back.
+const PASSPORT_REFUSED_ROW = " · no longer opens his record: only a school, his own provincial union or CSA Schools can be named. His family can take this name back.";
 // db/124 (Kameel, 29 Oct 2026: "Named selectors and the schools cricket
 // manager only, every read logged"): who at a union opened his passport.
 const UNION_READS_NONE = "No union has opened his passport.";
@@ -1058,7 +1066,18 @@ function PassportTab({ role, only = null }) {
   const unionReads = useLive("passport_union_reads", role, nudge).rows.filter((r) => !onlyIds || onlyIds.has(r.playerId));
   const forFamily = passportConsentReader() === "family";
   const nameOf = (id) => players.find((p) => p.id === id)?.name ?? rows.find((r) => r.playerId === id)?.name ?? "His record";
-  useEffect(() => { let off = false; api("/api/schools").then((r) => { if (!off && r?.rows) setSchools(r.rows); }).catch(() => {}); return () => { off = true; }; }, []);
+  // What may be named for THIS boy (db/124 §6 Q4): every school, his own
+  // provincial union and CSA Schools, read from the server's own test, so the
+  // list offers nothing the grant would refuse. Read again for each boy.
+  useEffect(() => {
+    let off = false;
+    setSchools([]); setSchoolId("");
+    if (!playerId) return () => { off = true; };
+    api(`/api/read/passport_recipients?playerId=${encodeURIComponent(playerId)}`)
+      .then((r) => { if (!off && r?.rows) setSchools(r.rows); }).catch(() => {});
+    return () => { off = true; };
+  }, [playerId]);
+  const chosenKind = schools.find((s) => s.id === schoolId)?.kind;
   // A pupil's own record (his self-access link): under eighteen his guardian
   // decides where it travels; from eighteen he does (db/122, Kameel 29 Oct
   // 2026: "Under eighteen, only his guardian; at eighteen, he does it
@@ -1070,6 +1089,7 @@ function PassportTab({ role, only = null }) {
     try { await api("/api/passport/consent", { method: "POST", body: { playerId, schoolId } }); setSchoolId(""); setNudge((n) => n + 1); }
     catch (e) {
       setSaid(e?.code === "not_his_union" || e?.message === "not_his_union" ? PASSPORT_NOT_HIS_UNION
+        : e?.code === "not_a_school" || e?.message === "not_a_school" ? PASSPORT_NOT_A_SCHOOL
         : ownRecords.has(playerId) && e?.status === 403 ? OWN_RECORD_WORDS : (e.message || "Refused."));
     }
   };
@@ -1093,11 +1113,14 @@ function PassportTab({ role, only = null }) {
           {players.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
         <select value={schoolId} onChange={(e) => setSchoolId(e.target.value)} aria-label="Which school" style={sel}>
-          <option value="">Which school or union?</option>
+          <option value="">{playerId ? "Which school or union?" : "Choose a player first"}</option>
           {schools.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <Btn onClick={grant} disabled={!playerId || !schoolId}>Name this school</Btn>
+        <Btn onClick={grant} disabled={!playerId || !schoolId}>
+          {chosenKind === "union" ? "Name his union" : chosenKind === "federation" ? "Name CSA Schools" : "Name this school"}
+        </Btn>
       </div>
+      <div data-testid="passport-who-may-be-named" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginBottom: "8px" }}>{PASSPORT_WHO_MAY_BE_NAMED}</div>
       {ownRecords.has(playerId) && (
         <div data-testid="passport-own-record" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginBottom: "8px" }}>{OWN_RECORD_WORDS}</div>
       )}
@@ -1108,7 +1131,7 @@ function PassportTab({ role, only = null }) {
           <div key={r.id} data-testid={`passport-consent-${r.id}`} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: `1px solid ${D.border}`, opacity: r.withdrawnAt ? 0.6 : 1 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{r.name} → {r.toSchoolName ?? "a school"}</div>
-              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>named {day(r.grantedAt)}{r.withdrawnAt ? ` · withdrawn ${day(r.withdrawnAt)}` : ""}{r.lapsed ? " · lapsed: the link of the person who named it has ended, so the school no longer opens his record. His family can name it again." : ""}</div>
+              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>named {day(r.grantedAt)}{r.withdrawnAt ? ` · withdrawn ${day(r.withdrawnAt)}` : ""}{r.lapsed ? " · lapsed: the link of the person who named it has ended, so the school no longer opens his record. His family can name it again." : ""}{r.refused ? PASSPORT_REFUSED_ROW : ""}</div>
             </div>
             {r.lapsed && <span data-testid={`passport-lapsed-${r.id}`} style={{ fontFamily: D.mono, fontSize: "12px", textTransform: "uppercase", color: D.textMuted }}>lapsed</span>}
             {r.withdrawnAt

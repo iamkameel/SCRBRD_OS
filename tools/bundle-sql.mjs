@@ -766,7 +766,9 @@ SELECT
         AND NOT has_function_privilege('scrbrd_app', to_regprocedure('consent_giver_live(uuid,uuid,timestamptz)'), 'EXECUTE')
         AND has_function_privilege('scrbrd_app', to_regprocedure('passport_consent_in_force(uuid)'), 'EXECUTE')
         AND has_function_privilege('scrbrd_app', to_regprocedure('scouting_consent_in_force(uuid)'), 'EXECUTE')
-        AND position('consent_giver_live(c.granted_by' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport_open(uuid)'))) > 0
+        -- db/124 moves passport_open()'s named-school arm into passport_open_not_union().
+        AND position('consent_giver_live(c.granted_by' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport_open(uuid)'))
+                     || coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport_open_not_union(uuid)')), '')) > 0
         AND position('consent_giver_live(c.decided_by' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('scouting_candidates()'))) > 0
         AND position('app_user_email_seen(' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('role_requester(uuid)'))) > 0
         AND position('app_user_email_seen(' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('pending_claims()'))) > 0
@@ -803,7 +805,16 @@ SELECT
         AND EXISTS (SELECT 1 FROM capability WHERE name = 'passport.union.read')
         AND (SELECT string_agg(role, ',' ORDER BY role) FROM role_capability WHERE capability = 'passport.union.read') = 'superadmin,unionselector'
         AND position('passport_union_consent(p_player) IS NOT NULL' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport_open(uuid)'))) > 0
-        AND position('NOT institution_is_union(c.to_school_id)' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport_open(uuid)'))) > 0
+        AND position('NOT institution_is_union(c.to_school_id)' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport_open_not_union(uuid)'))) > 0
+        -- After the red-team (Kameel, 30 Oct 2026): passport_open() is no door
+        -- of the application's (Q1); passport() logs only when no other arm
+        -- admits (Q2); the log keeps the reader's name (Q3); a club is no
+        -- school (Q4).
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('passport_open(uuid)'), 'EXECUTE')
+        AND position('IF NOT passport_open_not_union(p_player) THEN' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport(uuid)'))) > 0
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'passport_union_read' AND column_name = 'reader_name')
+        AND position('o.kind = ''school''' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport_consent_recipient_ok(uuid,uuid)'))) > 0
+        AND has_function_privilege('scrbrd_app', to_regprocedure('passport_recipients(uuid)'), 'EXECUTE')
         AND position('passport_union_log(' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport(uuid)'))) > 0
         AND has_function_privilege('scrbrd_app', to_regprocedure('passport_union_reads()'), 'EXECUTE')
         AND NOT has_function_privilege('scrbrd_app', to_regprocedure('passport_union_consent(uuid)'), 'EXECUTE')

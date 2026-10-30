@@ -72,12 +72,15 @@ export function kitRoutes({ pool, secret }) {
       const b = req.body || {};
       if (!UUID.test(String(b.playerId ?? "")) || !UUID.test(String(b.schoolId ?? ""))) throw err("player_and_school_required");
       return asPrincipal(req, async (c) => {
-        // His union or CSA Schools, never another province's union (db/124).
-        // Said in words, and only to somebody who may name a school for him
-        // (db/122's writer test): anybody else is refused as before, below.
+        // A school, his union or CSA Schools: never another province's union,
+        // and not a club or an academy until Kameel decides on them (db/124
+        // §6 Q4). Said in words, and only to somebody who may name a school
+        // for him (db/122's writer test): anybody else is refused as before,
+        // below, by the same test in the insert policy.
         const { rows: [chk] } = await c.query(
-          `select not passport_consent_recipient_ok($1, $2) and passport_consent_writer_ok($1) as not_his`, [b.playerId, b.schoolId]);
-        if (chk?.not_his) throw err("not_his_union", 422);
+          `select not passport_consent_recipient_ok($1, $2) and passport_consent_writer_ok($1) as refused,
+                  institution_is_union($2) as is_union`, [b.playerId, b.schoolId]);
+        if (chk?.refused) throw err(chk.is_union ? "not_his_union" : "not_a_school", 422);
         // A consent lapses when the link that gave it ends (db/122, Kameel 29
         // Oct 2026), but its row stays open, and db/08 allows one open row per
         // boy and school. A lapsed one naming this school is withdrawn first,
