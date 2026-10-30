@@ -29,6 +29,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clean = (/** @type {unknown} */ v, /** @type {number} */ max) => (v == null || String(v).trim() === "" ? null : String(v).trim().slice(0, max));
 // The roles that belong to no school (db/86). Not asked for; assigned.
 const PLATFORM_ROLES = Object.freeze(["superadmin", "platformadmin"]);
+// The roles that make an account a pupil's: app_user_email_seen() (db/118)
+// counts an account holding either as a boy's, whose address and sign-in code
+// are the office's (db/122 §1d).
+const PUPIL_ROLES = Object.freeze(["player", "selfaccess"]);
 
 // A refusal from enrol_person() that is not about authority is not a 403.
 // The office is told what cannot be done — this email is another school's,
@@ -192,6 +196,30 @@ export function requestRoutes({ pool, secret }) {
           // An account this caller cannot read is one he cannot add a role to.
           if (!u) throw err("not_permitted", 403);
           email = u.email; name = u.name;
+        }
+        // A PUPIL'S ACCOUNT AND HIS CODE ARE THE OFFICE'S (db/122 §1d; Kameel,
+        // 29 Oct 2026: "issuing a pupil's sign-in code belongs to the office
+        // alone ... The director of sport still adds roles by account id").
+        // Asked here, before enrol_person() writes anything, by the same two
+        // tests the database's doors use: app_user_email_seen() for an account
+        // that exists (login_code_issue()'s own rule), and guardian.link.manage
+        // at this school (who app_user_email_seen() shows a pupil's address
+        // to) for a pupil's account being opened. Asked after the code would
+        // be too late: enrol_person() has opened the account by then, and the
+        // refused code would leave it half made. A role added by the account's
+        // id with no code goes on as before.
+        const pupilRole = PUPIL_ROLES.includes(f.role);
+        const withCode = b.withCode === true;
+        if ((pupilRole && (!account || withCode)) || (account && withCode)) {
+          const { rows: [g] } = await client.query(
+            `select app_user_email_seen($1::uuid, $2::uuid, '@') is null as withheld,
+                    app_can('guardian.link.manage', $2::uuid, '*'::text,
+                            '00000000-0000-0000-0000-000000000000'::uuid,
+                            '00000000-0000-0000-0000-000000000000'::uuid) as office`,
+            [account, f.school]);
+          if ((pupilRole && !g?.office) || (account && withCode && g?.withheld !== false)) {
+            throw err("office_only", 403);
+          }
         }
         const { rows } = await client.query(
           `select * from enrol_person($1, $2, $3, $4, $5, $6, $7)`,

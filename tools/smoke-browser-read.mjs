@@ -986,8 +986,35 @@ try {
   // ── Enrolment, from the screen that names the problem ───────────
   group("A boy with no account gets one, from the card that says he has none");
   {
+    // A pupil's account and his sign-in code are the office's (db/122 §1d;
+    // Kameel, 29 Oct 2026: "issuing a pupil's sign-in code belong[s] to the
+    // office alone ... The director of sport still adds roles by account id").
+    // So the director of sport is shown the boys and told who enrols them,
+    // and offered no Enrol on a boy's chip: the server would refuse her
+    // `office_only` before writing anything.
+    const d = await open();
+    await signIn(d.page, /Director of Sport/);
+    await d.page.locator('[data-testid="nav-settings"]').click({ timeout: 6000 }); await d.page.waitForTimeout(1400);
+    const dCard = d.page.locator('[data-testid="people-without-accounts"]');
+    ok("the director of sport sees the card naming the boys who cannot sign in", await dCard.count() === 1);
+    ok("...with no Enrol on a boy's chip",
+       await dCard.locator('button[data-testid^="no-account-"]').count() === 0
+       && await dCard.locator('[data-testid^="no-account-"][title^="Enrol"]').count() === 0);
+    ok("...and words saying the school office enrols pupils",
+       /school office enrols pupils/i.test(await d.page.locator('[data-testid="no-account-office"]').innerText().catch(() => "")));
+    const codes = await d.page.evaluate(() => {
+      const rows = [...document.querySelectorAll('[data-testid="os-main"] tr')];
+      const pupil = rows.filter((r) => r.querySelector('[data-testid="email-withheld"]'));
+      return { pupil: pupil.length, onPupil: pupil.filter((r) => r.querySelector('[data-testid^="issue-code-"]')).length,
+               adult: rows.filter((r) => r.querySelector('[data-testid^="issue-code-"]')).length };
+    });
+    ok("...and no Sign-in code on a pupil's row, whose email she was not given, while an adult's keeps it",
+       codes.pupil > 0 && codes.onPupil === 0 && codes.adult > 0, JSON.stringify(codes));
+    ok("no console errors on the director's card", d.errors.length === 0, d.errors.join(" | "));
+    await d.ctx.close();
+
     const c = await open();
-    await signIn(c.page, /Director of Sport/);
+    await signIn(c.page, /Registrar|School Admin|registrar@example\.invalid/);
     const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
     await tid("nav-settings").click({ timeout: 6000 }); await c.page.waitForTimeout(1400);
 
@@ -1012,7 +1039,7 @@ try {
 
     const email = `walk.enrol.${Date.now()}@example.invalid`;
     await c.page.locator('[role="dialog"] input[type="email"]').fill(email);
-    ok("she enrols him", await click(c.page, /^Enrol$/, 4000));
+    ok("the office enrols him", await click(c.page, /^Enrol$/, 4000));
     await afterReads(c.page, 2200);
 
     // The code is the deliverable: there is no email channel, so the office

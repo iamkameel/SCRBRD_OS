@@ -257,6 +257,34 @@ try {
   ok("an account the caller cannot read is refused, by id",
      (await invite(sarah, { userId: "88888888-0000-0000-0000-0000000000ff" })).body?.error === "not_permitted");
 
+  // ...and so is opening his account: POST /api/users refuses her before
+  // enrol_person() writes anything, so no account is left made with no code.
+  const [{ id: UNENROLLED, team_code: UNENROLLED_TEAM }] = await q(
+    `select p.id::text, p.team_code from player p
+      where p.school_id = $1 and p.team_code is not null
+        and not exists (select 1 from app_user u where u.player_id = p.id)
+      order by p.id limit 1`, [HIL]);
+  const dosEnrol = await enrol(sarah, { ...body("v122.pupil@example.invalid", "V Pupil", UNENROLLED, UNENROLLED_TEAM), withCode: true });
+  ok(`the director of sport may not open a pupil's account (was ${dosEnrol.status} ${dosEnrol.body?.error ?? ""})`,
+     dosEnrol.status === 403 && dosEnrol.body?.error === "office_only" && !dosEnrol.body?.code);
+  ok("...nor without a code: the account is the office's to open",
+     (await enrol(sarah, body("v122.pupil@example.invalid", "V Pupil", UNENROLLED, UNENROLLED_TEAM))).body?.error === "office_only");
+  ok("...and neither left an account, or a request, behind",
+     (await accounts("v122.pupil@example.invalid")) === 0 && (await openRequests("v122.pupil@example.invalid")) === 0
+     && (await q(`select count(*)::int n from app_user where player_id = $1`, [UNENROLLED]))[0].n === 0);
+  const rolesBefore = (await q(`select count(*)::int n from role_assignment where person_id = $1`, [PILLAY_ACCOUNT]))[0].n;
+  const codesBefore = (await q(`select count(*)::int n from login_code where user_id = $1`, [PILLAY_ACCOUNT]))[0].n;
+  const dosAddCode = await enrol(sarah, { userId: PILLAY_ACCOUNT, role: "official", schoolId: HIL, withCode: true });
+  ok(`a role by his id WITH a code is refused her too (was ${dosAddCode.status} ${dosAddCode.body?.error ?? ""})`,
+     dosAddCode.status === 403 && dosAddCode.body?.error === "office_only" && !dosAddCode.body?.code);
+  ok("...before anything was written: no role added, no code made",
+     (await q(`select count(*)::int n from role_assignment where person_id = $1`, [PILLAY_ACCOUNT]))[0].n === rolesBefore
+     && (await q(`select count(*)::int n from login_code where user_id = $1`, [PILLAY_ACCOUNT]))[0].n === codesBefore);
+  const dosStaff = await enrol(sarah, { email: "v122.coach@example.invalid", name: "V Coach", role: "coach",
+                                        schoolId: HIL, teamCode: "U13A", withCode: true });
+  ok(`an adult's enrolment by the director, with a code, is unchanged (was ${dosStaff.status} ${dosStaff.body?.error ?? ""})`,
+     dosStaff.status === 200 && !!dosStaff.body?.userId && typeof dosStaff.body?.code === "string");
+
   group("The roster gap actually closes");
   const after = await q(
     `select count(*)::int n from player p
