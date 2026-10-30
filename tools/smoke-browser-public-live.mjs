@@ -55,6 +55,7 @@ import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { writeEvents, HIL } from "./fixture-matchcentre.mjs";
 import { ball, batters, bowler, inningsStart, retire, penalty, placementFromTap, BALL_TYPE } from "@scrbrd/scoring";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { pickTab } from "./walk-tabs.mjs";
 
 const PORT = port(8971);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -327,15 +328,28 @@ try {
   const title = await page.locator('[data-testid="mc-title"]').innerText().catch(() => "");
   ok("...Hilton College 1XI v Michaelhouse", /Hilton College/.test(title) && /Michaelhouse/.test(title), title);
   ok("...Live", (await page.locator('[data-testid="mc-status"]').textContent().catch(() => "")) === "Live");
+  // CRI-1.3: at 390 Partnerships, Analytics and Match details are under More; each tab has its own address.
+  const PUBLIC_AT = { summary: `/live/${LIVE}`, scorecard: `/scorecard/${LIVE}`, commentary: `/live/${LIVE}/commentary`,
+    partnerships: `/live/${LIVE}/partnerships`, analytics: `/live/${LIVE}/analytics`, details: `/live/${LIVE}/details` };
+  const wrongAt = [];
   for (const t of ["scorecard", "commentary", "partnerships", "analytics", "details", "summary"]) {
-    await page.locator(`[data-testid="mc-tab-${t}"]`).click({ timeout: 4000 }).catch(() => {});
+    await pickTab(page, t).catch(() => {});
     await afterReads(page, 400);
+    if (new URL(page.url()).pathname !== PUBLIC_AT[t] || await page.locator(`[data-testid="mc-panel-${t}"]`).count() !== 1) wrongAt.push(`${t} at ${new URL(page.url()).pathname}`);
     if (t === "scorecard") {
       const rows = (await page.locator('[data-testid="mc-bat-row"]').allInnerTexts()).map((r) => r.split("\n")[0].replace("*", "").trim());
       ok("the scorecard names the consented boy by the rule, and the rest are positions",
          rows.includes("J Whitfield") && rows.filter((x) => x === "Batter").length >= 3, rows.join(" | "));
     }
   }
+  ok("each tab, chosen, is its panel at its own address (/live/:id/commentary, /scorecard/:id…)", wrongAt.length === 0, wrongAt.join(" | "));
+  await page.goBack();
+  await afterReads(page, 400);
+  ok("the back button goes back a tab: Match details again, at its address",
+     await page.locator('[data-testid="mc-panel-details"]').count() === 1 && new URL(page.url()).pathname === PUBLIC_AT.details, page.url());
+  await page.goForward();
+  await afterReads(page, 400);
+  ok("...and forward, the Summary", await page.locator('[data-testid="mc-panel-summary"]').count() === 1);
   // A ball arrives while he watches. /live re-reads the whole log on its poll
   // (PublicMatch.jsx: every max(5 s, liveRefreshMs())), from the API's 5 s live
   // cache; the ground display is the one that reads ?since= (reads.js), and its
@@ -370,6 +384,19 @@ try {
     ok("no pupil's name or typed name in the new rows or the sentence", named.length === 0, [...new Set(named)].slice(0, 6).join(" | "));
   }
 
+  // CRI-1.3: a link to a tab opens it — the shell at /live/:id/partnerships is the live page, on Partnerships, and at
+  // 390 More says so; an address after the scorecard is not a page.
+  {
+    const res = await page.goto(`${BASE}/live/${LIVE}/partnerships`, { waitUntil: "networkidle" });
+    await page.waitForSelector('[data-testid="public-match"]', { timeout: 10000 }).catch(() => {});
+    await afterReads(page, 800);
+    ok("a link to /live/:id/partnerships opens the live page on Partnerships", res?.status() === 200
+       && await page.locator('[data-testid="mc-panel-partnerships"]').count() === 1, res?.status());
+    ok("...More names it, and labels its panel", (await page.locator('[data-testid="mc-more"]').innerText().catch(() => "")).trim() === "Partnerships"
+       && await page.locator('[data-testid="mc-panel-partnerships"]').getAttribute("aria-labelledby") === "mc-more");
+    const bad = await fetch(`${BASE}/scorecard/${LIVE}/commentary`);
+    ok("...and /scorecard/:id/commentary is the not-found page", bad.status === 404, bad.status);
+  }
   for (const path of [`/scorecard/${LIVE}`, `/scorecard/${DONE}`, `/display/${LIVE}`]) {
     const res = await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
     await afterReads(page, 1200);

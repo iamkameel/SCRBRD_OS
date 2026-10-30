@@ -4,7 +4,7 @@ import { useSports, sportBadge } from "../lib/features.js";
 import { useMenu } from "../lib/homeNav.js";
 import { D, T, inkOn, themed } from "../design/tokens.js";
 import { Icon } from "../ui/icons.jsx";
-import { invitationsWords } from "../lib/league.js";
+import { invitationsWords } from "../lib/invitationCount.js";
 
 // ══════════════════════════════════════════════════════
 //  MAIN APP

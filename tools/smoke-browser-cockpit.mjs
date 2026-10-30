@@ -66,6 +66,7 @@ import { writeEvents } from "./fixture-matchcentre.mjs";
 import { entryTable, LOAD_SENTENCE } from "../apps/web/src/lib/cockpit.js";
 import { NEVER_ON_THE_COCKPIT } from "../apps/web/src/lib/cockpitNever.js";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { pickTab, tabIds } from "./walk-tabs.mjs";
 
 const WEB_PORT = port(4380);
 const API_PORT = port(8980);
@@ -132,10 +133,14 @@ const rows = async (token, path) => (await call(`/api/read/${path}`, { token }))
 // (which reads "today" from the browser, lib/cockpit.js isMatchDay) sees the
 // match day. The server keeps the real clock; the client never checks a
 // token's expiry against its own, and the offset is at most two hours.
-const SA_LATE = new Date(Date.now() + 2 * 3600e3).getUTCHours() >= 22;
-/** The browser's time for a late run: 00:05 SA time tomorrow (22:05 UTC today), or now if later. */
+// Both read the clock as it was when the walk began: a late run that crosses
+// midnight SA time must not move the browser a further day past the fixture
+// (29 Oct, a run begun at 23:55 lost S4a–S10 to the context opened at 00:01).
+const STARTED = Date.now();
+const SA_LATE = new Date(STARTED + 2 * 3600e3).getUTCHours() >= 22;
+/** The browser's time for a late run: 00:05 SA time the day after the walk began (22:05 UTC that day), or now if later. */
 const browserNow = () => {
-  const d = new Date(Date.now() + 2 * 3600e3);
+  const d = new Date(STARTED + 2 * 3600e3);
   return Math.max(Date.now(), Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 22, 5));
 };
 
@@ -206,9 +211,8 @@ async function openMatch(page, id) {
   await afterReads(page, 1800);
   return (await tid(page, "match-view").count()) === 1;
 }
-const tabIds = (page) => page.$$eval('[data-testid^="mc-tab-"]', (els) => els.map((e) => e.getAttribute("data-testid").replace("mc-tab-", "")));
 async function coachTab(page) {
-  await tid(page, "mc-tab-coach").click({ timeout: 4000 }).catch(() => {});
+  await pickTab(page, "coach").catch(() => {});
   await page.waitForFunction(() => { const t = document.querySelector('[data-testid="mc-coach"]'); return t && !document.querySelector('[data-testid="mc-coach-loading"]'); }, null, { timeout: 12000 }).catch(() => {});
   await page.waitForTimeout(600);
 }
@@ -396,7 +400,8 @@ try {
     ok(`${label}: signs in and opens the fixture`, signed && entered);
     ok(`${label}: the policy says ${want.enters ? "enters" : "does not enter"}; the screen has ${tabs.includes("coach") ? "the tab" : "no tab"}`, tabs.includes("coach") === !!want.enters, tabs.join());
     if (want.enters) {
-      ok(`${label}: the Coach tab is the second, after the Summary`, tabs.join() === "summary,coach,scorecard,commentary,partnerships,analytics,details", tabs.join());
+      // CRI-1.3: on a phone the strip is Summary, Scorecard, Commentary; his tab leads the More menu.
+      ok(`${label}: the Coach tab leads the More menu, after the strip's three`, tabs.join() === "summary,scorecard,commentary,coach,partnerships,analytics,details", tabs.join());
       await coachTab(s.page);
       const p = want.panels;
       const have = { day: await tid(s.page, "coach-day").count() === 1, side: await tid(s.page, "coach-side").count() === 1, load: await tid(s.page, "coach-week").count() === 1 };

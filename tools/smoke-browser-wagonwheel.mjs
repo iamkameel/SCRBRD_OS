@@ -41,6 +41,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { pickTab } from "./walk-tabs.mjs";
 
 const WEB_PORT = port(5351);
 const API_PORT = port(8851);
@@ -383,7 +384,7 @@ try {
   await tid(`mc-open-${MATCH}`).first().click({ timeout: 5000 }).catch(() => {});
   await afterReads(page, 2000);
   ok("the match opens", await has("match-view"));
-  await tap("mc-tab-analytics").catch(() => {});
+  await pickTab(page, "analytics").catch(() => {});   // under More on a phone (CRI-1.3)
   await page.waitForTimeout(800);
   await click(/^Whole innings$/).catch(() => {});
   const wheel = '[data-testid="shot-wheel"]';
@@ -434,7 +435,7 @@ try {
 
   // ── F ────────────────────────────────────────────────────────
   group("F. SCRBRD-102: the wagon-wheel analysis panel — a filter, a chip, sides and areas");
-  await tap("mc-tab-analytics").catch(() => {});
+  await pickTab(page, "analytics").catch(() => {});   // under More on a phone (CRI-1.3)
   await afterReads(page, 800);
   balls = await serverBalls();   // re-read: E's sector-era row went in by SQL, after the last fetch
   const panel = '[data-testid="wagon-analysis"]';

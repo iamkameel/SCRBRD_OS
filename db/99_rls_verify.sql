@@ -1332,13 +1332,23 @@ CREATE OR REPLACE FUNCTION _v38_link_open(p uuid, mum uuid) RETURNS boolean AS $
                   WHERE s.player_id = p AND a.person_id = mum AND a.role = 'guardian' AND s.valid_until IS NULL)
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- THE DAY, AT ANY HOUR (db/122 §4). A move the trigger dates itself is dated
+-- sa_today(), Johannesburg's day; a link's liveness is still read on the
+-- session's day (current_date: Q7, left for its own file). From 22:00 to
+-- 24:00 UTC the first is a day ahead. These helpers stage a leaving, a return
+-- and a move on the session's day, the day the link tests read, and never
+-- before the day the membership they close was opened (which may be
+-- sa_today()'s), so the constraint that a side is left after it is joined
+-- holds at every hour and the assertions read one day throughout.
 -- He leaves the school system (his last school membership closes today), and comes back.
 CREATE OR REPLACE FUNCTION _v60_leave(p uuid) RETURNS void AS $$
-  UPDATE team_membership SET left_on = current_date WHERE player_id = p AND left_on IS NULL;
+  UPDATE team_membership SET left_on = greatest(current_date, joined_on) WHERE player_id = p AND left_on IS NULL;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v60_rejoin(p uuid) RETURNS void AS $$
   INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason)
-  SELECT id, school_id, 'cricket', team_code, current_date, 'moved' FROM player WHERE id = p;
+  SELECT id, school_id, 'cricket', team_code,
+         greatest(current_date, (SELECT max(m.left_on) FROM team_membership m WHERE m.player_id = p)), 'moved'
+    FROM player WHERE id = p;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The constructed series, recorded by his coach on the days named (days
@@ -1589,9 +1599,16 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- A move between sides, as the move route makes one: player.team_code, and
 -- db/08's history trigger closes the old membership and opens the new.
+-- Dated on the session's day, never before his open side began (see THE
+-- DAY, AT ANY HOUR, above _v60_leave), as the route dates a move it is given
+-- a day for.
 CREATE OR REPLACE FUNCTION _v62_move(p uuid, team text) RETURNS void AS $$
+BEGIN
+  PERFORM set_config('app.effective_on',
+    greatest(current_date, (SELECT max(m.joined_on) FROM team_membership m WHERE m.player_id = p AND m.left_on IS NULL))::text, true);
   UPDATE player SET team_code = team WHERE id = p;
-$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+  PERFORM set_config('app.effective_on', '', true);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- One guardian's link to one child, as the owner reads it: ended or open, and to when.
 CREATE OR REPLACE FUNCTION _v62_link(p uuid, mum uuid, OUT open boolean, OUT until date) AS $$
@@ -5273,17 +5290,24 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- comes back (a new one opens), and db/62's deferred triggers are fired.
 CREATE OR REPLACE FUNCTION _v109_leave(p_player uuid) RETURNS void AS $$
 BEGIN
-  UPDATE team_membership SET left_on = current_date WHERE player_id = p_player AND left_on IS NULL;
+  -- The session's day, never before the side began (THE DAY, AT ANY HOUR).
+  UPDATE team_membership SET left_on = greatest(current_date, joined_on) WHERE player_id = p_player AND left_on IS NULL;
   SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
   SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v109_return(p_player uuid) RETURNS void AS $$
 BEGIN
   INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason)
-  SELECT p.id, p.school_id, 'cricket', p.team_code, current_date, 'moved' FROM player p WHERE p.id = p_player;
+  SELECT p.id, p.school_id, 'cricket', p.team_code,
+         greatest(current_date, (SELECT max(m.left_on) FROM team_membership m WHERE m.player_id = p_player)), 'moved'
+    FROM player p WHERE p.id = p_player;
   SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
   SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The day a boy last left his side, as the owner reads it.
+CREATE OR REPLACE FUNCTION _v109_left_on(p_player uuid) RETURNS date AS $$
+  SELECT max(m.left_on) FROM team_membership m WHERE m.player_id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- How many contacts a boy has, past RLS (D14: they stay).
 CREATE OR REPLACE FUNCTION _v109_contacts(p_player uuid) RETURNS integer AS $$
   SELECT count(*)::int FROM emergency_contact WHERE player_id = p_player AND active
@@ -26246,7 +26270,10 @@ $v49$;
     -- (adult)
     PERFORM _v109_leave(O);
     e := _v109_ending(L_OLD);
-    PERFORM _assert(e->>'kind' = 'left_school' AND (e->>'ends_on')::date = current_date
+    -- The day he left: the session's, or the day his side began if that is
+    -- later (THE DAY, AT ANY HOUR, above _v60_leave).
+    PERFORM _assert(e->>'kind' = 'left_school' AND (e->>'ends_on')::date = _v109_left_on(O)
+                    AND (e->>'ends_on')::date >= current_date
                     AND e->>'reason' IS NULL AND e->>'ended_by' IS NULL,
       format('§86 (adult): Old left at 19 and Aunt''s link reads %s', e));
 
