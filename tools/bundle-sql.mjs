@@ -778,6 +778,24 @@ SELECT
         AND position('''office_only''' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('pending_claim_decline(uuid)'))) > 0
         AND position('''office_only''' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('login_code_issue(text,text,integer)'))) > 0
        THEN 'OK' ELSE 'PROBLEM' END                             AS "A lapsed consent, a pupil's email, the school's day",
+  -- db/123: a notice with a team and no child follows the side (REACH R-E):
+  -- the side on the notice's day, and a match's end and sheet (Kameel, 29
+  -- Oct); the moved or playing-up boy's own read; the report door asks both.
+  CASE WHEN EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'notification'
+                     AND policyname = 'notification_follows_side' AND permissive = 'RESTRICTIVE' AND cmd = 'SELECT'
+                     AND qual LIKE 'notice_follows_side(%')
+        AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'notification'
+                     AND policyname = 'notification_read_side' AND permissive = 'PERMISSIVE' AND cmd = 'SELECT'
+                     AND qual LIKE 'notice_side_read(%')
+        AND position('sa_date(p_at)' IN coalesce((SELECT prosrc FROM pg_proc
+              WHERE oid = to_regprocedure('notice_follows_side(text,uuid,text,text,text,uuid,uuid,uuid,timestamptz)')), '')) > 0
+        AND position('AND notice_follows_side(n.required_capability,' IN
+                     coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('notification_report(uuid)')), '')) > 0
+        AND position('OR notice_side_read(n.required_capability,' IN
+                     coalesce((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('notification_report(uuid)')), '')) > 0
+        AND NOT has_function_privilege('public', to_regprocedure('notification_report(uuid)'), 'EXECUTE')
+        AND NOT has_function_privilege('public', to_regprocedure('notice_side_read(text,uuid,text,text,text,uuid,uuid,uuid,timestamptz)'), 'EXECUTE')
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A side's notices reach the side",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",
