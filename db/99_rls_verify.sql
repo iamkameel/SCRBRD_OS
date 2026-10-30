@@ -8413,12 +8413,17 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 --     _v124_back() has him return today (a new membership, and db/62's
 --     reopening in place). The deferred triggers that call those two would
 --     fire only at commit, and this file rolls back, so they are called here.
-CREATE OR REPLACE FUNCTION _v124_stage5(y jsonb) RETURNS jsonb AS $$
+-- The people and their links are made HERE, as the owner, before the
+-- sections run, and not in the section: setting aside role_assignment's date
+-- stamp is an ALTER TABLE, which Postgres refuses once earlier sections have
+-- left deferred trigger events pending on the table. Their ids wait in a
+-- transaction-local setting for _v124_stage5().
+CREATE OR REPLACE FUNCTION _v124_prelinks() RETURNS void AS $$
 DECLARE
   HIL uuid := '11111111-1111-1111-1111-111111111111';
   OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
   t date := sa_today();
-  c_e uuid; c_r uuid; v_a uuid; v_pe uuid; v_pr uuid; ids jsonb;
+  c_e uuid; c_r uuid; v_a uuid; ids jsonb;
 BEGIN
   PERFORM set_config('app.user_id', '', true);
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
@@ -8431,7 +8436,7 @@ BEGIN
     ARRAY['eself', 'player',   HIL::text, '1XI', c_e::text]]);
   INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v124b.rg@example.invalid', 'V124B Rg', 'guardian')
   RETURNING id INTO v_a;
-  ids := ids || jsonb_build_object('rg', v_a);
+  ids := ids || jsonb_build_object('rg', v_a, 'E', c_e, 'R', c_r);
   -- The two links are dated back, so a consent dated back is no older than
   -- them (db/122 Q4). An appointment's own date is stamped by its trigger
   -- (db/01: who and when are not the writer's to say), so it is set aside
@@ -8452,15 +8457,23 @@ BEGIN
                                   consent_state, consent_version, consent_at, created_by, valid_from, valid_until, created_at)
   VALUES (v_a, c_r, 'parent', 'verified', OFFICE, now() - interval '3 years', 'granted', 'popia-2026-01', now() - interval '3 years',
           OFFICE, (t - interval '3 years')::date, NULL, now() - interval '3 years');
-  -- E names his union at fifteen; R's guardian names it two years ago.
+  PERFORM set_config('v124.pre', ids::text, true);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+DO $v124$ BEGIN PERFORM _v124_prelinks(); END $v124$;
+
+-- E names his union at fifteen; R's guardian names it two years ago: each
+-- consent written as the owner in the giver's name, and dated back.
+CREATE OR REPLACE FUNCTION _v124_stage5(y jsonb) RETURNS jsonb AS $$
+DECLARE ids jsonb := current_setting('v124.pre')::jsonb; v_pe uuid; v_pr uuid;
+BEGIN
   PERFORM set_config('app.user_id', ids->>'eself', true);
-  INSERT INTO passport_consent (player_id, to_school_id) VALUES (c_e, (y->>'U')::uuid) RETURNING id INTO v_pe;
+  INSERT INTO passport_consent (player_id, to_school_id) VALUES ((ids->>'E')::uuid, (y->>'U')::uuid) RETURNING id INTO v_pe;
   PERFORM set_config('app.user_id', ids->>'rg', true);
-  INSERT INTO passport_consent (player_id, to_school_id) VALUES (c_r, (y->>'U')::uuid) RETURNING id INTO v_pr;
+  INSERT INTO passport_consent (player_id, to_school_id) VALUES ((ids->>'R')::uuid, (y->>'U')::uuid) RETURNING id INTO v_pr;
   PERFORM set_config('app.user_id', '', true);
   UPDATE passport_consent SET granted_at = now() - interval '3 years' WHERE id = v_pe;
   UPDATE passport_consent SET granted_at = now() - interval '2 years' WHERE id = v_pr;
-  RETURN ids || jsonb_build_object('E', c_e, 'R', c_r, 'pc_e', v_pe, 'pc_r', v_pr);
+  RETURN ids || jsonb_build_object('pc_e', v_pe, 'pc_r', v_pr);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- R leaves eighteen months ago, at seventeen: the move closes his
