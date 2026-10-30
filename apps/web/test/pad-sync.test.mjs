@@ -138,6 +138,8 @@ group("B1. The heartbeat: the lease kept with nothing to send, and a moved token
     },
   });
   ps.leaseAt = 0;
+  ok("the pad has a heartbeat", typeof ps.heartbeat === "function");
+  if (typeof ps.heartbeat !== "function") ps.heartbeat = async () => {};
   await ps.heartbeat();
   ok("an attached pad with nothing queued tells the server it is still scoring", calls.filter((c) => c.path === "/session/heartbeat").length === 1
      && calls[0].body?.epoch === 3, calls);
@@ -163,6 +165,7 @@ group("B1. The heartbeat: the lease kept with nothing to send, and a moved token
       throw new Error(`unexpected ${m} ${p}`);
     },
   });
+  if (typeof ps.heartbeat !== "function") ps.heartbeat = async () => {};
   await ps.heartbeat({ now: true });
   ok("its own lapsed lease: the beat takes it back, under the next generation", engine.attached && engine.epoch === 4
      && calls.some((c) => c.path === "/session/claim" && !c.body?.takeover), calls);
@@ -218,7 +221,7 @@ group("P7. A result declared while the pad had balls to send: they go to the lea
   const say = bannerFor?.(seen.status, null, 0, { describe: () => "Ball — 4 runs" });
   ok("...the banner lists it and offers Send for review", say?.action === "review" && say?.list?.length === 1 && /never sent before the result/.test(say?.text ?? ""), say);
   reach = true;
-  await ps.forReview();
+  await ps.forReview?.();
   ok("...and Send for review sends it", engine.pendingCount === 0 && engine.rejected.length === 1, { pending: engine.pendingCount });
 }
 
