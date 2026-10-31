@@ -78,7 +78,13 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   designs disagree; and the questions for Kameel that settle each one)
   and access requests (added 2026-10-30, Kameel: a family asking for everything held about their child under POPIA sections 23 and 24; what is
   included, what is held back, such as other children and a safeguarding concern
-  that must not tip anyone off, who approves, and how fast).
+  that must not tip anyone off, who approves, and how fast)
+  and platform controls (added 2026-10-31, Kameel: what a SuperAdmin or
+  platform administrator may switch on and off, for features, people and whole
+  schools; suspending or archiving a school, freezing scoring in an incident,
+  public pages from inside the app; what a school, a family and a child are
+  told; what must never be switched off; how each act is logged; and one home
+  for every control).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
