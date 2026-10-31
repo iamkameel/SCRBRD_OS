@@ -243,6 +243,10 @@ const NAV_CAPABILITY = {
   modules:       "school.feature.manage",
   rulebook:      null,
   pitchdeck:     "platform.tenant.manage",
+  // A union selector's list of the boys whose families named his union
+  // (UNION_SELECTOR_FIND S3, db/125). The passport's own capability: the
+  // role holds nothing else of a boy, and the definers decide every row.
+  selection:     "passport.union.read",
   // ── The two persona apps (redesign step 4, docs/design/STEP4_parent_pupil.md
   // §2.0). Each is still checked against a capability its role holds, so a
   // persona's bar can only ever be NARROWER than this map. Which persona a
@@ -279,7 +283,7 @@ const NAV_GROUPS = [
   // but the menu draws it inside the Competitions home, not as a second entry
   // (design/homes.js, lib/homeNav.js).
   { key:"play",    label:"Play",       items:["dashboard","news","matches","calendar","competitions","leagues","officials"] },
-  { key:"people",  label:"People",     items:["squad","profiles","injuries","staff"] },
+  { key:"people",  label:"People",     items:["squad","profiles","selection","injuries","staff"] },
   { key:"develop", label:"Develop",    items:["analytics","skills","training"] },
   { key:"operate", label:"Operate",    items:["logistics","fields","sponsors","readiness"] },
   { key:"admin",   label:"Administer", items:["management","modules","pitchdeck"] },
@@ -433,6 +437,7 @@ const NAV_META = {
   modules:      { icon:"sliders-horizontal", label:"Modules"      },
   rulebook:     { icon:"book-open", label:"Rulebook"     },
   pitchdeck:    { icon:"presentation", label:"Pitch Deck"   },
+  selection:    { icon:"clipboard-list", label:"Selection"    },
   // The persona apps (step 4 §2.0, Q11): the same four words at a school and
   // a club; the nouns inside the screens come from lib/words.js (G15).
   children:     { icon:"house", label:"Home"         },

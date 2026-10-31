@@ -2244,6 +2244,9 @@ export const READ_QUERIES = {
                   confidence
              from passport($1::uuid)`,
     params: q => [req(q, "playerId")],
+    // A boy's record read across schools (a union, a named school): kept by
+    // no browser (UNION_SELECTOR_FIND D7, S3).
+    noStore: true,
   },
   /**
    * Whether a boy may be seen by accredited scouts, and who decided.
@@ -2335,6 +2338,16 @@ export const READ_QUERIES = {
     logsItself: true,
     noStore: true,
     refuses: ["choose_a_school_or_age_group"],
+  },
+  // His name, as the passport's own door answers it (UNION_SELECTOR_FIND D6:
+  // the open from a row calls passport() and passport_name()). Null when the
+  // door is shut, which is how the selector's screen tells "no longer open to
+  // your union" from a record with no line on it yet; a union reader's call is
+  // logged by the definer as a 'name' read his family sees.
+  passport_name: {
+    text: `select passport_name($1::uuid) as name`,
+    params: q => [uuidParam(q, "playerId", true)],
+    noStore: true,
   },
 
   /* Which roles must hold which checks. Platform reference data. */

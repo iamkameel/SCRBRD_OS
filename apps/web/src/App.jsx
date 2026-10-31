@@ -84,6 +84,7 @@ const PitchDeckView     = view(() => import("./views/PitchDeckView.jsx"),     "P
 const ProfilesView      = view(() => import("./views/ProfilesView.jsx"),      "ProfilesView");
 const ReadinessOverview = view(() => import("./views/ReadinessOverview.jsx"), "ReadinessOverview");
 const RulebookView      = view(() => import("./views/RulebookView.jsx"),      "RulebookView");
+const SelectionView     = view(() => import("./views/SelectionView.jsx"),     "SelectionView");
 // Everyone's (db/57): raising a concern with the DSO, and the DSO's inbox.
 const SafeguardingView  = view(() => import("./views/SafeguardingView.jsx"),  "SafeguardingView");
 const SettingsView      = view(() => import("./views/SettingsView.jsx"),      "SettingsView");
@@ -561,6 +562,7 @@ export default function SCRBRD_OS() {
     management:   <ManagementView    role={role} onDirectoryChanged={refreshDirectory}/>,
     rulebook:     <RulebookView      role={role}/>,
     pitchdeck:    <PitchDeckView     role={role} onNav={setPage}/>,
+    selection:    <SelectionView/>,
     // The family app (step 4 P1–P7) and the pupil's (S1–S4).
     children:     <FamilyHome        role={role} onNav={setPage}/>,
     fixtures:     <FamilyMatches     role={role}/>,

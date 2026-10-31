@@ -48,6 +48,7 @@ import { cockpitApi, MATCH as COCKPIT } from "./a11y-cockpit-mock.mjs";
 import { signupApi } from "./a11y-signup-mock.mjs";
 import { importApi } from "./a11y-import-mock.mjs";
 import { listingApi, MATCH as LISTING_MATCH } from "./a11y-listing-mock.mjs";
+import { selectionApi, OPEN as SEL_OPEN, SHUT as SEL_SHUT, UNION as SEL_UNION } from "./a11y-selection-mock.mjs";
 import { buildWebForWalk, WEB_TEST_ROOT } from "./web-test-build.mjs";
 import { narrowAudit } from "./a11y-narrow.mjs";
 import { shellHtml } from "../services/api/public/public-api.mjs";
@@ -184,7 +185,7 @@ const TYPE_FLOOR_CEILING = {
   // (the director of sport, against tools/a11y-listing-mock.mjs), at 1280 wide and, with an m, at 390: the switch
   // off, on and a reader's (disabled, with its reason), the line, the form, the form with a refusal showing.
   // Measured inside their own regions. Born at 0, and kept there.
-  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0,
+  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0,
   // GA-I13: the scorer's home, on a phone, measured inside its own region — a Resume card with a count, the
   // fixtures with their states, the lines before the toss. Born at 0, and kept there.
   scorerhome: 0,
@@ -249,7 +250,7 @@ const TAP_FLOOR_CEILING = {
   // (the director of sport, against tools/a11y-listing-mock.mjs), at 1280 wide and, with an m, at 390: the switch
   // off, on and a reader's (disabled, with its reason), the line, the form, the form with a refusal showing.
   // Measured inside their own regions. Born at 0, and kept there.
-  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0,
+  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0,
 };
 
 /**
@@ -295,7 +296,7 @@ const CONTRAST_CEILING = {
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
               practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
               importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
-              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0,
+              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0,
               scorerhome: 0 },
   daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
@@ -306,7 +307,7 @@ const CONTRAST_CEILING = {
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
               practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
               importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
-              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0,
+              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0,
               scorerhome: 0 },
 };
 
@@ -371,7 +372,7 @@ const EMOJI_CEILING = {
   // (the director of sport, against tools/a11y-listing-mock.mjs), at 1280 wide and, with an m, at 390: the switch
   // off, on and a reader's (disabled, with its reason), the line, the form, the form with a refusal showing.
   // Measured inside their own regions. Born at 0, and kept there.
-  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0,
+  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0,
   // GA-I13: the scorer's home.
   scorerhome: 0,
 };
@@ -1146,6 +1147,95 @@ async function listingWalk(theme, width) {
     ok("no page errors on the listing and Add ground screens", errors.length === 0, errors.join(" | "));
   } catch (e) {
     ok(`the ${T_} ${width} listing walk threw: ${e.message?.slice(0, 160)}`, false);
+  } finally {
+    await ctx.close();
+  }
+}
+
+/**
+ * SELECTION (UNION_SELECTOR_FIND S3): a union selector at two institutions,
+ * against tools/a11y-selection-mock.mjs — no server, no database — at 1280
+ * wide and at 390 (screens named with an m). The filters with the chip, the
+ * rows, the empty answer, an open passport and a shut one ("No longer open"),
+ * each measured inside its own region, every control named. Who is listed is
+ * tools/smoke-browser-passport-union.mjs's, against the real stack.
+ */
+async function selectionWalk(theme, width) {
+  const scheme = theme === "daylight" ? "light" : "dark";
+  const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
+  const m = width < 500 ? "m" : "";
+  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width, height: width < 500 ? 844 : 900 }, ...(m ? { isMobile: true, hasTouch: true } : {}) });
+  await offline(ctx);
+  const { handle } = selectionApi();
+  await ctx.route((url) => url.hostname === "localhost" && url.pathname.startsWith("/api/"), (route) => {
+    const u = new URL(route.request().url());
+    const r = handle(route.request().method(), u.pathname, u.searchParams);
+    return route.fulfill({ status: r.status, contentType: "application/json", body: JSON.stringify(r.body) });
+  });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  await page.addInitScript(`window.__SCRBRD_API_BASE__ = "http://localhost:${PORT}";`);
+  const tid = (id) => page.locator(`[data-testid="${id}"]`);
+  const goTo = async (nav) => {
+    const bar = page.locator(`[data-testid="nav-${nav}"]:visible, [data-testid="mnav-${nav}"]:visible`).first();
+    if (await bar.count()) await bar.click({ timeout: 5000 }).catch(() => {});
+    else {
+      await page.locator('[data-testid="mnav-more"]').click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.locator(`[data-testid="drawer-${nav}"]`).click({ timeout: 5000 }).catch(() => {});
+    }
+    await page.waitForTimeout(1200);
+  };
+  const check = async (screen, region) => {
+    await page.waitForTimeout(400);
+    ok(`${T_} ${width} ${screen}: the region is on the page`, await page.locator(region).count() === 1);
+    await measure(page, theme, `${screen}${m}`, region);
+    const inRegion = await page.evaluate((region) => [...document.querySelectorAll(`${region} button, ${region} a[href], ${region} input, ${region} select`)]
+      .filter((el) => !(el.getAttribute("aria-label") || el.textContent || (el.id && document.querySelector(`label[for="${el.id}"]`)?.textContent) || "").trim()).length, region);
+    ok(`${T_} ${width} ${screen}: every control in it has a name`, inRegion === 0);
+  };
+  try {
+    group(`${T_} ${width} — Selection`);
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+    const lg = page.locator("button:not([disabled])", { hasText: /Get Started|Log In/ }).first();
+    if (await lg.count()) { await lg.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(500); }
+    await page.locator("#login-email").fill("selector@example.invalid");
+    await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(2400);
+    ok("the union selector signs in", await tid("os-main").count() === 1);
+    await goTo("selection");
+    await page.waitForSelector('[data-testid="selection-filters"]', { timeout: 6000 }).catch(() => {});
+    ok("Selection opens, with the institution chip (two institutions)", await tid(`selection-org-${SEL_UNION}`).count() === 1);
+    await check("selection", '[data-testid="selection"]');
+    await tid(`selection-org-${SEL_UNION}`).click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    await tid("selection-age").selectOption("U15").catch(() => {});
+    await tid("selection-list").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="selection-rows"]', { timeout: 6000 }).catch(() => {});
+    ok("the rows are drawn", await page.locator('[data-testid^="selection-row-"]').count() === 3);
+    await check("selectionrows", '[data-testid="selection"]');
+    await tid("selection-name").fill("nobody");
+    await tid("selection-list").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="selection-empty"]', { timeout: 6000 }).catch(() => {});
+    ok("the empty answer is drawn", await tid("selection-empty").count() === 1);
+    await check("selectionempty", '[data-testid="selection"]');
+    await tid("selection-name").fill("");
+    await tid("selection-list").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForSelector(`[data-testid="selection-row-${SEL_OPEN}"]`, { timeout: 6000 }).catch(() => {});
+    await tid(`selection-row-${SEL_OPEN}`).click({ timeout: 4000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="selection-passport"][data-state="ok"]', { timeout: 6000 }).catch(() => {});
+    ok("a passport opens from a row", await tid("selection-passport-name").count() === 1);
+    await check("selectionpassport", '[data-testid="selection-passport"]');
+    await tid("selection-back").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForSelector(`[data-testid="selection-row-${SEL_SHUT}"]`, { timeout: 6000 }).catch(() => {});
+    await tid(`selection-row-${SEL_SHUT}`).click({ timeout: 4000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="selection-passport"][data-state="closed"]', { timeout: 6000 }).catch(() => {});
+    ok("a shut door says 'No longer open'", /^No longer open to Verify Union$/.test((await tid("selection-closed").innerText().catch(() => "")).trim()));
+    await check("selectionclosed", '[data-testid="selection-passport"]');
+    ok("no page errors on Selection", errors.length === 0, errors.join(" | "));
+  } catch (e) {
+    ok(`the ${T_} ${width} Selection walk threw: ${e.message?.slice(0, 160)}`, false);
   } finally {
     await ctx.close();
   }
@@ -2336,6 +2426,8 @@ try {
   await importWalk("floodlit");
   await listingWalk("floodlit", 1280);
   await listingWalk("floodlit", 390);
+  await selectionWalk("floodlit", 1280);
+  await selectionWalk("floodlit", 390);
   await signupWalk("floodlit");
   await practiceWalk("floodlit");
   await scorerHomeWalk("floodlit");
@@ -2345,6 +2437,8 @@ try {
   await importWalk("daylight");
   await listingWalk("daylight", 1280);
   await listingWalk("daylight", 390);
+  await selectionWalk("daylight", 1280);
+  await selectionWalk("daylight", 390);
   await signupWalk("daylight");
   await practiceWalk("daylight");
   await scorerHomeWalk("daylight");
@@ -2360,6 +2454,7 @@ try {
   // ── I32: the match-day screens again, at the narrowest phone (320), in both themes ──
   // The staff shell is also asked at 375 and 414, and the display at all three. Every list of narrowAudit is empty.
   if (process.env.A11Y_SHOTS) await (await import("node:fs/promises")).mkdir(process.env.A11Y_SHOTS, { recursive: true });
+  if (ONLY && want("selection")) for (const th of /** @type {const} */ (["floodlit", "daylight"])) { await selectionWalk(th, 1280); await selectionWalk(th, 390); }
   if (ONLY && want("listing")) for (const th of /** @type {const} */ (["floodlit", "daylight"])) { await listingWalk(th, 1280); await listingWalk(th, 390); }
   for (const width of (process.env.A11Y_WIDTHS ?? "320,375,414").split(",").map(Number)) {
     NARROW = { width };
