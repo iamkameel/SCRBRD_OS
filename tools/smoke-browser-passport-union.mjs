@@ -289,8 +289,10 @@ try {
     await afterReads(m.page, 1500);
     const looked = await inner(m.page, "passport-union-reads");
     const lines = await m.page.locator(`[data-testid="passport-union-read-${PILLAY}"]`).allInnerTexts();
+    // S4: the list's appearances are grouped per reader per SA day, in §3's words.
     ok("...and on her own screen, who at which union looked: the list and the open",
-       famOk && lines.filter((l) => /Screen Selector \(Union Selector\)/.test(l) && l.includes(KZN_NAME)).length >= 2, looked.slice(0, 300));
+       famOk && lines.some((l) => /appeared in Screen Selector's list \(Union Selector\)/.test(l) && l.includes(KZN_NAME))
+       && lines.some((l) => /Screen Selector \(Union Selector\), .* · opened his passport on /.test(l) && l.includes(KZN_NAME)), looked.slice(0, 300));
     ok("no page errors for her", m.errors.length === 0, m.errors.slice(0, 3).join(" | "));
     await m.ctx.close();
   }
