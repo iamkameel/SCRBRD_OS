@@ -849,6 +849,17 @@ SELECT
         AND EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = to_regclass('competition')
                      AND conname = 'competition_comp_type_known' AND convalidated)
        THEN 'OK' ELSE 'PROBLEM' END                             AS "The fixture class",
+  -- db/129: a pupil's own player row reads his side only from the day he
+  -- joined it: pupil_side_on() the application's, app_can_but_player() its
+  -- owner's, and the seventeen side reads each asking it.
+  CASE WHEN to_regprocedure('pupil_side_on(text,uuid,text,uuid,uuid)') IS NOT NULL
+        AND to_regprocedure('pupil_side_on(text,uuid,text,uuid,uuid,date)') IS NOT NULL
+        AND has_function_privilege('scrbrd_app', to_regprocedure('pupil_side_on(text,uuid,text,uuid,uuid)'), 'EXECUTE')
+        AND NOT has_function_privilege('public', to_regprocedure('pupil_side_on(text,uuid,text,uuid,uuid)'), 'EXECUTE')
+        AND to_regprocedure('app_can_but_player(text,uuid,text,uuid,uuid)') IS NOT NULL
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('app_can_but_player(text,uuid,text,uuid,uuid)'), 'EXECUTE')
+        AND (SELECT count(*) FROM pg_policy p WHERE pg_get_expr(p.polqual, p.polrelid) LIKE '%pupil_side_on(%') = 17
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "A pupil reads his side from the day he joined",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

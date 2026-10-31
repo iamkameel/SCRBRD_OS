@@ -13740,7 +13740,11 @@ BEGIN
     -- pad_resume_toss (db/126): the credential's own match's toss, only while
     -- the token is this person's on this device, written under the person's
     -- scoring.start with the scope lifted for that one write (§103).
-    PERFORM _assert(detail = 'ball_event_payload_seen,competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
+    -- app_can_but_player (db/129): app_can()'s own body bar one line (AND
+    -- a.role <> 'player'), the pad guard included word for word: under pad
+    -- scope it answers as app_can() does, or less; the owner's alone, asked
+    -- only by pupil_side_on(), which only ever narrows an app_can() yes.
+    PERFORM _assert(detail = 'app_can_but_player,ball_event_payload_seen,competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
                              || 'match_playing_conditions,match_result_readable,my_alert_choices,my_child_fixtures,my_own_sheet_fixtures,my_own_side_fixtures,pad_resume_issue,pad_resume_reclaim,pad_resume_toss,progression_check,'
                              || 'result_official_notices,result_staff,safeguarding_concern_raise,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_takeover,scoring_verify_takeover,trip_fixture_driver_only',
