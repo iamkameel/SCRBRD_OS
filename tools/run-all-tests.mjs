@@ -180,6 +180,10 @@ const SUITES = [
   ["blocked",  "apps/web/test/scoring-blocked.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // What a live pad says about the server when it cannot send (SCRBRD-078), same transform.
   ["sync-banner", "apps/web/test/sync-banner.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The match-day audit (Kameel, 30 Oct 2026): the heartbeat, the toss under
+  // the resume credential, an outbox that cannot open, a result declared with
+  // balls still to send.
+  ["pad-sync", "apps/web/test/pad-sync.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Practice Match, phase 1: a pasted list read, the squad limits, the display
   // name, the cfg startMatch takes, a reload that loses nothing (score, wickets,
   // overs, batters, bowler, undo), no route to the sync path or to any normal

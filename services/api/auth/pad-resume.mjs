@@ -30,7 +30,7 @@
  * request runs. Every step refuses with a 401 and a code; a stale `iat` is
  * answered with the server's time so the device can correct its offset.
  *
- * WHAT IT IS GOOD FOR — five routes, and nothing else. PAD_ROUTES below is
+ * WHAT IT IS GOOD FOR — six routes, and nothing else. PAD_ROUTES below is
  * the whole list; the dispatcher in server.mjs checks it before any other
  * routing, so a signed request to any other path — a pupil, a medical record,
  * another match, /api/session, /api/health — is 403 `pad_scope` without being
@@ -58,7 +58,7 @@ export const PAD = Object.freeze({
 });
 
 /**
- * The five routes a credential may reach, and the handler key each maps to in
+ * The six routes a credential may reach, and the handler key each maps to in
  * server.mjs. The match in the path must be the credential's own.
  * @type {ReadonlyArray<readonly [string, RegExp, string]>}
  */
@@ -68,6 +68,10 @@ export const PAD_ROUTES = Object.freeze([
   ["POST", /^\/api\/matches\/([^/]+)\/events$/, "append"],
   ["GET",  /^\/api\/matches\/([^/]+)\/events$/, "list"],
   ["GET",  /^\/api\/matches\/([^/]+)\/toss$/, "toss"],
+  // The toss written (db/126, Kameel 30 Oct 2026): a toss queued with no
+  // signal is sent after the sign-in may have run out, and every ball waits
+  // behind it. pad_resume_toss() asks that the token is still this device's.
+  ["POST", /^\/api\/matches\/([^/]+)\/toss$/, "tossRecord"],
 ]);
 
 /**

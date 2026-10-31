@@ -192,6 +192,12 @@ try {
   const dosText = await panel(dos.page).innerText();
   if (DEBUG) console.log("[debug] director of sport's panel:\n" + dosText);
   ok("...with both quarantined balls named", /2 waiting/.test(dosText));
+  // The match-day audit's P3 (Kameel, 30 Oct 2026): the approver is told
+  // where a released ball lands, and that the pilot's rule is discard and
+  // re-record unless it is the innings' last.
+  ok("...and told a released ball is written at the end of the log, right only for an innings' last",
+     /written at the end of the log/.test(dosText) && /last ball \(or balls\) of an innings/.test(dosText)
+     && /record it on the pad, in its place/.test(dosText), dosText.slice(0, 400));
   ok("...naming what one of them was", /Wicket.*Run Out/i.test(dosText));
   ok("...and the other", /1 run\b/.test(dosText));
   ok("...who sent them", /Sarah Mokoena/.test(dosText));

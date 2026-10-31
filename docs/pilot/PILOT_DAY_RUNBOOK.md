@@ -57,7 +57,7 @@ These are roles, not names. The numbers for each role are on the printed card ea
 1. Agree who scores first and who stands by.
 2. Both scorers sign in again, at the gate where there is signal.
 3. The first scorer opens the fixture from **Match Centre** (**Open Live Scorer →** or **Start Scoring →**). If no toss is recorded, the pad shows **The toss**. Answer it only when the umpires have told you the result: the side batting first opens the innings and that cannot be undone on the pad.
-4. The standby opens the same fixture afterwards. Their pad should say **Someone else is scoring this match**. Leave it.
+4. The standby opens the same fixture afterwards. Their pad should say **Someone else is scoring this match**. Leave it. If it says **Another phone was scoring this match** with **Take over scoring**, do not press it: the scoring phone is still the scoring phone unless the lead says it is dead (see "If the scoring phone dies").
 5. Check the pavilion screen still shows **Before the toss**.
 6. Open the health address again.
 
@@ -98,6 +98,8 @@ The server turned some balls down. They stay on that phone and still count on it
 
 The server held balls sent under a token the phone no longer held. They are not in the scorebook. A supervisor decides on each one. Call the match-day lead.
 
+For the pilot (Kameel, 30 Oct 2026) the lead taps **Discard** and the scorer records the ball again on the pad, in its place, unless it is the last ball (or balls) of an innings. A released ball is written at the end of the log, after everything scored since, and counted for whoever is batting and bowling there; the review panel says so.
+
 ### No signal at the ground
 
 1. Scoring carries on. The pill says **Held** or **On device**, and the balls are saved on the phone.
@@ -110,8 +112,12 @@ If the signal is back but the pill does not move, see 'The server or the databas
 ### A bar says another device holds the match
 
 - **Someone else is scoring this match** with a **Try again** button: another phone holds it. Do not score on both.
-- **Another device has taken over scoring this match**: a handover finished. This phone sends nothing more.
+- **Another phone was scoring this match** with **Take over scoring**: the scoring phone has gone quiet for over a minute and a half. The bar shows when the server's last ball came in. Press it only when the lead has said the scoring phone is dead. Nothing is taken until it is pressed, and the take-over is recorded.
+- **Another device has taken over scoring this match**: the match is on another phone now. This phone sends nothing more, and the bar lists the balls it kept. Show them to the lead. **Score on this device** works only after the other phone has stopped.
+- **This match was scored on another device while this one was not sending**: the two phones both scored. The bar lists this phone's balls the server lacks, and they are already saved aside on the phone. Tap **Send them to the lead**: they go **For review**, never straight into the scorebook, and this phone then shows the server's log.
 - **Score on this device**: another device scored since this one last held the match, and the pad is showing the server's log.
+
+The scoring phone keeps its screen awake while it holds the match, where the phone allows it. Keep it on charge anyway.
 
 ### The pavilion screen
 
@@ -124,10 +130,20 @@ Signs: the pill stays **Held** or **On device** although the phone has signal; t
 
 1. Keep scoring on the pad. Every ball is saved on the phone before it counts. Nothing is lost while the phone works. Do not reload, clear the match or sign out.
 2. The paper scorebook is kept as always, ball by ball. Today it is the second record: check it against the pad at the end of every over, not only at the innings.
-3. No handover while the server is down. If the scoring phone dies, the standby does not claim the match. From that ball the paper book is the only record; the standby writes the time and the over on it and scores on paper.
+3. No handover while the server is down. If the scoring phone dies, the standby does not claim the match. From that ball the paper book is the only record; the standby writes the time and the over on it and scores on paper. When the server is back, follow "If the scoring phone dies" below: the paper balls are typed into the pad, in order, before play moves on.
 4. Tell the match-day lead. The lead decides nothing during play except whether to suspend the service deliberately (see "The app shows something it should not"). Play goes on.
 5. When the server returns the balls send by themselves. Wait for **Sent**. The pavilion screen catches up on its own.
-6. After the match the lead opens the scorecard and compares it with the book. If every ball is there, nothing more is done. If balls are missing (a lost or dead phone, balls **For review** that cannot be released, a cleared match), the lead imports the book through the scorebook importer, typed by hand (the reader stays off), and the imported balls carry their source. Either way the lead writes a register entry.
+6. After the match the lead opens the scorecard and compares it with the book. If every ball is there, nothing more is done. If balls are missing from an innings that was scored live, they are typed into the pad from the book, in order (as below); the scorebook importer refuses any innings with a live ball in it. The importer is only for an innings that has no live ball at all (the whole innings on paper), typed by hand (the reader stays off), and the imported balls carry their source. Either way the lead writes a register entry.
+
+### If the scoring phone dies
+
+Decided by Kameel, 30 Oct 2026, for the pilot. There is no import into the middle of a live innings.
+
+1. The lead decides the scoring phone is dead (flat, broken, lost). Until then nobody takes over.
+2. The standby opens the fixture. After a minute and a half without the scoring phone, the bar says **Another phone was scoring this match** and when the server's last ball came in. The standby taps **Take over scoring**. (If the lead has force-released the match, the pad takes it at once.)
+3. The standby's pad says **You are scoring this match now** and the time of the server's last ball, with the board as the server has it. Compare that ball with the paper book.
+4. Any balls in the book after it are typed into the pad, one by one, in order, before the next ball is bowled. Then tap **Checked**.
+5. If the dead phone comes back later, it says **Another device has taken over scoring this match** and lists the balls it kept. The lead compares them with the book; they are already typed in from the book, so nothing more is sent from it.
 
 ### The app shows something it should not
 
@@ -140,7 +156,7 @@ Another school's boy's details, a name on the pavilion screen where a position s
 ### A phone with the app signed in is lost
 
 1. Tell the match-day lead at once. The lead or the school office disables that account and signs it out everywhere.
-2. If it was the scoring phone, the lead force-releases the match so the standby can claim it. Balls that had not been sent are on paper only; the standby carries on from the book.
+2. If it was the scoring phone, the lead force-releases the match so the standby can claim it. Balls that had not been sent are on paper only; the standby types them into the pad from the book, in order, before carrying on (see "If the scoring phone dies").
 3. The register entry says whether the phone was locked, when the account was disabled, and what was on it.
 
 ---
@@ -148,9 +164,10 @@ Another school's boy's details, a name on the pavilion screen where a position s
 ## After the match
 
 1. After the second innings the scorer's screen says **Match Complete**. The scorer stays until the pill says **Sent**, moving to where there is signal if needed.
-2. In the Match Centre tap **Open match**, then **Scorecard**, and compare with the umpires' book.
-3. The public page is at the link in the **Public page** panel: [match link from the Match Centre]. Only players whose family has consented are named; everyone else is shown by position.
-4. To take the public page down, tap **Withdraw** in the same panel.
+2. During play only the pad's own end of the second innings marks the match complete (Kameel, 30 Oct 2026). Nobody records the result anywhere else (**Match Details**, the office) until both phones say **Sent**. A pad that still had balls when a result was recorded sends them **For review** when it next has signal, and lists them; they never go into the finished scorebook.
+3. In the Match Centre tap **Open match**, then **Scorecard**, and compare with the umpires' book.
+4. The public page is at the link in the **Public page** panel: [match link from the Match Centre]. Only players whose family has consented are named; everyone else is shown by position.
+5. To take the public page down, tap **Withdraw** in the same panel.
 
 ---
 

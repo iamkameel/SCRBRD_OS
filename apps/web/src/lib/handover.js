@@ -94,6 +94,10 @@ export const REFUSAL_WORDS = {
   not_pending: "There is no handover waiting on this match.",
   not_token_holder: "This device does not hold the scoring token.",
   unreachable: "Could not reach the server.",
+  // db/126 (Kameel, 30 Oct 2026): another phone held this match and its lease
+  // lapsed. Taking it is a confirmed take-over, never a plain claim.
+  held_elsewhere: "Another phone was scoring this match. Taking it over is a choice you confirm, shown the server's last ball.",
+  epoch_moved: "Somebody else took this match while you were deciding. Nothing was taken.",
 };
 export const refusalWords = (reason) => REFUSAL_WORDS[reason] ?? `Could not complete this (${reason}).`;
 

@@ -24,7 +24,7 @@ until this populates `app.*` correctly.**
    says why); sends `Authorization: Bearer <token>` on every request.
 4. Token TTL is 30 min. There is no refresh of this token. The one thing that
    outlives it is the scoring pad's resume credential (below), which is not a
-   refresh: it signs five routes of one match and nothing else.
+   refresh: it signs six routes of one match and nothing else.
 5. Every token is minted by `mintToken()` (`auth-db.mjs`), which records a
    session first (`auth_session_open()`, db/85). The token names that session
    and the account's session epoch; see "A session ends when it is ended".
@@ -141,7 +141,7 @@ it (`pad_resume_issue()`). The pad asks right after a claim made signed in, and
 after a takeover. One live credential per person, device and match; a new
 issue ends the last (`reissued`). Nothing a credential can do mints another.
 
-**Good for exactly five routes, on its own match** (`PAD_ROUTES` in
+**Good for exactly six routes, on its own match** (`PAD_ROUTES` in
 `services/api/auth/pad-resume.mjs`):
 
 | Route | What for |
@@ -150,7 +150,8 @@ issue ends the last (`reissued`). Nothing a credential can do mints another.
 | `POST /api/matches/:id/session/claim` | only this device's own token taken back (`pad_resume_reclaim()`: state active, this person, this device) |
 | `POST /api/matches/:id/events` | appending that match's events |
 | `GET  /api/matches/:id/events` | reading that match's log |
-| `GET  /api/matches/:id/toss` | reading that match's toss (never recording one) |
+| `GET  /api/matches/:id/toss` | reading that match's toss |
+| `POST /api/matches/:id/toss` | recording that match's toss, only while the token is this device's (`pad_resume_toss()`, db/126; Kameel, 30 Oct 2026: a toss queued with no signal is sent after the sign-in may have run out, and every ball waits behind it). Frozen once the match has an event, as signed in. |
 
 Every other request carrying a credential — every read (pupils, medical,
 contacts, discipline), every write, another match's routes, `/api/session`,
@@ -219,7 +220,7 @@ because every request is decided by the person's live assignments.
 - *Theft from IndexedDB* — the store holds an id and a key handle; the id
   alone signs nothing, and the key cannot be exported.
 - *XSS on the page* — injected script can *use* the key while the page is open
-  (the honest limit of a non-extractable key); it reaches five routes of one
+  (the honest limit of a non-extractable key); it reaches six routes of one
   match until midnight, every event still judged by the Laws and stamped with
   this device. The in-memory token it could already use reaches more.
 - *Replay* — one method, one path, one body, a time and a jti, spent once.

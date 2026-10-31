@@ -31,13 +31,14 @@ const onServer = (evs) => evs.map((e, i) => ({ ...e, seq: i + 1 }));
 
 /** A fake server. `probe`: the session as the heartbeat reports it. */
 function server({ log = [], probe = { ok: false, epoch: null, state: null, reason: "no_session" }, claim = { ok: true, epoch: 1 } } = {}) {
+  /** @type {{probe: number, log: number, claim: number, claimOpts?: any}} */
   const calls = { probe: 0, log: 0, claim: 0 };
   return {
     calls,
     api: {
       probe: async () => { calls.probe++; if (probe instanceof Error) throw probe; return probe; },
       log: async () => { calls.log++; return log; },
-      claim: async () => { calls.claim++; return claim; },
+      claim: async (opts) => { calls.claim++; calls.claimOpts = opts; return typeof claim === "function" ? claim(opts) : claim; },
     },
   };
 }
@@ -211,6 +212,34 @@ group("K. The toss against the server's (SCRBRD-075)");
      tossDecision({ mine, server: theirs, serverHasEvents: false, log: [[OPEN, PAIR], []] }).reason === "toss_conflict");
   ok("playRecorded: the start alone is not play; batters are", !playRecorded(onlyStart) && playRecorded([[OPEN, PAIR], []]));
   ok("tossLine says it in words", /Away won the toss and chose to bat \(Away bat first\)/.test(tossLine(theirs, "Home", "Away")), tossLine(theirs, "Home", "Away"));
+}
+
+group("M. Another device's lapsed lease: refused, then a confirmed take-over (db/126, B1)");
+{
+  // The standby's phone opens the fixture. The scorer's phone held epoch 7
+  // and its lease lapsed during drinks. The database refuses a plain claim.
+  const { engine } = await engineWith();
+  const LOG = onServer([OPEN, PAIR, NEL, run(1)]);
+  const db = (/** @type {any} */ opts) => opts?.takeover
+    ? (opts.epoch === 7 ? { ok: true, epoch: 8 } : { ok: false, reason: "epoch_moved", epoch: 7 })
+    : { ok: false, reason: "held_elsewhere", epoch: 7 };
+  const s = server({ log: LOG, probe: { ok: false, epoch: 7, state: "active", reason: "not_token_holder" }, claim: db });
+  const r = await tryAttach({ engine, server: s.api, padLog: () => [[], []], adopt: () => {}, intent: "open" });
+  ok("a person opening the pad: a plain claim, refused held_elsewhere, with the generation named",
+     !r.ok && r.reason === "held_elsewhere" && r.sessionEpoch === 7 && s.calls.claim === 1 && s.calls.claimOpts === undefined, r);
+  ok("...and the pad does not hold the token", !engine.attached);
+  ok("held_elsewhere is not retried on a timer", !RETRY.has("held_elsewhere"));
+  const t = await tryAttach({ engine, server: s.api, padLog: () => padLogFrom(LOG), adopt: () => {}, intent: "takeover", takeoverEpoch: 7 });
+  ok("Take over, confirmed: asked as a take-over over the generation shown",
+     t.ok && t.epoch === 8 && s.calls.claimOpts?.takeover === true && s.calls.claimOpts?.epoch === 7, { t, opts: s.calls.claimOpts });
+  ok("...and says it followed another device's generation (the incoming scorer's note)", t.followed === true, t);
+  const { engine: e2 } = await engineWith();
+  const t2 = await tryAttach({ engine: e2, server: s.api, padLog: () => [[], []], adopt: () => {}, intent: "takeover", takeoverEpoch: 6 });
+  ok("a take-over over a generation the person was not shown: refused, epoch_moved", !t2.ok && t2.reason === "epoch_moved" && !e2.attached, t2);
+  const { engine: e3 } = await engineWith({ heldEpoch: 4 });
+  const s3 = server({ log: [], probe: { ok: true, epoch: 4, state: "active", reason: null }, claim: { ok: true, epoch: 4 } });
+  const own = await tryAttach({ engine: e3, server: s3.api, padLog: () => [[], []], adopt: () => {}, intent: "open" });
+  ok("this device's own token: nothing followed", own.ok && own.followed === false, own);
 }
 
 group("L. What is waiting, in words");

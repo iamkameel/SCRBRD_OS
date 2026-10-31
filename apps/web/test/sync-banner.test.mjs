@@ -95,5 +95,52 @@ group("D. The pad's resume credential (SCRBRD-078 option B)");
   ok("a toss to record, signed out: sign in to send it", /Sign in to send the toss/.test(toss) && /nothing is sent before it/.test(toss), toss);
 }
 
+group("E. The match-day audit (Kameel, 30 Oct 2026): every stop says what to do, and lists what it keeps");
+{
+  const handlers = { onSignIn() {}, onRetry() {}, onScoreHere() {}, onTakeOver() {}, onConfirmTakeOver() {}, onSettleFork() {}, onReview() {}, onDismissNote() {} };
+  const markup = (s, extra) => renderToStaticMarkup(h(SyncBanner, { status: s, match: MATCH, extra, ...handlers }));
+  const describe = (ev) => ev?.kind === "ball" ? `Ball — ${ev.value ?? 0} run${ev.value === 1 ? "" : "s"}` : `Event — ${ev?.kind}`;
+  const b1 = { payload: { kind: "ball", value: 1 } }, b4 = { payload: { kind: "ball", value: 4 } };
+  const AT = "2026-10-31T12:21:40Z";   // 14:21 in Johannesburg
+
+  // B1: another phone held the match; taking it is a confirmed act, shown the last ball.
+  const he = bannerFor(st({ reason: "held_elsewhere", heldElsewhere: { epoch: 7, at: AT, seq: 41 } }), MATCH);
+  ok("held_elsewhere: another phone was scoring, with the server's last ball at 14:21", he?.lead === "Another phone was scoring this match." && /14:21/.test(he.text), he);
+  ok("...and the action is the confirmed take-over", he?.action === "confirmtakeover" && /sync-confirm-takeover/.test(markup(st({ reason: "held_elsewhere", heldElsewhere: { epoch: 7, at: AT } }))));
+  ok("...never Try again (which used to take it in silence)", !/sync-retry/.test(markup(st({ reason: "held_elsewhere", heldElsewhere: { epoch: 7, at: AT } }))));
+  const heNone = bannerFor(st({ reason: "held_elsewhere", heldElsewhere: { epoch: 7, at: null } }), MATCH);
+  ok("...with no ball yet, it says so", /no ball from it yet/.test(heNone?.text ?? ""), heNone);
+  const em = bannerFor(st({ reason: "epoch_moved" }), MATCH);
+  ok("epoch_moved: nothing taken, Try again", em?.action === "retry" && /Nothing was taken/.test(em.text), em);
+
+  // P4: the incoming scorer's note, until checked.
+  const note = bannerFor(st({ attached: true, reason: null, takeoverNote: { at: AT, seq: 41 } }), MATCH, 0, { score: "87 for 3 after 14.2 overs" });
+  ok("the take-over note: the time of the server's last ball and the board then", note?.reason === "takeover_note" && /14:21/.test(note.text) && /87 for 3 after 14\.2 overs/.test(note.text), note);
+  ok("...to check against the scoreboard and the book, with Checked", /scoreboard and the book/.test(note?.text ?? "") && note?.action === "checked"
+     && /sync-note-checked/.test(markup(st({ attached: true, reason: null, takeoverNote: { at: AT } }))));
+
+  // P5: token_moved, fork and match_complete each offer an action and list the balls kept.
+  const tm = bannerFor(st({ reason: "token_moved", pendingList: [b1, b4] }), MATCH, 0, { describe });
+  ok("token_moved: Score on this device, the other phone first", tm?.action === "scorehere" && /other phone must stop first/.test(tm.text), tm);
+  ok("...and the two balls kept, listed", JSON.stringify(tm?.list) === JSON.stringify(["Ball — 1 run", "Ball — 4 runs"]), tm?.list);
+  ok("...rendered as a list a scorer can show the lead", /data-testid="sync-banner-list"/.test(markup(st({ reason: "token_moved", pendingList: [b1] }), { describe })));
+  const find = (id) => ({ c: { kind: "ball", value: 4 } })[id] ?? null;
+  const fk = bannerFor(st({ reason: "fork", reconcile: { state: "fork", extra: ["a"], mine: ["c"] } }), MATCH, 0, { describe, find });
+  ok("fork: its balls the server lacks, listed, and written aside", JSON.stringify(fk?.list) === JSON.stringify(["Ball — 4 runs"]) && /written aside on this phone/.test(fk.text), fk);
+  ok("...and the action: Send them to the lead", fk?.action === "settlefork" && /sync-settle-fork/.test(markup(st({ reason: "fork", reconcile: { state: "fork", extra: [], mine: [] } }))));
+  const mc = bannerFor(st({ reason: "match_complete", pendingList: [b1] }), MATCH, 0, { describe });
+  ok("match_complete with a ball unsent: never sent before the result, listed, Send for review", mc?.action === "review" && mc.list?.length === 1
+     && /never sent before the result was recorded/.test(mc.text), mc);
+  const mcGoing = bannerFor(st({ reason: "match_complete", pendingList: [b1], reviewing: true }), MATCH, 0, { describe });
+  ok("...while it is going, no second press", !mcGoing?.action && /Sending 1 ball to the lead/.test(mcGoing?.text ?? ""), mcGoing);
+
+  // P6: the outbox could not open.
+  const ob = bannerFor({ open: false, outboxUnavailable: true }, MATCH);
+  ok("outbox_unavailable: said, with what to do", ob?.reason === "outbox_unavailable" && /Score on the other phone/.test(ob.text), ob);
+
+  ok("every action button is at least 44px tall", (markup(st({ reason: "held_elsewhere", heldElsewhere: { epoch: 7, at: AT } })).match(/min-height:\s*(\d+)px/g) ?? [])
+     .every((m) => Number(m.match(/(\d+)/)[1]) >= 44));
+}
+
 console.log(`\n${"─".repeat(52)}\nSYNC BANNER: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

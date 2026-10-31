@@ -95,6 +95,14 @@ const PIN = new Map([
   ["Score on this device", { in: ["scorer/syncBanner.jsx"] }],
   ["Someone else is scoring this match", { in: ["lib/handover.js"], part: "Someone else is scoring this match on another device" }],
   ["Another device has taken over scoring this match", { in: ["scorer/syncBanner.jsx"], part: "Another device has taken over scoring this match\\." }],
+  // The match-day audit (Kameel, 30 Oct 2026): the confirmed take-over, the
+  // incoming scorer's note, a fork's way to the lead, a result's balls.
+  ["Another phone was scoring this match", { in: ["scorer/syncBanner.jsx"], part: "Another phone was scoring this match\\." }],
+  ["You are scoring this match now", { in: ["scorer/syncBanner.jsx"], part: "You are scoring this match now\\." }],
+  ["This match was scored on another device while this one was not sending", { in: ["scorer/syncBanner.jsx"], part: "This match was scored on another device while this one was not sending\\." }],
+  ["Take over scoring", { in: ["scorer/syncBanner.jsx"] }],
+  ["Send them to the lead", { in: ["scorer/syncBanner.jsx"] }],
+  ["Checked", { in: ["scorer/syncBanner.jsx"] }],
   // The handover sheet (scorer/sheets.jsx).
   ["Hand over scoring", { in: ["scorer/sheets.jsx"] }],
   ["Claim this match", { in: ["scorer/sheets.jsx"] }],

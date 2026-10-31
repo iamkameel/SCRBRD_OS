@@ -34,7 +34,7 @@ import { api, signedIn } from "../lib/api.js";
 import { profile } from "../lib/session.js";
 import { PadSync } from "../lib/sync.js";
 import { refusalWords } from "../lib/handover.js";
-import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad, reconcile, padLogFrom, withOrphans } from "@scrbrd/sync";
+import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad, reconcile, padLogFrom, withOrphans, describeEvent } from "@scrbrd/sync";
 import { HeldSheet } from "./held.jsx";
 import { awardEvent, awardRefusal, foldPad, pendingCredits, projectPad } from "./penalty.js";
 import { crease, deliveryEvents, noBallEvent, extraWicketEvent } from "./delivery.js";
@@ -622,6 +622,21 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   const project = (...evs) => projectPad(events, curIn, evs, scoringCtxRef.current);
 
   const inn=innings[curIn];
+  // What the sync banner needs from the pad (P4, P5): each kept event in
+  // words, with the innings' names; one of the pad's events by id; and the
+  // board as it stood when a take-over note appeared, held while it shows.
+  const noteScoreRef=useRef({at:null,score:null});
+  const noteAt=padStatus?.takeoverNote?.at??null;
+  if(noteAt&&noteScoreRef.current.at!==noteAt&&inn)noteScoreRef.current={at:noteAt,score:`${inn.runs} for ${inn.wickets} after ${fmtOv(inn.balls)} overs`};
+  const bannerExtra=useMemo(()=>{
+    const find=(id)=>{
+      for(const evs of events)for(const e of evs??[])if(e?.id===id)return e;
+      const q=syncRef.current?.engine?.pending?.find((p)=>p.idempotencyKey===id);
+      return q?{...q.payload,id}:null;
+    };
+    return {find,describe:(ev)=>describeEvent(ev,innings[ev?.innings??0]??null,find),
+      score:noteAt&&noteScoreRef.current.at===noteAt?noteScoreRef.current.score:null};
+  },[events,innings,noteAt]);
 
   // ── The super over (SCRBRD-114 phase 3b) ────────────────
   // May one start now, and if not, why: asked of the engine and of the
@@ -776,6 +791,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
    * this function's to settle — and marked known, so it is never queued.
    * @returns {boolean} whether it was taken
    */
+  // The fork whose log was last written aside (hooks.forked), by its ids.
+  const forkAsideRef = useRef(null);
   const adoptLog = (log, compared) => {
     const ids = new Set(compared.flatMap((evs) => (evs ?? []).map((e) => e?.id)));
     let took = false;
@@ -822,6 +839,17 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
           }));
         },
         followToss: (server) => followServerToss(server),
+        // A fork (P5; Kameel, 30 Oct 2026: as the handover path does): this
+        // phone's whole log, with the ids the server lacks, written aside for
+        // the lead before anything else happens to it. Once per fork.
+        forked: async (r) => {
+          const key = (r?.mine ?? []).join(",");
+          if (!key || forkAsideRef.current === key) return;
+          forkAsideRef.current = key;
+          const outbox = syncRef.current?.engine;
+          await saveAside(matchIdRef.current ?? matchId, { events: eventsRef.current, notOnServer: r.mine, reason: "fork",
+            ...(outbox?.toss ? { toss: outbox.toss } : {}) });
+        },
         onStatus: (st) => { if (!stopped) setPadStatus(st); },
       },
     });
@@ -2608,11 +2636,15 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
                 Not while a sheet is open: the sheet IS the fix in progress,
                 and a second button offering the same fix behind it only
                 competes. */}
-            {live&&!modal&&<SyncBanner status={padStatus} match={match} asideCount={asideCount}
+            {live&&!modal&&<SyncBanner status={padStatus} match={match} asideCount={asideCount} extra={bannerExtra}
               onSignIn={onSignIn&&padStatus?.online?onSignIn:null}
               onRetry={()=>syncRef.current?.attach("open")}
               onScoreHere={()=>syncRef.current?.attach("open")}
-              onTakeOver={()=>setModal("handover")}/>}
+              onTakeOver={()=>setModal("handover")}
+              onConfirmTakeOver={()=>syncRef.current?.attach("takeover")}
+              onSettleFork={()=>syncRef.current?.settleFork()}
+              onReview={()=>syncRef.current?.forReview()}
+              onDismissNote={()=>syncRef.current?.dismissNote()}/>}
             {/* SCRBRD-130 R1: while play is stopped, the banner says where and
                 offers the two ways on; it replaces the blocked panel's words. */}
             {activeTab==="score"&&!modal&&stopped&&<RainBanner stopped={stopped} isChase={matchChaseOf(innings,curIn)!=null}

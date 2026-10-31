@@ -589,6 +589,76 @@ export class SyncEngine {
       for (const ev of fresh) this.sent.add(ev.idempotencyKey);
       for (const ev of fresh) await this.storage.put(kSent(ev.idempotencyKey), "1");
       const res = await this.transport(this.matchId, batch);
+      flushed = await this._settle(res);
+      this.lastError = null; this.attempt = 0;
+    } catch (e) {
+      // `any`, not narrowed: a non-Error with a .message is reported by that
+      // message, as it always has been. (A thrown null or undefined would
+      // throw again here — noted in the typecheck notes, left as found.)
+      this.lastError = /** @type {any} */ (e).message || String(e);
+      this.attempt = Math.min(this.attempt + 1, BACKOFF.length - 1);
+    } finally {
+      this.syncing = false; this._emit();
+    }
+    return { flushed, remaining: this.pending.length, rejected: this.rejected.length, held: this.held.length };
+  }
+
+  /**
+   * Send what is queued for a PERSON to review, as it was stamped, without
+   * the token (the match-day audit, P5/P7; Kameel 30 Oct 2026).
+   *
+   * Two stops leave balls on a phone with no road to the server: a result
+   * declared while the pad still had balls to send (match_complete), and two
+   * devices that kept one match (a fork). Neither may go into the log — the
+   * match is over, or the log is another device's now — and neither should
+   * sit on one phone where the lead cannot see it. Sent here, unattached and
+   * never restamped, each is judged by the server's door like any event from
+   * a device that does not hold the token: written to quarantine, where the
+   * lead releases or rejects it (and the pill says "For review N"). The
+   * server decides that, not this method: an event it would take as live
+   * (this device holding the token under the event's own generation) cannot
+   * reach here, because the caller sends only after the server has said the
+   * match is complete or another device's events are in its log.
+   *
+   * Waits for a flush in progress; refuses while attached (the gate's road is
+   * the flush). Throws when there is no answer, everything still queued.
+   * @param {string[]} [keys]  only these (a fork's not-on-server events); default everything queued
+   * @returns {Promise<{sent: number, remaining: number, rejected: number}>}
+   */
+  async sendForReview(keys) {
+    if (this._inflight) await this._inflight.catch(() => {});
+    if (this.attached) throw new Error("attached");
+    const want = keys ? new Set(keys) : null;
+    const batch = this.pending.filter(ev => !want || want.has(ev.idempotencyKey));
+    if (!batch.length) return { sent: 0, remaining: this.pending.length, rejected: this.rejected.length };
+    const p = (async () => {
+      this.syncing = true; this._emit();
+      try {
+        const fresh = batch.filter(ev => !this.sent.has(ev.idempotencyKey));
+        for (const ev of fresh) this.sent.add(ev.idempotencyKey);
+        for (const ev of fresh) await this.storage.put(kSent(ev.idempotencyKey), "1");
+        const res = await this.transport(this.matchId, batch);
+        await this._settle(res);
+      } finally {
+        this.syncing = false; this._emit();
+      }
+    })();
+    const run = p.finally(() => { if (this._inflight === run) this._inflight = null; });
+    this._inflight = run;
+    await run;
+    return { sent: batch.length, remaining: this.pending.length, rejected: this.rejected.length };
+  }
+
+  /**
+   * One response, settled against what is queued: acked and duplicates
+   * cleared, quarantined moved to rejected, conflicts and refusals held for
+   * a person, anything the server did not reach left queued in order.
+   * @param {any} res
+   * @returns {Promise<number>} how many were acked
+   */
+  async _settle(res) {
+    let flushed = 0;
+    {
       // res: { accepted:[{idempotencyKey,seq}], duplicates:[...], quarantined:[...],
       //        conflicts:[{idempotencyKey,seq,reason}], refused:[{idempotencyKey,reason}] }
       const settled = new Map();
@@ -621,17 +691,8 @@ export class SyncEngine {
         else { this.rejected.push({ ...ev, reason: r.reason }); }
       }
       this.pending = stillPending;
-      this.lastError = null; this.attempt = 0;
-    } catch (e) {
-      // `any`, not narrowed: a non-Error with a .message is reported by that
-      // message, as it always has been. (A thrown null or undefined would
-      // throw again here — noted in the typecheck notes, left as found.)
-      this.lastError = /** @type {any} */ (e).message || String(e);
-      this.attempt = Math.min(this.attempt + 1, BACKOFF.length - 1);
-    } finally {
-      this.syncing = false; this._emit();
     }
-    return { flushed, remaining: this.pending.length, rejected: this.rejected.length, held: this.held.length };
+    return flushed;
   }
 
   /** Delay before the next retry after a failure (exponential, capped). */

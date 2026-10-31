@@ -222,7 +222,7 @@ export async function sessionProfile(pool, secret, bearer) {
  * duration and returned to the pool with no lingering context, because
  * withPrincipal sets everything transaction-locally and commits.
  *
- * `bearer` is the Authorization header as sent — or, for the five routes a
+ * `bearer` is the Authorization header as sent — or, for the six routes a
  * pad resume credential may use, the principal the dispatcher already built
  * from its signed request (pad-resume.mjs; `who(req)` below picks it). Only
  * a principal carrying scope "pad" is accepted that way: anything else must
@@ -406,7 +406,7 @@ export function afterCommit(fn) {
 /**
  * Who a request to one of the pad's routes runs as: the principal the
  * dispatcher built from a signed resume credential, when there is one, else
- * the Authorization header for runAsPrincipal() to verify. The five handlers
+ * the Authorization header for runAsPrincipal() to verify. The six handlers
  * a credential reaches pass this; every other handler passes the header, and
  * never sees a credential (the dispatcher refuses it first).
  * @param {{ principal?: Principal, headers?: { authorization?: string } }} req
