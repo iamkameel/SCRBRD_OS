@@ -17,7 +17,8 @@ These are roles, not names. The numbers for each role are on the printed card ea
 | role | for |
 |---|---|
 | the match-day lead | the pill says **For review**; the server or database is down; the app shows something it should not; a phone is lost; whether to import after play |
-| **the school office** | **Waiting for your school office**; a sign-in code; no scoring button on an account |
+| **the school office** | **Waiting for your school office**; no scoring button on an account |
+| Kameel, by phone, until stumps | a sign-in code: a new scorer, a dead phone, a take-over, or a sign-in that has lapsed |
 | the second reader | a compromise decision when the lead is the subject or is busy on the field; the person the lead phones at T + 1 hour |
 | the standby scorer | the handover; the paper book if the first phone dies |
 
@@ -35,7 +36,7 @@ These are roles, not names. The numbers for each role are on the printed card ea
 ### Phones and accounts
 
 1. Charge both scorers' phones and restart them.
-2. Each scorer opens `https://scrbrd.onrender.com/app` on their own phone (the home page at `https://scrbrd.onrender.com` has a **Log in** link to it). They tap **Continue with Google**, or type their email and the code from the school office in **Sign-in code** and tap **Sign In**. A code works once and expires, so ask the office for a fresh one on the morning if it was used.
+2. Each scorer opens `https://scrbrd.onrender.com/app` on their own phone (the home page at `https://scrbrd.onrender.com` has a **Log in** link to it). They tap **Continue with Google**, or type their email and the code from Kameel in **Sign-in code** and tap **Sign In**. A code works once and expires, so phone Kameel for a fresh one on the morning if it was used.
 3. If the screen says **Waiting for your school office**, the office has not linked that account yet. Ask the school office.
 4. Tap **Match Centre** (the bottom bar on a phone, or under **More**). The fixture must be listed. While it is upcoming its button reads **Start Scoring →**; once live it reads **Open Live Scorer →**. If there is no button, that account is not offered scoring: tell the school office.
 5. Rehearse on a practice match, not the real fixture: **Open SCRBRD Scorer**, then **Start Practice Match**. Score a few balls, a **Wicket** and an **Undo**. A practice match stays on the phone and is never counted.
@@ -103,7 +104,7 @@ For the pilot (Kameel, 30 Oct 2026) the lead taps **Discard** and the scorer rec
 ### No signal at the ground
 
 1. Scoring carries on. The pill says **Held** or **On device**, and the balls are saved on the phone.
-2. If the page reloads or the phone restarts, the pad reopens with its score. If a bar says **Sign in**, tap it and sign in again. If the old code has been used, ask the office for a new one.
+2. If the page reloads or the phone restarts, the pad reopens with its score. If a bar says **Sign in**, tap it and sign in again. If the old code has been used, phone Kameel for a new one (the number is on the day sheet).
 3. When signal returns the balls send by themselves. Wait for **Sent**.
 4. There is no handover without signal.
 
@@ -140,7 +141,7 @@ Signs: the pill stays **Held** or **On device** although the phone has signal; t
 Decided by Kameel, 30 Oct 2026, for the pilot. There is no import into the middle of a live innings.
 
 1. The lead decides the scoring phone is dead (flat, broken, lost). Until then nobody takes over.
-2. The standby opens the fixture. After a minute and a half without the scoring phone, the bar says **Another phone was scoring this match** and when the server's last ball came in. The standby taps **Take over scoring**. (If the lead has force-released the match, the pad takes it at once.)
+2. The standby opens the fixture. If their phone is signed out, they phone Kameel for a sign-in code (the number is on the day sheet; Kameel issues codes by phone until stumps, decided 30 Oct 2026). After a minute and a half without the scoring phone, the bar says **Another phone was scoring this match** and when the server's last ball came in. The standby taps **Take over scoring**. (If the lead has force-released the match, the pad takes it at once.)
 3. The standby's pad says **You are scoring this match now** and the time of the server's last ball, with the board as the server has it. Compare that ball with the paper book.
 4. Any balls in the book after it are typed into the pad, one by one, in order, before the next ball is bowled. Then tap **Checked**.
 5. If the dead phone comes back later, it says **Another device has taken over scoring this match** and lists the balls it kept. The lead compares them with the book; they are already typed in from the book, so nothing more is sent from it.
