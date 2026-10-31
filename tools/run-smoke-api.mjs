@@ -434,6 +434,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // the thirty-ball floor and the counts, no forbidden field or read, nothing
   // kept; a pupil against one team-mate only; a parent with no Compare.
   "browser-compare",
+  // UNION_SELECTOR_FIND S3 (db/125): the union selector's Selection screen —
+  // a school or an age group first, only the boys whose families named his
+  // union, a row of name, school and side, the open by id, the family's log
+  // of both, a stale open said in words, and nothing kept on the device.
+  "browser-passport-union",
   // The public pages, phase 1 (db/59): signed out, names by the rule, noindex.
   "browser-public",
   // SCRBRD-083 C1–C5: the parent's switch on her child's file, the office's
