@@ -337,6 +337,7 @@ const SUITES = [
   // REACH R-B (db/115): the consent cards list and word what the reader is
   // shown — his family's, his office's, his own side's — and no team-mate's.
   ["consent-readers", "apps/web/test/consent-readers.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["union-reads", "apps/web/test/union-reads.test.mjs"],
   // GA-I30: one home per domain (Competitions, Transport, Grounds). For every
   // role, a home's sections and links are the menu's own answer for their
   // source destination, and a role that reaches none of a home's parts has no

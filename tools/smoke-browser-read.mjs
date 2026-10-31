@@ -340,6 +340,30 @@ try {
   await afterReads(parent.page, 1500);
   const looked = await ptid("passport-union-reads").innerText().catch(() => "");
   ok("...and the card says who at which union looked", /Browser Selector \(Union Selector\)/.test(looked) && looked.includes(KZN_NAME), looked);
+  {
+    // S4 (UNION_SELECTOR_FIND §3, §7): his appearances in the selector's list
+    // (db/125 'list', as the list writes them) are one line per reader per SA
+    // day, with a count. 01:00 SAST on 15 Mar is 23:00 UTC on the 14th, and
+    // is counted on the 15th; 23:00 SAST on the 14th is a line of its own.
+    const sel = (await owner.query(`select id from app_user where email = 'selector.browser@example.invalid'`)).rows[0]?.id;
+    for (const at of ["2025-03-14 23:00Z", "2025-03-15 07:00Z", "2025-03-15 08:00Z", "2025-03-14 21:00Z"])
+      await owner.query(`insert into passport_union_read (player_id, reader_id, reader_name, reader_role, org_id, what, read_at)
+                         values ($1, $2, 'Browser Selector', 'Union Selector', $3, 'list', $4)`, [PILLAY, sel, KZN, at]);
+    // Consents is a toggle and is open: closed and opened again, the card is
+    // drawn afresh and reads the log again.
+    if (await ptid("passport-tab").count() === 1) await ptid(`family-open-consents-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
+    await ptid(`family-open-consents-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
+    await afterReads(parent.page, 1500);
+    ok("Consents opens again, for his log", await ptid("passport-union-reads").count() === 1);
+    const ls = await parent.page.locator(`[data-testid="passport-union-read-${PILLAY}"][data-kind="list"]`).allInnerTexts();
+    ok("...his list appearances, grouped per SA day with a count, the 01:00 SAST one on its SA day",
+       ls.some((l) => l.includes(`appeared in Browser Selector's list (Union Selector), ${KZN_NAME} · 3 times on 15 Mar 2025`))
+       && ls.some((l) => l.includes(`appeared in Browser Selector's list (Union Selector), ${KZN_NAME} · once on 14 Mar 2025`))
+       && ls.length === 2, ls);
+    const opens = await parent.page.locator(`[data-testid="passport-union-read-${PILLAY}"][data-kind="passport"]`).allInnerTexts();
+    ok("...and the opened passport stays a line of its own", opens.length === 1
+       && /Browser Selector \(Union Selector\), .* · opened his passport on /.test(opens[0]), opens);
+  }
 
   // ── P3: a declaration, from the fixture, lands where the coach reads it ──
   // A fixture with an explicit date, far enough ahead to be "coming up"

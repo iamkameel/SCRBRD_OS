@@ -10,6 +10,7 @@ import { profile, schoolsWhere } from "../lib/session.js";
 import { useSports } from "../lib/features.js";
 import { holdsCapability } from "../rbac/index.js";
 import { ownRecordsOf, passportConsentReader, readsScoutingOf } from "../lib/held.js";
+import { unionReadLines, unionReadWords } from "../lib/unionReads.js";
 import { api, signedIn } from "../lib/api.js";
 import { ceilingWords } from "../lib/ceilingWords.js";
 import { disablePush, enablePush, pushSupported } from "../lib/push.js";
@@ -1068,7 +1069,10 @@ function PassportTab({ role, only = null }) {
   const onlyIds = only ? new Set(only.map((c) => c.id)) : null;
   const players = onlyIds ? allPlayers.filter((p) => onlyIds.has(p.id)) : allPlayers;
   const rows = useLive("passport_consents", role, nudge).rows.filter((r) => !onlyIds || onlyIds.has(r.playerId));
-  // Who at a union looked (db/124): his family's alone, so drawn for a family.
+  // Who at a union looked (db/124): his family's alone, so drawn for a family,
+  // a guardian's and the boy's own on his self-access link alike (S4 Q1). A
+  // selector's list appearances (db/125 'list') are grouped per reader per SA
+  // day with a count; an opened passport and a name-only read stay a line each.
   const unionReads = useLive("passport_union_reads", role, nudge).rows.filter((r) => !onlyIds || onlyIds.has(r.playerId));
   const forFamily = passportConsentReader() === "family";
   const nameOf = (id) => players.find((p) => p.id === id)?.name ?? rows.find((r) => r.playerId === id)?.name ?? "His record";
@@ -1151,10 +1155,10 @@ function PassportTab({ role, only = null }) {
           <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600, marginBottom: "4px" }}>Who at a union looked</div>
           {unionReads.length === 0
             ? <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>{UNION_READS_NONE}</div>
-            : unionReads.map((r, i) => (
-              <div key={`${r.playerId}-${r.readAt}-${i}`} data-testid={`passport-union-read-${r.playerId}`}
+            : unionReadLines(unionReads).map((l, i) => (
+              <div key={`${l.playerId}-${l.kind}-${l.readAt}-${i}`} data-testid={`passport-union-read-${l.playerId}`} data-kind={l.kind}
                    style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, padding: "2px 0" }}>
-                {nameOf(r.playerId)}: {r.readerName} ({r.readerRole}), {r.organisation} · {day(r.readAt)}{r.what === "name" ? " · his name only" : ""}
+                {nameOf(l.playerId)}: {unionReadWords(l)}
               </div>
             ))}
         </div>
