@@ -31329,9 +31329,8 @@ $v49$;
   --                (U15A's training); gb reads none of SU
   --   (moved)      decision 2: V moved U16B → U17B at t-10. He and gv read OB
   --                (U16B, t-30) and not OA (U16B, after the move); gv does not
-  --                read NB (U17B, t-30: before V joined); V does, through his
-  --                player role on the U17B (db/112), as db/117 left his new
-  --                side's earlier fixtures and posts
+  --                read NB (U17B, t-30: before V joined); nor, since db/129,
+  --                does V (his player role on the U17B is dated, Q2)
   -- After the read-through (29 Oct 2026):
   --   (only-him)   notification_read_side gives a row that db/09's own
   --                notification_read does not to the boy himself alone: of
@@ -31446,9 +31445,11 @@ $v49$;
     PERFORM _as((y->>'gv')::uuid);
     got := _v123_reads(y, ARRAY['NB']);
     PERFORM _assert(got = '0/0', format('§100 (moved): gv reads %s of the U17B''s notice from before V joined', got));
+    -- Since db/129 (§106) his `player` role reads the U17B only from the day
+    -- he joined it (Q2), as his family does: not NB.
     PERFORM _as((y->>'vboy')::uuid);
     got := _v123_reads(y, ARRAY['NB']);
-    PERFORM _assert(got = '1/1', format('§100 (moved): vboy reads %s of his new side''s earlier notice (1/1, his player role)', got));
+    PERFORM _assert(got = '0/0', format('§100 (moved): vboy reads %s of his new side''s earlier notice (0/0: Q2, db/129)', got));
 
     -- (only-him)
     got := '';
