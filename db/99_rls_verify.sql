@@ -8870,6 +8870,142 @@ CREATE OR REPLACE FUNCTION _v125_scout_access(y jsonb, p_reader uuid) RETURNS te
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/125 (section 102) ─────────────────────────────────────────────
 
+-- ┌── db/128 (section 105). The SA day (Season rollover, the quiet-week item)
+-- A pinned clock. now() cannot move inside one transaction, and sa_today()
+-- is the one door every body db/128 re-emitted reads the day by, so it is
+-- re-created, as the owner, to read the instant in v128.at (now() when that
+-- is empty), and put back as it was (its definition kept in v128.sa_today).
+-- Re-created once, before any probe below runs: a SQL body another body
+-- inlined is cached with it for the transaction, so the pin moves by the
+-- setting, never by a second re-creation. The session runs at UTC, so
+-- current_date is the UTC day of both pinned instants: what a body still on
+-- current_date would read at that moment.
+CREATE OR REPLACE FUNCTION _v128_clock(p_at timestamptz) RETURNS date AS $$
+BEGIN
+  IF coalesce(current_setting('v128.sa_today', true), '') = '' THEN
+    PERFORM set_config('v128.sa_today', pg_get_functiondef('sa_today()'::regprocedure), true);
+    CREATE OR REPLACE FUNCTION public.sa_today() RETURNS date LANGUAGE sql STABLE AS
+      $f$ SELECT (coalesce(nullif(current_setting('v128.at', true), '')::timestamptz, now()) AT TIME ZONE 'Africa/Johannesburg')::date $f$;
+  END IF;
+  IF p_at IS NULL THEN
+    EXECUTE current_setting('v128.sa_today');
+    PERFORM set_config('v128.sa_today', '', true);
+  END IF;
+  PERFORM set_config('v128.at', coalesce(p_at::text, ''), true);
+  RETURN sa_today();
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Break is_family_of() back to the database's day (db/119's clock), or mend
+-- it to db/128's, as the owner: the guard section 105 must be seen to catch.
+CREATE OR REPLACE FUNCTION _v128_break(p_broken boolean) RETURNS text AS $$
+DECLARE v_def text := pg_get_functiondef('is_family_of(uuid)'::regprocedure);
+BEGIN
+  IF p_broken THEN
+    EXECUTE replace(v_def, 'sa_today()', 'current_date');
+  ELSE
+    EXECUTE regexp_replace(v_def, '\mcurrent_date\M', 'sa_today()', 'g');
+  END IF;
+  RETURN md5(regexp_replace(btrim((SELECT prosrc FROM pg_proc WHERE oid = 'is_family_of(uuid)'::regprocedure)), '\s+', ' ', 'g'));
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The people and links whose days end or begin at N+1 (N: the UTC day the
+-- run starts on), written as the owner in the office's name when section 105
+-- starts, so no section before it sees them.
+--   uE  a 1XI coach whose appointment ends N+1;  uS  one whose begins N+1
+--   gE  K's guardian, the link ending N+1;       gS  K's guardian from N+1
+--   K   a boy of thirteen; M  a boy eighteen on N+1
+--   uE's police clearance expires on N
+CREATE OR REPLACE FUNCTION _v128_setup() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  n date := (now() AT TIME ZONE 'UTC')::date;
+  v_k uuid; v_m uuid; v_ue uuid; v_us uuid; v_ge uuid; v_gs uuid; v_a uuid; v_le uuid; v_ls uuid;
+BEGIN
+  PERFORM set_config('app.user_id', OFFICE::text, true);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '1XI', 'Verify OneTwentyEight Kilo', 1281, 'batter', (n - interval '13 years 2 months')::date) RETURNING id INTO v_k;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, '1XI', 'Verify OneTwentyEight Mike', 1282, 'batter', (n + 1 - interval '18 years')::date) RETURNING id INTO v_m;
+  INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v128.ue@example.invalid', 'V128 Ue', 'coach') RETURNING id INTO v_ue;
+  INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v128.us@example.invalid', 'V128 Us', 'coach') RETURNING id INTO v_us;
+  INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v128.ge@example.invalid', 'V128 Ge', 'guardian') RETURNING id INTO v_ge;
+  INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v128.gs@example.invalid', 'V128 Gs', 'guardian') RETURNING id INTO v_gs;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from, valid_until)
+  VALUES (v_ue, 'coach', HIL, '1XI', n - 300, n + 1),
+         (v_us, 'coach', HIL, '1XI', n + 1, NULL);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_ge, 'guardian', HIL) RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from, valid_until, created_at)
+  VALUES (v_a, v_k, 'parent', 'verified', OFFICE, now() - interval '1 year', 'granted', 'popia-2026-01', now() - interval '1 year',
+          OFFICE, n - 300, n + 1, now() - interval '1 year') RETURNING id INTO v_le;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_gs, 'guardian', HIL) RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from, valid_until, created_at)
+  VALUES (v_a, v_k, 'parent', 'verified', OFFICE, now() - interval '1 year', 'granted', 'popia-2026-01', now() - interval '1 year',
+          OFFICE, n + 1, NULL, now() - interval '1 year') RETURNING id INTO v_ls;
+  INSERT INTO adult_clearance (person_id, school_id, kind, issued_on, expires_on, verified_by)
+  VALUES (v_ue, HIL, 'police_clearance', n - 100, n, OFFICE);
+  PERFORM set_config('app.user_id', '', true);
+  RETURN jsonb_build_object('n', n, 'K', v_k, 'M', v_m, 'ue', v_ue, 'us', v_us, 'ge', v_ge, 'gs', v_gs, 'le', v_le, 'ls', v_ls);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What the bodies the application may not call answer, as the owner, in one
+-- line (t/f for each, in this order):
+--   person_live_at uE,uS · lift_live_link gE,gS · public_name_live_link gE,gS ·
+--   health_giver_link_live gE,gS · lift_link_is_live gE,gS ·
+--   uE's clearance · M a minor (player_guardian_status) · the day a link is
+--   stamped with when its writer names none (assignment_subject's default)
+CREATE OR REPLACE FUNCTION _v128_owner_facts(y jsonb) RETURNS text AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  b text := ''; v_stamp date; v_a uuid;
+BEGIN
+  b := b || CASE WHEN person_live_at((y->>'ue')::uuid, HIL, ARRAY['coach']) THEN 't' ELSE 'f' END
+         || CASE WHEN person_live_at((y->>'us')::uuid, HIL, ARRAY['coach']) THEN 't' ELSE 'f' END || ' '
+         || CASE WHEN EXISTS (SELECT 1 FROM lift_live_link((y->>'ge')::uuid, (y->>'K')::uuid, 'guardian')) THEN 't' ELSE 'f' END
+         || CASE WHEN EXISTS (SELECT 1 FROM lift_live_link((y->>'gs')::uuid, (y->>'K')::uuid, 'guardian')) THEN 't' ELSE 'f' END || ' '
+         || CASE WHEN EXISTS (SELECT 1 FROM public_name_live_link((y->>'ge')::uuid, (y->>'K')::uuid, 'guardian')) THEN 't' ELSE 'f' END
+         || CASE WHEN EXISTS (SELECT 1 FROM public_name_live_link((y->>'gs')::uuid, (y->>'K')::uuid, 'guardian')) THEN 't' ELSE 'f' END || ' '
+         || CASE WHEN health_giver_link_live((y->>'le')::uuid) THEN 't' ELSE 'f' END
+         || CASE WHEN health_giver_link_live((y->>'ls')::uuid) THEN 't' ELSE 'f' END || ' '
+         || CASE WHEN lift_link_is_live((y->>'le')::uuid) THEN 't' ELSE 'f' END
+         || CASE WHEN lift_link_is_live((y->>'ls')::uuid) THEN 't' ELSE 'f' END || ' '
+         || coalesce((SELECT c.status FROM clearance_status((y->>'ue')::uuid, HIL, 'police_clearance') c LIMIT 1), '-') || ' '
+         || coalesce((SELECT CASE WHEN g.is_minor THEN 'minor' ELSE 'adult' END FROM player_guardian_status g
+                       WHERE g.player_id = (y->>'M')::uuid), '-');
+  -- The stamp: a link written with no valid_from, read back and taken away.
+  SELECT s.assignment_id INTO v_a FROM assignment_subject s WHERE s.id = (y->>'ls')::uuid;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, created_by)
+  VALUES (v_a, (y->>'M')::uuid, 'parent', 'pending', OFFICE) RETURNING valid_from INTO v_stamp;
+  DELETE FROM assignment_subject WHERE assignment_id = v_a AND player_id = (y->>'M')::uuid;
+  RETURN b || ' ' || CASE v_stamp WHEN (y->>'n')::date THEN 'N' WHEN (y->>'n')::date + 1 THEN 'N+1' ELSE v_stamp::text END;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- What the four read for themselves, as the application (pairs):
+--   uE, uS: app_holds('availability.read'), app_can() at his 1XI
+--   gE, gS: is_family_of(K), app_can() on K's emergency details (his link)
+-- Invoker: each read runs under the caller's own session.
+CREATE OR REPLACE FUNCTION _v128_app(y jsonb) RETURNS text AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  b text := ''; u text;
+BEGIN
+  FOREACH u IN ARRAY ARRAY['ue', 'us'] LOOP
+    PERFORM set_config('app.user_id', y->>u, true);
+    b := b || CASE WHEN app_holds('availability.read') THEN 't' ELSE 'f' END
+           || CASE WHEN app_can('availability.read', HIL, '1XI', NULL, NULL) THEN 't' ELSE 'f' END || ' ';
+  END LOOP;
+  FOREACH u IN ARRAY ARRAY['ge', 'gs'] LOOP
+    PERFORM set_config('app.user_id', y->>u, true);
+    b := b || CASE WHEN is_family_of((y->>'K')::uuid) THEN 't' ELSE 'f' END
+           || CASE WHEN app_can('player.emergency.read', HIL, NULL, (y->>'K')::uuid, NULL) THEN 't' ELSE 'f' END || ' ';
+  END LOOP;
+  PERFORM set_config('app.user_id', '', true);
+  RETURN btrim(b);
+END $$ LANGUAGE plpgsql;
+-- └── db/128 (section 105) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -32144,6 +32280,93 @@ $v49$;
   PERFORM set_config('app.match_id', '', true);
   -- └── end of section 103
   -- └── db/126 (section 103) ──────────────────────────────────────────
+
+  -- ┌── db/128 (section 105) ─────────────────────────────────────────
+  -- ── 105. The SA day (db/128; Season rollover, the quiet-week item) ──
+  -- "Every 'live today' check moves to sa_today() in one migration."
+  -- Two instants, under a pinned clock (_v128_clock()), with the session at
+  -- UTC so current_date is the UTC day of each: 23:30 SAST on day N (UTC day
+  -- N) and 00:30 SAST on day N+1 (UTC day still N). The fixtures end or
+  -- begin on N+1 (_v128_setup()).
+  --
+  -- What each label holds:
+  --   (bodies)  no body in the schema reads the database's day (bar one
+  --             comment), and each db/128 re-emitted reads Johannesburg's
+  --   (23:30)   on day N: the ending coach, the ending guardian link and a
+  --             clearance expiring today all still hold; the starting ones
+  --             do not yet; M is still a minor; a link is stamped N
+  --   (00:30)   on day N+1: each of those turned over at SAST midnight, two
+  --             hours before the UTC day does; a link is stamped N+1
+  --   (break)   is_family_of() put back on current_date: at 00:30 the ended
+  --             link is his family again, which (00:30) refuses; mended, it
+  --             is not
+  --   (clock)   sa_today() and the session's TimeZone as they were
+  DECLARE
+    y   jsonb := _v128_setup();
+    n   date := (now() AT TIME ZONE 'UTC')::date;
+    A   timestamptz := (n::timestamp + time '23:30') AT TIME ZONE 'Africa/Johannesburg';
+    B   timestamptz := ((n + 1)::timestamp + time '00:30') AT TIME ZONE 'Africa/Johannesburg';
+    v_tz  text := current_setting('TimeZone');
+    v_sa  text := (SELECT md5(prosrc) FROM pg_proc WHERE oid = 'sa_today()'::regprocedure);
+    v_fam text := (SELECT md5(regexp_replace(btrim(prosrc), '\s+', ' ', 'g')) FROM pg_proc WHERE oid = 'is_family_of(uuid)'::regprocedure);
+    v_app text; v_own text; v_bad text; v_md5 text;
+  BEGIN
+    -- (bodies)
+    SELECT string_agg(p.oid::regprocedure::text, ', ' ORDER BY p.oid::regprocedure::text COLLATE "C") INTO v_bad
+      FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+     WHERE ns.nspname = 'public' AND p.proname !~ '^_'   -- this file's own helpers set up the old day on purpose
+       AND (EXISTS (SELECT 1 FROM regexp_split_to_table(p.prosrc, E'\n') l
+                     WHERE l ~* '\mcurrent_date\M|localtimestamp|now\(\)\s*::\s*date|_at::date\M' AND btrim(l) !~ '^--')
+            OR coalesce(pg_get_expr(p.proargdefaults, 0), '') ~* 'current_date');
+    PERFORM _assert(v_bad IS NULL, format('§105 (bodies): these still read the database''s day: %s', v_bad));
+    PERFORM _assert((SELECT count(*) FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+                      WHERE ns.nspname = 'public' AND p.proname IN ('app_can', 'app_holds', 'is_family_of', 'my_own_boy',
+                            'person_live_at', 'lift_live_link', 'public_name_live_link', 'health_giver_link_live',
+                            'lift_link_is_live', 'clearance_status', 'player_guardian_link_counts', 'support_access_begin',
+                            'guardian_link_revoke', 'role_assignment_end', 'trip_contacts', 'trip_vehicle_fits')
+                        AND (p.prosrc ~ 'sa_today\(\)|sa_date\(')) = 17,
+      '§105 (bodies): a re-emitted body does not read Johannesburg''s day');
+    PERFORM _assert(pg_get_viewdef('player_guardian_status'::regclass) ~ 'sa_today\(\)'
+                    AND pg_get_viewdef('player_band_change_due'::regclass) ~ 'sa_today\(\)',
+      '§105 (bodies): a view still reads the database''s day');
+
+    PERFORM set_config('TimeZone', 'UTC', true);
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (23:30)
+    PERFORM _assert(_v128_clock(A) = n AND current_date = n, format('§105 (23:30): the pinned day is %s, the UTC day %s, not both %s', sa_today(), current_date, n));
+    v_app := _v128_app(y);
+    v_own := _v128_owner_facts(y);
+    PERFORM _assert(v_app = 'tt ff tt ff', format('§105 (23:30): uE, uS, gE, gS read %s, not tt ff tt ff', v_app));
+    PERFORM _assert(v_own = 'tf tf tf tf tf expiring minor N', format('§105 (23:30): the owner''s facts read %s', v_own));
+
+    -- (00:30)
+    PERFORM _assert(_v128_clock(B) = n + 1 AND current_date = n, format('§105 (00:30): the pinned day is %s, the UTC day %s', sa_today(), current_date));
+    v_app := _v128_app(y);
+    v_own := _v128_owner_facts(y);
+    PERFORM _assert(v_app = 'ff tt ff tt', format('§105 (00:30): uE, uS, gE, gS read %s, not ff tt ff tt', v_app));
+    PERFORM _assert(v_own = 'ft ft ft ft ft expired adult N+1', format('§105 (00:30): the owner''s facts read %s', v_own));
+
+    -- (break)
+    v_md5 := _v128_break(true);
+    PERFORM _assert(v_md5 <> v_fam, '§105 (break): is_family_of() did not change');
+    v_app := _v128_app(y);
+    PERFORM _assert(v_app = 'ff tt tf ft', format('§105 (break): on the database''s day, at 00:30 gE should read as family again and gS not yet, read %s', v_app));
+    PERFORM _assert(_v128_break(false) = v_fam, '§105 (break): is_family_of() is not db/128''s again');
+    v_app := _v128_app(y);
+    PERFORM _assert(v_app = 'ff tt ff tt', format('§105 (break): mended, uE, uS, gE, gS read %s', v_app));
+
+    -- (clock)
+    PERFORM _v128_clock(NULL);
+    PERFORM set_config('TimeZone', v_tz, true);
+    PERFORM _assert((SELECT md5(prosrc) FROM pg_proc WHERE oid = 'sa_today()'::regprocedure) = v_sa
+                    AND sa_today() = (now() AT TIME ZONE 'Africa/Johannesburg')::date
+                    AND current_setting('TimeZone') = v_tz,
+      '§105 (clock): sa_today() or the session''s TimeZone was not put back');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 105
+  -- └── db/128 (section 105) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
