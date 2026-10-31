@@ -6519,12 +6519,51 @@ $$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, 
 -- policy, about the caller app.user_id names, for one fixture: does he read
 -- a ball of it by one of them? p_child is my_child_fixtures() as he calls
 -- it, taken once per person. As the owner.
+-- (Placed here, before its first caller.) Since db/129 (§106): a pupil's own `player` row at a side reads a row of it
+-- only on a day his boy was on it; a reader with no boy at the school is not
+-- dated, and another assignment's reach stands. Spelled apart from
+-- pupil_side_on(), as the owner, about the caller. Every app_can() the rule
+-- below asks at a side (branch (1) with all-f, and "every boy on the side"
+-- or "on the sheet", which an unnamed row answers yes for any boy) is asked
+-- with it, as the build asks them.
+CREATE OR REPLACE FUNCTION _v129_lit_dated(p_cap text, p_school uuid, p_team text, p_person uuid, p_fixture uuid, p_on date)
+RETURNS boolean AS $$
+  SELECT NOT EXISTS (SELECT 1 FROM role_assignment a
+                      WHERE a.person_id = app_user_id() AND a.role = 'player' AND a.active
+                        AND (a.school_id IS NULL OR a.school_id = p_school)
+                        AND (a.team_code IS NULL OR p_team = '*' OR a.team_code = p_team))
+      OR NOT EXISTS (SELECT 1 FROM player p WHERE p.school_id = p_school AND (EXISTS (SELECT 1 FROM app_user u WHERE u.id = app_user_id() AND u.player_id = p.id)
+                       OR EXISTS (SELECT 1 FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+                                   WHERE a.person_id = app_user_id() AND a.role = 'selfaccess' AND a.active
+                                     AND (a.valid_from IS NULL OR a.valid_from <= sa_today())
+                                     AND (a.valid_until IS NULL OR a.valid_until > sa_today())
+                                     AND (a.expires_at IS NULL OR a.expires_at > now())
+                                     AND g.player_id = p.id AND g.verification_state = 'verified'
+                                     AND g.valid_from <= sa_today() AND (g.valid_until IS NULL OR g.valid_until > sa_today()))))
+      OR EXISTS (SELECT 1 FROM player p
+                   JOIN team_membership tm ON tm.player_id = p.id AND tm.school_id = p_school
+                                          AND tm.team_code = p_team AND tm.sport = 'cricket'
+                  WHERE p.school_id = p_school AND (EXISTS (SELECT 1 FROM app_user u WHERE u.id = app_user_id() AND u.player_id = p.id)
+                       OR EXISTS (SELECT 1 FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+                                   WHERE a.person_id = app_user_id() AND a.role = 'selfaccess' AND a.active
+                                     AND (a.valid_from IS NULL OR a.valid_from <= sa_today())
+                                     AND (a.valid_until IS NULL OR a.valid_until > sa_today())
+                                     AND (a.expires_at IS NULL OR a.expires_at > now())
+                                     AND g.player_id = p.id AND g.verification_state = 'verified'
+                                     AND g.valid_from <= sa_today() AND (g.valid_until IS NULL OR g.valid_until > sa_today())))
+                    AND tm.joined_on <= p_on AND (tm.left_on IS NULL OR tm.left_on >= p_on))
+      OR app_can_but_player(p_cap, p_school, p_team, p_person, p_fixture)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v112_db100(p_match uuid, p_child uuid[]) RETURNS boolean AS $$
+  -- since db/129 each app_can() with the pupil's dated clause, on the fixture's day
   SELECT EXISTS (SELECT 1 FROM (SELECT DISTINCT b.school_id FROM ball_event b WHERE b.match_id = p_match) s
-                  WHERE app_can('fixture.read', s.school_id, match_team(p_match), NULL, p_match))
+                  WHERE app_can('fixture.read', s.school_id, match_team(p_match), NULL, p_match)
+                    AND _v129_lit_dated('fixture.read', s.school_id, match_team(p_match), NULL, p_match,
+                                        (SELECT sa_date(m.starts_at) FROM match m WHERE m.id = p_match)))
       OR (EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = p_match)
           AND (EXISTS (SELECT 1 FROM match m WHERE m.id = p_match AND m.away_school_id IS NOT NULL
-                          AND app_can('fixture.read', m.away_school_id, m.away_team_code, NULL, p_match))
+                          AND app_can('fixture.read', m.away_school_id, m.away_team_code, NULL, p_match)
+                          AND _v129_lit_dated('fixture.read', m.away_school_id, m.away_team_code, NULL, p_match, sa_date(m.starts_at)))
                OR p_match = ANY (p_child)))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/112 (section 89) ─────────────────────────────────────────────
@@ -7351,27 +7390,6 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- answers nothing from it, so the answer is the same as asking every boy at
 -- the school; it only spares side_on() for the rest (by §94, some 130 boys
 -- at Hilton for every fixture and session asked).
--- Since db/129 (§106): a pupil's own `player` row at a side reads a row of it
--- only on a day his boy was on it; a reader with no boy at the school is not
--- dated, and another assignment's reach stands. Spelled apart from
--- pupil_side_on(), as the owner, about the caller. Every app_can() the rule
--- below asks at a side (branch (1) with all-f, and "every boy on the side"
--- or "on the sheet", which an unnamed row answers yes for any boy) is asked
--- with it, as the build asks them.
-CREATE OR REPLACE FUNCTION _v129_lit_dated(p_cap text, p_school uuid, p_team text, p_person uuid, p_fixture uuid, p_on date)
-RETURNS boolean AS $$
-  SELECT NOT EXISTS (SELECT 1 FROM role_assignment a
-                      WHERE a.person_id = app_user_id() AND a.role = 'player' AND a.active
-                        AND (a.school_id IS NULL OR a.school_id = p_school)
-                        AND (a.team_code IS NULL OR p_team = '*' OR a.team_code = p_team))
-      OR NOT EXISTS (SELECT 1 FROM player p WHERE p.school_id = p_school AND _v117_self(p.id))
-      OR EXISTS (SELECT 1 FROM player p
-                   JOIN team_membership tm ON tm.player_id = p.id AND tm.school_id = p_school
-                                          AND tm.team_code = p_team AND tm.sport = 'cricket'
-                  WHERE p.school_id = p_school AND _v117_self(p.id)
-                    AND tm.joined_on <= p_on AND (tm.left_on IS NULL OR tm.left_on >= p_on))
-      OR app_can_but_player(p_cap, p_school, p_team, p_person, p_fixture)
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v117_lit_side(p_cap text, p_school uuid, p_team text, p_fixture uuid, p_on date) RETURNS boolean AS $$
   SELECT (app_can(p_cap, p_school, p_team, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, p_fixture)
           AND _v129_lit_dated(p_cap, p_school, p_team, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, p_fixture, p_on))
