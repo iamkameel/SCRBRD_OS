@@ -24640,7 +24640,7 @@ $v49$;
     -- (text)
     SELECT pg_get_expr(p.polqual, p.polrelid) INTO q FROM pg_policy p
      WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_read' AND p.polcmd = 'r' AND p.polpermissive;
-    PERFORM _assert((length(q) - length(replace(q, 'match_team(', ''))) / length('match_team(') = 1
+    PERFORM _assert((length(q) - length(replace(q, 'match_team(', ''))) / length('match_team(') = 2   -- and its dated twin since db/129
                     AND position('away_school_id IS NOT NULL' IN q) > 0
                     AND position('my_child_fixtures()' IN q) > 0
                     AND position('00000000-0000-0000-0000-000000000000' IN q) = 0,
