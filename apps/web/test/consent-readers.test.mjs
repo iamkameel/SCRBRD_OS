@@ -86,8 +86,10 @@ ok("the card reads who at a union looked, narrowed to the child on a Family card
    /useLive\("passport_union_reads", role, nudge\)\.rows\.filter\(\(r\) => !onlyIds \|\| onlyIds\.has\(r\.playerId\)\)/.test(settings));
 ok("...and draws it for his family alone",
    /const forFamily = passportConsentReader\(\) === "family";/.test(settings) && /\{forFamily && \(\s*<div data-testid="passport-union-reads"/.test(settings));
+// S4 (UNION_SELECTOR_FIND §3): the words are lib/unionReads.js's, which
+// apps/web/test/union-reads.test.mjs holds; a list grouped per SA day.
 ok("...naming the reader, his role, the union and the day",
-   /\{r\.readerName\} \(\{r\.readerRole\}\), \{r\.organisation\} · \{day\(r\.readAt\)\}/.test(settings));
+   /\{nameOf\(l\.playerId\)\}: \{unionReadWords\(l\)\}/.test(settings) && /unionReadLines\(unionReads\)/.test(settings));
 ok("...and none is said, not left blank", /UNION_READS_NONE = "No union has opened his passport\."/.test(settings));
 ok("a union that is not his is refused in words",
    /e\?\.code === "not_his_union"/.test(settings) && /PASSPORT_NOT_HIS_UNION = "That union is not his\./.test(settings));
