@@ -48,7 +48,9 @@
 --   one; the session's own starts_at for nets; the post's day
 --   (news_post_day(), db/117) for posts and plans.
 -- It is only ever ANDed onto an app_can() call that already stood, with the
--- same arguments: no reader can gain a row from it. For a reader with no
+-- same arguments (in a policy: (NOT (SELECT app_reader_is_pupil()) OR
+-- pupil_side_on(…)), the pupil test asked once a query): no reader can gain
+-- a row from it. For a reader with no
 -- live `player` assignment at the side it is true at once, so every staff
 -- reader's answer is the same function of the same rows as before.
 --
@@ -106,9 +108,35 @@
 -- is named on). The import dates a new boy from the season's start (db/117
 -- §4b); the office may type a boy in dated.
 --
--- COST. The clause is asked only where its app_can() said yes; for a reader
--- with no `player` assignment at the side it is one probe of his own
--- assignments. Measured in db/99 §106's header.
+-- COST. In the policies the twin is asked only where its app_can() said yes,
+-- and only of a pupil: the pupil test (SELECT app_reader_is_pupil()) is a
+-- sub-select of no column, asked once a query, so every other reader pays
+-- one boolean a row. A pupil pays pupil_side_on() (PL/pgSQL: one probe of
+-- his `player` rows, my_own_boy(), side_on() on the day, and app_can_but_
+-- player() only for a row before he joined) on each row of his side; the
+-- log fast-accepts the fixtures of his own side on their day (db/117's
+-- my_own_side_fixtures(), which its fifth branch admits anyway), so a
+-- scorecard of a fixture he may read asks it of no ball. Measured 31 Oct
+-- 2026 on a forty-fixture season (five Hilton sides, 200 fixtures, 1,296
+-- balls on ten 1XI fixtures, 100 buses, 100 nets), R Pillay moved onto the
+-- 1XI at t-60, median of seven after two warm-ups, ms, SELECT count(*) as
+-- the reader under scrbrd_app, this file against pupil_side_on() made to
+-- answer true (the reach before it), same rows, same database:
+--                              this file   before     rows (this/before)
+--     match, director             11.1       7.2      204 / 204
+--     balls, director             44.1      49.6     1296 / 1296
+--     trip,  director             16.6      16.6      100 / 100
+--     match, 1XI coach            13.3      14.1       43 / 43
+--     match, guardian             14.1      15.5       43 / 43
+--     balls, guardian             79.7     106.8      696 / 696
+--     match, the moved pupil      48.2      20.5       43 / 66
+--     balls, the moved pupil     269.4      55.0      696 / 1296
+--     nets,  the moved pupil      11.7      11.7       22 / 35
+--     trip,  the moved pupil      52.4      59.7       20 / 31
+-- (a shared machine: staff and family readers are within the noise). The
+-- pupil's whole-season log read with no fixture named pays pupil_side_on()
+-- for each ball of the 600 he no longer reads; the app asks the log one
+-- fixture at a time, and of a fixture he reads, no ball asks it.
 --
 -- WHAT IT CHANGES ON A LIVE DATABASE
 --   + app_can_but_player(), pupil_side_on() ×2

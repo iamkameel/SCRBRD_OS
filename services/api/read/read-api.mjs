@@ -166,8 +166,9 @@ export const READ_QUERIES = {
                   -- before he joined it is not his through that row.
                   (case when (app_can('fixture.read', m.school_id, m.team_code,
                                       'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, m.id)
-                              and pupil_side_on('fixture.read', m.school_id, m.team_code,
-                                                'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, m.id))
+                              and ((select not app_reader_is_pupil())
+                                   or pupil_side_on('fixture.read', m.school_id, m.team_code,
+                                                    'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, m.id)))
                           or (m.id, m.school_id, coalesce(m.team_code, ''))
                              in (select r.match_id, r.school_id, coalesce(r.team_code, '')
                                    from my_fixture_ends('fixture.read') r)
