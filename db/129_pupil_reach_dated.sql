@@ -147,23 +147,23 @@ BEGIN
   END LOOP;
   -- Policies: md5 of pg_get_expr(), the text before this file or after it.
   FOR r IN SELECT * FROM (VALUES
-      ('match',                     'match_read',                     '9df4d851644d56841b19b725802a0008', '2e87606047c3276e3d3ef112c350f0c0'),
-      ('drs_review',                'drs_review_read',                'ec284f4c675417faa536e2601b401b1b', 'd5fad4ef3258518442a29e3ba8f887eb'),
-      ('match_broadcast',           'match_broadcast_read',           'ec284f4c675417faa536e2601b401b1b', 'd5fad4ef3258518442a29e3ba8f887eb'),
-      ('match_condition_override',  'match_condition_override_read',  'ec284f4c675417faa536e2601b401b1b', 'd5fad4ef3258518442a29e3ba8f887eb'),
-      ('match_conditions',          'match_conditions_read',          'ec284f4c675417faa536e2601b401b1b', 'd5fad4ef3258518442a29e3ba8f887eb'),
-      ('match_official',            'match_official_read',            'ec284f4c675417faa536e2601b401b1b', 'd5fad4ef3258518442a29e3ba8f887eb'),
-      ('match_pitch_report',        'match_pitch_report_read',        'ec284f4c675417faa536e2601b401b1b', 'd5fad4ef3258518442a29e3ba8f887eb'),
-      ('match_toss',                'match_toss_read',                'ec284f4c675417faa536e2601b401b1b', 'd5fad4ef3258518442a29e3ba8f887eb'),
-      ('match_weather',             'match_weather_read',             'ec284f4c675417faa536e2601b401b1b', 'd5fad4ef3258518442a29e3ba8f887eb'),
-      ('match_result_confirmation', 'match_result_confirmation_read', '7e6051b087832f4d849bdf1812a1dc09', '400fbebb245265421384c3f385d05661'),
-      ('match_result_decision',     'match_result_decision_read',     '5802a28818f9879de9c0c8ab5aa51ddb', '3c23df183c08878e1f53eeeb5bfd8fbc'),
-      ('ball_event',                'ball_event_read',                'c2c558be6822ce6d23ef575d6ed6f07e', '2af4c6fbdec8d17862e1207512c7cda6'),
-      ('match_squad',               'match_squad_read',               'f70d44bf248a50e6eeaadd16f0fb8f10', 'c08f74370b9c7b7690f35bfe3c3fbcf6'),
-      ('trip',                      'trip_read',                      '0c6f28bcf71ca3cd802ae5848baba921', '4db6b3bf1c82619a7d8d5119092a4e54'),
-      ('training_session',          'training_session_read',          '714e15102d55ace7b43e87a747b019c5', '6e94a2dcbc8324711262f5a7457e11b1'),
-      ('training_session_drill',    'training_session_drill_read',    '9881d03b9e3a052f64c61a20a0c62d15', '266d6c9aee794e1f42cfdea531f4098c'),
-      ('training_attendance',       'training_attendance_read',       '652f9a6f8f61efd4c3b352cb939b9065', '0b0e3284cf2789932320bed71c8d3af3'))
+      ('match',                     'match_read',                     '9df4d851644d56841b19b725802a0008', 'f0d18d60b5bcbd933c057db0ae76530f'),
+      ('drs_review',                'drs_review_read',                'ec284f4c675417faa536e2601b401b1b', '351a0dd35af09b7d311a5893eaa43c56'),
+      ('match_broadcast',           'match_broadcast_read',           'ec284f4c675417faa536e2601b401b1b', '351a0dd35af09b7d311a5893eaa43c56'),
+      ('match_condition_override',  'match_condition_override_read',  'ec284f4c675417faa536e2601b401b1b', '351a0dd35af09b7d311a5893eaa43c56'),
+      ('match_conditions',          'match_conditions_read',          'ec284f4c675417faa536e2601b401b1b', '351a0dd35af09b7d311a5893eaa43c56'),
+      ('match_official',            'match_official_read',            'ec284f4c675417faa536e2601b401b1b', '351a0dd35af09b7d311a5893eaa43c56'),
+      ('match_pitch_report',        'match_pitch_report_read',        'ec284f4c675417faa536e2601b401b1b', '351a0dd35af09b7d311a5893eaa43c56'),
+      ('match_toss',                'match_toss_read',                'ec284f4c675417faa536e2601b401b1b', '351a0dd35af09b7d311a5893eaa43c56'),
+      ('match_weather',             'match_weather_read',             'ec284f4c675417faa536e2601b401b1b', '351a0dd35af09b7d311a5893eaa43c56'),
+      ('match_result_confirmation', 'match_result_confirmation_read', '7e6051b087832f4d849bdf1812a1dc09', '7ceba2112effad37218ffe65f8f12a23'),
+      ('match_result_decision',     'match_result_decision_read',     '5802a28818f9879de9c0c8ab5aa51ddb', '8dc2414b02ca717cdeb048e97d106877'),
+      ('ball_event',                'ball_event_read',                'c2c558be6822ce6d23ef575d6ed6f07e', '9bb220903d6f0c5b3d2fdb388d7f655c'),
+      ('match_squad',               'match_squad_read',               'f70d44bf248a50e6eeaadd16f0fb8f10', '45ed7ab2621be310bf99238a7ce89167'),
+      ('trip',                      'trip_read',                      '0c6f28bcf71ca3cd802ae5848baba921', '1772c797f0eaa5aeee6b02d0c25490b4'),
+      ('training_session',          'training_session_read',          '714e15102d55ace7b43e87a747b019c5', 'f4c5d4c5003265f52ec18b84d5798d96'),
+      ('training_session_drill',    'training_session_drill_read',    '9881d03b9e3a052f64c61a20a0c62d15', '9f0621d72bea96429fe44d941bd66a5d'),
+      ('training_attendance',       'training_attendance_read',       '652f9a6f8f61efd4c3b352cb939b9065', '59bb90fba84da2df38f72edb5ca8f58a'))
       AS x(tbl, pol, was, mine)
   LOOP
     SELECT md5(pg_get_expr(p.polqual, p.polrelid)) INTO v_md5 FROM pg_policy p
@@ -265,34 +265,67 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 
 -- ── 2 · The rule: a pupil's own `player` reach, on the row's day ────
 -- On a stated day (a nets session, a post). NULL: the fixture's day.
+-- PL/pgSQL, so each of its few probes is a cached plan: it is asked per row
+-- for every pupil (the policies ask it only of a pupil, below).
 CREATE OR REPLACE FUNCTION pupil_side_on(p_capability text, p_school uuid, p_team text, p_person uuid,
                                          p_fixture uuid, p_on date)
 RETURNS boolean AS $$
-  SELECT NOT EXISTS (SELECT 1 FROM role_assignment a
-                      WHERE a.person_id = app_user_id() AND a.role = 'player' AND a.active
-                        AND (a.school_id IS NULL OR a.school_id = p_school)
-                        AND (a.team_code IS NULL OR p_team = '*' OR a.team_code = p_team))
-      OR NOT EXISTS (SELECT 1 FROM player p WHERE p.id = ANY (my_own_boy()) AND p.school_id = p_school)
-      OR EXISTS (SELECT 1 FROM player p
-                  WHERE p.id = ANY (my_own_boy()) AND p.school_id = p_school
-                    AND p_team IN (SELECT side_on(p.id, p_school, coalesce(p_on, side_day(p_fixture)))))
-      OR app_can_but_player(p_capability, p_school, p_team, p_person, p_fixture)
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+DECLARE
+  v_boys uuid[];
+  v_has  boolean;
+  v_on   boolean;
+BEGIN
+  -- no live `player` row of his at this side: not a pupil's own reach
+  IF NOT EXISTS (SELECT 1 FROM role_assignment a
+                  WHERE a.person_id = app_user_id() AND a.role = 'player' AND a.active
+                    AND (a.school_id IS NULL OR a.school_id = p_school)
+                    AND (a.team_code IS NULL OR p_team = '*' OR a.team_code = p_team)) THEN
+    RETURN true;
+  END IF;
+  -- his own boy at that school (none: a `player` row with no pupil behind
+  -- it, not dated), and whether he was on the side on the row's day
+  v_boys := my_own_boy();
+  SELECT count(*) > 0, coalesce(bool_or(p_team IN (SELECT side_on(p.id, p_school, coalesce(p_on, side_day(p_fixture))))), false)
+    INTO v_has, v_on
+    FROM player p
+   WHERE p.id = ANY (v_boys) AND p.school_id = p_school;
+  IF NOT v_has OR v_on THEN
+    RETURN true;
+  END IF;
+  -- before he joined (or after he left): only another of his assignments
+  RETURN app_can_but_player(p_capability, p_school, p_team, p_person, p_fixture);
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- On the fixture's day (no fixture: today): a fixture, and everything hung on one.
+-- On the fixture's day (no fixture: today): a fixture, and everything hung
+-- on one. The same body, with the day the fixture's.
 CREATE OR REPLACE FUNCTION pupil_side_on(p_capability text, p_school uuid, p_team text, p_person uuid,
                                          p_fixture uuid)
 RETURNS boolean AS $$
-  SELECT NOT EXISTS (SELECT 1 FROM role_assignment a
-                      WHERE a.person_id = app_user_id() AND a.role = 'player' AND a.active
-                        AND (a.school_id IS NULL OR a.school_id = p_school)
-                        AND (a.team_code IS NULL OR p_team = '*' OR a.team_code = p_team))
-      OR NOT EXISTS (SELECT 1 FROM player p WHERE p.id = ANY (my_own_boy()) AND p.school_id = p_school)
-      OR EXISTS (SELECT 1 FROM player p
-                  WHERE p.id = ANY (my_own_boy()) AND p.school_id = p_school
-                    AND p_team IN (SELECT side_on(p.id, p_school, side_day(p_fixture))))
-      OR app_can_but_player(p_capability, p_school, p_team, p_person, p_fixture)
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+DECLARE
+  v_boys uuid[];
+  v_has  boolean;
+  v_on   boolean;
+BEGIN
+  -- no live `player` row of his at this side: not a pupil's own reach
+  IF NOT EXISTS (SELECT 1 FROM role_assignment a
+                  WHERE a.person_id = app_user_id() AND a.role = 'player' AND a.active
+                    AND (a.school_id IS NULL OR a.school_id = p_school)
+                    AND (a.team_code IS NULL OR p_team = '*' OR a.team_code = p_team)) THEN
+    RETURN true;
+  END IF;
+  -- his own boy at that school (none: a `player` row with no pupil behind
+  -- it, not dated), and whether he was on the side on the row's day
+  v_boys := my_own_boy();
+  SELECT count(*) > 0, coalesce(bool_or(p_team IN (SELECT side_on(p.id, p_school, side_day(p_fixture)))), false)
+    INTO v_has, v_on
+    FROM player p
+   WHERE p.id = ANY (v_boys) AND p.school_id = p_school;
+  IF NOT v_has OR v_on THEN
+    RETURN true;
+  END IF;
+  -- before he joined (or after he left): only another of his assignments
+  RETURN app_can_but_player(p_capability, p_school, p_team, p_person, p_fixture);
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 
 -- ── 3 · side_reach_on(), branch (1) dated ──────────────────────────
@@ -342,23 +375,34 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 
 -- ── 5 · The seventeen reads: every app_can() gains its dated twin ──
 -- Each policy's text, read from the catalog, with every app_can(args) call
--- replaced by (app_can(args) AND pupil_side_on(args[, day])); nothing else
--- in it moves. The day: the fixture's (the five-argument form) for the
+-- replaced by (app_can(args) AND (NOT (SELECT app_reader_is_pupil()) OR
+-- pupil_side_on(args[, day]))); nothing else in it moves. The pupil test
+-- (db/116's, a reader with a pupil's account or a live `player` or
+-- `selfaccess` row) is a sub-select of no column, so it is asked once a
+-- query, and a reader who is no pupil asks pupil_side_on() of no row; for
+-- every one of them pupil_side_on() would answer true (it is false only for a
+-- live `player` row with a boy of his own, and either makes him a pupil).
+-- The log (ball_event_read) is read ball by ball, so its twin first asks
+-- whether the fixture is one of db/117's my_own_side_fixtures() (once a
+-- query): those are the fixtures of his side on their day, which the
+-- policy's own fifth branch admits whatever the twin says, so the answer is
+-- the plain twin's and only the rest of his rows ask pupil_side_on(). The day: the fixture's (the five-argument form) for the
 -- fixture, its satellites, its log, its sheet and its bus; the session's
 -- own starts_at for nets, its drills and its attendance. Re-created as it
 -- was: permissive, FOR SELECT, TO PUBLIC. The new text is asserted equal to
 -- the rewrite, as pg_get_expr() prints it, before the next is touched.
-CREATE OR REPLACE FUNCTION pg_temp.m129_dated(q text, p_day text) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION pg_temp.m129_dated(q text, p_day text, p_fast boolean) RETURNS text AS $$
 DECLARE
   v_out  text := '';
   v_rest text := q;
-  i int; j int; depth int; inq boolean; ch text; v_args text;
+  i int; j int; k int; depth int; inq boolean; ch text; v_args text; v_fix text; v_fast text;
 BEGIN
   LOOP
     i := position('app_can(' IN v_rest);
     EXIT WHEN i = 0;
-    -- the call's own closing parenthesis, outside quoted literals
-    j := i + 7; depth := 0; inq := false;
+    -- the call's own closing parenthesis, outside quoted literals, and its
+    -- last top-level argument (the fixture)
+    j := i + 7; depth := 0; inq := false; k := NULL;
     LOOP
       ch := substr(v_rest, j, 1);
       IF ch = '' THEN
@@ -370,12 +414,17 @@ BEGIN
       ELSIF NOT inq AND ch = ')' THEN
         depth := depth - 1;
         EXIT WHEN depth = 0;
+      ELSIF NOT inq AND ch = ',' AND depth = 1 THEN
+        k := j;
       END IF;
       j := j + 1;
     END LOOP;
     v_args := substr(v_rest, i + 8, j - i - 8);
+    v_fix := btrim(substr(v_rest, k + 1, j - k - 1));
+    v_fast := CASE WHEN p_fast THEN '(' || v_fix || ' = ANY (( SELECT my_own_side_fixtures() AS my_own_side_fixtures)::uuid[])) OR ' ELSE '' END;
     v_out := v_out || substr(v_rest, 1, i - 1)
-             || '(app_can(' || v_args || ') AND pupil_side_on(' || v_args || coalesce(', ' || p_day, '') || '))';
+             || '(app_can(' || v_args || ') AND ((NOT ( SELECT app_reader_is_pupil() AS app_reader_is_pupil)) OR ' || v_fast
+             || 'pupil_side_on(' || v_args || coalesce(', ' || p_day, '') || ')))';
     v_rest := substr(v_rest, j + 1);
   END LOOP;
   RETURN v_out || v_rest;
@@ -393,35 +442,35 @@ DECLARE
                  || '  WHERE (t.id = training_attendance.session_id))';
 BEGIN
   FOR r IN SELECT * FROM (VALUES
-      ('match',                     'match_read',                     NULL),
-      ('drs_review',                'drs_review_read',                NULL),
-      ('match_broadcast',           'match_broadcast_read',           NULL),
-      ('match_condition_override',  'match_condition_override_read',  NULL),
-      ('match_conditions',          'match_conditions_read',          NULL),
-      ('match_official',            'match_official_read',            NULL),
-      ('match_pitch_report',        'match_pitch_report_read',        NULL),
-      ('match_toss',                'match_toss_read',                NULL),
-      ('match_weather',             'match_weather_read',             NULL),
-      ('match_result_confirmation', 'match_result_confirmation_read', NULL),
-      ('match_result_decision',     'match_result_decision_read',     NULL),
-      ('ball_event',                'ball_event_read',                NULL),
-      ('match_squad',               'match_squad_read',               NULL),
-      ('trip',                      'trip_read',                      NULL),
-      ('training_session',          'training_session_read',          'sa_date(starts_at)'),
-      ('training_session_drill',    'training_session_drill_read',    DAY_DRILL),
-      ('training_attendance',       'training_attendance_read',       DAY_ATT))
-      AS x(tbl, pol, day)
+      ('match',                     'match_read',                     NULL,                 false),
+      ('drs_review',                'drs_review_read',                NULL,                 false),
+      ('match_broadcast',           'match_broadcast_read',           NULL,                 false),
+      ('match_condition_override',  'match_condition_override_read',  NULL,                 false),
+      ('match_conditions',          'match_conditions_read',          NULL,                 false),
+      ('match_official',            'match_official_read',            NULL,                 false),
+      ('match_pitch_report',        'match_pitch_report_read',        NULL,                 false),
+      ('match_toss',                'match_toss_read',                NULL,                 false),
+      ('match_weather',             'match_weather_read',             NULL,                 false),
+      ('match_result_confirmation', 'match_result_confirmation_read', NULL,                 false),
+      ('match_result_decision',     'match_result_decision_read',     NULL,                 false),
+      ('ball_event',                'ball_event_read',                NULL,                 true),
+      ('match_squad',               'match_squad_read',               NULL,                 false),
+      ('trip',                      'trip_read',                      NULL,                 false),
+      ('training_session',          'training_session_read',          'sa_date(starts_at)', false),
+      ('training_session_drill',    'training_session_drill_read',    DAY_DRILL,            false),
+      ('training_attendance',       'training_attendance_read',       DAY_ATT,              false))
+      AS x(tbl, pol, day, fast)
   LOOP
     SELECT pg_get_expr(p.polqual, p.polrelid) INTO v_q FROM pg_policy p
      WHERE p.polrelid = to_regclass(r.tbl) AND p.polname = r.pol;
     CONTINUE WHEN position('pupil_side_on(' IN v_q) > 0;   -- this file's already (the guard checked its md5)
-    v_new := pg_temp.m129_dated(v_q, r.day);
+    v_new := pg_temp.m129_dated(v_q, r.day, r.fast);
     EXECUTE format('DROP POLICY %I ON %I', r.pol, r.tbl);
     EXECUTE format('CREATE POLICY %I ON %I AS PERMISSIVE FOR SELECT TO PUBLIC USING (%s)', r.pol, r.tbl, v_new);
     SELECT pg_get_expr(p.polqual, p.polrelid) INTO v_got FROM pg_policy p
      WHERE p.polrelid = to_regclass(r.tbl) AND p.polname = r.pol;
     IF v_got IS DISTINCT FROM v_new THEN
-      RAISE EXCEPTION 'db/129: %.% reads back as%s%s, not the rewrite%s%s', r.tbl, r.pol, chr(10), v_got, chr(10), v_new;
+      RAISE EXCEPTION 'db/129: %.% reads back as%, not the rewrite%', r.tbl, r.pol, chr(10) || v_got, chr(10) || v_new;
     END IF;
   END LOOP;
 END $policies$;
@@ -450,7 +499,8 @@ END $grants$;
 
 -- ── 7 · Refuse to commit a file that did not do what it says ───────
 -- Narrow only: every change is an existing app_can() call ANDed with
--- pupil_side_on() on the same arguments, the text otherwise identical. That
+-- pupil_side_on() on the same arguments (in the policies, asked of a pupil),
+-- the text otherwise identical. That
 -- is what is asserted here, object by object, and it is the proof that no
 -- reader gains a row (x AND y admits no row x refused). db/99 §106 asserts it
 -- again on rows, for every reader it stages.
@@ -475,7 +525,7 @@ BEGIN
   END IF;
 
   -- pupil_side_on(): stable definers with a pinned path; the two forms one
-  -- rule, the five-argument one on the fixture's day.
+  -- body, the five-argument one on the fixture's day.
   SELECT p.prosrc INTO v_src FROM pg_proc p
    WHERE p.oid = to_regprocedure('pupil_side_on(text,uuid,text,uuid,uuid,date)')
      AND p.prosecdef AND p.provolatile = 's' AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'));
@@ -485,9 +535,11 @@ BEGIN
   IF v_src IS NULL OR v_f IS NULL
      OR replace(v_src, 'coalesce(p_on, side_day(p_fixture))', 'side_day(p_fixture)') IS DISTINCT FROM v_f
      OR EXISTS (SELECT 1 FROM unnest(ARRAY['a.person_id = app_user_id() AND a.role = ''player'' AND a.active',
-                                           'p.id = ANY (my_own_boy()) AND p.school_id = p_school',
+                                           'v_boys := my_own_boy();',
+                                           'WHERE p.id = ANY (v_boys) AND p.school_id = p_school;',
                                            'p_team IN (SELECT side_on(p.id, p_school, coalesce(p_on, side_day(p_fixture))))',
-                                           'app_can_but_player(p_capability, p_school, p_team, p_person, p_fixture)']) m
+                                           'IF NOT v_has OR v_on THEN',
+                                           'RETURN app_can_but_player(p_capability, p_school, p_team, p_person, p_fixture);']) m
                  WHERE position(m IN v_src) = 0) THEN
     RAISE EXCEPTION 'db/129: pupil_side_on() is missing, not a stable definer with a pinned path, or not the rule this file states';
   END IF;
@@ -531,30 +583,34 @@ BEGIN
   -- The seventeen reads: this file's text; each app_can() with its twin
   -- (the rewrite was asserted against pg_get_expr() as each was made).
   FOR r IN SELECT * FROM (VALUES
-      ('match', 'match_read', '2e87606047c3276e3d3ef112c350f0c0', 2),
-      ('drs_review', 'drs_review_read', 'd5fad4ef3258518442a29e3ba8f887eb', 2),
-      ('match_broadcast', 'match_broadcast_read', 'd5fad4ef3258518442a29e3ba8f887eb', 2),
-      ('match_condition_override', 'match_condition_override_read', 'd5fad4ef3258518442a29e3ba8f887eb', 2),
-      ('match_conditions', 'match_conditions_read', 'd5fad4ef3258518442a29e3ba8f887eb', 2),
-      ('match_official', 'match_official_read', 'd5fad4ef3258518442a29e3ba8f887eb', 2),
-      ('match_pitch_report', 'match_pitch_report_read', 'd5fad4ef3258518442a29e3ba8f887eb', 2),
-      ('match_toss', 'match_toss_read', 'd5fad4ef3258518442a29e3ba8f887eb', 2),
-      ('match_weather', 'match_weather_read', 'd5fad4ef3258518442a29e3ba8f887eb', 2),
-      ('match_result_confirmation', 'match_result_confirmation_read', '400fbebb245265421384c3f385d05661', 2),
-      ('match_result_decision', 'match_result_decision_read', '3c23df183c08878e1f53eeeb5bfd8fbc', 2),
-      ('ball_event', 'ball_event_read', '2af4c6fbdec8d17862e1207512c7cda6', 2),
-      ('match_squad', 'match_squad_read', 'c08f74370b9c7b7690f35bfe3c3fbcf6', 1),
-      ('trip', 'trip_read', '4db6b3bf1c82619a7d8d5119092a4e54', 3),
-      ('training_session', 'training_session_read', '6e94a2dcbc8324711262f5a7457e11b1', 1),
-      ('training_session_drill', 'training_session_drill_read', '266d6c9aee794e1f42cfdea531f4098c', 1),
-      ('training_attendance', 'training_attendance_read', '0b0e3284cf2789932320bed71c8d3af3', 1)) AS x(tbl, pol, mine, calls)
+      ('match', 'match_read', 'f0d18d60b5bcbd933c057db0ae76530f', 2),
+      ('drs_review', 'drs_review_read', '351a0dd35af09b7d311a5893eaa43c56', 2),
+      ('match_broadcast', 'match_broadcast_read', '351a0dd35af09b7d311a5893eaa43c56', 2),
+      ('match_condition_override', 'match_condition_override_read', '351a0dd35af09b7d311a5893eaa43c56', 2),
+      ('match_conditions', 'match_conditions_read', '351a0dd35af09b7d311a5893eaa43c56', 2),
+      ('match_official', 'match_official_read', '351a0dd35af09b7d311a5893eaa43c56', 2),
+      ('match_pitch_report', 'match_pitch_report_read', '351a0dd35af09b7d311a5893eaa43c56', 2),
+      ('match_toss', 'match_toss_read', '351a0dd35af09b7d311a5893eaa43c56', 2),
+      ('match_weather', 'match_weather_read', '351a0dd35af09b7d311a5893eaa43c56', 2),
+      ('match_result_confirmation', 'match_result_confirmation_read', '7ceba2112effad37218ffe65f8f12a23', 2),
+      ('match_result_decision', 'match_result_decision_read', '8dc2414b02ca717cdeb048e97d106877', 2),
+      ('ball_event', 'ball_event_read', '9bb220903d6f0c5b3d2fdb388d7f655c', 2),
+      ('match_squad', 'match_squad_read', '45ed7ab2621be310bf99238a7ce89167', 1),
+      ('trip', 'trip_read', '1772c797f0eaa5aeee6b02d0c25490b4', 3),
+      ('training_session', 'training_session_read', 'f4c5d4c5003265f52ec18b84d5798d96', 1),
+      ('training_session_drill', 'training_session_drill_read', '9f0621d72bea96429fe44d941bd66a5d', 1),
+      ('training_attendance', 'training_attendance_read', '59bb90fba84da2df38f72edb5ca8f58a', 1)) AS x(tbl, pol, mine, calls)
   LOOP
     SELECT pg_get_expr(p.polqual, p.polrelid) INTO v_q FROM pg_policy p
      WHERE p.polrelid = to_regclass(r.tbl) AND p.polname = r.pol AND p.polcmd = 'r' AND p.polpermissive
        AND p.polroles = '{0}' AND p.polwithcheck IS NULL;
     v_n := (length(coalesce(v_q, '')) - length(replace(coalesce(v_q, ''), '(app_can(', ''))) / length('(app_can(');
     IF v_q IS NULL OR md5(v_q) <> r.mine OR v_n <> r.calls
-       OR (length(v_q) - length(replace(v_q, ') AND pupil_side_on(', ''))) / length(') AND pupil_side_on(') <> r.calls
+       OR (length(v_q) - length(replace(v_q, ') AND ((NOT ( SELECT app_reader_is_pupil() AS app_reader_is_pupil)) OR ', '')))
+          / length(') AND ((NOT ( SELECT app_reader_is_pupil() AS app_reader_is_pupil)) OR ') <> r.calls
+       OR (length(v_q) - length(replace(v_q, 'pupil_side_on(', ''))) / length('pupil_side_on(') <> r.calls
+       OR (length(v_q) - length(replace(v_q, 'my_own_side_fixtures()', ''))) / length('my_own_side_fixtures()')
+          <> (CASE r.pol WHEN 'ball_event_read' THEN 3 ELSE 0 END)
        OR (length(v_q) - length(replace(v_q, 'app_can(', ''))) / length('app_can(') <> r.calls THEN
       RAISE EXCEPTION 'db/129: %.% is not the read this file wrote: %', r.tbl, r.pol, coalesce(v_q, 'missing');
     END IF;

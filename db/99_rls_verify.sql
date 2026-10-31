@@ -9295,11 +9295,11 @@ DECLARE f text;
 BEGIN
   FOREACH f IN ARRAY ARRAY['pupil_side_on(text,uuid,text,uuid,uuid,date)', 'pupil_side_on(text,uuid,text,uuid,uuid)'] LOOP
     IF p_broken THEN
-      EXECUTE replace(pg_get_functiondef(f::regprocedure), 'SELECT NOT EXISTS (SELECT 1 FROM role_assignment a',
-                                                            'SELECT true OR NOT EXISTS (SELECT 1 FROM role_assignment a');
+      EXECUTE replace(pg_get_functiondef(f::regprocedure), 'IF NOT EXISTS (SELECT 1 FROM role_assignment a',
+                                                            'IF true OR NOT EXISTS (SELECT 1 FROM role_assignment a');
     ELSE
-      EXECUTE replace(pg_get_functiondef(f::regprocedure), 'SELECT true OR NOT EXISTS (SELECT 1 FROM role_assignment a',
-                                                            'SELECT NOT EXISTS (SELECT 1 FROM role_assignment a');
+      EXECUTE replace(pg_get_functiondef(f::regprocedure), 'IF true OR NOT EXISTS (SELECT 1 FROM role_assignment a',
+                                                            'IF NOT EXISTS (SELECT 1 FROM role_assignment a');
     END IF;
   END LOOP;
   RETURN (SELECT string_agg(md5(prosrc), ' ' ORDER BY oid::regprocedure::text COLLATE "C") FROM pg_proc WHERE proname = 'pupil_side_on');
@@ -24377,8 +24377,10 @@ $v49$;
     -- (text)
     SELECT pg_get_expr(p.polqual, p.polrelid) INTO q FROM pg_policy p
      WHERE p.polrelid = 'ball_event'::regclass AND p.polname = 'ball_event_read' AND p.polcmd = 'r' AND p.polpermissive;
+    -- Two match_team( since db/129: the home arm's app_can() and its dated
+    -- twin, pupil_side_on(), on the same arguments.
     PERFORM _assert(position('away_school_id' IN q) > 0 AND position('away_team_code' IN q) > 0
-                    AND (length(q) - length(replace(q, 'match_team(', ''))) / length('match_team(') = 1,
+                    AND (length(q) - length(replace(q, 'match_team(', ''))) / length('match_team(') = 2,
       format('§75 (text): ball_event_read reads %s', q));
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_policy p
                                  WHERE p.polrelid IN ('ball_event'::regclass, 'scoring_session'::regclass,
@@ -32953,9 +32955,9 @@ $v49$;
                          'ball_event_read', 'match_squad_read', 'trip_read', 'training_session_read',
                          'training_session_drill_read', 'training_attendance_read')
        AND ((length(pg_get_expr(p.polqual, p.polrelid)) - length(replace(pg_get_expr(p.polqual, p.polrelid), 'app_can(', '')))
-            <> (length(pg_get_expr(p.polqual, p.polrelid)) - length(replace(pg_get_expr(p.polqual, p.polrelid), ') AND pupil_side_on(', '')))
-               * length('app_can(') / length(') AND pupil_side_on(')
-            OR position(') AND pupil_side_on(' IN pg_get_expr(p.polqual, p.polrelid)) = 0);
+            <> (length(pg_get_expr(p.polqual, p.polrelid)) - length(replace(pg_get_expr(p.polqual, p.polrelid), 'pupil_side_on(', '')))
+               * length('app_can(') / length('pupil_side_on(')
+            OR position(') AND ((NOT ( SELECT app_reader_is_pupil() AS app_reader_is_pupil)) OR ' IN pg_get_expr(p.polqual, p.polrelid)) = 0);
     PERFORM _assert(bad IS NULL AND (SELECT count(*) FROM pg_policy WHERE pg_get_expr(polqual, polrelid) LIKE '%pupil_side_on(%') = 17,
       format('§106 (text): these reads have an app_can() without its dated twin: %s', coalesce(bad, '(none; but not seventeen reads ask it)')));
   END;
