@@ -499,13 +499,13 @@ export const READ_QUERIES = {
     text: `select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
                   a.person_id as guardian_id, u.name as guardian_name, u.email as guardian_email,
                   u.active as account_active,
-                  (a.active and (a.valid_from is null or a.valid_from <= current_date)
-                            and (a.valid_until is null or a.valid_until > current_date)) as role_live,
+                  (a.active and (a.valid_from is null or a.valid_from <= sa_today())
+                            and (a.valid_until is null or a.valid_until > sa_today())) as role_live,
                   g.relationship, g.verification_state, vb.name as verified_by_name, g.verified_at, g.verified_note,
                   g.consent_state, g.consent_version, g.consent_at,
                   g.valid_from, g.valid_until, cb.name as created_by_name, g.created_at,
-                  (g.verification_state in ('pending', 'verified') and g.valid_from <= current_date
-                     and (g.valid_until is null or g.valid_until > current_date)) as live,
+                  (g.verification_state in ('pending', 'verified') and g.valid_from <= sa_today()
+                     and (g.valid_until is null or g.valid_until > sa_today())) as live,
                   e.kind as ending_kind, e.ends_on as ending_on, e.ended_at, eb.name as ended_by_name,
                   e.reason as ending_reason,
                   s.registration_state as standing, s.is_minor, s.live_links, s.consented_links
@@ -1545,7 +1545,7 @@ export const READ_QUERIES = {
                   -- came from the server rather than the mock", and a column
                   -- called live would land in that same field and quietly
                   -- become the flag.
-                  (current_date between sm.starts_on and sm.ends_on) as is_running
+                  (sa_today() between sm.starts_on and sm.ends_on) as is_running
              from sponsorship_masked sm
              join sponsor sp on sp.id = sm.sponsor_id
             where ($1::uuid is null or sm.match_id = $1 or sm.match_id is null)
@@ -1582,8 +1582,8 @@ export const READ_QUERIES = {
                   -- not the same as 'current'; a coordinator's list should show
                   -- the gap, not paper over it.
                   case when insurance_expires_on is null or roadworthy_expires_on is null then 'unknown'
-                       when least(insurance_expires_on, roadworthy_expires_on) < current_date then 'expired'
-                       when least(insurance_expires_on, roadworthy_expires_on) < current_date + 30 then 'expiring'
+                       when least(insurance_expires_on, roadworthy_expires_on) < sa_today() then 'expired'
+                       when least(insurance_expires_on, roadworthy_expires_on) < sa_today() + 30 then 'expiring'
                        else 'current' end as cover_state
              from vehicle
             where ($1::boolean is null or active = $1)
@@ -1898,8 +1898,8 @@ export const READ_QUERIES = {
                   c.verified_by, v.name as verified_by_name, c.verified_at,
                   c.revoked_at, c.revoked_reason,
                   case when c.revoked_at is not null then 'revoked'
-                       when c.expires_on < current_date then 'expired'
-                       when c.expires_on <= current_date + 60 then 'expiring'
+                       when c.expires_on < sa_today() then 'expired'
+                       when c.expires_on <= sa_today() + 60 then 'expiring'
                        else 'current' end as status
              from adult_clearance c
              join app_user u on u.id = c.person_id
@@ -1914,8 +1914,8 @@ export const READ_QUERIES = {
     text: `select c.id, c.school_id, s.name as school_name, c.kind, clearance_kind_label(c.kind) as kind_label,
                   c.issued_on, c.expires_on, c.revoked_at,
                   case when c.revoked_at is not null then 'revoked'
-                       when c.expires_on < current_date then 'expired'
-                       when c.expires_on <= current_date + 60 then 'expiring'
+                       when c.expires_on < sa_today() then 'expired'
+                       when c.expires_on <= sa_today() + 60 then 'expiring'
                        else 'current' end as status
              from adult_clearance c
              join school s on s.id = c.school_id
@@ -3279,12 +3279,12 @@ export const READ_QUERIES = {
             where a.person_id = app_user_id()
               and a.role = 'guardian'
               and a.active
-              and (a.valid_from  is null or a.valid_from  <= current_date)
-              and (a.valid_until is null or a.valid_until >  current_date)
+              and (a.valid_from  is null or a.valid_from  <= sa_today())
+              and (a.valid_until is null or a.valid_until >  sa_today())
               and (a.expires_at  is null or a.expires_at  >  now())
               and s.verification_state = 'verified'
-              and s.valid_from <= current_date
-              and (s.valid_until is null or s.valid_until > current_date)
+              and s.valid_from <= sa_today()
+              and (s.valid_until is null or s.valid_until > sa_today())
             order by p.full_name, s.player_id`/* my_children:end */,
   },
 };

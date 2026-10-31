@@ -193,7 +193,7 @@ SELECT
   -- on a real one it is whoever ran tools/bootstrap.mjs --owner.
   CASE WHEN EXISTS (SELECT 1 FROM role_assignment a JOIN app_user u ON u.id = a.person_id
                      WHERE a.role = 'superadmin' AND a.school_id IS NULL AND a.active AND u.active
-                       AND (a.valid_until IS NULL OR a.valid_until > current_date))
+                       AND (a.valid_until IS NULL OR a.valid_until > sa_today()))
        THEN 'OK' ELSE 'PROBLEM — nobody holds it' END              AS "An owner's key exists",
   CASE WHEN to_regprocedure('owner_recovery_issue(text,text,integer)') IS NOT NULL
        THEN 'OK' ELSE 'PROBLEM' END                              AS "Owner has a way back in",
@@ -218,8 +218,8 @@ SELECT
         AND (SELECT count(*) FROM assignment_subject s
                JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
                JOIN player p ON p.id = s.player_id
-              WHERE (s.valid_until IS NULL OR s.valid_until > current_date)
-                AND NOT coalesce(majority_on(p.born) > current_date, false)
+              WHERE (s.valid_until IS NULL OR s.valid_until > sa_today())
+                AND NOT coalesce(majority_on(p.born) > sa_today(), false)
                 AND NOT still_at_school(p.id)) = 0
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Guardianship ends at 18, or on leaving school",
   CASE WHEN to_regprocedure('still_at_school(uuid)') IS NOT NULL
@@ -227,7 +227,7 @@ SELECT
                JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
                JOIN player p ON p.id = s.player_id
               WHERE s.valid_until IS NULL
-                AND NOT coalesce(majority_on(p.born) > current_date, false)
+                AND NOT coalesce(majority_on(p.born) > sa_today(), false)
                 AND NOT still_at_school(p.id)) = 0
        THEN 'OK — ' || (SELECT count(*) FROM assignment_subject s
                           JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
@@ -710,14 +710,15 @@ SELECT
   -- reads PROBLEM rather than failing the query on a database without it.
   -- The body is read with every run of whitespace folded to one space, as
   -- db/119's own guard reads it, so the row does not hang on the file's
-  -- alignment (its a.valid_until line has two spaces before current_date).
+  -- alignment (its a.valid_until line has two spaces before sa_today()). db/128
+  -- moved its four day tests from current_date to sa_today().
   CASE WHEN EXISTS (SELECT 1 FROM pg_proc p
                      CROSS JOIN LATERAL (SELECT regexp_replace(p.prosrc, '\\s+', ' ', 'g') AS src) b
                      WHERE p.oid = to_regprocedure('is_family_of(uuid)')
                        AND b.src LIKE '%NOT app_pad_scoped()%'
-                       AND b.src LIKE '%s.valid_from <= current_date%'
-                       AND b.src LIKE '%s.valid_until IS NULL OR s.valid_until > current_date%'
-                       AND b.src LIKE '%a.valid_until IS NULL OR a.valid_until > current_date%'
+                       AND b.src LIKE '%s.valid_from <= sa_today()%'
+                       AND b.src LIKE '%s.valid_until IS NULL OR s.valid_until > sa_today()%'
+                       AND b.src LIKE '%a.valid_until IS NULL OR a.valid_until > sa_today()%'
                        AND b.src LIKE '%a.expires_at IS NULL OR a.expires_at > now()%'
                        AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))
                        AND NOT has_function_privilege('public', p.oid, 'EXECUTE'))

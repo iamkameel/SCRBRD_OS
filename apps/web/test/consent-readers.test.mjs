@@ -37,8 +37,8 @@ ok("a guardian whose every link has ended is nobody's family, and reads no passp
    && passportConsentReader([{ ...as("guardian", HIL, null, ["a"]), liveSubjects: [] }]) === null);
 const authDb = readFileSync(new URL("../../../services/api/auth/auth-db.mjs", import.meta.url), "utf8");
 ok("the session's liveSubjects are verified, begun and not ended, as is_family_of() asks (db/119)",
-   /g\.verification_state = 'verified'/.test(authDb) && /g\.valid_from <= current_date/.test(authDb)
-   && /g\.valid_until is null or g\.valid_until > current_date/.test(authDb) && /liveSubjects: a\.live_subjects/.test(authDb));
+   /g\.verification_state = 'verified'/.test(authDb) && /g\.valid_from <= sa_today\(\)/.test(authDb)
+   && /g\.valid_until is null or g\.valid_until > sa_today\(\)/.test(authDb) && /liveSubjects: a\.live_subjects/.test(authDb));
 
 group("The scouting decision: his family, his school's office, his own side's coach");
 const scout = (asg) => [A, M, B, W].filter((p) => readsScoutingOf(p, asg)).map((p) => p.id).join();

@@ -179,8 +179,8 @@ group("A. my_children (step 4 G1): the caller's own live guardian links, and the
      /where a\.person_id = app_user_id\(\)/.test(t));
   ok("...and to guardian ones: a pupil's self link is not a child", /a\.role = 'guardian'/.test(t));
   ok("a live link only, by app_can()'s clauses: verified, started, not ended",
-     /s\.verification_state = 'verified'/.test(t) && /s\.valid_from <= current_date/.test(t)
-     && /\(s\.valid_until is null or s\.valid_until > current_date\)/.test(t));
+     /s\.verification_state = 'verified'/.test(t) && /s\.valid_from <= sa_today\(\)/.test(t)
+     && /\(s\.valid_until is null or s\.valid_until > sa_today\(\)\)/.test(t));
   ok("carries the link's end date (G11) and its consent state", /s\.valid_until/.test(t) && /s\.consent_state/.test(t));
   ok("carries the wording and the time her own link's terms were agreed under (GA-I20 A1, R8a)", /s\.consent_version/.test(t) && /s\.consent_at/.test(t));
   ok("takes no parameter a caller could widen it with", !READ_QUERIES.my_children.params && !/\$1/.test(t));

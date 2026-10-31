@@ -545,7 +545,7 @@ export function guardianLinkRoutes({ pool, secret }) {
          (select g.id from assignment_subject g join role_assignment a on a.id = g.assignment_id
            where a.person_id = $1::uuid and a.role = 'guardian' and g.player_id = $2::uuid
              and g.verification_state in ('pending', 'verified')
-             and (g.valid_until is null or g.valid_until > current_date)
+             and (g.valid_until is null or g.valid_until > sa_today())
            order by g.created_at desc limit 1), $3::text, $4::text)`,
       (req) => [req.body?.guardianId, req.params.id, req.body?.kind || "office",
                 req.body?.reason ?? req.body?.note ?? null])),
