@@ -6474,7 +6474,8 @@ CREATE OR REPLACE FUNCTION _v112_fact(p_what text, p_id uuid DEFAULT NULL) RETUR
                             WHERE role = 'player' AND active AND id::text LIKE 'a5510000-%')
     WHEN 'all_assignments' THEN (SELECT md5(string_agg(concat_ws('|', id, person_id, role, team_code, active, revoked_at), ';' ORDER BY id))
                                    FROM role_assignment)
-    WHEN 'grant_md5' THEN (SELECT md5(replace(prosrc,
+    -- db/128 moved its day to sa_today(); read back on db/92's clock.
+    WHEN 'grant_md5' THEN (SELECT md5(replace(replace(prosrc, 'sa_today()', 'current_date'),
           '  -- db/108: a pupil is a pupil OF A SIDE (role_assignment_player_team_scoped).' || chr(10)
        || '  -- No side named by the request or the decider: his own side on the roster,' || chr(10)
        || '  -- at this school. None there either: refused by name, before anything is' || chr(10)
