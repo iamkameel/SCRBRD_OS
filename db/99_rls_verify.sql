@@ -26473,8 +26473,11 @@ $v49$;
      WHERE NOT EXISTS (SELECT 1 FROM pg_policy p
                         WHERE p.polrelid = to_regclass(x.tbl) AND p.polname = x.pol AND p.polcmd = 'r' AND p.polpermissive
                           AND position(x.q IN pg_get_expr(p.polqual, p.polrelid)) > 0
-                          AND replace(pg_get_expr(p.polqual, p.polrelid),
-                                      '''ffffffff-ffff-ffff-ffff-ffffffffffff''::uuid, ''00000000-0000-0000-0000-000000000000''::uuid)', '')
+                          -- (and since db/129 the same pair in the unnamed branch's dated
+                          -- twin, followed by the session's day)
+                          AND replace(replace(pg_get_expr(p.polqual, p.polrelid),
+                                      '''ffffffff-ffff-ffff-ffff-ffffffffffff''::uuid, ''00000000-0000-0000-0000-000000000000''::uuid)', ''),
+                                      '''ffffffff-ffff-ffff-ffff-ffffffffffff''::uuid, ''00000000-0000-0000-0000-000000000000''::uuid, sa_date(starts_at))', '')
                               NOT LIKE '%00000000-0000-0000-0000-000000000000%');
     PERFORM _assert(bad IS NULL, format('§83 (text): %s is not the policy db/106 wrote', bad));
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_policy p
