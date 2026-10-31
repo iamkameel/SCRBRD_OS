@@ -367,7 +367,7 @@ export const IMPORTS = {
              join role_assignment a on a.id = s.assignment_id
             where a.person_id = $1 and a.school_id = $2 and a.role = 'guardian' and a.active
               and s.player_id = $3 and s.verification_state in ('pending', 'verified')
-              and (s.valid_until is null or s.valid_until > current_date)
+              and (s.valid_until is null or s.valid_until > sa_today())
             limit 1`, [acct.id, school, child])).rows[0];
         if (link?.verification_state === "verified") return { ok: true, did: "unchanged" };
         if (link) {

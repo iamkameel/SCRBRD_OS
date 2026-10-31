@@ -17521,12 +17521,12 @@ select s.player_id, p.full_name, p.known_as, p.team_code,
             where a.person_id = app_user_id()
               and a.role = 'guardian'
               and a.active
-              and (a.valid_from  is null or a.valid_from  <= current_date)
-              and (a.valid_until is null or a.valid_until >  current_date)
+              and (a.valid_from  is null or a.valid_from  <= sa_today())
+              and (a.valid_until is null or a.valid_until >  sa_today())
               and (a.expires_at  is null or a.expires_at  >  now())
               and s.verification_state = 'verified'
-              and s.valid_from <= current_date
-              and (s.valid_until is null or s.valid_until > current_date)
+              and s.valid_from <= sa_today()
+              and (s.valid_until is null or s.valid_until > sa_today())
             order by p.full_name, s.player_id
 -- my_children:end
 $v49$;

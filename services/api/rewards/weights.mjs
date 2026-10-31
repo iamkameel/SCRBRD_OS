@@ -80,7 +80,7 @@ export const WEIGHT_KEYS = Object.freeze({
  */
 export async function weightAt(client, key, onDate = null) {
   const { rows } = await client.query(
-    `select reward_weight_at($1, coalesce($2::date, current_date)) as value`, [key, onDate]);
+    `select reward_weight_at($1, coalesce($2::date, sa_today())) as value`, [key, onDate]);
   const v = rows[0]?.value;
   return v == null ? null : Number(v);
 }

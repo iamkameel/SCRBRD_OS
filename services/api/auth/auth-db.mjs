@@ -177,14 +177,14 @@ export async function sessionProfile(pool, secret, bearer) {
               -- or "ended".
               coalesce(array_agg(g.player_id) filter (where g.player_id is not null
                          and g.verification_state = 'verified'
-                         and g.valid_from <= current_date
-                         and (g.valid_until is null or g.valid_until > current_date)), '{}') as live_subjects
+                         and g.valid_from <= sa_today()
+                         and (g.valid_until is null or g.valid_until > sa_today())), '{}') as live_subjects
          from role_assignment a
          left join school s on s.id = a.school_id
          left join assignment_subject g on g.assignment_id = a.id
         where a.person_id = $1 and a.active
-          and (a.valid_from  is null or a.valid_from  <= current_date)
-          and (a.valid_until is null or a.valid_until >  current_date)
+          and (a.valid_from  is null or a.valid_from  <= sa_today())
+          and (a.valid_until is null or a.valid_until >  sa_today())
           -- The support session's hour hand (db/22), the third clause of the
           -- liveness rule app_can() applies (db/23). Without it a session
           -- past its hour stayed on the workspace as if it were live —

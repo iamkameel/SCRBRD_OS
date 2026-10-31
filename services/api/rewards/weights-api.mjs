@@ -79,7 +79,7 @@ export function rewardWeightRoutes({ pool, secret }) {
         const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
           const { rows } = await client.query(
             `insert into reward_weight (key, value, effective_from, note)
-             values (btrim($1), $2, coalesce($3::date, current_date), $4)
+             values (btrim($1), $2, coalesce($3::date, sa_today()), $4)
              returning key, effective_from`,
             [key, value, from, note]);
           if (!rows.length) throw err("not_permitted", 403);
