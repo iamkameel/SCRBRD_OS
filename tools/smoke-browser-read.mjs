@@ -349,9 +349,12 @@ try {
     for (const at of ["2025-03-14 23:00Z", "2025-03-15 07:00Z", "2025-03-15 08:00Z", "2025-03-14 21:00Z"])
       await owner.query(`insert into passport_union_read (player_id, reader_id, reader_name, reader_role, org_id, what, read_at)
                          values ($1, $2, 'Browser Selector', 'Union Selector', $3, 'list', $4)`, [PILLAY, sel, KZN, at]);
-    ok("Family opens again, for his Consents", await nav(parent.page, /^Family$/));
+    // Consents is a toggle and is open: closed and opened again, the card is
+    // drawn afresh and reads the log again.
+    if (await ptid("passport-tab").count() === 1) await ptid(`family-open-consents-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
     await ptid(`family-open-consents-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
     await afterReads(parent.page, 1500);
+    ok("Consents opens again, for his log", await ptid("passport-union-reads").count() === 1);
     const ls = await parent.page.locator(`[data-testid="passport-union-read-${PILLAY}"][data-kind="list"]`).allInnerTexts();
     ok("...his list appearances, grouped per SA day with a count, the 01:00 SAST one on its SA day",
        ls.some((l) => l.includes(`appeared in Browser Selector's list (Union Selector), ${KZN_NAME} · 3 times on 15 Mar 2025`))
