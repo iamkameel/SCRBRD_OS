@@ -7351,26 +7351,36 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- answers nothing from it, so the answer is the same as asking every boy at
 -- the school; it only spares side_on() for the rest (by §94, some 130 boys
 -- at Hilton for every fixture and session asked).
--- Branch (1) since db/129: as before, except a pupil's own `player` row at
--- the side reads it only on a day his boy was on it (a reader with no boy at
--- the school is not dated; another assignment's reach stands).
+-- Since db/129 (§106): a pupil's own `player` row at a side reads a row of it
+-- only on a day his boy was on it; a reader with no boy at the school is not
+-- dated, and another assignment's reach stands. Spelled apart from
+-- pupil_side_on(), as the owner, about the caller. Every app_can() the rule
+-- below asks at a side (branch (1) with all-f, and "every boy on the side"
+-- or "on the sheet", which an unnamed row answers yes for any boy) is asked
+-- with it, as the build asks them.
+CREATE OR REPLACE FUNCTION _v129_lit_dated(p_cap text, p_school uuid, p_team text, p_person uuid, p_fixture uuid, p_on date)
+RETURNS boolean AS $$
+  SELECT NOT EXISTS (SELECT 1 FROM role_assignment a
+                      WHERE a.person_id = app_user_id() AND a.role = 'player' AND a.active
+                        AND (a.school_id IS NULL OR a.school_id = p_school)
+                        AND (a.team_code IS NULL OR p_team = '*' OR a.team_code = p_team))
+      OR NOT EXISTS (SELECT 1 FROM player p WHERE p.school_id = p_school AND _v117_self(p.id))
+      OR EXISTS (SELECT 1 FROM player p
+                   JOIN team_membership tm ON tm.player_id = p.id AND tm.school_id = p_school
+                                          AND tm.team_code = p_team AND tm.sport = 'cricket'
+                  WHERE p.school_id = p_school AND _v117_self(p.id)
+                    AND tm.joined_on <= p_on AND (tm.left_on IS NULL OR tm.left_on >= p_on))
+      OR app_can_but_player(p_cap, p_school, p_team, p_person, p_fixture)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v117_lit_side(p_cap text, p_school uuid, p_team text, p_fixture uuid, p_on date) RETURNS boolean AS $$
   SELECT (app_can(p_cap, p_school, p_team, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, p_fixture)
-          AND (NOT EXISTS (SELECT 1 FROM role_assignment a
-                            WHERE a.person_id = app_user_id() AND a.role = 'player' AND a.active
-                              AND a.school_id = p_school AND a.team_code = p_team)
-               OR NOT EXISTS (SELECT 1 FROM player p WHERE p.school_id = p_school AND _v117_self(p.id))
-               OR EXISTS (SELECT 1 FROM player p
-                            JOIN team_membership tm ON tm.player_id = p.id AND tm.school_id = p_school
-                                                   AND tm.team_code = p_team AND tm.sport = 'cricket'
-                           WHERE p.school_id = p_school AND _v117_self(p.id)
-                             AND tm.joined_on <= p_on AND (tm.left_on IS NULL OR tm.left_on >= p_on))
-               OR app_can_but_player(p_cap, p_school, p_team, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, p_fixture)))
+          AND _v129_lit_dated(p_cap, p_school, p_team, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, p_fixture, p_on))
       OR EXISTS (SELECT 1 FROM player p
                    JOIN (SELECT DISTINCT tm.player_id FROM team_membership tm
                           WHERE tm.school_id = p_school AND tm.team_code = p_team) c ON c.player_id = p.id
                   WHERE p.school_id = p_school AND p_team IN (SELECT side_on(p.id, p_school, p_on))
-                    AND app_can(p_cap, p_school, p_team, p.id, p_fixture))
+                    AND app_can(p_cap, p_school, p_team, p.id, p_fixture)
+                    AND _v129_lit_dated(p_cap, p_school, p_team, p.id, p_fixture, p_on))
       OR EXISTS (SELECT 1 FROM player p
                    JOIN (SELECT DISTINCT tm.player_id FROM team_membership tm
                           WHERE tm.school_id = p_school AND tm.team_code = p_team) c ON c.player_id = p.id
@@ -7387,7 +7397,11 @@ CREATE OR REPLACE FUNCTION _v117_lit_fixture(p_cap text, p_match uuid) RETURNS b
                   AND app_can(p_cap,
                               CASE WHEN ms.side = 'away' THEN m.away_school_id ELSE m.school_id END,
                               CASE WHEN ms.side = 'away' THEN m.away_team_code ELSE m.team_code END,
-                              ms.player_id, m.id))
+                              ms.player_id, m.id)
+                  AND _v129_lit_dated(p_cap,
+                              CASE WHEN ms.side = 'away' THEN m.away_school_id ELSE m.school_id END,
+                              CASE WHEN ms.side = 'away' THEN m.away_team_code ELSE m.team_code END,
+                              ms.player_id, m.id, sa_date(m.starts_at)))
     OR _v106_self_sheet(p_cap, m.id)))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
