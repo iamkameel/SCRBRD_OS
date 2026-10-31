@@ -5224,12 +5224,12 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 
 ### SCRBRD-089 — Loose ends found building the offline match day (SCRBRD-078/075/079)
 **Priority:** P2/P3 · **Domain:** Scoring / sync · **Found 2026-09-25**
-- **No heartbeat while the pad is open.** The spec's lease is refreshed "by heartbeat (~20s) and by any ball
+- ~~**No heartbeat while the pad is open.** The spec's lease is refreshed "by heartbeat (~20s) and by any ball
   written"; the client only writes. Every lull longer than 90 s (a drinks break, the innings break, rain) lapses
   the lease, and `scoring_claim` hands a lapsed lease to any device that opens the pad. The flush gate now takes
   back only the device's OWN lapsed token (same state, same epoch) and stops, in words, when another device has
   claimed — but whether an open pad should hold the match through a break (and so block an admin's force-release
-  for as long as it is open) is a decision. (P2)
+  for as long as it is open) is a decision. (P2)~~ **Done 2026-10-31** (#225, commit 22e4898): Kameel decided 30 Oct (match-day audit call 1) that the pad heartbeats while attached and in view, and a lapsed lease held by another device is taken only by a confirmed, audited take-over; force-release stays with the admin.
 - **A fork has no resolution on the pad.** When the pad's log and the server's each have events the other lacks,
   nothing is merged, nothing is claimed, and both stay where they are (the pad's on the device, said in words).
   The spec's route for such events is quarantine for a supervisor; a forked device does not send its side there
