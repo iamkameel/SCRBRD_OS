@@ -64,8 +64,9 @@
 --   ~ side_reach_on() (db/117)    branch (1) gains the clause: so
 --       side_reach(), fixture_end_reach(), fixture_reach(), the publication
 --       row and every notice asked through them are dated for him too.
---   ~ news_plan_reach(uuid,text,date) (db/117)   its team.read branch (1)
---       gains the clause on the post's day: the two restrictive news rules,
+--   ~ news_plan_reach(uuid,text,date) (db/117)   its two team.read calls
+--       (branch (1), and "a boy on the side that day", which an unnamed row
+--       answers for any boy) gain the clause on the post's day: the two restrictive news rules,
 --       the post's notice and the plan's byline answer through it.
 --       news_plan_reach(uuid,text) asks today: unchanged.
 --   ~ seventeen read policies, every app_can() in each gaining its dated
@@ -132,7 +133,7 @@ BEGIN
   FOR r IN SELECT * FROM (VALUES
       ('app_can(text,uuid,text,uuid,uuid)',       'f2104665f4ea2207c6d9165b6206785c', 'f2104665f4ea2207c6d9165b6206785c', 'db/128'),
       ('side_reach_on(text,uuid,text,uuid,date)', 'd06c1fa757b289ed9994c2bb58f40178', '81d5c93a5cc9e61ce1d3b506045da6b7', 'db/117'),
-      ('news_plan_reach(uuid,text,date)',         '392bde9e9f1425d7d4bcf0fbfdd894f9', '3d005451110e37580070e12fd6d0305b', 'db/117'))
+      ('news_plan_reach(uuid,text,date)',         '392bde9e9f1425d7d4bcf0fbfdd894f9', '2da22ae8c9bad2100509e99225d2b4c1', 'db/117'))
       AS x(fn, was, mine, src)
   LOOP
     SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = to_regprocedure(r.fn);
@@ -319,7 +320,10 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 
 
 -- ── 4 · news_plan_reach() on a day, branch (1) dated ───────────────
--- db/117's, word for word, with the clause on the team.read branch (1).
+-- db/117's, word for word, with the clause on both its team.read calls:
+-- branch (1), and the boy-on-the-side branch, which asks app_can() about each
+-- boy on the side that day and so answers yes for an unnamed `player` row
+-- whenever any boy was on it (as it does for staff, who are not dated).
 CREATE OR REPLACE FUNCTION news_plan_reach(p_school uuid, p_team text, p_on date) RETURNS boolean AS $$
   SELECT app_can('news.read', p_school, p_team,
                  '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
@@ -331,7 +335,8 @@ CREATE OR REPLACE FUNCTION news_plan_reach(p_school uuid, p_team text, p_on date
                        JOIN player p ON p.id = tm.player_id AND p.school_id = p_school
                       WHERE tm.school_id = p_school AND tm.team_code = p_team AND tm.sport = 'cricket'
                         AND tm.joined_on <= p_on AND (tm.left_on IS NULL OR tm.left_on >= p_on)
-                        AND app_can('team.read', p_school, p_team, p.id, '00000000-0000-0000-0000-000000000000'::uuid)))
+                        AND (app_can('team.read', p_school, p_team, p.id, '00000000-0000-0000-0000-000000000000'::uuid)
+                             AND pupil_side_on('team.read', p_school, p_team, p.id, '00000000-0000-0000-0000-000000000000'::uuid, p_on))))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 
@@ -514,8 +519,11 @@ BEGIN
      AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'));
   v_q := '(app_can(''team.read'', p_school, p_team, ' || ALLF || ', ' || ZERO || ') AND pupil_side_on(''team.read'', p_school, p_team, '
          || ALLF || ', ' || ZERO || ', p_on))';
-  IF position(v_q IN coalesce(v_src, '')) = 0
-     OR md5(replace(v_src, '(' || v_q, '(app_can(''team.read'', p_school, p_team, ' || ALLF || ', ' || ZERO || ')'))
+  v_f := '(app_can(''team.read'', p_school, p_team, p.id, ' || ZERO || ') AND pupil_side_on(''team.read'', p_school, p_team, p.id, '
+         || ZERO || ', p_on))';
+  IF position(v_q IN coalesce(v_src, '')) = 0 OR position(v_f IN coalesce(v_src, '')) = 0
+     OR md5(replace(replace(v_src, '(' || v_q, '(app_can(''team.read'', p_school, p_team, ' || ALLF || ', ' || ZERO || ')'),
+                    v_f, 'app_can(''team.read'', p_school, p_team, p.id, ' || ZERO || ')'))
         <> '392bde9e9f1425d7d4bcf0fbfdd894f9' THEN
     RAISE EXCEPTION 'db/129: news_plan_reach(uuid,text,date) is not db/117''s with branch (1) dated';
   END IF;

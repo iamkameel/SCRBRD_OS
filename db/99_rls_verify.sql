@@ -7351,8 +7351,21 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- answers nothing from it, so the answer is the same as asking every boy at
 -- the school; it only spares side_on() for the rest (by §94, some 130 boys
 -- at Hilton for every fixture and session asked).
+-- Branch (1) since db/129: as before, except a pupil's own `player` row at
+-- the side reads it only on a day his boy was on it (a reader with no boy at
+-- the school is not dated; another assignment's reach stands).
 CREATE OR REPLACE FUNCTION _v117_lit_side(p_cap text, p_school uuid, p_team text, p_fixture uuid, p_on date) RETURNS boolean AS $$
-  SELECT app_can(p_cap, p_school, p_team, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, p_fixture)
+  SELECT (app_can(p_cap, p_school, p_team, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, p_fixture)
+          AND (NOT EXISTS (SELECT 1 FROM role_assignment a
+                            WHERE a.person_id = app_user_id() AND a.role = 'player' AND a.active
+                              AND a.school_id = p_school AND a.team_code = p_team)
+               OR NOT EXISTS (SELECT 1 FROM player p WHERE p.school_id = p_school AND _v117_self(p.id))
+               OR EXISTS (SELECT 1 FROM player p
+                            JOIN team_membership tm ON tm.player_id = p.id AND tm.school_id = p_school
+                                                   AND tm.team_code = p_team AND tm.sport = 'cricket'
+                           WHERE p.school_id = p_school AND _v117_self(p.id)
+                             AND tm.joined_on <= p_on AND (tm.left_on IS NULL OR tm.left_on >= p_on))
+               OR app_can_but_player(p_cap, p_school, p_team, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, p_fixture)))
       OR EXISTS (SELECT 1 FROM player p
                    JOIN (SELECT DISTINCT tm.player_id FROM team_membership tm
                           WHERE tm.school_id = p_school AND tm.team_code = p_team) c ON c.player_id = p.id
@@ -9116,6 +9129,182 @@ BEGIN
   RETURN btrim(b);
 END $$ LANGUAGE plpgsql;
 -- └── db/128 (section 105) ─────────────────────────────────────────────
+
+-- ┌── db/129 (section 106). The moved boy's own reach is dated: his `player`
+-- assignment reads his side only from the day he joined it (Season rollover,
+-- S2's last slice; D1, Q2). Invented, as the owner; every name a
+-- placeholder. Hilton's U15F (the side he leaves, the design's "U14A";
+-- labels say 23) and U16F (the side he joins, "U15A"; labels say 24). Boys: B
+-- (U15F from t-90; the section moves him to the U16F on M, t-10 or this
+-- season's start), T (U16F from t-90, never moved) and C (joined the U16F on
+-- M: the newcomer of Q2, and the scorer named to f24c). t is today.
+-- Fixtures, by day: f23a (U15F, t-30), f23n (U15F, t+5); f24a (U16F, t-30),
+-- f24c (U16F, t-25: C is its scorer), f24u (U16F, t-20: B on its home sheet,
+-- playing up), f24d (U16F, M: the move's day), f24n (U16F, t+5). A toss, T on the home sheet, balls and a bus on f24a and
+-- f24n. Nets s24a (t-30) and s24n (t+3), each with a drill and T's
+-- attendance. Team posts n24a (published t-30) and n24n (now); a plan p24a
+-- for f24a.
+CREATE OR REPLACE FUNCTION _v129_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U14 date := make_date(extract(year FROM sa_today())::int - 14, 3, 1);
+  t date := sa_today();
+  M date := greatest((SELECT s.starts_on FROM season_for(sa_today(), 'school') s), t - 10);
+  ids jsonb; z jsonb := '{}'; v_id uuid; v_a uuid; v_drill uuid; c_b uuid; c_t uuid; c_c uuid;
+  k text; tm text; dd int;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('app.effective_on', (t - 90)::text, true);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U15F', 'Verify OneTwoNine Mover', 1291, 'batter', U14) RETURNING id INTO c_b;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U16F', 'Verify OneTwoNine Stayer', 1292, 'batter', U14) RETURNING id INTO c_t;
+  PERFORM set_config('app.effective_on', M::text, true);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U16F', 'Verify OneTwoNine Newcomer', 1293, 'batter', U14) RETURNING id INTO c_c;
+  PERFORM set_config('app.effective_on', '', true);
+  ids := _v71_people('v129', ARRAY[
+    ARRAY['bboy',    'player',      HIL::text, 'U15F', c_b::text],   -- B himself
+    ARRAY['tboy',    'player',      HIL::text, 'U16F', c_t::text],   -- T himself: never moved
+    ARRAY['cboy',    'player',      HIL::text, 'U16F', c_c::text],   -- C himself: joined on M
+    ARRAY['coach24', 'coach',       HIL::text, 'U16F', ''],
+    ARRAY['spec',    'spectator',   HIL::text, '',     ''],
+    ARRAY['office',  'schooladmin', HIL::text, '',     ''],
+    ARRAY['gb',      'guardian',    HIL::text, '',     ''],     -- B's mother: a boy on a sheet is registered
+    ARRAY['gt',      'guardian',    HIL::text, '',     '']]);   -- T's
+  PERFORM _v100_link((ids->>'gb')::uuid, HIL, c_b);
+  PERFORM _v100_link((ids->>'gt')::uuid, HIL, c_t);
+  -- Every pupil holds his self-access link beside `player` (roles.mjs).
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'bboy')::uuid, 'selfaccess', HIL) RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (v_a, c_b, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
+  z := jsonb_build_object('pb', c_b, 'pt', c_t, 'pc', c_c, 'day_move', M::text);
+  FOR k, tm, dd IN SELECT * FROM (VALUES
+      ('f23a', 'U15F', -30), ('f23n', 'U15F', 5), ('f24a', 'U16F', -30), ('f24c', 'U16F', -25),
+      ('f24u', 'U16F', -20), ('f24d', 'U16F', M - t), ('f24n', 'U16F', 5)) x LOOP
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+    VALUES (HIL, tm, 'Verify OneTwoNine ' || k, ((t + dd)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
+            'cricket', 'T20', 20, 'scheduled') RETURNING id INTO v_id;
+    z := z || jsonb_build_object(k, v_id);
+  END LOOP;
+  -- C scores f24c: a pupil scorer, named to that one fixture (a scorer's
+  -- row at a fixture also reads its side's rows with no fixture: its nets
+  -- and posts, as app_can() has always answered).
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, fixture_id)
+  VALUES ((ids->>'cboy')::uuid, 'scorer', HIL, 'U16F', (z->>'f24c')::uuid);
+  INSERT INTO match_squad (match_id, player_id, side, batting_no) VALUES
+    ((z->>'f24u')::uuid, c_b, 'home', 1), ((z->>'f24a')::uuid, c_t, 'home', 1), ((z->>'f24n')::uuid, c_t, 'home', 1);
+  INSERT INTO match_toss (match_id, school_id, won_by, decision) VALUES
+    ((z->>'f24a')::uuid, HIL, 'home', 'bat'), ((z->>'f24n')::uuid, HIL, 'home', 'bowl');
+  PERFORM _v71_bowl((z->>'f24a')::uuid, OFFICE, ARRAY[NULL]::uuid[]);
+  PERFORM _v71_bowl((z->>'f24n')::uuid, OFFICE, ARRAY[NULL]::uuid[]);
+  FOR k IN SELECT unnest(ARRAY['f24a', 'f24n']) LOOP
+    INSERT INTO trip (match_id, school_id, pickup, notes) VALUES ((z->>k)::uuid, HIL, 'V129 gate', 'V129 bus to ' || k)
+    RETURNING id INTO v_id;
+    z := z || jsonb_build_object('t' || substr(k, 2), v_id);
+  END LOOP;
+  INSERT INTO drill (school_id, name, category, duration_min) VALUES (HIL, 'V129 throwdowns', 'batting', 20) RETURNING id INTO v_drill;
+  FOR k, dd IN SELECT * FROM (VALUES ('s24a', -30), ('s24n', 3)) x LOOP
+    INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type)
+    VALUES (HIL, 'U16F', 'V129 ' || k, ((t + dd)::timestamp + time '15:00') AT TIME ZONE 'Africa/Johannesburg', 60, 'batting')
+    RETURNING id INTO v_id;
+    INSERT INTO training_session_drill (session_id, drill_id, position, minutes) VALUES (v_id, v_drill, 1, 20);
+    INSERT INTO training_attendance (session_id, player_id, status) VALUES (v_id, c_t, 'present');
+    z := z || jsonb_build_object(k, v_id);
+  END LOOP;
+  FOR k, dd IN SELECT * FROM (VALUES ('n24a', -30), ('n24n', 0)) x LOOP
+    INSERT INTO news_post (scope, school_id, team_code, kind, title, body, published_at, author_id)
+    VALUES ('team', HIL, 'U16F', 'post', 'V129 ' || k, 'V129 a word to the side',
+            CASE WHEN dd = 0 THEN now() - interval '1 minute' ELSE ((t + dd)::timestamp + time '12:00') AT TIME ZONE 'Africa/Johannesburg' END,
+            (ids->>'coach24')::uuid)
+    RETURNING id INTO v_id;
+    z := z || jsonb_build_object(k, v_id);
+  END LOOP;
+  INSERT INTO news_post (scope, school_id, team_code, kind, fixture_id, title, body, published_at, author_id)
+  VALUES ('team', HIL, 'U16F', 'plan', (z->>'f24a')::uuid, 'V129 p24a', 'V129 meet at the nets',
+          ((t - 31)::timestamp + time '12:00') AT TIME ZONE 'Africa/Johannesburg', (ids->>'coach24')::uuid) RETURNING id INTO v_id;
+  z := z || jsonb_build_object('p24a', v_id);
+  RETURN ids || z;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What the caller reads of the stage, under his own row security, by label,
+-- sorted (COLLATE "C"): the fixtures, the toss, the sheet (fixture/boy), the
+-- log, the buses, the nets, their drills and attendance, the posts and plan.
+CREATE OR REPLACE FUNCTION _v129_reads(z jsonb) RETURNS text AS $$
+  WITH f AS (SELECT array_agg(value::uuid) a FROM jsonb_each_text(z) WHERE key ~ '^f2'),
+       s AS (SELECT array_agg(value::uuid) a FROM jsonb_each_text(z) WHERE key ~ '^s2')
+  SELECT format('fixtures [%s] toss [%s] sheet [%s] balls [%s] trips [%s] nets [%s] drills [%s] att [%s] posts [%s]',
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l COLLATE "C"), '') FROM (SELECT _v106_label(z, m.id) l FROM match m, f WHERE m.id = ANY (f.a)) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l COLLATE "C"), '') FROM (SELECT _v106_label(z, v.match_id) l FROM match_toss v, f WHERE v.match_id = ANY (f.a)) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l COLLATE "C"), '') FROM (SELECT _v106_label(z, v.match_id) || '/' || _v106_label(z, v.player_id) l
+                                                               FROM match_squad v, f WHERE v.match_id = ANY (f.a)) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l COLLATE "C"), '') FROM (SELECT DISTINCT _v106_label(z, b.match_id) l FROM ball_event b, f WHERE b.match_id = ANY (f.a)) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l COLLATE "C"), '') FROM (SELECT _v106_label(z, v.id) l FROM trip v
+                                                               WHERE v.id = ANY (ARRAY(SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^t2'))) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l COLLATE "C"), '') FROM (SELECT _v106_label(z, v.id) l FROM training_session v, s WHERE v.id = ANY (s.a)) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l COLLATE "C"), '') FROM (SELECT _v106_label(z, v.session_id) l FROM training_session_drill v, s WHERE v.session_id = ANY (s.a)) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l COLLATE "C"), '') FROM (SELECT _v106_label(z, v.session_id) l FROM training_attendance v, s WHERE v.session_id = ANY (s.a)) x),
+    (SELECT coalesce(string_agg(l, ' ' ORDER BY l COLLATE "C"), '') FROM (SELECT _v106_label(z, n.id) l FROM news_post n
+                                                               WHERE n.id = ANY (ARRAY(SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^[np]2'))) x))
+$$ LANGUAGE sql STABLE;
+
+-- Over the stage and the seed's fixtures: what the caller reads of each
+-- table, as one sorted list of ids (COLLATE "C"), for the narrow-only
+-- comparison over everyone.
+CREATE OR REPLACE FUNCTION _v129_ids(z jsonb) RETURNS text AS $$
+  WITH f AS (SELECT array_agg(value::uuid) || _v106_seed_matches() a FROM jsonb_each_text(z) WHERE key ~ '^f2'),
+       s AS (SELECT array_agg(value::uuid) a FROM jsonb_each_text(z) WHERE key ~ '^s2')
+  SELECT coalesce(string_agg(x, ' ' ORDER BY x COLLATE "C"), '') FROM (
+    SELECT 'm' || m.id FROM match m, f WHERE m.id = ANY (f.a)
+    UNION ALL SELECT 'q' || v.match_id || v.player_id FROM match_squad v, f WHERE v.match_id = ANY (f.a)
+    UNION ALL SELECT 'x' || v.match_id FROM match_toss v, f WHERE v.match_id = ANY (f.a)
+    UNION ALL SELECT DISTINCT 'b' || b.match_id FROM ball_event b, f WHERE b.match_id = ANY (f.a)
+    UNION ALL SELECT 't' || v.id FROM trip v, f WHERE v.match_id = ANY (f.a)
+    UNION ALL SELECT 's' || v.id FROM training_session v, s WHERE v.id = ANY (s.a)
+    UNION ALL SELECT 'd' || v.session_id FROM training_session_drill v, s WHERE v.session_id = ANY (s.a)
+    UNION ALL SELECT 'a' || v.session_id || v.player_id FROM training_attendance v, s WHERE v.session_id = ANY (s.a)
+    UNION ALL SELECT 'n' || n.id FROM news_post n
+               WHERE n.id = ANY (ARRAY(SELECT value::uuid FROM jsonb_each_text(z) WHERE key ~ '^[np]2'))) y(x)
+$$ LANGUAGE sql STABLE;
+
+-- The people the narrow-only comparison asks, as the owner: everyone holding
+-- a live `player` assignment (every pupil any section has staged, and the
+-- seed's), and one holder of every other class of live assignment (its role
+-- and whether it names a boy), a seed account where one holds it.
+CREATE OR REPLACE FUNCTION _v129_people() RETURNS uuid[] AS $$
+  WITH a AS (SELECT r.person_id, r.role, EXISTS (SELECT 1 FROM assignment_subject g WHERE g.assignment_id = r.id) AS named
+               FROM role_assignment r WHERE r.active)
+  SELECT coalesce(array_agg(DISTINCT p), '{}') FROM (
+    SELECT person_id AS p FROM a WHERE role = 'player'
+    UNION
+    (SELECT DISTINCT ON (role, named) person_id FROM a WHERE role <> 'player'
+      ORDER BY role, named, (person_id::text NOT LIKE '88888888-%'), person_id::text COLLATE "C")) x
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Whether a person holds a live `player` assignment, as the owner.
+CREATE OR REPLACE FUNCTION _v129_holds_player(p_person uuid) RETURNS boolean AS $$
+  SELECT EXISTS (SELECT 1 FROM role_assignment WHERE person_id = p_person AND role = 'player' AND active)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The break: pupil_side_on() answering true (the gap db/129 closed), and
+-- put back, as the owner. Returns the two bodies' md5, so the section sees
+-- that each was changed and then restored.
+CREATE OR REPLACE FUNCTION _v129_break(p_broken boolean) RETURNS text AS $$
+DECLARE f text;
+BEGIN
+  FOREACH f IN ARRAY ARRAY['pupil_side_on(text,uuid,text,uuid,uuid,date)', 'pupil_side_on(text,uuid,text,uuid,uuid)'] LOOP
+    IF p_broken THEN
+      EXECUTE replace(pg_get_functiondef(f::regprocedure), 'SELECT NOT EXISTS (SELECT 1 FROM role_assignment a',
+                                                            'SELECT true OR NOT EXISTS (SELECT 1 FROM role_assignment a');
+    ELSE
+      EXECUTE replace(pg_get_functiondef(f::regprocedure), 'SELECT true OR NOT EXISTS (SELECT 1 FROM role_assignment a',
+                                                            'SELECT NOT EXISTS (SELECT 1 FROM role_assignment a');
+    END IF;
+  END LOOP;
+  RETURN (SELECT string_agg(md5(prosrc), ' ' ORDER BY oid::regprocedure::text COLLATE "C") FROM pg_proc WHERE proname = 'pupil_side_on');
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/129 (section 106) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -29388,7 +29577,8 @@ $v49$;
   --                its earlier rows (f42a, its bus, nets, post, balls: Q2);
   --                loses the 15XI's after the move (f41n, its bus, nets, the
   --                post and plan of now). A himself: the same old season by
-  --                (5), his new side whole by his `player` row (1), and his
+  --                (5), his new side from the day he joined by his `player`
+  --                row (1) (dated since db/129, §106: not f42a), and his
   --                old side's post and plan of his time on it (n41a, p41a),
   --                not the ones after he left (n41n, p41n) (Kameel, 22 Oct
   --                2026: news_post_read_old_side)
@@ -29540,7 +29730,9 @@ $v49$;
     -- ── (after) ──
     FOR k, want IN SELECT * FROM (VALUES
         ('g',    'fixtures [f41a f41d f41s f41w f42d f42n f43b] trips [t41a] training [s41a s42d s42n] posts [n41a n42n p41a] balls [f41a]'),
-        ('aboy', 'fixtures [f41a f41d f41s f41w f42a f42d f42n f43b] trips [t41a t42a] training [s41a s42a s42d s42n] posts [n41a n42a n42n p41a] balls [f41a f42a]')) x LOOP
+        -- Since db/129 his `player` row reads the 19XI only from the day he
+        -- joined it (Q2): not f42a, its bus, nets, post or balls (§106).
+        ('aboy', 'fixtures [f41a f41d f41s f41w f42d f42n f43b] trips [t41a] training [s41a s42d s42n] posts [n41a n42n p41a] balls [f41a]')) x LOOP
       PERFORM _as((z->>k)::uuid);
       got := _v117_reads(z);
       PERFORM _assert(got = want, format('§94 (after): the %s reads %s, the design gives %s', k, got, want));
@@ -32571,6 +32763,201 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 105
   -- └── db/128 (section 105) ──────────────────────────────────────────
+
+  -- ┌── db/129 (section 106) ─────────────────────────────────────────
+  -- ── 106. The moved boy's own reach is dated (Season rollover, S2's last slice) ──
+  -- docs/design/SEASON_ROLLOVER.md §0, §1.3, §2.2; Kameel 15 Oct 2026: D1,
+  -- and Q2 as recommended ("a boy who joins U15A in January does not read
+  -- U15A's 2026 fixtures, scorecards, posts or plans"). Rows are
+  -- _v129_stage()'s, invented; the move is the office's own UPDATE of
+  -- player.team_code through scrbrd_app with app.effective_on set, as the move
+  -- route writes it. What each label holds:
+  --   (before)    B on the U15F since t-90 reads its rows (f23a, f23n) and f24u
+  --               by his name on its sheet; T, on the U16F since t-90, reads
+  --               all the U16F's; C, who joined it on M, its rows from M and,
+  --               as f24c's scorer, f24c and what that row has always read
+  --               (the side's nets and posts): another assignment's reach stands
+  --   (move)      the office moves B to the U16F on M; his `player` row is
+  --               carried (db/112)
+  --   (after)     B reads the U16F's rows dated on or after M (f24d, f24n,
+  --               their toss, sheet, balls, bus; s24n with its drill and
+  --               attendance; n24n) and NOT those before it (f24a, its toss,
+  --               sheet, balls and bus; s24a, its drill and attendance;
+  --               n24a; the plan p24a; f24c); f24u still by the sheet
+  --               (branch 4)
+  --   (old side)  his U15F rows as the design says: f23a, of his time there
+  --               (db/117's branch 5); not f23n, after he left
+  --   (never)     T, who never moved, reads exactly what he read before
+  --   (staff)     the U16F coach, the office and a spectator read exactly
+  --               what they read before
+  --   (break)     pupil_side_on() made to answer true (the gap): B reads the
+  --               24XI's rows before M again; put back, he does not
+  --   (narrow)    for every person holding a live `player` assignment and one
+  --               holder of every other class of live assignment, over the
+  --               stage's rows and the seed's fixtures: what he reads with
+  --               db/129 is within what he read without it (the break), and
+  --               for every one with no live `player` assignment it is the same
+  --   (copy)      app_can_but_player() is app_can()'s body bar its one line,
+  --               so a change to app_can() not carried there goes red here
+  --   (text)      the seventeen reads: each app_can() with its twin
+  DECLARE
+    z      jsonb := _v129_stage();
+    OFFICE uuid;
+    B uuid; BBOY uuid;
+    t      date := sa_today();
+    XM     int;
+    k      text;
+    u      uuid;
+    n      int;
+    got    text;
+    want   text;
+    v_md5  text;
+    v_fix  text;
+    v_before jsonb := '{}';
+    v_new  jsonb := '{}';
+    ppl    uuid[];
+    bad    text;
+  BEGIN
+    OFFICE := (z->>'office')::uuid; B := (z->>'pb')::uuid; BBOY := (z->>'bboy')::uuid;
+    XM := (z->>'day_move')::date - t;
+
+    -- ── (before) ──
+    FOR k, want IN SELECT * FROM (VALUES
+        ('bboy', 'fixtures [f23a f23n f24u] toss [] sheet [f24u/pb] balls [] trips [] nets [] drills [] att [] posts []'),
+        ('cboy', 'fixtures [f24c f24d f24n] toss [f24n] sheet [f24n/pt] balls [f24n] trips [t24n] nets [s24a s24n] drills [s24a s24n] att [s24a s24n] posts [n24a n24n p24a]'),
+        ('tboy', 'fixtures [f24a f24c f24d f24n f24u] toss [f24a f24n] sheet [f24a/pt f24n/pt f24u/pb] balls [f24a f24n] trips [t24a t24n] nets [s24a s24n] drills [s24a s24n] att [s24a s24n] posts [n24a n24n p24a]')) x LOOP
+      PERFORM _as((z->>k)::uuid);
+      got := _v129_reads(z);
+      PERFORM _assert(got = want, format('§106 (before): the %s reads %s, the design gives %s', k, got, want));
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['tboy', 'cboy', 'coach24', 'office', 'spec'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      v_before := v_before || jsonb_build_object(k, _v129_reads(z));
+    END LOOP;
+
+    -- ── (move) ──
+    PERFORM _as(OFFICE);
+    PERFORM set_config('app.effective_on', (t + XM)::text, true);
+    UPDATE player SET team_code = 'U16F' WHERE id = B;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM set_config('app.effective_on', '', true);
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(n = 1, '§106 (move): the office could not move B');
+    PERFORM _assert(_v117_fact('rows', B) = format('U15F:-90..%s U16F:%s..', XM, XM),
+      format('§106 (move): B''s rows are %s', _v117_fact('rows', B)));
+    PERFORM _assert(_v112_roles(BBOY) = 'U15F:ended U16F:live',
+      format('§106 (move): B''s own `player` rows are %s (db/112''s carry)', _v112_roles(BBOY)));
+
+    -- ── (after), (old side) ──
+    want := 'fixtures [f23a f24d f24n f24u] toss [f24n] sheet [f24n/pt f24u/pb] balls [f24n] trips [t24n] nets [s24n] drills [s24n] att [s24n] posts [n24n]';
+    PERFORM _as(BBOY);
+    got := _v129_reads(z);
+    PERFORM _assert(got = want, format('§106 (after): B reads %s, the design gives %s', got, want));
+    v_fix := got;
+    -- ...and by the rule asked, not by chance: his own `player` row at the
+    -- U16F is live, the reach is there for the day he joined and not before;
+    -- and C's at f24c stands by his scorer's row.
+    PERFORM _assert(app_can('fixture.read', '11111111-1111-1111-1111-111111111111'::uuid, 'U16F',
+                            'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, (z->>'f24a')::uuid)
+                    AND NOT pupil_side_on('fixture.read', '11111111-1111-1111-1111-111111111111'::uuid, 'U16F',
+                                          'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, (z->>'f24a')::uuid)
+                    AND pupil_side_on('fixture.read', '11111111-1111-1111-1111-111111111111'::uuid, 'U16F',
+                                      'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, (z->>'f24d')::uuid)
+                    AND NOT pupil_side_on('fixture.read', '11111111-1111-1111-1111-111111111111'::uuid, 'U16F',
+                                          'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, (z->>'f24c')::uuid)
+                    AND NOT pupil_side_on('team.read', '11111111-1111-1111-1111-111111111111'::uuid, 'U16F',
+                                          'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, '00000000-0000-0000-0000-000000000000'::uuid, t + XM - 1)
+                    AND pupil_side_on('team.read', '11111111-1111-1111-1111-111111111111'::uuid, 'U16F',
+                                      'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, '00000000-0000-0000-0000-000000000000'::uuid, t + XM),
+      '§106 (after): pupil_side_on() does not answer by the day he joined (no before it, yes on it)');
+    PERFORM _as((z->>'cboy')::uuid);
+    PERFORM _assert(pupil_side_on('fixture.read', '11111111-1111-1111-1111-111111111111'::uuid, 'U16F',
+                                  'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, (z->>'f24c')::uuid)
+                    AND NOT pupil_side_on('fixture.read', '11111111-1111-1111-1111-111111111111'::uuid, 'U16F',
+                                          'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, (z->>'f24a')::uuid),
+      '§106 (after): C''s scorer row does not keep f24c, or keeps him f24a');
+
+    -- ── (never), (staff) ──
+    FOREACH k IN ARRAY ARRAY['tboy', 'cboy', 'coach24', 'office', 'spec'] LOOP
+      PERFORM _as((z->>k)::uuid);
+      got := _v129_reads(z);
+      PERFORM _assert(got = v_before->>k, format('§106 (never/staff): the %s read %s before the move and %s after', k, v_before->>k, got));
+    END LOOP;
+    PERFORM _assert(v_before->>'coach24' = v_before->>'tboy'
+                    AND v_before->>'office' = replace(v_before->>'tboy', 'fixtures [', 'fixtures [f23a f23n '),
+      format('§106 (staff): the U16F coach reads %s and the office %s, not the side''s whole season (the test proves nothing)',
+             v_before->>'coach24', v_before->>'office'));
+
+    -- ── (narrow): with db/129, then with the clause broken ──
+    ppl := _v129_people();
+    FOREACH u IN ARRAY ppl LOOP
+      PERFORM _as(u);
+      v_new := v_new || jsonb_build_object(u::text, _v129_ids(z));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+
+    -- ── (break) ──
+    v_md5 := _v129_break(true);
+    PERFORM _as(BBOY);
+    got := _v129_reads(z);
+    want := 'fixtures [f23a f24a f24c f24d f24n f24u] toss [f24a f24n] sheet [f24a/pt f24n/pt f24u/pb] balls [f24a f24n] trips [t24a t24n] nets [s24a s24n] drills [s24a s24n] att [s24a s24n] posts [n24a n24n p24a]';
+    PERFORM _assert(got = want, format('§106 (break): with the clause answering true B reads %s, not the U16F''s whole season %s', got, want));
+    n := 0;
+    FOREACH u IN ARRAY ppl LOOP
+      PERFORM _as(u);
+      got := _v129_ids(z);
+      SELECT string_agg(x, ' ') INTO bad
+        FROM unnest(string_to_array(nullif(v_new->>u::text, ''), ' ')) x
+       WHERE x <> ALL (string_to_array(got, ' '));
+      PERFORM _assert(bad IS NULL, format('§106 (narrow): %s reads %s with db/129 and not without it', u, left(bad, 300)));
+      PERFORM set_config('app.user_id', '', true);
+      IF NOT _v129_holds_player(u) THEN
+        PERFORM _as(u);
+        PERFORM _assert(got = v_new->>u::text, format('§106 (narrow): %s holds no `player` row and reads apart with and without db/129', u));
+        n := n + 1;
+      END IF;
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v129_break(false) <> v_md5, '§106 (break): pupil_side_on() was not changed');
+    PERFORM _assert(md5(regexp_replace(btrim((SELECT prosrc FROM pg_proc WHERE oid = 'pupil_side_on(text,uuid,text,uuid,uuid)'::regprocedure)), '\s+', ' ', 'g'))
+                    = md5(regexp_replace(btrim(replace((SELECT prosrc FROM pg_proc WHERE oid = 'pupil_side_on(text,uuid,text,uuid,uuid,date)'::regprocedure),
+                                                       'coalesce(p_on, side_day(p_fixture))', 'side_day(p_fixture)')), '\s+', ' ', 'g'))
+                    AND position('true OR' IN (SELECT string_agg(prosrc, ' ') FROM pg_proc WHERE proname = 'pupil_side_on')) = 0,
+      '§106 (break): pupil_side_on() is not db/129''s again');
+    PERFORM _as(BBOY);
+    PERFORM _assert(_v129_reads(z) = v_fix, format('§106 (break): put back, B reads %s, not %s', _v129_reads(z), v_fix));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(cardinality(ppl) > 20 AND n > 10
+                    AND ARRAY[BBOY, (z->>'tboy')::uuid, (z->>'cboy')::uuid] <@ ppl
+                    AND v_new->>BBOY::text <> '' AND v_new->>(z->>'tboy') <> '',
+      format('§106 (narrow): %s people, %s without a `player` row, or the stage''s boys not asked: it proves nothing', cardinality(ppl), n));
+
+    -- ── (copy) ──
+    PERFORM _assert(
+      replace((SELECT prosrc FROM pg_proc WHERE oid = 'app_can_but_player(text,uuid,text,uuid,uuid)'::regprocedure),
+              chr(10) || '       AND a.role <> ''player''', '')
+        = (SELECT prosrc FROM pg_proc WHERE oid = 'app_can(text,uuid,text,uuid,uuid)'::regprocedure)
+      AND position('AND a.role <> ''player''' IN (SELECT prosrc FROM pg_proc WHERE oid = 'app_can_but_player(text,uuid,text,uuid,uuid)'::regprocedure)) > 0,
+      '§106 (copy): app_can_but_player() is not app_can()''s body bar its one line: carry the change to app_can() there');
+
+    -- ── (text) ──
+    SELECT string_agg(c.relname || '.' || p.polname, ' ' ORDER BY c.relname COLLATE "C") INTO bad
+      FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid
+     WHERE p.polname IN ('match_read', 'drs_review_read', 'match_broadcast_read', 'match_condition_override_read',
+                         'match_conditions_read', 'match_official_read', 'match_pitch_report_read', 'match_toss_read',
+                         'match_weather_read', 'match_result_confirmation_read', 'match_result_decision_read',
+                         'ball_event_read', 'match_squad_read', 'trip_read', 'training_session_read',
+                         'training_session_drill_read', 'training_attendance_read')
+       AND ((length(pg_get_expr(p.polqual, p.polrelid)) - length(replace(pg_get_expr(p.polqual, p.polrelid), 'app_can(', '')))
+            <> (length(pg_get_expr(p.polqual, p.polrelid)) - length(replace(pg_get_expr(p.polqual, p.polrelid), ') AND pupil_side_on(', '')))
+               * length('app_can(') / length(') AND pupil_side_on(')
+            OR position(') AND pupil_side_on(' IN pg_get_expr(p.polqual, p.polrelid)) = 0);
+    PERFORM _assert(bad IS NULL AND (SELECT count(*) FROM pg_policy WHERE pg_get_expr(polqual, polrelid) LIKE '%pupil_side_on(%') = 17,
+      format('§106 (text): these reads have an app_can() without its dated twin: %s', coalesce(bad, '(none; but not seventeen reads ask it)')));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 106
+  -- └── db/129 (section 106) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

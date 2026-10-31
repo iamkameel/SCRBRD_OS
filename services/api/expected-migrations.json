@@ -123,5 +123,6 @@
   "125_union_selector_list.sql",
   "126_matchday_safety.sql",
   "127_fixture_class.sql",
-  "128_sa_day.sql"
+  "128_sa_day.sql",
+  "129_pupil_reach_dated.sql"
 ]
