@@ -161,7 +161,7 @@ export const READ_QUERIES = {
                   -- Not the all-zeros person: for a parent at the host whose
                   -- only child there plays for the visitors, that answered
                   -- 'home'.
-                  -- Branch (1) dated for a pupil's own `player` row as
+                  -- Branch (1) dated for a pupil's own player row as
                   -- match_read asks it (db/129): a fixture of his side from
                   -- before he joined it is not his through that row.
                   (case when (app_can('fixture.read', m.school_id, m.team_code,
