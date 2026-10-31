@@ -92,6 +92,7 @@ import {
 import { countsInOver, NOT_IN_OVER, keeperOf, isKeeperRef, isWicketBall, boundaryHit } from "@scrbrd/scoring";
 import { resultFromRow } from "@scrbrd/scoring";   // SCRBRD-130 R1
 import { deriveFacts, FACT_KIND } from "@scrbrd/scoring";   // Recognition R1
+import { fixtureClass, COMP_TYPES } from "@scrbrd/scoring";   // Recognition R3
 import { matchFoldContext, EVENT_COLUMNS } from "../services/api/write/events-api.mjs";
 import { rejudgeAfterAmendment } from "../services/api/write/rejudge.mjs";   // the Laws audit F4, db/121
 import { baseCard, TYPED as BOOK_TYPED } from "../packages/scoring/test/scorebook-cards.mjs";
@@ -1866,6 +1867,23 @@ try {
   // match_result() held to the fold — the outcome, the margin, who won and
   // who decided, and each innings' figures, ending, overs and target — and
   // both to what the design says the log is.
+  // ── Recognition R3 (db/127): the fixture class, both ways ──────────
+  // fixture_class(match) held to fixtureClass() (result.mjs) on every result
+  // and rain log below: the reason a match stands on no board, from the
+  // fold's result and from match_result()'s row, and the class.
+  /** @type {{id: string, result: any}[]} */
+  const resultMatches = [];
+  /** @param {string} rm @param {any} foldResult @param {any} sqlRow @param {string} name @param {any} [fixture] */
+  const fixtureClassBoth = async (rm, foldResult, sqlRow, name, fixture = null) => {
+    const [fc] = await q(`select * from fixture_class($1)`, [rm]);
+    const js = fixtureClass(fixture, foldResult);
+    const fromRow = fixtureClass(fixture, resultFromRow(sqlRow));
+    ok(`...fixture_class() is fixtureClass(): ${js.fixtureClass}, ${js.noBoard ?? "no reason"}`,
+       fc.fixture_class === js.fixtureClass && fc.no_board === js.noBoard && fromRow.noBoard === js.noBoard
+       && fromRow.fixtureClass === js.fixtureClass,
+       JSON.stringify({ name, sql: fc, fold: js, row: fromRow }));
+  };
+
   group(`The result (SCRBRD-114 phase 3a, db/69; the super over, 3b, db/71): match_result() is describeResult(), over ${RESULT_LOGS.length} logs`);
   for (const x of RESULT_LOGS) {
     const [{ id: rm }] = await q(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
@@ -1928,6 +1946,9 @@ try {
        sql.outcome === x.expect.outcome && sql.margin_kind === x.expect.marginKind && sql.margin === x.expect.marginValue
        && sql.decided_by === x.expect.decidedBy && sql.winner_side === x.expect.winnerSide,
        JSON.stringify({ sql: said, expect: x.expect }));
+    // Recognition R3 (db/127): fixture_class() is fixtureClass() over the fold's result, and over SQL's own row.
+    await fixtureClassBoth(rm, folded.result, sql, x.name);
+    resultMatches.push({ id: rm, result: folded.result });
   }
 
   // ── SCRBRD-130 R1 (db/73): rain, both ways ──────────────────────────
@@ -1974,6 +1995,8 @@ try {
        JSON.stringify({ sql: said, fold, sqlInnings: sinn, foldInnings: inn }));
     ok("...and is what the design says it is", sql.outcome === x.expect.outcome && sql.margin_kind === x.expect.marginKind
        && sql.margin === x.expect.marginValue && sql.winner_side === x.expect.winnerSide, JSON.stringify({ sql: said, expect: x.expect }));
+    await fixtureClassBoth(rm, folded.result, sql, x.name);   // Recognition R3 (db/127)
+    resultMatches.push({ id: rm, result: folded.result });
     const stops = [];
     for (let i = 0; i < folded.innings.length; i++) {
       const [s] = await q(`select * from innings_stop_as_folded($1, $2::smallint)`, [rm, i]);
@@ -1984,6 +2007,33 @@ try {
        JSON.stringify({ sql: stops, want }));
   }
   // ── end SCRBRD-130 R1 ──
+
+  // Recognition R3 (db/127): the class, both ways. Every reason is held to
+  // the twin above, on friendlies. Here a fixture under a competition of each
+  // comp_type (a competition is named when the fixture is made: it does not
+  // change once scored, db/67), not started, completed with nothing played,
+  // and abandoned: the class is the competition's, the reason the result's,
+  // in SQL as in the twin, from the fold and from match_result()'s row.
+  group(`The fixture class (Recognition R3, db/127): fixture_class() is fixtureClass() under each of ${COMP_TYPES.join(", ")}`);
+  {
+    const seen = new Set(resultMatches.map((m) => fixtureClass(null, m.result).noBoard ?? "none"));
+    ok("the friendlies above met every reason, and none",
+       ["none", "decided_off_field", "abandoned", "no_result", "adjusted_target"].every((k) => seen.has(k)), [...seen]);
+    for (const t of COMP_TYPES) {
+      const [{ id: comp }] = await q(`insert into competition (school_id, name, comp_type, format, level) values ($1, $2, $3, 'T20', 'school') returning id`,
+        [HIL, `Fold R3 ${t}`, t]);
+      await q(`insert into competition_entrant (competition_id, school_id, team_code, display_name) values ($1, $2, $3, 'Hilton 1st XI')`,
+        [comp, HIL, RESULT_SIDES.home]);
+      for (const status of ["scheduled", "complete", "abandoned"]) {
+        const [{ id: fm }] = await q(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status, competition_id)
+                                      values ($1, $2, $3, $4, 'T20', 20, $5, $6) returning id`,
+          [HIL, RESULT_SIDES.home, RESULT_SIDES.away, RESULT_STARTS_AT, status, comp]);
+        const folded = deriveMatch([], { startsAt: RESULT_STARTS_AT, status, sides: RESULT_SIDES, names: RESULT_NAMES });
+        const [sql] = await q(`select * from match_result_compute($1)`, [fm]);
+        await fixtureClassBoth(fm, folded.result, sql, `${t}, ${status}`, { competitionId: comp, compType: t });
+      }
+    }
+  }
 
   group("The door: a new ball with no type, or a wicket with no method, is refused");
   const M_DOOR = (await q(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status)

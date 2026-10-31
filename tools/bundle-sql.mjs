@@ -840,6 +840,15 @@ SELECT
         AND position('majority_on(p.born) > sa_today()' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('passport_consent_writer_ok(uuid)'))) > 0
         AND position('log_restricted_read(''scouting_candidates''' IN (SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('scouting_candidates()'))) > 0
        THEN 'OK' ELSE 'PROBLEM' END                             AS "The union selector's list",
+  -- db/127: RECOGNITION R3's fixture class (Q1–Q3): fixture_class() a
+  -- pinned definer nobody may call, and comp_type closed to league,
+  -- knockout and festival by a validated CHECK.
+  CASE WHEN to_regprocedure('fixture_class(uuid)') IS NOT NULL
+        AND NOT has_function_privilege('scrbrd_app', to_regprocedure('fixture_class(uuid)'), 'EXECUTE')
+        AND NOT has_function_privilege('public', to_regprocedure('fixture_class(uuid)'), 'EXECUTE')
+        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = to_regclass('competition')
+                     AND conname = 'competition_comp_type_known' AND convalidated)
+       THEN 'OK' ELSE 'PROBLEM' END                             AS "The fixture class",
   CASE WHEN (SELECT count(*) FROM schema_migration) = ${migrations.length}
        THEN 'OK — ${migrations.length} applied'
        ELSE 'PROBLEM — ' || (SELECT count(*) FROM schema_migration)::text END AS "Migration ledger",

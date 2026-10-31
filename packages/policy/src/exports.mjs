@@ -79,6 +79,8 @@ export const NAMED_NOT_EXPORTED = Object.freeze([
   // db/125: a union's list of named boys across schools is a door with a
   // record, never a file (UNION_SELECTOR_FIND D7; GA-I24/25 A1 extended).
   "passport_union_list",
+  // His name through the passport's door (S3): one boy at a time, never a file.
+  "passport_name",
   // A record about a boy's body (PUBLIC_DATA §5a), and his load: read
   // through definers under player.workload.read (level 2), which the table
   // rule cannot see into.
