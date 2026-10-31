@@ -8,8 +8,9 @@
  *
  *   node apps/web/test/league.test.mjs
  */
+import { COMP_TYPES as COMP_TYPE_LIST } from "@scrbrd/scoring";
 import {
-  LEAGUE_FORMATS, RULE_FIELDS, addDays, bracketRounds, checklistCounts, entrantCounts, entrantSummary, entrantWords, figureKind,
+  COMP_TYPES, LEAGUE_FORMATS, RULE_FIELDS, addDays, bracketRounds, checklistCounts, entrantCounts, entrantSummary, entrantWords, figureKind,
   formOfRules, instantOf, invitationsWaiting, invitationsWords, leagueRefusal, leagueSetupState, outcomeWords, planGroups, refusedWords, resumeStep, rulesOfForm, saDay, saTime, saToday,
   sideWords, slotId, slotWords, startOfDay, toggledLocks,
 } from "../src/lib/league.js";
@@ -141,6 +142,12 @@ ok("too few entrants", /at least two/.test(leagueRefusal(e("too_few_entrants")))
 ok("a code from another screen goes to its words", leagueRefusal(e("citation_required"), () => "cited") === "cited");
 ok("a code nobody worded names itself", /weird_code/.test(leagueRefusal(e("weird_code"))));
 ok("no answer at all", /Could not reach the server/.test(leagueRefusal(new Error("offline"))));
+
+group("The sheet's kinds are comp_type's closed list (RECOGNITION R3, db/127)");
+ok("the picker offers exactly league, knockout and festival, in that order",
+   JSON.stringify(COMP_TYPES.map((t) => t.value)) === JSON.stringify(COMP_TYPE_LIST), JSON.stringify(COMP_TYPES.map((t) => t.value)));
+ok("every kind has words", COMP_TYPES.every((t) => typeof t.label === "string" && t.label.length > 0));
+ok("no inter-house kind before V2 (Q2)", !COMP_TYPES.some((t) => /house/i.test(t.value)));
 
 console.log(`\n${"─".repeat(52)}\nLEAGUE WORDS: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

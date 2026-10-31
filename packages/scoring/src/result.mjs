@@ -291,3 +291,61 @@ export function resultFromRow(row) {
   };
   return { ...r, margin: marginString(r.outcome, r.marginKind, r.marginValue) };
 }
+
+// ── RECOGNITION R3: the fixture class (db/127 fixture_class()) ─────────
+// docs/design/RECOGNITION_reconciliation.md §5 R3, on Q1–Q3. The twin of
+// db/127's fixture_class(), rule for rule; tools/smoke-fold-figures.mjs holds
+// the two to each other over every result and rain log.
+
+/** competition.comp_type's closed list (db/127 competition_comp_type_known). Inter-house waits for V2 (Q2). */
+export const COMP_TYPE = Object.freeze({ LEAGUE: "league", KNOCKOUT: "knockout", FESTIVAL: "festival" });
+/** @type {readonly string[]} */
+export const COMP_TYPES = Object.freeze([COMP_TYPE.LEAGUE, COMP_TYPE.KNOCKOUT, COMP_TYPE.FESTIVAL]);
+
+/** A fixture's class (Q1, Q3). */
+export const FIXTURE_CLASS = Object.freeze({ COMPETITIVE: "competitive", FESTIVAL: "festival", FRIENDLY: "friendly" });
+
+/** Why a match stands on no board (Q3), in the order the first that holds is the reason. */
+export const NO_BOARD = Object.freeze({
+  DECIDED_OFF_FIELD: "decided_off_field", ABANDONED: "abandoned", NO_RESULT: "no_result", ADJUSTED_TARGET: "adjusted_target",
+});
+
+/**
+ * A fixture's class and the reason it stands on no board, as db/127's
+ * fixture_class() gives them.
+ *
+ *   class     friendly with no competition (Q1); festival under a festival;
+ *             competitive under a league or a knockout
+ *   noBoard   decided_off_field  a decision changed the outcome (conceded,
+ *                                walkover, an award overriding play); an
+ *                                award that only names who goes through
+ *                                leaves play's outcome, and is not one
+ *             null               still in progress, or nothing below holds
+ *             abandoned · no_result   the outcome
+ *             adjusted_target    the chase's target revised (umpires or DLS)
+ *
+ * The super over is no reason: its innings are in no career already (db/71),
+ * and the match's own stand. A board also asks match_verified() (db/114).
+ *
+ * @param {{competitionId?: string | null, compType?: string | null} | null | undefined} fixture
+ * @param {Pick<MatchResult, "outcome" | "playOutcome" | "decisionApplied"> & {revisedTarget?: string | null} | null | undefined} result
+ *   describeResult()'s (null while undecided) or resultFromRow()'s
+ * @returns {{fixtureClass: string, noBoard: string | null}}
+ */
+export function fixtureClass(fixture, result) {
+  const cls = fixture?.competitionId == null ? FIXTURE_CLASS.FRIENDLY
+    : fixture.compType === COMP_TYPE.FESTIVAL ? FIXTURE_CLASS.FESTIVAL : FIXTURE_CLASS.COMPETITIVE;
+  return { fixtureClass: cls, noBoard: noBoardReason(result) };
+}
+
+/** @param {Pick<MatchResult, "outcome" | "playOutcome" | "decisionApplied"> & {revisedTarget?: string | null} | null | undefined} r */
+function noBoardReason(r) {
+  if (r == null) return null;
+  if (r.decisionApplied === true && r.outcome !== r.playOutcome) return NO_BOARD.DECIDED_OFF_FIELD;
+  if (r.outcome == null || r.outcome === OUTCOME.IN_PROGRESS) return null;
+  if (r.outcome === OUTCOME.ABANDONED) return NO_BOARD.ABANDONED;
+  if (r.outcome === OUTCOME.NO_RESULT) return NO_BOARD.NO_RESULT;
+  if (r.revisedTarget != null) return NO_BOARD.ADJUSTED_TARGET;
+  return null;
+}
+// ── end RECOGNITION R3 ──

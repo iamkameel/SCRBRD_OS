@@ -13,8 +13,10 @@
  *   S. the words: resultWords() over match_result()'s row (resultFromRow())
  *      are describeResult()'s, and the public page's leave a reason out
  */
-import { deriveMatch, describeResult, resultWords, resultFromRow, OUTCOME } from "../src/index.mjs";
+import { deriveMatch, describeResult, resultWords, resultFromRow, OUTCOME,
+         fixtureClass, COMP_TYPE, COMP_TYPES, FIXTURE_CLASS, NO_BOARD } from "../src/index.mjs";
 import { RESULT_LOGS, RESULT_SIDES, RESULT_NAMES, RESULT_STARTS_AT } from "./result-logs.mjs";
+import { RAIN_LOGS, RAIN_SIDES, RAIN_NAMES, RAIN_STARTS_AT } from "./rain-logs.mjs";
 
 let pass = 0, fail = 0;
 /** @type {(n: string, c: unknown, detail?: unknown) => void} */
@@ -89,6 +91,87 @@ group("S. The words over SQL's row are the fold's");
      && resultWords(/** @type {any} */ (resultFromRow({ outcome: "draw" })), {}) === "Match drawn"
      && resultWords(/** @type {any} */ (resultFromRow({ outcome: "abandoned" })), {}) === "Match abandoned");
   ok("nothing in words while a match is under way", resultWords(/** @type {any} */ (resultFromRow({ outcome: "in_progress" })), {}) === null);
+}
+
+// ── RECOGNITION R3: the fixture class (db/127 fixture_class()'s twin) ──
+//   T. the class: friendly with no competition (Q1), festival under a
+//      festival, competitive under a league or a knockout; comp_type's list
+//   U. the no-board reason over every result and rain log the fold gives,
+//      in db/127's order; the same logs smoke-fold-figures holds SQL to
+//   V. the same reasons read off match_result()'s row (resultFromRow())
+group("T. The fixture class (RECOGNITION R3, Q1–Q3)");
+{
+  ok("comp_type's list is league, knockout, festival; no inter-house before V2 (Q2)",
+     JSON.stringify(COMP_TYPES) === JSON.stringify(["league", "knockout", "festival"]) && Object.isFrozen(COMP_TYPES), COMP_TYPES);
+  const won = { outcome: OUTCOME.HOME_WIN, playOutcome: OUTCOME.HOME_WIN, decisionApplied: false, revisedTarget: null };
+  ok("no competition: a friendly (Q1)", fixtureClass({ competitionId: null, compType: null }, won).fixtureClass === FIXTURE_CLASS.FRIENDLY);
+  ok("...and with nothing told at all", fixtureClass(null, null).fixtureClass === FIXTURE_CLASS.FRIENDLY);
+  ok("...a competition's type is not read without the competition",
+     fixtureClass({ competitionId: null, compType: COMP_TYPE.FESTIVAL }, won).fixtureClass === FIXTURE_CLASS.FRIENDLY);
+  ok("a festival's fixture: festival (Q3)", fixtureClass({ competitionId: "c", compType: COMP_TYPE.FESTIVAL }, won).fixtureClass === FIXTURE_CLASS.FESTIVAL);
+  ok("a league's fixture: competitive", fixtureClass({ competitionId: "c", compType: COMP_TYPE.LEAGUE }, won).fixtureClass === FIXTURE_CLASS.COMPETITIVE);
+  ok("a knockout's fixture: competitive", fixtureClass({ competitionId: "c", compType: COMP_TYPE.KNOCKOUT }, won).fixtureClass === FIXTURE_CLASS.COMPETITIVE);
+  ok("a won match has no reason", fixtureClass(null, won).noBoard === null);
+  ok("class and reason are independent: an abandoned festival fixture",
+     JSON.stringify(fixtureClass({ competitionId: "c", compType: "festival" }, { outcome: "abandoned", playOutcome: "abandoned", decisionApplied: false }))
+       === JSON.stringify({ fixtureClass: "festival", noBoard: "abandoned" }));
+}
+
+group("U. Why a match stands on no board, as the fold gives the result (db/127's order)");
+{
+  /** @type {Record<string, string | null>} */
+  const want = {
+    "a chase won by wickets": null,
+    "a tie, under no tie-break": null,
+    "a chase sealed abandoned: no result, never a win by runs": NO_BOARD.NO_RESULT,
+    "a chase never finished, the match complete": NO_BOARD.NO_RESULT,
+    "a chase under way": null,
+    "abandoned before a ball": NO_BOARD.ABANDONED,
+    "abandoned in the chase, by the organiser": NO_BOARD.ABANDONED,
+    "two innings a side: a draw": null,
+    "conceded in the chase": NO_BOARD.DECIDED_OFF_FIELD,
+    "a walkover, no ball bowled": NO_BOARD.DECIDED_OFF_FIELD,
+    "an award that overrides play": NO_BOARD.DECIDED_OFF_FIELD,
+    "an award on a tie names who goes through, and the tie stands": null,
+    "a concession on a match play decided: play stands": null,
+    "a super over won by wickets": null,
+    "a super over sealed abandoned: incomplete, and the organiser's award decides": null,
+  };
+  for (const [name, reason] of Object.entries(want)) {
+    const x = RESULT_LOGS.find((l) => l.name === name);
+    ok(`the log "${name}" is still in result-logs.mjs`, x != null);
+    if (!x) continue;
+    const got = fixtureClass(null, told(x)).noBoard;
+    ok(`${name}: ${reason ?? "no reason"}`, got === reason, got);
+  }
+  for (const x of RAIN_LOGS) {
+    const r = deriveMatch(x.log, { startsAt: RAIN_STARTS_AT, conditions: x.play ?? undefined, status: x.status,
+                                   sides: RAIN_SIDES, names: RAIN_NAMES }).result;
+    const e = x.expect;
+    const reason = e.outcome === OUTCOME.IN_PROGRESS ? null : e.outcome === OUTCOME.NO_RESULT ? NO_BOARD.NO_RESULT
+      : /\((DLS|revised target)\)$/.test(e.text ?? "") ? NO_BOARD.ADJUSTED_TARGET : null;
+    const got = fixtureClass(null, r).noBoard;
+    ok(`rain: ${x.name}: ${reason ?? "no reason"}`, got === reason, got);
+  }
+  ok("an adjusted target that also has no result is no result: the first that holds",
+     fixtureClass(null, { outcome: "no_result", playOutcome: "no_result", decisionApplied: false, revisedTarget: "dls_standard" }).noBoard === NO_BOARD.NO_RESULT);
+  ok("a concession on an abandoned match is decided off the field",
+     fixtureClass(null, { outcome: "home_win", playOutcome: "abandoned", decisionApplied: true }).noBoard === NO_BOARD.DECIDED_OFF_FIELD);
+  ok("an award naming who goes through, play still under way: no reason yet",
+     fixtureClass(null, { outcome: "in_progress", playOutcome: "in_progress", decisionApplied: true, revisedTarget: "umpires_revision" }).noBoard === null);
+}
+
+group("V. The same reasons off match_result()'s row (resultFromRow())");
+{
+  const row = (/** @type {any} */ o) => resultFromRow({ outcome: "home_win", play_outcome: "home_win", decision_applied: false, innings: [], ...o });
+  ok("a win: none", fixtureClass(null, row({})).noBoard === null);
+  ok("a chase's revised_target: adjusted target",
+     fixtureClass(null, row({ innings: [{ innings: 0 }, { innings: 1, revised_target: "umpires_revision" }] })).noBoard === NO_BOARD.ADJUSTED_TARGET);
+  ok("a walkover: decided off the field",
+     fixtureClass(null, row({ outcome: "away_win", play_outcome: "in_progress", decision_applied: true })).noBoard === NO_BOARD.DECIDED_OFF_FIELD);
+  ok("abandoned", fixtureClass(null, row({ outcome: "abandoned", play_outcome: "abandoned" })).noBoard === NO_BOARD.ABANDONED);
+  ok("no result", fixtureClass(null, row({ outcome: "no_result", play_outcome: "no_result" })).noBoard === NO_BOARD.NO_RESULT);
+  ok("in progress: none", fixtureClass(null, row({ outcome: "in_progress", play_outcome: "in_progress" })).noBoard === null);
 }
 
 console.log(`\n${"─".repeat(52)}\nRESULT SUITE: ${pass} passed, ${fail} failed`);

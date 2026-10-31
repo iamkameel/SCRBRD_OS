@@ -18,6 +18,8 @@
  * No colour and no token in here, so the suite can run it under plain node.
  */
 
+import { COMP_TYPE } from "@scrbrd/scoring";
+
 /** The formats the league route takes (db/67 competition_create). */
 export const LEAGUE_FORMATS = [
   { value: "T20", label: "T20", hint: "Twenty overs an innings." },
@@ -26,10 +28,11 @@ export const LEAGUE_FORMATS = [
   { value: "Two-Day", label: "Two-Day", hint: "Two innings a side over two days. The planner needs the match length from you." },
 ];
 
+/** The competition sheet's kinds: comp_type's closed list (db/127), each with its words. */
 export const COMP_TYPES = [
-  { value: "league", label: "League" },
-  { value: "knockout", label: "Knockout cup" },
-  { value: "festival", label: "Festival" },
+  { value: COMP_TYPE.LEAGUE, label: "League" },
+  { value: COMP_TYPE.KNOCKOUT, label: "Knockout cup" },
+  { value: COMP_TYPE.FESTIVAL, label: "Festival" },
 ];
 
 export const LEVELS = [
