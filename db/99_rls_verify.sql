@@ -8870,6 +8870,116 @@ CREATE OR REPLACE FUNCTION _v125_scout_access(y jsonb, p_reader uuid) RETURNS te
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/125 (section 102) ─────────────────────────────────────────────
 
+-- ┌── db/127 (section 104). RECOGNITION R3: the fixture class (Q1–Q3)
+-- _v127_stage(): Hilton's three competitions, one of each comp_type, its
+-- 1st XI entered in each, and the fixtures section 104 reads, each with a
+-- log written as the owner (_first24_73() and _ev_73(), db/73's):
+--   fr  a friendly, won in the chase              friendly / none
+--   lg  the league's, the same                    competitive / none
+--   ko  the knockout's, the same                  competitive / none
+--   fe  the festival's, the same                  festival / none
+--   ab  the league's, abandoned, nothing bowled   competitive / abandoned
+--   nr  the festival's, complete, the chase never finished   festival / no_result
+--   at  a friendly, the chase terminated above the umpires' par   friendly / adjusted_target
+--   wo  the knockout's, a walkover before a ball  competitive / decided_off_field
+--   aw  the knockout's, tied, an award naming who goes through   competitive / none
+--   lv  the league's, the first innings under way competitive / none yet
+CREATE OR REPLACE FUNCTION _v127_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  DEC uuid := '88888888-0000-0000-0000-000000000006';
+  T timestamptz := '2026-10-17 10:00+02';
+  lg_c uuid; ko_c uuid; fe_c uuid; c uuid;
+  y jsonb := '{}'; k text; x uuid;
+BEGIN
+  INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (HIL, 'Verify 127 League', 'league', 'T20', 'school') RETURNING id INTO lg_c;
+  INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (HIL, 'Verify 127 Cup', 'knockout', 'T20', 'school') RETURNING id INTO ko_c;
+  INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (HIL, 'Verify 127 Festival', 'festival', 'T20', 'school') RETURNING id INTO fe_c;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name)
+  SELECT z, HIL, '1XI', 'Verify 127 Hilton 1st XI' FROM unnest(ARRAY[lg_c, ko_c, fe_c]) z;
+  FOR k, c IN SELECT * FROM (VALUES ('fr', NULL::uuid), ('lg', lg_c), ('ko', ko_c), ('fe', fe_c), ('ab', lg_c), ('nr', fe_c),
+                                    ('at', NULL), ('wo', ko_c), ('aw', ko_c), ('lv', lg_c)) v LOOP
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+    VALUES (HIL, '1XI', 'Verify 127 ' || k, T, 'cricket', 'T20', 2,
+            CASE k WHEN 'ab' THEN 'abandoned' WHEN 'wo' THEN 'scheduled' WHEN 'lv' THEN 'live' ELSE 'complete' END, c)
+    RETURNING id INTO x;
+    y := y || jsonb_build_object(k, x, 'c_' || k, c);
+    IF k IN ('fr', 'lg', 'ko', 'fe', 'nr', 'at', 'aw') THEN
+      INSERT INTO match_conditions (match_id, set_id, set_version, doc, sources, doc_hash)
+      SELECT x, r.set_id, r.set_version, r.doc, r.sources, '' FROM match_conditions_compute(x) r;
+      -- The home side's 24 off two overs, sealed; the chase's innings begun.
+      PERFORM _first24_73(x, 2, 25);
+    END IF;
+    IF k IN ('fr', 'lg', 'ko', 'fe') THEN
+      -- The chase: 25 off 7, the target reached.
+      PERFORM _ev_73(x, 1::smallint, 'ball', 'run', 4, '{}', NULL, NULL, 6);
+      PERFORM _ev_73(x, 1::smallint, 'ball', 'run', 1, '{}');
+      PERFORM _ev_73(x, 1::smallint, 'innings_end', NULL, NULL, '{"reason":"target_reached","confirmed":{"runs":25,"wickets":0,"balls":7}}');
+    ELSIF k = 'nr' THEN
+      -- The chase: 6 off 6, and nothing more; the match marked complete.
+      PERFORM _ev_73(x, 1::smallint, 'ball', 'run', 1, '{}', NULL, NULL, 6);
+    ELSIF k = 'at' THEN
+      -- The chase: 15 off 9, rain, the umpires' par 13, terminated: won by 2 on par.
+      PERFORM _ev_73(x, 1::smallint, 'ball', 'run', 2, '{}', NULL, NULL, 6);
+      PERFORM _ev_73(x, 1::smallint, 'ball', 'run', 1, '{}', NULL, NULL, 3);
+      PERFORM _ev_73(x, 1::smallint, 'play_stopped', NULL, NULL, '{"reason":"rain"}');
+      PERFORM _ev_73(x, 1::smallint, 'revision', NULL, NULL, '{"overs":null,"target":null,"reason":"rain","par":13}');
+      PERFORM _ev_73(x, 1::smallint, 'innings_end', NULL, NULL, '{"reason":"abandoned","confirmed":{"runs":15,"wickets":0,"balls":9}}');
+    ELSIF k = 'aw' THEN
+      -- The chase: 24 off 12, all its overs: a tie; the organiser names who goes through.
+      PERFORM _ev_73(x, 1::smallint, 'ball', 'run', 2, '{}', NULL, NULL, 12);
+      PERFORM _ev_73(x, 1::smallint, 'innings_end', NULL, NULL, '{"reason":"overs_complete","confirmed":{"runs":24,"wickets":0,"balls":12}}');
+      INSERT INTO match_result_decision (match_id, kind, side, reason, overrides_play, decided_by)
+      VALUES (x, 'awarded', 'home', 'Verify 127: fewer wickets lost in the tie, under the cup''s rules', false, DEC);
+    ELSIF k = 'wo' THEN
+      INSERT INTO match_result_decision (match_id, kind, side, reason, overrides_play, decided_by)
+      VALUES (x, 'walkover', 'home', 'Verify 127: the visitors did not arrive', false, DEC);
+    ELSIF k = 'lv' THEN
+      PERFORM _ev_73(x, 0::smallint, 'innings_start', NULL, NULL, '{"battingTeam":"1XI","bowlingTeam":"Verify 127 lv","overs":2}');
+      PERFORM _ev_73(x, 0::smallint, 'ball', 'run', 1, '{}', NULL, NULL, 3);
+    END IF;
+  END LOOP;
+  RETURN y;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- fixture_class() as its owner reads it: "class/reason", "-" for none.
+CREATE OR REPLACE FUNCTION _v127_class(p_match uuid) RETURNS text AS $$
+  SELECT f.fixture_class || '/' || coalesce(f.no_board, '-') FROM fixture_class(p_match) f
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- match_result_compute()'s outcome and play's, as the owner reads them.
+CREATE OR REPLACE FUNCTION _v127_outcome(p_match uuid) RETURNS text AS $$
+  SELECT r.outcome || '/' || r.play_outcome || '/' || r.decision_applied FROM match_result_compute(p_match) r
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The standing decision on a match withdrawn, with its note, as the owner.
+CREATE OR REPLACE FUNCTION _v127_withdraw(p_match uuid) RETURNS void AS $$
+  UPDATE match_result_decision
+     SET withdrawn_at = now(), withdrawn_by = '88888888-0000-0000-0000-000000000006',
+         withdrawn_note = 'Verify 127: entered against the wrong fixture'
+   WHERE match_id = p_match AND withdrawn_at IS NULL
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A competition written as the owner, with the type given: 'ok', or the
+-- constraint that refused it. Nothing it writes outlives the call.
+CREATE OR REPLACE FUNCTION _v127_comp(p_type text, p_update uuid DEFAULT NULL) RETURNS text AS $$
+DECLARE v_c text;
+BEGIN
+  BEGIN
+    IF p_update IS NULL THEN
+      INSERT INTO competition (school_id, name, comp_type, format, level)
+      VALUES ('11111111-1111-1111-1111-111111111111', 'Verify 127 Probe', p_type, 'T20', 'school');
+    ELSE
+      UPDATE competition SET comp_type = p_type WHERE id = p_update;
+    END IF;
+    RAISE EXCEPTION USING ERRCODE = 'P0127', MESSAGE = 'ok';
+  EXCEPTION
+    WHEN check_violation THEN GET STACKED DIAGNOSTICS v_c = CONSTRAINT_NAME; RETURN v_c;
+    WHEN SQLSTATE 'P0127' THEN RETURN 'ok';
+  END;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/127 (section 104) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -32144,6 +32254,99 @@ $v49$;
   PERFORM set_config('app.match_id', '', true);
   -- └── end of section 103
   -- └── db/126 (section 103) ──────────────────────────────────────────
+  -- ┌── db/127 (section 104) ──────────────────────────────────────────
+  -- ── 104. The fixture class (db/127, RECOGNITION R3; Q1–Q3, decided 7 Oct 2026) ──
+  -- "fixture_class(match) in SQL and its JS twin: competitive, festival,
+  -- friendly, and no_board reasons (abandoned, no result, adjusted target,
+  -- decided off the field); comp_type closed to a vocabulary."
+  --
+  -- What each label holds (the fixtures are _v127_stage()'s, above):
+  --   (class)    a friendly, a league's, a knockout's and a festival's fixture,
+  --              each won on the field: friendly, competitive, competitive,
+  --              festival, and no reason
+  --   (reasons)  abandoned; no result; an adjusted target (the umpires' par);
+  --              decided off the field (a walkover); each beside its class
+  --   (none)     an award that only names who goes through leaves the tie,
+  --              and no reason; a match under way has no reason yet
+  --   (moves)    nothing is stored: a decision withdrawn, or the status moved,
+  --              moves the answer on the next read
+  --   (check)    comp_type is league, knockout or festival and nothing else:
+  --              an unknown type, a different case, and an empty one are
+  --              refused by competition_comp_type_known, on insert and update;
+  --              competition_create() still answers comp_type_invalid
+  --   (grants)   fixture_class() is a STABLE pinned definer nobody may call:
+  --              not PUBLIC, not the application, not a managed host's roles
+  DECLARE
+    y jsonb := _v127_stage();
+    got text;
+  BEGIN
+    -- (class)
+    PERFORM _assert(_v127_class((y->>'fr')::uuid) = 'friendly/-', format('§104 (class): a friendly won reads %s', _v127_class((y->>'fr')::uuid)));
+    PERFORM _assert(_v127_class((y->>'lg')::uuid) = 'competitive/-', format('§104 (class): a league fixture won reads %s', _v127_class((y->>'lg')::uuid)));
+    PERFORM _assert(_v127_class((y->>'ko')::uuid) = 'competitive/-', format('§104 (class): a knockout fixture won reads %s', _v127_class((y->>'ko')::uuid)));
+    PERFORM _assert(_v127_class((y->>'fe')::uuid) = 'festival/-', format('§104 (class): a festival fixture won reads %s', _v127_class((y->>'fe')::uuid)));
+    PERFORM _assert(_v127_outcome((y->>'fr')::uuid) LIKE 'away_win/away_win/%', format('§104 (class): the friendly is not won in the chase (%s)', _v127_outcome((y->>'fr')::uuid)));
+
+    -- (reasons)
+    PERFORM _assert(_v127_class((y->>'ab')::uuid) = 'competitive/abandoned', format('§104 (reasons): abandoned reads %s', _v127_class((y->>'ab')::uuid)));
+    PERFORM _assert(_v127_class((y->>'nr')::uuid) = 'festival/no_result', format('§104 (reasons): no result reads %s', _v127_class((y->>'nr')::uuid)));
+    PERFORM _assert(_v127_class((y->>'at')::uuid) = 'friendly/adjusted_target', format('§104 (reasons): an adjusted target reads %s (%s)', _v127_class((y->>'at')::uuid), _v127_outcome((y->>'at')::uuid)));
+    PERFORM _assert(_v127_class((y->>'wo')::uuid) = 'competitive/decided_off_field', format('§104 (reasons): a walkover reads %s', _v127_class((y->>'wo')::uuid)));
+
+    -- (none)
+    PERFORM _assert(_v127_outcome((y->>'aw')::uuid) = 'tie/tie/true', format('§104 (none): the award is not applied beside the tie (%s)', _v127_outcome((y->>'aw')::uuid)));
+    PERFORM _assert(_v127_class((y->>'aw')::uuid) = 'competitive/-', format('§104 (none): an award naming who goes through reads %s', _v127_class((y->>'aw')::uuid)));
+    PERFORM _assert(_v127_class((y->>'lv')::uuid) = 'competitive/-', format('§104 (none): a match under way reads %s', _v127_class((y->>'lv')::uuid)));
+    PERFORM _assert(_v127_class('00000000-0000-0000-0000-0000000001a7'::uuid) IS NULL, '§104 (none): a match that does not exist has a class');
+
+    -- (moves) the walkover withdrawn: no decision, nothing played, not started.
+    PERFORM _v127_withdraw((y->>'wo')::uuid);
+    PERFORM _assert(_v127_class((y->>'wo')::uuid) = 'competitive/-', format('§104 (moves): the walkover withdrawn still reads %s', _v127_class((y->>'wo')::uuid)));
+    -- The organiser abandons the league fixture under way.
+    PERFORM _set_match_status((y->>'lv')::uuid, 'abandoned');
+    PERFORM _assert(_v127_class((y->>'lv')::uuid) = 'competitive/abandoned', format('§104 (moves): abandoned under way reads %s', _v127_class((y->>'lv')::uuid)));
+
+    -- (check)
+    PERFORM _assert(_v127_comp('league') = 'ok' AND _v127_comp('knockout') = 'ok' AND _v127_comp('festival') = 'ok',
+      '§104 (check): one of league, knockout, festival was refused');
+    FOREACH got IN ARRAY ARRAY['inter_house', 'League', 'friendly', 'cup', ''] LOOP
+      PERFORM _assert(_v127_comp(got) = 'competition_comp_type_known', format('§104 (check): comp_type %L answered %s', got, _v127_comp(got)));
+    END LOOP;
+    PERFORM _assert(_v127_comp(NULL) = 'competition_comp_type_known', format('§104 (check): an empty comp_type answered %s', _v127_comp(NULL)));
+    PERFORM _assert(_v127_comp('inter_house', (y->>'c_lg')::uuid) = 'competition_comp_type_known', '§104 (check): a league was changed to inter_house');
+    PERFORM _assert(_v127_comp('festival', (y->>'c_lg')::uuid) = 'ok', '§104 (check): a league could not be made a festival');
+    PERFORM _assert(_v127_class((y->>'lg')::uuid) = 'competitive/-', '§104 (check): the probe''s update outlived it');
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'competition'::regclass
+                               AND conname = 'competition_comp_type_known' AND convalidated),
+      '§104 (check): competition_comp_type_known is not validated');
+    PERFORM _as(U_OWNER);
+    SELECT c.reason INTO got FROM competition_create('11111111-1111-1111-1111-111111111111', 'Verify 127 House Cup', 'inter_house', 'T20', NULL, NULL, 'school', NULL) c;
+    PERFORM _assert(got = 'comp_type_invalid', format('§104 (check): competition_create() took inter_house (%s)', got));
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (grants)
+    BEGIN
+      PERFORM * FROM fixture_class((y->>'fr')::uuid);
+      v_ok := true;
+    EXCEPTION WHEN insufficient_privilege THEN v_ok := false;
+    END;
+    PERFORM _assert(NOT v_ok, '§104 (grants): the application called fixture_class()');
+    PERFORM _assert(NOT has_function_privilege('public', 'fixture_class(uuid)'::regprocedure, 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', 'fixture_class(uuid)'::regprocedure, 'EXECUTE'),
+      '§104 (grants): PUBLIC or scrbrd_app may call fixture_class()');
+    FOREACH got IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = got)
+                      OR NOT has_function_privilege(got, 'fixture_class(uuid)'::regprocedure, 'EXECUTE'),
+        format('§104 (grants): %s may call fixture_class()', got));
+    END LOOP;
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'fixture_class(uuid)'::regprocedure
+                               AND p.prosecdef AND p.provolatile = 's'
+                               AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))),
+      '§104 (grants): fixture_class() is not a STABLE SECURITY DEFINER with a pinned path');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 104
+  -- └── db/127 (section 104) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
