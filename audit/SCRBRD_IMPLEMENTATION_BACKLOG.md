@@ -674,6 +674,7 @@ for the owner's key, a platform administrator, a school administrator and a two-
 - **A family's access request under POPIA s23 and s24, design** — **Decided 2026-10-30** (#222, commit 1a54773): Kameel answered all 15 questions in `docs/design/ACCESS_REQUESTS.md` §7 as recommended, 21:40 SAST. Docs only; nothing built. Slice 0, the paper runbook, comes first.
 - **Union selector's list, UNION_SELECTOR_FIND S1 and S2, db/125** — **Partly done 2026-10-30** (#223, commit 6551340): the union selector's list of boys whose families named his union has its read routes; the CSV export refuses the list; every listed row is logged. Later slices of §10 are not built.
 - **Seams audit fixes, 30 Oct, db/125** — **Done 2026-10-30** (#223, commit 6551340): a guardian's new passport consent is refused from the boy's 18th birthday; a scout's candidates read is logged; a withdrawn processing consent lapses the passport and scouting consents. db/125 is live on both databases and recorded in `db/SHIPPED.sha256`.
+- **Match-day safety fixes (Fable's match-day audit, 30 Oct)** — **Done 2026-10-31** (#225, commit 22e4898): the pad heartbeats and keeps the screen awake while scoring; a second phone can no longer take over a match without a confirmed, audited "Take over scoring"; the toss can be written under the pad's resume sign-in; every stopped pad lists the balls it kept and offers an action; the runbook covers the paper step after a dead phone. db/126 is live on both databases and recorded in `db/SHIPPED.sha256`.
 
 ## Product completeness
 
@@ -5223,12 +5224,12 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 
 ### SCRBRD-089 — Loose ends found building the offline match day (SCRBRD-078/075/079)
 **Priority:** P2/P3 · **Domain:** Scoring / sync · **Found 2026-09-25**
-- **No heartbeat while the pad is open.** The spec's lease is refreshed "by heartbeat (~20s) and by any ball
+- ~~**No heartbeat while the pad is open.** The spec's lease is refreshed "by heartbeat (~20s) and by any ball
   written"; the client only writes. Every lull longer than 90 s (a drinks break, the innings break, rain) lapses
   the lease, and `scoring_claim` hands a lapsed lease to any device that opens the pad. The flush gate now takes
   back only the device's OWN lapsed token (same state, same epoch) and stops, in words, when another device has
   claimed — but whether an open pad should hold the match through a break (and so block an admin's force-release
-  for as long as it is open) is a decision. (P2)
+  for as long as it is open) is a decision. (P2)~~ **Done 2026-10-31** (#225, commit 22e4898): Kameel decided 30 Oct (match-day audit call 1) that the pad heartbeats while attached and in view, and a lapsed lease held by another device is taken only by a confirmed, audited take-over; force-release stays with the admin.
 - **A fork has no resolution on the pad.** When the pad's log and the server's each have events the other lacks,
   nothing is merged, nothing is claimed, and both stay where they are (the pad's on the device, said in words).
   The spec's route for such events is quarantine for a supervisor; a forked device does not send its side there
