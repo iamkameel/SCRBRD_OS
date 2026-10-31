@@ -674,6 +674,7 @@ for the owner's key, a platform administrator, a school administrator and a two-
 - **A family's access request under POPIA s23 and s24, design** — **Decided 2026-10-30** (#222, commit 1a54773): Kameel answered all 15 questions in `docs/design/ACCESS_REQUESTS.md` §7 as recommended, 21:40 SAST. Docs only; nothing built. Slice 0, the paper runbook, comes first.
 - **Union selector's list, UNION_SELECTOR_FIND S1 and S2, db/125** — **Partly done 2026-10-30** (#223, commit 6551340): the union selector's list of boys whose families named his union has its read routes; the CSV export refuses the list; every listed row is logged. Later slices of §10 are not built.
 - **Seams audit fixes, 30 Oct, db/125** — **Done 2026-10-30** (#223, commit 6551340): a guardian's new passport consent is refused from the boy's 18th birthday; a scout's candidates read is logged; a withdrawn processing consent lapses the passport and scouting consents. db/125 is live on both databases and recorded in `db/SHIPPED.sha256`.
+- **Match-day safety fixes (Fable's match-day audit, 30 Oct)** — **Done 2026-10-31** (#225, commit 22e4898): the pad heartbeats and keeps the screen awake while scoring; a second phone can no longer take over a match without a confirmed, audited "Take over scoring"; the toss can be written under the pad's resume sign-in; every stopped pad lists the balls it kept and offers an action; the runbook covers the paper step after a dead phone. db/126 is live on both databases and recorded in `db/SHIPPED.sha256`.
 
 ## Product completeness
 
