@@ -242,10 +242,11 @@ try {
     const b = await readsDated(boy);
     // He keeps his old season's fixture, bus, nets and balls by branch (5),
     // and its plan of last month by news_post_read_old_side (db/117 §4,
-    // Kameel 22 October 2026); the U16B's past is his by his `player` role,
-    // as every team-mate's.
-    ok("he still reads the 1XI's fixture, bus, nets, plan and balls of last month, and the U16B's fixture as one of its players",
-       b === "fixtures [fNewPast fPast] trips [tPast] training [sPast] plans [pPast] balls [fPast:6]", b);
+    // Kameel 22 October 2026). The U16B's past is not his: since db/129 his
+    // `player` role reads the U16B only from the day he joined it (Q2), as
+    // his mother does.
+    ok("he still reads the 1XI's fixture, bus, nets, plan and balls of last month, and nothing of the U16B's before he joined",
+       b === "fixtures [fPast] trips [tPast] training [sPast] plans [pPast] balls [fPast:6]", b);
   }
 
   group("7 · The move voided his mother's seat to the side he left, and told her");
