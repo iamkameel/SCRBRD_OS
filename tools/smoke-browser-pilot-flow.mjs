@@ -189,11 +189,27 @@ const board = async (page) => ((await page.locator('[role="status"][aria-live="p
 const serverBalls = (match) => q(`select seq, innings, kind, ball_type, value, shot, theta, radius, placement_source, striker_id, payload
                                     from ball_event where match_id = $1 order by seq`, [match]);
 
-/** Every ball's time, from the first tap to the board showing it. */
+/** The pad sends in the background: until the server's log for the match has stopped growing. */
+async function settled(match) {
+  let last = -1;
+  for (let i = 0; i < 40; i++) {
+    const [{ n }] = await q(`select count(*)::int as n from ball_event where match_id = $1`, [match]);
+    if (n === last) return n;
+    last = n;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return last;
+}
+
+/** Every ball's time, from the first tap to the board showing it, and its taps. */
 const timings = { wheel: [], basic: [], extra: [] };
+const tapsPer = { wheel: 3, basic: 1, extra: 2 };
+/** A tap with no pause after it, for the timed balls: the walk adds nothing to the clock. */
+const press = (page, id) => tid(page, id).first().click({ timeout: 4000 });
 /**
  * Record one ball, timed: `taps` is the scorer's taps for it, and the clock
- * stops when the board no longer reads what it read before the first.
+ * stops when the board no longer reads what it read before the first. A
+ * `kind` of null records the ball and keeps it out of every timing set.
  */
 async function timed(page, kind, taps) {
   const before = await board(page);
@@ -204,7 +220,7 @@ async function timed(page, kind, taps) {
     return !!el && el.textContent.trim() !== b;
   }, 6000, before);
   const ms = Date.now() - t0;
-  if (moved) timings[kind].push(ms);
+  if (moved && kind) timings[kind].push(ms);
   return moved;
 }
 
@@ -406,20 +422,20 @@ try {
   const placed = async (shot, fx, fy, runs) => {
     let where = "";
     const moved = await timed(P, "wheel", async () => {
-      await tap(P, `shot-${shot}`);
+      await press(P, `shot-${shot}`);
       where = await tapField(P, fx, fy);
-      await tid(P, `run-${runs}`).first().click({ timeout: 4000 });
+      await press(P, `run-${runs}`);
     });
     ok(`${shot} for ${runs}: the field named "${where}" and the board moved (${await board(P)})`, moved && where.length > 0, where);
     await beat(P, 400);
     return where;
   };
-  /** An extra in two taps, its kind then its runs, timed. */
+  /** An extra in two taps, its kind then its runs, timed (unless the walk checks the screen between them). */
   const extra = async (label, kindKey, runsKey, setup = null) => {
-    const moved = await timed(P, "extra", async () => {
-      await tap(P, kindKey);
+    const moved = await timed(P, setup ? null : "extra", async () => {
+      await press(P, kindKey);
       if (setup) await setup();
-      await tap(P, runsKey);
+      await press(P, runsKey);
     });
     ok(`${label}: recorded in two taps (${await board(P)})`, moved);
     await beat(P, 400);
@@ -453,7 +469,7 @@ try {
   // ── 3a ─────────────────────────────────────────────────────────
   group("3a. A correction during play: a ball recorded, then undone");
   const beforeFlick = await board(P);
-  const rowsBefore = (await serverBalls(MATCH)).length;
+  const rowsBefore = await settled(MATCH);
   await placed("flick", 0.5, 0.4, 1);
   const undoSays = await tid(P, "key-undo").getAttribute("aria-label").catch(() => "");
   ok(`Undo says what it will take back ("${undoSays}")`, /^Undo: 1 to /.test(undoSays ?? ""), undoSays);
@@ -462,6 +478,7 @@ try {
   ok("the board is back where it was before the flick", await until(P, (b) => [...document.querySelectorAll('[role="status"][aria-live="polite"]')]
     .some((e) => e.textContent.trim() === b), 6000, beforeFlick), `${beforeFlick} / ${await board(P)}`);
   await afterReads(P, 1200);
+  await settled(MATCH);
   const afterUndo = await serverBalls(MATCH);
   if (DEBUG) console.log("[debug] after undo:", JSON.stringify(afterUndo.slice(rowsBefore).map((r) => [r.seq, r.kind, r.ball_type, r.value])));
   // An undo is not a deletion: the log keeps the ball and appends a void of it.
@@ -473,7 +490,8 @@ try {
 
   group("2. ...the wicket, and the second over");
   {
-    const moved = await timed(P, "extra", async () => {
+    // Not timed: a wicket is neither a wheel ball nor an extra, and its sheet is read.
+    const moved = await timed(P, null, async () => {
       await tap(P, "shot-missed");
       await tap(P, "area-none");
       await tap(P, "key-wicket");
@@ -481,24 +499,23 @@ try {
       await tap(P, "wicket-confirm");
     });
     ok(`a missed ball, bowled: the wicket is on the board (${await board(P)})`, moved && / for 1, /.test(await board(P)));
-    timings.extra.pop();   // a wicket is not an extra; it is kept out of the timing sets
   }
   await between("H Bramwell");
   ok("the next batter is in and H Bramwell is on for the second over", await has(P, "three-phase-pad") && !(await has(P, "scoring-blocked")),
     (await text(P)).slice(0, 300));
-  // Over 2: H Bramwell. A straight six, a dot, a glance, a drive, a sweep, a cut for four.
-  // Lofted over long on (straight down the ground is under the field's "Bowler" label).
+  // Over 2: H Bramwell. A six over long on, a dot, a glance, a drive, a sweep, a cut for four.
+  // (Straight down the ground is under the field's "Bowler" label.)
   await placed("loft", 0.3, 0.9, 6);
-  {
-    const moved = await timed(P, "basic", async () => { await tap(P, "key-dot"); });
-    ok(`a dot, one key (${await board(P)})`, moved);
-    timings.basic.pop();   // the dot on the three-phase pad is not Basic Scoring's
-  }
+  // Not timed: a dot on the three-phase pad is one key, but not Basic Scoring's.
+  ok(`a dot, one key (${await board(P)})`, await timed(P, null, async () => { await press(P, "key-dot"); }));
   await placed("glance", 0.6, -0.7, 1);
   await placed("drive", -0.2, 0.7, 2);
   await placed("sweep", 0.85, 0.3, 1);
   await placed("cut", -0.95, 0.1, 4);
 
+  // The pad sends in the background: wait for the twelfth legal ball to land.
+  const legal = (rows) => rows.filter((r) => r.innings === 0 && r.kind === "ball" && !["Wd", "Nb"].includes(r.ball_type)).length;
+  for (let i = 0; i < 40 && legal(await serverBalls(MATCH)) - 1 < OVERS * 6; i++) await P.waitForTimeout(250);
   const inn1 = (await serverBalls(MATCH)).filter((r) => r.innings === 0 && r.kind === "ball");
   const scoring = inn1.filter((r) => r.ball_type === "run" && Number(r.value) > 0);
   ok(`every scoring shot off the bat has a shot and a point on the server (${scoring.length} of them)`,
@@ -508,7 +525,277 @@ try {
     ["Wd", "Nb", "LB", "W"].every((t) => inn1.some((r) => r.ball_type === t)), JSON.stringify(inn1.map((r) => r.ball_type)));
   ok("...and the boundaries: a four and a six", inn1.some((r) => Number(r.value) === 4 && r.ball_type === "run") && inn1.some((r) => Number(r.value) === 6));
   if (DEBUG) console.log("[debug] innings 1:", JSON.stringify(inn1.map((r) => [r.ball_type, r.value, r.shot, r.theta])));
-  throw new Error("explore: stop after innings 1");
+
+  // ── 4 ──────────────────────────────────────────────────────────
+  group("4. The innings ends at its two overs, through the review gate");
+  ok("the review sheet opens on its own when the overs are done", await until(P, () => !!document.querySelector('[data-testid="innings-review"]'), 8000),
+    (await text(P)).slice(0, 300));
+  const reason1 = await inner(P, "review-reason");
+  ok(`...naming the reason ("${reason1}") and the score ("${await inner(P, "review-score")}")`, /overs/i.test(reason1) && /\d/.test(await inner(P, "review-score")));
+  await beat(P, 1500);
+  await tap(P, "review-confirm");
+  await afterReads(P, 800);
+  const breakText = await text(P);
+  const need = Number((/need\D*(\d+)/i.exec(breakText) ?? [])[1]);
+  ok(`the break names what the reply needs (${need})`, need > 0, breakText.slice(0, 300));
+  await beat(P, 1200);
+  ok("the scorer starts the reply", await click(P, /Start 2nd Innings/, 4000));
+  await afterReads(P, 600);
+
+  group("4. The reply, on Basic Scoring (one key a ball, no wagon wheel), until the match is decided");
+  let typed = 0;
+  /** The reply's prompts: Kearsney's batters typed, Hilton's bowlers picked from the roster. */
+  const ready2 = async () => {
+    for (let i = 0; i < 14; i++) {
+      if (await has(P, "innings-review")) return true;
+      const nameField = P.locator('input[aria-label="Player name"]');
+      if (await nameField.count()) { await nameField.first().fill(`K Batter ${++typed}`); await nameField.first().press("Enter"); await P.waitForTimeout(400); continue; }
+      const bowlerPick = P.locator('[data-testid="bowler-choice"]:not([disabled])');
+      if (await bowlerPick.count()) { await bowlerPick.first().click({ timeout: 2000 }).catch(() => {}); await P.waitForTimeout(400); continue; }
+      const bowl = P.locator("button:not([disabled])", { hasText: /\bBOWL\b/ });
+      if (await bowl.count()) { await bowl.first().click({ timeout: 2000 }).catch(() => {}); await P.waitForTimeout(400); continue; }
+      const sheet = (await P.locator('[role="dialog"]').count()) > 0;
+      const next = P.locator('[role="dialog"] button:not([disabled])', { hasText: /Next\s*$|^Start|Confirm/i });
+      if (sheet && await next.count()) { await next.first().click({ timeout: 2000 }).catch(() => {}); await P.waitForTimeout(400); continue; }
+      if (!sheet && await has(P, "scoring-blocked-fix")) { await tap(P, "scoring-blocked-fix").catch(() => {}); await P.waitForTimeout(400); continue; }
+      if (!sheet && !(await has(P, "scoring-blocked"))) return true;
+      await P.waitForTimeout(400);
+    }
+    return false;
+  };
+  ok("the reply's openers and bowler are named", await ready2(), (await text(P)).slice(0, 400));
+  if (!(await has(P, "basic-pad"))) { await tap(P, "pad-menu"); await tap(P, "pad-basic-scoring"); await P.keyboard.press("Escape"); await P.waitForTimeout(300); }
+  ok("the pad is on Basic Scoring", await has(P, "basic-pad"));
+  await beat(P);
+  const chase = [1, 0, 6, 2, 6, 4, 6, 1, 6, 6, 6, 6];
+  let decided = false, balls2 = 0;
+  for (const r of chase) {
+    await ready2();
+    if (await has(P, "innings-review")) { decided = true; break; }
+    const moved = await timed(P, "basic", async () => { await press(P, `run-${r}`); });
+    if (moved) balls2++;
+    await beat(P, 300);
+  }
+  decided ||= await until(P, () => !!document.querySelector('[data-testid="innings-review"]'), 6000);
+  ok(`the chase closes the innings on its own after ${balls2} balls (${await inner(P, "review-reason")})`, decided && /target/i.test(await inner(P, "review-reason")));
+  await beat(P, 1500);
+  await tap(P, "review-confirm");
+  await afterReads(P, 1000);
+  const result = await text(P);
+  ok("the result screen names the winner", /Match Complete/i.test(result) && /Kearsney/i.test(result) && /wicket/i.test(result), result.slice(0, 400));
+  await beat(P, 2000);
+  const ends = await q(`select payload->>'reason' as reason from ball_event where match_id = $1 and kind = 'innings_end' order by seq`, [MATCH]);
+  ok(`the server has both innings closed, for the Laws' reasons (${ends.map((e) => e.reason).join(", ")})`,
+    ends.length === 2 && /overs/.test(ends[0].reason) && ends[1].reason === "target_reached");
+  ok("no console errors (scorer, on the pad)", sc.errors.length === 0, sc.errors.join(" | "));
+
+  // The match decided on the pad is not, to the server, a finished match: its
+  // status is the fixture's own, and everything after full time — the
+  // scorer's confirm-or-correct prompt, the official result, a parent's
+  // Played row — waits on status 'complete' (MatchView.jsx, fulltime.jsx).
+  const [{ status: afterPad }] = await q(`select status from match where id = $1`, [MATCH]);
+  if (afterPad !== "complete") {
+    gap("4", `the match decided on the pad stays '${afterPad}': no screen marks it complete (the pad's result screen offers "New Match"; `
+      + "the fixture route takes status 'complete' and no form sends it). The walk marks it complete as the office, through that route");
+    const officeToken = await tokenFor("registrar@example.invalid");
+    const r = await fetch(`${BASE}/api/fixtures/${MATCH}`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${officeToken}` },
+      body: JSON.stringify({ status: "complete" }) });
+    ok(`the office's fixture route marks it complete (${r.status})`, r.ok && (await q(`select status from match where id = $1`, [MATCH]))[0].status === "complete",
+      await r.text().catch(() => ""));
+  } else {
+    ok("the match is complete on the server once it is decided", true);
+  }
+
+  // ── 3b ─────────────────────────────────────────────────────────
+  group("3b. After full time: the scorer asks for an amendment of the wide");
+  await tid(P, "exit-scorer").first().click({ timeout: 4000 }).catch(async () => { await P.locator(".os-exit-scorer").first().click({ timeout: 4000 }).catch(() => {}); });
+  await afterReads(P, 1200);
+  ok("he opens the finished match from Match Centre", await openMatch(P, MATCH), (await text(P)).slice(0, 300));
+  const [wide] = await q(`select idempotency_key from ball_event where match_id = $1 and kind = 'ball' and ball_type = 'Wd' and innings = 0`, [MATCH]);
+  if (await has(P, "mc-confirm-open")) {
+    await tap(P, "mc-confirm-open");
+    await beat(P);
+    // The prompt opens on the last innings; the wide was in Hilton's, the first.
+    if (await has(P, "mc-confirm-innings")) { await tid(P, "mc-confirm-innings").selectOption({ index: 0 }); await P.waitForTimeout(200); }
+    const at =await tid(P, "mc-confirm-delivery").locator("option").evaluateAll((os, k) => os.findIndex((o) => o.value === k), wide?.idempotency_key);
+    ok("the wide is a delivery he can name", at > 0, at);
+    await tid(P, "mc-confirm-delivery").selectOption({ index: Math.max(at, 0) });
+    await tid(P, "mc-confirm-reason").fill(WIDE_REASON);
+    await beat(P, 1000);
+    await tap(P, "mc-confirm-submit");
+    ok("filed, and said not to change the score until it is approved",
+      await until(P, () => /does not change the score until it is approved/.test(document.querySelector('[data-testid="mc-confirm-said"]')?.textContent ?? ""), 6000),
+      await inner(P, "mc-confirm-said"));
+    await beat(P, 1500);
+  } else {
+    gap("3b", "the finished match offers the scorer no way to ask for an amendment");
+  }
+  ok("no console errors (scorer)", sc.errors.length === 0, sc.errors.join(" | "));
+  await close(sc);
+
+  group("3b. The director of sport approves it from the fixture's Corrections sheet");
+  const ds = await open("director-approves-and-publishes");
+  ok("the director of sport signs in", await signIn(ds.page, "sarah@example.invalid"));
+  ok("...and opens the fixture", await openMatch(ds.page, MATCH));
+  const [amend] = await q(`select id from scoring_amendment where match_id = $1 and state = 'pending'`, [MATCH]);
+  const runsOf = (s) => Number((/(\d+)\/\d+/.exec(s) ?? [])[1]);
+  const totalBefore = await inner(ds.page, "mc-scores");
+  if (amend && await has(ds.page, "mc-corrections-open")) {
+    await tap(ds.page, "mc-corrections-open");
+    await tid(ds.page, `corr-amend-${amend.id}`).first().waitFor({ timeout: 6000 }).catch(() => {});
+    const asked = await inner(ds.page, `corr-amend-${amend.id}`);
+    ok("she reads the ball, the reason and who asked", asked.includes(WIDE_REASON) && /Asked by the scorer/.test(asked), asked.slice(0, 300));
+    ok(`...and its effect before she decides ("${await inner(ds.page, `corr-effect-${amend.id}`)}")`, /→/.test(await inner(ds.page, `corr-effect-${amend.id}`)));
+    await beat(ds.page, 1500);
+    await tap(ds.page, `corr-approve-${amend.id}`);
+    ok("approved, with the result as the server reads it",
+      await until(ds.page, (k) => /^Approved/.test(document.querySelector(`[data-testid="corr-said-${k}"]`)?.textContent ?? ""), 8000, amend.id),
+      await inner(ds.page, `corr-said-${amend.id}`));
+    await beat(ds.page, 1200);
+    await ds.page.keyboard.press("Escape");
+    const voided = await q(`select 1 from ball_event where match_id = $1 and kind = 'void'`, [MATCH]);
+    ok("the server appended a void of the wide (the undo's and this one)", voided.length === 2);
+  } else {
+    ok("the pending amendment reaches the director's Corrections sheet", false, JSON.stringify(amend));
+  }
+  await afterReads(ds.page, 1500);
+  if (await has(ds.page, "mc-stale")) await tap(ds.page, "mc-stale");
+  ok(`her Match Centre shows the innings a run lower (${totalBefore} → ${await inner(ds.page, "mc-scores")})`,
+    await until(ds.page, (r) => Number((/(\d+)\/\d+/.exec(document.querySelector('[data-testid="mc-scores"]')?.textContent ?? "") ?? [])[1]) === r - 1, 8000, runsOf(totalBefore)),
+    await inner(ds.page, "mc-scores"));
+
+  // ── 4 (official, published) ────────────────────────────────────
+  group("4. The result is confirmed official — by someone whose hand is not on the log");
+  const official = await inner(ds.page, "mc-official");
+  note(`the result's state on her screen: "${official}"`);
+  ok("the director, who approved a correction, is not offered Confirm", !(await has(ds.page, "mc-official-confirm")));
+  const pr = await open("principal-confirms");
+  ok("the principal signs in", await signIn(pr.page, "principal@example.invalid"));
+  ok("...and opens the fixture", await openMatch(pr.page, MATCH));
+  if (await has(pr.page, "mc-official-confirm")) {
+    await tap(pr.page, "mc-official-confirm");
+    ok(`the sheet says what confirming means ("${(await inner(pr.page, "mc-official-confirm-words")).slice(0, 120)}")`, (await inner(pr.page, "mc-official-confirm-words")).length > 0);
+    await beat(pr.page, 1500);
+    await tap(pr.page, "mc-official-confirm-go");
+    ok("the result is official", await until(pr.page, () => /official/i.test(document.querySelector('[data-testid="mc-official"]')?.textContent ?? ""), 8000),
+      `${await inner(pr.page, "mc-official")} / ${await inner(pr.page, "mc-official-said")}`);
+    await beat(pr.page, 1200);
+  } else {
+    gap("4", `the principal is offered no Confirm on the friendly's result (${await inner(pr.page, "mc-official")})`);
+  }
+  ok("no console errors (principal)", pr.errors.length === 0, pr.errors.join(" | "));
+  await close(pr);
+
+  // ── 7 (before) ─────────────────────────────────────────────────
+  group("7. The public page, signed out, before the side is published");
+  const pu = await open("public-page", { path: `/live/${MATCH}` });
+  await afterReads(pu.page, 1500);
+  const before = await text(pu.page);
+  ok("nothing of the match is shown while it is unpublished", !(await has(pu.page, "public-match")) && !/Whitfield|Kearsney/.test(before), before.slice(0, 300));
+  note(`what it says instead: "${before.replace(/\s+/g, " ").slice(0, 160)}"`);
+  await beat(pu.page, 1500);
+
+  group("4. The director publishes the home side");
+  await ds.page.bringToFront();
+  const pub = tid(ds.page, "publish-home-toggle");
+  if (!(await pub.count())) {
+    // The publish panel is in the fixture's Match Details beside Match Centre's list.
+    await tid(ds.page, "mc-back").first().click({ timeout: 4000 }).catch(() => {});
+    await afterReads(ds.page, 800);
+    await tid(ds.page, `match-card-${MATCH}`).first().click({ timeout: 6000 }).catch(() => {});
+    await afterReads(ds.page, 800);
+  }
+  if (await pub.count()) {
+    ok("the home side is 'not published'", /not published/.test(await inner(ds.page, "publish-home-state")));
+    await beat(ds.page, 1000);
+    await pub.first().click({ timeout: 4000 });
+    ok("...and now 'published'", await until(ds.page, () => /^published$/.test(document.querySelector('[data-testid="publish-home-state"]')?.textContent ?? ""), 6000),
+      await inner(ds.page, "publish-home-state"));
+    await beat(ds.page, 1200);
+  } else {
+    gap("4", "the director is offered no Publish on the fixture");
+  }
+  ok("no console errors (director)", ds.errors.length === 0, ds.errors.join(" | "));
+  await close(ds);
+
+  // ── 5 ──────────────────────────────────────────────────────────
+  group("5. The coach's view: the figures and the wagon wheel");
+  const co = await open("coach-figures-and-wheel");
+  ok("the 1XI coach signs in", await signIn(co.page, "coach@example.invalid"));
+  ok("...and opens the finished match", await openMatch(co.page, MATCH));
+  const coScores = await inner(co.page, "mc-scores");
+  ok(`the scores, corrected (${coScores.replace(/\s+/g, " ")})`, /\d+\/\d+/.test(coScores) && await has(co.page, "mc-corrected"));
+  await pickTab(co.page, "scorecard").catch(() => {});
+  await afterReads(co.page, 600);
+  const card = await inner(co.page, "mc-scorecard");
+  ok("the batting card names his batters with their runs", /James Whitfield/.test(card) && /\d+\s*\(\d+\)|\b\d+\b/.test(card), card.slice(0, 300));
+  const bowling = await inner(co.page, "mc-bowling");
+  ok("the bowling figures are there", bowling.length > 0, (card + bowling).slice(0, 300));
+  await beat(co.page, 1500);
+  await pickTab(co.page, "analytics").catch(() => {});
+  await afterReads(co.page, 800);
+  // The match opens on its last innings (the reply, on Basic Scoring: no wheel); Hilton's is the first.
+  if (await has(co.page, "mc-innings-0")) { await tap(co.page, "mc-innings-0"); await co.page.waitForTimeout(300); }
+  await click(co.page, /^Whole innings$/).catch(() => {});
+  const spokes = await co.page.locator('[data-testid="shot-wheel"] [data-spoke]').evaluateAll((els) => els.map((g) => g.getAttribute("data-spoke")));
+  const placedShots = (await serverBalls(MATCH)).filter((r) => r.innings === 0 && r.kind === "ball" && r.theta != null);
+  ok(`the wagon wheel draws a spoke for each placed ball of Hilton's innings (${spokes.length} drawn, ${placedShots.length - 1} placed and not undone)`,
+    spokes.length === placedShots.length - 1, JSON.stringify(spokes));
+  await co.page.locator('[data-testid="shot-wheel"]').first().scrollIntoViewIfNeeded().catch(() => {});
+  await beat(co.page, 2000);
+  ok("no console errors (coach)", co.errors.length === 0, co.errors.join(" | "));
+  await close(co);
+
+  // ── 6b ─────────────────────────────────────────────────────────
+  group("6b. After play: the parent sees his son's result, and the correction said");
+  const pa = await open("parent-after-play");
+  ok("H Whitfield signs in again", await signIn(pa.page, "parent.whitfield@example.invalid"));
+  await pa.page.locator("nav button, [data-testid^='mnav-']", { hasText: /^Matches$/ }).first().click({ timeout: 6000 }).catch(() => {});
+  await afterReads(pa.page, 1200);
+  const played = tid(pa.page, `played-row-${MATCH}`);
+  await played.first().waitFor({ timeout: 8000 }).catch(() => {});
+  const playedRow = await played.first().innerText().catch(() => "");
+  ok(`the match is under Played, with the result and his son's line ("${playedRow.replace(/\s+/g, " ")}")`,
+    /Kearsney/.test(playedRow) && /\d/.test(playedRow), (await text(pa.page)).slice(0, 500));
+  await beat(pa.page, 1200);
+  await played.first().click({ timeout: 4000 }).catch(() => {});
+  await afterReads(pa.page, 1500);
+  ok("the match opens in family mode, his son's row lit", await has(pa.page, "match-view"), (await text(pa.page)).slice(0, 300));
+  ok("...and the correction is said on the scores", await has(pa.page, "mc-corrected"), await inner(pa.page, "mc-scores"));
+  await beat(pa.page, 2000);
+  ok("no console errors (parent, after play)", pa.errors.length === 0, pa.errors.join(" | "));
+  await close(pa);
+
+  // ── 7 ──────────────────────────────────────────────────────────
+  group("7. The public page, once published: the match, and no boy named without consent");
+  await pu.page.bringToFront();
+  await pu.page.goto(`${BASE}/live/${MATCH}`, { waitUntil: "networkidle" });
+  await pu.page.waitForSelector('[data-testid="public-match"]', { timeout: 8000 }).catch(() => {});
+  await afterReads(pu.page, 1200);
+  ok("the public page draws the match", await has(pu.page, "public-match") && /\d+\/\d+/.test(await inner(pu.page, "mc-scores")), (await text(pu.page)).slice(0, 300));
+  const publicText = await text(pu.page);
+  // Every Hilton boy in the match (the pad's innings squads), and whether any
+  // consent to his name has ever been recorded. A boy with none is never named.
+  const boys = await q(`select p.full_name, exists (select 1 from public_name_consent c where c.player_id = p.id) as any_consent
+                          from player p where p.school_id = $1 and p.id::text in (
+                            select s->>'id' from ball_event e, jsonb_array_elements(coalesce(e.payload->'squad', '[]') || coalesce(e.payload->'bowlingSquad', '[]')) s
+                             where e.match_id = $2 and e.kind = 'innings_start')`, [HIL, MATCH]);
+  const unconsented = boys.filter((b) => !b.any_consent).map((b) => b.full_name);
+  note(`Hilton's boys in the match: ${boys.length}; with no consent to their name on record: ${unconsented.length} (${unconsented.join(", ")})`);
+  const words = (ns) => ns.flatMap((n) => n.split(/\s+/).filter((w) => w.length > 2));
+  const names = unconsented;
+  const leaks = words(names).filter((w) => publicText.includes(w));
+  ok(`no unconsented Hilton boy's name or surname is on the page (${names.length} checked)`, names.length > 0 && leaks.length === 0, leaks.join(", "));
+  ok("...the batters are shown by role instead", /Batter/.test(publicText), publicText.slice(0, 400));
+  const got = (await Promise.all(pu.bodies)).join("\n");
+  const bodyLeaks = words(names).filter((w) => got.includes(w));
+  ok("...nor in anything the page received", got.length > 0 && bodyLeaks.length === 0, bodyLeaks.join(", "));
+  ok("the correction is said, team-level, with no reason", await has(pu.page, "mc-corrected") && !publicText.includes(WIDE_REASON));
+  await tid(pu.page, "mc-corrected").first().click({ timeout: 3000 }).catch(() => {});
+  await beat(pu.page, 2000);
+  ok("no console errors (public)", pu.errors.length === 0, pu.errors.join(" | "));
+  await close(pu);
+  await close(office);
 } catch (e) {
   fail++;
   console.log("\n  ✗ the walk threw:", DEBUG ? e.stack : e.message);
@@ -530,10 +817,12 @@ const stat = (xs) => {
   const med = s.length % 2 ? s[(s.length - 1) / 2] : Math.round((s[s.length / 2 - 1] + s[s.length / 2]) / 2);
   return `${xs.length} balls, median ${med} ms, mean ${Math.round(xs.reduce((a, b) => a + b, 0) / xs.length)} ms, range ${s[0]}–${s.at(-1)} ms`;
 };
-console.log("\nTime per ball — THIS WALK'S OWN timings (a script's taps, first tap to the board showing the ball; not a human scorer's):");
-console.log(`  with the wagon wheel (shot, field, outcome):  ${stat(timings.wheel)}`);
-console.log(`  without it (one key on Basic Scoring):        ${stat(timings.basic)}`);
-console.log(`  extras (kind, then runs):                     ${stat(timings.extra)}`);
+console.log("\nTime per ball — THIS WALK'S OWN timings: a script tapping as fast as the page lets it, from the first tap to the");
+console.log("board showing the ball. They measure what the app costs per ball, not a human scorer's hand, eye or judgement:");
+console.log(`  with the wagon wheel (shot, field, outcome; ${tapsPer.wheel} taps): ${stat(timings.wheel)}`);
+console.log(`  without it (one key on Basic Scoring; ${tapsPer.basic} tap):        ${stat(timings.basic)}`);
+console.log(`  extras (kind, then runs; ${tapsPer.extra} taps):                    ${stat(timings.extra)}`);
+console.log("  (The wheel's figure includes the walk reading the field's prompt while the finger is down.)");
 if (fail && apiErr.length) console.log("\nAPI stderr:\n" + apiErr.join("").split("\n").slice(0, 12).join("\n"));
 console.log(`\n${"─".repeat(52)}\nBROWSER PILOT FLOW SMOKE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
