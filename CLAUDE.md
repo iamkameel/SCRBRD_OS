@@ -75,7 +75,16 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   the importer; and what the audit log must keep to answer for it) and who
   sees a child's data (added 2026-10-21: one map, across every design, of who
   may read each piece of a child's data and under what condition; where two
-  designs disagree; and the questions for Kameel that settle each one).
+  designs disagree; and the questions for Kameel that settle each one)
+  and access requests (added 2026-10-30, Kameel: a family asking for everything held about their child under POPIA sections 23 and 24; what is
+  included, what is held back, such as other children and a safeguarding concern
+  that must not tip anyone off, who approves, and how fast)
+  and platform controls (added 2026-10-31, Kameel: what a SuperAdmin or
+  platform administrator may switch on and off, for features, people and whole
+  schools; suspending or archiving a school, freezing scoring in an incident,
+  public pages from inside the app; what a school, a family and a child are
+  told; what must never be switched off; how each act is logged; and one home
+  for every control).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
@@ -107,11 +116,17 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   subagent's output** before it lands on the branch.
 - **Design and architecture** — ADRs, cross-cutting refactors, and debugging
   a failure whose cause is not yet known.
+- **Complex frontend code** (added 2026-10-29, Kameel: "we should always be
+  using Claude Opus 5.5 for complex frontend code generation") — new screens
+  or components with real logic (the Match Centre, the pad, the Board, the
+  status sentence, Cricinfo Sprint 1–2, StatsMagic's explorer), shared UI that
+  many screens draw, and anything that renders a child's data.
 
 ### Sonnet — well-specified, lower-risk work
 
-- Screens over an API that already exists (the roadmap's `partial` items),
-  styling and design-system work.
+- Simple screens over an API that already exists (the roadmap's `partial`
+  items), styling, copy and design-system tweaks. Anything more than that is
+  complex frontend code and goes to Opus (above).
 - Smoke walks and unit tests for behaviour already designed.
 
 ### Haiku (`model: "haiku"`) — searches and docs
@@ -216,6 +231,26 @@ lasted two to three hours at five to seven agents, about 220k to 460k output.
   CI is checked at the sweep, and a builder whose proof is queued on the
   database lock stops and reports, rather than waiting.
 
+## Plugins
+
+Installed 2026-10-30 (Kameel): Google's Elephant-Goldfish Model (`egm@egm`,
+github.com/google/elephant-goldfish-model, Apache 2.0), at project scope in
+`.claude/settings.json`. It drafts a spec with full context, then has
+fresh-context reviewers stress-test it: `/egm:egm-brainstorm`, `/egm:egm-draft`,
+`/egm:egm-review`, `/egm:egm-resolve`, `/egm:egm-drift-report`. A review spawns
+several reviewers, so it runs from the lead (builders cannot spawn agents) and
+is paced like any other agent work. No hooks, no MCP servers.
+
+How we use it (the lead's call, Kameel 30 Oct: "i'll go with your instincts"):
+- **Not before the weekly reset** (Wed 4 Nov 01:00); the week was at 80%.
+- **`egm-review` on each new Fable design** before it reaches Kameel: a cheaper
+  fresh-eyes pass, with reviewers on Sonnet, so his questions arrive already
+  tested. It does not replace Fable's red-team of a migration.
+- **`egm-drift-report` once a fortnight** on the merged designs against the code,
+  to catch a design that no longer says what was built. Haiku records what it finds.
+- Fable keeps the hard design problems listed above. EGM's own brainstorm and
+  draft are not used for them.
+
 ## Design skills
 
 Installed 2026-10-07 (Kameel) to raise SCRBRD's design, UI and UX, in
@@ -241,4 +276,5 @@ screen. They advise; this repository's rules win where they differ:
   `prefers-reduced-motion` honoured, and the a11y and browser walks green.
 - The existing tokens (`apps/web/src` theme) are the style lock. Do not write a
   second one (`.tastemaker/style-lock.md`) beside them.
-- Routing is unchanged: screens and styling go to Sonnet, review to Opus.
+- Routing: complex frontend code goes to Opus (2026-10-29, above); simple
+  screens and styling go to Sonnet; review to Opus.
