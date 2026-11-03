@@ -597,7 +597,17 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // register entered on Training, a wrong score withdrawn and struck, none of
   // the design's never-words, the hairline still under reduced motion, a
   // director refused by the server in words, four register states and no fifth.
-  "browser-skills-history"];
+  "browser-skills-history",
+  // The pilot's whole journey, end to end, the walk a founder's demo is
+  // recorded from (RECORD_VIDEO=<dir>): the office schedules a fixture and
+  // moves it, a parent answers for his son, the scorer scores on a phone with
+  // the wagon wheel on every scoring shot (a wide, a no-ball, leg byes, a
+  // boundary, a wicket, an undo), the reply on Basic Scoring, an amendment
+  // approved, the result confirmed and published, the coach's figures and
+  // wheel, the parent's result, and the public page's names. It prints the
+  // scorer's time per ball with and without the wheel, and says on a line of
+  // its own whatever the app cannot do yet.
+  "browser-pilot-flow"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.
