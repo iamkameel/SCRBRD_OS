@@ -9338,6 +9338,81 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/129 (section 106) ─────────────────────────────────────────────
 
+-- ┌── db/130 (section 107). Finishing the match (Kameel, 4 Nov 2026, option A)
+-- Invented, as the owner. Hilton's own sides U13E–U13A and U12E–U12C, each at
+-- home to Westville's 1XI over one over a side, live:
+--   MS (U13E), MC (U13D), MD (U13C), MA (U13B): decided on the log, Hilton
+--     6 for 0 and Westville 0 chasing 7, both innings sealed.
+--   MR (U13A): decided as those, for the refusals; never finished.
+--   MU (U12E): Hilton's innings sealed and nothing after it: undecided.
+--   MT (U12D): a tie (6 each) under a document whose result.tie_break is
+--     super_over, no super over played: the completion gate's case.
+--   MX (U12C): decided, then called off (status abandoned).
+-- The finishers: a scorer of U13E (sc), a coach of U13D (co), a director of
+-- sport (ds) and a sports administrator (sa), both school-wide. The refused
+-- are the seed's own: a parent (D Pillay), a pupil (R Pillay), the office
+-- (B Naicker, schooladmin: fixture.update, no scoring.finalise) and
+-- Westville's 1XI coach (S Pillay: scoring.finalise at the AWAY side).
+CREATE OR REPLACE FUNCTION _v130_person(p_tag text, p_role text, p_team text) RETURNS uuid AS $$
+DECLARE v_u uuid;
+BEGIN
+  INSERT INTO app_user (school_id, email, name, role, teams)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'v130.' || p_tag || '@example.invalid', 'V130 ' || initcap(p_tag), p_role,
+          CASE WHEN p_team IS NULL THEN '{}'::text[] ELSE ARRAY[p_team] END)
+  RETURNING id INTO v_u;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  VALUES (v_u, p_role, '11111111-1111-1111-1111-111111111111', p_team);
+  RETURN v_u;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _v130_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  v_t0 timestamptz := (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg';
+  ids jsonb := '{}';
+  m uuid; k text; t text;
+BEGIN
+  ids := ids || jsonb_build_object(
+    'sc', _v130_person('scorer', 'scorer', 'U13E'),
+    'co', _v130_person('coach', 'coach', 'U13D'),
+    'ds', _v130_person('dos', 'directorofsport', NULL),
+    'sa', _v130_person('sadmin', 'sportsadmin', NULL),
+    'parent', '88888888-0000-0000-0000-000000000005', 'pupil', '88888888-0000-0000-0000-000000000009',
+    'office', '88888888-0000-0000-0000-00000000000c', 'away', '88888888-0000-0000-0000-00000000001a');
+  FOR k, t IN SELECT * FROM (VALUES ('MS', 'U13E'), ('MC', 'U13D'), ('MD', 'U13C'), ('MA', 'U13B'), ('MR', 'U13A'),
+                                    ('MU', 'U12E'), ('MT', 'U12D'), ('MX', 'U12C')) x(k, t) LOOP
+    INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+    VALUES (HIL, t, WES, '1XI', 'x', v_t0, 'cricket', 'T20', 1, 'live') RETURNING id INTO m;
+    ids := ids || jsonb_build_object(k, m);
+  END LOOP;
+  -- MT's document provides a super over, fixed before its first ball.
+  INSERT INTO match_conditions (match_id, doc, sources, doc_hash)
+  VALUES ((ids->>'MT')::uuid, '{"play": {"result.tie_break": "super_over"}, "table": {}, "sheet": {}}', '{}', '');
+  FOR k IN SELECT unnest(ARRAY['MS', 'MC', 'MD', 'MA', 'MR', 'MU', 'MT', 'MX']) LOOP
+    m := (ids->>k)::uuid;
+    t := (SELECT team_code FROM match WHERE id = m);
+    PERFORM _v114_innings(m, 0::smallint, t, 'Westville 1XI', ARRAY[1, 1, 1, 1, 1, 1], NULL, (ids->>'sc')::uuid);
+    IF k = 'MT' THEN
+      PERFORM _v114_innings(m, 1::smallint, 'Westville 1XI', t, ARRAY[1, 1, 1, 1, 1, 1], 7, (ids->>'sc')::uuid);
+    ELSIF k <> 'MU' THEN
+      PERFORM _v114_innings(m, 1::smallint, 'Westville 1XI', t, ARRAY[0, 0, 0, 0, 0, 0], 7, (ids->>'sc')::uuid);
+    END IF;
+  END LOOP;
+  UPDATE match SET status = 'abandoned' WHERE id = (ids->>'MX')::uuid;
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A match's status, as the owner reads it.
+CREATE OR REPLACE FUNCTION _v130_status(p_match uuid) RETURNS text AS $$
+  SELECT status FROM match WHERE id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- How many finishing rows a match's scoring audit holds, as the owner reads it.
+CREATE OR REPLACE FUNCTION _v130_audit(p_match uuid) RETURNS integer AS $$
+  SELECT count(*)::integer FROM scoring_audit WHERE match_id = p_match AND event = 'match_finalised'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/130 (section 107) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -33000,6 +33075,106 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 106
   -- └── db/129 (section 106) ──────────────────────────────────────────
+
+  -- ┌── db/130 (section 107) ─────────────────────────────────────────
+  -- ── 107. Finishing the match (db/130; Kameel, 4 Nov 2026, option A) ──
+  -- "Whoever holds scoring.finalise at the home side finishes the match from
+  -- the pad's result screen." Staged by _v130_stage(); every call is the
+  -- caller's own, through scrbrd_app, as the API's route makes it.
+  --
+  -- What each label holds:
+  --   (finish)   the scorer, the coach, the director of sport and the sports
+  --              administrator each finish a decided match: (true, finished),
+  --              the status complete, one 'match_finalised' row
+  --   (again)    a second call is (true, already_complete) and writes nothing
+  --   (refused)  a parent, a pupil, the office (fixture.update, not
+  --              scoring.finalise), the away side's coach, the signed out, a
+  --              pad credential's scope and a match that is not there are
+  --              each not_permitted, and the match stays live
+  --   (undecided) a match the log has not decided is not_decided
+  --   (tie)      a tie whose document provides a super over is
+  --              super_over_pending, the gate's own reason
+  --   (abandoned) a called-off match is match_abandoned, and stays so
+  --   (claim)    once finished, a scoring claim is refused (db/33)
+  --   (audit)    the director's audit log words it "Finished the match",
+  --              by the scorer, about the fixture
+  --
+  -- Falsified (4 Nov 2026, the section alone, each change made as the owner
+  -- and restored; unchanged it passed before and after):
+  --   match_finalise() asking fixture.update      → (finish): the scorer and the coach refused
+  --   match_finalise() at the away side too        → (refused): the away coach finishes
+  --   match_finalise() without the outcome test    → (undecided)
+  --   match_finalise() without the gate's reason   → (tie): the trigger raises instead
+  DECLARE
+    y   jsonb := _v130_stage();
+    k   text;
+    who text;
+    got record;
+  BEGIN
+    -- (finish)
+    FOR k, who IN SELECT * FROM (VALUES ('MS', 'sc'), ('MC', 'co'), ('MD', 'ds'), ('MA', 'sa')) x(k, who) LOOP
+      PERFORM _as((y->>who)::uuid);
+      SELECT * INTO got FROM match_finalise((y->>k)::uuid);
+      PERFORM _assert(got.ok AND got.reason = 'finished' AND _v130_status((y->>k)::uuid) = 'complete'
+                      AND _v130_audit((y->>k)::uuid) = 1,
+        format('§107 (finish): %s finishing %s got (%s, %s), status %s, %s audit rows', who, k, got.ok, got.reason,
+               _v130_status((y->>k)::uuid), _v130_audit((y->>k)::uuid)));
+    END LOOP;
+
+    -- (again)
+    PERFORM _as((y->>'sc')::uuid);
+    SELECT * INTO got FROM match_finalise((y->>'MS')::uuid);
+    PERFORM _assert(got.ok AND got.reason = 'already_complete' AND _v130_audit((y->>'MS')::uuid) = 1,
+      format('§107 (again): a second call got (%s, %s) and %s audit rows', got.ok, got.reason, _v130_audit((y->>'MS')::uuid)));
+
+    -- (refused)
+    FOREACH who IN ARRAY ARRAY['parent', 'pupil', 'office', 'away', 'sc'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      SELECT * INTO got FROM match_finalise((y->>'MR')::uuid);
+      PERFORM _assert(NOT got.ok AND got.reason = 'not_permitted' AND _v130_status((y->>'MR')::uuid) = 'live',
+        format('§107 (refused): %s on MR got (%s, %s), status %s', who, got.ok, got.reason, _v130_status((y->>'MR')::uuid)));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT * INTO got FROM match_finalise((y->>'MR')::uuid);
+    PERFORM _assert(NOT got.ok AND got.reason = 'not_permitted', format('§107 (refused): signed out got (%s, %s)', got.ok, got.reason));
+    PERFORM _as((y->>'ds')::uuid);
+    PERFORM set_config('app.scope', 'pad', true);
+    SELECT * INTO got FROM match_finalise((y->>'MR')::uuid);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(NOT got.ok AND got.reason = 'not_permitted' AND _v130_status((y->>'MR')::uuid) = 'live',
+      format('§107 (refused): the director under a pad credential''s scope got (%s, %s)', got.ok, got.reason));
+    SELECT * INTO got FROM match_finalise(gen_random_uuid());
+    PERFORM _assert(NOT got.ok AND got.reason = 'not_permitted', format('§107 (refused): no such match got (%s, %s)', got.ok, got.reason));
+
+    -- (undecided), (tie), (abandoned): the director, who may finish any of Hilton's
+    SELECT * INTO got FROM match_finalise((y->>'MU')::uuid);
+    PERFORM _assert(NOT got.ok AND got.reason = 'not_decided' AND _v130_status((y->>'MU')::uuid) = 'live',
+      format('§107 (undecided): got (%s, %s)', got.ok, got.reason));
+    SELECT * INTO got FROM match_finalise((y->>'MT')::uuid);
+    PERFORM _assert(NOT got.ok AND got.reason = 'super_over_pending' AND _v130_status((y->>'MT')::uuid) = 'live',
+      format('§107 (tie): got (%s, %s)', got.ok, got.reason));
+    SELECT * INTO got FROM match_finalise((y->>'MX')::uuid);
+    PERFORM _assert(NOT got.ok AND got.reason = 'match_abandoned' AND _v130_status((y->>'MX')::uuid) = 'abandoned',
+      format('§107 (abandoned): got (%s, %s)', got.ok, got.reason));
+    PERFORM _assert(_v130_audit((y->>'MU')::uuid) + _v130_audit((y->>'MT')::uuid) + _v130_audit((y->>'MX')::uuid)
+                    + _v130_audit((y->>'MR')::uuid) = 0, '§107: a refusal left an audit row');
+
+    -- (claim)
+    PERFORM _as((y->>'sc')::uuid);
+    SELECT * INTO got FROM scoring_claim((y->>'MS')::uuid, 'v130-pad');
+    PERFORM _assert(NOT got.ok AND got.reason = 'match_complete', format('§107 (claim): a claim after finishing got (%s, %s)', got.ok, got.reason));
+
+    -- (audit)
+    PERFORM _as((y->>'ds')::uuid);
+    SELECT a.action, a.actor, a.subject_kind INTO got
+      FROM audit_log('11111111-1111-1111-1111-111111111111', ARRAY['scoring'], NULL, NULL, NULL, 200) a
+     WHERE a.action = 'Finished the match' AND a.actor = 'V130 Scorer';
+    PERFORM _assert(got.action IS NOT NULL AND got.subject_kind = 'fixture',
+      format('§107 (audit): the director''s log has no "Finished the match" by the scorer (%s)', got.subject_kind));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 107
+  -- └── db/130 (section 107) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
