@@ -207,7 +207,9 @@ try {
   const otherMatchId = (await dbq(
     `insert into match (school_id, team_code, opponent, ground_id, starts_at, format, overs, status)
      values ($1, '2XI', 'Other Driver XI', $2, $3, 'T20', 20, 'scheduled') returning id`,
-    [HIL, GROUND_ID, todayAt(10, 0)]))[0].id;
+    // No ground: the 1XI is on the Oval from 11:00, and db/133 refuses two
+    // fixtures on one ground at once.
+    [HIL, null, todayAt(10, 0)]))[0].id;
   const otherTripId = (await dbq(
     `insert into trip (match_id, school_id, vehicle_id, driver_id, depart_at, pickup)
      values ($1, $2, $3, $4, $5, 'Bottom gate') returning id`,
