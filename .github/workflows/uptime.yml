@@ -11,9 +11,8 @@ name: Uptime alert
 # Addresses (Settings -> Secrets and variables -> Actions -> Variables):
 #   PROD_URL  production. Unset, it falls back to https://scrbrd.onrender.com,
 #             the address written in docs/pilot/PRODUCTION_SHEET.md.
-#   DEMO_URL  the demo copy. Its address is not written in the repo
-#             (docs/pilot/DEMO_COPY.md says "<demo service>"), so unset, that
-#             job says so and does nothing.
+#   DEMO_URL  the demo copy. Unset, it falls back to
+#             https://scrbrd-demo.onrender.com (the scrbrd-demo Render service).
 # Either may be the base address or the full /api/health URL.
 #
 # Only the built-in GITHUB_TOKEN, with issues: write. No new secret.
@@ -41,7 +40,7 @@ jobs:
           - env: prod
             url: ${{ vars.PROD_URL || 'https://scrbrd.onrender.com' }}
           - env: demo
-            url: ${{ vars.DEMO_URL }}
+            url: ${{ vars.DEMO_URL || 'https://scrbrd-demo.onrender.com' }}
     concurrency:
       group: uptime-${{ matrix.env }}
       cancel-in-progress: false
