@@ -84,7 +84,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   schools; suspending or archiving a school, freezing scoring in an incident,
   public pages from inside the app; what a school, a family and a child are
   told; what must never be switched off; how each act is logged; and one home
-  for every control).
+  for every control)
+  and two phones scoring one match (added 2026-11-04, Kameel: two devices
+  scoring the same match whose logs disagree; which ball stands, how each
+  scorer is told, how the log keeps both versions, and what the official
+  result and the public page read meanwhile).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
