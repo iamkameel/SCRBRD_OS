@@ -3097,9 +3097,10 @@ BEGIN
       ('mf', 10, time '09:00', 'scheduled', 'Verify 076 later')) AS v(k, days, at, st, opp)
   LOOP
     INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
-    -- Ten overs a side (100 minutes): two hours apart, none overlaps the next (db/133).
+    -- Eight overs a side (84 minutes): two hours apart, and the morning one moved
+    -- half an hour later still ends before noon, so none overlaps the next (db/133).
     VALUES (HIL, 'U17A', r.opp, ((current_date + r.days)::timestamp + r.at) AT TIME ZONE 'Africa/Johannesburg',
-            'cricket', 'T20', 10, r.st, GROUND)
+            'cricket', 'T20', 8, r.st, GROUND)
     RETURNING id INTO v_m;
     ids := ids || jsonb_build_object(r.k, v_m, r.k || '_start', (SELECT starts_at FROM match WHERE id = v_m));
   END LOOP;

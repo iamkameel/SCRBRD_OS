@@ -227,7 +227,7 @@ try {
   const clashText = await dos.page.locator('[data-testid="fixture-refused"]').innerText().catch(() => "");
   if (DEBUG) console.log("[debug] clash shown:", clashText);
   ok("...refused, naming the clash in the database's words",
-     /^Not booked: 1XI v Michaelhouse is on Gordon Sherwood Oval \d\d:\d\d-\d\d:\d\d on \w{3} \d{1,2} \w{3}\. Choose another time or ground\.$/.test(clashText.trim()), clashText);
+     /^Not booked: 1XI v Michaelhouse is on Gordon Sherwood Oval (\d\d:\d\d-\d\d:\d\d on \w{3} \d{1,2} \w{3}|from \w{3} \d{1,2} \w{3} \d\d:\d\d to \w{3} \d{1,2} \w{3} \d\d:\d\d)\. Choose another time or ground\.$/.test(clashText.trim()), clashText);
   ok("...and nothing was arranged",
      !((await (await fetch(`${API}/api/read/matches`, auth)).json())?.rows ?? []).some((m) => m.opponent === "Kearsney Clash XI"));
   await click(dos.page, /^Cancel$/, 3000);
