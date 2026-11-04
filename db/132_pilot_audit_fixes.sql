@@ -55,13 +55,15 @@
 -- Kameel: "refuse 'Finish' while another phone holds the pen, and tell the
 -- scorer when a late ball is set aside."
 --   ~ match_finalise() (db/130)  after the match is locked, the scoring
---       session is locked too, and a live lease (state active, lease not
---       lapsed) held by a device other than the caller's (app_device_id(),
---       from the signed token) is held_elsewhere: nothing is finished under a
---       scorer who is still writing. The session lock also orders Finish
---       after any batch of balls already past its lease check (that batch
---       holds the same row until it commits), so no ball lands in the log
---       after "Finished the match". Every other line is db/130's.
+--       session is locked too, which orders Finish after any batch of balls
+--       already past its lease check (that batch holds the same row until it
+--       commits), so the log it reads is whole and no ball lands in it after
+--       "Finished the match". Then, after the log is found decided, a live
+--       lease (state active, lease not lapsed) held by a device other than
+--       the caller's (app_device_id(), from the signed token) is
+--       held_elsewhere: nothing is finished under a scorer who is still
+--       writing. A match that could not be finished anyway (not decided, a
+--       super over to play) says that first. Every other line is db/130's.
 --   + late_ball_notice()  AFTER INSERT on ball_event_quarantine: a ball set
 --       aside at a match that is complete (or called off) raises two notices,
 --       once per match while the first is unexpired: to the scorer who sent
@@ -153,7 +155,7 @@ BEGIN
       ('scoring_claim_handover(uuid,text,text)',                      '25f59befd49a03f8d9ab1beaff1849ac', '1c8ebbea34816d5b37fa983e275ead09',  'db/33'),
       ('scoring_lease_check(uuid,text,integer)',                      '7c371d47d9054c6cd2595303e32f6913', 'be2771f4c1439edc201f792c70d9c3e3',     'db/33'),
       ('scoring_verify_takeover(uuid,text,integer,integer,integer)',  'b7f4bd747453e5f6b0e12055d63dde24', '6499880df4581290fb527dd4a5eca169',    'db/45'),
-      ('match_finalise(uuid)',                                        'de8bd9dc838f5c489b9a7034200c962f', 'e2725409453e7e3d898402645cb8896c',  'db/130'),
+      ('match_finalise(uuid)',                                        'de8bd9dc838f5c489b9a7034200c962f', '03b8a550d38ea96ea67b8a38b9930f7b',  'db/130'),
       ('result_confirm_platform()',                                   '70d74fa6b013d7cf9bbf5031f1b80e31', 'ccdb5bd7b9dad9767658025a17cc8418',  'db/128'),
       ('audit_fixture_label(uuid)',                                   '06b10a4e83996bbc16432a836c2e9b54', 'b84a1dd71916204239e129fa0fd5b48b',     'db/79'),
       ('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)', 'f19c41322aa5c63846f827d49b960884', '8bea03eaac74fbfc54900f40c5d9e7f1',     'db/130'))
@@ -563,7 +565,7 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 -- ══════════════════════════════════════════════════════════════════
 --  3 · The pen is put down before Finish; a late ball is told
 -- ══════════════════════════════════════════════════════════════════
--- db/130's, with step 3b (marked db/132).
+-- db/130's, with steps 3b and 5b (marked db/132).
 CREATE OR REPLACE FUNCTION match_finalise(p_match uuid)
 RETURNS TABLE (ok boolean, reason text) AS $$
 DECLARE
@@ -585,22 +587,24 @@ BEGIN
   IF m.status = 'complete' THEN RETURN QUERY SELECT true, 'already_complete'::text; RETURN; END IF;
   -- 3. Called off: not a result to finish.
   IF m.status = 'abandoned' THEN RETURN QUERY SELECT false, 'match_abandoned'::text; RETURN; END IF;
-  -- 3b. db/132: another phone holds the pen. The session row is locked, as
-  --     the live path's lease check locks it, so a batch already past its
-  --     check commits first; then a live lease on a device that is not the
-  --     caller's refuses: its scorer may still be writing.
+  -- 3b. db/132: the session row is locked, as the live path's lease check
+  --     locks it, so a batch of balls already past its check commits before
+  --     the log is read below.
   PERFORM 1 FROM scoring_session s WHERE s.match_id = p_match FOR UPDATE;
-  IF EXISTS (SELECT 1 FROM scoring_session s
-              WHERE s.match_id = p_match AND s.state = 'active' AND s.lease_until > now()
-                AND s.holder_device IS DISTINCT FROM app_device_id()) THEN
-    RETURN QUERY SELECT false, 'held_elsewhere'::text; RETURN;
-  END IF;
   -- 4. The log has not decided it.
   SELECT x.outcome, x.result_hash INTO r FROM match_result_compute(p_match) x;
   IF r.outcome IS NULL OR r.outcome = 'in_progress' THEN RETURN QUERY SELECT false, 'not_decided'::text; RETURN; END IF;
   -- 5. A tie waiting on its super over: the gate's own reason.
   v_why := match_completion_refusal(p_match);
   IF v_why IS NOT NULL THEN RETURN QUERY SELECT false, v_why; RETURN; END IF;
+  -- 5b. db/132: another phone holds the pen. A live lease on a device that is
+  --     not the caller's refuses: its scorer may still be writing. Asked
+  --     last, so a match that could not be finished anyway says why.
+  IF EXISTS (SELECT 1 FROM scoring_session s
+              WHERE s.match_id = p_match AND s.state = 'active' AND s.lease_until > now()
+                AND s.holder_device IS DISTINCT FROM app_device_id()) THEN
+    RETURN QUERY SELECT false, 'held_elsewhere'::text; RETURN;
+  END IF;
 
   UPDATE match SET status = 'complete' WHERE id = p_match;
   INSERT INTO scoring_audit (match_id, school_id, event, actor_id, detail)

@@ -33870,7 +33870,7 @@ $v49$;
   --   match_finished_stays_finished disabled              → (reopen)
   --   match_finished_called_off disabled                  → (called off)
   --   match_result_confirmation_lapse disabled            → (lapse)
-  --   match_finalise() without step 3b                    → (held)
+  --   match_finalise() without step 5b                    → (held)
   --   late_ball_notice disabled                           → (late)
   --   scoring_claim() without the abandoned test          → (abandoned)
   --   role_assignment_revoke_only() without the fixture
