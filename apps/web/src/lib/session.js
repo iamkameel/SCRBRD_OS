@@ -178,6 +178,18 @@ export function couldScore(schoolId, teamCode) {
 }
 
 /**
+ * May this person finish this match (db/130: scoring.finalise at the home
+ * side)? Like couldScore(), it decides whether to OFFER the pad's "Finish the
+ * match", never whether to allow it: match_finalise() asks app_can() again.
+ */
+export function couldFinalise(schoolId, teamCode) {
+  return (_profile?.assignments ?? []).some((a) =>
+    roleGrants(a.role, "scoring.finalise") &&
+    (a.school == null || a.school === schoolId) &&
+    (a.team == null || a.team === teamCode));
+}
+
+/**
  * Is this build talking to a real backend?
  *
  * The answer drives what the UI says out loud. A demo running on mock data
