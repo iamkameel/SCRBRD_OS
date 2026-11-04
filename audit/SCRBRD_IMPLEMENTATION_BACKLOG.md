@@ -3,6 +3,8 @@
 **Pass 1:** Focused · `claude/ui-refactor-ds2` @ `0783ed5` · 2026-09-16
 **Pass 2:** Harvest from the `scrbrd-beta-2` prototype · `claude/ui-refactor-ds2` @ `bdf837e` · 2026-09-18
 
+1 Nov 2026: pilot scope frozen to eight items (setup, fixtures, mobile scoring, public/private views, coach view, parent view, audit trail, wagon wheel); other work parked, not deleted.
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -673,8 +675,12 @@ for the owner's key, a platform administrator, a school administrator and a two-
 - **How a union selector finds boys, design** — **Decided 2026-10-30** (#221, commit 298e5da): Kameel answered all six questions in `docs/design/UNION_SELECTOR_FIND.md` §9 as recommended, 21:05 SAST. Design and docs only; the build is its §10, from db/125.
 - **A family's access request under POPIA s23 and s24, design** — **Decided 2026-10-30** (#222, commit 1a54773): Kameel answered all 15 questions in `docs/design/ACCESS_REQUESTS.md` §7 as recommended, 21:40 SAST. Docs only; nothing built. Slice 0, the paper runbook, comes first.
 - **Union selector's list, UNION_SELECTOR_FIND S1 and S2, db/125** — **Partly done 2026-10-30** (#223, commit 6551340): the union selector's list of boys whose families named his union has its read routes; the CSV export refuses the list; every listed row is logged. Later slices of §10 are not built.
+- **Union selector's screen, UNION_SELECTOR_FIND S3** — **Partly done 2026-10-31** (#227, commit 5c33227): the Selection view for the unionselector persona is built, as the S3 row of `docs/design/UNION_SELECTOR_FIND.md` describes it. Slice S5 (playing styles on the row, Kameel's Q4: yes) is not built.
+- **Union selector's family lines, UNION_SELECTOR_FIND S4** — **Partly done 2026-10-31** (#231, commit 5261751): the family's "Who at a union looked" block groups the list reads per reader per SAST day, with a count; passport and name reads stay line by line. Slice S5 is not built.
 - **Seams audit fixes, 30 Oct, db/125** — **Done 2026-10-30** (#223, commit 6551340): a guardian's new passport consent is refused from the boy's 18th birthday; a scout's candidates read is logged; a withdrawn processing consent lapses the passport and scouting consents. db/125 is live on both databases and recorded in `db/SHIPPED.sha256`.
 - **Match-day safety fixes (Fable's match-day audit, 30 Oct)** — **Done 2026-10-31** (#225, commit 22e4898): the pad heartbeats and keeps the screen awake while scoring; a second phone can no longer take over a match without a confirmed, audited "Take over scoring"; the toss can be written under the pad's resume sign-in; every stopped pad lists the balls it kept and offers an action; the runbook covers the paper step after a dead phone. db/126 is live on both databases and recorded in `db/SHIPPED.sha256`.
+
+- **SuperAdmin controls, design** — **Designed 2026-10-31** (#229, commit 4c1422e): `docs/design/PLATFORM_CONTROLS.md`, what a SuperAdmin may switch on and off. Kameel answered all 18 questions as recommended on 31 Oct 2026 (12:17 SAST). Design only; Opus builds from its §9 slices. Nothing built yet.
 
 ## Product completeness
 
@@ -3470,6 +3476,8 @@ into both; dropping one would take the views with it. db/43 was such a change an
 `ball_dismissed_batter()` in the batting and dismissals views, and a batter run out at the other end has his match),
 and a NULL type and a W with no method reach the views through `ball_event_live` and `dismissal_is_bowlers()`.
 
+**Partly done 2026-10-31:** recognition slice R3, the fixture class (`docs/design/RECOGNITION_reconciliation.md`, R3 row), which decides which fixtures count toward awards and records: competitive, festival or friendly, and the reason a match stands on no board. A friendly is a fixture with no competition (db/127) (#228, commit 516c548).
+
 ### ~~SCRBRD-088~~ — CLOSED · A handover in the second innings cannot verify
 **Closed 2026-09-25** in `105e467` (#37): db/45, as the build note below records.
 **Priority:** P1 · **Domain:** Scoring / handover · **Type:** bug (found by db/43, 2026-09-25)
@@ -4806,9 +4814,13 @@ unique index). `GUARDIAN_APP_URL` is set from CSA's material. The information of
 
 **Partly done 2026-10-22:** SR-1 (db/112), season rollover: a moved pupil follows his new side, and a boy playing up reads his match's balls (#171, `184976c`).
 
+**Done 2026-11-04:** the last slice of the season rollover's S2 (`docs/design/SEASON_ROLLOVER.md`, db/129): a pupil's own reach is dated, so a boy who joins a side reads that side only from the day he joined it, not its earlier fixtures, scorecards, posts or plans. With this, Season rollover is complete (#232, commit a8c638a).
+
 **Partly done 2026-10-23:** REACH R-B: the consents read narrowed: passport consent is the office's alone, scouting consent stays with his side's coach (db/115) (#176, `37f5884`).
 
 **Partly done 2026-10-29:** a family's way in: a parent whose link has ended no longer reads his child's passport consents or opens his passport; the link must be live today (db/119, `is_family_of()`) (#205 via #211, commit 0da75d4).
+
+**Done 2026-10-31:** every "live today" check reads `sa_today()`, the day in Johannesburg, not the database's UTC day, so between midnight and 02:00 SAST a role, a guardian link or a consent is no longer judged on yesterday's date (db/128) (#230, commit a24088d).
 
 **Partly done 2026-10-30:** consents lapse when the giving link ends (db/122) (#215, commit 81de9e4).
 
