@@ -124,7 +124,7 @@ const older = async (player, days) => {
   await q(`update team_membership set joined_on = joined_on - $2::int where player_id = $1`, [player, days]);
 };
 const turnEighteen = async (player) =>
-  older(player, (await q(`select majority_on(born) - current_date as d from player where id = $1`, [player]))[0].d);
+  older(player, (await q(`select majority_on(born) - sa_today() as d from player where id = $1`, [player]))[0].d);
 const cleanup = async () => {
   const boys = Object.values(P), people = Object.values(U);
   await q(`delete from health_monitoring_consent where player_id = any($1)`, [boys]);
@@ -264,7 +264,7 @@ try {
      JSON.stringify(await link(P.minor, U.mmum)));
   await q(`update player set team_code = null where id = $1`, [P.pupil]);
   const la = await link(P.pupil, U.mum);
-  const { d } = await today();
+  const { sa: d } = await today();   // the SA day the link is ended on (db/128), not current_date
   ok("the adult pupil who leaves: his mother's link ends that day", la?.until === d, JSON.stringify(la));
   ok("...she reads nothing of him", !(await reads(mum, P.pupil)));
   ok("...and her health consent, which ran through it, is dead", !(await healthLive(P.pupil)));
