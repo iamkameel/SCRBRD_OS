@@ -394,6 +394,10 @@ const SUITES = [
   // safeErr() over a duplicate email and ID number, and every console call
   // under services/ walked for a DETAIL, an email, a name or a raw message.
   ["log-hygiene", "services/api/log-safe.test.mjs"],
+  // REACH R-I (§4 M4): no API route reads a masked column of `player` from
+  // the table itself, only through player_masked; db/99 §110's copy of the
+  // `players` read held to the API's.
+  ["player-columns", "services/api/player-columns.test.mjs"],
   ["notif-store", "apps/web/test/notifications-store.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The pilot load's checker (docs/pilot/PILOT_LOAD.md): duplicates, a bad
   // birthday, a side his birthday does not fit, a guardian with no email, an

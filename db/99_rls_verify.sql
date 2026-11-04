@@ -9453,6 +9453,45 @@ CREATE OR REPLACE FUNCTION _v131h_withdraw(p_match uuid, p_player uuid) RETURNS 
   SELECT count(*)::int FROM u
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- §110 (R-I): Hilton's U15E, invented here: three boys with every masked
+-- column of player filled, the first with his own account, his `player` row
+-- at the side and his self link, verified by the office, as R Pillay's is in
+-- the seed. As the owner; every value is invented.
+CREATE OR REPLACE FUNCTION _v131i_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U15 date := make_date(extract(year FROM sa_today())::int - 14, 3, 1);
+  b uuid[] := '{}'; v uuid; i int; ids jsonb; u uuid; sa uuid;
+BEGIN
+  FOR i IN 1..3 LOOP
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born, id_number, email, phone,
+                        hometown, houseatschool, address, guardian, height, weight, fitness)
+    VALUES (HIL, 'U15E', format('Mask Boy %s', i), 1340 + i, 'batter', U15, format('080301580008%s', i),
+            format('mask%s@example.invalid', i), format('+27 82 000 13%s', lpad(i::text, 2, '0')), 'Howick', 'Farfield',
+            format('%s Example Road, Howick', i), jsonb_build_object('name', format('Mask Parent %s', i), 'phone', '+27 82 000 1399'),
+            170 + i, 60 + i, 'fit')
+    RETURNING id INTO v;
+    b := b || v;
+  END LOOP;
+  ids := _v71_people('v131i', ARRAY[ARRAY['pupil', 'player', HIL::text, 'U15E', b[1]::text]]);
+  u := (ids->>'pupil')::uuid;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (u, 'selfaccess', HIL) RETURNING id INTO sa;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (sa, b[1], 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  RETURN ids || jsonb_build_object('b', to_jsonb(b));
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- How many of these boys' masked columns are filled, as the owner: the
+-- pupil's NULLs prove the mask only if the values are there to hide.
+CREATE OR REPLACE FUNCTION _v131i_filled(p_ids uuid[]) RETURNS integer AS $$
+  SELECT count(*)::int FROM player p
+   WHERE p.id = ANY (p_ids)
+     AND p.born IS NOT NULL AND p.id_number IS NOT NULL AND p.email IS NOT NULL AND p.phone IS NOT NULL
+     AND p.hometown IS NOT NULL AND p.houseatschool IS NOT NULL AND p.address IS NOT NULL AND p.guardian IS NOT NULL
+     AND p.height IS NOT NULL AND p.weight IS NOT NULL AND p.fitness IS NOT NULL
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/131 (sections 108, 109, 110) ─────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -33323,6 +33362,69 @@ $v49$;
   -- └── end of section 109
   -- └── db/131 (section 109) ──────────────────────────────────────────
 
+  -- ┌── db/131 (section 110) ─────────────────────────────────────────
+  -- ── 110. REACH R-I: what a pupil reaches of a team-mate through `players` (§4 M4) ──
+  -- player_read lets a pupil read his team-mates' rows (player.profile.read
+  -- at his side); the API reads them only through player_masked, whose
+  -- columns are masked per row (tables.mjs). Rows are _v131i_stage()'s,
+  -- invented, with every masked column filled. What each label holds:
+  --   (filled)    as the owner, all three boys have every masked column
+  --   (players)   the API's `players` read, word for word (read-api.mjs; the
+  --               static test services/api/player-columns.test.mjs holds the
+  --               copy to it): he reads his two team-mates, and of them no
+  --               masked column; of himself, his self link's tiers and not
+  --               his ID number
+  --   (view)      the same of every masked column player_masked carries,
+  --               the ones `players` does not select included
+  DECLARE
+    m    jsonb := _v131i_stage();
+    B1 uuid := (m->'b'->>0)::uuid;
+    MATES uuid[] := ARRAY[(m->'b'->>1)::uuid, (m->'b'->>2)::uuid];
+    got text; n int := 0; own boolean;
+    r record;
+  BEGIN
+    -- (filled)
+    PERFORM _assert(_v131i_filled(MATES || B1) = 3, '§110 (filled): the stage''s boys do not have every masked column: the proof proves nothing');
+    PERFORM _as((m->>'pupil')::uuid);
+    -- (players)  ── the `players` read, as read-api.mjs has it ──
+    FOR r IN
+    -- players:begin
+    select pm.id, pm.school_id, s.name as school_name, pm.full_name, pm.team_code, pm.squad_no, pm.playing_role,
+                  pm.batting_style, pm.bowling_arm, pm.bowling_style, pm.fitness,
+                  pm.born, pm.hometown, pm.height, pm.weight,
+                  pm.address, pm.guardian, pm.id_number
+             from player_masked pm
+             join school s on s.id = pm.school_id
+            order by pm.full_name
+    -- players:end
+    LOOP
+      IF r.id = ANY (MATES) THEN
+        n := n + 1;
+        IF r.fitness IS NOT NULL OR r.born IS NOT NULL OR r.hometown IS NOT NULL OR r.height IS NOT NULL OR r.weight IS NOT NULL
+           OR r.address IS NOT NULL OR r.guardian IS NOT NULL OR r.id_number IS NOT NULL THEN
+          got := concat_ws(', ', got, r.full_name);
+        END IF;
+      ELSIF r.id = B1 THEN
+        own := r.fitness IS NOT NULL AND r.born IS NOT NULL AND r.hometown IS NOT NULL AND r.height IS NOT NULL
+               AND r.weight IS NOT NULL AND r.address IS NOT NULL AND r.guardian IS NOT NULL AND r.id_number IS NULL;
+      END IF;
+    END LOOP;
+    PERFORM _assert(n = 2, format('§110 (players): the pupil reaches %s of his two team-mates through players: the proof proves nothing', n));
+    PERFORM _assert(got IS NULL, format('§110 (players): the pupil reads a masked column of %s', got));
+    PERFORM _assert(own, '§110 (players): the pupil does not read his own tiers, or reads his own ID number');
+    -- (view)
+    got := NULL;
+    got := (SELECT string_agg(full_name, ', ') FROM player_masked
+             WHERE id = ANY (MATES)
+               AND (born IS NOT NULL OR id_number IS NOT NULL OR email IS NOT NULL OR phone IS NOT NULL OR hometown IS NOT NULL
+                    OR houseatschool IS NOT NULL OR address IS NOT NULL OR guardian IS NOT NULL OR height IS NOT NULL
+                    OR weight IS NOT NULL OR fitness IS NOT NULL));
+    PERFORM _assert(got IS NULL AND (SELECT count(*) FROM player_masked WHERE id = ANY (MATES)) = 2,
+      format('§110 (view): through player_masked the pupil reads a masked column of %s', coalesce(got, '(or not his team-mates)')));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 110
+  -- └── db/131 (section 110) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
