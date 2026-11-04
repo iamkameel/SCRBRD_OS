@@ -415,6 +415,8 @@ const SUITES = [
   // this machine, the ledger and row-count comparisons, the roles a dump's
   // grants name, and a restore aimed anywhere else refused with exit 2.
   ["backup-verify", "tools/backup-verify.test.mjs"],
+  // The uptime alert (pilot item 7): what counts as down, the retries, the issue action.
+  ["uptime-check", "tools/uptime-check.test.mjs"],
   ["schema-guard", "services/api/schema-guard.test.mjs"],
   // Which commit /api/health says the process was built from (GA I14).
   ["revision", "services/api/revision.test.mjs"],
