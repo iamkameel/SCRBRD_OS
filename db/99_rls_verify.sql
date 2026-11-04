@@ -8759,7 +8759,7 @@ $$ LANGUAGE sql STABLE;
 CREATE OR REPLACE FUNCTION _v125_list(y jsonb, p_org uuid, p_school uuid, p_age text, p_q text DEFAULT NULL) RETURNS text AS $$
   SELECT coalesce(string_agg(_v125_key(y, l.player_id) || '@' || _v125_key(y, l.org_id), ',' ORDER BY l.n), '')
     FROM passport_union_list(p_org, p_school, p_age, p_q) WITH ORDINALITY
-         AS l(player_id, name, school_name, team_code, org_id, consent_id, n)
+         AS l(player_id, name, school_name, team_code, org_id, consent_id, batting_style, bowling_style, n)
 $$ LANGUAGE sql VOLATILE;
 
 -- The institutions and the schools the caller is offered: keys, in order;
@@ -32121,8 +32121,12 @@ $v49$;
   --              stranger
   --   (b)        a withdrawn consent drops the row in the same transaction
   --   (c)        a giver's link ended yesterday drops it
-  --   (i)        the row is the six columns; the bodies read no born, no
-  --              player_innings, no honour, no style, no passport_name()
+  --   (i)        the row is the eight columns and no others (db/134, S5: Q4
+  --              yes, his batting and bowling styles, roster identity, not a
+  --              figure); the bodies read no born, no player_innings, no
+  --              honour, no role, no arm, no passport_name(); the list reads
+  --              each style once, from his player row, and the other three
+  --              read no style
   --   (j)        the three are definers with the pinned path, the writer is
   --              not; nobody but scrbrd_app executes the three, nobody the
   --              writer
@@ -32246,15 +32250,20 @@ $v49$;
     PERFORM set_config('app.user_id', '', true);
     PERFORM _assert(_v125_total() = v_t, format('§102 (f): a refused call logged (%s, was %s)', _v125_total(), v_t));
 
-    -- (a) and (g): the selector's first list, at SA.
+    -- (a) and (g): the selector's first list, at SA. PA bats left and bowls
+    -- spin; PD's styles are not recorded (db/134: his row carries them as
+    -- they stand on his player row, a blank one blank).
+    UPDATE player SET batting_style = 'L', bowling_style = 'S' WHERE id = (y->>'PA')::uuid;
+    UPDATE player SET batting_style = NULL, bowling_style = NULL WHERE id = (y->>'PD')::uuid;
     PERFORM _as((y->>'sel')::uuid);
     SELECT coalesce(string_agg(_v125_key(y, l.player_id) || '@' || _v125_key(y, l.org_id)
-                               || '|' || l.name || '|' || l.school_name || '|' || l.team_code, ',' ORDER BY l.n), ''),
+                               || '|' || l.name || '|' || l.school_name || '|' || l.team_code
+                               || '|' || coalesce(l.batting_style, '-') || '|' || coalesce(l.bowling_style, '-'), ',' ORDER BY l.n), ''),
            array_agg(l.consent_id ORDER BY l.consent_id)
       INTO got, v_cids
-      FROM passport_union_list(U_, SA_, NULL, NULL) WITH ORDINALITY AS l(player_id, name, school_name, team_code, org_id, consent_id, n);
-    PERFORM _assert(got = 'PD@U|Verify OneTwentyFive Echo|Verify OneTwentyFive Alpha School|U15A,'
-                       || 'PA@U|Verify OneTwentyFive Kilo|Verify OneTwentyFive Alpha School|U15A',
+      FROM passport_union_list(U_, SA_, NULL, NULL) WITH ORDINALITY AS l(player_id, name, school_name, team_code, org_id, consent_id, batting_style, bowling_style, n);
+    PERFORM _assert(got = 'PD@U|Verify OneTwentyFive Echo|Verify OneTwentyFive Alpha School|U15A|-|-,'
+                       || 'PA@U|Verify OneTwentyFive Kilo|Verify OneTwentyFive Alpha School|U15A|L|S',
       format('§102 (a): the union''s selector lists SA as [%s]', got));
     v_n := _v125_direct((y->>'sel')::uuid, U_, SA_, NULL);
     PERFORM _assert(v_n = 2, format('§102 (a): the direct count over passport_consent at SA is %s, not the list''s 2', v_n));
@@ -32274,7 +32283,7 @@ $v49$;
     SELECT count(*), count(DISTINCT l.school_name),
            coalesce(string_agg(_v125_key(y, l.player_id), ',' ORDER BY l.n) FILTER (WHERE _v125_key(y, l.player_id) <> '?'), '')
       INTO v_n, v_n2, got
-      FROM passport_union_list(U_, NULL, 'u15', NULL) WITH ORDINALITY AS l(player_id, name, school_name, team_code, org_id, consent_id, n);
+      FROM passport_union_list(U_, NULL, 'u15', NULL) WITH ORDINALITY AS l(player_id, name, school_name, team_code, org_id, consent_id, batting_style, bowling_style, n);
     PERFORM _assert(got = 'PD,PA,PB', format('§102 (a): the union''s selector lists U15 as [%s] of this section''s boys', got));
     PERFORM _assert(v_n = _v125_direct((y->>'sel')::uuid, U_, NULL, 'U15'),
       format('§102 (a): the U15 list holds %s row(s), the direct count %s', v_n, _v125_direct((y->>'sel')::uuid, U_, NULL, 'U15')));
@@ -32476,13 +32485,26 @@ $v49$;
            p.prorettype = 'record'::regtype AND p.proretset
       INTO got, v_t, v_ok
       FROM pg_proc p WHERE p.oid = 'passport_union_list(uuid,uuid,text,text)'::regprocedure;
-    PERFORM _assert(got = 'player_id,name,school_name,team_code,org_id,consent_id' AND v_t = 'iiiitttttt' AND v_ok,
-      format('§102 (i): passport_union_list() returns [%s] (%s), not the six columns', got, v_t));
+    PERFORM _assert(got = 'player_id,name,school_name,team_code,org_id,consent_id,batting_style,bowling_style'
+                    AND v_t = 'iiiitttttttt' AND v_ok,
+      format('§102 (i): passport_union_list() returns [%s] (%s), not the eight columns', got, v_t));
+    SELECT array_to_string(p.proallargtypes::regtype[], ',') INTO got
+      FROM pg_proc p WHERE p.oid = 'passport_union_list(uuid,uuid,text,text)'::regprocedure;
+    PERFORM _assert(got = 'uuid,uuid,text,text,uuid,text,text,text,uuid,uuid,text,text',
+      format('§102 (i): passport_union_list()''s columns are typed [%s]', got));
     FOREACH k IN ARRAY ARRAY['passport_union_list(uuid,uuid,text,text)', 'passport_union_log_list(uuid[],uuid[])',
                              'passport_union_orgs()', 'passport_union_schools(uuid)'] LOOP
       SELECT p.prosrc INTO got FROM pg_proc p WHERE p.oid = k::regprocedure;
-      PERFORM _assert(got !~* '\m(born|player_innings|bowler_innings_figures|honour|team_cap|player_milestone|batting_style|bowling_style|bowling_arm|passport_name)\M',
-        format('§102 (i): %s reads past the name, the school and the side', k));
+      PERFORM _assert(got !~* '\m(born|player_innings|bowler_innings_figures|honour|team_cap|player_milestone|playing_role|bowling_arm|passport_name)\M',
+        format('§102 (i): %s reads past the name, the school, the side and the styles', k));
+      -- The styles (db/134): the list reads each once, from his player row;
+      -- the other three none.
+      PERFORM _assert(CASE WHEN k = 'passport_union_list(uuid,uuid,text,text)'
+                           THEN (length(got) - length(replace(got, 'batting_style', ''))) / length('batting_style') = 1
+                                AND (length(got) - length(replace(got, 'bowling_style', ''))) / length('bowling_style') = 1
+                                AND position('p.batting_style AS bat, p.bowling_style AS bowl' IN got) > 0
+                           ELSE got !~* '\m(batting_style|bowling_style)\M' END,
+        format('§102 (i): %s reads the styles other than once each from his player row', k));
     END LOOP;
 
     -- (j)
