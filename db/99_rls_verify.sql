@@ -9432,6 +9432,12 @@ EXCEPTION WHEN OTHERS THEN
   RETURN SQLSTATE || ' ' || coalesce(v_con, '');
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- A match's outcome as match_result_compute() folds it, as the owner (the
+-- function is not the application's to call).
+CREATE OR REPLACE FUNCTION _v133_outcome(p_match uuid) RETURNS text AS $$
+  SELECT r.outcome FROM match_result_compute(p_match) r
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- The scoring session, as the owner reads it: state and holder.
 CREATE OR REPLACE FUNCTION _v133_session(p_match uuid) RETURNS text AS $$
   SELECT coalesce((SELECT s.state::text || ' ' || coalesce(s.holder_user_id::text, '-') FROM scoring_session s WHERE s.match_id = p_match), 'none')
@@ -33360,8 +33366,8 @@ $v49$;
       '§112 (score): scorebook_import_open() does not refuse a postponed match');
 
     -- ── (result) ──
-    PERFORM _assert((SELECT r.outcome FROM match_result_compute(F9) r) = 'in_progress',
-      format('§112 (result): the postponed f9''s outcome reads %s', (SELECT r.outcome FROM match_result_compute(F9) r)));
+    PERFORM _assert(_v133_outcome(F9) = 'in_progress',
+      format('§112 (result): the postponed f9''s outcome reads %s', _v133_outcome(F9)));
 
     -- ── (grants) ──
     SELECT string_agg(f, ' ') INTO got FROM unnest(ARRAY['match_fixture_rules()', 'ball_event_not_postponed()',
