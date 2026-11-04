@@ -33861,21 +33861,30 @@ $v49$;
   --   (sheet)     fixture_sheet()'s comment records saved = shown
   --
   -- Falsified (4 Nov 2026, each change made as the owner on a migrated
-  -- database and the section run; restored, it passed):
-  --   match_finished_stays_finished disabled         → (reopen)
-  --   match_finished_called_off disabled             → (called off)
-  --   match_finalise() without step 3b               → (held)
-  --   late_ball_notice disabled                      → (late)
-  --   scoring_claim() without the abandoned test     → (abandoned)
-  --   role_assignment_revoke_only() as db/01 shipped → (role)
-  --   child_links' email unguarded                   → (links)
-  --   app_can() granted to PUBLIC again              → (grant)
-  --   public_name_live_link() on current_date        → (day)
-  --   news_post_read_team_wide without published_at  → (withdrawn)
-  --   result_confirm_platform() as db/128 left it    → (platform)
+  -- database, inside the verifier's transaction, and the section run; each
+  -- went red at its own label; unchanged it passed):
+  --   match_finished_stays_finished disabled              → (reopen)
+  --   match_finished_called_off disabled                  → (called off)
+  --   match_result_confirmation_lapse disabled            → (lapse)
+  --   match_finalise() without step 3b                    → (held)
+  --   late_ball_notice disabled                           → (late)
+  --   scoring_claim() without the abandoned test          → (abandoned)
+  --   role_assignment_revoke_only() without the fixture
+  --     rule, then without the dates rule                 → (role), each
+  --   role_assignment_change_logged disabled              → (role)
+  --   child_links' email unguarded in the copy            → (links)
+  --   app_can() granted to PUBLIC again                   → (grant)
+  --   public_name_live_link() on current_date             → (day)
+  --   news_post_read_team_wide without published_at       → (withdrawn)
+  --   result_confirm_platform() without the platform-only
+  --     test (any no-school result.confirm)               → (platform)
+  --   fixture_sheet()'s comment as db/131 left it         → (sheet)
+  -- Not falsifiable here: audit_fixture_label() put back on m.opponent
+  -- still names the away side, because match_away_side_is_named (db/08)
+  -- stamps its platform label into opponent on every write. The new body
+  -- reads that label itself, so the name never rests on the stamp.
   DECLARE
     y     jsonb := _v132_stage();
-    WES   uuid := '22222222-2222-2222-2222-222222222222';
     MH    uuid := (y->>'MH')::uuid;
     ML    uuid := (y->>'ML')::uuid;
     MX    uuid := (y->>'MX')::uuid;
@@ -33909,7 +33918,7 @@ $v49$;
                                        idempotency_key, body, fingerprint)
     VALUES (MH, match_school(MH), v_epoch, v_epoch, (y->>'sc')::uuid, 'v132-pad', 'v132-later-' || MH, '{}'::jsonb, md5('v132-later-' || MH));
     j := _v132_late(MH);
-    t := 'Late ball set aside · Hilton College U13F v ' || (SELECT s.name FROM school s WHERE s.id = WES) || ' 1XI';
+    t := 'Late ball set aside · Hilton College U13F v Westville Boys'' High 1XI';
     PERFORM _assert((j->>'n')::int = 2 AND (j->>'to_one')::int = 1 AND (j->>'to_office')::int = 1
                     AND j->>'recipient' = y->>'sc' AND j->'titles' = jsonb_build_array(t) AND (j->>'named')::int = 0,
       format('§111 (late): the notices for two late balls are %s, not one to the scorer and one to the office, unnamed, titled %s', j, t));
@@ -33959,7 +33968,7 @@ $v49$;
       FROM audit_log('11111111-1111-1111-1111-111111111111', ARRAY['scoring'], NULL, NULL, NULL, 200) a
      WHERE a.action = 'Called off a finished match' AND a.actor = 'V132 Office';
     PERFORM _assert(got.actor IS NOT NULL AND got.subject_kind = 'fixture' AND got.subject = _v132_label(ML)
-                    AND got.subject LIKE 'Hilton College U13F v ' || (SELECT s.name FROM school s WHERE s.id = WES) || ' 1XI · %',
+                    AND got.subject LIKE 'Hilton College U13F v Westville Boys'' High 1XI · %',
       format('§111 (called off): the director''s log reads %s / %s', got.subject_kind, got.subject));
 
     -- (abandoned): MX claimed while live, then called off by the office
@@ -34068,7 +34077,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
                    or app_support_access_id(player_school(g.player_id)) is not null)
             order by g.created_at desc, g.id
 -- child_links:end
-      ) x $f$$v132$;
+      ) x $f$ $v132$;
     PERFORM _as((y->>'ds')::uuid);
     SELECT count(*)::int, count(*) FILTER (WHERE r->>'guardian_email' IS NOT NULL OR r->>'verified_note' IS NOT NULL
                                               OR r->>'ending_reason' IS NOT NULL)::int

@@ -102,7 +102,9 @@
 --   ~ audit_fixture_label() (db/79): the away side is the platform's own
 --     label of it when it is on SCRBRD (fixture_side_label()), else the typed
 --     opponent, else "an opponent": never a NULL, so a shared fixture is named
---     in the audit log.
+--     in the audit log. Today match_away_side_is_named (db/08) stamps that
+--     label into opponent on every write, so the label already read right;
+--     the body no longer rests on the stamp.
 --   * fixture_sheet() (db/131): saved = shown is Kameel's decision (4 Nov
 --     2026). Its comment now says so in those words; the function is not
 --     touched.
@@ -145,16 +147,16 @@ BEGIN
     RAISE EXCEPTION 'db/132: the finish (db/130), the sheet (db/131), the pad guard (db/50), the audit log (db/79, db/80) or the SA day (db/08) is missing; apply them first';
   END IF;
   FOR r IN SELECT * FROM (VALUES
-      ('role_assignment_revoke_only()',                               'b08f57fa05f81a9ae1bce47c7cdf651e', 'MINE_REVOKE',    'db/01'),
-      ('scoring_claim(uuid,text)',                                    '4ff22013b983402bd7c68883cfe1a97b', 'MINE_CLAIM',     'db/126'),
-      ('scoring_takeover(uuid,text,integer)',                         '762c573b37ccfef1fc26732b8f92f33f', 'MINE_TAKEOVER',  'db/126'),
-      ('scoring_claim_handover(uuid,text,text)',                      '25f59befd49a03f8d9ab1beaff1849ac', 'MINE_HANDOVER',  'db/33'),
-      ('scoring_lease_check(uuid,text,integer)',                      '7c371d47d9054c6cd2595303e32f6913', 'MINE_LEASE',     'db/33'),
-      ('scoring_verify_takeover(uuid,text,integer,integer,integer)',  'b7f4bd747453e5f6b0e12055d63dde24', 'MINE_VERIFY',    'db/45'),
-      ('match_finalise(uuid)',                                        'de8bd9dc838f5c489b9a7034200c962f', 'MINE_FINALISE',  'db/130'),
-      ('result_confirm_platform()',                                   '70d74fa6b013d7cf9bbf5031f1b80e31', 'MINE_PLATFORM',  'db/128'),
-      ('audit_fixture_label(uuid)',                                   '06b10a4e83996bbc16432a836c2e9b54', 'MINE_LABEL',     'db/79'),
-      ('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)', 'f19c41322aa5c63846f827d49b960884', 'MINE_AUDIT',     'db/130'))
+      ('role_assignment_revoke_only()',                               'b08f57fa05f81a9ae1bce47c7cdf651e', '2b5af14563d406167228bac1536505b2',    'db/01'),
+      ('scoring_claim(uuid,text)',                                    '4ff22013b983402bd7c68883cfe1a97b', 'fdbb6a42742fb460c957ac767d0d40ad',     'db/126'),
+      ('scoring_takeover(uuid,text,integer)',                         '762c573b37ccfef1fc26732b8f92f33f', '5fc8557d772fec006045ba78324ca486',  'db/126'),
+      ('scoring_claim_handover(uuid,text,text)',                      '25f59befd49a03f8d9ab1beaff1849ac', '1c8ebbea34816d5b37fa983e275ead09',  'db/33'),
+      ('scoring_lease_check(uuid,text,integer)',                      '7c371d47d9054c6cd2595303e32f6913', 'be2771f4c1439edc201f792c70d9c3e3',     'db/33'),
+      ('scoring_verify_takeover(uuid,text,integer,integer,integer)',  'b7f4bd747453e5f6b0e12055d63dde24', '6499880df4581290fb527dd4a5eca169',    'db/45'),
+      ('match_finalise(uuid)',                                        'de8bd9dc838f5c489b9a7034200c962f', 'e2725409453e7e3d898402645cb8896c',  'db/130'),
+      ('result_confirm_platform()',                                   '70d74fa6b013d7cf9bbf5031f1b80e31', 'ccdb5bd7b9dad9767658025a17cc8418',  'db/128'),
+      ('audit_fixture_label(uuid)',                                   '06b10a4e83996bbc16432a836c2e9b54', 'b84a1dd71916204239e129fa0fd5b48b',     'db/79'),
+      ('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)', 'f19c41322aa5c63846f827d49b960884', '8bea03eaac74fbfc54900f40c5d9e7f1',     'db/130'))
       AS x(fn, was, mine, src)
   LOOP
     SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = to_regprocedure(r.fn);
