@@ -33897,6 +33897,7 @@ $v49$;
     MX    uuid := (y->>'MX')::uuid;
     got   record;
     v_ok  boolean; v_reason text; v_state text; v_epoch integer; v_con text; v_n integer;
+    v_at  timestamptz; v_page integer;
     j     jsonb;
     t     text;
     P     uuid;
@@ -34035,11 +34036,22 @@ $v49$;
     PERFORM _assert(NOT (j->'row'->>'active')::boolean AND (j->'row'->>'valid_until')::date = sa_today() + 7
                     AND jsonb_array_length(j->'changes') = 1,
       format('§111 (role): withdrawing it with a later end moved the end: %s', j));
+    -- Read page by page, as the screen does: every row this verifier wrote
+    -- shares the transaction's now(), so a first page need not hold them.
     PERFORM _as((y->>'ds')::uuid);
-    SELECT count(*)::int INTO v_n
-      FROM audit_log('11111111-1111-1111-1111-111111111111', ARRAY['role'], NULL, NULL, NULL, 200) a
-     WHERE a.action IN ('Changed a role''s dates: Coach (U13F)', 'Changed a role''s dates: Scorer')
-       AND a.actor = 'V132 Office' AND a.subject_kind = 'person' AND a.subject IN ('V132 Tcoach', 'V132 Tscw');
+    v_n := 0; v_at := NULL; t := NULL;
+    LOOP
+      v_page := 0;
+      FOR got IN SELECT a.at, a.key, a.action, a.actor, a.subject_kind, a.subject
+                   FROM audit_log('11111111-1111-1111-1111-111111111111', ARRAY['role'], NULL, v_at, t, 200) a LOOP
+        v_page := v_page + 1; v_at := got.at; t := got.key;
+        IF got.action IN ('Changed a role''s dates: Coach (U13F)', 'Changed a role''s dates: Scorer')
+           AND got.actor = 'V132 Office' AND got.subject_kind = 'person' AND got.subject IN ('V132 Tcoach', 'V132 Tscw') THEN
+          v_n := v_n + 1;
+        END IF;
+      END LOOP;
+      EXIT WHEN v_page < 200;
+    END LOOP;
     PERFORM _assert(v_n = 2, format('§111 (role): the director''s audit log shows %s of the two changes', v_n));
 
     -- (links)
