@@ -29,9 +29,9 @@ export function selectionApi() {
     ],
   };
   const boys = [
-    { player_id: OPEN, name: "Verify Boy A", school_name: "Verify High", team_code: "U15A", org_id: UNION, consent_id: "c1000000-0000-0000-0000-000000000001" },
-    { player_id: SHUT, name: "Verify Boy B", school_name: "Verify High", team_code: "U15B", org_id: UNION, consent_id: "c1000000-0000-0000-0000-000000000002" },
-    { player_id: "b0000000-0000-0000-0000-000000000003", name: "Verify Boy With A Rather Longer Name Than Most", school_name: "Verify High", team_code: "1XI", org_id: UNION, consent_id: "c1000000-0000-0000-0000-000000000003" },
+    { player_id: OPEN, name: "Verify Boy A", school_name: "Verify High", team_code: "U15A", org_id: UNION, consent_id: "c1000000-0000-0000-0000-000000000001", batting_style: "R", bowling_style: "S" },
+    { player_id: SHUT, name: "Verify Boy B", school_name: "Verify High", team_code: "U15B", org_id: UNION, consent_id: "c1000000-0000-0000-0000-000000000002", batting_style: "L", bowling_style: null },
+    { player_id: "b0000000-0000-0000-0000-000000000003", name: "Verify Boy With A Rather Longer Name Than Most", school_name: "Verify High", team_code: "1XI", org_id: UNION, consent_id: "c1000000-0000-0000-0000-000000000003", batting_style: null, bowling_style: null },
   ];
   /** @type {Record<string, (s: URLSearchParams) => any[]>} */
   const reads = {

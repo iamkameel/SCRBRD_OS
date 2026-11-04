@@ -4,7 +4,8 @@
  *
  *   - NEVER EVERYONE (D2): no list without an institution and a school or an
  *     age group; a name alone is no filter; the age group is a side's code
- *   - A ROW IS THREE THINGS (D3, §4.3–4.4): name, school, side
+ *   - A ROW IS FOUR THINGS (D3, §4.3–4.4; S5, Q4): name, school, side, and
+ *     his playing styles in words; a blank style left out, never "unknown"
  *   - THE WORDS (S3, §4.2): the empty result and a failed open, word for word
  *   - NOTHING KEPT (D7, §4.6): the screen names no store, no export, no share,
  *     and reads only the five reads it needs
@@ -12,7 +13,7 @@
  *   node apps/web/test/selection.test.mjs
  */
 import { readFileSync } from "node:fs";
-import { AGE_GROUPS, asRow, canList, closedWords, emptyWords, listQuery, showsChip } from "../src/lib/selection.js";
+import { AGE_GROUPS, asRow, canList, closedWords, emptyWords, listQuery, showsChip, styleWords } from "../src/lib/selection.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
@@ -31,10 +32,18 @@ ok("a name narrows, trimmed, and an empty one is not sent",
    listQuery({ org: ORG, school: SCH, q: "  pil " }) === `org=${ORG}&school=${SCH}&q=pil` && !/q=/.test(listQuery({ org: ORG, school: SCH, q: "   " })));
 ok("the age groups are U13 to U19, and no date of birth", AGE_GROUPS.join() === "U13,U14,U15,U16,U17,U18,U19");
 
-group("A row is a name, a school and a side (D3)");
-const row = asRow({ player_id: "p1", name: "Boy A", school_name: "School A", team_code: "U15A", org_id: ORG, consent_id: "c1", runs: 300, born: "2010-01-01" });
-ok("three things drawn, his id and the institution to open by", Object.keys(row).sort().join() === "id,name,org,school,side");
-ok("...anything else the server might send is dropped", !("runs" in row) && !("born" in row) && !JSON.stringify(row).includes("300"));
+group("A row is a name, a school, a side and his styles (D3, S5)");
+const row = asRow({ player_id: "p1", name: "Boy A", school_name: "School A", team_code: "U15A", org_id: ORG, consent_id: "c1",
+                    batting_style: "R", bowling_style: "S", runs: 300, born: "2010-01-01", playing_role: "bowler", bowling_arm: "L" });
+ok("four things drawn, his id and the institution to open by", Object.keys(row).sort().join() === "id,name,org,school,side,styles");
+ok("...anything else the server might send is dropped", !("runs" in row) && !("born" in row) && !JSON.stringify(row).includes("300")
+   && !/bowler|left-arm/i.test(JSON.stringify(row)));
+ok("his styles in words", row.styles === "Right-hand bat · spin");
+ok("...each hand and each pace", styleWords("L", "F") === "Left-hand bat · fast" && styleWords("R", "M") === "Right-hand bat · medium pace");
+ok("...a blank bowling style left out", styleWords("R", null) === "Right-hand bat" && styleWords("L", "") === "Left-hand bat");
+ok("...a blank batting style left out, the first word capitalised", styleWords(null, "S") === "Spin" && styleWords(undefined, "M") === "Medium pace");
+ok("...neither: nothing, never 'unknown'", styleWords(null, null) === "" && asRow({ player_id: "p2" }).styles === "");
+ok("...a spelling it has no words for is left out, not echoed", styleWords("X", "Q") === "" && styleWords("RHB", "S") === "Spin");
 
 group("The words (S3, §4.2, §4.8)");
 ok("the empty result", emptyWords("KZN Cricket Union") === "No boy's family has named KZN Cricket Union in that school or age group.");
@@ -51,6 +60,8 @@ const reads = [...code.matchAll(/\/api\/read\/([a-z_]+)/g)].map((m) => m[1]);
 ok("reads only the union's three, his name and his passport",
    [...new Set(reads)].sort().join() === "passport,passport_name,passport_union_list,passport_union_orgs,passport_union_schools", reads.join());
 ok("no figure, honour or ranking word on a row", !/sort\(|rank|average|wickets|honour|born|age_band/i.test(code.split("function SelectionPassport")[0]));
+ok("a row's styles are drawn only when there are some, and never as 'unknown'",
+   /\{r\.styles && \(/.test(code) && !/unknown|not recorded/i.test(code.split("function SelectionPassport")[0]));
 ok("a list only on the button, never on a keystroke", /onSubmit=\{ask\}/.test(code) && !/onChange=\{[^}]*runList/.test(code));
 
 console.log("\n" + "─".repeat(52));

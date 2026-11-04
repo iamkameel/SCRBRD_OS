@@ -2338,7 +2338,9 @@ export const READ_QUERIES = {
     noStore: true,
   },
   passport_union_list: {
-    text: `select player_id, name, school_name, team_code, org_id, consent_id
+    // db/134 (S5, Q4): how he bats and what he bowls ride on the row as
+    // roster identity, never a figure; the screen draws them in words.
+    text: `select player_id, name, school_name, team_code, org_id, consent_id, batting_style, bowling_style
              from passport_union_list($1::uuid, $2::uuid, $3::text, $4::text)`,
     params: q => [uuidParam(q, "org"), uuidParam(q, "school"), q?.ageGroup || null, q?.q || null],
     logsItself: true,

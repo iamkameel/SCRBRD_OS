@@ -180,8 +180,15 @@ try {
       ok("the selector lists the boy at his school, not kept", l1.status === 200 && !!row && noStore(l1));
       ok("...his name is passport_name()'s, his school and side, and the union that admits him",
          row?.name === name && row?.school_name === "Hilton College" && !!row?.team_code && row?.org_id === kzn && !!row?.consent_id);
-      ok("...and no figure: the row is six columns",
-         !!row && Object.keys(row).sort().join(",") === "consent_id,name,org_id,player_id,school_name,team_code");
+      ok("...and no figure: the row is eight columns, his styles the last two (db/134, S5)",
+         !!row && Object.keys(row).sort().join(",") === "batting_style,bowling_style,consent_id,name,org_id,player_id,school_name,team_code");
+      {
+        const st = (await q(`select batting_style, bowling_style from player where id = $1`, [PILLAY]))[0];
+        ok("...his styles as his player row holds them, a blank one blank",
+           row?.batting_style === st.batting_style && row?.bowling_style === st.bowling_style, { row, st });
+        ok("...no figure, role or arm anywhere in the answer",
+           !(l1.body?.rows ?? []).some((r) => Object.keys(r).some((k) => /runs|wickets|average|role|arm|born|honour/.test(k))));
+      }
       ok("his mother's list of who looked gains the list, and nothing else yet",
          (await what()).list === before.list + 1 && (await what()).passport === before.passport);
       ok("...his school's auditors see one list row naming him",

@@ -4,7 +4,8 @@
  *
  * Pure, so the rules the screen draws are tested without a browser:
  *   - never "everyone": a school or an age group before any list is asked for;
- *   - a row is a name, a school and a side, and nothing else;
+ *   - a row is a name, a school, a side and his playing styles in words, and
+ *     nothing else (no figure, no role, no order of merit);
  *   - an open that fails says "No longer open to {institution}" and no reason.
  * Nothing here stores anything: the screen holds a row only while it is shown.
  */
@@ -26,13 +27,30 @@ export function listQuery({ org, school, ageGroup, q }) {
   return p.toString();
 }
 
+/** How he bats (player.batting_style), in words. */
+const BATS = Object.freeze({ R: "Right-hand bat", L: "Left-hand bat" });
+/** What he bowls (player.bowling_style: pace or spin, not the arm), in words. */
+const BOWLS = Object.freeze({ F: "fast", M: "medium pace", S: "spin" });
+
 /**
- * The three things a row carries (D3), from the server's row. Its id and the
- * institution that admits him ride along for the open and are not drawn.
- * Anything else the server might ever add is dropped here, not drawn.
+ * His playing styles in words (S5, Q4): "Right-hand bat · spin". Roster
+ * identity, not a figure. A style not recorded, or one this screen has no
+ * words for, is left out, never "unknown"; with neither, the empty string.
+ */
+export function styleWords(bat, bowl) {
+  const words = [BATS[bat], BOWLS[bowl]].filter(Boolean).join(" · ");
+  return words && words[0].toUpperCase() + words.slice(1);
+}
+
+/**
+ * The four things a row carries (D3, and S5's styles), from the server's row.
+ * Its id and the institution that admits him ride along for the open and are
+ * not drawn. Anything else the server might ever add is dropped here, not
+ * drawn.
  */
 export const asRow = (r) => ({
   id: r.player_id, name: r.name, school: r.school_name, side: r.team_code, org: r.org_id,
+  styles: styleWords(r.batting_style, r.bowling_style),
 });
 
 /** The institution's name for the words, or a plain stand-in. */
