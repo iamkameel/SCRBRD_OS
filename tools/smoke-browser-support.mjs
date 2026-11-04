@@ -345,6 +345,7 @@ try {
     const shown = await off.page.$$eval('[data-testid="who-read-row"]', (els) => els.map((e) => e.getAttribute("data-resource")));
     // The same question asked raw; less the screen's own question, which went on the record after the screen's answer was read.
     const answer = (await readAs(await login("registrar@example.invalid"), `access_log?playerId=${P_CHILD}`)).filter((r) => !(r.resource === "access_log" && r.mine));
+    ok("focus moves to the way back, not to the top of the page", await off.page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "who-read-clear");
     ok("the chosen child is said, with the way back", (await tid(off.page, "who-read-child").innerText()).includes(child.full_name) && await tid(off.page, "who-read-clear").count() === 1);
     ok(`the list is the server's per-child answer (${shown.length} rows, the API's ${answer.length})`, shown.length > 0 && shown.length === answer.length, `${shown.join()} | ${answer.map((r) => r.resource).join()}`);
     ok("...the medic's read of his injuries is on it, named with his role", shown.includes("injuries") && /L van Wyk · \S/.test(section), section.slice(0, 400));

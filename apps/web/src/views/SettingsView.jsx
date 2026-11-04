@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import pkg from "../../package.json";
 import { ROLES, ROLE_FAMILIES, ROLE_IDENTITY } from "../design/roles.js";
 import { boundaries, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
@@ -1414,6 +1414,12 @@ const whenWords = (t) => new Date(t).toLocaleString("en-ZA", { timeZone: "Africa
 // No name is fetched for it and none is drawn before two letters are typed.
 function ChildPicker({ players, child, onPick }) {
   const [q, setQ] = useState("");
+  // The control that was pressed goes away (a choice, then "Back"): focus moves to
+  // the one that replaces it, never to the page's top (WCAG 2.4.3). Not on first draw.
+  const moved = useRef(false);
+  const next = useRef(/** @type {HTMLElement | null} */ (null));
+  useEffect(() => { if (moved.current) next.current?.focus(); }, [child]);
+  const pick = (/** @type {any} */ c) => { moved.current = true; onPick(c); };
   const term = q.trim().toLowerCase();
   const found = term.length < 2 ? [] : players.filter((p) => String(p.name ?? "").toLowerCase().includes(term))
     .sort((a, b) => String(a.name).localeCompare(String(b.name))).slice(0, 8);
@@ -1425,7 +1431,7 @@ function ChildPicker({ players, child, onPick }) {
         <span style={{ fontFamily: D.body, fontSize: "14px", color: D.textPrimary, fontWeight: 600 }}>
           This child: {child.name}{child.team ? ` · ${child.team}` : ""}
         </span>
-        <button type="button" className="os-state" data-testid="who-read-clear" onClick={() => { onPick(null); setQ(""); }} style={choice}>
+        <button type="button" className="os-state" data-testid="who-read-clear" ref={next} onClick={() => { pick(null); setQ(""); }} style={choice}>
           Back to the whole school
         </button>
       </div>
@@ -1435,11 +1441,11 @@ function ChildPicker({ players, child, onPick }) {
     <div style={{ marginBottom: "10px", maxWidth: "520px" }}>
       <label htmlFor="who-read-search" style={{ display: "block", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted,
         letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "5px" }}>Find a child by name</label>
-      <input id="who-read-search" data-testid="who-read-search" type="search" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off"
+      <input id="who-read-search" data-testid="who-read-search" ref={next} type="search" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off"
         aria-describedby="who-read-search-hint"
         style={{ width: "100%", minHeight: "44px", padding: "0 12px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.md,
           color: D.textPrimary, fontFamily: D.body, fontSize: "16px", boxSizing: "border-box" }}/>
-      <div id="who-read-search-hint" style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary, marginTop: "4px" }}>
+      <div id="who-read-search-hint" aria-live="polite" style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary, marginTop: "4px" }}>
         {term.length < 2 ? "Type two letters or more of his name."
           : found.length ? `${found.length} ${found.length === 1 ? "match" : "matches"}${found.length === 8 ? " shown; type more to narrow them" : ""}.`
           : "No child of this school by that name."}
@@ -1448,7 +1454,7 @@ function ChildPicker({ players, child, onPick }) {
         <ul aria-label="Children who match" style={{ listStyle: "none", margin: "8px 0 0", padding: 0, display: "grid", gap: "6px" }}>
           {found.map((p) => (
             <li key={p.id}>
-              <button type="button" className="os-state" data-testid={`who-read-option-${p.id}`} onClick={() => onPick({ id: p.id, name: p.name, team: p.team ?? null })}
+              <button type="button" className="os-state" data-testid={`who-read-option-${p.id}`} onClick={() => pick({ id: p.id, name: p.name, team: p.team ?? null })}
                 style={{ ...choice, width: "100%" }}>
                 {p.name}{p.team ? <span style={{ color: D.textSecondary }}> · {p.team}</span> : null}
               </button>
