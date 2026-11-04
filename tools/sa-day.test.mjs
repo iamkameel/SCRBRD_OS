@@ -12,7 +12,8 @@
 // This holds db/99 and those walks to the SA day. A current_date in db/99 is
 // allowed only where it means the UTC day on purpose: db/128's break and
 // mend of a body, the md5 of a body read back on db/92's clock, the checks
-// that a body no longer spells it, and §105's pinned UTC day.
+// that a body no longer spells it, §105's pinned UTC day, and §99 (sast)'s
+// session day under another zone (_v122_move()).
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -34,6 +35,7 @@ const DELIBERATE = [
   /~\* '\\mcurrent_date\\M\|localtimestamp/,                       // §105 (scan): the catalog's spellings
   /proargdefaults, 0\), ''\) ~\* 'current_date'/,                  // §105 (scan): argument defaults
   /_v128_clock\([AB]\) = n( \+ 1)? AND current_date = n/,          // §105: the pinned instants' UTC day
+  /v_day := current_date::text;   -- the session's own day/,       // _v122_move(): §99 (sast)'s other zone
 ];
 
 const code = (/** @type {string} */ l) => !/^\s*--/.test(l);
@@ -44,7 +46,7 @@ const stray = lines
 ok("db/99 reads today as sa_today(), the day the product reads since db/128", stray.length === 0,
    stray.slice(0, 10).map(({ l, n }) => `db/99:${n}: ${l.trim().slice(0, 140)}`).join("\n    "));
 const kept = lines.filter((l) => code(l) && DELIBERATE.some((re) => re.test(l))).length;
-ok("...and each deliberate UTC day is still there (10 lines)", kept === 10, `found ${kept}`);
+ok("...and each deliberate UTC day is still there (11 lines)", kept === 11, `found ${kept}`);
 
 // The walks that went red in the window, and the day each reads.
 const WALKS = ["assess", "guardian", "link18", "moves", "notes", "rating"];

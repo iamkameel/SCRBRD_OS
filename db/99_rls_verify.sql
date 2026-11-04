@@ -8128,7 +8128,7 @@ CREATE OR REPLACE FUNCTION _v122_move(p_player uuid, p_team text, p_tz text) RET
 DECLARE v_tz text := current_setting('TimeZone'); v_day text;
 BEGIN
   PERFORM set_config('TimeZone', p_tz, true);
-  v_day := sa_today()::text;
+  v_day := current_date::text;   -- the session's own day, under p_tz: deliberately not sa_today()
   PERFORM set_config('app.effective_on', '', true);
   PERFORM set_config('app.user_id', '88888888-0000-0000-0000-00000000000c', true);
   UPDATE player SET team_code = p_team WHERE id = p_player;
