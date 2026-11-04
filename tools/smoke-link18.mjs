@@ -108,7 +108,7 @@ const link = async (player, person) => (await q(
 const reads = async (token, player) =>
   ((await api("/api/read/players", { token })).body?.rows ?? []).some((r) => r.id === player);
 const healthLive = async (player) => (await q(`select health_consent_live($1) as live`, [player]))[0].live;
-const today = async () => (await q(`select current_date::text as d, sa_today()::text as sa`))[0];
+const today = async () => (await q(`select sa_today()::text as sa`))[0];
 // Everything about him happened d days sooner: his birthday, his parents'
 // links, both consents, his memberships' start (db/99's _v62_older()).
 const older = async (player, days) => {
@@ -146,10 +146,10 @@ try {
   await cleanup();
   await q(`insert into school (id, code, name, kind, province) values ($1, 'L18C', 'Link Eighteen Cricket Club', 'club', 'KwaZulu-Natal')`, [CLUB]);
   await q(`insert into player (id, school_id, team_code, full_name, surname, squad_no, playing_role, born) values
-             ($1, $5, '1XI', 'Pieter Linkeighteen', 'Linkeighteen', 181, 'batter', (current_date - interval '17 years 40 days')::date),
-             ($2, $5, '1XI', 'Mike Linkminor',      'Linkminor',     182, 'batter', (current_date - interval '16 years 40 days')::date),
-             ($3, $6, '1XI', 'Craig Linkclub',      'Linkclub',      183, 'batter', (current_date - interval '17 years 40 days')::date),
-             ($4, $5, '1XI', 'Gary Linkgrown',      'Linkgrown',     184, 'batter', (current_date - interval '18 years 120 days')::date)`,
+             ($1, $5, '1XI', 'Pieter Linkeighteen', 'Linkeighteen', 181, 'batter', (sa_today() - interval '17 years 40 days')::date),
+             ($2, $5, '1XI', 'Mike Linkminor',      'Linkminor',     182, 'batter', (sa_today() - interval '16 years 40 days')::date),
+             ($3, $6, '1XI', 'Craig Linkclub',      'Linkclub',      183, 'batter', (sa_today() - interval '17 years 40 days')::date),
+             ($4, $5, '1XI', 'Gary Linkgrown',      'Linkgrown',     184, 'batter', (sa_today() - interval '18 years 120 days')::date)`,
           [P.pupil, P.minor, P.club, P.grown, HIL, CLUB]);
   await q(`insert into app_user (id, school_id, email, name, role) values
              ($1, $8, 'link18.mum@example.invalid',     'L18 Mum',        'guardian'),
@@ -165,7 +165,7 @@ try {
   const REGISTRAR = "88888888-0000-0000-0000-00000000000c";
   await q(`insert into assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                            consent_state, consent_version, consent_at, valid_from)
-           values ($1, $2, 'self', 'verified', $3, now(), 'granted', 'popia-2026-01', now(), current_date - 30)`, [selfAsg, P.pupil, REGISTRAR]);
+           values ($1, $2, 'self', 'verified', $3, now(), 'granted', 'popia-2026-01', now(), sa_today() - 30)`, [selfAsg, P.pupil, REGISTRAR]);
 
   const reg = await login("registrar@example.invalid");
   const coff = await login("link18.coffice@example.invalid");
@@ -264,7 +264,7 @@ try {
      JSON.stringify(await link(P.minor, U.mmum)));
   await q(`update player set team_code = null where id = $1`, [P.pupil]);
   const la = await link(P.pupil, U.mum);
-  const { sa: d } = await today();   // the SA day the link is ended on (db/128), not current_date
+  const { sa: d } = await today();   // the SA day the link is ended on (db/128)
   ok("the adult pupil who leaves: his mother's link ends that day", la?.until === d, JSON.stringify(la));
   ok("...she reads nothing of him", !(await reads(mum, P.pupil)));
   ok("...and her health consent, which ran through it, is dead", !(await healthLive(P.pupil)));
