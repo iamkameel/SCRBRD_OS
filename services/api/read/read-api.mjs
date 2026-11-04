@@ -507,9 +507,10 @@ export const READ_QUERIES = {
    * family" is a question the DSO answers from the log.
    */
   child_links: {
-    text: `select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
+    // db/99 §111 (links) runs this same text, between the child_links markers.
+    text: /* child_links:begin */`select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
                   a.person_id as guardian_id, u.name as guardian_name,
-                  -- db/132 P-05 (Kameel, 4 Nov 2026: "the office only"): the guardian's
+                  -- db/132 (Kameel, 4 Nov 2026: "the office only"): the guardian's
                   -- email, the verification note and the link-ending reason, to a
                   -- holder of guardian.link.manage alone; user.role.assign reads the
                   -- link's state and dates.
@@ -543,7 +544,7 @@ export const READ_QUERIES = {
                               '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
               and (not (select app_is_platform_wide())
                    or app_support_access_id(player_school(g.player_id)) is not null)
-            order by g.created_at desc, g.id`,
+            order by g.created_at desc, g.id`/* child_links:end */,
     params: (q) => {
       const id = q?.playerId || null;
       if (id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
