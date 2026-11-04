@@ -941,6 +941,8 @@ const PLAYER_ROUTES = [
   // the dispute window, and who reads which words.
   [/^\/api\/matches\/([^/]+)\/official$/,                      "GET",  results.official],
   [/^\/api\/matches\/([^/]+)\/confirm$/,                       "POST", results.confirm],
+  // db/130: finishing the match (scoring.finalise at the home side), from the pad.
+  [/^\/api\/matches\/([^/]+)\/finalise$/,                      "POST", results.finalise],
   [/^\/api\/matches\/([^/]+)\/dispute$/,                       "POST", results.dispute],
   [/^\/api\/results\/disputes\/([^/]+)\/clear$/,              "POST", results.clearDispute],
   [/^\/api\/results\/confirmations\/([^/]+)\/withdraw$/,      "POST", results.withdrawConfirmation],
