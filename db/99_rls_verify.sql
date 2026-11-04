@@ -9349,19 +9349,23 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 --     super_over, no super over played: the completion gate's case.
 --   MX (U12C): decided, then called off (status abandoned).
 -- The finishers: a scorer of U13E (sc), a coach of U13D (co), a director of
--- sport (ds) and a sports administrator (sa), both school-wide. The refused
--- are the seed's own: a parent (D Pillay), a pupil (R Pillay), the office
--- (B Naicker, schooladmin: fixture.update, no scoring.finalise) and
--- Westville's 1XI coach (S Pillay: scoring.finalise at the AWAY side).
-CREATE OR REPLACE FUNCTION _v130_person(p_tag text, p_role text, p_team text) RETURNS uuid AS $$
+-- sport (ds) and a sports administrator (sa), both school-wide. The refused,
+-- each holding the one assignment and nothing else: a pupil on MR's own side
+-- (pupil: player, U13A), a parent (guardian), the office (schooladmin:
+-- fixture.update, no scoring.finalise) and Westville's 1XI coach (away:
+-- scoring.finalise at the AWAY side). Not the seed's people: earlier sections
+-- give them more (db/56's section makes R Pillay, the seed's pupil, a scorer
+-- at Hilton, which is scoring.finalise school-wide).
+CREATE OR REPLACE FUNCTION _v130_person(p_tag text, p_role text, p_team text,
+                                        p_school uuid DEFAULT '11111111-1111-1111-1111-111111111111') RETURNS uuid AS $$
 DECLARE v_u uuid;
 BEGIN
   INSERT INTO app_user (school_id, email, name, role, teams)
-  VALUES ('11111111-1111-1111-1111-111111111111', 'v130.' || p_tag || '@example.invalid', 'V130 ' || initcap(p_tag), p_role,
+  VALUES (p_school, 'v130.' || p_tag || '@example.invalid', 'V130 ' || initcap(p_tag), p_role,
           CASE WHEN p_team IS NULL THEN '{}'::text[] ELSE ARRAY[p_team] END)
   RETURNING id INTO v_u;
   INSERT INTO role_assignment (person_id, role, school_id, team_code)
-  VALUES (v_u, p_role, '11111111-1111-1111-1111-111111111111', p_team);
+  VALUES (v_u, p_role, p_school, p_team);
   RETURN v_u;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -9378,8 +9382,10 @@ BEGIN
     'co', _v130_person('coach', 'coach', 'U13D'),
     'ds', _v130_person('dos', 'directorofsport', NULL),
     'sa', _v130_person('sadmin', 'sportsadmin', NULL),
-    'parent', '88888888-0000-0000-0000-000000000005', 'pupil', '88888888-0000-0000-0000-000000000009',
-    'office', '88888888-0000-0000-0000-00000000000c', 'away', '88888888-0000-0000-0000-00000000001a');
+    'pupil', _v130_person('pupil', 'player', 'U13A'),
+    'parent', _v130_person('parent', 'guardian', NULL),
+    'office', _v130_person('office', 'schooladmin', NULL),
+    'away', _v130_person('away', 'coach', '1XI', WES));
   FOR k, t IN SELECT * FROM (VALUES ('MS', 'U13E'), ('MC', 'U13D'), ('MD', 'U13C'), ('MA', 'U13B'), ('MR', 'U13A'),
                                     ('MU', 'U12E'), ('MT', 'U12D'), ('MX', 'U12C')) x(k, t) LOOP
     INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
