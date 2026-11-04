@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ROLES } from "../design/roles.js";
+import { roleGrants } from "@scrbrd/policy/roles";
 import { D, inkOn, textOn } from "../design/tokens.js";
 import { holdsCapability } from "../rbac/index.js";
 import { useLive, useRows } from "../lib/live.js";
@@ -377,8 +378,9 @@ function RequestsPanel({ role, players }) {
           <div style={{flex:1,minWidth:"200px"}}>
             <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,fontWeight:600}}>{r.name} <span style={{color:D.textMuted,fontWeight:400}}>{r.email}</span></div>
             <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{ROLES[r.role]?.label ?? r.role}{r.team?` · ${r.team}`:""}{r.note?` — ${r.note}`:""}</div>
-            {/* REACH R-G (Kameel, 4 Nov 2026): what granting a follower opens, in one line. */}
-            {r.role==="spectator"&&<div data-testid={`request-spectator-reach-${r.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>He'll see every match and every team's posts, but no player's stats or passport.</div>}
+            {/* REACH R-G (Kameel, 4 Nov 2026): what granting a follower opens, in one line. By the
+                bundle, not the role's name (§21.1): the role that reads every side's posts. */}
+            {roleGrants(r.role, "news.team.read")&&<div data-testid={`request-spectator-reach-${r.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>He'll see every match and every team's posts, but no player's stats or passport.</div>}
             {r.askedUnverified&&<div data-testid={`request-unverified-${r.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.roseText}}>Asked before the email was verified: check with them before granting.</div>}
           </div>
           {needsChild(r)&&(

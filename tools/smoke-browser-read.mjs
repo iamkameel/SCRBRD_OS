@@ -1725,9 +1725,11 @@ try {
       ok("...and a follower's request says what he'll see, in one line",
          (await o.page.locator(`[data-testid="request-spectator-reach-${followReq}"]`).innerText({ timeout: 4000 }).catch(() => "")).trim()
            === "He'll see every match and every team's posts, but no player's stats or passport.");
-      // He asked to coach and named no side; the office names one.
-      await panel.locator('select[aria-label="Which side"]').first().selectOption("1XI").catch(() => {});
-      await panel.locator("button", { hasText: /^Grant$/ }).first().click({ timeout: 4000 }); await afterReads(o.page, 1500);
+      // He asked to coach and named no side; the office names one. His row:
+      // the follower's request above (db/131) waits on the same panel.
+      const zulu = panel.locator('[data-testid^="request-row-"]', { hasText: /N Zulu/ });
+      await zulu.locator('select[aria-label="Which side"]').first().selectOption("1XI").catch(() => {});
+      await zulu.locator("button", { hasText: /^Grant$/ }).first().click({ timeout: 4000 }); await afterReads(o.page, 1500);
       // The panel, not the whole screen: once granted he is on the users list
       // below it, which is the point.
       ok("...grants it, and it leaves the panel", await panel.count() === 0 || !/N Zulu/.test(await panel.innerText()));

@@ -25059,12 +25059,13 @@ $v49$;
                       AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id IN (P1, P2, T)) = 0,
         format('§78 (sheet): the %s reads something of Hilton U15A', k));
     END LOOP;
-    -- The follower (db/131): of Hilton U15A the ordinary post and its notice,
-    -- and neither plan nor a plan's notice.
+    -- The follower (db/131): of Hilton U15A the ordinary posts (this one, and
+    -- earlier sections') and their notices, and no plan nor a plan's notice.
     PERFORM _as((y->>'follower')::uuid);
-    PERFORM _assert((SELECT string_agg(n.id::text, ',') FROM news_post n WHERE n.school_id = V_HIL AND n.team_code = 'U15A') = T::text
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = T) = 1
+                    AND (SELECT count(*) FROM news_post n WHERE n.school_id = V_HIL AND n.team_code = 'U15A' AND n.kind = 'plan') = 0
                     AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id IN (P1, P2)) = 0,
-      '§78 (sheet): of Hilton U15A the follower reads more than the ordinary post, or a plan''s notice');
+      '§78 (sheet): of Hilton U15A the follower does not read the ordinary post, or reads a plan or a plan''s notice');
     PERFORM set_config('app.user_id', '', true);
     PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id IN (P1, P2)) = 0, '§78 (sheet): an anonymous session reads a plan');
 
