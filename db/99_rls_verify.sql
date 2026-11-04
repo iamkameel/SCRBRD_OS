@@ -9361,6 +9361,98 @@ BEGIN
   RETURN ids || jsonb_build_object('f', f);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- §109 (R-H): Hilton's U14E (eleven boys) at home to Westville's U14E (three),
+-- f1, in three days. A Hilton 12XI fixture against a school SCRBRD does not
+-- host, f2, with one boy of the 12XI on its sheet. Two more U14E fixtures:
+-- f3, whose sheet was named and then withdrawn whole (unpublished), and f4,
+-- with no sheet yet. Each boy has a guardian, verified by his own school's
+-- office and consented, as the seed's are: a boy is selected only once
+-- registered. The first U14E boy has his own account (a `player` row at the
+-- side) and his own parent; the other ten share one guardian, who stands in
+-- for their families and is asked nothing. Westville's first boy likewise.
+-- The U14E coach, the office, a follower the office admitted school-wide and
+-- one it scoped to the U14E, the 12XI boy's parent, Westville's U14E coach.
+-- As the owner; every name is invented.
+CREATE OR REPLACE FUNCTION _v131h_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE  uuid := '88888888-0000-0000-0000-00000000000c';
+  WOFFICE uuid := '88888888-0000-0000-0000-00000000000d';
+  U14 date := make_date(extract(year FROM sa_today())::int - 13, 3, 1);
+  U17 date := make_date(extract(year FROM sa_today())::int - 16, 3, 1);
+  a uuid[] := '{}'; w uuid[] := '{}'; v uuid; x uuid; i int; ids jsonb;
+  f1 uuid; f2 uuid; f3 uuid; f4 uuid; r record;
+BEGIN
+  FOR i IN 1..11 LOOP
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES (HIL, 'U14E', format('Sheet Home %s', lpad(i::text, 2, '0')), 1310 + i, 'batter', U14) RETURNING id INTO v;
+    a := a || v;
+  END LOOP;
+  FOR i IN 1..3 LOOP
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES (WES, 'U14E', format('Sheet Away %s', lpad(i::text, 2, '0')), 1320 + i, 'batter', U14) RETURNING id INTO v;
+    w := w || v;
+  END LOOP;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES (HIL, '12XI', 'Sheet Senior', 1330, 'bowler', U17) RETURNING id INTO x;
+  ids := _v71_people('v131h', ARRAY[
+    ARRAY['coach',     'coach',      HIL::text, 'U14E', ''],
+    ARRAY['office',    'schooladmin', HIL::text, '',    ''],
+    ARRAY['aboy',      'player',     HIL::text, 'U14E', a[1]::text],
+    ARRAY['aparent',   'guardian',   HIL::text, '',     ''],
+    ARRAY['rest',      'guardian',   HIL::text, '',     ''],
+    ARRAY['follower',  'spectator',  HIL::text, '',     ''],
+    ARRAY['efollower', 'spectator',  HIL::text, 'U14E', ''],
+    ARRAY['xparent',   'guardian',   HIL::text, '',     ''],
+    ARRAY['wescoach',  'coach',      WES::text, 'U14E', ''],
+    ARRAY['wesparent', 'guardian',   WES::text, '',     ''],
+    ARRAY['wesrest',   'guardian',   WES::text, '',     '']]);
+  FOR r IN SELECT ra.id AS aid, x2.p, x2.verifier FROM role_assignment ra,
+                  LATERAL (SELECT (ids->>'aparent')::uuid, a[1], OFFICE
+                           UNION ALL SELECT (ids->>'rest')::uuid, b, OFFICE FROM unnest(a[2:11]) b
+                           UNION ALL SELECT (ids->>'xparent')::uuid, x, OFFICE
+                           UNION ALL SELECT (ids->>'wesparent')::uuid, w[1], WOFFICE
+                           UNION ALL SELECT (ids->>'wesrest')::uuid, b, WOFFICE FROM unnest(w[2:3]) b) AS x2(person, p, verifier)
+            WHERE ra.person_id = x2.person LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (r.aid, r.p, 'parent', 'verified', r.verifier, now(), 'granted', 'popia-2026-01', now(), r.verifier, current_date - 1);
+  END LOOP;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U14E', WES, 'U14E', 'Westville U14E', ((sa_today() + 3)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f1;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '12XI', 'Section 109 Seniors', ((sa_today() + 3)::timestamp + time '13:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f2;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U14E', 'Section 109 Withdrawn', ((sa_today() + 5)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f3;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U14E', 'Section 109 Unnamed', ((sa_today() + 6)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f4;
+  INSERT INTO match_squad (match_id, player_id, side, batting_no)
+  SELECT f1, a[g.n], 'home', g.n FROM generate_series(1, 11) g(n)
+  UNION ALL SELECT f1, w[g.n], 'away', g.n FROM generate_series(1, 3) g(n)
+  UNION ALL SELECT f2, x, 'home', 1
+  UNION ALL SELECT f3, a[g.n], 'home', g.n FROM generate_series(1, 2) g(n);
+  UPDATE match_squad SET withdrawn = true WHERE match_id = f3;
+  RETURN ids || jsonb_build_object('a', to_jsonb(a), 'w', to_jsonb(w), 'x', x, 'f1', f1, 'f2', f2, 'f3', f3, 'f4', f4);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A sheet's rows as the owner sees them: every row, and the live ones. The
+-- unpublished case proves nothing unless the sheet was named.
+CREATE OR REPLACE FUNCTION _v131h_rows(p_match uuid) RETURNS text AS $$
+  SELECT count(*) || ' ' || count(*) FILTER (WHERE NOT withdrawn) FROM match_squad WHERE match_id = p_match
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Take a boy off a sheet as the coach's route does (withdrawn, not deleted),
+-- as the owner: the proof is about the read, not the coach's write.
+CREATE OR REPLACE FUNCTION _v131h_withdraw(p_match uuid, p_player uuid) RETURNS integer AS $$
+  WITH u AS (UPDATE match_squad SET withdrawn = true WHERE match_id = p_match AND player_id = p_player RETURNING 1)
+  SELECT count(*)::int FROM u
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- └── db/131 (sections 108, 109, 110) ─────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -33103,6 +33195,133 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 108
   -- └── db/131 (section 108) ──────────────────────────────────────────
+
+  -- ┌── db/131 (section 109) ─────────────────────────────────────────
+  -- ── 109. REACH R-H: the team sheet to the parent (§3.5, §6.8; STEP4 Q10) ──
+  -- Kameel 27 Sep 2026: "signed in, her own child's side and fixture only,
+  -- the named players and their order — names only". fixture_sheet() (db/131).
+  -- Rows are _v131h_stage()'s, invented. What each label holds:
+  --   (parent)      the first U14E boy's parent reads the U14E's eleven,
+  --                 names and order, for f1, and nothing of Westville's end;
+  --                 nothing of the 12XI's fixture f2
+  --   (pupil)       the boy himself reads the same eleven (S3)
+  --   (staff)       the U14E coach and the office read the same eleven
+  --   (spectator)   a follower, school-wide or scoped to the U14E, reads
+  --                 nothing of f1 or f2
+  --   (other school) Westville's parent reads her own end of f1, its three in
+  --                 order, and not Hilton's; so does Westville's coach
+  --   (other side)  the 12XI boy's parent reads f2's sheet and nothing of f1
+  --   (signed out)  nobody signed in reads nothing
+  --   (unpublished) f3, named and withdrawn whole, and f4, never named,
+  --                 return nothing, to the parent, the boy and the coach
+  --   (withdrawn)   a boy taken off f1 leaves it: the parent reads ten
+  --   (policy)      for every persona, fixture and end, the read answers an
+  --                 end exactly when match_squad_read shows that persona a
+  --                 live row of it
+  --   (columns)     side, batting_no, twelfth, name: no player_id, no uuid
+  --   (doors)       a stable SECURITY DEFINER with a pinned path; the
+  --                 application's, and not PUBLIC's or a managed host's
+  -- Falsified once: fixture_sheet() with its app_can() gate taken out went red
+  -- at §109 (parent), the parent reading both ends of f1.
+  DECLARE
+    h     jsonb := _v131h_stage();
+    F1 uuid := (h->>'f1')::uuid; F2 uuid := (h->>'f2')::uuid;
+    F3 uuid := (h->>'f3')::uuid; F4 uuid := (h->>'f4')::uuid;
+    A2 uuid := (h->'a'->>1)::uuid;
+    HOME text := (SELECT string_agg(format('home %s Sheet Home %s', i, lpad(i::text, 2, '0')), ' | ' ORDER BY i) FROM generate_series(1, 11) i);
+    AWAY text := (SELECT string_agg(format('away %s Sheet Away %s', i, lpad(i::text, 2, '0')), ' | ' ORDER BY i) FROM generate_series(1, 3) i);
+    k text; f uuid; sd text; got text; bad text;
+    r record;
+  BEGIN
+    -- (parent), (pupil), (staff)
+    FOREACH k IN ARRAY ARRAY['aparent', 'aboy', 'coach', 'office'] LOOP
+      PERFORM _as((h->>k)::uuid);
+      got := (SELECT string_agg(format('%s %s %s', s.side, s.batting_no, s.name), ' | ' ORDER BY s.o)
+                FROM fixture_sheet(F1) WITH ORDINALITY AS s(side, batting_no, twelfth, name, o));
+      PERFORM _assert(got = HOME, format('§109 (%s): the %s reads f1''s sheet as %s, not the U14E''s eleven in order',
+                                         CASE k WHEN 'aparent' THEN 'parent' WHEN 'aboy' THEN 'pupil' ELSE 'staff' END, k, coalesce(got, '(nothing)')));
+    END LOOP;
+    PERFORM _as((h->>'aparent')::uuid);
+    PERFORM _assert((SELECT count(*) FROM fixture_sheet(F2)) = 0, '§109 (parent): the U14E parent reads the 12XI''s sheet');
+
+    -- (spectator)
+    FOREACH k IN ARRAY ARRAY['follower', 'efollower'] LOOP
+      PERFORM _as((h->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM fixture_sheet(F1)) + (SELECT count(*) FROM fixture_sheet(F2)) = 0,
+        format('§109 (spectator): the %s reads a sheet', k));
+    END LOOP;
+
+    -- (other school)
+    FOREACH k IN ARRAY ARRAY['wesparent', 'wescoach'] LOOP
+      PERFORM _as((h->>k)::uuid);
+      got := (SELECT string_agg(format('%s %s %s', s.side, s.batting_no, s.name), ' | ' ORDER BY s.o)
+                FROM fixture_sheet(F1) WITH ORDINALITY AS s(side, batting_no, twelfth, name, o));
+      PERFORM _assert(got = AWAY, format('§109 (other school): Westville''s %s reads f1''s sheet as %s, not her own end''s three', k, coalesce(got, '(nothing)')));
+    END LOOP;
+
+    -- (other side)
+    PERFORM _as((h->>'xparent')::uuid);
+    PERFORM _assert((SELECT string_agg(format('%s %s %s', s.side, s.batting_no, s.name), ' | ') FROM fixture_sheet(F2) s) = 'home 1 Sheet Senior'
+                    AND (SELECT count(*) FROM fixture_sheet(F1)) = 0,
+      '§109 (other side): the 12XI parent does not read f2''s sheet, or reads the U14E''s');
+
+    -- (signed out)
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert((SELECT count(*) FROM fixture_sheet(F1)) = 0, '§109 (signed out): a session with nobody signed in reads a sheet');
+
+    -- (unpublished)
+    PERFORM _assert(_v131h_rows(F3) = '2 0' AND _v131h_rows(F4) = '0 0',
+      format('§109 (unpublished): f3 holds %s rows (all, live) and f4 %s, not 2 0 and 0 0: the proof proves nothing', _v131h_rows(F3), _v131h_rows(F4)));
+    FOREACH k IN ARRAY ARRAY['aparent', 'aboy', 'coach'] LOOP
+      PERFORM _as((h->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM fixture_sheet(F3)) + (SELECT count(*) FROM fixture_sheet(F4)) = 0,
+        format('§109 (unpublished): the %s reads a sheet withdrawn whole, or one never named', k));
+    END LOOP;
+
+    -- (withdrawn)
+    PERFORM _assert(_v131h_withdraw(F1, A2) = 1, '§109 (withdrawn): the second boy was not taken off f1');
+    PERFORM _as((h->>'aparent')::uuid);
+    PERFORM _assert((SELECT count(*) FROM fixture_sheet(F1)) = 10
+                    AND NOT EXISTS (SELECT 1 FROM fixture_sheet(F1) s WHERE s.name = 'Sheet Home 02'),
+      '§109 (withdrawn): the parent still reads the boy taken off f1');
+
+    -- (policy)
+    FOR r IN SELECT key, value FROM jsonb_each_text(h) WHERE key NOT IN ('a', 'w', 'x', 'f1', 'f2', 'f3', 'f4') LOOP
+      PERFORM _as(r.value::uuid);
+      FOREACH f IN ARRAY ARRAY[F1, F2, F3, F4] LOOP
+        FOREACH sd IN ARRAY ARRAY['home', 'away'] LOOP
+          IF EXISTS (SELECT 1 FROM fixture_sheet(f) s WHERE s.side = sd)
+             IS DISTINCT FROM EXISTS (SELECT 1 FROM match_squad q WHERE q.match_id = f AND q.side = sd AND NOT q.withdrawn) THEN
+            bad := concat_ws(', ', bad, format('%s at %s of %s', r.key, sd, CASE f WHEN F1 THEN 'f1' WHEN F2 THEN 'f2' WHEN F3 THEN 'f3' ELSE 'f4' END));
+          END IF;
+        END LOOP;
+      END LOOP;
+    END LOOP;
+    PERFORM _assert(bad IS NULL, format('§109 (policy): fixture_sheet() and match_squad_read disagree for %s', bad));
+
+    -- (columns)
+    PERFORM _assert((SELECT string_agg(u.n, ',' ORDER BY u.o) FROM pg_proc p,
+                            unnest(p.proargnames, p.proargmodes::text[], p.proallargtypes) WITH ORDINALITY AS u(n, m, t, o)
+                      WHERE p.oid = 'fixture_sheet(uuid)'::regprocedure AND u.m = 't') = 'side,batting_no,twelfth,name'
+                    AND NOT EXISTS (SELECT 1 FROM pg_proc p, unnest(p.proargmodes::text[], p.proallargtypes) AS u(m, t)
+                                     WHERE p.oid = 'fixture_sheet(uuid)'::regprocedure AND u.m = 't' AND u.t = 'uuid'::regtype),
+      '§109 (columns): fixture_sheet() returns more than side, batting_no, twelfth and name, or a uuid');
+
+    -- (doors)
+    PERFORM _assert((SELECT p.prosecdef AND p.provolatile = 's'
+                            AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']
+                       FROM pg_proc p WHERE p.oid = 'fixture_sheet(uuid)'::regprocedure),
+      '§109 (doors): fixture_sheet() is not a stable SECURITY DEFINER with a pinned path');
+    PERFORM _assert(has_function_privilege('scrbrd_app', 'fixture_sheet(uuid)', 'EXECUTE')
+                    AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                                     WHERE p.oid = 'fixture_sheet(uuid)'::regprocedure AND x.grantee = 0)
+                    AND NOT EXISTS (SELECT 1 FROM pg_roles o WHERE o.rolname IN ('anon', 'authenticated', 'service_role')
+                                       AND has_function_privilege(o.oid, 'fixture_sheet(uuid)', 'EXECUTE')),
+      '§109 (doors): fixture_sheet() is not the application''s alone');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 109
+  -- └── db/131 (section 109) ──────────────────────────────────────────
 
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
