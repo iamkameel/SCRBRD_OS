@@ -235,7 +235,7 @@ function SelectionView() {
                         </span>
                         {r.styleLine && (
                           <span data-testid={`selection-styles-${r.id}`}
-                            style={{ display: "block", fontFamily: D.body, fontSize: "12px", color: D.textSecondary, overflowWrap: "anywhere" }}>
+                            style={{ display: "block", fontFamily: D.body, fontSize: "12px", color: D.textMuted, overflowWrap: "anywhere" }}>
                             {r.styleLine}
                           </span>
                         )}
