@@ -5,6 +5,8 @@
 
 1 Nov 2026: pilot scope frozen to eight items (setup, fixtures, mobile scoring, public/private views, coach view, parent view, audit trail, wagon wheel); other work parked, not deleted.
 
+4 Nov 2026: the wagon wheel is pilot-critical, not optional (Kameel: 'wagon wheel is a given! definitely not optional!'); spectators read every side's team posts but no player stats or passports (supersedes REACH-D3); a read-only pilot security audit ran and its fixes are being built (db/132).
+
 ## Rules
 
 - Order by dependency, not merely severity.
