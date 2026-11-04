@@ -225,6 +225,10 @@ const SUITES = [
   // gate, its words, and what a dismissal holds (signals).
   ["cockpit", "apps/web/test/cockpit.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["signals", "apps/web/test/signals.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The coach's recent matches (pilot item 5): the cockpit's gate, our boys
+  // only (D8), the sums and ties, the thirty-ball floor, a correction moving
+  // the figures, and the never-list over the module and the card.
+  ["recent-matches", "apps/web/test/recentMatches.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // A coaching point's never-words, in JavaScript and in db/104's SQL, are
   // one list (GA-I27 §6; GA-I26a §2.2).
   ["coachingpoint", "apps/web/test/coachingPoint.test.mjs"],

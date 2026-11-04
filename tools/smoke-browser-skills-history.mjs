@@ -266,6 +266,10 @@ try {
      /already there/.test(await tid(c.page, "target-problem").innerText()) && await tid(c.page, "target-save").isDisabled());
   await tid(c.page, "target-score").fill("14");
   ok("...above it is allowed", (await tid(c.page, "target-problem").innerText()).trim() === "" && !(await tid(c.page, "target-save").isDisabled()));
+  // The picker's groups come from the form's own drills read (History.jsx, useLive("drills")),
+  // made when the form opens: wait for it to answer before reading the order. Read at once, a
+  // loaded runner (CI shard 1/4, 4 Nov) found no group at all and failed on an empty list.
+  await tid(c.page, "target-drill").locator("optgroup").first().waitFor({ state: "attached", timeout: 10000 }).catch(() => {});
   const optionTexts = await tid(c.page, "target-drill").locator("optgroup").evaluateAll((gs) => gs.map((g) => g.label));
   ok("the drill picker puts what suits against pace first", /^Suits against pace$/.test(optionTexts[0] ?? ""), optionTexts.join());
   await tid(c.page, "target-drill").selectOption(drill.id);
