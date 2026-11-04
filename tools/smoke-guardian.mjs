@@ -53,7 +53,7 @@ const REVOKE_LINK = `select * from guardian_link_revoke(
   (select g.id from assignment_subject g join role_assignment a on a.id = g.assignment_id
     where a.person_id = $1::uuid and a.role = 'guardian' and g.player_id = $2::uuid
       and g.verification_state in ('pending','verified')
-      and (g.valid_until is null or g.valid_until > current_date)
+      and (g.valid_until is null or g.valid_until > sa_today())
     order by g.created_at desc limit 1), $3::text, $4::text)`;
 
 let pass = 0, fail = 0;
@@ -124,7 +124,7 @@ try {
 
   group("Revocation narrows. It can never widen");
   await q(`update assignment_subject set verification_state = 'revoked',
-             valid_until = current_date
+             valid_until = sa_today()
             where player_id = $1 and relationship = 'parent'`, [P_INJURED]);
   const afterRevoke = await players(PARENT);
   ok("a revoked link reaches no child at all", afterRevoke.length === 0);
@@ -148,7 +148,7 @@ try {
   const twoChildren = await players(PARENT);
   ok("a parent of two children reads both",
      twoChildren.includes(P_INJURED) && twoChildren.includes(P_U13));
-  await q(`update assignment_subject set verification_state = 'revoked', valid_until = current_date
+  await q(`update assignment_subject set verification_state = 'revoked', valid_until = sa_today()
             where assignment_id = 'a5510000-0000-0000-0000-000000000005' and player_id = $1`, [P_U13]);
   const oneChild = await players(PARENT);
   ok("...and only the remaining one once the other link is ended",
@@ -182,7 +182,7 @@ try {
   ok("...but may be linked to a child in another side",
      (await call(REGISTRAR, "select * from guardian_link_establish($1,$2,'parent')",
                  [COACH_1XI, P_U13])).ok === true);
-  await q(`update assignment_subject g set verification_state = 'revoked', valid_until = current_date
+  await q(`update assignment_subject g set verification_state = 'revoked', valid_until = sa_today()
             from role_assignment a
            where a.id = g.assignment_id and a.person_id = $1 and g.player_id = $2`,
           [COACH_1XI, P_U13]);
@@ -207,7 +207,7 @@ try {
   ok("...and the child is registered", (await state(P_U13)) === "active");
   const link = (await q(`select g.* from assignment_subject g join role_assignment a on a.id = g.assignment_id
                           where a.person_id = $1 and g.player_id = $2
-                            and (g.valid_until is null or g.valid_until > current_date)`,
+                            and (g.valid_until is null or g.valid_until > sa_today())`,
                         [NEW_PARENT, P_U13]))[0];
   ok("...and the record names who verified it and when",
      link.verified_by === REGISTRAR && link.verified_at != null);
@@ -308,7 +308,7 @@ try {
   ok("...with the squad row now accepted", celeOk === null);
 
   // A child with no guardian at all is the case the rule exists for.
-  await q(`update assignment_subject g set verification_state='revoked', valid_until=current_date
+  await q(`update assignment_subject g set verification_state='revoked', valid_until=sa_today()
             from role_assignment a
            where a.id = g.assignment_id and a.person_id = $1 and g.player_id = $2`,
           [NEW_PARENT, P_U13]);
@@ -428,7 +428,7 @@ try {
       method: "POST", token: reg, body: { guardianId: ADULT_PARENT, relationship: "parent" } });
     ok("a child with no recorded date of birth cannot be linked at all",
        undated.body?.error === "player_date_of_birth_required" && undated.status === 422);
-    await q(`update player set born = (current_date - interval '13 years')::date where id = $1`, [NO_DOB]);
+    await q(`update player set born = (sa_today() - interval '13 years')::date where id = $1`, [NO_DOB]);
 
     const dated = await api(`/api/players/${NO_DOB}/guardians`, {
       method: "POST", token: reg, body: { guardianId: ADULT_PARENT, relationship: "parent" } });
@@ -440,7 +440,7 @@ try {
     // Khumalo is in Hilton's U13A, so his is open — and the open link is
     // asserted together with the reason it may be open.
     const ends = await q(`select s.valid_until, still_at_school(p.id) as at_school,
-                                 majority_on(p.born) > current_date as minor
+                                 majority_on(p.born) > sa_today() as minor
                             from assignment_subject s
                             join role_assignment a on a.id = s.assignment_id and a.role = 'guardian'
                             join player p on p.id = s.player_id

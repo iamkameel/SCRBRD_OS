@@ -10,9 +10,10 @@
  * §5 G7: his line on a played row is folded from that match's own log, one
  * read per match, kept for the page's life (useFold.js).
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useLive } from "../../lib/live.js";
+import { api, signedIn } from "../../lib/api.js";
 import { ReadState } from "../../ui/primitives.jsx";
 import { readState } from "../../lib/readState.js";
 import { humanDate } from "../../lib/format.js";
@@ -156,7 +157,8 @@ export function FixtureDetail({ match, child, role, self = false, onBack }) {
       </Card>
       <Card label="Team sheet" testid="fixture-teamsheet">
         <TeamSheetLine match={match} child={child} role={role} self={self}/>
-        {self && !cap && <SideSheet match={match} role={role}/>}
+        {/* The captain's section draws the side itself (SCRBRD-138), so his card keeps to the line. */}
+        {!(self && cap) && <SideSheet match={match} child={child}/>}
       </Card>
       {/* SCRBRD-138 phase B: the coach's plan to the side, for every boy and parent it reaches, above the captain's section. */}
       <FixturePlan match={match} child={child} role={role}/>
@@ -166,20 +168,44 @@ export function FixtureDetail({ match, child, role, self = false, onBack }) {
 }
 
 /**
- * The side, for a pupil (S2): every name on the published sheet, in order —
- * he reads the sheet under player.profile.read across his side, as a team-mate
- * reads it. Names and places only: nobody's fitness, injury or return date
- * (K3, db/55: a child's medical needs are not in general view to children).
+ * The side's sheet (P3, S3): every name on it, in batting order, under the
+ * child's own line (REACH R-H, db/131; STEP4 Q10, Kameel 27 Sep 2026: "the
+ * named players and their order — names only, no profiles, ages or photos").
+ *
+ * GET /api/matches/:id/sheet answers, as the reader, the end of the fixture
+ * whose sheet holds a boy he may read: her child's, or his own. The rows are
+ * a name, a place and a twelfth-man mark, and nothing else — no id, no age,
+ * no fitness, no answer (K3, db/55: a child's medical needs are not in
+ * general view). Signed in only: the demonstration draws the line alone, and
+ * no public page draws this. A sheet not out yet, a read that failed and a
+ * reader it does not admit all draw nothing, under the line that says which.
  */
-function SideSheet({ match, role }) {
-  const { rows } = useLive("match_squad", role, 0, { matchId: match.id });
-  if (!rows.length) return null;
-  const order = [...rows].sort((a, b) => (a.side ?? "").localeCompare(b.side ?? "") || (a.battingNo ?? 99) - (b.battingNo ?? 99));
+function SideSheet({ match, child }) {
+  const id = match.id;
+  const [rows, setRows] = useState(/** @type {any[] | null} */ (null));
+  useEffect(() => {
+    if (!id || !signedIn()) { setRows(null); return undefined; }
+    let cancelled = false;
+    api(`/api/matches/${id}/sheet`)
+      .then((d) => { if (!cancelled) setRows(Array.isArray(d?.rows) ? d.rows : []); })
+      .catch(() => { if (!cancelled) setRows(null); });
+    return () => { cancelled = true; };
+  }, [id]);
+  if (!rows?.length) return null;
+  // One end, the child's. A reader admitted at both ends (staff at both
+  // schools) is shown the end this child plays.
+  const ends = [...new Set(rows.map((r) => r.side))];
+  const end = ends.length === 1 ? ends[0] : endOf(match, child);
+  const side = rows.filter((r) => r.side === end);
   return (
-    <ol data-testid="side-sheet" style={{ margin: 0, paddingLeft: T.space.xl, display: "grid", gap: "2px" }}>
-      {order.map((r) => (
-        <li key={`${r.side}-${r.playerId}`} style={{ ...T.role.body, color: T.content.primary }}>
-          {r.name}{r.twelfth ? " (12th)" : ""}
+    <ol data-testid="side-sheet" aria-label="Team sheet, in batting order"
+      style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "2px" }}>
+      {side.map((r, i) => (
+        <li key={`${end}-${i}`} data-testid="side-sheet-row" style={{ ...T.role.body, color: T.content.primary, display: "flex", gap: T.space.sm }}>
+          <span style={{ minWidth: "2ch", textAlign: "right", color: T.content.secondary, fontVariantNumeric: "tabular-nums" }}>
+            {r.battingNo ?? ""}
+          </span>
+          <span>{r.name}{r.twelfth ? " (12th)" : ""}</span>
         </li>
       ))}
     </ol>

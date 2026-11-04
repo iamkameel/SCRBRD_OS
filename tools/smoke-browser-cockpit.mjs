@@ -38,6 +38,16 @@
  *      the second opens THAT fixture's Coach tab; past the first few, the rest
  *      fold under "Later" and make no read until opened. A Readiness row is a
  *      44px tap that opens its fixture's duties.
+ *   6d. RECENT MATCHES (pilot item 5): the coach's Dashboard names his side's
+ *      last three finished matches, newest first; each one's result and both
+ *      totals equal the result read fetched raw with his token; our boys'
+ *      runs and wickets are the scorecard's, by hand; the other school's boys
+ *      are never named; the two insights are plain counts with the rate held
+ *      under thirty balls; "as at" the read. An approved amendment voiding a
+ *      six moves the result, the total, the boy's runs and the insight, and
+ *      the match says it was corrected. The team manager gets the results and
+ *      no boy's figure (no player.performance.read); a parent, a pupil and a
+ *      scorer never see the card; no notification is written (D11).
  *   3b. WHERE THIS COMES FROM (GA-I27 slice 1, docs/design/GA-I27_coach_cards.md
  *      §5.1, §7): every card's disclosure, 44px and collapsed until asked;
  *      expanded, its trail's figures equal the same raw reads by arithmetic
@@ -827,6 +837,139 @@ try {
     ok(`...and its duty roster says what the row said ("${coveredText}")`, rosterText === coveredText, rosterText);
     ok("no page errors, no scoping refusals", r.errors.length === 0 && r.refusals.length === 0, [...r.errors, ...r.refusals].join(" | "));
     await r.ctx.close();
+  }
+
+  // ══ 6d · Recent matches (pilot item 5) ══════════════════════════════════
+  group("Recent matches on the Dashboard: the side's last three finished, the result and totals as the result read says, our boys' figures as the scorecard says, and a corrected ball moves them");
+  {
+    // A finished match of the walk's own, with a scorecard, two days ago: Hilton bat two
+    // overs (Whitfield 4,0,2,6,0,4 = 16 off 6; Bekker 2,2,0,0,4,0 = 8 off 6: even runs, so
+    // each faces his whole over), Westville make 9/1 (Naidoo 1 for 8 off his over, Seven
+    // 0 for 1). With the seed's two finished 1XI fixtures (...0001, no log; ...0004, a
+    // log with no innings_start) these are the coach's last three.
+    const FIN = (await q(
+      `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+       values ($1, '1XI', $2, '1XI', 'Westville Boys'' High 1XI', now() - interval '2 days', 'cricket', 'T20', 2, 'live') returning id`, [HIL, WES]))[0].id;
+    const { inningsStart, inningsEnd, batters, bowler, ball, voidEvent, BALL_TYPE } = await import("@scrbrd/scoring");
+    const hil = ["whitfield", "bekker", "naidoo", "seven"].map((k) => ({ id: ids[k], name: names[k] }));
+    const opp = ["Opp Alpha", "Opp Bravo", "Opp Charlie"].map((n) => ({ id: n, name: n }));
+    const finLog = [];
+    const add = (ev, innings) => finLog.push({ ...ev, innings, id: `recent-${finLog.length + 1}`, clientTs: Date.now() - 2 * 86400e3 + finLog.length * 20000 });
+    add(inningsStart({ battingTeam: "1XI", bowlingTeam: "Westville Boys' High 1XI", squad: hil, bowlingSquad: opp, overs: 2, captureProfile: "full" }), 0);
+    add(batters({ striker: ids.whitfield, nonStriker: ids.bekker }), 0);
+    add(bowler({ bowler: "Opp Alpha" }), 0);
+    for (const v of [4, 0, 2, 6, 0, 4]) add(ball({ type: BALL_TYPE.RUN, value: v }), 0);
+    add(bowler({ bowler: "Opp Bravo" }), 0);
+    for (const v of [2, 2, 0, 0, 4, 0]) add(ball({ type: BALL_TYPE.RUN, value: v }), 0);
+    add(inningsEnd({ reason: "overs_complete", confirmed: { runs: 24, wickets: 0, balls: 12 } }), 0);
+    add(inningsStart({ battingTeam: "Westville Boys' High 1XI", bowlingTeam: "1XI", squad: opp, bowlingSquad: hil, overs: 2, captureProfile: "full" }), 1);
+    add(batters({ striker: "Opp Alpha", nonStriker: "Opp Bravo" }), 1);
+    add(bowler({ bowler: ids.naidoo }), 1);
+    for (const v of [0, 0, 6, 0]) add(ball({ type: BALL_TYPE.RUN, value: v }), 1);
+    add(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled" }), 1);
+    add(batters({ striker: "Opp Charlie" }), 1);
+    add(ball({ type: BALL_TYPE.RUN, value: 2 }), 1);
+    add(bowler({ bowler: ids.seven }), 1);
+    for (const v of [0, 1, 0, 0, 0, 0]) add(ball({ type: BALL_TYPE.RUN, value: v }), 1);
+    await writeEvents(q, FIN, finLog);
+    await q(`update match set status = 'complete' where id = $1`, [FIN]);
+    const SEED_DONE = ["77777777-0000-0000-0000-000000000001", "77777777-0000-0000-0000-000000000004"];
+    const notices0 = (await q(`select count(*)::int n from notification`))[0].n;
+
+    // The same result read the card makes, fetched raw with the coach's own token, put in words again here.
+    const ovs = (b) => (b % 6 ? `${Math.floor(b / 6)}.${b % 6}` : String(b / 6));
+    const sideWords = (r, side) => (r?.innings ?? []).filter((i) => i.side === side && i.superOver == null).sort((a, b) => a.innings - b.innings)
+      .map((i) => `${i.wickets >= 10 ? `${i.runs} all out` : `${i.runs}/${i.wickets}`}${i.balls ? ` (${ovs(i.balls)} ov)` : ""}`).join(" & ");
+    const expectLine = async (id) => { const r = (await call(`/api/matches/${id}/result`, { token: coach })).body; return { result: r?.result?.text ?? "", ours: sideWords(r, "home"), theirs: sideWords(r, "away") }; };
+    const shown = (page) => page.$$eval('[data-testid="day-recent"] li[data-testid^="recent-match-"]', (els) => els.map((e) => ({
+      id: e.getAttribute("data-testid").slice("recent-match-".length), result: e.getAttribute("data-result"), ours: e.getAttribute("data-ours"), theirs: e.getAttribute("data-theirs"),
+      corrected: !!e.querySelector('[data-testid="recent-corrected"]') })));
+    const figure = (page, list, id) => page.locator(`[data-testid="recent-${list}-${id}"]`).first().getAttribute("data-figure", { timeout: 1500 }).catch(() => null);
+    const ready = (page) => page.waitForFunction(() => { const c = document.querySelector('[data-testid="day-recent"]'); return c && !c.querySelector('[data-testid="recent-loading"]'); }, null, { timeout: 15000 }).catch(() => {});
+
+    const rc = await open({ viewport: PHONE });
+    await signIn(rc.page, "coach@example.invalid");
+    await go(rc.page, "dashboard");
+    await ready(rc.page);
+    const lines = await shown(rc.page);
+    const recentText = await inner(rc.page, "day-recent");
+    dbg("RECENT", recentText);
+    ok("the coach's Dashboard has one Recent matches card, for his side", await tid(rc.page, "day-recent").count() === 1 && /^RECENT MATCHES/i.test(recentText), recentText.slice(0, 200));
+    ok("...the last three finished, newest first: the walk's, then the seed's two (no live match, no fixture to come)",
+       lines.map((l) => l.id).join() === [FIN, ...SEED_DONE].join(), lines.map((l) => l.id));
+    for (const l of lines) {
+      const want = await expectLine(l.id);
+      ok(`...${l.id === FIN ? "the walk's match" : `seed ${l.id.slice(-4)}`}: the result and both totals are the result read's ("${want.result}"; ${want.ours || "—"} v ${want.theirs || "—"})`,
+         l.result === want.result && l.ours === want.ours && l.theirs === want.theirs, JSON.stringify({ shown: l, want }));
+    }
+    const fin0 = await expectLine(FIN);
+    ok("...the walk's match by hand: Hilton 24/0 (2 ov), Westville 9/1 (2 ov), Hilton won by 15 runs",
+       fin0.ours === "24/0 (2 ov)" && fin0.theirs === "9/1 (2 ov)" && /won by 15 runs$/.test(fin0.result), JSON.stringify(fin0));
+    ok("...the seed's 0004: 172/2 off 16 overs, as the result read files it", lines[2]?.ours === "" && lines[2]?.theirs === "172/2 (16 ov)", JSON.stringify(lines[2]));
+    ok("our boys' runs, as the scorecard has them: Whitfield 16 (6 balls), Bekker 8 (6 balls)",
+       await figure(rc.page, "bat", WHITFIELD) === "16 (6 balls)" && await figure(rc.page, "bat", BEKKER) === "8 (6 balls)",
+       `${await figure(rc.page, "bat", WHITFIELD)} | ${await figure(rc.page, "bat", BEKKER)}`);
+    ok("our wickets: Naidoo 1 for 8 (1 ov); Seven, wicketless, not listed",
+       await figure(rc.page, "bowl", NAIDOO) === "1 for 8 (1 ov)" && await rc.page.locator(`[data-testid="recent-bowl-${SEVEN}"]`).count() === 0, await figure(rc.page, "bowl", NAIDOO));
+    const otherSide = ["Opp Alpha", "Opp Bravo", "Opp Charlie"].filter((n) => recentText.includes(n));
+    ok("no boy of the other school is named, summed or ranked (D8)", otherSide.length === 0, otherSide.join());
+    const insBat = (await inner(rc.page, "recent-insight-bat")).trim(), insBowl = (await inner(rc.page, "recent-insight-bowl")).trim();
+    ok("insight: the top scorer, plainly counted, the rate held under thirty balls",
+       insBat === `Top scorer over the last 3 matches: ${names.whitfield}, 16 runs from 6 balls. No strike rate: 6 balls is fewer than the 30 a rate needs.`, insBat);
+    ok("insight: the most wickets, the economy held under thirty balls",
+       insBowl === `Most wickets over the last 3 matches: ${names.naidoo}, 1 for 8 (1 ov). No economy rate: 6 balls is fewer than the 30 a rate needs.`, insBowl);
+    const src = (await inner(rc.page, "recent-source")).trim();
+    ok("the source line names the reads, the denominator (1 of 3 scorecards) and 'as at' the read", /^From each match's result and scorecard; our boys only, from 1 of 3 scorecards · as at \d{2}:\d{2}$/.test(src), src);
+    const lk = leaks(recentText);
+    ok(`none of the never-words, no injury, no reason, no phone number (${lk.length})`, lk.length === 0, lk.join(" | "));
+    const f9 = await floors(rc.page, '[data-testid="day-recent"]');
+    ok(`at 390: nothing under 12px (${f9.small.length}), nothing tapped under 44px (${f9.tiny.length})`, f9.small.length === 0 && f9.tiny.length === 0, [...f9.small, ...f9.tiny].slice(0, 4).join(" · "));
+    ok("no horizontal scroll at 390", await rc.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    await tid(rc.page, `recent-open-${FIN}`).click({ timeout: 4000 });
+    await tid(rc.page, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
+    ok("'Open the match' opens that fixture in the Match Centre", await tid(rc.page, "match-view").count() === 1 && await tid(rc.page, "os-main").getAttribute("data-page") === "matches");
+    ok("no page errors, no scoping refusals", rc.errors.length === 0 && rc.refusals.length === 0, [...rc.errors, ...rc.refusals].join(" | "));
+    await rc.ctx.close();
+
+    // The team manager: the side, by capability; no player.performance.read, so no boy's figure.
+    const tmp = await open({ viewport: PHONE });
+    await signIn(tmp.page, "manager.cockpit@example.invalid");
+    await go(tmp.page, "dashboard");
+    await ready(tmp.page);
+    ok("the team manager: the card with the results and totals", await tid(tmp.page, "day-recent").count() === 1 && (await shown(tmp.page)).length === 3);
+    ok("...and no boy's runs or wickets, no insight (player.performance.read is not his)",
+       await tid(tmp.page, "recent-bat").count() === 0 && await tid(tmp.page, "recent-bowl").count() === 0 && await tid(tmp.page, "recent-insights").count() === 0);
+    await tmp.ctx.close();
+
+    // A parent and a pupil: never the card, nothing that suggests one.
+    for (const [who, email] of [["a parent", "parent@example.invalid"], ["a pupil", "pillay@example.invalid"], ["a scorer", "scorer@example.invalid"]]) {
+      const s = await open({ viewport: PHONE });
+      await signIn(s.page, email);
+      await go(s.page, "dashboard");
+      await afterReads(s.page, 1500);
+      ok(`${who}: no Recent matches card on Home`, await tid(s.page, "day-recent").count() === 0 && !/Recent matches/i.test(await text(s.page).catch(() => "")));
+      await s.ctx.close();
+    }
+
+    // The correction: an approved amendment voids Whitfield's six (as tools/fixture-matchcentre.mjs writes one).
+    const six = finLog.find((e) => e.kind === "ball" && e.value === 6 && e.innings === 0);
+    const lastSeq = (await q(`select max(seq)::int s from ball_event where match_id = $1`, [FIN]))[0].s;
+    await writeEvents(q, FIN, [{ ...voidEvent({ target: six.id, reason: "amendment" }), amendment: "coach-recent-1", innings: 0, id: "amendment:coach-recent-1", clientTs: Date.now() }], lastSeq);
+    const fin1 = await expectLine(FIN);
+    ok("the result read moves with the correction: Hilton 18 now, not 24", fin1.ours.startsWith("18/0") && fin1.result !== fin0.result, JSON.stringify(fin1));
+    const ra = await open({ viewport: PHONE });
+    await signIn(ra.page, "coach@example.invalid");
+    await go(ra.page, "dashboard");
+    await ready(ra.page);
+    const after = (await shown(ra.page)).find((l) => l.id === FIN);
+    ok("after the correction the card reads the corrected result and total", after?.result === fin1.result && after?.ours === fin1.ours && after?.theirs === fin1.theirs, JSON.stringify({ after, fin1 }));
+    ok("...says the match was corrected", after?.corrected === true);
+    ok("...and Whitfield's runs move with the scorecard: 12 (6 balls), Bekker 6 (5 balls)",
+       await figure(ra.page, "bat", WHITFIELD) === "12 (6 balls)" && await figure(ra.page, "bat", BEKKER) === "6 (5 balls)",
+       `${await figure(ra.page, "bat", WHITFIELD)} | ${await figure(ra.page, "bat", BEKKER)}`);
+    ok("...and the insight with them", (await inner(ra.page, "recent-insight-bat")).includes(`${names.whitfield}, 12 runs from 6 balls.`), await inner(ra.page, "recent-insight-bat"));
+    await ra.ctx.close();
+    ok("the card notified nobody (D11): no notification written", (await q(`select count(*)::int n from notification`))[0].n === notices0);
   }
 
   // ══ 7 · The live tab ════════════════════════════════════════════════════

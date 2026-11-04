@@ -225,6 +225,10 @@ const SUITES = [
   // gate, its words, and what a dismissal holds (signals).
   ["cockpit", "apps/web/test/cockpit.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["signals", "apps/web/test/signals.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The coach's recent matches (pilot item 5): the cockpit's gate, our boys
+  // only (D8), the sums and ties, the thirty-ball floor, a correction moving
+  // the figures, and the never-list over the module and the card.
+  ["recent-matches", "apps/web/test/recentMatches.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // A coaching point's never-words, in JavaScript and in db/104's SQL, are
   // one list (GA-I27 §6; GA-I26a §2.2).
   ["coachingpoint", "apps/web/test/coachingPoint.test.mjs"],
@@ -394,6 +398,10 @@ const SUITES = [
   // safeErr() over a duplicate email and ID number, and every console call
   // under services/ walked for a DETAIL, an email, a name or a raw message.
   ["log-hygiene", "services/api/log-safe.test.mjs"],
+  // REACH R-I (§4 M4): no API route reads a masked column of `player` from
+  // the table itself, only through player_masked; db/99 §110's copy of the
+  // `players` read held to the API's.
+  ["player-columns", "services/api/player-columns.test.mjs"],
   ["notif-store", "apps/web/test/notifications-store.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The pilot load's checker (docs/pilot/PILOT_LOAD.md): duplicates, a bad
   // birthday, a side his birthday does not fit, a guardian with no email, an
@@ -411,6 +419,9 @@ const SUITES = [
   // verification against its own database.
   ["db-url-guard", "tools/db-url-guard.test.mjs"],
   ["shipped",  "tools/shipped.test.mjs"],
+  // The verifier's oracles and the midnight walks read sa_today(), the day the
+  // product reads since db/128, not the UTC day (CI red 00:00-02:00 SAST, #233).
+  ["sa-day",   "tools/sa-day.test.mjs"],
   // The backup drill's tool (docs/pilot/BACKUP_RESTORE.md): which hosts are
   // this machine, the ledger and row-count comparisons, the roles a dump's
   // grants name, and a restore aimed anywhere else refused with exit 2.

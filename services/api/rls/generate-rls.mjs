@@ -540,6 +540,8 @@ export const ADDED_SINCE_01 = {
   "discipline.side.read":        "116_readers_privacy.sql",
   // ── The union passport (Kameel, 29 Oct 2026): named selectors only (db/124) ──
   "passport.union.read":         "124_union_passport.sql",
+  // ── REACH R-G (Kameel, 4 Nov 2026): a spectator reads every side's team posts (db/131) ──
+  "news.team.read":              "131_reach_last.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 

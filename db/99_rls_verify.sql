@@ -91,7 +91,7 @@ CREATE OR REPLACE FUNCTION _count_open_guardian_links() RETURNS integer AS $$
     JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
     JOIN player p ON p.id = s.player_id
    WHERE s.valid_until IS NULL
-     AND NOT coalesce(majority_on(p.born) > current_date, false)
+     AND NOT coalesce(majority_on(p.born) > sa_today(), false)
      AND NOT still_at_school(p.id);
 $$ LANGUAGE sql SECURITY DEFINER;
 
@@ -178,8 +178,8 @@ CREATE OR REPLACE FUNCTION _live_guardian_links_49(p_person uuid) RETURNS text A
   SELECT string_agg(s.player_id::text, ',' ORDER BY s.player_id::text)
     FROM assignment_subject s JOIN role_assignment a ON a.id = s.assignment_id
    WHERE a.person_id = p_person AND a.role = 'guardian' AND a.active
-     AND s.verification_state = 'verified' AND s.valid_from <= current_date
-     AND (s.valid_until IS NULL OR s.valid_until > current_date);
+     AND s.verification_state = 'verified' AND s.valid_from <= sa_today()
+     AND (s.valid_until IS NULL OR s.valid_until > sa_today());
 $$ LANGUAGE sql SECURITY DEFINER;
 
 -- Wind a support session's hour hand back to a second ago (SCRBRD-012). The
@@ -508,9 +508,9 @@ DECLARE
                              AND tgname = 'ball_event_names_its_delivery' AND tgenabled = 'O');
 BEGIN
   INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-    (A, HIL, '2XI', 'V44 Opener',  44, 'batter', (current_date - interval '16 years')::date),
-    (B, HIL, '2XI', 'V44 Partner', 45, 'batter', (current_date - interval '16 years')::date),
-    (C, HIL, '2XI', 'V44 Seamer',  46, 'bowler', (current_date - interval '16 years')::date);
+    (A, HIL, '2XI', 'V44 Opener',  44, 'batter', (sa_today() - interval '16 years')::date),
+    (B, HIL, '2XI', 'V44 Partner', 45, 'batter', (sa_today() - interval '16 years')::date),
+    (C, HIL, '2XI', 'V44 Seamer',  46, 'bowler', (sa_today() - interval '16 years')::date);
   INSERT INTO match (id, school_id, team_code, opponent, starts_at, format, overs, status) VALUES
     ('77777777-0000-0000-0000-000000044025', HIL, '2XI', 'Verify 044 (2025)',     '2025-06-14 09:00:00+02', 'T20', 20, 'complete'),
     ('77777777-0000-0000-0000-0000000440e0', HIL, '2XI', 'Verify 044 (New Year)', '2025-12-31 23:30:00+00', 'T20', 20, 'complete'),
@@ -755,9 +755,9 @@ BEGIN
   INSERT INTO school (id, code, name) VALUES (S, 'verify-051', 'Verify 051');
   INSERT INTO app_user (id, email, name, role, school_id) VALUES (U, 'verify51@example.invalid', 'V51 Scorer', 'coach', S);
   INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-    (A, S, '1XI', 'V51 Opener',  1, 'batter', (current_date - interval '16 years')::date),
-    (B, S, '1XI', 'V51 Partner', 2, 'batter', (current_date - interval '16 years')::date),
-    (C, S, '1XI', 'V51 Seamer',  3, 'bowler', (current_date - interval '16 years')::date);
+    (A, S, '1XI', 'V51 Opener',  1, 'batter', (sa_today() - interval '16 years')::date),
+    (B, S, '1XI', 'V51 Partner', 2, 'batter', (sa_today() - interval '16 years')::date),
+    (C, S, '1XI', 'V51 Seamer',  3, 'bowler', (sa_today() - interval '16 years')::date);
   INSERT INTO match (id, school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
     (MA, S, '1XI', 'Verify 051 A', now() - interval '21 days', 'cricket', 'T20', 20, 'complete'),
     (MB, S, '1XI', 'Verify 051 B', now() - interval '14 days', 'cricket', 'T20', 20, 'complete'),
@@ -819,10 +819,10 @@ DECLARE
   M2  uuid := '77777777-0000-0000-0000-000000053002';
 BEGIN
   INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-    (A, HIL, '2XI', 'V53 Opener',  53, 'batter', (current_date - interval '16 years')::date),
-    (B, HIL, '2XI', 'V53 Partner', 54, 'batter', (current_date - interval '16 years')::date),
-    (C, HIL, '2XI', 'V53 Three',   55, 'batter', (current_date - interval '16 years')::date),
-    (D, HIL, '2XI', 'V53 Seamer',  56, 'bowler', (current_date - interval '16 years')::date);
+    (A, HIL, '2XI', 'V53 Opener',  53, 'batter', (sa_today() - interval '16 years')::date),
+    (B, HIL, '2XI', 'V53 Partner', 54, 'batter', (sa_today() - interval '16 years')::date),
+    (C, HIL, '2XI', 'V53 Three',   55, 'batter', (sa_today() - interval '16 years')::date),
+    (D, HIL, '2XI', 'V53 Seamer',  56, 'bowler', (sa_today() - interval '16 years')::date);
   INSERT INTO match (id, school_id, team_code, opponent, starts_at, format, overs, status) VALUES
     (M1, HIL, '2XI', 'Verify 053 (consent)',       '2026-03-14 09:00:00+02', 'T20', 20, 'complete'),
     (M2, HIL, '2XI', 'Verify 053 (not his return)', '2026-03-21 09:00:00+02', 'T20', 20, 'complete');
@@ -873,10 +873,10 @@ BEGIN
   INSERT INTO school (id, code, name) VALUES (S, 'verify-054', 'Verify 054');
   INSERT INTO app_user (id, email, name, role, school_id) VALUES (U, 'verify54@example.invalid', 'V54 Scorer', 'coach', S);
   INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-    (PX, S, '1XI', 'V54 Opener',  1, 'batter', (current_date - interval '16 years')::date),
-    (PY, S, '1XI', 'V54 Partner', 2, 'batter', (current_date - interval '16 years')::date),
-    (BA, S, '1XI', 'V54 Seamer',  3, 'bowler', (current_date - interval '16 years')::date),
-    (BC, S, '1XI', 'V54 Spinner', 4, 'bowler', (current_date - interval '16 years')::date);
+    (PX, S, '1XI', 'V54 Opener',  1, 'batter', (sa_today() - interval '16 years')::date),
+    (PY, S, '1XI', 'V54 Partner', 2, 'batter', (sa_today() - interval '16 years')::date),
+    (BA, S, '1XI', 'V54 Seamer',  3, 'bowler', (sa_today() - interval '16 years')::date),
+    (BC, S, '1XI', 'V54 Spinner', 4, 'bowler', (sa_today() - interval '16 years')::date);
   INSERT INTO match (id, school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
     (MA, S, '1XI', 'Verify 054', now() - interval '7 days', 'cricket', 'T20', 20, 'complete'),
     (MT, S, '1XI', 'Verify 054 T20', now() - interval '6 days', 'cricket', 'T20', 20, 'complete'),
@@ -1080,7 +1080,7 @@ BEGIN
     RETURN;
   END IF;
   INSERT INTO role_assignment (person_id, role, school_id, active, valid_from, expires_at)
-    VALUES ('88888888-0000-0000-0000-000000005706', 'dso', '11111111-1111-1111-1111-111111111111', true, current_date, now() + interval '1 hour')
+    VALUES ('88888888-0000-0000-0000-000000005706', 'dso', '11111111-1111-1111-1111-111111111111', true, sa_today(), now() + interval '1 hour')
     RETURNING id INTO v_asg;
   INSERT INTO support_access (actor_id, school_id, role, reason, assignment_id, expires_at)
     VALUES ('88888888-0000-0000-0000-000000005706', '11111111-1111-1111-1111-111111111111', 'dso',
@@ -1115,7 +1115,7 @@ BEGIN
   LOOP
     INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
     VALUES (r.school, '1XI', r.nm, split_part(r.nm, ' ', 2), 90 + s, 'batter',
-            current_date - make_interval(years => r.age) - interval '40 days')
+            sa_today() - make_interval(years => r.age) - interval '40 days')
     RETURNING id INTO v_p;
     s := s + 1;
     ids := ids || jsonb_build_object(r.k, v_p);
@@ -1126,7 +1126,7 @@ BEGIN
       INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                       consent_state, consent_version, consent_at, created_by, valid_from)
       VALUES (v_a, v_p, 'parent', 'verified', v_u, now() - interval '30 days', 'granted', 'popia-2026-01',
-              now() - interval '30 days', v_u, current_date - 30);
+              now() - interval '30 days', v_u, sa_today() - 30);
       ids := ids || jsonb_build_object('g_' || r.k, v_u);
     END IF;
   END LOOP;
@@ -1210,7 +1210,7 @@ BEGIN
   LOOP
     INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born, bowling_style)
     VALUES (HIL, 'U15A', r.nm, split_part(r.nm, ' ', 2), 60 + s, 'bowler',
-            (current_date - make_interval(years => r.age) - interval '40 days')::date, r.style)
+            (sa_today() - make_interval(years => r.age) - interval '40 days')::date, r.style)
     RETURNING id INTO v_p;
     s := s + 1;
     ids := ids || jsonb_build_object('p_' || r.k, v_p);
@@ -1253,11 +1253,11 @@ BEGIN
                                   consent_state, consent_version, consent_at, created_by, valid_from, valid_until)
   VALUES
     ((ids->>'a_boy')::uuid,    (ids->>'p_bowler')::uuid,  'self',   'verified', (ids->>'u_office')::uuid, now(), 'granted',
-     'popia-2026-01', now(), (ids->>'u_office')::uuid, current_date - 30, NULL),
+     'popia-2026-01', now(), (ids->>'u_office')::uuid, sa_today() - 30, NULL),
     ((ids->>'a_turner')::uuid, (ids->>'p_turning')::uuid, 'self',   'verified', (ids->>'u_office')::uuid, now(), 'granted',
-     'popia-2026-01', now(), (ids->>'u_office')::uuid, current_date - 30, NULL),
+     'popia-2026-01', now(), (ids->>'u_office')::uuid, sa_today() - 30, NULL),
     ((ids->>'a_mum2')::uuid,   (ids->>'p_other')::uuid,   'parent', 'verified', (ids->>'u_office')::uuid, now(), 'granted',
-     'popia-2026-01', now(), (ids->>'u_office')::uuid, current_date - 30,
+     'popia-2026-01', now(), (ids->>'u_office')::uuid, sa_today() - 30,
      majority_on((SELECT born FROM player WHERE id = (ids->>'p_other')::uuid)));
 
   -- Today's nets, at six in the morning.
@@ -1284,7 +1284,7 @@ BEGIN
 
   -- A hamstring, with the physio's note on it.
   INSERT INTO injury (school_id, player_id, injury_type, severity, date_injured, phase, restricted, notes, physio)
-  VALUES (HIL, (ids->>'p_bowler')::uuid, 'Hamstring strain', 'minor', current_date - 20, 'cleared', false,
+  VALUES (HIL, (ids->>'p_bowler')::uuid, 'Hamstring strain', 'minor', sa_today() - 20, 'cleared', false,
           'Grade 1; eccentric programme, review in two weeks', 'V60 physio');
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -1314,7 +1314,7 @@ CREATE OR REPLACE FUNCTION _v60_day(p uuid, d date) RETURNS SETOF load_day AS $$
 CREATE OR REPLACE FUNCTION _v60_turn_eighteen(p uuid) RETURNS void AS $$
 DECLARE d int;
 BEGIN
-  SELECT majority_on(born) - current_date INTO d FROM player WHERE id = p;
+  SELECT majority_on(born) - sa_today() INTO d FROM player WHERE id = p;
   UPDATE player SET born = born - d WHERE id = p;
   UPDATE assignment_subject SET valid_from = valid_from - d, valid_until = valid_until - d,
                                 verified_at = verified_at - make_interval(days => d), consent_at = consent_at - make_interval(days => d)
@@ -1342,12 +1342,12 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- holds at every hour and the assertions read one day throughout.
 -- He leaves the school system (his last school membership closes today), and comes back.
 CREATE OR REPLACE FUNCTION _v60_leave(p uuid) RETURNS void AS $$
-  UPDATE team_membership SET left_on = greatest(current_date, joined_on) WHERE player_id = p AND left_on IS NULL;
+  UPDATE team_membership SET left_on = greatest(sa_today(), joined_on) WHERE player_id = p AND left_on IS NULL;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v60_rejoin(p uuid) RETURNS void AS $$
   INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason)
   SELECT id, school_id, 'cricket', team_code,
-         greatest(current_date, (SELECT max(m.left_on) FROM team_membership m WHERE m.player_id = p)), 'moved'
+         greatest(sa_today(), (SELECT max(m.left_on) FROM team_membership m WHERE m.player_id = p)), 'moved'
     FROM player WHERE id = p;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -1513,7 +1513,7 @@ BEGIN
   LOOP
     INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
     VALUES (CASE r.at WHEN 'hil' THEN HIL ELSE CLUB END, '1XI', r.nm, split_part(r.nm, ' ', 2), 620 + s, 'batter',
-            (current_date - make_interval(years => r.age) - make_interval(days => r.days))::date)
+            (sa_today() - make_interval(years => r.age) - make_interval(days => r.days))::date)
     RETURNING id INTO v_p;
     s := s + 1;
     ids := ids || jsonb_build_object('p_' || r.k, v_p);
@@ -1549,7 +1549,7 @@ BEGIN
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
   VALUES ((ids->>'a_self')::uuid, (ids->>'p_pupil')::uuid, 'self', 'verified', (ids->>'u_office')::uuid, now(),
-          'granted', 'popia-2026-01', now(), (ids->>'u_office')::uuid, current_date - 30);
+          'granted', 'popia-2026-01', now(), (ids->>'u_office')::uuid, sa_today() - 30);
   -- Three parents who asked through onboarding, each naming the child: the
   -- office will grant them through decide_role_request(), the other door.
   FOR r IN SELECT * FROM (VALUES ('rpupil', 'rmum', 'hil'), ('rclub', 'rcmum', 'club'), ('radult', 'ramum', 'hil')) AS v(p, u, at) LOOP
@@ -1594,7 +1594,7 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 
 -- ...by as many days as make TODAY his eighteenth birthday.
 CREATE OR REPLACE FUNCTION _v62_turn_eighteen(p uuid) RETURNS void AS $$
-  SELECT _v62_older(p, (SELECT majority_on(born) - current_date FROM player WHERE id = p))
+  SELECT _v62_older(p, (SELECT majority_on(born) - sa_today() FROM player WHERE id = p))
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- A move between sides, as the move route makes one: player.team_code, and
@@ -1605,7 +1605,7 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v62_move(p uuid, team text) RETURNS void AS $$
 BEGIN
   PERFORM set_config('app.effective_on',
-    greatest(current_date, (SELECT max(m.joined_on) FROM team_membership m WHERE m.player_id = p AND m.left_on IS NULL))::text, true);
+    greatest(sa_today(), (SELECT max(m.joined_on) FROM team_membership m WHERE m.player_id = p AND m.left_on IS NULL))::text, true);
   UPDATE player SET team_code = team WHERE id = p;
   PERFORM set_config('app.effective_on', '', true);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -1819,7 +1819,7 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- Whether a person's newest guardian link to a child is live today, past RLS.
 CREATE OR REPLACE FUNCTION _link_live_65(p_player uuid, p_person uuid) RETURNS boolean AS $$
   SELECT coalesce(bool_or(s.verification_state = 'verified' AND a.active
-                          AND (s.valid_until IS NULL OR s.valid_until > current_date)), false)
+                          AND (s.valid_until IS NULL OR s.valid_until > sa_today())), false)
     FROM assignment_subject s JOIN role_assignment a ON a.id = s.assignment_id AND a.role = 'guardian'
    WHERE s.player_id = p_player AND a.person_id = p_person
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -2176,7 +2176,7 @@ BEGIN
   LOOP
     INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
     VALUES (CASE r.at WHEN 'hil' THEN HIL ELSE WES END, r.team, r.nm, split_part(r.nm, ' ', 2), 700 + s, 'batter',
-            (current_date - make_interval(years => r.age) - make_interval(days => r.days))::date)
+            (sa_today() - make_interval(years => r.age) - make_interval(days => r.days))::date)
     RETURNING id INTO v_p;
     s := s + 1;
     ids := ids || jsonb_build_object('p_' || r.k, v_p);
@@ -2213,7 +2213,7 @@ BEGIN
                                       consent_state, consent_version, consent_at, created_by, valid_from)
       VALUES (v_a, (ids->>('p_' || r.child))::uuid, CASE r.role WHEN 'selfaccess' THEN 'self' ELSE 'parent' END,
               'verified', (ids->>'u_office')::uuid, now(), 'granted', 'popia-2026-01', now(),
-              (ids->>'u_office')::uuid, current_date - 30);
+              (ids->>'u_office')::uuid, sa_today() - 30);
     END IF;
   END LOOP;
 
@@ -2239,22 +2239,22 @@ BEGIN
 
   -- The fixtures, each on an explicit day at an explicit hour, Johannesburg time.
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id, away_school_id, away_team_code)
-  VALUES (HIL, 'U15A', 'Verify 070', ((current_date + 10)::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
+  VALUES (HIL, 'U15A', 'Verify 070', ((sa_today() + 10)::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
           'cricket', 'T20', 20, 'scheduled', GROUND, WES, 'U15A')
   RETURNING id INTO v_m;
   ids := ids || jsonb_build_object('m', v_m, 'm_start', (SELECT starts_at FROM match WHERE id = v_m));
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
-  VALUES (HIL, 'U15A', 'Verify 070 off', ((current_date + 12)::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
+  VALUES (HIL, 'U15A', 'Verify 070 off', ((sa_today() + 12)::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
           'cricket', 'T20', 20, 'scheduled', GROUND)
   RETURNING id INTO v_m;
   ids := ids || jsonb_build_object('mv', v_m, 'mv_start', (SELECT starts_at FROM match WHERE id = v_m));
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
-  VALUES (HIL, 'U15A', 'Verify 070 tomorrow', ((current_date + 1)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
+  VALUES (HIL, 'U15A', 'Verify 070 tomorrow', ((sa_today() + 1)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
           'cricket', 'T20', 20, 'scheduled', GROUND)
   RETURNING id INTO v_m;
   ids := ids || jsonb_build_object('mt', v_m);
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
-  VALUES (HIL, 'U15A', 'Verify 070 afternoon', ((current_date + 1)::timestamp + time '14:00') AT TIME ZONE 'Africa/Johannesburg',
+  VALUES (HIL, 'U15A', 'Verify 070 afternoon', ((sa_today() + 1)::timestamp + time '14:00') AT TIME ZONE 'Africa/Johannesburg',
           'cricket', 'T20', 20, 'scheduled', GROUND)
   RETURNING id INTO v_m;
   ids := ids || jsonb_build_object('ma', v_m, 'ma_start', (SELECT starts_at FROM match WHERE id = v_m));
@@ -2334,7 +2334,7 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- The three CSA checks for a person at a school, current.
 CREATE OR REPLACE FUNCTION _v70_clear(p_person uuid, p_school uuid) RETURNS void AS $$
   INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on)
-  SELECT p_person, p_school, k, 'V70-' || k, current_date - 30, current_date + 600
+  SELECT p_person, p_school, k, 'V70-' || k, sa_today() - 30, sa_today() + 600
     FROM unnest(ARRAY['police_clearance', 'child_protection', 'sexual_offences_register']) k
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -2344,7 +2344,7 @@ CREATE OR REPLACE FUNCTION _v70_move(p uuid, team text) RETURNS void AS $$
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A guardian's link to a boy revoked by the office, today.
 CREATE OR REPLACE FUNCTION _v70_end_link(p uuid, mum uuid) RETURNS void AS $$
-  UPDATE assignment_subject s SET verification_state = 'revoked', valid_until = greatest(current_date, s.valid_from)
+  UPDATE assignment_subject s SET verification_state = 'revoked', valid_until = greatest(sa_today(), s.valid_from)
     FROM role_assignment a
    WHERE a.id = s.assignment_id AND a.person_id = mum AND s.player_id = p AND s.valid_until IS NULL;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -2372,7 +2372,7 @@ BEGIN
     VALUES (p_person, 'guardian', (SELECT school_id FROM player WHERE id = p_player)) RETURNING id INTO v_a;
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, valid_from)
-    VALUES (v_a, p_player, 'sibling', 'verified', p_person, now(), 'granted', 'popia-2026-01', now(), current_date - 1);
+    VALUES (v_a, p_player, 'sibling', 'verified', p_person, now(), 'granted', 'popia-2026-01', now(), sa_today() - 1);
   ELSE
     UPDATE role_assignment SET active = false, revoked_at = now()
      WHERE person_id = p_person AND role = 'guardian' AND active;
@@ -3025,7 +3025,7 @@ BEGIN
   LOOP
     INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
     VALUES (CASE r.at WHEN 'hil' THEN HIL ELSE WES END, r.team, r.nm, split_part(r.nm, ' ', 2), 760 + s, 'batter',
-            (current_date - make_interval(years => r.age) - make_interval(days => r.days))::date)
+            (sa_today() - make_interval(years => r.age) - make_interval(days => r.days))::date)
     RETURNING id INTO v_p;
     s := s + 1;
     ids := ids || jsonb_build_object('p_' || r.k, v_p);
@@ -3065,7 +3065,7 @@ BEGIN
                                       consent_state, consent_version, consent_at, created_by, valid_from)
       VALUES (v_a, (ids->>('p_' || r.child))::uuid, CASE r.role WHEN 'selfaccess' THEN 'self' ELSE 'parent' END,
               'verified', (ids->>'u_office')::uuid, now(), 'granted', 'popia-2026-01', now(),
-              (ids->>'u_office')::uuid, current_date - 30);
+              (ids->>'u_office')::uuid, sa_today() - 30);
     END IF;
   END LOOP;
   INSERT INTO role_assignment (person_id, role, school_id, team_code)
@@ -3086,19 +3086,19 @@ BEGIN
       ('mf', 10, time '09:00', 'scheduled', 'Verify 076 later')) AS v(k, days, at, st, opp)
   LOOP
     INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
-    VALUES (HIL, 'U17A', r.opp, ((current_date + r.days)::timestamp + r.at) AT TIME ZONE 'Africa/Johannesburg',
+    VALUES (HIL, 'U17A', r.opp, ((sa_today() + r.days)::timestamp + r.at) AT TIME ZONE 'Africa/Johannesburg',
             'cricket', 'T20', 20, r.st, GROUND)
     RETURNING id INTO v_m;
     ids := ids || jsonb_build_object(r.k, v_m, r.k || '_start', (SELECT starts_at FROM match WHERE id = v_m));
   END LOOP;
   -- Long ago, played: three years and ten days (due), and three years less ten days (not).
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
-  VALUES (HIL, 'U17A', 'Verify 076 long ago', ((current_date - interval '3 years' - interval '10 days')::date::timestamp + time '09:00')
+  VALUES (HIL, 'U17A', 'Verify 076 long ago', ((sa_today() - interval '3 years' - interval '10 days')::date::timestamp + time '09:00')
           AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'complete', GROUND)
   RETURNING id INTO v_m;
   ids := ids || jsonb_build_object('mp', v_m, 'mp_start', (SELECT starts_at FROM match WHERE id = v_m));
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
-  VALUES (HIL, 'U17A', 'Verify 076 not so long ago', ((current_date - interval '3 years' + interval '10 days')::date::timestamp + time '09:00')
+  VALUES (HIL, 'U17A', 'Verify 076 not so long ago', ((sa_today() - interval '3 years' + interval '10 days')::date::timestamp + time '09:00')
           AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'complete', GROUND)
   RETURNING id INTO v_m;
   ids := ids || jsonb_build_object('mq', v_m);
@@ -3193,7 +3193,7 @@ CREATE OR REPLACE FUNCTION _v76_fixture(p uuid, p_by interval) RETURNS void AS $
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A guardian's link to a boy revoked by the office, today.
 CREATE OR REPLACE FUNCTION _v76_end_link(p uuid, mum uuid) RETURNS void AS $$
-  UPDATE assignment_subject s SET verification_state = 'revoked', valid_until = greatest(current_date, s.valid_from)
+  UPDATE assignment_subject s SET verification_state = 'revoked', valid_until = greatest(sa_today(), s.valid_from)
     FROM role_assignment a
    WHERE a.id = s.assignment_id AND a.person_id = mum AND s.player_id = p AND s.valid_until IS NULL;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -3227,7 +3227,7 @@ CREATE OR REPLACE FUNCTION _v76_old_declaration(p_person uuid, p_ended_days_ago 
   INSERT INTO lift_driver_declaration (person_id, school_id, vehicle_description, registration, seats, licence_held, insured,
                                        roadworthy, belts, code_acknowledged, policy_version, declared_at, expires_on)
   VALUES (p_person, '11111111-1111-1111-1111-111111111111', 'white Polo', 'NP 760', 2, true, true, true, true, true, 1,
-          now() - make_interval(days => p_ended_days_ago + 365), current_date - p_ended_days_ago)
+          now() - make_interval(days => p_ended_days_ago + 365), sa_today() - p_ended_days_ago)
   RETURNING id
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- Rows past RLS: does this lift, this declaration, this seat still exist?
@@ -3261,7 +3261,7 @@ DECLARE
 BEGIN
   INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
   VALUES (HIL, 'U15A', 'Kid Endseventyseven', 'Endseventyseven', 777, 'batter',
-          (current_date - interval '14 years' - interval '40 days')::date)
+          (sa_today() - interval '14 years' - interval '40 days')::date)
   RETURNING id INTO v_p;
   ids := ids || jsonb_build_object('p_kid', v_p);
 
@@ -3281,21 +3281,21 @@ BEGIN
     RETURNING id INTO v_u;
     ids := ids || jsonb_build_object('u_' || r.k, v_u);
     INSERT INTO role_assignment (person_id, role, school_id, valid_from)
-    VALUES (v_u, r.role, CASE WHEN r.at_school THEN HIL END, current_date - 30)
+    VALUES (v_u, r.role, CASE WHEN r.at_school THEN HIL END, sa_today() - 30)
     RETURNING id INTO v_a;
     ids := ids || jsonb_build_object('a_' || r.k, v_a);
   END LOOP;
 
   -- The principal is also a DSO, and holds the office's key besides.
   INSERT INTO role_assignment (person_id, role, school_id, valid_from)
-  VALUES ((ids->>'u_head')::uuid, 'dso', HIL, current_date - 30) RETURNING id INTO v_a;
+  VALUES ((ids->>'u_head')::uuid, 'dso', HIL, sa_today() - 30) RETURNING id INTO v_a;
   ids := ids || jsonb_build_object('a_head_dso', v_a);
   INSERT INTO role_assignment (person_id, role, school_id, valid_from)
-  VALUES ((ids->>'u_head')::uuid, 'schooladmin', HIL, current_date - 30) RETURNING id INTO v_a;
+  VALUES ((ids->>'u_head')::uuid, 'schooladmin', HIL, sa_today() - 30) RETURNING id INTO v_a;
   ids := ids || jsonb_build_object('a_head_office', v_a);
   -- The owner's key also coaches a side.
   INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
-  VALUES ((ids->>'u_own')::uuid, 'coach', HIL, 'U15A', current_date - 30) RETURNING id INTO v_a;
+  VALUES ((ids->>'u_own')::uuid, 'coach', HIL, 'U15A', sa_today() - 30) RETURNING id INTO v_a;
   ids := ids || jsonb_build_object('a_own_coach', v_a);
   -- Two keys at two schools: Hilton's office, and Westville's principal. A
   -- principal may appoint medical staff; an office may not.
@@ -3303,15 +3303,15 @@ BEGIN
   VALUES (HIL, 'v77.twokeys@example.invalid', 'V77 Twokeys', 'schooladmin') RETURNING id INTO v_u;
   ids := ids || jsonb_build_object('u_two', v_u);
   INSERT INTO role_assignment (person_id, role, school_id, valid_from)
-  VALUES (v_u, 'schooladmin', HIL, current_date - 30), (v_u, 'principal', '22222222-2222-2222-2222-222222222222', current_date - 30);
+  VALUES (v_u, 'schooladmin', HIL, sa_today() - 30), (v_u, 'principal', '22222222-2222-2222-2222-222222222222', sa_today() - 30);
 
   -- Mum's link is verified; Dad's waits for the office.
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
   VALUES ((ids->>'a_mum')::uuid, v_p, 'parent', 'verified', (ids->>'u_office')::uuid, now(),
-          'granted', 'popia-2026-01', now(), (ids->>'u_office')::uuid, current_date - 30);
+          'granted', 'popia-2026-01', now(), (ids->>'u_office')::uuid, sa_today() - 30);
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, created_by, valid_from)
-  VALUES ((ids->>'a_dad')::uuid, v_p, 'parent', (ids->>'u_office')::uuid, current_date - 30);
+  VALUES ((ids->>'a_dad')::uuid, v_p, 'parent', (ids->>'u_office')::uuid, sa_today() - 30);
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -3413,26 +3413,26 @@ BEGIN
     RETURNING id INTO v_u;
     ids := ids || jsonb_build_object('u_' || r.k, v_u);
     INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
-    VALUES (v_u, r.role, r.school, CASE WHEN r.role = 'coach' THEN 'U15A' END, current_date - 30);
+    VALUES (v_u, r.role, r.school, CASE WHEN r.role = 'coach' THEN 'U15A' END, sa_today() - 30);
   END LOOP;
 
   -- The pupil: a player row, an account that is that player, a live player
   -- assignment and a scorer's assignment for one fixture.
   INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
   VALUES (HIL, 'U15A', 'Verify Seventynine Pupil', 'Pupil', 779, 'batter',
-          (current_date - interval '14 years' - interval '79 days')::date)
+          (sa_today() - interval '14 years' - interval '79 days')::date)
   RETURNING id INTO v_p;
   INSERT INTO app_user (school_id, email, name, role, player_id)
   VALUES (HIL, 'v79.pupil@example.invalid', 'Verify Seventynine Pupil', 'player', v_p) RETURNING id INTO v_u;
   ids := ids || jsonb_build_object('p_pupil', v_p, 'u_pupil', v_u);
   INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
-  VALUES (v_u, 'player', HIL, 'U15A', current_date - 30);
+  VALUES (v_u, 'player', HIL, 'U15A', sa_today() - 30);
 
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
   VALUES (HIL, 'U15A', 'Section Fiftyeight College U15A', T0, 'cricket', 'T20', 20, 'live') RETURNING id INTO v_m;
   ids := ids || jsonb_build_object('m', v_m);
   INSERT INTO role_assignment (person_id, role, school_id, fixture_id, valid_from)
-  VALUES (v_u, 'scorer', HIL, v_m, current_date - 30) RETURNING id INTO v_a;
+  VALUES (v_u, 'scorer', HIL, v_m, sa_today() - 30) RETURNING id INTO v_a;
   INSERT INTO match_official (match_id, school_id, duty, person_name, person_id)
   VALUES (v_m, HIL, 'scorer', 'Verify Seventynine Pupil', v_u) RETURNING id INTO v_d;
   INSERT INTO duty_suspension (duty_id, assignment_id, school_id, suspended_at, suspended_by, reason)
@@ -3446,7 +3446,7 @@ BEGIN
   VALUES (HIL, 'v79.leaver@example.invalid', 'Verify Seventynine Leaver', 'player') RETURNING id INTO v_u;
   ids := ids || jsonb_build_object('u_leaver', v_u);
   INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from, active)
-  VALUES (v_u, 'player', HIL, 'U15A', current_date - 300, false) RETURNING id INTO v_a;
+  VALUES (v_u, 'player', HIL, 'U15A', sa_today() - 300, false) RETURNING id INTO v_a;
   INSERT INTO role_assignment_ending (assignment_id, person_id, role, school_id, team_code, reason, ended_by, ended_at)
   VALUES (v_a, v_u, 'player', HIL, 'U15A',
           'Verify Seventynine Leaver left the school at the end of term.', (ids->>'u_office')::uuid, T0 + interval '3 minutes');
@@ -3460,7 +3460,7 @@ BEGIN
 
   -- Westville's own ended role.
   INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from, active)
-  VALUES ((ids->>'u_wes')::uuid, 'coach', WES, '1XI', current_date - 300, false) RETURNING id INTO v_a;
+  VALUES ((ids->>'u_wes')::uuid, 'coach', WES, '1XI', sa_today() - 300, false) RETURNING id INTO v_a;
   INSERT INTO role_assignment_ending (assignment_id, person_id, role, school_id, team_code, reason, ended_by, ended_at)
   VALUES (v_a, (ids->>'u_wes')::uuid, 'coach', WES, '1XI', 'Westville''s own ending, for section 58.', (ids->>'u_wes')::uuid,
           T0 + interval '8 minutes');
@@ -3512,7 +3512,7 @@ BEGIN
     ids := ids || jsonb_build_object('u_' || r.k, v_u);
     PERFORM set_config('app.user_id', coalesce(ids->>('u_' || r.granter), ''), true);
     INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
-    VALUES (v_u, r.role, r.school, r.team, current_date - 30) RETURNING id INTO v_a;
+    VALUES (v_u, r.role, r.school, r.team, sa_today() - 30) RETURNING id INTO v_a;
     ids := ids || jsonb_build_object('a_' || r.k, v_a);
   END LOOP;
 
@@ -3520,14 +3520,14 @@ BEGIN
   -- granted by the office.
   INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
   VALUES (V80, 'U15A', 'Verify Eighty Pupil', 'Pupil', 780, 'batter',
-          (current_date - interval '14 years' - interval '80 days')::date)
+          (sa_today() - interval '14 years' - interval '80 days')::date)
   RETURNING id INTO v_p;
   INSERT INTO app_user (school_id, email, name, role, player_id)
   VALUES (V80, 'v80.pupil@example.invalid', 'Verify Eighty Pupil', 'player', v_p) RETURNING id INTO v_u;
   ids := ids || jsonb_build_object('p_pupil', v_p, 'u_pupil', v_u);
   PERFORM set_config('app.user_id', ids->>'u_office', true);
   INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
-  VALUES (v_u, 'player', V80, 'U15A', current_date - 30) RETURNING id INTO v_a;
+  VALUES (v_u, 'player', V80, 'U15A', sa_today() - 30) RETURNING id INTO v_a;
   ids := ids || jsonb_build_object('a_pupil', v_a);
 
   -- The leaver: his player role granted by the office, and ended by it.
@@ -3535,7 +3535,7 @@ BEGIN
   VALUES (V80, 'v80.leaver@example.invalid', 'Verify Eighty Leaver', 'player') RETURNING id INTO v_u;
   ids := ids || jsonb_build_object('u_leaver', v_u);
   INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
-  VALUES (v_u, 'player', V80, 'U15A', current_date - 300) RETURNING id INTO v_a;
+  VALUES (v_u, 'player', V80, 'U15A', sa_today() - 300) RETURNING id INTO v_a;
   ids := ids || jsonb_build_object('a_leaver', v_a);
   UPDATE role_assignment SET active = false WHERE id = v_a;
   INSERT INTO role_assignment_ending (assignment_id, person_id, role, school_id, team_code, reason, ended_by)
@@ -3549,7 +3549,7 @@ BEGIN
   ids := ids || jsonb_build_object('u_support', v_u);
   PERFORM set_config('app.user_id', v_u::text, true);
   INSERT INTO role_assignment (person_id, role, school_id, active, valid_from, expires_at)
-  VALUES (v_u, 'schooladmin', V80, true, current_date, now() + interval '1 hour') RETURNING id INTO v_a;
+  VALUES (v_u, 'schooladmin', V80, true, sa_today(), now() + interval '1 hour') RETURNING id INTO v_a;
   ids := ids || jsonb_build_object('a_support', v_a);
   INSERT INTO support_access (actor_id, school_id, role, reason, assignment_id, expires_at)
   VALUES (v_u, V80, 'schooladmin', 'Section 59 support hour at Verify 080.', v_a, now() + interval '1 hour')
@@ -3594,7 +3594,7 @@ BEGIN
     RETURNING id INTO v_u;
     ids := ids || jsonb_build_object('u_' || r.k, v_u);
     INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
-    VALUES (v_u, r.role, r.school, CASE WHEN r.role = 'coach' THEN 'U15A' END, current_date - 30)
+    VALUES (v_u, r.role, r.school, CASE WHEN r.role = 'coach' THEN 'U15A' END, sa_today() - 30)
     RETURNING id INTO v_a;
     ids := ids || jsonb_build_object('a_' || r.k, v_a);
   END LOOP;
@@ -3607,13 +3607,13 @@ BEGIN
 
   -- The parent's child, a minor, verified by the office.
   INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
-  VALUES (HIL, NULL, 'Kid Eightyone', 'Eightyone', 810, 'batter', (current_date - interval '13 years')::date)
+  VALUES (HIL, NULL, 'Kid Eightyone', 'Eightyone', 810, 'batter', (sa_today() - interval '13 years')::date)
   RETURNING id INTO v_p;
   ids := ids || jsonb_build_object('p_kid', v_p);
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, created_by, valid_from)
   VALUES ((ids->>'a_parent')::uuid, v_p, 'parent', 'verified', (ids->>'u_office')::uuid, now(),
-          'pending', (ids->>'u_office')::uuid, current_date - 30);
+          'pending', (ids->>'u_office')::uuid, sa_today() - 30);
 
   -- Three pupils, each enrolled with his own record: his roster link and a
   -- verified `self` link, consent as named.
@@ -3624,19 +3624,19 @@ BEGIN
   LOOP
     INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
     VALUES (HIL, NULL, 'Pupil ' || initcap(r.k) || 'eightyone', initcap(r.k) || 'eightyone', 811, 'bowler',
-            (current_date - make_interval(years => r.age) - interval '20 days')::date)
+            (sa_today() - make_interval(years => r.age) - interval '20 days')::date)
     RETURNING id INTO v_p;
     INSERT INTO app_user (school_id, email, name, role, player_id)
     VALUES (HIL, 'v81.' || r.k || '@example.invalid', 'V81 ' || initcap(r.k), 'player', v_p)
     RETURNING id INTO v_u;
     ids := ids || jsonb_build_object('u_' || r.k, v_u, 'p_' || r.k, v_p);
     INSERT INTO role_assignment (person_id, role, school_id, valid_from)
-    VALUES (v_u, 'selfaccess', HIL, current_date - 30) RETURNING id INTO v_a;
+    VALUES (v_u, 'selfaccess', HIL, sa_today() - 30) RETURNING id INTO v_a;
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
     VALUES (v_a, v_p, 'self', 'verified', (ids->>'u_office')::uuid, now(),
             r.consent, CASE WHEN r.consent = 'granted' THEN 'popia-2026-01' END,
-            CASE WHEN r.consent = 'granted' THEN now() END, (ids->>'u_office')::uuid, current_date - 30);
+            CASE WHEN r.consent = 'granted' THEN now() END, (ids->>'u_office')::uuid, sa_today() - 30);
   END LOOP;
 
   -- Deactivated by the office, holding nothing.
@@ -4161,7 +4161,7 @@ BEGIN
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
   SELECT a, x, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
-         '88888888-0000-0000-0000-00000000000c', current_date - 1
+         '88888888-0000-0000-0000-00000000000c', sa_today() - 1
     FROM unnest(ARRAY['aaaaaaaa-0000-0000-0000-000000000013', 'aaaaaaaa-0000-0000-0000-000000000006']::uuid[]) x;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- Things an account has open on a fixture three days out: the scoring token
@@ -4246,32 +4246,32 @@ BEGIN
     VALUES (r.school, 'v92.' || r.k || '@example.invalid', 'V92 ' || initcap(r.k), r.role)
     RETURNING id INTO v_u;
     INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
-    VALUES (v_u, r.role, r.school, r.team, current_date - 30) RETURNING id INTO v_a;
+    VALUES (v_u, r.role, r.school, r.team, sa_today() - 30) RETURNING id INTO v_a;
     ids := ids || jsonb_build_object('u_' || r.k, v_u, 'a_' || r.k, v_a);
   END LOOP;
 
   -- The parent's child, a minor, verified by the office.
   INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
-  VALUES (HIL, 'U15A', 'Kid Ninetytwo', 'Ninetytwo', 920, 'batter', (current_date - interval '14 years')::date)
+  VALUES (HIL, 'U15A', 'Kid Ninetytwo', 'Ninetytwo', 920, 'batter', (sa_today() - interval '14 years')::date)
   RETURNING id INTO v_p;
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, created_by, valid_from)
   VALUES ((ids->>'a_parent')::uuid, v_p, 'parent', 'verified', (ids->>'u_office')::uuid, now(),
-          'pending', (ids->>'u_office')::uuid, current_date - 30);
+          'pending', (ids->>'u_office')::uuid, sa_today() - 30);
 
   -- A pupil at Hilton, his own record verified and his family's consent
   -- given, signed in with Google.
   INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
-  VALUES (HIL, 'U15A', 'Pupil Ninetytwo', 'Ninetytwo', 921, 'bowler', (current_date - interval '15 years')::date)
+  VALUES (HIL, 'U15A', 'Pupil Ninetytwo', 'Ninetytwo', 921, 'bowler', (sa_today() - interval '15 years')::date)
   RETURNING id INTO v_p;
   INSERT INTO app_user (school_id, email, name, role, player_id)
   VALUES (HIL, 'v92.pupil@example.invalid', 'V92 Pupil', 'player', v_p) RETURNING id INTO v_u;
-  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (v_u, 'selfaccess', HIL, current_date - 30)
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (v_u, 'selfaccess', HIL, sa_today() - 30)
   RETURNING id INTO v_a;
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
   VALUES (v_a, v_p, 'self', 'verified', (ids->>'u_office')::uuid, now(), 'granted', 'popia-2026-01', now(),
-          (ids->>'u_office')::uuid, current_date - 30);
+          (ids->>'u_office')::uuid, sa_today() - 30);
   INSERT INTO auth_identity (user_id, provider, provider_uid, email_at_link, linked_how)
   VALUES (v_u, 'google.com', 'v92-pupil', 'v92.pupil@example.invalid', 'office_confirmed');
   ids := ids || jsonb_build_object('u_pupil', v_u);
@@ -4297,7 +4297,7 @@ BEGIN
 
   -- The ended coach: his Hilton side, ended this morning by the office.
   INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
-  VALUES ((ids->>'u_ended')::uuid, 'coach', HIL, 'U15A', current_date - 200) RETURNING id INTO v_a;
+  VALUES ((ids->>'u_ended')::uuid, 'coach', HIL, 'U15A', sa_today() - 200) RETURNING id INTO v_a;
   UPDATE role_assignment SET active = false WHERE id = v_a;
   INSERT INTO role_assignment_ending (assignment_id, person_id, role, school_id, team_code, reason, ended_by)
   VALUES (v_a, (ids->>'u_ended')::uuid, 'coach', HIL, 'U15A', 'Verify 92: left at the end of term.', (ids->>'u_office')::uuid);
@@ -4313,7 +4313,7 @@ BEGIN
   VALUES ('11111111-1111-1111-1111-111111111111', 'U15A', 'Verify Ninetytwo College U15A', now() + interval '2 days',
           'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m;
   INSERT INTO role_assignment (person_id, role, school_id, fixture_id, valid_from)
-  VALUES (p_user, 'scorer', '11111111-1111-1111-1111-111111111111', m, current_date) RETURNING id INTO a;
+  VALUES (p_user, 'scorer', '11111111-1111-1111-1111-111111111111', m, sa_today()) RETURNING id INTO a;
   INSERT INTO match_official (match_id, school_id, duty, person_name, person_id)
   VALUES (m, '11111111-1111-1111-1111-111111111111', 'scorer', 'V92 Paused', p_user) RETURNING id INTO d;
   INSERT INTO duty_suspension (duty_id, assignment_id, school_id, suspended_by, reason)
@@ -4363,7 +4363,7 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v92_child_row(p_school uuid, p_by uuid, p_role text) RETURNS text AS $$
 BEGIN
   INSERT INTO school_register (school_id, email, name, role, valid_until, uploaded_by, upload_id)
-  VALUES (p_school, 'v92.child@example.invalid', 'V92 Child', p_role, current_date + 30, p_by, gen_random_uuid());
+  VALUES (p_school, 'v92.child@example.invalid', 'V92 Child', p_role, sa_today() + 30, p_by, gen_random_uuid());
   RETURN 'written';
 EXCEPTION WHEN check_violation THEN
   RETURN 'check_violation';
@@ -4373,7 +4373,7 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 CREATE OR REPLACE FUNCTION _v92_demote(p_user uuid) RETURNS void AS $$
   UPDATE role_assignment SET active = false WHERE person_id = p_user AND role = 'principal';
   INSERT INTO role_assignment (person_id, role, school_id, valid_from)
-  VALUES (p_user, 'schooladmin', '11111111-1111-1111-1111-111111111111', current_date);
+  VALUES (p_user, 'schooladmin', '11111111-1111-1111-1111-111111111111', sa_today());
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The upload as the route makes it, under the caller's identity: every row's
@@ -4443,7 +4443,7 @@ BEGIN
   FOR r IN SELECT * FROM (VALUES ('office', 'schooladmin'), ('dso', 'dso')) AS v(k, role) LOOP
     INSERT INTO app_user (school_id, email, name, role)
     VALUES (TRD, 'v93.' || r.k || '@example.invalid', 'V93 ' || initcap(r.k), r.role) RETURNING id INTO v_u;
-    INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (v_u, r.role, TRD, current_date - 30);
+    INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (v_u, r.role, TRD, sa_today() - 30);
     ids := ids || jsonb_build_object('u_' || r.k, v_u);
   END LOOP;
   RETURN ids;
@@ -4608,7 +4608,7 @@ BEGIN
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
     SELECT v_a, v_p, CASE WHEN a.role = 'guardian' THEN 'parent' ELSE 'self' END, 'verified', OFFICE, now(),
-           'granted', 'popia-2026-01', now(), OFFICE, current_date - 1
+           'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1
       FROM role_assignment a WHERE a.id = v_a;
   END LOOP;
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
@@ -4683,7 +4683,7 @@ BEGIN
             WHERE a.person_id = x.person LOOP
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
-    VALUES (r.aid, r.p, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+    VALUES (r.aid, r.p, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   END LOOP;
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
   VALUES (HIL, 'U15A', WES, 'U15A', 'Westville U15A', ((sa_today() + 2)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
@@ -4841,7 +4841,7 @@ BEGIN
                                     consent_state, consent_version, consent_at, created_by, valid_from)
     SELECT v_a, CASE WHEN a.school_id = HIL THEN h_bat ELSE w_bat END,
            CASE WHEN a.role = 'guardian' THEN 'parent' ELSE 'self' END, 'verified', OFFICE, now(),
-           'granted', 'popia-2026-01', now(), OFFICE, current_date - 1
+           'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1
       FROM role_assignment a WHERE a.id = v_a;
   END LOOP;
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
@@ -4902,7 +4902,7 @@ BEGIN
                                   consent_state, consent_version, consent_at, created_by, valid_from, valid_until)
   VALUES (v_a, p_player, 'parent', p_state, '88888888-0000-0000-0000-00000000000c',
           CASE WHEN p_state = 'verified' THEN now() END, 'granted', 'popia-2026-01', now(),
-          '88888888-0000-0000-0000-00000000000c', current_date - 30,
+          '88888888-0000-0000-0000-00000000000c', sa_today() - 30,
           coalesce(p_until, (SELECT majority_on(p.born) FROM player p WHERE p.id = p_player)));
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -4957,7 +4957,7 @@ BEGIN
   PERFORM _v100_link((ids->>'g2')::uuid, HIL, c_b);
   PERFORM _v100_link((ids->>'g2')::uuid, WES, c_w);
   PERFORM _v100_link((ids->>'g5')::uuid, HIL, c_b);
-  PERFORM _v100_link((ids->>'g3')::uuid, HIL, c_e, 'verified', current_date);
+  PERFORM _v100_link((ids->>'g3')::uuid, HIL, c_e, 'verified', sa_today());
   PERFORM _v100_link((ids->>'g4')::uuid, HIL, c_a, 'pending');
   -- Q is registered to play (the sheet refuses a boy who is not).
   PERFORM _v100_link((ids->>'gq')::uuid, HIL, c_q);
@@ -4968,7 +4968,7 @@ BEGIN
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
   VALUES (v_s, c_b, 'self', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
-          '88888888-0000-0000-0000-00000000000c', current_date - 1);
+          '88888888-0000-0000-0000-00000000000c', sa_today() - 1);
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status) VALUES
     (HIL, '13XI', WES, '13XI', 'Verify Hundred Westville', T, 'cricket', 'T20', 20, 'live') RETURNING id INTO f1;
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status) VALUES
@@ -5014,7 +5014,7 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 
 -- Ending a link as the office would, mid-section: the next read is refused.
 CREATE OR REPLACE FUNCTION _v100_end_link(p_person uuid, p_player uuid) RETURNS void AS $$
-  UPDATE assignment_subject g SET valid_until = current_date
+  UPDATE assignment_subject g SET valid_until = sa_today()
     FROM role_assignment a
    WHERE a.id = g.assignment_id AND a.person_id = p_person AND g.player_id = p_player
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -5085,7 +5085,7 @@ BEGIN
             WHERE a.person_id = x.person LOOP
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
-    VALUES (r.aid, r.p, 'parent', 'verified', r.verifier, now(), 'granted', 'popia-2026-01', now(), r.verifier, current_date - 1);
+    VALUES (r.aid, r.p, 'parent', 'verified', r.verifier, now(), 'granted', 'popia-2026-01', now(), r.verifier, sa_today() - 1);
   END LOOP;
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
   VALUES (HIL, 'U15A', WES, 'U15A', 'Westville U15A', ((sa_today() + 3)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
@@ -5138,7 +5138,7 @@ BEGIN
   SELECT a.id INTO v_a FROM role_assignment a WHERE a.person_id = (ids->>'parent')::uuid;
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
-  VALUES (v_a, v_boy, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  VALUES (v_a, v_boy, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   INSERT INTO feature_suppression (key, school_id, person_id, reason, hidden_by)
   VALUES ('skills', HIL, (ids->>'named')::uuid, 'v102: pending a review of his conduct', (ids->>'manager')::uuid)
   RETURNING id INTO n1;
@@ -5173,7 +5173,7 @@ BEGIN
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
   VALUES (a, p_player, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now() - interval '20 days',
-          'granted', 'popia-2026-01', now() - interval '20 days', '88888888-0000-0000-0000-00000000000c', current_date - 30)
+          'granted', 'popia-2026-01', now() - interval '20 days', '88888888-0000-0000-0000-00000000000c', sa_today() - 30)
   RETURNING id INTO l;
   RETURN l;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -5225,23 +5225,23 @@ BEGIN
   SELECT g.assignment_id INTO a FROM assignment_subject g WHERE g.id = l;
   -- What goes with her link (D14).
   INSERT INTO public_name_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
-  VALUES (v_boy, 'guardian', a, l, 'popia-2026-01', current_date - 10, OFFICE);
+  VALUES (v_boy, 'guardian', a, l, 'popia-2026-01', sa_today() - 10, OFFICE);
   INSERT INTO health_monitoring_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
-  VALUES (v_boy, 'guardian', a, l, 'v109', current_date - 10, OFFICE);
+  VALUES (v_boy, 'guardian', a, l, 'v109', sa_today() - 10, OFFICE);
   INSERT INTO emergency_contact (player_id, priority, name, relationship, phone)
   VALUES (v_boy, 1, 'V109 Mum', 'mother', '+27 82 109 0001') RETURNING id INTO v_c;
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
-  VALUES (HIL, 'U15A', 'Verify OneOhNine XI', ((current_date + 3)::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
+  VALUES (HIL, 'U15A', 'Verify OneOhNine XI', ((sa_today() + 3)::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
           'cricket', 'T20', 20, 'scheduled')
   RETURNING id INTO v_m;
   INSERT INTO lift_driver_declaration (person_id, school_id, vehicle_description, registration, seats, licence_held,
                                        insured, roadworthy, belts, code_acknowledged, policy_version, expires_on)
-  VALUES ((ids->>'dad')::uuid, HIL, 'Silver hatchback', 'V109 GP', 3, true, true, true, true, true, 1, current_date + 300)
+  VALUES ((ids->>'dad')::uuid, HIL, 'Silver hatchback', 'V109 GP', 3, true, true, true, true, true, 1, sa_today() + 300)
   RETURNING id INTO v_d;
   INSERT INTO lift_offer (school_id, match_id, team_code, leg, driver_id, declaration_id, seats, meet_kind, meet_at,
                           fixture_starts_at)
   VALUES (HIL, v_m, 'U15A', 'out', (ids->>'dad')::uuid, v_d, 3, 'school',
-          ((current_date + 3)::timestamp + time '07:30') AT TIME ZONE 'Africa/Johannesburg', now())
+          ((sa_today() + 3)::timestamp + time '07:30') AT TIME ZONE 'Africa/Johannesburg', now())
   RETURNING id INTO v_o;
   INSERT INTO lift_seat (offer_id, school_id, match_id, team_code, leg, player_id, consent_by, guardian_assignment_id,
                          guardian_link_id, requested_by, state)
@@ -5291,7 +5291,7 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 CREATE OR REPLACE FUNCTION _v109_leave(p_player uuid) RETURNS void AS $$
 BEGIN
   -- The session's day, never before the side began (THE DAY, AT ANY HOUR).
-  UPDATE team_membership SET left_on = greatest(current_date, joined_on) WHERE player_id = p_player AND left_on IS NULL;
+  UPDATE team_membership SET left_on = greatest(sa_today(), joined_on) WHERE player_id = p_player AND left_on IS NULL;
   SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
   SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -5299,7 +5299,7 @@ CREATE OR REPLACE FUNCTION _v109_return(p_player uuid) RETURNS void AS $$
 BEGIN
   INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason)
   SELECT p.id, p.school_id, 'cricket', p.team_code,
-         greatest(current_date, (SELECT max(m.left_on) FROM team_membership m WHERE m.player_id = p_player)), 'moved'
+         greatest(sa_today(), (SELECT max(m.left_on) FROM team_membership m WHERE m.player_id = p_player)), 'moved'
     FROM player p WHERE p.id = p_player;
   SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links IMMEDIATE;
   SET CONSTRAINTS team_membership_closes_guardian_links, team_membership_opens_guardian_links DEFERRED;
@@ -5387,7 +5387,7 @@ BEGIN
             WHERE a.person_id = x.person LOOP
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
-    VALUES (r.aid, r.p, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+    VALUES (r.aid, r.p, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   END LOOP;
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
   VALUES (HIL, '10XI', WES, '10XI', 'Westville 10XI', ((sa_today() + 2)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
@@ -5462,7 +5462,7 @@ BEGIN
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
     VALUES (r.aid, r.p, CASE r.role WHEN 'selfaccess' THEN 'self' ELSE 'parent' END, 'verified', r.verifier, now(),
-            'granted', 'popia-2026-01', now(), r.verifier, current_date - 1);
+            'granted', 'popia-2026-01', now(), r.verifier, sa_today() - 1);
   END LOOP;
   -- The team-mate holds the captaincy: an honour, which adds no capability.
   INSERT INTO honour (player_id, school_id, team_code, kind, season_id)
@@ -5532,7 +5532,7 @@ DECLARE
   ids jsonb; v_s uuid; v_m uuid; r record; v_u uuid; k text; d int;
   sess jsonb := '{}'; v_t uuid; v_retired uuid; v_wesdrill uuid; v_matenote uuid; v_k20 uuid; v_k10 uuid;
 BEGIN
-  PERFORM set_config('app.effective_on', (current_date - 60)::text, true);
+  PERFORM set_config('app.effective_on', (sa_today() - 60)::text, true);
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
     (HIL, 'U19E', 'Verify OneOhFive Subject', 1051, 'batter', U15) RETURNING id INTO v_s;
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
@@ -5560,7 +5560,7 @@ BEGIN
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
     VALUES (r.aid, r.p, CASE r.role WHEN 'selfaccess' THEN 'self' ELSE 'parent' END, 'verified', OFFICE, now(),
-            'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+            'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   END LOOP;
   INSERT INTO honour (player_id, school_id, team_code, kind, season_id)
   VALUES (v_m, HIL, 'U19E', 'captain', (SELECT s.id FROM season_for(sa_today(), 'school') s LIMIT 1));
@@ -5571,22 +5571,22 @@ BEGIN
 
   -- His scores: two looks at batting, the coach's.
   INSERT INTO player_skill (player_id, assessed_on, assessed_by, category, metric, score)
-  VALUES (v_s, current_date - 20, (ids->>'coach')::uuid, 'technical', 'againstPace', 7) RETURNING id INTO v_k20;
+  VALUES (v_s, sa_today() - 20, (ids->>'coach')::uuid, 'technical', 'againstPace', 7) RETURNING id INTO v_k20;
   INSERT INTO player_skill (player_id, assessed_on, assessed_by, category, metric, score)
-  VALUES (v_s, current_date - 10, (ids->>'coach')::uuid, 'technical', 'againstPace', 9) RETURNING id INTO v_k10;
+  VALUES (v_s, sa_today() - 10, (ids->>'coach')::uuid, 'technical', 'againstPace', 9) RETURNING id INTO v_k10;
   INSERT INTO player_skill (player_id, assessed_on, assessed_by, category, metric, score)
-  VALUES (v_s, current_date - 10, (ids->>'coach')::uuid, 'technical', 'footwork', 10);
+  VALUES (v_s, sa_today() - 10, (ids->>'coach')::uuid, 'technical', 'footwork', 10);
 
   -- The side's sessions, at four in the afternoon.
   FOREACH d IN ARRAY ARRAY[-12, -8, -6, -4, -3, -2, 2] LOOP
     INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type, cancelled)
-    VALUES (HIL, 'U19E', 'Verify 105 nets ' || d, ((current_date + d)::timestamp + time '16:00') AT TIME ZONE 'Africa/Johannesburg',
+    VALUES (HIL, 'U19E', 'Verify 105 nets ' || d, ((sa_today() + d)::timestamp + time '16:00') AT TIME ZONE 'Africa/Johannesburg',
             90, 'batting', d = -3)
     RETURNING id INTO v_t;
     sess := sess || jsonb_build_object('d' || abs(d) || CASE WHEN d > 0 THEN 'ahead' ELSE '' END, v_t);
   END LOOP;
   INSERT INTO training_session (school_id, team_code, title, starts_at, duration_min, session_type)
-  VALUES (HIL, 'U19F', 'Verify 105 other side', ((current_date - 5)::timestamp + time '16:00') AT TIME ZONE 'Africa/Johannesburg',
+  VALUES (HIL, 'U19F', 'Verify 105 other side', ((sa_today() - 5)::timestamp + time '16:00') AT TIME ZONE 'Africa/Johannesburg',
           60, 'fielding') RETURNING id INTO v_t;
   sess := sess || jsonb_build_object('other', v_t);
   INSERT INTO training_attendance (session_id, player_id, status) VALUES
@@ -5687,7 +5687,7 @@ BEGIN
   PERFORM _v100_link((ids->>'g2')::uuid, HIL, c_b);
   PERFORM _v100_link((ids->>'g2')::uuid, WES, c_w);
   PERFORM _v100_link((ids->>'gup')::uuid, HIL, c_up);
-  PERFORM _v100_link((ids->>'g3')::uuid, HIL, c_e, 'verified', current_date);
+  PERFORM _v100_link((ids->>'g3')::uuid, HIL, c_e, 'verified', sa_today());
   PERFORM _v100_link((ids->>'g4')::uuid, HIL, c_a, 'pending');
   PERFORM _v100_link((ids->>'g5')::uuid, HIL, c_a, 'revoked');
   PERFORM _v100_link((ids->>'wesg')::uuid, WES, c_w);
@@ -5698,7 +5698,7 @@ BEGIN
     INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_s, 'selfaccess', HIL) RETURNING id INTO v_s;
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
-    VALUES (v_s, v_stranger, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+    VALUES (v_s, v_stranger, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   END LOOP;
   INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v106.stranger@example.invalid', 'V106 Stranger', 'spectator')
   RETURNING id INTO v_stranger;
@@ -5773,8 +5773,8 @@ CREATE OR REPLACE FUNCTION _v106_self_sheet(p_cap text, p_match uuid) RETURNS bo
                          OR EXISTS (SELECT 1 FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
                                      WHERE a.person_id = app_user_id() AND a.role = 'selfaccess' AND a.active
                                        AND g.player_id = p.id AND g.verification_state = 'verified'
-                                       AND g.valid_from <= current_date
-                                       AND (g.valid_until IS NULL OR g.valid_until > current_date)))
+                                       AND g.valid_from <= sa_today()
+                                       AND (g.valid_until IS NULL OR g.valid_until > sa_today())))
                     AND app_can(p_cap, p.school_id, p.team_code, p.id, m.id))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -5934,7 +5934,7 @@ BEGIN
                                     consent_state, consent_version, consent_at, created_by, valid_from)
     SELECT v_a, CASE WHEN a.person_id = (ids->>'parent')::uuid THEN v_boy ELSE v_wboy END, 'parent', 'verified',
            CASE WHEN a.person_id = (ids->>'parent')::uuid THEN OFFICE ELSE WOFFICE END, now(), 'granted', 'popia-2026-01', now(),
-           CASE WHEN a.person_id = (ids->>'parent')::uuid THEN OFFICE ELSE WOFFICE END, current_date - 1
+           CASE WHEN a.person_id = (ids->>'parent')::uuid THEN OFFICE ELSE WOFFICE END, sa_today() - 1
       FROM role_assignment a WHERE a.id = v_a;
   END LOOP;
   -- An account with no school and no assignment: signed in, enrolled nowhere.
@@ -5954,8 +5954,8 @@ BEGIN
      '+27 82 555 1073', 'V107 Umpires', (ids->>'linked')::uuid)
   RETURNING id INTO c1;
   INSERT INTO official_accreditation (official_id, level, issued_by, valid_from, valid_until) VALUES
-    (u1, 'level1', 'V107', current_date - 100, current_date + 100),
-    (s1, 'club',   'V107', current_date - 10,  NULL);
+    (u1, 'level1', 'V107', sa_today() - 100, sa_today() + 100),
+    (s1, 'club',   'V107', sa_today() - 10,  NULL);
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
   VALUES (HIL, '1XI', 'Verify OneOhSeven XI', ((sa_today() + 5)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
           'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m;
@@ -5978,7 +5978,7 @@ CREATE OR REPLACE FUNCTION _v107_conflict_before(p_person uuid, p_match uuid) RE
            SELECT 1 FROM role_assignment ra
             WHERE ra.person_id = p_person AND ra.active
               AND ra.school_id = match_school(p_match)
-              AND (ra.valid_until IS NULL OR ra.valid_until > current_date))
+              AND (ra.valid_until IS NULL OR ra.valid_until > sa_today()))
 $$ LANGUAGE sql STABLE;
 -- └── db/107 (section 84) ─────────────────────────────────────────────
 
@@ -6089,7 +6089,7 @@ BEGIN
   FOR r IN SELECT a.id AS aid FROM role_assignment a WHERE a.person_id = (ids->>'guardian')::uuid LOOP
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
-    VALUES (r.aid, v_p, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+    VALUES (r.aid, v_p, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   END LOOP;
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
   VALUES (HIL, '12XI', 'Verify OneTen Visitors', ((sa_today() + 3)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
@@ -6191,21 +6191,21 @@ BEGIN
             WHERE a.person_id = x.person LOOP
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
-    VALUES (r.aid, r.p, r.rel, r.state, OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+    VALUES (r.aid, r.p, r.rel, r.state, OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   END LOOP;
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'mumphysio')::uuid, 'guardian', HIL) RETURNING id INTO v_a;
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
-  VALUES (v_a, v_own, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  VALUES (v_a, v_own, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'claimphysio')::uuid, 'guardian', HIL) RETURNING id INTO v_a;
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, created_by, valid_from)
-  VALUES (v_a, v_boy, 'parent', 'pending', OFFICE, current_date - 1);
+  VALUES (v_a, v_boy, 'parent', 'pending', OFFICE, sa_today() - 1);
   -- Each boy's own file, as the seed's pupil has his.
   FOR r IN SELECT x.person, x.p FROM (VALUES ((ids->>'boy')::uuid, v_boy), ((ids->>'mate')::uuid, v_mate)) AS x(person, p) LOOP
     INSERT INTO role_assignment (person_id, role, school_id) VALUES (r.person, 'selfaccess', HIL) RETURNING id INTO v_a;
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
-    VALUES (v_a, r.p, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+    VALUES (v_a, r.p, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   END LOOP;
   RETURN ids || jsonb_build_object('p_boy', v_boy, 'p_mate', v_mate, 'p_own', v_own, 'p_leaver', v_leaver,
                                    'p_side', v_side, 'p_wes', v_wes, 'p_rest', v_rest);
@@ -6362,7 +6362,7 @@ BEGIN
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
     VALUES (v_a, (z->>b)::uuid, 'self', st, OFFICE, CASE WHEN st = 'verified' THEN now() END,
-            'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+            'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   END LOOP;
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status) VALUES
     (HIL, 'U14E', 'Verify OneOneTwo Fourteens', D AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO v_id;
@@ -6606,7 +6606,7 @@ BEGIN
             WHERE a.person_id = x.person LOOP
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
-    VALUES (r.aid, r.p, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+    VALUES (r.aid, r.p, 'parent', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   END LOOP;
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
   VALUES (HIL, 'U19F', 'Verify OneThirteen Visitors', (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg',
@@ -6931,7 +6931,7 @@ BEGIN
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
     VALUES (v_a, CASE k WHEN 'aboy' THEN c_a ELSE c_m END, 'self', 'verified', OFFICE, now(),
-            'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+            'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   END LOOP;
   INSERT INTO passport_consent (player_id, to_school_id) VALUES (c_a, WES), (c_m, WES), (c_a, X), (c_m, X);
   -- Each given by the boy's guardian, as her grant stamps it: since db/122 a
@@ -7039,7 +7039,7 @@ BEGIN
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
     VALUES (v_s, (ids->>split_part(k, ':', 2))::uuid, 'self', 'verified', '88888888-0000-0000-0000-00000000000c', now(),
-            'granted', 'popia-2026-01', now(), '88888888-0000-0000-0000-00000000000c', current_date - 1);
+            'granted', 'popia-2026-01', now(), '88888888-0000-0000-0000-00000000000c', sa_today() - 1);
   END LOOP;
 
   -- The competition, its fixture, and one in no competition.
@@ -7076,18 +7076,18 @@ BEGIN
   VALUES (v_f, HIL, 'v116-target', 'v116: four runs to the wrong batter', (ids->>'scorer')::uuid)
   RETURNING id INTO v; ids := ids || jsonb_build_object('amend', v);
   INSERT INTO school_register (school_id, email, name, role, team_code, valid_until, uploaded_by, upload_id)
-  VALUES (HIL, 'v116.listed@example.invalid', 'V116 Listed', 'coach', '16XI', current_date + 30,
+  VALUES (HIL, 'v116.listed@example.invalid', 'V116 Listed', 'coach', '16XI', sa_today() + 30,
           (ids->>'office')::uuid, gen_random_uuid())
   RETURNING id INTO v; ids := ids || jsonb_build_object('register', v);
 
   -- Q3: d's injury.
   INSERT INTO injury (school_id, player_id, injury_type, severity, date_injured, phase, notes)
-  VALUES (HIL, (ids->>'d')::uuid, 'Verify OneSixteen hamstring', 'moderate', current_date - 3, 'rehab', 'v116 clinical note')
+  VALUES (HIL, (ids->>'d')::uuid, 'Verify OneSixteen hamstring', 'moderate', sa_today() - 3, 'rehab', 'v116 clinical note')
   RETURNING id INTO v; ids := ids || jsonb_build_object('injury', v);
   -- ...and the physio's review of it (db/111), with her clinical note.
   INSERT INTO injury_review (school_id, player_id, injury_id, reviewed_by, phase_after, restricted_after,
                              next_review_on, note)
-  VALUES (HIL, (ids->>'d')::uuid, v, (ids->>'physio')::uuid, 'rehab', true, current_date + 7, 'v116 review note')
+  VALUES (HIL, (ids->>'d')::uuid, v, (ids->>'physio')::uuid, 'rehab', true, sa_today() + 7, 'v116 review note')
   RETURNING id INTO v; ids := ids || jsonb_build_object('review', v);
 
   -- Q10: the conduct records, as the umpire would file them (the author is the session's).
@@ -7126,7 +7126,7 @@ BEGIN
 
   -- A1: his coach's rating of him, and his family's consent naming Westville.
   INSERT INTO player_skill (player_id, assessed_on, assessed_by, category, metric, score)
-  VALUES ((ids->>'h')::uuid, current_date - 5, (ids->>'coach')::uuid, 'technical', 'againstPace', 11);
+  VALUES ((ids->>'h')::uuid, sa_today() - 5, (ids->>'coach')::uuid, 'technical', 'againstPace', 11);
   INSERT INTO passport_consent (player_id, to_school_id, granted_by)
   VALUES ((ids->>'h')::uuid, WES, (ids->>'parent')::uuid);
   -- db/08's trigger stamps the giver from the session (nobody, here): his
@@ -7246,7 +7246,7 @@ BEGIN
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'aboy')::uuid, 'selfaccess', HIL) RETURNING id INTO v_a;
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
-  VALUES (v_a, c_a, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  VALUES (v_a, c_a, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   z := jsonb_build_object('a', c_a, 'c', c_c, 'm', c_m);
   -- The fixtures, each at 10:00 in Johannesburg on its day.
   FOR k, tm, dd, aw IN SELECT * FROM (VALUES
@@ -7325,7 +7325,7 @@ BEGIN
   -- M's), to f41s (A's seat: he is on its sheet) and to x41p (past).
   INSERT INTO lift_driver_declaration (person_id, school_id, vehicle_description, registration, seats, licence_held,
                                        insured, roadworthy, belts, code_acknowledged, policy_version, expires_on)
-  VALUES ((ids->>'gm')::uuid, HIL, 'V117 blue estate', 'V117 GP', 3, true, true, true, true, true, 1, current_date + 300)
+  VALUES ((ids->>'gm')::uuid, HIL, 'V117 blue estate', 'V117 GP', 3, true, true, true, true, true, 1, sa_today() + 300)
   RETURNING id INTO v_d;
   FOR k IN SELECT unnest(ARRAY['f41n', 'f41s', 'x41p']) LOOP
     INSERT INTO lift_offer (school_id, match_id, team_code, leg, driver_id, declaration_id, seats, meet_kind, meet_at, fixture_starts_at)
@@ -7379,11 +7379,11 @@ CREATE OR REPLACE FUNCTION _v117_self(p_player uuid) RETURNS boolean AS $$
   SELECT EXISTS (SELECT 1 FROM app_user u WHERE u.id = app_user_id() AND u.player_id = p_player)
       OR EXISTS (SELECT 1 FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
                   WHERE a.person_id = app_user_id() AND a.role = 'selfaccess' AND a.active
-                    AND (a.valid_from IS NULL OR a.valid_from <= current_date)
-                    AND (a.valid_until IS NULL OR a.valid_until > current_date)
+                    AND (a.valid_from IS NULL OR a.valid_from <= sa_today())
+                    AND (a.valid_until IS NULL OR a.valid_until > sa_today())
                     AND (a.expires_at IS NULL OR a.expires_at > now())
                     AND g.player_id = p_player AND g.verification_state = 'verified'
-                    AND g.valid_from <= current_date AND (g.valid_until IS NULL OR g.valid_until > current_date))
+                    AND g.valid_from <= sa_today() AND (g.valid_until IS NULL OR g.valid_until > sa_today()))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- The boys asked are those with any membership row on the side at the school
 -- (the join): side_on() still decides the day, and a boy never on the side
@@ -7653,21 +7653,21 @@ BEGIN
   FOREACH k IN ARRAY ARRAY['live', 'ended', 'expired', 'early', 'linkend', 'mum'] LOOP
     PERFORM _v100_link((ids->>k)::uuid, HIL, F);
   END LOOP;
-  UPDATE role_assignment SET valid_until = current_date
+  UPDATE role_assignment SET valid_until = sa_today()
    WHERE person_id = (ids->>'ended')::uuid AND role = 'guardian';
   UPDATE role_assignment SET expires_at = now() - interval '1 second'
    WHERE person_id = (ids->>'expired')::uuid AND role = 'guardian';
-  UPDATE assignment_subject s SET valid_from = current_date + 1
+  UPDATE assignment_subject s SET valid_from = sa_today() + 1
     FROM role_assignment a
    WHERE a.id = s.assignment_id AND a.person_id = (ids->>'early')::uuid AND s.player_id = F;
-  UPDATE assignment_subject s SET valid_until = current_date
+  UPDATE assignment_subject s SET valid_until = sa_today()
     FROM role_assignment a
    WHERE a.id = s.assignment_id AND a.person_id = (ids->>'linkend')::uuid AND s.player_id = F;
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'fboy')::uuid, 'selfaccess', HIL)
   RETURNING id INTO v_a;
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
-  VALUES (v_a, F, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  VALUES (v_a, F, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   INSERT INTO passport_consent (player_id, to_school_id) VALUES (F, WES);
   INSERT INTO player_scouting_consent (player_id, consent_state) VALUES (F, 'granted');
   -- One honour, so an open passport() has a line to give.
@@ -7678,7 +7678,7 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 
 -- The mother-physio's link to F ends today, as db/62's close ends one.
 CREATE OR REPLACE FUNCTION _v119_end_link(p_person uuid, p_player uuid) RETURNS void AS $$
-  UPDATE assignment_subject s SET valid_until = current_date
+  UPDATE assignment_subject s SET valid_until = sa_today()
     FROM role_assignment a
    WHERE a.id = s.assignment_id AND a.person_id = p_person AND a.role = 'guardian' AND s.player_id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -7772,7 +7772,7 @@ $$ LANGUAGE sql STABLE;
 -- as db/62's close or the office's dated end leaves it. Not _revoke(): his
 -- assignment stays active and live.
 CREATE OR REPLACE FUNCTION _v120_end_link(p_person uuid, p_player uuid) RETURNS void AS $$
-  UPDATE assignment_subject s SET valid_until = current_date - 1
+  UPDATE assignment_subject s SET valid_until = sa_today() - 1
     FROM role_assignment a
    WHERE a.id = s.assignment_id AND a.person_id = p_person AND a.role = 'guardian' AND s.player_id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -7806,9 +7806,9 @@ DECLARE
   am2 uuid;
 BEGIN
   INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-    (V_A, HIL, '2XI', 'V121 Opener',  121, 'batter', (current_date - interval '16 years')::date),
-    (V_B, HIL, '2XI', 'V121 Partner', 122, 'batter', (current_date - interval '16 years')::date),
-    (V_C, HIL, '2XI', 'V121 Seamer',  123, 'bowler', (current_date - interval '16 years')::date);
+    (V_A, HIL, '2XI', 'V121 Opener',  121, 'batter', (sa_today() - interval '16 years')::date),
+    (V_B, HIL, '2XI', 'V121 Partner', 122, 'batter', (sa_today() - interval '16 years')::date),
+    (V_C, HIL, '2XI', 'V121 Seamer',  123, 'bowler', (sa_today() - interval '16 years')::date);
   INSERT INTO match (id, school_id, team_code, opponent, starts_at, format, overs, status) VALUES
     (M, HIL, '2XI', 'Verify 121', '2026-10-24 09:00:00+02', 'T20', 20, 'complete');
   INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
@@ -7850,9 +7850,9 @@ BEGIN
   -- is scored). The amendment voids 29; the route's re-judging puts 30 on E
   -- (E kept the strike): D 49, E 50.
   INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-    (V_D, HIL, '2XI', 'V121 Fourth',  124, 'batter', (current_date - interval '16 years')::date),
-    (V_E, HIL, '2XI', 'V121 Fifth',   125, 'batter', (current_date - interval '16 years')::date),
-    (V_F, HIL, '2XI', 'V121 Sixth',   126, 'bowler', (current_date - interval '16 years')::date);
+    (V_D, HIL, '2XI', 'V121 Fourth',  124, 'batter', (sa_today() - interval '16 years')::date),
+    (V_E, HIL, '2XI', 'V121 Fifth',   125, 'batter', (sa_today() - interval '16 years')::date),
+    (V_F, HIL, '2XI', 'V121 Sixth',   126, 'bowler', (sa_today() - interval '16 years')::date);
   INSERT INTO match (id, school_id, team_code, opponent, starts_at, format, overs, status) VALUES
     (M2, HIL, '2XI', 'Verify 121 B1', '2026-10-25 09:00:00+02', 'T20', 20, 'complete');
   INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
@@ -8033,15 +8033,15 @@ BEGIN
     FROM role_assignment a WHERE a.id = g.assignment_id AND a.person_id = (ids->>'gp')::uuid AND g.player_id = c_c;
   -- Y is eighteen, so db/62 would close his guardian's link today; it is
   -- staged open for thirty days, and the section ends it.
-  PERFORM _v100_link((ids->>'yg')::uuid, HIL, c_y, 'verified', current_date + 30);
+  PERFORM _v100_link((ids->>'yg')::uuid, HIL, c_y, 'verified', sa_today() + 30);
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'yboy')::uuid, 'selfaccess', HIL) RETURNING id INTO v_a;
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
-  VALUES (v_a, c_y, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  VALUES (v_a, c_y, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'cboy')::uuid, 'selfaccess', HIL) RETURNING id INTO v_a;
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
-  VALUES (v_a, c_c, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  VALUES (v_a, c_c, 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   -- One honour, so an open passport() has a line to give.
   INSERT INTO honour (player_id, school_id, team_code, kind, season_id)
   VALUES (c_c, HIL, '16XI', 'captain', (SELECT s.id FROM season_for(sa_today(), 'school') s LIMIT 1));
@@ -8081,7 +8081,7 @@ BEGIN
   z := z || jsonb_build_object('f_lift', v);
   INSERT INTO lift_driver_declaration (person_id, school_id, vehicle_description, registration, seats, licence_held,
                                        insured, roadworthy, belts, code_acknowledged, policy_version, expires_on)
-  VALUES ((ids->>'drv')::uuid, HIL, 'V122 red hatch', 'V122 GP', 3, true, true, true, true, true, 1, current_date + 300)
+  VALUES ((ids->>'drv')::uuid, HIL, 'V122 red hatch', 'V122 GP', 3, true, true, true, true, true, 1, sa_today() + 300)
   RETURNING id INTO v_d;
   INSERT INTO lift_offer (school_id, match_id, team_code, leg, driver_id, declaration_id, seats, meet_kind, meet_at, fixture_starts_at)
   SELECT HIL, m.id, '13XI', 'out', (ids->>'drv')::uuid, v_d, 3, 'school', m.starts_at - interval '30 minutes', m.starts_at
@@ -8128,7 +8128,7 @@ CREATE OR REPLACE FUNCTION _v122_move(p_player uuid, p_team text, p_tz text) RET
 DECLARE v_tz text := current_setting('TimeZone'); v_day text;
 BEGIN
   PERFORM set_config('TimeZone', p_tz, true);
-  v_day := current_date::text;
+  v_day := current_date::text;   -- the session's own day, under p_tz: deliberately not sa_today()
   PERFORM set_config('app.effective_on', '', true);
   PERFORM set_config('app.user_id', '88888888-0000-0000-0000-00000000000c', true);
   UPDATE player SET team_code = p_team WHERE id = p_player;
@@ -8170,7 +8170,7 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- the one that gave the consent is re-opened, in place.
 CREATE OR REPLACE FUNCTION _v122_correct(p_person uuid, p_player uuid) RETURNS void AS $$
 BEGIN
-  UPDATE assignment_subject s SET valid_until = current_date
+  UPDATE assignment_subject s SET valid_until = sa_today()
     FROM role_assignment a
    WHERE a.id = s.assignment_id AND a.person_id = p_person AND a.role = 'guardian' AND s.player_id = p_player
      AND s.created_at > now();
@@ -8407,7 +8407,7 @@ BEGIN
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
   VALUES (v_a, c_b, 'self', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
-          '88888888-0000-0000-0000-00000000000c', current_date - 1);
+          '88888888-0000-0000-0000-00000000000c', sa_today() - 1);
   INSERT INTO honour (player_id, school_id, team_code, kind, season_id)
   VALUES (c_b, HIL, '16XI', 'captain', (SELECT s.id FROM season_for(sa_today(), 'school') s LIMIT 1));
   RETURN ids || jsonb_build_object('B', c_b, 'B2', c_b2, 'U', U, 'OU', OU, 'F', F, 'C', C);
@@ -8728,7 +8728,7 @@ BEGIN
   END LOOP;
   -- sup's support hour at U, written as support_access_begin() would.
   INSERT INTO role_assignment (person_id, role, school_id, active, valid_from, expires_at)
-  VALUES ((ids->>'sup')::uuid, 'schooladmin', U, true, current_date, now() + interval '1 hour') RETURNING id INTO v_a;
+  VALUES ((ids->>'sup')::uuid, 'schooladmin', U, true, sa_today(), now() + interval '1 hour') RETURNING id INTO v_a;
   INSERT INTO support_access (actor_id, school_id, role, reason, assignment_id, expires_at)
   VALUES ((ids->>'sup')::uuid, U, 'schooladmin', 'Verify 125: a support hour at the union', v_a, now() + interval '1 hour');
   PERFORM _v100_link((ids->>'ga')::uuid,  SA,  c_a);
@@ -8743,7 +8743,7 @@ BEGIN
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
   VALUES (v_a, c_a, 'self', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
-          '88888888-0000-0000-0000-00000000000c', current_date - 1);
+          '88888888-0000-0000-0000-00000000000c', sa_today() - 1);
   RETURN ids || jsonb_build_object('U', U, 'OU', OU, 'F', F, 'SA', SA, 'SB', SB, 'FAR', FAR, 'HIL', HIL, 'WES', WES,
                                    'PA', c_a, 'PD', c_d, 'PA2', c_a2, 'PN', c_n, 'PB', c_b, 'PC', c_c, 'PX', c_x,
                                    'Uname', (SELECT s.name FROM school s WHERE s.id = U))
@@ -9420,6 +9420,176 @@ CREATE OR REPLACE FUNCTION _v130_audit(p_match uuid) RETURNS integer AS $$
   SELECT count(*)::integer FROM scoring_audit WHERE match_id = p_match AND event = 'match_finalised'
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/130 (section 107) ─────────────────────────────────────────────
+-- ┌── db/131 (sections 108, 109, 110). REACH's last three slices ──────────
+-- §108 (R-G): Hilton's U13E and U13F, invented here. Their two coaches, the
+-- director of sport, a follower the office admitted school-wide and one it
+-- scoped to the U13E (a spectator assignment with team_code set: the office's
+-- decide route takes a side, requests-api.mjs), and the four school-wide
+-- roles that hold news.read and read no side (§78). A U13E fixture, for a
+-- plan. As the owner; every name is invented.
+CREATE OR REPLACE FUNCTION _v131g_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  ids jsonb; f uuid;
+BEGIN
+  ids := _v71_people('v131g', ARRAY[
+    ARRAY['director',  'directorofsport', HIL::text, '',     ''],
+    ARRAY['ecoach',    'coach',           HIL::text, 'U13E', ''],
+    ARRAY['fcoach',    'coach',           HIL::text, 'U13F', ''],
+    ARRAY['follower',  'spectator',       HIL::text, '',     ''],
+    ARRAY['efollower', 'spectator',       HIL::text, 'U13E', ''],
+    ARRAY['finance',     'finance',       HIL::text, '',     ''],
+    ARRAY['sponsorship', 'sponsorship',   HIL::text, '',     ''],
+    ARRAY['driver',      'driver',        HIL::text, '',     ''],
+    ARRAY['facilities',  'facilities',    HIL::text, '',     '']]);
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U13E', 'Section 108 Visitors', ((sa_today() + 4)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f;
+  RETURN ids || jsonb_build_object('f', f);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- §109 (R-H): Hilton's U14E (eleven boys) at home to Westville's U14E (three),
+-- f1, in three days. A Hilton 12XI fixture against a school SCRBRD does not
+-- host, f2, with one boy of the 12XI on its sheet. Two more U14E fixtures:
+-- f3, whose sheet was named and then withdrawn whole (unpublished), and f4,
+-- with no sheet yet. Each boy has a guardian, verified by his own school's
+-- office and consented, as the seed's are: a boy is selected only once
+-- registered. The first U14E boy has his own account (a `player` row at the
+-- side) and his own parent; the other ten share one guardian, who stands in
+-- for their families and is asked nothing. Westville's first boy likewise.
+-- A twelfth U14E boy, on no sheet, with his own account; and a named enquiry
+-- grant about the third, as a coach elsewhere asks about one boy.
+-- The U14E coach, the office, a follower the office admitted school-wide and
+-- one it scoped to the U14E, the 12XI boy's parent, Westville's U14E coach.
+-- As the owner; every name is invented.
+CREATE OR REPLACE FUNCTION _v131h_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE  uuid := '88888888-0000-0000-0000-00000000000c';
+  WOFFICE uuid := '88888888-0000-0000-0000-00000000000d';
+  U14 date := make_date(extract(year FROM sa_today())::int - 13, 3, 1);
+  U17 date := make_date(extract(year FROM sa_today())::int - 16, 3, 1);
+  a uuid[] := '{}'; w uuid[] := '{}'; v uuid; x uuid; bench uuid; i int; ids jsonb;
+  f1 uuid; f2 uuid; f3 uuid; f4 uuid; r record;
+BEGIN
+  FOR i IN 1..11 LOOP
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES (HIL, 'U14E', format('Sheet Home %s', lpad(i::text, 2, '0')), 1310 + i, 'batter', U14) RETURNING id INTO v;
+    a := a || v;
+  END LOOP;
+  FOR i IN 1..3 LOOP
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES (WES, 'U14E', format('Sheet Away %s', lpad(i::text, 2, '0')), 1320 + i, 'batter', U14) RETURNING id INTO v;
+    w := w || v;
+  END LOOP;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES (HIL, '12XI', 'Sheet Senior', 1330, 'bowler', U17) RETURNING id INTO x;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES (HIL, 'U14E', 'Sheet Bench', 1335, 'bowler', U14) RETURNING id INTO bench;
+  ids := _v71_people('v131h', ARRAY[
+    ARRAY['coach',     'coach',      HIL::text, 'U14E', ''],
+    ARRAY['office',    'schooladmin', HIL::text, '',    ''],
+    ARRAY['aboy',      'player',     HIL::text, 'U14E', a[1]::text],
+    ARRAY['benchboy',  'player',     HIL::text, 'U14E', bench::text],
+    ARRAY['enquirer',  'enquiry',    HIL::text, '',     ''],
+    ARRAY['aparent',   'guardian',   HIL::text, '',     ''],
+    ARRAY['rest',      'guardian',   HIL::text, '',     ''],
+    ARRAY['follower',  'spectator',  HIL::text, '',     ''],
+    ARRAY['efollower', 'spectator',  HIL::text, 'U14E', ''],
+    ARRAY['xparent',   'guardian',   HIL::text, '',     ''],
+    ARRAY['wescoach',  'coach',      WES::text, 'U14E', ''],
+    ARRAY['wesparent', 'guardian',   WES::text, '',     ''],
+    ARRAY['wesrest',   'guardian',   WES::text, '',     '']]);
+  FOR r IN SELECT ra.id AS aid, x2.p, x2.verifier FROM role_assignment ra,
+                  LATERAL (SELECT (ids->>'aparent')::uuid, a[1], OFFICE
+                           UNION ALL SELECT (ids->>'rest')::uuid, b, OFFICE FROM unnest(a[2:11]) b
+                           UNION ALL SELECT (ids->>'xparent')::uuid, x, OFFICE
+                           UNION ALL SELECT (ids->>'wesparent')::uuid, w[1], WOFFICE
+                           UNION ALL SELECT (ids->>'wesrest')::uuid, b, WOFFICE FROM unnest(w[2:3]) b) AS x2(person, p, verifier)
+            WHERE ra.person_id = x2.person LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    VALUES (r.aid, r.p, 'parent', 'verified', r.verifier, now(), 'granted', 'popia-2026-01', now(), r.verifier, current_date - 1);
+  END LOOP;
+  -- A named enquiry grant about the third U14E boy, verified by the office.
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, created_by, valid_from)
+  SELECT ra.id, a[3], 'enquiry', 'verified', OFFICE, now(), OFFICE, current_date - 1
+    FROM role_assignment ra WHERE ra.person_id = (ids->>'enquirer')::uuid;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U14E', WES, 'U14E', 'Westville U14E', ((sa_today() + 3)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f1;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '12XI', 'Section 109 Seniors', ((sa_today() + 3)::timestamp + time '13:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f2;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U14E', 'Section 109 Withdrawn', ((sa_today() + 5)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f3;
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U14E', 'Section 109 Unnamed', ((sa_today() + 6)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f4;
+  INSERT INTO match_squad (match_id, player_id, side, batting_no)
+  SELECT f1, a[g.n], 'home', g.n FROM generate_series(1, 11) g(n)
+  UNION ALL SELECT f1, w[g.n], 'away', g.n FROM generate_series(1, 3) g(n)
+  UNION ALL SELECT f2, x, 'home', 1
+  UNION ALL SELECT f3, a[g.n], 'home', g.n FROM generate_series(1, 2) g(n);
+  UPDATE match_squad SET withdrawn = true WHERE match_id = f3;
+  RETURN ids || jsonb_build_object('a', to_jsonb(a), 'w', to_jsonb(w), 'x', x, 'bench', bench, 'f1', f1, 'f2', f2, 'f3', f3, 'f4', f4);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A sheet's rows as the owner sees them: every row, and the live ones. The
+-- unpublished case proves nothing unless the sheet was named.
+CREATE OR REPLACE FUNCTION _v131h_rows(p_match uuid) RETURNS text AS $$
+  SELECT count(*) || ' ' || count(*) FILTER (WHERE NOT withdrawn) FROM match_squad WHERE match_id = p_match
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Take a boy off a sheet as the coach's route does (withdrawn, not deleted),
+-- as the owner: the proof is about the read, not the coach's write.
+CREATE OR REPLACE FUNCTION _v131h_withdraw(p_match uuid, p_player uuid) RETURNS integer AS $$
+  WITH u AS (UPDATE match_squad SET withdrawn = true WHERE match_id = p_match AND player_id = p_player RETURNING 1)
+  SELECT count(*)::int FROM u
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- §110 (R-I): Hilton's U15E, invented here: three boys with every masked
+-- column of player filled, the first with his own account, his `player` row
+-- at the side and his self link, verified by the office, as R Pillay's is in
+-- the seed. As the owner; every value is invented.
+CREATE OR REPLACE FUNCTION _v131i_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  U15 date := make_date(extract(year FROM sa_today())::int - 14, 3, 1);
+  b uuid[] := '{}'; v uuid; i int; ids jsonb; u uuid; sa uuid;
+BEGIN
+  FOR i IN 1..3 LOOP
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born, id_number, email, phone,
+                        hometown, houseatschool, address, guardian, height, weight, fitness)
+    VALUES (HIL, 'U15E', format('Mask Boy %s', i), 1340 + i, 'batter', U15, format('080301580008%s', i),
+            format('mask%s@example.invalid', i), format('+27 82 000 13%s', lpad(i::text, 2, '0')), 'Howick', 'Farfield',
+            format('%s Example Road, Howick', i), jsonb_build_object('name', format('Mask Parent %s', i), 'phone', '+27 82 000 1399'),
+            170 + i, 60 + i, 'fit')
+    RETURNING id INTO v;
+    b := b || v;
+  END LOOP;
+  ids := _v71_people('v131i', ARRAY[ARRAY['pupil', 'player', HIL::text, 'U15E', b[1]::text]]);
+  u := (ids->>'pupil')::uuid;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (u, 'selfaccess', HIL) RETURNING id INTO sa;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (sa, b[1], 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  RETURN ids || jsonb_build_object('b', to_jsonb(b));
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- How many of these boys' masked columns are filled, as the owner: the
+-- pupil's NULLs prove the mask only if the values are there to hide.
+CREATE OR REPLACE FUNCTION _v131i_filled(p_ids uuid[]) RETURNS integer AS $$
+  SELECT count(*)::int FROM player p
+   WHERE p.id = ANY (p_ids)
+     AND p.born IS NOT NULL AND p.id_number IS NOT NULL AND p.email IS NOT NULL AND p.phone IS NOT NULL
+     AND p.hometown IS NOT NULL AND p.houseatschool IS NOT NULL AND p.address IS NOT NULL AND p.guardian IS NOT NULL
+     AND p.height IS NOT NULL AND p.weight IS NOT NULL AND p.fitness IS NOT NULL
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/131 (sections 108, 109, 110) ─────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -10368,7 +10538,7 @@ BEGIN
           '+27 82 555 0100', 'KZN Cricket Umpires Association')
   RETURNING id INTO O_UMPIRE;
   INSERT INTO official_accreditation (official_id, level, issued_by, valid_from, valid_until)
-  VALUES (O_UMPIRE, 'level2', 'KZNCUA', current_date - 400, current_date + 200);
+  VALUES (O_UMPIRE, 'level2', 'KZNCUA', sa_today() - 400, sa_today() + 200);
 
   -- A school-scoped principal reads the panel. This is deliberate, not a
   -- leak: a director of sport about to appoint somebody has to see who is on
@@ -10422,7 +10592,7 @@ BEGIN
   PERFORM _as(U_PLAT);
   SELECT official_level(O_UMPIRE) INTO v_level;
   PERFORM _assert(v_level = 'level2', 'a current accreditation does not read as current to the keeper');
-  SELECT official_level(O_UMPIRE, current_date + 500) INTO v_level;
+  SELECT official_level(O_UMPIRE, sa_today() + 500) INTO v_level;
   PERFORM _assert(v_level IS NULL, 'a lapsed accreditation still reads as current');
   PERFORM _as(U_SARAH);
 
@@ -10579,7 +10749,7 @@ BEGIN
 
   -- Restore the date, and the same call now succeeds: open, because he is
   -- at school (db/62); his own birthday for a boy who is not (section 40).
-  PERFORM _set_born(P_U13, (current_date - interval '13 years')::date);
+  PERFORM _set_born(P_U13, (sa_today() - interval '13 years')::date);
   SELECT ok INTO v_ok FROM guardian_link_establish(U_BURSAR, P_U13, 'parent');
   PERFORM _assert(v_ok, 'a guardian cannot be linked to a thirteen-year-old');
   PERFORM _assert(_count_subjects(P_U13) = 1, 'the link was not recorded');
@@ -10655,7 +10825,7 @@ BEGIN
 
   -- Restored. Nothing later reads P_U13 again, but leaving a child's own
   -- birthday nulled for the rest of the run is not a state worth risking.
-  PERFORM _set_born(P_U13, (current_date - interval '13 years')::date);
+  PERFORM _set_born(P_U13, (sa_today() - interval '13 years')::date);
 
   -- EXPIRY IS LIVE. Nothing runs between the two reads below but app_can(),
   -- which evaluates valid_until on every call — so there is no window in which
@@ -13153,7 +13323,7 @@ BEGIN
       format('db/47 (other-child): a guardian of one child wrote another''s consent (ok %s, %s, %s rows)', v_ok, v_reason, _consent_rows(P_OTHER)));
     -- ...nor pass himself off as the office to do it
     SELECT s.ok, s.reason INTO v_ok, v_reason
-      FROM public_name_consent_set(P_OTHER, true, V, U_BEKKER, 'Admission form', current_date) s;
+      FROM public_name_consent_set(P_OTHER, true, V, U_BEKKER, 'Admission form', sa_today()) s;
     PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted' AND _consent_rows(P_OTHER) = 0,
       format('db/47 (other-child-office): a guardian recorded another family''s consent as the office (ok %s, %s)', v_ok, v_reason));
 
@@ -13165,7 +13335,7 @@ BEGIN
     -- (eighteen) ...and can from his birthday (C6): his date of birth moved
     -- back, as the owner, so R Pillay is nineteen
     v_born := _born_of(P_INJURED);
-    PERFORM _set_born(P_INJURED, (current_date - interval '19 years')::date);
+    PERFORM _set_born(P_INJURED, (sa_today() - interval '19 years')::date);
     SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_INJURED, true, V) s;
     PERFORM _assert(v_ok, format('db/47 (eighteen): a pupil of nineteen could not give his own consent (%s)', v_reason));
     v_facts := public_name_facts(P_INJURED);
@@ -13187,21 +13357,21 @@ BEGIN
       format('db/47 (form-required): the office recorded a consent naming no form (ok %s, %s)', v_ok, v_reason));
     -- (form-future) ...signed on a day that has happened
     SELECT s.ok, s.reason INTO v_ok, v_reason
-      FROM public_name_consent_set(P_OTHER, true, V, U_BEKKER, 'Admission form 2026', current_date + 30) s;
+      FROM public_name_consent_set(P_OTHER, true, V, U_BEKKER, 'Admission form 2026', sa_today() + 30) s;
     PERFORM _assert(NOT v_ok AND v_reason = 'form_in_future' AND _consent_rows(P_OTHER) = 0,
       format('db/47 (form-future): the office recorded a form dated next month (ok %s, %s)', v_ok, v_reason));
     -- (office) ...and records it, on the guardian's behalf, form and date named
     SELECT s.ok, s.reason INTO v_ok, v_reason
-      FROM public_name_consent_set(P_OTHER, true, V, U_BEKKER, 'Admission form 2026', current_date - 30) s;
+      FROM public_name_consent_set(P_OTHER, true, V, U_BEKKER, 'Admission form 2026', sa_today() - 30) s;
     v_row := _consent_last(P_OTHER);
     PERFORM _assert(v_ok AND v_row.given_by = 'guardian' AND v_row.form_name = 'Admission form 2026'
-                    AND v_row.form_date = current_date - 30 AND v_row.recorded_by = U_REGISTRAR
+                    AND v_row.form_date = sa_today() - 30 AND v_row.recorded_by = U_REGISTRAR
                     AND v_row.given_on = sa_today(),
       format('db/47 (office): the office could not record a guardian''s consent from its form (ok %s, %s, %s)',
              v_ok, v_reason, row(v_row.given_by, v_row.form_name, v_row.form_date, v_row.recorded_by, v_row.given_on)::text));
     -- (office-no-link) ...but only for a guardian with a verified link to him
     SELECT s.ok, s.reason INTO v_ok, v_reason
-      FROM public_name_consent_set(P_OTHER, true, V, U_WHIT, 'Admission form 2026', current_date) s;
+      FROM public_name_consent_set(P_OTHER, true, V, U_WHIT, 'Admission form 2026', sa_today()) s;
     PERFORM _assert(NOT v_ok AND v_reason = 'no_verified_link',
       format('db/47 (office-no-link): the office recorded a consent from somebody who is not his guardian (ok %s, %s)', v_ok, v_reason));
     -- (other-office) another school's office cannot
@@ -13275,7 +13445,7 @@ BEGIN
     -- guardian may give. Made sixteen again, and back in his side, the
     -- consent is competent again.
     v_born := _born_of(P_JW);
-    PERFORM _set_born(P_JW, (current_date - interval '19 years')::date);
+    PERFORM _set_born(P_JW, (sa_today() - interval '19 years')::date);
     SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_name_consent_set(P_JW, true, V || '-adult') s;
     v_facts := public_name_facts(P_JW);
     PERFORM _assert(NOT v_ok AND v_reason = 'adult_consents_for_himself' AND _consent_open_rows(P_JW) = 1
@@ -15012,7 +15182,7 @@ BEGIN
     EXCEPTION WHEN check_violation THEN v_err := SQLERRM; END;
     PERFORM _assert(v_err LIKE '%cannot be ended from here%', format('db/57 (guard): the principal ended a DSO''s appointment (%s)', coalesce(v_err, 'ended')));
     BEGIN
-      UPDATE role_assignment SET valid_until = current_date WHERE id = v_asg;
+      UPDATE role_assignment SET valid_until = sa_today() WHERE id = v_asg;
       v_err := NULL;
     EXCEPTION WHEN check_violation THEN v_err := SQLERRM; END;
     PERFORM _assert(v_err LIKE '%cannot be ended from here%', format('db/57 (guard): the principal dated out a DSO''s appointment (%s)', coalesce(v_err, 'dated out')));
@@ -16053,7 +16223,7 @@ BEGIN
     PERFORM _assert(n = 1 AND app_can('player.profile.read', HIL, '1XI', P_PUP, ZERO),
       format('db/62 (eighteen): app_can() refused a pupil''s mother on his eighteenth birthday (%s rows)', n));
     -- The club member's ends on the birthday, as it always has.
-    PERFORM _assert((_v62_link(P_CLUB, U_CMUM)).until = current_date,
+    PERFORM _assert((_v62_link(P_CLUB, U_CMUM)).until = sa_today(),
       format('db/62 (club): the club member''s link ends %s, not on his birthday', (_v62_link(P_CLUB, U_CMUM)).until));
     PERFORM _as(U_CMUM);
     SELECT count(*) INTO n FROM player_masked WHERE id = P_CLUB;
@@ -16067,7 +16237,7 @@ BEGIN
       format('db/62 (request): a granted parent lost her pupil son on his eighteenth birthday (%s rows)', n));
     PERFORM _as(U_RCMUM);
     SELECT count(*) INTO n FROM player_masked WHERE id = P_RCLUB;
-    PERFORM _assert(n = 0 AND (_v62_link(P_RCLUB, U_RCMUM)).until = current_date,
+    PERFORM _assert(n = 0 AND (_v62_link(P_RCLUB, U_RCMUM)).until = sa_today(),
       'db/62 (request): a granted club parent still reads him on his eighteenth birthday');
 
     -- (health) Her pre-18 yes is live on his birthday while he is at school;
@@ -16139,7 +16309,7 @@ BEGIN
     -- longer hers to answer for.
     PERFORM _v60_leave(P_ADU);
     PERFORM _v62_fire();
-    PERFORM _assert((_v62_link(P_ADU, U_AMUM)).until = current_date,
+    PERFORM _assert((_v62_link(P_ADU, U_AMUM)).until = sa_today(),
       format('db/62 (leaves): an adult''s link, on the day he left, ends %s', coalesce((_v62_link(P_ADU, U_AMUM)).until::text, 'never')));
     PERFORM _as(U_AMUM);
     SELECT count(*) INTO n FROM player_masked WHERE id = P_ADU;
@@ -16155,7 +16325,7 @@ BEGIN
     -- he left, not on his birthday, and a new one cannot be made for an adult.
     PERFORM _v60_rejoin(P_ADU);
     PERFORM _v62_fire();
-    PERFORM _assert((_v62_link(P_ADU, U_AMUM)).until = current_date,
+    PERFORM _assert((_v62_link(P_ADU, U_AMUM)).until = sa_today(),
       format('db/62 (never): an adult''s link ended on his leaving re-opened when he came back (%s)', coalesce((_v62_link(P_ADU, U_AMUM)).until::text, 'open')));
 
     -- (minor) A minor who leaves keeps his parent until his birthday.
@@ -16174,7 +16344,7 @@ BEGIN
     PERFORM _v60_leave(P_MIN);
     PERFORM _v62_fire();
     PERFORM _v62_turn_eighteen(P_MIN);
-    PERFORM _assert((_v62_link(P_MIN, U_MMUM)).until = current_date,
+    PERFORM _assert((_v62_link(P_MIN, U_MMUM)).until = sa_today(),
       format('db/62 (minor): out of school, his link does not end on his eighteenth birthday (%s)', (_v62_link(P_MIN, U_MMUM)).until));
     PERFORM _as(U_MMUM);
     SELECT count(*) INTO n FROM player_masked WHERE id = P_MIN;
@@ -18107,16 +18277,16 @@ $v49$;
       '§49 (A1): Sarah''s granted links do not carry their own consent version and time');
 
     -- (G11) The end date rides along, and is the link's own.
-    PERFORM _set_link_end_49(P_U16B, U_SARAH, current_date + 400);
+    PERFORM _set_link_end_49(P_U16B, U_SARAH, sa_today() + 400);
     SELECT valid_until INTO r FROM _v49_my_children WHERE player_id = P_U16B;
-    PERFORM _assert(r.valid_until = current_date + 400, format('§49 (G11): the link''s end date reads %s', r.valid_until));
+    PERFORM _assert(r.valid_until = sa_today() + 400, format('§49 (G11): the link''s end date reads %s', r.valid_until));
     PERFORM _assert((SELECT valid_until FROM _v49_my_children WHERE player_id = P_WES) IS NULL,
       '§49 (G11): one link''s end date leaked onto the other child''s');
 
     -- (live) and (verified): a link that has ended, or that the office has
     -- not verified, is no link — even for Sarah, whose office assignment
     -- still reads the boy's own row, so RLS on the player cannot hide it.
-    PERFORM _set_link_end_49(P_U16B, U_SARAH, current_date);
+    PERFORM _set_link_end_49(P_U16B, U_SARAH, sa_today());
     PERFORM _assert(EXISTS (SELECT 1 FROM player WHERE id = P_U16B), '§49: the fixture is void — Sarah cannot read K Dlamini as staff');
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE player_id = P_U16B),
       '§49 (live): a link that ended today is still on Sarah''s family app');
@@ -18602,7 +18772,7 @@ $v49$;
     PERFORM _assert(j IS NULL AND _v70_logged('lift_contacts', O_OUT) = 0,
       format('db/70 (numbers): the driver read numbers ten days before the lift: %s', j));
     SELECT offer_id INTO O_T FROM lift_offer_create(MT, 'out', 2, 'school',
-                                                    ((current_date + 1)::timestamp + time '08:00') AT TIME ZONE 'Africa/Johannesburg', NULL);
+                                                    ((sa_today() + 1)::timestamp + time '08:00') AT TIME ZONE 'Africa/Johannesburg', NULL);
     PERFORM _as(U_BMUM);
     SELECT seat_id INTO S_T FROM lift_seat_request(O_T, P_BEN);
     PERFORM _as(U_CMUM);
@@ -18862,7 +19032,7 @@ $v49$;
     -- the driver cannot confirm it
     PERFORM _as(U_ED);
     SELECT ok, seat_id INTO v_ok, S_ED FROM lift_seat_request(O_MA, P_ED);
-    PERFORM _set_born(P_ED, (current_date - make_interval(years => 17) - make_interval(days => 40))::date);
+    PERFORM _set_born(P_ED, (sa_today() - make_interval(years => 17) - make_interval(days => 40))::date);
     SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_request(O_MA, P_ED);
     SELECT count(*) INTO k FROM lift_offers_for(MA);
     PERFORM _assert(NOT v_ok AND v_reason = 'not_yet_eighteen' AND k = 0 AND lift_contacts(O_MA) IS NULL
@@ -18872,7 +19042,7 @@ $v49$;
     SELECT ok, reason INTO v_ok, v_reason FROM lift_seat_accept(ARRAY[S_ED]);
     PERFORM _assert(NOT v_ok AND v_reason = 'awaiting_guardian',
       format('db/70 (adult-17): the driver confirmed Ed''s own seat at seventeen: %s %s', v_ok, v_reason));
-    PERFORM _set_born(P_ED, (current_date - make_interval(years => 18) - make_interval(days => 40))::date);
+    PERFORM _set_born(P_ED, (sa_today() - make_interval(years => 18) - make_interval(days => 40))::date);
     -- (adult-left) at eighteen and gone from school: refused, reads no lift,
     -- and the seat he had asked for himself is void
     PERFORM _as(U_ED);
@@ -20226,7 +20396,7 @@ $v49$;
     PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted', format('db/76 (purge): a lift was purged twice: %s', v_reason));
     SELECT ok, reason INTO v_ok, v_reason FROM lift_purge_declaration(D_OLD);
     PERFORM _assert(v_ok AND NOT _v76_exists(D_OLD)
-                    AND (_v76_purge_log(HIL, to_char(current_date - 370, 'YYYY'))).declarations >= 1,
+                    AND (_v76_purge_log(HIL, to_char(sa_today() - 370, 'YYYY'))).declarations >= 1,
       format('db/76 (purge): the old declaration: %s %s', v_ok, v_reason));
     SELECT count(*) INTO k FROM lift_purge_log WHERE school_id = HIL;
     PERFORM _as(U_LDAD);
@@ -20505,7 +20675,7 @@ $v49$;
     SELECT ok, reason INTO v_ok, v_reason FROM role_assignment_end((ids->>'a_mum')::uuid, WHY);
     PERFORM _assert(v_ok, format('§56 (guardian): with Dad verified, Mum''s role could not be ended: %s', v_reason));
     lk := _v77_link((ids->>'a_mum')::uuid);
-    PERFORM _assert(lk.verification_state = 'revoked' AND lk.valid_until = current_date AND _v77_live_links(P_KID) = 1,
+    PERFORM _assert(lk.verification_state = 'revoked' AND lk.valid_until = sa_today() AND _v77_live_links(P_KID) = 1,
       format('§56 (guardian): Mum''s link is %s until %s, and the boy counts %s live link(s)',
              lk.verification_state, lk.valid_until, _v77_live_links(P_KID)));
     PERFORM _as(U_MUM);
@@ -23219,8 +23389,8 @@ $v49$;
       _r92('v92.c3@example.invalid', 'coach', 'U13C'),                 -- 13 not a Hilton side
       _r92('V92.NEWCOACH@example.invalid ', 'Coach', 'u15a'),          -- 14 line 2 again, typed differently
       _r92('v92.coach@example.invalid', 'scorer'),                     -- 15 already Coach (U15A) here
-      _r92('v92.past@example.invalid', 'scorer', NULL, to_char(current_date - 1, 'YYYY-MM-DD')),
-      _r92('v92.far@example.invalid', 'scorer', NULL, to_char(current_date + 600, 'YYYY-MM-DD')),
+      _r92('v92.past@example.invalid', 'scorer', NULL, to_char(sa_today() - 1, 'YYYY-MM-DD')),
+      _r92('v92.far@example.invalid', 'scorer', NULL, to_char(sa_today() + 600, 'YYYY-MM-DD')),
       _r92('v92.bad@example.invalid', 'scorer', NULL, '31/12/2026'),
       _r92('v92.n@example.invalid', 'scorer', NULL, NULL, 'X'),
       _r92('not-an-address', 'scorer'),
@@ -23301,7 +23471,7 @@ $v49$;
     PERFORM _assert(g.email = 'v92.newcoach@example.invalid' AND g.role = 'coach' AND g.team_code = 'U15A'
                     AND g.uploaded_by = U_OFF AND g.upload_id = v_up AND g.claimed_at IS NULL
                     AND g.valid_until = (SELECT s.ends_on FROM season s WHERE s.level = 'school'
-                                          AND current_date BETWEEN s.starts_on AND s.ends_on),
+                                          AND sa_today() BETWEEN s.starts_on AND s.ends_on),
       format('§73 (commit): the row reads %s', row_to_json(g)));
     PERFORM _assert(_v92_log('register.upload', v_up) = 1 AND _v92_log('register.upload', R_PAUSED) = 1,
       '§73 (commit): the upload is not on the log once, with its rows');
@@ -23318,7 +23488,7 @@ $v49$;
     PERFORM _as(U_OFF);
     j := _up92(HIL92, jsonb_build_array(_r92('v92.ended@example.invalid', 'scorer')));
     x := j->0;
-    PERFORM _assert((x->>'ok')::boolean AND x->>'warning' = 'recently_ended' AND (x->>'ended_on')::date = current_date
+    PERFORM _assert((x->>'ok')::boolean AND x->>'warning' = 'recently_ended' AND (x->>'ended_on')::date = sa_today()
                     AND x->>'detail' = 'Coach (U15A)' AND (x->>'ack') IS NOT NULL,
       format('§73 (warn): the dry run answered %s', x));
     j := _up92(HIL92, jsonb_build_array(_r92('v92.ended@example.invalid', 'scorer')), true);
@@ -23326,7 +23496,7 @@ $v49$;
       format('§73 (warn): an unacknowledged warning committed: %s', j));
     j := _up92(HIL92, jsonb_build_array(_r92('v92.ended@example.invalid', 'scorer')), true, ARRAY[(x->>'ack')::uuid]);
     g := _v92_row((j->0->>'row_id')::uuid);
-    PERFORM _assert(g.id IS NOT NULL AND g.warned_ended_on = current_date,
+    PERFORM _assert(g.id IS NOT NULL AND g.warned_ended_on = sa_today(),
       format('§73 (warn): the acknowledged row was not written with its warning: %s', j));
     -- Westville's coach was listed above with no warning and no refusal.
     PERFORM _assert(_v92_rows(HIL92, 'v92.wescoach@example.invalid') = 1,
@@ -23483,7 +23653,7 @@ $v49$;
 
     -- ── (expiry) ──
     PERFORM set_config('app.user_id', '', true);
-    PERFORM _v92_age(R_LATE, current_date - 1, NULL);
+    PERFORM _v92_age(R_LATE, sa_today() - 1, NULL);
     SELECT s.user_id INTO U_LATE FROM auth_identity_sign_in('google.com', 'v92-late', 'v92.late@example.invalid', 'V92 Late') s;
     PERFORM _as(U_LATE);
     PERFORM _assert(_claim92(HIL92) = '-::no_match' AND (_v92_row(R_LATE)).claimed_at IS NULL,
@@ -23501,8 +23671,8 @@ $v49$;
     -- ── (redact) — ninety-one days on ──
     PERFORM set_config('app.user_id', '', true);
     PERFORM _v92_age(R_LATE, NULL, now() - interval '91 days');
-    PERFORM _v92_age(R_DIFF, current_date - 91, NULL);
-    PERFORM _v92_age(R_CODE, current_date - 89, NULL);          -- not yet due
+    PERFORM _v92_age(R_DIFF, sa_today() - 91, NULL);
+    PERFORM _v92_age(R_CODE, sa_today() - 89, NULL);          -- not yet due
     PERFORM _as(U_COACH92);
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM register_redact_due(HIL92)) AND _redact92(HIL92) = 'refused',
       '§73 (redact): a coach saw or cleared what is due');
@@ -23513,7 +23683,7 @@ $v49$;
     PERFORM _assert(_redact92(HIL92) = '2', '§73 (redact): the office did not clear two rows');
     g := _v92_row(R_DIFF);
     PERFORM _assert(g.name = 'Redacted' AND g.email = 'redacted+' || R_DIFF || '@redacted.invalid' AND g.redacted_at IS NOT NULL
-                    AND g.role = 'scorer' AND g.uploaded_by = U_OFF AND g.valid_until = current_date - 91,
+                    AND g.role = 'scorer' AND g.uploaded_by = U_OFF AND g.valid_until = sa_today() - 91,
       format('§73 (redact): the cleared row reads %s', row_to_json(g)));
     PERFORM _assert((_v92_row(R_CODE)).redacted_at IS NULL AND (_v92_row(R_COACH)).email = 'v92.newcoach@example.invalid'
                     AND NOT EXISTS (SELECT 1 FROM register_redact_due(HIL92)) AND _v92_log('register.redact', R_DIFF) = 1,
@@ -24194,12 +24364,18 @@ $v49$;
                       AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id = v) = 1,
         format('§76 (post): the %s no longer reads an ordinary U15A post or its notice', k));
     END LOOP;
-    FOREACH k IN ARRAY ARRAY['bparent', 'follower'] LOOP
+    FOREACH k IN ARRAY ARRAY['bparent'] LOOP
       PERFORM _as((y->>k)::uuid);
       PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = v) = 0
                       AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id = v) = 0,
         format('§76 (post): the %s reads an ordinary U15A post or its notice (db/101 keeps it to the side)', k));
     END LOOP;
+    -- db/131 (Kameel, 4 Nov 2026, REACH R-G (a)): a spectator reads every
+    -- side's team posts at his school, and their notices; §108 is the proof.
+    PERFORM _as((y->>'follower')::uuid);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = v) = 1
+                    AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id = v) = 1,
+      '§76 (post): the follower does not read an ordinary U15A post or its notice (db/131)');
 
     -- (doors)
     FOREACH k IN ARRAY ARRAY['news_plan_reach(uuid,text)', 'news_notice_reach(uuid)'] LOOP
@@ -24886,13 +25062,15 @@ $v49$;
     -- db/118 any word of a pupil's name keeps a post off the home page.
     VALUES ('team', V_HIL, 'U15A', 'Section 78 nets', 'Nets on Thursday.', now()) RETURNING id INTO T;
     PERFORM _assert(jsonb_array_length(_notices_91(T)) = 1, '§78 (team): the post did not write one notice');
-    FOREACH k IN ARRAY ARRAY['aboy', 'aparent', 'coach', 'manager', 'assistant', 'director'] LOOP
+    -- The follower since db/131 (Kameel, 4 Nov 2026, REACH R-G (a)): a
+    -- spectator reads every side's team posts at his school; §108.
+    FOREACH k IN ARRAY ARRAY['aboy', 'aparent', 'coach', 'manager', 'assistant', 'director', 'follower'] LOOP
       PERFORM _as((y->>k)::uuid);
       PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = T) = 1
                       AND (SELECT count(*) FROM my_notifications n WHERE n.subject_kind = 'news' AND n.subject_id = T) = 1,
         format('§78 (team): the %s does not read the side''s post and its notice', k));
     END LOOP;
-    FOREACH k IN ARRAY ARRAY['bboy', 'bparent', 'follower', 'finance', 'sponsorship', 'driver', 'facilities',
+    FOREACH k IN ARRAY ARRAY['bboy', 'bparent', 'finance', 'sponsorship', 'driver', 'facilities',
                              'upboy', 'upparent', 'u14boy', 'u14parent', 'u14coach', 'wescoach', 'wesboy'] LOOP
       PERFORM _as((y->>k)::uuid);
       PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = T) = 0
@@ -24957,12 +25135,19 @@ $v49$;
       PERFORM _assert((SELECT string_agg(n.id::text, ',') FROM news_post n WHERE n.school_id = V_HIL AND n.team_code = 'U15A') = P1::text,
         format('§78 (sheet): of Hilton U15A the %s reads more than f1''s plan', k));
     END LOOP;
-    FOREACH k IN ARRAY ARRAY['u14boy', 'u14parent', 'u14coach', 'bparent', 'follower', 'finance'] LOOP
+    FOREACH k IN ARRAY ARRAY['u14boy', 'u14parent', 'u14coach', 'bparent', 'finance'] LOOP
       PERFORM _as((y->>k)::uuid);
       PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.school_id = V_HIL AND n.team_code = 'U15A') = 0
                       AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id IN (P1, P2, T)) = 0,
         format('§78 (sheet): the %s reads something of Hilton U15A', k));
     END LOOP;
+    -- The follower (db/131): of Hilton U15A the ordinary posts (this one, and
+    -- earlier sections') and their notices, and no plan nor a plan's notice.
+    PERFORM _as((y->>'follower')::uuid);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = T) = 1
+                    AND (SELECT count(*) FROM news_post n WHERE n.school_id = V_HIL AND n.team_code = 'U15A' AND n.kind = 'plan') = 0
+                    AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id IN (P1, P2)) = 0,
+      '§78 (sheet): of Hilton U15A the follower does not read the ordinary post, or reads a plan or a plan''s notice');
     PERFORM set_config('app.user_id', '', true);
     PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id IN (P1, P2)) = 0, '§78 (sheet): an anonymous session reads a plan');
 
@@ -24973,12 +25158,17 @@ $v49$;
     PERFORM _as((y->>'aparent')::uuid);
     got := _report_91((_notices_91(T)->0->>'id')::uuid);
     PERFORM _assert(got = 'ok', format('§78 (report): the side''s guardian could not report the side''s post''s notice (%s)', got));
-    FOREACH k IN ARRAY ARRAY['bparent', 'follower', 'u14parent'] LOOP
+    FOREACH k IN ARRAY ARRAY['bparent', 'u14parent'] LOOP
       PERFORM _as((y->>k)::uuid);
       got := _report_91((_notices_91(T)->0->>'id')::uuid) || ' ' || _report_91(NP1);
       PERFORM _assert(got = 'no_such_notice no_such_notice',
         format('§78 (report): the %s, who reads neither, reported the side''s notices (%s)', k, got));
     END LOOP;
+    -- The follower (db/131) reads the post's notice, so may report it; not the plan's.
+    PERFORM _as((y->>'follower')::uuid);
+    got := _report_91((_notices_91(T)->0->>'id')::uuid) || ' ' || _report_91(NP1);
+    PERFORM _assert(got = 'ok no_such_notice',
+      format('§78 (report): the follower reported the post''s notice and the plan''s as %s, not ok no_such_notice', got));
 
     -- (off)
     PERFORM _as((y->>'coach')::uuid);
@@ -25544,31 +25734,31 @@ $v49$;
   BEGIN
     -- (score)
     PERFORM _as((y->>'coach')::uuid);
-    EXECUTE format(upsert, SUBJ, 'current_date', 'footwork', 11) INTO K1;
-    EXECUTE format(upsert, SUBJ, 'current_date', 'footwork', 12) INTO got;
+    EXECUTE format(upsert, SUBJ, 'sa_today()', 'footwork', 11) INTO K1;
+    EXECUTE format(upsert, SUBJ, 'sa_today()', 'footwork', 12) INTO got;
     PERFORM _assert(got::uuid = K1 AND (_v104_skill(K1)->>'score')::int = 12
                     AND _v104_skill(K1)->>'assessed_by' = y->>'coach',
       '§81 (score): the coach''s same-day revision is not one row, his, at 12');
     PERFORM _as((y->>'assistant')::uuid);
-    PERFORM _assert(_v104_try(format(upsert, SUBJ, 'current_date', 'footwork', 14)) = '42501',
+    PERFORM _assert(_v104_try(format(upsert, SUBJ, 'sa_today()', 'footwork', 14)) = '42501',
       '§81 (score): the assistant coach rated the boy');
     PERFORM _as((y->>'coach2')::uuid);
-    got := _v104_try(format(upsert, SUBJ, 'current_date', 'footwork', 9));
+    got := _v104_try(format(upsert, SUBJ, 'sa_today()', 'footwork', 9));
     PERFORM _assert(got = '45003', format('§81 (score): a colleague''s same-day upsert onto the coach''s row ended %s, not 45003', got));
     PERFORM _assert(_v104_try(format('update player_skill set score = 9 where id = %L', K1)) = '45003',
       '§81 (score): a colleague revised the coach''s score directly');
     PERFORM _assert((_v104_skill(K1)->>'score')::int = 12 AND _v104_skill(K1)->>'assessed_by' = y->>'coach',
       '§81 (score): the coach''s row moved, or changed hands');
-    EXECUTE format(upsert, SUBJ, 'current_date + 1', 'footwork', 9) INTO K2;
+    EXECUTE format(upsert, SUBJ, 'sa_today() + 1', 'footwork', 9) INTO K2;
     PERFORM _assert(K2 <> K1 AND _v104_skill(K2)->>'assessed_by' = y->>'coach2',
       '§81 (score): the colleague''s next-day rating is not a row of his own');
     PERFORM _as((y->>'coach')::uuid);
     INSERT INTO player_skill (player_id, assessed_on, assessed_by, category, metric, score)
-    VALUES (SUBJ, current_date, (y->>'coach2')::uuid, 'technical', 'timing', 7) RETURNING id INTO KT;
+    VALUES (SUBJ, sa_today(), (y->>'coach2')::uuid, 'technical', 'timing', 7) RETURNING id INTO KT;
     PERFORM _assert(_v104_skill(KT)->>'assessed_by' = y->>'coach',
       '§81 (score): an insert naming another assessor was not stamped with the writer');
-    EXECUTE format(upsert, SUBJ, 'current_date', 'power', 13) INTO KP;
-    EXECUTE format(upsert, M, 'current_date', 'footwork', 10) INTO KM;
+    EXECUTE format(upsert, SUBJ, 'sa_today()', 'power', 13) INTO KP;
+    EXECUTE format(upsert, M, 'sa_today()', 'footwork', 10) INTO KM;
 
     -- (withdraw)
     FOREACH k IN ARRAY ARRAY['self', 'assistant', 'wescoach', 'manager', 'parent'] LOOP
@@ -25593,7 +25783,7 @@ $v49$;
       '§81 (withdraw): a withdrawn score was revised');
     PERFORM _assert(_v104_try(format('update player_skill set withdrawn_at = null, withdrawn_by = null where id = %L', KT)) = '45004',
       '§81 (withdraw): a withdrawn score was put back');
-    EXECUTE format(upsert, SUBJ, 'current_date', 'timing', 14) INTO KT2;
+    EXECUTE format(upsert, SUBJ, 'sa_today()', 'timing', 14) INTO KT2;
     PERFORM _assert(KT2 IS NOT NULL AND KT2 <> KT AND (_v104_skill(KT2)->>'score')::int = 14,
       '§81 (withdraw): the same day could not be re-rated after a withdrawal');
     PERFORM _as((y->>'coach2')::uuid);
@@ -25608,7 +25798,7 @@ $v49$;
               from player_skill s join player p on p.id = s.player_id
              where s.withdrawn_at is null
              order by s.assessed_on desc, p.full_name) x
-     WHERE x.player_id = SUBJ AND x.assessed_on = current_date;
+     WHERE x.player_id = SUBJ AND x.assessed_on = sa_today();
     PERFORM _assert(got = 'footwork:12,timing:14', format('§81 (reads): `skills` gives today %s, not footwork 12 and timing 14', coalesce(got, 'nothing')));
     SELECT count(*) FILTER (WHERE x.withdrawn_at IS NOT NULL AND x.withdrawn_reason IS NOT NULL), count(*) INTO n, k
       FROM (select s.id, s.player_id, p.school_id, s.assessed_on, s.category, s.metric, s.score,
@@ -25634,7 +25824,7 @@ $v49$;
     PERFORM _assert(_v104_note(PT)->>'author_id' = y->>'coach'
                     AND _v104_note(PT)->>'about_discipline' IS NULL AND _v104_note(PT)->>'adjustment' IS NULL
                     AND _v104_note(PT)->>'evidence_read' = 'skills'
-                    AND (_v104_note(PT)->>'evidence_as_of')::timestamptz = (current_date::timestamp AT TIME ZONE 'Africa/Johannesburg')
+                    AND (_v104_note(PT)->>'evidence_as_of')::timestamptz = (sa_today()::timestamp AT TIME ZONE 'Africa/Johannesburg')
                     AND _v104_note(PT)->'evidence_params'->>'skillId' = K1::text,
       '§81 (point): the point is not the coach''s, pinned to the row, moving nothing');
     FOREACH k IN ARRAY ARRAY['assistant', 'director', 'principal', 'self', 'boy', 'wescoach', 'manager'] LOOP
@@ -25717,7 +25907,7 @@ $v49$;
     SELECT c.ok INTO v_ok FROM coaching_point_write(SUBJ, NULL, 'front foot is late',
                                                     jsonb_build_object('read', 'skills', 'params', jsonb_build_object('skillId', K1))) c;
     PERFORM _assert(NOT v_ok, '§81 (support): a support session wrote a coaching point');
-    PERFORM _assert(_v104_try(format(upsert, SUBJ, 'current_date + 3', 'footwork', 3)) = '42501',
+    PERFORM _assert(_v104_try(format(upsert, SUBJ, 'sa_today() + 3', 'footwork', 3)) = '42501',
       '§81 (support): a support session rated the boy');
     PERFORM support_access_end(SUP);
     PERFORM set_config('app.user_id', '', true);
@@ -25727,7 +25917,7 @@ $v49$;
     PERFORM _assert(_v104_try(format('update development_note set body = ''front foot is very late'' where id = %L', PT)) = '45002',
       '§81 (edit): the author edited his coaching point');
     INSERT INTO development_note (player_id, school_id, author_id, body, about_discipline, adjustment, observed_on)
-    SELECT SUBJ, player_school(SUBJ), app_user_id(), 'Quiet in the nets this week.', NULL, NULL, current_date
+    SELECT SUBJ, player_school(SUBJ), app_user_id(), 'Quiet in the nets this week.', NULL, NULL, sa_today()
      WHERE player_school(SUBJ) IS NOT NULL
     RETURNING id INTO NP;
     PERFORM _assert(_v104_try(format('update development_note set body = ''Quiet in the nets; spoke to him.'' where id = %L', NP)) = 'ok'
@@ -25981,7 +26171,7 @@ $v49$;
   BEGIN
     -- (set)
     PERFORM _as((y->>'coach')::uuid);
-    SELECT t.ok, t.reason, t.id INTO v_ok, v_why, T1 FROM target_set(SUBJ, 'technical', 'againstPace', 12, current_date + 45, TD, NULL) t;
+    SELECT t.ok, t.reason, t.id INTO v_ok, v_why, T1 FROM target_set(SUBJ, 'technical', 'againstPace', 12, sa_today() + 45, TD, NULL) t;
     PERFORM _assert(v_ok, format('§82 (set): the coach could not set a target (%s)', v_why));
     PERFORM _assert(_v105_target(T1)->>'from_skill_id' = y->>'k10' AND _v105_target(T1)->>'set_by' = y->>'coach'
                     AND (_v105_target(T1)->>'target_score')::int = 12 AND _v105_target(T1)->>'school_id' = HIL::text,
@@ -25992,7 +26182,7 @@ $v49$;
         '13||matenote||note_not_his', '13|||past|due_in_past'] LOOP
       SELECT t.ok, t.reason INTO v_ok, v_why
         FROM target_set(SUBJ, 'technical', 'againstPace', split_part(k, '|', 1)::int,
-                        CASE WHEN split_part(k, '|', 4) = 'past' THEN current_date - 1 END,
+                        CASE WHEN split_part(k, '|', 4) = 'past' THEN sa_today() - 1 END,
                         (y->>nullif(split_part(k, '|', 2), ''))::uuid, (y->>nullif(split_part(k, '|', 3), ''))::uuid) t;
       PERFORM _assert(NOT v_ok AND v_why = split_part(k, '|', 5),
         format('§82 (set): %s ended %s, not %s', k, coalesce(v_why, 'set'), split_part(k, '|', 5)));
@@ -26134,7 +26324,7 @@ $v49$;
       PERFORM _as((y->>k)::uuid);
       EXECUTE 'select to_jsonb(z) from (' || Q_SINCE || ') z where z.discipline = ''batting'''
         INTO j USING SUBJ, BAT, '{}'::text[], '{}'::text[], '{}'::text[];
-      PERFORM _assert((j->>'anchor')::date = current_date - 10 AND (j->>'sessions')::int = 4 AND (j->>'registered')::int = 3
+      PERFORM _assert((j->>'anchor')::date = sa_today() - 10 AND (j->>'sessions')::int = 4 AND (j->>'registered')::int = 3
                       AND (j->>'present')::int = 1 AND (j->>'late')::int = 1
                       AND j->'drills' = jsonb_build_array(jsonb_build_object('drillId', TD, 'name', 'Throw-downs', 'times', 3),
                                                           jsonb_build_object('drillId', SP, 'name', 'Short-pitch defence', 'times', 1))
@@ -26153,16 +26343,16 @@ $v49$;
     PERFORM _as((y->>'coach')::uuid);
     SELECT w.ok INTO v_ok FROM skill_withdraw((y->>'k10')::uuid, 'Verify 105: the look was another boy''s') w;
     UPDATE player_skill SET withdrawn_at = now(), withdrawn_reason = 'Verify 105: footwork too'
-     WHERE player_id = SUBJ AND metric = 'footwork' AND assessed_on = current_date - 10;
+     WHERE player_id = SUBJ AND metric = 'footwork' AND assessed_on = sa_today() - 10;
     EXECUTE 'select to_jsonb(z) from (' || Q_SINCE || ') z where z.discipline = ''batting'''
       INTO j USING SUBJ, BAT, '{}'::text[], '{}'::text[], '{}'::text[];
-    PERFORM _assert(v_ok AND (j->>'anchor')::date = current_date - 20 AND (j->>'sessions')::int = 5
+    PERFORM _assert(v_ok AND (j->>'anchor')::date = sa_today() - 20 AND (j->>'sessions')::int = 5
                     AND (j->>'present')::int = 2,
       format('§82 (since): with the anchor withdrawn the window reads %s', coalesce(j::text, 'no row')));
-    PERFORM _v105_joined(SUBJ, current_date - 5);
+    PERFORM _v105_joined(SUBJ, sa_today() - 5);
     EXECUTE 'select to_jsonb(z) from (' || Q_SINCE || ') z where z.discipline = ''batting'''
       INTO j USING SUBJ, BAT, '{}'::text[], '{}'::text[], '{}'::text[];
-    PERFORM _assert((j->>'window_from')::date = current_date - 5 AND (j->>'sessions')::int = 2,
+    PERFORM _assert((j->>'window_from')::date = sa_today() - 5 AND (j->>'sessions')::int = 2,
       format('§82 (since): the window does not start at the day he joined the side: %s', coalesce(j::text, 'no row')));
 
     -- (manager)
@@ -26843,7 +27033,7 @@ $v49$;
     INSERT INTO official (full_name, born, panel) VALUES ('Verify OneOhSeven New', '1985-05-05', 'V107 Umpires')
     RETURNING id INTO v_new;
     INSERT INTO official_accreditation (official_id, level, issued_by, valid_from)
-    VALUES (v_new, 'club', 'V107', current_date) RETURNING official_id::text INTO got;
+    VALUES (v_new, 'club', 'V107', sa_today()) RETURNING official_id::text INTO got;
     PERFORM _assert(v_new IS NOT NULL AND got = v_new::text, '§84 (writes): the keeper could not add an official and grade him');
     UPDATE official SET active = false WHERE id = v_new AND active RETURNING id::text INTO got;
     PERFORM _assert(got = v_new::text, '§84 (writes): the keeper could not retire an official');
@@ -27156,14 +27346,14 @@ $v49$;
     got := _v109_revoke(L_MUM, 'custody', '  ' || WHY || '  ');
     PERFORM _assert(got = 'ok', format('§86 (revoke): the office was told %s', got));
     v_j := _v109_link_row(L_MUM);
-    PERFORM _assert(v_j->>'verification_state' = 'revoked' AND (v_j->>'valid_until')::date = current_date
+    PERFORM _assert(v_j->>'verification_state' = 'revoked' AND (v_j->>'valid_until')::date = sa_today()
                     AND v_j->>'verified_note' IS NULL,
       format('§86 (revoke): the link reads %s', v_j));
     PERFORM _assert(position('High Court' IN v_j::text) = 0, '§86 (revoke): the reason is on the link (D13)');
     PERFORM _assert(_v109_role((y->>'mum')::uuid) IS NULL, '§86 (revoke): Mum''s guardian role outlived her last link');
     e := _v109_ending(L_MUM);
     PERFORM _assert(e->>'kind' = 'custody' AND e->>'reason' = WHY AND (e->>'ended_by')::uuid = (y->>'office')::uuid
-                    AND (e->>'ends_on')::date = current_date AND (e->>'guardian_id')::uuid = (y->>'mum')::uuid
+                    AND (e->>'ends_on')::date = sa_today() AND (e->>'guardian_id')::uuid = (y->>'mum')::uuid
                     AND (e->>'player_id')::uuid = B AND e->>'notice_id' IS NOT NULL,
       format('§86 (revoke): the ending row reads %s', e));
 
@@ -27172,7 +27362,7 @@ $v49$;
     PERFORM _assert(v_j->>'kind' = 'system' AND (v_j->>'recipient_id')::uuid = (y->>'mum')::uuid
                     AND v_j->>'subject_person_id' IS NULL AND v_j->>'urgency' = 'medium'
                     AND v_j->>'body' = 'Your link to a child at Hilton College ended on '
-                                       || to_char(current_date, 'FMDD FMMonth YYYY')
+                                       || to_char(sa_today(), 'FMDD FMMonth YYYY')
                                        || '. The school office can say why; the platform does not.',
       format('§86 (notice): the notice reads %s', v_j));
     PERFORM _assert(position('OneOhNine' IN v_j::text) = 0 AND position('High Court' IN v_j::text) = 0,
@@ -27247,7 +27437,7 @@ $v49$;
     -- (dso)
     PERFORM _as(U_DSO);
     v_j := safeguarding_family((y->>'concern')::uuid);
-    PERFORM _assert(v_j -> 'ended' @> jsonb_build_array(jsonb_build_object('kind', 'custody', 'endsOn', current_date,
+    PERFORM _assert(v_j -> 'ended' @> jsonb_build_array(jsonb_build_object('kind', 'custody', 'endsOn', sa_today(),
                                                                           'linkId', L_MUM)),
       format('§86 (dso): inside the concern the DSO does not read how Mum''s link ended: %s', v_j -> 'ended'));
     PERFORM _assert(position('High Court' IN v_j::text) = 0 AND NOT (v_j -> 'ended' -> 0 ? 'reason'),
@@ -27282,7 +27472,7 @@ $v49$;
     e := _v109_ending(L_GRAN);
     PERFORM _assert(e->>'kind' = 'role_ended' AND e->>'reason' = 'V109: Gran stepped back from the family'
                     AND (e->>'ended_by')::uuid = (y->>'office')::uuid AND e->>'notice_id' IS NOT NULL
-                    AND (e->>'ends_on')::date = current_date,
+                    AND (e->>'ends_on')::date = sa_today(),
       format('§86 (role): Gran''s link reads %s', e));
     PERFORM _assert(_v109_ending(L_DAD2) IS NULL, '§86 (role): ending Gran''s role wrote a row for Dad''s link');
 
@@ -27311,7 +27501,7 @@ $v49$;
     -- The day he left: the session's, or the day his side began if that is
     -- later (THE DAY, AT ANY HOUR, above _v60_leave).
     PERFORM _assert(e->>'kind' = 'left_school' AND (e->>'ends_on')::date = _v109_left_on(O)
-                    AND (e->>'ends_on')::date >= current_date
+                    AND (e->>'ends_on')::date >= sa_today()
                     AND e->>'reason' IS NULL AND e->>'ended_by' IS NULL,
       format('§86 (adult): Old left at 19 and Aunt''s link reads %s', e));
 
@@ -27320,7 +27510,7 @@ $v49$;
     got := 'written';
     BEGIN
       INSERT INTO guardian_link_ending (link_id, player_id, school_id, guardian_id, kind, reason, ended_by, ends_on)
-      VALUES (L_DAD, B, '11111111-1111-1111-1111-111111111111', (y->>'dad')::uuid, 'office', WHY, (y->>'office')::uuid, current_date);
+      VALUES (L_DAD, B, '11111111-1111-1111-1111-111111111111', (y->>'dad')::uuid, 'office', WHY, (y->>'office')::uuid, sa_today());
     EXCEPTION WHEN insufficient_privilege THEN got := 'refused';
     END;
     PERFORM _assert(got = 'refused', '§86 (writes): the application wrote an ending row');
@@ -30786,7 +30976,7 @@ $v49$;
     PERFORM _assert(passport_name((y->>'A')::uuid) IS NOT NULL, '§97 (ended): while live gend does not open A''s passport');
     PERFORM _v120_end_link((y->>'gend')::uuid, (y->>'A')::uuid);
     PERFORM _assert(EXISTS (SELECT 1 FROM role_assignment a WHERE a.person_id = (y->>'gend')::uuid AND a.active
-                               AND (a.valid_until IS NULL OR a.valid_until > current_date)),
+                               AND (a.valid_until IS NULL OR a.valid_until > sa_today())),
       '§97 (ended): gend''s assignment is not live, so this is not the dated-link case');
     PERFORM _assert(NOT is_family_of((y->>'A')::uuid), '§97 (ended): gend is still A''s family');
     got := _v120_choices(y);
@@ -33203,6 +33393,309 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 107
   -- └── db/130 (section 107) ──────────────────────────────────────────
+  -- ┌── db/131 (section 108) ─────────────────────────────────────────
+  -- ── 108. REACH R-G: a spectator reads every side's team posts (§6.7) ──
+  -- docs/design/REACH_parent_pupil.md §2.3, §6.7, §7: Kameel, 4 Nov 2026,
+  -- (a): "a spectator reads EVERY side's team posts at his school, scoped or
+  -- not", replacing REACH-D3's "only when scoped" (14 Oct); still no plans;
+  -- §78's rule kept for finance, sponsorship, a driver and facilities. The
+  -- capability is db/131's news.team.read. Rows are _v131g_stage()'s,
+  -- invented; every post is its author's, written through scrbrd_app under
+  -- RLS. What each label holds:
+  --   (authors)    each coach reads his own side's post (and the U13E's
+  --                plan): the rows below are there to be read or refused
+  --   (school)     both followers, and the four, read the school's post
+  --   (every side) the follower admitted school-wide and the one scoped to
+  --                the U13E each read the U13E's and the U13F's posts, and
+  --                their notices
+  --   (plan)       neither follower reads the U13E's plan (team.read, db/96),
+  --                nor its notice
+  --   (others)     finance, sponsorship, a driver and facilities read no team
+  --                post, and no notice of one
+  --   (report)     the scoped follower may report the U13F's post's notice
+  --                (SG-9 rule 4: any reader may); the finance officer is told
+  --                there is no such notice
+  -- Falsified once: news_post_read_team_wide dropped went red at §108 (every
+  -- side), the scoped follower and the U13F's post.
+  DECLARE
+    g     jsonb := _v131g_stage();
+    V_HIL uuid := '11111111-1111-1111-1111-111111111111';
+    F     uuid := (g->>'f')::uuid;
+    S uuid; TE uuid; TF uuid; PE uuid;
+    k text; got text;
+  BEGIN
+    PERFORM _as((g->>'director')::uuid);
+    INSERT INTO news_post (scope, school_id, title, body, published_at)
+    VALUES ('school', V_HIL, 'Section 108 assembly', 'Colours on Friday.', now()) RETURNING id INTO S;
+    PERFORM _as((g->>'ecoach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', V_HIL, 'U13E', 'Section 108 nets', 'Nets on Tuesday.', now()) RETURNING id INTO TE;
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, kind, fixture_id)
+    VALUES ('team', V_HIL, 'U13E', 'Section 108 plan', 'Bat first if we win it.', now(), 'plan', F) RETURNING id INTO PE;
+    PERFORM _as((g->>'fcoach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', V_HIL, 'U13F', 'Section 108 kit', 'Whites on Saturday.', now()) RETURNING id INTO TF;
+
+    -- (authors)
+    PERFORM _as((g->>'ecoach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id IN (TE, PE)) = 2, '§108 (authors): the U13E coach does not read his post and his plan');
+    PERFORM _as((g->>'fcoach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = TF) = 1, '§108 (authors): the U13F coach does not read his post');
+
+    -- (school)
+    FOREACH k IN ARRAY ARRAY['follower', 'efollower', 'finance', 'sponsorship', 'driver', 'facilities'] LOOP
+      PERFORM _as((g->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = S) = 1,
+        format('§108 (school): the %s does not read the school''s post', k));
+    END LOOP;
+
+    -- (every side)
+    FOREACH k IN ARRAY ARRAY['follower', 'efollower'] LOOP
+      PERFORM _as((g->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id IN (TE, TF)) = 2
+                      AND (SELECT count(*) FROM my_notifications n WHERE n.subject_kind = 'news' AND n.subject_id IN (TE, TF)) = 2,
+        format('§108 (every side): the %s does not read both sides'' posts and their notices', k));
+    END LOOP;
+
+    -- (plan)
+    FOREACH k IN ARRAY ARRAY['follower', 'efollower'] LOOP
+      PERFORM _as((g->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = PE) = 0
+                      AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id = PE) = 0,
+        format('§108 (plan): the %s reads the U13E''s plan, or its notice', k));
+    END LOOP;
+
+    -- (others)
+    FOREACH k IN ARRAY ARRAY['finance', 'sponsorship', 'driver', 'facilities'] LOOP
+      PERFORM _as((g->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id IN (TE, TF, PE)) = 0
+                      AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id IN (TE, TF, PE)) = 0,
+        format('§108 (others): the %s reads a team''s post, or its notice', k));
+    END LOOP;
+
+    -- (report)
+    PERFORM _as((g->>'efollower')::uuid);
+    got := _report_91((_notices_91(TF)->0->>'id')::uuid);
+    PERFORM _assert(got = 'ok', format('§108 (report): the U13E follower could not report the U13F''s post''s notice (%s)', got));
+    PERFORM _as((g->>'finance')::uuid);
+    got := _report_91((_notices_91(TF)->0->>'id')::uuid);
+    PERFORM _assert(got = 'no_such_notice', format('§108 (report): the finance officer reported the U13F''s post''s notice (%s)', got));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 108
+  -- └── db/131 (section 108) ──────────────────────────────────────────
+
+  -- ┌── db/131 (section 109) ─────────────────────────────────────────
+  -- ── 109. REACH R-H: the team sheet to the parent (§3.5, §6.8; STEP4 Q10) ──
+  -- Kameel 27 Sep 2026: "signed in, her own child's side and fixture only,
+  -- the named players and their order — names only". fixture_sheet() (db/131).
+  -- Rows are _v131h_stage()'s, invented. What each label holds:
+  --   (parent)      the first U14E boy's parent reads the U14E's eleven,
+  --                 names and order, for f1, and nothing of Westville's end;
+  --                 nothing of the 12XI's fixture f2
+  --   (pupil)       the boy himself reads the same eleven (S3)
+  --   (staff)       the U14E coach and the office read the same eleven
+  --   (enquiry)     a named enquiry grant about one boy on f1's sheet opens
+  --                 nothing of it (Kameel, 4 Nov 2026), though the grant reads
+  --                 that boy under player.profile.read
+  --   (bench)       a U14E boy on no sheet reads nothing of f1, though his
+  --                 side's rows are his under match_squad_read
+  --   (spectator)   a follower, school-wide or scoped to the U14E, reads
+  --                 nothing of f1 or f2
+  --   (other school) Westville's parent reads her own end of f1, its three in
+  --                 order, and not Hilton's; so does Westville's coach
+  --   (other side)  the 12XI boy's parent reads f2's sheet and nothing of f1
+  --   (signed out)  nobody signed in reads nothing
+  --   (unpublished) f3, named and withdrawn whole, and f4, never named,
+  --                 return nothing, to the parent, the boy and the coach
+  --   (withdrawn)   a boy taken off f1 leaves it: the parent reads ten
+  --   (policy)      for every persona, fixture and end, the read answers an
+  --                 end only where match_squad_read shows that persona a live
+  --                 row of it: never wider than the side's own read
+  --   (columns)     side, batting_no, twelfth, name: no player_id, no uuid
+  --   (doors)       a stable SECURITY DEFINER with a pinned path; the
+  --                 application's, and not PUBLIC's or a managed host's
+  -- Falsified once each: fixture_sheet() with its gate taken out went red at
+  -- §109 (parent), the parent reading both ends of f1; with its staff branch
+  -- asking app_can() and not app_can_but_player() (a pupil's `player` row let
+  -- in), red at §109 (bench).
+  DECLARE
+    h     jsonb := _v131h_stage();
+    F1 uuid := (h->>'f1')::uuid; F2 uuid := (h->>'f2')::uuid;
+    F3 uuid := (h->>'f3')::uuid; F4 uuid := (h->>'f4')::uuid;
+    A2 uuid := (h->'a'->>1)::uuid;
+    HOME text := (SELECT string_agg(format('home %s Sheet Home %s', i, lpad(i::text, 2, '0')), ' | ' ORDER BY i) FROM generate_series(1, 11) i);
+    AWAY text := (SELECT string_agg(format('away %s Sheet Away %s', i, lpad(i::text, 2, '0')), ' | ' ORDER BY i) FROM generate_series(1, 3) i);
+    k text; f uuid; sd text; got text; bad text;
+    r record;
+  BEGIN
+    -- (parent), (pupil), (staff)
+    FOREACH k IN ARRAY ARRAY['aparent', 'aboy', 'coach', 'office'] LOOP
+      PERFORM _as((h->>k)::uuid);
+      got := (SELECT string_agg(format('%s %s %s', s.side, s.batting_no, s.name), ' | ' ORDER BY s.o)
+                FROM fixture_sheet(F1) WITH ORDINALITY AS s(side, batting_no, twelfth, name, o));
+      PERFORM _assert(got = HOME, format('§109 (%s): the %s reads f1''s sheet as %s, not the U14E''s eleven in order',
+                                         CASE k WHEN 'aparent' THEN 'parent' WHEN 'aboy' THEN 'pupil' ELSE 'staff' END, k, coalesce(got, '(nothing)')));
+    END LOOP;
+    PERFORM _as((h->>'aparent')::uuid);
+    PERFORM _assert((SELECT count(*) FROM fixture_sheet(F2)) = 0, '§109 (parent): the U14E parent reads the 12XI''s sheet');
+
+    -- (enquiry)
+    PERFORM _as((h->>'enquirer')::uuid);
+    -- The grant does read its boy under player.profile.read, which is what
+    -- opened the sheet to it before Kameel's narrowing of 4 Nov 2026.
+    PERFORM _assert(app_can('player.profile.read', '11111111-1111-1111-1111-111111111111', 'U14E', (h->'a'->>2)::uuid, F1),
+      '§109 (enquiry): the grant does not read its boy under player.profile.read: the proof proves nothing');
+    PERFORM _assert((SELECT count(*) FROM fixture_sheet(F1)) = 0, '§109 (enquiry): a named enquiry grant about one boy opens the sheet');
+
+    -- (bench)
+    PERFORM _as((h->>'benchboy')::uuid);
+    PERFORM _assert((SELECT count(*) FROM match_squad q WHERE q.match_id = F1 AND q.side = 'home' AND NOT q.withdrawn) = 11,
+      '§109 (bench): the boy off the sheet does not read his side''s rows: the proof proves nothing');
+    PERFORM _assert((SELECT count(*) FROM fixture_sheet(F1)) = 0, '§109 (bench): a boy on no sheet reads the side''s');
+
+    -- (spectator)
+    FOREACH k IN ARRAY ARRAY['follower', 'efollower'] LOOP
+      PERFORM _as((h->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM fixture_sheet(F1)) + (SELECT count(*) FROM fixture_sheet(F2)) = 0,
+        format('§109 (spectator): the %s reads a sheet', k));
+    END LOOP;
+
+    -- (other school)
+    FOREACH k IN ARRAY ARRAY['wesparent', 'wescoach'] LOOP
+      PERFORM _as((h->>k)::uuid);
+      got := (SELECT string_agg(format('%s %s %s', s.side, s.batting_no, s.name), ' | ' ORDER BY s.o)
+                FROM fixture_sheet(F1) WITH ORDINALITY AS s(side, batting_no, twelfth, name, o));
+      PERFORM _assert(got = AWAY, format('§109 (other school): Westville''s %s reads f1''s sheet as %s, not her own end''s three', k, coalesce(got, '(nothing)')));
+    END LOOP;
+
+    -- (other side)
+    PERFORM _as((h->>'xparent')::uuid);
+    PERFORM _assert((SELECT string_agg(format('%s %s %s', s.side, s.batting_no, s.name), ' | ') FROM fixture_sheet(F2) s) = 'home 1 Sheet Senior'
+                    AND (SELECT count(*) FROM fixture_sheet(F1)) = 0,
+      '§109 (other side): the 12XI parent does not read f2''s sheet, or reads the U14E''s');
+
+    -- (signed out)
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert((SELECT count(*) FROM fixture_sheet(F1)) = 0, '§109 (signed out): a session with nobody signed in reads a sheet');
+
+    -- (unpublished)
+    PERFORM _assert(_v131h_rows(F3) = '2 0' AND _v131h_rows(F4) = '0 0',
+      format('§109 (unpublished): f3 holds %s rows (all, live) and f4 %s, not 2 0 and 0 0: the proof proves nothing', _v131h_rows(F3), _v131h_rows(F4)));
+    FOREACH k IN ARRAY ARRAY['aparent', 'aboy', 'coach'] LOOP
+      PERFORM _as((h->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM fixture_sheet(F3)) + (SELECT count(*) FROM fixture_sheet(F4)) = 0,
+        format('§109 (unpublished): the %s reads a sheet withdrawn whole, or one never named', k));
+    END LOOP;
+
+    -- (withdrawn)
+    PERFORM _assert(_v131h_withdraw(F1, A2) = 1, '§109 (withdrawn): the second boy was not taken off f1');
+    PERFORM _as((h->>'aparent')::uuid);
+    PERFORM _assert((SELECT count(*) FROM fixture_sheet(F1)) = 10
+                    AND NOT EXISTS (SELECT 1 FROM fixture_sheet(F1) s WHERE s.name = 'Sheet Home 02'),
+      '§109 (withdrawn): the parent still reads the boy taken off f1');
+
+    -- (policy)
+    FOR r IN SELECT key, value FROM jsonb_each_text(h) WHERE key NOT IN ('a', 'w', 'x', 'bench', 'f1', 'f2', 'f3', 'f4') LOOP
+      PERFORM _as(r.value::uuid);
+      FOREACH f IN ARRAY ARRAY[F1, F2, F3, F4] LOOP
+        FOREACH sd IN ARRAY ARRAY['home', 'away'] LOOP
+          IF EXISTS (SELECT 1 FROM fixture_sheet(f) s WHERE s.side = sd)
+             AND NOT EXISTS (SELECT 1 FROM match_squad q WHERE q.match_id = f AND q.side = sd AND NOT q.withdrawn) THEN
+            bad := concat_ws(', ', bad, format('%s at %s of %s', r.key, sd, CASE f WHEN F1 THEN 'f1' WHEN F2 THEN 'f2' WHEN F3 THEN 'f3' ELSE 'f4' END));
+          END IF;
+        END LOOP;
+      END LOOP;
+    END LOOP;
+    PERFORM _assert(bad IS NULL, format('§109 (policy): fixture_sheet() opens what match_squad_read does not, for %s', bad));
+
+    -- (columns)
+    PERFORM _assert((SELECT string_agg(u.n, ',' ORDER BY u.o) FROM pg_proc p,
+                            unnest(p.proargnames, p.proargmodes::text[], p.proallargtypes) WITH ORDINALITY AS u(n, m, t, o)
+                      WHERE p.oid = 'fixture_sheet(uuid)'::regprocedure AND u.m = 't') = 'side,batting_no,twelfth,name'
+                    AND NOT EXISTS (SELECT 1 FROM pg_proc p, unnest(p.proargmodes::text[], p.proallargtypes) AS u(m, t)
+                                     WHERE p.oid = 'fixture_sheet(uuid)'::regprocedure AND u.m = 't' AND u.t = 'uuid'::regtype),
+      '§109 (columns): fixture_sheet() returns more than side, batting_no, twelfth and name, or a uuid');
+
+    -- (doors)
+    PERFORM _assert((SELECT p.prosecdef AND p.provolatile = 's'
+                            AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']
+                       FROM pg_proc p WHERE p.oid = 'fixture_sheet(uuid)'::regprocedure),
+      '§109 (doors): fixture_sheet() is not a stable SECURITY DEFINER with a pinned path');
+    PERFORM _assert(has_function_privilege('scrbrd_app', 'fixture_sheet(uuid)', 'EXECUTE')
+                    AND NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                                     WHERE p.oid = 'fixture_sheet(uuid)'::regprocedure AND x.grantee = 0)
+                    AND NOT EXISTS (SELECT 1 FROM pg_roles o WHERE o.rolname IN ('anon', 'authenticated', 'service_role')
+                                       AND has_function_privilege(o.oid, 'fixture_sheet(uuid)', 'EXECUTE')),
+      '§109 (doors): fixture_sheet() is not the application''s alone');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 109
+  -- └── db/131 (section 109) ──────────────────────────────────────────
+
+  -- ┌── db/131 (section 110) ─────────────────────────────────────────
+  -- ── 110. REACH R-I: what a pupil reaches of a team-mate through `players` (§4 M4) ──
+  -- player_read lets a pupil read his team-mates' rows (player.profile.read
+  -- at his side); the API reads them only through player_masked, whose
+  -- columns are masked per row (tables.mjs). Rows are _v131i_stage()'s,
+  -- invented, with every masked column filled. What each label holds:
+  --   (filled)    as the owner, all three boys have every masked column
+  --   (players)   the API's `players` read, word for word (read-api.mjs; the
+  --               static test services/api/player-columns.test.mjs holds the
+  --               copy to it): he reads his two team-mates, and of them no
+  --               masked column; of himself, his self link's tiers and not
+  --               his ID number
+  --   (view)      the same of every masked column player_masked carries,
+  --               the ones `players` does not select included
+  DECLARE
+    m    jsonb := _v131i_stage();
+    B1 uuid := (m->'b'->>0)::uuid;
+    MATES uuid[] := ARRAY[(m->'b'->>1)::uuid, (m->'b'->>2)::uuid];
+    got text; n int := 0; own boolean;
+    r record;
+  BEGIN
+    -- (filled)
+    PERFORM _assert(_v131i_filled(MATES || B1) = 3, '§110 (filled): the stage''s boys do not have every masked column: the proof proves nothing');
+    PERFORM _as((m->>'pupil')::uuid);
+    -- (players)  ── the `players` read, as read-api.mjs has it ──
+    FOR r IN
+    -- players:begin
+    select pm.id, pm.school_id, s.name as school_name, pm.full_name, pm.team_code, pm.squad_no, pm.playing_role,
+                  pm.batting_style, pm.bowling_arm, pm.bowling_style, pm.fitness,
+                  pm.born, pm.hometown, pm.height, pm.weight,
+                  pm.address, pm.guardian, pm.id_number
+             from player_masked pm
+             join school s on s.id = pm.school_id
+            order by pm.full_name
+    -- players:end
+    LOOP
+      IF r.id = ANY (MATES) THEN
+        n := n + 1;
+        IF r.fitness IS NOT NULL OR r.born IS NOT NULL OR r.hometown IS NOT NULL OR r.height IS NOT NULL OR r.weight IS NOT NULL
+           OR r.address IS NOT NULL OR r.guardian IS NOT NULL OR r.id_number IS NOT NULL THEN
+          got := concat_ws(', ', got, r.full_name);
+        END IF;
+      ELSIF r.id = B1 THEN
+        own := r.fitness IS NOT NULL AND r.born IS NOT NULL AND r.hometown IS NOT NULL AND r.height IS NOT NULL
+               AND r.weight IS NOT NULL AND r.address IS NOT NULL AND r.guardian IS NOT NULL AND r.id_number IS NULL;
+      END IF;
+    END LOOP;
+    PERFORM _assert(n = 2, format('§110 (players): the pupil reaches %s of his two team-mates through players: the proof proves nothing', n));
+    PERFORM _assert(got IS NULL, format('§110 (players): the pupil reads a masked column of %s', got));
+    PERFORM _assert(own, '§110 (players): the pupil does not read his own tiers, or reads his own ID number');
+    -- (view)
+    got := NULL;
+    got := (SELECT string_agg(full_name, ', ') FROM player_masked
+             WHERE id = ANY (MATES)
+               AND (born IS NOT NULL OR id_number IS NOT NULL OR email IS NOT NULL OR phone IS NOT NULL OR hometown IS NOT NULL
+                    OR houseatschool IS NOT NULL OR address IS NOT NULL OR guardian IS NOT NULL OR height IS NOT NULL
+                    OR weight IS NOT NULL OR fitness IS NOT NULL));
+    PERFORM _assert(got IS NULL AND (SELECT count(*) FROM player_masked WHERE id = ANY (MATES)) = 2,
+      format('§110 (view): through player_masked the pupil reads a masked column of %s', coalesce(got, '(or not his team-mates)')));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 110
+  -- └── db/131 (section 110) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

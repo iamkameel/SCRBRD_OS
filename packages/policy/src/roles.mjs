@@ -460,7 +460,11 @@ const BUNDLES = {
   ],
   // Deliberately the thinnest bundle in the file. No player profiles, so a
   // spectator never reaches a minor's record even in summary.
-  spectator: ["fixture.read", "news.read", "competition.read"],
+  // REACH R-G (Kameel, 4 Nov 2026: "Spectators can see all matches. Just a
+  // lesser level of detail and information regarding player stats and
+  // passports"): news.team.read, every side's team posts at his school,
+  // scoped or not; still no plan (team.read) and no player capability (db/131).
+  spectator: ["fixture.read", "news.read", "news.team.read", "competition.read"],
 
   // ── Specialists ──
   medical: ["player.workload.read",

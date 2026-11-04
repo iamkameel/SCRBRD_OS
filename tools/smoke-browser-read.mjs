@@ -375,12 +375,33 @@ try {
   await owner.query(
     `insert into trip (match_id, school_id, depart_at, pickup)
      values ($1, '11111111-1111-1111-1111-111111111111', '2027-03-06 07:15+02', 'the Chapel car park')`, [DECL]).catch(() => {});
+  // REACH R-H (db/131, STEP4 Q10): the side named for it, her child at four.
+  await owner.query(
+    `insert into match_squad (match_id, player_id, side, batting_no)
+     values ($1, $2, 'home', 4), ($1, 'aaaaaaaa-0000-0000-0000-000000000001', 'home', 1),
+            ($1, 'aaaaaaaa-0000-0000-0000-000000000002', 'home', 2), ($1, 'aaaaaaaa-0000-0000-0000-000000000003', 'home', 3)`, [DECL, PILLAY]);
   ok("Matches opens", await nav(parent.page, /^Matches$/));
   await ptid(`fixture-row-${DECL}`).click({ timeout: 6000 }).catch(() => {});
   await afterReads(parent.page, 1500);
   ok("the fixture opens: where, when and the bus", /Verify Step4 XI/.test(await ptid("fixture-title").innerText().catch(() => ""))
      && /Leaves 07:15 · the Chapel car park/.test(await ptid("bus-card").innerText().catch(() => "")));
   ok("...his answer is not given yet", /No answer yet/.test(await ptid(`availability-state-${PILLAY}`).innerText().catch(() => "")));
+  {
+    // REACH R-H (db/131; STEP4 Q10, Kameel 27 Sep 2026): the eleven to a
+    // parent, names and order, under her child's own line, which stays first.
+    await parent.page.waitForFunction(() => !!document.querySelector('[data-testid="side-sheet"]'), null, { timeout: 6000 }).catch(() => {});
+    const card = await ptid("fixture-teamsheet").innerText({ timeout: 4000 }).catch(() => "");
+    const rows = await parent.page.locator('[data-testid="side-sheet-row"]').allInnerTexts().catch(() => []);
+    const first = await parent.page.evaluate(() => {
+      const ids = [...document.querySelectorAll('[data-testid="fixture-teamsheet"] [data-testid]')].map((e) => e.getAttribute("data-testid"));
+      return ids.indexOf("teamsheet-line") > -1 && ids.indexOf("teamsheet-line") < ids.indexOf("side-sheet");
+    }).catch(() => false);
+    ok("...the team sheet: her child's line first ('named, batting 4'), then the side",
+       first && /Team sheet: named, batting 4/.test(await ptid("teamsheet-line").first().innerText().catch(() => "")), card);
+    ok("...the side by name, in batting order, and nothing else of them",
+       rows.map((r) => r.replace(/\s+/g, " ").trim()).join(" | ") === "1 James Whitfield | 2 T Bekker | 3 S Naidoo | 4 R Pillay", rows.join(" | "));
+    ok("...no team-mate's answer, fitness or age on the card", !/injur|rehab|fitness|born|years old|doubtful|unavailable/i.test(card), card);
+  }
   await ptid(`availability-set-${PILLAY}-unavailable`).click({ timeout: 4000 }).catch(() => {});
   await parent.page.selectOption(`[data-testid="availability-reason-${PILLAY}"]`, "travel").catch(() => {});
   await ptid(`availability-note-${PILLAY}`).fill("Away for a family wedding").catch(() => {});
@@ -1684,6 +1705,15 @@ try {
     ok("no console errors (stranger)", s.errors.length === 0);
     await s.ctx.close();
 
+    // REACH R-G (Kameel, 4 Nov 2026): a follower asks too, and his request
+    // says in one line what granting it opens.
+    const fp = new pg.Pool({ connectionString: ownerUrl() });
+    const follower = (await fp.query(`insert into app_user (school_id, email, name, role)
+                                      values (null, $1, 'F Walker', 'spectator') returning id`, [`walk.follower.${Date.now()}@example.invalid`])).rows[0].id;
+    const followReq = (await fp.query(`insert into role_request (person_id, role, school_id)
+                                       values ($1, 'spectator', '11111111-1111-1111-1111-111111111111') returning id`, [follower])).rows[0].id;
+    await fp.end().catch(() => {});
+
     const o = await open();
     await signIn(o.page, /Registrar|School Admin|registrar@example\.invalid/);
     if (await o.page.locator('[data-testid="nav-management"]').count()) {
@@ -1692,9 +1722,14 @@ try {
       // Three reads land before the panel draws; wait for the panel, not a clock.
       await panel.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
       ok("the office sees the request on the management screen", await panel.count() === 1 && /N Zulu/.test(await panel.innerText()));
-      // He asked to coach and named no side; the office names one.
-      await panel.locator('select[aria-label="Which side"]').first().selectOption("1XI").catch(() => {});
-      await panel.locator("button", { hasText: /^Grant$/ }).first().click({ timeout: 4000 }); await afterReads(o.page, 1500);
+      ok("...and a follower's request says what he'll see, in one line",
+         (await o.page.locator(`[data-testid="request-spectator-reach-${followReq}"]`).innerText({ timeout: 4000 }).catch(() => "")).trim()
+           === "He'll see every match and every team's posts, but no player's stats or passport.");
+      // He asked to coach and named no side; the office names one. His row:
+      // the follower's request above (db/131) waits on the same panel.
+      const zulu = panel.locator('[data-testid^="request-row-"]', { hasText: /N Zulu/ });
+      await zulu.locator('select[aria-label="Which side"]').first().selectOption("1XI").catch(() => {});
+      await zulu.locator("button", { hasText: /^Grant$/ }).first().click({ timeout: 4000 }); await afterReads(o.page, 1500);
       // The panel, not the whole screen: once granted he is on the users list
       // below it, which is the point.
       ok("...grants it, and it leaves the panel", await panel.count() === 0 || !/N Zulu/.test(await panel.innerText()));

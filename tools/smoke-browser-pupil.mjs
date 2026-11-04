@@ -266,6 +266,16 @@ try {
   ok("the fixture opens", /Verify Pupil XI/.test(await inner(s.page, "fixture-title")));
   const sheet = await inner(s.page, "side-sheet");
   ok("the team sheet: his side, by name and place", /R Pillay/.test(sheet) && /James Whitfield/.test(sheet) && /T Bekker/.test(sheet));
+  {
+    // REACH R-H (db/131): S3's card is the side's names and order, read as
+    // fixture_sheet() answers him (GET /api/matches/:id/sheet), under his own
+    // line, which stays first.
+    const rows = (await s.page.locator('[data-testid="side-sheet-row"]').allInnerTexts().catch(() => [])).map((r) => r.replace(/\s+/g, " ").trim());
+    ok("...in batting order, from the sheet read, under his own line",
+       rows.join(" | ") === "1 James Whitfield | 2 T Bekker | 3 S Naidoo | 4 R Pillay"
+       && asked.some((p) => p === `/api/matches/${NEXT}/sheet`)
+       && /You're in the side · batting 4/.test(await inner(s.page, "teamsheet-line")), rows.join(" | "));
+  }
   // K3 (db/55), the flipped assertion: before db/55 a pupil read every
   // team-mate's injury status. The sheet is names and places, and nothing on
   // the fixture says who is hurt, how, or until when.

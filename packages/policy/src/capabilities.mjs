@@ -367,6 +367,9 @@ export const CAPABILITIES = {
 
   // ── Publishing ──
   "news.read":                   "Read news and headlines",
+  // REACH R-G (Kameel, 4 Nov 2026): every side's team posts at the school,
+  // whatever side the assignment names, and never a side's plan (team.read).
+  "news.team.read":              "Read every side's team posts at the school (not its plans)",
   "news.publish.team":           "Publish to a team",
   "news.publish.school":         "Publish to an institution",
   "news.publish.competition":    "Publish to a competition",
@@ -622,7 +625,7 @@ export const LEVEL = Object.freeze({
   "result.confirm": 1,
 
   // ── Publishing ──
-  "news.read": 0, "news.publish.team": 1, "news.publish.school": 1,
+  "news.read": 0, "news.team.read": 0, "news.publish.team": 1, "news.publish.school": 1,
   "news.publish.competition": 1, "broadcast.publish": 1,
 
   // ── Analysis ──
