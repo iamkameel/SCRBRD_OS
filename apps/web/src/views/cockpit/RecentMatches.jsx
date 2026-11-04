@@ -38,11 +38,13 @@ export function RecentMatches({ matches, onNav }) {
 
 /**
  * Every pick's two reads, in parallel. `null` for a read that did not answer:
- * the card then says so for that match, never a total of nothing.
+ * the card then says so for that match, never a total of nothing, and offers
+ * the reads again (`again()`).
  * @param {import("../../lib/recentMatches.js").Side} side
  */
 function useRecent(side) {
   const ids = side.picks.map((p) => p.match.id).join(",");
+  const [nonce, setNonce] = useState(0);
   const [got, setGot] = useState(/** @type {{loading: boolean, rows: {route: any, innings: any[] | null, correctedAt: number | null}[], at: number | null}} */ ({ loading: true, rows: [], at: null }));
   useEffect(() => {
     let cancelled = false;
@@ -64,8 +66,8 @@ function useRecent(side) {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ids]);
-  return got;
+  }, [ids, nonce]);
+  return { ...got, again: () => setNonce((n) => n + 1) };
 }
 
 // Functions, not constants: the theme's tokens are read when drawn, never at import.
@@ -78,7 +80,7 @@ const btn = () => ({ minHeight: "44px", padding: `0 ${T.space.lg}`, background: 
 
 /** @param {{side: import("../../lib/recentMatches.js").Side, named: boolean, onNav: (page: string) => void}} p */
 function SideCard({ side, named, onNav }) {
-  const { loading, rows, at } = useRecent(side);
+  const { loading, rows, at, again } = useRecent(side);
   const first = side.picks[0];
   const ourName = (/** @type {any} */ m, /** @type {"home" | "away"} */ end) => sidesOf(m)[end];
   const theirName = (/** @type {any} */ m, /** @type {"home" | "away"} */ end) => sidesOf(m)[end === "home" ? "away" : "home"];
@@ -91,6 +93,7 @@ function SideCard({ side, named, onNav }) {
   const said = top ? insights(top, n) : [];
   const carded = summaries.filter((s) => s.line.carded).length;
   const unreadLogs = loading ? 0 : rows.filter((r) => r.innings == null).length;
+  const unreadAny = unreadLogs > 0 || (!loading && rows.some((r) => r.route == null));
   const open = (/** @type {string} */ id) => { requestResult(id); onNav("matches"); };
   const title = named ? `Recent matches · ${ourName(first.match, first.gate.end).full}` : "Recent matches";
 
@@ -159,6 +162,12 @@ function SideCard({ side, named, onNav }) {
               {unreadLogs ? `; ${unreadLogs} ${unreadLogs === 1 ? "scorecard" : "scorecards"} could not be read` : ""}
               {at != null && <> · <span data-testid="recent-asat">as at {clockWords(at)}</span></>}
             </p>
+            {/* A read that failed is said above, match by match; this is the way back from it. */}
+            {unreadAny && (
+              <button type="button" className="os-state" data-testid="recent-again" onClick={again} style={{ ...btn(), justifySelf: "start" }}>
+                Read them again
+              </button>
+            )}
           </>
         )}
       </div>
