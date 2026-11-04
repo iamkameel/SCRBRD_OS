@@ -85,6 +85,7 @@ const WORDS = {
   not_cricket: "Only a cricket fixture can take a scorebook.",
   not_yet_played: "This fixture has not been played yet, so there is no book to import.",
   match_abandoned: "This match was abandoned, so there is nothing to import.",
+  match_postponed: "This match is postponed, so it has not been played and there is nothing to import.",
   match_complete: "This match is already complete. If its record is wrong, it is corrected by an amendment, then imported again.",
   page_too_large: "That photo is too large. Each page may be up to 8 MB; take it again at a lower quality or crop it.",
   not_an_image: "That file is not a JPEG or PNG photo, so it was not added.",

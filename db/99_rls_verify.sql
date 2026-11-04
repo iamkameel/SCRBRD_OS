@@ -209,9 +209,12 @@ $$ LANGUAGE sql SECURITY DEFINER;
 -- tested on a match nothing else here has touched. And the three facts about
 -- a credential only the owner can state: why it ended, how many one-time ids
 -- it has spent, and a match day already over.
+-- The copy has no ground: a second fixture on the source's ground at the
+-- source's hour is a clash db/133 refuses, and these copies are about the
+-- pad's credential, not the ground.
 CREATE OR REPLACE FUNCTION _db50_fixture(p_id uuid, p_src uuid) RETURNS void AS $$
   INSERT INTO match SELECT (jsonb_populate_record(NULL::match,
-    to_jsonb(m) || jsonb_build_object('id', p_id, 'status', 'scheduled'))).* FROM match m WHERE m.id = p_src;
+    to_jsonb(m) || jsonb_build_object('id', p_id, 'status', 'scheduled', 'ground_id', NULL))).* FROM match m WHERE m.id = p_src;
 $$ LANGUAGE sql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION _db50_reason(p_credential uuid) RETURNS text AS $$
   SELECT coalesce(revoked_reason, 'live') FROM pad_resume_credential WHERE id = p_credential;
@@ -9337,6 +9340,131 @@ BEGIN
   RETURN (SELECT string_agg(md5(prosrc), ' ' ORDER BY oid::regprocedure::text COLLATE "C") FROM pg_proc WHERE proname = 'pupil_side_on');
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/129 (section 106) ─────────────────────────────────────────────
+
+-- ┌── db/133 (section 112). Fixtures: one ground at a time, 'postponed', and
+-- the side told (pilot item 2; Kameel, 4 Nov 2026). Invented, as the owner;
+-- every name a placeholder. Hilton's U18E (the side, "U15A" in the
+-- decision's words) and U18F (another side of the same school), a boy on
+-- each, the guardian of each, the U18E's coach, a director of sport (the
+-- office), a scorer, and Westville's 1XI coach. Grounds: V133 No.1 Ground
+-- (g) and two pitches on it (gp, gq). Fixtures, by day from today t:
+--   f1  U18E v V133 Kearsney    t+20 10:00 on g      scheduled
+--   f2  U18F v V133 Pitch Side  t+21 10:00 on gp     scheduled
+--   fw  Westville 1XI           t+22 10:00 on g      scheduled (another school's booking of g)
+--   f3  U18F v V133 Abandoned   t+23 10:00 on g      abandoned
+--   f6  U18F v V133 Off Again   t+24 10:00 on g      scheduled
+--   f7  U18E v V133 Live        t+25 10:00           live
+--   f8  U18E v V133 Scored      t+26 10:00           scheduled, six balls in its log
+--   f9  U18E v V133 Claimed     t+28 10:00           scheduled
+--   fc  U18E v V133 Complete    t-5  10:00           complete
+CREATE OR REPLACE FUNCTION _v133_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  t   date := sa_today();
+  U16 date := make_date(extract(year FROM sa_today())::int - 16, 3, 1);
+  ids jsonb; z jsonb := '{}'; v_pa uuid; v_pb uuid; v_g uuid; v_gp uuid; v_gq uuid; v_id uuid;
+  k text; sch uuid; tm text; dd int; gr text; st text;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U18E', 'Verify OneThreeThree Aside', 1331, 'batter', U16) RETURNING id INTO v_pa;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
+    (HIL, 'U18F', 'Verify OneThreeThree Bside', 1332, 'batter', U16) RETURNING id INTO v_pb;
+  ids := _v71_people('v133', ARRAY[
+    ARRAY['pa',     'player',          HIL::text, 'U18E', v_pa::text],   -- the boy on the side
+    ARRAY['pb',     'player',          HIL::text, 'U18F', v_pb::text],   -- a boy on another side
+    ARRAY['ga',     'guardian',        HIL::text, '',     ''],           -- his mother
+    ARRAY['gb',     'guardian',        HIL::text, '',     ''],           -- the other boy's
+    ARRAY['coach',  'coach',           HIL::text, 'U18E', ''],
+    ARRAY['office', 'directorofsport', HIL::text, '',     ''],
+    ARRAY['scorer', 'scorer',          HIL::text, '',     ''],
+    ARRAY['wes',    'coach',           WES::text, '1XI',  '']]);
+  PERFORM _v100_link((ids->>'ga')::uuid, HIL, v_pa);
+  PERFORM _v100_link((ids->>'gb')::uuid, HIL, v_pb);
+  INSERT INTO ground (school_id, name) VALUES (HIL, 'V133 No.1 Ground') RETURNING id INTO v_g;
+  INSERT INTO ground (school_id, name, parent_id) VALUES (HIL, 'V133 Pitch A', v_g) RETURNING id INTO v_gp;
+  INSERT INTO ground (school_id, name, parent_id) VALUES (HIL, 'V133 Pitch B', v_g) RETURNING id INTO v_gq;
+  z := ids || jsonb_build_object('p_a', v_pa, 'p_b', v_pb, 'g', v_g, 'gp', v_gp, 'gq', v_gq);
+  FOR k, sch, tm, dd, gr, st IN SELECT * FROM (VALUES
+      ('f1', HIL, 'U18E', 20, 'g',  'scheduled'), ('f2', HIL, 'U18F', 21, 'gp', 'scheduled'),
+      ('fw', WES, '1XI',  22, 'g',  'scheduled'), ('f3', HIL, 'U18F', 23, 'g',  'abandoned'),
+      ('f6', HIL, 'U18F', 24, 'g',  'scheduled'), ('f7', HIL, 'U18E', 25, '',   'live'),
+      ('f8', HIL, 'U18E', 26, '',   'scheduled'), ('f9', HIL, 'U18E', 28, '',   'scheduled'),
+      ('fc', HIL, 'U18E', -5, '',   'complete')) x LOOP
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+    VALUES (sch, tm, CASE k WHEN 'f1' THEN 'V133 Kearsney' WHEN 'f2' THEN 'V133 Pitch Side' WHEN 'fw' THEN 'V133 Visitors'
+                            WHEN 'f3' THEN 'V133 Abandoned' WHEN 'f6' THEN 'V133 Off Again' WHEN 'f7' THEN 'V133 Live'
+                            WHEN 'f8' THEN 'V133 Scored' WHEN 'f9' THEN 'V133 Claimed' ELSE 'V133 Complete' END,
+            ((t + dd)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 20, st,
+            nullif(z->>gr, '')::uuid)
+    RETURNING id INTO v_id;
+    z := z || jsonb_build_object(k, v_id);
+  END LOOP;
+  PERFORM _v71_bowl((z->>'f8')::uuid, (ids->>'scorer')::uuid, ARRAY[NULL]::uuid[]);
+  RETURN z;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A ball on a match, as the owner: what a definer (the importer's confirm)
+-- would write. 'written', or what refused it (SQLSTATE and constraint).
+CREATE OR REPLACE FUNCTION _v133_ball(p_match uuid, p_scorer uuid) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, ball_type, value)
+  SELECT p_match, m.school_id, 1, 0, 0, p_scorer, 'v133-pad', 'v133-' || p_match, 1, now(), 'ball', 'run', 0
+    FROM match m WHERE m.id = p_match;
+  RETURN 'written';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN SQLSTATE || ' ' || coalesce(v_con, '');
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The scoring session, as the owner reads it: state and holder.
+CREATE OR REPLACE FUNCTION _v133_session(p_match uuid) RETURNS text AS $$
+  SELECT coalesce((SELECT s.state::text || ' ' || coalesce(s.holder_user_id::text, '-') FROM scoring_session s WHERE s.match_id = p_match), 'none')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Every pair of counted fixtures on related grounds whose [start, end)
+-- overlap, over the whole table, as the owner: the clash rule's own count.
+CREATE OR REPLACE FUNCTION _v133_overlaps() RETURNS integer AS $$
+  WITH RECURSIVE tree (id, top) AS (
+    SELECT g.id, g.id FROM ground g
+    UNION ALL
+    SELECT g.id, t.top FROM ground g JOIN tree t ON g.parent_id = t.id
+  )
+  SELECT count(*)::int FROM match a JOIN match b ON a.id < b.id
+   WHERE a.ground_id IS NOT NULL AND b.ground_id IS NOT NULL
+     AND a.status NOT IN ('postponed', 'abandoned') AND b.status NOT IN ('postponed', 'abandoned')
+     AND (a.ground_id = b.ground_id
+          OR EXISTS (SELECT 1 FROM tree t WHERE (t.top = a.ground_id AND t.id = b.ground_id) OR (t.top = b.ground_id AND t.id = a.ground_id)))
+     AND a.starts_at < fixture_ends_at(b.starts_at, b.sport, b.format, b.overs)
+     AND b.starts_at < fixture_ends_at(a.starts_at, a.sport, a.format, a.overs)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A statement as the caller (scrbrd_app, as whoever app.user_id names):
+-- 'ok', or 'SQLSTATE|constraint|message'. _v133_probe() runs it and rolls it
+-- back, so a booking that is allowed is seen to be and leaves nothing behind.
+CREATE OR REPLACE FUNCTION _v133_try(p_sql text) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  EXECUTE p_sql;
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN SQLSTATE || '|' || coalesce(v_con, '') || '|' || SQLERRM;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION _v133_probe(p_sql text) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  EXECUTE p_sql;
+  RAISE EXCEPTION 'v133-undo';
+EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM = 'v133-undo' THEN RETURN 'ok'; END IF;
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN SQLSTATE || '|' || coalesce(v_con, '') || '|' || SQLERRM;
+END $$ LANGUAGE plpgsql;
+-- └── db/133 (section 112) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -33000,6 +33128,241 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 106
   -- └── db/129 (section 106) ──────────────────────────────────────────
+
+  -- ┌── db/133 (section 112) ─────────────────────────────────────────
+  -- ── 112. Fixtures: one ground at a time, 'postponed', the side told ──
+  -- Pilot item 2; Kameel, 4 Nov 2026 (db/133's header quotes the three
+  -- decisions). Rows are _v133_stage()'s, invented; every change is the
+  -- office's (a director of sport) UPDATE or INSERT of match through
+  -- scrbrd_app, as the fixture route writes it. What each label holds:
+  --   (seed)      no two counted fixtures on related grounds overlap, over the
+  --               whole table: the seed, and every section before this one
+  --   (ends)      fixture_ends_at() is the planner's length (T20 180 minutes,
+  --               fifty overs 420, Two-Day two SAST days, another sport a day)
+  --   (clash)     a booking over f1 on its ground is refused, 23P01
+  --               match_ground_clash, naming the clash in Kameel's shape; one
+  --               that starts as f1 ends is not
+  --   (tree)      a pitch clashes with its field and the field with its
+  --               pitch; two pitches of one field do not
+  --   (theirs)    another school's booking of the ground is refused without
+  --               its sides named
+  --   (ignored)   postponed and abandoned fixtures hold no ground
+  --   (moves)     scheduled → postponed, postponed → scheduled with a new date
+  --               (and by a new date alone), postponed → abandoned; refused:
+  --               postponed → live or complete, back on without a new date,
+  --               live or complete → postponed, a scored match postponed
+  --   (back on)   going back on is held to the ground like any booking
+  --   (told)      postponed, back on and called off each write one notice to
+  --               the side: its pupil and his guardian read it (and its
+  --               coach); the other side's boy and guardian and Westville do
+  --               not; no child is named on it or addressed by it
+  --   (score)     a postponed match is not claimed (match_postponed), the
+  --               session it had ends, and no ball is written on it, by
+  --               anybody
+  --   (result)    a postponed match has no result
+  --   (grants)    the new definers pinned, the app's only; the notice writer
+  --               nobody's
+  DECLARE
+    z      jsonb := _v133_stage();
+    t      date := sa_today();
+    OFF    uuid; GA uuid; GB uuid; PA uuid; PB uuid; CO uuid; WS uuid; SC uuid;
+    F1 uuid; F2 uuid; F3 uuid; F6 uuid; F7 uuid; F8 uuid; F9 uuid; FC uuid;
+    G uuid; GP uuid; GQ uuid;
+    got    text;
+    want   text;
+    n      integer;
+    ins    text := 'INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, ground_id) VALUES '
+                   || '(''11111111-1111-1111-1111-111111111111'', %L, %L, %L::timestamptz, ''cricket'', ''T20'', 20, %L)';
+    at     text;
+  BEGIN
+    OFF := (z->>'office')::uuid; GA := (z->>'ga')::uuid; GB := (z->>'gb')::uuid; PA := (z->>'pa')::uuid;
+    PB := (z->>'pb')::uuid; CO := (z->>'coach')::uuid; WS := (z->>'wes')::uuid; SC := (z->>'scorer')::uuid;
+    F1 := (z->>'f1')::uuid; F2 := (z->>'f2')::uuid; F3 := (z->>'f3')::uuid; F6 := (z->>'f6')::uuid;
+    F7 := (z->>'f7')::uuid; F8 := (z->>'f8')::uuid; F9 := (z->>'f9')::uuid; FC := (z->>'fc')::uuid;
+    G := (z->>'g')::uuid; GP := (z->>'gp')::uuid; GQ := (z->>'gq')::uuid;
+
+    -- ── (seed) ──
+    n := _v133_overlaps();
+    RAISE NOTICE '§112 (seed): % overlapping pairs of counted fixtures on related grounds', n;
+    PERFORM _assert(n = 0, format('§112 (seed): %s pairs of counted fixtures overlap on related grounds', n));
+
+    -- ── (ends) ──
+    at := (t::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg';
+    PERFORM _assert(fixture_ends_at(at::timestamptz, 'cricket', 'T20', 20) = at::timestamptz + interval '180 minutes'
+      AND fixture_ends_at(at::timestamptz, 'cricket', 'One-Day', NULL) = at::timestamptz + interval '420 minutes'
+      AND fixture_ends_at(at::timestamptz, 'cricket', 'T20', NULL) = at::timestamptz + interval '180 minutes'
+      AND fixture_ends_at(at::timestamptz, 'cricket', ' two  DAY ', 80) = ((t + 2)::timestamp AT TIME ZONE 'Africa/Johannesburg')
+      AND fixture_ends_at(at::timestamptz, 'cricket', 'One-Day Declaration', 100) = ((t + 1)::timestamp AT TIME ZONE 'Africa/Johannesburg')
+      AND fixture_ends_at(at::timestamptz, 'hockey', NULL, NULL) = ((t + 1)::timestamp AT TIME ZONE 'Africa/Johannesburg'),
+      '§112 (ends): fixture_ends_at() is not the planner''s fixtureLength()');
+
+    PERFORM _as(OFF);
+    -- ── (clash) ──
+    got := _v133_probe(format(ins, 'U18F', 'V133 Over It', ((t + 20)::timestamp + time '11:00') AT TIME ZONE 'Africa/Johannesburg', G));
+    want := '23P01|match_ground_clash|U18E v V133 Kearsney is on V133 No.1 Ground 10:00-13:00 on ' || to_char(t + 20, 'Dy FMDD Mon');
+    PERFORM _assert(got = want, format('§112 (clash): over f1 reads %s, not %s', got, want));
+    got := _v133_probe(format(ins, 'U18F', 'V133 After It', ((t + 20)::timestamp + time '13:00') AT TIME ZONE 'Africa/Johannesburg', G));
+    PERFORM _assert(got = 'ok', format('§112 (clash): a booking from the minute f1 ends reads %s, not ok', got));
+    got := _v133_probe(format('UPDATE match SET starts_at = %L::timestamptz WHERE id = %L',
+                              ((t + 20)::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg', F6));
+    PERFORM _assert(got LIKE '23P01|match_ground_clash|U18E v V133 Kearsney is on %',
+      format('§112 (clash): f6 moved onto f1 reads %s', got));
+
+    -- ── (tree) ──
+    got := _v133_probe(format(ins, 'U18F', 'V133 On The Pitch', ((t + 20)::timestamp + time '11:00') AT TIME ZONE 'Africa/Johannesburg', GP));
+    PERFORM _assert(got LIKE '23P01|match_ground_clash|U18E v V133 Kearsney is on V133 No.1 Ground %',
+      format('§112 (tree): a pitch of f1''s field reads %s', got));
+    got := _v133_probe(format(ins, 'U18E', 'V133 On The Field', ((t + 21)::timestamp + time '11:00') AT TIME ZONE 'Africa/Johannesburg', G));
+    PERFORM _assert(got LIKE '23P01|match_ground_clash|U18F v V133 Pitch Side is on V133 Pitch A %',
+      format('§112 (tree): the field over f2''s pitch reads %s', got));
+    got := _v133_probe(format(ins, 'U18E', 'V133 Next Pitch', ((t + 21)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg', GQ));
+    PERFORM _assert(got = 'ok', format('§112 (tree): the other pitch beside f2 reads %s, not ok', got));
+
+    -- ── (theirs) ──
+    got := _v133_probe(format(ins, 'U18E', 'V133 Their Day', ((t + 22)::timestamp + time '11:00') AT TIME ZONE 'Africa/Johannesburg', G));
+    want := '23P01|match_ground_clash|Another school''s fixture is on V133 No.1 Ground 10:00-13:00 on ' || to_char(t + 22, 'Dy FMDD Mon');
+    PERFORM _assert(got = want, format('§112 (theirs): reads %s, not %s', got, want));
+
+    -- ── (ignored): an abandoned fixture holds no ground ──
+    got := _v133_probe(format(ins, 'U18E', 'V133 In Its Place', ((t + 23)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg', G));
+    PERFORM _assert(got = 'ok', format('§112 (ignored): over the abandoned f3 reads %s, not ok', got));
+
+    -- ── (moves) and (told): f1 postponed ──
+    got := _v133_try(format('UPDATE match SET status = ''postponed'' WHERE id = %L', F1));
+    PERFORM _assert(got = 'ok' AND (SELECT status FROM match WHERE id = F1) = 'postponed',
+      format('§112 (moves): scheduled → postponed reads %s', got));
+    -- ...and holds no ground: f1's own slot can be booked now.
+    got := _v133_probe(format(ins, 'U18F', 'V133 Over It', ((t + 20)::timestamp + time '11:00') AT TIME ZONE 'Africa/Johannesburg', G));
+    PERFORM _assert(got = 'ok', format('§112 (ignored): over the postponed f1 reads %s, not ok', got));
+    FOR want, got IN SELECT * FROM (VALUES
+        ('live',      format('UPDATE match SET status = ''live'' WHERE id = %L', F1)),
+        ('complete',  format('UPDATE match SET status = ''complete'' WHERE id = %L', F1)),
+        ('same date', format('UPDATE match SET status = ''scheduled'' WHERE id = %L', F1)),
+        ('live → postponed', format('UPDATE match SET status = ''postponed'' WHERE id = %L', F7)),
+        ('complete → postponed', format('UPDATE match SET status = ''postponed'' WHERE id = %L', FC)),
+        ('scored', format('UPDATE match SET status = ''postponed'' WHERE id = %L', F8))) x LOOP
+      at := _v133_probe(got);
+      PERFORM _assert(at LIKE '23514|match_status_transition|%', format('§112 (moves): %s reads %s, not a refused move', want, at));
+    END LOOP;
+    PERFORM _assert((SELECT status FROM match WHERE id = F1) = 'postponed' AND (SELECT status FROM match WHERE id = F7) = 'live'
+                    AND (SELECT status FROM match WHERE id = F8) = 'scheduled', '§112 (moves): a refused move changed a status');
+
+    -- (told): one notice, to the side; nobody named, nobody addressed.
+    PERFORM set_config('app.user_id', '', true);
+    want := 'Postponed · U18E v V133 Kearsney';
+    PERFORM _as(GA);
+    SELECT count(*) INTO n FROM notification WHERE subject_id = F1 AND kind = 'fixture' AND title = want;
+    PERFORM _assert(n = 1, format('§112 (told): the side''s guardian reads %s postponement notices, not 1', n));
+    PERFORM _assert((SELECT body FROM notification WHERE subject_id = F1 AND title = want) =
+      'U18E v V133 Kearsney, set for ' || to_char(t + 20, 'Dy FMDD Mon') || ' at 10:00 at V133 No.1 Ground, is postponed. '
+      || 'It stays on the calendar and will be played on a new date; you will be told when it has one.',
+      '§112 (told): the postponement''s words are not the design''s');
+    PERFORM _as(PA);
+    SELECT count(*) INTO n FROM notification WHERE subject_id = F1 AND kind = 'fixture' AND title = want;
+    PERFORM _assert(n = 1, format('§112 (told): the side''s pupil reads %s postponement notices, not 1', n));
+    PERFORM _as(CO);
+    SELECT count(*) INTO n FROM notification WHERE subject_id = F1 AND kind = 'fixture' AND title = want;
+    PERFORM _assert(n = 1, format('§112 (told): the side''s coach reads %s, not 1', n));
+    FOR got IN SELECT unnest(ARRAY[GB::text, PB::text, WS::text]) LOOP
+      PERFORM _as(got::uuid);
+      SELECT count(*) INTO n FROM notification WHERE subject_id = F1;
+      PERFORM _assert(n = 0, format('§112 (told): %s, not of the side, reads %s of f1''s notices', got, n));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert((SELECT count(*) FROM notification WHERE subject_id = F1) = 0,
+      '§112 (told): nobody signed in reads a notice of f1');
+
+    -- ── (back on) ──
+    PERFORM _as(OFF);
+    -- f6 sits on f1's old slot meanwhile; back on there is a clash like any booking.
+    got := _v133_try(format('UPDATE match SET starts_at = %L::timestamptz WHERE id = %L',
+                            ((t + 20)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg', F6));
+    PERFORM _assert(got = 'ok', format('§112 (back on): f6 onto the postponed f1''s slot reads %s, not ok', got));
+    got := _v133_probe(format('UPDATE match SET status = ''scheduled'', starts_at = %L::timestamptz WHERE id = %L',
+                              ((t + 20)::timestamp + time '11:00') AT TIME ZONE 'Africa/Johannesburg', F1));
+    PERFORM _assert(got = '23P01|match_ground_clash|U18F v V133 Off Again is on V133 No.1 Ground 10:00-13:00 on ' || to_char(t + 20, 'Dy FMDD Mon'),
+      format('§112 (back on): back on over f6 reads %s', got));
+    -- A new date alone puts it back on (decision 2).
+    got := _v133_try(format('UPDATE match SET starts_at = %L::timestamptz WHERE id = %L',
+                            ((t + 27)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg', F1));
+    PERFORM _assert(got = 'ok' AND (SELECT status FROM match WHERE id = F1) = 'scheduled',
+      format('§112 (moves): a new date on the postponed f1 reads %s, status %s', got, (SELECT status FROM match WHERE id = F1)));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _as(GA);
+    PERFORM _assert((SELECT count(*) FROM notification WHERE subject_id = F1 AND kind = 'fixture') = 2
+      AND (SELECT body FROM notification WHERE subject_id = F1 AND title = 'Back on · U18E v V133 Kearsney')
+          = 'U18E v V133 Kearsney, postponed, is back on: ' || to_char(t + 27, 'Dy FMDD Mon') || ' at 10:00 at V133 No.1 Ground.',
+      '§112 (told): the guardian does not read both notices, postponed and back on, in the design''s words');
+    PERFORM _as(PA);
+    PERFORM _assert((SELECT count(*) FROM notification WHERE subject_id = F1 AND kind = 'fixture') = 2,
+      '§112 (told): the pupil does not read both notices');
+    PERFORM _as(GB);
+    PERFORM _assert((SELECT count(*) FROM notification WHERE subject_id = F1) = 0, '§112 (told): the other side''s guardian reads f1''s back-on');
+
+    -- ── (moves): postponed → scheduled with a new date, said; postponed → abandoned ──
+    PERFORM _as(OFF);
+    got := _v133_try(format('UPDATE match SET status = ''postponed'' WHERE id = %L', F6));
+    PERFORM _assert(got = 'ok', format('§112 (moves): f6 postponed reads %s', got));
+    got := _v133_probe(format('UPDATE match SET status = ''scheduled'', starts_at = %L::timestamptz WHERE id = %L',
+                              ((t + 30)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg', F6));
+    PERFORM _assert(got = 'ok', format('§112 (moves): postponed → scheduled with a new date reads %s', got));
+    got := _v133_try(format('UPDATE match SET status = ''abandoned'' WHERE id = %L', F6));
+    PERFORM _assert(got = 'ok' AND (SELECT status FROM match WHERE id = F6) = 'abandoned',
+      format('§112 (moves): postponed → abandoned reads %s', got));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _as(GB);
+    SELECT count(*) INTO n FROM notification WHERE subject_id = F6 AND kind = 'fixture';
+    PERFORM _assert(n = 2 AND EXISTS (SELECT 1 FROM notification WHERE subject_id = F6
+                                       AND title = 'Called off · U18F v V133 Off Again'
+                                       AND body = 'U18F v V133 Off Again (' || to_char(t + 20, 'Dy FMDD Mon') || ') is called off and will not be replayed.'),
+      format('§112 (told): the U18F''s guardian reads %s of f6''s notices, or not the called-off one in its words', n));
+    PERFORM _as(GA);
+    PERFORM _assert((SELECT count(*) FROM notification WHERE subject_id = F6) = 0, '§112 (told): the U18E''s guardian reads the U18F''s f6');
+    PERFORM set_config('app.user_id', '', true);
+    -- Nobody named, nobody addressed: every status notice is the side's.
+    PERFORM _as(OFF);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM notification
+                                 WHERE subject_id IN (F1, F6) AND kind = 'fixture'
+                                   AND (subject_person_id IS NOT NULL OR recipient_id IS NOT NULL OR scope_level <> 'team'
+                                        OR required_capability <> 'fixture.read' OR urgency <> 'medium'
+                                        OR position('Verify OneThreeThree' IN title || body) > 0)),
+      '§112 (told): a status notice names or addresses a person, or is not the side''s');
+
+    -- ── (score) ──
+    PERFORM _as(SC);
+    SELECT c.ok::text || ' ' || coalesce(c.reason, '') INTO got FROM scoring_claim(F9, 'v133-pad') c;
+    PERFORM _assert(got = 'true ', format('§112 (score): the scorer''s claim on f9 reads %s', got));
+    PERFORM _as(OFF);
+    got := _v133_try(format('UPDATE match SET status = ''postponed'' WHERE id = %L', F9));
+    PERFORM _assert(got = 'ok', format('§112 (score): f9 postponed reads %s', got));
+    PERFORM _assert(_v133_session(F9) = 'idle -', format('§112 (score): f9''s session reads %s after the postponement, not idle', _v133_session(F9)));
+    PERFORM _as(SC);
+    SELECT c.ok::text || ' ' || coalesce(c.reason, '') INTO got FROM scoring_claim(F9, 'v133-pad') c;
+    PERFORM _assert(got = 'false match_postponed', format('§112 (score): the claim on the postponed f9 reads %s', got));
+    PERFORM set_config('app.user_id', '', true);
+    got := _v133_ball(F9, SC);
+    PERFORM _assert(got = '23514 match_postponed', format('§112 (score): a ball on the postponed f9, as the owner, reads %s', got));
+    PERFORM _assert(position('''match_postponed''' IN (SELECT prosrc FROM pg_proc WHERE oid = 'scorebook_import_open(uuid)'::regprocedure)) > 0,
+      '§112 (score): scorebook_import_open() does not refuse a postponed match');
+
+    -- ── (result) ──
+    PERFORM _assert((SELECT r.outcome FROM match_result_compute(F9) r) = 'in_progress',
+      format('§112 (result): the postponed f9''s outcome reads %s', (SELECT r.outcome FROM match_result_compute(F9) r)));
+
+    -- ── (grants) ──
+    SELECT string_agg(f, ' ') INTO got FROM unnest(ARRAY['match_fixture_rules()', 'ball_event_not_postponed()',
+                                                         'match_status_ends_scoring()']) f
+     WHERE NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f::regprocedure AND p.prosecdef
+                         AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
+        OR has_function_privilege('public', f, 'EXECUTE');
+    PERFORM _assert(got IS NULL, format('§112 (grants): not pinned, or PUBLIC''s: %s', got));
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'fixture_status_notices(uuid,text,text)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'fixture_status_notices(uuid,text,text)', 'EXECUTE'),
+      '§112 (grants): the notice writer is callable by the app or PUBLIC');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 112
+  -- └── db/133 (section 112) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

@@ -55,6 +55,19 @@ function invalidFixtureSentence(detail) {
 
 export function fixtureRefusal(e) {
   if (e?.code === "invalid_fixture") return invalidFixtureSentence(e.detail);
+  // db/133 (Kameel, 4 Nov 2026): one ground at a time, no override. The
+  // database names the clash: "U15A v Kearsney College is on No.1 Ground
+  // 10:00-13:00 on Sat 8 Nov".
+  if (e?.code === "ground_clash") {
+    return typeof e.detail === "string" && e.detail
+      ? `Not booked: ${e.detail}. Choose another time or ground.`
+      : "Not booked: another fixture is on that ground then. Choose another time or ground.";
+  }
+  // db/133: a move the status may not make, in the database's own sentence
+  // ("A postponed fixture goes back on with a new date.").
+  if (e?.code === "status_transition") {
+    return typeof e.detail === "string" && e.detail ? e.detail : "That change to the fixture's status is not allowed.";
+  }
   if (FIXTURE_REFUSAL[e?.code]) return FIXTURE_REFUSAL[e.code];
   if (e?.status === 401) return "Your session has ended — sign in again. Nothing was arranged.";
   if (e?.status) return `Not arranged — the server said ${e.code || `HTTP ${e.status}`}.`;
@@ -143,10 +156,10 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
     : opponent;
   const ready = teamCode && (awayMode==="school" ? (awaySchoolId && awayTeamCode.trim()) : opponent.trim()) && date;
 
-  // Nothing here blocks a double-booking — the ground and the hour are a
-  // fact worth knowing, not a rule worth enforcing, and only the office
-  // arranging the trip could say whether it is really a clash. Computed
-  // from the same fixture list already on screen: no fabricated lookup.
+  // A hint only: the rule is the database's (db/133; Kameel, 4 Nov 2026 —
+  // two fixtures on one ground at overlapping times are refused, no
+  // override), and its refusal names the clash below. This says the same
+  // day early, from the fixture list already on screen: no fabricated lookup.
   const clash = date && ground && matches.some(m => m.venue===ground.name && m.date===date);
 
   const submit = async () => {
@@ -233,7 +246,7 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
           <Select label="Venue" value={groundId} onChange={setGroundId}
             options={[{value:"",label:"Not recorded"}, ...grounds.map(g=>({value:g.id,label:g.name}))]}/>
           {clash&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.amber,marginTop:"-8px",marginBottom:"12px"}}>
-            <Icon name="triangle-alert"/> Another fixture is already down for {ground.name} that day.</div>}
+            <Icon name="triangle-alert"/> Another fixture is already down for {ground.name} that day. Two fixtures cannot share a ground at the same time.</div>}
 
           {competitions.length>0&&(
             <Select label="Competition" value={competitionId} onChange={setCompetitionId} data-testid="fixture-competition"
@@ -296,7 +309,8 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
 }
 
 /**
- * Rescheduling, or calling off, a fixture the host already owns.
+ * Rescheduling, postponing, putting back on, or calling off a fixture the
+ * host already owns.
  *
  * Everything but the date, the ground and the status is frozen once a fixture
  * exists — services/api/write/fixture-api.mjs's `amend` deliberately does not
@@ -305,22 +319,39 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
  * uses: the actual gate is match_update() in db/09, keyed on fixture.update at
  * the HOST's own school and team, and the away school's attempt is refused
  * there regardless of what this component draws.
+ *
+ * POSTPONED (db/133; Kameel, 4 Nov 2026): called off before play, to be
+ * replayed. A fixture still to be played can be postponed; a postponed one
+ * goes back on only with a new date (both fields asked for), or is called
+ * off. Postponing and calling off each tell the side's parents and pupils at
+ * once, so each asks once more before it is sent; going back on tells them
+ * too. Which moves are allowed is the database's rule, and its refusal is
+ * shown in its own words, as a ground clash is.
  */
+const STATUS_ASK = {
+  postponed: { q: "Postpone this fixture? It stays on the calendar with no date, and the side's parents and pupils are told now.", yes: "Yes, postpone it" },
+  abandoned: { q: "Call this fixture off? It will not be played, and the side's parents and pupils are told now.", yes: "Yes, call it off" },
+};
+
 function RescheduleFixture({ match, grounds, onChanged }) {
+  const postponed = match.status === "postponed";
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [groundId, setGroundId] = useState("");
   const [said, setSaid] = useState("");
   const [busy, setBusy] = useState(false);
+  // The status this form is asking to confirm, or null.
+  const [asking, setAsking] = useState(null);
 
+  const close = () => { setOpen(false); setSaid(""); setAsking(null); setDate(""); setTime(""); setGroundId(""); };
   const amend = async (body) => {
     setSaid(""); setBusy(true);
     try {
       await api(`/api/fixtures/${match.id}`, { method: "POST", body });
-      setOpen(false); setDate(""); setTime(""); setGroundId("");
+      close();
       onChanged();
-    } catch (e) { setSaid(fixtureRefusal(e)); }
+    } catch (e) { setSaid(fixtureRefusal(e)); setAsking(null); }
     finally { setBusy(false); }
   };
 
@@ -328,31 +359,63 @@ function RescheduleFixture({ match, grounds, onChanged }) {
     const body = {};
     if (date && time) body.startsAt = new Date(`${date}T${time}`).toISOString();
     if (groundId) body.groundId = groundId;
+    if (postponed) {
+      // Back on is a new date, said whole: the day and the time.
+      if (!body.startsAt) { setSaid("Give it a new date and a start time to put it back on."); return; }
+      body.status = "scheduled";
+    }
     if (!Object.keys(body).length) { setSaid(FIXTURE_REFUSAL.nothing_to_change); return; }
     amend(body);
   };
 
   if (!open) return (
-    <Btn size="sm" variant="ghost" onClick={()=>setOpen(true)} data-testid="fixture-reschedule-open">Reschedule</Btn>
+    <Btn size="sm" variant="ghost" onClick={()=>setOpen(true)} data-testid="fixture-reschedule-open">
+      {postponed ? "Give it a new date" : "Reschedule or postpone"}
+    </Btn>
   );
 
+  const ask = asking ? STATUS_ASK[asking] : null;
   return (
-    <Card sx={{padding:"14px",marginBottom:"12px"}} data-testid="fixture-reschedule">
-      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"10px"}}>Reschedule this fixture</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+    <Card sx={{padding:"14px",marginBottom:"12px"}} data-testid="fixture-reschedule" data-status={match.status}>
+      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"6px"}}>
+        {postponed ? "Put this fixture back on" : "Reschedule this fixture"}
+      </div>
+      {postponed && (
+        <p data-testid="fixture-postponed-note" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,margin:"0 0 10px"}}>
+          Postponed. Its new date puts it back on, and the side's parents and pupils are told.
+        </p>
+      )}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"10px"}}>
         <Input label="New date" value={date} onChange={setDate} type="date"/>
         <Input label="New time" value={time} onChange={setTime} type="time"/>
       </div>
       <Select label="New venue" value={groundId} onChange={setGroundId}
         options={[{value:"",label:"Leave as is"}, ...grounds.map(g=>({value:g.id,label:g.name}))]}/>
       {said&&<div role="alert" data-testid="fixture-reschedule-refused" style={{fontFamily:D.body,fontSize:"12px",color:textOn(D.rose),marginBottom:"8px"}}>{said}</div>}
-      <div style={{display:"flex",gap:"8px",justifyContent:"space-between",flexWrap:"wrap"}}>
-        <Btn size="sm" variant="danger" disabled={busy} onClick={()=>amend({ status: "abandoned" })} data-testid="fixture-call-off">Call it off</Btn>
-        <div style={{display:"flex",gap:"8px"}}>
-          <Btn size="sm" variant="ghost" disabled={busy} onClick={()=>{setOpen(false);setSaid("");}}>Cancel</Btn>
-          <Btn size="sm" disabled={busy||(!date&&!groundId)} onClick={save} data-testid="fixture-reschedule-save">Save</Btn>
+      {ask ? (
+        <div role="group" aria-label="Confirm" data-testid="fixture-status-ask" style={{display:"grid",gap:"8px"}}>
+          <p style={{fontFamily:D.body,fontSize:"13px",color:D.textPrimary,margin:0}}>{ask.q}</p>
+          <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",flexWrap:"wrap"}}>
+            <Btn size="sm" variant="ghost" disabled={busy} onClick={()=>setAsking(null)}>Keep it</Btn>
+            <Btn size="sm" variant="danger" disabled={busy} onClick={()=>amend({ status: asking })} data-testid="fixture-status-confirm">{busy ? "Saving…" : ask.yes}</Btn>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div style={{display:"flex",gap:"8px",justifyContent:"space-between",flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+            {match.status === "upcoming" && (
+              <Btn size="sm" variant="ghost" disabled={busy} onClick={()=>{setSaid("");setAsking("postponed");}} data-testid="fixture-postpone">Postpone</Btn>
+            )}
+            <Btn size="sm" variant="danger" disabled={busy} onClick={()=>{setSaid("");setAsking("abandoned");}} data-testid="fixture-call-off">Call it off</Btn>
+          </div>
+          <div style={{display:"flex",gap:"8px"}}>
+            <Btn size="sm" variant="ghost" disabled={busy} onClick={close}>Cancel</Btn>
+            <Btn size="sm" disabled={busy||(postponed ? !(date&&time) : (!date&&!groundId))} onClick={save} data-testid="fixture-reschedule-save">
+              {postponed ? "Put it back on" : "Save"}
+            </Btn>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

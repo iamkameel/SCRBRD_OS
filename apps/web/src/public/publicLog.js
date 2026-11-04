@@ -97,7 +97,7 @@ export function unnamedToPositions(innings = [], people = {}) {
  * @param {any} m  GET /api/public/matches/:id's `match`
  */
 export function asPublicMatch(m) {
-  const status = { live: "live", complete: "complete", abandoned: "abandoned" }[m?.status] ?? "upcoming";
+  const status = { live: "live", complete: "complete", abandoned: "abandoned", postponed: "postponed" }[m?.status] ?? "upcoming";
   // Sliced as lib/live.js slices the signed-in read's, so both pages say the
   // same start for the same fixture.
   const sa = m?.startsAt ? String(m.startsAt) : null;
