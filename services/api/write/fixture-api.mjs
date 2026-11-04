@@ -63,6 +63,11 @@ export function fixtureRefusal(e) {
   if (e.code === "23514" && e.constraint === "match_super_over_pending") {
     return { status: 422, body: { error: "super_over_pending", detail: e.message } };
   }
+  // db/132 (Kameel, 4 Nov 2026): a finished match may only be called off. It
+  // is never put back to live or scheduled; a correction is an amendment.
+  if (e.code === "23514" && e.constraint === "match_finished_stays_finished") {
+    return { status: 422, body: { error: "match_finished", detail: e.message } };
+  }
   // db/133: a move the status may not make (postponing a match that was
   // scored, back on without a new date, a postponed match marked live), said
   // in full by the database.

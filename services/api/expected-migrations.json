@@ -125,5 +125,8 @@
   "127_fixture_class.sql",
   "128_sa_day.sql",
   "129_pupil_reach_dated.sql",
+  "130_match_finalise.sql",
+  "131_reach_last.sql",
+  "132_pilot_audit_fixes.sql",
   "133_fixture_status.sql"
 ]

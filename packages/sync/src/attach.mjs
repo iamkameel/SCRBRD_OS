@@ -220,7 +220,8 @@ export async function tryAttach({ engine, server, padLog, adopt, restore, intent
   const r = reconcile(padLog(), serverLog, { held: engine.held, pending: engine.pending });
   // A finished match takes nothing more, but the comparison still says
   // whether this device's log is all on the server (SCRBRD-079).
-  if (probe.reason === "match_complete") return { ok: false, reason: "match_complete", reconcile: r };
+  // A called-off match likewise (db/132).
+  if (probe.reason === "match_complete" || probe.reason === "match_abandoned") return { ok: false, reason: probe.reason, reconcile: r };
   if (r.state === "fork") return { ok: false, reason: "fork", reconcile: r };
 
   // What the server has is sent, as far as this device is concerned: marked

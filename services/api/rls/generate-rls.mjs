@@ -189,7 +189,31 @@ const definerTail = (/** @type {boolean} */ timeBoxed) => timeBoxed
   ? "$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;"
   : "$$ LANGUAGE sql STABLE SECURITY DEFINER;";
 
-function decisionFunction({ timeBoxed = false, suspendable = false } = {}) {
+/**
+ * WHAT A FRESH DECISION FILE MUST SAY, beside the pad scope above (db/128,
+ * db/132). db/01, db/23 and db/35 shipped with app_can() executable by PUBLIC
+ * and every "live today" test on current_date, and they keep emitting exactly
+ * that (`shipped`). The functions running today say otherwise: db/128 moved
+ * every day to sa_today(), Johannesburg's, and db/132 made app_can() the
+ * application's alone (REVOKE from PUBLIC, GRANT to scrbrd_app). A decision
+ * function emitted for a new file (the default) carries both, so the next
+ * generated file cannot hand them back.
+ */
+const APP_CAN_TO_PUBLIC = "GRANT EXECUTE ON FUNCTION app_can(text, uuid, text, uuid, uuid) TO PUBLIC;";
+const APP_CAN_TO_APP = "GRANT EXECUTE ON FUNCTION app_can(text, uuid, text, uuid, uuid) TO scrbrd_app;";
+const afresh = (/** @type {string} */ sql) => sql.replaceAll("current_date", "sa_today()").replace(APP_CAN_TO_PUBLIC, APP_CAN_TO_APP);
+
+/**
+ * app_can() and app_holds(): as a shipped file has them (`shipped`: db/01,
+ * db/23, db/35, byte for byte), or as a new file must (see afresh above).
+ * @param {{ timeBoxed?: boolean, suspendable?: boolean, shipped?: boolean }} [opts]
+ */
+export function decisionFunction({ timeBoxed = false, suspendable = false, shipped = false } = {}) {
+  const text = decisionText({ timeBoxed, suspendable });
+  return shipped ? text : afresh(text);
+}
+
+function decisionText({ timeBoxed = false, suspendable = false } = {}) {
   return `${banner("The authorization decision")}
 -- app_can(capability, school, team, person, fixture)
 --
@@ -540,6 +564,8 @@ export const ADDED_SINCE_01 = {
   "discipline.side.read":        "116_readers_privacy.sql",
   // ── The union passport (Kameel, 29 Oct 2026): named selectors only (db/124) ──
   "passport.union.read":         "124_union_passport.sql",
+  // ── REACH R-G (Kameel, 4 Nov 2026): a spectator reads every side's team posts (db/131) ──
+  "news.team.read":              "131_reach_last.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 
@@ -1228,7 +1254,7 @@ export function authz() {
     // against the tables it names at creation time — so emitting the decision
     // functions before the table they read fails the migration outright.
     capabilityRows(),
-    decisionFunction(),
+    decisionFunction({ shipped: true }),
     teamScopedConstraint(),
     assignmentPolicies(),
     ``,
@@ -1277,7 +1303,7 @@ export function timeBox() {
     `-- live for the minutes it was issued for and not one second longer, decided`,
     `-- by the same functions on every statement, with no job to run and fail.`,
     ``,
-    decisionFunction({ timeBoxed: true }),
+    decisionFunction({ timeBoxed: true, shipped: true }),
     mayGrantFunction({ timeBoxed: true }),
     ``,
   ].join("\n");
@@ -1316,7 +1342,7 @@ export function suspension() {
     `-- never lets go from false back to true. Every other assignment has no row`,
     `-- there, so nothing changes for anybody else.`,
     ``,
-    decisionFunction({ timeBoxed: true, suspendable: true }),
+    decisionFunction({ timeBoxed: true, suspendable: true, shipped: true }),
     mayGrantFunction({ timeBoxed: true, suspendable: true }),
     ``,
     `-- ── Assertion ──────────────────────────────────────────────────────`,

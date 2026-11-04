@@ -44,6 +44,7 @@
  *   GET  /api/matches/:id/events?since=           incremental sync
  *   POST /api/ai/stats-magic, /api/ai/commentary
  *   GET/POST /api/matches/:id/publication      a side of a fixture on the public pages
+ *   GET  /api/matches/:id/sheet                the team sheet, names and order, to its family (db/131)
  *   GET/POST /api/schools/:id/listing          a school's matches on the public home page
  *   POST /api/news/:id/public/{request,approve,withdraw}  a notice on the public home page (db/83)
  *   POST /api/news/:id/edit · /delete             change an unsent plan; throw away one never sent (db/110)
@@ -113,6 +114,7 @@ import { rosterAddRoutes } from "./write/roster-add-api.mjs";
 import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
 import { publicationRoutes } from "./write/publication-api.mjs";
+import { sheetRoutes } from "./read/sheet-api.mjs";
 import { listingRoutes } from "./write/listing-api.mjs";
 import { publicNameRoutes } from "./write/public-name-api.mjs";
 import { scorebookRoutes, scorebookFileRoutes } from "./write/scorebook-api.mjs";
@@ -491,6 +493,7 @@ const training = trainingRoutes({ pool, secret: SECRET });
 // A publish or withdrawal drops the public cache's entry before it answers,
 // not when db/59's notification arrives (publication-api.mjs).
 const publication = publicationRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
+const sheet = sheetRoutes({ pool, secret: SECRET });
 const listing = listingRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
 const publicName = publicNameRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
 const playing = playingConditionsRoutes({ pool, secret: SECRET });
@@ -703,6 +706,10 @@ const MATCH_ROUTES = [
   // and taking a side off must never depend on a menu setting.
   [/^\/api\/matches\/([^/]+)\/publication$/,        "GET",  publication.read],
   [/^\/api\/matches\/([^/]+)\/publication$/,        "POST", publication.set],
+  // The team sheet as names and order (REACH R-H, STEP4 Q10): fixture_sheet()
+  // (db/131) decides who, per end, as the caller. Not module-gated, as the
+  // fixture is not.
+  [/^\/api\/matches\/([^/]+)\/sheet$/,             "GET",  sheet.read],
   // A school's matches on the public home page (SCRBRD-142, db/82):
   // public_listing_set() decides who — broadcast.publish at the school, no
   // team. Not module-gated, as publication is not: taking a school off the
@@ -934,6 +941,8 @@ const PLAYER_ROUTES = [
   // the dispute window, and who reads which words.
   [/^\/api\/matches\/([^/]+)\/official$/,                      "GET",  results.official],
   [/^\/api\/matches\/([^/]+)\/confirm$/,                       "POST", results.confirm],
+  // db/130: finishing the match (scoring.finalise at the home side), from the pad.
+  [/^\/api\/matches\/([^/]+)\/finalise$/,                      "POST", results.finalise],
   [/^\/api\/matches\/([^/]+)\/dispute$/,                       "POST", results.dispute],
   [/^\/api\/results\/disputes\/([^/]+)\/clear$/,              "POST", results.clearDispute],
   [/^\/api\/results\/confirmations\/([^/]+)\/withdraw$/,      "POST", results.withdrawConfirmation],
