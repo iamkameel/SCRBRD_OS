@@ -16,8 +16,10 @@
  *      approves it from the fixture's Corrections sheet.
  *   4. The innings ends at its two overs, the reply is scored on Basic Scoring
  *      (no wagon wheel: the timing set beside the wheel's) until the match is
- *      decided, the review gate closes each innings, the result is confirmed
- *      official, and the director publishes the home side to the public pages.
+ *      decided, the review gate closes each innings, and the scorer finishes
+ *      the match from the result screen (db/130; refused before it is decided,
+ *      and to a parent and the office). The result is confirmed official, and
+ *      the director publishes the home side to the public pages.
  *   5. THE COACH opens the finished match: the batting and bowling figures,
  *      and the wagon wheel with a spoke for each placed scoring shot.
  *   6. THE PARENT (H Whitfield) sees the fixture and its change before play,
@@ -531,6 +533,16 @@ try {
   const breakText = await text(P);
   const need = Number((/need\D*(\d+)/i.exec(breakText) ?? [])[1]);
   ok(`the break names what the reply needs (${need})`, need > 0, breakText.slice(0, 300));
+  // Finishing is refused while the log has not decided the match (db/130), and
+  // to anyone without scoring.finalise at the home side, whatever the state.
+  const finish = async (email) => {
+    const r = await fetch(`${BASE}/api/matches/${MATCH}/finalise`, { method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${await tokenFor(email)}` } });
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  };
+  const early = await finish("scorer@example.invalid");
+  ok(`at the break, finishing is refused: the match is not decided (${early.status} ${early.body?.error})`,
+    early.status === 422 && early.body?.error === "not_decided" && /not decided/.test(early.body?.detail ?? ""), JSON.stringify(early));
   await beat(P, 1200);
   ok("the scorer starts the reply", await click(P, /Start 2nd Innings/, 4000));
   await afterReads(P, 600);
@@ -584,22 +596,37 @@ try {
     ends.length === 2 && /overs/.test(ends[0].reason) && ends[1].reason === "target_reached");
   ok("no console errors (scorer, on the pad)", sc.errors.length === 0, sc.errors.join(" | "));
 
-  // The match decided on the pad is not, to the server, a finished match: its
-  // status is the fixture's own, and everything after full time — the
-  // scorer's confirm-or-correct prompt, the official result, a parent's
-  // Played row — waits on status 'complete' (MatchView.jsx, fulltime.jsx).
-  const [{ status: afterPad }] = await q(`select status from match where id = $1`, [MATCH]);
-  if (afterPad !== "complete") {
-    gap("4", `the match decided on the pad stays '${afterPad}': no screen marks it complete (the pad's result screen offers "New Match"; `
-      + "the fixture route takes status 'complete' and no form sends it). The walk marks it complete as the office, through that route");
-    const officeToken = await tokenFor("registrar@example.invalid");
-    const r = await fetch(`${BASE}/api/fixtures/${MATCH}`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${officeToken}` },
-      body: JSON.stringify({ status: "complete" }) });
-    ok(`the office's fixture route marks it complete (${r.status})`, r.ok && (await q(`select status from match where id = $1`, [MATCH]))[0].status === "complete",
-      await r.text().catch(() => ""));
-  } else {
-    ok("the match is complete on the server once it is decided", true);
-  }
+  // ── 4 (finished) ───────────────────────────────────────────────
+  // The match decided on the pad becomes, to the server, a finished match when
+  // the scorer says so (db/130): everything after full time — the scorer's
+  // confirm-or-correct prompt, the official result, a parent's Played row —
+  // waits on it.
+  group("4. The scorer finishes the match from the result screen");
+  const parentTry = await finish("parent.whitfield@example.invalid");
+  ok(`a parent may not finish it (${parentTry.status} ${parentTry.body?.error})`, parentTry.status === 403 && parentTry.body?.error === "not_permitted",
+    JSON.stringify(parentTry));
+  const officeTry = await finish("registrar@example.invalid");
+  ok(`nor may the office, which holds fixture.update and not scoring.finalise (${officeTry.status} ${officeTry.body?.error})`,
+    officeTry.status === 403 && officeTry.body?.error === "not_permitted", JSON.stringify(officeTry));
+  ok("...and the match is still not complete", (await q(`select status from match where id = $1`, [MATCH]))[0].status !== "complete");
+  ok("the result screen offers him Finish the match", await has(P, "pad-finish"), (await text(P)).slice(0, 400));
+  const fin = await tid(P, "pad-finish").first().evaluate((e) => ({ h: e.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(e).fontSize) })).catch(() => null);
+  ok(`...a 44px key on the 12px floor (${JSON.stringify(fin)})`, !!fin && fin.h >= 44 && fin.fs >= 12);
+  await beat(P, 1200);
+  await tap(P, "pad-finish");
+  ok("he finishes it: 'Finished. The result now waits for confirmation.'",
+    await until(P, () => /^Finished\. The result now waits for confirmation\.$/.test(document.querySelector('[data-testid="pad-finish-said"]')?.textContent?.trim() ?? ""), 8000),
+    await inner(P, "pad-finish-said"));
+  ok("...and New Match is still there", (await P.locator("button", { hasText: /^New Match$/ }).count()) === 1);
+  const [{ status: afterFinish }] = await q(`select status from match where id = $1`, [MATCH]);
+  ok(`the server has the match complete (${afterFinish})`, afterFinish === "complete");
+  const [{ id: scorerId }] = await q(`select id from app_user where email = 'scorer@example.invalid'`);
+  const fins = await q(`select actor_id from scoring_audit where match_id = $1 and event = 'match_finalised'`, [MATCH]);
+  ok("...with one audit row, his", fins.length === 1 && fins[0].actor_id === scorerId, JSON.stringify(fins));
+  const twice = await finish("scorer@example.invalid");
+  ok(`a second press is a no-op (${twice.status} ${twice.body?.state})`, twice.status === 200 && twice.body?.state === "already_complete"
+    && (await q(`select count(*)::int n from scoring_audit where match_id = $1 and event = 'match_finalised'`, [MATCH]))[0].n === 1);
+  await beat(P, 2000);
 
   // ── 3b ─────────────────────────────────────────────────────────
   group("3b. After full time: the scorer asks for an amendment of the wide");
