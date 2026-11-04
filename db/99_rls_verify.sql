@@ -8669,8 +8669,10 @@ BEGIN
   RETURNING id INTO SB;
   INSERT INTO school (code, name, kind, province) VALUES ('V125X', 'Verify OneTwentyFive Far School', 'school', 'Verify 125 Province')
   RETURNING id INTO FAR;
-  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-    (SA, 'U15A', 'Verify OneTwentyFive Kilo', 1251, 'batter', U15) RETURNING id INTO c_a;
+  -- Kilo bats left and bowls spin (db/134: his list row carries both); the
+  -- others' styles are not recorded, and their rows carry them blank.
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born, batting_style, bowling_style) VALUES
+    (SA, 'U15A', 'Verify OneTwentyFive Kilo', 1251, 'batter', U15, 'L', 'S') RETURNING id INTO c_a;
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
     (SA, 'U15A', 'Verify OneTwentyFive Echo', 1252, 'bowler', U15) RETURNING id INTO c_d;
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born) VALUES
@@ -32251,10 +32253,8 @@ $v49$;
     PERFORM _assert(_v125_total() = v_t, format('§102 (f): a refused call logged (%s, was %s)', _v125_total(), v_t));
 
     -- (a) and (g): the selector's first list, at SA. PA bats left and bowls
-    -- spin; PD's styles are not recorded (db/134: his row carries them as
-    -- they stand on his player row, a blank one blank).
-    UPDATE player SET batting_style = 'L', bowling_style = 'S' WHERE id = (y->>'PA')::uuid;
-    UPDATE player SET batting_style = NULL, bowling_style = NULL WHERE id = (y->>'PD')::uuid;
+    -- spin; PD's styles are not recorded (db/134: a row carries them as they
+    -- stand on his player row, a blank one blank).
     PERFORM _as((y->>'sel')::uuid);
     SELECT coalesce(string_agg(_v125_key(y, l.player_id) || '@' || _v125_key(y, l.org_id)
                                || '|' || l.name || '|' || l.school_name || '|' || l.team_code
