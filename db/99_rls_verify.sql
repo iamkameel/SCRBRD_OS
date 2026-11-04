@@ -2163,12 +2163,15 @@ CREATE OR REPLACE FUNCTION _seed_70() RETURNS jsonb AS $$
 DECLARE
   HIL    uuid := '11111111-1111-1111-1111-111111111111';
   WES    uuid := '22222222-2222-2222-2222-222222222222';
-  GROUND uuid := 'ffffffff-0000-0000-0000-000000000001';
+  GROUND uuid;
   ids    jsonb := '{}';
   r      record;
   v_u uuid; v_a uuid; v_p uuid; v_m uuid;
   s      int := 0;
 BEGIN
+  -- A ground of this section's own: db/133 refuses two fixtures on one ground
+  -- at once, and other sections, and the seed, have fixtures on the Oval.
+  INSERT INTO ground (school_id, name) VALUES (HIL, 'Verify 070 Oval') RETURNING id INTO GROUND;
   FOR r IN SELECT * FROM (VALUES
       ('jono', 'Jono Liftseventy', 15,  10, 'hil', 'U15A'),
       ('ben',  'Ben Liftseventy',  15,  20, 'hil', 'U15A'),
@@ -3011,12 +3014,15 @@ CREATE OR REPLACE FUNCTION _seed_76() RETURNS jsonb AS $$
 DECLARE
   HIL    uuid := '11111111-1111-1111-1111-111111111111';
   WES    uuid := '22222222-2222-2222-2222-222222222222';
-  GROUND uuid := 'ffffffff-0000-0000-0000-000000000001';
+  GROUND uuid;
   ids    jsonb := '{}';
   r      record;
   v_u uuid; v_a uuid; v_p uuid; v_m uuid;
   s      int := 0;
 BEGIN
+  -- A ground of this section's own: db/133 refuses two fixtures on one ground
+  -- at once, and other sections, and the seed, have fixtures on the Oval.
+  INSERT INTO ground (school_id, name) VALUES (HIL, 'Verify 076 Oval') RETURNING id INTO GROUND;
   FOR r IN SELECT * FROM (VALUES
       ('kai', 'Kai Liftseventysix', 15, 10, 'hil', 'U17A'),
       ('lou', 'Lou Liftseventysix', 15, 20, 'hil', 'U17A'),
@@ -3091,8 +3097,9 @@ BEGIN
       ('mf', 10, time '09:00', 'scheduled', 'Verify 076 later')) AS v(k, days, at, st, opp)
   LOOP
     INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
+    -- Ten overs a side (100 minutes): two hours apart, none overlaps the next (db/133).
     VALUES (HIL, 'U17A', r.opp, ((current_date + r.days)::timestamp + r.at) AT TIME ZONE 'Africa/Johannesburg',
-            'cricket', 'T20', 20, r.st, GROUND)
+            'cricket', 'T20', 10, r.st, GROUND)
     RETURNING id INTO v_m;
     ids := ids || jsonb_build_object(r.k, v_m, r.k || '_start', (SELECT starts_at FROM match WHERE id = v_m));
   END LOOP;
@@ -3702,7 +3709,8 @@ BEGIN
     (m, HIL, 4, 1, 1, SCORER, 'v82', 'v82-' || m || '-4', 4, now(), 'ball', 'run', 1, '{"striker": "Typed Batter"}');
   -- f2 · Hilton v Westville; both publish; Hilton lists, Westville does not (row 2)
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status, ground_id)
-  VALUES (HIL, '2XI', WES, '2XI', 'Westville Boys'' High 2XI', noon + interval '1 hour', 'cricket', 'T20', 20, 'scheduled', GROUND)
+  -- No ground: f1 is on the Oval from noon, and db/133 refuses two fixtures on one ground at once.
+  VALUES (HIL, '2XI', WES, '2XI', 'Westville Boys'' High 2XI', noon + interval '1 hour', 'cricket', 'T20', 20, 'scheduled', NULL)
   RETURNING id INTO m;
   ids := ids || jsonb_build_object('f2', m);
   -- f3 · Westville at home to Hilton; only Hilton (away) publishes; Hilton lists (row 3)
@@ -4009,7 +4017,8 @@ BEGIN
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
   VALUES (HIL, 'U15A', 'Verify 088 Visitors', now(), 'cricket', 'T20', 20, 'live', g) RETURNING id INTO m_on;
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
-  VALUES (HIL, 'U15A', 'Verify 088 Visitors', now(), 'cricket', 'T20', 20, 'live', g) RETURNING id INTO m_off;
+  -- Four hours before ON, so the two are not on the Oval at once (db/133).
+  VALUES (HIL, 'U15A', 'Verify 088 Visitors', now() - interval '4 hours', 'cricket', 'T20', 20, 'live', g) RETURNING id INTO m_off;
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
   VALUES (HIL, 'U15A', 'Verify 088 Visitors', now(), 'cricket', 'T20', 20, 'live', g4) RETURNING id INTO m_few;
   PERFORM _publish_73(m_on);
