@@ -287,8 +287,11 @@ try {
   ok("it is scheduled again, on the new date", back?.status === "scheduled" && Date.parse(back.starts_at) === Date.parse(m2.starts_at) - (Date.parse(m2.starts_at) % 60e3) + 2 * 86400e3,
      JSON.stringify({ status: back?.status, at: back?.starts_at }));
   ok("...and the card no longer says Postponed", (await tid(dos.page, `mc-card-status-${M2}`).getAttribute("data-state").catch(() => null)) !== "postponed");
-  await pa.page.reload({ waitUntil: "networkidle" });
-  await afterReads(pa.page, 1500);
+  // Away and back: the Notices screen reads afresh when it opens.
+  await pa.page.locator("nav button", { hasText: /^Matches$/ }).first().click({ timeout: 6000 }).catch(() => {});
+  await afterReads(pa.page, 1200);
+  ok("the parent's Matches list no longer marks it Postponed", (await inner(pa.page, `fixture-chip-${M2}`)).trim() !== "Postponed"
+     && await tid(pa.page, `fixture-row-${M2}`).count() === 1, await inner(pa.page, `fixture-chip-${M2}`));
   await pa.page.locator("nav button", { hasText: /^Notices$/ }).first().click({ timeout: 6000 }).catch(() => {});
   await afterReads(pa.page, 1500);
   const notices2 = await tid(pa.page, "family-notices").innerText().catch(() => "");
