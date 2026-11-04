@@ -285,10 +285,11 @@ export function AvailabilityBlock({ match, child, role, self = false, compact = 
 
 /**
  * Whether the child is on the sheet, from match_squad. A parent's read
- * returns her own child's row and nobody else's, so she learns "named,
- * batting 4" and nothing more (§9 Q10's widening is not phase A); a pupil
- * reads his side's sheet, and his line says where he is on it. Either way the
- * line names nobody but the child.
+ * returns her own child's row and nobody else's, so the line says "named,
+ * batting 4"; a pupil reads his side's sheet, and his line says where he is
+ * on it. Either way the line names nobody but the child. On the fixture (P3,
+ * S3) the side's names and order follow it, from their own narrow read
+ * (STEP4 Q10, db/131: matches.jsx SideSheet).
  */
 export function TeamSheetLine({ match, child, role, self = false }) {
   const { rows, loading, error, disabled } = useLive("match_squad", role, 0, { matchId: match.id });
