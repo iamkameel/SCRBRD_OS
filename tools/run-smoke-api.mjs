@@ -40,6 +40,8 @@ const WALKS = [
   // A handover verifies against THIS innings, penalty runs included (SCRBRD-088, db/45).
   "handover-innings",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
+  // Pilot item 7: "who read my child's record", the office's five-minute answer.
+  "who-read",
   "rating", "notes", "amend", "login",
   // GA-I26a (db/104, db/105): a score keeps its assessor and is withdrawn, the
   // coaching point on the note tier, the target, the side's plan and register
