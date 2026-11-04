@@ -1705,6 +1705,15 @@ try {
     ok("no console errors (stranger)", s.errors.length === 0);
     await s.ctx.close();
 
+    // REACH R-G (Kameel, 4 Nov 2026): a follower asks too, and his request
+    // says in one line what granting it opens.
+    const fp = new pg.Pool({ connectionString: ownerUrl() });
+    const follower = (await fp.query(`insert into app_user (school_id, email, name, role)
+                                      values (null, $1, 'F Walker', 'spectator') returning id`, [`walk.follower.${Date.now()}@example.invalid`])).rows[0].id;
+    const followReq = (await fp.query(`insert into role_request (person_id, role, school_id)
+                                       values ($1, 'spectator', '11111111-1111-1111-1111-111111111111') returning id`, [follower])).rows[0].id;
+    await fp.end().catch(() => {});
+
     const o = await open();
     await signIn(o.page, /Registrar|School Admin|registrar@example\.invalid/);
     if (await o.page.locator('[data-testid="nav-management"]').count()) {
@@ -1713,6 +1722,9 @@ try {
       // Three reads land before the panel draws; wait for the panel, not a clock.
       await panel.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
       ok("the office sees the request on the management screen", await panel.count() === 1 && /N Zulu/.test(await panel.innerText()));
+      ok("...and a follower's request says what he'll see, in one line",
+         (await o.page.locator(`[data-testid="request-spectator-reach-${followReq}"]`).innerText({ timeout: 4000 }).catch(() => "")).trim()
+           === "He'll see every match and every team's posts, but no player's stats or passport.");
       // He asked to coach and named no side; the office names one.
       await panel.locator('select[aria-label="Which side"]').first().selectOption("1XI").catch(() => {});
       await panel.locator("button", { hasText: /^Grant$/ }).first().click({ timeout: 4000 }); await afterReads(o.page, 1500);
