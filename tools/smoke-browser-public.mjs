@@ -296,10 +296,11 @@ try {
 
   group("8. \"At this rate\", on a first innings still being played");
   {
-    const GROUND = "ffffffff-0000-0000-0000-000000000001";
+    // No ground: the shared fixture's T10 is live on the Oval now, and db/133
+    // refuses two fixtures on one ground at once. This section is about the rate.
     const liveId = (await q(
       `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
-       values ($1, '1XI', 'Kearsney College 1XI', $2, now() - interval '1 hour', 'cricket', 'T10', 10, 'live') returning id`, [HIL, GROUND]))[0].id;
+       values ($1, '1XI', 'Kearsney College 1XI', $2, now() - interval '1 hour', 'cricket', 'T10', 10, 'live') returning id`, [HIL, null]))[0].id;
     await as(SARAH, `select * from fixture_publish($1, 'home', true)`, [liveId]);
     const OAKES = "Gareth Oakes";
     let n = 0;

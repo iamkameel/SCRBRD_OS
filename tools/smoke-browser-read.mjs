@@ -2942,8 +2942,11 @@ try {
       const card = (await owner.query(`select id from emergency_contact where player_id = $1 and active order by priority limit 1`, [JAMES])).rows[0];
       ok("...H Whitfield declares", (await call(driverTok, "/api/lifts/declaration", { schoolId: HIL, vehicle: "silver Toyota Fortuner", registration: "nd 123-456", seats: 3,
         licenceHeld: true, insured: true, roadworthy: true, belts: true, codeAcknowledged: true, contactId: card?.id })).status === 200);
+      // No ground: the seed's 1XI v Michaelhouse is on the Oval at this hour three
+      // days on, and db/133 refuses two fixtures on one ground at once. The lift
+      // meets at school.
       const L = (await owner.query(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status, ground_id)
-         values ($1, '1XI', 'Verify GA-I20 Lift XI', now() + interval '3 days', 'T20', 20, 'scheduled', 'ffffffff-0000-0000-0000-000000000001') returning id, starts_at`, [HIL])).rows[0];
+         values ($1, '1XI', 'Verify GA-I20 Lift XI', now() + interval '3 days', 'T20', 20, 'scheduled', NULL) returning id, starts_at`, [HIL])).rows[0];
       // Both boys answered for it (each by his own parent), so the list is about the lift alone.
       await owner.query(`insert into match_availability (match_id, player_id, school_id, status, declared_by)
                          select $1, p.id, p.school_id, 'available', u.id from player p
