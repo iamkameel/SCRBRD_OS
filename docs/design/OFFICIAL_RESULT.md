@@ -37,6 +37,8 @@ Three words, and only two of them public: **Provisional** (complete, not confirm
 | **D13** | The scorer's and coach's "Looks right" | **Stays a device-only dismiss, reworded**: "Checked on this phone · this does not make the result official; the organiser does that" (role word by fixture class). A `result.confirm` holder who passes D5 sees "Confirm result" in its place, which writes. Nobody else sees a confirm | remove the prompt (no: it is the scorer's own check and the door to the amendment flow) |
 | **D14** | Withdrawing a confirmation | **The confirmer may withdraw his own within the dispute window, with a note** (`withdrawn_by/at/note`; a tap on the wrong fixture happens). After the window, only a correction reopens it. The withdrawal is said to both sides like a lapse | never (no: a mis-tap then needs a fake amendment); anyone with the capability (no: a second person un-confirming is a dispute, D7) |
 
+**Decided 2026-11-04 (Kameel), word for word:** "Who presses 'Finish the match' after the last ball? A: the scorer (or the coach, the director of sport, the sports admin: everyone who holds 'scoring.finalise') finishes it from the pad's result screen. A pupil who holds a scorer role may finish too." Built as db/130 (PR #234).
+
 ---
 
 ## 2 · States, and how each is known
