@@ -233,10 +233,10 @@ function SelectionView() {
                         <span style={{ display: "block", fontFamily: D.body, fontSize: "12px", color: D.textMuted, overflowWrap: "anywhere" }}>
                           {[r.school, r.side].filter(Boolean).join(" · ")}
                         </span>
-                        {r.styles && (
+                        {r.styleLine && (
                           <span data-testid={`selection-styles-${r.id}`}
                             style={{ display: "block", fontFamily: D.body, fontSize: "12px", color: D.textSecondary, overflowWrap: "anywhere" }}>
-                            {r.styles}
+                            {r.styleLine}
                           </span>
                         )}
                       </span>

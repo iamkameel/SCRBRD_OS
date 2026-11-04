@@ -50,7 +50,7 @@ export function styleWords(bat, bowl) {
  */
 export const asRow = (r) => ({
   id: r.player_id, name: r.name, school: r.school_name, side: r.team_code, org: r.org_id,
-  styles: styleWords(r.batting_style, r.bowling_style),
+  styleLine: styleWords(r.batting_style, r.bowling_style),
 });
 
 /** The institution's name for the words, or a plain stand-in. */
