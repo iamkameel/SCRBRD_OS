@@ -234,12 +234,19 @@ $$ LANGUAGE sql SECURITY DEFINER;
 -- again: db/132 refuses that move for everyone, the owner too, so this
 -- helper alone steps round the trigger, inside the verifier's own
 -- transaction, and puts it back (db/99 §111 (reopen) proves the refusal).
+-- So too from abandoned back to live: db/133 refuses that move for everyone
+-- (abandoned goes back on to scheduled only; §112 (off) proves it), so this
+-- helper steps round match_fixture_rules the same way, for the same reason.
 CREATE OR REPLACE FUNCTION _set_match_status(p_match uuid, p_status text) RETURNS void AS $$
 BEGIN
-  IF p_status NOT IN ('complete', 'abandoned')
-     AND EXISTS (SELECT 1 FROM match WHERE id = p_match AND status = 'complete') THEN
+  IF (p_status NOT IN ('complete', 'abandoned')
+      AND EXISTS (SELECT 1 FROM match WHERE id = p_match AND status = 'complete'))
+     OR (p_status NOT IN ('abandoned', 'scheduled')
+      AND EXISTS (SELECT 1 FROM match WHERE id = p_match AND status = 'abandoned')) THEN
     ALTER TABLE match DISABLE TRIGGER match_finished_stays_finished;
+    ALTER TABLE match DISABLE TRIGGER match_fixture_rules;
     UPDATE match SET status = p_status WHERE id = p_match;
+    ALTER TABLE match ENABLE TRIGGER match_fixture_rules;
     ALTER TABLE match ENABLE TRIGGER match_finished_stays_finished;
     RETURN;
   END IF;
