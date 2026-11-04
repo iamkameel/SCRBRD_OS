@@ -396,8 +396,10 @@ function RescheduleFixture({ match, grounds, onChanged }) {
         <div role="group" aria-label="Confirm" data-testid="fixture-status-ask" style={{display:"grid",gap:"8px"}}>
           <p style={{fontFamily:D.body,fontSize:"13px",color:D.textPrimary,margin:0}}>{ask.q}</p>
           <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",flexWrap:"wrap"}}>
-            <Btn size="sm" variant="ghost" disabled={busy} onClick={()=>setAsking(null)}>Keep it</Btn>
-            <Btn size="sm" variant="danger" disabled={busy} onClick={()=>amend({ status: asking })} data-testid="fixture-status-confirm">{busy ? "Saving…" : ask.yes}</Btn>
+            {/* Focus lands on the safe answer: the button that opened this is gone. */}
+            <Btn size="sm" variant="ghost" disabled={busy} onClick={()=>setAsking(null)} autoFocus>Keep it</Btn>
+            {/* Red only for calling off, which cannot be undone; a postponement goes back on. */}
+            <Btn size="sm" variant={asking === "abandoned" ? "danger" : "primary"} disabled={busy} onClick={()=>amend({ status: asking })} data-testid="fixture-status-confirm">{busy ? "Saving…" : ask.yes}</Btn>
           </div>
         </div>
       ) : (
