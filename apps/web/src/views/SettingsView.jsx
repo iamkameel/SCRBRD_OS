@@ -1280,7 +1280,7 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
           by the office (transport.lift.oversee), never by a job. */}
       <LiftPurgePanel/>
 
-      {canAudit && <AuditSection role={role}/>}
+      {canAudit && <AuditSection role={role} users={users} players={players}/>}
 
       <Panel>
         <CardHead title="This build" sub="What is running, and where it is pointed."/>
@@ -1306,8 +1306,23 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
 // for whoever holds audit.read there: the question a parent asks the office,
 // and the office can now answer from this screen rather than from the
 // database. The API filters every row to the reader's school.
-function AuditSection({ role }) {
-  const reads = useRows("access_log", role);
+//
+// FOR ONE CHILD (docs/pilot/WHO_READ_RUNBOOK.md step 3): the office finds the
+// child by name among the players it already reads, and the list becomes the
+// log's per-child answer, GET /api/read/access_log?playerId=<child>. The
+// server decides again (audit.read at the school, this school's rows only),
+// hides every safeguarding read (db/57), and puts the asking itself on the
+// record, naming the child. The picker is drawn inside this section only,
+// which only an audit.read holder is drawn; it adds no name the reader's own
+// players read did not already hold. Nothing here is on a public page.
+function AuditSection({ role, users = [], players = [] }) {
+  const [child, setChild] = useState(/** @type {{id: string, name: string, team: string | null} | null} */ (null));
+  const log = useLive("access_log", role, 0, child ? { playerId: child.id } : null);
+  // The server answers for the child alone; held to it here as well, so a
+  // demonstration's rows (or a stale answer while the next arrives) never
+  // show another child's reads under his name.
+  const reads = child ? log.rows.filter((r) => (r.recordIds ?? []).includes(child.id)) : log.rows;
+  const roleOf = useMemo(() => new Map(users.map((u) => [u.id, ROLES[u.role]?.label ?? u.role])), [users]);
   const [nonce, setNonce] = useState(0);
   const sessions = useRows("support_access", role, nonce);
   // The office may end a session early — the school does not have to trust the
@@ -1327,14 +1342,21 @@ function AuditSection({ role }) {
     }
     setNonce((n) => n + 1);
   };
-  const recent = reads.slice(0, 40);
+  const recent = child ? reads : reads.slice(0, 40);
   return (
     <div style={{ display: "grid", gap: "16px" }}>
-      <Panel>
+      <Panel data-testid="who-read">
         <CardHead title="On the record: who read what"
           sub="Every read of a restricted field — a date of birth, a clinical note — and every read made from outside the school. What was actually received, not what was asked for."/>
-        {recent.length === 0
-          ? <EmptyState icon="book-open" message="Nothing restricted has been read yet."/>
+        <ChildPicker players={players} child={child} onPick={setChild}/>
+        <p data-testid="who-read-count" aria-live="polite" style={{ fontFamily: D.body, fontSize: "13px", color: D.textSecondary, margin: "0 0 10px" }}>
+          {log.loading ? "Reading the record…"
+            : log.error ? "The record could not be read just now. Choose the child again, or reload the page."
+            : child ? `${reads.length} ${reads.length === 1 ? "read" : "reads"} about ${child.name}, newest first. Safeguarding reads are never listed here, and this question is itself on the record.`
+            : `The ${recent.length} newest reads across the school. Find a child above for his reads alone.`}
+        </p>
+        {log.loading || log.error ? null : recent.length === 0
+          ? <EmptyState icon="book-open" message={child ? `Nothing restricted about ${child.name} has been read.` : "Nothing restricted has been read yet."}/>
           : (
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1343,15 +1365,17 @@ function AuditSection({ role }) {
                 </tr></thead>
                 <tbody>
                   {recent.map((r) => (
-                    <tr key={r.id} style={{ borderTop: `1px solid ${D.border}` }}>
-                      <TD>{r.personName ?? "—"}</TD>
+                    <tr key={r.id} data-testid="who-read-row" data-resource={r.resource} style={{ borderTop: `1px solid ${D.border}` }}>
+                      <TD>{r.personName ?? "—"}{roleOf.get(r.personId) ? <span style={{ color: D.textSecondary }}> · {roleOf.get(r.personId)}</span> : null}</TD>
                       <TD mono>{r.resource}</TD>
                       <TD align="center" mono>{r.recordCount}</TD>
                       <TD mono>{(r.fields ?? []).join(", ") || "—"}</TD>
                       <TD align="center">
                         {r.supportAccessId ? <Badge color={D.amber}>Support</Badge> : r.platformWide ? <Badge color={D.violet}>Platform</Badge> : <Badge color={D.textMuted}>Own school</Badge>}
                       </TD>
-                      <TD align="center" mono title={r.occurredAt ? new Date(r.occurredAt).toLocaleString() : undefined}>{ago(r.occurredAt)}</TD>
+                      <TD align="center" mono title={r.occurredAt ? new Date(r.occurredAt).toLocaleString() : undefined}>
+                        {ago(r.occurredAt)}{child && r.occurredAt ? <div>{whenWords(r.occurredAt)}</div> : null}
+                      </TD>
                     </tr>
                   ))}
                 </tbody>
@@ -1377,6 +1401,61 @@ function AuditSection({ role }) {
             </div>
           ))}
       </Panel>
+    </div>
+  );
+}
+
+/** "4 Nov 2026, 14:02" on the school's clock: the date the office writes in its answer. @param {string} t */
+const whenWords = (t) => new Date(t).toLocaleString("en-ZA", { timeZone: "Africa/Johannesburg", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+// THE CHILD PICKER for "who read my child's record?": a name search over the
+// players this reader already reads, at most eight answers, each a 44px
+// choice; the chosen child is said, with the way back to the whole school.
+// No name is fetched for it and none is drawn before two letters are typed.
+function ChildPicker({ players, child, onPick }) {
+  const [q, setQ] = useState("");
+  const term = q.trim().toLowerCase();
+  const found = term.length < 2 ? [] : players.filter((p) => String(p.name ?? "").toLowerCase().includes(term))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name))).slice(0, 8);
+  const choice = { minHeight: "44px", padding: "0 14px", background: "transparent", color: D.textPrimary, border: `1px solid ${D.border}`,
+    borderRadius: D.md, cursor: "pointer", fontFamily: D.body, fontSize: "14px", textAlign: "left" };
+  if (child) {
+    return (
+      <div data-testid="who-read-child" style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: "10px" }}>
+        <span style={{ fontFamily: D.body, fontSize: "14px", color: D.textPrimary, fontWeight: 600 }}>
+          This child: {child.name}{child.team ? ` · ${child.team}` : ""}
+        </span>
+        <button type="button" className="os-state" data-testid="who-read-clear" onClick={() => { onPick(null); setQ(""); }} style={choice}>
+          Back to the whole school
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginBottom: "10px", maxWidth: "520px" }}>
+      <label htmlFor="who-read-search" style={{ display: "block", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted,
+        letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "5px" }}>Find a child by name</label>
+      <input id="who-read-search" data-testid="who-read-search" type="search" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off"
+        aria-describedby="who-read-search-hint"
+        style={{ width: "100%", minHeight: "44px", padding: "0 12px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.md,
+          color: D.textPrimary, fontFamily: D.body, fontSize: "16px", boxSizing: "border-box" }}/>
+      <div id="who-read-search-hint" style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary, marginTop: "4px" }}>
+        {term.length < 2 ? "Type two letters or more of his name."
+          : found.length ? `${found.length} ${found.length === 1 ? "match" : "matches"}${found.length === 8 ? " shown; type more to narrow them" : ""}.`
+          : "No child of this school by that name."}
+      </div>
+      {found.length > 0 && (
+        <ul aria-label="Children who match" style={{ listStyle: "none", margin: "8px 0 0", padding: 0, display: "grid", gap: "6px" }}>
+          {found.map((p) => (
+            <li key={p.id}>
+              <button type="button" className="os-state" data-testid={`who-read-option-${p.id}`} onClick={() => onPick({ id: p.id, name: p.name, team: p.team ?? null })}
+                style={{ ...choice, width: "100%" }}>
+                {p.name}{p.team ? <span style={{ color: D.textSecondary }}> · {p.team}</span> : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
