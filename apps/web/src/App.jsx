@@ -302,6 +302,8 @@ export default function SCRBRD_OS() {
       setScorerResume({ cfg: {
         matchId: m.id, team1: m.homeTeam, team2: m.awayTeam,
         teamCode: m.homeTeam, overs: m.overs ?? 20, live: true,
+        // The home school, for the result screen's "Finish the match" offer (db/130).
+        ...(m.schoolId ? { schoolId: m.schoolId } : {}),
         // The fixture's start dates the match for the Laws, and its format
         // says whether a no-ball gives a free hit (SCRBRD-113).
         ...(m.startsAt ? { startsAt: m.startsAt } : {}),

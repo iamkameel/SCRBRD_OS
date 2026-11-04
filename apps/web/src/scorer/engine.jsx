@@ -31,7 +31,8 @@ import { PracticeLabel, PracticeWeatherChip } from "./practiceLabel.jsx";
 import { clearDraft, inProgressPractice, loadPractice, savePractice, updatePractice, savedClock, cfgFromRecord, weatherChip } from "../lib/practice.js";
 import { scorecardFileName, scorecardText, saveTextFile } from "../lib/practiceExport.js";
 import { api, signedIn } from "../lib/api.js";
-import { profile } from "../lib/session.js";
+import { couldFinalise, profile } from "../lib/session.js";
+import { FinishMatch } from "./finishMatch.jsx";
 import { PadSync } from "../lib/sync.js";
 import { refusalWords } from "../lib/handover.js";
 import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad, reconcile, padLogFrom, withOrphans, describeEvent } from "@scrbrd/sync";
@@ -2441,6 +2442,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
               </div>
             </section>
           ))}
+          {/* db/130: a fixture's match is finished on the server by whoever
+              holds scoring.finalise at the home side — offered here, decided
+              there. Not for a practice match (its own record) or a tie still
+              waiting on its super over. */}
+          {live&&matchId&&!practiceMode&&signedIn()&&offer.state!=="available"&&couldFinalise(match?.schoolId,match?.teamCode)&&(
+            <FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}/>
+          )}
           <div style={{textAlign:"center",display:"flex",gap:"12px",justifyContent:"center",flexWrap:"wrap"}}>
             {practiceMode&&(
               <Btn variant="tonal" size="lg" data-testid="practice-save-scorecard" onClick={saveScorecard}>
