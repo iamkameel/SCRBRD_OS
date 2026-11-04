@@ -9338,6 +9338,31 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/129 (section 106) ─────────────────────────────────────────────
 
+-- ┌── db/131 (sections 108, 109, 110). REACH's last three slices ──────────
+-- §108 (R-G): Hilton's U13E and U13F, invented here. Their two coaches, the
+-- director of sport, a follower the office admitted school-wide and one it
+-- scoped to the U13E (a spectator assignment with team_code set: the office's
+-- decide route takes a side, requests-api.mjs). A U13E fixture, for a plan.
+-- As the owner; every name is invented.
+CREATE OR REPLACE FUNCTION _v131g_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  ids jsonb; f uuid;
+BEGIN
+  ids := _v71_people('v131g', ARRAY[
+    ARRAY['director',  'directorofsport', HIL::text, '',     ''],
+    ARRAY['ecoach',    'coach',           HIL::text, 'U13E', ''],
+    ARRAY['fcoach',    'coach',           HIL::text, 'U13F', ''],
+    ARRAY['follower',  'spectator',       HIL::text, '',     ''],
+    ARRAY['efollower', 'spectator',       HIL::text, 'U13E', '']]);
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U13E', 'Section 108 Visitors', ((sa_today() + 4)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f;
+  RETURN ids || jsonb_build_object('f', f);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- └── db/131 (sections 108, 109, 110) ─────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -33000,6 +33025,85 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 106
   -- └── db/129 (section 106) ──────────────────────────────────────────
+
+  -- ┌── db/131 (section 108) ─────────────────────────────────────────
+  -- ── 108. REACH R-G: a spectator and team posts (§6.7; REACH-D3) ──
+  -- docs/design/REACH_parent_pupil.md §2.3, §6.7, §7 D3 (Kameel 14 Oct 2026:
+  -- "a team's posts reach him only when the office scoped him to that side;
+  -- a school-wide spectator reads school posts and fixtures"). Rows are
+  -- _v131g_stage()'s, invented; every post is its author's, written through
+  -- scrbrd_app under RLS. What each label holds:
+  --   (authors)   each coach reads his own side's post (and the U13E's plan):
+  --               the rows below are there to be refused
+  --   (school)    both followers read the school's post
+  --   (wide)      the school-wide follower reads no team post, nor its notice
+  --   (scoped)    the follower the office scoped to the U13E reads no other
+  --               side's post, nor its notice
+  --   (plan)      neither reads the U13E's plan (team.read, db/96), nor its
+  --               notice
+  -- NOT ASSERTED HERE: "a U13E-scoped follower reads the U13E's posts". The
+  -- side test of db/101 (news_plan_reach(), db/117/db/129) asks team.read,
+  -- which no spectator holds, so today he reads none; §6.7's remedy (that
+  -- test under news.read) would pass every school-wide news.read holder
+  -- too, since app_can() fits an assignment with no team to every side, and
+  -- §78 (team) asserts the opposite of finance, sponsorship, a driver,
+  -- facilities and a follower. Left for the lead and Kameel.
+  DECLARE
+    g     jsonb := _v131g_stage();
+    V_HIL uuid := '11111111-1111-1111-1111-111111111111';
+    F     uuid := (g->>'f')::uuid;
+    S uuid; TE uuid; TF uuid; PE uuid;
+    k text;
+  BEGIN
+    PERFORM _as((g->>'director')::uuid);
+    INSERT INTO news_post (scope, school_id, title, body, published_at)
+    VALUES ('school', V_HIL, 'Section 108 assembly', 'Colours on Friday.', now()) RETURNING id INTO S;
+    PERFORM _as((g->>'ecoach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', V_HIL, 'U13E', 'Section 108 nets', 'Nets on Tuesday.', now()) RETURNING id INTO TE;
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at, kind, fixture_id)
+    VALUES ('team', V_HIL, 'U13E', 'Section 108 plan', 'Bat first if we win it.', now(), 'plan', F) RETURNING id INTO PE;
+    PERFORM _as((g->>'fcoach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', V_HIL, 'U13F', 'Section 108 kit', 'Whites on Saturday.', now()) RETURNING id INTO TF;
+
+    -- (authors)
+    PERFORM _as((g->>'ecoach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id IN (TE, PE)) = 2, '§108 (authors): the U13E coach does not read his post and his plan');
+    PERFORM _as((g->>'fcoach')::uuid);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = TF) = 1, '§108 (authors): the U13F coach does not read his post');
+
+    -- (school)
+    FOREACH k IN ARRAY ARRAY['follower', 'efollower'] LOOP
+      PERFORM _as((g->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = S) = 1,
+        format('§108 (school): the %s does not read the school''s post', k));
+    END LOOP;
+
+    -- (wide)
+    PERFORM _as((g->>'follower')::uuid);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id IN (TE, TF)) = 0
+                    AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id IN (TE, TF)) = 0,
+      '§108 (wide): the school-wide follower reads a team''s post, or its notice');
+
+    -- (scoped)
+    PERFORM _as((g->>'efollower')::uuid);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = TF) = 0
+                    AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id = TF) = 0,
+      '§108 (scoped): the U13E follower reads the U13F''s post, or its notice');
+
+    -- (plan)
+    FOREACH k IN ARRAY ARRAY['follower', 'efollower'] LOOP
+      PERFORM _as((g->>k)::uuid);
+      PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = PE) = 0
+                      AND (SELECT count(*) FROM notification n WHERE n.subject_kind = 'news' AND n.subject_id = PE) = 0,
+        format('§108 (plan): the %s reads the U13E''s plan, or its notice', k));
+    END LOOP;
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 108
+  -- └── db/131 (section 108) ──────────────────────────────────────────
+
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
