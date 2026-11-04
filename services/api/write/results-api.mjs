@@ -25,6 +25,11 @@
  *   POST /api/results/disputes/:id/clear                { note } the organiser; a friendly's other hand
  *   POST /api/results/confirmations/:id/withdraw        { note } the confirmer, within the window (D14)
  *   GET  /api/results/to-confirm                        the reader's results to confirm or settle
+ *
+ * Finishing the match (db/130; Kameel, 4 Nov 2026, option A):
+ *   POST /api/matches/:id/finalise                      scoring.finalise at the home side, from the
+ *                                                       pad's result screen: status complete, or
+ *                                                       already_complete; refusals in FINALISE_WORDS
  *   Each write tells the public cache once committed (onChange, I36 N2's
  *   hook; polling, no hub), and db/114's trigger tells every other instance.
  *
@@ -41,6 +46,19 @@ const err = (/** @type {string} */ code, status = 400, /** @type {unknown} */ de
   Object.assign(new Error(code), { status, detail });
 
 /** A definer function's (ok, reason, detail) row: the row when ok, else a refusal. @param {any} r */
+/**
+ * What finishing a match says (db/130's match_finalise()), each answer in
+ * the words the pad shows. The refusals travel as `detail`.
+ */
+export const FINALISE_WORDS = Object.freeze({
+  finished: "Finished. The result now waits for confirmation.",
+  already_complete: "This match is already finished.",
+  not_permitted: "You may not finish this match. A scorer, coach or director of sport of the home side can.",
+  not_decided: "The match is not decided yet: score it to its end before you finish it.",
+  super_over_pending: "The match is tied and its conditions provide a super over: play it, or record the organiser's decision, first.",
+  match_abandoned: "This match was called off, so there is no result to finish.",
+});
+
 function answer(r) {
   if (!r) throw err("no_result", 500);
   if (r.ok) return r;
@@ -344,6 +362,24 @@ export function resultsRoutes({ pool, secret, onChange }) {
       });
       changed(id);
       return out;
+    }),
+
+    // POST /api/matches/:id/finalise → { ok, state: finished | already_complete, message }
+    //   db/130 (Kameel, 4 Nov 2026, option A): whoever holds scoring.finalise
+    //   at the home side finishes a match the log has decided; a second call
+    //   is a no-op. refusals: not_permitted (403), not_decided, super_over_pending,
+    //   match_abandoned — each with its words (FINALISE_WORDS).
+    finalise: handle(async (req) => {
+      const id = idOf(req);
+      const r = await runAsPrincipal(pool, secret, as(req), async (client) =>
+        (await client.query(`select * from match_finalise($1)`, [id])).rows[0]);
+      if (!r) throw err("no_result", 500);
+      if (!r.ok) {
+        throw err(r.reason ?? "refused", r.reason === "not_permitted" ? 403 : 422,
+                  FINALISE_WORDS[/** @type {keyof typeof FINALISE_WORDS} */ (r.reason)] ?? undefined);
+      }
+      if (r.reason === "finished") changed(id);
+      return { ok: true, state: r.reason, message: FINALISE_WORDS[/** @type {keyof typeof FINALISE_WORDS} */ (r.reason)] };
     }),
 
     // POST /api/matches/:id/dispute { note } → { ok, id }

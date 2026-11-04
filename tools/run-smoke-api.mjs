@@ -82,6 +82,11 @@ const WALKS = [
   // dispute and its clearing, a reopening by amendment and a re-confirmation,
   // a withdrawal, and a friendly's confirmer who was a hand on its log. ──
   "official",
+  // ── db/130: finishing the match — scoring.finalise at the home side; the
+  // signed out, a parent, the office and the away coach refused; an undecided
+  // match refused; the scorer finishes; a second call a no-op; after it the
+  // result is provisional and the pen cannot be claimed. ──
+  "finalise",
   // ── SCRBRD-114 phase 3b (db/71): the super over ──
   // A cup tie and a friendly's, scored on the real write path; the cup tie
   // waits for its super over; the Laws and the document at the door; the
