@@ -1795,12 +1795,14 @@ CREATE OR REPLACE FUNCTION _typed_players_64() RETURNS bigint AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- db/65 (section 43). Two Hilton 1XI fixtures at Gordon Sherwood Oval, T20
--- of 20 overs: one ten days ahead (on the hour), one three days past.
+-- of 20 overs: one eleven days ahead (on the hour), one three days past.
+-- Eleven, not ten: the seed's U16B fixture is on the Oval ten days ahead at
+-- the seed's hour, and db/133 refuses two fixtures on one ground at once.
 CREATE OR REPLACE FUNCTION _seed_65() RETURNS jsonb AS $$
 DECLARE m uuid; mp uuid;
 BEGIN
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
-  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'Verify 065', date_trunc('hour', now()) + interval '10 days',
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'Verify 065', date_trunc('hour', now()) + interval '11 days',
           'cricket', 'T20', 20, 'scheduled', 'ffffffff-0000-0000-0000-000000000001')
   RETURNING id INTO m;
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, ground_id)
@@ -17529,8 +17531,10 @@ BEGIN
     SELECT * INTO r FROM fixture_plan_item_begin(P, KEY);
     PERFORM _assert(r.ok AND r.match_id = M, format('db/67 (twice): begun again, the item does not name its match (%s)', r.match_id));
     BEGIN
+      -- No ground on the second: it would be refused as a clash with M first
+      -- (db/133), and this is about the item, not the ground.
       INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, ground_id, starts_at, sport, format, overs, status, competition_id)
-      VALUES (HIL, '1XI', WES, '1XI', 'pending', PITCH, T0 + interval '30 minutes', 'cricket', 'T20', 20, 'scheduled', C) RETURNING id INTO M2;
+      VALUES (HIL, '1XI', WES, '1XI', 'pending', NULL, T0 + interval '30 minutes', 'cricket', 'T20', 20, 'scheduled', C) RETURNING id INTO M2;
       SELECT * INTO r FROM fixture_plan_item_record(P, KEY, M2);
       PERFORM _assert(false, 'db/67 (twice): a second item was recorded for one fixture');
     EXCEPTION WHEN unique_violation THEN NULL;
