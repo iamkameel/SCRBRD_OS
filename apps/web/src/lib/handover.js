@@ -84,6 +84,8 @@ export const cancelHandover = (matchId, { device }) =>
  */
 export const REFUSAL_WORDS = {
   match_complete: "This match is complete — scoring has closed. A correction now goes through an amendment request.",
+  // db/132: a match called off is not scored either.
+  match_abandoned: "This match was called off — scoring has closed.",
   lease_active: "Someone else is scoring this match on another device right now.",
   handover_pending: "A handover is waiting — enter the code from the outgoing scorer.",
   verifying: "A handover is being confirmed on another device.",

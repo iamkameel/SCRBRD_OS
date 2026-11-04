@@ -120,10 +120,12 @@ export function sessionRoutes({ pool, secret, hub }) {
         if (r.mismatch) { res.json({ ok: false, epoch: null, state: null, reason: "device_mismatch" }); return; }
         // db/33: on a complete match the lease is never extended and the
         // function says so in `state` (its shape cannot grow a reason).
+        // db/132: a called-off match likewise, as match_abandoned.
+        const over = r.state === "match_complete" || r.state === "match_abandoned";
         res.json({ ok: !!r.holds, epoch: r.epoch ?? null,
-                   state: r.state === "match_complete" ? null : (r.state ?? null),
+                   state: over ? null : (r.state ?? null),
                    reason: r.holds ? null
-                         : r.state === "match_complete" ? "match_complete"
+                         : over ? r.state
                          : (r.found ? "not_token_holder" : "no_session") });
       } catch (/** @type {any} */ e) {
         // scoring_lease_check raises insufficient_privilege for a caller who

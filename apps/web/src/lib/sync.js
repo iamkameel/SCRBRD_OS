@@ -426,7 +426,8 @@ export class PadSync {
     if (r.reason === "fork" && r.reconcile) { try { await this.hooks.forked?.(r.reconcile); } catch { /* the banner still lists them */ } }
     // A finished match takes nothing more into its log; what this device
     // still has queued goes to the lead's review rather than nowhere (P7).
-    if (r.reason === "match_complete" && engine.pendingCount) this.forReview();
+    // A called-off match likewise (db/132).
+    if ((r.reason === "match_complete" || r.reason === "match_abandoned") && engine.pendingCount) this.forReview();
     this.reason = r.reason;
     if (RETRY.has(r.reason)) {
       this.halted = false;
@@ -507,13 +508,14 @@ export class PadSync {
     try { hb = await this.probe(engine.epoch); }
     catch (e) { throw new Error(failureReason(e), { cause: e }); }
     if (hb.ok) { this.leaseAt = Date.now(); return { ok: true }; }
-    if (hb.reason === "match_complete") {
+    if (hb.reason === "match_complete" || hb.reason === "match_abandoned") {
       // A result declared while this pad still had balls to send (P7): they
       // never reach the log, but they reach the lead — sent for review, where
       // the server files them under match_complete, rather than kept on this
       // phone with no road anywhere. The flush stops here; the review send
       // waits for it.
-      const r = this.stop_("match_complete");
+      // A called-off match likewise (db/132), under its own word.
+      const r = this.stop_(hb.reason);
       if (engine.pendingCount) this.forReview();
       return r;
     }

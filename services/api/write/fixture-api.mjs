@@ -57,6 +57,11 @@ export function fixtureRefusal(e) {
   if (e.code === "23514" && e.constraint === "match_super_over_pending") {
     return { status: 422, body: { error: "super_over_pending", detail: e.message } };
   }
+  // db/132 (Kameel, 4 Nov 2026): a finished match may only be called off. It
+  // is never put back to live or scheduled; a correction is an amendment.
+  if (e.code === "23514" && e.constraint === "match_finished_stays_finished") {
+    return { status: 422, body: { error: "match_finished", detail: e.message } };
+  }
   if (e.code === "23514") return { status: 422, body: { error: "invalid_fixture", detail: e.message } };
   if (e.code === "23503") return { status: 404, body: { error: "no_such_school_ground_or_sport", detail: e.message } };
   const status = e.code === "42501" ? 403 : (e.status || 500);
