@@ -11776,6 +11776,10 @@ BEGIN
   PERFORM _set_match_status(M_HANDOVER, 'abandoned');
   PERFORM _assert(duty_status(O_SCORER) = 'expired', 'an abandoned fixture''s scorer is not expired');
   PERFORM _assert(duty_status(O_STOOD) = 'revoked', 'withdrawn does not outrank the fixture''s end');
+  -- db/132: a called-off match is not scored either, and the sections below
+  -- still score M_HANDOVER, so it is put back in play here, as an organiser
+  -- may put back a fixture he called off (only a finished one stays finished).
+  PERFORM _set_match_status(M_HANDOVER, 'live');
 
   -- ── Rulebook clauses: anyone signed in reads, nobody writes (SCRBRD-041, db/32)
   -- Reference material under the directive's own predicate. The spectator is
