@@ -189,17 +189,6 @@ const board = async (page) => ((await page.locator('[role="status"][aria-live="p
 const serverBalls = (match) => q(`select seq, innings, kind, ball_type, value, shot, theta, radius, placement_source, striker_id, payload
                                     from ball_event where match_id = $1 order by seq`, [match]);
 
-/** The pad sends in the background: until the server's log for the match has stopped growing. */
-async function settled(match) {
-  let last = -1;
-  for (let i = 0; i < 40; i++) {
-    const [{ n }] = await q(`select count(*)::int as n from ball_event where match_id = $1`, [match]);
-    if (n === last) return n;
-    last = n;
-    await new Promise((r) => setTimeout(r, 400));
-  }
-  return last;
-}
 
 /** Every ball's time, from the first tap to the board showing it, and its taps. */
 const timings = { wheel: [], basic: [], extra: [] };
@@ -469,7 +458,9 @@ try {
   // ── 3a ─────────────────────────────────────────────────────────
   group("3a. A correction during play: a ball recorded, then undone");
   const beforeFlick = await board(P);
-  const rowsBefore = await settled(MATCH);
+  // Counted once the leg bye before it is on the server (the pad sends in the background).
+  for (let i = 0; i < 50 && (await serverBalls(MATCH)).at(-1)?.ball_type !== "LB"; i++) await P.waitForTimeout(200);
+  const rowsBefore = (await serverBalls(MATCH)).length;
   await placed("flick", 0.5, 0.4, 1);
   const undoSays = await tid(P, "key-undo").getAttribute("aria-label").catch(() => "");
   ok(`Undo says what it will take back ("${undoSays}")`, /^Undo: 1 to /.test(undoSays ?? ""), undoSays);
@@ -478,7 +469,8 @@ try {
   ok("the board is back where it was before the flick", await until(P, (b) => [...document.querySelectorAll('[role="status"][aria-live="polite"]')]
     .some((e) => e.textContent.trim() === b), 6000, beforeFlick), `${beforeFlick} / ${await board(P)}`);
   await afterReads(P, 1200);
-  await settled(MATCH);
+  // The ball and its void, once both are sent (the pad's outbox may hold one a while).
+  for (let i = 0; i < 50 && (await serverBalls(MATCH)).length < rowsBefore + 2; i++) await P.waitForTimeout(200);
   const afterUndo = await serverBalls(MATCH);
   if (DEBUG) console.log("[debug] after undo:", JSON.stringify(afterUndo.slice(rowsBefore).map((r) => [r.seq, r.kind, r.ball_type, r.value])));
   // An undo is not a deletion: the log keeps the ball and appends a void of it.
@@ -584,7 +576,9 @@ try {
   const result = await text(P);
   ok("the result screen names the winner", /Match Complete/i.test(result) && /Kearsney/i.test(result) && /wicket/i.test(result), result.slice(0, 400));
   await beat(P, 2000);
-  const ends = await q(`select payload->>'reason' as reason from ball_event where match_id = $1 and kind = 'innings_end' order by seq`, [MATCH]);
+  const endsOf = () => q(`select payload->>'reason' as reason from ball_event where match_id = $1 and kind = 'innings_end' order by seq`, [MATCH]);
+  for (let i = 0; i < 50 && (await endsOf()).length < 2; i++) await P.waitForTimeout(200);
+  const ends = await endsOf();
   ok(`the server has both innings closed, for the Laws' reasons (${ends.map((e) => e.reason).join(", ")})`,
     ends.length === 2 && /overs/.test(ends[0].reason) && ends[1].reason === "target_reached");
   ok("no console errors (scorer, on the pad)", sc.errors.length === 0, sc.errors.join(" | "));
