@@ -45,7 +45,6 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const err = (/** @type {string} */ code, status = 400, /** @type {unknown} */ detail = undefined) =>
   Object.assign(new Error(code), { status, detail });
 
-/** A definer function's (ok, reason, detail) row: the row when ok, else a refusal. @param {any} r */
 /**
  * What finishing a match says (db/130's match_finalise()), each answer in
  * the words the pad shows. The refusals travel as `detail`.
@@ -59,6 +58,7 @@ export const FINALISE_WORDS = Object.freeze({
   match_abandoned: "This match was called off, so there is no result to finish.",
 });
 
+/** A definer function's (ok, reason, detail) row: the row when ok, else a refusal. @param {any} r */
 function answer(r) {
   if (!r) throw err("no_result", 500);
   if (r.ok) return r;
