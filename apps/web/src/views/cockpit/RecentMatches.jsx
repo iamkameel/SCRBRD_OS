@@ -115,8 +115,12 @@ function SideCard({ side, named, onNav }) {
                       <>
                         <p data-testid="recent-result" style={body()}>{l.result ?? "No result recorded"}</p>
                         <p data-testid="recent-totals" style={quiet()}>
-                          {us.short} <span style={fig()}>{l.ours ?? "did not bat"}</span>
-                          {" · "}{them.short} <span style={fig()}>{l.theirs ?? "did not bat"}</span>
+                          {l.ours == null && l.theirs == null ? "No innings on the log." : (
+                            <>
+                              {us.short} {l.ours != null ? <span style={fig()}>{l.ours}</span> : "no innings on the log"}
+                              {" · "}{them.short} {l.theirs != null ? <span style={fig()}>{l.theirs}</span> : "no innings on the log"}
+                            </>
+                          )}
                         </p>
                       </>
                     ) : <p data-testid="recent-unread" style={quiet()}>The result could not be read just now. That is not the same as there being none.</p>}
