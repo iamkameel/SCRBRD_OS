@@ -9840,6 +9840,23 @@ CREATE OR REPLACE FUNCTION _v133_outcome(p_match uuid) RETURNS text AS $$
   SELECT r.outcome FROM match_result_compute(p_match) r
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- _v133_probe() as the owner, who passes every policy: the rule holds for him too.
+CREATE OR REPLACE FUNCTION _v133_owner_probe(p_sql text) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  EXECUTE p_sql;
+  RAISE EXCEPTION 'v133-undo';
+EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM = 'v133-undo' THEN RETURN 'ok'; END IF;
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN SQLSTATE || '|' || coalesce(v_con, '') || '|' || SQLERRM;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A match's scoring_audit events, oldest first, as the owner.
+CREATE OR REPLACE FUNCTION _v133_audit(p_match uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(s.event, ' ' ORDER BY s.at, s.id), '') FROM scoring_audit s WHERE s.match_id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- The scoring session, as the owner reads it: state and holder.
 CREATE OR REPLACE FUNCTION _v133_session(p_match uuid) RETURNS text AS $$
   SELECT coalesce((SELECT s.state::text || ' ' || coalesce(s.holder_user_id::text, '-') FROM scoring_session s WHERE s.match_id = p_match), 'none')
@@ -34328,6 +34345,10 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   --   (score)     a postponed match is not claimed (match_postponed), the
   --               session it had ends, and no ball is written on it, by
   --               anybody
+  --   (off)       a match called off goes back on to scheduled only, on the
+  --               record (abandoned_back_on), and its side is told; to live,
+  --               complete or postponed it is refused, for every caller.
+  --               A complete match postponed is db/132's refusal, which stands
   --   (result)    a postponed match has no result
   --   (grants)    the new definers pinned, the app's only; the notice writer
   --               nobody's
@@ -34411,7 +34432,9 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
         ('complete → postponed', format('UPDATE match SET status = ''postponed'' WHERE id = %L', FC)),
         ('scored', format('UPDATE match SET status = ''postponed'' WHERE id = %L', F8))) x LOOP
       at := _v133_probe(got);
-      PERFORM _assert(at LIKE '23514|match_status_transition|%', format('§112 (moves): %s reads %s, not a refused move', want, at));
+      -- A complete match: db/132's rule answers first (match_finished_stays_finished).
+      PERFORM _assert(at LIKE CASE WHEN want = 'complete → postponed' THEN '23514|match_finished_stays_finished|%' ELSE '23514|match_status_transition|%' END,
+        format('§112 (moves): %s reads %s, not a refused move', want, at));
     END LOOP;
     PERFORM _assert((SELECT status FROM match WHERE id = F1) = 'postponed' AND (SELECT status FROM match WHERE id = F7) = 'live'
                     AND (SELECT status FROM match WHERE id = F8) = 'scheduled', '§112 (moves): a refused move changed a status');
@@ -34496,6 +34519,33 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
                                         OR required_capability <> 'fixture.read' OR urgency <> 'medium'
                                         OR position('Verify OneThreeThree' IN title || body) > 0)),
       '§112 (told): a status notice names or addresses a person, or is not the side''s');
+
+    -- ── (off): f3, called off, goes back on to scheduled and nowhere else ──
+    PERFORM _as(OFF);
+    FOR want IN SELECT unnest(ARRAY['live', 'complete', 'postponed']) LOOP
+      at := _v133_probe(format('UPDATE match SET status = %L WHERE id = %L', want, F3));
+      PERFORM _assert(at LIKE '23514|match_status_transition|%', format('§112 (off): abandoned → %s reads %s, not refused', want, at));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    -- ...the owner too (a definer, a migration, psql): every caller.
+    at := _v133_owner_probe(format('UPDATE match SET status = ''live'' WHERE id = %L', F3));
+    PERFORM _assert(at LIKE '23514|match_status_transition|%', format('§112 (off): abandoned → live as the owner reads %s', at));
+    PERFORM _as(OFF);
+    got := _v133_try(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', F3));
+    PERFORM _assert(got = 'ok' AND (SELECT status FROM match WHERE id = F3) = 'scheduled',
+      format('§112 (off): abandoned → scheduled reads %s', got));
+    PERFORM _assert(_v133_audit(F3) = 'abandoned_back_on', format('§112 (off): f3''s scoring audit reads [%s]', _v133_audit(F3)));
+    PERFORM _assert(position('Put a called-off match back on' IN (SELECT prosrc FROM pg_proc
+                      WHERE oid = 'audit_log(uuid,text[],timestamptz,timestamptz,text,integer)'::regprocedure)) > 0,
+      '§112 (off): audit_log() does not word abandoned_back_on');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _as(GB);
+    PERFORM _assert((SELECT body FROM notification WHERE subject_id = F3 AND title = 'Back on · U18F v V133 Abandoned')
+                    = 'U18F v V133 Abandoned, called off, is back on: ' || to_char(t + 23, 'Dy FMDD Mon') || ' at 10:00 at V133 No.1 Ground.',
+      '§112 (off): the U18F''s guardian does not read f3''s back-on in the design''s words');
+    PERFORM _as(GA);
+    PERFORM _assert((SELECT count(*) FROM notification WHERE subject_id = F3) = 0, '§112 (off): the U18E''s guardian reads f3''s notice');
+    PERFORM set_config('app.user_id', '', true);
 
     -- ── (score) ──
     PERFORM _as(SC);

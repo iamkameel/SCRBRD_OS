@@ -30,8 +30,19 @@
 --                             by itself (decision 2's own words)
 --   postponed → abandoned     it will not be replayed after all
 -- Every other move out of 'postponed' (to live, to complete) is refused, as
--- is going back on without a new date. Moves that do not touch 'postponed'
--- are unchanged. A postponed fixture keeps its row, its sheet and its toss;
+-- is going back on without a new date.
+--
+-- AND OUT OF 'abandoned' (Kameel, 4 Nov 2026, the board's paste-both: "An
+-- abandoned match can still be put back to live. Recommend: only back to
+-- scheduled, logged, for a match called off by mistake."):
+--   abandoned → scheduled     the only move, for every caller; scoring_audit
+--                             'abandoned_back_on', which audit_log() words
+--                             "Put a called-off match back on"; the side is
+--                             told, as for a postponed match back on
+-- abandoned → live, complete or postponed is refused. db/132's
+-- match_finished_stays_finished (complete → abandoned only) stands as it is;
+-- this file does not re-create it, and it answers first for a complete match.
+-- Other moves are unchanged. A postponed fixture keeps its row, its sheet and its toss;
 -- it has no result (match_result_compute() reads no innings: in_progress),
 -- the table counts only complete and abandoned fixtures (db/69, db/114),
 -- and a career is folded from balls, of which it has none.
@@ -138,7 +149,11 @@
 --                                 called only from the trigger below
 --   availability_ask_again()      re-emitted: + the status branch
 --   trigger availability_ask_again  + OF status
---   scoring_claim(uuid,text)      re-emitted: + 'match_postponed'
+--   scoring_claim(uuid,text)      re-emitted (db/132's body): + 'match_postponed'
+--   + match_called_off_back_on()  AFTER UPDATE OF status trigger function:
+--                                 abandoned → scheduled on the record. Definer.
+--   audit_log(…)                  re-emitted (db/132's body): + the words of
+--                                 'abandoned_back_on' and 'postponed'
 --   scorebook_import_open(uuid)   re-emitted: + 'match_postponed'
 --   lift_fixture_moved()          re-emitted: postponed voids as abandoned
 --   planner_inputs_for(uuid,date,date)  re-emitted: postponed holds no ground
@@ -150,8 +165,9 @@
 -- nothing: each re-emitted body is checked against the shipped one or this
 -- file's.
 --
--- db/132 is another builder's, on another branch; this file reads nothing
--- of it.
+-- Applied after db/132 (pilot audit fixes), whose scoring_claim() and
+-- audit_log() it re-emits with one change each; the guard below reads
+-- db/132's bodies.
 
 
 -- ── 0 · What this file was written against ─────────────────────────
@@ -171,12 +187,14 @@ BEGIN
      OR to_regprocedure('availability_fixture_moved(match_availability,match)') IS NULL
      OR to_regprocedure('person_is_pupil(uuid)') IS NULL
      OR to_regprocedure('lift_offer_end(uuid,text,text,uuid,boolean)') IS NULL
-     OR to_regclass('scoring_session') IS NULL OR to_regclass('scoring_audit') IS NULL THEN
-    RAISE EXCEPTION 'db/133: sa_today(), sa_date() (db/128), fixture_side_label() (db/08), availability_fixture_words() or availability_fixture_moved() (db/65), person_is_pupil(), lift_offer_end() (db/70) or the scoring session is missing; apply them first';
+     OR to_regclass('scoring_session') IS NULL OR to_regclass('scoring_audit') IS NULL
+     OR to_regprocedure('match_finished_stays_finished()') IS NULL THEN
+    RAISE EXCEPTION 'db/133: sa_today(), sa_date() (db/128), fixture_side_label() (db/08), availability_fixture_words() or availability_fixture_moved() (db/65), person_is_pupil(), lift_offer_end() (db/70), the scoring session or match_finished_stays_finished() (db/132) is missing; apply them first';
   END IF;
   FOR r IN SELECT * FROM (VALUES
-      ('availability_ask_again()',            '116c945fb47b3151b165f5f62c831b97', '710d2eed65f8148b958adb273c6e76df',      'db/128'),
-      ('scoring_claim(uuid,text)',            '4ff22013b983402bd7c68883cfe1a97b', '72578e50602ba0ae222325cfcb7de9c1',    'db/126'),
+      ('availability_ask_again()',            '116c945fb47b3151b165f5f62c831b97', '5ce73544ba0a617e3816bf916a92007d',      'db/128'),
+      ('scoring_claim(uuid,text)',            'fdbb6a42742fb460c957ac767d0d40ad', '0232098222e37ae95038df4275919532',    'db/132'),
+      ('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)', '8bea03eaac74fbfc54900f40c5d9e7f1', '4ff2375005bedd367c4bfea8463befca', 'db/132'),
       ('scorebook_import_open(uuid)',         '033ec24f91362fc0d0f2fc6496c6aed4', 'c20a52292e09d73b1cc06a7266cf646b',   'db/63'),
       ('lift_fixture_moved()',                'e5f40ac5c7cc1633e4132fefd1879c4f', '3f8f3ab007c087802f59f561588281f0',     'db/76'),
       ('planner_inputs_for(uuid,date,date)',  'b6638805a449436be26d15e5702bb97c', 'b4732d30f07157eb46f16d2b9b347eb2',  'db/67'),
@@ -291,6 +309,12 @@ BEGIN
           RAISE EXCEPTION 'A postponed fixture is given a new date or called off; it is not marked %.', NEW.status
             USING ERRCODE = 'check_violation', CONSTRAINT = 'match_status_transition';
         END IF;
+      ELSIF OLD.status = 'abandoned' AND NEW.status <> 'scheduled' THEN
+        -- Kameel, 4 Nov 2026: a match called off by mistake goes back on, to
+        -- scheduled, and that is on the record (match_called_off_back_on());
+        -- it is never put straight back to live or complete.
+        RAISE EXCEPTION 'A match called off is only put back on (scheduled); it is not marked %.', NEW.status
+          USING ERRCODE = 'check_violation', CONSTRAINT = 'match_status_transition';
       END IF;
     END IF;
   END IF;
@@ -409,6 +433,23 @@ CREATE TRIGGER match_status_ends_scoring AFTER UPDATE OF status ON match
   FOR EACH ROW WHEN (NEW.status = 'postponed' AND OLD.status IS DISTINCT FROM 'postponed')
   EXECUTE FUNCTION match_status_ends_scoring();
 
+-- A match called off, put back on (Kameel, 4 Nov 2026): on the record, by
+-- whom, at which ball, as db/132's finished_match_abandoned is. audit_log()
+-- words it "Put a called-off match back on" (§5 below).
+CREATE OR REPLACE FUNCTION match_called_off_back_on() RETURNS trigger AS $$
+BEGIN
+  INSERT INTO scoring_audit (match_id, school_id, event, actor_id, detail)
+  VALUES (NEW.id, NEW.school_id, 'abandoned_back_on', app_user_id(),
+          jsonb_build_object('from', OLD.status, 'to', NEW.status, 'startsAt', NEW.starts_at,
+                             'headSeq', coalesce((SELECT max(b.seq) FROM ball_event b WHERE b.match_id = NEW.id), 0)));
+  RETURN NULL;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+DROP TRIGGER IF EXISTS match_called_off_back_on ON match;
+CREATE TRIGGER match_called_off_back_on AFTER UPDATE OF status ON match
+  FOR EACH ROW WHEN (OLD.status = 'abandoned' AND NEW.status = 'scheduled')
+  EXECUTE FUNCTION match_called_off_back_on();
+
 -- scoring_claim() (db/126): refused on a postponed match, as on a complete one.
 SELECT pg_temp._v133_patch('scoring_claim(uuid,text)',
 '  SELECT * INTO s FROM scoring_session WHERE match_id = p_match FOR UPDATE;
@@ -443,6 +484,13 @@ SELECT pg_temp._v133_patch('planner_inputs_for(uuid,date,date)',
 SELECT pg_temp._v133_patch('public_live_fixtures()',
   'AND m.status IN (''scheduled'', ''live'', ''complete'', ''abandoned'')',
   'AND m.status IN (''scheduled'', ''live'', ''complete'', ''abandoned'', ''postponed'')', 1);
+
+-- audit_log() (db/132): the two scoring_audit events this file writes, in words.
+SELECT pg_temp._v133_patch('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)',
+'                 WHEN ''finished_match_abandoned'' THEN ''Called off a finished match''   -- db/132',
+'                 WHEN ''finished_match_abandoned'' THEN ''Called off a finished match''   -- db/132
+                 WHEN ''abandoned_back_on''        THEN ''Put a called-off match back on''   -- db/133
+                 WHEN ''postponed''                THEN ''Postponed the match: the pen was put down''   -- db/133', 1);
 
 
 -- ══════════════════════════════════════════════════════════════════
@@ -496,7 +544,8 @@ BEGIN
       v_life  := greatest(m.starts_at, now()) + interval '7 days';
     ELSE
       v_title := 'Back on · ' || v_home || ' v ' || v_away;
-      v_body  := v_home || ' v ' || v_away || ', postponed, is back on: ' || v_when || v_where || '.';
+      v_body  := v_home || ' v ' || v_away || CASE WHEN p_was = 'abandoned' THEN ', called off, ' ELSE ', postponed, ' END
+                 || 'is back on: ' || v_when || v_where || '.';
       v_life  := greatest(m.starts_at, now()) + interval '7 days';
     END IF;
     INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
@@ -520,9 +569,9 @@ DECLARE
   v_was    text;
   r        uuid;
 BEGIN
-  -- db/133: postponed, called off, or back on: the side is told.
+  -- db/133: postponed, called off, or back on (from either): the side is told.
   IF NEW.status IS DISTINCT FROM OLD.status
-     AND (NEW.status IN ('postponed', 'abandoned') OR (OLD.status = 'postponed' AND NEW.status = 'scheduled')) THEN
+     AND (NEW.status IN ('postponed', 'abandoned') OR (OLD.status IN ('postponed', 'abandoned') AND NEW.status = 'scheduled')) THEN
     PERFORM fixture_status_notices(NEW.id, OLD.status, NEW.status);
   END IF;
   IF NEW.status <> 'scheduled' OR NEW.starts_at <= now() THEN RETURN NULL; END IF;
@@ -576,6 +625,7 @@ DO $grants$
 DECLARE f text; r text;
 BEGIN
   FOREACH f IN ARRAY ARRAY['match_fixture_rules()', 'ball_event_not_postponed()', 'match_status_ends_scoring()',
+                           'match_called_off_back_on()',
                            'fixture_ends_at(timestamptz,text,text,integer)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
@@ -601,7 +651,8 @@ DO $check$
 DECLARE r record; v_md5 text;
 BEGIN
   FOR r IN SELECT * FROM (VALUES
-      ('availability_ask_again()', '710d2eed65f8148b958adb273c6e76df'), ('scoring_claim(uuid,text)', '72578e50602ba0ae222325cfcb7de9c1'),
+      ('availability_ask_again()', '5ce73544ba0a617e3816bf916a92007d'), ('scoring_claim(uuid,text)', '0232098222e37ae95038df4275919532'),
+      ('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)', '4ff2375005bedd367c4bfea8463befca'),
       ('scorebook_import_open(uuid)', 'c20a52292e09d73b1cc06a7266cf646b'), ('lift_fixture_moved()', '3f8f3ab007c087802f59f561588281f0'),
       ('planner_inputs_for(uuid,date,date)', 'b4732d30f07157eb46f16d2b9b347eb2'), ('public_live_fixtures()', '6aa12abde90e18205821fb4b78ef7d26')) x(fn, mine)
   LOOP
@@ -611,8 +662,9 @@ BEGIN
     END IF;
   END LOOP;
   IF (SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal AND tgname IN
-        ('match_fixture_rules', 'ball_event_not_postponed', 'match_status_ends_scoring', 'availability_ask_again')) <> 4 THEN
-    RAISE EXCEPTION 'db/133: its four triggers are not all in place';
+        ('match_fixture_rules', 'ball_event_not_postponed', 'match_status_ends_scoring', 'match_called_off_back_on',
+         'availability_ask_again')) <> 5 THEN
+    RAISE EXCEPTION 'db/133: its five triggers are not all in place';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = 'match_fixture_rules()'::regprocedure AND prosecdef
                    AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}')))
