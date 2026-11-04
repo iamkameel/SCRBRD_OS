@@ -360,6 +360,7 @@ try {
   }
   await beat(office.page);
   ok("no console errors (office)", office.errors.length === 0, office.errors.join(" | "));
+  await close(office);
 
   group("6a. ...and the parent's fixture says it changed");
   // The session is held in memory, so the parent goes Home and back rather than reloading.
@@ -789,7 +790,6 @@ try {
   await beat(pu.page, 2000);
   ok("no console errors (public)", pu.errors.length === 0, pu.errors.join(" | "));
   await close(pu);
-  await close(office);
 } catch (e) {
   fail++;
   console.log("\n  ✗ the walk threw:", DEBUG ? e.stack : e.message);
