@@ -9922,7 +9922,7 @@ END $$ LANGUAGE plpgsql;
 -- the first over: two that say what the pen's say, one that differs, and one
 -- the other phone was right about. 'third' (a director of sport who kept
 -- neither book) decides; 'conf' (a principal) asks whether the result may be
--- confirmed; 'req' (a scorer) is the hand that asks for an amendment.
+-- confirmed; 'req' (a scorer) and 'none' (a spectator) hold no approval.
 CREATE OR REPLACE FUNCTION _v136_stage() RETURNS jsonb AS $$
 DECLARE
   HIL uuid := '11111111-1111-1111-1111-111111111111';
@@ -9935,7 +9935,8 @@ BEGIN
     ARRAY['sender', 'principal',       HIL::text, '', ''],
     ARRAY['third',  'directorofsport', HIL::text, '', ''],
     ARRAY['conf',   'principal',       HIL::text, '', ''],
-    ARRAY['req',    'scorer',          HIL::text, '', '']]);
+    ARRAY['req',    'scorer',          HIL::text, '', ''],
+    ARRAY['none',   'spectator',       HIL::text, '', '']]);
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
   VALUES (HIL, 'U12F', WES, '1XI', 'x', v_t0, 'cricket', 'T20', 1, 'live') RETURNING id INTO m;
   k := _v114_innings(m, 0::smallint, 'U12F', 'Westville 1XI', ARRAY[1, 1, 4, 1, 1, 1], NULL, (ids->>'pen')::uuid);
@@ -34684,9 +34685,13 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   --              pen's ball stands"
   --   (counter)  a counterpart that is not this match's ball → no_such_counterpart
   --   (bulk)     two rows set aside in one statement write no ball_event row
-  --   (amend)    the other phone was right: an amendment of the pen's 0.4 is
-  --              asked for and named in the note; the audit row carries it and
-  --              the words say so
+  --   (amend)    the other phone was right (Kameel, 5 Nov, "A"): the third
+  --              approver opens the amendment of the pen's 0.4 himself
+  --              (second_account_amend()); a spectator and a scorer with no
+  --              approval → not_permitted, the sender → cannot_release_your_own,
+  --              the pen-holder → you_scored_this_match; asked again, the same
+  --              request; he may not approve it (cannot_approve_your_own); it
+  --              is named in the note, the audit row carries it, the words say so
   --   (after)    every row decided (and the amendment declined): confirmable
   --   (grants)   quarantine_resolve(…, text) is a pinned SECURITY DEFINER,
   --              not PUBLIC's, the application's; the four-argument door is gone
@@ -34698,6 +34703,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     TRD uuid := (y->>'third')::uuid;
     CNF uuid := (y->>'conf')::uuid;
     REQ uuid := (y->>'req')::uuid;
+    NOB uuid := (y->>'none')::uuid;
     K   text[] := ARRAY(SELECT jsonb_array_elements_text(y->'k'));
     r record; j jsonb; got text; n0 integer; a uuid;
     l record; i integer; n integer; x text; w text; v_at timestamptz; v_key text;
@@ -34752,13 +34758,36 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     SELECT * INTO r FROM match_confirmable(M);
     PERFORM _assert(r.reason = 'ball_held', format('§114 (held): one open row answered %s/%s', r.ok, r.reason));
 
-    -- (amend) the other phone was right about 0.4: an amendment of the pen's
-    -- ball, asked by a scorer (scoring.amend.request), named in the note.
+    -- (amend) the other phone was right about 0.4: the reviewer who kept
+    -- neither book asks for the amendment of the pen's ball himself
+    -- (second_account_amend(); Kameel, 5 Nov 2026, "A"), under
+    -- quarantine_resolve()'s checks; he may not approve it himself.
+    PERFORM _as(NOB);
+    SELECT * INTO r FROM second_account_amend((y->>'q4')::bigint, K[4], 'Second account: the book says 2');
+    PERFORM _assert(r.ok = false AND r.reason = 'not_permitted', format('§114 (amend): a spectator answered %s/%s', r.ok, r.reason));
     PERFORM _as(REQ);
-    INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
-    SELECT M, mm.school_id, K[4], 'Second account: the book says 2', app_user_id() FROM match mm WHERE mm.id = M
-    RETURNING id INTO a;
+    SELECT * INTO r FROM second_account_amend((y->>'q4')::bigint, K[4], 'Second account: the book says 2');
+    PERFORM _assert(r.ok = false AND r.reason = 'not_permitted', format('§114 (amend): a scorer with no approval answered %s/%s', r.ok, r.reason));
+    PERFORM _as(SND);
+    SELECT * INTO r FROM second_account_amend((y->>'q4')::bigint, K[4], 'Second account: the book says 2');
+    PERFORM _assert(r.ok = false AND r.reason = 'cannot_release_your_own', format('§114 (amend): the sender answered %s/%s', r.ok, r.reason));
+    PERFORM _as(PEN);
+    SELECT * INTO r FROM second_account_amend((y->>'q4')::bigint, K[4], 'Second account: the book says 2');
+    PERFORM _assert(r.ok = false AND r.reason = 'you_scored_this_match', format('§114 (amend): the pen-holder answered %s/%s', r.ok, r.reason));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM scoring_amendment x WHERE x.match_id = M), '§114 (amend): a refused ask wrote a request');
     PERFORM _as(TRD);
+    SELECT * INTO r FROM second_account_amend((y->>'q4')::bigint, 'v136-no-such-ball', 'Second account: the book says 2');
+    PERFORM _assert(r.ok = false AND r.reason = 'no_such_counterpart', format('§114 (amend): a ball not in the match answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM second_account_amend((y->>'q4')::bigint, K[4], 'Second account: the book says 2');
+    PERFORM _assert(r.ok AND r.amendment_id IS NOT NULL, format('§114 (amend): the third approver was refused: %s', r.reason));
+    a := r.amendment_id;
+    PERFORM _assert((SELECT x.requested_by = TRD AND x.state = 'pending' AND x.target_key = K[4] FROM scoring_amendment x WHERE x.id = a),
+      '§114 (amend): the request is not his, pending, on the pen''s 0.4');
+    SELECT * INTO r FROM second_account_amend((y->>'q4')::bigint, K[4], 'Second account: asked again');
+    PERFORM _assert(r.ok AND r.amendment_id = a, '§114 (amend): asked again, a second request was opened');
+    SELECT * INTO r FROM scoring_amendment_decide(a, true, 'Verify 136: my own');
+    PERFORM _assert(r.ok = false AND r.reason = 'cannot_approve_your_own', format('§114 (amend): he approved his own request: %s/%s', r.ok, r.reason));
+    PERFORM _assert(_v136_balls(M) = n0, '§114 (amend): the refused approval wrote a ball');
     SELECT * INTO r FROM quarantine_resolve((y->>'q4')::bigint, false, NULL, 'The book says 2 · amendment ' || a, K[4]);
     PERFORM _assert(r.ok, format('§114 (amend): refused %s', r.reason));
     j := _v136_audit(M) -> 3;
@@ -34803,6 +34832,14 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     PERFORM _assert(NOT has_function_privilege('public', 'quarantine_resolve(bigint,boolean,jsonb,text,text)', 'EXECUTE')
                     AND has_function_privilege('scrbrd_app', 'quarantine_resolve(bigint,boolean,jsonb,text,text)', 'EXECUTE'),
       '§114 (grants): quarantine_resolve() is PUBLIC''s, or not the application''s');
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'second_account_amend(bigint,text,text)'::regprocedure
+                              AND p.prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
+                    AND NOT has_function_privilege('public', 'second_account_amend(bigint,text,text)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'second_account_amend(bigint,text,text)', 'EXECUTE'),
+      '§114 (grants): second_account_amend() is not a pinned definer, or is PUBLIC''s, or not the application''s');
+    -- ...and scoring.amend.request is not widened: the table's own door still asks it.
+    PERFORM _assert((SELECT with_check FROM pg_policies WHERE tablename = 'scoring_amendment' AND policyname = 'scoring_amendment_insert')
+                      LIKE '%scoring.amend.request%', '§114 (grants): scoring_amendment_insert no longer asks scoring.amend.request');
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 114

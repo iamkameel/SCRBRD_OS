@@ -58,6 +58,19 @@
 -- amendment in its detail. Two lines change, by db/133's patch: nothing else
 -- in the body moves.
 --
+-- "THE OTHER PHONE WAS RIGHT" (R5.3; Kameel, 5 Nov 2026, 13:43, the Build
+-- Board, answer "A"). The reviewer opens the amendment request on the pen's
+-- ball himself, though he holds scoring.amend.approve and not
+-- scoring.amend.request: second_account_amend(), a definer used by the
+-- second-account route alone, asks exactly what quarantine_resolve() asks of
+-- him — the approval capability over the match, not the sender, not the
+-- scorer of a live ball in it — and that the ball is a live ball of this
+-- match, then writes the request in his name. Nothing else changes:
+-- scoring_amendment's own INSERT policy (db/24) still asks
+-- scoring.amend.request of everyone else, and scoring_amendment_decide()
+-- still refuses the requester (cannot_approve_your_own), so another approver
+-- approves it. Two hands stand.
+--
 -- ── WHY DROP AND CREATE ─────────────────────────────────────────────
 -- A fifth argument is a new signature. Left beside it, the four-argument
 -- function would be a door around you_scored_this_match. So it is dropped
@@ -67,7 +80,7 @@
 -- caller sees it missing. A four-argument call still resolves to it
 -- (p_counterpart DEFAULT NULL).
 --
--- WHO MAY CALL IT. SECURITY DEFINER, search_path pinned, granted to
+-- WHO MAY CALL THEM. Both are SECURITY DEFINER, search_path pinned, granted to
 -- scrbrd_app alone; revoked from PUBLIC and a managed host's anon,
 -- authenticated and service_role (db/131's loop). db/14 and db/37 granted it
 -- to PUBLIC: that grant is gone with the old signature.
@@ -75,6 +88,7 @@
 -- WHAT IT CHANGES ON A LIVE DATABASE (production holds test data only)
 --   function quarantine_resolve(bigint,boolean,jsonb,text) (db/37): dropped
 --   function quarantine_resolve(bigint,boolean,jsonb,text,text): created
+--   function second_account_amend(bigint,text,text): created
 --   function audit_log(…) (db/133): two lines added
 -- No table, column, capability, role or policy. Existing rows untouched. A
 -- second paste changes nothing (the guard reads db/37's and db/133's bodies
@@ -101,7 +115,7 @@ BEGIN
   IF to_regclass('ball_event_quarantine') IS NULL OR to_regclass('scoring_audit') IS NULL
      OR to_regclass('scoring_session') IS NULL OR to_regclass('ball_event_live') IS NULL
      OR to_regclass('scoring_amendment') IS NULL
-     OR to_regprocedure('ball_counts_in_over(text,jsonb)') IS NULL
+     OR to_regprocedure('ball_counts_in_over(text,jsonb)') IS NULL OR to_regprocedure('app_pad_scoped()') IS NULL
      OR to_regprocedure('app_can(text,uuid,text,uuid,uuid)') IS NULL THEN
     RAISE EXCEPTION 'db/136: the quarantine (db/02, db/37), the amendment (db/02), ball_counts_in_over() (db/54) or app_can() is missing; apply them first';
   END IF;
@@ -117,6 +131,10 @@ BEGIN
   IF v_old IS NULL AND pg_temp._v136_fold(v_new) <> '4e1dffc125a2e282281bcc7336d8cb9c' THEN
     RAISE EXCEPTION 'db/136: quarantine_resolve(bigint,boolean,jsonb,text,text) is not this file''s (md5 % of its folded body); look before replacing it',
       pg_temp._v136_fold(v_new);
+  END IF;
+  IF to_regprocedure('second_account_amend(bigint,text,text)') IS NOT NULL
+     AND pg_temp._v136_fold((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('second_account_amend(bigint,text,text)'))) <> '1eaa5e2dd708112cabe67a5527ee0ac5' THEN
+    RAISE EXCEPTION 'db/136: second_account_amend() is there and not this file''s; look before replacing it';
   END IF;
   SELECT p.prosrc INTO v_log FROM pg_proc p WHERE p.oid = to_regprocedure('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)');
   IF v_log IS NULL THEN
@@ -307,6 +325,61 @@ COMMENT ON FUNCTION quarantine_resolve(bigint, boolean, jsonb, text, text) IS
 
 
 -- ══════════════════════════════════════════════════════════════════
+-- §1b · "The other phone was right": the reviewer asks for the amendment
+-- ══════════════════════════════════════════════════════════════════
+-- Asked of the set-aside row p_id: the amendment of the pen's ball p_target,
+-- for the reason given. Refusals, in quarantine_resolve()'s order and words:
+-- no_such_quarantine, already_<resolution>, not_permitted (no approval over
+-- the match, or a pad's credential), cannot_release_your_own,
+-- you_scored_this_match; then no_such_counterpart (not a live ball of this
+-- match) and note_required. A request already pending on that ball is
+-- answered with its id (one pending request per ball, db/02), not a second.
+CREATE OR REPLACE FUNCTION second_account_amend(p_id bigint, p_target text, p_reason text)
+RETURNS TABLE (ok boolean, reason text, amendment_id uuid) AS $$
+DECLARE
+  q      ball_event_quarantine%ROWTYPE;
+  v_me   uuid := app_user_id();
+  v_why  text := nullif(btrim(left(p_reason, 1000)), '');
+  v_id   uuid;
+BEGIN
+  SELECT * INTO q FROM ball_event_quarantine WHERE id = p_id;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, 'no_such_quarantine', NULL::uuid; RETURN; END IF;
+  IF q.resolved_at IS NOT NULL THEN RETURN QUERY SELECT false, 'already_' || q.resolution, NULL::uuid; RETURN; END IF;
+  IF v_me IS NULL OR app_pad_scoped()
+     OR NOT app_can('scoring.amend.approve', q.school_id, match_team(q.match_id), NULL, q.match_id) THEN
+    RETURN QUERY SELECT false, 'not_permitted', NULL::uuid; RETURN;
+  END IF;
+  IF q.scorer_user_id = v_me THEN
+    RETURN QUERY SELECT false, 'cannot_release_your_own', NULL::uuid; RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM ball_event_live b WHERE b.match_id = q.match_id AND b.scorer_user_id = v_me) THEN
+    RETURN QUERY SELECT false, 'you_scored_this_match', NULL::uuid; RETURN;
+  END IF;
+  IF p_target IS NULL OR NOT EXISTS (SELECT 1 FROM ball_event_live b WHERE b.match_id = q.match_id AND b.idempotency_key = p_target) THEN
+    RETURN QUERY SELECT false, 'no_such_counterpart', NULL::uuid; RETURN;
+  END IF;
+  IF v_why IS NULL THEN RETURN QUERY SELECT false, 'note_required', NULL::uuid; RETURN; END IF;
+
+  SELECT a.id INTO v_id FROM scoring_amendment a
+   WHERE a.match_id = q.match_id AND a.target_key = p_target AND a.state = 'pending';
+  IF v_id IS NULL THEN
+    BEGIN
+      INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+      VALUES (q.match_id, q.school_id, p_target, v_why, v_me)
+      RETURNING id INTO v_id;
+    EXCEPTION WHEN unique_violation THEN
+      SELECT a.id INTO v_id FROM scoring_amendment a
+       WHERE a.match_id = q.match_id AND a.target_key = p_target AND a.state = 'pending';
+    END;
+  END IF;
+  RETURN QUERY SELECT true, NULL::text, v_id;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+COMMENT ON FUNCTION second_account_amend(bigint, text, text) IS
+  'TWO_PHONES R5.3 (db/136; Kameel, 5 Nov 2026, "A"): the reviewer of a second account opens the amendment request on the pen''s ball, under quarantine_resolve()''s own checks (scoring.amend.approve over the match, not the sender, not a scorer of a live ball in it). Called by the second-account route alone; scoring.amend.request is not widened; scoring_amendment_decide() still refuses the requester.';
+
+
+-- ══════════════════════════════════════════════════════════════════
 -- §2 · audit_log(): the words
 -- ══════════════════════════════════════════════════════════════════
 SELECT pg_temp._v136_patch('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)',
@@ -334,7 +407,7 @@ SELECT pg_temp._v136_patch('audit_log(uuid,text[],timestamptz,timestamptz,text,i
 DO $grants$
 DECLARE f text; r text;
 BEGIN
-  FOREACH f IN ARRAY ARRAY['quarantine_resolve(bigint,boolean,jsonb,text,text)'] LOOP
+  FOREACH f IN ARRAY ARRAY['quarantine_resolve(bigint,boolean,jsonb,text,text)', 'second_account_amend(bigint,text,text)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
     FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
@@ -364,6 +437,19 @@ BEGIN
                    AND x.privilege_type = 'EXECUTE' AND x.grantee <> p.proowner
                    AND x.grantee <> (SELECT oid FROM pg_roles WHERE rolname = 'scrbrd_app')) THEN
     RAISE EXCEPTION 'db/136: quarantine_resolve() is executable by someone other than its owner and scrbrd_app';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'second_account_amend(bigint,text,text)'::regprocedure
+                    AND p.prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
+     OR NOT has_function_privilege('scrbrd_app', 'second_account_amend(bigint,text,text)'::regprocedure, 'EXECUTE')
+     OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                 WHERE p.oid = 'second_account_amend(bigint,text,text)'::regprocedure
+                   AND x.privilege_type = 'EXECUTE' AND x.grantee <> p.proowner
+                   AND x.grantee <> (SELECT oid FROM pg_roles WHERE rolname = 'scrbrd_app')) THEN
+    RAISE EXCEPTION 'db/136: second_account_amend() is not a pinned definer executable by scrbrd_app alone';
+  END IF;
+  v_md5 := pg_temp._v136_fold((SELECT prosrc FROM pg_proc WHERE oid = 'second_account_amend(bigint,text,text)'::regprocedure));
+  IF v_md5 <> '1eaa5e2dd708112cabe67a5527ee0ac5' THEN
+    RAISE EXCEPTION 'db/136: second_account_amend() is not this file''s after the paste (md5 %)', v_md5;
   END IF;
   v_md5 := pg_temp._v136_fold((SELECT prosrc FROM pg_proc WHERE oid = 'quarantine_resolve(bigint,boolean,jsonb,text,text)'::regprocedure));
   IF v_md5 <> '4e1dffc125a2e282281bcc7336d8cb9c' THEN

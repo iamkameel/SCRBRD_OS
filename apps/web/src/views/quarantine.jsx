@@ -53,7 +53,6 @@ const REFUSAL = {
   dismissal_unknown: "The dismissal on this ball is not one of the recognised kinds.",
   note_required: "Say why first: what the paper book or the umpires say.",
   not_open_here: "The two accounts have changed since you opened them. Look again.",
-  cannot_request: "Asking for an amendment needs the scorer's capability to request one. Ask a scorer to request it, then set this ball aside as \"Pen stands\".",
   no_counterpart: "The pen has no ball here to amend. If the other phone's ball happened, the pen missed it.",
   one_ball_at_a_time: "Decide one ball at a time.",
 };
@@ -294,7 +293,7 @@ function QuarantinePanel({ matchId, role }) {
                           </Btn>
                         )}
                         {r.amendTarget && (
-                          <Btn size="sm" variant="ghost" disabled={off || !note.trim() || !viewer.mayRequest}
+                          <Btn size="sm" variant="ghost" disabled={off || !note.trim()}
                                onClick={() => otherRight(r.key, r.heldIds, note.trim())} data-testid={`second-account-row-${r.key}-other-right`}>
                             The other phone was right
                           </Btn>
@@ -306,10 +305,9 @@ function QuarantinePanel({ matchId, role }) {
                           </Btn>
                         )}
                       </div>
-                      {r.amendTarget && !viewer.mayRequest && !barred && (
+                      {r.amendTarget && !barred && (
                         <div style={{ ...smallText(), color: D.textMuted, marginTop: "4px" }}>
-                          "The other phone was right" asks for an amendment of the pen's ball, which needs a scorer's capability to request one.
-                          Ask a scorer to request it; another person then approves it.
+                          "The other phone was right" asks for an amendment of the pen's ball in your name. Another person who approves corrections then approves it.
                         </div>
                       )}
                     </li>

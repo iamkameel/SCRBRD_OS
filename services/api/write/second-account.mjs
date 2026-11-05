@@ -15,8 +15,8 @@
  *                            resolve, accept): the Laws judged, written at
  *                            the END of the log (db/14's standing behaviour).
  *   3. The other phone was right
- *                            an amendment of the pen's ball is asked for
- *                            (scoring.amend.request; another hand approves it
+ *                            an amendment of the pen's ball is asked for by
+ *                            the reviewer (db/136; another hand approves it
  *                            under db/38's lock) and the set-aside ball is
  *                            rejected with the amendment's id in its note.
  *                            Never a swap: ball_event is never edited.
@@ -373,12 +373,11 @@ export function secondAccountRoutes({ pool, secret }) {
   const viewer = async (client, matchId) => {
     const { rows } = await client.query(
       `select app_can('scoring.amend.approve', match_school($1), match_team($1), NULL, $1) as may,
-              app_can('scoring.amend.request', match_school($1), match_team($1), NULL, $1) as may_request,
               exists (select 1 from ball_event_live b where b.match_id = $1 and b.scorer_user_id = app_user_id()) as scored`,
       [matchId]);
     const v = rows[0] ?? {};
     if (v.may !== true) throw err("not_permitted", 403);
-    return { mayDecide: true, mayRequest: v.may_request === true, scoredThisMatch: v.scored === true };
+    return { mayDecide: true, scoredThisMatch: v.scored === true };
   };
   /**
    * Resolve each named row through quarantine_resolve() as "pen stands",
@@ -420,9 +419,10 @@ export function secondAccountRoutes({ pool, secret }) {
     // POST /matches/:id/second-account/other-phone-right {ids, note}
     //   → {ok: true, amendmentId, closed} | {ok: false, reason, id?}   (nothing asked, nothing decided)
     // The rows named are one ball's (one slot). An amendment of the pen's
-    // ball is asked for as the amendment route asks (the table's INSERT
-    // policy: scoring.amend.request), or the one already pending on that ball
-    // is named; then each row is rejected with the amendment in its note.
+    // ball is asked for in the reviewer's name (second_account_amend(),
+    // db/136), or the one already pending on that ball is named; then each
+    // row is rejected with the amendment in its note. One transaction: a
+    // refusal of any row asks for nothing.
     otherPhoneRight: handle(async (req) => runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
       await viewer(client, req.params.id);
       const f = find(await readAccounts(client, req.params.id), req.body?.ids);
@@ -433,28 +433,16 @@ export function secondAccountRoutes({ pool, secret }) {
       if (new Set(found.map(({ row }) => row.key)).size !== 1) return { ok: false, reason: "one_ball_at_a_time" };
       const target = found[0].row.amendTarget;
       if (!target) return { ok: false, reason: "no_counterpart" };
-      await client.query("savepoint other_phone_right");
-      /** @type {string | null} */
-      let amendmentId = null;
-      try {
-        const { rows } = await client.query(
-          `insert into scoring_amendment (match_id, school_id, target_key, reason, requested_by)
-           select $1, m.school_id, $2, $3, app_user_id() from match m where m.id = $1
-           returning id`,
-          [req.params.id, target, `Second account: ${note}`.slice(0, 1000)]);
-        amendmentId = rows[0]?.id ?? null;
-        await client.query("release savepoint other_phone_right");
-      } catch (/** @type {any} */ e) {
-        await client.query("rollback to savepoint other_phone_right");
-        if (e.code === "42501") return { ok: false, reason: "cannot_request" };
-        if (e.code !== "23505") throw e;
-        // One pending amendment of a ball at a time (db/02): name that one.
-        const { rows } = await client.query(
-          `select id from scoring_amendment where match_id = $1 and target_key = $2 and state = 'pending'`,
-          [req.params.id, target]);
-        amendmentId = rows[0]?.id ?? null;
-      }
-      if (!amendmentId) return { ok: false, reason: "cannot_request" };
+      // The reviewer asks for it himself (Kameel, 5 Nov 2026, "A"):
+      // second_account_amend() (db/136) asks him what quarantine_resolve()
+      // asks — approval over the match, not the sender, not a scorer of the
+      // match — and names a request already pending on that ball rather
+      // than a second. scoring.amend.request is not widened, and
+      // scoring_amendment_decide() still refuses him its approval.
+      const { rows: am } = await client.query(`select * from second_account_amend($1, $2, $3)`,
+        [found[0].id, target, `Second account: ${note}`.slice(0, 1000)]);
+      if (!am[0]?.ok) return { ok: false, reason: am[0]?.reason ?? "no_result" };
+      const amendmentId = am[0].amendment_id;
       await reject(client, found, () => `${note} · amendment ${amendmentId}`);
       return { ok: true, amendmentId, closed: found.length };
     })),
