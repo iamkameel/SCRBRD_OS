@@ -196,6 +196,31 @@ group("A. my_children (step 4 G1): the caller's own live guardian links, and the
      norm(between(sql)).length > 100 && norm(between(sql)) === norm(between(src)) && norm(between(src)) === norm(t));
 }
 
+group("A. my_links (GA-I20 A2, N4): her own links in every state, no child unless live, and the proof runs the same text");
+{
+  const t = READ_QUERIES.my_links.text;
+  ok("narrowed to the caller's own guardian assignments", /where a\.person_id = app_user_id\(\)\s+and a\.role = 'guardian'/.test(t));
+  ok("nothing under a pad credential", /and not app_pad_scoped\(\)/.test(t));
+  ok("every state: the outer where has no clause on the link's state or dates",
+     !/verification_state|valid_until|valid_from/.test(t.split("ps on true")[1] ?? "verification_state"));
+  ok("the child's id and name only on a live link",
+     /case when k\.status = 'live' then s\.player_id end as player_id/.test(t)
+     && /case when k\.status = 'live' then p\.full_name end as full_name/.test(t)
+     && /left join player p on p\.id = s\.player_id and k\.status = 'live'/.test(t)
+     && !/\bs\.player_id\s*,/.test(t) && !/\bp\.(known_as|team_code|school_id)\b/.test(t));
+  ok("the school by name from the public list, by her assignment's school", /public_schools\(\) x where x\.id = a\.school_id/.test(t));
+  ok("no reason, note or masked column", !/\b(verified_note|reason|note|born|address|id_number|phone|email)\b/.test(t));
+  ok("today is sa_today(), never current_date", /sa_today\(\)/.test(t) && !/current_date/.test(t));
+  ok("takes no parameter a caller could widen it with", !READ_QUERIES.my_links.params && !/\$1/.test(t));
+  const { readFileSync } = await import("node:fs");
+  const sql = readFileSync(new URL("../../../db/99_rls_verify.sql", import.meta.url), "utf8");
+  const between = (/** @type {string} */ s) => s.split("my_links:begin")[1]?.split("my_links:end")[0] ?? "";
+  const norm = (/** @type {string} */ s) => s.replace(/\*\/|\/\*|`|--/g, " ").replace(/\s+/g, " ").trim();
+  const src = readFileSync(new URL("./read-api.mjs", import.meta.url), "utf8");
+  ok("db/99 §116 proves this exact read, not a copy that has drifted",
+     norm(between(sql)).length > 100 && norm(between(sql)) === norm(between(src)) && norm(between(src)) === norm(t));
+}
+
 group("A. emergency_contact_count (GA-I20 A1, N2): a count, never a contact, and only where the contacts may be read");
 {
   const d = READ_QUERIES.emergency_contact_count;
