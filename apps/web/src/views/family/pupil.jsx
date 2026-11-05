@@ -31,6 +31,7 @@ import { MyLiftLine } from "../lifts.jsx";
 import { CaptainCard } from "./captain.jsx";
 import { TodoCard } from "./todo.jsx";
 import { Compare } from "../compare.jsx";
+import { PersonalBests } from "./bests.jsx";
 
 /** The pupil himself, in the shape the shared cards take: his own player row. */
 function useSelf(role) {
@@ -249,6 +250,8 @@ function HonoursTab({ me, role }) {
   const honours = rec.filter((r) => r.family !== "milestone");
   return (
     <>
+      {/* RECOGNITION R5 (D23, D24): his own bests, School Records first. */}
+      <PersonalBests role={role} playerId={me.id} who="Your" testid="passport-bests"/>
       <Card label="Milestones" testid="passport-milestones">
         {miles.length ? miles.map((m, i) => (
           <Line key={`${m.kind}-${i}`}>{m.label}{m.opponent ? ` · v ${m.opponent}` : ""}{m.on ? ` · ${humanDate(m.on)}` : ""}</Line>

@@ -820,6 +820,18 @@ function asRecognition(r) {
            matchId: r.match_id, opponent: r.opponent, isPublic: r.is_public, citation: r.citation, id: r.ref_id, live: true };
 }
 /**
+ * One of a boy's personal bests (RECOGNITION R5, db/141 player_best()): his
+ * highest innings or best bowling for a class group, format and side, or an
+ * innings still awaiting the scorer's seal (`verified` false, never `best`).
+ * Figures as the server derived them; nothing is ranked here.
+ */
+function asPersonalBest(r) {
+  return { metric: r.metric, group: r.class_group, format: r.format, side: r.side_code, matchId: r.match_id,
+           innings: r.innings, on: d10(r.played_on), opponent: r.opponent, runs: r.runs, balls: r.balls_faced,
+           notOut: r.not_out === true, wickets: r.wickets, conceded: r.runs_conceded,
+           verified: r.verified === true, best: r.best === true, live: true };
+}
+/**
  * One placed delivery, in the shape the wagon wheel already reads.
  *
  * The chart is the scorer's and expects a ball off the pad's own log —
@@ -1355,6 +1367,7 @@ const ADAPT = {
   equipment: asEquipment,
   equipment_issues: asIssue,
   recognition: asRecognition,
+  personal_bests: asPersonalBest,
   player_shot_points: asShotPoint,
   pitch_report: asPitchReport,
   caps: asCap,
