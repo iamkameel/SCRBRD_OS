@@ -33,6 +33,11 @@ const ballsOf = (n) => Array.from({ length: n }, () => ({ payload: { kind: "ball
   const x = secondAccountWords([{ payload: { kind: "batters" } }, { payload: { kind: "bowler" } }]);
   ok("no ball at all: what it kept", x.balls === 0 && x.text.startsWith("2 changes to the scorebook on this phone are"), x.text);
 }
+// The pad's own events (a fork's, found by id) count the same as outbox entries.
+{
+  const w = secondAccountWords([{ kind: "ball" }, { kind: "ball" }, { kind: "bowler" }, {}]);
+  ok("the pad's events: three balls (an unknown one counts as a ball)", w.balls === 3 && w.count === "3 balls", w);
+}
 // The pen-holder's line and its sheet.
 {
   ok("the badge line is R3's", penStandsLine(22) === "Your scoring stands · 22 balls from another phone set aside for review", penStandsLine(22));

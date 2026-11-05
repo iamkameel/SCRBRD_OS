@@ -655,7 +655,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     if(!st)return null;
     const mine=st.reconcile?.mine??[];
     if((st.reason==="fork"||st.reason==="fork_settling")&&mine.length){
-      return {ids:mine,items:mine.map((id)=>({payload:bannerExtra.find(id)??{}})),sent:false,
+      return {ids:mine,items:mine.map((id)=>bannerExtra.find(id)??{}),sent:false,
         sending:st.reason==="fork_settling"||!!st.reviewing,error:st.reviewError??null};
     }
     const aside=(st.rejectedList??[]).filter((e)=>e?.reason==="stale_epoch_or_lease");

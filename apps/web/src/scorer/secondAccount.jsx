@@ -24,7 +24,7 @@ import { reviewWords } from "./syncBanner.jsx";
 /**
  * The second phone's sheet: at reconnect, after a fork or balls set aside.
  * @param {object} p
- * @param {{payload?: any}[]} p.items  this phone's events not in the match record
+ * @param {any[]} p.items  this phone's events not in the match record (the pad's events, or outbox entries)
  * @param {boolean} p.sent      already with the server (set aside), so nothing to send
  * @param {boolean} p.sending   on their way now
  * @param {string|null} [p.error]  why the last send did not go (PadSync's reviewError)
