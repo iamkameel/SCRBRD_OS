@@ -820,6 +820,19 @@ function asRecognition(r) {
            matchId: r.match_id, opponent: r.opponent, isPublic: r.is_public, citation: r.citation, id: r.ref_id, live: true };
 }
 /**
+ * One line of a side's record boards (RECOGNITION R9, db/143 record_board()):
+ * a board (its state, minimum, coverage and matches awaiting verification),
+ * a holder, a former holder, or — staff only — a place on this season's
+ * list. Figures as the server derived them; nothing is ranked here.
+ */
+function asRecordLine(r) {
+  return { view: r.reader_view, school: r.side_school_id, side: r.side_code, metric: r.metric, group: r.class_group,
+           format: r.format, line: r.line, state: r.state, minBalls: r.min_balls, since: d10(r.coverage_since),
+           awaiting: r.awaiting, place: r.place, equalled: r.equalled === true, playerId: r.player_id, name: r.player_name,
+           matchId: r.match_id, innings: r.innings, on: d10(r.played_on), opponent: r.opponent, runs: r.runs, balls: r.balls,
+           notOut: r.not_out === true, wickets: r.wickets, conceded: r.runs_conceded, live: true };
+}
+/**
  * One placed delivery, in the shape the wagon wheel already reads.
  *
  * The chart is the scorer's and expects a ball off the pad's own log —
@@ -1355,6 +1368,7 @@ const ADAPT = {
   equipment: asEquipment,
   equipment_issues: asIssue,
   recognition: asRecognition,
+  record_boards: asRecordLine,
   player_shot_points: asShotPoint,
   pitch_report: asPitchReport,
   caps: asCap,

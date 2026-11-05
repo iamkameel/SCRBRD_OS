@@ -222,6 +222,9 @@ const SUITES = [
   // per screen, a method and never a name, the tenant's words (G15) — and
   // the Match Centre's family mode (G13).
   ["family", "apps/web/test/family.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // RECOGNITION R9: school record boards — holders, joint and former, the
+  // spec's empty states, the staff-only season list and none for a pupil.
+  ["records", "apps/web/test/records.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The coach's match-day cockpit and the intelligence feed (SCRBRD-136/137
   // phase A): the entry gate derived from roles.mjs and held to the design's
   // table, the status-tier-only health, the load word, the head count of
