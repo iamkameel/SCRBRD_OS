@@ -10146,6 +10146,29 @@ CREATE OR REPLACE FUNCTION _v140_to_pupils(p_match uuid) RETURNS integer AS $$
    WHERE n.subject_id = p_match AND n.recipient_id IS NOT NULL AND person_is_pupil(n.recipient_id)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- A scorebook's card (db/63's door, as the owner, its import named): Rohan's
+-- 104 not out against Kearsney on 1 Sep, read off the book, not the log.
+CREATE OR REPLACE FUNCTION _v140_book(p_player uuid) RETURNS uuid AS $$
+DECLARE m uuid; imp uuid := gen_random_uuid();
+BEGIN
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '14XI', 'Kearsney', '2026-09-01 10:00+02', 'cricket', 'T20', 20, 'complete')
+  RETURNING id INTO m;
+  PERFORM set_config('scrbrd.scorebook_commit', imp::text, true);
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                          client_seq, client_ts, kind, payload)
+  VALUES (m, '11111111-1111-1111-1111-111111111111', 1, 1, 0, '88888888-0000-0000-0000-000000000006', 'scorebook:' || imp,
+          'v140:' || m || ':book', 1, '2026-09-01 10:00+02', 'innings_summary',
+          jsonb_build_object('card', jsonb_build_object('v', 1, 'innings', 0, 'battingSide', 'home',
+                               'batting', jsonb_build_array(jsonb_build_object('ref', p_player::text, 'runs', 104, 'balls', 71, 'howOut', 'not_out')),
+                               'didNotBat', '[]'::jsonb, 'bowling', '[]'::jsonb, 'fallOfWickets', '[]'::jsonb, 'unreconciled', NULL,
+                               'extras', jsonb_build_object('byes', NULL, 'legByes', NULL, 'wides', NULL, 'noBalls', NULL, 'penalty', NULL),
+                               'total', 150, 'wickets', 4, 'overs', '20', 'endReason', 'overs_complete'),
+                             'typed', '{}'::jsonb, 'source', jsonb_build_object('kind', 'scorebook', 'import', imp)));
+  PERFORM set_config('scrbrd.scorebook_commit', '', true);
+  RETURN m;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- The mark returns (D20, Q7): what milestone_notify_as() does when a later
 -- correction makes the mark hold again — the same row, un-retracted.
 CREATE OR REPLACE FUNCTION _v140_rereach(p_player uuid, p_match uuid) RETURNS void AS $$
@@ -35202,6 +35225,8 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   --   (live)      on the ball: the side's notice, as before; no family
   --               notice; recognition() says the fifty is from the ball log,
   --               on the 14XI, in innings 0, a friendly, and not yet sealed
+  --   (book)      a scorebook card's hundred reads 'scorebook', and no
+  --               family notice is written for it (the side was never told)
   --   (seal)      the scorer's innings_end: one notice to Rohan's guardian,
   --               §7's words ("Rohan's first fifty" / "52 v DHS · sealed by
   --               the scorer, <day>"), medium, news.read; sealed_on today
@@ -35227,6 +35252,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   DECLARE
     y   jsonb := _v140_stage();
     M   uuid := (y->>'M')::uuid;
+    MB  uuid;
     A   uuid := (y->>'A')::uuid;
     W   uuid := (y->>'W')::uuid;
     GA  uuid := (y->>'ga')::uuid;
@@ -35249,6 +35275,13 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
                     AND r.fixture_class = 'friendly' AND r.sealed_on IS NULL,
       format('§118 (live): the guardian reads the fifty as %s/%s from %s on %s in %s, %s, sealed %s', r.kind, r.value, r.source,
              r.side_code, r.innings, r.fixture_class, r.sealed_on));
+
+    -- (book) a scorebook's hundred says so, and is shown, never noticed.
+    MB := _v140_book(A);
+    SELECT * INTO r FROM recognition(A) x WHERE x.family = 'milestone' AND x.match_id = MB;
+    PERFORM _assert(r.kind = 'hundred' AND r.value = 104 AND r.source = 'scorebook' AND r.opponent = 'Kearsney',
+      format('§118 (book): the book''s hundred reads %s/%s from %s v %s', r.kind, r.value, r.source, r.opponent));
+    PERFORM _assert(_v140_family_n(MB) = 0, '§118 (book): a book''s mark was noticed to the family');
 
     -- (seal)
     PERFORM _v140_seal(M, 20, 52);
