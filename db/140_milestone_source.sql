@@ -369,15 +369,23 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 -- ── The moments ────────────────────────────────────────────────────
 -- A mark noticed, retracted or returned (milestone_notify_as(), db/113;
 -- milestone_recheck(), db/121): its family follows.
+-- Both run inside the scorer's write (the ball, the void, the seal, Finish):
+-- a family notice that cannot be raised never stops it (db/132's
+-- late_ball_notice() and db/135's rule). The block is its own savepoint, so
+-- whatever it wrote is undone, and the server's log says so.
 CREATE OR REPLACE FUNCTION milestone_notice_family() RETURNS trigger AS $$
 BEGIN
-  IF TG_OP = 'INSERT' THEN
-    PERFORM milestone_family_tell(NEW.player_id, NEW.kind, NEW.match_id, NEW.innings);
-  ELSIF OLD.retracted_at IS NULL AND NEW.retracted_at IS NOT NULL THEN
-    PERFORM milestone_family_unsay(NEW.player_id, NEW.kind, NEW.match_id, NEW.innings, NEW.value);
-  ELSIF OLD.retracted_at IS NOT NULL AND NEW.retracted_at IS NULL THEN
-    PERFORM milestone_family_resay(NEW.player_id, NEW.kind, NEW.match_id, NEW.innings);
-  END IF;
+  BEGIN
+    IF TG_OP = 'INSERT' THEN
+      PERFORM milestone_family_tell(NEW.player_id, NEW.kind, NEW.match_id, NEW.innings);
+    ELSIF OLD.retracted_at IS NULL AND NEW.retracted_at IS NOT NULL THEN
+      PERFORM milestone_family_unsay(NEW.player_id, NEW.kind, NEW.match_id, NEW.innings, NEW.value);
+    ELSIF OLD.retracted_at IS NOT NULL AND NEW.retracted_at IS NULL THEN
+      PERFORM milestone_family_resay(NEW.player_id, NEW.kind, NEW.match_id, NEW.innings);
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'db/140: the family''s milestone notice for match % was not raised (SQLSTATE %)', NEW.match_id, SQLSTATE;
+  END;
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -388,12 +396,16 @@ CREATE TRIGGER milestone_notice_family AFTER INSERT OR UPDATE OF retracted_at ON
 -- The scorer's seal (an innings_end) and the match's verification (its
 -- status becoming complete): the marks they settle are told.
 CREATE OR REPLACE FUNCTION milestone_seal_watch() RETURNS trigger AS $$
+DECLARE v_match uuid;
 BEGIN
-  IF TG_TABLE_NAME = 'ball_event' THEN
-    PERFORM milestone_family_seal(NEW.match_id);
-  ELSE
-    PERFORM milestone_family_seal(NEW.id);
-  END IF;
+  -- ball_event's id is a bigint and match's a uuid: the match is taken
+  -- first, outside the block, so the handler never reads NEW.
+  IF TG_TABLE_NAME = 'ball_event' THEN v_match := NEW.match_id; ELSE v_match := NEW.id; END IF;
+  BEGIN
+    PERFORM milestone_family_seal(v_match);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'db/140: the family''s sealed notices for match % were not raised (SQLSTATE %)', v_match, SQLSTATE;
+  END;
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -576,6 +588,12 @@ BEGIN
              OR (tgrelid = 'match'::regclass AND tgname = 'match_milestone_verified'))) <> 3 THEN
     RAISE EXCEPTION 'db/140: a trigger that tells the family at the seal is missing or disabled';
   END IF;
+  -- A notice that cannot be raised never stops the scorer's write.
+  FOREACH f IN ARRAY ARRAY['milestone_notice_family()', 'milestone_seal_watch()'] LOOP
+    IF (SELECT prosrc FROM pg_proc WHERE oid = f::regprocedure) !~ 'EXCEPTION WHEN OTHERS THEN\s+RAISE WARNING' THEN
+      RAISE EXCEPTION 'db/140: % does not catch a failure of the family''s notice', f;
+    END IF;
+  END LOOP;
   -- The ball's own path is untouched: the family is never told on the ball.
   IF (SELECT prosrc FROM pg_proc WHERE oid = 'milestone_notify_as(uuid,text,uuid,smallint,integer,boolean)'::regprocedure)
        LIKE '%recipient_id%' THEN

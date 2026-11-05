@@ -10109,7 +10109,7 @@ CREATE OR REPLACE FUNCTION _v140_seal(p_match uuid, p_seq integer, p_runs intege
   INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
                           client_seq, client_ts, kind, payload)
   VALUES (p_match, '11111111-1111-1111-1111-111111111111', p_seq, 0, 0, '88888888-0000-0000-0000-000000000006',
-          'verify-140', 'v140:' || p_seq, p_seq, now(), 'innings_end',
+          'verify-140', 'v140:' || p_match || ':' || p_seq, p_seq, now(), 'innings_end',
           jsonb_build_object('reason', 'overs_complete', 'confirmed', jsonb_build_object('runs', p_runs, 'wickets', 0, 'balls', 18)));
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -10118,7 +10118,7 @@ CREATE OR REPLACE FUNCTION _v140_void(p_match uuid, p_seq integer, p_target text
   INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
                           client_seq, client_ts, kind, payload)
   VALUES (p_match, '11111111-1111-1111-1111-111111111111', p_seq, 0, 0, '88888888-0000-0000-0000-000000000006',
-          'verify-140', 'v140:' || p_seq, p_seq, now(), 'void', jsonb_build_object('target', p_target));
+          'verify-140', 'v140:' || p_match || ':' || p_seq, p_seq, now(), 'void', jsonb_build_object('target', p_target));
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The match's recognition notices to one person, as the owner reads them:
@@ -10168,6 +10168,51 @@ BEGIN
   PERFORM set_config('scrbrd.scorebook_commit', '', true);
   RETURN m;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- (failsafe) A second fixture, Rohan's thirteen fours and five dots again,
+-- its keys 'v140f:<seq>'; and the words function made to raise, its own
+-- definition handed back so the section puts it back as it was.
+CREATE OR REPLACE FUNCTION _v140_failmatch(p_player uuid, p_bowler uuid) RETURNS uuid AS $$
+DECLARE m uuid;
+BEGIN
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '14XI', 'Glenwood', (sa_today()::timestamp + time '13:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 3, 'live')
+  RETURNING id INTO m;
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                          client_seq, client_ts, kind, ball_type, value, striker_id, bowler_id, payload)
+  SELECT m, '11111111-1111-1111-1111-111111111111', g, 0, 0, '88888888-0000-0000-0000-000000000006', 'verify-140', 'v140f:' || g, g, now(),
+         CASE WHEN g = 1 THEN 'innings_start' ELSE 'ball' END, CASE WHEN g = 1 THEN NULL ELSE 'run' END,
+         (CASE WHEN g = 1 THEN NULL WHEN g <= 14 THEN 4 ELSE 0 END)::smallint,
+         CASE WHEN g = 1 THEN NULL ELSE p_player END, CASE WHEN g = 1 THEN NULL ELSE p_bowler END,
+         CASE WHEN g = 1 THEN '{"battingTeam":"Hilton 14XI","bowlingTeam":"Glenwood","overs":3}'::jsonb ELSE '{}'::jsonb END
+    FROM generate_series(1, 19) g ORDER BY g;
+  RETURN m;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _v140_words_break() RETURNS text AS $$
+DECLARE d text := pg_get_functiondef('milestone_family_words(uuid,text,uuid,smallint,integer)'::regprocedure);
+BEGIN
+  EXECUTE regexp_replace(d, '\mBEGIN\M', 'BEGIN RAISE EXCEPTION ''verify 140: the words fail'';');
+  RETURN d;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v140_words_mend(p_def text) RETURNS void AS $$
+BEGIN EXECUTE p_def; END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The scorer's two writes that end things, through the owner's door.
+CREATE OR REPLACE FUNCTION _v140_finish(p_match uuid) RETURNS void AS $$
+  UPDATE match SET status = 'complete' WHERE id = p_match;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- What stands of the match after them, as the owner reads it: the seal's
+-- row, the void's row, the status, and the side's fifty (live|retracted).
+CREATE OR REPLACE FUNCTION _v140_stands(p_match uuid) RETURNS text AS $$
+  SELECT concat_ws(',',
+    (SELECT 'end' FROM ball_event b WHERE b.match_id = p_match AND b.kind = 'innings_end' LIMIT 1),
+    (SELECT 'void' FROM ball_event b WHERE b.match_id = p_match AND b.kind = 'void' LIMIT 1),
+    (SELECT m.status FROM match m WHERE m.id = p_match),
+    (SELECT 'fifty ' || CASE WHEN mn.retracted_at IS NULL THEN 'live' ELSE 'retracted' END
+       FROM milestone_notice mn WHERE mn.match_id = p_match AND mn.kind = 'fifty'))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The mark returns (D20, Q7): what milestone_notify_as() does when a later
 -- correction makes the mark hold again — the same row, un-retracted.
@@ -35246,6 +35291,8 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   --               corrected."; recognition() no longer has it
   --   (rereach)   the mark holds again: the same notice returns, the
   --               withdrawal is superseded, nothing new is sent
+  --   (failsafe)  the words made to fail: the seal, Finish and a void all
+  --               stand, nothing half-written, a WARNING instead
   --   (grants)    recognition() a pinned definer, the application's, not
   --               PUBLIC's; every helper nobody's; milestone_family_notice
   --               read by nobody but its owner
@@ -35253,6 +35300,8 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     y   jsonb := _v140_stage();
     M   uuid := (y->>'M')::uuid;
     MB  uuid;
+    MF  uuid;
+    v_def text;
     A   uuid := (y->>'A')::uuid;
     W   uuid := (y->>'W')::uuid;
     GA  uuid := (y->>'ga')::uuid;
@@ -35351,6 +35400,23 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
                           || 'down A notice was withdrawn | The fifty noticed for Rohan was withdrawn after the scorecard was corrected. | medium news.read',
       format('§118 (rereach): the guardian holds %s', got));
     PERFORM _assert(_v140_family_n(M) = 1, format('§118 (rereach): %s family notices, not the same one', _v140_family_n(M)));
+
+    -- (failsafe) a family notice that cannot be raised never stops the
+    -- scorer: with the words made to fail, the seal, Finish and a void all
+    -- stand, the side's notice is taken back as before, nobody in the family
+    -- is told, and the trigger's body raises a WARNING instead (db/132's rule).
+    MF := _v140_failmatch(A, (y->>'C')::uuid);
+    v_def := _v140_words_break();
+    PERFORM _v140_seal(MF, 20, 52);
+    PERFORM _v140_finish(MF);
+    PERFORM _v140_void(MF, 21, 'v140f:3');
+    PERFORM _v140_words_mend(v_def);
+    got := _v140_stands(MF);
+    PERFORM _assert(got = 'end,void,complete,fifty retracted', format('§118 (failsafe): after a failed family notice the match holds %s', got));
+    PERFORM _assert(_v140_family_n(MF) = 0, format('§118 (failsafe): %s family notice(s) half-written', _v140_family_n(MF)));
+    PERFORM _assert((SELECT bool_and(prosrc ~ 'EXCEPTION WHEN OTHERS THEN\s+RAISE WARNING') FROM pg_proc
+                      WHERE proname IN ('milestone_notice_family', 'milestone_seal_watch')),
+      '§118 (failsafe): a trigger of the family''s notice does not turn its failure into a WARNING');
 
     -- (grants)
     PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'recognition(uuid)'::regprocedure
