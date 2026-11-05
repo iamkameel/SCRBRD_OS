@@ -129,5 +129,6 @@
   "131_reach_last.sql",
   "132_pilot_audit_fixes.sql",
   "133_fixture_status.sql",
-  "134_union_list_styles.sql"
+  "134_union_list_styles.sql",
+  "137_role_season_lock.sql"
 ]
