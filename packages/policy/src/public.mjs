@@ -277,6 +277,12 @@ export const NEVER_PUBLIC = Object.freeze({
   // union's interest in a named child, the scouting class. His family's to
   // see, never a page's; the whole table.
   passport_union_read: "N5",
+
+  // ── db/140, RECOGNITION R4: the family told at the seal ──
+  // N4. Which of a boy's guardians was told of which of his marks, and the
+  // notice that told her: who his guardians are. The family's notice is
+  // hers alone (recipient_id); the whole table.
+  milestone_family_notice: "N4",
 });
 
 /**
