@@ -56,7 +56,6 @@ const PORT = port(8852);
 const BASE = `http://127.0.0.1:${PORT}`;
 const HIL = "11111111-1111-1111-1111-111111111111";
 const WES = "22222222-2222-2222-2222-222222222222";
-const GROUND = "ffffffff-0000-0000-0000-000000000001";
 const COACH2 = "88888888-0000-0000-0000-00000000000a";   // the 2XI coach: news.publish.team at Hilton
 /** @type {string} */
 let NAMED;
@@ -299,12 +298,16 @@ try {
 
   group("5. The strip: a listed school's published fixture, team facts only (db/82)");
   {
+    // At a ground of its own, not the seed's Oval: noon today on a shared
+    // ground clashes (db/133, one ground at a time) with any fixture another
+    // writer put there relative to the clock, at some hour of the day.
+    const [{ id: ground, name: groundName }] = await q(
+      `insert into ground (school_id, name, surface) values ($1, 'Sherwood Strip Ground', 'grass') returning id, name`, [HIL]);
     const [{ id: today }] = await q(
       `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, ground_id, starts_at, sport, format, overs, status)
        values ($1, '1XI', $2, '1XI', 'Westville Boys'' High 1XI', $3,
                (sa_today()::timestamp + interval '12 hours') at time zone 'Africa/Johannesburg', 'cricket', 'T20', 20, 'live')
-       returning id`, [HIL, WES, GROUND]);
-    const [{ name: groundName }] = await q(`select name from ground where id = $1`, [GROUND]);
+       returning id`, [HIL, WES, ground]);
     await as(SARAH, `select * from fixture_publish($1, 'home', true)`, [today]);
     const card = (/** @type {any} */ page) => page.locator(`a[data-testid="home-card"][href="/live/${today}"]`);
     /** Reload until the card is (or is not) there: a change made by SQL reaches the cache by LISTEN, asynchronously. */
