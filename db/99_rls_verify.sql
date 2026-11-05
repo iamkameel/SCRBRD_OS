@@ -10941,7 +10941,7 @@ BEGIN
   -- ── Quarantine has a way out ──────────────────────────────────
   -- db/14. The door is a SECURITY DEFINER function that checks its own
   -- authority; the walk tools/smoke-quarantine.mjs exercises who may open it.
-  PERFORM _assert(to_regprocedure('quarantine_resolve(bigint,boolean,jsonb,text)') IS NOT NULL,
+  PERFORM _assert(to_regprocedure('quarantine_resolve(bigint,boolean,jsonb,text,text)') IS NOT NULL,
     'quarantine_resolve() is missing — a quarantined ball has no way out');
 
   -- ── Every definer function names its search path ───────────────
@@ -12193,10 +12193,10 @@ BEGIN
   --     neither race it for a seq nor append after it unjudged. Behaviour is
   --     proved in the walk; here, that the function in the database is the
   --     one db/37 wrote.
-  PERFORM _assert(pg_get_functiondef('quarantine_resolve(bigint,boolean,jsonb,text)'::regprocedure)
+  PERFORM _assert(pg_get_functiondef('quarantine_resolve(bigint,boolean,jsonb,text,text)'::regprocedure)
                     ~ 'p_row->>''contact''.*p_row->>''trajectory''',
     'quarantine_resolve() drops contact and trajectory from a released ball');
-  PERFORM _assert(pg_get_functiondef('quarantine_resolve(bigint,boolean,jsonb,text)'::regprocedure)
+  PERFORM _assert(pg_get_functiondef('quarantine_resolve(bigint,boolean,jsonb,text,text)'::regprocedure)
                     ~ 'FROM scoring_session s WHERE s.match_id = q.match_id FOR UPDATE',
     'quarantine_resolve() no longer takes the per-match lock the live write path takes');
   PERFORM _assert(EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ball_event_quarantine_resolution_check'
