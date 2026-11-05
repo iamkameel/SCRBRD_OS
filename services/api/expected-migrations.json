@@ -131,5 +131,6 @@
   "133_fixture_status.sql",
   "134_union_list_styles.sql",
   "135_second_account_notice.sql",
-  "136_second_account.sql"
+  "136_second_account.sql",
+  "140_milestone_source.sql"
 ]
