@@ -93,7 +93,9 @@ const STATUS = {
 
 const overs = (balls) => `${Math.floor(balls / 6)}.${balls % 6}`;
 const book = (t) => `${t.runs}/${t.wickets} (${overs(t.balls)})`;
-const small = { fontFamily: D.body, fontSize: "12px", lineHeight: 1.45 };
+// A function, not a constant: the theme changes D, and a token read at import
+// time would keep the first theme for ever.
+const smallText = () => ({ fontFamily: D.body, fontSize: "12px", lineHeight: 1.45 });
 
 function QuarantinePanel({ matchId, role }) {
   const canApprove = holdsCapability(role, "scoring.amend.approve");
@@ -128,7 +130,7 @@ function QuarantinePanel({ matchId, role }) {
     return (
       <Card sx={{ padding: "14px", marginTop: "12px" }} data-testid="quarantine-panel">
         <div style={{ marginBottom: "6px" }}>{head}</div>
-        <div style={{ ...small, color: state.error ? textOn(D.rose) : D.textMuted }}>
+        <div style={{ ...smallText(), color: state.error ? textOn(D.rose) : D.textMuted }}>
           {state.loading ? "Loading…" : `Could not load the set-aside balls (${state.error}).`}
         </div>
       </Card>
@@ -179,22 +181,22 @@ function QuarantinePanel({ matchId, role }) {
         </div>
       </div>
       {open === 0 ? (
-        <div style={{ ...small, color: D.textMuted }}>Nothing waiting for review.</div>
+        <div style={{ ...smallText(), color: D.textMuted }}>Nothing waiting for review.</div>
       ) : (<>
-        <p style={{ ...small, color: D.textPrimary, margin: "0 0 8px" }}>
+        <p style={{ ...smallText(), color: D.textPrimary, margin: "0 0 8px" }}>
           Another phone scored part of this match without the scoring pen. Its balls were set aside, not added to the score.
           The pen's book is the match's record; below, each of the other phone's balls is beside the pen's ball at the same place.
         </p>
         {/* Where a released ball lands (the match-day audit's P3; Kameel,
             30 Oct 2026; TWO_PHONES R5.2): at the end of the log. */}
-        <div data-testid="quarantine-where" style={{ ...small, color: D.textPrimary,
+        <div data-testid="quarantine-where" style={{ ...smallText(), color: D.textPrimary,
              padding: "8px 10px", marginBottom: "8px", borderRadius: "8px", background: `${D.amber}14`, border: `1px solid ${D.amber}55` }}>
           "Pen missed this ball" releases it: it is written at the end of the log, at the innings' end, after every ball scored since,
           and counted for whoever is batting and bowling there. Release only the last ball (or balls) of an innings.
           Otherwise set it aside, and have the scorer record it on the pad, in its place.
         </div>
         {viewer.scoredThisMatch && (
-          <div role="note" data-testid="second-account-barred" style={{ ...small, color: D.textPrimary, fontWeight: 600,
+          <div role="note" data-testid="second-account-barred" style={{ ...smallText(), color: D.textPrimary, fontWeight: 600,
                padding: "8px 10px", marginBottom: "8px", borderRadius: "8px", border: `1px solid ${D.border}` }}>
             You scored balls in this match's record, so you are a party to any difference between the two phones and may not decide it.
             Another person who approves corrections must decide — or, if there is nobody else at the school, the platform.
@@ -208,23 +210,23 @@ function QuarantinePanel({ matchId, role }) {
           return (
             <section key={a.deviceId} data-testid={`second-account-${a.deviceId}`} aria-label="A second account"
                      style={{ borderTop: `1px solid ${D.border}`, paddingTop: "8px" }}>
-              <div style={{ ...small, fontFamily: D.mono, color: D.textMuted }}>
+              <div style={{ ...smallText(), fontFamily: D.mono, color: D.textMuted }}>
                 Sent by {a.sender || "unknown"} from another phone · scored under epoch {a.submittedEpoch} (now {a.currentEpoch ?? "—"})
                 · {a.open} waiting{a.decided ? `, ${a.decided} decided` : ""}
               </div>
-              <div data-testid="second-account-totals" style={{ ...small, color: D.textPrimary, marginTop: "4px" }}>
+              <div data-testid="second-account-totals" style={{ ...smallText(), color: D.textPrimary, marginTop: "4px" }}>
                 {a.totals.pen.map((t) => {
                   const o = a.totals.other.find((x) => x.innings === t.innings);
                   return <div key={t.innings}>Innings {t.innings + 1}: the pen's book {book(t)} · the other phone's {o ? book(o) : "—"}</div>;
                 })}
               </div>
               {a.mine && (
-                <div role="note" data-testid="second-account-mine" style={{ ...small, color: D.textPrimary, fontWeight: 600, marginTop: "6px" }}>
+                <div role="note" data-testid="second-account-mine" style={{ ...smallText(), color: D.textPrimary, fontWeight: 600, marginTop: "6px" }}>
                   You sent these balls yourself — somebody else has to decide them.
                 </div>
               )}
               {a.drift && (
-                <div role="note" data-testid="second-account-drift" style={{ ...small, color: D.textPrimary, marginTop: "6px",
+                <div role="note" data-testid="second-account-drift" style={{ ...smallText(), color: D.textPrimary, marginTop: "6px",
                      padding: "8px 10px", borderRadius: "8px", border: `1px solid ${D.amber}55` }}>
                   From {a.drift.ball} (innings {a.drift.innings + 1}) the two accounts stop lining up: one phone has a delivery there the other does not,
                   so every ball after it is one out. Decide those balls by the over, against the paper book.
@@ -236,7 +238,7 @@ function QuarantinePanel({ matchId, role }) {
                        onClick={() => penStands(bulkKey, agreeIds, "Both accounts agree")}>
                     Pen stands for the {agreeing.length} that agree
                   </Btn>
-                  {said[bulkKey] && <div role="alert" style={{ ...small, color: textOn(D.rose), marginTop: "5px" }}>{said[bulkKey]?.text ?? said[bulkKey]}</div>}
+                  {said[bulkKey] && <div role="alert" style={{ ...smallText(), color: textOn(D.rose), marginTop: "5px" }}>{said[bulkKey]?.text ?? said[bulkKey]}</div>}
                 </div>
               )}
               <ol style={{ listStyle: "none", padding: 0, margin: "8px 0 0" }}>
@@ -252,19 +254,19 @@ function QuarantinePanel({ matchId, role }) {
                         <span style={{ fontFamily: D.mono, fontSize: "12px", fontWeight: 700, color: D.textPrimary }}>
                           {r.ball === "start" ? "Before the first ball" : r.ball}
                         </span>
-                        <span data-testid={`second-account-row-${r.key}-status`} style={{ ...small, fontWeight: 700, color: st.tone() }}>
+                        <span data-testid={`second-account-row-${r.key}-status`} style={{ ...smallText(), fontWeight: 700, color: st.tone() }}>
                           <span aria-hidden="true">{st.mark} </span>{st.words}{r.differsIn?.length ? `: ${r.differsIn.join(", ")}` : ""}
                           {r.afterDrift ? " · after the accounts stop lining up" : ""}
                         </span>
                       </div>
-                      <dl style={{ ...small, margin: "4px 0 0", display: "grid", gridTemplateColumns: "max-content 1fr", columnGap: "8px" }}>
+                      <dl style={{ ...smallText(), margin: "4px 0 0", display: "grid", gridTemplateColumns: "max-content 1fr", columnGap: "8px" }}>
                         <dt style={{ color: D.textMuted }}>Pen</dt>
                         <dd style={{ margin: 0, color: D.textPrimary }}>{r.pen.length ? r.pen.map((x) => x.words).join(" · ") : "No ball"}</dd>
                         <dt style={{ color: D.textMuted }}>Other phone</dt>
                         <dd style={{ margin: 0, color: D.textPrimary }}>{r.other.length ? r.other.map((x) => x.words).join(" · ") : "No ball (a change of bowler or batter only)"}</dd>
                       </dl>
                       {needsNote && (
-                        <label style={{ ...small, display: "block", marginTop: "6px", color: D.textMuted }}>
+                        <label style={{ ...smallText(), display: "block", marginTop: "6px", color: D.textMuted }}>
                           Why — what the paper book or the umpires say
                           <input type="text" value={note} maxLength={1000} disabled={off}
                                  data-testid={`second-account-row-${r.key}-note`}
@@ -276,7 +278,7 @@ function QuarantinePanel({ matchId, role }) {
                       )}
                       {said[r.key] && (
                         <div role="alert" data-testid={`second-account-row-${r.key}-refused`}
-                             style={{ ...small, color: textOn(D.rose), marginTop: "5px" }}>
+                             style={{ ...smallText(), color: textOn(D.rose), marginTop: "5px" }}>
                           {said[r.key]?.text ?? said[r.key]}
                         </div>
                       )}
@@ -305,7 +307,7 @@ function QuarantinePanel({ matchId, role }) {
                         )}
                       </div>
                       {r.amendTarget && !viewer.mayRequest && !barred && (
-                        <div style={{ ...small, color: D.textMuted, marginTop: "4px" }}>
+                        <div style={{ ...smallText(), color: D.textMuted, marginTop: "4px" }}>
                           "The other phone was right" asks for an amendment of the pen's ball, which needs a scorer's capability to request one.
                           Ask a scorer to request it; another person then approves it.
                         </div>
