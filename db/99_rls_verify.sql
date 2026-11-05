@@ -9912,6 +9912,47 @@ EXCEPTION WHEN OTHERS THEN
 END $$ LANGUAGE plpgsql;
 -- └── db/133 (section 112) ─────────────────────────────────────────────
 
+-- ┌── db/137 (section 115) ─────────────────────────────────────────────
+-- An office (user.role.assign at Hilton) and two appointments: a U13F coach
+-- for the 2026 season, dated from ten days ago to a fortnight ahead
+-- (a_season), and a scorer with no season (a_none).
+CREATE OR REPLACE FUNCTION _v137_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  ids jsonb; a uuid;
+BEGIN
+  ids := _v71_people('v137', ARRAY[
+    ARRAY['office', 'schooladmin', HIL::text, '', ''],
+    ARRAY['coach',  'scorer',      HIL::text, '', ''],
+    ARRAY['scw',    'scorer',      HIL::text, '', '']]);
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, season, valid_from, valid_until)
+  VALUES ((ids->>'coach')::uuid, 'coach', HIL, 'U13F', '2026', sa_today() - 10, sa_today() + 14) RETURNING id INTO a;
+  ids := ids || jsonb_build_object('a_season', a);
+  INSERT INTO role_assignment (person_id, role, school_id)
+  VALUES ((ids->>'scw')::uuid, 'scorer', HIL) RETURNING id INTO a;
+  ids := ids || jsonb_build_object('a_none', a);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The only way a season could move: the owner, with db/01's guard set aside.
+-- The change rows that leaves, read before the whole of it is undone (the
+-- guard comes back with the rollback); or what refused it.
+CREATE OR REPLACE FUNCTION _v137_season_bypass(p_id uuid, p_season text) RETURNS jsonb AS $$
+DECLARE j jsonb;
+BEGIN
+  BEGIN
+    ALTER TABLE role_assignment DISABLE TRIGGER role_assignment_revoke_guard;
+    UPDATE role_assignment SET season = p_season WHERE id = p_id;
+    SELECT coalesce(jsonb_agg(jsonb_build_object('was', c.was, 'became', c.became) ORDER BY c.id), '[]'::jsonb) INTO j
+      FROM role_assignment_change c WHERE c.assignment_id = p_id;
+    RAISE EXCEPTION 'v137-undo';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'v137-undo' THEN RETURN jsonb_build_object('error', SQLSTATE || ' ' || SQLERRM); END IF;
+  END;
+  RETURN j;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/137 (section 115) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -34611,6 +34652,103 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 112
   -- └── db/133 (section 112) ──────────────────────────────────────────
+  -- ┌── db/137 (section 115) ─────────────────────────────────────────
+  -- ── 115. An appointment's season is fixed (db/137; Kameel, 4 Nov 2026, "do both follow-ups next") ──
+  -- Staged by _v137_stage(); every change is the caller's own, through
+  -- scrbrd_app, unless it says the owner. What each label holds:
+  --   (season)  the office, who holds user.role.assign at Hilton, cannot
+  --             change an appointment's season: to another, to none, or
+  --             from none to one; each is check_violation in db/137's words,
+  --             the row is as it was, and no change row is written
+  --   (owner)   nor can the owner
+  --   (dates)   db/132's lock stands beside it: an end moved later is still
+  --             refused; an update that names the same season and brings the
+  --             end earlier goes through, one change row whose season is the
+  --             same before and after
+  --   (log)     with the guard set aside by the owner, a season moved is one
+  --             change row: none before, 2027 after
+  --   (pinned)  the guard is not a definer, the log is; both pin their
+  --             search_path; the log is nobody's to call; the log trigger
+  --             fires on season; both triggers are enabled
+  --
+  -- Falsified (5 Nov 2026, each change made as the owner on a migrated
+  -- database, inside the verifier's transaction, and the section run; each
+  -- went red at its own label; unchanged it passed):
+  --   role_assignment_revoke_only() as db/132 left it     → (season)
+  --   role_assignment_change_logged's WHEN as db/132's    → (log)
+  --   role_assignment_change_log() as db/132 left it      → (dates)
+  DECLARE
+    y   jsonb := _v137_stage();
+    A   uuid := (y->>'a_season')::uuid;
+    N   uuid := (y->>'a_none')::uuid;
+    j0  jsonb;
+    j   jsonb;
+    t   text;
+    s   text;
+    got text;
+  BEGIN
+    -- (season)
+    PERFORM _as((y->>'office')::uuid);
+    j0 := _v132_asg(A);
+    FOR t, s IN SELECT * FROM (VALUES
+        ('to another season', format('UPDATE role_assignment SET season = ''2027'' WHERE id = %L', A)),
+        ('to no season',      format('UPDATE role_assignment SET season = NULL WHERE id = %L', A)),
+        ('from none to one',  format('UPDATE role_assignment SET season = ''2026'' WHERE id = %L', N))) x LOOP
+      got := _v133_try(s);
+      PERFORM _assert(got = '23514||an appointment''s season is fixed; end it and appoint again',
+        format('§115 (season): an appointment''s season changed %s by the office reads %s', t, got));
+    END LOOP;
+    PERFORM _assert(_v132_asg(A) = j0, format('§115 (season): a refused season change left %s, was %s', _v132_asg(A), j0));
+    PERFORM _assert(_v132_asg(N)->'changes' = '[]'::jsonb AND _v132_asg(N)->'row'->'season' = 'null'::jsonb,
+      format('§115 (season): the seasonless appointment reads %s', _v132_asg(N)));
+
+    -- (owner)
+    got := _v133_owner_probe(format('UPDATE role_assignment SET season = ''2027'' WHERE id = %L', A));
+    PERFORM _assert(got LIKE '23514|%|an appointment''s season is fixed%', format('§115 (owner): the owner moving a season reads %s', got));
+
+    -- (dates)
+    got := _v133_try(format('UPDATE role_assignment SET valid_until = sa_today() + 30 WHERE id = %L', A));
+    PERFORM _assert(got LIKE '23514||an appointment''s dates may be ended or shortened%', format('§115 (dates): an end moved later reads %s', got));
+    got := _v133_try(format('UPDATE role_assignment SET season = ''2026'', valid_until = sa_today() + 7 WHERE id = %L', A));
+    PERFORM _assert(got = 'ok', format('§115 (dates): the same season with an earlier end reads %s', got));
+    j := _v132_asg(A);
+    PERFORM _assert(jsonb_array_length(j->'changes') = 1 AND j->'changes'->0->>'by' = y->>'office'
+                    AND (j->'changes'->0->'was'->>'until')::date = sa_today() + 14
+                    AND (j->'changes'->0->'became'->>'until')::date = sa_today() + 7
+                    AND j->'changes'->0->'was'->>'season' = '2026' AND j->'changes'->0->'became'->>'season' = '2026'
+                    AND j->'row'->>'season' = '2026',
+      format('§115 (dates): bringing the end earlier is recorded as %s', j));
+
+    -- (log)
+    j := _v137_season_bypass(N, '2027');
+    PERFORM _assert(jsonb_typeof(j) = 'array' AND jsonb_array_length(j) = 1
+                    AND j->0->'was'->'season' = 'null'::jsonb AND j->0->'became'->>'season' = '2027',
+      format('§115 (log): a season moved with the guard set aside is recorded as %s', j));
+    PERFORM _assert(_v132_asg(N)->'changes' = '[]'::jsonb AND _v132_asg(N)->'row'->'season' = 'null'::jsonb,
+      format('§115 (log): the owner''s move was not undone: %s', _v132_asg(N)));
+
+    -- (pinned)
+    PERFORM _assert(NOT (SELECT prosecdef FROM pg_proc WHERE oid = 'role_assignment_revoke_only()'::regprocedure)
+                    AND (SELECT prosecdef FROM pg_proc WHERE oid = 'role_assignment_change_log()'::regprocedure),
+      '§115 (pinned): the guard is a definer, or the log is not');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_proc
+                                 WHERE oid IN ('role_assignment_revoke_only()'::regprocedure, 'role_assignment_change_log()'::regprocedure)
+                                   AND NOT ('search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}')))),
+      '§115 (pinned): the guard or the log does not pin its search_path');
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'role_assignment_change_log()', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'role_assignment_change_log()', 'EXECUTE'),
+      '§115 (pinned): the log is callable by the application or PUBLIC');
+    PERFORM _assert(position('old.season IS DISTINCT FROM new.season' IN
+                      (SELECT pg_get_triggerdef(oid) FROM pg_trigger
+                        WHERE tgrelid = 'role_assignment'::regclass AND tgname = 'role_assignment_change_logged')) > 0,
+      '§115 (pinned): the log trigger does not fire on a season');
+    PERFORM _assert((SELECT count(*) FROM pg_trigger WHERE tgrelid = 'role_assignment'::regclass AND tgenabled <> 'D'
+                       AND tgname IN ('role_assignment_revoke_guard', 'role_assignment_change_logged')) = 2,
+      '§115 (pinned): the guard or the log trigger is missing or disabled');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 115
+  -- └── db/137 (section 115) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
