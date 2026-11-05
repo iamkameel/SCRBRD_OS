@@ -44,7 +44,7 @@ const API = `http://127.0.0.1:${API_PORT}`;
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 const HIL = "11111111-1111-1111-1111-111111111111";
 const WES = "22222222-2222-2222-2222-222222222222";
-const GROUND = "ffffffff-0000-0000-0000-000000000001";   // Gordon Sherwood Oval
+const STRIP = "Sherwood Strip Ground";   // the strip fixture's own ground
 const SIDEBOARD = "88888888-0000-0000-0000-0000000000f1";
 const DUPLICATE = "A ground with that name already exists at this school.";
 const FIELD = "Memorial Oval", PITCH = "Memorial Pitch 1";
@@ -199,12 +199,16 @@ try {
   const [{ left }] = await q(`select extract(epoch from date_trunc('day', now() at time zone 'Africa/Johannesburg') + interval '1 day' - now() at time zone 'Africa/Johannesburg')::int as left`);
   if (left < 600) await new Promise((r) => setTimeout(r, (left + 5) * 1000));
   // A fixture today (the home page lists today's), Hilton at home to Westville. The seed's own are dated otherwise.
+  // At a ground of its own, not the seed's Oval: noon today on a shared
+  // ground clashes (db/133, one ground at a time) with any fixture another
+  // writer put there relative to the clock, at some hour of the day.
+  const [{ id: ground, name: groundName }] = await q(
+    `insert into ground (school_id, name, surface) values ($1, $2, 'grass') returning id, name`, [HIL, STRIP]);
   [{ id: today }] = await q(
     `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, ground_id, starts_at, sport, format, overs, status)
      values ($1, '1XI', $2, '1XI', 'Westville Boys'' High 1XI', $3,
              (sa_today()::timestamp + interval '12 hours') at time zone 'Africa/Johannesburg', 'cricket', 'T20', 20, 'live')
-     returning id`, [HIL, WES, GROUND]);
-  const [{ name: groundName }] = await q(`select name from ground where id = $1`, [GROUND]);
+     returning id`, [HIL, WES, ground]);
   // A publisher for the 1XI only: reads the school's setting, may not change it.
   await q(`insert into app_user (id, school_id, email, name, role, teams) values ($1, $2, 'sideboard@example.invalid', 'R Mthembu', 'sportsadmin', '{1XI}')`, [SIDEBOARD, HIL]);
   await q(`insert into role_assignment (person_id, role, school_id, team_code) values ($1, 'sportsadmin', $2, '1XI')`, [SIDEBOARD, HIL]);
@@ -388,7 +392,7 @@ try {
   try {
     if (today) await q(`delete from match where id = $1`, [today]);
     await q(`delete from public_listing where school_id = $1`, [HIL]);
-    await q(`delete from ground where school_id = $1 and name in ($2, $3)`, [HIL, FIELD, PITCH]);
+    await q(`delete from ground where school_id = $1 and name in ($2, $3, $4)`, [HIL, FIELD, PITCH, STRIP]);
     await q(`delete from access_log where person_id = $1`, [SIDEBOARD]);
     await q(`delete from role_assignment where person_id = $1`, [SIDEBOARD]);
     await q(`delete from app_user where id = $1`, [SIDEBOARD]);
