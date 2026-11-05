@@ -172,6 +172,13 @@ ok("majorOf reads server and client versions", majorOf("16.13 (Ubuntu 16.13-0ubu
     ["a pooler user with no project ref", GOOD.replace(USER, "postgres"), /lacks the \.<project-ref> suffix/],
     ["a host with characters no host name has", `postgresql://${USER}:${PW}@aws-0-${REGION}.pooler.supabase.com!x:5432/${DB}`, /the host has characters a host name cannot have|does not parse/],
     ["an empty string", "", /it is empty/],
+    ["a zero-width space at the start", "\u200B" + GOOD, /invisible character at the very start/],
+    ["a byte-order mark at the start", "\uFEFF" + GOOD, /leading or trailing whitespace|invisible character at the very start/],
+    ["a zero-width joiner inside", GOOD.replace("@", "\u200D@"), /invisible character inside it/],
+    ["a look-alike letter", GOOD.replace("postgresql", "p\u043Estgresql"), /outside plain keyboard text/],
+    ["a smart quote in the password", GOOD.replace(PW, `${PW}\u2019`), /outside plain keyboard text/],
+    ["a name and = in front", "DATABASE_URL=" + GOOD, /a name and = in front of it/],
+    ["a jdbc scheme in front", "jdbc:" + GOOD, /starts with a different scheme/],
   ];
   /** Every 4-character run of a made-up value: no message may hold one. */
   const fragments = [USER, PW, REGION, DB, "qqrefxyzzy", "example.zz"]
