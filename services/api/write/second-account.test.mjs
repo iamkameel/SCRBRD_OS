@@ -92,5 +92,20 @@ ok("ball labels", ballLabel(1) === "0.1" && ballLabel(6) === "0.6" && ballLabel(
   ok("a decided row is not offered; the next is still at 0.2", a.rows.length === 1 && a.rows[0].ball === "0.2" && a.rows[0].status === "agrees");
 }
 
+{
+  // What may be released (R5.2): only a delivery the pen has none at the place of.
+  const shared = setup().map((e) => ev(e, "s"));
+  const pen = [...shared, ...[run(1), run(4), run(0)].map((e) => ev(e, "pen"))];
+  // The other phone: 1, a wide the pen missed, 6 where the pen has 4, 0, and a 0.4 the pen never had.
+  const o = [run(1), wide(), run(6), run(0), run(2)].map((e) => ev(e, "oth"));
+  const a = alignAccounts({ pen, prefix: shared, held: held(o) });
+  const rel = Object.assign({}, ...a.rows.map((r) => r.releasable));
+  ok("a wide the pen missed may be released, alone", rel["101"] === true, JSON.stringify(rel));
+  ok("...a ball the pen has, agreeing or not, may not", rel["100"] === false && rel["102"] === false && rel["103"] === false);
+  ok("...a ball the pen never had may", rel["104"] === true);
+  const b = alignAccounts({ pen, prefix: shared, held: held([ev(bowler({ bowler: B }), "oth")]) });
+  ok("...a change of bowler may never be", b.rows.length === 1 && Object.values(b.rows[0].releasable).every((v) => v === false));
+}
+
 console.log(`\nsecond-account: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

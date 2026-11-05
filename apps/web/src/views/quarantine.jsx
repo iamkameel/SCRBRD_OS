@@ -48,6 +48,9 @@ const REFUSAL = {
   already_recorded: "That ball is already in the log by another road; nothing was written.",
   idempotency_conflict: "A different ball is already in the log under this ball's id. Nothing was written — set this one aside.",
   no_such_quarantine: "That row is gone.",
+  you_hold_the_pen: "You hold this match's scoring pen, so you are a party to the difference and may not decide it. Another person who approves corrections, or the platform, must decide.",
+  pen_has_this_ball: "The pen has a ball here: set it aside, or ask for an amendment.",
+  not_a_ball: "This is not a ball the pen missed (a change of bowler or batters, or a ball its own phone undid): set it aside.",
   no_such_counterpart: "The pen's ball it was compared with is not in this match's record.",
   row_required: "Could not rebuild the delivery — nothing was written.",
   dismissal_unknown: "The dismissal on this ball is not one of the recognised kinds.",
@@ -160,16 +163,10 @@ function QuarantinePanel({ matchId, role }) {
     api(`/api/matches/${matchId}/second-account/pen-stands`, { method: "POST", body: { ids, note: note || undefined } }));
   const otherRight = (key, ids, note) => decide(key, () =>
     api(`/api/matches/${matchId}/second-account/other-phone-right`, { method: "POST", body: { ids, note } }));
-  // Released one by one, in the order the phone recorded them, each judged
-  // by the Laws; the first refusal stops the rest.
-  const penMissed = (key, ids, note) => decide(key, async () => {
-    let last = { ok: true };
-    for (const id of ids) {
-      last = await api(`/api/quarantine/${id}/resolve`, { method: "POST", body: { accept: true, note: note || undefined } });
-      if (!last?.ok) return last;
-    }
-    return last;
-  });
+  // One held ball released: only one the pen has no ball at the place of
+  // (the server refuses any other, pen_has_this_ball), judged by the Laws.
+  const penMissed = (key, id, note) => decide(key, () =>
+    api(`/api/quarantine/${id}/resolve`, { method: "POST", body: { accept: true, note: note || undefined } }));
 
   return (
     <Card sx={{ padding: "14px", marginTop: "12px" }} data-testid="quarantine-panel">
@@ -197,7 +194,7 @@ function QuarantinePanel({ matchId, role }) {
         {viewer.scoredThisMatch && (
           <div role="note" data-testid="second-account-barred" style={{ ...smallText(), color: D.textPrimary, fontWeight: 600,
                padding: "8px 10px", marginBottom: "8px", borderRadius: "8px", border: `1px solid ${D.border}` }}>
-            You scored balls in this match's record, so you are a party to any difference between the two phones and may not decide it.
+            You scored balls in this match's record, hold its scoring pen, or sent balls set aside here, so you are a party to any difference between the two phones and may not decide it.
             Another person who approves corrections must decide — or, if there is nobody else at the school, the platform.
           </div>
         )}
@@ -286,12 +283,19 @@ function QuarantinePanel({ matchId, role }) {
                              onClick={() => penStands(r.key, r.heldIds, note.trim())} data-testid={`second-account-row-${r.key}-pen-stands`}>
                           Pen stands
                         </Btn>
-                        {r.status !== "agrees" && (
-                          <Btn size="sm" variant="ghost" disabled={off}
-                               onClick={() => penMissed(r.key, r.heldIds, note.trim())} data-testid={`second-account-row-${r.key}-pen-missed`}>
-                            Pen missed this ball
-                          </Btn>
-                        )}
+                        {/* Per held ball, and only where the pen has no ball at its
+                            place (R5.2): never for a ball the pen also has, never
+                            for a change of bowler or batters. */}
+                        {(() => {
+                          const free = r.other.filter((x) => x.heldId != null && r.releasable?.[String(x.heldId)]);
+                          return free.map((x) => (
+                            <Btn key={x.heldId} size="sm" variant="ghost" disabled={off}
+                                 onClick={() => penMissed(r.key, x.heldId, note.trim())}
+                                 data-testid={`second-account-row-${r.key}-pen-missed-${x.heldId}`}>
+                              {free.length > 1 ? `Pen missed this ball: ${x.words}` : "Pen missed this ball"}
+                            </Btn>
+                          ));
+                        })()}
                         {r.amendTarget && (
                           <Btn size="sm" variant="ghost" disabled={off || !note.trim()}
                                onClick={() => otherRight(r.key, r.heldIds, note.trim())} data-testid={`second-account-row-${r.key}-other-right`}>

@@ -161,6 +161,9 @@ function slotted(events, ctx) {
  * @property {{key: string, words: string, heldId: number | string | null}[]} other   the second phone's
  * @property {(number | string)[]} heldIds   the set-aside rows still open in this slot, in the phone's order
  * @property {Record<string, string | null>} counterparts  per open held id: the pen's ball it is compared with
+ * @property {Record<string, boolean>} releasable  per open held id: a delivery the pen has no delivery at
+ *   the place of — the one case "Pen missed this ball" is for (R5.2). A delivery
+ *   the pen also has at its place, or a change of bowler or batters, is never released.
  * @property {string | null} amendTarget   the pen's ball an amendment would correct ("the other phone was right")
  * @property {string[]} differsIn          what differs, in words that name nobody
  * @property {boolean} afterDrift          at or after the ball where the accounts stop lining up
@@ -230,6 +233,8 @@ export function alignAccounts({ pen, prefix, held, ctx = {} }) {
       }
       /** @type {Record<string, string | null>} */
       const counterparts = {};
+      /** @type {Record<string, boolean>} may this one be released: a delivery the pen has none at the place of */
+      const releasable = {};
       for (const ev of open) {
         // A delivery against the pen's delivery at its place; anything else
         // (a bowler named, batters in) against the pen's event of its kind
@@ -239,6 +244,7 @@ export function alignAccounts({ pen, prefix, held, ctx = {} }) {
         const twin = isDelivery(ev) ? null : (ps?.all.filter((e) => e.kind === ev.kind) ?? [])[sameKind.indexOf(ev)];
         const c = (i >= 0 ? penLive[i] : null) ?? twin ?? penLive[0] ?? null;
         counterparts[String(/** @type {HeldEvent} */ (heldOf.get(ev)).id)] = c?.id ?? null;
+        releasable[String(/** @type {HeldEvent} */ (heldOf.get(ev)).id)] = isDelivery(ev) && i >= 0 && penLive[i] == null;
       }
       // The pen's ball an amendment would correct: the first that differs.
       let amendTarget = null;
@@ -251,7 +257,7 @@ export function alignAccounts({ pen, prefix, held, ctx = {} }) {
         pen: penLive.map((e) => ({ key: e.id, words: deliveryWords(e) })),
         other: otherLive.map((e) => ({ key: e.id, words: deliveryWords(e), heldId: heldOf.get(e)?.id ?? null })),
         heldIds: open.map((ev) => /** @type {HeldEvent} */ (heldOf.get(ev)).id),
-        counterparts, amendTarget, differsIn: [...new Set(differsIn)], afterDrift: false,
+        counterparts, releasable, amendTarget, differsIn: [...new Set(differsIn)], afterDrift: false,
       });
     }
   }
@@ -268,7 +274,7 @@ export function alignAccounts({ pen, prefix, held, ctx = {} }) {
       rows.push({
         key: `${inningsNo}:${k}:${h.id}`, innings: inningsNo, ordinal: k, ball: ballLabel(k), status: same ? "agrees" : "differs",
         pen: [{ key: twin.id, words: deliveryWords(twin) }], other: [{ key: h.event.id, words: deliveryWords(h.event), heldId: h.id }],
-        heldIds: [h.id], counterparts: { [String(h.id)]: twin.id }, amendTarget: same ? null : twin.id,
+        heldIds: [h.id], counterparts: { [String(h.id)]: twin.id }, releasable: { [String(h.id)]: false }, amendTarget: same ? null : twin.id,
         differsIn: same ? [] : ["the same ball, recorded twice"], afterDrift: false,
       });
     }
@@ -287,7 +293,7 @@ export function alignAccounts({ pen, prefix, held, ctx = {} }) {
  * device that sent set-aside balls, as the caller's own policies show them.
  * @param {import("../api-types.mjs").Db} client  @param {string} matchId
  */
-async function readAccounts(client, matchId) {
+export async function readAccounts(client, matchId) {
   const { rows: log } = await client.query(
     `select ${EVENT_COLUMNS} from ball_event where match_id = $1 order by seq`, [matchId]);
   const { rows: held } = await client.query(
@@ -351,6 +357,32 @@ function find(accounts, ids) {
 }
 
 /**
+ * Why a held event may not be released, by the alignment (R5.2, the
+ * red-team's F1 and F6): `pen_has_this_ball` when the pen has a delivery at
+ * its place (releasing it would count the ball twice), `not_a_ball` when it
+ * is a change of bowler or batters (written at the live end it would
+ * re-credit the pen's next balls). Null when the pen has no ball there, or
+ * when the row is not in any account (the function then answers).
+ * @param {any[]} accounts @param {string | number} id
+ * @returns {"pen_has_this_ball" | "not_a_ball" | null}
+ */
+export function releaseRefusal(accounts, id) {
+  for (const a of accounts) for (const r of a.rows) {
+    if (!r.heldIds.some((/** @type {any} */ h) => String(h) === String(id))) continue;
+    if (r.releasable[String(id)]) return null;
+    const mine = r.other.find((/** @type {any} */ o) => String(o.heldId) === String(id));
+    return mine ? "pen_has_this_ball" : "not_a_ball";
+  }
+  return null;
+}
+
+/** Where a held id sits: its row, for the pen's ball it is compared with. @param {any[]} accounts @param {string | number} id */
+export function rowOf(accounts, id) {
+  for (const a of accounts) for (const r of a.rows) if (r.heldIds.some((/** @type {any} */ h) => String(h) === String(id))) return r;
+  return null;
+}
+
+/**
  * @param {RouteDeps} deps
  * @returns {{read: IdHandler, penStands: IdHandler, otherPhoneRight: IdHandler}}
  */
@@ -373,7 +405,10 @@ export function secondAccountRoutes({ pool, secret }) {
   const viewer = async (client, matchId) => {
     const { rows } = await client.query(
       `select app_can('scoring.amend.approve', match_school($1), match_team($1), NULL, $1) as may,
-              exists (select 1 from ball_event_live b where b.match_id = $1 and b.scorer_user_id = app_user_id()) as scored`,
+              exists (select 1 from ball_event_live b where b.match_id = $1 and b.scorer_user_id = app_user_id())
+                or exists (select 1 from scoring_session s where s.match_id = $1 and s.state <> 'idle' and s.holder_user_id = app_user_id())
+                or exists (select 1 from ball_event_quarantine o where o.match_id = $1 and o.scorer_user_id = app_user_id()
+                             and o.resolved_at is null) as scored`,
       [matchId]);
     const v = rows[0] ?? {};
     if (v.may !== true) throw err("not_permitted", 403);

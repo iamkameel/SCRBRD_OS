@@ -26,7 +26,14 @@
 --                           to the disagreement and may not settle it; at a
 --                           school whose only approver scored, another
 --                           approver, or the platform, decides.
+--   you_hold_the_pen        the decider holds the scoring pen of this match
+--                           now (a scoring_session not idle, his): a party
+--                           before his first ball (the red-team's F3).
+--   you_scored_this_match   also: the decider's own set-aside balls are open in
+--                           this match (a third phone's scorer).
 --   no_such_counterpart     p_counterpart is not a ball of this match's log.
+-- A pad's resume credential is refused as not_permitted (as
+-- second_account_amend() and scoring_takeover() refuse it).
 -- then db/37's lock, its re-read, and its two paths, unchanged: a rejection
 -- writes no ball; a release is written at the next seq under the current
 -- epoch, marked recovered, under the submitting scorer's name, and the API
@@ -128,12 +135,12 @@ BEGIN
     RAISE EXCEPTION 'db/136: quarantine_resolve(bigint,boolean,jsonb,text) is not db/37''s (md5 % of its folded body); look before replacing it',
       pg_temp._v136_fold(v_old);
   END IF;
-  IF v_old IS NULL AND pg_temp._v136_fold(v_new) <> '4e1dffc125a2e282281bcc7336d8cb9c' THEN
+  IF v_old IS NULL AND pg_temp._v136_fold(v_new) <> '2ffae65a210df73ef81f31c93338a769' THEN
     RAISE EXCEPTION 'db/136: quarantine_resolve(bigint,boolean,jsonb,text,text) is not this file''s (md5 % of its folded body); look before replacing it',
       pg_temp._v136_fold(v_new);
   END IF;
   IF to_regprocedure('second_account_amend(bigint,text,text)') IS NOT NULL
-     AND pg_temp._v136_fold((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('second_account_amend(bigint,text,text)'))) <> '1eaa5e2dd708112cabe67a5527ee0ac5' THEN
+     AND pg_temp._v136_fold((SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure('second_account_amend(bigint,text,text)'))) <> '52497046547b6da0ce6d577689ec8847' THEN
     RAISE EXCEPTION 'db/136: second_account_amend() is there and not this file''s; look before replacing it';
   END IF;
   SELECT p.prosrc INTO v_log FROM pg_proc p WHERE p.oid = to_regprocedure('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)');
@@ -196,8 +203,9 @@ BEGIN
   IF q.resolved_at IS NOT NULL THEN
     RETURN QUERY SELECT false, 'already_' || q.resolution, NULL::integer; RETURN; END IF;
 
-  -- (1) authority over this match
-  IF NOT app_can('scoring.amend.approve', q.school_id, match_team(q.match_id), NULL, q.match_id) THEN
+  -- (1) authority over this match (and never a pad's resume credential)
+  IF app_pad_scoped()
+     OR NOT app_can('scoring.amend.approve', q.school_id, match_team(q.match_id), NULL, q.match_id) THEN
     RETURN QUERY SELECT false, 'not_permitted', NULL::integer; RETURN;
   END IF;
   -- (2) not your own
@@ -207,6 +215,15 @@ BEGIN
   -- (2b) db/136: neither book's scorer. Not the scorer of any ball that
   -- stands in this match's log (R6): he is a party to the disagreement.
   IF EXISTS (SELECT 1 FROM ball_event_live b WHERE b.match_id = q.match_id AND b.scorer_user_id = v_me) THEN
+    RETURN QUERY SELECT false, 'you_scored_this_match', NULL::integer; RETURN;
+  END IF;
+  -- ...nor the person holding the pen now, who is a party before his first
+  -- ball, nor a third phone's scorer whose own set-aside balls are open here.
+  IF EXISTS (SELECT 1 FROM scoring_session s WHERE s.match_id = q.match_id AND s.state <> 'idle' AND s.holder_user_id = v_me) THEN
+    RETURN QUERY SELECT false, 'you_hold_the_pen', NULL::integer; RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM ball_event_quarantine o WHERE o.match_id = q.match_id AND o.scorer_user_id = v_me
+                AND o.resolved_at IS NULL AND o.id <> q.id) THEN
     RETURN QUERY SELECT false, 'you_scored_this_match', NULL::integer; RETURN;
   END IF;
   -- (2c) db/136: the pen's ball it was compared with is a ball of this match.
@@ -355,6 +372,13 @@ BEGIN
   IF EXISTS (SELECT 1 FROM ball_event_live b WHERE b.match_id = q.match_id AND b.scorer_user_id = v_me) THEN
     RETURN QUERY SELECT false, 'you_scored_this_match', NULL::uuid; RETURN;
   END IF;
+  IF EXISTS (SELECT 1 FROM scoring_session s WHERE s.match_id = q.match_id AND s.state <> 'idle' AND s.holder_user_id = v_me) THEN
+    RETURN QUERY SELECT false, 'you_hold_the_pen', NULL::uuid; RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM ball_event_quarantine o WHERE o.match_id = q.match_id AND o.scorer_user_id = v_me
+                AND o.resolved_at IS NULL AND o.id <> q.id) THEN
+    RETURN QUERY SELECT false, 'you_scored_this_match', NULL::uuid; RETURN;
+  END IF;
   IF p_target IS NULL OR NOT EXISTS (SELECT 1 FROM ball_event_live b WHERE b.match_id = q.match_id AND b.idempotency_key = p_target) THEN
     RETURN QUERY SELECT false, 'no_such_counterpart', NULL::uuid; RETURN;
   END IF;
@@ -448,11 +472,11 @@ BEGIN
     RAISE EXCEPTION 'db/136: second_account_amend() is not a pinned definer executable by scrbrd_app alone';
   END IF;
   v_md5 := pg_temp._v136_fold((SELECT prosrc FROM pg_proc WHERE oid = 'second_account_amend(bigint,text,text)'::regprocedure));
-  IF v_md5 <> '1eaa5e2dd708112cabe67a5527ee0ac5' THEN
+  IF v_md5 <> '52497046547b6da0ce6d577689ec8847' THEN
     RAISE EXCEPTION 'db/136: second_account_amend() is not this file''s after the paste (md5 %)', v_md5;
   END IF;
   v_md5 := pg_temp._v136_fold((SELECT prosrc FROM pg_proc WHERE oid = 'quarantine_resolve(bigint,boolean,jsonb,text,text)'::regprocedure));
-  IF v_md5 <> '4e1dffc125a2e282281bcc7336d8cb9c' THEN
+  IF v_md5 <> '2ffae65a210df73ef81f31c93338a769' THEN
     RAISE EXCEPTION 'db/136: quarantine_resolve() is not this file''s after the paste (md5 %)', v_md5;
   END IF;
   v_md5 := pg_temp._v136_fold((SELECT prosrc FROM pg_proc WHERE oid = 'audit_log(uuid,text[],timestamptz,timestamptz,text,integer)'::regprocedure));

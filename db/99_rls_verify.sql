@@ -9936,7 +9936,9 @@ BEGIN
     ARRAY['third',  'directorofsport', HIL::text, '', ''],
     ARRAY['conf',   'principal',       HIL::text, '', ''],
     ARRAY['req',    'scorer',          HIL::text, '', ''],
-    ARRAY['none',   'spectator',       HIL::text, '', '']]);
+    ARRAY['none',   'spectator',       HIL::text, '', ''],
+    ARRAY['holder', 'directorofsport', HIL::text, '', ''],
+    ARRAY['own',    'principal',       HIL::text, '', '']]);
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
   VALUES (HIL, 'U12F', WES, '1XI', 'x', v_t0, 'cricket', 'T20', 1, 'live') RETURNING id INTO m;
   k := _v114_innings(m, 0::smallint, 'U12F', 'Westville 1XI', ARRAY[1, 1, 4, 1, 1, 1], NULL, (ids->>'pen')::uuid);
@@ -9953,6 +9955,27 @@ BEGIN
             md5('v136-held-' || m || '-' || i));
     ids := ids || jsonb_build_object('q' || i, currval(pg_get_serial_sequence('ball_event_quarantine', 'id')));
   END LOOP;
+  -- A third phone's ball, 'own's, open (the red-team's F3): its scorer is a
+  -- party to the match's second accounts.
+  INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                     idempotency_key, body, fingerprint)
+  VALUES (m, HIL, 0, 1, (ids->>'own')::uuid, 'v136-third-phone', 'v136-held-' || m || '-5',
+          '{"clientSeq": 5, "innings": 0, "payload": {"kind": "ball", "type": "run", "value": 1, "innings": 0}}'::jsonb,
+          md5('v136-held-' || m || '-5'));
+  ids := ids || jsonb_build_object('q5', currval(pg_get_serial_sequence('ball_event_quarantine', 'id')));
+  -- The pen's 0.5 itself, held too (same key, same fingerprint): a release
+  -- finds it in the log and closes it as superseded.
+  INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                     idempotency_key, body, fingerprint)
+  VALUES (m, HIL, 0, 1, (ids->>'sender')::uuid, 'v136-phone', k[5],
+          '{"clientSeq": 6, "innings": 0, "payload": {"kind": "ball", "type": "run", "value": 1, "innings": 0}}'::jsonb,
+          (SELECT b.fingerprint FROM ball_event b WHERE b.idempotency_key = k[5]));
+  ids := ids || jsonb_build_object('q6', currval(pg_get_serial_sequence('ball_event_quarantine', 'id')));
+  -- 'holder' holds the pen now and has scored nothing (the red-team's F3).
+  INSERT INTO scoring_session (match_id, school_id, state, epoch, holder_user_id, holder_device, lease_until)
+  VALUES (m, HIL, 'active', 1, (ids->>'holder')::uuid, 'v136-pen-now', now() + interval '90 seconds')
+  ON CONFLICT (match_id) DO UPDATE SET state = 'active', holder_user_id = EXCLUDED.holder_user_id,
+    holder_device = EXCLUDED.holder_device, lease_until = EXCLUDED.lease_until;
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -34683,7 +34706,12 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   --              counterpart_key, the note, both epochs and the ball (0.1);
   --              audit_log() words it "Set aside a second account of 0.1: the
   --              pen's ball stands"
+  --   (party)    the red-team's F3: the person holding the pen now, before his
+  --              first ball → you_hold_the_pen (both functions); a third
+  --              phone's scorer with his own balls open → you_scored_this_match
   --   (counter)  a counterpart that is not this match's ball → no_such_counterpart
+  --   (superseded) a release of a ball the log already holds under its key →
+  --              already_recorded, closed superseded, its audit row, no ball
   --   (bulk)     two rows set aside in one statement write no ball_event row
   --   (amend)    the other phone was right (Kameel, 5 Nov, "A"): the third
   --              approver opens the amendment of the pen's 0.4 himself
@@ -34704,6 +34732,8 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     CNF uuid := (y->>'conf')::uuid;
     REQ uuid := (y->>'req')::uuid;
     NOB uuid := (y->>'none')::uuid;
+    HLD uuid := (y->>'holder')::uuid;
+    OWN uuid := (y->>'own')::uuid;
     K   text[] := ARRAY(SELECT jsonb_array_elements_text(y->'k'));
     r record; j jsonb; got text; n0 integer; a uuid;
     l record; i integer; n integer; x text; w text; v_at timestamptz; v_key text;
@@ -34725,6 +34755,18 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     SELECT * INTO r FROM quarantine_resolve((y->>'q3')::bigint, true, '{"kind": "ball", "ball_type": "run", "value": 6}'::jsonb, NULL, NULL);
     PERFORM _assert(r.ok = false AND r.reason = 'you_scored_this_match', format('§114 (pen): the pen-holder''s release answered %s/%s', r.ok, r.reason));
     PERFORM _assert(_v136_audit(M) = '[]'::jsonb, '§114 (pen): a refusal wrote an audit row');
+
+    -- (party) the red-team's F3: the person holding the pen now, before his
+    -- first ball, and a third phone's scorer with his own balls open.
+    PERFORM _as(HLD);
+    SELECT * INTO r FROM quarantine_resolve((y->>'q1')::bigint, false, NULL, 'pen stands', K[1]);
+    PERFORM _assert(r.ok = false AND r.reason = 'you_hold_the_pen', format('§114 (party): the pen-holder with no ball answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM second_account_amend((y->>'q1')::bigint, K[1], 'Second account: x');
+    PERFORM _assert(r.ok = false AND r.reason = 'you_hold_the_pen', format('§114 (party): the pen-holder''s amendment answered %s/%s', r.ok, r.reason));
+    PERFORM _as(OWN);
+    SELECT * INTO r FROM quarantine_resolve((y->>'q1')::bigint, false, NULL, 'pen stands', K[1]);
+    PERFORM _assert(r.ok = false AND r.reason = 'you_scored_this_match', format('§114 (party): a third phone''s scorer answered %s/%s', r.ok, r.reason));
+    PERFORM _assert(_v136_audit(M) = '[]'::jsonb, '§114 (party): a refusal wrote an audit row');
 
     -- (counter)
     PERFORM _as(TRD);
@@ -34815,6 +34857,19 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     PERFORM _assert(w = 'Set aside a second account of 0.4: an amendment was asked of the pen''s ball',
       format('§114 (amend): audit_log() words it [%s]', w));
     PERFORM _assert(_v136_balls(M) = n0, '§114 (amend): setting it aside wrote a ball');
+
+    -- (superseded) a release of a ball already in the log under its key
+    -- closes it as superseded and writes nothing; the record says so.
+    SELECT * INTO r FROM quarantine_resolve((y->>'q6')::bigint, true, '{"kind": "ball", "ball_type": "run", "value": 1}'::jsonb, NULL, NULL);
+    PERFORM _assert(r.ok = false AND r.reason = 'already_recorded', format('§114 (superseded): answered %s/%s', r.ok, r.reason));
+    PERFORM _assert((SELECT q.resolution FROM ball_event_quarantine q WHERE q.id = (y->>'q6')::bigint) = 'superseded'
+                    AND _v136_balls(M) = n0, '§114 (superseded): not closed as superseded, or a ball was written');
+    PERFORM _assert((SELECT count(*) FROM jsonb_array_elements(_v136_audit(M)) e
+                      WHERE e->'detail'->>'resolution' = 'superseded' AND (e->'detail'->>'quarantine_id')::bigint = (y->>'q6')::bigint) = 1,
+      '§114 (superseded): no audit row for it');
+    -- The third phone's ball: the pen stands.
+    SELECT * INTO r FROM quarantine_resolve((y->>'q5')::bigint, false, NULL, 'Both books say 1', K[5]);
+    PERFORM _assert(r.ok, format('§114 (party): the third phone''s ball could not be set aside: %s', r.reason));
 
     -- (after) the amendment declined by another hand: nothing open, confirmable.
     PERFORM _as(CNF);
