@@ -298,6 +298,51 @@ try {
   ok("the parent's Notices now hold 'Back on · 1XI v Michaelhouse' as well", notices2.includes("Back on · 1XI v Michaelhouse") && notices2.includes("Postponed · 1XI v Michaelhouse"), notices2.slice(0, 300));
   await pa.ctx.close().catch(() => {});
 
+  // ── Called off, then put back on ──
+  group("The director of sport calls the fixture off, then puts the match back on");
+  await afterReads(dos.page, 300);
+  if (!(await tid(dos.page, "fixture-reschedule").count())) await click(dos.page, /^Reschedule or postpone$/, 4000);
+  if (DEBUG) console.log("[debug] panel:", await inner(dos.page, "fixture-reschedule"));
+  await tid(dos.page, "fixture-call-off").click({ timeout: 4000 }).catch((e) => DEBUG && console.log("[debug] calloff", e.message.slice(0, 100)));
+  await tid(dos.page, "fixture-status-confirm").click({ timeout: 4000 }).catch((e) => DEBUG && console.log("[debug] confirm", e.message.slice(0, 100)));
+  await afterReads(dos.page, 1500);
+  ok("the match is called off (abandoned) in the database", (await m2Of())?.status === "abandoned", (await m2Of())?.status);
+  await afterReads(dos.page, 300);
+  ok("the panel offers Put this match back on", await click(dos.page, /^Put this match back on$/, 4000));
+  ok("...saying plainly what happens, on one more ask",
+     (await tid(dos.page, "fixture-back-on").count()) === 1 && /Put this match back on/.test(await inner(dos.page, "fixture-reschedule")));
+  await tid(dos.page, "fixture-back-on").click({ timeout: 4000 }).catch(() => {});
+  ok("...the confirm says it goes back to scheduled and is logged",
+     /goes back to scheduled; you can set a new date\. This is logged\./.test(await inner(dos.page, "fixture-status-ask")), await inner(dos.page, "fixture-status-ask"));
+  const keptStart = (await m2Of())?.starts_at;
+  await tid(dos.page, "fixture-status-confirm").click({ timeout: 4000 }).catch(() => {});
+  await afterReads(dos.page, 1500);
+  const on = await m2Of();
+  ok("the match is scheduled again, with its start time kept", on?.status === "scheduled" && Date.parse(on.starts_at) === Date.parse(keptStart), JSON.stringify({ s: on?.status, at: on?.starts_at }));
+  const auditRes = await fetch(`${API}/api/read/audit_log?matchId=${M2}&limit=50`, auth).then((r) => r.json()).catch(() => ({}));
+  ok("the audit log says 'Put a called-off match back on'", JSON.stringify(auditRes).includes("Put a called-off match back on"), JSON.stringify(auditRes).slice(0, 200));
+  // Called off again, to see a viewer without the right.
+  await click(dos.page, /^Reschedule or postpone$/, 4000);
+  await tid(dos.page, "fixture-call-off").click({ timeout: 4000 }).catch(() => {});
+  await tid(dos.page, "fixture-status-confirm").click({ timeout: 4000 }).catch(() => {});
+  await afterReads(dos.page, 1500);
+  const pb = await open();
+  ok("the parent signs in", await signInAs(pb.page, "parent@example.invalid"));
+  await pb.page.locator("nav button", { hasText: /^Matches$/ }).first().click({ timeout: 6000 }).catch(() => {});
+  await afterReads(pb.page, 1500);
+  await tid(pb.page, `fixture-row-${M2}`).click({ timeout: 4000 }).catch(() => {});
+  await afterReads(pb.page, 1000);
+  ok("a viewer without the right is offered no way to put it back on",
+     (await tid(pb.page, "fixture-back-on").count()) === 0 && (await tid(pb.page, "fixture-reschedule-open").count()) === 0);
+  await pb.ctx.close().catch(() => {});
+  // Leave it back on for whoever runs next.
+  await afterReads(dos.page, 300);
+  await click(dos.page, /^Put this match back on$/, 4000);
+  await tid(dos.page, "fixture-back-on").click({ timeout: 4000 }).catch(() => {});
+  await tid(dos.page, "fixture-status-confirm").click({ timeout: 4000 }).catch(() => {});
+  await afterReads(dos.page, 1500);
+  ok("...and it is put back on again", (await m2Of())?.status === "scheduled");
+
   ok("no console errors on the director of sport's session", dos.errors.length === 0, dos.errors.join(" | "));
   await dos.ctx.close().catch(() => {});
 
