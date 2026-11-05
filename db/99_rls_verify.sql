@@ -10093,6 +10093,280 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/137 (section 115) ─────────────────────────────────────────────
 
+-- ┌── db/143 (section 121). RECOGNITION R9: school record boards (D22–D25)
+-- _v143_stage(), as the owner; every name invented (STEP4's). Three Hilton
+-- U15A boys — D Erasmus, K Naidoo, T Mokoena — and Hilton's league. Each
+-- match is written live, its log by _v143_ev(), and finished by
+-- _v143_finish() (the status the scorer's finish sets, which fires the
+-- notice):
+--   m0  league, U14A, 25 Aug   Naidoo 60 for the U14A (he is U15A now)
+--   m1  league, U15A, 1 Sep    Naidoo 71: the board's first record
+--   m2  league, U15A, 12 Sep   Erasmus 87* (a new record); Mokoena 2/10 off 6
+--   m3  league, U15A, 19 Sep   Mokoena 87, out: equals it (joint)
+--   m4  a friendly, 26 Sep     Naidoo 120: the Friendly board's alone
+--   m5  league, 3 Oct          Naidoo 150, never sealed: awaiting verification
+--   m6  league, 10 Oct         Naidoo 140, then rain and the umpires' par:
+--                              an adjusted target, on no board (A3)
+--   m7  league, T10, 17 Oct    Naidoo 100: the T10 board's, never the T20's
+--   mt  league, today          Erasmus 30: this season's list
+--   m8  league, 24 Oct         Naidoo 200, finished while a notice cannot be
+--                              written (the failsafe), so finished last
+-- The readers: coach, asst, tm (U15A), coach2 (U14A), prin, dos, analyst,
+-- media (school-wide), mate (a U15A pupil), self (Erasmus: his own record
+-- and a U15A pupil), guard (Erasmus's guardian), guard2 (Naidoo's), office,
+-- scorer, dso, scout, spect (spectator), wcoach (Westville U15A), woffice,
+-- and the seed's owner (superadmin, platform-wide).
+CREATE OR REPLACE FUNCTION _v143_ev(p_match uuid, p_inn smallint, p_kind text, p_bt text, p_v integer,
+                                    p_striker uuid, p_bowler uuid, p_payload jsonb DEFAULT '{}') RETURNS text AS $$
+DECLARE v_seq integer; v_school uuid; v_key text; v_at timestamptz;
+BEGIN
+  SELECT m.school_id, m.starts_at INTO v_school, v_at FROM match m WHERE m.id = p_match;
+  SELECT coalesce(max(b.seq), 0) + 1 INTO v_seq FROM ball_event b WHERE b.match_id = p_match;
+  v_key := 'v143:' || p_match || ':' || v_seq;
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                          client_seq, client_ts, kind, ball_type, value, dismissal, striker_id, bowler_id, payload)
+  VALUES (p_match, v_school, v_seq, 1, p_inn, '88888888-0000-0000-0000-000000000006', 'verify-143', v_key,
+          v_seq, v_at + v_seq * interval '20 seconds',
+          p_kind, p_bt, p_v, CASE WHEN p_bt = 'W' THEN 'bowled' END, p_striker, p_bowler, p_payload);
+  RETURN v_key;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The scorer's seal on an innings as the log stands now.
+CREATE OR REPLACE FUNCTION _v143_seal(p_match uuid, p_inn smallint, p_reason text DEFAULT 'declared') RETURNS void AS $$
+DECLARE v_runs int; v_wk int; v_balls int;
+BEGIN
+  SELECT coalesce(sum(b.value), 0), count(*) FILTER (WHERE b.ball_type = 'W'), count(*)
+    INTO v_runs, v_wk, v_balls
+    FROM ball_event_live b WHERE b.match_id = p_match AND b.innings = p_inn AND b.kind = 'ball';
+  PERFORM _v143_ev(p_match, p_inn, 'innings_end', NULL, NULL, NULL, NULL,
+                   jsonb_build_object('reason', p_reason,
+                                      'confirmed', jsonb_build_object('runs', v_runs, 'wickets', v_wk, 'balls', v_balls)));
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One innings: runs off the bat to p_striker (a W a wicket, bowled by
+-- p_bowler), sealed unless p_seal is false. The keys of its balls.
+CREATE OR REPLACE FUNCTION _v143_innings(p_match uuid, p_inn smallint, p_bat text, p_bowl text, p_balls text[],
+                                         p_striker uuid, p_bowler uuid, p_seal boolean DEFAULT true,
+                                         p_reason text DEFAULT 'declared') RETURNS text[] AS $$
+DECLARE b text; v_keys text[] := '{}';
+        sq jsonb := (SELECT jsonb_agg(jsonb_build_object('id', 'v143-' || g, 'name', 'V143 ' || g)) FROM generate_series(1, 11) g);
+BEGIN
+  PERFORM _v143_ev(p_match, p_inn, 'innings_start', NULL, NULL, NULL, NULL,
+                   jsonb_build_object('battingTeam', p_bat, 'bowlingTeam', p_bowl, 'squad', sq, 'overs', 20));
+  FOREACH b IN ARRAY p_balls LOOP
+    v_keys := v_keys || CASE WHEN b = 'W' THEN _v143_ev(p_match, p_inn, 'ball', 'W', 0, p_striker, p_bowler)
+                             ELSE _v143_ev(p_match, p_inn, 'ball', 'run', b::int, p_striker, p_bowler) END;
+  END LOOP;
+  IF p_seal THEN PERFORM _v143_seal(p_match, p_inn, p_reason); END IF;
+  RETURN v_keys;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The visitors' reply: all out for nothing, ten wickets in ten balls (the
+-- first p_overs of them, if given, bowled by p_bowler as the balls say), so
+-- the match has a result from play.
+CREATE OR REPLACE FUNCTION _v143_chase(p_match uuid, p_balls text[] DEFAULT '{}', p_bowler uuid DEFAULT NULL) RETURNS void AS $$
+DECLARE b text; w int := 0;
+        sq jsonb := (SELECT jsonb_agg(jsonb_build_object('id', 'v143-' || g, 'name', 'V143 ' || g)) FROM generate_series(1, 11) g);
+BEGIN
+  PERFORM _v143_ev(p_match, 1::smallint, 'innings_start', NULL, NULL, NULL, NULL,
+                   jsonb_build_object('battingTeam', 'Visitors', 'bowlingTeam', 'Home', 'squad', sq, 'overs', 20));
+  FOREACH b IN ARRAY p_balls LOOP
+    IF b = 'W' THEN w := w + 1; END IF;
+    PERFORM CASE WHEN b = 'W' THEN _v143_ev(p_match, 1::smallint, 'ball', 'W', 0, NULL, p_bowler)
+                 ELSE _v143_ev(p_match, 1::smallint, 'ball', 'run', b::int, NULL, p_bowler) END;
+  END LOOP;
+  WHILE w < 10 LOOP
+    PERFORM _v143_ev(p_match, 1::smallint, 'ball', 'W', 0, NULL, NULL);
+    w := w + 1;
+  END LOOP;
+  PERFORM _v143_seal(p_match, 1::smallint, 'all_out');
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The match finished, as match_finalise() finishes it: the status alone.
+CREATE OR REPLACE FUNCTION _v143_finish(p_match uuid) RETURNS text AS $$
+  UPDATE match SET status = 'complete' WHERE id = p_match RETURNING status
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- An approved correction: a void of the ball with this key.
+CREATE OR REPLACE FUNCTION _v143_void(p_match uuid, p_key text) RETURNS void AS $$
+  SELECT _v143_ev(p_match, (SELECT b.innings FROM ball_event b WHERE b.idempotency_key = p_key), 'void', NULL, NULL, NULL, NULL,
+                  jsonb_build_object('target', p_key));
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- match_verified() and fixture_class() as the owner reads them: "t/reason".
+CREATE OR REPLACE FUNCTION _v143_class(p_match uuid) RETURNS text AS $$
+  SELECT match_verified(p_match)::text || '/' || coalesce(f.no_board, '-') FROM fixture_class(p_match) f
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Every record notice a match raised (not its milestones), as the owner reads them:
+-- "team|scope|recipient|subject's name|title", sorted; '' for none.
+CREATE OR REPLACE FUNCTION _v143_notices(p_match uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(coalesce(n.team_code, '-') || '|' || n.scope_level || '|' || coalesce(n.recipient_id::text, '-')
+                             || '|' || coalesce(p.full_name, '-') || '|' || n.title, ' ;; ' ORDER BY n.title), '')
+    FROM notification n LEFT JOIN player p ON p.id = n.subject_person_id
+   WHERE n.subject_kind = 'match' AND n.subject_id = p_match AND n.kind = 'recognition'
+     AND n.title ~ '^(School|Friendly) record'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A notification that cannot be written: the failsafe's stand-in for any
+-- failure inside the notice.
+CREATE OR REPLACE FUNCTION _v143_refuse() RETURNS trigger AS $$
+BEGIN RAISE EXCEPTION 'v143: no notice may be written now'; END $$ LANGUAGE plpgsql;
+
+-- Finish a match while no notification can be written; the trigger is gone
+-- again before it returns. The match's status after the finish.
+CREATE OR REPLACE FUNCTION _v143_finish_refused(p_match uuid) RETURNS text AS $$
+DECLARE v text;
+BEGIN
+  CREATE TRIGGER v143_refuse BEFORE INSERT ON notification FOR EACH ROW EXECUTE FUNCTION _v143_refuse();
+  v := _v143_finish(p_match);
+  DROP TRIGGER v143_refuse ON notification;
+  RETURN v;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _v143_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  ids jsonb; v_e uuid; v_n uuid; v_m uuid; v_l uuid; m uuid; k text; a uuid;
+  sq jsonb := (SELECT jsonb_agg(jsonb_build_object('id', 'v143-' || g, 'name', 'V143 ' || g)) FROM generate_series(1, 11) g);
+  six text[];
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES (HIL, 'U15A', 'D Erasmus', 1431, 'allrounder', make_date(extract(year FROM sa_today())::int - 15, 3, 1)) RETURNING id INTO v_e;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES (HIL, 'U15A', 'K Naidoo', 1432, 'batter', make_date(extract(year FROM sa_today())::int - 15, 5, 1)) RETURNING id INTO v_n;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES (HIL, 'U15A', 'T Mokoena', 1433, 'bowler', make_date(extract(year FROM sa_today())::int - 15, 7, 1)) RETURNING id INTO v_m;
+  ids := _v71_people('v143', ARRAY[
+    ARRAY['coach',   'coach',           HIL::text, 'U15A', ''],
+    ARRAY['asst',    'assistantcoach',  HIL::text, 'U15A', ''],
+    ARRAY['tm',      'teammanager',     HIL::text, 'U15A', ''],
+    ARRAY['coach2',  'coach',           HIL::text, 'U14A', ''],
+    ARRAY['prin',    'principal',       HIL::text, '',     ''],
+    ARRAY['dos',     'directorofsport', HIL::text, '',     ''],
+    ARRAY['analyst', 'analyst',         HIL::text, '',     ''],
+    ARRAY['media',   'media',           HIL::text, '',     ''],
+    ARRAY['mate',    'player',          HIL::text, 'U15A', ''],
+    ARRAY['self',    'selfaccess',      HIL::text, '',     v_e::text],
+    ARRAY['guard',   'guardian',        HIL::text, '',     ''],
+    ARRAY['guard2',  'guardian',        HIL::text, '',     ''],
+    ARRAY['office',  'schooladmin',     HIL::text, '',     ''],
+    ARRAY['scorer',  'scorer',          HIL::text, '',     ''],
+    ARRAY['dso',     'dso',             HIL::text, '',     ''],
+    ARRAY['scout',   'scout',           HIL::text, '',     ''],
+    ARRAY['spect',   'spectator',       HIL::text, '',     ''],
+    ARRAY['wcoach',  'coach',           WES::text, 'U15A', ''],
+    ARRAY['woffice', 'schooladmin',     WES::text, '',     '']]);
+  -- The boy, as every pupil, is a player on his side as well as his own record.
+  INSERT INTO role_assignment (person_id, role, school_id, team_code) VALUES ((ids->>'self')::uuid, 'player', HIL, 'U15A');
+  FOR k, a IN SELECT x.k, x.p FROM (VALUES ('self', v_e), ('guard', v_e), ('guard2', v_n)) x(k, p) LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by)
+    SELECT r.id, a, CASE k WHEN 'self' THEN 'self' ELSE 'parent' END, 'verified', OFFICE, now(),
+           'granted', 'popia-2026-01', now(), OFFICE
+      FROM role_assignment r WHERE r.person_id = (ids->>k)::uuid AND r.role <> 'player';
+  END LOOP;
+  ids := ids || jsonb_build_object('owner', (SELECT u.id FROM app_user u WHERE u.email = 'owner@example.invalid'),
+                                   'erasmus', v_e, 'naidoo', v_n, 'mokoena', v_m);
+
+  INSERT INTO competition (school_id, name, comp_type, format, level) VALUES (HIL, 'Verify 143 League', 'league', 'T20', 'school')
+  RETURNING id INTO v_l;
+  INSERT INTO competition_entrant (competition_id, school_id, team_code, display_name)
+  SELECT v_l, HIL, t, 'Verify 143 Hilton ' || t FROM unnest(ARRAY['U14A', 'U15A']) t;
+
+  FOR k IN SELECT unnest(ARRAY['m0', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'mt', 'm8']) LOOP
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+    VALUES (HIL, CASE k WHEN 'm0' THEN 'U14A' ELSE 'U15A' END, 'Verify 143 ' || k,
+            CASE k WHEN 'm0' THEN '2026-08-25 10:00+02' WHEN 'm1' THEN '2026-09-01 10:00+02' WHEN 'm2' THEN '2026-09-12 10:00+02'
+                   WHEN 'm3' THEN '2026-09-19 10:00+02' WHEN 'm4' THEN '2026-09-26 10:00+02' WHEN 'm5' THEN '2026-10-03 10:00+02'
+                   WHEN 'm6' THEN '2026-10-10 10:00+02' WHEN 'm7' THEN '2026-10-17 10:00+02' WHEN 'm8' THEN '2026-10-24 10:00+02'
+                   ELSE ((sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg')::text END::timestamptz,
+            'cricket', CASE k WHEN 'm7' THEN 'T10' ELSE 'T20' END, CASE k WHEN 'm7' THEN 10 ELSE 20 END,
+            'live', CASE WHEN k <> 'm4' THEN v_l END)
+    RETURNING id INTO m;
+    ids := ids || jsonb_build_object(k, m);
+    six := NULL;
+    IF k = 'm0' THEN
+      INSERT INTO match_squad (match_id, player_id, side, batting_no) VALUES (m, v_n, 'home', 1);
+      PERFORM _v143_innings(m, 0::smallint, 'U14A', 'Visitors', array_fill('6'::text, ARRAY[10]), v_n, NULL);       -- 60
+      PERFORM _v143_chase(m);
+    ELSIF k = 'm1' THEN
+      PERFORM _v143_innings(m, 0::smallint, 'U15A', 'Visitors', array_fill('6'::text, ARRAY[11]) || ARRAY['4', '1'], v_n, NULL);  -- 71
+      PERFORM _v143_chase(m);
+    ELSIF k = 'm2' THEN
+      ids := ids || jsonb_build_object('m2_bat', to_jsonb(
+        _v143_innings(m, 0::smallint, 'U15A', 'Visitors', array_fill('6'::text, ARRAY[14]) || ARRAY['3'], v_e, NULL)));  -- 87*
+      PERFORM _v143_chase(m, ARRAY['W', '4', 'W', '6', '0', '0'], v_m);   -- Mokoena 2/10 off 6
+    ELSIF k = 'm3' THEN
+      PERFORM _v143_innings(m, 0::smallint, 'U15A', 'Visitors', array_fill('6'::text, ARRAY[14]) || ARRAY['3', 'W'], v_m, NULL);  -- 87
+      PERFORM _v143_chase(m);
+    ELSIF k = 'm4' THEN
+      PERFORM _v143_innings(m, 0::smallint, 'U15A', 'Visitors', array_fill('6'::text, ARRAY[20]), v_n, NULL);       -- 120
+      PERFORM _v143_chase(m);
+    ELSIF k = 'm5' THEN
+      PERFORM _v143_innings(m, 0::smallint, 'U15A', 'Visitors', array_fill('6'::text, ARRAY[25]), v_n, NULL, false);  -- 150, unsealed
+      PERFORM _v143_chase(m);
+    ELSIF k = 'm6' THEN
+      -- 140 in his twenty overs, then the chase: 15 off 9, rain, the umpires' par 13, terminated.
+      INSERT INTO match_conditions (match_id, set_id, set_version, doc, sources, doc_hash)
+      SELECT m, r.set_id, r.set_version, r.doc, r.sources, '' FROM match_conditions_compute(m) r;
+      PERFORM _v143_ev(m, 0::smallint, 'innings_start', NULL, NULL, NULL, NULL,
+                       jsonb_build_object('battingTeam', 'U15A', 'bowlingTeam', 'Visitors', 'squad', sq, 'overs', 20));
+      FOR a IN SELECT NULL::uuid FROM generate_series(1, 23) LOOP
+        PERFORM _v143_ev(m, 0::smallint, 'ball', 'run', 6, v_n, NULL);
+      END LOOP;
+      PERFORM _v143_ev(m, 0::smallint, 'ball', 'run', 2, v_n, NULL);                                               -- 140
+      PERFORM _v143_ev(m, 0::smallint, 'innings_end', NULL, NULL, NULL, NULL,
+                       '{"reason":"declared","confirmed":{"runs":140,"wickets":0,"balls":24}}');
+      PERFORM _v143_ev(m, 1::smallint, 'innings_start', NULL, NULL, NULL, NULL,
+                       jsonb_build_object('battingTeam', 'Visitors', 'bowlingTeam', 'U15A', 'squad', sq, 'overs', 20, 'target', 141));
+      FOR a IN SELECT NULL::uuid FROM generate_series(1, 6) LOOP PERFORM _v143_ev(m, 1::smallint, 'ball', 'run', 2, NULL, NULL); END LOOP;
+      FOR a IN SELECT NULL::uuid FROM generate_series(1, 3) LOOP PERFORM _v143_ev(m, 1::smallint, 'ball', 'run', 1, NULL, NULL); END LOOP;
+      PERFORM _v143_ev(m, 1::smallint, 'play_stopped', NULL, NULL, NULL, NULL, '{"reason":"rain"}');
+      PERFORM _v143_ev(m, 1::smallint, 'revision', NULL, NULL, NULL, NULL, '{"overs":null,"target":null,"reason":"rain","par":13}');
+      PERFORM _v143_ev(m, 1::smallint, 'innings_end', NULL, NULL, NULL, NULL,
+                       '{"reason":"abandoned","confirmed":{"runs":15,"wickets":0,"balls":9}}');
+    ELSIF k = 'm7' THEN
+      PERFORM _v143_innings(m, 0::smallint, 'U15A', 'Visitors', array_fill('6'::text, ARRAY[16]) || ARRAY['4'], v_n, NULL);  -- 100 (T10)
+      PERFORM _v143_chase(m);
+    ELSIF k = 'mt' THEN
+      PERFORM _v143_innings(m, 0::smallint, 'U15A', 'Visitors', array_fill('6'::text, ARRAY[5]), v_e, NULL);         -- 30, today
+      PERFORM _v143_chase(m);
+    ELSIF k = 'm8' THEN
+      PERFORM _v143_innings(m, 0::smallint, 'U15A', 'Visitors', array_fill('6'::text, ARRAY[33]) || ARRAY['2'], v_n, NULL);  -- 200
+      PERFORM _v143_chase(m);
+    END IF;
+  END LOOP;
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One board as the caller reads it, one line per row: "line:figure:name:MM-DD"
+-- (a board row "board:state:min:awaiting:since"), in the door's order; '' for
+-- none. Runs as the caller.
+CREATE OR REPLACE FUNCTION _v143_board(p_side text, p_metric text, p_group text, p_format text) RETURNS text AS $$
+  SELECT coalesce(string_agg(
+           CASE WHEN b.line = 'board'
+                THEN 'board:' || b.state || ':' || coalesce(b.min_balls::text, '-') || ':' || b.awaiting || ':'
+                     || coalesce(to_char(b.coverage_since, 'MM-DD'), '-')
+                ELSE b.line || coalesce('#' || b.place, '') || ':'
+                     || CASE WHEN b.metric IN ('best_bowling', 'best_economy') THEN b.wickets || '-' || b.runs_conceded || '/' || b.balls
+                             ELSE b.runs || CASE WHEN b.not_out THEN '*' ELSE '' END
+                                  || CASE WHEN b.metric = 'best_strike_rate' THEN '/' || b.balls ELSE '' END END
+                     || ':' || b.player_name || ':' || to_char(b.played_on, 'MM-DD') END, ' ' ORDER BY b.ord), '')
+    FROM (SELECT x.*, row_number() OVER () AS ord
+            FROM record_board('11111111-1111-1111-1111-111111111111', p_side) x) b
+   WHERE b.metric = p_metric AND b.class_group = p_group AND b.format = p_format
+$$ LANGUAGE sql STABLE;
+
+-- Every row of a side's boards the caller reads, and what view he reads.
+CREATE OR REPLACE FUNCTION _v143_rows(p_side text) RETURNS text AS $$
+  SELECT count(*)::text || '/' || coalesce(min(b.reader_view), '-') || '/' || count(*) FILTER (WHERE b.line = 'season')
+    FROM record_board('11111111-1111-1111-1111-111111111111', p_side) b
+$$ LANGUAGE sql STABLE;
+-- └── db/143 (section 121) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -35231,6 +35505,213 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 115
   -- └── db/137 (section 115) ──────────────────────────────────────────
+  -- ┌── db/143 (section 121) ─────────────────────────────────────────
+  -- ── 121. School record boards: who reads them, which matches count (R9) ──
+  -- docs/design/RECOGNITION_design.md D22–D25, A3, A11 and the
+  -- reconciliation's R9 row. Rows are _v143_stage()'s; every read is
+  -- record_board() through scrbrd_app, as the `record_boards` read makes it.
+  -- A board reads as _v143_board()'s "line:figure:name:MM-DD" list.
+  --   (staff)      the U15A's coach and assistant, the principal, the director,
+  --                the analyst and media read the full board: holders,
+  --                former holders and this season's ordered list (D22)
+  --   (pupil)      a U15A pupil, and the record holder himself, read the
+  --                chronology alone: never an ordered list of his side (D23)
+  --   (family)     his guardian and another boy's read no board (D23); so do
+  --                the office and the team manager, who hold no
+  --                player.performance.read (§2.3: nothing widens a role)
+  --   (nobody)     a scorer, the DSO, a scout, a spectator, Westville's coach
+  --                and office, the platform's owner (D7), signed out: nothing
+  --   (anchor)     the U14A board holds the 60 Naidoo made for the U14A,
+  --                read by its coach; the U14A's coach reads no U15A board
+  --   (chronology) 71, then 87*, then 87 equalled: two holders, one former
+  --   (count)      the unsealed 150 awaits verification, the friendly's 120 is
+  --                the Friendly board's, the 140 under an adjusted target is
+  --                on no board (A3), the T10's 100 never meets the T20's
+  --   (minimum)    a rate board is off until the school publishes a minimum;
+  --                the office may, a coach and the platform may not
+  --   (notice)     at verification: the 87* and the equalled 87 are noticed to
+  --                the U15A, team scope, no recipient; nothing for a first
+  --                record, an unsealed match or an adjusted target (D25)
+  --   (correct)    a voided ball breaks the seal and the board is rebuilt
+  --   (failsafe)   a notice that cannot be written does not stop the finish,
+  --                and the record still stands on the board
+  --   (grants)     the door and the setter the application's alone; the lines
+  --                and the notice nobody's; the table out of its reach;
+  --                no public_* function reads a board (A11)
+  DECLARE
+    y   jsonb := _v143_stage();
+    k   text; got text; want text; n integer; r record;
+    HI  text := 'board:standing:-:2:09-01 holder:87:T Mokoena:09-19 holder:87*:D Erasmus:09-12 former:71*:K Naidoo:09-01';
+    SEA text;
+    cur boolean := school_season_of(now()) = school_season_of('2026-09-01 10:00+02');
+  BEGIN
+    -- Every match finished as its scorer would, in the order played (m8 last).
+    FOR k IN SELECT unnest(ARRAY['m0', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'mt']) LOOP
+      PERFORM _v143_finish((y->>k)::uuid);
+    END LOOP;
+    PERFORM _assert(_v143_class((y->>'m6')::uuid) = 'true/adjusted_target',
+      format('§121 (count): the rain match reads %s, not verified with an adjusted target, so the next lines prove nothing',
+             _v143_class((y->>'m6')::uuid)));
+    PERFORM _assert(_v143_class((y->>'m5')::uuid) = 'false/-' AND _v143_class((y->>'m2')::uuid) = 'true/-'
+                    AND _v143_class((y->>'m4')::uuid) = 'true/-',
+      format('§121 (count): the unsealed match is verified, or a sealed one is not: m5 %s m2 %s m4 %s', _v143_class((y->>'m5')::uuid), _v143_class((y->>'m2')::uuid), _v143_class((y->>'m4')::uuid)));
+    SEA := CASE WHEN cur THEN 'season#1:87:T Mokoena:09-19 season#1:87*:D Erasmus:09-12 season#3:71*:K Naidoo:09-01 '
+                ELSE '' END
+           || 'season#' || CASE WHEN cur THEN '4' ELSE '1' END || ':30*:D Erasmus:' || to_char(sa_today(), 'MM-DD');
+
+    -- (staff)
+    FOR k IN SELECT unnest(ARRAY['coach', 'asst', 'prin', 'dos', 'analyst', 'media']) LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v143_board('U15A', 'highest_innings', 'school_records', 'T20');
+      PERFORM _assert(got = HI || ' ' || SEA, format('§121 (staff): %s reads the U15A''s highest innings as %s', k, got));
+      PERFORM _assert(split_part(_v143_rows('U15A'), '/', 2) = 'full', format('§121 (staff): %s reads the %s view', k, _v143_rows('U15A')));
+    END LOOP;
+
+    -- (pupil)
+    FOR k IN SELECT unnest(ARRAY['mate', 'self']) LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v143_board('U15A', 'highest_innings', 'school_records', 'T20');
+      PERFORM _assert(got = HI, format('§121 (pupil): %s reads the U15A''s highest innings as %s', k, got));
+      got := _v143_rows('U15A');
+      PERFORM _assert(split_part(got, '/', 2) = 'chronology' AND split_part(got, '/', 3) = '0',
+        format('§121 (pupil): %s reads %s (rows/view/season lines): an ordered list reached a pupil', k, got));
+    END LOOP;
+
+    -- (family), (nobody)
+    FOR k IN SELECT unnest(ARRAY['guard', 'guard2', 'office', 'tm', 'scorer', 'dso', 'scout', 'spect',
+                                 'wcoach', 'woffice', 'owner']) LOOP
+      PERFORM _as((y->>k)::uuid);
+      got := _v143_rows('U15A') || ' ' || _v143_rows('U14A');
+      PERFORM _assert(got = '0/-/0 0/-/0', format('§121 (family/nobody): %s reads %s of the boards', k, got));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v143_rows('U15A') = '0/-/0', format('§121 (nobody): signed out reads %s', _v143_rows('U15A')));
+
+    -- (anchor)
+    PERFORM _as((y->>'coach2')::uuid);
+    got := _v143_board('U14A', 'highest_innings', 'school_records', 'T20');
+    PERFORM _assert(got LIKE 'board:standing:-:0:08-25 holder:60*:K Naidoo:08-25%',
+      format('§121 (anchor): the U14A''s coach reads its board as %s', got));
+    PERFORM _assert(_v143_rows('U15A') = '0/-/0', format('§121 (anchor): the U14A''s coach reads %s of the U15A''s', _v143_rows('U15A')));
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert(_v143_rows('U14A') = '0/-/0' AND position('60' IN _v143_board('U15A', 'highest_innings', 'school_records', 'T20')) = 0,
+      '§121 (anchor): the U14A''s 60 reached the U15A''s coach');
+
+    -- (count), as the U15A's coach.
+    got := _v143_board('U15A', 'highest_innings', 'friendly', 'T20');
+    PERFORM _assert(got = 'board:standing:-:0:09-26 holder:120*:K Naidoo:09-26 season#1:120*:K Naidoo:09-26'
+                    OR (NOT cur AND got = 'board:standing:-:0:09-26 holder:120*:K Naidoo:09-26'),
+      format('§121 (count): the Friendly board reads %s', got));
+    got := _v143_board('U15A', 'highest_innings', 'school_records', 'T10');
+    PERFORM _assert(got LIKE 'board:standing:-:0:10-17 holder:100*:K Naidoo:10-17%',
+      format('§121 (count): the T10 board reads %s', got));
+    SELECT string_agg(DISTINCT b.runs::text, ',') INTO got FROM record_board('11111111-1111-1111-1111-111111111111', 'U15A') b
+     WHERE b.runs IN (140, 150);
+    PERFORM _assert(got IS NULL, format('§121 (count): the unsealed 150 or the adjusted 140 is on a board (%s)', got));
+
+    -- (minimum): both rate boards are off; the bowling board stands.
+    PERFORM _assert(_v143_board('U15A', 'best_economy', 'school_records', 'T20') = 'board:no_minimum:-:0:09-12'
+                    AND _v143_board('U15A', 'best_strike_rate', 'school_records', 'T20') = 'board:no_minimum:-:2:09-01',
+      format('§121 (minimum): with no minimum the rate boards read %s / %s',
+             _v143_board('U15A', 'best_economy', 'school_records', 'T20'), _v143_board('U15A', 'best_strike_rate', 'school_records', 'T20')));
+    got := _v143_board('U15A', 'best_bowling', 'school_records', 'T20');
+    PERFORM _assert(got LIKE 'board:standing:-:0:09-12 holder:2-10/6:T Mokoena:09-12%', format('§121 (minimum): best bowling reads %s', got));
+    FOR k IN SELECT unnest(ARRAY['coach', 'owner', 'dos']) LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT * INTO r FROM record_minimum_set('11111111-1111-1111-1111-111111111111', 'best_economy', 'T20', 6);
+      PERFORM _assert(NOT r.ok AND r.reason = 'not_permitted' OR (k = 'dos' AND r.ok),
+        format('§121 (minimum): %s setting a minimum answered %s/%s', k, r.ok, r.reason));
+    END LOOP;
+    PERFORM _as((y->>'office')::uuid);
+    SELECT * INTO r FROM record_minimum_set('11111111-1111-1111-1111-111111111111', 'highest_innings', 'T20', 6);
+    PERFORM _assert(NOT r.ok AND r.reason = 'metric_has_no_minimum', format('§121 (minimum): a minimum on highest innings answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM record_minimum_set('11111111-1111-1111-1111-111111111111', 'best_strike_rate', 'T20', 15);
+    PERFORM _assert(r.ok, format('§121 (minimum): the office publishing a minimum answered %s/%s', r.ok, r.reason));
+    PERFORM _as((y->>'coach')::uuid);
+    got := _v143_board('U15A', 'best_economy', 'school_records', 'T20');
+    PERFORM _assert(got LIKE 'board:standing:6:0:09-12 holder:2-10/6:T Mokoena:09-12%', format('§121 (minimum): economy, six balls the minimum, reads %s', got));
+    got := _v143_board('U15A', 'best_strike_rate', 'school_records', 'T20');
+    PERFORM _assert(got LIKE 'board:standing:15:2:09-01 holder:87*/15:D Erasmus:09-12%' AND position('71/13' IN got) = 0,
+      format('§121 (minimum): strike rate, fifteen balls the minimum, reads %s', got));
+    PERFORM _as((y->>'office')::uuid);
+    PERFORM record_minimum_set('11111111-1111-1111-1111-111111111111', 'best_strike_rate', 'T20', 200);
+    PERFORM record_minimum_set('11111111-1111-1111-1111-111111111111', 'best_economy', 'T20', NULL);
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert(_v143_board('U15A', 'best_strike_rate', 'school_records', 'T20') = 'board:not_enough:200:2:09-01'
+                    AND _v143_board('U15A', 'best_economy', 'school_records', 'T20') = 'board:no_minimum:-:0:09-12',
+      format('§121 (minimum): with nobody qualifying, and the minimum taken down, the boards read %s / %s',
+             _v143_board('U15A', 'best_strike_rate', 'school_records', 'T20'), _v143_board('U15A', 'best_economy', 'school_records', 'T20')));
+
+    -- (notice)
+    got := _v143_notices((y->>'m2')::uuid);
+    PERFORM _assert(got = 'U15A|team|-|D Erasmus|School record · Highest innings U15A T20: 87* D Erasmus',
+      format('§121 (notice): verifying the 87* noticed %s', got));
+    got := _v143_notices((y->>'m3')::uuid);
+    PERFORM _assert(got = 'U15A|team|-|T Mokoena|School record equalled · Highest innings U15A T20: 87 T Mokoena',
+      format('§121 (notice): verifying the equalled 87 noticed %s', got));
+    FOR k IN SELECT unnest(ARRAY['m0', 'm1', 'm4', 'm5', 'm6', 'm7', 'mt']) LOOP
+      PERFORM _assert(_v143_notices((y->>k)::uuid) = '', format('§121 (notice): %s noticed %s', k, _v143_notices((y->>k)::uuid)));
+    END LOOP;
+    PERFORM _v143_finish((y->>'m2')::uuid);
+    PERFORM _assert(_v143_notices((y->>'m2')::uuid) = 'U15A|team|-|D Erasmus|School record · Highest innings U15A T20: 87* D Erasmus',
+      '§121 (notice): finishing again noticed it twice');
+    FOR k IN SELECT unnest(ARRAY['mate', 'coach', 'self', 'guard', 'media']) LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT count(*) INTO n FROM notification x WHERE x.subject_id = (y->>'m2')::uuid AND x.kind = 'recognition' AND x.title LIKE 'School record%';
+      PERFORM _assert(n = 1, format('§121 (notice): the side''s %s reads %s record notices for the 87*', k, n));
+    END LOOP;
+    FOR k IN SELECT unnest(ARRAY['coach2', 'wcoach', 'scout', 'spect', 'guard2', 'office']) LOOP
+      PERFORM _as((y->>k)::uuid);
+      SELECT count(*) INTO n FROM notification x WHERE x.subject_id = (y->>'m2')::uuid AND x.kind = 'recognition' AND x.title LIKE 'School record%';
+      PERFORM _assert(n = 0, format('§121 (notice): %s, who reads no figures of his at the side, reads %s', k, n));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT count(*) INTO n FROM notification x WHERE x.subject_id = (y->>'m2')::uuid;
+    PERFORM _assert(n = 0, format('§121 (notice): signed out reads %s', n));
+
+    -- (correct): the 87*'s last ball (the 3) voided; then sealed again.
+    PERFORM _v143_void((y->>'m2')::uuid, (y->'m2_bat')->>14);
+    PERFORM _as((y->>'mate')::uuid);
+    got := _v143_board('U15A', 'highest_innings', 'school_records', 'T20');
+    PERFORM _assert(got = 'board:standing:-:3:09-01 holder:87:T Mokoena:09-19 former:71*:K Naidoo:09-01',
+      format('§121 (correct): with the seal broken the board reads %s', got));
+    PERFORM _v143_seal((y->>'m2')::uuid, 0::smallint);
+    got := _v143_board('U15A', 'highest_innings', 'school_records', 'T20');
+    PERFORM _assert(got = 'board:standing:-:2:09-01 holder:87:T Mokoena:09-19 former:84*:D Erasmus:09-12 former:71*:K Naidoo:09-01',
+      format('§121 (correct): sealed again, the board reads %s', got));
+
+    -- (failsafe): the 200 finished while no notification can be written.
+    PERFORM _assert(_v143_finish_refused((y->>'m8')::uuid) = 'complete', '§121 (failsafe): the match was not finished');
+    PERFORM _assert(_v143_notices((y->>'m8')::uuid) = '', format('§121 (failsafe): a notice was written: %s', _v143_notices((y->>'m8')::uuid)));
+    got := _v143_board('U15A', 'highest_innings', 'school_records', 'T20');
+    PERFORM _assert(got LIKE 'board:standing:-:1:09-01 holder:200*:K Naidoo:10-24 former:87:T Mokoena:09-19 %',
+      format('§121 (failsafe): the 200 does not stand: %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'v143_refuse'), '§121 (failsafe): the refusing trigger outlived the test');
+    -- No record notice anywhere names a recipient (never to a child alone).
+    PERFORM _assert(position('|-|' IN _v143_notices((y->>'m2')::uuid) || _v143_notices((y->>'m3')::uuid)) > 0
+                    AND position('|team|-|' IN _v143_notices((y->>'m3')::uuid)) > 0,
+      '§121 (notice): a record notice is not the side''s');
+
+    -- (grants)
+    PERFORM _assert(has_function_privilege('scrbrd_app', 'record_board(uuid,text)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'record_minimum_set(uuid,text,text,integer)', 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', 'record_lines(uuid,text)', 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', 'record_notice()', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'record_board(uuid,text)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'record_minimum_set(uuid,text,text,integer)', 'EXECUTE'),
+      '§121 (grants): a board function is PUBLIC''s, or the wrong one is the application''s');
+    PERFORM _assert(NOT has_table_privilege('scrbrd_app', 'record_definition', 'SELECT')
+                    AND NOT has_table_privilege('scrbrd_app', 'record_definition', 'INSERT')
+                    AND NOT has_table_privilege('scrbrd_app', 'record_definition', 'UPDATE'),
+      '§121 (grants): the application reaches record_definition directly');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace s ON s.oid = p.pronamespace
+                                 WHERE s.nspname = 'public' AND p.proname LIKE 'public\_%'
+                                   AND p.prosrc ~ '\m(record_board|record_lines|record_definition|record_minimum_set)\M'),
+      '§121 (grants): a public_* function reads a record board (A11)');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 121
+  -- └── db/143 (section 121) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
