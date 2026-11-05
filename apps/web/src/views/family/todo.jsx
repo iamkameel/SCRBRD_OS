@@ -128,7 +128,7 @@ const rowTestId = (row) => (row.rule === "R1" || row.rule === "R2" ? `todo-row-$
 /**
  * @param {{child: any, matches: any[], matchesRead: {loading: boolean, error: any}, onOpen: (m: any) => void, now: number,
  *          self?: boolean, day?: Record<string, any> | null, onDayRetry?: () => void,
- *          onDoor?: (panel: "consents" | "ring") => void}} p
+ *          onDoor?: (panel: "consents" | "ring" | "terms") => void}} p
  */
 export function TodoCard({ child, matches, matchesRead, onOpen, now, self = false, day = null, onDayRetry, onDoor }) {
   const [again, setAgain] = useState(0);

@@ -10092,6 +10092,88 @@ BEGIN
   RETURN j;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/137 (section 115) ─────────────────────────────────────────────
+-- ┌── GA-I20 A2 (section 116). Fixtures: one mother's guardian links in every
+-- state, and another family's (N4, my_links; no migration). Invented, as the
+-- owner; every name a placeholder. g holds a guardian assignment at Hilton
+-- and one at Westville; h another family's at Hilton; off the office that
+-- verified them; plat a platform administrator for the support session.
+--   l_old   g → live boy     revoked t-30, made 60 days ago (replaced by l_live)
+--   l_live  g → live boy     verified, live, consented
+--   l_pend  g → pending boy  established by the office, not verified, 4 days ago
+--   l_rej   g → rejected boy the office did not verify, 20 days ago
+--   l_rev   g → revoked boy  verified, then revoked t-3
+--   l_wes   g → Westville boy verified, ran out t-10 (Westville assignment)
+--   l_h     h → his own boy  verified, live
+CREATE OR REPLACE FUNCTION _vlinks_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  t   date := sa_today();
+  U16 date := make_date(extract(year FROM sa_today())::int - 16, 3, 1);
+  ids jsonb; z jsonb := '{}'; v_p uuid; v_aw uuid; v_id uuid; k text;
+  p jsonb := '{}'; n int := 1160;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  FOREACH k IN ARRAY ARRAY['live', 'pend', 'rej', 'rev', 'h'] LOOP
+    n := n + 1;
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES (HIL, 'U16E', 'Verify Mylinks ' || initcap(k), n, 'batter', U16) RETURNING id INTO v_p;
+    p := p || jsonb_build_object(k, v_p);
+  END LOOP;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES (WES, 'U16E', 'Verify Mylinks Wes', 1199, 'batter', U16) RETURNING id INTO v_p;
+  p := p || jsonb_build_object('wes', v_p);
+  ids := _v71_people('vlinks', ARRAY[
+    ARRAY['g',   'guardian',    HIL::text, '', ''],
+    ARRAY['h',   'guardian',    HIL::text, '', ''],
+    ARRAY['off', 'schooladmin', HIL::text, '', '']]);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'g')::uuid, 'guardian', WES) RETURNING id INTO v_aw;
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (NULL, 'vlinks.plat@example.invalid', 'VLINKS Plat', 'platformadmin') RETURNING id INTO v_id;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_id, 'platformadmin', NULL);
+  ids := ids || jsonb_build_object('plat', v_id);
+
+  -- l_old, then the link that replaced it.
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  valid_from, valid_until, created_at)
+  SELECT a.id, (p->>'live')::uuid, 'parent', 'revoked', (ids->>'off')::uuid, now() - interval '59 days',
+         t - 90, t - 30, now() - interval '60 days'
+    FROM role_assignment a WHERE a.person_id = (ids->>'g')::uuid AND a.school_id = HIL RETURNING id INTO v_id;
+  z := z || jsonb_build_object('l_old', v_id);
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, valid_from, created_at)
+  SELECT a.id, (p->>'live')::uuid, 'parent', 'verified', (ids->>'off')::uuid, now() - interval '29 days',
+         'granted', 'vlinks-terms-1', now() - interval '29 days', t - 29, now() - interval '29 days'
+    FROM role_assignment a WHERE a.person_id = (ids->>'g')::uuid AND a.school_id = HIL RETURNING id INTO v_id;
+  z := z || jsonb_build_object('l_live', v_id);
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, valid_from, created_at)
+  SELECT a.id, (p->>'pend')::uuid, 'guardian', t - 4, now() - interval '4 days'
+    FROM role_assignment a WHERE a.person_id = (ids->>'g')::uuid AND a.school_id = HIL RETURNING id INTO v_id;
+  z := z || jsonb_build_object('l_pend', v_id);
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, valid_from, created_at)
+  SELECT a.id, (p->>'rej')::uuid, 'parent', 'rejected', t - 20, now() - interval '20 days'
+    FROM role_assignment a WHERE a.person_id = (ids->>'g')::uuid AND a.school_id = HIL RETURNING id INTO v_id;
+  z := z || jsonb_build_object('l_rej', v_id);
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  valid_from, valid_until, created_at)
+  SELECT a.id, (p->>'rev')::uuid, 'parent', 'revoked', (ids->>'off')::uuid, now() - interval '199 days',
+         t - 200, t - 3, now() - interval '200 days'
+    FROM role_assignment a WHERE a.person_id = (ids->>'g')::uuid AND a.school_id = HIL RETURNING id INTO v_id;
+  z := z || jsonb_build_object('l_rev', v_id);
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  valid_from, valid_until, created_at)
+  VALUES (v_aw, (p->>'wes')::uuid, 'parent', 'verified', (ids->>'off')::uuid, now() - interval '399 days',
+          t - 400, t - 10, now() - interval '400 days')
+  RETURNING id INTO v_id;
+  z := z || jsonb_build_object('l_wes', v_id);
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  valid_from, created_at)
+  SELECT a.id, (p->>'h')::uuid, 'parent', 'verified', (ids->>'off')::uuid, now() - interval '9 days', t - 9, now() - interval '9 days'
+    FROM role_assignment a WHERE a.person_id = (ids->>'h')::uuid AND a.school_id = HIL RETURNING id INTO v_id;
+  z := z || jsonb_build_object('l_h', v_id);
+  RETURN ids || z || jsonb_build_object('p', p);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── GA-I20 A2 (section 116) ───────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -35231,6 +35313,170 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 115
   -- └── db/137 (section 115) ──────────────────────────────────────────
+  -- ┌── GA-I20 A2 (section 116) ───────────────────────────────────────
+  -- ── 116. Her own links in every state: my_links (GA-I20 A2, N4) ──
+  -- docs/design/GA-I20_parent_action_list.md §3.3, §3.4, §5.2 N4 and §7 A2.
+  -- The read is not a database object (db/01's policies admit a person's
+  -- own assignment and subject rows in every state, so it is security
+  -- invoker), and this section runs its own SQL, copied between the
+  -- my_links markers below and held equal to read-api.mjs by read.test.mjs,
+  -- as a TEMPORARY view owned by scrbrd_app, as §49 does for my_children.
+  -- Rows are _vlinks_stage()'s, invented. What each label holds:
+  --   (own)      g reads her six rows, each with the status the
+  --              screen words: live, ended (replaced), pending, rejected,
+  --              ended (revoked t-3), ended (ran out t-10, at Westville)
+  --   (school)   each row names its school from her assignment's school
+  --   (name)     no player id and no name on any row but the live one
+  --   (dates)    ended_on and asked_on are the days §4.3 says
+  --   (current)  the revoked link a live one replaced is not current
+  --   (other)    h reads his one row and none of g's; g none of his
+  --   (nobody)   a coach, a spectator, the pupil's self link and the office
+  --              (which reads every link at its school) read no row of hers
+  --   (support)  a support session at Hilton as the office reads none
+  --   (pad)      g under a pad credential reads nothing
+  -- Each guard was falsified once in this copy, run against the migrated
+  -- database, and went red at the first assertion able to see it:
+  --   `a.person_id = app_user_id()` removed   → (nobody): the office reads g's rows
+  --   the live-only player id                 → (name)
+  -- `not app_pad_scoped()` removed stays green: role_assignment's RESTRICTIVE
+  -- pad cut already hides her rows, and the read's clause is the second wall.
+  DECLARE
+    z     jsonb := _vlinks_stage();
+    G     uuid;  H uuid;
+    v_ok  boolean; v_sess uuid; v_why text;
+    got   text;
+    n     integer;
+    t     date := sa_today();
+    mine  uuid[];
+  BEGIN
+    G := (z->>'g')::uuid;  H := (z->>'h')::uuid;
+    mine := ARRAY[(z->>'l_old')::uuid, (z->>'l_live')::uuid, (z->>'l_pend')::uuid, (z->>'l_rej')::uuid,
+                  (z->>'l_rev')::uuid, (z->>'l_wes')::uuid];
+    EXECUTE $v116$CREATE TEMP VIEW _v116_my_links AS
+-- my_links:begin
+select s.id, a.school_id, ps.name as school_name, s.relationship,
+                  s.verification_state, s.consent_state, k.status,
+                  case when k.status = 'live' then s.player_id end as player_id,
+                  case when k.status = 'live' then p.full_name end as full_name,
+                  s.valid_from, s.valid_until, s.verified_at, sa_date(s.created_at) as asked_on,
+                  case when k.status = 'ended'
+                       then least(s.valid_until, a.valid_until, sa_date(a.expires_at), sa_date(a.revoked_at)) end as ended_on,
+                  (k.status = 'live' or not exists (
+                     select 1 from role_assignment a2
+                       join assignment_subject s2 on s2.assignment_id = a2.id
+                      where a2.person_id = app_user_id() and a2.role = 'guardian'
+                        and s2.player_id = s.player_id and s2.id <> s.id
+                        and ((s2.created_at, s2.id) > (s.created_at, s.id)
+                             or (s2.verification_state = 'verified' and a2.active
+                                 and (s2.valid_until is null or s2.valid_until > sa_today()))))) as current
+             from role_assignment a
+             join assignment_subject s on s.assignment_id = a.id
+             cross join lateral (select case
+                    when s.verification_state = 'rejected' then 'rejected'
+                    when s.verification_state = 'revoked' or not a.active
+                      or (a.valid_until is not null and a.valid_until <= sa_today())
+                      or (a.expires_at  is not null and a.expires_at  <= now())
+                      or (s.valid_until is not null and s.valid_until <= sa_today()) then 'ended'
+                    when s.verification_state = 'pending' then 'pending'
+                    when s.valid_from <= sa_today() and (a.valid_from is null or a.valid_from <= sa_today()) then 'live'
+                    else 'starts' end as status) k
+             left join player p on p.id = s.player_id and k.status = 'live'
+             left join lateral (select x.name from public_schools() x where x.id = a.school_id) ps on true
+            where a.person_id = app_user_id()
+              and a.role = 'guardian'
+              and not app_pad_scoped()
+            order by s.created_at desc, s.id
+-- my_links:end
+$v116$;
+
+    -- (own) g: six rows, one per link, each with the screen's status.
+    PERFORM _as(G);
+    SELECT string_agg(st, ',' ORDER BY st) INTO got FROM (
+      SELECT CASE id WHEN (z->>'l_old')::uuid THEN 'old' WHEN (z->>'l_live')::uuid THEN 'live'
+                     WHEN (z->>'l_pend')::uuid THEN 'pend' WHEN (z->>'l_rej')::uuid THEN 'rej'
+                     WHEN (z->>'l_rev')::uuid THEN 'rev' WHEN (z->>'l_wes')::uuid THEN 'wes' ELSE 'other' END
+             || '=' || status AS st
+        FROM _v116_my_links) q;
+    PERFORM _assert(got = 'live=live,old=ended,pend=pending,rej=rejected,rev=ended,wes=ended',
+      format('§116 (own): g reads %s', coalesce(got, 'nothing')));
+
+    -- (school) the school's name, from her assignment's school.
+    SELECT count(*) INTO n FROM _v116_my_links
+     WHERE (id = (z->>'l_wes')::uuid AND school_name = 'Westville Boys'' High')
+        OR (id <> (z->>'l_wes')::uuid AND school_name = 'Hilton College');
+    PERFORM _assert(n = 6, format('§116 (school): %s of g''s six rows name their school', n));
+
+    -- (name) a child on the live link only: no id, no name on any other.
+    PERFORM _assert((SELECT player_id = (z->'p'->>'live')::uuid AND full_name = 'Verify Mylinks Live'
+                       FROM _v116_my_links WHERE id = (z->>'l_live')::uuid),
+      '§116 (name): the live link does not carry its child');
+    SELECT count(*) INTO n FROM _v116_my_links WHERE status <> 'live' AND (player_id IS NOT NULL OR full_name IS NOT NULL);
+    PERFORM _assert(n = 0, format('§116 (name): %s pending, rejected or ended row(s) name a child', n));
+
+    -- (dates) the day each ended, and the day the pending link was made.
+    SELECT string_agg(k || '=' || coalesce((d - t)::text, '-'), ',' ORDER BY k) INTO got FROM (
+      SELECT CASE id WHEN (z->>'l_old')::uuid THEN 'old' WHEN (z->>'l_rev')::uuid THEN 'rev'
+                     WHEN (z->>'l_wes')::uuid THEN 'wes' ELSE 'zz' || status END AS k, ended_on AS d
+        FROM _v116_my_links) q;
+    PERFORM _assert(got = 'old=-30,rev=-3,wes=-10,zzlive=-,zzpending=-,zzrejected=-',
+      format('§116 (dates): the ended days read %s', got));
+    PERFORM _assert((SELECT asked_on = sa_date(now() - interval '4 days') FROM _v116_my_links WHERE id = (z->>'l_pend')::uuid),
+      '§116 (dates): the pending link''s day is not the day it was made');
+
+    -- (current) the revoked link the live one replaced is not drawn.
+    SELECT string_agg(CASE WHEN current THEN 'y' ELSE 'n' END, '' ORDER BY array_position(mine, id)) INTO got FROM _v116_my_links;
+    PERFORM _assert(got = 'nyyyyy', format('§116 (current): old,live,pend,rej,rev,wes read %s', got));
+
+    -- (other) another family: his own row, and nothing of hers either way.
+    PERFORM _as(H);
+    SELECT string_agg(status, ',') INTO got FROM _v116_my_links;
+    PERFORM _assert(got = 'live' AND (SELECT id FROM _v116_my_links) = (z->>'l_h')::uuid,
+      format('§116 (other): h reads %s', coalesce(got, 'nothing')));
+    PERFORM _as(G);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v116_my_links WHERE id = (z->>'l_h')::uuid),
+      '§116 (other): g reads h''s link');
+
+    -- (nobody) not a guardian of these: a coach, a spectator, the pupil
+    -- (his self link is not a guardian's) and the office, which reads them all.
+    FOREACH v_why IN ARRAY ARRAY['88888888-0000-0000-0000-00000000000a', '88888888-0000-0000-0000-000000000008',
+                                  '88888888-0000-0000-0000-000000000009', '88888888-0000-0000-0000-00000000000c',
+                                  z->>'off'] LOOP
+      PERFORM _as(v_why::uuid);
+      SELECT count(*) INTO n FROM _v116_my_links WHERE id = ANY (mine) OR id = (z->>'l_h')::uuid;
+      PERFORM _assert(n = 0, format('§116 (nobody): %s reads %s of the families'' links', v_why, n));
+    END LOOP;
+    PERFORM _as('88888888-0000-0000-0000-00000000000a');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v116_my_links), '§116 (nobody): a coach reads a link');
+    PERFORM _as('88888888-0000-0000-0000-000000000008');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v116_my_links), '§116 (nobody): a spectator reads a link');
+    PERFORM _as('88888888-0000-0000-0000-000000000009');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v116_my_links), '§116 (nobody): the pupil''s self link reads as a guardian''s');
+    PERFORM _as((z->>'off')::uuid);
+    PERFORM _assert((SELECT count(*) FROM assignment_subject WHERE id = ANY (mine) AND id <> (z->>'l_wes')::uuid) = 5,
+      '§116: the fixture is void — the office does not read g''s five Hilton links to be kept from');
+
+    -- (support) a support session at Hilton, as the office, reads none.
+    PERFORM _as((z->>'plat')::uuid);
+    SELECT r.ok, r.id INTO v_ok, v_sess
+      FROM support_access_begin('11111111-1111-1111-1111-111111111111', 'schooladmin', 'V116: Hilton asked the platform to help', NULL, 60) r;
+    PERFORM _assert(v_ok, '§116 (support): a support session at Hilton could not be begun');
+    PERFORM _assert((SELECT count(*) FROM assignment_subject WHERE id = ANY (mine) AND id <> (z->>'l_wes')::uuid) = 5,
+      '§116 (support): the fixture is void — the session does not read g''s five Hilton links to be kept from');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v116_my_links), '§116 (support): a support session reads a family''s links');
+    PERFORM support_access_end(v_sess);
+
+    -- (pad) g herself, under a pad credential: nothing.
+    PERFORM _as(G);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v116_my_links), '§116 (pad): a pad credential reads her links');
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert((SELECT count(*) FROM _v116_my_links) = 6, '§116 (pad): out of pad scope g does not read her six again');
+
+    EXECUTE 'DROP VIEW _v116_my_links';
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 116
+  -- └── GA-I20 A2 (section 116) ──────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

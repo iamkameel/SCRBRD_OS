@@ -21,6 +21,8 @@ import { phaseWord, severityWord } from "../../lib/injury.js";
 import { PassportTab } from "../SettingsView.jsx";
 import { InjuryHistory } from "../injuryreview.jsx";
 import { PublicNameSwitch } from "../publicname.jsx";
+import { GUARDIAN_TERMS_VERSION, agreedWords } from "../../lib/guardianLink.js";
+import { AgreeTerms } from "./terms.jsx";
 import { Action, Card, Line, OpenRow, Unread } from "./parts.jsx";
 
 /** Roles that never belong in "who else can see this": the break-glass keys and the platform. */
@@ -40,7 +42,7 @@ export function whoElseHolds(capability) {
     .map((r) => ROLE_IDENTITY[r]?.label ?? r);
 }
 
-export function ChildFileCard({ child, role, w, todo = null }) {
+export function ChildFileCard({ child, role, w, todo = null, onAgreed }) {
   // A door from his Home's To-do list (GA-I20 A1) opens one panel here, once.
   const [panel, setPanel] = useState(() => takeDoor(child.id));
   const opened = useRef(/** @type {HTMLDivElement | null} */ (null));
@@ -53,10 +55,20 @@ export function ChildFileCard({ child, role, w, todo = null }) {
       {/* His own count, opening his Home (GA-I20 A1, D1): never a sum across children. */}
       {todo}
       {child.consent !== "granted" && (
-        <Line testid="family-consent-pending">The {w.place}'s terms for {name} are not agreed yet. The office will ask you.</Line>
+        <Line testid="family-consent-pending">{child.consent === "withdrawn" && child.consentAt
+          ? `You withdrew the ${w.place}'s terms for ${name} on ${longDate(child.consentAt)}. Lifts and health monitoring are off until they are agreed again.`
+          : `The ${w.place}'s terms for ${name} are not agreed yet.`}</Line>
       )}
       <Line testid={`family-link-end-${child.id}`}>{linkEndWords(child, w)}</Line>
       <div ref={opened} style={{ display: "grid", gap: T.space.xs }}>
+        {/* GA-I20 A2 (N6, D7): the terms, read whole and agreed for her own link; agreed, the record's words. */}
+        <OpenRow onClick={() => toggle("terms")} testid={`family-open-terms-${child.id}`}>
+          <span style={{ ...T.role.body, fontWeight: 600 }}>{child.consent === "granted" ? `The ${w.place}'s terms` : "Read and agree"}</span>
+          <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>
+            {child.consent === "granted" ? agreedWords(child.consentAt, child.consentVersion) : `The ${w.place}'s terms for ${name}, version ${GUARDIAN_TERMS_VERSION}`}
+          </span>
+        </OpenRow>
+        {panel === "terms" && <AgreeTerms child={child} w={w} onAgreed={onAgreed} onClose={() => setPanel(null)}/>}
         <OpenRow onClick={() => toggle("ring")} testid={`family-open-ring-${child.id}`}>
           <span style={{ ...T.role.body, fontWeight: 600 }}>Who to ring</span>
           <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>The numbers the {w.place} calls if {name} is hurt</span>
