@@ -9934,15 +9934,24 @@ BEGIN
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- The only way a season could move: the owner, with db/01's guard set aside.
--- The change rows that leaves, read before the whole of it is undone (the
--- guard comes back with the rollback); or what refused it.
-CREATE OR REPLACE FUNCTION _v137_season_bypass(p_id uuid, p_season text) RETURNS jsonb AS $$
-DECLARE j jsonb;
+-- What the log trigger does with a season that moves. db/01's guard refuses
+-- every such update, and it cannot be set aside here (ALTER TABLE is refused
+-- while the verifier's transaction holds deferred trigger events), so the
+-- trigger is re-created, from its own live definition, on a scratch copy of
+-- the row, which keeps the row's id: the change row it writes is the
+-- assignment's. Read before the whole of it is undone; or what refused it.
+CREATE OR REPLACE FUNCTION _v137_season_logged(p_id uuid, p_season text) RETURNS jsonb AS $$
+DECLARE j jsonb; v_def text;
 BEGIN
+  SELECT pg_get_triggerdef(t.oid) INTO v_def FROM pg_trigger t
+   WHERE t.tgrelid = 'role_assignment'::regclass AND t.tgname = 'role_assignment_change_logged';
+  IF position(' ON public.role_assignment ' IN coalesce(v_def, '')) = 0 THEN
+    RETURN jsonb_build_object('error', 'no log trigger to copy: ' || coalesce(v_def, 'none'));
+  END IF;
   BEGIN
-    ALTER TABLE role_assignment DISABLE TRIGGER role_assignment_revoke_guard;
-    UPDATE role_assignment SET season = p_season WHERE id = p_id;
+    CREATE TEMP TABLE _v137_ra AS SELECT * FROM role_assignment WHERE id = p_id;
+    EXECUTE replace(v_def, ' ON public.role_assignment ', ' ON pg_temp._v137_ra ');
+    UPDATE pg_temp._v137_ra SET season = p_season;
     SELECT coalesce(jsonb_agg(jsonb_build_object('was', c.was, 'became', c.became) ORDER BY c.id), '[]'::jsonb) INTO j
       FROM role_assignment_change c WHERE c.assignment_id = p_id;
     RAISE EXCEPTION 'v137-undo';
@@ -34665,8 +34674,9 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   --             refused; an update that names the same season and brings the
   --             end earlier goes through, one change row whose season is the
   --             same before and after
-  --   (log)     with the guard set aside by the owner, a season moved is one
-  --             change row: none before, 2027 after
+  --   (log)     the log trigger, as it stands, fires on a season moved (on a
+  --             scratch copy of the row, since the guard refuses every such
+  --             update): one change row, none before, 2027 after
   --   (pinned)  the guard is not a definer, the log is; both pin their
   --             search_path; the log is nobody's to call; the log trigger
   --             fires on season; both triggers are enabled
@@ -34720,12 +34730,12 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
       format('§115 (dates): bringing the end earlier is recorded as %s', j));
 
     -- (log)
-    j := _v137_season_bypass(N, '2027');
+    j := _v137_season_logged(N, '2027');
     PERFORM _assert(jsonb_typeof(j) = 'array' AND jsonb_array_length(j) = 1
                     AND j->0->'was'->'season' = 'null'::jsonb AND j->0->'became'->>'season' = '2027',
-      format('§115 (log): a season moved with the guard set aside is recorded as %s', j));
+      format('§115 (log): a season moved under the log trigger is recorded as %s', j));
     PERFORM _assert(_v132_asg(N)->'changes' = '[]'::jsonb AND _v132_asg(N)->'row'->'season' = 'null'::jsonb,
-      format('§115 (log): the owner''s move was not undone: %s', _v132_asg(N)));
+      format('§115 (log): the scratch move was not undone: %s', _v132_asg(N)));
 
     -- (pinned)
     PERFORM _assert(NOT (SELECT prosecdef FROM pg_proc WHERE oid = 'role_assignment_revoke_only()'::regprocedure)
