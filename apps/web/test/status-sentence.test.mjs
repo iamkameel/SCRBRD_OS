@@ -100,6 +100,8 @@ says("a finished fixture on the list's read: its stored result", statusSentence(
 says("...finished, and nothing to word", statusSentence({ ...M, status: "complete" }), "complete", "Match over");
 says("called off (the signed-in read)", statusSentence({ ...M, status: "complete", calledOff: true }), "abandoned", "Match abandoned");
 says("...abandoned (the public read's word)", statusSentence({ ...M, status: "abandoned" }), "abandoned", "Match abandoned");
+// db/133: postponed before play, to be replayed: no result, whatever else the row carries.
+says("postponed", statusSentence({ ...M, status: "postponed", result: "Hilton won" }), "postponed", "Postponed");
 
 group("A super over being played");
 {

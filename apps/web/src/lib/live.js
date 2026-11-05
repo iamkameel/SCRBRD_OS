@@ -30,7 +30,10 @@ import { asNotification } from "./notifications.js";
 import { scoped, scopedSkills, scopedWeather, demoSummary } from "../rbac/index.js";
 
 /** DB fixture status → the vocabulary the views filter on. */
-const MATCH_STATUS = { scheduled: "upcoming", live: "live", complete: "complete", abandoned: "complete" };
+// 'postponed' (db/133) keeps its own word: called off before play, to be
+// replayed. It is not "upcoming" (nobody scores it, picks for it or answers
+// for it until it has a new date) and not "complete" (it has no result).
+const MATCH_STATUS = { scheduled: "upcoming", live: "live", complete: "complete", abandoned: "complete", postponed: "postponed" };
 
 /**
  * A fixture, in the shape the Match Centre draws.

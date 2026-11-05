@@ -375,9 +375,10 @@ const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
  *   result         the result's own words (resultText, or the server's)
  *   abandoned      "Match abandoned"
  *   complete       "Match over": finished, and no result to word
+ *   postponed      "Postponed": called off before play, to be replayed on a new date (db/133)
  */
 export const STATUS_STATE = Object.freeze(["upcoming", "toss", "live", "first_innings", "stopped", "innings_break", "chase", "lead",
-  "super_over", "result", "abandoned", "complete"]);
+  "super_over", "result", "abandoned", "complete", "postponed"]);
 
 /**
  * Where a fixture stands, in one sentence: what the Match Centre's list
@@ -401,6 +402,8 @@ export const STATUS_STATE = Object.freeze(["upcoming", "toss", "live", "first_in
 export function statusSentence(match, fold = null, { result = null } = {}) {
   const innings = (fold?.innings ?? []).filter(Boolean);
   const status = match?.status;
+  // Postponed (db/133): no result and no figures, whatever else is on record.
+  if (status === "postponed") return { state: "postponed", text: "Postponed" };
   // A super over being played: the match is level, not yet decided.
   const so = liveSuperOverLine(innings, status);
   if (so) return { state: "super_over", text: so };

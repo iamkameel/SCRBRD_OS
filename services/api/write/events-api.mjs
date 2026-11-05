@@ -285,7 +285,7 @@ const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_
  * @typedef {object} AppendResult
  * @property {{idempotencyKey: string, seq: number}[]} accepted     written now, at `seq`
  * @property {{idempotencyKey: string, seq: number}[]} duplicates   the same event, already written at `seq`
- * @property {{idempotencyKey: string, reason: "match_complete" | "stale_epoch_or_lease" | "no_session"}[]} quarantined  held for a person
+ * @property {{idempotencyKey: string, reason: "match_complete" | "match_abandoned" | "stale_epoch_or_lease" | "no_session"}[]} quarantined  held for a person
  * @property {{idempotencyKey: string, seq: number | null, reason: "idempotency_conflict"}[]} conflicts
  *   the key names another event: `seq` is the stored one's, null when that one is held
  * @property {{idempotencyKey: string, reason: RefusalCode, field?: string, value?: any, constraint?: string}[]} refused
@@ -295,7 +295,8 @@ const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_
 /**
  * scoring_lease_check()'s row (db/33): whether the match has a session,
  * whether this caller holds its live lease on this device at this epoch, and
- * the session's epoch and state — 'match_complete' once the match is over.
+ * the session's epoch and state — 'match_complete' once the match is over,
+ * 'match_abandoned' once it is called off (db/132).
  * @typedef {object} LeaseCheck
  * @property {boolean} found
  * @property {boolean} holds
@@ -483,7 +484,8 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
           idempotencyKey: ev.idempotencyKey,
           // db/33: a ball sent at a complete match is held for a person to
           // decide, and says why — not mistaken for a stale token.
-          reason: lease.state === "match_complete" ? "match_complete"
+          // db/132: and a called-off match likewise, with its own word.
+          reason: lease.state === "match_complete" || lease.state === "match_abandoned" ? lease.state
                 : lease.found ? "stale_epoch_or_lease" : "no_session",
         });
         return;

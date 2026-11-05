@@ -92,6 +92,12 @@ group("His side's fixtures, at either end of a shared one");
   ok("...else the one with the nearest fixture", chooseChild([ANIKA, ROHAN], M, null, NOW) === ROHAN);
   ok("...a remembered child who is no longer linked is not chosen", chooseChild([ANIKA, ROHAN], M, "gone", NOW) === ROHAN);
   ok("...and no children, no child", chooseChild([], M, null, NOW) === null);
+  // db/133: a postponed fixture is still to come whatever day it was set for,
+  // listed apart: never the next fixture, never among the played.
+  const P = [...M, { id: "m7", schoolId: HIL, homeTeam: "1XI", status: "postponed", startsAt: "2026-09-01T07:00:00Z", awayTeam: "Rained Off" }];
+  const g = fixturesOf(P, ROHAN, NOW);
+  ok("postponed: listed apart, though its day has passed", g.postponed.map((m) => m.id).join() === "m7", g.postponed.map((m) => m.id));
+  ok("...not the next fixture, nor played", g.upcoming[0]?.id === "m1" && !g.played.some((m) => m.id === "m7"));
 }
 
 group("A Home's notices: about this child, or about nobody in particular at his place");

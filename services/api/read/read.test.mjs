@@ -209,6 +209,27 @@ group("A. emergency_contact_count (GA-I20 A1, N2): a count, never a contact, and
   ok("is NOT a logged read: no contact comes back, so nothing is disclosed", !Object.hasOwn(RESTRICTED_FIELDS, "emergency_contact_count"));
 }
 
+group("A. child_links (db/132): a family's email, note and ending reason are the office's alone");
+{
+  const t = READ_QUERIES.child_links.text;
+  const office = "app_can('guardian.link.manage', player_school(g.player_id), '*'::text,";
+  ok("the office's test is guardian.link.manage, asked once as `office.ok`",
+     new RegExp(`cross join lateral \\(select ${office.replace(/[()*.[\]]/g, (c) => "\\" + c)}`).test(t) && /as ok\) office/.test(t));
+  ok("the guardian's email comes back only to it", /case when office\.ok then u\.email end as guardian_email/.test(t) && !/u\.email as guardian_email/.test(t));
+  ok("...the verification note likewise", /case when office\.ok then g\.verified_note end as verified_note/.test(t) && !/g\.verified_note,/.test(t));
+  ok("...and why a link ended", /case when office\.ok then e\.reason end as ending_reason/.test(t) && !/e\.reason as ending_reason/.test(t));
+  ok("user.role.assign still reads the links themselves", /or app_can\('user\.role\.assign', player_school\(g\.player_id\)/.test(t));
+  ok("the three are named as what a read discloses", ["guardian_email", "verified_note", "ending_reason"].every((f) => RESTRICTED_FIELDS.child_links.includes(f)));
+  // db/99 §111 (links) runs the read's own text; the two copies are one text.
+  const { readFileSync } = await import("node:fs");
+  const sql = readFileSync(new URL("../../../db/99_rls_verify.sql", import.meta.url), "utf8");
+  const between = (/** @type {string} */ s) => s.split("child_links:begin")[1]?.split("child_links:end")[0] ?? "";
+  const norm = (/** @type {string} */ s) => s.replace(/\*\/|\/\*|`|--/g, " ").replace(/\s+/g, " ").trim();
+  const src = readFileSync(new URL("./read-api.mjs", import.meta.url), "utf8");
+  ok("db/99 §111 proves this exact read, not a copy that has drifted",
+     norm(between(sql)).length > 100 && norm(between(sql)) === norm(between(src)) && norm(between(src)) === norm(t));
+}
+
 group("A. accounts (account lifecycle D5): every account, disabled ones included, under the same policy as users");
 {
   const a = READ_QUERIES.accounts.text, u = READ_QUERIES.users.text;

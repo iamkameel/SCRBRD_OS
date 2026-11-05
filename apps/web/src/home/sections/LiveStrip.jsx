@@ -10,7 +10,7 @@ import { homeBody, homeHead, oversOfBalls, timeOfDay } from "./shared.jsx";
  *           { asOf: "2026-10-03",
  *             fixtures: [{ id,
  *               home: { label, code }, away: { label, code, onPlatform },
- *               status,            // scheduled | live | complete | abandoned
+ *               status,            // scheduled | live | complete | abandoned | postponed
  *               format, overs,
  *               startsAt,          // ISO; the card shows the time of day only
  *               scores: [{ innings, runs, wickets, balls, side? }],
@@ -41,11 +41,11 @@ import { homeBody, homeHead, oversOfBalls, timeOfDay } from "./shared.jsx";
  * /scorecard/:id).
  */
 
-const known = (s) => s === "live" || s === "complete" || s === "abandoned" || s === "scheduled";
+const known = (s) => s === "live" || s === "complete" || s === "abandoned" || s === "scheduled" || s === "postponed";
 
 /** Live first, then by start; a status the page does not know is left out. */
 export function arrange(fixtures) {
-  const rank = { live: 0, scheduled: 1, complete: 2, abandoned: 2 };
+  const rank = { live: 0, scheduled: 1, complete: 2, abandoned: 2, postponed: 2 };
   return fixtures.filter((f) => f && typeof f.id === "string" && known(f.status))
     .map((f, i) => ({ f, i }))
     .sort((a, b) => rank[a.f.status] - rank[b.f.status] || String(a.f.startsAt ?? "").localeCompare(String(b.f.startsAt ?? "")) || a.i - b.i)
@@ -80,12 +80,14 @@ function Over({ balls }) {
 
 function Card({ f, rel }) {
   const live = f.status === "live", done = f.status === "complete", abandoned = f.status === "abandoned";
+  // db/133: called off before play, to be replayed; no score, no result.
+  const postponed = f.status === "postponed";
   const scores = Array.isArray(f.scores) ? f.scores : [];
   const bySide = scores.length > 0 && scores.every((s) => s.side === "home" || s.side === "away");
   const current = scores.length ? scores[scores.length - 1] : null;
   const start = timeOfDay(f.startsAt);
   const href = `/${done || abandoned ? "scorecard" : "live"}/${encodeURIComponent(f.id)}`;
-  const tag = live ? "LIVE" : done ? "RESULT" : abandoned ? "ABANDONED" : start;
+  const tag = live ? "LIVE" : done ? "RESULT" : abandoned ? "ABANDONED" : postponed ? "POSTPONED" : start;
   const sideLine = (side, key) => {
     const own = bySide ? scores.filter((s) => s.side === key) : [];
     return (

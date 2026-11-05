@@ -68,8 +68,11 @@ export function fixturesOf(matches, child, now) {
   // up": it was played and not yet closed, or not played. It is listed with
   // the played ones, where its scorecard (or the lack of one) says which.
   const gone = (m) => m.status === "upcoming" && t(m) < now - 6 * 3600e3;
+  // A postponed fixture (db/133) is listed apart: still to come, whatever day
+  // it was set for, but not the next fixture anybody travels to or answers for.
   return {
     live: mine.filter((m) => m.status === "live"),
+    postponed: mine.filter((m) => m.status === "postponed").sort((a, b) => startKey(a).localeCompare(startKey(b))),
     upcoming: mine.filter((m) => m.status === "upcoming" && !gone(m))
                   .sort((a, b) => startKey(a).localeCompare(startKey(b))),
     played: mine.filter((m) => m.status === "complete" || gone(m)).sort((a, b) => startKey(b).localeCompare(startKey(a))),

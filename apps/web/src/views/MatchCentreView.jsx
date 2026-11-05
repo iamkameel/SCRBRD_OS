@@ -327,7 +327,10 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                   regardless, and would refuse this one too if the courtesy
                   check above were ever wrong. */}
               {holdsCapability(role,"fixture.update")&&amendSchools.some(s=>s.id===selMatch.schoolId)&&(
-                <RescheduleFixture match={selMatch} grounds={GROUNDS} onChanged={()=>setMatchesNonce(n=>n+1)}/>
+                // The row as the list has it now: a fixture just postponed
+                // offers its new-date path, not the one it had (db/133).
+                (()=>{ const fresh = MATCHES.find(m=>m.id===selMatch.id) ?? selMatch;
+                  return <RescheduleFixture key={`${fresh.id}-${fresh.status}`} match={fresh} grounds={GROUNDS} onChanged={()=>setMatchesNonce(n=>n+1)}/>; })()
               )}
               {/* Naming the side, for the one assignment that holds team.select
                   for a side of this fixture, while it is still to be played.

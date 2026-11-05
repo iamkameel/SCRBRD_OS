@@ -182,15 +182,17 @@ export function bannerFor(st, match, asideCount = 0, extra = {}) {
       return { reason, tone: "stop", lead: refusalWords("handover_pending"), action: "takeover", text: "Scoring here waits until you have taken over." };
     case "verifying":
       return { reason, tone: "stop", lead: refusalWords("verifying"), text: "Scoring here waits until it is settled." };
-    case "match_complete": {
+    case "match_complete": case "match_abandoned": {
       // P7: a result declared while this phone had balls to send. They go to
       // the lead's review (quarantine), never into the finished scorebook.
+      // A match called off (db/132) is the same, in its own words.
       const n = st.pendingList?.length ?? 0;
+      const when = reason === "match_abandoned" ? "the match was called off" : "the result was recorded";
       if (!n) return { reason, tone: "stop", lead: refusalWords(reason), text: "" };
       return { reason, tone: "stop", lead: refusalWords(reason), list: pendingLines,
         ...(st.reviewing ? {} : { action: "review" }),
         text: st.reviewing ? `Sending ${waiting} to the lead for review…`
-          : `${waiting} ${one ? "was" : "were"} never sent before the result was recorded (listed below). ${one ? "It goes" : "They go"} to the lead for review, not into the scorebook${st.reviewError ? `; not sent yet (${reviewWords(st.reviewError)})` : ""}.` };
+          : `${waiting} ${one ? "was" : "were"} never sent before ${when} (listed below). ${one ? "It goes" : "They go"} to the lead for review, not into the scorebook${st.reviewError ? `; not sent yet (${reviewWords(st.reviewError)})` : ""}.` };
     }
     case "no_capability":
       return { reason, tone: "stop", lead: refusalWords(reason), text: saved ? `${saved}.` : "" };

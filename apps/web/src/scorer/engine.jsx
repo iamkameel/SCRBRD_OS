@@ -270,6 +270,9 @@ function SyncPill({ sync, storage, onOpenHeld }) {
       // know retrying will not help and where a correction goes instead.
       : sync.reason === "match_complete"
       ? { dot: D.sky, label: "Match complete", title: refusalWords("match_complete") }
+      // db/132: a match called off takes no more balls either.
+      : sync.reason === "match_abandoned"
+      ? { dot: D.sky, label: "Match called off", title: refusalWords("match_abandoned") }
       // SCRBRD-078 option B: the phone's resume credential has ended; the
       // banner says why and offers the sign-in.
       : sync.reason === "pad_ended"
@@ -2447,7 +2450,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
               there. Not for a practice match (its own record) or a tie still
               waiting on its super over. */}
           {live&&matchId&&!practiceMode&&signedIn()&&offer.state!=="available"&&couldFinalise(match?.schoolId,match?.teamCode)&&(
-            <FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}/>
+            <FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}
+              left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}/>
           )}
           <div style={{textAlign:"center",display:"flex",gap:"12px",justifyContent:"center",flexWrap:"wrap"}}>
             {practiceMode&&(

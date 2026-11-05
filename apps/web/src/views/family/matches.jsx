@@ -30,8 +30,35 @@ import { FixtureLifts } from "../lifts.jsx";
 
 const now = () => Date.now();
 
+/**
+ * A postponed fixture (db/133): called off before play, to be replayed on a
+ * date not yet set. Said in words, with the day it was set for; no answer is
+ * asked for a day the fixture is not on.
+ */
+function PostponedChip({ testid }) {
+  return (
+    <span data-testid={testid} data-state="postponed" style={{ display: "inline-flex", alignItems: "center", gap: T.space.xs,
+      ...T.role.body, fontSize: "14px", fontWeight: 600, color: T.content.primary }}>
+      <Icon name="calendar"/>Postponed
+    </span>
+  );
+}
+
 /** An upcoming row: when, who, home or away — and his answer, as a word. */
 function UpcomingRow({ m, child, role, onOpen }) {
+  if (m.status === "postponed") {
+    return (
+      <OpenRow onClick={() => onOpen(m)} testid={`fixture-row-${m.id}`} aside={<PostponedChip testid={`fixture-chip-${m.id}`}/>}>
+        <span style={{ ...T.role.body, fontWeight: 600, color: T.content.primary }}>v {opponentOf(m, child)} ({endOf(m, child)})</span>
+        <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>Was {whenOf(m)} · new date to follow</span>
+      </OpenRow>
+    );
+  }
+  return <AnsweredRow m={m} child={child} role={role} onOpen={onOpen}/>;
+}
+
+/** A fixture that is on: when, who, home or away — and his answer, as a word. */
+function AnsweredRow({ m, child, role, onOpen }) {
   const read = useLive("availability", role, 0, { matchId: m.id });
   const row = read.rows.find((r) => r.playerId === child.id) ?? null;
   // "No answer" is said only of a read that answered; one that is coming or
@@ -76,7 +103,7 @@ export function ChildMatches({ child, role, self = false, head = null }) {
   const [open, setOpen] = useState(null);
   if (open?.kind === "fixture") return <FixtureDetail match={open.match} child={child} role={role} self={self} onBack={() => setOpen(null)}/>;
   if (open?.kind === "match") return <MatchFor match={open.match} child={child} role={role} self={self} matches={matches} onBack={() => setOpen(null)}/>;
-  const { live, upcoming, played } = fixturesOf(matches, child, now());
+  const { live, upcoming, postponed, played } = fixturesOf(matches, child, now());
   const name = child.knownAs || child.name;
   return (
     <>
@@ -95,7 +122,7 @@ export function ChildMatches({ child, role, self = false, head = null }) {
         </Card>
       )}
       <Card label="Coming up" testid="matches-upcoming">
-        {upcoming.length ? upcoming.map((m) => (
+        {upcoming.length || postponed.length ? [...upcoming, ...postponed].map((m) => (
           <UpcomingRow key={m.id} m={m} child={child} role={role} onOpen={(x) => setOpen({ kind: "fixture", match: x })}/>
         )) : !loading && !error && <Line quiet>{self ? "Nothing arranged for your side yet." : `Nothing arranged for ${name}'s side yet.`}</Line>}
       </Card>
@@ -131,6 +158,7 @@ export function FixtureDetail({ match, child, role, self = false, onBack }) {
   // sees the fixture exactly as it was.
   const { cap } = useCaptaincy(self ? child : null, role, match.season ?? null);
   const maps = match.venue ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(match.venue)}` : null;
+  const postponed = match.status === "postponed";
   return (
     <>
       <Back onClick={onBack}>Matches</Back>
@@ -147,14 +175,21 @@ export function FixtureDetail({ match, child, role, self = false, onBack }) {
               style={{ color: T.content.primary, display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: "44px", minWidth: "44px", padding: "0 4px" }}>map</a></>}
           </Line>
         )}
-        <Umpires match={match} role={role}/>
-        <WeatherLine match={match} role={role}/>
+        {postponed
+          ? <p role="status" data-testid="fixture-postponed" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>
+              Postponed. It stays on the calendar and will be played on a new date; you will be told when it has one.
+            </p>
+          : <><Umpires match={match} role={role}/><WeatherLine match={match} role={role}/></>}
       </header>
-      <BusCard match={match} role={role}/>
-      <FixtureLifts match={match} child={child}/>
-      <Card label={self ? "You" : name} testid="fixture-availability">
-        <AvailabilityBlock match={match} child={child} role={role} self={self}/>
-      </Card>
+      {/* A postponed fixture has no day yet: no bus, no lift and no answer
+          is asked for (db/133). They come back with its new date. */}
+      {!postponed && <BusCard match={match} role={role}/>}
+      {!postponed && <FixtureLifts match={match} child={child}/>}
+      {!postponed && (
+        <Card label={self ? "You" : name} testid="fixture-availability">
+          <AvailabilityBlock match={match} child={child} role={role} self={self}/>
+        </Card>
+      )}
       <Card label="Team sheet" testid="fixture-teamsheet">
         <TeamSheetLine match={match} child={child} role={role} self={self}/>
         {/* The captain's section draws the side itself (SCRBRD-138), so his card keeps to the line. */}

@@ -147,7 +147,9 @@ export async function buildMatchCentreFixture(q) {
   const brk = (await q(
     `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
      values ($1, 'U16A', 'Kearsney College U16A', $2, now() - interval '1 hour', 'cricket', 'T5', 5, 'live') returning id`,
-    [HIL, GROUND]))[0].id;
+    // No ground: the T10 above is on the Oval until twenty minutes ago, and
+    // db/133 refuses two fixtures on one ground at once.
+    [HIL, null]))[0].id;
   await q(`insert into match_toss (match_id, school_id, won_by, decision) values ($1, $2, 'home', 'bat')`, [live, HIL]);
 
   // ── LIVE, innings 1: Hilton College 1XI, ten overs ──

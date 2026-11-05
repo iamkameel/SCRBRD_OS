@@ -65,7 +65,6 @@ import { ball, batters, bowler, inningsStart, sealInnings, deriveInnings, BALL_T
 const PORT = port(8849);
 const BASE = `http://127.0.0.1:${PORT}`;
 const MISSING = "77777777-0000-0000-0000-0000000fffff";
-const GROUND = "ffffffff-0000-0000-0000-000000000001";
 const SHOTS = process.env.DISPLAY_SHOTS || null;
 const DEBUG = !!process.env.BROWSER_DISPLAY_DEBUG;
 const SIZES = [[1920, 1080], [1024, 768], [390, 844]];
@@ -186,7 +185,9 @@ try {
   /** A fixture of this walk's own, Hilton at home, published, with typed sides. */
   let n = 0;
   const fixture = async (/** @type {string} */ status, /** @type {(at: (ev: any, inn: number) => any) => any[]} */ build,
-                         { ground = GROUND, ago = "1 hour", publish = true } = {}) => {
+                         // No ground unless the case is about one (par): db/133 refuses two
+                         // fixtures on one ground at once, and these are live together.
+                         { ground = null, ago = "1 hour", publish = true } = {}) => {
     const id = (await q(
       `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
        values ($1, '1XI', 'Kearsney College 1XI', $2, now() - $4::interval, 'cricket', 'T10', 10, $3) returning id`, [HIL, ground, status, ago]))[0].id;
@@ -268,7 +269,8 @@ try {
       for (const v of [2, 2, 0, 0, 0, 0]) chase.push(at(ball({ value: v }), 1));
     }
     return [...innings60(at, 80), ...chase];
-  }, { ground: PAR_G });
+    // Started before PAR1, so the two are not on the par ground at once (db/133).
+  }, { ground: PAR_G, ago: "3 hours" });
   // FEW: the same first innings at a ground with no record: nothing about par.
   const FEW = await fixture("live", (at) => {
     const all = [...open0(at)];
@@ -356,7 +358,7 @@ try {
   group("4. Not published is not found");
   {
     const unpub = (await q(`insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
-      values ($1, '1XI', 'Kearsney College 1XI', $2, now() - interval '1 hour', 'cricket', 'T10', 10, 'live') returning id`, [HIL, GROUND]))[0].id;
+      values ($1, '1XI', 'Kearsney College 1XI', $2, now() - interval '1 hour', 'cricket', 'T10', 10, 'live') returning id`, [HIL, null]))[0].id;
     const a = await tv(`/display/${unpub}`), b = await tv(`/display/${MISSING}`), c = await tv(`/live/${MISSING}`);
     const [ta, tb, tc] = await Promise.all([a, b, c].map((x) => x.res?.text() ?? ""));
     ok("an unpublished fixture's /display: 404, the same page as a missing one's and as /live's", a.res?.status() === 404 && b.res?.status() === 404
