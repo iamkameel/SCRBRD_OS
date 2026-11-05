@@ -354,6 +354,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // another phone's lapsed lease is a confirmed take-over with the server's
   // last ball shown, and the first phone's balls reach the lead.
   "browser-takeover",
+  // TWO_PHONES slice 2 (db/136): a second phone's account of an over the pen
+  // also scored, set aside; the principal, who kept neither book, closes the
+  // six that agree in one tap and decides the one that differs as "pen
+  // stands"; the log, the fold and match_live_score are what they were.
+  "browser-second-account",
   // SCRBRD-133 G1: the ground display, signed out, at 1920×1080, 1024×768
   // and 390×844 — names only under the rule (and a withdrawal reaching an
   // open display), no token, the 12px floor, the 404, the rotation's skip and

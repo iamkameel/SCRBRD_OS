@@ -231,8 +231,13 @@ export function alignAccounts({ pen, prefix, held, ctx = {} }) {
       /** @type {Record<string, string | null>} */
       const counterparts = {};
       for (const ev of open) {
+        // A delivery against the pen's delivery at its place; anything else
+        // (a bowler named, batters in) against the pen's event of its kind
+        // at its place in the slot; failing both, the pen's ball here.
         const i = otherLive.indexOf(ev);
-        const c = (i >= 0 ? penLive[i] : null) ?? penLive[0] ?? null;
+        const sameKind = os.all.filter((e) => e.kind === ev.kind);
+        const twin = isDelivery(ev) ? null : (ps?.all.filter((e) => e.kind === ev.kind) ?? [])[sameKind.indexOf(ev)];
+        const c = (i >= 0 ? penLive[i] : null) ?? twin ?? penLive[0] ?? null;
         counterparts[String(/** @type {HeldEvent} */ (heldOf.get(ev)).id)] = c?.id ?? null;
       }
       // The pen's ball an amendment would correct: the first that differs.
