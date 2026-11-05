@@ -210,6 +210,8 @@ const WALKS = [
   // he is at school, ended when he leaves — and option C for the public name.
   "link18",
   "recognition",
+  // RECOGNITION R9 (db/143): record boards, who reads them, which matches count, the notice.
+  "records",
   "season",
   "requests",
   "enrol",
