@@ -36,10 +36,7 @@
 --    principal and the director, who hold recognition.manage today); D3's
 --    "decide or manage" is recognition.manage until it does.
 --    A new result shape is a new function, so it is dropped and created in
---    this file's one transaction. Its grant is restated as scrbrd_app's alone:
---    db/08 and db/89 granted it to PUBLIC and db/116 moved it to scrbrd_app, so
---    production's ACL before the paste may still read PUBLIC; after it, it
---    does not.
+--    this file's one transaction; its grant is db/116's (scrbrd_app alone).
 --
 -- 2. The family's sealed notice (D6). A notice to a parent about HER child
 --    is written when the mark is sealed, never on the ball: one
@@ -110,7 +107,7 @@ BEGIN
      OR to_regprocedure('notification_unretract(uuid)') IS NULL
      OR to_regprocedure('lift_guardians_of(uuid)') IS NULL
      OR to_regprocedure('is_family_of(uuid)') IS NULL OR to_regprocedure('app_reader_is_pupil()') IS NULL
-     OR to_regprocedure('sa_date(timestamptz)') IS NULL OR to_regprocedure('fixture_side_label(uuid,text)') IS NULL OR to_regprocedure('honour_kind_label(text,text)') IS NULL
+     OR to_regprocedure('sa_date(timestamptz)') IS NULL OR to_regprocedure('honour_kind_label(text,text)') IS NULL
      OR to_regprocedure('app_can(text,uuid,text,uuid,uuid)') IS NULL THEN
     RAISE EXCEPTION 'db/140: milestone_notice with notice_id and retracted_at (db/89, db/113), match_verified() (db/114), fixture_class() (db/127), notification_unretract() (db/113), lift_guardians_of() (db/76), sa_date() (db/128) or app_reader_is_pupil() (db/116) is missing; apply them first';
   END IF;
@@ -125,7 +122,6 @@ BEGIN
       pg_temp._v140_fold(v_src);
   END IF;
 END $guard$;
-DROP FUNCTION pg_temp._v140_fold(text);
 
 
 -- ══════════════════════════════════════════════════════════════════
@@ -214,8 +210,6 @@ DECLARE
   p player%ROWTYPE;
   m match%ROWTYPE;
   v_first boolean := false;
-  v_side text;
-  v_opp text;
 BEGIN
   SELECT * INTO p FROM player x WHERE x.id = p_player;
   SELECT * INTO m FROM match x WHERE x.id = p_match;
@@ -241,54 +235,30 @@ BEGIN
          AND (em.starts_at, e.match_id, coalesce(e.innings, 0)) < (m.starts_at, p_match, p_innings));
   END IF;
   title := name || '''s ' || CASE WHEN v_first THEN 'first ' ELSE '' END || what;
-  -- The side he played against: match.opponent is the host's word for the
-  -- other end, so a boy on the away end played the host's side.
-  v_side := milestone_side_of(p_match, p_player);
-  v_opp := CASE WHEN m.away_school_id = p.school_id AND v_side IS NOT DISTINCT FROM m.away_team_code
-                     AND (m.school_id IS DISTINCT FROM p.school_id OR v_side IS DISTINCT FROM m.team_code)
-                THEN coalesce(fixture_side_label(m.school_id, m.team_code), m.team_code)
-                ELSE nullif(btrim(m.opponent), '') END;
   figure := concat_ws(' ',
     CASE p_kind WHEN 'fifty' THEN p_value::text WHEN 'hundred' THEN p_value::text
                 WHEN 'five_for' THEN p_value || ' wickets' END,
-    CASE WHEN v_opp IS NOT NULL THEN 'v ' || v_opp END);
+    CASE WHEN nullif(btrim(m.opponent), '') IS NOT NULL THEN 'v ' || btrim(m.opponent) END);
 END $$ LANGUAGE plpgsql STABLE SET search_path = pg_catalog, public, pg_temp;
 
 -- Tell each live guardian of one mark, if it is noticed, live, folds and is
--- sealed; once. Per guardian (the once row is hers):
---   never told                    a new notice
---   told, and that notice taken   the same notice returns, re-worded from the
---   back as a correction          mark as it folds and is sealed now (D20, Q7)
---   anything else                 nothing (her notice stands, or a person, not
---                                 the system, took it back)
--- Nobody to tell or return to: nothing is folded. Returns how many were
--- told or returned now.
+-- sealed; once. Returns how many were told now.
 CREATE OR REPLACE FUNCTION milestone_family_tell(p_player uuid, p_kind text, p_match uuid, p_innings smallint)
 RETURNS integer AS $$
 DECLARE
   mn milestone_notice%ROWTYPE;
   p  player%ROWTYPE;
   w  record;
-  g  uuid;
-  v_new  uuid[];   -- guardians never told
-  v_back uuid[];   -- their notices taken back as a correction
   v_at timestamptz;
   v_value integer;
   v_body text;
+  g uuid;
   v_id uuid;
   n integer := 0;
 BEGIN
   SELECT * INTO mn FROM milestone_notice x
    WHERE x.player_id = p_player AND x.kind = p_kind AND x.match_id = p_match AND x.innings = p_innings;
   IF NOT FOUND OR mn.retracted_at IS NOT NULL THEN RETURN 0; END IF;
-  SELECT array_agg(x.id ORDER BY x.id) FILTER (WHERE f.guardian_id IS NULL),
-         array_agg(f.notice_id ORDER BY x.id) FILTER (WHERE t.retracted_at IS NOT NULL AND t.retraction_kind = 'correction')
-    INTO v_new, v_back
-    FROM lift_guardians_of(p_player) AS x(id)
-    LEFT JOIN milestone_family_notice f
-      ON f.player_id = p_player AND f.kind = p_kind AND f.match_id = p_match AND f.innings = p_innings AND f.guardian_id = x.id
-    LEFT JOIN notification t ON t.id = f.notice_id;
-  IF v_new IS NULL AND v_back IS NULL THEN RETURN 0; END IF;
   -- The mark as it folds now: a fifty that became a hundred is the hundred's.
   SELECT ms.value INTO v_value FROM player_milestone ms
    WHERE ms.player_id = p_player AND ms.kind = p_kind AND ms.match_id = p_match
@@ -301,13 +271,10 @@ BEGIN
   SELECT * INTO w FROM milestone_family_words(p_player, p_kind, p_match, p_innings, v_value);
   v_body := concat_ws(' · ', nullif(w.figure, ''),
                       'sealed by the scorer, ' || to_char(v_at AT TIME ZONE 'Africa/Johannesburg', 'FMDD Mon'));
-  FOREACH v_id IN ARRAY coalesce(v_back, '{}'::uuid[]) LOOP
-    IF notification_unretract(v_id) THEN
-      UPDATE notification SET title = w.title, body = v_body WHERE id = v_id;
-      n := n + 1;
-    END IF;
-  END LOOP;
-  FOREACH g IN ARRAY coalesce(v_new, '{}'::uuid[]) LOOP
+  FOR g IN SELECT x.id FROM lift_guardians_of(p_player) AS x(id) ORDER BY 1 LOOP
+    CONTINUE WHEN EXISTS (SELECT 1 FROM milestone_family_notice f
+                           WHERE f.player_id = p_player AND f.kind = p_kind AND f.match_id = p_match
+                             AND f.innings = p_innings AND f.guardian_id = g);
     INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
                               required_capability, is_public, subject_kind, subject_id, subject_person_id, recipient_id)
     VALUES (p.school_id, p.team_code, CASE WHEN p.team_code IS NULL THEN 'school' ELSE 'team' END,
@@ -349,16 +316,41 @@ BEGIN
   RETURN n;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- The mark holds again (D20, Q7): milestone_family_tell()'s second case.
--- Her notice returns only once the seal stands for the mark as it folds
--- now, re-worded to that figure and that day; until then it stays down and
--- the dashed star says "not yet sealed by the scorer". The next seal
--- returns it (milestone_family_seal()). A mark she was never told of is
--- told then too. Nothing new is sent to one already told.
+-- The mark holds again (D20, Q7): the same rows return, their words
+-- re-synced to what folds now, and nothing new is sent. A mark the family
+-- was never told of is told now, if it is sealed.
 CREATE OR REPLACE FUNCTION milestone_family_resay(p_player uuid, p_kind text, p_match uuid, p_innings smallint)
 RETURNS integer AS $$
+DECLARE
+  f record;
+  w record;
+  v_value integer;
+  v_at timestamptz;
+  n integer := 0;
 BEGIN
-  RETURN milestone_family_tell(p_player, p_kind, p_match, p_innings);
+  IF NOT EXISTS (SELECT 1 FROM milestone_family_notice x
+                  WHERE x.player_id = p_player AND x.kind = p_kind AND x.match_id = p_match AND x.innings = p_innings) THEN
+    RETURN milestone_family_tell(p_player, p_kind, p_match, p_innings);
+  END IF;
+  SELECT ms.value INTO v_value FROM player_milestone ms
+   WHERE ms.player_id = p_player AND ms.kind = p_kind AND ms.match_id = p_match AND coalesce(ms.innings, 0) = p_innings
+   LIMIT 1;
+  v_at := milestone_seal_at(p_match, p_kind, p_innings);
+  FOR f IN SELECT x.notice_id FROM milestone_family_notice x
+           WHERE x.player_id = p_player AND x.kind = p_kind AND x.match_id = p_match AND x.innings = p_innings
+             AND x.notice_id IS NOT NULL
+           ORDER BY x.guardian_id LOOP
+    IF notification_unretract(f.notice_id) AND v_value IS NOT NULL AND v_at IS NOT NULL THEN
+      SELECT * INTO w FROM milestone_family_words(p_player, p_kind, p_match, p_innings, v_value);
+      UPDATE notification
+         SET title = w.title,
+             body = concat_ws(' · ', nullif(w.figure, ''),
+                              'sealed by the scorer, ' || to_char(v_at AT TIME ZONE 'Africa/Johannesburg', 'FMDD Mon'))
+       WHERE id = f.notice_id;
+      n := n + 1;
+    END IF;
+  END LOOP;
+  RETURN n;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- Every live mark of a match, told if it is sealed now.
