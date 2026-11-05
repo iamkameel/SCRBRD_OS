@@ -106,6 +106,82 @@ export function childConnection(url) {
 }
 
 /**
+ * What is wrong with the SHAPE of a connection string, in plain words, for a
+ * drill that cannot connect. Each message names the problem and never the
+ * value: no host, user, password or database name, not even a fragment, so
+ * the list can go to a CI log. Nothing here is interpolated from the input.
+ * Empty when nothing looks wrong. "may be" marks a likely, not certain, fault.
+ * The Supabase checks (host, port, pooler user) apply only to a remote string.
+ * @param {string} raw  the string exactly as given, before any trimming
+ * @returns {string[]}
+ */
+export function shapeProblems(raw) {
+  /** @type {string[]} */
+  const out = [];
+  if (typeof raw !== "string" || raw === "") return ["it is empty"];
+  // On the raw string: `new URL` silently drops tabs and line breaks anywhere,
+  // and spaces at the ends, so these would be invisible after parsing.
+  if (/^\s|\s$/.test(raw)) out.push("leading or trailing whitespace or a line break");
+  let s = raw.trim();
+  if (/\s/.test(s)) out.push("a space, tab or line break inside it (a URL has none; a space in the password is written %20)");
+  if (/^["'`]|["'`]$/.test(s)) {
+    out.push("wrapped in quotes (paste the string alone)");
+    s = s.replace(/^["'`]+|["'`]+$/g, "");
+  }
+  // An IPv6 host literal is the one place a bracket belongs.
+  if (/[[\]]/.test(s.replace(/@\[[0-9a-fA-F:.]+\]/, "@"))) out.push("square brackets left in (a template placeholder such as [YOUR-PASSWORD]?)");
+  if (/[<>]/.test(s)) out.push("angle brackets left in (a template placeholder?)");
+  if (/YOUR[-_ ]?PASSWORD/i.test(s)) out.push("the words YOUR-PASSWORD left in (the template's placeholder, not the password)");
+  if (!/^postgres(ql)?:\/\//i.test(s)) out.push("does not start with postgresql:// or postgres://");
+  const rest = s.replace(/^[a-z]+:\/\//i, "");
+  if ((rest.match(/@/g) ?? []).length > 1) out.push("more than one @ — the password likely has an unencoded @ (write it as %40)");
+  if (s.includes("#")) out.push("contains # — everything after it is dropped; in the password write it as %23");
+  if (/%(?![0-9a-fA-F]{2})/.test(s)) out.push("a % not followed by two hex digits — in the password write a literal % as %25");
+
+  let u;
+  try { u = new URL(s); } catch {
+    out.push("does not parse as a URL — often an unencoded @, #, / or ? in the password");
+    return out;
+  }
+  const hostParam = u.searchParams.get("host");
+  if (!u.hostname && hostParam == null) out.push("no host");
+  if (!u.username) out.push("no user");
+  if (!u.password && u.searchParams.get("password") == null) out.push("no password");
+  if (!u.pathname.replace(/^\/+/, "")) out.push("no database name (Supabase's is postgres)");
+  if (u.hostname && !/^([a-z0-9-]+\.)*[a-z0-9-]+$/i.test(u.hostname) && !/^\[[0-9a-f:.]+\]$/i.test(u.hostname)) {
+    out.push("the host has characters a host name cannot have — often part of the password after an unencoded @, / or ?");
+  }
+  if (isLocalUrl(s)) return out;
+
+  const host = u.hostname.toLowerCase();
+  const pooler = /\.pooler\.supabase\.com$/.test(host);
+  const direct = /^db\.[a-z0-9]+\.supabase\.co$/.test(host);
+  if (host && !pooler && !direct) out.push("host does not end in pooler.supabase.com or supabase.co (may be a typo, or the wrong host copied)");
+  if (direct) out.push("the direct host db.<ref>.supabase.co is IPv6-only, and GitHub's runners have no IPv6: use the session pooler (Connect → Session pooler)");
+  if (!u.port) out.push("no port (the session pooler is 5432)");
+  else if (u.port !== "5432" && u.port !== "6543") out.push("port is not 5432 or 6543");
+  else if (pooler && u.port === "6543") out.push("port 6543 is the transaction pooler, which may refuse pg_dump's snapshot: use the session pooler on 5432");
+  if (pooler && u.username && !/^[^.]+\.[a-z0-9]+$/i.test(decodeURIComponentSafe(u.username))) {
+    out.push("pooler host but the user lacks the .<project-ref> suffix (pooler users look like postgres.<ref>)");
+  }
+  return out;
+}
+
+/** @param {string} s */
+const decodeURIComponentSafe = (s) => { try { return decodeURIComponent(s); } catch { return s; } };
+
+/**
+ * The lines a connection failure prints under its error code: the shape
+ * problems, or, with none, where else to look. Never the string itself.
+ * @param {string} url
+ */
+export function shapeAdvice(url) {
+  const p = shapeProblems(url);
+  if (!p.length) return ["  the string's shape looks right; check the password and that the project is not paused"];
+  return ["  what is wrong with the connection string's shape (its value is never printed):", ...p.map((x) => `    - ${x}`)];
+}
+
+/**
  * db/SHIPPED.sha256 → Map of migration file name (no `db/`) → sha256.
  * @param {string} text
  */
@@ -248,6 +324,9 @@ const sha256File = (file) => new Promise((resolve, reject) => {
   createReadStream(file).on("data", (d) => h.update(d)).on("end", () => resolve(h.digest("hex"))).on("error", reject);
 });
 
+/** Set once the shape problems have been printed before connecting. */
+let shapeShown = false;
+
 /** @param {string} url */
 async function connect(url) {
   const { default: pg } = await import("pg");
@@ -257,6 +336,8 @@ async function connect(url) {
     // The driver's message can carry the host; say only what kind of failure it was.
     const err = /** @type {{code?: string}} */ (e);
     console.error(`✗ could not connect to ${describeUrl(url)} (${err.code ?? "connection failed"})`);
+    if (shapeShown) console.error("  (the connection string's shape problems are listed above)");
+    else for (const l of shapeAdvice(url)) console.error(l);
     process.exit(1);
   }
   return client;
@@ -312,6 +393,16 @@ async function takeCounts(opts, withDump) {
   // pg_dump inherits the mask, so the dump is never readable by anybody else,
   // not even while it is being written (the chmod below is the belt).
   process.umask(0o077);
+  // The drill reads production through a pasted secret: say what is wrong with
+  // its shape before trying it, so a DNS or password failure has its cause.
+  if (!isLocalUrl(url)) {
+    const problems = shapeProblems(url);
+    if (problems.length) {
+      console.error("! before connecting:");
+      for (const l of shapeAdvice(url)) console.error(l);
+      shapeShown = true;
+    }
+  }
   const client = await connect(url);
   try {
     await beginReadOnly(client);
@@ -336,6 +427,11 @@ async function takeCounts(opts, withDump) {
         // pg_dump names objects, not rows; a connection failure names the host,
         // and that line stays out of a terminal that may be screen-shared.
         if (r.stderr) console.error(r.stderr.split("\n").filter((l) => !/postgres(ql)?:\/\/|connection to server/.test(l)).join("\n"));
+        // pg_dump parses the string itself (libpq), so a shape Node accepted
+        // can still fail there: an unencoded @, say, splits differently.
+        if (/connection to server|could not translate host|password authentication|invalid (URI|connection)/i.test(r.stderr ?? "")) {
+          for (const l of shapeAdvice(url)) console.error(l);
+        }
         process.exit(1);
       }
       chmodSync(opts.out, 0o600);
