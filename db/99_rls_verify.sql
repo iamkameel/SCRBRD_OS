@@ -9912,6 +9912,60 @@ EXCEPTION WHEN OTHERS THEN
 END $$ LANGUAGE plpgsql;
 -- └── db/133 (section 112) ─────────────────────────────────────────────
 
+-- ┌── db/135 (section 113). Two phones scoring one match, slice 1 ─────────
+-- Invented, as the owner. Hilton's U13F at home to Westville's 1XI, live,
+-- one over in the log (MP), with the pen held by the U13F scorer (sc) on
+-- 'v135-pen' at generation 2, its lease live; a second U13F scorer (sc2) on
+-- 'v135-other' is the second phone. MF is the same fixture finished (a ball
+-- set aside there is db/132's late ball, not a second account). People: the
+-- director of sport (ds), the office (schooladmin), a U13E coach (ecoach).
+CREATE OR REPLACE FUNCTION _v135_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  v_t0 timestamptz := (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg';
+  ids jsonb; m uuid; k text;
+BEGIN
+  ids := _v71_people('v135', ARRAY[
+    ARRAY['sc',     'scorer',          HIL::text, 'U13F', ''],
+    ARRAY['sc2',    'scorer',          HIL::text, 'U13F', ''],
+    ARRAY['ds',     'directorofsport', HIL::text, '',     ''],
+    ARRAY['office', 'schooladmin',     HIL::text, '',     ''],
+    ARRAY['ecoach', 'coach',           HIL::text, 'U13E', '']]);
+  FOREACH k IN ARRAY ARRAY['MP', 'MF'] LOOP
+    INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+    VALUES (HIL, 'U13F', WES, '1XI', 'x', v_t0, 'cricket', 'T20', 1, 'live') RETURNING id INTO m;
+    ids := ids || jsonb_build_object(k, m);
+    PERFORM _v114_innings(m, 0::smallint, 'U13F', 'Westville 1XI', ARRAY[1, 0, 0, 0, 0, 0], NULL, (ids->>'sc')::uuid, false);
+    INSERT INTO scoring_session (match_id, school_id, state, epoch, holder_user_id, holder_device, lease_until)
+    VALUES (m, HIL, 'active', 2, (ids->>'sc')::uuid, 'v135-pen', now() + interval '90 seconds');
+  END LOOP;
+  UPDATE match SET status = 'complete' WHERE id = (ids->>'MF')::uuid;
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A match's second-account notices, as the owner reads them.
+CREATE OR REPLACE FUNCTION _v135_notices(p_match uuid) RETURNS jsonb AS $$
+  SELECT jsonb_build_object(
+    'n', count(*),
+    'to_one', count(*) FILTER (WHERE n.recipient_id IS NOT NULL AND n.kind = 'system' AND n.required_capability = 'news.read'),
+    'to_office', count(*) FILTER (WHERE n.recipient_id IS NULL AND n.scope_level = 'school' AND n.team_code IS NULL
+                                    AND n.kind = 'fixture' AND n.required_capability = 'fixture.update'),
+    'to_approvers', count(*) FILTER (WHERE n.recipient_id IS NULL AND n.scope_level = 'school' AND n.team_code IS NULL
+                                       AND n.required_capability = 'scoring.amend.approve'),
+    'recipient', min(n.recipient_id::text),
+    'medium', bool_and(n.urgency = 'medium' AND n.subject_person_id IS NULL AND NOT n.is_public),
+    'titles', coalesce(jsonb_agg(DISTINCT n.title), '[]'::jsonb),
+    'bodies', coalesce(jsonb_agg(DISTINCT n.body), '[]'::jsonb),
+    'named', count(*) FILTER (WHERE EXISTS (SELECT 1 FROM player p
+                                             WHERE position(p.full_name IN n.title || ' ' || n.body) > 0)
+                                 OR EXISTS (SELECT 1 FROM app_user u
+                                             WHERE u.name IS NOT NULL AND position(u.name IN n.title || ' ' || n.body) > 0)))
+    FROM notification n
+   WHERE n.subject_kind = 'match' AND n.subject_id = p_match AND n.title LIKE 'Second account set aside%'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/135 (section 113) ─────────────────────────────────────────────
+
 -- ┌── db/136 (section 114). A second account (docs/design/TWO_PHONES.md
 -- slice 2; Kameel, 5 Nov 2026, "All seven as recommended"). Invented, as the
 -- owner; every name a placeholder. A Hilton U12F friendly against
@@ -34689,6 +34743,137 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 112
   -- └── db/133 (section 112) ──────────────────────────────────────────
+
+  -- ┌── db/135 (section 113) ─────────────────────────────────────────
+  -- ── 113. Two phones scoring one match: the second account is told ──
+  -- docs/design/TWO_PHONES.md slice 1 (Kameel, 5 Nov 2026, all seven as
+  -- recommended). Rows are _v135_stage()'s, invented; every set-aside row is
+  -- written as the write path writes it, through scrbrd_app as the scorer
+  -- who sent it. What each label holds:
+  --   (told)      a ball from a phone that does not hold the pen, on a match
+  --               in play, raises three notices: to its scorer alone, to the
+  --               office (fixture.update) and to the approvers
+  --               (scoring.amend.approve), the fixture by its sides, the
+  --               design's body, medium, about no child, naming nobody
+  --   (once)      a second such ball raises none: once per match and reader
+  --   (pen)       a stale ball from the pen's own phone raises none
+  --   (finished)  a ball set aside at a finished match is db/132's late
+  --               ball, not a second account
+  --   (readers)   the sender reads his one; the director reads the school's;
+  --               a coach of another side reads none
+  --   (count)     second_account_waiting(): the pen's phone is told the
+  --               other phone's balls (not its over change, not its own);
+  --               the other phone, and the pen's scorer on another phone, 0
+  --   (grants)    both definers pinned; the count the app's, the trigger
+  --               nobody's, PUBLIC's neither; neither body reads a player, a
+  --               striker or a person's name, nor the database's day
+  --
+  -- Not yet falsified one by one; the walk tools/smoke-browser-two-phones.mjs
+  -- proves the same notices and count end to end through the API.
+  DECLARE
+    y   jsonb := _v135_stage();
+    MP  uuid := (y->>'MP')::uuid;
+    MF  uuid := (y->>'MF')::uuid;
+    SC  uuid := (y->>'sc')::uuid;
+    SC2 uuid := (y->>'sc2')::uuid;
+    j   jsonb;
+    t   text := 'Second account set aside · Hilton College U13F v Westville Boys'' High 1XI';
+    n   integer;
+    f   text;
+    src text;
+  BEGIN
+    -- (told)
+    PERFORM _as(SC2);
+    PERFORM set_config('app.device_id', 'v135-other', true);
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                       idempotency_key, body, fingerprint)
+    VALUES (MP, match_school(MP), 1, 2, SC2, 'v135-other', 'v135-a-' || MP, '{"payload":{"kind":"ball"}}'::jsonb, md5('v135-a-' || MP));
+    j := _v135_notices(MP);
+    PERFORM _assert((j->>'n')::int = 3 AND (j->>'to_one')::int = 1 AND (j->>'to_office')::int = 1 AND (j->>'to_approvers')::int = 1
+                    AND j->>'recipient' = SC2::text AND (j->>'medium')::boolean AND j->'titles' = jsonb_build_array(t)
+                    AND j->'bodies' = jsonb_build_array('Balls from a second phone were set aside for review, not added to the scorecard.')
+                    AND (j->>'named')::int = 0,
+      format('§113 (told): the notices for a second phone''s ball are %s, not three (sender, office, approvers), unnamed, titled %s', j, t));
+
+    -- (once)
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                       idempotency_key, body, fingerprint)
+    VALUES (MP, match_school(MP), 1, 2, SC2, 'v135-other', 'v135-b-' || MP, '{"payload":{"kind":"ball"}}'::jsonb, md5('v135-b-' || MP));
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                       idempotency_key, body, fingerprint)
+    VALUES (MP, match_school(MP), 1, 2, SC2, 'v135-other', 'v135-c-' || MP, '{"payload":{"kind":"bowler"}}'::jsonb, md5('v135-c-' || MP));
+    PERFORM _assert((_v135_notices(MP)->>'n')::int = 3, format('§113 (once): two more balls make %s notices, not three', _v135_notices(MP)->>'n'));
+
+    -- (pen)
+    PERFORM _as(SC);
+    PERFORM set_config('app.device_id', 'v135-pen', true);
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                       idempotency_key, body, fingerprint)
+    VALUES (MP, match_school(MP), 1, 2, SC, 'v135-pen', 'v135-d-' || MP, '{"payload":{"kind":"ball"}}'::jsonb, md5('v135-d-' || MP));
+    PERFORM _assert((_v135_notices(MP)->>'n')::int = 3 AND _v135_notices(MP)->>'recipient' = SC2::text,
+      format('§113 (pen): a stale ball from the pen''s own phone told someone: %s', _v135_notices(MP)));
+
+    -- (finished)
+    PERFORM _as(SC2);
+    PERFORM set_config('app.device_id', 'v135-other', true);
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                       idempotency_key, body, fingerprint)
+    VALUES (MF, match_school(MF), 1, 2, SC2, 'v135-other', 'v135-e-' || MF, '{"payload":{"kind":"ball"}}'::jsonb, md5('v135-e-' || MF));
+    PERFORM _assert((_v135_notices(MF)->>'n')::int = 0, format('§113 (finished): a ball after the finish raised %s second-account notices', _v135_notices(MF)->>'n'));
+
+    -- (readers)
+    SELECT count(*)::int INTO n FROM my_notifications x WHERE x.subject_id = MP AND x.title = t;
+    PERFORM _assert(n = 1, format('§113 (readers): the second phone''s scorer reads %s notices, not his one', n));
+    PERFORM _as((y->>'ds')::uuid);
+    SELECT count(*)::int INTO n FROM my_notifications x WHERE x.subject_id = MP AND x.title = t;
+    PERFORM _assert(n >= 1, format('§113 (readers): the director of sport reads %s notices, not the school''s', n));
+    PERFORM _as((y->>'office')::uuid);
+    SELECT count(*)::int INTO n FROM my_notifications x WHERE x.subject_id = MP AND x.title = t;
+    PERFORM _assert(n >= 1, format('§113 (readers): the office reads %s notices, not the office''s', n));
+    PERFORM _as((y->>'ecoach')::uuid);
+    SELECT count(*)::int INTO n FROM my_notifications x WHERE x.subject_id = MP AND x.title = t;
+    PERFORM _assert(n = 0, format('§113 (readers): a coach of another side reads %s notices', n));
+
+    -- (count)
+    PERFORM _as(SC);
+    PERFORM set_config('app.device_id', 'v135-pen', true);
+    n := second_account_waiting(MP);
+    PERFORM _assert(n = 2, format('§113 (count): the pen''s phone is told %s balls from the other phone, not 2', n));
+    PERFORM set_config('app.device_id', 'v135-elsewhere', true);
+    n := second_account_waiting(MP);
+    PERFORM _assert(n = 0, format('§113 (count): the pen''s scorer on another phone is told %s, not 0', n));
+    PERFORM _as(SC2);
+    PERFORM set_config('app.device_id', 'v135-other', true);
+    n := second_account_waiting(MP);
+    PERFORM _assert(n = 0, format('§113 (count): the other phone is told %s, not 0', n));
+    PERFORM set_config('app.device_id', '', true);
+
+    -- (grants)
+    FOREACH f IN ARRAY ARRAY['second_account_notice()', 'second_account_waiting(uuid)'] LOOP
+      PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f::regprocedure AND p.prosecdef
+                                AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))),
+        format('§113 (grants): %s is not a definer with its search_path pinned', f));
+      PERFORM _assert(NOT has_function_privilege('public', f, 'EXECUTE'), format('§113 (grants): %s is PUBLIC''s', f));
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_roles ro WHERE ro.rolname IN ('anon', 'authenticated', 'service_role')
+                                    AND has_function_privilege(ro.oid, f::regprocedure, 'EXECUTE')),
+        format('§113 (grants): %s is a managed host''s API role''s', f));
+      SELECT prosrc INTO src FROM pg_proc WHERE oid = f::regprocedure;
+      PERFORM _assert(src !~* '\m(striker_id|non_striker_id|bowler_id|dismissed_id|full_name|current[_]date)\M'
+                      AND src !~* '\mfrom\s+(player|app_user)\M' AND src !~* '\mjoin\s+(player|app_user)\M',
+        format('§113 (grants): %s reads a player, a striker, a person''s name or the database''s day', f));
+    END LOOP;
+    PERFORM _assert(has_function_privilege('scrbrd_app', 'second_account_waiting(uuid)', 'EXECUTE'),
+      '§113 (grants): the application cannot ask second_account_waiting()');
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'second_account_notice()', 'EXECUTE'),
+      '§113 (grants): the application can call the notice''s trigger function');
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger WHERE NOT tgisinternal AND tgenabled <> 'D'
+                              AND tgrelid = 'ball_event_quarantine'::regclass AND tgname = 'second_account_notice'),
+      '§113 (grants): the second-account trigger is missing or disabled');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('app.device_id', '', true);
+  -- └── end of section 113
+  -- └── db/135 (section 113) ──────────────────────────────────────────
 
   -- ┌── db/136 (section 114) ─────────────────────────────────────────
   -- ── 114. A second account: who may decide it, and the record it leaves ──

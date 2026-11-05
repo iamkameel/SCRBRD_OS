@@ -98,7 +98,7 @@ export function clockOf(at) {
 }
 
 /** Why a send for review did not go, in words. @param {string} why */
-const reviewWords = (why) => why === "unreachable" || why === "server_error" ? "no signal to the server; try again"
+export const reviewWords = (why) => why === "unreachable" || why === "server_error" ? "no signal to the server; try again"
   : why === "pad_ended" || why === "session_expired" ? "sign in first"
   : why === "not_all_sent" ? "the server took some and not others; try again"
   : why === "busy" ? "a ball was recorded meanwhile; try again"
