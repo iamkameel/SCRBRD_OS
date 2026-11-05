@@ -221,6 +221,12 @@ export class PadSync {
     this.reviewing = null;
     this.reviewError = null;
     /**
+     * For the device holding the pen (TWO_PHONES R3, db/135): balls from
+     * another phone set aside on this match, not yet decided — as the last
+     * heartbeat or send said. 0 until the server says otherwise.
+     */
+    this.secondAccount = 0;
+    /**
      * Whether the server answered the last time a signed-out pad asked
      * (/api/health, which needs no session): null before it has asked.
      * `navigator.onLine` alone is not the signal: it is true on a phone with
@@ -471,6 +477,7 @@ export class PadSync {
     const r = await this.call(`/api/matches/${this.matchId}/session/heartbeat`, {
       method: "POST", body: { device: deviceId(), epoch: epoch ?? 0 },
     });
+    if (r?.ok && Number.isInteger(r?.secondAccount)) this.secondAccount = r.secondAccount;
     return { ok: !!r?.ok, epoch: r?.epoch ?? null, state: r?.state ?? null, reason: r?.reason ?? null };
   }
 
@@ -631,6 +638,7 @@ export class PadSync {
     }
     if ((res?.quarantined ?? []).length) this.leaseAt = 0;
     else if ((res?.accepted ?? []).length) this.leaseAt = Date.now();
+    if (Number.isInteger(res?.secondAccount)) this.secondAccount = res.secondAccount;
     return res;
   }
 
@@ -839,6 +847,11 @@ export class PadSync {
       // P5/P7: balls going to the lead's review, and why the last try did not.
       reviewing: !!this.reviewing,
       reviewError: this.reviewError,
+      // TWO_PHONES R3: what this device sent that the server set aside, each
+      // with its reason (the second phone's sheet counts them); and, for the
+      // device holding the pen, another phone's balls set aside here.
+      rejectedList: e ? e.rejected.slice() : [],
+      secondAccount: e?.attached ? this.secondAccount : 0,
     });
   }
 

@@ -29,6 +29,10 @@ import { toRow, fromRow, normaliseDismissal, MatchFold, lawsRefusal, REFUSAL, RE
          PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE, CONDITION, KIND, conditionsOf } from "@scrbrd/scoring";
 import { safeErr } from "../log-safe.mjs";
 import { rejudgeAfterAmendment } from "./rejudge.mjs";
+// A circle, by design: second-account.mjs reads this module's columns and
+// fold; the release route here asks it where a held ball would go. Neither
+// uses the other at import time.
+import { readAccounts, rowOf, releaseRefusal } from "./second-account.mjs";
 /** @import { Pool, ApiRequest, ApiResponse, Handler, IdHandler, IdRequest, RouteDeps, DressedError } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs): pg's
 // carry a SQLSTATE `code` (and `table`, `constraint`, `detail`), this
@@ -70,7 +74,7 @@ import { rejudgeAfterAmendment } from "./rejudge.mjs";
  * @param {IncomingEvent} ev  the envelope {innings, payload, ...}
  * @returns {Record<string, any>}
  */
-function columnsFor(matchId, ev) {
+export function columnsFor(matchId, ev) {
   const row = toRow(ev.payload || {});
   return {
     match_id: matchId,
@@ -290,6 +294,8 @@ const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_
  *   the key names another event: `seq` is the stored one's, null when that one is held
  * @property {{idempotencyKey: string, reason: RefusalCode, field?: string, value?: any, constraint?: string}[]} refused
  *   the Laws, or the record, refused it
+ * @property {number} [secondAccount]  for the device holding the pen: balls from another phone set aside on
+ *   this match and not yet decided (db/135 second_account_waiting); absent for any other sender
  */
 
 /**
@@ -568,6 +574,13 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
         await client.query("rollback to savepoint event_write");
         result.refused.push({ idempotencyKey: ev.idempotencyKey, ...why });
       }
+    }
+    // The pen-holder's line (TWO_PHONES R3, db/135): how many balls from
+    // another phone are set aside on this match, undecided. Asked only by the
+    // device that holds the pen, which is the only one the function answers.
+    if (lease.holds) {
+      const { rows: sa } = await client.query(`select second_account_waiting($1) as n`, [matchId]);
+      result.secondAccount = sa[0]?.n ?? 0;
     }
     return result;
   });
@@ -908,6 +921,41 @@ export function amendmentRoutes({ pool, secret, onChange }) {
 
 
 /**
+ * The columns a held ball would be written with: the row the live path would
+ * have written. A wide or a no-ball's wicket and a wicket's dismissal are
+ * normalised as on the live path (the Laws judge the rest). columnsFor(), the
+ * one mapping, so the event's own innings (in its payload) wins over the
+ * envelope's. This used to take the envelope's — which the web pad always
+ * sends as 0 — so a held second-innings ball was released into the first:
+ * refused as innings_closed if that innings was sealed, written into it if
+ * not. The same object is what the held copy's fingerprint was taken over, so
+ * a resend matches. Throws `dismissal_unknown` (400) for a wicket whose
+ * dismissal is no recognised kind; `lenient` keeps it as sent instead (for a
+ * reader comparing, not writing: the second-account review).
+ * @param {string} matchId @param {any} body  the held envelope
+ * @param {{lenient?: boolean}} [o]
+ * @returns {Record<string, any>}
+ */
+export function heldColumns(matchId, body, { lenient = false } = {}) {
+  const payload = { ...(body?.payload || {}) };
+  if ((payload.kind ?? "ball") === "ball" && (payload.type === "Wd" || payload.type === "Nb") && payload.dismissal != null) {
+    payload.dismissal = normaliseDismissal(payload.dismissal) ?? payload.dismissal;
+  }
+  if ((payload.kind ?? "ball") === "ball" && payload.type === "W") {
+    const d = normaliseDismissal(payload.dismissal);
+    if (!d && !lenient) { const e = /** @type {DressedError} */ (new Error("dismissal_unknown")); e.status = 400; e.detail = { value: payload.dismissal ?? null }; throw e; }
+    if (d) payload.dismissal = d;
+  }
+  return columnsFor(matchId, { ...body, payload });
+}
+
+/** The words of a release the alignment refuses (TWO_PHONES R5.2). */
+const RELEASE_REFUSAL_TEXT = {
+  pen_has_this_ball: "The pen has a ball here: set it aside, or ask for an amendment.",
+  not_a_ball: "This is not a ball the pen missed (a change of bowler or batters, or a ball its own phone undid): set it aside.",
+};
+
+/**
  * quarantine_resolve()'s row (db/37). `seq` is where an accepted ball was
  * written.
  * @typedef {object} QuarantineResolution
@@ -984,27 +1032,14 @@ export function quarantineRoutes({ pool, secret, onChange }) {
         const { rows: q } = await client.query(
           `select match_id, body from ball_event_quarantine where id = $1`, [req.params.id]);
         if (!q.length) { const e = /** @type {DressedError} */ (new Error("no_such_quarantine")); e.status = 404; throw e; }
-        let row = null;
-        if (accept) {
-          const payload = q[0].body?.payload || {};
-          // A wide or a no-ball's wicket, as on the live path; the Laws judge it below.
-          if ((payload.kind ?? "ball") === "ball" && (payload.type === "Wd" || payload.type === "Nb") && payload.dismissal != null) {
-            payload.dismissal = normaliseDismissal(payload.dismissal) ?? payload.dismissal;
-          }
-          if ((payload.kind ?? "ball") === "ball" && payload.type === "W") {
-            const d = normaliseDismissal(payload.dismissal);
-            if (!d) { const e = /** @type {DressedError} */ (new Error("dismissal_unknown")); e.status = 400; e.detail = { value: payload.dismissal ?? null }; throw e; }
-            payload.dismissal = d;
-          }
-          // The row the live path would have written: columnsFor(), the one
-          // mapping, so the event's own innings (in its payload) wins over the
-          // envelope's. This used to take the envelope's — which the web pad
-          // always sends as 0 — so a held second-innings ball was released
-          // into the first: refused as innings_closed if that innings was
-          // sealed, written into it if not. The same object is what the held
-          // copy's fingerprint was taken over, so a resend matches.
-          row = columnsFor(q[0].match_id, { ...q[0].body, payload });
-        }
+        // The row the live path would have written (heldColumns()).
+        const row = accept ? heldColumns(q[0].match_id, q[0].body) : null;
+        // The two books lined up (second-account.mjs), read before anything
+        // is written: whether the pen has a ball where this one goes, and the
+        // pen's ball it is compared with. The client's word for either is
+        // not taken (the red-team's F1 and F5).
+        const accounts = await readAccounts(client, q[0].match_id);
+        const counterpart = rowOf(accounts, req.params.id)?.counterparts[String(req.params.id)] ?? null;
         await client.query("savepoint quarantine_release");
         // A released ball may be the match's first (every live one held):
         // its playing conditions are fixed before it is written, as the live
@@ -1013,9 +1048,11 @@ export function quarantineRoutes({ pool, secret, onChange }) {
         if (accept) await fixMatchConditions(client, q[0].match_id);
         let rows;
         try {
+          // db/136: the pen's ball it was compared with, from the server's
+          // own alignment (null: the pen has no ball here).
           ({ rows } = await client.query(
-            `select * from quarantine_resolve($1, $2, $3, $4)`,
-            [req.params.id, accept, row ? JSON.stringify(row) : null, req.body?.note ?? null]));
+            `select * from quarantine_resolve($1, $2, $3, $4, $5)`,
+            [req.params.id, accept, row ? JSON.stringify(row) : null, req.body?.note ?? null, counterpart]));
         } catch (e) {
           // A held ball carrying a value the table cannot hold (SCRBRD-077).
           // The live path refuses one when it writes it; a ball held under a
@@ -1030,6 +1067,17 @@ export function quarantineRoutes({ pool, secret, onChange }) {
         /** @type {QuarantineResolution} */
         const out = rows[0] ?? { ok: false, reason: "no_result" };
         if (!accept || !out.ok) { await client.query("release savepoint quarantine_release"); return out; }
+
+        // Who may release was the function's to say, first. Now WHAT may be
+        // released (TWO_PHONES R5.2): only a ball the pen has none at the
+        // place of. A ball the pen also has would be counted twice; a change
+        // of bowler or batters at the live end would re-credit the pen's next
+        // balls. Refused: nothing written, still held.
+        const notThis = releaseRefusal(accounts, req.params.id);
+        if (notThis) {
+          await client.query("rollback to savepoint quarantine_release");
+          return { ok: false, reason: notThis, text: RELEASE_REFUSAL_TEXT[notThis] };
+        }
 
         // Written, under the lock. Now the Laws, over the log it landed on.
         /** @type {{ rows: BallEventRow[] }} */

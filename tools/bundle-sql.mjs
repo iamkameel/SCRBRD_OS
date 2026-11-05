@@ -203,7 +203,7 @@ SELECT
        THEN 'OK — all pinned' ELSE 'PROBLEM' END                  AS "Definer functions pin search_path",
   CASE WHEN to_regclass('request_replay') IS NOT NULL
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Retries write once",
-  CASE WHEN to_regprocedure('quarantine_resolve(bigint,boolean,jsonb,text)') IS NOT NULL
+  CASE WHEN to_regprocedure('quarantine_resolve(bigint,boolean,jsonb,text,text)') IS NOT NULL
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Quarantine has a way out",
   CASE WHEN to_regprocedure('enrol_person(text,text,text,uuid,text,uuid,text)') IS NOT NULL
        THEN 'OK' ELSE 'PROBLEM' END                             AS "Enrolment exists",

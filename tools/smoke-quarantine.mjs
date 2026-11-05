@@ -166,10 +166,15 @@ try {
   ok("...and says why in words", tooSoon.body?.text === REFUSAL_TEXT.next_batter, tooSoon.body?.text);
   ok("...nothing was written", (await log(dos)).length === logBefore);
   ok("...and the ball is still held, for the approver to discard or leave", !(await rowFor(keyOf(20)))?.resolved_at);
+  // A held change of batters is never released (TWO_PHONES R5.2, db/136):
+  // written at the live end it would re-credit whatever follows. It was
+  // refused here by the Laws (batter_already_out); it is now refused before
+  // the Laws are asked, in words, and nothing is written.
   const outAgain = await resolve(comeback.id, dos, { accept: true });
-  ok("releasing a batter who is already out is refused: batter_already_out",
-     outAgain.body?.reason === "laws_refused" && outAgain.body?.law === REFUSAL.BATTER_ALREADY_OUT
-     && outAgain.body?.text === REFUSAL_TEXT.batter_already_out, JSON.stringify(outAgain.body));
+  ok("releasing a change of batters is refused: not a ball the pen missed",
+     outAgain.body?.ok === false && outAgain.body?.reason === "not_a_ball" && /not a ball the pen missed/.test(outAgain.body?.text ?? ""),
+     JSON.stringify(outAgain.body));
+  ok("...nothing was written", (await log(dos)).length === logBefore);
   const discard = await resolve(comeback.id, dos, { accept: false, note: "he was run out" });
   ok("...which the approver discards", discard.body?.ok === true && (await rowFor(keyOf(21)))?.resolution === "rejected");
   // Left held, the ball waits for the log to change. A new batter walks in.
