@@ -35404,10 +35404,10 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
       PERFORM _as((y->>who)::uuid);
       SELECT * INTO r FROM match_award(M, P1, WK);
       PERFORM _assert(r.ok = false AND r.reason = 'not_permitted', format('§120 (who): %s answered %s/%s', who, r.ok, r.reason));
-      PERFORM _assert(NOT EXISTS (SELECT 1 FROM match_award_state(M) s WHERE s.side = 'home'), format('§120 (who): %s reads the home side to decide', who));
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM match_award_state(M) st120 WHERE st120.side = 'home'), format('§120 (who): %s reads the home side to decide', who));
     END LOOP;
     PERFORM _as((y->>'wes')::uuid);
-    PERFORM _assert((SELECT string_agg(s.side, ',') FROM match_award_state(M) s) = 'away', '§120 (who): the other school''s coach does not read his own side alone');
+    PERFORM _assert((SELECT string_agg(st120.side, ',') FROM match_award_state(M) st120) = 'away', '§120 (who): the other school''s coach does not read his own side alone');
     FOREACH v_h IN ARRAY ARRAY[U_OWNER, U_PUPIL] LOOP
       PERFORM _as(v_h);
       SELECT * INTO r FROM match_award(M, P1, WK);
@@ -35415,7 +35415,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     END LOOP;
     PERFORM _as((y->>'coach')::uuid);
     PERFORM _assert((SELECT count(*) FROM match_award_state(M)) = 1
-                    AND (SELECT s.side = 'home' AND s.can_award AND s.refusal IS NULL AND s.verified FROM match_award_state(M) s),
+                    AND (SELECT st120.side = 'home' AND st120.can_award AND st120.refusal IS NULL AND st120.verified FROM match_award_state(M) st120),
       '§120 (who): the side''s coach does not read one side he may decide');
 
     -- (sheet)
@@ -35427,7 +35427,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     PERFORM _assert(r.ok = false AND r.reason = 'not_verified', format('§120 (sheet): an unsealed innings answered %s/%s', r.ok, r.reason));
     SELECT * INTO r FROM match_award(MS, P1, _v142_working((y->>'MS_head')::int, P1, ARRAY[P1]));
     PERFORM _assert(r.ok = false AND r.reason = 'not_verified', format('§120 (sheet): a live match answered %s/%s', r.ok, r.reason));
-    PERFORM _assert((SELECT s.refusal FROM match_award_state(MU) s) = 'not_verified', '§120 (sheet): the unsealed match''s sheet does not say why');
+    PERFORM _assert((SELECT st120.refusal FROM match_award_state(MU) st120) = 'not_verified', '§120 (sheet): the unsealed match''s sheet does not say why');
     SELECT * INTO r FROM match_award(M, P1, _v142_working(H - 1, P1, ARRAY[P1]));
     PERFORM _assert(r.ok = false AND r.reason = 'stale', format('§120 (sheet): an older head answered %s/%s', r.ok, r.reason));
     SELECT * INTO r FROM match_award(M, P1, _v142_working(H, P1, ARRAY[P1, W1]));
@@ -35447,7 +35447,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     SELECT * INTO r FROM match_award(M, P2, _v142_working(H, P2, ARRAY[P2]));
     PERFORM _assert(r.ok = false AND r.reason = 'guardian_conflict' AND r.detail = 'directorofsport',
       format('§120 (conflict): the guardian coach answered %s/%s/%s', r.ok, r.reason, r.detail));
-    PERFORM _assert((SELECT s.conflicts = ARRAY[P2] AND s.instead = 'directorofsport' FROM match_award_state(M) s),
+    PERFORM _assert((SELECT st120.conflicts = ARRAY[P2] AND st120.instead = 'directorofsport' FROM match_award_state(M) st120),
       '§120 (conflict): the guardian coach''s sheet does not mark his own boy');
     PERFORM _as((y->>'gdos')::uuid);
     SELECT * INTO r FROM match_award(M, P2, _v142_working(H, P2, ARRAY[P2]));
@@ -35491,7 +35491,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     PERFORM _as((y->>'coach')::uuid);
     SELECT * INTO r FROM match_award(M, P1, WK);
     PERFORM _assert(r.ok = false AND r.reason = 'already_awarded', format('§120 (once): a second award answered %s/%s', r.ok, r.reason));
-    PERFORM _assert((SELECT s.refusal = 'already_awarded' AND NOT s.can_award AND s.honour_id = v_h AND s.can_withdraw FROM match_award_state(M) s),
+    PERFORM _assert((SELECT st120.refusal = 'already_awarded' AND NOT st120.can_award AND st120.honour_id = v_h AND st120.can_withdraw FROM match_award_state(M) st120),
       '§120 (once): the sheet does not show the standing award');
     PERFORM _as((y->>'office')::uuid);
     got := _v133_try(format('INSERT INTO honour (player_id, kind, season_id, match_id, derived_from) VALUES (%L, ''player_of_match'', %L, %L, ''{}'')',
@@ -35523,14 +35523,14 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
       format('§120 (withdraw): the honour reads %s', _v142_honour(v_h) - 'derived'));
     j := _v142_fact(M, HIL);
     PERFORM _assert(jsonb_array_length(j->'notices') = 2
-                    AND (SELECT count(*) FROM jsonb_array_elements(j->'notices') n
-                          WHERE (n->>'id')::uuid = (_v142_honour(v_h)->>'notice')::uuid AND (n->>'retracted')::boolean
-                            AND n->>'retraction' = 'correction') = 1
-                    AND (SELECT count(*) FROM jsonb_array_elements(j->'notices') n
-                          WHERE NOT (n->>'retracted')::boolean AND n->'person' = 'null'::jsonb AND n->'recipient' = 'null'::jsonb
-                            AND n->>'scope' = 'team' AND n->>'team' = '19XI'
-                            AND n->>'body' LIKE 'Player of the Match · % v %: the award was withdrawn after the scorecard was corrected.'
-                            AND position('Boy2' IN (n->>'title') || (n->>'body')) = 0) = 1,
+                    AND (SELECT count(*) FROM jsonb_array_elements(j->'notices') e120
+                          WHERE (e120->>'id')::uuid = (_v142_honour(v_h)->>'notice')::uuid AND (e120->>'retracted')::boolean
+                            AND e120->>'retraction' = 'correction') = 1
+                    AND (SELECT count(*) FROM jsonb_array_elements(j->'notices') e120
+                          WHERE NOT (e120->>'retracted')::boolean AND e120->'person' = 'null'::jsonb AND e120->'recipient' = 'null'::jsonb
+                            AND e120->>'scope' = 'team' AND e120->>'team' = '19XI'
+                            AND e120->>'body' LIKE 'Player of the Match · % v %: the award was withdrawn after the scorecard was corrected.'
+                            AND position('Boy2' IN (e120->>'title') || (e120->>'body')) = 0) = 1,
       format('§120 (withdraw): the notices after a correction read %s', j->'notices'));
     SELECT * INTO r FROM match_award_withdraw(v_h, 'correction', 'The scorecard was corrected');
     PERFORM _assert(r.ok = false AND r.reason = 'already_withdrawn', format('§120 (withdraw): twice answered %s/%s', r.ok, r.reason));
@@ -35541,7 +35541,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     PERFORM _assert(r.ok, format('§120 (withdraw): another reason was refused: %s', r.reason));
     j := _v142_fact(M, HIL);
     PERFORM _assert(jsonb_array_length(j->'notices') = 3
-                    AND (SELECT count(*) FROM jsonb_array_elements(j->'notices') n WHERE NOT (n->>'retracted')::boolean) = 1
+                    AND (SELECT count(*) FROM jsonb_array_elements(j->'notices') e120 WHERE NOT (e120->>'retracted')::boolean) = 1
                     AND _v142_honour(v_h2)->>'withdrawn_kind' = 'other',
       format('§120 (withdraw): another reason said more than nothing: %s', j->'notices'));
     PERFORM _as((y->>'office')::uuid);
@@ -35550,21 +35550,21 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
 
     -- (audit)
     PERFORM _as((y->>'dos')::uuid);
-    SELECT string_agg(l.action, ' | ' ORDER BY l.at, l.key) INTO got FROM audit_log(HIL, ARRAY['recognition'], NULL, NULL, NULL, 200) l
-     WHERE l.action LIKE '%Player of the Match%';
+    SELECT string_agg(l120.action, ' | ' ORDER BY l120.at, l120.key) INTO got FROM audit_log(HIL, ARRAY['recognition'], NULL, NULL, NULL, 200) l120
+     WHERE l120.action LIKE '%Player of the Match%';
     PERFORM _assert(got LIKE 'Awarded Player of the Match — v %'
                     AND got LIKE '%| Withdrew Player of the Match — v % after a correction |%'
                     AND got LIKE '%| Awarded Player of the Match — v %| Withdrew Player of the Match — v %'
                     AND got NOT LIKE '%after a correction' AND (length(got) - length(replace(got, 'Awarded', ''))) / 7 = 2,
       format('§120 (audit): the log reads %s', got));
-    PERFORM _assert((SELECT bool_and(l.actor IS NOT NULL AND l.subject_kind = 'pupil' AND l.detail->>'honourKind' = 'player_of_match')
-                       FROM audit_log(HIL, ARRAY['recognition'], NULL, NULL, NULL, 200) l WHERE l.action LIKE '%Player of the Match%'),
+    PERFORM _assert((SELECT bool_and(l120.actor IS NOT NULL AND l120.subject_kind = 'pupil' AND l120.detail->>'honourKind' = 'player_of_match')
+                       FROM audit_log(HIL, ARRAY['recognition'], NULL, NULL, NULL, 200) l120 WHERE l120.action LIKE '%Player of the Match%'),
       '§120 (audit): a row has no actor, is not about the pupil, or does not say its kind');
-    PERFORM _assert(NOT EXISTS (SELECT 1 FROM audit_log(HIL, ARRAY['recognition'], NULL, NULL, NULL, 200) l
-                                 WHERE l.detail::text LIKE '%scorecard was corrected%' OR l.detail::text LIKE '%in error%'
-                                    OR l.detail ? 'reason'),
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM audit_log(HIL, ARRAY['recognition'], NULL, NULL, NULL, 200) l120
+                                 WHERE l120.detail::text LIKE '%scorecard was corrected%' OR l120.detail::text LIKE '%in error%'
+                                    OR l120.detail ? 'reason'),
       '§120 (audit): the audit log carries a withdrawal''s reason');
-    PERFORM _assert((SELECT count(*) FROM audit_log(HIL, NULL, NULL, NULL, NULL, 200) l WHERE l.kind = 'recognition') >= 3,
+    PERFORM _assert((SELECT count(*) FROM audit_log(HIL, NULL, NULL, NULL, NULL, 200) l120 WHERE l120.kind = 'recognition') >= 3,
       '§120 (audit): recognition is not among the kinds read by default');
     PERFORM _as((y->>'coach')::uuid);
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM audit_log(HIL, ARRAY['recognition'], NULL, NULL, NULL, 200)),
@@ -35584,7 +35584,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     PERFORM _assert(NOT has_table_privilege('scrbrd_app', 'recognition_audit', 'SELECT')
                     AND NOT has_table_privilege('scrbrd_app', 'recognition_audit', 'INSERT'),
       '§120 (grants): the recognition audit is readable or writable by the application');
-    PERFORM _assert((SELECT string_agg(rc.role, ',' ORDER BY rc.role) FROM role_capability rc WHERE rc.capability = 'recognition.match.award')
+    PERFORM _assert((SELECT string_agg(rc120.role, ',' ORDER BY rc120.role) FROM role_capability rc120 WHERE rc120.capability = 'recognition.match.award')
                     = 'coach,directorofsport,principal', '§120 (grants): recognition.match.award has other holders');
   END;
   PERFORM set_config('app.user_id', '', true);
