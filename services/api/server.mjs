@@ -74,6 +74,7 @@ import { signInRoutes, verifierFromEnv } from "./auth/signin-api.mjs";
 import { readRoute, exportRoute, liveResources, readIsNoStore } from "./read/read-api.mjs";
 import { importRoutes } from "./io/import-api.mjs";
 import { eventRoutes, amendmentRoutes, quarantineRoutes, correctionRoutes, squadRoutes, tossRoutes, conditionsRoutes, officialRoutes, availabilityRoutes, transportRoutes } from "./write/events-api.mjs";
+import { secondAccountRoutes } from "./write/second-account.mjs";
 import { scoutingRoutes, featureRoutes, drsRoutes, broadcastRoutes, sponsorRoutes, moduleAdminRoutes } from "./write/scouting-api.mjs";
 import { assessmentRoutes, accessRequestRoutes, developmentNoteRoutes, guardianLinkRoutes, developmentCorrectionRoutes } from "./write/assessment-api.mjs";
 import { guardianEndingRoutes } from "./write/guardian-ending-api.mjs";
@@ -416,6 +417,9 @@ const conduct = disciplineRoutes({ pool, secret: SECRET });
 // subscribes to it, and every screen polls (Kameel, 8 Oct).
 const amend   = amendmentRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
 const quarantine = quarantineRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
+// TWO_PHONES slice 2: a second account lined up against the pen's book, and
+// its three decisions (pen stands, in bulk; the other phone was right).
+const secondAccount = secondAccountRoutes({ pool, secret: SECRET });
 // GA-I36 N1: the corrections waiting on a match, and across the reader's matches.
 const corrections = correctionRoutes({ pool, secret: SECRET });
 const guard   = guardianLinkRoutes({ pool, secret: SECRET });
@@ -617,6 +621,11 @@ const MATCH_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/amendments$/,        "POST", amend.request],
   // The way out of quarantine: list what is waiting, then accept or reject.
   [/^\/api\/matches\/([^/]+)\/quarantine$/,         "GET",  quarantine.list],
+  // TWO_PHONES slice 2 (db/136): the second account beside the pen's book,
+  // gated as the quarantine's door is (scoring.amend.approve over the match).
+  [/^\/api\/matches\/([^/]+)\/second-account$/,                     "GET",  secondAccount.read],
+  [/^\/api\/matches\/([^/]+)\/second-account\/pen-stands$/,          "POST", secondAccount.penStands],
+  [/^\/api\/matches\/([^/]+)\/second-account\/other-phone-right$/,   "POST", secondAccount.otherPhoneRight],
   // GA-I36 N1: the amendments and held balls on a match, under their own policies.
   [/^\/api\/matches\/([^/]+)\/corrections$/,        "GET",  corrections.forMatch],
   // Naming the side. The two safeguarding triggers on match_squad fire here,

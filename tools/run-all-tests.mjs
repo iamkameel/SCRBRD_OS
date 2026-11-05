@@ -15,6 +15,8 @@ const SUITES = [
   ["laws-audit","packages/scoring/test/laws-audit.test.mjs"],
   // ...and F4's server half: which later balls an amendment re-judges (db/121).
   ["rejudge",  "services/api/write/rejudge.test.mjs"],
+  // TWO_PHONES R5: the pen's book and a second account lined up by legal ball.
+  ["second-account", "services/api/write/second-account.test.mjs"],
   ["design",   "apps/web/test/design.test.mjs"],
   ["analytics","apps/web/test/analytics.test.mjs"],
   ["home-routing","apps/web/test/home-routing.test.mjs"],
