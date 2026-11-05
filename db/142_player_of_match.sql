@@ -129,7 +129,7 @@ BEGIN
     RAISE EXCEPTION 'db/142: the notices (db/89), the official result (db/114), the sheet label (db/131), the audit log (db/79) or the SA day (db/08) is missing; apply them first';
   END IF;
   FOR r IN SELECT * FROM (VALUES
-      ('honour_stamp()',                 'ba879ca71d07f48100c4218397a80a4b', '43e6dfe476f65f5dd104339f8f597205', 'db/08'),
+      ('honour_stamp()',                 'ba879ca71d07f48100c4218397a80a4b', 'a089d23c4af2ec35928492b04362b303', 'db/08'),
       ('honour_kind_label(text,text)',   'f97492d5524992eef7c2abaa46d7bea8', '1456d2e848e00cb3277e356dc4958178', 'db/08'),
       ('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)',
                                          'a381fc0455aff9196d74f232eacfb01b', '5e47b7126f7d31e45a3407cbebbb33a2', 'db/136'))
@@ -279,6 +279,12 @@ BEGIN
     NEW.decided_by := NEW.awarded_by;   -- db/142: D5, the decider is the session
     NEW.withdrawn_at := NULL; NEW.withdrawn_by := NULL; NEW.withdrawn_reason := NULL;
     NEW.withdrawn_kind := NULL; NEW.notice_id := NULL;   -- db/142
+    RETURN NEW;
+  END IF;
+  -- db/142: the side's notice was deleted and its key set this to NULL;
+  -- nothing else moves, withdrawn or not.
+  IF OLD.notice_id IS NOT NULL AND NEW.notice_id IS NULL
+     AND (to_jsonb(NEW) - 'notice_id') = (to_jsonb(OLD) - 'notice_id') THEN
     RETURN NEW;
   END IF;
   IF OLD.withdrawn_at IS NOT NULL THEN
@@ -739,7 +745,7 @@ DO $check$
 DECLARE f text; r text; v_md5 text; v_src text;
 BEGIN
   FOR f, v_md5 IN SELECT * FROM (VALUES
-      ('honour_stamp()',               '43e6dfe476f65f5dd104339f8f597205'),
+      ('honour_stamp()',               'a089d23c4af2ec35928492b04362b303'),
       ('honour_kind_label(text,text)', '1456d2e848e00cb3277e356dc4958178'),
       ('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)', '5e47b7126f7d31e45a3407cbebbb33a2')) x(fn, md5) LOOP
     IF pg_temp._v142_fold((SELECT prosrc FROM pg_proc WHERE oid = f::regprocedure)) <> v_md5 THEN
