@@ -279,7 +279,7 @@ Sign in as `dos.wes`.
 1. **To resolve**: the office's list first, then every Westville fixture in the next seven days by day and team, each with its duty count; the rest folded under Later.
 2. **Officials**, **Staff** and the **Clearance register**: the whole school.
 3. **Match Centre**: all twelve fixtures.
-4. After the match, as `scorer2.wes`: on the fixture's full-time card tap "Something to correct", pick a ball and file a correction. The director cannot yet approve it on a screen.
+4. After the match, as `scorer2.wes`: on the fixture's full-time card tap "Something to correct", pick a ball and file a correction. The director of sport can approve it: as `dos.wes`, on **To resolve**, open the fixture's Corrections sheet and tap **Approve**; the ball is removed and nothing replaces it. The walk is `tools/smoke-browser-corrections.mjs`, step 3.
 
 A failure: a Kearsney record; a fixture missing.
 
@@ -307,7 +307,6 @@ Each needs a change to the app, not to the data:
 - Claims: Google sign-in is not set up for the demo address. Setting it up is configuration (Firebase and the demo domain), not code.
 - Recording an injury: no route and no screen. "Recording and updating injuries is coming."
 - Changing or cancelling a booked trip: no route. A trip booked by mistake stays on the list.
-- Approving a correction: the director has no screen to decide it.
 - A list of a boy's guardian links, with their state: no read. The office picks the parent and the server answers.
 - The away school's bus: a trip belongs to the host school, so Kearsney cannot book one to Westville, and the page says so.
 - The away team sheet on the pad: the host's scorer cannot read the visitors' named XI. He types their names.

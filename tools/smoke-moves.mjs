@@ -60,7 +60,9 @@ const spells = (id) => q(`select team_code, joined_on::text j, left_on::text l, 
 
 const pool = new pg.Pool({ connectionString: DB });
 const q = async (t, p) => (await pool.query(t, p)).rows;
-const today = new Date().toISOString().slice(0, 10);
+// The SA day, as the move route dates an undated move (sa_today()), not the
+// UTC day, which is a day behind from 00:00 to 02:00 SAST.
+const today = new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
 
 try {
   for (let i = 0; i < 60; i++) {

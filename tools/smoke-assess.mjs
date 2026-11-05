@@ -78,10 +78,12 @@ try {
   // a month ago — the first version of this walk counted the whole table and
   // failed against its own fixture, which is a test bug and would have been an
   // easy one to "fix" by loosening the assertion instead of reading the seed.
+  // Today is the SA day the API files an undated assessment on (sa_today()),
+  // not the database's UTC current_date, a day behind from 00:00 to 02:00.
   const stored = await dbq(
     `select category, metric, score, assessed_by is not null as attributed
        from player_skill
-      where player_id = $1 and assessed_on = current_date
+      where player_id = $1 and assessed_on = sa_today()
       order by category, metric`, [P_OWN]);
   ok("six rows are in the database", stored.length === 6);
   ok("every one names who assessed", stored.every((r) => r.attributed));
@@ -96,7 +98,7 @@ try {
   const after = await dbq(
     `select score from player_skill
       where player_id = $1 and category = 'technical' and metric = 'footwork'
-        and assessed_on = current_date`, [P_OWN]);
+        and assessed_on = sa_today()`, [P_OWN]);
   ok("...and replaces rather than duplicating", after.length === 1 && after[0].score === 18);
 
   const later = await assess(P_OWN, coach, {
@@ -119,7 +121,7 @@ try {
      otherSide.body?.error === "not_permitted");
   const leaked = await dbq(
     `select count(*)::int n from player_skill
-      where player_id = $1 and assessed_on = current_date`, [P_U16B]);
+      where player_id = $1 and assessed_on = sa_today()`, [P_U16B]);
   ok("...and nothing was written", leaked[0].n === 0);
 
   const otherSchool = await assess(P_WES, coach, { scores: { technical: { footwork: 12 } } });
@@ -165,7 +167,7 @@ try {
   }
   const untouched = await dbq(
     `select count(*)::int n from player_skill
-      where player_id = $1 and assessed_on = current_date`, [P_OWN]);
+      where player_id = $1 and assessed_on = sa_today()`, [P_OWN]);
   ok("...and none of them left a partial row", untouched[0].n === 6);
 
   group("The two halves of a rating stay apart");
@@ -182,7 +184,7 @@ try {
   const perf = battingIndex({ runs: career.runs, ballsFaced: career.balls, dismissals: career.outs });
   const rows = await dbq(
     `select metric, score from player_skill
-      where player_id = $1 and category = 'technical' and assessed_on = current_date`, [P_OWN]);
+      where player_id = $1 and category = 'technical' and assessed_on = sa_today()`, [P_OWN]);
   const coachNum = coachIndex(Object.fromEntries(rows.map((r) => [r.metric, r.score])));
 
   ok("the coach's number comes from their own metrics", coachNum.value !== null);

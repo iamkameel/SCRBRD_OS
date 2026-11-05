@@ -94,3 +94,11 @@ the day the sheet is written and checked on solo run 2.
 | every session on the platform | rotate `SESSION_SECRET` on Render | [Render dashboard path] | the owner |
 | owner recovery | unset `OWNER_RECOVERY_SECRET` on Render | [Render dashboard path] | the owner |
 | the database role's password | reset in Supabase, then set `DATABASE_URL` on Render | [Supabase path; Render path] | the owner |
+
+## Fixtures: decided 4 Nov 2026 (Kameel)
+
+No fixtures design exists in `docs/design/` yet, so these pilot-scope decisions are recorded here, word for word. They are being built as db/133.
+
+1. "Two fixtures on one ground at overlapping times: the app refuses the booking and names the clash. No override for the pilot."
+2. "A 'Postponed' status for a fixture called off before play that will be replayed; no result, no figures; a new date puts it back to scheduled; parents told both times."
+3. "Postponed, abandoned and back-on notify the side's parents and pupils, with no child's name on a lock screen."
