@@ -88,7 +88,11 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   and two phones scoring one match (added 2026-11-04, Kameel: two devices
   scoring the same match whose logs disagree; which ball stands, how each
   scorer is told, how the log keeps both versions, and what the official
-  result and the public page read meanwhile).
+  result and the public page read meanwhile)
+  and the guardian's terms (added 2026-11-05, Kameel: "give it to fable"; the
+  plain-language terms a parent agrees to in the app for a child, GA-I20 D7,
+  version popia-2026-01: what is kept, who reads it, how long, how to withdraw
+  or ask for it, each sentence traced to what the designs and the code do).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
