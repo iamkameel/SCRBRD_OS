@@ -8,7 +8,9 @@
  *   - ONLY CONSENTED ROWS: the rows are exactly the boys whose consent to his
  *     union is in force at that school, by a direct count over passport_consent;
  *     a boy of the same school without one is not there (D1, §4.1).
- *   - A ROW IS A NAME, A SCHOOL AND A SIDE (D3, §4.3–4.4), in the server's order.
+ *   - A ROW IS A NAME, A SCHOOL AND A SIDE (D3, §4.3–4.4), in the server's order,
+ *     and his playing styles in words (S5, Q4: "Right-hand bat · spin"), a
+ *     style not recorded left out; no figure, role or arm beside them.
  *   - THE EMPTY RESULT and A FAILED OPEN, word for word, with no reason (§4.2).
  *   - OPENING ONE WORKS: his name and his lines, by his id (D6), and the list
  *     is read again on return.
@@ -238,8 +240,12 @@ try {
   const side = (await q(`select team_code from player where id = $1`, [PILLAY]))[0].team_code;
   const pRow = shown.find((r) => r.id === PILLAY);
   const words = (pRow?.text ?? "").split("\n").map((t) => t.trim()).filter(Boolean);
-  ok("his row is his name, his school and his side, and nothing else",
-     words[0] === "R Pillay" && words[1] === `Hilton College · ${side}` && words.slice(2).every((w) => w === "›"), words);
+  const st = (await q(`select batting_style, bowling_style from player where id = $1`, [PILLAY]))[0];
+  ok("the seed has him batting right-handed with no bowling style recorded", st.batting_style === "R" && st.bowling_style === null, st);
+  ok("his row is his name, his school, his side and how he bats in words, and nothing else (S5)",
+     words[0] === "R Pillay" && words[1] === `Hilton College · ${side}` && words[2] === "Right-hand bat"
+     && words.slice(3).every((w) => w === "›"), words);
+  ok("...a style not recorded is left out, never 'unknown'", !/unknown|not recorded|·\s*$/i.test(await inner(s.page, `selection-styles-${PILLAY}`)));
   ok("no figure, honour, rank or birthday anywhere on the list",
      !/\d+ (runs|wickets|innings)|average|honour|cap #|rank|born|birthday|date of birth/i.test(await inner(s.page, "selection")));
   const listAnswer = s.answers.filter((a) => a.path === "passport_union_list").at(-1);
@@ -247,6 +253,25 @@ try {
      /no-store/.test(listAnswer?.cache) && s.answers.filter((a) => /^passport_union_(orgs|schools)$/.test(a.path)).every((a) => /no-store/.test(a.cache)), s.answers);
   const afterList = await reads();
   ok("his mother's log gains the list, under the selector's name", afterList.list === before.list + 1 && afterList.passport === before.passport, afterList);
+
+  group("His playing styles, in words (S5, Q4): roster identity, never a figure");
+  // His coach records that he bowls spin; the next list says so in words.
+  await q(`update player set bowling_style = 'S' where id = $1`, [PILLAY]);
+  try {
+    await tid(s.page, "selection-list").click();
+    ok("the list answers again", await listed(s.page));
+    ok("his row reads 'Right-hand bat · spin'", (await inner(s.page, `selection-styles-${PILLAY}`)).trim() === "Right-hand bat · spin",
+       await inner(s.page, `selection-styles-${PILLAY}`));
+    const answer = s.answers.filter((a) => a.path === "passport_union_list").at(-1);
+    ok("...answered no-store", /no-store/.test(answer?.cache ?? ""));
+    const all = await inner(s.page, "selection");
+    ok("...and still no figure, role, arm, rank or birthday anywhere on the list",
+       !/\d+ (runs|wickets|innings)|average|economy|strike rate|honour|cap #|rank|born|birthday|date of birth|all-?rounder|left-arm|right-arm|unknown/i.test(all), all.slice(0, 300));
+    const order = await s.page.$$eval('[data-testid^="selection-row-"]', (els) => els.map((e) => e.getAttribute("data-testid")));
+    ok("...in the same order as before the styles (school, then surname)", order.join() === shown.map((r) => `selection-row-${r.id}`).join(), order);
+  } finally {
+    await q(`update player set bowling_style = null where id = $1`, [PILLAY]);
+  }
 
   group("A name narrows within the list, and an empty answer says so in words (Q6, S3)");
   await tid(s.page, "selection-name").fill("nobody-by-this-name");

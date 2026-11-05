@@ -5,9 +5,10 @@
  *
  * The screen asks, in order: the institution (a chip, only when he reads at
  * two), a school or an age group (at least one, D2), and optionally a name
- * within that (Q6). Each row is a name, a school and a side, and nothing else
- * (D3, §4.3–4.4): no figure, honour, ranking or date of birth, and the order
- * is the server's (school, then surname). Tapping a row opens that boy's
+ * within that (Q6). Each row is a name, a school and a side, and his playing
+ * styles in words when they are recorded ("Right-hand bat · spin"; S5, Q4),
+ * and nothing else (D3, §4.3–4.4): no figure, role, honour, ranking or date
+ * of birth, and the order is the server's (school, then surname). Tapping a row opens that boy's
  * passport by id through passport() and passport_name() (D6).
  *
  * Every row shown is a read his family sees (D5): so a list is asked for only
@@ -232,6 +233,12 @@ function SelectionView() {
                         <span style={{ display: "block", fontFamily: D.body, fontSize: "12px", color: D.textMuted, overflowWrap: "anywhere" }}>
                           {[r.school, r.side].filter(Boolean).join(" · ")}
                         </span>
+                        {r.styleLine && (
+                          <span data-testid={`selection-styles-${r.id}`}
+                            style={{ display: "block", fontFamily: D.body, fontSize: "12px", color: D.textMuted, overflowWrap: "anywhere" }}>
+                            {r.styleLine}
+                          </span>
+                        )}
                       </span>
                       <span aria-hidden="true" style={{ fontFamily: D.body, fontSize: "16px", color: D.textMuted }}>›</span>
                     </button>
