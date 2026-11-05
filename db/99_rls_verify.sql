@@ -9912,6 +9912,186 @@ EXCEPTION WHEN OTHERS THEN
 END $$ LANGUAGE plpgsql;
 -- └── db/133 (section 112) ─────────────────────────────────────────────
 
+-- ┌── db/135 (section 113). Two phones scoring one match, slice 1 ─────────
+-- Invented, as the owner. Hilton's U13F at home to Westville's 1XI, live,
+-- one over in the log (MP), with the pen held by the U13F scorer (sc) on
+-- 'v135-pen' at generation 2, its lease live; a second U13F scorer (sc2) on
+-- 'v135-other' is the second phone. MF is the same fixture finished (a ball
+-- set aside there is db/132's late ball, not a second account). People: the
+-- director of sport (ds), the office (schooladmin), a U13E coach (ecoach).
+CREATE OR REPLACE FUNCTION _v135_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  v_t0 timestamptz := (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg';
+  ids jsonb; m uuid; k text;
+BEGIN
+  ids := _v71_people('v135', ARRAY[
+    ARRAY['sc',     'scorer',          HIL::text, 'U13F', ''],
+    ARRAY['sc2',    'scorer',          HIL::text, 'U13F', ''],
+    ARRAY['ds',     'directorofsport', HIL::text, '',     ''],
+    ARRAY['office', 'schooladmin',     HIL::text, '',     ''],
+    ARRAY['ecoach', 'coach',           HIL::text, 'U13E', '']]);
+  FOREACH k IN ARRAY ARRAY['MP', 'MF'] LOOP
+    INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+    VALUES (HIL, 'U13F', WES, '1XI', 'x', v_t0, 'cricket', 'T20', 1, 'live') RETURNING id INTO m;
+    ids := ids || jsonb_build_object(k, m);
+    PERFORM _v114_innings(m, 0::smallint, 'U13F', 'Westville 1XI', ARRAY[1, 0, 0, 0, 0, 0], NULL, (ids->>'sc')::uuid, false);
+    INSERT INTO scoring_session (match_id, school_id, state, epoch, holder_user_id, holder_device, lease_until)
+    VALUES (m, HIL, 'active', 2, (ids->>'sc')::uuid, 'v135-pen', now() + interval '90 seconds');
+  END LOOP;
+  UPDATE match SET status = 'complete' WHERE id = (ids->>'MF')::uuid;
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A match's second-account notices, as the owner reads them.
+CREATE OR REPLACE FUNCTION _v135_notices(p_match uuid) RETURNS jsonb AS $$
+  SELECT jsonb_build_object(
+    'n', count(*),
+    'to_one', count(*) FILTER (WHERE n.recipient_id IS NOT NULL AND n.kind = 'system' AND n.required_capability = 'news.read'),
+    'to_office', count(*) FILTER (WHERE n.recipient_id IS NULL AND n.scope_level = 'school' AND n.team_code IS NULL
+                                    AND n.kind = 'fixture' AND n.required_capability = 'fixture.update'),
+    'to_approvers', count(*) FILTER (WHERE n.recipient_id IS NULL AND n.scope_level = 'school' AND n.team_code IS NULL
+                                       AND n.required_capability = 'scoring.amend.approve'),
+    'recipient', min(n.recipient_id::text),
+    'medium', bool_and(n.urgency = 'medium' AND n.subject_person_id IS NULL AND NOT n.is_public),
+    'titles', coalesce(jsonb_agg(DISTINCT n.title), '[]'::jsonb),
+    'bodies', coalesce(jsonb_agg(DISTINCT n.body), '[]'::jsonb),
+    'named', count(*) FILTER (WHERE EXISTS (SELECT 1 FROM player p
+                                             WHERE position(p.full_name IN n.title || ' ' || n.body) > 0)
+                                 OR EXISTS (SELECT 1 FROM app_user u
+                                             WHERE u.name IS NOT NULL AND position(u.name IN n.title || ' ' || n.body) > 0)))
+    FROM notification n
+   WHERE n.subject_kind = 'match' AND n.subject_id = p_match AND n.title LIKE 'Second account set aside%'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/135 (section 113) ─────────────────────────────────────────────
+
+-- ┌── db/136 (section 114). A second account (docs/design/TWO_PHONES.md
+-- slice 2; Kameel, 5 Nov 2026, "All seven as recommended"). Invented, as the
+-- owner; every name a placeholder. A Hilton U12F friendly against
+-- Westville, both innings sealed and the match finished, every ball of it
+-- scored by 'pen' — a director of sport, who holds the approval capability
+-- (R6's case: at a small school the director of sport scores). A second
+-- phone, 'sender's (a principal, who holds it too), set aside four balls of
+-- the first over: two that say what the pen's say, one that differs, and one
+-- the other phone was right about. 'third' (a director of sport who kept
+-- neither book) decides; 'conf' (a principal) asks whether the result may be
+-- confirmed; 'req' (a scorer) and 'none' (a spectator) hold no approval.
+CREATE OR REPLACE FUNCTION _v136_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  v_t0 timestamptz := (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg';
+  ids jsonb; m uuid; k text[]; i int;
+BEGIN
+  ids := _v71_people('v136', ARRAY[
+    ARRAY['pen',    'directorofsport', HIL::text, '', ''],
+    ARRAY['sender', 'principal',       HIL::text, '', ''],
+    ARRAY['third',  'directorofsport', HIL::text, '', ''],
+    ARRAY['conf',   'principal',       HIL::text, '', ''],
+    ARRAY['req',    'scorer',          HIL::text, '', ''],
+    ARRAY['none',   'spectator',       HIL::text, '', ''],
+    ARRAY['holder', 'directorofsport', HIL::text, '', ''],
+    ARRAY['own',    'principal',       HIL::text, '', '']]);
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U12F', WES, '1XI', 'x', v_t0, 'cricket', 'T20', 1, 'live') RETURNING id INTO m;
+  k := _v114_innings(m, 0::smallint, 'U12F', 'Westville 1XI', ARRAY[1, 1, 4, 1, 1, 1], NULL, (ids->>'pen')::uuid);
+  PERFORM _v114_innings(m, 1::smallint, 'Westville 1XI', 'U12F', ARRAY[0, 0, 0, 0, 0, 0], 10, (ids->>'pen')::uuid);
+  UPDATE match SET status = 'complete' WHERE id = m;
+  ids := ids || jsonb_build_object('M', m, 'k', to_jsonb(k));
+  -- The second phone's account of 0.1, 0.2, 0.3 and 0.4: 1, 1, 6 and 2.
+  FOR i IN 1..4 LOOP
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                       idempotency_key, body, fingerprint)
+    VALUES (m, HIL, 0, 1, (ids->>'sender')::uuid, 'v136-phone', 'v136-held-' || m || '-' || i,
+            jsonb_build_object('clientSeq', i, 'innings', 0,
+              'payload', jsonb_build_object('kind', 'ball', 'type', 'run', 'value', (ARRAY[1, 1, 6, 2])[i], 'innings', 0)),
+            md5('v136-held-' || m || '-' || i));
+    ids := ids || jsonb_build_object('q' || i, currval(pg_get_serial_sequence('ball_event_quarantine', 'id')));
+  END LOOP;
+  -- A third phone's ball, 'own's, open (the red-team's F3): its scorer is a
+  -- party to the match's second accounts.
+  INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                     idempotency_key, body, fingerprint)
+  VALUES (m, HIL, 0, 1, (ids->>'own')::uuid, 'v136-third-phone', 'v136-held-' || m || '-5',
+          '{"clientSeq": 5, "innings": 0, "payload": {"kind": "ball", "type": "run", "value": 1, "innings": 0}}'::jsonb,
+          md5('v136-held-' || m || '-5'));
+  ids := ids || jsonb_build_object('q5', currval(pg_get_serial_sequence('ball_event_quarantine', 'id')));
+  -- The pen's 0.5 itself, held too (same key, same fingerprint): a release
+  -- finds it in the log and closes it as superseded.
+  INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                     idempotency_key, body, fingerprint)
+  VALUES (m, HIL, 0, 1, (ids->>'sender')::uuid, 'v136-phone', k[5],
+          '{"clientSeq": 6, "innings": 0, "payload": {"kind": "ball", "type": "run", "value": 1, "innings": 0}}'::jsonb,
+          (SELECT b.fingerprint FROM ball_event b WHERE b.idempotency_key = k[5]));
+  ids := ids || jsonb_build_object('q6', currval(pg_get_serial_sequence('ball_event_quarantine', 'id')));
+  -- 'holder' holds the pen now and has scored nothing (the red-team's F3).
+  INSERT INTO scoring_session (match_id, school_id, state, epoch, holder_user_id, holder_device, lease_until)
+  VALUES (m, HIL, 'active', 1, (ids->>'holder')::uuid, 'v136-pen-now', now() + interval '90 seconds')
+  ON CONFLICT (match_id) DO UPDATE SET state = 'active', holder_user_id = EXCLUDED.holder_user_id,
+    holder_device = EXCLUDED.holder_device, lease_until = EXCLUDED.lease_until;
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A match's second_account_resolved rows, as the owner reads them.
+CREATE OR REPLACE FUNCTION _v136_audit(p_match uuid) RETURNS jsonb AS $$
+  SELECT coalesce(jsonb_agg(jsonb_build_object('actor', s.actor_id, 'from', s.from_user, 'to', s.to_user,
+                                               'epoch', s.epoch, 'detail', s.detail) ORDER BY s.id), '[]'::jsonb)
+    FROM scoring_audit s WHERE s.match_id = p_match AND s.event = 'second_account_resolved'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v136_balls(p_match uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM ball_event WHERE match_id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/136 (section 114) ─────────────────────────────────────────────
+-- ┌── db/137 (section 115) ─────────────────────────────────────────────
+-- An office (user.role.assign at Hilton) and two appointments: a U13F coach
+-- for the 2026 season, dated from ten days ago to a fortnight ahead
+-- (a_season), and a scorer with no season (a_none).
+CREATE OR REPLACE FUNCTION _v137_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  ids jsonb; a uuid;
+BEGIN
+  ids := _v71_people('v137', ARRAY[
+    ARRAY['office', 'schooladmin', HIL::text, '', ''],
+    ARRAY['coach',  'scorer',      HIL::text, '', ''],
+    ARRAY['scw',    'scorer',      HIL::text, '', '']]);
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, season, valid_from, valid_until)
+  VALUES ((ids->>'coach')::uuid, 'coach', HIL, 'U13F', '2026', sa_today() - 10, sa_today() + 14) RETURNING id INTO a;
+  ids := ids || jsonb_build_object('a_season', a);
+  INSERT INTO role_assignment (person_id, role, school_id)
+  VALUES ((ids->>'scw')::uuid, 'scorer', HIL) RETURNING id INTO a;
+  ids := ids || jsonb_build_object('a_none', a);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What the log trigger does with a season that moves. db/01's guard refuses
+-- every such update, and it cannot be set aside here (ALTER TABLE is refused
+-- while the verifier's transaction holds deferred trigger events), so the
+-- trigger is re-created, from its own live definition, on a scratch copy of
+-- the row, which keeps the row's id: the change row it writes is the
+-- assignment's. Read before the whole of it is undone; or what refused it.
+CREATE OR REPLACE FUNCTION _v137_season_logged(p_id uuid, p_season text) RETURNS jsonb AS $$
+DECLARE j jsonb; v_def text;
+BEGIN
+  SELECT pg_get_triggerdef(t.oid) INTO v_def FROM pg_trigger t
+   WHERE t.tgrelid = 'role_assignment'::regclass AND t.tgname = 'role_assignment_change_logged';
+  IF position(' ON public.role_assignment ' IN coalesce(v_def, '')) = 0 THEN
+    RETURN jsonb_build_object('error', 'no log trigger to copy: ' || coalesce(v_def, 'none'));
+  END IF;
+  BEGIN
+    CREATE TEMP TABLE _v137_ra AS SELECT * FROM role_assignment WHERE id = p_id;
+    EXECUTE replace(v_def, ' ON public.role_assignment ', ' ON pg_temp._v137_ra ');
+    UPDATE pg_temp._v137_ra SET season = p_season;
+    SELECT coalesce(jsonb_agg(jsonb_build_object('was', c.was, 'became', c.became) ORDER BY c.id), '[]'::jsonb) INTO j
+      FROM role_assignment_change c WHERE c.assignment_id = p_id;
+    RAISE EXCEPTION 'v137-undo';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'v137-undo' THEN RETURN jsonb_build_object('error', SQLSTATE || ' ' || SQLERRM); END IF;
+  END;
+  RETURN j;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/137 (section 115) ─────────────────────────────────────────────
 -- ┌── GA-I20 A2 (section 116). Fixtures: one mother's guardian links in every
 -- state, and another family's (N4, my_links; no migration). Invented, as the
 -- owner; every name a placeholder. g holds a guardian assignment at Hilton
@@ -11024,7 +11204,7 @@ BEGIN
   -- ── Quarantine has a way out ──────────────────────────────────
   -- db/14. The door is a SECURITY DEFINER function that checks its own
   -- authority; the walk tools/smoke-quarantine.mjs exercises who may open it.
-  PERFORM _assert(to_regprocedure('quarantine_resolve(bigint,boolean,jsonb,text)') IS NOT NULL,
+  PERFORM _assert(to_regprocedure('quarantine_resolve(bigint,boolean,jsonb,text,text)') IS NOT NULL,
     'quarantine_resolve() is missing — a quarantined ball has no way out');
 
   -- ── Every definer function names its search path ───────────────
@@ -12276,10 +12456,10 @@ BEGIN
   --     neither race it for a seq nor append after it unjudged. Behaviour is
   --     proved in the walk; here, that the function in the database is the
   --     one db/37 wrote.
-  PERFORM _assert(pg_get_functiondef('quarantine_resolve(bigint,boolean,jsonb,text)'::regprocedure)
+  PERFORM _assert(pg_get_functiondef('quarantine_resolve(bigint,boolean,jsonb,text,text)'::regprocedure)
                     ~ 'p_row->>''contact''.*p_row->>''trajectory''',
     'quarantine_resolve() drops contact and trajectory from a released ball');
-  PERFORM _assert(pg_get_functiondef('quarantine_resolve(bigint,boolean,jsonb,text)'::regprocedure)
+  PERFORM _assert(pg_get_functiondef('quarantine_resolve(bigint,boolean,jsonb,text,text)'::regprocedure)
                     ~ 'FROM scoring_session s WHERE s.match_id = q.match_id FOR UPDATE',
     'quarantine_resolve() no longer takes the per-match lock the live write path takes');
   PERFORM _assert(EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ball_event_quarantine_resolution_check'
@@ -34695,6 +34875,444 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   -- └── end of section 112
   -- └── db/133 (section 112) ──────────────────────────────────────────
 
+  -- ┌── db/135 (section 113) ─────────────────────────────────────────
+  -- ── 113. Two phones scoring one match: the second account is told ──
+  -- docs/design/TWO_PHONES.md slice 1 (Kameel, 5 Nov 2026, all seven as
+  -- recommended). Rows are _v135_stage()'s, invented; every set-aside row is
+  -- written as the write path writes it, through scrbrd_app as the scorer
+  -- who sent it. What each label holds:
+  --   (told)      a ball from a phone that does not hold the pen, on a match
+  --               in play, raises three notices: to its scorer alone, to the
+  --               office (fixture.update) and to the approvers
+  --               (scoring.amend.approve), the fixture by its sides, the
+  --               design's body, medium, about no child, naming nobody
+  --   (once)      a second such ball raises none: once per match and reader
+  --   (pen)       a stale ball from the pen's own phone raises none
+  --   (finished)  a ball set aside at a finished match is db/132's late
+  --               ball, not a second account
+  --   (readers)   the sender reads his one; the director reads the school's;
+  --               a coach of another side reads none
+  --   (count)     second_account_waiting(): the pen's phone is told the
+  --               other phone's balls (not its over change, not its own);
+  --               the other phone, and the pen's scorer on another phone, 0
+  --   (grants)    both definers pinned; the count the app's, the trigger
+  --               nobody's, PUBLIC's neither; neither body reads a player, a
+  --               striker or a person's name, nor the database's day
+  --
+  -- Not yet falsified one by one; the walk tools/smoke-browser-two-phones.mjs
+  -- proves the same notices and count end to end through the API.
+  DECLARE
+    y   jsonb := _v135_stage();
+    MP  uuid := (y->>'MP')::uuid;
+    MF  uuid := (y->>'MF')::uuid;
+    SC  uuid := (y->>'sc')::uuid;
+    SC2 uuid := (y->>'sc2')::uuid;
+    j   jsonb;
+    t   text := 'Second account set aside · Hilton College U13F v Westville Boys'' High 1XI';
+    n   integer;
+    f   text;
+    src text;
+  BEGIN
+    -- (told)
+    PERFORM _as(SC2);
+    PERFORM set_config('app.device_id', 'v135-other', true);
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                       idempotency_key, body, fingerprint)
+    VALUES (MP, match_school(MP), 1, 2, SC2, 'v135-other', 'v135-a-' || MP, '{"payload":{"kind":"ball"}}'::jsonb, md5('v135-a-' || MP));
+    j := _v135_notices(MP);
+    PERFORM _assert((j->>'n')::int = 3 AND (j->>'to_one')::int = 1 AND (j->>'to_office')::int = 1 AND (j->>'to_approvers')::int = 1
+                    AND j->>'recipient' = SC2::text AND (j->>'medium')::boolean AND j->'titles' = jsonb_build_array(t)
+                    AND j->'bodies' = jsonb_build_array('Balls from a second phone were set aside for review, not added to the scorecard.')
+                    AND (j->>'named')::int = 0,
+      format('§113 (told): the notices for a second phone''s ball are %s, not three (sender, office, approvers), unnamed, titled %s', j, t));
+
+    -- (once)
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                       idempotency_key, body, fingerprint)
+    VALUES (MP, match_school(MP), 1, 2, SC2, 'v135-other', 'v135-b-' || MP, '{"payload":{"kind":"ball"}}'::jsonb, md5('v135-b-' || MP));
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                       idempotency_key, body, fingerprint)
+    VALUES (MP, match_school(MP), 1, 2, SC2, 'v135-other', 'v135-c-' || MP, '{"payload":{"kind":"bowler"}}'::jsonb, md5('v135-c-' || MP));
+    PERFORM _assert((_v135_notices(MP)->>'n')::int = 3, format('§113 (once): two more balls make %s notices, not three', _v135_notices(MP)->>'n'));
+
+    -- (pen)
+    PERFORM _as(SC);
+    PERFORM set_config('app.device_id', 'v135-pen', true);
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                       idempotency_key, body, fingerprint)
+    VALUES (MP, match_school(MP), 1, 2, SC, 'v135-pen', 'v135-d-' || MP, '{"payload":{"kind":"ball"}}'::jsonb, md5('v135-d-' || MP));
+    PERFORM _assert((_v135_notices(MP)->>'n')::int = 3 AND _v135_notices(MP)->>'recipient' = SC2::text,
+      format('§113 (pen): a stale ball from the pen''s own phone told someone: %s', _v135_notices(MP)));
+
+    -- (finished)
+    PERFORM _as(SC2);
+    PERFORM set_config('app.device_id', 'v135-other', true);
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                       idempotency_key, body, fingerprint)
+    VALUES (MF, match_school(MF), 1, 2, SC2, 'v135-other', 'v135-e-' || MF, '{"payload":{"kind":"ball"}}'::jsonb, md5('v135-e-' || MF));
+    PERFORM _assert((_v135_notices(MF)->>'n')::int = 0, format('§113 (finished): a ball after the finish raised %s second-account notices', _v135_notices(MF)->>'n'));
+
+    -- (readers)
+    SELECT count(*)::int INTO n FROM my_notifications x WHERE x.subject_id = MP AND x.title = t;
+    PERFORM _assert(n = 1, format('§113 (readers): the second phone''s scorer reads %s notices, not his one', n));
+    PERFORM _as((y->>'ds')::uuid);
+    SELECT count(*)::int INTO n FROM my_notifications x WHERE x.subject_id = MP AND x.title = t;
+    PERFORM _assert(n >= 1, format('§113 (readers): the director of sport reads %s notices, not the school''s', n));
+    PERFORM _as((y->>'office')::uuid);
+    SELECT count(*)::int INTO n FROM my_notifications x WHERE x.subject_id = MP AND x.title = t;
+    PERFORM _assert(n >= 1, format('§113 (readers): the office reads %s notices, not the office''s', n));
+    PERFORM _as((y->>'ecoach')::uuid);
+    SELECT count(*)::int INTO n FROM my_notifications x WHERE x.subject_id = MP AND x.title = t;
+    PERFORM _assert(n = 0, format('§113 (readers): a coach of another side reads %s notices', n));
+
+    -- (count)
+    PERFORM _as(SC);
+    PERFORM set_config('app.device_id', 'v135-pen', true);
+    n := second_account_waiting(MP);
+    PERFORM _assert(n = 2, format('§113 (count): the pen''s phone is told %s balls from the other phone, not 2', n));
+    PERFORM set_config('app.device_id', 'v135-elsewhere', true);
+    n := second_account_waiting(MP);
+    PERFORM _assert(n = 0, format('§113 (count): the pen''s scorer on another phone is told %s, not 0', n));
+    PERFORM _as(SC2);
+    PERFORM set_config('app.device_id', 'v135-other', true);
+    n := second_account_waiting(MP);
+    PERFORM _assert(n = 0, format('§113 (count): the other phone is told %s, not 0', n));
+    PERFORM set_config('app.device_id', '', true);
+
+    -- (grants)
+    FOREACH f IN ARRAY ARRAY['second_account_notice()', 'second_account_waiting(uuid)'] LOOP
+      PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f::regprocedure AND p.prosecdef
+                                AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))),
+        format('§113 (grants): %s is not a definer with its search_path pinned', f));
+      PERFORM _assert(NOT has_function_privilege('public', f, 'EXECUTE'), format('§113 (grants): %s is PUBLIC''s', f));
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_roles ro WHERE ro.rolname IN ('anon', 'authenticated', 'service_role')
+                                    AND has_function_privilege(ro.oid, f::regprocedure, 'EXECUTE')),
+        format('§113 (grants): %s is a managed host''s API role''s', f));
+      SELECT prosrc INTO src FROM pg_proc WHERE oid = f::regprocedure;
+      PERFORM _assert(src !~* '\m(striker_id|non_striker_id|bowler_id|dismissed_id|full_name|current[_]date)\M'
+                      AND src !~* '\mfrom\s+(player|app_user)\M' AND src !~* '\mjoin\s+(player|app_user)\M',
+        format('§113 (grants): %s reads a player, a striker, a person''s name or the database''s day', f));
+    END LOOP;
+    PERFORM _assert(has_function_privilege('scrbrd_app', 'second_account_waiting(uuid)', 'EXECUTE'),
+      '§113 (grants): the application cannot ask second_account_waiting()');
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'second_account_notice()', 'EXECUTE'),
+      '§113 (grants): the application can call the notice''s trigger function');
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger WHERE NOT tgisinternal AND tgenabled <> 'D'
+                              AND tgrelid = 'ball_event_quarantine'::regclass AND tgname = 'second_account_notice'),
+      '§113 (grants): the second-account trigger is missing or disabled');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('app.device_id', '', true);
+  -- └── end of section 113
+  -- └── db/135 (section 113) ──────────────────────────────────────────
+
+  -- ┌── db/136 (section 114) ─────────────────────────────────────────
+  -- ── 114. A second account: who may decide it, and the record it leaves ──
+  -- docs/design/TWO_PHONES.md slice 2 (R4–R6); Kameel, 5 Nov 2026. Rows are
+  -- _v136_stage()'s; every decision is a person's call of
+  -- quarantine_resolve() through scrbrd_app, as the routes make it.
+  --   (held)     while one set-aside row is open the result is not
+  --              confirmable: ball_held
+  --   (sender)   the phone's own scorer → cannot_release_your_own
+  --   (pen)      the pen-holder, a director of sport who scored every ball →
+  --              you_scored_this_match (R6), asked after the sender's rule
+  --   (third)    a director of sport who kept neither book: pen stands, with
+  --              the pen's ball and a note → ok; one scoring_audit row
+  --              second_account_resolved naming the decider, both scorers,
+  --              counterpart_key, the note, both epochs and the ball (0.1);
+  --              audit_log() words it "Set aside a second account of 0.1: the
+  --              pen's ball stands"
+  --   (party)    the red-team's F3: the person holding the pen now, before his
+  --              first ball → you_hold_the_pen (both functions); a third
+  --              phone's scorer with his own balls open → you_scored_this_match
+  --   (counter)  a counterpart that is not this match's ball → no_such_counterpart
+  --   (superseded) a release of a ball the log already holds under its key →
+  --              already_recorded, closed superseded, its audit row, no ball
+  --   (bulk)     two rows set aside in one statement write no ball_event row
+  --   (amend)    the other phone was right (Kameel, 5 Nov, "A"): the third
+  --              approver opens the amendment of the pen's 0.4 himself
+  --              (second_account_amend()); a spectator and a scorer with no
+  --              approval → not_permitted, the sender → cannot_release_your_own,
+  --              the pen-holder → you_scored_this_match; asked again, the same
+  --              request; he may not approve it (cannot_approve_your_own); it
+  --              is named in the note, the audit row carries it, the words say so
+  --   (after)    every row decided (and the amendment declined): confirmable
+  --   (grants)   quarantine_resolve(…, text) is a pinned SECURITY DEFINER,
+  --              not PUBLIC's, the application's; the four-argument door is gone
+  DECLARE
+    y   jsonb := _v136_stage();
+    M   uuid := (y->>'M')::uuid;
+    PEN uuid := (y->>'pen')::uuid;
+    SND uuid := (y->>'sender')::uuid;
+    TRD uuid := (y->>'third')::uuid;
+    CNF uuid := (y->>'conf')::uuid;
+    REQ uuid := (y->>'req')::uuid;
+    NOB uuid := (y->>'none')::uuid;
+    HLD uuid := (y->>'holder')::uuid;
+    OWN uuid := (y->>'own')::uuid;
+    K   text[] := ARRAY(SELECT jsonb_array_elements_text(y->'k'));
+    r record; j jsonb; got text; n0 integer; a uuid;
+    l record; i integer; n integer; x text; w text; v_at timestamptz; v_key text;
+  BEGIN
+    -- (held)
+    PERFORM _as(CNF);
+    SELECT * INTO r FROM match_confirmable(M);
+    PERFORM _assert(r.ok = false AND r.reason = 'ball_held', format('§114 (held): four open rows answered %s/%s', r.ok, r.reason));
+
+    -- (sender)
+    PERFORM _as(SND);
+    SELECT * INTO r FROM quarantine_resolve((y->>'q1')::bigint, false, NULL, 'mine', K[1]);
+    PERFORM _assert(r.ok = false AND r.reason = 'cannot_release_your_own', format('§114 (sender): the sender answered %s/%s', r.ok, r.reason));
+
+    -- (pen)
+    PERFORM _as(PEN);
+    SELECT * INTO r FROM quarantine_resolve((y->>'q1')::bigint, false, NULL, 'pen stands', K[1]);
+    PERFORM _assert(r.ok = false AND r.reason = 'you_scored_this_match', format('§114 (pen): the pen-holder answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM quarantine_resolve((y->>'q3')::bigint, true, '{"kind": "ball", "ball_type": "run", "value": 6}'::jsonb, NULL, NULL);
+    PERFORM _assert(r.ok = false AND r.reason = 'you_scored_this_match', format('§114 (pen): the pen-holder''s release answered %s/%s', r.ok, r.reason));
+    PERFORM _assert(_v136_audit(M) = '[]'::jsonb, '§114 (pen): a refusal wrote an audit row');
+
+    -- (party) the red-team's F3: the person holding the pen now, before his
+    -- first ball, and a third phone's scorer with his own balls open.
+    PERFORM _as(HLD);
+    SELECT * INTO r FROM quarantine_resolve((y->>'q1')::bigint, false, NULL, 'pen stands', K[1]);
+    PERFORM _assert(r.ok = false AND r.reason = 'you_hold_the_pen', format('§114 (party): the pen-holder with no ball answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM second_account_amend((y->>'q1')::bigint, K[1], 'Second account: x');
+    PERFORM _assert(r.ok = false AND r.reason = 'you_hold_the_pen', format('§114 (party): the pen-holder''s amendment answered %s/%s', r.ok, r.reason));
+    PERFORM _as(OWN);
+    SELECT * INTO r FROM quarantine_resolve((y->>'q1')::bigint, false, NULL, 'pen stands', K[1]);
+    PERFORM _assert(r.ok = false AND r.reason = 'you_scored_this_match', format('§114 (party): a third phone''s scorer answered %s/%s', r.ok, r.reason));
+    PERFORM _assert(_v136_audit(M) = '[]'::jsonb, '§114 (party): a refusal wrote an audit row');
+
+    -- (counter)
+    PERFORM _as(TRD);
+    SELECT * INTO r FROM quarantine_resolve((y->>'q1')::bigint, false, NULL, 'x', 'v136-no-such-ball');
+    PERFORM _assert(r.ok = false AND r.reason = 'no_such_counterpart', format('§114 (counter): answered %s/%s', r.ok, r.reason));
+
+    -- (third)
+    n0 := _v136_balls(M);
+    SELECT * INTO r FROM quarantine_resolve((y->>'q1')::bigint, false, NULL, '  Both books say 1  ', K[1]);
+    PERFORM _assert(r.ok, format('§114 (third): the third approver was refused: %s', r.reason));
+    j := _v136_audit(M);
+    PERFORM _assert(jsonb_array_length(j) = 1, format('§114 (third): %s audit rows, not one', jsonb_array_length(j)));
+    PERFORM _assert((j->0->>'actor')::uuid = TRD AND (j->0->>'from')::uuid = SND AND (j->0->>'to')::uuid = PEN
+                    AND (j->0->>'epoch')::int = 1,
+      format('§114 (third): the row does not name the decider, the other book''s scorer and the pen''s: %s', j->0));
+    PERFORM _assert(j->0->'detail' @> jsonb_build_object('quarantine_id', (y->>'q1')::bigint, 'resolution', 'rejected',
+                                                          'counterpart_key', K[1], 'note', 'Both books say 1',
+                                                          'submitted_epoch', 0, 'current_epoch', 1, 'ball', '0.1'),
+      format('§114 (third): the detail reads %s', j->0->'detail'));
+    PERFORM _assert((SELECT q.resolution FROM ball_event_quarantine q WHERE q.id = (y->>'q1')::bigint) = 'rejected',
+      '§114 (third): the row was not stamped rejected');
+
+    -- (bulk) the one-tap close: two rows, one statement, no ball written.
+    SELECT string_agg(x.ok::text || coalesce(x.reason, ''), ',') INTO got
+      FROM unnest(ARRAY[(y->>'q2')::bigint, (y->>'q3')::bigint]) WITH ORDINALITY AS t(id, o),
+           LATERAL quarantine_resolve(t.id, false, NULL, 'Both accounts agree', K[t.o + 1]) x;
+    PERFORM _assert(got = 'true,true', format('§114 (bulk): answered %s', got));
+    PERFORM _assert(_v136_balls(M) = n0, format('§114 (bulk): ball_event went from %s to %s rows', n0, _v136_balls(M)));
+    PERFORM _assert(jsonb_array_length(_v136_audit(M)) = 3, '§114 (bulk): not one audit row per row decided');
+    PERFORM _as(CNF);
+    SELECT * INTO r FROM match_confirmable(M);
+    PERFORM _assert(r.reason = 'ball_held', format('§114 (held): one open row answered %s/%s', r.ok, r.reason));
+
+    -- (amend) the other phone was right about 0.4: the reviewer who kept
+    -- neither book asks for the amendment of the pen's ball himself
+    -- (second_account_amend(); Kameel, 5 Nov 2026, "A"), under
+    -- quarantine_resolve()'s checks; he may not approve it himself.
+    PERFORM _as(NOB);
+    SELECT * INTO r FROM second_account_amend((y->>'q4')::bigint, K[4], 'Second account: the book says 2');
+    PERFORM _assert(r.ok = false AND r.reason = 'not_permitted', format('§114 (amend): a spectator answered %s/%s', r.ok, r.reason));
+    PERFORM _as(REQ);
+    SELECT * INTO r FROM second_account_amend((y->>'q4')::bigint, K[4], 'Second account: the book says 2');
+    PERFORM _assert(r.ok = false AND r.reason = 'not_permitted', format('§114 (amend): a scorer with no approval answered %s/%s', r.ok, r.reason));
+    PERFORM _as(SND);
+    SELECT * INTO r FROM second_account_amend((y->>'q4')::bigint, K[4], 'Second account: the book says 2');
+    PERFORM _assert(r.ok = false AND r.reason = 'cannot_release_your_own', format('§114 (amend): the sender answered %s/%s', r.ok, r.reason));
+    PERFORM _as(PEN);
+    SELECT * INTO r FROM second_account_amend((y->>'q4')::bigint, K[4], 'Second account: the book says 2');
+    PERFORM _assert(r.ok = false AND r.reason = 'you_scored_this_match', format('§114 (amend): the pen-holder answered %s/%s', r.ok, r.reason));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM scoring_amendment x WHERE x.match_id = M), '§114 (amend): a refused ask wrote a request');
+    PERFORM _as(TRD);
+    SELECT * INTO r FROM second_account_amend((y->>'q4')::bigint, 'v136-no-such-ball', 'Second account: the book says 2');
+    PERFORM _assert(r.ok = false AND r.reason = 'no_such_counterpart', format('§114 (amend): a ball not in the match answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM second_account_amend((y->>'q4')::bigint, K[4], 'Second account: the book says 2');
+    PERFORM _assert(r.ok AND r.amendment_id IS NOT NULL, format('§114 (amend): the third approver was refused: %s', r.reason));
+    a := r.amendment_id;
+    PERFORM _assert((SELECT x.requested_by = TRD AND x.state = 'pending' AND x.target_key = K[4] FROM scoring_amendment x WHERE x.id = a),
+      '§114 (amend): the request is not his, pending, on the pen''s 0.4');
+    SELECT * INTO r FROM second_account_amend((y->>'q4')::bigint, K[4], 'Second account: asked again');
+    PERFORM _assert(r.ok AND r.amendment_id = a, '§114 (amend): asked again, a second request was opened');
+    SELECT * INTO r FROM scoring_amendment_decide(a, true, 'Verify 136: my own');
+    PERFORM _assert(r.ok = false AND r.reason = 'cannot_approve_your_own', format('§114 (amend): he approved his own request: %s/%s', r.ok, r.reason));
+    PERFORM _assert(_v136_balls(M) = n0, '§114 (amend): the refused approval wrote a ball');
+    SELECT * INTO r FROM quarantine_resolve((y->>'q4')::bigint, false, NULL, 'The book says 2 · amendment ' || a, K[4]);
+    PERFORM _assert(r.ok, format('§114 (amend): refused %s', r.reason));
+    j := _v136_audit(M) -> 3;
+    PERFORM _assert(j->'detail'->>'amendment' = a::text AND j->'detail'->>'ball' = '0.4',
+      format('§114 (amend): the audit row reads %s', j));
+    -- audit_log() as the deciding director of sport (audit.read) reads it,
+    -- page by page as the screen pages it: every section before this one
+    -- wrote scoring rows at Hilton in this same transaction, at this same now().
+    got := NULL;
+    FOR i IN 1..100 LOOP
+      n := 0;
+      FOR l IN SELECT * FROM audit_log(NULL, ARRAY['scoring'], NULL, v_at, v_key, 200) LOOP
+        n := n + 1; v_at := l.at; v_key := l.key;
+        IF l.detail->>'event' = 'second_account_resolved' AND l.detail->>'note' = 'Both books say 1' THEN
+          got := l.action; x := l.detail->>'note';
+        ELSIF l.detail->>'event' = 'second_account_resolved' AND l.detail->>'amendment' = a::text THEN
+          w := l.action;
+        END IF;
+      END LOOP;
+      EXIT WHEN n < 200 OR (got IS NOT NULL AND w IS NOT NULL);
+    END LOOP;
+    PERFORM _assert(got = 'Set aside a second account of 0.1: the pen''s ball stands',
+      format('§114 (third): audit_log() words it [%s]', got));
+    PERFORM _assert(x = 'Both books say 1', '§114 (third): audit_log() does not carry the note');
+    PERFORM _assert(w = 'Set aside a second account of 0.4: an amendment was asked of the pen''s ball',
+      format('§114 (amend): audit_log() words it [%s]', w));
+    PERFORM _assert(_v136_balls(M) = n0, '§114 (amend): setting it aside wrote a ball');
+
+    -- (superseded) a release of a ball already in the log under its key
+    -- closes it as superseded and writes nothing; the record says so.
+    SELECT * INTO r FROM quarantine_resolve((y->>'q6')::bigint, true, '{"kind": "ball", "ball_type": "run", "value": 1}'::jsonb, NULL, NULL);
+    PERFORM _assert(r.ok = false AND r.reason = 'already_recorded', format('§114 (superseded): answered %s/%s', r.ok, r.reason));
+    PERFORM _assert((SELECT q.resolution FROM ball_event_quarantine q WHERE q.id = (y->>'q6')::bigint) = 'superseded'
+                    AND _v136_balls(M) = n0, '§114 (superseded): not closed as superseded, or a ball was written');
+    PERFORM _assert((SELECT count(*) FROM jsonb_array_elements(_v136_audit(M)) e
+                      WHERE e->'detail'->>'resolution' = 'superseded' AND (e->'detail'->>'quarantine_id')::bigint = (y->>'q6')::bigint) = 1,
+      '§114 (superseded): no audit row for it');
+    -- The third phone's ball: the pen stands.
+    SELECT * INTO r FROM quarantine_resolve((y->>'q5')::bigint, false, NULL, 'Both books say 1', K[5]);
+    PERFORM _assert(r.ok, format('§114 (party): the third phone''s ball could not be set aside: %s', r.reason));
+
+    -- (after) the amendment declined by another hand: nothing open, confirmable.
+    PERFORM _as(CNF);
+    SELECT * INTO r FROM scoring_amendment_decide(a, false, 'Verify 136: declined');
+    PERFORM _assert(r.ok, format('§114 (after): the decline was refused: %s', r.reason));
+    SELECT * INTO r FROM match_confirmable(M);
+    PERFORM _assert(r.ok AND r.reason IS NULL, format('§114 (after): every row decided answered %s/%s', r.ok, r.reason));
+
+    -- (grants)
+    PERFORM _assert(to_regprocedure('quarantine_resolve(bigint,boolean,jsonb,text)') IS NULL,
+      '§114 (grants): the four-argument quarantine_resolve() is still a door around you_scored_this_match');
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'quarantine_resolve(bigint,boolean,jsonb,text,text)'::regprocedure
+                              AND p.prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))),
+      '§114 (grants): quarantine_resolve() is not a SECURITY DEFINER with a pinned search_path');
+    PERFORM _assert(NOT has_function_privilege('public', 'quarantine_resolve(bigint,boolean,jsonb,text,text)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'quarantine_resolve(bigint,boolean,jsonb,text,text)', 'EXECUTE'),
+      '§114 (grants): quarantine_resolve() is PUBLIC''s, or not the application''s');
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'second_account_amend(bigint,text,text)'::regprocedure
+                              AND p.prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
+                    AND NOT has_function_privilege('public', 'second_account_amend(bigint,text,text)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'second_account_amend(bigint,text,text)', 'EXECUTE'),
+      '§114 (grants): second_account_amend() is not a pinned definer, or is PUBLIC''s, or not the application''s');
+    -- ...and scoring.amend.request is not widened: the table's own door still asks it.
+    PERFORM _assert((SELECT with_check FROM pg_policies WHERE tablename = 'scoring_amendment' AND policyname = 'scoring_amendment_insert')
+                      LIKE '%scoring.amend.request%', '§114 (grants): scoring_amendment_insert no longer asks scoring.amend.request');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 114
+  -- └── db/136 (section 114) ──────────────────────────────────────────
+  -- ┌── db/137 (section 115) ─────────────────────────────────────────
+  -- ── 115. An appointment's season is fixed (db/137; Kameel, 4 Nov 2026, "do both follow-ups next") ──
+  -- Staged by _v137_stage(); every change is the caller's own, through
+  -- scrbrd_app, unless it says the owner. What each label holds:
+  --   (season)  the office, who holds user.role.assign at Hilton, cannot
+  --             change an appointment's season: to another, to none, or
+  --             from none to one; each is check_violation in db/137's words,
+  --             the row is as it was, and no change row is written
+  --   (owner)   nor can the owner
+  --   (dates)   db/132's lock stands beside it: an end moved later is still
+  --             refused; an update that names the same season and brings the
+  --             end earlier goes through, one change row whose season is the
+  --             same before and after
+  --   (log)     the log trigger, as it stands, fires on a season moved (on a
+  --             scratch copy of the row, since the guard refuses every such
+  --             update): one change row, none before, 2027 after
+  --   (pinned)  the guard is not a definer, the log is; both pin their
+  --             search_path; the log is nobody's to call; the log trigger
+  --             fires on season; both triggers are enabled
+  --
+  -- Falsified (5 Nov 2026, each change made as the owner on a migrated
+  -- database, inside the verifier's transaction, and the section run; each
+  -- went red at its own label; unchanged it passed):
+  --   role_assignment_revoke_only() as db/132 left it     → (season)
+  --   role_assignment_change_logged's WHEN as db/132's    → (log)
+  --   role_assignment_change_log() as db/132 left it      → (dates)
+  DECLARE
+    y   jsonb := _v137_stage();
+    A   uuid := (y->>'a_season')::uuid;
+    N   uuid := (y->>'a_none')::uuid;
+    j0  jsonb;
+    j   jsonb;
+    t   text;
+    s   text;
+    got text;
+  BEGIN
+    -- (season)
+    PERFORM _as((y->>'office')::uuid);
+    j0 := _v132_asg(A);
+    FOR t, s IN SELECT * FROM (VALUES
+        ('to another season', format('UPDATE role_assignment SET season = ''2027'' WHERE id = %L', A)),
+        ('to no season',      format('UPDATE role_assignment SET season = NULL WHERE id = %L', A)),
+        ('from none to one',  format('UPDATE role_assignment SET season = ''2026'' WHERE id = %L', N))) x LOOP
+      got := _v133_try(s);
+      PERFORM _assert(got = '23514||an appointment''s season is fixed; end it and appoint again',
+        format('§115 (season): an appointment''s season changed %s by the office reads %s', t, got));
+    END LOOP;
+    PERFORM _assert(_v132_asg(A) = j0, format('§115 (season): a refused season change left %s, was %s', _v132_asg(A), j0));
+    PERFORM _assert(_v132_asg(N)->'changes' = '[]'::jsonb AND _v132_asg(N)->'row'->'season' = 'null'::jsonb,
+      format('§115 (season): the seasonless appointment reads %s', _v132_asg(N)));
+
+    -- (owner)
+    got := _v133_owner_probe(format('UPDATE role_assignment SET season = ''2027'' WHERE id = %L', A));
+    PERFORM _assert(got LIKE '23514|%|an appointment''s season is fixed%', format('§115 (owner): the owner moving a season reads %s', got));
+
+    -- (dates)
+    got := _v133_try(format('UPDATE role_assignment SET valid_until = sa_today() + 30 WHERE id = %L', A));
+    PERFORM _assert(got LIKE '23514||an appointment''s dates may be ended or shortened%', format('§115 (dates): an end moved later reads %s', got));
+    got := _v133_try(format('UPDATE role_assignment SET season = ''2026'', valid_until = sa_today() + 7 WHERE id = %L', A));
+    PERFORM _assert(got = 'ok', format('§115 (dates): the same season with an earlier end reads %s', got));
+    j := _v132_asg(A);
+    PERFORM _assert(jsonb_array_length(j->'changes') = 1 AND j->'changes'->0->>'by' = y->>'office'
+                    AND (j->'changes'->0->'was'->>'until')::date = sa_today() + 14
+                    AND (j->'changes'->0->'became'->>'until')::date = sa_today() + 7
+                    AND j->'changes'->0->'was'->>'season' = '2026' AND j->'changes'->0->'became'->>'season' = '2026'
+                    AND j->'row'->>'season' = '2026',
+      format('§115 (dates): bringing the end earlier is recorded as %s', j));
+
+    -- (log)
+    j := _v137_season_logged(N, '2027');
+    PERFORM _assert(jsonb_typeof(j) = 'array' AND jsonb_array_length(j) = 1
+                    AND j->0->'was'->'season' = 'null'::jsonb AND j->0->'became'->>'season' = '2027',
+      format('§115 (log): a season moved under the log trigger is recorded as %s', j));
+    PERFORM _assert(_v132_asg(N)->'changes' = '[]'::jsonb AND _v132_asg(N)->'row'->'season' = 'null'::jsonb,
+      format('§115 (log): the scratch move was not undone: %s', _v132_asg(N)));
+
+    -- (pinned)
+    PERFORM _assert(NOT (SELECT prosecdef FROM pg_proc WHERE oid = 'role_assignment_revoke_only()'::regprocedure)
+                    AND (SELECT prosecdef FROM pg_proc WHERE oid = 'role_assignment_change_log()'::regprocedure),
+      '§115 (pinned): the guard is a definer, or the log is not');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_proc
+                                 WHERE oid IN ('role_assignment_revoke_only()'::regprocedure, 'role_assignment_change_log()'::regprocedure)
+                                   AND NOT ('search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}')))),
+      '§115 (pinned): the guard or the log does not pin its search_path');
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'role_assignment_change_log()', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'role_assignment_change_log()', 'EXECUTE'),
+      '§115 (pinned): the log is callable by the application or PUBLIC');
+    PERFORM _assert(position('old.season IS DISTINCT FROM new.season' IN
+                      (SELECT pg_get_triggerdef(oid) FROM pg_trigger
+                        WHERE tgrelid = 'role_assignment'::regclass AND tgname = 'role_assignment_change_logged')) > 0,
+      '§115 (pinned): the log trigger does not fire on a season');
+    PERFORM _assert((SELECT count(*) FROM pg_trigger WHERE tgrelid = 'role_assignment'::regclass AND tgenabled <> 'D'
+                       AND tgname IN ('role_assignment_revoke_guard', 'role_assignment_change_logged')) = 2,
+      '§115 (pinned): the guard or the log trigger is missing or disabled');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 115
+  -- └── db/137 (section 115) ──────────────────────────────────────────
   -- ┌── GA-I20 A2 (section 116) ───────────────────────────────────────
   -- ── 116. Her own links in every state: my_links (GA-I20 A2, N4) ──
   -- docs/design/GA-I20_parent_action_list.md §3.3, §3.4, §5.2 N4 and §7 A2.

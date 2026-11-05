@@ -204,17 +204,21 @@ try {
   ok("...and the epoch that sent them there, against the one now current",
      new RegExp(`epoch ${epoch + 5}`).test(dosText) && new RegExp(`now ${epoch}`).test(dosText), dosText.slice(0, 300));
 
-  group("The server refuses the decision, and the panel says so honestly");
-  // Sarah sent both balls herself. quarantine_resolve() refuses the person who
-  // submitted a ball from being the one who releases it — same rule as an
-  // amendment — and answers 200 with { ok:false, reason:"cannot_release_your_own" },
-  // not a 4xx. A component that trusted the HTTP status alone would show
-  // nothing wrong here.
-  ok("she tries to release one", await click(dos.page, /^Release$/, 4000));
-  await afterReads(dos.page, 900);
+  group("She may not decide them, and the panel says so before she tries");
+  // Sarah sent both balls herself, and scored the match's setup events too.
+  // quarantine_resolve() refuses the sender (cannot_release_your_own) and,
+  // since db/136, the scorer of any ball in the match's record
+  // (you_scored_this_match). The panel says both up front and offers her no
+  // decision; the server's refusal stands behind it.
   const afterOwn = await panel(dos.page).innerText();
-  if (DEBUG) console.log("[debug] after her own attempt:\n" + afterOwn);
-  ok("the refusal is shown in the panel, not swallowed", /sent this ball yourself/i.test(afterOwn), afterOwn.slice(0, 300));
+  if (DEBUG) console.log("[debug] her panel:\n" + afterOwn);
+  ok("the panel says she sent these balls herself", /sent these balls yourself/i.test(afterOwn), afterOwn.slice(0, 300));
+  ok("...and that, having scored in this match, another approver must decide",
+     /party to any difference/.test(afterOwn) && /Another person who approves corrections must decide/.test(afterOwn), afterOwn.slice(0, 600));
+  ok("...with no decision she can press", (await dos.page.locator('[data-testid="quarantine-panel"] button:not([disabled])').count()) === 0);
+  const own = await fapi(`/api/quarantine/${(await dbq(`select min(id) as id from ball_event_quarantine where match_id = $1`, [MATCH]))[0].id}/resolve`,
+    { method: "POST", token: scorerTok, body: { accept: true } });
+  ok("the server refuses her by name if she asks anyway", own.body?.ok === false && own.body?.reason === "cannot_release_your_own", JSON.stringify(own.body));
   ok("...and nothing moved — both are still waiting", /2 waiting/.test(afterOwn));
   ok("no console errors on her session", dos.errors.length === 0, dos.errors.join(" | "));
 
@@ -226,7 +230,7 @@ try {
   ok("the panel is offered to her too — she also holds the approval capability", await panel(principal.page).count() === 1);
   const beforeRelease = await panel(principal.page).innerText();
   ok("...showing the same two waiting balls", /2 waiting/.test(beforeRelease));
-  ok("she releases the first one", await click(principal.page, /^Release$/, 4000));
+  ok("she releases the first one: the pen missed this ball", await click(principal.page, /^Pen missed this ball$/, 4000));
   await afterReads(principal.page, 1200);
   const afterRelease = await panel(principal.page).innerText();
   if (DEBUG) console.log("[debug] after release:\n" + afterRelease);
@@ -253,20 +257,23 @@ try {
   group("The Laws refuse the second, and the panel says why and offers both choices (SCRBRD-071)");
   // The released wicket emptied the striker's end, so the held single cannot
   // go in now: the server folds the log, asks lawsRefusal(), writes nothing.
-  ok("she tries to release the one left", await click(principal.page, /^Release$/, 4000));
+  ok("she tries to release the one left", await click(principal.page, /^Pen missed this ball$/, 4000));
   await afterReads(principal.page, 1200);
   const refusedByLaws = await panel(principal.page).innerText();
   if (DEBUG) console.log("[debug] after the Laws refused:\n" + refusedByLaws);
   ok("the refusal names the Law, in words", /The Laws refuse this ball: there was no batter at one end/.test(refusedByLaws), refusedByLaws.slice(0, 300));
   ok("...it is still waiting", /1 waiting/.test(refusedByLaws));
-  ok("...and she is offered to leave it held, beside Discard",
-     /Leave it held/.test(refusedByLaws) && /Discard/.test(refusedByLaws));
+  ok("...and she is offered to leave it held, beside Pen stands",
+     /Leave it held/.test(refusedByLaws) && /Pen stands/.test(refusedByLaws));
   ok("nothing reached the log", (await eventsLog(scorerTok)).length === afterLog.length);
   ok("leaving it clears the message and keeps the ball", await click(principal.page, /^Leave it held$/, 4000)
      && !/The Laws refuse/.test(await panel(principal.page).innerText()) && /1 waiting/.test(await panel(principal.page).innerText()));
 
-  group("Discarding the second writes nothing, and it does not come back");
-  ok("she discards the one left", await click(principal.page, /^Discard$/, 4000));
+  group("Setting the second aside writes nothing, and it does not come back");
+  // "Pen stands" on a ball the pen has no ball for needs her reason (db/136
+  // keeps it on the record).
+  await panel(principal.page).locator('input[data-testid$="-note"]').first().fill("The book has no such ball");
+  ok("she sets the one left aside: the pen stands", await click(principal.page, /^Pen stands$/, 4000));
   await afterReads(principal.page, 1200);
   const afterDiscard = await panel(principal.page).innerText();
   ok("the panel is empty", /Nothing waiting for review/.test(afterDiscard), afterDiscard);

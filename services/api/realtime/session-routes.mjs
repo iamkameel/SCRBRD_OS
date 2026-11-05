@@ -114,8 +114,14 @@ export function sessionRoutes({ pool, secret, hub }) {
         const r = await runAsPrincipal(pool, secret, b, async (client, principal) => {
           const named = req.body?.device;
           if (named != null && named !== principal.deviceId) return { mismatch: true };
-          return (await client.query(`select * from scoring_lease_check($1,$2,$3)`,
-                                     [id, principal.deviceId, req.body?.epoch])).rows[0] || {};
+          const lease = (await client.query(`select * from scoring_lease_check($1,$2,$3)`,
+                                            [id, principal.deviceId, req.body?.epoch])).rows[0] || {};
+          // The pen-holder's line (TWO_PHONES R3, db/135): balls from another
+          // phone set aside here, undecided. Only the pen's device is told.
+          if (lease.holds) {
+            lease.second_account = (await client.query(`select second_account_waiting($1) as n`, [id])).rows[0]?.n ?? 0;
+          }
+          return lease;
         });
         if (r.mismatch) { res.json({ ok: false, epoch: null, state: null, reason: "device_mismatch" }); return; }
         // db/33: on a complete match the lease is never extended and the
@@ -124,6 +130,7 @@ export function sessionRoutes({ pool, secret, hub }) {
         const over = r.state === "match_complete" || r.state === "match_abandoned";
         res.json({ ok: !!r.holds, epoch: r.epoch ?? null,
                    state: over ? null : (r.state ?? null),
+                   ...(r.holds ? { secondAccount: r.second_account ?? 0 } : {}),
                    reason: r.holds ? null
                          : over ? r.state
                          : (r.found ? "not_token_holder" : "no_session") });
