@@ -330,11 +330,15 @@ function AddFixtureModal({ fixtureSchools, teamOptions, grounds, matches, onClos
  */
 const STATUS_ASK = {
   postponed: { q: "Postpone this fixture? It stays on the calendar with no date, and the side's parents and pupils are told now.", yes: "Yes, postpone it" },
+  back_on: { q: "Put this match back on? It goes back to scheduled; you can set a new date. This is logged.", yes: "Yes, put it back on" },
   abandoned: { q: "Call this fixture off? It will not be played, and the side's parents and pupils are told now.", yes: "Yes, call it off" },
 };
 
 function RescheduleFixture({ match, grounds, onChanged }) {
   const postponed = match.status === "postponed";
+  // Called off (db/133: abandoned): the web reads it as "complete" with
+  // calledOff. A finished match has calledOff false and is never offered this.
+  const calledOff = match.calledOff === true;
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -370,11 +374,50 @@ function RescheduleFixture({ match, grounds, onChanged }) {
 
   if (!open) return (
     <Btn size="sm" variant="ghost" onClick={()=>setOpen(true)} data-testid="fixture-reschedule-open">
-      {postponed ? "Give it a new date" : "Reschedule or postpone"}
+      {calledOff ? "Put this match back on" : postponed ? "Give it a new date" : "Reschedule or postpone"}
     </Btn>
   );
 
   const ask = asking ? STATUS_ASK[asking] : null;
+  if (calledOff) {
+    // Back on keeps the start time unless a new one is given in full.
+    const backOn = () => {
+      const body = { status: "scheduled" };
+      if (date && time) body.startsAt = new Date(`${date}T${time}`).toISOString();
+      else if (date || time) { setSaid("Give both a date and a start time, or leave both empty to keep the start time."); setAsking(null); return; }
+      if (groundId) body.groundId = groundId;
+      amend(body);
+    };
+    return (
+      <Card sx={{padding:"14px",marginBottom:"12px"}} data-testid="fixture-reschedule" data-status="abandoned">
+        <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"6px"}}>Put this match back on</div>
+        <p data-testid="fixture-calledoff-note" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,margin:"0 0 10px"}}>
+          Called off. Putting it back on returns it to scheduled. Keep the start time, or give a new one.
+        </p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"10px"}}>
+          <Input label="New date (optional)" value={date} onChange={setDate} type="date"/>
+          <Input label="New time (optional)" value={time} onChange={setTime} type="time"/>
+        </div>
+        <Select label="New venue" value={groundId} onChange={setGroundId}
+          options={[{value:"",label:"Leave as is"}, ...grounds.map(g=>({value:g.id,label:g.name}))]}/>
+        {said&&<div role="alert" data-testid="fixture-reschedule-refused" style={{fontFamily:D.body,fontSize:"12px",color:textOn(D.rose),marginBottom:"8px"}}>{said}</div>}
+        {asking ? (
+          <div role="group" aria-label="Confirm" data-testid="fixture-status-ask" style={{display:"grid",gap:"8px"}}>
+            <p style={{fontFamily:D.body,fontSize:"13px",color:D.textPrimary,margin:0}}>{ask.q}</p>
+            <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",flexWrap:"wrap"}}>
+              <Btn size="sm" variant="ghost" disabled={busy} onClick={()=>setAsking(null)} autoFocus>Keep it called off</Btn>
+              <Btn size="sm" disabled={busy} onClick={backOn} data-testid="fixture-status-confirm">{busy ? "Saving…" : ask.yes}</Btn>
+            </div>
+          </div>
+        ) : (
+          <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+            <Btn size="sm" variant="ghost" disabled={busy} onClick={close}>Cancel</Btn>
+            <Btn size="sm" disabled={busy} onClick={()=>{setSaid("");setAsking("back_on");}} data-testid="fixture-back-on">Put this match back on</Btn>
+          </div>
+        )}
+      </Card>
+    );
+  }
   return (
     <Card sx={{padding:"14px",marginBottom:"12px"}} data-testid="fixture-reschedule" data-status={match.status}>
       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"6px"}}>
