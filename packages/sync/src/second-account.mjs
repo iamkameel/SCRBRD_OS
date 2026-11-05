@@ -19,6 +19,7 @@
  *
  * Pure, so the words are tested without a DOM (test/second-account.test.mjs).
  */
+import { KIND } from "@scrbrd/scoring";
 import { waitingPhrase } from "./attach.mjs";
 
 const LEAD = "Another phone scored this match while this one had no signal.";
@@ -29,17 +30,22 @@ const balls = (n) => `${n} ball${n === 1 ? "" : "s"}`;
 
 /**
  * What the second phone reads: the balls it kept that the match record does
- * not have, in the pad's counting words ("22 balls", "22 balls and 1 other
- * change").
+ * not have ("22 balls"); a phone that kept no ball says what it kept ("2
+ * changes to the scorebook").
  * @param {{payload?: any}[]} items  this phone's events not in the match record
- * @returns {{lead: string, text: string, count: string}}
+ * @returns {{lead: string, text: string, count: string, balls: number}}
  */
 export function secondAccountWords(items) {
-  const count = waitingPhrase(items);
-  const one = items.length === 1;
+  // R3 counts balls: a kept over change or innings start is set aside with
+  // them, but "22 balls" is what the scorer recorded and will recognise.
+  // Only a phone that kept no ball at all says what it did keep.
+  const n = items.filter((e) => (e?.payload?.kind ?? KIND.BALL) === KIND.BALL).length;
+  const count = n ? balls(n) : waitingPhrase(items);
+  const one = n ? n === 1 : items.length === 1;
   return {
     lead: LEAD,
     count,
+    balls: n,
     text: `${count} on this phone ${one ? "is" : "are"} not in the match record. `
       + `${one ? "It is" : "They are"} kept here and set aside on the server for review — nothing was lost, and `
       + `${one ? "it was not" : "none of them was"} added to the score. ${REVIEW}`,

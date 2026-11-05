@@ -26,10 +26,12 @@ const ballsOf = (n) => Array.from({ length: n }, () => ({ payload: { kind: "ball
   ok("one ball, singular", w.text.startsWith("1 ball on this phone is not in the match record. It is kept here")
      && w.text.includes("it was not added to the score"), w.text);
 }
-// A kept over change is counted, not called a ball.
+// The balls are counted: a kept over change goes with them, not into the count.
 {
-  const w = secondAccountWords([...ballsOf(6), { payload: { kind: "bowler_change" } }]);
-  ok("a ball and another change", w.count === "6 balls and 1 other change" && w.text.startsWith("6 balls and 1 other change on this phone are"), w.text);
+  const w = secondAccountWords([...ballsOf(6), { payload: { kind: "bowler" } }]);
+  ok("six balls and an over change read as six balls", w.count === "6 balls" && w.balls === 6 && w.text.startsWith("6 balls on this phone are"), w.text);
+  const x = secondAccountWords([{ payload: { kind: "batters" } }, { payload: { kind: "bowler" } }]);
+  ok("no ball at all: what it kept", x.balls === 0 && x.text.startsWith("2 changes to the scorebook on this phone are"), x.text);
 }
 // The pen-holder's line and its sheet.
 {

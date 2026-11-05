@@ -35,7 +35,7 @@ export function SecondAccountSheet({ items, sent, sending, error, onSend, onDone
   const w = secondAccountWords(items);
   return (
     <Sheet title={w.lead} accent={D.sky} onClose={onDone}>
-      <div data-testid="second-account-sheet" data-count={items.length} data-sent={sent ? "yes" : "no"}
+      <div data-testid="second-account-sheet" data-count={w.balls} data-sent={sent ? "yes" : "no"}
         style={{paddingTop:"12px",display:"flex",flexDirection:"column",gap:"16px"}}>
         <p data-testid="second-account-text" style={{margin:0,fontFamily:D.body,fontSize:"15px",lineHeight:1.55,color:D.textPrimary}}>
           {w.text}
