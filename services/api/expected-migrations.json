@@ -132,5 +132,6 @@
   "134_union_list_styles.sql",
   "135_second_account_notice.sql",
   "136_second_account.sql",
-  "137_role_season_lock.sql"
+  "137_role_season_lock.sql",
+  "142_player_of_match.sql"
 ]

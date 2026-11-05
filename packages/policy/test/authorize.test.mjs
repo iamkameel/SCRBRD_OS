@@ -11,7 +11,7 @@
 import {
   authorize, may, covers, isActive, scopeFilter, grantingAssignments, contexts,
 } from "../src/authorize.mjs";
-import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, unknownCapabilities, ungrantedCapabilities,
+import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, SUPERADMIN_RECOGNITION_CARVE, unknownCapabilities, ungrantedCapabilities,
          mayGrantRole, TEAM_SCOPED_ROLES, SUBJECT_SCOPED_ROLES } from "../src/roles.mjs";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "../src/capabilities.mjs";
 
@@ -174,9 +174,12 @@ group("D. Medical access is bounded by scope, not by tier");
   // ONE CARVE-OUT: safeguarding.* (roles.mjs; CSA Safeguarding Policy p63;
   // SAFEGUARDING_DSO §2.2, decided Q9). A key that reads every concern at
   // every school and records nothing is the reader CSA forbids.
-  const outsideSafeguarding = ALL_CAPABILITIES.filter((c) => !c.startsWith("safeguarding."));
-  ok("the owner's key holds every capability outside safeguarding.*",
+  // AND recognition D7 (db/142): the recognition capabilities it lists.
+  const outsideSafeguarding = ALL_CAPABILITIES.filter((c) => !c.startsWith("safeguarding.") && !SUPERADMIN_RECOGNITION_CARVE.includes(c));
+  ok("the owner's key holds every capability outside safeguarding.* and the recognition carve-out",
      outsideSafeguarding.every((c) => roleGrants("superadmin", c)));
+  ok("...and none of the recognition carve-out (D7), which is real capabilities",
+     SUPERADMIN_RECOGNITION_CARVE.length > 0 && SUPERADMIN_RECOGNITION_CARVE.every((c) => isCapability(c) && !roleGrants("superadmin", c)));
   ok("...and none inside it",
      ALL_CAPABILITIES.filter((c) => c.startsWith("safeguarding.")).every((c) => !roleGrants("superadmin", c))
      && ALL_CAPABILITIES.some((c) => c.startsWith("safeguarding.")));

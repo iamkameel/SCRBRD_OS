@@ -566,6 +566,8 @@ export const ADDED_SINCE_01 = {
   "passport.union.read":         "124_union_passport.sql",
   // ── REACH R-G (Kameel, 4 Nov 2026): a spectator reads every side's team posts (db/131) ──
   "news.team.read":              "131_reach_last.sql",
+  // ── RECOGNITION R6 (db/142): Player of the Match, the coach's path ──
+  "recognition.match.award":     "142_player_of_match.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 

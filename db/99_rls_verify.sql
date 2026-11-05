@@ -11387,12 +11387,15 @@ BEGIN
   -- it mattered.
   -- Every capability but one domain: safeguarding.* is the owner's key's one
   -- carve-out (roles.mjs, db/57; CSA p63). Section 35 proves it reads no
-  -- concern even when the rows are granted back.
+  -- concern even when the rows are granted back. And, since db/142,
+  -- recognition.match.award (RECOGNITION D7): the owner's key decides no
+  -- school's Player of the Match (roles.mjs SUPERADMIN_RECOGNITION_CARVE).
   PERFORM _assert(
     (SELECT count(*) FROM role_capability WHERE role = 'superadmin')
-      = (SELECT count(*) FROM capability WHERE name NOT LIKE 'safeguarding.%')
-    AND NOT EXISTS (SELECT 1 FROM role_capability WHERE role = 'superadmin' AND capability LIKE 'safeguarding.%'),
-    'the owner''s key does not hold every capability outside safeguarding.*, or holds one inside it');
+      = (SELECT count(*) FROM capability WHERE name NOT LIKE 'safeguarding.%' AND name <> 'recognition.match.award')
+    AND NOT EXISTS (SELECT 1 FROM role_capability WHERE role = 'superadmin'
+                     AND (capability LIKE 'safeguarding.%' OR capability = 'recognition.match.award')),
+    'the owner''s key does not hold every capability outside safeguarding.* and recognition.match.award, or holds one inside them');
 
   PERFORM _as(U_OWNER);
 
