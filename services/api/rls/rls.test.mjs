@@ -11,7 +11,7 @@ import { ROLES, ROLE_CAPABILITIES, roleGrants, SCORING_ROLES, SUBJECT_SCOPED_ROL
 import { TABLES, referencedCapabilities, isCapabilityExpression, maskedColumns } from "@scrbrd/policy/tables";
 import { ALL_CAPABILITIES, SENSITIVE, isCapability } from "@scrbrd/policy/capabilities";
 import { TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
-import { main, authz, policies, timeBox, suspension, matchAnchors, REANCHORED_IN_39, REANCHOR_FILE, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01, TEAM_SCOPED_SINCE_01, MASKED_SINCE_09, TABLES_ADDED_SINCE_09, NARROWED_SINCE, GENERATED_BEGIN, GENERATED_END, tablesAddedIn, spliceTablesAdded, maskPairs } from "./generate-rls.mjs";
+import { main, authz, policies, timeBox, suspension, matchAnchors, REANCHORED_IN_39, REANCHOR_FILE, WITHDRAWN_SINCE_01, ADDED_SINCE_01, ROLES_ADDED_SINCE_01, TEAM_SCOPED_SINCE_01, MASKED_SINCE_09, TABLES_ADDED_SINCE_09, NARROWED_SINCE, GENERATED_BEGIN, GENERATED_END, tablesAddedIn, spliceTablesAdded, maskPairs, decisionFunction } from "./generate-rls.mjs";
 import { GRANTABLE_ROLES } from "@scrbrd/policy/roles";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -685,6 +685,24 @@ group("M. Notifications S2: one stream (db/91)");
   ok("a DROP in db/91 is seen", dropped !== sql91 && /\bDROP\b/i.test(dropped));
   const touched = top + "\nUPDATE news_post SET urgency = 'medium';";
   ok("a stored row changed at the top level is seen", /\b(UPDATE|DELETE|INSERT|TRUNCATE)\b/i.test(touched));
+}
+
+// db/132: the shipped decision files keep their bytes (PUBLIC, current_date);
+// a decision function emitted for a new file is the application's alone and
+// reads Johannesburg's day, as the running ones do since db/128 and db/132.
+group("N. A fresh decision file keeps db/128's day and db/132's grant");
+{
+  const fresh = decisionFunction({ timeBoxed: true, suspendable: true });
+  const shipped = decisionFunction({ timeBoxed: true, suspendable: true, shipped: true });
+  ok("the shipped text still grants app_can() to PUBLIC and reads current_date (db/35 is unchanged)",
+     shipped.includes("GRANT EXECUTE ON FUNCTION app_can(text, uuid, text, uuid, uuid) TO PUBLIC;") && /current_date/.test(shipped));
+  ok("a fresh one grants app_can() to scrbrd_app, and to PUBLIC never",
+     fresh.includes("REVOKE ALL ON FUNCTION app_can(text, uuid, text, uuid, uuid) FROM PUBLIC;")
+     && fresh.includes("GRANT EXECUTE ON FUNCTION app_can(text, uuid, text, uuid, uuid) TO scrbrd_app;")
+     && !/GRANT EXECUTE ON FUNCTION app_can\([^)]*\) TO PUBLIC/.test(fresh));
+  ok("...and reads sa_today(), never current_date", !/current_date/.test(fresh) && /sa_today\(\)/.test(fresh));
+  ok("...and is otherwise the shipped text", fresh === shipped.replaceAll("current_date", "sa_today()")
+     .replace("app_can(text, uuid, text, uuid, uuid) TO PUBLIC;", "app_can(text, uuid, text, uuid, uuid) TO scrbrd_app;"));
 }
 
 console.log(`\n${"─".repeat(52)}\nRLS SUITE: ${pass} passed, ${fail} failed`);

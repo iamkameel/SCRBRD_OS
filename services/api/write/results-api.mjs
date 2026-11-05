@@ -56,6 +56,8 @@ export const FINALISE_WORDS = Object.freeze({
   not_decided: "The match is not decided yet: score it to its end before you finish it.",
   super_over_pending: "The match is tied and its conditions provide a super over: play it, or record the organiser's decision, first.",
   match_abandoned: "This match was called off, so there is no result to finish.",
+  // db/132 (Kameel, 4 Nov 2026): another phone holds the pen, its lease live.
+  held_elsewhere: "Another phone is scoring this match. Finish it from that phone, or once it has sent its last ball and put the pen down.",
 });
 
 /** A definer function's (ok, reason, detail) row: the row when ok, else a refusal. @param {any} r */
@@ -368,7 +370,8 @@ export function resultsRoutes({ pool, secret, onChange }) {
     //   db/130 (Kameel, 4 Nov 2026, option A): whoever holds scoring.finalise
     //   at the home side finishes a match the log has decided; a second call
     //   is a no-op. refusals: not_permitted (403), not_decided, super_over_pending,
-    //   match_abandoned — each with its words (FINALISE_WORDS).
+    //   match_abandoned, held_elsewhere (db/132: another phone's lease is
+    //   live) — each with its words (FINALISE_WORDS).
     finalise: handle(async (req) => {
       const id = idOf(req);
       const r = await runAsPrincipal(pool, secret, as(req), async (client) =>

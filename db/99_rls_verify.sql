@@ -227,9 +227,21 @@ $$ LANGUAGE sql SECURITY DEFINER;
 -- SCRBRD-034. A fixture's status is what duty_status() (db/30) and the
 -- completion gate (db/33) read, and moving it is an owner edit here — the
 -- section needs one match walked scheduled → live → complete → abandoned.
+-- It also walks the match from complete back to live, to meet each door
+-- again: db/132 refuses that move for everyone, the owner too, so this
+-- helper alone steps round the trigger, inside the verifier's own
+-- transaction, and puts it back (db/99 §111 (reopen) proves the refusal).
 CREATE OR REPLACE FUNCTION _set_match_status(p_match uuid, p_status text) RETURNS void AS $$
+BEGIN
+  IF p_status NOT IN ('complete', 'abandoned')
+     AND EXISTS (SELECT 1 FROM match WHERE id = p_match AND status = 'complete') THEN
+    ALTER TABLE match DISABLE TRIGGER match_finished_stays_finished;
+    UPDATE match SET status = p_status WHERE id = p_match;
+    ALTER TABLE match ENABLE TRIGGER match_finished_stays_finished;
+    RETURN;
+  END IF;
   UPDATE match SET status = p_status WHERE id = p_match;
-$$ LANGUAGE sql SECURITY DEFINER;
+END $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION _lease_until(p_match uuid) RETURNS timestamptz AS $$
   SELECT lease_until FROM scoring_session WHERE match_id = p_match;
@@ -6859,6 +6871,9 @@ CREATE OR REPLACE FUNCTION _v114_notes(p_match uuid) RETURNS jsonb AS $$
                                                'live', n.expires_at > now())
                             ORDER BY n.published_at, n.id), '[]'::jsonb)
     FROM notification n WHERE n.subject_kind = 'match' AND n.subject_id = p_match AND n.kind = 'fixture'
+     -- The result's notices only: a ball held after the finish raises its own
+     -- (db/132), which §111 (late) proves.
+     AND n.title NOT LIKE 'Late ball set aside%'
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- Is this person a hand on the match's log (D5), as the owner asks it?
 CREATE OR REPLACE FUNCTION _v114_hand(p_match uuid, p_user uuid) RETURNS text AS $$
@@ -9589,6 +9604,142 @@ CREATE OR REPLACE FUNCTION _v131i_filled(p_ids uuid[]) RETURNS integer AS $$
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/131 (sections 108, 109, 110) ─────────────────────────────────────
 
+-- ┌── db/132 (section 111). The pilot's hardening (Kameel, 4 Nov 2026) ──────
+-- Invented, as the owner. Hilton's U13F at home to Westville's 1XI, one over
+-- a side, live: MH and ML decided on the log (Hilton 6 for 0, Westville 0
+-- chasing 7, both innings sealed); MX with Hilton's innings only. People: the
+-- U13F scorer (sc), the director of sport (ds), the office (office:
+-- schooladmin), a U13E coach (ecoach), a follower the office scoped to the
+-- U13F (follower: a spectator, so a U13E post reaches him only as every
+-- side's), two guardians (mum, dad) of one boy (boy); the owner's key (owner:
+-- superadmin, no school), the owner's key beside a director's appointment at
+-- Hilton (both), and a league organiser with no school (org). Three
+-- appointments for the date rules: a scorer for MH alone (a_fix), a U13F
+-- coach dated from ten days ago to a fortnight ahead (a_dated), and a scorer
+-- for every fixture (a_wide). Mum's link carries the office's verification
+-- note; dad's was ended by the office, with its reason.
+CREATE OR REPLACE FUNCTION _v132_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  v_t0 timestamptz := (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg';
+  ids jsonb; m uuid; k text; u uuid; a uuid; b uuid;
+BEGIN
+  ids := _v71_people('v132', ARRAY[
+    ARRAY['sc',       'scorer',          HIL::text, 'U13F', ''],
+    ARRAY['ds',       'directorofsport', HIL::text, '',     ''],
+    ARRAY['office',   'schooladmin',     HIL::text, '',     ''],
+    ARRAY['ecoach',   'coach',           HIL::text, 'U13E', ''],
+    ARRAY['follower', 'spectator',       HIL::text, 'U13F', ''],
+    ARRAY['mum',      'guardian',        HIL::text, '',     ''],
+    ARRAY['dad',      'guardian',        HIL::text, '',     ''],
+    ARRAY['tsc',      'scorer',          HIL::text, '',     ''],
+    ARRAY['tcoach',   'scorer',          HIL::text, '',     ''],
+    ARRAY['tscw',     'scorer',          HIL::text, '',     '']]);
+  FOREACH k IN ARRAY ARRAY['owner', 'both', 'org'] LOOP
+    INSERT INTO app_user (school_id, email, name, role, teams)
+    VALUES (CASE WHEN k = 'both' THEN HIL END, 'v132.' || k || '@example.invalid', 'V132 ' || initcap(k),
+            CASE k WHEN 'org' THEN 'competitionadmin' ELSE 'superadmin' END, '{}')
+    RETURNING id INTO u;
+    INSERT INTO role_assignment (person_id, role, school_id)
+    VALUES (u, CASE k WHEN 'org' THEN 'competitionadmin' ELSE 'superadmin' END, NULL);
+    IF k = 'both' THEN
+      INSERT INTO role_assignment (person_id, role, school_id) VALUES (u, 'directorofsport', HIL);
+    END IF;
+    ids := ids || jsonb_build_object(k, u);
+  END LOOP;
+  FOREACH k IN ARRAY ARRAY['MH', 'ML', 'MX'] LOOP
+    INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+    VALUES (HIL, 'U13F', WES, '1XI', 'x', v_t0, 'cricket', 'T20', 1, 'live') RETURNING id INTO m;
+    ids := ids || jsonb_build_object(k, m);
+    PERFORM _v114_innings(m, 0::smallint, 'U13F', 'Westville 1XI', ARRAY[1, 1, 1, 1, 1, 1], NULL, (ids->>'sc')::uuid);
+    IF k <> 'MX' THEN
+      PERFORM _v114_innings(m, 1::smallint, 'Westville 1XI', 'U13F', ARRAY[0, 0, 0, 0, 0, 0], 7, (ids->>'sc')::uuid);
+    END IF;
+  END LOOP;
+  -- The three appointments, each the person's second, beside the stage's own.
+  INSERT INTO role_assignment (person_id, role, school_id, fixture_id)
+  VALUES ((ids->>'tsc')::uuid, 'scorer', HIL, (ids->>'MH')::uuid) RETURNING id INTO a;
+  ids := ids || jsonb_build_object('a_fix', a);
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from, valid_until)
+  VALUES ((ids->>'tcoach')::uuid, 'coach', HIL, 'U13F', sa_today() - 10, sa_today() + 14) RETURNING id INTO a;
+  ids := ids || jsonb_build_object('a_dated', a);
+  INSERT INTO role_assignment (person_id, role, school_id)
+  VALUES ((ids->>'tscw')::uuid, 'scorer', HIL) RETURNING id INTO a;
+  ids := ids || jsonb_build_object('a_wide', a);
+  -- The boy, his mother's link (with the office's note) and his father's
+  -- (ended by the office, with a reason).
+  INSERT INTO player (school_id, team_code, full_name, born)
+  VALUES (HIL, 'U13F', 'V132 Boy', make_date(extract(year FROM sa_today())::int - 12, 3, 1)) RETURNING id INTO b;
+  ids := ids || jsonb_build_object('boy', b);
+  PERFORM _v100_link((ids->>'mum')::uuid, HIL, b);
+  UPDATE assignment_subject s SET verified_note = 'V132: seen with the birth certificate'
+    FROM role_assignment r WHERE r.id = s.assignment_id AND r.person_id = (ids->>'mum')::uuid AND s.player_id = b;
+  PERFORM _v100_link((ids->>'dad')::uuid, HIL, b);
+  SELECT s.id, s.assignment_id INTO u, a FROM assignment_subject s JOIN role_assignment r ON r.id = s.assignment_id
+   WHERE r.person_id = (ids->>'dad')::uuid AND s.player_id = b;
+  UPDATE assignment_subject SET verification_state = 'revoked', valid_until = sa_today() WHERE id = u;
+  INSERT INTO guardian_link_ending (link_id, assignment_id, player_id, school_id, guardian_id, kind, reason, ended_by, ends_on)
+  VALUES (u, a, b, HIL, (ids->>'dad')::uuid, 'office', 'V132: ended at the family''s own request', (ids->>'office')::uuid, sa_today());
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A status move as the owner: 'ok', or the constraint that refused it.
+CREATE OR REPLACE FUNCTION _v132_owner_status(p_match uuid, p_status text) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  UPDATE match SET status = p_status WHERE id = p_match;
+  RETURN 'ok';
+EXCEPTION WHEN check_violation THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN coalesce(nullif(v_con, ''), SQLERRM);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A match's late-ball notices, as the owner reads them: how many, to whom,
+-- the title, and whether any player's name is in the words.
+CREATE OR REPLACE FUNCTION _v132_late(p_match uuid) RETURNS jsonb AS $$
+  SELECT jsonb_build_object(
+    'n', count(*),
+    'to_one', count(*) FILTER (WHERE n.recipient_id IS NOT NULL AND n.kind = 'system' AND n.required_capability = 'news.read'),
+    'to_office', count(*) FILTER (WHERE n.recipient_id IS NULL AND n.scope_level = 'school' AND n.team_code IS NULL
+                                    AND n.required_capability = 'fixture.update'),
+    'recipient', min(n.recipient_id::text),
+    'titles', coalesce(jsonb_agg(DISTINCT n.title), '[]'::jsonb),
+    'named', count(*) FILTER (WHERE EXISTS (SELECT 1 FROM player p
+                                             WHERE position(p.full_name IN n.title || ' ' || n.body) > 0)))
+    FROM notification n
+   WHERE n.subject_kind = 'match' AND n.subject_id = p_match AND n.title LIKE 'Late ball set aside%'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One appointment and its change rows, as the owner reads them.
+CREATE OR REPLACE FUNCTION _v132_asg(p_id uuid) RETURNS jsonb AS $$
+  SELECT jsonb_build_object('row', to_jsonb(a),
+           'changes', (SELECT coalesce(jsonb_agg(jsonb_build_object('by', c.changed_by, 'was', c.was, 'became', c.became)
+                                                ORDER BY c.id), '[]'::jsonb)
+                         FROM role_assignment_change c WHERE c.assignment_id = p_id))
+    FROM role_assignment a WHERE a.id = p_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- How many of a match's scoring_audit rows are a finished match called off,
+-- and by whom (the owner reads it).
+CREATE OR REPLACE FUNCTION _v132_called_off(p_match uuid) RETURNS jsonb AS $$
+  SELECT jsonb_build_object('n', count(*), 'actor', min(s.actor_id::text))
+    FROM scoring_audit s WHERE s.match_id = p_match AND s.event = 'finished_match_abandoned'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- result_confirm_platform() and audit_fixture_label() are the owner's
+-- helpers, executable by nobody else: asked here as a caller would have them
+-- asked, inside a definer.
+CREATE OR REPLACE FUNCTION _v132_platform(p_user uuid) RETURNS boolean AS $$
+BEGIN
+  PERFORM set_config('app.user_id', p_user::text, true);
+  RETURN result_confirm_platform();
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v132_label(p_match uuid) RETURNS text AS $$
+  SELECT audit_fixture_label(p_match)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/132 (section 111) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -11628,6 +11779,10 @@ BEGIN
   PERFORM _set_match_status(M_HANDOVER, 'abandoned');
   PERFORM _assert(duty_status(O_SCORER) = 'expired', 'an abandoned fixture''s scorer is not expired');
   PERFORM _assert(duty_status(O_STOOD) = 'revoked', 'withdrawn does not outrank the fixture''s end');
+  -- db/132: a called-off match is not scored either, and the sections below
+  -- still score M_HANDOVER, so it is put back in play here, as an organiser
+  -- may put back a fixture he called off (only a finished one stays finished).
+  PERFORM _set_match_status(M_HANDOVER, 'live');
 
   -- ── Rulebook clauses: anyone signed in reads, nobody writes (SCRBRD-041, db/32)
   -- Reference material under the directive's own predicate. The spectator is
@@ -33674,6 +33829,326 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 110
   -- └── db/131 (section 110) ──────────────────────────────────────────
+  -- ┌── db/132 (section 111) ─────────────────────────────────────────
+  -- ── 111. The pilot's hardening (db/132; Kameel, 4 Nov 2026, "as recommended") ──
+  -- Staged by _v132_stage(); every call is the caller's own, through
+  -- scrbrd_app, as the API's routes make them. What each label holds:
+  --   (held)      the director, on his own phone, cannot finish while the
+  --               scorer's lease is live: held_elsewhere, and the match stays
+  --               live; the scorer, on the phone that holds the pen, can
+  --   (late)      a ball set aside after the finish is told once to the
+  --               scorer who sent it and once to the home office, naming no
+  --               player; a second ball raises no second notice; a coach of
+  --               another side reads neither
+  --   (reopen)    a finished match is not put back to live or scheduled: the
+  --               office (fixture.update) is refused, and so is the owner
+  --   (called off) the office calls a finished match off: one scoring_audit
+  --               row by the office; the director's audit log words it
+  --               "Called off a finished match", naming the fixture with the
+  --               away side's platform label
+  --   (lapse)     calling off a confirmed result still lapses it (db/114's
+  --               trigger), reason status
+  --   (abandoned) a called-off match: the lease, the claim, the take-over, the
+  --               handover's claim and its check each say match_abandoned
+  --   (role)      an appointment's fixture is not moved or widened, its dates
+  --               not extended; narrowing goes through, one change row each,
+  --               shown in the director's audit log; a withdrawal's later end
+  --               is held where it was
+  --   (links)     read-api's child_links, as written (copied between its
+  --               markers): the director reads the boy's links without the
+  --               email, the note or the reason; the office reads all three
+  --   (grant)     app_can() is scrbrd_app's, and PUBLIC's no longer
+  --   (day)       app_can(), public_name_live_link(), result_confirm_platform()
+  --               read Johannesburg's day
+  --   (withdrawn) a follower reads another side's post, and not once its author
+  --               withdraws it
+  --   (platform)  "platform" is the owner's key alone: not a league organiser
+  --               with no school, not the owner's key beside a school's
+  --               director appointment, not the director
+  --   (sheet)     fixture_sheet()'s comment records saved = shown
+  --
+  -- Falsified (4 Nov 2026, each change made as the owner on a migrated
+  -- database, inside the verifier's transaction, and the section run; each
+  -- went red at its own label; unchanged it passed):
+  --   match_finished_stays_finished disabled              → (reopen)
+  --   match_finished_called_off disabled                  → (called off)
+  --   match_result_confirmation_lapse disabled            → (lapse)
+  --   match_finalise() without step 5b                    → (held)
+  --   late_ball_notice disabled                           → (late)
+  --   scoring_claim() without the abandoned test          → (abandoned)
+  --   role_assignment_revoke_only() without the fixture
+  --     rule, then without the dates rule                 → (role), each
+  --   role_assignment_change_logged disabled              → (role)
+  --   child_links' email unguarded in the copy            → (links)
+  --   app_can() granted to PUBLIC again                   → (grant)
+  --   public_name_live_link() on current_date             → (day)
+  --   news_post_read_team_wide without published_at       → (withdrawn)
+  --   result_confirm_platform() without the platform-only
+  --     test (any no-school result.confirm)               → (platform)
+  --   fixture_sheet()'s comment as db/131 left it         → (sheet)
+  -- Not falsifiable here: audit_fixture_label() put back on m.opponent
+  -- still names the away side, because match_away_side_is_named (db/08)
+  -- stamps its platform label into opponent on every write. The new body
+  -- reads that label itself, so the name never rests on the stamp.
+  DECLARE
+    y     jsonb := _v132_stage();
+    MH    uuid := (y->>'MH')::uuid;
+    ML    uuid := (y->>'ML')::uuid;
+    MX    uuid := (y->>'MX')::uuid;
+    got   record;
+    v_ok  boolean; v_reason text; v_state text; v_epoch integer; v_con text; v_n integer;
+    v_at  timestamptz; v_page integer;
+    j     jsonb;
+    t     text;
+    P     uuid;
+  BEGIN
+    -- (held)
+    PERFORM _as((y->>'sc')::uuid);
+    PERFORM set_config('app.device_id', 'v132-pad', true);
+    SELECT c.ok, c.epoch INTO v_ok, v_epoch FROM scoring_claim(MH, 'v132-pad') c;
+    PERFORM _assert(v_ok, '§111 (held): the scorer could not take the pen');
+    PERFORM _as((y->>'ds')::uuid);
+    PERFORM set_config('app.device_id', 'v132-dos-phone', true);
+    SELECT * INTO got FROM match_finalise(MH);
+    PERFORM _assert(NOT got.ok AND got.reason = 'held_elsewhere' AND _v130_status(MH) = 'live',
+      format('§111 (held): the director finished under a live lease on another phone: (%s, %s), status %s', got.ok, got.reason, _v130_status(MH)));
+    PERFORM _as((y->>'sc')::uuid);
+    PERFORM set_config('app.device_id', 'v132-pad', true);
+    SELECT * INTO got FROM match_finalise(MH);
+    PERFORM _assert(got.ok AND got.reason = 'finished' AND _v130_status(MH) = 'complete',
+      format('§111 (held): the scorer could not finish from the phone holding the pen: (%s, %s)', got.ok, got.reason));
+
+    -- (late)
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                       idempotency_key, body, fingerprint)
+    VALUES (MH, match_school(MH), v_epoch, v_epoch, (y->>'sc')::uuid, 'v132-pad', 'v132-late-' || MH, '{}'::jsonb, md5('v132-late-' || MH));
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                       idempotency_key, body, fingerprint)
+    VALUES (MH, match_school(MH), v_epoch, v_epoch, (y->>'sc')::uuid, 'v132-pad', 'v132-later-' || MH, '{}'::jsonb, md5('v132-later-' || MH));
+    j := _v132_late(MH);
+    t := 'Late ball set aside · Hilton College U13F v Westville Boys'' High 1XI';
+    PERFORM _assert((j->>'n')::int = 2 AND (j->>'to_one')::int = 1 AND (j->>'to_office')::int = 1
+                    AND j->>'recipient' = y->>'sc' AND j->'titles' = jsonb_build_array(t) AND (j->>'named')::int = 0,
+      format('§111 (late): the notices for two late balls are %s, not one to the scorer and one to the office, unnamed, titled %s', j, t));
+    SELECT count(*)::int INTO v_n FROM my_notifications n WHERE n.subject_id = MH AND n.title LIKE 'Late ball set aside%';
+    PERFORM _assert(v_n = 1, format('§111 (late): the scorer reads %s late-ball notices, not his one', v_n));
+    PERFORM _as((y->>'office')::uuid);
+    SELECT count(*)::int INTO v_n FROM my_notifications n WHERE n.subject_id = MH AND n.title LIKE 'Late ball set aside%';
+    PERFORM _assert(v_n = 1, format('§111 (late): the office reads %s late-ball notices, not the office''s one', v_n));
+    PERFORM _as((y->>'ecoach')::uuid);
+    SELECT count(*)::int INTO v_n FROM my_notifications n WHERE n.subject_id = MH AND n.title LIKE 'Late ball set aside%';
+    PERFORM _assert(v_n = 0, format('§111 (late): a coach of another side reads %s late-ball notices', v_n));
+
+    -- (reopen)
+    PERFORM _as((y->>'office')::uuid);
+    FOREACH t IN ARRAY ARRAY['live', 'scheduled'] LOOP
+      BEGIN
+        UPDATE match SET status = t WHERE id = MH;
+        GET DIAGNOSTICS v_n = ROW_COUNT;
+        v_con := 'moved ' || v_n;
+      EXCEPTION WHEN check_violation THEN
+        GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+      END;
+      PERFORM _assert(v_con = 'match_finished_stays_finished' AND _v130_status(MH) = 'complete',
+        format('§111 (reopen): the office moving a finished match to %s got %s, status %s', t, v_con, _v130_status(MH)));
+      PERFORM _assert(_v132_owner_status(MH, t) = 'match_finished_stays_finished' AND _v130_status(MH) = 'complete',
+        format('§111 (reopen): the owner moved a finished match to %s', t));
+    END LOOP;
+
+    -- (lapse), (called off): ML finished by the scorer, confirmed by the director, called off by the office
+    PERFORM _as((y->>'sc')::uuid);
+    SELECT * INTO got FROM match_finalise(ML);
+    PERFORM _assert(got.ok AND got.reason = 'finished', format('§111 (lapse): ML did not finish: (%s, %s)', got.ok, got.reason));
+    PERFORM _as((y->>'ds')::uuid);
+    SELECT c.ok, c.reason INTO v_ok, v_reason FROM match_result_confirm(ML) c;
+    PERFORM _assert(v_ok AND jsonb_array_length(_v114_rows(ML)) = 1,
+      format('§111 (lapse): the director could not confirm ML (%s): %s', v_reason, _v114_rows(ML)));
+    PERFORM _as((y->>'office')::uuid);
+    UPDATE match SET status = 'abandoned' WHERE id = ML;
+    PERFORM _assert(_v130_status(ML) = 'abandoned' AND _v114_rows(ML)->0->>'lapsed_reason' = 'status',
+      format('§111 (lapse): calling off a confirmed result left %s, status %s', _v114_rows(ML), _v130_status(ML)));
+    j := _v132_called_off(ML);
+    PERFORM _assert((j->>'n')::int = 1 AND j->>'actor' = y->>'office',
+      format('§111 (called off): the scoring audit holds %s for the office calling a finished match off', j));
+    PERFORM _assert((_v132_called_off(MX)->>'n')::int = 0, '§111 (called off): a match called off while live was written as a finished one');
+    PERFORM _as((y->>'ds')::uuid);
+    SELECT a.actor, a.subject_kind, a.subject INTO got
+      FROM audit_log('11111111-1111-1111-1111-111111111111', ARRAY['scoring'], NULL, NULL, NULL, 200) a
+     WHERE a.action = 'Called off a finished match' AND a.actor = 'V132 Office';
+    PERFORM _assert(got.actor IS NOT NULL AND got.subject_kind = 'fixture' AND got.subject = _v132_label(ML)
+                    AND got.subject LIKE 'Hilton College U13F v Westville Boys'' High 1XI · %',
+      format('§111 (called off): the director''s log reads %s / %s', got.subject_kind, got.subject));
+
+    -- (abandoned): MX claimed while live, then called off by the office
+    PERFORM _as((y->>'sc')::uuid);
+    PERFORM set_config('app.device_id', 'v132-pad', true);
+    SELECT c.ok, c.epoch INTO v_ok, v_epoch FROM scoring_claim(MX, 'v132-pad') c;
+    PERFORM _assert(v_ok, '§111 (abandoned): the scorer could not take MX''s pen while it was live');
+    PERFORM _as((y->>'office')::uuid);
+    UPDATE match SET status = 'abandoned' WHERE id = MX;
+    PERFORM _as((y->>'sc')::uuid);
+    SELECT l.holds, l.state INTO v_ok, v_state FROM scoring_lease_check(MX, 'v132-pad', v_epoch) l;
+    PERFORM _assert(NOT v_ok AND v_state = 'match_abandoned', format('§111 (abandoned): the lease on a called-off match: (%s, %s)', v_ok, v_state));
+    SELECT c.ok, c.reason INTO v_ok, v_reason FROM scoring_claim(MX, 'v132-pad') c;
+    PERFORM _assert(NOT v_ok AND v_reason = 'match_abandoned', format('§111 (abandoned): the claim: (%s, %s)', v_ok, v_reason));
+    SELECT c.ok, c.reason INTO v_ok, v_reason FROM scoring_takeover(MX, 'v132-other', v_epoch) c;
+    PERFORM _assert(NOT v_ok AND v_reason = 'match_abandoned', format('§111 (abandoned): the take-over: (%s, %s)', v_ok, v_reason));
+    SELECT h.ok, h.reason INTO v_ok, v_reason FROM scoring_claim_handover(MX, 'v132-other', '000000') h;
+    PERFORM _assert(NOT v_ok AND v_reason = 'match_abandoned', format('§111 (abandoned): the handover''s claim: (%s, %s)', v_ok, v_reason));
+    SELECT v.ok, v.reason INTO v_ok, v_reason FROM scoring_verify_takeover(MX, 'v132-other', 0, 0, 0) v;
+    PERFORM _assert(NOT v_ok AND v_reason = 'match_abandoned', format('§111 (abandoned): the handover''s check: (%s, %s)', v_ok, v_reason));
+    PERFORM set_config('app.device_id', '', true);
+
+    -- (role): the office, who holds user.role.assign at Hilton
+    PERFORM _as((y->>'office')::uuid);
+    FOR t, v_reason, P IN SELECT * FROM (VALUES
+        ('moved to another fixture', format('fixture_id = %L', ML),      (y->>'a_fix')::uuid),
+        ('widened to every fixture', 'fixture_id = NULL',                 (y->>'a_fix')::uuid),
+        ('its end taken off',        'valid_until = NULL',                (y->>'a_dated')::uuid),
+        ('its end moved later',      'valid_until = sa_today() + 30',     (y->>'a_dated')::uuid),
+        ('its start moved earlier',  'valid_from = sa_today() - 20',      (y->>'a_dated')::uuid),
+        ('its start taken off',      'valid_from = NULL',                 (y->>'a_dated')::uuid)) x(t, s, p) LOOP
+      BEGIN
+        EXECUTE format('UPDATE role_assignment SET %s WHERE id = $1', v_reason) USING P;
+        GET DIAGNOSTICS v_n = ROW_COUNT;
+        v_con := 'changed ' || v_n;
+      EXCEPTION WHEN check_violation THEN
+        v_con := SQLERRM;
+      END;
+      PERFORM _assert(v_con LIKE 'an appointment%', format('§111 (role): an appointment %s got: %s', t, v_con));
+    END LOOP;
+    j := _v132_asg((y->>'a_dated')::uuid);
+    PERFORM _assert(j->'changes' = '[]'::jsonb AND (j->'row'->>'valid_until')::date = sa_today() + 14,
+      format('§111 (role): a refused change left %s', j));
+    UPDATE role_assignment SET valid_until = sa_today() + 7 WHERE id = (y->>'a_dated')::uuid;
+    UPDATE role_assignment SET fixture_id = MH WHERE id = (y->>'a_wide')::uuid;
+    j := _v132_asg((y->>'a_dated')::uuid);
+    PERFORM _assert(jsonb_array_length(j->'changes') = 1 AND j->'changes'->0->>'by' = y->>'office'
+                    AND (j->'changes'->0->'was'->>'until')::date = sa_today() + 14
+                    AND (j->'changes'->0->'became'->>'until')::date = sa_today() + 7,
+      format('§111 (role): shortening the coach''s appointment is recorded as %s', j));
+    j := _v132_asg((y->>'a_wide')::uuid);
+    PERFORM _assert(jsonb_array_length(j->'changes') = 1 AND j->'changes'->0->'became'->>'fixture' = MH::text
+                    AND j->'changes'->0->'was'->'fixture' = 'null'::jsonb,
+      format('§111 (role): narrowing a scorer to one fixture is recorded as %s', j));
+    UPDATE role_assignment SET active = false, valid_until = sa_today() + 60 WHERE id = (y->>'a_dated')::uuid;
+    j := _v132_asg((y->>'a_dated')::uuid);
+    PERFORM _assert(NOT (j->'row'->>'active')::boolean AND (j->'row'->>'valid_until')::date = sa_today() + 7
+                    AND jsonb_array_length(j->'changes') = 1,
+      format('§111 (role): withdrawing it with a later end moved the end: %s', j));
+    -- Read page by page, as the screen does: every row this verifier wrote
+    -- shares the transaction's now(), so a first page need not hold them.
+    PERFORM _as((y->>'ds')::uuid);
+    v_n := 0; v_at := NULL; t := NULL;
+    LOOP
+      v_page := 0;
+      FOR got IN SELECT a.at, a.key, a.action, a.actor, a.subject_kind, a.subject
+                   FROM audit_log('11111111-1111-1111-1111-111111111111', ARRAY['role'], NULL, v_at, t, 200) a LOOP
+        v_page := v_page + 1; v_at := got.at; t := got.key;
+        IF got.action IN ('Changed a role''s dates: Coach (U13F)', 'Changed a role''s dates: Scorer')
+           AND got.actor = 'V132 Office' AND got.subject_kind = 'person' AND got.subject IN ('V132 Tcoach', 'V132 Tscw') THEN
+          v_n := v_n + 1;
+        END IF;
+      END LOOP;
+      EXIT WHEN v_page < 200;
+    END LOOP;
+    PERFORM _assert(v_n = 2, format('§111 (role): the director''s audit log shows %s of the two changes', v_n));
+
+    -- (links)
+    EXECUTE $v132$CREATE FUNCTION pg_temp._v132_child_links(uuid) RETURNS SETOF jsonb LANGUAGE sql AS $f$
+      SELECT to_jsonb(x) FROM (
+-- child_links:begin
+select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
+                  a.person_id as guardian_id, u.name as guardian_name,
+                  -- db/132 (Kameel, 4 Nov 2026: "the office only"): the guardian's
+                  -- email, the verification note and the link-ending reason, to a
+                  -- holder of guardian.link.manage alone; user.role.assign reads the
+                  -- link's state and dates.
+                  case when office.ok then u.email end as guardian_email,
+                  u.active as account_active,
+                  (a.active and (a.valid_from is null or a.valid_from <= sa_today())
+                            and (a.valid_until is null or a.valid_until > sa_today())) as role_live,
+                  g.relationship, g.verification_state, vb.name as verified_by_name, g.verified_at,
+                  case when office.ok then g.verified_note end as verified_note,
+                  g.consent_state, g.consent_version, g.consent_at,
+                  g.valid_from, g.valid_until, cb.name as created_by_name, g.created_at,
+                  (g.verification_state in ('pending', 'verified') and g.valid_from <= sa_today()
+                     and (g.valid_until is null or g.valid_until > sa_today())) as live,
+                  e.kind as ending_kind, e.ends_on as ending_on, e.ended_at, eb.name as ended_by_name,
+                  case when office.ok then e.reason end as ending_reason,
+                  s.registration_state as standing, s.is_minor, s.live_links, s.consented_links
+             from assignment_subject g
+             join role_assignment a on a.id = g.assignment_id and a.role = 'guardian'
+             left join app_user u  on u.id = a.person_id
+             left join app_user vb on vb.id = g.verified_by
+             left join app_user cb on cb.id = g.created_by
+             left join guardian_link_ending e on e.link_id = g.id
+             left join app_user eb on eb.id = e.ended_by
+             left join player_guardian_status s on s.player_id = g.player_id
+             cross join lateral (select app_can('guardian.link.manage', player_school(g.player_id), '*'::text,
+                                             '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid) as ok) office
+            where g.player_id = $1::uuid
+              and (app_can('guardian.link.manage', player_school(g.player_id), '*'::text,
+                           '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
+                   or app_can('user.role.assign', player_school(g.player_id), '*'::text,
+                              '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
+              and (not (select app_is_platform_wide())
+                   or app_support_access_id(player_school(g.player_id)) is not null)
+            order by g.created_at desc, g.id
+-- child_links:end
+      ) x $f$ $v132$;
+    PERFORM _as((y->>'ds')::uuid);
+    SELECT count(*)::int, count(*) FILTER (WHERE r->>'guardian_email' IS NOT NULL OR r->>'verified_note' IS NOT NULL
+                                              OR r->>'ending_reason' IS NOT NULL)::int
+      INTO v_n, v_epoch FROM pg_temp._v132_child_links((y->>'boy')::uuid) r;
+    PERFORM _assert(v_n = 2 AND v_epoch = 0,
+      format('§111 (links): the director reads %s links, %s of them with an email, a note or a reason', v_n, v_epoch));
+    PERFORM _as((y->>'office')::uuid);
+    SELECT count(*)::int INTO v_n FROM pg_temp._v132_child_links((y->>'boy')::uuid) r
+     WHERE (r->>'guardian_id' = y->>'mum' AND r->>'guardian_email' = 'v132.mum@example.invalid'
+            AND r->>'verified_note' = 'V132: seen with the birth certificate')
+        OR (r->>'guardian_id' = y->>'dad' AND r->>'ending_reason' = 'V132: ended at the family''s own request');
+    PERFORM _assert(v_n = 2, format('§111 (links): the office reads %s of the email, the note and the reason', v_n));
+
+    -- (grant)
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                                 WHERE p.oid = 'app_can(text,uuid,text,uuid,uuid)'::regprocedure
+                                   AND x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'app_can(text,uuid,text,uuid,uuid)', 'EXECUTE'),
+      '§111 (grant): app_can() is executable by PUBLIC, or not by scrbrd_app');
+
+    -- (day)
+    SELECT string_agg(p.oid::regprocedure::text, ', ') INTO t FROM pg_proc p
+     WHERE p.oid IN ('app_can(text,uuid,text,uuid,uuid)'::regprocedure, 'public_name_live_link(uuid,uuid,text)'::regprocedure,
+                     'result_confirm_platform()'::regprocedure)
+       AND (p.prosrc ~* '\mcurrent_date\M' OR p.prosrc !~ 'sa_today\(\)');
+    PERFORM _assert(t IS NULL, format('§111 (day): these do not read Johannesburg''s day: %s', t));
+
+    -- (withdrawn): a U13E post, read by the follower the office scoped to the U13F
+    PERFORM _as((y->>'ecoach')::uuid);
+    INSERT INTO news_post (scope, school_id, team_code, title, body, published_at)
+    VALUES ('team', match_school(MH), 'U13E', 'Section 111 nets', 'Nets on Tuesday.', now()) RETURNING id INTO P;
+    PERFORM _as((y->>'follower')::uuid);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = P) = 1, '§111 (withdrawn): the follower does not read the U13E''s post');
+    PERFORM _as((y->>'ecoach')::uuid);
+    PERFORM _assert(_withdraw_91(P) = 'ok', '§111 (withdrawn): the coach could not withdraw his post');
+    PERFORM _as((y->>'follower')::uuid);
+    PERFORM _assert((SELECT count(*) FROM news_post n WHERE n.id = P) = 0, '§111 (withdrawn): the follower still reads a withdrawn post');
+
+    -- (platform)
+    PERFORM _assert(_v132_platform((y->>'owner')::uuid) AND NOT _v132_platform((y->>'org')::uuid)
+                    AND NOT _v132_platform((y->>'both')::uuid) AND NOT _v132_platform((y->>'ds')::uuid),
+      format('§111 (platform): owner %s, organiser %s, owner and director %s, director %s', _v132_platform((y->>'owner')::uuid),
+             _v132_platform((y->>'org')::uuid), _v132_platform((y->>'both')::uuid), _v132_platform((y->>'ds')::uuid)));
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (sheet)
+    PERFORM _assert(obj_description('fixture_sheet(uuid)'::regprocedure, 'pg_proc') LIKE '%Saved = shown, Kameel''s decision of 4 Nov 2026%',
+      '§111 (sheet): fixture_sheet()''s comment does not record saved = shown');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 111
+  -- └── db/132 (section 111) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

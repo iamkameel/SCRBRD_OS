@@ -484,7 +484,12 @@ export const READ_QUERIES = {
    * WHO: user.role.assign or guardian.link.manage at the child's school,
    * asked here in so many words. db/01's assignment_subject_read already
    * admits those two (A4), but it also admits a parent to her OWN row, and
-   * this read is not hers: she reads her links through her own screens. So a
+   * this read is not hers: she reads her links through her own screens. What
+   * the two read differs (db/132; Kameel, 4 Nov 2026, "the office only", as for
+   * a pupil's email on 28 Oct): the guardian's email, the office's
+   * verification note and why a link ended come back only to a holder of
+   * guardian.link.manage; user.role.assign (the director of sport) reads each
+   * link's state, dates and who decided, with those three NULL. So a
    * parent, a coach and the DSO (who holds neither: SAFEGUARDING §1 item 2;
    * she reads a family through safeguarding_family(), inside a concern) get
    * nothing. `ending_reason` comes through guardian_link_ending's own policy
@@ -502,18 +507,25 @@ export const READ_QUERIES = {
    * family" is a question the DSO answers from the log.
    */
   child_links: {
-    text: `select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
-                  a.person_id as guardian_id, u.name as guardian_name, u.email as guardian_email,
+    // db/99 §111 (links) runs this same text, between the child_links markers.
+    text: /* child_links:begin */`select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
+                  a.person_id as guardian_id, u.name as guardian_name,
+                  -- db/132 (Kameel, 4 Nov 2026: "the office only"): the guardian's
+                  -- email, the verification note and the link-ending reason, to a
+                  -- holder of guardian.link.manage alone; user.role.assign reads the
+                  -- link's state and dates.
+                  case when office.ok then u.email end as guardian_email,
                   u.active as account_active,
                   (a.active and (a.valid_from is null or a.valid_from <= sa_today())
                             and (a.valid_until is null or a.valid_until > sa_today())) as role_live,
-                  g.relationship, g.verification_state, vb.name as verified_by_name, g.verified_at, g.verified_note,
+                  g.relationship, g.verification_state, vb.name as verified_by_name, g.verified_at,
+                  case when office.ok then g.verified_note end as verified_note,
                   g.consent_state, g.consent_version, g.consent_at,
                   g.valid_from, g.valid_until, cb.name as created_by_name, g.created_at,
                   (g.verification_state in ('pending', 'verified') and g.valid_from <= sa_today()
                      and (g.valid_until is null or g.valid_until > sa_today())) as live,
                   e.kind as ending_kind, e.ends_on as ending_on, e.ended_at, eb.name as ended_by_name,
-                  e.reason as ending_reason,
+                  case when office.ok then e.reason end as ending_reason,
                   s.registration_state as standing, s.is_minor, s.live_links, s.consented_links
              from assignment_subject g
              join role_assignment a on a.id = g.assignment_id and a.role = 'guardian'
@@ -523,6 +535,8 @@ export const READ_QUERIES = {
              left join guardian_link_ending e on e.link_id = g.id
              left join app_user eb on eb.id = e.ended_by
              left join player_guardian_status s on s.player_id = g.player_id
+             cross join lateral (select app_can('guardian.link.manage', player_school(g.player_id), '*'::text,
+                                             '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid) as ok) office
             where g.player_id = $1::uuid
               and (app_can('guardian.link.manage', player_school(g.player_id), '*'::text,
                            '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
@@ -530,7 +544,7 @@ export const READ_QUERIES = {
                               '00000000-0000-0000-0000-000000000000'::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
               and (not (select app_is_platform_wide())
                    or app_support_access_id(player_school(g.player_id)) is not null)
-            order by g.created_at desc, g.id`,
+            order by g.created_at desc, g.id`/* child_links:end */,
     params: (q) => {
       const id = q?.playerId || null;
       if (id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
@@ -3653,7 +3667,7 @@ export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[
   accounts: ["email"],
   // A child's guardians and why a link ended (db/109): every read is logged
   // (logsReads); these name what came back.
-  child_links: ["guardian_email", "ending_reason"],
+  child_links: ["guardian_email", "verified_note", "ending_reason"],
   // Dotted, because a rating is nested. What is disclosed here is a named
   // coach's judgement of a named child and the number it has moved to — which
   // is the development record, and as restricted as the assessment it is

@@ -940,6 +940,10 @@ async function verifyExpects() {
   try {
     await c.query("BEGIN");
     const scorer = (await c.query(`select id from app_user where email = 'scorer@example.invalid'`)).rows[0].id;
+    // A finished match never goes back to live (db/132), for the owner too;
+    // this read-only probe steps round that one trigger inside a
+    // transaction it rolls back, so nothing it does is kept.
+    await c.query("ALTER TABLE match DISABLE TRIGGER match_finished_stays_finished");
     await c.query(`update match set status = 'live' where id = $1`, [MATCH]);
     await c.query(`delete from scoring_session where match_id = $1`, [MATCH]);
     await c.query(`insert into scoring_session (match_id, school_id, state, epoch, holder_user_id, holder_device,
