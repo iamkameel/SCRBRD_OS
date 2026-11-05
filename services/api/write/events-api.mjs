@@ -290,6 +290,8 @@ const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_
  *   the key names another event: `seq` is the stored one's, null when that one is held
  * @property {{idempotencyKey: string, reason: RefusalCode, field?: string, value?: any, constraint?: string}[]} refused
  *   the Laws, or the record, refused it
+ * @property {number} [secondAccount]  for the device holding the pen: balls from another phone set aside on
+ *   this match and not yet decided (db/135 second_account_waiting); absent for any other sender
  */
 
 /**
@@ -568,6 +570,13 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
         await client.query("rollback to savepoint event_write");
         result.refused.push({ idempotencyKey: ev.idempotencyKey, ...why });
       }
+    }
+    // The pen-holder's line (TWO_PHONES R3, db/135): how many balls from
+    // another phone are set aside on this match, undecided. Asked only by the
+    // device that holds the pen, which is the only one the function answers.
+    if (lease.holds) {
+      const { rows: sa } = await client.query(`select second_account_waiting($1) as n`, [matchId]);
+      result.secondAccount = sa[0]?.n ?? 0;
     }
     return result;
   });

@@ -47,6 +47,7 @@ import { bowlerToSuspend, replacementEvent, suspendEvent, suspensionRefusalWords
 import { MenuItem, MenuSection, PadMenu } from "./padMenu.jsx";
 import { ExitKey, Pad, PadBoard } from "./pad.jsx";
 import { SyncBanner } from "./syncBanner.jsx";
+import { SecondAccountSheet, PenStandsLine, PenStandsSheet } from "./secondAccount.jsx";
 import { TossSheet } from "./toss.jsx";
 import { areaWords } from "./field.js";
 import { deliveryOf } from "./delivery.js";
@@ -641,6 +642,37 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     return {find,describe:(ev)=>describeEvent(ev,innings[ev?.innings??0]??null,find),
       score:noteAt&&noteScoreRef.current.at===noteAt?noteScoreRef.current.score:null};
   },[events,innings,noteAt]);
+
+  // ── Two phones scoring one match (TWO_PHONES R3, slice 1) ─────────
+  // This phone's second account: the balls it kept that the match record
+  // does not have. Before they are sent, a fork's (its log and the server's
+  // came apart); once sent, the ones the server set aside because another
+  // device held the pen. The pen's book stands; these are kept and reviewed,
+  // never merged. The sheet opens by itself once for each ball it has not
+  // shown, and stays until Done.
+  const secondAccount=useMemo(()=>{
+    const st=padStatus;
+    if(!st)return null;
+    const mine=st.reconcile?.mine??[];
+    if((st.reason==="fork"||st.reason==="fork_settling")&&mine.length){
+      return {ids:mine,items:mine.map((id)=>({payload:bannerExtra.find(id)??{}})),sent:false,
+        sending:st.reason==="fork_settling"||!!st.reviewing,error:st.reviewError??null};
+    }
+    const aside=(st.rejectedList??[]).filter((e)=>e?.reason==="stale_epoch_or_lease");
+    if(aside.length)return {ids:aside.map((e)=>e.idempotencyKey),items:aside,sent:true,sending:false,error:null};
+    return null;
+  },[padStatus,bannerExtra]);
+  const secondSeenRef=useRef(new Set());
+  const secondShownRef=useRef(null);
+  if(secondAccount)secondShownRef.current=secondAccount;
+  useEffect(()=>{
+    if(!secondAccount||modal)return;
+    if(secondAccount.ids.some((id)=>!secondSeenRef.current.has(id)))setModal("secondAccount");
+  },[secondAccount,modal]);
+  const secondDone=()=>{
+    for(const id of secondShownRef.current?.ids??[])secondSeenRef.current.add(id);
+    setModal(null);
+  };
 
   // ── The super over (SCRBRD-114 phase 3b) ────────────────
   // May one start now, and if not, why: asked of the engine and of the
@@ -2021,6 +2053,19 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
         onClose={()=>setModal(null)}/>
     );
 
+    // TWO_PHONES R3: the second phone's sheet, and the pen-holder's.
+    if(modal==="secondAccount"){
+      const sa=secondAccount??secondShownRef.current;
+      if(!sa)return null;
+      return (
+        <SecondAccountSheet items={sa.items} sent={sa.sent} sending={sa.sending} error={sa.error}
+          onSend={()=>syncRef.current?.settleFork()} onDone={secondDone}/>
+      );
+    }
+    if(modal==="penStands")return (
+      <PenStandsSheet count={padStatus?.secondAccount??0} onDone={()=>setModal(null)}/>
+    );
+
     if(modal==="held")return (
       <HeldSheet
         held={sync.heldList??[]}
@@ -2625,6 +2670,11 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
             {/* The state in one line, under the board: the SCRBRD-078 words. */}
             <div data-testid="pad-state" style={{display:"flex",alignItems:"center",gap:T.space.sm,flexWrap:"wrap"}}>
               <SyncPill sync={sync} storage={saveState.kind} onOpenHeld={()=>setModal("held")}/>
+              {/* TWO_PHONES R3: the pen-holder is told his scoring stands
+                  when another phone's balls were set aside here. */}
+              {live&&attached&&padStatus?.secondAccount>0&&(
+                <PenStandsLine count={padStatus.secondAccount} onOpen={()=>setModal("penStands")}/>
+              )}
             </div>
             {/* The match's playing conditions, in words (SCRBRD-114): the
                 version, the free hit, the innings cap, and the bowler on

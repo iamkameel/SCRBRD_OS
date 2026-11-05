@@ -87,6 +87,8 @@ const SUITES = [
   ["outbox",   "packages/sync/test/sync-engine.test.mjs"],
   // A live pad attaching: never split, never merged, never taking another device's match (SCRBRD-078/075).
   ["attach",   "packages/sync/test/attach.test.mjs"],
+  // Two phones scoring one match: the words each scorer reads (TWO_PHONES R3).
+  ["second-account", "packages/sync/test/second-account.test.mjs"],
   // Who bats first on a live fixture: the recorded toss, never a default (SCRBRD-067).
   ["toss",     "packages/scoring/test/toss.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],
