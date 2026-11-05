@@ -34690,13 +34690,8 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   --               nobody's, PUBLIC's neither; neither body reads a player, a
   --               striker or a person's name, nor the database's day
   --
-  -- Falsified (5 Nov 2026, each change made as the owner on a migrated
-  -- database and the section run; each went red at its own label):
-  --   second_account_notice disabled                      → (told)
-  --   the approvers' insert removed                        → (told)
-  --   the dedupe test without required_capability          → (told)
-  --   the holder-device test removed                       → (pen)
-  --   second_account_waiting() without the holder test    → (count)
+  -- Not yet falsified one by one; the walk tools/smoke-browser-two-phones.mjs
+  -- proves the same notices and count end to end through the API.
   DECLARE
     y   jsonb := _v135_stage();
     MP  uuid := (y->>'MP')::uuid;
