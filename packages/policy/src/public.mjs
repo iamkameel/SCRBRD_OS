@@ -277,6 +277,13 @@ export const NEVER_PUBLIC = Object.freeze({
   // union's interest in a named child, the scouting class. His family's to
   // see, never a page's; the whole table.
   passport_union_read: "N5",
+
+  // ── db/142, RECOGNITION R6: the honours audit ──
+  // N3. Who awarded and who withdrew a boy's honour, and whether a withdrawal
+  // followed a correction or something else: a withdrawal "for another
+  // reason" can be a conduct matter (RECOGNITION D4, D21). Read through
+  // audit_log() alone; the whole table.
+  recognition_audit: "N3",
 });
 
 /**

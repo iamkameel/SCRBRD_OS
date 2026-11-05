@@ -13,7 +13,7 @@
  *   node --import ./tools/register-jsx.mjs apps/web/test/potm.test.mjs
  */
 import { readFileSync } from "node:fs";
-import { shortName, confirmWords, standingWords, WITHDRAW_KINDS, REASON_MIN, REASON_MAX } from "../src/lib/potm.js";
+import { potmShortName, confirmWords, standingWords, WITHDRAW_KINDS, POTM_REASON_MIN, POTM_REASON_MAX } from "../src/lib/potm.js";
 import { POTM_WORDS, potmWords } from "../../../services/api/write/potm-api.mjs";
 
 let pass = 0, fail = 0;
@@ -21,11 +21,11 @@ const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, 
 const group = (t) => console.log("\n" + t);
 
 group("Names: the initial and the surname");
-ok("Rohan Pillay is R Pillay", shortName("Rohan Pillay") === "R Pillay");
-ok("a middle name goes", shortName("Rohan  Dev Pillay") === "R Pillay");
-ok("an initial stays", shortName("S Naidoo") === "S Naidoo");
-ok("one name is itself", shortName("Cele") === "Cele");
-ok("nothing is nothing", shortName(null) === "");
+ok("Rohan Pillay is R Pillay", potmShortName("Rohan Pillay") === "R Pillay");
+ok("a middle name goes", potmShortName("Rohan  Dev Pillay") === "R Pillay");
+ok("an initial stays", potmShortName("S Naidoo") === "S Naidoo");
+ok("one name is itself", potmShortName("Cele") === "Cele");
+ok("nothing is nothing", potmShortName(null) === "");
 
 group("The sheet's sentences (§7, the coach)");
 ok("the confirm sheet", confirmWords("Rohan Pillay") === "This awards Player of the Match to R Pillay and tells the side.");
@@ -34,7 +34,7 @@ ok("the standing award, for staff: the name, the decider, the time",
    standingWords({ name: "Rohan Pillay", decidedBy: "Sarah Botha", awardedAt: AT }, Date.parse("2026-10-06T08:00:00Z"))
      === "Player of the Match: Rohan Pillay · decided by Sarah Botha, 20:15, 4 Oct");
 ok("nothing standing, nothing said", standingWords(null) === null);
-ok("the reason's limits are the door's", REASON_MIN === 3 && REASON_MAX === 200);
+ok("the reason's limits are the door's", POTM_REASON_MIN === 3 && POTM_REASON_MAX === 200);
 
 group("Every refusal has words");
 const sql = readFileSync(new URL("../../../db/142_player_of_match.sql", import.meta.url), "utf8");

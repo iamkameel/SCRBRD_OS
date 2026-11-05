@@ -92,10 +92,13 @@ export function potmRoutes({ pool, secret }) {
          from match_squad s join player p on p.id = s.player_id
         where s.match_id = $1 and not s.withdrawn
         order by s.side, s.batting_no nulls last, p.full_name`, [id]);
+    /** @typedef {{side: string, player_id: string, batting_no: number | null, full_name: string}} SheetRow */
+    /** @type {SheetRow[]} */
+    const rowsOf = sheet;
     /** @type {Map<string, {sheet: any[], suggestions: any[], figures: Map<string, string>}>} */
     const out = new Map();
     for (const s of sides) {
-      const mine = sheet.filter((x) => x.side === s.side);
+      const mine = rowsOf.filter((x) => x.side === s.side);
       const ids = mine.map((x) => x.player_id);
       const facts = deriveFacts(evs.map(fromRow), ids, { ctx: /** @type {any} */ (ctx) });
       const figures = new Map(matchFigures(facts, ids).map((f) => [f.playerId, figuresWords(f)]));
@@ -148,10 +151,10 @@ export function potmRoutes({ pool, secret }) {
         const work = await working(client, id, st);
         // The side the boy is on, if the caller decides for it; the door says
         // which refusal it is either way.
-        const side = [...work.entries()].find(([, w]) => w.sheet.some((x) => x.playerId === b.playerId));
+        const side = [...work.entries()].find(([, w]) => w.sheet.some((/** @type {any} */ x) => x.playerId === b.playerId));
         const derived = {
           version: 1, basis: POTM_BASIS, factsVersion: FACTS_VERSION, headSeq: b.headSeq,
-          suggestions: side ? side[1].suggestions.map((x) => ({ playerId: x.playerId, figures: x.figures })) : [],
+          suggestions: side ? side[1].suggestions.map((/** @type {any} */ x) => ({ playerId: x.playerId, figures: x.figures })) : [],
           awardee: { playerId: b.playerId, figures: side ? side[1].figures.get(b.playerId) ?? "Did not bat or bowl" : "" },
         };
         const { rows } = await client.query(`select * from match_award($1, $2, $3::jsonb)`, [id, b.playerId, JSON.stringify(derived)]);

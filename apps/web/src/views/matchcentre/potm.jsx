@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { api, signedIn } from "../../lib/api.js";
-import { confirmWords, shortName, standingWords, WITHDRAW_KINDS, REASON_MIN, REASON_MAX, FALLBACK } from "../../lib/potm.js";
+import { confirmWords, potmShortName, standingWords, WITHDRAW_KINDS, POTM_REASON_MIN, POTM_REASON_MAX, FALLBACK } from "../../lib/potm.js";
 import { Icon } from "../../ui/icons.jsx";
 import { CardHead, Panel } from "./bits.jsx";
 
@@ -71,7 +71,7 @@ const row = (/** @type {boolean} */ disabled) => ({
   border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md, cursor: disabled ? "not-allowed" : "pointer",
   color: disabled ? T.content.tertiary : T.content.primary, fontFamily: T.type.body, fontSize: "14px",
 });
-const small = { ...T.role.body, fontSize: "13px", color: T.content.secondary, margin: 0 };
+const small = () => ({ ...T.role.body, fontSize: "13px", color: T.content.secondary, margin: 0 });
 
 /** @param {{potm: ReturnType<typeof usePotm>}} p */
 export function PotmPanel({ potm }) {
@@ -111,14 +111,14 @@ function PotmSide({ s, basis, two, potm }) {
     setBusy(false);
     setStep(null);
     if (r.ok) { setChosen(null); setMore(false); }
-    setSaid(r.ok ? { ok: true, text: `Awarded: ${shortName(pick.name)} is Player of the Match, and the side is told.` }
+    setSaid(r.ok ? { ok: true, text: `Awarded: ${potmShortName(pick.name)} is Player of the Match, and the side is told.` }
                  : { ok: false, text: r.text ?? FALLBACK });
   };
   const goWithdraw = async () => {
     const text = reason.trim();
     if (!kind) { setSaid({ ok: false, text: "Say whether it is withdrawn after a scorecard correction or for another reason." }); return; }
-    if (text.length < REASON_MIN || text.length > REASON_MAX) {
-      setSaid({ ok: false, text: `Say why, in ${REASON_MIN} to ${REASON_MAX} characters. Nobody on the side reads it.` }); return;
+    if (text.length < POTM_REASON_MIN || text.length > POTM_REASON_MAX) {
+      setSaid({ ok: false, text: `Say why, in ${POTM_REASON_MIN} to ${POTM_REASON_MAX} characters. Nobody on the side reads it.` }); return;
     }
     setBusy(true); setSaid(null);
     const r = await potm.withdraw(s.standing.honourId, kind, text);
@@ -173,9 +173,9 @@ function PotmSide({ s, basis, two, potm }) {
                   </span>
                 </label>
               ))}
-              <label style={{ ...small, display: "grid", gap: T.space.xs }}>
-                The reason, for the school ({REASON_MIN} to {REASON_MAX} characters; nobody on the side reads it)
-                <textarea data-testid="mc-potm-reason" value={reason} maxLength={REASON_MAX} onChange={(e) => setReason(e.target.value)}
+              <label style={{ ...small(), display: "grid", gap: T.space.xs }}>
+                The reason, for the school ({POTM_REASON_MIN} to {POTM_REASON_MAX} characters; nobody on the side reads it)
+                <textarea data-testid="mc-potm-reason" value={reason} maxLength={POTM_REASON_MAX} onChange={(e) => setReason(e.target.value)}
                   style={{ width: "100%", minHeight: "72px", padding: `${T.space.sm} ${T.space.md}`, borderRadius: T.radius.md, resize: "vertical",
                     border: `1px solid ${T.line.normal}`, background: T.surface.raised, color: T.content.primary,
                     fontFamily: T.type.body, fontSize: "14px", boxSizing: "border-box" }}/>
@@ -191,17 +191,17 @@ function PotmSide({ s, basis, two, potm }) {
       )}
 
       {!s.standing && !s.mayAward && s.refusalWords && (
-        <p data-testid="mc-potm-wait" style={small}>{s.refusalWords}</p>
+        <p data-testid="mc-potm-wait" style={small()}>{s.refusalWords}</p>
       )}
 
       {s.mayAward && step !== "confirm" && (
         <fieldset data-testid="mc-potm-choose" style={{ border: "none", padding: 0, margin: 0, display: "grid", gap: T.space.sm }}>
-          <legend style={{ ...small, padding: 0, marginBottom: T.space.xs }}>
+          <legend style={{ ...small(), padding: 0, marginBottom: T.space.xs }}>
             Choose one boy from the side. <span data-testid="mc-potm-basis">{basis}</span>
           </legend>
           {(s.suggestions ?? []).length > 0
             ? <div data-testid="mc-potm-suggestions" style={{ display: "grid", gap: T.space.xs }}>{s.suggestions.map(option)}</div>
-            : <p data-testid="mc-potm-no-suggestion" style={small}>No one on the side has a run or a wicket to suggest him. Choose from the sheet.</p>}
+            : <p data-testid="mc-potm-no-suggestion" style={small()}>No one on the side has a run or a wicket to suggest him. Choose from the sheet.</p>}
           {rest.length > 0 && (
             <button type="button" data-testid="mc-potm-more" aria-expanded={more} onClick={() => setMore((v) => !v)}
               className="pressBtn os-state" style={{ ...btn(false), justifySelf: "start" }}>
@@ -212,7 +212,7 @@ function PotmSide({ s, basis, two, potm }) {
           <button type="button" data-testid="mc-potm-award" disabled={!pick || busy} onClick={() => { setSaid(null); setStep("confirm"); }}
             className="pressBtn os-state" style={{ ...btn(!!pick, true), justifySelf: "start", opacity: pick ? 1 : 0.6,
               cursor: pick ? "pointer" : "not-allowed" }}>
-            {pick ? `Award to ${shortName(pick.name)}` : "Choose a player first"}
+            {pick ? `Award to ${potmShortName(pick.name)}` : "Choose a player first"}
           </button>
         </fieldset>
       )}

@@ -9,14 +9,14 @@
 import { whenWords } from "./official.js";
 
 /** "R Pillay" from "Rohan Pillay": the initial and the surname, as db/142's match_award_short(). */
-export function shortName(name) {
+export function potmShortName(name) {
   const s = String(name ?? "").trim().replace(/\s+/g, " ");
   const m = /^(\S)\S*\s+(?:.*\s)?(\S+)$/.exec(s);
   return m ? `${m[1]} ${m[2]}` : s;
 }
 
 /** The confirm sheet's one sentence (§7). */
-export const confirmWords = (name) => `This awards Player of the Match to ${shortName(name)} and tells the side.`;
+export const confirmWords = (name) => `This awards Player of the Match to ${potmShortName(name)} and tells the side.`;
 
 /** The two kinds of withdrawal (D21), and what each tells the side. */
 export const WITHDRAW_KINDS = Object.freeze([
@@ -27,7 +27,7 @@ export const WITHDRAW_KINDS = Object.freeze([
 ]);
 
 /** The reason's limits, as the door has them. */
-export const REASON_MIN = 3, REASON_MAX = 200;
+export const POTM_REASON_MIN = 3, POTM_REASON_MAX = 200;
 
 /**
  * The standing award as staff read it: "Player of the Match: Rohan Pillay ·
