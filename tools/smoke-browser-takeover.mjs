@@ -388,6 +388,11 @@ try {
 
   group("Score on this device: the logs have forked; A's ball goes to the lead");
   await tid(A.page, "sync-score-here").click({ timeout: 3000 });
+  // TWO_PHONES R3: the fork opens with a sheet in the pad's words, the count
+  // of balls this phone kept; Done leaves the banner and its list behind it.
+  ok("A's pad says so in a sheet first: one ball on this phone not in the match record",
+     await until(A.page, async () => (await tid(A.page, "second-account-sheet").getAttribute("data-count", { timeout: 800 }).catch(() => null)) === "1", 15000));
+  await tid(A.page, "second-account-done").click({ timeout: 3000 });
   ok("A is told the match was scored on another device", await until(A.page, async () => (await banner(A.page)).reason === "fork", 15000), JSON.stringify(await banner(A.page)));
   const fk = await banner(A.page);
   const fkList = await listItems(A.page);

@@ -15,6 +15,8 @@ const SUITES = [
   ["laws-audit","packages/scoring/test/laws-audit.test.mjs"],
   // ...and F4's server half: which later balls an amendment re-judges (db/121).
   ["rejudge",  "services/api/write/rejudge.test.mjs"],
+  // TWO_PHONES R5: the pen's book and a second account lined up by legal ball.
+  ["second-account", "services/api/write/second-account.test.mjs"],
   ["design",   "apps/web/test/design.test.mjs"],
   ["analytics","apps/web/test/analytics.test.mjs"],
   ["home-routing","apps/web/test/home-routing.test.mjs"],
@@ -87,6 +89,8 @@ const SUITES = [
   ["outbox",   "packages/sync/test/sync-engine.test.mjs"],
   // A live pad attaching: never split, never merged, never taking another device's match (SCRBRD-078/075).
   ["attach",   "packages/sync/test/attach.test.mjs"],
+  // Two phones scoring one match: the words each scorer reads (TWO_PHONES R3).
+  ["second-account", "packages/sync/test/second-account.test.mjs"],
   // Who bats first on a live fixture: the recorded toss, never a default (SCRBRD-067).
   ["toss",     "packages/scoring/test/toss.test.mjs"],
   ["phases",   "packages/scoring/test/phases.test.mjs"],
