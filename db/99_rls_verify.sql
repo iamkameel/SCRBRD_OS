@@ -9912,6 +9912,60 @@ EXCEPTION WHEN OTHERS THEN
 END $$ LANGUAGE plpgsql;
 -- └── db/133 (section 112) ─────────────────────────────────────────────
 
+-- ┌── db/136 (section 114). A second account (docs/design/TWO_PHONES.md
+-- slice 2; Kameel, 5 Nov 2026, "All seven as recommended"). Invented, as the
+-- owner; every name a placeholder. A Hilton U12F friendly against
+-- Westville, both innings sealed and the match finished, every ball of it
+-- scored by 'pen' — a director of sport, who holds the approval capability
+-- (R6's case: at a small school the director of sport scores). A second
+-- phone, 'sender's (a principal, who holds it too), set aside four balls of
+-- the first over: two that say what the pen's say, one that differs, and one
+-- the other phone was right about. 'third' (a director of sport who kept
+-- neither book) decides; 'conf' (a principal) asks whether the result may be
+-- confirmed; 'req' (a scorer) is the hand that asks for an amendment.
+CREATE OR REPLACE FUNCTION _v136_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  v_t0 timestamptz := (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg';
+  ids jsonb; m uuid; k text[]; i int;
+BEGIN
+  ids := _v71_people('v136', ARRAY[
+    ARRAY['pen',    'directorofsport', HIL::text, '', ''],
+    ARRAY['sender', 'principal',       HIL::text, '', ''],
+    ARRAY['third',  'directorofsport', HIL::text, '', ''],
+    ARRAY['conf',   'principal',       HIL::text, '', ''],
+    ARRAY['req',    'scorer',          HIL::text, '', '']]);
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U12F', WES, '1XI', 'x', v_t0, 'cricket', 'T20', 1, 'live') RETURNING id INTO m;
+  k := _v114_innings(m, 0::smallint, 'U12F', 'Westville 1XI', ARRAY[1, 1, 4, 1, 1, 1], NULL, (ids->>'pen')::uuid);
+  PERFORM _v114_innings(m, 1::smallint, 'Westville 1XI', 'U12F', ARRAY[0, 0, 0, 0, 0, 0], 10, (ids->>'pen')::uuid);
+  UPDATE match SET status = 'complete' WHERE id = m;
+  ids := ids || jsonb_build_object('M', m, 'k', to_jsonb(k));
+  -- The second phone's account of 0.1, 0.2, 0.3 and 0.4: 1, 1, 6 and 2.
+  FOR i IN 1..4 LOOP
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                       idempotency_key, body, fingerprint)
+    VALUES (m, HIL, 0, 1, (ids->>'sender')::uuid, 'v136-phone', 'v136-held-' || m || '-' || i,
+            jsonb_build_object('clientSeq', i, 'innings', 0,
+              'payload', jsonb_build_object('kind', 'ball', 'type', 'run', 'value', (ARRAY[1, 1, 6, 2])[i], 'innings', 0)),
+            md5('v136-held-' || m || '-' || i));
+    ids := ids || jsonb_build_object('q' || i, currval(pg_get_serial_sequence('ball_event_quarantine', 'id')));
+  END LOOP;
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A match's second_account_resolved rows, as the owner reads them.
+CREATE OR REPLACE FUNCTION _v136_audit(p_match uuid) RETURNS jsonb AS $$
+  SELECT coalesce(jsonb_agg(jsonb_build_object('actor', s.actor_id, 'from', s.from_user, 'to', s.to_user,
+                                               'epoch', s.epoch, 'detail', s.detail) ORDER BY s.id), '[]'::jsonb)
+    FROM scoring_audit s WHERE s.match_id = p_match AND s.event = 'second_account_resolved'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v136_balls(p_match uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM ball_event WHERE match_id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/136 (section 114) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -34611,6 +34665,137 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 112
   -- └── db/133 (section 112) ──────────────────────────────────────────
+
+  -- ┌── db/136 (section 114) ─────────────────────────────────────────
+  -- ── 114. A second account: who may decide it, and the record it leaves ──
+  -- docs/design/TWO_PHONES.md slice 2 (R4–R6); Kameel, 5 Nov 2026. Rows are
+  -- _v136_stage()'s; every decision is a person's call of
+  -- quarantine_resolve() through scrbrd_app, as the routes make it.
+  --   (held)     while one set-aside row is open the result is not
+  --              confirmable: ball_held
+  --   (sender)   the phone's own scorer → cannot_release_your_own
+  --   (pen)      the pen-holder, a director of sport who scored every ball →
+  --              you_scored_this_match (R6), asked after the sender's rule
+  --   (third)    a director of sport who kept neither book: pen stands, with
+  --              the pen's ball and a note → ok; one scoring_audit row
+  --              second_account_resolved naming the decider, both scorers,
+  --              counterpart_key, the note, both epochs and the ball (0.1);
+  --              audit_log() words it "Set aside a second account of 0.1: the
+  --              pen's ball stands"
+  --   (counter)  a counterpart that is not this match's ball → no_such_counterpart
+  --   (bulk)     two rows set aside in one statement write no ball_event row
+  --   (amend)    the other phone was right: an amendment of the pen's 0.4 is
+  --              asked for and named in the note; the audit row carries it and
+  --              the words say so
+  --   (after)    every row decided (and the amendment declined): confirmable
+  --   (grants)   quarantine_resolve(…, text) is a pinned SECURITY DEFINER,
+  --              not PUBLIC's, the application's; the four-argument door is gone
+  DECLARE
+    y   jsonb := _v136_stage();
+    M   uuid := (y->>'M')::uuid;
+    PEN uuid := (y->>'pen')::uuid;
+    SND uuid := (y->>'sender')::uuid;
+    TRD uuid := (y->>'third')::uuid;
+    CNF uuid := (y->>'conf')::uuid;
+    REQ uuid := (y->>'req')::uuid;
+    K   text[] := ARRAY(SELECT jsonb_array_elements_text(y->'k'));
+    r record; j jsonb; got text; n0 integer; a uuid;
+  BEGIN
+    -- (held)
+    PERFORM _as(CNF);
+    SELECT * INTO r FROM match_confirmable(M);
+    PERFORM _assert(r.ok = false AND r.reason = 'ball_held', format('§114 (held): four open rows answered %s/%s', r.ok, r.reason));
+
+    -- (sender)
+    PERFORM _as(SND);
+    SELECT * INTO r FROM quarantine_resolve((y->>'q1')::bigint, false, NULL, 'mine', K[1]);
+    PERFORM _assert(r.ok = false AND r.reason = 'cannot_release_your_own', format('§114 (sender): the sender answered %s/%s', r.ok, r.reason));
+
+    -- (pen)
+    PERFORM _as(PEN);
+    SELECT * INTO r FROM quarantine_resolve((y->>'q1')::bigint, false, NULL, 'pen stands', K[1]);
+    PERFORM _assert(r.ok = false AND r.reason = 'you_scored_this_match', format('§114 (pen): the pen-holder answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM quarantine_resolve((y->>'q3')::bigint, true, '{"kind": "ball", "ball_type": "run", "value": 6}'::jsonb, NULL, NULL);
+    PERFORM _assert(r.ok = false AND r.reason = 'you_scored_this_match', format('§114 (pen): the pen-holder''s release answered %s/%s', r.ok, r.reason));
+    PERFORM _assert(_v136_audit(M) = '[]'::jsonb, '§114 (pen): a refusal wrote an audit row');
+
+    -- (counter)
+    PERFORM _as(TRD);
+    SELECT * INTO r FROM quarantine_resolve((y->>'q1')::bigint, false, NULL, 'x', 'v136-no-such-ball');
+    PERFORM _assert(r.ok = false AND r.reason = 'no_such_counterpart', format('§114 (counter): answered %s/%s', r.ok, r.reason));
+
+    -- (third)
+    n0 := _v136_balls(M);
+    SELECT * INTO r FROM quarantine_resolve((y->>'q1')::bigint, false, NULL, '  Both books say 1  ', K[1]);
+    PERFORM _assert(r.ok, format('§114 (third): the third approver was refused: %s', r.reason));
+    j := _v136_audit(M);
+    PERFORM _assert(jsonb_array_length(j) = 1, format('§114 (third): %s audit rows, not one', jsonb_array_length(j)));
+    PERFORM _assert((j->0->>'actor')::uuid = TRD AND (j->0->>'from')::uuid = SND AND (j->0->>'to')::uuid = PEN
+                    AND (j->0->>'epoch')::int = 1,
+      format('§114 (third): the row does not name the decider, the other book''s scorer and the pen''s: %s', j->0));
+    PERFORM _assert(j->0->'detail' @> jsonb_build_object('quarantine_id', (y->>'q1')::bigint, 'resolution', 'rejected',
+                                                          'counterpart_key', K[1], 'note', 'Both books say 1',
+                                                          'submitted_epoch', 0, 'current_epoch', 1, 'ball', '0.1'),
+      format('§114 (third): the detail reads %s', j->0->'detail'));
+    PERFORM _assert((SELECT q.resolution FROM ball_event_quarantine q WHERE q.id = (y->>'q1')::bigint) = 'rejected',
+      '§114 (third): the row was not stamped rejected');
+    SELECT string_agg(l.action, ' | ') INTO got FROM audit_log(NULL, ARRAY['scoring']) l
+     WHERE l.detail->>'event' = 'second_account_resolved';
+    PERFORM _assert(got = 'Set aside a second account of 0.1: the pen''s ball stands',
+      format('§114 (third): audit_log() words it [%s]', got));
+    PERFORM _assert((SELECT l.detail->>'note' FROM audit_log(NULL, ARRAY['scoring']) l
+                      WHERE l.detail->>'event' = 'second_account_resolved' LIMIT 1) = 'Both books say 1',
+      '§114 (third): audit_log() does not carry the note');
+
+    -- (bulk) the one-tap close: two rows, one statement, no ball written.
+    SELECT string_agg(x.ok::text || coalesce(x.reason, ''), ',') INTO got
+      FROM unnest(ARRAY[(y->>'q2')::bigint, (y->>'q3')::bigint]) WITH ORDINALITY AS t(id, o),
+           LATERAL quarantine_resolve(t.id, false, NULL, 'Both accounts agree', K[t.o + 1]) x;
+    PERFORM _assert(got = 'true,true', format('§114 (bulk): answered %s', got));
+    PERFORM _assert(_v136_balls(M) = n0, format('§114 (bulk): ball_event went from %s to %s rows', n0, _v136_balls(M)));
+    PERFORM _assert(jsonb_array_length(_v136_audit(M)) = 3, '§114 (bulk): not one audit row per row decided');
+    PERFORM _as(CNF);
+    SELECT * INTO r FROM match_confirmable(M);
+    PERFORM _assert(r.reason = 'ball_held', format('§114 (held): one open row answered %s/%s', r.ok, r.reason));
+
+    -- (amend) the other phone was right about 0.4: an amendment of the pen's
+    -- ball, asked by a scorer (scoring.amend.request), named in the note.
+    PERFORM _as(REQ);
+    INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+    SELECT M, m.school_id, K[4], 'Second account: the book says 2', app_user_id() FROM match m WHERE m.id = M
+    RETURNING id INTO a;
+    PERFORM _as(TRD);
+    SELECT * INTO r FROM quarantine_resolve((y->>'q4')::bigint, false, NULL, 'The book says 2 · amendment ' || a, K[4]);
+    PERFORM _assert(r.ok, format('§114 (amend): refused %s', r.reason));
+    j := _v136_audit(M) -> 3;
+    PERFORM _assert(j->'detail'->>'amendment' = a::text AND j->'detail'->>'ball' = '0.4',
+      format('§114 (amend): the audit row reads %s', j));
+    SELECT l.action INTO got FROM audit_log(NULL, ARRAY['scoring']) l
+     WHERE l.detail->>'event' = 'second_account_resolved' AND l.detail->>'amendment' = a::text;
+    PERFORM _assert(got = 'Set aside a second account of 0.4: an amendment was asked of the pen''s ball',
+      format('§114 (amend): audit_log() words it [%s]', got));
+    PERFORM _assert(_v136_balls(M) = n0, '§114 (amend): setting it aside wrote a ball');
+
+    -- (after) the amendment declined by another hand: nothing open, confirmable.
+    PERFORM _as(CNF);
+    SELECT * INTO r FROM scoring_amendment_decide(a, false, 'Verify 136: declined');
+    PERFORM _assert(r.ok, format('§114 (after): the decline was refused: %s', r.reason));
+    SELECT * INTO r FROM match_confirmable(M);
+    PERFORM _assert(r.ok AND r.reason IS NULL, format('§114 (after): every row decided answered %s/%s', r.ok, r.reason));
+
+    -- (grants)
+    PERFORM _assert(to_regprocedure('quarantine_resolve(bigint,boolean,jsonb,text)') IS NULL,
+      '§114 (grants): the four-argument quarantine_resolve() is still a door around you_scored_this_match');
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'quarantine_resolve(bigint,boolean,jsonb,text,text)'::regprocedure
+                              AND p.prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))),
+      '§114 (grants): quarantine_resolve() is not a SECURITY DEFINER with a pinned search_path');
+    PERFORM _assert(NOT has_function_privilege('public', 'quarantine_resolve(bigint,boolean,jsonb,text,text)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'quarantine_resolve(bigint,boolean,jsonb,text,text)', 'EXECUTE'),
+      '§114 (grants): quarantine_resolve() is PUBLIC''s, or not the application''s');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 114
+  -- └── db/136 (section 114) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
