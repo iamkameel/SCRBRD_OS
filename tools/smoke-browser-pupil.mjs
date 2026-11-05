@@ -13,6 +13,8 @@
  *   - he answers for himself from his fixture, and the row says he did;
  *   - Passport shows his figures — a scorebook innings he played — and the
  *     Wheel tab (SCRBRD-102) draws;
+ *   - his personal bests (RECOGNITION R5): School Records first, in the
+ *     spec's empty-state words, Friendly under the filter, never a rank;
  *   - the Match Centre lights his own row and offers a wheel for him only;
  *   - Me shows his own injury record, the nature and the physio's notes
  *     (selfaccess), and his conduct record only when he asks for it (§9 Q6);
@@ -333,6 +335,21 @@ try {
   await tid(s.page, "passport-tab-honours").click({ timeout: 4000 }).catch(() => {});
   await afterReads(s.page, 1200);
   ok("the Honours tab draws", await tid(s.page, "passport-milestones").count() === 1 && await tid(s.page, "passport-honours").count() === 1);
+  // RECOGNITION R5 (D23, D24): his bests, School Records the headline group.
+  // His one innings is the scorebook's, a friendly: so School Records holds
+  // nothing yet, said in the spec's words, and the filter opens Friendly.
+  const bestsSaid = await inner(s.page, "passport-bests");
+  ok("his personal bests card draws, School Records first, in the spec's words",
+     /Personal bests/i.test(bestsSaid) && /Not enough eligible data/.test(bestsSaid), bestsSaid.replace(/\n/g, " / "));
+  ok("...with the filter saying which group is shown",
+     await tid(s.page, "passport-bests-group-school_records").getAttribute("aria-pressed") === "true");
+  await tid(s.page, "passport-bests-group-friendly").click({ timeout: 4000 }).catch(() => {});
+  await s.page.waitForTimeout(300);
+  const friendlySaid = await inner(s.page, "passport-bests");
+  ok("...Friendly: his best, his words, the group named",
+     /Your best: 34\*? v Verify Book XI · Friendly/.test(friendlySaid) && /in verified SCRBRD matches since Sep 2026/.test(friendlySaid),
+     friendlySaid.replace(/\n/g, " / "));
+  ok("...and never a rank (D23)", !/\b(\d+(st|nd|rd|th)|rank(ed)?|place)\b/i.test(friendlySaid + bestsSaid));
   const fp = await floors(s.page);
   ok(`Passport at phone width: nothing read under 12px (${fp.small.length})`, fp.small.length === 0, fp.small.slice(0, 4).join(" · "));
   ok(`...nothing tapped under 44px (${fp.tiny.length})`, fp.tiny.length === 0, fp.tiny.slice(0, 4).join(" · "));
