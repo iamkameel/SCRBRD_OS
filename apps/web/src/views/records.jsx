@@ -66,8 +66,10 @@ export function RecordBoardsView({ rows, read, side, group, onGroup, testid = "r
 }
 
 // Quiet lines: body type, secondary ink (no uppercase label for a sentence).
-const small = { ...T.role.body, fontSize: "13px", color: T.content.secondary, margin: 0 };
-const body = { ...T.role.body, color: T.content.primary, margin: 0 };
+// Functions, not constants: a token is read at render, never at import (the
+// theme can change under a module that is already loaded).
+const smallStyle = () => ({ ...T.role.body, fontSize: "13px", color: T.content.secondary, margin: 0 });
+const bodyStyle = () => ({ ...T.role.body, color: T.content.primary, margin: 0 });
 
 function Board({ b, side, group, full, testid }) {
   const empty = boardEmptyWords(b);
@@ -80,28 +82,28 @@ function Board({ b, side, group, full, testid }) {
         {boardTitle(b, side, group)}
       </h3>
       {empty && (
-        <p style={{ ...body, color: T.content.secondary }} data-testid={`${testid}-empty`}>
+        <p style={{ ...bodyStyle(), color: T.content.secondary }} data-testid={`${testid}-empty`}>
           <Icon name="hourglass"/> {empty}
         </p>
       )}
       {b.holders.map((h) => (
-        <p key={`h-${h.matchId}-${h.playerId}-${h.innings}`} style={body} data-testid={`${testid}-holder`}>
+        <p key={`h-${h.matchId}-${h.playerId}-${h.innings}`} style={bodyStyle()} data-testid={`${testid}-holder`}>
           <Icon name="trophy"/> <span style={{ fontWeight: 600 }}>{b.holders.length > 1 ? "Joint holder" : "Holder"}</span>{" · "}
           <span style={{ ...T.role.figure.sm, fontWeight: 600, color: T.content.primary }}>{figureOf(h)}</span> {h.name} {whereWords(h)}
           {h.equalled && <span style={{ color: T.content.secondary }}> · equalled</span>}
         </p>
       ))}
       {b.formers.map((f) => (
-        <p key={`f-${f.matchId}-${f.playerId}-${f.innings}`} style={{ ...body, color: T.content.secondary }} data-testid={`${testid}-former`}>
+        <p key={`f-${f.matchId}-${f.playerId}-${f.innings}`} style={{ ...bodyStyle(), color: T.content.secondary }} data-testid={`${testid}-former`}>
           <Icon name="rotate-ccw"/> Formerly {figureOf(f)} {f.name} {whereWords(f)}
         </p>
       ))}
       {b.awaiting > 0 && b.state !== "awaiting" && (
-        <p style={{ ...small }} data-testid={`${testid}-awaiting`}>
+        <p style={{ ...smallStyle() }} data-testid={`${testid}-awaiting`}>
           Awaiting verification: {b.awaiting} {b.awaiting === 1 ? "match" : "matches"} the scorer has not sealed yet.
         </p>
       )}
-      <p style={small} data-testid={`${testid}-coverage`}>{coverageWords(b)}</p>
+      <p style={smallStyle()} data-testid={`${testid}-coverage`}>{coverageWords(b)}</p>
       {full && <SeasonList b={b} testid={testid}/>}
     </section>
   );
@@ -111,15 +113,15 @@ function Board({ b, side, group, full, testid }) {
 function SeasonList({ b, testid }) {
   return (
     <div data-testid={`${testid}-season`} style={{ display: "grid", gap: "2px" }}>
-      <p style={small}>
+      <p style={smallStyle()}>
         This season · ordered by {metricLabel(b.metric).toLowerCase()}{b.minBalls ? ` · minimum ${b.minBalls} balls` : ""} · staff only
       </p>
       {b.season.length === 0
-        ? <p style={{ ...small, color: T.content.secondary }} data-testid={`${testid}-season-none`}>Nothing counted this season yet.</p>
+        ? <p style={{ ...smallStyle(), color: T.content.secondary }} data-testid={`${testid}-season-none`}>Nothing counted this season yet.</p>
         : (
           <ol style={{ margin: 0, paddingLeft: "1.5em", display: "grid", gap: "2px" }}>
             {b.season.map((s) => (
-              <li key={`s-${s.matchId}-${s.playerId}-${s.innings}`} value={s.place ?? undefined} style={body} data-testid={`${testid}-season-line`}>
+              <li key={`s-${s.matchId}-${s.playerId}-${s.innings}`} value={s.place ?? undefined} style={bodyStyle()} data-testid={`${testid}-season-line`}>
                 {figureOf(s)} {s.name} {whereWords(s)}
               </li>
             ))}
