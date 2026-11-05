@@ -18,7 +18,7 @@ const run = (/** @type {number} */ v) => ball({ type: "run", value: v, striker: 
 const wide = () => ball({ type: "Wd", value: 0, striker: A, nonStriker: B, bowler: BW });
 const setup = () => [inningsStart({ battingTeam: "H", bowlingTeam: "W" }), batters({ striker: A, nonStriker: B }), bowler({ bowler: BW })];
 /** The second phone's events, set aside, open. @param {any[]} evs */
-const held = (evs) => evs.map((e, i) => ({ id: 100 + i, event: e, resolution: null }));
+const held = (evs) => evs.map((e, i) => ({ id: 100 + i, event: e, resolution: /** @type {string | null} */ (null) }));
 
 ok("ball labels", ballLabel(1) === "0.1" && ballLabel(6) === "0.6" && ballLabel(7) === "1.1" && ballLabel(51) === "8.3" && ballLabel(0) === "start");
 

@@ -80,7 +80,7 @@ export function deliveryWords(ev) {
   if (!isDelivery(ev)) return ev.kind === "bowler" ? "Bowler named" : ev.kind === "batters" ? "Batters named" : String(ev.kind ?? "event").replace(/_/g, " ");
   const n = ev.value ?? 0, runs = `${n} run${n === 1 ? "" : "s"}`;
   switch (ev.type) {
-    case "W":  return `Wicket — ${DISMISSAL_LABEL[ev.dismissal] ?? ev.dismissal ?? "unspecified"}`;
+    case "W":  return `Wicket — ${DISMISSAL_LABEL[/** @type {keyof typeof DISMISSAL_LABEL} */ (ev.dismissal)] ?? ev.dismissal ?? "unspecified"}`;
     case "Wd": return n ? `Wide + ${runs}` : "Wide";
     case "Nb": return n ? `No ball + ${runs}` : "No ball";
     case "B":  return `Bye, ${runs}`;
@@ -280,7 +280,7 @@ export function alignAccounts({ pen, prefix, held, ctx = {} }) {
 /**
  * Read a match's two books and line up every second account in it, one per
  * device that sent set-aside balls, as the caller's own policies show them.
- * @param {import("pg").PoolClient} client  @param {string} matchId
+ * @param {import("../api-types.mjs").Db} client  @param {string} matchId
  */
 async function readAccounts(client, matchId) {
   const { rows: log } = await client.query(
@@ -363,7 +363,7 @@ export function secondAccountRoutes({ pool, secret }) {
    * Who is reading: gated as the quarantine's own door is gated — the
    * approval capability over this match (scoring.amend.approve) — and what
    * the screen should say to him.
-   * @param {import("pg").PoolClient} client @param {string} matchId
+   * @param {import("../api-types.mjs").Db} client @param {string} matchId
    */
   const viewer = async (client, matchId) => {
     const { rows } = await client.query(
@@ -378,7 +378,7 @@ export function secondAccountRoutes({ pool, secret }) {
   /**
    * Resolve each named row through quarantine_resolve() as "pen stands",
    * inside the caller's one transaction; the first refusal rolls them all back.
-   * @param {import("pg").PoolClient} client
+   * @param {import("../api-types.mjs").Db} client
    * @param {{id: string, row: AlignedRow}[]} found @param {(r: AlignedRow, id: string) => string | null} note
    */
   const reject = async (client, found, note) => {
