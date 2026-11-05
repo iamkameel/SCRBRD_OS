@@ -4106,6 +4106,8 @@ This needs a season-per-player read, shared with SCRBRD-132 Wave B.
 
 **Partly done 2026-10-14:** SCRBRD-136/137 away visibility: the ball log follows the fixture (db/97) (#147).
 
+**Partly done 2026-11-04:** pilot item 5, a Recent matches card on the coach's Dashboard (runs, wickets, two plain insights) (#238, commit 5e3f6a73).
+
 **Decided (Kameel, 2026-10-02):** see SCRBRD-137 and the design.
 
 **Phase B decided (Kameel, 2026-10-13, "yes to all"), with #135:** signal_ack keeps the device store ("keep the device store; do not build the table now", PB-D5); `bowler_day`'s gate and holder list are confirmed ("confirm", PB-D1); phase C stays as an option with its measured trigger ("keep, with the trigger in §7", PB-D9). Design: `docs/design/SCRBRD-136-137_phaseB.md`. Built after the pilot, B0 proofs first.
@@ -4830,6 +4832,8 @@ unique index). `GUARDIAN_APP_URL` is set from CSA's material. The information of
 
 **Partly done 2026-10-30:** side moves are dated by the school's day (#215, commit 81de9e4).
 
+**Partly done 2026-11-04:** REACH's last slices: spectators read every side's posts, the team sheet to parents, defence in depth (db/131) (#235, commit 6b26d6fe).
+
 **Priority:** P1 · **Domain:** Families / Privacy · **Type:** design (Fable, `docs/design/STEP4_parent_pupil.md`,
 decided by Kameel 2026-09-27), built by Opus
 **Phase A built 2026-10-01 (Opus), no migration.** The persona menus (G12: Home · Matches · Notices · Family for a
@@ -5279,3 +5283,14 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 4. **Harvest iamkameel/scrbrd** (Kameel, 2026-09-29: "what do we have here that we can learn and take from?"). Attach it with `add_repo` (read). A Haiku agent inventories it (features, screens, data model, anything SCRBRD_OS lacks) and compares it with the earlier harvest artifacts ("SCRBRD OS — the beta-2 harvest" https://claude.ai/artifact/7eNpDHLo9XRMsNJERzjPia, "SCRBRD Convergence Audit", "Four SCRBRD Builds"), so only what is new is reviewed. Opus reviews the candidates, and Kameel gets a short take/skip list. Nothing is copied without that review.
 
 **Then:** SCRBRD-110 phase 2 (check-ins and flags; needs db/62), safeguarding phase 2 (suspension), public pages phase 2, SCRBRD-114 phases 2–4. **Waiting on Kameel:** the KZN schools' bye-laws and playing conditions (SCRBRD-114 phase 5; the CSA club regulations received are club administration only).
+
+## Merged 4–5 Nov 2026 with no backlog entry
+
+- #234 (commit ec4b8b08, 2026-11-04): Finish the match from the pad (db/130), and the pilot journey walk.
+- #236 (commit 3124faf0, 2026-11-04): Docs: record Kameel's 4 Nov decisions (finish the match, fixtures, scope notes) and fix SOLO_TEST (docs only).
+- #237 (commit 8263c8fb, 2026-11-04): Pilot item 7: an uptime alert, and 'who read my child's record' in five minutes.
+- #239 (commit a0165022, 2026-11-04): Who read my child's record: pick one child on the audit screen.
+- #240 (commit d56147b7, 2026-11-04): CI between 00:00 and 02:00 SAST: tests read the SA day (db/99 current_date → sa_today; tools/sa-day.test.mjs).
+- #241 (commit dfa5c04e, 2026-11-05): Pilot hardening (db/132): a finished match stays finished, role dates locked and logged, safer Finish.
+- #242 (commit 16398116, 2026-11-05): Pilot item 2: fixtures — one ground at a time, Postponed, and parents told (db/133).
+- #243 (commit 75a1ef1e, 2026-11-05): Fix main's unit run: three db/99 staging dates read sa_today().
