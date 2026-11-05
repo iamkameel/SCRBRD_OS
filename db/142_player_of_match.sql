@@ -455,16 +455,18 @@ END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE TRIGGER recognition_audit_append_only BEFORE UPDATE ON recognition_audit
   FOR EACH ROW EXECUTE FUNCTION recognition_audit_append_only();
 
+-- Each act at the moment it is made (clock_timestamp(), the column's
+-- default), so two acts in one transaction keep their order in the log.
 CREATE OR REPLACE FUNCTION honour_audit() RETURNS trigger AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
-    INSERT INTO recognition_audit (at, event, honour_id, school_id, team_code, player_id, match_id, kind, actor_id, detail)
-    VALUES (NEW.awarded_at, 'awarded', NEW.id, NEW.school_id, NEW.team_code, NEW.player_id, NEW.match_id, NEW.kind,
+    INSERT INTO recognition_audit (event, honour_id, school_id, team_code, player_id, match_id, kind, actor_id, detail)
+    VALUES ('awarded', NEW.id, NEW.school_id, NEW.team_code, NEW.player_id, NEW.match_id, NEW.kind,
             NEW.awarded_by, jsonb_strip_nulls(jsonb_build_object('name', NEW.name)));
   ELSE
     IF OLD.withdrawn_at IS NULL AND NEW.withdrawn_at IS NOT NULL THEN
-      INSERT INTO recognition_audit (at, event, honour_id, school_id, team_code, player_id, match_id, kind, actor_id, detail)
-      VALUES (NEW.withdrawn_at, 'withdrawn', NEW.id, NEW.school_id, NEW.team_code, NEW.player_id, NEW.match_id, NEW.kind,
+      INSERT INTO recognition_audit (event, honour_id, school_id, team_code, player_id, match_id, kind, actor_id, detail)
+      VALUES ('withdrawn', NEW.id, NEW.school_id, NEW.team_code, NEW.player_id, NEW.match_id, NEW.kind,
               NEW.withdrawn_by, jsonb_strip_nulls(jsonb_build_object('name', NEW.name, 'withdrawnKind', NEW.withdrawn_kind)));
     END IF;
     IF NEW.is_public IS DISTINCT FROM OLD.is_public THEN
@@ -530,7 +532,7 @@ CREATE OR REPLACE FUNCTION match_award_state(p_match uuid)
 RETURNS TABLE (side text, school_id uuid, team_code text, side_label text, opponent_label text, heading text,
                verified boolean, head_seq integer, can_award boolean, refusal text,
                honour_id uuid, player_id uuid, player_name text, awarded_at timestamptz, decided_by_name text,
-               can_withdraw boolean, conflicts uuid[]) AS $$
+               can_withdraw boolean, conflicts uuid[], instead text) AS $$
 DECLARE
   m match%ROWTYPE;
   v_me uuid := app_user_id();
@@ -566,6 +568,7 @@ BEGIN
     conflicts := (SELECT coalesce(array_agg(q.player_id ORDER BY q.player_id), '{}'::uuid[]) FROM match_squad q
                    WHERE q.match_id = p_match AND q.side = s.side AND NOT q.withdrawn
                      AND match_award_guardian_of(v_me, q.player_id));
+    instead := match_award_instead(v_me, s.school);
     RETURN NEXT;
   END LOOP;
 END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;

@@ -94,6 +94,7 @@ import { contactRoutes } from "./write/contacts-api.mjs";
 import { clearanceRoutes } from "./write/clearance-api.mjs";
 import { safeguardingRoutes } from "./write/safeguarding-api.mjs";
 import { recognitionRoutes } from "./write/recognition-api.mjs";
+import { potmRoutes } from "./write/potm-api.mjs";
 import { competitionRoutes } from "./write/competitions-api.mjs";
 import { playingConditionsRoutes } from "./write/playing-conditions-api.mjs";
 import { plannerRoutes } from "./write/planner-api.mjs";
@@ -473,6 +474,7 @@ const clearances = clearanceRoutes({ pool, secret: SECRET });
 // Safeguarding, phase 1 (db/57): raising a concern, and the DSO's record.
 const safeguarding = safeguardingRoutes({ pool, secret: SECRET });
 const recognition = recognitionRoutes({ pool, secret: SECRET });
+const potm = potmRoutes({ pool, secret: SECRET });
 const competitions = competitionRoutes({ pool, secret: SECRET });
 const requests = requestRoutes({ pool, secret: SECRET });
 const staffRegister = registerRoutes({ pool, secret: SECRET });
@@ -768,6 +770,12 @@ const PLAYER_ROUTES = [
   [/^\/api\/honours$/,                              "POST", recognition.award],
   [/^\/api\/honours\/([^/]+)\/withdraw$/,           "POST", recognition.withdraw],
   [/^\/api\/honours\/([^/]+)\/public$/,             "POST", recognition.setPublic],
+  // RECOGNITION R6 (db/142): Player of the Match, the coach's path. Every
+  // rule is the doors': recognition.match.award over the side, the sheet, a
+  // verified match, never the boy himself or his guardian.
+  [/^\/api\/matches\/([^/]+)\/player-of-match$/,          "GET",  potm.state],
+  [/^\/api\/matches\/([^/]+)\/player-of-match$/,          "POST", potm.award],
+  [/^\/api\/matches\/([^/]+)\/player-of-match\/withdraw$/, "POST", potm.withdraw],
   [/^\/api\/cap-baselines$/,                        "POST", recognition.baseline],
   // The rewards figure. A GET on the id-bearing table, keyed on nothing: the
   // rows are whoever the principal may read, narrowed by ?teamCode.
