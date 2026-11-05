@@ -9508,11 +9508,11 @@ BEGIN
             WHERE ra.person_id = x2.person LOOP
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by, valid_from)
-    VALUES (r.aid, r.p, 'parent', 'verified', r.verifier, now(), 'granted', 'popia-2026-01', now(), r.verifier, current_date - 1);
+    VALUES (r.aid, r.p, 'parent', 'verified', r.verifier, now(), 'granted', 'popia-2026-01', now(), r.verifier, sa_today() - 1);
   END LOOP;
   -- A named enquiry grant about the third U14E boy, verified by the office.
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, created_by, valid_from)
-  SELECT ra.id, a[3], 'enquiry', 'verified', OFFICE, now(), OFFICE, current_date - 1
+  SELECT ra.id, a[3], 'enquiry', 'verified', OFFICE, now(), OFFICE, sa_today() - 1
     FROM role_assignment ra WHERE ra.person_id = (ids->>'enquirer')::uuid;
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
   VALUES (HIL, 'U14E', WES, 'U14E', 'Westville U14E', ((sa_today() + 3)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
@@ -9574,7 +9574,7 @@ BEGIN
   INSERT INTO role_assignment (person_id, role, school_id) VALUES (u, 'selfaccess', HIL) RETURNING id INTO sa;
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                   consent_state, consent_version, consent_at, created_by, valid_from)
-  VALUES (sa, b[1], 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, current_date - 1);
+  VALUES (sa, b[1], 'self', 'verified', OFFICE, now(), 'granted', 'popia-2026-01', now(), OFFICE, sa_today() - 1);
   RETURN ids || jsonb_build_object('b', to_jsonb(b));
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
