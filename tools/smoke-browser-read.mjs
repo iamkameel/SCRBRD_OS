@@ -3053,10 +3053,22 @@ try {
 
       // ── A link that has ended, and a request with the office ──
       const naidooId = (await owner.query(`select id from app_user where email = 'parent.naidoo@example.invalid'`)).rows[0].id;
-      await owner.query(`insert into role_request (person_id, role, school_id, note, requested_at) values ($1, 'guardian', $2, 'For my younger son', now() - interval '4 days')`, [naidooId, HIL]);
       const N = await open();
       ok("the parent whose link has ended signs in", await signInAs(N.page, "parent.naidoo@example.invalid"));
       await afterReads(N.page, 1500);
+      // GA-I20 A2 (N4, §3.4): her ended link is said, not "No child is linked".
+      await N.page.waitForSelector('[data-testid="family-link"]', { timeout: 8000 }).catch(() => {});
+      const endedSaid = await N.page.locator('[data-testid="family-none"]').innerText({ timeout: 6000 }).catch(() => "");
+      ok("A2: her ended link is said in §4.3's words, with the school and the day, and not as 'No child is linked'",
+         /Your link to a child at Hilton College ended on \d{1,2} [A-Z][a-z]{2} \d{4}\. The school office can say why; the platform does not\./.test(endedSaid)
+         && !/No child is linked/.test(endedSaid)
+         && await N.page.locator('[data-testid="family-link"][data-kind="ended"]').count() === 1, endedSaid);
+      ok("...naming no child", !/S Naidoo/.test(await text(N.page)), endedSaid);
+      await owner.query(`insert into role_request (person_id, role, school_id, note, requested_at) values ($1, 'guardian', $2, 'For my younger son', now() - interval '4 days')`, [naidooId, HIL]);
+      // A fresh screen (the token lives in memory, so not a reload): Family reads both again.
+      await N.page.locator('[data-testid="nav-family"]').first().click({ timeout: 6000 }).catch(() => {});
+      await afterReads(N.page, 1500);
+      await N.page.waitForSelector('[data-testid="family-pending"]', { timeout: 8000 }).catch(() => {});
       const none = await N.page.locator('[data-testid="family-none"]').innerText({ timeout: 6000 }).catch(() => "");
       ok("her request is said as pending, with the school and how long ago, and never as approved",
          /Your request to be linked to a child at Hilton College is with the office · asked 4 days ago\. This does not mean it was approved\./.test(none)

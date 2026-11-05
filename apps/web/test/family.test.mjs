@@ -13,8 +13,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { inningsStart, batters, bowler, ball, deriveInnings, BALL_TYPE } from "@scrbrd/scoring";
 import {
   howOutWord, lineFor, fixturesOf, isTheirs, opponentOf, chooseChild, noticesFor, linkEndWords, longDate,
-  pendingWords, doorTo, takeDoor,
+  pendingWords, linkWords, doorTo, takeDoor,
 } from "../src/lib/family.js";
+import { asLink } from "../src/lib/live.js";
 import { todoOf, countWords } from "../src/lib/todo.js";
 import { tenantWords } from "../src/lib/words.js";
 import { ChildSwitcher, stateWords } from "../src/views/family/parts.jsx";
@@ -327,6 +328,39 @@ group("Which innings are his side's: by the side the innings names, else by his 
   ok("a super over is no part of it", inningsOf(match, me, [{ ...mk("1XI", [], []), superOver: 1 }], ours)[0].side === null);
 }
 
+
+group("GA-I20 A2: her links that are not live, in §4.3's words, naming no child (D9, §3.3, §3.4)");
+{
+  const NOW_L = Date.parse("2026-10-08T10:00:00Z");
+  const raw = (o = {}) => ({ id: "l-1", school_id: "s1", school_name: "Hilton College", relationship: "parent",
+    verification_state: "revoked", consent_state: "granted", status: "ended", player_id: null, full_name: null,
+    valid_from: "2026-01-10", valid_until: "2026-10-03", verified_at: "2026-01-10T08:00:00Z", asked_on: "2026-01-09",
+    ended_on: "2026-10-03", current: true, ...o });
+  const L = (o) => asLink(raw(o));
+  ok("the adapter keeps the school, the state and the days, and no child where the read gave none",
+     L().schoolName === "Hilton College" && L().status === "ended" && L().endedOn === "2026-10-03" && L().askedOn === "2026-01-09"
+     && L().childId === null && L().childName === null && L().current === true);
+  ok("...and `current` is only ever a true the read said", asLink(raw({ current: null })).current === false);
+  const said = (o) => linkWords([L(o)], NOW_L);
+  ok("revoked: the design's sentence, the school and the day",
+     said()[0]?.kind === "ended" && said()[0]?.words === "Your link to a child at Hilton College ended on 3 Oct 2026. The school office can say why; the platform does not.",
+     said()[0]?.words);
+  ok("ran out (verified, end date past): the same sentence",
+     said({ verification_state: "verified", ended_on: "2026-09-30" })[0]?.words.startsWith("Your link to a child at Hilton College ended on 30 Sep 2026."));
+  ok("rejected: the office did not verify her request, on the day she asked",
+     said({ verification_state: "rejected", status: "rejected", ended_on: null, asked_on: "2026-09-12" })[0]?.words
+       === "The school office did not verify your request of 12 Sep 2026. Ask them.");
+  const pend = said({ verification_state: "pending", status: "pending", ended_on: null, asked_on: "2026-10-04" })[0];
+  ok("pending without a request: the pending sentence, never approved",
+     pend?.kind === "pending" && pend.words === "Your request to be linked to a child at Hilton College is with the office · asked 4 days ago. "
+       + "This does not mean it was approved. When the office verifies the link, your child appears here.", pend?.words);
+  ok("a live link, one not yet begun, and one replaced by another of hers are not said",
+     linkWords([L({ status: "live", player_id: "p1", full_name: "R Pillay" }), L({ status: "starts" }), L({ current: false })], NOW_L).length === 0);
+  ok("a read that has not answered says nothing", linkWords(null, NOW_L).length === 0 && linkWords(undefined, NOW_L).length === 0);
+  ok("no sentence names a child or carries a reason, even where a row wrongly held one",
+     linkWords([L({ full_name: "R Pillay", verified_note: "custody order" })], NOW_L).every((x) => !/Pillay|custody|player/i.test(x.words)));
+  ok("no school name in the row: 'the school', not a blank", said({ school_name: null })[0]?.words.startsWith("Your link to a child at the school ended"));
+}
 
 group("GA-I20 A1: a pending link is said as pending, never as approved, and names no child (§3.3)");
 {
