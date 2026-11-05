@@ -464,12 +464,18 @@ try {
   group("9. The home page's strip: listing and GET /api/public/live (SCRBRD-142, db/82)");
   {
     const WES = "22222222-2222-2222-2222-222222222222";
-    // Hilton 1XI v Westville 1XI, today at noon in South Africa, live, at a ground.
+    // Hilton 1XI v Westville 1XI, today at noon in South Africa, live, at a
+    // ground of its own. Not the Oval: fixture-public.mjs's live T10 is on it
+    // from two hours before the walk runs, and db/133 refuses two fixtures on
+    // one ground at once, so noon on the Oval clashed whenever the walk ran
+    // between 12:21 and 16:59 SAST (CI, 5 Nov, 16:01 SAST).
+    const [{ id: stripGround }] = await q(
+      `insert into ground (school_id, name, surface) values ($1, 'Sherwood Strip Ground', 'grass') returning id`, [HIL]);
     const [{ id: today }] = await q(
       `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, ground_id, starts_at, sport, format, overs, status)
-       values ($1, '1XI', $2, '1XI', 'Westville Boys'' High 1XI', 'ffffffff-0000-0000-0000-000000000001',
+       values ($1, '1XI', $2, '1XI', 'Westville Boys'' High 1XI', $3,
                (sa_today()::timestamp + interval '12 hours') at time zone 'Africa/Johannesburg', 'cricket', 'T20', 20, 'live')
-       returning id`, [HIL, WES]);
+       returning id`, [HIL, WES, stripGround]);
     const liveIds = async () => (/** @type {any[]} */ (JSON.parse((await get("/api/public/live")).body).fixtures ?? [])).map((f) => f.id);
     const listing = async (/** @type {string} */ school, /** @type {string} */ token, /** @type {boolean | undefined} */ listed) =>
       fetch(`${BASE}/api/schools/${school}/listing`, listed === undefined ? { headers: { authorization: `Bearer ${token}` } }
@@ -497,7 +503,7 @@ try {
     ok("...team facts: the schools, the codes, live, today", card?.home?.label === "Hilton College" && card?.home?.code === "1XI"
        && card?.away?.label === "Westville Boys' High" && card?.away?.onPlatform === true && card?.status === "live"
        && /^\d{4}-\d\d-\d\d$/.test(j.asOf), JSON.stringify(card));
-    ok("...no ground, no place, no name, no id but the fixture's", !/Gordon|Sherwood|ground|venue|ffffffff-/i.test(r.body)
+    ok("...no ground, no place, no name, no id but the fixture's", !/Gordon|Sherwood|ground|venue|ffffffff-/i.test(r.body) && !r.body.includes(stripGround)
        && leaksIn(r.body, []).length === 0, leaksIn(r.body, []).join(", "));
     ok("...noindex, public max-age=10", /noindex/.test(r.headers["x-robots-tag"] ?? "") && r.headers["cache-control"] === "public, max-age=10", JSON.stringify(r.headers));
     const staff = await get("/api/public/live", { token: `Bearer ${sarahToken}` });

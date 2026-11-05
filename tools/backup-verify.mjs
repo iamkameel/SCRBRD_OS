@@ -132,6 +132,17 @@ export function shapeProblems(raw) {
   if (/[[\]]/.test(s.replace(/@\[[0-9a-fA-F:.]+\]/, "@"))) out.push("square brackets left in (a template placeholder such as [YOUR-PASSWORD]?)");
   if (/[<>]/.test(s)) out.push("angle brackets left in (a template placeholder?)");
   if (/YOUR[-_ ]?PASSWORD/i.test(s)) out.push("the words YOUR-PASSWORD left in (the template's placeholder, not the password)");
+  // Characters a copy from a web page can carry and nobody can see.
+  if (/[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/.test(s)) {
+    out.push(/^[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/.test(s)
+      ? "an invisible character at the very start (a zero-width space or similar, often copied from a web page): retype the first few letters by hand"
+      : "an invisible character inside it (a zero-width space or similar, often copied from a web page)");
+  }
+  if (/[^\x20-\x7E\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF\s]/.test(s)) {
+    out.push("a character outside plain keyboard text (a look-alike letter, a smart quote or an accented letter); in the password write it percent-encoded");
+  }
+  if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(s)) out.push("a name and = in front of it (paste only the value, not NAME=...)");
+  else if (/^[a-z][a-z0-9+.-]*:/i.test(s) && !/^postgres(ql)?:/i.test(s)) out.push("starts with a different scheme (it must begin postgresql://)");
   if (!/^postgres(ql)?:\/\//i.test(s)) out.push("does not start with postgresql:// or postgres://");
   const rest = s.replace(/^[a-z]+:\/\//i, "");
   if ((rest.match(/@/g) ?? []).length > 1) out.push("more than one @ — the password likely has an unencoded @ (write it as %40)");
