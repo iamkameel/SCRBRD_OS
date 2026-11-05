@@ -141,7 +141,7 @@ ok("majorOf reads server and client versions", majorOf("16.13 (Ubuntu 16.13-0ubu
   ok("a well-shaped session-pooler string has no problems", shapeProblems(GOOD).length === 0, JSON.stringify(shapeProblems(GOOD)));
   ok("...and its advice says where else to look",
      shapeAdvice(GOOD).join("\n").includes("shape looks right; check the password and that the project is not paused"));
-  ok("a local string has no Supabase complaints", shapeProblems("postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd").length === 0);
+  ok("a local string has no Supabase complaints", shapeProblems("postgres://scrbrd:scrbrd@127.0.0.1:5433/scrbrd").length === 0);
 
   /** @type {[string, string, RegExp][]} */
   const cases = [
