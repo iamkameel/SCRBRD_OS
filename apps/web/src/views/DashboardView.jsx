@@ -18,6 +18,7 @@ import { seedCompletedMatch } from "../scorer/seed.js";
 import { boardInsights } from "../scorer/signals.js";
 import { parseBalls, parseScore, teamSquad } from "./shared.jsx";
 import { MatchDayCard } from "./cockpit/MatchDayCard.jsx";
+import { RecentMatches } from "./cockpit/RecentMatches.jsx";
 import { weatherWords } from "../lib/cockpit.js";
 import { observedStamp } from "../lib/weatherStamp.js";
 
@@ -199,7 +200,9 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
 
         {/* 1b. Match day — the coach's card for the next fixture within seven days
             (SCRBRD-136). Handed in, so the pitch deck's frame draws the day
-            sheet without it; it draws nothing for anyone the gate does not admit. */}
+            sheet without it; it draws nothing for anyone the gate does not admit.
+            The coach's recent matches ride in the same slot, under the same gate
+            (views/cockpit/RecentMatches.jsx, pilot item 5). */}
         {matchDay}
 
         {/* 2. Today / next — the next fixture, ready or not. */}
@@ -403,7 +406,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
       weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
       reads={reads} onRetry={() => setNonce((n) => n + 1)}
       onNav={onNav} onOpenScorer={onOpenScorer}
-      matchDay={signedIn() ? <MatchDayCard matches={MATCHES} onNav={onNav}/> : null}/>
+      matchDay={signedIn() ? <><MatchDayCard matches={MATCHES} onNav={onNav}/><RecentMatches matches={MATCHES} onNav={onNav}/></> : null}/>
   );
 }
 

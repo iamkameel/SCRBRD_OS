@@ -1,0 +1,56 @@
+name: Uptime alert
+
+# Every fifteen minutes, GET /api/health on production and on the demo copy.
+# A check that fails twice in a row (see tools/uptime-check.mjs: two rounds, a
+# pause apart, each round two tries at a ninety second timeout, because
+# Render's free plan sleeps and takes thirty to sixty seconds to wake) opens a
+# GitHub issue titled "Uptime: <env> is down", or comments on the one already
+# open. A pass closes it. GitHub emails the repository owner on a new issue:
+# that email is the alert.
+#
+# Addresses (Settings -> Secrets and variables -> Actions -> Variables):
+#   PROD_URL  production. Unset, it falls back to https://scrbrd.onrender.com,
+#             the address written in docs/pilot/PRODUCTION_SHEET.md.
+#   DEMO_URL  the demo copy. Unset, it falls back to
+#             https://scrbrd-demo.onrender.com (the scrbrd-demo Render service).
+# Either may be the base address or the full /api/health URL.
+#
+# Only the built-in GITHUB_TOKEN, with issues: write. No new secret.
+# Schedules run from the default branch only. Run it by hand from the Actions
+# tab (workflow_dispatch).
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # Worst case: 2 rounds x (2 tries x 90 s + 15 s) + 120 s between rounds.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: prod
+            url: ${{ vars.PROD_URL || 'https://scrbrd.onrender.com' }}
+          - env: demo
+            url: ${{ vars.DEMO_URL || 'https://scrbrd-demo.onrender.com' }}
+    concurrency:
+      group: uptime-${{ matrix.env }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check /api/health
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: node tools/uptime-check.mjs --env "${{ matrix.env }}" --url "${{ matrix.url }}"

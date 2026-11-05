@@ -3442,7 +3442,10 @@ function ratingsQuery() {
                from ev e
                join r on r.player_id = e.player_id
               where (case when e.fam = 'bowl' then r.bowling_anchor else r.batting_anchor end) is null
-                 or e.server_ts >= (case when e.fam = 'bowl' then r.bowling_anchor else r.batting_anchor end)::timestamptz
+                 -- from the anchor day's SA midnight, as development_since() opens (db/104):
+                 -- the UTC midnight dropped the balls of 00:00 to 02:00 SAST on that day
+                 or e.server_ts >= ((case when e.fam = 'bowl' then r.bowling_anchor else r.batting_anchor end)::timestamp
+                                    at time zone 'Africa/Johannesburg')
               group by e.player_id
            )
            select r.*,

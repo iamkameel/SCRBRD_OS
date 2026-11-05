@@ -188,7 +188,9 @@ try {
   // The note above is dated today. An assessment dated tomorrow re-anchors, and
   // a note the coach wrote BEFORE looking again is already inside the judgement
   // they have just made.
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  // Tomorrow in SA, after the note's sa_today(): the UTC one is today in SA
+  // from 00:00 to 02:00 SAST, the note's own day.
+  const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
   await api(`/api/players/${P_OWN}/assessment`, {
     method: "POST", token: coach,
     body: { assessedOn: tomorrow, scores: { technical: { footwork: 15 } } } });

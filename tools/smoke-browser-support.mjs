@@ -18,6 +18,11 @@
  *      Settings › School, with the reason, as live — and once ended from the
  *      platform side, as over, by whom?
  *   4. Signed out (the demonstration), is nothing invented?
+ *   5. "Who read my child's record?" (docs/pilot/WHO_READ_RUNBOOK.md): the
+ *      office finds ONE child by name in Settings › School, and the list is
+ *      the server's per-child answer (the medic's read of his injuries, named
+ *      with the reader's role and a date), no safeguarding read, no other
+ *      child; the asking is on the record; a coach has no picker.
  *
  * Falsified twice. Loosening the tab's gate in SettingsView.jsx to draw it
  * for everyone turned "there is no Support tab" red; loosening the panel's
@@ -303,6 +308,77 @@ try {
   const schoolAfter = await schoolCard(dos.page).innerText().catch(() => "");
   ok("...and the school's card no longer shows anything live", !/Live now/i.test(schoolAfter), schoolAfter.slice(0, 300));
   ok("...nor an End button", await endBtn.count() === 0);
+
+  // ── Who read my child's record (docs/pilot/WHO_READ_RUNBOOK.md) ─────
+  group("The office picks ONE child and sees who read his record; a coach has no picker");
+  {
+    const P_CHILD = "aaaaaaaa-0000-0000-0000-000000000005", P_OTHER = "aaaaaaaa-0000-0000-0000-000000000001";
+    const login = async (email) => (await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, deviceId: "device-who-read" }) })).json()).token;
+    const readAs = async (token, path) => (await (await fetch(`${API}/api/read/${path}`, { headers: { authorization: `Bearer ${token}` } })).json()).rows ?? [];
+    // Something to find: the medic reads the injury record (a restricted read, logged by the server),
+    // and two rows filed as the server files them: a safeguarding read naming the child, and a read of another child.
+    const medic = await login("medical@example.invalid");
+    ok("the medic reads the injury record", (await readAs(medic, "injuries")).length > 0);
+    const [medicRow] = await dbq(`select id from app_user where lower(email) = 'medical@example.invalid'`);
+    await dbq(`insert into access_log (school_id, person_id, resource, record_ids, record_count, fields)
+               values ($1, $2, 'safeguarding_concern', array[$3::uuid], 1, '{account}'), ($1, $2, 'players', array[$4::uuid], 1, '{born}')`,
+      [HIL, medicRow.id, P_CHILD, P_OTHER]);
+    const [child] = await dbq(`select full_name from player where id = $1`, [P_CHILD]);
+    const [other] = await dbq(`select full_name from player where id = $1`, [P_OTHER]);
+
+    const off = await open();
+    ok("the school office signs in", await signIn(off.page, "registrar@example.invalid"));
+    await toSettings(off.page);
+    ok("...opens Settings › School", await openTab(off.page, "school"));
+    ok("...and the section has a child picker", await tid(off.page, "who-read-search").count() === 1);
+    ok("...which names nobody before two letters are typed", await off.page.locator('[data-testid^="who-read-option-"]').count() === 0);
+    await tid(off.page, "who-read-search").fill(child.full_name.split(" ").pop().slice(0, 4));
+    await off.page.waitForTimeout(300);
+    const option = tid(off.page, `who-read-option-${P_CHILD}`);
+    ok("typing part of his surname offers him", await option.count() === 1, await tid(off.page, "who-read").innerText().catch(() => ""));
+    await option.click({ timeout: 4000 });
+    await off.page.waitForFunction(() => !/Reading the record/.test(document.querySelector('[data-testid="who-read-count"]')?.textContent ?? "Reading the record"), null, { timeout: 10000 }).catch(() => {});
+    await afterReads(off.page, 800);
+    const section = await tid(off.page, "who-read").innerText().catch(() => "");
+    if (DEBUG) console.log("[debug] who read, one child:\n" + section);
+    const shown = await off.page.$$eval('[data-testid="who-read-row"]', (els) => els.map((e) => e.getAttribute("data-resource")));
+    // The same question asked raw; less the screen's own question, which went on the record after the screen's answer was read.
+    const answer = (await readAs(await login("registrar@example.invalid"), `access_log?playerId=${P_CHILD}`)).filter((r) => !(r.resource === "access_log" && r.mine));
+    ok("focus moves to the way back, not to the top of the page", await off.page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "who-read-clear");
+    ok("the chosen child is said, with the way back", (await tid(off.page, "who-read-child").innerText()).includes(child.full_name) && await tid(off.page, "who-read-clear").count() === 1);
+    ok(`the list is the server's per-child answer (${shown.length} rows, the API's ${answer.length})`, shown.length > 0 && shown.length === answer.length, `${shown.join()} | ${answer.map((r) => r.resource).join()}`);
+    ok("...the medic's read of his injuries is on it, named with his role", shown.includes("injuries") && /L van Wyk · \S/.test(section), section.slice(0, 400));
+    ok("...with the fields and a date the office can write down", /\d{1,2} \w{3} \d{4}/.test(section), section.slice(0, 400));
+    ok("no safeguarding read is listed, though one names him", shown.every((r) => !String(r).startsWith("safeguarding")) && !/safeguarding_concern/.test(section), shown.join());
+    ok("the other child's read is not on his list, and the other child is not named", !section.includes(other.full_name), section.slice(0, 400));
+    const asked = await dbq(`select count(*)::int n from access_log l join app_user u on u.id = l.person_id
+                              where l.resource = 'access_log' and lower(u.email) = 'registrar@example.invalid' and l.record_ids @> array[$1::uuid]`, [P_CHILD]);
+    ok("the office's question from the screen is on the record, naming the child", asked[0].n >= 2, JSON.stringify(asked));
+    const floors = await tid(off.page, "who-read").evaluate((root) => {
+      const small = [], tiny = [];
+      for (const n of [root, ...root.querySelectorAll("*")]) {
+        const cs = getComputedStyle(n);
+        if ([...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()) && parseFloat(cs.fontSize) < 12) small.push(n.tagName);
+        if (/^(BUTTON|INPUT)$/.test(n.tagName) && n.getBoundingClientRect().height < 43.5) tiny.push(`${n.tagName} ${Math.round(n.getBoundingClientRect().height)}`);
+      }
+      return { small, tiny };
+    });
+    ok(`the section: nothing under 12px (${floors.small.length}), nothing tapped under 44px (${floors.tiny.length})`, floors.small.length === 0 && floors.tiny.length === 0, [...floors.small, ...floors.tiny].join());
+    await tid(off.page, "who-read-clear").click({ timeout: 4000 });
+    await afterReads(off.page, 800);
+    ok("'Back to the whole school' returns the picker and the school's list", await tid(off.page, "who-read-search").count() === 1 && /newest reads across the school/.test(await tid(off.page, "who-read-count").innerText()));
+    ok("no console errors on the office's session", off.errors.length === 0, off.errors.join(" | "));
+    await off.ctx.close().catch(() => {});
+
+    const co = await open();
+    ok("a coach signs in", await signIn(co.page, "coach@example.invalid"));
+    await toSettings(co.page);
+    const hasSchool = await openTab(co.page, "school");
+    ok("...and has no picker and no who-read section (no audit.read)", await tid(co.page, "who-read-search").count() === 0 && await tid(co.page, "who-read").count() === 0, `school tab: ${hasSchool}`);
+    ok("...nor the section's title anywhere", !(await text(co.page)).includes("who read what"));
+    await co.ctx.close().catch(() => {});
+  }
 
   ok("no console errors on the operator's session", plat.errors.length === 0, plat.errors.join(" | "));
   ok("no console errors on the school's session", dos.errors.length === 0, dos.errors.join(" | "));

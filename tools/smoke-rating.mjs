@@ -124,7 +124,8 @@ try {
   ok("...though the deliveries are still on the record",
      Number(lifetime[0]?.balls_faced) === 200);
   ok("...and the rating names the day it was anchored",
-     anchored.batting.anchoredOn?.slice(0, 10) === new Date().toISOString().slice(0, 10));
+     anchored.batting.anchoredOn?.slice(0, 10)
+       === new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" }));   // sa_today()
 
   group("Cricket played SINCE the assessment moves it");
   // A poor run, after the assessment. Dated in the future rather than the past,
