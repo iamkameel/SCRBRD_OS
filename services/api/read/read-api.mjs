@@ -3309,6 +3309,72 @@ export const READ_QUERIES = {
               and (s.valid_until is null or s.valid_until > sa_today())
             order by p.full_name, s.player_id`/* my_children:end */,
   },
+
+  /*
+   * HER OWN LINKS, IN EVERY STATE (GA-I20 A2, N4; D9, §3.3, §3.4, §4.3): so
+   * the family screen can say a link the office established but has not
+   * verified, one it did not verify, and one that ended, instead of "No child
+   * is linked" for all three.
+   *
+   * SECURITY INVOKER, like my_children and for the same reason: db/01's
+   * role_assignment_read and assignment_subject_read admit a person's own
+   * rows in every state (`person_id = app_user_id()`, active or not), so no
+   * definer is needed, and the narrowing to her own guardian assignments
+   * keeps the office's read of every family at its school out of it. A
+   * coach, a spectator and the pupil's self link get nothing (role); a pad
+   * credential nothing at all (role_assignment's RESTRICTIVE pad cut, and
+   * `not app_pad_scoped()` here as a second wall; no pad route reaches it).
+   *
+   * NO CHILD UNLESS THE LINK IS LIVE (SCRBRD-140 §6, enumeration): the player
+   * id and name ride only on a verified, started, open link through a live
+   * assignment, which is exactly my_children's set; every other row says the
+   * school, from public_schools() (her assignment's school, not the child's
+   * row, which is not hers to read), the relationship she claimed, the state
+   * and the dates, and nothing about who. No reason is carried for anything.
+   *
+   * `status` is the server's word for the screen: live, pending, rejected,
+   * ended (revoked, run out, or the assignment ended), starts (verified,
+   * not yet begun). `ended_on` is the first of the dates that ended it.
+   * `current` is false on a row a newer or live link of hers to the same
+   * child has replaced, so a revoked-and-re-made link does not read as ended.
+   *
+   * db/99 §116 runs this same text (between the my_links markers) as each
+   * persona; read.test.mjs holds the two copies equal.
+   */
+  my_links: {
+    text: /* my_links:begin */`select s.id, a.school_id, ps.name as school_name, s.relationship,
+                  s.verification_state, s.consent_state, k.status,
+                  case when k.status = 'live' then s.player_id end as player_id,
+                  case when k.status = 'live' then p.full_name end as full_name,
+                  s.valid_from, s.valid_until, s.verified_at, sa_date(s.created_at) as asked_on,
+                  case when k.status = 'ended'
+                       then least(s.valid_until, a.valid_until, sa_date(a.expires_at), sa_date(a.revoked_at)) end as ended_on,
+                  (k.status = 'live' or not exists (
+                     select 1 from role_assignment a2
+                       join assignment_subject s2 on s2.assignment_id = a2.id
+                      where a2.person_id = app_user_id() and a2.role = 'guardian'
+                        and s2.player_id = s.player_id and s2.id <> s.id
+                        and ((s2.created_at, s2.id) > (s.created_at, s.id)
+                             or (s2.verification_state = 'verified' and a2.active
+                                 and (s2.valid_until is null or s2.valid_until > sa_today()))))) as current
+             from role_assignment a
+             join assignment_subject s on s.assignment_id = a.id
+             cross join lateral (select case
+                    when s.verification_state = 'rejected' then 'rejected'
+                    when s.verification_state = 'revoked' or not a.active
+                      or (a.valid_until is not null and a.valid_until <= sa_today())
+                      or (a.expires_at  is not null and a.expires_at  <= now())
+                      or (s.valid_until is not null and s.valid_until <= sa_today()) then 'ended'
+                    when s.verification_state = 'pending' then 'pending'
+                    when s.valid_from <= sa_today() and (a.valid_from is null or a.valid_from <= sa_today()) then 'live'
+                    else 'starts' end as status) k
+             left join player p on p.id = s.player_id and k.status = 'live'
+             left join lateral (select x.name from public_schools() x where x.id = a.school_id) ps on true
+            where a.person_id = app_user_id()
+              and a.role = 'guardian'
+              and not app_pad_scoped()
+            order by s.created_at desc, s.id`/* my_links:end */,
+  },
 };
 
 /**

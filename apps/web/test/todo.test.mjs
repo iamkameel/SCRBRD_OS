@@ -304,7 +304,8 @@ group("R7: the handover, on the day only");
 group("R8a, R8b, R8c, R9: the undated rows, after the dated ones, in the design's order");
 {
   const pending = todoOf(quiet({ child: { ...ROHAN_G, consent: "pending", consentVersion: null, consentAt: null } }));
-  ok("R8a: the terms not agreed on her own link", pending.rows[0]?.rule === "R8a" && pending.rows[0].fact === "The school's terms for Rohan are not agreed yet. The office will ask you."
+  ok("R8a: the terms not agreed on her own link", pending.rows[0]?.rule === "R8a" && pending.rows[0].fact === "The school's terms for Rohan are not agreed yet."
+     && pending.rows[0].door?.kind === "terms" && pending.rows[0].door?.label === "Read and agree"
      && pending.rows[0].owner === "you (your own agreement)" && pending.rows[0].byWhenText === "since 12 Jan 2026", pending.rows[0]);
   const withdrawn = todoOf(quiet({ child: { ...ROHAN_G, consent: "withdrawn", consentAt: "2026-09-03T08:00:00Z" } }));
   ok("...withdrawn: said with its date", withdrawn.rows[0]?.fact === "You withdrew the school's terms for Rohan on 3 Sep 2026. Lifts and health monitoring are off until they are agreed again.", withdrawn.rows[0]?.fact);

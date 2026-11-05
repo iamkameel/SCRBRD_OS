@@ -23,6 +23,11 @@
  *      child, not the reason. Dad does not read it.
  *   5. D14: before, the public-name rule names him through Mum's consent;
  *      after, he is "Batter" (db/47, unchanged).
+ *   4b. GA-I20 A2 (N4): before, Mum's my_links reads her one link live with
+ *      her son; after, the same link ended today at Hilton College, with no
+ *      child's id or name and no reason; my_children nothing. Dad reads his
+ *      own live link and not hers; Sarah (staff, a parent elsewhere) and the
+ *      office read none of hers.
  *   6. The link again: 409 no_open_link. Dad's, now his only one, by the old
  *      route (POST …/guardians/revoke { guardianId }) and the new: 409
  *      last_verified_link, in the function's words; nothing moves.
@@ -63,6 +68,7 @@ const api = async (path, { method = "GET", token, body } = {}) => {
 };
 const tokenFor = async (email) =>
   (await api("/api/auth/dev-login", { method: "POST", body: { email, deviceId: "device-family-links" } })).body?.token;
+const myLinks = async (token) => (await api("/api/read/my_links", { token })).body?.rows ?? null;
 const links = (token, playerId) => api(`/api/read/child_links?playerId=${playerId}`, { token });
 const revoke = (token, player, link, body) =>
   api(`/api/players/${player}/guardians/${link}/revoke`, { method: "POST", token, body });
@@ -174,6 +180,12 @@ try {
      (await q(`select verification_state from assignment_subject where id = $1`, [S.l_mum]))[0].verification_state === "verified"
      && (await q(`select count(*)::int n from guardian_link_ending where link_id = $1`, [S.l_mum]))[0].n === 0);
 
+  // ── 2b. my_links before (GA-I20 A2, N4) ───────────────────────
+  group("my_links before: Mum's own link, live, with her son");
+  const before = await myLinks(mum);
+  ok("one row, live, carrying her son", before?.length === 1 && before[0].id === S.l_mum && before[0].status === "live"
+     && before[0].player_id === S.boy && before[0].school_name === "Hilton College" && before[0].current === true, JSON.stringify(before));
+
   // ── 3. The office revokes ─────────────────────────────────────
   group("The office ends Mum's link, with a kind and a reason");
   ok("before: his name is public through Mum's consent", (await nameOf(S.boy)) === "W Familylinks", await nameOf(S.boy));
@@ -229,6 +241,27 @@ try {
      !/Familylinks|High Court/.test(JSON.stringify(mine)) && mine[0]?.subject_person_id == null);
   ok("Dad does not read it",
      !((await api("/api/read/notifications", { token: dad })).body?.rows ?? []).some((n) => n.title === "A link to a child has ended"));
+
+  // ── 4b. my_links after (GA-I20 A2, N4; §3.4) ─────────────────
+  group("my_links after: Mum reads her ended link, and nothing of the child");
+  const ended = await myLinks(mum);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
+  ok("one row: ended today, at Hilton College, a parent's, still current",
+     ended?.length === 1 && ended[0].id === S.l_mum && ended[0].status === "ended" && ended[0].verification_state === "revoked"
+     && String(ended[0].ended_on).slice(0, 10) === today && ended[0].school_name === "Hilton College"
+     && ended[0].relationship === "parent" && ended[0].current === true, JSON.stringify(ended));
+  ok("...no child's id or name, and no reason anywhere in it",
+     ended?.[0]?.player_id == null && ended?.[0]?.full_name == null
+     && !JSON.stringify(ended).includes(S.boy) && !/Familylinks|High Court|custody/i.test(JSON.stringify(ended)), JSON.stringify(ended));
+  ok("...and my_children gives her nothing", ((await api("/api/read/my_children", { token: mum })).body?.rows ?? []).length === 0);
+  const dads = await myLinks(dad);
+  ok("Dad reads his own link, live, and not hers", dads?.length === 1 && dads[0].id === S.l_dad && dads[0].status === "live", JSON.stringify(dads));
+  for (const [name, token] of [["Sarah (staff, a parent at two schools)", sarah], ["the office", office], ["a coach", coach]]) {
+    const theirs = await myLinks(token);
+    ok(`${name} reads none of the family's links`, Array.isArray(theirs) && !theirs.some((x) => x.id === S.l_mum || x.id === S.l_dad),
+       JSON.stringify(theirs).slice(0, 200));
+  }
+  ok("signed out: refused", (await api("/api/read/my_links")).status === 401);
 
   // ── 5. D14 ─────────────────────────────────────────────────────
   group("What went with it (D14)");
