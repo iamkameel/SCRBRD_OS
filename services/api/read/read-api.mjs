@@ -3680,9 +3680,6 @@ export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[
   // The same figures as `career`, one grain finer: nothing about a child
   // beyond what `career` already discloses to the same reader.
   career_by_season: [],
-  // A boy's bests are career figures, one innings at a time (db/141): nothing
-  // beyond what `career` already discloses to the same reader.
-  personal_bests: [],
   dismissal_breakdown: [],
   skills:   ["score"],
   users:    ["email"],
