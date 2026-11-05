@@ -9,11 +9,12 @@
 // guard's decision is isLocalUrl(), which the first block pins case by case.
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   isLocalUrl, describeUrl, parseShipped, compareLedgers, compareCounts, rolesInAcl, parseCounts, majorOf, withoutPublicSchema,
-  childConnection,
+  childConnection, shapeProblems, shapeAdvice,
 } from "./backup-verify.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -132,6 +133,62 @@ ok("majorOf reads server and client versions", majorOf("16.13 (Ubuntu 16.13-0ubu
   ok("no password: no PGPASSWORD, the string unchanged", c.dbname === "postgres://owner@127.0.0.1/scrbrd" && !("PGPASSWORD" in c.env));
 }
 
+// ── shapeProblems: what is wrong with a pasted secret, never its value ──
+{
+  // Every value is made up and distinctive, so a leak of any fragment shows.
+  const USER = "postgres.qqrefxyzzy", PW = "Plugh7Wombat", REGION = "zz-mars-9", DB = "dbquuxzot";
+  const GOOD = `postgresql://${USER}:${PW}@aws-0-${REGION}.pooler.supabase.com:5432/${DB}`;
+  ok("a well-shaped session-pooler string has no problems", shapeProblems(GOOD).length === 0, JSON.stringify(shapeProblems(GOOD)));
+  ok("...and its advice says where else to look",
+     shapeAdvice(GOOD).join("\n").includes("shape looks right; check the password and that the project is not paused"));
+  ok("a local string has no Supabase complaints", shapeProblems("postgres://scrbrd:scrbrd@127.0.0.1:5432/scrbrd").length === 0);
+
+  /** @type {[string, string, RegExp][]} */
+  const cases = [
+    ["a trailing line break", GOOD + "\n", /leading or trailing whitespace or a line break/],
+    ["a leading space", " " + GOOD, /leading or trailing whitespace or a line break/],
+    ["a line break inside", GOOD.replace("@", "@\n"), /a space, tab or line break inside it/],
+    ["quotes around it", `"${GOOD}"`, /wrapped in quotes/],
+    ["single quotes around it", `'${GOOD}'`, /wrapped in quotes/],
+    ["the template's brackets", GOOD.replace(PW, `[${PW}]`), /square brackets left in/],
+    ["angle brackets", GOOD.replace(PW, `<${PW}>`), /angle brackets left in/],
+    ["the placeholder word", GOOD.replace(PW, "YOUR-PASSWORD"), /the words YOUR-PASSWORD left in/],
+    ["no scheme", GOOD.replace("postgresql://", ""), /does not start with postgresql:\/\/ or postgres:\/\//],
+    ["an http scheme", GOOD.replace("postgresql:", "https:"), /does not start with postgresql:\/\//],
+    ["an unencoded @ in the password", GOOD.replace(PW, `${PW}@x`), /more than one @ .*%40/],
+    ["an unencoded # in the password", GOOD.replace(PW, `${PW}#x`), /contains # .*%23/],
+    ["a bare % in the password", GOOD.replace(PW, `${PW}%zz`), /a % not followed by two hex digits .*%25/],
+    ["an unencoded / in the password", GOOD.replace(PW, `${PW}/x`), /does not parse as a URL/],
+    ["an unencoded ? in the password", GOOD.replace(PW, `${PW}?x`), /does not parse as a URL/],
+    ["no user", `postgresql://:${PW}@aws-0-${REGION}.pooler.supabase.com:5432/${DB}`, /no user/],
+    ["no password", GOOD.replace(`:${PW}`, ""), /no password/],
+    ["no database name", GOOD.replace(`/${DB}`, ""), /no database name/],
+    ["no host", `postgresql://${USER}:${PW}@:5432/${DB}`, /no host|does not parse/],
+    ["a host that is not Supabase's", GOOD.replace(`aws-0-${REGION}.pooler.supabase.com`, `${REGION}.example.zz`), /host does not end in pooler\.supabase\.com or supabase\.co/],
+    ["the IPv6-only direct host", GOOD.replace(`aws-0-${REGION}.pooler.supabase.com`, "db.qqrefxyzzy.supabase.co"), /direct host .* IPv6-only/],
+    ["no port", GOOD.replace(":5432", ""), /no port/],
+    ["a wrong port", GOOD.replace(":5432", ":5433"), /port is not 5432 or 6543/],
+    ["the transaction pooler's port", GOOD.replace(":5432", ":6543"), /6543 is the transaction pooler/],
+    ["a pooler user with no project ref", GOOD.replace(USER, "postgres"), /lacks the \.<project-ref> suffix/],
+    ["a host with characters no host name has", `postgresql://${USER}:${PW}@aws-0-${REGION}.pooler.supabase.com!x:5432/${DB}`, /the host has characters a host name cannot have|does not parse/],
+    ["an empty string", "", /it is empty/],
+  ];
+  /** Every 4-character run of a made-up value: no message may hold one. */
+  const fragments = [USER, PW, REGION, DB, "qqrefxyzzy", "example.zz"]
+    .flatMap((v) => Array.from({ length: v.length - 3 }, (_, i) => v.slice(i, i + 4)))
+    // Runs of Supabase's stock user "postgres.", which the messages may say.
+    .filter((f) => !"postgres.".includes(f));
+  for (const [why, input, want] of cases) {
+    const got = shapeProblems(input);
+    ok(`shape: ${why} is named`, got.some((m) => want.test(m)), JSON.stringify(got));
+    const all = shapeAdvice(input).join("\n");
+    const leak = fragments.find((f) => all.includes(f));
+    ok(`shape: ${why} — the advice carries no fragment of the host, user, password or database`, !leak, `leaked "${leak}"`);
+  }
+  const onePort = shapeProblems(GOOD.replace(":5432", ":5433"));
+  ok("only the problem a string has is named (one fault, one message)", onePort.length === 1, JSON.stringify(onePort));
+}
+
 // ── the guard, as a process ──
 const run = (/** @type {string[]} */ args, /** @type {Record<string,string>} */ env) =>
   spawnSync(process.execPath, [join(HERE, "backup-verify.mjs"), ...args], { encoding: "utf8", timeout: 20000, env: { ...process.env, ...env } });
@@ -144,6 +201,13 @@ const noMode = run([], {});
 ok("no mode is a usage error (exit 2)", noMode.status === 2 && /usage:/.test(noMode.stderr));
 const noOut = run(["dump", "--out"], { DATABASE_URL: REMOTE });
 ok("a flag with no value is a usage error before any connection", noOut.status === 2 && /needs a value/.test(noOut.stderr));
+// A local port nothing listens on: the failure names its code and the shape
+// verdict, and neither the user nor the password. No remote host is touched.
+const refusedConn = run(["counts", "--out", join(tmpdir(), `scrbrd-bv-${process.pid}.json`)],
+  { DATABASE_URL: "postgres://zzuserq:Xyzzy9Frob@127.0.0.1:1/zzdbq" });
+ok("a failed connection exits 1 and prints the shape verdict", refusedConn.status === 1
+   && /could not connect to local database/.test(refusedConn.stderr) && /shape looks right/.test(refusedConn.stderr), refusedConn.stderr);
+ok("...without the user or the password", !/zzuserq|Xyzzy9Frob/.test(refusedConn.stderr + refusedConn.stdout), refusedConn.stderr);
 
 console.log(`\nBACKUP VERIFY: ${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);
