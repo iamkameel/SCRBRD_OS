@@ -219,11 +219,12 @@ try {
   // The one signal the log actually carries: a revision. No "play stopped,
   // resuming at…" event exists on the platform, so the banner says exactly
   // what this is — a revised innings — and nothing it is not.
-  const GORDON = "ffffffff-0000-0000-0000-000000000001";
   const revId = (await q(
     `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
      values ($1, '1XI', 'Rain Test Opponent', $2, now() - interval '40 minutes', 'cricket', 'T20', 20, 'live') returning id`,
-    [HIL, GORDON]))[0].id;
+    // No ground: the T10 built below is live on the Oval now, and db/133
+    // refuses two fixtures on one ground at once. The banner is about the log.
+    [HIL, null]))[0].id;
   await q(`insert into match_toss (match_id, school_id, won_by, decision) values ($1, $2, 'home', 'bat')`, [revId, HIL]);
   const revLog = [];
   let rn = 0;

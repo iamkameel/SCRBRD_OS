@@ -38,6 +38,12 @@ import { runAsPrincipal } from "../auth/auth-db.mjs";
 const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
 
 const STATUS = ["scheduled", "live", "complete", "abandoned"];
+// A fixture is arranged in one of STATUS; a change may also postpone it
+// (db/133; Kameel, 4 Nov 2026). Which moves are allowed — into postponed only
+// from scheduled before a ball, out of it only back on with a new date or
+// called off — is the database's rule (match_fixture_rules()), answered as
+// status_transition below in its own words.
+const AMEND_STATUS = [...STATUS, "postponed"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -62,7 +68,20 @@ export function fixtureRefusal(e) {
   if (e.code === "23514" && e.constraint === "match_finished_stays_finished") {
     return { status: 422, body: { error: "match_finished", detail: e.message } };
   }
+  // db/133: a move the status may not make (postponing a match that was
+  // scored, back on without a new date, a postponed match marked live), said
+  // in full by the database.
+  if (e.code === "23514" && e.constraint === "match_status_transition") {
+    return { status: 422, body: { error: "status_transition", detail: e.message } };
+  }
   if (e.code === "23514") return { status: 422, body: { error: "invalid_fixture", detail: e.message } };
+  // db/133 (decision 1): two fixtures on one ground at overlapping times. The
+  // words name the clash — "U15A v Kearsney College is on No.1 Ground
+  // 10:00-13:00 on Sat 8 Nov" — or, for another school's booking, say only
+  // that the ground is taken then. No override for the pilot.
+  if (e.code === "23P01" && e.constraint === "match_ground_clash") {
+    return { status: 409, body: { error: "ground_clash", detail: e.message } };
+  }
   if (e.code === "23503") return { status: 404, body: { error: "no_such_school_ground_or_sport", detail: e.message } };
   const status = e.code === "42501" ? 403 : (e.status || 500);
   return { status, body: { error: e.code === "42501" ? "not_permitted" : (e.message || "error") } };
@@ -189,7 +208,10 @@ export function fixtureRoutes({ pool, secret }) {
 
     // POST /api/fixtures/:id { startsAt?, groundId?, status? }
     //
-    // Rescheduling and calling a match off. Deliberately NOT the away side or
+    // Rescheduling, postponing, putting back on and calling a match off.
+    // Postponed is { status: "postponed" }; back on is { status: "scheduled",
+    // startsAt } (a new date alone on a postponed fixture puts it back on
+    // too, db/133). The side is told of each by the database. Deliberately NOT the away side or
     // the sport: both are frozen by triggers once there is a ball log, and
     // before that they are better corrected by arranging the right fixture
     // than by mutating the wrong one into it.
@@ -197,7 +219,7 @@ export function fixtureRoutes({ pool, secret }) {
       const b = req.body || {};
       const when = b.startsAt == null ? null : new Date(b.startsAt);
       if (when && Number.isNaN(when.getTime())) throw err("starts_at_invalid");
-      if (b.status != null && !STATUS.includes(b.status)) throw err("status_invalid");
+      if (b.status != null && !AMEND_STATUS.includes(b.status)) throw err("status_invalid");
       // The competition it is played under (SCRBRD-114): a correction before
       // the first ball; db/61 refuses it once the match is scored.
       const competition = competitionOf(b.competitionId);

@@ -66,7 +66,9 @@ await new Promise((r) => web.listen(WEB_PORT, r));
 const browser = await chromium.launch({ ...launchOptions() });
 
 async function open() {
-  const ctx = await browser.newContext();
+  // South African time, so a date and a time typed into the forms are the
+  // ones the database reads (db/133's clash words are SAST).
+  const ctx = await browser.newContext({ timezoneId: "Africa/Johannesburg" });
   await offline(ctx);
   const page = await ctx.newPage();
   watchReads(page);
@@ -98,6 +100,21 @@ async function signIn(page, who) {
   await afterReads(page, 2000);
   return /Match Centre|Dashboard/i.test(await text(page));
 }
+async function signInAs(page, email) {
+  await click(page, /Get Started|Log In/, 5000);
+  await page.waitForTimeout(500);
+  await page.locator("#login-email").fill(email);
+  await click(page, /^Sign In$/, 5000);
+  await afterReads(page, 2200);
+  return (await page.locator('[data-testid="persona-bar"]').count()) === 1;
+}
+const tid = (page, id) => page.locator(`[data-testid="${id}"]`);
+const inner = (page, id) => tid(page, id).first().innerText().catch(() => "");
+/** An instant as the Johannesburg wall clock reads it: { date: "YYYY-MM-DD", time: "HH:MM" }. */
+const sast = (ms) => {
+  const s = new Date(ms + 2 * 3600e3).toISOString();
+  return { date: s.slice(0, 10), time: s.slice(11, 16) };
+};
 async function nav(page, label) {
   const l = page.locator("nav button", { hasText: label }).first();
   if (!(await l.count())) return false;
@@ -186,6 +203,100 @@ try {
   ok("...naming the actual rule broken", /differ|rules|itself/i.test(refusedText), refusedText);
   ok("the form is still open — nothing was silently arranged",
      await dos.page.locator('[data-testid="fixture-preview"]').count() === 1);
+  await click(dos.page, /^Cancel$/, 3000);
+
+  // ── db/133 (Kameel, 4 Nov 2026): one ground at a time, no override ──
+  // The seed's 1XI v Michaelhouse (M2) is on Gordon Sherwood Oval; a U15A
+  // fixture half an hour into it, on the same ground, is refused, naming it.
+  const M2 = "77777777-0000-0000-0000-000000000002";
+  const auth = { headers: { authorization: `Bearer ${tok}` } };
+  const m2Of = async () => (await (await fetch(`${API}/api/read/matches`, auth)).json())?.rows?.find((m) => m.id === M2);
+  const m2 = await m2Of();
+  ok("the seed's 1XI v Michaelhouse is on a ground", !!m2?.starts_at && !!m2?.ground, JSON.stringify(m2 ?? null).slice(0, 200));
+  group("A fixture on a ground already taken then is refused, and the clash is named");
+  ok("Schedule Match is offered again", await click(dos.page, /\+ Schedule Match/, 4000));
+  await dos.page.waitForTimeout(500);
+  await dos.page.locator("select").first().selectOption("U15A");
+  await dos.page.locator('input[placeholder="e.g. Michaelhouse 1st XI"]').fill("Kearsney Clash XI");
+  const over = sast(Date.parse(m2.starts_at) + 30 * 60e3);
+  await dos.page.locator('input[type="date"]').first().fill(over.date);
+  await dos.page.locator('input[type="time"]').first().fill(over.time);
+  await dos.page.locator('select:has(option:has-text("Gordon Sherwood Oval"))').first().selectOption({ label: "Gordon Sherwood Oval" });
+  ok("he tries to book the Oval half an hour into the 1XI's match", await click(dos.page, /Arrange Fixture/, 4000));
+  await dos.page.waitForTimeout(1200);
+  const clashText = await dos.page.locator('[data-testid="fixture-refused"]').innerText().catch(() => "");
+  if (DEBUG) console.log("[debug] clash shown:", clashText);
+  ok("...refused, naming the clash in the database's words",
+     /^Not booked: 1XI v Michaelhouse is on Gordon Sherwood Oval (\d\d:\d\d-\d\d:\d\d on \w{3} \d{1,2} \w{3}|from \w{3} \d{1,2} \w{3} \d\d:\d\d to \w{3} \d{1,2} \w{3} \d\d:\d\d)\. Choose another time or ground\.$/.test(clashText.trim()), clashText);
+  ok("...and nothing was arranged",
+     !((await (await fetch(`${API}/api/read/matches`, auth)).json())?.rows ?? []).some((m) => m.opponent === "Kearsney Clash XI"));
+  await click(dos.page, /^Cancel$/, 3000);
+
+  // ── Postponed, by the office, from the fixture's own panel ──
+  group("The director of sport postpones the 1XI v Michaelhouse, and the side is told");
+  await tid(dos.page, `match-card-${M2}`).click({ timeout: 4000 }).catch(() => {});
+  await afterReads(dos.page, 800);
+  ok("the fixture's panel offers Reschedule or postpone", await click(dos.page, /^Reschedule or postpone$/, 4000));
+  ok("...Postpone is offered", await tid(dos.page, "fixture-postpone").count() === 1);
+  await tid(dos.page, "fixture-postpone").click({ timeout: 4000 }).catch(() => {});
+  ok("...and asks once more, saying the side is told", /side's parents and pupils are told now/.test(await inner(dos.page, "fixture-status-ask")));
+  await tid(dos.page, "fixture-status-confirm").click({ timeout: 4000 }).catch(() => {});
+  await afterReads(dos.page, 1500);
+  ok("the card now says Postponed", (await tid(dos.page, `mc-card-status-${M2}`).getAttribute("data-state").catch(() => null)) === "postponed"
+     && (await inner(dos.page, `mc-card-status-${M2}`)).trim() === "Postponed", await inner(dos.page, `mc-card-status-${M2}`));
+  ok("...and so does the database", (await m2Of())?.status === "postponed");
+  ok("...with no Start Scoring on it", (await tid(dos.page, `match-card-${M2}`).locator("button", { hasText: /Start Scoring/ }).count()) === 0);
+
+  // ── The parent: Postponed on the fixture, and the notice ──
+  group("R Pillay's parent sees Postponed on the fixture, and a notice that names no child");
+  const pa = await open();
+  ok("the parent signs in", await signInAs(pa.page, "parent@example.invalid"));
+  await pa.page.locator("nav button", { hasText: /^Matches$/ }).first().click({ timeout: 6000 }).catch(() => {});
+  await afterReads(pa.page, 1500);
+  ok("his Matches list marks the fixture Postponed", (await inner(pa.page, `fixture-chip-${M2}`)).trim() === "Postponed", await inner(pa.page, `fixture-chip-${M2}`));
+  await tid(pa.page, `fixture-row-${M2}`).click({ timeout: 4000 }).catch(() => {});
+  await afterReads(pa.page, 1200);
+  ok("...and the fixture says so, asking no answer for a day it is not on",
+     /^Postponed\. It stays on the calendar/.test(await inner(pa.page, "fixture-postponed")) && await tid(pa.page, "fixture-availability").count() === 0,
+     await inner(pa.page, "fixture-postponed"));
+  await pa.page.locator("nav button", { hasText: /^Notices$/ }).first().click({ timeout: 6000 }).catch(() => {});
+  await afterReads(pa.page, 1500);
+  const notices = await tid(pa.page, "family-notices").innerText().catch(() => "");
+  ok("her Notices hold 'Postponed · 1XI v Michaelhouse'", notices.includes("Postponed · 1XI v Michaelhouse"), notices.slice(0, 300));
+  const paTok = await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "parent@example.invalid", deviceId: "browser-fixture-create-parent" }) })).json().then((j) => j.token);
+  const paNotes = (await (await fetch(`${API}/api/read/notifications`, { headers: { authorization: `Bearer ${paTok}` } })).json())?.rows ?? [];
+  const told = paNotes.filter((n) => n.subject_id === M2 && /^Postponed · /.test(n.title ?? ""));
+  ok("...one notice, the side's, naming no child and addressed to nobody",
+     told.length === 1 && !/Pillay/i.test(`${told[0]?.title} ${told[0]?.body}`) && !told[0]?.subject_person_id && !told[0]?.recipient_id,
+     JSON.stringify(told).slice(0, 300));
+  ok("no page errors on the parent's session", pa.errors.length === 0, pa.errors.join(" | "));
+
+  // ── Back on, with a new date ──
+  group("The director of sport gives it a new date: it is back on, and the side is told again");
+  await afterReads(dos.page, 500);
+  if (!(await tid(dos.page, "fixture-reschedule").count())) await click(dos.page, /^Give it a new date$/, 4000);
+  ok("the panel offers the new-date path for a postponed fixture", /Put this fixture back on/.test(await inner(dos.page, "fixture-reschedule")), await inner(dos.page, "fixture-reschedule"));
+  ok("...and Put it back on waits for a date and a time", await tid(dos.page, "fixture-reschedule-save").isDisabled().catch(() => false));
+  const again = sast(Date.parse(m2.starts_at) + 2 * 86400e3);
+  await tid(dos.page, "fixture-reschedule").locator('input[type="date"]').fill(again.date);
+  await tid(dos.page, "fixture-reschedule").locator('input[type="time"]').fill(again.time);
+  await tid(dos.page, "fixture-reschedule-save").click({ timeout: 4000 }).catch(() => {});
+  await afterReads(dos.page, 1500);
+  const back = await m2Of();
+  ok("it is scheduled again, on the new date", back?.status === "scheduled" && Date.parse(back.starts_at) === Date.parse(m2.starts_at) - (Date.parse(m2.starts_at) % 60e3) + 2 * 86400e3,
+     JSON.stringify({ status: back?.status, at: back?.starts_at }));
+  ok("...and the card no longer says Postponed", (await tid(dos.page, `mc-card-status-${M2}`).getAttribute("data-state").catch(() => null)) !== "postponed");
+  // Away and back: the Notices screen reads afresh when it opens.
+  await pa.page.locator("nav button", { hasText: /^Matches$/ }).first().click({ timeout: 6000 }).catch(() => {});
+  await afterReads(pa.page, 1200);
+  ok("the parent's Matches list no longer marks it Postponed", (await inner(pa.page, `fixture-chip-${M2}`)).trim() !== "Postponed"
+     && await tid(pa.page, `fixture-row-${M2}`).count() === 1, await inner(pa.page, `fixture-chip-${M2}`));
+  await pa.page.locator("nav button", { hasText: /^Notices$/ }).first().click({ timeout: 6000 }).catch(() => {});
+  await afterReads(pa.page, 1500);
+  const notices2 = await tid(pa.page, "family-notices").innerText().catch(() => "");
+  ok("the parent's Notices now hold 'Back on · 1XI v Michaelhouse' as well", notices2.includes("Back on · 1XI v Michaelhouse") && notices2.includes("Postponed · 1XI v Michaelhouse"), notices2.slice(0, 300));
+  await pa.ctx.close().catch(() => {});
 
   ok("no console errors on the director of sport's session", dos.errors.length === 0, dos.errors.join(" | "));
   await dos.ctx.close().catch(() => {});

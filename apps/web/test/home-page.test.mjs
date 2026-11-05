@@ -86,14 +86,17 @@ group("C. Live strip and news: nothing until given data, nothing on 404");
     fx("c2", "complete", { scores: [{ innings: 1, runs: 131, wickets: 8, balls: 120 }, { innings: 2, runs: 132, wickets: 4, balls: 97 }], result: "Westville Boys' High 1XI won by 6 wickets" }),
     fx("c1", "live", { scores: [{ innings: 1, runs: 142, wickets: 3, balls: 110 }] }),
     fx("c4", "abandoned"),
-    fx("c5", "postponed"),
+    fx("c5", "cancelled"),
+    // db/133: postponed before play, to be replayed. Listed with the settled ones.
+    fx("c6", "postponed"),
   ] };
-  ok("live first, then the day's order; an unknown status is left out", arrange(data.fixtures).map((f) => f.id).join() === "c1,c3,c2,c4");
+  ok("live first, then the day's order; an unknown status is left out", arrange(data.fixtures).map((f) => f.id).join() === "c1,c3,c2,c4,c6");
   const all = html(h(LiveStrip, { data }));
-  ok("a card for each known fixture", (all.match(/data-testid="home-card"/g) ?? []).length === 4, all.length);
+  ok("a card for each known fixture", (all.match(/data-testid="home-card"/g) ?? []).length === 5, all.length);
+  ok("a postponed card says POSTPONED, with no score, and links to the match page", /data-status="postponed"/.test(all) && /href="\/live\/c6"/.test(all) && /POSTPONED/.test(text(h(LiveStrip, { data: { fixtures: [fx("c6", "postponed")] } }))));
   ok("every card is a nofollow link to the match page; a finished one to the scorecard",
     /href="\/live\/c1"[^>]*rel="nofollow"|rel="nofollow"[^>]*href="\/live\/c1"/.test(all) && /href="\/scorecard\/c2"/.test(all) && /href="\/scorecard\/c4"/.test(all)
-    && (all.match(/rel="nofollow"/g) ?? []).length === 4);
+    && (all.match(/rel="nofollow"/g) ?? []).length === 5);
   const t = text(h(LiveStrip, { data }));
   ok("the live card reads the score and overs: 142/3, 18.2 ov", /LIVE/.test(t) && /142\/3 \(18\.2\)/.test(t) && /18\.2 ov/.test(t), t);
   ok("a score with no side is a line of its own, not guessed onto a team", /1st innings 142\/3/.test(t) && /2nd innings 132\/4 \(16\.1\)/.test(t), t);
