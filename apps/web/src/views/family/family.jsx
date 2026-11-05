@@ -269,7 +269,9 @@ export function FamilyNotices({ role }) {
  * card — lifts, consents, the account — is added beside it, not into it.
  */
 export function FamilyFile({ role, onNav }) {
-  const { rows: kids, loading, error } = useLive("my_children", role);
+  // Agreeing the terms (N6) reads her links again, so the card says the record's words.
+  const [nonce, setNonce] = useState(0);
+  const { rows: kids, loading, error } = useLive("my_children", role, nonce);
   // The fixtures, for each child's count (GA-I20 A1): the same read the Home makes.
   const matchesRead = useLive("matches", role);
   const links = useLinkLines(kids.length > 0);
@@ -282,7 +284,8 @@ export function FamilyFile({ role, onNav }) {
       <Title>Family</Title>
       {kids.map((c) => (
         <ChildFileCard key={c.id} child={c} role={role} w={tenantWords({ kind: c.schoolKind, relationship: c.relationship })}
-          todo={<TodoCount child={c} matches={matchesRead.rows} matchesRead={matchesRead} now={now} onOpen={() => openHome(c)}/>}/>
+          todo={<TodoCount child={c} matches={matchesRead.rows} matchesRead={matchesRead} now={now} onOpen={() => openHome(c)}/>}
+          onAgreed={() => setNonce((n) => n + 1)}/>
       ))}
       {/* Her other links, not live (GA-I20 A2): an ended or unverified link beside a live one is still said. */}
       {(links.lines.length > 0 || links.failed) && (

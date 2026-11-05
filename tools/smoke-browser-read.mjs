@@ -3064,6 +3064,8 @@ try {
          && !/No child is linked/.test(endedSaid)
          && await N.page.locator('[data-testid="family-link"][data-kind="ended"]').count() === 1, endedSaid);
       ok("...naming no child", !/S Naidoo/.test(await text(N.page)), endedSaid);
+      const nf = await floors(N.page);
+      ok(`A2: nothing under 12px (${nf.small.length}) and nothing tapped under 44px (${nf.tiny.length})`, nf.small.length === 0 && nf.tiny.length === 0, [...nf.small, ...nf.tiny].slice(0, 4).join(" · "));
       await owner.query(`insert into role_request (person_id, role, school_id, note, requested_at) values ($1, 'guardian', $2, 'For my younger son', now() - interval '4 days')`, [naidooId, HIL]);
       // A fresh screen (the token lives in memory, so not a reload): Family reads both again.
       await N.page.locator('[data-testid="nav-family"]').first().click({ timeout: 6000 }).catch(() => {});
@@ -3078,6 +3080,49 @@ try {
          && await N.page.locator('[data-testid="todo-record"]').count() === 0);
       ok("no scoping refusals or page errors for her", N.refusals.length === 0 && N.errors.length === 0, N.errors.join(" | "));
       await N.ctx.close();
+
+      // ── N6 (GA-I20 D7, A2): a parent reads the school's terms whole, agrees, and the row clears ──
+      const CELE = "aaaaaaaa-0000-0000-0000-000000000004";
+      const celeId = (await owner.query(`select id from app_user where email = 'parent.cele@example.invalid'`)).rows[0].id;
+      const C = await open();
+      const ct = (id) => C.page.locator(`[data-testid="${id}"]`);
+      try {
+        ok("N6: the parent whose terms are not agreed signs in", await signInAs(C.page, "parent.cele@example.invalid"));
+        await settled(C.page);
+        const row = ct(`todo-row-R8a-${CELE}`);
+        ok("...her list has the terms row, with 'Read and agree'", await row.count() === 1
+           && /The school's terms for M Cele are not agreed yet\./.test(await row.innerText()) && /Read and agree/.test(await row.innerText()),
+           await todo(C.page).innerText().catch(() => ""));
+        await row.click({ timeout: 4000 }).catch(() => {});
+        await C.page.waitForSelector('[data-testid="family-terms-text"]', { timeout: 8000 }).catch(() => {});
+        const agree = ct("family-terms-agree");
+        ok("...the whole text opens on his card, with the version and what is kept",
+           /The school's terms for your child on SCRBRD/.test(await ct("family-terms-text").innerText().catch(() => ""))
+           && /The Information Regulator of South Africa \(inforegulator\.org\.za\)\./.test(await ct("family-terms-text").innerText().catch(() => ""))
+           && /Version popia-2026-01\. Your agreement, this version and the time are kept against your name\./.test(await ct("family-terms-kept").innerText().catch(() => "")));
+        ok("...'I agree' waits until she has read to the end", await agree.isDisabled());
+        const tf = await floors(C.page);
+        ok(`N6: nothing under 12px (${tf.small.length}) and nothing tapped under 44px (${tf.tiny.length})`, tf.small.length === 0 && tf.tiny.length === 0, [...tf.small, ...tf.tiny].slice(0, 4).join(" · "));
+        await ct("family-terms-text").evaluate((el) => { el.scrollTop = el.scrollHeight; el.dispatchEvent(new Event("scroll")); });
+        await C.page.waitForFunction(() => !document.querySelector('[data-testid="family-terms-agree"]')?.hasAttribute("disabled"), null, { timeout: 4000 }).catch(() => {});
+        ok("...at the end it is ready", !(await agree.isDisabled()));
+        await agree.click({ timeout: 4000 });
+        await C.page.waitForSelector('[data-testid="family-terms-agreed"]', { timeout: 8000 }).catch(() => {});
+        ok("...agreed: the record's words, the day and the version", /^Agreed · \d{1,2} [A-Z][a-z]{2} \d{4}, \d\d:\d\d · popia-2026-01$/.test((await ct("family-terms-agreed").innerText().catch(() => "")).trim()),
+           await ct("family-terms-agreed").innerText().catch(() => ""));
+        const rec = (await owner.query(`select s.consent_state, s.consent_version from assignment_subject s join role_assignment a on a.id = s.assignment_id
+                                         where a.person_id = $1 and s.player_id = $2`, [celeId, CELE])).rows[0];
+        ok("...and the server holds it: granted, at the version", rec?.consent_state === "granted" && rec.consent_version === "popia-2026-01", JSON.stringify(rec));
+        ok("...his card no longer says the terms are not agreed", await ct("family-consent-pending").count() === 0);
+        await C.page.locator('[data-testid="nav-children"], [data-testid="nav-home"]').first().click({ timeout: 4000 }).catch(() => {});
+        await settled(C.page);
+        ok("...and on Home the row has cleared", await ct(`todo-row-R8a-${CELE}`).count() === 0, await todo(C.page).innerText().catch(() => ""));
+        ok("no scoping refusals or page errors for her", C.refusals.length === 0 && C.errors.length === 0, C.errors.join(" | "));
+      } finally {
+        await C.ctx.close();
+        await owner.query(`update assignment_subject s set consent_state = 'pending', consent_version = null, consent_at = null
+                             from role_assignment a where a.id = s.assignment_id and a.person_id = $1 and s.player_id = $2`, [celeId, CELE]);
+      }
     } finally {
       if (lifted) await grant(false).catch(() => {});
       await owner.end().catch(() => {});
