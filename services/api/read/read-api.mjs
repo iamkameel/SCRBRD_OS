@@ -2131,6 +2131,24 @@ export const READ_QUERIES = {
     params: q => [req(q, "playerId")],
   },
 
+  /*
+   * PERSONAL BESTS (RECOGNITION R5, db/141): one boy's highest innings and
+   * best bowling per class group (School Records, Friendly), format and the
+   * side he played for, through player_best() — security invoker over the
+   * career views, each match admitted only under player.performance.read at
+   * that side about him (D1, D22). Only verified matches are best; the rows
+   * still awaiting the scorer's seal come back with verified false so a
+   * screen can say so (D24's "awaiting verification"), and are never best.
+   * Derived on every read, never stored, never public (A10, A11).
+   */
+  personal_bests: {
+    text: `select b.metric, b.class_group, b.format, b.side_code, b.match_id, b.innings, b.played_on, b.opponent,
+                  b.runs, b.balls_faced, b.not_out, b.wickets, b.runs_conceded, b.verified, b.best
+             from player_best($1::uuid) b
+            where b.best or not b.verified`,
+    params: q => [req(q, "playerId")],
+  },
+
   /* A side's caps ledger, in cap order. Derived from the team sheets. */
   caps: {
     text: `select c.school_id, c.team_code, c.player_id, c.full_name, c.cap_no, c.appearances,
@@ -3662,6 +3680,9 @@ export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[
   // The same figures as `career`, one grain finer: nothing about a child
   // beyond what `career` already discloses to the same reader.
   career_by_season: [],
+  // A boy's bests are career figures, one innings at a time (db/141): nothing
+  // beyond what `career` already discloses to the same reader.
+  personal_bests: [],
   dismissal_breakdown: [],
   skills:   ["score"],
   users:    ["email"],
