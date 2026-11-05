@@ -34700,6 +34700,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     REQ uuid := (y->>'req')::uuid;
     K   text[] := ARRAY(SELECT jsonb_array_elements_text(y->'k'));
     r record; j jsonb; got text; n0 integer; a uuid;
+    l record; i integer; n integer; x text; w text; v_at timestamptz; v_key text;
   BEGIN
     -- (held)
     PERFORM _as(CNF);
@@ -34739,13 +34740,6 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
       format('§114 (third): the detail reads %s', j->0->'detail'));
     PERFORM _assert((SELECT q.resolution FROM ball_event_quarantine q WHERE q.id = (y->>'q1')::bigint) = 'rejected',
       '§114 (third): the row was not stamped rejected');
-    SELECT string_agg(l.action, ' | ') INTO got FROM audit_log(NULL, ARRAY['scoring']) l
-     WHERE l.detail->>'event' = 'second_account_resolved';
-    PERFORM _assert(got = 'Set aside a second account of 0.1: the pen''s ball stands',
-      format('§114 (third): audit_log() words it [%s]', got));
-    PERFORM _assert((SELECT l.detail->>'note' FROM audit_log(NULL, ARRAY['scoring']) l
-                      WHERE l.detail->>'event' = 'second_account_resolved' LIMIT 1) = 'Both books say 1',
-      '§114 (third): audit_log() does not carry the note');
 
     -- (bulk) the one-tap close: two rows, one statement, no ball written.
     SELECT string_agg(x.ok::text || coalesce(x.reason, ''), ',') INTO got
@@ -34762,7 +34756,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     -- ball, asked by a scorer (scoring.amend.request), named in the note.
     PERFORM _as(REQ);
     INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
-    SELECT M, m.school_id, K[4], 'Second account: the book says 2', app_user_id() FROM match m WHERE m.id = M
+    SELECT M, mm.school_id, K[4], 'Second account: the book says 2', app_user_id() FROM match mm WHERE mm.id = M
     RETURNING id INTO a;
     PERFORM _as(TRD);
     SELECT * INTO r FROM quarantine_resolve((y->>'q4')::bigint, false, NULL, 'The book says 2 · amendment ' || a, K[4]);
@@ -34770,10 +34764,27 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     j := _v136_audit(M) -> 3;
     PERFORM _assert(j->'detail'->>'amendment' = a::text AND j->'detail'->>'ball' = '0.4',
       format('§114 (amend): the audit row reads %s', j));
-    SELECT l.action INTO got FROM audit_log(NULL, ARRAY['scoring']) l
-     WHERE l.detail->>'event' = 'second_account_resolved' AND l.detail->>'amendment' = a::text;
-    PERFORM _assert(got = 'Set aside a second account of 0.4: an amendment was asked of the pen''s ball',
-      format('§114 (amend): audit_log() words it [%s]', got));
+    -- audit_log() as the deciding director of sport (audit.read) reads it,
+    -- page by page as the screen pages it: every section before this one
+    -- wrote scoring rows at Hilton in this same transaction, at this same now().
+    got := NULL;
+    FOR i IN 1..100 LOOP
+      n := 0;
+      FOR l IN SELECT * FROM audit_log(NULL, ARRAY['scoring'], NULL, v_at, v_key, 200) LOOP
+        n := n + 1; v_at := l.at; v_key := l.key;
+        IF l.detail->>'event' = 'second_account_resolved' AND l.detail->>'note' = 'Both books say 1' THEN
+          got := l.action; x := l.detail->>'note';
+        ELSIF l.detail->>'event' = 'second_account_resolved' AND l.detail->>'amendment' = a::text THEN
+          w := l.action;
+        END IF;
+      END LOOP;
+      EXIT WHEN n < 200 OR (got IS NOT NULL AND w IS NOT NULL);
+    END LOOP;
+    PERFORM _assert(got = 'Set aside a second account of 0.1: the pen''s ball stands',
+      format('§114 (third): audit_log() words it [%s]', got));
+    PERFORM _assert(x = 'Both books say 1', '§114 (third): audit_log() does not carry the note');
+    PERFORM _assert(w = 'Set aside a second account of 0.4: an amendment was asked of the pen''s ball',
+      format('§114 (amend): audit_log() words it [%s]', w));
     PERFORM _assert(_v136_balls(M) = n0, '§114 (amend): setting it aside wrote a ball');
 
     -- (after) the amendment declined by another hand: nothing open, confirmable.
