@@ -5294,3 +5294,5 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - #241 (commit dfa5c04e, 2026-11-05): Pilot hardening (db/132): a finished match stays finished, role dates locked and logged, safer Finish.
 - #242 (commit 16398116, 2026-11-05): Pilot item 2: fixtures — one ground at a time, Postponed, and parents told (db/133).
 - #243 (commit 75a1ef1e, 2026-11-05): Fix main's unit run: three db/99 staging dates read sa_today().
+- #244 (commit ffa8f3f0, 2026-11-05): Union selectors S5: a row shows his playing styles in words (db/134). Union selectors complete.
+- #245 (commit a4841e50, 2026-11-05): Backup drill: say what's wrong with the connection string's shape, never its value.
