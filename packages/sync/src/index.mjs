@@ -15,3 +15,4 @@ export * from "./indexeddb-storage.mjs";
 export * from "./held.mjs";
 export * from "./attach.mjs";
 export * from "./pad-proof.mjs";
+export * from "./second-account.mjs";

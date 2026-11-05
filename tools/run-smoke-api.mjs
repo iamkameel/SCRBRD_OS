@@ -354,6 +354,16 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // another phone's lapsed lease is a confirmed take-over with the server's
   // last ball shown, and the first phone's balls reach the lead.
   "browser-takeover",
+  // TWO_PHONES slice 1 (db/135): two phones score the same overs; the second
+  // phone's balls are set aside, never merged, both scorers are told in a
+  // sheet, and the notices name the fixture by its sides alone.
+  "browser-two-phones",
+  // TWO_PHONES slice 2 (db/136): a second phone's account of an over the pen
+  // also scored, set aside; the director who scored is refused; the server
+  // refuses releasing a ball the pen has; the principal, who kept neither
+  // book, closes the five that agree in one tap, decides the one that differs
+  // as "pen stands" (totals unchanged), and releases the one the pen missed.
+  "browser-second-account",
   // SCRBRD-133 G1: the ground display, signed out, at 1920×1080, 1024×768
   // and 390×844 — names only under the rule (and a withdrawal reaching an
   // open display), no token, the 12px floor, the 404, the rotation's skip and
@@ -658,7 +668,7 @@ const WEIGHTS = {
   "browser-offline-day": 80, "browser-playing-conditions-screen": 70,
   "browser-public": 70, "browser-cleanup": 70, "browser-suspension": 70,
   "browser-laws4": 70, "browser-handover": 60, "browser-handover-offline": 70, "browser-support": 60,
-  "browser-takeover": 90,
+  "browser-takeover": 90, "browser-two-phones": 180,
   "browser-pad-resume": 60, "browser-sync-drop": 60, "browser-dossier": 60, "browser-offline-undo": 50,
   "browser-wagonwheel": 50, "browser-results": 50, "browser-drs": 50,
   "browser-safeguarding": 50, "browser-playing-conditions": 50,
