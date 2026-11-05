@@ -34716,12 +34716,12 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   --              (which reads every link at its school) read no row of hers
   --   (support)  a support session at Hilton as the office reads none
   --   (pad)      g under a pad credential reads nothing
-  -- Each guard was falsified once (taken out of the API's copy, so
-  -- read.test.mjs went red too, and this copy run against the migrated
-  -- database) and went red at the first assertion able to see it:
+  -- Each guard was falsified once in this copy, run against the migrated
+  -- database, and went red at the first assertion able to see it:
   --   `a.person_id = app_user_id()` removed   → (nobody): the office reads g's rows
-  --   `and k.status = 'live'` on player id    → (name)
-  --   `not app_pad_scoped()` removed          → (pad)
+  --   the live-only player id                 → (name)
+  -- `not app_pad_scoped()` removed stays green: role_assignment's RESTRICTIVE
+  -- pad cut already hides her rows, and the read's clause is the second wall.
   DECLARE
     z     jsonb := _vlinks_stage();
     G     uuid;  H uuid;
@@ -34834,16 +34834,16 @@ $v116$;
     PERFORM _as('88888888-0000-0000-0000-000000000009');
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v116_my_links), '§116 (nobody): the pupil''s self link reads as a guardian''s');
     PERFORM _as((z->>'off')::uuid);
-    PERFORM _assert((SELECT count(*) FROM assignment_subject WHERE id = ANY (mine)) = 6,
-      '§116: the fixture is void — the office reads none of g''s links to be kept from');
+    PERFORM _assert((SELECT count(*) FROM assignment_subject WHERE id = ANY (mine) AND id <> (z->>'l_wes')::uuid) = 5,
+      '§116: the fixture is void — the office does not read g''s five Hilton links to be kept from');
 
     -- (support) a support session at Hilton, as the office, reads none.
     PERFORM _as((z->>'plat')::uuid);
     SELECT r.ok, r.id INTO v_ok, v_sess
       FROM support_access_begin('11111111-1111-1111-1111-111111111111', 'schooladmin', 'V116: Hilton asked the platform to help', NULL, 60) r;
     PERFORM _assert(v_ok, '§116 (support): a support session at Hilton could not be begun');
-    PERFORM _assert((SELECT count(*) FROM assignment_subject WHERE id = ANY (mine)) = 6,
-      '§116 (support): the fixture is void — the session reads none of g''s links to be kept from');
+    PERFORM _assert((SELECT count(*) FROM assignment_subject WHERE id = ANY (mine) AND id <> (z->>'l_wes')::uuid) = 5,
+      '§116 (support): the fixture is void — the session does not read g''s five Hilton links to be kept from');
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v116_my_links), '§116 (support): a support session reads a family''s links');
     PERFORM support_access_end(v_sess);
 

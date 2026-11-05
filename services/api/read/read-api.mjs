@@ -3322,8 +3322,8 @@ export const READ_QUERIES = {
    * definer is needed, and the narrowing to her own guardian assignments
    * keeps the office's read of every family at its school out of it. A
    * coach, a spectator and the pupil's self link get nothing (role); a pad
-   * credential nothing at all (`not app_pad_scoped()`, though no pad route
-   * reaches this read).
+   * credential nothing at all (role_assignment's RESTRICTIVE pad cut, and
+   * `not app_pad_scoped()` here as a second wall; no pad route reaches it).
    *
    * NO CHILD UNLESS THE LINK IS LIVE (SCRBRD-140 §6, enumeration): the player
    * id and name ride only on a verified, started, open link through a live
