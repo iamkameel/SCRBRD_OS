@@ -35690,7 +35690,9 @@ $v116$;
   --              §7's words, naming him by initial and surname; nothing to a
   --              child alone
   --   (once)     a second award for the side is refused; the application's
-  --              own INSERT of one is refused; the other side's coach awards
+  --              own INSERT of one is refused; the owner's key, which holds
+  --              recognition.manage, can neither withdraw it nor put it on
+  --              the board (D7, ahead of R5c); the other side's coach awards
   --              his own side's, and both stand
   --   (withdraw) only the side's deciders withdraw it, never the guardian;
   --              it needs a kind and a reason; after a correction the notice
@@ -35723,6 +35725,7 @@ $v116$;
   -- And for the red-team's fixes (6 Nov 2026), the same way:
   --   honour_unsay_side() retracting 'other' as a correction        → (withdraw)
   --   honour_unsay_side() taking its side from the sheet as it is   → (withdraw)
+  --   honour_no_platform_award dropped                              → (once)
   DECLARE
     y   jsonb := _v142_stage();
     M   uuid := (y->>'M')::uuid;
@@ -35842,6 +35845,13 @@ $v116$;
     got := _v133_try(format('INSERT INTO honour (player_id, kind, season_id, match_id, derived_from) VALUES (%L, ''player_of_match'', %L, %L, ''{}'')',
                             P1, _v142_honour(v_h)->>'season', M));
     PERFORM _assert(got LIKE '42501|%', format('§120 (once): the office''s own INSERT of one reads %s', got));
+    PERFORM _as(U_OWNER);
+    got := _v133_try(format('UPDATE honour SET withdrawn_at = now(), withdrawn_reason = ''By the key'', withdrawn_kind = ''correction'' WHERE id = %L', v_h));
+    PERFORM _assert(NOT (_v142_honour(v_h)->>'withdrawn')::boolean AND jsonb_array_length(_v142_fact(M, HIL)->'notices') = 1,
+      format('§120 (once): the owner''s key withdrew a Player of the Match (%s): %s', got, _v142_honour(v_h) - 'derived'));
+    got := _v133_try(format('UPDATE honour SET is_public = true WHERE id = %L', v_h));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(_v142_fact(M)->'audit') e120 WHERE e120->>'event' = 'made_public'),
+      format('§120 (once): the owner''s key put a Player of the Match on the board (%s)', got));
     PERFORM _as((y->>'wes')::uuid);
     SELECT * INTO r FROM match_award(M, W1, _v142_working(H, W1, ARRAY[W1]));
     PERFORM _assert(r.ok, format('§120 (once): the other side''s coach was refused his own side''s: %s', r.reason));

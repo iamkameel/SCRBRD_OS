@@ -11,7 +11,10 @@
 -- table joined into audit_log(). The reconciliation's R6 row
 -- (docs/design/RECOGNITION_reconciliation.md §5) names the capability and
 -- the proofs. The captain's nomination (R7), Colours (R8), the corrections
--- trigger (R10), the D4 mask and the D7 RESTRICTIVE cut (R5c) are not here.
+-- trigger (R10), the D4 mask and the D7 RESTRICTIVE cut (R5c) are not here,
+-- but for the one RESTRICTIVE line below that keeps the owner's key off a
+-- Player of the Match. withdrawn_reason stays unmasked until R5c: today any
+-- reader of the honour row may select it (recognition() never does).
 -- Its proof is db/99 §120; the walks are smoke-recognition (the API) and
 -- smoke-browser-potm (the staff sheet).
 --
@@ -43,6 +46,10 @@
 --               + honour_match_award_door  RESTRICTIVE, INSERT: the
 --                               application writes no player_of_match row
 --                               but through match_award() below
+--               + honour_no_platform_award  RESTRICTIVE, UPDATE: no
+--                               platform-wide assignment withdraws a Player
+--                               of the Match or puts it on the board (D7,
+--                               until R5c cuts the whole table)
 --               ~ honour_stamp() (db/08)  a POTM's side is the match's code
 --                               for the boy's side on the sheet, never his
 --                               current team (D22); decided_by stamped; the
@@ -103,7 +110,8 @@
 -- honour already awarded and one for every withdrawal. Safe to run twice.
 -- DROPs: honour_kind_check (made again with the new kind), the old
 -- honour_once_a_season (made again without POTM), and DROP POLICY IF EXISTS
--- before the one policy this file creates; the pg_temp helpers at the end.
+-- before each of the two policies this file creates; the pg_temp helpers
+-- at the end.
 --
 -- SCHEMA FIRST. The API built with it calls match_award_state(),
 -- match_award() and match_award_withdraw(); this file goes before it and is
@@ -236,6 +244,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS honour_match_award_once ON honour (match_id, s
 DROP POLICY IF EXISTS honour_match_award_door ON honour;
 CREATE POLICY honour_match_award_door ON honour AS RESTRICTIVE
   FOR INSERT WITH CHECK (kind <> 'player_of_match');
+
+-- D7, ahead of R5c: no platform-wide assignment changes a Player of the
+-- Match (the owner's key still holds recognition.manage, and with it the
+-- ordinary route's withdraw and is_public, until R5c carves recognition.*
+-- out and cuts the whole table). The school's own people are untouched.
+DROP POLICY IF EXISTS honour_no_platform_award ON honour;
+CREATE POLICY honour_no_platform_award ON honour AS RESTRICTIVE
+  FOR UPDATE USING (kind <> 'player_of_match' OR NOT app_is_platform_wide())
+           WITH CHECK (kind <> 'player_of_match' OR NOT app_is_platform_wide());
 
 
 -- ══════════════════════════════════════════════════════════════════
@@ -856,6 +873,14 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'honour'::regclass AND polname = 'honour_match_award_door'
                     AND NOT polpermissive AND polcmd = 'a') THEN
     RAISE EXCEPTION 'db/142: honour_match_award_door is not a RESTRICTIVE INSERT policy';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'honour'::regclass AND polname = 'honour_no_platform_award'
+                    AND NOT polpermissive AND polcmd = 'w') THEN
+    RAISE EXCEPTION 'db/142: honour_no_platform_award is not a RESTRICTIVE UPDATE policy';
+  END IF;
+  -- D7: the owner's key holds no recognition.match.award.
+  IF EXISTS (SELECT 1 FROM role_capability WHERE role = 'superadmin' AND capability = 'recognition.match.award') THEN
+    RAISE EXCEPTION 'db/142: the owner''s key (superadmin) holds recognition.match.award';
   END IF;
   IF (SELECT count(*) FROM pg_trigger WHERE tgrelid = 'honour'::regclass AND NOT tgisinternal AND tgenabled <> 'D'
         AND tgname IN ('honour_stamp', 'honour_tell_side', 'honour_unsay_side', 'honour_audit')) <> 4
