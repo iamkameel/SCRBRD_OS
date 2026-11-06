@@ -225,6 +225,10 @@ const SUITES = [
   // per screen, a method and never a name, the tenant's words (G15) — and
   // the Match Centre's family mode (G13).
   ["family", "apps/web/test/family.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // RECOGNITION R5: personal bests on the passport and the parent's card —
+  // School Records first, Friendly under the filter, a tie's dates, the
+  // spec's empty states, and no rank.
+  ["bests", "apps/web/test/bests.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The coach's match-day cockpit and the intelligence feed (SCRBRD-136/137
   // phase A): the entry gate derived from roles.mjs and held to the design's
   // table, the status-tier-only health, the load word, the head count of
