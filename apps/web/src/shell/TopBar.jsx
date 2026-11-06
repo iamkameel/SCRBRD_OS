@@ -3,20 +3,11 @@ import { ROLES, ROLE_FAMILIES, canonicalRole } from "../design/roles.js";
 import { D, T } from "../design/tokens.js";
 import { useNotifications } from "../lib/notifications.js";
 import { Icon } from "../ui/icons.jsx";
-import { signedIn } from "../lib/api.js";
-import { profile } from "../lib/session.js";
 
 // Opened by a tap, so it is not in the first download (the entry chunk is held to a ceiling, tools/check-bundle.mjs).
 const GlobalSearch = lazy(() => import("./GlobalSearch.jsx").then((m) => ({ default: m.GlobalSearch })));
 
 function TopBar({ role, onRoleChange, onNav, userName }) {
-  // Signed in, the menu offers the roles this person holds and no others: it
-  // changes which screens are drawn, never what the server gives, and a coach
-  // shown "Super Admin" under his name reads as if he could become one. The
-  // demonstration (signed out) keeps every role, as before.
-  const live = signedIn();
-  const held = live ? new Set((profile()?.assignments ?? []).map((a) => canonicalRole(a.role))) : null;
-  const offered = (r) => !held || held.has(r) || held.has(canonicalRole(r)) || r === role || canonicalRole(role) === r;
   // The unread badge is the SERVER's count of the notices it agreed to send
   // this person (my_notifications, db/89), from the one store every badge
   // reads (lib/notifications.js). Counting client-side over rows the browser
@@ -86,7 +77,7 @@ function TopBar({ role, onRoleChange, onNav, userName }) {
           </button>
           {roleOpen&&(
             <div ref={roleMenu} role="menu" aria-label="Switch role" style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:T.surface.overlay,border:`1px solid ${T.line.normal}`,borderRadius:T.radius.lg,overflowY:"auto",minWidth:"210px",maxHeight:"min(70vh,520px)",zIndex:200,boxShadow:T.elevation.lg}}>
-              <div style={{position:"sticky",top:0,background:T.surface.overlay,padding:"10px 12px 6px",borderBottom:`1px solid ${T.line.subtle}`,fontFamily:T.type.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary}}>{live ? "Your roles" : "Switch Role (Demo)"}</div>
+              <div style={{position:"sticky",top:0,background:T.surface.overlay,padding:"10px 12px 6px",borderBottom:`1px solid ${T.line.subtle}`,fontFamily:T.type.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary}}>Switch Role (Demo)</div>
               {/* Grouped by family, and ONE ENTRY PER ROLE.
                   This menu used to iterate ROLES, which is the LOOKUP table:
                   twenty-four real roles plus nine demonstration aliases that
@@ -97,7 +88,7 @@ function TopBar({ role, onRoleChange, onNav, userName }) {
                   ROLE_IDENTITY is the canonical set; the aliases stay in ROLES
                   so an account signed in as one still resolves to a name and a
                   navigation. */}
-              {Object.entries(ROLE_FAMILIES).map(([family,all])=>[family,all.filter(offered)]).filter(([,members])=>members.length>0).map(([family,members])=>(
+              {Object.entries(ROLE_FAMILIES).map(([family,members])=>(
                 <div key={family} role="group" aria-label={family}>
                   <div style={{padding:"9px 12px 3px",fontFamily:T.type.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:T.content.tertiary}}>{family}</div>
                   {members.map(r=>{

@@ -339,6 +339,12 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   const[curIn,setCurIn]=useState(0);
   const[modal,setModal]=useState(null);
   const[modalCtx,setModalCtx]=useState({});
+  // Whether this pad has put the new-over prompt to the scorer yet. The
+  // "N balls in this over?" cause (likelyCause, next_bowler) answers a scorer
+  // who closed that prompt thinking the over was not done; a pad opened on a
+  // finished over, before it has asked, says only that nobody is bowling.
+  const[overAsked,setOverAsked]=useState(false);
+  useEffect(()=>{if(modal==="newOver")setOverAsked(true);},[modal]);
   const[activeTab,setActiveTab]=useState("score");
   // A change of the pad's view (Score, Cards, Analysis, History) moves focus to
   // the pad's <main>, so the next Tab lands on the new view's first control
@@ -2712,7 +2718,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
             {activeTab==="score"&&!modal&&stopped&&<RainBanner stopped={stopped} isChase={matchChaseOf(innings,curIn)!=null}
               onResume={()=>setModal("resume")} onEnd={()=>setModal("rainEnd")}/>}
             {activeTab==="score"&&!modal&&!stopped&&<ScoringBlocked readiness={readiness} onFix={fixBlock}
-              cause={readiness.ready?null:likelyCause(readiness.blocked[0]?.code,{inn})}/>}
+              cause={readiness.ready||(readiness.blocked[0]?.code==="next_bowler"&&!overAsked)?null:likelyCause(readiness.blocked[0]?.code,{inn})}/>}
             {/* After the match, a suspension's report is offered here — never
                 during play, where nothing may stand between a tap and the
                 next ball (§1a); the pad's menu has it from the moment it is
