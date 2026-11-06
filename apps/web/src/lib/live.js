@@ -1078,6 +1078,20 @@ function asChild(r) {
            from: d10(r.valid_from), until: d10(r.valid_until), live: true };
 }
 
+/**
+ * One of her own guardian links in any state (GA-I20 A2, N4). The child's id
+ * and name arrive only on a live link; every other row is a school, a state
+ * and dates (SCRBRD-140 §6). `current` is false on a link another of hers to
+ * the same child has replaced.
+ */
+export function asLink(r) {
+  return { id: r.id, school: r.school_id, schoolName: r.school_name ?? null, relationship: r.relationship ?? null,
+           verification: r.verification_state, consent: r.consent_state, status: r.status,
+           childId: r.player_id ?? null, childName: r.full_name ?? null,
+           from: d10(r.valid_from), until: d10(r.valid_until), askedOn: d10(r.asked_on), endedOn: d10(r.ended_on),
+           current: r.current === true, live: true };
+}
+
 /** One name on a fixture's team sheet, as the reader's policy returns it. */
 function asSquadLine(r) {
   return { matchId: r.match_id, playerId: r.player_id, side: r.side, battingNo: r.batting_no ?? null,
@@ -1404,6 +1418,7 @@ const ADAPT = {
   injury_reviews: asInjuryReview,
   injury_worklist: asWorkItem,
   my_children: asChild,
+  my_links: asLink,
   match_squad: asSquadLine,
   skills: asSkill,
   skills_history: asSkillPoint,

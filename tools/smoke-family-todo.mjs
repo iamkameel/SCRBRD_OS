@@ -28,6 +28,10 @@
  *      a parent whose link has ended reads no child and may not declare.
  *   7. Everything a parent's list reads, as one body: her own child's counts
  *      and no other child's name, no phone, no email.
+ *   8. N6 (GA-I20 D7, A2): a parent agrees the school's terms for her own
+ *      link and it lands as granted, with the version and the time; another
+ *      guardian's link is refused; the pupil's own account cannot agree his
+ *      parent's terms. Put back as it was after.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-family-todo.mjs
@@ -319,6 +323,38 @@ try {
     const words = all.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "").replace(/\d{4}-\d\d-\d\d(T[\d:.]+(Z|[+-]\d\d:\d\d)?)?/g, "");
     ok("no phone, no email", !PHONE.test(words) && !/@/.test(words.replace(/"email":null/g, "")), words.match(PHONE)?.[0]);
     ok("every child id in it is her son's", [...all.matchAll(/"(?:player_id|playerId)":"([0-9a-f-]{36})"/g)].every((x) => x[1] === PILLAY));
+  }
+
+  group("8. N6: she agrees the school's terms for her own link; nobody agrees for another");
+  {
+    const consent = (token, player, body) => api(`/api/players/${player}/guardians/consent`, { method: "POST", token, body });
+    const linkOf = async (email, player) => (await q(`select s.consent_state, s.consent_version, s.consent_at from assignment_subject s
+        join role_assignment a on a.id = s.assignment_id join app_user u on u.id = a.person_id
+       where u.email = $1 and a.role = 'guardian' and s.player_id = $2 and s.verification_state = 'verified'`, [email, player]))[0];
+    const idOf = async (email) => (await q(`select id from app_user where email = $1`, [email]))[0].id;
+    const [celeId, pillayMum] = [await idOf("parent.cele@example.invalid"), await idOf("parent@example.invalid")];
+    const before = await linkOf("parent@example.invalid", PILLAY);
+    let r = await consent(cele, PILLAY, { guardianId: pillayMum, consentVersion: "popia-2026-01" });
+    ok("for another guardian's link: 403 not_permitted", r.status === 403 && r.body?.error === "not_permitted", JSON.stringify(r.body));
+    r = await consent(cele, PILLAY, { guardianId: celeId, consentVersion: "popia-2026-01" });
+    ok("...and for a child she has no link to: refused, no_verified_link", r.status === 403 && r.body?.error === "no_verified_link", JSON.stringify(r.body));
+    r = await consent(boy, PILLAY, { guardianId: pillayMum, consentVersion: "popia-2026-01" });
+    ok("the pupil's own account cannot agree his parent's terms: 403 not_permitted", r.status === 403 && r.body?.error === "not_permitted", JSON.stringify(r.body));
+    r = await consent(boy, PILLAY, { guardianId: await idOf("pillay@example.invalid"), consentVersion: "popia-2026-01" });
+    ok("...nor through his own self link, which is not a guardian's", r.status === 403 && r.body?.error === "no_verified_link", JSON.stringify(r.body));
+    ok("...and his mother's agreement did not move", JSON.stringify(await linkOf("parent@example.invalid", PILLAY)) === JSON.stringify(before));
+    ok("before: Cele's own link is pending, with no version or time", (await linkOf("parent.cele@example.invalid", CELE))?.consent_state === "pending");
+    r = await consent(cele, CELE, { guardianId: celeId });
+    ok("no version: refused, no_consent_version", r.status === 403 && r.body?.error === "no_consent_version", JSON.stringify(r.body));
+    r = await consent(cele, CELE, { guardianId: celeId, consentVersion: "popia-2026-01" });
+    ok("she agrees for her own link: 200 ok", r.status === 200 && r.body?.ok === true, JSON.stringify(r.body));
+    const now = await linkOf("parent.cele@example.invalid", CELE);
+    ok("...it lands as granted, with the version and the time", now?.consent_state === "granted" && now.consent_version === "popia-2026-01"
+       && Date.now() - new Date(now.consent_at).getTime() < 120000, JSON.stringify(now));
+    const mine = ((await read("my_children", cele)).body?.rows ?? []).find((x) => x.player_id === CELE);
+    ok("...and her family app reads it back", mine?.consent_state === "granted" && mine.consent_version === "popia-2026-01" && !!mine.consent_at, JSON.stringify(mine));
+    await q(`update assignment_subject s set consent_state = 'pending', consent_version = null, consent_at = null
+               from role_assignment a where a.id = s.assignment_id and a.person_id = $1 and s.player_id = $2`, [celeId, CELE]);
   }
 } catch (e) {
   fail++;
