@@ -657,6 +657,35 @@ group("D9  Player of the Match is decided by the side's coach, the director of s
        .every((r) => !caps(r).includes("recognition.match.award")));
 }
 
+// ── RECOGNITION A5, A6, D7, D9 (db/145, R5c): who decides an honour ──
+// Deciding (recognition.decide) is the director of sport's and the
+// principal's; the office records a decision by naming one of them (D5) and
+// holds recognition.manage, never recognition.decide. The two decide sets
+// are disjoint from everyone who nominates or plays: the side's coach
+// nominates Colours (R8), the captain Player of the Match (R7, a pupil), and
+// neither decides those. No platform role holds any recognition.* (D7), and
+// the carve-out is every recognition.*, derived. Falsified by giving
+// recognition.decide to schooladmin, to coach, and by narrowing the carve-out
+// back to recognition.match.award: each went red here.
+group("D9  Honours are decided by the director of sport and the principal, and never by the owner's key");
+{
+  const REC = ALL_CAPABILITIES.filter((c) => c.startsWith("recognition."));
+  ok("recognition.decide is held by directorofsport and principal alone",
+     holders("recognition.decide").sort().join() === "directorofsport,principal", holders("recognition.decide").join());
+  ok("...not by the office, which records a decision by naming who made it (A5, D5)",
+     !caps("schooladmin").includes("recognition.decide") && caps("schooladmin").includes("recognition.manage"));
+  ok("the deciders are disjoint from those who nominate or are nominated: no coach, assistant, team manager, pupil or parent decides",
+     ["coach", "assistantcoach", "teammanager", "player", "selfaccess", "guardian", "scorer"]
+       .every((r) => !caps(r).includes("recognition.decide")));
+  ok("the carve-out from the owner's key is every recognition.* (D7)",
+     REC.length >= 3 && SUPERADMIN_RECOGNITION_CARVE.slice().sort().join() === REC.slice().sort().join(), SUPERADMIN_RECOGNITION_CARVE.join(" "));
+  ok("...so neither platform role holds any recognition capability",
+     ["superadmin", "platformadmin"].every((r) => REC.every((c) => !caps(r).includes(c))),
+     ["superadmin", "platformadmin"].map((r) => REC.filter((c) => caps(r).includes(c)).join(",")).join(" · "));
+  ok("recognition.manage stays with the people who sign the board and the office that records it",
+     holders("recognition.manage").sort().join() === "directorofsport,principal,schooladmin", holders("recognition.manage").join());
+}
+
 // ── The boundary, told to the person standing at it ──────
 //
 // SCRBRD-033. boundaries(role) is the same separation these rules assert,
