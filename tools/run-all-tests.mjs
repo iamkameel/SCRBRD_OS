@@ -377,6 +377,9 @@ const SUITES = [
   ["home-page", "apps/web/test/home-page.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The home page's arena (Kameel, 6 Nov 2026): the rig's camera and ball, and which picture a device gets.
   ["home-arena", "apps/web/test/home-arena.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The newsfeed's kicker, standfirst, SA bands, per-viewer opened marks, and
+  // the generated covers: deterministic, decorative, drawing only the side.
+  ["news-feed", "apps/web/test/news-feed.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // SCRBRD-142 phase 2's switch on Settings → School and the line under the
   // Publish switch (the words held to the design, the line's forms), and
   // Fields → Add ground (every refusal in words, the route's limits).
