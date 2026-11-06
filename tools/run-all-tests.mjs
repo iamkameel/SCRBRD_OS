@@ -152,6 +152,9 @@ const SUITES = [
   // role without scoring.edit never offered it, one with it only over a
   // fixture its assignment covers; the capability the scoring routes ask.
   ["enter-scoring",     "apps/web/test/enter-scoring.test.mjs"],
+  // CRI-1.5: every dismissal's key is a commentary line's, and the Commentary
+  // opens far enough back (past "Earlier overs") to hold the ball asked for.
+  ["to-ball",           "apps/web/test/to-ball.test.mjs"],
   // GA-I36 A0/A1: a correction read off the log (the chip, the line, the
   // innings it moved), the effect folded before a decision, and 300 random
   // logs whose fold with voids equals the fold without the voided rows.

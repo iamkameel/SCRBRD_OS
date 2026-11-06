@@ -801,6 +801,79 @@ try {
   ok("no console errors (phone)", ph.errors.length === 0, ph.errors.join(" | "));
   await ph.ctx.close();
 
+  group("CRI-1.5: a dismissal opens the Commentary at that ball, and back restores the tab, the row and the scroll");
+  {
+    const ph5 = await open({ viewport: PHONE });
+    await signIn(ph5.page, /sarah@example\.invalid|Director/);
+    ok("the fixture opens on a phone", await openMatch(ph5.page, fx.live));
+    const P5 = ph5.page;
+    const path = () => new URL(P5.url()).pathname;
+    // Where the page is: the shell's <main> scrolls, or the document does.
+    const scrolled = () => P5.evaluate(() => Math.max(document.getElementById("os-content")?.scrollTop ?? 0, window.scrollY));
+    await pickTab(P5, "scorecard");
+    await tid(P5, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
+    await P5.waitForTimeout(300);
+    // The first innings' first wicket: early in a match of sixteen overs, past the Commentary's first twelve.
+    const firstOut = inn1.ballLog.find((b) => b.type === "W" && !b.freeHitSaved);
+    const who = inn1.batsmen.find((b) => b.id === (firstOut.dismissed ?? firstOut.strikerId));
+    const key = `e:${firstOut.id}`;
+    const row = tid(P5, "mc-bat-row").filter({ hasText: who.name }).first();
+    await row.locator('[data-testid="mc-bat-open"]').click({ timeout: 4000 });
+    await P5.waitForTimeout(300);
+    const link = row.locator('[data-testid="mc-dismissal-link"]');
+    const lg = await link.evaluate((e) => ({ h: e.getBoundingClientRect().height, t: e.innerText })).catch(() => null);
+    ok(`${who.name}'s opened row: his dismissal's line is a link to that ball, 44px tall`, (lg?.h ?? 0) >= 44 && /In commentary/.test(lg?.t ?? ""), JSON.stringify(lg));
+    await link.scrollIntoViewIfNeeded();
+    await P5.evaluate(() => { const m = document.getElementById("os-content"); if (m) m.scrollTop += 37; else window.scrollBy(0, 37); });
+    await P5.waitForTimeout(200);
+    const was = await scrolled();
+    const linkTop = await link.evaluate((e) => e.getBoundingClientRect().top);
+    ok(`the page is scrolled down to it (${was}px)`, was > 100, was);
+    await link.click();
+    await tid(P5, "mc-commentary").waitFor({ timeout: 4000 }).catch(() => {});
+    await P5.waitForTimeout(400);
+    ok("the Commentary opens, at its own address", await tid(P5, "mc-panel-commentary").count() === 1 && path() === `/app/matches/${fx.live}/commentary`, path());
+    const target = await P5.evaluate(() => {
+      const t = document.querySelectorAll('[data-testid="mc-line"][data-target="true"]');
+      const r = t[0]?.getBoundingClientRect();
+      return { n: t.length, key: t[0]?.getAttribute("data-key"), focused: document.activeElement === t[0], current: t[0]?.getAttribute("aria-current"),
+        inView: !!r && r.top >= 0 && r.bottom <= window.innerHeight, text: t[0]?.innerText ?? "" };
+    });
+    ok(`...at that ball: one line marked, the dismissal's own (${key}), the generator's words`, target.n === 1 && target.key === key
+       && target.text.includes(expected.find((c) => c.key === key)?.text ?? "∅"), JSON.stringify(target));
+    const overAt = await P5.evaluate(() => [...document.querySelectorAll('[data-testid="mc-over"]')].findIndex((o) => !!o.querySelector('[data-target="true"]')));
+    ok(`...in the ${overAt + 1}th over group, past the first twelve: the tab opened far enough back to hold it`, overAt >= 12, overAt);
+    ok("...on screen, with the focus on it and aria-current", target.inView && target.focused && target.current === "true", JSON.stringify(target));
+    ok("...and a way back to the scorecard, 44px", ((await tid(P5, "mc-back-to-scorecard").boundingBox().catch(() => null))?.height ?? 0) >= 44);
+    await P5.goBack();
+    await tid(P5, "mc-scorecard").waitFor({ timeout: 4000 }).catch(() => {});
+    await P5.waitForTimeout(400);
+    ok("the back button: the Scorecard again, at its address", await tid(P5, "mc-tab-scorecard").getAttribute("aria-selected") === "true" && path() === `/app/matches/${fx.live}/scorecard`, path());
+    const rowBack = tid(P5, "mc-bat-row").filter({ hasText: who.name }).first();
+    ok(`...the first innings still shown, ${who.name}'s row still open`, await tid(P5, "mc-innings-0").getAttribute("aria-pressed") === "true"
+       && await rowBack.locator('[data-testid="mc-bat-open"]').getAttribute("aria-expanded") === "true");
+    const back = await scrolled();
+    const backTop = await rowBack.locator('[data-testid="mc-dismissal-link"]').evaluate((e) => e.getBoundingClientRect().top).catch(() => null);
+    ok(`...and the page where it was (${back}px, was ${was}px; the line ${backTop}px from the top, was ${linkTop}px)`,
+       Math.abs(back - was) <= 2 && backTop != null && Math.abs(backTop - linkTop) <= 2);
+    ok("the tab no longer marks a ball once it is left", await tid(P5, "mc-back-to-scorecard").count() === 0);
+    // The way back on the page itself: the same place.
+    await rowBack.locator('[data-testid="mc-dismissal-link"]').click();
+    await tid(P5, "mc-back-to-scorecard").waitFor({ timeout: 4000 }).catch(() => {});
+    await tid(P5, "mc-back-to-scorecard").click();
+    await tid(P5, "mc-scorecard").waitFor({ timeout: 4000 }).catch(() => {});
+    await P5.waitForTimeout(400);
+    ok("\"Back to the scorecard\" is the same step back: the Scorecard, the row open, the page where it was",
+       path() === `/app/matches/${fx.live}/scorecard` && await tid(P5, "mc-bat-row").filter({ hasText: who.name }).first().locator('[data-testid="mc-bat-open"]').getAttribute("aria-expanded") === "true"
+       && Math.abs((await scrolled()) - was) <= 2, `${path()} ${await scrolled()}`);
+    await pickTab(P5, "commentary");
+    await P5.waitForTimeout(300);
+    ok("opened from the tab strip, the Commentary marks no ball and offers no way back", await P5.locator('[data-testid="mc-line"][data-target]').count() === 0
+       && await tid(P5, "mc-back-to-scorecard").count() === 0);
+    ok("no console errors (scorecard to ball)", ph5.errors.length === 0, ph5.errors.join(" | "));
+    await ph5.ctx.close();
+  }
+
   group("One address per tab (CRI-1.3): a link opens its tab, a tab moves the address, the back button goes back a tab");
   {
     const dl = await open();

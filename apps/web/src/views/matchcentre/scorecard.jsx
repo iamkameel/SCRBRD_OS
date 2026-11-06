@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { didNotBat, dismissalKey, extrasOf, fowLines, keepersOfSide, oversOf, runCounts, teamOf } from "../../lib/matchCentre.js";
 import { Icon } from "../../ui/icons.jsx";
 import { SideName, Quiet } from "./bits.jsx";
 import { isSuperOver, superOverTitle, superOversOf } from "../../lib/superOver.js";
+import { scrollerOf } from "../../lib/toBall.js";
 
 /**
  * THE SCORECARD (DESIGN_DIRECTION §10 item 7, the prototype's p7–p9): an
@@ -106,7 +107,7 @@ function FocusTag({ label }) {
 const focusEdge = (lit) => (lit ? { borderLeft: `4px solid ${T.brand.accentText}` } : {});
 
 /** A batter's row, which opens for a signed-in reader. */
-function BatterRow({ b, inn, open, onToggle, commentaryLine, profile, Wheel, kept = false, lit = false, litLabel = null }) {
+function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, profile, Wheel, kept = false, lit = false, litLabel = null }) {
   const notOut = b.status !== "out";
   const counts = open ? runCounts(inn, b.id) : null;
   const opens = !!onToggle;
@@ -146,12 +147,23 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, profile, Wheel, kep
             ))}
           </div>
           {Wheel && <Wheel inn={inn} playerId={b.id} title={`${b.name}: wagon wheel`}/>}
-          {commentaryLine && (
+          {/* CRI-1.5: the dismissal's line opens the Commentary at that very ball, where the page has one to open. */}
+          {commentaryLine && (onBall ? (
+            <button type="button" onClick={onBall} data-testid="mc-dismissal-link" className="pressBtn os-state"
+              style={{ justifySelf: "stretch", minHeight: "44px", display: "flex", alignItems: "center", gap: T.space.sm, cursor: "pointer",
+                textAlign: "left", background: "transparent", border: "none", borderLeft: `3px solid ${T.line.strong}`, borderRadius: 0,
+                padding: `${T.space.xs} 0 ${T.space.xs} ${T.space.md}`, color: T.content.primary, font: "inherit" }}>
+              <span data-testid="mc-dismissal-line" style={{ ...T.role.body, color: T.content.primary, flex: 1, minWidth: 0 }}>{commentaryLine}</span>
+              <span style={{ ...T.role.body, fontSize: "13px", color: T.content.secondary, display: "inline-flex", alignItems: "center", gap: "2px", whiteSpace: "nowrap" }}>
+                In commentary <span aria-hidden="true">›</span>
+              </span>
+            </button>
+          ) : (
             <p data-testid="mc-dismissal-line" style={{ ...T.role.body, color: T.content.primary, margin: 0,
               borderLeft: `3px solid ${T.line.strong}`, paddingLeft: T.space.md }}>
               {commentaryLine}
             </p>
-          )}
+          ))}
           {profile && (
             <button type="button" onClick={profile} className="pressBtn os-state"
               style={{ justifySelf: "start", minHeight: "44px", padding: `0 ${T.space.lg}`, cursor: "pointer",
@@ -171,8 +183,9 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, profile, Wheel, kep
  * wickets. `idx` is its place in the match's list of innings (the log's
  * innings number): the scorecard of a match innings, or of a super over's.
  */
-function InningsBody({ match, innings, idx, commentary, events, opens, profileOf, Wheel, focus, focusLabel }) {
-  const [openId, setOpenId] = useState(null);
+function InningsBody({ match, innings, idx, commentary, events, opens, profileOf, Wheel, focus, focusLabel, toBall = null, restore = null }) {
+  // CRI-1.5: back from the Commentary, the row the reader had open is open again.
+  const [openId, setOpenId] = useState(() => (restore?.innings === idx ? restore.openId ?? null : null));
   const inningsSel = idx;
   const inn = innings[idx];
   const side = teamOf(match, inn.battingTeam);
@@ -214,12 +227,17 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
 
       <div role="table" aria-label="Batting" className="mc-table" style={{ border: `1px solid ${T.line.normal}`, borderTop: "none" }}>
         <HeadRow cols={COLS} label="Batting" icon="bat" heads={["R", "B", "4s", "6s", "SR"]}/>
-        {inn.batsmen.map((b) => (
-          <BatterRow key={b.id} b={b} inn={inn} open={openId === b.id}
-            onToggle={opens ? () => setOpenId(openId === b.id ? null : b.id) : null}
-            commentaryLine={b.status === "out" ? byKey.get(dismissalKey(inn, b.id, innEvents) ?? "")?.text ?? null : null}
-            profile={profileOf(b.id)} Wheel={Wheel} kept={kept.has(b.id)} lit={!!focus?.has(b.id)} litLabel={focusLabel}/>
-        ))}
+        {inn.batsmen.map((b) => {
+          const key = b.status === "out" ? dismissalKey(inn, b.id, innEvents) : null;
+          const line = key ? byKey.get(key)?.text ?? null : null;
+          return (
+            <BatterRow key={b.id} b={b} inn={inn} open={openId === b.id}
+              onToggle={opens ? () => setOpenId(openId === b.id ? null : b.id) : null}
+              commentaryLine={line}
+              onBall={line && toBall ? (e) => toBall({ key, innings: idx, openId: b.id, from: e.currentTarget }) : null}
+              profile={profileOf(b.id)} Wheel={Wheel} kept={kept.has(b.id)} lit={!!focus?.has(b.id)} litLabel={focusLabel}/>
+          );
+        })}
         {dnb.map((p) => (
           <div key={p.id} role="row" data-testid="mc-dnb" style={{ display: "grid", gridTemplateColumns: COLS, gap: T.space.xs, alignItems: "center",
             padding: `${T.space.sm} ${T.space.md}`, minHeight: "44px", borderBottom: `1px solid ${T.line.subtle}` }}>
@@ -345,15 +363,31 @@ function SuperOverBlock({ pair, ...rest }) {
   );
 }
 
-export function ScorecardTab({ match, innings, commentary, events, inningsSel, setInningsSel, opens = false, profileOf = () => null, Wheel = null, focus = null, focusLabel = null }) {
+/**
+ * `toBall` (CRI-1.5): where the page can open the Commentary at a ball, a
+ * dismissal's line does, saying which innings and row it left; `restore` is
+ * that place again, coming back — the row reopened and the page where it was
+ * — and `onRestored` says it has been put back. The public page passes none.
+ */
+export function ScorecardTab({ match, innings, commentary, events, inningsSel, setInningsSel, opens = false, profileOf = () => null, Wheel = null, focus = null, focusLabel = null,
+                               toBall = null, restore = null, onRestored = null }) {
+  const at = useRef(/** @type {HTMLElement | null} */ (null));
+  // Once, as the tab is drawn again: the page back where the reader left it.
+  useLayoutEffect(() => {
+    if (!restore) return;
+    const sc = scrollerOf(at.current);
+    if (sc) sc.scrollTop = restore.scrollTop ?? 0;
+    onRestored?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // The innings the toggle is on is one of the match's own, always: a super
   // over has its block below.
   const sel = innings[inningsSel] && !isSuperOver(innings[inningsSel]) ? inningsSel : Math.max(0, innings.findIndex((x) => x && !isSuperOver(x)));
   const inn = innings[sel];
   if (!inn) return <Quiet testid="mc-scorecard-empty">Nothing has been scored yet.</Quiet>;
-  const body = { match, innings, commentary, events, opens, profileOf, Wheel, focus, focusLabel };
+  const body = { match, innings, commentary, events, opens, profileOf, Wheel, focus, focusLabel, toBall, restore };
   return (
-    <section data-testid="mc-scorecard" aria-label="Scorecard">
+    <section ref={at} data-testid="mc-scorecard" aria-label="Scorecard">
       <InningsToggle match={match} innings={innings} inningsSel={sel} setInningsSel={setInningsSel}/>
       <InningsBody {...body} idx={sel} key={sel}/>
       {superOversOf(innings).map((p) => <SuperOverBlock key={p.n} pair={p} {...body}/>)}

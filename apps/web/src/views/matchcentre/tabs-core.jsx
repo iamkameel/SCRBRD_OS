@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatKind } from "@scrbrd/scoring";
 import { T, contrast } from "../../design/tokens.js";
 import { boardInnings, commentaryByOver, inningsBreak, oversOf, targetOf, teamOf } from "../../lib/matchCentre.js";
@@ -13,6 +13,7 @@ import { chaseRates, rainTouched, rateTrack, reportFor } from "../../lib/par.js"
 import { wormOf } from "../../lib/chartSeries.js";
 import { RateTrack } from "../../ui/parTrack.jsx";
 import { Worm } from "../../ui/charts/worm.jsx";
+import { shownFor } from "../../lib/toBall.js";
 
 /**
  * The Match Centre's tabs that the public page (SCRBRD-083, src/public/)
@@ -199,13 +200,20 @@ function Mark({ kind }) {
   );
 }
 
-/** One line of commentary: where it fell, its mark, its words. */
-function CommentaryLine({ item }) {
+/**
+ * One line of commentary: where it fell, its mark, its words. `target`: the
+ * ball a scorecard's dismissal opened the Commentary at (CRI-1.5) — marked by
+ * a rule down its edge and a tint, never a colour alone, and focusable so the
+ * focus can be put on it.
+ */
+function CommentaryLine({ item, target = false }) {
   const strong = item.kind === "wicket" || item.kind === "innings_end" || item.kind === "milestone";
   const ballNo = item.kind === "ball" || item.kind === "four" || item.kind === "six" || item.kind === "wicket";
   return (
     <li data-testid="mc-line" data-kind={item.kind} data-key={item.key}
-      style={{ display: "flex", gap: T.space.sm, alignItems: "flex-start", padding: `${T.space.sm} ${T.space.md}`, borderTop: `1px solid ${T.line.subtle}` }}>
+      {...(target ? { "data-target": "true", "aria-current": "true", tabIndex: -1 } : {})}
+      style={{ display: "flex", gap: T.space.sm, alignItems: "flex-start", padding: `${T.space.sm} ${T.space.md}`, borderTop: `1px solid ${T.line.subtle}`,
+        ...(target ? { background: T.surface.interactive, boxShadow: `inset 4px 0 0 ${T.brand.accentText}` } : {}) }}>
       <span style={{ ...T.role.figure.sm, color: T.content.secondary, width: "40px", flexShrink: 0 }}>
         {ballNo ? `${item.over}.${item.ball}` : ""}
       </span>
@@ -217,15 +225,38 @@ function CommentaryLine({ item }) {
 
 const OVERS_AT_FIRST = 12;
 
-export function CommentaryTab({ match, commentary, demo, innings }) {
-  const [shown, setShown] = useState(OVERS_AT_FIRST);
+/**
+ * `ballKey` (CRI-1.5): the line a scorecard's dismissal asked for. The tab
+ * opens far enough back to hold it, puts it in the middle of the screen and
+ * the focus on it; `onBack` is the way back to the Scorecard where the reader
+ * was (the Match Centre's own history entry, or its tab where it has none).
+ */
+export function CommentaryTab({ match, commentary, demo, innings, ballKey = null, onBack = null }) {
+  const groups = useMemo(() => commentaryByOver(commentary ?? []), [commentary]);
+  const [shown, setShown] = useState(() => shownFor(groups, ballKey, OVERS_AT_FIRST));
+  const at = useRef(/** @type {HTMLElement | null} */ (null));
+  useEffect(() => {
+    if (!ballKey) return;
+    const el = [...(at.current?.querySelectorAll("[data-key]") ?? [])].find((x) => x.getAttribute("data-key") === ballKey);
+    if (!(el instanceof HTMLElement)) return;
+    // A jump, never a glide: the reader asked for this ball, and reduced motion has nothing to stop.
+    el.scrollIntoView({ block: "center", behavior: "instant" });
+    el.focus({ preventScroll: true });
+  }, [ballKey]);
   if (demo) return <Quiet testid="mc-commentary-none">Commentary is written from a match's own ball log. This demonstration fixture has none.</Quiet>;
   if (!commentary.length) return <Quiet testid="mc-commentary-none">Nothing has happened yet. Commentary starts with the first ball.</Quiet>;
-  const groups = commentaryByOver(commentary);
   const visible = groups.slice(0, shown);
   let lastInnings = null;
   return (
-    <section data-testid="mc-commentary" aria-label="Commentary, newest first">
+    <section ref={at} data-testid="mc-commentary" aria-label="Commentary, newest first">
+      {onBack && (
+        <button type="button" onClick={onBack} data-testid="mc-back-to-scorecard" className="pressBtn os-state"
+          style={{ minHeight: "44px", padding: `0 ${T.space.md}`, marginBottom: T.space.sm, display: "inline-flex", alignItems: "center", gap: T.space.xs,
+            cursor: "pointer", background: "transparent", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill,
+            color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
+          <span aria-hidden="true">‹</span> Back to the scorecard
+        </button>
+      )}
       {visible.map((g) => {
         const head = g.innings !== lastInnings;
         lastInnings = g.innings;
@@ -243,7 +274,7 @@ export function CommentaryTab({ match, commentary, demo, innings }) {
                 {g.end && <span data-testid="mc-over-end" style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>{g.end.text}</span>}
               </div>
               <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
-                {g.lines.map((c) => <CommentaryLine key={c.key} item={c}/>)}
+                {g.lines.map((c) => <CommentaryLine key={c.key} item={c} target={!!ballKey && c.key === ballKey}/>)}
               </ol>
             </Panel>
           </div>
