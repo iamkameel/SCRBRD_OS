@@ -126,6 +126,9 @@ const SUITES = [
   // block, the eligibility words, the commentary's words.
   ["super-over-screens", "apps/web/test/super-over-screens.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["season-awards",     "apps/web/test/season-awards.test.mjs"],
+  // Recognition R4 (db/140): where a milestone came from, the family's sealed
+  // line in §7's words, and a withdrawn honour's "withdrawn · date".
+  ["recognition-words", "apps/web/test/recognition-words.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // A figure a scorebook did not record stays null on the career screens
   // (SCRBRD-120 D12): the adapter, the strike rate over recorded balls, "at least N".
   ["unrecorded-figures", "apps/web/test/unrecorded-figures.test.mjs", ["--import", "./tools/register-jsx.mjs"]],

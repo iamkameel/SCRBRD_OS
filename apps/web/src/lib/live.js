@@ -814,10 +814,19 @@ function asClause(r) {
            live: true };
 }
 const d10 = (v) => (v ? String(v).slice(0, 10) : null);
-/** One line of a boy's recognition: an honour, a cap, or a milestone. The label is the server's. */
+/**
+ * One line of a boy's recognition: an honour, a cap, or a milestone. The label is the server's.
+ * R4 (db/140): a milestone says where it came from — the side he played for, its
+ * innings, the day the scorer's seal stands for it (null until then), its source
+ * ('ball log', 'scorebook', 'team sheet') and the fixture's class; a withdrawn
+ * honour carries the day it was withdrawn, and reaches only its three readers (D3).
+ */
 function asRecognition(r) {
   return { family: r.family, kind: r.kind, label: r.label, value: r.value, season: r.season, on: d10(r.on_date),
-           matchId: r.match_id, opponent: r.opponent, isPublic: r.is_public, citation: r.citation, id: r.ref_id, live: true };
+           matchId: r.match_id, opponent: r.opponent, isPublic: r.is_public, citation: r.citation, id: r.ref_id,
+           withdrawnOn: d10(r.withdrawn_on), sideCode: r.side_code ?? null, innings: r.innings ?? null,
+           sealedOn: d10(r.sealed_on), source: r.source ?? null, fixtureClass: r.fixture_class ?? null,
+           noBoard: r.no_board ?? null, live: true };
 }
 /**
  * One placed delivery, in the shape the wagon wheel already reads.

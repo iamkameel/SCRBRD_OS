@@ -221,9 +221,13 @@ try {
   // only by passport_union_log() inside passport()/passport_name(), read only
   // through passport_union_reads(), which answers the boy's family alone. No
   // application privilege and no policy, by design (Fable's red-team, 30 Oct).
+  // milestone_family_notice (db/140, RECOGNITION R4) records which guardian
+  // was told of which mark: written and read only inside db/140's notice
+  // functions, never public (N4), no policy by design.
   const DELIBERATELY_NO_POLICY = new Set(["login_code", "schema_migration", "pad_resume_jti", "dls_resource_table", "dls_resource",
                                           "auth_identity", "pending_claim", "auth_epoch", "auth_session",
-                                          "school_register", "request_cooldown", "passport_union_read"]);
+                                          "school_register", "request_cooldown", "passport_union_read",
+                                          "milestone_family_notice"]);
   const policyless = (await q(
     `select c.relname, count(p.polname)::int as policies
        from pg_class c
