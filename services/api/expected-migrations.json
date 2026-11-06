@@ -135,5 +135,6 @@
   "137_role_season_lock.sql",
   "139_owner_reads_stamped.sql",
   "140_milestone_source.sql",
-  "141_personal_bests.sql"
+  "141_personal_bests.sql",
+  "142_player_of_match.sql"
 ]

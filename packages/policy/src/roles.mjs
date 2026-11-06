@@ -64,6 +64,13 @@ export const SUBJECT_SCOPED_ROLES = Object.freeze(["guardian", "selfaccess", "en
 // knowing WHERE a fixture is played is not sensitive — it is on the team
 // sheet — and withholding it left coaches, managers and assistants unable to
 // open the Fields view at all.
+/**
+ * The recognition capabilities kept from the owner's key (RECOGNITION D7,
+ * db/142). Exported so the tests that hold the key to "everything but the
+ * carve-outs" read the same list.
+ */
+export const SUPERADMIN_RECOGNITION_CARVE = Object.freeze(["recognition.match.award"]);
+
 const READ_TEAM = ["team.read", "fixture.read", "player.profile.read", "news.read", "facility.read", "competition.read"];
 
 // A bundle is written as a list because that reads well, but it MEANS a set:
@@ -118,7 +125,14 @@ const BUNDLES = {
   // platform-wide assignment, so the union's door never opens on this key.
   // The owner's key still reads a passport through its own office arm, as
   // before db/124, and that read is not a union read.
-  superadmin: ALL_CAPABILITIES.filter((c) => !c.startsWith("safeguarding.")),
+  //
+  // AND `recognition.match.award` (db/142; RECOGNITION D7, decided 7 Oct
+  // 2026: "recognition.* joins safeguarding.* in the carve-out"): an honour
+  // about a child is his school's decision, and the owner's key reaching
+  // every school's Player of the Match is the reader D7 refuses. Support
+  // reaches a school as one of its roles for an hour (db/22), audited. The
+  // older recognition.manage leaves this key with R5c, not here.
+  superadmin: ALL_CAPABILITIES.filter((c) => !c.startsWith("safeguarding.") && !SUPERADMIN_RECOGNITION_CARVE.includes(c)),
 
   // ── Platform ──
   // Operating the platform is not a licence to read a school's confidential
@@ -154,7 +168,10 @@ const BUNDLES = {
   ],
 
   // ── Institution leadership ──
-  principal: ["recognition.manage", "player.workload.manage", "clearance.read", "clearance.manage",
+  principal: ["recognition.manage",
+    // D10's last step (db/142): she decides Player of the Match when the
+    // director of sport is the boy's guardian.
+    "recognition.match.award", "player.workload.manage", "clearance.read", "clearance.manage",
     "school.feature.manage",
     // The waiver, and nobody else at a school holds it — see the capability's
     // own note for why it is kept away from the people who place the boards.
@@ -194,7 +211,9 @@ const BUNDLES = {
     // the lift log through audit.read, never the arrangements.
     "transport.lift.policy",
   ],
-  directorofsport: ["recognition.manage", "player.workload.read", "player.workload.manage", "clearance.read", "clearance.manage",
+  directorofsport: ["recognition.manage",
+    // RECOGNITION D9 (db/142): Player of the Match for any side at his school.
+    "recognition.match.award", "player.workload.read", "player.workload.manage", "clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
     // Same reasoning as the principal above: the person who runs a school's
     // sport appoints its coaching and medical staff. Bounded by
@@ -307,6 +326,9 @@ const BUNDLES = {
     // it in from the photos, and somebody else confirms it.
     "scoring.import.read", "scoring.import.write",
     "news.publish.team", "opposition.read",
+    // RECOGNITION D9 (db/142): Player of the Match for his own side, never
+    // for a boy he is guardian of (D10, the row check in match_award()).
+    "recognition.match.award",
   ],
   assistantcoach: ["player.workload.read",
     "player.workload.write", "wellness.read",

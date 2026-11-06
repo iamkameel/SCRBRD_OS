@@ -100,6 +100,9 @@ const SUITES = [
   // Recognition R1: fifties, hundreds, five-fors and hat-tricks from the
   // fold, as player_milestone has them; the commentary's milestones read them.
   ["facts",    "packages/scoring/test/facts.test.mjs"],
+  // Recognition R6: Player of the Match suggestions from the facts — three at
+  // most, the side's sheet only, a stated weight, the board's words.
+  ["potm",     "packages/scoring/test/potm.test.mjs"],
   // Where the ball went, relative to the batter (SCRBRD-101): the sectors
   // named by the fielding families, and a stored seg read through the hand.
   ["placement", "packages/scoring/test/placement.test.mjs"],
@@ -283,6 +286,9 @@ const SUITES = [
   // OFFICIAL_RESULT (db/114): the public's words and staff's, every door's
   // refusal in words, "Looks right" still this phone's, the To-resolve rows.
   ["official", "apps/web/test/official.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // RECOGNITION R6 (db/142): Player of the Match's words — every refusal in
+  // words, who decides instead of a guardian, the two withdrawal kinds, the floors.
+  ["potm-words", "apps/web/test/potm.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["source-line", "apps/web/test/source-line.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I24-I25 S1: two players side by side — the floor at 29 and 30, the
   // pinned columns, who may be picked, no absence, types only, nothing kept.

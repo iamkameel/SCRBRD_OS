@@ -20,6 +20,7 @@ import { liveSuperOverLine, matchInningsOf, superOverCommentary } from "../../li
 import { Quiet } from "./bits.jsx";
 import { ConfirmScorecardPrompt, OnwardLinks, PreTossCard, RevisionBanner } from "./fulltime.jsx";
 import { OfficialLine, OfficialPanel, useOfficial } from "./official.jsx";
+import { PotmPanel, usePotm } from "./potm.jsx";
 import { liveRefreshMs, useMoments, useTicker } from "./live.js";
 import { BigScreen } from "./bigscreen.jsx";
 import { CaptainTab } from "./captainTab.jsx";
@@ -423,6 +424,9 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // the server's state for a finished fixture, read again as the log moves.
   const official = useOfficial(match, !!match.live && !log.demo && !isLive && match.status !== "upcoming", log.events?.length ?? 0);
   const [officialStep, setOfficialStep] = useState(/** @type {string | null} */ (null));
+  // RECOGNITION R6 (db/142): Player of the Match, for the people who decide
+  // it (the server answers nobody else). A finished fixture, the staff screen.
+  const potm = usePotm(match, !!match.live && !log.demo && match.status === "complete" && staffScreen, log.events?.length ?? 0);
 
   // What the Scorecard's rows open to, which only a signed-in reader has
   // (scorecard.jsx takes these rather than importing them, so the public page
@@ -525,6 +529,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
             <>
               <OnwardLinks match={match} sides={sides} matches={matches} onOpenFixture={onOpenFixture} onTeamResults={onTeamResults}/>
               <OfficialPanel official={official} step={officialStep} setStep={setOfficialStep} result={result}/>
+              <PotmPanel potm={potm}/>
               <ConfirmScorecardPrompt match={match} role={role} commentary={commentary} innings={played} onFiled={corrections.reload}
                 official={official.data} onConfirm={() => setOfficialStep("confirm")}/>
             </>

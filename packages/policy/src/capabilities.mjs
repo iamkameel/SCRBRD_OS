@@ -111,6 +111,12 @@ export const CAPABILITIES = {
   // point. A school decision, not a coach's: honours are read by everyone
   // who reads the roster, and written by the people who sign the board.
   "recognition.manage":          "Award honours and keep the caps ledger",
+  // RECOGNITION R6 (db/142; design D9, D10): deciding Player of the Match for
+  // a side's verified match — the side's coach, the director of sport, and
+  // the principal when the director is the boy's guardian. Never the owner's
+  // key (D7). The rows a decision may not cross (the boy himself, his
+  // guardian) are db/142's match_award(), not this name.
+  "recognition.match.award":     "Award Player of the Match for a side's verified match",
   "clearance.read":              "See whether an adult's clearances are current",
   "clearance.manage":            "Record and revoke an adult's clearances",
   "player.performance.read":     "See a player's match figures",
@@ -545,7 +551,7 @@ export const LEVEL = Object.freeze({
   // His own words about his body, and a measurement of it: health
   // information, candid, below the diagnosis tier only.
   "wellness.read": 3, "fitness.test.write": 3,
-  "recognition.manage": 0,
+  "recognition.manage": 0, "recognition.match.award": 0,
   "clearance.read": 2, "clearance.manage": 2,
   // Match figures: a scorecard, meant to be public.
   "player.performance.read": 0, "player.performance.write": 1,
