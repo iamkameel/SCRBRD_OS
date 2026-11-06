@@ -95,6 +95,7 @@ import { clearanceRoutes } from "./write/clearance-api.mjs";
 import { safeguardingRoutes } from "./write/safeguarding-api.mjs";
 import { recognitionRoutes } from "./write/recognition-api.mjs";
 import { potmRoutes } from "./write/potm-api.mjs";
+import { nominationRoutes } from "./write/nomination-api.mjs";
 import { competitionRoutes } from "./write/competitions-api.mjs";
 import { playingConditionsRoutes } from "./write/playing-conditions-api.mjs";
 import { plannerRoutes } from "./write/planner-api.mjs";
@@ -475,6 +476,7 @@ const clearances = clearanceRoutes({ pool, secret: SECRET });
 const safeguarding = safeguardingRoutes({ pool, secret: SECRET });
 const recognition = recognitionRoutes({ pool, secret: SECRET });
 const potm = potmRoutes({ pool, secret: SECRET });
+const nomination = nominationRoutes({ pool, secret: SECRET });
 const competitions = competitionRoutes({ pool, secret: SECRET });
 const requests = requestRoutes({ pool, secret: SECRET });
 const staffRegister = registerRoutes({ pool, secret: SECRET });
@@ -776,6 +778,13 @@ const PLAYER_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/player-of-match$/,          "GET",  potm.state],
   [/^\/api\/matches\/([^/]+)\/player-of-match$/,          "POST", potm.award],
   [/^\/api\/matches\/([^/]+)\/player-of-match\/withdraw$/, "POST", potm.withdraw],
+  // RECOGNITION R7 (db/144): the captain's nomination. Every rule is the
+  // doors': the season's captain on the sheet as himself (D14, D16), the
+  // side's staff reading it (D8), R6's deciders deciding it (D18).
+  [/^\/api\/matches\/([^/]+)\/player-of-match\/nomination$/,        "GET",  nomination.state],
+  [/^\/api\/matches\/([^/]+)\/player-of-match\/nomination$/,        "POST", nomination.nominate],
+  [/^\/api\/matches\/([^/]+)\/player-of-match\/nomination\/decide$/, "POST", nomination.decide],
+  [/^\/api\/player-of-match\/to-decide$/,                              "GET",  nomination.toDecide],
   [/^\/api\/cap-baselines$/,                        "POST", recognition.baseline],
   // RECOGNITION R9 (db/143): a rate record board's published minimum.
   [/^\/api\/record-minimums$/,                      "POST", recognition.recordMinimum],

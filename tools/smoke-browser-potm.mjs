@@ -23,6 +23,16 @@
  *      sheet, a choice is a radio (never colour alone); no console error.
  *   5. A parent and the 2XI coach arrive on the same fixture: no sheet at
  *      all, and the API gives them no side to decide.
+ *   6. RECOGNITION R7 (db/144): R Pillay, the season's captain, signed in as
+ *      himself on a second finished fixture: his Captain tab says "Nominate
+ *      one team-mate. <coach> decides. You cannot choose yourself.", the
+ *      coach's two suggestions with figures, none chosen, himself on neither
+ *      list, the other side's boys nowhere; the floors; one confirm sheet;
+ *      then his row "You nominated T Bekker · …" "With <coach>." The coach's
+ *      To-resolve list carries "Player of the Match to decide · the captain
+ *      nominated T Bekker"; his sheet "The captain nominated T Bekker ·
+ *      decide by …", Confirm in one tap and a confirm sheet; R6's honour is
+ *      tied to the nomination; the captain's tab then reads the award.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-potm.mjs
@@ -38,6 +48,7 @@ import pg from "pg";
 import { inningsStart, batters, bowler, ball, sealInnings, deriveInnings, BALL_TYPE } from "@scrbrd/scoring";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { pickTab } from "./walk-tabs.mjs";
 
 const WEB_PORT = port(5371);
 const API_PORT = port(8971);
@@ -233,6 +244,159 @@ try {
   ok("no console errors (the coach)", co.errors.length === 0, co.errors.join(" | "));
   await co.ctx.close();
 
+  group("The captain nominates, on his Captain tab (RECOGNITION R7, db/144)");
+  // R Pillay is the 1XI's captain this season; a second finished fixture
+  // with him on the sheet (Whitfield 17* off 6, Bekker 1/0, and Naidoo).
+  const SEASON = (await q(`select id from season_for(sa_today(), 'school')`))[0].id;
+  await q(`insert into honour (player_id, kind, season_id, citation) values ($1, 'captain', $2, 'the walk')`, [PILLAY, SEASON]);
+  const [{ id: M2 }] = await q(
+    `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+     values ($1, '1XI', $2, '1XI', 'Westville', now() - interval '2 hours', 'cricket', 'T20', 1, 'scheduled') returning id`, [HIL, WES]);
+  const HXI2 = [PILLAY, WHITFIELD, BEKKER, NAIDOO].map((id, i) => ({ id, name: `Hilton ${i + 1}` }));
+  for (const p of HXI2) await q(`insert into match_squad (match_id, player_id, side) values ($1, $2, 'home')`, [M2, p.id]);
+  for (const p of WXI) await q(`insert into match_squad (match_id, player_id, side) values ($1, $2, 'away')`, [M2, p.id]);
+  {
+    const claim2 = await call(`/api/matches/${M2}/session/claim`, { method: "POST", token: scorerTok, body: { device: "potm-pad" } });
+    let cs2 = 0, k2 = 0, refused2 = [];
+    const T1 = Date.now() - 2 * 3600_000;
+    for (const [i, inn] of [
+      { bat: "1XI", bowl: "Westville 1XI", squad: HXI2, bowlingSquad: WXI, balls: [6, 4, 6, 0, 0, 1].map((v) => ball({ type: BALL_TYPE.RUN, value: v })) },
+      { bat: "Westville 1XI", bowl: "1XI", squad: WXI, bowlingSquad: [HXI2[2], HXI2[1]], target: 18,
+        balls: [ball({ type: BALL_TYPE.RUN, value: 0 }), ball({ type: BALL_TYPE.RUN, value: 0 }), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled" })] },
+    ].entries()) {
+      const evs = [inningsStart({ battingTeam: inn.bat, bowlingTeam: inn.bowl, squad: inn.squad, bowlingSquad: inn.bowlingSquad, overs: 1, target: inn.target ?? null }),
+        batters({ striker: inn.squad[i === 0 ? 1 : 0].id, nonStriker: inn.squad[i === 0 ? 2 : 1].id }), bowler({ bowler: inn.bowlingSquad[0].id }), ...inn.balls]
+        .map((e) => ({ ...e, innings: i }));
+      evs.push({ ...sealInnings(deriveInnings(evs)), innings: i });
+      const r = await call(`/api/matches/${M2}/events`, { method: "POST", token: scorerTok, body: { events: evs.map((ev) => ({
+        epoch: claim2.body?.epoch, deviceId: "potm-pad", idempotencyKey: `bnom-${M2}-${++k2}`, clientSeq: ++cs2, clientTs: T1 + k2 * 20_000, innings: i, payload: ev })) } });
+      refused2 = refused2.concat(r.body?.refused ?? []);
+    }
+    await call(`/api/matches/${M2}/session/release`, { method: "POST", token: scorerTok, body: { device: "potm-pad" } }).catch(() => null);
+    await q(`update match set status = 'complete' where id = $1`, [M2]);
+    ok("a second fixture, R Pillay the captain on its sheet, verified", claim2.body?.ok === true && refused2.length === 0
+       && (await q(`select match_verified($1) v`, [M2]))[0].v === true, JSON.stringify(refused2).slice(0, 200));
+  }
+
+  let pu = await open();
+  // His own app: signed in as himself, Matches, the played match (as smoke-browser-pupil walks it).
+  const toHisTab = async () => {
+    await pu.page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+    await click(pu.page, /Get Started|Log In/, 5000);
+    await pu.page.waitForTimeout(400);
+    await click(pu.page, /pillay@example\.invalid/, 4000);
+    await click(pu.page, /^Sign In$/, 5000);
+    await afterReads(pu.page, 2200);
+    const nav = pu.page.locator('[data-testid="mnav-mymatches"], [data-testid="nav-mymatches"]').first();
+    await nav.click({ timeout: 6000 }).catch(() => {});
+    await afterReads(pu.page, 1800);
+    await tid(pu.page, `played-row-${M2}`).click({ timeout: 6000 }).catch(() => {});
+    await pu.page.waitForTimeout(2200);
+    await pickTab(pu.page, "captain").catch(() => {});
+    await afterReads(pu.page, 1500);
+  };
+  await toHisTab();
+  ok("R Pillay, signed in as himself, opens the played match's Captain tab", (await tid(pu.page, "mc-captain").count()) === 1);
+  ok("his Captain tab carries Player of the Match", await until(pu.page, () => !!document.querySelector('[data-testid="mc-captain-potm"]'), 12000));
+  ok("...in §7's words: one team-mate, the coach decides, never himself",
+     (await tid(pu.page, "mc-captain-potm-lead").innerText().catch(() => "")) === `Nominate one team-mate. ${coachName} decides. You cannot choose yourself.`,
+     await tid(pu.page, "mc-captain-potm-lead").innerText().catch(() => "∅"));
+  ok("...based on batting and bowling only", (await tid(pu.page, "mc-captain-potm-basis").innerText().catch(() => "")) === "Based on batting and bowling only.");
+  const csugg = await pu.page.$$eval('[data-testid="mc-captain-potm-suggestions"] label', (ls) => ls.map((l) => l.innerText.replace(/\s+/g, " ").trim()));
+  ok("...the coach's two suggestions, with the figures he reads on the scorecard",
+     csugg.length === 2 && /T Bekker 1\/0 \(0\.3\)/.test(csugg[0]) && /J(ames)? Whitfield 17\* \(6\)/.test(csugg[1]), csugg.join(" | "));
+  ok("...none chosen for him, and the tap waits", await pu.page.$$eval('[data-testid="mc-captain-potm"] input[type="radio"]', (rs) => rs.every((r) => !r.checked))
+     && await tid(pu.page, "mc-captain-potm-nominate").isDisabled() && /Choose a team-mate first/.test(await tid(pu.page, "mc-captain-potm-nominate").innerText()));
+  await tid(pu.page, "mc-captain-potm-more").click();
+  const blockText = await tid(pu.page, "mc-captain-potm").innerText();
+  ok("Someone else… opens the rest of his side, and he is on neither list", await tid(pu.page, "mc-captain-potm-sheet").locator("label").count() === 1
+     && await tid(pu.page, `mc-captain-potm-option-${PILLAY}`).count() === 0, blockText);
+  ok("...no boy of the other side is offered", !/Westville 0/.test(blockText) && await tid(pu.page, "mc-captain-potm-option-bbbbbbbb-0000-0000-0000-000000000001").count() === 0);
+  const cfloors = await pu.page.$eval('[data-testid="mc-captain-potm"]', (root) => {
+    const small = [], short = [];
+    for (const el of root.querySelectorAll("*")) {
+      const cs = getComputedStyle(el);
+      if (el.childNodes.length && [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && parseFloat(cs.fontSize) < 12) small.push(el.textContent.trim().slice(0, 30));
+    }
+    for (const el of root.querySelectorAll("button, label")) {
+      const r = el.getBoundingClientRect();
+      if (r.height && r.height < 44) short.push(`${el.tagName} ${Math.round(r.height)} ${el.textContent.trim().slice(0, 20)}`);
+    }
+    return { small, short, wide: root.scrollWidth <= root.clientWidth + 1 };
+  });
+  ok("no text under 12px on his block", cfloors.small.length === 0, cfloors.small.join(" | "));
+  ok("nothing tapped under 44px on his block", cfloors.short.length === 0, cfloors.short.join(" | "));
+  ok("nothing wider than the phone", cfloors.wide);
+  ok("the one tap is 56px", ((await tid(pu.page, "mc-captain-potm-nominate").boundingBox())?.height ?? 0) >= 56);
+  await tid(pu.page, `mc-captain-potm-option-${BEKKER}`).locator("input").check();
+  ok("choosing names the tap", /^Nominate T Bekker$/.test((await tid(pu.page, "mc-captain-potm-nominate").innerText()).trim()));
+  await tid(pu.page, "mc-captain-potm-nominate").click();
+  ok("one confirm sheet, saying who decides", /^This sends T Bekker to .+ as your nomination\. He decides, and the side hears it from him\.$/.test(
+     await tid(pu.page, "mc-captain-potm-confirm-words").innerText().catch(() => "")), await tid(pu.page, "mc-captain-potm-confirm-words").innerText().catch(() => "∅"));
+  await tid(pu.page, "mc-captain-potm-confirm-go").click();
+  ok("his row reads his nomination, with the coach", await until(pu.page, (n) => {
+    const t = document.querySelector('[data-testid="mc-captain-potm-mine"]')?.innerText ?? "";
+    return /You nominated T Bekker · \w{3} \d\d:\d\d/.test(t) && t.includes(`With ${n}.`);
+  }, 10000, coachName), await tid(pu.page, "mc-captain-potm-mine").innerText().catch(() => "∅"));
+  ok("...and the pick is gone", await tid(pu.page, "mc-captain-potm-choose").count() === 0);
+  const nrow = await q(`select status, nominee_player_id, nominated_by_player_id from recognition_nomination where match_id = $1`, [M2]);
+  ok("the database holds one open nomination, his, of T Bekker", nrow.length === 1 && nrow[0].status === "open" && nrow[0].nominee_player_id === BEKKER
+     && nrow[0].nominated_by_player_id === PILLAY, JSON.stringify(nrow));
+  ok("...and nobody was sent a notice about it", (await q(`select count(*)::int n from notification where subject_id = $1`, [M2]))[0].n === 0);
+  ok("no verdict word anywhere on his tab", !/rejected|declined|overruled/i.test(await tid(pu.page, "mc-captain-potm").innerText()));
+  ok("no console errors (the captain)", pu.errors.length === 0, pu.errors.join(" | "));
+
+  group("The coach reads it on his To-resolve list, and confirms it on the sheet");
+  const cq = await open();
+  await cq.page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+  await click(cq.page, /Get Started|Log In/, 5000);
+  await cq.page.waitForTimeout(400);
+  await click(cq.page, /coach@example\.invalid|Head Coach/, 4000);
+  await click(cq.page, /^Sign In$/, 5000);
+  await afterReads(cq.page, 2000);
+  // To resolve is under Operate on the coach's nav.
+  for (const sel of ['[data-testid="mnav-readiness"]', '[data-testid="nav-readiness"]']) {
+    const l = cq.page.locator(sel).first();
+    if (await l.count()) { await l.click({ timeout: 6000 }).catch(() => {}); break; }
+  }
+  if ((await tid(cq.page, "queue").count()) === 0) {
+    await cq.page.locator("button", { hasText: /^More$|Operate/ }).first().click({ timeout: 3000 }).catch(() => {});
+    await cq.page.locator('[data-testid="mnav-readiness"], [data-testid="nav-readiness"], button:has-text("To resolve")').first().click({ timeout: 4000 }).catch(() => {});
+  }
+  await afterReads(cq.page, 2000);
+  const qrow = await until(cq.page, () => /Player of the Match to decide · the captain nominated T Bekker/.test(document.querySelector('[data-testid="queue-potm"]')?.innerText ?? ""), 12000);
+  ok("his To-resolve list carries the row, with its deadline", qrow && /by \w{3} \d\d:\d\d/.test(await tid(cq.page, "queue-potm").innerText().catch(() => "")),
+     await tid(cq.page, "queue-potm").innerText().catch(() => "∅"));
+  ok("no console errors (the To-resolve list)", cq.errors.length === 0, cq.errors.join(" | "));
+  await cq.ctx.close();
+
+  const c2 = await open();
+  ok("the coach arrives on the fixture", await arrive(c2.page, M2, /coach@example\.invalid|Head Coach/));
+  ok("the sheet says the captain nominated T Bekker, and by when",
+     await until(c2.page, () => /^The captain nominated T Bekker · decide by \w{3} \d\d:\d\d$/.test((document.querySelector('[data-testid="mc-potm-nomination-line"]')?.textContent ?? "").trim()), 12000),
+     await tid(c2.page, "mc-potm-nomination-line").innerText().catch(() => "∅"));
+  ok("...Confirm is the one tap, 56px; Choose another and No award beside it",
+     ((await tid(c2.page, "mc-potm-nomination-confirm").boundingBox())?.height ?? 0) >= 56
+     && await tid(c2.page, "mc-potm-nomination-another").count() === 1 && await tid(c2.page, "mc-potm-nomination-none").count() === 1);
+  ok("...and R6's picker waits behind Choose another", await tid(c2.page, "mc-potm-choose").count() === 0);
+  await tid(c2.page, "mc-potm-nomination-confirm").click();
+  ok("the confirm sheet is §7's", (await tid(c2.page, "mc-potm-nomination-words").innerText().catch(() => "")) === "This awards Player of the Match to T Bekker and tells the side.");
+  await tid(c2.page, "mc-potm-nomination-go").click();
+  ok("awarded, in words, and the standing award drawn", await until(c2.page, () => /Awarded: T Bekker is Player of the Match/.test(document.querySelector('[data-testid="mc-potm-said"]')?.textContent ?? "")
+     && /Player of the Match: T Bekker/.test(document.querySelector('[data-testid="mc-potm-standing"]')?.textContent ?? ""), 10000));
+  const done = await q(`select n.status, h.player_id, h.nomination_id = n.id as tied from recognition_nomination n join honour h on h.id = n.honour_id where n.match_id = $1`, [M2]);
+  ok("the nomination is confirmed by R6's honour, tied to it", done.length === 1 && done[0].status === "confirmed" && done[0].player_id === BEKKER && done[0].tied, JSON.stringify(done));
+  ok("no console errors (the coach, R7)", c2.errors.length === 0, c2.errors.join(" | "));
+  await c2.ctx.close();
+
+  await pu.ctx.close();
+  pu = await open();
+  await toHisTab();
+  ok("the captain's tab reads the award as the side sees it", await until(pu.page,
+     () => /Player of the Match: T Bekker/.test(document.querySelector('[data-testid="mc-captain-potm-mine"]')?.innerText ?? ""), 12000),
+     await tid(pu.page, "mc-captain-potm-mine").innerText().catch(() => "∅"));
+  await pu.ctx.close();
+
   group("Nobody else is shown it");
   // A parent's app and another side's coach may not open this fixture at
   // all; whether it opens or not, no sheet is drawn, and the API gives them
@@ -249,7 +413,7 @@ try {
     await s.ctx.close();
   }
 
-  ok("the API logged no errors", apiErr.join("").trim() === "", apiErr.join("").slice(0, 400));
+  ok("the API logged no errors", apiErr.join("").trim() === "", apiErr.join("").slice(0, 3000));
 } catch (e) {
   fail++;
   console.log("  ✗ threw:", e.message);

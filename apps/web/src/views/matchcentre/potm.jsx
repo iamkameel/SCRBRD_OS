@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { api, signedIn } from "../../lib/api.js";
 import { confirmWords, potmShortName, standingWords, WITHDRAW_KINDS, POTM_REASON_MIN, POTM_REASON_MAX, FALLBACK } from "../../lib/potm.js";
+import { NO_AWARD_DONE, NO_AWARD_WORDS, staffLine } from "../../lib/nomination.js";
 import { Icon } from "../../ui/icons.jsx";
 import { CardHead, Panel } from "./bits.jsx";
 
@@ -19,6 +20,11 @@ import { CardHead, Panel } from "./bits.jsx";
  *               "Someone else", one confirm sheet, and the server's words for
  *               every refusal. A boy whose guardian the reader is cannot be
  *               chosen, and the line says who decides instead (D10).
+ *   R7 (db/144) The captain's nomination, when there is one: "The captain
+ *               nominated R Pillay · decide by Mon 20:14", and Confirm (one
+ *               tap and a confirm sheet), Choose another (the same
+ *               suggestions; the award answers the nomination), or No award.
+ *               A guardian of the nominee is told who decides instead.
  *
  * Floors: 12px text and up, 44px targets (56px for the one tap), the state of
  * a choice is a radio and words, never colour alone; nothing moves, so
@@ -36,8 +42,11 @@ export function usePotm(match, on, seen) {
   useEffect(() => {
     if (!on || !signedIn()) { setData(null); return undefined; }
     let cancelled = false;
-    api(`/api/matches/${match.id}/player-of-match`)
-      .then((d) => { if (!cancelled) setData(d ?? null); })
+    // R6's sides, and R7's nominations for them (db/144): a nomination read
+    // that fails leaves the sheet as R6 draws it.
+    Promise.all([api(`/api/matches/${match.id}/player-of-match`),
+                 api(`/api/matches/${match.id}/player-of-match/nomination`).catch(() => null)])
+      .then(([d, nom]) => { if (!cancelled) setData(d ? { ...d, nominations: nom?.staff ?? [] } : null); })
       .catch(() => { if (!cancelled) setData((x) => x); });
     return () => { cancelled = true; };
   }, [match.id, on, seen, n]);
@@ -57,7 +66,9 @@ export function usePotm(match, on, seen) {
     post(`/api/matches/${match.id}/player-of-match`, { playerId, headSeq }), [match.id, post]);
   const withdraw = useCallback((/** @type {string} */ honourId, /** @type {string} */ kind, /** @type {string} */ reason) =>
     post(`/api/matches/${match.id}/player-of-match/withdraw`, { honourId, kind, reason }), [match.id, post]);
-  return { data, reload, award, withdraw };
+  const decide = useCallback((/** @type {string} */ nominationId, /** @type {string} */ action, /** @type {string | null} */ playerId, /** @type {number} */ headSeq) =>
+    post(`/api/matches/${match.id}/player-of-match/nomination/decide`, { nominationId, action, playerId, headSeq }), [match.id, post]);
+  return { data, reload, award, withdraw, decide };
 }
 
 const btn = (/** @type {boolean} */ strong, tall = false) => ({
@@ -82,18 +93,22 @@ export function PotmPanel({ potm }) {
       <CardHead icon="award">Player of the Match</CardHead>
       <div style={{ padding: T.space.md, display: "grid", gap: T.space.lg }}>
         {sides.map((/** @type {any} */ s) => (
-          <PotmSide key={s.side} s={s} basis={potm.data.basis} two={sides.length > 1} potm={potm}/>
+          <PotmSide key={s.side} s={s} basis={potm.data.basis} two={sides.length > 1} potm={potm}
+            nom={(potm.data.nominations ?? []).find((/** @type {any} */ x) => x.side === s.side) ?? null}/>
         ))}
       </div>
     </Panel>
   );
 }
 
-/** @param {{s: any, basis: string, two: boolean, potm: ReturnType<typeof usePotm>}} p */
-function PotmSide({ s, basis, two, potm }) {
+/** @param {{s: any, basis: string, two: boolean, potm: ReturnType<typeof usePotm>, nom: any}} p */
+function PotmSide({ s, basis, two, potm, nom }) {
   const [chosen, setChosen] = useState(/** @type {string | null} */ (null));
   const [more, setMore] = useState(false);
-  const [step, setStep] = useState(/** @type {null | "confirm" | "withdraw"} */ (null));
+  const [step, setStep] = useState(/** @type {null | "confirm" | "withdraw" | "nominee" | "no_award"} */ (null));
+  // R7: an open nomination the reader may decide; Choose another opens R6's picker under it.
+  const open = nom && nom.status === "open" && nom.mayDecide;
+  const [another, setAnother] = useState(false);
   const [kind, setKind] = useState(/** @type {string | null} */ (null));
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -107,7 +122,9 @@ function PotmSide({ s, basis, two, potm }) {
   const go = async () => {
     if (!pick) return;
     setBusy(true); setSaid(null);
-    const r = await potm.award(pick.playerId, s.headSeq);
+    // While the captain's nomination is open, the award answers it (db/144).
+    const r = open ? await potm.decide(nom.nominationId, pick.playerId === nom.nomineeId ? "confirm" : "choose", pick.playerId, s.headSeq)
+                   : await potm.award(pick.playerId, s.headSeq);
     setBusy(false);
     setStep(null);
     if (r.ok) { setChosen(null); setMore(false); }
@@ -194,7 +211,62 @@ function PotmSide({ s, basis, two, potm }) {
         <p data-testid="mc-potm-wait" style={small()}>{s.refusalWords}</p>
       )}
 
-      {s.mayAward && step !== "confirm" && (
+      {nom && (
+        <div data-testid="mc-potm-nomination" data-status={nom.status} style={{ display: "grid", gap: T.space.sm }}>
+          {nom.status === "open" && (
+            <p data-testid="mc-potm-nomination-line" style={{ ...T.role.body, color: T.content.primary, margin: 0, fontWeight: 600 }}>
+              {staffLine(nom, Date.now())}
+            </p>
+          )}
+          {nom.status === "no_award" && <p data-testid="mc-potm-nomination-line" style={small()}>{NO_AWARD_DONE}</p>}
+          {nom.refusalWords && nom.status !== "confirmed" && nom.status !== "superseded" && (
+            <p data-testid="mc-potm-nomination-wait" style={small()}>{nom.refusalWords}</p>
+          )}
+          {open && s.mayAward && !step && (
+            <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
+              <button type="button" data-testid="mc-potm-nomination-confirm" onClick={() => { setSaid(null); setStep("nominee"); }}
+                className="pressBtn os-state" style={btn(true, true)}>Confirm {potmShortName(nom.nomineeName)}</button>
+              <button type="button" data-testid="mc-potm-nomination-another" aria-expanded={another} onClick={() => setAnother((v) => !v)}
+                className="pressBtn os-state" style={btn(false)}>Choose another</button>
+              <button type="button" data-testid="mc-potm-nomination-none" onClick={() => { setSaid(null); setStep("no_award"); }}
+                className="pressBtn os-state" style={btn(false)}>No award</button>
+            </div>
+          )}
+          {open && step === "nominee" && (
+            <div data-testid="mc-potm-nomination-sheet" style={{ display: "grid", gap: T.space.sm }}>
+              <p data-testid="mc-potm-nomination-words" style={{ ...T.role.body, color: T.content.primary, margin: 0 }}>{confirmWords(nom.nomineeName)}</p>
+              <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
+                <button type="button" data-testid="mc-potm-nomination-go" disabled={busy} className="pressBtn os-state" style={btn(true, true)}
+                  onClick={async () => {
+                    setBusy(true); setSaid(null);
+                    const r = await potm.decide(nom.nominationId, "confirm", null, s.headSeq);
+                    setBusy(false); setStep(null);
+                    setSaid(r.ok ? { ok: true, text: `Awarded: ${potmShortName(nom.nomineeName)} is Player of the Match, and the side is told.` }
+                                 : { ok: false, text: r.text ?? FALLBACK });
+                  }}>{busy ? "Awarding…" : "Award it"}</button>
+                <button type="button" data-testid="mc-potm-cancel" onClick={() => setStep(null)} className="pressBtn os-state" style={btn(false)}>Not now</button>
+              </div>
+            </div>
+          )}
+          {open && step === "no_award" && (
+            <div data-testid="mc-potm-nomination-sheet" style={{ display: "grid", gap: T.space.sm }}>
+              <p data-testid="mc-potm-nomination-words" style={{ ...T.role.body, color: T.content.primary, margin: 0 }}>{NO_AWARD_WORDS}</p>
+              <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
+                <button type="button" data-testid="mc-potm-nomination-go" disabled={busy} className="pressBtn os-state" style={btn(true, true)}
+                  onClick={async () => {
+                    setBusy(true); setSaid(null);
+                    const r = await potm.decide(nom.nominationId, "no_award", null, s.headSeq);
+                    setBusy(false); setStep(null);
+                    setSaid(r.ok ? { ok: true, text: NO_AWARD_DONE } : { ok: false, text: r.text ?? FALLBACK });
+                  }}>{busy ? "Recording…" : "Record no award"}</button>
+                <button type="button" data-testid="mc-potm-cancel" onClick={() => setStep(null)} className="pressBtn os-state" style={btn(false)}>Not now</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {s.mayAward && step !== "confirm" && (!nom || nom.status !== "open" || (open && another && !step)) && (
         <fieldset data-testid="mc-potm-choose" style={{ border: "none", padding: 0, margin: 0, display: "grid", gap: T.space.sm }}>
           <legend style={{ ...small(), padding: 0, marginBottom: T.space.xs }}>
             Choose one boy from the side. <span data-testid="mc-potm-basis">{basis}</span>

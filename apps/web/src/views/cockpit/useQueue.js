@@ -4,6 +4,8 @@ import { conditionsState, isMatchDay } from "../../lib/cockpit.js";
 import { readOnce, readQuery } from "../../lib/live.js";
 import { chooseSchoolFixtures, fixtureRows, groupByDay, headerOf, isQueueReader, liftExceptionRows, officeReader, officeRows, resultRows, resultsReader } from "../../lib/queue.js";
 import { isForbidden, isModuleOff } from "../../lib/readState.js";
+import { nominationRows } from "../../lib/nomination.js";
+import { roleGrants } from "@scrbrd/policy/roles";
 
 /**
  * THE QUEUE'S READS (match-day queue, phase A1; docs/design/GA-I09-I11_match_day_queue.md
@@ -151,6 +153,25 @@ export function useQueue({ matches, assignments, now }) {
     : resultsRead.loaded ? { loading: false, ...resultRows({ rows: resultsRead.rows, now, error: resultsRead.error }) }
       : { loading: true, rows: [], unread: [], open: 0, failed: 0 }), [wantsResults, resultsRead, now]);
 
+  // ── RECOGNITION R7 (db/144): the captain's nominations this reader may decide ──
+  // Asked of a reader one of whose assignments may decide Player of the Match
+  // (layout only: nominations_to_decide() decides again what comes back).
+  const wantsPotm = (assignments ?? []).some((/** @type {any} */ a) => !!a?.role && (a.subjects?.length ?? 0) === 0
+    && roleGrants(a.role, "recognition.match.award"));
+  const [potmRead, setPotmRead] = useState(/** @type {{loaded: boolean, rows: any[] | null, error: string | null}} */ ({ loaded: false, rows: [], error: null }));
+  const [potmAgain, setPotmAgain] = useState(0);
+  useEffect(() => {
+    if (!signedIn() || !wantsPotm) return undefined;
+    let cancelled = false;
+    api("/api/player-of-match/to-decide")
+      .then((d) => { if (!cancelled) setPotmRead({ loaded: true, rows: d?.rows ?? [], error: null }); })
+      .catch((e) => { if (!cancelled) setPotmRead({ loaded: true, rows: null, error: String(e?.code || "unreachable") }); });
+    return () => { cancelled = true; };
+  }, [wantsPotm, potmAgain]);
+  const potm = useMemo(() => (!wantsPotm ? null
+    : potmRead.loaded ? { loading: false, ...nominationRows({ rows: potmRead.rows, now, error: potmRead.error }) }
+      : { loading: true, rows: [], unread: [], open: 0, failed: 0 }), [wantsPotm, potmRead, now]);
+
   // ── O6, on a tap: logged by the database, so never on opening ──
   const [lifts, setLifts] = useState(/** @type {Record<string, {loading: boolean, rows: ReturnType<typeof liftExceptionRows> | null, error: string | null}>} */ ({}));
   /** @param {string} school */
@@ -178,9 +199,10 @@ export function useQueue({ matches, assignments, now }) {
   })), [offices, office, now]);
 
   const header = useMemo(() => {
-    const h = headerOf(groups, results ? [...officeLists, results] : officeLists);
-    return { ...h, loading: h.loading + officeLists.filter((o) => o.loading).length + (results?.loading ? 1 : 0) };
-  }, [groups, officeLists, results]);
+    const lists = [...officeLists, ...(results ? [results] : []), ...(potm ? [potm] : [])];
+    const h = headerOf(groups, /** @type {any} */ (lists));
+    return { ...h, loading: h.loading + officeLists.filter((o) => o.loading).length + (results?.loading ? 1 : 0) + (potm?.loading ? 1 : 0) };
+  }, [groups, officeLists, results, potm]);
 
   return {
     /** Fixtures in the window, grouped by day then team. */
@@ -197,6 +219,9 @@ export function useQueue({ matches, assignments, now }) {
     /** OFFICIAL_RESULT: the results to confirm or settle, or null for a reader who stands behind none. */
     results,
     retryResults: () => setResultsAgain((n) => n + 1),
+    /** RECOGNITION R7: the captain's nominations to decide, or null for a reader who decides none. */
+    potm,
+    retryPotm: () => setPotmAgain((n) => n + 1),
     lifts,
     checkLifts,
     /** Is there anything this reader can be shown at all. */
