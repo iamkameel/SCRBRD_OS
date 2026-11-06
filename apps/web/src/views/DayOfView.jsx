@@ -42,15 +42,15 @@ import { dateStr, today } from "../lib/format.js";
 import { api } from "../lib/api.js";
 import { profile } from "../lib/session.js";
 import { useLive } from "../lib/live.js";
+import { saClock, saDate } from "../lib/saTime.js";
 import { Badge, Btn, Card, EmptyState, Select } from "../ui/primitives.jsx";
 import { Icon } from "../ui/icons.jsx";
 
-// HH:MM from a raw timestamp string, or an em dash. Sliced rather than run
-// through a Date object and a timezone conversion — the same convention
-// asMatch's own `time` field uses, so a fixture's kickoff and a trip's
-// departure read as the same clock.
-const hm = (ts) => (ts ? String(ts).slice(11, 16) : "—");
-const dayOf = (ts) => (ts ? String(ts).slice(0, 10) : null);
+// HH:MM and the day of an instant on the SA clock (lib/saTime.js), or an em
+// dash: the same clock asMatch's own `time` field uses, so a fixture's
+// kickoff and a trip's departure read alike, and both read South African.
+const hm = (ts) => saClock(ts) ?? "—";
+const dayOf = (ts) => saDate(ts);
 
 /**
  * A trip card: what the driver's own account can read about it, and the one
@@ -179,7 +179,7 @@ function DriverDayView({ role }) {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <div style={{ fontFamily: D.body, fontSize: "13px", fontWeight: 600, color: D.textPrimary }}>
-                    {new Date(t.departAt).toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" })} · {hm(t.departAt)}
+                    {new Date(t.departAt).toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short", timeZone: "Africa/Johannesburg" })} · {hm(t.departAt)}
                   </div>
                   <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
                     {fixtureOf(t) ? `${fixtureOf(t).homeTeam} vs ${fixtureOf(t).awayTeam} · ` : ""}{t.pickup || "Pickup not recorded"}

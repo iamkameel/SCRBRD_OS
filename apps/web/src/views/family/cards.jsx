@@ -221,7 +221,7 @@ export function TrainingCard({ child, role, now }) {
   const { rows, disabled } = useLive("training", role);
   if (disabled) return null;
   const next = rows.filter((t) => t.team === child.team && t.school === child.school && !t.cancelled && t.date
-    && Date.parse(`${t.date}T${t.time ?? "00:00"}:00Z`) >= now - 3600e3)
+    && Date.parse(`${t.date}T${t.time ?? "00:00"}:00+02:00`) >= now - 3600e3)   // date and time are SA (asTraining)
     .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))[0];
   if (!next) return null;
   return (
