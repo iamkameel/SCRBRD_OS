@@ -67,6 +67,15 @@ export function potmRoutes({ pool, secret }) {
     catch (/** @type {any} */ e) {
       if (e.code === "42501") return res.status(403).json({ error: "not_permitted", message: POTM_WORDS.not_permitted });
       if (e.code === "22P02") return res.status(400).json({ error: "malformed" });
+      // db/144's honour_tie_nomination(): an award while the captain's
+      // nomination is open answers it, never by its nominee's guardian or by
+      // the nominator; refused at the table, said in words here.
+      if (e.code === "23514" && e.message === "nomination_guardian_conflict") {
+        return res.status(422).json({ error: "guardian_conflict", detail: e.detail ?? null, message: potmWords("guardian_conflict", e.detail ?? null) });
+      }
+      if (e.code === "23514" && e.message === "decider_is_nominator") {
+        return res.status(422).json({ error: "decider_is_nominator", message: "You made this nomination, so another coach decides." });
+      }
       const status = e.status || 500;
       if (status >= 500) { console.error("potm →", safeErr(e)); return res.status(status).json({ error: "error" }); }
       res.status(status).json({ error: e.message || "error", ...(e.detail !== undefined ? { detail: e.detail } : {}),

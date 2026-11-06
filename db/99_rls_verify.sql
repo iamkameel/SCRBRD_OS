@@ -10679,8 +10679,6 @@ CREATE OR REPLACE FUNCTION _v142_off_sheet(p_match uuid, p_player uuid) RETURNS 
   UPDATE match_squad SET withdrawn = true WHERE match_id = p_match AND player_id = p_player
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/142 (section 120) ─────────────────────────────────────────────
-
-
 -- ┌── db/143 (section 121). RECOGNITION R9: school record boards (D22–D25)
 -- _v143_stage(), as the owner; every name invented (STEP4's). Three Hilton
 -- U15A boys — D Erasmus, K Naidoo, Thabo Mokoena — and Hilton's league. Each
@@ -11012,6 +11010,161 @@ CREATE OR REPLACE FUNCTION _v143_rows(p_side text) RETURNS text AS $$
     FROM record_board('11111111-1111-1111-1111-111111111111', p_side) b
 $$ LANGUAGE sql STABLE;
 -- └── db/143 (section 121) ─────────────────────────────────────────────
+
+-- ┌── db/144 (section 122) ─────────────────────────────────────────────
+-- Hilton's 20XI at home to Westville's 20XI, invented here, today. Hilton
+-- boys: C the season's captain, V the vice-captain, N1 and N2 team-mates, O
+-- of the side but off every sheet, and X the 20XI captain of LAST season;
+-- one Westville boy W1, all nineteen (registered to play without a
+-- guardian link, as §120's are). Accounts: C, V, N1 and a team-mate (N2) each sign in
+-- as himself (a verified self link); `capx` is an account whose app_user
+-- names C but whose self link the school never verified. The staff: the
+-- side's coach, assistant and team manager; another Hilton side's coach;
+-- Hilton's director of sport, principal and office; Westville's 20XI coach;
+-- a coach of the side who is N1's guardian (a pending link); a coach of the
+-- side who also holds a platform-wide assignment (twohats); N1's mother (a
+-- verified guardian); a platform administrator; the scorer.
+-- Matches, both sides' innings sealed and the match complete unless said:
+--   M   C, V, N1, N2 and W1 on the sheet          (the captain's)
+--   M2  V, N1, N2 and W1 (C not picked)           (the vice-captain's)
+--   M3  as M, its log three days old              (the window closed)
+--   M4  as M                                       (no award)
+--   M5  as M                                       (the coach awards first)
+--   M6  as M                                       (a lapse)
+--   MU  as M, the second innings never sealed     (not verified)
+CREATE OR REPLACE FUNCTION _v144_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  v_t0 timestamptz := (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg';
+  v_season uuid := (SELECT f.id FROM season_for(sa_today(), 'school') f);
+  v_last uuid;
+  ids jsonb := '{}'; p uuid; m uuid; k text; a uuid; i int; who text;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  FOR i, k IN SELECT * FROM (VALUES (1, 'c'), (2, 'v'), (3, 'n1'), (4, 'n2'), (5, 'o'), (6, 'x')) z(i, k) LOOP
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES (HIL, '20XI', 'Verify OneFortyFour ' || initcap(k), 1440 + i, 'batter', make_date(extract(year FROM sa_today())::int - 19, 2, i))
+    RETURNING id INTO p;
+    ids := ids || jsonb_build_object(k, p);
+  END LOOP;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES (WES, '20XI', 'Verify OneFortyFour Visitor', 1449, 'bowler', make_date(extract(year FROM sa_today())::int - 19, 4, 1))
+  RETURNING id INTO p;
+  ids := ids || jsonb_build_object('w1', p);
+  ids := ids || _v71_people('v144', ARRAY[
+    ARRAY['cap',       'selfaccess',      HIL::text, '',     ids->>'c'],
+    ARRAY['vice',      'selfaccess',      HIL::text, '',     ids->>'v'],
+    ARRAY['nominee',   'selfaccess',      HIL::text, '',     ids->>'n1'],
+    ARRAY['mate',      'selfaccess',      HIL::text, '',     ids->>'n2'],
+    ARRAY['capx',      'selfaccess',      HIL::text, '',     ids->>'c'],
+    ARRAY['coach',     'coach',           HIL::text, '20XI', ''],
+    ARRAY['assistant', 'assistantcoach',  HIL::text, '20XI', ''],
+    ARRAY['manager',   'teammanager',     HIL::text, '20XI', ''],
+    ARRAY['other',     'coach',           HIL::text, '18XI', ''],
+    ARRAY['dos',       'directorofsport', HIL::text, '',     ''],
+    ARRAY['prin',      'principal',       HIL::text, '',     ''],
+    ARRAY['office',    'schooladmin',     HIL::text, '',     ''],
+    ARRAY['wes',       'coach',           WES::text, '20XI', ''],
+    ARRAY['gcoach',    'coach',           HIL::text, '20XI', ''],
+    ARRAY['twohats',   'coach',           HIL::text, '20XI', ''],
+    ARRAY['mother',    'guardian',        HIL::text, '',     ''],
+    ARRAY['scorer',    'scorer',          HIL::text, '',     '']]);
+  -- The self links: verified for the four pupils, never for capx.
+  FOREACH who IN ARRAY ARRAY['cap', 'vice', 'nominee', 'mate', 'capx'] LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at)
+    SELECT a2.id, u.player_id, 'self', CASE WHEN who = 'capx' THEN 'pending' ELSE 'verified' END,
+           CASE WHEN who <> 'capx' THEN (ids->>'office')::uuid END, CASE WHEN who <> 'capx' THEN now() END
+      FROM role_assignment a2 JOIN app_user u ON u.id = a2.person_id
+     WHERE a2.person_id = (ids->>who)::uuid AND a2.role = 'selfaccess';
+  END LOOP;
+  -- N1's guardians: the side's coach (pending, a parent all the same) and his mother (verified).
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'gcoach')::uuid, 'guardian', HIL) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship) VALUES (a, (ids->>'n1')::uuid, 'parent');
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at)
+  SELECT a2.id, (ids->>'n1')::uuid, 'parent', 'verified', (ids->>'office')::uuid, now(), 'granted', 'v144-terms', now()
+    FROM role_assignment a2 WHERE a2.person_id = (ids->>'mother')::uuid AND a2.role = 'guardian';
+  INSERT INTO app_user (school_id, email, name, role) VALUES (NULL, 'v144.plat@example.invalid', 'V144 Plat', 'platformadmin') RETURNING id INTO a;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (a, 'platformadmin', NULL);
+  ids := ids || jsonb_build_object('plat', a, 'season', v_season);
+  -- The side's coach who also holds a platform-wide assignment (D7: the cut is the person's).
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'twohats')::uuid, 'platformadmin', NULL);
+  -- The captaincies: C captain, V vice-captain, X last season's captain.
+  INSERT INTO honour (player_id, kind, season_id, awarded_on) VALUES
+    ((ids->>'c')::uuid, 'captain', v_season, sa_today() - 30),
+    ((ids->>'v')::uuid, 'vice_captain', v_season, sa_today() - 30);
+  v_last := (SELECT s.id FROM season s WHERE s.level = 'school' AND s.ends_on < (SELECT s2.starts_on FROM season s2 WHERE s2.id = v_season)
+              ORDER BY s.ends_on DESC LIMIT 1);
+  IF v_last IS NOT NULL THEN
+    INSERT INTO honour (player_id, kind, season_id, awarded_on) VALUES ((ids->>'x')::uuid, 'captain', v_last, sa_today() - 400);
+  END IF;
+  ids := ids || jsonb_build_object('last', v_last);
+  FOR k IN SELECT unnest(ARRAY['M', 'M2', 'M3', 'M4', 'M5', 'M6', 'MU']) LOOP
+    INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+    VALUES (HIL, '20XI', WES, '20XI', 'x', v_t0, 'cricket', 'T20', 1, 'live') RETURNING id INTO m;
+    INSERT INTO match_squad (match_id, player_id, side)
+    SELECT m, (ids->>x)::uuid, 'home' FROM unnest(CASE WHEN k = 'M2' THEN ARRAY['v', 'n1', 'n2'] ELSE ARRAY['c', 'v', 'n1', 'n2'] END) x;
+    INSERT INTO match_squad (match_id, player_id, side) VALUES (m, (ids->>'w1')::uuid, 'away');
+    PERFORM _v114_innings(m, 0::smallint, '20XI', 'V144 Westville', ARRAY[1, 1, 1, 1, 1, 1], NULL, (ids->>'scorer')::uuid);
+    PERFORM _v114_innings(m, 1::smallint, 'V144 Westville', '20XI', ARRAY[0, 0, 0, 0, 0, 0], 7, (ids->>'scorer')::uuid, k <> 'MU');
+    UPDATE match SET status = 'complete' WHERE id = m;
+    IF k = 'M3' THEN
+      ALTER TABLE ball_event DISABLE TRIGGER ball_event_no_update;
+      UPDATE ball_event SET server_ts = server_ts - interval '3 days' WHERE match_id = m;
+      ALTER TABLE ball_event ENABLE TRIGGER ball_event_no_update;
+    END IF;
+    ids := ids || jsonb_build_object(k, m, k || '_head', match_head_seq(m));
+  END LOOP;
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The working the application would send for a nomination.
+CREATE OR REPLACE FUNCTION _v144_working(p_head integer, p_nominee uuid, p_suggested uuid[]) RETURNS jsonb AS $$
+  SELECT jsonb_build_object('version', 1, 'basis', 'batting_bowling', 'factsVersion', 1, 'headSeq', p_head,
+           'suggestions', coalesce((SELECT jsonb_agg(jsonb_build_object('playerId', s, 'figures', '6* (6)') ORDER BY o)
+                                      FROM unnest(p_suggested) WITH ORDINALITY u(s, o)), '[]'::jsonb),
+           'nominee', jsonb_build_object('playerId', p_nominee, 'figures', '6* (6)'))
+$$ LANGUAGE sql IMMUTABLE;
+
+-- One nomination, past RLS.
+CREATE OR REPLACE FUNCTION _v144_nom(p_id uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(n) FROM recognition_nomination n WHERE n.id = p_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A match's nominations, honours and audit rows, past RLS.
+CREATE OR REPLACE FUNCTION _v144_fact(p_match uuid) RETURNS jsonb AS $$
+  SELECT jsonb_build_object(
+    'noms', (SELECT count(*) FROM recognition_nomination n WHERE n.match_id = p_match),
+    'honours', (SELECT count(*) FROM honour h WHERE h.match_id = p_match AND h.withdrawn_at IS NULL),
+    'notices', (SELECT count(*) FROM notification x WHERE x.kind = 'recognition' AND x.subject_kind = 'match' AND x.subject_id = p_match),
+    'audit', coalesce((SELECT jsonb_agg(jsonb_build_object('event', a.event, 'actor', a.actor_id, 'player', a.player_id,
+                                                           'nomination', a.nomination_id, 'honour', a.honour_id) ORDER BY a.id)
+                         FROM recognition_audit a WHERE a.match_id = p_match), '[]'::jsonb))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- 138 phase C's proofs of is_captain_of(), which nobody but the owner calls.
+CREATE OR REPLACE FUNCTION _v144_captain(p_player uuid, p_team text, p_season uuid) RETURNS boolean AS $$
+  SELECT is_captain_of(p_player, p_team, p_season)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Owner's acts the tests need: a captaincy withdrawn, a boy moved side, a
+-- window closed under an open nomination, and an edit of a decided one.
+CREATE OR REPLACE FUNCTION _v144_owner(p_sql text) RETURNS text AS $$
+DECLARE v_u text := current_setting('app.user_id', true); v_r text;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  BEGIN
+    EXECUTE p_sql;
+    v_r := 'ok';
+  EXCEPTION WHEN OTHERS THEN
+    v_r := SQLSTATE || '|' || SQLERRM;
+  END;
+  PERFORM set_config('app.user_id', coalesce(v_u, ''), true);
+  RETURN v_r;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/144 (section 122) ─────────────────────────────────────────────
+
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -37331,6 +37484,364 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 121
   -- └── db/143 (section 121) ──────────────────────────────────────────
+  -- ┌── db/144 (section 122) ─────────────────────────────────────────
+  -- ── 122. Player of the Match, the captain's nomination (db/144; RECOGNITION R7, D8, D14–D18) ──
+  -- Staged by _v144_stage(); every act is the caller's own, through
+  -- scrbrd_app and the doors, read back past RLS by _v144_nom()/_v144_fact().
+  -- Labels:
+  --   (captain)  is_captain_of(), SCRBRD-138 §1.2: true for the live
+  --              captaincy and the vice-captaincy; false withdrawn, last
+  --              season, another side, another school, and once he has
+  --              moved side
+  --   (gate)     D16's nine tests, each made false in turn while the rest
+  --              hold, each refused in its own word:
+  --                1 not the pupil himself (a coach; an account whose
+  --                  self link no school verified; a pad credential)
+  --                2 no captaincy of the side (a team-mate), and the
+  --                  vice-captain while the captain is on the sheet
+  --                3 the captain not on the sheet
+  --                4 the nominee not on his side's sheet (off it; the
+  --                  other side's boy)
+  --                5 himself
+  --                6 the match not verified
+  --                7 an award already standing
+  --                8 the window closed (48 hours from verification)
+  --                9 a second open nomination for the side
+  --   (stored)   the row: his captaincy, the window, ids and figures with
+  --              the head and the result hash, no words; one audit row; no
+  --              notice to anybody
+  --   (reads)    D8: the nominator and the side's staff and the school's
+  --              deciders and office read it; the nominee, a team-mate,
+  --              his mother, another side's coach, the other school's,
+  --              the platform's, the side's coach who also holds a
+  --              platform-wide assignment, a support session and a pad
+  --              read nothing
+  --   (decide)   only the side's deciders; never the nominee's guardian
+  --              (told who decides instead), by either door; Confirm writes
+  --              R6's honour tied to it, told to the side once, and the
+  --              captain's tab reads it; a decided row is not edited
+  --   (vice)     the captain not picked: the vice-captain nominates; the
+  --              coach chooses another, and it reads superseded
+  --   (close)    no award ends it and it is not reopened; an award decided
+  --              first leaves no nomination to make; an open one lapses
+  --              when its window closes and cannot then be decided
+  --   (grants)   the doors and the policy's tests are the application's;
+  --              the helpers nobody's; the table SELECT only, no text
+  --
+  -- Falsified (6 Nov 2026, each change made as the owner on a migrated
+  -- database inside the section's transaction, and the section run; each
+  -- went red at its own label; unchanged it passed):
+  --   recognition_self_players() taking an unverified self link   → (gate 1)
+  --   captain_nominate() without is_captain_of()                  → (gate 2)
+  --   captain_nominate() without the nominator's sheet test       → (gate 3)
+  --   captain_nominate() without the nominee's sheet test         → (gate 4)
+  --   captain_nominate() without "never himself", and the CHECK
+  --     recognition_nomination_not_self dropped                   → (gate 5)
+  --   captain_nominate() without match_verified()                 → (gate 6)
+  --   captain_nominate() ignoring a standing award                → (gate 7)
+  --   captain_nominate() without the 48-hour window               → (gate 8)
+  --   the open-once index dropped and its test removed            → (gate 9)
+  --   captain_nominate() storing no result hash                   → (stored)
+  --   the recognition_nomination_audit trigger dropped            → (stored)
+  --   recognition_nomination_mine() answering true                → (reads)
+  --   the RESTRICTIVE recognition_nomination_not_platform dropped → (reads)
+  --   honour_tie_nomination() without its guardian test           → (decide)
+  --   match_nomination_decide() without match_award_holds()       → (decide)
+  --   match_nomination_decide() without its platform-wide cut     → (decide)
+  --   captain_nominate() reopening after no award                 → (close)
+  --   recognition_nomination_lapse() lapsing nothing              → (close)
+  --   captaincy_holds() without its season test                   → (captain)
+  --   captaincy_holds() without "his side today"                  → (captain)
+  --   GRANT EXECUTE ON is_captain_of() TO scrbrd_app              → (grants)
+  DECLARE
+    y   jsonb := _v144_stage();
+    M   uuid := (y->>'M')::uuid;
+    C   uuid := (y->>'c')::uuid;
+    V   uuid := (y->>'v')::uuid;
+    N1  uuid := (y->>'n1')::uuid;
+    N2  uuid := (y->>'n2')::uuid;
+    O   uuid := (y->>'o')::uuid;
+    W1  uuid := (y->>'w1')::uuid;
+    SEA uuid := (y->>'season')::uuid;
+    WK  jsonb;
+    j   jsonb;
+    r   record;
+    who text;
+    got text;
+    v_n uuid;
+    v_sess uuid;
+  BEGIN
+    WK := _v144_working((y->>'M_head')::int, N1, ARRAY[N1, C]);
+
+    -- (captain)
+    PERFORM _assert(_v144_captain(C, '20XI', SEA) AND _v144_captain(V, '20XI', SEA), '§122 (captain): the captain or the vice-captain is not');
+    PERFORM _assert(NOT _v144_captain(N1, '20XI', SEA), '§122 (captain): a team-mate with no honour is');
+    PERFORM _assert(NOT _v144_captain(C, '19XI', SEA), '§122 (captain): the captain of another side');
+    PERFORM _assert(y->>'last' IS NULL OR (NOT _v144_captain((y->>'x')::uuid, '20XI', SEA) AND _v144_captain((y->>'x')::uuid, '20XI', (y->>'last')::uuid)),
+      '§122 (captain): last season''s captain is this season''s, or was not last season''s');
+    PERFORM _assert(NOT _v144_captain(W1, '20XI', SEA), '§122 (captain): another school''s boy');
+    got := _v144_owner(format('UPDATE player SET team_code = ''19XI'' WHERE id = %L', V));
+    PERFORM _assert(got = 'ok' AND NOT _v144_captain(V, '20XI', SEA), format('§122 (captain): moved side, still captain (%s)', got));
+    PERFORM _v144_owner(format('UPDATE player SET team_code = ''20XI'' WHERE id = %L', V));
+    got := _v144_owner(format('UPDATE honour SET withdrawn_at = now(), withdrawn_reason = ''v144'' WHERE player_id = %L AND kind = ''captain''', (y->>'x')::uuid));
+    PERFORM _assert(got = 'ok' AND (y->>'last' IS NULL OR NOT _v144_captain((y->>'x')::uuid, '20XI', (y->>'last')::uuid)),
+      format('§122 (captain): a withdrawn captaincy still holds (%s)', got));
+
+    -- (gate) 1: not the pupil himself.
+    FOREACH who IN ARRAY ARRAY['coach', 'capx', 'dos'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      SELECT * INTO r FROM captain_nominate(M, N1, WK);
+      PERFORM _assert(r.ok = false AND r.reason = 'not_permitted', format('§122 (gate 1): %s answered %s/%s', who, r.ok, r.reason));
+    END LOOP;
+    PERFORM _as((y->>'cap')::uuid);
+    PERFORM set_config('app.scope', 'pad', true);
+    SELECT * INTO r FROM captain_nominate(M, N1, WK);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(r.ok = false AND r.reason = 'not_permitted', format('§122 (gate 1): under a pad credential answered %s/%s', r.ok, r.reason));
+    -- 2: no captaincy; the vice-captain while the captain plays.
+    PERFORM _as((y->>'mate')::uuid);
+    SELECT * INTO r FROM captain_nominate(M, N1, WK);
+    PERFORM _assert(r.ok = false AND r.reason = 'not_captain', format('§122 (gate 2): a team-mate answered %s/%s', r.ok, r.reason));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM captain_nomination_state(M)), '§122 (gate 2): a team-mate reads the captain''s block');
+    PERFORM _as((y->>'vice')::uuid);
+    SELECT * INTO r FROM captain_nominate(M, N1, WK);
+    PERFORM _assert(r.ok = false AND r.reason = 'captain_on_sheet', format('§122 (gate 2): the vice-captain beside the captain answered %s/%s', r.ok, r.reason));
+    -- 3: the captain not on the sheet.
+    PERFORM _as((y->>'cap')::uuid);
+    SELECT * INTO r FROM captain_nominate((y->>'M2')::uuid, N1, _v144_working((y->>'M2_head')::int, N1, ARRAY[N1]));
+    PERFORM _assert(r.ok = false AND r.reason = 'not_on_sheet', format('§122 (gate 3): the captain not picked answered %s/%s', r.ok, r.reason));
+    -- 4: the nominee not on his side's sheet.
+    SELECT * INTO r FROM captain_nominate(M, O, _v144_working((y->>'M_head')::int, O, ARRAY[N1]));
+    PERFORM _assert(r.ok = false AND r.reason = 'nominee_not_on_sheet', format('§122 (gate 4): a boy off the sheet answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM captain_nominate(M, W1, _v144_working((y->>'M_head')::int, W1, ARRAY[N1]));
+    PERFORM _assert(r.ok = false AND r.reason = 'nominee_not_on_sheet', format('§122 (gate 4): the other side''s boy answered %s/%s', r.ok, r.reason));
+    -- 5: himself.
+    SELECT * INTO r FROM captain_nominate(M, C, _v144_working((y->>'M_head')::int, C, ARRAY[C]));
+    PERFORM _assert(r.ok = false AND r.reason = 'cannot_nominate_yourself', format('§122 (gate 5): himself answered %s/%s', r.ok, r.reason));
+    -- 6: not verified.
+    SELECT * INTO r FROM captain_nominate((y->>'MU')::uuid, N1, _v144_working((y->>'MU_head')::int, N1, ARRAY[N1]));
+    PERFORM _assert(r.ok = false AND r.reason = 'not_verified', format('§122 (gate 6): an unsealed match answered %s/%s', r.ok, r.reason));
+    PERFORM _assert((SELECT st.refusal = 'not_verified' AND NOT st.may_nominate AND st.sheet IS NULL FROM captain_nomination_state((y->>'MU')::uuid) st),
+      '§122 (gate 6): the unsealed match''s block offers a pick');
+    -- 7: an award stands (M5: the coach decided first, through R6's door).
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT * INTO r FROM match_award((y->>'M5')::uuid, N2, _v142_working((y->>'M5_head')::int, N2, ARRAY[N2]));
+    PERFORM _assert(r.ok, format('§122 (gate 7): the coach''s own award was refused: %s', r.reason));
+    PERFORM _as((y->>'cap')::uuid);
+    SELECT * INTO r FROM captain_nominate((y->>'M5')::uuid, N1, _v144_working((y->>'M5_head')::int, N1, ARRAY[N1]));
+    PERFORM _assert(r.ok = false AND r.reason = 'already_awarded', format('§122 (gate 7): after the award answered %s/%s', r.ok, r.reason));
+    -- 8: the window closed.
+    SELECT * INTO r FROM captain_nominate((y->>'M3')::uuid, N1, _v144_working((y->>'M3_head')::int, N1, ARRAY[N1]));
+    PERFORM _assert(r.ok = false AND r.reason = 'window_closed', format('§122 (gate 8): three days on answered %s/%s', r.ok, r.reason));
+    -- The working: an older head, the other side's boy suggested, four.
+    SELECT * INTO r FROM captain_nominate(M, N1, _v144_working((y->>'M_head')::int - 1, N1, ARRAY[N1]));
+    PERFORM _assert(r.ok = false AND r.reason = 'stale', format('§122 (gate): an older head answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM captain_nominate(M, N1, _v144_working((y->>'M_head')::int, N1, ARRAY[N1, W1]));
+    PERFORM _assert(r.ok = false AND r.reason = 'derived_from_invalid', format('§122 (gate): the other side suggested answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM captain_nominate(M, N1, _v144_working((y->>'M_head')::int, N1, ARRAY[N1, N2, C, V]));
+    PERFORM _assert(r.ok = false AND r.reason = 'derived_from_invalid', format('§122 (gate): four suggestions answered %s/%s', r.ok, r.reason));
+    PERFORM _assert((_v144_fact(M)->>'noms')::int = 0, '§122 (gate): a refusal wrote a nomination');
+    -- All nine hold: the captain's block offers the pick, the sheet without him.
+    j := (SELECT to_jsonb(st) FROM captain_nomination_state(M) st);
+    PERFORM _assert(j->>'side' = 'home' AND (j->>'may_nominate')::boolean AND j->>'refusal' IS NULL AND j->>'nominated_as' = 'captain'
+                    AND j->>'coach_name' ~ '^V[0-9]+ Coach$' AND jsonb_array_length(j->'sheet') = 3
+                    AND NOT (j->'sheet' @> jsonb_build_array(jsonb_build_object('playerId', C)))
+                    AND j->'sheet' @> jsonb_build_array(jsonb_build_object('playerId', N1, 'name', 'V N1'))
+                    AND j->>'nomination_id' IS NULL,
+      format('§122 (gate): the captain''s block reads %s', j));
+    SELECT * INTO r FROM captain_nominate(M, N1, WK);
+    PERFORM _assert(r.ok AND r.nomination_id IS NOT NULL, format('§122 (gate): the captain was refused: %s', r.reason));
+    v_n := r.nomination_id;
+    -- 9: a second open nomination.
+    SELECT * INTO r FROM captain_nominate(M, N2, _v144_working((y->>'M_head')::int, N2, ARRAY[N1]));
+    PERFORM _assert(r.ok = false AND r.reason = 'already_nominated', format('§122 (gate 9): a second nomination answered %s/%s', r.ok, r.reason));
+
+    -- (stored)
+    j := _v144_nom(v_n);
+    PERFORM _assert(j->>'kind' = 'player_of_match' AND j->>'status' = 'open' AND (j->>'nominee_player_id')::uuid = N1
+                    AND (j->>'nominated_by_player_id')::uuid = C AND j->>'nominated_by_user_id' IS NULL
+                    AND j->>'nominated_as' = 'captain' AND j->>'team_code' = '20XI' AND (j->>'school_id')::uuid = HIL
+                    AND (j->>'season_id')::uuid = SEA AND (j->>'match_id')::uuid = M
+                    AND (j->>'closes_at')::timestamptz > now() + interval '47 hours' AND (j->>'closes_at')::timestamptz <= now() + interval '48 hours'
+                    AND (j->'derived_from'->>'headSeq')::int = (y->>'M_head')::int AND j->'derived_from'->>'resultHash' ~ '^[0-9a-f]{32}$'
+                    AND jsonb_array_length(j->'derived_from'->'suggestions') = 2 AND (j->'derived_from'->'nominee'->>'playerId')::uuid = N1
+                    AND NOT (j ? 'rationale'),
+      format('§122 (stored): the nomination reads %s', j));
+    j := _v144_fact(M);
+    PERFORM _assert(jsonb_array_length(j->'audit') = 1 AND j->'audit'->0->>'event' = 'nominated'
+                    AND (j->'audit'->0->>'actor')::uuid = (y->>'cap')::uuid AND (j->'audit'->0->>'player')::uuid = N1
+                    AND (j->'audit'->0->>'nomination')::uuid = v_n AND (j->>'notices')::int = 0,
+      format('§122 (stored): the audit and the notices read %s', j));
+
+    -- (reads)
+    FOREACH who IN ARRAY ARRAY['cap', 'coach', 'assistant', 'manager', 'dos', 'prin', 'office', 'gcoach'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert((SELECT count(*) FROM recognition_nomination WHERE id = v_n) = 1, format('§122 (reads): %s does not read it', who));
+    END LOOP;
+    FOREACH who IN ARRAY ARRAY['nominee', 'mate', 'vice', 'capx', 'mother', 'other', 'wes', 'plat', 'twohats', 'scorer'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert((SELECT count(*) FROM recognition_nomination WHERE id = v_n) = 0, format('§122 (reads): %s reads it', who));
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM match_nomination_state(M)) AND NOT EXISTS (SELECT 1 FROM nominations_to_decide() t WHERE t.nomination_id = v_n),
+        format('§122 (reads): %s reads it through a door', who));
+    END LOOP;
+    PERFORM _as((y->>'mate')::uuid);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM captain_nomination_state(M)), '§122 (reads): a team-mate reads the captain''s block');
+    PERFORM _as(U_OWNER);
+    PERFORM _assert((SELECT count(*) FROM recognition_nomination WHERE id = v_n) = 0, '§122 (reads): the owner''s key reads it');
+    PERFORM _as((y->>'plat')::uuid);
+    SELECT x.ok, x.id INTO r FROM support_access_begin(HIL, 'schooladmin', 'V144: Hilton asked the platform to help', NULL, 60) x;
+    PERFORM _assert(r.ok, '§122 (reads): a support session at Hilton could not be begun');
+    v_sess := r.id;
+    PERFORM _assert((SELECT count(*) FROM recognition_nomination WHERE id = v_n) = 0, '§122 (reads): a support session reads it');
+    PERFORM support_access_end(v_sess);
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM _assert((SELECT count(*) FROM recognition_nomination WHERE id = v_n) = 0, '§122 (reads): a pad credential reads it');
+    PERFORM set_config('app.scope', '', true);
+    -- The captain's own block: his row, open, in neutral state.
+    PERFORM _as((y->>'cap')::uuid);
+    j := (SELECT to_jsonb(st) FROM captain_nomination_state(M) st);
+    PERFORM _assert((j->>'nomination_id')::uuid = v_n AND j->>'status' = 'open' AND j->>'nominee_name' = 'V N1'
+                    AND j->>'refusal' = 'already_nominated' AND NOT (j->>'may_nominate')::boolean AND j->'sheet' = 'null'::jsonb,
+      format('§122 (reads): the captain''s block after his pick reads %s', j));
+
+    -- (decide)
+    FOREACH who IN ARRAY ARRAY['assistant', 'manager', 'office', 'other', 'wes', 'cap', 'twohats'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      SELECT * INTO r FROM match_nomination_decide(v_n, 'confirm', NULL, _v142_working((y->>'M_head')::int, N1, ARRAY[N1, C]));
+      PERFORM _assert(r.ok = false AND r.reason = 'not_permitted', format('§122 (decide): %s answered %s/%s', who, r.ok, r.reason));
+    END LOOP;
+    PERFORM _as((y->>'assistant')::uuid);
+    PERFORM _assert((SELECT st.refusal = 'not_permitted' AND NOT st.may_decide FROM match_nomination_state(M) st),
+      '§122 (decide): the assistant''s line offers him the decision');
+    PERFORM _as((y->>'gcoach')::uuid);
+    SELECT * INTO r FROM match_nomination_decide(v_n, 'choose', N2, _v142_working((y->>'M_head')::int, N2, ARRAY[N1, C]));
+    PERFORM _assert(r.ok = false AND r.reason = 'guardian_conflict' AND r.detail = 'directorofsport',
+      format('§122 (decide): the nominee''s guardian answered %s/%s/%s', r.ok, r.reason, r.detail));
+    PERFORM _assert((SELECT st.refusal = 'guardian_conflict' AND st.instead = 'directorofsport' FROM match_nomination_state(M) st),
+      '§122 (decide): the guardian''s line does not say who decides');
+    got := _v133_try(format('SELECT * FROM match_award(%L, %L, %L::jsonb)', M, N2, _v142_working((y->>'M_head')::int, N2, ARRAY[N1, C])));
+    PERFORM _assert(got LIKE '23514||nomination_guardian_conflict', format('§122 (decide): R6''s door let the guardian decide his boy''s nomination: %s', got));
+    PERFORM _assert((_v144_fact(M)->>'honours')::int = 0 AND _v144_nom(v_n)->>'status' = 'open', '§122 (decide): a refusal decided it');
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT * INTO r FROM match_nomination_decide(v_n, 'shrug', NULL, NULL);
+    PERFORM _assert(r.ok = false AND r.reason = 'action_invalid', format('§122 (decide): an unknown act answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM match_nomination_decide(v_n, 'confirm', NULL, _v142_working((y->>'M_head')::int - 1, N1, ARRAY[N1, C]));
+    PERFORM _assert(r.ok = false AND r.reason = 'stale', format('§122 (decide): an older head answered %s/%s', r.ok, r.reason));
+    PERFORM _assert((SELECT st.may_decide AND st.nominated_as = 'captain' AND st.nominee_name = 'Verify OneFortyFour N1' FROM match_nomination_state(M) st),
+      '§122 (decide): the coach''s line does not offer him the decision');
+    PERFORM _assert((SELECT count(*) FROM nominations_to_decide() t WHERE t.nomination_id = v_n AND t.nominee_name = 'V N1'
+                       AND t.nominated_as = 'captain' AND t.match_id = M) = 1,
+      '§122 (decide): the coach''s To-resolve row is not there');
+    SELECT * INTO r FROM match_nomination_decide(v_n, 'confirm', NULL, _v142_working((y->>'M_head')::int, N1, ARRAY[N1, C]));
+    PERFORM _assert(r.ok AND r.honour_id IS NOT NULL, format('§122 (decide): the coach''s confirm was refused: %s', r.reason));
+    j := _v144_nom(v_n);
+    PERFORM _assert(j->>'status' = 'confirmed' AND (j->>'decided_by')::uuid = (y->>'coach')::uuid AND (j->>'honour_id')::uuid = r.honour_id
+                    AND (_v142_honour(r.honour_id)->>'player')::uuid = N1
+                    AND (SELECT h.nomination_id FROM honour h WHERE h.id = r.honour_id) = v_n,
+      format('§122 (decide): the confirmed nomination reads %s', j));
+    PERFORM _assert((_v144_fact(M)->>'notices')::int = 1 AND (_v144_fact(M)->>'honours')::int = 1
+                    AND (SELECT string_agg(e->>'event', ',') FROM jsonb_array_elements(_v144_fact(M)->'audit') e) = 'nominated,awarded,nomination_confirmed',
+      format('§122 (decide): the side is not told once, or the audit reads %s', _v144_fact(M)));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM nominations_to_decide() t WHERE t.nomination_id = v_n), '§122 (decide): the To-resolve row outlives the decision');
+    SELECT * INTO r FROM match_nomination_decide(v_n, 'no_award', NULL, NULL);
+    PERFORM _assert(r.ok = false AND r.reason = 'already_decided', format('§122 (decide): twice answered %s/%s', r.ok, r.reason));
+    PERFORM _as((y->>'cap')::uuid);
+    j := (SELECT to_jsonb(st) FROM captain_nomination_state(M) st);
+    PERFORM _assert(j->>'status' = 'confirmed' AND (j->>'award_player_id')::uuid = N1 AND j->>'award_name' = 'V N1'
+                    AND j->>'refusal' = 'already_awarded',
+      format('§122 (decide): the captain''s block after the confirm reads %s', j));
+    got := _v144_owner(format('UPDATE recognition_nomination SET status = ''open'', decided_by = NULL, decided_at = NULL, honour_id = NULL WHERE id = %L', v_n));
+    PERFORM _assert(got LIKE '23514|a decided nomination is not edited%', format('§122 (decide): the owner reopened a decided one: %s', got));
+    got := _v144_owner(format('DELETE FROM recognition_nomination WHERE id = %L', v_n));
+    PERFORM _assert(got LIKE '23514|a nomination is kept%', format('§122 (decide): a nomination was deleted: %s', got));
+    got := _v133_try(format('UPDATE recognition_nomination SET status = ''lapsed'' WHERE id = %L', v_n));
+    PERFORM _assert(got LIKE '42501|%', format('§122 (decide): the application edits a nomination: %s', got));
+    got := _v133_try(format('INSERT INTO recognition_nomination (kind, season_id, school_id, team_code, nominee_player_id) VALUES (''colours'', %L, %L, ''20XI'', %L)', SEA, HIL, N1));
+    PERFORM _assert(got LIKE '42501|%', format('§122 (decide): the application writes a nomination: %s', got));
+    got := _v144_owner(format('UPDATE honour SET nomination_id = NULL WHERE id = %L', (_v144_nom(v_n)->>'honour_id')));
+    PERFORM _assert(got LIKE '23514|an award''s nomination is not edited%', format('§122 (decide): an award''s tie was edited: %s', got));
+
+    -- (vice)
+    PERFORM _as((y->>'vice')::uuid);
+    SELECT * INTO r FROM captain_nominate((y->>'M2')::uuid, N1, _v144_working((y->>'M2_head')::int, N1, ARRAY[N1, N2]));
+    PERFORM _assert(r.ok, format('§122 (vice): the vice-captain with the captain not picked was refused: %s', r.reason));
+    v_n := r.nomination_id;
+    PERFORM _assert(_v144_nom(v_n)->>'nominated_as' = 'vice_captain', '§122 (vice): the row does not say the vice-captain');
+    PERFORM _as((y->>'dos')::uuid);
+    SELECT * INTO r FROM match_nomination_decide(v_n, 'choose', N2, _v142_working((y->>'M2_head')::int, N2, ARRAY[N1, N2]));
+    PERFORM _assert(r.ok, format('§122 (vice): the director''s choice was refused: %s', r.reason));
+    PERFORM _assert(_v144_nom(v_n)->>'status' = 'superseded' AND (_v142_honour(r.honour_id)->>'player')::uuid = N2,
+      format('§122 (vice): choosing another reads %s', _v144_nom(v_n)));
+    PERFORM _as((y->>'vice')::uuid);
+    j := (SELECT to_jsonb(st) FROM captain_nomination_state((y->>'M2')::uuid) st);
+    PERFORM _assert(j->>'status' = 'superseded' AND j->>'nominee_name' = 'V N1' AND j->>'award_name' = 'V N2' AND j->>'nominated_as' = 'vice_captain',
+      format('§122 (vice): the vice-captain''s block reads %s', j));
+
+    -- (close) no award, and not reopened.
+    PERFORM _as((y->>'cap')::uuid);
+    SELECT * INTO r FROM captain_nominate((y->>'M4')::uuid, N2, _v144_working((y->>'M4_head')::int, N2, ARRAY[N2]));
+    PERFORM _assert(r.ok, format('§122 (close): the captain was refused on M4: %s', r.reason));
+    v_n := r.nomination_id;
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT * INTO r FROM match_nomination_decide(v_n, 'no_award', NULL, NULL);
+    PERFORM _assert(r.ok AND _v144_nom(v_n)->>'status' = 'no_award' AND (_v144_fact((y->>'M4')::uuid)->>'honours')::int = 0,
+      format('§122 (close): no award reads %s/%s', r.reason, _v144_nom(v_n)));
+    PERFORM _as((y->>'cap')::uuid);
+    SELECT * INTO r FROM captain_nominate((y->>'M4')::uuid, N1, _v144_working((y->>'M4_head')::int, N1, ARRAY[N2]));
+    PERFORM _assert(r.ok = false AND r.reason = 'already_decided', format('§122 (close): after no award answered %s/%s', r.ok, r.reason));
+    -- A lapse: the window closed under an open nomination.
+    SELECT * INTO r FROM captain_nominate((y->>'M6')::uuid, N1, _v144_working((y->>'M6_head')::int, N1, ARRAY[N1]));
+    PERFORM _assert(r.ok, format('§122 (close): the captain was refused on M6: %s', r.reason));
+    v_n := r.nomination_id;
+    got := _v144_owner(format('ALTER TABLE recognition_nomination DISABLE TRIGGER recognition_nomination_guard; '
+                              'UPDATE recognition_nomination SET closes_at = now() - interval ''1 second'' WHERE id = %L; '
+                              'ALTER TABLE recognition_nomination ENABLE TRIGGER recognition_nomination_guard', v_n));
+    PERFORM _assert(got = 'ok', format('§122 (close): the window could not be closed: %s', got));
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM nominations_to_decide() t WHERE t.nomination_id = v_n), '§122 (close): a lapsed nomination is on the To-resolve list');
+    SELECT * INTO r FROM match_nomination_decide(v_n, 'confirm', NULL, _v142_working((y->>'M6_head')::int, N1, ARRAY[N1]));
+    PERFORM _assert(r.ok = false AND r.reason = 'lapsed' AND _v144_nom(v_n)->>'status' = 'lapsed' AND _v144_nom(v_n)->>'decided_by' IS NULL,
+      format('§122 (close): a lapsed one answered %s/%s and reads %s', r.ok, r.reason, _v144_nom(v_n)));
+    SELECT * INTO r FROM match_award((y->>'M6')::uuid, N2, _v142_working((y->>'M6_head')::int, N2, ARRAY[N1]));
+    PERFORM _assert(r.ok AND (SELECT h.nomination_id IS NULL FROM honour h WHERE h.id = r.honour_id),
+      format('§122 (close): after the lapse the coach decides alone: %s', r.reason));
+    PERFORM _assert((SELECT string_agg(e->>'event', ',') FROM jsonb_array_elements(_v144_fact((y->>'M6')::uuid)->'audit') e) = 'nominated,nomination_lapsed,awarded',
+      format('§122 (close): the lapse''s audit reads %s', _v144_fact((y->>'M6')::uuid)->'audit'));
+    PERFORM _as((y->>'dos')::uuid);
+    SELECT string_agg(l.action, ' | ' ORDER BY l.at, l.key) INTO got FROM audit_log(HIL, ARRAY['recognition'], NULL, NULL, NULL, 400) l
+     WHERE l.detail->>'team' = '20XI' AND l.action NOT LIKE 'Awarded%';
+    PERFORM _assert(got LIKE '%Nominated for Player of the Match (the captain''s pick)%'
+                    AND got LIKE '%Nominated for Player of the Match (the vice-captain''s pick)%'
+                    AND got LIKE '%Confirmed the captain''s nomination for Player of the Match%'
+                    AND got LIKE '%Chose another boy than the captain''s nomination for Player of the Match%'
+                    AND got LIKE '%Recorded no award on the captain''s nomination for Player of the Match%'
+                    AND got LIKE '%The captain''s nomination for Player of the Match lapsed undecided%',
+      format('§122 (close): the audit log reads %s', got));
+
+    -- (grants)
+    PERFORM _assert(has_function_privilege('scrbrd_app', 'captain_nominate(uuid,uuid,jsonb)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'captain_nomination_state(uuid)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'match_nomination_decide(uuid,text,uuid,jsonb)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'match_nomination_state(uuid)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'nominations_to_decide()', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'captain_nominate(uuid,uuid,jsonb)', 'EXECUTE'),
+      '§122 (grants): a door is not the application''s alone');
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'is_captain_of(uuid,text,uuid)', 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', 'recognition_self_players()', 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', 'recognition_nomination_lapse(uuid)', 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', 'honour_tie_nomination()', 'EXECUTE'),
+      '§122 (grants): a helper is the application''s to call');
+    PERFORM _assert(has_table_privilege('scrbrd_app', 'recognition_nomination', 'SELECT')
+                    AND NOT has_table_privilege('scrbrd_app', 'recognition_nomination', 'INSERT')
+                    AND NOT has_table_privilege('scrbrd_app', 'recognition_nomination', 'UPDATE')
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_name = 'recognition_nomination'
+                                       AND c.column_name IN ('rationale', 'note', 'comment', 'reason', 'message')),
+      '§122 (grants): the application writes the table, or it has a free-text column');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 122
+  -- └── db/144 (section 122) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

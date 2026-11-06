@@ -115,8 +115,19 @@ export function useNav(role) {
  * nothing about what any read returns.
  */
 export function personaOf(role) {
+  return personaFor(heldRoles(role));
+}
+
+/**
+ * The roles this session holds: the assignments actually held, or, in the
+ * demo (no assignments), the persona and the roles it comes with — the set
+ * personaOf() and useNav() read. Presentation only.
+ * @param {string} role  the shell's badge role
+ * @returns {string[]}
+ */
+export function heldRoles(role) {
   const held = profile()?.assignments?.map((a) => a.role) ?? [];
-  return personaFor(held.length ? held : [role, ...(ROLES[role]?.also ?? [])]);
+  return held.length ? [...new Set(held)] : [role, ...(ROLES[role]?.also ?? [])];
 }
 
 // ── The sports this session's schools run ──

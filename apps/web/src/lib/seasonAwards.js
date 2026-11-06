@@ -28,7 +28,7 @@
  * floor to that season's balls: a boy with twenty balls in each of two
  * seasons is below the floor in both, whatever his career says.
  */
-import { battingIndex, bowlingIndex } from "@scrbrd/scoring";
+import { MIN_BALLS_BOWLED, MIN_BALLS_FACED, battingIndex, bowlingIndex } from "@scrbrd/scoring";
 
 /** The option value for every season at once — the `career` read, unchanged. */
 export const ALL_SEASONS = "all";
@@ -161,4 +161,58 @@ export function mvpRanking(players, opts = {}) {
     .filter((x) => x.score != null)
     .sort((a, b) => /** @type {number} */ (b.score) - /** @type {number} */ (a.score))
     .slice(0, opts.limit ?? 10);
+}
+
+// ── Who sees a ranking, and what it says it is (recognition R5b, D23, A15) ──
+//
+// docs/design/RECOGNITION_design.md §6.1: "a pupil may see a record and its
+// holders; he may not see his team-mates ordered by a figure, and neither
+// may his parent. Staff may, because selecting a side is their job and the
+// figures are labelled with their method." STEP4 §6: "no leaderboard of the
+// team's parents' children on a family screen."
+
+/**
+ * The roles that are playing, or belonging to someone who does — the
+ * "playing" family of design/roles.js's ROLE_IDENTITY, written out here so
+ * this file stays a plain module the walks import. A test holds the two to
+ * the same list (apps/web/test/season-awards.test.mjs).
+ */
+export const PLAYING_ROLES = Object.freeze(["player", "guardian", "spectator", "selfaccess"]);
+
+/**
+ * Whether a person whose roles are `held` is shown a list of players ordered
+ * by a figure: the Season Awards tab's five lists, the MVP figure, the Top
+ * Performers lists. Only when one role he holds is not a playing one — a
+ * coach who is also a parent keeps them; a pupil (player, selfaccess), a
+ * `player` with no file of his own, a parent, a parent who also follows the
+ * school as a spectator, do not. Nobody held, nobody shown.
+ *
+ * Presentation only, like every gate in the shell: it decides what is drawn,
+ * never what a read returns. The career reads a ranking is built from are
+ * the API's and the database's to decide.
+ * @param {readonly string[]} held  the roles actually held (or the demo persona's)
+ */
+export function showsRankings(held) {
+  return (held ?? []).some((r) => typeof r === "string" && r && !PLAYING_ROLES.includes(r));
+}
+
+/**
+ * The method of each ranking, in plain words, for the staff who see it
+ * (D22: "ordered by the metric with its minimum qualification stated").
+ * `season` is the Awards tab's choice: a season's label, or ALL_SEASONS.
+ * @param {"runs"|"wickets"|"batting"|"bowling"|"mvp"|"average"|"wicketCount"} kind
+ * @param {string|null} [season]
+ */
+export function rankingMethod(kind, season = null) {
+  const over = season == null ? "" : season === ALL_SEASONS ? " across every season on record" : ` in the ${season} school season`;
+  switch (kind) {
+    case "runs": return `Ranked by runs scored${over}, most first; level on runs, the higher average first. No minimum number of balls.`;
+    case "wickets": return `Ranked by wickets taken${over}, most first; level on wickets, the lower economy first. No minimum number of balls.`;
+    case "batting": return `Ranked by the batting index${over} (average and strike rate together, out of 20), highest first. Only players who have faced at least ${MIN_BALLS_FACED} balls.`;
+    case "bowling": return `Ranked by the bowling index${over} (economy and balls per wicket together, out of 20), highest first. Only players who have bowled at least ${MIN_BALLS_BOWLED} balls.`;
+    case "mvp": return `Ranked by the batting and bowling index${over}, averaged where a player has both, highest first. Only players who have faced ${MIN_BALLS_FACED} balls or bowled ${MIN_BALLS_BOWLED}; never a rating either index refused.`;
+    case "average": return `Ranked by batting average${over}, highest first. No minimum number of innings or balls.`;
+    case "wicketCount": return `Ranked by wickets taken${over}, most first. No minimum number of balls.`;
+    default: return "";
+  }
 }

@@ -288,6 +288,25 @@ function ReadinessOverview({ role, onNav }) {
               </section>
             </Card>
           )}
+          {q.potm && (q.potm.loading || q.potm.rows.length > 0 || q.potm.unread.length > 0) && (
+            // RECOGNITION R7 (db/144, D18): the captain's nominations this reader may decide. Drawn only when there is one,
+            // or its read failed: no nomination is the usual case and says nothing.
+            <Card sx={{ padding: 0, marginBottom: "10px" }} data-testid="queue-potm">
+              <section aria-labelledby="queue-potm-head">
+                <header style={{ padding: "12px 16px" }}>
+                  <h2 id="queue-potm-head" style={{ margin: 0, fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: D.textMuted }}>
+                    Player of the Match to decide
+                  </h2>
+                </header>
+                {q.potm.loading ? <p style={{ ...small(true), padding: "0 16px 12px", margin: 0 }}>Reading the nominations…</p> : (
+                  <ul style={{ margin: 0, padding: 0 }}>
+                    {q.potm.rows.map((r) => <Row key={r.id} row={r} door={doorOf(r)}/>)}
+                    {q.potm.unread.map((r) => <Row key={r.id} row={r} door={null} onRetry={q.retryPotm}/>)}
+                  </ul>
+                )}
+              </section>
+            </Card>
+          )}
           {matchesSaid.state === "failed" && <ReadState read={matchesSaid} compact testId="readiness-read-state" onRetry={() => setNonce((n) => n + 1)}/>}
           <div style={{ display: "grid", gap: "16px", gridTemplateColumns: q.offices.length ? "repeat(auto-fit, minmax(min(100%, 340px), 1fr))" : "1fr", alignItems: "start" }}>
             {q.offices.length > 0 && (

@@ -11,6 +11,7 @@ import { atThisRate, boardFromInnings } from "../../scorer/boardData.js";
 import { bowlerCapWords } from "../../scorer/conditionsLine.jsx";
 import { ShotWheel } from "../../scorer/charts.jsx";
 import { ReportPlan } from "../family/plan.jsx";
+import { CaptainPotm } from "./captainPotm.jsx";
 import { Panel, Quiet } from "./bits.jsx";
 
 /**
@@ -29,6 +30,10 @@ import { Panel, Quiet } from "./bits.jsx";
  * bowled his 4 overs", "5 overs; the conditions allow 4". Nothing else — never
  * a reason, never a boy's own limit (D4) — and no line at all where the
  * document has no cap. It is drawn while the innings is in play.
+ *
+ * PLAYER OF THE MATCH (RECOGNITION R7, captainPotm.jsx): after the match, the
+ * captain's one nomination, drawn only while the server's gate passes, and his
+ * own nomination's state in neutral words.
  *
  * THE ONE ROW THAT OPENS is the coach's plan (phase B, PlanRow below), after the
  * Board: it opens the plan's own words, which the whole side may already read on
@@ -161,6 +166,9 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
       {props && <Board {...props} lastWicket={undefined} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="mc-captain-board"/>}
 
       <PlanRow match={match} role={role} me={me}/>
+
+      {/* RECOGNITION R7 (db/144, D17): his Player of the Match nomination, after the match; the server says whether he may. */}
+      {decided && match.status === "complete" && !!match.live && <CaptainPotm match={match}/>}
 
       {coming.length > 0 && (
         <Part label="Next in" testid="mc-captain-next-in">
