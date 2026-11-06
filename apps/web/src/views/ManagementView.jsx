@@ -177,6 +177,8 @@ const AUDIT_KINDS = [
   ["amendment", "Amendments"],
   ["scorebook", "Scorebook imports"],
   ["duty",      "Duty suspensions"],
+  // db/142: honours awarded, withdrawn, put on or taken off the public board.
+  ["recognition", "Honours"],
 ];
 const AUDIT_PAGE = 25;
 // A row with nobody behind it. A grant made by a seed or a migration has no

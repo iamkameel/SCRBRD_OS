@@ -622,6 +622,55 @@ try {
   ok("...and the error is gone", back && await bad.page.locator('[data-testid="awards-error"]').count() === 0);
   await bad.ctx.close().catch(() => {});
 
+  // RECOGNITION R4 (db/140; RECOGNITION_design.md D3, D6, §7): a boy's
+  // Recognition card on Profiles says where each milestone came from, in
+  // words beside its mark; a withdrawn honour reaches the school's deciders
+  // with its date and never its reason, and has left the side's coach's.
+  group("Profiles: where each milestone came from; a withdrawn honour to the deciders only (R4)");
+  {
+    const WHITFIELD = "aaaaaaaa-0000-0000-0000-000000000001";
+    const season = (await q(`select id from season where level = 'school' and label = '2026'`))[0].id;
+    const hw = (await q(`insert into honour (player_id, kind, season_id) values ($1, 'half_colours', $2) returning id`, [WHITFIELD, season]))[0].id;
+    await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: awarded in error' where id = $1`, [hw]);
+    const MON3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const [ty, tm, td] = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Johannesburg" }).format(new Date()).split("-").map(Number);
+    const DMY = `${td} ${MON3[tm - 1]} ${ty}`;
+    // Profiles → one boy, waiting on his own card's words (`mark`), not on a
+    // card being there: the last boy's stays drawn until the read answers.
+    const profile = async (page, id, mark) => {
+      await page.locator('[data-testid="nav-profiles"]').first().click({ timeout: WAIT }).catch(() => {});
+      await page.locator(`[data-testid="roster-player-${id}"]`).first().click({ timeout: WAIT }).catch(() => {});
+      return until(page, (m) => new RegExp(m).test(document.querySelector('[data-testid="recognition-card"]')?.innerText ?? ""), mark);
+    };
+    const chips = (page) => page.$$eval('[data-testid="recognition-card"] [data-testid^="recognition-"]',
+      (els) => els.map((e) => ({ id: e.getAttribute("data-testid"), text: e.innerText.replace(/\s+/g, " ").trim(),
+                                 px: parseFloat(getComputedStyle(e).fontSize) })));
+
+    const d = await open();
+    ok("the director of sport signs in", await signIn(d.page, /sarah@example\.invalid|Director/));
+    ok("...and opens Top Scorer's profile", await profile(d.page, TS, "Hundred \\(118\\)"));
+    const ts = await chips(d.page);
+    ok("his hundred says the scorer has not sealed it, in words beside a dashed star",
+       ts.some((c) => c.id === "recognition-milestone" && /Hundred \(118\)/.test(c.text) && /not yet sealed by the scorer/.test(c.text))
+       && await d.page.locator('[data-testid="recognition-card"] [data-sealed="false"]').count() >= 1, JSON.stringify(ts));
+    ok("...nothing on the card under 12px", ts.every((c) => c.px >= 12), JSON.stringify(ts.map((c) => c.px)));
+    ok("...and opens Whitfield's", await profile(d.page, WHITFIELD, "Full colours"));
+    const wd = await chips(d.page);
+    ok("the director reads his withdrawn half colours, with its date", wd.some((c) => c.id === "recognition-withdrawn" && c.text.includes(`Half colours 2026 · withdrawn ${DMY}`)), JSON.stringify(wd));
+    ok("...and never its reason", !wd.some((c) => /awarded in error|the walk/i.test(c.text)));
+    ok("no console errors on the director's session", d.errors.length === 0, d.errors.join(" | "));
+    await d.ctx.close().catch(() => {});
+
+    const c = await open();
+    ok("the 1XI coach signs in", await signIn(c.page, /coach@example\.invalid|Coach/));
+    ok("...and opens Whitfield's profile", await profile(c.page, WHITFIELD, "Full colours"));
+    const cw = await chips(c.page);
+    ok("the coach's card has his colours and no withdrawn honour (D3)", cw.some((x) => x.id === "recognition-honour")
+       && !cw.some((x) => x.id === "recognition-withdrawn" || /withdrawn/.test(x.text)), JSON.stringify(cw));
+    ok("no console errors on the coach's session", c.errors.length === 0, c.errors.join(" | "));
+    await c.ctx.close().catch(() => {});
+  }
+
   // RECOGNITION R9 (db/143): the school record boards, from a browser. Two
   // 1st XI matches today, each with a result and both innings sealed, each
   // finished as the scorer's finish sets it: Records Batter's 12, then R

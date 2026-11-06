@@ -427,6 +427,10 @@ const HAND_WRITTEN_SINCE_47 = {
   guardian_link_ending: {},
   // db/124: which union opened a boy's passport is never public as a whole (N5).
   passport_union_read: {},
+  // db/140: which guardian was told of which sealed mark is never public as a whole (N4).
+  milestone_family_notice: {},
+  // db/142: who awarded and withdrew a boy's honour is never public as a whole (N3).
+  recognition_audit: {},
 };
 
 /** The db/NN files from 47 on, which is where hand-written pupil tables are held to this. */

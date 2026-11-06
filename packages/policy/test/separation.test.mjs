@@ -42,7 +42,7 @@
  *
  *   node packages/policy/test/separation.test.mjs
  */
-import { ROLES, ROLE_CAPABILITIES, SCORING_ROLES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, boundaries, mayGrantRole } from "../src/roles.mjs";
+import { ROLES, ROLE_CAPABILITIES, SCORING_ROLES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, SUPERADMIN_RECOGNITION_CARVE, boundaries, mayGrantRole } from "../src/roles.mjs";
 import { ALL_CAPABILITIES, LEVEL, SENSITIVE, PLATFORM_ONLY } from "../src/capabilities.mjs";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -298,8 +298,9 @@ group("SG  Nobody but a DSO reads a safeguarding concern");
   const wrong = SG.filter((c) => holders(c).join() !== "dso");
   ok("safeguarding.* is held by dso and by no other role — the owner's key included",
      wrong.length === 0, wrong.map((c) => `${c}: ${holders(c).join(",")}`).join(" · "));
-  ok("the owner's key holds every capability outside safeguarding.*",
-     ALL_CAPABILITIES.filter((c) => !c.startsWith("safeguarding.")).every((c) => caps("superadmin").includes(c)));
+  ok("the owner's key holds every capability outside safeguarding.* (and recognition's D7 carve-out)",
+     ALL_CAPABILITIES.filter((c) => !c.startsWith("safeguarding.") && !SUPERADMIN_RECOGNITION_CARVE.includes(c))
+       .every((c) => caps("superadmin").includes(c)));
   const kept = [...ALL_CAPABILITIES.filter((c) => /^(medical|discipline|scoring)\./.test(c)),
                 "user.role.assign", "player.pii.read", "player.emergency.read", "player.age.read",
                 "player.note.read", "broadcast.publish"];
@@ -636,6 +637,24 @@ group("READERS Q10–Q16  the narrowed reads stay narrow");
      !caps("selfaccess").includes("player.identity.read"));
   ok("...and the office still holds it, so his right of access is met on request",
      caps("schooladmin").includes("player.identity.read"));
+}
+
+// ── RECOGNITION D9 (db/142): who decides Player of the Match ──
+// The side's coach and the director of sport decide; the principal holds it
+// for D10's last step (the director is the boy's guardian). Nobody who scores,
+// assists, manages, reads or plays holds it, and the owner's key does not
+// (D7). The rows a decision may not cross — the boy himself, his guardian —
+// are db/142's match_award() and db/99 §120's. Falsified by adding the
+// capability to assistantcoach, and by dropping the carve-out from superadmin.
+group("D9  Player of the Match is decided by the side's coach, the director of sport and the principal");
+{
+  ok("recognition.match.award is held by coach, directorofsport and principal alone",
+     holders("recognition.match.award").sort().join() === "coach,directorofsport,principal",
+     holders("recognition.match.award").join());
+  ok("...never by the owner's key (D7)", !caps("superadmin").includes("recognition.match.award"));
+  ok("...nor by a scorer, an assistant, a team manager, a pupil, a parent or the office",
+     ["scorer", "assistantcoach", "teammanager", "player", "selfaccess", "guardian", "schooladmin", "platformadmin"]
+       .every((r) => !caps(r).includes("recognition.match.award")));
 }
 
 // ── The boundary, told to the person standing at it ──────

@@ -93,6 +93,8 @@ export const NAMED_NOT_EXPORTED = Object.freeze([
   "child_links",
   // His figures across matches (GA-I24-I25 D9: compare exports nothing).
   "career", "career_by_season", "matchups", "matchup_coverage",
+  // His bests (RECOGNITION R5): a screen's, never a file (A11's spirit).
+  "personal_bests",
   // A side's record boards (RECOGNITION R9): a screen's, never a file (A11).
   "record_boards",
   // His conduct (db/116): a league's read of its competition's records, the

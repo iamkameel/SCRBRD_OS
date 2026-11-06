@@ -814,10 +814,31 @@ function asClause(r) {
            live: true };
 }
 const d10 = (v) => (v ? String(v).slice(0, 10) : null);
-/** One line of a boy's recognition: an honour, a cap, or a milestone. The label is the server's. */
+/**
+ * One line of a boy's recognition: an honour, a cap, or a milestone. The label is the server's.
+ * R4 (db/140): a milestone says where it came from — the side he played for, its
+ * innings, the day the scorer's seal stands for it (null until then), its source
+ * ('ball log', 'scorebook', 'team sheet') and the fixture's class; a withdrawn
+ * honour carries the day it was withdrawn, and reaches only its three readers (D3).
+ */
 function asRecognition(r) {
   return { family: r.family, kind: r.kind, label: r.label, value: r.value, season: r.season, on: d10(r.on_date),
-           matchId: r.match_id, opponent: r.opponent, isPublic: r.is_public, citation: r.citation, id: r.ref_id, live: true };
+           matchId: r.match_id, opponent: r.opponent, isPublic: r.is_public, citation: r.citation, id: r.ref_id,
+           withdrawnOn: d10(r.withdrawn_on), sideCode: r.side_code ?? null, innings: r.innings ?? null,
+           sealedOn: d10(r.sealed_on), source: r.source ?? null, fixtureClass: r.fixture_class ?? null,
+           noBoard: r.no_board ?? null, live: true };
+}
+/**
+ * One of a boy's personal bests (RECOGNITION R5, db/141 player_best()): his
+ * highest innings or best bowling for a class group, format and side, or an
+ * innings still awaiting the scorer's seal (`verified` false, never `best`).
+ * Figures as the server derived them; nothing is ranked here.
+ */
+function asPersonalBest(r) {
+  return { metric: r.metric, group: r.class_group, format: r.format, side: r.side_code, matchId: r.match_id,
+           innings: r.innings, on: d10(r.played_on), opponent: r.opponent, runs: r.runs, balls: r.balls_faced,
+           notOut: r.not_out === true, wickets: r.wickets, conceded: r.runs_conceded,
+           verified: r.verified === true, best: r.best === true, live: true };
 }
 /**
  * One line of a side's record boards (RECOGNITION R9, db/143 record_board()):
@@ -1382,6 +1403,7 @@ const ADAPT = {
   equipment: asEquipment,
   equipment_issues: asIssue,
   recognition: asRecognition,
+  personal_bests: asPersonalBest,
   record_boards: asRecordLine,
   player_shot_points: asShotPoint,
   pitch_report: asPitchReport,
