@@ -140,6 +140,9 @@ group("S3 · A picked boy is unavailable, restricted or asking again");
   ok("unavailable and picked: fires, with who said it", run([r({ declaredStatus: "unavailable", declaredByName: "Mrs Pillay" })])[0]?.lines[0] === "R Pillay · on the sheet · marked unavailable (said by Mrs Pillay)");
   ok("restricted: the date, nothing of the nature", run([r({ clinicallyRestricted: true, returnDate: "2026-10-14T00:00:00.000Z" })])[0]?.lines[0] === "R Pillay · restricted · back 14 Oct");
   ok("asked again", run([r({ declaredStatus: "needs_reconfirming" })])[0]?.lines[0] === "R Pillay · on the sheet · asked again: the fixture has moved");
+  const started = (status) => ruleS3(base({ match: { ...SOON, status }, readiness: [r({ declaredStatus: "needs_reconfirming" }), r({ playerId: "p2", declaredStatus: "unavailable" })] }));
+  ok("...but not once the match is under way or over: the side is the side playing (the unavailable boy still fires)",
+     ["live", "complete"].every((s) => started(s).length === 1 && /marked unavailable/.test(started(s)[0].lines[0])), started("live"));
   ok("available, doubtful or unanswered: silent", ["available", "doubtful", null].every((s) => run([r({ declaredStatus: s })]).length === 0));
   ok("not picked: silent", run([r({ selected: false, declaredStatus: "unavailable" })]).length === 0);
   ok("one card per boy, in the read's order", run([r({ playerId: "a", declaredStatus: "unavailable" }), r({ playerId: "b", clinicallyRestricted: true }), r({ playerId: "c" })]).length === 2);
