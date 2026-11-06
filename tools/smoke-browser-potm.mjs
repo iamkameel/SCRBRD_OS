@@ -278,16 +278,25 @@ try {
        && (await q(`select match_verified($1) v`, [M2]))[0].v === true, JSON.stringify(refused2).slice(0, 200));
   }
 
-  const pu = await open();
-  await pu.page.goto(`http://localhost:${WEB_PORT}/app/matches/${M2}`, { waitUntil: "networkidle" });
-  await click(pu.page, /Get Started|Log In/, 5000);
-  await pu.page.waitForTimeout(400);
-  await pu.page.locator("#login-email").fill("pillay@example.invalid").catch(() => {});
-  await click(pu.page, /^Sign In$/, 5000);
-  await tid(pu.page, "match-view").waitFor({ timeout: 12000 }).catch(() => {});
-  await afterReads(pu.page, 1500);
-  ok("R Pillay arrives on the fixture, signed in as himself", (await tid(pu.page, "match-view").count()) === 1);
-  await pickTab(pu.page, "captain").catch(() => {});
+  let pu = await open();
+  // His own app: signed in as himself, Matches, the played match (as smoke-browser-pupil walks it).
+  const toHisTab = async () => {
+    await pu.page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+    await click(pu.page, /Get Started|Log In/, 5000);
+    await pu.page.waitForTimeout(400);
+    await click(pu.page, /pillay@example\.invalid/, 4000);
+    await click(pu.page, /^Sign In$/, 5000);
+    await afterReads(pu.page, 2200);
+    const nav = pu.page.locator('[data-testid="mnav-mymatches"], [data-testid="nav-mymatches"]').first();
+    await nav.click({ timeout: 6000 }).catch(() => {});
+    await afterReads(pu.page, 1800);
+    await tid(pu.page, `played-row-${M2}`).click({ timeout: 6000 }).catch(() => {});
+    await pu.page.waitForTimeout(2200);
+    await pickTab(pu.page, "captain").catch(() => {});
+    await afterReads(pu.page, 1500);
+  };
+  await toHisTab();
+  ok("R Pillay, signed in as himself, opens the played match's Captain tab", (await tid(pu.page, "mc-captain").count()) === 1);
   ok("his Captain tab carries Player of the Match", await until(pu.page, () => !!document.querySelector('[data-testid="mc-captain-potm"]'), 12000));
   ok("...in §7's words: one team-mate, the coach decides, never himself",
      (await tid(pu.page, "mc-captain-potm-lead").innerText().catch(() => "")) === `Nominate one team-mate. ${coachName} decides. You cannot choose yourself.`,
@@ -339,11 +348,21 @@ try {
 
   group("The coach reads it on his To-resolve list, and confirms it on the sheet");
   const cq = await open();
-  await cq.page.goto(`http://localhost:${WEB_PORT}/app/readiness`, { waitUntil: "networkidle" });
+  await cq.page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
   await click(cq.page, /Get Started|Log In/, 5000);
   await cq.page.waitForTimeout(400);
   await click(cq.page, /coach@example\.invalid|Head Coach/, 4000);
   await click(cq.page, /^Sign In$/, 5000);
+  await afterReads(cq.page, 2000);
+  // To resolve is under Operate on the coach's nav.
+  for (const sel of ['[data-testid="mnav-readiness"]', '[data-testid="nav-readiness"]']) {
+    const l = cq.page.locator(sel).first();
+    if (await l.count()) { await l.click({ timeout: 6000 }).catch(() => {}); break; }
+  }
+  if ((await tid(cq.page, "queue").count()) === 0) {
+    await cq.page.locator("button", { hasText: /^More$|Operate/ }).first().click({ timeout: 3000 }).catch(() => {});
+    await cq.page.locator('[data-testid="mnav-readiness"], [data-testid="nav-readiness"], button:has-text("To resolve")').first().click({ timeout: 4000 }).catch(() => {});
+  }
   await afterReads(cq.page, 2000);
   const qrow = await until(cq.page, () => /Player of the Match to decide · the captain nominated T Bekker/.test(document.querySelector('[data-testid="queue-potm"]')?.innerText ?? ""), 12000);
   ok("his To-resolve list carries the row, with its deadline", qrow && /by \w{3} \d\d:\d\d/.test(await tid(cq.page, "queue-potm").innerText().catch(() => "")),
@@ -370,10 +389,9 @@ try {
   ok("no console errors (the coach, R7)", c2.errors.length === 0, c2.errors.join(" | "));
   await c2.ctx.close();
 
-  await pu.page.reload({ waitUntil: "networkidle" });
-  await tid(pu.page, "match-view").waitFor({ timeout: 12000 }).catch(() => {});
-  await afterReads(pu.page, 1500);
-  await pickTab(pu.page, "captain").catch(() => {});
+  await pu.ctx.close();
+  pu = await open();
+  await toHisTab();
   ok("the captain's tab reads the award as the side sees it", await until(pu.page,
      () => /Player of the Match: T Bekker/.test(document.querySelector('[data-testid="mc-captain-potm-mine"]')?.innerText ?? ""), 12000),
      await tid(pu.page, "mc-captain-potm-mine").innerText().catch(() => "∅"));
@@ -395,7 +413,7 @@ try {
     await s.ctx.close();
   }
 
-  ok("the API logged no errors", apiErr.join("").trim() === "", apiErr.join("").slice(0, 400));
+  ok("the API logged no errors", apiErr.join("").trim() === "", apiErr.join("").slice(0, 3000));
 } catch (e) {
   fail++;
   console.log("  ✗ threw:", e.message);
