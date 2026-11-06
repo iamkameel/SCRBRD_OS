@@ -3,8 +3,9 @@
  * (RECOGNITION R8, db/146).
  *
  *   GET  /api/colours/nominations                → { sides: [side…], rows: [nomination…] }
- *        sides: the sides the caller nominates for (the side's coach), so a
- *        screen offers only the boys the door would take
+ *        sides: the sides the caller nominates for (the side's coach), each
+ *        with `kin`, the boys of it he is guardian of (the door refuses
+ *        them), so a screen offers only the boys the door would take
  *        every Colours nomination the caller reads (D8): his own, and those of
  *        the sides he is staff of or the school he decides or records at,
  *        open first, each with whether he may decide it now and, if not, why,
@@ -47,6 +48,7 @@ export const COLOURS_WORDS = Object.freeze({
   kind_invalid: "Choose Full colours or Half colours.",
   player_required: "Choose the boy first.",
   cannot_nominate_yourself: "You cannot nominate yourself.",
+  nominator_is_guardian: "You are his guardian, so another coach of the side nominates him.",
   cannot_award_yourself: "You cannot decide your own Colours.",
   no_season: "The school calendar holds no season for today.",
   already_awarded: "He already holds them this season.",
@@ -81,7 +83,7 @@ export function coloursRoutes({ pool, secret }) {
       if (e.code === "42501") return res.status(403).json({ error: "not_permitted", message: coloursWords("not_permitted") });
       if (e.code === "22P02") return res.status(400).json({ error: "malformed" });
       // honour_colours_answer() (db/146): the same row checks at the table.
-      if (e.code === "23514" && e.message === "colours_guardian_conflict") {
+      if (e.code === "23514" && e.message === "guardian_conflict") {
         return res.status(422).json({ error: "guardian_conflict", detail: e.detail ?? null, message: guardianWords(e.detail ?? null) });
       }
       if (e.code === "23514" && e.message === "decider_is_nominator") {
@@ -104,7 +106,7 @@ export function coloursRoutes({ pool, secret }) {
       const { rows: sides } = await client.query(`select * from colours_sides()`);
       return {
         // The sides he nominates for: the sheet offers only their boys.
-        sides: sides.map((s) => ({ schoolId: s.school_id, teamCode: s.team_code, sideLabel: s.side_label })),
+        sides: sides.map((s) => ({ schoolId: s.school_id, teamCode: s.team_code, sideLabel: s.side_label, kin: s.kin ?? [] })),
         rows: rows.map((r) => ({
           nominationId: r.nomination_id, kind: r.kind, kindWords: kindWords(r.kind), season: r.season,
           schoolId: r.school_id, teamCode: r.team_code, sideLabel: r.side_label,

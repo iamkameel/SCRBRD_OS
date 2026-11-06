@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { refusedWords } from "@scrbrd/policy/words";
 import { D, inkOn } from "../design/tokens.js";
-import { holdsCapability } from "../rbac/index.js";
+import { holdsAsHeld } from "../lib/held.js";
 import { api, signedIn } from "../lib/api.js";
 
 /**
@@ -88,7 +88,9 @@ export function ColoursPanel({ role, players }) {
 
   if (!live) return <p data-testid="colours-signin" style={note()}>Sign in to nominate or decide Colours. The demonstration holds none.</p>;
 
-  const canNominate = holdsCapability(role, "recognition.colours.nominate") && state.sides.length > 0;
+  // From every role the person holds (a director who coaches a side too), as
+  // the menu is drawn; the server's `sides` say which boys.
+  const canNominate = holdsAsHeld(role, "recognition.colours.nominate") && state.sides.length > 0;
   const toDecide = state.rows.filter((r) => r.status === "open" && r.mayDecide);
   const rest = state.rows.filter((r) => !(r.status === "open" && r.mayDecide));
   return (
@@ -145,7 +147,9 @@ function Nominate({ sides, players, onDone }) {
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState(/** @type {{ ok: boolean, text: string } | null} */ (null));
   const s = sides[Math.min(side, sides.length - 1)];
-  const boys = (players ?? []).filter((p) => p.school === s.schoolId && p.team === s.teamCode)
+  // Never a boy he is guardian of (Kameel, 6 Nov 2026): the door refuses him.
+  const kin = new Set(s.kin ?? []);
+  const boys = (players ?? []).filter((p) => p.school === s.schoolId && p.team === s.teamCode && !kin.has(p.id))
     .slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const pick = boys.find((p) => p.id === boy) ?? null;
   const refused = courtesy(why);
@@ -168,7 +172,7 @@ function Nominate({ sides, players, onDone }) {
   return (
     <section data-testid="colours-nominate" aria-labelledby="colours-nominate-h" style={card()}>
       <h3 id="colours-nominate-h" style={head()}>Nominate for Colours</h3>
-      <p style={small()}>A boy of your side. The director of sport decides; the principal, if he is the boy&apos;s guardian.</p>
+      <p style={small()}>A boy of your side. The director of sport decides; the principal, if he is the boy&apos;s guardian. A boy you are guardian of is nominated by another coach of the side.</p>
       {sides.length > 1 && (
         <label style={label()}>Side
           <select data-testid="colours-side" value={side} onChange={(e) => { setSide(Number(e.target.value)); setBoy(""); }} style={field()}>

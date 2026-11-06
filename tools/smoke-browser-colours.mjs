@@ -116,6 +116,13 @@ async function toSquadColours(page) {
   await page.waitForTimeout(300);
   return true;
 }
+/** To Squad, on the side she coaches, where the coach's Colours form is. */
+async function page_goSquad(page) {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await tid(page, "nav-squad").first().click({ timeout: 6000 }).catch(() => {});
+  await tid(page, "colours-nominate").waitFor({ timeout: 10000 }).catch(() => {});
+  await afterReads(page, 1000);
+}
 /** Management → Colours (the deciders and the office), then the phone's width. */
 async function toColours(page) {
   const nav = tid(page, "nav-management").first();
@@ -200,10 +207,14 @@ try {
     await c.ctx.close();
   }
 
-  // Sarah, the U16B coach and director of sport, nominates her own son (K Dlamini), by the API.
-  const sarahTok = await login("sarah@example.invalid");
-  const dl = await call("/api/colours/nominations", { method: "POST", token: sarahTok, body: { playerId: DLAMINI, kind: "half_colours" } });
-  ok("(stage) Sarah nominates K Dlamini for half colours", dl.status === 200, JSON.stringify(dl.body));
+  // K Dlamini, Sarah's son, nominated by another U16B coach (she may not: Kameel, 6 Nov 2026), by the API.
+  await q(`insert into role_assignment (person_id, role, school_id, team_code) select id, 'coach', school_id, 'U16B' from app_user where email = 'coach2@example.invalid'`);
+  // A second U16B boy, so Sarah's list has someone on it beside her son.
+  const MATE = (await q(`insert into player (school_id, team_code, full_name, squad_no, playing_role, born)
+                         values ('11111111-1111-1111-1111-111111111111', 'U16B', 'Walk Colours Mate', 77, 'batter', sa_today() - interval '15 years')
+                         returning id`))[0].id;
+  const dl = await call("/api/colours/nominations", { method: "POST", token: await login("coach2@example.invalid"), body: { playerId: DLAMINI, kind: "half_colours" } });
+  ok("(stage) another U16B coach nominates K Dlamini for half colours", dl.status === 200, JSON.stringify(dl.body));
 
   group("A director who is the boy's guardian");
   {
@@ -216,6 +227,9 @@ try {
     const row = s.page.locator('[data-testid="colours-row"]', { hasText: "K Dlamini" }).first();
     ok("...whose row says who decides instead", /You are his guardian, so the principal decides\./.test(await row.innerText().catch(() => "")),
        await row.innerText().catch(() => ""));
+    await page_goSquad(s.page);
+    const offered = await tid(s.page, "colours-boy").locator("option").evaluateAll((els) => els.map((e) => e.value).filter(Boolean)).catch(() => null);
+    ok("...and on her U16B Squad page she is offered his team-mate, not her son", Array.isArray(offered) && offered.includes(MATE) && !offered.includes(DLAMINI), JSON.stringify(offered));
     ok("no page error", s.errors.length === 0, s.errors.join(" | "));
     await s.ctx.close();
   }

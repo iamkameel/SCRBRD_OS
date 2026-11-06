@@ -13,7 +13,8 @@
  *   3. THE SCHOOL DECIDES (A17, D9, D10): the principal awards, with a
  *      citation that passes the same list; the ordinary honour row, decided
  *      by her; twice is refused. A director who nominated, and is the boy's
- *      guardian, decides neither way and is told the principal does.
+ *      guardian, decides neither way and is told the principal does; nor
+ *      does she nominate him (Kameel, 6 Nov 2026).
  *   4. THE ORDINARY ROUTE KEEPS THE SAME CHECKS: the office recording the
  *      principal's decision answers the open nomination, and she is told.
  *
@@ -125,8 +126,16 @@ try {
   group("A director who is the boy's guardian decides neither way (D10)");
   let dlamini;
   {
-    const r = await nominate(sarah, { playerId: DLAMINI, kind: "half_colours" });
-    ok("Sarah, the U16B coach, nominates K Dlamini", r.status === 200 && r.body?.ok, JSON.stringify(r.body));
+    const own = await nominate(sarah, { playerId: DLAMINI, kind: "half_colours" });
+    ok("Sarah, the U16B coach, may not nominate her own son, and is told who does (Kameel, 6 Nov 2026)", own.status === 422
+       && own.body?.error === "nominator_is_guardian" && own.body?.message === "You are his guardian, so another coach of the side nominates him.",
+       JSON.stringify(own.body));
+    ok("...and her U16B side says he is hers, so no screen offers him", ((await api("/api/colours/nominations", { token: sarah })).body?.sides ?? [])
+       .some((x) => x.teamCode === "U16B" && (x.kin ?? []).includes(DLAMINI)));
+    // A second U16B coach (the 2XI coach, given the side here) nominates him.
+    await q(`insert into role_assignment (person_id, role, school_id, team_code) select id, 'coach', school_id, 'U16B' from app_user where email = 'coach2@example.invalid'`);
+    const r = await nominate(coach2, { playerId: DLAMINI, kind: "half_colours" });
+    ok("another coach of the side nominates K Dlamini", r.status === 200 && r.body?.ok, JSON.stringify(r.body));
     dlamini = r.body?.nominationId;
     const line = (await noms(sarah)).find((n) => n.nominationId === dlamini);
     ok("...her line does not offer her the decision, and says the principal decides", line?.mayDecide === false

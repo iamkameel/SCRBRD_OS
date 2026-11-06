@@ -11171,7 +11171,8 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 -- side's coach; Hilton's director of sport, principal, two office accounts
 -- and its DSO (audit.read, no decision); Westville's director of sport; a
 -- coach of the side who also holds a platform-wide assignment (twohats); a
--- platform administrator. B1 holds half colours (the office withdraws them in
+-- platform administrator; a second director of sport who is B2's guardian
+-- (gdos, a pending link). B1 holds half colours (the office withdraws them in
 -- the section) and a Player of the Match on today's match M, its side told,
 -- which answered B2's nomination of him (B2 the captain).
 CREATE OR REPLACE FUNCTION _v145_stage() RETURNS jsonb AS $$
@@ -11207,6 +11208,10 @@ BEGIN
   SELECT a2.id, (ids->>'b1')::uuid, 'parent', 'verified', (ids->>'office')::uuid, now(), 'granted', 'v145-terms', now()
     FROM role_assignment a2 WHERE a2.person_id = (ids->>'mother')::uuid AND a2.role = 'guardian';
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'twohats')::uuid, 'platformadmin', NULL);
+  -- gdos: a director of sport who is B2's father (pending: a parent is a parent before the office verifies him).
+  ids := ids || _v71_people('v145g', ARRAY[ARRAY['gdos', 'directorofsport', HIL::text, '', '']]);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'gdos')::uuid, 'guardian', HIL) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship) VALUES (a, (ids->>'b2')::uuid, 'parent');
   INSERT INTO app_user (school_id, email, name, role) VALUES (NULL, 'v145.plat@example.invalid', 'V145 Plat', 'platformadmin') RETURNING id INTO a;
   INSERT INTO role_assignment (person_id, role, school_id) VALUES (a, 'platformadmin', NULL);
   ids := ids || jsonb_build_object('plat', a, 'season', v_season);
@@ -11266,7 +11271,8 @@ END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- manager; a coach of Hilton's 6XI; Hilton's director of sport, principal
 -- and office; a second director of sport who is K2's guardian (a pending
 -- link); a coach of the side who is also a director of sport (coachdos); a
--- coach of the side whose account is K3 himself (self); Westville's 4XI
+-- coach of the side whose account is K3 himself (self); a coach of the side
+-- who is K2's guardian (gcoach, a pending link); Westville's 4XI
 -- coach; a coach of the side who also holds a platform-wide assignment
 -- (twohats); a platform administrator.
 CREATE OR REPLACE FUNCTION _v146_stage() RETURNS jsonb AS $$
@@ -11313,6 +11319,10 @@ BEGIN
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'gdos')::uuid, 'guardian', HIL) RETURNING id INTO a;
   INSERT INTO assignment_subject (assignment_id, player_id, relationship) VALUES (a, (ids->>'k2')::uuid, 'parent');
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'coachdos')::uuid, 'directorofsport', HIL);
+  -- gcoach: a coach of the side who is K2's father too (Kameel, 6 Nov 2026: he does not nominate his son).
+  ids := ids || _v71_people('v146g', ARRAY[ARRAY['gcoach', 'coach', HIL::text, '4XI', '']]);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'gcoach')::uuid, 'guardian', HIL) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship) VALUES (a, (ids->>'k2')::uuid, 'parent');
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'twohats')::uuid, 'platformadmin', NULL);
   INSERT INTO app_user (school_id, email, name, role) VALUES (NULL, 'v146.plat@example.invalid', 'V146 Plat', 'platformadmin') RETURNING id INTO a;
   INSERT INTO role_assignment (person_id, role, school_id) VALUES (a, 'platformadmin', NULL);
@@ -38050,6 +38060,12 @@ $v116$;
   --              told, hers alone, in §7's words; the director who decides
   --              himself is the decider and nobody is told; the director
   --              naming the principal is told as himself
+  --   (guardian) D10 for every kind (Kameel, 6 Nov 2026): a guardian of the
+  --              boy (gdos, a director) is refused as the decider of his
+  --              captaincy and of a named award, whether he records it himself
+  --              or the office names him, and is told the principal decides;
+  --              he may decide another boy's; he does not withdraw his son's
+  --              Colours
   --   (f10)      a Player of the Match's standing notice is not detached from
   --              it by an UPDATE; when the notice is deleted, its key clears
   --   (f9)       an honour with an audit is not deleted, and the audit stays
@@ -38068,6 +38084,8 @@ $v116$;
   --   honour_stamp()'s notice bypass without its NOT EXISTS (db/142's)              → (f10)
   --   recognition_audit's honour key re-made ON DELETE CASCADE (db/142's)           → (f9)
   --   GRANT EXECUTE ON FUNCTION recognition_decider_holds(uuid,uuid) TO scrbrd_app  → (grants)
+  --   honour_decided_by() without its guardian test                                 → (guardian)
+  --   honour_withdrawn_by() returning without its test                              → (guardian)
   --   GRANT SELECT (nomination_id) ON honour TO scrbrd_app                          → (mask_nom)
   --   honour_nomination_id() without its D8 test                                    → (mask_nom)
   DECLARE
@@ -38198,6 +38216,30 @@ $v116$;
                                    AND e->>'body' LIKE 'V145 Dos recorded Fielder of the Year % for V Boy2 as your decision, %'),
       format('§123 (decider): the director naming the principal: %s, told %s', got, j));
 
+    -- (guardian)
+    PERFORM _as((y->>'office')::uuid);
+    got := _v145_try(format('INSERT INTO honour (player_id, kind, season_id, awarded_on, decided_by) VALUES (%L, %L, %L, %L, %L)',
+                            B2, 'captain', SEA, sa_today(), y->>'gdos'));
+    PERFORM _assert(got = '23514|guardian_conflict', format('§123 (guardian): the office naming his father: %s', got));
+    PERFORM _as((y->>'gdos')::uuid);
+    BEGIN
+      INSERT INTO honour (player_id, kind, name, season_id, awarded_on) VALUES (B2, 'award', 'Most Improved', SEA, sa_today());
+      got := 'ok';
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS who = PG_EXCEPTION_DETAIL;
+      got := SQLSTATE || '|' || SQLERRM || '|' || coalesce(who, '');
+    END;
+    PERFORM _assert(got = '23514|guardian_conflict|principal', format('§123 (guardian): his father deciding himself: %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM honour h WHERE h.player_id = B2 AND h.kind IN ('captain', 'award') AND h.name IS DISTINCT FROM 'Fielder of the Year'),
+      '§123 (guardian): a refused honour was written');
+    got := _v145_try(format('INSERT INTO honour (player_id, kind, season_id, awarded_on) VALUES (%L, %L, %L, %L)', B1, 'honours', SEA, sa_today()));
+    PERFORM _assert(got = 'ok', format('§123 (guardian): he could not decide another boy''s honours: %s', got));
+    got := _v145_try(format('UPDATE honour SET withdrawn_at = now(), withdrawn_reason = %L WHERE player_id = %L AND kind = %L',
+                            'v145: his father withdraws', B2, 'colours'));
+    PERFORM _assert(got LIKE '42501|a guardian of the boy does not withdraw his honour%'
+                    AND _v145_honour((SELECT h.id FROM honour h WHERE h.player_id = B2 AND h.kind = 'colours'))->>'withdrawn_by' IS NULL,
+      format('§123 (guardian): his father withdrew his Colours: %s', got));
+
     -- (f10)
     PERFORM _assert(_v145_honour(PM)->>'notice' IS NOT NULL, '§123 (f10): the Player of the Match''s notice was not written');
     PERFORM _as((y->>'dos')::uuid);
@@ -38238,7 +38280,8 @@ $v116$;
   --   (who)      nobody else nominates: not the assistant, the team manager,
   --              the office, the director, another side's coach, the other
   --              school's coach, a coach who holds a platform-wide assignment,
-  --              a parent, a pupil; never himself; never twice; never for a
+  --              a parent, a pupil; never himself; never his own son (gcoach,
+  --              refused in words, and not offered him); never twice; never for a
   --              kind that is not Colours; never a rationale out of bounds
   --   (shape)    a captain's nomination carries no rationale and a Colours
   --              one no match (the table's own CHECKs, past the doors)
@@ -38270,7 +38313,8 @@ $v116$;
   --   colours_nominations() without its reader test                          → (reads)
   --   colours_decide() without its guardian test                             → (decide)
   --   colours_decide() without its nominator test                            → (decide)
-  --   honour_colours_answer() without its tests                              → (table)
+  --   honour_colours_answer() without its nominator test                     → (table)
+  --   colours_nominate() without its guardian test                           → (who)
   --   GRANT EXECUTE ON FUNCTION colours_nominator_holds(uuid,text) TO scrbrd_app → (grants)
   DECLARE
     y   jsonb := _v146_stage();
@@ -38341,6 +38385,11 @@ $v116$;
       PERFORM _as((y->>who)::uuid);
       PERFORM _assert(NOT EXISTS (SELECT 1 FROM colours_sides()), format('§124 (who): %s is offered a side to nominate for', who));
     END LOOP;
+    PERFORM _as((y->>'gcoach')::uuid);
+    SELECT * INTO r FROM colours_nominate(K2, 'colours', NULL);
+    PERFORM _assert(r.ok = false AND r.reason = 'nominator_is_guardian', format('§124 (who): a coach nominating his son answered %s/%s', r.ok, r.reason));
+    PERFORM _assert((SELECT c.kin = ARRAY[K2] FROM colours_sides() c WHERE c.team_code = '4XI'),
+      '§124 (who): the guardian coach is offered his son');
     PERFORM _as((y->>'coachdos')::uuid);
     SELECT * INTO r FROM colours_nominate(K2, 'colours', NULL);
     PERFORM _assert(r.ok, format('§124 (who): coachdos was refused: %s', r.reason));
@@ -38446,7 +38495,7 @@ $v116$;
     PERFORM _assert(got = '23514|decider_is_nominator', format('§124 (table): the office naming the nominator: %s', got));
     got := _v145_try(format('INSERT INTO honour (player_id, kind, season_id, awarded_on, decided_by) VALUES (%L, %L, %L, %L, %L)',
                             K2, 'colours', SEA, sa_today(), y->>'gdos'));
-    PERFORM _assert(got = '23514|colours_guardian_conflict', format('§124 (table): the office naming the guardian: %s', got));
+    PERFORM _assert(got = '23514|guardian_conflict', format('§124 (table): the office naming the guardian: %s', got));
     PERFORM _assert(_v146_nom(v_h)->>'status' = 'open' AND jsonb_array_length(_v146_fact(K2)->'honours') = 0, '§124 (table): a refusal decided it');
     got := _v145_try(format('INSERT INTO honour (player_id, kind, season_id, awarded_on, decided_by) VALUES (%L, %L, %L, %L, %L)',
                             K2, 'colours', SEA, sa_today(), y->>'prin'));
@@ -38456,7 +38505,7 @@ $v116$;
       format('§124 (table): the office recording the principal''s decision: %s, %s', got, j));
     PERFORM _as((y->>'gdos')::uuid);
     got := _v145_try(format('UPDATE honour SET withdrawn_at = now(), withdrawn_reason = %L WHERE id = %L', 'v146: his father withdraws', _v146_fact(K2)->'honours'->0->>'id'));
-    PERFORM _assert(got LIKE '42501|a guardian of the boy does not withdraw his Colours%' AND NOT (_v146_fact(K2)->'honours'->0->>'withdrawn')::boolean,
+    PERFORM _assert(got LIKE '42501|a guardian of the boy does not withdraw his honour%' AND NOT (_v146_fact(K2)->'honours'->0->>'withdrawn')::boolean,
       format('§124 (table): the guardian withdrew his son''s Colours: %s', got));
 
     -- (grants)

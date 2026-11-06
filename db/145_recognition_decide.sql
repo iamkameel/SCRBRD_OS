@@ -57,7 +57,12 @@
 --                 live assignment at the boy's school (not a pad, not a
 --                 support hour, never platform-wide), or the write is undone
 --                 ("decider_required"). After the table's policy, so a coach
---                 is told "not permitted", not a word about deciders.
+--                 is told "not permitted", not a word about deciders. Never a
+--                 guardian of the boy, of any kind (D10; Kameel, 6 Nov 2026),
+--                 told who decides instead ("guardian_conflict").
+--               + honour_withdrawn_by  AFTER UPDATE OF withdrawn_at, every kind
+--                 but a Player of the Match (db/142's stamp has those): a
+--                 guardian of the boy never withdraws it, by any route.
 --               + honour_tell_decider  AFTER INSERT: when the recorder is not
 --                 the decider, the decider is told, his alone (D5, Q11):
 --                 "The office recorded Full colours 2026 for R Pillay as your
@@ -65,7 +70,8 @@
 --                 stops the record: a WARNING.
 --   recognition_audit  F9: its honour key RESTRICTs a delete instead of
 --                 cascading the append-only rows away with the honour.
---   functions   + recognition_decider_holds, honour_decided_by, honour_tell_decider (nobody's)
+--   functions   + recognition_decider_holds, honour_decided_by, honour_withdrawn_by,
+--                 honour_tell_decider (nobody's)
 --               + honour_withdrawn_reason, honour_nomination_id (the
 --                 application's: the view's)
 --
@@ -357,17 +363,42 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 -- the row names, not about the caller: it is the record's invariant (no
 -- capability lets a recorder past it). A write with no session (a migration,
 -- the seed) is the owner's, and names whom it names.
+--
+-- D10, for every kind (Kameel, 6 Nov 2026): a guardian of the boy is refused
+-- as the decider of any honour of his, Colours, captaincy, season honours and
+-- named awards alike, and is told who decides instead (the principal when he
+-- is the director). A Player of the Match is db/142's door's and stamp's.
 CREATE OR REPLACE FUNCTION honour_decided_by() RETURNS trigger AS $$
 BEGIN
   IF NOT recognition_decider_holds(NEW.decided_by, NEW.school_id) THEN
     RAISE EXCEPTION 'decider_required' USING ERRCODE = 'check_violation',
       DETAIL = 'An honour names who decided it: the director of sport or the principal at the boy''s school (RECOGNITION D5).';
   END IF;
+  IF match_award_guardian_of(NEW.decided_by, NEW.player_id) THEN
+    RAISE EXCEPTION 'guardian_conflict' USING ERRCODE = 'check_violation',
+      DETAIL = match_award_instead(NEW.decided_by, NEW.school_id);
+  END IF;
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE TRIGGER honour_decided_by AFTER INSERT ON honour
   FOR EACH ROW WHEN (NEW.kind <> 'player_of_match' AND NEW.awarded_by IS NOT NULL)
   EXECUTE FUNCTION honour_decided_by();
+
+-- And either way (Kameel, 6 Nov 2026, D10 read broadly): a guardian of the
+-- boy does not withdraw an honour of his, of any kind, by any route. A Player
+-- of the Match's withdrawal is refused the same way by db/142's stamp.
+CREATE OR REPLACE FUNCTION honour_withdrawn_by() RETURNS trigger AS $$
+BEGIN
+  IF match_award_guardian_of(NEW.withdrawn_by, NEW.player_id) THEN
+    RAISE EXCEPTION 'a guardian of the boy does not withdraw his honour; another of the school''s deciders does'
+      USING ERRCODE = 'insufficient_privilege', DETAIL = match_award_instead(NEW.withdrawn_by, NEW.school_id);
+  END IF;
+  RETURN NULL;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE TRIGGER honour_withdrawn_by AFTER UPDATE OF withdrawn_at ON honour
+  FOR EACH ROW WHEN (OLD.withdrawn_at IS NULL AND NEW.withdrawn_at IS NOT NULL AND NEW.kind <> 'player_of_match'
+                     AND NEW.withdrawn_by IS NOT NULL)
+  EXECUTE FUNCTION honour_withdrawn_by();
 
 -- D5, Q11: when somebody records a decision he did not make, the person it
 -- names is told, his alone, so a false attribution is seen by the person it
@@ -437,7 +468,7 @@ BEGIN
   REVOKE ALL ON FUNCTION honour_nomination_id(uuid) FROM PUBLIC;
   GRANT EXECUTE ON FUNCTION honour_nomination_id(uuid) TO scrbrd_app;
   -- The system's own: nobody's to call.
-  FOREACH f IN ARRAY ARRAY['recognition_decider_holds(uuid,uuid)', 'honour_decided_by()', 'honour_tell_decider()'] LOOP
+  FOREACH f IN ARRAY ARRAY['recognition_decider_holds(uuid,uuid)', 'honour_decided_by()', 'honour_withdrawn_by()', 'honour_tell_decider()'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM scrbrd_app', f);
   END LOOP;
@@ -448,6 +479,7 @@ BEGIN
       EXECUTE format('REVOKE ALL ON FUNCTION recognition_decider_holds(uuid,uuid) FROM %I', r);
       EXECUTE format('REVOKE ALL ON FUNCTION honour_tell_decider() FROM %I', r);
       EXECUTE format('REVOKE ALL ON FUNCTION honour_decided_by() FROM %I', r);
+      EXECUTE format('REVOKE ALL ON FUNCTION honour_withdrawn_by() FROM %I', r);
       EXECUTE format('REVOKE ALL ON honour_masked FROM %I', r);
     END IF;
   END LOOP;
@@ -507,7 +539,7 @@ BEGIN
   END IF;
   -- Definers, pinned; no reading of the database's day (db/128).
   FOREACH f IN ARRAY ARRAY['honour_stamp()', 'honour_withdrawn_reason(uuid)', 'honour_nomination_id(uuid)', 'recognition_decider_holds(uuid,uuid)',
-                           'honour_decided_by()', 'honour_tell_decider()'] LOOP
+                           'honour_decided_by()', 'honour_withdrawn_by()', 'honour_tell_decider()'] LOOP
     SELECT prosrc INTO v_src FROM pg_proc WHERE oid = f::regprocedure;
     IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = f::regprocedure) THEN
       RAISE EXCEPTION 'db/145: % is not a definer', f;
@@ -526,7 +558,7 @@ BEGIN
       RAISE EXCEPTION 'db/145: % is not the application''s alone', f;
     END IF;
   END LOOP;
-  FOREACH f IN ARRAY ARRAY['recognition_decider_holds(uuid,uuid)', 'honour_decided_by()', 'honour_tell_decider()'] LOOP
+  FOREACH f IN ARRAY ARRAY['recognition_decider_holds(uuid,uuid)', 'honour_decided_by()', 'honour_withdrawn_by()', 'honour_tell_decider()'] LOOP
     IF has_function_privilege('scrbrd_app', f, 'EXECUTE')
        OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
                    WHERE p.oid = f::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN
@@ -541,9 +573,9 @@ BEGIN
       RAISE EXCEPTION 'db/145: a managed host''s API role (%) reaches a withdrawal''s reason', r;
     END IF;
   END LOOP;
-  IF (SELECT count(*) FROM pg_trigger WHERE tgrelid = 'honour'::regclass AND tgname IN ('honour_decided_by', 'honour_tell_decider')
-        AND tgenabled <> 'D') <> 2 THEN
-    RAISE EXCEPTION 'db/145: honour_decided_by or honour_tell_decider is missing or disabled';
+  IF (SELECT count(*) FROM pg_trigger WHERE tgrelid = 'honour'::regclass AND tgname IN ('honour_decided_by', 'honour_withdrawn_by', 'honour_tell_decider')
+        AND tgenabled <> 'D') <> 3 THEN
+    RAISE EXCEPTION 'db/145: honour_decided_by, honour_withdrawn_by or honour_tell_decider is missing or disabled';
   END IF;
   -- F9: the audit is never deleted with its honour.
   IF (SELECT c.confdeltype FROM pg_constraint c

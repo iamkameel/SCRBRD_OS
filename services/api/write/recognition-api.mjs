@@ -78,7 +78,7 @@ export function recognitionRoutes({ pool, secret }) {
       // fact — and 23505 is the one-a-season index. Both say which.
       if (e.code === "23514" && e.message === "decider_required") return res.status(422).json({ error: "decider_required", detail: e.detail });
       // db/146 (R8): a Colours decision's row checks, whichever route.
-      if (e.code === "23514" && e.message === "colours_guardian_conflict") return res.status(422).json({ error: "guardian_conflict", detail: e.detail ?? null });
+      if (e.code === "23514" && e.message === "guardian_conflict") return res.status(422).json({ error: "guardian_conflict", detail: e.detail ?? null });
       if (e.code === "23514" && e.message === "decider_is_nominator") return res.status(422).json({ error: "decider_is_nominator" });
       if (e.code === "23514") return res.status(422).json({ error: "invalid_honour", detail: e.message });
       if (e.code === "23505") return res.status(422).json({ error: "already_awarded_this_season", detail: e.detail });

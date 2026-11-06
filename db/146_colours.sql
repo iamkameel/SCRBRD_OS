@@ -33,12 +33,11 @@
 --                            Colours nomination carries a rationale, of 3 to
 --                            300 characters
 --               + one open Colours nomination a boy a kind a season
---   triggers    + honour_colours_answer  AFTER INSERT OR UPDATE OF withdrawn_at
---                 on honour, Colours and half colours, by whichever route:
---                 the decider is never a live guardian of the boy (D10, read
---                 broadly), nor the coach who nominated him (D9); an open
---                 nomination is answered by the award (confirmed); a
---                 guardian of the boy never withdraws them
+--   triggers    + honour_colours_answer  AFTER INSERT on honour, Colours and
+--                 half colours, by whichever route: the decider is never the
+--                 coach who nominated him (D9); an open nomination is answered
+--                 by the award (confirmed). A guardian of the boy deciding or
+--                 withdrawing is refused for every kind by db/145.
 --   ~ audit_log() (db/144's)  a Colours nomination is "the coach's", never
 --                 "the captain's pick", patched in place (db/142's
 --                 exact-needle pattern)
@@ -50,12 +49,15 @@
 -- Nominate: a holder of recognition.colours.nominate over the boy's side
 -- today (the side's coach), through an assignment AT the school, as himself
 -- (never a pad, a support hour or anybody who holds a platform-wide
--- assignment). Never himself (his account or a self link naming him); one
+-- assignment). Never himself (his account or a self link naming him); never
+-- a boy he is guardian of (Kameel, 6 Nov 2026: another coach of the side
+-- nominates his son); one
 -- open nomination a boy a kind a season; not a boy who already holds them
 -- this season.
 -- Decide: a holder of recognition.decide at the boy's school (the director of
 -- sport; the principal), as db/145's recognition_decider_holds() asks it.
--- Row checks: the decider is not the nominator; the decider is not a live
+-- Row checks (the guardian's at the table are db/145's, for every kind):
+-- the decider is not the nominator; the decider is not a live
 -- guardian of the boy (any guardian link naming him, verified or not, not
 -- ended: refused, and told who decides instead — the principal when he is the
 -- director); the nominee is not the nominator (above). The guardian steps
@@ -87,6 +89,7 @@ DECLARE r record; v_src text; v_md5 text;
 BEGIN
   IF to_regclass('recognition_nomination') IS NULL OR to_regclass('honour') IS NULL
      OR to_regprocedure('recognition_decider_holds(uuid,uuid)') IS NULL
+     OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'honour'::regclass AND tgname IN ('honour_decided_by', 'honour_withdrawn_by'))
      OR to_regprocedure('recognition_nomination_staff(uuid,text,uuid)') IS NULL
      OR to_regprocedure('match_award_guardian_of(uuid,uuid)') IS NULL OR to_regprocedure('match_award_instead(uuid,uuid)') IS NULL
      OR to_regprocedure('match_award_short(text)') IS NULL OR to_regprocedure('potm_is_the_boy(uuid,uuid)') IS NULL
@@ -196,23 +199,12 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- After honour_stamp has named the decider (db/145), so decided_by is his.
 -- A write with no session (a migration, the seed) is the owner's and is not
 -- asked. A refusal here undoes the award with it.
+-- A guardian of the boy deciding or withdrawing any honour of his is db/145's
+-- (honour_decided_by, honour_withdrawn_by: every kind, Kameel 6 Nov 2026).
 CREATE OR REPLACE FUNCTION honour_colours_answer() RETURNS trigger AS $$
 DECLARE n recognition_nomination%ROWTYPE;
 BEGIN
   IF app_user_id() IS NULL THEN RETURN NULL; END IF;
-  IF TG_OP = 'UPDATE' THEN
-    -- Kameel, 6 Nov 2026 (D10 read broadly): a guardian of the boy steps
-    -- aside from his Colours either way, the withdrawal included.
-    IF OLD.withdrawn_at IS NULL AND NEW.withdrawn_at IS NOT NULL AND match_award_guardian_of(NEW.withdrawn_by, NEW.player_id) THEN
-      RAISE EXCEPTION 'a guardian of the boy does not withdraw his Colours; another of the school''s deciders does'
-        USING ERRCODE = 'insufficient_privilege';
-    END IF;
-    RETURN NULL;
-  END IF;
-  IF match_award_guardian_of(NEW.decided_by, NEW.player_id) THEN
-    RAISE EXCEPTION 'colours_guardian_conflict' USING ERRCODE = 'check_violation',
-      DETAIL = match_award_instead(NEW.decided_by, NEW.school_id);
-  END IF;
   SELECT * INTO n FROM recognition_nomination x
    WHERE x.kind = NEW.kind AND x.nominee_player_id = NEW.player_id AND x.season_id = NEW.season_id AND x.status = 'open'
    FOR UPDATE;
@@ -225,7 +217,8 @@ BEGIN
   END IF;
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-CREATE OR REPLACE TRIGGER honour_colours_answer AFTER INSERT OR UPDATE OF withdrawn_at ON honour
+DROP TRIGGER IF EXISTS honour_colours_answer ON honour;
+CREATE TRIGGER honour_colours_answer AFTER INSERT ON honour
   FOR EACH ROW WHEN (NEW.kind IN ('colours', 'half_colours')) EXECUTE FUNCTION honour_colours_answer();
 
 
@@ -291,20 +284,26 @@ BEGIN
 END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The sides the caller nominates for (A17): each of his own side assignments
--- through which colours_nominator_holds() answers, so the Colours sheet
--- offers him only the boys the door would take. Nothing for anybody else.
-CREATE OR REPLACE FUNCTION colours_sides() RETURNS TABLE (school_id uuid, team_code text, side_label text) AS $$
-  SELECT DISTINCT a.school_id, a.team_code, coalesce(fixture_side_label(a.school_id, a.team_code), a.team_code)
-    FROM role_assignment a
-   WHERE a.person_id = app_user_id() AND a.team_code IS NOT NULL AND a.school_id IS NOT NULL
-     AND colours_nominator_holds(a.school_id, a.team_code)
+-- through which colours_nominator_holds() answers, and the boys of each he is
+-- guardian of (`kin`: the door refuses them), so the Colours sheet offers him
+-- only the boys the door would take. Nothing for anybody else.
+DROP FUNCTION IF EXISTS colours_sides();
+CREATE FUNCTION colours_sides() RETURNS TABLE (school_id uuid, team_code text, side_label text, kin uuid[]) AS $$
+  SELECT x.school_id, x.team_code, coalesce(fixture_side_label(x.school_id, x.team_code), x.team_code),
+         coalesce((SELECT array_agg(p.id ORDER BY p.id) FROM player p
+                    WHERE p.school_id = x.school_id AND p.team_code = x.team_code
+                      AND match_award_guardian_of(app_user_id(), p.id)), '{}'::uuid[])
+    FROM (SELECT DISTINCT a.school_id, a.team_code FROM role_assignment a
+           WHERE a.person_id = app_user_id() AND a.team_code IS NOT NULL AND a.school_id IS NOT NULL
+             AND colours_nominator_holds(a.school_id, a.team_code)) x
    ORDER BY 1, 2
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The side's coach nominates (A17). The rationale is optional; D2's list is
 -- the API's (one list, in JavaScript), and the table bounds its length.
---   not_permitted · kind_invalid · no_such_player · cannot_nominate_yourself
---   · no_season · already_awarded · already_nominated · rationale_invalid
+--   not_permitted · kind_invalid · cannot_nominate_yourself ·
+--   nominator_is_guardian · no_season · already_awarded · already_nominated
+--   · rationale_invalid
 CREATE OR REPLACE FUNCTION colours_nominate(p_player uuid, p_kind text, p_rationale text)
 RETURNS TABLE (ok boolean, reason text, nomination_id uuid) AS $$
 DECLARE
@@ -326,6 +325,12 @@ BEGIN
   END IF;
   IF potm_is_the_boy(v_me, p_player) THEN
     RETURN QUERY SELECT false, 'cannot_nominate_yourself'::text, NULL::uuid; RETURN;
+  END IF;
+  -- Kameel, 6 Nov 2026: a coach does not nominate his own son. Any guardian
+  -- link naming the boy, verified or not, not ended (db/142's test): another
+  -- coach of the side nominates him.
+  IF match_award_guardian_of(v_me, p_player) THEN
+    RETURN QUERY SELECT false, 'nominator_is_guardian'::text, NULL::uuid; RETURN;
   END IF;
   v_season := (SELECT f.id FROM season_for(sa_today(), 'school') f);
   IF v_season IS NULL THEN
