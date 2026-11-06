@@ -282,6 +282,9 @@ const SUITES = [
   // RECOGNITION R6 (db/142): Player of the Match's words — every refusal in
   // words, who decides instead of a guardian, the two withdrawal kinds, the floors.
   ["potm-words", "apps/web/test/potm.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // RECOGNITION R7 (db/144): the captain's nomination's words — his row's five
+  // states, never a verdict word, the coach's line and To-resolve row, every refusal.
+  ["nomination-words", "apps/web/test/nomination.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["source-line", "apps/web/test/source-line.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I24-I25 S1: two players side by side — the floor at 29 and 30, the
   // pinned columns, who may be picked, no absence, types only, nothing kept.

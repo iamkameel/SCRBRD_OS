@@ -129,7 +129,9 @@ export function nominationRoutes({ pool, secret }) {
     for (const r of rows) {
       const sheet = Array.isArray(r.sheet) ? r.sheet : [];
       const mine = r.self_id ?? null;
+      /** @type {any[]} */
       let suggestions = [];
+      /** @type {Map<string, string>} */
       let figures = new Map();
       if (r.may_nominate) {
         const w = await working(client, id, rosterOf({ sheet }, mine));
@@ -183,6 +185,7 @@ export function nominationRoutes({ pool, secret }) {
       return runAsPrincipal(pool, secret, as(req), async (client) => {
         const { rows: st } = await client.query(`select * from captain_nomination_state($1)`, [id]);
         const s = st.find((r) => r.may_nominate && Array.isArray(r.sheet));
+        /** @type {{version: number, basis: string, factsVersion: number, headSeq: number, suggestions: {playerId: string, figures: string}[], nominee: {playerId: string, figures: string}}} */
         let derived = { version: 1, basis: POTM_BASIS, factsVersion: FACTS_VERSION, headSeq: b.headSeq, suggestions: [], nominee: { playerId: b.playerId, figures: "" } };
         if (s) {
           const w = await working(client, id, rosterOf({ sheet: s.sheet }, s.self_id ?? null));
