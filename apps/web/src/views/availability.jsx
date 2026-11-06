@@ -21,6 +21,7 @@ import { readState } from "../lib/readState.js";
 import { useLive } from "../lib/live.js";
 import { api } from "../lib/api.js";
 import { humanDateTime } from "../lib/format.js";
+import { otherSideOf } from "../lib/matchCentre.js";
 import { holdsCapability } from "../rbac/index.js";
 
 const ANSWERS = [["available", "Available"], ["doubtful", "Doubtful"], ["unavailable", "Unavailable"]];
@@ -33,11 +34,19 @@ const stateOf = (status) => ({
 }[status] ?? { label: "No answer", color: D.textMuted });
 const word = (s) => (ANSWERS.find(([v]) => v === s)?.[1] ?? s ?? "").toLowerCase();
 
+// The reader's own side's code in a fixture, from his end of it (the matches
+// read's my_side): at a fixture the other school hosts, homeTeam is the HOST's
+// side, which shares a code ("1XI") with ours and is not ours. Without an end
+// said, the home side, as before.
+const ourCode = (m) => (m.mySide === "away" ? m.awayTeamCode : m.homeTeam);
+/** The other side, named in full, from the reader's end. */
+const vs = (m) => otherSideOf(m) ?? m.awayTeam;
+
 /** The side's coming fixtures, soonest first: the one list the panel and the player's own setter both draw from. */
 function useUpcoming(role, team) {
   const { rows: matches } = useLive("matches", role);
   return useMemo(() => (matches ?? [])
-    .filter((m) => m.homeTeam === team && m.status === "upcoming" && m.startsAt && new Date(m.startsAt) > new Date())
+    .filter((m) => ourCode(m) === team && m.status === "upcoming" && m.startsAt && new Date(m.startsAt) > new Date())
     .sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt))), [matches, team]);
 }
 
@@ -97,7 +106,7 @@ function PlayerAnswer({ role, match, upcoming, onPick, player }) {
   return (
     <div data-testid="set-availability" style={{ display: "grid", gap: "8px" }}>
       <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary }}>
-        v {match.awayTeam} · {humanDateTime(match.date, match.time)}
+        v {vs(match)} · {humanDateTime(match.date, match.time)}
       </div>
       {upcoming.length > 1 && (
         <label style={{ display: "grid", gap: "4px", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted }}>
@@ -105,7 +114,7 @@ function PlayerAnswer({ role, match, upcoming, onPick, player }) {
           <select aria-label="Which fixture" value={match.id} onChange={(e) => onPick(e.target.value)}
             style={{ minHeight: "44px", padding: "9px 12px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.md,
               color: D.textPrimary, fontFamily: D.body, fontSize: "14px", boxSizing: "border-box", width: "100%" }}>
-            {upcoming.map((m) => <option key={m.id} value={m.id}>{`v ${m.awayTeam} · ${humanDateTime(m.date, m.time)}`}</option>)}
+            {upcoming.map((m) => <option key={m.id} value={m.id}>{`v ${vs(m)} · ${humanDateTime(m.date, m.time)}`}</option>)}
           </select>
         </label>
       )}
@@ -157,7 +166,7 @@ function AvailabilityList({ role, match, upcoming, onPick }) {
             Availability
           </div>
           <div data-testid="availability-fixture" style={{ fontFamily: D.body, fontSize: "13px", color: D.textPrimary, marginTop: "4px" }}>
-            v {match.awayTeam} · {answers[0]?.fixtureWords ?? humanDateTime(match.date, match.time)}
+            v {vs(match)} · {answers[0]?.fixtureWords ?? humanDateTime(match.date, match.time)}
           </div>
         </div>
         {asking > 0 && (
@@ -167,7 +176,7 @@ function AvailabilityList({ role, match, upcoming, onPick }) {
       {upcoming.length > 1 && (
         <div style={{ marginTop: "10px", maxWidth: "360px" }}>
           <Select label="Fixture" aria-label="Which fixture" value={match.id} onChange={onPick}
-            options={upcoming.map((m) => ({ value: m.id, label: `v ${m.awayTeam} · ${humanDateTime(m.date, m.time)}` }))}/>
+            options={upcoming.map((m) => ({ value: m.id, label: `v ${vs(m)} · ${humanDateTime(m.date, m.time)}` }))}/>
         </div>
       )}
       {answers.length === 0 && !["ok", "empty"].includes(readSaid.state) && (

@@ -358,7 +358,8 @@ function DuringAndAfter({ match, gate, innings, overs, result, commentary, phone
         <Part label="Phases" testid="coach-phases">
           {phases.map((row) => (
             <div key={row.innings} style={{ display: "grid", gap: "2px" }}>
-              {phases.length > 1 && <span style={quiet()}>Innings {row.innings + 1}</span>}
+              {/* The read numbers its rows from 1 (read-api composePhases), as people do. */}
+              {phases.length > 1 && <span style={quiet()}>Innings {row.innings}</span>}
               {["powerplay", "middle", "death"].map((k) => row.phases?.[k]).filter((ph) => ph && ph.played && ph.balls > 0).map((ph) => (
                 <span key={ph.name} data-testid={`coach-phase-${ph.name}`} style={body()}>
                   {ph.label} {ph.overs} · {ph.runs}/{ph.wickets}{ph.runRate != null ? ` · RR ${ph.runRate.toFixed(1)}` : ""}

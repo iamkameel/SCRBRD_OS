@@ -63,7 +63,9 @@ ok("...and never 'hurt'", !/hurt/i.test(lines));
 const h = asPublicMatch({ id: "m", homeLabel: "Hilton College 1XI", homeCode: "HIL", homeTeam: "1XI", awayLabel: "Kearsney College 1XI",
   awayOnPlatform: false, awayTeam: null, status: "live", startsAt: "2026-09-26T08:00:00.000Z", ground: "Gordon Sherwood Oval", overs: 5, format: "T5" });
 ok("an off-platform opponent is its typed name, as the signed-in read has it", h.awayTeam === "Kearsney College 1XI" && h.awayLabel === null);
-ok("status, ground and start carried", h.status === "live" && h.venue === "Gordon Sherwood Oval" && h.date === "2026-09-26" && h.time === "08:00");
+ok("status, ground and start carried, the start on the SA clock (08:00Z is 10:00)", h.status === "live" && h.venue === "Gordon Sherwood Oval" && h.date === "2026-09-26" && h.time === "10:00");
+const late = asPublicMatch({ id: "m", status: "live", startsAt: "2026-11-06T22:30:00.000Z" });
+ok("...and a start after 22:00 UTC is the next SA day", late.date === "2026-11-07" && late.time === "00:30");
 ok("a scheduled fixture is 'upcoming'", asPublicMatch({ id: "m", status: "scheduled" }).status === "upcoming");
 
 console.log(`\nPUBLIC PAGE: ${pass} passed, ${fail} failed`);
