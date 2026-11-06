@@ -242,7 +242,17 @@ async function sweepScreen(/** @type {any} */ s, /** @type {string} */ key, /** 
     await afterReads(s.page, 500);
     await scan(s, who, width);
     await s.page.keyboard.press("Escape").catch(() => {});
-    if (!(await tid(s.page, "os-main").count())) return false;
+    if (!(await tid(s.page, "os-main").count())) {
+      // A scorer's fixture card opens the pad, which takes the whole screen by
+      // design (App.jsx): that is a screen standing, not the shell falling.
+      // Out of it by its own exit key, back to this screen; nothing was scored.
+      if (!(await s.page.locator('[data-testid="pad-titlebar"]').count())) return false;
+      await tid(s.page, "exit-scorer").first().click({ timeout: 3000 }).catch(() => {});
+      await afterReads(s.page, 800);
+      if (!(await tid(s.page, "os-main").count())) { s.here.sub = ""; return "pad"; }
+      await goTo(s.page, key, width);
+      continue;
+    }
     // A button that went to another screen: come back, so the next is on this one.
     if ((await shownPage(s.page)) !== key) await goTo(s.page, key, width);
   }
@@ -317,7 +327,8 @@ async function sweepAccount(who, width, matches) {
       const at = await goTo(s.page, k, width);
       await scan(s, who, width);
       if (!at && !(await tid(s.page, "os-main").count())) { crashes.push({ who, width, url: s.page.url(), page: k, sub: "", kind: "shell-gone", panel: "-", message: "the shell is gone" }); break; }
-      if (at) await sweepScreen(s, k, who, width);
+      // Out of the pad the only way there is: sign in afresh, and go on from the next screen.
+      if (at && (await sweepScreen(s, k, who, width)) === "pad" && !(await signIn(s.page, who))) break;
     }
     const other = keys.find((k) => k !== "matches") ?? "matches";
     const listed = ["live", "upcoming", "complete"].map((f) => ({ id: `list:${f}`, label: `${f} (listed)` }));
