@@ -10174,6 +10174,18 @@ BEGIN
   RETURN ids || z || jsonb_build_object('p', p);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── GA-I20 A2 (section 116) ───────────────────────────────────────────
+-- ┌── db/139 (section 117). The owner's key's reads, stamped as the platform's.
+-- A row written the way db/63, db/66, db/81, db/91, db/92, db/93 and db/101
+-- write theirs: a plain INSERT under the caller's own id, platform_wide left
+-- to its default. Created here, as the owner, because the application role
+-- has no INSERT policy on access_log (only the definers write it). Returns
+-- the row's stamp as written.
+CREATE OR REPLACE FUNCTION _v139_plain(p_school uuid, p_child uuid, p_person uuid DEFAULT NULL) RETURNS boolean AS $$
+  INSERT INTO access_log (school_id, person_id, resource, record_ids, record_count, fields, device_id)
+  VALUES (p_school, coalesce(p_person, app_user_id()), 'v139_plain', ARRAY[p_child], 1, ARRAY['page:1'], app_device_id())
+  RETURNING platform_wide
+$$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/139 (section 117) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -35477,6 +35489,69 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 116
   -- └── GA-I20 A2 (section 116) ──────────────────────────────────────
+  -- ┌── db/139 (section 117) ─────────────────────────────────────────
+  -- ── 117. The owner's key's reads of a child are on the record ──
+  -- Kameel, 5 Nov 2026 (the guardian's terms Q6): log the key's reads like
+  -- every other read of a child's record. What each label holds:
+  --   (logged)    the key's read through log_restricted_read() names the boy,
+  --               under his school, as the key, stamped platform-wide
+  --   (plain)     a row a definer writes with a plain INSERT under the key's
+  --               id is stamped platform-wide (db/139's trigger); the same
+  --               row under a school office's id is not; a row the key
+  --               writes about somebody else's read is not
+  --   (office)    Hilton's office, asking who read the boy, finds both of the
+  --               key's rows, naming him and saying "the platform"
+  --   (other)     Westville's office finds neither
+  --   (grants)    the trigger function is a pinned definer nobody may call
+  DECLARE
+    OWNR uuid := '88888888-0000-0000-0000-000000000022';
+    OFFH uuid := '88888888-0000-0000-0000-00000000000c';
+    OFFW uuid := '88888888-0000-0000-0000-00000000000d';
+    KID  uuid := 'aaaaaaaa-0000-0000-0000-000000000005';
+    HILS uuid := '11111111-1111-1111-1111-111111111111';
+    n int; got text;
+  BEGIN
+    -- (logged)
+    PERFORM _as(OWNR);
+    PERFORM log_restricted_read('v139_passport', ARRAY[KID], '{}'::text[], HILS);
+    PERFORM _as(OFFH);
+    SELECT count(*) INTO n FROM access_log l
+     WHERE l.resource = 'v139_passport' AND l.person_id = OWNR AND l.school_id = HILS
+       AND l.record_ids @> ARRAY[KID] AND l.platform_wide;
+    PERFORM _assert(n = 1, format('§117 (logged): the key''s read of the boy wrote %s stamped rows at his school, not 1', n));
+
+    -- (plain)
+    PERFORM _as(OWNR);
+    PERFORM _assert(_v139_plain(HILS, KID), '§117 (plain): the key''s plain-INSERT row is not stamped platform-wide');
+    PERFORM _assert(NOT _v139_plain(HILS, KID, OFFH), '§117 (plain): a row the key wrote about the office''s read was stamped platform-wide');
+    PERFORM _as(OFFH);
+    PERFORM _assert(NOT _v139_plain(HILS, KID), '§117 (plain): the office''s own row was stamped platform-wide');
+    PERFORM log_restricted_read('v139_passport', ARRAY[KID], '{}'::text[], HILS);
+
+    -- (office)
+    SELECT string_agg(l.resource || ':' || (l.person_id = OWNR)::text || ':' || l.platform_wide::text, ' '
+                      ORDER BY l.resource, (l.person_id = OWNR), l.platform_wide)
+      INTO got FROM access_log l
+     WHERE l.record_ids @> ARRAY[KID] AND l.resource IN ('v139_passport', 'v139_plain');
+    PERFORM _assert(got = 'v139_passport:false:false v139_passport:true:true v139_plain:false:false v139_plain:false:false v139_plain:true:true',
+      format('§117 (office): Hilton''s office reads the boy''s rows as %s', got));
+
+    -- (other)
+    PERFORM _as(OFFW);
+    SELECT count(*) INTO n FROM access_log l WHERE l.record_ids @> ARRAY[KID] AND l.resource IN ('v139_passport', 'v139_plain');
+    PERFORM _assert(n = 0, format('§117 (other): Westville''s office reads %s of the boy''s rows', n));
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (grants)
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'access_log_platform_stamp()'::regprocedure
+                              AND p.prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
+                    AND NOT has_function_privilege('public', 'access_log_platform_stamp()', 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', 'access_log_platform_stamp()', 'EXECUTE'),
+      '§117 (grants): access_log_platform_stamp() is not pinned, or is callable by PUBLIC or the app');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 117
+  -- └── db/139 (section 117) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

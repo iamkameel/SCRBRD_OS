@@ -3790,6 +3790,26 @@ const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
                      disciplinary_records: "player_id",
                      opposition_squad: "player_id" };
 
+/**
+ * THE OWNER'S KEY NAMES THE CHILD IT READ (Kameel, 5 Nov 2026, the guardian's
+ * terms Q6: "log those reads, like every other read of a child's record is
+ * logged"; PLATFORM_CONTROLS slice 6a). A platform-wide or support reader's
+ * every read was already written (db/20, db/22), but a read whose rows carry
+ * no school_id, or whose child is not in SUBJECT_ID, was filed under no
+ * school and named nobody: the row existed, and the school's office asking
+ * "who read his record" (access_log ?playerId=) could not find it. For those
+ * readers only, the child is found from the row's own column when SUBJECT_ID
+ * names none (PLATFORM_SUBJECT_ID, else player_id), or from the query when
+ * the read is about one child whose id the rows do not carry (ABOUT_ONE: his
+ * passport, his honours); and a row with no school_id is filed under the
+ * child's school. An ordinary school reader's log is not changed.
+ */
+/** @type {Record<string, string>} */
+const PLATFORM_SUBJECT_ID = { bowling_breaches: "bowler_id" };
+/** @type {Record<string, string>} */
+const ABOUT_ONE = { passport: "playerId", passport_name: "playerId", passport_recipients: "playerId",
+                    load_weeks: "playerId", recognition: "playerId" };
+
 /** At most this many ids per entry. A log row is evidence, not a data export. */
 const MAX_LOGGED_IDS = 500;
 
@@ -3932,11 +3952,37 @@ export async function readResource(pool, secret, bearer, resource, query = {}, o
       }
     } else if ((who?.platform || who?.support) && rows.length) {
       const disclosed = (watched ?? []).filter((f) => rows.some((r) => pick(r, f) != null));
-      for (const school of new Set(rows.map((r) => r.school_id ?? null))) {
-        const mine = rows.filter((r) => (r.school_id ?? null) === school);
+      // Which child each row is about, and the child the query asked about
+      // when the rows do not say (PLATFORM_SUBJECT_ID, ABOUT_ONE above).
+      const childCol = idCol ?? PLATFORM_SUBJECT_ID[resource] ?? "player_id";
+      const childOf = (/** @type {any} */ r) => (UUID_RE.test(String(r[childCol] ?? "")) ? r[childCol] : null);
+      const asked = ABOUT_ONE[resource] && UUID_RE.test(String(query?.[ABOUT_ONE[resource]] ?? ""))
+        ? query[ABOUT_ONE[resource]] : null;
+      // A row with no school_id is filed under its child's school, read as
+      // the caller reads player (no new reach): a child he cannot see there
+      // stays under no school, as before.
+      const unfiled = [...new Set(rows.filter((r) => !r.school_id).map((r) => childOf(r) ?? asked).filter(Boolean))];
+      /** @type {Map<string, string>} */
+      const schoolOfChild = new Map();
+      if (unfiled.length) {
+        const { rows: found } = await client.query(
+          `select id, school_id from player where id = any($1::uuid[])`, [unfiled]);
+        for (const p of found) schoolOfChild.set(p.id, p.school_id);
+      }
+      /** @type {Map<string | null, Set<string>>} */
+      const bySchool = new Map();
+      const file = (/** @type {string | null} */ school, /** @type {string | null} */ child) => {
+        if (!bySchool.has(school)) bySchool.set(school, new Set());
+        if (child) bySchool.get(school)?.add(child);
+      };
+      for (const r of rows) {
+        const child = childOf(r) ?? asked;
+        file(r.school_id ?? (child ? schoolOfChild.get(child) ?? null : null), child);
+      }
+      for (const [school, children] of bySchool) {
         await client.query(
           `select log_restricted_read($1, $2::uuid[], $3::text[], $4::uuid)`,
-          [resource, idsIn(mine), disclosed, school]);
+          [resource, [...children].slice(0, MAX_LOGGED_IDS), disclosed, school]);
       }
       logged = true;
     } else if (watched?.length && rows.length) {
