@@ -179,7 +179,7 @@ function DriverDayView({ role }) {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <div style={{ fontFamily: D.body, fontSize: "13px", fontWeight: 600, color: D.textPrimary }}>
-                    {new Date(t.departAt).toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" })} · {hm(t.departAt)}
+                    {new Date(t.departAt).toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short", timeZone: "Africa/Johannesburg" })} · {hm(t.departAt)}
                   </div>
                   <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
                     {fixtureOf(t) ? `${fixtureOf(t).homeTeam} vs ${fixtureOf(t).awayTeam} · ` : ""}{t.pickup || "Pickup not recorded"}
