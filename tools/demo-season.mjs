@@ -93,38 +93,32 @@ const SEASON = [
     bat: { [CAPTAIN]: { min: 28, max: 48 } }, bowl: { [CAPTAIN]: 4 }, potm: ["nominate"] },
   { key: "u16a-1008", team: "U16A", home: "WES", at: "2026-10-08T12:30:00Z", existing: true, win: "WES",
     bat: { "de300000-0000-4000-8000-000000000046": { min: 52, max: 74 } }, potm: ["WES"] },
-  { key: "u14b-1009", team: "U14B", home: "WES", at: "2026-10-09T12:30:00Z", existing: true, win: "KEA", potm: ["WES"] },
-  { key: "2xi-1010", team: "2XI", home: "WES", at: "2026-10-10T07:30:00Z", existing: true, win: "WES", potm: ["WES"] },
-  { key: "3xi-1010", team: "3XI", home: "WES", at: "2026-10-10T12:00:00Z", existing: true, win: "KEA",
-    bat: { "de300000-0000-4000-8000-000000000196": { min: 55, max: 80 } }, potm: ["WES"] },
-  { key: "u15a-1012", team: "U15A", home: "WES", at: "2026-10-12T12:30:00Z", existing: true, win: "WES", potm: ["WES"] },
-  { key: "u13a-1013", team: "U13A", home: "WES", at: "2026-10-13T12:30:00Z", existing: true, win: "WES", potm: ["WES"] },
-  { key: "u12a-1014", team: "U12A", home: "WES", at: "2026-10-14T12:30:00Z", existing: true, win: "KEA", potm: [] },
   { key: "u14a-1015", team: "U14A", home: "WES", at: "2026-10-15T08:00:00Z", existing: true, win: "WES",
     bat: { [U14A_BOY]: { min: 18, max: 34 } }, potm: ["WES"] },
   { key: "u16b-1015", team: "U16B", home: "WES", at: "2026-10-15T12:30:00Z", existing: true, win: "WES",
     bat: { [U16B_BOY]: { min: 30, max: 46 } }, potm: ["WES"] },
-  { key: "u15b-1016", team: "U15B", home: "WES", at: "2026-10-16T12:30:00Z", existing: true, win: "KEA", potm: ["WES"] },
   { key: "1xi-1017", team: "1XI", home: "WES", at: "2026-10-17T08:00:00Z", existing: true, league: true, win: "WES",
     bat: { [CAPTAIN]: { min: 101, notOut: true } }, potm: ["WES"] },
   { key: "u14a-1021", team: "U14A", home: "KEA", at: "2026-10-21T12:30:00Z", id: "de5e0000-0000-4000-a000-000000000101", win: "WES",
     bat: { [U14A_BOY]: { min: 52, max: 72 } }, potm: ["WES", "KEA"] },
-  { key: "u16a-1022", team: "U16A", home: "KEA", at: "2026-10-22T12:30:00Z", id: "de5e0000-0000-4000-a000-000000000102", win: "KEA", potm: ["WES", "KEA"] },
-  { key: "2xi-1024", team: "2XI", home: "WES", at: "2026-10-24T07:30:00Z", id: "de5e0000-0000-4000-a000-000000000103", win: "KEA", potm: ["WES"] },
+  { key: "1xi-1024", team: "1XI", home: "WES", at: "2026-10-24T07:30:00Z", id: "de5e0000-0000-4000-a000-000000000103", win: "WES", potm: ["WES"] },
   { key: "u15a-1026", team: "U15A", home: "KEA", at: "2026-10-26T12:30:00Z", id: "de5e0000-0000-4000-a000-000000000104", win: "WES",
     bat: { "de300000-0000-4000-8000-000000000077": { min: 100, max: 118 } }, potm: ["WES", "KEA"] },
-  { key: "u13a-1027", team: "U13A", home: "WES", at: "2026-10-27T12:30:00Z", id: "de5e0000-0000-4000-a000-000000000105", win: "KEA", potm: ["WES"] },
-  { key: "u12a-1028", team: "U12A", home: "KEA", at: "2026-10-28T12:30:00Z", id: "de5e0000-0000-4000-a000-000000000106", win: "WES", potm: ["KEA"] },
-  { key: "u14b-1029", team: "U14B", home: "WES", at: "2026-10-29T12:30:00Z", id: "de5e0000-0000-4000-a000-000000000107", win: "WES", potm: ["WES"] },
   { key: "u16b-1029", team: "U16B", home: "KEA", at: "2026-10-29T12:30:00Z", id: "de5e0000-0000-4000-a000-000000000108", win: "KEA", potm: ["WES", "KEA"] },
-  { key: "3xi-1031", team: "3XI", home: "KEA", at: "2026-10-31T07:30:00Z", id: "de5e0000-0000-4000-a000-000000000109", win: "WES", potm: ["WES", "KEA"] },
   { key: "1xi-1031", team: "1XI", home: "KEA", at: "2026-10-31T12:00:00Z", id: "de5e0000-0000-4000-a000-000000000110", league: true, win: "WES",
     bat: { [CAPTAIN]: { min: 30, max: 52 } }, bowl: { [CAPTAIN]: 5 }, potm: ["WES", "KEA"] },
-  { key: "u15b-1102", team: "U15B", home: "WES", at: "2026-11-02T12:30:00Z", id: "de5e0000-0000-4000-a000-000000000111", win: "WES", potm: ["WES"] },
-  { key: "u14a-1103", team: "U14A", home: "WES", at: "2026-11-03T12:30:00Z", id: "de5e0000-0000-4000-a000-000000000112", win: "KEA",
-    bat: { [U14A_BOY]: { min: 8, max: 28 } }, potm: [] },
-  { key: "2xi-1104", team: "2XI", home: "KEA", at: "2026-11-04T12:30:00Z", id: "de5e0000-0000-4000-a000-000000000113", win: "WES", potm: ["WES", "KEA"] },
-  { key: "u16a-1105", team: "U16A", home: "WES", at: "2026-11-05T12:30:00Z", id: "de5e0000-0000-4000-a000-000000000114", win: "WES", potm: [] },
+];
+
+/**
+ * The demo's other October fixtures, not played in this season: the director
+ * of sport rearranges each to a date after the ones already ahead (the
+ * fixture route's update of starts_at), so no past fixture stands half-done.
+ */
+const REARRANGED = [
+  ["U14B", "2026-10-09T12:30:00Z", "2026-11-16T12:30:00Z"], ["2XI", "2026-10-10T07:30:00Z", "2026-11-21T07:30:00Z"],
+  ["3XI", "2026-10-10T12:00:00Z", "2026-11-21T12:00:00Z"], ["U15A", "2026-10-12T12:30:00Z", "2026-11-17T12:30:00Z"],
+  ["U13A", "2026-10-13T12:30:00Z", "2026-11-18T12:30:00Z"], ["U12A", "2026-10-14T12:30:00Z", "2026-11-19T12:30:00Z"],
+  ["U15B", "2026-10-16T12:30:00Z", "2026-11-20T12:30:00Z"],
 ];
 
 /** What comes next: fixtures still to be played (and tomorrow's 1XI, which --live starts). */
@@ -210,6 +204,7 @@ function playMatch(spec, { live = false, t0Live = 0 } = {}) {
     const winner = chased ? secondCode : firstCode;
     if (!live) {
       if (tied || (want && winner !== want)) continue;
+      if (second.fold.runs < 95) continue;   // no collapse a school 1XI would remember for the wrong reasons
       if (!second.fold.complete) continue;
     } else if (second.fold.runs > first.fold.runs - 20 || second.fold.wickets > 4 || second.fold.runs < 45) continue;
     const lines = [...first.fold.batsmen, ...second.fold.batsmen];
@@ -430,6 +425,9 @@ ${as(em("driver", h.key))}
 ${door("trip_mark(t, 'departed')", `The driver could not mark the trip on ${spec.key} departed`)}
 ${door("trip_mark(t, 'arrived')", `The driver could not mark the trip on ${spec.key} arrived`)}`);
   // The official result: the organiser for a league fixture, the home director for a friendly.
+  if (spec.league) parts.push(`${as("league@example.invalid")}
+${door(`match_conditions_refix_table(m, (SELECT cs.id FROM condition_set cs WHERE cs.competition_id = ${q(LEAGUE)} AND cs.status = 'published' ORDER BY cs.version DESC LIMIT 1),
+         'The league''s points for 2026, confirmed in its rules, applied to a fixture played before they were published.')`, `The league could not re-fix the table figures of ${spec.key}`)}`);
   parts.push(`${as(spec.league ? "league@example.invalid" : em("dos", h.key))}
   SELECT x.ok, x.reason INTO r FROM match_result_confirm(m) x;
   IF NOT coalesce(r.ok, false) THEN RAISE EXCEPTION 'The result of ${spec.key} could not be confirmed: %. Nothing was changed.', r.reason; END IF;`);
@@ -490,7 +488,7 @@ END $verified$;`;
 
 // ── The file's frame ──
 const ID_EMAILS = (() => {
-  const out = new Set(["registrar.wes@example.invalid", "office.kea@example.invalid", "league@example.invalid", "platform@example.invalid",
+  const out = new Set(["registrar@example.invalid", "registrar.wes@example.invalid", "office.kea@example.invalid", "league@example.invalid", "platform@example.invalid",
                        "pupil.wes.1xi@example.invalid", "pupil.wes.u14a@example.invalid", "pupil.wes.u16b@example.invalid"]);
   for (const s of ["wes", "kea"]) {
     for (const r of ["principal", "dos", "dso", "scorer1", "scorer2", "official", "transport", "driver"]) out.add(em(r, s));
@@ -567,12 +565,39 @@ ${door("competition_entrant_respond(v, true)", "Kearsney could not accept the le
 ${as("league@example.invalid")}
   UPDATE competition_entrant SET division_id = ${q(D1)} WHERE id = v;
 
+  -- The league's points, confirmed from its rules and published by its
+  -- administrator (POST /api/competitions/:id/playing-conditions, …/values,
+  -- …/publish). A version takes effect from tomorrow (db/61: never back-dated),
+  -- so the fixtures already played take it by the designed path for a played
+  -- match: the administrator re-fixes each one's table figures from it, with a
+  -- reason (match_conditions_refix_table(), db/69), before confirming its result.
+  -- The table is then computed from the results rather than typed.
+  SELECT x.ok, x.reason, x.set_id AS id INTO r FROM condition_set_draft(${q(LEAGUE)}, 'KZN Schools T20 League 2026 (demo)', sa_today() + 1) x;
+  IF NOT coalesce(r.ok, false) THEN RAISE EXCEPTION 'The league could not draft its playing conditions: %. Nothing was changed.', r.reason; END IF;
+  t := r.id;
+${[["points.win", 4], ["points.loss", 0], ["points.tie", 2], ["points.draw", 2], ["points.no_result", 2], ["points.abandoned", 2], ["nrr.method", "standard"]].map(([k, v], j) =>
+  door(`condition_value_enter(t, ${q(k)}, '', ${q(JSON.stringify(v))}::jsonb, 'confirmed', 'League rules 2026 (demo)', '4.${j + 1}', date '2026-09-15', NULL)`, `The league could not enter ${k}`)).join("\n")}
+${door("condition_set_publish(t)", "The league could not publish its playing conditions")}
+
   -- Kearsney's minibus, as POST /api/vehicles adds it (Westville's came with the cast).
 ${as(em("transport", "kea"))}
   INSERT INTO vehicle (school_id, registration, description, kind, capacity, condition, next_service_on, active, notes,
                        insurance_expires_on, roadworthy_expires_on)
   VALUES (${q(KEA)}, 'KEA DEMO 1', 'Demo minibus, 22 seats', 'minibus', 22, 'good', NULL, true, 'Demo season', date '2027-03-31', date '2027-01-31')
   ON CONFLICT DO NOTHING;
+
+  -- The October fixtures this season does not play, rearranged by Westville's director of sport.
+${as(em("dos", "wes"))}
+${REARRANGED.map(([team, was, now]) => `  UPDATE match SET starts_at = timestamptz ${q(now)}
+   WHERE school_id = ${q(WES)} AND away_school_id = ${q(KEA)} AND team_code = ${q(team)} AND starts_at = timestamptz ${q(was)} AND status = 'scheduled';
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN RAISE EXCEPTION 'Could not rearrange the ${team} fixture of ${was} (% found). Nothing was changed.', n; END IF;`).join("\n")}
+
+  -- Hilton's two seed fixtures still open in October, against schools not on
+  -- SCRBRD, called off by Hilton's office (the fixture route, status abandoned):
+  -- one never started, one stopped after sixteen balls and never resumed.
+${as("registrar@example.invalid")}
+  UPDATE match SET status = 'abandoned' WHERE id IN ('77777777-0000-0000-0000-000000000002', '77777777-0000-0000-0000-000000000003') AND status = 'scheduled';
 
   -- Both schools list their matches on the SCRBRD home page (Settings → School).
 ${as(em("dos", "wes"))}

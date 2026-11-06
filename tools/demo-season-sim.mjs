@@ -175,7 +175,7 @@ export function playInnings(o) {
     }
 
     // The runs off the bat.
-    let w = { 0: 0.36, 1: 0.34, 2: 0.10, 3: 0.015, 4: 0.115, 6: 0.035 };
+    let w = { 0: 0.38, 1: 0.34, 2: 0.09, 3: 0.015, 4: 0.102, 6: 0.03 };
     const agg = s.skill * o.strength * (phase === "pp" ? 1.1 : phase === "death" ? 1.3 : 0.95);
     w[4] *= agg; w[6] *= agg * agg; w[0] /= agg;
     if (target && line.runs < target.min) { w[4] *= 1.35; w[6] *= 1.4; w[1] *= 1.1; }
