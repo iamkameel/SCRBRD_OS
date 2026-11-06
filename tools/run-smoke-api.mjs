@@ -357,6 +357,12 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // be chosen; the confirm sheet's words; the side told, nobody alone; a
   // withdrawal after a correction naming nobody; 12px, 44px, 56px at 390.
   "browser-potm",
+  // RECOGNITION R8 (db/146): Colours — the coach nominates on his Squad page
+  // from his own side's boys, a refused word named before he can send; a
+  // director who is the boy's guardian is offered no button; the principal
+  // awards through one confirm sheet (56px) and records no award; 12px and
+  // 44px at 390.
+  "browser-colours",
   // Redesign step 3c / SCRBRD-098: the Match Centre's six tabs, the
   // scorecard's layout and the shared commentary, on a real scored match.
   "browser-matchcentre",

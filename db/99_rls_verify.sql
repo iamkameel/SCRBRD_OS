@@ -37703,6 +37703,12 @@ $v116$;
     SELECT * INTO r FROM colours_nominate(K1, 'half_colours', NULL);
     PERFORM _assert(r.ok, format('§124 (who): a second coach of the side was refused half colours: %s', r.reason));
     v_n2 := r.nomination_id;
+    PERFORM _assert((SELECT string_agg(c.team_code, ',') FROM colours_sides() c) = '4XI',
+      '§124 (who): a coach of the side is not offered his side, or is offered another');
+    FOREACH who IN ARRAY ARRAY['assistant', 'dos', 'office', 'twohats', 'pupil'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM colours_sides()), format('§124 (who): %s is offered a side to nominate for', who));
+    END LOOP;
     PERFORM _as((y->>'coachdos')::uuid);
     SELECT * INTO r FROM colours_nominate(K2, 'colours', NULL);
     PERFORM _assert(r.ok, format('§124 (who): coachdos was refused: %s', r.reason));

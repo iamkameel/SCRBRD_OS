@@ -188,8 +188,10 @@ const NDLOVU_B = "registrar.wes@example.invalid";   // T Ndlovu at Westville: no
 // The capability that opens each tab. This is the screen's own table, restated
 // so the walk can ask the POLICY who should have each tab and hold the screen to it.
 const TAB_CAP = { users: "user.role.assign", squad: "team.manage", fixtures: "fixture.create",
-                  broadcast: "broadcast.publish", audit: "audit.read", grounds: "facility.manage" };
-const tabsFor = (role) => Object.keys(TAB_CAP).filter((id) => roleGrants(role, TAB_CAP[id]));
+                  broadcast: "broadcast.publish", audit: "audit.read", grounds: "facility.manage",
+                  // RECOGNITION R8 (db/146): any of the three opens Colours.
+                  colours: ["recognition.colours.nominate", "recognition.decide", "recognition.manage"] };
+const tabsFor = (role) => Object.keys(TAB_CAP).filter((id) => [].concat(TAB_CAP[id]).some((c) => roleGrants(role, c)));
 const tabsShown = (page) => page.locator('[data-testid^="mgmt-tab-"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-testid").replace("mgmt-tab-", "")));
 const INVENTED = /Updated fixture|Added training session|role changed|scorecard submitted|Medical clearance|New user created|Coaching Asst|Pretorius|Irrigation|Roll and mark|Outfield mowing|Prepare Main Oval|Mzimba|Hadebe/;
 const HIL_OVAL = "ffffffff-0000-0000-0000-000000000001";
@@ -558,8 +560,8 @@ try {
   ok("the principal signs in", await signIn(prin.page, "principal@example.invalid"));
   ok("...and reaches Management", await toUsers(prin.page));
   const prinTabs = await tabsShown(prin.page);
-  ok("her tabs are Users and Audit log — what she holds — and not a coach's squad tools",
-     JSON.stringify(prinTabs) === JSON.stringify(tabsFor("principal")) && JSON.stringify(prinTabs) === JSON.stringify(["users", "audit"]), prinTabs.join());
+  ok("her tabs are Users, Audit log and Colours — what she holds — and not a coach's squad tools",
+     JSON.stringify(prinTabs) === JSON.stringify(tabsFor("principal")) && JSON.stringify(prinTabs) === JSON.stringify(["users", "audit", "colours"]), prinTabs.join());
   await prin.ctx.close();
 
   const dos = await open();

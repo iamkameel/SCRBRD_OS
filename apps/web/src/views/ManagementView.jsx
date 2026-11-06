@@ -9,6 +9,7 @@ import { humanDate } from "../lib/format.js";
 import { decideWords, decidedWords } from "../lib/decideWords.js";
 import { Icon } from "../ui/icons.jsx";
 import { PeoplePanel } from "./people.jsx";
+import { ColoursPanel } from "./colours.jsx";
 
 // ══════════════════════════════════════════════════════
 //  MANAGEMENT VIEW
@@ -44,8 +45,11 @@ function ManagementView({ role, onDirectoryChanged }) {
     {id:"broadcast",cap:"broadcast.publish", icon:"radio-tower", label:"Broadcast",    color:D.roseText},
     {id:"audit",    cap:"audit.read",        icon:"search",      label:"Audit log",    color:D.textSecondary},
     {id:"grounds",  cap:"facility.manage",   icon:"ground",      label:"Ground tasks", color:D.teal},
+    // RECOGNITION R8 (db/146): the side's coach nominates, the director of
+    // sport and the principal decide, the office reads (D8). Any of the three.
+    {id:"colours",  cap:["recognition.colours.nominate","recognition.decide","recognition.manage"], icon:"award", label:"Colours", color:D.amber},
   ];
-  const tabs = TABS.filter(t=>holdsCapability(role,t.cap));
+  const tabs = TABS.filter(t=>[].concat(t.cap).some(c=>holdsCapability(role,c)));
   // The screen opens on the first tab this person has.
   const tab = tabs.some(t=>t.id===activeTab) ? activeTab : tabs[0]?.id;
 
@@ -157,6 +161,9 @@ function ManagementView({ role, onDirectoryChanged }) {
 
       {/* ── GROUND TASKS ── the duties are the fixtures at this person's grounds */}
       {tab==="grounds"&&<GroundDuties role={role}/>}
+
+      {/* ── COLOURS ── RECOGNITION R8 (db/146): views/colours.jsx */}
+      {tab==="colours"&&<ColoursPanel role={role} players={PLAYERS}/>}
     </div>
   );
 }

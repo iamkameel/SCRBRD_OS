@@ -43,8 +43,8 @@
 --                 "the captain's pick", patched in place (db/142's
 --                 exact-needle pattern)
 --   functions   + colours_nominator_holds, honour_colours_answer (nobody's)
---               + colours_nominations, colours_nominate, colours_decide
---                 (the doors: scrbrd_app only)
+--               + colours_sides, colours_nominations, colours_nominate,
+--                 colours_decide (the doors: scrbrd_app only)
 --
 -- ── WHO MAY (A17, D9, D10) ──────────────────────────────────────────
 -- Nominate: a holder of recognition.colours.nominate over the boy's side
@@ -70,7 +70,7 @@
 -- EXISTING ROWS. None change. Safe to run twice. DROPs: none but the pg_temp
 -- helpers at the end; DROP POLICY is not needed (no policy is made).
 --
--- SCHEMA FIRST. The API built with it (colours-api.mjs) calls the three
+-- SCHEMA FIRST. The API built with it (colours-api.mjs) calls the four
 -- doors; this file goes before it and is in services/api/expected-migrations.json.
 --
 -- THE GUARD keys on pg_proc.prosrc as db/142 does: the md5 of the live
@@ -290,6 +290,17 @@ BEGIN
    ORDER BY (n.status = 'open') DESC, n.created_at DESC, n.id;
 END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- The sides the caller nominates for (A17): each of his own side assignments
+-- through which colours_nominator_holds() answers, so the Colours sheet
+-- offers him only the boys the door would take. Nothing for anybody else.
+CREATE OR REPLACE FUNCTION colours_sides() RETURNS TABLE (school_id uuid, team_code text, side_label text) AS $$
+  SELECT DISTINCT a.school_id, a.team_code, coalesce(fixture_side_label(a.school_id, a.team_code), a.team_code)
+    FROM role_assignment a
+   WHERE a.person_id = app_user_id() AND a.team_code IS NOT NULL AND a.school_id IS NOT NULL
+     AND colours_nominator_holds(a.school_id, a.team_code)
+   ORDER BY 1, 2
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- The side's coach nominates (A17). The rationale is optional; D2's list is
 -- the API's (one list, in JavaScript), and the table bounds its length.
 --   not_permitted · kind_invalid · no_such_player · cannot_nominate_yourself
@@ -398,7 +409,7 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 DO $grants$
 DECLARE f text; r text;
 BEGIN
-  FOREACH f IN ARRAY ARRAY['colours_nominations()', 'colours_nominate(uuid,text,text)', 'colours_decide(uuid,text,text)'] LOOP
+  FOREACH f IN ARRAY ARRAY['colours_sides()', 'colours_nominations()', 'colours_nominate(uuid,text,text)', 'colours_decide(uuid,text,text)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
     FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
@@ -449,7 +460,7 @@ BEGIN
     RAISE EXCEPTION 'db/146: the application writes recognition_nomination';
   END IF;
   -- Definers, pinned; no reading of the database's day (db/128).
-  FOREACH f IN ARRAY ARRAY['colours_nominator_holds(uuid,text)', 'honour_colours_answer()', 'colours_nominations()',
+  FOREACH f IN ARRAY ARRAY['colours_nominator_holds(uuid,text)', 'honour_colours_answer()', 'colours_sides()', 'colours_nominations()',
                            'colours_nominate(uuid,text,text)', 'colours_decide(uuid,text,text)'] LOOP
     SELECT prosrc INTO v_src FROM pg_proc WHERE oid = f::regprocedure;
     IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = f::regprocedure) THEN
@@ -462,7 +473,7 @@ BEGIN
       RAISE EXCEPTION 'db/146: % reads the database''s day (db/128)', f;
     END IF;
   END LOOP;
-  FOREACH f IN ARRAY ARRAY['colours_nominations()', 'colours_nominate(uuid,text,text)', 'colours_decide(uuid,text,text)'] LOOP
+  FOREACH f IN ARRAY ARRAY['colours_sides()', 'colours_nominations()', 'colours_nominate(uuid,text,text)', 'colours_decide(uuid,text,text)'] LOOP
     IF NOT has_function_privilege('scrbrd_app', f, 'EXECUTE')
        OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
                    WHERE p.oid = f::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN

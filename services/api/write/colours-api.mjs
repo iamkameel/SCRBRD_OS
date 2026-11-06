@@ -2,7 +2,9 @@
  * SCRBRD — Colours: the side's coach nominates, the school decides
  * (RECOGNITION R8, db/146).
  *
- *   GET  /api/colours/nominations                → { rows: [nomination…] }
+ *   GET  /api/colours/nominations                → { sides: [side…], rows: [nomination…] }
+ *        sides: the sides the caller nominates for (the side's coach), so a
+ *        screen offers only the boys the door would take
  *        every Colours nomination the caller reads (D8): his own, and those of
  *        the sides he is staff of or the school he decides or records at,
  *        open first, each with whether he may decide it now and, if not, why,
@@ -99,7 +101,10 @@ export function coloursRoutes({ pool, secret }) {
   return {
     list: handle(async (req) => runAsPrincipal(pool, secret, as(req), async (client) => {
       const { rows } = await client.query(`select * from colours_nominations()`);
+      const { rows: sides } = await client.query(`select * from colours_sides()`);
       return {
+        // The sides he nominates for: the sheet offers only their boys.
+        sides: sides.map((s) => ({ schoolId: s.school_id, teamCode: s.team_code, sideLabel: s.side_label })),
         rows: rows.map((r) => ({
           nominationId: r.nomination_id, kind: r.kind, kindWords: kindWords(r.kind), season: r.season,
           schoolId: r.school_id, teamCode: r.team_code, sideLabel: r.side_label,
