@@ -35672,6 +35672,9 @@ $v116$;
   -- ── 120. Player of the Match, the coach's path (db/142; RECOGNITION R6, D5, D9, D10, D18, D21) ──
   -- Staged by _v142_stage(); every act is the caller's own, through
   -- scrbrd_app and the doors, read back past RLS by _v142_fact(). Labels:
+  --   (paste)    what the file rests on holds: honour does not force RLS
+  --              (the door is its owner), audit_log() holds the arm, and
+  --              app_support_access_id() answers with no argument
   --   (who)      who may decide: never the assistant, the team manager, the
   --              office, another Hilton side's coach, the other school's
   --              coach for this side's boy, the owner's key, a pupil
@@ -35730,6 +35733,7 @@ $v116$;
   --   honour_no_platform_award dropped                              → (once)
   --   honour_stamp() without its guardian test                      → (withdraw)
   --   match_award_role_word() answering "the coach" always          → (side)
+  --   ALTER TABLE honour FORCE ROW LEVEL SECURITY                   → (paste)
   DECLARE
     y   jsonb := _v142_stage();
     M   uuid := (y->>'M')::uuid;
@@ -35750,6 +35754,14 @@ $v116$;
     v_h2 uuid;
   BEGIN
     WK := _v142_working(H, P1, ARRAY[P1, P2]);
+
+    -- (paste)
+    PERFORM _assert(NOT (SELECT relforcerowsecurity FROM pg_class WHERE oid = 'honour'::regclass),
+      '§120 (paste): honour forces row-level security, so the door would meet its own policy');
+    PERFORM _assert(position('FROM recognition_audit rx' IN (SELECT prosrc FROM pg_proc
+                       WHERE oid = 'audit_log(uuid,text[],timestamptz,timestamptz,text,integer)'::regprocedure)) > 0,
+      '§120 (paste): audit_log() does not hold the recognition arm');
+    PERFORM _assert(app_support_access_id() IS NULL, '§120 (paste): app_support_access_id() with no argument does not answer');
 
     -- (who)
     FOR who IN SELECT unnest(ARRAY['assistant', 'manager', 'office', 'other', 'wes']) LOOP

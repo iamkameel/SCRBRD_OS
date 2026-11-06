@@ -139,9 +139,17 @@ BEGIN
      OR to_regprocedure('match_verified(uuid)') IS NULL OR to_regprocedure('match_head_seq(uuid)') IS NULL
      OR to_regprocedure('match_result_compute(uuid)') IS NULL
      OR to_regprocedure('fixture_side_label(uuid,text)') IS NULL
-     OR to_regprocedure('app_pad_scoped()') IS NULL OR to_regprocedure('app_support_access_id(uuid)') IS NULL
+     OR to_regprocedure('app_pad_scoped()') IS NULL
+     -- The bodies below call app_support_access_id() with no argument: a form
+     -- that takes none, or whose one argument has a default (db/22's).
+     OR NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.proname = 'app_support_access_id'
+                       AND p.pronamespace = 'public'::regnamespace AND p.pronargs - p.pronargdefaults = 0)
+     OR to_regprocedure('app_is_platform_wide()') IS NULL
+     OR to_regprocedure('app_can(text,uuid,text,uuid,uuid)') IS NULL
+     OR to_regprocedure('log_restricted_read(text,uuid[],text[],uuid)') IS NULL
+     OR to_regprocedure('season_for(date,text)') IS NULL
      OR to_regprocedure('audit_person_label(uuid)') IS NULL OR to_regprocedure('sa_today()') IS NULL THEN
-    RAISE EXCEPTION 'db/142: the notices (db/89), the official result (db/114), the sheet label (db/131), the audit log (db/79) or the SA day (db/08) is missing; apply them first';
+    RAISE EXCEPTION 'db/142: the notices (db/89), the official result (db/114), the sheet label (db/131), the audit log (db/79), the support hour (db/22), the platform reads (db/20) or the SA day (db/08) is missing; apply them first';
   END IF;
   FOR r IN SELECT * FROM (VALUES
       ('honour_stamp()',                 'ba879ca71d07f48100c4218397a80a4b', '4d23d2abe5b6a93970590b2cdf413933', 'db/08'),
@@ -920,6 +928,32 @@ BEGIN
      OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'recognition_audit'::regclass AND tgname = 'recognition_audit_append_only' AND tgenabled <> 'D') THEN
     RAISE EXCEPTION 'db/142: a trigger on honour or recognition_audit is missing or disabled';
   END IF;
+  -- The door is the table's owner, which RLS does not stop: unless the
+  -- table forces it, when match_award()'s INSERT would meet the door policy.
+  IF (SELECT relforcerowsecurity FROM pg_class WHERE oid = 'honour'::regclass) THEN
+    RAISE EXCEPTION 'db/142: honour forces row-level security, so match_award() would be refused by honour_match_award_door';
+  END IF;
+  -- The audit_log() patch landed, and its arm runs: planned here, as an
+  -- office of a scratch school, all of it undone.
+  v_src := (SELECT prosrc FROM pg_proc WHERE oid = 'audit_log(uuid,text[],timestamptz,timestamptz,text,integer)'::regprocedure);
+  IF position('FROM recognition_audit rx' IN v_src) = 0 OR position($k$'duty', 'recognition']$k$ IN v_src) = 0 THEN
+    RAISE EXCEPTION 'db/142: audit_log() does not hold the recognition kind and its arm';
+  END IF;
+  DECLARE v_school uuid; v_user uuid;
+  BEGIN
+    INSERT INTO school (code, name) VALUES ('V142CHK', 'db/142 audit check') RETURNING id INTO v_school;
+    INSERT INTO app_user (school_id, email, name, role) VALUES (v_school, 'v142.check@example.invalid', 'db/142 check', 'schooladmin')
+      RETURNING id INTO v_user;
+    INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_user, 'schooladmin', v_school);
+    PERFORM set_config('app.user_id', v_user::text, true);
+    PERFORM * FROM audit_log(v_school, ARRAY['recognition'], now() - interval '1 day', now(), NULL, 1);
+    PERFORM * FROM audit_log(v_school, NULL, now() - interval '1 day', now(), NULL, 1);
+    RAISE EXCEPTION 'v142-planned';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'v142-planned' THEN
+      RAISE EXCEPTION 'db/142: audit_log()''s recognition arm does not run (%): %', SQLSTATE, SQLERRM;
+    END IF;
+  END;
   -- Every honour is on the audit, and every withdrawal says its kind.
   IF EXISTS (SELECT 1 FROM honour h WHERE NOT EXISTS (SELECT 1 FROM recognition_audit x WHERE x.honour_id = h.id AND x.event = 'awarded'))
      OR EXISTS (SELECT 1 FROM honour h WHERE h.withdrawn_at IS NOT NULL AND h.withdrawn_kind IS NULL) THEN
