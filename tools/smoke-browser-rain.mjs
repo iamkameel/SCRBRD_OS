@@ -47,14 +47,38 @@ import { createHash } from "node:crypto";
 import { EVENT_COLUMNS } from "../services/api/write/events-api.mjs";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
+import { createServer as createNetServer } from "node:net";
 import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 
-const WEB_PORT = port(5371);
-const API_PORT = port(8871);
+/**
+ * The first free port from the walk's own, port(base), on. Every worktree on
+ * this machine shares the literal ports, each shifted by its own offset, so
+ * another walk can sit on this one's: smoke-browser-solo's API (5632) at
+ * offset 3500 is this walk's API (8871) at offset 261. When one held
+ * API_PORT, this walk's API died on EADDRINUSE, the health check took the
+ * other server's answer, and the walk failed on the operator's first click
+ * ("locator.click: Timeout 6000ms exceeded", 0 passed), which read like a
+ * clock bug. A port taken is stepped past here, and the walk waits for its
+ * own server to say it listens, never for whoever answers on the port.
+ * @param {number} base
+ */
+const freePort = async (base) => {
+  for (let k = 0; k < 40; k++) {
+    const p = port(base + k);
+    const free = await new Promise((r) => {
+      const s = createNetServer().once("error", () => r(false)).once("listening", () => s.close(() => r(true)));
+      s.listen(p);
+    });
+    if (free) return p;
+  }
+  throw new Error(`no free port from ${port(base)}`);
+};
+const WEB_PORT = await freePort(5371);
+const API_PORT = await freePort(8871);
 const API = `http://127.0.0.1:${API_PORT}`;
 const DB = ownerUrl();
 const SHOTS = process.env.RAIN_SHOTS || null;
@@ -73,6 +97,14 @@ const api = spawn(process.execPath, ["services/api/server.mjs"], {
 });
 const apiErr = [];
 api.stderr.on("data", (d) => apiErr.push(d.toString()));
+/** Settles when THIS walk's server says it listens; fails, with its error, if it exits first. */
+const apiUp = new Promise((resolve, reject) => {
+  let out = "";
+  api.stdout.on("data", (d) => { out += d.toString(); if (out.includes(`SCRBRD API on http://localhost:${API_PORT}`)) resolve(undefined); });
+  api.on("exit", (code) => reject(new Error(`the walk's own API exited (${code}) before it listened on ${API_PORT}: `
+    + (apiErr.join("").split("\n").find((l) => /Error/.test(l)) ?? "no error printed"))));
+});
+apiUp.catch(() => {});   // judged at the top of the walk, below
 
 const web = createServer(async (req, res) => {
   const url = new URL(req.url, "http://x").pathname;
@@ -247,6 +279,7 @@ async function shoot(name) {
 
 try {
   if (SHOTS) await mkdir(SHOTS, { recursive: true });
+  await Promise.race([apiUp, new Promise((_, no) => setTimeout(() => no(new Error(`the walk's own API did not listen on ${API_PORT} in 30 s`)), 30000).unref())]);
   for (let i = 0; i < 60; i++) {
     try { const r = await fetch(`${API}/api/health`); if ((await r.json()).db === "ok") break; } catch { /* not up */ }
     await new Promise((r) => setTimeout(r, 250));
