@@ -22,6 +22,7 @@ import { RecentMatches } from "./cockpit/RecentMatches.jsx";
 import { weatherWords } from "../lib/cockpit.js";
 import { observedStamp } from "../lib/weatherStamp.js";
 import { saClock } from "../lib/saTime.js";
+import { sidesOf } from "../lib/matchCentre.js";
 
 // ══════════════════════════════════════════════════════
 //  THE DAY SHEET (DESIGN_DIRECTION §5) — replaces the KPI dashboard.
@@ -211,7 +212,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
           <BentoCard level="b" title="Next fixture" data-testid="day-next">
             {next ? (
               <div data-testid={`next-fixture-${next.id}`}>
-                <div style={{ ...T.role.title.md, color: T.content.primary }}>{next.homeTeam} v {next.awayTeam}</div>
+                <div style={{ ...T.role.title.md, color: T.content.primary }}>{sidesOf(next).home.full} v {sidesOf(next).away.full}</div>
                 <div style={{ ...T.role.body, color: T.content.secondary, marginTop: T.space.xs }}>
                   {humanDateTime(next.date, next.time)}
                 </div>
