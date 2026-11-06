@@ -403,7 +403,7 @@ function LeagueView({ role, homeBar = null }) {
               <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"8px"}}>
                 <select value={seasonPending?"":activeSeason} onChange={e=>setAwardsSeason(e.target.value)}
                   aria-label="Season" data-testid="awards-season-select" disabled={seasonPending}
-                  style={{padding:"6px 10px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,color:D.textPrimary,fontFamily:D.body,fontSize:"12px"}}>
+                  style={{padding:"6px 10px",minHeight:"44px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,color:D.textPrimary,fontFamily:D.body,fontSize:"12px"}}>
                   {seasonPending&&<option value="">Loading seasons…</option>}
                   <option value={ALL_SEASONS}>All seasons</option>
                   {seasonChoice.seasons.map(s=><option key={s} value={s}>{s}{s===seasonChoice.current?" (current)":""}</option>)}
@@ -411,14 +411,14 @@ function LeagueView({ role, homeBar = null }) {
                 {awardSchools.length>1&&(
                   <select value={awardsSchool} onChange={e=>{setAwardsSchool(e.target.value);setAwardsTeam("");}}
                     aria-label="School" data-testid="awards-school-select"
-                    style={{padding:"6px 10px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,color:D.textPrimary,fontFamily:D.body,fontSize:"12px"}}>
+                    style={{padding:"6px 10px",minHeight:"44px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,color:D.textPrimary,fontFamily:D.body,fontSize:"12px"}}>
                     <option value="">All schools</option>
                     {awardSchools.map(([id,name])=><option key={id} value={id}>{name}</option>)}
                   </select>
                 )}
                 <select value={awardsTeam} onChange={e=>setAwardsTeam(e.target.value)}
                   aria-label="Team" data-testid="awards-team-select"
-                  style={{padding:"6px 10px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,color:D.textPrimary,fontFamily:D.body,fontSize:"12px"}}>
+                  style={{padding:"6px 10px",minHeight:"44px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,color:D.textPrimary,fontFamily:D.body,fontSize:"12px"}}>
                   <option value="">All teams</option>
                   {awardTeams.map(t=><option key={t} value={t}>{t}</option>)}
                 </select>

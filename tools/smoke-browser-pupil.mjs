@@ -20,6 +20,12 @@
  *     return date reaches him — not on the team sheet, and not through the
  *     reads behind it;
  *   - nothing read under 12px and nothing tapped under 44px, at phone width;
+ *   - NO ORDERED LIST OF TEAM-MATES IS DRAWN (recognition R5b, D23, A15): not
+ *     on any of his four screens, and not for a pupil who holds `player`
+ *     with no file of his own (the seed's spectator@ account), whose menu is
+ *     the staff one and reaches Competitions and Leagues: no Top Performers
+ *     card, no Top Performers or Awards tab, no MVP, though his reads carry
+ *     his side's figures;
  *   - no scoping refusals, no page errors;
  *   - THE CAPTAIN'S VIEW (SCRBRD-138 phase A): the seed's pupil is awarded
  *     `captain` for the walk and it is withdrawn after. With it, his Home
@@ -64,6 +70,7 @@ import { capWords } from "@scrbrd/scoring";
 import { ATTACK, buildCaptainFixtures, fixConditions, PLAY } from "./fixture-captain.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { pickTab, tabIds } from "./walk-tabs.mjs";
+import { rankingsOnScreen } from "./walk-rankings.mjs";
 
 const WEB_PORT = port(4366);
 const API_PORT = port(8966);
@@ -362,9 +369,57 @@ try {
   const fm = await floors(s.page);
   ok(`Me at phone width: nothing read under 12px (${fm.small.length})`, fm.small.length === 0, fm.small.slice(0, 4).join(" · "));
   ok(`...nothing tapped under 44px (${fm.tiny.length})`, fm.tiny.length === 0, fm.tiny.slice(0, 4).join(" · "));
+  group("No ordered list of team-mates is drawn for him (recognition R5b: D23, A15)");
+  for (const key of ["myhome", "mymatches", "passport", "me"]) {
+    const opened = await go(s.page, key);
+    const ranked = opened ? await rankingsOnScreen(s.page) : [];
+    ok(`${key}: no list of players ordered by a figure`, opened && ranked.length === 0, opened ? ranked.join(" · ") : "did not open");
+  }
   ok("no scoping refusals in his session", s.refusals.length === 0, s.refusals[0]);
   ok("no page errors in his session", s.errors.length === 0, s.errors.join(" | "));
   await s.ctx.close();
+
+  // A pupil who holds `player` and no `selfaccess` is not the pupil persona
+  // (design/roles.js): his menu is the staff one, and it reaches Competitions
+  // and Leagues because `player` holds competition.read. His reads carry his
+  // side's figures, so the screen is what must not rank them (D23).
+  group("A pupil with no file of his own reaches Leagues, and no ordered list of team-mates is drawn (R5b)");
+  {
+    const { token } = await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "spectator@example.invalid", deviceId: "pupil-walk-ranks" }) })).json();
+    const career = (await (await fetch(`${API}/api/read/career`, { headers: { authorization: `Bearer ${token}` } })).json()).rows ?? [];
+    const withRuns = career.filter((r) => Number(r.runs ?? r.bat_runs ?? 0) > 0);
+    ok("his career read carries his side's figures, several boys' (what a ranking would be built from)", withRuns.length >= 2, JSON.stringify(career.slice(0, 3)));
+    const r = await open({ phone: false });
+    await click(r.page, /Get Started|Log In/, 5000);
+    await r.page.waitForTimeout(500);
+    await click(r.page, /spectator@example\.invalid/, 4000);
+    await click(r.page, /^Sign In$/, 5000);
+    await afterReads(r.page, 2200);
+    ok("he signs in, to the staff shell (no persona)", (await tid(r.page, "persona-bar").count()) === 0 && /Match Centre|Dashboard/i.test(await inner(r.page, "os-main")));
+    const comps = r.page.locator("nav button", { hasText: /^Competitions\d*$/ }).first();
+    const reached = (await comps.count()) > 0 && await comps.click({ timeout: 6000 }).then(() => true, () => false);
+    await afterReads(r.page, 1800);
+    ok("Competitions is on his menu, and opens", reached && await tid(r.page, "os-main").getAttribute("data-page") === "competitions");
+    let ranked = await rankingsOnScreen(r.page);
+    ok("Competitions: no Top Performers card, no list of players ordered by a figure", ranked.length === 0, ranked.join(" · "));
+    const leagues = r.page.locator('[data-testid="home-competitions-sections"] button', { hasText: /^Leagues$/ }).first();
+    const opened = (await leagues.count()) > 0 && await leagues.click({ timeout: 6000 }).then(() => true, () => false);
+    const drawn = opened && await r.page.waitForFunction(() => /League Management/.test(document.body.innerText)
+      && !!document.querySelector('[data-testid^="league-tab-"]'), null, { timeout: 15000 }).then(() => true, () => false);
+    await afterReads(r.page, 1500);
+    const tabs = await r.page.$$eval('[data-testid^="league-tab-"]', (els) => els.map((e) => e.getAttribute("data-testid").replace("league-tab-", "")));
+    ok("Leagues opens, with its tabs", drawn && tabs.length > 0, tabs.join());
+    ok("...and neither Top Performers nor Awards is among them", !tabs.includes("performers") && !tabs.includes("awards"), tabs.join());
+    for (const t of tabs) {
+      await tid(r.page, `league-tab-${t}`).click({ timeout: 4000 }).catch(() => {});
+      await afterReads(r.page, 1200);
+      ranked = await rankingsOnScreen(r.page);
+      ok(`Leagues · ${t}: no list of players ordered by a figure, no MVP`, ranked.length === 0, ranked.join(" · "));
+    }
+    ok("no page errors in his session", r.errors.length === 0, r.errors.join(" | "));
+    await r.ctx.close();
+  }
 
   // ── K3 (db/55), at the reads behind the screens ──
   // The flipped assertion, where a screen cannot hide it: his session's own

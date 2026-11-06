@@ -36,6 +36,7 @@ import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { bookCard, writeBookInnings } from "./book-innings.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { rankingsOnScreen } from "./walk-rankings.mjs";
 
 const WEB_PORT = port(4326);
 const API_PORT = port(8795);
@@ -436,6 +437,56 @@ try {
   ok("...and the Report button is gone", await postRow.locator('[data-testid="notice-report"]').count() === 0);
   ok("the guardian's session raised no scoping refusals", parent.refusals.length === 0);
   ok("...and no page errors", parent.errors.length === 0, parent.errors.join(" | "));
+
+  // ── Recognition R5b (D23, A15; STEP4 §6: "no leaderboard of the team's
+  // parents' children on a family screen"). Her four screens, and then the
+  // same parent holding `spectator` as well: no longer the family persona
+  // (design/roles.js), so her menu is the staff one and reaches Competitions
+  // and Leagues, where the Top Performers and Awards lists would rank her
+  // son's side. None is drawn for her. ──
+  group("No ordered list of team-mates is drawn for a parent (recognition R5b: D23, A15)");
+  for (const key of ["children", "fixtures", "notices", "family"]) {
+    await ptid(`nav-${key}`).click({ timeout: 6000 }).catch(() => {});
+    await afterReads(parent.page, 1500);
+    const opened = await ptid("os-main").getAttribute("data-page") === key;
+    const ranked = opened ? await rankingsOnScreen(parent.page) : [];
+    ok(`${key}: no list of players ordered by a figure`, opened && ranked.length === 0, opened ? ranked.join(" · ") : "did not open");
+  }
+  {
+    const PARENT_USER = "88888888-0000-0000-0000-000000000005";
+    const HIL = "11111111-1111-1111-1111-111111111111";
+    const spec = (await owner.query(`insert into role_assignment (person_id, role, school_id) values ($1, 'spectator', $2) returning id`, [PARENT_USER, HIL])).rows[0].id;
+    try {
+      const { token } = await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "parent@example.invalid", deviceId: "read-walk-ranks" }) })).json();
+      const career = (await (await fetch(`${API}/api/read/career`, { headers: { authorization: `Bearer ${token}` } })).json()).rows ?? [];
+      ok("her career read is her own child's figures alone", career.length >= 1 && career.every((r) => r.player_id === PILLAY), JSON.stringify(career.map((r) => r.player_id)));
+      const ps = await open();
+      ok("a parent who is also a spectator signs in, to the staff shell", await signIn(ps.page, /parent@example\.invalid/)
+         && await ps.page.locator('[data-testid="persona-bar"]').count() === 0);
+      ok("...Competitions is on her menu, and opens", await nav(ps.page, /^Competitions\d*$/)
+         && await ps.page.locator('[data-testid="os-main"]').getAttribute("data-page") === "competitions");
+      let ranked = await rankingsOnScreen(ps.page);
+      ok("Competitions: no Top Performers card, no list of players ordered by a figure", ranked.length === 0, ranked.join(" · "));
+      await ps.page.locator('[data-testid="home-competitions-sections"] button', { hasText: /^Leagues$/ }).first().click({ timeout: 6000 }).catch(() => {});
+      const drawn = await ps.page.waitForFunction(() => /League Management/.test(document.body.innerText)
+        && !!document.querySelector('[data-testid^="league-tab-"]'), null, { timeout: 15000 }).then(() => true, () => false);
+      await afterReads(ps.page, 1500);
+      const tabs = await ps.page.$$eval('[data-testid^="league-tab-"]', (els) => els.map((e) => e.getAttribute("data-testid").replace("league-tab-", "")));
+      ok("Leagues opens, with its tabs", drawn && tabs.length > 0, tabs.join());
+      ok("...and neither Top Performers nor Awards is among them", !tabs.includes("performers") && !tabs.includes("awards"), tabs.join());
+      for (const t of tabs) {
+        await ps.page.locator(`[data-testid="league-tab-${t}"]`).click({ timeout: 4000 }).catch(() => {});
+        await afterReads(ps.page, 1200);
+        ranked = await rankingsOnScreen(ps.page);
+        ok(`Leagues · ${t}: no list of players ordered by a figure, no MVP`, ranked.length === 0, ranked.join(" · "));
+      }
+      ok("...and no page errors in her session", ps.errors.length === 0, ps.errors.join(" | "));
+      await ps.ctx.close();
+    } finally {
+      await owner.query(`delete from role_assignment where id = $1`, [spec]);
+    }
+  }
 
   // The coach's Squad: the same row, "said by" the parent, by name.
   {
