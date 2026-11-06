@@ -1,9 +1,12 @@
-import { useState } from "react";
-import { D, T, textOn, themed } from "../design/tokens.js";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { D, textOn, themed } from "../design/tokens.js";
 import { Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
+import { Icon } from "../ui/icons.jsx";
+import { NewsCover } from "../ui/NewsCover.jsx";
 import { useLive } from "../lib/live.js";
 import { api } from "../lib/api.js";
-import { schoolsWhere } from "../lib/session.js";
+import { profile, schoolsWhere } from "../lib/session.js";
+import { BAND_LABEL, bandOf, deskOf, kickerOf, longWhenSa, bodyParagraphs, readStore, sideLabel, standfirst, whenSa } from "../lib/newsFeed.js";
 import { holdsCapability } from "../rbac/index.js";
 
 /**
@@ -19,11 +22,22 @@ import { holdsCapability } from "../rbac/index.js";
  * offered on the same capabilities the INSERT policy demands, so the button is
  * never there for somebody the database would then refuse.
  *
+ * HOW IT READS (6 Nov, Kameel: "a proper news feed"): the newest post is the
+ * lead story with a large cover, the rest a grid under Today, This week and
+ * Earlier. Each card is a generated cover (ui/NewsCover.jsx: drawn in code, no
+ * photograph), the kicker ("1st XI · Westville"), the headline, a standfirst
+ * from the body, the SA date and the desk that wrote it, and "Read more",
+ * which opens the full read in place (#read-<id>, so the phone's back button
+ * closes it). The chips narrow what is on screen to a side, the school or the
+ * league; they never widen what the policy sent. A post stays marked New until
+ * this viewer opens it, remembered in this browser only (lib/newsFeed.js).
+ *
  * THE PUBLIC HOME PAGE (SCRBRD-142 §3.5, db/83): a sent team or school post
  * carries a line saying whether it is on the SCRBRD home page, with the one
  * button its state allows; the school's publishers get a short approvals card
  * at the top. The composer has nothing new for that: a post is asked about
- * after it is posted, so nobody writes "for the public" in haste.
+ * after it is posted, so nobody writes "for the public" in haste. A post that
+ * is on the home page offers its link there, from the full read.
  *
  * ONE STREAM (docs/design/NOTIFICATIONS.md D9-D11, S2): a sent post is also a
  * notice in everybody's Notices, written by the post's trigger (db/91). The
@@ -38,9 +52,19 @@ const TIER = themed(() => ({
   competition: { cap: "news.publish.competition", label: "The league",  tone: D.amber },
 }));
 
+/** The post a #read-<id> address names, or null. */
+const readingFromHash = () => {
+  try {
+    const m = /^#read-([A-Za-z0-9-]{1,64})$/.exec(window.location.hash || "");
+    return m ? m[1] : null;
+  } catch { return null; }
+};
+
+const scrollBox = () => (typeof document === "undefined" ? null : document.getElementById("os-content"));
+
 function NewsView({ role }) {
   const [nonce, setNonce] = useState(0);
-  const { rows, loading } = useLive("news", role, nonce);
+  const { rows, loading, error: readError, status } = useLive("news", role, nonce);
   const [composing, setComposing] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
@@ -89,10 +113,82 @@ function NewsView({ role }) {
   };
   const waiting = rows.filter(n => n.publicState === "requested" && n.mayApprove && !n.mine);
 
+  // ── New until opened: this viewer, this browser (lib/newsFeed.js readStore) ──
+  const viewer = profile()?.user?.id || role || "anon";
+  const store = useMemo(() => readStore(viewer), [viewer]);
+  const [opened, setOpened] = useState(() => store.load());
+  useEffect(() => { setOpened(store.load()); }, [store]);
+  const isNew = (n) => !n.draft && !n.mine && !opened.has(n.id);
+
+  // ── The full read, at #read-<id>: back (the button, or the phone's) closes it ──
+  const [readingId, setReadingId] = useState(readingFromHash);
+  const pushed = useRef(false);
+  const scrollWas = useRef(0);
+  const returnTo = useRef(null);
+  useEffect(() => {
+    const sync = () => { const id = readingFromHash(); pushed.current = pushed.current && !!id; setReadingId(id); };
+    window.addEventListener("popstate", sync);
+    window.addEventListener("hashchange", sync);
+    return () => {
+      window.removeEventListener("popstate", sync);
+      window.removeEventListener("hashchange", sync);
+      // Leaving the Newsfeed with a post open: the address forgets it.
+      try { if (readingFromHash()) window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search); } catch { /* no history: nothing to tidy */ }
+    };
+  }, []);
+  useEffect(() => { if (readingId) setOpened(store.mark([readingId])); }, [readingId, store]);
+  useEffect(() => {
+    const box = scrollBox();
+    if (readingId) { box?.scrollTo?.({ top: 0 }); return; }
+    // Back on the feed: where the reader was, and focus on the card's own button.
+    if (box && scrollWas.current) box.scrollTo?.({ top: scrollWas.current });
+    const id = returnTo.current; returnTo.current = null;
+    if (id) requestAnimationFrame(() => document.querySelector(`[data-testid="news-open-${id}"]`)?.focus?.());
+  }, [readingId]);
+  const openPost = (id) => {
+    scrollWas.current = scrollBox()?.scrollTop ?? 0;
+    returnTo.current = id;
+    try { window.history.pushState(window.history.state, "", `#read-${id}`); pushed.current = true; } catch { pushed.current = false; }
+    setReadingId(id);
+  };
+  const closePost = () => {
+    if (pushed.current) { pushed.current = false; try { window.history.back(); return; } catch { /* fall through */ } }
+    try { window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search); } catch { /* nothing to tidy */ }
+    setReadingId(null);
+  };
+
+  // ── The chips: narrow what is on screen; never widen what the policy sent ──
+  const [filter, setFilter] = useState("all");
+  const chips = useMemo(() => chipsOf(rows, isNew), [rows, opened]); // eslint-disable-line react-hooks/exhaustive-deps
+  const active = chips.some(c => c.key === filter) ? filter : "all";
+  const shown = useMemo(() => rows.filter(n => matches(n, chips.find(c => c.key === active), isNew)), [rows, chips, active, opened]); // eslint-disable-line react-hooks/exhaustive-deps
+  const unreadCount = rows.filter(isNew).length;
+  const lead = shown[0] || null;
+  const bands = useMemo(() => {
+    const now = Date.now();
+    const out = { "today": [], "week": [], earlier: [] };
+    for (const n of shown.slice(1)) out[bandOf(n.at, now)].push(n);
+    return out;
+  }, [shown]);
+
+  const publicRow = (n) => <PublicRow n={n} busy={!!busy} onDoor={door} error={publicError?.id===n.id ? publicError.text : null}/>;
+  const reading = readingId ? rows.find(n => n.id === readingId) : null;
+
+  if (readingId) {
+    return (
+      <div>
+        {reading
+          ? <NewsArticle n={reading} onBack={closePost} publicRow={publicRow(reading)} more={rows.filter(m => m.id !== reading.id && m.scope === reading.scope && m.teamCode === reading.teamCode && !m.draft).slice(0, 3)}
+                         onOpen={(id) => { returnTo.current = null; try { window.history.replaceState(window.history.state, "", `#read-${id}`); } catch { /* the post still opens */ } setReadingId(id); }}/>
+          : <NotInFeed loading={loading} onBack={closePost}/>}
+      </div>
+    );
+  }
+
   return (
     <div>
       <SectionHeader title="Newsfeed"
-        subtitle="Notices for your side, your school and the leagues you play in"
+        sub="Notices for your side, your school and the leagues you play in"
         actions={canPublish && <Btn size="sm" data-testid="news-compose" onClick={()=>{setError(null);setComposing(true);}}>＋ Post a notice</Btn>}/>
 
       {waiting.length>0 && (
@@ -128,32 +224,71 @@ function NewsView({ role }) {
         </Card>
       )}
 
-      {loading && rows.length===0 && (
-        <Card sx={{padding:"16px"}}><div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Loading…</div></Card>
+      {/* The chips: what is on screen, by audience. Only audiences that have a post here. */}
+      {rows.length>0 && chips.length>1 && (
+        <div role="group" aria-label="Show posts for" className="os-news-chips" data-testid="news-chips" style={{marginBottom:"14px"}}>
+          {chips.map(c=>(
+            <button key={c.key} type="button" className="pressBtn" data-testid={`news-chip-${c.key}`} aria-pressed={active===c.key}
+              onClick={()=>setFilter(c.key)}
+              style={{flexShrink:0,minHeight:"44px",padding:"0 16px",borderRadius:D.pill,cursor:"pointer",whiteSpace:"nowrap",
+                border:`1px solid ${active===c.key?D.textPrimary:D.border}`,
+                background:active===c.key?D.textPrimary:"transparent",
+                color:active===c.key?D.bg:D.textSecondary,fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.04em"}}>
+              {c.label}<span style={{marginLeft:"8px",fontFamily:D.mono,fontWeight:500,opacity:0.85}}>{c.count}</span>
+            </button>
+          ))}
+          {unreadCount>0 && (
+            <button type="button" className="pressBtn" data-testid="news-mark-all"
+              onClick={()=>setOpened(store.mark(rows.filter(isNew).map(n=>n.id)))}
+              style={{flexShrink:0,marginLeft:"auto",minHeight:"44px",padding:"0 14px",borderRadius:D.pill,cursor:"pointer",whiteSpace:"nowrap",
+                border:"1px solid transparent",background:"transparent",color:D.textSecondary,fontFamily:D.body,fontSize:"12px",textDecoration:"underline",textUnderlineOffset:"3px"}}>
+              Mark all as read
+            </button>
+          )}
+        </div>
       )}
 
-      {!loading && rows.length===0 && (
-        <EmptyState icon="newspaper" title="Nothing posted yet"
-          hint={canPublish
-            ? "Notices you post appear here, and reach exactly the people the tier names."
-            : "When your school or your side posts a notice, it appears here."}/>
-      )}
+      {loading && rows.length===0 && <FeedSkeleton/>}
 
-      <div data-testid="news-list" style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-        {rows.map(n=>(
-          <Card key={n.id} data-testid={`news-${n.id}`} sx={{padding:"14px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px",flexWrap:"wrap"}}>
-              <Badge color={TIER[n.scope]?.tone || D.textMuted}>{n.audience}</Badge>
-              {n.draft && <Badge color={D.amber}>Draft</Badge>}
-              <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>
-                {n.at ? new Date(n.at).toLocaleDateString() : ""}
-              </span>
+      {!loading && rows.length===0 && (readError
+        ? <Card sx={{padding:"8px"}}><EmptyState error={readError} status={status} what="the newsfeed" onRetry={()=>setNonce(n=>n+1)}/></Card>
+        : (
+          <Card data-testid="news-empty" className="" sx={{display:"grid",gridTemplateColumns:"1fr",maxWidth:"640px"}}>
+            <NewsCover seed="newsfeed-empty" school={schools[0]?.name || "SCRBRD"} scope="school" ratio="21 / 9"/>
+            <div style={{padding:"18px 20px 20px"}}>
+              <h3 style={{fontFamily:D.head,fontSize:"18px",fontWeight:700,color:D.textPrimary,marginBottom:"6px"}}>Nothing posted yet</h3>
+              <p style={{fontFamily:D.body,fontSize:"14px",color:D.textSecondary,lineHeight:1.6,marginBottom:canPublish?"14px":0}}>
+                {canPublish
+                  ? "Notices you post appear here as stories, and reach exactly the people the audience names."
+                  : "When your side, your school or your league posts a notice, it appears here."}
+              </p>
+              {canPublish && <Btn size="sm" data-testid="news-empty-compose" onClick={()=>{setError(null);setComposing(true);}}>Post the first notice</Btn>}
             </div>
-            <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>{n.title}</div>
-            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{n.body}</div>
-            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"8px"}}>{n.author}</div>
-            <PublicRow n={n} busy={!!busy} onDoor={door} error={publicError?.id===n.id ? publicError.text : null}/>
           </Card>
+        ))}
+
+      {rows.length>0 && shown.length===0 && (
+        <Card data-testid="news-filter-empty" className="" sx={{padding:"20px"}}>
+          <p style={{fontFamily:D.body,fontSize:"14px",color:D.textSecondary,marginBottom:"10px"}}>Nothing here under this filter.</p>
+          <Btn size="sm" variant="ghost" onClick={()=>setFilter("all")}>Show everything</Btn>
+        </Card>
+      )}
+
+      <div data-testid="news-list" style={{display:"flex",flexDirection:"column",gap:"24px"}}>
+        {lead && (
+          <NewsCard n={lead} lead index={0} fresh={isNew(lead)} onOpen={openPost} publicRow={publicRow(lead)}/>
+        )}
+        {["today","week","earlier"].map(band => bands[band].length>0 && (
+          <section key={band} aria-labelledby={`news-band-${band}`} data-testid={`news-band-${band}`}>
+            <h3 id={`news-band-${band}`} style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:"10px",display:"flex",alignItems:"center",gap:"10px"}}>
+              {BAND_LABEL[band]}<span aria-hidden="true" style={{flex:1,height:"1px",background:D.border}}/>
+            </h3>
+            <div className="os-news-grid">
+              {bands[band].map((n,i)=>(
+                <NewsCard key={n.id} n={n} index={i+1} fresh={isNew(n)} onOpen={openPost} publicRow={publicRow(n)}/>
+              ))}
+            </div>
+          </section>
         ))}
       </div>
 
@@ -211,6 +346,225 @@ function NewsView({ role }) {
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+/** The chips this feed's own posts call for: All, each side, the school, the league, New. */
+function chipsOf(rows, isNew) {
+  const out = [{ key: "all", label: "All", count: rows.length }];
+  const sides = new Map();
+  const schoolsSeen = new Set(rows.map(n => n.schoolId).filter(Boolean));
+  for (const n of rows) {
+    if (n.scope !== "team" || !n.teamCode) continue;
+    const key = `side-${n.schoolId || "x"}-${n.teamCode}`.replace(/[^A-Za-z0-9-]/g, "");
+    const label = schoolsSeen.size > 1 && n.schoolName ? `${sideLabel(n.teamCode)} · ${n.schoolName}` : sideLabel(n.teamCode);
+    const s = sides.get(key) || { key, label, count: 0, match: { schoolId: n.schoolId, teamCode: n.teamCode } };
+    s.count++; sides.set(key, s);
+  }
+  out.push(...[...sides.values()].sort((a, b) => a.label.localeCompare(b.label, "en", { numeric: true })));
+  const school = rows.filter(n => n.scope === "school").length;
+  if (school) out.push({ key: "school", label: "Whole school", count: school });
+  const league = rows.filter(n => n.scope === "competition").length;
+  if (league) out.push({ key: "league", label: "League", count: league });
+  const fresh = rows.filter(isNew).length;
+  if (fresh) out.push({ key: "new", label: "New", count: fresh });
+  return out;
+}
+
+/** Is this post under this chip? A narrowing of rows already sent, never a widening. */
+function matches(n, chip, isNew) {
+  if (!chip || chip.key === "all") return true;
+  if (chip.key === "school") return n.scope === "school";
+  if (chip.key === "league") return n.scope === "competition";
+  if (chip.key === "new") return isNew(n);
+  return !!chip.match && n.scope === "team" && n.teamCode === chip.match.teamCode && n.schoolId === chip.match.schoolId;
+}
+
+/** The kicker's colour, and its words. */
+function Kicker({ n, size = "12px" }) {
+  const tone = TIER[n.scope]?.tone || D.textMuted;
+  return (
+    <span data-testid="news-kicker" style={{fontFamily:D.mono,fontSize:size,fontWeight:500,letterSpacing:"0.08em",textTransform:"uppercase",color:textOn(tone),overflowWrap:"anywhere"}}>
+      {kickerOf(n)}
+    </span>
+  );
+}
+
+/** The desk and the day, for a card: "1st XI staff · Today, 14:30". */
+function Byline({ n, long = false }) {
+  const { name, desk } = deskOf(n);
+  const when = long ? longWhenSa(n.at) : whenSa(n.at);
+  return (
+    <div data-testid="news-byline" style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:"4px 8px",fontFamily:D.body,fontSize:long?"13px":"12px",color:D.textMuted,lineHeight:1.5}}>
+      <span style={{color:D.textSecondary,fontWeight:600}}>{name ? `${name}, ${desk}` : desk}</span>
+      {when && <><span aria-hidden="true">·</span><time dateTime={n.at || undefined}>{when}</time></>}
+    </div>
+  );
+}
+
+/**
+ * One story on the feed. The cover and the card are a mouse's shortcut to the
+ * full read; the keyboard's is "Read more", a real button.
+ */
+function NewsCard({ n, lead = false, index, fresh, onOpen, publicRow }) {
+  const H = lead ? "h3" : "h4";
+  const headId = `news-h-${n.id}`;
+  return (
+    <article data-testid={`news-${n.id}`} data-new={fresh ? "true" : undefined} aria-labelledby={headId}
+      className={`os-news-card os-news-in${lead ? " os-news-lead" : ""}`}
+      onClick={(e)=>{ if (e.target.closest?.("button, a, [data-no-open]")) return; onOpen(n.id); }}
+      style={{animationDelay:`${Math.min(index, 8) * 45}ms`,background:D.surf1,border:`1px solid ${fresh ? D.borderMed : D.border}`,borderRadius:D.lg,overflow:"hidden",
+        display:lead?undefined:"flex",flexDirection:lead?undefined:"column",minWidth:0}}>
+      <div style={{position:"relative",minHeight:lead?"220px":undefined}}>
+        <NewsCover seed={n.id} school={n.schoolName || n.competitionName} team={n.teamCode} scope={n.scope} ratio={lead ? "auto" : "16 / 9"}
+          style={lead ? { minHeight: "220px", aspectRatio: "16 / 9" } : undefined}/>
+      </div>
+      <div style={{padding:lead?"20px 22px 18px":"14px 16px 12px",display:"flex",flexDirection:"column",gap:lead?"10px":"8px",flex:1,minWidth:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+          <Kicker n={n}/>
+          {fresh && <Badge color={D.emerald} data-testid={`news-new-${n.id}`}>New</Badge>}
+          {n.draft && <Badge color={D.amber}>Draft</Badge>}
+          {n.kind === "plan" && <Badge color={D.sky}>Match plan</Badge>}
+        </div>
+        <H id={headId} style={{fontFamily:D.head,fontSize:lead?"clamp(20px, 2.4vw, 28px)":"16px",fontWeight:700,color:D.textPrimary,lineHeight:1.25,letterSpacing:lead?"-0.01em":0,overflowWrap:"anywhere"}}>
+          {n.title}
+        </H>
+        <p data-testid="news-standfirst" style={{fontFamily:D.body,fontSize:lead?"15px":"13px",color:D.textSecondary,lineHeight:1.6,
+          display:"-webkit-box",WebkitLineClamp:lead?4:3,WebkitBoxOrient:"vertical",overflow:"hidden",overflowWrap:"anywhere"}}>
+          {standfirst(n.body, lead ? 320 : 200)}
+        </p>
+        <div style={{marginTop:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:"8px",flexWrap:"wrap"}}>
+          <Byline n={n}/>
+          <button type="button" className="pressBtn" data-testid={`news-open-${n.id}`} aria-label={`Read more: ${n.title}`} onClick={()=>onOpen(n.id)}
+            style={{minHeight:"44px",minWidth:"44px",padding:"0 4px",marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:"4px",
+              background:"transparent",border:"none",cursor:"pointer",fontFamily:D.head,fontSize:"13px",fontWeight:700,color:textOn(D.sky)}}>
+            Read more <Icon name="arrow-up-right" size="14px"/>
+          </button>
+        </div>
+        <div data-no-open="" onClick={(e)=>e.stopPropagation()}>{publicRow}</div>
+      </div>
+    </article>
+  );
+}
+
+/** The full read: the cover, the kicker, the headline, the byline, the whole body. */
+function NewsArticle({ n, onBack, publicRow, more, onOpen }) {
+  const head = useRef(null);
+  useEffect(() => { head.current?.focus?.({ preventScroll: true }); }, [n.id]);
+  const [copied, setCopied] = useState(null);
+  const isPublic = n.publicState === "approved" && !n.draft;
+  const share = async () => {
+    // The home page's own copy of the post (db/83): the public link names
+    // nothing the home page does not already show.
+    const url = `${window.location.origin}/#news-${n.id}`;
+    try {
+      if (navigator.share) { await navigator.share({ title: n.title, url }); setCopied("shared"); return; }
+    } catch (e) { if (e?.name === "AbortError") return; }
+    try { await navigator.clipboard.writeText(url); setCopied("copied"); }
+    catch { setCopied("failed"); }
+  };
+  return (
+    <article data-testid="news-read" aria-labelledby="news-read-h" className="os-news-in" style={{maxWidth:"760px",margin:"0 auto"}}>
+      <button type="button" className="pressBtn" data-testid="news-read-back" onClick={onBack}
+        style={{minHeight:"44px",padding:"0 14px 0 8px",marginBottom:"12px",display:"inline-flex",alignItems:"center",gap:"6px",
+          borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",color:D.textSecondary,cursor:"pointer",fontFamily:D.head,fontSize:"13px",fontWeight:700}}>
+        <Icon name="chevron-left" size="16px"/> Newsfeed
+      </button>
+      <div style={{borderRadius:D.lg,overflow:"hidden",border:`1px solid ${D.border}`}}>
+        <NewsCover seed={n.id} school={n.schoolName || n.competitionName} team={n.teamCode} scope={n.scope} ratio="16 / 9"/>
+      </div>
+      <header style={{padding:"18px 2px 4px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",marginBottom:"10px"}}>
+          <Kicker n={n} size="13px"/>
+          {n.draft && <Badge color={D.amber}>Draft</Badge>}
+          {n.kind === "plan" && <Badge color={D.sky}>Match plan</Badge>}
+        </div>
+        <h2 id="news-read-h" ref={head} tabIndex={-1} style={{fontFamily:D.head,fontSize:"clamp(24px, 5vw, 36px)",fontWeight:800,color:D.textPrimary,lineHeight:1.15,letterSpacing:"-0.015em",outline:"none",overflowWrap:"anywhere",marginBottom:"12px"}}>
+          {n.title}
+        </h2>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"10px",flexWrap:"wrap",paddingBottom:"14px",borderBottom:`1px solid ${D.border}`}}>
+          <Byline n={n} long/>
+          {isPublic && (
+            <button type="button" className="pressBtn" data-testid="news-read-share" onClick={share}
+              style={{minHeight:"44px",padding:"0 16px",display:"inline-flex",alignItems:"center",gap:"6px",borderRadius:D.pill,border:`1px solid ${D.border}`,
+                background:D.surf2,color:D.textPrimary,cursor:"pointer",fontFamily:D.head,fontSize:"13px",fontWeight:700}}>
+              <Icon name="send" size="14px"/> {copied === "copied" ? "Link copied" : "Share the home-page link"}
+            </button>
+          )}
+        </div>
+        {copied === "failed" && <p role="alert" style={{marginTop:"8px",fontFamily:D.body,fontSize:"12px",color:textOn(D.rose)}}>Could not copy the link on this device.</p>}
+        {copied === "copied" && <p role="status" className="sr-only">Link copied</p>}
+      </header>
+      <div data-testid="news-read-body" style={{padding:"16px 2px 8px"}}>
+        {bodyParagraphs(n.body).map((para, i) => (
+          <p key={i} style={{fontFamily:D.body,fontSize:"16px",color:D.textPrimary,lineHeight:1.75,whiteSpace:"pre-wrap",overflowWrap:"anywhere",marginBottom:"16px",maxWidth:"68ch"}}>{para}</p>
+        ))}
+      </div>
+      {publicRow}
+      {more.length>0 && (
+        <section aria-labelledby="news-read-more" style={{marginTop:"28px"}}>
+          <h3 id="news-read-more" style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:"10px"}}>
+            More for {kickerOf(n).split(" · ")[0]}
+          </h3>
+          <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
+            {more.map(m=>(
+              <button key={m.id} type="button" className="pressBtn" data-testid={`news-more-${m.id}`} onClick={()=>onOpen(m.id)}
+                style={{minHeight:"44px",padding:"10px 12px",textAlign:"left",borderRadius:D.md,border:`1px solid ${D.border}`,background:D.surf1,cursor:"pointer",display:"flex",gap:"12px",alignItems:"center"}}>
+                <span style={{width:"72px",flexShrink:0,borderRadius:D.sm,overflow:"hidden"}}>
+                  <NewsCover seed={m.id} school={m.schoolName || m.competitionName} team={m.teamCode} scope={m.scope} ratio="4 / 3"/>
+                </span>
+                <span style={{display:"flex",flexDirection:"column",gap:"2px",minWidth:0}}>
+                  <span style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,lineHeight:1.3,overflowWrap:"anywhere"}}>{m.title}</span>
+                  <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{whenSa(m.at)}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      <div style={{marginTop:"24px"}}>
+        <Btn variant="ghost" size="sm" data-testid="news-read-back-foot" onClick={onBack}>Back to the newsfeed</Btn>
+      </div>
+    </article>
+  );
+}
+
+/** A #read-<id> this reader has no post for: withdrawn, or never theirs to read. Nothing of it is shown. */
+function NotInFeed({ loading, onBack }) {
+  return (
+    <Card data-testid="news-read-missing" className="" sx={{padding:"20px",maxWidth:"640px",margin:"0 auto"}}>
+      {loading
+        ? <p role="status" style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted}}>Opening the post…</p>
+        : <>
+            <h2 style={{fontFamily:D.head,fontSize:"18px",fontWeight:700,color:D.textPrimary,marginBottom:"6px"}}>This post is not in your newsfeed</h2>
+            <p style={{fontFamily:D.body,fontSize:"14px",color:D.textSecondary,lineHeight:1.6,marginBottom:"14px"}}>
+              It may have been withdrawn, or it was written for a side or a school you do not follow.
+            </p>
+          </>}
+      <Btn size="sm" variant="ghost" data-testid="news-read-back" onClick={onBack}>Back to the newsfeed</Btn>
+    </Card>
+  );
+}
+
+/** The shape of the feed while the read is on the wire: a lead and three cards, drawn quietly. */
+function FeedSkeleton() {
+  const bar = (w, h = "12px") => <div style={{width:w,height:h,borderRadius:D.sm,background:D.surf3,animation:"pulse 1.6s ease-in-out infinite"}}/>;
+  return (
+    <div data-testid="news-loading" role="status" aria-busy="true" style={{display:"flex",flexDirection:"column",gap:"24px"}}>
+      <span className="sr-only">Loading the newsfeed…</span>
+      <div aria-hidden="true" className="os-news-lead" style={{background:D.surf1,border:`1px solid ${D.border}`,borderRadius:D.lg,overflow:"hidden"}}>
+        <div style={{aspectRatio:"16 / 9",background:D.surf2,animation:"pulse 1.6s ease-in-out infinite"}}/>
+        <div style={{padding:"20px",display:"flex",flexDirection:"column",gap:"12px"}}>{bar("40%")}{bar("85%","24px")}{bar("95%")}{bar("70%")}</div>
+      </div>
+      <div aria-hidden="true" className="os-news-grid">
+        {[0,1,2].map(i=>(
+          <div key={i} style={{background:D.surf1,border:`1px solid ${D.border}`,borderRadius:D.lg,overflow:"hidden"}}>
+            <div style={{aspectRatio:"16 / 9",background:D.surf2,animation:"pulse 1.6s ease-in-out infinite"}}/>
+            <div style={{padding:"14px",display:"flex",flexDirection:"column",gap:"10px"}}>{bar("35%")}{bar("80%","16px")}{bar("90%")}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
