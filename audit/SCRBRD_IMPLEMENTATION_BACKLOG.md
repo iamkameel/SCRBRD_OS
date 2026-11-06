@@ -5284,7 +5284,7 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 
 **Then:** SCRBRD-110 phase 2 (check-ins and flags; needs db/62), safeguarding phase 2 (suspension), public pages phase 2, SCRBRD-114 phases 2–4. **Waiting on Kameel:** the KZN schools' bye-laws and playing conditions (SCRBRD-114 phase 5; the CSA club regulations received are club administration only).
 
-## Merged 4–5 Nov 2026 with no backlog entry
+## Merged 4–6 Nov 2026 with no backlog entry
 
 - #234 (commit ec4b8b08, 2026-11-04): Finish the match from the pad (db/130), and the pilot journey walk.
 - #236 (commit 3124faf0, 2026-11-04): Docs: record Kameel's 4 Nov decisions (finish the match, fixtures, scope notes) and fix SOLO_TEST (docs only).
@@ -5301,3 +5301,6 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - #250 (commit c8004c52, 2026-11-05): Two phones, slice 2: compare the two books, three decisions, Accept can no longer double an over (db/136).
 - #251 (commit e291eab6, 2026-11-05): Fixtures: the office can put a called-off match back on.
 - #252 (commit 3c6f18ad, 2026-11-05): A role's season is fixed once appointed, and logged (db/137).
+- #254 (commit a2aab597, 2026-11-05): The parent's action list, A2: an ended link said plainly, and the school's terms (popia-2026-01) agreed in the app.
+- #253 (commit 2086c5bc, 2026-11-06): The platform owner's reads of a child are found by the school's "who read" (db/139).
+- #257 (commit 347aae8b, 2026-11-06): Backlog: recorded #248–#252 (docs only).
