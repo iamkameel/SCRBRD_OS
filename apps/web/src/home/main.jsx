@@ -131,12 +131,13 @@ function Home() {
   const news = useNews();
   useRevealFallback(`${live ? live.fixtures.length : -1}:${news ? news.posts.length : -1}`);
   const liveNow = live ? live.fixtures.filter((f) => f?.status === "live").length : 0;
+  const mode = arena?.mode ?? "wait";
   return (
     <>
       <Header appHref={APP} logo={SCRBRD_LOGO} live={liveNow} over/>
-      <main data-arena={arena?.mode ?? "wait"}>
+      <main data-arena={mode}>
         {arena?.mode === "3d" && <Arena forced={arena.forced} onFail={fail}/>}
-        <Hero appHref={APP} hasStrip={!!live} photo={HERO_PHOTO} mode={arena?.mode ?? "wait"}/>
+        <Hero appHref={APP} hasStrip={!!live} photo={HERO_PHOTO} mode={mode}/>
         <div id="home-after-film" tabIndex={-1} style={{ outline: "none", paddingTop: "24px" }}>
           <LiveStrip data={live} show="live"/>
           <LiveStrip data={live} show="today"/>
