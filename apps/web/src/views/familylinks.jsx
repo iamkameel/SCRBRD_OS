@@ -22,6 +22,7 @@ import { useId, useState } from "react";
 import { D, textOn } from "../design/tokens.js";
 import { api } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
+import { dayMonthYear } from "../lib/recognitionWords.js";
 import { holdsCapability } from "../rbac/index.js";
 import {
   REASON_MAX, REVOKE_KINDS, asChildLink, consequenceWords, isLastVerified, linkStateWords, mayOfferRevoke,
@@ -68,8 +69,8 @@ export function FamilyLinks({ role, player }) {
                 {l.guardianEmail && <p style={{ ...dNote(), overflowWrap: "anywhere" }}>{l.guardianEmail}</p>}
                 <p style={dNote()} data-testid="family-link-state">{linkStateWords(l, { readsEndings: mayRevoke })}</p>
                 <p style={dNote()}>
-                  {l.createdAt ? `Linked ${l.createdAt}${l.createdBy ? ` by ${l.createdBy}` : ""}` : ""}
-                  {l.verifiedAt ? ` · verified ${l.verifiedAt}${l.verifiedBy ? ` by ${l.verifiedBy}` : ""}` : ""}
+                  {l.createdAt ? `Linked ${dayMonthYear(l.createdAt)}${l.createdBy ? ` by ${l.createdBy}` : ""}` : ""}
+                  {l.verifiedAt ? ` · verified ${dayMonthYear(l.verifiedAt)}${l.verifiedBy ? ` by ${l.verifiedBy}` : ""}` : ""}
                   {l.consent === "granted" && l.consentVersion ? ` · terms ${l.consentVersion}` : ""}
                   {l.endedBy ? ` · ended by ${l.endedBy}` : ""}
                   {!l.accountActive ? " · account not active" : ""}
