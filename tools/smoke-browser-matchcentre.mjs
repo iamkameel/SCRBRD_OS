@@ -874,6 +874,79 @@ try {
     await ph5.ctx.close();
   }
 
+  group("CRI-1.6: on a phone the scorecard's header stays at the top as its rows scroll; a scroll cue where the table is wider than the screen");
+  {
+    const s6 = await open({ viewport: { width: 360, height: 740 } });
+    await signIn(s6.page, /sarah@example\.invalid|Director/);
+    ok("the fixture opens at 360 wide", await openMatch(s6.page, fx.live));
+    const P6 = s6.page;
+    await pickTab(P6, "scorecard");
+    await tid(P6, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
+    await P6.waitForTimeout(300);
+    const heads = await P6.evaluate(() => [...document.querySelectorAll('[data-testid="mc-head"]')].map((h) => ({
+      role: h.getAttribute("role"), cells: [...h.children].map((c) => c.getAttribute("role")), bg: getComputedStyle(h).backgroundColor })));
+    ok("the batting and the bowling each have a header row: role=row, six role=columnheader cells", heads.length === 2
+       && heads.every((h) => h.role === "row" && h.cells.length === 6 && h.cells.every((c) => c === "columnheader")), JSON.stringify(heads));
+    ok("...each opaque, so no row shows through it", heads.every((h) => h.bg !== "rgba(0, 0, 0, 0)"), JSON.stringify(heads));
+    // Scroll the batting table's head out of view, its rows still on screen.
+    const into = (/** @type {number} */ by) => P6.evaluate(async (by) => {
+      // The top of the screen, as the reader sees it: under the top bar where it stays on screen.
+      const bar = document.querySelector('[data-testid="topbar"], [data-testid="persona-bar"]')?.getBoundingClientRect();
+      const table = document.querySelector('[role="table"][aria-label="Batting"]');
+      const head = table.querySelector('[data-testid="mc-head"]');
+      const m = document.getElementById("os-content");
+      const sc = m && m.scrollHeight > m.clientHeight ? m : document.scrollingElement;
+      const top0 = bar && bar.top <= 0.5 && bar.bottom > 0 ? bar.bottom : 0;
+      sc.scrollTop += table.getBoundingClientRect().top - top0 + by;
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const b2 = document.querySelector('[data-testid="topbar"], [data-testid="persona-bar"]')?.getBoundingClientRect();
+      const top = b2 && b2.top <= 0.5 && b2.bottom > 0 ? b2.bottom : 0;
+      const h = head.getBoundingClientRect(), t = table.getBoundingClientRect();
+      const hit = document.elementFromPoint(h.left + h.width - 12, h.top + h.height / 2);
+      return { headTop: h.top, top, tableTop: t.top, tableBottom: t.bottom, onTop: !!hit && head.contains(hit), stuck: head.getAttribute("data-stuck") };
+    }, by);
+    const stuck = await into(120);
+    ok(`scrolled 120px into the batting: its header holds at the top of the screen (${Math.round(stuck.headTop)} = ${Math.round(stuck.top)}), over the rows`,
+       Math.abs(stuck.headTop - stuck.top) <= 1 && stuck.tableTop < stuck.top && stuck.tableBottom > stuck.headTop + 100 && stuck.onTop && stuck.stuck === "true", JSON.stringify(stuck));
+    const past = await P6.evaluate(async () => {
+      const table = document.querySelector('[role="table"][aria-label="Batting"]');
+      const head = table.querySelector('[data-testid="mc-head"]');
+      const m = document.getElementById("os-content");
+      const sc = m && m.scrollHeight > m.clientHeight ? m : document.scrollingElement;
+      sc.scrollTop += table.getBoundingClientRect().bottom + 200;
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const h = head.getBoundingClientRect(), t = table.getBoundingClientRect();
+      return { headBottom: h.bottom, tableBottom: t.bottom };
+    });
+    ok("...and goes with its table once the table has passed: it never sits over the bowling", past.headBottom <= past.tableBottom + 1, JSON.stringify(past));
+    await P6.evaluate(() => { (document.getElementById("os-content")?.scrollHeight ?? 0) > (document.getElementById("os-content")?.clientHeight ?? 0)
+      ? (document.getElementById("os-content").scrollTop = 0) : window.scrollTo(0, 0); });
+    await P6.waitForTimeout(200);
+    ok("...and back at the top it is where it was drawn, held by nothing", await P6.evaluate(() => !document.querySelector('[data-testid="mc-head"][data-stuck]')
+       && !document.querySelector('[data-testid="mc-head"]').style.transform));
+    ok("at 360 every column fits: no scroll cue, nothing sideways", await tid(P6, "mc-scroll-cue").count() === 0
+       && await P6.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    // A phone at 200% zoom: the six columns no longer fit, and the table says it scrolls.
+    await P6.setViewportSize({ width: 280, height: 740 });
+    await P6.waitForTimeout(500);
+    const cue = tid(P6, "mc-scroll-cue").first();
+    ok("at 280 wide the table scrolls in its own box, and says so above it", await cue.isVisible().catch(() => false)
+       && /Scroll sideways for every figure/.test(await cue.innerText().catch(() => "")) && await tid(P6, "mc-scroll-fade").count() >= 1);
+    ok("...the cue on the 12px floor, and hidden from a screen reader (it reads every cell anyway)",
+       await cue.evaluate((e) => parseFloat(getComputedStyle(e).fontSize) >= 12 && e.getAttribute("aria-hidden") === "true").catch(() => false));
+    ok("...and still nothing sideways on the page", await P6.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    const cues = await tid(P6, "mc-scroll-cue").count();
+    await P6.evaluate(() => { const t = document.querySelector('[role="table"][aria-label="Batting"]'); t.scrollLeft = t.scrollWidth; });
+    await P6.waitForTimeout(300);
+    ok("scrolled to its last column, the batting's cue goes (the bowling's stays)", await tid(P6, "mc-scroll-cue").count() === cues - 1, `${cues} → ${await tid(P6, "mc-scroll-cue").count()}`);
+    await P6.setViewportSize(DESK);
+    await P6.waitForTimeout(400);
+    const deskHeld = (await into(120)).stuck;
+    ok("on a desktop the header is not held and there is no cue", deskHeld == null && await tid(P6, "mc-scroll-cue").count() === 0, deskHeld);
+    ok("no console errors (sticky header)", s6.errors.length === 0, s6.errors.join(" | "));
+    await s6.ctx.close();
+  }
+
   group("One address per tab (CRI-1.3): a link opens its tab, a tab moves the address, the back button goes back a tab");
   {
     const dl = await open();
