@@ -60,15 +60,36 @@ const DEMO_CAST = [
   "spectator", "watcher", "analyst", "platform", "owner",
 ].map((e) => (e.includes("@") ? e : `${e}@example.invalid`));
 
-const api = spawn(process.execPath, ["services/api/server.mjs"], {
-  env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", SESSION_SECRET: "panel-sweep-secret",
-         ALLOW_DEV_LOGIN: "1", PUBLIC_PAGES: "on", PUBLIC_PSEUDONYM_SECRET: "panel-sweep-pseudonyms-0123456789abcdef",
-         PUBLIC_TRUST_PROXY_HOPS: "1", SERVE_CLIENT: process.env.PANEL_SWEEP_CLIENT || "apps/web/dist" },
-  stdio: ["ignore", "pipe", "pipe"],
-});
 const apiErr = /** @type {string[]} */ ([]);
-api.stderr.on("data", (d) => apiErr.push(d.toString()));
-api.stdout.on("data", (d) => { if (DEBUG) process.stdout.write(d); });
+/** @type {{when: string, code: number | null, signal: string | null, tail: string}[]} */
+const apiExits = [];
+let stopping = false;
+/** The API, restarted if it goes down mid-sweep: an exit is recorded (a finding in itself), not the end of the run. */
+function startApi() {
+  const p = spawn(process.execPath, ["services/api/server.mjs"], {
+    env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", SESSION_SECRET: "panel-sweep-secret",
+           ALLOW_DEV_LOGIN: "1", PUBLIC_PAGES: "on", PUBLIC_PSEUDONYM_SECRET: "panel-sweep-pseudonyms-0123456789abcdef",
+           PUBLIC_TRUST_PROXY_HOPS: "1", SERVE_CLIENT: process.env.PANEL_SWEEP_CLIENT || "apps/web/dist" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  p.stderr.on("data", (d) => apiErr.push(d.toString()));
+  p.stdout.on("data", (d) => { if (DEBUG) process.stdout.write(d); });
+  p.on("exit", (code, signal) => {
+    if (stopping) return;
+    apiExits.push({ when: new Date().toISOString(), code, signal, tail: apiErr.join("").slice(-1200) });
+    console.log(`  ! the API exited (code ${code}, signal ${signal}); restarting`);
+    api = startApi();
+  });
+  return p;
+}
+let api = startApi();
+async function apiUp() {
+  for (let i = 0; i < 80; i++) {
+    try { const r = await fetch(`${BASE}/api/health`); if ((await r.json()).db === "ok") return true; } catch { /* not up */ }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
+}
 
 const owner = new pg.Pool({ connectionString: ownerUrl() });
 const q = async (/** @type {string} */ t, /** @type {any[]} */ p = []) => (await owner.query(t, p)).rows;
@@ -172,7 +193,8 @@ async function goTo(/** @type {any} */ page, /** @type {string} */ key, /** @typ
 
 // What a sweep must never press: a write, a takeover, a way out.
 const SKIP = /save|submit|delete|retire|revoke|withdraw|publish|send|sign out|log out|remove|cancel|approve|reject|start|scor|declare|record|add |new |confirm|agree|accept|decline|dispute|finish|finalise|lift|pause|resume|undo|reset|clear|mark|claim|link|unlink|request|invite|raise|report|close|end |sign|\+/i;
-const SKIP_ID = /^(availability-set|sidebar-|mnav-|nav-|drawer-|topbar-|role-option|persona-|panel-error|skip-link|demo-banner)/;
+// ...nor open the pad, which takes the whole screen (resume-practice-open).
+const SKIP_ID = /^(availability-set|sidebar-|mnav-|nav-|drawer-|topbar-|role-option|persona-|panel-error|skip-link|demo-banner|resume-|pad-|scorer-)/;
 
 /**
  * The controls on this screen that change what it shows without writing:
@@ -324,10 +346,7 @@ async function sweepPublic(/** @type {{id: string, label: string}[]} */ matches)
 
 let exit = 0;
 try {
-  for (let i = 0; i < 80; i++) {
-    try { const r = await fetch(`${BASE}/api/health`); if ((await r.json()).db === "ok") break; } catch { /* not up */ }
-    await new Promise((r) => setTimeout(r, 250));
-  }
+  await apiUp();
   const all = (await q(`select email from app_user where email is not null order by email`)).map((r) => r.email);
   const asked = process.env.PANEL_SWEEP_ACCOUNTS?.split(",").map((e) => e.trim()).filter(Boolean);
   let accounts = asked ?? DEMO_CAST.filter((e) => all.includes(e));
@@ -352,9 +371,19 @@ try {
 
   for (const who of accounts) {
     const before = crashes.length;
-    if (DESKTOP) await sweepAccount(who, "desktop", matches);
     const persona = /^(parent|pupil|pillay|sarah)/.test(who);
-    if (PHONE && (persona || PHONE_ALL)) await sweepAccount(who, "phone", matches);
+    for (const width of /** @type {const} */ (["desktop", "phone"])) {
+      if (width === "desktop" ? !DESKTOP : !(PHONE && (persona || PHONE_ALL))) continue;
+      await apiUp();
+      const exits = apiExits.length, mark = crashes.length;
+      await sweepAccount(who, width, matches).catch((e) => console.log(`  ! ${who} [${width}]: ${String(e.message).split("\n")[0]}`));
+      // The API went down under this person: his sweep proves nothing; once more on the restarted one.
+      if (apiExits.length > exits) {
+        crashes.splice(mark);
+        await apiUp();
+        await sweepAccount(who, width, matches).catch((e) => console.log(`  ! ${who} [${width}] again: ${String(e.message).split("\n")[0]}`));
+      }
+    }
     console.log(`  ${crashes.length > before ? "✗" : "✓"} ${who}${crashes.length > before ? ` — ${crashes.length - before} found` : ""}`);
   }
   await sweepPublic(matches);
@@ -380,6 +409,10 @@ try {
   }
   const fails = new Map();
   for (const f of apiFailures) { const k = `${f.status} ${f.path.replace(/[0-9a-f-]{36}/g, ":id")}`; fails.set(k, [...(fails.get(k) ?? []), f.who]); }
+  if (apiExits.length) {
+    lines.push("## The API exited mid-sweep (restarted; that person's sweep was run again)", "");
+    for (const x of apiExits) lines.push(`- ${x.when}: code ${x.code}, signal ${x.signal}`, "", "```", x.tail, "```", "");
+  }
   lines.push("## API answers of 400 or more (for diagnosis; not counted)", "");
   for (const [k, ws] of [...fails].sort()) lines.push(`- ${k} — ${[...new Set(ws)].slice(0, 8).join(", ")}${ws.length > 8 ? " …" : ""} (${ws.length}×)`);
   const md = lines.join("\n") + "\n";
@@ -392,6 +425,7 @@ try {
 } finally {
   await browser.close().catch(() => {});
   await owner.end().catch(() => {});
+  stopping = true;
   api.kill();
   if (exit && apiErr.length && DEBUG) console.log(apiErr.join("").slice(-3000));
 }

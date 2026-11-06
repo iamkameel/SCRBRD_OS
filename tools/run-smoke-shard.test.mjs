@@ -34,7 +34,7 @@ const onDisk = readdirSync(join(ROOT, "tools"))
 // The walks the runner accounts for but never runs: NO_DB ("" is smoke.mjs)
 // and BY_HAND in tools/run-smoke-api.mjs. Anything else on disk must be in
 // exactly one of the two sets below.
-const NOT_HERE = ["", "scorer", "persist", "a11y", "demo-cast"];
+const NOT_HERE = ["", "scorer", "persist", "a11y", "demo-cast", "browser-panel-sweep"];
 
 /** @type {{ api: string[], browser: string[] }} */
 const sets = { api: [], browser: [] };
@@ -98,7 +98,7 @@ console.log("\nboth sets");
 const both = [...sets.api, ...sets.browser];
 check("no walk is in both sets", new Set(both).size === both.length);
 check("every browser walk on disk is in the browser set",
-  JSON.stringify(onDisk.filter((w) => w.startsWith("browser-")).sort()) === JSON.stringify([...sets.browser].sort()));
+  JSON.stringify(onDisk.filter((w) => w.startsWith("browser-") && !NOT_HERE.includes(w)).sort()) === JSON.stringify([...sets.browser].sort()));
 const expected = onDisk.filter((w) => !NOT_HERE.includes(w)).sort();
 check("the API set and the browser set are every runnable walk on disk", JSON.stringify([...both].sort()) === JSON.stringify(expected),
   `on disk but in neither: ${expected.filter((w) => !both.includes(w)).join(",") || "none"}; in a set but not on disk: ${both.filter((w) => !expected.includes(w)).join(",") || "none"}`);
