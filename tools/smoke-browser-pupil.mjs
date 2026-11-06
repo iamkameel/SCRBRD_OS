@@ -13,6 +13,8 @@
  *   - he answers for himself from his fixture, and the row says he did;
  *   - Passport shows his figures — a scorebook innings he played — and the
  *     Wheel tab (SCRBRD-102) draws;
+ *   - his personal bests (RECOGNITION R5): School Records first, in the
+ *     spec's empty-state words, Friendly under the filter, never a rank;
  *   - the Match Centre lights his own row and offers a wheel for him only;
  *   - Me shows his own injury record, the nature and the physio's notes
  *     (selfaccess), and his conduct record only when he asks for it (§9 Q6);
@@ -317,6 +319,24 @@ try {
   await tid(s.page, "mc-back").click({ timeout: 4000 }).catch(() => {});
   await s.page.waitForTimeout(600);
 
+  // RECOGNITION R4 (db/140): a half colours of his, withdrawn; and a five-for
+  // (five in five, so a hat-trick too) in a played match the scorer has not
+  // sealed. Staged after Matches, whose checks are about other fixtures.
+  const R4_SEASON = (await q(`select id from season where level = 'school' and label = '2026'`))[0].id;
+  const R4W = (await q(`insert into honour (player_id, kind, season_id) values ($1, 'half_colours', $2) returning id`, [PILLAY, R4_SEASON]))[0].id;
+  await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: awarded in error' where id = $1`, [R4W]);
+  const R4M = (await q(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
+                        values ($1, '1XI', 'Verify R4 XI', '2026-09-19 09:00+02', 'T20', 20, 'complete') returning id`, [HIL]))[0].id;
+  for (let g = 1; g <= 5; g++) {
+    await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq, client_ts,
+                                     kind, ball_type, value, bowler_id, dismissal, payload)
+             values ($1, $2, $3, 0, 1, $4, 'r4-walk', $5, $3, now(), 'ball', 'W', 0, $6, 'bowled', '{}')`, [R4M, HIL, g, scorer, `r4-walk-${g}`, PILLAY]);
+  }
+  const MON3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const saToday = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Johannesburg" }).format(new Date());
+  const [ty, tm, td] = saToday.split("-").map(Number);
+  const DM = `${td} ${MON3[tm - 1]}`, DMY = `${DM} ${ty}`;
+
   group("Passport: his figures, on the board; the Wheel tab");
   ok("Passport opens", await go(s.page, "passport"));
   // The board and the season tab say "Reading your career figures…" and
@@ -340,6 +360,32 @@ try {
   await tid(s.page, "passport-tab-honours").click({ timeout: 4000 }).catch(() => {});
   await afterReads(s.page, 1200);
   ok("the Honours tab draws", await tid(s.page, "passport-milestones").count() === 1 && await tid(s.page, "passport-honours").count() === 1);
+  {
+    // R4 (D6, §7): where each mark came from, in words beside its mark.
+    const miles = await inner(s.page, "passport-milestones");
+    ok("R4: his five-for says the scorer has not sealed it yet", /Five-for \(5 wickets\) · v Verify R4 XI · Sat 19 Sep · not yet sealed by the scorer/.test(miles), miles);
+    ok("...beside a dashed star, hidden from a screen reader (the words say it)",
+       await s.page.locator('[data-testid="passport-milestone-seal"][data-sealed="false"][aria-hidden="true"]').count() >= 1);
+    // D3, D4: his withdrawn honour stays on his own passport, its date and no reason.
+    const hon = await inner(s.page, "passport-honours");
+    ok("R4: his withdrawn half colours stays on his passport, with its date", hon.includes(`Half colours 2026 · withdrawn ${DMY}`), hon);
+    ok("...and never the reason", !/awarded in error|the walk/i.test(hon), hon);
+  }
+  // RECOGNITION R5 (D23, D24): his bests, School Records the headline group.
+  // His one innings is the scorebook's, a friendly: so School Records holds
+  // nothing yet, said in the spec's words, and the filter opens Friendly.
+  const bestsSaid = await inner(s.page, "passport-bests");
+  ok("his personal bests card draws, School Records first, in the spec's words",
+     /Personal bests/i.test(bestsSaid) && /Not enough eligible data/.test(bestsSaid), bestsSaid.replace(/\n/g, " / "));
+  ok("...with the filter saying which group is shown",
+     await tid(s.page, "passport-bests-group-school_records").getAttribute("aria-pressed") === "true");
+  await tid(s.page, "passport-bests-group-friendly").click({ timeout: 4000 }).catch(() => {});
+  await s.page.waitForTimeout(300);
+  const friendlySaid = await inner(s.page, "passport-bests");
+  ok("...Friendly: his best, his words, the group named",
+     /Your best: 34\*? v Verify Book XI · Friendly/.test(friendlySaid) && /in verified SCRBRD matches since Sep 2026/.test(friendlySaid),
+     friendlySaid.replace(/\n/g, " / "));
+  ok("...and never a rank (D23)", !/\b(\d+(st|nd|rd|th)|rank(ed)?|place)\b/i.test(friendlySaid + bestsSaid));
   const fp = await floors(s.page);
   ok(`Passport at phone width: nothing read under 12px (${fp.small.length})`, fp.small.length === 0, fp.small.slice(0, 4).join(" · "));
   ok(`...nothing tapped under 44px (${fp.tiny.length})`, fp.tiny.length === 0, fp.tiny.slice(0, 4).join(" · "));
@@ -1027,6 +1073,39 @@ try {
     await q(`delete from news_post where id = any($1::uuid[])`, [FILLER]);
     ok("the walk's 101 newer posts are gone, and their notices", (await q(`select count(*)::int as n from news_post where id = any($1::uuid[])`, [FILLER]))[0].n === 0
        && (await q(`select count(*)::int as n from notification where subject_id = any($1::uuid[])`, [FILLER]))[0].n === 0);
+
+    // ── RECOGNITION R4: the family's card, before and after the seal (D3, D6, §7) ──
+    const fam = await open();
+    ok("R4: his parent signs in", await signInAs(fam.page, "parent@example.invalid"));
+    await afterReads(fam.page, 1500);
+    const before = (await inner(fam.page, "season-milestone")).trim();
+    ok("her card: his five-for, in her words, not yet sealed by the scorer",
+       /^R Pillay's (first )?(five-for · 5 wickets|hat-trick ·) v Verify R4 XI · not yet sealed by the scorer$/.test(before), before);
+    ok("...beside a dashed star", await fam.page.locator('[data-testid="season-milestone-seal"][data-sealed="false"]').count() === 1);
+    const famHon = await inner(fam.page, "family-honours");
+    ok("her card: his withdrawn half colours, its date, and that the school can say why",
+       famHon.includes(`Half colours 2026 · withdrawn ${DMY} · the school can say why`) && !/awarded in error|the walk/i.test(famHon), famHon);
+    ok("she has not been told of it on the ball", !/R Pillay's (first )?(five-for|hat-trick)/.test(await inner(fam.page, "notices-card")));
+    const fh = await floors(fam.page);
+    ok(`her Home: nothing under 12px (${fh.small.length}), nothing tapped under 44px (${fh.tiny.length})`, fh.small.length === 0 && fh.tiny.length === 0, [...fh.small, ...fh.tiny].slice(0, 4).join(" · "));
+    ok("no scoping refusals and no page errors", fam.refusals.length === 0 && fam.errors.length === 0, fam.refusals[0] ?? fam.errors.join(" | "));
+    await fam.ctx.close();
+    // The scorer seals the innings: the figures he read back are the log's.
+    await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq, client_ts, kind, payload)
+             values ($1, $2, 6, 0, 1, $3, 'r4-walk', 'r4-walk-6', 6, now(), 'innings_end',
+                     '{"reason":"declared","confirmed":{"runs":0,"wickets":5,"balls":5}}')`, [R4M, HIL, scorer]);
+    const sealed = await open();
+    await signInAs(sealed.page, "parent@example.invalid");
+    await afterReads(sealed.page, 1500);
+    const after = (await inner(sealed.page, "season-milestone")).trim();
+    ok("sealed: her card says so, and when, in §7's words",
+       new RegExp(`^R Pillay's (first )?(five-for · 5 wickets|hat-trick ·) v Verify R4 XI · sealed by the scorer, ${DM}$`).test(after), after);
+    ok("...beside the medal", await sealed.page.locator('[data-testid="season-milestone-seal"][data-sealed="true"]').count() === 1);
+    ok("...and she is told, now and not before", /R Pillay's (first )?(five-for|hat-trick)/.test(await inner(sealed.page, "notices-card")), await inner(sealed.page, "notices-card"));
+    await sealed.ctx.close();
+    const toKids = await q(`select count(*)::int as n from notification n join app_user u on u.id = n.recipient_id
+                             where n.subject_id = $1 and u.player_id is not null`, [R4M]);
+    ok("nothing about it went to a child alone", toKids[0].n === 0, toKids[0].n);
   }
   await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: withdrawn' where id = $1`, [keptAgain]);
   ok("the walk leaves no live captaincy of his behind", (await q(`select count(*)::int as n from honour where player_id = $1 and withdrawn_at is null`, [PILLAY]))[0].n === 0);

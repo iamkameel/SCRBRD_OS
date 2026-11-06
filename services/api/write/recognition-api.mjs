@@ -20,7 +20,10 @@ import { runAsPrincipal } from "../auth/auth-db.mjs";
 // pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
 const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
+// Not player_of_match: a match's award is decided through potm-api.mjs, and
+// db/142's honour_match_award_door refuses one written here.
 const KINDS = ["colours", "half_colours", "honours", "captain", "vice_captain", "player_of_season", "award"];
+const WITHDRAWN_KINDS = ["correction", "other"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SEASON = /^\d{4}(\/\d{2})?$/;
 const isoDate = (/** @type {unknown} */ v, /** @type {string} */ code) => {
@@ -79,14 +82,19 @@ export function recognitionRoutes({ pool, secret }) {
       });
     }),
 
-    // POST /api/honours/:id/withdraw { reason }
+    // POST /api/honours/:id/withdraw { reason, kind? }
+    //   kind (D21, db/142): 'correction' when a scorecard correction is why,
+    //   else 'other' (the default). Only a Player of the Match's 'correction'
+    //   is told to the side, naming nobody; the reason is told to nobody.
     withdraw: handle(async (req) => {
       const reason = String(req.body?.reason ?? "").trim();
       if (reason.length < 3 || reason.length > 200) throw err("reason_required");
+      const kind = req.body?.kind == null ? "other" : String(req.body.kind);
+      if (!WITHDRAWN_KINDS.includes(kind)) throw err("kind_invalid");
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         const { rowCount } = await client.query(
-          `update honour set withdrawn_at = now(), withdrawn_reason = $2
-            where id = $1 and withdrawn_at is null`, [req.params.id, reason]);
+          `update honour set withdrawn_at = now(), withdrawn_reason = $2, withdrawn_kind = $3
+            where id = $1 and withdrawn_at is null`, [req.params.id, reason, kind]);
         // "Not yours" and "already withdrawn" are the same silence: confirming
         // an honour id exists for a boy the caller may not read is the leak.
         return { withdrawn: rowCount };

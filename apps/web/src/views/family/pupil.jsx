@@ -31,6 +31,9 @@ import { MyLiftLine } from "../lifts.jsx";
 import { CaptainCard } from "./captain.jsx";
 import { TodoCard } from "./todo.jsx";
 import { Compare } from "../compare.jsx";
+import { SealMark } from "../../ui/sealMark.jsx";
+import { honourWords, isSealed, isWithdrawn, provenanceOf } from "../../lib/recognitionWords.js";
+import { PersonalBests } from "./bests.jsx";
 
 /** The pupil himself, in the shape the shared cards take: his own player row. */
 function useSelf(role) {
@@ -249,14 +252,29 @@ function HonoursTab({ me, role }) {
   const honours = rec.filter((r) => r.family !== "milestone");
   return (
     <>
+      {/* RECOGNITION R5 (D23, D24): his own bests, School Records first. */}
+      <PersonalBests role={role} playerId={me.id} who="Your" testid="passport-bests"/>
       <Card label="Milestones" testid="passport-milestones">
-        {miles.length ? miles.map((m, i) => (
-          <Line key={`${m.kind}-${i}`}>{m.label}{m.opponent ? ` · v ${m.opponent}` : ""}{m.on ? ` · ${humanDate(m.on)}` : ""}</Line>
-        )) : <NoneOr read={recRead} what="your milestones" none="No milestone yet." onRetry={() => setNonce((n) => n + 1)} testid="passport-milestones-none"/>}
+        {miles.length ? miles.map((m, i) => {
+          // Where it came from (R4): the seal's mark beside its words, and
+          // "from the scorebook" for a card read off a book (D6, §7).
+          const said = provenanceOf(m);
+          return (
+            <Line key={`${m.kind}-${i}`} testid="passport-milestone">
+              <SealMark sealed={isSealed(m)} testid="passport-milestone-seal"/>{" "}
+              {m.label}{m.opponent ? ` · v ${m.opponent}` : ""}{m.on ? ` · ${humanDate(m.on)}` : ""}
+              {said.length > 0 && <span style={{ color: T.content.secondary }} data-testid="passport-milestone-source"> · {said.join(" · ")}</span>}
+            </Line>
+          );
+        }) : <NoneOr read={recRead} what="your milestones" none="No milestone yet." onRetry={() => setNonce((n) => n + 1)} testid="passport-milestones-none"/>}
       </Card>
       <Card label="Honours and caps" testid="passport-honours">
         {honours.length ? honours.map((h, i) => (
-          <Line key={`${h.family}-${h.kind}-${i}`}>{h.label}{h.season ? ` · ${h.season}` : h.on ? ` · ${humanDate(h.on)}` : ""}</Line>
+          // A withdrawn honour stays on his own passport, its date and no
+          // reason (D3, D4): "Half colours 2026 · withdrawn 3 Oct 2026".
+          isWithdrawn(h)
+            ? <Line key={`${h.family}-${h.kind}-${i}`} quiet testid="passport-honour-withdrawn">{honourWords(h)}</Line>
+            : <Line key={`${h.family}-${h.kind}-${i}`}>{h.label}{h.season ? ` · ${h.season}` : h.on ? ` · ${humanDate(h.on)}` : ""}</Line>
         )) : <NoneOr read={recRead} what="your honours" none="None on record yet." onRetry={() => setNonce((n) => n + 1)} testid="passport-honours-none"/>}
       </Card>
       {lines.length > 0 && (

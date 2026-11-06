@@ -210,6 +210,8 @@ const WALKS = [
   // he is at school, ended when he leaves — and option C for the public name.
   "link18",
   "recognition",
+  // RECOGNITION R5 (db/141): personal bests, who reads them, which matches count.
+  "bests",
   "season",
   "requests",
   "enrol",
@@ -345,6 +347,11 @@ const WALKS = [
 const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-dossier", "browser-handover", "browser-handover-offline", "browser-innings-end", "browser-quarantine", "browser-drs", "browser-dismissals", "browser-discipline", "browser-support", "browser-seasons", "browser-rulebook", "browser-duties", "browser-fixture-create", "browser-held", "browser-toss", "browser-offline-undo", "browser-dayof",
   // SCRBRD-082 / SCRBRD-084: the Post-Match Report and the Season Awards tab.
   "browser-report", "browser-awards",
+  // RECOGNITION R6 (db/142): Player of the Match on the staff sheet — the
+  // suggestions with their figures, none chosen; a guardian's own boy cannot
+  // be chosen; the confirm sheet's words; the side told, nobody alone; a
+  // withdrawal after a correction naming nobody; 12px, 44px, 56px at 390.
+  "browser-potm",
   // Redesign step 3c / SCRBRD-098: the Match Centre's six tabs, the
   // scorecard's layout and the shared commentary, on a real scored match.
   "browser-matchcentre",
