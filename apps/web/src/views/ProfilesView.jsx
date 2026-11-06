@@ -17,6 +17,8 @@ import { Icon } from "../ui/icons.jsx";
 import { SourceLine } from "../ui/sourceLine.jsx";
 import { SRC_BALLS, SRC_RECORD, WINDOW_ALL, dateWindow } from "../lib/sourceWords.js";
 import { MIN_BALLS_BOWLED, MIN_BALLS_FACED } from "@scrbrd/scoring";
+import { SealMark } from "../ui/sealMark.jsx";
+import { honourWords, isSealed, isWithdrawn, provenanceOf } from "../lib/recognitionWords.js";
 
 // ══════════════════════════════════════════════════════
 //  SETTINGS / RBAC VIEW
@@ -830,16 +832,27 @@ function RecognitionCard({ playerId, role }) {
       <Card sx={{padding:"14px",marginTop:"16px"}} data-testid="recognition-card">
         <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"8px"}}>Recognition</div>
         <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-          {rows.map((r,i)=>(
-            <span key={`${r.family}-${r.kind}-${r.id??i}`} data-testid={`recognition-${r.family}`}
-              title={[r.season, r.on, r.opponent&&`v ${r.opponent}`, r.citation, r.isPublic?"on the public board":null].filter(Boolean).join(" · ")}
+          {rows.map((r,i)=>{
+            // R4 (db/140): a milestone says where it came from, in words
+            // beside its mark; a withdrawn honour reaches this card only for
+            // the school's deciders, with its date and never its reason (D3).
+            const withdrawn = isWithdrawn(r);
+            const said = provenanceOf(r);
+            return (
+            <span key={`${r.family}-${r.kind}-${r.id??i}`} data-testid={withdrawn ? "recognition-withdrawn" : `recognition-${r.family}`}
+              title={[r.season, r.on, r.opponent&&`v ${r.opponent}`, r.sideCode&&r.family==="milestone"?r.sideCode:null, r.citation, r.isPublic?"on the public board":null].filter(Boolean).join(" · ")}
               style={{display:"inline-flex",alignItems:"center",gap:"6px",padding:"4px 10px",borderRadius:D.pill,fontFamily:D.body,fontSize:"12px",
-                background:FAMILY_TONE[r.family]+"14",border:`1px solid ${FAMILY_TONE[r.family]}33`,color:textOn(FAMILY_TONE[r.family])}}>
-              {r.label}
-              <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{r.season??r.on}</span>
-              {r.isPublic&&<span style={{fontSize:"12px"}}><Icon name="landmark" label="on the public board"/></span>}
+                background:withdrawn?"transparent":FAMILY_TONE[r.family]+"14",
+                border:`1px ${withdrawn||said.length?"dashed":"solid"} ${FAMILY_TONE[r.family]}${withdrawn?"66":"33"}`,
+                color:withdrawn?D.textMuted:textOn(FAMILY_TONE[r.family])}}>
+              {r.family==="milestone"&&<SealMark sealed={isSealed(r)}/>}
+              {withdrawn ? honourWords(r) : r.label}
+              {!withdrawn&&<span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{r.season??r.on}</span>}
+              {said.length>0&&<span data-testid="recognition-source" style={{fontSize:"12px",color:D.textMuted}}>{said.join(" · ")}</span>}
+              {r.isPublic&&!withdrawn&&<span style={{fontSize:"12px"}}><Icon name="landmark" label="on the public board"/></span>}
             </span>
-          ))}
+            );
+          })}
         </div>
       </Card>
     </div>

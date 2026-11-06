@@ -13,9 +13,10 @@ import { resultText, teamOf } from "../../lib/matchCentre.js";
 import { humanDate } from "../../lib/format.js";
 import { fixturesOf, lineFor, noticesFor, opponentOf, endOf } from "../../lib/family.js";
 import { Board } from "../../ui/board.jsx";
-import { Icon } from "../../ui/icons.jsx";
 import { Action, AvailabilityBlock, BusLine, Card, Line, TeamSheetLine, WeatherLine, whenOf } from "./parts.jsx";
 import { useFold } from "./useFold.js";
+import { SealMark } from "../../ui/sealMark.jsx";
+import { familyMilestoneLine, familyName, honourWords, isFirst, isSealed, isWithdrawn, provenanceOf } from "../../lib/recognitionWords.js";
 
 const DAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -114,26 +115,60 @@ export function LastMatchCard({ child, matches, onOpen, now, self = false }) {
   );
 }
 
-/** This season's figures and his latest milestone (§2.1). Not drawn with neither. */
+/**
+ * This season's figures and his latest milestone (§2.1). Not drawn with neither.
+ *
+ * The milestone says where it came from (RECOGNITION R4, D6): once the scorer
+ * has sealed it, the medal and "Rohan's first fifty · 63 v DHS · sealed by the
+ * scorer, 12 Sep"; before, a dashed star and "not yet sealed by the scorer".
+ * Read through recognition(), which gives a parent her own child's and nobody
+ * else's. On a parent's screen his honours follow, a withdrawn one with its
+ * date and "the school can say why", never the reason (D3, D4); the pupil
+ * reads his own on the Passport's Honours tab.
+ */
 export function SeasonCard({ child, role, self = false }) {
   const { rows: seasons } = useLive("career_by_season", role);
-  const { rows: miles } = useLive("milestones", role, 0, { playerId: child.id });
+  const { rows: rec } = useLive("recognition", role, 0, { playerId: child.id });
   const s = seasons.find((r) => r.id === child.id && r.currentSeason) ?? null;
-  const m = miles.filter((x) => x.playerId === child.id)[0] ?? null;
-  if (!s && !m) return null;
+  const miles = rec.filter((x) => x.family === "milestone");
+  const m = miles[0] ?? null;
+  const honours = self ? [] : rec.filter((x) => x.family === "honour");
+  if (!s && !m && !honours.length) return null;
   const bits = s ? [
     s.innings ? `${s.runs} runs in ${s.innings} innings` : null,
     s.avg != null ? `average ${s.avg}` : null,
     s.ballsBowled ? `${s.wkts} wicket${s.wkts === 1 ? "" : "s"}` : null,
   ].filter(Boolean) : [];
+  const said = m && !self ? familyMilestoneLine(m, familyName(child), isFirst(miles, m)) : null;
+  const notes = m && self ? provenanceOf(m) : [];
   return (
-    <Card label={s?.season ? `This season · ${s.season}` : "This season"} testid="season-card">
-      {bits.length > 0 && <p data-testid="season-line" style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>{bits.join(" · ")}</p>}
-      {s && !bits.length && <Line quiet>{self ? "You have" : `${child.knownAs || child.name} has`} not batted or bowled this season yet.</Line>}
-      {m && (
-        <Line testid="season-milestone"><Icon name="medal"/> {m.label}{m.opponent ? ` · v ${m.opponent}` : ""}{m.on ? ` · ${humanDate(m.on)}` : ""}</Line>
+    <>
+      {(s || m) && (
+        <Card label={s?.season ? `This season · ${s.season}` : "This season"} testid="season-card">
+          {bits.length > 0 && <p data-testid="season-line" style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>{bits.join(" · ")}</p>}
+          {s && !bits.length && <Line quiet>{self ? "You have" : `${child.knownAs || child.name} has`} not batted or bowled this season yet.</Line>}
+          {m && (
+            <Line testid="season-milestone">
+              <SealMark sealed={isSealed(m)} testid="season-milestone-seal"/>{" "}
+              {said ? said.line : <>{m.label}{m.opponent ? ` · v ${m.opponent}` : ""}{m.on ? ` · ${humanDate(m.on)}` : ""}</>}
+              {(said?.note || notes.length > 0) && (
+                <span data-testid="season-milestone-note" style={{ color: T.content.secondary }}> · {said ? said.note : notes.join(" · ")}</span>
+              )}
+            </Line>
+          )}
+        </Card>
       )}
-    </Card>
+      {honours.length > 0 && (
+        <Card label="Honours" testid="family-honours">
+          {honours.map((h) => (
+            <Line key={h.id ?? `${h.kind}-${h.season}`} quiet={isWithdrawn(h)}
+              testid={isWithdrawn(h) ? "family-honour-withdrawn" : "family-honour"}>
+              {honourWords(h, { family: true })}
+            </Line>
+          ))}
+        </Card>
+      )}
+    </>
   );
 }
 
