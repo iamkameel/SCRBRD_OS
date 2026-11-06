@@ -139,6 +139,17 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   const rates = useMemo(() => (chasing ? chaseRates(events ?? [], fold ?? {}, index) : null), [chasing, events, fold, index]);
   const worm = useMemo(() => (inn ? wormOf({ match, played: innings, index, events, overs, report: par }) : null),
     [inn, match, innings, index, events, overs, par]);
+  // SCRBRD-130 R2: the calculator beside the umpires' figure, the server's; the signed-in page passes it.
+  // A rain-decided match keeps it in its result view: the umpires' par and SCRBRD's are the result's own story.
+  const rainPanel = rainLine && (
+    <Panel testid="mc-rain">
+      <CardHead icon="cloud-rain">Rain</CardHead>
+      <p data-testid="mc-rain-calculated" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{rainLine.words}</p>
+      {rainLine.difference && (
+        <p data-testid="mc-rain-difference" style={{ ...T.role.body, color: T.content.primary, margin: `${T.space.xs} 0 0` }}>{rainLine.difference}</p>
+      )}
+    </Panel>
+  );
   // CRI-1.7: after full time — play has decided it, or the fixture is finished — the Summary is the result,
   // and the live board, the latest balls and "at this rate" give way to it.
   const fullTime = settled || match.status === "complete";
@@ -149,6 +160,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
           <ResultBoard match={match} innings={innings} result={result}/>
           <MomentMark moment={moment} announce={!quietMoments}/>
         </div>
+        {rainPanel}
         {worm && (
           <Panel testid="mc-worm-panel">
             <CardHead icon="trending-up">Worm</CardHead>
@@ -219,15 +231,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
         </p>
       )}
       {/* SCRBRD-130 R2: the calculator beside the umpires' figure, the server's; the signed-in page passes it. */}
-      {rainLine && (
-        <Panel testid="mc-rain">
-          <CardHead icon="cloud-rain">Rain</CardHead>
-          <p data-testid="mc-rain-calculated" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{rainLine.words}</p>
-          {rainLine.difference && (
-            <p data-testid="mc-rain-difference" style={{ ...T.role.body, color: T.content.primary, margin: `${T.space.xs} 0 0` }}>{rainLine.difference}</p>
-          )}
-        </Panel>
-      )}
+      {rainPanel}
       <OverSummary item={overSummary} announce={!quietMoments}/>
       {/* The worm, with the par (G2): the innings in play, the target, the
           ground's par or the DLS par dashed — the server's figures. */}
