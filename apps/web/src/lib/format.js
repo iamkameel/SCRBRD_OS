@@ -1,9 +1,12 @@
 import { D } from "../design/tokens.js";
+import { saDate } from "./saTime.js";
 
 // ── DATE HELPERS (must be before any data that uses them) ──
 const today   = new Date();
 
-const dateStr = (d) => d.toISOString().split("T")[0];
+// The SA day of a Date (lib/saTime.js), so "today" is Johannesburg's day and
+// matches asMatch()'s `date`, not UTC's (a day behind from 00:00 to 02:00).
+const dateStr = (d) => saDate(d);
 
 const addDays = (d,n) => { const x=new Date(d); x.setDate(x.getDate()+n); return x; };
 
