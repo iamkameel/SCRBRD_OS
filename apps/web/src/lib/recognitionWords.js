@@ -123,6 +123,18 @@ export function provenanceOf(r) {
 export const isWithdrawn = (r) => r?.family === "honour" && Boolean(r.withdrawnOn);
 
 /**
+ * The season to say beside an honour's label, or null when the label already
+ * says it: a Player of the Match label ends with its date ("… · 21 Oct 2026"),
+ * and "21 Oct 2026 2026" says the year twice.
+ * @param {{label?: string|null, season?: string|null}} r
+ */
+export function seasonOnce(r) {
+  if (!r?.season) return null;
+  const y = String(r.season).replace(/[^0-9A-Za-z/-]/g, "");
+  return y && new RegExp(`\\b${y}\\b`).test(String(r.label ?? "")) ? null : r.season;
+}
+
+/**
  * An honour as §7 says it: "Half colours 2026"; withdrawn, "Half colours 2026
  * · withdrawn 3 Oct 2026", and to a parent "· the school can say why". The
  * reason is never on a screen (D4); the server never sends it.
@@ -130,10 +142,7 @@ export const isWithdrawn = (r) => r?.family === "honour" && Boolean(r.withdrawnO
  * @param {{ family?: boolean }} [opts]
  */
 export function honourWords(r, { family = false } = {}) {
-  // The season once: a Player of the Match label already ends with its date
-  // ("… · 21 Oct 2026"), and "21 Oct 2026 2026" says the year twice.
-  const season = r.season && !new RegExp(`\\b${String(r.season).replace(/[^0-9A-Za-z/-]/g, "")}\\b`).test(String(r.label ?? "")) ? r.season : null;
-  const head = [r.label, season].filter(Boolean).join(" ");
+  const head = [r.label, seasonOnce(r)].filter(Boolean).join(" ");
   if (!r.withdrawnOn) return head;
   return [head, `withdrawn ${dayMonthYear(r.withdrawnOn)}`, family ? "the school can say why" : null].filter(Boolean).join(" · ");
 }

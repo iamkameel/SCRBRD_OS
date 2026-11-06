@@ -33,7 +33,7 @@ import { CaptainCard } from "./captain.jsx";
 import { TodoCard } from "./todo.jsx";
 import { Compare } from "../compare.jsx";
 import { SealMark } from "../../ui/sealMark.jsx";
-import { honourWords, isSealed, isWithdrawn, provenanceOf } from "../../lib/recognitionWords.js";
+import { honourWords, isSealed, isWithdrawn, provenanceOf, seasonOnce } from "../../lib/recognitionWords.js";
 import { PersonalBests } from "./bests.jsx";
 import { RecordBoards } from "../records.jsx";
 
@@ -286,7 +286,7 @@ function HonoursTab({ me, role }) {
           // reason (D3, D4): "Half colours 2026 · withdrawn 3 Oct 2026".
           isWithdrawn(h)
             ? <Line key={`${h.family}-${h.kind}-${i}`} quiet testid="passport-honour-withdrawn">{honourWords(h)}</Line>
-            : <Line key={`${h.family}-${h.kind}-${i}`}>{h.label}{h.season ? ` · ${h.season}` : h.on ? ` · ${humanDate(h.on)}` : ""}</Line>
+            : <Line key={`${h.family}-${h.kind}-${i}`}>{h.label}{seasonOnce(h) ? ` · ${seasonOnce(h)}` : h.season ? "" : h.on ? ` · ${humanDate(h.on)}` : ""}</Line>
         )) : <NoneOr read={recRead} what="your honours" none="None on record yet." onRetry={() => setNonce((n) => n + 1)} testid="passport-honours-none"/>}
       </Card>
       {lines.length > 0 && (
