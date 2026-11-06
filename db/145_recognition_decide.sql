@@ -43,6 +43,11 @@
 --                 person who withdrew it, and to nobody else; honour_masked
 --                 (the view tables.mjs's mask asks for: MASKED_SINCE_09)
 --                 calls it.
+--               ~ nomination_id (db/144; the red-team's F3 on R7, Kameel's
+--                 answer pending): masked the same way, read through
+--                 honour_nomination_id() by whoever reads the nomination
+--                 itself (D8), so the award does not tell the nominee, a
+--                 team-mate or a parent that the captain picked.
 --               ~ honour_stamp() (db/142)  D5: the decider of any honour but
 --                 a Player of the Match may be named by the person recording
 --                 it; one who names nobody is the decider. F10: the notice_id
@@ -61,7 +66,8 @@
 --   recognition_audit  F9: its honour key RESTRICTs a delete instead of
 --                 cascading the append-only rows away with the honour.
 --   functions   + recognition_decider_holds, honour_decided_by, honour_tell_decider (nobody's)
---               + honour_withdrawn_reason (the application's: the view's)
+--               + honour_withdrawn_reason, honour_nomination_id (the
+--                 application's: the view's)
 --
 -- ── WHO DECIDES NOW ─────────────────────────────────────────────────
 --   Player of the Match   recognition.match.award over the side (db/142's
@@ -101,8 +107,11 @@ BEGIN
      OR to_regprocedure('honour_kind_label(text,text)') IS NULL
      OR to_regprocedure('app_is_platform_wide()') IS NULL OR to_regprocedure('app_pad_scoped()') IS NULL
      OR to_regprocedure('app_support_access_id(uuid)') IS NULL OR to_regprocedure('sa_today()') IS NULL
-     OR to_regprocedure('app_can(text,uuid,text,uuid,uuid)') IS NULL THEN
-    RAISE EXCEPTION 'db/145: Player of the Match (db/142), the notices (db/89), the platform reads (db/20), the support hour (db/22) or the SA day (db/128) is missing; apply them first';
+     OR to_regprocedure('app_can(text,uuid,text,uuid,uuid)') IS NULL
+     OR to_regprocedure('recognition_nomination_mine(uuid)') IS NULL
+     OR to_regprocedure('recognition_nomination_staff(uuid,text,uuid)') IS NULL
+     OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'honour' AND column_name = 'nomination_id') THEN
+    RAISE EXCEPTION 'db/145: Player of the Match (db/142), the captain''s nomination (db/144), the notices (db/89), the platform reads (db/20), the support hour (db/22) or the SA day (db/128) is missing; apply them first';
   END IF;
   FOR r IN SELECT * FROM (VALUES
       ('honour_stamp()', '4d23d2abe5b6a93970590b2cdf413933', '0cc86739759cc6d25706960264b44b17', 'db/142'))
@@ -161,7 +170,7 @@ DECLARE v_cols text; r text;
 BEGIN
   SELECT string_agg(format('%I', c.column_name), ', ' ORDER BY c.ordinal_position) INTO v_cols
     FROM information_schema.columns c
-   WHERE c.table_schema = 'public' AND c.table_name = 'honour' AND c.column_name <> 'withdrawn_reason';
+   WHERE c.table_schema = 'public' AND c.table_name = 'honour' AND c.column_name NOT IN ('withdrawn_reason', 'nomination_id');
   EXECUTE 'REVOKE SELECT ON honour FROM scrbrd_app';
   EXECUTE format('GRANT SELECT (%s) ON honour TO scrbrd_app', v_cols);
   -- A managed host's API roles get table privileges by default privilege. Row
@@ -169,7 +178,8 @@ BEGIN
   -- more of the reason than the application does.
   FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r)
-       AND (has_table_privilege(r, 'honour', 'SELECT') OR has_column_privilege(r, 'honour', 'withdrawn_reason', 'SELECT')) THEN
+       AND (has_table_privilege(r, 'honour', 'SELECT') OR has_column_privilege(r, 'honour', 'withdrawn_reason', 'SELECT')
+            OR has_column_privilege(r, 'honour', 'nomination_id', 'SELECT')) THEN
       EXECUTE format('REVOKE SELECT ON honour FROM %I', r);
       EXECUTE format('GRANT SELECT (%s) ON honour TO %I', v_cols, r);
     END IF;
@@ -193,24 +203,43 @@ CREATE OR REPLACE FUNCTION honour_withdrawn_reason(p_honour uuid) RETURNS text A
                      '00000000-0000-0000-0000-000000000000'::uuid, NULL::uuid))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- Which captain's nomination an award answered (db/144's honour.nomination_id;
+-- the red-team's F3 on R7): that a nomination existed, and so that the
+-- captain picked, or did not pick, this boy. D8: a nomination is read by its
+-- nominator and the side's staff and the school's deciders and office, never
+-- by the nominee, a team-mate, a parent or the public, so its key on the
+-- award is read by the same people (db/144's own two tests), and by nobody
+-- through a pad, a support hour or a platform-wide assignment. NULL
+-- otherwise, and NULL for an award no nomination answered: the two are not
+-- told apart.
+CREATE OR REPLACE FUNCTION honour_nomination_id(p_honour uuid) RETURNS uuid AS $$
+  SELECT h.nomination_id
+    FROM honour h JOIN recognition_nomination n ON n.id = h.nomination_id
+   WHERE h.id = p_honour
+     AND app_user_id() IS NOT NULL AND NOT app_pad_scoped()
+     AND app_support_access_id(n.school_id) IS NULL AND NOT app_is_platform_wide()
+     AND (recognition_nomination_mine(n.nominated_by_player_id) OR recognition_nomination_staff(n.school_id, n.team_code, n.match_id))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- honour_masked — every column listed explicitly, the reason through the
--- function above and evaluated PER ROW. Built from information_schema as
+-- function above (the award's nomination through the one beside it) and
+-- evaluated PER ROW. Built from information_schema as
 -- db/09 builds every *_masked view, with the table's whole mask list from
 -- tables.mjs (rls.test.mjs holds the tuple to it, verbatim). One difference
 -- from db/09's shape, and it is the point: the masked column is not read
--- from the table here, because the caller holds no SELECT on it; the
--- function reads it, and decides.
+-- from the table here, because the caller holds no SELECT on it; its
+-- function, honour_<column>(), reads it, and decides.
 DO $mask_honour$
 DECLARE cols text;
 BEGIN
   SELECT string_agg(
            CASE WHEN g.capability IS NOT NULL
-                THEN format('honour_withdrawn_reason(honour.id) AS %I', c.column_name)
+                THEN format('honour_%1$s(honour.id) AS %1$I', c.column_name)   -- honour_withdrawn_reason(), honour_nomination_id()
                 ELSE format('%I', c.column_name)
            END, ', ' ORDER BY c.ordinal_position)
     INTO cols
     FROM information_schema.columns c
-    LEFT JOIN (VALUES ('withdrawn_reason', 'recognition.decide', '(SELECT p.team_code FROM player p WHERE p.id = honour.player_id)')) AS g(column_name, capability, team_anchor)
+    LEFT JOIN (VALUES ('withdrawn_reason', 'recognition.decide', '(SELECT p.team_code FROM player p WHERE p.id = honour.player_id)'), ('nomination_id', 'recognition.match.award', '(SELECT p.team_code FROM player p WHERE p.id = honour.player_id)')) AS g(column_name, capability, team_anchor)
            ON g.column_name = c.column_name
    WHERE c.table_schema = 'public' AND c.table_name = 'honour';
 
@@ -405,6 +434,8 @@ BEGIN
   -- The view's: the application's, as the view runs as the caller.
   REVOKE ALL ON FUNCTION honour_withdrawn_reason(uuid) FROM PUBLIC;
   GRANT EXECUTE ON FUNCTION honour_withdrawn_reason(uuid) TO scrbrd_app;
+  REVOKE ALL ON FUNCTION honour_nomination_id(uuid) FROM PUBLIC;
+  GRANT EXECUTE ON FUNCTION honour_nomination_id(uuid) TO scrbrd_app;
   -- The system's own: nobody's to call.
   FOREACH f IN ARRAY ARRAY['recognition_decider_holds(uuid,uuid)', 'honour_decided_by()', 'honour_tell_decider()'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
@@ -413,6 +444,7 @@ BEGIN
   FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('REVOKE ALL ON FUNCTION honour_withdrawn_reason(uuid) FROM %I', r);
+      EXECUTE format('REVOKE ALL ON FUNCTION honour_nomination_id(uuid) FROM %I', r);
       EXECUTE format('REVOKE ALL ON FUNCTION recognition_decider_holds(uuid,uuid) FROM %I', r);
       EXECUTE format('REVOKE ALL ON FUNCTION honour_tell_decider() FROM %I', r);
       EXECUTE format('REVOKE ALL ON FUNCTION honour_decided_by() FROM %I', r);
@@ -451,10 +483,16 @@ BEGIN
   -- D4: the reason is not the application's to select, from the table or
   -- from anywhere but the function; every other column is.
   IF has_column_privilege('scrbrd_app', 'honour', 'withdrawn_reason', 'SELECT')
+     OR has_column_privilege('scrbrd_app', 'honour', 'nomination_id', 'SELECT')
      OR has_table_privilege('scrbrd_app', 'honour', 'SELECT')
      OR EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema = 'public' AND c.table_name = 'honour'
-                   AND c.column_name <> 'withdrawn_reason' AND NOT has_column_privilege('scrbrd_app', 'honour', c.column_name, 'SELECT')) THEN
-    RAISE EXCEPTION 'db/145: the application selects the withdrawal''s reason, or lost another column of honour';
+                   AND c.column_name NOT IN ('withdrawn_reason', 'nomination_id')
+                   AND NOT has_column_privilege('scrbrd_app', 'honour', c.column_name, 'SELECT')) THEN
+    RAISE EXCEPTION 'db/145: the application selects the withdrawal''s reason or the award''s nomination, or lost another column of honour';
+  END IF;
+  IF position('honour_nomination_id(honour.id) AS nomination_id' IN pg_get_viewdef('honour_masked'::regclass)) = 0
+     AND position('honour_nomination_id(id) AS nomination_id' IN pg_get_viewdef('honour_masked'::regclass)) = 0 THEN
+    RAISE EXCEPTION 'db/145: honour_masked does not say the award''s nomination through honour_nomination_id()';
   END IF;
   IF position('honour_withdrawn_reason(honour.id) AS withdrawn_reason' IN pg_get_viewdef('honour_masked'::regclass)) = 0
      AND position('honour_withdrawn_reason(id) AS withdrawn_reason' IN pg_get_viewdef('honour_masked'::regclass)) = 0 THEN
@@ -468,7 +506,7 @@ BEGIN
     RAISE EXCEPTION 'db/145: honour_masked lost security_invoker or security_barrier, or a column';
   END IF;
   -- Definers, pinned; no reading of the database's day (db/128).
-  FOREACH f IN ARRAY ARRAY['honour_stamp()', 'honour_withdrawn_reason(uuid)', 'recognition_decider_holds(uuid,uuid)',
+  FOREACH f IN ARRAY ARRAY['honour_stamp()', 'honour_withdrawn_reason(uuid)', 'honour_nomination_id(uuid)', 'recognition_decider_holds(uuid,uuid)',
                            'honour_decided_by()', 'honour_tell_decider()'] LOOP
     SELECT prosrc INTO v_src FROM pg_proc WHERE oid = f::regprocedure;
     IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = f::regprocedure) THEN
@@ -481,11 +519,13 @@ BEGIN
       RAISE EXCEPTION 'db/145: % reads the database''s day (db/128)', f;
     END IF;
   END LOOP;
-  IF NOT has_function_privilege('scrbrd_app', 'honour_withdrawn_reason(uuid)', 'EXECUTE')
-     OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
-                 WHERE p.oid = 'honour_withdrawn_reason(uuid)'::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN
-    RAISE EXCEPTION 'db/145: honour_withdrawn_reason() is not the application''s alone';
-  END IF;
+  FOREACH f IN ARRAY ARRAY['honour_withdrawn_reason(uuid)', 'honour_nomination_id(uuid)'] LOOP
+    IF NOT has_function_privilege('scrbrd_app', f, 'EXECUTE')
+       OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                   WHERE p.oid = f::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN
+      RAISE EXCEPTION 'db/145: % is not the application''s alone', f;
+    END IF;
+  END LOOP;
   FOREACH f IN ARRAY ARRAY['recognition_decider_holds(uuid,uuid)', 'honour_decided_by()', 'honour_tell_decider()'] LOOP
     IF has_function_privilege('scrbrd_app', f, 'EXECUTE')
        OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
@@ -495,8 +535,9 @@ BEGIN
   END LOOP;
   FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles ro WHERE ro.rolname = r)
-       AND (has_column_privilege(r, 'honour', 'withdrawn_reason', 'SELECT')
-            OR has_function_privilege(r, 'honour_withdrawn_reason(uuid)', 'EXECUTE')) THEN
+       AND (has_column_privilege(r, 'honour', 'withdrawn_reason', 'SELECT') OR has_column_privilege(r, 'honour', 'nomination_id', 'SELECT')
+            OR has_function_privilege(r, 'honour_withdrawn_reason(uuid)', 'EXECUTE')
+            OR has_function_privilege(r, 'honour_nomination_id(uuid)', 'EXECUTE')) THEN
       RAISE EXCEPTION 'db/145: a managed host''s API role (%) reaches a withdrawal''s reason', r;
     END IF;
   END LOOP;

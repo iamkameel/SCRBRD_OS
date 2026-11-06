@@ -826,6 +826,9 @@ export const MASKED_SINCE_09 = Object.freeze({
   // holds for a read that never goes near the view.
   honour: { file: "145_recognition_decide.sql", masked: {
     "recognition.decide": ["withdrawn_reason"],
+    // The captain's nomination an award answered (db/144's column; the
+    // red-team's F3 on R7): read under D8, through honour_nomination_id().
+    "recognition.match.award": ["nomination_id"],
   } },
 });
 

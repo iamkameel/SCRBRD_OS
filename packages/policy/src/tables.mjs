@@ -256,7 +256,12 @@ export const TABLES = {
     anchors: { school: "school_id",
                team: "(SELECT p.team_code FROM player p WHERE p.id = honour.player_id)",
                person: "player_id" },
-    masked: { "recognition.decide": ["withdrawn_reason"] },
+    // So is the captain's nomination an award answered (nomination_id,
+    // db/144; db/145): whether the captain picked him is the nomination's,
+    // read under D8 by the nominator and the side's staff and the deciders
+    // (honour_nomination_id(), db/144's own tests). The capability keyed
+    // here is the deciders'; the function holds the whole rule.
+    masked: { "recognition.decide": ["withdrawn_reason"], "recognition.match.award": ["nomination_id"] },
   },
   cap_baseline: {
     // Where a side's cap numbers start: the caps awarded before the platform

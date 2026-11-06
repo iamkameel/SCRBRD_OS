@@ -11172,7 +11172,8 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 -- and its DSO (audit.read, no decision); Westville's director of sport; a
 -- coach of the side who also holds a platform-wide assignment (twohats); a
 -- platform administrator. B1 holds half colours (the office withdraws them in
--- the section) and a Player of the Match on today's match M, its side told.
+-- the section) and a Player of the Match on today's match M, its side told,
+-- which answered B2's nomination of him (B2 the captain).
 CREATE OR REPLACE FUNCTION _v145_stage() RETURNS jsonb AS $$
 DECLARE
   HIL uuid := '11111111-1111-1111-1111-111111111111';
@@ -11219,9 +11220,16 @@ BEGIN
   VALUES (HIL, '5XI', WES, '5XI', 'x', (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 1, 'complete')
   RETURNING id INTO m;
   INSERT INTO match_squad (match_id, player_id, side) VALUES (m, (ids->>'b1')::uuid, 'home'), (m, (ids->>'b2')::uuid, 'home');
+  -- B2, the captain, nominated B1; the award answers it (honour_tie_nomination()).
+  INSERT INTO recognition_nomination (kind, match_id, season_id, school_id, team_code, nominee_player_id, nominated_by_player_id,
+                                      nominated_as, derived_from, closes_at)
+  VALUES ('player_of_match', m, v_season, HIL, '5XI', (ids->>'b1')::uuid, (ids->>'b2')::uuid, 'captain', '{}'::jsonb, now() + interval '1 day');
+  -- Decided by the director (the answered nomination names its decider).
+  PERFORM set_config('app.user_id', ids->>'dos', true);
   INSERT INTO honour (player_id, kind, name, season_id, awarded_on, match_id, derived_from)
   VALUES ((ids->>'b1')::uuid, 'player_of_match', 'v x', v_season, sa_today(), m, jsonb_build_object('side', 'home'))
   RETURNING id INTO h;
+  PERFORM set_config('app.user_id', '', true);
   RETURN ids || jsonb_build_object('M', m, 'potm', h);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -37903,7 +37911,8 @@ $v116$;
     j := _v144_nom(v_n);
     PERFORM _assert(j->>'status' = 'confirmed' AND (j->>'decided_by')::uuid = (y->>'coach')::uuid AND (j->>'honour_id')::uuid = r.honour_id
                     AND (_v142_honour(r.honour_id)->>'player')::uuid = N1
-                    AND (SELECT h.nomination_id FROM honour h WHERE h.id = r.honour_id) = v_n,
+                    -- through the view: db/145 masks the column at the table (D8)
+                    AND (SELECT h.nomination_id FROM honour_masked h WHERE h.id = r.honour_id) = v_n,
       format('§122 (decide): the confirmed nomination reads %s', j));
     PERFORM _assert((_v144_fact(M)->>'notices')::int = 1 AND (_v144_fact(M)->>'honours')::int = 1
                     AND (SELECT string_agg(e->>'event', ',') FROM jsonb_array_elements(_v144_fact(M)->'audit') e) = 'nominated,awarded,nomination_confirmed',
@@ -37969,7 +37978,7 @@ $v116$;
     PERFORM _assert(r.ok = false AND r.reason = 'lapsed' AND _v144_nom(v_n)->>'status' = 'lapsed' AND _v144_nom(v_n)->>'decided_by' IS NULL,
       format('§122 (close): a lapsed one answered %s/%s and reads %s', r.ok, r.reason, _v144_nom(v_n)));
     SELECT * INTO r FROM match_award((y->>'M6')::uuid, N2, _v142_working((y->>'M6_head')::int, N2, ARRAY[N1]));
-    PERFORM _assert(r.ok AND (SELECT h.nomination_id IS NULL FROM honour h WHERE h.id = r.honour_id),
+    PERFORM _assert(r.ok AND (SELECT h.nomination_id IS NULL FROM honour_masked h WHERE h.id = r.honour_id),
       format('§122 (close): after the lapse the coach decides alone: %s', r.reason));
     PERFORM _assert((SELECT string_agg(e->>'event', ',') FROM jsonb_array_elements(_v144_fact((y->>'M6')::uuid)->'audit') e) = 'nominated,nomination_lapsed,awarded',
       format('§122 (close): the lapse''s audit reads %s', _v144_fact((y->>'M6')::uuid)->'audit'));
@@ -38028,6 +38037,11 @@ $v116$;
   --              office account that withdrew it read it, and the other office
   --              account, the side's coach, the DSO (audit.read: READERS Q2),
   --              the boy's mother and a pupil read NULL
+  --   (mask_nom) the award's nomination (db/144's nomination_id; the
+  --              red-team's F3 on R7) is not the application's to select from
+  --              the table; through honour_masked the side's coach, the
+  --              director, the office and the captain who nominated read it,
+  --              and the nominee, his mother and the DSO read NULL (D8)
   --   (decider)  the office alone, or naming a coach, or naming another
   --              school's director, is refused (D5, A5); the office naming the
   --              principal is her decision, recorded by the office, and she is
@@ -38052,6 +38066,8 @@ $v116$;
   --   honour_stamp()'s notice bypass without its NOT EXISTS (db/142's)              → (f10)
   --   recognition_audit's honour key re-made ON DELETE CASCADE (db/142's)           → (f9)
   --   GRANT EXECUTE ON FUNCTION recognition_decider_holds(uuid,uuid) TO scrbrd_app  → (grants)
+  --   GRANT SELECT (nomination_id) ON honour TO scrbrd_app                          → (mask_nom)
+  --   honour_nomination_id() without its D8 test                                    → (mask_nom)
   DECLARE
     y   jsonb := _v145_stage();
     B1  uuid := (y->>'b1')::uuid;
@@ -38112,6 +38128,29 @@ $v116$;
     PERFORM _as((y->>'pupil')::uuid);
     PERFORM _assert(honour_withdrawn_reason(HW) IS NULL AND NOT EXISTS (SELECT 1 FROM honour_masked h WHERE h.id = HW AND h.withdrawn_reason IS NOT NULL),
       '§123 (mask): a pupil reads the reason');
+
+    -- (mask_nom)
+    PERFORM _assert(EXISTS (SELECT 1 FROM recognition_nomination x WHERE x.match_id = (y->>'M')::uuid AND x.status = 'confirmed'
+                               AND x.honour_id = PM),
+      '§123 (mask_nom): the stage''s award did not answer the nomination');
+    FOREACH who IN ARRAY ARRAY['coach', 'dos', 'office', 'mother', 'pupil'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      got := _v145_try(format('SELECT nomination_id FROM honour WHERE id = %L', PM));
+      PERFORM _assert(got LIKE '42501|%', format('§123 (mask_nom): %s selects the award''s nomination from the table: %s', who, got));
+    END LOOP;
+    FOREACH who IN ARRAY ARRAY['coach', 'dos', 'office', 'pupil'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(honour_nomination_id(PM) IS NOT NULL
+                      AND honour_nomination_id(PM) = (SELECT x.id FROM recognition_nomination x WHERE x.match_id = (y->>'M')::uuid)
+                      AND (who = 'pupil' OR (SELECT h.nomination_id FROM honour_masked h WHERE h.id = PM) = honour_nomination_id(PM)),
+        format('§123 (mask_nom): %s does not read the award''s nomination', who));
+    END LOOP;
+    FOREACH who IN ARRAY ARRAY['mother', 'dso'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(EXISTS (SELECT 1 FROM honour_masked h WHERE h.id = PM) AND (SELECT h.nomination_id FROM honour_masked h WHERE h.id = PM) IS NULL
+                      AND honour_nomination_id(PM) IS NULL,
+        format('§123 (mask_nom): %s reads the award''s nomination, or does not read the award', who));
+    END LOOP;
 
     -- (decider)
     PERFORM _as((y->>'office')::uuid);
@@ -38176,6 +38215,8 @@ $v116$;
                     AND NOT has_function_privilege('scrbrd_app', 'recognition_decider_holds(uuid,uuid)', 'EXECUTE')
                     AND NOT has_function_privilege('scrbrd_app', 'honour_tell_decider()', 'EXECUTE')
                     AND NOT has_column_privilege('scrbrd_app', 'honour', 'withdrawn_reason', 'SELECT')
+                    AND NOT has_column_privilege('scrbrd_app', 'honour', 'nomination_id', 'SELECT')
+                    AND has_function_privilege('scrbrd_app', 'honour_nomination_id(uuid)', 'EXECUTE')
                     AND has_column_privilege('scrbrd_app', 'honour', 'withdrawn_at', 'SELECT'),
       '§123 (grants): the reason''s function is not the application''s alone, a helper is, or the column grants are wrong');
   END;
