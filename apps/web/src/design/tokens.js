@@ -1011,6 +1011,9 @@ button{touch-action:manipulation}
    (school.code, "HIL 1XI") where there is not. Both are in the page; one
    shows. display:none, so a screen reader reads only the one on screen. */
 .mc-short{display:none}
+/* CRI-1.6: on a phone a scorecard's header row stays at the top of the screen while its rows scroll under it.
+   Under 300px the table scrolls sideways in its own box (above), and the header holds to that box instead. */
+@media(max-width:640px){.mc-head{position:sticky;top:0;z-index:1}}
 /* The spectator board's moments (step 3c): a four, a six, a wicket is a short
    beat; a milestone the bigger, the interrupt. Reduced motion makes both a cut
    (the reduced-motion rule below). Never on the pad. */

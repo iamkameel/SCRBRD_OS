@@ -158,6 +158,8 @@ async function openMatch(page, id) {
 const tab = async (page, id) => { await tid(page, `mc-tab-${id}`).click({ timeout: 4000 }); await page.waitForTimeout(500); };
 
 const TABS = ["summary", "scorecard", "commentary", "partnerships", "analytics", "details"];
+/** Overs as the card writes them: 9.4 for 58 balls. */
+const oversOfBalls = (/** @type {number} */ b) => `${Math.floor(b / 6)}${b % 6 ? `.${b % 6}` : ""}`;
 
 try {
   for (let i = 0; i < 60; i++) {
@@ -630,7 +632,9 @@ try {
   ok("the chase is won", finalMatch.result?.winner === "Westville Boys' High 1XI", JSON.stringify(finalMatch.result));
   ok("the result arrives as a moment on the board — held no longer than a milestone",
      await until(L, () => document.querySelector('[data-testid="mc-moment"][data-kind="result"]')?.innerText.includes("won by"), 8000));
-  ok("...beside the total, which stays in view throughout", await tid(L, "mc-board-total").isVisible());
+  // CRI-1.7: the result is full time, and the Summary is the result view the moment it arrives; the totals stay in view.
+  ok("...over the Summary's result view, whose totals stay in view throughout", await tid(L, "mc-result-view").isVisible().catch(() => false)
+     && await tid(L, "mc-result-total").last().isVisible().catch(() => false));
   if (SHOTS) { await mkdir(SHOTS, { recursive: true }); await L.screenshot({ path: join(SHOTS, "fulltime-result-moment-1280-floodlit.png") }).catch(() => {}); }
   ok("the moment clears within a second and a half — the score is never hidden for long (§3.6)",
      await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), 2500));
@@ -653,6 +657,35 @@ try {
   ok("the decided fixture opens", await openMatch(fin.page, fx.live));
   await afterReads(fin.page, 2000);
   ok("a fresh read plays no moment a second time — nothing is replayed on load", await tid(fin.page, "mc-moment").count() === 0);
+  {
+    // CRI-1.7: after full time the Summary is the result view, from the fold.
+    const F = fin.page;
+    const want = `${finalMatch.result.winner} won by ${finalMatch.result.margin}`;
+    const finals = finalMatch.innings.filter(Boolean);
+    ok("CRI-1.7: the completed fixture's Summary is the result view", await tid(F, "mc-summary").getAttribute("data-view").catch(() => null) === "result"
+       && await tid(F, "mc-result-view").count() === 1);
+    ok(`...headed by the result in words, the header's own ("${want}")`, (await tid(F, "mc-result-sentence").innerText().catch(() => "")).trim() === want
+       && (await tid(F, "mc-result").innerText().catch(() => "")).trim() === want);
+    const rowsShown = (await tid(F, "mc-result-row").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+    ok(`...each innings' total, the fold's: ${finals.map((i) => `${i.runs}/${i.wickets}`).join(", ")}`, rowsShown.length === finals.length
+       && finals.every((i, k) => rowsShown[k].includes(`${i.runs}/${i.wickets}`) && rowsShown[k].includes(`(${oversOfBalls(i.balls)} ov)`)), rowsShown.join(" | "));
+    ok("...on the board's black face, in both themes", await tid(F, "mc-result-view").evaluate((e) => getComputedStyle(e).backgroundColor).catch(() => "") !== "rgba(0, 0, 0, 0)");
+    const facts = await tid(F, "mc-result-innings").allInnerTexts();
+    const top1 = [...finals[0].batsmen].filter((b) => b.balls > 0 || b.runs > 0).sort((a, b) => b.runs - a.runs || a.balls - b.balls)[0];
+    const bowl2 = [...finals[1].bowlers].filter((b) => b.balls > 0).sort((a, b) => b.wickets - a.wickets || a.runs - b.runs)[0];
+    ok(`...the match in figures: each innings' top scorers and best bowling (${top1.name} ${top1.runs}; ${bowl2.name} ${bowl2.wickets}/${bowl2.runs})`,
+       facts.length === 2 && facts[0].includes(top1.name) && facts[0].includes(String(top1.runs)) && facts[1].includes(bowl2.name)
+       && facts[1].includes(`${bowl2.wickets}/${bowl2.runs}`), facts.join(" | ").slice(0, 300));
+    ok("...the live board, the latest balls and \"at this rate\" have given way to it", await tid(F, "mc-board").count() === 0
+       && await tid(F, "mc-latest").count() === 0 && !/At this rate/.test(await tid(F, "mc-summary").innerText()));
+    ok("...the worm, the highlights and all the commentary one tap away stay", await tid(F, "mc-worm-panel").count() === 1
+       && await tid(F, "mc-highlights").count() === 1 && await tid(F, "mc-all-commentary").count() === 1);
+    await tid(F, "mc-all-commentary").click({ timeout: 4000 }).catch(() => {});
+    await tid(F, "mc-panel-commentary").waitFor({ timeout: 4000 }).catch(() => {});
+    ok("...which opens it", await tid(F, "mc-panel-commentary").count() === 1);
+    await pickTab(F, "summary").catch(() => {});
+    await tid(F, "mc-result-view").waitFor({ timeout: 4000 }).catch(() => {});
+  }
   ok("the onward links show", await tid(fin.page, "mc-onward").count() === 1);
   ok("Hilton's own next fixture (the seeded one)", await tid(fin.page, "mc-onward-next-home").count() === 1);
   ok("...never a link to Westville's — no fixture of theirs is on this list, and this never guesses one",
@@ -801,6 +834,132 @@ try {
   ok("no console errors (phone)", ph.errors.length === 0, ph.errors.join(" | "));
   await ph.ctx.close();
 
+  group("CRI-1.5: a dismissal opens the Commentary at that ball, and back restores the tab, the row and the scroll");
+  {
+    const ph5 = await open({ viewport: PHONE });
+    await signIn(ph5.page, /sarah@example\.invalid|Director/);
+    ok("the fixture opens on a phone", await openMatch(ph5.page, fx.live));
+    const P5 = ph5.page;
+    const path = () => new URL(P5.url()).pathname;
+    // Where the page is: the shell's <main> scrolls, or the document does.
+    const scrolled = () => P5.evaluate(() => Math.max(document.getElementById("os-content")?.scrollTop ?? 0, window.scrollY));
+    await pickTab(P5, "scorecard");
+    await tid(P5, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
+    await P5.waitForTimeout(300);
+    // The first innings' first wicket: early in a match of sixteen overs, past the Commentary's first twelve.
+    const firstOut = inn1.ballLog.find((b) => b.type === "W" && !b.freeHitSaved);
+    const who = inn1.batsmen.find((b) => b.id === (firstOut.dismissed ?? firstOut.strikerId));
+    const key = `e:${firstOut.id}`;
+    const row = tid(P5, "mc-bat-row").filter({ hasText: who.name }).first();
+    await row.locator('[data-testid="mc-bat-open"]').click({ timeout: 4000 });
+    await P5.waitForTimeout(300);
+    const link = row.locator('[data-testid="mc-dismissal-link"]');
+    const lg = await link.evaluate((e) => ({ h: e.getBoundingClientRect().height, t: e.innerText })).catch(() => null);
+    ok(`${who.name}'s opened row: his dismissal's line is a link to that ball, 44px tall`, (lg?.h ?? 0) >= 44 && /In commentary/.test(lg?.t ?? ""), JSON.stringify(lg));
+    await link.scrollIntoViewIfNeeded();
+    await P5.evaluate(() => { const m = document.getElementById("os-content"); if (m) m.scrollTop += 37; else window.scrollBy(0, 37); });
+    await P5.waitForTimeout(200);
+    const was = await scrolled();
+    const linkTop = await link.evaluate((e) => e.getBoundingClientRect().top);
+    ok(`the page is scrolled down to it (${was}px)`, was > 100, was);
+    await link.click();
+    await tid(P5, "mc-commentary").waitFor({ timeout: 4000 }).catch(() => {});
+    await P5.waitForTimeout(400);
+    ok("the Commentary opens, at its own address", await tid(P5, "mc-panel-commentary").count() === 1 && path() === `/app/matches/${fx.live}/commentary`, path());
+    const target = await P5.evaluate(() => {
+      const t = document.querySelectorAll('[data-testid="mc-line"][data-target="true"]');
+      const r = t[0]?.getBoundingClientRect();
+      return { n: t.length, key: t[0]?.getAttribute("data-key"), focused: document.activeElement === t[0], current: t[0]?.getAttribute("aria-current"),
+        inView: !!r && r.top >= 0 && r.bottom <= window.innerHeight, text: t[0]?.innerText ?? "" };
+    });
+    ok(`...at that ball: one line marked, the dismissal's own (${key}), the generator's words`, target.n === 1 && target.key === key
+       && target.text.includes(expected.find((c) => c.key === key)?.text ?? "∅"), JSON.stringify(target));
+    const overAt = await P5.evaluate(() => [...document.querySelectorAll('[data-testid="mc-over"]')].findIndex((o) => !!o.querySelector('[data-target="true"]')));
+    ok(`...in the ${overAt + 1}th over group, past the first twelve: the tab opened far enough back to hold it`, overAt >= 12, overAt);
+    ok("...on screen, with the focus on it and aria-current", target.inView && target.focused && target.current === "true", JSON.stringify(target));
+    ok("...and a way back to the scorecard, 44px", ((await tid(P5, "mc-back-to-scorecard").boundingBox().catch(() => null))?.height ?? 0) >= 44);
+    await P5.goBack();
+    await tid(P5, "mc-scorecard").waitFor({ timeout: 4000 }).catch(() => {});
+    await P5.waitForTimeout(400);
+    ok("the back button: the Scorecard again, at its address", await tid(P5, "mc-tab-scorecard").getAttribute("aria-selected") === "true" && path() === `/app/matches/${fx.live}/scorecard`, path());
+    const rowBack = tid(P5, "mc-bat-row").filter({ hasText: who.name }).first();
+    ok(`...the first innings still shown, ${who.name}'s row still open`, await tid(P5, "mc-innings-0").getAttribute("aria-pressed") === "true"
+       && await rowBack.locator('[data-testid="mc-bat-open"]').getAttribute("aria-expanded") === "true");
+    const back = await scrolled();
+    const backTop = await rowBack.locator('[data-testid="mc-dismissal-link"]').evaluate((e) => e.getBoundingClientRect().top).catch(() => null);
+    ok(`...and the page where it was (${back}px, was ${was}px; the line ${backTop}px from the top, was ${linkTop}px)`,
+       Math.abs(back - was) <= 2 && backTop != null && Math.abs(backTop - linkTop) <= 2);
+    ok("the tab no longer marks a ball once it is left", await tid(P5, "mc-back-to-scorecard").count() === 0);
+    // The way back on the page itself: the same place.
+    await rowBack.locator('[data-testid="mc-dismissal-link"]').click();
+    await tid(P5, "mc-back-to-scorecard").waitFor({ timeout: 4000 }).catch(() => {});
+    await tid(P5, "mc-back-to-scorecard").click();
+    await tid(P5, "mc-scorecard").waitFor({ timeout: 4000 }).catch(() => {});
+    await P5.waitForTimeout(400);
+    ok("\"Back to the scorecard\" is the same step back: the Scorecard, the row open, the page where it was",
+       path() === `/app/matches/${fx.live}/scorecard` && await tid(P5, "mc-bat-row").filter({ hasText: who.name }).first().locator('[data-testid="mc-bat-open"]').getAttribute("aria-expanded") === "true"
+       && Math.abs((await scrolled()) - was) <= 2, `${path()} ${await scrolled()}`);
+    await pickTab(P5, "commentary");
+    await P5.waitForTimeout(300);
+    ok("opened from the tab strip, the Commentary marks no ball and offers no way back", await P5.locator('[data-testid="mc-line"][data-target]').count() === 0
+       && await tid(P5, "mc-back-to-scorecard").count() === 0);
+    ok("no console errors (scorecard to ball)", ph5.errors.length === 0, ph5.errors.join(" | "));
+    await ph5.ctx.close();
+  }
+
+  group("CRI-1.6: on a phone the scorecard's header stays at the top as its rows scroll; a scroll cue where the table is wider than the screen");
+  {
+    const s6 = await open({ viewport: { width: 360, height: 740 } });
+    await signIn(s6.page, /sarah@example\.invalid|Director/);
+    ok("the fixture opens at 360 wide", await openMatch(s6.page, fx.live));
+    const P6 = s6.page;
+    await pickTab(P6, "scorecard");
+    await tid(P6, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
+    await P6.waitForTimeout(300);
+    const heads = await P6.evaluate(() => [...document.querySelectorAll('[data-testid="mc-head"]')].map((h) => ({
+      role: h.getAttribute("role"), cells: [...h.children].map((c) => c.getAttribute("role")), pos: getComputedStyle(h).position,
+      bg: getComputedStyle(h).backgroundColor })));
+    ok("the batting and the bowling each have a header row: role=row, six role=columnheader cells", heads.length === 2
+       && heads.every((h) => h.role === "row" && h.cells.length === 6 && h.cells.every((c) => c === "columnheader")), JSON.stringify(heads));
+    ok("...sticky on a phone, and opaque", heads.every((h) => h.pos === "sticky" && h.bg !== "rgba(0, 0, 0, 0)"), JSON.stringify(heads));
+    // Scroll the batting table's head out of view, its rows still on screen.
+    const stuck = await P6.evaluate(async () => {
+      const m = document.getElementById("os-content");
+      const sc = m && m.scrollHeight > m.clientHeight ? m : document.scrollingElement;
+      const top = sc === document.scrollingElement ? 0 : sc.getBoundingClientRect().top;
+      const table = document.querySelector('[role="table"][aria-label="Batting"]');
+      const head = table.querySelector('[data-testid="mc-head"]');
+      sc.scrollTop += table.getBoundingClientRect().top - top + 120;
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const h = head.getBoundingClientRect(), t = table.getBoundingClientRect();
+      const hit = document.elementFromPoint(h.left + h.width - 12, h.top + h.height / 2);
+      return { headTop: h.top, top, tableTop: t.top, tableBottom: t.bottom, onTop: !!hit && head.contains(hit) };
+    });
+    ok(`scrolled 120px into the batting: its header holds at the top of the screen (${Math.round(stuck.headTop)} = ${Math.round(stuck.top)}), over the rows`,
+       Math.abs(stuck.headTop - stuck.top) <= 1 && stuck.tableTop < stuck.top && stuck.tableBottom > stuck.headTop + 100 && stuck.onTop, JSON.stringify(stuck));
+    ok("at 360 every column fits: no scroll cue, nothing sideways", await tid(P6, "mc-scroll-cue").count() === 0
+       && await P6.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    // A phone at 200% zoom: the six columns no longer fit, and the table says it scrolls.
+    await P6.setViewportSize({ width: 280, height: 740 });
+    await P6.waitForTimeout(500);
+    const cue = tid(P6, "mc-scroll-cue").first();
+    ok("at 280 wide the table scrolls in its own box, and says so above it", await cue.isVisible().catch(() => false)
+       && /Scroll sideways for every figure/.test(await cue.innerText().catch(() => "")) && await tid(P6, "mc-scroll-fade").count() >= 1);
+    ok("...the cue on the 12px floor, and hidden from a screen reader (it reads every cell anyway)",
+       await cue.evaluate((e) => parseFloat(getComputedStyle(e).fontSize) >= 12 && e.getAttribute("aria-hidden") === "true").catch(() => false));
+    ok("...and still nothing sideways on the page", await P6.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    const cues = await tid(P6, "mc-scroll-cue").count();
+    await P6.evaluate(() => { const t = document.querySelector('[role="table"][aria-label="Batting"]'); t.scrollLeft = t.scrollWidth; });
+    await P6.waitForTimeout(300);
+    ok("scrolled to its last column, the batting's cue goes (the bowling's stays)", await tid(P6, "mc-scroll-cue").count() === cues - 1, `${cues} → ${await tid(P6, "mc-scroll-cue").count()}`);
+    await P6.setViewportSize(DESK);
+    await P6.waitForTimeout(400);
+    ok("on a desktop the header is not sticky and there is no cue", await P6.evaluate(() => getComputedStyle(document.querySelector('[data-testid="mc-head"]')).position) === "static"
+       && await tid(P6, "mc-scroll-cue").count() === 0);
+    ok("no console errors (sticky header)", s6.errors.length === 0, s6.errors.join(" | "));
+    await s6.ctx.close();
+  }
+
   group("One address per tab (CRI-1.3): a link opens its tab, a tab moves the address, the back button goes back a tab");
   {
     const dl = await open();
@@ -925,7 +1084,7 @@ try {
     ok("the director of sport signs in", await signIn(bd.page, /sarah@example\.invalid|Director/));
     ok("the decided fixture opens", await openMatch(bd.page, fx.live));
     const B = bd.page;
-    ok("Summary draws, with no failure card", await tid(B, "mc-board-total").count() === 1 && await tid(B, "panel-error").count() === 0);
+    ok("Summary draws (the result view, CRI-1.7), with no failure card", await tid(B, "mc-result-view").count() === 1 && await tid(B, "panel-error").count() === 0);
 
     await tab(B, "commentary");
     const card = tid(B, "panel-error");
