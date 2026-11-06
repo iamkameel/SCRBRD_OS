@@ -374,7 +374,7 @@ const HOME_HTML = join(DIST, "home.html");
  * statically. Everything the home page reaches only by import() — the 2D
  * film, the scene, three.js — is the LAZY graph, under a ceiling of its own,
  * HOME_LAZY_LIMIT_KB, about 800 KB as decided. Measured that day: first
- * paint 253 KB, lazy 589 KB (three.js alone 532 KB). Both graphs, static
+ * paint 228 KB, lazy 582 KB (three.js alone 532 KB, shared with the pitch deck). Both graphs, static
  * and lazy, stay clear of the eight signed-in markers, as before. And
  * three.js must stay lazy: THREE_MARKER (a string in three's renderer) in
  * the first-paint graph fails the build, and its absence from the lazy one
