@@ -148,6 +148,10 @@ const SUITES = [
   // to literal markup and the same on the pad, the Match Centre and the
   // public page (whose row says the fold's labels, never a name).
   ["board-rows",        "apps/web/test/board-rows.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // CRI-1.4: "Enter scoring" on the match page — every role in roles.mjs, a
+  // role without scoring.edit never offered it, one with it only over a
+  // fixture its assignment covers; the capability the scoring routes ask.
+  ["enter-scoring",     "apps/web/test/enter-scoring.test.mjs"],
   // GA-I36 A0/A1: a correction read off the log (the chip, the line, the
   // innings it moved), the effect folded before a decision, and 300 random
   // logs whose fold with voids equals the fold without the voided rows.

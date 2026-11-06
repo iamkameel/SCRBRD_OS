@@ -467,11 +467,15 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
             <Icon name="tv"/> Big screen
           </button>
         )}
+        {/* CRI-1.4: the one way from reading this match into scoring it — an explicit tap, offered only where the
+            caller found an assignment granting the scoring routes' capability over this fixture (lib/enterScoring.js).
+            Nothing else on this page opens the pad, claims the match or calls a scoring route. */}
         {canScoreIt && (isLive || match.status === "upcoming") && onOpenScorer && (
-          <button type="button" onClick={() => onOpenScorer(match)} className="pressBtn"
-            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, background: T.brand.green, color: T.surface.canvas,
+          <button type="button" onClick={() => onOpenScorer(match)} className="pressBtn os-state" data-testid="mc-enter-scoring"
+            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
+              background: T.brand.green, color: T.surface.canvas,
               border: "none", borderRadius: T.radius.pill, cursor: "pointer", fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
-            {isLive ? "Open scorer" : "Start scoring"}
+            <Icon name="pencil"/> Enter scoring
           </button>
         )}
         </span>

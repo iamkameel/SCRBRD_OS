@@ -279,6 +279,9 @@ try {
 
   // ── Desktop, Floodlit ──
   const dos = await open();
+  // CRI-1.4: every write this session asks of a match, from sign-in on. Reading the fixture must ask none.
+  const dosWrites = [];
+  dos.page.on("request", (r) => { if (r.method() !== "GET" && /\/api\/matches\//.test(r.url())) dosWrites.push(`${r.method()} ${new URL(r.url()).pathname}`); });
   ok("the director of sport signs in", await signIn(dos.page, /sarah@example\.invalid|Director/));
   ok("Match Centre opens the fixture", await openMatch(dos.page, fx.live));
   const p = dos.page;
@@ -505,6 +508,16 @@ try {
   const det = await tid(p, "mc-details").innerText();
   ok("the format, the ground and the toss", /T10 · 10 overs a side/.test(det) && /Gordon Sherwood Oval/.test(det)
      && /Hilton College 1XI won the toss and chose to bat/.test(det), det.slice(0, 200));
+  group("CRI-1.4: Enter scoring is offered to the director of sport, and reading every tab never entered it");
+  {
+    const enter = tid(p, "mc-enter-scoring");
+    const geo = await enter.evaluate((e) => ({ h: e.getBoundingClientRect().height, f: parseFloat(getComputedStyle(e).fontSize), t: e.textContent.trim() })).catch(() => null);
+    ok("the live fixture offers \"Enter scoring\" (scoring.edit at Hilton, the fixture's home school)", await enter.count() === 1 && geo?.t === "Enter scoring", geo?.t);
+    ok("...a 44px button on the 12px floor", (geo?.h ?? 0) >= 44 && (geo?.f ?? 0) >= 12, JSON.stringify(geo));
+    ok("reading the fixture, every tab of it, asked no write of the match: no claim, no ball, no handover",
+       dosWrites.length === 0, dosWrites.join(" | "));
+    ok("...and the pad never opened: the reader is still on the match page", await p.locator(".scorer-shell").count() === 0 && await tid(p, "match-view").count() === 1);
+  }
   await tid(p, "mc-back").click(); await p.waitForTimeout(600);
   ok("All matches goes back to the list", await tid(p, "match-view").count() === 0 && await tid(p, `match-card-${fx.live}`).count() === 1);
   // CRI-1.2: the card's sentence is the same function's, from the list's own read (no log): the toss it carries.
@@ -840,6 +853,60 @@ try {
     await afterReads(sp.page, 1500);
     ok("...and has the fixture on its Summary, with no Coach tab", await tid(sp.page, "mc-panel-summary").count() === 1 && await tid(sp.page, "mc-tab-coach").count() === 0);
     await sp.ctx.close();
+  }
+
+  group("CRI-1.4: who is offered Enter scoring — only an assignment that may score this fixture; the pad opens on the tap alone");
+  {
+    const sees = async (who, id) => {
+      const s = await open();
+      const writes = [];
+      s.page.on("request", (r) => { if (r.method() !== "GET" && /\/api\/matches\//.test(r.url())) writes.push(`${r.method()} ${new URL(r.url()).pathname}`); });
+      // A regex picks a listed account; an address is typed (not every seeded account is on the list).
+      let inn;
+      if (typeof who === "string") {
+        await click(s.page, /Get Started|Log In/, 5000);
+        await s.page.waitForTimeout(500);
+        await s.page.locator('input[type="email"]').first().fill(who);
+        await click(s.page, /^Sign In$/, 5000);
+        await afterReads(s.page, 2000);
+        inn = /Match Centre|Dashboard/i.test(await text(s.page));
+      } else inn = await signIn(s.page, who);
+      const opened = await openMatch(s.page, id);
+      return { s, inn, opened, writes, offered: await tid(s.page, "mc-enter-scoring").count() === 1 };
+    };
+    const w = await sees(/watcher@example\.invalid|Spectator/, fx.brk);
+    ok("a spectator opens the live U16A fixture and is never offered it (no scoring.edit)", w.inn && w.opened && !w.offered);
+    await w.s.ctx.close();
+    // A fixture the away side's coach can read (db/97): Hilton's 1XI at home to Westville's, live, nothing bowled yet.
+    const [{ id: awayFx }] = await q(
+      `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, ground_id, starts_at, sport, format, overs, status)
+       values ($1, '1XI', $2, '1XI', 'Westville Boys'' High 1XI', null, now() - interval '5 minutes', 'cricket', 'T10', 10, 'live') returning id`,
+      [HIL, (await q(`select away_school_id from match where id = $1`, [fx.live]))[0].away_school_id]);
+    const wes = await sees("coach.wes@example.invalid", awayFx);
+    ok("Westville's 1XI coach reads the fixture his side is the away side of, and is not offered it: scoring is the home side's log",
+       wes.inn && wes.opened && !wes.offered, JSON.stringify({ inn: wes.inn, opened: wes.opened, offered: wes.offered }));
+    await wes.s.ctx.close();
+    const c1 = await sees("coach@example.invalid", awayFx);
+    ok("Hilton's 1XI coach is offered it on his own side's fixture", c1.inn && c1.opened && c1.offered, JSON.stringify({ inn: c1.inn, opened: c1.opened, offered: c1.offered }));
+    await c1.s.ctx.close();
+    const c2 = await sees("coach2@example.invalid", awayFx);
+    ok("Hilton's 2XI coach holds scoring.edit too, but for the 2XI: on the 1XI's fixture he is not offered it",
+       c2.inn && !c2.offered, JSON.stringify({ inn: c2.inn, opened: c2.opened, offered: c2.offered }));
+    await c2.s.ctx.close();
+    await q(`update match set status = 'complete' where id = $1`, [awayFx]);
+    const done = await sees(/sarah@example\.invalid|Director/, fx.live);
+    ok("on the finished fixture nobody is offered it, the director of sport included", done.opened && !done.offered);
+    await done.s.ctx.close();
+    const sc1 = await sees(/scorer@example\.invalid|Scorer/, fx.brk);
+    ok("the school's scorer is offered it on the live U16A fixture", sc1.inn && sc1.opened && sc1.offered);
+    for (const t of TABS) await pickTab(sc1.s.page, t).catch(() => {});
+    await afterReads(sc1.s.page, 500);
+    ok("...and reading all six of its tabs asked no write and opened no pad", sc1.writes.length === 0 && await sc1.s.page.locator(".scorer-shell").count() === 0,
+       sc1.writes.join(" | "));
+    await tid(sc1.s.page, "mc-enter-scoring").click({ timeout: 4000 }).catch(() => {});
+    ok("his tap on it opens the pad", await until(sc1.s.page, () => !!document.querySelector(".scorer-shell"), 10000));
+    ok("no console errors (Enter scoring)", sc1.s.errors.length === 0, sc1.s.errors.join(" | "));
+    await sc1.s.ctx.close();
   }
 
   group("An error boundary: a panel that throws is a card in its own place, and its neighbours stand");

@@ -4,7 +4,8 @@ import { useTheme } from "../design/theme.js";
 import { humanDate } from "../lib/format.js";
 import { useLive } from "../lib/live.js";
 import { canScore, holdsCapability } from "../rbac/index.js";
-import { schoolsWhere } from "../lib/session.js";
+import { profile, schoolsWhere } from "../lib/session.js";
+import { ENTERABLE, mayEnterScoring } from "../lib/enterScoring.js";
 import { Btn, Card, ReadState, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { MatchView } from "./matchcentre/MatchView.jsx";
@@ -173,8 +174,13 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
     // The row as the list has it now, so a live fixture that has moved on
     // (a result, a new status) is the one the view shows.
     const fresh = MATCHES.find((m) => m.id === openM.id) ?? openM;
+    // CRI-1.4: the match page's "Enter scoring", signed in, only where one of this
+    // person's assignments grants the scoring routes' own capability over THIS
+    // fixture (lib/enterScoring.js). The demonstration has no session and no
+    // server to refuse it, so its role decides, as the list's buttons do.
+    const enters = signedIn() ? mayEnterScoring(profile()?.assignments, fresh) : canScore(role) && ENTERABLE.includes(fresh.status);
     return (
-      <MatchView match={fresh} role={role} onClose={() => { setOpenM(null); setCoachOn(null); }} canScoreIt={canScore(role)}
+      <MatchView match={fresh} role={role} onClose={() => { setOpenM(null); setCoachOn(null); }} canScoreIt={enters}
         initialTab={coachOn?.tab ?? null} initialDrawer={coachOn?.drawer ?? false} initialCorrections={coachOn?.corrections ?? false}
         route={{ tab: route?.matchId === fresh.id ? route.tab : null, setTab: (t) => navigate(appPath(fresh.id, t)) }}
         onOpenScorer={onOpenScorer} onNavProfile={onNavProfile} onNav={onNav} onOpenDuties={openDuties}
