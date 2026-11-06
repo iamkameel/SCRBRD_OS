@@ -2,8 +2,18 @@
 /**
  * A PLAYED SEASON for the DEMO copy (scrbrd-demo), as SQL the lead pastes.
  *
- *   node tools/demo-season.mjs <out-dir>            the season: demo-season-1.sql … -N.sql, pasted in order
- *   node tools/demo-season.mjs --live <ISO> <out-dir>  tomorrow's live 1XI match: demo-live.sql
+ *   node tools/demo-season.mjs <out-dir>          the season: demo-season-1.sql … -3.sql, pasted in order
+ *   node tools/demo-season.mjs --live <out-dir>   tomorrow's live 1XI match: demo-live.sql, pasted after them.
+ *       Every time in it is relative to now() at the paste: the match started about
+ *       90 minutes before, the first innings is sealed, the chase is 8 overs in and
+ *       nobody holds the pen, so scorer1.wes's pad claims it and scores on.
+ *
+ * TWELVE MATCHES, chosen for the tour (the lead, 6 Nov): the WES 1XI's three
+ * league games and a friendly; U14A ×2, U16B ×2, U15A, U16A; 2XI and 3XI at
+ * Westville Main so the ground has the five open-age first innings its par
+ * needs. The demo's other October fixtures are rearranged into late November,
+ * and Hilton's two open seed fixtures called off. The career reads slow with
+ * the size of the whole log (row security per ball): see the lead's PERF.md.
  *
  * Westville (WES) and Kearsney (KEA), every side, 7 October to 5 November
  * 2026, at Westville Main and at Kearsney Main (added here as Kearsney's own
@@ -52,10 +62,9 @@ import { ROSTER, sideOf, WES, KEA } from "./demo-roster.mjs";
 
 const args = process.argv.slice(2);
 const LIVE = args[0] === "--live";
-const liveAt = LIVE ? args[1] : null;
-const outDir = LIVE ? args[2] : args[0];
-if (!outDir || (LIVE && !liveAt)) {
-  console.error("usage: node tools/demo-season.mjs <out-dir>\n       node tools/demo-season.mjs --live <ISO start> <out-dir>");
+const outDir = args.at(-1);
+if (!outDir || outDir.startsWith("--")) {
+  console.error("usage: node tools/demo-season.mjs <out-dir>\n       node tools/demo-season.mjs --live <out-dir>");
   process.exit(2);
 }
 mkdirSync(outDir, { recursive: true });

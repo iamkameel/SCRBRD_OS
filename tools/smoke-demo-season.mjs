@@ -8,7 +8,7 @@
  *   SCRBRD_DB=demo_season SCRBRD_DB_PORT=5433 node tools/demo-replica.mjs
  *   node tools/demo-season.mjs <dir>  &&  psql … -f <dir>/demo-season-1.sql … -N.sql
  *   SCRBRD_DB=demo_season SCRBRD_DB_PORT=5433 SCRBRD_PORT_OFFSET=171 node tools/smoke-demo-season.mjs
- *   node tools/demo-season.mjs --live <ISO> <dir>  &&  psql … -f <dir>/demo-live.sql
+*   node tools/demo-season.mjs --live <dir>  &&  psql … -f <dir>/demo-live.sql
  *   … node tools/smoke-demo-season.mjs --live      the live match: par, and the pad scores one more ball
  *   … node tools/smoke-demo-season.mjs --browser [shots-dir]   screenshots (needs apps/web/dist)
  *
