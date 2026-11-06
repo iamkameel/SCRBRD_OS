@@ -137,7 +137,8 @@ async function openMatch(page, id) {
 const measure = (page, id) => tid(page, id).first().evaluate((el) => {
   const r = el.getBoundingClientRect();
   const fs = parseFloat(getComputedStyle(el).fontSize);
-  return { h: r.height, fs };
+  // To the hundredth of a pixel: the press transition's scale can leave 43.99994 for a 44px box.
+  return { h: Math.round(r.height * 100) / 100, fs };
 });
 
 try {
