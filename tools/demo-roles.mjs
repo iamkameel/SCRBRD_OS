@@ -141,12 +141,17 @@ const contacts = CONTACT_BOYS.map((n) => {
     const i = contactNo++;
     const name = `${CONTACT_NAMES[i % CONTACT_NAMES.length]} (demo)`;
     const phone = `+27 00 000 ${String(1000 + i * 37).slice(-4)}`;
-    return `  UPDATE emergency_contact SET active = false WHERE player_id = ${P(n)} AND priority = ${pr} AND active;
-  INSERT INTO emergency_contact (player_id, priority, name, relationship, phone, phone_alt, email, note)
-  VALUES (${P(n)}, ${pr}, ${q(name)}, ${q(rel)}, ${q(phone)}, NULL, NULL, ${pr === 1 ? "'Works shifts: try the second number after 18:00 (demo).'" : "NULL"})
-  RETURNING id INTO v;
-  IF v IS NULL THEN RAISE EXCEPTION 'The parent of boy ${n} could not add a contact. Nothing was changed.'; END IF;
-  contacts := contacts || jsonb_build_object(${q(`${n}:${pr}`)}, v);`;
+    // A contact already at this place (the season's: a lift rings it) is kept, not replaced.
+    return `  IF had_contacts ? ${q(`${n}:${pr}`)} THEN
+    contacts := contacts || jsonb_build_object(${q(`${n}:${pr}`)}, had_contacts->>${q(`${n}:${pr}`)});
+  ELSE
+    UPDATE emergency_contact SET active = false WHERE player_id = ${P(n)} AND priority = ${pr} AND active;
+    INSERT INTO emergency_contact (player_id, priority, name, relationship, phone, phone_alt, email, note)
+    VALUES (${P(n)}, ${pr}, ${q(name)}, ${q(rel)}, ${q(phone)}, NULL, NULL, ${pr === 1 ? "'Works shifts: try the second number after 18:00 (demo).'" : "NULL"})
+    RETURNING id INTO v;
+    IF v IS NULL THEN RAISE EXCEPTION 'The parent of boy ${n} could not add a contact. Nothing was changed.'; END IF;
+    contacts := contacts || jsonb_build_object(${q(`${n}:${pr}`)}, v);
+  END IF;`;
   }).join("\n");
   return `${as(parentOf(n))}\n${rows}`;
 }).join("\n\n");
@@ -355,10 +360,12 @@ const roleRequest = `${as(parentOf(20))}
   IF v IS NULL THEN RAISE EXCEPTION 'The parent could not ask to score. Nothing was changed.'; END IF;`;
 
 // ── 10 · A lift driver's declaration (POST /api/lifts/declaration) ──
-const declaration = `${as(parentOf(2))}
-  SELECT ok, reason INTO r FROM lift_driver_declare(${q(WES)}::uuid, 'Silver hatchback (demo)', 'DEMO 002', 3, true, true, true, true, true,
-                                                     (contacts->>'2:1')::uuid);
-${must("The parent could not make the driver's declaration")}`;
+const declaration = `  IF NOT (current_setting('demo_roles.declared')::boolean) THEN
+${as(parentOf(2))}
+    SELECT ok, reason INTO r FROM lift_driver_declare(${q(WES)}::uuid, 'Silver hatchback (demo)', 'DEMO 002', 3, true, true, true, true, true,
+                                                       (contacts->>'2:1')::uuid);
+  ${must("The parent could not make the driver's declaration")}
+  END IF;`;
 
 // ── 11 · Availability for the coming fixtures, by each boy's parent (POST /matches/:id/availability) ──
 // Only fixtures already there, starting in the next ten days, not started, and
@@ -387,18 +394,22 @@ const availability = `  FOR f IN SELECT * FROM jsonb_to_recordset(current_settin
 
 // ── 12 · Transport: a second WES vehicle, a KEA minibus (POST /api/vehicles) ──
 const vehicles = `${as("transport.wes")}
+  IF NOT (current_setting('demo_roles.vehicles')::jsonb ? 'WES DEMO 2') THEN
   INSERT INTO vehicle (school_id, registration, description, kind, capacity, condition, next_service_on, active, notes,
-                       insurance_expires_on, roadworthy_expires_on)
-  VALUES (${q(WES)}, 'WES DEMO 2', 'Demo bus, 60 seats', 'bus', 60, 'good', ${day(40)}, true, ${q(MARK)}, date '2027-06-30', date '2027-02-28')
-  RETURNING id INTO v;
-  IF v IS NULL THEN RAISE EXCEPTION 'The WES transport coordinator could not add the bus. Nothing was changed.'; END IF;
+                         insurance_expires_on, roadworthy_expires_on)
+    VALUES (${q(WES)}, 'WES DEMO 2', 'Demo bus, 60 seats', 'bus', 60, 'good', ${day(40)}, true, ${q(MARK)}, date '2027-06-30', date '2027-02-28')
+    RETURNING id INTO v;
+    IF v IS NULL THEN RAISE EXCEPTION 'The WES transport coordinator could not add the bus. Nothing was changed.'; END IF;
+  END IF;
 
 ${as("transport.kea")}
+  IF NOT (current_setting('demo_roles.vehicles')::jsonb ? 'KEA DEMO 1') THEN
   INSERT INTO vehicle (school_id, registration, description, kind, capacity, condition, next_service_on, active, notes,
-                       insurance_expires_on, roadworthy_expires_on)
-  VALUES (${q(KEA)}, 'KEA DEMO 1', 'Demo minibus, 16 seats', 'minibus', 16, 'excellent', ${day(25)}, true, ${q(MARK)}, date '2027-04-30', date '2027-03-31')
-  RETURNING id INTO v;
-  IF v IS NULL THEN RAISE EXCEPTION 'The KEA transport coordinator could not add the minibus. Nothing was changed.'; END IF;`;
+                         insurance_expires_on, roadworthy_expires_on)
+    VALUES (${q(KEA)}, 'KEA DEMO 1', 'Demo minibus, 16 seats', 'minibus', 16, 'excellent', ${day(25)}, true, ${q(MARK)}, date '2027-04-30', date '2027-03-31')
+    RETURNING id INTO v;
+    IF v IS NULL THEN RAISE EXCEPTION 'The KEA transport coordinator could not add the minibus. Nothing was changed.'; END IF;
+  END IF;`;
 
 // ── 13 · Lift clubs at Kearsney: the platform grants the module, the principal signs the policy ──
 const KEA_POLICY = [
@@ -557,6 +568,12 @@ BEGIN
   PERFORM set_config('demo_roles.entrants', coalesce((SELECT jsonb_agg(jsonb_build_object('school_id', school_id, 'team_code', team_code))::text
                                                          FROM competition_entrant WHERE competition_id = ${q(COMPETITION)}
                                                           AND status IN ('invited', 'accepted')), '[]'), true);
+  PERFORM set_config('demo_roles.contacts_had', coalesce((SELECT jsonb_object_agg(right(c.player_id::text, 3)::int::text || ':' || c.priority, c.id)::text
+      FROM emergency_contact c WHERE c.active AND c.player_id::text LIKE 'de300000-0000-4000-8000-%'), '{}'), true);
+  PERFORM set_config('demo_roles.declared', (EXISTS (SELECT 1 FROM lift_driver_declaration d JOIN app_user u ON u.id = d.person_id
+      WHERE u.email = ${q(parentOf(2))} AND d.withdrawn_at IS NULL))::text, true);
+  PERFORM set_config('demo_roles.vehicles', coalesce((SELECT jsonb_object_agg(upper(registration), true)::text FROM vehicle
+      WHERE school_id IN (${q(WES)}, ${q(KEA)})), '{}'), true);
   PERFORM set_config('demo_roles.conditions', (EXISTS (SELECT 1 FROM condition_set WHERE competition_id = ${q(COMPETITION)}))::text, true);
 END $read$;
 
@@ -579,6 +596,7 @@ DECLARE
   ts       jsonb := '{}';   -- "WES/1XI/-4" -> training session id
   sp       jsonb := '{}';   -- sponsor name -> id
   contacts jsonb := '{}';   -- "boy:priority" -> emergency contact id
+  had_contacts jsonb := current_setting('demo_roles.contacts_had')::jsonb;   -- the same, already there
   r        record;
   c        record;
   b        record;
@@ -660,7 +678,7 @@ DECLARE cl int; soon int; ec int; inj int; rev int; ts int; att int; sk int; dn 
         gl int; rr int; dec int; veh int; spn int; spl int; ent int; cs int; nw int;
 BEGIN
   SELECT count(*), count(*) FILTER (WHERE expires_on <= sa_today() + 30) INTO cl, soon FROM adult_clearance WHERE note = ${q(MARK)};
-  SELECT count(*) INTO ec FROM emergency_contact WHERE active AND name LIKE '% (demo)' AND player_id IN (${CONTACT_BOYS.map(P).join(", ")});
+  SELECT count(DISTINCT (player_id, priority)) INTO ec FROM emergency_contact WHERE active AND priority <= 2 AND player_id IN (${CONTACT_BOYS.map(P).join(", ")});
   SELECT count(*) INTO inj FROM injury WHERE player_id IN (${INJURIES.map((j) => P(j.n)).join(", ")});
   SELECT count(*) INTO rev FROM injury_review rv JOIN injury i ON i.id = rv.injury_id WHERE i.player_id IN (${INJURIES.map((j) => P(j.n)).join(", ")});
   SELECT count(*) INTO ts FROM training_session WHERE school_id IN (${q(WES)}, ${q(KEA)}) AND starts_at > now() - interval '6 days';

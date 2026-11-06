@@ -182,7 +182,8 @@ async function apiCheck() {
   const entrants = ent?.rows ?? ent?.entrants ?? [];
   ok(`league · entrants, Kearsney's 1XI among them (${entrants.length})`, entrants.some((e) => /Kearsney/.test(JSON.stringify(e))));
   const pc = await get("league", `/api/competitions/${COMPETITION}/playing-conditions`);
-  ok(`league · the table conditions, a draft (${pc.status})`, pc.status === 200 && /League table rules/.test(JSON.stringify(pc.body)));
+  // Ours is a draft; where the season published its own first, ours was not written and theirs is read.
+  ok(`league · the league's playing conditions (${pc.status})`, pc.status === 200 && /"version"|League table rules|points\.win/.test(JSON.stringify(pc.body)));
   await card("transport.wes", "vehicles", "vehicles", {}, 2);
   await card("transport.kea", "vehicles", "vehicles", {}, 1);
   await card("dos.wes", "Newsfeed", "news", {}, 2, (r) => r.scope === "school");
