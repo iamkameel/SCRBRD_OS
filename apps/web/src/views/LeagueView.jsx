@@ -21,8 +21,9 @@ import { useTheme } from "../design/theme.js";
 import { schoolsWhere } from "../lib/session.js";
 import {
   ALL_SEASONS, awardSeasons, bestBattingAverages, bestBowlingEconomies, defaultAwardSeason, mvpRanking,
-  playersForSeason, scoped, topRunScorers, topWicketTakers,
+  playersForSeason, rankingMethod, scoped, showsRankings, topRunScorers, topWicketTakers,
 } from "../lib/seasonAwards.js";
+import { heldRoles } from "../lib/features.js";
 import { Icon } from "../ui/icons.jsx";
 import { SourceLine } from "../ui/sourceLine.jsx";
 import { SRC_ENTERED, SRC_RECORD, SRC_RESULTS, WINDOW_ALL, ballsFacedBasis, seasonWindow } from "../lib/sourceWords.js";
@@ -74,6 +75,12 @@ function LeagueView({ role, homeBar = null }) {
   // there and this read is where it comes from — with its divisions.
   const LADDER = useLive("league", role, 0, comp?.live ? { competitionId: comp.id } : null).rows;
   const canEdit = holdsCapability(role,"competition.manage");
+  // Recognition D23 / A15 (R5b): a list of players ordered by a figure — the
+  // Top Performers tab, the Season Awards tab and its MVP — is drawn for
+  // staff only, labelled with its method. A pupil, a parent, a `player` with
+  // no file, a parent who is also a spectator: none is offered either tab,
+  // and neither is drawn for them even if `tab` somehow names it.
+  const ranks = showsRankings(heldRoles(role));
 
   // Editable table row state
   const [tableEdit, setTableEdit] = useState({}); // { teamName: {W,L,NR} }
@@ -154,7 +161,7 @@ function LeagueView({ role, homeBar = null }) {
               if(t==="conditions") return !!comp.live;
               // SCRBRD-123: the competition's manager plans its fixtures; the API decides who that is, this offers the tab to those whose role can.
               if(t==="planner") return !!comp.live&&holdsCapability(role,"competition.conditions.manage");
-              if(t==="performers") return true;
+              if(t==="performers"||t==="awards") return ranks;
               return true;
             }).map(t=>(
               <button key={t} aria-pressed={tab===t} data-testid={`league-tab-${t}`} onClick={()=>setTab(t)} className="pressBtn" style={{
@@ -329,7 +336,7 @@ function LeagueView({ role, homeBar = null }) {
           )}
 
           {/* ── TOP PERFORMERS ── */}
-          {tab==="performers"&&(
+          {tab==="performers"&&ranks&&(
             <>
             <div style={{marginBottom:"12px"}}>
               {/* The two lists rank Hilton's players (school "HIL") of every age group, whatever competition is chosen above. */}
@@ -338,8 +345,11 @@ function LeagueView({ role, homeBar = null }) {
                 denominator={ballsFacedBasis(PLAYERS.filter(p=>p.school==="HIL"))}/>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px"}}>
-              <Card>
-                <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}><Icon name="bat"/> Top Batters — {comp.ageGroup}</div>
+              <Card data-testid="performers-batting" data-ranking="players">
+                <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}><Icon name="bat"/> Top Batters — {comp.ageGroup}</div>
+                  <div data-testid="performers-batting-method" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{rankingMethod("average", ALL_SEASONS)}</div>
+                </div>
                 {topBat.map((p,i)=>(
                   <div key={p.id} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px"}}>
                     <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,width:"16px"}}>{i+1}</span>
@@ -359,8 +369,11 @@ function LeagueView({ role, homeBar = null }) {
                   </div>
                 ))}
               </Card>
-              <Card>
-                <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}><Icon name="ball"/> Top Bowlers — {comp.ageGroup}</div>
+              <Card data-testid="performers-bowling" data-ranking="players">
+                <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
+                  <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}><Icon name="ball"/> Top Bowlers — {comp.ageGroup}</div>
+                  <div data-testid="performers-bowling-method" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{rankingMethod("wicketCount", ALL_SEASONS)}</div>
+                </div>
                 {topBowl.map((p,i)=>(
                   <div key={p.id} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px"}}>
                     <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,width:"16px"}}>{i+1}</span>
@@ -385,7 +398,7 @@ function LeagueView({ role, homeBar = null }) {
           )}
 
           {/* ── SEASON AWARDS / MVP (SCRBRD-084), season by season (SCRBRD-086) ── */}
-          {tab==="awards"&&(
+          {tab==="awards"&&ranks&&(
             <div data-testid="season-awards">
               <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"8px"}}>
                 <select value={seasonPending?"":activeSeason} onChange={e=>setAwardsSeason(e.target.value)}
@@ -434,25 +447,29 @@ function LeagueView({ role, homeBar = null }) {
               <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px"}}>
                 <RankedList testId="awards-run-scorers" icon="bat" title="Top Run-Scorers" color={D.sky}
                   rows={topRunScorers(AWARD_PLAYERS, awardScope)}
-                  primary={p=>p.runs} primaryLabel="runs" secondary={p=>p.avg} secondaryLabel="avg"/>
+                  primary={p=>p.runs} primaryLabel="runs" secondary={p=>p.avg} secondaryLabel="avg"
+                  method={rankingMethod("runs", activeSeason)}/>
                 <RankedList testId="awards-wicket-takers" icon="ball" title="Top Wicket-Takers" color={D.violet}
                   rows={topWicketTakers(AWARD_PLAYERS, awardScope)}
-                  primary={p=>p.wkts} primaryLabel="wkts" secondary={p=>p.econ} secondaryLabel="econ"/>
+                  primary={p=>p.wkts} primaryLabel="wkts" secondary={p=>p.econ} secondaryLabel="econ"
+                  method={rankingMethod("wickets", activeSeason)}/>
                 <RankedList testId="awards-batting-index" icon="trending-up" title="Best Batting Index" color={D.emerald}
                   rows={bestBattingAverages(AWARD_PLAYERS, awardScope).map(x=>({...x.player,index:x.index.value}))}
                   primary={p=>p.index} primaryLabel="index" secondary={p=>p.avg} secondaryLabel="avg"
-                  empty="Nobody here has faced the 30 balls the index needs yet."/>
+                  empty="Nobody here has faced the 30 balls the index needs yet."
+                  method={rankingMethod("batting", activeSeason)}/>
                 <RankedList testId="awards-bowling-index" icon="trending-down" title="Best Bowling Index" color={D.orange}
                   rows={bestBowlingEconomies(AWARD_PLAYERS, awardScope).map(x=>({...x.player,index:x.index.value}))}
                   primary={p=>p.index} primaryLabel="index" secondary={p=>p.econ} secondaryLabel="econ"
-                  empty="Nobody here has bowled the 36 balls the index needs yet."/>
+                  empty="Nobody here has bowled the 36 balls the index needs yet."
+                  method={rankingMethod("bowling", activeSeason)}/>
               </div>
               <div style={{marginTop:"14px"}}>
                 <RankedList testId="awards-mvp" icon="trophy" title="MVP Ranking" color={D.amber}
                   rows={mvpRanking(AWARD_PLAYERS, awardScope).map(x=>({...x.player,mvp:x.score}))}
                   primary={p=>p.mvp} primaryLabel="rating" secondary={p=>p.team} secondaryLabel=""
                   empty="Nobody here clears the sample floor for either index yet."
-                  sub="Batting and bowling index, averaged where a player has both — never a rating either index refused (packages/scoring's own sample floor)."/>
+                  method={rankingMethod("mvp", activeSeason)}/>
               </div>
               </>)}
             </div>
@@ -576,12 +593,12 @@ function AwardsReadFailed({ read, onRetry }) {
  * apps/web/src/lib/seasonAwards.js: this component only draws it, the same
  * division of labour the Match Centre (views/matchcentre/) keeps between the fold and the screen.
  */
-function RankedList({ testId, icon, title, color, rows, primary, primaryLabel, secondary, secondaryLabel, empty, sub }) {
+function RankedList({ testId, icon, title, color, rows, primary, primaryLabel, secondary, secondaryLabel, empty, method }) {
   return (
-    <Card data-testid={testId}>
+    <Card data-testid={testId} data-ranking="players">
       <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
         <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}>{icon&&<Icon name={icon}/>} {title}</div>
-        {sub&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{sub}</div>}
+        {method&&<div data-testid={`${testId}-method`} style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{method}</div>}
       </div>
       {rows.length===0
         ? <div style={{padding:"20px 14px",textAlign:"center",fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{empty ?? "Nobody on record for this scope yet."}</div>

@@ -7,6 +7,8 @@ import { Icon } from "../ui/icons.jsx";
 import { api, signedIn } from "../lib/api.js";
 import { leagueSetupState } from "../lib/league.js";
 import { LeagueInvitations } from "./leagueinvites.jsx";
+import { heldRoles } from "../lib/features.js";
+import { ALL_SEASONS, rankingMethod, showsRankings } from "../lib/seasonAwards.js";
 
 // The league wizard (SCRBRD-127) and the fixture planner (SCRBRD-123) are opened
 // from here and are the largest screens in this view, so they load when first
@@ -59,6 +61,10 @@ function CompetitionsView({ role, homeBar = null }) {
   const COMPETITIONS = useRows("competitions", role, nonce);
   const MATCHES = useRows("matches", role);
   const PLAYERS = usePlayersWithCareer(role);
+  // Recognition D23 / A15 (R5b): the Top Performers card orders players by a
+  // figure, so it is staff's only, with its method said; a pupil or a parent
+  // is not shown it (lib/seasonAwards.js showsRankings).
+  const ranks = showsRankings(heldRoles(role));
   const [active, setActive] = useState("comp1");
   // What the screen is showing in place of the list: the league wizard (new, or
   // reopened for a league part-made), or a league's fixture planner.
@@ -201,10 +207,11 @@ function CompetitionsView({ role, homeBar = null }) {
                 </div>
               ))}
             </Card>
-            <Card sx={{padding:"14px"}}>
+            {ranks&&<Card sx={{padding:"14px"}} data-testid="competition-top-performers" data-ranking="players">
               <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"12px"}}>Top Performers</div>
               <div style={{marginBottom:"10px"}}>
                 <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"6px"}}>BATTING</div>
+                <div data-testid="competition-top-batting-method" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"6px"}}>{rankingMethod("average", ALL_SEASONS)}</div>
                 {PLAYERS.filter(p=>p.team==="1XI").sort((a,b)=>b.avg-a.avg).slice(0,3).map((p,i)=>(
                   <div key={p.id} style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}}>
                     <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,width:"14px"}}>{i+1}</span>
@@ -216,6 +223,7 @@ function CompetitionsView({ role, homeBar = null }) {
               </div>
               <div>
                 <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"6px"}}>BOWLING</div>
+                <div data-testid="competition-top-bowling-method" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"6px"}}>{rankingMethod("wicketCount", ALL_SEASONS)}</div>
                 {PLAYERS.filter(p=>p.team==="1XI"&&p.wkts>0).sort((a,b)=>b.wkts-a.wkts).slice(0,3).map((p,i)=>(
                   <div key={p.id} style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}}>
                     <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,width:"14px"}}>{i+1}</span>
@@ -225,7 +233,7 @@ function CompetitionsView({ role, homeBar = null }) {
                   </div>
                 ))}
               </div>
-            </Card>
+            </Card>}
           </div>
         </div>
       )}
