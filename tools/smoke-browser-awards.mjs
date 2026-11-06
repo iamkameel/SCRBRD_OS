@@ -732,6 +732,96 @@ try {
     ok("no console errors on the coach's session", c.errors.length === 0, c.errors.join(" | "));
     await c.ctx.close().catch(() => {});
   }
+
+  // RECOGNITION R9 (db/143): the school record boards, from a browser. Two
+  // 1st XI matches today, each with a result and both innings sealed, each
+  // finished as the scorer's finish sets it: Records Batter's 12, then R
+  // Pillay's 14*, which takes the record. The director reads the full board
+  // (with this season's ordered list, staff only); R Pillay reads his side's
+  // board on his Matches screen as a pavilion board shows it, and no list.
+  group("Record boards: the director reads the full board, the pupil the chronology");
+  {
+    const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005";
+    const [{ id: rb }] = await q(`insert into player (school_id, team_code, full_name, squad_no, playing_role, born)
+                                  values ($1, '1XI', 'Records Batter', 1438, 'batter', current_date - interval '16 years') returning id`, [HIL]);
+    const [{ id: lg }] = await q(`insert into competition (school_id, name, comp_type, format, level)
+                                  values ($1, 'Records Browser League', 'league', 'T20', 'school') returning id`, [HIL]);
+    await q(`insert into competition_entrant (competition_id, school_id, team_code, display_name) values ($1, $2, '1XI', 'Hilton 1st XI')`, [lg, HIL]);
+    let rseq = 0;
+    const rev = (m, inn, kind, { t = null, v = null, s = null, payload = {} } = {}) => {
+      rseq += 1;
+      return q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                                       client_seq, client_ts, kind, ball_type, value, dismissal, striker_id, payload)
+                values ($1, $2, $3, 1, $4, $5, 'browser-records', $6, $3, now(), $7, $8, $9, $10, $11, $12)`,
+               [m, HIL, rseq, inn, su, `browser-records-${m}-${rseq}`, kind, t, v, t === "W" ? "bowled" : null, s, payload]);
+    };
+    const sealR = async (m, inn, reason) => {
+      const [c] = await q(`select coalesce(sum(value), 0)::int runs, (count(*) filter (where ball_type = 'W'))::int wickets, count(*)::int balls
+                             from ball_event_live where match_id = $1 and innings = $2 and kind = 'ball'`, [m, inn]);
+      await rev(m, inn, "innings_end", { payload: { reason, confirmed: c } });
+    };
+    const sq = Array.from({ length: 11 }, (_, i) => ({ id: `br-${i + 1}`, name: `BR ${i + 1}` }));
+    const recMatch = async (opponent, hoursAgo, striker, balls) => {
+      const [{ id }] = await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status, competition_id)
+                                values ($1, '1XI', $2, now() - ($3 || ' hours')::interval, 'cricket', 'T20', 20, 'live', $4) returning id`,
+                               [HIL, opponent, String(hoursAgo), lg]);
+      await rev(id, 0, "innings_start", { payload: { battingTeam: "1XI", bowlingTeam: opponent, squad: sq, overs: 20 } });
+      for (const v of balls) await rev(id, 0, "ball", { t: "run", v, s: striker });
+      await sealR(id, 0, "declared");
+      await rev(id, 1, "innings_start", { payload: { battingTeam: opponent, bowlingTeam: "1XI", squad: sq, overs: 20 } });
+      for (let i = 0; i < 10; i++) await rev(id, 1, "ball", { t: "W", v: 0 });
+      await sealR(id, 1, "all_out");
+      await q(`update match set status = 'complete' where id = $1`, [id]);
+      return id;
+    };
+    await recMatch("Records DHS", 3, rb, [6, 6]);                 // 12
+    await recMatch("Records Kearsney", 1, PILLAY, [6, 6, 2]);     // 14*
+    const [note] = await q(`select title, recipient_id from notification where title like 'School record%' and team_code = '1XI'`);
+    ok("finishing the second match noticed the record to the side, to nobody alone",
+       note?.title === "School record · Highest innings 1XI T20: 14* R Pillay" && note.recipient_id === null, JSON.stringify(note));
+
+    const st = await open();
+    ok("the director of sport signs in", await signIn(st.page, /sarah@example\.invalid|Director/));
+    ok("Leagues opens", await nav(st.page, /Leagues/));
+    await st.page.locator('[data-testid="league-tab-records"]').click({ timeout: WAIT }).catch(() => {});
+    ok("the Records tab opens", await until(st.page, () => !!document.querySelector('[data-testid="league-records"]')));
+    await st.page.selectOption('[data-testid="records-team-select"]', "1XI").catch(() => {});
+    const drawn = await until(st.page, () => /Holder/.test(document.querySelector('[data-testid="staff-records"]')?.innerText ?? ""));
+    const said = drawn ? (await st.page.locator('[data-testid="staff-records"]').innerText()).replace(/\s+/g, " ") : "";
+    ok("the 1st XI's board: R Pillay's 14* holds it, the 12 before it", drawn
+       && /Highest innings · 1XI · T20 · School Records/.test(said) && /Holder · 14\* R Pillay v Records Kearsney/.test(said)
+       && /Formerly 12\* Records Batter v Records DHS/.test(said), said.slice(0, 500));
+    ok("...with its coverage said", /In verified SCRBRD matches since \w{3} \d{4}\. Earlier matches are not counted\./.test(said));
+    ok("...and, for staff, this season's list, labelled as theirs", /This season · ordered by highest innings · staff only/.test(said)
+       && await st.page.locator('[data-testid="staff-records-season-line"]').count() >= 2);
+    ok("...a rate board says it is off, in words", /Off until the school publishes a minimum/.test(said));
+    const sel = await st.page.locator('[data-testid="records-team-select"]').boundingBox();
+    ok("the side picker is at least 44px tall", !!sel && sel.height >= 44, JSON.stringify(sel));
+    const tinyText = await st.page.evaluate(() => [...document.querySelectorAll('[data-testid="staff-records"] *')]
+      .filter((e) => [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()))
+      .map((e) => ({ t: e.textContent.trim().slice(0, 30), px: parseFloat(getComputedStyle(e).fontSize) })).filter((x) => x.px < 12));
+    ok("nothing on the board is under 12px", tinyText.length === 0, JSON.stringify(tinyText));
+    ok("no console errors on the director's records", st.errors.length === 0, st.errors.join(" | "));
+    await st.ctx.close().catch(() => {});
+
+    const pu = await open();
+    const pupilIn = await press(pu.page, /pillay@example\.invalid/) && await press(pu.page, /^Sign In$/)
+      && await until(pu.page, () => !!document.querySelector('[data-testid="persona-bar"]'));
+    ok("R Pillay signs in to his own app", pupilIn);
+    await pu.page.locator('[data-testid="mnav-mymatches"], [data-testid="nav-mymatches"]').first().click({ timeout: WAIT }).catch(() => {});
+    const seen = await until(pu.page, () => /Holder/.test(document.querySelector('[data-testid="pupil-records"]')?.innerText ?? ""));
+    const his = seen ? (await pu.page.locator('[data-testid="pupil-records"]').innerText()).replace(/\s+/g, " ") : "";
+    ok("his Matches screen shows his side's board: the holder and the former holder",
+       seen && /Holder · 14\* R Pillay/.test(his) && /Formerly 12\* Records Batter/.test(his), his.slice(0, 400));
+    ok("...never an ordered list of his side (D23)", !/staff only|This season/.test(his)
+       && await pu.page.locator('[data-testid="pupil-records-season"]').count() === 0
+       && !/\b(\d+(st|nd|rd|th)|rank(ed)?)\b/i.test(his));
+    const filt = pu.page.locator('[data-testid="pupil-records"] button');
+    const boxes = await Promise.all((await filt.all()).map((b) => b.boundingBox()));
+    ok("...any control on it is at least 44px", boxes.every((b) => !b || b.height >= 44), JSON.stringify(boxes));
+    ok("no console errors on the pupil's records", pu.errors.length === 0, pu.errors.join(" | "));
+    await pu.ctx.close().catch(() => {});
+  }
 } catch (e) {
   ok(`the browser awards walk threw: ${e.message?.slice(0, 200)}`, false);
   if (DEBUG) console.log(e.stack?.split("\n").slice(0, 10).join("\n"));

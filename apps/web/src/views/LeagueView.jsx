@@ -9,6 +9,7 @@ import { stat } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Pill, SectionHeader } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { SeasonHistory } from "./SeasonHistoryView.jsx";
+import { RecordBoards } from "./records.jsx";
 import { AddFixtureModal } from "./fixtures.jsx";
 import { PlayingConditions } from "./playingconditions.jsx";
 
@@ -54,6 +55,10 @@ function LeagueView({ role, homeBar = null }) {
   // several competitions and none at all for some sides.
   const [awardsSchool, setAwardsSchool] = useState("");
   const [awardsTeam,   setAwardsTeam]   = useState("");
+  // RECOGNITION R9: which side's record boards the Records tab shows. The
+  // server decides what this reader may see of them (db/143 record_board()).
+  const [recSchool, setRecSchool] = useState("");
+  const [recTeam,   setRecTeam]   = useState("");
   // SCRBRD-086. Which season the Awards tab rolls up. null until somebody
   // chooses: the tab then opens on defaultAwardSeason() — the current season
   // when it has figures — once the season-scoped read has said which seasons
@@ -97,6 +102,9 @@ function LeagueView({ role, homeBar = null }) {
   const awardSchools = [...new Map(PLAYERS.filter(p=>p.school).map(p=>[p.school, p.schoolName || p.school])).entries()];
   const awardTeams = [...new Set(PLAYERS.filter(p=>awardsSchool ? p.school===awardsSchool : true).map(p=>p.team).filter(Boolean))].sort();
   const awardScope = { school: awardsSchool || null, team: awardsTeam || null };
+  const recSchoolId = recSchool || awardSchools[0]?.[0] || "";
+  const recTeams = [...new Set(PLAYERS.filter(p=>p.school===recSchoolId).map(p=>p.team).filter(Boolean))].sort();
+  const recTeamCode = recTeam && recTeams.includes(recTeam) ? recTeam : (recTeams[0] || "");
   // Every season is the `career` read, exactly as this tab has always ranked
   // it; one season is that season's rows of `career_by_season`. The sample
   // floors then apply to whichever the rankings are handed. Until the season
@@ -155,13 +163,15 @@ function LeagueView({ role, homeBar = null }) {
         <>
           {/* Tab bar */}
           <div style={{display:"flex",gap:"6px",marginBottom:"16px",flexWrap:"wrap"}}>
-            {["table","fixtures","results","performers","awards","history","conditions","planner"].filter(t=>{
+            {["table","fixtures","results","performers","awards","records","history","conditions","planner"].filter(t=>{
               if(t==="table") return comp.table||comp.type==="league"||comp.type==="tournament";
               // SCRBRD-114: a competition on the platform has playing conditions; a demonstration row has none to read.
               if(t==="conditions") return !!comp.live;
               // SCRBRD-123: the competition's manager plans its fixtures; the API decides who that is, this offers the tab to those whose role can.
               if(t==="planner") return !!comp.live&&holdsCapability(role,"competition.conditions.manage");
               if(t==="performers"||t==="awards") return ranks;
+              // RECOGNITION R9: signed in only (D22); the read says what this reader may see.
+              if(t==="records") return signedIn();
               return true;
             }).map(t=>(
               <button key={t} aria-pressed={tab===t} data-testid={`league-tab-${t}`} onClick={()=>setTab(t)} className="pressBtn" style={{
@@ -472,6 +482,30 @@ function LeagueView({ role, homeBar = null }) {
                   method={rankingMethod("mvp", activeSeason)}/>
               </div>
               </>)}
+            </div>
+          )}
+
+          {/* ── SCHOOL RECORD BOARDS (RECOGNITION R9, db/143) ── */}
+          {tab==="records"&&(
+            <div data-testid="league-records" style={{display:"grid",gap:"12px"}}>
+              <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+                {awardSchools.length>1&&(
+                  <select value={recSchoolId} onChange={e=>{setRecSchool(e.target.value);setRecTeam("");}}
+                    aria-label="School" data-testid="records-school-select"
+                    style={{minHeight:"44px",padding:"6px 10px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,color:D.textPrimary,fontFamily:D.body,fontSize:"14px"}}>
+                    {awardSchools.map(([id,name])=><option key={id} value={id}>{name}</option>)}
+                  </select>
+                )}
+                <select value={recTeamCode} onChange={e=>setRecTeam(e.target.value)}
+                  aria-label="Side" data-testid="records-team-select"
+                  style={{minHeight:"44px",padding:"6px 10px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,color:D.textPrimary,fontFamily:D.body,fontSize:"14px"}}>
+                  {recTeams.length===0&&<option value="">No side to show</option>}
+                  {recTeams.map(t=><option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              {recSchoolId&&recTeamCode
+                ? <RecordBoards role={role} school={recSchoolId} side={recTeamCode} testid="staff-records"/>
+                : <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted}}>No side of yours to show records for.</div>}
             </div>
           )}
 

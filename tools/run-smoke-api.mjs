@@ -212,6 +212,8 @@ const WALKS = [
   "recognition",
   // RECOGNITION R5 (db/141): personal bests, who reads them, which matches count.
   "bests",
+  // RECOGNITION R9 (db/143): record boards, who reads them, which matches count, the notice.
+  "records",
   "season",
   "requests",
   "enrol",
