@@ -10918,6 +10918,84 @@ EXCEPTION WHEN OTHERS THEN
   RETURN SQLSTATE || '|' || SQLERRM;
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- └── db/145 (section 123) ─────────────────────────────────────────────
+-- ┌── db/146 (section 124) ─────────────────────────────────────────────
+-- Hilton's 4XI, invented here: K1, K2 and K3 on it, nineteen (registered to
+-- play without a guardian link, as §120's are). K1 and K2 sign in as
+-- themselves (verified self links); K1's mother is a verified guardian. The
+-- staff: the side's coach and a second coach of it; its assistant and team
+-- manager; a coach of Hilton's 6XI; Hilton's director of sport, principal
+-- and office; a second director of sport who is K2's guardian (a pending
+-- link); a coach of the side who is also a director of sport (coachdos); a
+-- coach of the side whose account is K3 himself (self); Westville's 4XI
+-- coach; a coach of the side who also holds a platform-wide assignment
+-- (twohats); a platform administrator.
+CREATE OR REPLACE FUNCTION _v146_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  ids jsonb := '{}'; p uuid; a uuid; i int; k text; who text;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  FOR i, k IN SELECT * FROM (VALUES (1, 'k1'), (2, 'k2'), (3, 'k3')) z(i, k) LOOP
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES (HIL, '4XI', 'Verify OneFortySix Boy' || i, 1460 + i, 'batter', make_date(extract(year FROM sa_today())::int - 19, 6, i))
+    RETURNING id INTO p;
+    ids := ids || jsonb_build_object(k, p);
+  END LOOP;
+  ids := ids || _v71_people('v146', ARRAY[
+    ARRAY['pupil',     'selfaccess',      HIL::text, '',    ids->>'k1'],
+    ARRAY['mate',      'selfaccess',      HIL::text, '',    ids->>'k2'],
+    ARRAY['coach',     'coach',           HIL::text, '4XI', ''],
+    ARRAY['coach2',    'coach',           HIL::text, '4XI', ''],
+    ARRAY['assistant', 'assistantcoach',  HIL::text, '4XI', ''],
+    ARRAY['manager',   'teammanager',     HIL::text, '4XI', ''],
+    ARRAY['other',     'coach',           HIL::text, '6XI', ''],
+    ARRAY['dos',       'directorofsport', HIL::text, '',    ''],
+    ARRAY['prin',      'principal',       HIL::text, '',    ''],
+    ARRAY['office',    'schooladmin',     HIL::text, '',    ''],
+    ARRAY['gdos',      'directorofsport', HIL::text, '',    ''],
+    ARRAY['coachdos',  'coach',           HIL::text, '4XI', ''],
+    ARRAY['self',      'coach',           HIL::text, '4XI', ids->>'k3'],
+    ARRAY['wes',       'coach',           WES::text, '4XI', ''],
+    ARRAY['twohats',   'coach',           HIL::text, '4XI', ''],
+    ARRAY['mother',    'guardian',        HIL::text, '',    '']]);
+  FOREACH who IN ARRAY ARRAY['pupil', 'mate'] LOOP
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at)
+    SELECT a2.id, u.player_id, 'self', 'verified', (ids->>'office')::uuid, now()
+      FROM role_assignment a2 JOIN app_user u ON u.id = a2.person_id
+     WHERE a2.person_id = (ids->>who)::uuid AND a2.role = 'selfaccess';
+  END LOOP;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at)
+  SELECT a2.id, (ids->>'k1')::uuid, 'parent', 'verified', (ids->>'office')::uuid, now(), 'granted', 'v146-terms', now()
+    FROM role_assignment a2 WHERE a2.person_id = (ids->>'mother')::uuid AND a2.role = 'guardian';
+  -- gdos: a director of sport who is K2's father (pending: a parent is a parent before the office verifies him).
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'gdos')::uuid, 'guardian', HIL) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship) VALUES (a, (ids->>'k2')::uuid, 'parent');
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'coachdos')::uuid, 'directorofsport', HIL);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'twohats')::uuid, 'platformadmin', NULL);
+  INSERT INTO app_user (school_id, email, name, role) VALUES (NULL, 'v146.plat@example.invalid', 'V146 Plat', 'platformadmin') RETURNING id INTO a;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (a, 'platformadmin', NULL);
+  RETURN ids || jsonb_build_object('plat', a, 'season', (SELECT f.id FROM season_for(sa_today(), 'school') f));
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One nomination, past RLS.
+CREATE OR REPLACE FUNCTION _v146_nom(p_id uuid) RETURNS jsonb AS $$
+  SELECT to_jsonb(n) FROM recognition_nomination n WHERE n.id = p_id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A boy's Colours honours and his nominations' audit, past RLS.
+CREATE OR REPLACE FUNCTION _v146_fact(p_player uuid) RETURNS jsonb AS $$
+  SELECT jsonb_build_object(
+    'honours', coalesce((SELECT jsonb_agg(jsonb_build_object('id', h.id, 'kind', h.kind, 'decided_by', h.decided_by, 'awarded_by', h.awarded_by,
+                                           'citation', h.citation, 'team', h.team_code, 'season', h.season_id, 'withdrawn', h.withdrawn_at IS NOT NULL)
+                                           ORDER BY h.awarded_at, h.id)
+                           FROM honour h WHERE h.player_id = p_player AND h.kind IN ('colours', 'half_colours')), '[]'::jsonb),
+    'audit', coalesce((SELECT jsonb_agg(jsonb_build_object('event', a.event, 'actor', a.actor_id, 'kind', a.kind, 'nomination', a.nomination_id,
+                                         'honour', a.honour_id, 'detail', a.detail) ORDER BY a.id)
+                         FROM recognition_audit a WHERE a.player_id = p_player AND a.kind IN ('colours', 'half_colours')), '[]'::jsonb))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/146 (section 124) ─────────────────────────────────────────────
 
 
 -- From here on we are the unprivileged application role, so every read below
@@ -37334,8 +37412,12 @@ $v116$;
                     AND NOT has_table_privilege('scrbrd_app', 'recognition_nomination', 'INSERT')
                     AND NOT has_table_privilege('scrbrd_app', 'recognition_nomination', 'UPDATE')
                     AND NOT EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_name = 'recognition_nomination'
-                                       AND c.column_name IN ('rationale', 'note', 'comment', 'reason', 'message')),
-      '§122 (grants): the application writes the table, or it has a free-text column');
+                                       AND c.column_name IN ('note', 'comment', 'reason', 'message'))
+                    -- db/146 (R8): the one free-text column is a coach's Colours
+                    -- rationale, which a captain's nomination never carries (§124).
+                    AND EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'recognition_nomination'::regclass
+                                   AND conname = 'recognition_nomination_rationale_coach'),
+      '§122 (grants): the application writes the table, or it has a free-text column a captain could fill');
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 122
@@ -37511,6 +37593,247 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 123
   -- └── db/145 (section 123) ──────────────────────────────────────────
+  -- ┌── db/146 (section 124) ─────────────────────────────────────────
+  -- ── 124. Colours: the side's coach nominates, the school decides (db/146; RECOGNITION R8: A17, D2, D5, D8, D9, D10, D15) ──
+  -- Staged by _v146_stage(); every act is the caller's own, through
+  -- scrbrd_app and the doors (or, for the ordinary route, the table's
+  -- policies), read back past RLS by _v146_nom() and _v146_fact(). Labels:
+  --   (nominate) the side's coach nominates K1 for Full colours with a
+  --              rationale: one open row in D15's shape (his account, the
+  --              side, the season, no match, no pupil, no window), on the
+  --              recognition audit as the coach's nomination, never the
+  --              captain's pick
+  --   (who)      nobody else nominates: not the assistant, the team manager,
+  --              the office, the director, another side's coach, the other
+  --              school's coach, a coach who holds a platform-wide assignment,
+  --              a parent, a pupil; never himself; never twice; never for a
+  --              kind that is not Colours; never a rationale out of bounds
+  --   (shape)    a captain's nomination carries no rationale and a Colours
+  --              one no match (the table's own CHECKs, past the doors)
+  --   (reads)    D8: the side's coaches, assistant and team manager, the
+  --              director, the principal and the office read the nomination
+  --              and its rationale, through the table and the door; the boy,
+  --              his mother, a team-mate, another side's coach, the other
+  --              school, the twohats coach, the owner's key and a platform
+  --              administrator read none of it
+  --   (decide)   only a decider decides, never the coach who nominated
+  --              (coachdos), never a guardian of the boy either way, who is
+  --              told the principal decides (gdos, a director); the director
+  --              awards K1 Full colours: the ordinary honour, decided_by him,
+  --              its citation, the nomination confirmed and tied, the audit
+  --              the coach's; twice is refused; the principal records no
+  --              award on K1's half colours
+  --   (table)    the ordinary route keeps the same row checks: the office
+  --              naming the nominator, or a guardian of the boy, is refused;
+  --              naming the principal answers the nomination; a guardian of
+  --              the boy does not withdraw his Colours
+  --   (grants)   the doors are the application's, the helpers nobody's
+  --
+  -- Falsified (6 Nov 2026, each change made as the owner on a migrated
+  -- database inside the section's transaction, and the section run; each
+  -- went red at its own label; unchanged it passed):
+  --   audit_log() as db/144 left it (the captain's pick for every kind)       → (nominate)
+  --   colours_nominator_holds() answering true                               → (who)
+  --   recognition_nomination_rationale_coach dropped                         → (shape)
+  --   colours_nominations() without its reader test                          → (reads)
+  --   colours_decide() without its guardian test                             → (decide)
+  --   colours_decide() without its nominator test                            → (decide)
+  --   honour_colours_answer() without its tests                              → (table)
+  --   GRANT EXECUTE ON FUNCTION colours_nominator_holds(uuid,text) TO scrbrd_app → (grants)
+  DECLARE
+    y   jsonb := _v146_stage();
+    K1  uuid := (y->>'k1')::uuid;
+    K2  uuid := (y->>'k2')::uuid;
+    K3  uuid := (y->>'k3')::uuid;
+    SEA uuid := (y->>'season')::uuid;
+    U_OWNER uuid := '88888888-0000-0000-0000-000000000022';
+    WHY text := 'Forty wickets at eleven, and he bowls when the side needs him.';
+    r   record;
+    j   jsonb;
+    got text;
+    who text;
+    v_n uuid;
+    v_n2 uuid;
+    v_h uuid;
+  BEGIN
+    -- (nominate)
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT * INTO r FROM colours_nominate(K1, 'colours', WHY);
+    PERFORM _assert(r.ok AND r.nomination_id IS NOT NULL, format('§124 (nominate): the side''s coach was refused: %s', r.reason));
+    v_n := r.nomination_id;
+    j := _v146_nom(v_n);
+    PERFORM _assert(j->>'kind' = 'colours' AND j->>'status' = 'open' AND j->>'nominated_by_user_id' = y->>'coach'
+                    AND j->>'nominated_by_player_id' IS NULL AND j->>'nominee_player_id' = K1::text AND j->>'team_code' = '4XI'
+                    AND j->>'season_id' = SEA::text AND j->>'match_id' IS NULL AND j->>'closes_at' IS NULL
+                    AND j->>'nominated_as' IS NULL AND j->>'rationale' = WHY,
+      format('§124 (nominate): the row reads %s', j));
+    j := _v146_fact(K1);
+    PERFORM _assert(jsonb_array_length(j->'audit') = 1 AND j->'audit'->0->>'event' = 'nominated' AND j->'audit'->0->>'actor' = y->>'coach'
+                    AND position(WHY IN (j->'audit')::text) = 0,
+      format('§124 (nominate): the audit reads %s', j->'audit'));
+    PERFORM _as((y->>'dos')::uuid);
+    got := (SELECT string_agg(l.action, ' | ' ORDER BY l.at, l.key) FROM audit_log('11111111-1111-1111-1111-111111111111'::uuid, ARRAY['recognition'], NULL, NULL, NULL, 400) l
+             WHERE l.detail->>'team' = '4XI');
+    PERFORM _assert(got LIKE '%Nominated for Full colours (the coach''s nomination)%' AND got NOT LIKE '%captain%',
+      format('§124 (nominate): the audit log reads %s', got));
+
+    -- (who)
+    FOREACH who IN ARRAY ARRAY['assistant', 'manager', 'office', 'dos', 'prin', 'other', 'wes', 'twohats', 'mother', 'pupil'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      SELECT * INTO r FROM colours_nominate(K2, 'colours', NULL);
+      PERFORM _assert(r.ok = false AND r.reason = 'not_permitted', format('§124 (who): %s answered %s/%s', who, r.ok, r.reason));
+    END LOOP;
+    FOREACH v_h IN ARRAY ARRAY[U_OWNER, (y->>'plat')::uuid] LOOP
+      PERFORM _as(v_h);
+      SELECT * INTO r FROM colours_nominate(K2, 'colours', NULL);
+      PERFORM _assert(r.ok = false AND r.reason = 'not_permitted', format('§124 (who): %s answered %s/%s', v_h, r.ok, r.reason));
+    END LOOP;
+    PERFORM _as((y->>'self')::uuid);
+    SELECT * INTO r FROM colours_nominate(K3, 'colours', NULL);
+    PERFORM _assert(r.ok = false AND r.reason = 'cannot_nominate_yourself', format('§124 (who): himself answered %s/%s', r.ok, r.reason));
+    PERFORM _as((y->>'coach2')::uuid);
+    SELECT * INTO r FROM colours_nominate(K1, 'colours', NULL);
+    PERFORM _assert(r.ok = false AND r.reason = 'already_nominated', format('§124 (who): twice answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM colours_nominate(K1, 'captain', NULL);
+    PERFORM _assert(r.ok = false AND r.reason = 'kind_invalid', format('§124 (who): a captaincy answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM colours_nominate(K1, 'half_colours', 'ok');
+    PERFORM _assert(r.ok = false AND r.reason = 'rationale_invalid', format('§124 (who): two letters answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM colours_nominate(K1, 'half_colours', repeat('x', 301));
+    PERFORM _assert(r.ok = false AND r.reason = 'rationale_invalid', format('§124 (who): 301 letters answered %s/%s', r.ok, r.reason));
+    SELECT * INTO r FROM colours_nominate(K1, 'half_colours', NULL);
+    PERFORM _assert(r.ok, format('§124 (who): a second coach of the side was refused half colours: %s', r.reason));
+    v_n2 := r.nomination_id;
+    PERFORM _as((y->>'coachdos')::uuid);
+    SELECT * INTO r FROM colours_nominate(K2, 'colours', NULL);
+    PERFORM _assert(r.ok, format('§124 (who): coachdos was refused: %s', r.reason));
+
+    -- (shape)
+    got := _v144_owner(format('INSERT INTO recognition_nomination (kind, match_id, season_id, school_id, team_code, nominee_player_id, nominated_by_player_id, nominated_as, derived_from, closes_at, rationale) '
+                              'SELECT %L, m.id, %L, %L, %L, %L, %L, %L, %L::jsonb, now() + interval %L, %L FROM match m LIMIT 1',
+                              'player_of_match', SEA, '11111111-1111-1111-1111-111111111111', '4XI', K1, K2, 'captain', '{}', '1 day', 'the captain types'));
+    PERFORM _assert(got LIKE '23514|%recognition_nomination_rationale_coach%', format('§124 (shape): a captain''s nomination with a rationale: %s', got));
+    got := _v144_owner(format('INSERT INTO recognition_nomination (kind, match_id, season_id, school_id, team_code, nominee_player_id, nominated_by_user_id) '
+                              'SELECT %L, m.id, %L, %L, %L, %L, %L FROM match m LIMIT 1',
+                              'colours', SEA, '11111111-1111-1111-1111-111111111111', '4XI', K3, y->>'coach'));
+    PERFORM _assert(got LIKE '23514|%recognition_nomination_colours_shape%', format('§124 (shape): a Colours nomination with a match: %s', got));
+
+    -- (reads)
+    FOREACH who IN ARRAY ARRAY['coach', 'coach2', 'assistant', 'manager', 'dos', 'prin', 'office'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert((SELECT x.rationale FROM recognition_nomination x WHERE x.id = v_n) = WHY
+                      AND (SELECT c.rationale FROM colours_nominations() c WHERE c.nomination_id = v_n) = WHY,
+        format('§124 (reads): %s does not read the nomination and its rationale', who));
+    END LOOP;
+    FOREACH who IN ARRAY ARRAY['pupil', 'mother', 'mate', 'other', 'wes', 'twohats', 'self'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM recognition_nomination x WHERE x.nominee_player_id IN (K1, K2) AND who <> 'self')
+                      AND NOT EXISTS (SELECT 1 FROM colours_nominations() c WHERE c.nominee_id = K1 AND who <> 'self'),
+        format('§124 (reads): %s reads a Colours nomination', who));
+    END LOOP;
+    FOREACH v_h IN ARRAY ARRAY[U_OWNER, (y->>'plat')::uuid] LOOP
+      PERFORM _as(v_h);
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM recognition_nomination x WHERE x.nominee_player_id IN (K1, K2))
+                      AND NOT EXISTS (SELECT 1 FROM colours_nominations() c WHERE c.nominee_id IN (K1, K2)),
+        format('§124 (reads): %s reads a Colours nomination', v_h));
+    END LOOP;
+    PERFORM _as((y->>'coach')::uuid);
+    PERFORM _assert((SELECT c.mine AND NOT c.may_decide AND c.refusal = 'not_permitted' FROM colours_nominations() c WHERE c.nomination_id = v_n),
+      '§124 (reads): the coach''s line offers him the decision, or does not say it is his');
+
+    -- (decide)
+    FOREACH who IN ARRAY ARRAY['office', 'coach', 'coach2', 'assistant', 'twohats'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      SELECT * INTO r FROM colours_decide(v_n, 'award', NULL);
+      PERFORM _assert(r.ok = false AND r.reason = 'not_permitted', format('§124 (decide): %s answered %s/%s', who, r.ok, r.reason));
+    END LOOP;
+    PERFORM _as((y->>'coachdos')::uuid);
+    v_h := (SELECT c.nomination_id FROM colours_nominations() c WHERE c.nominee_id = K2 AND c.kind = 'colours');
+    -- Caught, so a door that let him through says so here, not as the
+    -- table's own refusal (honour_colours_answer(), the second line).
+    BEGIN
+      SELECT * INTO r FROM colours_decide(v_h, 'award', NULL);
+      got := r.ok || '/' || coalesce(r.reason, '');
+    EXCEPTION WHEN OTHERS THEN got := 'raised ' || SQLERRM;
+    END;
+    PERFORM _assert(got = 'false/decider_is_nominator', format('§124 (decide): the nominator answered %s', got));
+    PERFORM _assert((SELECT NOT c.may_decide AND c.refusal = 'decider_is_nominator' FROM colours_nominations() c WHERE c.nomination_id = v_h),
+      '§124 (decide): the nominator''s line offers him the decision');
+    PERFORM _as((y->>'gdos')::uuid);
+    FOREACH who IN ARRAY ARRAY['award', 'no_award'] LOOP
+      BEGIN
+        SELECT * INTO r FROM colours_decide(v_h, who, NULL);
+        got := r.ok || '/' || coalesce(r.reason, '') || '/' || coalesce(r.detail, '');
+      EXCEPTION WHEN OTHERS THEN got := 'raised ' || SQLERRM;
+      END;
+      PERFORM _assert(got = 'false/guardian_conflict/principal', format('§124 (decide): the guardian''s %s answered %s', who, got));
+    END LOOP;
+    PERFORM _assert((SELECT NOT c.may_decide AND c.refusal = 'guardian_conflict' AND c.instead = 'principal' FROM colours_nominations() c WHERE c.nomination_id = v_h),
+      '§124 (decide): the guardian''s line offers him the decision, or does not say who decides');
+    PERFORM _assert(_v146_nom(v_h)->>'status' = 'open' AND jsonb_array_length(_v146_fact(K2)->'honours') = 0, '§124 (decide): a refusal decided it');
+    PERFORM _as((y->>'dos')::uuid);
+    SELECT * INTO r FROM colours_decide(v_n, 'maybe', NULL);
+    PERFORM _assert(r.ok = false AND r.reason = 'action_invalid', format('§124 (decide): an unknown act answered %s/%s', r.ok, r.reason));
+    PERFORM _assert((SELECT c.may_decide AND c.refusal IS NULL FROM colours_nominations() c WHERE c.nomination_id = v_n),
+      '§124 (decide): the director''s line does not offer him the decision');
+    SELECT * INTO r FROM colours_decide(v_n, 'award', 'Forty wickets in a season.');
+    PERFORM _assert(r.ok AND r.honour_id IS NOT NULL, format('§124 (decide): the director was refused: %s', r.reason));
+    j := _v146_fact(K1);
+    PERFORM _assert(jsonb_array_length(j->'honours') = 1 AND j->'honours'->0->>'kind' = 'colours'
+                    AND j->'honours'->0->>'decided_by' = y->>'dos' AND j->'honours'->0->>'awarded_by' = y->>'dos'
+                    AND j->'honours'->0->>'citation' = 'Forty wickets in a season.' AND j->'honours'->0->>'team' = '4XI'
+                    AND j->'honours'->0->>'season' = SEA::text,
+      format('§124 (decide): the honour reads %s', j->'honours'));
+    j := _v146_nom(v_n);
+    PERFORM _assert(j->>'status' = 'confirmed' AND j->>'decided_by' = y->>'dos' AND j->>'honour_id' = r.honour_id::text,
+      format('§124 (decide): the nomination reads %s', j));
+    got := (SELECT string_agg(l.action, ' | ' ORDER BY l.at, l.key) FROM audit_log('11111111-1111-1111-1111-111111111111'::uuid, ARRAY['recognition'], NULL, NULL, NULL, 400) l
+             WHERE l.detail->>'team' = '4XI');
+    PERFORM _assert(got LIKE '%Confirmed the coach''s nomination for Full colours%' AND got LIKE '%Awarded Full colours%',
+      format('§124 (decide): the audit log reads %s', got));
+    SELECT * INTO r FROM colours_decide(v_n, 'award', NULL);
+    PERFORM _assert(r.ok = false AND r.reason = 'already_decided', format('§124 (decide): twice answered %s/%s', r.ok, r.reason));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM notification x WHERE x.subject_person_id = K1 AND x.kind = 'recognition'
+                                   AND x.title LIKE 'Recorded as your decision%'),
+      '§124 (decide): the director deciding himself was told he did');
+    PERFORM _as((y->>'prin')::uuid);
+    SELECT * INTO r FROM colours_decide(v_n2, 'no_award', NULL);
+    PERFORM _assert(r.ok AND _v146_nom(v_n2)->>'status' = 'no_award' AND _v146_nom(v_n2)->>'decided_by' = y->>'prin'
+                    AND jsonb_array_length(_v146_fact(K1)->'honours') = 1,
+      format('§124 (decide): the principal''s no award: %s, %s', r.reason, _v146_nom(v_n2)));
+
+    -- (table)
+    PERFORM _as((y->>'office')::uuid);
+    got := _v145_try(format('INSERT INTO honour (player_id, kind, season_id, awarded_on, decided_by) VALUES (%L, %L, %L, %L, %L)',
+                            K2, 'colours', SEA, sa_today(), y->>'coachdos'));
+    PERFORM _assert(got = '23514|decider_is_nominator', format('§124 (table): the office naming the nominator: %s', got));
+    got := _v145_try(format('INSERT INTO honour (player_id, kind, season_id, awarded_on, decided_by) VALUES (%L, %L, %L, %L, %L)',
+                            K2, 'colours', SEA, sa_today(), y->>'gdos'));
+    PERFORM _assert(got = '23514|colours_guardian_conflict', format('§124 (table): the office naming the guardian: %s', got));
+    PERFORM _assert(_v146_nom(v_h)->>'status' = 'open' AND jsonb_array_length(_v146_fact(K2)->'honours') = 0, '§124 (table): a refusal decided it');
+    got := _v145_try(format('INSERT INTO honour (player_id, kind, season_id, awarded_on, decided_by) VALUES (%L, %L, %L, %L, %L)',
+                            K2, 'colours', SEA, sa_today(), y->>'prin'));
+    j := _v146_nom(v_h);
+    PERFORM _assert(got = 'ok' AND j->>'status' = 'confirmed' AND j->>'decided_by' = y->>'prin'
+                    AND j->>'honour_id' = (_v146_fact(K2)->'honours'->0->>'id'),
+      format('§124 (table): the office recording the principal''s decision: %s, %s', got, j));
+    PERFORM _as((y->>'gdos')::uuid);
+    got := _v145_try(format('UPDATE honour SET withdrawn_at = now(), withdrawn_reason = %L WHERE id = %L', 'v146: his father withdraws', _v146_fact(K2)->'honours'->0->>'id'));
+    PERFORM _assert(got LIKE '42501|a guardian of the boy does not withdraw his Colours%' AND NOT (_v146_fact(K2)->'honours'->0->>'withdrawn')::boolean,
+      format('§124 (table): the guardian withdrew his son''s Colours: %s', got));
+
+    -- (grants)
+    PERFORM _assert(has_function_privilege('scrbrd_app', 'colours_nominate(uuid,text,text)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'colours_decide(uuid,text,text)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'colours_nominations()', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'colours_decide(uuid,text,text)', 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', 'colours_nominator_holds(uuid,text)', 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', 'honour_colours_answer()', 'EXECUTE')
+                    AND NOT has_table_privilege('scrbrd_app', 'recognition_nomination', 'INSERT'),
+      '§124 (grants): a door is not the application''s alone, a helper is, or the application writes a nomination');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 124
+  -- └── db/146 (section 124) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

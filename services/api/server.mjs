@@ -96,6 +96,7 @@ import { safeguardingRoutes } from "./write/safeguarding-api.mjs";
 import { recognitionRoutes } from "./write/recognition-api.mjs";
 import { potmRoutes } from "./write/potm-api.mjs";
 import { nominationRoutes } from "./write/nomination-api.mjs";
+import { coloursRoutes } from "./write/colours-api.mjs";
 import { competitionRoutes } from "./write/competitions-api.mjs";
 import { playingConditionsRoutes } from "./write/playing-conditions-api.mjs";
 import { plannerRoutes } from "./write/planner-api.mjs";
@@ -477,6 +478,7 @@ const safeguarding = safeguardingRoutes({ pool, secret: SECRET });
 const recognition = recognitionRoutes({ pool, secret: SECRET });
 const potm = potmRoutes({ pool, secret: SECRET });
 const nomination = nominationRoutes({ pool, secret: SECRET });
+const colours = coloursRoutes({ pool, secret: SECRET });
 const competitions = competitionRoutes({ pool, secret: SECRET });
 const requests = requestRoutes({ pool, secret: SECRET });
 const staffRegister = registerRoutes({ pool, secret: SECRET });
@@ -785,6 +787,12 @@ const PLAYER_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/player-of-match\/nomination$/,        "POST", nomination.nominate],
   [/^\/api\/matches\/([^/]+)\/player-of-match\/nomination\/decide$/, "POST", nomination.decide],
   [/^\/api\/player-of-match\/to-decide$/,                              "GET",  nomination.toDecide],
+  // RECOGNITION R8 (db/146): Colours. Every rule is the doors': the side's
+  // coach nominates (A17), the director of sport or the principal decides,
+  // never the nominator, never a guardian of the boy (D9, D10).
+  [/^\/api\/colours\/nominations$/,                   "GET",  colours.list],
+  [/^\/api\/colours\/nominations$/,                   "POST", colours.nominate],
+  [/^\/api\/colours\/nominations\/([^/]+)\/decide$/, "POST", colours.decide],
   [/^\/api\/cap-baselines$/,                        "POST", recognition.baseline],
   // The rewards figure. A GET on the id-bearing table, keyed on nothing: the
   // rows are whoever the principal may read, narrowed by ?teamCode.

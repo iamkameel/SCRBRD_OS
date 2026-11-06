@@ -573,6 +573,8 @@ export const ADDED_SINCE_01 = {
   "recognition.match.award":     "142_player_of_match.sql",
   // ── RECOGNITION R5c (db/145): deciding an honour, the director and the principal (A5) ──
   "recognition.decide":          "145_recognition_decide.sql",
+  // ── RECOGNITION R8 (db/146): Colours, the side's coach nominates (A17) ──
+  "recognition.colours.nominate": "146_colours.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 

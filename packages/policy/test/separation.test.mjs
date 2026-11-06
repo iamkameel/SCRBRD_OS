@@ -684,6 +684,15 @@ group("D9  Honours are decided by the director of sport and the principal, and n
      ["superadmin", "platformadmin"].map((r) => REC.filter((c) => caps(r).includes(c)).join(",")).join(" · "));
   ok("recognition.manage stays with the people who sign the board and the office that records it",
      holders("recognition.manage").sort().join() === "directorofsport,principal,schooladmin", holders("recognition.manage").join());
+  // R8 (db/146; A17): the side's coach nominates for Colours, and the two
+  // sets are disjoint, so no role both nominates and decides a boy's Colours
+  // (the row check that the decider is not the nominator is db/146's, for a
+  // person who holds two roles).
+  ok("recognition.colours.nominate is held by the side's coach alone (A17)",
+     holders("recognition.colours.nominate").join() === "coach", holders("recognition.colours.nominate").join());
+  ok("...and no role that nominates for Colours decides them, nor the other way (D9)",
+     holders("recognition.colours.nominate").every((r) => !caps(r).includes("recognition.decide"))
+     && holders("recognition.decide").every((r) => !caps(r).includes("recognition.colours.nominate")));
 }
 
 // ── The boundary, told to the person standing at it ──────

@@ -123,6 +123,11 @@ export const CAPABILITIES = {
   // records a decision by naming who decided (D5), and keeps the caps
   // baseline and the public-board switch. Never the owner's key (D7).
   "recognition.decide":          "Decide a boy's honours: Colours, half colours and the season's awards",
+  // RECOGNITION R8 (db/146; A17, D9): nominating a boy of one's own side for
+  // Colours or half colours, with an optional rationale the staff read. The
+  // side's coach. Disjoint from recognition.decide (separation.test.mjs): he
+  // nominates, the director of sport or the principal decides.
+  "recognition.colours.nominate": "Nominate a boy of your side for Colours",
   "clearance.read":              "See whether an adult's clearances are current",
   "clearance.manage":            "Record and revoke an adult's clearances",
   "player.performance.read":     "See a player's match figures",
@@ -558,6 +563,7 @@ export const LEVEL = Object.freeze({
   // information, candid, below the diagnosis tier only.
   "wellness.read": 3, "fitness.test.write": 3,
   "recognition.manage": 0, "recognition.match.award": 0, "recognition.decide": 0,
+  "recognition.colours.nominate": 0,
   "clearance.read": 2, "clearance.manage": 2,
   // Match figures: a scorecard, meant to be public.
   "player.performance.read": 0, "player.performance.write": 1,

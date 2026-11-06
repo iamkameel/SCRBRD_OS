@@ -212,6 +212,11 @@ const WALKS = [
   "recognition",
   // RECOGNITION R5 (db/141): personal bests, who reads them, which matches count.
   "bests",
+  // RECOGNITION R8 (db/146): Colours — the side's coach nominates with a
+  // rationale the side's list passes, the staff and deciders read it, the
+  // principal decides, a guardian who directs sport decides neither way, and
+  // the office's ordinary route answers the nomination.
+  "colours",
   "season",
   "requests",
   "enrol",

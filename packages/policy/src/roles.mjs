@@ -342,6 +342,9 @@ const BUNDLES = {
     // RECOGNITION D9 (db/142): Player of the Match for his own side, never
     // for a boy he is guardian of (D10, the row check in match_award()).
     "recognition.match.award",
+    // RECOGNITION A17 (db/146, R8): he nominates a boy of his side for
+    // Colours; the director of sport or the principal decides (D9).
+    "recognition.colours.nominate",
   ],
   assistantcoach: ["player.workload.read",
     "player.workload.write", "wellness.read",
