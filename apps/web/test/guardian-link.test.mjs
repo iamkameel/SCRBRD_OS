@@ -11,12 +11,17 @@
  *   - every code guardian_link_verify() and guardian_consent_record() answer has
  *     words, a refusal and a failure are told apart, and none is a raw code
  *   - the version is the one the seed and db/62 record
+ *   - N6 (GA-I20 D7): the terms' text is the approved text, by hash per
+ *     version and equal to docs/design/GUARDIAN_TERMS.md §1; rendered, no
+ *     placeholder is left; the parent's refusals are words
  *
  *   node apps/web/test/guardian-link.test.mjs
  */
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import {
-  GUARDIAN_TERMS_VERSION, confirmWords, doneWords, guardianCandidates, guardianLinkWords,
+  GUARDIAN_TERMS_VERSION, GUARDIAN_TERMS, AGREE_KEPT_WORDS, agreeRefusalWords, agreedWords, confirmWords, doneWords,
+  guardianCandidates, guardianLinkWords, renderTerms, termsContacts, termsRuns,
 } from "../src/lib/guardianLink.js";
 
 let pass = 0, fail = 0;
@@ -105,6 +110,60 @@ group("Every refusal has words");
   ok("each of them has words in this file", [...reasons].every((r) => say(r).kind === "refused"), [...reasons].filter((r) => say(r).kind !== "refused").join());
   const router = readFileSync(new URL("../../../services/api/write/assessment-api.mjs", import.meta.url), "utf8");
   ok("the two routes this screen posts to exist", /verify: handle/.test(router) && /consent: handle/.test(router));
+}
+
+group("N6: the terms' text is the version's, the approved text, and renders whole");
+{
+  // One entry per version ever shown. Changing a sentence without a new
+  // version fails here; a new version adds a line, and the old text stays.
+  const APPROVED = { "popia-2026-01": "807ccf8b527aa2bff1818bf967300c0550e21b543bcbeab3451d81e212d88b37" };
+  const hash = createHash("sha256").update(JSON.stringify({ title: GUARDIAN_TERMS.title, sections: GUARDIAN_TERMS.sections })).digest("hex");
+  ok("the text's hash is the one approved for its version", GUARDIAN_TERMS.version === GUARDIAN_TERMS_VERSION
+     && APPROVED[GUARDIAN_TERMS.version] === hash, hash);
+  // The design doc's §1, as a blockquote, rebuilt from the constant: byte for byte.
+  const doc = readFileSync(new URL("../../../docs/design/GUARDIAN_TERMS.md", import.meta.url), "utf8");
+  const quote = doc.slice(doc.indexOf("> ### "), doc.indexOf("\n---", doc.indexOf("> ### "))).trimEnd();
+  const lines = [`> ### ${GUARDIAN_TERMS.title}`, `> *Version ${GUARDIAN_TERMS.version}*`];
+  for (const sec of GUARDIAN_TERMS.sections) {
+    lines.push(">");
+    if (sec.heading) lines.push(`> **${sec.heading}**`);
+    sec.paragraphs.forEach((p, i) => { if (i) lines.push(">"); lines.push(`> ${p}`); });
+  }
+  ok("the constant is the design doc's §1, byte for byte", lines.join("\n") === quote, quote.slice(0, 120));
+  ok("Kameel's Q2 and Q5 lines are in it",
+     GUARDIAN_TERMS.sections.some((s) => s.heading === "Your rights" && s.paragraphs.includes("The Information Regulator of South Africa (inforegulator.org.za)."))
+     && GUARDIAN_TERMS.sections.some((s) => s.heading === "Why" && s.paragraphs[0].endsWith("If he has his own sign-in, the same agreement covers his account.")));
+  const text = GUARDIAN_TERMS.sections.flatMap((s) => [s.heading ?? "", ...s.paragraphs]).join("\n");
+  ok("its only placeholders are the two contacts", (text.match(/\{[^}]*\}/g) ?? []).sort().join() === "{SCRBRD contact},{school contact}");
+  const shown = renderTerms(termsContacts("Hilton College"));
+  const flat = shown.flatMap((s) => [s.heading ?? "", ...s.paragraphs]).join("\n");
+  ok("rendered, no placeholder is left", !/[{}]/.test(flat), flat.match(/\{[^}]*\}/g));
+  ok("...the school's contact is its head through the office; SCRBRD's the platform's",
+     flat.includes("The school's information officer: the principal of Hilton College, through the school office.")
+     && flat.includes("SCRBRD's information officer: the SCRBRD information officer, via the school office."));
+  ok("...and only the contacts changed", shown.length === GUARDIAN_TERMS.sections.length
+     && shown.slice(0, -1).every((s, i) => JSON.stringify(s) === JSON.stringify(GUARDIAN_TERMS.sections[i])));
+  ok("no school name: 'the school', never a blank", JSON.stringify(renderTerms(termsContacts(null))).includes("the principal of the school,"));
+  ok("the marks: bold, italic and plain, nothing else",
+     JSON.stringify(termsRuns("You agree for **one child, at one school**, *See it:* x"))
+       === JSON.stringify([{ kind: "text", text: "You agree for " }, { kind: "strong", text: "one child, at one school" },
+                           { kind: "text", text: ", " }, { kind: "em", text: "See it:" }, { kind: "text", text: " x" }]));
+  ok("every run of the text joins back to the text without its marks",
+     GUARDIAN_TERMS.sections.every((s) => s.paragraphs.every((p) => termsRuns(p).map((r) => r.text).join("") === p.replace(/\*\*|\*/g, ""))));
+}
+
+group("N6: what the parent is told she agrees to, and what she is told if it is refused");
+{
+  ok("what is kept: her agreement, the version and the time, against her name",
+     AGREE_KEPT_WORDS === "Your agreement, this version and the time are kept against your name.");
+  ok("the done words are the record's: Agreed · day, time · version",
+     agreedWords("2026-11-05T14:02:00Z", "popia-2026-01") === "Agreed · 5 Nov 2026, 16:02 · popia-2026-01", agreedWords("2026-11-05T14:02:00Z", "popia-2026-01"));
+  for (const code of ["no_verified_link", "not_permitted", "no_consent_version", "no_such_player"]) {
+    const w = agreeRefusalWords({ status: 403, code }, "Rohan");
+    ok(`${code}: a refusal in words, saying nothing was recorded`, w.kind === "refused" && /Nothing was recorded|not recorded/.test(w.text) && !w.text.includes(code), w.text);
+  }
+  ok("no answer is a failure, not a refusal", agreeRefusalWords(new Error("offline"), "Rohan").kind === "failed");
+  ok("an unknown code is a failure with the code, not a raw refusal", agreeRefusalWords({ status: 500, code: "boom" }, "Rohan").text.includes("boom"));
 }
 
 console.log(`\nGUARDIAN LINK SCREEN: ${pass} passed, ${fail} failed`);

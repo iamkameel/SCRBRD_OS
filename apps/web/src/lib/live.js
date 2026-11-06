@@ -814,10 +814,19 @@ function asClause(r) {
            live: true };
 }
 const d10 = (v) => (v ? String(v).slice(0, 10) : null);
-/** One line of a boy's recognition: an honour, a cap, or a milestone. The label is the server's. */
+/**
+ * One line of a boy's recognition: an honour, a cap, or a milestone. The label is the server's.
+ * R4 (db/140): a milestone says where it came from — the side he played for, its
+ * innings, the day the scorer's seal stands for it (null until then), its source
+ * ('ball log', 'scorebook', 'team sheet') and the fixture's class; a withdrawn
+ * honour carries the day it was withdrawn, and reaches only its three readers (D3).
+ */
 function asRecognition(r) {
   return { family: r.family, kind: r.kind, label: r.label, value: r.value, season: r.season, on: d10(r.on_date),
-           matchId: r.match_id, opponent: r.opponent, isPublic: r.is_public, citation: r.citation, id: r.ref_id, live: true };
+           matchId: r.match_id, opponent: r.opponent, isPublic: r.is_public, citation: r.citation, id: r.ref_id,
+           withdrawnOn: d10(r.withdrawn_on), sideCode: r.side_code ?? null, innings: r.innings ?? null,
+           sealedOn: d10(r.sealed_on), source: r.source ?? null, fixtureClass: r.fixture_class ?? null,
+           noBoard: r.no_board ?? null, live: true };
 }
 /**
  * One of a boy's personal bests (RECOGNITION R5, db/141 player_best()): his
@@ -1075,6 +1084,20 @@ function asChild(r) {
            // GA-I20 A1 (R8a): the wording of the terms her own link was agreed under, and when.
            consentVersion: r.consent_version ?? null, consentAt: r.consent_at ?? null,
            from: d10(r.valid_from), until: d10(r.valid_until), live: true };
+}
+
+/**
+ * One of her own guardian links in any state (GA-I20 A2, N4). The child's id
+ * and name arrive only on a live link; every other row is a school, a state
+ * and dates (SCRBRD-140 §6). `current` is false on a link another of hers to
+ * the same child has replaced.
+ */
+export function asLink(r) {
+  return { id: r.id, school: r.school_id, schoolName: r.school_name ?? null, relationship: r.relationship ?? null,
+           verification: r.verification_state, consent: r.consent_state, status: r.status,
+           childId: r.player_id ?? null, childName: r.full_name ?? null,
+           from: d10(r.valid_from), until: d10(r.valid_until), askedOn: d10(r.asked_on), endedOn: d10(r.ended_on),
+           current: r.current === true, live: true };
 }
 
 /** One name on a fixture's team sheet, as the reader's policy returns it. */
@@ -1403,6 +1426,7 @@ const ADAPT = {
   injury_reviews: asInjuryReview,
   injury_worklist: asWorkItem,
   my_children: asChild,
+  my_links: asLink,
   match_squad: asSquadLine,
   skills: asSkill,
   skills_history: asSkillPoint,

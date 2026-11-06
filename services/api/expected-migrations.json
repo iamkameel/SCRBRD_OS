@@ -132,5 +132,8 @@
   "134_union_list_styles.sql",
   "135_second_account_notice.sql",
   "136_second_account.sql",
+  "137_role_season_lock.sql",
+  "139_owner_reads_stamped.sql",
+  "140_milestone_source.sql",
   "141_personal_bests.sql"
 ]
