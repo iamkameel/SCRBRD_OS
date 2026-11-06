@@ -37838,7 +37838,9 @@ $v116$;
                     AND (j->>'closes_at')::timestamptz > now() + interval '47 hours' AND (j->>'closes_at')::timestamptz <= now() + interval '48 hours'
                     AND (j->'derived_from'->>'headSeq')::int = (y->>'M_head')::int AND j->'derived_from'->>'resultHash' ~ '^[0-9a-f]{32}$'
                     AND jsonb_array_length(j->'derived_from'->'suggestions') = 2 AND (j->'derived_from'->'nominee'->>'playerId')::uuid = N1
-                    AND NOT (j ? 'rationale'),
+                    -- db/146 (R8) gave the table a rationale, a coach's Colours
+                    -- nomination's alone: a captain's row carries none (its CHECK).
+                    AND j->'rationale' = 'null'::jsonb,
       format('§122 (stored): the nomination reads %s', j));
     j := _v144_fact(M);
     PERFORM _assert(jsonb_array_length(j->'audit') = 1 AND j->'audit'->0->>'event' = 'nominated'
