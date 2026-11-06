@@ -129,7 +129,7 @@ function LeagueView({ role, homeBar = null }) {
 
   return (
     <div className="os-page">
-      <SectionHeader title="League Management" sub="Standings · Fixtures · Results · Top Performers" color={D.amber}
+      <SectionHeader title="League Management" sub={ranks ? "Standings · Fixtures · Results · Top Performers" : "Standings · Fixtures · Results"} color={D.amber}
         actions={fixtureSchools.length>0&&<Btn size="sm" onClick={()=>setAddFixture(true)}>+ Add Fixture</Btn>}/>
       {homeBar}
 

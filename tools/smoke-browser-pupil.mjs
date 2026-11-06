@@ -393,11 +393,13 @@ try {
     const r = await open({ phone: false });
     await click(r.page, /Get Started|Log In/, 5000);
     await r.page.waitForTimeout(500);
-    await click(r.page, /spectator@example\.invalid/, 4000);
+    // Not one of the login screen's pilot buttons: typed, as any account is.
+    await r.page.locator('input[type="email"]').first().fill("spectator@example.invalid").catch(() => {});
     await click(r.page, /^Sign In$/, 5000);
     await afterReads(r.page, 2200);
-    ok("he signs in, to the staff shell (no persona)", (await tid(r.page, "persona-bar").count()) === 0 && /Match Centre|Dashboard/i.test(await inner(r.page, "os-main")));
     const comps = r.page.locator("nav button", { hasText: /^Competitions\d*$/ }).first();
+    ok("he signs in, to the staff shell (no persona bar, the staff menu)", (await tid(r.page, "os-main").count()) === 1
+       && (await tid(r.page, "persona-bar").count()) === 0 && (await r.page.locator("nav button", { hasText: /^Dashboard$/ }).count()) > 0);
     const reached = (await comps.count()) > 0 && await comps.click({ timeout: 6000 }).then(() => true, () => false);
     await afterReads(r.page, 1800);
     ok("Competitions is on his menu, and opens", reached && await tid(r.page, "os-main").getAttribute("data-page") === "competitions");
