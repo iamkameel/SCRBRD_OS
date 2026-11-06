@@ -24,6 +24,7 @@
  *     said by his role ("the striker"), exactly as the generator says anyone
  *     it is not given a name for.
  */
+import { saClock, saDate } from "../lib/saTime.js";
 
 /** Where a reference sits on an event, and the word for it there. */
 const REFS = Object.freeze({
@@ -98,9 +99,10 @@ export function unnamedToPositions(innings = [], people = {}) {
  */
 export function asPublicMatch(m) {
   const status = { live: "live", complete: "complete", abandoned: "abandoned", postponed: "postponed" }[m?.status] ?? "upcoming";
-  // Sliced as lib/live.js slices the signed-in read's, so both pages say the
-  // same start for the same fixture.
-  const sa = m?.startsAt ? String(m.startsAt) : null;
+  // On the SA clock, as lib/live.js names the signed-in read's (lib/saTime.js),
+  // so both pages say the same start for the same fixture: startsAt arrives in
+  // UTC, and a slice of the string named a 21:55 start 19:55.
+  const sa = m?.startsAt ?? null;
   return {
     id: m.id,
     homeTeam: m.homeTeam ?? "Home",
@@ -111,8 +113,8 @@ export function asPublicMatch(m) {
     awayCode: m.awayCode ?? null,
     awayTeamCode: m.awayTeam ?? null,
     venue: m.ground ?? null,
-    date: sa ? sa.slice(0, 10) : null,
-    time: sa ? sa.slice(11, 16) : null,
+    date: saDate(sa),
+    time: saClock(sa),
     startsAt: m.startsAt ?? null,
     status,
     overs: m.overs ?? null,
