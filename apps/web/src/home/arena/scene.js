@@ -664,6 +664,7 @@ export function mountArena({ stage, canvas, hud, film, forced = false, onReady =
     const r = stage.getBoundingClientRect();
     w = Math.max(1, Math.round(r.width)); h = Math.max(1, Math.round(r.height));
     renderer.setPixelRatio(dpr);
+    stage.dataset.dpr = String(dpr);   // known from the first frame, not only after the fps window
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     measure();
