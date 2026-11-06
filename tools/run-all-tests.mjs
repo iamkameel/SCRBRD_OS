@@ -184,6 +184,9 @@ const SUITES = [
   // the server's report (@scrbrd/scoring parReport()), the Board's words, the
   // rate track and the worm's par line — and no resource computed by a page.
   ["par",               "apps/web/test/par.test.mjs"],
+  // CRI-1.8: the win estimate off the par line, labelled "par estimate": hand
+  // figures in both innings, nothing wherever par defines nothing, team names only.
+  ["par-estimate",      "apps/web/test/par-estimate.test.mjs"],
   // The ground display's QR code (lib/qr.js) against an independent encoder.
   ["qr",                "apps/web/test/qr.test.mjs"],
   // Renders components, so it needs the .jsx transform hook.

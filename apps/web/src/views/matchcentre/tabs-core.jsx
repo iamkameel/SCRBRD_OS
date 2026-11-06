@@ -9,7 +9,7 @@ import { InningsToggle } from "./scorecard.jsx";
 import { CardHead, Panel, Quiet, SideName } from "./bits.jsx";
 import { Highlights, MomentMark, OverSummary, ResultBoard } from "./spectator.jsx";
 import { matchChaseOf, superOverTitle, twoInningsPlayed } from "../../lib/superOver.js";
-import { chaseRates, rainTouched, rateTrack, reportFor } from "../../lib/par.js";
+import { chaseRates, estimateLine, rainTouched, rateTrack, reportFor } from "../../lib/par.js";
 import { wormOf } from "../../lib/chartSeries.js";
 import { RateTrack } from "../../ui/parTrack.jsx";
 import { Worm } from "../../ui/charts/worm.jsx";
@@ -189,6 +189,10 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   const track = rateTrack({ inn, chasing, target, overs: inOvers, report: pressure.report, rates, rained: pressure.rained,
     side: teamOf(match, inn.battingTeam).short });
   const side = teamOf(match, inn.battingTeam);
+  // CRI-1.8: the win estimate off the par line, where par defines one; the sides by name, never a player.
+  const other = teamOf(match, inn.bowlingTeam);
+  const estimate = estimateLine({ inn, target, par: pressure, decided: settled,
+    sides: { batting: phone ? side.short : side.full, fielding: phone ? other.short : other.full } });
   const insight = !props ? [] : boardInsights(inn, { target, overs: inOvers });
   const latest = [...commentary].reverse().filter((c) => c.kind !== "over_end").slice(0, 3);
   // CRI-1.1: how fresh the board is, while the match is being played — `okAt`
@@ -200,7 +204,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
       {props && (
         <div style={{ position: "relative" }}>
           <Board {...props} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="mc-board"
-            insight={insight.length ? insight : undefined} updated={updated}
+            insight={insight.length ? insight : undefined} updated={updated} estimate={estimate}
             extra={track ? <RateTrack track={track} testid="mc-rate-track" textStyle={{ fontFamily: T.type.body, fontSize: "13px" }}
               palette={{ line: T.board.dim, bar: T.board.lime, dot: T.board.figure, text: T.board.dim, gap: T.board.lime }}/> : null}/>
           <MomentMark moment={moment} announce={!quietMoments}/>
