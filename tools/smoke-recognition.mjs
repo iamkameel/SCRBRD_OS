@@ -336,6 +336,8 @@ try {
     ok("a correction takes the fifty and her notice away", (await familyNotice(parent)).length === 0 && !(await fiftyOf(parent)));
     ok("...and tells her, in her words", (await notices(parent)).some((x) => x.body === "The fifty noticed for R Pillay was withdrawn after the scorecard was corrected."));
     ok("...and nobody else", !(await notices(coach)).some((x) => /noticed for R Pillay/.test(x.body ?? "")) && !(await notices(pupil)).some((x) => /noticed for R Pillay/.test(x.body ?? "")));
+  }
+
   group("Player of the Match, the coach's path (RECOGNITION R6, db/142)");
   {
     const WES = "22222222-2222-2222-2222-222222222222";
