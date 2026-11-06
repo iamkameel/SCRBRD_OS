@@ -347,9 +347,10 @@ export function todoOf(o) {
     undated.push(row({ rule: "R8a", key: child.id, child,
       fact: child.consent === "withdrawn" && child.consentAt
         ? `You withdrew the school's terms for ${first} on ${longDate(child.consentAt)}. Lifts and health monitoring are off until they are agreed again.`
-        : `The school's terms for ${first} are not agreed yet. The office will ask you.`,
+        : `The school's terms for ${first} are not agreed yet.`,
       owner: "you (your own agreement)", byWhenText: child.from ? `since ${longDate(child.from)}` : null,
-      source: "my_children", sourceText: "from your link to the school", door: { kind: "consents", label: "Consents" } }, now));
+      // GA-I20 A2 (N6, D7): she reads and agrees them herself, on his Family card.
+      source: "my_children", sourceText: "from your link to the school", door: { kind: "terms", label: "Read and agree" } }, now));
   }
   // The consents read answers for him, and says whether he is an adult (db/62): the server's word, never an age here.
   const consents = sourceOf(o, "consents");

@@ -5296,3 +5296,8 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - #243 (commit 75a1ef1e, 2026-11-05): Fix main's unit run: three db/99 staging dates read sa_today().
 - #244 (commit ffa8f3f0, 2026-11-05): Union selectors S5: a row shows his playing styles in words (db/134). Union selectors complete.
 - #245 (commit a4841e50, 2026-11-05): Backup drill: say what's wrong with the connection string's shape, never its value.
+- #248 (commit b470ba7e, 2026-11-05): Backup drill: name an invisible character, a look-alike letter, NAME= or another scheme; the walks' ground-clash fix (each noon fixture gets its own ground).
+- #249 (merged within #250, commit c8004c52, 2026-11-05): Two phones, slice 1: a second account set aside is told to both scorers (db/135).
+- #250 (commit c8004c52, 2026-11-05): Two phones, slice 2: compare the two books, three decisions, Accept can no longer double an over (db/136).
+- #251 (commit e291eab6, 2026-11-05): Fixtures: the office can put a called-off match back on.
+- #252 (commit 3c6f18ad, 2026-11-05): A role's season is fixed once appointed, and logged (db/137).

@@ -32,10 +32,11 @@ import {
   GUARDIAN_TERMS_VERSION, confirmWords, doneWords, guardianCandidates, guardianLinkWords,
 } from "../lib/guardianLink.js";
 import { DBtn, dField, dHead, dNote } from "./publicname.jsx";
+import { TermsText } from "./terms.jsx";
 
 const today = () => new Date().toLocaleDateString("en-CA");
 
-/** @param {{ role: string, player: { id: string, name: string, school?: string | null } }} props */
+/** @param {{ role: string, player: { id: string, name: string, school?: string | null, schoolName?: string | null } }} props */
 export function GuardianLinks({ role, player }) {
   const pickId = useId();
   const [readNonce, setReadNonce] = useState(0);
@@ -119,6 +120,8 @@ export function GuardianLinks({ role, player }) {
             <div role="group" aria-label={confirmWords(ask, who)} data-testid="guardian-links-confirm"
               style={{ marginTop: "10px", padding: "12px 14px", borderRadius: D.md, border: `1px solid ${D.border}`, background: D.surf2 }}>
               <p style={{ ...dNote(), margin: 0, color: D.textPrimary }}>{confirmWords(ask, who)}</p>
+              {/* N6 (GA-I20 D7): the office is shown the same text the parent reads, never asked to type it. */}
+              {ask === "consent" && <TermsText schoolName={player.schoolName} maxHeight="40vh" testid="guardian-links-terms"/>}
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                 <DBtn onClick={run} disabled={busy} testid="guardian-links-yes">
                   {busy ? "Saving…" : ask === "verify" ? "Yes, verify" : "Yes, record it"}
