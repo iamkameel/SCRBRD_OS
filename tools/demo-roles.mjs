@@ -26,8 +26,9 @@
  *   office (registrar.wes, office.kea)  every clearance each school-level
  *       appointee's role requires (clearance_requirement), all current, but
  *       WES U13A coach's safeguarding awareness runs out in nine days, and
- *       KEA U12A team manager's first aid is not recorded (the register's
- *       warning and its gap); a guardian link waiting to be verified
+ *       KEA U12A coach's first aid is not recorded (the register's
+ *       warning and its gap); the director records the office's own; a
+ *       guardian link waiting to be verified
  *   parents        emergency contacts for the three pupils and four more boys;
  *                  a pending request to score (parent.020); a lift driver's
  *                  declaration (parent.002); health-monitoring consent for three
@@ -97,14 +98,19 @@ const day = (n) => (n === 0 ? "sa_today()" : `(sa_today() + ${n})`);
 const at = (n, hhmm) => `((sa_today() + ${n}) + time '${hhmm}') AT TIME ZONE 'Africa/Johannesburg'`;
 
 // ── 1 · Clearances, by the office ──
-const clearances = [WES, KEA].map((school) => {
+// The office records everybody's but its own; the director of sport records the office's.
+const clearances = [WES, KEA].flatMap((school) => {
   const office = school === WES ? "registrar.wes" : "office.kea";
-  return `${as(office)}
+  const dos = school === WES ? "dos.wes" : "dos.kea";
+  return [[office, `<> ${q(`${office}@example.invalid`)}`], [dos, `= ${q(`${office}@example.invalid`)}`]];
+}).map(([who, filter], i) => {
+  const school = i < 2 ? WES : KEA;
+  return `${as(who)}
   FOR c IN SELECT * FROM jsonb_to_recordset(current_setting('demo_roles.clear')::jsonb)
                     AS x(person uuid, school uuid, role text, email text, k int)
-            WHERE x.school = ${q(school)}::uuid LOOP
+            WHERE x.school = ${q(school)}::uuid AND x.email ${filter} LOOP
     FOR kind IN SELECT cr.kind FROM clearance_requirement cr WHERE cr.role = c.role ORDER BY cr.kind LOOP
-      CONTINUE WHEN c.email = 'manager.kea.u12a@example.invalid' AND kind = 'first_aid';
+      CONTINUE WHEN c.email = 'coach.kea.u12a@example.invalid' AND kind = 'first_aid';
       IF c.email = 'coach.wes.u13a@example.invalid' AND kind = 'safeguarding_awareness' THEN
         iss := sa_today() - 357; exp := sa_today() + 9;
       ELSE
@@ -358,12 +364,8 @@ ${must("The parent could not make the driver's declaration")}`;
 // Only fixtures already there, starting in the next ten days, not started, and
 // only boys nobody has answered for. Squad 5 is doubtful (family), squad 10 out
 // (academic), 13–15 not yet answered (so the parent's list has a row).
-const availability = `  FOR f IN SELECT m.id AS match_id, sd.school_id, sd.team_code
-              FROM match m
-              CROSS JOIN LATERAL (VALUES (m.school_id, m.team_code), (m.away_school_id, m.away_team_code)) AS sd(school_id, team_code)
-             WHERE m.status = 'scheduled' AND m.starts_at > now() AND m.starts_at < now() + interval '10 days'
-               AND sd.school_id IN (${q(WES)}::uuid, ${q(KEA)}::uuid) AND sd.school_id = match_school(m.id)
-             ORDER BY m.starts_at LOOP
+const availability = `  FOR f IN SELECT * FROM jsonb_to_recordset(current_setting('demo_roles.coming')::jsonb)
+                    AS x(match_id uuid, school_id uuid, team_code text, starts_at timestamptz) ORDER BY x.starts_at LOOP
     FOR b IN SELECT pl.id AS player, pl.squad_no, g.email
                FROM jsonb_to_recordset(current_setting('demo_roles.boys')::jsonb) AS pl(id uuid, school_id uuid, team_code text, squad_no int)
                JOIN jsonb_to_recordset(current_setting('demo_roles.parents')::jsonb) AS g(player uuid, email text) ON g.player = pl.id
@@ -533,7 +535,6 @@ BEGIN
       FROM (SELECT ra.*, row_number() OVER (ORDER BY ra.school_id, ra.person_id, ra.role) FROM role_assignment ra) ra
       JOIN app_user u ON u.id = ra.person_id AND u.active
      WHERE ra.active AND ra.fixture_id IS NULL AND ra.school_id IN (${q(WES)}, ${q(KEA)})
-       AND u.email NOT IN ('registrar.wes@example.invalid', 'office.kea@example.invalid')
        AND EXISTS (SELECT 1 FROM clearance_requirement cr WHERE cr.role = ra.role)), '[]'), true);
   PERFORM set_config('demo_roles.boys', (SELECT jsonb_agg(jsonb_build_object('id', id, 'school_id', school_id, 'team_code', team_code, 'squad_no', squad_no))::text
                                            FROM player WHERE id::text LIKE 'de300000-0000-4000-8000-%'), true);
@@ -545,6 +546,14 @@ BEGIN
        AND split_part(split_part(u.email, '@', 1), '.', 2)::int = right(s.player_id::text, 3)::int), true);
   PERFORM set_config('demo_roles.answered', coalesce((SELECT jsonb_object_agg(match_id::text || ':' || player_id::text, true)::text
                                                         FROM match_availability), '{}'), true);
+  -- The coming fixtures, the home side only: the availability route files an
+  -- answer under match_school(), the home school, so an away family's answer
+  -- is the away school's to take (the route refuses it here).
+  PERFORM set_config('demo_roles.coming', coalesce((
+    SELECT jsonb_agg(jsonb_build_object('match_id', m.id, 'school_id', m.school_id, 'team_code', m.team_code, 'starts_at', m.starts_at))::text
+      FROM match m
+     WHERE m.status = 'scheduled' AND m.starts_at > now() AND m.starts_at < now() + interval '10 days'
+       AND m.school_id IN (${q(WES)}, ${q(KEA)}) AND m.school_id = match_school(m.id)), '[]'), true);
   PERFORM set_config('demo_roles.entrants', coalesce((SELECT jsonb_agg(jsonb_build_object('school_id', school_id, 'team_code', team_code))::text
                                                          FROM competition_entrant WHERE competition_id = ${q(COMPETITION)}
                                                           AND status IN ('invited', 'accepted')), '[]'), true);
