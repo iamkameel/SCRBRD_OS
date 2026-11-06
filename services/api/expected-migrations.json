@@ -134,5 +134,6 @@
   "136_second_account.sql",
   "137_role_season_lock.sql",
   "139_owner_reads_stamped.sql",
-  "142_player_of_match.sql"
+  "142_player_of_match.sql",
+  "144_captain_nomination.sql"
 ]
