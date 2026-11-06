@@ -137,5 +137,6 @@
   "140_milestone_source.sql",
   "141_personal_bests.sql",
   "142_player_of_match.sql",
+  "143_record_boards.sql",
   "144_captain_nomination.sql"
 ]

@@ -135,5 +135,28 @@ export function recognitionRoutes({ pool, secret }) {
         return { schoolId: r.school_id, teamCode: r.team_code, capsBefore: r.caps_before, asOf: String(r.as_of).slice(0, 10), setBy: r.set_by };
       });
     }),
+
+    // POST /api/record-minimums { schoolId, metric, format, minBalls }
+    // RECOGNITION R9 (db/143): a school publishes the minimum, in balls, a
+    // rate record board needs (best_strike_rate: balls faced; best_economy:
+    // legal balls bowled), or takes it down with minBalls null — an unset
+    // minimum is a board that is off. record_minimum_set() decides who may
+    // (recognition.manage at the school, never a platform-wide assignment)
+    // and answers ok and a reason.
+    recordMinimum: handle(async (req) => {
+      const b = req.body || {};
+      if (!UUID.test(String(b.schoolId ?? ""))) throw err("school_required");
+      if (!["best_strike_rate", "best_economy"].includes(b.metric)) throw err("metric_has_no_minimum");
+      const format = String(b.format ?? "").trim();
+      if (!/^[A-Za-z0-9 ]{2,20}$/.test(format)) throw err("format_invalid");
+      const min = b.minBalls == null ? null : Number(b.minBalls);
+      if (min !== null && (!Number.isInteger(min) || min < 1 || min > 600)) throw err("minimum_out_of_range");
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const { rows } = await client.query(`select ok, reason from record_minimum_set($1::uuid, $2, $3, $4)`,
+                                            [b.schoolId, b.metric, format, min]);
+        if (!rows[0]?.ok) throw err(rows[0]?.reason || "not_permitted", rows[0]?.reason === "not_permitted" ? 403 : 422);
+        return { schoolId: b.schoolId, metric: b.metric, format, minBalls: min };
+      });
+    }),
   };
 }

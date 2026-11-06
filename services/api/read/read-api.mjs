@@ -2153,6 +2153,25 @@ export const READ_QUERIES = {
     params: q => [req(q, "playerId")],
   },
 
+  /*
+   * SCHOOL RECORD BOARDS (RECOGNITION R9, db/143): one side's boards —
+   * metric × class group (School Records, Friendly) × format — through
+   * record_board(): the board's state and coverage, the holders (joint
+   * holders share it), the former holders, and for staff alone this season's
+   * list ordered by the metric (`reader_view` 'full'; a pupil reads
+   * 'chronology', never an ordered list of his side; a family nothing).
+   * Anchored on the side the performance was for (D22); only verified matches
+   * with a result from play count (A3). Derived on every read, never stored,
+   * never public (A10, A11), never a file.
+   */
+  record_boards: {
+    text: `select b.reader_view, b.side_school_id, b.side_code, b.metric, b.class_group, b.format, b.line, b.state,
+                  b.min_balls, b.coverage_since, b.awaiting, b.place, b.equalled, b.player_id, b.player_name,
+                  b.match_id, b.innings, b.played_on, b.opponent, b.runs, b.balls, b.not_out, b.wickets, b.runs_conceded
+             from record_board($1::uuid, $2::text) b`,
+    params: q => [uuidParam(q, "schoolId", true), teamParam(req(q, "teamCode"))],
+  },
+
   /* A side's caps ledger, in cap order. Derived from the team sheets. */
   caps: {
     text: `select c.school_id, c.team_code, c.player_id, c.full_name, c.cap_no, c.appearances,
@@ -3700,6 +3719,18 @@ function uuidParam(q, key, required = false) {
   }
   if (!UUID_RE.test(String(v))) { const e = /** @type {DressedError} */ (new Error(`bad_param:${key}`)); e.status = 400; throw e; }
   return v;
+}
+
+/**
+ * A side's code, as match.team_code's own CHECK names one ("U15A", "1XI"):
+ * anything else is refused here rather than sent to the database.
+ * @param {string} v
+ */
+function teamParam(v) {
+  if (!/^(U(9|10|11|12|13|14|15|16|17|18|19)[A-F]?|([1-9]|1[0-9]|20)XI)$/.test(String(v))) {
+    const e = /** @type {DressedError} */ (new Error("bad_param:teamCode")); e.status = 400; throw e;
+  }
+  return String(v);
 }
 
 /** @param {Record<string, string> | undefined} q @param {string} key */
