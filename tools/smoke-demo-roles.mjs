@@ -235,10 +235,12 @@ async function shots() {
       await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 8000 });
       const signedIn = await page.locator('[data-testid="os-main"]').waitFor({ timeout: 20000 }).then(() => true, () => false);
       if (nav) {
-        await page.locator(`[data-testid="mnav-${nav}"], [data-testid="nav-${nav}"]`).first().click({ timeout: 4000 }).catch(async () => {
-          await page.locator('[data-testid="mnav-more"], [aria-label="More"]').first().click({ timeout: 3000 }).catch(() => {});
-          await page.locator(`[data-testid="mnav-${nav}"], [data-testid="nav-${nav}"]`).first().click({ timeout: 4000 }).catch(() => {});
-        });
+        const direct = page.locator(`[data-testid="mnav-${nav}"]`);
+        if (await direct.count()) await direct.first().click({ timeout: 4000 }).catch(() => {});
+        else {
+          await page.locator('[data-testid="mnav-more"]').first().click({ timeout: 4000 }).catch(() => {});
+          await page.locator(`[data-testid="drawer-${nav}"]`).first().click({ timeout: 4000 }).catch(() => {});
+        }
       }
       await page.waitForLoadState("networkidle").catch(() => {});
       await page.waitForTimeout(1500);
