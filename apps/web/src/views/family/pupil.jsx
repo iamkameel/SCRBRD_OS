@@ -20,6 +20,7 @@ import { useLive, useRatings } from "../../lib/live.js";
 import { signedIn } from "../../lib/api.js";
 import { humanDate, stat } from "../../lib/format.js";
 import { ownRecordId } from "../../lib/family.js";
+import { withOpponents } from "../../lib/matchCentre.js";
 import { CareerWagonWheel, DismissalMethodCard } from "../ProfilesView.jsx";
 import { Action, Card, Line, NoneOr, Page, Title } from "./parts.jsx";
 import { ReadState } from "../../ui/primitives.jsx";
@@ -255,7 +256,9 @@ function HonoursTab({ me, role }) {
   // for the same boy again and nobody else.
   const [nonce, setNonce] = useState(0);
   const recRead = useLive("recognition", role, nonce, { playerId: me.id });
-  const { rows: rec } = recRead;
+  const { rows: matches } = useLive("matches", role);
+  // His own end of each fixture names the opponent (the server's is the host's).
+  const rec = withOpponents(recRead.rows, matches);
   const { rows: lines } = useLive("passport", role, 0, { playerId: me.id });
   const miles = rec.filter((r) => r.family === "milestone");
   const honours = rec.filter((r) => r.family !== "milestone");

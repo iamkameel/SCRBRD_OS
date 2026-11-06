@@ -130,7 +130,10 @@ export const isWithdrawn = (r) => r?.family === "honour" && Boolean(r.withdrawnO
  * @param {{ family?: boolean }} [opts]
  */
 export function honourWords(r, { family = false } = {}) {
-  const head = [r.label, r.season].filter(Boolean).join(" ");
+  // The season once: a Player of the Match label already ends with its date
+  // ("… · 21 Oct 2026"), and "21 Oct 2026 2026" says the year twice.
+  const season = r.season && !new RegExp(`\\b${String(r.season).replace(/[^0-9A-Za-z/-]/g, "")}\\b`).test(String(r.label ?? "")) ? r.season : null;
+  const head = [r.label, season].filter(Boolean).join(" ");
   if (!r.withdrawnOn) return head;
   return [head, `withdrawn ${dayMonthYear(r.withdrawnOn)}`, family ? "the school can say why" : null].filter(Boolean).join(" · ");
 }

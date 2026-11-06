@@ -94,6 +94,10 @@ function asMatch(r) {
     homeCode: r.home_code ?? null,
     awayCode: r.away_code ?? null,
     awayTeamCode: r.away_team_code ?? null,
+    // Which end of the fixture is the reader's own, as the read says it
+    // ('home' | 'away', null where it does not): a fixture the other school
+    // hosts names its opponent as the host sees it, so "v" is read from this.
+    mySide: r.my_side === "home" || r.my_side === "away" ? r.my_side : null,
     // The toss as the fixture read carries it: 'home' | 'away', 'bat' | 'bowl'.
     tossWonBy: r.toss_won_by ?? null,
     tossDecision: r.toss_decision ?? null,

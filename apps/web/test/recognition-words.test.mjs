@@ -8,6 +8,7 @@
  *   node --import ./tools/register-jsx.mjs apps/web/test/recognition-words.test.mjs
  */
 import { createElement as h } from "react";
+import { withOpponents } from "../src/lib/matchCentre.js";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   dayMonth, dayMonthYear, familyName, familyMilestoneLine, figureOf, honourWords, isFirst, isSealed, isWithdrawn,
@@ -63,6 +64,14 @@ group("A withdrawn honour (D3, D4)");
   ok("the pupil and the deciders: 'withdrawn · date'", honourWords(w) === "Half colours 2026 · withdrawn 3 Oct 2026", honourWords(w));
   ok("his parent: '· the school can say why'", honourWords(w, { family: true }) === "Half colours 2026 · withdrawn 3 Oct 2026 · the school can say why");
   ok("a live one: label and season", honourWords({ family: "honour", label: "Full colours", season: "2025" }) === "Full colours 2025");
+  const potm = honourWords({ family: "honour", label: "Player of the Match — v Kearsney College U14A · 21 Oct 2026", season: "2026" });
+  // The opponent from the reader's own end: the host's `opponent` text names his own side.
+  const away = { id: "m1", homeTeam: "U14A", homeLabel: "Kearsney College U14A", awayLabel: "Westville Boys' High U14A", awayTeamCode: "U14A", mySide: "away" };
+  const fixed = withOpponents([{ matchId: "m1", opponent: "Westville Boys' High U14A", kind: "fifty", value: 64 }, { matchId: "m9", opponent: "DHS" }], [away]);
+  ok("a fixture the other school hosted names the side he played against", fixed[0].opponent === "Kearsney College U14A" && figureOf(fixed[0]) === "64 v Kearsney College U14A", JSON.stringify(fixed[0]));
+  ok("...and a row with no such fixture is unchanged", fixed[1].opponent === "DHS");
+  ok("...and a fixture with no end said is left as the server named it", withOpponents([{ matchId: "m1", opponent: "X" }], [{ ...away, mySide: null }])[0].opponent === "X");
+  ok("a label that already carries the year says it once", potm === "Player of the Match — v Kearsney College U14A · 21 Oct 2026", potm);
   ok("isWithdrawn reads withdrawnOn, on an honour only", isWithdrawn(w) && !isWithdrawn({ ...w, family: "milestone" }) && !isWithdrawn({ ...w, withdrawnOn: null }));
   ok("no word of a reason anywhere", !/reason|because|error/i.test(honourWords(w, { family: true })));
 }
