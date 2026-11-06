@@ -19,7 +19,7 @@
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import pg from "pg";
-import { deriveMatch, fromRow, ball, BALL_TYPE, toRow } from "@scrbrd/scoring";
+import { deriveMatch, fromRow, ball, BALL_TYPE } from "@scrbrd/scoring";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
 const LIVE = process.argv.includes("--live");
@@ -227,7 +227,7 @@ async function liveCheck() {
   const head = await call(`/api/public/matches/${LIVE_ID}`);
   ok(`the public header answers (${head.status})`, head.status === 200);
   const tok = await login("scorer1.wes@example.invalid", "kameel-pad");
-  const claim = await call(`/api/matches/${LIVE_ID}/session/claim`, { method: "POST", token: tok, body: { deviceId: "kameel-pad" } });
+  const claim = await call(`/api/matches/${LIVE_ID}/session/claim`, { method: "POST", token: tok, body: { device: "kameel-pad" } });
   ok(`scorer1.wes's pad takes the pen (${claim.status}, epoch ${claim.body?.epoch})`, claim.status === 200 && claim.body?.ok !== false, JSON.stringify(claim.body));
   const ev = await call(`/api/matches/${LIVE_ID}/events`, { token: tok });
   const evs = (ev.body?.events ?? ev.body?.rows ?? []).map(fromRow);
@@ -237,8 +237,7 @@ async function liveCheck() {
   const next = ball({ type: BALL_TYPE.RUN, value: 1, striker: inn.striker, nonStriker: inn.nonStriker, bowler: inn.bowler });
   const e = { ...next, innings: 1, id: "kameel-pad-1", clientTs: Date.now() };
   const send = await call(`/api/matches/${LIVE_ID}/events`, { method: "POST", token: tok,
-    body: { deviceId: "kameel-pad", events: [{ ...toRow(e), idempotencyKey: e.id, epoch: claim.body?.epoch ?? 1, deviceId: "kameel-pad", clientSeq: 1, clientTs: e.clientTs,
-                                               kind: e.kind, innings: 1, payload: toRow(e).payload }] } });
+    body: { events: [{ idempotencyKey: e.id, deviceId: "kameel-pad", epoch: claim.body?.epoch ?? 1, clientSeq: 1, clientTs: e.clientTs, payload: e }] } });
   ok(`...and scores one more ball (${send.status}: ${JSON.stringify(send.body).slice(0, 200)})`, send.status === 200 && (send.body?.accepted?.length ?? 0) === 1);
 }
 

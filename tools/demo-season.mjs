@@ -93,6 +93,10 @@ const SEASON = [
     bat: { [CAPTAIN]: { min: 28, max: 48 } }, bowl: { [CAPTAIN]: 4 }, potm: ["nominate"] },
   { key: "u16a-1008", team: "U16A", home: "WES", at: "2026-10-08T12:30:00Z", existing: true, win: "WES",
     bat: { "de300000-0000-4000-8000-000000000046": { min: 52, max: 74 } }, potm: ["WES"] },
+  // Two more open-age matches at Westville Main, so the ground has the five
+  // first innings its par needs (db/74, venue_par_min_innings()) for tomorrow.
+  { key: "2xi-1010", team: "2XI", home: "WES", at: "2026-10-10T07:30:00Z", existing: true, win: "WES", potm: ["WES"] },
+  { key: "3xi-1010", team: "3XI", home: "WES", at: "2026-10-10T12:00:00Z", existing: true, win: "KEA", potm: ["WES"] },
   { key: "u14a-1015", team: "U14A", home: "WES", at: "2026-10-15T08:00:00Z", existing: true, win: "WES",
     bat: { [U14A_BOY]: { min: 18, max: 34 } }, potm: ["WES"] },
   { key: "u16b-1015", team: "U16B", home: "WES", at: "2026-10-15T12:30:00Z", existing: true, win: "WES",
@@ -115,8 +119,7 @@ const SEASON = [
  * fixture route's update of starts_at), so no past fixture stands half-done.
  */
 const REARRANGED = [
-  ["U14B", "2026-10-09T12:30:00Z", "2026-11-16T12:30:00Z"], ["2XI", "2026-10-10T07:30:00Z", "2026-11-21T07:30:00Z"],
-  ["3XI", "2026-10-10T12:00:00Z", "2026-11-21T12:00:00Z"], ["U15A", "2026-10-12T12:30:00Z", "2026-11-17T12:30:00Z"],
+  ["U14B", "2026-10-09T12:30:00Z", "2026-11-16T12:30:00Z"], ["U15A", "2026-10-12T12:30:00Z", "2026-11-17T12:30:00Z"],
   ["U13A", "2026-10-13T12:30:00Z", "2026-11-18T12:30:00Z"], ["U12A", "2026-10-14T12:30:00Z", "2026-11-19T12:30:00Z"],
   ["U15B", "2026-10-16T12:30:00Z", "2026-11-20T12:30:00Z"],
 ];
@@ -764,7 +767,10 @@ if (!LIVE) {
   const played = playMatch(spec, { live: true });
   const f = played.first, s = played.second;
   console.log(`live 1XI: ${played.firstCode} ${f.runs}/${f.wickets} sealed; ${played.secondCode} ${s.runs}/${s.wickets} after ${Math.floor(s.balls / 6)}.${s.balls % 6}, ${played.log.length} events, seed ${played.seed}`);
-  // The clock: the last ball about two minutes before the paste.
+  // The clock: the first ball about 90 minutes before the paste and the last
+  // about two minutes before it (a brisk 28 overs with a short break).
+  const scale = (85 * 60) / played.log.at(-1).clientTs;
+  for (const e of played.log) e.clientTs = Math.round(e.clientTs * scale);
   const lastT = played.log.at(-1).clientTs;
   const t0 = `(now() - make_interval(secs => ${Math.round(lastT) + 120}))`;
   const body = `
