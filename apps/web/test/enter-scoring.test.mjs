@@ -113,8 +113,11 @@ group("the page offers nothing else that enters scoring");
   ok("...drawn only where its caller passed canScoreIt", /\{canScoreIt && \(isLive \|\| match\.status === "upcoming"\) && onOpenScorer && \(/.test(mv));
   ok("...and MatchView never claims a session or writes the log", !/session\/claim|\/events`, \{ method: "POST"|handover/.test(mv));
   const mc = readFileSync(new URL("../src/views/MatchCentreView.jsx", import.meta.url), "utf8");
-  ok("the Match Centre passes the fixture's own gate when signed in",
-     /const enters = signedIn\(\) \? mayEnterScoring\(profile\(\)\?\.assignments, fresh\)/.test(mc) && /canScoreIt=\{enters\}/.test(mc));
+  ok("the Match Centre's one gate is the fixture's own when signed in",
+     /const scoresHere = \(m\) => \(signedIn\(\) \? mayEnterScoring\(profile\(\)\?\.assignments, m\)/.test(mc));
+  ok("...the match page passes it", /const enters = scoresHere\(fresh\);/.test(mc) && /canScoreIt=\{enters\}/.test(mc));
+  ok("...and every fixture card's scorer button in the list asks it, and nothing else", /\(isLive\|\|m\.status==="upcoming"\)&&scoresHere\(m\)&&<Btn/.test(mc)
+     && !/canScore\(role\)&&<Btn/.test(mc));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

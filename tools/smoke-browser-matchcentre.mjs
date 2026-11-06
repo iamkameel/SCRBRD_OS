@@ -1050,8 +1050,15 @@ try {
         await afterReads(s.page, 2000);
         inn = /Match Centre|Dashboard/i.test(await text(s.page));
       } else inn = await signIn(s.page, who);
+      // The list's card first: its scorer button asks the same gate (Kameel, 6 Nov).
+      await s.page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
+      await tid(s.page, `mc-open-${id}`).first().waitFor({ timeout: 10000 }).catch(() => {});
+      const listed = await tid(s.page, `mc-score-${id}`).count() === 1;
       const opened = await openMatch(s.page, id);
-      return { s, inn, opened, writes, offered: await tid(s.page, "mc-enter-scoring").count() === 1 };
+      const offered = await tid(s.page, "mc-enter-scoring").count() === 1;
+      // The card and the page say the same: both offered, or neither.
+      ok(`...the list's card agrees with the page (${offered ? "offered" : "not offered"})`, listed === offered, JSON.stringify({ listed, offered }));
+      return { s, inn, opened, writes, offered };
     };
     const w = await sees(/watcher@example\.invalid|Spectator/, fx.brk);
     ok("a spectator opens the live U16A fixture and is never offered it (no scoring.edit)", w.inn && w.opened && !w.offered);
