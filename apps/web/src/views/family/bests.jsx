@@ -35,13 +35,17 @@ const EMPTY = Object.freeze({
  */
 export function PersonalBests({ role, playerId, who, testid = "personal-bests", quietWhenNone = false }) {
   const [nonce, setNonce] = useState(0);
-  const [group, setGroup] = useState(GROUPS[0].id);
+  // Null until he picks one: the card opens on School Records, or, where that
+  // holds nothing and Friendly does, on Friendly, never on an empty group.
+  const [picked, setGroup] = useState(/** @type {string | null} */ (null));
   // The read is asked about this one boy, and answers about nobody else.
   const read = useLive("personal_bests", role, nonce, { playerId });
   const { rows: matches } = useLive("matches", role);
   if (quietWhenNone && !read.loading && !read.error && !read.rows.length) return null;
   // His own end of each fixture names the opponent (the server's is the host's).
-  return <PersonalBestsView rows={withOpponents(read.rows, matches)} read={read} group={group} onGroup={setGroup} who={who} testid={testid}
+  const rows = withOpponents(read.rows, matches);
+  const group = picked ?? groupsHeld(rows)[0] ?? GROUPS[0].id;
+  return <PersonalBestsView rows={rows} read={read} group={group} onGroup={setGroup} who={who} testid={testid}
     onRetry={() => setNonce((n) => n + 1)}/>;
 }
 
