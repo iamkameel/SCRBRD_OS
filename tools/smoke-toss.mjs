@@ -221,9 +221,13 @@ try {
   // only by passport_union_log() inside passport()/passport_name(), read only
   // through passport_union_reads(), which answers the boy's family alone. No
   // application privilege and no policy, by design (Fable's red-team, 30 Oct).
+  // recognition_audit (db/142, RECOGNITION R6) is the honours audit:
+  // append-only, written by honour_audit() and read only through audit_log()
+  // (N3), no policy by design.
   const DELIBERATELY_NO_POLICY = new Set(["login_code", "schema_migration", "pad_resume_jti", "dls_resource_table", "dls_resource",
                                           "auth_identity", "pending_claim", "auth_epoch", "auth_session",
-                                          "school_register", "request_cooldown", "passport_union_read"]);
+                                          "school_register", "request_cooldown", "passport_union_read",
+                                          "recognition_audit"]);
   const policyless = (await q(
     `select c.relname, count(p.polname)::int as policies
        from pg_class c
