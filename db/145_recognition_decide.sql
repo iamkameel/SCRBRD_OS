@@ -51,7 +51,9 @@
 --               ~ honour_stamp() (db/142)  D5: the decider of any honour but
 --                 a Player of the Match may be named by the person recording
 --                 it; one who names nobody is the decider. F10: the notice_id
---                 bypass holds only when the notice is really gone.
+--                 bypass holds only when the notice is really gone. A standing
+--                 honour names no withdrawer (the red-team's F3; its reason
+--                 and kind were already tied to withdrawn_at by CHECKs).
 --   triggers    + honour_decided_by  AFTER INSERT, every kind but a Player of
 --                 the Match: the decider holds recognition.decide through a
 --                 live assignment at the boy's school (not a pad, not a
@@ -110,6 +112,7 @@ BEGIN
      OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'honour' AND column_name = 'notice_id')
      OR NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'honour'::regclass AND polname = 'honour_no_platform_award')
      OR to_regprocedure('match_award_guardian_of(uuid,uuid)') IS NULL OR to_regprocedure('match_award_short(text)') IS NULL
+     OR to_regprocedure('match_award_instead(uuid,uuid)') IS NULL
      OR to_regprocedure('honour_kind_label(text,text)') IS NULL
      OR to_regprocedure('app_is_platform_wide()') IS NULL OR to_regprocedure('app_pad_scoped()') IS NULL
      OR to_regprocedure('app_support_access_id(uuid)') IS NULL OR to_regprocedure('sa_today()') IS NULL
@@ -120,7 +123,7 @@ BEGIN
     RAISE EXCEPTION 'db/145: Player of the Match (db/142), the captain''s nomination (db/144), the notices (db/89), the platform reads (db/20), the support hour (db/22) or the SA day (db/128) is missing; apply them first';
   END IF;
   FOR r IN SELECT * FROM (VALUES
-      ('honour_stamp()', '4d23d2abe5b6a93970590b2cdf413933', '0cc86739759cc6d25706960264b44b17', 'db/142'))
+      ('honour_stamp()', '4d23d2abe5b6a93970590b2cdf413933', 'db37c75f7e614b8aee00e3e2f11b1a13', 'db/142'))
       AS x(fn, was, mine, src)
   LOOP
     SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = to_regprocedure(r.fn);
@@ -268,15 +271,24 @@ GRANT SELECT ON honour_masked TO scrbrd_app;
 --  4 · Every honour names its decider (D5)
 -- ══════════════════════════════════════════════════════════════════
 -- Does this person decide honours at this school today? recognition.decide
--- through a live assignment AT the school (never a platform-wide one), not
--- ended, not expired, not suspended. Asked of the person named, who need not
--- be the session (the office names him); when he is the session, never
--- through a pad's credential or a support hour.
+-- through a live assignment AT the school, not ended, not expired, not
+-- suspended. Asked of the person named, who need not be the session (the
+-- office names him). Never a person who holds a platform-wide assignment,
+-- whatever he holds beside it: D7's cut is by the person, so he is not named
+-- either (the red-team's F1). Never under a support hour. When he is the
+-- session, through app_can() as well (F2), as every door asks it: a pad's
+-- credential, and whatever app_can() refuses centrally, stop him deciding.
 CREATE OR REPLACE FUNCTION recognition_decider_holds(p_person uuid, p_school uuid) RETURNS boolean AS $$
   SELECT p_person IS NOT NULL AND p_school IS NOT NULL
-     AND NOT coalesce(p_person = app_user_id() AND (app_pad_scoped() OR app_support_access_id(p_school) IS NOT NULL), false)
+     AND (p_person IS DISTINCT FROM app_user_id()
+          OR (app_support_access_id(p_school) IS NULL
+              AND app_can('recognition.decide', p_school, '*'::text, '00000000-0000-0000-0000-000000000000'::uuid, NULL::uuid)))
      AND NOT EXISTS (SELECT 1 FROM support_access s WHERE s.actor_id = p_person AND s.school_id = p_school
                         AND s.ended_at IS NULL AND s.expires_at > now())
+     AND NOT EXISTS (SELECT 1 FROM role_assignment w
+                      WHERE w.person_id = p_person AND w.active AND w.school_id IS NULL
+                        AND (w.valid_from IS NULL OR w.valid_from <= sa_today())
+                        AND (w.valid_until IS NULL OR w.valid_until > sa_today()))
      AND EXISTS (SELECT 1 FROM role_assignment a
                    JOIN role_capability rc ON rc.role = a.role AND rc.capability = 'recognition.decide'
                   WHERE a.person_id = p_person AND a.active AND a.school_id = p_school
@@ -340,6 +352,14 @@ BEGIN
   END IF;
   -- is_public may change: putting a name on a board, or taking it off, is a
   -- decision about the board, not about the honour.
+  -- db/145 (the red-team's F3): a standing honour names no withdrawer. Its
+  -- reason and kind are tied to withdrawn_at by db/08's and db/142's CHECKs
+  -- (honour_withdrawal_has_reason, honour_withdrawal_has_kind); the
+  -- withdrawer is not, so it is refused here.
+  IF NEW.withdrawn_at IS NULL AND NEW.withdrawn_by IS DISTINCT FROM OLD.withdrawn_by THEN
+    RAISE EXCEPTION 'a standing honour names no withdrawer — withdraw it, and the withdrawer is stamped'
+      USING ERRCODE = 'check_violation';
+  END IF;
   IF NEW.withdrawn_at IS NOT NULL THEN
     -- db/142: D9/D10 at the table, whatever the route: a live guardian of
     -- the boy does not withdraw his Player of the Match (the door says it
@@ -493,7 +513,7 @@ END $grants$;
 DO $check$
 DECLARE f text; r text; v_src text;
 BEGIN
-  IF pg_temp._v145_fold((SELECT prosrc FROM pg_proc WHERE oid = 'honour_stamp()'::regprocedure)) <> '0cc86739759cc6d25706960264b44b17' THEN
+  IF pg_temp._v145_fold((SELECT prosrc FROM pg_proc WHERE oid = 'honour_stamp()'::regprocedure)) <> 'db37c75f7e614b8aee00e3e2f11b1a13' THEN
     RAISE EXCEPTION 'db/145: honour_stamp() is not this file''s after the paste (md5 %)',
       pg_temp._v145_fold((SELECT prosrc FROM pg_proc WHERE oid = 'honour_stamp()'::regprocedure));
   END IF;

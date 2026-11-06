@@ -398,8 +398,10 @@ BEGIN
     RETURN QUERY SELECT false, 'citation_invalid'::text, NULL::text, NULL::uuid; RETURN;
   END IF;
   BEGIN
-    INSERT INTO honour (player_id, kind, season_id, citation, awarded_on)
-    VALUES (n.nominee_player_id, n.kind, n.season_id, v_cite, sa_today())
+    -- Off the public board until the school puts it there (is_public is the
+    -- school's switch, D11), said here rather than left to the default.
+    INSERT INTO honour (player_id, kind, season_id, citation, awarded_on, is_public)
+    VALUES (n.nominee_player_id, n.kind, n.season_id, v_cite, sa_today(), false)
     RETURNING id INTO v_id;
   EXCEPTION WHEN unique_violation THEN
     RETURN QUERY SELECT false, 'already_awarded'::text, NULL::text, NULL::uuid; RETURN;

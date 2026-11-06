@@ -11210,6 +11210,19 @@ BEGIN
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'twohats')::uuid, 'platformadmin', NULL);
   -- gdos: a director of sport who is B2's father (pending: a parent is a parent before the office verifies him).
   ids := ids || _v71_people('v145g', ARRAY[ARRAY['gdos', 'directorofsport', HIL::text, '', '']]);
+  -- Directors the office may not name (the red-team's F1, F4): one who also
+  -- holds a platform-wide assignment; one whose assignment ended; one whose
+  -- assignment is suspended; one who is a support hour's.
+  ids := ids || _v71_people('v145x', ARRAY[
+    ARRAY['dos2hats', 'directorofsport', HIL::text, '', ''],
+    ARRAY['olddos',   'directorofsport', HIL::text, '', ''],
+    ARRAY['susdos',   'directorofsport', HIL::text, '', ''],
+    ARRAY['sup',      'directorofsport', HIL::text, '', '']]);
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'dos2hats')::uuid, 'platformadmin', NULL);
+  UPDATE role_assignment SET valid_from = sa_today() - 30, valid_until = sa_today() WHERE person_id = (ids->>'olddos')::uuid;
+  UPDATE role_assignment SET expires_at = now() + interval '1 hour' WHERE person_id = (ids->>'sup')::uuid RETURNING id INTO a;
+  INSERT INTO support_access (actor_id, school_id, role, reason, assignment_id, expires_at)
+  VALUES ((ids->>'sup')::uuid, HIL, 'directorofsport', 'Verify 145: a support hour, to fix a row', a, now() + interval '1 hour');
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'gdos')::uuid, 'guardian', HIL) RETURNING id INTO a;
   INSERT INTO assignment_subject (assignment_id, player_id, relationship) VALUES (a, (ids->>'b2')::uuid, 'parent');
   INSERT INTO app_user (school_id, email, name, role) VALUES (NULL, 'v145.plat@example.invalid', 'V145 Plat', 'platformadmin') RETURNING id INTO a;
@@ -11225,6 +11238,12 @@ BEGIN
   VALUES (HIL, '5XI', WES, '5XI', 'x', (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 1, 'complete')
   RETURNING id INTO m;
   INSERT INTO match_squad (match_id, player_id, side) VALUES (m, (ids->>'b1')::uuid, 'home'), (m, (ids->>'b2')::uuid, 'home');
+  -- susdos's assignment, paused by the office (db/34's duty_suspension, on a duty of his at M).
+  INSERT INTO match_official (match_id, school_id, duty, person_name, person_id)
+  VALUES (m, HIL, 'scorer', 'V145 Susdos', (ids->>'susdos')::uuid) RETURNING id INTO h;
+  INSERT INTO duty_suspension (duty_id, assignment_id, school_id, suspended_by, reason)
+  SELECT h, a2.id, HIL, (ids->>'office')::uuid, 'Verify 145: paused pending a conversation.'
+    FROM role_assignment a2 WHERE a2.person_id = (ids->>'susdos')::uuid AND a2.role = 'directorofsport';
   -- B2, the captain, nominated B1; the award answers it (honour_tie_nomination()).
   INSERT INTO recognition_nomination (kind, match_id, season_id, school_id, team_code, nominee_player_id, nominated_by_player_id,
                                       nominated_as, derived_from, closes_at)
@@ -11319,6 +11338,11 @@ BEGIN
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'gdos')::uuid, 'guardian', HIL) RETURNING id INTO a;
   INSERT INTO assignment_subject (assignment_id, player_id, relationship) VALUES (a, (ids->>'k2')::uuid, 'parent');
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'coachdos')::uuid, 'directorofsport', HIL);
+  -- sup: a director of sport for a support hour (db/22), and nothing else.
+  ids := ids || _v71_people('v146s', ARRAY[ARRAY['sup', 'directorofsport', HIL::text, '', '']]);
+  UPDATE role_assignment SET expires_at = now() + interval '1 hour' WHERE person_id = (ids->>'sup')::uuid RETURNING id INTO a;
+  INSERT INTO support_access (actor_id, school_id, role, reason, assignment_id, expires_at)
+  VALUES ((ids->>'sup')::uuid, HIL, 'directorofsport', 'Verify 146: a support hour, to fix a row', a, now() + interval '1 hour');
   -- gcoach: a coach of the side who is K2's father too (Kameel, 6 Nov 2026: he does not nominate his son).
   ids := ids || _v71_people('v146g', ARRAY[ARRAY['gcoach', 'coach', HIL::text, '4XI', '']]);
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'gcoach')::uuid, 'guardian', HIL) RETURNING id INTO a;
@@ -11338,7 +11362,8 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 CREATE OR REPLACE FUNCTION _v146_fact(p_player uuid) RETURNS jsonb AS $$
   SELECT jsonb_build_object(
     'honours', coalesce((SELECT jsonb_agg(jsonb_build_object('id', h.id, 'kind', h.kind, 'decided_by', h.decided_by, 'awarded_by', h.awarded_by,
-                                           'citation', h.citation, 'team', h.team_code, 'season', h.season_id, 'withdrawn', h.withdrawn_at IS NOT NULL)
+                                           'citation', h.citation, 'team', h.team_code, 'season', h.season_id, 'withdrawn', h.withdrawn_at IS NOT NULL,
+                                           'public', h.is_public)
                                            ORDER BY h.awarded_at, h.id)
                            FROM honour h WHERE h.player_id = p_player AND h.kind IN ('colours', 'half_colours')), '[]'::jsonb),
     'audit', coalesce((SELECT jsonb_agg(jsonb_build_object('event', a.event, 'actor', a.actor_id, 'kind', a.kind, 'nomination', a.nomination_id,
@@ -38055,7 +38080,9 @@ $v116$;
   --              director, the office and the captain who nominated read it,
   --              and the nominee, his mother and the DSO read NULL (D8)
   --   (decider)  the office alone, or naming a coach, or naming another
-  --              school's director, is refused (D5, A5); the office naming the
+  --              school's director, or a director who also holds a
+  --              platform-wide assignment (F1), whose assignment ended or is
+  --              suspended, or who is a support hour's (F4), is refused (D5, A5); the office naming the
   --              principal is her decision, recorded by the office, and she is
   --              told, hers alone, in §7's words; the director who decides
   --              himself is the decider and nobody is told; the director
@@ -38066,6 +38093,10 @@ $v116$;
   --              or the office names him, and is told the principal decides;
   --              he may decide another boy's; he does not withdraw his son's
   --              Colours
+  --   (session)  the reason is not read under a pad's credential, nor by a
+  --              support hour's director (F4)
+  --   (standing) a standing honour takes no reason (db/08's CHECK) and names
+  --              no withdrawer (F3)
   --   (f10)      a Player of the Match's standing notice is not detached from
   --              it by an UPDATE; when the notice is deleted, its key clears
   --   (f9)       an honour with an audit is not deleted, and the audit stays
@@ -38084,6 +38115,14 @@ $v116$;
   --   honour_stamp()'s notice bypass without its NOT EXISTS (db/142's)              → (f10)
   --   recognition_audit's honour key re-made ON DELETE CASCADE (db/142's)           → (f9)
   --   GRANT EXECUTE ON FUNCTION recognition_decider_holds(uuid,uuid) TO scrbrd_app  → (grants)
+  --   recognition_decider_holds() without its platform-wide test                    → (decider)
+  --   recognition_decider_holds() without its valid_until test                      → (decider)
+  --   recognition_decider_holds() without its duty_suspension test                  → (decider)
+  --   recognition_decider_holds() without either support test                       → (decider)
+  --   honour_withdrawn_reason() without its pad test                                → (session)
+  --   honour_withdrawn_reason() without its support test                            → (session)
+  --   ALTER TABLE honour DROP CONSTRAINT honour_withdrawal_has_reason               → (standing)
+  --   honour_stamp() without its withdrawer test                                    → (standing)
   --   honour_decided_by() without its guardian test                                 → (guardian)
   --   honour_withdrawn_by() returning without its test                              → (guardian)
   --   GRANT SELECT (nomination_id) ON honour TO scrbrd_app                          → (mask_nom)
@@ -38176,7 +38215,7 @@ $v116$;
     PERFORM _as((y->>'office')::uuid);
     got := _v145_try(format('INSERT INTO honour (player_id, kind, season_id) VALUES (%L, %L, %L)', B2, 'colours', SEA));
     PERFORM _assert(got = '23514|decider_required', format('§123 (decider): the office alone: %s', got));
-    FOREACH who IN ARRAY ARRAY['coach', 'wesdos', 'office2'] LOOP
+    FOREACH who IN ARRAY ARRAY['coach', 'wesdos', 'office2', 'dos2hats', 'olddos', 'susdos', 'sup'] LOOP
       got := _v145_try(format('INSERT INTO honour (player_id, kind, season_id, decided_by) VALUES (%L, %L, %L, %L)', B2, 'colours', SEA, y->>who));
       PERFORM _assert(got = '23514|decider_required', format('§123 (decider): the office naming %s: %s', who, got));
     END LOOP;
@@ -38240,6 +38279,29 @@ $v116$;
                     AND _v145_honour((SELECT h.id FROM honour h WHERE h.player_id = B2 AND h.kind = 'colours'))->>'withdrawn_by' IS NULL,
       format('§123 (guardian): his father withdrew his Colours: %s', got));
 
+    -- (session)
+    -- The director (the decider's arm, which asks app_can()) and the office
+    -- that withdrew it (the withdrawer's arm, which only the pad test stops).
+    FOREACH who IN ARRAY ARRAY['dos', 'office'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM set_config('app.scope', 'pad', true);
+      got := honour_withdrawn_reason(HW);
+      PERFORM set_config('app.scope', '', true);
+      PERFORM _assert(got IS NULL AND honour_withdrawn_reason(HW) IS NOT NULL,
+        format('§123 (session): %s read the reason under a pad''s credential: %s', who, got));
+    END LOOP;
+    PERFORM _as((y->>'sup')::uuid);
+    PERFORM _assert(honour_withdrawn_reason(HW) IS NULL, '§123 (session): a support hour''s director read the reason');
+
+    -- (standing)
+    PERFORM _as((y->>'office')::uuid);
+    v_h := (SELECT h.id FROM honour h WHERE h.player_id = B1 AND h.kind = 'honours');
+    got := _v145_try(format('UPDATE honour SET withdrawn_reason = %L WHERE id = %L', 'v145: planted for later', v_h));
+    PERFORM _assert(got LIKE '23514|%honour_withdrawal_has_reason%', format('§123 (standing): a reason was planted on a standing honour: %s', got));
+    got := _v145_try(format('UPDATE honour SET withdrawn_by = %L WHERE id = %L', y->>'office', v_h));
+    PERFORM _assert(got LIKE '23514|a standing honour names no withdrawer%' AND _v145_honour(v_h)->>'withdrawn_by' IS NULL,
+      format('§123 (standing): a withdrawer was named on a standing honour: %s', got));
+
     -- (f10)
     PERFORM _assert(_v145_honour(PM)->>'notice' IS NOT NULL, '§123 (f10): the Player of the Match''s notice was not written');
     PERFORM _as((y->>'dos')::uuid);
@@ -38295,9 +38357,15 @@ $v116$;
   --              (coachdos), never a guardian of the boy either way, who is
   --              told the principal decides (gdos, a director); the director
   --              awards K1 Full colours: the ordinary honour, decided_by him,
-  --              its citation, the nomination confirmed and tied, the audit
-  --              the coach's; twice is refused; the principal records no
-  --              award on K1's half colours
+  --              its citation, off the public board, the nomination confirmed
+  --              and tied, the audit the coach's; twice is refused; the
+  --              principal records no award on K1's half colours, worded as the
+  --              coach's nomination
+  --   (session)  the director under a pad's credential, and a support
+  --              hour's director, neither decide nor read the sheet (F2, F4)
+  --   (mask_nom) were a Colours award to carry its nomination's key, the side's
+  --              coach would read it through honour_masked and the boy's
+  --              mother and a team-mate would not (D8; F4)
   --   (table)    the ordinary route keeps the same row checks: the office
   --              naming the nominator, or a guardian of the boy, is refused;
   --              naming the principal answers the nomination; a guardian of
@@ -38315,6 +38383,11 @@ $v116$;
   --   colours_decide() without its nominator test                            → (decide)
   --   honour_colours_answer() without its nominator test                     → (table)
   --   colours_nominate() without its guardian test                           → (who)
+  --   recognition_decider_holds() without its app_can() for the session      → (session)
+  --   recognition_decider_holds() without either support test                → (session)
+  --   honour_nomination_id() without its D8 test                             → (mask_nom)
+  --   colours_decide() writing is_public true                                → (decide)
+  --   audit_log()'s no-award words as db/144 left them                       → (decide)
   --   GRANT EXECUTE ON FUNCTION colours_nominator_holds(uuid,text) TO scrbrd_app → (grants)
   DECLARE
     y   jsonb := _v146_stage();
@@ -38468,6 +38541,7 @@ $v116$;
     PERFORM _assert(jsonb_array_length(j->'honours') = 1 AND j->'honours'->0->>'kind' = 'colours'
                     AND j->'honours'->0->>'decided_by' = y->>'dos' AND j->'honours'->0->>'awarded_by' = y->>'dos'
                     AND j->'honours'->0->>'citation' = 'Forty wickets in a season.' AND j->'honours'->0->>'team' = '4XI'
+                    AND j->'honours'->0->>'public' = 'false'
                     AND j->'honours'->0->>'season' = SEA::text,
       format('§124 (decide): the honour reads %s', j->'honours'));
     j := _v146_nom(v_n);
@@ -38487,6 +38561,46 @@ $v116$;
     PERFORM _assert(r.ok AND _v146_nom(v_n2)->>'status' = 'no_award' AND _v146_nom(v_n2)->>'decided_by' = y->>'prin'
                     AND jsonb_array_length(_v146_fact(K1)->'honours') = 1,
       format('§124 (decide): the principal''s no award: %s, %s', r.reason, _v146_nom(v_n2)));
+    PERFORM _as((y->>'dos')::uuid);
+    got := (SELECT string_agg(l.action, ' | ' ORDER BY l.at, l.key) FROM audit_log('11111111-1111-1111-1111-111111111111'::uuid, ARRAY['recognition'], NULL, NULL, NULL, 400) l
+             WHERE l.detail->>'team' = '4XI');
+    PERFORM _assert(got LIKE '%Recorded no award on the coach''s nomination for Half colours%',
+      format('§124 (decide): the audit log does not word the no award as the coach''s: %s', got));
+
+    -- (session)
+    PERFORM _as((y->>'dos')::uuid);
+    PERFORM set_config('app.scope', 'pad', true);
+    SELECT * INTO r FROM colours_decide(v_h, 'no_award', NULL);
+    got := r.reason || '/' || (SELECT count(*) FROM colours_nominations())::text;
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(got = 'not_permitted/0' AND _v146_nom(v_h)->>'status' = 'open',
+      format('§124 (session): the director decided under a pad''s credential: %s', got));
+    PERFORM _as((y->>'sup')::uuid);
+    SELECT * INTO r FROM colours_decide(v_h, 'no_award', NULL);
+    PERFORM _assert(r.reason = 'not_permitted' AND _v146_nom(v_h)->>'status' = 'open'
+                    AND NOT EXISTS (SELECT 1 FROM colours_nominations() c WHERE c.nominee_id IN (K1, K2) AND c.may_decide),
+      format('§124 (session): a support hour''s director decided: %s', r.reason));
+
+    -- (mask_nom): K1's Colours award given its nomination's key for one
+    -- moment, past the CHECK and the tie trigger, then undone.
+    BEGIN
+      got := _v144_owner('ALTER TABLE honour DROP CONSTRAINT honour_nomination_is_a_match_award');
+      got := got || _v144_owner('ALTER TABLE honour DISABLE TRIGGER honour_tie_nomination');
+      got := got || _v144_owner(format('UPDATE honour SET nomination_id = %L WHERE id = %L', v_n, _v146_fact(K1)->'honours'->0->>'id'));
+      PERFORM _assert(got = 'okokok', format('§124 (mask_nom): the key could not be staged: %s', got));
+      PERFORM _as((y->>'coach')::uuid);
+      PERFORM _assert((SELECT h.nomination_id FROM honour_masked h WHERE h.id = (_v146_fact(K1)->'honours'->0->>'id')::uuid) = v_n,
+        '§124 (mask_nom): the side''s coach does not read the Colours award''s nomination');
+      FOREACH who IN ARRAY ARRAY['mother', 'mate'] LOOP
+        PERFORM _as((y->>who)::uuid);
+        PERFORM _assert(honour_nomination_id((_v146_fact(K1)->'honours'->0->>'id')::uuid) IS NULL
+                        AND NOT EXISTS (SELECT 1 FROM honour_masked h WHERE h.player_id = K1 AND h.nomination_id IS NOT NULL),
+          format('§124 (mask_nom): %s reads the Colours award''s nomination', who));
+      END LOOP;
+      RAISE EXCEPTION 'v146-undo';
+    EXCEPTION WHEN OTHERS THEN
+      IF SQLERRM <> 'v146-undo' THEN RAISE; END IF;
+    END;
 
     -- (table)
     PERFORM _as((y->>'office')::uuid);
