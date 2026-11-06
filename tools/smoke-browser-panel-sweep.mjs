@@ -27,6 +27,8 @@
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-panel-sweep.mjs
  *   PANEL_SWEEP_PHONE=0   desktop only (default: the persona accounts at phone width too)
+ *   PANEL_SWEEP_PHONE=all every account at phone width too
+ *   PANEL_SWEEP_DESKTOP=0 phone width only
  *   PANEL_SWEEP_DEBUG=1   print each stop as it is visited
  */
 import { chromium } from "playwright-core";
@@ -42,6 +44,8 @@ const PORT = port(8871);
 const BASE = `http://127.0.0.1:${PORT}`;
 const DEBUG = !!process.env.PANEL_SWEEP_DEBUG;
 const PHONE = process.env.PANEL_SWEEP_PHONE !== "0";
+const PHONE_ALL = process.env.PANEL_SWEEP_PHONE === "all";
+const DESKTOP = process.env.PANEL_SWEEP_DESKTOP !== "0";
 
 const DEMO_CAST = [
   "coach.wes.1xi", "coach.wes.u14a", "coach.kea.1xi", "scorer1.wes", "dos.wes", "dos.kea",
@@ -54,7 +58,7 @@ const DEMO_CAST = [
 const api = spawn(process.execPath, ["services/api/server.mjs"], {
   env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", SESSION_SECRET: "panel-sweep-secret",
          ALLOW_DEV_LOGIN: "1", PUBLIC_PAGES: "on", PUBLIC_PSEUDONYM_SECRET: "panel-sweep-pseudonyms-0123456789abcdef",
-         PUBLIC_TRUST_PROXY_HOPS: "1", SERVE_CLIENT: "apps/web/dist" },
+         PUBLIC_TRUST_PROXY_HOPS: "1", SERVE_CLIENT: process.env.PANEL_SWEEP_CLIENT || "apps/web/dist" },
   stdio: ["ignore", "pipe", "pipe"],
 });
 const apiErr = /** @type {string[]} */ ([]);
@@ -79,7 +83,10 @@ const browser = await chromium.launch({ ...launchOptions() });
  * @param {string} who  @param {"desktop" | "phone"} width
  */
 async function open(who, width) {
-  const ctx = await browser.newContext({ viewport: width === "phone" ? { width: 390, height: 844 } : { width: 1366, height: 900 } });
+  // A school's own browser: the SA clock and the SA locale (dates written
+  // 2026/11/06), not the container's UTC and en-US, which hid date faults.
+  const ctx = await browser.newContext({ viewport: width === "phone" ? { width: 390, height: 844 } : { width: 1366, height: 900 },
+    timezoneId: process.env.PANEL_SWEEP_TZ || "Africa/Johannesburg", locale: process.env.PANEL_SWEEP_LOCALE || "en-ZA" });
   await offline(ctx);
   const page = await ctx.newPage();
   // The built bundle's API base, as every browser walk points it (lib/api.js).
@@ -162,8 +169,12 @@ async function controls(/** @type {any} */ page) {
       const id = e.getAttribute("data-testid") ?? "";
       const t = (e.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
       if (SKI.test(id) || id.startsWith("mc-tab-") || id === "mc-more") return;
-      if (SK.test(t) || SK.test(e.getAttribute("aria-label") ?? "")) return;
-      const kind = /-section-/.test(id) ? "section"
+      // An opener is named for what it does, whatever its words say ("The
+      // school's terms: agreed" opens the terms; it agrees to nothing).
+      const opener = /(^|-)open(-|$)/.test(id);
+      if (!opener && (SK.test(t) || SK.test(e.getAttribute("aria-label") ?? ""))) return;
+      const kind = opener ? "open"
+        : /-section-/.test(id) ? "section"
         : e.getAttribute("role") === "tab" ? "tab"
         : /^child-chip-/.test(id) ? "child"
         : e.hasAttribute("aria-expanded") ? "expand"
@@ -177,7 +188,7 @@ async function controls(/** @type {any} */ page) {
 /** Every section, tab, chip and opener on a screen, and a few of its records. */
 async function sweepScreen(/** @type {any} */ s, /** @type {string} */ key, /** @type {string} */ who, /** @type {string} */ width) {
   const found = await controls(s.page);
-  const strong = found.filter((c) => c.kind !== "button").slice(0, 24);
+  const strong = found.filter((c) => c.kind !== "button").slice(0, 30);
   const rest = found.filter((c) => c.kind === "button" && c.t.length >= 4);
   const picks = [...new Set([0, Math.floor(rest.length / 2), rest.length - 1])].filter((i) => i >= 0 && i < rest.length).map((i) => rest[i]);
   for (const c of [...strong, ...picks]) {
@@ -323,9 +334,9 @@ try {
 
   for (const who of accounts) {
     const before = crashes.length;
-    await sweepAccount(who, "desktop", matches);
+    if (DESKTOP) await sweepAccount(who, "desktop", matches);
     const persona = /^(parent|pupil|pillay|sarah)/.test(who);
-    if (PHONE && persona) await sweepAccount(who, "phone", matches);
+    if (PHONE && (persona || PHONE_ALL)) await sweepAccount(who, "phone", matches);
     console.log(`  ${crashes.length > before ? "✗" : "✓"} ${who}${crashes.length > before ? ` — ${crashes.length - before} found` : ""}`);
   }
   await sweepPublic(matches);
