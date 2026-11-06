@@ -50,13 +50,15 @@ const courtesy = (/** @type {string} */ text) => {
   return `This can't be written with ${listed} in it. Change the words and send again.`;
 };
 
-const note = { margin: 0, fontFamily: D.body, fontSize: "14px", color: D.textMuted };
-const small = { margin: 0, fontFamily: D.body, fontSize: "13px", color: D.textSecondary };
-const card = { borderRadius: D.lg, border: `1px solid ${D.border}`, background: D.surf1, padding: "14px 16px", display: "flex", flexDirection: "column", gap: "10px" };
-const head = { margin: 0, fontFamily: D.head, fontSize: "14px", fontWeight: 800, color: D.textPrimary };
-const field = { minHeight: "44px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "8px 10px",
-                fontFamily: D.body, fontSize: "14px", color: D.textPrimary, boxSizing: "border-box", width: "100%" };
-const label = { display: "flex", flexDirection: "column", gap: "4px", fontFamily: D.body, fontSize: "13px", color: D.textSecondary };
+// Each style is a function, read when drawn: the tokens switch in place
+// (tokens.js), and a constant would keep the first theme for ever.
+const note = () => ({ margin: 0, fontFamily: D.body, fontSize: "14px", color: D.textMuted });
+const small = () => ({ margin: 0, fontFamily: D.body, fontSize: "13px", color: D.textSecondary });
+const card = () => ({ borderRadius: D.lg, border: `1px solid ${D.border}`, background: D.surf1, padding: "14px 16px", display: "flex", flexDirection: "column", gap: "10px" });
+const head = () => ({ margin: 0, fontFamily: D.head, fontSize: "14px", fontWeight: 800, color: D.textPrimary });
+const field = () => ({ minHeight: "44px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "8px 10px",
+                fontFamily: D.body, fontSize: "14px", color: D.textPrimary, boxSizing: "border-box", width: "100%" });
+const label = () => ({ display: "flex", flexDirection: "column", gap: "4px", fontFamily: D.body, fontSize: "13px", color: D.textSecondary });
 /** @param {boolean} strong @param {boolean} [tall] @param {boolean} [off] */
 const btn = (strong, tall = false, off = false) => ({
   minHeight: tall ? "56px" : "44px", padding: "0 18px", borderRadius: D.pill, cursor: off ? "not-allowed" : "pointer",
@@ -84,29 +86,29 @@ export function ColoursPanel({ role, players }) {
     return () => { cancelled = true; };
   }, [live, nonce]);
 
-  if (!live) return <p data-testid="colours-signin" style={note}>Sign in to nominate or decide Colours. The demonstration holds none.</p>;
+  if (!live) return <p data-testid="colours-signin" style={note()}>Sign in to nominate or decide Colours. The demonstration holds none.</p>;
 
   const canNominate = holdsCapability(role, "recognition.colours.nominate") && state.sides.length > 0;
   const toDecide = state.rows.filter((r) => r.status === "open" && r.mayDecide);
   const rest = state.rows.filter((r) => !(r.status === "open" && r.mayDecide));
   return (
     <div data-testid="colours" style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-      <p style={{ ...note, fontSize: "13px" }}>
+      <p style={{ ...note(), fontSize: "13px" }}>
         The side&apos;s coach nominates; the director of sport or the principal decides. Nobody is told about a nomination,
         so a boy never learns he was nominated and not chosen.
       </p>
-      {state.error && <p data-testid="colours-error" role="alert" style={{ ...note, color: D.roseText }}>The nominations could not be read — the server did not answer. This is not the same as there being none.</p>}
+      {state.error && <p data-testid="colours-error" role="alert" style={{ ...note(), color: D.roseText }}>The nominations could not be read — the server did not answer. This is not the same as there being none.</p>}
       {canNominate && <Nominate sides={state.sides} players={players} onDone={reload}/>}
       {toDecide.length > 0 && (
         <section aria-labelledby="colours-decide-h" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <h3 id="colours-decide-h" style={head}>To decide</h3>
+          <h3 id="colours-decide-h" style={head()}>To decide</h3>
           {toDecide.map((r) => <DecideRow key={r.nominationId} r={r} onDone={reload}/>)}
         </section>
       )}
       <section aria-labelledby="colours-list-h" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-        <h3 id="colours-list-h" style={head}>Nominations</h3>
-        {state.loading && <p style={note}>Loading…</p>}
-        {!state.loading && !state.error && rest.length === 0 && <p data-testid="colours-none" style={note}>{toDecide.length ? "Nothing else on the list." : "No Colours nominations yet."}</p>}
+        <h3 id="colours-list-h" style={head()}>Nominations</h3>
+        {state.loading && <p style={note()}>Loading…</p>}
+        {!state.loading && !state.error && rest.length === 0 && <p data-testid="colours-none" style={note()}>{toDecide.length ? "Nothing else on the list." : "No Colours nominations yet."}</p>}
         {rest.length > 0 && (
           <ul data-testid="colours-rows" style={{ listStyle: "none", margin: 0, padding: 0, border: `1px solid ${D.border}`, borderRadius: D.lg, background: D.surf1 }}>
             {rest.map((r, i) => (
@@ -115,9 +117,9 @@ export function ColoursPanel({ role, players }) {
                 <span style={{ fontFamily: D.body, fontSize: "14px", color: D.textPrimary }}>
                   <span style={{ fontWeight: 600 }}>{r.nomineeName}</span> · {r.kindWords} {r.season} · {r.sideLabel}
                 </span>
-                <span style={small}>{r.mine ? "You nominated him" : `Nominated by ${r.nominatedBy ?? "a coach"}`}, {day(r.nominatedAt)}</span>
-                {r.rationale && <span style={small}>Why: {r.rationale}</span>}
-                <span data-testid="colours-state" style={{ ...small, color: D.textPrimary }}>{stateWords(r)}</span>
+                <span style={small()}>{r.mine ? "You nominated him" : `Nominated by ${r.nominatedBy ?? "a coach"}`}, {day(r.nominatedAt)}</span>
+                {r.rationale && <span style={small()}>Why: {r.rationale}</span>}
+                <span data-testid="colours-state" style={{ ...small(), color: D.textPrimary }}>{stateWords(r)}</span>
               </li>
             ))}
           </ul>
@@ -164,18 +166,18 @@ function Nominate({ sides, players, onDone }) {
   };
 
   return (
-    <section data-testid="colours-nominate" aria-labelledby="colours-nominate-h" style={card}>
-      <h3 id="colours-nominate-h" style={head}>Nominate for Colours</h3>
-      <p style={small}>A boy of your side. The director of sport decides; the principal, if he is the boy&apos;s guardian.</p>
+    <section data-testid="colours-nominate" aria-labelledby="colours-nominate-h" style={card()}>
+      <h3 id="colours-nominate-h" style={head()}>Nominate for Colours</h3>
+      <p style={small()}>A boy of your side. The director of sport decides; the principal, if he is the boy&apos;s guardian.</p>
       {sides.length > 1 && (
-        <label style={label}>Side
-          <select data-testid="colours-side" value={side} onChange={(e) => { setSide(Number(e.target.value)); setBoy(""); }} style={field}>
+        <label style={label()}>Side
+          <select data-testid="colours-side" value={side} onChange={(e) => { setSide(Number(e.target.value)); setBoy(""); }} style={field()}>
             {sides.map((x, i) => <option key={`${x.schoolId}:${x.teamCode}`} value={i}>{x.sideLabel}</option>)}
           </select>
         </label>
       )}
-      <label style={label}>Boy
-        <select data-testid="colours-boy" value={boy} onChange={(e) => setBoy(e.target.value)} style={field}>
+      <label style={label()}>Boy
+        <select data-testid="colours-boy" value={boy} onChange={(e) => setBoy(e.target.value)} style={field()}>
           <option value="">Choose a boy of {s.sideLabel}…</option>
           {boys.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
@@ -189,20 +191,20 @@ function Nominate({ sides, players, onDone }) {
           </button>
         ))}
       </div>
-      <label style={label}>Why (optional)
+      <label style={label()}>Why (optional)
         <textarea data-testid="colours-why" value={why} onChange={(e) => setWhy(e.target.value)} rows={3} maxLength={TEXT_MAX + 50}
-          style={{ ...field, minHeight: "88px", resize: "vertical" }}/>
+          style={{ ...field(), minHeight: "88px", resize: "vertical" }}/>
         <span style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
           Read by the side&apos;s staff and the school&apos;s deciders, never by him, his parents or his team-mates. {why.trim().length}/{TEXT_MAX}
         </span>
       </label>
-      {refused && <p data-testid="colours-why-refused" role="status" style={{ ...small, color: D.roseText }}>{refused}</p>}
+      {refused && <p data-testid="colours-why-refused" role="status" style={{ ...small(), color: D.roseText }}>{refused}</p>}
       <div>
         <button type="button" data-testid="colours-nominate-go" disabled={off} onClick={go} style={btn(true, false, off)}>
           {pick && kind ? `Nominate ${pick.name}` : "Nominate"}
         </button>
       </div>
-      {said && <p data-testid="colours-said" role={said.ok ? "status" : "alert"} style={{ ...small, color: said.ok ? D.textPrimary : D.roseText }}>{said.text}</p>}
+      {said && <p data-testid="colours-said" role={said.ok ? "status" : "alert"} style={{ ...small(), color: said.ok ? D.textPrimary : D.roseText }}>{said.text}</p>}
     </section>
   );
 }
@@ -231,11 +233,11 @@ function DecideRow({ r, onDone }) {
   };
 
   return (
-    <div data-testid="colours-decide-row" style={card}>
+    <div data-testid="colours-decide-row" style={card()}>
       <span style={{ fontFamily: D.body, fontSize: "14px", color: D.textPrimary }}>
         <span style={{ fontWeight: 600 }}>{what} to decide</span> · {r.nominatedBy ?? "The coach"} nominated {r.nomineeName} · {r.sideLabel} · {day(r.nominatedAt)}
       </span>
-      {r.rationale && <span style={small}>Why: {r.rationale}</span>}
+      {r.rationale && <span style={small()}>Why: {r.rationale}</span>}
       {step === null && (
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <button type="button" data-testid="colours-award" onClick={() => setStep("award")} style={btn(true)}>Award</button>
@@ -244,13 +246,13 @@ function DecideRow({ r, onDone }) {
       )}
       {step === "award" && (
         <div data-testid="colours-confirm" role="group" aria-label={`Award ${what}`} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          <p style={{ ...small, color: D.textPrimary }}>This awards {what} to {r.nomineeName}.</p>
-          <label style={label}>Citation (optional)
+          <p style={{ ...small(), color: D.textPrimary }}>This awards {what} to {r.nomineeName}.</p>
+          <label style={label()}>Citation (optional)
             <textarea data-testid="colours-citation" value={cite} onChange={(e) => setCite(e.target.value)} rows={2} maxLength={TEXT_MAX + 50}
-              style={{ ...field, minHeight: "64px", resize: "vertical" }}/>
+              style={{ ...field(), minHeight: "64px", resize: "vertical" }}/>
             <span style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>Read by his side and his parents. {cite.trim().length}/{TEXT_MAX}</span>
           </label>
-          {refused && <p data-testid="colours-citation-refused" role="status" style={{ ...small, color: D.roseText }}>{refused}</p>}
+          {refused && <p data-testid="colours-citation-refused" role="status" style={{ ...small(), color: D.roseText }}>{refused}</p>}
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             <button type="button" data-testid="colours-award-go" disabled={busy || !!refused || cite.trim().length > TEXT_MAX}
               onClick={() => go("award")} style={btn(true, true, busy || !!refused || cite.trim().length > TEXT_MAX)}>Award {r.kindWords}</button>
@@ -260,14 +262,14 @@ function DecideRow({ r, onDone }) {
       )}
       {step === "no_award" && (
         <div data-testid="colours-no-award-confirm" role="group" aria-label="Record no award" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          <p style={{ ...small, color: D.textPrimary }}>No award for {r.nomineeName} on this nomination. Nobody is told about it.</p>
+          <p style={{ ...small(), color: D.textPrimary }}>No award for {r.nomineeName} on this nomination. Nobody is told about it.</p>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             <button type="button" data-testid="colours-no-award-go" disabled={busy} onClick={() => go("no_award")} style={btn(true, false, busy)}>Record no award</button>
             <button type="button" onClick={() => { setStep(null); setSaid(null); }} style={btn(false)}>Cancel</button>
           </div>
         </div>
       )}
-      {said && <p data-testid="colours-decide-said" role="alert" style={{ ...small, color: D.roseText }}>{said.text}</p>}
+      {said && <p data-testid="colours-decide-said" role="alert" style={{ ...small(), color: D.roseText }}>{said.text}</p>}
     </div>
   );
 }

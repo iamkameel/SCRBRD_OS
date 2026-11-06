@@ -189,8 +189,8 @@ const NDLOVU_B = "registrar.wes@example.invalid";   // T Ndlovu at Westville: no
 // so the walk can ask the POLICY who should have each tab and hold the screen to it.
 const TAB_CAP = { users: "user.role.assign", squad: "team.manage", fixtures: "fixture.create",
                   broadcast: "broadcast.publish", audit: "audit.read", grounds: "facility.manage",
-                  // RECOGNITION R8 (db/146): any of the three opens Colours.
-                  colours: ["recognition.colours.nominate", "recognition.decide", "recognition.manage"] };
+                  // RECOGNITION R8 (db/146): either opens Colours (the coach nominates on Squad).
+                  colours: ["recognition.decide", "recognition.manage"] };
 const tabsFor = (role) => Object.keys(TAB_CAP).filter((id) => [].concat(TAB_CAP[id]).some((c) => roleGrants(role, c)));
 const tabsShown = (page) => page.locator('[data-testid^="mgmt-tab-"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-testid").replace("mgmt-tab-", "")));
 const INVENTED = /Updated fixture|Added training session|role changed|scorecard submitted|Medical clearance|New user created|Coaching Asst|Pretorius|Irrigation|Roll and mark|Outfield mowing|Prepare Main Oval|Mzimba|Hadebe/;

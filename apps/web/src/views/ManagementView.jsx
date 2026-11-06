@@ -45,9 +45,10 @@ function ManagementView({ role, onDirectoryChanged }) {
     {id:"broadcast",cap:"broadcast.publish", icon:"radio-tower", label:"Broadcast",    color:D.roseText},
     {id:"audit",    cap:"audit.read",        icon:"search",      label:"Audit log",    color:D.textSecondary},
     {id:"grounds",  cap:"facility.manage",   icon:"ground",      label:"Ground tasks", color:D.teal},
-    // RECOGNITION R8 (db/146): the side's coach nominates, the director of
-    // sport and the principal decide, the office reads (D8). Any of the three.
-    {id:"colours",  cap:["recognition.colours.nominate","recognition.decide","recognition.manage"], icon:"award", label:"Colours", color:D.amber},
+    // RECOGNITION R8 (db/146): the director of sport and the principal decide,
+    // the office reads (D8). The side's coach nominates on his Squad page:
+    // this screen is not his (design/roles.js: user.role.assign).
+    {id:"colours",  cap:["recognition.decide","recognition.manage"], icon:"award", label:"Colours", color:D.amber},
   ];
   const tabs = TABS.filter(t=>[].concat(t.cap).some(c=>holdsCapability(role,c)));
   // The screen opens on the first tab this person has.
