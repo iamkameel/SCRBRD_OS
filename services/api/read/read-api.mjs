@@ -2123,11 +2123,33 @@ export const READ_QUERIES = {
   /*
    * RECOGNITION: one boy's honours, caps and milestones in one shape, through
    * recognition() in db/08 — player.profile.read on him or nothing. Honours
-   * are awarded, caps are earned, milestones happen; none is a score.
+   * are awarded, caps are earned, milestones happen; none is a score. Since
+   * db/140 (R4) a milestone says where it came from (sealed_on, source, the
+   * side and the fixture class) and a withdrawn honour, with withdrawn_on and
+   * never its reason, reaches the pupil, his guardian and the deciders (D3).
    */
   recognition: {
-    text: `select family, kind, label, value, season, on_date, match_id, opponent, is_public, citation, ref_id
+    text: `select family, kind, label, value, season, on_date, match_id, opponent, is_public, citation, ref_id,
+                  withdrawn_on, side_code, innings, sealed_on, source, fixture_class, no_board
              from recognition($1::uuid)`,
+    params: q => [req(q, "playerId")],
+  },
+
+  /*
+   * PERSONAL BESTS (RECOGNITION R5, db/141): one boy's highest innings and
+   * best bowling per class group (School Records, Friendly), format and the
+   * side he played for, through player_best() — security invoker over the
+   * career views, each match admitted only under player.performance.read at
+   * that side about him (D1, D22). Only verified matches are best; the rows
+   * still awaiting the scorer's seal come back with verified false so a
+   * screen can say so (D24's "awaiting verification"), and are never best.
+   * Derived on every read, never stored, never public (A10, A11).
+   */
+  personal_bests: {
+    text: `select b.metric, b.class_group, b.format, b.side_code, b.match_id, b.innings, b.played_on, b.opponent,
+                  b.runs, b.balls_faced, b.not_out, b.wickets, b.runs_conceded, b.verified, b.best
+             from player_best($1::uuid) b
+            where b.best or not b.verified`,
     params: q => [req(q, "playerId")],
   },
 

@@ -12,7 +12,12 @@
  *   3. A MILESTONE IS DERIVED FROM THE LOG: fifty, hundred, five-for,
  *      hat-trick, career marks — and noticed once, the ball it lands on.
  *   4. THE PROFILE'S VIEW IS GATED ON THE ROSTER READ, per boy.
- *   5. PLAYER OF THE MATCH, THE COACH'S PATH (RECOGNITION R6, db/142): the
+ *   5. A MILESTONE SAYS WHERE IT CAME FROM (R4, db/140): the ball log or the
+ *      scorebook, the side, the fixture's class, and whether the scorer has
+ *      sealed it; his parent is told when he does, never on the ball, and a
+ *      correction takes it back in her words. A withdrawn honour reaches
+ *      the boy, his parent and the deciders, with its date, never its reason.
+ *   6. PLAYER OF THE MATCH, THE COACH'S PATH (RECOGNITION R6, db/142): the
  *      side's coach or the director of sport decides it for a verified
  *      match, from the side's sheet, with R1's suggestions shown and stored;
  *      never another side's coach, never a guardian of the boy; one per side;
@@ -268,6 +273,61 @@ try {
     ok("the milestone ledger is trigger-only", !(await q(`set local role scrbrd_app; delete from milestone_notice`).then(() => true).catch(() => false)));
   }
 
+  // R4 (db/140; RECOGNITION_design.md D3, D6, §7): a milestone says where it
+  // came from, and a parent is told about her own child when the scorer seals
+  // the innings, never on the ball; a withdrawn honour reaches the boy, his
+  // parent and the school's deciders, with its date and never its reason.
+  group("A milestone says where it came from; the family is told at the seal");
+  {
+    const pupil = await login("pillay@example.invalid");          // R Pillay himself
+    const bekkerParent = await login("parent.bekker@example.invalid");
+    const m = await fixture("1XI", 0, "live", "Glenwood");
+    await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                                     client_seq, client_ts, kind, payload)
+             values ($1, $2, $3, 0, 0, $4, 'walk', $5, $3, now(), 'innings_start', '{"battingTeam":"Hilton 1XI","bowlingTeam":"Glenwood","overs":3}')`,
+            [m, HIL, ++seq, SCORER, `rc-${++key}`]);
+    await feed(m, 0, fours(PILLAY, NAIDOO, 13));
+    await feed(m, 0, Array.from({ length: 5 }, () => dot(PILLAY, NAIDOO)));
+    const fiftyOf = async (tok) => (await recog(PILLAY, tok)).find((x) => x.family === "milestone" && x.match_id === m && x.kind === "fifty");
+    const f0 = await fiftyOf(parent);
+    ok("his parent reads the fifty, from the ball log, on the 1XI, a friendly", f0?.value === 52 && f0?.source === "ball log"
+       && f0?.side_code === "1XI" && f0?.innings === 0 && f0?.fixture_class === "friendly");
+    ok("...not yet sealed by the scorer", f0 && f0.sealed_on === null);
+    const familyNotice = async (tok) => (await notices(tok)).filter((x) => /^R Pillay's (first )?fifty$/.test(x.title));
+    ok("the side is told on the ball, as before", (await notices(coach)).some((x) => x.title === "Fifty for R Pillay" && /against Glenwood/.test(x.body)));
+    ok("...and his parent is not, until the seal", (await familyNotice(parent)).length === 0);
+    await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                                     client_seq, client_ts, kind, payload)
+             values ($1, $2, $3, 0, 0, $4, 'walk', $5, $3, now(), 'innings_end',
+                     '{"reason":"overs_complete","confirmed":{"runs":52,"wickets":0,"balls":18}}')`,
+            [m, HIL, ++seq, SCORER, `rc-${++key}`]);
+    const told = await familyNotice(parent);
+    ok("the scorer seals the innings: his parent is told, in §7's words", told.length === 1
+       && /^52 v Glenwood · sealed by the scorer, \d{1,2} [A-Z][a-z]{2}$/.test(told[0].body));
+    ok("...the fifty now reads sealed today", String((await fiftyOf(parent))?.sealed_on ?? "").slice(0, 10)
+       === new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Johannesburg" }).format(new Date()));
+    ok("nothing to a child alone: the boy, his coach and another parent are not sent it",
+       (await familyNotice(pupil)).length === 0 && (await familyNotice(coach)).length === 0 && (await familyNotice(bekkerParent)).length === 0);
+    ok("...and it is his parent's alone in the database too", (await q(
+      `select count(*)::int c from notification where subject_id = $1 and recipient_id is not null and retracts_id is null`, [m]))[0].c === 1);
+
+    // D3: a withdrawn honour, to three readers.
+    const pin = (await q(`select id from honour where player_id = $1 and kind = 'award' and name = 'Most Improved'`, [PILLAY]))[0].id;
+    ok("the director of sport withdraws one of his awards", (await withdraw(pin, head, "Awarded in error")).body?.withdrawn === 1);
+    const wOf = async (tok) => (await recog(PILLAY, tok)).find((x) => x.ref_id === pin);
+    const w = await wOf(parent);
+    ok("his parent still reads it, withdrawn, with the date", w && /^\d{4}-\d{2}-\d{2}/.test(String(w.withdrawn_on)));
+    ok("...so does he, and the director of sport", Boolean((await wOf(pupil))?.withdrawn_on) && Boolean((await wOf(head))?.withdrawn_on));
+    ok("...but not his coach: it has left every screen another child can open", !(await wOf(coach)));
+    ok("...and nobody is sent the reason", !(await recog(PILLAY, head)).some((x) => "withdrawn_reason" in x || JSON.stringify(x).includes("Awarded in error")));
+
+    // A correction takes the fifty away: her notice goes, in the family's words.
+    const k = (await q(`select idempotency_key from ball_event where match_id = $1 and kind = 'ball' order by seq limit 1`, [m]))[0].idempotency_key;
+    await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq, client_ts, kind, payload)
+             values ($1, $2, $3, 0, 0, $4, 'walk', $5, $3, now(), 'void', jsonb_build_object('target', $6::text))`, [m, HIL, ++seq, SCORER, `rc-${++key}`, k]);
+    ok("a correction takes the fifty and her notice away", (await familyNotice(parent)).length === 0 && !(await fiftyOf(parent)));
+    ok("...and tells her, in her words", (await notices(parent)).some((x) => x.body === "The fifty noticed for R Pillay was withdrawn after the scorecard was corrected."));
+    ok("...and nobody else", !(await notices(coach)).some((x) => /noticed for R Pillay/.test(x.body ?? "")) && !(await notices(pupil)).some((x) => /noticed for R Pillay/.test(x.body ?? "")));
   group("Player of the Match, the coach's path (RECOGNITION R6, db/142)");
   {
     const WES = "22222222-2222-2222-2222-222222222222";

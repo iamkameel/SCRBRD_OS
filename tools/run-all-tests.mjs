@@ -129,6 +129,9 @@ const SUITES = [
   // block, the eligibility words, the commentary's words.
   ["super-over-screens", "apps/web/test/super-over-screens.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["season-awards",     "apps/web/test/season-awards.test.mjs"],
+  // Recognition R4 (db/140): where a milestone came from, the family's sealed
+  // line in §7's words, and a withdrawn honour's "withdrawn · date".
+  ["recognition-words", "apps/web/test/recognition-words.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // A figure a scorebook did not record stays null on the career screens
   // (SCRBRD-120 D12): the adapter, the strike rate over recorded balls, "at least N".
   ["unrecorded-figures", "apps/web/test/unrecorded-figures.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
@@ -225,6 +228,10 @@ const SUITES = [
   // per screen, a method and never a name, the tenant's words (G15) — and
   // the Match Centre's family mode (G13).
   ["family", "apps/web/test/family.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // RECOGNITION R5: personal bests on the passport and the parent's card —
+  // School Records first, Friendly under the filter, a tie's dates, the
+  // spec's empty states, and no rank.
+  ["bests", "apps/web/test/bests.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The coach's match-day cockpit and the intelligence feed (SCRBRD-136/137
   // phase A): the entry gate derived from roles.mjs and held to the design's
   // table, the status-tier-only health, the load word, the head count of
