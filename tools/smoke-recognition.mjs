@@ -18,6 +18,14 @@
  *      never another side's coach, never a guardian of the boy; one per side;
  *      the side is told and no child alone; a withdrawal says its kind, and
  *      only a correction is told; the audit log words it.
+ *   6. THE CAPTAIN'S NOMINATION (RECOGNITION R7, db/144): the season's
+ *      captain, signed in as himself, nominates one team-mate from his own
+ *      side's sheet once the match is verified, from the coach's
+ *      suggestions; never himself, never the other side; nobody is told; the
+ *      coach reads it on his sheet and his To-resolve list and confirms it
+ *      (R6's honour, the side told once) — never as the nominee's guardian,
+ *      by either door; the director records no award; the captain's tab
+ *      reads each outcome; the audit log words them.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-recognition.mjs
@@ -417,6 +425,148 @@ try {
        && !JSON.stringify(audit2).includes("The scorecard was corrected") && !JSON.stringify(audit2).includes("Awarded in error"));
     const ca = await api("/api/read/audit_log?kinds=recognition", { token: coach });
     ok("a coach reads no audit log", (ca.body?.rows?.length ?? 0) === 0, JSON.stringify(ca.body).slice(0, 300));
+  }
+
+  group("Player of the Match, the captain's nomination (RECOGNITION R7, db/144)");
+  {
+    const WES = "22222222-2222-2222-2222-222222222222";
+    const T0 = Date.parse("2026-10-10T08:00:00Z");
+    const WXI = ["01", "02"].map((n) => ({ id: `bbbbbbbb-0000-0000-0000-0000000000${n}`, name: `Westville ${n}` }));
+    const scorer = await login("scorer@example.invalid");
+    const pupil = await login("pillay@example.invalid");        // R Pillay, signed in as himself
+    const nom = (m, tok) => api(`/api/matches/${m}/player-of-match/nomination`, { token: tok });
+    const pickOne = (m, tok, playerId, headSeq) => api(`/api/matches/${m}/player-of-match/nomination`, { method: "POST", token: tok, body: { playerId, headSeq } });
+    const decide = (m, tok, body) => api(`/api/matches/${m}/player-of-match/nomination/decide`, { method: "POST", token: tok, body });
+    const toDecide = (tok) => api("/api/player-of-match/to-decide", { token: tok });
+    // R Pillay is the 1XI's captain this season, as the director awards it (138 §1.1).
+    const cap = await award(head, { playerId: PILLAY, kind: "captain", season: "2026" });
+    ok("the director makes R Pillay the 1XI's captain", cap.status === 200 || cap.status === 201, JSON.stringify(cap.body));
+    // One scored match: Hilton's 1XI (R Pillay, Whitfield, Bekker, Cele) v Westville.
+    const scoreMatch = async (starts, homeXI) => {
+      const [{ id: M }] = await q(
+        `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+         values ($1, '1XI', $2, '1XI', 'Westville', $3, 'cricket', 'T20', 1, 'scheduled') returning id`, [HIL, WES, starts]);
+      const HXI = homeXI.map((id, i) => ({ id, name: `Hilton ${i + 1}` }));
+      for (const p of HXI) await q(`insert into match_squad (match_id, player_id, side) values ($1, $2, 'home')`, [M, p.id]);
+      for (const p of WXI) await q(`insert into match_squad (match_id, player_id, side) values ($1, $2, 'away')`, [M, p.id]);
+      const claim = await api(`/api/matches/${M}/session/claim`, { method: "POST", token: scorer, body: { device: "device-recognition" } });
+      let cs = 0, k = 0, refused = [];
+      const innings = [
+        { bat: "1XI", bowl: "Westville 1XI", squad: HXI, bowlingSquad: WXI, balls: [6, 4, 6, 0, 0, 1].map((v) => ball({ type: BALL_TYPE.RUN, value: v })) },
+        { bat: "Westville 1XI", bowl: "1XI", squad: WXI, bowlingSquad: [HXI[2], HXI[1]], target: 18,
+          balls: [ball({ type: BALL_TYPE.RUN, value: 0 }), ball({ type: BALL_TYPE.RUN, value: 0 }), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled" })] },
+      ];
+      for (const [i, inn] of innings.entries()) {
+        const evs = [inningsStart({ battingTeam: inn.bat, bowlingTeam: inn.bowl, squad: inn.squad, bowlingSquad: inn.bowlingSquad, overs: 1, target: inn.target ?? null }),
+          batters({ striker: inn.squad[1].id, nonStriker: inn.squad[2].id }), bowler({ bowler: inn.bowlingSquad[0].id }), ...inn.balls]
+          .map((e) => ({ ...e, innings: i }));
+        evs.push({ ...sealInnings(deriveInnings(evs)), innings: i });
+        const r = await api(`/api/matches/${M}/events`, { method: "POST", token: scorer, body: { events: evs.map((ev) => ({
+          epoch: claim.body?.epoch, deviceId: "device-recognition", idempotencyKey: `nom-${M}-${++k}`, clientSeq: ++cs, clientTs: T0 + k * 20_000, innings: i, payload: ev })) } });
+        refused = refused.concat(r.body?.refused ?? []);
+      }
+      ok(`a match is scored on the write path (${starts.slice(0, 10)})`, claim.body?.ok === true && refused.length === 0, JSON.stringify(refused).slice(0, 300));
+      return M;
+    };
+    // Whitfield bats 17* off 6; Bekker takes the wicket (1/0 off 0.3). R Pillay does neither.
+    const M = await scoreMatch("2026-10-10T10:00:00+02:00", [PILLAY, WHITFIELD, BEKKER, CELE]);
+
+    const early = await nom(M, pupil);
+    ok("before the match is finished the captain has no pick, and is told it waits", early.status === 200 && early.body?.captain?.length === 1
+       && early.body.captain[0].mayNominate === false && early.body.captain[0].refusal === "not_verified" && early.body.captain[0].sheet.length === 0
+       && early.body.captain[0].refusalWords === "You can nominate once the scorer has sealed the match.", JSON.stringify(early.body));
+    ok("...and a nomination is refused, not_verified", (await pickOne(M, pupil, BEKKER, early.body?.captain?.[0]?.headSeq)).body?.error === "not_verified");
+    await q(`update match set status = 'complete' where id = $1`, [M]);
+
+    const coachName = (await q(`select name from app_user where email = 'coach@example.invalid'`))[0].name;
+    const st = await nom(M, pupil);
+    const mine = st.body?.captain?.[0];
+    ok("the captain may nominate: his side, the coach named, based on batting and bowling only",
+       st.status === 200 && st.body.captain.length === 1 && mine?.mayNominate === true && mine.nominatedAs === "captain"
+       && mine.coachName === coachName && st.body.basis === "Based on batting and bowling only.", JSON.stringify(st.body));
+    ok("...the coach's two suggestions, the wicket before the seventeen, with figures",
+       mine?.suggestions?.length === 2 && mine.suggestions[0].playerId === BEKKER && mine.suggestions[0].figures === "1/0 (0.3)"
+       && mine.suggestions[1].playerId === WHITFIELD && mine.suggestions[1].figures === "17* (6)", JSON.stringify(mine?.suggestions));
+    ok("...his own side's sheet without him, never the other side's boys",
+       mine?.sheet?.length === 3 && !mine.sheet.some((x) => x.playerId === PILLAY) && !mine.sheet.some((x) => WXI.some((w) => w.id === x.playerId)), JSON.stringify(mine?.sheet));
+    ok("...and he reads no staff line", (st.body?.staff ?? []).length === 0);
+    ok("his father reads no captain's block and no nomination", ((await nom(M, parent)).body?.captain ?? []).length === 0);
+    ok("the other school's coach reads none of it", ((await nom(M, wesCoach)).body?.staff ?? []).length === 0
+       && ((await nom(M, wesCoach)).body?.captain ?? []).length === 0);
+
+    const hs = mine?.headSeq;
+    const self = await pickOne(M, pupil, PILLAY, hs);
+    ok("he cannot choose himself", self.status === 422 && self.body?.error === "cannot_nominate_yourself" && self.body?.message === "You cannot choose yourself.", JSON.stringify(self.body));
+    ok("...nor the other side's boy", (await pickOne(M, pupil, WXI[0].id, hs)).body?.error === "nominee_not_on_sheet");
+    ok("...nor on an older reading of the log", (await pickOne(M, pupil, BEKKER, hs - 1)).body?.error === "stale");
+    ok("the coach is not the captain", (await pickOne(M, coach, BEKKER, hs)).status === 403);
+    ok("...nor is his father", (await pickOne(M, parent, BEKKER, hs)).status === 403);
+    const p1 = await pickOne(M, pupil, BEKKER, hs);
+    ok("R Pillay nominates T Bekker", p1.status === 200 && p1.body?.ok === true && !!p1.body.nominationId, JSON.stringify(p1.body));
+    const row = (await q(`select * from recognition_nomination where id = $1`, [p1.body?.nominationId]))[0];
+    ok("...a row with ids and figures, his captaincy and a 48-hour window, no words",
+       row?.status === "open" && row.nominee_player_id === BEKKER && row.nominated_by_player_id === PILLAY && row.nominated_as === "captain"
+       && row.derived_from?.suggestions?.length === 2 && row.derived_from.nominee?.figures === "1/0 (0.3)" && row.derived_from.headSeq === hs
+       && !("rationale" in row) && Date.parse(row.closes_at) - Date.now() > 47 * 3600e3, JSON.stringify(row));
+    ok("...nobody is sent a notice about it", (await q(`select count(*)::int n from notification where subject_id = $1`, [M]))[0].n === 0);
+    ok("a second nomination is refused", (await pickOne(M, pupil, WHITFIELD, hs)).body?.error === "already_nominated");
+    const after = (await nom(M, pupil)).body?.captain?.[0];
+    ok("his tab now shows his nomination, open, with the coach, and no pick",
+       after?.mayNominate === false && after.mine?.status === "open" && after.mine.nomineeName === "T Bekker" && after.sheet.length === 0, JSON.stringify(after));
+
+    const cs = (await nom(M, coach)).body?.staff;
+    ok("the coach's sheet reads the captain's nomination, his to decide",
+       cs?.length === 1 && cs[0].nomineeId === BEKKER && cs[0].nominatedAs === "captain" && cs[0].status === "open" && cs[0].mayDecide === true, JSON.stringify(cs));
+    const td = (await toDecide(coach)).body?.rows;
+    ok("...and his To-resolve list has it, the name by initial and surname", td?.length === 1 && td[0].matchId === M && td[0].nomineeName === "T Bekker"
+       && td[0].nominatedAs === "captain", JSON.stringify(td));
+    ok("the 2XI coach reads no nomination and has nothing to decide", ((await nom(M, coach2)).body?.staff ?? []).length === 0
+       && ((await toDecide(coach2)).body?.rows ?? []).length === 0);
+    ok("the captain has nothing to decide", ((await toDecide(pupil)).body?.rows ?? []).length === 0);
+    ok("the captain may not decide his own nomination", (await decide(M, pupil, { nominationId: p1.body?.nominationId, action: "confirm", headSeq: hs })).status === 403);
+    const c1 = await decide(M, coach, { nominationId: p1.body?.nominationId, action: "confirm", headSeq: hs });
+    ok("the coach confirms it", c1.status === 200 && c1.body?.ok === true && !!c1.body.honourId, JSON.stringify(c1.body));
+    const h = (await q(`select * from honour where id = $1`, [c1.body?.honourId]))[0];
+    ok("...R6's honour, for T Bekker, decided by the coach, tied to the nomination",
+       h?.kind === "player_of_match" && h.player_id === BEKKER && h.nomination_id === p1.body?.nominationId
+       && (await q(`select status from recognition_nomination where id = $1`, [p1.body?.nominationId]))[0].status === "confirmed");
+    const told = await q(`select title, recipient_id, scope_level from notification where kind = 'recognition' and subject_kind = 'match' and subject_id = $1`, [M]);
+    ok("...the side is told once, nobody alone", told.length === 1 && told[0].recipient_id === null && told[0].scope_level === "team"
+       && /: T Bekker$/.test(told[0].title), JSON.stringify(told));
+    const done = (await nom(M, pupil)).body?.captain?.[0];
+    ok("the captain's tab reads the award as the side sees it", done?.mine?.status === "confirmed" && done.mine.award?.name === "T Bekker"
+       && done.mayNominate === false, JSON.stringify(done));
+    ok("...and the To-resolve row is gone", ((await toDecide(coach)).body?.rows ?? []).length === 0);
+
+    // The coach is Naidoo's guardian (the pending link from the section above):
+    // the captain nominates Naidoo, and the coach may decide it neither way.
+    const M2 = await scoreMatch("2026-10-11T10:00:00+02:00", [PILLAY, NAIDOO, BEKKER, CELE]);
+    await q(`update match set status = 'complete' where id = $1`, [M2]);
+    const hs2 = (await nom(M2, pupil)).body?.captain?.[0]?.headSeq;
+    const both = (await nom(M2, pupil)).body?.captain?.[0];
+    ok("with Naidoo (the season's other captain) on the sheet too, R Pillay still nominates", both?.mayNominate === true, JSON.stringify(both));
+    const p2 = await pickOne(M2, pupil, NAIDOO, hs2);
+    ok("R Pillay nominates S Naidoo", p2.status === 200, JSON.stringify(p2.body));
+    const gl = (await nom(M2, coach)).body?.staff?.[0];
+    ok("the coach, Naidoo's guardian, is told the director decides, and offered nothing",
+       gl?.mayDecide === false && gl.refusal === "guardian_conflict" && gl.refusalWords === "You are his guardian, so the director of sport decides.", JSON.stringify(gl));
+    ok("...he has no To-resolve row for it", !((await toDecide(coach)).body?.rows ?? []).some((r) => r.matchId === M2));
+    const gd = await decide(M2, coach, { nominationId: p2.body?.nominationId, action: "choose", playerId: BEKKER, headSeq: hs2 });
+    ok("...he may not choose another either", gd.status === 422 && gd.body?.error === "guardian_conflict", JSON.stringify(gd.body));
+    const gr = await api(`/api/matches/${M2}/player-of-match`, { method: "POST", token: coach, body: { playerId: BEKKER, headSeq: hs2 } });
+    ok("...nor award one through R6's door while it is open", gr.status === 422 && gr.body?.error === "guardian_conflict", JSON.stringify(gr.body));
+    ok("the director has it to decide", ((await toDecide(head)).body?.rows ?? []).some((r) => r.matchId === M2 && r.nomineeName === "S Naidoo"));
+    const na = await decide(M2, head, { nominationId: p2.body?.nominationId, action: "no_award" });
+    ok("the director records no award", na.status === 200 && na.body?.ok === true, JSON.stringify(na.body));
+    const nd = (await nom(M2, pupil)).body?.captain?.[0];
+    ok("the captain's tab says so, and offers no second pick", nd?.mine?.status === "no_award" && nd.mayNominate === false && nd.refusal === "already_decided", JSON.stringify(nd));
+    ok("...nothing is told to the side", (await q(`select count(*)::int n from notification where subject_id = $1`, [M2]))[0].n === 0);
+    const audit = await rows("/api/read/audit_log?kinds=recognition", head);
+    ok("the audit log words the nominations and their decisions, the decider named",
+       audit.some((r) => r.action === "Nominated for Player of the Match (the captain's pick)" && r.subject === "T Bekker" && r.actor === "R Pillay")
+       && audit.some((r) => r.action === "Confirmed the captain's nomination for Player of the Match" && r.actor === coachName)
+       && audit.some((r) => r.action === "Recorded no award on the captain's nomination for Player of the Match" && r.subject === "S Naidoo"),
+       JSON.stringify(audit.filter((r) => /nominat/i.test(r.action))).slice(0, 600));
   }
 
   ok("the server logged no errors", serverErr.join("").trim() === "");

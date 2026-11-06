@@ -488,14 +488,15 @@ CREATE OR REPLACE TRIGGER honour_close_nomination AFTER INSERT ON honour
 -- captains this season (or once nominated for), with whether he may
 -- nominate now and why not, the side's sheet without him (only while he
 -- may), and his own nomination with its state and the award that answered
--- it. Nothing for anybody else; never the other side's sheet.
+-- it, and his own player id. Nothing for anybody else; never the other side's sheet.
 --   refusal: not_on_sheet · captain_on_sheet · not_verified · already_awarded
 --            · window_closed · already_nominated · already_decided · no_season
 CREATE OR REPLACE FUNCTION captain_nomination_state(p_match uuid)
 RETURNS TABLE (side text, school_id uuid, team_code text, heading text, nominated_as text, coach_name text,
                may_nominate boolean, refusal text, closes_at timestamptz, head_seq integer, sheet jsonb,
                nomination_id uuid, nominee_id uuid, nominee_name text, status text, nominated_at timestamptz,
-               decided_at timestamptz, award_player_id uuid, award_name text, awarded_at timestamptz) AS $$
+               decided_at timestamptz, award_player_id uuid, award_name text, awarded_at timestamptz,
+               self_id uuid) AS $$
 DECLARE
   m match%ROWTYPE;
   v_self uuid[] := recognition_self_players();
@@ -560,6 +561,7 @@ BEGIN
     award_player_id := h.player_id;
     award_name := (SELECT match_award_short(p.full_name) FROM player p WHERE p.id = h.player_id);
     awarded_at := h.awarded_at;
+    self_id := me;   -- his own player row, so the application can leave him off his list
     RETURN NEXT;
     n := NULL; me := NULL;
   END LOOP;
