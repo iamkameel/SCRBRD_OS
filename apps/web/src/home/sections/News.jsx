@@ -30,7 +30,7 @@ const postsOf = (data) => (Array.isArray(data) ? data : Array.isArray(data?.post
 
 const LONG = 240;   // a body past this many characters is clamped; it is a guess at four lines, the clamp itself is CSS
 
-function Post({ p }) {
+function Post({ p, i = 0 }) {
   const [open, setOpen] = useState(false);
   const text = String(p.body ?? "");
   const long = text.length > LONG;
@@ -40,7 +40,7 @@ function Post({ p }) {
     ? { display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }
     : {};
   return (
-    <article data-testid="home-news-post" style={{ borderRadius: T.radius.lg, border: `1px solid ${T.line.subtle}`, background: T.fill.panel, padding: T.space.lg }}>
+    <article data-testid="home-news-post" className="hb-post" style={{ "--i": i, borderRadius: T.radius.lg, border: `1px solid ${T.line.subtle}`, background: T.fill.panel, padding: T.space.lg }}>
       <div style={{ display: "flex", flexWrap: "wrap", gap: T.space.sm, alignItems: "center", marginBottom: T.space.sm }}>
         {chip && <span style={{ fontFamily: T.type.mono, fontSize: "12px", color: T.brand.blueText, border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, padding: "2px 10px" }}>{chip}</span>}
         {when && <span style={{ fontFamily: T.type.mono, fontSize: "12px", color: T.content.tertiary }}>{when}</span>}
@@ -63,9 +63,9 @@ export function News({ data, limit = 5 }) {
   const posts = all.filter((p) => p && typeof p.id === "string" && p.title).slice(0, limit);
   if (!posts.length) return null;
   return (
-    <Section id="home-news" label="News" narrow>
+    <Section id="home-news" label="News" narrow cam="news">
       <div style={{ display: "grid", gap: T.space.md }}>
-        {posts.map((p) => <Post key={p.id} p={p} />)}
+        {posts.map((p, i) => <Post key={p.id} p={p} i={i} />)}
       </div>
     </Section>
   );

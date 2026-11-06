@@ -132,11 +132,11 @@ function Cards({ list, rel }) {
 }
 
 /** The board a part of the strip is drawn on: a section, its heading on the board's face. */
-function Board({ id, label, live, asOf, children }) {
+function Board({ id, label, live, asOf, ticker, children }) {
   return (
-    <section id={id} aria-labelledby={`${id}-h`} className="rv"
+    <section id={id} aria-labelledby={`${id}-h`} className="rv" data-cam="strip"
       style={{ padding: `${T.space.xl} ${T.space.lg}`, maxWidth: "1120px", margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
-      <div style={{ background: T.board.face, borderRadius: T.radius.xxl, padding: `${T.space.xl} ${T.space.lg}`, border: "1px solid rgba(255,255,255,0.08)",
+      <div className="board-face" style={{ position: "relative", overflow: "hidden", background: T.board.face, borderRadius: T.radius.xxl, padding: `${T.space.xl} ${T.space.lg}`, border: "1px solid rgba(255,255,255,0.08)",
         boxShadow: "0 30px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: T.space.md, marginBottom: T.space.lg, flexWrap: "wrap" }}>
           <h2 id={`${id}-h`} style={{ ...homeHead(), fontSize: "14px", fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: T.board.figure,
@@ -145,10 +145,36 @@ function Board({ id, label, live, asOf, children }) {
           </h2>
           {asOf && <span style={{ ...mono(), fontSize: "12px", color: T.board.dim, letterSpacing: "0.08em" }}>{asOf}</span>}
         </div>
+        {ticker?.length ? <Ticker items={ticker} /> : null}
         {children}
       </div>
     </section>
   );
+}
+
+/**
+ * The ground's ticker: the board's fixtures as one running line, the way a
+ * stadium's ribbon carries the scores (Kameel, 6 Nov 2026). Decorative and
+ * aria-hidden: every word in it is on a card below, which is what a screen
+ * reader reads and what a tap opens. Twice over, so the run loops without a
+ * seam; with reduced motion it stands still (home/fx.js).
+ */
+function Ticker({ items }) {
+  const run = (/** @type {string} */ k) => items.map((t, i) => <span key={`${k}${i}`} className="tick-item"><i className="tick-dot" />{t}</span>);
+  return (
+    <div className="tick" aria-hidden="true">
+      <div className="tick-run">{run("a")}{run("b")}</div>
+    </div>
+  );
+}
+
+/** One fixture as the ticker says it: the tag, both sides, the latest score. */
+export function tickerLine(f) {
+  const scores = Array.isArray(f.scores) ? f.scores : [];
+  const cur = scores.length ? scores[scores.length - 1] : null;
+  const tag = f.status === "live" ? "LIVE" : f.status === "complete" ? "RESULT" : f.status === "abandoned" ? "ABANDONED" : f.status === "postponed" ? "POSTPONED" : timeOfDay(f.startsAt);
+  const fig = cur && (f.status === "live" || f.status === "complete") ? `  ${figure(cur)} (${oversOfBalls(cur.balls)})` : "";
+  return `${tag ? `${tag}  ` : ""}${nameOf(f.home)} v ${nameOf(f.away)}${fig}`;
 }
 
 /** Blank flaps, for a board with nothing on it yet. Decorative. */
@@ -178,7 +204,7 @@ export function LiveStrip({ data, show = "all", nofollow = "nofollow" }) {
   // The hero's "Follow a match" (#matches) lands on the first section this strip draws.
   const parts = [];
   if ((show === "all" || show === "live") && live.length) {
-    parts.push(<Board key="live" id="matches" label="Live now" live asOf={day}><Cards list={live} rel={nofollow} /></Board>);
+    parts.push(<Board key="live" id="matches" label="Live now" live asOf={day} ticker={live.map(tickerLine)}><Cards list={live} rel={nofollow} /></Board>);
   }
   if (show === "all" || show === "today") {
     const id = parts.length || (show === "today" && live.length) ? "today" : "matches";
@@ -189,7 +215,7 @@ export function LiveStrip({ data, show = "all", nofollow = "nofollow" }) {
         <p style={{ ...homeBody(), fontSize: "14px", color: T.board.dim, marginTop: T.space.xs, lineHeight: 1.5 }}>A school's listed fixtures show here on match day, with the score as it is scored.</p>
       </Board>);
     } else if (rest.length) {
-      parts.push(<Board key="today" id={id} label="Today" asOf={live.length ? "" : day}><Cards list={rest} rel={nofollow} /></Board>);
+      parts.push(<Board key="today" id={id} label="Today" asOf={live.length ? "" : day} ticker={live.length ? undefined : rest.map(tickerLine)}><Cards list={rest} rel={nofollow} /></Board>);
     }
   }
   return parts.length ? <>{parts}</> : null;

@@ -44,14 +44,42 @@ export const ALSO = [
   "Notices for players, parents and staff",
 ];
 
+/**
+ * A tile leans towards a mouse over it and a light follows the pointer
+ * (`.hb-tile`, home/fx.js; only with motion allowed, and only for a mouse:
+ * a finger gets the press instead). The handler writes four custom
+ * properties on the tile under the pointer and reads only that tile's box.
+ * @param {import("react").PointerEvent<HTMLElement>} e
+ */
+function tilt(e) {
+  if (e.pointerType !== "mouse") return;
+  const el = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest?.(".hb-tile"));
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const x = (e.clientX - r.left) / (r.width || 1), y = (e.clientY - r.top) / (r.height || 1);
+  el.style.setProperty("--mx", `${(x * 100).toFixed(1)}%`);
+  el.style.setProperty("--my", `${(y * 100).toFixed(1)}%`);
+  el.style.setProperty("--rx", `${((0.5 - y) * 9).toFixed(2)}deg`);
+  el.style.setProperty("--ry", `${((x - 0.5) * 11).toFixed(2)}deg`);
+}
+/** @param {import("react").PointerEvent<HTMLElement>} e */
+function untilt(e) {
+  const el = /** @type {HTMLElement | null} */ (/** @type {HTMLElement} */ (e.target).closest?.(".hb-tile"));
+  if (!el || el.contains(/** @type {Node | null} */ (e.relatedTarget))) return;
+  el.style.setProperty("--rx", "0deg");
+  el.style.setProperty("--ry", "0deg");
+}
+
 export function Tiles() {
   return (
     <>
-      <Section id="home-tiles" reveal={false} kicker="What SCRBRD does, today" label="What makes SCRBRD different">
-        <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,250px),1fr))", gap: T.space.md }}>
+      <Section id="home-tiles" reveal={false} cam="tiles" kicker="What SCRBRD does, today" label="What makes SCRBRD different">
+        <ol className="tiles" onPointerMove={tilt} onPointerOut={untilt}
+          style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,250px),1fr))", gap: T.space.md }}>
           {LEAD.map((f, i) => (
-            <li key={f.title} className="rv hb-tile" style={{ "--i": i % 4, gridColumn: i < 2 || i >= 6 ? "span var(--wide, 1)" : undefined, borderRadius: T.radius.xl, border: `1px solid ${T.line.normal}`,
-              background: T.surface.raised, padding: T.space.xl, boxShadow: T.elevation.sm, position: "relative", overflow: "hidden" }}>
+            <li key={f.title} className="rv" style={{ "--i": i % 4, gridColumn: i < 2 || i >= 6 ? "span var(--wide, 1)" : undefined, display: "flex" }}>
+              <div className="hb-tile" style={{ flex: 1, borderRadius: T.radius.xl, border: `1px solid ${T.line.normal}`,
+                background: T.surface.raised, padding: T.space.xl, boxShadow: T.elevation.sm, position: "relative", overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: T.space.lg }}>
                 <span aria-hidden="true" style={{ width: "44px", height: "44px", borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center",
                   color: T.brand.accentText, background: T.fill.track }}><Glyph name={f.icon} /></span>
@@ -59,6 +87,7 @@ export function Tiles() {
               </div>
               <h3 style={{ ...homeHead(), fontSize: i < 2 ? "20px" : "17px", fontWeight: 700, color: T.content.primary, marginBottom: T.space.sm, lineHeight: 1.25 }}>{f.title}</h3>
               <p style={{ ...homeBody(), fontSize: "15px", color: T.content.secondary, lineHeight: 1.55 }}>{f.desc}</p>
+              </div>
             </li>
           ))}
         </ol>
@@ -66,7 +95,7 @@ export function Tiles() {
       <Section id="home-also" label="Also in the pilot" narrow>
         <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexWrap: "wrap", gap: T.space.sm }}>
           {ALSO.map((a) => (
-            <li key={a} style={{ ...homeBody(), fontSize: "14px", color: T.content.secondary, padding: "8px 14px", borderRadius: T.radius.pill, border: `1px solid ${T.line.normal}`, background: T.fill.panel }}>{a}</li>
+            <li key={a} className="chip" style={{ ...homeBody(), fontSize: "14px", color: T.content.secondary, padding: "8px 14px", borderRadius: T.radius.pill, border: `1px solid ${T.line.normal}`, background: T.fill.panel }}>{a}</li>
           ))}
         </ul>
       </Section>

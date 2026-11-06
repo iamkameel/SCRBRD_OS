@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { GLOBAL_CSS, T } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
@@ -6,6 +6,8 @@ import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { Header, LiveStrip, Hero, Tiles, News, Families, Schools, Footer, Privacy, Seam } from "./sections/index.js";
 import { homeCss } from "./fx.js";
 import { LIVE_POLL_MS, anyLive, readLive, readNews } from "./reads.js";
+import { arenaMode } from "./arena/capable.js";
+import { Arena } from "./arena/Arena.jsx";
 
 /**
  * The public home page's entry (SCRBRD-142), built from home.html and served
@@ -31,6 +33,13 @@ import { LIVE_POLL_MS, anyLive, readLive, readNews } from "./reads.js";
  * to the strip on every screen, and the hero offers "Follow a match", so a
  * parent who came for the score is one tap from it however far the film is.
  * HERO_PHOTO is the photo slot (Hero's `photo`): null until there is one.
+ *
+ * The arena (6 Nov 2026, Kameel: "make it look and feel like a modern video
+ * game … continue using three.js"): after the first paint, arena/capable.js
+ * picks the picture behind the words — the three.js ground (arena/Arena.jsx,
+ * a lazy chunk the camera flies through as the page is read), the 2D film,
+ * or with reduced motion its stills. Each section names its camera shot with
+ * data-cam. A scene that fails hands back to the film (useArena).
  */
 const APP = "/app";
 const SCHOOLS_EMAIL = "kameel@maverickdesign.co.za";
@@ -93,7 +102,31 @@ function useRevealFallback(key) {
   }, [key]);
 }
 
+/**
+ * Which picture is behind the page: null until after the first paint (the
+ * words never wait on the choice), then arena/capable.js's answer, asked
+ * again when reduced motion is switched. A 3D scene that fails is replaced
+ * by the film for the rest of the visit.
+ */
+function useArena() {
+  const [mode, setMode] = useState(/** @type {ReturnType<typeof arenaMode> | null} */ (null));
+  const failed = useRef(false);
+  const pick = useCallback(() => {
+    const m = arenaMode();
+    setMode(failed.current && m.mode === "3d" ? { mode: "film", forced: false } : m);
+  }, []);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    pick();
+    mq?.addEventListener?.("change", pick);
+    return () => mq?.removeEventListener?.("change", pick);
+  }, [pick]);
+  const fail = useCallback(() => { failed.current = true; pick(); }, [pick]);
+  return { arena: mode, fail };
+}
+
 function Home() {
+  const { arena, fail } = useArena();
   const live = useLive();
   const news = useNews();
   useRevealFallback(`${live ? live.fixtures.length : -1}:${news ? news.posts.length : -1}`);
@@ -101,8 +134,9 @@ function Home() {
   return (
     <>
       <Header appHref={APP} logo={SCRBRD_LOGO} live={liveNow} over/>
-      <main>
-        <Hero appHref={APP} hasStrip={!!live} photo={HERO_PHOTO}/>
+      <main data-arena={arena?.mode ?? "wait"}>
+        {arena?.mode === "3d" && <Arena forced={arena.forced} onFail={fail}/>}
+        <Hero appHref={APP} hasStrip={!!live} photo={HERO_PHOTO} mode={arena?.mode ?? "wait"}/>
         <div id="home-after-film" tabIndex={-1} style={{ outline: "none", paddingTop: "24px" }}>
           <LiveStrip data={live} show="live"/>
           <LiveStrip data={live} show="today"/>

@@ -46,27 +46,31 @@ export const SHOT_COPY = [
 
 const INK = "#f4f6f3", SOFT = "#c9d1db", QUIET = "#a3adbb", LIME = "#b9f227";
 
-export function Hero({ appHref = "/app", hasStrip = false, skipTo = "#home-after-film", photo = null }) {
+/** Each shot's camera in the 3D arena (arena/rig.js SHOTS; FILM is this order, home-arena.test.mjs holds the two together). */
+export const SHOT_CAMS = ["runup", "delivery", "bounce", "six", "board"];
+
+/**
+ * `mode` is main.jsx's choice of picture (arena/capable.js): "film" plays the
+ * 2D film here, "stills" draws its storyboard, "3d" leaves this stage empty
+ * because the arena behind the page is drawing, and "wait" (before the first
+ * paint is done) draws nothing yet.
+ */
+export function Hero({ appHref = "/app", hasStrip = false, skipTo = "#home-after-film", photo = null, mode = "film" }) {
   const section = useRef(null), stage = useRef(null), canvas = useRef(null), heroStill = useRef(null);
   const stills = useRef(/** @type {(HTMLCanvasElement | null)[]} */ ([]));
 
   useEffect(() => {
+    if (mode !== "film" && mode !== "stills") return undefined;
     let stop = () => {}, live = true;
-    const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    const start = () => {
-      stop();
-      // Loaded after first paint, so the words and the call to action never wait on the drawing.
-      import("../film/engine.js").then((film) => {
-        if (!live) return;
-        stop = mq?.matches
-          ? film.drawStills([{ canvas: heroStill.current, shot: 0, p: 0.02 }, ...stills.current.map((c, i) => ({ canvas: c, shot: i }))])
-          : film.mountFilm({ section: section.current, stage: stage.current, canvas: canvas.current });
-      }).catch(() => { /* no drawing: the night backdrop (home/fx.js) and every word stay */ });
-    };
-    start();
-    mq?.addEventListener?.("change", start);
-    return () => { live = false; stop(); mq?.removeEventListener?.("change", start); };
-  }, []);
+    // Loaded after first paint, so the words and the call to action never wait on the drawing.
+    import("../film/engine.js").then((film) => {
+      if (!live) return;
+      stop = mode === "stills"
+        ? film.drawStills([{ canvas: heroStill.current, shot: 0, p: 0.02 }, ...stills.current.map((c, i) => ({ canvas: c, shot: i }))])
+        : film.mountFilm({ section: section.current, stage: stage.current, canvas: canvas.current });
+    }).catch(() => { /* no drawing: the night backdrop (home/fx.js) and every word stay */ });
+    return () => { live = false; stop(); };
+  }, [mode]);
 
   return (
     <section id="home-film" ref={section} className="film" aria-labelledby="home-hero-h">
@@ -74,11 +78,11 @@ export function Hero({ appHref = "/app", hasStrip = false, skipTo = "#home-after
         <canvas ref={canvas} className="film-canvas" />
       </div>
 
-      <div className="film-block film-hero">
+      <div className="film-block film-hero" data-cam="hero">
         {photo?.src && <img className="film-photo" src={photo.src} alt={photo.alt ?? ""} />}
         <canvas ref={heroStill} className="film-still" aria-hidden="true" />
         <div className="film-in">
-          <p style={{ display: "inline-flex", alignItems: "center", gap: "8px", margin: "0 0 20px", padding: "7px 14px", borderRadius: "9999px",
+          <p className="hero-pill" style={{ display: "inline-flex", alignItems: "center", gap: "8px", margin: "0 0 20px", padding: "7px 14px", borderRadius: "9999px",
             background: "rgba(5,8,13,0.6)", border: "1px solid rgba(255,255,255,0.18)", fontFamily: "'Syne',sans-serif", fontSize: "12px",
             fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: SOFT }}>
             <span aria-hidden="true" style={{ width: "7px", height: "7px", borderRadius: "50%", background: LIME, boxShadow: `0 0 10px ${LIME}` }} />
@@ -86,13 +90,13 @@ export function Hero({ appHref = "/app", hasStrip = false, skipTo = "#home-after
           </p>
           <h1 id="home-hero-h" style={{ fontFamily: "'Syne',sans-serif", margin: 0, fontSize: "clamp(32px,6.4vw,64px)", fontWeight: 700,
             color: INK, lineHeight: 1.04, letterSpacing: "-0.02em", maxWidth: "10.5em", textShadow: "0 2px 30px rgba(0,0,0,0.5)" }}>
-            School cricket, scored live
-            <span style={{ display: "block", color: LIME }}>and kept safe.</span>
+            <span className="h1-a" style={{ display: "block" }}>School cricket, scored live</span>
+            <span className="h1-b" style={{ display: "block", color: LIME }}>and kept safe.</span>
           </h1>
-          <p style={{ fontFamily: "'DM Sans',sans-serif", margin: "18px 0 24px", fontSize: "17px", color: SOFT, lineHeight: 1.6, maxWidth: "540px" }}>
+          <p className="hero-lede" style={{ fontFamily: "'DM Sans',sans-serif", margin: "18px 0 24px", fontSize: "17px", color: SOFT, lineHeight: 1.6, maxWidth: "540px" }}>
             SCRBRD runs a school's cricket from the pavilion to the parent's phone. Scorers score offline, families follow live, and a child's name stays private unless a parent agrees.
           </p>
-          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+          <div className="hero-ctas" style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
             <LinkButton solid href={appHref} testId="home-cta-login">Log in</LinkButton>
             {hasStrip && <LinkButton href="#matches" testId="home-cta-follow" tone="night">Follow a match</LinkButton>}
             <LinkButton href={skipTo} testId="home-skip-film" tone="night">Skip the film</LinkButton>
@@ -109,8 +113,8 @@ export function Hero({ appHref = "/app", hasStrip = false, skipTo = "#home-after
         {SHOT_COPY.map((c, i) => (
           <li key={c.tag} className="film-block film-shot" data-shot={i + 1}>
             <canvas ref={(el) => { stills.current[i] = el; }} className="film-still" aria-hidden="true" />
-            <div className="film-cap">
-              <p className="film-tag">{`0${i + 1} · ${c.tag}`}</p>
+            <div className="film-cap" data-cam={SHOT_CAMS[i]}>
+              <p className="film-tag"><span className="film-n">{`0${i + 1}`}</span>{` · ${c.tag}`}</p>
               <h2>{c.title}</h2>
               <p className="film-say">{c.say}</p>
             </div>
