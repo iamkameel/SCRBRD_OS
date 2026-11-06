@@ -820,7 +820,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
    then a grid that fills the width; each card rises in once. Reduced motion:
    no movement at all (below). */
 @keyframes newsIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-.os-news-in{animation:newsIn .36s cubic-bezier(.22,1,.36,1) both}
+.os-news-in{animation:newsIn .36s cubic-bezier(.22,1,.36,1) backwards}
 .os-news-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:16px}
 .os-news-lead{display:grid;grid-template-columns:minmax(0,1fr)}
 @media (min-width:900px){.os-news-lead{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}}

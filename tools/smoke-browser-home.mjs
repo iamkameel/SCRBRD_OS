@@ -545,6 +545,33 @@ try {
       await page.waitForSelector('[data-testid="news-list"], [data-testid="news-empty"]', { timeout: 10000 }).catch(() => {});
       await afterReads(page).catch(() => {});
     };
+    /**
+     * The floors inside `sel` (smoke-a11y's rules, which never opens the
+     * newsfeed): visible text 12px or more, outside drawings and what is
+     * hidden from assistive technology; every button and link 44px tall and
+     * named. Returns what broke them.
+     */
+    const feedFloors = (/** @type {any} */ page, /** @type {string} */ sel) => page.evaluate((s) => {
+      const out = [];
+      for (const root of document.querySelectorAll(s)) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const el = n.parentElement;
+          if (!el || !n.nodeValue?.trim() || el.closest("svg, .sr-only, [aria-hidden=true]")) continue;
+          const r = el.getBoundingClientRect();
+          if (r.width < 1 || r.height < 1) continue;
+          const size = parseFloat(getComputedStyle(el).fontSize);
+          if (size < 12) out.push(`${size}px "${n.nodeValue.trim().slice(0, 30)}"`);
+        }
+        for (const c of root.querySelectorAll("button, a[href]")) {
+          if (c.closest("[aria-hidden=true]")) continue;
+          const r = c.getBoundingClientRect();
+          if (Math.round(r.height) < 44) out.push(`${r.height.toFixed(2)}px tall: ${(c.textContent ?? "").trim().slice(0, 30)}`);
+          if (!(c.getAttribute("aria-label") || c.textContent || "").trim()) out.push("a control with no name");
+        }
+      }
+      return out;
+    }, sel);
     const isNew = (/** @type {any} */ page, /** @type {string} */ id) => page.locator(`[data-testid="news-${id}"]`).getAttribute("data-new").then((v) => v === "true", () => null);
 
     const coach = await reader("coach2@example.invalid", { width: 1440, height: 900 });
@@ -567,8 +594,16 @@ try {
       const bylines = await coach.page.$$eval('[data-testid="news-byline"]', (els) => els.map((e) => e.textContent ?? ""));
       ok("bylines name a desk and an SA date, never an email", bylines.length >= 6 && bylines.every((b) => !b.includes("@") && /staff|organisers|office/.test(b)) && bylines.some((b) => /Today, \d\d:\d\d/.test(b)), bylines.slice(0, 3).join(" | "));
       const opens = await coach.page.$$eval('[data-testid^="news-open-"]', (els) => els.map((e) => e.getBoundingClientRect().height));
-      ok("Read more is on a 44px target on every card", opens.length >= 6 && opens.every((h) => h >= 44), opens.join());
+      ok("Read more is on a 44px target on every card", opens.length >= 6 && opens.every((h) => Math.round(h) >= 44), opens.join());
       ok("the office's posts are New to the coach; his own are not", (await isNew(coach.page, NETS)) === true && (await isNew(coach.page, FINAL)) === false);
+      const floors = await feedFloors(coach.page, '[data-testid="news-list"], [data-testid="news-chips"]');
+      ok("the feed keeps the floors: no text under 12px, nothing tapped under 44px, every control named", floors.length === 0, floors.slice(0, 4).join(" | "));
+      // Reduced motion: the cards arrive without moving.
+      await coach.page.emulateMedia({ reducedMotion: "reduce" });
+      const still = await coach.page.$$eval(".os-news-in", (els) => els.every((e) => getComputedStyle(e).animationName === "none"));
+      await coach.page.emulateMedia({ reducedMotion: "no-preference" });
+      const moving = await coach.page.$$eval(".os-news-in", (els) => els.some((e) => getComputedStyle(e).animationName === "newsIn"));
+      ok("the cards rise in, and not at all with reduced motion", still && moving);
       await shot(coach.page, "feed-desktop-1440", { fullPage: false });
 
       await coach.page.locator(`[data-testid="news-open-${NETS}"]`).click({ timeout: 4000 });
@@ -577,7 +612,11 @@ try {
       const body = await coach.page.locator('[data-testid="news-read-body"]').innerText().catch(() => "");
       ok("Read more opens the whole post: its headline, every paragraph, at #read-<id>",
          head === "Nets move to the Oval from Monday" && /Bring water and a cap/.test(body) && new URL(coach.page.url()).hash === `#read-${NETS}`, `${head} | ${coach.page.url()}`);
-      ok("...with a back button on a 44px target", ((await coach.page.locator('[data-testid="news-read-back"]').boundingBox().catch(() => null))?.height ?? 0) >= 44);
+      ok("...with a back button on a 44px target", ((await coach.page.locator('[data-testid="news-read-back"]').boundingBox().catch(() => null))?.height ?? 0) >= 43.5, "the layout rounds 44 to 43.9999 at a scale of 2");
+      const readFloors = await feedFloors(coach.page, '[data-testid="news-read"]');
+      ok("...and the full read keeps the floors too", readFloors.length === 0, readFloors.slice(0, 4).join(" | "));
+      ok("...its headline is the one h2 in it, and its cover is decorative",
+         (await coach.page.locator('[data-testid="news-read"] h2').count()) === 1 && (await coach.page.locator('[data-testid="news-read"] .os-news-cover:not([aria-hidden="true"])').count()) === 0 && (await coach.page.locator('[data-testid="news-read"] .os-news-cover').count()) >= 1);
       await coach.page.goBack();
       await coach.page.waitForSelector('[data-testid="news-list"]', { timeout: 6000 }).catch(() => {});
       ok("the browser's back closes it, and the post is no longer New", (await coach.page.locator('[data-testid="news-read"]').count()) === 0 && (await isNew(coach.page, NETS)) === false);
