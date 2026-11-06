@@ -29,6 +29,8 @@
  *   PANEL_SWEEP_PHONE=0   desktop only (default: the persona accounts at phone width too)
  *   PANEL_SWEEP_PHONE=all every account at phone width too
  *   PANEL_SWEEP_DESKTOP=0 phone width only
+ *   PANEL_SWEEP_FAIL=career,milestones   those reads answer 503 (a slow host's timeouts)
+ *   PANEL_SWEEP_FAIL=all  every read and per-match route answers 503
  *   PANEL_SWEEP_DEBUG=1   print each stop as it is visited
  */
 import { chromium } from "playwright-core";
@@ -46,6 +48,9 @@ const DEBUG = !!process.env.PANEL_SWEEP_DEBUG;
 const PHONE = process.env.PANEL_SWEEP_PHONE !== "0";
 const PHONE_ALL = process.env.PANEL_SWEEP_PHONE === "all";
 const DESKTOP = process.env.PANEL_SWEEP_DESKTOP !== "0";
+// Reads to answer 503, by name ("career,milestones"), or "all" for every read
+// and every per-match route: the screens must say so, not fall over.
+const FAIL = (process.env.PANEL_SWEEP_FAIL ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
 const DEMO_CAST = [
   "coach.wes.1xi", "coach.wes.u14a", "coach.kea.1xi", "scorer1.wes", "dos.wes", "dos.kea",
@@ -92,6 +97,19 @@ async function open(who, width) {
   // The built bundle's API base, as every browser walk points it (lib/api.js).
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(BASE)};`);
   watchReads(page);
+  // A slow or failing host, on purpose: the demo's career read takes seconds
+  // (and times out as the log grows), and a screen drawn from the players
+  // before their figures arrive — or with none at all — must still stand.
+  if (FAIL.length) {
+    await page.route("**/api/**", (route) => {
+      const path = new URL(route.request().url()).pathname;
+      const read = /^\/api\/read\/([a-z_]+)/.exec(path)?.[1];
+      const hit = FAIL.includes("all") ? path.startsWith("/api/read/") || /^\/api\/matches\/[^/]+\/./.test(path)
+        : !!read && FAIL.includes(read);
+      if (!hit || path.startsWith("/api/auth/")) return route.continue();
+      return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "unavailable" }) });
+    });
+  }
   const here = { page: "", sub: "" };
   const record = (/** @type {string} */ kind, /** @type {string} */ panel, /** @type {string} */ message) =>
     crashes.push({ who, width, url: page.url().replace(BASE, ""), page: here.page, sub: here.sub, kind, panel, message });

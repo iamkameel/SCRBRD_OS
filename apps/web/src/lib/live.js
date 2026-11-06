@@ -23,7 +23,7 @@
  * it. The mock fallback IS scoped client-side (through rbac/), because mock
  * rows have no database behind them — that is a demo affordance, not security.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, signedIn } from "./api.js";
 import { saClock, saDate } from "./saTime.js";
 import { combineReads } from "./readState.js";
@@ -1801,11 +1801,9 @@ export function usePlayersWithCareer(role, nonce = 0) {
 export function usePlayersWithCareerState(role, nonce = 0) {
   const players = useLive("players", role, nonce);
   const career = useLive("career", role, nonce);
-  const byId = new Map(career.rows.map((c) => [c.id, c]));
-  const rows = !career.rows.length ? players.rows : players.rows.map((p) => {
-    const c = byId.get(p.id);
-    return c ? { ...p, ...c, name: p.name ?? c.name } : p;
-  });
+  // Memoised on the two reads, so a screen's effects keyed on `rows` run when
+  // a read answers, not on every render.
+  const rows = useMemo(() => mergeCareer(players.rows, career.rows), [players.rows, career.rows]);
   return {
     rows,
     // Each read's whole state (rows, status, disabled), for lib/readState.js:
@@ -1818,6 +1816,25 @@ export function usePlayersWithCareerState(role, nonce = 0) {
     // from players who merely lack their figures. `rows` above is unchanged.
     read: combineReads([{ what: "the players", read: players }, { what: "the career figures", read: career }]),
   };
+}
+
+/**
+ * Players with their career figures beside them, where there are any.
+ *
+ * asCareer promises `form` is always an array; a boy with no career row (he
+ * has not played, the career read is still coming, or it failed) must keep
+ * that promise too, or every `.form.map()` beside him falls over. The demo's
+ * mock rows carry their own form, which is kept.
+ * @param {any[]} players  @param {any[]} careerRows
+ */
+export function mergeCareer(players, careerRows) {
+  const bare = (/** @type {any} */ p) => (Array.isArray(p.form) ? p : { ...p, form: [] });
+  if (!careerRows.length) return players.map(bare);
+  const byId = new Map(careerRows.map((c) => [c.id, c]));
+  return players.map((p) => {
+    const c = byId.get(p.id);
+    return c ? { ...p, ...c, name: p.name ?? c.name } : bare(p);
+  });
 }
 
 /** The common case: just the rows. Views that need the state use useLive(). */

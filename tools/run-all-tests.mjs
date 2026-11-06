@@ -446,6 +446,9 @@ const SUITES = [
   // product reads since db/128, not the UTC day (CI red 00:00-02:00 SAST, #233).
   ["sa-day",   "tools/sa-day.test.mjs"],
   ["sa-time",  "apps/web/test/sa-time.test.mjs"],
+  // A boy with no career row still has a form guide (an empty one): the
+  // Analytics squad table fell over on it in the played-season demo.
+  ["career-merge", "apps/web/test/career-merge.test.mjs"],
   // The backup drill's tool (docs/pilot/BACKUP_RESTORE.md): which hosts are
   // this machine, the ledger and row-count comparisons, the roles a dump's
   // grants name, and a restore aimed anywhere else refused with exit 2.
