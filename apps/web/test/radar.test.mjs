@@ -95,6 +95,15 @@ for (const file of ["SkillsView.jsx", "SquadView.jsx", "ProfilesView.jsx"]) {
   ok(`${file} draws the one Overall radar`, /<OverallRadar\b/.test(src(file)) && /from "\.\.\/ui\/overallRadar\.jsx"/.test(src(file)));
 }
 ok("...and Squad and Profiles no longer draw a radar of their own", !/<RadarChart\b/.test(src("SquadView.jsx")) && !/<RadarChart\b/.test(src("ProfilesView.jsx")));
+// Every player's groups side by side is for staff alone: a pupil or a parent
+// sees his own boy's radar and no team-mate's (recognition R5b, D23, A15).
+{
+  const sv = src("SkillsView.jsx");
+  ok("Skills' every-player table is drawn only behind the rankings' gate and the read it already needs",
+    /seesEveryone\s*&&\s*<EveryPlayer\b/.test(sv) && (sv.match(/<EveryPlayer\b/g) ?? []).length === 1
+    && /const seesEveryone = mayReadSkills && \(held\.length \? showsRankings\(held\) : !PLAYING_ROLES\.includes\(role\)\);/.test(sv));
+  ok("...and it is in the list's order, never sorted by a figure", !/EveryPlayer[\s\S]{0,4000}\.sort\(/.test(sv.slice(sv.indexOf("function EveryPlayer"), sv.indexOf("function SkillsView"))));
+}
 
 group("What is drawn");
 const html = renderToStaticMarkup(h(RadarChart, { data: all20, max: RUBRIC_MAX, size: 110, color: "#38bdf8" }));
