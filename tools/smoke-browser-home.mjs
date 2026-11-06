@@ -40,6 +40,19 @@
  *      seed name. Taken down by the office, it is gone (within 60 s: the
  *      LISTEN notification, or the cache's TTL).
  *
+ * The newsfeed as news (6 Nov 2026, Kameel: covers, headlines, a full read):
+ *   8. Seeded posts read as a feed: the newest is the lead story, the rest
+ *      under Today, This week and Earlier; every card has a decorative cover
+ *      (aria-hidden), its kicker, a real heading, a standfirst and Read more
+ *      on a 44px target. Another's post is New until opened, and stays opened
+ *      after a reload (this browser only). Read more opens the whole post at
+ *      #read-<id> with its byline (no email); back closes it. The chips
+ *      narrow to the school's posts. A follower who reads the school but not
+ *      the side sees the school's posts and none of the side's, and a link
+ *      to the side's post shows him nothing of it. No horizontal scroll at
+ *      390. With NEWS_SHOTS=<dir>, screenshots of the feed, a full read, an
+ *      empty feed and the home page's news are written there.
+ *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-home.mjs
  */
@@ -473,6 +486,191 @@ try {
     } finally {
       // Left as found, so a rerun's §5 starts unlisted.
       await as(SARAH, `select * from public_listing_set($1, false)`, [HIL]);
+    }
+  }
+
+  group("8. The newsfeed as news: covers, the lead story, the full read, and a reader who may not see a post");
+  {
+    const SHOTS = process.env.NEWS_SHOTS || "";
+    const shot = async (/** @type {any} */ page, /** @type {string} */ name, /** @type {any} */ opts = {}) => {
+      if (!SHOTS) return;
+      await page.waitForTimeout(450);
+      await page.screenshot({ path: `${SHOTS}/${name}.png`, ...opts }).catch((/** @type {any} */ e) => console.log("  (screenshot failed)", name, e?.message));
+    };
+    // Invented posts, written as the people who may write them, dated across
+    // a fortnight on the SA clock so the feed has Today, This week and Earlier.
+    const post = async (/** @type {string} */ who, /** @type {string} */ scope, /** @type {string | null} */ team, /** @type {string} */ title, /** @type {string} */ body, /** @type {string} */ ago) => {
+      const [{ id }] = await as(who,
+        `insert into news_post (scope, school_id, team_code, title, body, published_at)
+         values ($1, $2, $3, $4, $5, now() - $6::interval) returning id`, [scope, HIL, team, title, body, ago]);
+      return /** @type {string} */ (id);
+    };
+    const FINAL = await post(COACH2, "team", "2XI", "Second XI book their place in the KZN schools final",
+      "A composed chase under lights at the Oval took the Second XI through to the provincial final, with six wickets and nine balls to spare.\n\nThe bowlers set it up early: three wickets in the powerplay and only two boundaries conceded in the last five overs. The fielding was the best it has been all season.\n\nThe final is on Saturday 14 November at 10:00. Whites, the travelling kit and a packed lunch; the bus leaves the pavilion at 07:30.", "0 seconds");
+    const NETS = await post(SARAH, "school", null, "Nets move to the Oval from Monday",
+      "The indoor centre is being resurfaced, so every side's nets move to the outdoor lanes at the Oval from Monday 9 November for three weeks.\n\nTimes are unchanged. Bring water and a cap; the lanes have no shade until four o'clock.", "3 hours");
+    const TUES = await post(COACH2, "team", "2XI", "Training moves to Tuesday this week",
+      "Because of the exam timetable, Thursday's practice moves to Tuesday at 15:00. Fielding first, then middle practice.", "1 day");
+    const DINNER = await post(SARAH, "school", null, "Cricket dinner: tickets on sale",
+      "The end-of-season cricket dinner is in the dining hall on Friday 27 November at 18:30. Tickets are R180 from the sports office until the 20th; families of every side are welcome.", "4 days");
+    const KIT = await post(COACH2, "team", "2XI", "Kit back before the holidays",
+      "Please return the side's playing shirts and the two spare helmets to the kit room by the last day of term.", "12 days");
+    const UMPIRE = await post(SARAH, "school", null, "An umpiring course for parents",
+      "The provincial association runs a two-evening Level 1 umpiring course in the pavilion. It is free for the school's families, and every side needs two more umpires next season.", "20 days");
+    const SCHOOL_POSTS = [NETS, DINNER, UMPIRE], SIDE_POSTS = [FINAL, TUES, KIT];
+
+    /** Signed in at /app as `email` on the newsfeed, at this width. */
+    const reader = async (/** @type {string} */ email, /** @type {{width: number, height: number}} */ viewport) => {
+      const ctx = await browser.newContext({ viewport, deviceScaleFactor: 2, extraHTTPHeaders: { "x-forwarded-for": `10.85.2.${++ipN}` } });
+      await offline(ctx);
+      const page = await ctx.newPage();
+      watchReads(page);
+      const errors = /** @type {string[]} */ ([]);
+      page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+      page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(`console.error: ${m.text()}`); });
+      await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(BASE)};`);
+      await page.goto(`${BASE}/app`, { waitUntil: "networkidle" });
+      await page.locator("#login-email").fill(email, { timeout: 8000 });
+      await page.locator("button", { hasText: /^Sign In$/ }).first().click({ timeout: 4000 });
+      await page.waitForFunction(() => /Match Centre|Dashboard|Newsfeed/i.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+      return { ctx, page, errors };
+    };
+    const toFeed = async (/** @type {any} */ page) => {
+      const bar = page.locator('[data-testid="nav-news"]:visible, [data-testid="mnav-news"]:visible').first();
+      if (await bar.count()) await bar.click({ timeout: 6000 }).catch(() => {});
+      else {
+        await page.locator('[data-testid="mnav-more"]').click({ timeout: 5000 }).catch(() => {});
+        await page.locator('[data-testid="drawer-news"]').click({ timeout: 5000 }).catch(() => {});
+      }
+      await page.waitForSelector('[data-testid="news-list"], [data-testid="news-empty"]', { timeout: 10000 }).catch(() => {});
+      await afterReads(page).catch(() => {});
+    };
+    const isNew = (/** @type {any} */ page, /** @type {string} */ id) => page.locator(`[data-testid="news-${id}"]`).getAttribute("data-new").then((v) => v === "true", () => null);
+
+    const coach = await reader("coach2@example.invalid", { width: 1440, height: 900 });
+    try {
+      await toFeed(coach.page);
+      const ids = await coach.page.$$eval('[data-testid="news-list"] article[data-testid^="news-"]', (els) => els.map((e) => e.getAttribute("data-testid")?.slice(5)));
+      ok("the newest post is the lead story, a real heading over its standfirst", ids[0] === FINAL
+         && (await coach.page.locator(`[data-testid="news-${FINAL}"] h3`).innerText().catch(() => "")) === "Second XI book their place in the KZN schools final", ids.slice(0, 3).join());
+      ok("...and every seeded post is on the feed", [...SCHOOL_POSTS, ...SIDE_POSTS].every((id) => ids.includes(id)), ids.join());
+      const covers = await coach.page.$$eval('[data-testid="news-list"] article', (els) => els.map((a) => {
+        const c = a.querySelector(".os-news-cover");
+        return !!c && c.getAttribute("aria-hidden") === "true" && !!c.querySelector("svg") && !c.querySelector("img, a, button");
+      }));
+      ok("every card has a cover: drawn, decorative, no image and no control in it", covers.length >= 6 && covers.every(Boolean), covers.join());
+      const kicker = await coach.page.locator(`[data-testid="news-${TUES}"] [data-testid="news-kicker"]`).innerText().catch(() => "");
+      ok("a side's kicker names the side and the school", /2nd XI · Hilton College/i.test(kicker), kicker);
+      ok("...a school post's says Whole school", /Whole school · Hilton College/i.test(await coach.page.locator(`[data-testid="news-${NETS}"] [data-testid="news-kicker"]`).innerText().catch(() => "")));
+      ok("the rest are under Today, This week and Earlier", (await coach.page.locator('[data-testid="news-band-today"]').count()) === 1
+         && (await coach.page.locator('[data-testid="news-band-week"]').count()) === 1 && (await coach.page.locator('[data-testid="news-band-earlier"]').count()) === 1);
+      const bylines = await coach.page.$$eval('[data-testid="news-byline"]', (els) => els.map((e) => e.textContent ?? ""));
+      ok("bylines name a desk and an SA date, never an email", bylines.length >= 6 && bylines.every((b) => !b.includes("@") && /staff|organisers|office/.test(b)) && bylines.some((b) => /Today, \d\d:\d\d/.test(b)), bylines.slice(0, 3).join(" | "));
+      const opens = await coach.page.$$eval('[data-testid^="news-open-"]', (els) => els.map((e) => e.getBoundingClientRect().height));
+      ok("Read more is on a 44px target on every card", opens.length >= 6 && opens.every((h) => h >= 44), opens.join());
+      ok("the office's posts are New to the coach; his own are not", (await isNew(coach.page, NETS)) === true && (await isNew(coach.page, FINAL)) === false);
+      await shot(coach.page, "feed-desktop-1440", { fullPage: false });
+
+      await coach.page.locator(`[data-testid="news-open-${NETS}"]`).click({ timeout: 4000 });
+      await coach.page.waitForSelector('[data-testid="news-read"]', { timeout: 6000 }).catch(() => {});
+      const head = await coach.page.locator("#news-read-h").innerText().catch(() => "");
+      const body = await coach.page.locator('[data-testid="news-read-body"]').innerText().catch(() => "");
+      ok("Read more opens the whole post: its headline, every paragraph, at #read-<id>",
+         head === "Nets move to the Oval from Monday" && /Bring water and a cap/.test(body) && new URL(coach.page.url()).hash === `#read-${NETS}`, `${head} | ${coach.page.url()}`);
+      ok("...with a back button on a 44px target", ((await coach.page.locator('[data-testid="news-read-back"]').boundingBox().catch(() => null))?.height ?? 0) >= 44);
+      await coach.page.goBack();
+      await coach.page.waitForSelector('[data-testid="news-list"]', { timeout: 6000 }).catch(() => {});
+      ok("the browser's back closes it, and the post is no longer New", (await coach.page.locator('[data-testid="news-read"]').count()) === 0 && (await isNew(coach.page, NETS)) === false);
+      // Away and back: the feed is drawn afresh and reads the mark from this browser's storage.
+      await coach.page.locator('[data-testid="nav-dashboard"]:visible, [data-testid="nav-matches"]:visible').first().click({ timeout: 4000 }).catch(() => {});
+      await coach.page.waitForSelector('[data-testid="news-list"]', { state: "detached", timeout: 6000 }).catch(() => {});
+      await toFeed(coach.page);
+      const kept = await coach.page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("scrbrd.news.opened.v1:")).map((k) => localStorage.getItem(k)).join(""));
+      ok("...and stays opened when the feed is drawn again, kept in this browser alone",
+         (await isNew(coach.page, NETS)) === false && (await isNew(coach.page, DINNER)) === true && kept.includes(NETS), kept);
+
+      await coach.page.locator('[data-testid="news-chip-school"]').click({ timeout: 4000 });
+      const shown = await coach.page.$$eval('[data-testid="news-list"] article[data-testid^="news-"]', (els) => els.map((e) => e.getAttribute("data-testid")?.slice(5)));
+      const schoolWide = (await q(`select id::text from news_post where scope = 'school' and school_id = $1 and published_at is not null`, [HIL])).map((r) => r.id);
+      ok("the Whole school chip narrows to the school's posts", shown.length === schoolWide.length && shown.every((id) => schoolWide.includes(id))
+         && SCHOOL_POSTS.every((id) => shown.includes(id)) && SIDE_POSTS.every((id) => !shown.includes(id)), shown.join());
+      await coach.page.locator('[data-testid="news-chip-all"]').click({ timeout: 4000 }).catch(() => {});
+      ok("no console errors on the feed or the full read", coach.errors.length === 0, coach.errors.join(" | "));
+    } finally { await coach.ctx.close(); }
+
+    // The phone: the feed, and a full read.
+    const phone = await reader("coach2@example.invalid", { width: 390, height: 844 });
+    try {
+      await toFeed(phone.page);
+      ok("at 390 the feed has no horizontal scroll, and no card runs past the screen", await phone.page.evaluate(() => document.documentElement.scrollWidth <= 391
+         && [...document.querySelectorAll('[data-testid="news-list"] article, [data-testid="news-list"] article p, [data-testid="news-list"] article h3, [data-testid="news-list"] article h4')]
+              .every((e) => e.getBoundingClientRect().right <= window.innerWidth + 1)));
+      await shot(phone.page, "feed-phone-390");
+      await phone.page.locator(`[data-testid="news-open-${FINAL}"]`).click({ timeout: 4000 });
+      await phone.page.waitForSelector('[data-testid="news-read"]', { timeout: 6000 }).catch(() => {});
+      ok("...nor does the full read", await phone.page.evaluate(() => document.documentElement.scrollWidth <= 391
+         && [...document.querySelectorAll('[data-testid="news-read"] p, [data-testid="news-read"] h2')].every((e) => e.getBoundingClientRect().right <= window.innerWidth + 1)));
+      await shot(phone.page, "read-phone-390");
+      await shot(phone.page, "read-phone-390-full", { fullPage: true });
+      ok("no console errors on the phone", phone.errors.length === 0, phone.errors.join(" | "));
+    } finally { await phone.ctx.close(); }
+
+    // A follower reads the school's news and not the side's (db/101).
+    const fan = await reader("spectator@example.invalid", { width: 1280, height: 900 });
+    try {
+      await toFeed(fan.page);
+      const ids = await fan.page.$$eval('[data-testid="news-list"] article[data-testid^="news-"]', (els) => els.map((e) => e.getAttribute("data-testid")?.slice(5)));
+      const all = await text(fan.page);
+      ok("a follower sees the school's posts", SCHOOL_POSTS.every((id) => ids.includes(id)), ids.join());
+      ok("...and none of the side's, in the cards or anywhere on the page",
+         SIDE_POSTS.every((id) => !ids.includes(id)) && !/KZN schools final|Training moves to Tuesday|Kit back before/.test(all), ids.join());
+      await fan.page.evaluate((id) => { window.location.hash = `read-${id}`; }, FINAL);
+      await fan.page.waitForSelector('[data-testid="news-read-missing"]', { timeout: 6000 }).catch(() => {});
+      const missing = await text(fan.page);
+      ok("a link to the side's post shows him that it is not in his feed, and nothing of it",
+         (await fan.page.locator('[data-testid="news-read-missing"]').count()) === 1 && !/KZN schools final|composed chase/.test(missing), missing.slice(0, 300));
+      ok("no console errors for the follower", fan.errors.length === 0, fan.errors.join(" | "));
+    } finally { await fan.ctx.close(); }
+
+    // An empty feed: Westville has posted nothing, and the seed's one league
+    // post is held back as a draft for the length of this check.
+    const LEAGUE_POSTS = (await q(`select id, published_at from news_post where scope = 'competition' and published_at is not null`));
+    for (const r of LEAGUE_POSTS) await q(`update news_post set published_at = null where id = $1`, [r.id]);
+    const quiet = await reader("coach.wes@example.invalid", { width: 390, height: 844 });
+    try {
+      await toFeed(quiet.page);
+      ok("a school with nothing posted shows the empty state, and offers the first post to a publisher",
+         (await quiet.page.locator('[data-testid="news-empty"]').count()) === 1 && (await quiet.page.locator('[data-testid="news-empty-compose"]').count()) === 1);
+      await shot(quiet.page, "empty-phone-390");
+    } finally {
+      await quiet.ctx.close();
+      for (const r of LEAGUE_POSTS) await q(`update news_post set published_at = $2 where id = $1`, [r.id, r.published_at]);
+    }
+
+    // The home page's news, as the same cards: posts asked for and approved.
+    {
+      // The coach asks; the director of sport, not the author, approves (db/83).
+      for (const id of [FINAL, TUES, KIT]) { await as(COACH2, `select * from news_public_request($1)`, [id]); await as(SARAH, `select * from news_public_approve($1)`, [id]); }
+      await as(SARAH, `select * from public_listing_set($1, true)`, [HIL]);
+      try {
+        const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, extraHTTPHeaders: { "x-forwarded-for": `10.85.3.${++ipN}` } });
+        await offline(ctx);
+        const page = await ctx.newPage();
+        for (let i = 0; i < 20; i++) {
+          await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+          if ((await page.locator('[data-testid="home-news-post"]').count()) >= 3) break;
+          await page.waitForTimeout(500);
+        }
+        await page.locator("#home-news").scrollIntoViewIfNeeded().catch(() => {});
+        await page.waitForTimeout(900);
+        if (SHOTS) await page.locator("#home-news").screenshot({ path: `${SHOTS}/home-news-1440.png` }).catch((/** @type {any} */ e) => console.log("  (screenshot failed)", e?.message));
+        const newsText = await page.locator("#home-news").innerText().catch(() => "");
+        ok("the home page's news carries the approved posts as cards, and no author", (await page.locator('[data-testid="home-news-post"]').count()) >= 2
+           && /KZN schools final/.test(newsText) && !/staff|Coach|author|@/.test(newsText), newsText.slice(0, 300));
+        await ctx.close();
+      } finally {
+        await as(SARAH, `select * from public_listing_set($1, false)`, [HIL]);
+      }
     }
   }
 } catch (e) {

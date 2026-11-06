@@ -6,9 +6,10 @@ import { hashOf, sideLabel } from "../lib/newsFeed.js";
  * A NEWS POST'S COVER, drawn in code (no photograph, no upload, no person).
  *
  * Deterministic: the same post draws the same cover every time, on every
- * device. The ground comes from the school (T.cover, picked by its name), so
- * one school's posts share a colour; the motif — stumps, the ball's seam, a
- * pitch strip, a scoreboard — and its placement come from the post's id.
+ * device. The ground comes from the school (T.cover, picked by its name, and
+ * two set apart from it), so one school's posts share a small family of
+ * colours; the motif — stumps, the ball's seam, a pitch strip, a scoreboard —
+ * and its placement come from the post's id.
  *
  * WHAT IT MAY DRAW: only what the reader already reads on the card beside it
  * — the side's code and the school's initials. On the public home page those
@@ -38,7 +39,9 @@ export function monogram(name) {
 export function coverPlan({ seed, school, team, scope }) {
   const h = hashOf(seed);
   const h2 = hashOf(`${seed}·b`);
-  const palette = T.cover[hashOf(school || team || seed) % T.cover.length];
+  // The school's own ground, or one of two set apart from it: a school's
+  // feed keeps its colour and still reads card by card.
+  const palette = T.cover[(hashOf(school || team || seed) + [0, 3, 5][(h >>> 5) % 3]) % T.cover.length];
   const motif = MOTIFS[h % MOTIFS.length];
   const label = scope === "team" && team ? sideLabel(team)
     : scope === "competition" ? "LEAGUE"

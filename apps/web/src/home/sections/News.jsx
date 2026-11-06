@@ -55,11 +55,11 @@ function Post({ p, lead, index, open: startOpen }) {
       <NewsCover seed={p.id} school={p.school || null} team={p.team || null} scope={p.team ? "team" : "school"} ratio="16 / 9"/>
       <div style={{ padding: lead ? T.space.xl : T.space.lg, display: "flex", flexDirection: "column", gap: T.space.sm, minWidth: 0 }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: T.space.sm, alignItems: "center" }}>
-          {chip && <span style={{ fontFamily: T.type.mono, fontSize: "12px", letterSpacing: "0.06em", textTransform: "uppercase", color: T.brand.blueText }}>{chip}</span>}
+          {chip && <span style={{ fontFamily: T.type.mono, fontSize: "12px", letterSpacing: "0.04em", fontWeight: 500, color: T.brand.blueText }}>{chip}</span>}
           {when && <span style={{ fontFamily: T.type.mono, fontSize: "12px", color: T.content.tertiary }}>{when}</span>}
         </div>
         <h3 style={{ ...homeHead(), fontSize: lead ? "clamp(20px, 3vw, 28px)" : "17px", fontWeight: 700, color: T.content.primary, lineHeight: 1.25, overflowWrap: "anywhere" }}>{p.title}</h3>
-        <p style={{ ...homeBody(), fontSize: lead ? "16px" : "15px", color: T.content.secondary, lineHeight: 1.6, whiteSpace: "pre-line", overflowWrap: "anywhere", ...clamp }}>{text}</p>
+        <p style={{ ...homeBody(), fontSize: lead ? "16px" : "15px", color: T.content.secondary, lineHeight: 1.6, whiteSpace: long && !open ? "normal" : "pre-line", overflowWrap: "anywhere", ...clamp }}>{long && !open ? text.replace(/\s+/g, " ").trim() : text}</p>
         {long && (
           <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
             style={{ ...homeBody(), alignSelf: "flex-start", minHeight: "44px", minWidth: "44px", background: "transparent", border: "none", padding: 0, cursor: "pointer", fontSize: "14px", fontWeight: 600, color: T.brand.blueText, textDecoration: "underline", textUnderlineOffset: "3px" }}>

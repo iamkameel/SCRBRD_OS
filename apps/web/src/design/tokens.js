@@ -822,7 +822,7 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
 @keyframes newsIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 .os-news-in{animation:newsIn .36s cubic-bezier(.22,1,.36,1) both}
 .os-news-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:16px}
-.os-news-lead{display:grid;grid-template-columns:1fr}
+.os-news-lead{display:grid;grid-template-columns:minmax(0,1fr)}
 @media (min-width:900px){.os-news-lead{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}}
 .os-news-card{cursor:pointer;transition:transform .19s cubic-bezier(.4,0,.2,1),border-color .19s cubic-bezier(.4,0,.2,1)}
 .os-news-cover svg{transition:transform .42s cubic-bezier(.22,1,.36,1)}
