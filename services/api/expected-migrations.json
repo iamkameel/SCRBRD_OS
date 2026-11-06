@@ -136,5 +136,6 @@
   "139_owner_reads_stamped.sql",
   "140_milestone_source.sql",
   "141_personal_bests.sql",
-  "142_player_of_match.sql"
+  "142_player_of_match.sql",
+  "143_record_boards.sql"
 ]
