@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { roleGrants } from "@scrbrd/policy/roles";
 import { D, themed } from "../design/tokens.js";
 import { Badge, Btn, Card, Input, Modal, Pill, SectionHeader } from "../ui/primitives.jsx";
-import { api } from "../lib/api.js";
+import { api, signedIn } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { schoolsWhere } from "../lib/session.js";
 import { Icon } from "../ui/icons.jsx";
@@ -49,8 +49,16 @@ function ModulesView({ role }) {
   const isPlatform = roleGrants(role, "platform.feature.manage");
   const canSuppress = roleGrants(role, "school.feature.manage");
 
-  const settings = useLive("module_settings", role, nonce);
-  const hidden   = useLive("module_suppressions", role, nonce);
+  // Both reads are about ONE school, and the server requires it
+  // (read-api.mjs: req(q, "schoolId")). Sent without it they were refused
+  // with a 400 and the screen said "Could not load the switches" to every
+  // principal. Signed in with no school to be about (a platform account),
+  // nothing is asked: the resource name is withheld, so useLive reads
+  // nothing, and the screen says why below. Signed out, the demo's rows.
+  const about = schoolId ? { schoolId } : null;
+  const noSchool = signedIn() && !about;
+  const settings = useLive(noSchool ? "" : "module_settings", role, nonce, about);
+  const hidden   = useLive(noSchool ? "" : "module_suppressions", role, nonce, about);
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState(null);
   const [person, setPerson] = useState(null);   // the module being hidden from someone
@@ -238,12 +246,19 @@ function ModulesView({ role }) {
         </Card>
       )}
 
-      {settings.loading && (
+      {noSchool && (
+        <Card sx={{ padding: "28px", textAlign: "center" }} data-testid="modules-no-school">
+          <span style={{ color: D.textMuted, fontFamily: D.body, fontSize: "13px" }}>
+            Switches are set school by school, and this account is not assigned to a school, so there are none to show here.
+          </span>
+        </Card>
+      )}
+      {!noSchool && settings.loading && (
         <Card style={{ padding: "28px", textAlign: "center" }}>
           <span style={{ color: D.textMuted, fontFamily: D.body, fontSize: "13px" }}>Loading switches…</span>
         </Card>
       )}
-      {!settings.loading && settings.error && (
+      {!noSchool && !settings.loading && settings.error && (
         <Card style={{ padding: "28px", textAlign: "center" }}>
           <span style={{ color: D.textMuted, fontFamily: D.body, fontSize: "13px" }}>
             Could not load the switches ({settings.error}).
@@ -251,7 +266,7 @@ function ModulesView({ role }) {
         </Card>
       )}
 
-      {!settings.loading && !settings.error && (
+      {!noSchool && !settings.loading && !settings.error && (
         <>
           <Section title="Modules" sub={KIND.module.sub} list={modules}/>
           <Section title="Features" sub={KIND.feature.sub} list={features}/>
