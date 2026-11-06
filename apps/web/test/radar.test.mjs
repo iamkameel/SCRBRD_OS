@@ -10,6 +10,9 @@
  *   - the Squad caller, pre-normalised to 0-100, draws exactly where it always did
  *   - no target exists without a saved goal, and a saved one is believed only inside the scale
  *   - the chart's text is never under 12px
+ *   - the Overall radar (Kameel, 6 Nov): four groups, each a mean, the overall
+ *     beside them, drawn the same on Skills, Squad and Profiles, words on every
+ *     axis, "Not assessed yet" for nothing and no shape for a partial one
  *
  *   node --import ./tools/register-jsx.mjs apps/web/test/radar.test.mjs
  */
@@ -18,8 +21,10 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SCALE_MAX, TREE } from "@scrbrd/scoring";
 import { RadarChart } from "../src/ui/primitives.jsx";
+import { OverallRadar } from "../src/ui/overallRadar.jsx";
 import {
   RUBRIC_MAX, MAX_LABELLED_AXES, radarGeometry, radarRatio, radarLabelOf, categoryMeans, categoryMeansOn100, radarSummary,
+  SKILL_CATEGORIES, overallOf, overallSummary,
 } from "../src/lib/radar.js";
 import { focusAreas } from "../src/lib/focusAreas.js";
 
@@ -79,10 +84,17 @@ ok("and its words for a screen reader are on the 1-20 scale, not on 100", /Techn
 
 group("Every caller says what the outer ring is");
 const src = (f) => readFileSync(new URL(`../src/views/${f}`, import.meta.url), "utf8");
-for (const [file, want] of [["SkillsView.jsx", "max={RUBRIC_MAX}"], ["ProfilesView.jsx", "max={RUBRIC_MAX}"], ["SquadView.jsx", "max={100}"]]) {
-  const calls = [...src(file).matchAll(/<RadarChart\b[^>]*?(?:\/>|>)/gs)].map((m) => m[0]);
-  ok(`${file}: ${calls.length} call(s), each with ${want}`, calls.length >= 1 && calls.every((c) => c.includes(want)), calls);
+{
+  const calls = [...src("SkillsView.jsx").matchAll(/<RadarChart\b[^>]*?(?:\/>|>)/gs)].map((m) => m[0]);
+  ok(`SkillsView.jsx: ${calls.length} call(s), each with max={RUBRIC_MAX}`, calls.length >= 1 && calls.every((c) => c.includes("max={RUBRIC_MAX}")), calls);
 }
+// Squad's snapshot and the Profiles page draw the Skills Matrix's Overall
+// radar (Kameel, 6 Nov), whose outer ring is RUBRIC_MAX by construction;
+// neither keeps a radar of its own, so the three cannot disagree.
+for (const file of ["SkillsView.jsx", "SquadView.jsx", "ProfilesView.jsx"]) {
+  ok(`${file} draws the one Overall radar`, /<OverallRadar\b/.test(src(file)) && /from "\.\.\/ui\/overallRadar\.jsx"/.test(src(file)));
+}
+ok("...and Squad and Profiles no longer draw a radar of their own", !/<RadarChart\b/.test(src("SquadView.jsx")) && !/<RadarChart\b/.test(src("ProfilesView.jsx")));
 
 group("What is drawn");
 const html = renderToStaticMarkup(h(RadarChart, { data: all20, max: RUBRIC_MAX, size: 110, color: "#38bdf8" }));
@@ -117,6 +129,38 @@ ok("no ratings, no plan", focusAreas({}).length === 0 && focusAreas(null).length
 ok("labels read as words", focusAreas({ lineAndLength: 5 })[0].label === "Line and length");
 const sk = src("SkillsView.jsx");
 ok("SkillsView draws a target only from focusAreas, and passes it only the saved targets the targets read returned (GA-I26a), never rating + 10", /focusAreas\(skills\[category\],\s*savedTargets\(targetsRead\.rows,\s*category\)\)/.test(sk) && !/Math\.min\(v\s*\+\s*10/.test(sk) && !/v\+10/.test(sk));
+
+group("The Overall radar's figures (Kameel, 6 Nov)");
+ok("its four groups are the rubric's, in the tabs' order", JSON.stringify(SKILL_CATEGORIES) === JSON.stringify(Object.keys(TREE)), [SKILL_CATEGORIES, Object.keys(TREE)]);
+const four = { technical: { a: 14, b: 15 }, mental: { a: 17 }, tactical: { a: 12, b: 12, c: 13 }, physical: { a: 16, b: 15 } };
+const o4 = overallOf(four);
+ok("each group is the mean of its ratings, to a tenth", o4.axes.map((a) => a.value).join() === "14.5,17,12.3,15.5", o4.axes);
+ok("the overall is the mean of the groups, not of every rating", o4.overall === 14.8 && o4.complete && o4.rated === 4, o4);
+const o3 = overallOf({ technical: { a: 14 }, mental: { a: 16 }, physical: { a: 12 } });
+ok("a group nobody rated is null, not 0, and the overall rests on the rest", o3.axes[2].value === null && o3.overall === 14 && !o3.complete && o3.rated === 3, o3);
+ok("nothing rated is no overall at all", overallOf(null).overall === null && overallOf({}).overall === null && overallOf({ technical: {} }).overall === null);
+ok("its words name each group, the overall, and a group not rated",
+  overallSummary(o4) === "Technical 14.5 of 20, Mental 17 of 20, Tactical 12.3 of 20, Physical 15.5 of 20. Overall 14.8 of 20."
+  && /Tactical not rated, Physical 12 of 20\. Overall 14 of 20, from 3 of 4 groups\./.test(overallSummary(o3)), [overallSummary(o4), overallSummary(o3)]);
+
+group("What the Overall radar draws");
+const ov = renderToStaticMarkup(h(OverallRadar, { skills: four }));
+ok("an image whose words are the four groups and the overall", /role="img"/.test(ov) && /aria-label="Overall skills radar\. Technical 14\.5 of 20, Mental 17 of 20, Tactical 12\.3 of 20, Physical 15\.5 of 20\. Overall 14\.8 of 20\."/.test(ov), ov.slice(0, 300));
+ok("every axis is labelled in words on the chart", ["Technical", "Mental", "Tactical", "Physical"].every((w) => new RegExp(`<text[^>]*>${w}</text>`).test(ov)));
+const ovSizes = [...ov.matchAll(/font-size(?:="|:\s*)([\d.]+)/g)].map((m) => Number(m[1]));
+ok("nothing on it is under 12px", ovSizes.length >= 4 && ovSizes.every((n) => n >= 12), ovSizes);
+ok("the overall is beside it, out of 20", /data-overall="14.8"/.test(ov) && /OVERALL/.test(ov) && />14\.8</.test(ov));
+ok("its outer ring is 20 and 20/20 reaches it", (() => {
+  const all = renderToStaticMarkup(h(OverallRadar, { skills: { technical: { a: 20 }, mental: { a: 20 }, tactical: { a: 20 }, physical: { a: 20 } } }));
+  const polys = [...all.matchAll(/<polygon points="([^"]+)"/g)].map((m) => m[1]);
+  return /data-max="20"/.test(all) && polys.length === 5 && polys[4] === polys[3];
+})());
+ok("nothing animates, so reduced motion has nothing to honour", !/animation|transition/.test(ov));
+const none = renderToStaticMarkup(h(OverallRadar, { skills: null }));
+ok("no assessment: 'Not assessed yet.', no chart, no zero", /Not assessed yet\./.test(none) && !/<svg/.test(none) && !/>0</.test(none), none);
+const part = renderToStaticMarkup(h(OverallRadar, { skills: { technical: { a: 14 }, mental: { a: 16 }, physical: { a: 12 } } }));
+ok("three groups of four: no shape, the missing one 'Not rated', the overall says what it rests on",
+  !/<svg/.test(part) && /Not rated/.test(part) && /Rated in 3 of 4 groups/.test(part) && /from 3 of 4 groups/.test(part), part.slice(0, 300));
 
 console.log(`\n${fail ? "✗" : "✓"} radar: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

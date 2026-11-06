@@ -2,9 +2,9 @@ import { useMemo, useState } from "react";
 import { D, textOn } from "../design/tokens.js";
 import { fitnessColor, stat } from "../lib/format.js";
 import { SR } from "../scorer/format.js";
-import { Avatar, Badge, Btn, Card, Input, Modal, RadarChart, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
+import { Avatar, Badge, Btn, Card, Input, Modal, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
+import { OverallRadar } from "../ui/overallRadar.jsx";
 import { SegmentedControl } from "../ui/data.jsx";
-import { RUBRIC_MAX, categoryMeans, categoryMeansOn100, radarSummary } from "../lib/radar.js";
 import { usePlayersWithCareerState, useSkills } from "../lib/live.js";
 import { readStateFor } from "../lib/readState.js";
 import { api, signedIn } from "../lib/api.js";
@@ -264,16 +264,13 @@ function SquadView({ role }) {
               </div>
             )}
             {SKILLS_MATRIX[selected.id]&&(
-              <div>
+              <div data-testid="squad-skills-snapshot">
                 <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS SNAPSHOT</div>
-                <div style={{display:"flex",justifyContent:"center"}}>
-                  {/* One axis per category the ratings carry, the mean of its
-                      1-20 ratings on the chart's 0-100 scale. Naming a
-                      "batting" group that no rating has crashed this panel for
-                      any player who had been assessed. */}
-                  <RadarChart color={D.sky} size={120} max={100} data={categoryMeansOn100(SKILLS_MATRIX[selected.id])}
-                    caption={radarSummary(categoryMeans(SKILLS_MATRIX[selected.id]), RUBRIC_MAX)}/>
-                </div>
+                {/* The Skills Matrix's Overall radar, the same component, for
+                    this boy alone: his four groups on the 1-20 scale and the
+                    overall beside them (Kameel, 6 Nov). Drawn from the skills
+                    read this panel already made, so it reaches nobody new. */}
+                <OverallRadar skills={SKILLS_MATRIX[selected.id]} size={120} testId="squad-overall-radar"/>
               </div>
             )}
             {/* Each action is drawn only for a person who can do it, and never in

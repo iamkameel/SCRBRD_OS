@@ -137,3 +137,39 @@ export function categoryMeansOn100(byCategory) {
 /** The words a screen reader gets in place of the shape: "Technical 14 of 20, Mental 17 of 20". */
 export const radarSummary = (data, max) =>
   Object.entries(data ?? {}).map(([k, v]) => `${radarLabelOf(k)} ${Number.isFinite(v) ? Math.round(v * 10) / 10 : "not rated"} of ${max}`).join(", ");
+
+/**
+ * The four groups of the rubric, in the order the Skills Matrix's tabs draw
+ * them. A copy of TREE's keys (packages/scoring/src/rubric.mjs) for the same
+ * reason RUBRIC_MAX is a copy; apps/web/test/radar.test.mjs holds the two equal.
+ */
+export const SKILL_CATEGORIES = Object.freeze(["technical", "mental", "tactical", "physical"]);
+
+const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+const tenth = (v) => Math.round(v * 10) / 10;
+
+/**
+ * The Overall radar's figures (Kameel, 6 Nov): each of the four groups as the
+ * mean of its 1-20 ratings, and the overall as the mean of the groups that
+ * carry any, so a group with fifteen ratings does not outweigh one with three.
+ * A group nobody has rated is `null`, never a 0: the radar is drawn only when
+ * all four carry a figure, and the overall says how many it rests on.
+ * @param {Record<string, Record<string, number>> | null | undefined} byCategory
+ * @returns {{ axes: { key: string, label: string, value: number | null, count: number }[], overall: number | null, rated: number, complete: boolean }}
+ */
+export function overallOf(byCategory) {
+  const axes = SKILL_CATEGORIES.map((key) => {
+    const xs = Object.values(byCategory?.[key] ?? {}).filter(Number.isFinite);
+    return { key, label: radarLabelOf(key), value: xs.length ? tenth(mean(xs)) : null, count: xs.length };
+  });
+  const rated = axes.filter((a) => a.value != null);
+  // From the unrounded means, so the overall is not a rounding of roundings.
+  const raw = SKILL_CATEGORIES.map((k) => Object.values(byCategory?.[k] ?? {}).filter(Number.isFinite)).filter((xs) => xs.length).map(mean);
+  return { axes, overall: raw.length ? tenth(mean(raw)) : null, rated: rated.length, complete: rated.length === SKILL_CATEGORIES.length };
+}
+
+/** The Overall radar's words for a screen reader: "Technical 14.5 of 20, …, Physical not rated. Overall 15.1 of 20." */
+export function overallSummary(o) {
+  const parts = o.axes.map((a) => (a.value == null ? `${a.label} not rated` : `${a.label} ${a.value} of ${RUBRIC_MAX}`));
+  return o.overall == null ? "Not assessed yet." : `${parts.join(", ")}. Overall ${o.overall} of ${RUBRIC_MAX}${o.complete ? "" : `, from ${o.rated} of ${SKILL_CATEGORIES.length} groups`}.`;
+}
