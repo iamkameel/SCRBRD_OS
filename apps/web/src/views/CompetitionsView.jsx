@@ -125,7 +125,7 @@ function CompetitionsView({ role, homeBar = null }) {
                 <div style={{flex:1}}>
                   <div style={{fontFamily:D.head,fontSize:"16px",fontWeight:700,color:D.textPrimary}}>{comp.name}</div>
                   <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"3px"}}>
-                    {comp.format} · {comp.ageGroup} · {comp.teams} teams
+                    {[comp.format, comp.ageGroup, Number.isFinite(Number(comp.teams)) && comp.teams !== null && comp.teams !== "" ? `${comp.teams} teams` : null].filter(Boolean).join(" · ")}
                   </div>
                 </div>
                 <Badge color={comp.active?D.emerald:D.textMuted}>{comp.active?"Active":"Inactive"}</Badge>
@@ -198,7 +198,10 @@ function CompetitionsView({ role, homeBar = null }) {
           </div>
           {/* Stats sidebar */}
           <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-            <Card sx={{padding:"14px"}}>
+            {/* The demonstration's own figures, fixed in this file: never drawn in a
+                signed-in session, where they read as the school's (a Westville
+                director saw "Hilton Performance · 5 played, 4 won"). */}
+            {!signedIn()&&<Card sx={{padding:"14px"}}>
               <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"12px"}}>Hilton Performance</div>
               {[["Matches Played","5"],["Wins","4"],["Losses","1"],["Run Rate","+1.24"],["Highest Score","186/6"],["Lowest Score","142/3"]].map(([l,v])=>(
                 <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${D.border}`}}>
@@ -206,7 +209,7 @@ function CompetitionsView({ role, homeBar = null }) {
                   <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textPrimary,fontWeight:500}}>{v}</span>
                 </div>
               ))}
-            </Card>
+            </Card>}
             {ranks&&<Card sx={{padding:"14px"}} data-testid="competition-top-performers" data-ranking="players">
               <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"12px"}}>Top Performers</div>
               <div style={{marginBottom:"10px"}}>

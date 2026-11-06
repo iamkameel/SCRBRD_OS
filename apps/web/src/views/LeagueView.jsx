@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { holdsCapability } from "../rbac/index.js";
 import { D } from "../design/tokens.js";
 
@@ -29,7 +29,9 @@ import { Icon } from "../ui/icons.jsx";
 import { SourceLine } from "../ui/sourceLine.jsx";
 import { SRC_ENTERED, SRC_RECORD, SRC_RESULTS, WINDOW_ALL, ballsFacedBasis, seasonWindow } from "../lib/sourceWords.js";
 import { basisWords } from "../lib/standings.js";
-import { signedIn } from "../lib/api.js";
+import { api, signedIn } from "../lib/api.js";
+import { sidesOf } from "../lib/matchCentre.js";
+import { humanDateTime } from "../lib/format.js";
 import { MIN_BALLS_FACED } from "@scrbrd/scoring";
 
 // ══════════════════════════════════════════════════════
@@ -90,11 +92,33 @@ function LeagueView({ role, homeBar = null }) {
   // Editable table row state
   const [tableEdit, setTableEdit] = useState({}); // { teamName: {W,L,NR} }
 
-  const compMatches = MATCHES.filter(m=>m.competition===selComp);
+  // The competition's fixtures: a live fixture names its competition by id
+  // (competitionId); the demonstration's rows carry `competition`. Matched on
+  // the competition on screen, not the selector's starting value ("comp1"),
+  // which no live competition is called.
+  const compMatches = MATCHES.filter(m=>(comp && (m.competition===comp.id || (m.competitionId!=null && m.competitionId===comp.id))) || (!comp && m.competition===selComp));
+  const live = signedIn();
+  // A finished fixture's result in words, from the route its own page reads
+  // (GET /api/matches/:id/result); the fixtures read carries none.
+  const [resultsSaid, setResultsSaid] = useState(/** @type {Record<string, string | null>} */ ({}));
+  const doneKey = live ? compMatches.filter(m=>m.status==="complete").map(m=>m.id).join(",") : "";
+  useEffect(() => {
+    const want = doneKey ? doneKey.split(",").filter((id) => !(id in resultsSaid)) : [];
+    if (!want.length) return undefined;
+    let off = false;
+    Promise.all(want.map((id) => api(`/api/matches/${id}/result`).then((r) => [id, r?.result?.text ?? null], () => [id, null])))
+      .then((pairs) => { if (!off) setResultsSaid((w) => ({ ...w, ...Object.fromEntries(pairs) })); });
+    return () => { off = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doneKey]);
+  const sideNames = (m) => live ? `${sidesOf(m).home.full} vs ${sidesOf(m).away.full}` : `${m.homeTeam} vs ${m.awayTeam}`;
+  const resultOf = (m) => (live ? resultsSaid[m.id] ?? null : m.result ?? null);
 
-  // Top performers from squad
-  const topBat = PLAYERS.filter(p=>p.school==="HIL"&&p.avg>0).sort((a,b)=>b.avg-a.avg).slice(0,5);
-  const topBowl = PLAYERS.filter(p=>p.school==="HIL"&&p.wkts>0).sort((a,b)=>b.wkts-a.wkts).slice(0,5);
+  // Top performers from squad: the demonstration's own school; in a live
+  // session the read is already this reader's school, so every row of it.
+  const ours = (p) => live || p.school==="HIL";
+  const topBat = PLAYERS.filter(p=>ours(p)&&p.avg>0).sort((a,b)=>b.avg-a.avg).slice(0,5);
+  const topBowl = PLAYERS.filter(p=>ours(p)&&p.wkts>0).sort((a,b)=>b.wkts-a.wkts).slice(0,5);
 
   // Every school and team this reader's career rows actually carry — never a
   // hand-written list, so the selector only ever offers a scope this person
@@ -303,8 +327,8 @@ function LeagueView({ role, homeBar = null }) {
                   <Card key={m.id} sx={{padding:"14px 16px"}}>
                     <div style={{display:"flex",gap:"16px",alignItems:"center",flexWrap:"wrap"}}>
                       <div style={{flex:1}}>
-                        <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,marginBottom:"3px"}}>{m.homeTeam} <span style={{color:D.textMuted,fontSize:"12px",fontWeight:400}}>vs</span> {m.awayTeam}</div>
-                        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}><Icon name="calendar"/> {m.date} · <Icon name="map-pin"/> {m.venue}</div>
+                        <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary,marginBottom:"3px"}}>{live ? sidesOf(m).home.full : m.homeTeam} <span style={{color:D.textMuted,fontSize:"12px",fontWeight:400}}>vs</span> {live ? sidesOf(m).away.full : m.awayTeam}</div>
+                        <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}><Icon name="calendar"/> {live ? humanDateTime(m.date, m.time) : m.date}{m.venue ? <> · <Icon name="map-pin"/> {m.venue}</> : null}</div>
                       </div>
                       {w&&<WeatherChip w={w} status={m.status} compact/>}
                       {m.transport?.bus&&<Pill color={D.lime}><Icon name="bus"/> {m.transport.depart}</Pill>}
@@ -323,12 +347,13 @@ function LeagueView({ role, homeBar = null }) {
                 <Card sx={{padding:"32px",textAlign:"center"}}><div style={{color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>No results yet.</div></Card>
               )}
               {compMatches.filter(m=>m.status==="complete").map(m=>(
-                <Card key={m.id} sx={{padding:"14px 16px",border:`1px solid ${m.result?.includes("Hilton")?D.emerald+"22":D.rose+"11"}`}}>
+                <Card key={m.id} sx={{padding:"14px 16px",border:`1px solid ${live?D.border:m.result?.includes("Hilton")?D.emerald+"22":D.rose+"11"}`}}>
                   <div style={{display:"flex",gap:"12px",alignItems:"center",flexWrap:"wrap"}}>
-                    <Badge color={m.result?.includes("Hilton")?D.emerald:D.rose}>{m.result?.includes("Hilton")?"W":"L"}</Badge>
+                    {/* W or L is the demonstration's school's; a live result is said in words below. */}
+                    {!live&&<Badge color={m.result?.includes("Hilton")?D.emerald:D.rose}>{m.result?.includes("Hilton")?"W":"L"}</Badge>}
                     <div style={{flex:1}}>
-                      <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{m.homeTeam} vs {m.awayTeam}</div>
-                      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{m.date} · {m.venue}</div>
+                      <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>{sideNames(m)}</div>
+                      <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{live ? humanDateTime(m.date, m.time) : m.date}{m.venue ? ` · ${m.venue}` : ""}</div>
                     </div>
                     {m.scorecard&&(
                       <div style={{display:"flex",gap:"8px",fontFamily:D.mono,fontSize:"12px"}}>
@@ -337,7 +362,7 @@ function LeagueView({ role, homeBar = null }) {
                         {m.scorecard.away&&<span style={{color:D.textSecondary}}>{m.scorecard.away.score} ({m.scorecard.away.overs})</span>}
                       </div>
                     )}
-                    <div style={{fontFamily:D.body,fontSize:"12px",color:m.result?.includes("Hilton")?D.emerald:D.amber,fontStyle:"italic"}}>{m.result}</div>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:live?D.textPrimary:m.result?.includes("Hilton")?D.emerald:D.amber,fontStyle:live?"normal":"italic"}}>{resultOf(m)}</div>
                     {canEdit&&<Btn size="sm" variant="ghost">Edit</Btn>}
                   </div>
                 </Card>
