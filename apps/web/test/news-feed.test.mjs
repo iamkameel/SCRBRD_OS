@@ -5,7 +5,7 @@
  */
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { BAND_LABEL, bandOf, deskOf, hashOf, kickerOf, longWhenSa, paragraphs, readStore, sideLabel, standfirst, whenSa } from "../src/lib/newsFeed.js";
+import { BAND_LABEL, bandOf, deskOf, hashOf, kickerOf, longWhenSa, bodyParagraphs, readStore, sideLabel, standfirst, whenSa } from "../src/lib/newsFeed.js";
 import { NewsCover, coverPlan, monogram } from "../src/ui/NewsCover.jsx";
 
 let pass = 0, fail = 0;
@@ -32,8 +32,8 @@ ok("a short body is the standfirst whole", standfirst("Won by six wickets.") ===
 const long = "The side won by six wickets. " + "Teas are in the pavilion after the game and parents are welcome. ".repeat(6);
 const sf = standfirst(long, 120);
 ok("a long body is cut at a sentence or a word, never mid-word", sf.length <= 121 && (/\.$/.test(sf) || /…$/.test(sf)), sf);
-ok("paragraphs split on blank lines and keep line breaks inside one", JSON.stringify(paragraphs("One.\nTwo.\n\n\nThree.")) === JSON.stringify(["One.\nTwo.", "Three."]));
-ok("markup is text to it", paragraphs("<b>x</b>")[0] === "<b>x</b>");
+ok("paragraphs split on blank lines and keep line breaks inside one", JSON.stringify(bodyParagraphs("One.\nTwo.\n\n\nThree.")) === JSON.stringify(["One.\nTwo.", "Three."]));
+ok("markup is text to it", bodyParagraphs("<b>x</b>")[0] === "<b>x</b>");
 
 group("C. The SA day: bands and dates");
 const now = Date.parse("2026-11-06T19:00:00Z");   // 21:00 SAST, Friday

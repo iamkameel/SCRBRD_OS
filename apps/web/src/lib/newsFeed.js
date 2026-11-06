@@ -11,7 +11,7 @@
  *   sideLabel(code)      "1XI" → "1st XI"; any other code as written
  *   kickerOf(post)       "1st XI · Westville", "Whole school · Westville", "League · Inland T20"
  *   standfirst(body)     the opening of the body, two or three lines' worth
- *   paragraphs(body)     the whole body as paragraphs, text only
+ *   bodyParagraphs(body)    the whole body as paragraphs, text only
  *   deskOf(post)         who wrote it, by the desk that may post to that audience — never an email
  *   whenSa(at, now)      "Today, 14:30", "Yesterday, 09:10", "Thu 5 Nov", "12 Oct 2025", on the SA clock
  *   bandOf(at, now)      "today" | "week" | "earlier", by the SA day
@@ -55,7 +55,7 @@ export function kickerOf(p) {
 }
 
 /** The body as paragraphs: split on blank lines, each kept as written. @param {unknown} body */
-export function paragraphs(body) {
+export function bodyParagraphs(body) {
   return String(body ?? "").replace(/\r\n?/g, "\n").split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
 }
 
@@ -112,7 +112,7 @@ export function bandOf(at, now = Date.now()) {
   return "earlier";
 }
 
-export const BAND_LABEL = Object.freeze({ today: "Today", week: "This week", earlier: "Earlier" });
+export const BAND_LABEL = Object.freeze({ "today": "Today", week: "This week", earlier: "Earlier" });
 
 /** When, on the SA clock, in the fewest words. @param {unknown} at @param {unknown} [now] */
 export function whenSa(at, now = Date.now()) {

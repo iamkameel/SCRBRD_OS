@@ -6,7 +6,7 @@ import { NewsCover } from "../ui/NewsCover.jsx";
 import { useLive } from "../lib/live.js";
 import { api } from "../lib/api.js";
 import { profile, schoolsWhere } from "../lib/session.js";
-import { BAND_LABEL, bandOf, deskOf, kickerOf, longWhenSa, paragraphs, readStore, sideLabel, standfirst, whenSa } from "../lib/newsFeed.js";
+import { BAND_LABEL, bandOf, deskOf, kickerOf, longWhenSa, bodyParagraphs, readStore, sideLabel, standfirst, whenSa } from "../lib/newsFeed.js";
 import { holdsCapability } from "../rbac/index.js";
 
 /**
@@ -166,7 +166,7 @@ function NewsView({ role }) {
   const lead = shown[0] || null;
   const bands = useMemo(() => {
     const now = Date.now();
-    const out = { today: [], week: [], earlier: [] };
+    const out = { "today": [], "week": [], earlier: [] };
     for (const n of shown.slice(1)) out[bandOf(n.at, now)].push(n);
     return out;
   }, [shown]);
@@ -437,7 +437,7 @@ function NewsCard({ n, lead = false, index, fresh, onOpen, publicRow }) {
         <div style={{marginTop:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:"8px",flexWrap:"wrap"}}>
           <Byline n={n}/>
           <button type="button" className="pressBtn" data-testid={`news-open-${n.id}`} aria-label={`Read more: ${n.title}`} onClick={()=>onOpen(n.id)}
-            style={{minHeight:"44px",minWidth:"44px",padding:"0 4px 0 12px",marginRight:"-4px",display:"inline-flex",alignItems:"center",gap:"4px",
+            style={{minHeight:"44px",minWidth:"44px",padding:"0 4px",marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:"4px",
               background:"transparent",border:"none",cursor:"pointer",fontFamily:D.head,fontSize:"13px",fontWeight:700,color:textOn(D.sky)}}>
             Read more <Icon name="arrow-up-right" size="14px"/>
           </button>
@@ -497,7 +497,7 @@ function NewsArticle({ n, onBack, publicRow, more, onOpen }) {
         {copied === "copied" && <p role="status" className="sr-only">Link copied</p>}
       </header>
       <div data-testid="news-read-body" style={{padding:"16px 2px 8px"}}>
-        {paragraphs(n.body).map((para, i) => (
+        {bodyParagraphs(n.body).map((para, i) => (
           <p key={i} style={{fontFamily:D.body,fontSize:"16px",color:D.textPrimary,lineHeight:1.75,whiteSpace:"pre-wrap",overflowWrap:"anywhere",marginBottom:"16px",maxWidth:"68ch"}}>{para}</p>
         ))}
       </div>
