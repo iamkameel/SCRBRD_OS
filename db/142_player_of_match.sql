@@ -87,8 +87,11 @@
 --   "Player of the Match · Sat 3 Oct v Kearsney: R Pillay"
 -- Never to a child alone (no recipient); a push is a pointer (push-api.mjs
 -- buildPayload()), so no lock screen carries a name. On withdrawal the
--- notice is retracted without a word (notification_retract(…, false)); on
--- 'correction' one more low notice to the same side, naming nobody:
+-- notice is taken back without a word: as a correction ('correction', the
+-- system's word) when the scorecard was corrected, as a person's take-back
+-- ('withdrawn', db/89's word for it, which notification_unretract() never
+-- returns) for another reason. On 'correction' one more low notice to the
+-- same side, naming nobody:
 --   "Player of the Match · Sat 3 Oct v Kearsney: the award was withdrawn
 --    after the scorecard was corrected." For 'other', nothing is said. A
 -- notice that cannot be written never stops the award or the withdrawal:
@@ -381,7 +384,7 @@ CREATE OR REPLACE FUNCTION honour_tell_side() RETURNS trigger AS $$
 DECLARE v_id uuid; v_side text; v_name text;
 BEGIN
   BEGIN
-    v_side := match_award_side_of(NEW.match_id, NEW.player_id);
+    v_side := coalesce(NEW.derived_from->>'side', match_award_side_of(NEW.match_id, NEW.player_id));
     SELECT match_award_short(p.full_name) INTO v_name FROM player p WHERE p.id = NEW.player_id;
     INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
                               required_capability, is_public, subject_kind, subject_id, subject_person_id)
@@ -397,26 +400,58 @@ BEGIN
   RETURN NEW;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- A person's take-back of the side's notice: the word db/89 gives a
+-- retraction by a person ('withdrawn', retracted_by the withdrawer), the
+-- one notification_unretract() refuses, so nothing the system does later
+-- (a correction re-reached, R10) can put the award back on the side's feed.
+-- Written through the retraction door as notification_retract() writes it:
+-- that function keeps 'withdrawn' for a person's own post (kind 'notice'),
+-- and an award withdrawn for another reason is a person's act about a
+-- recognition notice. Nothing is said.
+CREATE OR REPLACE FUNCTION match_award_take_back(p_notice uuid) RETURNS void AS $$
+DECLARE n notification%ROWTYPE; v_by uuid := app_user_id();
+BEGIN
+  SELECT * INTO n FROM notification WHERE id = p_notice FOR UPDATE;
+  IF NOT FOUND OR n.retracted_at IS NOT NULL THEN RETURN; END IF;
+  PERFORM set_config('scrbrd.notification_retract', n.id::text, true);
+  UPDATE notification SET retracted_at = now(), retracted_by = v_by, retraction_kind = 'withdrawn' WHERE id = n.id;
+  PERFORM set_config('scrbrd.notification_retract', '', true);
+  IF v_by IS NOT NULL THEN
+    PERFORM log_restricted_read('notification.retract', ARRAY[n.id], ARRAY['retracted'], n.school_id);
+  END IF;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- D21. The side's notice is taken back: as a correction when the scorecard
+-- was corrected, as a person's take-back otherwise. Only a correction is
+-- told, naming nobody. Two blocks, so a take-back that raises does not also
+-- lose the correction's line. The side is the one the award was decided for
+-- (derived_from), not the sheet as it stands now.
 CREATE OR REPLACE FUNCTION honour_unsay_side() RETURNS trigger AS $$
-DECLARE v_side text;
+DECLARE v_side text := coalesce(NEW.derived_from->>'side', match_award_side_of(NEW.match_id, NEW.player_id), 'home');
 BEGIN
   BEGIN
     IF NEW.notice_id IS NOT NULL THEN
-      PERFORM notification_retract(NEW.notice_id, 'correction', false);
-    END IF;
-    IF NEW.withdrawn_kind = 'correction' THEN
-      v_side := match_award_side_of(NEW.match_id, NEW.player_id);
-      INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
-                                required_capability, is_public, subject_kind, subject_id)
-      VALUES (NEW.school_id, NEW.team_code, 'team', 'recognition', 'low',
-              match_award_heading(NEW.match_id, coalesce(v_side, 'home')) || ': the award was withdrawn',
-              match_award_heading(NEW.match_id, coalesce(v_side, 'home'))
-                || ': the award was withdrawn after the scorecard was corrected.',
-              'news.read', false, 'match', NEW.match_id);
+      IF NEW.withdrawn_kind = 'correction' THEN
+        PERFORM notification_retract(NEW.notice_id, 'correction', false);
+      ELSE
+        PERFORM match_award_take_back(NEW.notice_id);
+      END IF;
     END IF;
   EXCEPTION WHEN OTHERS THEN
     RAISE WARNING 'db/142: the side''s notice of Player of the Match % was not taken back (%): %', NEW.id, SQLSTATE, SQLERRM;
   END;
+  IF NEW.withdrawn_kind = 'correction' THEN
+    BEGIN
+      INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
+                                required_capability, is_public, subject_kind, subject_id)
+      VALUES (NEW.school_id, NEW.team_code, 'team', 'recognition', 'low',
+              match_award_heading(NEW.match_id, v_side) || ': the award was withdrawn',
+              match_award_heading(NEW.match_id, v_side) || ': the award was withdrawn after the scorecard was corrected.',
+              'news.read', false, 'match', NEW.match_id);
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'db/142: the side was not told Player of the Match % was withdrawn after a correction (%): %', NEW.id, SQLSTATE, SQLERRM;
+    END;
+  END IF;
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -720,7 +755,7 @@ BEGIN
                            'match_award_opponent(uuid,text)', 'match_award_heading(uuid,text)',
                            'match_award_short(text)',
                            'honour_tell_side()', 'honour_unsay_side()', 'honour_audit()',
-                           'recognition_audit_append_only()'] LOOP
+                           'match_award_take_back(uuid)', 'recognition_audit_append_only()'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM scrbrd_app', f);
     FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
@@ -763,7 +798,7 @@ BEGIN
   FOREACH f IN ARRAY ARRAY['honour_stamp()', 'match_award_holds(uuid,text,uuid)', 'match_award_guardian_of(uuid,uuid)',
                            'match_award_instead(uuid,uuid)', 'match_award_side_of(uuid,uuid)',
                            'match_award_opponent(uuid,text)', 'match_award_heading(uuid,text)',
-                           'honour_tell_side()', 'honour_unsay_side()', 'honour_audit()',
+                           'honour_tell_side()', 'honour_unsay_side()', 'honour_audit()', 'match_award_take_back(uuid)',
                            'match_award_state(uuid)', 'match_award(uuid,uuid,jsonb)', 'match_award_withdraw(uuid,text,text)'] LOOP
     SELECT prosrc INTO v_src FROM pg_proc WHERE oid = f::regprocedure;
     IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = f::regprocedure) THEN
@@ -787,7 +822,8 @@ BEGIN
   FOREACH f IN ARRAY ARRAY['match_award_holds(uuid,text,uuid)', 'match_award_guardian_of(uuid,uuid)',
                            'match_award_instead(uuid,uuid)', 'match_award_side_of(uuid,uuid)',
                            'match_award_opponent(uuid,text)', 'match_award_heading(uuid,text)', 'match_award_short(text)',
-                           'honour_tell_side()', 'honour_unsay_side()', 'honour_audit()', 'recognition_audit_append_only()'] LOOP
+                           'honour_tell_side()', 'honour_unsay_side()', 'honour_audit()', 'match_award_take_back(uuid)',
+                           'recognition_audit_append_only()'] LOOP
     IF has_function_privilege('scrbrd_app', f, 'EXECUTE')
        OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
                    WHERE p.oid = f::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN

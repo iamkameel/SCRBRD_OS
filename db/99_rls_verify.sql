@@ -10281,6 +10281,23 @@ CREATE OR REPLACE FUNCTION _v142_fact(p_match uuid, p_school uuid DEFAULT NULL) 
                          FROM recognition_audit a WHERE a.match_id = p_match AND (p_school IS NULL OR a.school_id = p_school)), '[]'::jsonb),
     'hash', (SELECT r.result_hash FROM match_result_compute(p_match) r))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- notification_unretract() asked of a notice as the system would ask it,
+-- past the grants: 'ok', or what refused it.
+CREATE OR REPLACE FUNCTION _v142_unretract(p_id uuid) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  PERFORM notification_unretract(p_id);
+  RAISE EXCEPTION 'v142-undo';
+EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM = 'v142-undo' THEN RETURN 'ok'; END IF;
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN SQLSTATE || '|' || coalesce(v_con, '') || '|' || SQLERRM;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A boy taken off a match's sheet after the fact, as the office would.
+CREATE OR REPLACE FUNCTION _v142_off_sheet(p_match uuid, p_player uuid) RETURNS void AS $$
+  UPDATE match_squad SET withdrawn = true WHERE match_id = p_match AND player_id = p_player
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/142 (section 120) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
@@ -35678,8 +35695,12 @@ $v116$;
   --   (withdraw) only the side's deciders withdraw it, never the guardian;
   --              it needs a kind and a reason; after a correction the notice
   --              is taken back and one more, naming nobody, says why; for
-  --              another reason it is taken back and nothing is said; twice
-  --              is refused; a withdrawn award is not edited
+  --              another reason it is taken back as a person's take-back
+  --              ('withdrawn', which notification_unretract() refuses) and
+  --              nothing is said; twice is refused; a withdrawn award is not
+  --              edited; the other side's coach withdraws his after the boy
+  --              is taken off the sheet, and the words still name the other
+  --              side as the opponent (the side the award was decided for)
   --   (audit)    audit_log() words each act for the director of sport, the
   --              decider named, the kind said, the reason never; a coach
   --              reads none of it
@@ -35699,6 +35720,9 @@ $v116$;
   --   honour_unsay_side() naming the boy on a correction            → (withdraw)
   --   audit_log() without its recognition arm                       → (audit)
   --   GRANT EXECUTE ON match_award_holds() TO scrbrd_app            → (grants)
+  -- And for the red-team's fixes (6 Nov 2026), the same way:
+  --   honour_unsay_side() retracting 'other' as a correction        → (withdraw)
+  --   honour_unsay_side() taking its side from the sheet as it is   → (withdraw)
   DECLARE
     y   jsonb := _v142_stage();
     M   uuid := (y->>'M')::uuid;
@@ -35865,6 +35889,23 @@ $v116$;
                     AND (SELECT count(*) FROM jsonb_array_elements(j->'notices') e120 WHERE NOT (e120->>'retracted')::boolean) = 1
                     AND _v142_honour(v_h2)->>'withdrawn_kind' = 'other',
       format('§120 (withdraw): another reason said more than nothing: %s', j->'notices'));
+    PERFORM _assert((SELECT e120->>'retraction' FROM jsonb_array_elements(_v142_fact(M, HIL)->'notices') e120
+                      WHERE (e120->>'id')::uuid = (_v142_honour(v_h2)->>'notice')::uuid) = 'withdrawn'
+                    AND (SELECT e120->>'retraction' FROM jsonb_array_elements(_v142_fact(M, HIL)->'notices') e120
+                          WHERE (e120->>'id')::uuid = (_v142_honour(v_h)->>'notice')::uuid) = 'correction',
+      format('§120 (withdraw): another reason is not a person''s take-back, or a correction not a correction: %s', _v142_fact(M, HIL)->'notices'));
+    got := _v142_unretract((_v142_honour(v_h2)->>'notice')::uuid);
+    PERFORM _assert(got LIKE '23514|notification_retract_kind|%', format('§120 (withdraw): the system may put back an award withdrawn for another reason: %s', got));
+    PERFORM _as((y->>'wes')::uuid);
+    SELECT st120.honour_id INTO v_h2 FROM match_award_state(M) st120;
+    PERFORM _v142_off_sheet(M, W1);
+    SELECT * INTO r FROM match_award_withdraw(v_h2, 'correction', 'The scorecard was corrected');
+    PERFORM _assert(r.ok, format('§120 (withdraw): the other side''s coach was refused his own: %s', r.reason));
+    PERFORM _assert((SELECT count(*) FROM jsonb_array_elements(_v142_fact(M, WES)->'notices') e120
+                      WHERE NOT (e120->>'retracted')::boolean
+                        AND e120->>'body' LIKE 'Player of the Match · % v Hilton College 19XI: the award was withdrawn after the scorecard was corrected.') = 1,
+      format('§120 (withdraw): off the sheet, the words lost the opponent: %s', _v142_fact(M, WES)->'notices'));
+    PERFORM _as((y->>'coach')::uuid);
     PERFORM _as((y->>'office')::uuid);
     got := _v133_try(format('UPDATE honour SET derived_from = ''{}'' WHERE id = %L', v_h));
     PERFORM _assert(got LIKE '23514||a withdrawn honour is not edited%', format('§120 (withdraw): editing a withdrawn award reads %s', got));
