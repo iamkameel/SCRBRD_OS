@@ -158,6 +158,8 @@ async function openMatch(page, id) {
 const tab = async (page, id) => { await tid(page, `mc-tab-${id}`).click({ timeout: 4000 }); await page.waitForTimeout(500); };
 
 const TABS = ["summary", "scorecard", "commentary", "partnerships", "analytics", "details"];
+/** Overs as the card writes them: 9.4 for 58 balls. */
+const oversOfBalls = (/** @type {number} */ b) => `${Math.floor(b / 6)}${b % 6 ? `.${b % 6}` : ""}`;
 
 try {
   for (let i = 0; i < 60; i++) {
@@ -630,7 +632,9 @@ try {
   ok("the chase is won", finalMatch.result?.winner === "Westville Boys' High 1XI", JSON.stringify(finalMatch.result));
   ok("the result arrives as a moment on the board — held no longer than a milestone",
      await until(L, () => document.querySelector('[data-testid="mc-moment"][data-kind="result"]')?.innerText.includes("won by"), 8000));
-  ok("...beside the total, which stays in view throughout", await tid(L, "mc-board-total").isVisible());
+  // CRI-1.7: the result is full time, and the Summary is the result view the moment it arrives; the totals stay in view.
+  ok("...over the Summary's result view, whose totals stay in view throughout", await tid(L, "mc-result-view").isVisible().catch(() => false)
+     && await tid(L, "mc-result-total").last().isVisible().catch(() => false));
   if (SHOTS) { await mkdir(SHOTS, { recursive: true }); await L.screenshot({ path: join(SHOTS, "fulltime-result-moment-1280-floodlit.png") }).catch(() => {}); }
   ok("the moment clears within a second and a half — the score is never hidden for long (§3.6)",
      await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), 2500));
@@ -653,6 +657,35 @@ try {
   ok("the decided fixture opens", await openMatch(fin.page, fx.live));
   await afterReads(fin.page, 2000);
   ok("a fresh read plays no moment a second time — nothing is replayed on load", await tid(fin.page, "mc-moment").count() === 0);
+  {
+    // CRI-1.7: after full time the Summary is the result view, from the fold.
+    const F = fin.page;
+    const want = `${finalMatch.result.winner} won by ${finalMatch.result.margin}`;
+    const finals = finalMatch.innings.filter(Boolean);
+    ok("CRI-1.7: the completed fixture's Summary is the result view", await tid(F, "mc-summary").getAttribute("data-view").catch(() => null) === "result"
+       && await tid(F, "mc-result-view").count() === 1);
+    ok(`...headed by the result in words, the header's own ("${want}")`, (await tid(F, "mc-result-sentence").innerText().catch(() => "")).trim() === want
+       && (await tid(F, "mc-result").innerText().catch(() => "")).trim() === want);
+    const rowsShown = (await tid(F, "mc-result-row").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+    ok(`...each innings' total, the fold's: ${finals.map((i) => `${i.runs}/${i.wickets}`).join(", ")}`, rowsShown.length === finals.length
+       && finals.every((i, k) => rowsShown[k].includes(`${i.runs}/${i.wickets}`) && rowsShown[k].includes(`(${oversOfBalls(i.balls)} ov)`)), rowsShown.join(" | "));
+    ok("...on the board's black face, in both themes", await tid(F, "mc-result-view").evaluate((e) => getComputedStyle(e).backgroundColor).catch(() => "") !== "rgba(0, 0, 0, 0)");
+    const facts = await tid(F, "mc-result-innings").allInnerTexts();
+    const top1 = [...finals[0].batsmen].filter((b) => b.balls > 0 || b.runs > 0).sort((a, b) => b.runs - a.runs || a.balls - b.balls)[0];
+    const bowl2 = [...finals[1].bowlers].filter((b) => b.balls > 0).sort((a, b) => b.wickets - a.wickets || a.runs - b.runs)[0];
+    ok(`...the match in figures: each innings' top scorers and best bowling (${top1.name} ${top1.runs}; ${bowl2.name} ${bowl2.wickets}/${bowl2.runs})`,
+       facts.length === 2 && facts[0].includes(top1.name) && facts[0].includes(String(top1.runs)) && facts[1].includes(bowl2.name)
+       && facts[1].includes(`${bowl2.wickets}/${bowl2.runs}`), facts.join(" | ").slice(0, 300));
+    ok("...the live board, the latest balls and \"at this rate\" have given way to it", await tid(F, "mc-board").count() === 0
+       && await tid(F, "mc-latest").count() === 0 && !/At this rate/.test(await tid(F, "mc-summary").innerText()));
+    ok("...the worm, the highlights and all the commentary one tap away stay", await tid(F, "mc-worm-panel").count() === 1
+       && await tid(F, "mc-highlights").count() === 1 && await tid(F, "mc-all-commentary").count() === 1);
+    await tid(F, "mc-all-commentary").click({ timeout: 4000 }).catch(() => {});
+    await tid(F, "mc-panel-commentary").waitFor({ timeout: 4000 }).catch(() => {});
+    ok("...which opens it", await tid(F, "mc-panel-commentary").count() === 1);
+    await pickTab(F, "summary").catch(() => {});
+    await tid(F, "mc-result-view").waitFor({ timeout: 4000 }).catch(() => {});
+  }
   ok("the onward links show", await tid(fin.page, "mc-onward").count() === 1);
   ok("Hilton's own next fixture (the seeded one)", await tid(fin.page, "mc-onward-next-home").count() === 1);
   ok("...never a link to Westville's — no fixture of theirs is on this list, and this never guesses one",
@@ -1071,7 +1104,7 @@ try {
     ok("the director of sport signs in", await signIn(bd.page, /sarah@example\.invalid|Director/));
     ok("the decided fixture opens", await openMatch(bd.page, fx.live));
     const B = bd.page;
-    ok("Summary draws, with no failure card", await tid(B, "mc-board-total").count() === 1 && await tid(B, "panel-error").count() === 0);
+    ok("Summary draws (the result view, CRI-1.7), with no failure card", await tid(B, "mc-result-view").count() === 1 && await tid(B, "panel-error").count() === 0);
 
     await tab(B, "commentary");
     const card = tid(B, "panel-error");

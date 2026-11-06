@@ -7,7 +7,7 @@ import { atThisRate, boardFromInnings } from "../../scorer/boardData.js";
 import { boardInsights } from "../../scorer/signals.js";
 import { InningsToggle } from "./scorecard.jsx";
 import { CardHead, Panel, Quiet, SideName } from "./bits.jsx";
-import { Highlights, MomentMark, OverSummary } from "./spectator.jsx";
+import { Highlights, MomentMark, OverSummary, ResultBoard } from "./spectator.jsx";
 import { matchChaseOf, superOverTitle, twoInningsPlayed } from "../../lib/superOver.js";
 import { chaseRates, rainTouched, rateTrack, reportFor } from "../../lib/par.js";
 import { wormOf } from "../../lib/chartSeries.js";
@@ -80,6 +80,47 @@ function InningsBreakCard({ match, innings, overs }) {
   );
 }
 
+/**
+ * The match in figures, after full time (CRI-1.7): each of the match's own
+ * innings in the facts its innings break gave — its top scorers and its best
+ * bowling — the fold's figures, in the names the page's log carries.
+ */
+function ResultFacts({ match, innings }) {
+  const shown = innings.map((inn, i) => ({ inn, i })).filter(({ inn }) => inn && inn.superOver == null && inn.summarised == null);
+  if (!shown.length) return null;
+  /** @param {{name: string, fig: string}} p */
+  const Row = ({ name, fig }) => (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: T.space.md, alignItems: "baseline" }}>
+      <span style={{ ...T.role.body, color: T.content.primary, minWidth: 0, overflowWrap: "anywhere" }}>{name}</span>
+      <span style={{ ...T.role.figure.sm, color: T.content.primary, whiteSpace: "nowrap" }}>{fig}</span>
+    </div>
+  );
+  return (
+    <Panel testid="mc-result-facts">
+      <CardHead icon="trophy">The match in figures</CardHead>
+      <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)" }}>
+        {shown.map(({ inn, i }) => {
+          const b = inningsBreak(inn);
+          return (
+            <div key={i} data-testid="mc-result-innings" data-innings={i}
+              style={{ display: "grid", gap: T.space.xs, padding: `${T.space.md} ${T.space.lg}`, borderTop: `1px solid ${T.line.subtle}` }}>
+              <span style={{ ...T.role.label, color: T.content.secondary }}><SideName side={teamOf(match, inn.battingTeam)}/> innings</span>
+              <div data-testid="mc-result-batting" style={{ display: "grid", gap: "2px" }}>
+                {b.topScorers.length ? b.topScorers.slice(0, 2).map((x) => <Row key={x.id} name={x.name} fig={`${x.runs}${x.status === "batting" ? "*" : ""} (${x.balls})`}/>)
+                  : <span style={{ ...T.role.body, color: T.content.secondary }}>Nobody scored.</span>}
+              </div>
+              <div data-testid="mc-result-bowling" style={{ display: "grid", gap: "2px" }}>
+                {b.bestBowling.length ? b.bestBowling.map((x) => <Row key={x.id} name={x.name} fig={`${x.wickets}/${x.runs} (${oversOf(x.balls)})`}/>)
+                  : <span style={{ ...T.role.body, color: T.content.secondary }}>No bowler on record.</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Panel>
+  );
+}
+
 // `quietMoments`: the page has a live region of its own (the public page's),
 // so the moment and the over summary are drawn but not announced a second time.
 // `par` (SCRBRD-133 G2): the server's par report — GET /api/public/matches/:id/par
@@ -98,6 +139,43 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   const rates = useMemo(() => (chasing ? chaseRates(events ?? [], fold ?? {}, index) : null), [chasing, events, fold, index]);
   const worm = useMemo(() => (inn ? wormOf({ match, played: innings, index, events, overs, report: par }) : null),
     [inn, match, innings, index, events, overs, par]);
+  // CRI-1.7: after full time — play has decided it, or the fixture is finished — the Summary is the result,
+  // and the live board, the latest balls and "at this rate" give way to it.
+  const fullTime = settled || match.status === "complete";
+  if (fullTime && (innings.length || result)) {
+    return (
+      <div style={{ display: "grid", gap: T.space.lg }} data-testid="mc-summary" data-view="result">
+        <div style={{ position: "relative" }}>
+          <ResultBoard match={match} innings={innings} result={result}/>
+          <MomentMark moment={moment} announce={!quietMoments}/>
+        </div>
+        {worm && (
+          <Panel testid="mc-worm-panel">
+            <CardHead icon="trending-up">Worm</CardHead>
+            <div style={{ padding: `0 ${T.space.lg} ${T.space.md}` }}>
+              <Worm lines={worm.lines} balls={worm.balls} target={worm.target} par={worm.par} revised={worm.revised}
+                umpiresPar={worm.umpiresPar} said={worm.said} height="160px" testid="mc-worm"
+                textStyle={{ fontFamily: T.type.body, fontSize: "12px" }}
+                palette={{ main: T.content.primary, dim: T.content.tertiary, target: T.brand.accentText, par: T.brand.accentText,
+                           rule: T.line.normal, text: T.content.secondary, label: T.content.primary }}/>
+            </div>
+          </Panel>
+        )}
+        <ResultFacts match={match} innings={innings}/>
+        {commentary.length > 0 && (
+          <div>
+            <button type="button" onClick={() => setTab("commentary")} className="pressBtn os-state" data-testid="mc-all-commentary"
+              style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, cursor: "pointer", background: "transparent",
+                border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, color: T.content.primary,
+                fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
+              All commentary
+            </button>
+          </div>
+        )}
+        <Highlights match={match} innings={innings} commentary={commentary}/>
+      </div>
+    );
+  }
   if (!innings.length) return <Quiet testid="mc-summary-empty">Nothing has been scored yet. The board opens with the first ball.</Quiet>;
   const target = chaseNow?.target ?? null;
   const inOvers = inn.overs ?? overs;

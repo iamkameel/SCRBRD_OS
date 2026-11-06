@@ -496,7 +496,11 @@ try {
   ok("12px and 44px on the block", f.roots > 0 && !f.small.length && !f.tiny.length, JSON.stringify(f));
   await shoot("7-scorecard-block");
   await tap("mc-tab-summary");
-  ok("the Summary's board carries the block", /^Super over 2 · /.test(await said("mc-board-sub")), await said("mc-board-sub"));
+  // CRI-1.7: the match is decided, so the Summary is its result view: the server's words, and every innings, the super overs named.
+  const resRows = (await page.locator('[data-testid="mc-result-row"]').allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+  ok("the Summary is the result view: the result in the header's words, the super overs' innings named in its rows",
+     (await said("mc-result-sentence")) === (await said("mc-result")) && resRows.some((r) => /^Super over 1 · /.test(r)) && resRows.some((r) => /^Super over 2 · /.test(r)),
+     `${await said("mc-result-sentence")} | ${resRows.join(" | ")}`);
   await tap("mc-tab-commentary");
   const comm = await text();
   ok("the commentary opens each super over in its own words",
