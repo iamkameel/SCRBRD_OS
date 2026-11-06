@@ -21,7 +21,7 @@ import { signedIn } from "../../lib/api.js";
 import { useNav } from "../../lib/features.js";
 import { humanDate } from "../../lib/format.js";
 import { tenantWords } from "../../lib/words.js";
-import { chooseChild, doorTo, pendingWords, recallChild, rememberChild } from "../../lib/family.js";
+import { chooseChild, doorTo, linkWords, pendingWords, recallChild, rememberChild } from "../../lib/family.js";
 import { Action, Card, ChildSwitcher, Line, NoneOr, Page, Title } from "./parts.jsx";
 import { readState } from "../../lib/readState.js";
 import { LastMatchCard, LiveCard, NextFixtureCard, NoticesCard, SeasonCard } from "./cards.jsx";
@@ -46,6 +46,27 @@ function useChildren(role) {
   return { kids, child, choose, loading, error, matches, matchesRead, matchesSaid, retry: () => setNonce((n) => n + 1) };
 }
 
+/**
+ * Her own links that are not live (GA-I20 A2, D9, §4.3): one the office
+ * established and has not verified, one it did not verify, one that ended.
+ * Each is a sentence in words, never a colour; no child is named, because
+ * the read names none on these rows. Drawn on the empty state and under her
+ * children on Family. A read that failed is said, never drawn as nothing.
+ */
+function useLinkLines(enabled) {
+  const read = useLive("my_links", "guardian");
+  const lines = enabled && signedIn() && !read.loading && !read.error ? linkWords(read.rows, Date.now()) : [];
+  return { lines, failed: enabled && signedIn() && !read.loading && !!read.error };
+}
+
+function LinkLines({ lines }) {
+  return lines.map((l) => (
+    <div key={l.id} data-testid="family-link" data-kind={l.kind} style={{ display: "grid", gap: "2px" }}>
+      <Line>{l.words}</Line>
+    </div>
+  ));
+}
+
 /** What a family screen says when there is no child to show — and why, honestly. */
 function NoChild({ loading, error, testid }) {
   // Her own requests to be linked (GA-I20 A1, §3.3): said as pending, and
@@ -53,19 +74,26 @@ function NoChild({ loading, error, testid }) {
   // the player row is not hers to read until the office verifies the link.
   const asked = useLive("role_requests", "guardian");
   const pending = signedIn() && !loading && !error ? pendingWords(asked.rows, Date.now()) : [];
+  // Her links that are not live (A2): pending without a request, not verified, ended.
+  const links = useLinkLines(!loading && !error);
+  const said = pending.length + links.lines.length > 0;
   return (
     <Page testid={testid}>
       <Card label="Family" testid="family-none">
         {!signedIn() ? <Line>Sign in to see your family. The demonstration holds no family's records.</Line>
           : loading ? <Line quiet>Reading your family…</Line>
           : error ? <Line quiet>Could not load your family just now. This is not the same as there being nobody.</Line>
-          : pending.length ? pending.map((p) => (
-            <div key={p.id} data-testid="family-pending" style={{ display: "grid", gap: "2px" }}>
-              <Line>{p.words}</Line>
-              {p.note && <Line quiet>Your note to the office: {p.note}</Line>}
-            </div>
-          ))
-          : <Line>No child is linked to your account yet. The school office verifies each link; ask them if one is missing.</Line>}
+          : <>
+            {pending.map((p) => (
+              <div key={p.id} data-testid="family-pending" style={{ display: "grid", gap: "2px" }}>
+                <Line>{p.words}</Line>
+                {p.note && <Line quiet>Your note to the office: {p.note}</Line>}
+              </div>
+            ))}
+            <LinkLines lines={links.lines}/>
+            {!said && <Line>No child is linked to your account yet. The school office verifies each link; ask them if one is missing.</Line>}
+            {links.failed && <Line quiet testid="family-links-failed">Could not read your other links just now.</Line>}
+          </>}
       </Card>
     </Page>
   );
@@ -241,9 +269,12 @@ export function FamilyNotices({ role }) {
  * card — lifts, consents, the account — is added beside it, not into it.
  */
 export function FamilyFile({ role, onNav }) {
-  const { rows: kids, loading, error } = useLive("my_children", role);
+  // Agreeing the terms (N6) reads her links again, so the card says the record's words.
+  const [nonce, setNonce] = useState(0);
+  const { rows: kids, loading, error } = useLive("my_children", role, nonce);
   // The fixtures, for each child's count (GA-I20 A1): the same read the Home makes.
   const matchesRead = useLive("matches", role);
+  const links = useLinkLines(kids.length > 0);
   if (!kids.length) return <NoChild loading={loading} error={error} testid="family-file"/>;
   const now = Date.now();
   // His count opens his Home: the child is chosen as the switcher chooses him.
@@ -253,8 +284,16 @@ export function FamilyFile({ role, onNav }) {
       <Title>Family</Title>
       {kids.map((c) => (
         <ChildFileCard key={c.id} child={c} role={role} w={tenantWords({ kind: c.schoolKind, relationship: c.relationship })}
-          todo={<TodoCount child={c} matches={matchesRead.rows} matchesRead={matchesRead} now={now} onOpen={() => openHome(c)}/>}/>
+          todo={<TodoCount child={c} matches={matchesRead.rows} matchesRead={matchesRead} now={now} onOpen={() => openHome(c)}/>}
+          onAgreed={() => setNonce((n) => n + 1)}/>
       ))}
+      {/* Her other links, not live (GA-I20 A2): an ended or unverified link beside a live one is still said. */}
+      {(links.lines.length > 0 || links.failed) && (
+        <Card label="Other links" testid="family-other-links">
+          <LinkLines lines={links.lines}/>
+          {links.failed && <Line quiet testid="family-links-failed">Could not read your other links just now.</Line>}
+        </Card>
+      )}
     </Page>
   );
 }

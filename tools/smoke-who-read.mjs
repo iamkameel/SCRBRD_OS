@@ -20,6 +20,10 @@
  *   6. another school's office sees none of it
  *   7. the office's own question is on the record, naming the child
  *   8. the whole rehearsal takes seconds, far inside five minutes
+ *   9. the owner's key reading the child's file (his passport, his name, the
+ *      fixture's availability and readiness) is on the same list: a row for
+ *      each, naming him, under Hilton, as the key, marked platform-wide
+ *      (Kameel, 5 Nov 2026, the guardian's terms Q6; db/139)
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-who-read.mjs
@@ -33,6 +37,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const HIL = "11111111-1111-1111-1111-111111111111";
 const P_INJURED = "aaaaaaaa-0000-0000-0000-000000000005";
 const P_OTHER = "aaaaaaaa-0000-0000-0000-000000000001";
+const MATCH = "77777777-0000-0000-0000-000000000001";        // Hilton's, P_INJURED's side
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 
 let pass = 0, fail = 0;
@@ -72,6 +77,7 @@ try {
   const office  = await login("registrar@example.invalid");      // schooladmin, Hilton: audit.read
   const officeW = await login("registrar.wes@example.invalid");  // schooladmin, Westville
   const coach   = await login("coach@example.invalid");          // coach, Hilton: no audit.read
+  const owner   = await login("owner@example.invalid");          // superadmin: the owner's key
 
   const started = Date.now();
   await q(`delete from access_log`);
@@ -86,12 +92,25 @@ try {
            values ($1, $2, 'safeguarding_concern', array[$3::uuid], 1, '{account}'),
                   ($1, $2, 'players', array[$4::uuid], 1, '{born}')`, [HIL, medicRow.id, P_INJURED, P_OTHER]);
 
+  group("The owner's key reads his file");
+  const OWNER_READS = [`passport?playerId=${P_INJURED}`, `passport_name?playerId=${P_INJURED}`,
+                       `availability?matchId=${MATCH}`, `readiness?matchId=${MATCH}`];
+  for (const path of OWNER_READS) {
+    const r = await api(`/api/read/${path}`, { token: owner });
+    ok(`the key reads ${path.split("?")[0]}`, r.status === 200 && (r.body?.rows ?? []).length > 0, r.status);
+  }
+  const [ownerRow] = await q(`select id from app_user where lower(email) = 'owner@example.invalid'`);
+
   group("The office asks about ONE child");
   const ans = await aboutChild(office, P_INJURED);
   const rows = ans.body?.rows ?? [];
   ok("the office gets an answer", ans.status === 200 && rows.length > 0, ans.body);
   ok("...every read on it names this child", rows.every((r) => (r.record_ids ?? []).includes(P_INJURED)), rows.map((r) => r.record_ids));
-  ok("...each names the reader", rows.every((r) => r.person_name), rows.map((r) => r.person_name));
+  // A platform account belongs to no school, so the office cannot look its
+  // name up (app_user's own rule, unchanged): the row names him by id and
+  // says Platform, which is what the screen shows.
+  ok("...each names the reader, or says it was the platform",
+     rows.every((r) => r.person_name || (r.person_id && r.platform_wide === true)), rows.map((r) => r.person_name));
   ok("...with the time, the resource and how the reader arrived",
      rows.every((r) => r.occurred_at && r.resource && typeof r.platform_wide === "boolean"), rows[0]);
   ok("...newest first", rows.every((r, i) => i === 0 || rows[i - 1].occurred_at >= r.occurred_at));
@@ -99,6 +118,16 @@ try {
   const mine = rows.find((r) => r.resource === "injuries" && r.person_id === medicRow.id);
   ok("the medic's read of his injuries is on the list", !!mine, rows.map((r) => r.resource));
   ok("...with the fields that came back", Array.isArray(mine?.fields), mine);
+
+  for (const path of OWNER_READS) {
+    const res = path.split("?")[0];
+    const theirs = rows.filter((r) => r.resource === res && r.person_id === ownerRow.id);
+    ok(`the key's read of ${res} is on his list, as the key, platform-wide`,
+       theirs.length === 1 && theirs[0].platform_wide === true && theirs[0].support_access_id == null
+         && theirs[0].school_id === HIL,
+       theirs);
+  }
+  ok("...and the medic's read is still logged as a school reader's", mine?.platform_wide === false, mine);
 
   group("What it never shows");
   ok("no safeguarding read, though one names him", rows.every((r) => !String(r.resource).startsWith("safeguarding")), rows.map((r) => r.resource));

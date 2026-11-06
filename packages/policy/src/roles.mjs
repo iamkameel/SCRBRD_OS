@@ -87,8 +87,13 @@ const BUNDLES = {
   //
   // WHAT THIS COSTS, said plainly rather than left for someone to discover:
   // this role reads every child's medical, disciplinary and PII record at
-  // every school on the platform, and nothing records that it did. That is
-  // the deliberate difference from `platformadmin` below, which stops at the
+  // every school on the platform. Every such read is on the record (db/20;
+  // Kameel, 5 Nov 2026, the guardian's terms Q6: logged like every other
+  // read of a child's record): read-api.mjs files it under the child's
+  // school, naming him, and db/139 stamps every row the key writes
+  // platform-wide, so the school's office sees the platform reading. But
+  // logged is not limited, and that is the deliberate difference from
+  // `platformadmin` below, which stops at the
   // schoolhouse door and reaches a school's confidential records only through
   // platform.support.impersonate — time-boxed and audited, and since db/22
   // real: support_access_begin() issues one role at one school for an hour,
