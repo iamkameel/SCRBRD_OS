@@ -246,14 +246,13 @@ try {
 
   group("The captain nominates, on his Captain tab (RECOGNITION R7, db/144)");
   // R Pillay is the 1XI's captain this season; a second finished fixture
-  // with him on the sheet (Whitfield 17* off 6, Bekker 1/0, Cele, no Naidoo).
+  // with him on the sheet (Whitfield 17* off 6, Bekker 1/0, and Naidoo).
   const SEASON = (await q(`select id from season_for(sa_today(), 'school')`))[0].id;
   await q(`insert into honour (player_id, kind, season_id, citation) values ($1, 'captain', $2, 'the walk')`, [PILLAY, SEASON]);
-  const CELE = "aaaaaaaa-0000-0000-0000-000000000004";
   const [{ id: M2 }] = await q(
     `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
      values ($1, '1XI', $2, '1XI', 'Westville', now() - interval '2 hours', 'cricket', 'T20', 1, 'scheduled') returning id`, [HIL, WES]);
-  const HXI2 = [PILLAY, WHITFIELD, BEKKER, CELE].map((id, i) => ({ id, name: `Hilton ${i + 1}` }));
+  const HXI2 = [PILLAY, WHITFIELD, BEKKER, NAIDOO].map((id, i) => ({ id, name: `Hilton ${i + 1}` }));
   for (const p of HXI2) await q(`insert into match_squad (match_id, player_id, side) values ($1, $2, 'home')`, [M2, p.id]);
   for (const p of WXI) await q(`insert into match_squad (match_id, player_id, side) values ($1, $2, 'away')`, [M2, p.id]);
   {
@@ -266,7 +265,7 @@ try {
         balls: [ball({ type: BALL_TYPE.RUN, value: 0 }), ball({ type: BALL_TYPE.RUN, value: 0 }), ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled" })] },
     ].entries()) {
       const evs = [inningsStart({ battingTeam: inn.bat, bowlingTeam: inn.bowl, squad: inn.squad, bowlingSquad: inn.bowlingSquad, overs: 1, target: inn.target ?? null }),
-        batters({ striker: inn.squad[1].id, nonStriker: inn.squad[2].id }), bowler({ bowler: inn.bowlingSquad[0].id }), ...inn.balls]
+        batters({ striker: inn.squad[i === 0 ? 1 : 0].id, nonStriker: inn.squad[i === 0 ? 2 : 1].id }), bowler({ bowler: inn.bowlingSquad[0].id }), ...inn.balls]
         .map((e) => ({ ...e, innings: i }));
       evs.push({ ...sealInnings(deriveInnings(evs)), innings: i });
       const r = await call(`/api/matches/${M2}/events`, { method: "POST", token: scorerTok, body: { events: evs.map((ev) => ({

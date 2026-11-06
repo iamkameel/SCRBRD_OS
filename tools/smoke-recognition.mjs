@@ -441,7 +441,8 @@ try {
     // R Pillay is the 1XI's captain this season, as the director awards it (138 §1.1).
     const cap = await award(head, { playerId: PILLAY, kind: "captain", season: "2026" });
     ok("the director makes R Pillay the 1XI's captain", cap.status === 200 || cap.status === 201, JSON.stringify(cap.body));
-    // One scored match: Hilton's 1XI (R Pillay, Whitfield, Bekker, Cele) v Westville.
+    // One scored match: Hilton's 1XI (R Pillay, Whitfield, Bekker, Naidoo) v Westville.
+    // Naidoo is the season's other 1XI captain (seeded): either captain on the sheet nominates.
     const scoreMatch = async (starts, homeXI) => {
       const [{ id: M }] = await q(
         `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
@@ -458,7 +459,7 @@ try {
       ];
       for (const [i, inn] of innings.entries()) {
         const evs = [inningsStart({ battingTeam: inn.bat, bowlingTeam: inn.bowl, squad: inn.squad, bowlingSquad: inn.bowlingSquad, overs: 1, target: inn.target ?? null }),
-          batters({ striker: inn.squad[1].id, nonStriker: inn.squad[2].id }), bowler({ bowler: inn.bowlingSquad[0].id }), ...inn.balls]
+          batters({ striker: inn.squad[i === 0 ? 1 : 0].id, nonStriker: inn.squad[i === 0 ? 2 : 1].id }), bowler({ bowler: inn.bowlingSquad[0].id }), ...inn.balls]
           .map((e) => ({ ...e, innings: i }));
         evs.push({ ...sealInnings(deriveInnings(evs)), innings: i });
         const r = await api(`/api/matches/${M}/events`, { method: "POST", token: scorer, body: { events: evs.map((ev) => ({
@@ -469,7 +470,7 @@ try {
       return M;
     };
     // Whitfield bats 17* off 6; Bekker takes the wicket (1/0 off 0.3). R Pillay does neither.
-    const M = await scoreMatch("2026-10-10T10:00:00+02:00", [PILLAY, WHITFIELD, BEKKER, CELE]);
+    const M = await scoreMatch("2026-10-10T10:00:00+02:00", [PILLAY, WHITFIELD, BEKKER, NAIDOO]);
 
     const early = await nom(M, pupil);
     ok("before the match is finished the captain has no pick, and is told it waits", early.status === 200 && early.body?.captain?.length === 1
@@ -540,7 +541,7 @@ try {
 
     // The coach is Naidoo's guardian (the pending link from the section above):
     // the captain nominates Naidoo, and the coach may decide it neither way.
-    const M2 = await scoreMatch("2026-10-11T10:00:00+02:00", [PILLAY, NAIDOO, BEKKER, CELE]);
+    const M2 = await scoreMatch("2026-10-11T10:00:00+02:00", [PILLAY, NAIDOO, BEKKER, WHITFIELD]);
     await q(`update match set status = 'complete' where id = $1`, [M2]);
     const hs2 = (await nom(M2, pupil)).body?.captain?.[0]?.headSeq;
     const both = (await nom(M2, pupil)).body?.captain?.[0];
@@ -573,7 +574,7 @@ try {
   if (serverErr.length) console.log(serverErr.join("").slice(0, 600));
 } catch (e) {
   fail++;
-  console.log("  ✗ threw:", e.message);
+  console.log("  ✗ threw:", e.message, e.stack?.split("\n").slice(1, 3).join(" "));
 } finally {
   server.kill();
   await pool.end();
