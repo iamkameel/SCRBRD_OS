@@ -15,3 +15,14 @@ the upstream repositories were not copied.
 
 To update one: clone the repository, read the diff, and copy the skill's
 directory over this one.
+
+## Uploaded skills
+
+| Skill | Source | Added |
+|---|---|---|
+| saas-animation | Uploaded by Kameel as `saas-animation.skill` (sha256 `b1c99cf6…0baf`). No upstream repository or licence came with it. | 2026-11-06 |
+
+saas-animation's scripts call only ffmpeg and a local Chrome on 127.0.0.1, and
+its templates load only their own scripts. Its rules on children's photos,
+names and claims are weaker than `docs/policy/PUBLIC_DATA.md`; this
+repository's rules win, as for every design skill (CLAUDE.md).
