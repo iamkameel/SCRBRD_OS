@@ -25,6 +25,7 @@
  */
 import { useEffect, useState } from "react";
 import { api, signedIn } from "./api.js";
+import { saClock, saDate } from "./saTime.js";
 import { combineReads } from "./readState.js";
 import { asNotification } from "./notifications.js";
 import { scoped, scopedSkills, scopedWeather, demoSummary } from "../rbac/index.js";
@@ -53,12 +54,12 @@ function asMatch(r) {
     // the ground's row (no facility.read: a scorer) cannot tell from `venue`.
     hasGround: typeof r.has_ground === "boolean" ? r.has_ground : null,
     groundId: null,
-    date: r.starts_at ? String(r.starts_at).slice(0, 10) : null,
-    // HH:MM, sliced the same way `date` is rather than through a Date object
-    // and a timezone conversion — a day-of screen naming a kickoff time is the
-    // one thing worse than naming none: this is the raw instant the fixture
-    // was scheduled at, exactly as written.
-    time: r.starts_at ? String(r.starts_at).slice(11, 16) : null,
+    date: saDate(r.starts_at),
+    // The day and the HH:MM of the kickoff on the SA clock (lib/saTime.js):
+    // starts_at is a timestamptz and arrives in UTC ("…T12:30:00.000Z"), so a
+    // slice of the string named a 14:30 fixture 12:30, and a fixture after
+    // 22:00 UTC the day before. Every day and time a person sees is SA's.
+    time: saClock(r.starts_at),
     // The instant itself, for the scorer: it dates the match, and the date
     // decides the Edition of the Laws the match is scored under (SCRBRD-113).
     startsAt: r.starts_at ?? null,
@@ -187,8 +188,9 @@ function asTraining(r) {
     title: r.title,
     team: r.team_code,
     school: r.school_id,
-    date: t ? t.toISOString().slice(0, 10) : null,
-    time: t ? t.toISOString().slice(11, 16) : null,
+    // On the SA clock, as asMatch's are: a 15:00 session is 13:00 in UTC.
+    date: t ? saDate(t) : null,
+    time: t ? saClock(t) : null,
     duration: r.duration_min,
     venue: r.venue,
     coach: r.coach_name,

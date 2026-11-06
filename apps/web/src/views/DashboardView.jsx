@@ -21,6 +21,7 @@ import { MatchDayCard } from "./cockpit/MatchDayCard.jsx";
 import { RecentMatches } from "./cockpit/RecentMatches.jsx";
 import { weatherWords } from "../lib/cockpit.js";
 import { observedStamp } from "../lib/weatherStamp.js";
+import { saClock } from "../lib/saTime.js";
 
 // ══════════════════════════════════════════════════════
 //  THE DAY SHEET (DESIGN_DIRECTION §5) — replaces the KPI dashboard.
@@ -44,8 +45,8 @@ import { observedStamp } from "../lib/weatherStamp.js";
 // not this one's.
 // ══════════════════════════════════════════════════════
 
-/** HH:MM off a raw timestamp, sliced the way asMatch()'s own `time` field is — never through a Date object. */
-const hm = (ts) => (ts ? String(ts).slice(11, 16) : null);
+/** HH:MM of an instant on the SA clock, as asMatch()'s own `time` field is (lib/saTime.js). */
+const hm = (ts) => saClock(ts);
 
 /**
  * The demo's live innings, reconstructed from its scorecard line exactly as

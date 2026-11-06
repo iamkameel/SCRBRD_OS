@@ -447,6 +447,7 @@ const SUITES = [
   // The verifier's oracles and the midnight walks read sa_today(), the day the
   // product reads since db/128, not the UTC day (CI red 00:00-02:00 SAST, #233).
   ["sa-day",   "tools/sa-day.test.mjs"],
+  ["sa-time",  "apps/web/test/sa-time.test.mjs"],
   // The backup drill's tool (docs/pilot/BACKUP_RESTORE.md): which hosts are
   // this machine, the ledger and row-count comparisons, the roles a dump's
   // grants name, and a restore aimed anywhere else refused with exit 2.

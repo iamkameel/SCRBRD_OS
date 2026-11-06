@@ -253,11 +253,13 @@ try {
   ok("...with exactly one trip card for today", await tid(driver.page, "driver-trip").count() === 1,
      `${await tid(driver.page, "driver-trip").count()} cards`);
   ok("...and it is his", await tid(driver.page, "driver-trip").first().getAttribute("data-trip-id").catch(() => null) === tripId);
-  ok("...naming the departure", /08:30/.test(landing));
+  // todayAt() writes UTC hours: the bus at 08:30Z leaves at 10:30 in SA, and the
+  // screen names the SA clock (lib/saTime.js), never the UTC one it once sliced.
+  ok("...naming the departure, on the SA clock (08:30Z is 10:30)", /10:30/.test(landing) && !/08:30/.test(landing));
   ok("...the pickup", /Top gate/.test(landing));
   ok("...the vehicle", /KZN\s?482\s?GP/.test(landing));
   ok("...and the fixture it goes to: the opposition", /Browser Day-of XI/.test(landing));
-  ok("...and when it starts", /starts 09:00/.test(landing));
+  ok("...and when it starts, on the SA clock (09:00Z is 11:00)", /starts 11:00/.test(landing));
   ok("not the other driver's bus at the same school",
      !/Bottom gate/.test(landing) && !/KZN\s?119\s?KP/.test(landing) && !/Other Driver XI/.test(landing));
   ok("...nor the other driver's second bus to his own fixture", !/Chapel steps/.test(landing));
@@ -337,7 +339,7 @@ try {
   const gkLanding = await text(gk.page);
   ok("the day-of groundskeeper screen is drawn", await tid(gk.page, "dayof-groundskeeper").count() === 1);
   ok("...not the ordinary dashboard (day sheet)", await tid(gk.page, "day-next").count() === 0 && await tid(gk.page, "day-sheet").count() === 0);
-  ok("...naming the fixture's time", /09:00/.test(gkLanding));
+  ok("...naming the fixture's time, on the SA clock (09:00Z is 11:00)", /11:00/.test(gkLanding));
   ok("...the ground it is at", /Gordon Sherwood Oval/.test(gkLanding));
   ok("...and the format", /T20/.test(gkLanding));
   // Two fixtures today: this one and the second driver's (group 1's fixture
