@@ -22,7 +22,7 @@ import { useRows, useWeather } from "../lib/live.js";
 import { readState } from "../lib/readState.js";
 import { Icon } from "../ui/icons.jsx";
 import { StateLabel } from "../ui/stateLabel.jsx";
-import { signedIn } from "../lib/api.js";
+import { api, signedIn } from "../lib/api.js";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { ScorebookImportView, ScorebookPanel } from "./scorebook.jsx";
 import { clearCoach, peekCoach } from "../lib/cockpitNav.js";
@@ -157,8 +157,32 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
   // (SCRBRD-100 item 4) — the Match Centre list, already filtered to
   // "complete" and to that side. Cleared by picking any other status pill.
   const [teamFilter, setTeamFilter] = useState(null);
+  // A match in play first, then what is still to come soonest first, then the
+  // rest in the read's order (latest first): a phone opened on match day finds
+  // the live card at the top, not under every fixture of the next fortnight.
+  const rank = (m) => (m.status === "live" ? 0 : m.status === "upcoming" ? 1 : 2);
   const filtered = MATCHES.filter(m=>filter==="all"||m.status===filter)
-    .filter(m=>!teamFilter || sidesOf(m).home.full===teamFilter || sidesOf(m).away.full===teamFilter);
+    .filter(m=>!teamFilter || sidesOf(m).home.full===teamFilter || sidesOf(m).away.full===teamFilter)
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => rank(a.m) - rank(b.m)
+      || (rank(a.m) === 1 ? String(a.m.startsAt ?? "").localeCompare(String(b.m.startsAt ?? "")) : 0)
+      || a.i - b.i)
+    .map(({ m }) => m);
+  // A finished match's result in words, from the same route the match's own
+  // page reads (GET /api/matches/:id/result): without it every finished card
+  // said only "Match over". Asked once per match, for the cards on screen.
+  const [resultsSaid, setResultsSaid] = useState(/** @type {Record<string, string | null>} */ ({}));
+  const doneIds = signedIn() ? filtered.filter((m) => m.status === "complete" && !m.calledOff).map((m) => m.id) : [];
+  const doneKey = doneIds.join(",");
+  useEffect(() => {
+    const want = doneIds.filter((id) => !(id in resultsSaid));
+    if (!want.length) return undefined;
+    let off = false;
+    Promise.all(want.map((id) => api(`/api/matches/${id}/result`).then((r) => [id, r?.result?.text ?? null], () => [id, null])))
+      .then((pairs) => { if (!off) setResultsSaid((w) => ({ ...w, ...Object.fromEntries(pairs) })); });
+    return () => { off = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doneKey]);
   // Opens a fixture's own Match Centre — the "next fixture" links (item 4)
   // and, from the list itself, the ordinary "Open match" button.
   const openFixture = (m) => { setSelMatch(null); setOpenM(m); };
@@ -232,7 +256,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
             const isLive = m.status==="live";
             const isSel = selMatch?.id===m.id;
             const sides = sidesOf(m);
-            const status = statusSentence(m);
+            const status = statusSentence(m, null, { result: resultsSaid[m.id] ?? null });
             return (
               <Card key={m.id} data-testid={`match-card-${m.id}`} onClick={()=>setSelMatch(isSel?null:m)} sx={{
                 background:isLive?`linear-gradient(135deg,${D.emerald}08,${D.surf1})`:D.surf1,
