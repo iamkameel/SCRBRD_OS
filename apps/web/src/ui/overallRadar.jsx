@@ -101,7 +101,7 @@ function OverallRadar({ skills, size = 132, testId = "overall-radar" }) {
       <div style={{ flex: "1 1 150px", minWidth: "150px", maxWidth: "240px" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: "6px", paddingBottom: "8px", marginBottom: "4px", borderBottom: `1px solid ${D.border}` }}>
           <span style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.08em", color: D.textMuted }}>OVERALL</span>
-          <span data-testid={`${testId}-overall`} style={{ fontFamily: D.mono, fontSize: "24px", fontWeight: 700, color: D.textPrimary, marginLeft: "auto" }}>{o.overall}</span>
+          <span data-testid={`${testId}-overall`} style={{ fontFamily: D.mono, fontSize: "24px", fontWeight: 700, color: D.textPrimary, marginLeft: "auto" }}>{o.overall.toFixed(1)}</span>
           <span style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted }}>/ {RUBRIC_MAX}</span>
         </div>
         <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginBottom: "6px" }}>
@@ -114,7 +114,7 @@ function OverallRadar({ skills, size = 132, testId = "overall-radar" }) {
               <span style={{ flex: 1, fontFamily: D.body, fontSize: "12px", color: D.textSecondary }}>{a.label}</span>
               {a.value == null
                 ? <span style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>Not rated</span>
-                : <span style={{ fontFamily: D.mono, fontSize: "13px", fontWeight: 700, color: D.textPrimary }}>{a.value}</span>}
+                : <span style={{ fontFamily: D.mono, fontSize: "13px", fontWeight: 700, color: D.textPrimary }}>{a.value.toFixed(1)}</span>}
             </li>
           ))}
         </ul>

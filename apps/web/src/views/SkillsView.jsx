@@ -130,10 +130,10 @@ function EveryPlayer({ players, matrix, selId, onPick }) {
                     <>
                       {o.axes.map((a) => (
                         <td key={a.key} style={{ ...td, color: a.value == null ? D.textMuted : D.textPrimary }}>
-                          {a.value == null ? <span style={{ fontFamily: D.body, fontSize: "12px" }}>Not rated</span> : a.value}
+                          {a.value == null ? <span style={{ fontFamily: D.body, fontSize: "12px" }}>Not rated</span> : a.value.toFixed(1)}
                         </td>
                       ))}
-                      <td style={{ ...td, fontWeight: 700 }}>{o.overall}</td>
+                      <td style={{ ...td, fontWeight: 700 }}>{o.overall.toFixed(1)}</td>
                     </>
                   )}
                 </tr>
