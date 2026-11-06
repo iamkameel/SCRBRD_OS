@@ -100,7 +100,8 @@ ok("...and Squad and Profiles no longer draw a radar of their own", !/<RadarChar
 {
   const sv = src("SkillsView.jsx");
   ok("Skills' every-player table is drawn only behind the rankings' gate and the read it already needs",
-    /seesEveryone\s*&&\s*<EveryPlayer\b/.test(sv) && (sv.match(/<EveryPlayer\b/g) ?? []).length === 1
+    (sv.match(/<EveryPlayer\b/g) ?? []).length === 2
+    && (sv.match(/seesEveryone\s*&&\s*(?:\(\s*<div[^>]*>\s*)?<EveryPlayer\b/g) ?? []).length === 2
     && /const seesEveryone = mayReadSkills && \(held\.length \? showsRankings\(held\) : !PLAYING_ROLES\.includes\(role\)\);/.test(sv));
   ok("...and it is in the list's order, never sorted by a figure", !/EveryPlayer[\s\S]{0,4000}\.sort\(/.test(sv.slice(sv.indexOf("function EveryPlayer"), sv.indexOf("function SkillsView"))));
 }

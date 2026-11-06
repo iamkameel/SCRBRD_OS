@@ -196,7 +196,10 @@ function SkillsView({ role }) {
   // around) reads the seeded matrix and offers no write it cannot make — the
   // save would reach the API with no token and fail (missing_token).
   const canEdit = signedIn() && holdsAsHeld(role,"player.development.write");
-  const cats = skills ? Object.keys(skills) : [];
+  // The rubric's order (technical, mental, tactical, physical), whatever order
+  // the rows arrived in; a group outside it keeps its place after them.
+  const rubricAt = (c) => { const i = SKILL_CATEGORIES.indexOf(c); return i < 0 ? SKILL_CATEGORIES.length : i; };
+  const cats = skills ? Object.keys(skills).sort((a,b)=>rubricAt(a)-rubricAt(b)) : [];
   // "overall" is the fifth tab (Kameel, 6 Nov): the four groups on one radar.
   // A group this boy has no rating in is not a tab of his, so a tab chosen on
   // another boy falls back to his first rather than drawing nothing.
@@ -277,8 +280,7 @@ function SkillsView({ role }) {
               const s=SKILLS_MATRIX[p.id];
               // No assessment is not a zero: no figure is made for him.
               // The same overall as the Overall tab's: the mean of the groups.
-              const ov=s?overallOf(s).overall:null;
-              const overall=ov!=null?Math.round(ov):null;
+              const overall=s?(v=>v==null?null:Math.round(v))(overallOf(s).overall):null;
               return (
                 <button key={p.id} onClick={()=>setSelId(p.id)} className="pressBtn" style={{
                   padding:"10px 14px",display:"flex",alignItems:"center",gap:"9px",
@@ -557,8 +559,8 @@ function SkillsView({ role }) {
                   what the side ran, a block per discipline. ── */}
               <SincePanel rows={sinceRead.rows} history={histRead.rows} player={selPlayer} staff={staffView} self={!staffView}/>
 
-              {/* Category tabs */}
-              <div style={{display:"flex",gap:"6px",marginBottom:"16px"}}>
+              {/* Category tabs: five now, so they wrap on a phone rather than push the page sideways. */}
+              <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"16px"}}>
                 {["overall",...cats].map(c=>(
                   <button key={c} type="button" onClick={()=>setCategory(c)} className="pressBtn" aria-pressed={tab===c}
                     data-testid={`skills-tab-${c}`} style={{
@@ -686,6 +688,11 @@ function SkillsView({ role }) {
                 <div style={{marginTop:"14px"}}><Btn size="sm" onClick={()=>{setWriteError(null);setAssessing(true);}}>Run Assessment</Btn></div>
               )}
             </Card>
+          )}
+          {/* A boy chosen from the every-player table may have no assessment:
+              the table stays, so the coach is not stranded on him. */}
+          {!skills&&category==="overall"&&detailRead.state==="unassessed"&&seesEveryone&&(
+            <div style={{marginTop:"14px"}}><EveryPlayer players={listed} matrix={SKILLS_MATRIX} selId={selPlayer.id} onPick={setSelId}/></div>
           )}
         </div>
       </div>

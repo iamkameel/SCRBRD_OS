@@ -690,8 +690,8 @@ try {
   // beside it: on the Skills Matrix's Overall tab (with every player's means
   // for staff), in Squad's Skills snapshot and on the Profiles page, the same
   // component and the same figures. J Whitfield is rated in all four groups
-  // now (the three physical 20s above); K Dlamini in technical alone; R Pillay
-  // in none. A fresh coach, at twice the pixels, so the screenshots
+  // now (the three physical 20s above); M Cele in technical alone, for this
+  // group only (one rating, taken away at its end); R Pillay in none. A fresh coach, at twice the pixels, so the screenshots
   // (BROWSER_READ_SHOTS=<dir>) are sharp; the steps after this one keep theirs.
   group("The Overall radar: Skills Matrix, Squad's snapshot, Profiles (Kameel, 6 Nov)");
   {
@@ -714,7 +714,7 @@ try {
       }
       return { small, tiny };
     });
-    const WHITFIELD = "aaaaaaaa-0000-0000-0000-000000000001", DLAMINI = "aaaaaaaa-0000-0000-0000-000000000006", PILLAY_ID = "aaaaaaaa-0000-0000-0000-000000000005";
+    const WHITFIELD = "aaaaaaaa-0000-0000-0000-000000000001", CELE = "aaaaaaaa-0000-0000-0000-000000000004", PILLAY_ID = "aaaaaaaa-0000-0000-0000-000000000005";
     // His four groups from the rows as they stand (newest score per skill), so
     // the figures asserted are the database's, not a copy typed here.
     const owner = new pg.Pool({ connectionString: ownerUrl() });
@@ -725,8 +725,9 @@ try {
           where player_id = $1 and withdrawn_at is null order by category, metric, assessed_on desc) s group by category`, [WHITFIELD]);
       const m = Object.fromEntries(rows.map((r) => [r.category, r.m]));
       const t = (v) => Math.round(v * 10) / 10;
+      await owner.query(`insert into player_skill (player_id, assessed_on, category, metric, score, note) values ($1, current_date - 1, 'technical', 'footwork', 13, 'overall-radar walk')`, [CELE]);
       want = { ...Object.fromEntries(Object.entries(m).map(([k, v]) => [k, t(v)])), overall: t(Object.values(m).reduce((a, b) => a + b, 0) / Object.values(m).length) };
-    } catch (e) { ok("his ratings are read from the database", false, e.message); } finally { await owner.end().catch(() => {}); }
+    } catch (e) { ok("his ratings are read from the database", false, e.message); }
     ok("the coach signs in", await signIn(P, /Coach/));
     ok("the skills screen opens", await nav(P, /Skills/));
     ok("an Overall tab sits beside the four groups, 44px tall", await (async () => {
@@ -747,7 +748,7 @@ try {
     ok("...and the figure in the list beside him is that overall, rounded", (await said(P.locator(`[data-testid="overall-row-${WHITFIELD}"]`))).includes(String(want?.overall)));
     const all = at("skills-overall-all");
     ok("a coach also sees every listed player's groups, in a table", await all.count() === 1 && await all.locator("tbody tr").count() >= 3);
-    ok("...a boy rated in one group shows that one and 'Not rated' for the rest", /Not rated/.test(await said(at(`overall-row-${DLAMINI}`))));
+    ok("...a boy rated in one group shows that one and 'Not rated' for the rest", /Not rated/.test(await said(at(`overall-row-${CELE}`))));
     ok("...a boy nobody assessed says 'Not assessed yet', not a row of zeros",
        /Not assessed yet/.test(await said(at(`overall-row-${PILLAY_ID}`))) && !/\b0\b/.test(await said(at(`overall-row-${PILLAY_ID}`))));
     ok("...and it is not a ranking: no data-ranking, no ranking's title", (await rankingsOnScreen(P)).length === 0, await rankingsOnScreen(P));
@@ -756,10 +757,15 @@ try {
       ok(`nothing on the Overall tab under 12px (${fl.small.length}) or tapped under 44px (${fl.tiny.length})`, fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].slice(0, 6).join(" · "));
     }
     await shot(P, "skills-overall-desktop");
-    await at(`overall-row-${DLAMINI}`).locator("button").click({ timeout: 4000 }).catch(() => {});
+    await at(`overall-row-${CELE}`).locator("button").click({ timeout: 4000 }).catch(() => {});
     await P.waitForTimeout(500);
     ok("a name in the table opens his: one group of four, no shape, said in words",
        await at("overall-radar-chart").count() === 0 && /Rated in 1 of 4 groups/.test(await said(at("overall-radar-partial"))) && /from 1 of 4 groups/.test(await said(at("overall-radar"))));
+    await at(`overall-row-${PILLAY_ID}`).locator("button").click({ timeout: 4000 }).catch(() => {});
+    await P.waitForTimeout(500);
+    ok("a boy with none, chosen from the table: 'Not assessed yet.', no radar, and the table stays",
+       /^Not assessed yet\.$/.test((await said(at("skills-read-state"))).trim()) && await at("overall-radar-chart").count() === 0 && await all.count() === 1,
+       (await said(at("skills-read-state"))).trim());
     await at(`overall-row-${WHITFIELD}`).locator("button").click({ timeout: 4000 }).catch(() => {});
     await P.waitForTimeout(500);
     // A phone: the radar and its figures fit, and the page does not scroll sideways.
@@ -816,6 +822,8 @@ try {
        /Not assessed yet/.test(await said(at("profile-skills-read-state"))) && await P.locator('[data-testid="overall-radar-chart"]').count() === 0);
     ok("no scoping refusals or page errors", C.refusals.length === 0 && C.errors.length === 0, C.errors.join(" | ").slice(0, 300));
     await C.ctx.close();
+    await owner.query(`delete from player_skill where player_id = $1 and note = 'overall-radar walk'`, [CELE]).catch(() => {});
+    await owner.end().catch(() => {});
   }
 
   // ── Writing one, in the browser ─────────────────────────────────
