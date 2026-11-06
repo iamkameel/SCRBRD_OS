@@ -34,7 +34,8 @@
 --                            300 characters
 --               + one open Colours nomination a boy a kind a season
 --   triggers    + honour_colours_answer  AFTER INSERT on honour, Colours and
---                 half colours, by whichever route: the decider is never the
+--                 half colours, by whichever route: never both in a season
+--                 (Kameel, 6 Nov 2026); the decider is never the
 --                 coach who nominated him (D9); an open nomination is answered
 --                 by the award (confirmed). A guardian of the boy deciding or
 --                 withdrawing is refused for every kind by db/145.
@@ -204,6 +205,15 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 CREATE OR REPLACE FUNCTION honour_colours_answer() RETURNS trigger AS $$
 DECLARE n recognition_nomination%ROWTYPE;
 BEGIN
+  -- Kameel, 6 Nov 2026 (Fable's Q4): a boy holds Full or Half colours in a
+  -- season, not both, by whichever route and whoever writes it. The boy's
+  -- row is locked first, so two awards at once cannot both pass.
+  PERFORM 1 FROM player p WHERE p.id = NEW.player_id FOR UPDATE;
+  IF EXISTS (SELECT 1 FROM honour h WHERE h.player_id = NEW.player_id AND h.kind IN ('colours', 'half_colours')
+                AND h.kind <> NEW.kind AND h.season_id = NEW.season_id AND h.withdrawn_at IS NULL AND h.id <> NEW.id) THEN
+    RAISE EXCEPTION 'one_colours_a_season' USING ERRCODE = 'check_violation',
+      DETAIL = 'A boy holds Full colours or Half colours in a season, not both.';
+  END IF;
   IF app_user_id() IS NULL THEN RETURN NULL; END IF;
   SELECT * INTO n FROM recognition_nomination x
    WHERE x.kind = NEW.kind AND x.nominee_player_id = NEW.player_id AND x.season_id = NEW.season_id AND x.status = 'open'
@@ -302,8 +312,8 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- The side's coach nominates (A17). The rationale is optional; D2's list is
 -- the API's (one list, in JavaScript), and the table bounds its length.
 --   not_permitted · kind_invalid · cannot_nominate_yourself ·
---   nominator_is_guardian · no_season · already_awarded · already_nominated
---   · rationale_invalid
+--   nominator_is_guardian · no_season · already_awarded · one_colours_a_season
+--   · already_nominated · rationale_invalid
 CREATE OR REPLACE FUNCTION colours_nominate(p_player uuid, p_kind text, p_rationale text)
 RETURNS TABLE (ok boolean, reason text, nomination_id uuid) AS $$
 DECLARE
@@ -339,6 +349,11 @@ BEGIN
   IF EXISTS (SELECT 1 FROM honour h WHERE h.player_id = p_player AND h.kind = p_kind AND h.season_id = v_season AND h.withdrawn_at IS NULL) THEN
     RETURN QUERY SELECT false, 'already_awarded'::text, NULL::uuid; RETURN;
   END IF;
+  -- Kameel, 6 Nov 2026 (Fable's Q4): Full or Half colours in a season, not both.
+  IF EXISTS (SELECT 1 FROM honour h WHERE h.player_id = p_player AND h.kind IN ('colours', 'half_colours') AND h.kind <> p_kind
+                AND h.season_id = v_season AND h.withdrawn_at IS NULL) THEN
+    RETURN QUERY SELECT false, 'one_colours_a_season'::text, NULL::uuid; RETURN;
+  END IF;
   IF EXISTS (SELECT 1 FROM recognition_nomination n WHERE n.nominee_player_id = p_player AND n.kind = p_kind
                 AND n.season_id = v_season AND n.status = 'open') THEN
     RETURN QUERY SELECT false, 'already_nominated'::text, NULL::uuid; RETURN;
@@ -361,7 +376,7 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 -- award. The citation is optional; D2's list is the API's.
 --   not_permitted · already_decided · action_invalid · guardian_conflict
 --   (detail: who decides) · decider_is_nominator · cannot_award_yourself ·
---   citation_invalid · already_awarded
+--   citation_invalid · one_colours_a_season · already_awarded
 CREATE OR REPLACE FUNCTION colours_decide(p_nomination uuid, p_action text, p_citation text)
 RETURNS TABLE (ok boolean, reason text, detail text, honour_id uuid) AS $$
 DECLARE
@@ -396,6 +411,11 @@ BEGIN
   END IF;
   IF v_cite IS NOT NULL AND length(v_cite) NOT BETWEEN 3 AND 300 THEN
     RETURN QUERY SELECT false, 'citation_invalid'::text, NULL::text, NULL::uuid; RETURN;
+  END IF;
+  -- Kameel, 6 Nov 2026 (Fable's Q4): Full or Half colours in a season, not both.
+  IF EXISTS (SELECT 1 FROM honour h WHERE h.player_id = n.nominee_player_id AND h.kind IN ('colours', 'half_colours')
+                AND h.kind <> n.kind AND h.season_id = n.season_id AND h.withdrawn_at IS NULL) THEN
+    RETURN QUERY SELECT false, 'one_colours_a_season'::text, NULL::text, NULL::uuid; RETURN;
   END IF;
   BEGIN
     -- Off the public board until the school puts it there (is_public is the

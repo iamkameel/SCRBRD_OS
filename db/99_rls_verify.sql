@@ -38092,7 +38092,8 @@ $v116$;
   --              captaincy and of a named award, whether he records it himself
   --              or the office names him, and is told the principal decides;
   --              he may decide another boy's; he does not withdraw his son's
-  --              Colours
+  --              Colours; withdrawn by the office, he does not read why
+  --              (Kameel, 6 Nov 2026, Fable's Q1), though the other director does
   --   (session)  the reason is not read under a pad's credential, nor by a
   --              support hour's director (F4)
   --   (standing) a standing honour takes no reason (db/08's CHECK) and names
@@ -38124,6 +38125,7 @@ $v116$;
   --   ALTER TABLE honour DROP CONSTRAINT honour_withdrawal_has_reason               → (standing)
   --   honour_stamp() without its withdrawer test                                    → (standing)
   --   honour_decided_by() without its guardian test                                 → (guardian)
+  --   honour_withdrawn_reason() without its guardian test                           → (guardian)
   --   honour_withdrawn_by() returning without its test                              → (guardian)
   --   GRANT SELECT (nomination_id) ON honour TO scrbrd_app                          → (mask_nom)
   --   honour_nomination_id() without its D8 test                                    → (mask_nom)
@@ -38278,6 +38280,17 @@ $v116$;
     PERFORM _assert(got LIKE '42501|a guardian of the boy does not withdraw his honour%'
                     AND _v145_honour((SELECT h.id FROM honour h WHERE h.player_id = B2 AND h.kind = 'colours'))->>'withdrawn_by' IS NULL,
       format('§123 (guardian): his father withdrew his Colours: %s', got));
+    PERFORM _as((y->>'office')::uuid);
+    v_h := (SELECT h.id FROM honour h WHERE h.player_id = B2 AND h.kind = 'colours');
+    got := _v145_try(format('UPDATE honour SET withdrawn_at = now(), withdrawn_reason = %L WHERE id = %L', 'v145: recorded for the wrong boy', v_h));
+    PERFORM _assert(got = 'ok', format('§123 (guardian): the office could not withdraw B2''s Colours: %s', got));
+    PERFORM _as((y->>'gdos')::uuid);
+    PERFORM _assert(honour_withdrawn_reason(v_h) IS NULL
+                    AND (SELECT h.withdrawn_reason IS NULL FROM honour_masked h WHERE h.id = v_h),
+      '§123 (guardian): his father reads why his Colours were withdrawn');
+    PERFORM _as((y->>'dos')::uuid);
+    PERFORM _assert(honour_withdrawn_reason(v_h) = 'v145: recorded for the wrong boy',
+      '§123 (guardian): the other director does not read why');
 
     -- (session)
     -- The director (the decider's arm, which asks app_can()) and the office
@@ -38361,6 +38374,10 @@ $v116$;
   --              and tied, the audit the coach's; twice is refused; the
   --              principal records no award on K1's half colours, worded as the
   --              coach's nomination
+  --   (once)     Full or Half colours in a season, not both (Kameel, 6 Nov
+  --              2026, Fable's Q4): with K1's Full colours awarded, he is not
+  --              nominated for Half, not awarded them through the door, nor
+  --              recorded with them by the office
   --   (session)  the director under a pad's credential, and a support
   --              hour's director, neither decide nor read the sheet (F2, F4)
   --   (mask_nom) were a Colours award to carry its nomination's key, the side's
@@ -38383,6 +38400,9 @@ $v116$;
   --   colours_decide() without its nominator test                            → (decide)
   --   honour_colours_answer() without its nominator test                     → (table)
   --   colours_nominate() without its guardian test                           → (who)
+  --   colours_nominate() without its one-a-season test                       → (once)
+  --   colours_decide() without its one-a-season test                         → (once)
+  --   honour_colours_answer() without its one-a-season test                  → (once)
   --   recognition_decider_holds() without its app_can() for the session      → (session)
   --   recognition_decider_holds() without either support test                → (session)
   --   honour_nomination_id() without its D8 test                             → (mask_nom)
@@ -38556,6 +38576,23 @@ $v116$;
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM notification x WHERE x.subject_person_id = K1 AND x.kind = 'recognition'
                                    AND x.title LIKE 'Recorded as your decision%'),
       '§124 (decide): the director deciding himself was told he did');
+    -- (once)
+    PERFORM _as((y->>'coach')::uuid);
+    SELECT * INTO r FROM colours_nominate(K1, 'half_colours', NULL);
+    PERFORM _assert(r.ok = false AND r.reason = 'one_colours_a_season',
+      format('§124 (once): with Full colours he was nominated for Half: %s/%s', r.ok, r.reason));
+    PERFORM _as((y->>'prin')::uuid);
+    BEGIN
+      SELECT * INTO r FROM colours_decide(v_n2, 'award', NULL);
+      got := r.ok || '/' || coalesce(r.reason, '');
+    EXCEPTION WHEN OTHERS THEN got := 'raised ' || SQLERRM;
+    END;
+    PERFORM _assert(got = 'false/one_colours_a_season' AND _v146_nom(v_n2)->>'status' = 'open',
+      format('§124 (once): with Full colours he was awarded Half through the door: %s', got));
+    PERFORM _as((y->>'office')::uuid);
+    got := _v145_try(format('INSERT INTO honour (player_id, kind, season_id, awarded_on, decided_by) VALUES (%L, %L, %L, %L, %L)',
+                            K1, 'half_colours', SEA, sa_today(), y->>'prin'));
+    PERFORM _assert(got = '23514|one_colours_a_season', format('§124 (once): the office recorded Half colours beside Full: %s', got));
     PERFORM _as((y->>'prin')::uuid);
     SELECT * INTO r FROM colours_decide(v_n2, 'no_award', NULL);
     PERFORM _assert(r.ok AND _v146_nom(v_n2)->>'status' = 'no_award' AND _v146_nom(v_n2)->>'decided_by' = y->>'prin'

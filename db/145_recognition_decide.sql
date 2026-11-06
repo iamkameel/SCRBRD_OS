@@ -197,7 +197,7 @@ END $mask_columns$;
 
 -- The reason of one honour, to whoever may read it: a holder of
 -- recognition.decide at the honour's school (any side: the deciders are the
--- school's), or the person who withdrew it (D4: the office reads it only if
+-- school's) who is not the boy's guardian, or the person who withdrew it (D4: the office reads it only if
 -- it withdrew; the side's coach only if he did). Never through a pad, a
 -- support hour or a platform-wide assignment. NULL otherwise, and NULL for an
 -- id that is not an honour: the two are not told apart.
@@ -208,8 +208,11 @@ CREATE OR REPLACE FUNCTION honour_withdrawn_reason(p_honour uuid) RETURNS text A
      AND app_user_id() IS NOT NULL AND NOT app_pad_scoped()
      AND app_support_access_id(h.school_id) IS NULL AND NOT app_is_platform_wide()
      AND (h.withdrawn_by = app_user_id()
-          OR app_can('recognition.decide', h.school_id, '*'::text,
-                     '00000000-0000-0000-0000-000000000000'::uuid, NULL::uuid))
+          OR (app_can('recognition.decide', h.school_id, '*'::text,
+                      '00000000-0000-0000-0000-000000000000'::uuid, NULL::uuid)
+              -- Kameel, 6 Nov 2026 (Fable's Q1): a decider who is the boy's
+              -- guardian is his parent here, and D4 says never the parent.
+              AND NOT match_award_guardian_of(app_user_id(), h.player_id)))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- Which captain's nomination an award answered (db/144's honour.nomination_id;

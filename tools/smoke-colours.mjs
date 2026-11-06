@@ -163,6 +163,13 @@ try {
     const n = (await noms(coach)).find((x) => x.nominationId === bekker);
     ok("...and the coach reads his nomination as awarded", n?.status === "confirmed" && n?.honourId === r.body?.honourId && n?.decidedBy, JSON.stringify(n));
     ok("...twice is refused", (await decide(principal, bekker, { action: "award" })).body?.error === "already_decided");
+    // Kameel, 6 Nov 2026: Full or Half colours in a season, not both.
+    const half = await nominate(coach, { playerId: BEKKER, kind: "half_colours" });
+    ok("with Full colours he is not nominated for Half, and the coach is told why", half.status === 422
+       && half.body?.error === "one_colours_a_season" && /not both/.test(half.body?.message ?? ""), JSON.stringify(half.body));
+    const halfRec = await api("/api/honours", { method: "POST", token: registrar,
+      body: { playerId: BEKKER, kind: "half_colours", season: "2026", decidedBy: await idOf("principal@example.invalid") } });
+    ok("...nor recorded with them by the office", halfRec.status === 422 && halfRec.body?.error === "one_colours_a_season", JSON.stringify(halfRec.body));
     const recog = await rows(`/api/read/recognition?playerId=${BEKKER}`, coach);
     ok("...and it is on his recognition, as any honour is", recog.some((x) => x.family === "honour" && x.kind === "colours" && x.citation === WHY));
     const d = await decide(principal, dlamini, { action: "no_award" });

@@ -52,6 +52,7 @@ export const COLOURS_WORDS = Object.freeze({
   cannot_award_yourself: "You cannot decide your own Colours.",
   no_season: "The school calendar holds no season for today.",
   already_awarded: "He already holds them this season.",
+  one_colours_a_season: "He holds the other Colours this season. A boy holds Full or Half colours in a season, not both: withdraw those first.",
   already_nominated: "He is already nominated for them this season. The school is deciding.",
   rationale_invalid: `Say why in ${TEXT_MIN} to ${TEXT_MAX} characters, or leave it empty.`,
   citation_invalid: `Write the citation in ${TEXT_MIN} to ${TEXT_MAX} characters, or leave it empty.`,
@@ -85,6 +86,9 @@ export function coloursRoutes({ pool, secret }) {
       // honour_colours_answer() (db/146): the same row checks at the table.
       if (e.code === "23514" && e.message === "guardian_conflict") {
         return res.status(422).json({ error: "guardian_conflict", detail: e.detail ?? null, message: guardianWords(e.detail ?? null) });
+      }
+      if (e.code === "23514" && e.message === "one_colours_a_season") {
+        return res.status(422).json({ error: "one_colours_a_season", message: coloursWords("one_colours_a_season") });
       }
       if (e.code === "23514" && e.message === "decider_is_nominator") {
         return res.status(422).json({ error: "decider_is_nominator", message: coloursWords("decider_is_nominator") });
