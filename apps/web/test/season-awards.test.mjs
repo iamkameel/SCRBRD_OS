@@ -12,8 +12,10 @@
 import { MIN_BALLS_BOWLED, MIN_BALLS_FACED } from "@scrbrd/scoring";
 import {
   ALL_SEASONS, awardSeasons, bestBattingAverages, bestBowlingEconomies, defaultAwardSeason, mvpRanking, mvpScore,
-  playersForSeason, topRunScorers, topWicketTakers,
+  playersForSeason, PLAYING_ROLES, rankingMethod, showsRankings, topRunScorers, topWicketTakers,
 } from "../src/lib/seasonAwards.js";
+import { ROLE_IDENTITY } from "../src/design/roles.js";
+import { ROLES as POLICY_ROLES } from "@scrbrd/policy/roles";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d !== undefined ? `— ${JSON.stringify(d)}` : ""); } };
@@ -169,6 +171,33 @@ group("The floor applies per season: enough balls in total is not enough in eith
   ok("absent from the 2026 batting index", bestBattingAverages(playersForSeason(career, rows, "2026")).length === 0);
   ok("...present across every season, where his balls add up", bestBattingAverages(career).length === 1);
   ok("still a real score on each season's run-scorers list", topRunScorers(playersForSeason(career, rows, "2026")).length === 1);
+}
+
+group("Recognition R5b (D23, A15): who is shown a ranking");
+{
+  const playing = Object.entries(ROLE_IDENTITY).filter(([, r]) => r.family === "playing").map(([k]) => k).sort();
+  ok("the playing roles are design/roles.js's playing family, exactly", JSON.stringify([...PLAYING_ROLES].sort()) === JSON.stringify(playing), playing);
+  ok("the pupil (player + selfaccess) is not shown one", !showsRankings(["player", "selfaccess"]));
+  ok("...nor a player with no file of his own", !showsRankings(["player"]));
+  ok("...nor a parent", !showsRankings(["guardian"]));
+  ok("...nor a parent who also follows the school as a spectator", !showsRankings(["guardian", "spectator"]));
+  ok("...nor nobody", !showsRankings([]) && !showsRankings(undefined));
+  ok("a coach is", showsRankings(["coach"]));
+  ok("...and a coach who is also a parent keeps them", showsRankings(["guardian", "coach"]));
+  ok("the director, the analyst and media are (the matrix's full boards)", ["directorofsport", "analyst", "media"].every((r) => showsRankings([r])));
+  const staff = Object.keys(POLICY_ROLES).filter((r) => !PLAYING_ROLES.includes(r));
+  ok("every role of the policy outside the playing family is shown them", staff.length > 10 && staff.every((r) => showsRankings([r])), staff);
+}
+
+group("Recognition R5b: each ranking says its method, in plain words");
+{
+  ok("runs: what, which way, the tie-break, and that there is no floor",
+     rankingMethod("runs", "2026") === "Ranked by runs scored in the 2026 school season, most first; level on runs, the higher average first. No minimum number of balls.");
+  ok("every season is said as such", /across every season on record/.test(rankingMethod("wickets", ALL_SEASONS)));
+  ok("the batting index states its minimum, from the package", rankingMethod("batting", "2026").includes(`at least ${MIN_BALLS_FACED} balls`));
+  ok("the bowling index states its minimum, from the package", rankingMethod("bowling", "2026").includes(`at least ${MIN_BALLS_BOWLED} balls`));
+  ok("the MVP says it averages the two and never ranks a refused rating", /averaged where a player has both/.test(rankingMethod("mvp")) && /never a rating either index refused/.test(rankingMethod("mvp")));
+  ok("every kind has words, and none is under a sentence", ["runs", "wickets", "batting", "bowling", "mvp", "average", "wicketCount"].every((k) => /^Ranked by .+\.$/.test(rankingMethod(/** @type {any} */ (k)))));
 }
 
 console.log("\n" + "─".repeat(52));

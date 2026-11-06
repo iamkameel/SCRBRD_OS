@@ -52,6 +52,12 @@
  * is the tab exactly as it was before seasons existed — the `career` read,
  * ranked by the same functions, list for list and row for row.
  *
+ * STAFF STILL SEE THEM, LABELLED (recognition R5b, D23, A15). The director
+ * sees all five lists and the Top Performers tab, each saying its method in
+ * the words lib/seasonAwards.js's rankingMethod() gives, the season in them
+ * following the select; the tab clears the 12px and 44px floors. (A pupil
+ * and a parent are not shown them: smoke-browser-pupil and smoke-browser-read.)
+ *
  * Every wait is on data — a name on the screen, a value in a select — never
  * on a fixed time: a fixed 1.2 s was what failed on a slower CI machine.
  *
@@ -73,7 +79,7 @@ import { ownerUrl, appUrl, port } from "./db-url.mjs";
 // behaviour before seasons. NOT the new season helpers: the expected season
 // lists are built below without them, so a bug in one cannot hide in both.
 import {
-  bestBattingAverages, bestBowlingEconomies, mvpRanking, topRunScorers, topWicketTakers,
+  bestBattingAverages, bestBowlingEconomies, mvpRanking, rankingMethod, topRunScorers, topWicketTakers,
 } from "../apps/web/src/lib/seasonAwards.js";
 
 const WEB_PORT = port(5303);
@@ -248,6 +254,31 @@ const settled = (page, season, on = [], off = []) => until(page, ({ season, on, 
   return on.every((id) => ids.includes(id)) && off.every((id) => !ids.includes(id));
 }, { season, on, off });
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/** The five lists of the Awards tab, by test id, with the method each is ranked by. */
+const LISTS = [["awards-run-scorers", "runs"], ["awards-wicket-takers", "wickets"], ["awards-batting-index", "batting"],
+               ["awards-bowling-index", "bowling"], ["awards-mvp", "mvp"]];
+/** Each list's method line as drawn, and how many players it ranks. */
+const methods = (page) => page.evaluate((lists) => lists.map(([id]) => {
+  const card = document.querySelector(`[data-testid="${id}"]`);
+  return { id, ranking: card?.getAttribute("data-ranking") ?? null, method: document.querySelector(`[data-testid="${id}-method"]`)?.textContent ?? null,
+           rows: document.querySelectorAll(`[data-testid="${id}-row"]`).length };
+}), LISTS);
+/** Text set under 12px and a control under 44px, inside `sel`. */
+const floors = (page, sel) => page.evaluate((sel) => {
+  const small = [], tiny = [];
+  for (const root of document.querySelectorAll(sel)) {
+    for (const n of [root, ...root.querySelectorAll("*")]) {
+      const cs = getComputedStyle(n);
+      const own = [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
+      if (own && parseFloat(cs.fontSize) < 12) small.push(`${n.tagName} ${cs.fontSize} "${n.textContent.trim().slice(0, 30)}"`);
+      if (/^(BUTTON|SELECT|TEXTAREA|INPUT)$/.test(n.tagName)) {
+        const r = n.getBoundingClientRect();
+        if (r.height && r.height < 44) tiny.push(`${n.tagName} ${Math.round(r.height)}px "${(n.textContent || n.id).trim().slice(0, 30)}"`);
+      }
+    }
+  }
+  return { small, tiny };
+}, sel);
 const everywhere = (lists, id) => Object.values(lists).some((l) => l.includes(id));
 
 try {
@@ -432,6 +463,19 @@ try {
   ok("...as the shared source line: source, scope, window and a count of balls (GA-I22)",
      /Source Scored balls and scorebook imports/.test(s.scope.replace(/\s+/g, " ")) && /Scope .+, .+/.test(s.scope.replace(/\s+/g, " ")) && /Window The \d{4} school season/.test(s.scope.replace(/\s+/g, " ")) && /Basis (From|Only|No) /.test(s.scope.replace(/\s+/g, " ")), s.scope);
 
+  group("Staff still see the rankings, each with its method (recognition R5b: D23, A15)");
+  {
+    const m = await methods(dos.page);
+    for (const [id, kind] of LISTS) {
+      const got = m.find((x) => x.id === id);
+      ok(`${id}: drawn for the director, marked as a ranking, with players on it`, got?.ranking === "players" && got.rows > 0, JSON.stringify(got));
+      ok(`...and labelled with its method: "${rankingMethod(kind, cur)}"`, got?.method === rankingMethod(kind, cur), got?.method);
+    }
+    const f = await floors(dos.page, '[data-testid="season-awards"], [data-testid^="league-tab-"]');
+    ok(`the Awards tab: nothing read under 12px (${f.small.length})`, f.small.length === 0, f.small.slice(0, 4).join(" · "));
+    ok(`...nothing tapped under 44px (${f.tiny.length})`, f.tiny.length === 0, f.tiny.slice(0, 4).join(" · "));
+  }
+
   group("This season: only this season's players");
   ok("Last Season Star is on no list this season", !everywhere(s.lists, LS), JSON.stringify(s.lists));
   ok("every player on every list has figures this season",
@@ -480,6 +524,11 @@ try {
   ok("the split allrounder's two seasons clear both floors together: batting index, bowling index and MVP",
      s.lists.bat.includes(SP) && s.lists.bowl.includes(SP) && s.lists.mvp.includes(SP), JSON.stringify(s.lists));
   ok("the screen says every season", /every season/i.test(s.scope), s.scope);
+  {
+    const m = await methods(dos.page);
+    ok("...and each list's method says every season with it",
+       LISTS.every(([id, kind]) => m.find((x) => x.id === id)?.method === rankingMethod(kind, "all")), JSON.stringify(m.map((x) => x.method)));
+  }
 
   group("Scoped to team 9XI, this season: the other team's star disappears entirely");
   await dos.page.selectOption('[data-testid="awards-season-select"]', cur);
@@ -491,6 +540,19 @@ try {
   if (DEBUG) console.log("[debug] awards (team 9XI):\n" + scopedText);
   ok("Other Team Star is gone from every list once scoped to 9XI", !/Other Team Star/.test(scopedText), scopedText.slice(0, 400));
   ok("Top Scorer is still here — the same team, unaffected by the scope narrowing", /Top Scorer/.test(scopedText));
+
+  group("The Top Performers tab: staff see it, each list with its method (R5b)");
+  {
+    ok("the Top Performers tab is offered to the director", await press(dos.page, /^Performers$/i));
+    const drawn = await until(dos.page, () => !!document.querySelector('[data-testid="performers-batting"]'));
+    const p = await dos.page.evaluate(() => ["performers-batting", "performers-bowling"].map((id) => ({
+      id, ranking: document.querySelector(`[data-testid="${id}"]`)?.getAttribute("data-ranking") ?? null,
+      method: document.querySelector(`[data-testid="${id}-method"]`)?.textContent ?? null })));
+    ok("both lists are drawn, marked as rankings", drawn && p.every((x) => x.ranking === "players"), JSON.stringify(p));
+    ok(`...batting: "${rankingMethod("average", "all")}"`, p[0]?.method === rankingMethod("average", "all"), p[0]?.method);
+    ok(`...bowling: "${rankingMethod("wicketCount", "all")}"`, p[1]?.method === rankingMethod("wicketCount", "all"), p[1]?.method);
+    ok("back to the Awards tab", await press(dos.page, /^Awards$/i) && await settled(dos.page, cur, [TS], [OT]));
+  }
 
   group("MVP: the batting specialist at the index ceiling outranks a blended, sub-ceiling rating");
   s = await screen(dos.page);
