@@ -349,7 +349,10 @@ ${claim ? `  SELECT x.ok, x.reason INTO r FROM scoring_claim(m, ${q(device(spec)
 const COLS = ["ball_type", "value", "shot", "seg", "zone", "striker_id", "non_striker_id", "bowler_id", "dismissed_id", "dismissal",
               "theta", "radius", "placement_source", "close_position", "capture_profile"];
 const PID = new Set(["striker_id", "non_striker_id", "bowler_id", "dismissed_id"]);
-const tok = (s) => s.replace(/"de300000-0000-4000-8000-000000000(\d{3})"/g, '"@$1"');
+// A fielder goes into the log by NAME, as the pad's wicket sheet writes one
+// (replay.mjs isKeeperRef(); db/68): "#NNN", made the boy's name in SQL.
+const tok = (s) => s.replace(/"fielder":"de300000-0000-4000-8000-000000000(\d{3})"/g, '"fielder":"#$1"')
+  .replace(/"de300000-0000-4000-8000-000000000(\d{3})"/g, '"@$1"');
 
 /** The events, compact: [seq, innings, kind, seconds from the start, payload, …COLS]. */
 function encodeEvents(log) {
@@ -381,6 +384,9 @@ SELECT mt.id, mt.school_id, (e->>0)::int, 1, (e->>1)::smallint,
                                     '"@', '"de300000-0000-4000-8000-000000000')::jsonb AS pl0) a
  CROSS JOIN LATERAL (SELECT CASE WHEN e->>2 = 'innings_start'
                                  THEN a.pl0 || jsonb_build_object('squad', ${sq("squad")}, 'bowlingSquad', ${sq("bowlingSquad")})
+                                 WHEN a.pl0->>'fielder' LIKE '#%'
+                                 THEN jsonb_set(a.pl0, '{fielder}', to_jsonb((SELECT p.full_name FROM player p
+                                        WHERE p.id = ('de300000-0000-4000-8000-000000000' || substr(a.pl0->>'fielder', 2))::uuid)))
                                  ELSE a.pl0 END AS pl) b
  WHERE mt.id = current_setting('demo.m')::uuid
  ORDER BY (e->>0)::int;`;

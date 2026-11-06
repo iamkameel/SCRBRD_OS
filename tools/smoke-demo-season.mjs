@@ -19,7 +19,7 @@
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import pg from "pg";
-import { deriveMatch, fromRow, ball, BALL_TYPE } from "@scrbrd/scoring";
+import { deriveMatch, fromRow, ball, bowler, BALL_TYPE } from "@scrbrd/scoring";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
 const LIVE = process.argv.includes("--live");
@@ -234,11 +234,16 @@ async function liveCheck() {
   const fold = deriveMatch(evs);
   const inn = fold.innings[1];
   ok(`the chase stands at ${inn?.runs}/${inn?.wickets} after ${Math.floor((inn?.balls ?? 0) / 6)}.${(inn?.balls ?? 0) % 6}, target ${inn?.target}`, inn && !inn.complete && inn.target > inn.runs);
-  const next = ball({ type: BALL_TYPE.RUN, value: 1, striker: inn.striker, nonStriker: inn.nonStriker, bowler: inn.bowler });
-  const e = { ...next, innings: 1, id: "kameel-pad-1", clientTs: Date.now() };
+  // The over is done: the pad asks for the next bowler first, then the ball.
+  const lastBowler = evs.filter((x) => x.kind === "bowler" && (x.innings ?? 0) === 1).at(-1)?.bowler;
+  const nextBowler = [...(inn.bowlers ?? [])].filter((b) => b.id !== lastBowler && (b.balls ?? 0) < 24).sort((a, b) => (a.balls ?? 0) - (b.balls ?? 0))[0]?.id;
+  const out = [];
+  if (inn.bowler == null) out.push({ ...bowler({ bowler: nextBowler }), innings: 1, id: "kameel-pad-1", clientTs: Date.now() });
+  const after = deriveMatch([...evs, ...out]).innings[1];
+  out.push({ ...ball({ type: BALL_TYPE.RUN, value: 1, striker: after.striker, nonStriker: after.nonStriker, bowler: after.bowler }), innings: 1, id: "kameel-pad-2", clientTs: Date.now() + 30000 });
   const send = await call(`/api/matches/${LIVE_ID}/events`, { method: "POST", token: tok,
-    body: { events: [{ idempotencyKey: e.id, deviceId: "kameel-pad", epoch: claim.body?.epoch ?? 1, clientSeq: 1, clientTs: e.clientTs, payload: e }] } });
-  ok(`...and scores one more ball (${send.status}: ${JSON.stringify(send.body).slice(0, 200)})`, send.status === 200 && (send.body?.accepted?.length ?? 0) === 1);
+    body: { events: out.map((e, i) => ({ idempotencyKey: e.id, deviceId: "kameel-pad", epoch: claim.body?.epoch ?? 1, clientSeq: i + 1, clientTs: e.clientTs, payload: e })) } });
+  ok(`...and scores one more ball (${send.status}: ${JSON.stringify(send.body).slice(0, 200)})`, send.status === 200 && (send.body?.accepted?.length ?? 0) === out.length);
 }
 
 async function browserCheck() {
@@ -252,6 +257,13 @@ async function browserCheck() {
   const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".map": "application/json" };
   const web = createServer(async (req, res) => {
     const url = new URL(req.url, "http://x").pathname;
+    // The public shells and their reads are the API's, as on the demo service.
+    if (/^\/(api\/public\/|live\/|scorecard\/|display\/)/.test(url)) {
+      const r = await fetch(API + req.url);
+      res.writeHead(r.status, { "content-type": r.headers.get("content-type") ?? "text/html" });
+      res.end(Buffer.from(await r.arrayBuffer()));
+      return;
+    }
     let body, type;
     try { const f = join("apps/web/dist", url === "/" ? "index.html" : url); body = await readFile(f); type = TYPES[extname(f)] ?? "application/octet-stream"; }
     catch { body = await readFile("apps/web/dist/index.html"); type = "text/html"; }
@@ -280,14 +292,20 @@ async function browserCheck() {
     const [one] = await q(`select id from match where school_id = $1 and team_code = '1XI' and status = 'complete' and starts_at = timestamptz '2026-10-17 08:00:00+00'`, [WES]);
     const coach = await open("coach.wes.1xi@example.invalid");
     await shot(coach.page, "01-coach-dashboard");
-    await nav(coach.page, "matches");
-    await shot(coach.page, "02-match-centre-results");
-    const card = coach.page.locator(`[data-testid="match-card-${one.id}"]`).first();
-    await card.click({ timeout: 8000 }).catch(() => {});
-    await shot(coach.page, "03-scorecard-1xi-hundred");
-    await coach.page.locator('[data-testid="duty-roster"]').first().scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
-    await shot(coach.page, "04-match-details-duties");
     await coach.ctx.close();
+    // The Match Centre wide, so the list and the Match Details panel sit side by side.
+    const desk = await open("coach.wes.1xi@example.invalid", { wide: true });
+    await nav(desk.page, "matches");
+    await desk.page.locator('button', { hasText: /^Complete$/ }).first().click({ timeout: 5000 }).catch(() => {});
+    await shot(desk.page, "02-match-centre-results");
+    const card = desk.page.locator(`[data-testid="match-card-${one.id}"]`).first();
+    await card.locator("text=Westville Main").first().click({ timeout: 8000 }).catch(async () => { await card.click({ position: { x: 20, y: 20 } }).catch(() => {}); });
+    await desk.page.locator('[data-testid="duty-roster"]').first().scrollIntoViewIfNeeded({ timeout: 8000 }).catch(() => {});
+    await shot(desk.page, "04-match-details-duties");
+    await card.locator("button", { hasText: /Open match/ }).first().click({ timeout: 8000 }).catch(() => {});
+    await desk.page.locator('[data-testid="mc-tab-scorecard"]').first().click({ timeout: 8000 }).catch(() => {});
+    await shot(desk.page, "03-scorecard-1xi-hundred");
+    await desk.ctx.close();
     const parent = await open("parent.106@example.invalid");
     await shot(parent.page, "05-parent-home");
     await parent.ctx.close();
