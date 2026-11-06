@@ -42,8 +42,13 @@ const STATE_WORD = {
   named: "named", recorded: "recorded",
   idle: "not started", active: "live",
   handover_pending: "handover offered", verifying: "verifying handover",
+  lapsed: "nobody scoring",
   arranged: "arranged", departed: "departed", arrived: "arrived", cancelled: "cancelled",
 };
+// A scoring session whose lease has run out (the server's `held`: 'lapsed')
+// is nobody's pen: a finished match read "LIVE · lease held" months after its
+// last ball. Said as nobody scoring, with no lease word beside it.
+const lapsedOff = (/** @type {any} */ r) => (r.duty === "scoring" && r.held === "lapsed" ? { ...r, state: "lapsed", detail: null } : r);
 const TONE = themed(() => ({
   active: D.emerald, arrived: D.emerald, named: D.sky, recorded: D.sky, arranged: D.sky,
   departed: D.amber, handover_pending: D.amber, verifying: D.amber,
@@ -91,7 +96,7 @@ function DutyRoster({ matchId, role }) {
               ? <span data-testid={`duty-${slot.key}-none`}
                       style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>nothing on record</span>
               : <div style={{ flex: 1, minWidth: "160px", display: "grid", gap: "2px" }}>
-                  {here.map((r, i) => (
+                  {here.map(lapsedOff).map((r, i) => (
                     <div key={`${r.duty}-${i}`} style={{ display: "flex", alignItems: "baseline", gap: "8px", flexWrap: "wrap" }}>
                       <span style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary }}>{r.who || r.detail || "—"}</span>
                       <span data-testid={`duty-${slot.key}-state`}
