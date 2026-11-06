@@ -84,11 +84,13 @@
 -- record_board().
 --
 -- ── THE NOTICE (D25) ────────────────────────────────────────────────
--- When a match becomes complete and is verified, each board of each of its
+-- When a match is verified — at the finish, or at the seal of an innings
+-- after the finish, whichever comes last (F5) — each board of each of its
 -- ends whose record this match now holds — beating or equalling one set in
 -- an earlier match — is noticed to that side: team scope, no recipient
 -- (never to a child alone), the holder as subject_person_id as a milestone
--- notice is. Its required capability is player.performance.read, not
+-- notice is, named by initial and surname ("87* D Erasmus", §7, F12). Its
+-- required capability is player.performance.read, not
 -- news.read: the notice is read by those who may read the board's figures
 -- about him at that side (news.read and that, as the notification policy
 -- asks both), so a school-wide news reader who reads no figures (a scout, a
@@ -100,8 +102,8 @@
 --
 -- ── WHAT THIS FILE DOES NOT TOUCH ──────────────────────────────────
 -- No capability, role, column of an existing table, or existing function.
--- One table, four functions and one trigger, all new; a second paste
--- changes nothing.
+-- One table, eight functions and two triggers (on match's status and on an
+-- innings_end in ball_event), all new; a second paste changes nothing.
 
 
 -- ── 0 · What this file stands on, and refuse to replace what it was not ──
@@ -125,10 +127,14 @@ BEGIN
   END IF;
   -- Every function is this file's alone: absent, or as this file wrote it.
   FOR r IN SELECT * FROM (VALUES
-      ('record_lines(uuid,text)',                 '9212ba18caaa56cf7c4372e7d2de96a8'),
-      ('record_board(uuid,text)',                 '650f59c6d99c176456a3b06ecb754178'),
+      ('record_lines(uuid,text)',                 '2d03bc0412b21e6fcb99f6fd5c0350bc'),
+      ('record_board(uuid,text)',                 '48dab739bc96b58d445bd6a3eba25db6'),
       ('record_minimum_set(uuid,text,text,integer)', 'eb487cceac06e73dfd20e5ac221aed9b'),
-      ('record_notice()',                         'bc7c09bb6d514a4124c725d52cd9ae36'))
+      ('record_notice()',                         '918885e72d081140272f264a206fb32c'),
+      ('record_innings_end(uuid,smallint)',       'd239b853deee847d0d619cb33aad4fe1'),
+      ('record_short_name(text)',                 '9d502d1954150a38e1f8154f76dc3161'),
+      ('record_notice_for(uuid)',                 '7739d83048455b4118ce43be770c70ee'),
+      ('record_seal_notice()',                    '4d854860f39a1f4815ba66cafb657f22'))
       AS x(fn, mine)
   LOOP
     SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = to_regprocedure(r.fn);
@@ -175,9 +181,51 @@ REVOKE ALL ON record_definition FROM scrbrd_app;
 
 
 -- ══════════════════════════════════════════════════════════════════
+-- §2a · record_innings_end: which end of the match batted an innings
+-- ══════════════════════════════════════════════════════════════════
+-- 'home' or 'away', as the log names the batting side of the innings (its
+-- innings_start's teamKey, else battingTeam) against the match's two names
+-- (the home side's code, the opponent), as match_result_compute() (db/121)
+-- reads them; else the other end of another of the match's own innings that
+-- names a side under a different key. NULL when neither says: the row it
+-- would place goes on no board (F6). db/121's last resort ("else home") is
+-- a guess and is not taken here. A super over is no innings of a board.
+-- Nobody's to call; record_lines() reads it as the owner.
+CREATE OR REPLACE FUNCTION record_innings_end(p_match uuid, p_innings smallint) RETURNS text AS $$
+  WITH k AS (
+    SELECT DISTINCT ON (b.innings) b.innings,
+           nullif(btrim(coalesce(b.payload->>'teamKey', b.payload->>'battingTeam')), '') AS key
+      FROM ball_event_live b
+     WHERE b.match_id = p_match AND b.kind = 'innings_start' AND b.super_over IS NULL
+     ORDER BY b.innings, b.seq
+  ),
+  named AS (
+    SELECT k.innings, k.key,
+           CASE WHEN result_key_eq(k.key, coalesce(m.team_code, 'Home')) THEN 'home'
+                WHEN result_key_eq(k.key, m.opponent) THEN 'away' END AS side
+      FROM k CROSS JOIN match m WHERE m.id = p_match
+  )
+  SELECT coalesce(
+           (SELECT n.side FROM named n WHERE n.innings = p_innings),
+           (SELECT CASE o.side WHEN 'home' THEN 'away' ELSE 'home' END
+              FROM named t JOIN named o ON o.innings <> t.innings AND o.side IS NOT NULL
+             WHERE t.innings = p_innings AND t.key IS NOT NULL AND NOT result_key_eq(o.key, t.key)
+             ORDER BY o.innings LIMIT 1))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+COMMENT ON FUNCTION record_innings_end(uuid, smallint) IS
+  'db/143 (RECOGNITION R9, F6): the end of the match (home or away) that batted an innings, by the names the log gives it; NULL when that cannot be known. A row without a team sheet is placed by this, never by the boy''s school today. Nobody''s to call.';
+
+-- The initial and surname, as a notice names a boy ("D Erasmus"), the same
+-- rule as db/142's match_award_short(), held here so db/143 stands alone.
+CREATE OR REPLACE FUNCTION record_short_name(p_name text) RETURNS text AS $$
+  SELECT regexp_replace(btrim(coalesce(p_name, '')), '^(\S)\S*\s+(?:.*\s)?(\S+)$', '\1 \2')
+$$ LANGUAGE sql IMMUTABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+
+-- ══════════════════════════════════════════════════════════════════
 -- §2 · record_lines: every board of one side, as the owner reads it
 -- ══════════════════════════════════════════════════════════════════
--- Nobody's to call (record_board() and record_notice() call it as the
+-- Nobody's to call (record_board() and record_notice_for() call it as the
 -- owner). One row per line a board can draw:
 --   board   one per metric × class group × format the side has a counted or
 --           waiting performance for: its state, the minimum, the coverage
@@ -223,17 +271,19 @@ RETURNS TABLE (metric text, class_group text, format text, line text, state text
      CROSS JOIN LATERAL fixture_class(e.id) c
   ),
   -- The boy is on this side's end of the match: his team sheet says so, or
-  -- (no sheet row) his school is this end's.
+  -- (no sheet row) the innings does — the end that batted it, for an
+  -- innings; the other end, for a spell (record_innings_end()). Never his
+  -- school today: a boy who has since moved to the opponent's school stays
+  -- on the side he played for (F6). An innings whose end cannot be known
+  -- puts the row on no board.
   bat AS (
     SELECT f.*, i.player_id, i.innings::smallint AS inn, i.runs::integer AS r, i.balls_faced::integer AS bf,
            NOT coalesce(i.out, false) AS no
       FROM fx f
       JOIN player_innings i ON i.match_id = f.id
-      JOIN player p ON p.id = i.player_id
       LEFT JOIN match_squad q ON q.match_id = f.id AND q.player_id = i.player_id
-     WHERE CASE WHEN q.side = 'home' THEN f.home_end WHEN q.side = 'away' THEN f.away_end
-                WHEN p.school_id = f.home_school THEN f.home_end
-                WHEN p.school_id = f.away_school THEN f.away_end ELSE false END
+     WHERE CASE coalesce(q.side, record_innings_end(f.id, i.innings::smallint))
+                WHEN 'home' THEN f.home_end WHEN 'away' THEN f.away_end ELSE false END
   ),
   bowl AS (
     SELECT f.*, x.player_id, x.innings::smallint AS inn, x.wickets::integer AS w, x.runs_conceded::integer AS rc,
@@ -245,11 +295,10 @@ RETURNS TABLE (metric text, class_group text, format text, line text, state text
                          WHERE s.match_id = f.id AND s.innings = x.innings AND s.player_id = x.player_id), 0))::integer AS lb
       FROM fx f
       JOIN bowler_innings_figures x ON x.match_id = f.id
-      JOIN player p ON p.id = x.player_id
       LEFT JOIN match_squad q ON q.match_id = f.id AND q.player_id = x.player_id
-     WHERE CASE WHEN q.side = 'home' THEN f.home_end WHEN q.side = 'away' THEN f.away_end
-                WHEN p.school_id = f.home_school THEN f.home_end
-                WHEN p.school_id = f.away_school THEN f.away_end ELSE false END
+     WHERE CASE coalesce(q.side, CASE record_innings_end(f.id, x.innings::smallint)
+                                   WHEN 'home' THEN 'away' WHEN 'away' THEN 'home' END)
+                WHEN 'home' THEN f.home_end WHEN 'away' THEN f.away_end ELSE false END
   ),
   -- One row per performance and metric; k is the comparison, higher better.
   perf0 AS (
@@ -336,7 +385,7 @@ RETURNS TABLE (metric text, class_group text, format text, line text, state text
    WHERE s.pl <= 10
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 COMMENT ON FUNCTION record_lines(uuid, text) IS
-  'db/143 (RECOGNITION R9): every record board of one side (metric × class group × format), as the owner reads the log: the board''s state, holders, former holders and this season''s ordered list. Only verified matches with no no-board reason count. Nobody''s to call: record_board() and record_notice() read it.';
+  'db/143 (RECOGNITION R9): every record board of one side (metric × class group × format), as the owner reads the log: the board''s state, holders, former holders and this season''s ordered list. Only verified matches with no no-board reason count. Nobody''s to call: record_board() and record_notice_for() read it.';
 
 
 -- ══════════════════════════════════════════════════════════════════
@@ -350,6 +399,12 @@ RETURNS TABLE (reader_view text, side_school_id uuid, side_code text, metric tex
                line text, state text, min_balls integer, coverage_since date, awaiting integer, place integer,
                equalled boolean, player_id uuid, player_name text, match_id uuid, innings smallint, played_on date,
                opponent text, runs integer, balls integer, not_out boolean, wickets integer, runs_conceded integer) AS $$
+  -- NULL, not the zero uuid, as the person, in both calls, on purpose: in
+  -- app_can() (db/50) a guardian, selfaccess or enquiry assignment REFUSES a
+  -- NULL person and ADMITS the zero uuid ("a row about nobody"). With the
+  -- zero uuid a parent would read the full board, season list and all. With
+  -- NULL only an assignment naming nobody (a pupil's `player`, staff) passes.
+  -- db/99 §121's guardian rows prove it; do not "fix" it to the zero uuid.
   WITH who AS MATERIALIZED (
     SELECT CASE WHEN app_can_but_player('player.performance.read', p_school, p_side, NULL, NULL) THEN 'full'
                 ELSE 'chronology' END AS v
@@ -405,8 +460,16 @@ COMMENT ON FUNCTION record_minimum_set(uuid, text, text, integer) IS
 -- ══════════════════════════════════════════════════════════════════
 -- §5 · record_notice: the side is told at verification (D25)
 -- ══════════════════════════════════════════════════════════════════
-CREATE OR REPLACE FUNCTION record_notice() RETURNS trigger AS $$
+-- record_notice_for(match): every record this verified match now holds,
+-- against an earlier match's, noticed to its side once. Called when the match
+-- is finished (the status) and when an innings of a finished match is sealed
+-- (F5: a scorer may finish first and seal after, and a correction is sealed
+-- again after the finish). Either order notices once: the once test is the
+-- notice itself (match, side, title, not retracted). Each end's boards are
+-- derived once (F11). The boy is named by initial and surname (F12, §7).
+CREATE OR REPLACE FUNCTION record_notice_for(p_match uuid) RETURNS void AS $$
 DECLARE
+  m match%ROWTYPE;
   e record;
   r record;
   v_title text;
@@ -415,16 +478,17 @@ DECLARE
   v_fig text;
 BEGIN
   BEGIN
-    IF NOT match_verified(NEW.id) THEN RETURN NULL; END IF;
-    FOR e IN SELECT x.s, x.t FROM (VALUES (NEW.school_id, NEW.team_code), (NEW.away_school_id, NEW.away_team_code)) x(s, t)
+    SELECT * INTO m FROM match x WHERE x.id = p_match;
+    IF NOT FOUND OR m.status <> 'complete' OR NOT match_verified(p_match) THEN RETURN; END IF;
+    FOR e IN SELECT x.s, x.t FROM (VALUES (m.school_id, m.team_code), (m.away_school_id, m.away_team_code)) x(s, t)
               WHERE x.s IS NOT NULL AND x.t IS NOT NULL
     LOOP
       FOR r IN
+        WITH l AS MATERIALIZED (SELECT * FROM record_lines(e.s, e.t))
         SELECT l.*, b.coverage_since AS since
-          FROM record_lines(e.s, e.t) l
-          JOIN record_lines(e.s, e.t) b ON b.line = 'board' AND b.metric = l.metric
-                                       AND b.class_group = l.class_group AND b.format = l.format
-         WHERE l.line = 'holder' AND l.match_id = NEW.id AND l.prior_best
+          FROM l
+          JOIN l b ON b.line = 'board' AND b.metric = l.metric AND b.class_group = l.class_group AND b.format = l.format
+         WHERE l.line = 'holder' AND l.match_id = p_match AND l.prior_best
          ORDER BY l.class_group DESC, l.format, l.metric, l.player_name
       LOOP
         v_metric := CASE r.metric WHEN 'highest_innings' THEN 'Highest innings' WHEN 'best_bowling' THEN 'Best bowling'
@@ -436,34 +500,60 @@ BEGIN
           ELSE r.runs_conceded || ' off ' || r.balls || ' balls' END;
         v_title := CASE WHEN r.class_group = 'friendly' THEN 'Friendly record' ELSE 'School record' END
                    || CASE WHEN r.equalled THEN ' equalled' ELSE '' END
-                   || ' · ' || v_metric || ' ' || e.t || ' ' || coalesce(r.format, '') || ': ' || v_fig || ' ' || r.player_name;
+                   || ' · ' || v_metric || ' ' || e.t || ' ' || coalesce(r.format, '') || ': ' || v_fig || ' '
+                   || record_short_name(r.player_name);
         v_body := v_fig || ' against ' || coalesce(r.opponent, 'the opposition') || ', '
                   || to_char(r.played_on, 'FMDD Mon YYYY') || '. In verified SCRBRD matches since '
                   || to_char(r.since, 'Mon YYYY') || '.';
         IF NOT EXISTS (SELECT 1 FROM notification n
-                        WHERE n.subject_kind = 'match' AND n.subject_id = NEW.id AND n.school_id = e.s
+                        WHERE n.subject_kind = 'match' AND n.subject_id = p_match AND n.school_id = e.s
                           AND n.team_code = e.t AND n.title = v_title AND n.retracted_at IS NULL) THEN
           INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
                                     required_capability, is_public, subject_kind, subject_id, subject_person_id)
           VALUES (e.s, e.t, 'team', 'recognition', 'low', v_title, v_body,
-                  'player.performance.read', false, 'match', NEW.id, r.player_id);
+                  'player.performance.read', false, 'match', p_match, r.player_id);
         END IF;
       END LOOP;
     END LOOP;
   EXCEPTION WHEN OTHERS THEN
-    -- The match is finished whatever happens to its notice; the server's log
-    -- says the notice was not raised.
-    RAISE WARNING 'db/143: the record notice for match % was not raised (SQLSTATE %)', NEW.id, SQLSTATE;
+    -- The match is finished, or the innings sealed, whatever happens to its
+    -- notice; the server's log says the notice was not raised.
+    RAISE WARNING 'db/143: the record notice for match % was not raised (SQLSTATE %)', p_match, SQLSTATE;
   END;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+COMMENT ON FUNCTION record_notice_for(uuid) IS
+  'db/143 (RECOGNITION R9, D25): each record a finished, verified match now holds against an earlier match''s, noticed once to that side (team scope, under player.performance.read, no recipient, the holder as subject, named by initial and surname). A notice that cannot be raised never stops the write that asked for it. Nobody''s to call.';
+
+-- The match finished.
+CREATE OR REPLACE FUNCTION record_notice() RETURNS trigger AS $$
+BEGIN
+  PERFORM record_notice_for(NEW.id);
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 COMMENT ON FUNCTION record_notice() IS
-  'db/143 (RECOGNITION R9, D25): when a match becomes complete and verified, each record it now holds against an earlier match''s is noticed to that side (team scope, under player.performance.read, no recipient, the holder as subject). A notice that cannot be raised never stops the match being finished.';
+  'db/143 (RECOGNITION R9, D25): the match finished; record_notice_for() decides whether it is verified and what to notice.';
 
 DROP TRIGGER IF EXISTS match_record_notice ON match;
 CREATE TRIGGER match_record_notice AFTER UPDATE OF status ON match
   FOR EACH ROW WHEN (NEW.status = 'complete' AND OLD.status IS DISTINCT FROM 'complete')
   EXECUTE FUNCTION record_notice();
+
+-- An innings sealed: at a finished match, the seal may be what verifies it
+-- (F5). The match must be finished; record_notice_for() asks the rest.
+CREATE OR REPLACE FUNCTION record_seal_notice() RETURNS trigger AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM match x WHERE x.id = NEW.match_id AND x.status = 'complete') THEN
+    PERFORM record_notice_for(NEW.match_id);
+  END IF;
+  RETURN NULL;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+COMMENT ON FUNCTION record_seal_notice() IS
+  'db/143 (RECOGNITION R9, D25, F5): an innings of a finished match sealed; record_notice_for() notices what the now-verified match holds.';
+
+DROP TRIGGER IF EXISTS ball_event_record_notice ON ball_event;
+CREATE TRIGGER ball_event_record_notice AFTER INSERT ON ball_event
+  FOR EACH ROW WHEN (NEW.kind = 'innings_end')
+  EXECUTE FUNCTION record_seal_notice();
 
 
 -- ── 6 · Who may call them ──────────────────────────────────────────
@@ -474,8 +564,10 @@ CREATE TRIGGER match_record_notice AFTER UPDATE OF status ON match
 DO $grants$
 DECLARE f text; r text;
 BEGIN
-  FOREACH f IN ARRAY ARRAY['record_lines(uuid,text)', 'record_board(uuid,text)',
-                           'record_minimum_set(uuid,text,text,integer)', 'record_notice()'] LOOP
+  FOREACH f IN ARRAY ARRAY['record_innings_end(uuid,smallint)', 'record_short_name(text)',
+                           'record_lines(uuid,text)', 'record_board(uuid,text)',
+                           'record_minimum_set(uuid,text,text,integer)', 'record_notice_for(uuid)',
+                           'record_notice()', 'record_seal_notice()'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM scrbrd_app', f);
     FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
@@ -498,8 +590,10 @@ END $grants$;
 DO $check$
 DECLARE r text;
 BEGIN
-  FOREACH r IN ARRAY ARRAY['record_lines(uuid,text)', 'record_board(uuid,text)',
-                           'record_minimum_set(uuid,text,text,integer)', 'record_notice()'] LOOP
+  FOREACH r IN ARRAY ARRAY['record_innings_end(uuid,smallint)', 'record_short_name(text)',
+                           'record_lines(uuid,text)', 'record_board(uuid,text)',
+                           'record_minimum_set(uuid,text,text,integer)', 'record_notice_for(uuid)',
+                           'record_notice()', 'record_seal_notice()'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = r::regprocedure AND p.prosecdef
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))) THEN
       RAISE EXCEPTION 'db/143: % is not a SECURITY DEFINER with a pinned path', r;
@@ -516,10 +610,12 @@ BEGIN
      OR NOT has_function_privilege('scrbrd_app', 'record_minimum_set(uuid,text,text,integer)'::regprocedure, 'EXECUTE') THEN
     RAISE EXCEPTION 'db/143: the application cannot call record_board() or record_minimum_set()';
   END IF;
-  IF has_function_privilege('scrbrd_app', 'record_lines(uuid,text)'::regprocedure, 'EXECUTE')
-     OR has_function_privilege('scrbrd_app', 'record_notice()'::regprocedure, 'EXECUTE') THEN
-    RAISE EXCEPTION 'db/143: the application can call record_lines() or record_notice()';
-  END IF;
+  FOREACH r IN ARRAY ARRAY['record_innings_end(uuid,smallint)', 'record_short_name(text)', 'record_lines(uuid,text)',
+                           'record_notice_for(uuid)', 'record_notice()', 'record_seal_notice()'] LOOP
+    IF has_function_privilege('scrbrd_app', r::regprocedure, 'EXECUTE') THEN
+      RAISE EXCEPTION 'db/143: the application can call %', r;
+    END IF;
+  END LOOP;
   IF has_table_privilege('scrbrd_app', 'record_definition', 'SELECT')
      OR has_table_privilege('scrbrd_app', 'record_definition', 'INSERT')
      OR has_table_privilege('scrbrd_app', 'record_definition', 'UPDATE')
@@ -551,9 +647,19 @@ BEGIN
                     AND tgenabled <> 'D' AND tgfoid = 'record_notice()'::regprocedure) THEN
     RAISE EXCEPTION 'db/143: the record notice trigger is missing or disabled';
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'ball_event'::regclass AND tgname = 'ball_event_record_notice'
+                    AND tgenabled <> 'D' AND tgfoid = 'record_seal_notice()'::regprocedure) THEN
+    RAISE EXCEPTION 'db/143: the record notice on the seal is missing or disabled (F5)';
+  END IF;
+  -- A row without a team sheet is placed by its innings, never by the boy's
+  -- school today (F6).
+  IF position('record_innings_end(' IN (SELECT prosrc FROM pg_proc WHERE oid = 'record_lines(uuid,text)'::regprocedure)) = 0
+     OR position('school_id = f.' IN (SELECT prosrc FROM pg_proc WHERE oid = 'record_lines(uuid,text)'::regprocedure)) > 0 THEN
+    RAISE EXCEPTION 'db/143: record_lines() places a performance by something other than its sheet or its innings';
+  END IF;
   -- The notice is the side's, never one person's (no recipient).
-  IF position('recipient_id' IN (SELECT prosrc FROM pg_proc WHERE oid = 'record_notice()'::regprocedure)) > 0 THEN
-    RAISE EXCEPTION 'db/143: record_notice() names a recipient';
+  IF position('recipient_id' IN (SELECT prosrc FROM pg_proc WHERE oid = 'record_notice_for(uuid)'::regprocedure)) > 0 THEN
+    RAISE EXCEPTION 'db/143: record_notice_for() names a recipient';
   END IF;
   -- No signed-out door reads a board (A11): no public_* function names one.
   IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
