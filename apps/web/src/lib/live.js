@@ -315,6 +315,10 @@ function asNewsPost(r) {
     noticeId: r.noticeId ?? null,
     schoolId: r.school_id ?? null,
     teamCode: r.team_code ?? null,
+    // The feed's kicker and byline ("1st XI · Westville"): names the read
+    // already returns, carried through; nothing new is asked of the server.
+    schoolName: r.school_name ?? null,
+    competitionName: r.competition_name ?? null,
   };
 }
 
