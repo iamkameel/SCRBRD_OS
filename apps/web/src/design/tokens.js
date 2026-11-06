@@ -514,6 +514,25 @@ const T = {
     paint:     "#ffffff",   // creases and stumps
   },
 
+  /**
+   * THE NEWS COVERS (ui/NewsCover.jsx): the grounds a generated cover is
+   * painted on. Fixed art, like the board and the strip: a cover is a picture,
+   * the same in both themes, its figures drawn in `ink` and `accent` on
+   * `ground` and `deep`. A school's posts share one ground, picked from its
+   * name, so a feed reads by school at a glance; the motif changes per post.
+   * Never a photograph, never a figure of a person.
+   */
+  cover: [
+    { ground: "#0f3d2e", deep: "#06211a", accent: "#b9f227", ink: "#f4f6f3" },  // pavilion green
+    { ground: "#14295f", deep: "#0a1433", accent: "#2ee6d6", ink: "#f4f6f3" },  // cobalt
+    { ground: "#5c2a14", deep: "#2e1409", accent: "#f9b233", ink: "#f4f6f3" },  // clay
+    { ground: "#5a1426", deep: "#2b0811", accent: "#ff9aa6", ink: "#f4f6f3" },  // maroon
+    { ground: "#0e3a44", deep: "#052026", accent: "#34e58a", ink: "#f4f6f3" },  // deep teal
+    { ground: "#1b2340", deep: "#0b1022", accent: "#f7b733", ink: "#f4f6f3" },  // navy and gold
+    { ground: "#36205a", deep: "#1a0f2e", accent: "#cdb4fb", ink: "#f4f6f3" },  // plum
+    { ground: "#22402a", deep: "#0f2214", accent: "#c8a96a", ink: "#f4f6f3" },  // forest and willow
+  ],
+
   /** One 4px rhythm. Anything off it is a decision somebody has to defend. */
   space: { xs:"4px", sm:"8px", md:"12px", lg:"16px", xl:"24px", xxl:"32px", huge:"48px" },
 
@@ -797,6 +816,19 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
 ::-webkit-scrollbar-thumb{background:${T.surface.overlay};border-radius:2px}
 .os-page{animation:fadeUp .25s ease}
 @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+/* The newsfeed (views/NewsView.jsx, home/sections/News.jsx): a lead story,
+   then a grid that fills the width; each card rises in once. Reduced motion:
+   no movement at all (below). */
+@keyframes newsIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.os-news-in{animation:newsIn .36s cubic-bezier(.22,1,.36,1) both}
+.os-news-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:16px}
+.os-news-lead{display:grid;grid-template-columns:1fr}
+@media (min-width:900px){.os-news-lead{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}}
+.os-news-card{cursor:pointer;transition:transform .19s cubic-bezier(.4,0,.2,1),border-color .19s cubic-bezier(.4,0,.2,1)}
+.os-news-cover svg{transition:transform .42s cubic-bezier(.22,1,.36,1)}
+@media (hover:hover){.os-news-card:hover{transform:translateY(-2px)}.os-news-card:hover .os-news-cover svg{transform:scale(1.03)}}
+.os-news-chips{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
+.os-news-chips::-webkit-scrollbar{display:none}
 /* Name what moves (never "all"), and a disabled button never presses. Hover
    lives behind (hover: hover): on a phone :hover latches after a tap and
    reads as "selected". */
@@ -943,6 +975,8 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
   .os-panel-in{animation:none!important}
   .os-tick{transition:none!important}
   .os-hair{animation:none!important}
+  .os-news-in{animation:none!important}
+  .os-news-card:hover,.os-news-card:hover .os-news-cover svg{transform:none!important}
 }
 /* The same block, by the ground display's own setting (SCRBRD-133 §4.3): a
    TV's browser has no system setting anybody can reach, so the setup's

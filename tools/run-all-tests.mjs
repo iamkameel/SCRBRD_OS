@@ -375,6 +375,9 @@ const SUITES = [
   // strip and news hidden on a 404, the analytics toggle writes the pref and
   // starts nothing, the 12px and 44px floors, the copy.
   ["home-page", "apps/web/test/home-page.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The newsfeed's kicker, standfirst, SA bands, per-viewer opened marks, and
+  // the generated covers: deterministic, decorative, drawing only the side.
+  ["news-feed", "apps/web/test/news-feed.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // SCRBRD-142 phase 2's switch on Settings → School and the line under the
   // Publish switch (the words held to the design, the line's forms), and
   // Fields → Add ground (every refusal in words, the route's limits).
