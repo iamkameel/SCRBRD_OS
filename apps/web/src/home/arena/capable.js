@@ -6,7 +6,8 @@
  *   "stills"  prefers-reduced-motion: the film's five drawn stills, a
  *             storyboard, nothing moving (film/engine.js drawStills).
  *   "film"    the 2D canvas film (film/engine.js mountFilm): no WebGL, a GL
- *             that is software or blocklisted (failIfMajorPerformanceCaveat),
+ *             that is software or blocklisted (failIfMajorPerformanceCaveat,
+ *             or a renderer named as software),
  *             a device that says it is small (fewer than four cores, less
  *             than 4 GB, Save-Data on), or the 3D scene failing later — it
  *             did not load, the GL context was lost, or it could not hold a
@@ -52,8 +53,17 @@ export function webgl(win, strict) {
     const opts = { failIfMajorPerformanceCaveat: strict };
     const gl = /** @type {WebGLRenderingContext | null} */ (c.getContext("webgl2", opts) || c.getContext("webgl", opts));
     if (!gl) return false;
+    // A renderer that draws on the CPU (SwiftShader, llvmpipe, Microsoft's
+    // Basic Render Driver) passes the caveat check in some browsers, and
+    // manages a few frames a second: it gets the film.
+    let soft = false;
+    if (strict) {
+      const info = gl.getExtension("WEBGL_debug_renderer_info");
+      const name = String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+      soft = /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
+    }
     gl.getExtension("WEBGL_lose_context")?.loseContext();
-    return true;
+    return !soft;
   } catch {
     return false;
   }

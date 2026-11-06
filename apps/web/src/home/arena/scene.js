@@ -471,7 +471,7 @@ export function mountArena({ stage, canvas, hud, film, forced = false, onReady =
     prof.push(new THREE.Vector2(98, 22), new THREE.Vector2(99, 22), new THREE.Vector2(99, 0));
     const crowdTex = keep(canvasTexture(1024, 256, drawCrowd).tex);
     crowdTex.wrapS = THREE.RepeatWrapping;
-    crowdTex.repeat.set(14, 1);
+    crowdTex.repeat.set(3, 1);
     crowdTex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
     const stands = new THREE.Mesh(keep(new THREE.LatheGeometry(prof, 96)), keep(new THREE.MeshLambertMaterial({ map: crowdTex, color: 0x9aa6bc, emissive: 0x05080e, side: THREE.DoubleSide })));
     scene.add(stands);
@@ -672,7 +672,7 @@ export function mountArena({ stage, canvas, hud, film, forced = false, onReady =
   // ── The loop ──
   let raf = 0, last = 0, clock = 0, visible = true, dead = false, ready = false, frames = 0;
   let prevB = 0, shake = 0, cheer = 0, pulse = -1, prevAnchor = 0, wave = 0;
-  let sampleSince = 0, sampleFrames = 0, sampleMs = 0, fpsSince = 0, fpsFrames = 0;
+  let sampleSince = 0, sampleFrames = 0, sampleMs = 0, fpsSince = 0, fpsFrames = 0, born = 0;
   /** @type {Record<string, string>} */
   const hudText = {};
   const write = (/** @type {HTMLElement | null | undefined} */ el, /** @type {string} */ k, /** @type {string} */ v) => {
@@ -698,8 +698,8 @@ export function mountArena({ stage, canvas, hud, film, forced = false, onReady =
     // Moments, as the delivery is scrolled forward through them.
     if (prevB < 3 && b >= 3) shake = 1;                                   // bat on ball
     if (prevB < 2 && b >= 2) { pulse = 0; groundU.uPulseA.value = 0.9; }  // the bounce
-    if (!landed(prevB) && landed(b)) { cheer = 1; flipAt = clock; }       // six
-    if (landed(prevB) && !landed(b)) flipAt = clock;                      // scrolled back
+    if (!landed(prevB) && landed(b)) { cheer = 1; flipAt = now; }       // six
+    if (landed(prevB) && !landed(b)) flipAt = now;                      // scrolled back
     prevB = b;
     const anchor = Math.round(f);
     if (anchor !== prevAnchor && anchor >= FILM.length) { pulse = 0; groundU.uPulseA.value = 0.7; }
@@ -773,7 +773,7 @@ export function mountArena({ stage, canvas, hud, film, forced = false, onReady =
       boardKey = nextState;
       paintBoard(flipAt < 0 ? 1 : 0);
     } else if (flipAt >= 0) {
-      const p = clamp((clock - flipAt) / 0.42);
+      const p = clamp((now - flipAt) / 420);
       paintBoard(p);
       if (p >= 1) flipAt = -1;
     }
@@ -826,11 +826,15 @@ export function mountArena({ stage, canvas, hud, film, forced = false, onReady =
       stage.dataset.dpr = String(dpr);
       fpsSince = now; fpsFrames = 0;
     }
-    if (clock > 1.2) {
+    // Over windows of a second and a half of wall time, after a second to
+    // settle: past 21 ms a frame the pixel ratio steps down by half, to 1;
+    // past 40 ms at 1, the film takes over (unless the scene was picked by hand).
+    if (!born) born = now;
+    if (now - born > 1000) {
       if (!sampleSince) sampleSince = now;
       sampleFrames++;
       sampleMs = now - sampleSince;
-      if (sampleFrames >= 90) {
+      if (sampleMs >= 1500 && sampleFrames >= 6) {
         const ms = sampleMs / sampleFrames;
         sampleSince = now; sampleFrames = 0;
         if (ms > 21 && dpr > 1) { dpr = Math.max(1, dpr - 0.5); resize(); }
