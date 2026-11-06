@@ -35687,8 +35687,9 @@ $v116$;
   --              working with the head and match_result()'s hash, a name
   --              for the match, and one audit row
   --   (side)     the side is told once, at team scope, under news.read, in
-  --              §7's words, naming him by initial and surname; nothing to a
-  --              child alone
+  --              §7's words, naming him by initial and surname, the decider
+  --              by his true role word (the principal here, the coach for
+  --              the other side); nothing to a child alone
   --   (once)     a second award for the side is refused; the application's
   --              own INSERT of one is refused; the owner's key, which holds
   --              recognition.manage, can neither withdraw it nor put it on
@@ -35728,6 +35729,7 @@ $v116$;
   --   honour_unsay_side() taking its side from the sheet as it is   → (withdraw)
   --   honour_no_platform_award dropped                              → (once)
   --   honour_stamp() without its guardian test                      → (withdraw)
+  --   match_award_role_word() answering "the coach" always          → (side)
   DECLARE
     y   jsonb := _v142_stage();
     M   uuid := (y->>'M')::uuid;
@@ -35836,6 +35838,8 @@ $v116$;
                     AND j->'notices'->0->>'title' ~ '^Player of the Match · [A-Z][a-z]{2} [0-9]{1,2} [A-Z][a-z]{2} v .+: V Boy2$'
                     AND (_v142_honour(v_h)->>'notice')::uuid = (j->'notices'->0->>'id')::uuid,
       format('§120 (side): the side''s notice reads %s', j->'notices'));
+    PERFORM _assert(j->'notices'->0->>'body' LIKE 'V Boy2 is Player of the Match against % Decided by the principal.',
+      format('§120 (side): the notice does not name the principal as the decider: %s', j->'notices'->0->>'body'));
 
     -- (once)
     PERFORM _as((y->>'coach')::uuid);
@@ -35859,7 +35863,8 @@ $v116$;
     PERFORM _assert(r.ok, format('§120 (once): the other side''s coach was refused his own side''s: %s', r.reason));
     PERFORM _assert((_v142_fact(M, HIL)->>'honours')::int = 1 AND (_v142_fact(M, WES)->>'honours')::int = 1
                     AND jsonb_array_length(_v142_fact(M, HIL)->'notices') = 1 AND jsonb_array_length(_v142_fact(M, WES)->'notices') = 1
-                    AND _v142_fact(M, WES)->'notices'->0->>'team' = '19XI' AND _v142_fact(M, WES)->'notices'->0->>'title' LIKE '%: V Visitor',
+                    AND _v142_fact(M, WES)->'notices'->0->>'team' = '19XI' AND _v142_fact(M, WES)->'notices'->0->>'title' LIKE '%: V Visitor'
+                    AND _v142_fact(M, WES)->'notices'->0->>'body' LIKE '% Decided by the coach.',
       format('§120 (once): the two sides do not each stand, each told: %s', _v142_fact(M)));
 
     -- (withdraw)

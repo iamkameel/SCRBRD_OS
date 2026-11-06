@@ -71,6 +71,7 @@
 --                 correction". Never the reason (D4, READERS Q2).
 --   functions   + match_award_holds, match_award_guardian_of,
 --                 match_award_side_of, match_award_opponent, match_award_short,
+--                 match_award_role_word, match_award_take_back,
 --                 the three trigger functions, the audit guard (nobody's)
 --               + match_award_state, match_award, match_award_withdraw
 --                 (the doors: scrbrd_app only)
@@ -384,6 +385,27 @@ CREATE OR REPLACE FUNCTION match_award_instead(p_person uuid, p_school uuid) RET
               THEN 'principal' ELSE 'directorofsport' END
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- D5: the decider as a role word, for the side's notice, read by pupils and
+-- parents as well as staff: the role his live assignment at the side's
+-- school holds among those that decide (role_capability's
+-- recognition.match.award), the side's own coach first, then the director
+-- of sport, then the principal; "the school" if none answers.
+CREATE OR REPLACE FUNCTION match_award_role_word(p_person uuid, p_school uuid, p_team text) RETURNS text AS $$
+  SELECT coalesce((
+    SELECT CASE a.role WHEN 'coach' THEN 'the coach' WHEN 'directorofsport' THEN 'the director of sport'
+                       WHEN 'principal' THEN 'the principal' END
+      FROM role_assignment a
+      JOIN role_capability rc ON rc.role = a.role AND rc.capability = 'recognition.match.award'
+     WHERE a.person_id = p_person AND a.active AND a.school_id = p_school
+       AND a.role IN ('coach', 'directorofsport', 'principal')
+       AND (a.team_code IS NULL OR a.team_code = p_team)
+       AND (a.valid_from IS NULL OR a.valid_from <= sa_today())
+       AND (a.valid_until IS NULL OR a.valid_until > sa_today())
+       AND (a.expires_at IS NULL OR a.expires_at > now())
+     ORDER BY CASE a.role WHEN 'coach' THEN 1 WHEN 'directorofsport' THEN 2 ELSE 3 END
+     LIMIT 1), 'the school')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- "R Pillay" from "Rohan Pillay": the initial and the surname (§7's words).
 CREATE OR REPLACE FUNCTION match_award_short(p_name text) RETURNS text AS $$
   SELECT regexp_replace(btrim(coalesce(p_name, '')), '^(\S)\S*\s+(?:.*\s)?(\S+)$', '\1 \2')
@@ -417,7 +439,7 @@ BEGIN
                               required_capability, is_public, subject_kind, subject_id, subject_person_id)
     VALUES (NEW.school_id, NEW.team_code, 'team', 'recognition', 'low',
             match_award_heading(NEW.match_id, v_side) || ': ' || v_name,
-            v_name || ' is Player of the Match against ' || match_award_opponent(NEW.match_id, v_side) || '. Decided by the coach.',
+            v_name || ' is Player of the Match against ' || match_award_opponent(NEW.match_id, v_side) || '. Decided by ' || match_award_role_word(NEW.decided_by, NEW.school_id, NEW.team_code) || '.',
             'news.read', false, 'match', NEW.match_id, NEW.player_id)
     RETURNING id INTO v_id;
     NEW.notice_id := v_id;
@@ -780,7 +802,7 @@ BEGIN
   FOREACH f IN ARRAY ARRAY['match_award_holds(uuid,text,uuid)', 'match_award_guardian_of(uuid,uuid)',
                            'match_award_instead(uuid,uuid)', 'match_award_side_of(uuid,uuid)',
                            'match_award_opponent(uuid,text)', 'match_award_heading(uuid,text)',
-                           'match_award_short(text)',
+                           'match_award_short(text)', 'match_award_role_word(uuid,uuid,text)',
                            'honour_tell_side()', 'honour_unsay_side()', 'honour_audit()',
                            'match_award_take_back(uuid)', 'recognition_audit_append_only()'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
@@ -825,6 +847,7 @@ BEGIN
   FOREACH f IN ARRAY ARRAY['honour_stamp()', 'match_award_holds(uuid,text,uuid)', 'match_award_guardian_of(uuid,uuid)',
                            'match_award_instead(uuid,uuid)', 'match_award_side_of(uuid,uuid)',
                            'match_award_opponent(uuid,text)', 'match_award_heading(uuid,text)',
+                           'match_award_role_word(uuid,uuid,text)',
                            'honour_tell_side()', 'honour_unsay_side()', 'honour_audit()', 'match_award_take_back(uuid)',
                            'match_award_state(uuid)', 'match_award(uuid,uuid,jsonb)', 'match_award_withdraw(uuid,text,text)'] LOOP
     SELECT prosrc INTO v_src FROM pg_proc WHERE oid = f::regprocedure;
@@ -849,7 +872,7 @@ BEGIN
   FOREACH f IN ARRAY ARRAY['match_award_holds(uuid,text,uuid)', 'match_award_guardian_of(uuid,uuid)',
                            'match_award_instead(uuid,uuid)', 'match_award_side_of(uuid,uuid)',
                            'match_award_opponent(uuid,text)', 'match_award_heading(uuid,text)', 'match_award_short(text)',
-                           'honour_tell_side()', 'honour_unsay_side()', 'honour_audit()', 'match_award_take_back(uuid)',
+                           'match_award_role_word(uuid,uuid,text)', 'honour_tell_side()', 'honour_unsay_side()', 'honour_audit()', 'match_award_take_back(uuid)',
                            'recognition_audit_append_only()'] LOOP
     IF has_function_privilege('scrbrd_app', f, 'EXECUTE')
        OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
