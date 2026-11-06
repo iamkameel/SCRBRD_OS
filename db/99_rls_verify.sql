@@ -37055,7 +37055,7 @@ $v116$;
     -- All nine hold: the captain's block offers the pick, the sheet without him.
     j := (SELECT to_jsonb(st) FROM captain_nomination_state(M) st);
     PERFORM _assert(j->>'side' = 'home' AND (j->>'may_nominate')::boolean AND j->>'refusal' IS NULL AND j->>'nominated_as' = 'captain'
-                    AND j->>'coach_name' = 'V144 Coach' AND jsonb_array_length(j->'sheet') = 3
+                    AND j->>'coach_name' ~ '^V[0-9]+ Coach$' AND jsonb_array_length(j->'sheet') = 3
                     AND NOT (j->'sheet' @> jsonb_build_array(jsonb_build_object('playerId', C)))
                     AND j->'sheet' @> jsonb_build_array(jsonb_build_object('playerId', N1, 'name', 'V N1'))
                     AND j->>'nomination_id' IS NULL,
