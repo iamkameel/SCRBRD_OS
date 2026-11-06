@@ -34,6 +34,7 @@ import { Compare } from "../compare.jsx";
 import { SealMark } from "../../ui/sealMark.jsx";
 import { honourWords, isSealed, isWithdrawn, provenanceOf } from "../../lib/recognitionWords.js";
 import { PersonalBests } from "./bests.jsx";
+import { RecordBoards } from "../records.jsx";
 
 /** The pupil himself, in the shape the shared cards take: his own player row. */
 function useSelf(role) {
@@ -103,7 +104,15 @@ export function PupilHome({ role }) {
 export function PupilMatches({ role }) {
   const { me, loading, error } = useSelf(role);
   if (!me) return <NoSelf loading={loading} error={error} testid="pupil-matches"/>;
-  return <Page testid="pupil-matches"><ChildMatches child={me} role={role} self/></Page>;
+  // RECOGNITION R9 (D23): his side's record boards as a pavilion board shows
+  // them — the holders and former holders, never an ordered list of his side
+  // (the read sends him none).
+  return (
+    <Page testid="pupil-matches">
+      <ChildMatches child={me} role={role} self/>
+      <RecordBoards role={role} school={me.school} side={me.team} testid="pupil-records"/>
+    </Page>
+  );
 }
 
 // ── S3 · Passport ──────────────────────────────────────

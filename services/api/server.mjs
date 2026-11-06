@@ -777,6 +777,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/player-of-match$/,          "POST", potm.award],
   [/^\/api\/matches\/([^/]+)\/player-of-match\/withdraw$/, "POST", potm.withdraw],
   [/^\/api\/cap-baselines$/,                        "POST", recognition.baseline],
+  // RECOGNITION R9 (db/143): a rate record board's published minimum.
+  [/^\/api\/record-minimums$/,                      "POST", recognition.recordMinimum],
   // The rewards figure. A GET on the id-bearing table, keyed on nothing: the
   // rows are whoever the principal may read, narrowed by ?teamCode.
   [/^\/api\/rewards$/,                              "GET",  rewards.figures],

@@ -95,6 +95,8 @@ export const NAMED_NOT_EXPORTED = Object.freeze([
   "career", "career_by_season", "matchups", "matchup_coverage",
   // His bests (RECOGNITION R5): a screen's, never a file (A11's spirit).
   "personal_bests",
+  // A side's record boards (RECOGNITION R9): a screen's, never a file (A11).
+  "record_boards",
   // His conduct (db/116): a league's read of its competition's records, the
   // standing file the narrow door exists to prevent, and a coach's read of
   // his side's, read on a screen and not filed.
