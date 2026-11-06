@@ -35694,7 +35694,8 @@ $v116$;
   --              recognition.manage, can neither withdraw it nor put it on
   --              the board (D7, ahead of R5c); the other side's coach awards
   --              his own side's, and both stand
-  --   (withdraw) only the side's deciders withdraw it, never the guardian;
+  --   (withdraw) only the side's deciders withdraw it, never the guardian
+  --              (at the door, nor through the ordinary route at the table);
   --              it needs a kind and a reason; after a correction the notice
   --              is taken back and one more, naming nobody, says why; for
   --              another reason it is taken back as a person's take-back
@@ -35726,6 +35727,7 @@ $v116$;
   --   honour_unsay_side() retracting 'other' as a correction        → (withdraw)
   --   honour_unsay_side() taking its side from the sheet as it is   → (withdraw)
   --   honour_no_platform_award dropped                              → (once)
+  --   honour_stamp() without its guardian test                      → (withdraw)
   DECLARE
     y   jsonb := _v142_stage();
     M   uuid := (y->>'M')::uuid;
@@ -35867,6 +35869,10 @@ $v116$;
     PERFORM _as((y->>'gcoach')::uuid);
     SELECT * INTO r FROM match_award_withdraw(v_h, 'correction', 'The scorecard was corrected');
     PERFORM _assert(r.ok = false AND r.reason = 'guardian_conflict', format('§120 (withdraw): the guardian answered %s/%s', r.ok, r.reason));
+    PERFORM _as((y->>'gdos')::uuid);
+    got := _v133_try(format('UPDATE honour SET withdrawn_at = now(), withdrawn_reason = ''The scorecard was corrected'', withdrawn_kind = ''correction'' WHERE id = %L', v_h));
+    PERFORM _assert(got LIKE '42501||a guardian of the boy does not withdraw his Player of the Match%' AND NOT (_v142_honour(v_h)->>'withdrawn')::boolean,
+      format('§120 (withdraw): the guardian director withdrew it through the ordinary route: %s', got));
     PERFORM _as((y->>'coach')::uuid);
     SELECT * INTO r FROM match_award_withdraw(v_h, 'mistake', 'The scorecard was corrected');
     PERFORM _assert(r.reason = 'kind_invalid', format('§120 (withdraw): an unknown kind answered %s/%s', r.ok, r.reason));

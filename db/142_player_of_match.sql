@@ -54,7 +54,8 @@
 --                               for the boy's side on the sheet, never his
 --                               current team (D22); decided_by stamped; the
 --                               new columns never edited; a withdrawal's
---                               kind defaults to 'other'
+--                               kind defaults to 'other'; a guardian of the
+--                               boy never withdraws a Player of the Match
 --               ~ honour_kind_label() (db/08)  'Player of the Match'
 --   triggers    + honour_tell_side   BEFORE INSERT, a POTM: the side's notice
 --               + honour_unsay_side  AFTER UPDATE OF withdrawn_at, a POTM:
@@ -87,7 +88,9 @@
 -- naming who decides: the director of sport, or the principal when the
 -- caller is the director. The same people withdraw it, with a kind and a
 -- reason; the office (recognition.manage) may also withdraw it through the
--- ordinary route. Nothing here nominates: R7's captain is later.
+-- ordinary route. A guardian of the boy withdraws it by no route: the door
+-- refuses him in words, and honour_stamp() refuses him at the table
+-- (insufficient_privilege). Nothing here nominates: R7's captain is later.
 --
 -- ── WHAT IS SAID (D18, D21) ─────────────────────────────────────────
 -- To the side, at team scope, under news.read, kind recognition, low:
@@ -140,7 +143,7 @@ BEGIN
     RAISE EXCEPTION 'db/142: the notices (db/89), the official result (db/114), the sheet label (db/131), the audit log (db/79) or the SA day (db/08) is missing; apply them first';
   END IF;
   FOR r IN SELECT * FROM (VALUES
-      ('honour_stamp()',                 'ba879ca71d07f48100c4218397a80a4b', 'a089d23c4af2ec35928492b04362b303', 'db/08'),
+      ('honour_stamp()',                 'ba879ca71d07f48100c4218397a80a4b', '4d23d2abe5b6a93970590b2cdf413933', 'db/08'),
       ('honour_kind_label(text,text)',   'f97492d5524992eef7c2abaa46d7bea8', '1456d2e848e00cb3277e356dc4958178', 'db/08'),
       ('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)',
                                          'a381fc0455aff9196d74f232eacfb01b', '5e47b7126f7d31e45a3407cbebbb33a2', 'db/136'))
@@ -323,6 +326,13 @@ BEGIN
   -- is_public may change: putting a name on a board, or taking it off, is a
   -- decision about the board, not about the honour.
   IF NEW.withdrawn_at IS NOT NULL THEN
+    -- db/142: D9/D10 at the table, whatever the route: a live guardian of
+    -- the boy does not withdraw his Player of the Match (the door says it
+    -- in words first).
+    IF NEW.kind = 'player_of_match' AND match_award_guardian_of(app_user_id(), NEW.player_id) THEN
+      RAISE EXCEPTION 'a guardian of the boy does not withdraw his Player of the Match; another of the school''s deciders does'
+        USING ERRCODE = 'insufficient_privilege';
+    END IF;
     NEW.withdrawn_at := now();
     NEW.withdrawn_by := app_user_id();
     NEW.withdrawn_kind := coalesce(NEW.withdrawn_kind, 'other');   -- db/142: D21
@@ -797,7 +807,7 @@ DO $check$
 DECLARE f text; r text; v_md5 text; v_src text;
 BEGIN
   FOR f, v_md5 IN SELECT * FROM (VALUES
-      ('honour_stamp()',               'a089d23c4af2ec35928492b04362b303'),
+      ('honour_stamp()',               '4d23d2abe5b6a93970590b2cdf413933'),
       ('honour_kind_label(text,text)', '1456d2e848e00cb3277e356dc4958178'),
       ('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)', '5e47b7126f7d31e45a3407cbebbb33a2')) x(fn, md5) LOOP
     IF pg_temp._v142_fold((SELECT prosrc FROM pg_proc WHERE oid = f::regprocedure)) <> v_md5 THEN
