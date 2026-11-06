@@ -10303,12 +10303,14 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- Hilton's 20XI at home to Westville's 20XI, invented here, today. Hilton
 -- boys: C the season's captain, V the vice-captain, N1 and N2 team-mates, O
 -- of the side but off every sheet, and X the 20XI captain of LAST season;
--- one Westville boy W1. Accounts: C, V, N1 and a team-mate (N2) each sign in
+-- one Westville boy W1, all nineteen (registered to play without a
+-- guardian link, as §120's are). Accounts: C, V, N1 and a team-mate (N2) each sign in
 -- as himself (a verified self link); `capx` is an account whose app_user
 -- names C but whose self link the school never verified. The staff: the
 -- side's coach, assistant and team manager; another Hilton side's coach;
 -- Hilton's director of sport, principal and office; Westville's 20XI coach;
--- a coach of the side who is N1's guardian (a pending link); N1's mother (a
+-- a coach of the side who is N1's guardian (a pending link); a coach of the
+-- side who also holds a platform-wide assignment (twohats); N1's mother (a
 -- verified guardian); a platform administrator; the scorer.
 -- Matches, both sides' innings sealed and the match complete unless said:
 --   M   C, V, N1, N2 and W1 on the sheet          (the captain's)
@@ -10330,12 +10332,12 @@ BEGIN
   PERFORM set_config('app.user_id', '', true);
   FOR i, k IN SELECT * FROM (VALUES (1, 'c'), (2, 'v'), (3, 'n1'), (4, 'n2'), (5, 'o'), (6, 'x')) z(i, k) LOOP
     INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
-    VALUES (HIL, '20XI', 'Verify OneFortyFour ' || initcap(k), 1440 + i, 'batter', make_date(extract(year FROM sa_today())::int - 16, 2, i))
+    VALUES (HIL, '20XI', 'Verify OneFortyFour ' || initcap(k), 1440 + i, 'batter', make_date(extract(year FROM sa_today())::int - 19, 2, i))
     RETURNING id INTO p;
     ids := ids || jsonb_build_object(k, p);
   END LOOP;
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
-  VALUES (WES, '20XI', 'Verify OneFortyFour Visitor', 1449, 'bowler', make_date(extract(year FROM sa_today())::int - 16, 4, 1))
+  VALUES (WES, '20XI', 'Verify OneFortyFour Visitor', 1449, 'bowler', make_date(extract(year FROM sa_today())::int - 19, 4, 1))
   RETURNING id INTO p;
   ids := ids || jsonb_build_object('w1', p);
   ids := ids || _v71_people('v144', ARRAY[
@@ -10353,24 +10355,29 @@ BEGIN
     ARRAY['office',    'schooladmin',     HIL::text, '',     ''],
     ARRAY['wes',       'coach',           WES::text, '20XI', ''],
     ARRAY['gcoach',    'coach',           HIL::text, '20XI', ''],
+    ARRAY['twohats',   'coach',           HIL::text, '20XI', ''],
     ARRAY['mother',    'guardian',        HIL::text, '',     ''],
     ARRAY['scorer',    'scorer',          HIL::text, '',     '']]);
   -- The self links: verified for the four pupils, never for capx.
   FOREACH who IN ARRAY ARRAY['cap', 'vice', 'nominee', 'mate', 'capx'] LOOP
-    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state)
-    SELECT a2.id, u.player_id, 'self', CASE WHEN who = 'capx' THEN 'pending' ELSE 'verified' END
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at)
+    SELECT a2.id, u.player_id, 'self', CASE WHEN who = 'capx' THEN 'pending' ELSE 'verified' END,
+           CASE WHEN who <> 'capx' THEN (ids->>'office')::uuid END, CASE WHEN who <> 'capx' THEN now() END
       FROM role_assignment a2 JOIN app_user u ON u.id = a2.person_id
      WHERE a2.person_id = (ids->>who)::uuid AND a2.role = 'selfaccess';
   END LOOP;
   -- N1's guardians: the side's coach (pending, a parent all the same) and his mother (verified).
   INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'gcoach')::uuid, 'guardian', HIL) RETURNING id INTO a;
   INSERT INTO assignment_subject (assignment_id, player_id, relationship) VALUES (a, (ids->>'n1')::uuid, 'parent');
-  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, consent_state, consent_version, consent_at)
-  SELECT a2.id, (ids->>'n1')::uuid, 'parent', 'verified', 'granted', 'v144-terms', now()
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at)
+  SELECT a2.id, (ids->>'n1')::uuid, 'parent', 'verified', (ids->>'office')::uuid, now(), 'granted', 'v144-terms', now()
     FROM role_assignment a2 WHERE a2.person_id = (ids->>'mother')::uuid AND a2.role = 'guardian';
   INSERT INTO app_user (school_id, email, name, role) VALUES (NULL, 'v144.plat@example.invalid', 'V144 Plat', 'platformadmin') RETURNING id INTO a;
   INSERT INTO role_assignment (person_id, role, school_id) VALUES (a, 'platformadmin', NULL);
   ids := ids || jsonb_build_object('plat', a, 'season', v_season);
+  -- The side's coach who also holds a platform-wide assignment (D7: the cut is the person's).
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES ((ids->>'twohats')::uuid, 'platformadmin', NULL);
   -- The captaincies: C captain, V vice-captain, X last season's captain.
   INSERT INTO honour (player_id, kind, season_id, awarded_on) VALUES
     ((ids->>'c')::uuid, 'captain', v_season, sa_today() - 30),
@@ -36160,7 +36167,9 @@ $v116$;
   --   (reads)    D8: the nominator and the side's staff and the school's
   --              deciders and office read it; the nominee, a team-mate,
   --              his mother, another side's coach, the other school's,
-  --              the platform's, a support session and a pad read nothing
+  --              the platform's, the side's coach who also holds a
+  --              platform-wide assignment, a support session and a pad
+  --              read nothing
   --   (decide)   only the side's deciders; never the nominee's guardian
   --              (told who decides instead), by either door; Confirm writes
   --              R6's honour tied to it, told to the side once, and the
@@ -36175,8 +36184,29 @@ $v116$;
   --
   -- Falsified (6 Nov 2026, each change made as the owner on a migrated
   -- database inside the section's transaction, and the section run; each
-  -- went red at its own label; unchanged it passed): see the commit that
-  -- adds this section.
+  -- went red at its own label; unchanged it passed):
+  --   recognition_self_players() taking an unverified self link   → (gate 1)
+  --   captain_nominate() without is_captain_of()                  → (gate 2)
+  --   captain_nominate() without the nominator's sheet test       → (gate 3)
+  --   captain_nominate() without the nominee's sheet test         → (gate 4)
+  --   captain_nominate() without "never himself", and the CHECK
+  --     recognition_nomination_not_self dropped                   → (gate 5)
+  --   captain_nominate() without match_verified()                 → (gate 6)
+  --   captain_nominate() ignoring a standing award                → (gate 7)
+  --   captain_nominate() without the 48-hour window               → (gate 8)
+  --   the open-once index dropped and its test removed            → (gate 9)
+  --   captain_nominate() storing no result hash                   → (stored)
+  --   the recognition_nomination_audit trigger dropped            → (stored)
+  --   recognition_nomination_mine() answering true                → (reads)
+  --   the RESTRICTIVE recognition_nomination_not_platform dropped → (reads)
+  --   honour_tie_nomination() without its guardian test           → (decide)
+  --   match_nomination_decide() without match_award_holds()       → (decide)
+  --   match_nomination_decide() without its platform-wide cut     → (decide)
+  --   captain_nominate() reopening after no award                 → (close)
+  --   recognition_nomination_lapse() lapsing nothing              → (close)
+  --   captaincy_holds() without its season test                   → (captain)
+  --   captaincy_holds() without "his side today"                  → (captain)
+  --   GRANT EXECUTE ON is_captain_of() TO scrbrd_app              → (grants)
   DECLARE
     y   jsonb := _v144_stage();
     M   uuid := (y->>'M')::uuid;
@@ -36302,7 +36332,7 @@ $v116$;
       PERFORM _as((y->>who)::uuid);
       PERFORM _assert((SELECT count(*) FROM recognition_nomination WHERE id = v_n) = 1, format('§122 (reads): %s does not read it', who));
     END LOOP;
-    FOREACH who IN ARRAY ARRAY['nominee', 'mate', 'vice', 'capx', 'mother', 'other', 'wes', 'plat', 'scorer'] LOOP
+    FOREACH who IN ARRAY ARRAY['nominee', 'mate', 'vice', 'capx', 'mother', 'other', 'wes', 'plat', 'twohats', 'scorer'] LOOP
       PERFORM _as((y->>who)::uuid);
       PERFORM _assert((SELECT count(*) FROM recognition_nomination WHERE id = v_n) = 0, format('§122 (reads): %s reads it', who));
       PERFORM _assert(NOT EXISTS (SELECT 1 FROM match_nomination_state(M)) AND NOT EXISTS (SELECT 1 FROM nominations_to_decide() t WHERE t.nomination_id = v_n),
@@ -36330,7 +36360,7 @@ $v116$;
       format('§122 (reads): the captain''s block after his pick reads %s', j));
 
     -- (decide)
-    FOREACH who IN ARRAY ARRAY['assistant', 'manager', 'office', 'other', 'wes', 'cap'] LOOP
+    FOREACH who IN ARRAY ARRAY['assistant', 'manager', 'office', 'other', 'wes', 'cap', 'twohats'] LOOP
       PERFORM _as((y->>who)::uuid);
       SELECT * INTO r FROM match_nomination_decide(v_n, 'confirm', NULL, _v142_working((y->>'M_head')::int, N1, ARRAY[N1, C]));
       PERFORM _assert(r.ok = false AND r.reason = 'not_permitted', format('§122 (decide): %s answered %s/%s', who, r.ok, r.reason));

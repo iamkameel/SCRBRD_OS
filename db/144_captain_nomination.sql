@@ -30,8 +30,10 @@
 --                himself; by the side's coach, assistant coach and team
 --                manager; and by the school's deciders and its office
 --                (recognition.match.award / recognition.manage holders at
---                the school). RESTRICTIVE: never a platform-wide
---                assignment (D7), never a support session, never a pad.
+--                the school). RESTRICTIVE: never anybody who holds a
+--                platform-wide assignment (D7, the person, as db/57 cuts
+--                it), never a support session, never a pad. The doors keep
+--                the same cut.
 --                The application writes no row: SELECT is its only grant;
 --                the doors below write.
 --   honour     + nomination_id  D18: the nomination an award answered; set
@@ -739,7 +741,9 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 -- The coach decides the nomination (D18): confirm (the nominee), choose
 -- another (p_player, through R6's match_award(), which writes the honour
 -- and the side's notice; the trigger above answers the nomination), or no
--- award. R6's own refusals come back as they are.
+-- award. R6's own refusals come back as they are. Never by anybody who
+-- holds a platform-wide assignment (D7), as the table's read and the staff
+-- sheet's line.
 --   not_permitted · lapsed · already_decided · action_invalid ·
 --   guardian_conflict (detail: who decides) · decider_is_nominator ·
 --   player_required · and match_award()'s
@@ -751,7 +755,7 @@ DECLARE
   r record; v_player uuid;
 BEGIN
   SELECT * INTO n FROM recognition_nomination x WHERE x.id = p_nomination AND x.kind = 'player_of_match';
-  IF NOT FOUND OR v_me IS NULL OR NOT match_award_holds(n.school_id, n.team_code, n.match_id) THEN
+  IF NOT FOUND OR v_me IS NULL OR app_is_platform_wide() OR NOT match_award_holds(n.school_id, n.team_code, n.match_id) THEN
     RETURN QUERY SELECT false, 'not_permitted'::text, NULL::text, NULL::uuid; RETURN;
   END IF;
   PERFORM 1 FROM match y WHERE y.id = n.match_id FOR UPDATE;
@@ -786,11 +790,12 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 
 -- The To-resolve row (D18, A22): every open nomination in its window the
 -- caller may decide — never one of a boy he is guardian of, never his own.
+-- Nobody who holds a platform-wide assignment (D7), as the table's read.
 CREATE OR REPLACE FUNCTION nominations_to_decide()
 RETURNS TABLE (nomination_id uuid, match_id uuid, starts_at timestamptz, side text, side_label text, heading text,
                nominee_name text, nominated_as text, closes_at timestamptz) AS $$
 BEGIN
-  IF app_user_id() IS NULL THEN RETURN; END IF;
+  IF app_user_id() IS NULL OR app_is_platform_wide() THEN RETURN; END IF;
   PERFORM recognition_nomination_lapse(NULL);
   RETURN QUERY
   SELECT n.id, n.match_id, m.starts_at, x.side, coalesce(fixture_side_label(n.school_id, n.team_code), n.team_code),
