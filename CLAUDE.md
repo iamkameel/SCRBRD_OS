@@ -234,6 +234,13 @@ screen. They advise; this repository's rules win where they differ:
 - **No photograph of a child, and no child's name, on a public page**
   (`docs/policy/PUBLIC_DATA.md`). Skip the skills' stock-photo and
   illustration fetches for any page a child could appear on.
+- **Marketing films, decks and demos may name children** (Kameel,
+  2026-11-07), on three conditions. The names are invented, never a real
+  pupil's. They take the form the product shows a consenting child,
+  initial and surname ("K Dlamini"). And one child is isolated to show POPIA
+  at work: named in the signed-in views, but shown only as a position
+  ("Batter", with "No consent") on anything public. Still no photograph or
+  likeness of a child.
 - **No new runtime dependency** (Tailwind, shadcn, GSAP, Sonner, a component
   registry) without Kameel's say. The bundle ceilings in
   `tools/check-bundle.mjs` stand.
