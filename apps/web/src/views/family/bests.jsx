@@ -14,6 +14,7 @@
 import { useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useLive } from "../../lib/live.js";
+import { withOpponents } from "../../lib/matchCentre.js";
 import { Icon } from "../../ui/icons.jsx";
 import { Action, Card, Line, NoneOr } from "./parts.jsx";
 import {
@@ -37,8 +38,10 @@ export function PersonalBests({ role, playerId, who, testid = "personal-bests", 
   const [group, setGroup] = useState(GROUPS[0].id);
   // The read is asked about this one boy, and answers about nobody else.
   const read = useLive("personal_bests", role, nonce, { playerId });
+  const { rows: matches } = useLive("matches", role);
   if (quietWhenNone && !read.loading && !read.error && !read.rows.length) return null;
-  return <PersonalBestsView rows={read.rows} read={read} group={group} onGroup={setGroup} who={who} testid={testid}
+  // His own end of each fixture names the opponent (the server's is the host's).
+  return <PersonalBestsView rows={withOpponents(read.rows, matches)} read={read} group={group} onGroup={setGroup} who={who} testid={testid}
     onRetry={() => setNonce((n) => n + 1)}/>;
 }
 

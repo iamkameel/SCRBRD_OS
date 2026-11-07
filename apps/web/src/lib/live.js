@@ -94,6 +94,10 @@ function asMatch(r) {
     homeCode: r.home_code ?? null,
     awayCode: r.away_code ?? null,
     awayTeamCode: r.away_team_code ?? null,
+    // Which end of the fixture is the reader's own, as the read says it
+    // ('home' | 'away', null where it does not): a fixture the other school
+    // hosts names its opponent as the host sees it, so "v" is read from this.
+    mySide: r.my_side === "home" || r.my_side === "away" ? r.my_side : null,
     // The toss as the fixture read carries it: 'home' | 'away', 'bat' | 'bowl'.
     tossWonBy: r.toss_won_by ?? null,
     tossDecision: r.toss_decision ?? null,
@@ -1589,9 +1593,16 @@ export function liveResources() { return Object.keys(ADAPT); }
  * without guessing from the code. lib/readState.js decides.
  * @param {string} resource  @param {string} [query]  the string readQuery() made
  */
+// The reads derived from the whole ball log under its row security
+// (demo-season PERF: career 3.5 to 10 s on the demo's season). Under the
+// default ten seconds a pupil's passport said "Could not read your career
+// figures" of a read that was still on its way; these wait for it.
+const SLOW_READS = new Set(["career", "career_by_season", "milestones", "personal_bests", "record_boards"]);
+const timeoutFor = (/** @type {string} */ resource) => (SLOW_READS.has(resource) ? 30000 : undefined);
+
 export async function readOnce(resource, query = "") {
   try {
-    const { rows } = await api(`/api/read/${resource}${query}`);
+    const { rows } = await api(`/api/read/${resource}${query}`, { timeoutMs: timeoutFor(resource) });
     return { rows: rows.map(ADAPT[resource]), live: true, loading: false, error: null, status: null };
   } catch (/** @type {any} */ e) {
     if (e.status === 403 && e.code === "module_disabled") {
@@ -1670,7 +1681,7 @@ export async function readLive(resource, params = null) {
   if (!signedIn() || !ADAPT[resource]) return null;
   const query = readQuery(params);
   try {
-    const { rows } = await api(`/api/read/${resource}${query}`);
+    const { rows } = await api(`/api/read/${resource}${query}`, { timeoutMs: timeoutFor(resource) });
     return (rows ?? []).map(ADAPT[resource]);
   } catch { return null; }
 }
