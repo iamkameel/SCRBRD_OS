@@ -338,6 +338,13 @@ try {
     };
     const a = await visit(`/live/${pub2}`);
     const before = await label(a.page);
+    // CRI-1.7: a finished fixture's public Summary is its result view, and it names nobody the rule does not.
+    await a.page.waitForSelector('[data-testid="mc-result-view"]', { timeout: 10000 }).catch(() => {});
+    const rv = await text(a.page);
+    ok("the finished fixture's public Summary is its result view: the result, the totals, the match in figures",
+       await tid(a.page, "mc-summary").getAttribute("data-view").catch(() => null) === "result" && await tid(a.page, "mc-result-row").count() >= 1
+       && await tid(a.page, "mc-result-facts").count() === 1 && await tid(a.page, "mc-board").count() === 0);
+    ok("...naming in it only whom the rule names, as the scorecard does: no first name, no pseudonym, no date", leaks(rv).length === 0, leaks(rv).join(","));
     ok("a finished fixture nobody has confirmed: Provisional", before.state === "provisional" && /^Provisional$/.test(before.words.trim()), JSON.stringify(before));
     await a.ctx.close();
     // Made official as the owner here: the door, its rules and its refusals are db/99 §91's and smoke-official's.

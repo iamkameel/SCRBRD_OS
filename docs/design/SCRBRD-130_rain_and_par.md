@@ -326,6 +326,37 @@ Built by Opus in the order D14 set, one migration a phase, each proof broken onc
 
 **Proofs falsified** (each broken once, red, restored): §52 (par), (faced), (method), (deemed), (stopped), (public), (super over); §53 (floor), (revised), (ended), (grain), (window), (pooled), (guard); §54 (operator), (structure), (synthetic), (published), (withdrawn), (frozen), (platform), (guard); the JavaScript Laws' six refusals, the super over's revision refusal ahead of them, and the fold's par clause and overs-faced rule.
 
+## 10 · The par estimate (CRI-1.8), and its calibration after the pilot
+
+**Decided (Kameel, 2026-10-23, CRICINFO_GAP_PLAN.md decision 5):** win probability is shown now, from the existing par line, labelled a par estimate, and recalibrated once pilot ball logs exist. It supersedes SCRBRD-133 D4 for this one figure; the pressure index stays out.
+
+**What it is.** A reading of the par line and nothing else: how far the innings stands from the ground's par at this point (§6.5), set against how far the ground's own first-innings totals spread. It is computed in the browser from the par report the page already reads (`GET …/par`, public and signed in; the ground display's), by `parEstimate()` in `packages/scoring/src/pressure.mjs`; no route, table or migration changed. It is not fitted to any result: no school result exists to fit it to yet.
+
+| symbol | meaning | from |
+|---|---|---|
+| `P` | the ground's par: the mean of its first-innings totals | `venue.par` (§6.3) |
+| `parAt` | par at this point: `P` scaled by the resources (or the overs) used | `venue.parAt` (§6.5) |
+| `f` | what is left of an innings, as a share of par: `(P − parAt) ÷ P` | |
+| `σ` | the spread of the ground's totals: `(high − low) ÷ d2(n)`, the range estimator, `d2` the control-chart constant for `n` innings (2 to 25; past 25 the 25th, which overstates `σ` slightly) | `venue.range`, `venue.n` |
+
+- **First innings**, the side batting: `Φ((runs − parAt) ÷ (σ √(1 + f)))` — its total, par from here added, against a chase expected to make par; both uncertain.
+- **Chase**, the side chasing: `Φ((P·f − (need − ½)) ÷ (σ √f))` — the runs par says are left against the runs needed.
+- Shown to the nearest **5 %**, never below **5 %** or above **95 %** (`PAR_ESTIMATE_STEP`, `PAR_ESTIMATE_BOUND`): an estimate nobody has calibrated does not say "certain".
+- **Nothing is shown** where par defines nothing, rather than a guess: no report for this position (`reportFor()`), no venue par (fewer than five innings, §6.3), a declaration match, a super over, a scorebook's innings, a ground with no spread on record, a first innings the umpires cut (held to a full innings' par), rain anywhere in the match (the DLS par is a calculation for one target and has no spread), a chase with nothing left, and a decided match.
+- **Where it is drawn:** the Summary's board (signed in and public) and the ground display (signed in and public), each as one line, the label first: *Par estimate: HIL 1XI 65% · WBH 1XI 35%*. Never on the pad. Team names only: no player is named, ranked or implied (PUBLIC_DATA.md L1; A3 is untouched — nothing here compares children).
+
+**Its known limits, said plainly.** With no DLS table loaded `parAt` is the proportion of overs, which ignores wickets, so the estimate does not move when a wicket falls; with a table it does (§6.5). `σ` from a range of five to ten innings is rough. The chase treats the runs still to come as a normal variable around par; a tie's small share is counted with the fielding side.
+
+### Recalibration after the pilot
+
+Once the pilot has played enough matches (at least 30 limited-overs matches at grounds with a venue par; Kameel to confirm the number):
+
+1. **Replay every pilot ball log** through `parReport()` and `parEstimate()` at the end of each over, with the venue par as it stood on the match's date (§6.2's window), and record `(z, kind, over, the side that won)`. `z` is returned with every estimate for this purpose.
+2. **Reliability.** Bin the estimates by their shown figure (5 %, 10 % … 95 %) and compare each bin's share of wins with its figure; report the Brier score and its reliability term, for first innings and chases apart.
+3. **Refit only the spread.** Keep the two formulas; fit one scale `k` on `σ` (`σ' = k·σ`) by maximum likelihood over the logs — `k > 1` if the estimate has been too sure of itself. A separate `k` for chases only if the data supports it.
+4. **Decide the grain and the bounds again** from the bins' counts: a 5 % grain that the bins cannot tell apart becomes 10 %.
+5. **Kameel decides** whether the recalibrated estimate stays, and its wording, from the reliability table. If it is no better than 50/50 at the start of a chase, it comes off the board.
+
 ## Appendix A · Existing things this design relies on, by name
 
 | thing | where | used for |
