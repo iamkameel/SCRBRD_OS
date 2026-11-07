@@ -13,13 +13,48 @@
  * sport, the principal, the school office. A refused write is an empty
  * result, not a branch here. school_id and team_code are stamped from the
  * player, awarded_by from the session; the request supplies none of them.
+ *
+ * WHO DECIDED (RECOGNITION A5, D5; db/145): every honour names its decider,
+ * a holder of recognition.decide at the boy's school (the director of sport
+ * or the principal). One who decides names nobody and is the decider; the
+ * office records a decision by naming who made it (`decidedBy`), and that
+ * person is told. honour_stamp() refuses anyone else ("decider_required").
+ *
+ * THE CITATION (D2) is a coach's or a decider's words about a child, read by
+ * his team-mates and his parents, so it passes the one writer-side list
+ * (packages/policy/src/words.mjs, SG-10's) before it is written; on a hit it
+ * is refused back to its writer with the words named.
  */
+import { refusedWords, CLASSES, CLASS_SENTENCE } from "@scrbrd/policy/words";
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs):
 // pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
 
-const err = (/** @type {string} */ code, status = 400) => Object.assign(new Error(code), { status });
+const err = (/** @type {string} */ code, status = 400, /** @type {Record<string, unknown>} */ extra = {}) =>
+  Object.assign(new Error(code), { status, extra });
+
+/**
+ * D2's refusal for a citation or a rationale, in words for its writer alone:
+ * every refused word named, one sentence for each class hit, and what to do.
+ * @param {{ word: string, cls: string }[]} hits
+ * @param {string} what  "A citation" | "A rationale"
+ * @param {string} readers  who reads it
+ */
+export function wordsRefusal(hits, what, readers) {
+  const listed = (/** @type {string[]} */ xs) => xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
+  // words.mjs's own sentences, but for the derisive one, which speaks of the
+  // side reading a plan: here the readers are named in the line before.
+  const sentence = (/** @type {string} */ c) => c === "derisive" ? "It is about a boy, and others read it."
+    : CLASS_SENTENCE[/** @type {keyof typeof CLASS_SENTENCE} */ (c)];
+  return [`This can't be written with ${listed(hits.map((h) => h.word))} in it.`, `${what} is read by ${readers}.`,
+          ...CLASSES.filter((c) => hits.some((h) => h.cls === c)).map(sentence), "Change the words and send again."].join(" ");
+}
+/** @param {unknown} text @returns {string | null} */
+const citationRefused = (text) => {
+  const hits = refusedWords(text);
+  return hits.length ? wordsRefusal(hits, "A citation", "his side and his parents") : null;
+};
 // Not player_of_match: a match's award is decided through potm-api.mjs, and
 // db/142's honour_match_award_door refuses one written here.
 const KINDS = ["colours", "half_colours", "honours", "captain", "vice_captain", "player_of_season", "award"];
@@ -41,16 +76,22 @@ export function recognitionRoutes({ pool, secret }) {
     catch (/** @type {any} */ e) {
       // 23514 is the table's own rule — an unnamed award, an edit after the
       // fact — and 23505 is the one-a-season index. Both say which.
+      if (e.code === "23514" && e.message === "decider_required") return res.status(422).json({ error: "decider_required", detail: e.detail });
+      // db/146 (R8): a Colours decision's row checks, whichever route.
+      if (e.code === "23514" && e.message === "guardian_conflict") return res.status(422).json({ error: "guardian_conflict", detail: e.detail ?? null });
+      if (e.code === "23514" && e.message === "decider_is_nominator") return res.status(422).json({ error: "decider_is_nominator" });
+      // Kameel, 6 Nov 2026: Full or Half colours in a season, not both.
+      if (e.code === "23514" && e.message === "one_colours_a_season") return res.status(422).json({ error: "one_colours_a_season", detail: e.detail });
       if (e.code === "23514") return res.status(422).json({ error: "invalid_honour", detail: e.message });
       if (e.code === "23505") return res.status(422).json({ error: "already_awarded_this_season", detail: e.detail });
       if (e.code === "23503") return res.status(404).json({ error: "no_such_player" });
       const status = e.code === "42501" ? 403 : (e.status || 500);
-      res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error"), ...(e.extra ?? {}) });
     }
   };
 
   return {
-    // POST /api/honours { playerId, kind, name?, season, citation?, awardedOn?, isPublic? }
+    // POST /api/honours { playerId, kind, name?, season, citation?, awardedOn?, isPublic?, decidedBy? }
     award: handle(async (req) => {
       const b = req.body || {};
       if (!UUID.test(String(b.playerId ?? ""))) throw err("player_required");
@@ -63,22 +104,27 @@ export function recognitionRoutes({ pool, secret }) {
       const season = String(b.season ?? "").trim();
       if (!SEASON.test(season)) throw err("season_must_be_yyyy_or_yyyy_slash_yy");
       const citation = b.citation == null || String(b.citation).trim() === "" ? null : String(b.citation).trim().slice(0, 300);
+      const refused = citationRefused(citation);
+      if (refused) throw err("citation_refused", 422, { words: refusedWords(citation).map((h) => h.word), message: refused });
       const awardedOn = isoDate(b.awardedOn, "awarded_on_must_be_yyyy_mm_dd");
       const isPublic = b.isPublic === true;
+      // D5: who decided, when the recorder did not. The table checks him.
+      if (b.decidedBy != null && !UUID.test(String(b.decidedBy))) throw err("decided_by_invalid");
+      const decidedBy = b.decidedBy == null ? null : String(b.decidedBy);
 
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         const { rows: sr } = await client.query(`select season_named($1, 'school') as id`, [season]);
         if (!sr[0]?.id) throw err("season_unknown_at_school_level");
         const { rows } = await client.query(
-          `insert into honour (player_id, kind, name, season_id, citation, awarded_on, is_public)
-           values ($1, $2, $3, $4, $5, coalesce($6::date, sa_today()), $7)
-           returning id, player_id, school_id, team_code, kind, name, citation, awarded_on, is_public, awarded_by`,
-          [b.playerId, b.kind, name, sr[0].id, citation, awardedOn, isPublic]);
+          `insert into honour (player_id, kind, name, season_id, citation, awarded_on, is_public, decided_by)
+           values ($1, $2, $3, $4, $5, coalesce($6::date, sa_today()), $7, $8)
+           returning id, player_id, school_id, team_code, kind, name, citation, awarded_on, is_public, awarded_by, decided_by`,
+          [b.playerId, b.kind, name, sr[0].id, citation, awardedOn, isPublic, decidedBy]);
         if (!rows.length) throw err("not_permitted", 403);
         const h = rows[0];
         return { id: h.id, playerId: h.player_id, schoolId: h.school_id, teamCode: h.team_code, kind: h.kind,
                  name: h.name, season, citation: h.citation, awardedOn: String(h.awarded_on).slice(0, 10),
-                 isPublic: h.is_public, awardedBy: h.awarded_by };
+                 isPublic: h.is_public, awardedBy: h.awarded_by, decidedBy: h.decided_by };
       });
     }),
 
