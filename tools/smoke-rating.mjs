@@ -178,11 +178,26 @@ try {
   ok("the 1st XI coach reads their own side", seen.some((r) => r.player_id === P_MATE));
   const spectator = await ratings(watcher);
   ok("a spectator reads no ratings at all", spectator.length === 0);
-  // A coach who cannot read another side's assessments gets no coach half —
-  // not somebody else's number.
+  // A coach who cannot read another side's assessments gets no row for that
+  // side's boys: a rating is his development record, and a number composed
+  // from the log alone in its place would still be a rating.
   const otherSide = seen.find((r) => r.player_id === "aaaaaaaa-0000-0000-0000-000000000006");
-  ok("...and a player in another side discloses no assessment",
-     !otherSide || otherSide.batting.coach === null);
+  ok("...and no row for a player in another side", !otherSide);
+
+  group("A pupil reads his own rating; his parents and his team-mates read none");
+  // R Pillay is P_OWN's team-mate in the 1XI: `player` lets him read the side,
+  // `selfaccess` his own development record and nobody else's (STEP4 §3.2,
+  // SCRBRD-138 §4, READERS §H). P_OWN is assessed and has balls since, so
+  // there is a number of his that a wider read would hand over.
+  const P_PUPIL = "aaaaaaaa-0000-0000-0000-000000000005";
+  const pupilRows = await ratings(await login("pillay@example.invalid"));
+  ok(`a pupil's ratings read is his own row only (${pupilRows.length})`,
+     pupilRows.length === 1 && pupilRows[0].player_id === P_PUPIL);
+  ok("...with no team-mate's row in it", !pupilRows.some((r) => r.player_id === P_OWN || r.player_id === P_MATE));
+  // H Whitfield is P_OWN's parent: guardian holds no player.development.read
+  // ("he sees his ratings and you do not", the terms popia-2026-01).
+  const parentRows = await ratings(await login("parent.whitfield@example.invalid"));
+  ok(`a parent's ratings read is empty, her own child's included (${parentRows.length})`, parentRows.length === 0);
 
   group("And the disclosure is logged");
   await q(`delete from access_log`);
