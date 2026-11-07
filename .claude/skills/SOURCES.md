@@ -10,6 +10,7 @@ the upstream repositories were not copied.
 | better-accessibility, better-colors, better-interface, better-layout, better-typography, better-ui, better-writing, break, build-design, explain-interface, interface-review, state-machine, variant | https://github.com/jakubkrehel/skills | d574cc8 |
 | landing-page-design | https://github.com/elayadesign/ai-design-skills | 1c1e97c |
 | tastemaker, ideagram | https://github.com/codeswithroh/tastemaker | e39b4bf |
+| stageshow (v1.1.1; MIT, with its own `NOTICE.md` for the bundled brand icons and app artwork) | https://github.com/benjitaylor/skills (`stageshow/`) | 299140f (added 7 Nov 2026) |
 | ponytail, ponytail-audit, ponytail-debt, ponytail-gain, ponytail-help, ponytail-review | https://github.com/DietrichGebert/ponytail (`skills/`; the plugin's hooks and band were not copied) | 09c434a (updated 21 Oct 2026) |
 | edge-to-edge, android-intent-security, android-permissions-security, play-policy-insights, android-cli, testing-setup | https://github.com/android/skills (Apache 2.0; added 27 Oct 2026, the six a Capacitor shell would use; the other 30 native-app skills were not copied) | 45fd173 |
 
