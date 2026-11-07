@@ -22,6 +22,7 @@
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-read.mjs
  *   BROWSER_READ_DEBUG=1 node tools/smoke-browser-read.mjs
+ *   BROWSER_READ_SHOTS=<dir> node tools/smoke-browser-read.mjs   (the Overall radar's screenshots)
  */
 import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
@@ -76,8 +77,8 @@ await new Promise((r) => web.listen(WEB_PORT, r));
 const browser = await chromium.launch({ ...launchOptions() });
 
 /** A fresh page per person: a session must not leak between them. */
-async function open() {
-  const ctx = await browser.newContext();
+async function open(opts = {}) {
+  const ctx = await browser.newContext(opts);
   await offline(ctx);
   const page = await ctx.newPage();
   watchReads(page);
@@ -682,6 +683,147 @@ try {
     await click(coach.page, /^technical$/i, 4000);
   } else {
     ok("the skills screen is reachable for a coach", false);
+  }
+
+  // ── The Overall radar (Kameel, 6 Nov) ───────────────────────────
+  // One radar of the four groups, each the mean of its ratings, the overall
+  // beside it: on the Skills Matrix's Overall tab (with every player's means
+  // for staff), in Squad's Skills snapshot and on the Profiles page, the same
+  // component and the same figures. J Whitfield is rated in all four groups
+  // now (the three physical 20s above); M Cele in technical alone, for this
+  // group only (one rating, taken away at its end); R Pillay in none. A fresh coach, at twice the pixels, so the screenshots
+  // (BROWSER_READ_SHOTS=<dir>) are sharp; the steps after this one keep theirs.
+  group("The Overall radar: Skills Matrix, Squad's snapshot, Profiles (Kameel, 6 Nov)");
+  {
+    const SHOTS = process.env.BROWSER_READ_SHOTS;
+    const shot = async (pg_, name) => { if (SHOTS) await pg_.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: false }).catch(() => {}); };
+    const C = await open({ deviceScaleFactor: 2, viewport: { width: 1280, height: 900 } });
+    const P = C.page;
+    const at = (id) => P.locator(`[data-testid="${id}"]`);
+    const said = (l) => l.innerText({ timeout: 3000 }).catch(() => "");
+    // The floors over what this change draws: the tabs, the radar, its figures and the table.
+    const myFloors = () => P.evaluate(() => {
+      const small = [], tiny = [];
+      for (const root of document.querySelectorAll('[data-testid^="skills-tab-"], [data-testid="skills-overall"], [data-testid="skills-overall-all"], [data-testid="squad-skills-snapshot"], [data-testid="profile-skills-radar"]')) {
+        for (const n of [root, ...root.querySelectorAll("*")]) {
+          const own = [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
+          const fs = parseFloat(getComputedStyle(n).fontSize);
+          if (own && fs < 12) small.push(`${n.tagName} ${fs}px "${n.textContent.trim().slice(0, 30)}"`);
+          if (n.tagName === "BUTTON") { const h = n.getBoundingClientRect().height; if (h && h < 44) tiny.push(`BUTTON ${Math.round(h)}px "${n.textContent.trim().slice(0, 30)}"`); }
+        }
+      }
+      return { small, tiny };
+    });
+    const WHITFIELD = "aaaaaaaa-0000-0000-0000-000000000001", CELE = "aaaaaaaa-0000-0000-0000-000000000004", PILLAY_ID = "aaaaaaaa-0000-0000-0000-000000000005";
+    // His four groups from the rows as they stand (newest score per skill), so
+    // the figures asserted are the database's, not a copy typed here.
+    const owner = new pg.Pool({ connectionString: ownerUrl() });
+    let want = null;
+    try {
+      const { rows } = await owner.query(
+        `select category, avg(score)::float as m from (select distinct on (category, metric) category, score from player_skill
+          where player_id = $1 and withdrawn_at is null order by category, metric, assessed_on desc) s group by category`, [WHITFIELD]);
+      const m = Object.fromEntries(rows.map((r) => [r.category, r.m]));
+      const t = (v) => Math.round(v * 10) / 10;
+      await owner.query(`insert into player_skill (player_id, assessed_on, category, metric, score, note) values ($1, current_date - 1, 'technical', 'footwork', 13, 'overall-radar walk')`, [CELE]);
+      want = { ...Object.fromEntries(Object.entries(m).map(([k, v]) => [k, t(v)])), overall: t(Object.values(m).reduce((a, b) => a + b, 0) / Object.values(m).length) };
+    } catch (e) { ok("his ratings are read from the database", false, e.message); }
+    ok("the coach signs in", await signIn(P, /Coach/));
+    ok("the skills screen opens", await nav(P, /Skills/));
+    ok("an Overall tab sits beside the four groups, 44px tall", await (async () => {
+      const tabs = await P.locator('[data-testid^="skills-tab-"]').evaluateAll((bs) => bs.map((b) => [b.textContent.trim().toLowerCase(), b.getBoundingClientRect().height]));
+      return tabs[0]?.[0] === "overall" && ["technical", "mental", "tactical", "physical"].every((c) => tabs.some(([t]) => t === c)) && tabs.every(([, h]) => h >= 44);
+    })());
+    await at("skills-tab-overall").click({ timeout: 4000 }).catch(() => {});
+    await P.waitForTimeout(400);
+    const chart = at("overall-radar-chart");
+    ok("Overall draws his radar: an image whose words are the four groups and the overall", await chart.count() === 1
+       && await chart.getAttribute("role") === "img" && /Technical [\d.]+ of 20, Mental [\d.]+ of 20, Tactical [\d.]+ of 20, Physical [\d.]+ of 20\. Overall [\d.]+ of 20\./.test(await chart.getAttribute("aria-label") ?? ""),
+       await chart.getAttribute("aria-label").catch(() => null));
+    ok("...every axis labelled in words on the chart", (await chart.locator("text").allTextContents().catch(() => [])).join() === "Technical,Mental,Tactical,Physical");
+    ok("...each group the mean of his ratings, and the overall the mean of the four, as the database has them",
+       !!want && await at("overall-radar").getAttribute("data-overall") === String(want.overall)
+       && (await Promise.all(["technical", "mental", "tactical", "physical"].map(async (c) => (await said(at(`overall-radar-${c}`))).includes(String(want[c]))))).every(Boolean),
+       { want, shown: await at("overall-radar").innerText().catch(() => "") });
+    ok("...and the figure in the list beside him is that overall, rounded", (await said(P.locator(`[data-testid="overall-row-${WHITFIELD}"]`))).includes(String(want?.overall)));
+    const all = at("skills-overall-all");
+    ok("a coach also sees every listed player's groups, in a table", await all.count() === 1 && await all.locator("tbody tr").count() >= 3);
+    ok("...a boy rated in one group shows that one and 'Not rated' for the rest", /Not rated/.test(await said(at(`overall-row-${CELE}`))));
+    ok("...a boy nobody assessed says 'Not assessed yet', not a row of zeros",
+       /Not assessed yet/.test(await said(at(`overall-row-${PILLAY_ID}`))) && !/\b0\b/.test(await said(at(`overall-row-${PILLAY_ID}`))));
+    ok("...and it is not a ranking: no data-ranking, no ranking's title", (await rankingsOnScreen(P)).length === 0, await rankingsOnScreen(P));
+    {
+      const fl = await myFloors();
+      ok(`nothing on the Overall tab under 12px (${fl.small.length}) or tapped under 44px (${fl.tiny.length})`, fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].slice(0, 6).join(" · "));
+    }
+    await shot(P, "skills-overall-desktop");
+    await at(`overall-row-${CELE}`).locator("button").click({ timeout: 4000 }).catch(() => {});
+    await P.waitForTimeout(500);
+    ok("a name in the table opens his: one group of four, no shape, said in words",
+       await at("overall-radar-chart").count() === 0 && /Rated in 1 of 4 groups/.test(await said(at("overall-radar-partial"))) && /from 1 of 4 groups/.test(await said(at("overall-radar"))));
+    await at(`overall-row-${PILLAY_ID}`).locator("button").click({ timeout: 4000 }).catch(() => {});
+    await P.waitForTimeout(500);
+    ok("a boy with none, chosen from the table: 'Not assessed yet.', no radar, and the table stays",
+       /^Not assessed yet\.$/.test((await said(at("skills-read-state"))).trim()) && await at("overall-radar-chart").count() === 0 && await all.count() === 1,
+       (await said(at("skills-read-state"))).trim());
+    await at(`overall-row-${WHITFIELD}`).locator("button").click({ timeout: 4000 }).catch(() => {});
+    await P.waitForTimeout(500);
+    // A phone: the radar and its figures fit, and the page does not scroll sideways.
+    await P.setViewportSize({ width: 390, height: 844 });
+    await P.waitForTimeout(500);
+    await at("skills-overall").scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+    const box = await chart.boundingBox().catch(() => null);
+    const wide = await P.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    ok("at 390px the radar is whole on screen and the page does not scroll sideways", !!box && box.x >= 0 && box.x + box.width <= 390 && wide <= 0, { box, wide });
+    {
+      const fl = await myFloors();
+      ok(`...nothing under 12px (${fl.small.length}) or tapped under 44px (${fl.tiny.length}) on the phone`,
+         fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].slice(0, 6).join(" · "));
+    }
+    await shot(P, "skills-overall-phone");
+    await P.setViewportSize({ width: 1280, height: 900 });
+    await P.waitForTimeout(300);
+
+    // Squad Management: his card, the Skills snapshot, the same radar.
+    ok("the squad screen opens", await nav(P, /Squad/));
+    await at(`squad-card-${WHITFIELD}`).click({ timeout: 4000 }).catch(() => {});
+    await P.waitForTimeout(600);
+    const snap = at("squad-skills-snapshot");
+    ok("Squad's Skills snapshot draws the Overall radar", await snap.count() === 1 && await snap.locator('[data-testid="overall-radar-chart"]').count() === 1);
+    ok("...with the same overall the Skills Matrix gave", await at("squad-overall-radar").getAttribute("data-overall").catch(() => null) === String(want?.overall));
+    ok("...on the 1-20 scale, not on 100", /of 20/.test(await snap.locator('[data-testid="overall-radar-chart"]').getAttribute("aria-label").catch(() => "") ?? "") && await snap.locator('[data-max="100"]').count() === 0);
+    await snap.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+    {
+      const fl = await myFloors();
+      ok(`...nothing in the snapshot under 12px (${fl.small.length})`, fl.small.length === 0, fl.small.slice(0, 4).join(" · "));
+    }
+    await shot(P, "squad-skills-snapshot");
+    await at(`squad-card-${PILLAY_ID}`).click({ timeout: 4000 }).catch(() => {});
+    await P.waitForTimeout(500);
+    ok("...and a boy with no assessment is 'Not assessed yet', with no radar",
+       /Not assessed yet/.test(await said(at("squad-skills-read-state"))) && await P.locator('[data-testid="overall-radar-chart"]').count() === 0);
+
+    // Profiles: his page, the same radar.
+    ok("the profiles screen opens", await nav(P, /Profiles/));
+    await at(`roster-player-${WHITFIELD}`).first().click({ timeout: 4000 }).catch(() => {});
+    await P.waitForTimeout(1200);
+    const prof = at("profile-skills-radar");
+    ok("his Profiles page draws the Overall radar", await prof.count() === 1 && await prof.locator('[data-testid="overall-radar-chart"]').count() === 1);
+    ok("...with the same overall again", await at("profile-overall-radar").getAttribute("data-overall").catch(() => null) === String(want?.overall));
+    await prof.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+    {
+      const fl = await myFloors();
+      ok(`...nothing in it under 12px (${fl.small.length})`, fl.small.length === 0, fl.small.slice(0, 4).join(" · "));
+    }
+    await shot(P, "profiles-overall");
+    await at(`roster-player-${PILLAY_ID}`).first().click({ timeout: 4000 }).catch(() => {});
+    await P.waitForTimeout(1000);
+    ok("...and a boy with no assessment is 'Not assessed yet' there too",
+       /Not assessed yet/.test(await said(at("profile-skills-read-state"))) && await P.locator('[data-testid="overall-radar-chart"]').count() === 0);
+    ok("no scoping refusals or page errors", C.refusals.length === 0 && C.errors.length === 0, C.errors.join(" | ").slice(0, 300));
+    await C.ctx.close();
+    await owner.query(`delete from player_skill where player_id = $1 and note = 'overall-radar walk'`, [CELE]).catch(() => {});
+    await owner.end().catch(() => {});
   }
 
   // ── Writing one, in the browser ─────────────────────────────────
