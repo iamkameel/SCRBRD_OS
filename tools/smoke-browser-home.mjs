@@ -26,6 +26,18 @@
  *      is five drawn stills with their captions, every section visible and
  *      at rest, nothing animating.
  *
+ * The arena (Kameel, 6 Nov 2026: three.js, loaded after paint):
+ *   4c. home.html preloads no three.js; asked for by hand (?arena=3d, since
+ *      this browser's GL is software), three.js arrives after the home entry
+ *      by import(); the WebGL canvas is aria-hidden, at a pixel ratio of 2 or
+ *      less, fades in, and keeps drawing on screen; scrolling flies through
+ *      the five shots with the HUD; no horizontal scroll, the floors hold, no
+ *      child's name; a hidden tab draws nothing; a lost GL context takes the
+ *      scene down and the 2D film plays; with reduced motion a hand-picked
+ *      scene is still the storyboard and three.js is never fetched; and
+ *      without asking, a software-GL browser gets the film and never fetches
+ *      three.js.
+ *
  * Phase 2 — the strip (db/82):
  *   5. Nothing is listed until the school lists: a published fixture is not
  *      on the page. Listed, its card appears: the schools, live, a link to
@@ -305,8 +317,102 @@ try {
     ok("...five stills instead, each drawn, each with its caption", still.frames === 5 && frames.length === 5 && frames.every((x) => x.inked)
        && (await page.locator(".film-shots .film-cap h2").count()) === 5, JSON.stringify(frames.map((x) => x.inked)));
     ok("...and no horizontal scroll", !(await wide(page)));
+    // Reduced motion wins over a hand-picked scene: still the storyboard, and three.js never fetched.
+    const fetched = /** @type {string[]} */ ([]);
+    page.on("request", (r) => fetched.push(r.url()));
+    await page.goto(`${BASE}/?arena=3d`, { waitUntil: "networkidle" });
+    await afterReads(page, 800);
+    ok("...and asked for the 3D scene by hand, reduced motion still gets the stills, and three.js is never fetched",
+       (await page.evaluate(() => document.querySelector("main")?.dataset.arena)) === "stills" && !fetched.some((u) => /three\.module|\/scene-[^/]+\.js$/.test(u)),
+       fetched.filter((u) => /three|scene/.test(u)).join(" "));
     ok("no console errors with reduced motion", errors.length === 0, errors.join(" | "));
     await ctx.close();
+
+    group("4c. The arena: the three.js ground behind the page, after paint (Kameel, 6 Nov 2026)");
+    {
+    // This browser draws WebGL in software (SwiftShader), which arena/capable.js
+    // hands to the 2D film on its own, so the walk asks for the scene by hand.
+    const home = readFileSync("apps/web/dist/home.html", "utf8");
+    ok("three.js is not in the page's first paint: home.html preloads no three or scene chunk", !/three|scene-/.test(home));
+    const a = await visitor();
+    const loaded = /** @type {{url: string, at: number}[]} */ ([]);
+    const t0 = Date.now();
+    a.page.on("requestfinished", (r) => loaded.push({ url: r.url(), at: Date.now() - t0 }));
+    await a.page.goto(`${BASE}/?arena=3d`, { waitUntil: "domcontentloaded" });
+    await a.page.waitForFunction(() => document.documentElement.classList.contains("arena-on"), null, { timeout: 15000 }).catch(() => {});
+    const home1 = loaded.find((l) => /\/assets\/home-[^/]+\.js$/.test(l.url)), three = loaded.find((l) => /three\.module-[^/]+\.js$/.test(l.url));
+    ok("the scene is a lazy chunk: three.js arrives after the home entry, by import()", !!home1 && !!three && three.at >= home1.at, JSON.stringify({ home: home1?.at, three: three?.at }));
+    const st = await a.page.evaluate(() => {
+      const c = /** @type {HTMLCanvasElement | null} */ (document.querySelector(".arena-canvas"));
+      const stage = /** @type {HTMLElement | null} */ (document.querySelector(".arena-stage"));
+      return { mode: document.querySelector("main")?.dataset.arena, on: document.documentElement.classList.contains("arena-on"),
+               hidden: stage?.closest("[aria-hidden=true]") === stage, gl: !!c && !!(c.getContext("webgl2") || c.getContext("webgl")),
+               w: c?.width ?? 0, cssW: c?.getBoundingClientRect().width ?? 0, dpr: Number(stage?.dataset.dpr ?? 0) };
+    });
+    ok("the arena is up: a WebGL canvas, faded in on its first frame, decorative (aria-hidden)", st.mode === "3d" && st.on && st.hidden && st.gl, JSON.stringify(st));
+    ok("...drawn at a pixel ratio of 2 or less", st.w > 0 && st.w <= st.cssW * 2 + 1 && st.dpr > 0 && st.dpr <= 2, JSON.stringify(st));
+    const h1a = await a.page.evaluate(() => { const r = /** @type {Element} */ (document.querySelector("h1")).getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: innerHeight }; });
+    ok("the hero's heading is whole in the first screen over the scene", h1a.top >= 0 && h1a.bottom <= h1a.h, JSON.stringify(h1a));
+    const frames = async () => Number(await a.page.evaluate(() => /** @type {HTMLElement} */ (document.querySelector(".arena-stage")).dataset.frames ?? 0));
+    await a.page.waitForTimeout(2300);
+    const f1 = await frames();
+    await a.page.waitForTimeout(2300);
+    const f2 = await frames();
+    ok("...and it is rendering: frames go up while it is on screen", f2 > f1 && f1 > 0, `${f1} → ${f2}`);
+    // Scroll the whole film and the page: the shots, the HUD, the floors.
+    const film = await a.page.evaluate(() => { const r = /** @type {HTMLElement} */ (document.getElementById("home-film")).getBoundingClientRect(); return { top: r.top + scrollY, h: r.height, vh: innerHeight }; });
+    let overflow = false, hudOn = false;
+    for (const s of [1.2, 2.2, 3.2, 4.2, 5.2]) {
+      await a.page.evaluate((/** @type {number} */ y) => window.scrollTo({ top: y, behavior: "instant" }), film.top + s * film.vh);
+      await a.page.waitForTimeout(900);
+      overflow = overflow || await a.page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+      hudOn = hudOn || await a.page.evaluate(() => !!document.querySelector(".hud.on"));
+    }
+    const shot = await a.page.evaluate(() => document.getElementById("home-film")?.dataset.shot);
+    ok("scrolling flies the camera through the delivery: the last shot, the HUD shown on the way", shot === "5" && hudOn, `shot ${shot}, hud ${hudOn}`);
+    const total = await a.page.evaluate(() => document.documentElement.scrollHeight);
+    for (let y = film.top + film.h; y < total; y += film.vh * 0.7) {
+      await a.page.evaluate((/** @type {number} */ yy) => window.scrollTo({ top: yy, behavior: "instant" }), y);
+      await a.page.waitForTimeout(150);
+      overflow = overflow || await a.page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    }
+    ok("no horizontal scroll at 390 px over the scene", !overflow);
+    const fl = await floors(a.page);
+    ok("over the scene too: no text under 12px, nothing tapped under 44px", fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].slice(0, 4).join(" · "));
+    ok("the scene's page names no child", namesIn(await text(a.page)).length === 0, namesIn(await text(a.page)).join(", "));
+    // A hidden tab draws nothing.
+    await a.page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+    await a.page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, get: () => true }); document.dispatchEvent(new Event("visibilitychange")); });
+    await a.page.waitForTimeout(1300);
+    const h1f = await frames();
+    await a.page.waitForTimeout(2200);
+    const h2f = await frames();
+    ok("a hidden tab stops the loop: no frame drawn while hidden", h2f === h1f, `${h1f} → ${h2f}`);
+    await a.page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, get: () => false }); document.dispatchEvent(new Event("visibilitychange")); });
+    // The GL context lost: the scene is disposed and the 2D film takes over. Never a blank page.
+    await a.page.evaluate(() => {
+      const c = /** @type {HTMLCanvasElement} */ (document.querySelector(".arena-canvas"));
+      const gl = /** @type {WebGLRenderingContext} */ (c.getContext("webgl2") || c.getContext("webgl"));
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
+    });
+    await a.page.waitForFunction(() => document.querySelector("main")?.dataset.arena === "film", null, { timeout: 6000 }).catch(() => {});
+    await a.page.waitForTimeout(800);
+    const after = await a.page.evaluate(() => ({ mode: document.querySelector("main")?.dataset.arena, stage: !!document.querySelector(".arena-stage"), cls: document.documentElement.className }));
+    ok("the GL context lost: the scene is taken down and the 2D film plays instead", after.mode === "film" && !after.stage && !/arena-3d/.test(after.cls) && (await ink(a.page, ".film-canvas"))[0]?.inked === true, JSON.stringify(after));
+    ok("no console errors over the scene", a.errors.length === 0, a.errors.join(" | "));
+    await a.ctx.close();
+
+    // Without asking: this browser's software GL gets the 2D film, decided before three.js is fetched.
+    const b = await visitor();
+    const got = /** @type {string[]} */ ([]);
+    b.page.on("request", (r) => got.push(r.url()));
+    await b.page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+    await b.page.waitForTimeout(600);
+    ok("a software-GL browser gets the 2D film, and never fetches three.js",
+       (await b.page.evaluate(() => document.querySelector("main")?.dataset.arena)) === "film" && !got.some((u) => /three\.module/.test(u)),
+       got.filter((u) => /three|scene/.test(u)).join(" "));
+    await b.ctx.close();
+    }
   }
 
   group("5. The strip: a listed school's published fixture, team facts only (db/82)");

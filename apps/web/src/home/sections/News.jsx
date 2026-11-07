@@ -49,7 +49,7 @@ function Post({ p, lead, index, open: startOpen }) {
     ? { display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }
     : {};
   return (
-    <article id={`news-${p.id}`} data-testid="home-news-post" className={`os-news-in${lead ? " os-news-lead" : ""}`}
+    <article id={`news-${p.id}`} data-testid="home-news-post" className={`hb-post os-news-in${lead ? " os-news-lead" : ""}`}
       style={{ animationDelay: `${Math.min(index, 6) * 50}ms`, borderRadius: T.radius.lg, border: `1px solid ${T.line.subtle}`, background: T.fill.panel, overflow: "hidden",
                display: lead ? undefined : "flex", flexDirection: lead ? undefined : "column", minWidth: 0, scrollMarginTop: "84px" }}>
       <NewsCover seed={p.id} school={p.school || null} team={p.team || null} scope={p.team ? "team" : "school"} ratio="16 / 9"/>
@@ -93,7 +93,7 @@ export function News({ data, limit = 5 }) {
   if (!all || !ready) return null;
   const [lead, ...rest] = posts;
   return (
-    <Section id="home-news" label="News">
+    <Section id="home-news" label="News" cam="news">
       <div style={{ display: "grid", gap: T.space.lg }}>
         <Post key={lead.id} p={lead} lead index={0} open={target === lead.id}/>
         {rest.length > 0 && (

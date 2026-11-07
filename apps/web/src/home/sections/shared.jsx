@@ -31,13 +31,19 @@ export const displayHead = () => ({
  * over it) a display heading. The section arrives as it scrolls in (`.rv`,
  * home/fx.js): from a visible state, and not at all with reduced motion.
  * `reveal={false}` when its own parts arrive one by one instead.
+ *
+ * `cam` names the arena's camera shot for this section (arena/rig.js SHOTS):
+ * the 3D scene behind the page flies to it as the section comes in. Over the
+ * arena every section sits on a panel of its own (`.panel`, home/fx.js), so
+ * its words never sit on the moving picture.
  */
-export function Section({ id, label, kicker, narrow, children, style, reveal = true }) {
+export function Section({ id, label, kicker, narrow, children, style, reveal = true, cam, className }) {
   return (
-    <section id={id} aria-labelledby={id ? `${id}-h` : undefined} className={reveal ? "rv" : undefined}
+    <section id={id} aria-labelledby={id ? `${id}-h` : undefined} data-cam={cam}
+      className={["panel", reveal ? "rv" : "", className ?? ""].filter(Boolean).join(" ")}
       style={{ padding: `${T.space.xl} ${T.space.lg}`, maxWidth: narrow ? "760px" : "1120px", margin: "0 auto", width: "100%", boxSizing: "border-box", ...style }}>
-      {kicker && <p style={{ ...eyebrow(), color: T.brand.accentText, marginBottom: T.space.md }}>{kicker}</p>}
-      {label && <h2 id={id ? `${id}-h` : undefined} style={kicker ? { ...displayHead(), marginBottom: T.space.xl } : { ...eyebrow(), marginBottom: T.space.lg }}>{label}</h2>}
+      {kicker && <p className="kicker" style={{ ...eyebrow(), color: T.brand.accentText, marginBottom: T.space.md }}>{kicker}</p>}
+      {label && <h2 id={id ? `${id}-h` : undefined} className={kicker ? "display-h" : undefined} style={kicker ? { ...displayHead(), marginBottom: T.space.xl } : { ...eyebrow(), marginBottom: T.space.lg }}>{label}</h2>}
       {children}
     </section>
   );

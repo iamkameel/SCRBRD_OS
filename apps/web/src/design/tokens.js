@@ -556,6 +556,9 @@ const T = {
     interrupt: "1100ms",  // wicket, fifty, hundred, result
     ease:      "cubic-bezier(.22,1,.36,1)",
     swift:     "cubic-bezier(.4,0,.2,1)",
+    // The home page's arena (6 Nov 2026): a snap that overshoots a little, for
+    // a HUD panel, a caption or a tile arriving. Never on a figure: figures flip.
+    punch:     "cubic-bezier(.2,1.25,.3,1)",
   },
 
   type: {
