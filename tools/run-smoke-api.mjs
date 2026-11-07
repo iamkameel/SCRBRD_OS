@@ -642,7 +642,12 @@ const NO_DB = ["", "scorer", "persist", "a11y"];
 // Run by hand and never here: it needs the 330 invented players, which are
 // kept out of the repository, and the demo cast loaded on top of the seed
 // (docs/pilot/SOLO_TEST.md). Named so the check below knows it is not lost.
-const BY_HAND = ["demo-cast"];
+//
+// browser-panel-sweep: every account, every page, tab and match, recording
+// each panel that fell over (6 Nov 2026). It runs on a seeded database, but a
+// sweep of every account is the better part of an hour, so it is run before a
+// demo or after a big paste, not in every verify; PANEL_SWEEP_ACCOUNTS narrows it.
+const BY_HAND = ["demo-cast", "browser-panel-sweep"];
 
 const onDisk = readdirSync("tools")
   .filter((f) => /^smoke.*\.mjs$/.test(f))

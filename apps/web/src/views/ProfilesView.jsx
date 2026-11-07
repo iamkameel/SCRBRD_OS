@@ -239,7 +239,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               </div>
 
               {/* Recent form */}
-              {p.form&&(
+              {p.form?.length>0&&(
                 <Card sx={{padding:"14px"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
                     <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>FORM (LAST 8)</div>
