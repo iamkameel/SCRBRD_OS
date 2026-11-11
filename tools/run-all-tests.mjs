@@ -215,6 +215,8 @@ const SUITES = [
   ["practice", "apps/web/test/practice.test.mjs"],
   // Pilot Match phase 2: no name on the wire (a property test), and phase 1's locks.
   ["pilot-wire", "apps/web/test/pilotWire.test.mjs"],
+  // ...and the phone's pilot store: slots, what leaves, the refusal, the names' date.
+  ["pilot-store", "apps/web/test/pilot.test.mjs"],
   // A panel that throws is a quiet card in its place, logs its name and the
   // message once, and resets on "Try again" (ui/ErrorBoundary.jsx); same transform.
   ["error-boundary", "apps/web/test/error-boundary.test.mjs", ["--import", "./tools/register-jsx.mjs"]],

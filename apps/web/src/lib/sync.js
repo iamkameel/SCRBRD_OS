@@ -736,7 +736,7 @@ export class PadSync {
       const wire = [];
       for (const ev of batch) {
         const w = pilotWire(ev.payload ?? {}, roster);
-        if (w.ok) wire.push({ ...ev, payload: w.event });
+        if (w.ok) { const out = { ...ev }; out.payload = w.event; wire.push(out); }
         else kept.push({ idempotencyKey: ev.idempotencyKey, reason: "name_on_wire" });
       }
       batch = wire;

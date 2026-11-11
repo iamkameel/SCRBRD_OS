@@ -47,7 +47,7 @@ import { loadMatch } from "../lib/persist.js";
  */
 
 // ── Styles, read from the tokens at draw time so a theme switch applies ──
-export const S = {
+const S = {
   page: () => ({ minHeight: "100vh", background: T.surface.canvas, color: T.content.primary }),
   bar: () => ({
     position: "sticky", top: 0, zIndex: 20, display: "flex", alignItems: "center", gap: T.space.sm,
@@ -101,6 +101,9 @@ export const S = {
     background: T.surface.interactive, color: tone === "bad" ? T.semantic.criticalText : T.content.primary,
   }),
 };
+
+/** The practice screens' styles, for My Pilot Matches (pilotList.jsx), so the two lists read alike. */
+export const practiceStyles = S;
 
 const Row = ({ children, gap = T.space.sm, wrap = true }) => (
   <div style={{ display: "flex", flexWrap: wrap ? "wrap" : "nowrap", gap, alignItems: "center" }}>{children}</div>

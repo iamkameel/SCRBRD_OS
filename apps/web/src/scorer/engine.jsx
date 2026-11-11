@@ -2606,7 +2606,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   // was refused because one is already pending (to take it) — anyone else
   // has nothing to do here.
   const takeOver=sync.reason==="handover_pending"||sync.reason==="verifying";
-  const showHandover=attached||takeOver;
+  // A Pilot Match is never handed to another person (PILOT_MATCH_PHASE2
+  // §3.1): its holder is always its owner; another phone is a Take over.
+  const showHandover=(attached||takeOver)&&!pilotMode;
   // At a desktop or a tablet on its side, the board and its state sit beside
   // the pad instead of above it (the `pad-split` rule in GS).
   const split=activeTab==="score"&&uiMode==="focus";

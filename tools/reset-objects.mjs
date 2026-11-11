@@ -100,10 +100,10 @@ const arr = (/** @type {string[]} */ xs) => xs.length
 
 /**
  * The teardown, as one DO block: drops, in `public`, exactly the objects
- * named, and never one that belongs to an extension — and, first, each
- * schema of our own whole (`pilot`: nothing outside it may depend on it,
- * db/151's isolation check, and its tables' keys into ours would otherwise
- * read as somebody else's objects built on ours and stop the reset).
+ * named, and never one that belongs to an extension — and each schema of
+ * our own whole (`pilot`: nothing outside it may depend on it, db/151's
+ * isolation check, and its tables' keys into ours are ours, not somebody
+ * else's objects built on ours).
  * @param {ReturnType<typeof projectObjects>} o
  */
 export function teardownSql(o) {
@@ -123,12 +123,6 @@ DECLARE
   ours_schemas   text[] := ${arr(o.schemas ?? [])};
   foreign_deps   text;
 BEGIN
-  -- Our own schemas go first, whole. One transaction: a refusal below puts
-  -- them back.
-  FOR r IN SELECT nspname FROM pg_namespace WHERE nspname = ANY (ours_schemas) LOOP
-    EXECUTE format('DROP SCHEMA IF EXISTS %I CASCADE', r.nspname);
-    n := n + 1;
-  END LOOP;
 
   -- FIRST, A REFUSAL. CASCADE on one of ours would take with it anything of
   -- somebody else's built on it: their view over our table, their function
@@ -176,11 +170,21 @@ BEGIN
    WHERE NOT coalesce(x.rel  IN (SELECT oid FROM ours WHERE cls = 'pg_class'::regclass), false)
      AND NOT coalesce(x.proc IN (SELECT oid FROM ours WHERE cls = 'pg_proc'::regclass), false)
      AND NOT coalesce(x.typ  IN (SELECT oid FROM ours WHERE cls = 'pg_type'::regclass), false)
+     -- ...nor a key or a trigger of a table in a schema of our own: ours too.
+     AND NOT coalesce((SELECT ns.nspname FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace WHERE c.oid = x.rel)
+                      = ANY (ours_schemas), false)
      AND NOT EXISTS (SELECT 1 FROM pg_depend e WHERE e.classid = x.classid AND e.objid = x.objid AND e.deptype = 'e');
   IF foreign_deps IS NOT NULL THEN
     RAISE EXCEPTION 'refusing to reset: these are not this project''s, and depend on its objects: %', foreign_deps
       USING HINT = 'Nothing was dropped. Remove or detach them first: the reset drops only what db/ creates.';
   END IF;
+
+  -- Our own schemas, whole (db/151's pilot): nothing outside them may
+  -- depend on them (its isolation check), and their keys into public are ours.
+  FOR r IN SELECT nspname FROM pg_namespace WHERE nspname = ANY (ours_schemas) LOOP
+    EXECUTE format('DROP SCHEMA IF EXISTS %I CASCADE', r.nspname);
+    n := n + 1;
+  END LOOP;
 
   -- Views first: a view over a table we are about to drop would go with it
   -- under CASCADE anyway, but dropping them explicitly keeps the count honest.

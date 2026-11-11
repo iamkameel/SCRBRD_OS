@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { T } from "../design/tokens.js";
-import { PracticePage, S } from "./practice.jsx";
+import { PracticePage, practiceStyles } from "./practice.jsx";
 import { savedWords } from "../lib/practice.js";
 import { api, signedIn } from "../lib/api.js";
 import {
@@ -22,6 +22,7 @@ import {
  * screens' own styles (practice.jsx S), so the two lists read alike.
  */
 
+const S = practiceStyles;
 const scoreLine = (/** @type {any} */ l) => `${l.team} ${l.runs}/${l.wickets} (${Math.floor(l.balls / 6)}.${l.balls % 6} ov)`;
 /** @param {{children: any}} p */
 const Row = ({ children }) => <div style={{ display: "flex", flexWrap: "wrap", gap: T.space.sm, alignItems: "center" }}>{children}</div>;
@@ -121,15 +122,15 @@ export function PilotList({ onBack, onResume }) {
       {theirs && theirs.length > 0 && (
         <section style={S.card()} aria-labelledby="pilot-theirs">
           <h2 id="pilot-theirs" style={S.h2()}>On SCRBRD, not on this phone</h2>
-          {theirs.map((m) => (
+          {theirs.map((m) => { const state = m.status === "live" ? "In progress" : "Finished"; return (
             <div key={m.id} data-testid="pilot-server-row" data-id={m.id} style={{ display: "grid", gap: T.space.xs }}>
               <p style={{ ...S.body(), color: T.content.primary, fontWeight: 600 }}>{title(m)}</p>
-              <p style={S.body()}>{`${m.status === "live" ? "In progress" : "Finished"} · ${m.events} events`}</p>
+              <p style={S.body()}>{`${state} · started ${savedWords(Date.parse(m.startsAt))} · ${m.events} events`}</p>
               <Row>
                 <button type="button" className="pressBtn" style={S.secondary()} disabled={busy} data-testid="pilot-open-here" onClick={() => openHere(m)}>Open on this phone</button>
               </Row>
             </div>
-          ))}
+          ); })}
         </section>
       )}
       {rows && rows.length > 0 && (

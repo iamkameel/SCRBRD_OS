@@ -611,6 +611,9 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // all deleted from the page's own confirmation, and nothing left in
   // IndexedDB or localStorage; 390 wide.
   "browser-practice",
+  // Pilot Match phase 2, slice 3 (db/151): the phone sends a granted account's
+  // match with no name in a ball; an ungranted one stays on the phone, in words.
+  "browser-pilot",
   // Settings → Import and the Staff screen: the office has the tab and a coach
   // does not; the template downloads; a file with one bad line shows that line
   // in the route's words and keeps Import disabled; a clean file is checked,
