@@ -11433,7 +11433,7 @@ DECLARE v_m uuid; v_inn smallint; v_seq int; v_target ball_event; v_stray bigint
         v_first ball_event; v_other uuid; v_amend uuid;
 BEGIN
   SELECT b.match_id INTO v_m FROM ball_event b JOIN match m ON m.id = b.match_id
-   WHERE m.school_id = p_host AND b.school_id = p_host AND b.kind = 'ball'
+   WHERE m.school_id = p_host AND b.school_id = p_host AND b.kind = 'ball' AND b.striker_id IS NOT NULL
    GROUP BY b.match_id ORDER BY count(*) DESC, b.match_id LIMIT 1;
   SELECT * INTO v_target FROM ball_event WHERE match_id = v_m AND kind = 'ball' ORDER BY seq DESC LIMIT 1;
   v_seq := (SELECT max(seq) FROM ball_event WHERE match_id = v_m);
