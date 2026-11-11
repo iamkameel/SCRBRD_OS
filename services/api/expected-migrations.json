@@ -139,5 +139,7 @@
   "142_player_of_match.sql",
   "143_record_boards.sql",
   "144_captain_nomination.sql",
+  "145_recognition_decide.sql",
+  "146_colours.sql",
   "147_ball_log_read_per_match.sql"
 ]

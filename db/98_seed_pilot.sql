@@ -670,25 +670,27 @@ INSERT INTO match_weather (match_id, condition, temp_c, humidity_pct, wind_kph, 
 ALTER TABLE adult_clearance DISABLE TRIGGER adult_clearance_csa_age;
 INSERT INTO adult_clearance (person_id, school_id, kind, reference, issued_on, expires_on, note) VALUES
   -- The 1XI coach: all three, first aid running out.
-  ('88888888-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-041177', '2026-03-01', '2027-02-28', NULL),
-  ('88888888-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-88421',   '2025-11-01', '2027-10-31', NULL),
+  ('88888888-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-041177', current_date - 200, current_date + 400, NULL),
+  ('88888888-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-88421',   current_date - 200, current_date + 400, NULL),
   ('88888888-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'first_aid',        'FA-L1-2024-3310', '2024-09-25', current_date + 20, 'Level 1'),
   -- The 2XI coach: police clearance lapsed a month ago, no first aid on file.
   ('88888888-0000-0000-0000-00000000000a', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2025-118902', '2025-08-01', current_date - 30, NULL),
-  ('88888888-0000-0000-0000-00000000000a', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-90117',   '2026-01-15', '2028-01-14', NULL),
+  ('88888888-0000-0000-0000-00000000000a', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-90117',   current_date - 200, current_date + 400, NULL),
   -- Sarah, who coaches U16B.
-  ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-002215', '2026-01-20', '2027-01-19', NULL),
-  ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-70233',   '2025-06-01', '2027-05-31', NULL),
-  ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'first_aid',        'FA-L2-2025-0871', '2025-10-10', '2027-10-09', 'Level 2'),
+  ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-002215', current_date - 200, current_date + 400, NULL),
+  ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-70233',   current_date - 200, current_date + 400, NULL),
+  ('88888888-0000-0000-0000-000000000007', '11111111-1111-1111-1111-111111111111', 'first_aid',        'FA-L2-2025-0871', current_date - 200, current_date + 400, 'Level 2'),
   -- The physio. Her police clearance was recorded to run five years, which
   -- db/08 allowed and CSA's 24 months does not: a legacy row, still current
   -- until its own date (db/56 leaves it alone; db/99 section 34 reads it).
   ('88888888-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2024-019004', current_date - 400, current_date - 400 + 1825, 'Recorded before CSA''s 24 months applied'),
-  ('88888888-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-65510',   '2025-09-01', '2027-08-31', NULL),
-  -- The driver: everything current, permit to January.
-  ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-030771', '2026-02-20', '2027-02-19', NULL),
-  ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-71904',   '2025-12-01', '2027-11-30', NULL),
-  ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'driving_permit',   'PrDP-G-4471820',  '2025-01-10', '2027-01-09', 'Goods and passengers');
+  ('88888888-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-65510',   current_date - 200, current_date + 400, NULL),
+  -- The driver: everything current. Dates run from today, so no walk goes
+  -- stale as the calendar moves (a fixed 2027-01-09 permit read as expiring
+  -- from 10 Nov 2026).
+  ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'police_clearance', 'PCC-2026-030771', current_date - 200, current_date + 400, NULL),
+  ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'child_protection', 'NRSO-11-71904',   current_date - 200, current_date + 400, NULL),
+  ('88888888-0000-0000-0000-000000000017', '11111111-1111-1111-1111-111111111111', 'driving_permit',   'PrDP-G-4471820',  current_date - 200, current_date + 400, 'Goods and passengers');
 ALTER TABLE adult_clearance ENABLE TRIGGER adult_clearance_csa_age;
 
 -- ── Recognition ────────────────────────────────────────────────────

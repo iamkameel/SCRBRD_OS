@@ -2409,8 +2409,8 @@ No table, column, row or policy changes. It refuses to run unless the view in
 place is db/121's or its own, or if a policy it states has changed; a second
 paste changes nothing.
 
-Paste `node tools/bundle-sql.mjs --apply 147` after 144 (145 and 146 are not
-needed first), then the verify bundle (§123 is its proof: the view row for
+Paste `node tools/bundle-sql.mjs --apply 147` after 146, then the verify
+bundle (§125 is its proof: the view row for
 row against db/121's own definition under row security, for every seeded
 reader, with a ball planted at the other school; §9 names the view as its one
 exception). **Schema first**: the API built with it refuses to start without
@@ -2594,6 +2594,20 @@ migrator refuses something.
    ledgered, so it changes freely — every guarantee a new file adds gets a
    section there, and the verify bundle runs the whole file against
    production after each paste.
+
+**A migration re-runs harmlessly: that is the house rule** (Kameel, 6 Nov
+2026, on Fable's red-team of db/145 and db/146). A hand-written `db/NN` is
+written so that pasting it a second time changes nothing and raises nothing:
+`IF NOT EXISTS`, `CREATE OR REPLACE`, `ON CONFLICT DO NOTHING`, a `DROP …
+IF EXISTS` before what it re-makes, and an md5 guard that accepts the body it
+replaces **and** its own. It does not refuse a second run. A paste that fails
+half-way leaves the editor's transaction rolled back, or, run statement by
+statement, part applied; either way the remedy is to paste the same file
+again, and a file that refused its own second run would block exactly that.
+Running ahead of a predecessor is still refused (the guard names what is
+missing), and the ledger still refuses a file that *changed* after it ran.
+`db/142`–`db/146` are written this way, and the header of each says "Safe to
+run twice".
 
 ### The procedure
 

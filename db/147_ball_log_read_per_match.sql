@@ -68,7 +68,7 @@
 -- 41 ms for a parent), so 28 matches took 0.7 s a scan, slower than before.
 -- So this view states the conditions, and two guards hold them to the
 -- policies they state:
---   1. this file refuses to run, and db/99 §123 fails, if any SELECT policy
+--   1. this file refuses to run, and db/99 §125 fails, if any SELECT policy
 --      on ball_event, match or ball_event_rejudged is not the one this file
 --      was written against (name, kind, roles and the md5 of its text, as
 --      db/121 pins a view: the text, or the text with spacing and brackets
@@ -76,7 +76,7 @@
 --      if a SELECT policy on ball_event comes to read a column other than
 --      match_id and school_id (pg_depend). A policy changed later fails the
 --      verifier until this view is re-stated with it.
---   2. db/99 §123 compares the view, row for row, with db/121's own
+--   2. db/99 §125 compares the view, row for row, with db/121's own
 --      definition run under row security, for every seeded reader, with a
 --      ball planted at the other school to take the per-ball path.
 --
@@ -107,7 +107,7 @@
 -- §0 · The policies this view states, as this file was written against them.
 -- NULL when every SELECT policy on ball_event, match and ball_event_rejudged
 -- is the one below and ball_event's read only match_id and school_id; else
--- what differs, in words. Asked by §1 here and by db/99 §123. Each pin is the
+-- what differs, in words. Asked by §1 here and by db/99 §125. Each pin is the
 -- md5 of pg_get_expr() of the policy's USING, or of it with spacing and
 -- brackets taken out and the case folded (another major version's deparse).
 CREATE OR REPLACE FUNCTION ball_log_policies_unpinned() RETURNS text
@@ -148,7 +148,7 @@ AS $$
   SELECT string_agg(why, '; ' ORDER BY why) FROM wrong
 $$;
 COMMENT ON FUNCTION ball_log_policies_unpinned() IS
-  'db/147: NULL while the SELECT policies of ball_event, match and ball_event_rejudged are those ball_event_live states once a match; else what changed. db/99 §123 asks it.';
+  'db/147: NULL while the SELECT policies of ball_event, match and ball_event_rejudged are those ball_event_live states once a match; else what changed. db/99 §125 asks it.';
 
 -- §1 · What is in place is what this file was written against.
 DO $guard$
@@ -272,7 +272,7 @@ SELECT b.id, b.match_id, b.school_id, b.seq, b.epoch, b.innings,
             AND (v.school_id = b.school_id OR ball_event_row_visible(v.id)));
 
 COMMENT ON VIEW ball_event_live IS
-  'db/147: the ball log as the reader may read it, voids applied. Runs as its owner (security_barrier) and asks ball_event''s read conditions as the reader once a match; ball_log_policies_unpinned() and db/99 §123 hold it to the policies and to db/121''s rows.';
+  'db/147: the ball log as the reader may read it, voids applied. Runs as its owner (security_barrier) and asks ball_event''s read conditions as the reader once a match; ball_log_policies_unpinned() and db/99 §125 hold it to the policies and to db/121''s rows.';
 
 -- §4 · What this file made is what it says.
 DO $check$

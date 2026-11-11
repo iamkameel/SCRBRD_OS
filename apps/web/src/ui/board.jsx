@@ -49,6 +49,10 @@ import { freshnessWords } from "../lib/announce.js";
  *   lastWicket  { name, dismissal, runs, balls } — CRI-1.1, a fixed row:
  *               "Last wicket  R Naidoo c Smith b Jones 34 (25)", from the
  *               fold (scorer/boardData.js lastWicketOf), in the fold's names
+ *   estimate    CRI-1.8: "Par estimate: HIL 1XI 65% · WBH 1XI 35%", a fixed
+ *               row under the second line (lib/par.js estimateLine()), the
+ *               label before the figures on every screen that has one; the
+ *               pad passes none
  *   updated     { at, status, held } — CRI-1.1, a fixed row at the foot:
  *               "Updated 4 s ago · Live · Held 2" (lib/announce.js
  *               freshnessWords). Only its own words tick, once a second, and
@@ -254,7 +258,7 @@ export function Freshness({ at = null, status = null, held = null, testid = "boa
 }
 
 export function Board({ team, total, wickets, overs, sub, batters = [], partnership, bowler, thisOver = [], insight, compact = false,
-  size = "pad", testid = "board", extra = null, lastWicket, updated }) {
+  size = "pad", testid = "board", extra = null, lastWicket, updated, estimate = null }) {
   // On the pad the total is figure.board, 56 on a phone and 72 on a tablet;
   // the size comes from `.os-board-total` because an inline style cannot say
   // "from 768px". On a card it is figure.lg.
@@ -305,6 +309,13 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
       </div>
       {/* A screen's own row under the second line — the rate track (SCRBRD-133 §3.5). The pad passes none. */}
       {extra && <div style={{ marginTop: T.space.xs }}>{extra}</div>}
+      {/* CRI-1.8: the win estimate read off the par line, labelled as the estimate it is. */}
+      {estimate && (
+        <p data-testid={`${testid}-estimate`} style={{ margin: `${T.space.xs} 0 0`, fontFamily: T.type.body, fontSize: "13px", lineHeight: 1.35,
+          color: B.dim, fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>
+          {estimate}
+        </p>
+      )}
 
       {(batters.length > 0 || partnership || bowler || chips.length > 0) && (
         <div style={{ borderTop: `1px solid ${B.rule}`, marginTop: T.space.sm, paddingTop: compact ? T.space.xs : T.space.sm, display: "grid", gap: T.space.xs }}>
