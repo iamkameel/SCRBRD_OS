@@ -1,6 +1,6 @@
 
-import { useState } from "react";
-import { heldRoles, holdsAsHeld, holdsForPlayer } from "../lib/held.js";
+import { useEffect, useState } from "react";
+import { heldRoles, holdsAsHeld, holdsForPlayer, ownRecordsOf } from "../lib/held.js";
 import { PLAYING_ROLES, showsRankings } from "../lib/seasonAwards.js";
 import { D } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Modal, RadarChart, ReadState, SectionHeader } from "../ui/primitives.jsx";
@@ -12,8 +12,9 @@ import { MIN_RADAR_AXES, RUBRIC_MAX, SKILL_CATEGORIES, overallOf } from "../lib/
 import { OverallRadar, SKILL_COLORS } from "../ui/overallRadar.jsx";
 import { focusAreas } from "../lib/focusAreas.js";
 import { readState, readStateFor } from "../lib/readState.js";
-import { pointsFor, standingPoint, savedTargets, openTargetOn } from "../lib/assessmentHistory.js";
-import { Strip, TargetLine, DotSheet, TargetModal, SincePanel } from "./skills/History.jsx";
+import { pointsFor, standingPoint, savedTargets, openTargetOn, skillsList } from "../lib/assessmentHistory.js";
+import { Strip, TargetLine, DotSheet, TargetModal, SincePanel, CoachingPoints, PointModal } from "./skills/History.jsx";
+import { clearHanded, handedToSkills, pointerOfScore } from "../lib/coachingPoint.js";
 
 /**
  * The anchor sentence for a value, and whether anybody has approved it.
@@ -173,7 +174,13 @@ function SkillsView({ role }) {
   // The selected PLAYER ID, not the player row — see FieldsView for the same
   // change and the same reason: a row captured at first render belongs to a
   // list that no longer exists once the server answers.
-  const [selId, setSelId]         = useState(null);
+  // Opened from the coach's drawer (GA-I27 slice 2): on the boy the card is
+  // about, and, from "Make a coaching point of this", with its pointer.
+  // Handed for this one opening and taken once drawn.
+  const [arrived] = useState(() => handedToSkills());
+  useEffect(() => { clearHanded(); }, []);
+  const [selId, setSelId]         = useState(arrived?.playerId ?? null);
+  const [pointing, setPointing]   = useState(arrived?.pointer ?? null);   // a pointer, the field open
   const [category, setCategory]   = useState("technical");
   // Default to the first player who HAS an assessment, not the first player.
   // The list on the left is filtered to assessed players; defaulting to
@@ -181,16 +188,22 @@ function SkillsView({ role }) {
   // greeted every coach with "no assessment available" while assessed players
   // sat beside it. Falls back to the first player when nobody is assessed,
   // which is the state the empty message is actually for.
-  const assessed = PLAYERS.filter(p => SKILLS_MATRIX[p.id]);
+  // Only the boys whose scores this reader may ask for are listed. A coach's
+  // side-wide assignment reaches every boy on his side; a pupil's own-record
+  // assignment names him alone, so the side's players read (which he holds,
+  // through `player`, for the team sheet) does not put a team-mate on his
+  // Skills screen, not even as "Not assessed yet" (GA-I26a §4.4: "the
+  // pupil's Skills screen lists him alone"; STEP4: no team-mate's ratings).
+  // Presentation only: every read below is authorised again by the server.
+  const skillsAnswered = !signedIn() || (skillsRead.live && !skillsRead.disabled);
+  const { readable, assessed, listed } = skillsList(PLAYERS, SKILLS_MATRIX,
+    (id) => holdsForPlayer(role, "player.development.read", id), skillsAnswered);
   // Players with no assessment are listed too, after the assessed ones, and
   // say so: a coach looking for who still has to be assessed would otherwise
   // have to know to look for people who are not on the screen. Only once the
   // skills read has answered: while it is coming, or after it failed, whether
   // anybody is assessed is not known, and the detail pane says which.
-  const skillsAnswered = !signedIn() || (skillsRead.live && !skillsRead.disabled);
-  const unassessedList = skillsAnswered ? PLAYERS.filter(p => !SKILLS_MATRIX[p.id]) : [];
-  const listed = [...assessed, ...unassessedList];
-  const selPlayer = PLAYERS.find(p => p.id === selId) ?? assessed[0] ?? PLAYERS[0];
+  const selPlayer = readable.find(p => p.id === selId) ?? assessed[0] ?? readable[0];
   const skills = selPlayer ? SKILLS_MATRIX[selPlayer.id] : null;
   // Writing needs a session: the demo (nobody signed in, a role picked to look
   // around) reads the seeded matrix and offers no write it cannot make — the
@@ -236,6 +249,9 @@ function SkillsView({ role }) {
   // a reader who holds player.note.read; the boy himself holds the scores and
   // not that, and is spoken to as "you" and "your coach".
   const staffView = holdsAsHeld(role, "player.note.read");
+  // The boy reading his own record (his Skills door on Me): the same screen,
+  // spoken to him. Nothing is read differently; only the words change.
+  const selfView = !staffView && !!selPlayer && ownRecordsOf().has(selPlayer.id);
   // Held for THIS boy: a pupil's own-record assignment reaches him alone, so a
   // team-mate tapped in the list is never asked for (and never logged against).
   // The coaching points are drawn only in a strip's dot sheet, so they are read
@@ -244,8 +260,14 @@ function SkillsView({ role }) {
   const histRead = useBoyRead("skills_history", role, selPlayer?.id, nonce, mayReadHistory);
   const targetsRead = useBoyRead("targets", role, selPlayer?.id, nonce, mayReadHistory);
   const sinceRead = useBoyRead("development_since", role, selPlayer?.id, nonce, mayReadHistory);
-  const pointsRead = useBoyRead("coaching_points", role, selPlayer?.id, nonce,
-    mayReadHistory && holdsForPlayer(role, "player.note.read", selPlayer?.id));
+  const mayReadPoints = mayReadHistory && holdsForPlayer(role, "player.note.read", selPlayer?.id);
+  const pointsRead = useBoyRead("coaching_points", role, selPlayer?.id, nonce, mayReadPoints);
+  // Who may make a point (GA-I27 §5.3; db/104 coaching_point_write): a writer
+  // of his scores who also writes notes, the coach. The assistant coach and
+  // the director read points and do not make them (GA-I26a §7.1 item 4); a
+  // note writer may withdraw one (note_withdraw, §7.1 item 6).
+  const mayPoint = canEdit && mayReadPoints && holdsAsHeld(role, "player.note.write");
+  const mayWithdrawPoint = signedIn() && mayReadPoints && holdsAsHeld(role, "player.note.write");
   const [openDot, setOpenDot]     = useState(null);   // a point from the history
   const [targeting, setTargeting] = useState(null);   // { category, metric }
   const [assessing, setAssessing] = useState(false);
@@ -266,14 +288,15 @@ function SkillsView({ role }) {
   );
 
   return (
-    <div className="os-page">
-      <SectionHeader title="Skills Matrix" sub="Player development tracking & assessment" color={D.violet}
+    <div className="os-page" data-testid={selfView?"skills-self":undefined}>
+      <SectionHeader title={selfView?"Your skills":"Skills Matrix"}
+        sub={selfView?"Every score your coach has given you, with its date":"Player development tracking & assessment"} color={D.violet}
         actions={canEdit&&<Btn size="sm" onClick={()=>{setWriteError(null);setAssessing(true);}}>+ Run Assessment</Btn>}/>
       <div style={{display:"grid",gridTemplateColumns:"var(--g-side-l,220px 1fr)",gap:"16px",alignItems:"start"}}>
         {/* Player list */}
         <Card sx={{padding:"0"}}>
           <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
-            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>SELECT PLAYER</div>
+            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>{selfView?"YOU":"SELECT PLAYER"}</div>
           </div>
           <div style={{maxHeight:"calc(100vh - 200px)",overflowY:"auto"}}>
             {listed.map(p=>{
@@ -538,7 +561,13 @@ function SkillsView({ role }) {
 
           {openDot&&(
             <DotSheet point={openDot} staff={staffView} canWrite={canEdit} points={pointsRead.rows}
-              onClose={()=>setOpenDot(null)} onDone={()=>{setOpenDot(null);setNonce(n=>n+1);}}/>
+              onClose={()=>setOpenDot(null)} onDone={()=>{setOpenDot(null);setNonce(n=>n+1);}}
+              onMakePoint={mayPoint?(pt)=>{setOpenDot(null);setPointing(pointerOfScore(pt,selPlayer.id));}:null}/>
+          )}
+          {pointing&&mayPoint&&pointing.playerId===selPlayer.id&&(
+            <PointModal pointer={pointing} player={selPlayer} now={Date.now()}
+              others={PLAYERS.filter(p=>p.id!==selPlayer.id).map(p=>p.name)}
+              onClose={()=>setPointing(null)} onDone={()=>{setPointing(null);setNonce(n=>n+1);}}/>
           )}
           {targeting&&(
             <TargetModal role={role} playerId={selPlayer.id} category={targeting.category} metric={targeting.metric}
@@ -558,6 +587,7 @@ function SkillsView({ role }) {
               {/* ── Since the last look (GA-I26a §4.2): what he attended and
                   what the side ran, a block per discipline. ── */}
               <SincePanel rows={sinceRead.rows} history={histRead.rows} player={selPlayer} staff={staffView} self={!staffView}/>
+
 
               {/* Category tabs: five now, so they wrap on a phone rather than push the page sideways. */}
               <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"16px"}}>
@@ -688,6 +718,20 @@ function SkillsView({ role }) {
                 <div style={{marginTop:"14px"}}><Btn size="sm" onClick={()=>{setWriteError(null);setAssessing(true);}}>Run Assessment</Btn></div>
               )}
             </Card>
+          )}
+          {/* ── Coaching points (GA-I27 slice 2): only where the read was
+              made, for a reader of notes; never the boy or his parents. Drawn
+              whether or not he has a score yet: a point from a card in the
+              drawer stands on a matchup, not on a rating. ── */}
+          {mayReadPoints&&readState(pointsRead,{what:"the coaching points"}).state==="failed"&&(
+            <Card sx={{marginBottom:"14px"}}><ReadState compact testId="points-read-state" read={readState(pointsRead,{what:"the coaching points"})} onRetry={retry}/></Card>
+          )}
+          {mayReadPoints&&readState(pointsRead,{what:"the coaching points"}).state!=="failed"&&(
+            <div style={{marginTop:"14px"}}>
+              <CoachingPoints points={pointsRead.rows} answered={["ok","empty"].includes(readState(pointsRead,{what:"the coaching points"}).state)}
+                history={histRead.rows} playerId={selPlayer.id} staff={staffView}
+                canWithdraw={mayWithdrawPoint} nonce={nonce} now={Date.now()} onDone={()=>setNonce(n=>n+1)}/>
+            </div>
           )}
           {/* A boy chosen from the every-player table may have no assessment:
               the table stays, so the coach is not stranded on him. */}

@@ -25,9 +25,10 @@
  *     - the hairline has an animation, and none under prefers-reduced-motion
  *   The coach on Training: a plan edited and saved, the register marked, four
  *     states and no fifth, the plan naming nobody
- *   The boy himself and his parent: walked when their shells have a door to
- *     Skills and Training (they have none yet, and the walk says so); the
- *     unit test holds what they would be drawn
+ *   The boy himself, through his Skills door on Me: his strip, his target,
+ *     "your coach", himself alone in the list, no Set target, Why, notes or
+ *     coaching point, the coach's name nowhere. His parent: no Skills door;
+ *     Training walked when her shell has a door to it
  *   The director of sport: the strip, the target and the coach's name; a
  *     target for a boy of a side he does not coach is refused by the server and
  *     said in words (the screen draws from the roles held; the database
@@ -380,14 +381,20 @@ try {
   await m2.ctx.close().catch(() => {});
 
   group("The boy himself, and his parent");
-  // The pupil's and the family's apps are their own shells (step 4) and, as
-  // built, have no door to Skills or Training. The screens are written for the
-  // reader who holds the capability, so when a door opens they are walked
-  // here; until then this says so and does not fail on a menu that is not ours.
+  // The pupil's app is its own shell (step 4): four items on the bar and no
+  // fifth, so his Skills door is on Me, on his ratings card (STEP4 §2.0:
+  // every other screen from a card on the four). His parent has none
+  // (GA-I26a §7.3: "As guardian: the Skills nav is absent").
   const b = await open();
   ok("R Pillay signs in", await signIn(b.page, "pillay@example.invalid"));
-  if (await tid(b.page, "nav-skills").count()) {
-    ok("he has the Skills screen", await nav(b.page, "skills"));
+  ok("his bar has no Skills item: the door is on Me", await tid(b.page, "nav-skills").count() === 0);
+  ok("he opens Me", await nav(b.page, "me"));
+  {
+    await tid(b.page, "me-skills-open").waitFor({ timeout: 12000 }).catch(() => {});
+    const door = await tid(b.page, "me-skills-open").boundingBox().catch(() => null);
+    ok("...and his ratings card has a Skills door, a 44px target", !!door && door.height >= 44, JSON.stringify(door));
+    await tid(b.page, "me-skills-open").click({ timeout: 8000 }).catch(() => {});
+    ok("he has the Skills screen", await tid(b.page, "skills-self").waitFor({ timeout: 12000 }).then(() => true).catch(() => false));
     await tid(b.page, "history-strip").first().waitFor({ timeout: 12000 }).catch(() => {});
     ok("his strip draws, with the two scores", await tid(b.page, "history-technical-againstPace").locator('button[data-testid^="history-dot-"]').count() === 2);
     ok("...and his target", /target 14/.test(await tid(b.page, "target-line").first().innerText().catch(() => "")));
@@ -407,11 +414,18 @@ try {
     const btext = await text(b.page);
     ok("he is not offered Set target, a Why, or the notes", await b.page.locator('[data-testid^="set-target-"]').count() === 0 && await tid(b.page, "target-why").count() === 0 && !/DEVELOPMENT NOTES/.test(btext) && !/Gets squared up early/.test(btext));
     ok("the coach's name is nowhere on his screen", !new RegExp(COACH).test(await said(b.page)));
-    ok("his list holds himself alone", await b.page.locator("button", { hasText: /Pillay/ }).count() === 1 && !/Whitfield|Naidoo|Erasmus/.test(btext));
+    // His own list, in the screen's main area: the header's account button
+    // carries his name too, and is not the list.
+    const bNamed = await b.page.locator('[data-testid="os-main"] button', { hasText: /Pillay/ }).allInnerTexts();
+    ok("his list holds himself alone", bNamed.length === 1 && !/Whitfield|Naidoo|Erasmus/.test(btext), `${JSON.stringify(bNamed)} ${btext.match(/Whitfield|Naidoo|Erasmus/)?.[0] ?? ""}`);
     const bad2 = (await said(b.page)).match(NEVER)?.[0];
     ok("none of the never-words on his screen either", !bad2, bad2);
-  } else {
-    console.log("  (the pupil's shell has no Skills door yet: his view is held by the unit test, not walked here)");
+    ok("no Run Assessment, no every-player table, no Make a coaching point",
+       await b.page.locator("button", { hasText: /Run Assessment/ }).count() === 0
+       && await tid(b.page, "skills-overall-all").count() === 0
+       && await b.page.locator('[data-testid^="make-point"]').count() === 0);
+    await tid(b.page, "skills-back").click({ timeout: 8000 }).catch(() => {});
+    ok("Back takes him to Me", await tid(b.page, "pupil-me").waitFor({ timeout: 8000 }).then(() => true).catch(() => false));
   }
   ok("no console errors on his session", b.errors.length === 0, b.errors.join(" | "));
   await b.ctx.close().catch(() => {});

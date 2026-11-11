@@ -248,3 +248,23 @@ export function lastLookBy(rows, discipline) {
  * list the side reads, and the route refuses it.
  */
 export const REGISTER_STATES = Object.freeze(["present", "late", "excused", "absent"]);
+
+/**
+ * Who the Skills screen lists, and in what order (GA-I26a §4.4): only the boys
+ * whose scores the reader may ask for (`mayRead(id)`, held.js holdsForPlayer),
+ * the assessed first, then, once the skills read has answered, the rest as
+ * "Not assessed yet". A coach's side-wide assignment reaches every boy on his
+ * side; a pupil's own-record assignment names him alone, so his list holds
+ * himself and no team-mate, not even as "Not assessed yet". Presentation
+ * only: the server authorises every read again.
+ * @param {{ id: string }[]} players  the players read, as the reader holds it
+ * @param {Record<string, unknown>} matrix  the skills read's pivot, by player id
+ * @param {(id: string) => boolean} mayRead
+ * @param {boolean} answered  has the skills read answered?
+ */
+export function skillsList(players, matrix, mayRead, answered) {
+  const readable = players.filter((p) => mayRead(p.id));
+  const assessed = readable.filter((p) => matrix[p.id]);
+  const listed = [...assessed, ...(answered ? readable.filter((p) => !matrix[p.id]) : [])];
+  return { readable, assessed, listed };
+}
