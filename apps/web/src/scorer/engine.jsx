@@ -339,12 +339,17 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   const[curIn,setCurIn]=useState(0);
   const[modal,setModal]=useState(null);
   const[modalCtx,setModalCtx]=useState({});
-  // Whether this pad has put the new-over prompt to the scorer yet. The
-  // "N balls in this over?" cause (likelyCause, next_bowler) answers a scorer
-  // who closed that prompt thinking the over was not done; a pad opened on a
-  // finished over, before it has asked, says only that nobody is bowling.
-  const[overAsked,setOverAsked]=useState(false);
-  useEffect(()=>{if(modal==="newOver")setOverAsked(true);},[modal]);
+  // Where the scorer tried to record a ball past the over's end: a tap on the
+  // pad while it waits for the next over's bowler (guardReady), kept as the
+  // innings and its legal balls then. Only there does the "N balls in this
+  // over?" cause (likelyCause, next_bowler) answer him — it asks whether he
+  // miscounted the over he is trying to extend. It was shown once the new-over
+  // sheet had been opened at all, and the over's own end opens that sheet by
+  // itself: a scorer who closed it, or a pad handed over at the end of an
+  // over, was asked about an eighth ball nobody had tried to record (the
+  // interface review of 11 Nov 2026, from the rehearsal's opened pad). Now
+  // a pad that has not been asked for that ball says only that nobody is bowling.
+  const[pastOverAt,setPastOverAt]=useState(null);
   const[activeTab,setActiveTab]=useState("score");
   // A change of the pad's view (Score, Cards, Analysis, History) moves focus to
   // the pad's <main>, so the next Tab lands on the new view's first control
@@ -1267,6 +1272,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   const guardReady=()=>{
     if(padLock){setModal("handover");return false;}
     if(readiness.ready)return true;
+    if(readiness.blocked[0]?.code===SCORING_BLOCK.NEXT_BOWLER)setPastOverAt(`${curIn}:${inn?.balls??0}`);
     fixBlock(readiness.blocked[0]);
     return false;
   };
@@ -2718,7 +2724,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
             {activeTab==="score"&&!modal&&stopped&&<RainBanner stopped={stopped} isChase={matchChaseOf(innings,curIn)!=null}
               onResume={()=>setModal("resume")} onEnd={()=>setModal("rainEnd")}/>}
             {activeTab==="score"&&!modal&&!stopped&&<ScoringBlocked readiness={readiness} onFix={fixBlock}
-              cause={readiness.ready||(readiness.blocked[0]?.code==="next_bowler"&&!overAsked)?null:likelyCause(readiness.blocked[0]?.code,{inn})}/>}
+              cause={readiness.ready||(readiness.blocked[0]?.code==="next_bowler"&&pastOverAt!==`${curIn}:${inn?.balls??0}`)?null:likelyCause(readiness.blocked[0]?.code,{inn})}/>}
             {/* After the match, a suspension's report is offered here — never
                 during play, where nothing may stand between a tap and the
                 next ball (§1a); the pad's menu has it from the moment it is
