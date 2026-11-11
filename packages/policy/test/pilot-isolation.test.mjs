@@ -74,7 +74,7 @@ group("B. The pilot migration is where the schema is");
   const own = readFileSync(join(DB, "151_pilot_match.sql"), "utf8");
   ok("db/151 creates schema pilot, and takes it from PUBLIC and the application role",
      /CREATE SCHEMA pilot;/.test(own) && /REVOKE ALL ON SCHEMA pilot FROM PUBLIC;/.test(own) && /REVOKE ALL ON SCHEMA pilot FROM scrbrd_app;/.test(own));
-  ok("...grants nothing in it to anybody", !/GRANT[^;]*\bON\s+(ALL\s+TABLES\s+IN\s+SCHEMA\s+pilot|SCHEMA\s+pilot|(TABLE\s+)?pilot\.)/i.test(stripComments(own)));
+  ok("...grants nothing in it to anybody", !/\bGRANT\s[^;]*\bON\s+(ALL\s+TABLES\s+IN\s+SCHEMA\s+pilot|SCHEMA\s+pilot|(TABLE\s+)?pilot\.)/i.test(stripComments(own)));
   ok("...and runs the isolation check before it ends", /SELECT pilot_isolation_check\(\);\s*$/.test(own.trimEnd() + "\n"));
   ok("the verifier calls the check, and proves a view and a function make it raise",
      /_v151_breaks\('CREATE VIEW/.test(readFileSync(join(DB, "99_rls_verify.sql"), "utf8"))

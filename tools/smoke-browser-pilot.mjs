@@ -250,7 +250,7 @@ try {
   await phoneA.tap("practice-back");
 
   group("W1. Switched on: the choice, the label, the notice; airplane mode; then signal");
-  await sql(`update pilot.switch set enabled = true where key = 'pilot_sync'`);
+  await sql(`set local pilot.without_purge = 'test'; update pilot.switch set enabled = true where key = 'pilot_sync'`);  // a test database: the purge (slice 5) is not built yet
   await sql(`insert into pilot.scorer (user_id) values ($1) on conflict (user_id) do update set ended_at = null`, [SCORER_ID]);
   await freshStart(phoneA);
   ok("the start screen now offers My Pilot Matches", await phoneA.has("pilot-list-open"));
@@ -303,7 +303,7 @@ try {
   await phoneA.shot("w1-sent");
 
   group("W1. The fallback lifted later: this match's names still stay here");
-  await sql(`update pilot.switch set enabled = true where key = 'pilot_names_upload'`);
+  await sql(`set local pilot.without_purge = 'test'; update pilot.switch set enabled = true where key = 'pilot_names_upload'`);  // a test database: the purge (slice 5) is not built yet
   await phoneA.tap("run-0");
   await serverEvents(/** @type {string} */ (uuidA), 7);
   await afterReads(phoneA.page, 1500);

@@ -101,6 +101,10 @@ group("B. What leaves for the server");
                              { sidesMayGo: true });
   ok("...but never a side whose name holds a typed name as whole words: it goes as its place",
      named.sides[0].school === "Home" && !/canarytest/i.test(JSON.stringify(named)) && named.sides[1].school === "Kearsney", JSON.stringify(named.sides));
+  const cls = P.createBody({ ...rec, teams: [{ ...rec.teams[0], team_class: "Sipho" }, rec.teams[1]], pilot: { ...rec.pilot,
+                            roster: { ...rec.pilot.roster, slots: { ...rec.pilot.roster.slots, x: { side: "home", list_no: 9, name: "Sipho" } } } } });
+  ok("...and never an age group or class that holds one", cls.sides[0].team_class === null && !/sipho/i.test(JSON.stringify(cls.sides)),
+     JSON.stringify(cls.sides));
   ok("...the weather's conditions alone", body.weather?.condition === "overcast" && !("observed_at" in (body.weather ?? {})));
   const nb = P.namesBody(rec);
   ok("the names' body: each slot's name, for the one request that carries them", nb.rows.length === 5 && nb.rows.some((r) => r.name === CANARY && UUID.test(r.slot)));

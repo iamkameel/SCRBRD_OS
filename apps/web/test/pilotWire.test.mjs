@@ -214,5 +214,19 @@ group("E. One list, on the phone and in db/151");
      JSON.stringify(Object.keys(closed)));
 }
 
+group("F. Shapes the scoring package writes");
+{
+  const p = SLOTS[0], q = SLOTS[4];
+  const nio = pilotWire({ kind: "ball", type: "run", value: 0, striker: p, bowler: q, notInOver: "fielder_returning" }, roster);
+  ok("a delivery not in the over keeps its reason, a code of NOT_IN_OVER", nio.ok && nio.event.notInOver === "fielder_returning", JSON.stringify(nio));
+  const odd = pilotWire({ kind: "ball", type: "run", value: 0, striker: p, bowler: q, notInOver: "made_up_reason" }, roster);
+  ok("...and leaves off one that is not", odd.ok && !("notInOver" in odd.event), JSON.stringify(odd));
+  const at = 1762858800000;
+  const st = pilotWire({ kind: "play_stopped", reason: "rain", note: "Qa Canarytest hurt", at }, roster);
+  ok("a stoppage keeps its time, ms since the epoch as events.mjs writes it, and never its note",
+     st.ok && st.event.at === at && !("note" in st.event), JSON.stringify(st));
+  ok("an event with no kind is not sent", pilotWire({ striker: p }, roster).ok === false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

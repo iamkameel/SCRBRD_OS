@@ -18,8 +18,8 @@
  *   - the four team fields leave as `home` or `away`; the team's name never
  *     travels in an event;
  *   - every other value has its key's shape: a code of its closed vocabulary
- *     (CLOSED), a lower-case code (a reason, a shot), an event id, a time, a
- *     number or a yes/no. Anything else — a stoppage's note, a reason in
+ *     (CLOSED), a lower-case code (a reason, a shot), an event id, a number
+ *     (a stoppage's time is one: ms since the epoch) or a yes/no. Anything else — a stoppage's note, a reason in
  *     words — is left off;
  *   - A LAST CHECK: if any key, or any value that is not a code of its key's
  *     closed vocabulary, equals by the normKey rule any name on the roster,
@@ -89,6 +89,7 @@ export const CLOSED = Object.freeze({
   facesNext: ["striker", "non_striker", "incoming"],
   scope: ["innings", "match"],
   bowlerApproach: ["over", "around"],
+  notInOver: ["fielder_returning", "illegal_fielding", "distracting_striker", "obstructing_batter"],
 });
 
 /** The pad writes the approach in words; it travels as a code, and comes back as the words. */
@@ -97,9 +98,8 @@ const APPROACH_IN = Object.freeze({ over: "Over the wicket", around: "Around the
 
 const CODE = /^[a-z][a-z0-9_]{0,40}$/;
 const EVENT_ID = /^[A-Za-z0-9_.+-]{1,80}(:[A-Za-z0-9_.+-]{1,80}){1,6}$/;
-const TIME = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]{1,6})?)?(Z|[+-][0-9]{2}:[0-9]{2})$/;
 const BOOLEAN_KEYS = new Set(["boundary", "freeHit", "captainConsent", "toBattingTeam"]);
-const CODE_KEYS = new Set(["reason", "shot", "notInOver"]);
+const CODE_KEYS = new Set(["reason", "shot"]);
 
 /**
  * Is this value of this key the shape the server takes? Players, squads and
@@ -113,7 +113,6 @@ export function valueFits(k, v) {
   if (CODE_KEYS.has(k)) return typeof v === "string" && CODE.test(v);
   if (k === "id") return typeof v === "string" && EVENT_ID.test(v);
   if (k === "target") return (typeof v === "number" && Number.isFinite(v)) || (typeof v === "string" && EVENT_ID.test(v));
-  if (k === "at") return typeof v === "string" && TIME.test(v);
   if (BOOLEAN_KEYS.has(k)) return typeof v === "boolean";
   if (k === "confirmed") {
     return !!v && typeof v === "object" && !Array.isArray(v)

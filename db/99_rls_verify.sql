@@ -11679,9 +11679,13 @@ BEGIN
   RETURN jsonb_build_object('a', a, 'b', b);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- The owner's key: a switch, a grant.
+-- The owner's key: a switch, a grant. This is a test database, so the
+-- switch may go on before the purge exists (review S6), for this one
+-- statement only.
 CREATE OR REPLACE FUNCTION _v151_switch(p_key text, p_on boolean) RETURNS void AS $$
-  UPDATE pilot.switch SET enabled = p_on, set_at = now() WHERE key = p_key;
+  SELECT set_config('pilot.without_purge', 'test', true);
+  UPDATE pilot.switch SET enabled = p_on WHERE key = p_key;
+  SELECT set_config('pilot.without_purge', '', true);
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v151_grant(p_user uuid, p_on boolean) RETURNS void AS $$
   INSERT INTO pilot.scorer (user_id) VALUES (p_user)
@@ -39548,11 +39552,13 @@ $v116$;
   --   (fail closed) a pilot table named in capitals, quoted, spaced at the dot, through a
   --                 search_path, by dynamic SQL, or from an `_`-named function off the
   --                 verifier's own list; an overload of a listed name; a policy on it: each raises
-  --   (managed)     a managed host's API roles hold nothing in pilot, and the internal delete
+  --   (managed)     a managed host's API roles hold nothing in pilot, EXECUTE on the internal delete
+  --                 given to PUBLIC or anon is caught, and the internal delete
   --                 refuses a caller with no account, or another account (review B1)
   --   (latch)       a late event does not bring expired names back (review B2)
   --   (write screen) pilot_insert and pilot_hold screen what they write themselves (S2)
-  --   (off)         with phase 2 switched off, nothing is created and nothing is said of grants
+  --   (off)         neither switch goes on before the purge exists (S6); with phase 2 off,
+  --                 nothing is created and nothing is said of grants
   --   (grant needed) an account with no pilot.scorer grant, superadmin included, cannot create
   --   (create)      the granted owner creates, idempotently; another account gets not_found
   --   (owner only)  no other account, superadmin included, reads any of it
@@ -39641,6 +39647,17 @@ $v116$;
     PERFORM _assert(s ~ 'pilot isolation \(functions\).*pilot_delete.*may be called', format('§129 (granted): a door granted to PUBLIC passed: %s', s));
     s := _v151_breaks('GRANT EXECUTE ON FUNCTION public.pilot_delete_one(uuid, text) TO scrbrd_app');
     PERFORM _assert(s ~ 'pilot isolation \(functions\).*pilot_delete_one', format('§129 (granted): the internal delete granted passed: %s', s));
+    -- (managed) The internal delete given to PUBLIC, of which a managed
+    -- host's anon is a member, or to anon itself where it exists, as
+    -- Supabase's default privileges would give it (review B1): caught.
+    s := _v151_breaks('GRANT EXECUTE ON FUNCTION public.pilot_delete_one(uuid, text) TO PUBLIC');
+    PERFORM _assert(s ~ 'pilot isolation \(functions\).*pilot_delete_one.*may be called',
+      format('§129 (managed): the internal delete granted to PUBLIC passed: %s', s));
+    FOR r IN SELECT rolname FROM pg_roles WHERE rolname IN ('anon', 'authenticated', 'service_role') LOOP
+      s := _v151_breaks(format('GRANT EXECUTE ON FUNCTION public.pilot_delete_one(uuid, text) TO %I', r.rolname));
+      PERFORM _assert(s ~ 'pilot isolation \(functions\).*pilot_delete_one.*may be called',
+        format('§129 (managed): the internal delete granted to %s passed: %s', r.rolname, s));
+    END LOOP;
     -- (fail closed)
     FOREACH t IN ARRAY ARRAY[
       $f$CREATE FUNCTION public.v151_caps() RETURNS bigint LANGUAGE sql AS 'SELECT count(*) FROM PILOT.BALL_EVENT'$f$,
@@ -39659,6 +39676,8 @@ $v116$;
     PERFORM _assert(s ~ 'pilot isolation \(dependency\)', format('§129 (fail closed): a policy on a pilot table passed: %s', s));
     s := _v151_breaks('ALTER TABLE public.player ADD COLUMN v151_x uuid; ALTER TABLE public.player ADD FOREIGN KEY (v151_x) REFERENCES pilot.match(id)');
     PERFORM _assert(s ~ 'pilot isolation \(dependency\)', format('§129 (fail closed): a key into a pilot table passed: %s', s));
+    s := _v151_breaks('CREATE TABLE public.v151_typed (m pilot.name)');
+    PERFORM _assert(s ~ 'pilot isolation \(dependency\)', format('§129 (fail closed): a column of a pilot row type passed: %s', s));
     PERFORM _assert(_v151_check() = 'ok', '§129 (check): a scratch object outlived its test');
 
     -- (off) both switches as db/151 leaves them.
@@ -39672,8 +39691,16 @@ $v116$;
     PERFORM _assert(s = 'pilot_off', format('§129 (off): a granted account created with phase 2 off: %s', s));
     PERFORM _assert((_v151_facts(M)->>'match')::int = 0, '§129 (off): a match row exists');
 
+    -- (off) Neither switch goes on before the purge exists (S6), unless a
+    -- test database says so.
+    s := _v151_owner_try('UPDATE pilot.switch SET enabled = true WHERE key = ''pilot_sync''');
+    PERFORM _assert(s ~ 'stays off until pilot_purge_expired', format('§129 (off): a switch went on with no purge built: %s', s));
+    s := _v151_owner_try('UPDATE pilot.switch SET enabled = true');
+    PERFORM _assert(s ~ 'stays off until pilot_purge_expired', format('§129 (off): the names switch went on with no purge built: %s', s));
+
     -- (grant needed)
     PERFORM _v151_switch('pilot_sync', true);
+    PERFORM _assert(coalesce(current_setting('pilot.without_purge', true), '') = '', '§129 (off): the test''s leave outlived its switch');
     FOREACH u IN ARRAY ARRAY[to_jsonb(B), to_jsonb(U_OWNER), to_jsonb(U_PLAT), to_jsonb(U_SCORER)] LOOP
       PERFORM _as((u #>> '{}')::uuid);
       SELECT c.reason INTO s FROM pilot_create(M, v_sides, v_slots, 20, NULL, now(), '{"wonBy":"home","decision":"bat"}', NULL, NULL) c;
@@ -39733,6 +39760,10 @@ $v116$;
     PERFORM _as(A);
     SELECT c.reason INTO s FROM pilot_names_put(M, jsonb_build_array(jsonb_build_object('slot', H2, 'name', 'Verify'))) c;
     PERFORM _assert(s = 'team_name_has_player_name', format('§129 (names off): a name the home side''s name holds as a word was answered %s', s));
+    j := pilot_header(M);
+    PERFORM _assert((SELECT string_agg((x->>'school') || '|' || (x->>'display_name'), ',' ORDER BY x->>'side' DESC) FROM jsonb_array_elements(j->'sides') x)
+                    = 'Home|Home U13B,Away|Away U13B' AND _v151_dump(M) !~ 'Verify (Home|Away)',
+      format('§129 (names off): a side holding the refused name kept it on the server (S4): %s', j->'sides'));
     -- A boy typed as "LB" (N2), and one name erased with a tombstone (S6).
     SELECT * INTO r FROM pilot_names_put(M, jsonb_build_array(jsonb_build_object('slot', H2, 'name', 'LB'),
                                                               jsonb_build_object('slot', W1, 'name', '')));
@@ -39758,6 +39789,10 @@ $v116$;
       '§129 (screen): a key outside its kind''s list passed');
     PERFORM _assert(pilot_event_refusal(M, '{"kind":"retire","reason":"Thabo was hurt"}') = 'free_text', '§129 (screen): a reason in words passed');
     PERFORM _assert(pilot_event_refusal(M, '{"kind":"scorebook_card","card":{}}') = 'free_text', '§129 (screen): a kind not sent passed');
+    PERFORM _assert(pilot_event_refusal(M, jsonb_build_object('striker', H1, 'innings', 0)) = 'free_text', '§129 (screen): an event with no kind passed');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"ball","notInOver":"thabo"}') = 'free_text', '§129 (screen): a not-in-over reason off its list passed');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"play_stopped","reason":"rain","at":1762858800000}') IS NULL,
+      '§129 (screen): a stoppage''s time, as events.mjs writes it, was refused');
     PERFORM _assert(pilot_event_refusal(M, '{"kind":"ball","type":"run","value":"four"}') = 'free_text', '§129 (screen): a number in words passed');
     PERFORM _assert(pilot_event_refusal(M, jsonb_build_object('kind', 'ball', 'type', 'LB', 'value', 1, 'striker', H1, 'bowler', W1)) IS NULL,
       '§129 (screen): a leg-bye was refused because a boy is typed "LB" (N2)');
@@ -39831,6 +39866,11 @@ $v116$;
       format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'dev-v151:x:9',
              jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'ball', 'ball_type', 'run', 'value', 1, 'payload', jsonb_build_object('note', 'hurt'))),
       format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'Qa Canarytest', v_cols),
+      -- A name under a payload key a column also fills: the column must not mask it.
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'dev-v151:x:9',
+             jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'ball', 'ball_type', 'run', 'value', 1, 'striker_id', H1,
+                                'bowler_id', W1, 'payload', jsonb_build_object('striker', 'qa canarytest'))),
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'dev-v151:x:9', v_cols - 'kind'),
       format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'dev-v151:x:9', v_cols || jsonb_build_object('striker_id', 'a1510000-0000-4000-8000-0000000000ff')),
       format('SELECT pilot_hold(%L, 1, 2, %L, %L, %L)', M, 'dev-v151:x:10', jsonb_build_object('payload', jsonb_build_object('kind', 'ball', 'sub', 'Thabo')), v_cols),
       format('SELECT pilot_hold(%L, 1, 2, %L, %L, %L)', M, 'dev-v151:x:10', jsonb_build_object('clientTs', 'Qa Canarytest', 'payload', '{}'::jsonb), v_cols)]

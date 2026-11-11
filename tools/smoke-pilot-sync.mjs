@@ -117,7 +117,7 @@ try {
   ok("signed out, the status is refused", (await api("/api/pilot/status")).status === 401);
 
   group("B. Switched on: the grant, the owner, the one not-found");
-  await sql(`update pilot.switch set enabled = true where key = 'pilot_sync'`);
+  await sql(`set local pilot.without_purge = 'test'; update pilot.switch set enabled = true where key = 'pilot_sync'`);  // a test database: the purge (slice 5) is not built yet
   st = await api("/api/pilot/status", { token: tc });
   ok("an account with no grant is told so", st.body?.sync === true && st.body?.granted === false, st.text);
   cr = await api("/api/pilot/matches", { method: "POST", token: tc, body: CREATE });
@@ -149,7 +149,7 @@ try {
   let np = await api(`/api/pilot/${M}/names`, { method: "POST", token: ta, body: { rows: NAMES } });
   ok("with the counsel fallback on, the names do not go: names_upload_off", np.body?.ok === false && np.body?.reason === "names_upload_off", np.text);
   ok("...and none is held", (await sql(`select count(*)::int n from pilot.name where match_id = $1`, [M])).rows[0].n === 0);
-  await sql(`update pilot.switch set enabled = true where key = 'pilot_names_upload'`);
+  await sql(`set local pilot.without_purge = 'test'; update pilot.switch set enabled = true where key = 'pilot_names_upload'`);  // a test database: the purge (slice 5) is not built yet
   np = await api(`/api/pilot/${M}/names`, { method: "POST", token: ta, body: { rows: NAMES } });
   ok("with it off, the owner puts three names", np.body?.ok === true && np.body?.n === 3, np.text);
   const back = await api(`/api/pilot/${M}/names`, { token: ta });

@@ -240,8 +240,12 @@ export function createBody(rec, { sidesMayGo = false } = {}) {
     sides: rec.teams.map((/** @type {any} */ t) => {
       const real = sidesMayGo && !holdsAName(t.school, roster) && !holdsAName(t.display_name, roster);
       const place = t.side === "away" ? "Away" : "Home";
-      return { side: t.side, school: real ? t.school : place, age_division: t.age_division || null, team_class: t.team_class || null,
-               display_name: real ? t.display_name : practiceTeamName({ school: place, division: t.age_division, cls: t.team_class }) };
+      // The age group and class always go (they are how a side is told
+      // apart), unless one of them holds a typed name.
+      const division = t.age_division && !holdsAName(t.age_division, roster) ? t.age_division : null;
+      const cls = t.team_class && !holdsAName(t.team_class, roster) ? t.team_class : null;
+      return { side: t.side, school: real ? t.school : place, age_division: division, team_class: cls,
+               display_name: real ? t.display_name : practiceTeamName({ school: place, division, cls }) };
     }),
     slots: rec.pilot.slots,
     overs: rec.match.overs, format: null, startsAt: rec.match.starts_at,

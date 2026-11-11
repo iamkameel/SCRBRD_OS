@@ -84,6 +84,25 @@ CREATE TABLE pilot.switch (
 );
 INSERT INTO pilot.switch (key, enabled) VALUES ('pilot_sync', false), ('pilot_names_upload', false);
 
+-- ...and neither goes on before the purge exists (review S6). Slice 5 builds
+-- pilot_purge_expired(): until then nothing deletes expired names or a
+-- nameless match at twelve months, so a switch turned on would keep a
+-- child's typed name past its date. A test database says so in the same
+-- transaction (`SET LOCAL pilot.without_purge = 'test'`); nowhere else may.
+CREATE OR REPLACE FUNCTION pilot_switch_guard() RETURNS trigger AS $$
+BEGIN
+  IF NEW.enabled AND to_regprocedure('public.pilot_purge_expired()') IS NULL
+     AND coalesce(current_setting('pilot.without_purge', true), '') <> 'test' THEN
+    RAISE EXCEPTION 'pilot switch %: stays off until pilot_purge_expired() exists (slice 5)', NEW.key
+      USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  NEW.set_by := session_user;
+  NEW.set_at := now();
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER pilot_switch_guard BEFORE INSERT OR UPDATE ON pilot.switch
+  FOR EACH ROW EXECUTE FUNCTION pilot_switch_guard();
+
 -- Who may start one (Q2): granted by the owner's key and nothing else.
 -- Signing in with Google gives nobody this row.
 CREATE TABLE pilot.scorer (
@@ -406,14 +425,16 @@ CREATE OR REPLACE FUNCTION pilot_closed(p_key text) RETURNS text[] AS $$
     WHEN 'facesNext' THEN ARRAY['striker', 'non_striker', 'incoming']
     WHEN 'scope' THEN ARRAY['innings', 'match']
     WHEN 'bowlerApproach' THEN ARRAY['over', 'around']
+    WHEN 'notInOver' THEN ARRAY['fielder_returning', 'illegal_fielding', 'distracting_striker', 'obstructing_batter']
   END
 $$ LANGUAGE sql IMMUTABLE PARALLEL SAFE;
 
 -- The keys an event of each kind may carry (§3.4: "a key outside the
 -- allow-list for its kind", as db/59 lists them), the base keys included.
 -- Mirrored by lib/pilotWire.js KIND_KEYS; the same test holds them equal.
+-- NULL for a kind not listed, or none: such an event is free_text whole.
 CREATE OR REPLACE FUNCTION pilot_kind_keys(p_kind text) RETURNS text[] AS $$
-  SELECT ARRAY['kind', 'innings', 'clientTs', 'id', 'seq'] || CASE p_kind
+  SELECT ARRAY['kind', 'innings', 'clientTs', 'id', 'seq'] || x.k FROM (SELECT CASE p_kind
     WHEN 'innings_start' THEN ARRAY['battingTeam', 'bowlingTeam', 'teamKey', 'bowlingTeamKey', 'squad', 'bowlingSquad', 'twelfthMan',
                                     'overs', 'target', 'captureProfile', 'superOver']
     WHEN 'batters' THEN ARRAY['striker', 'nonStriker', 'captainConsent']
@@ -430,8 +451,8 @@ CREATE OR REPLACE FUNCTION pilot_kind_keys(p_kind text) RETURNS text[] AS $$
     WHEN 'void' THEN ARRAY['target', 'reason']
     WHEN 'play_stopped' THEN ARRAY['reason', 'at']
     WHEN 'play_resumed' THEN ARRAY['at']
-    ELSE NULL
-  END
+  END) x(k)
+   WHERE x.k IS NOT NULL
 $$ LANGUAGE sql IMMUTABLE PARALLEL SAFE;
 
 -- Is the switch on? Off when the row is missing.
@@ -462,8 +483,8 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 --   name_in_event  a key, or a value that is not a code of its key's closed
 --                  vocabulary, equals (pilot_norm) a typed name of the match;
 --   free_text      a kind not sent, a key outside its kind's list, or a
---                  value not of its key's shape: codes, numbers, event ids,
---                  times — never words;
+--                  value not of its key's shape: codes, numbers, event ids
+--                  — never words;
 --   unknown_slot   a player who is not one of this match's slots.
 CREATE OR REPLACE FUNCTION pilot_screen(p_id uuid, p_event jsonb) RETURNS text AS $$
 DECLARE r record; v_keys text[]; v_closed text[]; v jsonb; t text;
@@ -494,16 +515,12 @@ BEGIN
       END IF;
     ELSIF v_closed IS NOT NULL THEN
       IF t <> 'string' OR NOT ((v #>> '{}') = ANY (v_closed)) THEN RETURN 'free_text'; END IF;
-    ELSIF r.key IN ('reason', 'shot', 'notInOver') THEN
+    ELSIF r.key IN ('reason', 'shot') THEN
       IF t <> 'string' OR (v #>> '{}') !~ '^[a-z][a-z0-9_]{0,40}$' THEN RETURN 'free_text'; END IF;
     ELSIF r.key = 'id' THEN
       IF t <> 'string' OR (v #>> '{}') !~ '^[A-Za-z0-9_.+-]{1,80}(:[A-Za-z0-9_.+-]{1,80}){1,6}$' THEN RETURN 'free_text'; END IF;
     ELSIF r.key = 'target' THEN
       IF NOT (t = 'number' OR (t = 'string' AND (v #>> '{}') ~ '^[A-Za-z0-9_.+-]{1,80}(:[A-Za-z0-9_.+-]{1,80}){1,6}$')) THEN
-        RETURN 'free_text';
-      END IF;
-    ELSIF r.key = 'at' THEN
-      IF t <> 'string' OR (v #>> '{}') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]{1,6})?)?(Z|[+-][0-9]{2}:[0-9]{2})$' THEN
         RETURN 'free_text';
       END IF;
     ELSIF r.key IN ('boundary', 'freeHit', 'captainConsent', 'toBattingTeam') THEN
@@ -515,7 +532,8 @@ BEGIN
       END IF;
     ELSE
       -- innings, clientTs, seq, value, nbRuns, seg, theta, radius, overs,
-      -- superOver, runs, par: numbers.
+      -- superOver, runs, par, at (a stoppage's time, ms since the epoch, as
+      -- events.mjs writes it): numbers.
       IF t <> 'number' THEN RETURN 'free_text'; END IF;
     END IF;
   END LOOP;
@@ -543,7 +561,11 @@ BEGIN
     'theta', p_cols -> 'theta', 'radius', p_cols -> 'radius', 'placementSource', p_cols -> 'placement_source',
     'placementNull', p_cols -> 'placement_null', 'closePosition', p_cols -> 'close_position',
     'captureProfile', p_cols -> 'capture_profile'));
-  RETURN pilot_screen(p_id, v_ev);
+  -- The payload is screened as it stands too: in v_ev a column overwrites a
+  -- payload key of the same name, so `payload.striker` holding a name under
+  -- a striker_id column would be stored unread.
+  RETURN coalesce(pilot_screen(p_id, jsonb_build_object('kind', p_cols -> 'kind') || coalesce(p_cols -> 'payload', '{}'::jsonb)),
+                  pilot_screen(p_id, v_ev));
 END $$ LANGUAGE plpgsql STABLE;
 
 -- A refusal raised from inside a write: the CHECK the event broke, named
@@ -639,9 +661,10 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 -- Put once after pilot_create, and again only after an edit: each row sets
 -- one slot's name, or with an empty name erases it (a tombstone with its
 -- slot, S6). Refused while the counsel fallback is on (`names_upload_off`),
--- after the names' date, on a promoted match, and when a side's school or
--- display name holds one of the names as whole words (§5.2's rule): the
--- names then stay on the phone.
+-- after the names' date, on a promoted match, and when a side's school,
+-- display name, age group or class holds one of the names as whole words
+-- (§5.2's rule): the names then stay on the phone, and that side is made
+-- its place again on the server.
 CREATE OR REPLACE FUNCTION pilot_names_put(p_id uuid, p_rows jsonb)
 RETURNS TABLE (ok boolean, reason text, n integer) AS $$
 DECLARE v_m pilot.match%ROWTYPE; r jsonb; v_n int := 0; v_name text; v_slot uuid;
@@ -658,9 +681,29 @@ BEGIN
                  WHERE NOT EXISTS (SELECT 1 FROM pilot.slot s WHERE s.match_id = p_id AND s.id::text = x->>'slot')) THEN
     RETURN QUERY SELECT false, 'unknown_slot', 0; RETURN;
   END IF;
+  -- A side that holds one of these names is made its place again ("Home",
+  -- "Home U13B") before the refusal, so the name does not stay on the
+  -- server inside a team for the twelve months the side is kept; the phone
+  -- keeps the team's real name, and puts the names again at its next sync.
   IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_rows) x CROSS JOIN pilot.side sd
               WHERE sd.match_id = p_id AND coalesce(btrim(x->>'name'), '') <> ''
-                AND (pilot_contains_word(sd.school, x->>'name') OR pilot_contains_word(sd.display_name, x->>'name'))) THEN
+                AND (pilot_contains_word(sd.school, x->>'name') OR pilot_contains_word(sd.display_name, x->>'name')
+                     OR pilot_contains_word(sd.age_division, x->>'name') OR pilot_contains_word(sd.team_class, x->>'name'))) THEN
+    UPDATE pilot.side sd
+       SET age_division = q.div, team_class = q.cls,
+           school = CASE WHEN q.text_has THEN q.place ELSE sd.school END,
+           display_name = CASE WHEN NOT (q.text_has OR q.div IS DISTINCT FROM sd.age_division OR q.cls IS DISTINCT FROM sd.team_class)
+                               THEN sd.display_name
+                               ELSE btrim(q.place || ' ' || CASE WHEN q.cls IS NULL THEN coalesce(q.div, '')
+                                                                 WHEN q.div ~ '^U[0-9]+$' AND q.cls ~ '^[A-Za-z0-9]$' THEN q.div || q.cls
+                                                                 ELSE btrim(coalesce(q.div, '') || ' ' || q.cls) END) END
+      FROM (SELECT s2.side, CASE s2.side WHEN 'away' THEN 'Away' ELSE 'Home' END AS place,
+                   bool_or(pilot_contains_word(s2.school, x->>'name') OR pilot_contains_word(s2.display_name, x->>'name')) AS text_has,
+                   CASE WHEN bool_or(pilot_contains_word(s2.age_division, x->>'name')) THEN NULL ELSE min(s2.age_division) END AS div,
+                   CASE WHEN bool_or(pilot_contains_word(s2.team_class, x->>'name')) THEN NULL ELSE min(s2.team_class) END AS cls
+              FROM pilot.side s2 CROSS JOIN jsonb_array_elements(p_rows) x
+             WHERE s2.match_id = p_id AND coalesce(btrim(x->>'name'), '') <> '' GROUP BY s2.side) q
+     WHERE sd.match_id = p_id AND sd.side = q.side;
     RETURN QUERY SELECT false, 'team_name_has_player_name', 0; RETURN;
   END IF;
   FOR r IN SELECT * FROM jsonb_array_elements(p_rows) LOOP
@@ -1000,6 +1043,7 @@ CREATE OR REPLACE FUNCTION pilot_isolation_check(p_exempt text[] DEFAULT '{}') R
 DECLARE v text; v_roles oid[]; v_app oid; v_owner oid; r record;
   -- (signature, SECURITY DEFINER?, granted to the application role?, may name the typed names?)
   v_list CONSTANT text[][] := ARRAY[
+    ['public.pilot_switch_guard()',                      'f', 'f', 'f'],
     ['public.pilot_log_guard()',                         'f', 'f', 'f'],
     ['public.pilot_ball_event_stamp()',                  'f', 'f', 'f'],
     ['public.pilot_match_clocks()',                      'f', 'f', 'f'],
@@ -1061,12 +1105,17 @@ BEGIN
   END IF;
 
   -- 2. No dependency: anything outside the schema — a view's rule, a policy,
-  --    a key, a trigger, a default — that depends on an object inside it.
+  --    a key, a trigger, a default, a column, a function or a type — that
+  --    depends on an object inside it: a relation, or a relation's row type.
   SELECT string_agg(DISTINCT pg_describe_object(d.classid, d.objid, d.objsubid), '; ') INTO v
     FROM pg_depend d
-    JOIN pg_class t ON d.refclassid = 'pg_class'::regclass AND t.oid = d.refobjid
-    JOIN pg_namespace tn ON tn.oid = t.relnamespace AND tn.nspname = 'pilot'
    WHERE d.deptype = 'n'
+     AND ((d.refclassid = 'pg_class'::regclass
+           AND EXISTS (SELECT 1 FROM pg_class t JOIN pg_namespace tn ON tn.oid = t.relnamespace
+                        WHERE t.oid = d.refobjid AND tn.nspname = 'pilot'))
+       OR (d.refclassid = 'pg_type'::regclass
+           AND EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace tn ON tn.oid = t.typnamespace
+                        WHERE t.oid = d.refobjid AND tn.nspname = 'pilot')))
      AND coalesce((SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
                     WHERE c.oid = CASE d.classid
                       WHEN 'pg_rewrite'::regclass THEN (SELECT ev_class FROM pg_rewrite WHERE oid = d.objid)
@@ -1129,19 +1178,25 @@ BEGIN
 END $$ LANGUAGE plpgsql STABLE SET search_path = pg_catalog, public, pg_temp;
 
 -- ── Grants ──────────────────────────────────────────────────────────
--- Every pilot function is taken from PUBLIC, and from a managed host's API
+-- Every pilot function is taken from PUBLIC, from a managed host's API
 -- roles (Supabase gives anon, authenticated and service_role EXECUTE on
 -- every new function in public by default, which a REVOKE from PUBLIC does
--- not take away) — then the doors the API opens are given to the
--- application role alone. The schema, its tables and its sequences the same.
+-- not take away), and from any other role a default privilege gave it to —
+-- then the doors the API opens are given to the application role alone. The
+-- schema, its tables and its sequences the same. pilot_isolation_check()
+-- below refuses the file if anything but the owner still holds a privilege.
 DO $grants$
-DECLARE f text; r text;
+DECLARE f text; r text; g record;
 BEGIN
   FOR f IN SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
             WHERE n.nspname = 'public' AND (p.proname ~ '^pilot_' OR p.proname = 'match_promoted_from_guard') LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role', 'scrbrd_app'] LOOP
       IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r); END IF;
+    END LOOP;
+    FOR g IN SELECT DISTINCT a.grantee FROM pg_proc p, aclexplode(p.proacl) a
+              WHERE p.oid = f::regprocedure AND a.grantee <> p.proowner AND a.grantee <> 0 LOOP
+      EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, pg_get_userbyid(g.grantee));
     END LOOP;
   END LOOP;
   FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role', 'scrbrd_app'] LOOP
@@ -1153,6 +1208,15 @@ BEGIN
   END LOOP;
   EXECUTE 'REVOKE ALL ON ALL TABLES IN SCHEMA pilot FROM PUBLIC';
   EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA pilot FROM PUBLIC';
+  FOR g IN SELECT DISTINCT c.oid::regclass::text AS rel, c.relkind, a.grantee FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace,
+                  aclexplode(c.relacl) a
+            WHERE n.nspname = 'pilot' AND a.grantee <> c.relowner AND a.grantee <> 0 LOOP
+    EXECUTE format('REVOKE ALL ON %s %s FROM %I', CASE WHEN g.relkind = 'S' THEN 'SEQUENCE' ELSE 'TABLE' END, g.rel, pg_get_userbyid(g.grantee));
+  END LOOP;
+  FOR g IN SELECT DISTINCT a.grantee FROM pg_namespace n, aclexplode(n.nspacl) a
+            WHERE n.nspname = 'pilot' AND a.grantee <> n.nspowner AND a.grantee <> 0 LOOP
+    EXECUTE format('REVOKE ALL ON SCHEMA pilot FROM %I', pg_get_userbyid(g.grantee));
+  END LOOP;
   FOREACH f IN ARRAY ARRAY[
     'pilot_status()', 'pilot_create(uuid,jsonb,jsonb,integer,text,timestamptz,jsonb,text,jsonb)', 'pilot_names_put(uuid,jsonb)',
     'pilot_names_for_owner(uuid)', 'pilot_header(uuid)', 'pilot_mine()', 'pilot_claim(uuid,text)', 'pilot_takeover(uuid,text,integer)',
