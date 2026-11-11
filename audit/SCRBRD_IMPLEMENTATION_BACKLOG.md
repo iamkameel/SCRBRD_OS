@@ -774,12 +774,14 @@ one duplicates an existing entry, strike the `CRI-*` line and point at the older
 - ~~**CRI-1.1** — `Board`: last-wicket and "updated · sync" rows. Evidence: `ui/board.jsx:214` has no last-wicket prop.~~ **Done 2026-10-29** (#206, commit 5a44f4d): the board shows the last wicket and an "updated · sync" row.
 - ~~**CRI-1.2** — `statusSentence()` shared by fixture list, board and push. Evidence: `scores.jsx` prints innings lines only.~~ **Done 2026-10-29** (#206, commit 5a44f4d): one status sentence, shared by the fixture list, the board and push.
 - ~~**CRI-1.3** — Tabs Summary, Scorecard, Commentary + More; a route per tab. Evidence: `MatchView.jsx:60–66`.~~ **Done 2026-10-30** (#213, commit cc48221): on a phone the match page shows Summary, Scorecard and Commentary plus a More menu, and each tab has its own address.
-- **CRI-1.4** — "Enter scoring" on the match page, authorised scorer only. Policy test required first.
-- **CRI-1.5** — Scorecard dismissal → that ball in Commentary; back restores state.
-- **CRI-1.6** — Sticky scorecard header and scroll cue at 360px.
-- **CRI-1.7** — Summary becomes the result view after full time.
-- **CRI-1.8** — Win probability from the par line, labelled "par estimate" (decided 2026-10-23).
+- ~~**CRI-1.4** — "Enter scoring" on the match page, authorised scorer only. Policy test required first.~~ **Done 2026-11-11** (#266, merge commit 060e0a2b).
+- ~~**CRI-1.5** — Scorecard dismissal → that ball in Commentary; back restores state.~~ **Done 2026-11-11** (#266, merge commit 060e0a2b).
+- ~~**CRI-1.6** — Sticky scorecard header and scroll cue at 360px.~~ **Done 2026-11-11** (#266, merge commit 060e0a2b).
+- ~~**CRI-1.7** — Summary becomes the result view after full time.~~ **Done 2026-11-11** (#266, merge commit 060e0a2b).
+- ~~**CRI-1.8** — Win probability from the par line, labelled "par estimate" (decided 2026-10-23).~~ **Done 2026-11-11** (#266, merge commit 060e0a2b).
 - **Phone More menu: Tab leaves it** — **Done 2026-10-30** (#214, commit a1262cb): on the match page's phone More menu, Tab leaves the menu and closes it, following the WAI-ARIA menu button pattern (a follow-up to CRI-1.3).
+
+**Sprint 1 complete 2026-11-11** (#266, merge commit 060e0a2b): CRI-1.4 to CRI-1.8 are done.
 
 **Sprint 2:** CRI-2.1 commentary chips and over jump · CRI-2.2 `sourceLine` and capture coverage on every chart ·
 CRI-2.3 chart-to-delivery drill-down · CRI-2.4 reader freshness and low-bandwidth mode · CRI-2.5 three spectator charts.
@@ -3482,6 +3484,8 @@ and a NULL type and a W with no method reach the views through `ball_event_live`
 
 **Partly done 2026-10-31:** recognition slice R3, the fixture class (`docs/design/RECOGNITION_reconciliation.md`, R3 row), which decides which fixtures count toward awards and records: competitive, festival or friendly, and the reason a match stands on no board. A friendly is a fixture with no competition (db/127) (#228, commit 516c548).
 
+**Partly done 2026-11-11:** recognition slices R5c (capabilities and the carve-out; db/145 `recognition_decide`) and R8 (Colours; db/146) (#268, merge commit 259c34b8), live on both databases since 7 Nov.
+
 ### ~~SCRBRD-088~~ — CLOSED · A handover in the second innings cannot verify
 **Closed 2026-09-25** in `105e467` (#37): db/45, as the build note below records.
 **Priority:** P1 · **Domain:** Scoring / handover · **Type:** bug (found by db/43, 2026-09-25)
@@ -5329,3 +5333,8 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - #273 (commit 89cb61bd, 2026-11-07): Ratings returns a boy's row only to readers of his development record: a pupil reads his own, a parent none (`services/api/read/read-api.mjs`). Part of the 7 Nov decisions; REACH-D2's career-figure build stays open (see "Close REACH-D2").
 - #274 (commit 8c013c30, 2026-11-07): Skills: one Overall radar on the Skills Matrix, the squad snapshot and Profiles. Closes SCRBRD-047 (struck through above).
 - #275 (commit a03e62d0, 2026-11-07): Demo dress rehearsal: 17 fixes to what a viewer would notice (labels, times, live card, signals, reads).
+
+## Merged 11 Nov 2026 with no backlog entry
+
+- #276 (merge commit 2e77e530, 2026-11-11): Docs: Kameel's 7 Nov and 11 Nov ratings decisions, and the 6–7 Nov merges.
+- #277 (merge commit 65f52f02, 2026-11-11): The stageshow skill (Benji Taylor, MIT) in `.claude/skills`.
