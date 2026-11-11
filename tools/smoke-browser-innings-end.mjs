@@ -172,7 +172,7 @@ const takeWicket = async (n) => {
   let confirmed = false;
   if (tapped) {
     for (let attempt = 0; attempt < 4 && !confirmed; attempt++) {
-      confirmed = await click(/Confirm Out/, 2000);
+      confirmed = await click(/Confirm Out/i, 2000);
       if (!confirmed) await page.waitForTimeout(500);
     }
   }

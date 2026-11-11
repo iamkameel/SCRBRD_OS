@@ -302,7 +302,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                           canScore() only decides whether to offer the button,
                           and being wrong here shows a button that then says
                           no, never the wrong data. */}
-                      {(isLive||m.status==="upcoming")&&canScore(role)&&<Btn variant="success" onClick={e=>{e.stopPropagation();onOpenScorer&&onOpenScorer(m);}}>{isLive?"Open Live Scorer →":"Start Scoring →"}</Btn>}
+                      {(isLive||m.status==="upcoming")&&canScore(role)&&<Btn variant="success" onClick={e=>{e.stopPropagation();onOpenScorer&&onOpenScorer(m);}}>{isLive?"Open live scorer →":"Start scoring →"}</Btn>}
                       {/* The fixture's own Match Centre (step 3c), for every
                           fixture — NOT gated on `m.scorecard`, which is a mock-only
                           field: asMatch() sets it null for every live row because
@@ -457,8 +457,9 @@ function NoMatchesPanel({ matches, filter, teamFilter, onOpen }) {
   const Row = ({ m }) => {
     const sides = sidesOf(m);
     return (
-      <button onClick={()=>onOpen(m)} data-testid="mc-nomatches-row" className="pressBtn" style={{
-        display:"flex",width:"100%",justifyContent:"space-between",alignItems:"center",gap:"10px",
+      // 44 tall, the tap floor: the rows were 32 (interface review, 11 Nov 2026).
+      <button type="button" onClick={()=>onOpen(m)} data-testid="mc-nomatches-row" className="pressBtn" style={{
+        display:"flex",width:"100%",minHeight:"44px",justifyContent:"space-between",alignItems:"center",gap:"10px",
         padding:"8px 10px",borderRadius:D.md,border:`1px solid ${D.border}`,background:D.surf2,
         cursor:"pointer",textAlign:"left",fontFamily:D.body,fontSize:"12px",color:D.textPrimary,
       }}>

@@ -306,7 +306,7 @@ try {
 
   // ── C ────────────────────────────────────────────────────────
   group("C. At once, who comes in — and not him, back to the end he left");
-  ok("the batting-order sheet is open", /Batting Order/.test(await dialog()) && await has("batter-choice"));
+  ok("the batting-order sheet is open", /Batting Order/i.test(await dialog()) && await has("batter-choice"));
   ok(`...${names[S1]} is not offered to resume at his own end`, !(await has(`resume-${S1}`)));
   await closeSheet();
   ok("closed without a choice, the pad says why it cannot score", /no batter at one end/i.test(await said("scoring-blocked")), await said("scoring-blocked"));
@@ -314,8 +314,8 @@ try {
   ok("the menu's sheet now offers only the batter who is in", !(await has("retire-pick-striker")) && await tid("retire-pick-nonStriker").getAttribute("data-batter") === S2);
   await closeSheet();
   await tap("scoring-blocked-fix");
-  ok("the pad's fix reopens the batting-order sheet — not the openers', not a bowler", /Batting Order/.test(await dialog())
-     && !/Opening Bowler/.test(await dialog()) && await has("batter-choice"), (await dialog()).slice(0, 120));
+  ok("the pad's fix reopens the batting-order sheet — not the openers', not a bowler", /Batting Order/i.test(await dialog())
+     && !/Opening Bowler/i.test(await dialog()) && await has("batter-choice"), (await dialog()).slice(0, 120));
 
   // ── D ────────────────────────────────────────────────────────
   group("D. The next batter comes in at his end, and the over is finished");
@@ -380,7 +380,7 @@ try {
   ok("the partner's retirement is stored", (await serverEvents()).at(-1)?.kind === "retire" && (await serverEvents()).at(-1)?.batter === P);
   const firstSheet = await dialog();
   ok("the batting-order sheet opens, and does not offer him back to the end he has just left",
-     /Batting Order/.test(firstSheet) && !(await has(`resume-${P}`)) && !(await has("resume-list")) && await has("batter-choice"),
+     /Batting Order/i.test(firstSheet) && !(await has(`resume-${P}`)) && !(await has("resume-list")) && await has("batter-choice"),
      firstSheet.slice(0, 200));
   ok("the next batter comes in", await sendNext());
   const S4 = (await serverEvents()).at(-1);
@@ -417,7 +417,7 @@ try {
   const careerRO = await dismissals(RO);
   await agree("retired out: a wicket", { runs: runsG, wickets: 2, balls: ballsG });
   ok("the batting-order sheet does not offer him back to his own vacancy, consent or not",
-     /Batting Order/.test(await dialog()) && !(await has("consent-list")) && !(await has(`consent-${RO}`)), (await dialog()).slice(0, 200));
+     /Batting Order/i.test(await dialog()) && !(await has("consent-list")) && !(await has(`consent-${RO}`)), (await dialog()).slice(0, 200));
   ok("the next batter comes in", await sendNext());
   await score(0);
   await tap("key-wicket");

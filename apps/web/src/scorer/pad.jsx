@@ -205,8 +205,13 @@ function Stepper({ phase, values, onStep, stepperRef }) {
               <span style={{ ...T.role.label, color: now ? T.surface.canvas : T.content.secondary }}>
                 {done && <Icon name="circle-check"/>} {s.n} {s.label}
               </span>
-              <span style={{ fontFamily: T.type.body, fontSize: "14px", fontWeight: 600, maxWidth: "100%",
-                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              {/* The value in full, wrapping: the area was cut to "Deep backw…",
+                  and once the finger lifts nothing else on screen names it
+                  (interface review, 11 Nov 2026). Two lines are kept from the
+                  first, so the stepper does not grow under the thumb between
+                  Area and Outcome for an everyday name. */}
+              <span data-testid={`step-${s.n}-value`} style={{ fontFamily: T.type.body, fontSize: "14px", fontWeight: 600, lineHeight: 1.25,
+                maxWidth: "100%", minHeight: "2.5em", overflowWrap: "break-word",
                 color: now ? T.surface.canvas : done ? T.content.primary : T.content.tertiary }}>
                 {values[s.n - 1] ?? (now ? "Now" : "—")}
               </span>
@@ -319,8 +324,12 @@ const runKey = (r, onRun, h, style) => (
 function OutcomeKeys({ onRun, onWicket, note, blockRef }) {
   return (
     <div ref={blockRef} data-testid="phase-outcome" style={{ display: "grid", gap: T.space.sm }}>
+      {/* The wicket's own colour, T.run.wicket — the board's W chip — not
+          critical: a wicket is not an error ("State, never sport", tokens.js).
+          Its icon, its place at the head of the block and its weight are
+          what set it apart (interface review, 11 Nov 2026). */}
       <Key face={<><Icon name="bails-off"/> Wicket</>} say="Wicket" testid="key-wicket" h="64px" onClick={onWicket}
-        style={{ background: T.semantic.critical, color: inkOn(T.semantic.critical), border: `1px solid ${T.semantic.critical}`,
+        style={{ background: T.run.wicket, color: inkOn(T.run.wicket), border: `1px solid ${T.run.wicket}`,
           fontSize: "18px", fontWeight: 700 }}/>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: T.space.sm }}>
         {RUNS.filter((r) => r.v >= 2).map((r) => runKey(r, onRun, "64px"))}
@@ -368,7 +377,7 @@ function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true, wi
           <Key face={<><Icon name="bails-off"/> Wicket</>} testid="extra-wicket" pressed={wicket} onClick={() => setWicket((w) => !w)}
             say={kind === "Wd" ? "Wicket off this wide" : "Wicket off this no ball"}
             style={{ padding: `0 ${T.space.md}`, flexShrink: 0,
-              ...(wicket ? { background: T.semantic.critical, color: inkOn(T.semantic.critical), border: `1px solid ${T.semantic.critical}`, fontWeight: 600 } : {}) }}/>
+              ...(wicket ? { background: T.run.wicket, color: inkOn(T.run.wicket), border: `1px solid ${T.run.wicket}`, fontWeight: 600 } : {}) }}/>
         )}
         <Key face="Cancel" testid="extra-cancel" onClick={onCancel} style={{ padding: `0 ${T.space.md}`, flexShrink: 0 }}/>
       </div>

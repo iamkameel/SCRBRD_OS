@@ -111,10 +111,10 @@ const PIN = new Map([
   ["The toss", { in: ["scorer/toss.jsx"] }],
   ["Bat", { in: ["scorer/toss.jsx"] }],
   ["Bowl", { in: ["scorer/toss.jsx"] }],
-  ["Opening Bowler", { in: ["scorer/sheets.jsx"] }],          // the new-over sheet's title at over 0
-  ["Batting Order", { in: ["scorer/sheets.jsx"] }],
+  ["Opening bowler", { in: ["scorer/sheets.jsx"] }],          // the new-over sheet's title at over 0
+  ["Batting order", { in: ["scorer/sheets.jsx"] }],
   ["Go", { in: ["scorer/sheets.jsx"] }],
-  ["Confirm Out", { in: ["scorer/sheets.jsx"] }],
+  ["Confirm out", { in: ["scorer/sheets.jsx"] }],
   ["Can't score yet", { in: ["scorer/scoring.jsx"] }],
   ["Match Complete", { in: ["scorer/engine.jsx"] }],
   // Rain (scorer/rainSheet.jsx).
@@ -262,7 +262,7 @@ const BANNED = [
   // The app runs on Render; Firebase is Google sign-in only, its hosting unused.
   ["scrbrd-os.web.app", "the app is at scrbrd.onrender.com (render.yaml); Firebase Hosting is not deployed"],
   ["Get Started", "the app opens on the sign-in screen"],
-  ["Confirm Wicket", "the wicket sheet's button is Confirm Out"],
+  ["Confirm Wicket", "the wicket sheet's button is Confirm out"],
   ["Arm handover", "the handover button is Hand over scoring"],
   ["Amend", "the innings review has That is right and Take back the last ball"],
   ["Tap your name", "that exists only in the demo"],
