@@ -12,7 +12,7 @@ import { batterChoices, bowlerChoices, unavailableWords } from "./prompts.js";
 import { KeeperRow } from "./keeperSheet.jsx";
 import { OFF_SIDE_ASK, OFF_SIDE_MARK, OFF_SIDE_WHY, offSide } from "./side.js";
 import { Proposal, useProposal } from "./rainSheet.jsx";
-import { extraOf, NB_FROM, nbFreeHit } from "./extras.js";
+import { extraOf, NB_FROM, nbFreeHit, nbNotBoundary } from "./extras.js";
 import { wicketAsks, wicketDetail } from "./wicketAsks.js";
 
 /** A choice that is on, the way the pad marks one: the primary ink's ring on the interactive surface. Never a state hue. */
@@ -73,6 +73,9 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
   const[from,setFrom]=useState(null);
   const FROM=[{id:null,label:"Off the bat"},{id:NB_RUNS.BYES,label:"Byes"},{id:NB_RUNS.LEG_BYES,label:"Leg byes"}];
   const[wicket,setWicket]=useState(false);
+  // Four or six off the bat that did not reach the rope (RECOGNITION R12, P8).
+  const[notBoundary,setNotBoundary]=useState(false);
+  const allRun=nbNotBoundary({from,notBoundary},runs);
   // Off any no-ball a batter is out only run out, hit the ball twice or
   // obstructing the field (Law 21.17, 4th Edition; 21.18 in the 3rd).
   // Both: 1 penalty run + any runs scored (the bat's only when off the bat), doesn't count as legal delivery
@@ -163,6 +166,21 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
             </div>
           </div>
         )}
+        {/* Four or six off the bat: did it reach the rope (RECOGNITION R12,
+            P8)? Untouched it is a boundary, as the run keys' are; all run,
+            or with overthrows, it is the batter's runs and no four or six. */}
+        {from==null&&(runs===4||runs===6)&&(
+          <div data-testid="nb-boundary">
+            <Lbl sx={{marginBottom:"8px"}}>Did it reach the boundary?</Lbl>
+            <div style={{display:"flex",gap:"6px"}}>
+              {[[false,"Yes"],[true,"No, all run"]].map(([on,label])=>(
+                <button key={label} type="button" data-testid={`nb-boundary-${on?"no":"yes"}`} aria-pressed={notBoundary===on} onClick={()=>setNotBoundary(on)} className="pressBtn" style={{
+                  flex:1,minHeight:"44px",padding:"10px 0",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:600,
+                  ...chosen(notBoundary===on)}}>{label}</button>
+              ))}
+            </div>
+          </div>
+        )}
         {/* And a wicket? (Law 21.17): off a no ball only run out, hit the
             ball twice or obstructing the field. Yes moves on to the wicket
             sheet, which offers just those; nothing is recorded until it
@@ -182,7 +200,7 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
             </div>
           )}
         </div>
-        <Btn variant="amber" size="lg" full data-testid="nb-confirm" onClick={()=>onConfirm(nbType,runs,runs>0?from:null,wicket)} sx={{borderRadius:D.md}}>
+        <Btn variant="amber" size="lg" full data-testid="nb-confirm" onClick={()=>allRun?onConfirm(nbType,runs,from,wicket,true):onConfirm(nbType,runs,runs>0?from:null,wicket)} sx={{borderRadius:D.md}}>
           {wicket?"Next: the wicket":`Confirm No Ball (${runs+1} runs)`}
         </Btn>
       </div>

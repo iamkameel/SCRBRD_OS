@@ -8,7 +8,7 @@ import { placeWords } from "./field.js";
 import { boardFromInnings } from "./boardData.js";
 import { WagonWheel } from "./panels.jsx";
 import { ALL_SHOTS_FLAT, SHOT_CATS } from "./shots.js";
-import { EXTRAS, NB_DEFAULT, NB_FROM, NB_TYPES, extraCall, extraOf, nbFreeHit, runsWords } from "./extras.js";
+import { EXTRAS, NB_DEFAULT, NB_FROM, NB_TYPES, extraCall, extraOf, nbFreeHit, nbNotBoundary, runsWords } from "./extras.js";
 
 /**
  * THE PAD — step 2 of the redesign (DESIGN_DIRECTION §4).
@@ -399,6 +399,15 @@ function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true, wi
                 style={{ ...keyBase("44px"), ...segment(nb.from === f.id) }}>{f.label}</button>
             ))}
           </div>
+          {/* Four or six off the bat that did not reach the rope (RECOGNITION
+              R12, P8): one tap says so, and the runs are the batter's with no
+              four or six. Untouched, a four or six off the bat is a boundary,
+              as the run keys' are. Byes are never a batter's boundary. */}
+          {nb.from == null && (
+            <button type="button" aria-pressed={nb.notBoundary === true} data-testid="nb-not-boundary"
+              className="pressBtn os-state" onClick={() => setNb((p) => ({ ...p, notBoundary: !p.notBoundary }))}
+              style={{ ...keyBase("44px"), ...segment(nb.notBoundary === true) }}>All run, not a boundary</button>
+          )}
           {/* No free hit in a declaration or timed match (the fold's
               inn.freeHits, from the fixture's format; SCRBRD-113). */}
           {freeHits && nbFreeHit(nb.type) && (
@@ -424,7 +433,7 @@ function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true, wi
           const likely = n === x.likely;
           return (
             <button key={n} ref={likely ? likelyRef : undefined} type="button" data-testid={`extra-run-${n}`} data-likely={likely || undefined}
-              aria-label={`${runsWords(kind, n)}${wicket ? ", then the wicket" : likely ? " (the usual)" : ""}`}
+              aria-label={`${runsWords(kind, n)}${isNb && nbNotBoundary(nb, n) ? ", not a boundary" : ""}${wicket ? ", then the wicket" : likely ? " (the usual)" : ""}`}
               className="pressBtn os-state" onClick={() => onRuns(n, nb, wicket)}
               style={{ ...keyBase("56px"), ...T.role.figure.md, fontSize: "24px",
                 ...(likely ? { background: T.content.primary, color: T.surface.canvas, border: `2px solid ${T.content.primary}` } : {}) }}>
@@ -657,7 +666,7 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
     // A wicket on the wide or the no-ball: the engine opens the wicket
     // sheet with the extra's answers, and records nothing until it confirms.
     if (wicket && onExtraWicket && (extra === "Wd" || extra === "Nb")) {
-      if (extra === "Nb") onExtraWicket("Nb", n, nb.type, n > 0 ? nb.from : null);
+      if (extra === "Nb") onExtraWicket("Nb", n, nb.type, n > 0 ? nb.from : null, ...(nbNotBoundary(nb, n) ? [true] : []));
       else onExtraWicket("Wd", n);
       if (basic) setExtra(null); else reset();
       return;

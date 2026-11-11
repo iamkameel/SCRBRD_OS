@@ -60,9 +60,14 @@ export function deliveryEvents({ curIn, before, freeHit, type, value, shot, seg,
  * and sector (null on the pad). `nbType` is passed on as it always was;
  * ball() keeps only the fields the record has.
  */
-export function noBallEvent({ inn, nbType, runs, nbRuns, selShot, selSeg, wicket = null }) {
+export function noBallEvent({ inn, nbType, runs, nbRuns, selShot, selSeg, wicket = null, notBoundary = false }) {
   return ballEvent({type:"Nb",value:runs,shot:selShot,
     seg:selSeg?.seg??null,zone:selSeg?.zone??null,nbType,...(nbRuns?{nbRuns}:{}),
+    // Four or six off the bat that did not reach the rope — all run, or with
+    // overthrows (RECOGNITION R12, P8; the Laws audit F7): no four or six for
+    // the batter (boundaryHit()). Only when the scorer said so; every other
+    // no-ball is the event it always was.
+    ...(notBoundary?{boundary:false}:{}),
     ...crease(inn),...wicketFields(wicket)});
 }
 
@@ -83,13 +88,14 @@ const wicketFields = (w) => (w ? {
  * A wicket on a wide or a no-ball: the extra exactly as the pad records it
  * without one — a wide as commitBall() builds it (recordWide), a no-ball as
  * the no-ball question does (noBallEvent) — carrying the wicket.
- * @param {{inn: object, extra: {type: "Wd" | "Nb", runs: number, nbType?: string | null, nbRuns?: string | null},
+ * @param {{inn: object, extra: {type: "Wd" | "Nb", runs: number, nbType?: string | null, nbRuns?: string | null, notBoundary?: boolean},
  *          wicket: {dismissal: string, fielder?: string | null, dismissed?: string | null, outAt?: string | null},
  *          freeHit?: boolean, approach?: string | null}} o
  */
 export function extraWicketEvent({ inn, extra, wicket, freeHit = false, approach = null }) {
   if (extra.type === "Nb") {
-    return noBallEvent({ inn, nbType: extra.nbType ?? null, runs: extra.runs, nbRuns: extra.nbRuns ?? null, selShot: null, selSeg: null, wicket });
+    return noBallEvent({ inn, nbType: extra.nbType ?? null, runs: extra.runs, nbRuns: extra.nbRuns ?? null, selShot: null, selSeg: null, wicket,
+      notBoundary: extra.notBoundary === true });
   }
   return ballEvent({ ...deliveryOf({ type: "Wd", value: extra.runs, approach, freeHit, crease: crease(inn) }), ...wicketFields(wicket) });
 }
