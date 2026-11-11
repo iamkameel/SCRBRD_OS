@@ -588,16 +588,6 @@ function SkillsView({ role }) {
                   what the side ran, a block per discipline. ── */}
               <SincePanel rows={sinceRead.rows} history={histRead.rows} player={selPlayer} staff={staffView} self={!staffView}/>
 
-              {/* ── Coaching points (GA-I27 slice 2): only where the read was
-                  made, for a reader of notes. Never the boy or his parents. ── */}
-              {mayReadPoints&&readState(pointsRead,{what:"the coaching points"}).state==="failed"&&(
-                <Card sx={{marginBottom:"14px"}}><ReadState compact testId="points-read-state" read={readState(pointsRead,{what:"the coaching points"})} onRetry={retry}/></Card>
-              )}
-              {mayReadPoints&&readState(pointsRead,{what:"the coaching points"}).state!=="failed"&&(
-                <CoachingPoints points={pointsRead.rows} answered={["ok","empty"].includes(readState(pointsRead,{what:"the coaching points"}).state)}
-                  history={histRead.rows} playerId={selPlayer.id} staff={staffView}
-                  canWithdraw={mayWithdrawPoint} nonce={nonce} now={Date.now()} onDone={()=>setNonce(n=>n+1)}/>
-              )}
 
               {/* Category tabs: five now, so they wrap on a phone rather than push the page sideways. */}
               <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"16px"}}>
@@ -728,6 +718,20 @@ function SkillsView({ role }) {
                 <div style={{marginTop:"14px"}}><Btn size="sm" onClick={()=>{setWriteError(null);setAssessing(true);}}>Run Assessment</Btn></div>
               )}
             </Card>
+          )}
+          {/* ── Coaching points (GA-I27 slice 2): only where the read was
+              made, for a reader of notes; never the boy or his parents. Drawn
+              whether or not he has a score yet: a point from a card in the
+              drawer stands on a matchup, not on a rating. ── */}
+          {mayReadPoints&&readState(pointsRead,{what:"the coaching points"}).state==="failed"&&(
+            <Card sx={{marginBottom:"14px"}}><ReadState compact testId="points-read-state" read={readState(pointsRead,{what:"the coaching points"})} onRetry={retry}/></Card>
+          )}
+          {mayReadPoints&&readState(pointsRead,{what:"the coaching points"}).state!=="failed"&&(
+            <div style={{marginTop:"14px"}}>
+              <CoachingPoints points={pointsRead.rows} answered={["ok","empty"].includes(readState(pointsRead,{what:"the coaching points"}).state)}
+                history={histRead.rows} playerId={selPlayer.id} staff={staffView}
+                canWithdraw={mayWithdrawPoint} nonce={nonce} now={Date.now()} onDone={()=>setNonce(n=>n+1)}/>
+            </div>
           )}
           {/* A boy chosen from the every-player table may have no assessment:
               the table stays, so the coach is not stranded on him. */}

@@ -231,7 +231,7 @@ ok("the register code never writes the word injured", !/injured/i.test(src("../s
   // where the points were read (player.note.read for HIM: never the boy, never
   // his parents), and a point is made only by a writer of his scores who
   // writes notes (coaching_point_write's two capabilities).
-  ok("the coaching points panel is drawn only where the points read was made", /\{mayReadPoints&&readState\(pointsRead[^}]*\}\)\.state!=="failed"&&\(\s*<CoachingPoints /.test(skillsSrc)
+  ok("the coaching points panel is drawn only where the points read was made", /\{mayReadPoints&&readState\(pointsRead[^}]*\}\)\.state!=="failed"&&\(\s*<div style=\{\{marginTop:"14px"\}\}>\s*<CoachingPoints /.test(skillsSrc)
      && (skillsSrc.match(/<CoachingPoints /g) ?? []).length === 1);
   ok("...and a point is made only by a writer who writes notes", /const mayPoint = canEdit && mayReadPoints && holdsAsHeld\(role, "player\.note\.write"\);/.test(skillsSrc)
      && /\{pointing&&mayPoint&&pointing\.playerId===selPlayer\.id&&\(/.test(skillsSrc) && /onMakePoint=\{mayPoint\?/.test(skillsSrc));
