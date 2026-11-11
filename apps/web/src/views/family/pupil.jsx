@@ -14,7 +14,7 @@
  * The words are chosen so a nine-year-old can read them and an
  * eighteen-year-old is not patronised (§1.2).
  */
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useLive, useRatings } from "../../lib/live.js";
 import { signedIn } from "../../lib/api.js";
@@ -22,7 +22,7 @@ import { humanDate, stat } from "../../lib/format.js";
 import { ownRecordId } from "../../lib/family.js";
 import { withOpponents } from "../../lib/matchCentre.js";
 import { CareerWagonWheel, DismissalMethodCard } from "../ProfilesView.jsx";
-import { Action, Card, Line, NoneOr, Page, Title } from "./parts.jsx";
+import { Action, Back, Card, Line, NoneOr, Page, Title } from "./parts.jsx";
 import { ReadState } from "../../ui/primitives.jsx";
 import { readState } from "../../lib/readState.js";
 import { LastMatchCard, LiveCard, NewsCard, NextFixtureCard, NoticesCard, SeasonCard, TrainingCard } from "./cards.jsx";
@@ -36,6 +36,11 @@ import { SealMark } from "../../ui/sealMark.jsx";
 import { honourWords, isSealed, isWithdrawn, provenanceOf, seasonOnce } from "../../lib/recognitionWords.js";
 import { PersonalBests } from "./bests.jsx";
 import { RecordBoards } from "../records.jsx";
+
+// His Skills door (GA-I26a §4, STEP4 item 7): the staff Skills screen, read
+// under his own assignments, which reach him alone. Its own chunk, loaded
+// only when he opens it, as the staff menu loads it.
+const SkillsView = lazy(() => import("../SkillsView.jsx").then((m) => ({ default: m.SkillsView })));
 
 /** The pupil himself, in the shape the shared cards take: his own player row. */
 function useSelf(role) {
@@ -310,13 +315,29 @@ function HonoursTab({ me, role }) {
  */
 export function PupilMe({ role, onNav }) {
   const { me, loading, error } = useSelf(role);
-  const [show, setShow] = useState({ record: false, conduct: false });
+  const [show, setShow] = useState({ record: false, conduct: false, skills: false });
   if (!me) return <NoSelf loading={loading} error={error} testid="pupil-me"/>;
+  // His skills, every score with its date and any target his coach set: the
+  // Skills screen, opened from his ratings card rather than a fifth item on
+  // the bar (STEP4 §2.0: four items; every other screen from a card on them).
+  // What it draws for him is GA-I26a §4.4's: himself alone, "your coach",
+  // no Set target, no Why, no notes and no coaching point.
+  if (show.skills) return (
+    <div data-testid="pupil-skills" style={{ display: "grid", gap: "12px", alignContent: "start" }}>
+      <div style={{ padding: "16px 16px 0" }}><Back testid="skills-back" onClick={() => setShow((s) => ({ ...s, skills: false }))}>Me</Back></div>
+      <Suspense fallback={<Page><Line quiet>Opening your skills…</Line></Page>}>
+        <SkillsView role={role}/>
+      </Suspense>
+    </div>
+  );
   return (
     <Page testid="pupil-me">
       <Title>Me</Title>
       <Card label="My health" testid="me-health"><Health child={me} role={role} self/></Card>
-      <Card label="My ratings" testid="me-ratings"><MyRatings me={me} role={role}/></Card>
+      <Card label="My ratings" testid="me-ratings"
+        aside={<Action testid="me-skills-open" onClick={() => setShow((s) => ({ ...s, skills: true }))}>Your skills</Action>}>
+        <MyRatings me={me} role={role}/>
+      </Card>
       <Card label="My record" testid="me-record"
         aside={!show.record && <Action testid="me-record-show" onClick={() => setShow((s) => ({ ...s, record: true }))}>Show</Action>}>
         {show.record ? <TheirRecord child={me} role={role} self/> : <Line quiet>Your date of birth and address, as the school holds them. For your ID number, ask the school office.</Line>}

@@ -27,7 +27,8 @@
  */
 import { busOf, isMatchDay, isSoon, saTime, shortDate, LOAD_SENTENCE, weatherWords } from "./cockpit.js";
 import { EXCEPTION_WORDS } from "./liftWords.js";
-import { matchupTypes } from "./captain.js";
+import { matchupLine, matchupTypes } from "./captain.js";
+import { pointLines } from "./coachingPoint.js";
 import { clockWords } from "./corrections.js";
 
 /** The matchup floor (D14): thirty balls against a type, the dossier's own floor for a strike rate. */
@@ -58,6 +59,10 @@ export const RULES = Object.freeze({
   S10: { title: "No playing conditions",                     via: ["fixture.read"],                               source: "playing-conditions" },
   S11: { title: "A bowler's week",                           via: ["player.workload.read"],                       source: "workload" },
   S12: { title: "A notice for this fixture",                 via: ["news.read"],                                  source: "notifications" },
+  // GA-I27 slice 2 (C4): a coaching point written about one of our boys for
+  // this fixture, as written. Read under the note's own policy (GA-I26a
+  // AH-D2, AH-D3): the coach, the assistant coach, the director of sport.
+  S13: { title: "A coaching point for this fixture",         via: ["player.note.read"],                           source: "coaching_points" },
 });
 
 /** The order of the rules, for sorting and for the test that holds the list whole. */
@@ -93,11 +98,12 @@ export const TRAILS = Object.freeze({
   S10: { read: "playing-conditions", reads: ["playing-conditions"],   window: "this fixture",                       denominator: "the conditions document",             unit: null,    screen: { route: "competitions", label: "Open the conditions" } },
   S11: { read: "workload",           reads: ["workload"],             window: "the 7 days to today",                denominator: "overs begun, every match",            unit: "overs", screen: TRAINING },
   S12: { read: "notifications",      reads: ["notifications"],        window: "as published",                       denominator: null,                                  unit: null,    screen: { route: "notifications", label: "Open Alerts" } },
+  S13: { read: "coaching_points",    reads: ["coaching_points"],      window: "as written",                         denominator: null,                                  unit: null,    screen: { route: "skills", label: "Open his development panel" } },
 });
 
 /**
  * @typedef {object} Card
- * @property {string} rule     "S1" … "S12"
+ * @property {string} rule     "S1" … "S13"
  * @property {string} base     what a dismissal is filed under: the rule and the thing it is about
  * @property {string} key      the evidence: a dismissal holds only while this is unchanged
  * @property {string} title
@@ -178,6 +184,7 @@ const plural = (/** @type {number} */ n, /** @type {string} */ one, /** @type {s
  * @property {((balls: number) => string | null) | null} capFor  the pad's cap sentence for the frozen conditions
  * @property {Record<string, number> | null} [at]  when each read answered (ms), by the read's name; "fold" is the match's log (GA-I27 §4.1)
  * @property {number | null} [head]  the match's head seq: the highest the log has reached (GA-I36 D1)
+ * @property {any[] | null} [points]  coaching_points for this fixture (asPoint rows), read only by a reader who holds player.note.read
  */
 
 const ours = (/** @type {Ctx} */ c) => (c.squad ?? []).filter((r) => r.side === c.gate.end);
@@ -366,7 +373,7 @@ export function ruleS5(c) {
       const cov = m.coverage && m.coverage.deliveries > 0 ? `${m.coverage.attributable} of ${m.coverage.deliveries} balls attributable` : null;
       const has = !!(m.coverage && m.coverage.deliveries > 0);
       out.push(card("S5", `S5:${r.playerId}:${t.type}`, `S5:${r.playerId}:${t.type}:${t.balls}`, [
-        `${r.name} v ${t.type} · ${plural(t.balls, "ball")} · ${plural(t.runs, "run")} · ${t.out === 0 ? "not out" : t.out === 1 ? "out once" : `out ${t.out} times`}`, cov,
+        matchupLine(r.name, t), cov,
       ], t.balls, { growth: MATCHUP_GROWTH, figures: [fig("against", t.type), fig("balls", t.balls, per(t.balls, "ball")), fig("runs", t.runs, per(t.runs, "run")),
         fig("out", t.out, t.out === 1 ? "time" : "times"),
         has ? fig("attributable", m.coverage.attributable, per(m.coverage.attributable, "ball")) : null,
@@ -485,8 +492,30 @@ export function ruleS12(c) {
       figures: [fig("kind", n.type)], params: { notificationId: n.id } }));
 }
 
+// ── S13 · A coaching point for this fixture ────────────
+
+/**
+ * A coaching point a coach wrote about one boy for this fixture (GA-I27 §1.3,
+ * slice 2), as written: derived from nothing, like S12. Its lines are the boy,
+ * the sentence, what it stood on and, where today's matchup read differs, what
+ * it says now (C-D5), from the same read S5 drew. A withdrawn point is not a
+ * signal: it stays on the boy's development panel, struck. The read is made
+ * only for a reader who holds player.note.read, and the server answers it
+ * under the note's policy; no pupil, parent or team manager is sent a row.
+ * @param {Ctx} c @returns {Card[]}
+ */
+export function ruleS13(c) {
+  if (!c.points || !c.match) return [];
+  return c.points.filter((p) => p.matchId === c.match.id && !p.withdrawn && p.playerId).map((p) => {
+    const m = c.matchups?.[p.playerId];
+    const w = pointLines(p, { matchups: m ? m.rows : null, at: c.at?.matchups ?? null, now: c.now });
+    return card("S13", `S13:${p.id}`, `S13:${p.id}:${w.now ?? ""}`, [`${p.name ?? "One of ours"}: ${p.body}`, w.stood, w.now], 1, {
+      figures: [fig("written", p.observedOn ?? "")], params: { playerId: p.playerId } });
+  });
+}
+
 /** Every rule, in the fixed order. */
-const EVALUATE = [ruleS1, ruleS2a, ruleS2b, ruleS2c, ruleS3, ruleS4a, ruleS4b, ruleS5, ruleS6, ruleS7, ruleS8, ruleS9, ruleS10, ruleS11, ruleS12];
+const EVALUATE = [ruleS1, ruleS2a, ruleS2b, ruleS2c, ruleS3, ruleS4a, ruleS4b, ruleS5, ruleS6, ruleS7, ruleS8, ruleS9, ruleS10, ruleS11, ruleS12, ruleS13];
 
 /**
  * The feed: every rule over what the cockpit holds, in the rules' fixed order.

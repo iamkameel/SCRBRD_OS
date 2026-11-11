@@ -434,6 +434,8 @@ const HAND_WRITTEN_SINCE_47 = {
   milestone_family_notice: {},
   // db/142: who awarded and withdrew a boy's honour is never public as a whole (N3).
   recognition_audit: {},
+  // db/148: a decider's review of an award a correction moved is never public as a whole (N5).
+  recognition_review: {},
 };
 
 /** The db/NN files from 47 on, which is where hand-written pupil tables are held to this. */

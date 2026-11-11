@@ -33,6 +33,15 @@
  *      nominated T Bekker"; his sheet "The captain nominated T Bekker ·
  *      decide by …", Confirm in one tap and a confirm sheet; R6's honour is
  *      tied to the nomination; the captain's tab then reads the award.
+ *   7. RECOGNITION R10 (db/148): a third finished fixture, its balls stamped
+ *      as the pad stamps them; the coach awards J Whitfield; an amendment
+ *      voids his first six. The award stands. The coach's To-resolve list
+ *      carries "Player of the Match to review · J Whitfield · the scorecard
+ *      was corrected"; its door opens the fixture, where the sheet reads
+ *      "The figures this award cited have changed: 17* (6) → 11* (5).
+ *      Withdraw, or let it stand." He lets it stand, in one tap of 44px:
+ *      the review is gone and the award still stands; the floors hold; no
+ *      console error.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-potm.mjs
@@ -396,6 +405,95 @@ try {
      () => /Player of the Match: T Bekker/.test(document.querySelector('[data-testid="mc-captain-potm-mine"]')?.innerText ?? ""), 12000),
      await tid(pu.page, "mc-captain-potm-mine").innerText().catch(() => "∅"));
   await pu.ctx.close();
+
+  group("A correction returns the award to its decider (RECOGNITION R10, db/148)");
+  {
+    const headTok = (await call("/api/auth/dev-login", { method: "POST", body: { email: "sarah@example.invalid", deviceId: "potm-r10" } })).body?.token;
+    const coachTok = (await call("/api/auth/dev-login", { method: "POST", body: { email: "coach@example.invalid", deviceId: "potm-r10" } })).body?.token;
+    const [{ id: M3 }] = await q(
+      `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+       values ($1, '1XI', $2, '1XI', 'Westville', now() - interval '1 hour', 'cricket', 'T20', 1, 'scheduled') returning id`, [HIL, WES]);
+    for (const p of HXI) await q(`insert into match_squad (match_id, player_id, side) values ($1, $2, 'home')`, [M3, p.id]);
+    for (const p of WXI) await q(`insert into match_squad (match_id, player_id, side) values ($1, $2, 'away')`, [M3, p.id]);
+    const claim3 = await call(`/api/matches/${M3}/session/claim`, { method: "POST", token: scorerTok, body: { device: "potm-pad" } });
+    let cs3 = 0, k3 = 0, refused3 = [];
+    const T3 = Date.now() - 3600_000;
+    const W1 = WXI[0].id;
+    // Stamped with striker and bowler, as the pad stamps a ball (engine.jsx).
+    for (const [i, inn] of [
+      { bat: "1XI", bowl: "Westville 1XI", squad: HXI, bowlingSquad: WXI,
+        balls: [6, 4, 6, 0, 0, 1].map((v) => ball({ type: BALL_TYPE.RUN, value: v, striker: WHITFIELD, bowler: W1 })) },
+      { bat: "Westville 1XI", bowl: "1XI", squad: WXI, bowlingSquad: [HXI[1], HXI[0]], target: 18,
+        balls: [ball({ type: BALL_TYPE.RUN, value: 0, striker: W1, bowler: BEKKER }), ball({ type: BALL_TYPE.RUN, value: 0, striker: W1, bowler: BEKKER }),
+                ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled", striker: W1, bowler: BEKKER })] },
+    ].entries()) {
+      const evs = [inningsStart({ battingTeam: inn.bat, bowlingTeam: inn.bowl, squad: inn.squad, bowlingSquad: inn.bowlingSquad, overs: 1, target: inn.target ?? null }),
+        batters({ striker: inn.squad[0].id, nonStriker: inn.squad[1].id }), bowler({ bowler: inn.bowlingSquad[0].id }), ...inn.balls]
+        .map((e) => ({ ...e, innings: i }));
+      evs.push({ ...sealInnings(deriveInnings(evs)), innings: i });
+      const r = await call(`/api/matches/${M3}/events`, { method: "POST", token: scorerTok, body: { events: evs.map((ev) => ({
+        epoch: claim3.body?.epoch, deviceId: "potm-pad", idempotencyKey: `bpotm10-${M3}-${++k3}`, clientSeq: ++cs3, clientTs: T3 + k3 * 20_000, innings: i, payload: ev })) } });
+      refused3 = refused3.concat(r.body?.refused ?? []);
+    }
+    await call(`/api/matches/${M3}/session/release`, { method: "POST", token: scorerTok, body: { device: "potm-pad" } }).catch(() => null);
+    await q(`update match set status = 'complete' where id = $1`, [M3]);
+    const hs3 = (await call(`/api/matches/${M3}/player-of-match`, { token: coachTok })).body?.sides?.[0]?.headSeq;
+    const a3 = await call(`/api/matches/${M3}/player-of-match`, { method: "POST", token: coachTok, body: { playerId: WHITFIELD, headSeq: hs3 } });
+    const asked = await call(`/api/matches/${M3}/amendments`, { method: "POST", token: scorerTok, body: { targetKey: `bpotm10-${M3}-4`, reason: "The first six was a dot ball." } });
+    const ap = await call(`/api/amendments/${asked.body?.id}/decide`, { method: "POST", token: headTok, body: { approve: true } });
+    ok("a third fixture scored, the coach's award, then an amendment voids the awardee's first six",
+       claim3.body?.ok === true && refused3.length === 0 && a3.status === 200 && ap.body?.ok === true, JSON.stringify([refused3, a3.body, ap.body]).slice(0, 400));
+
+    const cr = await open();
+    await cr.page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+    await click(cr.page, /Get Started|Log In/, 5000);
+    await cr.page.waitForTimeout(400);
+    await click(cr.page, /coach@example\.invalid|Head Coach/, 4000);
+    await click(cr.page, /^Sign In$/, 5000);
+    await afterReads(cr.page, 2000);
+    for (const sel of ['[data-testid="mnav-readiness"]', '[data-testid="nav-readiness"]']) {
+      const l = cr.page.locator(sel).first();
+      if (await l.count()) { await l.click({ timeout: 6000 }).catch(() => {}); break; }
+    }
+    if ((await tid(cr.page, "queue").count()) === 0) {
+      await cr.page.locator("button", { hasText: /^More$|Operate/ }).first().click({ timeout: 3000 }).catch(() => {});
+      await cr.page.locator('[data-testid="mnav-readiness"], [data-testid="nav-readiness"], button:has-text("To resolve")').first().click({ timeout: 4000 }).catch(() => {});
+    }
+    await afterReads(cr.page, 2000);
+    ok("his To-resolve list carries the review", await until(cr.page,
+       () => /Player of the Match to review · J Whitfield · the scorecard was corrected/.test(document.querySelector('[data-testid="queue-potm"]')?.innerText ?? ""), 12000),
+       await tid(cr.page, "queue-potm").innerText().catch(() => "∅"));
+    const door = tid(cr.page, "queue-potm").locator("button", { hasText: /Review it/ }).first();
+    ok("...with its door, 44px", (await door.count()) === 1 && ((await door.boundingBox())?.height ?? 0) >= 44);
+    ok("no console errors (the To-resolve list, R10)", cr.errors.length === 0, cr.errors.join(" | "));
+    await cr.ctx.close();
+
+    const cs = await open();
+    ok("the coach arrives on the fixture", await arrive(cs.page, M3, /coach@example\.invalid|Head Coach/));
+    ok("the sheet says the figures moved, in §7's words", await until(cs.page,
+       () => (document.querySelector('[data-testid="mc-potm-review-words"]')?.textContent ?? "").trim()
+             === "The figures this award cited have changed: 17* (6) → 11* (5). Withdraw, or let it stand.", 12000),
+       await tid(cs.page, "mc-potm-review-words").innerText().catch(() => "∅"));
+    ok("...beside the award, which stands", /Player of the Match: James Whitfield/.test(await tid(cs.page, "mc-potm-standing").innerText().catch(() => "")));
+    const standH = (await tid(cs.page, "mc-potm-stand").boundingBox())?.height ?? 0;
+    const tiny = await cs.page.$eval('[data-testid="mc-potm-review"]', (root) =>
+      [...root.querySelectorAll("*")].filter((e) => e.childNodes.length && [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())
+        && parseFloat(getComputedStyle(e).fontSize) < 12).length);
+    ok("...Let it stand is 44px, and nothing in it is under 12px", standH >= 44 && tiny === 0, `${standH} / ${tiny}`);
+    await tid(cs.page, "mc-potm-withdraw").click();
+    ok("...withdrawing it starts at 'after a scorecard correction'", await tid(cs.page, "mc-potm-kind-correction").locator("input").isChecked());
+    await tid(cs.page, "mc-potm-cancel").click();
+    await tid(cs.page, "mc-potm-stand").click();
+    ok("he lets it stand, in words", await until(cs.page,
+       () => /It stands\. The review is closed with your name/.test(document.querySelector('[data-testid="mc-potm-said"]')?.textContent ?? ""), 10000),
+       await tid(cs.page, "mc-potm-said").innerText().catch(() => "∅"));
+    ok("...the review is gone and the award still stands", await until(cs.page, () => !document.querySelector('[data-testid="mc-potm-review"]')
+       && /Player of the Match: James Whitfield/.test(document.querySelector('[data-testid="mc-potm-standing"]')?.textContent ?? ""), 10000));
+    const rv = await q(`select r.outcome, h.withdrawn_at from recognition_review r join honour h on h.id = r.honour_id where r.match_id = $1`, [M3]);
+    ok("...the database agrees: stands, not withdrawn", rv.length === 1 && rv[0].outcome === "stands" && rv[0].withdrawn_at === null, JSON.stringify(rv));
+    ok("no console errors (the coach, R10)", cs.errors.length === 0, cs.errors.join(" | "));
+    await cs.ctx.close();
+  }
 
   group("Nobody else is shown it");
   // A parent's app and another side's coach may not open this fixture at

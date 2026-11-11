@@ -298,6 +298,11 @@ export const NEVER_PUBLIC = Object.freeze({
   // reason" can be a conduct matter (RECOGNITION D4, D21). Read through
   // audit_log() alone; the whole table.
   recognition_audit: "N3",
+  // ── db/148, RECOGNITION R10: a correction reaches the award ──
+  // N5. That a correction moved what a boy's award stood on, and what his
+  // decider did about it: a judgement about a child's honour, read by the
+  // decider alone (D19). Never on a page; the whole table.
+  recognition_review: "N5",
 });
 
 /**

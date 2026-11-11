@@ -24,8 +24,9 @@
  *      words; one tap on him confirms. The new-batter prompt lists the
  *      batting order's next name first; one tap sends him in.
  *   E  A refusal says its likely cause: the pad closed the over, the scorer
- *      closes the new-over prompt, and the pad asks "N balls in this over?
- *      … Was one of them a wide or no-ball?" — no clause numbers.
+ *      closes the new-over prompt (the pad says only that nobody is bowling),
+ *      taps a seventh ball, and the pad asks "N balls in this over? … Was one
+ *      of them a wide or no-ball?" — no clause numbers.
  *   F  The haptic tick: one 10 ms buzz per recorded ball, none under reduced
  *      motion, none with the pad menu's switch off.
  *
@@ -348,15 +349,25 @@ try {
   ok("the pad closes the over and asks for the next bowler", /Over 1 Complete/i.test(await text()));
   await page.keyboard.press("Escape");
   await page.waitForTimeout(500);
+  // The interface review (11 Nov 2026): closing the prompt the over's own end
+  // opened is not a seventh ball. The pad asked "N balls in this over?" here,
+  // of a scorer who had tried to record nothing more.
+  ok("closing the over's own prompt: the pad says only that nobody is bowling, and asks about no extra ball",
+     /Can't score yet/.test(await tid("scoring-blocked").innerText().catch(() => "")) && !(await has("scoring-blocked-cause")),
+     await tid("scoring-blocked").innerText().catch(() => ""));
   const delivered = endOver.inn.ballLog.filter((b) => b.over === 0).length;
-  const cause = (await tid("scoring-blocked-cause").innerText().catch(() => "")).trim();
-  ok(`the scorer who thinks the over is not done is told what probably happened ("${cause}")`,
-     cause === `${delivered + 1} balls in this over? Six legal balls are already recorded in over 1. Was one of them a wide or no-ball?`);
-  ok("...under the reason, with no clause number", /Can't score yet/.test(await tid("scoring-blocked").innerText()) && !/\bLaw\b|\d+\.\d+\.\d/.test(cause));
   const rowsAt = (await serverLog(0)).rows.length;
   await tap("run-0");
   await page.waitForTimeout(600);
   ok("a seventh ball is not recorded: the tap opens the fix", (await serverLog(0)).rows.length === rowsAt && /Over 1 Complete/i.test(await text()));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(500);
+  const cause = (await tid("scoring-blocked-cause").innerText().catch(() => "")).trim();
+  ok(`the scorer who tried a seventh ball, thinking the over not done, is told what probably happened ("${cause}")`,
+     cause === `${delivered + 1} balls in this over? Six legal balls are already recorded in over 1. Was one of them a wide or no-ball?`);
+  ok("...under the reason, with no clause number", /Can't score yet/.test(await tid("scoring-blocked").innerText()) && !/\bLaw\b|\d+\.\d+\.\d/.test(cause));
+  await tap("scoring-blocked-fix");
+  await page.waitForTimeout(400);
   await nameBowler("B Zulu");
 
   // ── Three-phase ──────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { batHandOf } from "@scrbrd/scoring";
 import { T, inkOn } from "../design/tokens.js";
 import { Board } from "../ui/board.jsx";
@@ -181,9 +181,9 @@ const STEPS = [
   { n: 3, label: "Outcome" },
 ];
 
-function Stepper({ phase, values, onStep }) {
+function Stepper({ phase, values, onStep, stepperRef }) {
   return (
-    <ol aria-label="Steps for this ball" data-testid="pad-stepper"
+    <ol ref={stepperRef} aria-label="Steps for this ball" data-testid="pad-stepper"
       style={{ listStyle: "none", display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: T.space.sm, margin: 0, padding: 0 }}>
       {STEPS.map((s) => {
         const now = phase === s.n, done = phase > s.n;
@@ -205,8 +205,13 @@ function Stepper({ phase, values, onStep }) {
               <span style={{ ...T.role.label, color: now ? T.surface.canvas : T.content.secondary }}>
                 {done && <Icon name="circle-check"/>} {s.n} {s.label}
               </span>
-              <span style={{ fontFamily: T.type.body, fontSize: "14px", fontWeight: 600, maxWidth: "100%",
-                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              {/* The value in full, wrapping: the area was cut to "Deep backw…",
+                  and once the finger lifts nothing else on screen names it
+                  (interface review, 11 Nov 2026). Two lines are kept from the
+                  first, so the stepper does not grow under the thumb between
+                  Area and Outcome for an everyday name. */}
+              <span data-testid={`step-${s.n}-value`} style={{ fontFamily: T.type.body, fontSize: "14px", fontWeight: 600, lineHeight: 1.25,
+                maxWidth: "100%", minHeight: "2.5em", overflowWrap: "break-word",
                 color: now ? T.surface.canvas : done ? T.content.primary : T.content.tertiary }}>
                 {values[s.n - 1] ?? (now ? "Now" : "—")}
               </span>
@@ -259,21 +264,26 @@ function ShotPhase({ shot, onShot }) {
  * the striker's hand (OFF and LEG follow him), and the position is named, in
  * the engine's words, while the finger is down; the stepper keeps it after.
  */
-function AreaPhase({ inn, area, onArea, onNone }) {
+function AreaPhase({ inn, area, onArea, onNone, blockRef, fieldMax = null }) {
   const [preview, setPreview] = useState(null);
   const words = preview ? placeWords(preview) : null;
   return (
-    <div data-testid="phase-area" style={{ display: "grid", gap: T.space.sm }}>
+    <div ref={blockRef} data-testid="phase-area" style={{ display: "grid", gap: T.space.sm }}>
       <div style={{ display: "flex", alignItems: "center", gap: T.space.sm }}>
         <p data-testid="area-prompt" aria-live="polite" style={{ ...T.role.body, flex: 1, color: words ? T.content.primary : T.content.secondary,
           fontWeight: words ? 600 : undefined, margin: 0 }}>{words ?? "Tap where the ball went."}</p>
         <Key face="Didn’t travel" testid="area-none" onClick={onNone} say="Didn’t travel: blocked, or no stroke"
           style={{ padding: `0 ${T.space.md}`, flexShrink: 0 }}/>
       </div>
-      <WagonWheel bare ballLog={inn.ballLog} selSeg={area?.theta != null ? area : null}
-        onPlace={(p) => { setPreview(null); onArea(p); }} onPlacing={setPreview}
-        batHand={batHandOf(inn)} handFor={(b) => batHandOf(inn, b.strikerId)}
-        viewMode="wagon" onViewMode={() => {}} hidden={EMPTY} onToggle={() => {}}/>
+      {/* The field's size where a short phone has less room than its width:
+          sized to what is left between the title bar and the docked strip
+          (useClearOfStrip), never under FIELD_MIN. */}
+      <div data-testid="area-field" style={{ width: "100%", maxWidth: fieldMax != null ? `${fieldMax}px` : undefined, margin: "0 auto" }}>
+        <WagonWheel bare ballLog={inn.ballLog} selSeg={area?.theta != null ? area : null}
+          onPlace={(p) => { setPreview(null); onArea(p); }} onPlacing={setPreview}
+          batHand={batHandOf(inn)} handFor={(b) => batHandOf(inn, b.strikerId)}
+          viewMode="wagon" onViewMode={() => {}} hidden={EMPTY} onToggle={() => {}}/>
+      </div>
     </div>
   );
 }
@@ -311,11 +321,15 @@ const runKey = (r, onRun, h, style) => (
  * a stray tap must not reach, heads the block. Nothing moves from ball to
  * ball. Byes and leg byes are on the strip with the other extras (item 3).
  */
-function OutcomeKeys({ onRun, onWicket, note }) {
+function OutcomeKeys({ onRun, onWicket, note, blockRef }) {
   return (
-    <div data-testid="phase-outcome" style={{ display: "grid", gap: T.space.sm }}>
+    <div ref={blockRef} data-testid="phase-outcome" style={{ display: "grid", gap: T.space.sm }}>
+      {/* The wicket's own colour, T.run.wicket — the board's W chip — not
+          critical: a wicket is not an error ("State, never sport", tokens.js).
+          Its icon, its place at the head of the block and its weight are
+          what set it apart (interface review, 11 Nov 2026). */}
       <Key face={<><Icon name="bails-off"/> Wicket</>} say="Wicket" testid="key-wicket" h="64px" onClick={onWicket}
-        style={{ background: T.semantic.critical, color: inkOn(T.semantic.critical), border: `1px solid ${T.semantic.critical}`,
+        style={{ background: T.run.wicket, color: inkOn(T.run.wicket), border: `1px solid ${T.run.wicket}`,
           fontSize: "18px", fontWeight: 700 }}/>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: T.space.sm }}>
         {RUNS.filter((r) => r.v >= 2).map((r) => runKey(r, onRun, "64px"))}
@@ -363,7 +377,7 @@ function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true, wi
           <Key face={<><Icon name="bails-off"/> Wicket</>} testid="extra-wicket" pressed={wicket} onClick={() => setWicket((w) => !w)}
             say={kind === "Wd" ? "Wicket off this wide" : "Wicket off this no ball"}
             style={{ padding: `0 ${T.space.md}`, flexShrink: 0,
-              ...(wicket ? { background: T.semantic.critical, color: inkOn(T.semantic.critical), border: `1px solid ${T.semantic.critical}`, fontWeight: 600 } : {}) }}/>
+              ...(wicket ? { background: T.run.wicket, color: inkOn(T.run.wicket), border: `1px solid ${T.run.wicket}`, fontWeight: 600 } : {}) }}/>
         )}
         <Key face="Cancel" testid="extra-cancel" onClick={onCancel} style={{ padding: `0 ${T.space.md}`, flexShrink: 0 }}/>
       </div>
@@ -430,13 +444,16 @@ function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true, wi
  * extras' kinds (SCRBRD-100 item 3), then Dot — wide, the ball a scorer
  * records most — and Undo, which says what it will take back (item 5).
  */
-function Strip({ extra, onExtra, onDot, onUndo, undoWhat, midBall, panel = null }) {
+function Strip({ extra, onExtra, onDot, onUndo, undoWhat, midBall, panel = null, stripRef, free = false }) {
   const label = midBall ? "Undo: start this ball again" : undoWhat ? `Undo: ${undoWhat}` : "Undo: nothing to undo";
   return (
     // `pad-strip-dock` (scorer/ui.jsx): on a phone the strip docks 16px above
     // the bottom bar when the pad is taller than the screen, so the extras,
-    // Dot and Undo are never below the fold (§4 rule 1).
-    <div data-testid="pad-strip" className="pad-strip-dock" style={{ display: "grid", gap: T.space.sm }}>
+    // Dot and Undo are never below the fold (§4 rule 1). `pad-strip-free`
+    // undocks it for a phase whose keys or field cannot fit above it
+    // (useClearOfStrip): the strip then follows them, and is never over them.
+    <div ref={stripRef} data-testid="pad-strip" data-docked={free ? "free" : undefined}
+      className={free ? "pad-strip-dock pad-strip-free" : "pad-strip-dock"} style={{ display: "grid", gap: T.space.sm }}>
       {/* An extra's runs sit on the strip's top edge, over the keys above
           it: the strip never moves, docked or in its place. */}
       {panel && <div style={{ position: "absolute", left: 0, right: 0, bottom: `calc(100% + ${T.space.sm})` }}>{panel}</div>}
@@ -469,6 +486,134 @@ function Strip({ extra, onExtra, onDot, onUndo, undoWhat, midBall, panel = null 
   );
 }
 
+// ── Keeping a phase clear of the docked strip ───────────────────
+
+/** The canvas ring the docked strip draws round itself (ui.jsx: `box-shadow: 0 0 0 T.space.sm`). */
+const RING = 8;
+/** The docked strip's bottom sits this far above the bottom bar's top (ui.jsx: 4px inset + 54px bar + 16px). */
+const DOCK_ABOVE_BAR = 16;
+/** The smallest field the pad draws to keep it above the docked strip; with less room the strip undocks instead. */
+export const FIELD_MIN = 240;
+/** The field's own largest size (panels.jsx: the bare wheel's `min(100%, 332px)`). */
+const FIELD_MAX = 332;
+
+/**
+ * The band of the screen a phase may use, in viewport pixels: under the title
+ * bar, and over the docked strip — where the strip WOULD dock, whether or not
+ * it is docked now — or, where it never docks (a desktop), over the bottom bar.
+ * @param {HTMLElement} strip
+ */
+function clearBand(strip) {
+  const head = document.querySelector('[data-testid="pad-titlebar"]');
+  const tabs = document.querySelector('[data-testid="pad-tabs"]');
+  const top = (head ? Math.max(0, head.getBoundingClientRect().bottom) : 0) + RING;
+  const barTop = tabs ? tabs.getBoundingClientRect().top : innerHeight;
+  const docks = typeof matchMedia === "function" && matchMedia("(max-width: 880px)").matches;
+  return { top, barFloor: barTop - RING, dockFloor: docks ? barTop - DOCK_ABOVE_BAR - strip.getBoundingClientRect().height - RING : null };
+}
+
+/** Scroll the page by the least that puts [top, bottom] inside [bandTop, floor]: the top wins where both cannot. */
+function bringInto(top, bottom, bandTop, floor) {
+  let dy = 0;
+  if (bottom > floor) dy = Math.min(bottom - floor, top - bandTop);
+  else if (top < bandTop) dy = top - bandTop;
+  if (Math.abs(dy) >= 1) scrollBy({ top: dy, behavior: "instant" });
+}
+
+/**
+ * No tap meant for the field, or for a phase's keys, may land on the strip.
+ * The strip docks over the bottom of a pad taller than the screen (`.pad-strip-dock`),
+ * so on a short phone, or under a sync banner, it covered the Area step's field —
+ * and a tap on what the scorer took for the field recorded a dot (the interface
+ * review of 11 Nov 2026, finding 3). So, for the Area and Outcome steps:
+ *
+ *  - the field is sized to the room between the title bar and the docked strip
+ *    (never under FIELD_MIN, never over its own 332px);
+ *  - where even that does not fit (a phone held sideways), the strip undocks for
+ *    the step and follows its keys, so it is never over them;
+ *  - the page is scrolled, at once and by the least, to put the step (and the
+ *    stepper, where it fits) in that band, and again when a banner comes or goes;
+ *  - when the ball ends, the page goes back to where the ball began.
+ *
+ * It decides nothing about what a tap records: it moves the page, not the keys' calls.
+ */
+function useClearOfStrip({ active, phase, stripRef, blockRef, stepperRef }) {
+  const [fit, setFit] = useState({ free: false, field: null });
+  const [tick, setTick] = useState(0);
+  const ballStart = useRef(null);
+  useEffect(() => {
+    if (!active || phase === 1) return undefined;
+    const bump = () => setTick((t) => t + 1);
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(bump) : null;
+    ro?.observe(document.body);
+    addEventListener("resize", bump);
+    return () => { ro?.disconnect(); removeEventListener("resize", bump); };
+  }, [active, phase]);
+  useLayoutEffect(() => {
+    if (!active) return;
+    if (phase === 1) {
+      if (ballStart.current != null) { const y = ballStart.current; ballStart.current = null; scrollTo({ top: y, behavior: "instant" }); }
+      if (fit.free || fit.field != null) setFit({ free: false, field: null });
+      return;
+    }
+    if (ballStart.current == null) ballStart.current = scrollY;
+    const strip = stripRef.current, block = blockRef.current;
+    if (!strip || !block) return;
+    const band = clearBand(strip);
+    let want = { free: false, field: null };
+    if (band.dockFloor != null) {
+      if (phase === 2) {
+        // The prompt row, then the field under it, T.space.sm apart.
+        const row = block.firstElementChild?.getBoundingClientRect().height ?? 44;
+        const docked = Math.floor(band.dockFloor - band.top - row - RING);
+        const loose = Math.floor(band.barFloor - band.top - row - RING);
+        want = docked >= FIELD_MIN ? { free: false, field: docked < FIELD_MAX ? docked : null }
+          : { free: true, field: loose < FIELD_MAX ? Math.max(FIELD_MIN, loose) : null };
+      } else {
+        want = { free: block.getBoundingClientRect().height > band.dockFloor - band.top, field: null };
+      }
+    }
+    if (want.free !== fit.free || want.field !== fit.field) { setFit(want); return; }
+    const b = block.getBoundingClientRect();
+    const floor = fit.free || band.dockFloor == null ? band.barFloor : band.dockFloor;
+    const st = stepperRef.current?.getBoundingClientRect();
+    bringInto(st && b.bottom - st.top <= floor - band.top ? st.top : b.top, b.bottom, band.top, floor);
+    // `stripRef`, `blockRef` and `stepperRef` are refs: read when the effect runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, phase, tick, fit]);
+  return fit;
+}
+
+/**
+ * Focus is never left under the strip or the title bar (WCAG 2.4.11): a key
+ * reached by Tab that the docked strip covers is scrolled clear of it. The
+ * browser's own focus scroll does not see a sticky strip as covering anything.
+ */
+function useFocusClearOfStrip(stripRef) {
+  useEffect(() => {
+    const onFocus = (e) => {
+      const el = e.target, strip = stripRef.current;
+      if (!(el instanceof Element) || !strip || strip.contains(el)) return;
+      // The keyboard's focus only: a key tapped where it shows above the strip
+      // is not moved under the finger between its press and its release.
+      if (!el.matches(":focus-visible")) return;
+      if (el.closest('[data-testid="pad-titlebar"], [data-testid="pad-tabs"], [role="dialog"]')) return;
+      // Only what comes before the strip on the page can be under it.
+      if (!(el.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING)) return;
+      requestAnimationFrame(() => {
+        if (!el.isConnected || !strip.isConnected) return;
+        // The line where the docked strip begins, not where it is drawn now:
+        // the strip moves while the page scrolls, until it docks.
+        const r = el.getBoundingClientRect(), band = clearBand(strip);
+        const free = strip.classList.contains("pad-strip-free") || band.dockFloor == null;
+        bringInto(r.top, r.bottom, band.top, free ? band.barFloor : band.dockFloor);
+      });
+    };
+    document.addEventListener("focusin", onFocus);
+    return () => document.removeEventListener("focusin", onFocus);
+  }, [stripRef]);
+}
+
 /**
  * The pad. `basic` is Basic Scoring: the outcome keys alone. Otherwise the
  * three phases. Both end in the same engine calls the pad has always made;
@@ -486,6 +631,9 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
   const [shot, setShot] = useState(preset?.shot ?? null);
   const [area, setArea] = useState(preset?.area ?? null);     // a placement: the point tapped, or didNotTravel() | null (not asked yet)
   const [extra, setExtra] = useState(null);   // the kind whose runs are being asked
+  const stripRef = useRef(null), blockRef = useRef(null), stepperRef = useRef(null);
+  const fit = useClearOfStrip({ active: !!inn && !basic, phase, stripRef, blockRef, stepperRef });
+  useFocusClearOfStrip(stripRef);
   if (!inn) return null;
 
   const reset = () => { setPhase(1); setShot(null); setArea(null); setExtra(null); };
@@ -534,6 +682,7 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
     fourth={inn?.lawsEdition === 4} freeHits={inn?.freeHits !== false} wicketable={!!onExtraWicket}/>;
   const strip = (
     <Strip extra={extra} onExtra={openExtra} undoWhat={undoWhat} midBall={extra != null || (!basic && phase > 1)} panel={runs}
+      stripRef={stripRef} free={!basic && fit.free}
       // A dot mid-ball carries what the scorer has told the pad so far — the
       // same event as the outcome's 0; with nothing chosen it is the one-tap dot.
       onDot={() => (basic ? basicRun(0) : commitRun(0))}
@@ -556,13 +705,14 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
   return (
     <div data-testid="three-phase-pad" data-phase={phase} style={{ display: "grid", gap: T.space.sm }}>
       {phase > 1 && (
-        <Stepper phase={phase} values={[shotMeta?.label ?? null, areaWord, null]}
+        <Stepper stepperRef={stepperRef} phase={phase} values={[shotMeta?.label ?? null, areaWord, null]}
           onStep={(n) => { setExtra(null); setPhase(n); if (n === 1) setArea(null); }}/>
       )}
       <div style={behind}>
         {phase === 1 && <ShotPhase shot={shot} onShot={(id) => { setShot(id); setArea(null); setPhase(2); }}/>}
-        {phase === 2 && <AreaPhase inn={inn} area={area} onArea={(s) => { setArea(s); setPhase(3); }} onNone={() => { setArea(didNotTravel(shot)); setPhase(3); }}/>}
-        {phase === 3 && <OutcomeKeys onRun={commitRun} onWicket={commitWicket} note={note}/>}
+        {phase === 2 && <AreaPhase inn={inn} area={area} blockRef={blockRef} fieldMax={fit.field}
+          onArea={(s) => { setArea(s); setPhase(3); }} onNone={() => { setArea(didNotTravel(shot)); setPhase(3); }}/>}
+        {phase === 3 && <OutcomeKeys onRun={commitRun} onWicket={commitWicket} note={note} blockRef={blockRef}/>}
       </div>
       {strip}
     </div>

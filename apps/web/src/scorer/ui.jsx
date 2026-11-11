@@ -40,7 +40,9 @@ const GS = () => (
     .badgePop{animation:badgePop .3s cubic-bezier(.34,1.56,.64,1) both}
     .wagonLine{stroke-dasharray:320;animation:wagonDraw .38s ease both}
     .fadeIn{animation:fadeIn .22s ease both}
-    .pressBtn{transition:transform .1s ease,opacity .1s ease}
+    /* The press (.pressBtn) is GLOBAL_CSS's alone: 0.96 over 150ms, and none
+       under reduced motion. This sheet came after it and pressed every pad
+       key a second way (0.95, 100ms, an opacity dip), reduced motion or not. */
     /* The moment on the pad's board (pad.jsx BoardFlash): in, and held until
        it is taken away at FLASH_MS. It never ends invisible, so with reduced
        motion it is a cut, on and then off. */
@@ -64,6 +66,11 @@ const GS = () => (
         background:${T.surface.canvas};box-shadow:0 0 0 ${T.space.sm} ${T.surface.canvas}}
       .pad-strip-dock::after{content:"";position:absolute;left:-${T.space.lg};right:-${T.space.lg};top:100%;
         height:calc(74px + env(safe-area-inset-bottom));background:${T.surface.canvas}}
+      /* A step whose keys or field cannot fit above the docked strip (a phone
+         held sideways): the strip undocks and follows them (pad.jsx
+         useClearOfStrip), so it is never drawn over what the scorer means to tap. */
+      .pad-strip-dock.pad-strip-free{position:relative;bottom:auto;z-index:auto;box-shadow:none}
+      .pad-strip-dock.pad-strip-free::after{display:none}
     }
     @media(min-width:1024px){
       .pad-layout{max-width:1320px}
@@ -74,7 +81,6 @@ const GS = () => (
     .sc-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
     @media(max-width:900px){.sc-grid-2{grid-template-columns:1fr}}
     @media(max-width:900px){.pro-score-grid{grid-template-columns:1fr}}
-    .pressBtn:active:not(:disabled){transform:scale(.95);opacity:.85}
     .pressBtn:disabled{cursor:not-allowed!important;opacity:.38!important}
     .shotBtn{transition:all .15s ease;border:1px solid transparent}
     .shotBtn:hover{border-color:${T.line.strong}!important}
@@ -171,7 +177,7 @@ const Btn = ({ children, onClick, disabled, variant="primary", size="md", full, 
   const minH = size==="lg"?"48px":"44px";
   const V = {
     primary:{background:disabled?D.surf2:D.grad,color:disabled?D.textMuted:T.light.ink,border:"none",boxShadow:disabled?"none":`0 4px 24px ${clr(D.indigo,.4)}`},
-    danger: {background:disabled?D.surf2:T.light.critical,color:disabled?D.textMuted:T.light.ink,border:"none",boxShadow:disabled?"none":`0 4px 20px ${D.rose}40`},
+    danger: {background:disabled?D.surf2:T.light.critical,color:disabled?D.textMuted:T.light.criticalInk,border:"none",boxShadow:disabled?"none":`0 4px 20px ${D.rose}40`},
     ghost:  {background:"transparent",color:D.textSecondary,border:`1px solid ${D.border}`},
     tonal:  {background:D.surf2,color:D.textPrimary,border:`1px solid ${D.borderMed}`},
     live:   {background:disabled?D.surf2:D.gradLive,color:disabled?D.textMuted:T.light.ink,border:"none",boxShadow:disabled?"none":`0 4px 20px ${D.emerald}40`},

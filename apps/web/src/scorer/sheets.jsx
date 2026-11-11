@@ -15,6 +15,10 @@ import { Proposal, useProposal } from "./rainSheet.jsx";
 import { extraOf, NB_FROM, nbFreeHit } from "./extras.js";
 import { wicketAsks, wicketDetail } from "./wicketAsks.js";
 
+/** A choice that is on, the way the pad marks one: the primary ink's ring on the interactive surface. Never a state hue. */
+const chosen = (on) => ({ border: `1px solid ${on ? T.content.primary : D.border}`, background: on ? T.surface.interactive : D.surf2,
+  color: on ? T.content.primary : D.textSecondary });
+
 /* ═══════════════════════════════════════════════════════
    SHOT SELECTOR SHEET
 ═══════════════════════════════════════════════════════ */
@@ -81,7 +85,7 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
       note:"Umpire warning issued. Bowler may be removed. Same dismissal rules apply."},
   ];
   return (
-    <Sheet title="No Ball" accent={D.amber} onClose={onClose}>
+    <Sheet title="No ball" accent={D.amber} onClose={onClose}>
       <div style={{paddingTop:"14px",display:"flex",flexDirection:"column",gap:"14px"}}>
         {types.map(t=>(
           <button key={t.id} onClick={()=>setNbType(t.id)} className="pressBtn" style={{
@@ -169,8 +173,7 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
             {[[false,"No"],[true,"Yes"]].map(([on,label])=>(
               <button key={label} type="button" data-testid={`nb-wicket-${on?"yes":"no"}`} aria-pressed={wicket===on} onClick={()=>setWicket(on)} className="pressBtn" style={{
                 flex:1,minHeight:"44px",padding:"10px 0",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:600,
-                border:`1px solid ${wicket===on?D.rose+"77":D.border}`,background:wicket===on?`${D.rose}1a`:D.surf2,
-                color:wicket===on?D.roseText:D.textMuted}}>{label}</button>
+                ...chosen(wicket===on)}}>{label}</button>
             ))}
           </div>
           {wicket&&(
@@ -235,8 +238,7 @@ function WideSheet({onConfirm,onClose,edition=3}){
             {[[false,"No"],[true,"Yes"]].map(([on,label])=>(
               <button key={label} type="button" data-testid={`wd-wicket-${on?"yes":"no"}`} aria-pressed={wicket===on} onClick={()=>setWicket(on)} className="pressBtn" style={{
                 flex:1,minHeight:"44px",padding:"10px 0",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:600,
-                border:`1px solid ${wicket===on?D.rose+"77":D.border}`,background:wicket===on?`${D.rose}1a`:D.surf2,
-                color:wicket===on?D.roseText:D.textMuted}}>{label}</button>
+                ...chosen(wicket===on)}}>{label}</button>
             ))}
           </div>
           {wicket&&(
@@ -637,7 +639,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
   const mayResumeWithConsent=timedOut?[]:resumableWithConsent;
   const asking=mayResumeWithConsent.find(b=>b.id===consentFor)??null;
   return (
-    <Sheet title="Batting Order" accent={D.emerald} onClose={onClose}>
+    <Sheet title="Batting order" accent={D.emerald} onClose={onClose}>
       <div style={{paddingTop:"12px"}}>
         {header&&<div style={{marginBottom:"14px"}}>{header}</div>}
         {/* At crease */}
@@ -920,9 +922,13 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
   };
   const whoName=who===nonStriker?.id?nonStriker?.name:(striker?.name??batName);
   const pill=(on)=>({flex:1,minHeight:"44px",padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"15px",fontWeight:500,
-    border:"1px solid "+(on?D.rose+"55":D.border),background:on?D.rose+"1a":D.surf2,color:on?D.roseText:D.textSecondary});
+    ...chosen(on)});
+  // A wicket is recorded, not an error: the sheet takes the wicket's own
+  // colour (T.run.wicket, the board's W chip), and what is chosen is marked
+  // as every other choice on the pad is, not in the danger hue (tokens.js:
+  // "State, never sport. A wicket is not an error"; interface review, 11 Nov 2026).
   return (
-    <Sheet title="WICKET!" accent={D.rose} onClose={onClose}>
+    <Sheet title="Wicket" accent={T.run.wicket} onClose={onClose}>
       <div style={{color:D.textSecondary,fontSize:"13px",fontFamily:D.body,marginBottom:"14px",paddingTop:"4px"}}>
         {asksWho?whoName:batName} is dismissed
       </div>
@@ -937,9 +943,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
         {modes.map(m=>(
           <button key={m} data-testid={`wicket-mode-${m}`} onClick={()=>handleMode(m)} className="pressBtn" style={{
             minHeight:"48px",padding:"8px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"15px",fontWeight:500,
-            border:"1px solid "+(mode===m?D.rose+"55":D.border),
-            background:mode===m?D.rose+"1a":D.surf2,
-            color:mode===m?D.roseText:D.textSecondary,transition:"background-color .15s, border-color .15s, color .15s, transform 150ms ease-out"}}>
+            ...chosen(mode===m),transition:"background-color .15s, border-color .15s, color .15s, transform 150ms ease-out"}}>
             {DISMISSAL_LABEL[m]}
           </button>
         ))}
@@ -1074,9 +1078,9 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
       )}
       <div style={{display:"flex",gap:"10px",marginTop:"4px"}}>
         <Btn variant="ghost" sx={{flex:1,minHeight:"48px",fontSize:"15px",borderRadius:D.md}} onClick={onClose}>Cancel</Btn>
-        <Btn variant="danger" sx={{flex:2,minHeight:"48px",fontSize:"16px",borderRadius:D.md}} data-testid="wicket-confirm" disabled={(asksEnd&&!end)||(asksFaces&&!faces)}
+        <Btn variant="primary" sx={{flex:2,minHeight:"48px",fontSize:"16px",borderRadius:D.md}} data-testid="wicket-confirm" disabled={(asksEnd&&!end)||(asksFaces&&!faces)}
           onClick={()=>{if(asksEnd&&!end)return;if(asksFaces&&!faces)return;
-            onConfirm(mode,displayFielder,wicketDetail(asks,{who,strikerId:striker?.id??null,runs,from,end,faces,asksFaces}));}}>Confirm Out</Btn>
+            onConfirm(mode,displayFielder,wicketDetail(asks,{who,strikerId:striker?.id??null,runs,from,end,faces,asksFaces}));}}>Confirm out</Btn>
       </div>
     </Sheet>
   );
@@ -1127,7 +1131,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
     ? choices.rows.filter(p=>String(p.name).toLowerCase().includes(filter.toLowerCase()))
     : choices.rows;
   return (
-    <Sheet title={midOver?"Change of Bowler":ovNum===0?"Opening Bowler":`Over ${ovNum} Complete`} accent={D.amber} onClose={onClose}>
+    <Sheet title={midOver?"Change of bowler":ovNum===0?"Opening bowler":`Over ${ovNum} complete`} accent={D.amber} onClose={onClose}>
       <div style={{paddingTop:"8px"}}>
         {header}
         {/* Who is keeping (SCRBRD-126): asked with the opening bowler and at
@@ -1246,7 +1250,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
  * and from nothing when nothing was, so a scorer who presses Start without
  * touching it changes nothing about how the match reads.
  */
-function Innings2Sheet({target,teamName,overs,declared=null,note=null,rain=false,propose=null,why="offline",onClose,onStart,title="Innings Break",startLabel="Start 2nd Innings →",lead=null}){
+function Innings2Sheet({target,teamName,overs,declared=null,note=null,rain=false,propose=null,why="offline",onClose,onStart,title="Innings break",startLabel="Start 2nd Innings →",lead=null}){
   const[profile,setProfile]=useState(declared);
   // ── SCRBRD-130 R1: the umpires' figures for the chase (design §1, §2.2) ──
   // After rain cut the first innings, or when the interval was lost, the
@@ -1445,7 +1449,7 @@ function NextInningsSheet({inningsNo,innings,plan,followOnOffered=false,lead=0,d
   const pill=(on)=>({flex:1,minHeight:"44px",padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"15px",fontWeight:500,
     border:"1px solid "+(on?D.indigo+"66":D.border),background:on?D.indigo+"1a":D.surf2,color:on?D.textPrimary:D.textSecondary});
   return (
-    <Sheet title="Innings Break" accent={D.indigo} onClose={onClose}>
+    <Sheet title="Innings break" accent={D.indigo} onClose={onClose}>
       <div style={{textAlign:"center",padding:"20px 0 24px"}}>
         {line&&<div data-testid="next-innings-lead" style={{fontFamily:T.type.body,fontSize:"15px",lineHeight:1.4,color:T.content.primary,margin:"0 0 12px"}}>{line}</div>}
         <div style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted,marginBottom:"8px"}}>Innings {inningsNo}</div>

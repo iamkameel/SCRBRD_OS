@@ -224,7 +224,8 @@ improve-animations, find-animation-opportunities, emil-design-eng,
 apple-design, mobile-native, break-ui, prototype, …), Jakub Krehel's
 (better-interface and the `better-*` set, interface-review, break, variant,
 state-machine, build-design), Elaya's landing-page-design, and tastemaker
-(with ideagram). Each skill keeps its upstream MIT licence beside it
+(with ideagram). Added 2026-11-11 (Kameel): Benji Taylor's stageshow, for
+mock product screens on marketing pages and feature cards. Each skill keeps its upstream MIT licence beside it
 (`LICENSE.upstream`); the source commits are in `.claude/skills/SOURCES.md`.
 
 Use them on screens and the public pages: interface-review or better-interface

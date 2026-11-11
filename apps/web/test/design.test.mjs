@@ -224,15 +224,20 @@ eachLook((th, vision) => {
     // Stated as the trap it is, so the next person does not reach for white.
     for (const fill of [T.semantic.critical, T.brand.green, T.semantic.warning])
       ok(`...and white on ${fill} would not have (${ratio("#ffffff", fill).toFixed(2)}:1)`, ratio("#ffffff", fill) < 4.5);
-  if (th === "daylight") {
-    // The gradients carry white type (buttons, the active tab). In daylight
-    // every stop is deep enough for it; under lights they are the 2.0 values.
-    const stops = Object.entries(T.light).filter(([k]) => k !== "ambient" && k !== "ink")
+  {
+    // The gradients carry type (buttons, the active tab, the free-hit alert):
+    // `ink` on every one of them but `critical`, which takes `criticalInk`
+    // (Btn danger). Every stop of every gradient, in both themes — under
+    // lights white read at 1.6:1 on the primary buttons until 11 Nov 2026
+    // (interface review), because this ran in daylight alone.
+    const stops = Object.entries(T.light).filter(([k]) => !["ambient", "ink", "criticalInk"].includes(k))
       .flatMap(([k, v]) => (v.match(/#[0-9a-fA-F]{6}/g) ?? []).map((h) => [k, h]));
-    const weak = stops.filter(([, h]) => ratio(T.light.ink, h) < 4.5);
-    ok(`white reads on every daylight gradient stop (${stops.length})`, weak.length === 0, weak.map(([k, h]) => `${k} ${h}`).join(", "));
-    ok("the lime fill takes the primary ink, as §3.1 says", inkOn(T.brand.lime) === T.content.primary);
+    const inkFor = (k) => (k === "critical" ? T.light.criticalInk : T.light.ink);
+    const weak = stops.filter(([k, h]) => ratio(inkFor(k), h) < 4.5);
+    ok(`the gradients' ink reads on every ${th} gradient stop (${stops.length})`, weak.length === 0,
+       weak.map(([k, h]) => `${k} ${h} ${ratio(inkFor(k), h).toFixed(2)}:1`).join(", "));
   }
+  if (th === "daylight") ok("the lime fill takes the primary ink, as §3.1 says", inkOn(T.brand.lime) === T.content.primary);
 
   group(`${lookName(th, vision)} — D is an alias table, not a second palette`);
   // The one rule that keeps two token surfaces from becoming two design systems:

@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useNav } from "../../lib/features.js";
+import { roleGrants } from "@scrbrd/policy/roles";
+import { handToSkills, pointerOfCard } from "../../lib/coachingPoint.js";
 import { batHandOf, bowlingLimit } from "@scrbrd/scoring";
 import { boardInnings, sidesOf, teamOf } from "../../lib/matchCentre.js";
 import { matchChaseOf } from "../../lib/superOver.js";
@@ -118,7 +120,25 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
       const id = c.evidence.params?.playerId;
       return id && onNavProfile && nav.includes("profiles") ? closeThen(() => onNavProfile(id)) : null;
     }
+    // S13: the boy's development panel, opened on him (GA-I27 §5.2).
+    if (s.route === "skills") {
+      const id = c.evidence.params?.playerId;
+      return id && onNav && nav.includes("skills") ? closeThen(() => { handToSkills({ playerId: id }); onNav("skills", null); }) : null;
+    }
     return onNav && nav.includes(s.route) ? closeThen(() => onNav(s.route, s.section ?? null)) : null;
+  };
+
+  // "Make a coaching point of this" (GA-I27 §5.2, C-D7): from S5 only, for a
+  // reader whose assignment may write one (player.development.write and
+  // player.note.write: the coach, not the assistant, the director or the team
+  // manager; GA-I26a §7.1 item 4) and whose menu has the Skills screen. It
+  // writes nothing here: it opens his development panel with the pointer
+  // filled in, and the point is written there (C-D6: the drawer writes nothing).
+  const mayPoint = roleGrants(gate.role, "player.development.write") && roleGrants(gate.role, "player.note.write") && !!onNav && nav.includes("skills");
+  const makePoint = (/** @type {any} */ c) => {
+    if (!mayPoint) return null;
+    const pointer = pointerOfCard(c, match.id, feed.now);
+    return pointer ? closeThen(() => { handToSkills({ playerId: pointer.playerId, pointer }); onNav("skills", null); }) : null;
   };
 
   const label = `Coach · ${phone ? sides[gate.end].short : sides[gate.end].full}`;
@@ -167,7 +187,7 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
       {!loading && !played && panels.matchups && reads.matchups && <Matchups reads={reads} sheet={sheet}/>}
 
       {drawer && (
-        <FeedDrawer feed={feed} gate={gate} log={log} openScreen={openScreen} onClose={() => { setDrawer(false); opener.current?.focus(); }}/>
+        <FeedDrawer feed={feed} gate={gate} log={log} openScreen={openScreen} makePoint={makePoint} onClose={() => { setDrawer(false); opener.current?.focus(); }}/>
       )}
       {dossier && <OppositionDossier match={match} role={role} onClose={() => setDossier(false)}/>}
       {picking && (
