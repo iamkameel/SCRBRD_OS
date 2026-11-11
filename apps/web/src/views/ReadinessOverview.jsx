@@ -289,16 +289,17 @@ function ReadinessOverview({ role, onNav }) {
             </Card>
           )}
           {q.potm && (q.potm.loading || q.potm.rows.length > 0 || q.potm.unread.length > 0) && (
-            // RECOGNITION R7 (db/144, D18): the captain's nominations this reader may decide. Drawn only when there is one,
-            // or its read failed: no nomination is the usual case and says nothing.
+            // RECOGNITION R7 (db/144, D18): the captain's nominations this reader may decide, and R10 (db/148, D19) the
+            // awards a scorecard correction moved, to review. Drawn only when there is one, or a read failed: nothing to
+            // decide is the usual case and says nothing.
             <Card sx={{ padding: 0, marginBottom: "10px" }} data-testid="queue-potm">
               <section aria-labelledby="queue-potm-head">
                 <header style={{ padding: "12px 16px" }}>
                   <h2 id="queue-potm-head" style={{ margin: 0, fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: D.textMuted }}>
-                    Player of the Match to decide
+                    Player of the Match to decide or review
                   </h2>
                 </header>
-                {q.potm.loading ? <p style={{ ...small(true), padding: "0 16px 12px", margin: 0 }}>Reading the nominations…</p> : (
+                {q.potm.loading ? <p style={{ ...small(true), padding: "0 16px 12px", margin: 0 }}>Reading the nominations and reviews…</p> : (
                   <ul style={{ margin: 0, padding: 0 }}>
                     {q.potm.rows.map((r) => <Row key={r.id} row={r} door={doorOf(r)}/>)}
                     {q.potm.unread.map((r) => <Row key={r.id} row={r} door={null} onRetry={q.retryPotm}/>)}

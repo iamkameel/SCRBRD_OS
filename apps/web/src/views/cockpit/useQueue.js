@@ -5,6 +5,7 @@ import { readOnce, readQuery } from "../../lib/live.js";
 import { chooseSchoolFixtures, fixtureRows, groupByDay, headerOf, isQueueReader, liftExceptionRows, officeReader, officeRows, resultRows, resultsReader } from "../../lib/queue.js";
 import { isForbidden, isModuleOff } from "../../lib/readState.js";
 import { nominationRows } from "../../lib/nomination.js";
+import { reviewRows } from "../../lib/potm.js";
 import { roleGrants } from "@scrbrd/policy/roles";
 
 /**
@@ -158,19 +159,29 @@ export function useQueue({ matches, assignments, now }) {
   // (layout only: nominations_to_decide() decides again what comes back).
   const wantsPotm = (assignments ?? []).some((/** @type {any} */ a) => !!a?.role && (a.subjects?.length ?? 0) === 0
     && roleGrants(a.role, "recognition.match.award"));
-  const [potmRead, setPotmRead] = useState(/** @type {{loaded: boolean, rows: any[] | null, error: string | null}} */ ({ loaded: false, rows: [], error: null }));
+  // R10 (db/148): and the awards a scorecard correction moved, to the same
+  // readers (recognition_reviews_open() decides again: the decider alone).
+  /** @typedef {{rows: any[] | null, error: string | null}} PotmList */
+  const [potmRead, setPotmRead] = useState(/** @type {{loaded: boolean, decide: PotmList, review: PotmList}} */
+    ({ loaded: false, decide: { rows: [], error: null }, review: { rows: [], error: null } }));
   const [potmAgain, setPotmAgain] = useState(0);
   useEffect(() => {
     if (!signedIn() || !wantsPotm) return undefined;
     let cancelled = false;
-    api("/api/player-of-match/to-decide")
-      .then((d) => { if (!cancelled) setPotmRead({ loaded: true, rows: d?.rows ?? [], error: null }); })
-      .catch((e) => { if (!cancelled) setPotmRead({ loaded: true, rows: null, error: String(e?.code || "unreachable") }); });
+    /** @param {string} path @returns {Promise<PotmList>} */
+    const list = (path) => api(path).then((d) => ({ rows: d?.rows ?? [], error: null }))
+      .catch((e) => ({ rows: null, error: String(e?.code || "unreachable") }));
+    Promise.all([list("/api/player-of-match/to-decide"), list("/api/player-of-match/to-review")])
+      .then(([decide, review]) => { if (!cancelled) setPotmRead({ loaded: true, decide, review }); });
     return () => { cancelled = true; };
   }, [wantsPotm, potmAgain]);
-  const potm = useMemo(() => (!wantsPotm ? null
-    : potmRead.loaded ? { loading: false, ...nominationRows({ rows: potmRead.rows, now, error: potmRead.error }) }
-      : { loading: true, rows: [], unread: [], open: 0, failed: 0 }), [wantsPotm, potmRead, now]);
+  const potm = useMemo(() => {
+    if (!wantsPotm) return null;
+    if (!potmRead.loaded) return { loading: true, rows: [], unread: [], open: 0, failed: 0 };
+    const a = nominationRows({ rows: potmRead.decide.rows, now, error: potmRead.decide.error });
+    const b = reviewRows({ rows: potmRead.review.rows, error: potmRead.review.error });
+    return { loading: false, rows: [...a.rows, ...b.rows], unread: [...a.unread, ...b.unread], open: a.open + b.open, failed: a.failed + b.failed };
+  }, [wantsPotm, potmRead, now]);
 
   // ── O6, on a tap: logged by the database, so never on opening ──
   const [lifts, setLifts] = useState(/** @type {Record<string, {loading: boolean, rows: ReturnType<typeof liftExceptionRows> | null, error: string | null}>} */ ({}));
@@ -219,7 +230,7 @@ export function useQueue({ matches, assignments, now }) {
     /** OFFICIAL_RESULT: the results to confirm or settle, or null for a reader who stands behind none. */
     results,
     retryResults: () => setResultsAgain((n) => n + 1),
-    /** RECOGNITION R7: the captain's nominations to decide, or null for a reader who decides none. */
+    /** RECOGNITION R7 and R10: the captain's nominations to decide and the corrected awards to review, or null for a reader who decides none. */
     potm,
     retryPotm: () => setPotmAgain((n) => n + 1),
     lifts,
