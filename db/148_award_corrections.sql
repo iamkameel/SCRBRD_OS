@@ -56,10 +56,16 @@
 --               the mirror and packages/scoring's words never flags an award
 --               nothing moved. derived_from is otherwise the door's (db/142),
 --               and is never edited after the insert (honour_stamp()).
---   trigger   + ball_event_award_review  CONSTRAINT, AFTER INSERT, WHEN kind
---               = 'void', DEFERRABLE INITIALLY DEFERRED: at commit, so it reads
---               the log as the correction left it, after an amendment's
---               re-judging of who faced (db/121), never half-way through one.
+--   trigger   + ball_event_award_review  AFTER INSERT, WHEN kind = 'void'
+--               (beside db/113's ball_event_milestone_retract) or
+--               'innings_end' (the scorer's re-seal, when a correction's
+--               figures and result are settled again), and run again by
+--               ~ scoring_amendment_rejudge() (db/121), patched in place (one
+--               line, db/142's exact-needle pattern): an amendment's void is
+--               checked on the stamps, then again on who the fold says faced,
+--               as db/121 runs milestone_recheck() twice (its review's B1).
+--               (Not a deferred constraint trigger: its pending events would
+--               refuse any later ALTER TABLE ball_event in the transaction.)
 --               (1) D19: each standing award of the match is re-derived and
 --               compared; a difference opens a review and tells the decider
 --               (D19's fallback when his assignment has ended). The award is
@@ -79,10 +85,12 @@
 --               record that newly holds after a correction says so: "…, after
 --               a correction." Restated whole; the guard below takes db/143's
 --               body or this file's.
---   functions + match_award_figures, match_award_person_holds,
+--   functions + match_award_figures, match_award_result, match_award_person_holds,
 --               recognition_review_baseline, recognition_review_tell,
 --               recognition_review_check, record_notice_holds,
 --               record_notice_recheck, the trigger functions (nobody's)
+--             ~ scoring_amendment_rejudge() (db/121), one line (above)
+--             + recognition_correction_for (the re-check of one match)
 --             + recognition_review_reader (the policy's predicate, the
 --               application's to evaluate as the reader, as db/144's
 --               recognition_nomination_staff() is)
@@ -110,8 +118,8 @@
 -- (the trigger acts on voids from now on). No row is written by the paste.
 --
 -- NOTHING IS REMOVED. CREATE TABLE IF NOT EXISTS, CREATE OR REPLACE, DROP …
--- IF EXISTS before the policies and the constraint trigger this file makes
--- again. Safe to run twice (DEPLOYING.md, "A migration re-runs harmlessly").
+-- IF EXISTS before the policies and the trigger this file makes again; the
+-- re-judging's patch is skipped when its line is already there. Safe to run twice (DEPLOYING.md, "A migration re-runs harmlessly").
 --
 -- SCHEMA FIRST. The API built with it (potm-api.mjs: GET
 -- /api/player-of-match/to-review, POST /api/player-of-match/reviews/:id/stand)
@@ -145,6 +153,8 @@ BEGIN
      OR to_regprocedure('match_award_side_of(uuid,uuid)') IS NULL
      OR to_regprocedure('match_result_compute(uuid)') IS NULL
      OR to_regprocedure('milestone_retract()') IS NULL
+     OR to_regprocedure('scoring_amendment_rejudge(uuid,jsonb)') IS NULL
+     OR to_regprocedure('milestone_recheck(uuid,smallint,uuid[],boolean)') IS NULL
      OR to_regprocedure('notification_retract(uuid,text,boolean)') IS NULL
      OR to_regprocedure('notification_unretract(uuid)') IS NULL
      OR to_regprocedure('record_notice_for(uuid)') IS NULL OR to_regprocedure('record_lines(uuid,text)') IS NULL
@@ -157,7 +167,7 @@ BEGIN
   END IF;
   SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = 'record_notice_for(uuid)'::regprocedure;
   v_md5 := pg_temp._v148_fold(v_src);
-  IF v_md5 NOT IN ('7739d83048455b4118ce43be770c70ee', '52bf0c1621beb1e2d46f0cc7cff1b9fa') THEN
+  IF v_md5 NOT IN ('7739d83048455b4118ce43be770c70ee', '6b7c1b61a1f308601d3afe18ffe8905a') THEN
     RAISE EXCEPTION 'db/148: record_notice_for() is not db/143''s or this file''s (md5 % of its folded body); look before replacing it', v_md5;
   END IF;
 END $guard$;
@@ -199,6 +209,17 @@ CREATE OR REPLACE FUNCTION match_award_figures(p_match uuid, p_player uuid) RETU
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 COMMENT ON FUNCTION match_award_figures(uuid, uuid) IS
   'db/148 (RECOGNITION R10, D19): one boy''s figures in one match in packages/scoring figuresWords()''s words, as the career views read the log (never a super over, never a voided ball). The SQL mirror a correction is compared by. Nobody''s to call.';
+
+-- The result an award is held to: match_result()'s hash while the match
+-- is verified (match_verified(), R3's one definition: every innings sealed
+-- and the seal standing), NULL while it is not. A correction breaks the
+-- seal of the innings it touches, and until the scorer seals it again the
+-- result is unsettled, not moved (a chase a ball short reads "no result"):
+-- the re-check compares the result at the re-seal (§6), never in between.
+-- The figures are compared at once: a hundred made 99 is the void's.
+CREATE OR REPLACE FUNCTION match_award_result(p_match uuid) RETURNS text AS $$
+  SELECT CASE WHEN match_verified(p_match) THEN (SELECT r.result_hash FROM match_result_compute(p_match) r) END
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The decider's words for the decision, kept with it: the door's own working
 -- and, beside it, the mirror's reading at the same head.
@@ -393,16 +414,16 @@ BEGIN
   END IF;
   SELECT * INTO b FROM recognition_review_baseline(h.id);
   v_now := match_award_figures(h.match_id, h.player_id);
-  v_hash := (SELECT x.result_hash FROM match_result_compute(h.match_id) x);
+  v_hash := match_award_result(h.match_id);
   v_f := b.figures IS NOT NULL AND v_now IS DISTINCT FROM b.figures;
-  v_r := b.result IS NOT NULL AND v_hash IS DISTINCT FROM b.result;
+  v_r := b.result IS NOT NULL AND v_hash IS NOT NULL AND v_hash IS DISTINCT FROM b.result;
   v_reason := CASE WHEN v_f AND v_r THEN 'figures_and_result_moved' WHEN v_f THEN 'figures_moved' WHEN v_r THEN 'result_moved' END;
   SELECT x.id INTO v_open FROM recognition_review x WHERE x.honour_id = h.id AND x.closed_at IS NULL FOR UPDATE;
   IF v_open IS NOT NULL THEN
     -- Told once: a later correction keeps the reading current, says nothing
     -- more, and leaves the review open even if the figures came back — the
     -- decider closes it.
-    UPDATE recognition_review SET figures_after = v_now, result_after = v_hash, checked_at = now(),
+    UPDATE recognition_review SET figures_after = v_now, result_after = coalesce(v_hash, result_after), checked_at = now(),
            reason = coalesce(v_reason, reason)
      WHERE id = v_open;
     RETURN;
@@ -488,38 +509,69 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 
 
 -- ══════════════════════════════════════════════════════════════════
---  6 · The trigger: at commit, on a void
+--  6 · On a void, and again after an amendment's re-judging
 -- ══════════════════════════════════════════════════════════════════
--- A void of a void restores nothing (db/113), so nothing moved: skipped.
-CREATE OR REPLACE FUNCTION recognition_correction() RETURNS trigger AS $$
+-- Every standing award of the match asked again, and every live record
+-- notice of it. Each in its own block: a correction is never refused for a
+-- review or a notice, and one award's failure does not skip the next.
+CREATE OR REPLACE FUNCTION recognition_correction_for(p_match uuid) RETURNS void AS $$
 DECLARE h record;
 BEGIN
-  IF EXISTS (SELECT 1 FROM ball_event t WHERE t.match_id = NEW.match_id AND t.idempotency_key = NEW.payload->>'target'
-                AND t.kind = 'void') THEN
-    RETURN NULL;
-  END IF;
   FOR h IN SELECT x.id FROM honour x
-            WHERE x.match_id = NEW.match_id AND x.withdrawn_at IS NULL AND x.kind = 'player_of_match'
+            WHERE x.match_id = p_match AND x.withdrawn_at IS NULL AND x.kind = 'player_of_match'
             ORDER BY x.awarded_at, x.id LOOP
     BEGIN
       PERFORM recognition_review_check(h.id);
     EXCEPTION WHEN OTHERS THEN
-      RAISE WARNING 'db/148: Player of the Match % was not re-checked after a correction to match % (%): %', h.id, NEW.match_id, SQLSTATE, SQLERRM;
+      RAISE WARNING 'db/148: Player of the Match % was not re-checked after a correction to match % (%): %', h.id, p_match, SQLSTATE, SQLERRM;
     END;
   END LOOP;
   BEGIN
-    PERFORM record_notice_recheck(NEW.match_id);
+    PERFORM record_notice_recheck(p_match);
   EXCEPTION WHEN OTHERS THEN
-    RAISE WARNING 'db/148: the record notices of match % were not re-checked after a correction (%): %', NEW.match_id, SQLSTATE, SQLERRM;
+    RAISE WARNING 'db/148: the record notices of match % were not re-checked after a correction (%): %', p_match, SQLSTATE, SQLERRM;
   END;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The void's, and the re-seal's: a scorer's seal after a correction is
+-- when the innings' figures and the result are settled again, and a ball
+-- scored again after a void reaches the awards only here. A void of a void
+-- restores nothing (db/113): skipped.
+CREATE OR REPLACE FUNCTION recognition_correction() RETURNS trigger AS $$
+BEGIN
+  IF NEW.kind = 'void' AND EXISTS (SELECT 1 FROM ball_event t WHERE t.match_id = NEW.match_id
+                                      AND t.idempotency_key = NEW.payload->>'target' AND t.kind = 'void') THEN
+    RETURN NULL;
+  END IF;
+  PERFORM recognition_correction_for(NEW.match_id);
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 DROP TRIGGER IF EXISTS ball_event_award_review ON ball_event;
-CREATE CONSTRAINT TRIGGER ball_event_award_review AFTER INSERT ON ball_event
-  DEFERRABLE INITIALLY DEFERRED
-  FOR EACH ROW WHEN (NEW.kind = 'void')
+CREATE TRIGGER ball_event_award_review AFTER INSERT ON ball_event
+  FOR EACH ROW WHEN (NEW.kind IN ('void', 'innings_end'))
   EXECUTE FUNCTION recognition_correction();
+
+-- The amendment's re-judging (db/121 §5, its review's B1): after it has
+-- written who faced, the awards and the records are asked again on the log
+-- the careers now read. One line after db/121's milestone_recheck().
+CREATE OR REPLACE FUNCTION pg_temp._v148_patch(p_fn text, p_needle text, p_repl text, p_times integer) RETURNS void AS $$
+DECLARE v_src text; v_n integer;
+BEGIN
+  SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = p_fn::regprocedure;
+  IF position(p_repl IN v_src) > 0 THEN RETURN; END IF;
+  v_n := (length(v_src) - length(replace(v_src, p_needle, ''))) / length(p_needle);
+  IF v_n <> p_times THEN
+    RAISE EXCEPTION 'db/148: % holds its needle % times, not %: look before replacing it', p_fn, v_n, p_times;
+  END IF;
+  EXECUTE replace(pg_get_functiondef(p_fn::regprocedure), p_needle, p_repl);
+END $$ LANGUAGE plpgsql;
+
+SELECT pg_temp._v148_patch('scoring_amendment_rejudge(uuid,jsonb)',
+  E'  PERFORM milestone_recheck(a.match_id, t.innings, coalesce(v_players, \'{}\'::uuid[]), true);\n  RETURN n;',
+  E'  PERFORM milestone_recheck(a.match_id, t.innings, coalesce(v_players, \'{}\'::uuid[]), true);\n'
+  || E'  PERFORM recognition_correction_for(a.match_id);   -- db/148: the awards and the record notices follow it too\n  RETURN n;',
+  1);
 
 
 -- ══════════════════════════════════════════════════════════════════
@@ -550,7 +602,8 @@ RETURNS TABLE (review_id uuid, honour_id uuid, match_id uuid, side text, heading
          match_award_heading(r.match_id, coalesce(h.derived_from->>'side', match_award_side_of(r.match_id, r.player_id), 'home')),
          r.player_id, match_award_short(p.full_name), r.reason, r.figures_before,
          match_award_figures(r.match_id, r.player_id),
-         (SELECT x.result_hash FROM match_result_compute(r.match_id) x) IS DISTINCT FROM r.result_before,
+         coalesce(match_award_result(r.match_id) IS DISTINCT FROM r.result_before, false)
+           AND match_award_result(r.match_id) IS NOT NULL,
          r.opened_at, (SELECT u.name FROM app_user u WHERE u.id = r.decided_by), r.decided_by = app_user_id(),
          NOT match_award_guardian_of(app_user_id(), r.player_id)
     FROM recognition_review r
@@ -581,9 +634,9 @@ BEGIN
   UPDATE recognition_review
      SET closed_at = now(), closed_by = v_me, outcome = 'stands',
          figures_after = match_award_figures(r.match_id, r.player_id),
-         result_after = (SELECT x.result_hash FROM match_result_compute(r.match_id) x),
+         result_after = coalesce(match_award_result(r.match_id), r.result_after),
          figures_at_close = match_award_figures(r.match_id, r.player_id),
-         result_at_close = (SELECT x.result_hash FROM match_result_compute(r.match_id) x),
+         result_at_close = coalesce(match_award_result(r.match_id), r.result_after, r.result_before),
          checked_at = now()
    WHERE id = r.id;
   RETURN QUERY SELECT true, NULL::text;
@@ -600,7 +653,9 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 --     through notification_unretract() (which supersedes its "withdrawn"
 --     notice unsaid), its words re-synced; nothing new is sent;
 --   * a record the match newly holds after a correction (a void after the
---     first seal) is noticed once, "…, after a correction."
+--     first seal) is noticed once, "…, after a correction.";
+--   * first, a live record notice of the match that no longer holds is
+--     taken back (record_notice_recheck()), as on a void.
 CREATE OR REPLACE FUNCTION record_notice_for(p_match uuid) RETURNS void AS $$
 DECLARE
   m match%ROWTYPE;
@@ -616,6 +671,9 @@ BEGIN
   BEGIN
     SELECT * INTO m FROM match x WHERE x.id = p_match;
     IF NOT FOUND OR m.status <> 'complete' OR NOT match_verified(p_match) THEN RETURN; END IF;
+    -- db/148: what the match was said to hold and holds no longer is taken
+    -- back first (a later correction can move a figure up as well as down).
+    PERFORM record_notice_recheck(p_match);
     -- db/148: a void written after the first seal is a correction.
     v_after := EXISTS (SELECT 1 FROM ball_event v
                         WHERE v.match_id = p_match AND v.kind = 'void'
@@ -686,11 +744,12 @@ COMMENT ON FUNCTION record_notice_for(uuid) IS
 DO $grants$
 DECLARE f text; r text;
 BEGIN
-  FOREACH f IN ARRAY ARRAY['match_award_figures(uuid,uuid)', 'honour_cite_figures()', 'recognition_review_guard()',
+  FOREACH f IN ARRAY ARRAY['match_award_figures(uuid,uuid)', 'match_award_result(uuid)', 'honour_cite_figures()', 'recognition_review_guard()',
                            'match_award_person_holds(uuid,uuid,text,uuid)',
                            'recognition_review_reader(uuid,text,uuid,uuid,uuid)',
                            'recognition_review_baseline(uuid)', 'recognition_review_tell(uuid)', 'recognition_review_check(uuid)',
-                           'record_notice_holds(uuid)', 'record_notice_recheck(uuid)', 'recognition_correction()',
+                           'record_notice_holds(uuid)', 'record_notice_recheck(uuid)', 'recognition_correction_for(uuid)',
+                           'recognition_correction()',
                            'honour_close_review()', 'recognition_reviews_open(uuid)', 'recognition_review_stand(uuid)',
                            'record_notice_for(uuid)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
@@ -720,11 +779,12 @@ END $grants$;
 DO $check$
 DECLARE f text; v_src text;
 BEGIN
-  FOREACH f IN ARRAY ARRAY['match_award_figures(uuid,uuid)', 'honour_cite_figures()',
+  FOREACH f IN ARRAY ARRAY['match_award_figures(uuid,uuid)', 'match_award_result(uuid)', 'honour_cite_figures()',
                            'match_award_person_holds(uuid,uuid,text,uuid)',
                            'recognition_review_reader(uuid,text,uuid,uuid,uuid)',
                            'recognition_review_baseline(uuid)', 'recognition_review_tell(uuid)', 'recognition_review_check(uuid)',
-                           'record_notice_holds(uuid)', 'record_notice_recheck(uuid)', 'recognition_correction()',
+                           'record_notice_holds(uuid)', 'record_notice_recheck(uuid)', 'recognition_correction_for(uuid)',
+                           'recognition_correction()',
                            'honour_close_review()', 'recognition_reviews_open(uuid)', 'recognition_review_stand(uuid)',
                            'record_notice_for(uuid)'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f::regprocedure AND p.prosecdef
@@ -759,12 +819,18 @@ BEGIN
                        AND permissive = 'RESTRICTIVE') THEN
     RAISE EXCEPTION 'db/148: recognition_review''s row security is not as this file wrote it';
   END IF;
-  -- The void trigger: deferred to commit, on a void only.
+  -- The void trigger, on a void only; and the re-judging runs the same check.
   IF NOT EXISTS (SELECT 1 FROM pg_trigger g
                   WHERE g.tgrelid = 'ball_event'::regclass AND g.tgname = 'ball_event_award_review'
-                    AND g.tgfoid = 'recognition_correction()'::regprocedure AND g.tgdeferrable AND g.tginitdeferred
-                    AND pg_get_triggerdef(g.oid) LIKE '%AFTER INSERT ON public.ball_event DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((new.kind = ''void''::text))%') THEN
-    RAISE EXCEPTION 'db/148: ball_event_award_review is not a deferred AFTER INSERT … WHEN (kind = ''void'') trigger';
+                    AND g.tgfoid = 'recognition_correction()'::regprocedure AND NOT g.tgdeferrable
+                    AND pg_get_triggerdef(g.oid) LIKE '%AFTER INSERT ON public.ball_event FOR EACH ROW WHEN ((new.kind = ANY (ARRAY[''void''::text, ''innings_end''::text])))%') THEN
+    RAISE EXCEPTION 'db/148: ball_event_award_review is not an AFTER INSERT … WHEN (kind IN (''void'', ''innings_end'')) trigger';
+  END IF;
+  SELECT prosrc INTO v_src FROM pg_proc WHERE oid = 'scoring_amendment_rejudge(uuid,jsonb)'::regprocedure;
+  IF position('PERFORM recognition_correction_for(a.match_id);' IN v_src) = 0
+     OR position('milestone_recheck(' IN v_src) = 0
+     OR NOT has_function_privilege('scrbrd_app', 'scoring_amendment_rejudge(uuid,jsonb)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'db/148: scoring_amendment_rejudge() does not re-check the awards after re-judging, or lost its milestone re-check or its grant';
   END IF;
   IF (SELECT count(*) FROM pg_trigger WHERE tgrelid = 'honour'::regclass
         AND tgname IN ('honour_cite_figures', 'honour_close_review') AND tgenabled <> 'D') <> 2
@@ -772,7 +838,8 @@ BEGIN
     RAISE EXCEPTION 'db/148: a trigger on honour or recognition_review is missing or disabled';
   END IF;
   -- The re-check never withdraws and never awards (D19).
-  FOREACH f IN ARRAY ARRAY['recognition_review_check(uuid)', 'recognition_correction()', 'recognition_review_tell(uuid)'] LOOP
+  FOREACH f IN ARRAY ARRAY['recognition_review_check(uuid)', 'recognition_correction()', 'recognition_correction_for(uuid)',
+                           'recognition_review_tell(uuid)'] LOOP
     SELECT prosrc INTO v_src FROM pg_proc WHERE oid = f::regprocedure;
     IF v_src ~* 'insert\s+into\s+honour\M' OR v_src ~* 'update\s+honour\M' OR position('match_award(' IN v_src) > 0 THEN
       RAISE EXCEPTION 'db/148: % writes an honour', f;
@@ -783,12 +850,14 @@ BEGIN
     RAISE EXCEPTION 'db/148: record_notice_recheck() does not retract through notification_retract()';
   END IF;
   SELECT prosrc INTO v_src FROM pg_proc WHERE oid = 'record_notice_for(uuid)'::regprocedure;
-  IF position('notification_unretract(v_back)' IN v_src) = 0 OR position(', after a correction. In verified' IN v_src) = 0 THEN
+  IF position('notification_unretract(v_back)' IN v_src) = 0 OR position(', after a correction. In verified' IN v_src) = 0
+     OR position('PERFORM record_notice_recheck(p_match);' IN v_src) = 0 THEN
     RAISE EXCEPTION 'db/148: record_notice_for() does not return a re-held record on its row, or does not say "after a correction"';
   END IF;
-  IF pg_temp._v148_fold(v_src) <> '52bf0c1621beb1e2d46f0cc7cff1b9fa' THEN
+  IF pg_temp._v148_fold(v_src) <> '6b7c1b61a1f308601d3afe18ffe8905a' THEN
     RAISE EXCEPTION 'db/148: record_notice_for() is not this file''s (md5 %)', pg_temp._v148_fold(v_src);
   END IF;
 END $check$;
 
+DROP FUNCTION pg_temp._v148_patch(text, text, text, integer);
 DROP FUNCTION pg_temp._v148_fold(text);
