@@ -357,6 +357,53 @@ export const chargedToBowler = (d) => DISMISSALS.has(d) && !NON_DELIVERY.has(d);
 /** @param {unknown} d  a dismissal, canonical (normaliseDismissal) or not */
 export const standsOnFreeHit = (d) => NON_DELIVERY.has(d);
 
+/**
+ * WHO FIELDED THE WICKET (RECOGNITION R12, P2).
+ *
+ * `fielder` is the scorecard's text, as the pad has always written it — a
+ * name ("c Naidoo b Mkhize"). It is not a reference: the keeper's catch was
+ * matched to the keeper by that name (isKeeperRef), and nothing could say
+ * which boy took a catch. `fielders` is the reference, beside it: the
+ * fielders the scorer named, in order, each a player id where SCRBRD holds a
+ * row and the name as typed where it does not (a substitute, the other
+ * side's boy) — the same rule as striker and bowler (asPlayerId).
+ *
+ *   caught    one: the catcher (the bowler himself for caught and bowled)
+ *   stumped   one: the wicket-keeper (Law 39), who alone stumps
+ *   run out   one or two: the fielder who put the wicket down, and the one
+ *             who threw or handed him the ball, as a scorecard writes
+ *             "run out (Naidoo/Botha)" (Law 38). THE CONTRIBUTION RULE: each
+ *             fielder named is credited one run out; the wicket is one
+ *             wicket for the side however many handled it. Nobody else is
+ *             credited, and a run out with nobody named credits nobody.
+ *
+ * No other way out names a fielder. Optional, so every wicket already
+ * scored is the event it was and folds as it did; a wicket without it has
+ * no fielding credit (the spec: "missing fielding attribution stays unknown,
+ * not zero"; fieldingCredits(), replay.mjs).
+ * @type {ReadonlyMap<unknown, number>}  the way out → how many fielders it may name
+ */
+export const FIELDED_DISMISSALS = new Map([
+  [DISMISSAL.CAUGHT, 1], [DISMISSAL.STUMPED, 1], [DISMISSAL.RUN_OUT, 2],
+]);
+/** The longest a typed fielder's name may be, as the pad's field allows. */
+export const FIELDER_REF_MAX = 80;
+
+/**
+ * Is `f` a fielders list this way out may carry: one or two (a run out) or
+ * one (a catch, a stumping) non-empty references, each named once? The one
+ * rule the constructor, the Laws (lawsRefusal, FIELDERS_INVALID) and SQL's
+ * door (db/150 ball_fielders_valid()) ask.
+ * @param {unknown} f  @param {unknown} mode  the canonical dismissal
+ * @returns {boolean}
+ */
+export function fieldersFit(f, mode) {
+  const max = FIELDED_DISMISSALS.get(mode);
+  if (max == null || !Array.isArray(f) || f.length < 1 || f.length > max) return false;
+  if (!f.every((x) => typeof x === "string" && x.trim() !== "" && x === x.trim() && x.length <= FIELDER_REF_MAX)) return false;
+  return new Set(f).size === f.length;
+}
+
 /*
  * A WICKET ON A WIDE OR A NO-BALL.
  *
@@ -957,6 +1004,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  *   closePosition: string | null, captureProfile: string | null,
  *   nbRuns?: NbRuns, nbType?: NbType, outAt?: RunOutEnd,
  *   facesNext?: FacesNext, notInOver?: PenaltyReason, boundary?: false,
+ *   fielders?: string[],
  * }} BallEvent
  */
 /**
@@ -974,6 +1022,7 @@ export const SUSPENSION_SCOPE_TEXT = Object.freeze({
  *   closePosition?: string | null, captureProfile?: string | null,
  *   nbRuns?: string | null, nbType?: string | null, outAt?: string | null,
  *   facesNext?: string | null, notInOver?: string | null, boundary?: boolean | null,
+ *   fielders?: string[] | null,
  * }} BallInput
  */
 
@@ -1489,6 +1538,20 @@ const checkedBoundary = (b, type) => {
 };
 
 /**
+ * Reject a `fielders` list (RECOGNITION R12, P2) that is not one this way
+ * out may carry (fieldersFit), or one on a delivery that is not a wicket.
+ * @param {unknown} f  @param {boolean} wicket  @param {unknown} mode
+ * @returns {string[] | null}
+ */
+const checkedFielders = (f, wicket, mode) => {
+  if (f == null) return null;
+  if (!wicket || !fieldersFit(f, mode)) {
+    throw new TypeError(`fielders ${JSON.stringify(f)} are named for a catch or a stumping (one) or a run out (one or two), each once`);
+  }
+  return [.../** @type {string[]} */ (f)];
+};
+
+/**
  * Reject an `outAt` the model does not define, or one on a delivery that is
  * not a wicket (a W, or a wicket on a wide or a no-ball: isWicketBall()).
  * @param {string | null | undefined} e  @param {boolean} wicket
@@ -1575,6 +1638,7 @@ export const ball = (o) => {
   const outAt = checkedOutAt(o.outAt, wicket);
   const facesNext = checkedFacesNext(o.facesNext, wicket);
   const notInOver = checkedNotInOver(o.notInOver, wicket);
+  const fielders = checkedFielders(o.fielders, wicket, normaliseDismissal(o.dismissal));
   return {
   ...base(KIND.BALL, o),
   // `type` is the delivery kind (run | W | Wd | Nb | B | LB). It is named to
@@ -1629,6 +1693,10 @@ export const ball = (o) => {
   // API can refuse it by name rather than quietly recording a null wicket.
   dismissal: normaliseDismissal(o.dismissal) ?? o.dismissal ?? null,
   fielder: o.fielder ?? null,
+  // Who fielded it, as references (RECOGNITION R12, P2; FIELDED_DISMISSALS).
+  // Omitted when the scorer named nobody, so every other wicket is the event
+  // it always was.
+  ...(fielders ? { fielders } : {}),
   dismissed: o.dismissed ?? null, // player id; defaults to the striker at replay
   // The end the batter was out at (SCRBRD-069), when the scorer was asked.
   // Omitted otherwise, so every other wicket is the event it always was.

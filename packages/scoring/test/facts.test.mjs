@@ -109,7 +109,7 @@ group("A. Fifty and hundred: 98 → 104 is one hundred, with both crossings");
   ok("the single-taker made nothing", ms(f, P[1]).length === 0);
   ok("moments: a mark at 50 and at 100, said of him", f.moments.filter((m) => m.kind === M.BATTER_MARK && m.player === P[0])
     .map((m) => m.mark).join() === "50,100");
-  ok("the answer is stamped with the rules' version", f.version === FACTS_VERSION && FACTS_VERSION === 1);
+  ok("the answer is stamped with the rules' version", f.version === FACTS_VERSION && FACTS_VERSION === 2);
 
   // The runs are the fold's: a no-ball hit for four is his and a ball faced;
   // a no-ball's byes are not his; a wide is neither runs nor a ball faced.
@@ -454,7 +454,7 @@ group("L. Determinism: the same events, the same facts");
   let threw = null;
   try { deriveFacts(deep(structuredClone(log))); } catch (e) { threw = e; }
   ok("a frozen log folds (nothing is written to it)", threw === null, String(threw));
-  ok("an empty log: no facts", JSON.stringify(deriveFacts([])) === JSON.stringify({ version: 1, milestones: [], batting: [], bowling: [], moments: [] }));
+  ok("an empty log: no facts", JSON.stringify(deriveFacts([])) === JSON.stringify({ version: 2, milestones: [], batting: [], bowling: [], fielding: [], moments: [] }));
   ok("no argument at all: no facts", deriveFacts().milestones.length === 0);
 }
 

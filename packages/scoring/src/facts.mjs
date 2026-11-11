@@ -33,6 +33,12 @@
  *               the "highest innings" candidates, and the timeline that keeps
  *               a century's fifty.
  *   bowling     every bowler's figures: the "best bowling" candidates.
+ *   fielding    every fielder's catches, stumpings and run outs in an
+ *               innings, from the wickets that name him by reference
+ *               (RECOGNITION R12, P2: fieldingCredits(), replay.mjs), and
+ *               the catches he took as the keeper on the record. Only a boy
+ *               the log credits has a line: a wicket that names nobody
+ *               credits nobody, so a boy with no line is unknown, not nought.
  *   moments     what a narrator says on the ball it happens: a batter
  *               reaching each fifty, a bowler's fifth wicket and each after
  *               it, a hat-trick, and a bowler on one.
@@ -73,7 +79,7 @@
  */
 
 import { KIND, isWicketBall, countsInOver, chargedToBowler, normaliseDismissal, isPlayerId } from "./events.mjs";
-import { deriveMatch, foldSteps, penaltyCredits } from "./replay.mjs";
+import { deriveMatch, foldSteps, penaltyCredits, fieldingCredits } from "./replay.mjs";
 
 /** @import { LogEvent } from "./events.mjs" */
 /** @import { Innings, FoldContext } from "./replay.mjs" */
@@ -84,7 +90,7 @@ import { deriveMatch, foldSteps, penaltyCredits } from "./replay.mjs";
  * fact means moves it; a reader that stored a fact's evidence can tell which
  * rules made it.
  */
-export const FACTS_VERSION = 1;
+export const FACTS_VERSION = 2;   // 2: fielding (RECOGNITION R12, P2)
 
 /** A milestone's kind: player_milestone's `kind` for the innings-grain rows. */
 export const FACT_KIND = Object.freeze({
@@ -153,6 +159,16 @@ const FIVE = 5;
  */
 
 /**
+ * @typedef {object} FieldingLine
+ * @property {string} player
+ * @property {number} innings   the innings he fielded in (the other side batting)
+ * @property {number} catches
+ * @property {number} stumpings
+ * @property {number} runOuts   each run out he is named in (the contribution rule, FIELDED_DISMISSALS)
+ * @property {number} keeperCatches  of his catches, those taken as the keeper on the record
+ */
+
+/**
  * @typedef {object} Moment
  * @property {string} kind      one of MOMENT_KIND
  * @property {string} player    the striker for a mark, the bowler otherwise
@@ -171,6 +187,7 @@ const FIVE = 5;
  * @property {Milestone[]} milestones
  * @property {BattingLine[]} batting
  * @property {BowlingLine[]} bowling
+ * @property {FieldingLine[]} fielding
  * @property {Moment[]} moments
  */
 
@@ -243,6 +260,7 @@ export function deriveFacts(events = [], roster = null, options = {}) {
   /** @type {Milestone[]} */ const milestones = [];
   /** @type {BattingLine[]} */ const batting = [];
   /** @type {BowlingLine[]} */ const bowling = [];
+  /** @type {FieldingLine[]} */ const fielding = [];
   /** @type {Moment[]} */ const moments = [];
 
   for (const n of numbers) {
@@ -352,10 +370,26 @@ export function deriveFacts(events = [], roster = null, options = {}) {
       const h = summarised ? undefined : hatAt.get(w.id);
       if (h) mine.push({ kind: FACT_KIND.HAT_TRICK, player: w.id, innings: n, value: 3, at: h, ballsTo: null });
     }
+    // The fielding (RECOGNITION R12, P2): every credit the innings' wickets
+    // name, from the ball log as the fold left it (a void has taken its
+    // ball's away). A scorebook's card has no ball log, so no credit: its
+    // "c Naidoo" is text, and stays unknown.
+    /** @type {Map<string, FieldingLine>} */ const fielders = new Map();
+    for (const entry of fin.ballLog) {
+      for (const c of fieldingCredits(entry)) {
+        if (!linked(c.ref)) continue;
+        let line = fielders.get(c.ref);
+        if (!line) { line = { player: c.ref, innings: n, catches: 0, stumpings: 0, runOuts: 0, keeperCatches: 0 }; fielders.set(c.ref, line); }
+        if (c.act === "catch") { line.catches += 1; if (c.keeper) line.keeperCatches += 1; }
+        else if (c.act === "stumping") line.stumpings += 1;
+        else line.runOuts += 1;
+      }
+    }
+    fielding.push(...fielders.values());
     // In the order they happened; a scorebook's, which have no ball, as listed.
     const order = (/** @type {Milestone} */ m) => m.at?.index ?? Number.MAX_SAFE_INTEGER;
     milestones.push(...mine.map((m, k) => ({ m, k })).sort((a, b) => order(a.m) - order(b.m) || a.k - b.k).map((x) => x.m));
   }
 
-  return { version: FACTS_VERSION, milestones, batting, bowling, moments };
+  return { version: FACTS_VERSION, milestones, batting, bowling, fielding, moments };
 }

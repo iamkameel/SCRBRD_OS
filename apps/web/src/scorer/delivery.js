@@ -76,10 +76,12 @@ export function noBallEvent({ inn, nbType, runs, nbRuns, selShot, selSeg, wicket
  * sheet asked it: the method, the fielder, who was out when it was not the
  * striker, and the end when runs were completed. Nothing when there is none,
  * so every other extra is the event it always was.
- * @param {{dismissal: string, fielder?: string | null, dismissed?: string | null, outAt?: string | null} | null} w
+ * @param {{dismissal: string, fielder?: string | null, fielders?: string[], dismissed?: string | null, outAt?: string | null} | null} w
  */
 const wicketFields = (w) => (w ? {
   dismissal: w.dismissal, fielder: w.fielder || null,
+  // Who fielded it, as references (RECOGNITION R12, P2), when the sheet named somebody.
+  ...(w.fielders?.length ? { fielders: w.fielders } : {}),
   ...(w.dismissed ? { dismissed: w.dismissed } : {}),
   ...(w.outAt ? { outAt: w.outAt } : {}),
 } : {});
@@ -89,7 +91,7 @@ const wicketFields = (w) => (w ? {
  * without one — a wide as commitBall() builds it (recordWide), a no-ball as
  * the no-ball question does (noBallEvent) — carrying the wicket.
  * @param {{inn: object, extra: {type: "Wd" | "Nb", runs: number, nbType?: string | null, nbRuns?: string | null, notBoundary?: boolean},
- *          wicket: {dismissal: string, fielder?: string | null, dismissed?: string | null, outAt?: string | null},
+ *          wicket: {dismissal: string, fielder?: string | null, fielders?: string[], dismissed?: string | null, outAt?: string | null},
  *          freeHit?: boolean, approach?: string | null}} o
  */
 export function extraWicketEvent({ inn, extra, wicket, freeHit = false, approach = null }) {

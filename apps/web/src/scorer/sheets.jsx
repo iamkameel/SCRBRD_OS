@@ -13,7 +13,7 @@ import { KeeperRow } from "./keeperSheet.jsx";
 import { OFF_SIDE_ASK, OFF_SIDE_MARK, OFF_SIDE_WHY, offSide } from "./side.js";
 import { Proposal, useProposal } from "./rainSheet.jsx";
 import { extraOf, NB_FROM, nbFreeHit, nbNotBoundary } from "./extras.js";
-import { wicketAsks, wicketDetail } from "./wicketAsks.js";
+import { wicketAsks, wicketDetail, fielderRefs } from "./wicketAsks.js";
 
 /** A choice that is on, the way the pad marks one: the primary ink's ring on the interactive surface. Never a state hue. */
 const chosen = (on) => ({ border: `1px solid ${on ? T.content.primary : D.border}`, background: on ? T.surface.interactive : D.surf2,
@@ -892,6 +892,12 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
   const asksCatch=!offExtra&&mode===DISMISSAL.OBSTRUCTING_FIELD&&edition===4&&!!striker&&!!nonStriker;
   const asksFaces=asksCatch&&stopped;
   const[fielder,setFielder]=useState("");
+  // A run out's second fielder (RECOGNITION R12, P2): the one who threw or
+  // handed the ball to the one who put the wicket down. Asked only when the
+  // scorer taps "Add a second fielder", so a tap on the list still chooses
+  // one fielder, as it always did.
+  const[second,setSecond]=useState("");
+  const[adding,setAdding]=useState(false);
   const[fielterFilter,setFielderFilter]=useState("");
   // Whose wicket, where the mode leaves it open. Retired out is either
   // batter's; the rest default to the striker, as the event does.
@@ -929,8 +935,21 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
   const displayFielder=isStumped?wkName||fielder:fielder;
   const filteredFielders=(fieldingSquad||[])
     .filter(p=>!fielterFilter||p.name.toLowerCase().includes(fielterFilter.toLowerCase()));
+  const pickFielder=(name)=>{
+    if(isRunOut&&adding&&fielder&&name!==fielder){setSecond(name);setAdding(false);return;}
+    setFielder(name);
+    if(second===name)setSecond("");
+  };
+  // The fielders as references (P2): the keeper on a stumping, the catcher,
+  // the run out's one or two. The scorecard's text is the names, as before;
+  // a run out by two reads "run out (A/B)".
+  const wkRef=keeper?.id??(()=>{const w=(fieldingSquad||[]).find(p=>p.role==="WK");return w?(w.id??w.name):null;})();
+  const fielderNames=isStumped?[]:isRunOut&&second?[fielder,second]:[fielder];
+  const fielders=isStumped?(wkName&&wkRef?[wkRef]:[]):needsFielder?fielderRefs(fielderNames,fieldingSquad,twelfth):[];
+  const fielderText=isRunOut&&fielder&&second?`${fielder}/${second}`:displayFielder;
   const handleMode=(m)=>{
     setMode(m);
+    setSecond("");setAdding(false);
     setFielder("");
     setFielderFilter("");
     setWho(striker?.id??null);
@@ -1060,18 +1079,18 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
               color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"9px 13px",marginBottom:"8px"}}/>
           <div style={{display:"flex",flexDirection:"column",gap:"4px",maxHeight:"180px",overflowY:"auto",overscrollBehavior:"contain"}}>
             {filteredFielders.map(p=>(
-              <button key={p.name} onClick={()=>setFielder(p.name)} className="pressBtn" style={{
-                display:"flex",alignItems:"center",gap:"8px",padding:"8px 12px",borderRadius:D.md,
-                border:"1px solid "+(fielder===p.name?D.sky+"55":D.border),
-                background:fielder===p.name?D.sky+"12":D.surf2,
+              <button key={p.name} onClick={()=>pickFielder(p.name)} className="pressBtn" aria-pressed={fielder===p.name||second===p.name} style={{
+                display:"flex",alignItems:"center",gap:"8px",padding:"8px 12px",borderRadius:D.md,minHeight:"44px",
+                border:"1px solid "+(fielder===p.name||second===p.name?D.sky+"55":D.border),
+                background:fielder===p.name||second===p.name?D.sky+"12":D.surf2,
                 cursor:"pointer",textAlign:"left",transition:"background-color .12s, border-color .12s, color .12s, transform 150ms ease-out"}}>
-                <span style={{fontFamily:D.body,fontSize:"13px",color:fielder===p.name?D.sky:D.textPrimary,fontWeight:500,flex:1}}>{p.name}</span>
+                <span style={{fontFamily:D.body,fontSize:"13px",color:fielder===p.name||second===p.name?D.sky:D.textPrimary,fontWeight:500,flex:1}}>{p.name}</span>
                 <Badge color={p.role==="WK"?D.violet:p.role==="ALL"?D.amber:p.role==="BOWL"?D.orange:D.sky}>{p.role}</Badge>
               </button>
             ))}
           </div>
           {twelfth&&(
-            <button type="button" data-testid="wicket-twelfth" onClick={()=>setFielder(twelfth.name)} className="pressBtn" style={{
+            <button type="button" data-testid="wicket-twelfth" onClick={()=>pickFielder(twelfth.name)} className="pressBtn" style={{
               display:"flex",alignItems:"center",gap:"8px",width:"100%",minHeight:"44px",marginTop:"6px",padding:"8px 12px",borderRadius:D.md,
               border:"1px solid "+(fielder===twelfth.name?D.sky+"55":D.border),
               background:fielder===twelfth.name?D.sky+"12":D.surf2,cursor:"pointer",textAlign:"left"}}>
@@ -1079,9 +1098,24 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
               <Badge color={D.violet}>12th Man</Badge>
             </button>
           )}
+          {/* A run out by two (P2): each is credited one run out. */}
+          {isRunOut&&fielder&&(second?(
+            <div data-testid="wicket-second" style={{display:"flex",alignItems:"center",gap:"8px",marginTop:"6px"}}>
+              <span style={{fontFamily:D.body,fontSize:"13px",color:D.textPrimary,flex:1}}>Run out by {fielder} and {second}</span>
+              <button type="button" data-testid="wicket-second-remove" onClick={()=>setSecond("")} className="pressBtn" style={{
+                minHeight:"44px",padding:"0 12px",borderRadius:D.md,border:"1px solid "+D.border,background:D.surf2,cursor:"pointer",
+                fontFamily:D.body,fontSize:"13px",color:D.textPrimary}}>Remove {second}</button>
+            </div>
+          ):(
+            <button type="button" data-testid="wicket-add-second" aria-pressed={adding} onClick={()=>setAdding(a=>!a)} className="pressBtn" style={{
+              width:"100%",minHeight:"44px",marginTop:"6px",padding:"8px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
+              fontFamily:D.body,fontSize:"13px",fontWeight:500,...chosen(adding)}}>
+              {adding?"Now tap the second fielder":"Add a second fielder"}
+            </button>
+          ))}
           {!fielder&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.amber,marginTop:"6px"}}>{twelfth?"Or type a substitute's name below:":"Or type name below:"}</div>}
           <input value={!fieldingSquad.find(p=>p.name===fielder)&&fielder!==twelfth?.name&&fielder?fielder:""} 
-            onChange={e=>setFielder(e.target.value)} placeholder="Type any name…" aria-label="Fielder not in the squad"
+            onChange={e=>{setFielder(e.target.value);setSecond("");setAdding(false);}} placeholder="Type any name…" aria-label="Fielder not in the squad"
             style={{width:"100%",background:D.surf2,border:"1px solid "+D.border,borderRadius:D.md,marginTop:"6px",
               color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"9px 13px"}}/>
         </div>
@@ -1098,7 +1132,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
         <Btn variant="ghost" sx={{flex:1,minHeight:"48px",fontSize:"15px",borderRadius:D.md}} onClick={onClose}>Cancel</Btn>
         <Btn variant="primary" sx={{flex:2,minHeight:"48px",fontSize:"16px",borderRadius:D.md}} data-testid="wicket-confirm" disabled={(asksEnd&&!end)||(asksFaces&&!faces)}
           onClick={()=>{if(asksEnd&&!end)return;if(asksFaces&&!faces)return;
-            onConfirm(mode,displayFielder,wicketDetail(asks,{who,strikerId:striker?.id??null,runs,from,end,faces,asksFaces}));}}>Confirm out</Btn>
+            onConfirm(mode,fielderText,wicketDetail(asks,{who,strikerId:striker?.id??null,runs,from,end,faces,asksFaces,fielders}));}}>Confirm out</Btn>
       </div>
     </Sheet>
   );

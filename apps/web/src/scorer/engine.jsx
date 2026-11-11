@@ -1806,10 +1806,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     // one (a point, or "didn't travel"), else the bare seg and zone as before.
     const offExtra=modalCtx?.extra??null;
     const ev=offExtra?extraWicketEvent({inn,extra:offExtra,freeHit,approach:hubApproach,
-      wicket:{dismissal:mode,fielder,dismissed:extra.dismissed??null,outAt:extra.outAt??null}})
+      wicket:{dismissal:mode,fielder,...(extra.fielders?{fielders:extra.fielders}:{}),dismissed:extra.dismissed??null,outAt:extra.outAt??null}})
     :ballEvent({type:"W",value:extra.runs??0,shot:modalCtx?.shot||null,
       ...(modalCtx?.placement??{seg:modalCtx?.seg??null,zone:modalCtx?.zone??null}),
       dismissal:mode,fielder:fielder||null,freeHit,
+      // Who fielded it, as references (RECOGNITION R12, P2): the catcher, the
+      // keeper on a stumping, the run out's one or two. Only when named.
+      ...(extra.fielders?{fielders:extra.fielders}:{}),
       ...crease(inn),
       ...(extra.dismissed?{dismissed:extra.dismissed}:{}),
       ...(extra.outAt?{outAt:extra.outAt}:{}),
