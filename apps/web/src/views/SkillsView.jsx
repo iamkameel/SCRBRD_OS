@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { heldRoles, holdsAsHeld, holdsForPlayer, ownRecordsOf } from "../lib/held.js";
 import { PLAYING_ROLES, showsRankings } from "../lib/seasonAwards.js";
 import { D } from "../design/tokens.js";
@@ -13,7 +13,8 @@ import { OverallRadar, SKILL_COLORS } from "../ui/overallRadar.jsx";
 import { focusAreas } from "../lib/focusAreas.js";
 import { readState, readStateFor } from "../lib/readState.js";
 import { pointsFor, standingPoint, savedTargets, openTargetOn, skillsList } from "../lib/assessmentHistory.js";
-import { Strip, TargetLine, DotSheet, TargetModal, SincePanel } from "./skills/History.jsx";
+import { Strip, TargetLine, DotSheet, TargetModal, SincePanel, CoachingPoints, PointModal } from "./skills/History.jsx";
+import { clearHanded, handedToSkills, pointerOfScore } from "../lib/coachingPoint.js";
 
 /**
  * The anchor sentence for a value, and whether anybody has approved it.
@@ -173,7 +174,13 @@ function SkillsView({ role }) {
   // The selected PLAYER ID, not the player row — see FieldsView for the same
   // change and the same reason: a row captured at first render belongs to a
   // list that no longer exists once the server answers.
-  const [selId, setSelId]         = useState(null);
+  // Opened from the coach's drawer (GA-I27 slice 2): on the boy the card is
+  // about, and, from "Make a coaching point of this", with its pointer.
+  // Handed for this one opening and taken once drawn.
+  const [arrived] = useState(() => handedToSkills());
+  useEffect(() => { clearHanded(); }, []);
+  const [selId, setSelId]         = useState(arrived?.playerId ?? null);
+  const [pointing, setPointing]   = useState(arrived?.pointer ?? null);   // a pointer, the field open
   const [category, setCategory]   = useState("technical");
   // Default to the first player who HAS an assessment, not the first player.
   // The list on the left is filtered to assessed players; defaulting to
@@ -253,8 +260,14 @@ function SkillsView({ role }) {
   const histRead = useBoyRead("skills_history", role, selPlayer?.id, nonce, mayReadHistory);
   const targetsRead = useBoyRead("targets", role, selPlayer?.id, nonce, mayReadHistory);
   const sinceRead = useBoyRead("development_since", role, selPlayer?.id, nonce, mayReadHistory);
-  const pointsRead = useBoyRead("coaching_points", role, selPlayer?.id, nonce,
-    mayReadHistory && holdsForPlayer(role, "player.note.read", selPlayer?.id));
+  const mayReadPoints = mayReadHistory && holdsForPlayer(role, "player.note.read", selPlayer?.id);
+  const pointsRead = useBoyRead("coaching_points", role, selPlayer?.id, nonce, mayReadPoints);
+  // Who may make a point (GA-I27 §5.3; db/104 coaching_point_write): a writer
+  // of his scores who also writes notes, the coach. The assistant coach and
+  // the director read points and do not make them (GA-I26a §7.1 item 4); a
+  // note writer may withdraw one (note_withdraw, §7.1 item 6).
+  const mayPoint = canEdit && mayReadPoints && holdsAsHeld(role, "player.note.write");
+  const mayWithdrawPoint = signedIn() && mayReadPoints && holdsAsHeld(role, "player.note.write");
   const [openDot, setOpenDot]     = useState(null);   // a point from the history
   const [targeting, setTargeting] = useState(null);   // { category, metric }
   const [assessing, setAssessing] = useState(false);
@@ -548,7 +561,13 @@ function SkillsView({ role }) {
 
           {openDot&&(
             <DotSheet point={openDot} staff={staffView} canWrite={canEdit} points={pointsRead.rows}
-              onClose={()=>setOpenDot(null)} onDone={()=>{setOpenDot(null);setNonce(n=>n+1);}}/>
+              onClose={()=>setOpenDot(null)} onDone={()=>{setOpenDot(null);setNonce(n=>n+1);}}
+              onMakePoint={mayPoint?(pt)=>{setOpenDot(null);setPointing(pointerOfScore(pt,selPlayer.id));}:null}/>
+          )}
+          {pointing&&mayPoint&&pointing.playerId===selPlayer.id&&(
+            <PointModal pointer={pointing} player={selPlayer} now={Date.now()}
+              others={PLAYERS.filter(p=>p.id!==selPlayer.id).map(p=>p.name)}
+              onClose={()=>setPointing(null)} onDone={()=>{setPointing(null);setNonce(n=>n+1);}}/>
           )}
           {targeting&&(
             <TargetModal role={role} playerId={selPlayer.id} category={targeting.category} metric={targeting.metric}
@@ -568,6 +587,16 @@ function SkillsView({ role }) {
               {/* ── Since the last look (GA-I26a §4.2): what he attended and
                   what the side ran, a block per discipline. ── */}
               <SincePanel rows={sinceRead.rows} history={histRead.rows} player={selPlayer} staff={staffView} self={!staffView}/>
+
+              {/* ── Coaching points (GA-I27 slice 2): only where the read was
+                  made, for a reader of notes. Never the boy or his parents. ── */}
+              {mayReadPoints&&readState(pointsRead,{what:"the coaching points"}).state==="failed"&&(
+                <Card sx={{marginBottom:"14px"}}><ReadState compact testId="points-read-state" read={readState(pointsRead,{what:"the coaching points"})} onRetry={retry}/></Card>
+              )}
+              {mayReadPoints&&readState(pointsRead,{what:"the coaching points"}).state!=="failed"&&(
+                <CoachingPoints points={pointsRead.rows} history={histRead.rows} playerId={selPlayer.id} staff={staffView}
+                  canWithdraw={mayWithdrawPoint} nonce={nonce} now={Date.now()} onDone={()=>setNonce(n=>n+1)}/>
+              )}
 
               {/* Category tabs: five now, so they wrap on a phone rather than push the page sideways. */}
               <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"16px"}}>

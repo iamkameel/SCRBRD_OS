@@ -42,6 +42,10 @@ export const PANEL_CAPABILITY = Object.freeze({
   lifts:      ["transport.lift.receive"],                // P1's head count, S1's subtraction, S4a
   liftOffice: ["transport.lift.oversee"],                // S4b: the office's, never the coach's
   matchups:   ["player.performance.read"],               // S5, P9
+  // S13: coaching points, under the note's own policy (GA-I26a AH-D2, AH-D3):
+  // the coach, the assistant coach, the director. Never the team manager or
+  // the physio, whose drawers then make no such read (GA-I27 §3.2, C-D8).
+  points:     ["player.note.read"],
 });
 
 /** @typedef {{[K in keyof typeof PANEL_CAPABILITY]: boolean}} Panels */

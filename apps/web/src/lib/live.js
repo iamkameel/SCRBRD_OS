@@ -1306,7 +1306,13 @@ function asSince(r) {
 function asPoint(r) {
   return { id: r.id, playerId: r.player_id, body: r.body, observedOn: r.observed_on ? String(r.observed_on).slice(0, 10) : null,
            author: r.author_name || null, read: r.evidence_read, skillId: r.evidence_params?.skillId ?? null,
-           withdrawn: !!r.withdrawn_at, live: true };
+           withdrawn: !!r.withdrawn_at, live: true,
+           // The pointer as stored (GA-I27 §6): what the point stood on, for
+           // the "stood on / now" lines (C-D5). Read under player.note.read.
+           name: r.full_name ?? null, matchId: r.match_id ?? null, rule: r.evidence_rule ?? null,
+           params: r.evidence_params ?? null, head: r.evidence_head ?? null,
+           asOf: r.evidence_as_of ? Date.parse(r.evidence_as_of) : null, text: Array.isArray(r.evidence_text) ? r.evidence_text : null,
+           writtenAt: r.created_at ? Date.parse(r.created_at) : null, withdrawnAt: r.withdrawn_at ? Date.parse(r.withdrawn_at) : null };
 }
 
 /** One drill on a session's plan: it names no boy. */

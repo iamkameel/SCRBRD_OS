@@ -186,7 +186,7 @@ group("Nothing here widens a reader or writes a health word");
 const src = (f) => readFileSync(new URL(f, import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\/|(^|[^:])\/\/.*$/gm, "$1");
 const skills = src("../src/views/SkillsView.jsx") + src("../src/views/skills/History.jsx") + src("../src/lib/assessmentHistory.js");
 const asked = [...skills.matchAll(/holds(?:AsHeld|ForPlayer)\(\s*role\s*,\s*"([^"]+)"/g)].map((m) => m[1]);
-ok("the Skills screens ask only for the scores' and the notes' own capabilities", asked.length >= 3 && asked.every((c) => ["player.development.read", "player.development.write", "player.note.read"].includes(c)), asked);
+ok("the Skills screens ask only for the scores' and the notes' own capabilities", asked.length >= 3 && asked.every((c) => ["player.development.read", "player.development.write", "player.note.read", "player.note.write"].includes(c)), asked);
 ok("the Skills screens do not read a load, a wellness check, the discipline record or the injuries", !/workload|wellness|bowler_day|disciplinary|injuries|medical/i.test(skills));
 const skillsSrc = src("../src/views/SkillsView.jsx");
 ok("Set target, and with it the Why, is offered only to a writer", /\{canEdit&&\(\s*<button type="button" data-testid=\{`set-target-/.test(skillsSrc));
@@ -226,7 +226,15 @@ ok("the register code never writes the word injured", !/injured/i.test(src("../s
   ok("...and nothing in the pupil's or the parent's shell opens Make a coaching point", !/coaching.?point/i.test(pupilSrc.replace(/\/\/.*$/gm, "")));
   ok("the history reads are gated per boy, and the points only where the strip is",
      /useBoyRead\("skills_history",[^)]*mayReadHistory\)/.test(skillsSrc)
-     && /useBoyRead\("coaching_points",[\s\S]*?mayReadHistory && holdsForPlayer\(role, "player\.note\.read"/.test(skillsSrc));
+     && /const mayReadPoints = mayReadHistory && holdsForPlayer\(role, "player\.note\.read", selPlayer\?\.id\);\s*const pointsRead = useBoyRead\("coaching_points", role, selPlayer\?\.id, nonce, mayReadPoints\)/.test(skillsSrc));
+  // GA-I27 slice 2: the coaching points panel and the field are drawn only
+  // where the points were read (player.note.read for HIM: never the boy, never
+  // his parents), and a point is made only by a writer of his scores who
+  // writes notes (coaching_point_write's two capabilities).
+  ok("the coaching points panel is drawn only where the points read was made", /\{mayReadPoints&&readState\(pointsRead[^}]*\}\)\.state!=="failed"&&\(\s*<CoachingPoints /.test(skillsSrc)
+     && (skillsSrc.match(/<CoachingPoints /g) ?? []).length === 1);
+  ok("...and a point is made only by a writer who writes notes", /const mayPoint = canEdit && mayReadPoints && holdsAsHeld\(role, "player\.note\.write"\);/.test(skillsSrc)
+     && /\{pointing&&mayPoint&&pointing\.playerId===selPlayer\.id&&\(/.test(skillsSrc) && /onMakePoint=\{mayPoint\?/.test(skillsSrc));
 }
 ok("the assessment modal sends no note", !/note:\s*note/.test(src("../src/lib/development.js")) && !/recordAssessment\([^)]*\{[^}]*note/.test(src("../src/views/SkillsView.jsx")));
 

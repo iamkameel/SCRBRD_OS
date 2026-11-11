@@ -171,18 +171,28 @@ export async function withdrawNote(noteId) {
 }
 
 /**
- * Write the "why" of a target as a coaching point standing on the score it is
- * about (`evidence_read: 'skills'`). The cockpit's never-words are refused
- * here before the trip and again in the database, which is the one that holds.
+ * Write a coaching point (GA-I27 §5.3, slice 2): one boy, one sentence of up
+ * to 500 characters, and the pointer it stands on, either a score on his
+ * strip (`skillId`, `evidence_read: 'skills'`) or a card in the drawer
+ * (`evidence`, from lib/coachingPoint.js pointerOfCard, with the fixture it
+ * is about as `matchId`). The cockpit's never-words are refused here before
+ * the trip and again in the database, which is the one that holds; so is a
+ * second boy's name.
+ * @param {string} playerId
+ * @param {{ body: string, skillId?: string, evidence?: Record<string, any>, matchId?: string | null }} p
  * @returns {Promise<{ id: string }>}
  */
-export async function writeCoachingPoint(playerId, { body, skillId }) {
+export async function writeCoachingPoint(playerId, { body, skillId, evidence, matchId = null }) {
   const text = (body || "").trim();
   if (!text) throw new Error("body_required");
-  if (text.length > WHY_MAX) throw new Error("body_length");
-  if (!skillId) throw new Error("evidence_required");
+  if (text.length > POINT_BODY_MAX) throw new Error("body_length");
+  const ev = evidence ?? (skillId ? { read: "skills", params: { skillId } } : null);
+  if (!ev?.read) throw new Error("evidence_required");
   if (NEVER_ON_THE_COCKPIT.test(text)) throw new Error("forbidden_word");
   return api(`/api/players/${playerId}/coaching-points`, {
-    method: "POST", body: { body: text, evidence: { read: "skills", params: { skillId } } },
+    method: "POST", body: { body: text, evidence: ev, ...(matchId ? { matchId } : {}) },
   });
 }
+
+/** A coaching point's sentence: the column's limit (db/104), not the target's one line. */
+export const POINT_BODY_MAX = 500;
