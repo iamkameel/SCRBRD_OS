@@ -529,7 +529,7 @@ try {
     for (const p of WXI) await q(`insert into match_squad (match_id, player_id, side) values ($1, $2, 'away')`, [M, p.id]);
     // Hilton one off the over, Whitfield's; Westville run out off the first
     // ball by Pillay and Whitfield, named by reference (P2), all out.
-    const claim = await api(`/api/matches/${M}/session/claim`, { method: "POST", token: scorer, body: { device: "device-recognition-r12" } });
+    const claim = await api(`/api/matches/${M}/session/claim`, { method: "POST", token: scorer, body: { device: "device-recognition" } });
     let cs = 0, k = 0;
     const innings = [
       { bat: "1XI", bowl: "Westville 1XI", squad: HXI, bowlingSquad: WXI, balls: [1, 0, 0, 0, 0, 0].map((v) => ball({ type: BALL_TYPE.RUN, value: v })) },
@@ -543,7 +543,7 @@ try {
         .map((e) => ({ ...e, innings: i }));
       evs.push({ ...sealInnings(deriveInnings(evs)), innings: i });
       const r = await api(`/api/matches/${M}/events`, { method: "POST", token: scorer, body: { events: evs.map((ev) => ({
-        epoch: claim.body?.epoch, deviceId: "device-recognition-r12", idempotencyKey: `potm-r12-${M}-${++k}`, clientSeq: ++cs, clientTs: T0 + k * 20_000, innings: i, payload: ev })) } });
+        epoch: claim.body?.epoch, deviceId: "device-recognition", idempotencyKey: `potm-r12-${M}-${++k}`, clientSeq: ++cs, clientTs: T0 + k * 20_000, innings: i, payload: ev })) } });
       refused = refused.concat(r.body?.refused ?? []);
     }
     ok("the match is scored on the write path, the run out naming its two fielders", claim.body?.ok === true && refused.length === 0, JSON.stringify(refused).slice(0, 300));
@@ -556,7 +556,7 @@ try {
     ok("every fielding wicket names its fielders: fielding counts, and the line is dropped",
        st.status === 200 && st.body?.basis === null && st.body?.basisKey === "batting_bowling_fielding", JSON.stringify(st.body).slice(0, 300));
     ok("...the suggestions count it: Whitfield's run and run out (11) before Pillay's run out (10), in words",
-       home?.suggestions?.length === 2 && home.suggestions[0].playerId === WHITFIELD && home.suggestions[0].figures === "1* (6) · 1 run out"
+       home?.suggestions?.length === 2 && home.suggestions[0].playerId === WHITFIELD && home.suggestions[0].figures === "1* (1) · 1 run out"
        && home.suggestions[1].playerId === PILLAY && home.suggestions[1].figures === "1 run out", JSON.stringify(home?.suggestions));
     const a = await give(M, coach, PILLAY, home?.headSeq);
     ok("the coach awards it to the fielder", a.status === 200 && a.body?.ok === true, JSON.stringify(a.body));
