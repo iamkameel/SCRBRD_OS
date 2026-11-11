@@ -217,11 +217,20 @@ const FLOODLIT = {
     // violet, which the onboarding flow already drew from these tokens.
     action:  "linear-gradient(135deg,#3b6ef5,#b48cf5)",
     // Destructive, and the free-hit alert. Named so they can have a Daylight
-    // value; they were two hand-written gradients.
-    critical: "linear-gradient(135deg,#f4374f,#dc2626)",
+    // value; they were two hand-written gradients. Critical was #f4374f into
+    // #dc2626, on which white read at 3.81:1 and 4.83:1 (rendered, 4.37:1 on
+    // "Confirm Out"); both stops deepened, white reads at 5.57:1 and 5.74:1
+    // (interface review, 11 Nov 2026).
+    critical: "linear-gradient(135deg,#c8243a,#c81e1e)",
     alert:    "linear-gradient(135deg,#f97316,#f59e0b)",
-    // Type set ON one of the gradients above. White under lights, as it was.
-    ink:     "#ffffff",
+    // Type set ON one of the gradients above. Under lights every one of them
+    // but critical ends bright (cyan, green, lime, gold, violet, orange): white
+    // read at 1.6-2.6:1 on "Open live scorer" and the handover tabs. The
+    // canvas reads at 4.55:1 or better on every stop of live, intel, cobalt,
+    // gold, action and alert (design.test.mjs measures each one).
+    ink:     "#05070a",
+    // Type set on `critical` alone: white, on its deepened stops.
+    criticalInk: "#ffffff",
   },
 
   /** The keyboard focus ring, and the halo that separates it from any surface. */
@@ -356,6 +365,7 @@ const DAYLIGHT = {
     critical: "linear-gradient(135deg,#b3122a,#8f0e22)",
     alert:    "linear-gradient(135deg,#9a4f00,#8a5a00)",
     ink:     "#ffffff",
+    criticalInk: "#ffffff",
   },
   focus: {
     ring: "#0a6897",
@@ -839,6 +849,14 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
 .pressBtn:not(:disabled):active{transform:scale(0.96)}
 .card-hover{transition:transform .2s ease,box-shadow .2s ease}
 @media (hover: hover){.card-hover:hover{transform:translateY(-1px);box-shadow:${T.elevation.lg}!important}}
+/* A card that opens something (ui/primitives.jsx Card with onClick): a native
+   button across the whole card, under its content. The content lets a tap fall
+   through to it, except on the card's own controls. Its focus ring is drawn
+   inside the card, which clips anything outside its edge. */
+.os-card-action{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;border-radius:inherit;background:transparent;cursor:pointer;z-index:0;font:inherit;color:inherit}
+.os-card-action:focus-visible{outline-offset:-4px;border-radius:inherit;box-shadow:inset 0 0 0 6px ${T.focus.halo}}
+.os-card-content{position:relative;z-index:1;pointer-events:none}
+.os-card-content :is(a,button,input,select,textarea,summary,label,[role=button],[role=link],[role=tab],[tabindex]){pointer-events:auto}
 .pulse{animation:pulse 2s ease infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 .spin{animation:spin 1s linear infinite}

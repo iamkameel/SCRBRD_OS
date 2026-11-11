@@ -176,7 +176,7 @@ const Btn = ({ children, onClick, disabled, variant="primary", size="md", full, 
   const minH = size==="lg"?"48px":"44px";
   const V = {
     primary:{background:disabled?D.surf2:D.grad,color:disabled?D.textMuted:T.light.ink,border:"none",boxShadow:disabled?"none":`0 4px 24px ${clr(D.indigo,.4)}`},
-    danger: {background:disabled?D.surf2:T.light.critical,color:disabled?D.textMuted:T.light.ink,border:"none",boxShadow:disabled?"none":`0 4px 20px ${D.rose}40`},
+    danger: {background:disabled?D.surf2:T.light.critical,color:disabled?D.textMuted:T.light.criticalInk,border:"none",boxShadow:disabled?"none":`0 4px 20px ${D.rose}40`},
     ghost:  {background:"transparent",color:D.textSecondary,border:`1px solid ${D.border}`},
     tonal:  {background:D.surf2,color:D.textPrimary,border:`1px solid ${D.borderMed}`},
     live:   {background:disabled?D.surf2:D.gradLive,color:disabled?D.textMuted:T.light.ink,border:"none",boxShadow:disabled?"none":`0 4px 20px ${D.emerald}40`},
