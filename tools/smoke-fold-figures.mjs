@@ -192,6 +192,15 @@ const rnd8 = () => (s8 = (s8 * 1103515245 + 12345) % 2147483648) / 2147483648;
 let s9 = 9191;
 const rnd9 = () => (s9 = (s9 * 1103515245 + 12345) % 2147483648) / 2147483648;
 const TYPED_SUB = "S Typed-Substitute";
+// MATCH's sheet, as the seed has it: four of Hilton's eleven, at home (the
+// review's S3: db/150's door credits a fielder named by id only from the
+// fielding side's sheet). Held to the database before the logs are written.
+const MATCH_SHEET = new Set(["01", "02", "03", "05"].map((n) => `aaaaaaaa-0000-0000-0000-0000000000${n}`));
+/** The ids db/150's ball_fielder_on_side() lets field this ball: the sheet's, on the bowler's side, else the side the striker is not on. */
+const fieldingIds = (/** @type {any} */ at) => {
+  const field = MATCH_SHEET.has(at.bowler) ? "home" : MATCH_SHEET.has(at.striker) ? "away" : null;
+  return field === "away" ? [] : [...MATCH_SHEET].filter((x) => x !== at.striker && x !== at.nonStriker);
+};
 const OFF_WIDE = ["run_out", "stumped", "hit_wicket", "obstructing_field"];
 const OFF_NO_BALL = ["run_out", "hit_twice", "obstructing_field"];
 const gen = { suspensions: 0, splitOvers: 0, hurtReturns: 0, padRetires: 0, padMidOver: 0, padReturns: 0, hurtWaits: 0, hurtRefused: 0,
@@ -315,16 +324,21 @@ function builder(no, overs, o = {}) {
       if (isWicketBall(e) && e.fielders === undefined && (how === "caught" || how === "stumped" || how === "run_out")) {
         const r9 = rnd9();
         const k = keeperOf(at);
-        const side = [...bowling.filter(isId), ...KEEPERS.filter(isId)].filter((x) => x !== at.striker && x !== at.nonStriker);
-        const one = () => (rnd9() < 0.15 ? (gen.fieldersTyped++, TYPED_SUB) : side[Math.floor(rnd9() * side.length)]);
+        // Only the fielding side's, as db/150's door allows; a typed
+        // substitute where the side in the field has nobody on the sheet.
+        const side = fieldingIds(at);
+        const one = () => (!side.length || rnd9() < 0.15 ? (gen.fieldersTyped++, TYPED_SUB) : side[Math.floor(rnd9() * side.length)]);
         const fn = /** @type {any} */ (fielder).fielder ?? e.fielder;
-        if (r9 >= 0.7 || !side.length) gen.fieldersNone++;
+        const keeperMay = (/** @type {any} */ kk) => kk && (!isId(kk.id) || side.includes(kk.id));
+        if (r9 >= 0.7) gen.fieldersNone++;
         else if (how === "stumped") {
-          // The keeper's alone (Law 39): by his reference, or nobody while none is recorded.
-          if (k) { named = { fielders: [k.id] }; gen.fieldersStump++; } else gen.fieldersNone++;
+          // The keeper's alone (Law 39): by his reference, or nobody while
+          // none is recorded or he is not the fielding side's on the sheet.
+          if (keeperMay(k)) { named = { fielders: [k.id] }; gen.fieldersStump++; } else gen.fieldersNone++;
         } else if (how === "caught") {
-          if (k && (fn === k.id || fn === k.name)) { named = { fielders: [k.id] }; gen.fieldersKeeperCatch++; }
-          else { named = { fielders: [one()] }; }
+          if (k && (fn === k.id || fn === k.name)) {
+            if (keeperMay(k)) { named = { fielders: [k.id] }; gen.fieldersKeeperCatch++; } else gen.fieldersNone++;
+          } else { named = { fielders: [one()] }; }
           gen.fieldersCatch++;
         } else {
           const a = one();
@@ -1615,13 +1629,15 @@ try {
     /** @type {Map<string, number>} */ const want = new Map();
     for (const [no, inn] of byInnings) {
       for (const x of inn.ballLog) for (const c of fieldingCredits(x)) {
-        const key = `${no}|${x.seq}|${c.ref}|${c.act}|${c.keeper}`;
+        const key = `${no}|${x.seq}|${c.ref}|${c.act}`;
         want.set(key, (want.get(key) ?? 0) + 1);
       }
     }
-    const got = new Map((await q(`select innings, seq, fielder_ref, act, as_keeper, count(*)::int n from fielding_credit
-                                   where match_id = $1 group by 1, 2, 3, 4, 5`, [MATCH]))
-      .map((r) => [`${r.innings}|${r.seq}|${r.fielder_ref}|${r.act}|${r.as_keeper}`, r.n]));
+    const got = new Map((await q(`select innings, seq, fielder_ref, act, count(*)::int n from fielding_credit
+                                   where match_id = $1 group by 1, 2, 3, 4`, [MATCH]))
+      .map((r) => [`${r.innings}|${r.seq}|${r.fielder_ref}|${r.act}`, r.n]));
+    const sheet = (await q(`select player_id from match_squad where match_id = $1 and not withdrawn and side = 'home'`, [MATCH])).map((r) => r.player_id);
+    ok("MATCH's sheet is the four the generator names from", sheet.length === MATCH_SHEET.size && sheet.every((x) => MATCH_SHEET.has(x)), JSON.stringify(sheet));
     const bad = differences(want, got);
     ok(`fielding_credit: every fielder of every standing catch, stumping and run out (${want.size})`, bad.length === 0 && want.size >= 10, show(bad));
     // A boy's career moved by exactly the facts' fielding lines.
@@ -2174,6 +2190,17 @@ try {
     { ball_type: "W", dismissal: "caught", payload: { fielders: null } },
   ].map((c, i) => tryInsert(M_DOOR, 40 + i, { kind: "ball", value: 0, striker: PLAYERS[1], ...c }, scorer)));
   ok("...a catch by one, a run out by two (a typed name among them), off a wide, a JSON null: taken", fieldersOk.every((t) => t.ok), JSON.stringify(fieldersOk));
+  // The review's S3: a fielder named by id is the fielding side's. MATCH has
+  // a home sheet; refused rows write nothing, so it is asked of MATCH itself.
+  const [onSheet, offSheet, notInMatch] = [HIL_1XI[1], OTHERS[0], WES_1XI[0]];
+  const offSide = await Promise.all([offSheet, notInMatch].map((f, i) => tryInsert(MATCH, 900001 + i,
+    { kind: "ball", ball_type: "W", value: 0, dismissal: "caught", striker: null, bowler: HIL_1XI[0], payload: { fielders: [f] } }, scorer)));
+  ok("db/150: a boy not on the sheet, or another school's boy, named as the catcher: refused",
+     offSide.every((t) => !t.ok && t.code === "23514" && t.constraint === DOOR_FIELDERS), JSON.stringify(offSide));
+  const side = async (/** @type {string | null} */ b, /** @type {string | null} */ s, /** @type {string} */ f) =>
+    (await q(`select ball_fielder_on_side($1, 0::smallint, 2147483647, $2, $3, $4) ok`, [MATCH, b, s, f]))[0].ok;
+  ok("...the bowler's team-mate on the sheet may; a team-mate while his side bats (the striker on the sheet, a typed bowler) may not; a typed name may",
+     await side(HIL_1XI[0], null, onSheet) === true && await side(null, HIL_1XI[0], onSheet) === false && await side(null, HIL_1XI[0], "S Sub") === true);
 
   // The API: a ball with no type from a client that sends one is refused on
   // its own, named, and the rest of the batch written (SCRBRD-077).

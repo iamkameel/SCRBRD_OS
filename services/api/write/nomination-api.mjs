@@ -171,8 +171,12 @@ export function nominationRoutes({ pool, secret }) {
         const captain = await captainSides(client, id);
         const { rows } = await client.query(`select * from match_nomination_state($1)`, [id]);
         // D17's line for the captain as for the coach: dropped once fielding
-        // is counted (RECOGNITION R12).
-        const basis = captain.find((c) => c.basisKey)?.basisKey ?? POTM_BASIS;
+        // is counted (RECOGNITION R12). The match's, from its log, for every
+        // reader the route answers — a coach, a captain whose window closed —
+        // not only a captain who may nominate (the basis does not depend on
+        // the roster: potmBasis() reads the whole log's credits).
+        const basis = captain.find((c) => c.basisKey)?.basisKey
+          ?? (captain.length || rows.length ? (await working(client, id, [])).basis : POTM_BASIS);
         return {
           matchId: id, basis: basisWords(basis), basisKey: basis, captain,
           staff: rows.map((r) => ({

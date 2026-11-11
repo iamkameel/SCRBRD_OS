@@ -113,6 +113,19 @@ group("B. The Laws");
      [{ type: "W", value: 0, dismissal: "caught", fielders: [F1.id, F2.id] }, { type: "W", value: 0, dismissal: "run_out", fielders: [F1.id, F1.id] },
       { type: "run", value: 0, fielders: [F1.id] }]
        .every((ev) => refusal(log, { kind: "ball", ...ev }) === REFUSAL.FIELDERS_INVALID));
+  // An id's case (the review's S2): an id is a player id only in lower case,
+  // so the fold and SQL never disagree about who it is.
+  const LET = "abcdef01-0000-4000-8000-0000000000aa";
+  const lettered = [
+    inningsStart({ innings: 0, battingTeam: "Bat XI", bowlingTeam: "Field XI", squad: [{ id: LET, name: "Lettered Bat" }, BAT[1]], bowlingSquad: FIELD, overs: 5 }),
+    batters({ innings: 0, striker: LET, nonStriker: BAT[1].id }), bowler({ innings: 0, bowler: W1.id }),
+  ].map(stamp(SEP15));
+  ok("the striker's id in upper case, named as the catcher: refused, never read as somebody else",
+     refusal(lettered, { kind: "ball", type: "W", value: 0, dismissal: "caught", fielders: [LET.toUpperCase()] }) === REFUSAL.FIELDERS_INVALID
+     && !fieldersFit([LET.toUpperCase()], "caught") && fieldersFit([LET], "caught"));
+  ok("...and one id twice, in two cases, on a run out: refused, by the rule and the constructor",
+     !fieldersFit([LET, LET.toUpperCase()], "run_out") && throws(() => W({ dismissal: "run_out", fielders: [LET, LET.toUpperCase()] })));
+  ok("...a typed name in capitals is a name, as before", fieldersFit(["J SUB"], "caught"));
   ok("it has words, without a clause number, and a likely cause", typeof REFUSAL_TEXT.fielders_invalid === "string"
      && !/\d+\.\d+/.test(REFUSAL_TEXT.fielders_invalid) && typeof likelyCause("fielders_invalid") === "string");
 }

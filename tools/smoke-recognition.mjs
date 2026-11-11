@@ -576,6 +576,11 @@ try {
       JSON.stringify({ version: 1, basis: "batting_bowling_fielding_and_charm", headSeq: home?.headSeq, suggestions: [], awardee: { playerId: WHITFIELD, figures: "x" } })])
       .catch((e) => [{ ok: false, reason: String(e.message) }]);
     ok("...a basis it does not know is refused", forged[0]?.ok === false, JSON.stringify(forged));
+    // The review's S4: the nomination route says the match's basis to a coach,
+    // who may not nominate, as potm-api does.
+    const ns = await api(`/api/matches/${M}/player-of-match/nomination`, { token: coach });
+    ok("...and the nomination route says the same basis to the coach, the line dropped",
+       ns.status === 200 && ns.body?.basisKey === "batting_bowling_fielding" && ns.body?.basis === null, JSON.stringify(ns.body).slice(0, 300));
   }
 
   group("Player of the Match, the captain's nomination (RECOGNITION R7, db/144)");

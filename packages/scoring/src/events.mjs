@@ -393,16 +393,24 @@ export const FIELDER_REF_MAX = 80;
  * Is `f` a fielders list this way out may carry: one or two (a run out) or
  * one (a catch, a stumping) non-empty references, each named once? The one
  * rule the constructor, the Laws (lawsRefusal, FIELDERS_INVALID) and SQL's
- * door (db/150 ball_fielders_valid()) ask.
+ * door (db/150 ball_fielders_fit()) ask.
+ *
+ * A reference shaped as a player id is a player id only in lower case, as
+ * SCRBRD writes them: one in upper or mixed case is refused, so the fold
+ * (which compares strings exactly) and SQL (which reads it as a uuid) can
+ * never disagree about who it is, nor count "<id>" and "<ID>" as two.
  * @param {unknown} f  @param {unknown} mode  the canonical dismissal
  * @returns {boolean}
  */
 export function fieldersFit(f, mode) {
   const max = FIELDED_DISMISSALS.get(mode);
   if (max == null || !Array.isArray(f) || f.length < 1 || f.length > max) return false;
-  if (!f.every((x) => typeof x === "string" && x.trim() !== "" && x === x.trim() && x.length <= FIELDER_REF_MAX)) return false;
+  if (!f.every((x) => typeof x === "string" && x.trim() !== "" && x === x.trim() && x.length <= FIELDER_REF_MAX
+                     && !(UUID_ANY_CASE.test(x) && x !== x.toLowerCase()))) return false;
   return new Set(f).size === f.length;
 }
+/** A player id's shape, in any case: fieldersFit() refuses one not in lower case. */
+const UUID_ANY_CASE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /*
  * A WICKET ON A WIDE OR A NO-BALL.

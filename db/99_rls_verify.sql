@@ -11593,7 +11593,7 @@ BEGIN
   VALUES (HIL, '11XI', 'Verify OneFifty Bowler', 1502, 'bowler', make_date(extract(year FROM sa_today())::int - 19, 3, 2)) RETURNING id INTO BWL;
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
   VALUES (WES, '11XI', 'Verify OneFifty Visitor', 1503, 'bowler', make_date(extract(year FROM sa_today())::int - 19, 3, 3)) RETURNING id INTO WV;
-  ids := jsonb_build_object('fielder', FLD, 'bowler', BWL)
+  ids := jsonb_build_object('fielder', FLD, 'bowler', BWL, 'visitor', WV)
          || _v71_people('v150', ARRAY[ARRAY['coach', 'coach', HIL::text, '11XI', '']]);
   -- db/148's helpers write as §125's scorer; made here when §125 has not run.
   IF NOT EXISTS (SELECT 1 FROM app_user WHERE email = 'v148.scorer@example.invalid') THEN
@@ -11605,14 +11605,16 @@ BEGIN
             (sa_today()::timestamp + make_time(13 + i, 0, 0)) AT TIME ZONE 'Africa/Johannesburg', 'cricket', 'T20', 3, 'live')
     RETURNING id INTO m;
     INSERT INTO match_squad (match_id, player_id, side) VALUES (m, FLD, 'home'), (m, BWL, 'home'), (m, WV, 'away');
-    PERFORM _v148_innings(m, 0::smallint, '11XI', 'V150 Westville', 3, _v148_balls(FLD, WV, array_fill(1, ARRAY[6])), NULL, 'declared');
+    v_keys := _v148_innings(m, 0::smallint, '11XI', 'V150 Westville', 3, _v148_balls(FLD, WV, array_fill(1, ARRAY[6])), NULL, 'declared');
+    ids := ids || jsonb_build_object(k || '_single', v_keys[6]);
     PERFORM _v148_ev(m, 1::smallint, 'innings_start', NULL, NULL, NULL, NULL, NULL,
       jsonb_build_object('battingTeam', 'V150 Westville', 'teamKey', 'V150 Westville', 'bowlingTeam', '11XI', 'overs', 3, 'target', 7));
     ids := ids || jsonb_build_object(k || '_catch',
       _v148_ev(m, 1::smallint, 'ball', 'W', 0, NULL, BWL, 'caught',
                jsonb_build_object('fielder', 'Verify OneFifty Fielder', 'fielders', jsonb_build_array(FLD))));
     FOR i IN 1..17 LOOP
-      ids := ids || jsonb_build_object(k || '_dot', _v148_ev(m, 1::smallint, 'ball', 'run', 0, NULL, BWL, NULL, NULL));
+      ids := ids || jsonb_build_object(k || CASE WHEN i = 1 THEN '_dot1' ELSE '_dot' END,
+                                       _v148_ev(m, 1::smallint, 'ball', 'run', 0, NULL, BWL, NULL, NULL));
     END LOOP;
     PERFORM _v148_seal(m, 1::smallint, 'overs_complete');
     UPDATE match SET status = 'complete' WHERE id = m;
@@ -39258,7 +39260,11 @@ $v116$;
                   AND ball_fielders_fit('["a","b"]', 'run_out') AND NOT ball_fielders_fit('["a","b"]', 'caught')
                   AND NOT ball_fielders_fit('["a","a"]', 'run_out') AND NOT ball_fielders_fit('["a","b","c"]', 'run_out')
                   AND NOT ball_fielders_fit('["a"]', 'lbw') AND NOT ball_fielders_fit('[]', 'caught')
-                  AND NOT ball_fielders_fit(NULL, 'caught') AND NOT ball_fielders_fit('[" a"]', 'caught'),
+                  AND NOT ball_fielders_fit(NULL, 'caught') AND NOT ball_fielders_fit('[" a"]', 'caught')
+                  -- an id only in lower case (the review's S2): the striker's in capitals, one id twice
+                  AND NOT ball_fielders_fit('["ABCDEF01-0000-4000-8000-0000000000AA"]', 'caught')
+                  AND NOT ball_fielders_fit('["abcdef01-0000-4000-8000-0000000000aa","ABCDEF01-0000-4000-8000-0000000000AA"]', 'run_out')
+                  AND ball_fielders_fit('["J SUB"]', 'caught'),
     '§128 (fit): ball_fielders_fit() is not events.mjs fieldersFit()');
   PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'ball_event'::regclass
                              AND tgname = 'ball_event_wicket_fielders' AND tgenabled = 'O' AND tgtype & 2 = 2 AND tgtype & 4 = 4),
@@ -39278,20 +39284,29 @@ $v116$;
                              (SELECT prosrc FROM pg_proc WHERE oid = 'captain_nominate(uuid,uuid,jsonb)'::regprocedure)) > 0,
     '§128 (basis): Player of the Match refuses the fielding basis');
   -- (corrected) R10 on the award's basis: the Fielder's Player of the Match,
-  -- decided on fielding, cites his catch; the catch voided, the award is
-  -- flagged to its decider and stands. The same catch voided under an award
-  -- decided on batting and bowling moves nothing it cited: no review.
+  -- decided on fielding, cites his catch. A void that moves nothing he did
+  -- opens nothing. His last single voided: a review, his catch still in both
+  -- readings; the decider's list (recognition_reviews_open) and his "let it
+  -- stand" (recognition_review_stand) read it on the award's basis, so a
+  -- further void that moves nothing of his opens no new review (the review's
+  -- S1: a stand read without fielding would open a phantom one). His catch
+  -- voided: flagged again, and it stands. The same catch voided under an
+  -- award decided on batting and bowling moves nothing it cited.
+  -- (side) a fielder named by id is the fielding side's (S3): the visitor,
+  -- named as the Bowler's catcher, is refused at the door.
   -- Falsified (11 Nov 2026, on a migrated database inside the section's
   -- transaction): recognition_review_check() reading the two-argument mirror
-  -- → (corrected) red at "moved nothing"; honour_cite_figures() likewise →
-  -- red at "cites".
+  -- → red at "moved nothing"; honour_cite_figures() likewise → red at
+  -- "cites"; recognition_reviews_open() → red at "the decider's list";
+  -- recognition_review_stand() → red at "let it stand kept"; the door's
+  -- side check skipped → red at (side).
   DECLARE
     y   jsonb := _v150_stage();
     MF  uuid := (y->>'MF')::uuid;
     MB  uuid := (y->>'MB')::uuid;
     FLD uuid := (y->>'fielder')::uuid;
     COACH uuid := (y->>'coach')::uuid;
-    r record; j jsonb; v_hf uuid; v_hb uuid;
+    r record; j jsonb; v_hf uuid; v_hb uuid; got text;
   BEGIN
     PERFORM _as(COACH);
     SELECT * INTO r FROM match_award(MF, FLD, jsonb_build_object('version', 1, 'basis', 'batting_bowling_fielding', 'factsVersion', 2,
@@ -39308,21 +39323,48 @@ $v116$;
       format('§128 (corrected): the fielding award cites %s', j->'derived'));
     PERFORM _assert(_v142_honour(v_hb)->'derived'->>'figuresSql' = '6* (6)',
       format('§128 (corrected): the old award cites %s', _v142_honour(v_hb)->'derived'->>'figuresSql'));
-    -- A correction that moves nothing he did (a dot of the Bowler's voided):
-    -- the fielding award, re-derived on its own basis, opens nothing.
-    PERFORM _v148_void(MF, y->>'MF_dot');
+    -- A dot of the Bowler's voided: nothing of the Fielder's moved.
+    PERFORM _v148_void(MF, y->>'MF_dot1');
     PERFORM _assert(jsonb_array_length(_v148_reviews(v_hf)) = 0,
       format('§128 (corrected): a void that moved nothing the award cited opened a review: %s', _v148_reviews(v_hf)));
-    PERFORM _v148_void(MF, y->>'MF_catch');
-    PERFORM _v148_void(MB, y->>'MB_catch');
-    j := _v142_honour(v_hf);
-    PERFORM _assert(NOT (j->>'withdrawn')::boolean, '§128 (corrected): the award whose catch was voided was withdrawn');
+    -- His last single voided: a review, the catch in both readings.
+    PERFORM _v148_void(MF, y->>'MF_single');
     j := _v148_reviews(v_hf);
     PERFORM _assert(jsonb_array_length(j) = 1 AND j->0->>'reason' = 'figures_moved' AND j->0->>'closed_at' IS NULL
-                    AND j->0->>'figures_before' = '6* (6) · 1 catch' AND j->0->>'figures_after' = '6* (6)',
+                    AND j->0->>'figures_before' = '6* (6) · 1 catch' AND j->0->>'figures_after' = '5* (5) · 1 catch',
+      format('§128 (corrected): his single voided was not flagged on the fielding basis: %s', j));
+    PERFORM _as(COACH);
+    SELECT * INTO r FROM recognition_reviews_open(MF);
+    PERFORM _assert(r.review_id = (j->0->>'id')::uuid AND r.figures_before = '6* (6) · 1 catch' AND r.figures_now = '5* (5) · 1 catch',
+      format('§128 (corrected): the decider''s list reads the award without its basis: %s → %s', r.figures_before, r.figures_now));
+    SELECT * INTO r FROM recognition_review_stand((j->0->>'id')::uuid);
+    PERFORM _assert(r.ok, format('§128 (corrected): the coach could not let it stand: %s', r.reason));
+    PERFORM set_config('app.user_id', '', true);
+    j := _v148_reviews(v_hf);
+    PERFORM _assert(jsonb_array_length(j) = 1 AND j->0->>'outcome' = 'stands' AND j->0->>'figures_at_close' = '5* (5) · 1 catch',
+      format('§128 (corrected): "let it stand" kept the figures without the award''s basis: %s', j));
+    -- A further void that moves nothing of his: no new review.
+    PERFORM _v148_void(MF, y->>'MF_dot');
+    PERFORM _assert(jsonb_array_length(_v148_reviews(v_hf)) = 1,
+      format('§128 (corrected): a further void that moved nothing of his opened a review after he let it stand: %s', _v148_reviews(v_hf)));
+    -- His catch voided: flagged again; the award stands.
+    PERFORM _v148_void(MF, y->>'MF_catch');
+    PERFORM _v148_void(MB, y->>'MB_catch');
+    PERFORM _assert(NOT (_v142_honour(v_hf)->>'withdrawn')::boolean, '§128 (corrected): the award whose catch was voided was withdrawn');
+    j := _v148_reviews(v_hf);
+    PERFORM _assert(jsonb_array_length(j) = 2 AND j->1->>'reason' = 'figures_moved' AND j->1->>'closed_at' IS NULL
+                    AND j->1->>'figures_before' = '5* (5) · 1 catch' AND j->1->>'figures_after' = '5* (5)',
       format('§128 (corrected): the award whose catch was voided was not flagged as R10 flags one: %s', j));
     PERFORM _assert(jsonb_array_length(_v148_reviews(v_hb)) = 0,
       format('§128 (corrected): an award decided on batting and bowling was flagged for a catch: %s', _v148_reviews(v_hb)));
+    -- (side) the visitor named as the Bowler's catcher: not the fielding side's.
+    BEGIN
+      PERFORM _v148_ev(MB, 1::smallint, 'ball', 'W', 0, NULL, (y->>'bowler')::uuid, 'caught',
+                       jsonb_build_object('fielder', 'Verify OneFifty Visitor', 'fielders', jsonb_build_array(y->>'visitor')));
+      got := 'written';
+    EXCEPTION WHEN check_violation THEN got := 'refused';
+    END;
+    PERFORM _assert(got = 'refused', '§128 (side): the other side''s boy was credited a catch for the side in the field');
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/150 (section 128) ──────────────────────────────────────────

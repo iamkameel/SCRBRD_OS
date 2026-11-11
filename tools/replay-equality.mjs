@@ -36,8 +36,10 @@ const dbs = [dbName(), ...args.flatMap((a, i) => (a === "--db" ? [args[i + 1]] :
 // ── The ref's engine, unpacked ────────────────────────────────────────
 const scratch = mkdtempSync(join(tmpdir(), "replay-equality-"));
 mkdirSync(join(scratch, "src"));
-const tar = spawnSync("sh", ["-c", `git -C "${ROOT}" archive "${ref}" packages/scoring/src | tar -x -C "${scratch}/src"`], { encoding: "utf8" });
-if (tar.status !== 0) { console.error(`replay-equality: could not unpack ${ref}: ${tar.stderr}`); process.exit(2); }
+// No shell: the ref is an argument, never spliced into a command line.
+const archive = spawnSync("git", ["-C", ROOT, "archive", "--", ref, "packages/scoring/src"], { maxBuffer: 64 * 1024 * 1024 });
+const tar = archive.status === 0 ? spawnSync("tar", ["-x", "-C", join(scratch, "src")], { input: archive.stdout }) : archive;
+if (tar.status !== 0) { console.error(`replay-equality: could not unpack ${ref}: ${String(tar.stderr ?? "")}`); process.exit(2); }
 const before = await import(pathToFileURL(join(scratch, "src/packages/scoring/src/index.mjs")).href);
 const after = await import(pathToFileURL(join(ROOT, "packages/scoring/src/index.mjs")).href);
 

@@ -32,21 +32,26 @@
 --   functions  + ball_fielders_fit(jsonb, text)  events.mjs fieldersFit():
 --                the list this way out may carry. IMMUTABLE, nobody's data.
 --              + ball_event_wicket_fielders()  the door's body
+--              + ball_fielder_on_side()  a fielder named by id is the fielding
+--                side's for the match: on the sheet (match_squad) on the
+--                bowler's side, else the innings' fielding squad
 --   trigger    + ball_event_wicket_fielders  BEFORE INSERT on ball_event: a
 --                row whose payload names fielders that do not fit its way
 --                out, or on a delivery that is no wicket, is refused
 --                (check_violation, CONSTRAINT ball_event_wicket_fielders →
 --                "fielders_invalid", events-api.mjs CHECK_REASON); a
 --                stumping's first fielder is the keeper while one is on
---                the record (as db/68's door asks of its `fielder`). Named
+--                the record (as db/68's door asks of its `fielder`); a
+--                fielder named by id is one of the fielding side's
+--                (ball_fielder_on_side(): never a team-mate batting, a boy
+--                not in the match, another school's child). Named
 --                to fire after ball_event_stumped_by_keeper and before
 --                zz_ball_event_fingerprint. Whether a fielder is a batter
 --                at the crease is the Laws' at commit (lawsRefusal,
 --                fielders_invalid); a stored row is never re-judged.
 --   views      + fielding_credit (security_invoker)  fieldingCredits(): one
 --                row per fielder a standing catch, stumping or run out
---                names, over ball_event_career (no super over, no void),
---                with as_keeper when he was the keeper at that ball.
+--                names, over ball_event_career (no super over, no void).
 --              + player_fielding_act, player_fielding_career,
 --                player_fielding_by_season (security_invoker)  a boy's
 --                catches and run outs (from fielding_credit) and his
@@ -126,8 +131,10 @@ END $$ LANGUAGE plpgsql;
 -- ══════════════════════════════════════════════════════════════════
 -- One or two (a run out), one (a catch, a stumping), none for any other way
 -- out; each a non-empty string with no space at either end and at most 80
--- characters (FIELDER_REF_MAX), each named once. False — never NULL — for
--- anything else, a missing list included.
+-- characters (FIELDER_REF_MAX), each named once; one shaped as a player id
+-- only in lower case, as SCRBRD writes ids (so "<id>" and "<ID>" are never
+-- two fielders here and one in the fold). False — never NULL — for anything
+-- else, a missing list included.
 CREATE OR REPLACE FUNCTION ball_fielders_fit(p_fielders jsonb, p_dismissal text) RETURNS boolean AS $$
   SELECT coalesce(
            jsonb_typeof(p_fielders) = 'array'
@@ -135,7 +142,9 @@ CREATE OR REPLACE FUNCTION ball_fielders_fit(p_fielders jsonb, p_dismissal text)
        AND jsonb_array_length(p_fielders) <= CASE p_dismissal WHEN 'caught' THEN 1 WHEN 'stumped' THEN 1 WHEN 'run_out' THEN 2 ELSE 0 END
        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(p_fielders) e
                         WHERE jsonb_typeof(e) <> 'string' OR e #>> '{}' = '' OR e #>> '{}' ~ '^\s|\s$'
-                           OR length(e #>> '{}') > 80)
+                           OR length(e #>> '{}') > 80
+                           OR (e #>> '{}' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                               AND e #>> '{}' <> lower(e #>> '{}')))
        AND (SELECT count(DISTINCT e) FROM jsonb_array_elements_text(p_fielders) e) = jsonb_array_length(p_fielders),
          false)
 $$ LANGUAGE sql IMMUTABLE PARALLEL SAFE;
@@ -146,6 +155,50 @@ COMMENT ON FUNCTION ball_fielders_fit(jsonb, text) IS
 -- ══════════════════════════════════════════════════════════════════
 --  2 · The door
 -- ══════════════════════════════════════════════════════════════════
+-- Is this reference a fielder of the side in the field (the review's S3)?
+-- A typed name (a substitute, the other side's boy, Law 24) always may be.
+-- A player id must be one of the fielding side's for that match:
+--   the match has a sheet (match_squad, not withdrawn; the twelfth man is on
+--     it): on the sheet, and on the side the ball's bowler is on — or, with
+--     a bowler the sheet does not hold (a typed name), the side the striker
+--     is not on; with neither on the sheet, anywhere on it;
+--   no sheet: one of the innings' fielding squad as the pad named it (the
+--     innings_start's bowlingSquad, an id or a member's id) or the keeper on
+--     the record; with no fielding squad named at all, nothing to check.
+-- So a team-mate batting, a boy not in the match, or another school's child
+-- is never credited a catch he did not take. Asked by the door, which
+-- knows the sheet; the Laws do not (the pad offers only the fielding side).
+CREATE OR REPLACE FUNCTION ball_fielder_on_side(p_match uuid, p_innings smallint, p_seq integer,
+                                                p_bowler uuid, p_striker uuid, p_ref text) RETURNS boolean AS $$
+  SELECT CASE
+    WHEN p_ref !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN true
+    WHEN EXISTS (SELECT 1 FROM match_squad s WHERE s.match_id = p_match AND NOT s.withdrawn) THEN
+      EXISTS (SELECT 1 FROM match_squad s
+               WHERE s.match_id = p_match AND NOT s.withdrawn AND s.player_id = p_ref::uuid
+                 AND s.side = coalesce(
+                       (SELECT b.side FROM match_squad b WHERE b.match_id = p_match AND NOT b.withdrawn AND b.player_id = p_bowler),
+                       (SELECT CASE t.side WHEN 'home' THEN 'away' WHEN 'away' THEN 'home' END
+                          FROM match_squad t WHERE t.match_id = p_match AND NOT t.withdrawn AND t.player_id = p_striker),
+                       s.side))
+    ELSE coalesce((
+      SELECT CASE WHEN count(m.id) = 0 THEN true
+                  ELSE bool_or(m.id = p_ref) OR coalesce((SELECT k.keeper_ref = p_ref FROM keeper_at(p_match, p_innings, p_seq) k), false) END
+        FROM (SELECT s.payload FROM ball_event_live s
+               WHERE s.match_id = p_match AND s.innings = p_innings AND s.kind = 'innings_start' AND s.seq < p_seq
+               ORDER BY s.seq DESC LIMIT 1) st
+        CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(st.payload -> 'bowlingSquad') = 'array'
+                                                     THEN st.payload -> 'bowlingSquad' ELSE '[]'::jsonb END) e(member)
+        CROSS JOIN LATERAL (SELECT CASE jsonb_typeof(e.member)
+                                     WHEN 'object' THEN CASE WHEN jsonb_typeof(e.member -> 'id') = 'string' THEN e.member ->> 'id' END
+                                     WHEN 'string' THEN e.member #>> '{}' END AS id) m
+       WHERE m.id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'), true)
+  END
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+COMMENT ON FUNCTION ball_fielder_on_side(uuid, smallint, integer, uuid, uuid, text) IS
+  'db/150 (RECOGNITION R12): a fielder named by id is one of the fielding side''s for the match (the sheet, else the innings'' fielding squad). The door''s; nobody''s to call.';
+REVOKE ALL ON FUNCTION ball_fielder_on_side(uuid, smallint, integer, uuid, uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION ball_fielder_on_side(uuid, smallint, integer, uuid, uuid, text) FROM scrbrd_app;
+
 -- A JSON null is no list, as the constructor and the Laws read it: the
 -- wicket names nobody.
 CREATE OR REPLACE FUNCTION ball_event_wicket_fielders() RETURNS trigger AS $$
@@ -160,6 +213,12 @@ BEGIN
       NEW.match_id, NEW.idempotency_key
       USING ERRCODE = 'check_violation', SCHEMA = 'public', TABLE = 'ball_event', CONSTRAINT = 'ball_event_wicket_fielders';
   END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements_text(NEW.payload -> 'fielders') f(ref)
+              WHERE NOT ball_fielder_on_side(NEW.match_id, NEW.innings, NEW.seq, NEW.bowler_id, NEW.striker_id, f.ref)) THEN
+    RAISE EXCEPTION 'ball_event: a fielder named is not one of the fielding side''s for this match (match %, key %)',
+      NEW.match_id, NEW.idempotency_key
+      USING ERRCODE = 'check_violation', SCHEMA = 'public', TABLE = 'ball_event', CONSTRAINT = 'ball_event_wicket_fielders';
+  END IF;
   IF NEW.dismissal = 'stumped' THEN
     SELECT * INTO k FROM keeper_at(NEW.match_id, NEW.innings, NEW.seq);
     IF k.keeper_ref IS NOT NULL AND NOT keeper_is_fielder(k.keeper_ref, k.keeper_name, NEW.payload -> 'fielders' -> 0) THEN
@@ -169,7 +228,9 @@ BEGIN
     END IF;
   END IF;
   RETURN NEW;
-END $$ LANGUAGE plpgsql;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A definer, so the sheet it reads (ball_fielder_on_side(), nobody's to
+-- call) is asked whoever's insert fires it; it only refuses, never writes.
 REVOKE ALL ON FUNCTION ball_event_wicket_fielders() FROM PUBLIC;
 
 DROP TRIGGER IF EXISTS ball_event_wicket_fielders ON ball_event;
@@ -185,20 +246,19 @@ CREATE TRIGGER ball_event_wicket_fielders
 -- hit saves a catch and a stumping: ball_wicket_stands()), over the career
 -- log (no super over, no void). act is 'catch', 'stumping' or 'run_out';
 -- player_id the fielder when his reference is a player id (a typed name is
--- nobody's figure); as_keeper when he was the keeper on the record at that
--- ball (keeper_at(), the fold's keeperId).
+-- nobody's figure). Whether he was keeping is the keeping record's
+-- (keeper_dismissal, db/68), not asked here: no reader of this view needs
+-- it, and keeper_at() per row is a correlated scan of the log.
 CREATE OR REPLACE VIEW fielding_credit WITH (security_invoker = true) AS
 SELECT b.match_id, b.school_id, b.innings, b.seq, b.server_ts,
        f.ref                                                           AS fielder_ref,
        f.ord::smallint                                                 AS fielder_no,
-       CASE WHEN f.ref ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+       CASE WHEN f.ref ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
             THEN f.ref::uuid END                                       AS player_id,
-       CASE b.dismissal WHEN 'caught' THEN 'catch' WHEN 'stumped' THEN 'stumping' ELSE 'run_out' END AS act,
-       coalesce(k.keeper_ref = f.ref, false)                           AS as_keeper
+       CASE b.dismissal WHEN 'caught' THEN 'catch' WHEN 'stumped' THEN 'stumping' ELSE 'run_out' END AS act
   FROM ball_event_career b
   CROSS JOIN LATERAL jsonb_array_elements_text(CASE WHEN jsonb_typeof(b.payload -> 'fielders') = 'array'
                                                     THEN b.payload -> 'fielders' ELSE '[]'::jsonb END) WITH ORDINALITY AS f(ref, ord)
-  LEFT JOIN LATERAL keeper_at(b.match_id, b.innings, b.seq) k ON true
  WHERE b.kind = 'ball' AND ball_is_wicket(b.ball_type, b.dismissal) AND b.dismissal IN ('caught', 'stumped', 'run_out')
    AND ball_fielders_fit(b.payload -> 'fielders', b.dismissal)
    AND ball_wicket_stands(b.match_id, b.innings, b.seq, b.kind, b.ball_type, b.dismissal);
@@ -384,7 +444,10 @@ BEGIN
      OR ball_fielders_fit('["a","a"]', 'run_out') OR ball_fielders_fit('[]', 'caught') OR ball_fielders_fit('[""]', 'caught')
      OR ball_fielders_fit('[" a"]', 'caught') OR ball_fielders_fit('[7]', 'caught') OR ball_fielders_fit('"a"', 'caught')
      OR ball_fielders_fit('["a"]', 'bowled') OR ball_fielders_fit(NULL, 'caught')
-     OR ball_fielders_fit(to_jsonb(ARRAY[repeat('x', 81)]), 'caught') OR NOT ball_fielders_fit(to_jsonb(ARRAY[repeat('x', 80)]), 'caught') THEN
+     OR ball_fielders_fit(to_jsonb(ARRAY[repeat('x', 81)]), 'caught') OR NOT ball_fielders_fit(to_jsonb(ARRAY[repeat('x', 80)]), 'caught')
+     OR ball_fielders_fit('["AAAAAAAA-0000-4000-8000-000000000001"]', 'caught')
+     OR ball_fielders_fit('["aaaaaaaa-0000-4000-8000-000000000001","AAAAAAAA-0000-4000-8000-000000000001"]', 'run_out')
+     OR NOT ball_fielders_fit('["aaaaaaaa-0000-4000-8000-000000000001","J SUB"]', 'run_out') THEN
     RAISE EXCEPTION 'db/150: ball_fielders_fit() is not fieldersFit()';
   END IF;
   -- The door fires after db/68's and before the fingerprint.
@@ -409,7 +472,6 @@ BEGIN
      OR position($r$NEW.derived_from->>'basis'$r$ IN (SELECT prosrc FROM pg_proc WHERE oid = 'honour_cite_figures()'::regprocedure)) = 0
      OR position($r$h.derived_from->>'basis'$r$ IN (SELECT prosrc FROM pg_proc WHERE oid = 'recognition_reviews_open(uuid)'::regprocedure)) = 0
      OR position($r$x.derived_from->>'basis'$r$ IN (SELECT prosrc FROM pg_proc WHERE oid = 'recognition_review_stand(uuid)'::regprocedure)) = 0
-     OR match_award_figures(gen_random_uuid(), gen_random_uuid(), 'batting_bowling') IS DISTINCT FROM match_award_figures(gen_random_uuid(), gen_random_uuid())
      OR EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid IN ('match_award_figures(uuid,uuid,text)'::regprocedure, 'match_award_fielding_words(uuid,uuid)'::regprocedure)
                    AND (NOT p.prosecdef OR has_function_privilege('scrbrd_app', p.oid, 'EXECUTE'))) THEN
     RAISE EXCEPTION 'db/150: a correction does not re-derive an award on the basis it was decided on';
