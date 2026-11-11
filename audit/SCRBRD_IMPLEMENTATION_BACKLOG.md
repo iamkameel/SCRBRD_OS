@@ -7,6 +7,8 @@
 
 4 Nov 2026: the wagon wheel is pilot-critical, not optional (Kameel: 'wagon wheel is a given! definitely not optional!'); spectators read every side's team posts but no player stats or passports (supersedes REACH-D3); a read-only pilot security audit ran and its fixes are being built (db/132).
 
+7 Nov 2026: Kameel closed REACH-D2 (a pupil no longer reads team-mates' career figures; the parents' terms popia-2026-01 stand); the ratings fix shipped in #273 (commit 89cb61bd, live since 7 Nov); the career-figure build is open (see "Close REACH-D2" below). Skills' Overall radar (#274) closes SCRBRD-047.
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -1763,8 +1765,8 @@ already-correct. Risk LOW. Migration UNKNOWN until the audit.
 - **SCRBRD-046** — KDE heatmap over the wagon wheel. `placementEngine.ts` specifies continuous 2D Gaussian
   kernel density for shot distribution; `kde|density` returns zero hits. Same story as -045: the data is
   captured, the read does not exist. Pairs with the blueprint's zone-based comparative analytics. Risk LOW.
-- **SCRBRD-047** — Player skill radar over the rubric axes (`PlayerSkillRadarChart.tsx`). The rubric
-  exists and is tested; the radar does not. Risk LOW.
+- ~~**SCRBRD-047** — Player skill radar over the rubric axes (`PlayerSkillRadarChart.tsx`). The rubric
+  exists and is tested; the radar does not. Risk LOW.~~ **Done 2026-11-07** (#274, commit 8c013c30): one Overall radar over the rubric axes on the Skills Matrix, the squad snapshot and Profiles (`apps/web/src/lib/radar.js`, `ui/overallRadar.jsx`).
 - **SCRBRD-048** — Notifications name the role and scope that generated them. §19: *"multi-role users
   should see the role and scope that generated each notification."* Also §13's *"a role switch visibly
   changes action and dashboard context"* — worth auditing whether the switcher shows the active role **and
@@ -4846,6 +4848,17 @@ the design's §10. **Open:** phases B (consents read and public-name route, G2/G
 D (photo consent record), E (SCRBRD-110's cards), F (invoices, if Q1 says yes); Q10's narrow team-sheet read; the
 scorecard's row expansion for another child (§10 departure 11).
 
+### Close REACH-D2: pupil reads of team-mates' career figures
+**Priority:** P1 · **Domain:** Families / Privacy · **Type:** build, Opus (Kameel, 7 Nov 2026; `docs/design/REACH_parent_pupil.md` §6.6 and §7)
+**Not started.** A pupil reads a team-mate's career, season and wagon-wheel pages today: `player.performance.read` is in the `player` bundle (`roles.mjs:330–335`), so the five per-boy reads (`career`, `career_by_season`, `dismissal_breakdown`, `player_shot_points`, `bowler_day`) answer a team-mate. Decided 14 Oct as "leave them open"; closed by Kameel on 7 Nov 2026: a pupil no longer reads team-mates' career figures, and the parents' terms (popia-2026-01) stand as written ("his name on the sheet and scorecard, nothing more"). The ratings fix (PR #273) is done and is not this entry.
+**Build:** path (a), `player.performance.read` out of the `player` bundle (`selfaccess` keeps it), if SCRBRD-138's captain tab does not depend on it at team scope; otherwise path (b), the five reads gated on `is_family_of(player) OR` a staff capability `OR` 138's captain gate, in `read-api.mjs`, with `read.test.mjs` holding the SQL equal to `db/99`'s copy. Path (a) changes `role_capability` by migration.
+**Acceptance criteria:**
+- [ ] A pupil's `career?playerId=` for a team-mate is refused; his own career and wagon wheel are still read.
+- [ ] The captain's tab reads as SCRBRD-138 decided.
+- [ ] The match scorecard is unchanged (Q4).
+- [ ] `db/99` pupil walk asserts the above, and is green.
+**Regression risk:** MEDIUM (a pupil's read narrows; the captain's tab is the one place it could break).
+
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
 https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp; the rule is DESIGN_DIRECTION §1a)
@@ -5304,3 +5317,13 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - #254 (commit a2aab597, 2026-11-05): The parent's action list, A2: an ended link said plainly, and the school's terms (popia-2026-01) agreed in the app.
 - #253 (commit 2086c5bc, 2026-11-06): The platform owner's reads of a child are found by the school's "who read" (db/139).
 - #257 (commit 347aae8b, 2026-11-06): Backlog: recorded #248–#252 (docs only).
+
+## Merged 6–7 Nov 2026 with no backlog entry
+
+- #269 (commit 22d32776, 2026-11-06): Fixture and training days and times on the SA clock, not UTC (`apps/web/src/lib/saTime.js`).
+- #270 (commit 9d0caf60, 2026-11-07): Home page: a 3D floodlit ground you fly through on scroll (three.js, loaded after paint).
+- #271 (commit ca3988f9, 2026-11-07): The newsfeed on the home page and in the News view, with post covers (`apps/web/src/lib/newsFeed.js`).
+- #272 (commit ec96188a, 2026-11-07): The 'panel couldn't be shown' crash in Analytics, and two reads that failed for want of a school.
+- #273 (commit 89cb61bd, 2026-11-07): Ratings returns a boy's row only to readers of his development record: a pupil reads his own, a parent none (`services/api/read/read-api.mjs`). Part of the 7 Nov decisions; REACH-D2's career-figure build stays open (see "Close REACH-D2").
+- #274 (commit 8c013c30, 2026-11-07): Skills: one Overall radar on the Skills Matrix, the squad snapshot and Profiles. Closes SCRBRD-047 (struck through above).
+- #275 (commit a03e62d0, 2026-11-07): Demo dress rehearsal: 17 fixes to what a viewer would notice (labels, times, live card, signals, reads).
