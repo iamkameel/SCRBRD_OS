@@ -2348,6 +2348,9 @@ async function padFit() {
             // pad has already brought the Outcome keys clear of the docked strip
             // (pad.jsx useClearOfStrip, interface review 11 Nov 2026), so the
             // page is not at its top; opening the runs must not move it.
+            // The walk's own scrollTo(0, 0) above is undone by the pad once the
+            // chase's longer line has re-measured it, so let that settle first.
+            await page.waitForTimeout(400);
             const y0 = await page.evaluate(() => scrollY);
             const before = await page.evaluate(() => Math.round(document.querySelector('[data-testid="pad-strip"]').getBoundingClientRect().top));
             await page.locator('[data-testid="key-noball"]').click({ timeout: 3000 });
