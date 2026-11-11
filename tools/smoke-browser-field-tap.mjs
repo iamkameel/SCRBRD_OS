@@ -189,7 +189,8 @@ try {
     await new Promise((r) => setTimeout(r, 250));
   }
   await dbq(`insert into match_toss (match_id, school_id, won_by, decision)
-             select id, school_id, 'home', 'bat' from match where id = $1 on conflict (match_id) do nothing`, [MATCH]);
+             select id, school_id, 'home', 'bat' from match where id = $1
+              and not exists (select 1 from match_toss where match_id = $1)`, [MATCH]);
 
   for (const [name, dev] of PHONES) {
     group(`${name} (${dev.viewport.width}×${dev.viewport.height}, ${dev.deviceScaleFactor}×, touch)`);
