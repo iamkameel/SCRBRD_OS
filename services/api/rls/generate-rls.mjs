@@ -462,6 +462,9 @@ export const WITHDRAWN_SINCE_01 = {
   // Q10: the league reads its own fixtures' records, through
   // competition_discipline_records() and competition.discipline.read.
   competitionadmin: [{ after: "officiating.registry.manage", capability: "discipline.read" }],
+  // RECOGNITION D7 (db/145, R5c): the owner's key holds no recognition.*.
+  // db/01 granted it recognition.manage; db/145 withdraws it.
+  superadmin: [{ after: "player.workload.manage", capability: "recognition.manage" }],
   // (GA-I19 D3 had db/111 withdraw the principal's medical.nature.read;
   // READERS Q9, 21 Oct 2026, later, keeps it, and db/116 restores it. db/01's
   // row stands, so nothing is recorded here.)
@@ -568,6 +571,10 @@ export const ADDED_SINCE_01 = {
   "news.team.read":              "131_reach_last.sql",
   // ── RECOGNITION R6 (db/142): Player of the Match, the coach's path ──
   "recognition.match.award":     "142_player_of_match.sql",
+  // ── RECOGNITION R5c (db/145): deciding an honour, the director and the principal (A5) ──
+  "recognition.decide":          "145_recognition_decide.sql",
+  // ── RECOGNITION R8 (db/146): Colours, the side's coach nominates (A17) ──
+  "recognition.colours.nominate": "146_colours.sql",
 };
 const shippedIn01 = (/** @type {string} */ cap) => !(cap in ADDED_SINCE_01);
 
@@ -808,6 +815,20 @@ export const MASKED_SINCE_09 = Object.freeze({
   injury: { file: "111_injury_review.sql", masked: {
     "medical.nature.read":  ["emergency_services", "next_review_on"],
     "medical.details.read": ["recorded_by", "dso_notified_at"],
+  } },
+  // RECOGNITION D4 (db/145, R5c): why an honour was withdrawn may be a
+  // conduct matter and may name a third party. It is read by the school's
+  // deciders (recognition.decide) and by whoever withdrew it, never by the
+  // pupil, his parent, the side's staff or the auditor (READERS Q2). honour
+  // had no masked column when db/09 shipped, so db/09 builds no honour_masked
+  // and db/145 builds the first; it also takes the column out of the
+  // application's SELECT on the table itself (db/102's shape), so the mask
+  // holds for a read that never goes near the view.
+  honour: { file: "145_recognition_decide.sql", masked: {
+    "recognition.decide": ["withdrawn_reason"],
+    // The captain's nomination an award answered (db/144's column; the
+    // red-team's F3 on R7): read under D8, through honour_nomination_id().
+    "recognition.match.award": ["nomination_id"],
   } },
 });
 

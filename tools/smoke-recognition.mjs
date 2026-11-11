@@ -131,7 +131,30 @@ try {
     ok("...stamped from the session", a.body?.awardedBy === await idOf("sarah@example.invalid"));
     ok("...with the school and side from the boy, not the request", a.body?.schoolId === HIL && a.body?.teamCode === "1XI");
     ok("...not public until somebody says so", a.body?.isPublic === false);
-    ok("the office can", (await award(registrar, { playerId: CELE, kind: "vice_captain", season: "2026" })).status === 200);
+    // D5 (db/145): the office records a decision by naming who made it.
+    const officeAlone = await award(registrar, { playerId: CELE, kind: "vice_captain", season: "2026" });
+    ok("the office alone does not decide an honour (A5, D5)", officeAlone.status === 422 && officeAlone.body?.error === "decider_required", JSON.stringify(officeAlone.body));
+    ok("...nor names a coach as the decider",
+       (await award(registrar, { playerId: CELE, kind: "vice_captain", season: "2026", decidedBy: await idOf("coach@example.invalid") })).body?.error === "decider_required");
+    const recorded = await award(registrar, { playerId: CELE, kind: "vice_captain", season: "2026", decidedBy: await idOf("principal@example.invalid") });
+    ok("the office records the principal's decision", recorded.status === 200
+       && recorded.body?.decidedBy === await idOf("principal@example.invalid") && recorded.body?.awardedBy === await idOf("registrar@example.invalid"),
+       JSON.stringify(recorded.body));
+    // Tiered (recognition.decide): the list carries its title, and opening
+    // it reads the body (and logs the open), as every tiered notice does.
+    const told = (await notices(principal)).filter((n) => n.kind === "recognition" && /^Recorded as your decision/.test(n.title ?? ""));
+    const opened = told[0] ? (await api(`/api/notifications/${told[0].id}/read`, { method: "POST", token: principal })).body?.notice : null;
+    ok("...and she is told, in her words, naming the boy as the school does", told.length === 1
+       && told[0].title === "Recorded as your decision: Vice-captain 2026" && told[0].tiered === true && told[0].body == null
+       && opened?.body === `The office recorded Vice-captain 2026 for M Cele as your decision, ${(await q(`select to_char(sa_today(), 'FMDD Mon') d`))[0].d}. If you did not decide it, say so to the office.`,
+       JSON.stringify({ told, opened }));
+    ok("...and nobody else is", !(await notices(head)).some((n) => /^Recorded as your decision/.test(n.title ?? ""))
+       && !(await notices(registrar)).some((n) => /^Recorded as your decision/.test(n.title ?? ""))
+       && !(await notices(coach)).some((n) => /^Recorded as your decision/.test(n.title ?? "")));
+    const refused = await award(head, { playerId: CELE, kind: "honours", season: "2026", citation: "Batted through his hamstring niggle." });
+    ok("a citation passes the side's list of words (D2), refused with the words named", refused.status === 422
+       && refused.body?.error === "citation_refused" && refused.body?.words?.join() === "hamstring,niggle" && /hamstring and niggle/.test(refused.body?.message ?? ""),
+       JSON.stringify(refused.body));
     ok("the principal can", (await award(principal, { playerId: PILLAY, kind: "award", name: "Fielder of the Year", season: "2026" })).status === 200);
     ok("a coach cannot", [403, 401].includes((await award(coach, { playerId: BEKKER, kind: "colours", season: "2026" })).status));
     ok("another school's coach cannot", [403, 401].includes((await award(wesCoach, { playerId: BEKKER, kind: "colours", season: "2026" })).status));
@@ -570,7 +593,9 @@ try {
     ok("...a row with ids and figures, his captaincy and a 48-hour window, no words",
        row?.status === "open" && row.nominee_player_id === BEKKER && row.nominated_by_player_id === PILLAY && row.nominated_as === "captain"
        && row.derived_from?.suggestions?.length === 2 && row.derived_from.nominee?.figures === "1/0 (0.3)" && row.derived_from.headSeq === hs
-       && !("rationale" in row) && Date.parse(row.closes_at) - Date.now() > 47 * 3600e3, JSON.stringify(row));
+       // R8 (db/146) gave the table a rationale, a coach's Colours nomination's
+       // alone: a captain's row never carries one (its CHECK).
+       && row.rationale === null && Date.parse(row.closes_at) - Date.now() > 47 * 3600e3, JSON.stringify(row));
     ok("...nobody is sent a notice about it", (await q(`select count(*)::int n from notification where subject_id = $1`, [M]))[0].n === 0);
     ok("a second nomination is refused", (await pickOne(M, pupil, WHITFIELD, hs)).body?.error === "already_nominated");
     const after = (await nom(M, pupil)).body?.captain?.[0];
