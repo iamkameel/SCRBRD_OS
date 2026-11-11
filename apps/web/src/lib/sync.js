@@ -83,12 +83,28 @@
  * falls back to the sign-in if there is one, and otherwise says, in words,
  * that scoring on this phone has ended until somebody signs in. The rest of
  * the app is signed out throughout: nothing else can use it.
+ *
+ * A PILOT MATCH (PILOT_MATCH_PHASE2 §3.1, slice 3)
+ * ───────────────────────────────────────────────
+ * The same engine, the same gate, heartbeat, wake lock and take-over, with
+ * three things injected (`pilot`): the routes (/api/pilot/:uuid/…, not
+ * /api/matches/:id/…), the transport, which puts every event through
+ * lib/pilotWire.js before it leaves (one that would carry a name is held on
+ * this phone as `name_on_wire`, never sent), and first contact: before its
+ * first claim, the match is created on the server (pilot_create), then its
+ * names are put — only when the server says names may go (the counsel
+ * fallback, §14 item 1). A refusal of the create (no grant, phase 2 off)
+ * is `pilot_refused`: nothing is sent, and the pad keeps the match as a
+ * Practice Match (§3.3 step 2). A Pilot Match has no resume credential yet
+ * (slice 3b): signed out, it says "sign in to send", as any pad does.
+ * A practice id is refused by both locks below before any of this is read.
  */
 import { SyncEngine, indexedDbStorage, tryAttach, tossDecision, padLogFrom, RETRY } from "@scrbrd/sync";
 import { fromRow, tossFromRow } from "@scrbrd/scoring";
 import { api, signedIn } from "./api.js";
 import { deviceId } from "./device.js";
-import { isPracticeId } from "./persist.js";
+import { isPracticeId, isPilotId } from "./persist.js";
+import { pilotWire, pilotUnwire } from "./pilotWire.js";
 import { padResumeSupported, loadPadCredential, mintPadCredential, forgetPadCredential, padApi, padEnded } from "./padKey.js";
 
 const RETRY_MS = 4000;
@@ -144,6 +160,18 @@ const online = () => (typeof navigator === "undefined" ? true : navigator.onLine
  * when it has forked from the server's (P5); `hooks.onStatus(status)` is told
  * everything the pad shows. None of them may throw.
  */
+/**
+ * What a Pilot Match's pad gives PadSync (lib/pilot.js keeps the record).
+ * @typedef {object} PilotMode
+ * @property {() => import("./pilotWire.js").PilotRoster} roster   slot id to name, and the sides' names
+ * @property {() => Promise<{server: string, namesSent: boolean, namesMayGo?: boolean, namesPurged?: boolean} | null>} state  where it stands with the server
+ * @property {() => any} createBody   pilot_create's body (lib/pilot.js createBody)
+ * @property {() => {rows: {slot: string, name: string}[]}} namesBody
+ * @property {() => Promise<unknown>} created   pilot_create said yes
+ * @property {() => Promise<unknown>} namesPut  the names are on the server
+ * @property {(reason: string) => Promise<unknown>} onRefused  the server will not take it: it stays on this phone
+ */
+
 export class PadSync {
   /**
    * @param {object} args
@@ -153,9 +181,18 @@ export class PadSync {
    * @param {{padLog: () => any[][], adopt: (log: any[][]) => boolean, restore: (orphans: any[]) => void,
    *          followToss: (toss: any) => void, onStatus: (s: any) => void,
    *          forked?: (reconcile: any) => void | Promise<void>}} args.hooks
+   * @param {PilotMode} [args.pilot]  a Pilot Match (its id starts `pilot-`): the routes, the wire, first contact
    */
-  constructor({ matchId, userId, intent, hooks }) {
+  constructor({ matchId, userId, intent, hooks, pilot }) {
     this.matchId = matchId;
+    /**
+     * A Pilot Match's injected parts, or null for a fixture. Only for a
+     * `pilot-` id: anything else given one is a fixture, as before.
+     * @type {PilotMode | null}
+     */
+    this.pilot = pilot && isPilotId(matchId) ? pilot : null;
+    /** Where this match's pad routes are: a fixture's, or a Pilot Match's (by its uuid). */
+    this.base = this.pilot ? `/api/pilot/${matchId.slice("pilot-".length)}` : `/api/matches/${matchId}`;
     this.userId = userId;
     this.intent = intent;
     this.hooks = hooks;
@@ -391,6 +428,27 @@ export class PadSync {
     }
     if (!online()) { this.reason = "offline"; this.status(); return; }
     this.reason = "attaching"; this.status();
+    // A Pilot Match is created on the server before its first claim, and
+    // its names put after (§3.3 steps 2–3). A refusal ends here, in words.
+    if (this.pilot) {
+      let first;
+      try { first = await this.firstContact(); }
+      catch (e) { first = { ok: false, reason: failureReason(e) }; }
+      if (this.stopped) return;
+      if (!first.ok) {
+        this.reason = first.reason;
+        if (RETRY.has(first.reason)) {
+          const wait = ATTACH_BACKOFF[Math.min(this.attempt, ATTACH_BACKOFF.length - 1)];
+          this.attempt += 1;
+          this.retryTimer = setTimeout(() => this.attach(), wait);
+        } else {
+          this.halted = true;
+        }
+        this.status();
+        if (first.reason === "pilot_refused") { try { await this.pilot.onRefused(first.detail ?? "not_granted"); } catch { /* the pad says it */ } }
+        return;
+      }
+    }
     let r;
     const intent = this.intent;
     // A take-over is asked once, for the press that confirmed it: a retry
@@ -449,6 +507,46 @@ export class PadSync {
   }
 
   /**
+   * A Pilot Match's first contact (§3.3 steps 2–3), at each attach until it
+   * has happened: pilot_create, idempotent for the owner; then the names,
+   * once, and only when the server says names may go. `pilot_refused` when
+   * the server will not take this match from this account.
+   * @returns {Promise<{ok: true} | {ok: false, reason: string, detail?: string}>}
+   */
+  async firstContact() {
+    const p = /** @type {PilotMode} */ (this.pilot);
+    const state = await p.state();
+    if (!state) return { ok: false, reason: "pilot_record_missing" };
+    if (state.server !== "created") {
+      const r = await this.call("/api/pilot/matches", { method: "POST", body: p.createBody() });
+      if (r?.ok !== true) {
+        // A refusal by the server's own rule is the match's answer: it
+        // stays on this phone. Anything else (a malformed match) is said.
+        if (r?.reason === "not_granted" || r?.reason === "pilot_off" || r?.reason === "not_found") {
+          return { ok: false, reason: "pilot_refused", detail: r.reason };
+        }
+        return { ok: false, reason: r?.reason ? `pilot_${r.reason}` : "pilot_create_failed" };
+      }
+      await p.created();
+    }
+    // Only if the notice the scorer read said they would go (§3.6).
+    if (state.namesMayGo === true && !state.namesSent && !state.namesPurged) {
+      // Asked now, of the server, never from what this phone remembers:
+      // the names go only while the server says they may (§14 item 1).
+      let names = false;
+      try { names = (await this.call("/api/pilot/status"))?.names === true; } catch { names = false; }
+      if (names) {
+        const body = p.namesBody();
+        if (body.rows.length) {
+          const r = await this.call(`${this.base}/names`, { method: "POST", body });
+          if (r?.ok === true) await p.namesPut();
+        } else await p.namesPut();
+      }
+    }
+    return { ok: true };
+  }
+
+  /**
    * Signed out: is the server there? Asked of /api/health, and asked again
    * every REACH_MS for as long as it is not (one small unauthenticated GET).
    * The pad then says "no signal" rather than offering a sign-in that cannot
@@ -474,7 +572,7 @@ export class PadSync {
    * @param {number|null} epoch
    */
   async probe(epoch) {
-    const r = await this.call(`/api/matches/${this.matchId}/session/heartbeat`, {
+    const r = await this.call(`${this.base}/session/heartbeat`, {
       method: "POST", body: { device: deviceId(), epoch: epoch ?? 0 },
     });
     if (r?.ok && Number.isInteger(r?.secondAccount)) this.secondAccount = r.secondAccount;
@@ -492,7 +590,7 @@ export class PadSync {
    * review after it — never the same event twice (see status()).
    */
   async serverLog() {
-    const r = await this.call(`/api/matches/${this.matchId}/events`);
+    const r = await this.call(`${this.base}/events`);
     if (Number.isInteger(r?.quarantined)) {
       this.review = { server: r.quarantined, seen: this.engine?.rejected?.length ?? 0 };
     }
@@ -501,6 +599,10 @@ export class PadSync {
     // and seq. fromRow keeps neither — the pad's events do not carry them.
     const last = [...rows].reverse().find((x) => x?.kind === "ball") ?? null;
     this.serverLast = last ? { at: last.server_ts ?? null, seq: last.seq ?? null } : { at: null, seq: null };
+    // A Pilot Match's log has positions where the pad shows names: they are
+    // put back from this phone's roster (pilotWire.js), positions where it
+    // has none.
+    if (this.pilot) { const roster = this.pilot.roster(); return rows.map((x) => pilotUnwire(fromRow(x), roster)); }
     return rows.map(fromRow);
   }
 
@@ -623,8 +725,25 @@ export class PadSync {
    * @param {any[]} batch
    */
   async send(id, batch) {
+    // A Pilot Match's events leave through pilotWire() (§3.2): slot ids, no
+    // names, no free text. One that would carry a name is not sent: it is
+    // answered here as refused, `name_on_wire`, and the engine holds it on
+    // this phone for a person — the server never sees it.
+    /** @type {any[]} */
+    const kept = [];
+    if (this.pilot) {
+      const roster = this.pilot.roster();
+      const wire = [];
+      for (const ev of batch) {
+        const w = pilotWire(ev.payload ?? {}, roster);
+        if (w.ok) wire.push({ ...ev, payload: w.event });
+        else kept.push({ idempotencyKey: ev.idempotencyKey, reason: "name_on_wire" });
+      }
+      batch = wire;
+      if (!batch.length) return { accepted: [], duplicates: [], quarantined: [], conflicts: [], refused: kept };
+    }
     let res;
-    try { res = await this.call(`/api/matches/${id}/events`, { method: "POST", body: { events: batch } }); }
+    try { res = await this.call(`${this.base}/events`, { method: "POST", body: { events: batch } }); }
     catch (e) {
       const why = failureReason(e);
       // The session has ended, or the resume credential has: nothing will
@@ -639,6 +758,7 @@ export class PadSync {
     if ((res?.quarantined ?? []).length) this.leaseAt = 0;
     else if ((res?.accepted ?? []).length) this.leaseAt = Date.now();
     if (Number.isInteger(res?.secondAccount)) this.secondAccount = res.secondAccount;
+    if (kept.length) res = { ...res, refused: [...(res?.refused ?? []), ...kept] };
     return res;
   }
 
@@ -648,6 +768,8 @@ export class PadSync {
    * @param {{wonBy: "home"|"away", decision: "bat"|"bowl"}} mine
    */
   async settleToss(mine) {
+    // A Pilot Match's toss went with its create (§3.3 step 2): nothing to settle.
+    if (this.pilot) return { settled: /** @type {true} */ (true) };
     // This match's toss only — which the resume credential may read, where
     // every fixture's (/api/read/matches) it may not.
     let row;
@@ -737,6 +859,8 @@ export class PadSync {
 
   /** This match's credential, read from the device once. */
   async padRecord() {
+    // A Pilot Match has no resume credential until slice 3b.
+    if (this.pilot) return (this.pad = null);
     if (this.pad === undefined) this.pad = await loadPadCredential(this.matchId);
     return this.pad;
   }
@@ -770,8 +894,8 @@ export class PadSync {
    */
   /** @param {{takeover: true, epoch: number|null}} [opts] */
   async claimCall(opts) {
-    const r = await this.call(`/api/matches/${this.matchId}/session/claim`, { method: "POST", body: { device: deviceId(), ...(opts ?? {}) } });
-    if (r?.ok && !this.pad && signedIn()) this.ensurePad();
+    const r = await this.call(`${this.base}/session/claim`, { method: "POST", body: { device: deviceId(), ...(opts ?? {}) } });
+    if (r?.ok && !this.pad && signedIn() && !this.pilot) this.ensurePad();
     return r;
   }
 
@@ -784,6 +908,7 @@ export class PadSync {
 
   /** Ask for a credential, once at a time; a page that cannot hold one says so (status). */
   ensurePad() {
+    if (this.pilot) return null;
     if (this.minting || this.stopped || !padResumeSupported()) { this.status(); return this.minting; }
     this.minting = mintPadCredential(this.matchId)
       .then((rec) => { if (rec && !this.stopped) { this.pad = rec; this.padEnd = null; } })
@@ -807,6 +932,7 @@ export class PadSync {
     const e = this.engine;
     if (e?.attached) this.holdWake(); else this.releaseWake();
     this.hooks.onStatus({
+      pilot: !!this.pilot,
       open: !!e,
       // The outbox could not open (P6): the banner says this phone cannot send.
       outboxUnavailable: !!this.outboxError,

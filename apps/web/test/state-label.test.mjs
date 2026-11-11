@@ -40,7 +40,7 @@ const plain = (w) => typeof w === "string" && /\s/.test(w) && !/_/.test(w);
 group("Each state says its words");
 {
   ok("six kinds: the brief's three, then the result's three (D12)",
-     STATE_KINDS.join(",") === "demo,practice,readonly,provisional,review,official", STATE_KINDS.join(","));
+     STATE_KINDS.join(",") === "demo,practice,pilot,readonly,provisional,review,official", STATE_KINDS.join(","));
   ok("the result's words are D11's", STATE_WORDS.provisional === "Provisional" && STATE_WORDS.review === "Under review"
      && STATE_WORDS.official === "Official result");
   const demo = renderToStaticMarkup(h(StateLabel, { kind: "demo" }));
