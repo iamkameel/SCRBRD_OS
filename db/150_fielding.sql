@@ -11,7 +11,7 @@
 -- (RECOGNITION_design.md §10, row R12). P8, the boundary, needed nothing
 -- here: db/121's ball_boundary() already reads payload.boundary = false,
 -- and a no-ball's four all run now carries it from the pad.
--- Its proof: db/99's section R12; tools/smoke-fold-figures.mjs (this SQL
+-- Its proof: db/99 §128; tools/smoke-fold-figures.mjs (this SQL
 -- equal to the fold's fieldingCredits() and facts over a real write path);
 -- smoke-recognition (Player of the Match on the new basis).
 --
