@@ -11679,14 +11679,16 @@ BEGIN
   RETURN jsonb_build_object('a', a, 'b', b);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- The owner's key: a switch, a grant. This is a test database, so the
--- switch may go on before the purge exists (review S6), for this one
--- statement only.
+-- The owner's key: a switch, a grant. db/151 keeps a switch off until the
+-- purge (slice 5) exists, and no setting steps round that (SF-A): so a
+-- stand-in purge is written, the switch turned, and the stand-in dropped,
+-- here, inside this file's own transaction.
 CREATE OR REPLACE FUNCTION _v151_switch(p_key text, p_on boolean) RETURNS void AS $$
-  SELECT set_config('pilot.without_purge', 'test', true);
+BEGIN
+  EXECUTE 'CREATE FUNCTION public.pilot_purge_expired() RETURNS void LANGUAGE sql AS ''''';
   UPDATE pilot.switch SET enabled = p_on WHERE key = p_key;
-  SELECT set_config('pilot.without_purge', '', true);
-$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+  EXECUTE 'DROP FUNCTION public.pilot_purge_expired()';
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v151_grant(p_user uuid, p_on boolean) RETURNS void AS $$
   INSERT INTO pilot.scorer (user_id) VALUES (p_user)
   ON CONFLICT (user_id) DO UPDATE SET ended_at = CASE WHEN p_on THEN NULL ELSE now() END;
@@ -39639,6 +39641,32 @@ $v116$;
     PERFORM _assert(s ~ 'pilot isolation \(grant\)', format('§129 (granted): USAGE on the schema passed: %s', s));
     s := _v151_breaks('GRANT SELECT ON pilot.ball_event TO PUBLIC');
     PERFORM _assert(s ~ 'pilot isolation \(grant\).*ball_event', format('§129 (granted): a grant to PUBLIC passed: %s', s));
+    -- (granted) ...to any role but the owner, not only the five named (SF-B):
+    -- pg_monitor, a role every cluster has, stands for a new reporting role.
+    s := _v151_breaks('GRANT SELECT ON pilot.name TO pg_monitor');
+    PERFORM _assert(s ~ 'pilot isolation \(grant\).*name', format('§129 (granted): a grant on the names to another role passed: %s', s));
+    s := _v151_breaks('GRANT USAGE ON SCHEMA pilot TO pg_monitor');
+    PERFORM _assert(s ~ 'pilot isolation \(grant\).*schema pilot', format('§129 (granted): USAGE on the schema to another role passed: %s', s));
+    s := _v151_breaks('GRANT SELECT ON ALL SEQUENCES IN SCHEMA pilot TO pg_monitor');
+    PERFORM _assert(s ~ 'pilot isolation \(grant\)', format('§129 (granted): a sequence granted to another role passed: %s', s));
+    -- (granted) ...and no publication, nor an API role reading everything by
+    -- membership (SF-B). Where the owner is no superuser (a managed host), the
+    -- statement itself may be refused first; that is as good.
+    FOREACH t IN ARRAY ARRAY[
+      'CREATE PUBLICATION v151_pub FOR TABLE pilot.name',
+      'CREATE PUBLICATION v151_pub_schema FOR TABLES IN SCHEMA pilot',
+      'GRANT pg_read_all_data TO scrbrd_app',
+      'GRANT pg_write_all_data TO scrbrd_app',
+      format('GRANT %I TO scrbrd_app', (SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = 'pilot'))]
+    LOOP
+      s := _v151_breaks(t);
+      -- (A grant of the owner's role is refused outright where the owner is
+      -- already a member of the application role, as here: no circle.)
+      PERFORM _assert(s ~ 'pilot isolation \(grant\)' OR s ~ 'is a member of role'
+                      OR (NOT (SELECT rolsuper FROM pg_roles WHERE oid = (SELECT nspowner FROM pg_namespace WHERE nspname = 'pilot'))
+                          AND s ~* 'permission denied|must be superuser|must have'),
+        format('§129 (granted): %s passed the check: %s', t, s));
+    END LOOP;
     s := _v151_breaks('ALTER DEFAULT PRIVILEGES IN SCHEMA pilot GRANT SELECT ON TABLES TO scrbrd_app');
     PERFORM _assert(s ~ 'pilot isolation \(grant\).*default', format('§129 (granted): a default privilege in pilot passed: %s', s));
     s := _v151_breaks('GRANT EXECUTE ON FUNCTION public.pilot_screen(uuid, jsonb) TO scrbrd_app');
@@ -39697,10 +39725,13 @@ $v116$;
     PERFORM _assert(s ~ 'stays off until pilot_purge_expired', format('§129 (off): a switch went on with no purge built: %s', s));
     s := _v151_owner_try('UPDATE pilot.switch SET enabled = true');
     PERFORM _assert(s ~ 'stays off until pilot_purge_expired', format('§129 (off): the names switch went on with no purge built: %s', s));
+    -- ...and no setting steps round it (SF-A): the override the first fix had is gone.
+    s := _v151_owner_try('SET LOCAL pilot.without_purge = ''test''; UPDATE pilot.switch SET enabled = true');
+    PERFORM _assert(s ~ 'stays off until pilot_purge_expired', format('§129 (off): a setting turned a switch on with no purge built: %s', s));
 
     -- (grant needed)
     PERFORM _v151_switch('pilot_sync', true);
-    PERFORM _assert(coalesce(current_setting('pilot.without_purge', true), '') = '', '§129 (off): the test''s leave outlived its switch');
+    PERFORM _assert(to_regprocedure('public.pilot_purge_expired()') IS NULL, '§129 (off): the stand-in purge outlived its switch');
     FOREACH u IN ARRAY ARRAY[to_jsonb(B), to_jsonb(U_OWNER), to_jsonb(U_PLAT), to_jsonb(U_SCORER)] LOOP
       PERFORM _as((u #>> '{}')::uuid);
       SELECT c.reason INTO s FROM pilot_create(M, v_sides, v_slots, 20, NULL, now(), '{"wonBy":"home","decision":"bat"}', NULL, NULL) c;
@@ -39791,6 +39822,19 @@ $v116$;
     PERFORM _assert(pilot_event_refusal(M, '{"kind":"scorebook_card","card":{}}') = 'free_text', '§129 (screen): a kind not sent passed');
     PERFORM _assert(pilot_event_refusal(M, jsonb_build_object('striker', H1, 'innings', 0)) = 'free_text', '§129 (screen): an event with no kind passed');
     PERFORM _assert(pilot_event_refusal(M, '{"kind":"ball","notInOver":"thabo"}') = 'free_text', '§129 (screen): a not-in-over reason off its list passed');
+    -- The code-shaped values hold no name as whole words (SF-C): an id, a
+    -- target, a reason, a shot, however it is joined up.
+    PERFORM _assert(pilot_event_refusal(M, jsonb_build_object('kind', 'void', 'target', 'x:y', 'reason', 'scorer_undo', 'id', 'Qa.Canarytest:1')) = 'name_in_event',
+      '§129 (screen): the canary in an event id passed');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"void","target":"Qa-Canarytest:hurt","reason":"scorer_undo"}') = 'name_in_event',
+      '§129 (screen): the canary in a target passed');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"void","target":"x:y","reason":"qa_canarytest"}') = 'name_in_event',
+      '§129 (screen): the canary underscored in a reason passed');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"ball","type":"run","value":0,"shot":"qa_canarytest"}') = 'name_in_event',
+      '§129 (screen): the canary underscored in a shot passed');
+    PERFORM _assert(pilot_event_refusal(M, jsonb_build_object('kind', 'void', 'reason', 'scorer_undo',
+                      'id', 'v151-device-1:pilot-' || M || ':m1:5', 'target', 'v151-device-1:pilot-' || M || ':m1:4')) IS NULL,
+      '§129 (screen): a void in newEventId''s own shape was refused');
     PERFORM _assert(pilot_event_refusal(M, '{"kind":"play_stopped","reason":"rain","at":1762858800000}') IS NULL,
       '§129 (screen): a stoppage''s time, as events.mjs writes it, was refused');
     PERFORM _assert(pilot_event_refusal(M, '{"kind":"ball","type":"run","value":"four"}') = 'free_text', '§129 (screen): a number in words passed');
@@ -39829,21 +39873,21 @@ $v116$;
     v_cols := jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'innings_start',
                 'payload', jsonb_build_object('battingTeam', 'home', 'bowlingTeam', 'away', 'squad', jsonb_build_array(H1, H2),
                                               'bowlingSquad', jsonb_build_array(W1, W2), 'overs', 20));
-    n := pilot_insert(M, 2, 'dev-v151:pilot-' || M || ':m1:1', 1, now(), v_cols);
+    n := pilot_insert(M, 2, 'v151-device-2:pilot-' || M || ':m1:1', 1, now(), v_cols);
     PERFORM _assert(n = 1, format('§129 (log): the first event was written at seq %s', n));
     v_cols := jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'ball', 'ball_type', 'run', 'value', 4,
                                  'striker_id', H1, 'non_striker_id', H2, 'bowler_id', W1, 'payload', '{}'::jsonb);
-    n := pilot_insert(M, 2, 'dev-v151:pilot-' || M || ':m1:2', 2, now(), v_cols);
+    n := pilot_insert(M, 2, 'v151-device-2:pilot-' || M || ':m1:2', 2, now(), v_cols);
     PERFORM _assert(n = 2, format('§129 (log): the ball was written at seq %s', n));
-    SELECT * INTO r FROM pilot_dedupe(M, 'dev-v151:pilot-' || M || ':m1:2', v_cols);
+    SELECT * INTO r FROM pilot_dedupe(M, 'v151-device-2:pilot-' || M || ':m1:2', v_cols);
     PERFORM _assert(r.seq = 2 AND r.same, '§129 (log): a retry of the ball is not a duplicate by fingerprint');
-    SELECT * INTO r FROM pilot_dedupe(M, 'dev-v151:pilot-' || M || ':m1:2', v_cols || '{"value": 6}');
+    SELECT * INTO r FROM pilot_dedupe(M, 'v151-device-2:pilot-' || M || ':m1:2', v_cols || '{"value": 6}');
     PERFORM _assert(r.seq = 2 AND NOT r.same, '§129 (log): another ball under the same key reads as the same');
-    PERFORM _assert(_v151_as_caller(format('SELECT pilot_insert(%L, 1, %L, 3, now(), %L)', M, 'dev-v151:x:3', v_cols)) = '42501',
+    PERFORM _assert(_v151_as_caller(format('SELECT pilot_insert(%L, 1, %L, 3, now(), %L)', M, 'v151-device-2:pilot-' || M || ':x:3', v_cols)) = '42501',
       '§129 (log): a write at the old generation was taken');
     PERFORM _assert((SELECT count(*) FROM pilot_log(M)) = 2 AND (SELECT bool_or(x.striker_id = H1) FROM pilot_log(M) x),
       '§129 (log): the owner does not read his two events back');
-    PERFORM _assert(pilot_hold(M, 1, 2, 'dev-v151:pilot-' || M || ':old:1',
+    PERFORM _assert(pilot_hold(M, 1, 2, 'v151-device-2:pilot-' || M || ':old:1',
                                jsonb_build_object('scorerId', 'Qa Canarytest', 'matchId', 'Verify Away One', 'clientTs', 1, 'payload',
                                                   jsonb_build_object('kind', 'ball', 'type', 'run', 'value', 4, 'striker', H1, 'bowler', W1)), v_cols),
       '§129 (log): a stale ball was not held');
@@ -39860,20 +39904,29 @@ $v116$;
 
     -- (write screen) The writes screen what they write, whatever called them.
     FOREACH t IN ARRAY ARRAY[
-      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'dev-v151:x:9',
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'v151-device-2:pilot-' || M || ':x:9',
              jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'ball', 'ball_type', 'run', 'value', 1, 'striker_id', H1,
                                 'bowler_id', W1, 'payload', jsonb_build_object('fielder', 'qa canarytest'))),
-      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'dev-v151:x:9',
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'v151-device-2:pilot-' || M || ':x:9',
              jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'ball', 'ball_type', 'run', 'value', 1, 'payload', jsonb_build_object('note', 'hurt'))),
       format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'Qa Canarytest', v_cols),
+      -- The key (SF-C): not newEventId's shape; another device's; a name
+      -- hidden by punctuation in its match part or its tail.
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'Qa-Canarytest', v_cols),
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'v151-device-1:pilot-' || M || ':m1:9', v_cols),
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'v151-device-2:Qa-Canarytest:m1:9', v_cols),
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'v151-device-2:qa_canarytest:m1:9', v_cols),
+      format('SELECT pilot_hold(%L, 1, 2, %L, %L, %L)', M, 'Qa-Canarytest',
+             jsonb_build_object('payload', jsonb_build_object('kind', 'void', 'target', 'a:b', 'reason', 'scorer_undo')),
+             jsonb_build_object('match_id', M, 'kind', 'void', 'innings', 0, 'payload', jsonb_build_object('target', 'a:b', 'reason', 'scorer_undo'))),
       -- A name under a payload key a column also fills: the column must not mask it.
-      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'dev-v151:x:9',
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'v151-device-2:pilot-' || M || ':x:9',
              jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'ball', 'ball_type', 'run', 'value', 1, 'striker_id', H1,
                                 'bowler_id', W1, 'payload', jsonb_build_object('striker', 'qa canarytest'))),
-      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'dev-v151:x:9', v_cols - 'kind'),
-      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'dev-v151:x:9', v_cols || jsonb_build_object('striker_id', 'a1510000-0000-4000-8000-0000000000ff')),
-      format('SELECT pilot_hold(%L, 1, 2, %L, %L, %L)', M, 'dev-v151:x:10', jsonb_build_object('payload', jsonb_build_object('kind', 'ball', 'sub', 'Thabo')), v_cols),
-      format('SELECT pilot_hold(%L, 1, 2, %L, %L, %L)', M, 'dev-v151:x:10', jsonb_build_object('clientTs', 'Qa Canarytest', 'payload', '{}'::jsonb), v_cols)]
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'v151-device-2:pilot-' || M || ':x:9', v_cols - 'kind'),
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'v151-device-2:pilot-' || M || ':x:9', v_cols || jsonb_build_object('striker_id', 'a1510000-0000-4000-8000-0000000000ff')),
+      format('SELECT pilot_hold(%L, 1, 2, %L, %L, %L)', M, 'v151-device-2:pilot-' || M || ':x:10', jsonb_build_object('payload', jsonb_build_object('kind', 'ball', 'sub', 'Thabo')), v_cols),
+      format('SELECT pilot_hold(%L, 1, 2, %L, %L, %L)', M, 'v151-device-2:pilot-' || M || ':x:10', jsonb_build_object('clientTs', 'Qa Canarytest', 'payload', '{}'::jsonb), v_cols)]
     LOOP
       s := _v151_as_caller(t);
       PERFORM _assert(s IN ('23514', '23503'), format('§129 (write screen): %s answered %s', t, s));
@@ -39886,7 +39939,7 @@ $v116$;
     j := _v151_facts(M);
     PERFORM _assert((j->>'names_purge_after')::timestamptz < now() AND NOT EXISTS (SELECT 1 FROM pilot_names_for_owner(M)),
       format('§129 (latch): the names are readable 40 days after the last ball: %s', j));
-    n := pilot_insert(M, 2, 'dev-v151:pilot-' || M || ':late:1', 3, now(),
+    n := pilot_insert(M, 2, 'v151-device-2:pilot-' || M || ':late:1', 3, now(),
                       jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'ball', 'ball_type', 'run', 'value', 1,
                                          'striker_id', H1, 'non_striker_id', H2, 'bowler_id', W1, 'payload', '{}'::jsonb));
     PERFORM _assert((_v151_facts(M)->>'last_event_at')::timestamptz > now() - interval '1 minute'
@@ -39896,7 +39949,7 @@ $v116$;
     PERFORM _assert((SELECT c.reason FROM pilot_names_put(M, jsonb_build_array(jsonb_build_object('slot', H1, 'name', 'Verify Again'))) c) = 'names_expired',
       '§129 (latch): new names were taken after the date');
     -- The clock is the ball's own time, not its arrival (S5).
-    PERFORM pilot_insert(M, 2, 'dev-v151:pilot-' || M || ':late:2', 4, now() - interval '50 days',
+    PERFORM pilot_insert(M, 2, 'v151-device-2:pilot-' || M || ':late:2', 4, now() - interval '50 days',
                          jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'ball', 'ball_type', 'run', 'value', 1,
                                             'striker_id', H1, 'non_striker_id', H2, 'bowler_id', W1, 'payload', '{}'::jsonb));
     PERFORM _assert((_v151_facts(M)->>'last_event_at')::timestamptz > now() - interval '1 minute',

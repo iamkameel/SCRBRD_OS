@@ -36,7 +36,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { SyncEngine, memoryStorage } from "@scrbrd/sync";
-import { appUrl, ownerUrl, port } from "./db-url.mjs";
+import { appUrl, ownerUrl, port, refuseUnlessLocal } from "./db-url.mjs";
 import { deriveMatch, fromRow, inningsStart, batters, bowler, ball, playStopped, BALL_TYPE, newEventId } from "@scrbrd/scoring";
 
 const PORT = port(8793);
@@ -48,9 +48,20 @@ let pass = 0, fail = 0;
 const ok = (/** @type {string} */ n, /** @type {unknown} */ c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 400)}` : ""); } };
 const group = (/** @type {string} */ t) => console.log("\n" + t);
 
+// This walk turns the Pilot Match's switches on: never against a database
+// that is not on this machine (the second review's SF-A).
+refuseUnlessLocal("smoke-pilot-sync");
 const owner = new pg.Client({ connectionString: ownerUrl() });
 await owner.connect();
 const sql = (/** @type {string} */ q, /** @type {any[]} */ p = []) => owner.query(q, p);
+// A switch on, in a test database. db/151's guard keeps both off until the
+// purge (slice 5) exists, so a stand-in purge is written, the switch turned,
+// and the stand-in dropped, in one transaction: nothing of it outlives it.
+const switchOn = (/** @type {string} */ key) => sql(`begin;
+  create function public.pilot_purge_expired() returns void language sql as '';
+  update pilot.switch set enabled = true where key = '${key}';
+  drop function public.pilot_purge_expired();
+  commit;`).catch(async (e) => { await sql("rollback"); throw e; });
 
 // Three school-less accounts, as a Google sign-up makes them (role 'none'):
 // A and B are granted, C is not.
@@ -117,7 +128,7 @@ try {
   ok("signed out, the status is refused", (await api("/api/pilot/status")).status === 401);
 
   group("B. Switched on: the grant, the owner, the one not-found");
-  await sql(`set local pilot.without_purge = 'test'; update pilot.switch set enabled = true where key = 'pilot_sync'`);  // a test database: the purge (slice 5) is not built yet
+  await switchOn('pilot_sync');
   st = await api("/api/pilot/status", { token: tc });
   ok("an account with no grant is told so", st.body?.sync === true && st.body?.granted === false, st.text);
   cr = await api("/api/pilot/matches", { method: "POST", token: tc, body: CREATE });
@@ -149,7 +160,7 @@ try {
   let np = await api(`/api/pilot/${M}/names`, { method: "POST", token: ta, body: { rows: NAMES } });
   ok("with the counsel fallback on, the names do not go: names_upload_off", np.body?.ok === false && np.body?.reason === "names_upload_off", np.text);
   ok("...and none is held", (await sql(`select count(*)::int n from pilot.name where match_id = $1`, [M])).rows[0].n === 0);
-  await sql(`set local pilot.without_purge = 'test'; update pilot.switch set enabled = true where key = 'pilot_names_upload'`);  // a test database: the purge (slice 5) is not built yet
+  await switchOn('pilot_names_upload');
   np = await api(`/api/pilot/${M}/names`, { method: "POST", token: ta, body: { rows: NAMES } });
   ok("with it off, the owner puts three names", np.body?.ok === true && np.body?.n === 3, np.text);
   const back = await api(`/api/pilot/${M}/names`, { token: ta });

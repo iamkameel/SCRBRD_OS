@@ -26,7 +26,8 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { pilotWire, pilotUnwire, PLAYER_FIELDS, TEAM_FIELDS, WIRE_STRING, KIND_KEYS, CLOSED, positionWords, containsWord, holdsAName } from "../src/lib/pilotWire.js";
+import { pilotWire, pilotUnwire, PLAYER_FIELDS, TEAM_FIELDS, WIRE_STRING, KIND_KEYS, CLOSED, BASE_KEYS, BOOLEAN_KEYS, CODE_KEYS, CODE, EVENT_ID,
+         positionWords, containsWord, holdsAName } from "../src/lib/pilotWire.js";
 
 let pass = 0, fail = 0;
 const ok = (/** @type {string} */ n, /** @type {unknown} */ c, d = "") => {
@@ -212,6 +213,25 @@ group("E. One list, on the phone and in db/151");
      JSON.stringify(Object.keys(keys)));
   ok("CLOSED is pilot_closed(), key for key and code for code", Object.keys(closed).length >= 15 && same(closed, CLOSED),
      JSON.stringify(Object.keys(closed)));
+  // The rest of pilot_screen()'s rules, read out of its body (the second
+  // review's nit): the base keys, the player fields, the yes/no keys, the
+  // code keys, and the code and event-id patterns.
+  const screen = body("pilot_screen");
+  const quoted = (/** @type {string} */ t) => [...t.matchAll(/'([^']*)'/g)].map((x) => x[1]);
+  const inList = (/** @type {string} */ first) => {
+    const m = screen.match(new RegExp(`r\\.key IN \\(('${first}'[^)]*)\\)`));
+    return m ? quoted(m[1]) : null;
+  };
+  const sameSet = (/** @type {Iterable<string> | null} */ a, /** @type {Iterable<string>} */ b) =>
+    !!a && JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+  const base = (body("pilot_kind_keys").match(/SELECT ARRAY\[([^\]]*)\]/) ?? [])[1] ?? "";
+  ok("BASE_KEYS is pilot_kind_keys()'s base", sameSet(quoted(base), BASE_KEYS), base);
+  ok("PLAYER_FIELDS is pilot_screen()'s player keys", sameSet(inList("striker"), PLAYER_FIELDS), JSON.stringify(inList("striker")));
+  ok("BOOLEAN_KEYS is pilot_screen()'s yes/no keys", sameSet(inList("boundary"), BOOLEAN_KEYS), JSON.stringify(inList("boundary")));
+  ok("CODE_KEYS is pilot_screen()'s code keys", sameSet(inList("reason"), CODE_KEYS), JSON.stringify(inList("reason")));
+  const pattern = (/** @type {string} */ key) => (screen.match(new RegExp(`r\\.key ${key}[\\s\\S]*?!~ '([^']+)'`)) ?? [])[1];
+  ok("CODE is the code keys' pattern", pattern("IN \\('reason'") === CODE.source, pattern("IN \\('reason'"));
+  ok("EVENT_ID is the id's pattern", pattern("= 'id'") === EVENT_ID.source, pattern("= 'id'"));
 }
 
 group("F. Shapes the scoring package writes");

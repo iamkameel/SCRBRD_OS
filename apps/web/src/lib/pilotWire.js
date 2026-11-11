@@ -50,7 +50,7 @@ export const TEAM_FIELDS = Object.freeze(["battingTeam", "bowlingTeam", "teamKey
 /** What a string on the wire may look like at all (db/151's own rule). */
 export const WIRE_STRING = /^[A-Za-z0-9_.:+-]{1,160}$/;
 
-const BASE_KEYS = ["kind", "innings", "clientTs", "id", "seq"];
+export const BASE_KEYS = ["kind", "innings", "clientTs", "id", "seq"];
 /** The keys each kind of event may carry on the wire (db/151 pilot_kind_keys). */
 export const KIND_KEYS = Object.freeze({
   innings_start: ["battingTeam", "bowlingTeam", "teamKey", "bowlingTeamKey", "squad", "bowlingSquad", "twelfthMan", "overs", "target",
@@ -96,10 +96,10 @@ export const CLOSED = Object.freeze({
 const APPROACH_OUT = Object.freeze({ "Over the wicket": "over", "Around the wicket": "around" });
 const APPROACH_IN = Object.freeze({ over: "Over the wicket", around: "Around the wicket" });
 
-const CODE = /^[a-z][a-z0-9_]{0,40}$/;
-const EVENT_ID = /^[A-Za-z0-9_.+-]{1,80}(:[A-Za-z0-9_.+-]{1,80}){1,6}$/;
-const BOOLEAN_KEYS = new Set(["boundary", "freeHit", "captainConsent", "toBattingTeam"]);
-const CODE_KEYS = new Set(["reason", "shot"]);
+export const CODE = /^[a-z][a-z0-9_]{0,40}$/;
+export const EVENT_ID = /^[A-Za-z0-9_.+-]{1,80}(:[A-Za-z0-9_.+-]{1,80}){1,6}$/;
+export const BOOLEAN_KEYS = new Set(["boundary", "freeHit", "captainConsent", "toBattingTeam"]);
+export const CODE_KEYS = new Set(["reason", "shot"]);
 
 /**
  * Is this value of this key the shape the server takes? Players, squads and

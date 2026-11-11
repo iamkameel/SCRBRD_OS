@@ -30,7 +30,9 @@
 --
 --   1. No grant: no role but the owner — not scrbrd_app, not PUBLIC, and not
 --      a managed host's anon, authenticated or service_role — holds any
---      privilege on the schema, a table, a sequence or a default ACL in it.
+--      privilege on the schema, a table, a sequence or a default ACL in it;
+--      no publication carries a pilot table; and no API role reaches it by
+--      membership (of the owner, pg_read_all_data or pg_write_all_data).
 --   2. No dependency: no view, policy, key, trigger or default outside
 --      `pilot` may depend on an object in it.
 --   3. An allow-list of functions, by signature: every function that names
@@ -69,6 +71,19 @@
 --
 -- Nothing here dates anything by the database's day (db/128): every clock
 -- is a timestamptz.
+--
+-- FOR SLICE 5 (the purge), from the second review:
+--   - pilot_switch_guard() asks only that a function called
+--     pilot_purge_expired() exists, which a stand-in satisfies. When the
+--     purge lands, the guard must ask for more than its name: that it is
+--     the purge (its signature and owner, on the isolation list) and that
+--     it has run recently.
+--   - The purge keys on names_purge_after and purge_after, never on
+--     `ended_at + interval`: ended_at is not latched and moves with a late
+--     event, while the two dates, once passed, do not (B2).
+--   - `reason` and `shot` must be closed vocabularies (each kind's reasons
+--     from packages/scoring, the picker's shot ids) in pilot_closed() and
+--     pilotWire.js CLOSED before pilot_sync goes on.
 
 -- ── The schema ──────────────────────────────────────────────────────
 CREATE SCHEMA pilot;
@@ -87,12 +102,13 @@ INSERT INTO pilot.switch (key, enabled) VALUES ('pilot_sync', false), ('pilot_na
 -- ...and neither goes on before the purge exists (review S6). Slice 5 builds
 -- pilot_purge_expired(): until then nothing deletes expired names or a
 -- nameless match at twelve months, so a switch turned on would keep a
--- child's typed name past its date. A test database says so in the same
--- transaction (`SET LOCAL pilot.without_purge = 'test'`); nowhere else may.
+-- child's typed name past its date. There is no setting that steps round
+-- this (the second review's SF-A): a test that needs a switch on writes a
+-- stand-in purge, turns the switch, and drops the stand-in, all in its own
+-- transaction, which is a deliberate act in a file, never a flag.
 CREATE OR REPLACE FUNCTION pilot_switch_guard() RETURNS trigger AS $$
 BEGIN
-  IF NEW.enabled AND to_regprocedure('public.pilot_purge_expired()') IS NULL
-     AND coalesce(current_setting('pilot.without_purge', true), '') <> 'test' THEN
+  IF NEW.enabled AND to_regprocedure('public.pilot_purge_expired()') IS NULL THEN
     RAISE EXCEPTION 'pilot switch %: stays off until pilot_purge_expired() exists (slice 5)', NEW.key
       USING ERRCODE = 'insufficient_privilege';
   END IF;
@@ -474,6 +490,39 @@ CREATE OR REPLACE FUNCTION pilot_own(p_id uuid) RETURNS uuid AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- ── The screen (§3.4) ───────────────────────────────────────────────
+
+-- The words of a code-shaped value (an event id, a target, a reason, a shot,
+-- an idempotency key), for the name check: its colon-separated parts, less
+-- this match's own id and the devices this match already knows (labels the
+-- token binds, kept in their own columns). A name hidden by punctuation
+-- ("Qa-Canarytest:hurt", "qa_canarytest") is then found as whole words by
+-- pilot_contains_word(), and a boy typed "Dev" does not hold back every ball
+-- of a phone called dev-….
+CREATE OR REPLACE FUNCTION pilot_code_words(p_id uuid, p_v text) RETURNS text AS $$
+  SELECT coalesce(string_agg(x.part, ' '), '')
+    FROM unnest(string_to_array(coalesce(p_v, ''), ':')) x(part)
+   WHERE x.part <> 'pilot-' || p_id::text
+     AND x.part IS DISTINCT FROM app_device_id()
+     AND NOT EXISTS (SELECT 1 FROM pilot.session s WHERE s.match_id = p_id AND s.holder_device = x.part)
+     AND NOT EXISTS (SELECT 1 FROM pilot.ball_event b WHERE b.match_id = p_id AND b.device_id = x.part)
+     AND NOT EXISTS (SELECT 1 FROM pilot.held h WHERE h.match_id = p_id AND h.device_id = x.part)
+$$ LANGUAGE sql STABLE;
+
+-- The idempotency key (S2, the second review's SF-C): newEventId()'s shape,
+-- `<this device>:<match>:<base 36>:<base 36>`, starting with the device the
+-- token is bound to, and no typed name of the match in it as whole words. A
+-- reason, or NULL.
+CREATE OR REPLACE FUNCTION pilot_key_refusal(p_id uuid, p_key text) RETURNS text AS $$
+  SELECT CASE
+    WHEN p_key IS NULL OR app_device_id() IS NULL OR char_length(p_key) > 200
+      OR left(p_key, char_length(app_device_id()) + 1) IS DISTINCT FROM app_device_id() || ':'
+      OR substr(p_key, char_length(app_device_id()) + 2) !~ '^[A-Za-z0-9_.+-]{1,80}:[0-9a-z]{1,12}:[0-9a-z]{1,12}$'
+      THEN 'free_text'
+    WHEN EXISTS (SELECT 1 FROM pilot.name nm WHERE nm.match_id = p_id
+                  AND pilot_contains_word(pilot_code_words(p_id, substr(p_key, char_length(app_device_id()) + 2)), nm.typed_name))
+      THEN 'name_in_event'
+  END
+$$ LANGUAGE sql STABLE;
 -- One event, as the pad keeps it (camelCase), judged against one match. A
 -- reason, or NULL when it may go on. It never returns a name. Run inside
 -- the writing functions themselves (pilot_insert, pilot_hold), so no route
@@ -481,7 +530,9 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- asked first by the API so a refusal is said per event.
 --
 --   name_in_event  a key, or a value that is not a code of its key's closed
---                  vocabulary, equals (pilot_norm) a typed name of the match;
+--                  vocabulary, equals (pilot_norm) a typed name of the match,
+--                  or, for the code-shaped values (id, target, reason,
+--                  shot), holds one as whole words (pilot_code_words);
 --   free_text      a kind not sent, a key outside its kind's list, or a
 --                  value not of its key's shape: codes, numbers, event ids
 --                  — never words;
@@ -491,8 +542,10 @@ DECLARE r record; v_keys text[]; v_closed text[]; v jsonb; t text;
 BEGIN
   IF jsonb_typeof(p_event) IS DISTINCT FROM 'object' THEN RETURN 'free_text'; END IF;
   IF EXISTS (SELECT 1 FROM pilot_leaves(p_event) x JOIN pilot.name nm ON nm.match_id = p_id
-              WHERE pilot_norm(x.s) = pilot_norm(nm.typed_name)
-                AND NOT (x.k IS NOT NULL AND x.s = ANY (coalesce(pilot_closed(x.k), '{}')))) THEN
+              WHERE NOT (x.k IS NOT NULL AND x.s = ANY (coalesce(pilot_closed(x.k), '{}')))
+                AND CASE WHEN x.k IN ('id', 'target', 'reason', 'shot')
+                         THEN pilot_contains_word(pilot_code_words(p_id, x.s), nm.typed_name)
+                         ELSE pilot_norm(x.s) = pilot_norm(nm.typed_name) END) THEN
     RETURN 'name_in_event';
   END IF;
   v_keys := pilot_kind_keys(p_event ->> 'kind');
@@ -878,12 +931,13 @@ RETURNS boolean AS $$
 DECLARE v_why text; v_body jsonb;
 BEGIN
   IF pilot_own(p_id) IS NULL THEN RETURN false; END IF;
-  IF p_key IS NULL OR p_key !~ '^[A-Za-z0-9_.:+-]{1,200}$' OR jsonb_typeof(p_body) IS DISTINCT FROM 'object'
+  IF jsonb_typeof(p_body) IS DISTINCT FROM 'object'
      OR EXISTS (SELECT 1 FROM unnest(ARRAY['innings', 'clientSeq', 'clientTs']) f
                  WHERE p_body ? f AND jsonb_typeof(p_body -> f) NOT IN ('number', 'null')) THEN
     PERFORM pilot_refuse('free_text');
   END IF;
-  v_why := coalesce(pilot_screen(p_id, coalesce(p_body -> 'payload', '{}'::jsonb)), pilot_row_refusal(p_id, p_cols));
+  v_why := coalesce(pilot_key_refusal(p_id, p_key), pilot_screen(p_id, coalesce(p_body -> 'payload', '{}'::jsonb)),
+                    pilot_row_refusal(p_id, p_cols));
   IF v_why IS NOT NULL THEN PERFORM pilot_refuse(v_why); END IF;
   v_body := jsonb_strip_nulls(jsonb_build_object('epoch', p_epoch, 'idempotencyKey', p_key, 'innings', p_body -> 'innings',
                                                  'clientSeq', p_body -> 'clientSeq', 'clientTs', p_body -> 'clientTs',
@@ -909,8 +963,7 @@ BEGIN
                     AND s.holder_device = app_device_id() AND s.lease_until > now()) THEN
     RAISE EXCEPTION 'no live lease' USING ERRCODE = 'insufficient_privilege';
   END IF;
-  IF p_key IS NULL OR p_key !~ '^[A-Za-z0-9_.:+-]{1,200}$' THEN PERFORM pilot_refuse('free_text'); END IF;
-  v_why := pilot_row_refusal(p_id, p_cols);
+  v_why := coalesce(pilot_key_refusal(p_id, p_key), pilot_row_refusal(p_id, p_cols));
   IF v_why IS NOT NULL THEN PERFORM pilot_refuse(v_why); END IF;
   SELECT coalesce(max(b.seq), 0) + 1 INTO v_seq FROM pilot.ball_event b WHERE b.match_id = p_id;
   INSERT INTO pilot.ball_event (match_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq, client_ts,
@@ -1040,7 +1093,7 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 -- It fails closed: a function is on the list by its signature, and the
 -- list pins how it runs and who may call it.
 CREATE OR REPLACE FUNCTION pilot_isolation_check(p_exempt text[] DEFAULT '{}') RETURNS void AS $$
-DECLARE v text; v_roles oid[]; v_app oid; v_owner oid; r record;
+DECLARE v text; v_app oid; v_owner oid; r record;
   -- (signature, SECURITY DEFINER?, granted to the application role?, may name the typed names?)
   v_list CONSTANT text[][] := ARRAY[
     ['public.pilot_switch_guard()',                      'f', 'f', 'f'],
@@ -1055,6 +1108,8 @@ DECLARE v text; v_roles oid[]; v_app oid; v_owner oid; r record;
     ['public.pilot_switch_on(text)',                     't', 'f', 'f'],
     ['public.pilot_may_score()',                         't', 'f', 'f'],
     ['public.pilot_own(uuid)',                           't', 'f', 'f'],
+    ['public.pilot_code_words(uuid,text)',               'f', 'f', 'f'],
+    ['public.pilot_key_refusal(uuid,text)',              'f', 'f', 't'],
     ['public.pilot_screen(uuid,jsonb)',                  'f', 'f', 't'],
     ['public.pilot_row_refusal(uuid,jsonb)',             'f', 'f', 'f'],
     ['public.pilot_refuse(text)',                        'f', 'f', 'f'],
@@ -1082,27 +1137,41 @@ DECLARE v text; v_roles oid[]; v_app oid; v_owner oid; r record;
     ['public.pilot_isolation_check(text[])',             'f', 'f', 'f']];
   v_oids oid[] := '{}'; v_ex oid[] := '{}'; i int;
 BEGIN
-  -- The roles that must hold nothing: PUBLIC (0), the application role, and
-  -- a managed host's API roles where they exist.
-  SELECT array_agg(oid) INTO v_roles FROM pg_roles WHERE rolname IN ('scrbrd_app', 'anon', 'authenticated', 'service_role');
-  v_roles := coalesce(v_roles, '{}') || 0::oid;
   v_app := (SELECT oid FROM pg_roles WHERE rolname = 'scrbrd_app');
   v_owner := (SELECT nspowner FROM pg_namespace WHERE nspname = 'pilot');
 
-  -- 1. No grant: the schema, every relation and sequence in it, and its
-  --    default privileges.
+  -- 1. No grant, failing closed (the second review's SF-B): no grantee but
+  --    the owner on the schema, or on any relation or sequence in it, and
+  --    every one of them owned by the schema's owner; no default privileges
+  --    in it; no publication carrying any of it out of the database; and no
+  --    API role that reads everything by membership, whatever the ACLs say.
   IF EXISTS (SELECT 1 FROM pg_namespace n, aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a
-              WHERE n.nspname = 'pilot' AND a.grantee = ANY (v_roles)) THEN
+              WHERE n.nspname = 'pilot' AND a.grantee <> n.nspowner) THEN
     RAISE EXCEPTION 'pilot isolation (grant): a role other than the owner may use schema pilot';
   END IF;
   SELECT string_agg(c.relname, ', ' ORDER BY c.relname) INTO v
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
    WHERE n.nspname = 'pilot'
-     AND EXISTS (SELECT 1 FROM aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a WHERE a.grantee = ANY (v_roles));
+     AND (c.relowner <> v_owner
+          OR EXISTS (SELECT 1 FROM aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a WHERE a.grantee <> c.relowner));
   IF v IS NOT NULL THEN RAISE EXCEPTION 'pilot isolation (grant): a role other than the owner holds a privilege on %', v; END IF;
   IF EXISTS (SELECT 1 FROM pg_default_acl d JOIN pg_namespace n ON n.oid = d.defaclnamespace WHERE n.nspname = 'pilot') THEN
     RAISE EXCEPTION 'pilot isolation (grant): schema pilot has default privileges';
   END IF;
+  SELECT string_agg(DISTINCT pt.pubname || ' (' || pt.tablename || ')', ', ') INTO v
+    FROM pg_publication_tables pt WHERE pt.schemaname = 'pilot';
+  IF v IS NOT NULL THEN RAISE EXCEPTION 'pilot isolation (grant): a publication carries a pilot table: %', v; END IF;
+  IF current_setting('server_version_num')::int >= 150000 THEN
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_publication_namespace pn JOIN pg_namespace n ON n.oid = pn.pnnspid WHERE n.nspname = 'pilot') THEN
+      RAISE EXCEPTION 'pilot isolation (grant): a publication carries schema pilot';
+    END IF;
+  END IF;
+  SELECT string_agg(DISTINCT api.rolname || ' in ' || m.rolname, ', ') INTO v
+    FROM pg_roles api CROSS JOIN pg_roles m
+   WHERE api.rolname IN ('scrbrd_app', 'anon', 'authenticated', 'service_role')
+     AND (m.oid = v_owner OR m.rolname IN ('pg_read_all_data', 'pg_write_all_data'))
+     AND pg_has_role(api.oid, m.oid, 'MEMBER');
+  IF v IS NOT NULL THEN RAISE EXCEPTION 'pilot isolation (grant): an API role reaches pilot by membership: %', v; END IF;
 
   -- 2. No dependency: anything outside the schema — a view's rule, a policy,
   --    a key, a trigger, a default, a column, a function or a type — that

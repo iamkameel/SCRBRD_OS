@@ -43,7 +43,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
-import { appUrl, ownerUrl, port } from "./db-url.mjs";
+import { appUrl, ownerUrl, port, refuseUnlessLocal } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5397);
@@ -59,9 +59,20 @@ let pass = 0, fail = 0;
 const ok = (/** @type {string} */ n, /** @type {unknown} */ c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 400)}` : ""); } };
 const group = (/** @type {string} */ t) => console.log("\n" + t);
 
+// This walk turns the Pilot Match's switches on: never against a database
+// that is not on this machine (the second review's SF-A).
+refuseUnlessLocal("smoke-browser-pilot");
 const owner = new pg.Client({ connectionString: ownerUrl() });
 await owner.connect();
 const sql = (/** @type {string} */ q, /** @type {any[]} */ p = []) => owner.query(q, p);
+// A switch on, in a test database. db/151's guard keeps both off until the
+// purge (slice 5) exists, so a stand-in purge is written, the switch turned,
+// and the stand-in dropped, in one transaction: nothing of it outlives it.
+const switchOn = (/** @type {string} */ key) => sql(`begin;
+  create function public.pilot_purge_expired() returns void language sql as '';
+  update pilot.switch set enabled = true where key = '${key}';
+  drop function public.pilot_purge_expired();
+  commit;`).catch(async (e) => { await sql("rollback"); throw e; });
 const one = async (/** @type {string} */ q, /** @type {any[]} */ p = []) => (await sql(q, p)).rows[0];
 const SCORER_ID = (await one(`select id from app_user where email = $1`, [SCORER])).id;
 await sql(`update pilot.switch set enabled = false`);
@@ -250,7 +261,7 @@ try {
   await phoneA.tap("practice-back");
 
   group("W1. Switched on: the choice, the label, the notice; airplane mode; then signal");
-  await sql(`set local pilot.without_purge = 'test'; update pilot.switch set enabled = true where key = 'pilot_sync'`);  // a test database: the purge (slice 5) is not built yet
+  await switchOn('pilot_sync');
   await sql(`insert into pilot.scorer (user_id) values ($1) on conflict (user_id) do update set ended_at = null`, [SCORER_ID]);
   await freshStart(phoneA);
   ok("the start screen now offers My Pilot Matches", await phoneA.has("pilot-list-open"));
@@ -303,7 +314,7 @@ try {
   await phoneA.shot("w1-sent");
 
   group("W1. The fallback lifted later: this match's names still stay here");
-  await sql(`set local pilot.without_purge = 'test'; update pilot.switch set enabled = true where key = 'pilot_names_upload'`);  // a test database: the purge (slice 5) is not built yet
+  await switchOn('pilot_names_upload');
   await phoneA.tap("run-0");
   await serverEvents(/** @type {string} */ (uuidA), 7);
   await afterReads(phoneA.page, 1500);
