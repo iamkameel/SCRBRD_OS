@@ -42,6 +42,8 @@ const KINDS = /** @type {const} */ ({
   routines: new RegExp(String.raw`\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE|AGGREGATE)\s+${ID}\s*\(`, "gi"),
   types: new RegExp(String.raw`\bCREATE\s+(?:TYPE|DOMAIN)\s+${ID}`, "gi"),
   sequences: new RegExp(String.raw`\bCREATE\s+SEQUENCE\s+(?:IF\s+NOT\s+EXISTS\s+)?${ID}`, "gi"),
+  // A schema of our own (db/151's `pilot`): wholly ours, by its name.
+  schemas: /\bCREATE\s+SCHEMA\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_][\w$]*)/gi,
   // A rename makes a name of ours that no CREATE spelled.
   renamed: new RegExp(String.raw`\bALTER\s+(TABLE|VIEW|MATERIALIZED\s+VIEW|FUNCTION|PROCEDURE|TYPE|DOMAIN|SEQUENCE)\s+(?:IF\s+EXISTS\s+)?[^;]*?\bRENAME\s+TO\s+${ID}`, "gi"),
 });
@@ -58,13 +60,14 @@ const nameOf = (/** @type {string} */ raw) => {
 const stripComments = (/** @type {string} */ sql) => sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ");
 
 /**
- * Every object this repository's migrations create in `public`, by kind.
+ * Every object this repository's migrations create in `public`, by kind,
+ * and every schema of its own they create beside it (db/151's `pilot`).
  * @param {string} dbDir
- * @returns {{ tables: string[], views: string[], routines: string[], types: string[], sequences: string[] }}
+ * @returns {{ tables: string[], views: string[], routines: string[], types: string[], sequences: string[], schemas: string[] }}
  */
 export function projectObjects(dbDir) {
   /** @type {Record<string, Set<string>>} */
-  const found = { tables: new Set(["schema_migration"]), views: new Set(), routines: new Set(), types: new Set(), sequences: new Set() };
+  const found = { tables: new Set(["schema_migration"]), views: new Set(), routines: new Set(), types: new Set(), sequences: new Set(), schemas: new Set() };
   for (const f of migrationFiles(dbDir)) {
     const sql = stripComments(readFileSync(join(dbDir, f), "utf8"));
     for (const [kind, re] of Object.entries(KINDS)) {
@@ -76,6 +79,11 @@ export function projectObjects(dbDir) {
           if (n) found[target].add(n);
           continue;
         }
+        if (kind === "schemas") {
+          const n = m[1].toLowerCase();
+          if (n !== "public") found.schemas.add(n);
+          continue;
+        }
         const n = nameOf(m[1]);
         if (n) found[kind].add(n);
       }
@@ -83,7 +91,7 @@ export function projectObjects(dbDir) {
   }
   const sorted = (/** @type {Set<string>} */ s) => [...s].sort();
   return { tables: sorted(found.tables), views: sorted(found.views), routines: sorted(found.routines),
-           types: sorted(found.types), sequences: sorted(found.sequences) };
+           types: sorted(found.types), sequences: sorted(found.sequences), schemas: sorted(found.schemas) };
 }
 
 const arr = (/** @type {string[]} */ xs) => xs.length
@@ -92,7 +100,10 @@ const arr = (/** @type {string[]} */ xs) => xs.length
 
 /**
  * The teardown, as one DO block: drops, in `public`, exactly the objects
- * named, and never one that belongs to an extension.
+ * named, and never one that belongs to an extension — and, first, each
+ * schema of our own whole (`pilot`: nothing outside it may depend on it,
+ * db/151's isolation check, and its tables' keys into ours would otherwise
+ * read as somebody else's objects built on ours and stop the reset).
  * @param {ReturnType<typeof projectObjects>} o
  */
 export function teardownSql(o) {
@@ -109,8 +120,16 @@ DECLARE
   ours_routines  text[] := ${arr(o.routines)};
   ours_types     text[] := ${arr(o.types)};
   ours_sequences text[] := ${arr(o.sequences)};
+  ours_schemas   text[] := ${arr(o.schemas ?? [])};
   foreign_deps   text;
 BEGIN
+  -- Our own schemas go first, whole. One transaction: a refusal below puts
+  -- them back.
+  FOR r IN SELECT nspname FROM pg_namespace WHERE nspname = ANY (ours_schemas) LOOP
+    EXECUTE format('DROP SCHEMA IF EXISTS %I CASCADE', r.nspname);
+    n := n + 1;
+  END LOOP;
+
   -- FIRST, A REFUSAL. CASCADE on one of ours would take with it anything of
   -- somebody else's built on it: their view over our table, their function
   -- taking our type, their table with a column of our enum or a foreign key

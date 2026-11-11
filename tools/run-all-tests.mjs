@@ -30,6 +30,8 @@ const SUITES = [
   // What a signed-out page may show about a pupil (SCRBRD-083): the surfaces,
   // the never-public list against every masked column, the name rule.
   ["public",   "packages/policy/test/public.test.mjs"],
+  // Pilot Match phase 2 (db/151): no migration but the pilot's names schema pilot.
+  ["pilot-isolation", "packages/policy/test/pilot-isolation.test.mjs"],
   // The plan's word list (SCRBRD-138 phase B §3): SG-10's words in code, the
   // one copy the news route and the composer both read.
   ["words",    "packages/policy/test/words.test.mjs"],

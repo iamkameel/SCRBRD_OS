@@ -11665,6 +11665,115 @@ CREATE OR REPLACE FUNCTION _v149_people(p_match uuid, p_player uuid) RETURNS jso
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/149 (section 127) ─────────────────────────────────────────────
 
+-- ┌── db/151 (section 129) ─────────────────────────────────────────────
+-- Pilot Match phase 2 (docs/design/PILOT_MATCH_PHASE2.md slices 1–2). The
+-- verifier's own doors into schema `pilot`, which the application role
+-- cannot reach: each writes or reads as the owner, as the owner's key, a
+-- migration or the definer functions would. Two invented, school-less
+-- accounts (role 'none', as a Google sign-up is) score; nobody real.
+CREATE OR REPLACE FUNCTION _v151_users() RETURNS jsonb AS $$
+DECLARE a uuid; b uuid;
+BEGIN
+  INSERT INTO app_user (school_id, email, name, role) VALUES (NULL, 'v151.scorer.a@example.invalid', 'V151 Scorer A', 'none') RETURNING id INTO a;
+  INSERT INTO app_user (school_id, email, name, role) VALUES (NULL, 'v151.scorer.b@example.invalid', 'V151 Scorer B', 'none') RETURNING id INTO b;
+  RETURN jsonb_build_object('a', a, 'b', b);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The owner's key: a switch, a grant.
+CREATE OR REPLACE FUNCTION _v151_switch(p_key text, p_on boolean) RETURNS void AS $$
+  UPDATE pilot.switch SET enabled = p_on, set_at = now() WHERE key = p_key;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v151_grant(p_user uuid, p_on boolean) RETURNS void AS $$
+  INSERT INTO pilot.scorer (user_id) VALUES (p_user)
+  ON CONFLICT (user_id) DO UPDATE SET ended_at = CASE WHEN p_on THEN NULL ELSE now() END;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A statement run as the CALLER (the application role): 'ok', or its SQLSTATE.
+CREATE OR REPLACE FUNCTION _v151_as_caller(p_sql text) RETURNS text AS $$
+BEGIN EXECUTE p_sql; RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN RETURN SQLSTATE; END $$ LANGUAGE plpgsql;
+
+-- The isolation check as it stands, as the owner: 'ok' or its message.
+CREATE OR REPLACE FUNCTION _v151_check() RETURNS text AS $$
+BEGIN PERFORM pilot_isolation_check(); RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN RETURN SQLERRM; END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Does the check catch this? The statement runs as the owner, then the
+-- check; whatever happened is rolled back with the subtransaction, and the
+-- check's message comes back ('NOT CAUGHT' when it passed).
+CREATE OR REPLACE FUNCTION _v151_breaks(p_sql text) RETURNS text AS $$
+BEGIN
+  EXECUTE p_sql;
+  PERFORM pilot_isolation_check();
+  RAISE EXCEPTION 'NOT CAUGHT';
+EXCEPTION WHEN OTHERS THEN RETURN SQLERRM;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A statement as the owner, rolled back: 'ok' or its message. For the log's
+-- append-only guard, which binds the owner too.
+CREATE OR REPLACE FUNCTION _v151_owner_try(p_sql text, p_deleting boolean DEFAULT false) RETURNS text AS $$
+BEGIN
+  IF p_deleting THEN PERFORM set_config('pilot.deleting', 'on', true); END IF;
+  EXECUTE p_sql;
+  RAISE EXCEPTION 'ok';
+EXCEPTION WHEN OTHERS THEN
+  PERFORM set_config('pilot.deleting', '', true);
+  RETURN SQLERRM;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A lease that lapsed (the clock, without waiting 90 seconds).
+CREATE OR REPLACE FUNCTION _v151_lapse(p_id uuid) RETURNS void AS $$
+  UPDATE pilot.session SET lease_until = now() - interval '1 second' WHERE match_id = p_id;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Every derived read, counted: the four tables a derived read reads, and
+-- every view and materialized view in public built on any of them. A view
+-- that cannot be counted here (it asks for an identity) answers -1, the same
+-- before as after.
+CREATE OR REPLACE FUNCTION _v151_derived() RETURNS jsonb AS $$
+DECLARE r record; v_n bigint; out jsonb := '{}';
+BEGIN
+  FOR r IN SELECT DISTINCT c.relname FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+            WHERE ns.nspname = 'public' AND (c.relname IN ('ball_event', 'match', 'player', 'match_squad')
+              OR (c.relkind IN ('v', 'm') AND EXISTS (
+                SELECT 1 FROM pg_depend d JOIN pg_rewrite rw ON d.classid = 'pg_rewrite'::regclass AND rw.oid = d.objid
+                 WHERE rw.ev_class = c.oid AND d.refobjid IN ('ball_event'::regclass, 'match'::regclass, 'player'::regclass,
+                                                              'match_squad'::regclass))))
+            ORDER BY 1
+  LOOP
+    BEGIN EXECUTE format('SELECT count(*) FROM public.%I', r.relname) INTO v_n;
+    EXCEPTION WHEN OTHERS THEN v_n := -1; END;
+    out := out || jsonb_build_object(r.relname, v_n);
+  END LOOP;
+  RETURN out;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Every row of one pilot match in every pilot table but the names, as text:
+-- what a grep of a dump for the canary would read.
+CREATE OR REPLACE FUNCTION _v151_dump(p_id uuid) RETURNS text AS $$
+  SELECT coalesce((SELECT string_agg(row_to_json(x)::text, E'\n') FROM pilot.match x WHERE x.id = p_id), '')
+      || coalesce((SELECT string_agg(row_to_json(x)::text, E'\n') FROM pilot.side x WHERE x.match_id = p_id), '')
+      || coalesce((SELECT string_agg(row_to_json(x)::text, E'\n') FROM pilot.slot x WHERE x.match_id = p_id), '')
+      || coalesce((SELECT string_agg(row_to_json(x)::text, E'\n') FROM pilot.session x WHERE x.match_id = p_id), '')
+      || coalesce((SELECT string_agg(row_to_json(x)::text, E'\n') FROM pilot.ball_event x WHERE x.match_id = p_id), '')
+      || coalesce((SELECT string_agg(row_to_json(x)::text, E'\n') FROM pilot.held x WHERE x.match_id = p_id), '')
+      || coalesce((SELECT string_agg(row_to_json(x)::text, E'\n') FROM pilot.audit x WHERE x.match_id = p_id), '')
+      || coalesce((SELECT string_agg(row_to_json(x)::text, E'\n') FROM pilot.tombstone x WHERE x.match_id = p_id), '')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What the owner's table holds for one match: names, rows, tombstones, audit.
+CREATE OR REPLACE FUNCTION _v151_facts(p_id uuid) RETURNS jsonb AS $$
+  SELECT jsonb_build_object(
+    'names', (SELECT count(*) FROM pilot.name WHERE match_id = p_id),
+    'canary', (SELECT count(*) FROM pilot.name WHERE match_id = p_id AND typed_name = 'Qa Canarytest'),
+    'match', (SELECT count(*) FROM pilot.match WHERE id = p_id),
+    'log', (SELECT count(*) FROM pilot.ball_event WHERE match_id = p_id),
+    'held', (SELECT count(*) FROM pilot.held WHERE match_id = p_id AND resolved_at IS NULL),
+    'tombstones', (SELECT coalesce(jsonb_agg(what || ':' || why ORDER BY what), '[]') FROM pilot.tombstone WHERE match_id = p_id),
+    'audit', (SELECT coalesce(jsonb_agg(event ORDER BY id), '[]') FROM pilot.audit WHERE match_id = p_id))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/151 (section 129) ─────────────────────────────────────────────
+
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -39394,6 +39503,269 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 127
   -- └── db/149 (section 127) ──────────────────────────────────────────
+  -- ┌── db/151 (section 129) ─────────────────────────────────────────
+  -- ── 129. A Pilot Match is kept out of every derived read (db/151; PILOT_MATCH_PHASE2 §2.4, §3.4, §4) ──
+  -- As scrbrd_app throughout; the owner's acts go through the _v151_ doors.
+  -- The test name is the canary `Qa Canarytest`, which is nobody.
+  -- Labels:
+  --   (grant)       the application role is refused every pilot table, for
+  --                 every command, and the schema itself
+  --   (check)       the isolation check passes on the schema as migrated
+  --   (dependency)  a scratch view on the pilot log outside the schema makes it raise
+  --   (functions)   a scratch function naming a pilot table, off the list, makes it raise
+  --   (names)       a listed function that names the typed names, off the narrow list, makes it raise
+  --   (granted)     a grant on a pilot table, or on the schema, makes it raise
+  --   (off)         with phase 2 switched off, nothing is created and nothing is said of grants
+  --   (grant needed) an account with no pilot.scorer grant, superadmin included, cannot create
+  --   (create)      the granted owner creates, idempotently; another account gets not_found
+  --   (owner only)  no other account, superadmin included, reads any of it
+  --   (names off)   the counsel fallback refuses the names; on, the canary is held in pilot.name alone
+  --   (screen)      name_in_event, unknown_slot and free_text refuse; a clean event passes
+  --   (session)     claim, the lease, a second device refused, a take-over over a lapsed lease
+  --   (log)         written at seq 1, deduped by fingerprint; append-only, even for the owner
+  --   (derived)     every derived read answers exactly as it did before the pilot match existed
+  --   (canary)      no pilot row but the names holds the canary
+  --   (delete)      another account cannot; the owner can, with tombstones and the audit kept
+  --   (promoted_from) match.promoted_from exists and is UNIQUE
+  DECLARE
+    u    jsonb := _v151_users();
+    A    uuid := (u->>'a')::uuid;
+    B    uuid := (u->>'b')::uuid;
+    M    uuid := 'a1510000-0000-4000-8000-000000000001';
+    H1   uuid := 'a1510000-0000-4000-8000-0000000000a1';
+    H2   uuid := 'a1510000-0000-4000-8000-0000000000a2';
+    W1   uuid := 'a1510000-0000-4000-8000-0000000000b1';
+    W2   uuid := 'a1510000-0000-4000-8000-0000000000b2';
+    v_before jsonb := _v151_derived();
+    v_sides jsonb := '[{"side":"home","school":"Verify Home","age_division":"U13","team_class":"B","display_name":"Verify Home U13B"},
+                       {"side":"away","school":"Verify Away","age_division":"U13","team_class":"B","display_name":"Verify Away U13B"}]';
+    v_slots jsonb;
+    v_cols jsonb;
+    r record; t text; n int; s text; j jsonb;
+  BEGIN
+    v_slots := jsonb_build_array(
+      jsonb_build_object('id', H1, 'side', 'home', 'list_no', 1, 'batting_no', 1, 'twelfth', false),
+      jsonb_build_object('id', H2, 'side', 'home', 'list_no', 2, 'batting_no', 2, 'twelfth', false),
+      jsonb_build_object('id', W1, 'side', 'away', 'list_no', 1, 'batting_no', 1, 'twelfth', false),
+      jsonb_build_object('id', W2, 'side', 'away', 'list_no', 2, 'batting_no', 2, 'twelfth', false));
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (grant)
+    PERFORM _assert(NOT has_schema_privilege('scrbrd_app', 'pilot', 'USAGE'), '§129 (grant): the application role may use schema pilot');
+    n := 0;
+    FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+              WHERE ns.nspname = 'pilot' AND c.relkind = 'r' ORDER BY 1 LOOP
+      n := n + 1;
+      FOREACH t IN ARRAY ARRAY[format('SELECT 1 FROM pilot.%I LIMIT 1', r.relname),
+                                format('DELETE FROM pilot.%I', r.relname),
+                                format('UPDATE pilot.%I SET match_id = match_id', r.relname),
+                                format('INSERT INTO pilot.%I DEFAULT VALUES', r.relname)] LOOP
+        s := _v151_as_caller(t);
+        PERFORM _assert(s = '42501', format('§129 (grant): as the application role, %s answered %s, not permission denied', t, s));
+      END LOOP;
+    END LOOP;
+    PERFORM _assert(n = 11, format('§129 (grant): %s tables in schema pilot, not the design''s ten and the switch', n));
+
+    -- (check)
+    PERFORM _assert(_v151_check() = 'ok', format('§129 (check): the isolation check fails as migrated: %s', _v151_check()));
+    -- (dependency)
+    s := _v151_breaks('CREATE VIEW public.v151_scratch_view AS SELECT seq FROM pilot.ball_event');
+    PERFORM _assert(s ~ 'pilot isolation \(dependency\).*v151_scratch_view', format('§129 (dependency): a view on the pilot log passed: %s', s));
+    s := _v151_breaks('CREATE MATERIALIZED VIEW public.v151_scratch_mat AS SELECT match_id FROM pilot.name');
+    PERFORM _assert(s ~ 'pilot isolation \(dependency\)', format('§129 (dependency): a materialized view on the names passed: %s', s));
+    -- (functions)
+    s := _v151_breaks($f$CREATE FUNCTION public.v151_scratch_reader() RETURNS bigint LANGUAGE sql AS 'SELECT count(*) FROM pilot.ball_event'$f$);
+    PERFORM _assert(s ~ 'pilot isolation \(functions\).*v151_scratch_reader', format('§129 (functions): an unlisted reader passed: %s', s));
+    s := _v151_breaks($f$CREATE FUNCTION public.public_pilot_score(text) RETURNS bigint LANGUAGE sql AS 'SELECT count(*) FROM pilot.match'$f$);
+    PERFORM _assert(s ~ 'pilot isolation \(functions\)', format('§129 (functions): the public read, not yet built, passed: %s', s));
+    -- (names)
+    s := _v151_breaks($f$CREATE OR REPLACE FUNCTION public.pilot_held_here(p_id uuid) RETURNS integer LANGUAGE sql
+                           AS 'SELECT count(*)::int FROM pilot.name WHERE match_id = p_id'$f$);
+    PERFORM _assert(s ~ 'pilot isolation \(names\).*pilot_held_here', format('§129 (names): a listed function reading the names passed: %s', s));
+    -- (granted)
+    s := _v151_breaks('GRANT SELECT ON pilot.name TO scrbrd_app');
+    PERFORM _assert(s ~ 'pilot isolation \(grant\).*name', format('§129 (granted): a grant on the names passed: %s', s));
+    s := _v151_breaks('GRANT USAGE ON SCHEMA pilot TO scrbrd_app');
+    PERFORM _assert(s ~ 'pilot isolation \(grant\)', format('§129 (granted): USAGE on the schema passed: %s', s));
+    s := _v151_breaks('GRANT SELECT ON pilot.ball_event TO PUBLIC');
+    PERFORM _assert(s ~ 'pilot isolation \(grant\).*ball_event', format('§129 (granted): a grant to PUBLIC passed: %s', s));
+    PERFORM _assert(_v151_check() = 'ok', '§129 (check): a scratch object outlived its test');
+
+    -- (off) both switches as db/151 leaves them.
+    PERFORM _as(A); PERFORM set_config('app.device_id', 'v151-device-1', true);
+    SELECT * INTO r FROM pilot_status();
+    PERFORM _assert(NOT r.sync AND NOT r.granted AND NOT r.names, format('§129 (off): db/151 left a switch on: %s', row_to_json(r)));
+    PERFORM _v151_grant(A, true);
+    SELECT * INTO r FROM pilot_status();
+    PERFORM _assert(NOT r.granted, '§129 (off): with phase 2 off, the status says the account is granted');
+    SELECT c.reason INTO s FROM pilot_create(M, v_sides, v_slots, 20, NULL, now(), '{"wonBy":"home","decision":"bat"}', 'Verify Oval', NULL) c;
+    PERFORM _assert(s = 'pilot_off', format('§129 (off): a granted account created with phase 2 off: %s', s));
+    PERFORM _assert((_v151_facts(M)->>'match')::int = 0, '§129 (off): a match row exists');
+
+    -- (grant needed)
+    PERFORM _v151_switch('pilot_sync', true);
+    FOREACH u IN ARRAY ARRAY[to_jsonb(B), to_jsonb(U_OWNER), to_jsonb(U_PLAT), to_jsonb(U_SCORER)] LOOP
+      PERFORM _as((u #>> '{}')::uuid);
+      SELECT c.reason INTO s FROM pilot_create(M, v_sides, v_slots, 20, NULL, now(), '{"wonBy":"home","decision":"bat"}', NULL, NULL) c;
+      PERFORM _assert(s = 'not_granted', format('§129 (grant needed): %s with no grant was answered %s', u, s));
+      PERFORM _assert(NOT (SELECT x.granted FROM pilot_status() x), format('§129 (grant needed): %s is told he is granted', u));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT c.reason INTO s FROM pilot_create(M, v_sides, v_slots, 20, NULL, now(), NULL, NULL, NULL) c;
+    PERFORM _assert(s = 'not_signed_in', format('§129 (grant needed): signed out was answered %s', s));
+
+    -- (create)
+    PERFORM _as(A);
+    SELECT * INTO r FROM pilot_create(M, v_sides, v_slots, 20, 'T20', now(), '{"wonBy":"home","decision":"bat"}', 'Verify Oval',
+                                      '{"condition":"sunny","temp_c":21,"lat":-29.5,"lon":30.2}');
+    PERFORM _assert(r.ok, format('§129 (create): the granted owner could not create: %s', r.reason));
+    SELECT * INTO r FROM pilot_create(M, v_sides, v_slots, 20, 'T20', now(), '{"wonBy":"home","decision":"bat"}', 'Verify Oval', NULL);
+    PERFORM _assert(r.ok, format('§129 (create): a second create of the same match by its owner was refused: %s', r.reason));
+    j := pilot_header(M);
+    PERFORM _assert(j->>'status' = 'live' AND jsonb_array_length(j->'slots') = 4 AND jsonb_array_length(j->'sides') = 2,
+      format('§129 (create): the header reads %s', j));
+    PERFORM _assert(_v151_dump(M) !~ '"lat"|"lon"|-29\.5', format('§129 (create): the weather kept a position: %s', _v151_dump(M)));
+    PERFORM _v151_grant(B, true);
+    PERFORM _as(B);
+    SELECT c.reason INTO s FROM pilot_create(M, v_sides, v_slots, 20, NULL, now(), NULL, NULL, NULL) c;
+    PERFORM _assert(s = 'not_found', format('§129 (create): another granted account creating the same id was answered %s', s));
+
+    -- (owner only)
+    FOREACH u IN ARRAY ARRAY[to_jsonb(B), to_jsonb(U_OWNER), to_jsonb(U_PLAT)] LOOP
+      PERFORM _as((u #>> '{}')::uuid);
+      PERFORM set_config('app.device_id', 'v151-device-1', true);
+      PERFORM _assert(pilot_header(M) IS NULL, format('§129 (owner only): %s reads the header', u));
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM pilot_mine() x WHERE x->>'id' = M::text), format('§129 (owner only): %s lists the match', u));
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM pilot_log(M)), format('§129 (owner only): %s reads the log', u));
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM pilot_names_for_owner(M)), format('§129 (owner only): %s reads the names', u));
+      PERFORM _assert((SELECT c.reason FROM pilot_claim(M, 'v151-device-1') c) = 'not_found', format('§129 (owner only): %s claims', u));
+      PERFORM _assert(_v151_as_caller(format('SELECT * FROM pilot_lease_check(%L, %L, 1)', M, 'v151-device-1')) = '42501',
+        format('§129 (owner only): %s passes the lease check', u));
+      PERFORM _assert(pilot_event_refusal(M, '{"kind":"ball"}') = 'not_found', format('§129 (owner only): %s is screened', u));
+    END LOOP;
+
+    -- (names off) then on: the canary goes into pilot.name, and only there.
+    PERFORM _as(A);
+    SELECT c.reason INTO s FROM pilot_names_put(M, jsonb_build_array(jsonb_build_object('slot', H1, 'name', 'Qa Canarytest'))) c;
+    PERFORM _assert(s = 'names_upload_off', format('§129 (names off): the names went with the fallback on: %s', s));
+    PERFORM _assert((_v151_facts(M)->>'names')::int = 0, '§129 (names off): a name was kept');
+    PERFORM _v151_switch('pilot_names_upload', true);
+    SELECT * INTO r FROM pilot_names_put(M, jsonb_build_array(jsonb_build_object('slot', H1, 'name', '  Qa   Canarytest '),
+                                                              jsonb_build_object('slot', W1, 'name', 'Verify Away One')));
+    PERFORM _assert(r.ok AND r.n = 2, format('§129 (names off): with the fallback off the owner could not put names: %s', r.reason));
+    PERFORM _assert((_v151_facts(M)->>'canary')::int = 1, format('§129 (names off): the canary is not held as typed: %s', _v151_facts(M)));
+    PERFORM _assert((SELECT count(*) FROM pilot_names_for_owner(M)) = 2, '§129 (names off): the owner does not read his two names');
+    SELECT c.reason INTO s FROM pilot_names_put(M, jsonb_build_array(jsonb_build_object('slot', 'a1510000-0000-4000-8000-0000000000ff', 'name', 'X'))) c;
+    PERFORM _assert(s = 'unknown_slot', format('§129 (names off): a name for another slot was answered %s', s));
+    PERFORM _as(B);
+    SELECT c.reason INTO s FROM pilot_names_put(M, jsonb_build_array(jsonb_build_object('slot', H2, 'name', 'Verify Intruder'))) c;
+    PERFORM _assert(s = 'not_found', format('§129 (names off): another account put a name: %s', s));
+
+    -- (screen)
+    PERFORM _as(A);
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"ball","type":"W","dismissal":"caught","fielder":"qa canarytest"}') = 'name_in_event',
+      '§129 (screen): a fielder named by the canary passed');
+    PERFORM _assert(pilot_event_refusal(M, jsonb_build_object('kind', 'batters', 'striker', H1, 'x', jsonb_build_object('deep', ARRAY['QA CANARYTEST']))) = 'name_in_event',
+      '§129 (screen): the canary, nested and in capitals, passed');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"ball","Qa Canarytest":1}') = 'name_in_event', '§129 (screen): the canary as a key passed');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"batters","striker":"a1510000-0000-4000-8000-0000000000ff"}') = 'unknown_slot',
+      '§129 (screen): a striker who is no slot of this match passed');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"innings_start","squad":["a1510000-0000-4000-8000-0000000000ff"]}') = 'unknown_slot',
+      '§129 (screen): a squad entry that is no slot passed');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"play_stopped","reason":"rain","note":"hit on the helmet"}') = 'free_text',
+      '§129 (screen): a note passed');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"innings_start","battingTeam":"VerifyHome"}') = 'free_text',
+      '§129 (screen): a team named other than home or away passed');
+    PERFORM _assert(pilot_event_refusal(M, jsonb_build_object('kind', 'innings_start', 'battingTeam', 'home', 'bowlingTeam', 'away',
+                                        'teamKey', 'home', 'bowlingTeamKey', 'away', 'squad', jsonb_build_array(H1, H2),
+                                        'bowlingSquad', jsonb_build_array(W1, W2), 'twelfthMan', NULL, 'overs', 20,
+                                        'id', 'dev-v151:pilot-' || M || ':m1:1')) IS NULL,
+      '§129 (screen): a clean innings_start was refused');
+
+    -- (session)
+    PERFORM set_config('app.device_id', 'v151-device-1', true);
+    SELECT * INTO r FROM pilot_claim(M, 'v151-device-1');
+    PERFORM _assert(r.ok AND r.epoch = 1, format('§129 (session): the owner''s first claim: %s %s', r.reason, r.epoch));
+    SELECT * INTO r FROM pilot_lease_check(M, 'v151-device-1', 1);
+    PERFORM _assert(r.found AND r.holds, '§129 (session): the claimed lease does not hold');
+    PERFORM _assert((SELECT c.reason FROM pilot_claim(M, 'v151-device-9') c) = 'device_mismatch',
+      '§129 (session): a claim for a device the token is not bound to was not refused by name');
+    PERFORM set_config('app.device_id', 'v151-device-2', true);
+    SELECT * INTO r FROM pilot_claim(M, 'v151-device-2');
+    PERFORM _assert(NOT r.ok AND r.reason = 'lease_active', format('§129 (session): a second device under a live lease: %s', r.reason));
+    PERFORM _v151_lapse(M);
+    SELECT * INTO r FROM pilot_claim(M, 'v151-device-2');
+    PERFORM _assert(NOT r.ok AND r.reason = 'held_elsewhere' AND r.epoch = 1, format('§129 (session): a plain claim over a lapsed lease: %s', r.reason));
+    SELECT * INTO r FROM pilot_takeover(M, 'v151-device-2', 7);
+    PERFORM _assert(NOT r.ok AND r.reason = 'epoch_moved', format('§129 (session): a take-over of an unseen generation: %s', r.reason));
+    SELECT * INTO r FROM pilot_takeover(M, 'v151-device-2', 1);
+    PERFORM _assert(r.ok AND r.epoch = 2, format('§129 (session): the confirmed take-over: %s %s', r.reason, r.epoch));
+    PERFORM _assert(_v151_facts(M)->'audit' @> '["created", "names_put", "claim", "takeover"]',
+      format('§129 (session): the audit reads %s', _v151_facts(M)->'audit'));
+
+    -- (log)
+    v_cols := jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'innings_start',
+                'payload', jsonb_build_object('battingTeam', 'home', 'bowlingTeam', 'away', 'squad', jsonb_build_array(H1, H2),
+                                              'bowlingSquad', jsonb_build_array(W1, W2), 'overs', 20));
+    n := pilot_insert(M, 2, 'dev-v151:pilot-' || M || ':m1:1', 1, now(), v_cols);
+    PERFORM _assert(n = 1, format('§129 (log): the first event was written at seq %s', n));
+    v_cols := jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'ball', 'ball_type', 'run', 'value', 4,
+                                 'striker_id', H1, 'non_striker_id', H2, 'bowler_id', W1, 'payload', '{}'::jsonb);
+    n := pilot_insert(M, 2, 'dev-v151:pilot-' || M || ':m1:2', 2, now(), v_cols);
+    PERFORM _assert(n = 2, format('§129 (log): the ball was written at seq %s', n));
+    SELECT * INTO r FROM pilot_dedupe(M, 'dev-v151:pilot-' || M || ':m1:2', v_cols);
+    PERFORM _assert(r.seq = 2 AND r.same, '§129 (log): a retry of the ball is not a duplicate by fingerprint');
+    SELECT * INTO r FROM pilot_dedupe(M, 'dev-v151:pilot-' || M || ':m1:2', v_cols || '{"value": 6}');
+    PERFORM _assert(r.seq = 2 AND NOT r.same, '§129 (log): another ball under the same key reads as the same');
+    PERFORM _assert(_v151_as_caller(format('SELECT pilot_insert(%L, 1, %L, 3, now(), %L)', M, 'dev-v151:x:3', v_cols)) = '42501',
+      '§129 (log): a write at the old generation was taken');
+    PERFORM _assert((SELECT count(*) FROM pilot_log(M)) = 2 AND (SELECT bool_or(x.striker_id = H1) FROM pilot_log(M) x),
+      '§129 (log): the owner does not read his two events back');
+    PERFORM _assert(pilot_hold(M, 1, 2, 'dev-v151:pilot-' || M || ':old:1', '{"payload":{"kind":"ball"}}', v_cols), '§129 (log): a stale ball was not held');
+    PERFORM _assert(pilot_held_here(M) = 1 AND (_v151_facts(M)->>'held')::int = 1, '§129 (log): the held ball is not counted for its device alone');
+    s := _v151_owner_try(format('UPDATE pilot.ball_event SET value = 6 WHERE match_id = %L', M));
+    PERFORM _assert(s ~ 'append-only', format('§129 (log): the owner updated the pilot log: %s', s));
+    s := _v151_owner_try(format('DELETE FROM pilot.ball_event WHERE match_id = %L', M));
+    PERFORM _assert(s ~ 'append-only', format('§129 (log): the owner deleted from the pilot log: %s', s));
+    s := _v151_owner_try(format('DELETE FROM pilot.ball_event WHERE match_id = %L', M), true);
+    PERFORM _assert(s = 'ok', format('§129 (log): with pilot.deleting set the delete was still refused: %s', s));
+    PERFORM _assert((_v151_facts(M)->>'log')::int = 2, '§129 (log): the rolled-back delete took the log');
+
+    -- (derived)
+    j := _v151_derived();
+    PERFORM _assert(j = v_before, format('§129 (derived): a derived read moved with a pilot match: before %s, after %s', v_before, j));
+    PERFORM _assert(jsonb_typeof(j->'ball_event') = 'number' AND (SELECT count(*) FROM jsonb_object_keys(j)) >= 5,
+      format('§129 (derived): the derived reads were not counted: %s', j));
+
+    -- (canary)
+    s := _v151_dump(M);
+    PERFORM _assert(s !~* 'canarytest' AND s !~* 'Verify Away One', '§129 (canary): a typed name is in a pilot row outside pilot.name');
+    PERFORM _assert(s ~ H1::text, '§129 (canary): the dump read nothing');
+
+    -- (delete)
+    PERFORM _as(B);
+    PERFORM _assert((SELECT c.reason FROM pilot_delete(M) c) = 'not_found', '§129 (delete): another account deleted the match');
+    PERFORM _assert(pilot_delete_all_for(A) = 0, '§129 (delete): another account deleted the owner''s matches');
+    PERFORM _as(A);
+    PERFORM _assert((SELECT c.ok FROM pilot_delete(M) c), '§129 (delete): the owner could not delete his match');
+    j := _v151_facts(M);
+    PERFORM _assert((j->>'match')::int = 0 AND (j->>'names')::int = 0 AND (j->>'log')::int = 0 AND (j->>'held')::int = 0
+                    AND j->'tombstones' = '["match:scorer", "names:scorer"]' AND j->'audit' @> '["deleted"]',
+      format('§129 (delete): after the delete the owner''s tables hold %s', j));
+
+    -- (promoted_from)
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+                             WHERE c.conrelid = 'match'::regclass AND c.contype = 'u' AND a.attname = 'promoted_from'
+                               AND array_length(c.conkey, 1) = 1),
+      '§129 (promoted_from): match.promoted_from is not UNIQUE');
+
+    PERFORM _v151_switch('pilot_sync', false);
+    PERFORM _v151_switch('pilot_names_upload', false);
+    PERFORM set_config('app.device_id', '', true);
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 129
+  -- └── db/151 (section 129) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
