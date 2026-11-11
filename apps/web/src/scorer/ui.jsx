@@ -64,6 +64,11 @@ const GS = () => (
         background:${T.surface.canvas};box-shadow:0 0 0 ${T.space.sm} ${T.surface.canvas}}
       .pad-strip-dock::after{content:"";position:absolute;left:-${T.space.lg};right:-${T.space.lg};top:100%;
         height:calc(74px + env(safe-area-inset-bottom));background:${T.surface.canvas}}
+      /* A step whose keys or field cannot fit above the docked strip (a phone
+         held sideways): the strip undocks and follows them (pad.jsx
+         useClearOfStrip), so it is never drawn over what the scorer means to tap. */
+      .pad-strip-dock.pad-strip-free{position:relative;bottom:auto;z-index:auto;box-shadow:none}
+      .pad-strip-dock.pad-strip-free::after{display:none}
     }
     @media(min-width:1024px){
       .pad-layout{max-width:1320px}
