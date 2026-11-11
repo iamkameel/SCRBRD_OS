@@ -138,5 +138,6 @@
   "141_personal_bests.sql",
   "142_player_of_match.sql",
   "143_record_boards.sql",
-  "144_captain_nomination.sql"
+  "144_captain_nomination.sql",
+  "147_ball_log_read_per_match.sql"
 ]
