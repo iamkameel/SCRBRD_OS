@@ -3,9 +3,6 @@
 These SVGs are local copies of the original artwork supplied by the following sources. Their colors and proportions are unchanged. Source revisions and hashes make each asset traceable.
 
 - [SVGL](https://github.com/pheralb/svgl), MIT. See `LICENSE-SVGL.txt`.
-- [Linear brand assets](https://linear.app/brand): official light and dark logomarks, downloaded 25 October 2026. Subject to Linear’s published brand usage terms.
-- [American Express](https://www.americanexpress.com/en-us/): the official blue-box asset from its versioned static asset package, downloaded 25 October 2026. Subject to American Express’s brand usage terms.
-- [Circle brand kit](https://www.circle.com/pressroom): official USDC token logo, downloaded 25 October 2026. Subject to Circle’s brand usage policy.
 - [Cryptocurrency Icons](https://github.com/spothq/cryptocurrency-icons), CC0 1.0. Flat Bitcoin and Ethereum artwork; see `LICENSE-CRYPTO-FLAT.txt`.
 - [Payment icons](https://github.com/aaronfagan/svg-credit-card-payment-icons), Apache 2.0. See `LICENSE-PAYMENT-ICONS.txt`.
 - [Simple Icons](https://github.com/simple-icons/simple-icons), CC0 1.0, for the bank marks (Chase, Wells Fargo, Bank of America, Barclays, HSBC, Monzo, Revolut), downloaded 27 October 2026, and Google Docs, downloaded 28 October 2026, all at commit `90646e4bf7f3`; each monochrome glyph is given the brand's own hex from the Simple Icons data as its fill. See `LICENSE-SIMPLE-ICONS.txt`.
@@ -38,13 +35,8 @@ The asset repositories’ software licenses do not confer ownership of the brand
 | `vercel.svg` | [Pinned source](https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/vercel.svg) | `565f40e56abbd9c9f31e113c45e90ce456cc112d4811f2f49d1d5041fe501b7c` |
 | `vercel-dark.svg` | [Pinned source](https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/vercel_dark.svg) | `a9ae5ad4ea10c39122cc6b07927132f9c684dd2f1a7bef5337b0eb7364e139ae` |
 | `shopify.svg` | [Pinned source](https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/shopify.svg) | `86e19afda708cead229b714d25de147ef0b920cfea807c5b2933b30d17a234db` |
-| `linear.svg` | [Official source](https://static.linear.app/design-assets/Linear-Brand-Assets.zip?v=3) | `e683e95a5eb9b360ae06360c0350fd1b5fcf3d2222ef9de8e71fa0bc413dccc3` |
-| `linear-dark.svg` | [Official source](https://static.linear.app/design-assets/Linear-Brand-Assets.zip?v=3) | `32f9883452188b39787f8242c7bfce723ded255f35f13254e727871d3dae2fd1` |
-| `amex.svg` | [Official source](https://www.aexp-static.com/cdaas/one/statics/axp-static-assets/1.8.0/package/dist/img/logos/dls-logo-bluebox-solid.svg) | `028f643755987211bf2f3add6c62ae1870a888cf2f4fe3040a4fac7dce2543ab` |
 | `solana.svg` | [Source](https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/sol.svg) | `d5ae3179116a3e643c131489e305cd71a6eb2f0d58e20f3c4189f741eed9ac91` |
-| `usdc.svg` | [Source](https://6778953.fs1.hubspotusercontent-na1.net/hubfs/6778953/Pressroom/brandkit/logo-downloads/usdc.zip) | `fe4f9d5f34ef4ebeb5d80e1f5ff63dcaf5a0d5495f4adf206e4c3011d1f5c57d` |
 | `tether.svg` | [Source](https://raw.githubusercontent.com/pheralb/svgl/f9b726cee1d1f3c697a18c880185e89d9a55bb70/static/library/tether.svg) | `14c4ce4de02e430893b51b6fd6c814d1c32a2001d5a0f8962304652f30773a17` |
-| `amex-tile.svg` | [Official source](https://www.aexp-static.com/cdaas/one/statics/axp-static-assets/1.8.0/package/dist/img/logos/dls-logo-stack-white.svg) | `56b8e90244c34621e294d3357edfef9a1467e501773ed21b25dc6367ab3d7803` |
 | `bitcoin.svg` | [Pinned source](https://raw.githubusercontent.com/spothq/cryptocurrency-icons/1a63530be6e374711a8554f31b17e4cb92c25fa5/svg/color/btc.svg) | `5a8131ecdf855b12cb56080aeeeefea266976529c45b2d58c284a13b7519f4ca` |
 | `ethereum.svg` | [Pinned source](https://raw.githubusercontent.com/spothq/cryptocurrency-icons/1a63530be6e374711a8554f31b17e4cb92c25fa5/svg/color/eth.svg) | `1f94df8533f61806f7b17eaf9cd28678cdba66e1d82a9ca8f9fb38d35a907e9c` |
 | `google-docs.svg` | [Pinned source](https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/googledocs.svg), brand hex #4285F4 applied as the fill | `880b39680b64812e5203f366c08779e86c824e3a6264a8eefca2a56afbf79fa6` |

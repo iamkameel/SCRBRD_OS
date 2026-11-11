@@ -404,6 +404,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // wide through the pad; the board, the server's fold, match_live_score,
   // the scorecard, the career read and the public page say the same score.
   "browser-wicket-on-extra",
+  // 11 Nov 2026 (Kameel, on his phone): a tap on the Area step's field opened
+  // the wicket sheet or recorded runs, through the same tap's click landing on
+  // the Outcome key drawn where the field was. Touch-emulated on nine phones:
+  // every point of the field places the ball and records nothing.
+  "browser-field-tap",
   // Recognition R2: the pad's moments are the facts' (deriveFacts): every
   // milestone a ball earns (a fifty and the side's 50 on one six), a run out
   // breaking a hat-trick, a wicket ball's ALL OUT queued behind it; every
@@ -701,6 +706,7 @@ const WEIGHTS = {
   "browser-public": 70, "browser-cleanup": 70, "browser-suspension": 70,
   "browser-laws4": 70, "browser-handover": 60, "browser-handover-offline": 70, "browser-support": 60,
   "browser-takeover": 90, "browser-two-phones": 180,
+  "browser-field-tap": 400,
   "browser-pad-resume": 60, "browser-sync-drop": 60, "browser-dossier": 60, "browser-offline-undo": 50,
   "browser-wagonwheel": 50, "browser-results": 50, "browser-drs": 50,
   "browser-safeguarding": 50, "browser-playing-conditions": 50,

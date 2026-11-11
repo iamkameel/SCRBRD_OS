@@ -1516,10 +1516,12 @@ export const READ_QUERIES = {
    * so the publication row stands in for the viewer's permission — an overlay
    * is watched by people with no account and cannot lean on theirs.
    *
-   * Names arrive ALREADY REDUCED to whatever the school chose. If a fixture is
-   * set to initials, no full name is in this payload: not in a field the
-   * widget declines to render, not in a console, not in a screenshot of a
-   * network tab. The widget is presentation; this is the security.
+   * No child is named (db/149; Kameel, 11 Nov 2026, Q1(e)): the striker,
+   * non-striker and bowler arrive as "Batter", "Non-striker" and "Bowler"
+   * whatever name_display says, until a stream consent exists. No name or
+   * initial is in this payload: not in a field the widget declines to
+   * render, not in a console, not in a screenshot of a network tab. The
+   * widget is presentation; this is the security.
    */
   broadcast_state: {
     text: `select * from broadcast_state($1)`,

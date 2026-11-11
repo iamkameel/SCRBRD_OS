@@ -10,7 +10,7 @@ import { BrandMark } from './kit'
 <BrandMark name="Your product" src="/assets/product.svg" size={28} />
 ```
 
-`size` is the footprint's height. App marks get a square footprint; wide payment marks get a proportionate width. Amex uses its white wordmark on a blue card tile, and its official blue-box logo when bare. A mark that ships as a glyph on a solid square field (Dropbox) is shown as the glyph alone in its brand color, on the same white tile as the other app marks; a sharp blue square inside a rounded white one is never right, and a solid blue tile shouts next to the rest of the row. `width` overrides the footprint when a product row has a fixed track. The artwork is always `object-fit: contain`, never stretched to fill a square. The bundled marks carry optical scale adjustments, so a narrow Figma mark and a full Gmail mark have the same presence.
+`size` is the footprint's height. App marks get a square footprint; wide payment marks get a proportionate width. A mark that ships as a glyph on a solid square field (Dropbox) is shown as the glyph alone in its brand color, on the same white tile as the other app marks; a sharp blue square inside a rounded white one is never right, and a solid blue tile shouts next to the rest of the row. `width` overrides the footprint when a product row has a fixed track. The artwork is always `object-fit: contain`, never stretched to fill a square. The bundled marks carry optical scale adjustments, so a narrow Figma mark and a full Gmail mark have the same presence.
 
 `surface` follows the Stage's light or dark theme. Pass `surface="light"` for a white card inside a dark Stage. Dark variants are picked automatically where supplied; full-color artwork without one keeps a white tile on a dark surface. If you remove the tile, check the bare mark against its real background. Keep the native colors even in a monochrome UI. Crypto marks are flat, with no coin bevels or metallic shading.
 
@@ -20,10 +20,10 @@ A real company named in the scene (Chase, Wells Fargo, Stripe, Slack) carries it
 
 | Group | `brand` values |
 |---|---|
-| Payments | `visa`, `mastercard`, `amex`, `discover`, `paypal`, `stripe` |
-| Crypto | `bitcoin`, `ethereum`, `solana`, `usdc`, `tether` |
+| Payments | `visa`, `mastercard`, `discover`, `paypal`, `stripe` |
+| Crypto | `bitcoin`, `ethereum`, `solana`, `tether` |
 | Banks | `chase`, `wellsfargo`, `bankofamerica`, `barclays`, `hsbc`, `monzo`, `revolut` |
-| Apps | `notion`, `gmail`, `google-calendar`, `google-docs`, `1password`, `figma`, `slack`, `github`, `linear`, `dropbox`, `google-drive`, `google-sheets`, `google-slides`, `google-meet`, `zoom`, `vercel`, `shopify` |
+| Apps | `notion`, `gmail`, `google-calendar`, `google-docs`, `1password`, `figma`, `slack`, `github`, `dropbox`, `google-drive`, `google-sheets`, `google-slides`, `google-meet`, `zoom`, `vercel`, `shopify` |
 
 Use only the integrations or payment methods the scene needs. A small row explains a relationship; it does not fill spare space with logos. Keep equal row tracks and align the marks by eye: their different silhouettes are no excuse for ragged labels or uneven gaps.
 
