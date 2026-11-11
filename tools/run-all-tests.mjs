@@ -114,6 +114,8 @@ const SUITES = [
   // The pad's Area step records a point, the same event as the Pro hub's for
   // the same tap (SCRBRD-101). Imports pad.jsx, so it needs the transform.
   ["pad-point", "apps/web/test/pad-point.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // A tap on the field places the ball and presses nothing that replaces it (11 Nov 2026).
+  ["follow-through", "apps/web/test/follow-through.test.mjs"],
   // The pad's half of the Laws audit (28 Oct 2026): the run out's end on every
   // run out, whose the runs were, obstruction, the free-hit note, runs not a
   // boundary, a Two-Day's four innings.
