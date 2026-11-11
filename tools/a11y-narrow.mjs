@@ -174,6 +174,13 @@ export const narrowAudit = (page, { root = null, tap = 44, floor = 12 } = {}) =>
     for (let j = i + 1; j < boxes.length; j++) {
       const a = boxes[i], b = boxes[j];
       if (a.el.contains(b.el) || b.el.contains(a.el) || a.fixed !== b.fixed) continue;
+      // A card that opens something (ui/primitives.jsx Card): its native button
+      // lies across the whole card UNDER the card's own content by design, and
+      // a tap on the content falls through to it. That is the card, not one
+      // thing drawn over another; anything else over the content still counts.
+      const cardAction = (x, y) => x.el.classList.contains("os-card-action") && x.el.parentElement?.contains(y.el)
+        && !!y.el.closest(".os-card-content") && y.el.closest(".os-card-content").parentElement === x.el.parentElement;
+      if (cardAction(a, b) || cardAction(b, a)) continue;
       const w = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
       const h = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
       if (w <= 3 || h <= 3) continue;
