@@ -2,6 +2,14 @@
 
 Project-level instructions for Claude Code working in this repository.
 
+## Ownership
+
+Added 2026-11-11 (Kameel): "you own the code. you are responsible for accuracy." The
+lead decides what is the lead's to decide (what goes into the repository, what a
+fix needs, whether a claim is true) and checks it before saying it, rather than
+handing Kameel a choice that only needs doing right. Kameel's calls stay his:
+product, privacy and anything CLAUDE.md names as his.
+
 ## Subagent routing
 
 When building out this project, use subagents. Route each subagent to Fable,

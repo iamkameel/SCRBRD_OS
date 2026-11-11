@@ -23,13 +23,6 @@ export const brandMarks = {
     dark: new URL('./mastercard.svg', import.meta.url).href,
     proportion: 1.56, scale: 0.9,
   },
-  'amex': {
-    name: "American Express", category: 'Payments',
-    light: new URL('./amex.svg', import.meta.url).href,
-    dark: new URL('./amex.svg', import.meta.url).href,
-    tileArtwork: new URL('./amex-tile.svg', import.meta.url).href, tileBackground: '#006fcf',
-    proportion: 1.56, scale: 0.84,
-  },
   'discover': {
     name: "Discover", category: 'Payments',
     light: new URL('./discover.svg', import.meta.url).href,
@@ -94,12 +87,6 @@ export const brandMarks = {
     name: "GitHub", category: 'Apps',
     light: new URL('./github.svg', import.meta.url).href,
     dark: new URL('./github-dark.svg', import.meta.url).href,
-    proportion: 1, scale: 0.64,
-  },
-  'linear': {
-    name: "Linear", category: 'Apps',
-    light: new URL('./linear.svg', import.meta.url).href,
-    dark: new URL('./linear-dark.svg', import.meta.url).href,
     proportion: 1, scale: 0.64,
   },
   'dropbox': {
@@ -169,12 +156,6 @@ export const brandMarks = {
     light: new URL('./solana.svg', import.meta.url).href,
     dark: new URL('./solana.svg', import.meta.url).href,
     proportion: 1, scale: 0.68,
-  },
-  'usdc': {
-    name: 'USDC', category: 'Crypto',
-    light: new URL('./usdc.svg', import.meta.url).href,
-    dark: new URL('./usdc.svg', import.meta.url).href,
-    proportion: 1, scale: 0.8,
   },
   'tether': {
     name: 'Tether', category: 'Crypto',

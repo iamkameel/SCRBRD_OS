@@ -126,7 +126,7 @@ export default function KitExtras() {
             <div className="kx-row">
               <BrandMark brand="slack" />
               <BrandMark brand="notion" />
-              <BrandMark brand="linear" />
+              <BrandMark brand="github" />
             </div>
           </Tile>
         </div>

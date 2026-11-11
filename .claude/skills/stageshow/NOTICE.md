@@ -24,3 +24,8 @@ The local brand registry in `kit/brands/` includes SVG artwork from SVGL (MIT), 
 `--ss-phone-photo-light: url(...)` and optionally `--ss-phone-photo-dark`.
 Without it, the kit uses its CSS-drawn `pro` frame. No bezel photographs are
 bundled.
+
+
+## SCRBRD's copy (11 Nov 2026)
+
+Removed from this copy: the app icons taken from app bundles (`assets/app-icons.ts` now holds plain lettered placeholders) and the official Linear, American Express and Circle (USDC) assets, which carried no licence for redistribution. The remaining marks in `kit/brands/` are under the licences listed in `kit/brands/SOURCES.md`.
