@@ -141,7 +141,16 @@ export async function storageKind() { return (await backend()).name; }
  */
 export const PRACTICE_ID_PREFIX = "practice-";
 export const isPracticeId = (id) => typeof id === "string" && id.startsWith(PRACTICE_ID_PREFIX);
-const matchKey = (id) => (isPracticeId(id) ? `practice:log:${id}` : `match:${id}`);
+/**
+ * Pilot Matches (PILOT_MATCH_PHASE2 §3.3; lib/pilot.js) are a Practice Match
+ * with phase 2 on: their ids start `pilot-` and every key of theirs starts
+ * `pilot:`, beside the practice namespace and never in it. The two prefixes
+ * never both match an id, and nothing converts one into the other except
+ * pilot.js demoteToPractice(), which goes from pilot to practice and never back.
+ */
+export const PILOT_ID_PREFIX = "pilot-";
+export const isPilotId = (id) => typeof id === "string" && id.startsWith(PILOT_ID_PREFIX);
+const matchKey = (id) => (isPracticeId(id) ? `practice:log:${id}` : isPilotId(id) ? `pilot:log:${id}` : `match:${id}`);
 
 /**
  * Save an in-progress innings log.
@@ -173,7 +182,7 @@ export async function clearMatch(matchId) {
 /**
  * Every fixture's saved log on this device, for the scorer's home (GA-I13):
  * what it can offer to resume. Only `match:` keys, so never a practice match
- * (those are `practice:log:`, and stay the pad's). Null when the store could
+ * (those are `practice:log:`, and stay the pad's) nor a Pilot Match (`pilot:log:`). Null when the store could
  * not be read at all, which the home says as that, never as "nothing saved".
  */
 export async function savedMatchLogs() {
