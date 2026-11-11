@@ -413,8 +413,19 @@ jobs:
       # download one. The full package is pulled in here only to fetch Chromium
       # and its system libraries; tools/chromium.mjs then finds it through
       # PLAYWRIGHT_BROWSERS_PATH without any path hard-coded in a walk.
+      # --with-deps fetches extra fonts through apt. When the Ubuntu mirrors
+      # can't be resolved (11 Nov), that fails although the runner image already
+      # has every library Chromium needs. So: two tries with the deps, then the
+      # browser alone. If a library really is missing, the walks fail to launch
+      # it and say so.
       - name: Install Chromium
-        run: npx --yes playwright@1.62.1 install --with-deps chromium
+        run: |
+          for i in 1 2; do
+            npx --yes playwright@1.62.1 install --with-deps chromium && exit 0
+            sleep $((i * 20))
+          done
+          echo "::warning::apt unreachable; installing Chromium without its system packages"
+          npx --yes playwright@1.62.1 install chromium
 
       # The walks serve apps/web/dist, so it has to exist. Locally it survives
       # from a previous build and the need is invisible; on a clean runner the
