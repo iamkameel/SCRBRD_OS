@@ -2,13 +2,13 @@
 import { useState } from "react";
 import { D, px, textOn, themed } from "../design/tokens.js";
 import { fitnessColor, stat } from "../lib/format.js";
-import { Avatar, Badge, Card, EmptyState, ProgressBar, SectionHeader } from "../ui/primitives.jsx";
+import { Avatar, Badge, Card, EmptyState, ProgressBar, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { SourceLine } from "../ui/sourceLine.jsx";
 import { SeasonBars } from "./seasonbars.jsx";
 import { DemoWorm } from "./demoworm.jsx";
 import { SRC_BALLS, SRC_FIXTURES, SRC_RECORD, WINDOW_ALL, ballsFacedBasis, isoDay } from "../lib/sourceWords.js";
 import { signedIn } from "../lib/api.js";
-import { usePlayersWithCareer, useLive } from "../lib/live.js";
+import { usePlayersWithCareerState, useLive } from "../lib/live.js";
 import { Metric, MetricGroup, dash } from "../ui/data.jsx";
 import { heldTeams } from "../lib/held.js";
 import { pickTeam, teamsOf } from "../lib/teamContext.js";
@@ -20,7 +20,12 @@ import { Compare } from "./compare.jsx";
 function AnalyticsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const PLAYERS = usePlayersWithCareer(role);
+  const CAREER = usePlayersWithCareerState(role);
+  const PLAYERS = CAREER.rows;
+  // The figures are a second read beside the roster, and on a played season it
+  // takes seconds (PERF.md). Until it answers, or if it fails, the bars and the
+  // table say so in words, rather than drawing a squad of blanks.
+  const figuresRead = CAREER.read.state === "ok" ? null : CAREER.read;
   // The sides to choose between are the ones the rows contain, not a fixed three
   // (1XI, U15A, U13A), and the one on show is the person's own, else the first
   // of those. A U16B coach was offered three sides that were not his (GA-I07).
@@ -89,6 +94,7 @@ function AnalyticsView({ role }) {
             <SourceLine testid="source-line-performance" demo={!signedIn()} demoWhy="sample players"
               source={SRC_RECORD} scope={`${teamFilter ?? "No side in view"}, one bar per player`} window={WINDOW_ALL}
               denominator={ballsFacedBasis(players)}/>
+            {figuresRead&&<ReadState testId="analytics-figures-read-state" read={figuresRead} compact icon="bat"/>}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px",marginBottom:"14px"}}>
             <Card sx={{padding:"16px"}}>
@@ -135,6 +141,7 @@ function AnalyticsView({ role }) {
                 source={SRC_RECORD} scope={`${teamFilter ?? "No side in view"}, one row per player`} window={WINDOW_ALL}
                 denominator={ballsFacedBasis(players)}/>
             </div>
+            {figuresRead&&<ReadState testId="analytics-table-read-state" read={figuresRead} compact icon="bat"/>}
           </div>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
@@ -166,8 +173,13 @@ function AnalyticsView({ role }) {
                       <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:p.wkts>=15?D.rose:p.wkts>=8?D.violet:D.textMuted}}>{p.wkts||"—"}</td>
                       <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:p.econ&&p.econ<=6.5?D.emerald:p.econ&&p.econ<=8?D.amber:p.econ?D.rose:D.textMuted}}>{p.econ||"—"}</td>
                       <td style={{padding:"10px 12px"}}>
+                        {/* A boy with no career row (he has not batted in a
+                            recorded match) has no form guide at all:
+                            usePlayersWithCareer merges a career row only where
+                            there is one. An empty guide, said as a dash. */}
+                        {!(p.form?.length)&&<span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>—</span>}
                         <div style={{display:"flex",gap:"2px"}}>
-                          {p.form.slice(-5).map((v,j)=>(
+                          {(p.form ?? []).slice(-5).map((v,j)=>(
                             <div key={j} style={{width:"13px",height:"13px",borderRadius:"2px",background:v===0?D.rose+"55":v>=5?D.amber+"66":D.emerald+"44",display:"flex",alignItems:"center",justifyContent:"center"}}>
                               <span style={{fontFamily:D.mono,fontSize:"12px",color:v===0?D.rose:v>=5?D.amber:D.emerald,fontWeight:700}}>{v===0?"W":v}</span>
                             </div>
@@ -475,7 +487,10 @@ function Phases({ role }) {
   const played = MATCHES.filter((m) => m.status === "complete" || m.status === "live");
   const [matchId, setMatchId] = useState("");
   const chosen = matchId || played[0]?.id || "";
-  const { rows, loading, error, disabled } = useLive("phases", role, 0, chosen ? { matchId: chosen } : null);
+  // The read is one fixture's (req(q, "matchId")): until the fixtures have
+  // come back there is none to name, and asking anyway was a 400 on every
+  // visit. Signed in with none chosen, nothing is asked.
+  const { rows, loading, error, disabled } = useLive(signedIn() && !chosen ? "" : "phases", role, 0, chosen ? { matchId: chosen } : null);
   const match = played.find((m) => m.id === chosen);
 
   if (!played.length) {

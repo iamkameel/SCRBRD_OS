@@ -40,6 +40,7 @@ export function Header({ appHref = "/app", logo, live = 0, over = false }) {
         )}
         <LinkButton href={appHref} testId="home-login">Log in</LinkButton>
       </div>
+      {over && <i aria-hidden="true" className="xp" />}
     </header>
   );
 }

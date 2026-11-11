@@ -23,8 +23,9 @@
  * it. The mock fallback IS scoped client-side (through rbac/), because mock
  * rows have no database behind them — that is a demo affordance, not security.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, signedIn } from "./api.js";
+import { saClock, saDate } from "./saTime.js";
 import { combineReads } from "./readState.js";
 import { asNotification } from "./notifications.js";
 import { scoped, scopedSkills, scopedWeather, demoSummary } from "../rbac/index.js";
@@ -53,12 +54,12 @@ function asMatch(r) {
     // the ground's row (no facility.read: a scorer) cannot tell from `venue`.
     hasGround: typeof r.has_ground === "boolean" ? r.has_ground : null,
     groundId: null,
-    date: r.starts_at ? String(r.starts_at).slice(0, 10) : null,
-    // HH:MM, sliced the same way `date` is rather than through a Date object
-    // and a timezone conversion — a day-of screen naming a kickoff time is the
-    // one thing worse than naming none: this is the raw instant the fixture
-    // was scheduled at, exactly as written.
-    time: r.starts_at ? String(r.starts_at).slice(11, 16) : null,
+    date: saDate(r.starts_at),
+    // The day and the HH:MM of the kickoff on the SA clock (lib/saTime.js):
+    // starts_at is a timestamptz and arrives in UTC ("…T12:30:00.000Z"), so a
+    // slice of the string named a 14:30 fixture 12:30, and a fixture after
+    // 22:00 UTC the day before. Every day and time a person sees is SA's.
+    time: saClock(r.starts_at),
     // The instant itself, for the scorer: it dates the match, and the date
     // decides the Edition of the Laws the match is scored under (SCRBRD-113).
     startsAt: r.starts_at ?? null,
@@ -93,6 +94,10 @@ function asMatch(r) {
     homeCode: r.home_code ?? null,
     awayCode: r.away_code ?? null,
     awayTeamCode: r.away_team_code ?? null,
+    // Which end of the fixture is the reader's own, as the read says it
+    // ('home' | 'away', null where it does not): a fixture the other school
+    // hosts names its opponent as the host sees it, so "v" is read from this.
+    mySide: r.my_side === "home" || r.my_side === "away" ? r.my_side : null,
     // The toss as the fixture read carries it: 'home' | 'away', 'bat' | 'bowl'.
     tossWonBy: r.toss_won_by ?? null,
     tossDecision: r.toss_decision ?? null,
@@ -187,8 +192,9 @@ function asTraining(r) {
     title: r.title,
     team: r.team_code,
     school: r.school_id,
-    date: t ? t.toISOString().slice(0, 10) : null,
-    time: t ? t.toISOString().slice(11, 16) : null,
+    // On the SA clock, as asMatch's are: a 15:00 session is 13:00 in UTC.
+    date: t ? saDate(t) : null,
+    time: t ? saClock(t) : null,
     duration: r.duration_min,
     venue: r.venue,
     coach: r.coach_name,
@@ -313,6 +319,10 @@ function asNewsPost(r) {
     noticeId: r.noticeId ?? null,
     schoolId: r.school_id ?? null,
     teamCode: r.team_code ?? null,
+    // The feed's kicker and byline ("1st XI · Westville"): names the read
+    // already returns, carried through; nothing new is asked of the server.
+    schoolName: r.school_name ?? null,
+    competitionName: r.competition_name ?? null,
   };
 }
 
@@ -1583,9 +1593,16 @@ export function liveResources() { return Object.keys(ADAPT); }
  * without guessing from the code. lib/readState.js decides.
  * @param {string} resource  @param {string} [query]  the string readQuery() made
  */
+// The reads derived from the whole ball log under its row security
+// (demo-season PERF: career 3.5 to 10 s on the demo's season). Under the
+// default ten seconds a pupil's passport said "Could not read your career
+// figures" of a read that was still on its way; these wait for it.
+const SLOW_READS = new Set(["career", "career_by_season", "milestones", "personal_bests", "record_boards"]);
+const timeoutFor = (/** @type {string} */ resource) => (SLOW_READS.has(resource) ? 30000 : undefined);
+
 export async function readOnce(resource, query = "") {
   try {
-    const { rows } = await api(`/api/read/${resource}${query}`);
+    const { rows } = await api(`/api/read/${resource}${query}`, { timeoutMs: timeoutFor(resource) });
     return { rows: rows.map(ADAPT[resource]), live: true, loading: false, error: null, status: null };
   } catch (/** @type {any} */ e) {
     if (e.status === 403 && e.code === "module_disabled") {
@@ -1664,7 +1681,7 @@ export async function readLive(resource, params = null) {
   if (!signedIn() || !ADAPT[resource]) return null;
   const query = readQuery(params);
   try {
-    const { rows } = await api(`/api/read/${resource}${query}`);
+    const { rows } = await api(`/api/read/${resource}${query}`, { timeoutMs: timeoutFor(resource) });
     return (rows ?? []).map(ADAPT[resource]);
   } catch { return null; }
 }
@@ -1799,11 +1816,9 @@ export function usePlayersWithCareer(role, nonce = 0) {
 export function usePlayersWithCareerState(role, nonce = 0) {
   const players = useLive("players", role, nonce);
   const career = useLive("career", role, nonce);
-  const byId = new Map(career.rows.map((c) => [c.id, c]));
-  const rows = !career.rows.length ? players.rows : players.rows.map((p) => {
-    const c = byId.get(p.id);
-    return c ? { ...p, ...c, name: p.name ?? c.name } : p;
-  });
+  // Memoised on the two reads, so a screen's effects keyed on `rows` run when
+  // a read answers, not on every render.
+  const rows = useMemo(() => mergeCareer(players.rows, career.rows), [players.rows, career.rows]);
   return {
     rows,
     // Each read's whole state (rows, status, disabled), for lib/readState.js:
@@ -1816,6 +1831,25 @@ export function usePlayersWithCareerState(role, nonce = 0) {
     // from players who merely lack their figures. `rows` above is unchanged.
     read: combineReads([{ what: "the players", read: players }, { what: "the career figures", read: career }]),
   };
+}
+
+/**
+ * Players with their career figures beside them, where there are any.
+ *
+ * asCareer promises `form` is always an array; a boy with no career row (he
+ * has not played, the career read is still coming, or it failed) must keep
+ * that promise too, or every `.form.map()` beside him falls over. The demo's
+ * mock rows carry their own form, which is kept.
+ * @param {any[]} players  @param {any[]} careerRows
+ */
+export function mergeCareer(players, careerRows) {
+  const bare = (/** @type {any} */ p) => (Array.isArray(p.form) ? p : { ...p, form: [] });
+  if (!careerRows.length) return players.map(bare);
+  const byId = new Map(careerRows.map((c) => [c.id, c]));
+  return players.map((p) => {
+    const c = byId.get(p.id);
+    return c ? { ...p, ...c, name: p.name ?? c.name } : bare(p);
+  });
 }
 
 /** The common case: just the rows. Views that need the state use useLive(). */

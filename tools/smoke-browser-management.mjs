@@ -389,7 +389,7 @@ try {
   ok("...the two the walk dated are among them", dutyIds.includes(FX_A) && dutyIds.includes(FX_B));
   const dA = await off.page.locator(`[data-match-id="${FX_A}"]`).innerText({ timeout: 3000 }).catch(() => "(not listed)");
   const dB = await off.page.locator(`[data-match-id="${FX_B}"]`).innerText({ timeout: 3000 }).catch(() => "(not listed)");
-  ok("...each names the ground and the day, from the fixture", /Gordon Sherwood Oval/.test(dA) && /14 Mar/.test(dA) && /09:00/.test(dA), dA);
+  ok("...each names the ground and the day, from the fixture", /Gordon Sherwood Oval/.test(dA) && /14 Mar/.test(dA) && /11:00/.test(dA), dA);   // 09:00Z is 11:00 on the SA clock
   ok("...the one with a report on file says so", /Pitch report filed/.test(dA) && !/not yet/.test(dA), dA);
   ok("...the one without says that", /Pitch report not yet filed/.test(dB), dB);
   ok("...and a fixture already played is not a duty", !dutyIds.includes("77777777-0000-0000-0000-000000000001"));

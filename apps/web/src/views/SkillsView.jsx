@@ -1,13 +1,15 @@
 
 import { useState } from "react";
-import { holdsAsHeld, holdsForPlayer } from "../lib/held.js";
+import { heldRoles, holdsAsHeld, holdsForPlayer } from "../lib/held.js";
+import { PLAYING_ROLES, showsRankings } from "../lib/seasonAwards.js";
 import { D } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Modal, RadarChart, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { useLive, useNotes, useRatings, useSkills, useBoyRead } from "../lib/live.js";
 import { recordAssessment, writeNote, writeWords, NOTE_ADJUSTMENT_LIMIT } from "../lib/development.js";
 import { TREE, DISCIPLINES, ANCHOR_POINTS, anchorFor, SCALE_MIN, SCALE_MAX } from "@scrbrd/scoring";
 import { signedIn } from "../lib/api.js";
-import { MIN_RADAR_AXES, RUBRIC_MAX } from "../lib/radar.js";
+import { MIN_RADAR_AXES, RUBRIC_MAX, SKILL_CATEGORIES, overallOf } from "../lib/radar.js";
+import { OverallRadar, SKILL_COLORS } from "../ui/overallRadar.jsx";
 import { focusAreas } from "../lib/focusAreas.js";
 import { readState, readStateFor } from "../lib/readState.js";
 import { pointsFor, standingPoint, savedTargets, openTargetOn } from "../lib/assessmentHistory.js";
@@ -73,6 +75,77 @@ function AttributeRow({ group, attr, value, current, onChange }) {
   );
 }
 
+/**
+ * Every player's four groups and overall, for staff, on the Overall tab.
+ *
+ * The players are the ones the list beside it already holds, in its order
+ * (assessed first, then the rest): nothing is re-read and nothing is sorted
+ * by a figure. A name opens that player's radar above. A boy nobody has
+ * assessed says so, never a row of zeros. A table, so a screen reader reads
+ * each figure with its group and its player.
+ */
+function EveryPlayer({ players, matrix, selId, onPick }) {
+  const th = { fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.06em", color: D.textMuted,
+               textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${D.border}`, whiteSpace: "nowrap" };
+  const td = { fontFamily: D.mono, fontSize: "13px", color: D.textPrimary, textAlign: "right", padding: "0 10px",
+               borderBottom: `1px solid ${D.border}` };
+  return (
+    <Card sx={{ padding: "16px", marginBottom: "14px" }} data-testid="skills-overall-all">
+      <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", marginBottom: "4px" }}>
+        EVERY PLAYER · COACHING STAFF
+      </div>
+      <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginBottom: "10px", lineHeight: 1.5 }}>
+        The mean of each group, out of {RUBRIC_MAX}, in the order of the list. Choose a name to see his radar.
+      </div>
+      <div style={{ overflowX: "auto", maxWidth: "100%" }}>
+        <table style={{ width: "100%", minWidth: "460px", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th scope="col" style={{ ...th, textAlign: "left" }}>PLAYER</th>
+              {SKILL_CATEGORIES.map((c) => (
+                <th key={c} scope="col" style={th}>
+                  <span aria-hidden="true" style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", background: SKILL_COLORS[c], marginRight: "5px" }}/>
+                  {c.toUpperCase()}
+                </th>
+              ))}
+              <th scope="col" style={th}>OVERALL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {players.map((p) => {
+              const o = overallOf(matrix[p.id]);
+              const on = p.id === selId;
+              return (
+                <tr key={p.id} data-testid={`overall-row-${p.id}`} style={{ background: on ? D.violet + "12" : "transparent" }}>
+                  <th scope="row" style={{ ...td, fontFamily: D.body, textAlign: "left", padding: 0, fontWeight: 400 }}>
+                    <button type="button" onClick={() => onPick(p.id)} className="pressBtn" aria-current={on ? "true" : undefined}
+                      style={{ minHeight: "44px", width: "100%", padding: "0 10px", textAlign: "left", background: "none", border: "none",
+                               cursor: "pointer", fontFamily: D.body, fontSize: "12px", fontWeight: on ? 600 : 400, color: D.textPrimary }}>
+                      {p.name}
+                    </button>
+                  </th>
+                  {o.overall == null ? (
+                    <td colSpan={SKILL_CATEGORIES.length + 1} style={{ ...td, fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>Not assessed yet</td>
+                  ) : (
+                    <>
+                      {o.axes.map((a) => (
+                        <td key={a.key} style={{ ...td, color: a.value == null ? D.textMuted : D.textPrimary }}>
+                          {a.value == null ? <span style={{ fontFamily: D.body, fontSize: "12px" }}>Not rated</span> : a.value.toFixed(1)}
+                        </td>
+                      ))}
+                      <td style={{ ...td, fontWeight: 700 }}>{o.overall.toFixed(1)}</td>
+                    </>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 // ══════════════════════════════════════════════════════
 //  SKILLS MATRIX VIEW
 // ══════════════════════════════════════════════════════
@@ -123,13 +196,27 @@ function SkillsView({ role }) {
   // around) reads the seeded matrix and offers no write it cannot make — the
   // save would reach the API with no token and fail (missing_token).
   const canEdit = signedIn() && holdsAsHeld(role,"player.development.write");
-  const cats = skills ? Object.keys(skills) : [];
+  // The rubric's order (technical, mental, tactical, physical), whatever order
+  // the rows arrived in; a group outside it keeps its place after them.
+  const rubricAt = (c) => { const i = SKILL_CATEGORIES.indexOf(c); return i < 0 ? SKILL_CATEGORIES.length : i; };
+  const cats = skills ? Object.keys(skills).sort((a,b)=>rubricAt(a)-rubricAt(b)) : [];
+  // "overall" is the fifth tab (Kameel, 6 Nov): the four groups on one radar.
+  // A group this boy has no rating in is not a tab of his, so a tab chosen on
+  // another boy falls back to his first rather than drawing nothing.
+  const tab = category === "overall" || cats.includes(category) ? category : (cats[0] ?? "overall");
   // What the skills read says about THIS player: reading, could not read, may
   // not read, or read and nothing for him (not assessed yet).
   const mayReadSkills = holdsAsHeld(role, "player.development.read");
   const detailRead = readStateFor(skillsRead, skills ? [skills] : [], { what: "skills assessments", mayRead: mayReadSkills });
-  // Technical / mental / physical — the craft, the head, the body.
-  const SKILL_COLORS = { technical:D.sky, mental:D.violet, tactical:D.amber, physical:D.emerald };
+  // Technical / mental / tactical / physical: the colours are ui/overallRadar.jsx's,
+  // so the Overall radar's dots and these tabs agree.
+  // Every player's four groups side by side, on the Overall tab, for staff
+  // only: never for a pupil or a parent, who see their own boy's radar and no
+  // team-mate's (recognition R5b, D23, A15). The same gate the rankings use,
+  // read from the roles held; in the demo, from the persona picked. The rows
+  // are the ones this screen already reads, in the player list's order.
+  const held = heldRoles();
+  const seesEveryone = mayReadSkills && (held.length ? showsRankings(held) : !PLAYING_ROLES.includes(role));
 
   // The 1-20 scale, banded as the rubric bands it: 1-5 poor, 6-10 average,
   // 11-15 good, 16-20 excellent. Kept in step with BANDS_OF_SCALE in
@@ -192,7 +279,8 @@ function SkillsView({ role }) {
             {listed.map(p=>{
               const s=SKILLS_MATRIX[p.id];
               // No assessment is not a zero: no figure is made for him.
-              const overall=s?Math.round(Object.values(s).flatMap(c=>Object.values(c)).reduce((a,b)=>a+b,0)/Object.values(s).flatMap(c=>Object.values(c)).length):null;
+              // The same overall as the Overall tab's: the mean of the groups.
+              const overall=s?(v=>v==null?null:Math.round(v))(overallOf(s).overall):null;
               return (
                 <button key={p.id} onClick={()=>setSelId(p.id)} className="pressBtn" style={{
                   padding:"10px 14px",display:"flex",alignItems:"center",gap:"9px",
@@ -206,7 +294,7 @@ function SkillsView({ role }) {
                     <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{p.team}</div>
                     {!s&&<div data-testid={`unassessed-${p.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Not assessed yet</div>}
                   </div>
-                  {s&&(
+                  {overall!=null&&(
                   <div style={{textAlign:"center"}}>
                     <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:700,color:progressColorForScore(overall)}}>{overall}</div>
                     <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>OVR</div>
@@ -471,19 +559,34 @@ function SkillsView({ role }) {
                   what the side ran, a block per discipline. ── */}
               <SincePanel rows={sinceRead.rows} history={histRead.rows} player={selPlayer} staff={staffView} self={!staffView}/>
 
-              {/* Category tabs */}
-              <div style={{display:"flex",gap:"6px",marginBottom:"16px"}}>
-                {cats.map(c=>(
-                  <button key={c} onClick={()=>setCategory(c)} className="pressBtn" style={{
-                    padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",
-                    border:`1px solid ${category===c?(SKILL_COLORS[c]||D.indigo)+"55":D.border}`,
-                    background:category===c?(SKILL_COLORS[c]||D.indigo)+"14":"transparent",
-                    fontFamily:D.body,fontSize:"12px",fontWeight:category===c?600:400,
-                    color:category===c?D.textPrimary:D.textMuted,textTransform:"capitalize",
+              {/* Category tabs: five now, so they wrap on a phone rather than push the page sideways. */}
+              <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"16px"}}>
+                {["overall",...cats].map(c=>(
+                  <button key={c} type="button" onClick={()=>setCategory(c)} className="pressBtn" aria-pressed={tab===c}
+                    data-testid={`skills-tab-${c}`} style={{
+                    minHeight:"44px",padding:"7px 16px",borderRadius:D.pill,cursor:"pointer",
+                    border:`1px solid ${tab===c?(SKILL_COLORS[c]||D.textSecondary)+"55":D.border}`,
+                    background:tab===c?(SKILL_COLORS[c]||D.textSecondary)+"14":"transparent",
+                    fontFamily:D.body,fontSize:"12px",fontWeight:tab===c?600:400,
+                    color:tab===c?D.textPrimary:D.textMuted,textTransform:"capitalize",
                   }}>{c}</button>
                 ))}
               </div>
 
+              {tab==="overall"&&(
+                <>
+                  <Card sx={{padding:"16px",marginBottom:"14px"}} data-testid="skills-overall">
+                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>OVERALL · {selPlayer.name}</div>
+                    <OverallRadar skills={skills}/>
+                    <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"10px",lineHeight:1.5}}>
+                      Each group is the mean of its ratings, on the 1 to 20 scale; the outer ring is {RUBRIC_MAX}. The tabs above have every rating.
+                    </div>
+                  </Card>
+                  {seesEveryone&&<EveryPlayer players={listed} matrix={SKILLS_MATRIX} selId={selPlayer.id} onPick={setSelId}/>}
+                </>
+              )}
+
+              {tab!=="overall"&&(()=>{ const category=tab; return (
               <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,240px)",gap:"16px"}}>
                 <Card sx={{padding:"16px"}}>
                   <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"14px",textTransform:"capitalize"}}>{category} Skills</div>
@@ -573,6 +676,7 @@ function SkillsView({ role }) {
                   </Card>
                 </div>
               </div>
+              ); })()}
             </>
           ):(
             <Card sx={{padding:"16px",textAlign:"center"}} data-testid="skills-read-state-card">
@@ -584,6 +688,11 @@ function SkillsView({ role }) {
                 <div style={{marginTop:"14px"}}><Btn size="sm" onClick={()=>{setWriteError(null);setAssessing(true);}}>Run Assessment</Btn></div>
               )}
             </Card>
+          )}
+          {/* A boy chosen from the every-player table may have no assessment:
+              the table stays, so the coach is not stranded on him. */}
+          {!skills&&category==="overall"&&detailRead.state==="unassessed"&&seesEveryone&&(
+            <div style={{marginTop:"14px"}}><EveryPlayer players={listed} matrix={SKILLS_MATRIX} selId={selPlayer.id} onPick={setSelId}/></div>
           )}
         </div>
       </div>

@@ -431,6 +431,18 @@ export default function SCRBRD_OS() {
     window.addEventListener("popstate", go);
     return () => window.removeEventListener("popstate", go);
   }, [appState, role]);
+  // The menu's own Match Centre, tapped while a match is open in it, goes back
+  // to the list: the open match is the address (/app/matches/<id>), and the page
+  // was already "matches", so the tap changed nothing and the coach stayed in
+  // the match. The route's own event (lib/route.js), written out for the same
+  // ceiling as above.
+  const navTo = (k, section = null) => {
+    if (k === "matches" && page === "matches" && atMatches() && window.location.pathname !== "/app/matches") {
+      window.history.pushState(null, "", "/app/matches" + window.location.search);
+      window.dispatchEvent(new Event("scrbrd:navigate"));
+    }
+    setPage(k, section);
+  };
   const lastPage = useRef(page);
   useEffect(() => {
     if (lastPage.current === "matches" && page !== "matches" && atMatches()) toApp();
@@ -594,7 +606,7 @@ export default function SCRBRD_OS() {
             navigation entry on every single page change — and the nav is up to
             nineteen entries long. Invisible until focused. */}
         <a href="#os-content" className="skip-link" data-testid="skip-link">Skip to content</a>
-        {!isMobile&&<Sidebar role={role} active={HOME_OF[page] ?? page} onNav={setPage} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut} persona={persona}/>}
+        {!isMobile&&<Sidebar role={role} active={HOME_OF[page] ?? page} onNav={navTo} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut} persona={persona}/>}
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,overflow:"hidden"}}>
           {/* Said on every screen, not once on the login page. The shell can
               be reached without a session — the demo entry, a restored
@@ -624,7 +636,7 @@ export default function SCRBRD_OS() {
             </Suspense>
           </main>
         </div>
-        {isMobile&&<MobileNav role={role} active={HOME_OF[page] ?? page} onNav={setPage} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut}/>}
+        {isMobile&&<MobileNav role={role} active={HOME_OF[page] ?? page} onNav={navTo} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut}/>}
       </div>
     </>
   );

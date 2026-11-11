@@ -2,9 +2,9 @@ import { useMemo, useState } from "react";
 import { D, textOn } from "../design/tokens.js";
 import { fitnessColor, stat } from "../lib/format.js";
 import { SR } from "../scorer/format.js";
-import { Avatar, Badge, Btn, Card, Input, Modal, RadarChart, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
+import { Avatar, Badge, Btn, Card, Input, Modal, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
+import { OverallRadar } from "../ui/overallRadar.jsx";
 import { SegmentedControl } from "../ui/data.jsx";
-import { RUBRIC_MAX, categoryMeans, categoryMeansOn100, radarSummary } from "../lib/radar.js";
 import { usePlayersWithCareerState, useSkills } from "../lib/live.js";
 import { readStateFor } from "../lib/readState.js";
 import { api, signedIn } from "../lib/api.js";
@@ -24,6 +24,10 @@ import { ageAtCutoff, compareTeams, isEligible, parseTeam, teamLabel, teamsForLe
 // band is read off the SAME cut-off isEligible() judges by, purely to tell a
 // parent or coach what it will say, never to gate the form: nothing here
 // blocks naming a boy to a side he is a year young for.
+// An age the reader has (a date of birth on record and his to read): a card
+// with none says nothing about it, rather than a bare "y".
+const hasAge = (age) => age != null && age !== "" && Number.isFinite(Number(age));
+
 function schoolBand(age) {
   if (age == null) return null;
   if (age <= 13) return "U13";
@@ -185,7 +189,7 @@ function SquadView({ role }) {
                     <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary,lineHeight:1.2}}>
                       {p.name} {p.cap==="c"?"(c)":p.cap==="vc"?"(vc)":""}
                     </div>
-                    <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{p.age}y · {p.batHand}HB · {p.bowlArm==="L"?"LA":"RA"}{p.bowlStyle}</div>
+                    <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{[hasAge(p.age)?`${p.age}y`:null,`${p.batHand}HB`,`${p.bowlArm==="L"?"LA":"RA"}${p.bowlStyle??""}`].filter(Boolean).join(" · ")}</div>
                   </div>
                 </div>
                 <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"8px"}}>
@@ -221,7 +225,7 @@ function SquadView({ role }) {
                 <Avatar name={selected.name} size={48} color={roleColor(selected.role)}/>
                 <div>
                   <div style={{fontFamily:D.head,fontSize:"14px",fontWeight:700,color:D.textPrimary}}>{selected.name}</div>
-                  <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{selected.team} · Age {selected.age}</div>
+                  <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{selected.team}{hasAge(selected.age)?` · Age ${selected.age}`:""}</div>
                 </div>
               </div>
               <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"16px"}}>✕</button>
@@ -235,7 +239,7 @@ function SquadView({ role }) {
             <div style={{marginBottom:"14px"}}>
               <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px"}}>SEASON STATS</div>
               <div style={{display:"grid",gridTemplateColumns:"var(--g-3,1fr 1fr 1fr)",gap:"6px"}}>
-                {[["AVG",stat(selected.avg),D.sky],["SR",stat(selected.sr),D.amber],["WKTS",stat(selected.wkts),D.violet],["ECON",stat(selected.econ),D.emerald],["AGE",selected.age,D.textMuted],[selected.cap?"ROLE":"",(selected.cap||"").toUpperCase()||"-",D.amber]].filter(([l])=>l).map(([l,v,c])=>(
+                {[["AVG",stat(selected.avg),D.sky],["SR",stat(selected.sr),D.amber],["WKTS",stat(selected.wkts),D.violet],["ECON",stat(selected.econ),D.emerald],["AGE",hasAge(selected.age)?selected.age:"—",D.textMuted],[selected.cap?"ROLE":"",(selected.cap||"").toUpperCase()||"-",D.amber]].filter(([l])=>l).map(([l,v,c])=>(
                   <div key={l} style={{textAlign:"center",padding:"7px 4px",background:D.surf2,borderRadius:D.sm}}>
                     <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:500,color:c}}>{v}</div>
                     <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{l}</div>
@@ -264,16 +268,13 @@ function SquadView({ role }) {
               </div>
             )}
             {SKILLS_MATRIX[selected.id]&&(
-              <div>
+              <div data-testid="squad-skills-snapshot">
                 <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS SNAPSHOT</div>
-                <div style={{display:"flex",justifyContent:"center"}}>
-                  {/* One axis per category the ratings carry, the mean of its
-                      1-20 ratings on the chart's 0-100 scale. Naming a
-                      "batting" group that no rating has crashed this panel for
-                      any player who had been assessed. */}
-                  <RadarChart color={D.sky} size={120} max={100} data={categoryMeansOn100(SKILLS_MATRIX[selected.id])}
-                    caption={radarSummary(categoryMeans(SKILLS_MATRIX[selected.id]), RUBRIC_MAX)}/>
-                </div>
+                {/* The Skills Matrix's Overall radar, the same component, for
+                    this boy alone: his four groups on the 1-20 scale and the
+                    overall beside them (Kameel, 6 Nov). Drawn from the skills
+                    read this panel already made, so it reaches nobody new. */}
+                <OverallRadar skills={SKILLS_MATRIX[selected.id]} size={120} testId="squad-overall-radar"/>
               </div>
             )}
             {/* Each action is drawn only for a person who can do it, and never in

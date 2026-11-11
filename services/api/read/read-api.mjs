@@ -3516,6 +3516,16 @@ function ratingsQuery() {
              select p.id as player_id, p.full_name, p.team_code, p.school_id,
                     ${cols.join(",\n                    ")}
                from player p${joins.join("")}
+              -- A RATING IS A DEVELOPMENT RECORD, so a row only for a boy whose
+              -- development record the reader holds: the question player_skill's
+              -- own policy asks (db/09), and development_since's gate. Without
+              -- it a reader who may read the boy but not his assessment (a
+              -- pupil's team-mates through \`player\`, a parent, the team
+              -- manager, the analyst) got a row per boy, the coach half cut by
+              -- row security and a 1-20 number composed from the log alone in
+              -- its place (STEP4:422, SCRBRD-138:213, GA-I24-I25 D5).
+              where app_can('player.development.read', p.school_id, p.team_code, p.id,
+                            '00000000-0000-0000-0000-000000000000'::uuid)
            ),
            ev as materialized (
              select who.player_id, who.fam, b.server_ts, who.runs, who.balls, who.wickets
@@ -3539,6 +3549,8 @@ function ratingsQuery() {
                                 and s.stands then 1 else 0 end)
                ) as who(fam, player_id, runs, balls, wickets)
               where who.player_id is not null
+                -- Only the boys \`r\` kept: no fold of balls nobody is rated on.
+                and who.player_id in (select r.player_id from r)
            ),
            f as (
              select e.player_id,

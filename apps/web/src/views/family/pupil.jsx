@@ -20,6 +20,7 @@ import { useLive, useRatings } from "../../lib/live.js";
 import { signedIn } from "../../lib/api.js";
 import { humanDate, stat } from "../../lib/format.js";
 import { ownRecordId } from "../../lib/family.js";
+import { withOpponents } from "../../lib/matchCentre.js";
 import { CareerWagonWheel, DismissalMethodCard } from "../ProfilesView.jsx";
 import { Action, Card, Line, NoneOr, Page, Title } from "./parts.jsx";
 import { ReadState } from "../../ui/primitives.jsx";
@@ -32,7 +33,7 @@ import { CaptainCard } from "./captain.jsx";
 import { TodoCard } from "./todo.jsx";
 import { Compare } from "../compare.jsx";
 import { SealMark } from "../../ui/sealMark.jsx";
-import { honourWords, isSealed, isWithdrawn, provenanceOf } from "../../lib/recognitionWords.js";
+import { honourWords, isSealed, isWithdrawn, provenanceOf, seasonOnce } from "../../lib/recognitionWords.js";
 import { PersonalBests } from "./bests.jsx";
 import { RecordBoards } from "../records.jsx";
 
@@ -255,7 +256,9 @@ function HonoursTab({ me, role }) {
   // for the same boy again and nobody else.
   const [nonce, setNonce] = useState(0);
   const recRead = useLive("recognition", role, nonce, { playerId: me.id });
-  const { rows: rec } = recRead;
+  const { rows: matches } = useLive("matches", role);
+  // His own end of each fixture names the opponent (the server's is the host's).
+  const rec = withOpponents(recRead.rows, matches);
   const { rows: lines } = useLive("passport", role, 0, { playerId: me.id });
   const miles = rec.filter((r) => r.family === "milestone");
   const honours = rec.filter((r) => r.family !== "milestone");
@@ -283,7 +286,7 @@ function HonoursTab({ me, role }) {
           // reason (D3, D4): "Half colours 2026 · withdrawn 3 Oct 2026".
           isWithdrawn(h)
             ? <Line key={`${h.family}-${h.kind}-${i}`} quiet testid="passport-honour-withdrawn">{honourWords(h)}</Line>
-            : <Line key={`${h.family}-${h.kind}-${i}`}>{h.label}{h.season ? ` · ${h.season}` : h.on ? ` · ${humanDate(h.on)}` : ""}</Line>
+            : <Line key={`${h.family}-${h.kind}-${i}`}>{h.label}{seasonOnce(h) ? ` · ${seasonOnce(h)}` : h.season ? "" : h.on ? ` · ${humanDate(h.on)}` : ""}</Line>
         )) : <NoneOr read={recRead} what="your honours" none="None on record yet." onRetry={() => setNonce((n) => n + 1)} testid="passport-honours-none"/>}
       </Card>
       {lines.length > 0 && (
