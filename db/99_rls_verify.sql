@@ -11231,14 +11231,15 @@ BEGIN
   v_seq := (SELECT max(seq) FROM ball_event WHERE match_id = v_m);
   ALTER TABLE ball_event DISABLE TRIGGER USER;
   INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
-                          client_seq, client_ts, kind, ball_type, value, payload)
+                          client_seq, client_ts, kind, ball_type, value, payload, fingerprint)
   VALUES (v_m, p_other, v_seq + 1, v_target.epoch, v_target.innings, v_target.scorer_user_id, 'v147', 'v147-stray',
-          v_seq + 1, now(), 'ball', 'run', 1, '{}')
+          v_seq + 1, now(), 'ball', 'run', 1, '{}', 'v147-stray')
   RETURNING id INTO v_stray;
+  -- (fingerprint: the trigger that stamps it is among those lifted)
   INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
-                          client_seq, client_ts, kind, payload)
+                          client_seq, client_ts, kind, payload, fingerprint)
   VALUES (v_m, p_other, v_seq + 2, v_target.epoch, v_target.innings, v_target.scorer_user_id, 'v147', 'v147-void',
-          v_seq + 2, now(), 'void', jsonb_build_object('target', v_target.idempotency_key))
+          v_seq + 2, now(), 'void', jsonb_build_object('target', v_target.idempotency_key), 'v147-void')
   RETURNING id INTO v_void;
   ALTER TABLE ball_event ENABLE TRIGGER USER;
   RETURN jsonb_build_object('match', v_m, 'stray', v_stray, 'void', v_void, 'target', v_target.id);
@@ -37952,6 +37953,10 @@ $v116$;
   --   (stray)   the same once a ball and a void are planted at the other
   --             school of a host's fixture; the stray ball read by some and
   --             not others, the void's target read where the void is not
+  -- Falsified once each, the view broken and this section run: the per-ball
+  -- branch dropped went red at (stray); the away arm dropped at (rows); a
+  -- policy narrowed, one added on match, and pad_scope_select made to read
+  -- `kind` each named by ball_log_policies_unpinned() at (pinned).
   DECLARE
     u       uuid;
     pass    int;
