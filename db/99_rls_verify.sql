@@ -11574,6 +11574,97 @@ CREATE OR REPLACE FUNCTION _v148_void(p_match uuid, p_target text) RETURNS text 
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/148 (section 125) ─────────────────────────────────────────────
 
+-- ┌── db/149 (section 127) ─────────────────────────────────────────────
+-- The stream overlay names no child (Kameel, 11 Nov 2026, Q1(e)). Hilton's
+-- U18A at home to Westville's U18A, invented here, today, the overlay
+-- published (name_display 'full', the most a school could choose) and both
+-- sides published for the public page. Hilton boys: CON (sixteen, a verified
+-- guardian's consent, live: the public page would name him), UNA (nothing
+-- recorded), DSO (consented, and marked never-public by the DSO), NEV
+-- (consented, and marked never-public by the office), OFF (thirteen,
+-- consented, his age group's names switched off); Westville's VIS
+-- (consented). An adult umpire. The ball helper and the setting helper write
+-- as the owner, as the scorer's and the publisher's doors would.
+CREATE OR REPLACE FUNCTION _v149_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  WES    uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  DSO    uuid := '88888888-0000-0000-0000-000000000057';
+  SCORER uuid := '88888888-0000-0000-0000-000000000006';
+  v_born date := (sa_today() - interval '16 years 2 months')::date;
+  v_young date := (sa_today() - interval '13 years 2 months')::date;
+  ids jsonb := '{}'; r record; v_p uuid; v_u uuid; v_a uuid; v_l uuid; v_m uuid; i int := 0;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  FOR r IN SELECT * FROM (VALUES
+      ('con', HIL, 'Consented', true), ('una', HIL, 'Unasked', false), ('dso', HIL, 'Dsomarked', true),
+      ('nev', HIL, 'Neverpublic', true), ('off', HIL, 'Namesoff', true), ('vis', WES, 'Visitor', true)) AS v(k, school, surname, consent)
+  LOOP
+    i := i + 1;
+    INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+    VALUES (r.school, 'U18A', 'Verify OneFortyNine ' || r.surname, 'OneFortyNine ' || r.surname, 1490 + i, 'batter',
+            CASE r.k WHEN 'off' THEN v_young ELSE v_born END)
+    RETURNING id INTO v_p;
+    ids := ids || jsonb_build_object(r.k, v_p);
+    IF r.consent THEN
+      INSERT INTO app_user (school_id, email, name, role)
+      VALUES (r.school, 'v149.' || r.k || '.parent@example.invalid', 'V149 Parent ' || r.k, 'guardian') RETURNING id INTO v_u;
+      INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_u, 'guardian', r.school) RETURNING id INTO v_a;
+      INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                      consent_state, consent_version, consent_at, created_by, valid_from)
+      VALUES (v_a, v_p, 'parent', 'verified', OFFICE, now() - interval '30 days', 'granted', 'popia-2026-01',
+              now() - interval '30 days', OFFICE, sa_today() - 30)
+      RETURNING id INTO v_l;
+      INSERT INTO public_name_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
+      VALUES (v_p, 'guardian', v_a, v_l, 'public-names-2026-09', sa_today() - 10, OFFICE);
+    END IF;
+  END LOOP;
+  INSERT INTO player_never_public (player_id, reason, set_on, set_by)
+  VALUES ((ids->>'dso')::uuid, 'Verify 149: the DSO''s mark', sa_today(), DSO),
+         ((ids->>'nev')::uuid, 'Verify 149: the office''s mark', sa_today(), OFFICE);
+  -- Every Hilton and Westville age group named (earlier sections leave some
+  -- off), then OFF's own age group switched off.
+  UPDATE public_names_off SET names_off = false WHERE school_id IN (HIL, WES) AND names_off;
+  INSERT INTO public_names_off (school_id, age_group, names_off, set_by)
+  VALUES (HIL, birth_age_group(v_young), true, OFFICE)
+  ON CONFLICT (school_id, age_group) DO UPDATE SET names_off = true;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U18A', WES, 'U18A', 'Westville Boys'' High U18A', now() - interval '1 hour', 'cricket', 'T20', 20, 'live')
+  RETURNING id INTO v_m;
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by)
+  VALUES (v_m, 'home', HIL, 'U18A', true, OFFICE), (v_m, 'away', WES, 'U18A', true, OFFICE);
+  INSERT INTO match_broadcast (match_id, school_id, published, published_by, name_display, show_officials, strapline)
+  VALUES (v_m, HIL, true, OFFICE, 'full', true, 'Hilton v Westville · U18A');
+  INSERT INTO match_official (match_id, school_id, duty, person_name, panel, appointed_by)
+  VALUES (v_m, HIL, 'umpire', 'Adult Umpire Kwezi', 'KZN Cricket Umpires', SCORER);
+  RETURN ids || jsonb_build_object('m', v_m);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One delivery on the overlay's match, as the scorer's pad writes it.
+CREATE OR REPLACE FUNCTION _v149_ball(p_match uuid, p_striker uuid, p_non uuid, p_bowler uuid) RETURNS void AS $$
+DECLARE v_seq int := (SELECT coalesce(max(seq), 0) + 1 FROM ball_event WHERE match_id = p_match);
+BEGIN
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                          client_ts, kind, ball_type, value, striker_id, non_striker_id, bowler_id, payload)
+  VALUES (p_match, '11111111-1111-1111-1111-111111111111', v_seq, 1, 0, '88888888-0000-0000-0000-000000000006', 'v149',
+          'v149-' || p_match || '-' || v_seq, v_seq, now(), 'ball', 'run', 1, p_striker, p_non, p_bowler, '{}'::jsonb);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The school's overlay settings, as its publisher's door would set them.
+CREATE OR REPLACE FUNCTION _v149_set(p_match uuid, p_display text, p_officials boolean, p_published boolean) RETURNS void AS $$
+  UPDATE match_broadcast SET name_display = p_display, show_officials = p_officials, published = p_published
+   WHERE match_id = p_match;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What the public page's read finds about one boy (db/59), past RLS: the
+-- control that he is one the public page would name, or would not.
+CREATE OR REPLACE FUNCTION _v149_people(p_match uuid, p_player uuid) RETURNS jsonb AS $$
+  SELECT jsonb_build_object('published', pp.school_published, 'facts', pp.facts)
+    FROM public_match_people(p_match) pp WHERE pp.player_id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/149 (section 127) ─────────────────────────────────────────────
+
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -39199,6 +39290,110 @@ $v116$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/148 (section 125) ──────────────────────────────────────────
+  -- ┌── db/149 (section 127) ─────────────────────────────────────────
+  -- ── 127. The stream overlay names no child (db/149; PUBLIC_DATA D2; Kameel 11 Nov 2026, Q1(e)) ──
+  -- Staged by _v149_stage(); every read is broadcast_state() through
+  -- scrbrd_app, signed out unless said.
+  -- Labels:
+  --   (before)    a published overlay before a ball: the row, nobody at
+  --               the crease
+  --   (control)   CON is a boy the public page would name (his side
+  --               published, his consent live and competent, no mark, names
+  --               on); UNA, DSO, NEV and OFF are not; VIS's school published
+  --               and he consented
+  --   (roles)     every child, CON and VIS included, is 'Batter' /
+  --               'Non-striker' / 'Bowler', under name_display full,
+  --               initials and none; no name, initial or surname anywhere
+  --               in the row
+  --   (who)       signed out, the side's coach, the director of sport, the
+  --               DSO and Westville's office read the same row
+  --   (officials) the umpire named in full when shown; NULL when not
+  --   (off-air)   unpublished, no row
+  --   (body)      the function reads no player
+  --
+  -- Falsified (11 Nov 2026, on a migrated database inside the section's
+  -- transaction; each went red at its own label; unchanged it passed):
+  --   broadcast_state()'s three name columns back to db/128's
+  --     broadcast_name(full_name, name_display)                    → (roles)
+  --   the officials' CASE answering NULL                            → (officials)
+  DECLARE
+    y   jsonb := _v149_stage();
+    M   uuid := (y->>'m')::uuid;
+    CON uuid := (y->>'con')::uuid; UNA uuid := (y->>'una')::uuid; DSO uuid := (y->>'dso')::uuid;
+    NEV uuid := (y->>'nev')::uuid; OFF uuid := (y->>'off')::uuid; VIS uuid := (y->>'vis')::uuid;
+    v_row text; v_out text; v_pp jsonb; d text; k text; u uuid; u2 uuid;
+    s record;
+  BEGIN
+    PERFORM set_config('app.user_id', '', true);
+    -- (before)
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.match_id = M AND s.striker IS NULL AND s.non_striker IS NULL AND s.bowler IS NULL,
+      format('§127 (before): before a ball the overlay reads %s / %s / %s', s.striker, s.non_striker, s.bowler));
+
+    -- (control) what the public page's read finds, once each boy is in the log
+    PERFORM _v149_ball(M, CON, UNA, VIS);
+    PERFORM _v149_ball(M, DSO, NEV, VIS);
+    PERFORM _v149_ball(M, OFF, CON, VIS);
+    v_pp := _v149_people(M, CON);
+    PERFORM _assert((v_pp->>'published')::boolean AND v_pp->'facts'->>'neverPublic' = 'false'
+                    AND v_pp->'facts'->>'namesOff' = 'false'
+                    AND v_pp->'facts'->'consents'->0->>'competent' = 'true'
+                    AND v_pp->'facts'->'consents'->0->>'endedOn' IS NULL,
+      format('§127 (control): CON is not a boy the public page would name: %s', v_pp));
+    PERFORM _assert(_v149_people(M, UNA)->'facts'->'consents' = '[]'::jsonb, '§127 (control): UNA has a consent');
+    PERFORM _assert(_v149_people(M, DSO)->'facts'->>'neverPublic' = 'true', '§127 (control): DSO is not marked');
+    PERFORM _assert(_v149_people(M, NEV)->'facts'->>'neverPublic' = 'true', '§127 (control): NEV is not marked');
+    PERFORM _assert(_v149_people(M, OFF)->'facts'->>'namesOff' = 'true', '§127 (control): OFF''s names are not off');
+    PERFORM _assert((_v149_people(M, VIS)->>'published')::boolean
+                    AND _v149_people(M, VIS)->'facts'->'consents'->0->>'competent' = 'true',
+      format('§127 (control): VIS is not a published, consented boy: %s', _v149_people(M, VIS)));
+
+    -- (roles) each pair at the crease in turn, under each setting a school may choose
+    FOREACH d IN ARRAY ARRAY['full', 'initials', 'none'] LOOP
+      PERFORM _v149_set(M, d, true, true);
+      FOR u, u2, k IN SELECT * FROM (VALUES (CON, UNA, 'CON/UNA'), (DSO, NEV, 'DSO/NEV'), (OFF, CON, 'OFF/CON')) z(a, b, c) LOOP
+        PERFORM _v149_ball(M, u, u2, VIS);
+        SELECT * INTO s FROM broadcast_state(M);
+        SELECT row_to_json(x)::text INTO v_row FROM broadcast_state(M) x;
+        PERFORM _assert(s.striker = 'Batter' AND s.non_striker = 'Non-striker' AND s.bowler = 'Bowler',
+          format('§127 (roles): %s under %s reads %s / %s / %s', k, d, s.striker, s.non_striker, s.bowler));
+        PERFORM _assert(v_row !~* '(Verify|OneFortyNine|Consented|Unasked|Dsomarked|Neverpublic|Namesoff|Visitor)',
+          format('§127 (roles): a name is in the overlay''s row under %s: %s', d, v_row));
+        PERFORM _assert(s.name_display = d, format('§127 (roles): name_display reads %s, not %s', s.name_display, d));
+      END LOOP;
+    END LOOP;
+
+    -- (who) the same row for every caller, signed out or in
+    PERFORM _v149_set(M, 'full', true, true);
+    PERFORM set_config('app.user_id', '', true);
+    SELECT row_to_json(x)::text INTO v_out FROM broadcast_state(M) x;
+    FOREACH u IN ARRAY ARRAY[U_COACH, U_SARAH, '88888888-0000-0000-0000-000000000057'::uuid, U_WES_ADM] LOOP
+      PERFORM _as(u);
+      SELECT row_to_json(x)::text INTO v_row FROM broadcast_state(M) x;
+      PERFORM _assert(v_row = v_out, format('§127 (who): %s reads %s; signed out reads %s', u, v_row, v_out));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (officials)
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.officials = 'Adult Umpire Kwezi', format('§127 (officials): the umpire reads %s', s.officials));
+    PERFORM _v149_set(M, 'full', false, true);
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.officials IS NULL AND s.striker = 'Batter',
+      format('§127 (officials): with officials off it reads %s / %s', s.officials, s.striker));
+
+    -- (off-air)
+    PERFORM _v149_set(M, 'full', true, false);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM broadcast_state(M)), '§127 (off-air): an unpublished overlay has a row');
+
+    -- (body)
+    PERFORM _assert((SELECT p.prosrc !~* '\m(player|full_name|broadcast_name|striker_id|non_striker_id|bowler_id)\M'
+                       FROM pg_proc p WHERE p.oid = 'broadcast_state(uuid)'::regprocedure),
+      '§127 (body): broadcast_state() reads a player or a name');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 127
+  -- └── db/149 (section 127) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

@@ -92,7 +92,12 @@ const DECIDED = {
   // later, and signed in. On a public page: none.
   A8: ["Photographs of pupils", "never", "None on public pages"],
   D1: ["Search engines", "never", "Public pages are not indexed"],
-  D2: ["The stream overlay", "name_rule", "Brought under the L2 consent rule", ["published"]],
+  // No child is named on the overlay (db/149; Kameel, 11 Nov 2026, PUBLIC_BY_TERMS
+  // Q1(e)): every child is a role word until a stream consent exists, so no
+  // pupil is picked out by name. Officials, adults doing a public job, as before.
+  D2: ["The stream overlay", "team_level",
+       "No child is named: \"Batter\" / \"Non-striker\" / \"Bowler\" for every child until a stream consent exists; officials as before",
+       ["published"]],
   // The link travelling is expected. What it opens is whatever the other
   // surfaces allow, and nothing more.
   D3: ["A live link shared on WhatsApp", "public", "Expected; the page shows only what this rule allows"],
