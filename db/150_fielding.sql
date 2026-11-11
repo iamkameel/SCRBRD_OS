@@ -57,6 +57,14 @@
 --                Our boys only. The career reads' fielding columns.
 --              Both read through ball_event's own policies: a reader sees
 --              the credits of the matches he may read, as the careers do.
+--   R10        + match_award_figures(match, boy, basis), match_award_fielding_words():
+--                db/148's mirror on the award's own basis; ~ honour_cite_figures(),
+--                recognition_review_check(), recognition_reviews_open() and
+--                recognition_review_stand() (db/148) pass the award's basis, so a
+--                correction that voids or re-credits a catch flags an award decided
+--                on fielding, and an old batting_bowling award compares as before.
+--                Applies after db/148 (the guard asks for it); after a re-run of
+--                db/148, run this file again.
 --   POTM       ~ match_award() (db/142) and captain_nominate() (db/144)
 --                take the basis the application read the suggestions on —
 --                'batting_bowling' (no fielding), or, new,
@@ -89,9 +97,13 @@ BEGIN
      OR to_regprocedure('school_season_of(timestamptz)') IS NULL
      OR to_regprocedure('match_award(uuid,uuid,jsonb)') IS NULL
      OR to_regprocedure('captain_nominate(uuid,uuid,jsonb)') IS NULL
+     -- R10 (db/148): the corrections this file teaches the fielding basis.
+     OR to_regprocedure('match_award_figures(uuid,uuid)') IS NULL OR to_regprocedure('honour_cite_figures()') IS NULL
+     OR to_regprocedure('recognition_review_check(uuid)') IS NULL OR to_regprocedure('recognition_reviews_open(uuid)') IS NULL
+     OR to_regprocedure('recognition_review_stand(uuid)') IS NULL
      OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'ball_event'::regclass AND tgname = 'ball_event_stumped_by_keeper')
      OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'ball_event'::regclass AND tgname = 'zz_ball_event_fingerprint') THEN
-    RAISE EXCEPTION 'db/150: the keeper (db/68), wickets on extras (db/87), Player of the Match (db/142) or the captain''s nomination (db/144) is missing; apply them first';
+    RAISE EXCEPTION 'db/150: the keeper (db/68), wickets on extras (db/87), Player of the Match (db/142), the captain''s nomination (db/144) or corrections reaching awards (db/148) is missing; apply them first';
   END IF;
 END $guard$;
 
@@ -292,7 +304,75 @@ END $patch$;
 
 
 -- ══════════════════════════════════════════════════════════════════
---  6 · What this file holds itself to
+--  6 · A correction re-derives an award on the basis it was decided on
+--      (R10, db/148)
+-- ══════════════════════════════════════════════════════════════════
+-- db/148's mirror, match_award_figures(match, boy), is figuresWords() on the
+-- batting and bowling basis. An award decided on the fielding basis cited
+-- the boy's fielding too ("6* (6) · 1 catch"), so a correction that voids or
+-- re-credits a catch must move what is compared, and one that touches only
+-- fielding must not move an award decided without it. The three-argument
+-- mirror below is figuresWords(matchFigures(facts, ids, basis)): the
+-- two-argument one's words, and on the fielding basis the boy's catches,
+-- stumpings and run outs from fielding_credit after them (catches, then
+-- stumpings, then run outs, as potm.mjs writes them); his fielding alone
+-- when he neither batted nor bowled. Any other basis is exactly db/148's.
+-- Every call db/148 makes of the mirror for an award is patched to pass the
+-- award's own derived_from.basis (honour_cite_figures, recognition_review_
+-- check, recognition_reviews_open, recognition_review_stand): an old
+-- batting_bowling award compares as before, character for character.
+-- Re-running db/148 after this file restates those four without the basis:
+-- run this file again after it.
+CREATE OR REPLACE FUNCTION match_award_fielding_words(p_match uuid, p_player uuid) RETURNS text AS $$
+  SELECT nullif(concat_ws(' · ',
+           CASE WHEN c.catches > 0 THEN c.catches || CASE WHEN c.catches = 1 THEN ' catch' ELSE ' catches' END END,
+           CASE WHEN c.stumpings > 0 THEN c.stumpings || CASE WHEN c.stumpings = 1 THEN ' stumping' ELSE ' stumpings' END END,
+           CASE WHEN c.run_outs > 0 THEN c.run_outs || CASE WHEN c.run_outs = 1 THEN ' run out' ELSE ' run outs' END END), '')
+    FROM (SELECT count(*) FILTER (WHERE f.act = 'catch') AS catches,
+                 count(*) FILTER (WHERE f.act = 'stumping') AS stumpings,
+                 count(*) FILTER (WHERE f.act = 'run_out') AS run_outs
+            FROM fielding_credit f WHERE f.match_id = p_match AND f.player_id = p_player) c
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION match_award_figures(p_match uuid, p_player uuid, p_basis text) RETURNS text AS $$
+  SELECT CASE WHEN p_basis IS DISTINCT FROM 'batting_bowling_fielding' OR f.w IS NULL THEN b.w
+              WHEN b.w = 'Did not bat or bowl' THEN f.w
+              ELSE b.w || ' · ' || f.w END
+    FROM (SELECT match_award_figures(p_match, p_player) AS w) b,
+         (SELECT CASE WHEN p_basis = 'batting_bowling_fielding' THEN match_award_fielding_words(p_match, p_player) END AS w) f
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+COMMENT ON FUNCTION match_award_figures(uuid, uuid, text) IS
+  'db/150 (RECOGNITION R12 on R10): db/148''s mirror on the award''s basis: on batting_bowling_fielding the boy''s catches, stumpings and run outs after his batting and bowling, as potm.mjs figuresWords() writes them. Nobody''s to call.';
+
+DO $mirror$
+DECLARE f text; r text;
+BEGIN
+  FOREACH f IN ARRAY ARRAY['match_award_fielding_words(uuid,uuid)', 'match_award_figures(uuid,uuid,text)'] LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM scrbrd_app', f);
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
+      END IF;
+    END LOOP;
+  END LOOP;
+  PERFORM pg_temp._v150_patch('honour_cite_figures()',
+    $n$match_award_figures(NEW.match_id, NEW.player_id))$n$,
+    $r$match_award_figures(NEW.match_id, NEW.player_id, NEW.derived_from->>'basis'))$r$, 1);
+  PERFORM pg_temp._v150_patch('recognition_review_check(uuid)',
+    $n$v_now := match_award_figures(h.match_id, h.player_id);$n$,
+    $r$v_now := match_award_figures(h.match_id, h.player_id, h.derived_from->>'basis');$r$, 1);
+  PERFORM pg_temp._v150_patch('recognition_reviews_open(uuid)',
+    $n$match_award_figures(r.match_id, r.player_id),$n$,
+    $r$match_award_figures(r.match_id, r.player_id, h.derived_from->>'basis'),$r$, 1);
+  PERFORM pg_temp._v150_patch('recognition_review_stand(uuid)',
+    $n$match_award_figures(r.match_id, r.player_id),$n$,
+    $r$match_award_figures(r.match_id, r.player_id, (SELECT x.derived_from->>'basis' FROM honour x WHERE x.id = r.honour_id)),$r$, 2);
+END $mirror$;
+
+
+-- ══════════════════════════════════════════════════════════════════
+--  7 · What this file holds itself to
 -- ══════════════════════════════════════════════════════════════════
 DO $proof$
 DECLARE got text[];
@@ -324,6 +404,15 @@ BEGIN
      OR position($r$NOT IN ('batting_bowling', 'batting_bowling_fielding')$r$ IN (SELECT prosrc FROM pg_proc WHERE oid = 'captain_nominate(uuid,uuid,jsonb)'::regprocedure)) = 0
      OR position($r$'basis', p_derived->>'basis'$r$ IN (SELECT prosrc FROM pg_proc WHERE oid = 'captain_nominate(uuid,uuid,jsonb)'::regprocedure)) = 0 THEN
     RAISE EXCEPTION 'db/150: Player of the Match does not take the basis it was read on';
+  END IF;
+  IF position($r$h.derived_from->>'basis'$r$ IN (SELECT prosrc FROM pg_proc WHERE oid = 'recognition_review_check(uuid)'::regprocedure)) = 0
+     OR position($r$NEW.derived_from->>'basis'$r$ IN (SELECT prosrc FROM pg_proc WHERE oid = 'honour_cite_figures()'::regprocedure)) = 0
+     OR position($r$h.derived_from->>'basis'$r$ IN (SELECT prosrc FROM pg_proc WHERE oid = 'recognition_reviews_open(uuid)'::regprocedure)) = 0
+     OR position($r$x.derived_from->>'basis'$r$ IN (SELECT prosrc FROM pg_proc WHERE oid = 'recognition_review_stand(uuid)'::regprocedure)) = 0
+     OR match_award_figures(gen_random_uuid(), gen_random_uuid(), 'batting_bowling') IS DISTINCT FROM match_award_figures(gen_random_uuid(), gen_random_uuid())
+     OR EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid IN ('match_award_figures(uuid,uuid,text)'::regprocedure, 'match_award_fielding_words(uuid,uuid)'::regprocedure)
+                   AND (NOT p.prosecdef OR has_function_privilege('scrbrd_app', p.oid, 'EXECUTE'))) THEN
+    RAISE EXCEPTION 'db/150: a correction does not re-derive an award on the basis it was decided on';
   END IF;
   -- Nothing stored names fielders before this file: the credit starts empty.
   IF NOT EXISTS (SELECT 1 FROM ball_event WHERE payload ? 'fielders') AND EXISTS (SELECT 1 FROM fielding_credit) THEN

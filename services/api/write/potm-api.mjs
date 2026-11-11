@@ -6,6 +6,9 @@
  *              mayAward, refusal, standing, mayWithdraw, suggestions, sheet }] }
  *   POST /api/matches/:id/player-of-match            { playerId, headSeq } → { ok, honourId }
  *   POST /api/matches/:id/player-of-match/withdraw   { honourId, kind, reason } → { ok }
+ *   A side's `review` (R10, db/148): the open review of its standing award,
+ *   when a correction moved what it stood on and the reader is its decider
+ *   (recognition-api.mjs reviewOf()); null otherwise.
  *
  * WHO. Every rule is db/142's: match_award_state() answers a side only to a
  * holder of recognition.match.award over it (the side's coach, the director
@@ -33,6 +36,7 @@ import { deriveFacts, fromRow, suggestPlayerOfMatch, matchFigures, figuresWords,
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { EVENT_COLUMNS_SEEN, matchFoldContext } from "./events-api.mjs";
 import { safeErr } from "../log-safe.mjs";
+import { reviewOf } from "./recognition-api.mjs";
 /** @import { RouteDeps, IdHandler } from "../api-types.mjs" */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -142,6 +146,10 @@ export function potmRoutes({ pool, secret }) {
         // One log, one basis for every side of it; D17's line, or none once
         // fielding is counted (RECOGNITION R12).
         const basis = [...work.values()][0]?.basis ?? POTM_BASIS;
+        // R10 (db/148): a correction moved what a standing award stood on;
+        // the review is the decider's (the door answers nobody else).
+        const { rows: rv } = await client.query(`select * from recognition_reviews_open($1)`, [id]);
+        const reviews = new Map(rv.map((x) => [x.honour_id, reviewOf(x)]));
         return {
           matchId: id, basis: basisWords(basis), basisKey: basis,
           sides: rows.map((r) => ({
@@ -152,6 +160,7 @@ export function potmRoutes({ pool, secret }) {
             standing: r.honour_id ? { honourId: r.honour_id, playerId: r.player_id, name: r.player_name,
                                       awardedAt: r.awarded_at, decidedBy: r.decided_by_name } : null,
             mayWithdraw: r.can_withdraw === true,
+            review: r.honour_id ? reviews.get(r.honour_id) ?? null : null,
             suggestions: r.can_award ? work.get(r.side)?.suggestions ?? [] : [],
             sheet: r.can_award ? work.get(r.side)?.sheet ?? [] : [],
           })),

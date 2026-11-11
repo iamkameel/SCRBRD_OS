@@ -787,6 +787,10 @@ const PLAYER_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/player-of-match\/nomination$/,        "POST", nomination.nominate],
   [/^\/api\/matches\/([^/]+)\/player-of-match\/nomination\/decide$/, "POST", nomination.decide],
   [/^\/api\/player-of-match\/to-decide$/,                              "GET",  nomination.toDecide],
+  // RECOGNITION R10 (db/148): a correction moved what an award stood on; its
+  // decider reads the review and lets the award stand (or withdraws it above).
+  [/^\/api\/player-of-match\/to-review$/,                              "GET",  recognition.toReview],
+  [/^\/api\/player-of-match\/reviews\/([^/]+)\/stand$/,              "POST", recognition.stand],
   // RECOGNITION R8 (db/146): Colours. Every rule is the doors': the side's
   // coach nominates (A17), the director of sport or the principal decides,
   // never the nominator, never a guardian of the boy (D9, D10).

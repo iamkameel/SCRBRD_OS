@@ -20,6 +20,15 @@
  * office records a decision by naming who made it (`decidedBy`), and that
  * person is told. honour_stamp() refuses anyone else ("decider_required").
  *
+ * A CORRECTION REACHES THE AWARD (RECOGNITION R10, D19; db/148). A void, or
+ * the scorer's re-seal after one, that moves what a match's award was
+ * decided on (the awardee's figures, or the result) opens a review to its
+ * decider, and the award stands until he acts: he withdraws it (kind
+ * 'correction', potm-api.mjs) or lets it stand (below). The database
+ * decides who reads a review (the decider; once his assignment has ended,
+ * the side's other deciders; never a guardian of the boy) and never awards
+ * another boy.
+ *
  * THE CITATION (D2) is a coach's or a decider's words about a child, read by
  * his team-mates and his parents, so it passes the one writer-side list
  * (packages/policy/src/words.mjs, SG-10's) before it is written; on a hit it
@@ -61,6 +70,23 @@ const KINDS = ["colours", "half_colours", "honours", "captain", "vice_captain", 
 const WITHDRAWN_KINDS = ["correction", "other"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SEASON = /^\d{4}(\/\d{2})?$/;
+/**
+ * One open review, as the decider's To-resolve row and the staff sheet read
+ * it: the figures the award cited and the figures now, and whether the
+ * result has moved since (db/148 recognition_reviews_open()).
+ * @param {any} r
+ */
+export const reviewOf = (r) => ({
+  reviewId: r.review_id, honourId: r.honour_id, matchId: r.match_id, side: r.side, heading: r.heading,
+  playerId: r.player_id, playerName: r.player_name, reason: r.reason,
+  figuresBefore: r.figures_before ?? null, figuresNow: r.figures_now ?? null, resultMoved: r.result_moved === true,
+  openedAt: r.opened_at, decidedBy: r.decided_by_name ?? null, decidedByMe: r.decided_by_me === true, mayWithdraw: r.can_withdraw === true,
+});
+/** What "let it stand" answers, in the sheet's words. */
+export const STAND_WORDS = Object.freeze({
+  not_permitted: "You may not decide this award.",
+  already_closed: "This review is already closed.",
+});
 const isoDate = (/** @type {unknown} */ v, /** @type {string} */ code) => {
   if (v == null || String(v).trim() === "") return null;
   const s = String(v).trim();
@@ -154,6 +180,31 @@ export function recognitionRoutes({ pool, secret }) {
         const { rowCount } = await client.query(
           `update honour set is_public = $2 where id = $1 and withdrawn_at is null`, [req.params.id, req.body.isPublic]);
         return { updated: rowCount };
+      });
+    }),
+
+    // GET /api/player-of-match/to-review → { rows } (RECOGNITION R10, db/148)
+    //   The decider's open reviews: one per award a correction moved.
+    toReview: handle(async (req) => runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+      const { rows } = await client.query(`select * from recognition_reviews_open(null)`);
+      return { rows: rows.map(reviewOf) };
+    })),
+
+    // POST /api/player-of-match/reviews/:id/stand → { ok }
+    //   D19's "let it stand": the review closed with his name; the figures as
+    //   they stand now are what the next correction is compared with.
+    stand: handle(async (req) => {
+      const id = String(req.params?.id ?? "");
+      if (!UUID.test(id)) throw err("not_found", 404);
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const { rows } = await client.query(`select * from recognition_review_stand($1)`, [id]);
+        const r = rows[0];
+        if (!r?.ok) {
+          const reason = r?.reason ?? "not_permitted";
+          throw err(reason, reason === "not_permitted" ? 403 : 422,
+                    { message: STAND_WORDS[/** @type {keyof typeof STAND_WORDS} */ (reason)] ?? STAND_WORDS.not_permitted });
+        }
+        return { ok: true };
       });
     }),
 

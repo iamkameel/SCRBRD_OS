@@ -141,5 +141,6 @@
   "144_captain_nomination.sql",
   "145_recognition_decide.sql",
   "146_colours.sql",
+  "148_award_corrections.sql",
   "150_fielding.sql"
 ]
