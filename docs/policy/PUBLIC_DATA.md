@@ -62,7 +62,7 @@ ground for publishing it on these pages is the prior consent of a competent pers
 | A8 | Photographs of pupils | None on public pages. *Note: photo and video sharing will come later, for registered users only.* |
 | D1 | Search engines | Public pages are not indexed |
 | D1a | The home page lists live matches and news | Team-level only; per-school listing switch plus the existing per-fixture publication; indexed itself, its match pages not (2026-10-02) |
-| D2 | The stream overlay (built) | Brought under the L2 consent rule |
+| D2 | The stream overlay (built) | No child is named: "Batter" / "Non-striker" / "Bowler" for every child, whatever the fixture's name display, until a stream consent exists; officials as before. *Changed 11 Nov 2026 (Kameel, PUBLIC_BY_TERMS Q1(e): "the stream caption: role words ('Batter') until its own consent"); built in `db/149_overlay_name_gate.sql`.* |
 | D3 | A live link shared on WhatsApp | Expected; the page shows only what this rule allows |
 | D4 | News posts naming pupils | News stays signed-in for now |
 
@@ -209,5 +209,7 @@ below. Kameel confirmed all of them the same day.
    `db/59_public_read_path.sql` and `services/api/public/`, as
    `docs/design/SCRBRD-083_public_pages.md` §8 phase 1 records. No deployment serves
    them until it sets `PUBLIC_PAGES=on`, which waits on item 5.
-4. **The overlay brought under the rule** (D2).
+4. **The overlay brought under the rule** (D2). **Done (db/149, 11 Nov 2026):** the overlay
+   names no child at all, role words for every child until a stream consent exists
+   (Kameel, PUBLIC_BY_TERMS Q1(e)). Proved by db/99 §127 and `tools/smoke-broadcast.mjs`.
 5. **The information officer's confirmation** of this document.
