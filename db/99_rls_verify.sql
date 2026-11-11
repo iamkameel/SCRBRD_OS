@@ -11693,9 +11693,17 @@ CREATE OR REPLACE FUNCTION _v151_as_caller(p_sql text) RETURNS text AS $$
 BEGIN EXECUTE p_sql; RETURN 'ok';
 EXCEPTION WHEN OTHERS THEN RETURN SQLSTATE; END $$ LANGUAGE plpgsql;
 
+-- This section's own helpers, by signature: the only functions the
+-- isolation check is told to pass over (they roll back with this file).
+CREATE OR REPLACE FUNCTION _v151_exempt() RETURNS text[] AS $$
+  SELECT ARRAY['_v151_users()', '_v151_switch(text,boolean)', '_v151_grant(uuid,boolean)', '_v151_as_caller(text)', '_v151_check()',
+               '_v151_breaks(text)', '_v151_owner_try(text,boolean)', '_v151_lapse(uuid)', '_v151_derived()', '_v151_dump(uuid)',
+               '_v151_facts(uuid)', '_v151_age(uuid)', '_v151_delete_as_nobody(uuid,uuid)', '_v151_exempt()']
+$$ LANGUAGE sql IMMUTABLE;
+
 -- The isolation check as it stands, as the owner: 'ok' or its message.
 CREATE OR REPLACE FUNCTION _v151_check() RETURNS text AS $$
-BEGIN PERFORM pilot_isolation_check(); RETURN 'ok';
+BEGIN PERFORM pilot_isolation_check(_v151_exempt()); RETURN 'ok';
 EXCEPTION WHEN OTHERS THEN RETURN SQLERRM; END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- Does the check catch this? The statement runs as the owner, then the
@@ -11704,7 +11712,7 @@ EXCEPTION WHEN OTHERS THEN RETURN SQLERRM; END $$ LANGUAGE plpgsql SECURITY DEFI
 CREATE OR REPLACE FUNCTION _v151_breaks(p_sql text) RETURNS text AS $$
 BEGIN
   EXECUTE p_sql;
-  PERFORM pilot_isolation_check();
+  PERFORM pilot_isolation_check(_v151_exempt());
   RAISE EXCEPTION 'NOT CAUGHT';
 EXCEPTION WHEN OTHERS THEN RETURN SQLERRM;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -11719,6 +11727,24 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
   PERFORM set_config('pilot.deleting', '', true);
   RETURN SQLERRM;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A match whose last ball was 40 days ago: its names' date has passed.
+CREATE OR REPLACE FUNCTION _v151_age(p_id uuid) RETURNS void AS $$
+  UPDATE pilot.match SET starts_at = now() - interval '41 days', created_at = now() - interval '41 days',
+         last_event_at = now() - interval '40 days' WHERE id = p_id;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The internal delete reached as a managed host's API role would reach it
+-- (review B1: no app.user_id, which PostgREST cannot set), or as another
+-- account: it must refuse, whatever EXECUTE a host grants.
+CREATE OR REPLACE FUNCTION _v151_delete_as_nobody(p_id uuid, p_as uuid) RETURNS boolean AS $$
+DECLARE v boolean;
+BEGIN
+  PERFORM set_config('app.user_id', coalesce(p_as::text, ''), true);
+  v := pilot_delete_one(p_id, 'scorer');
+  PERFORM set_config('app.user_id', '', true);
+  RETURN v;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- A lease that lapsed (the clock, without waiting 90 seconds).
@@ -11769,6 +11795,9 @@ CREATE OR REPLACE FUNCTION _v151_facts(p_id uuid) RETURNS jsonb AS $$
     'match', (SELECT count(*) FROM pilot.match WHERE id = p_id),
     'log', (SELECT count(*) FROM pilot.ball_event WHERE match_id = p_id),
     'held', (SELECT count(*) FROM pilot.held WHERE match_id = p_id AND resolved_at IS NULL),
+    'held_body', (SELECT coalesce(string_agg(body::text, ''), '') FROM pilot.held WHERE match_id = p_id),
+    'names_purge_after', (SELECT names_purge_after FROM pilot.match WHERE id = p_id),
+    'last_event_at', (SELECT last_event_at FROM pilot.match WHERE id = p_id),
     'tombstones', (SELECT coalesce(jsonb_agg(what || ':' || why ORDER BY what), '[]') FROM pilot.tombstone WHERE match_id = p_id),
     'audit', (SELECT coalesce(jsonb_agg(event ORDER BY id), '[]') FROM pilot.audit WHERE match_id = p_id))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -39514,7 +39543,15 @@ $v116$;
   --   (dependency)  a scratch view on the pilot log outside the schema makes it raise
   --   (functions)   a scratch function naming a pilot table, off the list, makes it raise
   --   (names)       a listed function that names the typed names, off the narrow list, makes it raise
-  --   (granted)     a grant on a pilot table, or on the schema, makes it raise
+  --   (granted)     a grant on a pilot table, on the schema, a default privilege, or EXECUTE on
+  --                 a pilot function to anyone the list does not name, makes it raise
+  --   (fail closed) a pilot table named in capitals, quoted, spaced at the dot, through a
+  --                 search_path, by dynamic SQL, or from an `_`-named function off the
+  --                 verifier's own list; an overload of a listed name; a policy on it: each raises
+  --   (managed)     a managed host's API roles hold nothing in pilot, and the internal delete
+  --                 refuses a caller with no account, or another account (review B1)
+  --   (latch)       a late event does not bring expired names back (review B2)
+  --   (write screen) pilot_insert and pilot_hold screen what they write themselves (S2)
   --   (off)         with phase 2 switched off, nothing is created and nothing is said of grants
   --   (grant needed) an account with no pilot.scorer grant, superadmin included, cannot create
   --   (create)      the granted owner creates, idempotently; another account gets not_found
@@ -39526,7 +39563,7 @@ $v116$;
   --   (derived)     every derived read answers exactly as it did before the pilot match existed
   --   (canary)      no pilot row but the names holds the canary
   --   (delete)      another account cannot; the owner can, with tombstones and the audit kept
-  --   (promoted_from) match.promoted_from exists and is UNIQUE
+  --   (promoted_from) match.promoted_from exists, is UNIQUE, and the application role cannot set it
   DECLARE
     u    jsonb := _v151_users();
     A    uuid := (u->>'a')::uuid;
@@ -39565,6 +39602,13 @@ $v116$;
       END LOOP;
     END LOOP;
     PERFORM _assert(n = 11, format('§129 (grant): %s tables in schema pilot, not the design''s ten and the switch', n));
+    -- (managed) whichever of a managed host's API roles exist here hold
+    -- nothing: the schema, a table, or any pilot function.
+    FOR r IN SELECT rolname FROM pg_roles WHERE rolname IN ('anon', 'authenticated', 'service_role') LOOP
+      PERFORM _assert(NOT has_schema_privilege(r.rolname, 'pilot', 'USAGE'), format('§129 (managed): %s may use schema pilot', r.rolname));
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.proname ~ '^pilot_' AND has_function_privilege(r.rolname, p.oid, 'EXECUTE')),
+        format('§129 (managed): %s may call a pilot function', r.rolname));
+    END LOOP;
 
     -- (check)
     PERFORM _assert(_v151_check() = 'ok', format('§129 (check): the isolation check fails as migrated: %s', _v151_check()));
@@ -39589,6 +39633,32 @@ $v116$;
     PERFORM _assert(s ~ 'pilot isolation \(grant\)', format('§129 (granted): USAGE on the schema passed: %s', s));
     s := _v151_breaks('GRANT SELECT ON pilot.ball_event TO PUBLIC');
     PERFORM _assert(s ~ 'pilot isolation \(grant\).*ball_event', format('§129 (granted): a grant to PUBLIC passed: %s', s));
+    s := _v151_breaks('ALTER DEFAULT PRIVILEGES IN SCHEMA pilot GRANT SELECT ON TABLES TO scrbrd_app');
+    PERFORM _assert(s ~ 'pilot isolation \(grant\).*default', format('§129 (granted): a default privilege in pilot passed: %s', s));
+    s := _v151_breaks('GRANT EXECUTE ON FUNCTION public.pilot_screen(uuid, jsonb) TO scrbrd_app');
+    PERFORM _assert(s ~ 'pilot isolation \(functions\).*pilot_screen.*may be called', format('§129 (granted): the screen granted to the app passed: %s', s));
+    s := _v151_breaks('GRANT EXECUTE ON FUNCTION public.pilot_delete(uuid) TO PUBLIC');
+    PERFORM _assert(s ~ 'pilot isolation \(functions\).*pilot_delete.*may be called', format('§129 (granted): a door granted to PUBLIC passed: %s', s));
+    s := _v151_breaks('GRANT EXECUTE ON FUNCTION public.pilot_delete_one(uuid, text) TO scrbrd_app');
+    PERFORM _assert(s ~ 'pilot isolation \(functions\).*pilot_delete_one', format('§129 (granted): the internal delete granted passed: %s', s));
+    -- (fail closed)
+    FOREACH t IN ARRAY ARRAY[
+      $f$CREATE FUNCTION public.v151_caps() RETURNS bigint LANGUAGE sql AS 'SELECT count(*) FROM PILOT.BALL_EVENT'$f$,
+      $f$CREATE FUNCTION public.v151_quoted() RETURNS bigint LANGUAGE sql AS 'SELECT count(*) FROM "pilot"."held"'$f$,
+      $f$CREATE FUNCTION public.v151_spaced() RETURNS bigint LANGUAGE sql AS 'SELECT count(*) FROM pilot . session'$f$,
+      $f$CREATE FUNCTION public.v151_path() RETURNS bigint LANGUAGE sql SET search_path = pilot, pg_catalog AS 'SELECT 1::bigint'$f$,
+      $f$CREATE FUNCTION public.v151_dynamic() RETURNS void LANGUAGE plpgsql AS $b$ BEGIN EXECUTE format('SELECT 1 FROM %I.%I', 'pilot', 'name'); END $b$ $f$,
+      $f$CREATE FUNCTION public._v151_sneak() RETURNS bigint LANGUAGE sql AS 'SELECT count(*) FROM pilot.name'$f$,
+      $f$CREATE FUNCTION public.pilot_names_for_owner(uuid, text) RETURNS bigint LANGUAGE sql AS 'SELECT 1::bigint'$f$,
+      $f$CREATE FUNCTION pg_temp.v151_elsewhere() RETURNS bigint LANGUAGE sql AS 'SELECT count(*) FROM pilot.ball_event'$f$]
+    LOOP
+      s := _v151_breaks(t);
+      PERFORM _assert(s ~ 'pilot isolation \((functions|names)\)', format('§129 (fail closed): this passed the check: %s — %s', t, s));
+    END LOOP;
+    s := _v151_breaks('CREATE POLICY v151_policy ON public.player USING (EXISTS (SELECT 1 FROM pilot.name))');
+    PERFORM _assert(s ~ 'pilot isolation \(dependency\)', format('§129 (fail closed): a policy on a pilot table passed: %s', s));
+    s := _v151_breaks('ALTER TABLE public.player ADD COLUMN v151_x uuid; ALTER TABLE public.player ADD FOREIGN KEY (v151_x) REFERENCES pilot.match(id)');
+    PERFORM _assert(s ~ 'pilot isolation \(dependency\)', format('§129 (fail closed): a key into a pilot table passed: %s', s));
     PERFORM _assert(_v151_check() = 'ok', '§129 (check): a scratch object outlived its test');
 
     -- (off) both switches as db/151 leaves them.
@@ -39660,6 +39730,14 @@ $v116$;
     PERFORM _as(B);
     SELECT c.reason INTO s FROM pilot_names_put(M, jsonb_build_array(jsonb_build_object('slot', H2, 'name', 'Verify Intruder'))) c;
     PERFORM _assert(s = 'not_found', format('§129 (names off): another account put a name: %s', s));
+    PERFORM _as(A);
+    SELECT c.reason INTO s FROM pilot_names_put(M, jsonb_build_array(jsonb_build_object('slot', H2, 'name', 'Verify'))) c;
+    PERFORM _assert(s = 'team_name_has_player_name', format('§129 (names off): a name the home side''s name holds as a word was answered %s', s));
+    -- A boy typed as "LB" (N2), and one name erased with a tombstone (S6).
+    SELECT * INTO r FROM pilot_names_put(M, jsonb_build_array(jsonb_build_object('slot', H2, 'name', 'LB'),
+                                                              jsonb_build_object('slot', W1, 'name', '')));
+    PERFORM _assert(r.ok AND (_v151_facts(M)->>'names')::int = 2 AND _v151_facts(M)->'tombstones' = '["names:scorer"]',
+      format('§129 (names off): an erased name left no tombstone: %s %s', r.reason, _v151_facts(M)));
 
     -- (screen)
     PERFORM _as(A);
@@ -39676,6 +39754,15 @@ $v116$;
       '§129 (screen): a note passed');
     PERFORM _assert(pilot_event_refusal(M, '{"kind":"innings_start","battingTeam":"VerifyHome"}') = 'free_text',
       '§129 (screen): a team named other than home or away passed');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"ball","catchBy":"Thabo"}') = 'free_text',
+      '§129 (screen): a key outside its kind''s list passed');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"retire","reason":"Thabo was hurt"}') = 'free_text', '§129 (screen): a reason in words passed');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"scorebook_card","card":{}}') = 'free_text', '§129 (screen): a kind not sent passed');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"ball","type":"run","value":"four"}') = 'free_text', '§129 (screen): a number in words passed');
+    PERFORM _assert(pilot_event_refusal(M, jsonb_build_object('kind', 'ball', 'type', 'LB', 'value', 1, 'striker', H1, 'bowler', W1)) IS NULL,
+      '§129 (screen): a leg-bye was refused because a boy is typed "LB" (N2)');
+    PERFORM _assert(pilot_event_refusal(M, '{"kind":"retire","reason":"lb"}') = 'name_in_event',
+      '§129 (screen): the name "LB" written as a reason passed');
     PERFORM _assert(pilot_event_refusal(M, jsonb_build_object('kind', 'innings_start', 'battingTeam', 'home', 'bowlingTeam', 'away',
                                         'teamKey', 'home', 'bowlingTeamKey', 'away', 'squad', jsonb_build_array(H1, H2),
                                         'bowlingSquad', jsonb_build_array(W1, W2), 'twelfthMan', NULL, 'overs', 20,
@@ -39721,7 +39808,12 @@ $v116$;
       '§129 (log): a write at the old generation was taken');
     PERFORM _assert((SELECT count(*) FROM pilot_log(M)) = 2 AND (SELECT bool_or(x.striker_id = H1) FROM pilot_log(M) x),
       '§129 (log): the owner does not read his two events back');
-    PERFORM _assert(pilot_hold(M, 1, 2, 'dev-v151:pilot-' || M || ':old:1', '{"payload":{"kind":"ball"}}', v_cols), '§129 (log): a stale ball was not held');
+    PERFORM _assert(pilot_hold(M, 1, 2, 'dev-v151:pilot-' || M || ':old:1',
+                               jsonb_build_object('scorerId', 'Qa Canarytest', 'matchId', 'Verify Away One', 'clientTs', 1, 'payload',
+                                                  jsonb_build_object('kind', 'ball', 'type', 'run', 'value', 4, 'striker', H1, 'bowler', W1)), v_cols),
+      '§129 (log): a stale ball was not held');
+    PERFORM _assert(_v151_facts(M)->>'held_body' !~* 'canarytest|Verify Away' AND _v151_facts(M)->>'held_body' ~ 'clientTs',
+      format('§129 (write screen): the held row keeps a field the client named: %s', _v151_facts(M)->>'held_body'));
     PERFORM _assert(pilot_held_here(M) = 1 AND (_v151_facts(M)->>'held')::int = 1, '§129 (log): the held ball is not counted for its device alone');
     s := _v151_owner_try(format('UPDATE pilot.ball_event SET value = 6 WHERE match_id = %L', M));
     PERFORM _assert(s ~ 'append-only', format('§129 (log): the owner updated the pilot log: %s', s));
@@ -39730,6 +39822,45 @@ $v116$;
     s := _v151_owner_try(format('DELETE FROM pilot.ball_event WHERE match_id = %L', M), true);
     PERFORM _assert(s = 'ok', format('§129 (log): with pilot.deleting set the delete was still refused: %s', s));
     PERFORM _assert((_v151_facts(M)->>'log')::int = 2, '§129 (log): the rolled-back delete took the log');
+
+    -- (write screen) The writes screen what they write, whatever called them.
+    FOREACH t IN ARRAY ARRAY[
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'dev-v151:x:9',
+             jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'ball', 'ball_type', 'run', 'value', 1, 'striker_id', H1,
+                                'bowler_id', W1, 'payload', jsonb_build_object('fielder', 'qa canarytest'))),
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'dev-v151:x:9',
+             jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'ball', 'ball_type', 'run', 'value', 1, 'payload', jsonb_build_object('note', 'hurt'))),
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'Qa Canarytest', v_cols),
+      format('SELECT pilot_insert(%L, 2, %L, 9, now(), %L)', M, 'dev-v151:x:9', v_cols || jsonb_build_object('striker_id', 'a1510000-0000-4000-8000-0000000000ff')),
+      format('SELECT pilot_hold(%L, 1, 2, %L, %L, %L)', M, 'dev-v151:x:10', jsonb_build_object('payload', jsonb_build_object('kind', 'ball', 'sub', 'Thabo')), v_cols),
+      format('SELECT pilot_hold(%L, 1, 2, %L, %L, %L)', M, 'dev-v151:x:10', jsonb_build_object('clientTs', 'Qa Canarytest', 'payload', '{}'::jsonb), v_cols)]
+    LOOP
+      s := _v151_as_caller(t);
+      PERFORM _assert(s IN ('23514', '23503'), format('§129 (write screen): %s answered %s', t, s));
+    END LOOP;
+    PERFORM _assert((_v151_facts(M)->>'log')::int = 2 AND (_v151_facts(M)->>'held')::int = 1, '§129 (write screen): a refused write left a row');
+
+    -- (latch) The last ball 40 days ago: the names' date has passed. A late
+    -- ball does not bring them back.
+    PERFORM _v151_age(M);
+    j := _v151_facts(M);
+    PERFORM _assert((j->>'names_purge_after')::timestamptz < now() AND NOT EXISTS (SELECT 1 FROM pilot_names_for_owner(M)),
+      format('§129 (latch): the names are readable 40 days after the last ball: %s', j));
+    n := pilot_insert(M, 2, 'dev-v151:pilot-' || M || ':late:1', 3, now(),
+                      jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'ball', 'ball_type', 'run', 'value', 1,
+                                         'striker_id', H1, 'non_striker_id', H2, 'bowler_id', W1, 'payload', '{}'::jsonb));
+    PERFORM _assert((_v151_facts(M)->>'last_event_at')::timestamptz > now() - interval '1 minute'
+                    AND _v151_facts(M)->>'names_purge_after' = j->>'names_purge_after',
+      format('§129 (latch): a late ball moved the names'' date: before %s, after %s', j->>'names_purge_after', _v151_facts(M)->>'names_purge_after'));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pilot_names_for_owner(M)), '§129 (latch): a late ball brought the names back');
+    PERFORM _assert((SELECT c.reason FROM pilot_names_put(M, jsonb_build_array(jsonb_build_object('slot', H1, 'name', 'Verify Again'))) c) = 'names_expired',
+      '§129 (latch): new names were taken after the date');
+    -- The clock is the ball's own time, not its arrival (S5).
+    PERFORM pilot_insert(M, 2, 'dev-v151:pilot-' || M || ':late:2', 4, now() - interval '50 days',
+                         jsonb_build_object('match_id', M, 'innings', 0, 'kind', 'ball', 'ball_type', 'run', 'value', 1,
+                                            'striker_id', H1, 'non_striker_id', H2, 'bowler_id', W1, 'payload', '{}'::jsonb));
+    PERFORM _assert((_v151_facts(M)->>'last_event_at')::timestamptz > now() - interval '1 minute',
+      '§129 (latch): an older ball sent late moved the last ball back');
 
     -- (derived)
     j := _v151_derived();
@@ -39742,6 +39873,14 @@ $v116$;
     PERFORM _assert(s !~* 'canarytest' AND s !~* 'Verify Away One', '§129 (canary): a typed name is in a pilot row outside pilot.name');
     PERFORM _assert(s ~ H1::text, '§129 (canary): the dump read nothing');
 
+    -- (managed) The internal delete refuses a caller with no account (as a
+    -- managed host's API role reaches it) and another account, whatever
+    -- EXECUTE a host grants; the application role cannot call it at all.
+    PERFORM _assert(_v151_as_caller(format('SELECT pilot_delete_one(%L, %L)', M, 'scorer')) = '42501',
+      '§129 (managed): the application role called the internal delete');
+    PERFORM _assert(NOT _v151_delete_as_nobody(M, NULL) AND NOT _v151_delete_as_nobody(M, B) AND (_v151_facts(M)->>'match')::int = 1,
+      '§129 (managed): the internal delete deleted for a caller with no account, or another account');
+
     -- (delete)
     PERFORM _as(B);
     PERFORM _assert((SELECT c.reason FROM pilot_delete(M) c) = 'not_found', '§129 (delete): another account deleted the match');
@@ -39750,7 +39889,7 @@ $v116$;
     PERFORM _assert((SELECT c.ok FROM pilot_delete(M) c), '§129 (delete): the owner could not delete his match');
     j := _v151_facts(M);
     PERFORM _assert((j->>'match')::int = 0 AND (j->>'names')::int = 0 AND (j->>'log')::int = 0 AND (j->>'held')::int = 0
-                    AND j->'tombstones' = '["match:scorer", "names:scorer"]' AND j->'audit' @> '["deleted"]',
+                    AND j->'tombstones' = '["match:scorer", "names:scorer", "names:scorer"]' AND j->'audit' @> '["deleted"]',
       format('§129 (delete): after the delete the owner''s tables hold %s', j));
 
     -- (promoted_from)
@@ -39758,6 +39897,10 @@ $v116$;
                              WHERE c.conrelid = 'match'::regclass AND c.contype = 'u' AND a.attname = 'promoted_from'
                                AND array_length(c.conkey, 1) = 1),
       '§129 (promoted_from): match.promoted_from is not UNIQUE');
+    PERFORM _as(U_OWNER);
+    s := _v151_as_caller(format('UPDATE match SET promoted_from = %L WHERE id = %L', M, '77777777-0000-0000-0000-000000000002'));
+    PERFORM _assert(s = '42501', format('§129 (promoted_from): the application role set it: %s', s));
+    PERFORM set_config('app.user_id', '', true);
 
     PERFORM _v151_switch('pilot_sync', false);
     PERFORM _v151_switch('pilot_names_upload', false);

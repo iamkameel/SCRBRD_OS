@@ -364,15 +364,19 @@ $$ LANGUAGE sql IMMUTABLE PARALLEL SAFE;
 -- Every string in a JSON value, however deep, with the key it sits under
 -- (an array's entries under the array's key), and every key itself (k NULL).
 CREATE OR REPLACE FUNCTION pilot_leaves(p jsonb, p_key text DEFAULT NULL) RETURNS TABLE (k text, s text) AS $$
-  SELECT p_key, p #>> '{}' WHERE jsonb_typeof(p) = 'string'
+  -- A recursive query, not a function calling itself: the planner inlines
+  -- a SQL function, and one that calls itself would be inlined for ever.
+  WITH RECURSIVE t(k, v) AS (
+    SELECT p_key, p
+    UNION ALL
+    SELECT c.k, c.v FROM t CROSS JOIN LATERAL (
+      SELECT e.key, e.value FROM jsonb_each(CASE WHEN jsonb_typeof(t.v) = 'object' THEN t.v ELSE '{}'::jsonb END) e
+      UNION ALL
+      SELECT t.k, a.value FROM jsonb_array_elements(CASE WHEN jsonb_typeof(t.v) = 'array' THEN t.v ELSE '[]'::jsonb END) a
+    ) c(k, v))
+  SELECT t.k, t.v #>> '{}' FROM t WHERE jsonb_typeof(t.v) = 'string'
   UNION ALL
-  SELECT NULL, e.key FROM jsonb_each(CASE WHEN jsonb_typeof(p) = 'object' THEN p ELSE '{}'::jsonb END) e
-  UNION ALL
-  SELECT l.k, l.s FROM jsonb_each(CASE WHEN jsonb_typeof(p) = 'object' THEN p ELSE '{}'::jsonb END) e
-         CROSS JOIN LATERAL pilot_leaves(e.value, e.key) l
-  UNION ALL
-  SELECT l.k, l.s FROM jsonb_array_elements(CASE WHEN jsonb_typeof(p) = 'array' THEN p ELSE '[]'::jsonb END) a
-         CROSS JOIN LATERAL pilot_leaves(a, p_key) l
+  SELECT NULL, e.key FROM t CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(t.v) = 'object' THEN t.v ELSE '{}'::jsonb END) e
 $$ LANGUAGE sql IMMUTABLE;
 
 -- The closed vocabularies: a key whose every value is one of a known few.
