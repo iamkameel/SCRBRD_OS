@@ -533,7 +533,7 @@ export class PadSync {
     if (state.namesMayGo === true && !state.namesSent && !state.namesPurged) {
       // Asked now, of the server, never from what this phone remembers:
       // the names go only while the server says they may (§14 item 1).
-      let names = false;
+      let names;
       try { names = (await this.call("/api/pilot/status"))?.names === true; } catch { names = false; }
       if (names) {
         const body = p.namesBody();

@@ -424,7 +424,7 @@ export async function purgeExpiredNames(now = Date.now()) {
 export async function restoreFromServer(uuidOfMatch, { call = api } = {}) {
   const h = await call(`/api/pilot/${uuidOfMatch}`);
   /** @type {{slot: string, name: string}[]} */
-  let names = [];
+  let names;
   try { names = (await call(`/api/pilot/${uuidOfMatch}/names`))?.names ?? []; } catch { names = []; }
   const served = await call(`/api/pilot/${uuidOfMatch}/events`);
   const id = `${PILOT_ID_PREFIX}${uuidOfMatch}`;
