@@ -121,10 +121,11 @@
 -- IF EXISTS before the policies and the trigger this file makes again; the
 -- re-judging's patch is skipped when its line is already there. Safe to run twice (DEPLOYING.md, "A migration re-runs harmlessly").
 --
--- SCHEMA FIRST. The API built with it (potm-api.mjs: GET
+-- SCHEMA FIRST. The API built with it (recognition-api.mjs: GET
 -- /api/player-of-match/to-review, POST /api/player-of-match/reviews/:id/stand)
--- calls recognition_reviews_open() and recognition_review_stand(); this file
--- goes before it and is in services/api/expected-migrations.json.
+-- calls recognition_reviews_open() and recognition_review_stand(), and
+-- potm-api.mjs reads a side's open review with the first; this file goes
+-- before it and is in services/api/expected-migrations.json.
 --
 -- THE GUARD keys on pg_proc.prosrc as db/142–db/146 do: the md5 of the live
 -- record_notice_for() body, its whitespace folded, must be db/143's or this
