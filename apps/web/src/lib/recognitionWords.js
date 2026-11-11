@@ -134,15 +134,23 @@ export function seasonOnce(r) {
   return y && new RegExp(`\\b${y}\\b`).test(String(r.label ?? "")) ? null : r.season;
 }
 
+/** What a withdrawal after a scorecard correction says beside its date (D21; R10, 11 Nov 2026). */
+export const AFTER_CORRECTION = "after the scorecard was corrected";
+
 /**
  * An honour as §7 says it: "Half colours 2026"; withdrawn, "Half colours 2026
- * · withdrawn 3 Oct 2026", and to a parent "· the school can say why". The
- * reason is never on a screen (D4); the server never sends it.
- * @param {{label: string, season?: string|null, withdrawnOn?: string|null}} r
+ * · withdrawn 3 Oct 2026", and to a parent "· the school can say why". R10
+ * (db/148; decided 11 Nov 2026): one withdrawn after a scorecard correction
+ * (withdrawnKind 'correction') says so, "· withdrawn 3 Oct 2026 after the
+ * scorecard was corrected", to the boy and his parent alike, and the parent
+ * is not told the school can say why: the correction is why. The reason is
+ * never on a screen (D4); the server never sends it.
+ * @param {{label: string, season?: string|null, withdrawnOn?: string|null, withdrawnKind?: string|null}} r
  * @param {{ family?: boolean }} [opts]
  */
 export function honourWords(r, { family = false } = {}) {
   const head = [r.label, seasonOnce(r)].filter(Boolean).join(" ");
   if (!r.withdrawnOn) return head;
+  if (r.withdrawnKind === "correction") return [head, `withdrawn ${dayMonthYear(r.withdrawnOn)} ${AFTER_CORRECTION}`].join(" · ");
   return [head, `withdrawn ${dayMonthYear(r.withdrawnOn)}`, family ? "the school can say why" : null].filter(Boolean).join(" · ");
 }
