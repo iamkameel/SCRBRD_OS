@@ -292,10 +292,10 @@ group("The tabs a person has are the capabilities they hold");
   const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   ok("a groundskeeper has Ground tasks and nothing else", eq(tabsOf("facilities").tabs, ["grounds"]), tabsOf("facilities").tabs);
   ok("a coach has the squad (team.manage) and nothing else", eq(tabsOf("coach").tabs, ["squad"]), tabsOf("coach").tabs);
-  ok("a principal — who may assign roles and read the audit — has Users and Audit log, not the coach's squad",
-     eq(tabsOf("principal").tabs, ["users", "audit"]), tabsOf("principal").tabs);
-  ok("a director of sport has the Users tab her capability earns, and is on it", eq(tabsOf("directorofsport").tabs, ["users", "squad", "fixtures", "broadcast", "audit", "grounds"]) && /data-testid="people-panel"/.test(tabsOf("directorofsport").out), tabsOf("directorofsport").tabs);
-  ok("a school admin has every tab but Broadcast, which she does not hold", eq(tabsOf("schooladmin").tabs, ["users", "squad", "fixtures", "audit", "grounds"]), tabsOf("schooladmin").tabs);
+  ok("a principal — who may assign roles, read the audit and decide Colours — has Users, Audit log and Colours, not the coach's squad",
+     eq(tabsOf("principal").tabs, ["users", "audit", "colours"]), tabsOf("principal").tabs);
+  ok("a director of sport has the Users tab her capability earns, and is on it", eq(tabsOf("directorofsport").tabs, ["users", "squad", "fixtures", "broadcast", "audit", "grounds", "colours"]) && /data-testid="people-panel"/.test(tabsOf("directorofsport").out), tabsOf("directorofsport").tabs);
+  ok("a school admin has every tab but Broadcast, which she does not hold (Colours to read: D8)", eq(tabsOf("schooladmin").tabs, ["users", "squad", "fixtures", "audit", "grounds", "colours"]), tabsOf("schooladmin").tabs);
   ok("reading the people (user.read) is not the audit log (audit.read): a bursar has neither tab", eq(tabsOf("finance").tabs, []), tabsOf("finance").tabs);
   ok("a role with none of these is told so, and drawn no tab", eq(tabsOf("spectator").tabs, []) && /Nothing on this screen is yours to manage/.test(tabsOf("spectator").out));
   ok("the screen opens on the first tab a person has — a groundskeeper is not shown the directory", !/people-panel/.test(tabsOf("facilities").out));
