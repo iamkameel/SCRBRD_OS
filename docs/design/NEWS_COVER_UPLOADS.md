@@ -1,6 +1,6 @@
 # News cover photos — staff uploads beside the generated cover: the design
 
-Status: **design for Kameel's review** (Fable, 2026-11-11; revised the same day after Opus's review).
+Status: **approved by Kameel, 11 Nov 2026: "All 8 as recommended"** (his note on the card, confirmed the same day: public data moves to opt-out by terms; that is a separate design, and photos of pupils stay off public pages here). Was: **design for Kameel's review** (Fable, 2026-11-11; revised the same day after Opus's review).
 Nothing here is built. Opus builds from it after Kameel answers §12. Asked for by Kameel on 6 Nov
 2026: "Generated + staff uploads".
 
