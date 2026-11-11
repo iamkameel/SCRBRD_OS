@@ -4851,10 +4851,12 @@ scorecard's row expansion for another child (§10 departure 11).
 ### Close REACH-D2: pupil reads of team-mates' career figures
 **Priority:** P1 · **Domain:** Families / Privacy · **Type:** build, Opus (Kameel, 7 Nov 2026; `docs/design/REACH_parent_pupil.md` §6.6 and §7)
 **Not started.** A pupil reads a team-mate's career, season and wagon-wheel pages today: `player.performance.read` is in the `player` bundle (`roles.mjs:330–335`), so the five per-boy reads (`career`, `career_by_season`, `dismissal_breakdown`, `player_shot_points`, `bowler_day`) answer a team-mate. Decided 14 Oct as "leave them open"; closed by Kameel on 7 Nov 2026: a pupil no longer reads team-mates' career figures, and the parents' terms (popia-2026-01) stand as written ("his name on the sheet and scorecard, nothing more"). The ratings fix (PR #273) is done and is not this entry.
-**Build:** path (a), `player.performance.read` out of the `player` bundle (`selfaccess` keeps it), if SCRBRD-138's captain tab does not depend on it at team scope; otherwise path (b), the five reads gated on `is_family_of(player) OR` a staff capability `OR` 138's captain gate, in `read-api.mjs`, with `read.test.mjs` holding the SQL equal to `db/99`'s copy. Path (a) changes `role_capability` by migration.
+**Exceptions (Kameel, 11 Nov 2026), both kept:** (1) the Compare card, "Me v a team-mate" (GA-I24 D10): a pupil sets one team-mate's season figures beside his own; (2) the captain's view (SCRBRD-138): the boy holding the captaincy reads his side's season figures, nothing else. Path (a) is ruled out: removing `player.performance.read` from the `player` bundle would break both.
+**Build:** path (b), the five reads gated on `is_family_of(player) OR` a staff capability `OR` 138's captain gate, in `read-api.mjs`, with `read.test.mjs` holding the SQL equal to `db/99`'s copy. The Compare card and the captain's season table keep their reads through their own gates. Sentence 14 of popia-2026-02 needs the redraft in `CONSENT_V2.md` before -02 is issued.
 **Acceptance criteria:**
 - [ ] A pupil's `career?playerId=` for a team-mate is refused; his own career and wagon wheel are still read.
 - [ ] The captain's tab reads as SCRBRD-138 decided.
+- [ ] The Compare card (one team-mate's season figures beside his own) and the captain's season table (SCRBRD-138) still work.
 - [ ] The match scorecard is unchanged (Q4).
 - [ ] `db/99` pupil walk asserts the above, and is green.
 **Regression risk:** MEDIUM (a pupil's read narrows; the captain's tab is the one place it could break).
