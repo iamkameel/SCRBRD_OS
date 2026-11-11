@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { T, contrast } from "../design/tokens.js";
 import { Icon } from "./icons.jsx";
 import { freshnessWords } from "../lib/announce.js";
@@ -253,6 +253,27 @@ export function Freshness({ at = null, status = null, held = null, testid = "boa
   );
 }
 
+/**
+ * The line under the total, broken only where it reads: a figure keeps the
+ * word before it ("RRR 8.43", "off 66" — "RRR" never ends a line and "8.43"
+ * never starts one), and a part's " ·" stays at the end of its line, never
+ * the start of the next. At 390px the line began "· RRR 8.66", at 320px
+ * "RRR" sat apart from "8.43" (interface review, 11 Nov 2026). The text is
+ * the same, word for word.
+ * @param {{ text: any }} props
+ */
+function SubLine({ text }) {
+  if (typeof text !== "string" || !text.includes(" · ")) return text;
+  const parts = text.split(" · ");
+  const held = (p) => p.split(/(\S+ \d[\d.]*)/).map((s, j) => (j % 2 ? <span key={j} style={{ whiteSpace: "nowrap" }}>{s}</span> : s));
+  return parts.map((p, i) => (
+    <Fragment key={i}>
+      {held(p)}
+      {i < parts.length - 1 && <><span style={{ whiteSpace: "nowrap" }}>{" ·"}</span>{" "}</>}
+    </Fragment>
+  ));
+}
+
 export function Board({ team, total, wickets, overs, sub, batters = [], partnership, bowler, thisOver = [], insight, compact = false,
   size = "pad", testid = "board", extra = null, lastWicket, updated }) {
   // On the pad the total is figure.board, 56 on a phone and 72 on a tablet;
@@ -293,7 +314,7 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
                   <Figure value={overs} testid={`${testid}-overs`}/>
                 </span>
               )}
-              {sub && <span style={{ ...T.role.body, fontSize: "14px", lineHeight: 1.35, color: B.dim }} data-testid={`${testid}-sub`}>{sub}</span>}
+              {sub && <span style={{ ...T.role.body, fontSize: "14px", lineHeight: 1.35, color: B.dim }} data-testid={`${testid}-sub`}><SubLine text={sub}/></span>}
             </div>
           )}
         </div>

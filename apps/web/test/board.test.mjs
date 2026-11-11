@@ -36,7 +36,20 @@ ok("the team", out.includes("Hilton 1st XI"));
 ok("the total and the wickets, as figures",
    /data-testid="board-runs"[^>]*>142</.test(out) && /data-testid="board-wickets"[^>]*>3</.test(out));
 ok("the overs as the scorer writes them — no \"ov\" beside a figure", /data-testid="board-overs"[^>]*>14\.2</.test(out) && !/>14\.2 ?ov/.test(out));
-ok("the sub-line", out.includes("Need 45 off 34 · CRR 9.91"));
+const textOf = (s) => s.replace(/<[^>]+>/g, "");
+ok("the sub-line", textOf(out).includes("Need 45 off 34 · CRR 9.91"));
+{
+  // The interface review (11 Nov 2026): the line broke before a "·" ("· RRR
+  // 8.66") and between "RRR" and its figure. A rate is one unbreakable piece,
+  // and each " ·" stays with what is before it; the words are unchanged.
+  const chase = html(h(Board, { ...PROPS, sub: "Need 45 off 34 · CRR 9.91 · RRR 7.94" }));
+  const sub = chase.match(/data-testid="board-sub"[^>]*>(.*?)<\/span><\/div>/)?.[1] ?? "";
+  ok("the sub-line's words are the same, word for word", textOf(sub) === "Need 45 off 34 · CRR 9.91 · RRR 7.94", textOf(sub));
+  ok("...a rate keeps its figure: CRR 9.91 and RRR 7.94 each unbreakable",
+     /<span style="white-space:nowrap">CRR 9\.91<\/span>/.test(sub) && /<span style="white-space:nowrap">RRR 7\.94<\/span>/.test(sub), sub);
+  ok("...and every \" ·\" is held to the part before it, never the start of a line",
+     (sub.match(/<span style="white-space:nowrap"> ·<\/span> /g) ?? []).length === 2, sub);
+}
 ok("both batters, with runs and balls", out.includes("D Erasmus") && out.includes("R Pillay") && out.includes("(12)"));
 ok("the on-strike marker, and it is said as well as drawn",
    /data-on-strike="true"[^>]*>.*?●/.test(out) && out.includes("on strike: ") && (out.match(/data-on-strike="true"/g) ?? []).length === 1);
