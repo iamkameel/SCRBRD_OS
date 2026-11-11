@@ -11372,7 +11372,7 @@ CREATE OR REPLACE FUNCTION _v146_fact(p_player uuid) RETURNS jsonb AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/146 (section 124) ─────────────────────────────────────────────
 
--- ┌── db/147 (section 125) ─────────────────────────────────────────────
+-- ┌── db/147 (section 126) ─────────────────────────────────────────────
 -- db/121's ball_event_live, word for word, as its caller (security_invoker
 -- over ball_event, under row security per ball): the rows db/147's owner's
 -- view, which asks the policy's conditions once a match, must equal.
@@ -11451,7 +11451,7 @@ BEGIN
   ALTER TABLE ball_event ENABLE TRIGGER USER;
   RETURN jsonb_build_object('match', v_m, 'stray', v_stray, 'void', v_void, 'target', v_target.id);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- └── db/147 (section 125) ─────────────────────────────────────────────
+-- └── db/147 (section 126) ─────────────────────────────────────────────
 
 
 -- From here on we are the unprivileged application role, so every read below
@@ -11875,7 +11875,7 @@ BEGIN
   -- once read as passing, because the option's NAME was all that was asked.)
   -- ONE EXCEPTION, by name: ball_event_live (db/147) runs as its owner so its
   -- scan of the log does not run ball_event's policy per ball; it states the
-  -- policy's conditions once a match, behind a security barrier, and §125
+  -- policy's conditions once a match, behind a security barrier, and §126
   -- holds it to them (the policies pinned, and row for row against db/121's
   -- view run under row security). Any other view as its owner is still red.
   PERFORM _assert(
@@ -11886,7 +11886,7 @@ BEGIN
   PERFORM _assert(
     coalesce((SELECT reloptions @> ARRAY['security_barrier=true'] FROM pg_class WHERE oid = 'ball_event_live'::regclass), false)
     AND ball_log_policies_unpinned() IS NULL,
-    'ball_event_live runs as its owner without a security barrier, or the policies it states have changed (db/147, §125)');
+    'ball_event_live runs as its owner without a security barrier, or the policies it states have changed (db/147, §126)');
 
   PERFORM _as(U_COACH);
   SELECT count(*) INTO n FROM player_masked WHERE school_id = WES;
@@ -26563,7 +26563,7 @@ $v49$;
                                    AND concat(pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid)) LIKE '%away\_%'),
       '§75 (text): a write or a pad table''s policy names the away side');
     -- ball_event_live is db/147's owner's view, which states the away branch
-    -- itself once a match; §125 holds it to the policy row for row.
+    -- itself once a match; §126 holds it to the policy row for row.
     PERFORM _assert((SELECT bool_and(coalesce(c.reloptions, '{}') @> ARRAY['security_invoker=true']) AND count(*) = 4
                        FROM pg_class c WHERE c.oid IN ('bowler_over'::regclass, 'bowler_spell'::regclass,
                                                        'ball_event_career'::regclass, 'match_live_score'::regclass))
@@ -38768,8 +38768,8 @@ $v116$;
   -- └── end of section 124
   -- └── db/146 (section 124) ──────────────────────────────────────────
 
-  -- ┌── db/147 (section 125) ─────────────────────────────────────────
-  -- ── 125. The ball log asks once a match (db/147) ──
+  -- ┌── db/147 (section 126) ─────────────────────────────────────────
+  -- ── 126. The ball log asks once a match (db/147) ──
   -- ball_event_live runs as its owner and states ball_event's read
   -- conditions once a match (§9 names it as the one such view). Labels:
   --   (pinned)  the SELECT policies of ball_event, match and
@@ -38802,28 +38802,28 @@ $v116$;
     n_hid   int := 0;
   BEGIN
     -- (pinned)
-    PERFORM _assert(ball_log_policies_unpinned() IS NULL, format('§125 (pinned): %s', ball_log_policies_unpinned()));
+    PERFORM _assert(ball_log_policies_unpinned() IS NULL, format('§126 (pinned): %s', ball_log_policies_unpinned()));
     -- (shape)
     PERFORM _assert((SELECT c.reloptions @> ARRAY['security_barrier=true', 'security_invoker=false']
                         AND c.relowner = (SELECT t.relowner FROM pg_class t WHERE t.oid = 'ball_event'::regclass)
                        FROM pg_class c WHERE c.oid = 'ball_event_live'::regclass)
                     AND (SELECT NOT p.prosecdef AND p.proisstrict FROM pg_proc p WHERE p.oid = 'ball_event_row_visible(bigint)'::regprocedure),
-      '§125 (shape): ball_event_live is not an owner''s security barrier view, or its probe runs as its owner');
+      '§126 (shape): ball_event_live is not an owner''s security barrier view, or its probe runs as its owner');
 
     FOR pass IN 1..2 LOOP
       IF pass = 2 THEN
         y := _v147_plant(HIL, WES);
-        PERFORM _assert(y->>'stray' IS NOT NULL AND y->>'void' IS NOT NULL, format('§125 (stray): nothing was planted: %s', y));
+        PERFORM _assert(y->>'stray' IS NOT NULL AND y->>'void' IS NOT NULL, format('§126 (stray): nothing was planted: %s', y));
       END IF;
       PERFORM set_config('app.user_id', '', true);
       PERFORM _assert(_v147_rows('ball_event_live') = _v147_rows('_v147_live_rls'),
-        format('§125 (rows): nobody reads %s through ball_event_live and %s under row security', _v147_rows('ball_event_live'), _v147_rows('_v147_live_rls')));
+        format('§126 (rows): nobody reads %s through ball_event_live and %s under row security', _v147_rows('ball_event_live'), _v147_rows('_v147_live_rls')));
       n_all := split_part(_v147_rows('ball_event_live'), ':', 1)::int;
       FOR u IN SELECT * FROM _v147_people() LOOP
         PERFORM _as(u);
         a := _v147_rows('ball_event_live');
         b := _v147_rows('_v147_live_rls');
-        PERFORM _assert(a = b, format('§125 (%s): %s reads %s through ball_event_live and %s under row security',
+        PERFORM _assert(a = b, format('§126 (%s): %s reads %s through ball_event_live and %s under row security',
                                       CASE pass WHEN 1 THEN 'rows' ELSE 'stray' END, u, a, b));
         IF pass = 1 AND split_part(a, ':', 1)::int > 0 THEN n_some := n_some + 1; END IF;
         IF pass = 2 THEN
@@ -38836,25 +38836,25 @@ $v116$;
       -- A pad's credential: its own match, and no other.
       PERFORM _as(U_SCORER);
       a := coalesce(y->>'match', (SELECT max(l.match_id::text) FROM ball_event_live l));
-      PERFORM _assert(a IS NOT NULL, '§125 (rows): the scorer reads no fixture to hold a pad''s credential to');
+      PERFORM _assert(a IS NOT NULL, '§126 (rows): the scorer reads no fixture to hold a pad''s credential to');
       PERFORM set_config('app.scope', 'pad', true);
       PERFORM set_config('app.match_id', a, true);
       PERFORM _assert(_v147_rows('ball_event_live') = _v147_rows('_v147_live_rls'),
-        format('§125 (rows): a pad''s credential reads %s through ball_event_live and %s under row security', _v147_rows('ball_event_live'), _v147_rows('_v147_live_rls')));
+        format('§126 (rows): a pad''s credential reads %s through ball_event_live and %s under row security', _v147_rows('ball_event_live'), _v147_rows('_v147_live_rls')));
       PERFORM set_config('app.scope', '', true);
       PERFORM set_config('app.match_id', '', true);
     END LOOP;
     -- Not vacuous: somebody reads balls, and the stray ball and the void's
     -- target each come out both ways.
     PERFORM _assert(n_some > 0 AND n_all = 0,
-      format('§125 (rows): %s readers read a ball; nobody read %s', n_some, n_all));
+      format('§126 (rows): %s readers read a ball; nobody read %s', n_some, n_all));
     PERFORM _assert(n_stray > 0 AND n_host > 0 AND n_tgt > 0 AND n_hid > 0,
-      format('§125 (stray): the stray ball read by %s, the host''s balls without it by %s, the void''s target by %s and hidden from %s',
+      format('§126 (stray): the stray ball read by %s, the host''s balls without it by %s, the void''s target by %s and hidden from %s',
              n_stray, n_host, n_tgt, n_hid));
   END;
   PERFORM set_config('app.user_id', '', true);
-  -- └── end of section 125
-  -- └── db/147 (section 125) ──────────────────────────────────────────
+  -- └── end of section 126
+  -- └── db/147 (section 126) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

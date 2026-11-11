@@ -2410,7 +2410,7 @@ place is db/121's or its own, or if a policy it states has changed; a second
 paste changes nothing.
 
 Paste `node tools/bundle-sql.mjs --apply 147` after 146, then the verify
-bundle (§125 is its proof: the view row for
+bundle (§126 is its proof: the view row for
 row against db/121's own definition under row security, for every seeded
 reader, with a ball planted at the other school; §9 names the view as its one
 exception). **Schema first**: the API built with it refuses to start without
