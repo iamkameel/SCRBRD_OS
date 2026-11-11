@@ -154,3 +154,35 @@ export function PilotList({ onBack, onResume }) {
     </PracticePage>
   );
 }
+
+/**
+ * Finish a Pilot Match on SCRBRD (§7.3), from the pad's result screen: one
+ * press, once every ball has gone. Its end is then its last ball (`lastAt`,
+ * the pad's own time), from which the names' 30 days run, and the server
+ * takes nothing more into its log.
+ * @param {{matchId: string, attached: boolean, left: number, lastAt: number, done: boolean, onDone: () => Promise<unknown>}} props
+ */
+export function PilotFinish({ matchId, attached, left, lastAt, done, onDone }) {
+  const [state, setState] = useState(/** @type {"idle" | "busy" | "done" | "failed"} */ (done ? "done" : "idle"));
+  const ready = attached && left === 0;
+  const finish = async () => {
+    setState("busy");
+    try {
+      const r = await api(`/api/pilot/${pilotUuid(matchId)}/finish`, { method: "POST", body: { at: lastAt || Date.now() } });
+      if (r?.ok === true || r?.reason === "not_live") { await onDone(); setState("done"); } else setState("failed");
+    } catch { setState("failed"); }
+  };
+  return (
+    <section data-testid="pilot-finish" style={{ ...S.card(), marginBottom: T.space.lg }} aria-label="Finish this Pilot Match">
+      {state === "done"
+        ? <p role="status" data-testid="pilot-finished" style={S.body()}>Finished on SCRBRD. Nothing more is sent for this match.</p>
+        : <>
+            <p style={S.body()}>{ready ? "Every ball is on SCRBRD. Finish the match there when you are done with it: nothing more is sent after that."
+              : "Finish the match on SCRBRD once every ball has gone: it waits for signal and a sign-in."}</p>
+            {state === "failed" && <p role="status" style={S.note("bad")}>It could not be finished. Try again when there is signal.</p>}
+            <button type="button" className="pressBtn" style={S.primary(ready && state !== "busy")} disabled={!ready || state === "busy"}
+              data-testid="pilot-finish-button" onClick={finish}>Finish the match on SCRBRD</button>
+          </>}
+    </section>
+  );
+}

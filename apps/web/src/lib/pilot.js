@@ -43,7 +43,7 @@ import {
 import { api, signedIn } from "./api.js";
 import { profile } from "./session.js";
 import { lineUp, practiceTeamName, oversOf, practiceRecord, summarise } from "./practice.js";
-import { positionWords, pilotUnwire } from "./pilotWire.js";
+import { positionWords, pilotUnwire, holdsAName } from "./pilotWire.js";
 import { indexedDbStorage, padLogFrom, inningsInPlay } from "@scrbrd/sync";
 import { fromRow } from "@scrbrd/scoring";
 import { deviceId } from "./device.js";
@@ -221,20 +221,32 @@ export function pilotRecord(draft, id, p, now = Date.now(), { namesMayGo = false
 
 /**
  * What pilot_create is sent (§3.3 step 2): the sides, the slots, the overs,
- * the start, the toss, the venue's NAME and the weather's conditions. No
- * name of a player, no position of the phone.
- * @param {any} rec
+ * the start, the toss and the weather's conditions. No name of a player, no
+ * position of the phone, and never the venue's name, which stays here (the
+ * review's S4: a ground typed as a child's farm is a child's whereabouts).
+ *
+ * A side's school and display name are free text a scorer typed, so they go
+ * only where the names may go (`sidesMayGo`: the notice said so, and the
+ * server says names may) and hold no typed name as whole words. Otherwise
+ * the side goes as its place and its age group — "Home", "Home U13B" — and
+ * its real name stays on this phone.
+ * @param {any} rec @param {{sidesMayGo?: boolean}} [o]
  */
-export function createBody(rec) {
+export function createBody(rec, { sidesMayGo = false } = {}) {
   const w = rec.match_weather;
+  const roster = rec.pilot.roster;
   return {
     id: pilotUuid(rec.id),
-    sides: rec.teams.map((/** @type {any} */ t) => ({ side: t.side, school: t.school, age_division: t.age_division || null,
-                                                     team_class: t.team_class || null, display_name: t.display_name })),
+    sides: rec.teams.map((/** @type {any} */ t) => {
+      const real = sidesMayGo && !holdsAName(t.school, roster) && !holdsAName(t.display_name, roster);
+      const place = t.side === "away" ? "Away" : "Home";
+      return { side: t.side, school: real ? t.school : place, age_division: t.age_division || null, team_class: t.team_class || null,
+               display_name: real ? t.display_name : practiceTeamName({ school: place, division: t.age_division, cls: t.team_class }) };
+    }),
     slots: rec.pilot.slots,
     overs: rec.match.overs, format: null, startsAt: rec.match.starts_at,
     toss: { wonBy: rec.match.toss.won_by, decision: rec.match.toss.decision },
-    venueName: rec.match.venue?.name || null,
+    venueName: null,
     weather: w ? { condition: w.condition, temp_c: w.temp_c, humidity_pct: w.humidity_pct, wind_kph: w.wind_kph,
                    wind_dir: w.wind_dir, rain_chance_pct: w.rain_chance_pct, playable: w.playable } : null,
   };

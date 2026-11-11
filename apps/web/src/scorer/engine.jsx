@@ -30,7 +30,7 @@ import { PracticeSetup, PracticeList, PracticeWeatherSheet, withWeatherChange } 
 import { PracticeLabel, PilotLabel, PracticeWeatherChip } from "./practiceLabel.jsx";
 import { clearDraft, inProgressPractice, loadPractice, savePractice, updatePractice, savedClock, cfgFromRecord, weatherChip } from "../lib/practice.js";
 import { PILOT_WORDS, createBody, namesBody, demoteToPractice, listPilot, loadPilot, pilotStatus, purgeExpiredNames, updatePilotState } from "../lib/pilot.js";
-import { PilotList } from "./pilotList.jsx";
+import { PilotList, PilotFinish } from "./pilotList.jsx";
 import { scorecardFileName, scorecardText, saveTextFile } from "../lib/practiceExport.js";
 import { api, signedIn } from "../lib/api.js";
 import { couldFinalise, profile } from "../lib/session.js";
@@ -890,7 +890,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     const pilot = pilotMode && isPilotId(id0) ? {
       roster: () => practiceRef.current?.pilot?.roster ?? { slots: {}, teams: { home: "", away: "" } },
       state: async () => (await loadPilot(id0))?.pilot ?? null,
-      createBody: () => createBody(practiceRef.current),
+      createBody: (o) => createBody(practiceRef.current, o),
       namesBody: () => namesBody(practiceRef.current),
       created: async () => { const r = await updatePilotState(id0, { server: "created" }); if (r && !stopped) setPractice(r); },
       namesPut: async () => { const r = await updatePilotState(id0, { namesSent: true }); if (r && !stopped) setPractice(r); },
@@ -2572,6 +2572,15 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
               holds scoring.finalise at the home side — offered here, decided
               there. Not for a practice match (its own record) or a tie still
               waiting on its super over. */}
+          {/* A Pilot Match is finished on SCRBRD by its scorer (§7.3): from
+              then on its clocks run from its last ball, and nothing more is
+              taken into its log. */}
+          {pilotMode&&live&&matchId&&offer.state!=="available"&&(
+            <PilotFinish matchId={matchId} attached={!!padStatus?.attached} left={(padStatus?.pending??0)+(padStatus?.held??0)}
+              lastAt={Math.max(0,...events.flat().map(e=>Number.isFinite(e?.clientTs)?e.clientTs:0))}
+              done={practice?.pilot?.finished===true}
+              onDone={async()=>{const r=await updatePilotState(matchId,{finished:true,finishedAt:Date.now()});if(r)setPractice(r);}}/>
+          )}
           {live&&matchId&&!practiceMode&&signedIn()&&offer.state!=="available"&&couldFinalise(match?.schoolId,match?.teamCode)&&(
             <FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}
               left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}/>

@@ -165,7 +165,7 @@ const online = () => (typeof navigator === "undefined" ? true : navigator.onLine
  * @typedef {object} PilotMode
  * @property {() => import("./pilotWire.js").PilotRoster} roster   slot id to name, and the sides' names
  * @property {() => Promise<{server: string, namesSent: boolean, namesMayGo?: boolean, namesPurged?: boolean} | null>} state  where it stands with the server
- * @property {() => any} createBody   pilot_create's body (lib/pilot.js createBody)
+ * @property {(o: {sidesMayGo: boolean}) => any} createBody   pilot_create's body (lib/pilot.js createBody)
  * @property {() => {rows: {slot: string, name: string}[]}} namesBody
  * @property {() => Promise<unknown>} created   pilot_create said yes
  * @property {() => Promise<unknown>} namesPut  the names are on the server
@@ -517,8 +517,16 @@ export class PadSync {
     const p = /** @type {PilotMode} */ (this.pilot);
     const state = await p.state();
     if (!state) return { ok: false, reason: "pilot_record_missing" };
+    // Asked now, of the server, never from what this phone remembers: the
+    // names — and the sides' real names with them — go only while the server
+    // says names may (§14 item 1), and only if the notice the scorer read
+    // said they would (§3.6).
+    let names = false;
+    if (state.namesMayGo === true && !state.namesPurged && (state.server !== "created" || !state.namesSent)) {
+      try { names = (await this.call("/api/pilot/status"))?.names === true; } catch { names = false; }
+    }
     if (state.server !== "created") {
-      const r = await this.call("/api/pilot/matches", { method: "POST", body: p.createBody() });
+      const r = await this.call("/api/pilot/matches", { method: "POST", body: p.createBody({ sidesMayGo: names }) });
       if (r?.ok !== true) {
         // A refusal by the server's own rule is the match's answer: it
         // stays on this phone. Anything else (a malformed match) is said.
@@ -529,19 +537,12 @@ export class PadSync {
       }
       await p.created();
     }
-    // Only if the notice the scorer read said they would go (§3.6).
-    if (state.namesMayGo === true && !state.namesSent && !state.namesPurged) {
-      // Asked now, of the server, never from what this phone remembers:
-      // the names go only while the server says they may (§14 item 1).
-      let names;
-      try { names = (await this.call("/api/pilot/status"))?.names === true; } catch { names = false; }
-      if (names) {
-        const body = p.namesBody();
-        if (body.rows.length) {
-          const r = await this.call(`${this.base}/names`, { method: "POST", body });
-          if (r?.ok === true) await p.namesPut();
-        } else await p.namesPut();
-      }
+    if (names && !state.namesSent) {
+      const body = p.namesBody();
+      if (body.rows.length) {
+        const r = await this.call(`${this.base}/names`, { method: "POST", body });
+        if (r?.ok === true) await p.namesPut();
+      } else await p.namesPut();
     }
     return { ok: true };
   }
@@ -737,7 +738,7 @@ export class PadSync {
       for (const ev of batch) {
         const w = pilotWire(ev.payload ?? {}, roster);
         if (w.ok) { const out = { ...ev }; out.payload = w.event; wire.push(out); }
-        else kept.push({ idempotencyKey: ev.idempotencyKey, reason: "name_on_wire" });
+        else kept.push({ idempotencyKey: ev.idempotencyKey, reason: w.reason });
       }
       batch = wire;
       if (!batch.length) return { accepted: [], duplicates: [], quarantined: [], conflicts: [], refused: kept };

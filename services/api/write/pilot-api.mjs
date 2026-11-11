@@ -54,6 +54,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** @param {unknown} id @returns {string | null} */
 export const pilotUuid = (id) => (typeof id === "string" && UUID.test(id) ? id.toLowerCase() : null);
 
+/** A time the pad sent (ms since the epoch), or null. @param {unknown} v */
+const atOf = (v) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? new Date(v) : null);
+
 /** The one not-found. */
 const notFound = () => Object.assign(new Error("not_found"), { status: 404 });
 
@@ -65,15 +68,32 @@ const NO_CONDITIONS = { conditions: null, conditionsHash: null, conditionsFixed:
                         conditionsSources: null, conditionsTitle: null, conditionsVersion: null };
 
 /**
- * What a held ball keeps: the envelope's own fields and the screened event,
- * nothing else a client might have put beside them.
+ * What a held ball is sent with: the numbers and the screened event. db/151
+ * pilot_hold() checks each again and builds the row it keeps from them
+ * alone; the client's other fields (its device, its scorer, its match) are
+ * never stored.
  * @param {any} ev
  */
 const heldBody = (ev) => ({
-  matchId: ev.matchId ?? null, deviceId: ev.deviceId, scorerId: ev.scorerId ?? null, epoch: ev.epoch,
-  innings: ev.innings ?? 0, clientSeq: ev.clientSeq, clientTs: ev.clientTs ?? null,
-  idempotencyKey: ev.idempotencyKey, payload: ev.payload ?? {},
+  innings: Number.isInteger(ev.innings) ? ev.innings : null, clientSeq: ev.clientSeq,
+  clientTs: Number.isFinite(ev.clientTs) ? ev.clientTs : null, payload: ev.payload ?? {},
 });
+
+/**
+ * A pilot batch's numbers, checked before anything reaches the database, so
+ * a value that is not a number (a name, typed where a number goes) is a 400
+ * here and never a cast that fails in Postgres's own log (the review's N3).
+ * @param {any[]} events
+ */
+export function checkPilotBatch(events) {
+  checkBatch(events);
+  events.forEach((ev, i) => {
+    const bad = !Number.isInteger(ev.epoch) || (ev.clientTs != null && !Number.isFinite(ev.clientTs))
+      || (ev.innings != null && !Number.isInteger(ev.innings))
+      || typeof ev.payload !== "object" || ev.payload === null || Array.isArray(ev.payload);
+    if (bad) throw Object.assign(new Error("malformed_event"), { status: 400, detail: { index: i } });
+  });
+}
 
 /**
  * A Pilot Match's log (LogStore, events-api.mjs): db/151's functions, each
@@ -165,8 +185,9 @@ export function pilotRoutes({ pool, secret }) {
       return as(req, async (c) => {
         const { rows } = await c.query(
           `select * from pilot_create($1, $2::jsonb, $3::jsonb, $4, $5, $6, $7::jsonb, $8, $9::jsonb)`,
-          [id, JSON.stringify(b.sides ?? null), JSON.stringify(b.slots ?? null), Number.isInteger(b.overs) ? b.overs : null,
-           typeof b.format === "string" ? b.format : null, b.startsAt ? new Date(b.startsAt) : null,
+          [id, JSON.stringify(b.sides ?? null), JSON.stringify(b.slots ?? null), Number.isInteger(b.overs) && b.overs >= 1 && b.overs <= 50 ? b.overs : null,
+           typeof b.format === "string" ? b.format : null,
+           typeof b.startsAt === "string" && Number.isFinite(Date.parse(b.startsAt)) ? new Date(b.startsAt) : null,
            JSON.stringify(b.toss ?? null), typeof b.venueName === "string" ? b.venueName : null, JSON.stringify(b.weather ?? null)]);
         // The create's own refusals (not_granted, pilot_off) are answers the
         // phone acts on: the match stays on it as a Practice Match.
@@ -218,7 +239,7 @@ export function pilotRoutes({ pool, secret }) {
     append: handle((req) => {
       const id = idOf(req);
       const events = req.body?.events || [];
-      checkBatch(events);
+      checkPilotBatch(events);
       return as(req, (c, principal) => appendBatch(c, principal, PILOT_STORE, id, events));
     }),
 
@@ -234,12 +255,18 @@ export function pilotRoutes({ pool, secret }) {
       });
     }),
 
-    finish: handle((req) => { const id = idOf(req); return as(req, async (c) => answer((await c.query(`select * from pilot_finish($1)`, [id])).rows[0])); }),
+    // The pad's time of the act (ms since the epoch), so the end is the
+    // match's own (S5); the server keeps it no later than now and no earlier
+    // than the last ball.
+    finish: handle((req) => {
+      const id = idOf(req);
+      return as(req, async (c) => answer((await c.query(`select * from pilot_finish($1, $2)`, [id, atOf(req.body?.at)])).rows[0]));
+    }),
 
     abandon: handle((req) => {
       const id = idOf(req);
-      return as(req, async (c) => answer((await c.query(`select * from pilot_abandon($1, $2)`,
-                                                         [id, typeof req.body?.reason === "string" ? req.body.reason : null])).rows[0]));
+      return as(req, async (c) => answer((await c.query(`select * from pilot_abandon($1, $2, $3)`,
+                                                         [id, typeof req.body?.reason === "string" ? req.body.reason : null, atOf(req.body?.at)])).rows[0]));
     }),
 
     remove: handle((req) => { const id = idOf(req); return as(req, async (c) => answer((await c.query(`select * from pilot_delete($1)`, [id])).rows[0])); }),

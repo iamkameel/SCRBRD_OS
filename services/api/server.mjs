@@ -530,7 +530,7 @@ const scorebookFiles = scorebookFileRoutes({ pool, secret: SECRET, store: pageSt
 const lifts = liftRoutes({ pool, secret: SECRET });
 // Pilot Match phase 2 (db/151): its own schema, behind two switches that db/151
 // leaves off. Every per-match route answers one not-found to anybody but the owner.
-const pilot = pilotRoutes({ pool, secret: SECRET });
+const pilotMatch = pilotRoutes({ pool, secret: SECRET });
 // The key is read once, here, and goes nowhere but Google's header. Unset,
 // the hint answers 503 weather_unavailable and the scorer picks by hand.
 // Only an enrolled account may spend the quota (db/81's app_enrolled()): a
@@ -1169,20 +1169,20 @@ const LIFT_ROUTES = [
  * @type {Route[]}
  */
 const PILOT_ROUTES = [
-  [/^\/api\/pilot\/status$/,                                  "GET",  pilot.status],
-  [/^\/api\/pilot\/mine$/,                                    "GET",  pilot.mine],
-  [/^\/api\/pilot\/matches$/,                                 "POST", pilot.create],
-  [/^\/api\/pilot\/delete-all$/,                              "POST", pilot.removeAll],
-  [/^\/api\/pilot\/([0-9a-fA-F-]{36})$/,                      "GET",  pilot.header],
-  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/names$/,               "GET",  pilot.names],
-  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/names$/,               "POST", pilot.putNames],
-  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/session\/claim$/,      "POST", pilot.claim],
-  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/session\/heartbeat$/,  "POST", pilot.heartbeat],
-  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/events$/,              "POST", pilot.append],
-  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/events$/,              "GET",  pilot.list],
-  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/finish$/,              "POST", pilot.finish],
-  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/abandon$/,             "POST", pilot.abandon],
-  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/delete$/,              "POST", pilot.remove],
+  [/^\/api\/pilot\/status$/,                                  "GET",  pilotMatch.status],
+  [/^\/api\/pilot\/mine$/,                                    "GET",  pilotMatch.mine],
+  [/^\/api\/pilot\/matches$/,                                 "POST", pilotMatch.create],
+  [/^\/api\/pilot\/delete-all$/,                              "POST", pilotMatch.removeAll],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})$/,                      "GET",  pilotMatch.header],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/names$/,               "GET",  pilotMatch.names],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/names$/,               "POST", pilotMatch.putNames],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/session\/claim$/,      "POST", pilotMatch.claim],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/session\/heartbeat$/,  "POST", pilotMatch.heartbeat],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/events$/,              "POST", pilotMatch.append],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/events$/,              "GET",  pilotMatch.list],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/finish$/,              "POST", pilotMatch.finish],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/abandon$/,             "POST", pilotMatch.abandon],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/delete$/,              "POST", pilotMatch.remove],
 ];
 // ── end SCRBRD-124 ──
 
@@ -1370,7 +1370,7 @@ async function servePad(req, res) {
  * other; its route is closed since S2.)
  * @type {Set<unknown>}
  */
-const OWN_DEDUP = new Set([events.append, pilot.append]);
+const OWN_DEDUP = new Set([events.append, pilotMatch.append]);
 
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return json(res, 204, {});

@@ -16,6 +16,9 @@
  *      the names back — positions where the roster has none.
  *   D  Phase 1's three locks still refuse a `practice-` id, and a `pilot-` id
  *      is not routed under `practice:`.
+ *   E  The phone's allow-list and db/151's are one list: KIND_KEYS against
+ *      pilot_kind_keys(), CLOSED against pilot_closed(), read out of the
+ *      migration.
  *
  * The test name is the canary `Qa Canarytest`, which is nobody.
  *
@@ -23,7 +26,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { pilotWire, pilotUnwire, PLAYER_FIELDS, TEAM_FIELDS, WIRE_STRING, positionWords } from "../src/lib/pilotWire.js";
+import { pilotWire, pilotUnwire, PLAYER_FIELDS, TEAM_FIELDS, WIRE_STRING, KIND_KEYS, CLOSED, positionWords, containsWord, holdsAName } from "../src/lib/pilotWire.js";
 
 let pass = 0, fail = 0;
 const ok = (/** @type {string} */ n, /** @type {unknown} */ c, d = "") => {
@@ -77,7 +80,7 @@ const anEvent = (/** @type {number} */ n) => {
   if (rnd() < 0.3) ev.squad = Array.from({ length: 1 + Math.floor(rnd() * 4) }, aPlayer);
   if (rnd() < 0.3) ev.bowlingSquad = Array.from({ length: 1 + Math.floor(rnd() * 4) }, aPlayer);
   if (rnd() < 0.3) ev.note = freeText();
-  if (rnd() < 0.3) ev.reason = pick(["retired_hurt", "rain", "injury", "scorer_undo", freeText()]);
+  if (rnd() < 0.3) ev.reason = pick(["retired_hurt", "rain", "injury", "scorer_undo", "sipho", "jean-luc", freeText()]);
   if (rnd() < 0.2) ev.detail = { why: freeText(), deep: [freeText(), 3, { k: freeText() }] };
   if (rnd() < 0.4) { ev.type = pick(["run", "W", "Wd", "Nb", "B", "LB"]); ev.value = Math.floor(rnd() * 7); }
   if (rnd() < 0.2) ev.dismissal = pick(["bowled", "caught", "run_out"]);
@@ -113,10 +116,13 @@ group("A. The property: no roster name on the wire, ever");
     for (const f of PLAYER_FIELDS) if (w[f] != null && !SLOTS.includes(w[f])) bad.push(["player", f, w[f]]);
     for (const f of ["squad", "bowlingSquad"]) if (Array.isArray(w[f]) && w[f].some((x) => !SLOTS.includes(x))) bad.push(["squad", w[f]]);
     for (const f of TEAM_FIELDS) if (w[f] != null && w[f] !== "home" && w[f] !== "away") bad.push(["team", f, w[f]]);
+    const allowed = new Set(["kind", "innings", "clientTs", "id", "seq", ...(KIND_KEYS[w.kind] ?? [])]);
+    const stray = Object.keys(w).find((k) => !allowed.has(k));
+    if (stray) bad.push(["key outside its kind's list", stray, w.kind]);
     if ("note" in w || "detail" in w && JSON.stringify(w.detail).includes(" ")) bad.push(["note", w]);
   }
   ok(`${N} random events: every one held back, or on the wire with no name and no free text`, bad.length === 0, JSON.stringify(bad.slice(0, 3)));
-  ok("...and both happened, many times (the generator reaches both sides)", sent > N / 10 && held > N / 10, `${sent} sent, ${held} held`);
+  ok("...and both happened, many times (the generator reaches both sides)", sent > N / 10 && held > N / 50, `${sent} sent, ${held} held`);
 }
 
 group("B. By hand");
@@ -143,8 +149,23 @@ group("B. By hand");
   ok("a retirement goes as its code alone, never the reason in words", r.ok && r.event.reason === "retired_hurt" && !("text" in r.event), JSON.stringify(r));
   r = pilotWire({ kind: "revision", overs: 15, reason: "the umpires said so" }, roster);
   ok("a reason in words is left off", r.ok && !("reason" in r.event) && r.event.overs === 15, JSON.stringify(r));
-  r = pilotWire({ kind: "ball", type: "run", value: 1, striker: H1, bowler: W1, extra: { tag: "Sipho" } }, roster);
-  ok("a one-word name hidden in a nested code is caught by the last check", !r.ok && r.reason === "name_on_wire", JSON.stringify(r));
+  r = pilotWire({ kind: "retire", batter: H1, reason: "sipho" }, roster);
+  ok("a one-word name written as a code is caught by the last check", !r.ok && r.reason === "name_on_wire", JSON.stringify(r));
+  r = pilotWire({ kind: "ball", type: "run", value: 1, striker: H1, bowler: W1, catchBy: "Qa-Canarytest", sub: "Thabo", extra: { tag: "Sipho" } }, roster);
+  ok("keys outside the kind's list never travel, whatever they hold (S3)", r.ok && !("catchBy" in r.event) && !("sub" in r.event) && !("extra" in r.event), JSON.stringify(r));
+  r = pilotWire({ kind: "ball", type: "run", value: 1, striker: H1, bowler: W1, shot: "Cover Drive by Sipho" }, roster);
+  ok("a value not of its key's shape is left off", r.ok && !("shot" in r.event), JSON.stringify(r));
+  r = pilotWire({ kind: "scorebook_note", text: "x" }, roster);
+  ok("a kind a Pilot Match does not send stays on the phone", !r.ok && r.reason === "not_sendable", JSON.stringify(r));
+  const lb = { slots: { ...roster.slots, "00000000-0000-4000-8000-300000000001": { side: "home", list_no: 9, name: "LB" } }, teams: roster.teams };
+  r = pilotWire({ kind: "ball", type: "LB", value: 1, striker: H1, bowler: W1 }, lb);
+  ok("a boy typed as \"LB\" does not hold back a leg-bye: LB there is a code (N2)", r.ok && r.event.type === "LB", JSON.stringify(r));
+  r = pilotWire({ kind: "ball", type: "run", value: 1, striker: H1, bowler: W1, bowlerApproach: "Around the wicket" }, roster);
+  ok("the approach travels as its code, and comes back as the words", r.ok && r.event.bowlerApproach === "around"
+     && pilotUnwire(r.event, roster).bowlerApproach === "Around the wicket", JSON.stringify(r));
+  ok("whole words: a team holding a typed name is seen, a team merely near one is not",
+     holdsAName("Qa Canarytest XI", roster) && holdsAName("The canarytest's farm", { slots: { x: { side: "home", list_no: 1, name: "Canarytest" } }, teams: roster.teams }) === true
+     && !holdsAName("Sipholand High", roster) && containsWord("Hilton U13B", "hilton") && !containsWord("Hiltonian", "Hilton"));
   r = pilotWire({ kind: "innings_start", battingTeam: "Some Other XI", squad: [H1] }, roster);
   ok("a team that is neither side keeps the event on the phone", !r.ok, JSON.stringify(r));
 }
@@ -174,6 +195,23 @@ group("D. Phase 1's locks, beside phase 2");
   const persistMod = await import("../src/lib/persist.js");
   ok("isPilotId and isPracticeId never both say yes", persistMod.isPilotId("pilot-x") && !persistMod.isPracticeId("pilot-x")
      && persistMod.isPracticeId("practice-x") && !persistMod.isPilotId("practice-x") && !persistMod.isPilotId("77777777-0000-0000-0000-000000000002"));
+}
+
+group("E. One list, on the phone and in db/151");
+{
+  const sql = readFileSync(join(import.meta.dirname, "../../../db/151_pilot_match.sql"), "utf8");
+  const body = (/** @type {string} */ fn) => sql.slice(sql.indexOf(`FUNCTION ${fn}(`), sql.indexOf("$$ LANGUAGE", sql.indexOf(`FUNCTION ${fn}(`)));
+  /** Every `WHEN 'x' THEN ARRAY[...]` of a CASE, as {x: [...]}. @param {string} t */
+  const cases = (t) => Object.fromEntries([...t.matchAll(/WHEN '([A-Za-z_]+)' THEN ARRAY\[([^\]]*)\]/g)]
+    .map((m) => [m[1], [...m[2].matchAll(/'([^']*)'/g)].map((x) => x[1])]));
+  const keys = cases(body("pilot_kind_keys"));
+  const closed = cases(body("pilot_closed"));
+  const same = (/** @type {any} */ a, /** @type {any} */ b) => JSON.stringify(Object.keys(a).sort().map((k) => [k, [...a[k]].sort()]))
+    === JSON.stringify(Object.keys(b).sort().map((k) => [k, [...b[k]].sort()]));
+  ok("KIND_KEYS is pilot_kind_keys(), kind for kind and key for key", Object.keys(keys).length === 13 && same(keys, KIND_KEYS),
+     JSON.stringify(Object.keys(keys)));
+  ok("CLOSED is pilot_closed(), key for key and code for code", Object.keys(closed).length >= 15 && same(closed, CLOSED),
+     JSON.stringify(Object.keys(closed)));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

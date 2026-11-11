@@ -92,7 +92,15 @@ group("B. What leaves for the server");
   ok("pilot_create's body: the id, two sides, five slots, overs, toss", body.id === P.pilotUuid(id) && body.sides.length === 2 && body.slots.length === 5
      && body.overs === 20 && body.toss.wonBy === "home" && body.toss.decision === "bat");
   ok("...no player's name", !ALL.some((n) => s.includes(n)) && !/canarytest/i.test(s), s.slice(0, 300));
-  ok("...the venue's name, and never the phone's position", body.venueName === "Walk Oval" && !/-29\.54|30\.28|"lat"|"lon"|accuracy/.test(s), s);
+  ok("...never the venue's name, never the phone's position (S4)", body.venueName === null && !s.includes("Walk Oval") && !/-29\.54|30\.28|"lat"|"lon"|accuracy/.test(s), s);
+  ok("...and, unless the names may go, the sides as their place: Home U13B, Away U13B",
+     body.sides.map((x) => `${x.school}|${x.display_name}`).join() === "Home|Home U13B,Away|Away U13B" && !/Hilton|Kearsney/.test(s), JSON.stringify(body.sides));
+  const real = P.createBody(rec, { sidesMayGo: true });
+  ok("where the names may go, the sides' real names go too", real.sides.map((x) => x.display_name).join() === "Hilton U13B,Kearsney U13B");
+  const named = P.createBody({ ...rec, teams: [{ ...rec.teams[0], school: "Qa Canarytest Academy", display_name: "Qa Canarytest Academy U13B" }, rec.teams[1]] },
+                             { sidesMayGo: true });
+  ok("...but never a side whose name holds a typed name as whole words: it goes as its place",
+     named.sides[0].school === "Home" && !/canarytest/i.test(JSON.stringify(named)) && named.sides[1].school === "Kearsney", JSON.stringify(named.sides));
   ok("...the weather's conditions alone", body.weather?.condition === "overcast" && !("observed_at" in (body.weather ?? {})));
   const nb = P.namesBody(rec);
   ok("the names' body: each slot's name, for the one request that carries them", nb.rows.length === 5 && nb.rows.some((r) => r.name === CANARY && UUID.test(r.slot)));

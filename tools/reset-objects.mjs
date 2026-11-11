@@ -42,11 +42,17 @@ const KINDS = /** @type {const} */ ({
   routines: new RegExp(String.raw`\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE|AGGREGATE)\s+${ID}\s*\(`, "gi"),
   types: new RegExp(String.raw`\bCREATE\s+(?:TYPE|DOMAIN)\s+${ID}`, "gi"),
   sequences: new RegExp(String.raw`\bCREATE\s+SEQUENCE\s+(?:IF\s+NOT\s+EXISTS\s+)?${ID}`, "gi"),
-  // A schema of our own (db/151's `pilot`): wholly ours, by its name.
-  schemas: /\bCREATE\s+SCHEMA\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_][\w$]*)/gi,
   // A rename makes a name of ours that no CREATE spelled.
   renamed: new RegExp(String.raw`\bALTER\s+(TABLE|VIEW|MATERIALIZED\s+VIEW|FUNCTION|PROCEDURE|TYPE|DOMAIN|SEQUENCE)\s+(?:IF\s+EXISTS\s+)?[^;]*?\bRENAME\s+TO\s+${ID}`, "gi"),
 });
+
+/**
+ * The schemas of our own beside public, by a fixed list — never read from a
+ * migration's text, where a `CREATE SCHEMA IF NOT EXISTS extensions` would
+ * put a host's own schema on the drop list. A schema joins this list in the
+ * same change as the migration that creates it.
+ */
+export const PROJECT_SCHEMAS = Object.freeze(["pilot"]);
 
 /** `public.foo` → foo; `"Foo"` → Foo; bare → lower case; another schema → null. */
 const nameOf = (/** @type {string} */ raw) => {
@@ -67,7 +73,7 @@ const stripComments = (/** @type {string} */ sql) => sql.replace(/\/\*[\s\S]*?\*
  */
 export function projectObjects(dbDir) {
   /** @type {Record<string, Set<string>>} */
-  const found = { tables: new Set(["schema_migration"]), views: new Set(), routines: new Set(), types: new Set(), sequences: new Set(), schemas: new Set() };
+  const found = { tables: new Set(["schema_migration"]), views: new Set(), routines: new Set(), types: new Set(), sequences: new Set() };
   for (const f of migrationFiles(dbDir)) {
     const sql = stripComments(readFileSync(join(dbDir, f), "utf8"));
     for (const [kind, re] of Object.entries(KINDS)) {
@@ -79,11 +85,6 @@ export function projectObjects(dbDir) {
           if (n) found[target].add(n);
           continue;
         }
-        if (kind === "schemas") {
-          const n = m[1].toLowerCase();
-          if (n !== "public") found.schemas.add(n);
-          continue;
-        }
         const n = nameOf(m[1]);
         if (n) found[kind].add(n);
       }
@@ -91,7 +92,7 @@ export function projectObjects(dbDir) {
   }
   const sorted = (/** @type {Set<string>} */ s) => [...s].sort();
   return { tables: sorted(found.tables), views: sorted(found.views), routines: sorted(found.routines),
-           types: sorted(found.types), sequences: sorted(found.sequences), schemas: sorted(found.schemas) };
+           types: sorted(found.types), sequences: sorted(found.sequences), schemas: [...PROJECT_SCHEMAS] };
 }
 
 const arr = (/** @type {string[]} */ xs) => xs.length
@@ -142,6 +143,17 @@ BEGIN
     SELECT t.oid, 'pg_type'::regclass FROM pg_type t
       JOIN pg_namespace ns ON ns.oid = t.typnamespace
      WHERE ns.nspname = 'public' AND t.typname = ANY (ours_types)
+    -- Everything in a schema of our own is ours, so what somebody else built
+    -- on it stops the reset too, before the schema goes CASCADE.
+    UNION ALL
+    SELECT c.oid, 'pg_class'::regclass FROM pg_class c
+      JOIN pg_namespace ns ON ns.oid = c.relnamespace WHERE ns.nspname = ANY (ours_schemas)
+    UNION ALL
+    SELECT p.oid, 'pg_proc'::regclass FROM pg_proc p
+      JOIN pg_namespace ns ON ns.oid = p.pronamespace WHERE ns.nspname = ANY (ours_schemas)
+    UNION ALL
+    SELECT t.oid, 'pg_type'::regclass FROM pg_type t
+      JOIN pg_namespace ns ON ns.oid = t.typnamespace WHERE ns.nspname = ANY (ours_schemas)
   ), dependent AS (
     -- Each dependent, by what it hangs off: the relation a view's rule, a
     -- constraint, a default, a trigger or a policy belongs to; the routine;
@@ -170,9 +182,6 @@ BEGIN
    WHERE NOT coalesce(x.rel  IN (SELECT oid FROM ours WHERE cls = 'pg_class'::regclass), false)
      AND NOT coalesce(x.proc IN (SELECT oid FROM ours WHERE cls = 'pg_proc'::regclass), false)
      AND NOT coalesce(x.typ  IN (SELECT oid FROM ours WHERE cls = 'pg_type'::regclass), false)
-     -- ...nor a key or a trigger of a table in a schema of our own: ours too.
-     AND NOT coalesce((SELECT ns.nspname FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace WHERE c.oid = x.rel)
-                      = ANY (ours_schemas), false)
      AND NOT EXISTS (SELECT 1 FROM pg_depend e WHERE e.classid = x.classid AND e.objid = x.objid AND e.deptype = 'e');
   IF foreign_deps IS NOT NULL THEN
     RAISE EXCEPTION 'refusing to reset: these are not this project''s, and depend on its objects: %', foreign_deps

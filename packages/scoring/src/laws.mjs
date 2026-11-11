@@ -233,6 +233,7 @@ export const REFUSAL_TEXT = Object.freeze({
   // (name_on_wire, lib/pilotWire.js); the server refuses one that arrives
   // anyway (db/151 pilot_event_refusal()).
   name_on_wire: "a player's name was in it, so this phone did not send it",
+  not_sendable: "it is not something a Pilot Match sends, so this phone kept it",
   name_in_event: "a player's name was in it, and a Pilot Match's balls carry positions, not names",
   unknown_slot: "it named a player who is not on this match's team lists",
   free_text: "it carried words typed during play, which a Pilot Match does not send",

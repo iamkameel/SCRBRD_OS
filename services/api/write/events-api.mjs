@@ -239,6 +239,11 @@ const CHECK_REASON = {
   // db/68's door: what the Laws refuse at commit (Law 39, SCRBRD-126), for a
   // row that reaches the table another way — a held event released.
   ball_event_stumped_by_keeper: "stumped_not_keeper",
+  // db/151: a Pilot Match's own screen, raised from inside the write itself
+  // (pilot_insert, pilot_hold) when a caller stepped round the API's.
+  name_in_event: "name_in_event",
+  unknown_slot: "unknown_slot",
+  free_text: "free_text",
 };
 
 /**
