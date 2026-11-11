@@ -309,3 +309,117 @@ export function parReport({ events, ctx = {}, venue = null, table = null, g50 = 
   }
   return out;
 }
+
+// ── CRI-1.8: the par estimate (CRICINFO_GAP_PLAN.md decision 5, 2026-10-23) ──
+//
+// "Win probability is shown from the existing par line, labelled a par
+// estimate, and recalibrated once pilot ball logs exist." This is that
+// estimate, and nothing more than the par line says: how far the innings
+// stands from the ground's par at this point, against how far the ground's own
+// first-innings totals spread. It is NOT fitted to any result, and it says so
+// wherever it is drawn ("Par estimate"); SCRBRD-130 §10 is its calibration
+// note, for after the pilot.
+//
+//   P        the ground's par (the mean of its first-innings totals, venue.par)
+//   parAt    par at this point (venue.parAt: P scaled by the resources, or the
+//            overs, the innings has used)
+//   f        what is left of an innings, as a share of par: (P − parAt) ÷ P
+//   σ        the spread of the ground's totals, from their range and their
+//            number: (high − low) ÷ d2(n), the range estimator (d2 below)
+//
+//   first innings   the side batting:   Φ( (runs − parAt) ÷ (σ √(1 + f)) )
+//                   — its total, par from here added, against the side
+//                   chasing, who are expected to make par: both uncertain
+//   chase           the side chasing:   Φ( (P·f − (need − ½)) ÷ (σ √f) )
+//                   — the runs par says are left, against the runs needed
+//
+// WHERE THERE IS NO PAR THERE IS NO ESTIMATE (the brief: "show nothing rather
+// than a guess"): no report for this position, no venue par (fewer than five
+// innings here, a declaration match, a super over, a scorebook's innings), a
+// ground whose totals have no spread on record, rain anywhere in the match (the
+// DLS par is a calculation for one target, and a first innings the umpires cut
+// is held to a full innings' par), a chase with nothing left to bowl, and a
+// match already decided. Rounded to the nearest five, and never beyond five or
+// ninety-five: an estimate nobody has calibrated does not get to say "certain".
+
+/**
+ * d2(n): the expected range of n draws from a normal distribution, in standard
+ * deviations (the control-chart constant), for n = 2..25. Beyond 25 the last,
+ * which a little overstates the spread — the cautious side.
+ */
+export const RANGE_D2 = Object.freeze([0, 0, 1.128, 1.693, 2.059, 2.326, 2.534, 2.704, 2.847, 2.970, 3.078, 3.173, 3.258,
+  3.336, 3.407, 3.472, 3.532, 3.588, 3.640, 3.689, 3.735, 3.778, 3.819, 3.858, 3.895, 3.931]);
+
+/** The estimate's grain, and how near the ends it may go (per cent). */
+export const PAR_ESTIMATE_STEP = 5;
+export const PAR_ESTIMATE_BOUND = 5;
+
+/** The standard normal's distribution function (Abramowitz and Stegun 7.1.26, |error| < 1.5e-7). @param {number} z */
+export function normalCdf(z) {
+  const x = Math.abs(z) / Math.SQRT2;
+  const t = 1 / (1 + 0.3275911 * x);
+  const erf = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return z >= 0 ? (1 + erf) / 2 : (1 - erf) / 2;
+}
+
+/**
+ * The spread of a ground's first-innings totals, from the venue report's
+ * range and number of innings; null where the record gives none.
+ * @param {{n?: number, range?: {low?: number | null, high?: number | null}} | null | undefined} venue
+ */
+export function venueSpread(venue) {
+  const n = venue?.n, low = venue?.range?.low, high = venue?.range?.high;
+  if (!Number.isInteger(n) || /** @type {number} */ (n) < 2 || !Number.isFinite(low) || !Number.isFinite(high)) return null;
+  const range = /** @type {number} */ (high) - /** @type {number} */ (low);
+  if (!(range > 0)) return null;
+  return range / RANGE_D2[Math.min(/** @type {number} */ (n), RANGE_D2.length - 1)];
+}
+
+/** @param {number} p  a probability, 0..1 @returns {number} per cent, on the grain, inside the bounds */
+const toShown = (p) => {
+  const pct = Math.round((p * 100) / PAR_ESTIMATE_STEP) * PAR_ESTIMATE_STEP;
+  return Math.min(100 - PAR_ESTIMATE_BOUND, Math.max(PAR_ESTIMATE_BOUND, pct));
+};
+
+/**
+ * @typedef {object} ParEstimate
+ * @property {number} batting   per cent, the side batting now
+ * @property {number} fielding  per cent, the other side (100 − batting)
+ * @property {"first_innings" | "chase"} kind
+ * @property {number} z         the standardised gap it was read from (for the calibration note's log)
+ */
+
+/**
+ * The par estimate for the innings on the board, or null where par does not
+ * define one (above).
+ * @param {object} o
+ * @param {any} o.report    the par report, ONLY where it speaks for this very position (lib/par.js reportFor())
+ * @param {any} o.inn       the fold's innings on the board
+ * @param {boolean} o.chasing  it is the match's second innings, with a target
+ * @param {number | null} [o.target]
+ * @param {boolean} [o.rained]   rain touched the match (rainTouched())
+ * @param {boolean} [o.decided]  play has decided the match
+ * @returns {ParEstimate | null}
+ */
+export function parEstimate({ report, inn, chasing, target = null, rained = false, decided = false }) {
+  if (!report || !inn || decided || rained || inn.superOver != null || inn.summarised != null) return null;
+  const v = report.venue;
+  if (!v?.sufficient || v.shortened || !Number.isInteger(v.par) || !Number.isInteger(v.parAt) || v.par <= 0) return null;
+  const sigma = venueSpread(v);
+  if (sigma == null) return null;
+  const P = v.par, f = Math.max(0, (P - v.parAt) / P);
+  const runs = inn.runs ?? 0;
+  if (!chasing) {
+    const z = (runs - v.parAt) / (sigma * Math.sqrt(1 + f));
+    const batting = toShown(normalCdf(z));
+    return { batting, fielding: 100 - batting, kind: "first_innings", z };
+  }
+  if (!Number.isInteger(target)) return null;
+  const need = /** @type {number} */ (target) - runs;
+  const left = (inn.overs ?? 0) * 6 - (inn.balls ?? 0);
+  if (need <= 0 || left <= 0 || (inn.wickets ?? 0) >= 10 || inn.complete || f <= 0) return null;
+  const z = (P * f - (need - 0.5)) / (sigma * Math.sqrt(f));
+  const batting = toShown(normalCdf(z));
+  return { batting, fielding: 100 - batting, kind: "chase", z };
+}
+// ── end CRI-1.8 ──

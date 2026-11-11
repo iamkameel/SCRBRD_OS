@@ -60,7 +60,7 @@ import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { buildPublicFixture, HIL } from "./fixture-public.mjs";
 import { writeEvents } from "./fixture-matchcentre.mjs";
-import { ball, batters, bowler, inningsStart, sealInnings, deriveInnings, BALL_TYPE, INNINGS_END_REASON } from "@scrbrd/scoring";
+import { ball, batters, bowler, inningsStart, sealInnings, deriveInnings, BALL_TYPE, INNINGS_END_REASON, parEstimate } from "@scrbrd/scoring";
 
 const PORT = port(8849);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -503,7 +503,10 @@ try {
        worm1.par && !!worm1.dash && worm1.label === "Par here 80 (6 innings)" && /Par: this ground, 6 innings \(dashed\) · proportion of overs; no DLS table loaded/.test(worm1.legend ?? "")
        && /Par here 80 \(6 innings\), dashed/.test(worm1.said ?? ""), JSON.stringify(worm1));
     const body1 = await text(p1.page);
-    ok("...no pressure figure and no percentage anywhere (D4)", !/pressure|\d\s?%/i.test(body1) && leaks(body1).length === 0, body1.slice(0, 300));
+    // D4, as CRI-1.8 changed it (Kameel, 23 Oct): no pressure figure, and the one percentage is the par estimate, labelled.
+    const pcts = body1.split("\n").filter((l) => /\d\s?%/.test(l));
+    ok("...no pressure figure, and no percentage but the par estimate's own line (D4, as CRI-1.8 changed it)",
+       !/pressure/i.test(body1) && pcts.length === 1 && /^Par estimate: /.test(pcts[0].trim()) && leaks(body1).length === 0, pcts.join(" | ") || body1.slice(0, 300));
     const parRead = p1.requests.find((r) => /\/api\/public\/matches\/[^/]+\/par$/.test(r.url));
     ok("...read from /api/public/…/par, with no Authorization header", !!parRead && parRead.auth == null);
     const pj = await fetch(`${BASE}/api/public/matches/${PAR1.id}/par`, { headers: { "x-forwarded-for": "10.85.2.8" } });
@@ -560,6 +563,72 @@ try {
     const moving = await tick(""), still = await tick("?motion=reduce");
     ok(`the ticks slide by transform (${moving}); under Reduce motion they cut (${still})`,
        /transform/.test(moving) && !/^(none|all) 0s$/.test(moving) && (/^none\b/.test(still) || / 0s$/.test(still)), `${moving} | ${still}`);
+  }
+
+  group("CRI-1.8: the par estimate, labelled, on the ground display, the public page and the signed-in Summary — and nothing where par is not defined");
+  {
+    // What the estimate must say, from the server's own par read (the same report each surface reads) and the fold.
+    const expectOf = async (/** @type {string} */ id, /** @type {boolean} */ chasing) => {
+      const r = await (await fetch(`${BASE}/api/public/matches/${id}/par`, { headers: { "x-forwarded-for": "10.85.2.7" } })).json();
+      const evs = (await q(`select kind, payload, innings, seq from ball_event where match_id = $1 order by seq`, [id]));
+      return { r, chasing, evs: evs.length };
+    };
+    const P1 = await expectOf(PAR1.id, false);
+    // PAR1: par here 24 of 80 (six innings, 70 to 90): σ = 20 ÷ d2(6) = 20 ÷ 2.534; 30 runs, 6 ahead, f = 56 ÷ 80.
+    const e1 = parEstimate({ report: P1.r, inn: { runs: 30, balls: 18, wickets: 0, overs: 10 }, chasing: false });
+    ok(`PAR1's estimate, from its par read (par ${P1.r.venue?.parAt} of ${P1.r.venue?.par}, ${P1.r.venue?.n} innings, ${P1.r.venue?.range?.low}–${P1.r.venue?.range?.high}): ${e1?.batting} / ${e1?.fielding}`,
+       e1?.batting === 70 && e1.fielding === 30, JSON.stringify(e1));
+    const C = await expectOf(PARC.id, true);
+    const ec = parEstimate({ report: C.r, inn: { runs: 12, balls: 18, wickets: 0, overs: 10 }, chasing: true, target: 81 });
+    ok(`PARC's, the chase: 69 needed where par leaves 56 — ${ec?.batting} / ${ec?.fielding}, never below ${5}`, ec?.batting === 5 && ec.fielding === 95, JSON.stringify(ec));
+    const said = async (/** @type {any} */ page, /** @type {string} */ testid) => (await tid(page, testid).innerText({ timeout: 15000 }).catch(() => "")).trim();
+    for (const [id, want, label] of [[PAR1.id, /^Par estimate: \S.* 70% · \S.* 30%$/, "a first innings"], [PARC.id, /^Par estimate: \S.* 5% · \S.* 95%$/, "the chase"]]) {
+      const d = await tv(`/display/${id}`);
+      await until(d.page, () => !!document.querySelector('[data-testid="display-estimate"]'), 15000);
+      const w = await said(d.page, "display-estimate");
+      ok(`the ground display, ${label}: "${w}"`, want.test(w), w);
+      ok("...team names only: no player, no pseudonym", leaks(w).length === 0 && !/Typed/.test(w));
+      await d.ctx.close();
+      const l = await tv(`/live/${id}`, { width: 390, height: 844 });
+      await until(l.page, () => !!document.querySelector('[data-testid="mc-board-estimate"]'), 15000);
+      const lw = await said(l.page, "mc-board-estimate");
+      ok(`the public live page's board, ${label}, at 390: "${lw}"`, want.test(lw) && leaks(lw).length === 0, lw);
+      const fs = await tid(l.page, "mc-board-estimate").evaluate((e) => parseFloat(getComputedStyle(e).fontSize)).catch(() => 0);
+      ok("...on the 12px floor", fs >= 12, fs);
+      ok("no console errors (estimate, public)", d.errors.length === 0 && l.errors.length === 0, [...d.errors, ...l.errors].join(" | "));
+      await l.ctx.close();
+    }
+    for (const [id, label] of [[FEW.id, "a ground with no record"], [BRK.id, "a ground-less fixture at the innings break"]]) {
+      const d = await tv(`/display/${id}`);
+      await until(d.page, () => !!document.querySelector('[data-testid="display-total"]'), 15000);
+      await sleep(1500);
+      ok(`${label}: no estimate on the ground display, and no percentage at all`, await tid(d.page, "display-estimate").count() === 0 && !/\d\s?%/.test(await text(d.page)));
+      await d.ctx.close();
+      const l = await tv(`/live/${id}`);
+      await until(l.page, () => !!document.querySelector('[data-testid="mc-board-total"]'), 15000);
+      await sleep(1500);
+      ok(`${label}: none on the public page either`, await tid(l.page, "mc-board-estimate").count() === 0);
+      await l.ctx.close();
+    }
+    // Signed in: the director of sport's Summary of the same fixture.
+    const ctx = await browser.newContext({ viewport: { width: 1366, height: 900 }, extraHTTPHeaders: { "x-forwarded-for": `10.85.1.${++ipN}` } });
+    await offline(ctx);
+    const page = await ctx.newPage();
+    await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(BASE)};`);
+    await page.goto(`${BASE}/app/matches/${PAR1.id}`, { waitUntil: "networkidle" });
+    const press = async (/** @type {RegExp} */ re) => {
+      const b = page.locator("button:not([disabled])", { hasText: re }).first();
+      if (await b.count()) { await b.click({ timeout: 5000 }).catch(() => {}); await sleep(500); }
+    };
+    await press(/Get Started|Log In/); await press(/sarah@example\.invalid|Director/); await press(/^Sign In$/);
+    await until(page, () => !!document.querySelector('[data-testid="mc-board-estimate"]'), 20000);
+    const sw = await said(page, "mc-board-estimate");
+    ok(`the signed-in Summary's board says the same, by the sides' full names: "${sw}"`, /^Par estimate: Hilton College 1XI 70% · .+ 30%$/.test(sw), sw);
+    await tid(page, "mc-bigscreen-open").click({ timeout: 5000 }).catch(() => {});
+    await until(page, () => !!document.querySelector('[data-testid="mc-bigscreen-estimate"]'), 15000);
+    const bw = await said(page, "mc-bigscreen-estimate");
+    ok(`...and its Big screen: "${bw}"`, /^Par estimate: \S.* 70% · \S.* 30%$/.test(bw), bw);
+    await ctx.close();
   }
 
   group("9. The setup section, signed in as the director of sport");

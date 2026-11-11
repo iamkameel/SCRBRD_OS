@@ -1,4 +1,4 @@
-import { RRR_TREND, chaseRates, rainTouched, rrrTrend } from "@scrbrd/scoring";
+import { RRR_TREND, chaseRates, parEstimate, rainTouched, rrrTrend } from "@scrbrd/scoring";
 
 /**
  * PAR AND PRESSURE, IN WORDS (SCRBRD-133 G2, design §3.3, §3.5) — pure, so
@@ -23,7 +23,39 @@ import { RRR_TREND, chaseRates, rainTouched, rrrTrend } from "@scrbrd/scoring";
  * function the server runs, so it needs no read at all.
  */
 
-export { RRR_TREND, chaseRates, rainTouched, rrrTrend };
+export { RRR_TREND, chaseRates, parEstimate, rainTouched, rrrTrend };
+
+/**
+ * CRI-1.8: what the win estimate is called, on every surface that draws it —
+ * the Summary's board (signed in and public) and the ground display. It is
+ * read off the par line (@scrbrd/scoring parEstimate()), not fitted to any
+ * result, and the label says so before any figure (SCRBRD-130 §10).
+ */
+export const PAR_ESTIMATE = "Par estimate";
+
+/**
+ * "Par estimate: HIL 1XI 65% · WBH 1XI 35%" — the side batting first in the
+ * line, then the other; team names only, never a player. Null with no estimate.
+ * @param {{batting: number, fielding: number} | null} est
+ * @param {{batting: string, fielding: string}} sides  the sides' names as the screen writes them
+ */
+export function estimateWords(est, sides) {
+  if (!est) return null;
+  return `${PAR_ESTIMATE}: ${sides.batting} ${est.batting}% · ${sides.fielding} ${est.fielding}%`;
+}
+
+/**
+ * The estimate's line for the innings on a board, from what the board's par
+ * already holds (SummaryTab's `pressure`, the display's parOf()): null where
+ * par defines none, and once play has decided the match.
+ * @param {{inn: any, target: number | null, par: {chasing: boolean, report: any, rained: boolean, result?: string | null} | null | undefined,
+ *          sides: {batting: string, fielding: string}, decided?: boolean}} o
+ */
+export function estimateLine({ inn, target, par, sides, decided = false }) {
+  if (!par) return null;
+  return estimateWords(parEstimate({ report: par.report, inn, chasing: par.chasing, target, rained: par.rained,
+    decided: decided || !!par.result }), sides);
+}
 
 /** What the line calls the ground's par. */
 export const VENUE_PAR = "par for this ground";
