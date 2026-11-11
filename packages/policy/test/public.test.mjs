@@ -86,8 +86,11 @@ group("§2 — every surface the document decides, and nothing it does not");
   ok("D1 search engines: never", d("D1") === "never");
   ok("L6 a typed name: never", d("L6") === "never");
   ok("L7 shot maps and wagon wheels: team level", d("L7") === "team_level" && surface("L7").public);
-  ok("L2, L4, L5, A2, A5, A6 and D2 name pupils only by the name rule",
-     ["L2", "L4", "L5", "A2", "A5", "A6", "D2"].every((id) => d(id) === "name_rule"));
+  ok("L2, L4, L5, A2, A5 and A6 name pupils only by the name rule",
+     ["L2", "L4", "L5", "A2", "A5", "A6"].every((id) => d(id) === "name_rule"));
+  // db/149, Kameel 11 Nov 2026 (PUBLIC_BY_TERMS Q1(e)): role words for every child.
+  ok("D2 the stream overlay names no child: role words until a stream consent",
+     d("D2") === "team_level" && surface("D2").public && /no child is named/i.test(surface("D2").rule));
   ok("L1, L3, A1 and D3 are public", ["L1", "L3", "A1", "D3"].every((id) => d(id) === "public"));
   ok("off until switched on: L1 and A1 need publishing (§1.1)",
      surface("L1").needs.includes("published") && surface("A1").needs.includes("published"));
