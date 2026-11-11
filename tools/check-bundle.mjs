@@ -365,11 +365,27 @@ const HOME_HTML = join(DIST, "home.html");
  * KB), and the film of one delivery added (film/draw.js and film/engine.js,
  * a lazy chunk of ~25 KB, counted here because the whole graph is). Measured
  * 235 KB. The ceiling stays where it was: the film fits inside it.
+ *
+ * 2026-11-06, the arena (Kameel's decision that day: "three.js, loaded after
+ * paint"): the home page gets a three.js scene behind it, fetched by import()
+ * once the page has painted (home/arena/Arena.jsx → arena/scene.js). The
+ * page must still paint at today's weight, so this ceiling, 260 KB, now
+ * bounds the FIRST-PAINT graph only — the home entry and what it imports
+ * statically. Everything the home page reaches only by import() — the 2D
+ * film, the scene, three.js — is the LAZY graph, under a ceiling of its own,
+ * HOME_LAZY_LIMIT_KB, about 800 KB as decided. Measured that day: first
+ * paint 228 KB, lazy 582 KB (three.js alone 532 KB, shared with the pitch deck). Both graphs, static
+ * and lazy, stay clear of the eight signed-in markers, as before. And
+ * three.js must stay lazy: THREE_MARKER (a string in three's renderer) in
+ * the first-paint graph fails the build, and its absence from the lazy one
+ * means the scene went missing.
  */
 const HOME_LIMIT_KB = 260;
+const HOME_LAZY_LIMIT_KB = 800;
+const THREE_MARKER = "THREE.WebGLRenderer";
 const HOME_HTML_LIMIT_KB = 15;
 const homeProblems = [];
-let homeKB = 0;
+let homeKB = 0, homeLazyKB = 0;
 if (!existsSync(HOME_HTML)) {
   homeProblems.push("dist/home.html is missing — the home page has no build (vite.config.js's `home` entry)");
 } else {
@@ -379,8 +395,16 @@ if (!existsSync(HOME_HTML)) {
   if (!homeEntry) homeProblems.push("dist/home.html loads no assets/home-*.js — the home entry did not build");
   else {
     const whole = wholeGraph(homeEntry);
-    homeKB = Math.round(whole.reduce((n, f) => n + statSync(f).size, 0) / 1024);
+    const first = staticGraph(homeEntry);
+    const lazy = whole.filter((f) => !first.includes(f));
+    homeKB = Math.round(first.reduce((n, f) => n + statSync(f).size, 0) / 1024);
+    homeLazyKB = Math.round(lazy.reduce((n, f) => n + statSync(f).size, 0) / 1024);
     const text = whole.map((f) => readFileSync(f, "utf8")).join("\n");
+    const firstText = first.map((f) => readFileSync(f, "utf8")).join("\n");
+    const lazyText = lazy.map((f) => readFileSync(f, "utf8")).join("\n");
+    if (firstText.includes(THREE_MARKER)) homeProblems.push(`three.js is in the home page's first-paint graph ("${THREE_MARKER}" found) — the page must paint before the scene loads; import it lazily (home/arena/Arena.jsx)`);
+    else if (!lazyText.includes(THREE_MARKER)) homeProblems.push(`three.js is in no lazy chunk the home page reaches ("${THREE_MARKER}" not found) — the arena's scene went missing, or the marker went stale`);
+    if (homeLazyKB > HOME_LAZY_LIMIT_KB) homeProblems.push(`the home page's lazy graph (the film, the 3D scene, three.js) is ${homeLazyKB} KB; the ceiling is ${HOME_LAZY_LIMIT_KB} KB`);
     const rest = js.filter((f) => !whole.includes(f)).map((f) => readFileSync(f, "utf8"));
     if (!text.includes("/api/public/live")) homeProblems.push("the home graph does not read /api/public/live — it is not the home bundle");
     // SCRBRD-142 phase 3: the news section is mounted with its read.
@@ -390,7 +414,7 @@ if (!existsSync(HOME_HTML)) {
       else if (!rest.some((t) => t.includes(marker))) homeProblems.push(`${what}'s marker "${marker}" is in no chunk outside the home graph — the marker went stale`);
     }
     if (text.includes(DISPLAY_MARKER)) homeProblems.push(`the ground display is in the home page's graph ("${DISPLAY_MARKER}" found)`);
-    if (homeKB > HOME_LIMIT_KB) homeProblems.push(`the home page's graph is ${homeKB} KB; the ceiling is ${HOME_LIMIT_KB} KB`);
+    if (homeKB > HOME_LIMIT_KB) homeProblems.push(`the home page's first-paint graph is ${homeKB} KB; the ceiling is ${HOME_LIMIT_KB} KB`);
   }
   const htmlKB = Buffer.byteLength(page) / 1024;
   if (htmlKB > HOME_HTML_LIMIT_KB) homeProblems.push(`dist/home.html is ${htmlKB.toFixed(1)} KB; the ceiling is ${HOME_HTML_LIMIT_KB} KB`);
@@ -403,5 +427,5 @@ if (homeProblems.length) {
   console.error("  Not public/reads.js (the fold), not lib/firebase.js, not lib/api.js.");
   process.exit(1);
 }
-console.log(`BUNDLE CHECK: ${files.length} assets, ${FORBIDDEN.length} markers, 0 leaks · no client source reaches the rewards module · Firebase SDK, the views and the scorer outside the ${entryKB} KB entry graph (ceiling ${ENTRY_LIMIT_KB} KB) · the public pages' graph (${publicKB} KB static, ceiling ${PUBLIC_LIMIT_KB} KB; ${publicWholeKB} KB with the lazy ground display) holds none of the ${NOT_PUBLIC.length} signed-in markers · nor does the home page's (${homeKB} KB, ceiling ${HOME_LIMIT_KB} KB)`);
+console.log(`BUNDLE CHECK: ${files.length} assets, ${FORBIDDEN.length} markers, 0 leaks · no client source reaches the rewards module · Firebase SDK, the views and the scorer outside the ${entryKB} KB entry graph (ceiling ${ENTRY_LIMIT_KB} KB) · the public pages' graph (${publicKB} KB static, ceiling ${PUBLIC_LIMIT_KB} KB; ${publicWholeKB} KB with the lazy ground display) holds none of the ${NOT_PUBLIC.length} signed-in markers · nor does the home page's (first paint ${homeKB} KB, ceiling ${HOME_LIMIT_KB} KB; lazy film and 3D scene ${homeLazyKB} KB, ceiling ${HOME_LAZY_LIMIT_KB} KB)`);
 process.exit(0);

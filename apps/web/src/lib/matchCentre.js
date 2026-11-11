@@ -68,6 +68,39 @@ export function sidesOf(m) {
 }
 
 /**
+ * The other side of a fixture, named in full, from the reader's own end
+ * (`mySide`, the matches read's my_side); null where the read does not say
+ * which end is his. A fixture the other school hosts carries the host's
+ * `opponent` text, which names the reader's own side: this is the side he
+ * played against.
+ * @param {any} m  @returns {string | null}
+ */
+export function otherSideOf(m) {
+  if (m?.mySide !== "home" && m?.mySide !== "away") return null;
+  return sidesOf(m)[m.mySide === "home" ? "away" : "home"].full;
+}
+
+/**
+ * Rows that name a match and its opponent (a milestone, a personal best),
+ * with the opponent read from the fixture where the reader's matches read
+ * has it: the server's `opponent` is the host's, which names the boy's own
+ * side when the other school hosted. A row with no such fixture is unchanged.
+ * @template {{matchId?: string | null, opponent?: string | null}} R
+ * `nameOf` names the other side of one fixture (otherSideOf by default, the
+ * family's opponentOf for a child).
+ * @param {R[]} rows  @param {any[]} matches  @param {(m: any) => string | null} [nameOf]  @returns {R[]}
+ */
+export function withOpponents(rows, matches, nameOf = otherSideOf) {
+  if (!rows?.length || !matches?.length) return rows ?? [];
+  const byId = new Map(matches.map((m) => [m.id, m]));
+  return rows.map((r) => {
+    const m = r?.matchId ? byId.get(r.matchId) : null;
+    const o = m ? nameOf(m) : null;
+    return o && o !== r.opponent ? { ...r, opponent: o } : r;
+  });
+}
+
+/**
  * Which side of the fixture an innings' batting side is. The pad writes the
  * fixture's own names into innings_start (team1 is the home side's team code,
  * team2 the opponent), so they are compared as written; failing that, the

@@ -374,7 +374,9 @@ try {
   await afterReads(parent.page, 1200);
   const was = await inner(parent.page, `availability-was-${WHITFIELD}`);
   ok(`"The fixture has changed: …" is on his son's answer (${was})`, /The fixture has changed/.test(was), (await text(parent.page)).slice(0, 600));
-  ok(`...and the fixture shows the new time (${hm(MOVED)})`, (await text(parent.page)).includes(hm(MOVED)), (await text(parent.page)).slice(0, 600));
+  // The screen names the SA clock (lib/saTime.js), whatever clock this walk's browser keeps.
+  const saHm = (d) => new Date(d.getTime() + 2 * 3600e3).toISOString().slice(11, 16);
+  ok(`...and the fixture shows the new time (${saHm(MOVED)})`, (await text(parent.page)).includes(saHm(MOVED)), (await text(parent.page)).slice(0, 600));
   await beat(parent.page, 1200);
   ok("no console errors (parent, before play)", parent.errors.length === 0, parent.errors.join(" | "));
   await close(parent);

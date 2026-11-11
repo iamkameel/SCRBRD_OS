@@ -4,8 +4,8 @@ import { D, inkOn, textOn, themed } from "../design/tokens.js";
 import { atLeast, bookNote, fitnessColor, humanDate, stat } from "../lib/format.js";
 import { signedIn } from "../lib/api.js";
 import { can, filterRecord, holdsCapability } from "../rbac/index.js";
-import { Avatar, Badge, Card, EmptyState, Pill, RadarChart, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
-import { MIN_RADAR_AXES, RUBRIC_MAX, categoryMeans } from "../lib/radar.js";
+import { Avatar, Badge, Card, EmptyState, Pill, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
+import { OverallRadar } from "../ui/overallRadar.jsx";
 import { ShotHeatMap, ShotSpider, ShotWheel } from "../scorer/charts.jsx";
 import { WagonAnalysisPanel } from "../scorer/wagonAnalysisPanel.jsx";
 import { useLive, usePlayersWithCareerState, useRows, useSkills } from "../lib/live.js";
@@ -202,17 +202,15 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                   </Card>
                 )}
                 {skills&&(
-                  <Card sx={{padding:"14px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS RADAR</div>
-                    <div style={{display:"flex",justifyContent:"center"}}>
-                      {/* One axis per category the ratings actually carry. The demo
-                          groups by batting/bowling/fielding/fitness; live ratings by
-                          technical/mental/tactical/physical. Naming four axes here
-                          crashed the profile on every live player. */}
-                      {Object.keys(categoryMeans(skills)).length>=MIN_RADAR_AXES
-                        ? <RadarChart data={categoryMeans(skills)} max={RUBRIC_MAX} color={rCol} size={130}/>
-                        : <div data-testid="radar-too-few" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,lineHeight:1.5}}>Rated in fewer than three groups so far, too few for a radar. The Skills tab has every rating.</div>}
-                    </div>
+                  <Card sx={{padding:"14px"}} data-testid="profile-skills-radar">
+                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"10px"}}>SKILLS RADAR · OVERALL</div>
+                    {/* The Skills Matrix's Overall radar, the same component:
+                        his four groups, each the mean of its 1-20 ratings, and
+                        the overall beside them (Kameel, 6 Nov). A group with no
+                        rating is said, never drawn as a point at the centre, and
+                        the shape waits until all four are rated. From the
+                        skills read this page already made. */}
+                    <OverallRadar skills={skills} size={120} testId="profile-overall-radar"/>
                   </Card>
                 )}
                 <Card sx={{padding:"14px"}}>
@@ -239,7 +237,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
               </div>
 
               {/* Recent form */}
-              {p.form&&(
+              {p.form?.length>0&&(
                 <Card sx={{padding:"14px"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
                     <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>FORM (LAST 8)</div>

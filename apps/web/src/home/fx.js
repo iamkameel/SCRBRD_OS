@@ -1,4 +1,5 @@
 import { T } from "../design/tokens.js";
+import { arenaCss, interactCss } from "./hud.js";
 
 /**
  * The home page's own stylesheet: the film's stage, the reveals, the over in
@@ -69,8 +70,8 @@ body{overflow-x:clip}
    cards lift a little under a pointer. */
 .hb-card{transition:transform .18s ease,border-color .18s ease}
 .hb-card:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.28)}
-.hb-tile{transition:transform .2s ease,box-shadow .2s ease}
-.hb-tile:hover{transform:translateY(-3px);box-shadow:${T.elevation.lg}}
+${interactCss()}
+${arenaCss()}
 
 @media (prefers-reduced-motion:no-preference){
   html{scroll-behavior:smooth}

@@ -375,6 +375,11 @@ const SUITES = [
   // strip and news hidden on a 404, the analytics toggle writes the pref and
   // starts nothing, the 12px and 44px floors, the copy.
   ["home-page", "apps/web/test/home-page.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The home page's arena (Kameel, 6 Nov 2026): the rig's camera and ball, and which picture a device gets.
+  ["home-arena", "apps/web/test/home-arena.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // The newsfeed's kicker, standfirst, SA bands, per-viewer opened marks, and
+  // the generated covers: deterministic, decorative, drawing only the side.
+  ["news-feed", "apps/web/test/news-feed.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // SCRBRD-142 phase 2's switch on Settings → School and the line under the
   // Publish switch (the words held to the design, the line's forms), and
   // Fields → Add ground (every refusal in words, the route's limits).
@@ -445,6 +450,10 @@ const SUITES = [
   // The verifier's oracles and the midnight walks read sa_today(), the day the
   // product reads since db/128, not the UTC day (CI red 00:00-02:00 SAST, #233).
   ["sa-day",   "tools/sa-day.test.mjs"],
+  ["sa-time",  "apps/web/test/sa-time.test.mjs"],
+  // A boy with no career row still has a form guide (an empty one): the
+  // Analytics squad table fell over on it in the played-season demo.
+  ["career-merge", "apps/web/test/career-merge.test.mjs"],
   // The backup drill's tool (docs/pilot/BACKUP_RESTORE.md): which hosts are
   // this machine, the ledger and row-count comparisons, the roles a dump's
   // grants name, and a restore aimed anywhere else refused with exit 2.

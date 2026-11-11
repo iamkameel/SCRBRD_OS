@@ -309,7 +309,10 @@ export function ruleS3(c) {
   if (!p.select || !p.side || !c.readiness) return [];
   return c.readiness.filter((r) => r.selected && (r.side == null || r.side === c.gate.end)).flatMap((r) => {
     const restricted = p.status && r.clinicallyRestricted === true;
-    const state = restricted ? "restricted" : r.declaredStatus === "unavailable" ? "unavailable" : r.declaredStatus === "needs_reconfirming" ? "again" : null;
+    // "Asked again: the fixture has moved" is a question for before the start;
+    // once the match is under way the side is the side that is playing.
+    const again = r.declaredStatus === "needs_reconfirming" && (c.match?.status == null || c.match.status === "upcoming");
+    const state = restricted ? "restricted" : r.declaredStatus === "unavailable" ? "unavailable" : again ? "again" : null;
     if (!state) return [];
     const said = r.selfDeclared ? "said himself" : r.declaredByName ? `said by ${r.declaredByName}` : "said by the family";
     const line = state === "restricted" ? `${r.name} · restricted${r.returnDate ? ` · back ${shortDate(r.returnDate)}` : ""}`

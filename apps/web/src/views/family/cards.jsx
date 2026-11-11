@@ -9,7 +9,7 @@ import { T } from "../../design/tokens.js";
 import { useLive } from "../../lib/live.js";
 import { useNotifications } from "../../lib/notifications.js";
 import { ReadState } from "../../ui/primitives.jsx";
-import { resultText, teamOf } from "../../lib/matchCentre.js";
+import { resultText, teamOf, withOpponents } from "../../lib/matchCentre.js";
 import { humanDate } from "../../lib/format.js";
 import { fixturesOf, lineFor, noticesFor, opponentOf, endOf } from "../../lib/family.js";
 import { Board } from "../../ui/board.jsx";
@@ -128,7 +128,11 @@ export function LastMatchCard({ child, matches, onOpen, now, self = false }) {
  */
 export function SeasonCard({ child, role, self = false }) {
   const { rows: seasons } = useLive("career_by_season", role);
-  const { rows: rec } = useLive("recognition", role, 0, { playerId: child.id });
+  const { rows: read } = useLive("recognition", role, 0, { playerId: child.id });
+  const { rows: matches } = useLive("matches", role);
+  // The opponent from his own end of the fixture: the server's is the host's,
+  // which names his own side when the other school hosted.
+  const rec = withOpponents(read, matches, (m) => opponentOf(m, child));
   const s = seasons.find((r) => r.id === child.id && r.currentSeason) ?? null;
   const miles = rec.filter((x) => x.family === "milestone");
   const m = miles[0] ?? null;
@@ -221,7 +225,7 @@ export function TrainingCard({ child, role, now }) {
   const { rows, disabled } = useLive("training", role);
   if (disabled) return null;
   const next = rows.filter((t) => t.team === child.team && t.school === child.school && !t.cancelled && t.date
-    && Date.parse(`${t.date}T${t.time ?? "00:00"}:00Z`) >= now - 3600e3)
+    && Date.parse(`${t.date}T${t.time ?? "00:00"}:00+02:00`) >= now - 3600e3)   // date and time are SA (asTraining)
     .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))[0];
   if (!next) return null;
   return (

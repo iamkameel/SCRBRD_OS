@@ -21,6 +21,8 @@ import { MatchDayCard } from "./cockpit/MatchDayCard.jsx";
 import { RecentMatches } from "./cockpit/RecentMatches.jsx";
 import { weatherWords } from "../lib/cockpit.js";
 import { observedStamp } from "../lib/weatherStamp.js";
+import { saClock } from "../lib/saTime.js";
+import { sidesOf } from "../lib/matchCentre.js";
 
 // ══════════════════════════════════════════════════════
 //  THE DAY SHEET (DESIGN_DIRECTION §5) — replaces the KPI dashboard.
@@ -44,8 +46,8 @@ import { observedStamp } from "../lib/weatherStamp.js";
 // not this one's.
 // ══════════════════════════════════════════════════════
 
-/** HH:MM off a raw timestamp, sliced the way asMatch()'s own `time` field is — never through a Date object. */
-const hm = (ts) => (ts ? String(ts).slice(11, 16) : null);
+/** HH:MM of an instant on the SA clock, as asMatch()'s own `time` field is (lib/saTime.js). */
+const hm = (ts) => saClock(ts);
 
 /**
  * The demo's live innings, reconstructed from its scorecard line exactly as
@@ -210,7 +212,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
           <BentoCard level="b" title="Next fixture" data-testid="day-next">
             {next ? (
               <div data-testid={`next-fixture-${next.id}`}>
-                <div style={{ ...T.role.title.md, color: T.content.primary }}>{next.homeTeam} v {next.awayTeam}</div>
+                <div style={{ ...T.role.title.md, color: T.content.primary }}>{sidesOf(next).home.full} v {sidesOf(next).away.full}</div>
                 <div style={{ ...T.role.body, color: T.content.secondary, marginTop: T.space.xs }}>
                   {humanDateTime(next.date, next.time)}
                 </div>
