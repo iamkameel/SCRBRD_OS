@@ -313,7 +313,7 @@ export function SincePanel({ rows, history, player, staff, self }) {
  * `matchups`: S5 points are re-derived from the boy's matchups read, made
  * here only when one of his points stood on it, under the reader's own gate.
  */
-export function CoachingPoints({ points, history, playerId, staff, canWithdraw, nonce, now, onDone }) {
+export function CoachingPoints({ points, answered = true, history, playerId, staff, canWithdraw, nonce, now, onDone }) {
   const hasS5 = points.some((p) => p.read === "matchups");
   const [mu, setMu] = useState(/** @type {{rows: any[] | null, at: number | null}} */ ({ rows: null, at: null }));
   useEffect(() => {
@@ -332,7 +332,10 @@ export function CoachingPoints({ points, history, playerId, staff, canWithdraw, 
       <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginBottom: "10px", lineHeight: 1.5 }}>
         One sentence about him, on what it stood on. Not visible to him or his parents. Make one from a score on a strip, or from a card in the match-day drawer.
       </div>
-      {points.length === 0 && <div data-testid="coaching-points-none" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>No coaching point yet.</div>}
+      {/* "None" only of a read that answered (GA-I08): a read still coming is not an empty one. */}
+      {points.length === 0 && (answered
+        ? <div data-testid="coaching-points-none" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>No coaching point yet.</div>
+        : <div data-testid="coaching-points-reading" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>Reading the coaching points…</div>)}
       {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: D.roseText, marginBottom: "8px" }}>{said}</div>}
       <div style={{ display: "grid", gap: "12px" }}>
         {points.map((p) => {

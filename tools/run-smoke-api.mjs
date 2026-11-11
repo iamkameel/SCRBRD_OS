@@ -624,6 +624,13 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // the design's never-words, the hairline still under reduced motion, a
   // director refused by the server in words, four register states and no fifth.
   "browser-skills-history",
+  // GA-I27 slice 2 (C4): coaching points from a browser — "Make a coaching
+  // point of this" from S5 in the drawer and from a dot on the strip, the
+  // field refusing a never-word and another boy's name, S13 in the drawer,
+  // stood on / now after a voided ball ("corrected"), withdrawn and struck;
+  // read by the coach, the assistant and the director; never the team
+  // manager, the boy himself or his parent, by screen or by the read.
+  "browser-coaching-points",
   // The pilot's whole journey, end to end, the walk a founder's demo is
   // recorded from (RECORD_VIDEO=<dir>): the office schedules a fixture and
   // moves it, a parent answers for his son, the scorer scores on a phone with

@@ -594,7 +594,8 @@ function SkillsView({ role }) {
                 <Card sx={{marginBottom:"14px"}}><ReadState compact testId="points-read-state" read={readState(pointsRead,{what:"the coaching points"})} onRetry={retry}/></Card>
               )}
               {mayReadPoints&&readState(pointsRead,{what:"the coaching points"}).state!=="failed"&&(
-                <CoachingPoints points={pointsRead.rows} history={histRead.rows} playerId={selPlayer.id} staff={staffView}
+                <CoachingPoints points={pointsRead.rows} answered={["ok","empty"].includes(readState(pointsRead,{what:"the coaching points"}).state)}
+                  history={histRead.rows} playerId={selPlayer.id} staff={staffView}
                   canWithdraw={mayWithdrawPoint} nonce={nonce} now={Date.now()} onDone={()=>setNonce(n=>n+1)}/>
               )}
 
