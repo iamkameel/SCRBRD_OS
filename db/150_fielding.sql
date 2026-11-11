@@ -255,6 +255,9 @@ SELECT a.player_id,
 COMMENT ON VIEW player_fielding_by_season IS
   'db/150 (RECOGNITION R12): player_fielding_career per school season. Evidence for Fielder and Wicketkeeper of the Season, read under the career read''s scope.';
 
+-- Read, never written: the schema's default privileges hand the application
+-- INSERT and UPDATE on every new relation, and these are views of the log.
+REVOKE INSERT, UPDATE, DELETE ON fielding_credit, player_fielding_act, player_fielding_career, player_fielding_by_season FROM scrbrd_app;
 GRANT SELECT ON fielding_credit, player_fielding_act, player_fielding_career, player_fielding_by_season TO scrbrd_app;
 -- A managed host's API roles read neither (Supabase grants a new view to them).
 DO $hosted$
