@@ -14,6 +14,7 @@ import { Badge, BallDot, Card, Lbl, SignalBar } from "./ui.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { isSuperOver, pairPlace, superOverCommentary, superOverTitle } from "../lib/superOver.js";
 import { latestMilestones } from "./milestones.js";
+import { swallowFollowThrough } from "./followThrough.js";
 
 
 /* ═══════════════════════════════════════════════════════
@@ -187,7 +188,11 @@ function WagonWheel({ballLog=[],selSeg,onSel,onPlace,onPlacing,viewMode,onViewMo
             <circle cx={CX} cy={CY} r={150} fill="transparent" style={{cursor:"crosshair"}} data-testid="wagon-capture"
               onPointerDown={(e)=>{e.currentTarget.setPointerCapture?.(e.pointerId);place(pointFromEvent(e));}}
               onPointerMove={(e)=>{if(placing)place(pointFromEvent(e));}}
-              onPointerUp={(e)=>{const p=pointFromEvent(e)??placing;place(null);if(p)onPlace(p);}}
+              // The ball is placed as the finger lifts, and what replaces the
+              // field (the pad's Outcome keys) is drawn under it at once: the
+              // rest of this tap, the click the browser sends after it, is
+              // swallowed so it cannot press the key now there (followThrough.js).
+              onPointerUp={(e)=>{const p=pointFromEvent(e)??placing;place(null);if(p){swallowFollowThrough();onPlace(p);}}}
               onPointerCancel={()=>place(null)}/>
           )}
           {/* The live point, and the line to it. Shown before commit so the
