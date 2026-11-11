@@ -326,6 +326,19 @@ const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_
  * holds them durably, apart from the outbox, for exactly that).
  */
 export async function appendEvents(pool, secret, bearer, matchId, events) {
+  checkBatch(events);
+  return runAsPrincipal(pool, secret, bearer, (client, principal) =>
+    appendBatch(client, principal, FIXTURE_STORE, matchId, events));
+}
+
+/**
+ * A batch's shape, checked before any transaction opens: a non-empty array,
+ * every event with its identity, and a wicket's dismissal from the
+ * vocabulary (normalised in place). Throws a 400 naming the first fault;
+ * nothing has been written. Every log's batch passes it (pilot-api.mjs too).
+ * @param {IncomingEvent[]} events
+ */
+export function checkBatch(events) {
   if (!Array.isArray(events) || events.length === 0) { const e = /** @type {DressedError} */ (new Error("no_events")); e.status = 400; throw e; }
 
   // AN EVENT WITHOUT ITS IDENTITY CANNOT BE ANSWERED FOR. Every result bucket
@@ -370,9 +383,6 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
     }
     p.dismissal = d;
   }
-
-  return runAsPrincipal(pool, secret, bearer, (client, principal) =>
-    appendBatch(client, principal, FIXTURE_STORE, matchId, events));
 }
 
 /**

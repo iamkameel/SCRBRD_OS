@@ -228,6 +228,14 @@ export const REFUSAL_TEXT = Object.freeze({
   placement_invalid: "where the ball went was not recorded in a form the scorebook can hold",
   capture_profile_unknown: "the capture profile was not one the scorebook knows",
   value_refused: "a value in it is not one the scorebook can hold",
+  // Nor these: a Pilot Match's log holds no typed name (PILOT_MATCH_PHASE2
+  // §3.2, §3.4). The phone holds back an event a name slipped into
+  // (name_on_wire, lib/pilotWire.js); the server refuses one that arrives
+  // anyway (db/151 pilot_event_refusal()).
+  name_on_wire: "a player's name was in it, so this phone did not send it",
+  name_in_event: "a player's name was in it, and a Pilot Match's balls carry positions, not names",
+  unknown_slot: "it named a player who is not on this match's team lists",
+  free_text: "it carried words typed during play, which a Pilot Match does not send",
 });
 
 /**

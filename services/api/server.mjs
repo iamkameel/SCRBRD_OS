@@ -15,6 +15,7 @@
  *   POST /api/auth/sign-ins, …/claims/:id/confirm the ways a person signs in, and the office's claims
  *   GET  /api/session                             who am I, what am I assigned to
  *   GET  /api/read/:resource                      the governed read path
+ *   /api/pilot/…                                  Pilot Match phase 2 (write/pilot-api.mjs, db/151)
  *   POST /api/matches/:id/session/claim           take the scoring token
  *   POST /api/matches/:id/session/heartbeat       keep the lease alive
  *   POST /api/matches/:id/session/handover/arm    offer the token (needs a synced log)
@@ -124,6 +125,7 @@ import { publicNameRoutes } from "./write/public-name-api.mjs";
 import { scorebookRoutes, scorebookFileRoutes } from "./write/scorebook-api.mjs";
 // SCRBRD-124 phase 1: parent lift clubs (db/70).
 import { liftRoutes } from "./write/lift-api.mjs";
+import { pilotRoutes } from "./write/pilot-api.mjs";
 // Practice Match's live weather hint, from Google (2026-10-02): a hint, never
 // the match's record; nothing stored (weather/weather-api.mjs).
 import { weatherRoutes, weatherConfig } from "./weather/weather-api.mjs";
@@ -526,6 +528,9 @@ const scorebook = scorebookRoutes({ pool, secret: SECRET, store: pageStore });
 const scorebookFiles = scorebookFileRoutes({ pool, secret: SECRET, store: pageStore });
 // SCRBRD-124 phase 1: parent lift clubs (db/70).
 const lifts = liftRoutes({ pool, secret: SECRET });
+// Pilot Match phase 2 (db/151): its own schema, behind two switches that db/151
+// leaves off. Every per-match route answers one not-found to anybody but the owner.
+const pilot = pilotRoutes({ pool, secret: SECRET });
 // The key is read once, here, and goes nowhere but Google's header. Unset,
 // the hint answers 503 weather_unavailable and the scorer picks by hand.
 // Only an enrolled account may spend the quota (db/81's app_enrolled()): a
@@ -1157,6 +1162,28 @@ const LIFT_ROUTES = [
   [/^\/api\/lifts\/([0-9a-f-]{36})\/purge$/,            "POST", lifts.purge],
   [/^\/api\/lift-declarations\/([0-9a-f-]{36})\/purge$/, "POST", lifts.purgeDeclaration],
 ];
+
+/**
+ * Pilot Match phase 2 (write/pilot-api.mjs, db/151). The id is the match's
+ * uuid; anything else is not one of these routes.
+ * @type {Route[]}
+ */
+const PILOT_ROUTES = [
+  [/^\/api\/pilot\/status$/,                                  "GET",  pilot.status],
+  [/^\/api\/pilot\/mine$/,                                    "GET",  pilot.mine],
+  [/^\/api\/pilot\/matches$/,                                 "POST", pilot.create],
+  [/^\/api\/pilot\/delete-all$/,                              "POST", pilot.removeAll],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})$/,                      "GET",  pilot.header],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/names$/,               "GET",  pilot.names],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/names$/,               "POST", pilot.putNames],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/session\/claim$/,      "POST", pilot.claim],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/session\/heartbeat$/,  "POST", pilot.heartbeat],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/events$/,              "POST", pilot.append],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/events$/,              "GET",  pilot.list],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/finish$/,              "POST", pilot.finish],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/abandon$/,             "POST", pilot.abandon],
+  [/^\/api\/pilot\/([0-9a-fA-F-]{36})\/delete$/,              "POST", pilot.remove],
+];
 // ── end SCRBRD-124 ──
 
 /** @type {Route[]} */
@@ -1339,10 +1366,11 @@ async function servePad(req, res) {
 /**
  * The write routes that keep their own once-only rule and stand outside the
  * Idempotency-Key unit (see the dispatcher): ball events, keyed per event in
- * the batch. (The push fan-out was the other; its route is closed since S2.)
+ * the batch — a fixture's, and a Pilot Match's. (The push fan-out was the
+ * other; its route is closed since S2.)
  * @type {Set<unknown>}
  */
-const OWN_DEDUP = new Set([events.append]);
+const OWN_DEDUP = new Set([events.append, pilot.append]);
 
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return json(res, 204, {});
@@ -1459,7 +1487,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    for (const [pattern, method, handler, module] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES, ...SAFEGUARDING_ROUTES, ...LIFT_ROUTES]) {
+    for (const [pattern, method, handler, module] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES, ...SAFEGUARDING_ROUTES, ...LIFT_ROUTES, ...PILOT_ROUTES]) {
       const m = req.method === method && pattern.exec(path);
       if (!m) continue;
       // The write side of the module gate, in the one place every write route

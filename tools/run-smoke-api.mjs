@@ -37,6 +37,8 @@ import { readdirSync } from "node:fs";
 // previous walk's writes would make them pass or fail for the wrong reason.
 const WALKS = [
   "read", "sync", "handover", "handover-crash", "fold",
+  // Pilot Match phase 2 (db/151): the write path, the grant, the one not-found.
+  "pilot-sync",
   // A handover verifies against THIS innings, penalty runs included (SCRBRD-088, db/45).
   "handover-innings",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
