@@ -9,8 +9,9 @@
  * answers are compared as JSON. Fields this tree adds and the ref never had
  * are reported, never hidden: a log that carries none of the new event
  * fields must fold to exactly the ref's answer, key for key; the only
- * addition allowed is a new key whose value is empty (facts.fielding: [] on
- * a log that names no fielder by reference) or the facts' version stamp.
+ * additions allowed are the facts' new keys (NEW_KEYS: facts.fielding empty
+ * on a log that names no fielder by reference, facts.unattributed) and the
+ * facts' version stamp.
  *
  *   SCRBRD_DB=r12 SCRBRD_DB_PORT=5433 node tools/replay-equality.mjs [--ref origin/main] [--db demo_season ...]
  *
@@ -42,8 +43,13 @@ const after = await import(pathToFileURL(join(ROOT, "packages/scoring/src/index.
 
 /** The fields an event may carry here that the ref's events never did. */
 const NEW_EVENT_FIELDS = ["fielders"];
-/** The answer's keys this tree adds, which must be empty for a log without the new fields. */
-const NEW_EMPTY_KEYS = new Set(["fielding"]);
+/**
+ * The answer's keys this tree adds, and what each must be for a log without
+ * the new fields: no fielding line (nobody is named), and a count of the
+ * fielding wickets the log cannot attribute, which is new and any number.
+ * @type {Record<string, (v: unknown) => boolean>}
+ */
+const NEW_KEYS = { fielding: (v) => Array.isArray(v) && v.length === 0, unattributed: (v) => Number.isInteger(v) };
 
 /** @param {any} engine @param {any[]} log @param {any} ctx */
 function answer(engine, log, ctx) {
@@ -66,7 +72,7 @@ function differences(/** @type {any} */ a, /** @type {any} */ b, path = "") {
     const p = path ? `${path}.${k}` : k;
     if (!(k in a)) {
       // A key the ref never had: allowed only as an empty list, or the stamp.
-      if (NEW_EMPTY_KEYS.has(k) && Array.isArray(b[k]) && b[k].length === 0) continue;
+      if (path === "facts" && NEW_KEYS[k]?.(b[k])) continue;
       out.push(`${p} (new)`);
       continue;
     }

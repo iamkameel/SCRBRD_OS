@@ -41,6 +41,23 @@ const UNRECORDED_ZERO = (/** @type {string} */ alias, /** @type {string} */ col)
  * (from `book`, over summary_batting_line) is how many of his batting innings
  * came from a scorebook, for the screens' one-line note.
  */
+/**
+ * A boy's fielding and keeping (RECOGNITION R12, db/150), from the fielding
+ * view joined as `fld`: catches and run outs where a wicket names him, and
+ * his keeping record. Nought where he has no row — a count of acts, and a
+ * wicket that names nobody is nobody's (the Awards tab says so). On the
+ * by-season read only: the lifetime `career` read's estimated cost crossed
+ * PostgreSQL's JIT optimisation threshold with the keeping record joined
+ * (seven seconds compiling on the demo season), so the Awards tab sums a
+ * boy's seasons for "every season" instead (seasonAwards.js
+ * fieldingForSeason). player_fielding_career is there for a reader of one boy.
+ */
+const FIELDING_COLUMNS = `coalesce(fld.catches, 0)::int         as catches,
+                  coalesce(fld.run_outs, 0)::int        as run_outs,
+                  coalesce(fld.keeping_catches, 0)::int as keeping_catches,
+                  coalesce(fld.stumpings, 0)::int       as stumpings,
+                  coalesce(fld.innings_kept, 0)::int    as innings_kept,`;
+
 const UNRECORDED_COLUMNS = `coalesce(unrec.innings_without_balls, 0)::int      as innings_without_balls,
                   coalesce(unrec.runs_without_balls, 0)::int         as runs_without_balls,
                   coalesce(unrec.innings_without_boundaries, 0)::int as innings_without_boundaries,
@@ -3116,6 +3133,7 @@ export const READ_QUERIES = {
                   ${UNRECORDED_ZERO("bowl", "wides")}
                   ${UNRECORDED_ZERO("bowl", "no_balls")}
                   ${UNRECORDED_COLUMNS}
+                  ${FIELDING_COLUMNS}
                   coalesce(bowl.wickets, 0)              as wickets
              from (select * from player_batting_by_season    where $1::text is null or season = $1) bat
              -- USING merges the keys, so a player who only bowled in a season
@@ -3123,6 +3141,10 @@ export const READ_QUERIES = {
              full join (select * from player_dismissals_by_season where $1::text is null or season = $1) dis
                using (player_id, season)
              full join (select * from player_bowling_by_season    where $1::text is null or season = $1) bowl
+               using (player_id, season)
+             -- RECOGNITION R12 (db/150): a boy who only fielded or kept in a
+             -- season has his row for it too.
+             full join (select * from player_fielding_by_season   where $1::text is null or season = $1) fld
                using (player_id, season)
              join player p on p.id = player_id
              -- Aliased apart from the merged key: a second bare season would

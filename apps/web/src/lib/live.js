@@ -1244,6 +1244,13 @@ export function asCareer(r) {
     // such; undefined would crash the .map() that draws it.
     form: Array.isArray(r.form) ? r.form.map(Number) : [],
     bowlAvg: wkts > 0 ? round2(conceded / wkts) : null,
+    // Fielding and keeping (RECOGNITION R12, db/150), on the by-season read:
+    // the catches and run outs a wicket names him for, and his keeping
+    // record. A count of what the log credits him with, so nought is
+    // "nothing credited", never "dropped nothing".
+    catches: Number(r.catches ?? 0), runOuts: Number(r.run_outs ?? 0),
+    keepingCatches: Number(r.keeping_catches ?? 0), stumpings: Number(r.stumpings ?? 0),
+    inningsKept: Number(r.innings_kept ?? 0),
     live: true,
   };
 }

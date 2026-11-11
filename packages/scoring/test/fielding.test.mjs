@@ -16,6 +16,8 @@
  *   E. the facts: fielding lines for linked boys only, never a super over,
  *      never a scorebook card; a corrected log's credit goes with its ball
  *   F. P8: a no-ball's four all run is runs and no four, in the fold and the facts
+ *   G. Player of the Match: fielding counts where every fielding wicket names
+ *      its fielders, and D17's line goes; otherwise batting and bowling only
  *
  *   node packages/scoring/test/fielding.test.mjs
  */
@@ -23,6 +25,8 @@ import {
   deriveInnings, deriveMatch, MatchFold, lawsRefusal, REFUSAL, REFUSAL_TEXT, likelyCause,
   inningsStart, batters, bowler, ball, keeper, voidEvent, toRow, fromRow, BALL_TYPE,
   fieldingCredits, fieldersFit, FIELDED_DISMISSALS, FIELDER_REF_MAX, deriveFacts,
+  suggestPlayerOfMatch, matchFigures, figuresWords, potmBasis, basisWords, POTM_BASIS, POTM_BASIS_FIELDING, POTM_BASES,
+  BASIS_WORDS, FIELDING_WEIGHT,
 } from "../src/index.mjs";
 
 let pass = 0, fail = 0;
@@ -192,6 +196,36 @@ group("F. P8: a no-ball's four all run");
   ok("a no-ball carrying a run out after four all run folds", deriveMatch([...opening(), ...at(
     ball({ type: BALL_TYPE.NO_BALL, value: 4, nbType: "front_foot", boundary: false, dismissal: "run_out", fielders: [F1.id], outAt: "bowler_end" }))])
     .innings[0].wickets === 1);
+}
+
+group("G. Player of the Match: the basis, and fielding in the order");
+{
+  const sheet = FIELD.map((p) => p.id);
+  // Fred takes two catches and a run out; Will bowls, one wicket his.
+  const named = [...opening(), ...at(
+    W({ dismissal: "caught", fielder: F1.name, fielders: [F1.id] }), next(2),
+    W({ dismissal: "caught", fielder: F1.name, fielders: [F1.id] }), next(3),
+    W({ dismissal: "run_out", fielder: F1.name, fielders: [F1.id] }), next(4),
+    W({ dismissal: "bowled" }),
+  )];
+  const f = deriveFacts(named, sheet);
+  ok("every fielding wicket named: nothing unattributed, the fielding basis", f.unattributed === 0 && potmBasis(f) === POTM_BASIS_FIELDING);
+  ok("...and D17's line is dropped", basisWords(POTM_BASIS_FIELDING) === null && basisWords(POTM_BASIS) === BASIS_WORDS);
+  const s1 = suggestPlayerOfMatch(f, sheet);
+  ok("the fielder is suggested on his fielding: 3 x ten against the bowler's 3 x twenty",
+     s1[0]?.playerId === W1.id && s1[1]?.playerId === F1.id && FIELDING_WEIGHT === 10, s1);
+  ok("...his figures in words", s1[1]?.figures === "2 catches · 1 run out", s1);
+  const unnamed = named.map((e) => (e.kind === "ball" && e.dismissal === "run_out" ? strip(e) : e));
+  const g = deriveFacts(unnamed, sheet);
+  ok("one wicket naming nobody: fielding unknown, batting and bowling only", g.unattributed === 1 && potmBasis(g) === POTM_BASIS);
+  ok("...and the fielder is not suggested on it", !suggestPlayerOfMatch(g, sheet).some((x) => x.playerId === F1.id));
+  ok("a stored basis is read as stored: the old basis over the new log leaves fielding out",
+     !suggestPlayerOfMatch(f, sheet, undefined, POTM_BASIS).some((x) => x.playerId === F1.id)
+     && matchFigures(f, [F1.id], POTM_BASIS)[0].field === undefined);
+  ok("facts from before R12 (no count) are the old basis", potmBasis({}) === POTM_BASIS && POTM_BASES.length === 2);
+  ok("a boy who only fielded is 'did not bat or bowl' with nothing to name, else his fielding",
+     figuresWords({ playerId: "x", bat: null, bowl: null, field: null }) === "Did not bat or bowl"
+     && figuresWords({ playerId: "x", bat: null, bowl: null, field: { catches: 1, stumpings: 1, runOuts: 0 } }) === "1 catch · 1 stumping");
 }
 
 console.log(`\nFIELDING: ${pass} passed, ${fail} failed`);

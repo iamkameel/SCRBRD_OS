@@ -239,6 +239,8 @@ const CHECK_REASON = {
   // db/68's door: what the Laws refuse at commit (Law 39, SCRBRD-126), for a
   // row that reaches the table another way — a held event released.
   ball_event_stumped_by_keeper: "stumped_not_keeper",
+  // db/150's door (RECOGNITION R12, P2): the fielders a way out may name.
+  ball_event_wicket_fielders: "fielders_invalid",
 };
 
 /**

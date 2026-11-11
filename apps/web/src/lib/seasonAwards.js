@@ -129,6 +129,59 @@ export function topWicketTakers(players, opts = {}) {
     .slice(0, opts.limit ?? 10);
 }
 
+/** The fielding and keeping figures a season row carries (RECOGNITION R12). */
+const FIELDING_KEYS = ["catches", "runOuts", "keepingCatches", "stumpings", "inningsKept"];
+
+/**
+ * The fielding ranking's input (RECOGNITION R12): one season's rows, laid
+ * over the players as playersForSeason() lays them; for every season, each
+ * player's fielding summed over his seasons — the lifetime career read does
+ * not carry it (read-api.mjs FIELDING_COLUMNS) — and nobody who fielded in
+ * none of them is in it. Every other figure is the player's own.
+ * @param {any[]} players     usePlayersWithCareer() rows
+ * @param {any[]} seasonRows  asSeasonCareer() rows, every season
+ * @param {string} season     a season's label, or ALL_SEASONS
+ */
+export function fieldingForSeason(players, seasonRows, season) {
+  if (season !== ALL_SEASONS) return playersForSeason(players, seasonRows, season);
+  /** @type {Map<string, any>} */
+  const sum = new Map();
+  for (const r of seasonRows) {
+    if (!r?.id) continue;
+    const s = sum.get(r.id) ?? Object.fromEntries(FIELDING_KEYS.map((k) => [k, 0]));
+    for (const k of FIELDING_KEYS) s[k] += Number(r[k] ?? 0);
+    sum.set(r.id, s);
+  }
+  const byId = new Map(players.map((p) => [p.id, p]));
+  return [...sum].map(([id, s]) => { const p = byId.get(id); return p ? { ...p, ...s } : { id, ...s }; });
+}
+
+/** A fielder's dismissals: the catches and run outs a wicket names him for. */
+export const fieldingDismissals = (p) => (p.catches ?? 0) + (p.runOuts ?? 0);
+/** A keeper's dismissals: his catches and stumpings as the wicket-keeper. */
+export const keepingDismissals = (p) => (p.keepingCatches ?? 0) + (p.stumpings ?? 0);
+
+/**
+ * The season's leading fielders (RECOGNITION R12): catches and run outs,
+ * each run out his whoever else is named in it (the contribution rule), a
+ * catch taken keeping among them. A plain count, as the run-scorers'.
+ * Nobody with none credited is listed.
+ */
+export function topFielders(players, opts = {}) {
+  return scoped(players, opts)
+    .filter((p) => fieldingDismissals(p) > 0)
+    .sort((a, b) => fieldingDismissals(b) - fieldingDismissals(a) || (b.catches ?? 0) - (a.catches ?? 0))
+    .slice(0, opts.limit ?? 10);
+}
+
+/** The season's leading wicket-keepers: dismissals as the keeper on the record, stumpings breaking a tie. */
+export function topKeepers(players, opts = {}) {
+  return scoped(players, opts)
+    .filter((p) => keepingDismissals(p) > 0)
+    .sort((a, b) => keepingDismissals(b) - keepingDismissals(a) || (b.stumpings ?? 0) - (a.stumpings ?? 0))
+    .slice(0, opts.limit ?? 10);
+}
+
 /**
  * Best batting index — the average/strike-rate blend battingIndex() computes
  * — for whoever clears MIN_BALLS_FACED. Below the floor, absent, not last.
@@ -200,7 +253,7 @@ export function showsRankings(held) {
  * The method of each ranking, in plain words, for the staff who see it
  * (D22: "ordered by the metric with its minimum qualification stated").
  * `season` is the Awards tab's choice: a season's label, or ALL_SEASONS.
- * @param {"runs"|"wickets"|"batting"|"bowling"|"mvp"|"average"|"wicketCount"} kind
+ * @param {"runs"|"wickets"|"batting"|"bowling"|"mvp"|"average"|"wicketCount"|"fielding"|"keeping"} kind
  * @param {string|null} [season]
  */
 export function rankingMethod(kind, season = null) {
@@ -213,6 +266,9 @@ export function rankingMethod(kind, season = null) {
     case "mvp": return `Ranked by the batting and bowling index${over}, averaged where a player has both, highest first. Only players who have faced ${MIN_BALLS_FACED} balls or bowled ${MIN_BALLS_BOWLED}; never a rating either index refused.`;
     case "average": return `Ranked by batting average${over}, highest first. No minimum number of innings or balls.`;
     case "wicketCount": return `Ranked by wickets taken${over}, most first. No minimum number of balls.`;
+    // RECOGNITION R12: from the wickets the scorer named a fielder for.
+    case "fielding": return `Ranked by catches and run outs${over}, most first; level, more catches first. Each fielder named in a run out has it. Only wickets the scorer named the fielder for: one recorded without its fielder counts for nobody.`;
+    case "keeping": return `Ranked by dismissals as wicket-keeper${over}, catches and stumpings, most first; level, more stumpings first.`;
     default: return "";
   }
 }
