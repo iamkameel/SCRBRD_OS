@@ -127,6 +127,8 @@ try {
   cr = await api("/api/pilot/matches", { method: "POST", token: ta, body: CREATE });
   ok("the owner creates the match", cr.body?.ok === true, cr.text);
   ok("...again, the same answer (idempotent)", (await api("/api/pilot/matches", { method: "POST", token: ta, body: CREATE })).body?.ok === true);
+  ok("...and the venue it was sent is not kept (review S4)",
+     (await sql(`select venue_name from pilot.match where id = $1`, [M])).rows[0]?.venue_name === null);
   const head = await api(`/api/pilot/${M}`, { token: ta });
   ok("the header: live, two sides, eight slots, no position kept", head.body?.status === "live" && head.body?.sides?.length === 2
      && head.body?.slots?.length === 8 && !/"lat"|"lon"|-29\.54/.test(head.text), head.text);
@@ -253,6 +255,9 @@ try {
   ok("...it is in pilot.held, and the log did not grow",
      (await sql(`select count(*)::int n from pilot.held where match_id = $1 and resolved_at is null`, [M])).rows[0].n === 1
      && (await sql(`select count(*)::int n from pilot.ball_event where match_id = $1`, [M])).rows[0].n === rows.length);
+  const heldKeys = (await sql(`select distinct k from pilot.held h, jsonb_object_keys(h.body) k where match_id = $1`, [M])).rows.map((r) => r.k);
+  ok("...its body is the server's own few fields, nothing the client named (review S2)",
+     heldKeys.length > 0 && heldKeys.every((k) => ["epoch", "idempotencyKey", "innings", "clientSeq", "clientTs", "payload"].includes(k)), heldKeys.join());
 
   group("G. What the server holds");
   const dump = (await sql(`select coalesce(string_agg(t, E'\\n'), '') d from (
@@ -263,7 +268,7 @@ try {
       union all select row_to_json(x)::text from pilot.slot x where match_id = $1
       union all select row_to_json(x)::text from pilot.session x where match_id = $1
       union all select row_to_json(x)::text from pilot.audit x where match_id = $1) z`, [M])).rows[0].d;
-  ok("a dump of every pilot row but the names: no typed name", dump.length > 1000 && !/canarytest|Walk Home Two|Walk Away One/i.test(dump), dump.slice(0, 200));
+  ok("a dump of every pilot row but the names: no typed name", dump.length > 1000 && !/canarytest|Walk Home Two|Walk Away One|Walk Oval/i.test(dump), dump.slice(0, 200));
   ok("...the balls carry slot ids", dump.includes(H[0]) && dump.includes(W[0]));
   ok("pilot.name holds the canary, as typed", (await sql(`select count(*)::int n from pilot.name where match_id = $1 and typed_name = $2`, [M, CANARY])).rows[0].n === 1);
   ok("no ball_event, match or player row was written for it",

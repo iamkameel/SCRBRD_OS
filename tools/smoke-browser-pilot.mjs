@@ -295,6 +295,10 @@ try {
      requests.filter((r) => PLAYERS.some((n) => (r.url + r.body).includes(n))).map((r) => r.url).join(" "));
   const row = await one(`select owner_user_id, venue_name, weather from pilot.match where id = $1`, [uuidA]);
   ok("the match is the scorer's own, with no position anywhere", row?.owner_user_id === SCORER_ID && !/"lat"|"lon"/.test(JSON.stringify(row)), JSON.stringify(row));
+  const sidesA = (await sql(`select school, display_name from pilot.side where match_id = $1 order by side`, [uuidA])).rows;
+  ok("...no venue kept, and the sides sent as Home and Away, since its names stay here (review S4)",
+     row?.venue_name === null && sidesA.length === 2 && sidesA.every((r) => /^(Home|Away)$/.test(r.school))
+     && !sidesA.some((r) => /Hilton|Kearsney/.test(r.school + r.display_name)), JSON.stringify(sidesA));
   ok("the pad, attached, offers no handover to another person (§3.1)", !(await phoneA.has("open-handover")));
   await phoneA.shot("w1-sent");
 
