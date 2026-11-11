@@ -1,5 +1,8 @@
 # Public by terms: the opt-out model for a child's name on public pages
 
+**Status: approved by Kameel, 11 Nov 2026 (10:42 SAST): "All 9 as recommended".** Counsel answers §0's questions before any slice that publishes ships; slice 1 (the stream caption) does not wait.
+
+
 **Status:** design, for Kameel's review (Fable, 11 Nov 2026; revised the same day after an Opus review). Nothing is built. Nothing ships before counsel answers §8 and the information officer re-signs PUBLIC_DATA. Slice 1 (the stream caption) is the exception: it fixes a defect that exists today and should not wait.
 **Kameel's decision this answers (11 Nov 2026):** "My agreeing to the Terms & Condition, parents and kids automatically accept to having some details completely public. Privacy setting will be available for them to disable data and information they choose to hide from public view." He chose "Move to opt-out by terms" over keeping opt-in.
 **Read:** `CLAUDE.md`; `docs/policy/PUBLIC_DATA.md`; `CONSENT_V2.md`; `GUARDIAN_TERMS.md`; `SCRBRD-083_public_pages.md` (§0–§3, §6, phase 2); `RECOGNITION_design.md` §2, §3; `READERS_child_data.md` (rules, K, M, conflict 7); `apps/web/src/views/publicname.jsx`; `services/api/public/redact.mjs` (header, `nameFor`); `ACCOUNT_LIFECYCLE.md` §3.4, §4.1–4.2; `SAFEGUARDING_DSO.md` §2, §6.1, Q7; `ACCESS_REQUESTS.md` D4, §3.1, §4 rows K, K2, M; `INCIDENTS_AND_BREACHES.md` §3.2–3.3, §4.3, §6.1. All at `origin/main` on 11 Nov.
