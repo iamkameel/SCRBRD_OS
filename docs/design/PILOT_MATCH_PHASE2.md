@@ -139,6 +139,12 @@ Above the first name field, in the setup step and before any name exists (POPIA 
 
 The label on every pilot screen changes from "Practice match · kept on this phone" to **"Pilot match · names kept private"**. A new `STATE_WORDS.pilot` goes beside the old one, which stays for phase 1 matches.
 
+**Kameel's approval (12 Nov 2026, 00:01 SAST, on the Build Board): approve both lines and the rule.**
+
+1. While names stay on the phone, above the first name field: "These names stay on this phone. SCRBRD is sent the score and each player's position, never a name. Delete the match and the names go at once."
+2. At setup, for an account not granted: "Your account can't send Pilot Matches. This match will stay on this phone."
+3. The rule: a match's names leave the phone only if the notice its scorer saw said they would; matches started before name upload was switched on keep their names on the phone.
+
 ---
 
 ## 4 · Who reads a Pilot Match, signed in
