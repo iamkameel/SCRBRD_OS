@@ -1,6 +1,6 @@
 import { T, contrast } from "../../design/tokens.js";
 import { chipFill } from "../../ui/board.jsx";
-import { teamOf } from "../../lib/matchCentre.js";
+import { oversOf, teamOf } from "../../lib/matchCentre.js";
 import { Icon } from "../../ui/icons.jsx";
 import { SideName } from "./bits.jsx";
 import { BEAT_WORD, overSummaryText } from "../../lib/announce.js";
@@ -109,6 +109,48 @@ export function Highlights({ match, innings, commentary }) {
           </ol>
         </div>
       ))}
+    </section>
+  );
+}
+
+// ── CRI-1.7: the result view (G15) ──
+
+/**
+ * After full time the Summary is the result, not the live board (CRI-1.7):
+ * the result sentence the header says, on the board's own black face, with
+ * every innings' total under it — the match's innings, then a super over's —
+ * and, below it, each innings in the facts the innings break gives (its top
+ * scorers, its best bowling). Every figure is the fold's; every name is the
+ * one the page's log carries, so on the public page it is the name rule's
+ * (publicName(): an initial and surname with consent, else "Batter").
+ */
+export function ResultBoard({ match, innings, result, testid = "mc-result-view" }) {
+  const B = T.board;
+  const rows = innings.map((inn, i) => ({ inn, i })).filter(({ inn }) => !!inn);
+  return (
+    <section data-testid={testid} aria-label="Result"
+      style={{ background: B.face, color: B.figure, borderRadius: T.radius.lg, border: `1px solid ${B.rule}`, padding: `${T.space.md} ${T.space.lg}`,
+        display: "grid", gap: T.space.sm }}>
+      <span style={{ ...T.role.label, color: B.dim }}>Result</span>
+      <p data-testid="mc-result-sentence" style={{ ...T.role.title.md, color: B.figure, margin: 0, overflowWrap: "anywhere" }}>{result || "Match complete"}</p>
+      {rows.length > 0 && (
+        <ol style={{ listStyle: "none", margin: 0, padding: 0, borderTop: `1px solid ${B.rule}` }}>
+          {rows.map(({ inn, i }) => (
+            <li key={i} data-testid="mc-result-row" data-innings={i}
+              style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: `0 ${T.space.md}`,
+                padding: `${T.space.xs} 0`, borderBottom: `1px solid ${B.rule}` }}>
+              <span style={{ ...T.role.body, color: B.figure, minWidth: 0, overflowWrap: "anywhere" }}>
+                {inn.superOver != null && <span style={{ color: B.dim }}>{superOverTitle(inn.superOver)} · </span>}
+                <SideName side={teamOf(match, inn.battingTeam)}/>
+              </span>
+              <span style={{ fontFamily: T.type.mono, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                <span data-testid="mc-result-total" style={{ ...T.role.figure.md, color: B.figure }}>{inn.runs}/{inn.wickets}</span>
+                <span style={{ fontFamily: T.type.body, fontSize: "13px", color: B.dim }}> ({oversOf(inn.balls)} ov)</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
     </section>
   );
 }

@@ -2561,6 +2561,20 @@ migrator refuses something.
    section there, and the verify bundle runs the whole file against
    production after each paste.
 
+**A migration re-runs harmlessly: that is the house rule** (Kameel, 6 Nov
+2026, on Fable's red-team of db/145 and db/146). A hand-written `db/NN` is
+written so that pasting it a second time changes nothing and raises nothing:
+`IF NOT EXISTS`, `CREATE OR REPLACE`, `ON CONFLICT DO NOTHING`, a `DROP …
+IF EXISTS` before what it re-makes, and an md5 guard that accepts the body it
+replaces **and** its own. It does not refuse a second run. A paste that fails
+half-way leaves the editor's transaction rolled back, or, run statement by
+statement, part applied; either way the remedy is to paste the same file
+again, and a file that refused its own second run would block exactly that.
+Running ahead of a predecessor is still refused (the guard names what is
+missing), and the ledger still refuses a file that *changed* after it ran.
+`db/142`–`db/146` are written this way, and the header of each says "Safe to
+run twice".
+
 ### The procedure
 
 1. Write `db/NN_*.sql`, the next number after the highest in `db/`, and add

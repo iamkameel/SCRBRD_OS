@@ -4,7 +4,8 @@ import { useTheme } from "../design/theme.js";
 import { humanDate } from "../lib/format.js";
 import { useLive } from "../lib/live.js";
 import { canScore, holdsCapability } from "../rbac/index.js";
-import { schoolsWhere } from "../lib/session.js";
+import { profile, schoolsWhere } from "../lib/session.js";
+import { ENTERABLE, mayEnterScoring } from "../lib/enterScoring.js";
 import { Btn, Card, ReadState, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { MatchView } from "./matchcentre/MatchView.jsx";
@@ -186,6 +187,11 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
   // Opens a fixture's own Match Centre — the "next fixture" links (item 4)
   // and, from the list itself, the ordinary "Open match" button.
   const openFixture = (m) => { setSelMatch(null); setOpenM(m); };
+  // CRI-1.4, and the list since (Kameel, 6 Nov): a fixture's scorer button — the match page's "Enter scoring"
+  // and the list's "Open Live Scorer" alike — only where one of this person's assignments grants the scoring
+  // routes' own capability over THAT fixture (lib/enterScoring.js). The demonstration has no session and no
+  // server to refuse it, so its role decides there.
+  const scoresHere = (m) => (signedIn() ? mayEnterScoring(profile()?.assignments, m) : canScore(role) && ENTERABLE.includes(m.status));
   const teamResults = (label) => { setOpenM(null); setTeamFilter(label); setFilter("complete"); };
   if (sbOpen) {
     return (
@@ -197,8 +203,9 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
     // The row as the list has it now, so a live fixture that has moved on
     // (a result, a new status) is the one the view shows.
     const fresh = MATCHES.find((m) => m.id === openM.id) ?? openM;
+    const enters = scoresHere(fresh);
     return (
-      <MatchView match={fresh} role={role} onClose={() => { setOpenM(null); setCoachOn(null); }} canScoreIt={canScore(role)}
+      <MatchView match={fresh} role={role} onClose={() => { setOpenM(null); setCoachOn(null); }} canScoreIt={enters}
         initialTab={coachOn?.tab ?? null} initialDrawer={coachOn?.drawer ?? false} initialCorrections={coachOn?.corrections ?? false}
         route={{ tab: route?.matchId === fresh.id ? route.tab : null, setTab: (t) => navigate(appPath(fresh.id, t)) }}
         onOpenScorer={onOpenScorer} onNavProfile={onNavProfile} onNav={onNav} onOpenDuties={openDuties}
@@ -297,10 +304,11 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                           the toss, not once someone has already marked the
                           match live. Whether this person MAY score it is
                           decided by the database when the scorer claims it;
-                          canScore() only decides whether to offer the button,
+                          scoresHere() only decides whether to offer the button
+                          — over this fixture, by the routes' own capability —
                           and being wrong here shows a button that then says
                           no, never the wrong data. */}
-                      {(isLive||m.status==="upcoming")&&canScore(role)&&<Btn variant="success" onClick={e=>{e.stopPropagation();onOpenScorer&&onOpenScorer(m);}}>{isLive?"Open Live Scorer →":"Start Scoring →"}</Btn>}
+                      {(isLive||m.status==="upcoming")&&scoresHere(m)&&<Btn variant="success" data-testid={`mc-score-${m.id}`} onClick={e=>{e.stopPropagation();onOpenScorer&&onOpenScorer(m);}}>{isLive?"Open Live Scorer →":"Start Scoring →"}</Btn>}
                       {/* The fixture's own Match Centre (step 3c), for every
                           fixture — NOT gated on `m.scorecard`, which is a mock-only
                           field: asMatch() sets it null for every live row because

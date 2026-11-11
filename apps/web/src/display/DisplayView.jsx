@@ -7,6 +7,7 @@ import { MomentMark, OverSummary } from "../views/matchcentre/spectator.jsx";
 import { useArrivals, useMoments, useTicker } from "../views/matchcentre/live.js";
 import { DAYLIGHT_DIM, boardOf, clockAt, displayState, parOf, trackOf } from "./data.js";
 import { RateTrack } from "../ui/parTrack.jsx";
+import { estimateLine } from "../lib/par.js";
 import { Chips, DisplayPanel } from "./panels.jsx";
 import { useRotation } from "./Rotation.jsx";
 import { FOW_MS } from "./rotation.js";
@@ -147,6 +148,8 @@ function DisplayBoard({ match, state, shownRuns, moment, overSummary, paused, an
     );
   }
   const side = teamOf(match, state.inn.battingTeam);
+  const estimate = estimateLine({ inn: state.inn, target: state.target, par,
+    sides: { batting: side.short, fielding: teamOf(match, state.inn.bowlingTeam).short } });
   const insight = boardInsights(state.inn, { target: state.target, overs: state.overs });
   const marked = props.batters.some((b) => b.onStrike);
   return (
@@ -159,6 +162,8 @@ function DisplayBoard({ match, state, shownRuns, moment, overSummary, paused, an
           {props.sub && <div className="dv-sub" data-testid={`${tp}-sub`}>{props.sub}</div>}
           <RateTrack track={trackOf(state, par, side.short)} textClass="dv-small" testid={`${tp}-rate-track`}
             palette={{ line: "var(--dv-dim)", bar: "var(--dv-lime)", dot: "var(--dv-figure)", text: "var(--dv-dim)", gap: "var(--dv-lime)" }}/>
+          {/* CRI-1.8: the win estimate off the par line, labelled as the estimate it is; the sides by name only. */}
+          {estimate && <div className="dv-small dv-dim" data-testid={`${tp}-estimate`}>{estimate}</div>}
         </div>
         <div className="dv-total" data-testid={`${tp}-total`}>
           <Figure value={shownRuns ?? props.total}/><span className="dv-slash">/</span><Figure value={props.wickets}/>

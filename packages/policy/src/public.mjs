@@ -218,6 +218,10 @@ export const NEVER_PUBLIC = Object.freeze({
   // N3. Colours are withdrawn with a reason, and the reason can be a conduct
   // matter. A public honours board (A5) shows live honours; never why one went.
   "honour.withdrawn_reason": "N3",
+  // N5. Which captain's nomination an award answered (db/144; masked by
+  // db/145): a team-mate's judgement of him, picked or passed over. Read by
+  // the nomination's own readers (D8), never public.
+  "honour.nomination_id": "N5",
   // N4. A pupil who signs in has a login address here, and a guardian's row
   // lists whose guardian they are.
   "app_user.email": "N4",

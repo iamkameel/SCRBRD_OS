@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { didNotBat, dismissalKey, extrasOf, fowLines, keepersOfSide, oversOf, runCounts, teamOf } from "../../lib/matchCentre.js";
 import { Icon } from "../../ui/icons.jsx";
 import { SideName, Quiet } from "./bits.jsx";
 import { isSuperOver, superOverTitle, superOversOf } from "../../lib/superOver.js";
+import { scrollerOf } from "../../lib/toBall.js";
+import { NARROW_PX } from "../../lib/matchTabs.js";
 
 /**
  * THE SCORECARD (DESIGN_DIRECTION §10 item 7, the prototype's p7–p9): an
@@ -56,11 +58,17 @@ export function InningsToggle({ match, innings, inningsSel, setInningsSel }) {
 const COLS = "minmax(0,1fr) 36px 32px 30px 28px 62px";
 const BOWL_COLS = "minmax(0,1fr) 36px 28px 36px 28px 62px";
 
-/** A header row: the label, and the figures' heads right-aligned. */
+/**
+ * A header row: the label, and the figures' heads right-aligned. On a phone it
+ * stays at the top of the screen while its table's rows scroll under it
+ * (CRI-1.6, useHeadOnScreen below), so "R B 4s 6s SR" is never off screen
+ * above the figures it names. Opaque, so a row never shows through it; the
+ * cells keep role=columnheader wherever it sits.
+ */
 function HeadRow({ cols, heads, label, icon }) {
   return (
-    <div role="row" style={{ display: "grid", gridTemplateColumns: cols, gap: T.space.xs, alignItems: "center",
-      padding: `${T.space.sm} ${T.space.md}`, borderBottom: `1px solid ${T.line.normal}` }}>
+    <div role="row" className="mc-head" data-testid="mc-head" style={{ display: "grid", gridTemplateColumns: cols, gap: T.space.xs, alignItems: "center",
+      padding: `${T.space.sm} ${T.space.md}`, borderBottom: `1px solid ${T.line.normal}`, background: T.surface.base }}>
       <span role="columnheader" style={{ ...T.role.label, color: T.content.secondary, display: "inline-flex", gap: T.space.xs, alignItems: "center" }}>
         {icon && <Icon name={icon}/>}{label}
       </span>
@@ -75,6 +83,109 @@ function Figs({ values, strong = 0 }) {
     <span key={i} role="cell" style={{ ...T.role.figure.sm, textAlign: "right", color: i === strong ? T.content.primary : T.content.secondary,
       fontWeight: i === strong ? 500 : 400 }}>{v ?? "–"}</span>
   ));
+}
+
+/**
+ * Does this box hold more than it shows, to its right? Measured, not guessed:
+ * a scorecard fits a phone, and scrolls sideways only where the screen is
+ * narrower than its six columns (`.mc-table` under 300px: a phone at 200%
+ * zoom). Answered again as it is resized or scrolled.
+ * @param {{current: HTMLElement | null}} ref
+ */
+function useMoreToTheRight(ref) {
+  const [more, setMore] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const check = () => setMore(el.scrollWidth - el.clientWidth - el.scrollLeft > 1);
+    check();
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(check);
+    ro?.observe(el);
+    el.addEventListener("scroll", check, { passive: true });
+    return () => { ro?.disconnect(); el.removeEventListener("scroll", check); };
+  }, [ref]);
+  return more;
+}
+
+/**
+ * CRI-1.6: on a phone, the table's header row held at the top of the screen
+ * while the table's rows pass under it, and let go with the table's end.
+ *
+ * Not `position: sticky`: the shell's column and its <main> are boxes that
+ * clip (overflow hidden, overflow-y auto) and never scroll — the document
+ * does — so a sticky row holds to a box that never moves and never sticks.
+ * Changing the shell would change every screen. So the row is moved, by a
+ * transform, to the top of the screen — under the top bar where the bar
+ * stays on screen — on every scroll, at most once a frame. Nothing animates:
+ * it is a position, so reduced motion has nothing to stop. Wider than a phone,
+ * and in a table that scrolls sideways in its own box (under 300px), the row
+ * stays where it is.
+ * @param {{current: HTMLElement | null}} ref  the table
+ */
+function useHeadOnScreen(ref) {
+  useEffect(() => {
+    const table = ref.current;
+    if (!table || typeof window === "undefined" || !window.matchMedia) return undefined;
+    const phone = window.matchMedia(`(max-width: ${NARROW_PX}px)`);
+    let frame = 0;
+    const place = () => {
+      frame = 0;
+      const head = /** @type {HTMLElement | null} */ (table.querySelector(":scope > .mc-head"));
+      if (!head) return;
+      const own = /(auto|scroll)/.test(getComputedStyle(table).overflowX) && table.scrollWidth > table.clientWidth;
+      let shift = 0;
+      if (phone.matches && !own) {
+        const bar = document.querySelector('[data-testid="topbar"], [data-testid="persona-bar"]')?.getBoundingClientRect();
+        const top = bar && bar.top <= 0.5 && bar.bottom > 0 ? bar.bottom : 0;
+        const t = table.getBoundingClientRect();
+        // Down to the top of the screen, and no further than the table's own last row: it leaves with the table.
+        shift = Math.max(0, Math.min(top - t.top, t.height - head.offsetHeight));
+      }
+      head.style.transform = shift > 0 ? `translateY(${shift}px)` : "";
+      // While held it is a bar on the screen, as a sticky one is, and says so to the page (the narrow and a11y
+      // walks treat a sticky bar as drawn over what scrolls under it); at rest it is a row of the table.
+      head.style.position = shift > 0 ? "sticky" : "";
+      if (shift > 0) head.setAttribute("data-stuck", "true"); else head.removeAttribute("data-stuck");
+    };
+    const ask = () => { if (!frame) frame = requestAnimationFrame(place); };
+    place();
+    window.addEventListener("scroll", ask, { passive: true, capture: true });
+    window.addEventListener("resize", ask);
+    phone.addEventListener?.("change", ask);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", ask, { capture: true });
+      window.removeEventListener("resize", ask);
+      phone.removeEventListener?.("change", ask);
+    };
+  }, [ref]);
+}
+
+/**
+ * A scorecard table, and its scroll cue (CRI-1.6): where the table is wider
+ * than the screen, a line above it says so and its right edge fades, until
+ * the reader has scrolled to its last column. Seen, not said: a screen reader
+ * reads every cell wherever the box is scrolled, so the cue is aria-hidden.
+ */
+function CardTable({ label, testid = undefined, style, outer = undefined, children }) {
+  const ref = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const more = useMoreToTheRight(ref);
+  useHeadOnScreen(ref);
+  return (
+    <div style={outer}>
+      {more && (
+        <p data-testid="mc-scroll-cue" aria-hidden="true" style={{ margin: `0 0 ${T.space.xs}`, fontFamily: T.type.body, fontSize: "13px",
+          lineHeight: 1.35, color: T.content.secondary, textAlign: "right" }}>
+          Scroll sideways for every figure <span>›</span>
+        </p>
+      )}
+      <div style={{ position: "relative" }}>
+        <div ref={ref} role="table" aria-label={label} data-testid={testid} className="mc-table" style={style}>{children}</div>
+        {more && <div data-testid="mc-scroll-fade" aria-hidden="true" style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "28px",
+          pointerEvents: "none", background: `linear-gradient(to right, transparent, ${T.surface.canvas})` }}/>}
+      </div>
+    </div>
+  );
 }
 
 const sr = (r, b) => (b ? ((r / b) * 100).toFixed(2) : "—");
@@ -106,7 +217,7 @@ function FocusTag({ label }) {
 const focusEdge = (lit) => (lit ? { borderLeft: `4px solid ${T.brand.accentText}` } : {});
 
 /** A batter's row, which opens for a signed-in reader. */
-function BatterRow({ b, inn, open, onToggle, commentaryLine, profile, Wheel, kept = false, lit = false, litLabel = null }) {
+function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, profile, Wheel, kept = false, lit = false, litLabel = null }) {
   const notOut = b.status !== "out";
   const counts = open ? runCounts(inn, b.id) : null;
   const opens = !!onToggle;
@@ -146,12 +257,23 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, profile, Wheel, kep
             ))}
           </div>
           {Wheel && <Wheel inn={inn} playerId={b.id} title={`${b.name}: wagon wheel`}/>}
-          {commentaryLine && (
+          {/* CRI-1.5: the dismissal's line opens the Commentary at that very ball, where the page has one to open. */}
+          {commentaryLine && (onBall ? (
+            <button type="button" onClick={onBall} data-testid="mc-dismissal-link" className="pressBtn os-state"
+              style={{ justifySelf: "stretch", minHeight: "44px", display: "flex", alignItems: "center", gap: T.space.sm, cursor: "pointer",
+                textAlign: "left", background: "transparent", border: "none", borderLeft: `3px solid ${T.line.strong}`, borderRadius: 0,
+                padding: `${T.space.xs} 0 ${T.space.xs} ${T.space.md}`, color: T.content.primary, font: "inherit" }}>
+              <span data-testid="mc-dismissal-line" style={{ ...T.role.body, color: T.content.primary, flex: 1, minWidth: 0 }}>{commentaryLine}</span>
+              <span style={{ ...T.role.body, fontSize: "13px", color: T.content.secondary, display: "inline-flex", alignItems: "center", gap: "2px", whiteSpace: "nowrap" }}>
+                In commentary <span aria-hidden="true">›</span>
+              </span>
+            </button>
+          ) : (
             <p data-testid="mc-dismissal-line" style={{ ...T.role.body, color: T.content.primary, margin: 0,
               borderLeft: `3px solid ${T.line.strong}`, paddingLeft: T.space.md }}>
               {commentaryLine}
             </p>
-          )}
+          ))}
           {profile && (
             <button type="button" onClick={profile} className="pressBtn os-state"
               style={{ justifySelf: "start", minHeight: "44px", padding: `0 ${T.space.lg}`, cursor: "pointer",
@@ -171,8 +293,9 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, profile, Wheel, kep
  * wickets. `idx` is its place in the match's list of innings (the log's
  * innings number): the scorecard of a match innings, or of a super over's.
  */
-function InningsBody({ match, innings, idx, commentary, events, opens, profileOf, Wheel, focus, focusLabel }) {
-  const [openId, setOpenId] = useState(null);
+function InningsBody({ match, innings, idx, commentary, events, opens, profileOf, Wheel, focus, focusLabel, toBall = null, restore = null }) {
+  // CRI-1.5: back from the Commentary, the row the reader had open is open again.
+  const [openId, setOpenId] = useState(() => (restore?.innings === idx ? restore.openId ?? null : null));
   const inningsSel = idx;
   const inn = innings[idx];
   const side = teamOf(match, inn.battingTeam);
@@ -212,14 +335,19 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
         </span>
       </div>
 
-      <div role="table" aria-label="Batting" className="mc-table" style={{ border: `1px solid ${T.line.normal}`, borderTop: "none" }}>
+      <CardTable label="Batting" style={{ border: `1px solid ${T.line.normal}`, borderTop: "none" }}>
         <HeadRow cols={COLS} label="Batting" icon="bat" heads={["R", "B", "4s", "6s", "SR"]}/>
-        {inn.batsmen.map((b) => (
-          <BatterRow key={b.id} b={b} inn={inn} open={openId === b.id}
-            onToggle={opens ? () => setOpenId(openId === b.id ? null : b.id) : null}
-            commentaryLine={b.status === "out" ? byKey.get(dismissalKey(inn, b.id, innEvents) ?? "")?.text ?? null : null}
-            profile={profileOf(b.id)} Wheel={Wheel} kept={kept.has(b.id)} lit={!!focus?.has(b.id)} litLabel={focusLabel}/>
-        ))}
+        {inn.batsmen.map((b) => {
+          const key = b.status === "out" ? dismissalKey(inn, b.id, innEvents) : null;
+          const line = key ? byKey.get(key)?.text ?? null : null;
+          return (
+            <BatterRow key={b.id} b={b} inn={inn} open={openId === b.id}
+              onToggle={opens ? () => setOpenId(openId === b.id ? null : b.id) : null}
+              commentaryLine={line}
+              onBall={line && toBall ? (e) => toBall({ key, innings: idx, openId: b.id, from: e.currentTarget }) : null}
+              profile={profileOf(b.id)} Wheel={Wheel} kept={kept.has(b.id)} lit={!!focus?.has(b.id)} litLabel={focusLabel}/>
+          );
+        })}
         {dnb.map((p) => (
           <div key={p.id} role="row" data-testid="mc-dnb" style={{ display: "grid", gridTemplateColumns: COLS, gap: T.space.xs, alignItems: "center",
             padding: `${T.space.sm} ${T.space.md}`, minHeight: "44px", borderBottom: `1px solid ${T.line.subtle}` }}>
@@ -245,10 +373,11 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
             <span style={{ ...T.role.figure.md, color: T.content.primary }}>{inn.runs}/{inn.wickets}</span>
           </span>
         </div>
-      </div>
+      </CardTable>
 
       {inn.bowlers.length > 0 && (
-        <div role="table" aria-label="Bowling" data-testid="mc-bowling" className="mc-table" style={{ border: `1px solid ${T.line.normal}`, marginTop: T.space.lg, borderRadius: T.radius.lg, overflow: "hidden" }}>
+        <CardTable label="Bowling" testid="mc-bowling" outer={{ marginTop: T.space.lg }}
+          style={{ border: `1px solid ${T.line.normal}`, borderRadius: T.radius.lg, overflow: "hidden" }}>
           <HeadRow cols={BOWL_COLS} label="Bowling" icon="ball" heads={["O", "M", "R", "W", "Econ"]}/>
           {inn.bowlers.map((bw) => (
             <div key={bw.id} role="row" data-focus={focus?.has(bw.id) ? "true" : undefined}
@@ -278,7 +407,7 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
               ))}
             </p>
           )}
-        </div>
+        </CardTable>
       )}
 
       {fow.length > 0 && (
@@ -345,15 +474,31 @@ function SuperOverBlock({ pair, ...rest }) {
   );
 }
 
-export function ScorecardTab({ match, innings, commentary, events, inningsSel, setInningsSel, opens = false, profileOf = () => null, Wheel = null, focus = null, focusLabel = null }) {
+/**
+ * `toBall` (CRI-1.5): where the page can open the Commentary at a ball, a
+ * dismissal's line does, saying which innings and row it left; `restore` is
+ * that place again, coming back — the row reopened and the page where it was
+ * — and `onRestored` says it has been put back. The public page passes none.
+ */
+export function ScorecardTab({ match, innings, commentary, events, inningsSel, setInningsSel, opens = false, profileOf = () => null, Wheel = null, focus = null, focusLabel = null,
+                               toBall = null, restore = null, onRestored = null }) {
+  const at = useRef(/** @type {HTMLElement | null} */ (null));
+  // Once, as the tab is drawn again: the page back where the reader left it.
+  useLayoutEffect(() => {
+    if (!restore) return;
+    const sc = scrollerOf(at.current);
+    if (sc) sc.scrollTop = restore.scrollTop ?? 0;
+    onRestored?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // The innings the toggle is on is one of the match's own, always: a super
   // over has its block below.
   const sel = innings[inningsSel] && !isSuperOver(innings[inningsSel]) ? inningsSel : Math.max(0, innings.findIndex((x) => x && !isSuperOver(x)));
   const inn = innings[sel];
   if (!inn) return <Quiet testid="mc-scorecard-empty">Nothing has been scored yet.</Quiet>;
-  const body = { match, innings, commentary, events, opens, profileOf, Wheel, focus, focusLabel };
+  const body = { match, innings, commentary, events, opens, profileOf, Wheel, focus, focusLabel, toBall, restore };
   return (
-    <section data-testid="mc-scorecard" aria-label="Scorecard">
+    <section ref={at} data-testid="mc-scorecard" aria-label="Scorecard">
       <InningsToggle match={match} innings={innings} inningsSel={sel} setInningsSel={setInningsSel}/>
       <InningsBody {...body} idx={sel} key={sel}/>
       {superOversOf(innings).map((p) => <SuperOverBlock key={p.n} pair={p} {...body}/>)}

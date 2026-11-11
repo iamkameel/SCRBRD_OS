@@ -240,12 +240,28 @@ export const TABLES = {
     // boy in public. Read by whoever reads the roster he is on — a team-mate
     // sees the honours board, which is the point of one — and written by the
     // people who sign it. Never edited: withdrawn with a reason, and stays.
+    //
+    // The reason it was withdrawn (RECOGNITION D4, db/145) may be a conduct
+    // matter and may name a third party: read by the school's deciders
+    // (recognition.decide) and by whoever withdrew it, and by nobody else —
+    // not the boy, his parent, the side's staff, the auditor (READERS Q2) or
+    // the public (NEVER_PUBLIC). The withdrawer is not a capability, so the
+    // rule lives in honour_withdrawn_reason(), which honour_masked calls;
+    // db/145 also takes the column out of the application's SELECT on the
+    // table itself, so no read reaches it any other way. The owner's key
+    // reads no honour at all (D7: a RESTRICTIVE cut on platform-wide
+    // assignments, every command).
     read:  "player.profile.read",
     write: "recognition.manage",
     anchors: { school: "school_id",
                team: "(SELECT p.team_code FROM player p WHERE p.id = honour.player_id)",
                person: "player_id" },
-    masked: {},
+    // So is the captain's nomination an award answered (nomination_id,
+    // db/144; db/145): whether the captain picked him is the nomination's,
+    // read under D8 by the nominator and the side's staff and the deciders
+    // (honour_nomination_id(), db/144's own tests). The capability keyed
+    // here is the deciders'; the function holds the whole rule.
+    masked: { "recognition.decide": ["withdrawn_reason"], "recognition.match.award": ["nomination_id"] },
   },
   cap_baseline: {
     // Where a side's cap numbers start: the caps awarded before the platform

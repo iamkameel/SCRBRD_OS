@@ -158,6 +158,8 @@ async function openMatch(page, id) {
 const tab = async (page, id) => { await tid(page, `mc-tab-${id}`).click({ timeout: 4000 }); await page.waitForTimeout(500); };
 
 const TABS = ["summary", "scorecard", "commentary", "partnerships", "analytics", "details"];
+/** Overs as the card writes them: 9.4 for 58 balls. */
+const oversOfBalls = (/** @type {number} */ b) => `${Math.floor(b / 6)}${b % 6 ? `.${b % 6}` : ""}`;
 
 try {
   for (let i = 0; i < 60; i++) {
@@ -279,6 +281,9 @@ try {
 
   // ── Desktop, Floodlit ──
   const dos = await open();
+  // CRI-1.4: every write this session asks of a match, from sign-in on. Reading the fixture must ask none.
+  const dosWrites = [];
+  dos.page.on("request", (r) => { if (r.method() !== "GET" && /\/api\/matches\//.test(r.url())) dosWrites.push(`${r.method()} ${new URL(r.url()).pathname}`); });
   ok("the director of sport signs in", await signIn(dos.page, /sarah@example\.invalid|Director/));
   ok("Match Centre opens the fixture", await openMatch(dos.page, fx.live));
   const p = dos.page;
@@ -505,6 +510,16 @@ try {
   const det = await tid(p, "mc-details").innerText();
   ok("the format, the ground and the toss", /T10 · 10 overs a side/.test(det) && /Gordon Sherwood Oval/.test(det)
      && /Hilton College 1XI won the toss and chose to bat/.test(det), det.slice(0, 200));
+  group("CRI-1.4: Enter scoring is offered to the director of sport, and reading every tab never entered it");
+  {
+    const enter = tid(p, "mc-enter-scoring");
+    const geo = await enter.evaluate((e) => ({ h: e.getBoundingClientRect().height, f: parseFloat(getComputedStyle(e).fontSize), t: e.textContent.trim() })).catch(() => null);
+    ok("the live fixture offers \"Enter scoring\" (scoring.edit at Hilton, the fixture's home school)", await enter.count() === 1 && geo?.t === "Enter scoring", geo?.t);
+    ok("...a 44px button on the 12px floor", (geo?.h ?? 0) >= 44 && (geo?.f ?? 0) >= 12, JSON.stringify(geo));
+    ok("reading the fixture, every tab of it, asked no write of the match: no claim, no ball, no handover",
+       dosWrites.length === 0, dosWrites.join(" | "));
+    ok("...and the pad never opened: the reader is still on the match page", await p.locator(".scorer-shell").count() === 0 && await tid(p, "match-view").count() === 1);
+  }
   await tid(p, "mc-back").click(); await p.waitForTimeout(600);
   ok("All matches goes back to the list", await tid(p, "match-view").count() === 0 && await tid(p, `match-card-${fx.live}`).count() === 1);
   // CRI-1.2: the card's sentence is the same function's, from the list's own read (no log): the toss it carries.
@@ -617,7 +632,9 @@ try {
   ok("the chase is won", finalMatch.result?.winner === "Westville Boys' High 1XI", JSON.stringify(finalMatch.result));
   ok("the result arrives as a moment on the board — held no longer than a milestone",
      await until(L, () => document.querySelector('[data-testid="mc-moment"][data-kind="result"]')?.innerText.includes("won by"), 8000));
-  ok("...beside the total, which stays in view throughout", await tid(L, "mc-board-total").isVisible());
+  // CRI-1.7: the result is full time, and the Summary is the result view the moment it arrives; the totals stay in view.
+  ok("...over the Summary's result view, whose totals stay in view throughout", await tid(L, "mc-result-view").isVisible().catch(() => false)
+     && await tid(L, "mc-result-total").last().isVisible().catch(() => false));
   if (SHOTS) { await mkdir(SHOTS, { recursive: true }); await L.screenshot({ path: join(SHOTS, "fulltime-result-moment-1280-floodlit.png") }).catch(() => {}); }
   ok("the moment clears within a second and a half — the score is never hidden for long (§3.6)",
      await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), 2500));
@@ -640,6 +657,35 @@ try {
   ok("the decided fixture opens", await openMatch(fin.page, fx.live));
   await afterReads(fin.page, 2000);
   ok("a fresh read plays no moment a second time — nothing is replayed on load", await tid(fin.page, "mc-moment").count() === 0);
+  {
+    // CRI-1.7: after full time the Summary is the result view, from the fold.
+    const F = fin.page;
+    const want = `${finalMatch.result.winner} won by ${finalMatch.result.margin}`;
+    const finals = finalMatch.innings.filter(Boolean);
+    ok("CRI-1.7: the completed fixture's Summary is the result view", await tid(F, "mc-summary").getAttribute("data-view").catch(() => null) === "result"
+       && await tid(F, "mc-result-view").count() === 1);
+    ok(`...headed by the result in words, the header's own ("${want}")`, (await tid(F, "mc-result-sentence").innerText().catch(() => "")).trim() === want
+       && (await tid(F, "mc-result").innerText().catch(() => "")).trim() === want);
+    const rowsShown = (await tid(F, "mc-result-row").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+    ok(`...each innings' total, the fold's: ${finals.map((i) => `${i.runs}/${i.wickets}`).join(", ")}`, rowsShown.length === finals.length
+       && finals.every((i, k) => rowsShown[k].includes(`${i.runs}/${i.wickets}`) && rowsShown[k].includes(`(${oversOfBalls(i.balls)} ov)`)), rowsShown.join(" | "));
+    ok("...on the board's black face, in both themes", await tid(F, "mc-result-view").evaluate((e) => getComputedStyle(e).backgroundColor).catch(() => "") !== "rgba(0, 0, 0, 0)");
+    const facts = await tid(F, "mc-result-innings").allInnerTexts();
+    const top1 = [...finals[0].batsmen].filter((b) => b.balls > 0 || b.runs > 0).sort((a, b) => b.runs - a.runs || a.balls - b.balls)[0];
+    const bowl2 = [...finals[1].bowlers].filter((b) => b.balls > 0).sort((a, b) => b.wickets - a.wickets || a.runs - b.runs)[0];
+    ok(`...the match in figures: each innings' top scorers and best bowling (${top1.name} ${top1.runs}; ${bowl2.name} ${bowl2.wickets}/${bowl2.runs})`,
+       facts.length === 2 && facts[0].includes(top1.name) && facts[0].includes(String(top1.runs)) && facts[1].includes(bowl2.name)
+       && facts[1].includes(`${bowl2.wickets}/${bowl2.runs}`), facts.join(" | ").slice(0, 300));
+    ok("...the live board, the latest balls and \"at this rate\" have given way to it", await tid(F, "mc-board").count() === 0
+       && await tid(F, "mc-latest").count() === 0 && !/At this rate/.test(await tid(F, "mc-summary").innerText()));
+    ok("...the worm, the highlights and all the commentary one tap away stay", await tid(F, "mc-worm-panel").count() === 1
+       && await tid(F, "mc-highlights").count() === 1 && await tid(F, "mc-all-commentary").count() === 1);
+    await tid(F, "mc-all-commentary").click({ timeout: 4000 }).catch(() => {});
+    await tid(F, "mc-panel-commentary").waitFor({ timeout: 4000 }).catch(() => {});
+    ok("...which opens it", await tid(F, "mc-panel-commentary").count() === 1);
+    await pickTab(F, "summary").catch(() => {});
+    await tid(F, "mc-result-view").waitFor({ timeout: 4000 }).catch(() => {});
+  }
   ok("the onward links show", await tid(fin.page, "mc-onward").count() === 1);
   ok("Hilton's own next fixture (the seeded one)", await tid(fin.page, "mc-onward-next-home").count() === 1);
   ok("...never a link to Westville's — no fixture of theirs is on this list, and this never guesses one",
@@ -788,6 +834,152 @@ try {
   ok("no console errors (phone)", ph.errors.length === 0, ph.errors.join(" | "));
   await ph.ctx.close();
 
+  group("CRI-1.5: a dismissal opens the Commentary at that ball, and back restores the tab, the row and the scroll");
+  {
+    const ph5 = await open({ viewport: PHONE });
+    await signIn(ph5.page, /sarah@example\.invalid|Director/);
+    ok("the fixture opens on a phone", await openMatch(ph5.page, fx.live));
+    const P5 = ph5.page;
+    const path = () => new URL(P5.url()).pathname;
+    // Where the page is: the shell's <main> scrolls, or the document does.
+    const scrolled = () => P5.evaluate(() => Math.max(document.getElementById("os-content")?.scrollTop ?? 0, window.scrollY));
+    await pickTab(P5, "scorecard");
+    await tid(P5, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
+    await P5.waitForTimeout(300);
+    // The first innings' first wicket: early in a match of sixteen overs, past the Commentary's first twelve.
+    const firstOut = inn1.ballLog.find((b) => b.type === "W" && !b.freeHitSaved);
+    const who = inn1.batsmen.find((b) => b.id === (firstOut.dismissed ?? firstOut.strikerId));
+    const key = `e:${firstOut.id}`;
+    const row = tid(P5, "mc-bat-row").filter({ hasText: who.name }).first();
+    await row.locator('[data-testid="mc-bat-open"]').click({ timeout: 4000 });
+    await P5.waitForTimeout(300);
+    const link = row.locator('[data-testid="mc-dismissal-link"]');
+    const lg = await link.evaluate((e) => ({ h: e.getBoundingClientRect().height, t: e.innerText })).catch(() => null);
+    ok(`${who.name}'s opened row: his dismissal's line is a link to that ball, 44px tall`, (lg?.h ?? 0) >= 44 && /In commentary/.test(lg?.t ?? ""), JSON.stringify(lg));
+    await link.scrollIntoViewIfNeeded();
+    await P5.evaluate(() => { const m = document.getElementById("os-content"); if (m) m.scrollTop += 37; else window.scrollBy(0, 37); });
+    await P5.waitForTimeout(200);
+    const was = await scrolled();
+    const linkTop = await link.evaluate((e) => e.getBoundingClientRect().top);
+    ok(`the page is scrolled down to it (${was}px)`, was > 100, was);
+    await link.click();
+    await tid(P5, "mc-commentary").waitFor({ timeout: 4000 }).catch(() => {});
+    await P5.waitForTimeout(400);
+    ok("the Commentary opens, at its own address", await tid(P5, "mc-panel-commentary").count() === 1 && path() === `/app/matches/${fx.live}/commentary`, path());
+    const target = await P5.evaluate(() => {
+      const t = document.querySelectorAll('[data-testid="mc-line"][data-target="true"]');
+      const r = t[0]?.getBoundingClientRect();
+      return { n: t.length, key: t[0]?.getAttribute("data-key"), focused: document.activeElement === t[0], current: t[0]?.getAttribute("aria-current"),
+        inView: !!r && r.top >= 0 && r.bottom <= window.innerHeight, text: t[0]?.innerText ?? "" };
+    });
+    ok(`...at that ball: one line marked, the dismissal's own (${key}), the generator's words`, target.n === 1 && target.key === key
+       && target.text.includes(expected.find((c) => c.key === key)?.text ?? "∅"), JSON.stringify(target));
+    const overAt = await P5.evaluate(() => [...document.querySelectorAll('[data-testid="mc-over"]')].findIndex((o) => !!o.querySelector('[data-target="true"]')));
+    ok(`...in the ${overAt + 1}th over group, past the first twelve: the tab opened far enough back to hold it`, overAt >= 12, overAt);
+    ok("...on screen, with the focus on it and aria-current", target.inView && target.focused && target.current === "true", JSON.stringify(target));
+    ok("...and a way back to the scorecard, 44px", ((await tid(P5, "mc-back-to-scorecard").boundingBox().catch(() => null))?.height ?? 0) >= 44);
+    await P5.goBack();
+    await tid(P5, "mc-scorecard").waitFor({ timeout: 4000 }).catch(() => {});
+    await P5.waitForTimeout(400);
+    ok("the back button: the Scorecard again, at its address", await tid(P5, "mc-tab-scorecard").getAttribute("aria-selected") === "true" && path() === `/app/matches/${fx.live}/scorecard`, path());
+    const rowBack = tid(P5, "mc-bat-row").filter({ hasText: who.name }).first();
+    ok(`...the first innings still shown, ${who.name}'s row still open`, await tid(P5, "mc-innings-0").getAttribute("aria-pressed") === "true"
+       && await rowBack.locator('[data-testid="mc-bat-open"]').getAttribute("aria-expanded") === "true");
+    const back = await scrolled();
+    const backTop = await rowBack.locator('[data-testid="mc-dismissal-link"]').evaluate((e) => e.getBoundingClientRect().top).catch(() => null);
+    ok(`...and the page where it was (${back}px, was ${was}px; the line ${backTop}px from the top, was ${linkTop}px)`,
+       Math.abs(back - was) <= 2 && backTop != null && Math.abs(backTop - linkTop) <= 2);
+    ok("the tab no longer marks a ball once it is left", await tid(P5, "mc-back-to-scorecard").count() === 0);
+    // The way back on the page itself: the same place.
+    await rowBack.locator('[data-testid="mc-dismissal-link"]').click();
+    await tid(P5, "mc-back-to-scorecard").waitFor({ timeout: 4000 }).catch(() => {});
+    await tid(P5, "mc-back-to-scorecard").click();
+    await tid(P5, "mc-scorecard").waitFor({ timeout: 4000 }).catch(() => {});
+    await P5.waitForTimeout(400);
+    ok("\"Back to the scorecard\" is the same step back: the Scorecard, the row open, the page where it was",
+       path() === `/app/matches/${fx.live}/scorecard` && await tid(P5, "mc-bat-row").filter({ hasText: who.name }).first().locator('[data-testid="mc-bat-open"]').getAttribute("aria-expanded") === "true"
+       && Math.abs((await scrolled()) - was) <= 2, `${path()} ${await scrolled()}`);
+    await pickTab(P5, "commentary");
+    await P5.waitForTimeout(300);
+    ok("opened from the tab strip, the Commentary marks no ball and offers no way back", await P5.locator('[data-testid="mc-line"][data-target]').count() === 0
+       && await tid(P5, "mc-back-to-scorecard").count() === 0);
+    ok("no console errors (scorecard to ball)", ph5.errors.length === 0, ph5.errors.join(" | "));
+    await ph5.ctx.close();
+  }
+
+  group("CRI-1.6: on a phone the scorecard's header stays at the top as its rows scroll; a scroll cue where the table is wider than the screen");
+  {
+    const s6 = await open({ viewport: { width: 360, height: 740 } });
+    await signIn(s6.page, /sarah@example\.invalid|Director/);
+    ok("the fixture opens at 360 wide", await openMatch(s6.page, fx.live));
+    const P6 = s6.page;
+    await pickTab(P6, "scorecard");
+    await tid(P6, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
+    await P6.waitForTimeout(300);
+    const heads = await P6.evaluate(() => [...document.querySelectorAll('[data-testid="mc-head"]')].map((h) => ({
+      role: h.getAttribute("role"), cells: [...h.children].map((c) => c.getAttribute("role")), bg: getComputedStyle(h).backgroundColor })));
+    ok("the batting and the bowling each have a header row: role=row, six role=columnheader cells", heads.length === 2
+       && heads.every((h) => h.role === "row" && h.cells.length === 6 && h.cells.every((c) => c === "columnheader")), JSON.stringify(heads));
+    ok("...each opaque, so no row shows through it", heads.every((h) => h.bg !== "rgba(0, 0, 0, 0)"), JSON.stringify(heads));
+    // Scroll the batting table's head out of view, its rows still on screen.
+    const into = (/** @type {number} */ by) => P6.evaluate(async (by) => {
+      // The top of the screen, as the reader sees it: under the top bar where it stays on screen.
+      const bar = document.querySelector('[data-testid="topbar"], [data-testid="persona-bar"]')?.getBoundingClientRect();
+      const table = document.querySelector('[role="table"][aria-label="Batting"]');
+      const head = table.querySelector('[data-testid="mc-head"]');
+      const m = document.getElementById("os-content");
+      const sc = m && m.scrollHeight > m.clientHeight ? m : document.scrollingElement;
+      const top0 = bar && bar.top <= 0.5 && bar.bottom > 0 ? bar.bottom : 0;
+      sc.scrollTop += table.getBoundingClientRect().top - top0 + by;
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const b2 = document.querySelector('[data-testid="topbar"], [data-testid="persona-bar"]')?.getBoundingClientRect();
+      const top = b2 && b2.top <= 0.5 && b2.bottom > 0 ? b2.bottom : 0;
+      const h = head.getBoundingClientRect(), t = table.getBoundingClientRect();
+      const hit = document.elementFromPoint(h.left + h.width - 12, h.top + h.height / 2);
+      return { headTop: h.top, top, tableTop: t.top, tableBottom: t.bottom, onTop: !!hit && head.contains(hit), stuck: head.getAttribute("data-stuck") };
+    }, by);
+    const stuck = await into(120);
+    ok(`scrolled 120px into the batting: its header holds at the top of the screen (${Math.round(stuck.headTop)} = ${Math.round(stuck.top)}), over the rows`,
+       Math.abs(stuck.headTop - stuck.top) <= 1 && stuck.tableTop < stuck.top && stuck.tableBottom > stuck.headTop + 100 && stuck.onTop && stuck.stuck === "true", JSON.stringify(stuck));
+    const past = await P6.evaluate(async () => {
+      const table = document.querySelector('[role="table"][aria-label="Batting"]');
+      const head = table.querySelector('[data-testid="mc-head"]');
+      const m = document.getElementById("os-content");
+      const sc = m && m.scrollHeight > m.clientHeight ? m : document.scrollingElement;
+      sc.scrollTop += table.getBoundingClientRect().bottom + 200;
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const h = head.getBoundingClientRect(), t = table.getBoundingClientRect();
+      return { headBottom: h.bottom, tableBottom: t.bottom };
+    });
+    ok("...and goes with its table once the table has passed: it never sits over the bowling", past.headBottom <= past.tableBottom + 1, JSON.stringify(past));
+    await P6.evaluate(() => { (document.getElementById("os-content")?.scrollHeight ?? 0) > (document.getElementById("os-content")?.clientHeight ?? 0)
+      ? (document.getElementById("os-content").scrollTop = 0) : window.scrollTo(0, 0); });
+    await P6.waitForTimeout(200);
+    ok("...and back at the top it is where it was drawn, held by nothing", await P6.evaluate(() => !document.querySelector('[data-testid="mc-head"][data-stuck]')
+       && !document.querySelector('[data-testid="mc-head"]').style.transform));
+    ok("at 360 every column fits: no scroll cue, nothing sideways", await tid(P6, "mc-scroll-cue").count() === 0
+       && await P6.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    // A phone at 200% zoom: the six columns no longer fit, and the table says it scrolls.
+    await P6.setViewportSize({ width: 280, height: 740 });
+    await P6.waitForTimeout(500);
+    const cue = tid(P6, "mc-scroll-cue").first();
+    ok("at 280 wide the table scrolls in its own box, and says so above it", await cue.isVisible().catch(() => false)
+       && /Scroll sideways for every figure/.test(await cue.innerText().catch(() => "")) && await tid(P6, "mc-scroll-fade").count() >= 1);
+    ok("...the cue on the 12px floor, and hidden from a screen reader (it reads every cell anyway)",
+       await cue.evaluate((e) => parseFloat(getComputedStyle(e).fontSize) >= 12 && e.getAttribute("aria-hidden") === "true").catch(() => false));
+    ok("...and still nothing sideways on the page", await P6.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    const cues = await tid(P6, "mc-scroll-cue").count();
+    await P6.evaluate(() => { const t = document.querySelector('[role="table"][aria-label="Batting"]'); t.scrollLeft = t.scrollWidth; });
+    await P6.waitForTimeout(300);
+    ok("scrolled to its last column, the batting's cue goes (the bowling's stays)", await tid(P6, "mc-scroll-cue").count() === cues - 1, `${cues} → ${await tid(P6, "mc-scroll-cue").count()}`);
+    await P6.setViewportSize(DESK);
+    await P6.waitForTimeout(400);
+    const deskHeld = (await into(120)).stuck;
+    ok("on a desktop the header is not held and there is no cue", deskHeld == null && await tid(P6, "mc-scroll-cue").count() === 0, deskHeld);
+    ok("no console errors (sticky header)", s6.errors.length === 0, s6.errors.join(" | "));
+    await s6.ctx.close();
+  }
+
   group("One address per tab (CRI-1.3): a link opens its tab, a tab moves the address, the back button goes back a tab");
   {
     const dl = await open();
@@ -842,6 +1034,67 @@ try {
     await sp.ctx.close();
   }
 
+  group("CRI-1.4: who is offered Enter scoring — only an assignment that may score this fixture; the pad opens on the tap alone");
+  {
+    const sees = async (who, id) => {
+      const s = await open();
+      const writes = [];
+      s.page.on("request", (r) => { if (r.method() !== "GET" && /\/api\/matches\//.test(r.url())) writes.push(`${r.method()} ${new URL(r.url()).pathname}`); });
+      // A regex picks a listed account; an address is typed (not every seeded account is on the list).
+      let inn;
+      if (typeof who === "string") {
+        await click(s.page, /Get Started|Log In/, 5000);
+        await s.page.waitForTimeout(500);
+        await s.page.locator('input[type="email"]').first().fill(who);
+        await click(s.page, /^Sign In$/, 5000);
+        await afterReads(s.page, 2000);
+        inn = /Match Centre|Dashboard/i.test(await text(s.page));
+      } else inn = await signIn(s.page, who);
+      // The list's card first: its scorer button asks the same gate (Kameel, 6 Nov).
+      await s.page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
+      await tid(s.page, `mc-open-${id}`).first().waitFor({ timeout: 10000 }).catch(() => {});
+      const listed = await tid(s.page, `mc-score-${id}`).count() === 1;
+      const opened = await openMatch(s.page, id);
+      const offered = await tid(s.page, "mc-enter-scoring").count() === 1;
+      // The card and the page say the same: both offered, or neither.
+      ok(`...the list's card agrees with the page (${offered ? "offered" : "not offered"})`, listed === offered, JSON.stringify({ listed, offered }));
+      return { s, inn, opened, writes, offered };
+    };
+    const w = await sees(/watcher@example\.invalid|Spectator/, fx.brk);
+    ok("a spectator opens the live U16A fixture and is never offered it (no scoring.edit)", w.inn && w.opened && !w.offered);
+    await w.s.ctx.close();
+    // A fixture the away side's coach can read (db/97): Hilton's 1XI at home to Westville's, live, nothing bowled yet.
+    const [{ id: awayFx }] = await q(
+      `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, ground_id, starts_at, sport, format, overs, status)
+       values ($1, '1XI', $2, '1XI', 'Westville Boys'' High 1XI', null, now() - interval '5 minutes', 'cricket', 'T10', 10, 'live') returning id`,
+      [HIL, (await q(`select away_school_id from match where id = $1`, [fx.live]))[0].away_school_id]);
+    const wes = await sees("coach.wes@example.invalid", awayFx);
+    ok("Westville's 1XI coach reads the fixture his side is the away side of, and is not offered it: scoring is the home side's log",
+       wes.inn && wes.opened && !wes.offered, JSON.stringify({ inn: wes.inn, opened: wes.opened, offered: wes.offered }));
+    await wes.s.ctx.close();
+    const c1 = await sees("coach@example.invalid", awayFx);
+    ok("Hilton's 1XI coach is offered it on his own side's fixture", c1.inn && c1.opened && c1.offered, JSON.stringify({ inn: c1.inn, opened: c1.opened, offered: c1.offered }));
+    await c1.s.ctx.close();
+    const c2 = await sees("coach2@example.invalid", awayFx);
+    ok("Hilton's 2XI coach holds scoring.edit too, but for the 2XI: on the 1XI's fixture he is not offered it",
+       c2.inn && !c2.offered, JSON.stringify({ inn: c2.inn, opened: c2.opened, offered: c2.offered }));
+    await c2.s.ctx.close();
+    await q(`update match set status = 'complete' where id = $1`, [awayFx]);
+    const done = await sees(/sarah@example\.invalid|Director/, fx.live);
+    ok("on the finished fixture nobody is offered it, the director of sport included", done.opened && !done.offered);
+    await done.s.ctx.close();
+    const sc1 = await sees(/scorer@example\.invalid|Scorer/, fx.brk);
+    ok("the school's scorer is offered it on the live U16A fixture", sc1.inn && sc1.opened && sc1.offered);
+    for (const t of TABS) await pickTab(sc1.s.page, t).catch(() => {});
+    await afterReads(sc1.s.page, 500);
+    ok("...and reading all six of its tabs asked no write and opened no pad", sc1.writes.length === 0 && await sc1.s.page.locator(".scorer-shell").count() === 0,
+       sc1.writes.join(" | "));
+    await tid(sc1.s.page, "mc-enter-scoring").click({ timeout: 4000 }).catch(() => {});
+    ok("his tap on it opens the pad", await until(sc1.s.page, () => !!document.querySelector(".scorer-shell"), 10000));
+    ok("no console errors (Enter scoring)", sc1.s.errors.length === 0, sc1.s.errors.join(" | "));
+    await sc1.s.ctx.close();
+  }
+
   group("An error boundary: a panel that throws is a card in its own place, and its neighbours stand");
   // The walks run against a production build, where the test hook is compiled
   // out (vite.config.js `define`; tools/check-bundle.mjs holds that). So this
@@ -858,7 +1111,7 @@ try {
     ok("the director of sport signs in", await signIn(bd.page, /sarah@example\.invalid|Director/));
     ok("the decided fixture opens", await openMatch(bd.page, fx.live));
     const B = bd.page;
-    ok("Summary draws, with no failure card", await tid(B, "mc-board-total").count() === 1 && await tid(B, "panel-error").count() === 0);
+    ok("Summary draws (the result view, CRI-1.7), with no failure card", await tid(B, "mc-result-view").count() === 1 && await tid(B, "panel-error").count() === 0);
 
     await tab(B, "commentary");
     const card = tid(B, "panel-error");

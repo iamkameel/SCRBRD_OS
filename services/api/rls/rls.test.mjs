@@ -308,7 +308,13 @@ for (const [table, def] of Object.entries(TABLES)) {
   // A table added after db/09 (TABLES_ADDED_SINCE_09) has its view in the
   // generated block of its own file, as its policies are (group C2): the
   // same assertions, held to that file (injury_review, db/111, is the first).
-  const SQL = policySql(table);
+  // A table db/09 shipped with no mask at all, and whose first mask came
+  // later (MASKED_SINCE_09: honour, db/145), has its first view in that
+  // file: the same assertions, held to it.
+  const firstLater = /** @type {Record<string, { file: string }>} */ (MASKED_SINCE_09)[table];
+  const SQL = firstLater && !new RegExp(`VIEW ${table}_masked`).test(policySql(table))
+    ? (existsSync(join(DB_DIR, firstLater.file)) ? readFileSync(join(DB_DIR, firstLater.file), "utf8") : "")
+    : policySql(table);
   ok(`${table}_masked is generated`, new RegExp(`VIEW ${table}_masked`).test(SQL));
   // security_invoker is the one that decides WHOSE policies apply. Without it
   // the view runs as its owner, who owns the table underneath and bypasses
