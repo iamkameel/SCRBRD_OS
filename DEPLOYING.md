@@ -2382,6 +2382,40 @@ read asks `passport_consent_recipient_ok()`, and `POST /api/passport/consent`
 asks it first (answering `not_his_union` or `not_a_school`). Not to be
 pasted before Kameel's review.
 <!-- ── end db/124 ── -->
+<!-- ── db/147: the ball log's reads ask once a match ── -->
+#### The ball log's reads ask once a match, not once a ball (db/147)
+
+`db/147_ball_log_read_per_match.sql` is a speed fix with no change to who
+reads what. Every career, season, milestone, best, record, spell and
+live-score read goes through `ball_event_live`, and each of its scans of the
+log ran `ball_event_read` on every ball, so a career read took seconds at
+3 000 balls and minutes at a pilot season's size. `ball_event_live` now runs
+as its owner, behind a security barrier, and asks the policy's own conditions
+once a match; a ball whose school is not its match's (none today) is asked of
+itself, as the reader, through `ball_event_row_visible()`; a caller row
+security does not apply to (the owner's definers, the triggers) reads every
+ball, as before. The conditions it states are pinned:
+`ball_log_policies_unpinned()` names any SELECT policy on `ball_event`,
+`match` or `ball_event_rejudged` that is not the one it was written against,
+and the verifier fails until the view is re-stated with it. `ball_event`'s
+policies are unchanged and still guard every direct read of the table.
+
+**What it does to a live database.** Two new functions,
+`ball_log_policies_unpinned()` and `ball_event_row_visible(bigint)` (both run
+as the caller; the second answers only "may I read this ball"), and
+`ball_event_live` re-created with the same columns and rows,
+`security_invoker` off and `security_barrier` on, its owner and grants kept.
+No table, column, row or policy changes. It refuses to run unless the view in
+place is db/121's or its own, or if a policy it states has changed; a second
+paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 147` after 144 (145 and 146 are not
+needed first), then the verify bundle (§123 is its proof: the view row for
+row against db/121's own definition under row security, for every seeded
+reader, with a ball planted at the other school; §9 names the view as its one
+exception). **Schema first**: the API built with it refuses to start without
+db/147 (`expected-migrations.json`); it needs nothing new from it to run.
+<!-- ── end db/147 ── -->
 
 ### 5 · Cloud Run, the first time
 
