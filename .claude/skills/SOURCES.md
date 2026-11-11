@@ -12,7 +12,7 @@ the upstream repositories were not copied.
 | tastemaker, ideagram | https://github.com/codeswithroh/tastemaker | e39b4bf |
 | ponytail, ponytail-audit, ponytail-debt, ponytail-gain, ponytail-help, ponytail-review | https://github.com/DietrichGebert/ponytail (`skills/`; the plugin's hooks and band were not copied) | 09c434a (updated 21 Oct 2026) |
 | edge-to-edge, android-intent-security, android-permissions-security, play-policy-insights, android-cli, testing-setup | https://github.com/android/skills (Apache 2.0; added 27 Oct 2026, the six a Capacitor shell would use; the other 30 native-app skills were not copied) | 45fd173 |
-| stageshow | https://github.com/benjitaylor/skills (`stageshow/`; MIT; added 11 Nov 2026 at Kameel's request. Its `NOTICE.md` lists the bundled app icons and brand logos, which its MIT licence does not cover; its own `package.json` is not part of this workspace and adds no dependency to the app) | 299140f |
+| stageshow | https://github.com/benjitaylor/skills (`stageshow/`; MIT; added 11 Nov 2026 at Kameel's request. The unlicensed app icons and the official Linear, American Express and Circle logos were removed from this copy on 11 Nov (see its `NOTICE.md`); its own `package.json` is not part of this workspace and adds no dependency to the app) | 299140f |
 
 To update one: clone the repository, read the diff, and copy the skill's
 directory over this one.
