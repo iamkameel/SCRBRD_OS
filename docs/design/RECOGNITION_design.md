@@ -317,6 +317,8 @@ Times are the fixture's time zone; a date is added once it is not today; nothing
 | **D24** | School Records is the headline group; other groups under a labelled filter; the spec's four empty states. |
 | **D25** | A record is noticed to the side at verification, not on the ball. |
 
+**Changed 11 Nov 2026 (R12, as §10's row says):** D17's "based on batting and bowling only" is dropped where fielding is scored. Where every catch, stumping and run out of the match names its fielders (`fielders`, P2), the suggestions count fielding — ten for each catch, stumping or run out against twenty a wicket and one a run — the figures say it ("12 (9) · 2 catches · 1 run out") and the line is not shown; the decision stores `basis: batting_bowling_fielding`. A match with a fielding wicket that names nobody keeps the line and the old basis, `batting_bowling`: fielding there is unknown, not nought. The same for the coach and the captain.
+
 **Changed 21 Oct 2026 (Kameel, READERS_child_data Q2 and Q6):** D4 reads "masked to `recognition.decide` and the withdrawer; never the pupil, the parent, the side's coach (unless he withdrew), or the public." `audit.read` is removed from it. D3 (above) governs the DSO's withdrawn-honour read: "absent; through the audit on a concern".
 
 ---
@@ -361,7 +363,7 @@ The reconciliation's R1–R12 stand in order. Changes are listed per slice; tier
 | **R9 · School record boards (V1b)** | D22–D25: anchor on the side code, the chronology view for pupils and the full view for staff, no family board, the record notice at verification, the spec's empty states | Opus the SQL; Sonnet the screens |
 | **R10 · Corrections reach awards** | D19–D21 as §5: the void trigger comparing `derived_from` and `result_hash`, `recognition_review`, retraction of the honour's and the parent's and a record's notices, the un-retract rule, the "after a correction" notice; the decider's To-resolve row and sheet | **Opus**; after GA-I36 A1 and A2 |
 | **R11 · Public honours board and staff recognition** | D11–D13: `public_honours()` calls `publicName()` per row, never-public rows absent, citation only when named; §3.3's wording check and, if needed, the v2 consent and GA-I20 row; `smoke-public` asserts a "Player" row has no citation and a never-public boy has no row | Opus; Sonnet the school page |
-| **R12 · Scorer completeness (V2)** | none; when P2 lands, D17's "based on batting and bowling only" line is dropped | Opus |
+| **R12 · Scorer completeness (V2)** | none; when P2 lands, D17's "based on batting and bowling only" line is dropped (built 11 Nov 2026: dropped where every fielding wicket names its fielders; see the note under §8) | Opus |
 
 Order: R1 → R2 and R3 → (GA-I36 A2) → R4 → R5, R5b, R5c → R6 → R7 → R8 → R9 → R10 → R11 → R12. R5b can go anywhere after the freeze; R5c must precede R6.
 

@@ -454,7 +454,7 @@ group("L. Determinism: the same events, the same facts");
   let threw = null;
   try { deriveFacts(deep(structuredClone(log))); } catch (e) { threw = e; }
   ok("a frozen log folds (nothing is written to it)", threw === null, String(threw));
-  ok("an empty log: no facts", JSON.stringify(deriveFacts([])) === JSON.stringify({ version: 2, milestones: [], batting: [], bowling: [], fielding: [], unattributed: 0, moments: [] }));
+  ok("an empty log: no facts", JSON.stringify(deriveFacts([])) === JSON.stringify({ version: 2, milestones: [], batting: [], bowling: [], fielding: [], unattributed: 0, credited: 0, moments: [] }));
   ok("no argument at all: no facts", deriveFacts().milestones.length === 0);
 }
 

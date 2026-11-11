@@ -223,6 +223,11 @@ group("G. Player of the Match: the basis, and fielding in the order");
      !suggestPlayerOfMatch(f, sheet, undefined, POTM_BASIS).some((x) => x.playerId === F1.id)
      && matchFigures(f, [F1.id], POTM_BASIS)[0].field === undefined);
   ok("facts from before R12 (no count) are the old basis", potmBasis({}) === POTM_BASIS && POTM_BASES.length === 2);
+  const bowledOnly = deriveFacts([...opening(), ...at(W({ dismissal: "bowled" }), next(2), W({ dismissal: "lbw" }))], sheet);
+  ok("a log that names no fielder anywhere — every log before R12 — is the old basis, though nothing is unattributed",
+     bowledOnly.unattributed === 0 && bowledOnly.credited === 0 && potmBasis(bowledOnly) === POTM_BASIS);
+  ok("...and a typed substitute's catch is a credit the basis counts, though he holds no line",
+     deriveFacts([...opening(), ...at(W({ dismissal: "caught", fielders: ["J Sub"] }))], sheet).credited === 1);
   ok("a boy who only fielded is 'did not bat or bowl' with nothing to name, else his fielding",
      figuresWords({ playerId: "x", bat: null, bowl: null, field: null }) === "Did not bat or bowl"
      && figuresWords({ playerId: "x", bat: null, bowl: null, field: { catches: 1, stumpings: 1, runOuts: 0 } }) === "1 catch · 1 stumping");

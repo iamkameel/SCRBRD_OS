@@ -46,10 +46,11 @@ const NEW_EVENT_FIELDS = ["fielders"];
 /**
  * The answer's keys this tree adds, and what each must be for a log without
  * the new fields: no fielding line (nobody is named), and a count of the
- * fielding wickets the log cannot attribute, which is new and any number.
+ * fielding wickets the log cannot attribute, which is new and any number,
+ * and no credit.
  * @type {Record<string, (v: unknown) => boolean>}
  */
-const NEW_KEYS = { fielding: (v) => Array.isArray(v) && v.length === 0, unattributed: (v) => Number.isInteger(v) };
+const NEW_KEYS = { fielding: (v) => Array.isArray(v) && v.length === 0, unattributed: (v) => Number.isInteger(v), credited: (v) => v === 0 };
 
 /** @param {any} engine @param {any[]} log @param {any} ctx */
 function answer(engine, log, ctx) {

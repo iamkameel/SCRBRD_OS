@@ -10,13 +10,14 @@
  * a correction moved them.
  *
  * THE BASIS, SAID ON THE SCREEN. Fielding counts once it is scored (P2,
- * RECOGNITION R12): when every catch, stumping and run out of the match
- * names its fielders (the facts' `unattributed` is nought), the basis is
- * POTM_BASIS_FIELDING and D17's line is dropped (basisWords() is null).
- * Otherwise — a log from before the pad named fielders, a wicket whose
- * fielder was not named, a scorebook card — fielding is unknown, not
- * nought: the basis is POTM_BASIS, batting and bowling only, and
- * BASIS_WORDS says so. `basis` is what the decision stores, so a later
+ * RECOGNITION R12): when the match's log names its fielders (a credit at
+ * all) and every catch, stumping and run out in it names them (the facts'
+ * `unattributed` is nought), the basis is POTM_BASIS_FIELDING and D17's
+ * line is dropped (basisWords() is null). Otherwise — a log from before the
+ * pad named fielders, a wicket whose fielder was not named, a scorebook
+ * card — fielding is unknown, not nought: the basis is POTM_BASIS, batting
+ * and bowling only, and BASIS_WORDS says so. Every log scored before R12
+ * names no fielder, so its suggestions are exactly what they were. `basis` is what the decision stores, so a later
  * re-derive (R10) reads the match on the basis it was decided on.
  *
  * THE ORDER. A plain, stated weighting, not a model: runs off the bat, plus
@@ -44,13 +45,14 @@ export const BASIS_WORDS = "Based on batting and bowling only.";
 export const FIELDING_WEIGHT = 10;
 
 /**
- * The basis a match's suggestions are read on: with fielding when every
- * catch, stumping and run out it holds names its fielders, else batting and
- * bowling only. Facts from before R12 (no `unattributed`) are the old basis.
- * @param {Pick<Facts, "unattributed"> | {unattributed?: number}} facts
+ * The basis a match's suggestions are read on: with fielding when its log
+ * names fielders and every catch, stumping and run out it holds names them,
+ * else batting and bowling only. Facts from before R12 (no counts) are the
+ * old basis.
+ * @param {{unattributed?: number, credited?: number}} facts
  * @returns {string}  one of POTM_BASES
  */
-export const potmBasis = (facts) => (facts?.unattributed === 0 ? POTM_BASIS_FIELDING : POTM_BASIS);
+export const potmBasis = (facts) => (facts?.unattributed === 0 && (facts?.credited ?? 0) > 0 ? POTM_BASIS_FIELDING : POTM_BASIS);
 /**
  * D17's line for a basis: said while fielding is not counted, dropped (null)
  * once it is.

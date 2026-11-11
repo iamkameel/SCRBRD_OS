@@ -38672,6 +38672,37 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 124
   -- └── db/146 (section 124) ──────────────────────────────────────────
+
+  -- ┌── db/150 (section R12): who fielded the wicket ────────────────────
+  -- RECOGNITION R12. The rule (events.mjs fieldersFit), the door on every
+  -- insert, the views reading through ball_event's own policies (invoker),
+  -- the application reading and never writing them, and Player of the Match
+  -- taking the basis it was read on. That fielding_credit and the careers are
+  -- the fold's is tools/smoke-fold-figures.mjs's.
+  PERFORM _assert(ball_fielders_fit('["a"]', 'caught') AND ball_fielders_fit('["a"]', 'stumped')
+                  AND ball_fielders_fit('["a","b"]', 'run_out') AND NOT ball_fielders_fit('["a","b"]', 'caught')
+                  AND NOT ball_fielders_fit('["a","a"]', 'run_out') AND NOT ball_fielders_fit('["a","b","c"]', 'run_out')
+                  AND NOT ball_fielders_fit('["a"]', 'lbw') AND NOT ball_fielders_fit('[]', 'caught')
+                  AND NOT ball_fielders_fit(NULL, 'caught') AND NOT ball_fielders_fit('[" a"]', 'caught'),
+    '§R12 (fit): ball_fielders_fit() is not events.mjs fieldersFit()');
+  PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'ball_event'::regclass
+                             AND tgname = 'ball_event_wicket_fielders' AND tgenabled = 'O' AND tgtype & 2 = 2 AND tgtype & 4 = 4),
+    '§R12 (door): the fielders door is not a live BEFORE INSERT trigger on ball_event');
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_class WHERE relname IN ('fielding_credit', 'player_fielding_act', 'player_fielding_career', 'player_fielding_by_season')
+                                AND NOT coalesce('security_invoker=true' = ANY (reloptions), false))
+                  AND (SELECT count(*) FROM pg_class WHERE relname IN ('fielding_credit', 'player_fielding_act', 'player_fielding_career', 'player_fielding_by_season')) = 4,
+    '§R12 (views): a fielding view is missing or runs as its owner, past ball_event''s policies');
+  PERFORM _assert(has_table_privilege('scrbrd_app', 'fielding_credit', 'SELECT') AND has_table_privilege('scrbrd_app', 'player_fielding_by_season', 'SELECT')
+                  AND NOT has_table_privilege('scrbrd_app', 'fielding_credit', 'INSERT')
+                  AND NOT has_table_privilege('public', 'player_fielding_by_season', 'SELECT')
+                  AND NOT has_function_privilege('public', 'ball_event_wicket_fielders()', 'EXECUTE'),
+    '§R12 (grants): the application does not read the fielding views, writes one, or the public reads them');
+  PERFORM _assert(position($r$NOT IN ('batting_bowling', 'batting_bowling_fielding')$r$ IN
+                             (SELECT prosrc FROM pg_proc WHERE oid = 'match_award(uuid,uuid,jsonb)'::regprocedure)) > 0
+                  AND position($r$NOT IN ('batting_bowling', 'batting_bowling_fielding')$r$ IN
+                             (SELECT prosrc FROM pg_proc WHERE oid = 'captain_nominate(uuid,uuid,jsonb)'::regprocedure)) > 0,
+    '§R12 (basis): Player of the Match refuses the fielding basis');
+  -- └── db/150 (section R12) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

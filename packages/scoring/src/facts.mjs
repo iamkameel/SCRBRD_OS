@@ -191,6 +191,8 @@ const FIVE = 5;
  * @property {number} unattributed  the match's catches, stumpings and run outs that stood and
  *   name no fielder by reference (and every wicket of a scorebook card): fielding the log
  *   does not know. Nought means every fielding wicket is credited (potmBasis())
+ * @property {number} credited  the fielding credits the match's wickets name, a typed name's
+ *   included: nought in a log from before the pad named fielders (potmBasis())
  * @property {Moment[]} moments
  */
 
@@ -264,7 +266,7 @@ export function deriveFacts(events = [], roster = null, options = {}) {
   /** @type {BattingLine[]} */ const batting = [];
   /** @type {BowlingLine[]} */ const bowling = [];
   /** @type {FieldingLine[]} */ const fielding = [];
-  let unattributed = 0;
+  let unattributed = 0, credited = 0;
   /** @type {Moment[]} */ const moments = [];
 
   for (const n of numbers) {
@@ -383,6 +385,7 @@ export function deriveFacts(events = [], roster = null, options = {}) {
     for (const entry of fin.ballLog) {
       const credits = fieldingCredits(entry);
       if (!credits.length && isWicketBall(entry) && !entry.freeHitSaved && FIELDED_DISMISSALS.has(normaliseDismissal(entry.dismissal))) unattributed += 1;
+      credited += credits.length;
       for (const c of credits) {
         if (!linked(c.ref)) continue;
         let line = fielders.get(c.ref);
@@ -398,5 +401,5 @@ export function deriveFacts(events = [], roster = null, options = {}) {
     milestones.push(...mine.map((m, k) => ({ m, k })).sort((a, b) => order(a.m) - order(b.m) || a.k - b.k).map((x) => x.m));
   }
 
-  return { version: FACTS_VERSION, milestones, batting, bowling, fielding, unattributed, moments };
+  return { version: FACTS_VERSION, milestones, batting, bowling, fielding, unattributed, credited, moments };
 }

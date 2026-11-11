@@ -70,11 +70,11 @@ group("A. The order: runs plus twenty a wicket");
   ok("two asked for, two given", suggestPlayerOfMatch(f, H, 2).length === 2);
   ok("the basis is said in words and stored as a word", BASIS_WORDS === "Based on batting and bowling only." && POTM_BASIS === "batting_bowling");
   // A tie on weight goes to wickets: 20 runs v one wicket.
-  const tie = matchFigures({ version: 1, milestones: [], moments: [], fielding: [], unattributed: 0,
+  const tie = matchFigures({ version: 1, milestones: [], moments: [], fielding: [], unattributed: 0, credited: 0,
     batting: [{ player: H[0], innings: 0, runs: 20, balls: 10, out: true, summarised: false, crossings: [] }],
     bowling: [{ player: H[1], innings: 1, wickets: 1, runs: 30, balls: 24, summarised: false }] }, [H[0], H[1]]);
   ok("matchFigures reads each listed boy", tie.length === 2 && tie[0].bat?.runs === 20 && tie[1].bowl?.wickets === 1, tie);
-  const tied = suggestPlayerOfMatch({ version: 1, milestones: [], moments: [], fielding: [], unattributed: 0,
+  const tied = suggestPlayerOfMatch({ version: 1, milestones: [], moments: [], fielding: [], unattributed: 0, credited: 0,
     batting: [{ player: H[0], innings: 0, runs: 20, balls: 10, out: true, summarised: false, crossings: [] }],
     bowling: [{ player: H[1], innings: 1, wickets: 1, runs: 30, balls: 24, summarised: false }] }, [H[0], H[1]]);
   ok("a tie on weight goes to the wicket", tied[0]?.playerId === H[1], tied);
