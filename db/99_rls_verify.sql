@@ -38905,8 +38905,10 @@ $v116$;
   --               told again; the record is the 99's, noticed once, "after
   --               a correction"
   --   (stand)     a non-reader's "let it stand" is refused; the coach's
-  --               closes it with his name and the figures as they stand; a
-  --               void that moves nothing of his opens nothing
+  --               closes it with his name and the figures as they stand, and
+  --               audit_log() words it ("Let Player of the Match — v …
+  --               stand after a correction", the review named, no reason);
+  --               a void that moves nothing of his opens nothing
   --   (re-reached) the ball scored again and sealed again at 100: a new
   --               review (his figures moved from what he let stand); the
   --               record's own notice returns on its row (D20, Q7), its
@@ -38925,6 +38927,9 @@ $v116$;
   --               closed 'withdrawn' with his name; the side's notice is
   --               taken back and one more, naming nobody, says why; no
   --               award is made to anybody
+  --   (kind)      recognition() says the withdrawal's kind, correction or
+  --               other, with its date, to the director, the boy and his
+  --               mother; never its reason; the assistant gets no row
   --   (grants)    the doors are the application's; the rest nobody's; the
   --               application writes no review
   --
@@ -38935,6 +38940,8 @@ $v116$;
   --   recognition_review_reader() without its decider test           → (readers)
   --   record_notice_recheck() skipping the retraction                → (unsaid)
   --   record_notice_for() without its un-retract                     → (re-reached)
+  --   recognition_review_stand() writing no audit row                → (stand)
+  --   recognition() returning no withdrawn_kind                      → (kind)
   DECLARE
     y   jsonb := _v148_stage();
     M0  uuid := (y->>'M0')::uuid;
@@ -39068,6 +39075,16 @@ $v116$;
                     AND NOT (_v142_honour(v_h1)->>'withdrawn')::boolean,
       format('§125 (stand): the review let stand reads %s', j));
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM recognition_reviews_open(M1)), '§125 (stand): the review is still open to the coach');
+    -- Q4 (11 Nov 2026): in the audit log, as every decision on an honour is.
+    PERFORM _as(DOS);
+    SELECT string_agg(l.action || ' / ' || coalesce(l.actor, '-') || ' / ' || coalesce(l.detail->>'review', '-'), ' | ') INTO got
+      FROM audit_log('11111111-1111-1111-1111-111111111111', ARRAY['recognition'], NULL, NULL, NULL, 500) l
+     WHERE l.action LIKE 'Let %';
+    PERFORM _assert(got LIKE 'Let Player of the Match — v % stand after a correction / V148 Coach / ' || v_rv::text,
+      format('§125 (stand): the audit log reads %s', got));
+    PERFORM _assert((SELECT bool_and(l.subject_kind = 'pupil' AND l.detail->>'honourKind' = 'player_of_match' AND NOT (l.detail ? 'reason'))
+                       FROM audit_log('11111111-1111-1111-1111-111111111111', ARRAY['recognition'], NULL, NULL, NULL, 500) l WHERE l.action LIKE 'Let %'),
+      '§125 (stand): the audit row is not about the pupil, does not say its kind, or carries a reason');
     PERFORM _v148_void(M1, y->>'M1_dot');
     PERFORM _assert(jsonb_array_length(_v148_reviews(v_h1)) = 1,
       format('§125 (stand): a void that moved nothing of his opened a review: %s', _v148_reviews(v_h1)));
@@ -39149,6 +39166,24 @@ $v116$;
       format('§125 (withdraw): an award was made to anybody, or this one is not withdrawn as a correction: %s', _v142_honour(v_h2)));
     SELECT * INTO r FROM recognition_review_stand((j->0->>'id')::uuid);
     PERFORM _assert(r.ok = false, '§125 (withdraw): a withdrawn award''s review was let stand');
+    -- (kind) Q2 (11 Nov 2026): recognition() says a withdrawal's kind beside
+    -- its date, to the three readers of a withdrawn honour, never its reason.
+    PERFORM _assert((SELECT x.withdrawn_kind = 'correction' AND x.withdrawn_on IS NOT NULL FROM recognition(P2) x WHERE x.ref_id = v_h2),
+      '§125 (kind): the director does not read M2''s award withdrawn as a correction');
+    SELECT * INTO r FROM match_award_withdraw(v_h1, 'other', 'Withdrawn for a matter the school will raise in person');
+    PERFORM _assert(r.ok, format('§125 (kind): the director could not withdraw M1''s award: %s', r.reason));
+    FOR who IN SELECT unnest(ARRAY['mother', 'boy', 'dos']) LOOP
+      PERFORM _as((y->>who)::uuid);
+      PERFORM _assert((SELECT x.withdrawn_kind = 'other' AND x.withdrawn_on IS NOT NULL FROM recognition(P1) x WHERE x.ref_id = v_h1),
+        format('§125 (kind): %s does not read the withdrawn award''s kind', who));
+    END LOOP;
+    PERFORM _as(MOTHER);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM recognition(P1) x WHERE x.withdrawn_kind IS NOT NULL AND x.withdrawn_on IS NULL)
+                    AND NOT EXISTS (SELECT 1 FROM recognition(P1) x WHERE to_jsonb(x)::text LIKE '%in person%'),
+      '§125 (kind): a standing row carries a kind, or the reason reached the mother');
+    PERFORM _as((y->>'assistant')::uuid);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM recognition(P1) x WHERE x.ref_id = v_h1),
+      '§125 (kind): the assistant coach reads the withdrawn award');
 
     -- (grants)
     PERFORM _assert(has_function_privilege('scrbrd_app', 'recognition_reviews_open(uuid)', 'EXECUTE')

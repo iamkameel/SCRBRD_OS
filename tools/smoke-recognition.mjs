@@ -355,6 +355,7 @@ try {
     const wOf = async (tok) => (await recog(PILLAY, tok)).find((x) => x.ref_id === pin);
     const w = await wOf(parent);
     ok("his parent still reads it, withdrawn, with the date", w && /^\d{4}-\d{2}-\d{2}/.test(String(w.withdrawn_on)));
+    ok("...and its kind, 'other' by the ordinary route (R10, db/148)", w?.withdrawn_kind === "other", JSON.stringify(w));
     ok("...so does he, and the director of sport", Boolean((await wOf(pupil))?.withdrawn_on) && Boolean((await wOf(head))?.withdrawn_on));
     ok("...but not his coach: it has left every screen another child can open", !(await wOf(coach)));
     ok("...and nobody is sent the reason", !(await recog(PILLAY, head)).some((x) => "withdrawn_reason" in x || JSON.stringify(x).includes("Awarded in error")));
@@ -753,6 +754,19 @@ try {
     const twice = await stand(row?.reviewId, coach);
     ok("...and twice is refused in words", twice.status === 422 && twice.body?.error === "already_closed" && twice.body?.message === "This review is already closed.", JSON.stringify(twice.body));
     ok("a review id that is not one is a 404", (await stand("not-an-id", coach)).status === 404);
+    const lg = await rows("/api/read/audit_log?kinds=recognition", head);
+    const coachName10 = (await q(`select name from app_user where email = 'coach@example.invalid'`))[0].name;
+    ok("the audit log words it, and names the coach", lg.some((r) => /^Let Player of the Match — v Westville.* stand after a correction$/.test(r.action)
+       && r.actor === coachName10 && r.detail?.review === row?.reviewId),
+       JSON.stringify(lg.filter((r) => /^Let /.test(r.action))));
+    // Withdrawn as a correction after all: the boy's and his parent's card say so (decided 11 Nov 2026).
+    ok("the director withdraws it as a correction", (await api(`/api/matches/${M}/player-of-match/withdraw`, { method: "POST", token: head,
+       body: { honourId: a.body?.honourId, kind: "correction", reason: "The six was a dot ball after all" } })).body?.ok === true);
+    const wp = await login("parent.whitfield@example.invalid");
+    const card = (await recog(WHITFIELD, wp)).find((x) => x.ref_id === a.body?.honourId);
+    ok("his parent reads it withdrawn, kind correction, never the reason", card?.withdrawn_kind === "correction" && !!card.withdrawn_on
+       && !JSON.stringify(card).includes("dot ball after all"), JSON.stringify(card));
+    ok("...and the director reads the kind too", (await recog(WHITFIELD, head)).find((x) => x.ref_id === a.body?.honourId)?.withdrawn_kind === "correction");
   }
 
   ok("the server logged no errors", serverErr.join("").trim() === "");

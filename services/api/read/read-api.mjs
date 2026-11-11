@@ -2126,11 +2126,12 @@ export const READ_QUERIES = {
    * are awarded, caps are earned, milestones happen; none is a score. Since
    * db/140 (R4) a milestone says where it came from (sealed_on, source, the
    * side and the fixture class) and a withdrawn honour, with withdrawn_on and
-   * never its reason, reaches the pupil, his guardian and the deciders (D3).
+   * never its reason, reaches the pupil, his guardian and the deciders (D3);
+   * since db/148 (R10) with its kind, correction or other (D21).
    */
   recognition: {
     text: `select family, kind, label, value, season, on_date, match_id, opponent, is_public, citation, ref_id,
-                  withdrawn_on, side_code, innings, sealed_on, source, fixture_class, no_board
+                  withdrawn_on, side_code, innings, sealed_on, source, fixture_class, no_board, withdrawn_kind
              from recognition($1::uuid)`,
     params: q => [req(q, "playerId")],
   },

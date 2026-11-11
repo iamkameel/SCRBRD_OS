@@ -74,6 +74,17 @@ group("A withdrawn honour (D3, D4)");
   ok("a label that already carries the year says it once", potm === "Player of the Match — v Kearsney College U14A · 21 Oct 2026", potm);
   ok("isWithdrawn reads withdrawnOn, on an honour only", isWithdrawn(w) && !isWithdrawn({ ...w, family: "milestone" }) && !isWithdrawn({ ...w, withdrawnOn: null }));
   ok("no word of a reason anywhere", !/reason|because|error/i.test(honourWords(w, { family: true })));
+  // R10 (db/148; decided 11 Nov 2026): the kind, never the reason.
+  const c = { family: "honour", label: "Player of the Match — v Kearsney College U14A · 21 Oct 2026", season: "2026",
+              withdrawnOn: "2026-10-23", withdrawnKind: "correction" };
+  ok("withdrawn after a correction, to the boy: the date and why",
+     honourWords(c) === "Player of the Match — v Kearsney College U14A · 21 Oct 2026 · withdrawn 23 Oct 2026 after the scorecard was corrected", honourWords(c));
+  ok("...to his parent the same, and not 'the school can say why'",
+     honourWords(c, { family: true }) === honourWords(c) && !/school can say why/.test(honourWords(c, { family: true })));
+  ok("withdrawn for another reason: as before, the parent told the school can say why",
+     honourWords({ ...w, withdrawnKind: "other" }, { family: true }) === "Half colours 2026 · withdrawn 3 Oct 2026 · the school can say why"
+     && honourWords({ ...w, withdrawnKind: "other" }) === "Half colours 2026 · withdrawn 3 Oct 2026");
+  ok("...and a kind on a standing honour says nothing", honourWords({ family: "honour", label: "Full colours", season: "2025", withdrawnKind: "correction" }) === "Full colours 2025");
 }
 
 group("The seal's mark: a medal once sealed, a dashed star before; hidden, the words say it");

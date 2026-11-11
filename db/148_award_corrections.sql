@@ -85,6 +85,17 @@
 --               record that newly holds after a correction says so: "…, after
 --               a correction." Restated whole; the guard below takes db/143's
 --               body or this file's.
+--   function  ~ recognition() (db/140)  one column more, withdrawn_kind, for
+--               a withdrawn honour, to the same three readers (the pupil, his
+--               guardian, recognition.manage over him); never the reason (D4).
+--               Decided 11 Nov 2026 (R10's Q2): a Player of the Match
+--               withdrawn as a correction reads "withdrawn <date> after the
+--               scorecard was corrected" on the pupil's and parent's card.
+--               Dropped and created (a new shape), its grant restated.
+--   audit     + recognition_audit event 'review_stood' (the CHECK re-made);
+--             ~ audit_log() (db/136, as db/142–146 left it) words it, one
+--               needle each (Q4, 11 Nov 2026: "let it stand" is in the audit
+--               log like every decision on a child's honour)
 --   functions + match_award_figures, match_award_result, match_award_person_holds,
 --               recognition_review_baseline, recognition_review_tell,
 --               recognition_review_check, record_notice_holds,
@@ -128,8 +139,10 @@
 -- before it and is in services/api/expected-migrations.json.
 --
 -- THE GUARD keys on pg_proc.prosrc as db/142–db/146 do: the md5 of the live
--- record_notice_for() body, its whitespace folded, must be db/143's or this
--- file's.
+-- record_notice_for() and recognition() bodies, whitespace folded, must be
+-- db/143's and db/140's, or this file's. audit_log() and
+-- scoring_amendment_rejudge() are patched by exact needle, which refuses a
+-- body that does not hold it exactly once.
 
 
 -- ── 0 · What this file was written against ─────────────────────────
@@ -165,6 +178,10 @@ BEGIN
      OR to_regprocedure('app_is_platform_wide()') IS NULL
      OR to_regprocedure('match_verified(uuid)') IS NULL OR to_regprocedure('sa_today()') IS NULL THEN
     RAISE EXCEPTION 'db/148: Player of the Match (db/142), the notices'' retraction (db/89, db/113), the record boards (db/143), the career views (db/87), the pad guard (db/50) or the platform reads (db/20) is missing; apply them first';
+  END IF;
+  SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = 'recognition(uuid)'::regprocedure;
+  IF v_src IS NULL OR pg_temp._v148_fold(v_src) NOT IN ('e070d3ca32e877ab0999ad81bf7bbc48', '7a09e624cdff62bfcf94fdd3b1c04f41') THEN
+    RAISE EXCEPTION 'db/148: recognition() is not db/140''s or this file''s (md5 %); look before replacing it', pg_temp._v148_fold(v_src);
   END IF;
   SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = 'record_notice_for(uuid)'::regprocedure;
   v_md5 := pg_temp._v148_fold(v_src);
@@ -640,6 +657,11 @@ BEGIN
          result_at_close = coalesce(match_award_result(r.match_id), r.result_after, r.result_before),
          checked_at = now()
    WHERE id = r.id;
+  -- Q4 (11 Nov 2026): in the audit log, as every decision on an honour is.
+  INSERT INTO recognition_audit (event, honour_id, school_id, team_code, player_id, match_id, kind, actor_id, detail)
+  SELECT 'review_stood', h.id, h.school_id, h.team_code, h.player_id, h.match_id, h.kind, v_me,
+         jsonb_build_object('name', h.name, 'reviewId', r.id)
+    FROM honour h WHERE h.id = r.honour_id;
   RETURN QUERY SELECT true, NULL::text;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -739,8 +761,119 @@ COMMENT ON FUNCTION record_notice_for(uuid) IS
   'db/143 (RECOGNITION R9, D25), db/148 (R10, D20): each record a finished, verified match now holds against an earlier match''s, noticed once to that side (team scope, under player.performance.read, no recipient, the holder as subject, named by initial and surname); one taken back by a correction and held again returns on the same row; one newly held after a correction says so. A notice that cannot be raised never stops the write that asked for it. Nobody''s to call.';
 
 
+
+
 -- ══════════════════════════════════════════════════════════════════
---  9 · Who may call what
+--  9 · recognition() says a withdrawal's kind (db/140's, one column more)
+-- ══════════════════════════════════════════════════════════════════
+-- Decided 11 Nov 2026 by the lead on R10's Q2: a Player of the Match
+-- withdrawn after a correction reads, on the pupil's and the parent's card,
+-- "withdrawn <date> after the scorecard was corrected" (D21: a correction is
+-- the kind the side is told of already); the parent keeps "the school can
+-- say why" for kind 'other' only. So the honour arm carries withdrawn_kind
+-- beside withdrawn_on, for the same three readers db/140 returns a withdrawn
+-- honour to. db/140's body otherwise exactly; a new result shape is a new
+-- function, dropped and created in this file's transaction, its grant
+-- restated below.
+DROP FUNCTION IF EXISTS recognition(uuid);
+CREATE FUNCTION recognition(p_player uuid)
+RETURNS TABLE (family text, kind text, label text, value int, season text, on_date date,
+               match_id uuid, opponent text, is_public boolean, citation text, ref_id uuid,
+               withdrawn_on date, side_code text, innings smallint, sealed_on date, source text,
+               fixture_class text, no_board text, withdrawn_kind text) AS $$
+DECLARE v_own boolean;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM player p WHERE p.id = p_player
+                    AND app_can('player.profile.read', p.school_id, p.team_code, p.id,
+                                '00000000-0000-0000-0000-000000000000'::uuid)
+                    -- READERS Q13: a pupil, through a standing assignment only.
+                    AND (NOT app_reader_is_pupil()
+                         OR app_can('player.profile.read', p.school_id, p.team_code, p.id, NULL::uuid))) THEN
+    RETURN;
+  END IF;
+  -- D3: the pupil himself (his self-access link, or his own account) and his
+  -- guardian read a withdrawn honour; so does recognition.manage over him.
+  v_own := is_family_of(p_player)
+           OR EXISTS (SELECT 1 FROM app_user u WHERE u.id = app_user_id() AND u.player_id = p_player);
+  RETURN QUERY
+    WITH ms AS MATERIALIZED (
+      SELECT x.kind, x.value, x.match_id, x.innings, x.opponent, x.played_on
+        FROM player_milestone x WHERE x.player_id = p_player
+         AND NOT EXISTS (SELECT 1 FROM milestone_notice mn
+                          WHERE mn.player_id = x.player_id AND mn.kind = x.kind AND mn.match_id = x.match_id
+                            AND mn.innings = coalesce(x.innings, 0) AND mn.retracted_at IS NOT NULL)),
+    mx AS MATERIALIZED (
+      SELECT d.match_id, f.fixture_class, f.no_board, milestone_side_of(d.match_id, p_player) AS side_code
+        FROM (SELECT DISTINCT ms.match_id FROM ms) d
+        LEFT JOIN LATERAL fixture_class(d.match_id) f ON true),
+    sx AS MATERIALIZED (
+      SELECT g.match_id, g.grain, g.innings,
+             sa_date(milestone_seal_at(g.match_id, g.grain, g.innings)) AS sealed_on,
+             milestone_source(g.match_id, g.grain, g.innings) AS source
+        FROM (SELECT DISTINCT ms.match_id,
+                     CASE WHEN ms.kind IN ('fifty', 'hundred', 'five_for', 'hat_trick') THEN 'fifty'
+                          WHEN ms.kind = 'caps' THEN 'caps' ELSE 'career_runs' END AS grain,
+                     coalesce(ms.innings, 0)::smallint AS innings
+                FROM ms) g)
+    SELECT 'honour'::text, h.kind, honour_kind_label(h.kind, h.name), NULL::int, (SELECT sn.label FROM season sn WHERE sn.id = h.season_id), h.awarded_on,
+           NULL::uuid, NULL::text, h.is_public, h.citation, h.id,
+           sa_date(h.withdrawn_at), h.team_code, NULL::smallint, NULL::date, NULL::text, NULL::text, NULL::text,
+           -- db/148 (R10; the lead's decision of 11 Nov 2026 on Q2): the
+           -- withdrawal's kind, with its date, to the same three readers.
+           -- Never its reason (D4).
+           CASE WHEN h.withdrawn_at IS NOT NULL THEN h.withdrawn_kind END
+      FROM honour h WHERE h.player_id = p_player
+       AND (h.withdrawn_at IS NULL OR v_own
+            OR app_can('recognition.manage', h.school_id, coalesce(h.team_code, '*'), h.player_id, NULL::uuid))
+    UNION ALL
+    SELECT 'cap', 'cap', c.team_code || ' cap ' || CASE WHEN c.baseline_set THEN '#' || c.cap_no ELSE '#' || c.cap_no || ' (no baseline set)' END
+             || ' · ' || c.appearances || ' appearance' || CASE WHEN c.appearances = 1 THEN '' ELSE 's' END,
+           c.cap_no, NULL, c.first_on, c.first_match_id, NULL, false, NULL, NULL,
+           NULL::date, c.team_code, NULL::smallint, NULL::date, 'team sheet', NULL::text, NULL::text, NULL::text
+      FROM team_cap c WHERE c.player_id = p_player
+    UNION ALL
+    SELECT 'milestone', ms.kind, milestone_label(ms.kind, ms.value), ms.value, NULL, ms.played_on,
+           ms.match_id, ms.opponent, false, NULL, NULL,
+           NULL::date, mx.side_code, ms.innings, sx.sealed_on, sx.source, mx.fixture_class, mx.no_board, NULL::text
+      FROM ms
+      JOIN mx ON mx.match_id = ms.match_id
+      JOIN sx ON sx.match_id = ms.match_id AND sx.innings = coalesce(ms.innings, 0)
+             AND sx.grain = CASE WHEN ms.kind IN ('fifty', 'hundred', 'five_for', 'hat_trick') THEN 'fifty'
+                                 WHEN ms.kind = 'caps' THEN 'caps' ELSE 'career_runs' END
+    ORDER BY 6 DESC NULLS LAST, 1;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+COMMENT ON FUNCTION recognition(uuid) IS
+  'db/140 (RECOGNITION R4), db/148 (R10): a boy''s honours, caps and milestones under player.profile.read on him. A milestone says where it came from (side_code, innings, sealed_on, source, fixture_class, no_board); a withdrawn honour is returned, with withdrawn_on and withdrawn_kind (correction | other) and never its reason, to the pupil, his guardian and recognition.manage over him only (D3, D21).';
+
+
+
+-- ══════════════════════════════════════════════════════════════════
+--  10 · "Let it stand" is in the audit log (decided 11 Nov 2026, Q4)
+-- ══════════════════════════════════════════════════════════════════
+-- recognition_audit (db/142, widened by db/144) gains the event, written by
+-- recognition_review_stand(): who, when, which award (honour_id, its name)
+-- and the review. audit_log() words it as it words a withdrawal, patched in
+-- place (db/142's exact-needle pattern): "Let Player of the Match — v … stand
+-- after a correction". The child is named as audit_log() names him for every
+-- honour (subject), and no more.
+ALTER TABLE recognition_audit DROP CONSTRAINT IF EXISTS recognition_audit_event_check;
+ALTER TABLE recognition_audit ADD CONSTRAINT recognition_audit_event_check
+  CHECK (event IN ('awarded', 'withdrawn', 'made_public', 'made_private', 'nominated', 'nomination_confirmed',
+                   'nomination_superseded', 'nomination_no_award', 'nomination_lapsed', 'review_stood'));
+
+SELECT pg_temp._v148_patch('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)',
+  E'                 WHEN \'made_public\' THEN \'Put an honour on the public board: \'',
+  E'                 WHEN \'review_stood\' THEN \'Let \' || honour_kind_label(rx.kind, rx.detail->>\'name\') || \' stand after a correction\'   -- db/148\n'
+  || E'                 WHEN \'made_public\' THEN \'Put an honour on the public board: \'',
+  1);
+SELECT pg_temp._v148_patch('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)',
+  E'\'withdrawnKind\', rx.detail->\'withdrawnKind\')),',
+  E'\'withdrawnKind\', rx.detail->\'withdrawnKind\', \'review\', rx.detail->\'reviewId\')),',
+  1);
+
+
+-- ══════════════════════════════════════════════════════════════════
+--  11 · Who may call what
 -- ══════════════════════════════════════════════════════════════════
 DO $grants$
 DECLARE f text; r text;
@@ -766,6 +899,14 @@ BEGIN
       EXECUTE format('REVOKE ALL ON recognition_review FROM %I', r);
     END IF;
   END LOOP;
+  -- recognition(): db/140's grant, restated on the new function.
+  REVOKE ALL ON FUNCTION recognition(uuid) FROM PUBLIC;
+  GRANT EXECUTE ON FUNCTION recognition(uuid) TO scrbrd_app;
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('REVOKE ALL ON FUNCTION recognition(uuid) FROM %I', r);
+    END IF;
+  END LOOP;
   -- The doors, and the policy's predicate (evaluated as the reader, as
   -- db/144's recognition_nomination_staff() is).
   GRANT EXECUTE ON FUNCTION recognition_reviews_open(uuid) TO scrbrd_app;
@@ -775,7 +916,7 @@ END $grants$;
 
 
 -- ══════════════════════════════════════════════════════════════════
---  10 · Refuse to commit a file that did not do what it says
+--  12 · Refuse to commit a file that did not do what it says
 -- ══════════════════════════════════════════════════════════════════
 DO $check$
 DECLARE f text; v_src text;
@@ -855,8 +996,24 @@ BEGIN
      OR position('PERFORM record_notice_recheck(p_match);' IN v_src) = 0 THEN
     RAISE EXCEPTION 'db/148: record_notice_for() does not return a re-held record on its row, or does not say "after a correction"';
   END IF;
+  IF pg_get_function_result('recognition(uuid)'::regprocedure) <>
+     'TABLE(family text, kind text, label text, value integer, season text, on_date date, match_id uuid, opponent text, is_public boolean, citation text, ref_id uuid, withdrawn_on date, side_code text, innings smallint, sealed_on date, source text, fixture_class text, no_board text, withdrawn_kind text)'
+     OR (SELECT prosrc FROM pg_proc WHERE oid = 'recognition(uuid)'::regprocedure) LIKE '%withdrawn_reason%'
+     OR NOT has_function_privilege('scrbrd_app', 'recognition(uuid)', 'EXECUTE')
+     OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) x
+                 WHERE p.oid = 'recognition(uuid)'::regprocedure AND x.grantee = 0 AND x.privilege_type = 'EXECUTE') THEN
+    RAISE EXCEPTION 'db/148: recognition() is not the shape this file gives it, reads a reason (D4), or lost its grant';
+  END IF;
+  IF position('WHEN ''review_stood'' THEN' IN (SELECT prosrc FROM pg_proc
+       WHERE oid = 'audit_log(uuid,text[],timestamptz,timestamptz,text,integer)'::regprocedure)) = 0
+     OR position('INSERT INTO recognition_audit' IN (SELECT prosrc FROM pg_proc WHERE oid = 'recognition_review_stand(uuid)'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'db/148: "let it stand" does not reach the audit log';
+  END IF;
   IF pg_temp._v148_fold(v_src) <> '6b7c1b61a1f308601d3afe18ffe8905a' THEN
     RAISE EXCEPTION 'db/148: record_notice_for() is not this file''s (md5 %)', pg_temp._v148_fold(v_src);
+  END IF;
+  IF pg_temp._v148_fold((SELECT prosrc FROM pg_proc WHERE oid = 'recognition(uuid)'::regprocedure)) <> '7a09e624cdff62bfcf94fdd3b1c04f41' THEN
+    RAISE EXCEPTION 'db/148: recognition() is not this file''s (md5 %)', pg_temp._v148_fold((SELECT prosrc FROM pg_proc WHERE oid = 'recognition(uuid)'::regprocedure));
   END IF;
 END $check$;
 

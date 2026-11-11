@@ -829,14 +829,15 @@ const d10 = (v) => (v ? String(v).slice(0, 10) : null);
  * R4 (db/140): a milestone says where it came from — the side he played for, its
  * innings, the day the scorer's seal stands for it (null until then), its source
  * ('ball log', 'scorebook', 'team sheet') and the fixture's class; a withdrawn
- * honour carries the day it was withdrawn, and reaches only its three readers (D3).
+ * honour carries the day it was withdrawn, and reaches only its three readers (D3);
+ * R10 (db/148) with its kind, 'correction' or 'other' (D21), never its reason.
  */
 function asRecognition(r) {
   return { family: r.family, kind: r.kind, label: r.label, value: r.value, season: r.season, on: d10(r.on_date),
            matchId: r.match_id, opponent: r.opponent, isPublic: r.is_public, citation: r.citation, id: r.ref_id,
            withdrawnOn: d10(r.withdrawn_on), sideCode: r.side_code ?? null, innings: r.innings ?? null,
            sealedOn: d10(r.sealed_on), source: r.source ?? null, fixtureClass: r.fixture_class ?? null,
-           noBoard: r.no_board ?? null, live: true };
+           noBoard: r.no_board ?? null, withdrawnKind: r.withdrawn_kind ?? null, live: true };
 }
 /**
  * One of a boy's personal bests (RECOGNITION R5, db/141 player_best()): his
