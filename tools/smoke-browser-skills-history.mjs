@@ -205,7 +205,7 @@ try {
   ok("a session offers Plan and Register, to a coach", await tid(c.page, `plan-open-${sess[1]}`).count() === 1 && await tid(c.page, `register-open-${sess[1]}`).count() === 1);
   const tp = await tid(c.page, `plan-open-${sess[1]}`).boundingBox();
   const tr = await tid(c.page, `register-open-${sess[1]}`).boundingBox();
-  ok("...each a 44px target", tp?.height >= 44 && tp?.width >= 44 && tr?.height >= 44 && tr?.width >= 44, JSON.stringify([tp, tr]));
+  ok("...each a 44px target", tp?.height >= 43.5 && tp?.width >= 43.5 && tr?.height >= 43.5 && tr?.width >= 43.5, JSON.stringify([tp, tr]));
   await tid(c.page, `plan-open-${sess[1]}`).click();
   await tid(c.page, "plan-editor").waitFor({ timeout: 8000 });
   ok("the plan editor says it names nobody", /names nobody/.test(await tid(c.page, "plan-editor").innerText()));
@@ -226,7 +226,7 @@ try {
   const regTxt = await tid(c.page, "register-sheet").innerText();
   ok("...and no injured, and no free text", !/injur/i.test(regTxt) && await tid(c.page, "register-sheet").locator("textarea, input").count() === 0);
   const sb = await tid(c.page, `register-${P_SELF}-late`).boundingBox();
-  ok("...each state a 44px target", sb?.height >= 44 && sb?.width >= 44, JSON.stringify(sb));
+  ok("...each state a 44px target", sb?.height >= 43.5 && sb?.width >= 43.5, JSON.stringify(sb));
   ok("Save is off until somebody is marked", await tid(c.page, "register-save").isDisabled());
   await tid(c.page, `register-${P_SELF}-present`).click();
   ok("a pressed state is checked", (await tid(c.page, `register-${P_SELF}-present`).getAttribute("aria-checked")) === "true");
@@ -392,7 +392,7 @@ try {
   {
     await tid(b.page, "me-skills-open").waitFor({ timeout: 12000 }).catch(() => {});
     const door = await tid(b.page, "me-skills-open").boundingBox().catch(() => null);
-    ok("...and his ratings card has a Skills door, a 44px target", !!door && door.height >= 44, JSON.stringify(door));
+    ok("...and his ratings card has a Skills door, a 44px target", !!door && door.height >= 43.5, JSON.stringify(door) + " (the layout rounds 44 to 43.9999 at a fractional offset; 43.5 as in the cockpit, home and practice walks)");
     await tid(b.page, "me-skills-open").click({ timeout: 8000 }).catch(() => {});
     ok("he has the Skills screen", await tid(b.page, "skills-self").waitFor({ timeout: 12000 }).then(() => true).catch(() => false));
     await tid(b.page, "history-strip").first().waitFor({ timeout: 12000 }).catch(() => {});
@@ -400,7 +400,7 @@ try {
     ok("...and his target", /target 14/.test(await tid(b.page, "target-line").first().innerText().catch(() => "")));
     await b.page.setViewportSize({ width: 390, height: 844 });
     const bdots = await tid(b.page, "history-technical-againstPace").locator('button[data-testid^="history-dot-"]').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return [r.width, r.height]; }));
-    ok("...each dot a 44px target on a phone", bdots.length === 2 && bdots.every(([w, h]) => w >= 44 && h >= 44), JSON.stringify(bdots));
+    ok("...each dot a 44px target on a phone", bdots.length === 2 && bdots.every(([w, h]) => w >= 43.5 && h >= 43.5), JSON.stringify(bdots));
     await tid(b.page, "since-batting").waitFor({ timeout: 12000 }).catch(() => {});
     const bsince = await tid(b.page, "since-batting").innerText().catch(() => "");
     ok("the panel speaks to him: 'your coach', 'you were'", /\(your coach\)/.test(bsince) && /You were marked present at 1/.test(bsince) && /you were there for 1/.test(bsince), bsince);
