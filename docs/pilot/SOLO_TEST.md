@@ -205,10 +205,10 @@ Then sign in as `pupil.wes.u14a`. Compare. He has **Home**, **Matches**, **Passp
 
 Sign in as `scorer1.wes` on phone 1, after scenario 2 saved the side. The sheet is `SCORER_HELP.md`; these are the checks.
 
-1. **Match Centre**, today's fixture, **Start Scoring →**. Answer **The toss**, then **Bat** or **Bowl**, the openers and the **Opening Bowler**.
+1. **Match Centre**, today's fixture, **Start scoring →**. Answer **The toss**, then **Bat** or **Bowl**, the openers and the **Opening bowler**.
 2. Kearsney's names: the pad cannot read another school's team sheet. Type each Kearsney player's name as he comes in ("K Batter 1"). That is expected.
 3. Score an over with a **Dot**, a four, a **Wide** and a **No ball**. Check the score counts one extra for each, and the over has six legal balls.
-4. Score a **Wicket**, then **Confirm Out**. Pick the next batter on **Batting Order**.
+4. Score a **Wicket**, then **Confirm out**. Pick the next batter on **Batting order**.
 5. Tap **Undo** once. The last ball goes, and the score goes back.
 6. Offline: switch on airplane mode. Score an over. The pill reads **Held** with a count. Switch it off. The count falls, then **Sent**.
 7. Rain: **Pad menu**, **Play stopped**, **Rain**, **Stop play**. Then **Resume**.

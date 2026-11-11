@@ -301,7 +301,7 @@ async function browserCheck() {
     const fixture = sc.page.locator(`[data-testid="match-card-${today}"]`);
     await fixture.waitFor({ timeout: 20000 }).catch(() => {});
     ok("today's fixture is in the Match Centre", (await fixture.count()) === 1);
-    const start = fixture.locator("button", { hasText: /Start Scoring →|Open Live Scorer →/ }).first();
+    const start = fixture.locator("button", { hasText: /Start Scoring →|Open Live Scorer →/i }).first();
     ok("...with Start Scoring on its card", (await start.count()) === 1);
     await start.click({ timeout: 8000 }).catch(() => {});
     const toss = sc.page.locator('[data-testid="toss-sheet"]');

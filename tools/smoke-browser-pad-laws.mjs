@@ -600,7 +600,7 @@ try {
   await enterField.fill("Batter 11");
   await enterField.press("Enter");
   await afterReads(page, 900);
-  ok("Enter sent the batter in: the sheet is closed", await enterField.count() === 0 && !/Batting Order/.test(await text()));
+  ok("Enter sent the batter in: the sheet is closed", await enterField.count() === 0 && !/Batting Order/i.test(await text()));
   ok("...and the closing Enter did not press the Wicket key again: no second wicket sheet", await tid("wicket-confirm").count() === 0 && await tid("wicket-mode-stumped").count() === 0);
   const en = await agree("after the wicket and Enter", 1);
   const wAfter = (await dbq(`select count(*)::int as n from ball_event where match_id = $1 and kind = 'ball' and ball_type = 'W'`, [MATCH]))[0].n;

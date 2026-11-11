@@ -33,8 +33,15 @@ export function PadMenu({ children }) {
     const r = button.current?.getBoundingClientRect();
     if (r) {
       const vw = window.innerWidth, w = Math.min(PANEL_WIDTH, vw - 2 * GUTTER);
+      // The panel ends above the pad's bottom bar, not under it: the bar is
+      // painted over it (the panel sits in the title bar's stacking context),
+      // and the menu's last item and its words could never be scrolled into
+      // view (interface review, 11 Nov 2026). The bar is measured, so a phone's
+      // safe-area inset is in it.
+      const bar = document.querySelector('[data-testid="pad-tabs"]')?.getBoundingClientRect();
+      const floor = bar && bar.top > r.bottom ? bar.top : window.innerHeight;
       setAt({ top: r.bottom + 8, left: Math.max(GUTTER, Math.min(r.right - w, vw - w - GUTTER)), width: w,
-              maxHeight: Math.max(200, window.innerHeight - r.bottom - 8 - GUTTER) });
+              maxHeight: Math.max(200, floor - r.bottom - 8 - GUTTER) });
     }
     setOpen((o) => !o);
   };

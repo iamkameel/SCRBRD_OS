@@ -2344,6 +2344,14 @@ async function padFit() {
           // pad's own space: the strip stays where the thumb is, and the
           // runs are on screen above it. The no-ball's is the tallest.
           if (innings === "a chase") {
+            // Where the page stands before the extra opens: on a small phone the
+            // pad has already brought the Outcome keys clear of the docked strip
+            // (pad.jsx useClearOfStrip, interface review 11 Nov 2026), so the
+            // page is not at its top; opening the runs must not move it.
+            // The walk's own scrollTo(0, 0) above is undone by the pad once the
+            // chase's longer line has re-measured it, so let that settle first.
+            await page.waitForTimeout(400);
+            const y0 = await page.evaluate(() => scrollY);
             const before = await page.evaluate(() => Math.round(document.querySelector('[data-testid="pad-strip"]').getBoundingClientRect().top));
             await page.locator('[data-testid="key-noball"]').click({ timeout: 3000 });
             await page.waitForTimeout(250);
@@ -2355,7 +2363,7 @@ async function padFit() {
                        onScreen: keys.every((k) => k.top >= 0), overBoard: keys.some((k) => k.top < board.bottom), scrollY };
             });
             ok(`${w}×${hgt} ${name}: the no-ball's runs open over the pad's keys, the strip unmoved (${before} → ${open.stripTop}), none over the board`,
-               open.keys >= 10 && open.stripTop === before && open.above && open.onScreen && !open.overBoard && open.scrollY === 0, JSON.stringify(open));
+               open.keys >= 10 && open.stripTop === before && open.above && open.onScreen && !open.overBoard && open.scrollY === y0, JSON.stringify({ ...open, y0 }));
             await page.locator('[data-testid="extra-cancel"]').click({ timeout: 3000 });
           }
         }
