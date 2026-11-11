@@ -26,7 +26,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   shortDate, pointsFor, standingPoint, stripLayout, stripSummary, dotWords, byWords, savedTargets, openTargetOn,
-  targetWords, targetProblem, orderDrills, sinceWords, lastLookBy, REGISTER_STATES, CELL, yOf,
+  targetWords, targetProblem, orderDrills, sinceWords, lastLookBy, REGISTER_STATES, CELL, yOf, skillsList,
 } from "../src/lib/assessmentHistory.js";
 import { focusAreas } from "../src/lib/focusAreas.js";
 import { holdsForPlayer } from "../src/lib/held.js";
@@ -186,7 +186,7 @@ group("Nothing here widens a reader or writes a health word");
 const src = (f) => readFileSync(new URL(f, import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\/|(^|[^:])\/\/.*$/gm, "$1");
 const skills = src("../src/views/SkillsView.jsx") + src("../src/views/skills/History.jsx") + src("../src/lib/assessmentHistory.js");
 const asked = [...skills.matchAll(/holds(?:AsHeld|ForPlayer)\(\s*role\s*,\s*"([^"]+)"/g)].map((m) => m[1]);
-ok("the Skills screens ask only for the scores' and the notes' own capabilities", asked.length >= 3 && asked.every((c) => ["player.development.read", "player.development.write", "player.note.read"].includes(c)), asked);
+ok("the Skills screens ask only for the scores' and the notes' own capabilities", asked.length >= 3 && asked.every((c) => ["player.development.read", "player.development.write", "player.note.read", "player.note.write"].includes(c)), asked);
 ok("the Skills screens do not read a load, a wellness check, the discipline record or the injuries", !/workload|wellness|bowler_day|disciplinary|injuries|medical/i.test(skills));
 const skillsSrc = src("../src/views/SkillsView.jsx");
 ok("Set target, and with it the Why, is offered only to a writer", /\{canEdit&&\(\s*<button type="button" data-testid=\{`set-target-/.test(skillsSrc));
@@ -204,9 +204,37 @@ ok("the register code never writes the word injured", !/injured/i.test(src("../s
   ok("...nor anybody's coaching points", !holdsForPlayer("player", "player.note.read", ME, pupil));
   ok("a coach may ask for any boy's (the server decides which answer)", holdsForPlayer("coach", "player.development.read", MATE, coach));
   ok("no boy selected, no read", !holdsForPlayer("coach", "player.development.read", null, coach));
+  // His Skills door (the pupil's shell, on Me): the list is himself alone.
+  // He holds the side's players read through `player` (the team sheet), so
+  // the list is narrowed to who he may read, before and after the skills
+  // read answers, assessed or not; a team-mate is never "Not assessed yet".
+  const side = [{ id: MATE, name: "K Whitfield" }, { id: ME, name: "R Pillay" }, { id: "x3", name: "D Erasmus" }];
+  const asPupil = (id) => holdsForPlayer("player", "player.development.read", id, pupil);
+  const asCoach = (id) => holdsForPlayer("coach", "player.development.read", id, coach);
+  const ids = (l) => l.map((p) => p.id).join();
+  ok("the pupil's list is himself alone, rated", ids(skillsList(side, { [ME]: {}, [MATE]: {} }, asPupil, true).listed) === ME);
+  ok("...and unrated: himself alone, no team-mate as 'Not assessed yet'", ids(skillsList(side, {}, asPupil, true).listed) === ME);
+  ok("...and before the read answers, nobody else to fall back on", ids(skillsList(side, {}, asPupil, false).readable) === ME);
+  ok("a coach's list is his side, the assessed first", ids(skillsList(side, { x3: {} }, asCoach, true).listed) === ["x3", MATE, ME].join());
+  ok("the Skills screen lists through skillsList, and picks only from who it may read",
+     /skillsList\(PLAYERS, SKILLS_MATRIX,\s*\(id\) => holdsForPlayer\(role, "player\.development\.read", id\)/.test(skillsSrc)
+     && /readable\.find\(p => p\.id === selId\) \?\? assessed\[0\] \?\? readable\[0\]/.test(skillsSrc)
+     && !/PLAYERS\.find\(p => p\.id === selId\)/.test(skillsSrc));
+  // The pupil's door: on Me, never a fifth item on his bar (STEP4 §2.0).
+  const pupilSrc = src("../src/views/family/pupil.jsx");
+  ok("the pupil's Me opens the Skills screen", /testid="me-skills-open"/.test(pupilSrc) && /<SkillsView role=\{role\}\/>/.test(pupilSrc));
+  ok("...and nothing in the pupil's or the parent's shell opens Make a coaching point", !/coaching.?point/i.test(pupilSrc.replace(/\/\/.*$/gm, "")));
   ok("the history reads are gated per boy, and the points only where the strip is",
      /useBoyRead\("skills_history",[^)]*mayReadHistory\)/.test(skillsSrc)
-     && /useBoyRead\("coaching_points",[\s\S]*?mayReadHistory && holdsForPlayer\(role, "player\.note\.read"/.test(skillsSrc));
+     && /const mayReadPoints = mayReadHistory && holdsForPlayer\(role, "player\.note\.read", selPlayer\?\.id\);\s*const pointsRead = useBoyRead\("coaching_points", role, selPlayer\?\.id, nonce, mayReadPoints\)/.test(skillsSrc));
+  // GA-I27 slice 2: the coaching points panel and the field are drawn only
+  // where the points were read (player.note.read for HIM: never the boy, never
+  // his parents), and a point is made only by a writer of his scores who
+  // writes notes (coaching_point_write's two capabilities).
+  ok("the coaching points panel is drawn only where the points read was made", /\{mayReadPoints&&readState\(pointsRead[^}]*\}\)\.state!=="failed"&&\(\s*<div style=\{\{marginTop:"14px"\}\}>\s*<CoachingPoints /.test(skillsSrc)
+     && (skillsSrc.match(/<CoachingPoints /g) ?? []).length === 1);
+  ok("...and a point is made only by a writer who writes notes", /const mayPoint = canEdit && mayReadPoints && holdsAsHeld\(role, "player\.note\.write"\);/.test(skillsSrc)
+     && /\{pointing&&mayPoint&&pointing\.playerId===selPlayer\.id&&\(/.test(skillsSrc) && /onMakePoint=\{mayPoint\?/.test(skillsSrc));
 }
 ok("the assessment modal sends no note", !/note:\s*note/.test(src("../src/lib/development.js")) && !/recordAssessment\([^)]*\{[^}]*note/.test(src("../src/views/SkillsView.jsx")));
 

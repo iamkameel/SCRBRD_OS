@@ -13,18 +13,19 @@
  * choice it makes is words ("R Pillay, coach" to staff, "your coach" to the
  * boy), and the "Why" field exists only for a reader who may write one.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { D, T } from "../../design/tokens.js";
 import { Card, Modal } from "../../ui/primitives.jsx";
-import { useLive } from "../../lib/live.js";
+import { readLive, useLive } from "../../lib/live.js";
 import { drillCategoriesFor } from "@scrbrd/scoring";
 import {
   CELL, STRIP_HEIGHT, yOf, stripLayout, stripSummary, dotWords, byWords, shortDate, metricWords,
   targetWords, targetProblem, orderDrills, sinceWords, lastLookBy,
 } from "../../lib/assessmentHistory.js";
 import {
-  setTarget, withdrawTarget, withdrawScore, writeWords, REASON_MAX, WHY_MAX,
+  setTarget, withdrawTarget, withdrawScore, withdrawNote, writeCoachingPoint, writeWords, REASON_MAX, WHY_MAX,
 } from "../../lib/development.js";
+import { POINT_MAX, POINT_WORDS, pointLines, pointProblem, pointerWords } from "../../lib/coachingPoint.js";
 
 /** A tap target that meets the floor: 44px each way, 12px type. */
 const tap = (extra = {}) => ({
@@ -115,7 +116,7 @@ export function TargetLine({ target }) {
  * may read them, the coaching points that stood on this row. A coach may take
  * a score back here, with a reason; the row stays, struck.
  */
-export function DotSheet({ point, staff, canWrite, points, onClose, onDone }) {
+export function DotSheet({ point, staff, canWrite, points, onClose, onDone, onMakePoint = null }) {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState("");
@@ -142,6 +143,14 @@ export function DotSheet({ point, staff, canWrite, points, onClose, onDone }) {
                 <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted }}>{p.author || "—"} · {shortDate(p.observedOn)}{p.withdrawn ? " · withdrawn" : ""}</div>
               </div>
             ))}
+          </div>
+        )}
+        {/* GA-I27 slice 2: a coaching point standing on this score, written
+            on the panel; offered to a writer of points only, never on a
+            withdrawn score. */}
+        {onMakePoint && !point.withdrawn && (
+          <div style={{ marginTop: "14px" }}>
+            <button type="button" data-testid="make-point-dot" onClick={() => onMakePoint(point)} style={tap()}>Make a coaching point of this</button>
           </div>
         )}
         {canWrite && !point.withdrawn && (
@@ -291,3 +300,111 @@ export function SincePanel({ rows, history, player, staff, self }) {
   );
 }
 
+
+/**
+ * THE COACHING POINTS on the boy's development panel (GA-I27 §1.3, §5.3,
+ * slice 2; GA-I26a A4). Every point written about him, newest first, each
+ * with what it stood on and, where today's read differs, what it says now
+ * (C-D5): the old line is never overwritten. A withdrawn point stays, struck.
+ * Drawn only for a reader the `coaching_points` read was made for
+ * (player.note.read: the coach, the assistant, the director); the boy and his
+ * parents are never sent a row, and SkillsView never asks for one for them.
+ *
+ * `matchups`: S5 points are re-derived from the boy's matchups read, made
+ * here only when one of his points stood on it, under the reader's own gate.
+ */
+export function CoachingPoints({ points, answered = true, history, playerId, staff, canWithdraw, nonce, now, onDone }) {
+  const hasS5 = points.some((p) => p.read === "matchups");
+  const [mu, setMu] = useState(/** @type {{rows: any[] | null, at: number | null}} */ ({ rows: null, at: null }));
+  useEffect(() => {
+    if (!hasS5 || !playerId) { setMu({ rows: null, at: null }); return undefined; }
+    let cancelled = false;
+    readLive("matchups", { batterId: playerId }).then((rows) => { if (!cancelled) setMu({ rows, at: rows ? Date.now() : null }); });
+    return () => { cancelled = true; };
+  }, [hasS5, playerId, nonce]);
+  const [busy, setBusy] = useState(/** @type {string | null} */ (null));
+  const [said, setSaid] = useState("");
+  return (
+    <Card sx={{ padding: "16px", marginBottom: "14px" }} data-testid="coaching-points">
+      <div style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", marginBottom: "10px" }}>
+        COACHING POINTS · COACHING STAFF ONLY
+      </div>
+      <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginBottom: "10px", lineHeight: 1.5 }}>
+        One sentence about him, on what it stood on. Not visible to him or his parents. Make one from a score on a strip, or from a card in the match-day drawer.
+      </div>
+      {/* "None" only of a read that answered (GA-I08): a read still coming is not an empty one. */}
+      {points.length === 0 && (answered
+        ? <div data-testid="coaching-points-none" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>No coaching point yet.</div>
+        : <div data-testid="coaching-points-reading" style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>Reading the coaching points…</div>)}
+      {said && <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: D.roseText, marginBottom: "8px" }}>{said}</div>}
+      <div style={{ display: "grid", gap: "12px" }}>
+        {points.map((p) => {
+          const w = pointLines(p, { matchups: mu.rows, history, at: mu.at, now });
+          return (
+            <div key={p.id} data-testid={`point-${p.id}`} data-withdrawn={p.withdrawn ? "yes" : "no"}
+              style={{ borderLeft: `2px solid ${D.border}`, paddingLeft: "12px", opacity: p.withdrawn ? 0.65 : 1 }}>
+              <div style={{ fontFamily: D.body, fontSize: "14px", color: D.textPrimary, lineHeight: 1.5, textDecoration: p.withdrawn ? "line-through" : "none" }}>{p.body}</div>
+              {w.stood && <div data-testid="point-stood" style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted, marginTop: "4px", lineHeight: 1.5 }}>{w.stood}</div>}
+              {w.now && <div data-testid="point-now" style={{ fontFamily: D.mono, fontSize: "12px", color: D.textSecondary, marginTop: "2px", lineHeight: 1.5 }}>{w.now}</div>}
+              <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginTop: "4px" }}>
+                {byWords(p.author, staff)} · {shortDate(p.observedOn)}{p.withdrawn ? " · withdrawn" : ""}
+              </div>
+              {canWithdraw && !p.withdrawn && (
+                <button type="button" data-testid={`point-withdraw-${p.id}`} disabled={busy === p.id} style={tap({ marginTop: "6px" })}
+                  onClick={async () => {
+                    setBusy(p.id); setSaid("");
+                    try { await withdrawNote(p.id); onDone(); }
+                    catch (e) { setSaid(writeWords(e)); }
+                    finally { setBusy(null); }
+                  }}>{busy === p.id ? "Saving…" : "Withdraw this point"}</button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Writing one (GA-I27 §5.3): the pointer shown above the field as the card's
+ * collapsed line and "as at"; one field of up to 500 characters labelled
+ * "Coaching point"; Save. The field refuses a never-word and another boy's
+ * name before it sends (`others`: the names the screen holds beside his), and
+ * the function refuses both again.
+ */
+export function PointModal({ pointer, player, others, now, onClose, onDone }) {
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState("");
+  const save = async () => {
+    const problem = pointProblem(body, others);
+    if (problem) { setSaid(POINT_WORDS[problem]); return; }
+    setBusy(true); setSaid("");
+    try { await writeCoachingPoint(player.id, { body, evidence: pointer.evidence, matchId: pointer.matchId }); onDone(); }
+    catch (e) {
+      const code = String(/** @type {any} */ (e)?.code || /** @type {any} */ (e)?.message || "").split(" ")[0];
+      setSaid(/** @type {Record<string, string>} */ (POINT_WORDS)[code] ?? writeWords(e));
+    }
+    finally { setBusy(false); }
+  };
+  return (
+    <Modal title={`Coaching point — ${player.name}`} width="520px" onClose={onClose}>
+      <div data-testid="point-form">
+        <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, lineHeight: 1.5 }}>Standing on</div>
+        <div data-testid="point-pointer" style={{ fontFamily: D.mono, fontSize: "12px", color: D.textSecondary, lineHeight: 1.5, marginTop: "2px" }}>{pointerWords(pointer, now)}</div>
+        <label htmlFor="point-body" style={labelStyle()}>Coaching point — coaching staff only; he and his parents do not read it</label>
+        <textarea id="point-body" data-testid="point-body" value={body} maxLength={POINT_MAX} rows={4}
+          onChange={(e) => { setBody(e.target.value); setSaid(""); }}
+          style={{ ...fieldStyle(), resize: "vertical" }}/>
+        <div style={{ fontFamily: D.mono, fontSize: "12px", color: D.textMuted, marginTop: "4px" }}>{body.trim().length} / {POINT_MAX}</div>
+        {said && <div role="alert" data-testid="point-said" style={{ fontFamily: D.body, fontSize: "12px", color: D.roseText, marginTop: "8px" }}>{said}</div>}
+        <div style={{ display: "flex", gap: "8px", marginTop: "14px", flexWrap: "wrap" }}>
+          <button type="button" data-testid="point-save" disabled={busy || !body.trim()} onClick={save}
+            style={tap({ color: D.textPrimary, opacity: busy || !body.trim() ? 0.5 : 1 })}>{busy ? "Saving…" : "Save"}</button>
+          <button type="button" onClick={onClose} style={tap()}>Cancel</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
