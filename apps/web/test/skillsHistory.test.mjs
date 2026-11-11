@@ -26,7 +26,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   shortDate, pointsFor, standingPoint, stripLayout, stripSummary, dotWords, byWords, savedTargets, openTargetOn,
-  targetWords, targetProblem, orderDrills, sinceWords, lastLookBy, REGISTER_STATES, CELL, yOf,
+  targetWords, targetProblem, orderDrills, sinceWords, lastLookBy, REGISTER_STATES, CELL, yOf, skillsList,
 } from "../src/lib/assessmentHistory.js";
 import { focusAreas } from "../src/lib/focusAreas.js";
 import { holdsForPlayer } from "../src/lib/held.js";
@@ -204,6 +204,26 @@ ok("the register code never writes the word injured", !/injured/i.test(src("../s
   ok("...nor anybody's coaching points", !holdsForPlayer("player", "player.note.read", ME, pupil));
   ok("a coach may ask for any boy's (the server decides which answer)", holdsForPlayer("coach", "player.development.read", MATE, coach));
   ok("no boy selected, no read", !holdsForPlayer("coach", "player.development.read", null, coach));
+  // His Skills door (the pupil's shell, on Me): the list is himself alone.
+  // He holds the side's players read through `player` (the team sheet), so
+  // the list is narrowed to who he may read, before and after the skills
+  // read answers, assessed or not; a team-mate is never "Not assessed yet".
+  const side = [{ id: MATE, name: "K Whitfield" }, { id: ME, name: "R Pillay" }, { id: "x3", name: "D Erasmus" }];
+  const asPupil = (id) => holdsForPlayer("player", "player.development.read", id, pupil);
+  const asCoach = (id) => holdsForPlayer("coach", "player.development.read", id, coach);
+  const ids = (l) => l.map((p) => p.id).join();
+  ok("the pupil's list is himself alone, rated", ids(skillsList(side, { [ME]: {}, [MATE]: {} }, asPupil, true).listed) === ME);
+  ok("...and unrated: himself alone, no team-mate as 'Not assessed yet'", ids(skillsList(side, {}, asPupil, true).listed) === ME);
+  ok("...and before the read answers, nobody else to fall back on", ids(skillsList(side, {}, asPupil, false).readable) === ME);
+  ok("a coach's list is his side, the assessed first", ids(skillsList(side, { x3: {} }, asCoach, true).listed) === ["x3", MATE, ME].join());
+  ok("the Skills screen lists through skillsList, and picks only from who it may read",
+     /skillsList\(PLAYERS, SKILLS_MATRIX,\s*\(id\) => holdsForPlayer\(role, "player\.development\.read", id\)/.test(skillsSrc)
+     && /readable\.find\(p => p\.id === selId\) \?\? assessed\[0\] \?\? readable\[0\]/.test(skillsSrc)
+     && !/PLAYERS\.find\(p => p\.id === selId\)/.test(skillsSrc));
+  // The pupil's door: on Me, never a fifth item on his bar (STEP4 §2.0).
+  const pupilSrc = src("../src/views/family/pupil.jsx");
+  ok("the pupil's Me opens the Skills screen", /testid="me-skills-open"/.test(pupilSrc) && /<SkillsView role=\{role\}\/>/.test(pupilSrc));
+  ok("...and nothing in the pupil's or the parent's shell opens Make a coaching point", !/coaching.?point/i.test(pupilSrc.replace(/\/\/.*$/gm, "")));
   ok("the history reads are gated per boy, and the points only where the strip is",
      /useBoyRead\("skills_history",[^)]*mayReadHistory\)/.test(skillsSrc)
      && /useBoyRead\("coaching_points",[\s\S]*?mayReadHistory && holdsForPlayer\(role, "player\.note\.read"/.test(skillsSrc));

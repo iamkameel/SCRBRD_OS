@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { heldRoles, holdsAsHeld, holdsForPlayer } from "../lib/held.js";
+import { heldRoles, holdsAsHeld, holdsForPlayer, ownRecordsOf } from "../lib/held.js";
 import { PLAYING_ROLES, showsRankings } from "../lib/seasonAwards.js";
 import { D } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Modal, RadarChart, ReadState, SectionHeader } from "../ui/primitives.jsx";
@@ -12,7 +12,7 @@ import { MIN_RADAR_AXES, RUBRIC_MAX, SKILL_CATEGORIES, overallOf } from "../lib/
 import { OverallRadar, SKILL_COLORS } from "../ui/overallRadar.jsx";
 import { focusAreas } from "../lib/focusAreas.js";
 import { readState, readStateFor } from "../lib/readState.js";
-import { pointsFor, standingPoint, savedTargets, openTargetOn } from "../lib/assessmentHistory.js";
+import { pointsFor, standingPoint, savedTargets, openTargetOn, skillsList } from "../lib/assessmentHistory.js";
 import { Strip, TargetLine, DotSheet, TargetModal, SincePanel } from "./skills/History.jsx";
 
 /**
@@ -181,16 +181,22 @@ function SkillsView({ role }) {
   // greeted every coach with "no assessment available" while assessed players
   // sat beside it. Falls back to the first player when nobody is assessed,
   // which is the state the empty message is actually for.
-  const assessed = PLAYERS.filter(p => SKILLS_MATRIX[p.id]);
+  // Only the boys whose scores this reader may ask for are listed. A coach's
+  // side-wide assignment reaches every boy on his side; a pupil's own-record
+  // assignment names him alone, so the side's players read (which he holds,
+  // through `player`, for the team sheet) does not put a team-mate on his
+  // Skills screen, not even as "Not assessed yet" (GA-I26a §4.4: "the
+  // pupil's Skills screen lists him alone"; STEP4: no team-mate's ratings).
+  // Presentation only: every read below is authorised again by the server.
+  const skillsAnswered = !signedIn() || (skillsRead.live && !skillsRead.disabled);
+  const { readable, assessed, listed } = skillsList(PLAYERS, SKILLS_MATRIX,
+    (id) => holdsForPlayer(role, "player.development.read", id), skillsAnswered);
   // Players with no assessment are listed too, after the assessed ones, and
   // say so: a coach looking for who still has to be assessed would otherwise
   // have to know to look for people who are not on the screen. Only once the
   // skills read has answered: while it is coming, or after it failed, whether
   // anybody is assessed is not known, and the detail pane says which.
-  const skillsAnswered = !signedIn() || (skillsRead.live && !skillsRead.disabled);
-  const unassessedList = skillsAnswered ? PLAYERS.filter(p => !SKILLS_MATRIX[p.id]) : [];
-  const listed = [...assessed, ...unassessedList];
-  const selPlayer = PLAYERS.find(p => p.id === selId) ?? assessed[0] ?? PLAYERS[0];
+  const selPlayer = readable.find(p => p.id === selId) ?? assessed[0] ?? readable[0];
   const skills = selPlayer ? SKILLS_MATRIX[selPlayer.id] : null;
   // Writing needs a session: the demo (nobody signed in, a role picked to look
   // around) reads the seeded matrix and offers no write it cannot make — the
@@ -236,6 +242,9 @@ function SkillsView({ role }) {
   // a reader who holds player.note.read; the boy himself holds the scores and
   // not that, and is spoken to as "you" and "your coach".
   const staffView = holdsAsHeld(role, "player.note.read");
+  // The boy reading his own record (his Skills door on Me): the same screen,
+  // spoken to him. Nothing is read differently; only the words change.
+  const selfView = !staffView && !!selPlayer && ownRecordsOf().has(selPlayer.id);
   // Held for THIS boy: a pupil's own-record assignment reaches him alone, so a
   // team-mate tapped in the list is never asked for (and never logged against).
   // The coaching points are drawn only in a strip's dot sheet, so they are read
@@ -266,14 +275,15 @@ function SkillsView({ role }) {
   );
 
   return (
-    <div className="os-page">
-      <SectionHeader title="Skills Matrix" sub="Player development tracking & assessment" color={D.violet}
+    <div className="os-page" data-testid={selfView?"skills-self":undefined}>
+      <SectionHeader title={selfView?"Your skills":"Skills Matrix"}
+        sub={selfView?"Every score your coach has given you, with its date":"Player development tracking & assessment"} color={D.violet}
         actions={canEdit&&<Btn size="sm" onClick={()=>{setWriteError(null);setAssessing(true);}}>+ Run Assessment</Btn>}/>
       <div style={{display:"grid",gridTemplateColumns:"var(--g-side-l,220px 1fr)",gap:"16px",alignItems:"start"}}>
         {/* Player list */}
         <Card sx={{padding:"0"}}>
           <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
-            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>SELECT PLAYER</div>
+            <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em"}}>{selfView?"YOU":"SELECT PLAYER"}</div>
           </div>
           <div style={{maxHeight:"calc(100vh - 200px)",overflowY:"auto"}}>
             {listed.map(p=>{
