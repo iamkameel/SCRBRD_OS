@@ -2391,30 +2391,65 @@ live-score read goes through `ball_event_live`, and each of its scans of the
 log ran `ball_event_read` on every ball, so a career read took seconds at
 3 000 balls and minutes at a pilot season's size. `ball_event_live` now runs
 as its owner, behind a security barrier, and asks the policy's own conditions
-once a match; a ball whose school is not its match's (none today) is asked of
-itself, as the reader, through `ball_event_row_visible()`; a caller row
-security does not apply to (the owner's definers, the triggers) reads every
-ball, as before. The conditions it states are pinned:
-`ball_log_policies_unpinned()` names any SELECT policy on `ball_event`,
-`match` or `ball_event_rejudged` that is not the one it was written against,
-and the verifier fails until the view is re-stated with it. `ball_event`'s
-policies are unchanged and still guard every direct read of the table.
+once a match. A caller row security does not apply to (the owner's definers,
+the triggers) reads every ball, as before. `ball_event`'s policies are
+unchanged and still guard every direct read of the table.
 
-**What it does to a live database.** Two new functions,
-`ball_log_policies_unpinned()` and `ball_event_row_visible(bigint)` (both run
-as the caller; the second answers only "may I read this ball"), and
-`ball_event_live` re-created with the same columns and rows,
-`security_invoker` off and `security_barrier` on, its owner and grants kept.
-No table, column, row or policy changes. It refuses to run unless the view in
-place is db/121's or its own, or if a policy it states has changed; a second
-paste changes nothing.
+**It fails closed.** The conditions it restates are pinned twice:
+- the text pin (`ball_log_text_pinned()`): every SELECT policy on
+  `ball_event`, `match` and `ball_event_rejudged`, and the view itself, by
+  the md5 of its text with only whitespace normalised;
+- the live pin (`ball_log_pinned()`, asked by the view on every read): the
+  catalogue rows of those policies and of the view, against the fingerprint
+  `ball_log_repin()` recorded when the text pin held.
+
+Any `CREATE`, `ALTER` or `DROP POLICY` on those three tables, or a re-created
+view, breaks the live pin at once. From then on the view reads exactly what
+the reader's own `SELECT` of each table returns: correct, and as slow as before
+db/147, until the view is re-stated for the new policies. The verifier says so
+(§9, §126). **After a restore into a new database** (new catalogue xmins) the
+view also reads that way. To bring the speed back, the owner runs
+`SELECT ball_log_repin();`. It re-pins only if the text pin holds, and
+otherwise names what differs.
+
+**The text pins are Postgres 16's deparse.** On a server whose deparse
+differs by more than whitespace the paste refuses to run and names the
+policy. Re-take the pins on that version first; nothing is half-applied.
+
+**Grants (Supabase).** `ball_event_live` is SELECT for `scrbrd_app` and
+nothing else. PUBLIC, `anon`, `authenticated` and `service_role` are revoked
+where they exist. The two exact-path functions are `scrbrd_app`'s to call, and
+`ball_log_repin()` is the owner's. Supabase's security advisor will flag this
+view as `security_definer_view` (lint 0010). That is expected and is this
+design: **do not "fix" it by setting `security_invoker` back on.** That would
+put the per-ball cost back, and §9 and §126 would go red.
+
+**What it does to a live database.** It adds:
+- one table, `ball_log_pin` (one row, the fingerprint; row security on, no
+  policy, no privilege for the application);
+- seven functions: `ball_log_norm()`, `ball_log_policies_unpinned()`,
+  `ball_log_text_pinned()` and `ball_log_fingerprint()` (catalogue reads, as
+  the caller), `ball_log_pinned()` and `ball_log_repin()` (definers, for the
+  pin row), and `ball_event_visible_ids()` and
+  `ball_event_rejudged_visible_keys()` (the caller's own SELECT);
+- `ball_event_live`, re-created with the same columns and rows.
+
+No other table, and no column, row or policy, changes. It refuses to run
+unless the view in place is db/121's or its own, or if a policy it states has
+changed. A second paste changes nothing.
 
 Paste `node tools/bundle-sql.mjs --apply 147` after 146, then the verify
-bundle (§126 is its proof: the view row for
-row against db/121's own definition under row security, for every seeded
-reader, with a ball planted at the other school; §9 names the view as its one
-exception). **Schema first**: the API built with it refuses to start without
-db/147 (`expected-migrations.json`); it needs nothing new from it to run.
+bundle. §126 is its proof:
+- the view row for row against db/121's own definition under row security,
+  for every seeded reader;
+- on a pad's credential at every fixture, either side's;
+- in support sessions, and with match's row security lifted;
+- with a ball, a void and a re-judged striker planted;
+- with a RESTRICTIVE policy added, for the fail-closed path.
+
+§9 names the view as its one exception. **Schema first**: the API built with
+it refuses to start without db/147 (`expected-migrations.json`); it needs
+nothing new from it to run.
 <!-- ── end db/147 ── -->
 
 ### 5 · Cloud Run, the first time
