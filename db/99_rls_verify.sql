@@ -11478,9 +11478,21 @@ BEGIN
   RETURN split_part(a, ':', 1)::int;
 END $$ LANGUAGE plpgsql;
 
--- Every fixture with a ball, for a pad's credential at each (the owner's list).
+-- The fixtures a pad's credential is held at (the owner's list): for each
+-- school, its fixture with the most balls as the host and as the away side,
+-- so a pad at either end of a fixture is asked. Every reader at every fixture
+-- of this file's whole cast ran past two hours.
 CREATE OR REPLACE FUNCTION _v147_matches() RETURNS SETOF uuid AS $$
-  SELECT DISTINCT match_id FROM ball_event ORDER BY 1
+  SELECT DISTINCT x.match_id FROM (
+    (SELECT DISTINCT ON (m.school_id) b.match_id
+       FROM ball_event b JOIN match m ON m.id = b.match_id
+      GROUP BY m.school_id, b.match_id ORDER BY m.school_id, count(*) DESC, b.match_id)
+    UNION ALL
+    (SELECT DISTINCT ON (m.away_school_id) b.match_id
+       FROM ball_event b JOIN match m ON m.id = b.match_id
+      WHERE m.away_school_id IS NOT NULL
+      GROUP BY m.away_school_id, b.match_id ORDER BY m.away_school_id, count(*) DESC, b.match_id)) x
+  ORDER BY 1
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The owner's DDL the fallback's proof needs (a policy added and dropped, row
