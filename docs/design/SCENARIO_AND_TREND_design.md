@@ -1,6 +1,6 @@
 # Scenario controls (GA-I29) and the season trend, slice 2 (GA-I23)
 
-**Status:** Design (Opus, 2026-11-11), for Kameel's review. Nothing here is built.
+**Status:** Design (Opus, 2026-11-11). Kameel answered the questions below on 12 Nov 2026. Nothing here is built.
 **Governing decision (Kameel, 11 Nov 2026, word for word):** "Scenario controls (GA-I29) - probability and forecasts are based scoring-rates and overs and what's achievable etc."
 **Source, and nothing broader:** `audit/GAP_ANALYSIS_2026-10-05.md` Phase C (I23, I29; "built over existing reads, with its source, unit, window and denominator shown"); `docs/design/CRICINFO_GAP_PLAN.md` (CRI-1.8, decision 5); `docs/design/SCRBRD-130_rain_and_par.md` §10; `packages/scoring/src/pressure.mjs` (`requiredRate`, `rrrTrend`, `chaseRates`, `inningsAtOverEnds`, `parReport`, `parEstimate`); `packages/scoring/src/replay.mjs` (`inningsOverReason`, `wicketsToEnd`, `describeResult`, `revisedTargetMethod`, the `Innings` typedef); `packages/scoring/src/conditions.mjs` (the condition keys); `apps/web/src/lib/par.js`; `apps/web/src/scorer/boardData.js` (`chaseLine`, `atThisRate`, `rainLine`, `boardFromInnings`); `apps/web/src/scorer/signals.js` (`boardInsights`); `apps/web/src/scorer/chartData.js` (`runRates`, `chaseEndWords`); `apps/web/src/views/matchcentre/tabs-core.jsx` (`SummaryTab`); `apps/web/src/display/DisplayView.jsx`; GA-I23 slice 1 (commit `ef0e999d`, #115: `lib/seasonBars.js`, `views/seasonbars.jsx`, `views/demoworm.jsx`, `AnalyticsView.jsx:86`); `services/api/read/read-api.mjs` (`career`, `career_by_season`, `UNRECORDED_COLUMNS`); `db/87_wicket_on_extra.sql` (`player_innings`, its latest definition); `packages/scoring/src/rating.mjs` (`MIN_BALLS_FACED`, `MIN_BALLS_BOWLED`); `apps/web/src/ui/sourceLine.jsx`; `docs/policy/PUBLIC_DATA.md` (§1, §2); `docs/design/GA-I36_corrections_everywhere.md` §2, §3, §5, §7; `docs/design/REACH_parent_pupil.md` (decided 7 and 11 Nov); `docs/design/GA-I24-I25_compare_and_combine.md` (D3, D4, D10, D11).
 **Reader:** Kameel on a phone first; then the Opus lead; then whoever builds a slice. Names in the sketches are the seed's (Hilton, Kearsney), never a real child's.
@@ -264,6 +264,22 @@ Both views skip a void and its target on every read (`ball_event_live`, `ball_ev
 ---
 
 ## Questions for Kameel
+
+**Kameel's answer (12 Nov 2026, 00:29 SAST, on the Build Board): All 12 as recommended.**
+
+- **Q1:** Leave it as shipped: the par estimate stays, labelled "Par estimate", and the scenario panel adds no second percentage.
+- **Q2:** Yes, the scenario panel may appear on the public match page, team-level arithmetic on a published score, no child named.
+- **Q3:** 12 legal balls is the minimum before any projection on any surface.
+- **Q4:** No scenario on the pad. Scenarios are for readers.
+- **Q5:** Not now. Bowlers' overs left is a later slice, signed-in staff only, if a coach asks.
+- **Q6:** Yes, in the ground display's existing insight rotation, with no stepper.
+- **Q7:** No. A pupil may not read a team-mate's innings-by-innings line. The new read is gated per boy from the start.
+- **Q8:** Yes, one child at a time: a parent sees her child's innings-by-innings line on his own screen, as well as on Analytics.
+- **Q9:** No verdict words on a trend. Points and a line only.
+- **Q10:** Yes to all three: rates over balls actually bowled, signed in for anyone who may read the side's fixtures, not public.
+- **Q11:** Bowling innings by innings (B4) is built after B2 and B3, if coaches ask for it in the pilot.
+- **Q12:** Yes: 6 innings and 30 balls for a batter, 5 matches for a side.
+
 
 | # | Question | Recommendation |
 |---|---|---|
