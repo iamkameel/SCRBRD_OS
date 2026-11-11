@@ -16,6 +16,7 @@ import { AvailabilityPanel, PlayerAvailability } from "./availability.jsx";
 import { EditProfile, mayEditProfile } from "./playeredit.jsx";
 // SCRBRD-124 (db/70): lifts on the side's fixture.
 import { LiftDayStaff, LiftsPanel } from "./lifts.jsx";
+import { ColoursPanel } from "./colours.jsx";
 import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
 import { ageAtCutoff, compareTeams, isEligible, parseTeam, teamLabel, teamsForLevel } from "@scrbrd/policy/teams";
 
@@ -309,6 +310,15 @@ function SquadView({ role }) {
           </Card>
         )}
       </div>
+      {/* RECOGNITION R8 (db/146): the side's coach nominates for Colours here,
+          on his side's page; Management is not his (it is user.role.assign's),
+          and the deciders decide there. */}
+      {holdsAsHeld(role,"recognition.colours.nominate")&&(
+        <section aria-labelledby="squad-colours-h" data-testid="squad-colours" style={{marginTop:"24px",display:"flex",flexDirection:"column",gap:"10px"}}>
+          <h2 id="squad-colours-h" style={{margin:0,fontFamily:D.head,fontSize:"16px",fontWeight:800,color:D.textPrimary}}>Colours</h2>
+          <ColoursPanel role={role} players={PLAYERS}/>
+        </section>
+      )}
       {addModal&&(
         <Modal title="Add Player" width="600px" onClose={()=>{setAddModal(false);setNpSaid("");}}>
           {/* A live preview, in the exact card the roster grid draws — not a

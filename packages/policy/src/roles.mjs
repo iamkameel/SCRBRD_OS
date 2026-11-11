@@ -65,11 +65,15 @@ export const SUBJECT_SCOPED_ROLES = Object.freeze(["guardian", "selfaccess", "en
 // sheet — and withholding it left coaches, managers and assistants unable to
 // open the Fields view at all.
 /**
- * The recognition capabilities kept from the owner's key (RECOGNITION D7,
- * db/142). Exported so the tests that hold the key to "everything but the
- * carve-outs" read the same list.
+ * The recognition capabilities kept from the owner's key (RECOGNITION D7):
+ * every `recognition.*`, as `safeguarding.*` is kept. db/142 carved
+ * recognition.match.award; db/145 (R5c) carves the rest, recognition.manage
+ * with it (the one db/01 granted the key, withdrawn there: WITHDRAWN_SINCE_01).
+ * Derived, never typed, so a recognition capability written later is carved
+ * the day it is written. Exported so the tests that hold the key to
+ * "everything but the carve-outs" read the same list.
  */
-export const SUPERADMIN_RECOGNITION_CARVE = Object.freeze(["recognition.match.award"]);
+export const SUPERADMIN_RECOGNITION_CARVE = Object.freeze(ALL_CAPABILITIES.filter((c) => c.startsWith("recognition.")));
 
 const READ_TEAM = ["team.read", "fixture.read", "player.profile.read", "news.read", "facility.read", "competition.read"];
 
@@ -126,12 +130,15 @@ const BUNDLES = {
   // The owner's key still reads a passport through its own office arm, as
   // before db/124, and that read is not a union read.
   //
-  // AND `recognition.match.award` (db/142; RECOGNITION D7, decided 7 Oct
-  // 2026: "recognition.* joins safeguarding.* in the carve-out"): an honour
-  // about a child is his school's decision, and the owner's key reaching
-  // every school's Player of the Match is the reader D7 refuses. Support
-  // reaches a school as one of its roles for an hour (db/22), audited. The
-  // older recognition.manage leaves this key with R5c, not here.
+  // AND `recognition.*` (RECOGNITION D7, decided 7 Oct 2026:
+  // "recognition.* joins safeguarding.* in the carve-out"): an honour about a
+  // child is his school's decision, and the owner's key reaching every
+  // school's honours is the reader D7 refuses. db/142 carved
+  // recognition.match.award; db/145 (R5c) the rest, recognition.manage and
+  // recognition.decide with it, and cuts the honour table with a RESTRICTIVE
+  // policy false for any platform-wide assignment, as db/57 cuts the
+  // safeguarding tables. Support reaches a school as one of its roles for an
+  // hour (db/22), audited, which is enough to fix a wrong row.
   superadmin: ALL_CAPABILITIES.filter((c) => !c.startsWith("safeguarding.") && !SUPERADMIN_RECOGNITION_CARVE.includes(c)),
 
   // ── Platform ──
@@ -171,7 +178,10 @@ const BUNDLES = {
   principal: ["recognition.manage",
     // D10's last step (db/142): she decides Player of the Match when the
     // director of sport is the boy's guardian.
-    "recognition.match.award", "player.workload.manage", "clearance.read", "clearance.manage",
+    "recognition.match.award",
+    // A5 (db/145, R5c): she decides honours, as the director does; and when
+    // he is the boy's guardian, she is the one who may (D10).
+    "recognition.decide", "player.workload.manage", "clearance.read", "clearance.manage",
     "school.feature.manage",
     // The waiver, and nobody else at a school holds it — see the capability's
     // own note for why it is kept away from the people who place the boards.
@@ -213,7 +223,10 @@ const BUNDLES = {
   ],
   directorofsport: ["recognition.manage",
     // RECOGNITION D9 (db/142): Player of the Match for any side at his school.
-    "recognition.match.award", "player.workload.read", "player.workload.manage", "clearance.read", "clearance.manage",
+    "recognition.match.award",
+    // A5 (db/145, R5c): he decides Colours, half colours and the season's
+    // honours; the office records his decision by naming him (D5).
+    "recognition.decide", "player.workload.read", "player.workload.manage", "clearance.read", "clearance.manage",
     "availability.read", "availability.declare",
     // Same reasoning as the principal above: the person who runs a school's
     // sport appoints its coaching and medical staff. Bounded by
@@ -329,6 +342,9 @@ const BUNDLES = {
     // RECOGNITION D9 (db/142): Player of the Match for his own side, never
     // for a boy he is guardian of (D10, the row check in match_award()).
     "recognition.match.award",
+    // RECOGNITION A17 (db/146, R8): he nominates a boy of his side for
+    // Colours; the director of sport or the principal decides (D9).
+    "recognition.colours.nominate",
   ],
   assistantcoach: ["player.workload.read",
     "player.workload.write", "wellness.read",

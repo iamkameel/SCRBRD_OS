@@ -35,6 +35,7 @@ import { CorrectionsSheet, pendingWords } from "./corrections.jsx";
 import { StateLabel } from "../../ui/stateLabel.jsx";
 import { TabStrip, panelLabel } from "./tabStrip.jsx";
 import { NARROW_PX, tabOr } from "../../lib/matchTabs.js";
+import { scrollerOf } from "../../lib/toBall.js";
 
 /**
  * THE MATCH CENTRE — one fixture, followed (DESIGN_DIRECTION §10, step 3c).
@@ -328,6 +329,20 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // The innings the Scorecard, Partnerships and Analytics tabs are on: the
   // one in play, until the reader picks another.
   const [picked, setPicked] = useState(null);
+  // CRI-1.5: a dismissal's line opens the Commentary at that ball (`ballAt`), and remembers where the
+  // Scorecard was (`cardAt`: the innings, the row open, the page's scroll) for the way back. Leaving the
+  // Commentary ends the jump; the Scorecard, drawn again, puts itself back and says so.
+  const [ballAt, setBallAt] = useState(/** @type {string | null} */ (null));
+  const [cardAt, setCardAt] = useState(/** @type {{innings: number, openId: string, scrollTop: number} | null} */ (null));
+  useEffect(() => { if (tab !== "commentary") setBallAt(null); }, [tab]);
+  const toBall = ({ key, innings: at, openId, from }) => {
+    setCardAt({ innings: at, openId, scrollTop: scrollerOf(from).scrollTop });
+    setBallAt(key);
+    setTab("commentary");
+  };
+  // Back: the browser's own step where the Match Centre gave the tab an address (the jump was a new
+  // entry), else the tab itself.
+  const backToCard = () => { if (route) window.history.back(); else setTab("scorecard"); };
   // ...of the match's own innings: a super over has its block on the
   // Scorecard and the board on the Summary, and no place in the toggles.
   const inningsSel = picked ?? Math.max(0, matchInningsOf(played).length - 1);
@@ -447,7 +462,10 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
     staff, eventCount: log.events?.length ?? 0, initialDrawer,
     // The coach's evidence trail (GA-I27 §4.1): the log's head seq and when it was read, its "Updated · refresh", and where a card's link goes.
     head: log.events ? log.head : null, okAt: log.okAt, log: log.demo ? null : { stale: log.stale, refreshing: log.refreshing, failed: log.failed, okAt: log.okAt, refresh: log.refresh },
-    onNav, onOpenDuties };
+    onNav, onOpenDuties,
+    // CRI-1.5: the Scorecard's dismissals open the Commentary at their ball, and the way back.
+    toBall: signedIn() && !log.demo ? toBall : null, restore: cardAt, onRestored: () => setCardAt(null),
+    ballKey: ballAt, onBack: ballAt ? backToCard : null };
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id} style={{ minWidth: 0 }}>
@@ -467,11 +485,15 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
             <Icon name="tv"/> Big screen
           </button>
         )}
+        {/* CRI-1.4: the one way from reading this match into scoring it — an explicit tap, offered only where the
+            caller found an assignment granting the scoring routes' capability over this fixture (lib/enterScoring.js).
+            Nothing else on this page opens the pad, claims the match or calls a scoring route. */}
         {canScoreIt && (isLive || match.status === "upcoming") && onOpenScorer && (
-          <button type="button" onClick={() => onOpenScorer(match)} className="pressBtn"
-            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, background: T.brand.green, color: T.surface.canvas,
+          <button type="button" onClick={() => onOpenScorer(match)} className="pressBtn os-state" data-testid="mc-enter-scoring"
+            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
+              background: T.brand.green, color: T.surface.canvas,
               border: "none", borderRadius: T.radius.pill, cursor: "pointer", fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
-            {isLive ? "Open scorer" : "Start scoring"}
+            <Icon name="pencil"/> Enter scoring
           </button>
         )}
         </span>
