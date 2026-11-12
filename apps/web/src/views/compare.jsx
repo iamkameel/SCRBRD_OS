@@ -8,12 +8,12 @@
  *   D1  two reads, not a new one: `career` and `career_by_season` for the
  *       figures, `matchups` and `matchup_coverage` for each batter, the same
  *       reads Profiles opens.
- *   D10 the pupil's card, as REACH-D2 leaves it (Kameel, 7 and 11 Nov 2026):
- *       one team-mate's SEASON figures beside his own, this season only. His
- *       picker is his side's names from `players` (the roster he already
- *       reads), the team-mate's figures one read of `career_by_season` that
- *       names him; the server refuses a pupil a team-mate's career, other
- *       seasons, match-ups and wheel, and the card says so in words.
+ *   D10 the pupil's card, kept exactly as before REACH-D2 (Kameel, 11 Nov
+ *       and 12 Nov 2026: "career and match-ups too"): his picker is his
+ *       side's names from `players` (the roster he already reads); the
+ *       team-mate's career, seasons and match-ups are each read NAMING him
+ *       (`playerId`, `batterId`), the one way the server gives a pupil
+ *       another boy's figures (REACH_ONE_MATE); unnamed, his reads are his own.
  *   D2  the picker offers only players the reader may open today, under the
  *       assignment that carries Compare. A pupil's is his own side, and he is
  *       the left column.
@@ -42,19 +42,20 @@ import { SourceLine } from "../ui/sourceLine.jsx";
 import { SRC_BALLS, SRC_RECORD, WINDOW_ALL, seasonWindow } from "../lib/sourceWords.js";
 import {
   COMPARE_FLOOR, asAtWords, battingRows, belowFloor, bowlingRows, bySide, compareScopes,
-  pickable, seasonRow, sharedSeasons, teamMates, typeRows,
+  pickable, project, seasonRow, sharedSeasons, teamMates, typeRows,
 } from "../lib/compare.js";
 
 /**
  * One read that waits for its parameter: no player chosen, no request at all,
  * rather than useLive's unfiltered read of every batter's match-ups.
+ * `{}` reads with no parameter; null does not read at all.
  * @param {string} resource  @param {Record<string, string> | null} params  @param {number} nonce
  */
 function useReadFor(resource, params, nonce) {
   const query = params ? readQuery(params) : null;
-  const [state, setState] = useState({ rows: [], live: false, loading: !!query, error: null, status: null });
+  const [state, setState] = useState({ rows: [], live: false, loading: query !== null, error: null, status: null });
   useEffect(() => {
-    if (!query) { setState({ rows: [], live: false, loading: false, error: null, status: null }); return; }
+    if (query === null) { setState({ rows: [], live: false, loading: false, error: null, status: null }); return; }
     let cancelled = false;
     setState((s) => ({ ...s, loading: true }));
     readOnce(resource, query).then((next) => { if (!cancelled) setState(next); });
@@ -164,16 +165,16 @@ export function Compare({ role, self = null }) {
   const [aPick, setA] = useState("");
   const [bPick, setB] = useState("");
   const [season, setSeason] = useState("");
-  // A pupil's picker is his side's roster, names and ids only: the server
-  // gives him no team-mate's career row (REACH-D2), so it is never built
-  // from one. Staff pick from the career rows they may open (D2).
-  const careerRead = useLive(pupil ? "players" : "career", role, nonce);
+  const careerRead = useLive("career", role, nonce);
   const seasonsRead = useLive("career_by_season", role, nonce);
+  // A pupil's picker is his side's roster, names and ids only: his unnamed
+  // career read is his own row (REACH-D2), so it is never built from that.
+  const rosterRead = useReadFor("players", pupil ? {} : null, nonce);
 
   const offered = useMemo(() => (pupil
-    ? teamMates(careerRead.rows, self)
+    ? teamMates(rosterRead.rows, self)
     : pickable(careerRead.rows, compareScopes(profile()?.assignments ?? []))),
-  [careerRead.rows, pupil, self]);
+  [careerRead.rows, rosterRead.rows, pupil, self]);
 
   const aId = pupil ? self.id : aPick;
   // A choice the picker no longer offers (a re-read after he left the side) is no choice.
@@ -181,19 +182,17 @@ export function Compare({ role, self = null }) {
   const aOk = pupil || offered.some((p) => p.id === aId);
   const ready = aOk && !!aId && !!bId && aId !== bId;
 
-  // Match-ups are a boy's own (REACH-D2): never asked for on the pupil's card.
-  const staffReady = ready && !pupil;
-  const mA = useReadFor("matchups", staffReady ? { batterId: aId } : null, nonce);
-  const mB = useReadFor("matchups", staffReady ? { batterId: bId } : null, nonce);
-  const cA = useReadFor("matchup_coverage", staffReady ? { batterId: aId } : null, nonce);
-  const cB = useReadFor("matchup_coverage", staffReady ? { batterId: bId } : null, nonce);
-  // The one team-mate's season rows, asked for by name: the only read that
-  // gives a pupil another boy's figures, and only this season's (11 Nov).
-  const mateRead = useReadFor("career_by_season", pupil && ready ? { playerId: bId } : null, nonce);
+  const mA = useReadFor("matchups", ready ? { batterId: aId } : null, nonce);
+  const mB = useReadFor("matchups", ready ? { batterId: bId } : null, nonce);
+  const cA = useReadFor("matchup_coverage", ready ? { batterId: aId } : null, nonce);
+  const cB = useReadFor("matchup_coverage", ready ? { batterId: bId } : null, nonce);
+  // The team-mate's career and seasons, read naming him (REACH_ONE_MATE).
+  const mateCareer = useReadFor("career", pupil && ready ? { playerId: bId } : null, nonce);
+  const mateSeasons = useReadFor("career_by_season", pupil && ready ? { playerId: bId } : null, nonce);
 
   // D14: the time the reads answered, set when the last of them settles.
   const settled = !careerRead.loading && !seasonsRead.loading && !mA.loading && !mB.loading && !cA.loading && !cB.loading
-    && !mateRead.loading;
+    && !rosterRead.loading && !mateCareer.loading && !mateSeasons.loading;
   const [asAt, setAsAt] = useState(/** @type {Date | null} */ (null));
   useEffect(() => { if (settled) setAsAt(new Date()); }, [settled, nonce, aId, bId]);
 
@@ -207,24 +206,18 @@ export function Compare({ role, self = null }) {
     );
   }
 
-  const careerSaid = readState(careerRead, { what: pupil ? "your side" : "the career figures" });
-  const A = pupil ? { id: self.id, name: self.name, team: self.team } : offered.find((p) => p.id === aId) ?? null;
-  const B = offered.find((p) => p.id === bId) ?? null;
-  // The pupil's card: this season, his row beside the team-mate's. The
-  // season is the server's (`current_season`), never a clock here.
-  const thisSeason = pupil
-    ? (seasonsRead.rows.find((r) => r.currentSeason && r.season)?.season ?? mateRead.rows.find((r) => r.currentSeason && r.season)?.season ?? null)
-    : null;
-  const meNow = pupil && thisSeason ? seasonRow(seasonsRead.rows, self.id, thisSeason) : null;
-  const mateNow = pupil && thisSeason ? seasonRow(mateRead.rows, bId, thisSeason) : null;
-  const mateSaid = pupil && ready ? readState(mateRead, { what: "the team-mate's season" }) : null;
-  const seasons = ready && !pupil ? sharedSeasons(seasonsRead.rows, aId, bId) : [];
+  const careerSaid = readState(pupil ? rosterRead : careerRead, { what: pupil ? "your side" : "the career figures" });
+  const meRow = pupil ? project(careerRead.rows.find((r) => r.id === self.id) ?? { id: self.id, name: self.name, team: self.team }) : null;
+  const A = pupil ? meRow : offered.find((p) => p.id === aId) ?? null;
+  const picked = offered.find((p) => p.id === bId) ?? null;
+  // His career row, read naming him; the roster's name where it has none.
+  const B = pupil ? (picked ? { ...picked, ...(project(mateCareer.rows.find((r) => r.id === bId)) ?? {}) } : null) : picked;
+  const seasonRows = pupil ? [...seasonsRead.rows, ...mateSeasons.rows] : seasonsRead.rows;
+  const seasons = ready ? sharedSeasons(seasonRows, aId, bId) : [];
   const inSeason = season && seasons.includes(season) ? season : "";
-  const figA = pupil ? meNow : inSeason ? seasonRow(seasonsRead.rows, aId, inSeason) : A;
-  const figB = pupil ? mateNow : inSeason ? seasonRow(seasonsRead.rows, bId, inSeason) : B;
-  const window = pupil ? seasonWindow(thisSeason) : inSeason ? seasonWindow(inSeason) : WINDOW_ALL;
-  // D8 on his card: no column drawn as a gap, so both boys need this season's figures.
-  const showFigures = !pupil || (!!meNow && !!mateNow);
+  const figA = inSeason ? seasonRow(seasonRows, aId, inSeason) : A;
+  const figB = inSeason ? seasonRow(seasonRows, bId, inSeason) : B;
+  const window = inSeason ? seasonWindow(inSeason) : WINDOW_ALL;
   const names = A && B ? `${A.name} and ${B.name}` : "";
   const bf = (r) => (r?.ballsFaced === undefined ? 0 : r.ballsFaced);
 
@@ -272,26 +265,9 @@ export function Compare({ role, self = null }) {
         )}
       </Panel>
 
-      {ready && A && B && pupil && (
-        <Panel title="This season only" testid="compare-pupil-scope">
-          <p data-testid="compare-pupil-scope-words" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>
-            {`Only this season's figures are set beside yours. ${B.name}'s other seasons, his career, his match-ups and his wheel are his own, so they are not shown here.`}
-          </p>
-          {mateSaid && mateSaid.state !== "ok" && mateSaid.state !== "empty" ? (
-            <ReadState compact read={mateSaid} onRetry={() => setNonce((n) => n + 1)} testId="compare-mate-read-state"/>
-          ) : settled && !showFigures ? (
-            <p data-testid="compare-pupil-none" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>
-              {!meNow && !mateNow ? `Neither you nor ${B.name} has figures this season yet.`
-                : !meNow ? "You have no figures this season yet, so there is nothing to set beside his."
-                : `${B.name} has no figures this season yet, so there is nothing to set beside yours.`}
-            </p>
-          ) : null}
-        </Panel>
-      )}
-
-      {ready && A && B && showFigures && (
+      {ready && A && B && (
         <>
-          {!pupil && seasons.length > 0 && (
+          {seasons.length > 0 && (
             <div role="group" aria-label="Which figures" data-testid="compare-window" style={{ display: "flex", gap: T.space.xs, flexWrap: "wrap" }}>
               {[["", "Every season"], ...seasons.map((s) => [s, `${s} season`])].map(([v, l]) => (
                 <button key={v || "all"} type="button" aria-pressed={inSeason === v} data-testid={`compare-season-${v || "all"}`}
@@ -324,7 +300,7 @@ export function Compare({ role, self = null }) {
               under={belowFloor([{ name: A.name, n: figA?.ballsBowled ?? 0 }, { name: B.name, n: figB?.ballsBowled ?? 0 }])}/>
           </Panel>
 
-          {!pupil && <MatchupPanel A={A} B={B} names={names} mA={mA} mB={mB} cA={cA} cB={cB} onRetry={() => setNonce((n) => n + 1)}/>}
+          <MatchupPanel A={A} B={B} names={names} mA={mA} mB={mB} cA={cA} cB={cB} onRetry={() => setNonce((n) => n + 1)}/>
         </>
       )}
     </div>

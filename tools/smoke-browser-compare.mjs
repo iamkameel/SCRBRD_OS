@@ -22,11 +22,9 @@
  *     screen says when it read (D14).
  *   - A PUPIL COMPARES HIMSELF WITH ONE TEAM-MATE ONLY (D10, Q1): he is the
  *     left column, there is one picker, and it holds his side, never himself.
- *     Since REACH-D2 (Kameel, 7 and 11 Nov 2026) the card is the team-mate's
- *     season beside his, this season only: the picker is built from the
- *     roster (`players`), never a team-mate's career row; the team-mate's
- *     figures are one `career_by_season?playerId=` read; no match-up read,
- *     no season buttons, and the words say why.
+ *     Since REACH-D2 the card is as it was (Kameel, 12 Nov 2026: "career and
+ *     match-ups too"): the picker is built from the roster (`players`), and
+ *     each of the team-mate's figures is a read that names him.
  *   - A PARENT HAS NO COMPARE (D11, Q2): no Analytics, no card, anywhere in
  *     her app.
  *   - 12px and 44px over the compare screen at 390 wide, both people.
@@ -417,20 +415,23 @@ try {
   const offeredP = (await options(p.page, "compare-pick-b")).sort();
   ok("...his picker holds his side's boys, from the roster", mates.length > 0 && offeredP.join() === mates.join(), `${offeredP.length} offered, ${mates.length} team-mates`);
   ok("...never himself, and no boy of another side", !offeredP.includes(PILLAY) && offeredP.every((id) => roster.find((r) => r.id === id)?.team_code === "1XI"));
-  ok("...and no team-mate's career was asked for to build it", !p.asked.slice(pFrom).some((x) => /^\/api\/read\/career(\?|$)/.test(x)), p.asked.slice(pFrom).join(" "));
   await tid(p.page, "compare-pick-b").selectOption(set.player_id);
   ok("his figures beside the team-mate's read", await settled(p.page));
-  ok("...the team-mate's figures are one season read that names him",
-     p.asked.slice(pFrom).some((x) => x === `/api/read/career_by_season?playerId=${set.player_id}`), p.asked.slice(pFrom).join(" "));
-  const mateRows = (await call(`/api/read/career_by_season?playerId=${set.player_id}`, pupilTok)).body?.rows ?? [];
-  ok("...which the server answers with his current season only", mateRows.length === 1 && mateRows[0].current_season === true && mateRows[0].player_id === set.player_id,
-     JSON.stringify(mateRows.map((r) => r.season)));
-  ok("...the team-mate's column is that season's runs", (await inner(p.page, "compare-bat-runs-b")).trim().startsWith(String(mateRows[0]?.runs)), await inner(p.page, "compare-bat-runs-b"));
-  ok("no match-up is asked for, and no match-up panel or season button is drawn",
-     !p.asked.slice(pFrom).some((x) => /\/api\/read\/matchup/.test(x)) && await tid(p.page, "compare-matchups").count() === 0
-     && await tid(p.page, "compare-window").count() === 0, p.asked.slice(pFrom).filter((x) => /matchup/.test(x)).join(" "));
-  ok("...and the card says in words that his other seasons, career, match-ups and wheel are his own",
-     /his career, his match-ups and his wheel are his own/.test(await inner(p.page, "compare-pupil-scope-words")), await inner(p.page, "compare-pupil-scope-words"));
+  // Kameel, 12 Nov 2026: "Keep the card exactly as before (career and
+  // match-ups too)". Each of the team-mate's figures is a read that names him.
+  const asked = p.asked.slice(pFrom);
+  ok("...the team-mate's career, seasons and match-ups are each read naming him",
+     [`/api/read/career?playerId=${set.player_id}`, `/api/read/career_by_season?playerId=${set.player_id}`, `/api/read/matchups?batterId=${set.player_id}`]
+       .every((u) => asked.includes(u)), asked.join(" "));
+  const mateCareer = (await call(`/api/read/career?playerId=${set.player_id}`, pupilTok)).body?.rows ?? [];
+  ok("...the server answers the named career with his row alone", mateCareer.length === 1 && mateCareer[0].player_id === set.player_id, JSON.stringify(mateCareer.map((r) => r.full_name)));
+  ok("...and the card's Every season column is that career's runs",
+     (await inner(p.page, "compare-bat-runs-b")).trim().startsWith(String(mateCareer[0]?.runs)), await inner(p.page, "compare-bat-runs-b"));
+  ok("the season buttons and the pace-and-spin panel are drawn, as before",
+     await tid(p.page, "compare-window").count() === 1 && await tid(p.page, "compare-season-all").count() === 1
+     && await tid(p.page, "compare-matchups").count() === 1 && await tid(p.page, "compare-pupil-scope").count() === 0);
+  const elsewhere = (await call(`/api/read/career?playerId=${LEFT.id}`, pupilTok)).body?.rows ?? [];
+  ok("...a boy of another side named on career reads nothing", elsewhere.length === 0);
   const head = await p.page.$$eval('[data-testid="compare-bat-table"] thead th', (ths) => ths.map((t) => t.innerText.trim()));
   ok("...himself on the left, the team-mate on the right", head[0]?.toLowerCase() === "r pillay" && head[2]?.toLowerCase() === set.full_name.toLowerCase(), head.join(" | "));
   ok("...the floor applies to him as to anyone", (await p.page.$$eval('[data-testid="compare"] td[data-held="true"]', (els) => els.length)) >= 1);

@@ -30,12 +30,13 @@
  *     his side's figures;
  *   - no scoping refusals, no page errors;
  *   - A TEAM-MATE'S FIGURES ARE REFUSED (REACH-D2, Kameel 7 Nov 2026; the
- *     two exceptions of 11 Nov): his own career, seasons, wheel and
- *     breakdown come back; a team-mate's `career?playerId=`, wheel,
- *     match-ups, bests and dismissal breakdown do not; "Me v a team-mate"
- *     reads that one boy's current season and no other; the captain reads
- *     his side's season rows for his season and nothing lifetime, and loses
- *     them with the honour;
+ *     two exceptions of 11 Nov, and 12 Nov's "career and match-ups too"):
+ *     unnamed, his reads are his own; a team-mate NAMED, as "Me v a
+ *     team-mate" names him, gives his career, every season and his batting
+ *     match-ups, and never his wheel, bests or dismissal breakdown; a boy of
+ *     another side named gives nothing; the captain reads his side's season
+ *     rows for his season and nothing lifetime, and loses them with the
+ *     honour;
  *   - THE CAPTAIN'S VIEW (SCRBRD-138 phase A): the seed's pupil is awarded
  *     `captain` for the walk and it is withdrawn after. With it, his Home
  *     carries the card, his fixture the section, his match the tab; a
@@ -666,8 +667,8 @@ try {
     const own = await get("career");
     ok("his career read answers, with his own row", own.status === 200 && own.rows.some((r) => r.player_id === PILLAY), JSON.stringify(own.rows.map((r) => r.player_id)));
     ok("...and no team-mate's", own.rows.every((r) => r.player_id === PILLAY), JSON.stringify(own.rows.map((r) => r.full_name)));
-    // `career` takes no playerId (a team-mate's lifetime row is simply not in
-    // it, above); naming him on the season read opens this season only.
+    // Named, as the Compare card names him (Kameel, 12 Nov): his career and
+    // every season of his, last season's included.
     const lastLabel = String(Number(SEASON_NOW) - 1);
     await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
              values ($1, '1XI', 'Verify Reach Last', $2, 'cricket', 'T20', 20, 'complete')`, [HIL, `${lastLabel}-06-15 09:00+02`]);
@@ -678,8 +679,10 @@ try {
              values ($1, $2, 1, 1, 1, $3, 'd-reach', $4, 1, now(), 'ball', 'run', 3, $5)`, [lastM, HIL, scorer0, `reach-${lastM}-1`, NAIDOO]);
     const owned = (await q(`select count(*)::int as n from player_batting_by_season where player_id = $1 and season = $2`, [NAIDOO, lastLabel]))[0].n;
     const named = await get(`career_by_season?playerId=${NAIDOO}&season=${lastLabel}`);
-    ok("a team-mate named on the season read: last season's row (there is one) is refused",
-       owned === 1 && named.status === 200 && named.rows.length === 0, `${owned} owned, ${JSON.stringify(named.rows.map((r) => r.season))}`);
+    ok("a team-mate named on the season read: his last season's row comes back",
+       owned === 1 && named.rows.length === 1 && named.rows[0].player_id === NAIDOO, `${owned} owned, ${JSON.stringify(named.rows.map((r) => r.season))}`);
+    const namedCareer = await get(`career?playerId=${NAIDOO}`);
+    ok("...and named on career, his row alone", namedCareer.rows.length === 1 && namedCareer.rows[0].player_id === NAIDOO, JSON.stringify(namedCareer.rows.map((r) => r.full_name)));
     const seasons = await get("career_by_season");
     ok("his seasons: his own rows and nobody else's", seasons.rows.length > 0 && seasons.rows.every((r) => r.player_id === PILLAY), JSON.stringify(seasons.rows.map((r) => `${r.full_name}@${r.season}`)));
     // One measured shot of his own, in a fixture of the walk's, so his wheel has a ball to return
@@ -696,22 +699,24 @@ try {
     ok("his own wheel is read, every placed ball of his", wheel.status === 200 && wheel.rows.length > 0 && wheel.rows.length === theirs, `${wheel.rows.length} of ${theirs}`);
     for (const mate of [NAIDOO, WHITFIELD]) {
       ok(`a team-mate's wheel is refused (${mate.slice(-2)})`, (await get(`player_shot_points?playerId=${mate}`)).rows.length === 0);
-      ok(`...his match-ups (${mate.slice(-2)})`, (await get(`matchups?batterId=${mate}`)).rows.every((r) => r.batter_id === PILLAY || r.bowler_id === PILLAY));
-      ok(`...his balls faced (${mate.slice(-2)})`, Number((await get(`matchup_coverage?batterId=${mate}`)).rows[0]?.deliveries ?? 0) === 0);
       ok(`...his bests (${mate.slice(-2)})`, (await get(`personal_bests?playerId=${mate}`)).rows.length === 0);
+      // The card's own read: named as the batter, his pairs and nothing else.
+      ok(`...named as the batter, his match-ups are his pairs only (${mate.slice(-2)})`,
+         (await get(`matchups?batterId=${mate}`)).rows.every((r) => r.batter_id === mate));
     }
     const how = await get("dismissal_breakdown");
     ok("how he is out: his own rows only", how.rows.every((r) => r.player_id === PILLAY), JSON.stringify(how.rows.map((r) => r.full_name)));
     const pairs = await get("matchups");
     ok("match-ups unnamed: every pair is one of his", pairs.rows.every((r) => r.batter_id === PILLAY || r.bowler_id === PILLAY), JSON.stringify(pairs.rows.map((r) => `${r.batter_name}>${r.bowler_name}`)));
-    // "Me v a team-mate" (11 Nov): one team-mate's season, named, this season.
+    // "Me v a team-mate": one team-mate, named, every season of his.
     const mateSeason = await get(`career_by_season?playerId=${NAIDOO}`);
-    ok("Me v a team-mate: naming one team-mate reads his current season and nothing else",
-       mateSeason.rows.length > 0 && mateSeason.rows.every((r) => r.player_id === NAIDOO && r.season === SEASON_NOW && r.current_season === true),
+    ok("Me v a team-mate: naming one team-mate reads his seasons, this one and last, and no other boy's",
+       mateSeason.rows.every((r) => r.player_id === NAIDOO) && [SEASON_NOW, lastLabel].every((x) => mateSeason.rows.some((r) => r.season === x)),
        JSON.stringify(mateSeason.rows.map((r) => `${r.full_name}@${r.season}`)));
     const elsewhere = (await q(`select id from player where school_id = $1 and team_code is distinct from '1XI' and id in
                                  (select player_id from player_batting_by_season union select player_id from player_bowling_by_season) limit 1`, [HIL]))[0]?.id;
-    if (elsewhere) ok("...and naming a boy of another side reads nothing", (await get(`career_by_season?playerId=${elsewhere}`)).rows.length === 0);
+    if (elsewhere) ok("...and naming a boy of another side reads nothing", (await get(`career_by_season?playerId=${elsewhere}`)).rows.length === 0
+       && (await get(`career?playerId=${elsewhere}`)).rows.length === 0);
   }
 
   group("Without the honour: no card, no section, no tab — and nothing suggests one is missing");
@@ -877,7 +882,7 @@ try {
     ok("nothing lifetime: his career read is his own row", (await get("career")).every((r) => r.player_id === PILLAY));
     ok("...no team-mate's wheel, breakdown or match-ups", (await get(`player_shot_points?playerId=${NAIDOO}`)).length === 0
        && (await get("dismissal_breakdown")).every((r) => r.player_id === PILLAY)
-       && (await get(`matchups?batterId=${WHITFIELD}`)).every((r) => r.batter_id === PILLAY || r.bowler_id === PILLAY));
+       && (await get("matchups")).every((r) => r.batter_id === PILLAY || r.bowler_id === PILLAY));
   }
 
   group("Withdrawn: gone on the next load");

@@ -172,7 +172,8 @@ group("A. career_by_season (SCRBRD-086): the career read's scope, one grain fine
      /school_season_of\(m\.starts_at\)\s+as season/.test(READ_QUERIES.innings_by_season.text));
   ok("the fixture list files a match by the same function the season views do",
      /school_season_of\(m\.starts_at\) as season/.test(READ_QUERIES.matches.text));
-  ok("`career` itself is untouched: no season anywhere in it", !/season/.test(READ_QUERIES.career.text));
+  ok("`career` itself is untouched: no season anywhere in it (but REACH-D2's self CTE)",
+     !/season/.test(READ_QUERIES.career.text.replace((await import("./read-api.mjs")).REACH_SELF_CTES, "")));
 }
 
 group("A. innings_by_season (GA-I23 slice 2, B1): career's scope, one boy, gated per boy from day one");
@@ -294,7 +295,7 @@ group("A. my_children (step 4 G1): the caller's own live guardian links, and the
 
 group("A. REACH-D2 (Kameel, 7 and 11 Nov 2026): a boy's figures across matches are his, his family's and his side's staff's");
 {
-  const { REACH_FAMILY_OR_STAFF: G, REACH_SELF_CTES: C, REACH_SEASON_ARMS: S } = await import("./read-api.mjs");
+  const { REACH_FAMILY_OR_STAFF: G, REACH_SELF_CTES: C, REACH_CAPTAIN_ARM: S, REACH_ONE_MATE: M, reachOneMate } = await import("./read-api.mjs");
   const flat = (/** @type {string} */ s) => s.replace(/--[^\n]*/g, "").replace(/\s+/g, " ").trim();
   const g = flat(G);
   ok("the gate opens with the family: his own self link or a guardian's, live (is_family_of)", g.startsWith("(is_family_of(p.id) or"));
@@ -315,19 +316,28 @@ group("A. REACH-D2 (Kameel, 7 and 11 Nov 2026): a boy's figures across matches a
   for (const r of ["career", "career_by_season", "dismissal_breakdown", "player_shot_points", "matchups", "matchup_coverage", "personal_bests"]) {
     ok(`${r} asks the gate`, has(r));
   }
-  ok("career: one row a boy, under the gate in its where", flat(READ_QUERIES.career.text).includes(`where ${g} order by p.full_name`));
+  ok("career: one row a boy, under the gate or the one team-mate named, narrowed by ?playerId=",
+     flat(READ_QUERIES.career.text).includes(`where ($1::uuid is null or p.id = $1::uuid) and (${g} or ${flat(reachOneMate(1))}) order by p.full_name`)
+     && READ_QUERIES.career.params?.({}).join() === "" && READ_QUERIES.career.params?.({}).length === 1);
   ok("dismissal_breakdown: both halves", flat(READ_QUERIES.dismissal_breakdown.text).split(g).length === 3);
-  ok("matchups: a pair is admitted by its batter or its bowler, after the grouping",
-     flat(READ_QUERIES.matchups.text).includes(`having exists (select 1 from player p where p.id = b.striker_id and ${g}) or exists (select 1 from player p where p.id = b.bowler_id and ${g})`));
+  ok("matchups: a pair is admitted by its batter (or the one batter named) or its bowler, after the grouping",
+     flat(READ_QUERIES.matchups.text).includes(`having exists (select 1 from player p where p.id = b.striker_id and (${g} or ${flat(reachOneMate(1))})) or exists (select 1 from player p where p.id = b.bowler_id and ${g})`));
+  ok("matchup_coverage: the named batter's balls, under the gate or the one team-mate named",
+     flat(READ_QUERIES.matchup_coverage.text).includes(`(striker_id = $1 and exists (select 1 from player p where p.id = $1 and (${g} or ${flat(reachOneMate(1))})))`));
+  ok("the one team-mate is asked of each read's own parameter", reachOneMate(1).includes("$1::uuid is not null and p.id = $1::uuid") && !reachOneMate(1).includes("$2"));
   ok("personal_bests: the boy asked of the gate beside player_best()'s own",
      flat(READ_QUERIES.personal_bests.text).includes(`and exists (select 1 from player p where p.id = $1::uuid and ${g})`));
 
-  // The two exceptions are career_by_season's alone.
+  // The captain's arm is career_by_season's alone; the one team-mate is the
+  // Compare card's four reads' alone (Kameel, 12 Nov: "career and match-ups too").
   const cbs = flat(READ_QUERIES.career_by_season.text);
-  ok("career_by_season carries the two exceptions, ORed beside the gate, and nothing else does",
-     cbs.startsWith(`with ${flat(C)} select`) && cbs.includes(`and (${g} or ${flat(S)})`)
-     && ["career", "dismissal_breakdown", "player_shot_points", "matchups", "matchup_coverage", "personal_bests"]
-          .every((r) => !READ_QUERIES[r].text.includes("reach_captaincy") && !READ_QUERIES[r].text.includes("reach_self")));
+  ok("career_by_season carries the captain and the one team-mate, ORed beside the gate",
+     cbs.startsWith(`with ${flat(C)} select`) && cbs.includes(`and (${g} or ${flat(S)} or ${flat(M)})`));
+  ok("...the captain's arm is in no other read",
+     ["career", "dismissal_breakdown", "player_shot_points", "matchups", "matchup_coverage", "personal_bests"]
+       .every((r) => !READ_QUERIES[r].text.includes("reach_captaincy k")));
+  ok("...and the wheel, the breakdown and the bests take no team-mate",
+     ["dismissal_breakdown", "player_shot_points", "personal_bests"].every((r) => !READ_QUERIES[r].text.includes("reach_self")));
   ok("...?playerId= narrows every reader's rows to that one boy", cbs.includes("where ($2::uuid is null or p.id = $2::uuid) and ("));
   ok("the captain: his own live self link, a live captaincy or vice-captaincy, his side and school, that season's label",
      flat(C).includes("a.role = 'selfaccess'") && flat(C).includes("g.relationship = 'self' and g.verification_state = 'verified'")
@@ -335,10 +345,10 @@ group("A. REACH-D2 (Kameel, 7 and 11 Nov 2026): a boy's figures across matches a
      && flat(C).includes("h.kind in ('captain', 'vice_captain') and h.withdrawn_at is null")
      && flat(C).includes("h.school_id = k.self_school and h.team_code = k.self_team")
      && flat(S).includes("k.cap_school = p.school_id and k.cap_team = p.team_code and k.cap_season = season"));
-  ok("Me v a team-mate: the one boy named, this season, on his own side, never himself",
-     flat(S).includes("$2::uuid is not null and p.id = $2::uuid and season = (select school_season_of(now()))")
-     && flat(S).includes("k.self_school = p.school_id and k.self_team = p.team_code and k.self_id <> p.id"));
-  ok("today is sa_today() and the season the server's, never current_date", !/current_date/.test(flat(C) + flat(S) + g));
+  ok("Me v a team-mate: the one boy named, on his own side, never himself, every season",
+     flat(M).includes("$2::uuid is not null and p.id = $2::uuid")
+     && flat(M).includes("k.self_school = p.school_id and k.self_team = p.team_code and k.self_id <> p.id") && !/season/.test(M));
+  ok("today is sa_today() and the season the server's, never current_date", !/current_date/.test(flat(C) + flat(S) + flat(M) + g));
   ok("career_by_season's playerId is a checked uuid", (() => {
     try { READ_QUERIES.career_by_season.params?.({ playerId: "x' or 1=1" }); return false; } catch (e) { return /bad_param:playerId/.test(String(e)); }
   })());
@@ -349,9 +359,9 @@ group("A. REACH-D2 (Kameel, 7 and 11 Nov 2026): a boy's figures across matches a
   const src = readFileSync(new URL("./read-api.mjs", import.meta.url), "utf8");
   const between = (/** @type {string} */ s, /** @type {string} */ k) => s.split(`${k}:begin`)[1]?.split(`${k}:end`)[0] ?? "";
   const norm = (/** @type {string} */ s) => s.replace(/\*\/|\/\*|`|--/g, " ").replace(/\s+/g, " ").trim();
-  for (const [k, v] of [["reach_family_or_staff", G], ["reach_self_ctes", C], ["reach_season_arms", S]]) {
+  for (const [k, v] of [["reach_family_or_staff", G], ["reach_self_ctes", C], ["reach_captain_arm", S], ["reach_one_mate", M]]) {
     ok(`db/99 §130 proves ${k} exactly, not a copy that has drifted`,
-       norm(between(sql, k)).length > 100 && norm(between(sql, k)) === norm(between(src, k)) && norm(between(src, k)) === norm(v));
+       norm(between(sql, k)).length > 80 && norm(between(sql, k)) === norm(between(src, k)) && norm(between(src, k)) === norm(v));
   }
 }
 
@@ -508,7 +518,7 @@ group("A. The cockpit's reads (SCRBRD-136/137 phase B §5, §1.4): the lead's fi
   ok("player_shot_points draws a boy's wheel only for a reader of his record, and only where his figures are the reader's (REACH-D2)",
      flat(READ_QUERIES.player_shot_points.text).includes("where b.striker_id = $1 and exists (select 1 from player p where p.id = $1 and (is_family_of(p.id)"));
   ok("matchup_coverage counts a named batter's balls only for a reader of his record, and only where his figures are the reader's",
-     flat(READ_QUERIES.matchup_coverage.text).includes("($1::uuid is null or (striker_id = $1 and exists (select 1 from player p where p.id = $1 and (is_family_of(p.id)"));
+     flat(READ_QUERIES.matchup_coverage.text).includes("($1::uuid is null or (striker_id = $1 and exists (select 1 from player p where p.id = $1 and ((is_family_of(p.id)"));
   ok("bowling_breaches carries no gate of its own (bowling_breach's policy is player.workload.read)",
      !/app_can/.test(flat(READ_QUERIES.bowling_breaches.text)));
   ok("workload's comment names the gate workload() asks, not player.development.read",

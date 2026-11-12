@@ -40378,8 +40378,10 @@ $v116$;
   --               nothing lifetime; gone when the honour is withdrawn; a
   --               captaincy last season opens last season only; the copy is
   --               is_captain_of() row for row
-  --   (compare)   one team-mate's season, this season, only when named, only
-  --               on his own side
+  --   (compare)   one team-mate, only when named, only on his own side: his
+  --               career, every season and his match-ups as a batter, the
+  --               card's reads (Kameel, 12 Nov: "career and match-ups too");
+  --               never his wheel or how he is out
   --   (staffer)   a pupil holding a coach's assignment on his side too reads
   --               no team-mate (Kameel, 12 Nov)
   --   (parent)    a parent her own child and no other boy
@@ -40400,7 +40402,6 @@ $v116$;
   -- to see it (read.test.mjs holds this copy to the API's):
   --   the staff arm open to a pupil      → (own/mate): N1's career read holds C,N1,N2
   --   the captain's season test removed  → (captain): his seasons hold last season's side
-  --   the card's season test removed     → (compare): N1 naming N2 reads N2's two seasons
   --   the card's side test removed       → (compare): the pupil-staffer naming U reads U
   --   the roster arm removed             → (staff): 9XI's coach reads C,N1,N2
   --   a withdrawn honour counted         → (captain): after the withdrawal, the side
@@ -40445,15 +40446,18 @@ reach_self as materialized (
 -- reach_self_ctes:end
 $c130$;
     v_s text := $s130$
--- reach_season_arms:begin
-(exists (select 1 from reach_captaincy k
+-- reach_captain_arm:begin
+exists (select 1 from reach_captaincy k
                         where k.cap_school = p.school_id and k.cap_team = p.team_code and k.cap_season = season)
-               or ($2::uuid is not null and p.id = $2::uuid
-                   and season = (select school_season_of(now()))
-                   and exists (select 1 from reach_self k
-                                where k.self_school = p.school_id and k.self_team = p.team_code and k.self_id <> p.id)))
--- reach_season_arms:end
+-- reach_captain_arm:end
 $s130$;
+    v_m text := $m130$
+-- reach_one_mate:begin
+($2::uuid is not null and p.id = $2::uuid
+               and exists (select 1 from reach_self k
+                            where k.self_school = p.school_id and k.self_team = p.team_code and k.self_id <> p.id))
+-- reach_one_mate:end
+$m130$;
     nm text := $n$replace(p.full_name, 'Verify OneThirty ', '')$n$;
     q_career text; q_seasons text; q_wheel text; q_breakdown text; q_pairs text;
     v_last_h uuid; v_vice uuid; v_moved uuid;
@@ -40466,21 +40470,25 @@ $s130$;
     -- The reads, each as the API asks it of a boy `p`: career (one row a
     -- boy), career_by_season, the wheel (player_shot_points: his balls with
     -- a point), how he is out and takes wickets, and a match's pairs.
-    q_career := 'select ' || nm || ' as k from player p where p.full_name like ''Verify OneThirty %'' and ' || v_g;
+    -- $2 is the one boy a read names (`career`'s and `career_by_season`'s
+    -- playerId, `matchups`' batterId); the API asks it as each read's own.
+    q_career := 'with ' || v_c || ' select ' || nm || ' as k from player p where p.full_name like ''Verify OneThirty %'''
+             || ' and ($2::uuid is null or p.id = $2::uuid) and (' || v_g || ' or ' || v_m || ')';
     q_seasons := 'with ' || v_c || ' select ' || nm || ' || ''@'' || x.season as k'
               || ' from (select player_id, season from player_batting_by_season union select player_id, season from player_bowling_by_season) x'
               || ' join player p on p.id = x.player_id'
-              || ' where p.full_name like ''Verify OneThirty %'' and ($2::uuid is null or p.id = $2::uuid) and (' || v_g || ' or ' || v_s || ')';
+              || ' where p.full_name like ''Verify OneThirty %'' and ($2::uuid is null or p.id = $2::uuid) and (' || v_g || ' or ' || v_s || ' or ' || v_m || ')';
     q_wheel := 'select ' || nm || ' as k from ball_event_career b join player p on p.id = b.striker_id'
-            || ' where b.match_id in (' || quote_literal(y->>'M') || ', ' || quote_literal(y->>'ML') || ') and b.theta is not null and ' || v_g;
+            || ' where b.match_id in (' || quote_literal(y->>'M') || ', ' || quote_literal(y->>'ML') || ') and b.theta is not null and ($2::uuid is null or p.id = $2::uuid) and ' || v_g;
     q_breakdown := 'select ' || nm || ' || '':bat'' as k from player p join player_dismissal_breakdown d on d.player_id = p.id'
                 || ' where p.full_name like ''Verify OneThirty %'' and ' || v_g
                 || ' union all select ' || nm || ' || '':bowl'' from player p join player_wicket_breakdown w on w.player_id = p.id'
                 || ' where p.full_name like ''Verify OneThirty %'' and ' || v_g;
-    q_pairs := 'select replace(bat.full_name, ''Verify OneThirty '', '''') || ''>'' || replace(bowl.full_name, ''Verify OneThirty '', '''') as k'
+    q_pairs := 'with ' || v_c || ' select replace(bat.full_name, ''Verify OneThirty '', '''') || ''>'' || replace(bowl.full_name, ''Verify OneThirty '', '''') as k'
             || ' from (select b.striker_id, b.bowler_id from ball_event_career b where b.match_id = ' || quote_literal(y->>'M')
+            || ' and ($2::uuid is null or b.striker_id = $2::uuid)'
             || ' group by b.striker_id, b.bowler_id'
-            || ' having exists (select 1 from player p where p.id = b.striker_id and ' || v_g || ')'
+            || ' having exists (select 1 from player p where p.id = b.striker_id and (' || v_g || ' or ' || v_m || '))'
             || ' or exists (select 1 from player p where p.id = b.bowler_id and ' || v_g || ')) z'
             || ' join player bat on bat.id = z.striker_id join player bowl on bowl.id = z.bowler_id';
 
@@ -40541,39 +40549,52 @@ $s130$;
       format('§130 (captain): last season''s captain''s seasons hold %s', got));
     PERFORM _vd2_honour(v_last_h, true);
 
-    -- (compare) one team-mate, named, this season, his own side.
+    -- (compare) one team-mate, named, his own side: career, every season,
+    -- his match-ups as a batter; never his wheel.
     got := _vd2_rows(q_seasons, (y->>'n2')::uuid);
-    PERFORM _assert(got = 'N2@' || S, format('§130 (compare): N1 naming N2 reads %s', got));
+    PERFORM _assert(got = 'N2@' || L || ',N2@' || S, format('§130 (compare): N1 naming N2 reads %s', got));
+    got := _vd2_rows(q_career, (y->>'n2')::uuid);
+    PERFORM _assert(got = 'N2', format('§130 (compare): N1 naming N2 reads the career of %s', got));
+    got := _vd2_rows(q_pairs, (y->>'n2')::uuid);
+    PERFORM _assert(got = 'N2>C,N2>N1', format('§130 (compare): N1 naming N2 as the batter reads the pairs %s', got));
+    got := _vd2_rows(q_wheel, (y->>'n2')::uuid);
+    PERFORM _assert(got = '', format('§130 (compare): N1 naming N2 reads his wheel: %s', got));
+    PERFORM _assert(_vd2_rows(q_career, (y->>'u')::uuid) = '' AND _vd2_rows(q_career, (y->>'o')::uuid) = ''
+                    AND _vd2_rows(q_pairs, (y->>'u')::uuid) = '',
+      '§130 (compare): N1 naming a boy of another side read his career or his pairs');
     got := _vd2_rows(q_seasons, (y->>'c')::uuid);
-    PERFORM _assert(got = 'C@' || S, format('§130 (compare): N1 naming the captain reads %s', got));
+    PERFORM _assert(got = 'C@' || L || ',C@' || S, format('§130 (compare): N1 naming the captain reads %s', got));
     got := _vd2_rows(q_seasons, (y->>'u')::uuid);
     PERFORM _assert(got = '', format('§130 (compare): N1 naming a boy of another side who played for his reads %s', got));
     got := _vd2_rows(q_seasons, (y->>'o')::uuid);
     PERFORM _assert(got = '', format('§130 (compare): N1 naming another side''s boy reads %s', got));
     got := _vd2_rows(q_seasons, (y->>'n1')::uuid);
     PERFORM _assert(got = 'N1@' || L || ',N1@' || S, format('§130 (compare): N1 naming himself reads %s', got));
-    -- Named, the career, wheel and pairs stay his own (no exception there).
-    PERFORM _assert(_vd2_rows(q_career) = 'N1' AND _vd2_rows(q_wheel) = 'N1',
-      '§130 (compare): naming a team-mate opened something beyond his season');
+    -- Unnamed, every read is his own again.
+    PERFORM _assert(_vd2_rows(q_career) = 'N1' AND _vd2_rows(q_wheel) = 'N1' AND _vd2_rows(q_seasons) = 'N1@' || L || ',N1@' || S
+                    AND _vd2_rows(q_pairs) = 'N1>N2,N2>N1' AND _vd2_rows(q_breakdown) = 'N1:bat',
+      '§130 (compare): an unnamed read is not his own alone');
 
     -- (staffer) N2: a pupil, and 9XI's coach as well.
     PERFORM _as(U_N2);
     PERFORM _assert(_vd2_rows(q_career) = 'N2', format('§130 (staffer): the pupil-staffer''s career read holds %s', _vd2_rows(q_career)));
     PERFORM _assert(_vd2_rows(q_seasons) = 'N2@' || L || ',N2@' || S, format('§130 (staffer): his seasons hold %s', _vd2_rows(q_seasons)));
     PERFORM _assert(_vd2_rows(q_wheel) = 'N2', format('§130 (staffer): his wheel read draws %s', _vd2_rows(q_wheel)));
-    PERFORM _assert(_vd2_rows(q_seasons, (y->>'n1')::uuid) = 'N1@' || S,
+    PERFORM _assert(_vd2_rows(q_seasons, (y->>'n1')::uuid) = 'N1@' || L || ',N1@' || S,
       format('§130 (staffer): his card naming N1 reads %s', _vd2_rows(q_seasons, (y->>'n1')::uuid)));
     -- He reads U's row as a coach (the roster), so only the card's own side
     -- test keeps the boy who played up for 9XI, of 8XI, off it: N1 cannot
     -- read U at all, and could not show it.
-    PERFORM _assert(EXISTS (SELECT 1 FROM player WHERE id = (y->>'u')::uuid) AND _vd2_rows(q_seasons, (y->>'u')::uuid) = '',
+    PERFORM _assert(EXISTS (SELECT 1 FROM player WHERE id = (y->>'u')::uuid) AND _vd2_rows(q_seasons, (y->>'u')::uuid) = ''
+                    AND _vd2_rows(q_career, (y->>'u')::uuid) = '' AND _vd2_rows(q_pairs, (y->>'u')::uuid) = '',
       format('§130 (compare): the pupil-staffer''s card naming a boy of another side reads %s', _vd2_rows(q_seasons, (y->>'u')::uuid)));
 
     -- (parent) N1's mother: her son, nobody else, and no exception of a pupil's.
     PERFORM _as(U_MUM);
     PERFORM _assert(_vd2_rows(q_career) = 'N1', format('§130 (parent): the mother''s career read holds %s', _vd2_rows(q_career)));
     PERFORM _assert(_vd2_rows(q_seasons) = 'N1@' || L || ',N1@' || S, format('§130 (parent): her seasons hold %s', _vd2_rows(q_seasons)));
-    PERFORM _assert(_vd2_rows(q_seasons, (y->>'n2')::uuid) = '', '§130 (parent): naming a team-mate opened his season to her');
+    PERFORM _assert(_vd2_rows(q_seasons, (y->>'n2')::uuid) = '' AND _vd2_rows(q_career, (y->>'n2')::uuid) = '',
+      '§130 (parent): naming a team-mate opened his figures to her');
     PERFORM _assert(_vd2_rows(q_wheel) = 'N1' AND _vd2_rows(q_breakdown) = 'N1:bat',
       format('§130 (parent): her wheel %s, her breakdown %s', _vd2_rows(q_wheel), _vd2_rows(q_breakdown)));
 

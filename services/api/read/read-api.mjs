@@ -152,21 +152,32 @@ export const REACH_SELF_CTES = /* reach_self_ctes:begin */`reach_self as materia
                 and h.school_id = k.self_school and h.team_code = k.self_team)`/* reach_self_ctes:end */;
 
 /**
- * The arms the two exceptions add, for a season row of boy `p` (`season` the
- * row's own, `$2` the one boy asked for):
- *   - THE CAPTAIN (SCRBRD-138 C2): a boy holding the captaincy of a side for
- *     a season reads that side's rows for that season, and no other season;
- *   - "ME V A TEAM-MATE" (GA-I24 D10): a pupil reads ONE team-mate's rows
- *     for the current season, only when he asks for that one boy
- *     (`playerId`), and only a boy on his own side at his school.
+ * THE CAPTAIN (SCRBRD-138 C2; Kameel, 11 Nov 2026), on `career_by_season`
+ * alone, for a season row of boy `p` (`season` the row's own): a boy holding
+ * the captaincy of a side for a season reads that side's rows for that
+ * season, and no other season.
  * db/99 §130 runs this text as each persona; read.test.mjs holds it equal.
  */
-export const REACH_SEASON_ARMS = /* reach_season_arms:begin */`(exists (select 1 from reach_captaincy k
-                        where k.cap_school = p.school_id and k.cap_team = p.team_code and k.cap_season = season)
-               or ($2::uuid is not null and p.id = $2::uuid
-                   and season = (select school_season_of(now()))
-                   and exists (select 1 from reach_self k
-                                where k.self_school = p.school_id and k.self_team = p.team_code and k.self_id <> p.id)))`/* reach_season_arms:end */;
+export const REACH_CAPTAIN_ARM = /* reach_captain_arm:begin */`exists (select 1 from reach_captaincy k
+                        where k.cap_school = p.school_id and k.cap_team = p.team_code and k.cap_season = season)`/* reach_captain_arm:end */;
+
+/**
+ * "ME V A TEAM-MATE" (GA-I24 D10; Kameel, 11 Nov 2026, and 12 Nov: "Keep the
+ * card exactly as before (career and match-ups too)"): a pupil who NAMES one
+ * boy (`$2` here, the read's own playerId or batterId) on his own current side
+ * at his school reads what the card shows of him: his career, his seasons
+ * (all of them), and his batting against pace and spin (matchups and
+ * matchup_coverage by batterId). One boy per read; never himself (he is his
+ * own family); never a boy of another side. His wheel, how he is out, his
+ * bests and his innings line are not the card's, and stay refused.
+ * db/99 §130 runs this text as each persona; read.test.mjs holds it equal.
+ * Each read asks it with its own parameter: reachOneMate(n).
+ */
+export const REACH_ONE_MATE = /* reach_one_mate:begin */`($2::uuid is not null and p.id = $2::uuid
+               and exists (select 1 from reach_self k
+                            where k.self_school = p.school_id and k.self_team = p.team_code and k.self_id <> p.id))`/* reach_one_mate:end */;
+/** REACH_ONE_MATE asked of the read's parameter $n. @param {number} n */
+export const reachOneMate = (n) => REACH_ONE_MATE.replaceAll("$2::uuid", `$${n}::uuid`);
 
 // The dismissals that are not the bowler's, as a SQL list, from the one set
 // the reducer reads — so a query cannot restate the law differently.
@@ -2942,12 +2953,14 @@ export const READ_QUERIES = {
    * or either boy himself. So a pupil reads his own batting against every
    * bowler and his own bowling against every batter (a team-mate who faced
    * him in a fixture of the two sides included: that row is his bowling as
-   * much as the batter's batting), and no pair of two other boys. The captain
-   * is no exception (Kameel, 11 Nov: "the side's season figures, nothing
-   * else").
+   * much as the batter's batting), and no pair of two other boys; except the
+   * one team-mate his Compare card names as the batter (`?batterId=`,
+   * REACH_ONE_MATE; Kameel, 12 Nov), whose pairs the card folds to pace and
+   * spin. The captaincy adds nothing here.
    */
   matchups: {
-    text: `select b.striker_id                          as batter_id,
+    text: `with ${REACH_SELF_CTES}
+           select b.striker_id                          as batter_id,
                   bat.full_name                         as batter_name,
                   b.bowler_id,
                   bowl.full_name                        as bowler_name,
@@ -3000,7 +3013,8 @@ export const READ_QUERIES = {
               and ($1::uuid is null or b.striker_id = $1)
               and ($2::uuid is null or b.bowler_id  = $2)
             group by b.striker_id, bat.full_name, b.bowler_id, bowl.full_name, bowl.bowling_style
-           having exists (select 1 from player p where p.id = b.striker_id and ${REACH_FAMILY_OR_STAFF})
+           having exists (select 1 from player p where p.id = b.striker_id
+                             and (${REACH_FAMILY_OR_STAFF} or ${reachOneMate(1)}))
                or exists (select 1 from player p where p.id = b.bowler_id and ${REACH_FAMILY_OR_STAFF})
             order by balls desc, bat.full_name`,
     params: q => [q?.batterId || null, q?.bowlerId || null],
@@ -3020,7 +3034,8 @@ export const READ_QUERIES = {
    * expected to say what it left out.
    */
   matchup_coverage: {
-    text: `select count(*) filter (where striker_id is not null and bowler_id is not null)::int as attributable,
+    text: `with ${REACH_SELF_CTES}
+           select count(*) filter (where striker_id is not null and bowler_id is not null)::int as attributable,
                   count(*) filter (where striker_id is null or bowler_id is null)::int         as unattributable,
                   count(*)::int                                                                 as deliveries
              from ball_event_career
@@ -3030,7 +3045,7 @@ export const READ_QUERIES = {
               -- and whose figures are this reader's (REACH-D2): his balls
               -- faced are a figure of his. Unnamed, the count is the log's.
               and ($1::uuid is null or (striker_id = $1 and exists (select 1 from player p where p.id = $1
-                                                                       and ${REACH_FAMILY_OR_STAFF})))`,
+                                                                       and (${REACH_FAMILY_OR_STAFF} or ${reachOneMate(1)}))))`,
     params: q => [q?.batterId || null],
   },
 
@@ -3163,14 +3178,15 @@ export const READ_QUERIES = {
    * has bowled no legal ball has no economy rate.
    *
    * WHOSE (REACH-D2): a boy's row only where his figures are this reader's
-   * (REACH_FAMILY_OR_STAFF): himself, his family, the staff of his side. A
-   * pupil reads his own row and no team-mate's, the captain and the Compare
-   * card included: their exceptions are season figures (career_by_season),
-   * never a lifetime. A screen that needs his side's names reads `players`
-   * or the sheet, not this.
+   * (REACH_FAMILY_OR_STAFF): himself, his family, the staff of his side; or,
+   * for a pupil, the one team-mate his Compare card names (`?playerId=`,
+   * REACH_ONE_MATE). Unnamed, a pupil reads his own row and nobody else's;
+   * a screen that needs his side's names reads `players`, not this.
+   * `?playerId=` narrows the rows to that one boy, for every reader.
    */
   career: {
-    text: `select p.id                                   as player_id,
+    text: `with ${REACH_SELF_CTES}
+           select p.id                                   as player_id,
                   p.full_name, p.team_code, p.school_id,
                   coalesce(bat.matches, 0)               as bat_matches,
                   coalesce(bat.runs, 0)                  as runs,
@@ -3219,8 +3235,11 @@ export const READ_QUERIES = {
                 where r.n <= 8
                 group by r.player_id
              ) f on f.player_id = p.id
-            where ${REACH_FAMILY_OR_STAFF}
+            where ($1::uuid is null or p.id = $1::uuid)
+              and (${REACH_FAMILY_OR_STAFF}
+                   or ${reachOneMate(1)})
             order by p.full_name`,
+    params: q => [uuidParam(q, "playerId", false)],
   },
 
   /**
@@ -3263,10 +3282,10 @@ export const READ_QUERIES = {
    *
    * WHOSE (REACH-D2, and the two exceptions Kameel kept on 11 Nov 2026): a
    * boy's season row only where his figures are this reader's
-   * (REACH_FAMILY_OR_STAFF), or, for a pupil, under REACH_SEASON_ARMS: the
-   * captain (or vice-captain) reads his side's rows for each season he holds
-   * the captaincy, and no other season; and "Me v a team-mate" reads one
-   * team-mate's current season when it names him (`?playerId=`). So the
+   * (REACH_FAMILY_OR_STAFF), or, for a pupil, under REACH_CAPTAIN_ARM (the
+   * captain or vice-captain reads his side's rows for each season he holds
+   * the captaincy, and no other season) or REACH_ONE_MATE ("Me v a
+   * team-mate" reads one team-mate's seasons when it names him). So the
    * captain's season table (SCRBRD-138 C2) and the Compare card (GA-I24 D10)
    * keep their figures, and nothing else of a team-mate reaches a pupil.
    * `?playerId=` narrows the rows to that one boy, for every reader.
@@ -3317,7 +3336,8 @@ export const READ_QUERIES = {
                     on book.book_player = p.id and book.book_season = season
             where ($2::uuid is null or p.id = $2::uuid)
               and (${REACH_FAMILY_OR_STAFF}
-                   or ${REACH_SEASON_ARMS})
+                   or ${REACH_CAPTAIN_ARM}
+                   or ${reachOneMate(2)})
             order by season desc, p.full_name`,
     params: q => [q?.season || null, uuidParam(q, "playerId", false)],
   },
