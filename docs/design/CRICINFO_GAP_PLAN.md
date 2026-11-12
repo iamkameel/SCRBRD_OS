@@ -138,9 +138,9 @@ Backlog IDs `CRI-*` are in `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`.
 
 | ID | Item | Files | Tier | Closes when |
 | --- | --- | --- | --- | --- |
-| CRI-2.1 | Commentary chips on event `kind`; over jump; per-ball `id` anchor | `tabs-core.jsx`, `@scrbrd/scoring/commentary` | Sonnet | Filters return the events the scorecard counts. merged #305 / #306 (12 Nov) |
+| CRI-2.1 | Commentary chips on event `kind`; over jump; per-ball `id` anchor | `tabs-core.jsx`, `@scrbrd/scoring/commentary` | Sonnet | Filters return the events the scorecard counts. merged #305 (12 Nov) |
 | CRI-2.2 | `sourceLine` on every chart; "shots captured for N of M balls" | `ui/sourceLine.jsx`, `matchcentre/tabs.jsx`, `scorer/wagonAnalysisPanel.jsx`, `views/compare.jsx` | Sonnet | No chart without a source line |
-| CRI-2.3 | Drill-down: bar or sector → filtered commentary by event ID | `matchcentre/tabs.jsx`, `tabs-core.jsx` | Opus | Every run traceable to a listed ball. merged #305 / #306 (12 Nov) |
+| CRI-2.3 | Drill-down: bar or sector → filtered commentary by event ID | `matchcentre/tabs.jsx`, `tabs-core.jsx` | Opus | Every run traceable to a listed ball. merged #306 (12 Nov) |
 | CRI-2.4 | Reader freshness and low-bandwidth mode | `spectator.jsx`, public page, `bigscreen.jsx` | Opus | 3G walk: score in 3 s, no blank state |
 | CRI-2.5 | Spectator charts: worm with wicket pins, Manhattan, partnerships; coach keeps all | `matchcentre/tabs.jsx`, role gating | Sonnet | Parent walk three charts; coach walk all |
 
