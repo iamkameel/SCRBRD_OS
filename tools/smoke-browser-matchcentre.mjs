@@ -829,25 +829,33 @@ try {
         };
       });
     };
+    // A family opens the fixture from its own Matches (family mode: the child's 1st XI plays in it).
     const who = [
-      ["the parent (guardian)", /parent@example\.invalid|D Pillay/, THREE, "spectator"],
-      ["the pupil (player, 1st XI)", /spectator@example\.invalid|A Spectator/, THREE, "spectator"],
-      ["the 1st XI's coach", /coach@example\.invalid|C Hendricks/, ALL, "full"],
-      ["the director of sport", /sarah@example\.invalid|Director/, ALL, "full"],
+      ["the parent (guardian)", "parent@example.invalid", THREE, "spectator", true],
+      ["the pupil (player, 1st XI)", "spectator@example.invalid", THREE, "spectator", true],
+      ["the 1st XI's coach", "coach@example.invalid", ALL, "full", false],
+      ["the director of sport", "sarah@example.invalid", ALL, "full", false],
     ];
     const stands2 = inn2.partnerships.length + (inn2.striker && inn2.nonStriker ? 1 : 0);
-    for (const [label, re, want, analysis] of who) {
+    for (const [label, email, want, analysis, family] of who) {
       const s = await open({ viewport: PHONE });
-      ok(`${label} signs in`, await signIn(s.page, re));
-      let opened = await openMatch(s.page, fx.live);
-      if (!opened) {
-        // A family's home has no Match Centre in its bar: the fixture's own address.
-        await s.page.goto(`http://localhost:${WEB_PORT}/app/matches/${fx.live}/analytics`, { waitUntil: "networkidle" }).catch(() => {});
+      await click(s.page, /Get Started|Log In/, 5000);
+      await s.page.waitForTimeout(500);
+      await s.page.locator("#login-email").fill(email);
+      await click(s.page, /^Sign In$/, 5000);
+      await afterReads(s.page, 2200);
+      ok(`${label} signs in`, (await tid(s.page, "persona-bar").count()) === 1 || /Match Centre|Dashboard/i.test(await text(s.page)));
+      let opened;
+      if (family) {
+        await s.page.locator('[data-testid="mnav-mymatches"], [data-testid="nav-mymatches"]').first().click({ timeout: 6000 }).catch(() => {});
+        await afterReads(s.page, 1800);
+        await tid(s.page, `fixture-row-${fx.live}`).first().click({ timeout: 6000 }).catch(() => {});
         await tid(s.page, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
         await afterReads(s.page, 1500);
         opened = (await tid(s.page, "match-view").count()) === 1;
-      }
-      ok(`...and opens the fixture`, opened);
+      } else opened = await openMatch(s.page, fx.live);
+      ok(`...and opens the fixture${family ? ", from the family's own Matches" : ""}`, opened);
+      if (!opened) { await s.ctx.close(); continue; }
       const c = await chartsOf(s.page);
       ok(`${label}: ${want.length} charts, ${want.join(", ")} (${analysis})`, c.analysis === analysis && c.charts.join() === want.join(), JSON.stringify(c));
       ok(`...the worm with its ${inn1.fow.length + inn2.fow.length} wicket pins, and a bar for each of the second innings' ${stands2} stands`,
