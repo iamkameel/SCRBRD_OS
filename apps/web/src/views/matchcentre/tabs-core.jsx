@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { formatKind } from "@scrbrd/scoring";
 import { T, contrast } from "../../design/tokens.js";
 import { boardInnings, commentaryByOver, inningsBreak, oversOf, targetOf, teamOf } from "../../lib/matchCentre.js";
@@ -26,6 +26,12 @@ import { shownFor } from "../../lib/toBall.js";
  */
 
 // ── Summary ─────────────────────────────────────────────
+
+// GA-I29 A1: the scenario panel is its own chunk, fetched the first time a
+// Summary is drawn live: the public entry's static graph has a ceiling
+// (tools/check-bundle.mjs), and the arithmetic it draws (@scrbrd/scoring
+// scenario.mjs) is already in it, for "At this rate" and the insight line.
+const ScenarioPanel = lazy(() => import("./scenario.jsx").then((m) => ({ default: m.ScenarioPanel })));
 
 
 /** The innings break (§10 item 10, p2): the first innings in four facts. */
@@ -232,6 +238,12 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
       )}
       {/* SCRBRD-130 R2: the calculator beside the umpires' figure, the server's; the signed-in page passes it. */}
       {rainPanel}
+      {/* GA-I29 A1: scenarios — arithmetic on this innings' own record, signed in and public alike, team-level,
+          from 12 legal balls (scenario.jsx; @scrbrd/scoring scenarioOf() says when it is drawn). */}
+      <Suspense fallback={null}>
+        <ScenarioPanel innings={innings} index={index} target={target} overs={inOvers} format={match.format} events={events} fold={fold}
+          decided={!!result || settled} atBreak={atBreak} estimate={!!estimate} team={side.full}/>
+      </Suspense>
       <OverSummary item={overSummary} announce={!quietMoments}/>
       {/* The worm, with the par (G2): the innings in play, the target, the
           ground's par or the DLS par dashed — the server's figures. */}
