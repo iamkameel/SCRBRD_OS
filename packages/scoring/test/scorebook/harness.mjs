@@ -16,6 +16,13 @@
  * builds one scorebook through the pad's functions themselves and holds the
  * two logs equal, so this file and the pad cannot drift.
  *
+ * Added with INV-11 to INV-15, from the same code: the no-ball's kind
+ * (delivery.js noBallEvent: front foot, height, beamer), a delivery not in
+ * the over (penalty.js notInOverEvents), a bowler suspended (suspension.js
+ * suspendEvent, engine.jsx recordSuspension), the wicket-keeper (engine.jsx
+ * addKeeper), a declaration match's format, and the milestones the facts
+ * give (deriveFacts) held to a card that states them.
+ *
  * Every event is also asked of the Laws (lawsRefusal) before it is added, as
  * the server asks it at commit: a paper the server would refuse is reported.
  *
