@@ -22,15 +22,22 @@
  * side is the host's; it only puts the position word where the fold and
  * the commentary look for a name.
  *
- * FAIL CLOSED. A player SCRBRD holds a row for (his reference is a uuid) is
- * named only when the FIRST innings_start naming a side carries him for it
- * (the members the server keyed that side's row by), and every side that
- * carries him there was answered as not position-only. Before the first answer, after a
- * read that failed, and for a boy no side's first squad carries, he is his
- * position. A catch is the pad's shape: `fielder` the name the scorecard
- * prints, `fielders` the references; either one belonging to a boy shown by
- * position makes the catch "Fielder". A name the scorer typed (L6: no row,
- * so no mark) is left as it was.
+ * AND ONLY WHERE THE PUBLIC PAGE NAMES HIM (Kameel, 12 Nov 2026, 21:00: "we
+ * should be masking the names of any boy that doesn't have a public
+ * profile"). On top of the side rule, a boy is named only where the public
+ * live page of the same match names him, and by the label it names him by:
+ * the public page's own read, so the screen shows the crowd nothing the
+ * public page would not (publicLabels()). A name the scorer typed (L6) is
+ * a position, as it is there.
+ *
+ * FAIL CLOSED. A boy is named only when the FIRST innings_start naming a
+ * side carries him for it (the members the server keyed that side's row
+ * by), every side that carries him there was answered as not
+ * position-only, and the public page names him. Before either answer,
+ * after a read that failed, on a fixture that is not published, and for a
+ * boy no side's first squad carries, he is his position. A catch is the
+ * pad's shape: `fielder` the name the scorecard prints, `fielders` the
+ * references; it is the named catcher's label, or "Fielder".
  *
  * The words are the public projection's (services/api/public/redact.mjs,
  * public/publicLog.js): "Batter" in the batting squad, "Bowler" in the
@@ -78,24 +85,76 @@ function squadSides(events) {
 }
 
 /**
- * The ids the big screen may name (Kameel, 12 Nov 2026, (b)): a boy whom a
- * side's first squad carries, every side carrying him answered as not
- * position-only. No answer (`null`) names nobody with a row; a side the
- * answer does not mention names nobody it carries.
+ * The boys the PUBLIC LIVE PAGE of this match names, by their signed-in id,
+ * with the label it names them by (Kameel, 12 Nov 2026, 21:00: "we should be
+ * masking the names of any boy that doesn't have a public profile"). The
+ * answer is the public page's own read (GET /api/public/matches/:id/log,
+ * public-api.mjs), the rule applied on the server by publicName() over
+ * public_match_people(): `people` maps a pseudonym to the label of exactly
+ * the boys the public page names, and each innings_start's squads carry
+ * those pseudonyms in the order the signed-in log carries the ids. So the
+ * k-th innings_start of each log is lined up, squad by squad and place by
+ * place; a squad whose length differs, an innings that differs, a count of
+ * innings_start that differs, or a boy given two labels names nobody there.
+ * Nothing here decides who is named; null (no public answer: the read
+ * failed, or the fixture is not published) names nobody.
+ * @param {{events?: any[], people?: Record<string, string>} | null | undefined} pub
+ * @param {any[]} events  the signed-in log
+ * @returns {Map<string, string> | null}  id → the public label
+ */
+export function publicLabels(pub, events = []) {
+  if (!pub || !Array.isArray(pub.events) || !pub.people || typeof pub.people !== "object") return null;
+  const mine = events.filter((e) => e?.kind === "innings_start");
+  const theirs = pub.events.filter((e) => e?.kind === "innings_start");
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  /** @type {Set<string>} */
+  const torn = new Set();
+  if (mine.length !== theirs.length) return out;
+  mine.forEach((ev, k) => {
+    const pe = theirs[k];
+    if ((pe?.innings ?? 0) !== (ev?.innings ?? 0)) return;
+    for (const key of ["squad", "bowlingSquad"]) {
+      const a = Array.isArray(ev[key]) ? ev[key] : [], b = Array.isArray(pe[key]) ? pe[key] : [];
+      if (a.length !== b.length) continue;
+      a.forEach((/** @type {any} */ m, /** @type {number} */ i) => {
+        const id = m?.id ?? m, ref = b[i]?.id ?? b[i];
+        const label = typeof ref === "string" && Object.hasOwn(pub.people, ref) ? pub.people[ref] : null;
+        if (typeof id !== "string" || !UUID.test(id) || typeof label !== "string" || !label.trim()) return;
+        if (out.has(id) && out.get(id) !== label) torn.add(id);
+        out.set(id, label);
+      });
+    }
+  });
+  for (const id of torn) out.delete(id);
+  return out;
+}
+
+/**
+ * The boys the big screen names, with the label it names them by: those
+ * the public live page names (`labels`, publicLabels()), and of those only
+ * the boys whom a side's first squad carries with every side carrying him
+ * answered as not position-only (Kameel, 12 Nov 2026, (b), and the season
+ * roster). Both answers are needed: without either, nobody is named.
  * @param {{rows: {team?: string | null, position_only?: boolean, log_seq?: number | string}[]} | null | undefined} answer
  * @param {any[]} events  the log the screen folds
- * @returns {ReadonlySet<string>}
+ * @param {Map<string, string> | null | undefined} labels
+ * @returns {ReadonlyMap<string, string>}
  */
-export function namedOnGround(answer, events = []) {
-  if (!answer || !Array.isArray(answer.rows)) return new Set();
+export function namedOnGround(answer, events = [], labels = null) {
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  if (!answer || !Array.isArray(answer.rows) || !labels) return out;
   /** @type {Map<string, boolean>} side → shown by position */
   const flags = new Map();
   for (const r of answer.rows) {
     if (!r || typeof r.team !== "string") continue;
     flags.set(r.team, flags.get(r.team) === true || r.position_only !== false);
   }
-  const sides = squadSides(events);
-  return new Set([...sides].filter(([, of]) => [...of].every((t) => flags.get(t) === false)).map(([id]) => id));
+  for (const [id, of] of squadSides(events)) {
+    if ([...of].every((t) => flags.get(t) === false) && labels.has(id)) out.set(id, /** @type {string} */ (labels.get(id)));
+  }
+  return out;
 }
 
 /**
@@ -108,69 +167,79 @@ export function answeredThrough(answer) {
 }
 
 /**
- * Whether a reference is shown by position: a player with a row whom the
- * answer does not name.
- * @param {ReadonlySet<string>} named  @param {unknown} ref
+ * Whether a reference is shown by position: anybody the screen does not
+ * name — a player with a row, and a name the scorer typed alike (L6: the
+ * public page names no typed name).
+ * @param {ReadonlyMap<string, string>} named  @param {unknown} ref
  */
-export const byPosition = (named, ref) => typeof ref === "string" && UUID.test(ref) && !named.has(ref);
+export const byPosition = (named, ref) => typeof ref === "string" && !named.has(ref);
 
 /**
- * The log, ready for the big screen's fold: every squad member shown by
- * position carries his position word as his name, and a fielder written by
- * his reference, or by the name his squad gave him, is "Fielder". Also
- * returns `hidden`, the names those boys carried in the log (normalised:
- * trimmed, spaced once, lower case), so the fold's
- * own lines (the fall of wickets, a partnership) and the commentary can be
- * held to the same rule; and `spoken`, the log for the commentary, the same
- * catches given no fielder at all, so the generator says "a fielder" rather
- * than any text the scorer wrote.
+ * The log, ready for the big screen's fold: every squad member the screen
+ * names carries the public page's label as his name, and every other his
+ * position word. A catch (the pad's shape: `fielder` the scorecard's name
+ * text, `fielders` the references) is the named catcher's label, or
+ * "Fielder". Also returns `hidden`, the names everyone else carried in the
+ * log (normalised: trimmed, spaced once, lower case), so the fold's own
+ * lines (the fall of wickets, a partnership) and the commentary are held to
+ * the same rule; and `spoken`, the log for the commentary, a catch given
+ * the named catcher's reference or no fielder at all ("a fielder").
  * @param {any[]} events  the signed-in log, as folded
- * @param {ReadonlySet<string>} named
+ * @param {ReadonlyMap<string, string>} named
  * @returns {{events: any[], spoken: any[], hidden: ReadonlySet<string>}}
  */
-export function forGround(events = [], named = new Set()) {
+export function forGround(events = [], named = new Map()) {
   /** @type {Set<string>} */
   const hidden = new Set();
+  /** @type {Map<string, string>} a named boy's squad name → his id */
+  const byName = new Map();
   for (const ev of events) {
     if (ev?.kind !== "innings_start") continue;
     for (const m of [...(ev.squad ?? []), ...(ev.bowlingSquad ?? [])]) {
       const id = m?.id ?? m;
-      if (byPosition(named, id) && norm(m?.name)) hidden.add(norm(m.name));
+      const name = typeof m === "object" && m !== null ? m.name : m;
+      if (!norm(name)) continue;
+      if (byPosition(named, id)) hidden.add(norm(name));
+      else byName.set(norm(name), id);
     }
   }
+  for (const n of hidden) byName.delete(n);
   const member = (/** @type {any} */ m, /** @type {string} */ word) => {
     const id = m?.id ?? m;
-    if (!byPosition(named, id)) return m;
-    return typeof m === "object" && m !== null ? { ...m, name: word } : { id, name: word };
+    const name = byPosition(named, id) ? word : /** @type {string} */ (named.get(id));
+    return typeof m === "object" && m !== null ? { ...m, name } : { id, name };
   };
-  /** @param {any} ev  a catch by a boy shown by position? */
-  const hiddenCatch = (ev) => {
+  /** @param {any} ev  the named catcher, if the catch is one; undefined if the event names no fielder */
+  const catcher = (ev) => {
     const refs = Array.isArray(ev?.fielders) ? ev.fielders : [];
-    return (typeof ev?.fielder === "string" && (byPosition(named, ev.fielder) || hidden.has(norm(ev.fielder))))
-      || refs.some((/** @type {unknown} */ r) => byPosition(named, r));
+    if (!refs.length && typeof ev?.fielder !== "string") return undefined;
+    if (refs.length) return refs.find((/** @type {unknown} */ r) => typeof r === "string" && named.has(r)) ?? null;
+    return named.has(ev.fielder) ? ev.fielder : (byName.get(norm(ev.fielder)) ?? null);
   };
   const out = events.map((ev) => {
     if (ev?.kind === "innings_start") {
       return { ...ev, squad: (ev.squad ?? []).map((m) => member(m, GROUND_POSITION.batter)),
                bowlingSquad: (ev.bowlingSquad ?? []).map((m) => member(m, GROUND_POSITION.bowler)) };
     }
-    // A catch as the pad writes it: `fielder` the scorecard's name text,
-    // `fielders` the references. Either one his makes it "Fielder".
-    return hiddenCatch(ev) ? { ...ev, fielder: GROUND_POSITION.fielder } : ev;
+    const c = catcher(ev);
+    return c === undefined ? ev : { ...ev, fielder: c ? /** @type {string} */ (named.get(c)) : GROUND_POSITION.fielder };
   });
-  const spoken = events.map((ev) => (ev?.kind !== "innings_start" && hiddenCatch(ev) ? { ...ev, fielder: "" } : ev));
+  const spoken = events.map((ev) => {
+    if (ev?.kind === "innings_start") return ev;
+    const c = catcher(ev);
+    return c === undefined ? ev : { ...ev, fielder: c ?? "" };
+  });
   return { events: out, spoken, hidden };
 }
 
 /**
- * After the fold: a batter or bowler the fold could name only by his
- * reference (no squad carried him), and any line that still carries a
- * hidden name, is his position. Changes the innings in place, as the public
- * page's unnamedToPositions() does, and returns them.
+ * After the fold: a batter or bowler the screen does not name, and any line
+ * that still carries a hidden name, is his position. Changes the innings in
+ * place, as the public page's unnamedToPositions() does, and returns them.
  * @param {any[]} innings  deriveMatch()'s, over forGround()'s events
- * @param {ReadonlySet<string>} named  @param {ReadonlySet<string>} hidden
+ * @param {ReadonlyMap<string, string>} named  @param {ReadonlySet<string>} hidden
  */
-export function groundInnings(innings = [], named = new Set(), hidden = new Set()) {
+export function groundInnings(innings = [], named = new Map(), hidden = new Set()) {
   const word = (/** @type {unknown} */ name, /** @type {string} */ w) => (typeof name === "string" && hidden.has(norm(name)) ? w : name);
   for (const inn of innings) {
     if (!inn) continue;
@@ -184,16 +253,12 @@ export function groundInnings(innings = [], named = new Set(), hidden = new Set(
 }
 
 /**
- * The commentary's nameOf, held to the same rule: a boy shown by position
- * is given no name, so the generator says his role.
- * @param {(ref: string) => string | null} nameOf  the Match Centre's own (lib/matchCentre.js nameBook)
- * @param {ReadonlySet<string>} named  @param {ReadonlySet<string>} hidden
+ * The commentary's nameOf, held to the same rule: a boy the screen does not
+ * name is given no name, so the generator says his role; a named boy is his
+ * public label.
+ * @param {ReadonlyMap<string, string>} named  @param {ReadonlySet<string>} hidden
  * @returns {(ref: string) => string | null}
  */
-export function groundNameOf(nameOf, named, hidden) {
-  return (ref) => {
-    if (byPosition(named, ref) || hidden.has(norm(ref))) return null;
-    const n = nameOf(ref);
-    return n != null && hidden.has(norm(n)) ? null : n;
-  };
+export function groundNameOf(named, hidden) {
+  return (ref) => (byPosition(named, ref) || hidden.has(norm(ref)) ? null : named.get(ref) ?? null);
 }
