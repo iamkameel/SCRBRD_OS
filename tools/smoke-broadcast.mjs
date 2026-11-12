@@ -36,7 +36,7 @@ const DB = ownerUrl();
 const HIL = "11111111-1111-1111-1111-111111111111";
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 240)}` : ""); } };
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
@@ -213,6 +213,34 @@ try {
   ok("...with no word of any child's name in the payload", leaks(JSON.stringify(named.body)).length === 0);
   ok("the row remembers who decided",
      !!(await q(`select published_by from match_broadcast where match_id = $1`, [m]))[0]?.published_by);
+
+  // PUBLIC_BY_TERMS slice 1: "a marked, a switched-off and an unanswered child
+  // are role words on the overlay read". The non-striker under a never-public
+  // mark (the DSO's), the school's names switched off for the consenting
+  // batter, and the bowler, whose family never answered. Each is controlled
+  // against the public page's own read first, so the overlay is proved for
+  // the three states and not for boys who only looked like them.
+  group("A marked, a switched-off and an unanswered child: role words (PUBLIC_BY_TERMS slice 1)");
+  const dso = (await q(`select id from app_user where email = 'dso@example.invalid'`))[0]?.id ?? office;
+  await q(`insert into player_never_public (player_id, reason, set_on, set_by) values ($1, 'Smoke: a mark', sa_today(), $2)`, [other.id, dso]);
+  await q(`insert into public_names_off (school_id, age_group, names_off, set_by)
+           select $1, birth_age_group(p.born, sa_today()), true, $2 from player p where p.id = $3 and p.born is not null
+           on conflict (school_id, age_group) do update set names_off = true`, [HIL, office, bat.id]);
+  {
+    const facts = new Map((await q(`select player_id, facts from public_match_people($1)`, [m])).map((r) => [r.player_id, r.facts]));
+    ok("control: the non-striker is marked, the batter's names are off, the bowler has no answer on file",
+       facts.get(other.id)?.neverPublic === true && facts.get(bat.id)?.namesOff === true
+       && Array.isArray(facts.get(bowl.id)?.consents) && facts.get(bowl.id).consents.length === 0,
+       JSON.stringify([...facts.values()]));
+    const marked = await overlayRaw(m, head);
+    ok("the overlay says only the roles", roles(marked.body?.rows?.[0]), JSON.stringify(marked.body?.rows?.[0]));
+    ok("...with no word of any of the three names in the payload", leaks(JSON.stringify(marked.body)).length === 0,
+       leaks(JSON.stringify(marked.body)).join(", "));
+    ok("...and the same for a coach signed in", roles(await overlay(m, coach)));
+  }
+  await q(`update player_never_public set ended_on = sa_today(), ended_by = set_by, ended_at = now()
+            where player_id = $1 and ended_on is null`, [other.id]);
+  await q(`update public_names_off set names_off = false where school_id = $1`, [HIL]);
 
   group("An age group a school will not name at all");
   await publish(m, head, { published: true, nameDisplay: "none" });
