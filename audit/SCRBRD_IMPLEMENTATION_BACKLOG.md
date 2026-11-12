@@ -11,6 +11,8 @@
 
 12 Nov 2026: three merges recorded. #297 (merge e774cda7): season trend B1, the innings-by-innings and side-season reads (GA-I23). #298 (merge ee3cbe6e): scenario controls A0+A1, one projection and the Match Centre panel (GA-I29). #300 (merge aea244a3): season trend B2, a player's innings panel on Analytics, a parent's Home and the pupil's Passport (GA-I23). Left open: B3 and A2.
 
+12 Nov 2026: #299 merged (merge fda88860): the public-by-terms design, approved by Kameel 11 Nov ('All 9 as recommended'); slices 1–8 to be built now, off until counsel (Kameel 12 Nov: 'Build 1-8, switched off').
+
 ## Rules
 
 - Order by dependency, not merely severity.
