@@ -20,7 +20,7 @@
  *
  * It also asserts what /api/health says about the revision: RENDER_GIT_COMMIT
  * first, else GIT_COMMIT, else null; a value that is not a commit id is not
- * echoed; no other key appears on the body.
+ * echoed; ball_log_pinned is true (db/152); no other key appears on the body.
  *
  * The two throwaway roles are created and dropped by this walk on the walk's
  * own cluster (cluster-wide names, so they carry the database's name), and
@@ -170,12 +170,16 @@ try {
     ok("…dev login is not on", b.health?.auth === "token_only");
     ok("revision is null when the host says nothing", b.health && "revision" in b.health && b.health.revision === null,
        JSON.stringify(b.health?.revision));
+    // db/152: the ball log reads the fast way on a database migrated from
+    // nothing (its paste pins it); false would mean every career read is slow.
+    ok("/api/health says the ball log is pinned (db/152)", b.health?.ball_log_pinned === true,
+       JSON.stringify(b.health?.ball_log_pinned));
   }
 
   group("/api/health says which commit this is");
   const FULL = "0148454a1b2c3d4e5f60718293a4b5c6d7e8f901";
   const OTHER = "ffffffffffffffffffffffffffffffffffffffff";
-  const KEYS = ["ok", "db", "ai", "auth", "read", "write", "handover", "public", "pages", "reader", "weather", "revision"].sort();
+  const KEYS = ["ok", "db", "ball_log_pinned", "ai", "auth", "read", "write", "handover", "public", "pages", "reader", "weather", "revision"].sort();
   {
     const b = await boot(appUrl(), { RENDER_GIT_COMMIT: FULL });
     ok("Render's RENDER_GIT_COMMIT is the revision, in full", b.health?.revision === FULL, JSON.stringify(b.health?.revision));

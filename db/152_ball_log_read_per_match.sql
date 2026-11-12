@@ -69,11 +69,18 @@
 --                  at the paste, by the verifier, and by ball_log_repin().
 --   the live pin   ball_log_pinned(), asked by the view at every use: the
 --                  catalogue rows of those policies and of this view's rule,
---                  each by its oid and the transaction that last wrote it
---                  (xmin), against the fingerprint ball_log_repin() recorded
---                  once the text pin held. Any CREATE, ALTER or DROP POLICY on
---                  the three tables, and any re-creation of this view, changes
---                  it at once, in that transaction and every later one.
+--                  each by its oid, the transaction that last wrote it (xmin)
+--                  and the md5 of its stored expression (polqual, ev_action:
+--                  node text, no deparse), each policy's kind and roles, and
+--                  the view's options and owner (pg_class), against the
+--                  fingerprint ball_log_repin() recorded once the text pin
+--                  held. Any CREATE, ALTER or DROP POLICY on the three
+--                  tables, any re-creation of this view, and any ALTER VIEW
+--                  of its options or owner changes it at once, in that
+--                  transaction and every later one; an ALTER POLICY or a
+--                  CREATE OR REPLACE VIEW after ball_log_repin() in the same
+--                  transaction as well, where the xmin alone would not move
+--                  (Fable's red-team, S2).
 -- When the live pin does not hold, the view stops using the restated
 -- conditions AND the shortcuts that stand on the observation, and admits
 -- exactly the rows the reader's own SELECT of each table returns:
@@ -84,7 +91,10 @@
 -- until the view is re-stated for the new policies and re-pinned. A restore
 -- into a new database (new xmins) also reads unpinned, so exact and slow,
 -- until the owner runs `SELECT ball_log_repin()`, which re-pins only if the
--- text pin holds.
+-- text pin holds. Unpinned is correct but slow, and says so nowhere in what a
+-- reader sees: /api/health reports ball_log_pinned, and DEPLOYING.md says
+-- when to re-pin (a restore, a major upgrade, a re-run of
+-- pad_scope_guard_install()).
 --
 -- WHY THE CONDITIONS ARE WRITTEN OUT. A probe asking the policy as the reader
 -- once a match was tried first: exact by construction, but each probe is a
@@ -113,7 +123,9 @@
 -- policies or of this view differs by more than whitespace, this file
 -- refuses to run (§1 or §5), naming what differs: re-take the pins on that
 -- version before pasting. Nothing is half-applied (the paste is one
--- transaction).
+-- transaction). Checked on 17.6 and 17.11, 12 Nov: production runs 17.6 and
+-- the demo 17.11, and on both every pinned policy hash and db/121's view hash
+-- match this file exactly, so the guard passes.
 --
 -- WHAT IT CHANGES ON A LIVE DATABASE
 --   + ball_log_pin: one row, the live pin's fingerprint; row security on, no
@@ -122,15 +134,17 @@
 --     ball_log_text_pinned(), ball_log_fingerprint(): catalogue reads,
 --     SECURITY INVOKER
 --   + ball_log_pinned(): the live pin, SECURITY DEFINER (it reads
---     ball_log_pin), EXECUTE for scrbrd_app; ball_log_repin(): SECURITY
---     DEFINER, the owner's alone
+--     ball_log_pin), EXECUTE for scrbrd_app (the view and /api/health ask
+--     it); ball_log_repin(): SECURITY DEFINER, the owner's alone
 --   + ball_event_visible_ids(), ball_event_rejudged_visible_keys(): the
 --     caller's own SELECT of the two tables, SECURITY INVOKER; EXECUTE for
 --     scrbrd_app only
 --   ~ ball_event_live: re-created with the same columns, in the same order,
 --     and the same rows for every reader; security_invoker off,
 --     security_barrier on; its owner kept; SELECT for scrbrd_app only
---     (PUBLIC, anon and authenticated revoked where they exist). No table,
+--   Every one of them is revoked from PUBLIC and from anon, authenticated
+--   and service_role where they exist (Supabase's roles are not reached by
+--   PUBLIC; Fable's S4), and granted to scrbrd_app alone. No table,
 --     column, row or policy changes. It refuses to run unless the view in
 --     place is db/121's or this file's own, so a second paste changes nothing.
 -- ══════════════════════════════════════════════════════════════════
@@ -202,23 +216,31 @@ COMMENT ON FUNCTION ball_log_text_pinned() IS
   'db/152: true while the SELECT policies of ball_event, match and ball_event_rejudged and ball_event_live''s own text are those db/152 pinned.';
 
 -- The live pin's fingerprint: each SELECT policy row of the three tables and
--- ball_event_live's rule, by oid and by the transaction that last wrote it.
--- Catalogue index reads, well under a millisecond; any CREATE, ALTER or DROP
--- POLICY there, or CREATE OR REPLACE of the view, changes it.
+-- ball_event_live's rule, by oid, by the transaction that last wrote it, and
+-- by the md5 of the expression it stores (node text, not a deparse); each
+-- policy's kind and roles; the view's options and owner. Catalogue index
+-- reads, well under a millisecond. Any CREATE, ALTER or DROP POLICY there,
+-- CREATE OR REPLACE of the view, or ALTER VIEW of its options or owner
+-- changes it, including a second write in the transaction that re-pinned,
+-- which leaves the xmin as it was (Fable's S2).
 CREATE OR REPLACE FUNCTION ball_log_fingerprint() RETURNS text
   LANGUAGE sql STABLE SECURITY INVOKER
   SET search_path = pg_catalog, public, pg_temp
 AS $$
-  SELECT coalesce((SELECT string_agg(p.oid::text || ':' || p.xmin::text, ',' ORDER BY p.oid)
+  SELECT coalesce((SELECT string_agg(p.oid::text || ':' || p.xmin::text || ':' || md5(coalesce(p.polqual::text, ''))
+                                     || ':' || p.polpermissive::text || ':' || p.polroles::text, ',' ORDER BY p.oid)
                      FROM pg_policy p
                     WHERE p.polrelid IN ('ball_event'::regclass, 'match'::regclass, 'ball_event_rejudged'::regclass)
                       AND p.polcmd IN ('r', '*')), '')
       || '|' ||
-         coalesce((SELECT r.oid::text || ':' || r.xmin::text FROM pg_rewrite r
+         coalesce((SELECT r.oid::text || ':' || r.xmin::text || ':' || md5(r.ev_action::text) FROM pg_rewrite r
                     WHERE r.ev_class = 'ball_event_live'::regclass AND r.rulename = '_RETURN'), '')
+      || '|' ||
+         coalesce((SELECT coalesce(c.reloptions::text, '') || ':' || c.relowner::text FROM pg_class c
+                    WHERE c.oid = 'ball_event_live'::regclass), '')
 $$;
 COMMENT ON FUNCTION ball_log_fingerprint() IS
-  'db/152: the catalogue rows ball_event_live''s restated conditions stand on (the three tables'' SELECT policies and the view''s rule), by oid and xmin.';
+  'db/152: the catalogue rows ball_event_live''s restated conditions stand on (the three tables'' SELECT policies and the view''s rule, by oid, xmin and the md5 of the stored expression; the policies'' kind and roles; the view''s options and owner).';
 
 CREATE TABLE IF NOT EXISTS ball_log_pin (
   id          smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -414,17 +436,36 @@ SELECT b.id, b.match_id, b.school_id, b.seq, b.epoch, b.innings,
 COMMENT ON VIEW ball_event_live IS
   'db/152: the ball log as the reader may read it, voids applied. Runs as its owner (security_barrier) and asks ball_event''s read conditions as the reader once a match while ball_log_pinned(); else the reader''s own SELECT. db/99 §9 and §126 hold it.';
 
--- §4 · Who may select from it (S4): the application, and only SELECT.
+-- §4 · Who may select from it (S4): the application, and only SELECT. Who
+-- may call what: every function of this file and ball_log_pin revoked from
+-- PUBLIC and from Supabase's three roles where they exist, as db/106 and
+-- db/129 do (PUBLIC does not reach them; Fable's S4); then the application
+-- may call all but the re-pin, and has nothing on ball_log_pin.
 REVOKE ALL ON ball_event_live FROM PUBLIC;
 DO $grants$
-DECLARE r text;
+DECLARE r text; f text;
 BEGIN
+  FOREACH f IN ARRAY ARRAY['ball_log_norm(text)', 'ball_log_policies_unpinned()', 'ball_log_text_pinned()',
+                           'ball_log_fingerprint()', 'ball_log_pinned()', 'ball_log_repin()',
+                           'ball_event_visible_ids()', 'ball_event_rejudged_visible_keys()'] LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
+      END IF;
+    END LOOP;
+  END LOOP;
   FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('REVOKE ALL ON ball_event_live FROM %I', r);
+      EXECUTE format('REVOKE ALL ON ball_log_pin FROM %I', r);
     END IF;
   END LOOP;
 END $grants$;
+REVOKE ALL ON ball_log_pin FROM PUBLIC;
+REVOKE ALL ON ball_log_pin FROM scrbrd_app;
+REVOKE ALL ON FUNCTION ball_log_repin() FROM scrbrd_app;
+GRANT EXECUTE ON FUNCTION ball_log_norm(text) TO scrbrd_app;
 REVOKE ALL ON ball_event_live FROM scrbrd_app;
 GRANT SELECT ON ball_event_live TO scrbrd_app;
 
@@ -445,6 +486,30 @@ BEGIN
                'ball_log_text_pinned()'::regprocedure, 'ball_log_fingerprint()'::regprocedure))
      OR EXISTS (SELECT 1 FROM pg_proc WHERE NOT prosecdef AND oid IN ('ball_log_pinned()'::regprocedure, 'ball_log_repin()'::regprocedure)) THEN
     RAISE EXCEPTION 'db/152: an exact-path or pin function runs as the wrong role';
+  END IF;
+  -- Nobody but the application, and the application all but the re-pin and
+  -- nothing on ball_log_pin.
+  IF EXISTS (
+       SELECT 1
+         FROM unnest(ARRAY['ball_log_norm(text)', 'ball_log_policies_unpinned()', 'ball_log_text_pinned()',
+                           'ball_log_fingerprint()', 'ball_log_pinned()', 'ball_log_repin()',
+                           'ball_event_visible_ids()', 'ball_event_rejudged_visible_keys()']) f,
+              unnest(ARRAY['public', 'anon', 'authenticated', 'service_role']) r
+        WHERE (r = 'public' OR EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r))
+          AND has_function_privilege(r, f, 'EXECUTE'))
+     OR EXISTS (
+       SELECT 1 FROM unnest(ARRAY['public', 'anon', 'authenticated', 'service_role', 'scrbrd_app']) r,
+                     unnest(ARRAY['ball_log_pin', 'ball_event_live']) t
+        WHERE (r = 'public' OR EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r))
+          AND NOT (r = 'scrbrd_app' AND t = 'ball_event_live')
+          AND (has_table_privilege(r, t, 'SELECT') OR has_table_privilege(r, t, 'INSERT')
+               OR has_table_privilege(r, t, 'UPDATE') OR has_table_privilege(r, t, 'DELETE')))
+     OR has_function_privilege('scrbrd_app', 'ball_log_repin()', 'EXECUTE')
+     OR EXISTS (SELECT 1 FROM unnest(ARRAY['ball_log_norm(text)', 'ball_log_policies_unpinned()', 'ball_log_text_pinned()',
+                                            'ball_log_fingerprint()', 'ball_log_pinned()',
+                                            'ball_event_visible_ids()', 'ball_event_rejudged_visible_keys()']) f
+                 WHERE NOT has_function_privilege('scrbrd_app', f, 'EXECUTE')) THEN
+    RAISE EXCEPTION 'db/152: a function, ball_log_pin or ball_event_live is somebody''s but the application''s, or the application lacks one or may re-pin';
   END IF;
   -- The text pin must hold now (it raises, naming what differs, if not) …
   PERFORM ball_log_repin();
