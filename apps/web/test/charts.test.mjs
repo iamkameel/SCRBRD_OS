@@ -27,6 +27,7 @@ import {
 } from "@scrbrd/scoring";
 import { WormChart, ManhattanChart, RunRateChart, AnalysisDashboard } from "../src/scorer/charts.jsx";
 import { projectInnings, projectMatch, runRates, deliveryRuns } from "../src/scorer/chartData.js";
+import { overParts } from "../src/scorer/overParts.js";
 
 let pass = 0, fail = 0;
 const ok = (name, c, d = "") => {
@@ -366,14 +367,16 @@ console.log("\nF. The shared projection, over generated innings");
     projs.forEach((p, i) => {
       const inn = list[i];
       checked++;
+      const partsOf = overParts(inn, logs[i]);
       for (const o of p.overs) {
-        const ids = o.parts.map((x) => x.id);
+        const parts = partsOf.get(o.over) ?? [];
+        const ids = parts.map((x) => x.id);
         const listed = filterCommentary(told, { ids }).map((x) => lineEventId(x.key));
-        const sum = o.parts.reduce((s, x) => s + x.runs, 0);
+        const sum = parts.reduce((s, x) => s + x.runs, 0);
         if (sum !== o.runs) drillWorst ??= { t, i, over: o.over, problem: `parts sum ${sum}, bar ${o.runs}` };
         if (ids.some((x) => x == null)) drillWorst ??= { t, i, over: o.over, problem: "a part with no event id" };
         if (listed.length !== ids.length || listed.some((x) => !ids.includes(x))) drillWorst ??= { t, i, over: o.over, problem: `${ids.length} parts, ${listed.length} lines` };
-        barsSeen++; if (o.parts.some((x) => !inn.ballLog.some((b) => b.id === x.id))) awarded++;
+        barsSeen++; if (parts.some((x) => !inn.ballLog.some((b) => b.id === x.id))) awarded++;
       }
       const end = p.points.at(-1)?.runs;
       const bars = p.overs.reduce((s, o) => s + o.runs, 0);

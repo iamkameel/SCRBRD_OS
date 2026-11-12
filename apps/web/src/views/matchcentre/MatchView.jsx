@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useTheme } from "../../design/theme.js";
 import { deriveMatch, fromRow } from "@scrbrd/scoring";
@@ -338,26 +338,18 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // CRI-2.3: a chart's bar or area opens the Commentary at its balls (`ballsAt`: their event ids, and
   // what they are), and the Analytics tab's scroll is kept for the way back, as the Scorecard's is.
   const [ballsAt, setBallsAt] = useState(/** @type {{ids: string[], what: string, runs: number} | null} */ (null));
-  const chartAt = useRef(/** @type {number | null} */ (null));
+  const [chartsAt, setChartsAt] = useState(/** @type {{scrollTop: number} | null} */ (null));
   useEffect(() => {
     if (tab !== "commentary") { setBallAt(null); setBallsAt(null); }
-    if (tab !== "commentary" && tab !== "analytics") chartAt.current = null;
-  }, [tab]);
-  useEffect(() => {
-    if (tab !== "analytics" || chartAt.current == null) return;
-    const top = chartAt.current;
-    chartAt.current = null;
-    // After the tab is drawn: the page where the reader left it.
-    requestAnimationFrame(() => { const el = document.querySelector('[data-testid="mc-analytics"]'); if (el) scrollerOf(el).scrollTop = top; });
+    if (tab !== "commentary" && tab !== "analytics") setChartsAt(null);
   }, [tab]);
   const toBall = ({ key, innings: at, openId, from }) => {
     setCardAt({ innings: at, openId, scrollTop: scrollerOf(from).scrollTop });
     setBallAt(key);
     setTab("commentary");
   };
-  const toBalls = (balls) => {
-    const el = document.querySelector('[data-testid="mc-analytics"]');
-    chartAt.current = el ? scrollerOf(el).scrollTop : null;
+  const toBalls = (balls, from) => {
+    setChartsAt({ scrollTop: scrollerOf(from).scrollTop });
     setBallsAt(balls);
     setTab("commentary");
   };
@@ -489,7 +481,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
     toBall: signedIn() && !log.demo ? toBall : null, restore: cardAt, onRestored: () => setCardAt(null),
     ballKey: ballAt, onBack: ballAt ? backToCard : ballsAt ? backToCharts : null, backLabel: ballsAt ? "Back to the charts" : "Back to the scorecard",
     // CRI-2.3: a chart's bar or area opens the Commentary at its balls.
-    toBalls: signedIn() && !log.demo ? toBalls : null, balls: ballsAt };
+    toBalls: signedIn() && !log.demo ? toBalls : null, balls: ballsAt, chartsAt, onChartsRestored: () => setChartsAt(null) };
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id} style={{ minWidth: 0 }}>

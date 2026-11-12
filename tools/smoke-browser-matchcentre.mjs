@@ -55,6 +55,7 @@ import { deriveMatch, deriveInnings, deriveCommentary, runsOffBat, ball, batters
 import { buildMatchCentreFixture, buildLongFixture, writeEvents, HIL } from "./fixture-matchcentre.mjs";
 import { correctionsOf, withCorrectionLines } from "../apps/web/src/lib/corrections.js";
 import { projectMatch } from "../apps/web/src/scorer/chartData.js";
+import { overParts } from "../apps/web/src/scorer/overParts.js";
 import { wagonAnalysis } from "../apps/web/src/scorer/wagonAnalysis.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
@@ -707,7 +708,9 @@ try {
     await D3.waitForTimeout(300);
     // The bars' events, as the chart projects them: the same projection, over the same log.
     const proj1 = projectMatch(fold.innings, { events: evs, overs: 10 })[0];
-    const runsOf = new Map(proj1.overs.flatMap((o) => o.parts.map((x) => [x.id, x.runs])));
+    const parts1 = overParts(inn1, evs.filter((e) => (e.innings ?? 0) === 0));
+    const partsOf = (o) => parts1.get(o.over) ?? [];
+    const runsOf = new Map([...parts1.values()].flat().map((x) => [x.id, x.runs]));
     const listed = () => D3.locator('[data-testid="mc-line"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-key")));
     const backToCharts = async () => {
       await tid(D3, "mc-back-to-scorecard").click({ timeout: 4000 });
@@ -727,7 +730,7 @@ try {
       await tid(D3, "mc-drill").waitFor({ timeout: 4000 }).catch(() => {});
       await D3.waitForTimeout(200);
       const keys = await listed();
-      const want = o.parts.map((x) => `e:${x.id}`).sort();
+      const want = partsOf(o).map((x) => `e:${x.id}`).sort();
       const sum = keys.reduce((s, k) => s + (runsOf.get(k.slice(2)) ?? NaN), 0);
       if (keys.slice().sort().join() !== want.join()) bad.push(`over ${o.over + 1}: listed ${keys.length}, the bar's ${want.length}`);
       else if (sum !== o.runs) bad.push(`over ${o.over + 1}: listed balls add to ${sum}, the bar says ${o.runs}`);
@@ -754,11 +757,13 @@ try {
     await tid(D3, "manhattan-show").click();
     await tid(D3, "mc-drill").waitFor({ timeout: 4000 }).catch(() => {});
     await D3.waitForTimeout(200);
-    ok("...over 5 by the picker: the same balls as its bar", (await listed()).sort().join() === proj1.overs[4].parts.map((x) => `e:${x.id}`).sort().join());
+    ok("...over 5 by the picker: the same balls as its bar", (await listed()).sort().join() === partsOf(proj1.overs[4]).map((x) => `e:${x.id}`).sort().join());
     ok("...the focus on the line saying what is listed", await D3.evaluate(() => document.activeElement?.getAttribute("data-testid") === "mc-drill-what"));
     await tid(D3, "mc-drill-all").click(); await D3.waitForTimeout(300);
-    ok("\"Every ball\": the filter gone, All pressed, the latest over first", await tid(D3, "mc-drill").count() === 0
-       && await tid(D3, "mc-chip-all").getAttribute("aria-pressed") === "true" && /^Over 10\b/.test((await tid(D3, "mc-over-title").first().innerText()).trim()));
+    const latest = `Over ${inn2.ballLog.at(-1).over + 1}`;
+    ok(`"Every ball": the filter gone, All pressed, the latest over (${latest} of the chase) first`, await tid(D3, "mc-drill").count() === 0
+       && await tid(D3, "mc-chip-all").getAttribute("aria-pressed") === "true" && (await tid(D3, "mc-over-title").first().innerText()).trim() === latest,
+       await tid(D3, "mc-over-title").first().innerText());
     await backToCharts().catch(() => {});
     if (!(await tid(D3, "mc-analytics").count())) { await pickTab(D3, "analytics"); }
     await tid(D3, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
