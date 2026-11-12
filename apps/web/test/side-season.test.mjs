@@ -20,7 +20,7 @@
 import { createElement as h } from "react";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { asSideSeason, MIN_MATCHES, allotmentWords, axisTop, floorNote, inningsText, resultWords, runRate, seasonOptions, seasonPoints, seasonTable, spokenSummary } from "../src/lib/sideSeason.js";
+import { sideSchool, asSideSeason, MIN_MATCHES, allotmentWords, axisTop, floorNote, inningsText, resultWords, runRate, seasonOptions, seasonPoints, seasonTable, spokenSummary } from "../src/lib/sideSeason.js";
 import { readState } from "../src/lib/readState.js";
 import { ChartTablesOpen } from "../src/ui/ChartTable.jsx";
 import { SideSeasonView } from "../src/views/sideseason.jsx";
@@ -73,6 +73,13 @@ group("The points and the line: from the 5th match");
   const two = [...rows(2), asSideSeason({ ...raw(9), season: "2025", current_season: false })];
   ok("only the season asked for, and the server's season picked by default", seasonPoints(two, "2026").length === 2 && seasonOptions(two).open === "2026" && seasonOptions(two).seasons.join() === "2026,2025");
   ok("the axis tops at a whole run an over, never under 1", axisTop(pts) >= 7 && Number.isInteger(axisTop(pts)) && axisTop([]) === 1);
+}
+
+group("Which school the side is");
+{
+  const roster = [{ team: "1XI", school: "W" }, { team: "1XI", school: "H" }, { team: "U15A", school: "H" }];
+  ok("the school the reader holds, when the roster holds two 1XIs", sideSchool(roster, "1XI", ["H"]) === "H" && sideSchool(roster, "1XI", ["X", "W"]) === "W");
+  ok("else the first the rows name; none for a side the rows lack", sideSchool(roster, "1XI") === "W" && sideSchool(roster, "U13A", ["H"]) === null && sideSchool([], "1XI") === null);
 }
 
 group("NULL is not zero; rain is said");
@@ -149,7 +156,7 @@ group("Signed in replaces the demonstration; signed out keeps it");
 {
   const an = read("../src/views/AnalyticsView.jsx");
   ok("the demonstration is drawn only when nobody is signed in (once)", /\{!signedIn\(\)&&<DemoWorm\/>\}/.test(an) && (an.match(/<DemoWorm\/>/g) ?? []).length === 1);
-  ok("the side's season is drawn only when signed in, for the side on screen and its school", /\{signedIn\(\)&&<SideSeason role=\{role\} team=\{teamFilter\} school=\{players\[0\]\?\.school\?\?null\}\/>\}/.test(an) && (an.match(/<SideSeason /g) ?? []).length === 1);
+  ok("the side's season is drawn only when signed in, for the side on screen and the roster that names its school", /\{signedIn\(\)&&<SideSeason role=\{role\} team=\{teamFilter\} players=\{players\}\/>\}/.test(an) && (an.match(/<SideSeason /g) ?? []).length === 1);
   const sv = read("../src/views/sideseason.jsx");
   ok("the panel reads side_season and no other, with the school and side as parameters", /useLive\("side_season", role, nonce, \{ schoolId: school, teamCode: team \}\)/.test(sv) && (sv.match(/useLive\(/g) ?? []).length === 1);
   ok("it carries no demonstration and no worm", !/demo/i.test(sv.replace(/\/\*[\s\S]*?\*\//g, "")));

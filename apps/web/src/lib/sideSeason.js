@@ -182,3 +182,17 @@ export function seasonTable(points, season) {
     note: "An over is six legal balls. “So far” is the season’s run rate through that match, from the 5th.",
   };
 }
+
+/**
+ * Which school the side on screen belongs to. The roster can hold two schools'
+ * "1XI"s (a staff reader may see both); the side whose season this is, is the
+ * one at a school the reader holds an assignment at, else the first the rows name.
+ * Presentation only: the read is gated by the fixture's own scope, whatever is asked.
+ * @param {{ team?: string | null, school?: string | null }[]} players  @param {string | null} team
+ * @param {(string | null | undefined)[]} [heldSchools]
+ * @returns {string | null}
+ */
+export function sideSchool(players, team, heldSchools = []) {
+  const schools = [...new Set((players ?? []).filter((p) => p && p.team === team && p.school).map((p) => p.school))];
+  return schools.find((s) => heldSchools.includes(s)) ?? schools[0] ?? null;
+}

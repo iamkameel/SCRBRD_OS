@@ -5,9 +5,10 @@ import { SourceLine } from "../ui/sourceLine.jsx";
 import { ChartTable } from "../ui/ChartTable.jsx";
 import { useLive } from "../lib/live.js";
 import { readState } from "../lib/readState.js";
+import { profile } from "../lib/session.js";
 import { SRC_RECORD, dateWindow, seasonWindow } from "../lib/sourceWords.js";
 import {
-  MIN_MATCHES, axisTop, floorNote, inningsText, matchesBasis, rainNote, rateText, seasonOptions, seasonPoints, seasonTable,
+  MIN_MATCHES, axisTop, sideSchool, floorNote, inningsText, matchesBasis, rainNote, rateText, seasonOptions, seasonPoints, seasonTable,
   spokenSummary, unreadableNote,
 } from "../lib/sideSeason.js";
 
@@ -30,9 +31,10 @@ import {
  * @param {object} props
  * @param {string} props.role
  * @param {string | null} props.team     the side on screen (the Analytics team filter)
- * @param {string | null} props.school   the school that side belongs to
+ * @param {{ team?: string | null, school?: string | null }[]} props.players  the roster rows in view, which say which school each side is
  */
-export function SideSeason({ role, team, school }) {
+export function SideSeason({ role, team, players }) {
+  const school = sideSchool(players, team, (profile()?.assignments ?? []).map((a) => a.school));
   if (!team || !school) {
     return (
       <Card sx={{ padding: T.space.lg, marginBottom: T.space.lg }} data-testid="side-season-panel">

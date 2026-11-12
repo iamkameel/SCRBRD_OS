@@ -2927,8 +2927,7 @@ try {
         const openSeason = sideRows.find((r) => r.current_season)?.season ?? [...new Set(sideRows.map((r) => r.season))].sort().reverse()[0];
         const inSeason = sideRows.filter((r) => r.season === openSeason);
         ok("the read has a season of completed 1XI matches to compare with", inSeason.length >= 6, inSeason.length);
-        await s.page.reload();
-        await afterReads(s.page, 1500);
+        await nav(s.page, /Squad/);
         ok("Analytics reopens for her", await nav(s.page, /Analytics/));
         await sq("analytics-team-1XI").click({ timeout: 4000 }).catch(() => {});
         await s.page.waitForFunction((n) => document.querySelectorAll('[data-testid="side-season-match"]').length === n, inSeason.length, { timeout: 9000 }).catch(() => {});

@@ -90,7 +90,7 @@ function AnalyticsView({ role }) {
               nobody is signed in; a signed-in reader never sees invented figures. */}
           <SeasonBars key={teamFilter??"none"} role={role} team={teamFilter} demoPlayers={PLAYERS}/>
           {!signedIn()&&<DemoWorm/>}
-          {signedIn()&&<SideSeason role={role} team={teamFilter} school={players[0]?.school??null}/>}
+          {signedIn()&&<SideSeason role={role} team={teamFilter} players={players}/>}
           {/* The four bar charts below are the career read (every season on record). */}
           <div style={{marginBottom:"12px"}}>
             <SourceLine testid="source-line-performance" demo={!signedIn()} demoWhy="sample players"
