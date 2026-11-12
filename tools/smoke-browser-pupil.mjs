@@ -666,8 +666,20 @@ try {
     const own = await get("career");
     ok("his career read answers, with his own row", own.status === 200 && own.rows.some((r) => r.player_id === PILLAY), JSON.stringify(own.rows.map((r) => r.player_id)));
     ok("...and no team-mate's", own.rows.every((r) => r.player_id === PILLAY), JSON.stringify(own.rows.map((r) => r.full_name)));
-    const named = await get(`career?playerId=${NAIDOO}`);
-    ok("a team-mate's career?playerId= is refused: not one row of his", named.status === 200 && !named.rows.some((r) => r.player_id === NAIDOO), JSON.stringify(named.rows.map((r) => r.full_name)));
+    // `career` takes no playerId (a team-mate's lifetime row is simply not in
+    // it, above); naming him on the season read opens this season only.
+    const lastLabel = String(Number(SEASON_NOW) - 1);
+    await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+             values ($1, '1XI', 'Verify Reach Last', $2, 'cricket', 'T20', 20, 'complete')`, [HIL, `${lastLabel}-06-15 09:00+02`]);
+    const lastM = (await q(`select id from match where opponent = 'Verify Reach Last'`))[0].id;
+    const scorer0 = (await q(`select id from app_user where email = 'scorer@example.invalid'`))[0].id;
+    await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq, client_ts,
+                                     kind, ball_type, value, striker_id)
+             values ($1, $2, 1, 1, 1, $3, 'd-reach', $4, 1, now(), 'ball', 'run', 3, $5)`, [lastM, HIL, scorer0, `reach-${lastM}-1`, NAIDOO]);
+    const owned = (await q(`select count(*)::int as n from player_batting_by_season where player_id = $1 and season = $2`, [NAIDOO, lastLabel]))[0].n;
+    const named = await get(`career_by_season?playerId=${NAIDOO}&season=${lastLabel}`);
+    ok("a team-mate named on the season read: last season's row (there is one) is refused",
+       owned === 1 && named.status === 200 && named.rows.length === 0, `${owned} owned, ${JSON.stringify(named.rows.map((r) => r.season))}`);
     const seasons = await get("career_by_season");
     ok("his seasons: his own rows and nobody else's", seasons.rows.length > 0 && seasons.rows.every((r) => r.player_id === PILLAY), JSON.stringify(seasons.rows.map((r) => `${r.full_name}@${r.season}`)));
     // One measured shot of his own, in a fixture of the walk's, so his wheel has a ball to return

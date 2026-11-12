@@ -11985,8 +11985,40 @@ BEGIN
     END IF;
     ids := ids || jsonb_build_object(k, m);
   END LOOP;
+  -- Two assignments narrowed to the trial M: an assistant coach for the day
+  -- and its scorer.
+  ids := ids || jsonb_build_object('acfix', _vd2_person('acfix', 'assistantcoach', '9XI', NULL),
+                                   'scfix', _vd2_person('scfix', 'scorer', NULL, NULL));
+  UPDATE role_assignment SET fixture_id = (ids->>'M')::uuid
+   WHERE person_id IN ((ids->>'acfix')::uuid, (ids->>'scfix')::uuid);
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Every account with a self link, for the captaincy's row-for-row check.
+CREATE OR REPLACE FUNCTION _vd2_self_accounts() RETURNS uuid[] AS $$
+  SELECT coalesce(array_agg(DISTINCT a.person_id ORDER BY a.person_id), '{}')
+    FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+   WHERE a.role = 'selfaccess' AND g.relationship = 'self'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/144's own answer, for the caller (app.user_id): every (school, side,
+-- season label) for which is_captain_of() is true of a boy
+-- recognition_self_players() names, over every season of every level and
+-- every side any honour of his names. The read's copy must give exactly this.
+CREATE OR REPLACE FUNCTION _vd2_captaincy_want() RETURNS text AS $$
+  SELECT coalesce(string_agg(x.k, ',' ORDER BY x.k), '') FROM (
+    SELECT DISTINCT p.school_id || '|' || t.team || '|' || s.label AS k
+      FROM unnest(recognition_self_players()) sp(id)
+      JOIN player p ON p.id = sp.id
+      CROSS JOIN LATERAL (SELECT DISTINCT h.team_code AS team FROM honour h WHERE h.player_id = p.id) t
+      CROSS JOIN season s
+     WHERE is_captain_of(p.id, t.team, s.id)) x
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The owner moves a boy to another side (the office's act).
+CREATE OR REPLACE FUNCTION _vd2_move(p_player uuid, p_team text) RETURNS void AS $$
+  UPDATE player SET team_code = p_team WHERE id = p_player
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The owner's answer to the question the read's copy asks: is_captain_of()
 -- (db/144), which the application may not call.
@@ -40354,7 +40386,15 @@ $v116$;
   --   (staff)     staff read what they read before: the side's coach, the
   --               other side's coach and the director of sport every boy of
   --               the school (the roster), each figure over the balls his own
-  --               row security lets him read
+  --               row security lets him read; for each of them, and for an
+  --               assistant coach and a scorer narrowed to the trial, every
+  --               gated read equals the same read ungated
+  --   (row)       the read's captaincy is db/144's, row for row: for every
+  --               account with a self link, the copy's (school, side, season)
+  --               rows equal is_captain_of() over recognition_self_players(),
+  --               every season of every level and every side his honours
+  --               name; a captain moved off his side holds none; a club
+  --               season's captaincy opens no school season's rows
   -- Each guard was falsified once in this copy and the section run alone
   -- against a seeded database; each went red at the first assertion able
   -- to see it (read.test.mjs holds this copy to the API's):
@@ -40365,6 +40405,8 @@ $v116$;
   --   the roster arm removed             → (staff): 9XI's coach reads C,N1,N2
   --   a withdrawn honour counted         → (captain): after the withdrawal, the side
   --   the pairs' gate removed            → (own/mate): N1's match-ups hold four pairs
+  --   the captaincy's side test removed  → (row): a captain moved off his side still holds it
+  --   a season level the copy asks       → (row): the club-season captaincy, not db/144's
   DECLARE
     y jsonb := _vd2_stage();
     S text; L text;
@@ -40399,8 +40441,7 @@ reach_self as materialized (
                join honour h on h.player_id = k.self_id
                join season s on s.id = h.season_id
               where h.kind in ('captain', 'vice_captain') and h.withdrawn_at is null
-                and h.school_id = k.self_school and h.team_code = k.self_team
-                and s.level = 'school')
+                and h.school_id = k.self_school and h.team_code = k.self_team)
 -- reach_self_ctes:end
 $c130$;
     v_s text := $s130$
@@ -40415,8 +40456,8 @@ $c130$;
 $s130$;
     nm text := $n$replace(p.full_name, 'Verify OneThirty ', '')$n$;
     q_career text; q_seasons text; q_wheel text; q_breakdown text; q_pairs text;
-    v_last_h uuid; v_vice uuid;
-    got text;
+    v_last_h uuid; v_vice uuid; v_moved uuid;
+    got text; who text; qq text; u uuid; n_acc int := 0; n_cap int := 0;
   BEGIN
     S := y->>'season'; L := y->>'last';
     U_C := y->>'u_c'; U_N1 := y->>'u_n1'; U_N2 := y->>'u_n2'; U_MUM := y->>'mother';
@@ -40473,7 +40514,7 @@ $s130$;
     PERFORM _assert(got = 'C@' || L || ',C@' || S || ',N1@' || S || ',N2@' || S,
       format('§130 (captain): the captain''s seasons hold %s', got));
     -- The copy asks is_captain_of()'s question: one live captaincy, 9XI, this season.
-    EXECUTE 'CREATE TEMP VIEW _vd2_captaincy AS WITH ' || v_c || ' SELECT cap_team, cap_season FROM reach_captaincy';
+    EXECUTE 'CREATE TEMP VIEW _vd2_captaincy AS WITH ' || v_c || ' SELECT cap_school, cap_team, cap_season FROM reach_captaincy';
     PERFORM _assert((SELECT string_agg(cap_team || '@' || cap_season, ',') FROM _vd2_captaincy) = '9XI@' || S
                     AND _vd2_captain((y->>'c')::uuid, '9XI', S) AND NOT _vd2_captain((y->>'c')::uuid, '9XI', L),
       '§130 (captain): the read''s captaincy is not is_captain_of()''s');
@@ -40551,6 +40592,53 @@ $s130$;
     PERFORM _assert(_vd2_rows(q_seasons) = '', format('§130 (staff): 8XI''s coach''s seasons hold %s', _vd2_rows(q_seasons)));
     PERFORM _as(U_DOS);
     PERFORM _assert(_vd2_rows(q_career) = 'C,N1,N2,O,U', format('§130 (staff): the director of sport reads %s', _vd2_rows(q_career)));
+    -- (staff) Gated equals ungated, read by read, for every staff persona:
+    -- the gate narrows the pupil and nobody else.
+    FOREACH who IN ARRAY ARRAY['coach', 'ocoach', 'dos', 'acfix', 'scfix'] LOOP
+      PERFORM _as((y->>who)::uuid);
+      FOREACH qq IN ARRAY ARRAY[q_career, q_seasons, q_wheel, q_breakdown, q_pairs] LOOP
+        PERFORM _assert(_vd2_rows(qq) = _vd2_rows(replace(qq, v_g, 'true')),
+          format('§130 (staff): %s reads %s gated, %s ungated', who, _vd2_rows(qq), _vd2_rows(replace(qq, v_g, 'true'))));
+      END LOOP;
+    END LOOP;
+    PERFORM _as((y->>'acfix')::uuid);
+    PERFORM _assert(_vd2_rows(q_career) = 'C,N1,N2,O,U' AND _vd2_rows(q_wheel) = 'C,N1,N2',
+      format('§130 (staff): the assistant coach for the day reads %s, wheel %s', _vd2_rows(q_career), _vd2_rows(q_wheel)));
+
+    -- (row) A captain moved off his side: N2 captains 9XI, then the office
+    -- moves him to 8XI ("an honour does not move sides when he does").
+    v_moved := _vd2_award((y->>'n2')::uuid, 'captain', (SELECT f.id FROM season_for(sa_today(), 'school') f), U_DOS);
+    PERFORM _as(U_N2);
+    PERFORM _assert((SELECT string_agg(cap_team || '@' || cap_season, ',') FROM _vd2_captaincy) = '9XI@' || S,
+      '§130 (row): N2''s captaincy of 9XI is not in the copy');
+    PERFORM _vd2_move((y->>'n2')::uuid, '8XI');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _vd2_captaincy) AND NOT _vd2_captain((y->>'n2')::uuid, '9XI', S),
+      '§130 (row): a captain moved off his side still holds its captaincy');
+    -- (row) Every account with a self link, the seed's and every section's,
+    -- with C captain again (a fresh award) and N2 moved off the side he captains.
+    v_vice := _vd2_award((y->>'c')::uuid, 'captain', (SELECT f.id FROM season_for(sa_today(), 'school') f), U_DOS);
+    -- And a captaincy on a club season's row (the level is not asked, as
+    -- captaincy_holds() does not ask it): in the copy, and no season row
+    -- opens by it, since no school season carries a club label.
+    v_last_h := _vd2_award((y->>'n1')::uuid, 'captain', (SELECT f.id FROM season_for(sa_today(), 'club') f), U_DOS);
+    PERFORM _as(U_N1);
+    PERFORM _assert((SELECT count(*) FROM _vd2_captaincy) = 1 AND _vd2_rows(q_seasons) = 'N1@' || L || ',N1@' || S,
+      format('§130 (row): a club-season captaincy opened %s', _vd2_rows(q_seasons)));
+    FOREACH u IN ARRAY _vd2_self_accounts() LOOP
+      PERFORM _as(u);
+      SELECT coalesce(string_agg(z.k, ',' ORDER BY z.k), '') INTO got
+        FROM (SELECT DISTINCT cap_school || '|' || cap_team || '|' || cap_season AS k FROM _vd2_captaincy) z;
+      PERFORM _assert(got = _vd2_captaincy_want(),
+        format('§130 (row): for account %s the copy gives %s, is_captain_of() %s', u, got, _vd2_captaincy_want()));
+      n_acc := n_acc + 1;
+      IF got <> '' THEN n_cap := n_cap + 1; END IF;
+    END LOOP;
+    PERFORM _assert(n_acc >= 5 AND n_cap >= 1,
+      format('§130 (row): the check is void: %s accounts, %s holding a captaincy', n_acc, n_cap));
+    PERFORM _vd2_move((y->>'n2')::uuid, '9XI');
+    PERFORM _vd2_honour(v_moved, true);
+    PERFORM _vd2_honour(v_vice, true);
+    PERFORM _vd2_honour(v_last_h, true);
     EXECUTE 'DROP VIEW _vd2_captaincy';
   END;
   PERFORM set_config('app.user_id', '', true);

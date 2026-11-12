@@ -122,7 +122,10 @@ export const REACH_FAMILY_OR_STAFF = /* reach_family_or_staff:begin */`(is_famil
  * suspension check). `reach_captaincy` is the side and season of each live
  * captaincy or vice-captaincy he holds (138 D1, both lead the side), on his
  * side today and at his school: captaincy_holds()'s five tests (db/144),
- * which db/99 §130 holds this copy to, row for row.
+ * which db/99 §130 holds this copy to, row for row, for every account with a
+ * self link. Like captaincy_holds() it does not ask the season's level: a
+ * club season's label ("2025/26") is never a school season's ("2026"), so
+ * the season arm below can only match a school season.
  *
  * db/99 §130 runs this text as each persona; read.test.mjs holds it equal.
  */
@@ -146,8 +149,7 @@ export const REACH_SELF_CTES = /* reach_self_ctes:begin */`reach_self as materia
                join honour h on h.player_id = k.self_id
                join season s on s.id = h.season_id
               where h.kind in ('captain', 'vice_captain') and h.withdrawn_at is null
-                and h.school_id = k.self_school and h.team_code = k.self_team
-                and s.level = 'school')`/* reach_self_ctes:end */;
+                and h.school_id = k.self_school and h.team_code = k.self_team)`/* reach_self_ctes:end */;
 
 /**
  * The arms the two exceptions add, for a season row of boy `p` (`season` the

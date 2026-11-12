@@ -132,9 +132,12 @@ group("REACH-D2: the captain's read, and never a leaders chart of one bar");
   const opts = [...html.matchAll(/<option value="(\d{4})"/g)].map((m) => m[1]);
   ok("the captain's season chooser offers only his captaincy's season, not a past season of his alone", opts.join() === "2026", opts.join());
   ok("...and the chart is the side's, two bars", /data-mode="squad"/.test(html) && bars(html).length === 2, JSON.stringify(bars(html)));
-  const pupil = view({ rows: [cap[0], cap[2]] });
+  const pupil = view({ rows: [cap[0], cap[2]], pupil: true });
   ok("a pupil who is not captain: his own seasons, said in words, no leaders chart",
-     /data-mode="player"/.test(pupil) && /read shows you one player of this side/.test(text(pupil)) && !/season-bars-player/.test(pupil), text(pupil).slice(0, 160));
+     /data-mode="player"/.test(pupil) && /You see your own figures; your team-mates’ are theirs/.test(text(pupil)) && !/season-bars-player/.test(pupil), text(pupil).slice(0, 160));
+  ok("the captain is told the seasons left out, and why",
+     /2025 is left out: you see the side’s figures only for a season you hold the captaincy/.test(text(view({ rows: cap, pupil: true }))), text(view({ rows: cap, pupil: true })).slice(0, 300));
+  ok("...a member of staff is not", !/left out/.test(text(html)));
 }
 
 group("What the panel draws, from the read's rows (signed in)");

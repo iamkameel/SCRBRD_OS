@@ -305,9 +305,10 @@ group("A. REACH-D2 (Kameel, 7 and 11 Nov 2026): a boy's figures across matches a
      && g.includes("app_can('player.profile.read', p.school_id, p.team_code, p.id,")
      && g.includes("or app_can('player.roster.read', p.school_id, '*'::text, p.id,"));
   ok("...and no capability every pupil holds at his whole side (no performance.read)", !/performance\.read/.test(g));
-  const { roleGrants } = await import("@scrbrd/policy/roles");
-  ok("the any-side arm is staff's alone: no pupil, guardian, selfaccess or enquiry holds player.roster.read",
-     ["player", "selfaccess", "guardian", "enquiry", "spectator"].every((r) => !roleGrants(r, "player.roster.read")));
+  const { ROLE_CAPABILITIES } = await import("@scrbrd/policy/roles");
+  const rosterHolders = Object.entries(ROLE_CAPABILITIES).filter(([, caps]) => [...caps].includes("player.roster.read")).map(([r]) => r).sort();
+  ok("the any-side arm is the school's staff's alone: exactly these roles hold player.roster.read",
+     rosterHolders.join() === "assistantcoach,coach,directorofsport,principal,schooladmin,sportsadmin,superadmin,teammanager", rosterHolders.join());
 
   // Every read of a boy's figures across matches carries it.
   const has = (/** @type {string} */ r) => flat(READ_QUERIES[r].text).includes(g);
