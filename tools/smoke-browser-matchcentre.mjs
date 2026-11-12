@@ -33,7 +33,10 @@
  *      to Over 14 of a longer fixture (fixture-matchcentre.mjs LONG);
  *  11. CRI-2.3: every Manhattan bar and every wagon-wheel area with balls in
  *      it opens the Commentary at exactly its events, adding up to its runs,
- *      and the way back is the charts where the page was.
+ *      and the way back is the charts where the page was;
+ *  12. CRI-2.5: a parent and a pupil have the three spectator charts on
+ *      Analytics (the worm with its wickets, runs per over, the
+ *      partnerships), the side's coach and the director of sport every one.
  *
  * MC_SHOTS=<dir> also saves every tab at 390 and 1366 wide, in Daylight and
  * Floodlit, into <dir>.
@@ -801,6 +804,60 @@ try {
     ok("at 390 wide, nothing is wider than the screen (the drill-down)", await D3.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     ok("no console errors (drill-down)", d23.errors.length === 0, d23.errors.join(" | "));
     await d23.ctx.close();
+  }
+
+  group("CRI-2.5: a parent and a pupil have three charts on Analytics (the worm with its wickets, runs per over, the partnerships); the coach and the director every one");
+  {
+    const ALL = ["worm", "manhattan", "partnership", "batsman", "bowler", "wheel", "heat", "spider"];
+    const THREE = ["worm", "manhattan", "partnership"];
+    /** The charts the Analytics tab draws, by their tables' toggles, and what else is there. */
+    const chartsOf = async (P) => {
+      await pickTab(P, "analytics");
+      await tid(P, "mc-analytics").waitFor({ timeout: 6000 }).catch(() => {});
+      await tid(P, "mc-innings-1").click({ timeout: 3000 }).catch(() => {});
+      await P.waitForTimeout(300);
+      return P.evaluate(() => {
+        const A = document.querySelector('[data-testid="mc-analytics"]');
+        return {
+          analysis: A?.getAttribute("data-analysis") ?? null,
+          charts: [...(A?.querySelectorAll('[data-testid$="-table-toggle"]') ?? [])].map((e) => e.getAttribute("data-testid").replace(/-table-toggle$/, "")),
+          wagon: !!A?.querySelector('[data-testid="wagon-analysis"]'),
+          wheel: !!A?.querySelector('[data-testid="shot-wheel"]'),
+          pins: A?.querySelectorAll('circle[r="4.5"]').length ?? 0,
+          stands: A?.querySelectorAll('[data-testid="mc-partnership-bar"]').length ?? 0,
+          wide: document.documentElement.scrollWidth > window.innerWidth + 1,
+        };
+      });
+    };
+    const who = [
+      ["the parent (guardian)", /parent@example\.invalid|D Pillay/, THREE, "spectator"],
+      ["the pupil (player, 1st XI)", /spectator@example\.invalid|A Spectator/, THREE, "spectator"],
+      ["the 1st XI's coach", /coach@example\.invalid|C Hendricks/, ALL, "full"],
+      ["the director of sport", /sarah@example\.invalid|Director/, ALL, "full"],
+    ];
+    const stands2 = inn2.partnerships.length + (inn2.striker && inn2.nonStriker ? 1 : 0);
+    for (const [label, re, want, analysis] of who) {
+      const s = await open({ viewport: PHONE });
+      ok(`${label} signs in`, await signIn(s.page, re));
+      let opened = await openMatch(s.page, fx.live);
+      if (!opened) {
+        // A family's home has no Match Centre in its bar: the fixture's own address.
+        await s.page.goto(`http://localhost:${WEB_PORT}/app/matches/${fx.live}/analytics`, { waitUntil: "networkidle" }).catch(() => {});
+        await tid(s.page, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
+        await afterReads(s.page, 1500);
+        opened = (await tid(s.page, "match-view").count()) === 1;
+      }
+      ok(`...and opens the fixture`, opened);
+      const c = await chartsOf(s.page);
+      ok(`${label}: ${want.length} charts, ${want.join(", ")} (${analysis})`, c.analysis === analysis && c.charts.join() === want.join(), JSON.stringify(c));
+      ok(`...the worm with its ${inn1.fow.length + inn2.fow.length} wicket pins, and a bar for each of the second innings' ${stands2} stands`,
+         c.pins === inn1.fow.length + inn2.fow.length && c.stands === stands2, `${c.pins} pins, ${c.stands} stands`);
+      if (analysis === "spectator") ok("...no wheel, no wagon-wheel analysis", !c.wheel && !c.wagon);
+      else ok("...the wheel and the wagon-wheel analysis", c.wheel && c.wagon);
+      ok("...nothing wider than the screen at 390", !c.wide);
+      ok(`no console errors (${label})`, s.errors.length === 0, s.errors.join(" | "));
+      await s.ctx.close();
+    }
   }
 
   await tab(p, "details");

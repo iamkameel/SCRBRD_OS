@@ -10,6 +10,9 @@ import { projectMatch } from "../../scorer/chartData.js";
 import { overParts } from "../../scorer/overParts.js";
 import { WagonAnalysisPanel } from "../../scorer/wagonAnalysisPanel.jsx";
 import { ErrorBoundary } from "../../ui/ErrorBoundary.jsx";
+import { ChartTable } from "../../ui/ChartTable.jsx";
+import { profile } from "../../lib/session.js";
+import { fullAnalysis } from "../../lib/matchAnalysis.js";
 import { InningsToggle } from "./scorecard.jsx";
 import { scrollerOf } from "../../lib/toBall.js";
 import { Panel, Quiet } from "./bits.jsx";
@@ -30,6 +33,47 @@ export { SummaryTab, CommentaryTab, PartnershipsTab };
 // ── Analytics ───────────────────────────────────────────
 
 /**
+ * CRI-2.5: the innings' stands as a chart — one of the three every reader of
+ * the Analytics tab has. The fold's partnerships (the stand still in, while
+ * both are in, as the Partnerships tab adds it), each bar its runs against
+ * the biggest, the pair named as the scorecard names them, and the figures
+ * as a table behind "Show as table" (GA-I31).
+ */
+function PartnershipChart({ inn }) {
+  const rows = (inn.partnerships ?? []).map((p) => ({ ...p, open: false }));
+  const cp = inn.curPartner;
+  const nm = (id) => inn.batsmen.find((b) => b.id === id)?.name;
+  const last = { bat1: nm(cp?.bat1) ?? "?", bat2: nm(cp?.bat2) ?? "?" };
+  const listed = rows.some((r) => r.bat1 === last.bat1 && r.bat2 === last.bat2 && r.runs === cp?.runs && r.balls === cp?.balls);
+  if (cp && cp.bat1 && cp.bat2 && (cp.runs > 0 || cp.balls > 0) && !listed) rows.push({ ...last, runs: cp.runs, balls: cp.balls, wicket: inn.wickets + 1, open: true });
+  const most = Math.max(1, ...rows.map((r) => r.runs));
+  const nth = (n) => `${n}${n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th"}`;
+  const table = [{ caption: "Partnerships, wicket by wicket", columns: ["Wicket", "Pair", "Runs", "Balls"], text: [1],
+    rows: rows.map((r) => [`${nth(r.wicket)}${r.open ? " (unbroken)" : ""}`, `${r.bat1} and ${r.bat2}`, r.runs, r.balls]) }];
+  return (
+    <Panel testid="mc-partnership-chart" style={{ padding: `${T.space.md} ${T.space.md}` }}>
+      {!rows.length ? <Quiet>No partnership yet.</Quiet> : (
+        <ol aria-label={`Partnerships: ${rows.length}, the biggest ${most} runs`} style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: T.space.sm }}>
+          {rows.map((r, i) => (
+            <li key={i} data-testid="mc-partnership-bar" data-runs={r.runs} style={{ display: "grid", gap: "2px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: T.space.sm, alignItems: "baseline", flexWrap: "wrap" }}>
+                <span style={{ ...T.role.body, fontSize: "14px", color: T.content.primary, minWidth: 0, overflowWrap: "anywhere" }}>{r.bat1} and {r.bat2}</span>
+                <span style={{ ...T.role.figure.sm, color: T.content.primary }}>{r.runs} <span style={{ color: T.content.secondary }}>({r.balls}){r.open ? " *" : ""}</span></span>
+              </div>
+              <div aria-hidden="true" style={{ height: "8px", borderRadius: T.radius.pill, background: T.fill.track, overflow: "hidden" }}>
+                <div style={{ width: `${Math.round((r.runs / most) * 100)}%`, height: "100%", background: T.sport.batting, borderRadius: T.radius.pill }}/>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+      <ChartTable testid="partnership-table" tables={table}/>
+    </Panel>
+  );
+}
+
+
+/**
  * `toBalls` (CRI-2.3): a Manhattan bar or a wagon-wheel area leads to the
  * Commentary, filtered to its balls by event id (MatchView's, signed in and
  * not a demonstration; null leaves the charts as they were).
@@ -46,6 +90,9 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs,
     onChartsRestored?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // CRI-2.5: the whole analysis under analytics.read for this fixture's side (lib/matchAnalysis.js);
+  // a parent, a pupil, a spectator: the worm, runs per over and the partnerships.
+  const full = fullAnalysis(profile()?.assignments, match);
   const inn = innings[inningsSel];
   if (!inn) return <Quiet testid="mc-analytics-empty">Nothing has been scored yet.</Quiet>;
   /** A chart's balls, and where the page is, for the way back. */
@@ -73,7 +120,7 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs,
   );
   const H = ({ children }) => <h2 style={{ ...T.role.label, color: T.content.secondary, margin: `${T.space.lg} 0 ${T.space.sm}` }}>{children}</h2>;
   return (
-    <section ref={at} data-testid="mc-analytics" aria-label="Analytics">
+    <section ref={at} data-testid="mc-analytics" data-analysis={full ? "full" : "spectator"} aria-label="Analytics">
       <InningsToggle match={match} innings={innings} inningsSel={inningsSel} setInningsSel={(i) => { setInningsSel(i); setWheelOf(null); }}/>
       <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
         <Kpi l="Run rate" v={inn.balls ? ((inn.runs / inn.balls) * 6).toFixed(2) : "—"}/>
@@ -85,6 +132,9 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs,
       <H>Runs per over</H>
       <ManhattanChart inn={inn} match={cfg} projection={proj[inningsSel]}
         onOver={drill ? (o) => drill({ ids: (parts?.get(o.over) ?? []).map((x) => x.id).filter(Boolean), what: `over ${o.over + 1}`, runs: o.runs }) : null}/>
+      <H>Partnerships</H>
+      <PartnershipChart inn={inn}/>
+      {full && (<>
       <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)", gap: T.space.md }}>
         <div><H>Batting impact</H><BatsmanChart inn={inn}/></div>
         <div><H>Bowling economy</H><BowlerChart inn={inn}/></div>
@@ -124,6 +174,7 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs,
           />
         </ErrorBoundary>
       </div>
+      </>)}
     </section>
   );
 }
