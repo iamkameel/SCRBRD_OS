@@ -78,6 +78,8 @@
  *   extras b 1 lb 2 w 3 nb 1 p 0 byes, leg byes, wide runs, no-ball runs, penalty runs
  *   total 87/4 5.0               runs/wickets and the overs bowled
  *   fow 1-12 B2 2.3              wicket-score, the batter out, the over he fell in
+ *   notinover 6                  optional: how many deliveries the innings had that were not
+ *                                one of the over (the @ marks): each was faced, none is a legal ball
  *   keeper F2 ct 1 st 1          optional, in the order they kept: the keeper's catches
  *                                and stumpings (a card with none says the fold has none)
  *   bowl BW1 2-0-17-1 wd 1 nb 0  O-M-R-W, the number of wides and no-balls bowled
@@ -159,6 +161,7 @@
  * @property {number} total  @property {number} wickets  @property {string} overs
  * @property {{wicket: number, runs: number, who: string, over: string}[]} fow
  * @property {{who: string, catches: number, stumpings: number}[]} keepers
+ * @property {number} notInOver  deliveries faced that were not one of the over
  * @property {CardBowler[]} bowling
  */
 
@@ -317,7 +320,7 @@ export function parseScorebook(text, file = "scorebook") {
       case "declare": if (!inn) bad(); /** @type {PaperInnings} */ (inn).lines.push({ kind: "declare", at }); return;
       case "card": {
         inn = null;
-        card = { innings: Number(rest[0]), batting: [], extras: { b: 0, lb: 0, w: 0, nb: 0, p: 0 }, total: -1, wickets: -1, overs: "", fow: [], keepers: [], bowling: [] };
+        card = { innings: Number(rest[0]), batting: [], extras: { b: 0, lb: 0, w: 0, nb: 0, p: 0 }, total: -1, wickets: -1, overs: "", fow: [], keepers: [], notInOver: 0, bowling: [] };
         book.cards.push(card);
         return;
       }
@@ -350,6 +353,7 @@ export function parseScorebook(text, file = "scorebook") {
         /** @type {Card} */ (card).fow.push({ wicket: Number(/** @type {RegExpExecArray} */ (m)[1]), runs: Number(/** @type {RegExpExecArray} */ (m)[2]), who: rest[1], over: rest[2] });
         return;
       }
+      case "notinover": if (!card || rest.length !== 1) bad(); /** @type {Card} */ (card).notInOver = Number(rest[0]); return;
       case "keeper": {
         if (!card || rest.length !== 5 || !/^F\d+$/.test(rest[0]) || rest[1] !== "ct" || rest[3] !== "st") bad();
         /** @type {Card} */ (card).keepers.push({ who: rest[0], catches: Number(rest[2]), stumpings: Number(rest[4]) });
@@ -396,7 +400,7 @@ export function cardArithmetic(c) {
   const wides = sum(c.bowling.map((b) => b.wides));
   if (wides > c.extras.w || (wides === 0) !== (c.extras.w === 0)) out.push(`bowlers' wides ${wides} cannot give ${c.extras.w} wide runs`);
   const faced = sum(c.batting.map((b) => b.balls));
-  if (faced !== ballsOf(c.overs) + nbs) out.push(`balls faced ${faced}, not the legal balls ${ballsOf(c.overs)} and no-balls ${nbs}`);
+  if (faced !== ballsOf(c.overs) + nbs + c.notInOver) out.push(`balls faced ${faced}, not the legal balls ${ballsOf(c.overs)}, no-balls ${nbs} and deliveries not in the over ${c.notInOver}`);
   const out_ = c.batting.filter((b) => b.howOut !== "not out" && b.howOut !== "retired hurt").length;
   if (out_ !== c.wickets) out.push(`${out_} batters out, not ${c.wickets} wickets`);
   if (c.fow.length !== c.wickets) out.push(`${c.fow.length} falls of wicket, not ${c.wickets}`);
