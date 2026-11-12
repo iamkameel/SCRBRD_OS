@@ -324,6 +324,7 @@ const SUITES = [
   // GA-I23: the Analytics performance tab's season bars are the career_by_season
   // read, per player per season, and no invented figure is drawn signed in.
   ["season-bars", "apps/web/test/season-bars.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["side-season", "apps/web/test/side-season.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The three solo-test screens, over routes that already existed: the office
   // verifying a parent's link and recording the family's agreement, booking a
   // vehicle and a trip, and signing out everywhere. Who is offered, what is

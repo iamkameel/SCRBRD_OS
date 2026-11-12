@@ -6,6 +6,7 @@ import { Avatar, Badge, Card, EmptyState, ProgressBar, ReadState, SectionHeader 
 import { SourceLine } from "../ui/sourceLine.jsx";
 import { SeasonBars } from "./seasonbars.jsx";
 import { DemoWorm } from "./demoworm.jsx";
+import { SideSeason } from "./sideseason.jsx";
 import { SRC_BALLS, SRC_FIXTURES, SRC_RECORD, WINDOW_ALL, ballsFacedBasis, isoDay } from "../lib/sourceWords.js";
 import { signedIn } from "../lib/api.js";
 import { usePlayersWithCareerState, useLive } from "../lib/live.js";
@@ -89,6 +90,7 @@ function AnalyticsView({ role }) {
               nobody is signed in; a signed-in reader never sees invented figures. */}
           <SeasonBars key={teamFilter??"none"} role={role} team={teamFilter} demoPlayers={PLAYERS}/>
           {!signedIn()&&<DemoWorm/>}
+          {signedIn()&&<SideSeason role={role} team={teamFilter} school={players[0]?.school??null}/>}
           {/* The four bar charts below are the career read (every season on record). */}
           <div style={{marginBottom:"12px"}}>
             <SourceLine testid="source-line-performance" demo={!signedIn()} demoWhy="sample players"
