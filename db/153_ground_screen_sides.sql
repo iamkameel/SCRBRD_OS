@@ -103,7 +103,7 @@
 --
 -- Nothing else. broadcast_state() (db/149) already names no child.
 --
--- Its proof is db/99 §130; the walk is smoke-browser-matchcentre's big
+-- Its proof is db/99 §131; the walk is smoke-browser-matchcentre's big
 -- screen group.
 
 -- ── 0 · What this file was written against ─────────────────────────
