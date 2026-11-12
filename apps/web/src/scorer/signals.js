@@ -144,12 +144,11 @@ const inReach = (runs, reach, marks = [50, 100, 150, 200]) => {
  * not drawn. Spectator screens only (the pad never shows Tier 2).
  *
  * @param {object} inn  a folded innings
- * @param {{target?: number|null, overs?: number, format?: unknown, innings?: any[] | null}} [o]
- *   `format` match.format (a declaration match projects nothing); `innings` the
- *   match's folded innings, for whether the chase's target was revised
+ * @param {{target?: number|null, overs?: number, format?: unknown}} [o]
+ *   `format` match.format (a declaration match projects nothing)
  * @returns {string[]}
  */
-const boardInsights = (inn, { target = null, overs = 20, format = null, innings = null } = {}) => {
+const boardInsights = (inn, { target = null, overs = 20, format = null } = {}) => {
   if (!inn || !inn.balls || inn.complete) return [];
   const out = [];
   const pair = [inn.striker, inn.nonStriker].map((id) => inn.batsmen?.find((b) => b.id === id)).filter(Boolean);
@@ -172,7 +171,7 @@ const boardInsights = (inn, { target = null, overs = 20, format = null, innings 
     const p = projectedTotal(inn, { overs, format });
     if (p) out.push(`Projected ${p.runs} at ${p.crr} an over`);
   } else {
-    const own = ownRateChaseLine(inn, { target, overs, format, innings });
+    const own = ownRateChaseLine(inn, { target, overs, format });
     if (own) out.push(own);
   }
   // Legal deliveries since the last boundary (a four or six to the rope, F7).

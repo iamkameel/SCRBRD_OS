@@ -244,6 +244,14 @@ try {
 
   group("7. The ball, said: a live region that speaks only what arrives");
   {
+    // Ten dot balls first, so the chase is at twelve legal balls and the scenario panel (GA-I29) is drawn
+    // beside the page's live region: its <output> must not count as a second region speaking.
+    {
+      const last = Number((await q(`select max(seq) as s from ball_event where match_id = $1`, [pub]))[0].s);
+      const dots = [...Array.from({ length: 4 }, () => ball({ type: BALL_TYPE.RUN, value: 0 })), bowler({ bowler: ids.erasmus }),
+                    ...Array.from({ length: 6 }, () => ball({ type: BALL_TYPE.RUN, value: 0 }))];
+      await writeEvents(q, pub, dots.map((ev, k) => ({ ...ev, innings: 1, id: `pub-dots-${k}`, clientTs: Date.now() - 60000 + k })), last);
+    }
     // Read every 5 s (the page's floor), from the API's 5 s live cache.
     const lv = await visit(`/live/${pub}`, { init: `window.__SCRBRD_LIVE_MS__ = 1000;` });
     await lv.page.waitForSelector('[data-testid="public-match"]', { timeout: 10000 }).catch(() => {});
@@ -271,6 +279,9 @@ try {
     await put(1, ball({ type: BALL_TYPE.RUN, value: 4 }));
     ok("a new four is announced: \"Four runs\"", await heard("Four runs"), await said());
     heardAll.push(await said());
+    // The scenario panel is drawn here (the chase is past twelve balls), so its aria-live="off" <output> is on the page.
+    ok("the chase's scenario panel is on the page, its outcome an <output> that does not speak",
+       await tid(lv.page, "mc-scenario").count() === 1 && await tid(lv.page, "mc-scenario-outcome").getAttribute("aria-live") === "off");
     ok("...and it is the only live region on the page speaking (the moment on the board is drawn, not said again)",
        // Speaking: a region with words in it. The page's other region (the
        // "Updated · refresh" line, GA-I36) is there and silent while current.

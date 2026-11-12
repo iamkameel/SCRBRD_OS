@@ -203,7 +203,7 @@ group("The screens use it, with no per-view line left beside it");
     }
   };
   walk("../src/");
-  ok("only the signed-in views import it", importers.length > 0 && importers.every((f) => /^(views\/(AnalyticsView|LeagueView|ProfilesView|SeasonHistoryView|seasonbars|demoworm|compare)\.jsx|views\/matchcentre\/scenario\.jsx|lib\/seasonBars\.js|ui\/sourceLine\.jsx|lib\/sourceWords\.js)$/.test(f)), importers.join(" "));
+  ok("only the signed-in views import it, and the scenario panel (its own lazy chunk on the public page, Q2)", importers.length > 0 && importers.every((f) => /^(views\/(AnalyticsView|LeagueView|ProfilesView|SeasonHistoryView|seasonbars|demoworm|compare)\.jsx|views\/matchcentre\/scenario\.jsx|lib\/seasonBars\.js|ui\/sourceLine\.jsx|lib\/sourceWords\.js)$/.test(f)), importers.join(" "));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

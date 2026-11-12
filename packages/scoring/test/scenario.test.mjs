@@ -16,7 +16,7 @@
  */
 import {
   scenarioOf, scenarioHidden, scenarioBase, projectedTotal, ownRateChaseLine, openingHalves,
-  runRate, totalAt, chaseAt, lastOvers, rateOfHalves, SCENARIO_MIN_BALLS, SCENARIO_RATE, SCENARIO_FOOTNOTE,
+  runRate, totalAt, chaseAt, chaseWords, lastOvers, rateOfHalves, rateText, levelIsTie, SCENARIO_MIN_BALLS, SCENARIO_RATE, SCENARIO_FOOTNOTE,
   deriveMatch, describeResult, inningsStart, batters, bowler, ball, voidEvent, penalty, revision, playStopped,
   OUTCOME, BALL_TYPE,
 } from "../src/index.mjs";
@@ -25,6 +25,8 @@ import { rainLog } from "./rain-logs.mjs";
 /** @import { LogEvent } from "../src/events.mjs" */
 
 let pass = 0, fail = 0;
+/** The words one short by `short` runs, in this chase's conditions. @param {any} m  @param {number} short */
+const chaseWordsOf = (m, short) => chaseWords({ reached: false, finish: 26 - short, short }, levelIsTie(m.innings[1]?.overs ?? 0, m.innings[1]?.conditions));
 /** @param {string} n  @param {unknown} c  @param {unknown} [d] */
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d !== undefined ? `— ${JSON.stringify(d).slice(0, 600)}` : ""); } };
 const group = (/** @type {string} */ t) => console.log("\n" + t);
@@ -71,6 +73,16 @@ group("A. The figures (A2)");
   ok("...need 36 off 6 is not (six sixes)", !/more than six/.test(line(exactly, "need") ?? ""), line(exactly, "need"));
   ok("S10: level at need = 1", /^Scores level/.test(line(chase(inn({ runs: 132, balls: 111, wickets: 5, target: 133 })), "need") ?? ""));
   ok("...the last ball at L = 1", /^Last ball/.test(line(chase(inn({ runs: 130, balls: 119, wickets: 5, target: 133 })), "need") ?? ""));
+}
+
+group("A2. One rate formatter (S1): the board's CRR and RRR, the insight and the panel say one figure");
+{
+  ok("81 off 80 balls is 6.07 (the board's own figure, not 6.08)", rateText(81, 80) === "6.07");
+  ok("...in the panel's first innings", line(first(inn({ runs: 81, balls: 80 })), "own")?.startsWith("At their rate so far (6.07 an over)"), line(first(inn({ runs: 81, balls: 80 })), "own"));
+  ok("...and in projectedTotal(), which the insight and \"At this rate\" read", projectedTotal(inn({ runs: 81, balls: 80 }))?.crr === "6.07");
+  ok("...as a required rate: need 81 off 80 is 6.07", /^Needs 81 off 80 balls: 6\.07 an over/.test(line(chase(inn({ runs: 52, balls: 40, target: 133 })), "need") ?? ""),
+     line(chase(inn({ runs: 52, balls: 40, target: 133 })), "need"));
+  ok("no ball, no rate", rateText(5, 0) === null);
 }
 
 group("B. Exact, never rounded up (A2: 132.6 against 133)");
@@ -147,8 +159,8 @@ group("C. The words (A3)");
      stopped.lines[0].key === "stopped" && stopped.lines[0].text === "Play stopped. These use the target and overs as they stand.");
   ok("...and the panel stays", line(stopped, "need") != null && line(stopped, "at") != null);
   const nr = /** @type {any} */ (chase(inn({ runs: 30, balls: 30, overs: 8, target: 70, conditions: { "result.min_overs_per_side": 10 } })));
-  ok('a short chase that would be a no result: "Under this match\'s conditions, a chase of fewer than 10 overs that falls short is a no result."',
-     line(nr, "no_result") === "Under this match's conditions, a chase of fewer than 10 overs that falls short is a no result.", nr?.lines);
+  ok('a short chase that would be a no result: "Under this match\'s conditions, a chase of fewer than 10 overs that runs out of overs short of the target is a no result."',
+     line(nr, "no_result") === "Under this match's conditions, a chase of fewer than 10 overs that runs out of overs short of the target is a no result.", nr?.lines);
   ok("...not where the chase has the overs", line(chase(inn({ runs: 30, balls: 30, overs: 10, target: 70, conditions: { "result.min_overs_per_side": 10 } })), "no_result") === null);
 }
 
@@ -248,8 +260,10 @@ group("E. Folded logs");
      line(sr, "need") === "Needs 13 off 11 balls (revised): 7.09 an over, 1.18 a ball", line(sr, "need"));
   ok('...and one more line: "If play stops again the umpires may change the target and the overs."',
      line(sr, "again") === "If play stops again the umpires may change the target and the overs.", sr?.lines);
-  ok("...a revised target is never \"scores level\" one short (A3: unrevised only)",
-     line(scenarioOf({ innings: mr.innings, index: 1, target: 26, halves: 14 }), "at") === "If they score at 7.0 an over: they would finish on 25, 1 short", line(scenarioOf({ innings: mr.innings, index: 1, target: 26, halves: 14 }), "at"));
+  // The lead, 12 Nov: the tie words follow describeResult()'s tie rule, revised target or not (below: 25 against a revised 26 is a tie).
+  ok('...one short of a revised target is "scores level", as describeResult() calls it a tie',
+     line(scenarioOf({ innings: mr.innings, index: 1, target: 26, halves: 14 }), "at") === "If they score at 7.0 an over: they would finish on 25, 1 short: scores level",
+     line(scenarioOf({ innings: mr.innings, index: 1, target: 26, halves: 14 }), "at"));
   const dls = rainLog([{ bat: "1XI", bowl: "Kearsney", overs: 5, steps: runs(30, 1) },
                        { bat: "Kearsney", bowl: "1XI", overs: 5, target: 31,
                          steps: [...runs(6, 1), { stop: "rain" }, { rev: { overs: 4, target: 26 } }, { resume: true }, ...runs(7, 1)], seal: false }],
@@ -267,6 +281,29 @@ group("E. Folded logs");
      && describeResult(tr.innings)?.outcome === OUTCOME.TIE, [tr.innings[1]?.runs, describeResult(tr.innings)?.outcome]);
   const tieFlat = rainLog([{ bat: "1XI", bowl: "Kearsney", overs: 5, steps: runs(30, 1) }, { bat: "Kearsney", bowl: "1XI", overs: 5, steps: runs(30, 1) }]);
   ok("...and an unrevised one on T − 1 (30 against 31)", describeResult(deriveMatch(tieFlat).innings)?.outcome === OUTCOME.TIE);
+  ok("...and the last ball says the tie, revised: \"Last ball: 3 to win, 2 to tie\"",
+     line(scenarioOf({ innings: deriveMatch(rainLog([{ bat: "1XI", bowl: "Kearsney", overs: 5, steps: runs(30, 1) },
+       { bat: "Kearsney", bowl: "1XI", overs: 5, target: 31, steps: [...runs(6, 1), { stop: "rain" }, { rev: { overs: 4, target: 26 } }, { resume: true }, ...runs(17, 1)], seal: false }])).innings,
+       index: 1, target: 26 }), "need") === "Last ball: 3 to win, 2 to tie");
+
+  // Under the match's fewest overs (result.min_overs_per_side 5), a chase cut to 4 overs that ends one short
+  // is a NO RESULT, not a tie: the panel says no tie, and describeResult() agrees.
+  const MIN5 = { "result.min_overs_per_side": 5 };
+  const cutPlans = (/** @type {(number | "W" | {stop: string} | {resume: true} | {rev: {overs?: number, target?: number}})[]} */ tail, /** @type {false | undefined} */ seal) => rainLog([
+    { bat: "1XI", bowl: "Kearsney", overs: 5, steps: runs(30, 1) },
+    { bat: "Kearsney", bowl: "1XI", overs: 5, target: 31, steps: [...runs(6, 1), { stop: "rain" }, { rev: { overs: 4, target: 26 } }, { resume: true }, ...tail], seal }],
+    { conditions: MIN5 });
+  const cutNow = deriveMatch(cutPlans(runs(17, 1), false), { conditions: MIN5 });
+  const sm = /** @type {any} */ (scenarioOf({ innings: cutNow.innings, index: 1, target: 26 }));
+  ok("a chase cut to 4 overs under a minimum of 5, 3 off the last ball: \"Last ball: 3 to win\", no tie", line(sm, "need") === "Last ball: 3 to win", line(sm, "need"));
+  ok("...and the no-result line says why", line(sm, "no_result") === "Under this match's conditions, a chase of fewer than 5 overs that runs out of overs short of the target is a no result.", sm?.lines);
+  ok("...no line of it says \"tie\" or \"scores level\"", sm.lines.every((/** @type {any} */ l) => !/\btie\b|scores level/.test(l.text)), sm.lines.map((/** @type {any} */ l) => l.text));
+  ok("...one short at a stepper rate: \"1 short\", no \"scores level\"", line(scenarioOf({ innings: cutNow.innings, index: 1, target: 26, halves: 1 }), "at") === "If they score at 0.5 an over: they would finish on 23, 3 short"
+     && chaseWordsOf(cutNow, 1) === "they would finish on 25, 1 short", chaseWordsOf(cutNow, 1));
+  const cutEnd = deriveMatch(cutPlans([...runs(17, 1), 2], undefined), { conditions: MIN5 });
+  ok("describeResult(): ending on 25 against 26 there is a no result", cutEnd.innings[1]?.runs === 25
+     && describeResult(cutEnd.innings, { conditions: MIN5 })?.outcome === OUTCOME.NO_RESULT, [cutEnd.innings[1]?.runs, describeResult(cutEnd.innings, { conditions: MIN5 })?.outcome]);
+  ok("ownRateChaseLine() keeps the same rule (no \"scores level\" under the minimum)", levelIsTie(4, MIN5) === false && levelIsTie(5, MIN5) === true && levelIsTie(4, {}) === true);
 
   // A nine-boy squad: eight wickets end the innings, so 3 down is 5 in hand.
   const nine = Array.from({ length: 9 }, (_, k) => ({ id: `u${k}`, name: `U ${k + 1}` }));

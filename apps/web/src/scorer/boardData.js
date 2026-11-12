@@ -1,4 +1,4 @@
-import { projectedTotal } from "@scrbrd/scoring";
+import { projectedTotal, rateText } from "@scrbrd/scoring";
 import { RR, fmtOv, isOut } from "./format.js";
 import { superOverBlock } from "../lib/superOver.js";
 import { parWords } from "../lib/par.js";
@@ -43,7 +43,7 @@ export function chaseLine(inn, target, overs) {
   if (target == null || !inn) return null;
   const balls = Math.max(0, overs * 6 - inn.balls);
   const need = target - inn.runs;
-  return { need, balls, rrr: need > 0 && balls > 0 ? ((need / balls) * 6).toFixed(2) : null };
+  return { need, balls, rrr: need > 0 && balls > 0 ? rateText(need, balls) : null };
 }
 
 /**

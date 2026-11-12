@@ -209,7 +209,22 @@ group("Tier 2 lines come from the fold, and say nothing the fold cannot");
   ok("the projection in a first innings", lines.includes("Projected 198 at 9.91 an over"));
   ok("a boundary drought, in legal balls", lines.includes("No boundary for 19 balls"));
   ok("the last wicket", lines.includes("Last wicket: T Botha at 99/3, 11.2 overs"));
-  ok("no projection in a chase", !boardInsights(inn, { overs: 20, target: 180 }).some((l) => /Projected/.test(l)));
+  // GA-I29 A0: in a chase the projection is where the rate so far would take it (S8), never "Projected".
+  const chaseLines = boardInsights(inn, { overs: 20, target: 180 });
+  ok("no first-innings projection in a chase", !chaseLines.some((l) => /Projected/.test(l)), chaseLines.join(" | "));
+  ok('...but the chase\'s own rate, S8: "At their rate so far (9.91 an over): they would get there with 10 balls to spare"',
+     chaseLines.includes("At their rate so far (9.91 an over): they would get there with 10 balls to spare"), chaseLines.join(" | "));
+  const own = (/** @type {any[]} */ lines) => lines.filter((l) => /^At their rate so far/.test(l));
+  ok("...not before twelve legal balls: 11 balls, none; 12, one (A-D8)",
+     own(boardInsights({ ...inn, runs: 20, balls: 11 }, { overs: 20, target: 180 })).length === 0
+     && own(boardInsights({ ...inn, runs: 20, balls: 12 }, { overs: 20, target: 180 })).length === 1);
+  ok("...and the first innings' projection keeps the same minimum: 11 balls, none; 12, one",
+     !boardInsights({ ...inn, runs: 20, balls: 11 }, { overs: 20 }).some((l) => /Projected/.test(l))
+     && boardInsights({ ...inn, runs: 20, balls: 12 }, { overs: 20 }).includes("Projected 200 at 10.00 an over"));
+  ok("a declaration match projects nothing, in either innings",
+     !boardInsights(inn, { overs: 20, format: "Two-Day" }).some((l) => /Projected/.test(l))
+     && own(boardInsights(inn, { overs: 20, target: 180, format: "Two-Day" })).length === 0);
+  ok("...a limited-overs one does", boardInsights(inn, { overs: 20, format: "T20" }).includes("Projected 198 at 9.91 an over"));
   ok("an innings with no balls, or a finished one, says nothing",
      boardInsights({ ...inn, balls: 0 }).length === 0 && boardInsights({ ...inn, complete: true }).length === 0);
 }

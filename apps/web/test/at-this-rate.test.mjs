@@ -66,5 +66,26 @@ ok("with it, the line sits beside the run rate", shown.sub === "CRR 7.00 · At t
 const chase = boardFromInnings(four, { target: 120, overs: 10, projected: null });
 ok("a chase is untouched", /^Need 106 off 48 · CRR 7.00 · RRR /.test(chase.sub) && !/At this rate/.test(chase.sub), chase.sub);
 
+console.log("\nE. One rate, one figure (GA-I29 S1: @scrbrd/scoring rateText() on every screen)");
+{
+  const { boardInsights } = await import("../src/scorer/signals.js");
+  const { scenarioOf } = await import("@scrbrd/scoring");
+  const { RR } = await import("../src/scorer/format.js");
+  const { parWords } = await import("../src/lib/par.js");
+  const i81 = { ...inn(81, 80), overs: 20, squad: [], conditions: {} };
+  ok("81 off 80 balls: the board says CRR 6.07 · At this rate: 122", boardFromInnings(i81, { overs: 20, projected: atThisRate(i81, { overs: 20 }) }).sub === "CRR 6.07 · At this rate: 122",
+     boardFromInnings(i81, { overs: 20, projected: atThisRate(i81, { overs: 20 }) }).sub);
+  ok("...the insight: \"Projected 122 at 6.07 an over\"", boardInsights(i81, { overs: 20 }).includes("Projected 122 at 6.07 an over"), boardInsights(i81, { overs: 20 }));
+  ok("...the panel: \"At their rate so far (6.07 an over): 122 off 20 overs\"",
+     scenarioOf({ innings: [i81], index: 0 })?.lines[0]?.text === "At their rate so far (6.07 an over): 122 off 20 overs", scenarioOf({ innings: [i81], index: 0 })?.lines[0]);
+  ok("...RR() and the par line's CRR the same", RR(81, 80) === "6.07" && /CRR 6\.07$/.test(parWords({ inn: i81, chasing: false, target: null, overs: 20,
+     report: { venue: { parAt: 100 } } }) ?? ""));
+  // A chase needing 81 off 80: the board's RRR and the panel's required rate are one figure.
+  const c = { ...inn(52, 40), overs: 20, target: 133, squad: [], conditions: {} };
+  ok("a chase needing 81 off 80: the board's RRR 6.07, and the panel's", /RRR 6\.07/.test(boardFromInnings(c, { target: 133, overs: 20 }).sub)
+     && /^Needs 81 off 80 balls: 6\.07 an over/.test(scenarioOf({ innings: [{ runs: 132, balls: 120, complete: true }, c], index: 1, target: 133 })?.lines[0]?.text ?? ""),
+     boardFromInnings(c, { target: 133, overs: 20 }).sub);
+}
+
 console.log(`\nAT THIS RATE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

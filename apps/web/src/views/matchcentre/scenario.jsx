@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from "react";
-import { scenarioOf } from "@scrbrd/scoring";
+import { lastOvers, scenarioOf } from "@scrbrd/scoring";
 import { T } from "../../design/tokens.js";
 import { SourceLine } from "../../ui/sourceLine.jsx";
 import { SRC_BALLS } from "../../lib/sourceWords.js";
@@ -28,7 +28,8 @@ import { CardHead, Panel } from "./bits.jsx";
  * reader moves it (A3).
  *
  * NO MOTION. The figures change in place; the press feedback is the shared
- * .pressBtn, which prefers-reduced-motion already turns off.
+ * .pressBtn, which prefers-reduced-motion already turns off (and a button at
+ * its bound, aria-disabled, does not press).
  *
  * @param {object} p
  * @param {any[]} p.innings      the match's innings, folded
@@ -49,10 +50,11 @@ export function ScenarioPanel({ innings, index, target, overs, format, events, f
   const [chosen, setChosen] = useState(/** @type {{index: number, halves: number} | null} */ (null));
   const [said, setSaid] = useState("");
   const halves = chosen && chosen.index === index ? chosen.halves : null;
-  const base = useMemo(() => ({ innings, index, target, overs, format, ctx: fold ?? {}, decided, atBreak, estimate }),
-    [innings, index, target, overs, format, fold, decided, atBreak, estimate]);
-  // Folded when the log or the rate moves, not on every tick of the board's runs.
-  const s = useMemo(() => scenarioOf({ ...base, halves, events }), [base, halves, events]);
+  // The last five overs fold the log three times: once per log, not per press of the stepper or tick of the runs.
+  const five = useMemo(() => lastOvers(events, fold ?? {}, index, innings?.[index]), [events, fold, index, innings]);
+  const base = useMemo(() => ({ innings, index, target, overs, format, ctx: fold ?? {}, five, decided, atBreak, estimate }),
+    [innings, index, target, overs, format, fold, five, decided, atBreak, estimate]);
+  const s = useMemo(() => scenarioOf({ ...base, halves }), [base, halves]);
   if (!s) return null;
   const at = s.lines.find((l) => l.key === "at");
   const move = (/** @type {number} */ by) => {
@@ -60,7 +62,7 @@ export function ScenarioPanel({ innings, index, target, overs, format, events, f
     if (next < s.bounds.min || next > s.bounds.max) return;
     setChosen({ index, halves: next });
     // The line as it now reads, for the polite status: the stepper's own line needs no log.
-    setSaid(scenarioOf({ ...base, halves: next, events: null })?.lines.find((l) => l.key === "at")?.text ?? "");
+    setSaid(scenarioOf({ ...base, halves: next })?.lines.find((l) => l.key === "at")?.text ?? "");
   };
   const atMin = s.halves <= s.bounds.min, atMax = s.halves >= s.bounds.max;
   // A function, not a component: a component declared here would be a new type each render, and the
@@ -68,7 +70,7 @@ export function ScenarioPanel({ innings, index, target, overs, format, events, f
   /** @param {-1 | 1} dir  @param {boolean} off  @param {string} label  @param {string} glyph  @param {string} testid */
   const button = (dir, off, label, glyph, testid) => (
     <button type="button" id={`${id}-${dir < 0 ? "down" : "up"}`} data-testid={testid} aria-label={label} aria-disabled={off ? "true" : undefined}
-      onClick={() => { if (!off) move(dir); }} className="pressBtn os-state"
+      onClick={() => { if (!off) move(dir); }} className={off ? "os-state" : "pressBtn os-state"}
       style={{ minWidth: `${T.floor.target}px`, minHeight: `${T.floor.target}px`, padding: 0, display: "inline-flex", alignItems: "center",
         justifyContent: "center", cursor: off ? "default" : "pointer", background: "transparent", border: `1px solid ${T.line.normal}`,
         borderRadius: T.radius.md, color: off ? T.content.tertiary : T.content.primary, fontFamily: T.type.body, fontSize: "20px", fontWeight: 600 }}>
@@ -79,10 +81,15 @@ export function ScenarioPanel({ innings, index, target, overs, format, events, f
   return (
     <Panel testid="mc-scenario">
       <CardHead icon="target">Scenarios</CardHead>
-      <div style={{ padding: `${T.space.sm} ${T.space.lg} ${T.space.md}`, display: "grid", gap: T.space.sm }}>
-        <SourceLine testid="mc-scenario-source" source={SRC_BALLS} scope={`${team}, this innings`} window={s.source.window}
-          denominator={{ n: s.source.balls, unit: "ball" }}/>
-        <ul data-kind={s.kind} style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: T.space.xs }}>
+      {/* One column that may shrink below its content (minmax(0, 1fr)), and words that break anywhere: a
+          long unbroken team name wraps inside the panel, and never widens the track past the card's edge. */}
+      <div style={{ padding: `${T.space.sm} ${T.space.lg} ${T.space.md}`, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: T.space.sm,
+        overflowWrap: "anywhere" }}>
+        <div style={{ minWidth: 0 }}>
+          <SourceLine testid="mc-scenario-source" source={SRC_BALLS} scope={`${team}, this innings`} window={s.source.window}
+            denominator={{ n: s.source.balls, unit: "ball" }}/>
+        </div>
+        <ul data-kind={s.kind} style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: T.space.xs }}>
           {s.lines.map((l) => (
             <li key={l.key} data-testid={`mc-scenario-${l.key}`}
               style={{ ...T.role.body, color: quiet(l.key) ? T.content.secondary : T.content.primary, margin: 0, overflowWrap: "anywhere" }}>
@@ -91,11 +98,11 @@ export function ScenarioPanel({ innings, index, target, overs, format, events, f
                   <span>{at.stepper.lead}</span>
                   <span role="group" aria-label="The rate, runs an over" data-testid="mc-scenario-stepper"
                     style={{ display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
-                    {button(-1, atMin, `Lower the rate to ${((s.halves - 1) / 2).toFixed(1)} an over`, "−", "mc-scenario-down")}
+                    {button(-1, atMin, atMin ? `Lowest rate, ${(s.bounds.min / 2).toFixed(1)} an over` : `Lower the rate to ${((s.halves - 1) / 2).toFixed(1)} an over`, "−", "mc-scenario-down")}
                     <span data-testid="mc-scenario-rate" style={{ ...T.role.figure.md, color: T.content.primary, minWidth: "3.2ch", textAlign: "center" }}>
                       {at.stepper.rate}
                     </span>
-                    {button(1, atMax, `Raise the rate to ${((s.halves + 1) / 2).toFixed(1)} an over`, "+", "mc-scenario-up")}
+                    {button(1, atMax, atMax ? `Highest rate, ${(s.bounds.max / 2).toFixed(1)} an over` : `Raise the rate to ${((s.halves + 1) / 2).toFixed(1)} an over`, "+", "mc-scenario-up")}
                   </span>
                   <output htmlFor={`${id}-down ${id}-up`} aria-live="off" data-testid="mc-scenario-outcome">{at.stepper.tail}</output>
                 </span>

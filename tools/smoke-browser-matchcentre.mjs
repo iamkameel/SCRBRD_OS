@@ -271,16 +271,18 @@ try {
 
   group("GA-I29: scenarios — from 12 legal balls, a stepper a keyboard drives, a void that moves the outcome and keeps the rate");
   {
-    // A first innings of twenty overs, live, with no ground (db/133: the T10 below is on the Oval).
+    // A first innings of twenty overs, live, with no ground (db/133: the T10 below is on the Oval). The visitors bat,
+    // under one long unbroken name, so the panel's Scope is the worst case a narrow phone meets (review S5).
+    const LONG = "Hoërskool_Waterkloof_Pretoria_Oos_Onder14B_Ontwikkelingspan";
     const scId = (await q(
       `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
-       values ($1, '1XI', 'Scenario Test Opponent', $2, now() - interval '30 minutes', 'cricket', 'T20', 20, 'live') returning id`, [HIL, null]))[0].id;
-    await q(`insert into match_toss (match_id, school_id, won_by, decision) values ($1, $2, 'home', 'bat')`, [scId, HIL]);
+       values ($1, '1XI', $3, $2, now() - interval '30 minutes', 'cricket', 'T20', 20, 'live') returning id`, [HIL, null, LONG]))[0].id;
+    await q(`insert into match_toss (match_id, school_id, won_by, decision) values ($1, $2, 'home', 'field')`, [scId, HIL]);
     /** @type {any[]} */
     const scLog = [];
     let sn = 0;
     const addSc = (ev) => { const e = { ...ev, innings: 0, id: `mc-sc-${++sn}`, clientTs: Date.parse("2026-11-12T08:00:00Z") + sn * 20000 }; scLog.push(e); return e; };
-    addSc(inningsStart({ battingTeam: "1XI", bowlingTeam: "Scenario Test Opponent", teamKey: "1XI", bowlingTeamKey: "Scenario Test Opponent",
+    addSc(inningsStart({ battingTeam: LONG, bowlingTeam: "1XI", teamKey: LONG, bowlingTeamKey: "1XI",
       squad: Array.from({ length: 11 }, (_, k) => ({ id: `sc${k}`, name: `Scen ${k + 1}` })), bowlingSquad: [], overs: 20 }));
     addSc(batters({ striker: "sc0", nonStriker: "sc1" }));
     addSc(bowler({ bowler: "Scen Bowler" }));
@@ -310,8 +312,8 @@ try {
     const hand = await tid(S, "mc-scenario-hand").innerText().catch(() => "");
     ok('..."10 wickets in hand · 108 balls left (18 overs)"', hand === "10 wickets in hand · 108 balls left (18 overs)", hand);
     const src = (await tid(S, "mc-scenario-source").innerText().catch(() => "")).replace(/\s+/g, " ");
-    ok(`...the source line: scored balls, Hilton's innings, 2 of 20 overs, from 12 balls ("${src}")`,
-       /Source Scored balls/.test(src) && /Scope Hilton College 1XI, this innings/.test(src) && /Window 2 of 20 overs/.test(src) && /Basis From 12 balls\./.test(src));
+    ok(`...the source line: scored balls, the side batting, 2 of 20 overs, from 12 balls ("${src}")`,
+       /Source Scored balls/.test(src) && src.includes(`Scope ${LONG}, this innings`) && /Window 2 of 20 overs/.test(src) && /Basis From 12 balls\./.test(src));
     ok("...the footnote", (await tid(S, "mc-scenario-footnote").innerText().catch(() => "")).startsWith("Arithmetic on the score so far, not a forecast."));
     const rate = () => tid(S, "mc-scenario-rate").innerText().catch(() => "");
     const outcome = () => tid(S, "mc-scenario-outcome").innerText().catch(() => "");
@@ -361,7 +363,16 @@ try {
     ok("the panel names no player and prints no percentage", !/Scen \d|%|chance|likely/.test(words), words);
     await S.setViewportSize({ width: 320, height: 700 });
     await S.waitForTimeout(300);
-    ok("at 320 wide nothing in the panel is wider than it", await S.evaluate(() => { const el = document.querySelector('[data-testid="mc-scenario"]'); return !!el && el.scrollWidth <= el.clientWidth + 1; }));
+    const at320 = await S.evaluate(() => {
+      const el = document.querySelector('[data-testid="mc-scenario"]');
+      if (!el) return null;
+      const edge = el.getBoundingClientRect().right;
+      // Every line, the source line's scope among them, ends inside the card: nothing is cut off by its overflow.
+      const cut = [...el.querySelectorAll('[data-testid^="mc-scenario-"], [data-part]')].filter((x) => x.getBoundingClientRect().right > edge + 1 || x.scrollWidth > x.clientWidth + 1)
+        .map((x) => x.getAttribute("data-testid") ?? x.getAttribute("data-part"));
+      return { wide: el.scrollWidth > el.clientWidth + 1, cut, page: document.documentElement.scrollWidth > innerWidth + 1 };
+    });
+    ok("at 320 wide, with the long unbroken name, every line of the panel wraps inside it", !!at320 && !at320.wide && at320.cut.length === 0, JSON.stringify(at320));
     ok("no console errors (scenarios)", sc.errors.length === 0, sc.errors.join(" | "));
     await sc.ctx.close();
     await q(`update match set status = 'complete' where id = $1`, [scId]);
@@ -1276,6 +1287,37 @@ try {
     const pageErrors = bd.errors.filter((e) => /^pageerror/.test(e));
     ok("no uncaught page error — every throw was caught", pageErrors.length === 0, pageErrors.join(" | "));
     await bd.ctx.close();
+
+    // GA-I29 (review S2): the scenario panel has a boundary of its own with no card. If it fails (its chunk
+    // will not load, or it throws) the Summary stands exactly as it was: the board, and no failure card.
+    {
+      const ebId = (await q(
+        `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
+         values ($1, '1XI', 'Boundary Test Opponent', $2, now() - interval '20 minutes', 'cricket', 'T20', 20, 'live') returning id`, [HIL, null]))[0].id;
+      await q(`insert into match_toss (match_id, school_id, won_by, decision) values ($1, $2, 'home', 'bat')`, [ebId, HIL]);
+      let en = 0;
+      const atE = (ev) => ({ ...ev, innings: 0, id: `mc-eb-${++en}`, clientTs: Date.parse("2026-11-12T09:00:00Z") + en * 20000 });
+      await writeEvents(q, ebId, [
+        atE(inningsStart({ battingTeam: "1XI", bowlingTeam: "Boundary Test Opponent", teamKey: "1XI", bowlingTeamKey: "Boundary Test Opponent",
+          squad: Array.from({ length: 11 }, (_, k) => ({ id: `eb${k}`, name: `Edge ${k + 1}` })), bowlingSquad: [], overs: 20 })),
+        atE(batters({ striker: "eb0", nonStriker: "eb1" })), atE(bowler({ bowler: "Edge Bowler" })),
+        ...[1, 0, 4, 1, 0, 2].map((v) => atE(ball({ value: v }))), atE(bowler({ bowler: "Edge Bowler Two" })),
+        ...[1, 1, 0, 6, 1, 2].map((v) => atE(ball({ value: v }))),
+      ]);
+      const sl = [];
+      const se = await open({ init: `window.__SCRBRD_TEST_THROW__ = "scenarios";` });
+      se.page.on("console", (m) => { if (/^\[panel\]/.test(m.text())) sl.push(m.text()); });
+      ok("the director of sport signs in", await signIn(se.page, /sarah@example\.invalid|Director/));
+      ok("a live fixture at twelve balls opens", await openMatch(se.page, ebId));
+      await afterReads(se.page, 1500);
+      ok("the scenario panel, made to throw, is simply absent: no card, no alert", await tid(se.page, "mc-scenario").count() === 0
+         && await tid(se.page, "panel-error").count() === 0);
+      ok("...and the Summary stands: the board, its \"At this rate\", the latest balls", await tid(se.page, "mc-board").count() === 1
+         && /At this rate: 190/.test(await tid(se.page, "mc-board-sub").innerText().catch(() => "")) && await tid(se.page, "mc-latest").count() === 1);
+      ok("...the failure logged once, by name", sl.length === 1 && /^\[panel\] scenarios could not be shown: test throw$/.test(sl[0] ?? ""), sl.join(" | "));
+      await se.ctx.close();
+      await q(`update match set status = 'complete' where id = $1`, [ebId]);
+    }
 
     // And the ordinary build does not carry the hook at all.
     WEB_ROOT = "apps/web/dist";
