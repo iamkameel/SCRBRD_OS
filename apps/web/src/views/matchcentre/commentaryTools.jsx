@@ -114,7 +114,7 @@ function Drill({ drill, lines, onAll }) {
         <strong>{what}</strong>{` · ${plural(drill.runs, "run")} · ${plural(balls, "ball")}${other ? ` and ${plural(other, "award")}` : ""}, listed below`}
       </p>
       <button type="button" data-testid="mc-drill-all" onClick={onAll} className="pressBtn os-state"
-        style={{ minHeight: "44px", padding: `0 ${T.space.md}`, borderRadius: T.radius.pill, cursor: "pointer", background: "transparent",
+        style={{ minHeight: "48px", padding: `0 ${T.space.md}`, borderRadius: T.radius.pill, cursor: "pointer", background: "transparent",
           border: `1px solid ${T.line.normal}`, color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
         Every ball
       </button>

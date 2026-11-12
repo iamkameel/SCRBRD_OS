@@ -125,7 +125,8 @@ function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fi
     return drill ? (
       <button type="button" data-testid={testid} data-balls={ids.length} onClick={() => onArea(area)} className="pressBtn os-state"
         aria-label={`${label}: ${runs} run${runs === 1 ? "" : "s"} from ${ids.length} ball${ids.length === 1 ? "" : "s"}. Show them in the commentary`}
-        style={{ ...box, minHeight: T.floor.target, cursor: "pointer", background: "transparent", border: "none",
+        // It wraps as the row it replaces does (200% zoom on a phone): no wider than its column.
+        style={{ ...box, flexWrap: "wrap", minWidth: 0, boxSizing: "border-box", minHeight: "48px", cursor: "pointer", background: "transparent", border: "none",
           borderBottom: box.borderBottom, textAlign: "left", font: "inherit" }}>
         {inner}
       </button>
@@ -221,11 +222,11 @@ function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fi
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)", gap: T.space.md, marginTop: T.space.md }}>
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div style={{ ...T.role.label, color: T.content.secondary, marginBottom: T.space.xs }}>Off side areas</div>
               {offAreas.map((ar) => <AreaCell key={ar.key} area={ar}/>)}
             </div>
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div style={{ ...T.role.label, color: T.content.secondary, marginBottom: T.space.xs }}>On side areas</div>
               {legAreas.map((ar) => <AreaCell key={ar.key} area={ar}/>)}
             </div>

@@ -201,7 +201,7 @@ function ManhattanChart({inn,match,events=null,projection=null,onOver=null}){
           <label style={{display:"flex",gap:T.space.sm,alignItems:"center",flex:"1 1 200px",minWidth:0}}>
             <span style={{...T.role.label,color:T.content.secondary}}>Balls of</span>
             <select data-testid="manhattan-pick" value={pick} onChange={e=>setPick(e.target.value)}
-              style={{flex:"1 1 auto",minWidth:0,minHeight:"44px",padding:`0 ${T.space.md}`,borderRadius:T.radius.md,border:`1px solid ${T.line.normal}`,
+              style={{flex:"1 1 auto",minWidth:0,minHeight:"48px",padding:`0 ${T.space.md}`,borderRadius:T.radius.md,border:`1px solid ${T.content.tertiary}`,
                 background:T.surface.raised,color:T.content.primary,fontFamily:T.type.body,fontSize:"16px",boxSizing:"border-box"}}>
               <option value="">An over…</option>
               {ovData.map(o=><option key={o.over} value={String(o.over)}>{`Over ${o.over+1} · ${o.runs} run${o.runs===1?"":"s"}`}</option>)}
@@ -209,7 +209,7 @@ function ManhattanChart({inn,match,events=null,projection=null,onOver=null}){
           </label>
           <button type="button" data-testid="manhattan-show" disabled={pick===""} className="pressBtn os-state"
             onClick={()=>{const o=ovData.find(x=>String(x.over)===pick);if(o)onOver(o);}}
-            style={{minHeight:"44px",padding:`0 ${T.space.md}`,borderRadius:T.radius.pill,cursor:pick===""?"default":"pointer",background:"transparent",
+            style={{minHeight:"48px",padding:`0 ${T.space.md}`,borderRadius:T.radius.pill,cursor:pick===""?"default":"pointer",background:"transparent",
               border:`1px solid ${T.line.normal}`,color:pick===""?T.content.secondary:T.content.primary,fontFamily:T.type.body,fontSize:"14px",fontWeight:600}}>
             Show in commentary
           </button>
