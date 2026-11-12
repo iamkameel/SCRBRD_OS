@@ -8,6 +8,12 @@
  *   D1  two reads, not a new one: `career` and `career_by_season` for the
  *       figures, `matchups` and `matchup_coverage` for each batter, the same
  *       reads Profiles opens.
+ *   D10 the pupil's card, kept exactly as before REACH-D2 (Kameel, 11 Nov
+ *       and 12 Nov 2026: "career and match-ups too"): his picker is his
+ *       side's names from `players` (the roster he already reads); the
+ *       team-mate's career, seasons and match-ups are each read NAMING him
+ *       (`playerId`, `batterId`), the one way the server gives a pupil
+ *       another boy's figures (REACH_ONE_MATE); unnamed, his reads are his own.
  *   D2  the picker offers only players the reader may open today, under the
  *       assignment that carries Compare. A pupil's is his own side, and he is
  *       the left column.
@@ -42,13 +48,14 @@ import {
 /**
  * One read that waits for its parameter: no player chosen, no request at all,
  * rather than useLive's unfiltered read of every batter's match-ups.
+ * `{}` reads with no parameter; null does not read at all.
  * @param {string} resource  @param {Record<string, string> | null} params  @param {number} nonce
  */
 function useReadFor(resource, params, nonce) {
   const query = params ? readQuery(params) : null;
-  const [state, setState] = useState({ rows: [], live: false, loading: !!query, error: null, status: null });
+  const [state, setState] = useState({ rows: [], live: false, loading: query !== null, error: null, status: null });
   useEffect(() => {
-    if (!query) { setState({ rows: [], live: false, loading: false, error: null, status: null }); return; }
+    if (query === null) { setState({ rows: [], live: false, loading: false, error: null, status: null }); return; }
     let cancelled = false;
     setState((s) => ({ ...s, loading: true }));
     readOnce(resource, query).then((next) => { if (!cancelled) setState(next); });
@@ -160,11 +167,14 @@ export function Compare({ role, self = null }) {
   const [season, setSeason] = useState("");
   const careerRead = useLive("career", role, nonce);
   const seasonsRead = useLive("career_by_season", role, nonce);
+  // A pupil's picker is his side's roster, names and ids only: his unnamed
+  // career read is his own row (REACH-D2), so it is never built from that.
+  const rosterRead = useReadFor("players", pupil ? {} : null, nonce);
 
   const offered = useMemo(() => (pupil
-    ? teamMates(careerRead.rows, self)
+    ? teamMates(rosterRead.rows, self)
     : pickable(careerRead.rows, compareScopes(profile()?.assignments ?? []))),
-  [careerRead.rows, pupil, self]);
+  [careerRead.rows, rosterRead.rows, pupil, self]);
 
   const aId = pupil ? self.id : aPick;
   // A choice the picker no longer offers (a re-read after he left the side) is no choice.
@@ -176,9 +186,13 @@ export function Compare({ role, self = null }) {
   const mB = useReadFor("matchups", ready ? { batterId: bId } : null, nonce);
   const cA = useReadFor("matchup_coverage", ready ? { batterId: aId } : null, nonce);
   const cB = useReadFor("matchup_coverage", ready ? { batterId: bId } : null, nonce);
+  // The team-mate's career and seasons, read naming him (REACH_ONE_MATE).
+  const mateCareer = useReadFor("career", pupil && ready ? { playerId: bId } : null, nonce);
+  const mateSeasons = useReadFor("career_by_season", pupil && ready ? { playerId: bId } : null, nonce);
 
   // D14: the time the reads answered, set when the last of them settles.
-  const settled = !careerRead.loading && !seasonsRead.loading && !mA.loading && !mB.loading && !cA.loading && !cB.loading;
+  const settled = !careerRead.loading && !seasonsRead.loading && !mA.loading && !mB.loading && !cA.loading && !cB.loading
+    && !rosterRead.loading && !mateCareer.loading && !mateSeasons.loading;
   const [asAt, setAsAt] = useState(/** @type {Date | null} */ (null));
   useEffect(() => { if (settled) setAsAt(new Date()); }, [settled, nonce, aId, bId]);
 
@@ -192,14 +206,17 @@ export function Compare({ role, self = null }) {
     );
   }
 
-  const careerSaid = readState(careerRead, { what: "the career figures" });
+  const careerSaid = readState(pupil ? rosterRead : careerRead, { what: pupil ? "your side" : "the career figures" });
   const meRow = pupil ? project(careerRead.rows.find((r) => r.id === self.id) ?? { id: self.id, name: self.name, team: self.team }) : null;
   const A = pupil ? meRow : offered.find((p) => p.id === aId) ?? null;
-  const B = offered.find((p) => p.id === bId) ?? null;
-  const seasons = ready ? sharedSeasons(seasonsRead.rows, aId, bId) : [];
+  const picked = offered.find((p) => p.id === bId) ?? null;
+  // His career row, read naming him; the roster's name where it has none.
+  const B = pupil ? (picked ? { ...picked, ...(project(mateCareer.rows.find((r) => r.id === bId)) ?? {}) } : null) : picked;
+  const seasonRows = pupil ? [...seasonsRead.rows, ...mateSeasons.rows] : seasonsRead.rows;
+  const seasons = ready ? sharedSeasons(seasonRows, aId, bId) : [];
   const inSeason = season && seasons.includes(season) ? season : "";
-  const figA = inSeason ? seasonRow(seasonsRead.rows, aId, inSeason) : A;
-  const figB = inSeason ? seasonRow(seasonsRead.rows, bId, inSeason) : B;
+  const figA = inSeason ? seasonRow(seasonRows, aId, inSeason) : A;
+  const figB = inSeason ? seasonRow(seasonRows, bId, inSeason) : B;
   const window = inSeason ? seasonWindow(inSeason) : WINDOW_ALL;
   const names = A && B ? `${A.name} and ${B.name}` : "";
   const bf = (r) => (r?.ballsFaced === undefined ? 0 : r.ballsFaced);
@@ -238,7 +255,7 @@ export function Compare({ role, self = null }) {
         <ReadState compact read={careerSaid} onRetry={() => setNonce((n) => n + 1)} testId="compare-read-state"/>
         {careerSaid.state === "ok" && offered.length < (pupil ? 1 : 2) && (
           <p data-testid="compare-none" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>
-            {pupil ? "No team-mate on your side has a record you may open yet." : "There are not two players here whose figures you may open."}
+            {pupil ? "No team-mate is on your side's list yet." : "There are not two players here whose figures you may open."}
           </p>
         )}
         {careerSaid.state === "ok" && !ready && offered.length >= (pupil ? 1 : 2) && (

@@ -5,6 +5,7 @@ import { oversOf } from "../lib/matchCentre.js";
 import { bowlingPanel, breakPanel, fallOfWicket, overRows, partnershipPanel, pretossPanel, resultPanel, stoppedPanel } from "./data.js";
 import { wormOf } from "../lib/chartSeries.js";
 import { Worm } from "../ui/charts/worm.jsx";
+import { SourcedPlain, ballsLine } from "../ui/sourced.jsx";
 
 /**
  * The ground display's panels (SCRBRD-133 §2.2): 1 the worm with the par
@@ -59,8 +60,12 @@ function WormPanel({ match, played, index, events, report }) {
   return (
     <section data-testid="display-panel-worm" aria-label="Worm">
       <h2 className="dv-title">Worm</h2>
-      <Worm lines={w.lines} balls={w.balls} target={w.target} par={w.par} revised={w.revised} umpiresPar={w.umpiresPar}
-        palette={BOARD_PALETTE} said={w.said} height="max(110px, 30vmin)" textClass="dv-small" testid="display-worm"/>
+      {/* CRI-2.2: the line in the display's own ink and class, under the worm. */}
+      <SourcedPlain line={ballsLine(played.filter(Boolean).length > 1 ? "Both innings" : "This innings", played.reduce((n, x) => n + (x?.balls ?? 0), 0))}
+        className="dv-small" testid="source-line-display-worm">
+        <Worm lines={w.lines} balls={w.balls} target={w.target} par={w.par} revised={w.revised} umpiresPar={w.umpiresPar}
+          palette={BOARD_PALETTE} said={w.said} height="max(110px, 30vmin)" textClass="dv-small" testid="display-worm"/>
+      </SourcedPlain>
     </section>
   );
 }

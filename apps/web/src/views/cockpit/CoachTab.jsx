@@ -24,6 +24,7 @@ import { FeedDrawer } from "./FeedDrawer.jsx";
 import { PickSide } from "./PickSide.jsx";
 import { ThePlan } from "./ThePlan.jsx";
 import { useBowlerDay, useCockpit, useFeed } from "./useCockpit.js";
+import { Sourced, ballsLine, shotsCaptured } from "../../ui/sourced.jsx";
 
 /**
  * THE COACH TAB (SCRBRD-136 phase A; docs/design/SCRBRD-136-137_coach_cockpit_and_feed.md
@@ -410,6 +411,8 @@ function DuringAndAfter({ match, gate, innings, overs, result, commentary, phone
                 the log carries. No batter chooser (the wheel stays the whole
                 innings, as it was) and no match chooser (one match). */}
             <ErrorBoundary name="coach wheel analysis">
+              <Sourced line={ballsLine("Their innings", shown.ballLog.length,
+                shotsCaptured(shown.ballLog.filter((b) => b.theta != null || b.seg != null).length, shown.ballLog.length))} testid="source-line-coach-wheel">
               <WagonAnalysisPanel
                 balls={shown.ballLog}
                 handOf={(strikerId) => batHandOf(o, strikerId)}
@@ -417,6 +420,7 @@ function DuringAndAfter({ match, gate, innings, overs, result, commentary, phone
                 title="Where they have scored"
                 showPercent={false}
               />
+              </Sourced>
             </ErrorBoundary>
           </div>
         );
