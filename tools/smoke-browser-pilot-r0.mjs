@@ -96,9 +96,6 @@ await new Promise((r) => web.listen(WEB_PORT, () => r(null)));
 
 // The names this walk types: made up. Players never go in a ball; with the
 // fallback on they go nowhere at all.
-const A = ["Alpha One", "Alpha Two", CANARY, "Alpha Four"];
-const B = ["Bravo One", "Bravo Two", "Bravo Three", "Bravo Four"];
-const PLAYERS = [...A, ...B, "Canarytest"];
 
 const browser = await chromium.launch({ ...launchOptions() });
 const errors = [];
@@ -173,47 +170,6 @@ async function openScorer(p) {
   await p.page.setViewportSize({ width: 390, height: 844 });
   await afterReads(p.page, 600);
 }
-/** Back to the start screen and in again, so it asks the server afresh. @param {Awaited<ReturnType<typeof phone>>} p */
-async function freshStart(p) {
-  await p.tap("start-practice");
-  await p.tap("practice-back");
-  await afterReads(p.page, 600);
-}
-
-/**
- * The setup, start to pad. `choose` taps a choice on step 0 when given.
- * @param {Awaited<ReturnType<typeof phone>>} p
- * @param {{choose?: "live" | "phone", home: string[], away: string[], seeNotice?: (t: string) => void}} o
- */
-async function setUp(p, o) {
-  await p.tap("start-practice");
-  if (o.choose) await p.tap(o.choose === "live" ? "pilot-choice-live" : "pilot-choice-phone");
-  await p.tap("practice-overs-20");
-  await p.tap("practice-next");
-  await p.tid("practice-school-0").fill("Hilton");
-  await p.tid("practice-division-0").selectOption("U13");
-  await p.tap("practice-class-0-B");
-  await p.tid("practice-school-1").fill("Kearsney");
-  await p.tid("practice-division-1").selectOption("U13");
-  await p.tap("practice-class-1-B");
-  await p.tap("practice-next");
-  o.seeNotice?.(await p.tid("pilot-notice").innerText().catch(() => ""));
-  await p.tid("practice-paste-0").fill(o.home.join("\n"));
-  await p.tap("practice-add-0");
-  await p.tap("practice-next");
-  await p.tid("practice-paste-1").fill(o.away.join("\n"));
-  await p.tap("practice-add-1");
-  await p.tap("practice-next");
-  await p.page.locator("button[role=radio]", { hasText: "Hilton U13B" }).first().click();
-  await p.page.locator("button[role=radio]", { hasText: /^Bat$/ }).click();
-  await p.click(/Confirm Toss/);
-  await p.page.locator("button", { hasText: o.home[0] }).first().click({ timeout: 3000 });
-  await p.page.locator("button", { hasText: o.home[1] }).first().click({ timeout: 3000 });
-  await p.click(/Select Opening Bowler/);
-  await p.page.locator("button", { hasText: o.away[0] }).first().click();
-  await p.click(/Start Match/);
-  await p.page.waitForTimeout(1200);
-}
 /** The one-tap keys. @param {Awaited<ReturnType<typeof phone>>} p */
 async function basic(p) {
   if (await p.has("basic-pad")) return true;
@@ -231,9 +187,6 @@ async function serverEvents(/** @type {string} */ uuid, /** @type {number} */ n,
   }
   return got;
 }
-const pilotIdOn = async (/** @type {Awaited<ReturnType<typeof phone>>} */ p) =>
-  ((await p.keys()).find((k) => /\/pilot:meta:pilot-/.test(k)) ?? "").replace(/^.*pilot:meta:pilot-/, "") || null;
-
 // ── The walks' own helpers ───────────────────────────────────────────────
 
 /** Taps under 43.5 px and text under 12 px, among what is on screen now. @param {{page: import("playwright-core").Page}} p */
