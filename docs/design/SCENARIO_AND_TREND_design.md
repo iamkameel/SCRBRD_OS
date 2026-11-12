@@ -204,7 +204,7 @@ Two panels on the same tab, under the season bars, each over a read of its own (
 | **Window** | one school season; innings ordered by `ended_at`, match and innings, the form guide's order (`career`'s `form`) |
 | **Denominator** | innings (the line), balls faced (the strike rate) |
 | **Minimum before the line shows** | **6 innings in the season with balls recorded, and 30 balls faced in the five-innings window** (`MIN_BALLS_FACED`, rating.mjs). Six because a rolling five needs a sixth innings to make two points of a line. Points are drawn from the first innings |
-| **Scorebook innings** | `player_innings` is the ball log's (`ball_event_career`), so an innings imported from a scorebook is in the season bars' total (`book_innings`, `career_by_season`) but not here innings by innings. The panel says so (B3) |
+| **Scorebook innings** | *Corrected by B1 (13 Nov 2026).* `player_innings` carries a scorebook's batting rows as innings of their own (db/64, db/87: its `summary_batting_line` arm), so an innings imported from a scorebook **is** returned innings by innings, marked `source = 'scorebook'`, with `balls_faced` NULL where the book recorded no balls (never 0). B2 draws it as a point, and leaves a NULL `balls_faced` out of the strike rate and out of the 30-ball floor (the innings counts towards the 6, its balls towards nothing). Summed over a season, the innings are `career_by_season`'s runs, and the scorebook ones its `book_innings` (the trend walk proves both) |
 
 ### B2.3 · Bowling, innings by innings: not in slice 2
 
@@ -218,7 +218,7 @@ Every panel carries `<SourceLine>`, whose `floor` turns a small denominator into
 |---|---|
 | Player, under 6 innings | Source line basis: "Only 4 innings, fewer than the 6 this needs. A guide, not a result." Note: "The line starts once he has batted 6 times this season. Until then each innings is shown on its own." |
 | Player, 6 innings but under 30 balls in the window | basis: "Only 22 balls faced in his last five innings, fewer than the 30 this needs. A guide, not a result." |
-| Player, scorebook innings in the season | note: "2 innings from a scorebook are in the season's total but are not shown one by one." |
+| Player, scorebook innings in the season | *Corrected by B1:* they are shown one by one (B2.2). The note says only what the book lacks, for B2 to word: e.g. "2 innings are from a scorebook; 1 has no balls recorded, so it is not in the strike rate." |
 | Player, did not bat this season | "Did not bat this season." No axis, no zero |
 | Side, under 5 matches | "Only 3 completed matches, fewer than the 5 this needs. A guide, not a result." Note: "The line starts at the 5th match. Until then each match is shown on its own." |
 | Side, a rain-cut match | the point says its allotment: "16 overs (revised)" |
@@ -249,6 +249,8 @@ Both views skip a void and its target on every read (`ball_event_live`, `ball_ev
 | **The other school** | nothing | AV-D3 cross-school gates |
 | **The public** | nothing, not even the side's line | A4 (no page per player), A3 (no leaderboards) |
 | **The side's season panel** (B2.1) | everyone who may read the side's fixtures, signed in; not public | team-level totals already on scorecards they may read (Q10) |
+
+**Who "staff" is, as B1 built it (13 Nov 2026).** The staff arm of `innings_by_season`'s gate is `player.roster.read` or `analytics.read`, asked about the boy's own side or the side he played for in the match (never `'*'`), with no fixture, and never for a reader who is a pupil (`not app_reader_is_pupil()`, the safe default, pending Kameel). The roles that pass: coach, assistant coach and team manager of his side; director of sport, principal, the office (schooladmin), sportsadmin and analyst, school-wide; superadmin, whose every read is logged platform-wide. A member of staff of another side who is also a parent reads his own boy's line and no team-mate's. A scorer, medical, fitness, media, scout, enquiry and spectator read no boy's line, though they may read `career`. `read.test.mjs` holds the exact set.
 
 **A finding from slice 1, for the REACH-D2 build, not fixed here.** Slice 1's "side's leaders" mode shows a pupil his team-mates' season runs and wickets, because `career_by_season` gives a pupil his side's rows (REACH M5). Under the 7 Nov close, only the captain keeps the side's season figures. Hiding the mode in the view would be cosmetic; the read is what discloses, and REACH §6.6 owns it. Slice B1 below must not widen it.
 

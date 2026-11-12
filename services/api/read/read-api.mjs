@@ -3167,6 +3167,173 @@ export const READ_QUERIES = {
   },
 
   /**
+   * ONE BOY'S SEASON, INNINGS BY INNINGS (GA-I23 slice 2, B1;
+   * docs/design/SCENARIO_AND_TREND_design.md §B2.2, §B4, §B5).
+   *
+   * One row per innings he batted: runs, balls faced, out or not out, oldest
+   * first (the form guide's order, `career`'s `form`, turned round for a
+   * line). Over player_innings (db/87), the view `career`'s form guide
+   * reads, joined to `match` for the season by the one rule (db/44) and to
+   * `player` for the name. Nothing is stored and nothing is cached: both
+   * views skip a void and its target, so a corrected ball is gone from the
+   * next read (GA-I36 §3).
+   *
+   * THE SCOPE IS `career`'s, ROW FOR ROW, AND THEN NARROWED PER BOY.
+   * player_innings is security_invoker over ball_event_career, and `match`
+   * and `player` are policed, so a row comes back only where `career` would
+   * give this reader the same innings. On top of that, and only ever
+   * narrowing it (an AND, never an OR), the boy himself is gated, from day
+   * one (Kameel, Q7, 12 Nov 2026; REACH §6.6 path (b), for this read only):
+   *   - is_family_of(): his own self link, or a guardian's verified, live
+   *     link to him. A pending, ended or revoked link reads nothing, and a
+   *     pad's credential never does;
+   *   - or, for a reader who is not a pupil, a staff capability about HIS
+   *     SIDE: player.roster.read or analytics.read, asked at his school for
+   *     his own side (p.team_code) or for the side he played for in that
+   *     match (his school's end of it, so a boy playing up is his match
+   *     side's staff's too), and with NO fixture, so an assignment narrowed
+   *     to one match (a scorer, a pupil scoring, an assistant coach for one
+   *     fixture) never passes. A school-wide assignment (team NULL) passes
+   *     at every side of its school. The roles that hold either capability,
+   *     held exactly by read.test.mjs: coach, assistantcoach, teammanager
+   *     (their own side), directorofsport, principal, schooladmin (the
+   *     office), sportsadmin, analyst (school-wide), and superadmin (every
+   *     school; its every read is logged platform-wide). Neither capability
+   *     is in the `player` bundle, `guardian` or `selfaccess`.
+   * So a pupil reads his own innings and no team-mate's: the captain
+   * included (Kameel, 11 Nov: "the side's season figures, nothing else"; an
+   * innings-by-innings line is not season figures), and a pupil given a
+   * staff assignment too (not app_reader_is_pupil(), the safe default,
+   * pending Kameel). A parent reads her own child's; a member of staff of
+   * another side who is also a parent of a boy on this one reads that boy's
+   * and none of his team-mates' (the staff arm asks about the boy's side,
+   * never '*'). The other school's readers fail the staff arm (another
+   * school) and the family arm (not his family). The public has no token,
+   * and there is no public route.
+   *
+   * ONE BOY PER READ. `playerId` is required: a parent reads one child at a
+   * time (STEP4 decision 1, never two children merged), and nobody gets a
+   * side's worth of innings lines in one answer.
+   *
+   * `source` says where an innings came from: `scored` (the ball log) or
+   * `scorebook` (a summary card, db/63/64, whose batting row player_innings
+   * carries as its own row). An innings is the scorebook's where the
+   * innings was summarised, the rule innings_result_state() reads. A
+   * scorebook innings may have no balls (`balls_faced` NULL, never 0).
+   * Summed over a season, these rows are career_by_season's runs, and the
+   * scorebook ones its `book_innings` (the trend walk proves both).
+   *
+   * Leaves as no file (exports.mjs, his figures across matches).
+   */
+  innings_by_season: {
+    text: `select i.player_id, p.full_name, p.team_code, p.school_id,
+                  school_season_of(m.starts_at)                                    as season,
+                  school_season_of(m.starts_at) = (select school_season_of(now())) as current_season,
+                  i.match_id, i.innings, i.ended_at,
+                  i.runs::int                                                      as runs,
+                  i.balls_faced::int                                               as balls_faced,
+                  coalesce(i.out, false)                                           as out,
+                  case when exists (select 1 from ball_event_career e
+                                     where e.match_id = i.match_id and e.innings = i.innings
+                                       and e.kind = 'innings_summary')
+                       then 'scorebook' else 'scored' end                          as source
+             from player_innings i
+             join player p on p.id = i.player_id
+             join match m on m.id = i.match_id
+             -- The side he played for in this match: his school's end of it.
+             cross join lateral (
+               select case when m.school_id = p.school_id then m.team_code
+                           when m.away_school_id = p.school_id then m.away_team_code end as team) his
+            where i.player_id = $1
+              and ($2::text is null or school_season_of(m.starts_at) = $2)
+              -- The per-boy gate (B5, Q7), asked for each innings row: one
+              -- boy per read, a season's innings, so a few dozen asks.
+              and (is_family_of(p.id)
+                   or ((select not app_reader_is_pupil())
+                       and (app_can('player.roster.read', p.school_id, p.team_code, p.id, NULL::uuid)
+                            or app_can('player.roster.read', p.school_id, his.team, p.id, NULL::uuid)
+                            or app_can('analytics.read', p.school_id, p.team_code, p.id, NULL::uuid)
+                            or app_can('analytics.read', p.school_id, his.team, p.id, NULL::uuid))))
+            order by i.ended_at, i.match_id, i.innings`,
+    params: q => [uuidParam(q, "playerId", true), seasonParam(q)],
+  },
+
+  /**
+   * A SIDE'S SEASON, MATCH BY MATCH (GA-I23 slice 2, B1;
+   * docs/design/SCENARIO_AND_TREND_design.md §B2.1, §B4, Q10).
+   *
+   * One row per completed limited-overs fixture of the side (`schoolId` and
+   * `teamCode`, at either end of the fixture), oldest first: its runs,
+   * wickets and legal balls for and against, from match_live_score (per
+   * match per innings, a scorebook card's figures where the innings was
+   * summarised), and the allotment each innings was played to, with
+   * whether it was revised ("16 overs (revised)"), from match_result()'s
+   * innings, which also says which side batted each innings and how the
+   * match ended. Legal balls are the balls actually bowled: an all-out side
+   * is not charged its allotment (Q10); net run rate's convention belongs to
+   * the standings table. A super over is not the match's runs (db/71).
+   *
+   * TEAM-LEVEL: a side's totals, the figures on scorecards the reader may
+   * already read, and no child named. SCOPE: the reader's fixtures, through
+   * `match`'s own policy (match_read), and the invoker live score over the
+   * log they may read; so a side's season is signed in only (there is no
+   * public route), and a reader at another school gets only the fixtures
+   * his side played against this one. A match whose innings he cannot read
+   * comes back with its figures NULL, never zero.
+   *
+   * `result` is from the side's end: won, lost, tied, no_result, draw,
+   * abandoned, or match_result()'s own word otherwise.
+   */
+  side_season: {
+    text: `select m.id as match_id, m.starts_at,
+                  school_season_of(m.starts_at)                                    as season,
+                  school_season_of(m.starts_at) = (select school_season_of(now())) as current_season,
+                  k.side,
+                  case when k.side = 'home'
+                       then coalesce(fixture_side_label(m.away_school_id, m.away_team_code), m.opponent)
+                       else fixture_side_label(m.school_id, m.team_code) end      as opponent,
+                  m.overs                                                          as scheduled_overs,
+                  (fi.v->>'innings')::int                                          as for_innings,
+                  f.runs::int as for_runs, f.wickets::int as for_wickets, f.legal_balls::int as for_balls,
+                  (fi.v->>'overs')::int                                            as for_overs,
+                  coalesce((fi.v->>'revised')::boolean, false)                     as for_revised,
+                  (ai.v->>'innings')::int                                          as against_innings,
+                  a.runs::int as against_runs, a.wickets::int as against_wickets, a.legal_balls::int as against_balls,
+                  (ai.v->>'overs')::int                                            as against_overs,
+                  coalesce((ai.v->>'revised')::boolean, false)                     as against_revised,
+                  case when r.outcome in ('home_win', 'away_win')
+                       then case when r.winner_side = k.side then 'won' else 'lost' end
+                       when r.outcome = 'tie' then 'tied'
+                       else r.outcome end                                          as result,
+                  r.margin_kind, r.margin, r.decided_by
+             from match m
+             cross join lateral (
+               select case when m.school_id = $1 and m.team_code = $2 then 'home'
+                           when m.away_school_id = $1 and m.away_team_code = $2 then 'away' end as side) k
+             cross join lateral match_result(m.id) r
+             -- The match's own innings, each with the side match_result()
+             -- says batted it; a super over is not the match's (db/71).
+             left join lateral (
+               select e.v from jsonb_array_elements(r.innings) e(v)
+                where e.v->'super_over' = 'null'::jsonb and e.v->>'side' = k.side
+                order by (e.v->>'position')::int limit 1) fi on true
+             left join lateral (
+               select e.v from jsonb_array_elements(r.innings) e(v)
+                where e.v->'super_over' = 'null'::jsonb and e.v->>'side' is distinct from k.side
+                order by (e.v->>'position')::int limit 1) ai on true
+             left join match_live_score f on f.match_id = m.id and f.innings = (fi.v->>'innings')::smallint
+             left join match_live_score a on a.match_id = m.id and a.innings = (ai.v->>'innings')::smallint
+            where k.side is not null
+              and m.status = 'complete' and m.sport = 'cricket' and m.overs is not null
+              -- Limited overs: one innings a side, at most two of the match's own.
+              and (select count(*) from jsonb_array_elements(r.innings) e(v)
+                    where e.v->'super_over' = 'null'::jsonb) <= 2
+              and ($3::text is null or school_season_of(m.starts_at) = $3)
+            order by m.starts_at, m.id`,
+    params: q => [uuidParam(q, "schoolId", true), teamParam(req(q, "teamCode")), seasonParam(q)],
+  },
+
+  /**
    * How a boy is out, and how a bowler takes wickets — by method.
    *
    * `career` above has `dismissals` and `wickets` as single counts.
@@ -3759,6 +3926,18 @@ function uuidParam(q, key, required = false) {
 }
 
 /**
+ * A season label from the query: absent (null) or a school season ("2026")
+ * or a club one ("2026/27"); anything else is a 400, as a bad uuid is.
+ * @param {Record<string, string> | undefined} q
+ */
+function seasonParam(q) {
+  const v = q?.season;
+  if (v === undefined || v === null || v === "") return null;
+  if (!/^\d{4}(\/\d{2})?$/.test(String(v))) { const e = /** @type {DressedError} */ (new Error("bad_param:season")); e.status = 400; throw e; }
+  return String(v);
+}
+
+/**
  * A side's code, as match.team_code's own CHECK names one ("U15A", "1XI"):
  * anything else is refused here rather than sent to the database.
  * @param {string} v
@@ -3819,6 +3998,8 @@ export const RESTRICTED_FIELDS = Object.freeze(/** @type {Record<string, string[
   // The same figures as `career`, one grain finer: nothing about a child
   // beyond what `career` already discloses to the same reader.
   career_by_season: [],
+  // The same innings `career`'s form guide reads, one boy at a time.
+  innings_by_season: [],
   dismissal_breakdown: [],
   skills:   ["score"],
   users:    ["email"],
