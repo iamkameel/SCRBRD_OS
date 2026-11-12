@@ -40351,9 +40351,10 @@ $v116$;
   --   (staffer)   a pupil holding a coach's assignment on his side too reads
   --               no team-mate (Kameel, 12 Nov)
   --   (parent)    a parent her own child and no other boy
-  --   (staff)     the side's coach his side and the boy who played up for
-  --               it, not another side's boy; that side's coach the reverse;
-  --               the director of sport every side
+  --   (staff)     staff read what they read before: the side's coach, the
+  --               other side's coach and the director of sport every boy of
+  --               the school (the roster), each figure over the balls his own
+  --               row security lets him read
   -- Each guard was falsified once in this copy and the section run alone
   -- against a seeded database; each went red at the first assertion able
   -- to see it (read.test.mjs holds this copy to the API's):
@@ -40361,7 +40362,7 @@ $v116$;
   --   the captain's season test removed  → (captain): his seasons hold last season's side
   --   the card's season test removed     → (compare): N1 naming N2 reads N2's two seasons
   --   the card's side test removed       → (compare): the pupil-staffer naming U reads U
-  --   the sheet arm removed              → (staff): 9XI's coach reads C,N1,N2
+  --   the roster arm removed             → (staff): 9XI's coach reads C,N1,N2
   --   a withdrawn honour counted         → (captain): after the withdrawal, the side
   --   the pairs' gate removed            → (own/mate): N1's match-ups hold four pairs
   DECLARE
@@ -40373,11 +40374,7 @@ $v116$;
 (is_family_of(p.id)
               or ((select not app_reader_is_pupil())
                   and (app_can('player.profile.read', p.school_id, p.team_code, p.id, NULL::uuid)
-                       or exists (select 1 from match_squad q join match m on m.id = q.match_id
-                                   where q.player_id = p.id and not q.withdrawn
-                                     and app_can('player.profile.read', p.school_id,
-                                                 case when q.side = 'away' then m.away_team_code else m.team_code end,
-                                                 p.id, NULL::uuid)))))
+                       or app_can('player.roster.read', p.school_id, '*'::text, p.id, NULL::uuid))))
 -- reach_family_or_staff:end
 $g130$;
     v_c text := $c130$
@@ -40541,14 +40538,17 @@ $s130$;
 
     -- (staff)
     PERFORM _as(U_CO);
-    PERFORM _assert(_vd2_rows(q_career) = 'C,N1,N2,U', format('§130 (staff): 9XI''s coach reads %s', _vd2_rows(q_career)));
+    PERFORM _assert(_vd2_rows(q_career) = 'C,N1,N2,O,U', format('§130 (staff): 9XI''s coach reads %s', _vd2_rows(q_career)));
     PERFORM _assert(_vd2_rows(q_seasons) = 'C@' || L || ',C@' || S || ',N1@' || L || ',N1@' || S || ',N2@' || L || ',N2@' || S || ',U@' || S,
       format('§130 (staff): 9XI''s coach''s seasons hold %s', _vd2_rows(q_seasons)));
     PERFORM _assert(_vd2_rows(q_wheel) = 'C,N1,N2' AND _vd2_rows(q_breakdown) = 'N1:bat,N2:bowl'
                     AND _vd2_rows(q_pairs) = 'C>N2,N1>N2,N2>C,N2>N1,N2>U',
       format('§130 (staff): 9XI''s coach: wheel %s, breakdown %s, pairs %s', _vd2_rows(q_wheel), _vd2_rows(q_breakdown), _vd2_rows(q_pairs)));
     PERFORM _as(U_OCO);
-    PERFORM _assert(_vd2_rows(q_career) = 'O,U', format('§130 (staff): 8XI''s coach reads %s', _vd2_rows(q_career)));
+    PERFORM _assert(_vd2_rows(q_career) = 'C,N1,N2,O,U', format('§130 (staff): 8XI''s coach reads %s', _vd2_rows(q_career)));
+    -- ...and their figures over his own side's fixtures only: 8XI's coach
+    -- reads no ball of 9XI's trial, so no season row of any boy in it.
+    PERFORM _assert(_vd2_rows(q_seasons) = '', format('§130 (staff): 8XI''s coach''s seasons hold %s', _vd2_rows(q_seasons)));
     PERFORM _as(U_DOS);
     PERFORM _assert(_vd2_rows(q_career) = 'C,N1,N2,O,U', format('§130 (staff): the director of sport reads %s', _vd2_rows(q_career)));
     EXECUTE 'DROP VIEW _vd2_captaincy';

@@ -5,10 +5,9 @@
  * them on 8 October 2026).
  *
  *   - THE PICKER OFFERS ONLY READABLE PLAYERS. The 1XI coach's picker holds
- *     his side and nobody else (since REACH-D2 the career read gives him no
- *     other side's boy either, unless a 1XI sheet named him); the analyst's
- *     holds the school; a boy who has left (no side) is in neither, though
- *     the read still returns him (Q6).
+ *     his side and nobody else, though the career read returns other sides'
+ *     boys in outline; the analyst's holds the school; a boy who has left (no
+ *     side) is in neither, though the read still returns him (Q6).
  *   - THE FLOOR AND THE COUNTS (D4, Q8). Every ball count is drawn with its
  *     evidence word; a rate under thirty legal balls is an em dash and
  *     "insufficient" (or "none"); "not enough balls to compare" is said in
@@ -251,14 +250,7 @@ try {
   const SECRET_VALUES = new RegExp(secrets.flatMap((s) => [s.iso, s.dmy]).map((v) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
   ok("the career read still returns the boy who has left, to the analyst (so the picker is what keeps him out)",
      analystCareer.some((r) => r.player_id === LEFT.id && r.team_code == null), LEFT);
-  // REACH-D2: a coach reads his side's boys and a boy named on its sheets,
-  // never every side's in outline (the staff arm asks his side, never '*').
-  const sheetBoys = new Set((await q(`select distinct s.player_id from match_squad s join match m on m.id = s.match_id
-                                      where not s.withdrawn and ((s.side = 'home' and m.school_id = $1 and m.team_code = '1XI')
-                                         or (s.side = 'away' and m.away_school_id = $1 and m.away_team_code = '1XI'))`, [HIL])).map((r) => r.player_id));
-  ok("...and returns the coach no other side's boy, unless a 1XI sheet named him (REACH-D2)",
-     coachCareer.every((r) => (r.team_code === "1XI" && r.school_id === HIL) || sheetBoys.has(r.player_id)),
-     coachCareer.filter((r) => r.team_code !== "1XI" && !sheetBoys.has(r.player_id)).map((r) => r.full_name).join(", "));
+  ok("...and returns the coach other sides' boys in outline (REACH-D2 narrows the pupil, not the staff)", coachCareer.some((r) => r.team_code !== "1XI"));
 
   // ══ The coach ══
   group("The 1XI coach: Compare on Analytics, his side only");

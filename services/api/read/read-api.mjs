@@ -83,15 +83,19 @@ const UNRECORDED_COLUMNS = `coalesce(unrec.innings_without_balls, 0)::int      a
  *   - is_family_of(): the boy himself through his own verified, live self
  *     link, or a guardian's verified, live link to him. A pending, ended or
  *     revoked link reads nothing, and a pad's credential never does;
- *   - or, for a reader who is NOT a pupil, a standing assignment at HIS
- *     side: player.profile.read, the question his row's own policy asks
- *     (db/09 player_read), asked at his school for his own side
- *     (p.team_code), or for a side he has been named on a sheet for (a boy
- *     playing up is that side's staff's too), with NO fixture, so an
- *     assignment narrowed to one match (a scorer) never passes, and never
- *     with '*', so a coach of one side no longer reads every side's boys.
- *     A school-wide assignment (team NULL) passes at every side of its
- *     school; another school's never does (AV-D3 unchanged).
+ *   - or, for a reader who is NOT a pupil, a standing assignment that
+ *     reads his record: player_read's own two arms (db/09), each asked about
+ *     HIM (p.id) and with NO fixture, so an assignment narrowed to one match
+ *     (a scorer) never passes. player.profile.read at his side (his side's
+ *     staff, a school-wide assignment, and a guardian only for her own
+ *     child, whose link names him); or player.roster.read at his school,
+ *     any side ('*'), which only the school's staff hold (coach, assistant,
+ *     team manager, office, director of sport, principal; never a pupil, a
+ *     guardian or selfaccess): the roster reach they have today, so a coach
+ *     keeps the figures of a boy of another side who played in his fixtures
+ *     (the fold-figures and free-hit walks hold those to the fold). Another
+ *     school's reader never passes (AV-D3 unchanged). So staff read what
+ *     they read before, and the gate narrows the pupil and nobody else.
  * A pupil is never admitted by the staff arm, even if he also holds a staff
  * assignment (app_reader_is_pupil(), as innings_by_season): Kameel decided it
  * on 12 Nov 2026, "Keep it closed: a pupil never reads team-mates' innings
@@ -104,11 +108,7 @@ const UNRECORDED_COLUMNS = `coalesce(unrec.innings_without_balls, 0)::int      a
 export const REACH_FAMILY_OR_STAFF = /* reach_family_or_staff:begin */`(is_family_of(p.id)
               or ((select not app_reader_is_pupil())
                   and (app_can('player.profile.read', p.school_id, p.team_code, p.id, NULL::uuid)
-                       or exists (select 1 from match_squad q join match m on m.id = q.match_id
-                                   where q.player_id = p.id and not q.withdrawn
-                                     and app_can('player.profile.read', p.school_id,
-                                                 case when q.side = 'away' then m.away_team_code else m.team_code end,
-                                                 p.id, NULL::uuid)))))`/* reach_family_or_staff:end */;
+                       or app_can('player.roster.read', p.school_id, '*'::text, p.id, NULL::uuid))))`/* reach_family_or_staff:end */;
 
 /**
  * THE TWO EXCEPTIONS (Kameel, 11 Nov 2026), on `career_by_season` alone:
