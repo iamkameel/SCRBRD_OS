@@ -78,8 +78,10 @@ group("The points and the line: from the 5th match");
 group("Which school the side is");
 {
   const roster = [{ team: "1XI", school: "W" }, { team: "1XI", school: "H" }, { team: "U15A", school: "H" }];
-  ok("the school the reader holds, when the roster holds two 1XIs", sideSchool(roster, "1XI", ["H"]) === "H" && sideSchool(roster, "1XI", ["X", "W"]) === "W");
-  ok("else the first the rows name; none for a side the rows lack", sideSchool(roster, "1XI") === "W" && sideSchool(roster, "U13A", ["H"]) === null && sideSchool([], "1XI") === null);
+  const dir = { school: "H", role: "directorofsport" }, parent = { school: "W", role: "guardian" };
+  ok("the school of the reader's staff role, not the one where he is a parent", sideSchool(roster, "1XI", [parent, dir]) === "H");
+  ok("the school he is assigned to this very side at comes first", sideSchool(roster, "1XI", [dir, { school: "W", role: "coach", team: "1XI" }]) === "W");
+  ok("else the first the rows name; none for a side the rows lack", sideSchool(roster, "1XI") === "W" && sideSchool(roster, "U13A", [dir]) === null && sideSchool([], "1XI") === null);
 }
 
 group("NULL is not zero; rain is said");

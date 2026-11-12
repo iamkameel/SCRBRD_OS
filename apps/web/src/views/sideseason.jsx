@@ -34,7 +34,7 @@ import {
  * @param {{ team?: string | null, school?: string | null }[]} props.players  the roster rows in view, which say which school each side is
  */
 export function SideSeason({ role, team, players }) {
-  const school = sideSchool(players, team, (profile()?.assignments ?? []).map((a) => a.school));
+  const school = sideSchool(players, team, profile()?.assignments ?? []);
   if (!team || !school) {
     return (
       <Card sx={{ padding: T.space.lg, marginBottom: T.space.lg }} data-testid="side-season-panel">
