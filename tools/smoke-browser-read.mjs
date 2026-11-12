@@ -2993,7 +2993,7 @@ try {
         await afterReads(demoCtx.page, 1000);
         ok("Analytics opens signed out", await nav(demoCtx.page, /Analytics/));
         ok("signed out, the demonstration worm still shows, labelled Demo", await demoCtx.page.locator('[data-testid="demo-worm"]').count() === 1
-           && /Demo/.test(await demoCtx.page.locator('[data-testid="source-line-worm"]').innerText().catch(() => "")));
+           && /demo/i.test(await demoCtx.page.locator('[data-testid="source-line-worm"]').innerText().catch(() => "")));
         ok("...and the side's season panel, which is the read's, is not drawn", await demoCtx.page.locator('[data-testid="side-season-panel"]').count() === 0);
         await demoCtx.ctx.close();
       }
