@@ -35,6 +35,7 @@ import { Compare } from "../compare.jsx";
 import { SealMark } from "../../ui/sealMark.jsx";
 import { honourWords, isSealed, isWithdrawn, provenanceOf, seasonOnce } from "../../lib/recognitionWords.js";
 import { PersonalBests } from "./bests.jsx";
+import { SeasonTrend } from "../seasontrend.jsx";
 import { RecordBoards } from "../records.jsx";
 
 // His Skills door (GA-I26a §4, STEP4 item 7): the staff Skills screen, read
@@ -222,6 +223,13 @@ function SeasonTab({ me, role, career }) {
           {s.ballsBowled > 0 && <p style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>{s.wkts} wkts · econ {stat(s.econ)}</p>}
         </Card>
       )) : <NoneOr read={seasonsRead} what="your seasons" none="No season on record yet." onRetry={() => setNonce((n) => n + 1)} testid="passport-season-none"/>}
+      {/* GA-I23 slice 2 (B2, B5): his own season, innings by innings, read
+          through his own self link; a team-mate's he never reads (Q7). */}
+      {/* Quiet when he has no innings at all, as the family Home is. */}
+      {signedIn() && (
+        <SeasonTrend role={role} playerId={me.id} who="You" self bare quietWhenNone
+          frame={(panel) => <Card label="Innings by innings" testid="passport-trend">{panel}</Card>}/>
+      )}
       {career?.form?.length > 0 && (
         <Card label="Form · last innings first" testid="passport-form">
           <p style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>{career.form.join(" · ")}</p>

@@ -2903,6 +2903,59 @@ try {
          !/\bDemo\b/.test(bodyText) && await sq("demo-worm").count() === 0 && !/Last 8 Matches/i.test(bodyText) && !/illustrative/i.test(bodyText));
       ok("no scoping refusals or page errors for her", s.refusals.length === 0 && s.errors.length === 0, s.errors.join(" | "));
       await s.ctx.close();
+
+      // GA-I23 B2: the 1XI coach picks a boy of his side on the performance
+      // tab and reads his season innings by innings: the read's rows, a point
+      // each, the table behind "Show as table", and nothing wider than a
+      // 320px screen. A coach of another side reads no 1XI boy's line.
+      const BEKKER = "aaaaaaaa-0000-0000-0000-000000000002";
+      const tokOf = async (email) => (await (await fetch(`${API}/api/auth/dev-login`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, deviceId: "browser-read-b2" }) })).json())?.token;
+      const inningsOf = async (tok, boy) => (await (await fetch(`${API}/api/read/innings_by_season?playerId=${boy}`, { headers: { authorization: `Bearer ${tok}` } })).json())?.rows ?? [];
+      const coachRows = await inningsOf(await tokOf("coach@example.invalid"), BEKKER);
+      ok("B2: the seed gives T Bekker an innings this season, read by his coach", coachRows.some((r) => r.current_season), JSON.stringify(coachRows).slice(0, 200));
+      // A failed sign-in would read as nothing too: the token is asked for first,
+      // and the read is asked with it and must answer 200 with no rows.
+      const coach2Tok = await tokOf("coach2@example.invalid");
+      ok("B2: the coach of another side (2XI) signs in", !!coach2Tok);
+      const coach2Read = coach2Tok ? await fetch(`${API}/api/read/innings_by_season?playerId=${BEKKER}`, { headers: { authorization: `Bearer ${coach2Tok}` } }) : null;
+      const coach2Rows = coach2Read ? ((await coach2Read.json().catch(() => null))?.rows ?? null) : null;
+      ok("B2: ...and reads none of a 1XI boy's innings (answered, with no rows)", coach2Read?.status === 200 && Array.isArray(coach2Rows) && coach2Rows.length === 0,
+         `${coach2Read?.status} ${JSON.stringify(coach2Rows)?.slice(0, 120)}`);
+      const co = await open();
+      const cq = (id) => co.page.locator(`[data-testid="${id}"]`);
+      ok("B2: the 1XI coach signs in", await signIn(co.page, /coach@example\.invalid/));
+      ok("B2: Analytics opens for him", await nav(co.page, /Analytics/));
+      await cq("analytics-team-1XI").click({ timeout: 4000 }).catch(() => {});
+      await afterReads(co.page, 600);
+      ok("B2: the performance tab offers the side's players, none picked, and says so",
+         await cq("season-trend-player").count() === 1 && await cq("season-trend-none-picked").count() === 1 && await cq("season-trend").count() === 0);
+      await cq("season-trend-player").selectOption(BEKKER, { timeout: 4000 }).catch(() => {});
+      await co.page.waitForFunction(() => { const el = document.querySelector('[data-testid="season-trend"]'); return el && el.getAttribute("data-state") !== "loading"; }, null, { timeout: 15000 }).catch(() => {});
+      const cur = coachRows.filter((r) => r.current_season);
+      const drawnPts = await co.page.locator('[data-testid="season-trend-point"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-runs")));
+      ok("B2: his panel draws a point per innings of the read's, this season", drawnPts.join() === cur.map((r) => String(r.runs)).join(), `${drawnPts} vs ${cur.map((r) => r.runs)}`);
+      const trendSaid = (await cq("season-trend").innerText().catch(() => "")).replace(/\s+/g, " ");
+      ok("B2: ...with the source line, the season window and B3's small-sample words", /Source Scored balls and scorebook imports/.test(trendSaid) && /Scope One player: T Bekker/.test(trendSaid)
+         && new RegExp(`Window The ${cur[0]?.season} school season`).test(trendSaid) && new RegExp(`Only ${cur.length} innings?, fewer than the 6 this needs`).test(trendSaid), trendSaid.slice(0, 300));
+      ok("B2: ...the season's runs, and no verdict words", new RegExp(`Runs ${cur.reduce((n, r) => n + Number(r.runs), 0)}\\b`).test(trendSaid) && !/\b(in form|improving|declining|best|struggling)\b/i.test(trendSaid), trendSaid.slice(0, 300));
+      await cq("season-trend-table-toggle").click({ timeout: 4000 }).catch(() => {});
+      await co.page.waitForTimeout(200);
+      ok("B2: Show as table opens a real table, a row per innings", await cq("season-trend-table-toggle").getAttribute("aria-expanded") === "true"
+         && await co.page.locator('[data-testid="season-trend-table"] tbody tr').count() === cur.length);
+      await co.page.setViewportSize({ width: 320, height: 720 });
+      await co.page.waitForTimeout(500);
+      const fitB2 = await co.page.evaluate(() => {
+        const el = document.querySelector('[data-testid="season-trend-pick"]');
+        // Inside the table's own scrolling region a wide table scrolls, by design;
+        // the region itself must fit.
+        const wide = el ? [...el.querySelectorAll("*")].filter((n) => !n.parentElement?.closest('[role="region"]') && n.getBoundingClientRect().right > window.innerWidth + 0.5).map((n) => n.tagName + "#" + (n.getAttribute("data-testid") ?? "")) : ["no panel"];
+        return { page: document.documentElement.scrollWidth, inner: window.innerWidth, wide };
+      });
+      ok("B2: at 320px the panel, its table open, holds inside the screen", fitB2.wide.length === 0, JSON.stringify(fitB2).slice(0, 300));
+      ok("no scoping refusals or page errors for the coach", co.refusals.length === 0 && co.errors.length === 0, co.errors.join(" | "));
+      await co.ctx.close();
     } finally { await owner.end().catch(() => {}); }
   }
 
