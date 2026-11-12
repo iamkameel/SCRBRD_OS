@@ -483,3 +483,19 @@ export const ABANDON_CODE = Object.freeze({ rain: "weather", bad_light: "light",
 /** @param {unknown} stopReason */
 export const abandonCode = (stopReason) =>
   (typeof stopReason === "string" && Object.hasOwn(ABANDON_CODE, stopReason) ? ABANDON_CODE[/** @type {keyof typeof ABANDON_CODE} */ (stopReason)] : "other");
+
+/**
+ * Where a Pilot Match stands, in one of three words: "In progress",
+ * "Finished", "Called off". The server's status wins where this phone has
+ * heard it (pilot_header's `live`, `finished`, `abandoned`); otherwise this
+ * phone's own record: a call-off made here (sent, or held for signal), then
+ * the pad's own end of the match.
+ * @param {{meta?: any, complete?: boolean, serverStatus?: string | null}} [o]
+ * @returns {"In progress" | "Finished" | "Called off"}
+ */
+export function pilotStateWords({ meta = null, complete = false, serverStatus = null } = {}) {
+  if (serverStatus === "abandoned") return "Called off";
+  if (serverStatus === "finished") return "Finished";
+  if (meta?.pilot?.callOff || meta?.pilot?.abandoned) return "Called off";
+  return complete || meta?.pilot?.finished === true ? "Finished" : "In progress";
+}

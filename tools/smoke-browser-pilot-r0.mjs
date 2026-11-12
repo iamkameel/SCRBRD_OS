@@ -454,9 +454,10 @@ try {
   await P.page.locator("button", { hasText: /^×$/ }).first().click({ timeout: 3000 }).catch(() => {});
   await P.tap("exit-scorer"); await openScorer(P);
   await P.tap("pilot-list-open"); await afterReads(P.page, 800);
-  const rowTxt = (await P.tid("pilot-row").filter({ hasText: /Hilton U13B v Kearsney U13B/ }).first().innerText().catch(() => "")).replace(/\s+/g, " ");
+  const rowTxt = (await P.page.locator(`[data-testid="pilot-row"][data-id="pilot-${uuid2}"]`).first().innerText().catch(() => "")).replace(/\s+/g, " ");
   ok("My Pilot Matches still lists it, with its score", /Hilton U13B v Kearsney U13B/.test(rowTxt) && /\d/.test(rowTxt), rowTxt);
-  if (/In progress/.test(rowTxt)) finding("apps/web/src/scorer/pilotList.jsx:101 reads the phone's own record (r.complete) only, so a match the server has abandoned is shown as \"In progress\" on the phone that scored it; on another phone, pilotList.jsx:127 (m.status === \"live\" ? \"In progress\" : \"Finished\") shows an abandoned match as \"Finished\". A called-off match is never said to be called off.");
+  // F2 (was a finding): the row's word reads the server's status, and the phone's own call-off before it hears back.
+  ok("...and says Called off, not In progress or Finished", /Called off/.test(rowTxt) && !/In progress|Finished/.test(rowTxt), rowTxt);
   await P.tap("practice-back");
 
   // ── 5 ──────────────────────────────────────────────────────────────

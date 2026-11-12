@@ -4,7 +4,7 @@ import { PracticePage, practiceStyles } from "./practice.jsx";
 import { savedWords } from "../lib/practice.js";
 import { api, signedIn } from "../lib/api.js";
 import {
-  deleteAllPilotHere, deletePilotHere, deletePilotOnServer, listPilot, pilotUuid, restoreFromServer,
+  deleteAllPilotHere, deletePilotHere, deletePilotOnServer, listPilot, pilotStateWords, pilotUuid, restoreFromServer,
 } from "../lib/pilot.js";
 
 /**
@@ -36,6 +36,9 @@ const sentWords = (meta) => meta?.pilot?.server === "created" ? "On SCRBRD" : "N
 export function PilotList({ onBack, onResume }) {
   const [rows, setRows] = useState(/** @type {any[] | null} */ (null));
   const [theirs, setTheirs] = useState(/** @type {any[] | null} */ (null));
+  // The server's status of each match this account has there (pilot_mine():
+  // live, finished, abandoned), by uuid; empty when it did not answer.
+  const [status, setStatus] = useState(/** @type {Map<string, string>} */ (new Map()));
   const [ask, setAsk] = useState(/** @type {string | null} */ (null));
   const [said, setSaid] = useState("");
   const [busy, setBusy] = useState(false);
@@ -44,12 +47,13 @@ export function PilotList({ onBack, onResume }) {
   const refresh = async () => {
     const here = await listPilot();
     setRows(here);
-    if (!signedIn()) { setTheirs(null); return; }
+    if (!signedIn()) { setTheirs(null); setStatus(new Map()); return; }
     try {
       const r = await api("/api/pilot/mine", { timeoutMs: 5000 });
       const ids = new Set(here.map((x) => pilotUuid(x.id)));
+      setStatus(new Map((r?.matches ?? []).map((/** @type {any} */ m) => [m.id, m.status])));
       setTheirs((r?.matches ?? []).filter((/** @type {any} */ m) => !ids.has(m.id)));
-    } catch { setTheirs(null); }
+    } catch { setTheirs(null); setStatus(new Map()); }
   };
   useEffect(() => { refresh(); }, []);
   useEffect(() => { if (ask) /** @type {any} */ (confirmRef.current)?.focus(); }, [ask]);
@@ -99,7 +103,7 @@ export function PilotList({ onBack, onResume }) {
           <h2 style={S.h2()}>{r.title}</h2>
           <p style={S.body()}>{r.lines.length ? r.lines.map(scoreLine).join(" · ") : "Nothing scored yet"}</p>
           <p style={S.body()}>
-            {r.complete ? "Finished" : "In progress"}{" · "}<span data-testid="pilot-row-sent">{sentWords(r.meta)}</span>
+            <span data-testid="pilot-row-state">{pilotStateWords({ meta: r.meta, complete: r.complete, serverStatus: status.get(pilotUuid(r.id) ?? "") ?? null })}</span>{" · "}<span data-testid="pilot-row-sent">{sentWords(r.meta)}</span>
             {" · "}last saved {savedWords(r.savedAt)}
           </p>
           {ask === r.id ? (
@@ -122,7 +126,7 @@ export function PilotList({ onBack, onResume }) {
       {theirs && theirs.length > 0 && (
         <section style={S.card()} aria-labelledby="pilot-theirs">
           <h2 id="pilot-theirs" style={S.h2()}>On SCRBRD, not on this phone</h2>
-          {theirs.map((m) => { const state = m.status === "live" ? "In progress" : "Finished"; return (
+          {theirs.map((m) => { const state = pilotStateWords({ serverStatus: m.status }); return (
             <div key={m.id} data-testid="pilot-server-row" data-id={m.id} style={{ display: "grid", gap: T.space.xs }}>
               <p style={{ ...S.body(), color: T.content.primary, fontWeight: 600 }}>{title(m)}</p>
               <p style={S.body()}>{`${state} · started ${savedWords(Date.parse(m.startsAt))} · ${m.events} events`}</p>

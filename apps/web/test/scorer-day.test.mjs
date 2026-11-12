@@ -15,7 +15,7 @@ import {
   SECTION_ORDER, SANDBOX_WORDS, WEEK_DAYS, boardOfLog, finishedPilots, homeSections, nowItems, p0Items, scoreLine, startWords, weekOf,
 } from "../src/lib/scorerDay.js";
 import { heldByMatch, pendingByMatch } from "../src/lib/deviceMatches.js";
-import { pilotUuid } from "../src/lib/pilot.js";
+import { abandonCode, pilotStateWords, pilotUuid } from "../src/lib/pilot.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
@@ -159,6 +159,17 @@ group("Pilot Matches: finished ones are kept as a sandbox; nothing promotes");
   ok("the phone's opens; the server's says where it is", rows[0].onPhone === true && rows[1].onPhone === false);
   ok("its own score, from its own log", scoreLine(rows[0].lines[0]) === "A 84/3 (12.0 ov)");
   ok("with the server unread, the phone's alone", finishedPilots(phone, null, pilotUuid).length === 1);
+  ok("a match the server called off is drawn called off", finishedPilots(phone, [{ ...server[0], status: "abandoned" }], pilotUuid)[0].status === "abandoned");
+  ok("...and one called off on this phone, not yet heard back", finishedPilots([{ ...phone[0], meta: { pilot: { callOff: { code: "weather", at: NOW } } } }], null, pilotUuid)[0].status === "abandoned");
+  ok("...a plain finish is finished", rows[0].status === "finished");
+  ok("three words, the server's status first: In progress, Finished, Called off",
+    pilotStateWords({ serverStatus: "live" }) === "In progress" && pilotStateWords({ serverStatus: "finished" }) === "Finished"
+    && pilotStateWords({ serverStatus: "abandoned", complete: true }) === "Called off");
+  ok("...then this phone's: a call-off made here, then the pad's own end",
+    pilotStateWords({ meta: { pilot: { callOff: { code: "light" } } }, complete: true }) === "Called off"
+    && pilotStateWords({ complete: true }) === "Finished" && pilotStateWords({}) === "In progress");
+  ok("the stop's reason is kept as the server's code", abandonCode("rain") === "weather" && abandonCode("bad_light") === "light"
+    && abandonCode("wet_ground") === "ground" && abandonCode("other") === "other" && abandonCode(undefined) === "other");
   ok("the words: kept as a sandbox, counted in no figure", /sandbox/.test(SANDBOX_WORDS.kept) && /no figure, standing or record/.test(SANDBOX_WORDS.why));
   ok("nothing finished: the empty state says what a finished one will be", /No finished Pilot Match yet/.test(SANDBOX_WORDS.empty));
   const view = readFileSync(new URL("../src/views/ScorerHomeView.jsx", import.meta.url), "utf8");

@@ -341,7 +341,7 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                         <p style={strong()}>{r.title}</p>
                         {r.lines.length > 0 && <p style={line()}>{r.lines.map(scoreLine).join(" · ")}</p>}
                         <p style={{ ...line(), color: T.content.primary, fontWeight: 600 }} data-testid={`pilot-done-${r.id}-state`}>
-                          {r.status === "abandoned" ? "Abandoned" : "Finished"} · {SANDBOX_WORDS.kept}
+                          {r.status === "abandoned" ? "Called off" : "Finished"} · {SANDBOX_WORDS.kept}
                         </p>
                         <p style={line()}>{SANDBOX_WORDS.why}{r.onPhone ? "" : " On SCRBRD, not on this phone: My Pilot Matches brings it here."}</p>
                         {r.onPhone && (

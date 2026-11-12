@@ -206,11 +206,14 @@ export const SANDBOX_WORDS = Object.freeze({
 export function finishedPilots(phone, server, uuidOf) {
   const here = new Set();
   const out = [];
+  const served = new Map((server ?? []).filter((m) => m?.id).map((m) => [m.id, m.status]));
   for (const r of phone ?? []) {
     if (!r?.id) continue;
     here.add(uuidOf(r.id));
     if (!r.complete) continue;
-    out.push({ key: r.id, id: r.id, title: r.title, onPhone: true, status: "finished", lines: r.lines ?? [], at: r.savedAt ?? null });
+    // Called off (lib/pilot.js pilotStateWords): the server says so, or this phone made the call-off.
+    const off = served.get(uuidOf(r.id)) === "abandoned" || !!r.meta?.pilot?.callOff || r.meta?.pilot?.abandoned === true;
+    out.push({ key: r.id, id: r.id, title: r.title, onPhone: true, status: off ? "abandoned" : "finished", lines: r.lines ?? [], at: r.savedAt ?? null });
   }
   for (const m of server ?? []) {
     if (!m?.id || here.has(m.id)) continue;
