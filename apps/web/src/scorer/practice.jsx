@@ -3,7 +3,8 @@ import { T, inkOn } from "../design/tokens.js";
 import { Icon } from "../ui/icons.jsx";
 import { CaptureProfilePicker, Sheet } from "./ui.jsx";
 import { OpeningSetupStep, TossStep } from "./setup.jsx";
-import { PracticeLabel } from "./practiceLabel.jsx";
+import { PracticeLabel, PilotLabel } from "./practiceLabel.jsx";
+import { PILOT_WORDS, mayOfferLive, newPilotId, pilotCfg, pilotRecord, pilotSlots } from "../lib/pilot.js";
 import {
   CLASSES, DIVISIONS, MAX_OVERS, MAX_SQUAD, MIN_SQUAD, OVERS_PRESETS, WEATHER_ATTRIBUTION, WEATHER_CONDITIONS, WEATHER_SOURCE, WEATHER_UNAVAILABLE,
   addNames, applyHint, blankDraft, chooseCondition, conditionLabel, dropHint, fetchWeather, clearDraft, deleteAllPractice, deletePractice, isRepeated, lineUp, listPractice, loadDraft, loadPractice,
@@ -30,6 +31,14 @@ import { loadMatch } from "../lib/persist.js";
  *
  * Every one of them carries the PracticeLabel, and none of them sends
  * anything anywhere (lib/practice.js says what is kept, and where).
+ *
+ * PHASE 2 (PILOT_MATCH_PHASE2 §3.5, §3.6). With phase 2 switched on for a
+ * granted account, the setup's first step asks once, before any name is
+ * typed: Send live to SCRBRD (the default) or Keep on this phone only (phase
+ * 1, unchanged). Chosen live, every setup screen carries the PilotLabel,
+ * the squads' steps carry the notice above the first name field, and the
+ * match starts as a Pilot Match (lib/pilot.js). With phase 2 off — as it
+ * ships — none of this is drawn, and the setup is phase 1's, word for word.
  *
  * Floors (DESIGN_DIRECTION §3.2, §3.5): nothing read under 12px, nothing
  * tapped under 44px, tokens read from T while it draws (so both themes), the
@@ -93,6 +102,9 @@ const S = {
   }),
 };
 
+/** The practice screens' styles, for My Pilot Matches (pilotList.jsx), so the two lists read alike. */
+export const practiceStyles = S;
+
 const Row = ({ children, gap = T.space.sm, wrap = true }) => (
   <div style={{ display: "flex", flexWrap: wrap ? "wrap" : "nowrap", gap, alignItems: "center" }}>{children}</div>
 );
@@ -117,7 +129,7 @@ const Field = ({ label, children }) => (
 );
 
 /** The page every practice screen sits in: a bar with the way back, the label, the body. */
-function PracticePage({ title, sub, onBack, backLabel = "Back", saved = null, children }) {
+export function PracticePage({ title, sub, onBack, backLabel = "Back", saved = null, pilot = false, children }) {
   const h = useRef(null);
   useEffect(() => { h.current?.focus({ preventScroll: true }); }, [title]);
   return (
@@ -133,7 +145,7 @@ function PracticePage({ title, sub, onBack, backLabel = "Back", saved = null, ch
         </div>
       </header>
       <main style={S.main()}>
-        <PracticeLabel saved={saved}/>
+        {pilot ? <PilotLabel saved={saved}/> : <PracticeLabel saved={saved}/>}
         {children}
       </main>
     </div>
@@ -181,10 +193,12 @@ function withXiOrder(players, order) {
 }
 
 /**
- * @param {{onStart: (cfg: any, record: any) => void, onCancel: () => void}} props
+ * @param {{onStart: (cfg: any, record: any) => void, onCancel: () => void, pilot?: any}} props
  *   `onStart` is the scorer's: it opens the pad on `cfg` and keeps `record`.
+ *   `pilot` is phase 2's status for this account (lib/pilot.js pilotStatus):
+ *   {sync, granted, names}, or null when nothing is known.
  */
-export function PracticeSetup({ onStart, onCancel }) {
+export function PracticeSetup({ onStart, onCancel, pilot = null }) {
   const [draft, setDraft] = useState(blankDraft);
   const [ready, setReady] = useState(false);
   const [picked, setPicked] = useState(false);
@@ -273,9 +287,21 @@ export function PracticeSetup({ onStart, onCancel }) {
   const shared = sharedNames(draft.squads[0], draft.squads[1]);
 
   const first = draft.bat === 0 ? draft.toss : 1 - draft.toss;
+  // Phase 2: offered only to a granted account with phase 2 on; chosen live
+  // by default then (§3.5). Otherwise this is a Practice Match, as ever.
+  const offerLive = mayOfferLive(pilot);
+  const live = offerLive && (draft.mode ?? "pilot") === "pilot";
   const confirmOpeners = (opener1, opener2, openBowler) => {
     if (started.current) return;
     started.current = true;
+    if (live) {
+      const id = newPilotId();
+      const slots = pilotSlots(draft);
+      // The notice the scorer read said whether the names go (§3.6): they
+      // go only if it said so, and only while the server says they may.
+      onStart(pilotCfg(draft, { id, opener1, opener2, openBowler }, slots), pilotRecord(draft, id, slots, Date.now(), { namesMayGo: pilot?.names === true }));
+      return;
+    }
     const id = newPracticeId();
     onStart(practiceCfg(draft, { id, opener1, opener2, openBowler }), practiceRecord(draft, id));
   };
@@ -291,8 +317,8 @@ export function PracticeSetup({ onStart, onCancel }) {
   if (!ready) return <PracticePage title="Practice Match" onBack={onCancel}><p style={S.body()}>Opening…</p></PracticePage>;
 
   return (
-    <PracticePage title="Practice Match" sub={`Step ${step + 1} of ${STEP_TITLES.length} · ${STEP_TITLES[step]}`}
-      onBack={step === 0 ? onCancel : () => go(step - 1)}>
+    <PracticePage title={live ? "Pilot Match" : "Practice Match"} sub={`Step ${step + 1} of ${STEP_TITLES.length} · ${STEP_TITLES[step]}`}
+      onBack={step === 0 ? onCancel : () => go(step - 1)} pilot={live}>
       {step === 0 && picked && (
         <div style={S.card()} data-testid="practice-draft-note">
           <p style={S.body()}>Picked up where you left off. Nothing was sent anywhere.</p>
@@ -303,6 +329,19 @@ export function PracticeSetup({ onStart, onCancel }) {
 
       {step === 0 && (
         <>
+          {/* Asked once, before the first name is typed (§3.5). */}
+          {offerLive && (
+            <section style={S.card()} aria-labelledby="pm-where" data-testid="pilot-choice">
+              <h2 id="pm-where" style={S.h2()}>Where this match goes</h2>
+              <div role="radiogroup" aria-labelledby="pm-where" style={{ display: "grid", gap: T.space.sm }}>
+                <Pick testid="pilot-choice-live" on={live} onClick={() => up({ mode: "pilot" })}>{PILOT_WORDS.sendLive}</Pick>
+                <Pick testid="pilot-choice-phone" on={!live} onClick={() => up({ mode: "practice" })}>{PILOT_WORDS.keepHere}</Pick>
+              </div>
+            </section>
+          )}
+          {pilot?.sync && !pilot?.granted && (
+            <p role="status" data-testid="pilot-not-granted" style={S.note()}>{PILOT_WORDS.notGranted}</p>
+          )}
           <section style={S.card()} aria-labelledby="pm-overs">
             <h2 id="pm-overs" style={S.h2()}>Overs per innings</h2>
             <div role="radiogroup" aria-labelledby="pm-overs" style={{ display: "flex", flexWrap: "wrap", gap: T.space.sm }}>
@@ -414,6 +453,10 @@ export function PracticeSetup({ onStart, onCancel }) {
         const canGo = v.ok && !crossBad;
         return (
           <>
+            {/* §3.6: above the first name field, before any name exists. */}
+            {live && (
+              <p role="note" data-testid="pilot-notice" style={S.note()}>{pilot?.names ? PILOT_WORDS.notice : PILOT_WORDS.noticeNamesHere}</p>
+            )}
             <section style={S.card()} aria-labelledby={`pm-squad-${i}`}>
               <h2 id={`pm-squad-${i}`} style={S.h2()}>{names[i]}</h2>
               <p style={S.body()}>

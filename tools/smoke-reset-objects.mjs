@@ -120,6 +120,17 @@ try {
     await withScratch((c) => c.query(`drop view if exists not_ours_over_ours`));
   }
 
+  group("...and so does one built on db/151's pilot schema (review S7)");
+  {
+    await withScratch((c) => c.query(`create view not_ours_over_pilot as select id from pilot.match`));
+    const r = migrate("--reset-objects");
+    ok("refused, naming it", r.status !== 0 && /refusing to reset/.test(r.stderr + r.stdout) && /not_ours_over_pilot/.test(r.stderr + r.stdout),
+       (r.stderr + r.stdout).slice(-300));
+    ok("...with the pilot schema still there",
+       (await withScratch((c) => c.query(`select count(*)::int n from pg_namespace where nspname = 'pilot'`))).rows[0].n === 1);
+    await withScratch((c) => c.query(`drop view if exists not_ours_over_pilot`));
+  }
+
   group("The rebuild bundle's teardown keeps them too (Supabase's SQL Editor path)");
   {
     // Fresh sentinels, so this group stands on its own whatever came before.

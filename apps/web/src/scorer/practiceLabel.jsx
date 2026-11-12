@@ -21,6 +21,19 @@ export function PracticeLabel({ saved = null, compact = false }) {
 }
 
 /**
+ * A Pilot Match's words (PILOT_MATCH_PHASE2 §3.6), on every pilot screen in
+ * place of the practice ones, which stay for every phase 1 match.
+ * @param {{saved?: string | null, compact?: boolean}} props
+ */
+export function PilotLabel({ saved = null, compact = false }) {
+  return (
+    <StateLabel kind="pilot" compact={compact} testid="pilot-label">
+      {saved && <span data-testid="practice-saved" style={{ fontWeight: 400 }}>{`· last saved ${saved}`}</span>}
+    </StateLabel>
+  );
+}
+
+/**
  * The small weather chip in the practice pad's header: what the weather is
  * now, in words ("Overcast · 18°C"), from the record (lib/practice.js
  * weatherChipWords). Text only, not a control; nothing when none is recorded.

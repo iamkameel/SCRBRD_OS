@@ -21,14 +21,16 @@ import { StopSheet, RainBanner, ResumeSheet, RainEndSheet } from "./rainSheet.js
 import { ConditionsLine, bowlerCapWords } from "./conditionsLine.jsx";
 import { D, T, inkOn } from "../design/tokens.js";
 import { deviceId } from "../lib/device.js";
-import { loadMatch, saveMatch, saveAside, storageKind, isPracticeId } from "../lib/persist.js";
+import { loadMatch, saveMatch, saveAside, storageKind, isPracticeId, isPilotId } from "../lib/persist.js";
 // Practice Match, phase 1: typed teams and names, scored on this pad, kept on
 // this phone and nowhere else (lib/practice.js). Statically imported, not
 // lazy: the scorer's chunk is the one a phone has cached for a ground with no
 // signal, and a practice match is started from the field.
 import { PracticeSetup, PracticeList, PracticeWeatherSheet, withWeatherChange } from "./practice.jsx";
-import { PracticeLabel, PracticeWeatherChip } from "./practiceLabel.jsx";
+import { PracticeLabel, PilotLabel, PracticeWeatherChip } from "./practiceLabel.jsx";
 import { clearDraft, inProgressPractice, loadPractice, savePractice, updatePractice, savedClock, cfgFromRecord, weatherChip } from "../lib/practice.js";
+import { PILOT_WORDS, createBody, namesBody, demoteToPractice, listPilot, loadPilot, pilotStatus, purgeExpiredNames, updatePilotState } from "../lib/pilot.js";
+import { PilotList, PilotFinish } from "./pilotList.jsx";
 import { scorecardFileName, scorecardText, saveTextFile } from "../lib/practiceExport.js";
 import { api, signedIn } from "../lib/api.js";
 import { couldFinalise, profile } from "../lib/session.js";
@@ -331,6 +333,17 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   const[practice,setPractice]=useState(null);
   const[practiceOffer,setPracticeOffer]=useState(null);
   const practiceMode=!!match?.practice;
+  // A Pilot Match (lib/pilot.js, PILOT_MATCH_PHASE2): a practice match with
+  // phase 2 on. Everything practiceMode keeps off stays off; its own outbox
+  // (lib/sync.js PadSync, pilot mode) is the one thing it adds.
+  const pilotMode=practiceMode&&!!match?.pilot&&isPilotId(match?.matchId);
+  // The record, for the pad's sync hooks, which run outside a render.
+  const practiceRef=useRef(null);
+  practiceRef.current=practice;
+  // Phase 2, as the server last said (pilotStatus): whether the setup offers
+  // "Send live to SCRBRD", and the start screen My Pilot Matches.
+  const[pilotNow,setPilotNow]=useState(null);
+  const[pilotHere,setPilotHere]=useState(0);
   // ── The event log is the state ──────────────────────────
   // One log per innings. Everything the UI renders — score, scorecard, wagon
   // wheel, worm, partnerships, fall of wickets — is a fold over these, so
@@ -419,7 +432,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   // Centre or restored after a reload (App.jsx puts `live` on its cfg). The
   // demo's seeded fixtures and a match started on the setup screen have
   // none, and nothing of theirs is ever queued.
-  const live = resume?.cfg?.live === true && !!resume?.cfg?.matchId && !isPracticeId(resume.cfg.matchId);
+  const fixtureLive = resume?.cfg?.live === true && !!resume?.cfg?.matchId && !isPracticeId(resume.cfg.matchId);
+  // A Pilot Match has a server behind it too (its own routes): the outbox
+  // opens for it as for a fixture. Never a practice id (pilotMode asks).
+  const live = fixtureLive || pilotMode;
   // Who opened it: a person, from the Match Centre ("open"), or the session
   // restore after a reload ("restore"), which never takes a match another
   // device has claimed since this one held it (packages/sync attach.mjs).
@@ -560,7 +576,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   // the sheets say why there is none, and work without it (D6).
   const dlsWhy = !live || !attached || !signedIn() || padStatus?.online === false || sync.state === "waiting" ? "offline"
     : sync.state !== "synced" ? "unsynced" : null;
-  const dlsMatchId = live ? resume.cfg.matchId : null;
+  const dlsMatchId = fixtureLive ? resume.cfg.matchId : null;
   const proposeDls = useMemo(() => (dlsWhy || !dlsMatchId ? null
     : (/** @type {string} */ q) => api(`/api/matches/${dlsMatchId}/dls?${q}`, { timeoutMs: 6000 })), [dlsWhy, dlsMatchId]);
   // ── end SCRBRD-130 R2 ──
@@ -745,7 +761,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
       // with the log, then what the server says now, before the log is set,
       // so the first fold has them.
       if (saved?.fold) applyFold(saved.fold);
-      const fresh = live ? await liveFold(resume.cfg) : null;
+      const fresh = fixtureLive ? await liveFold(resume.cfg) : null;
       if (cancelled) return;
       if (fresh) applyFold(fresh);
       if (saved?.events?.some(e => e.length)) {
@@ -760,7 +776,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
         // Where each end's side came from, as saved; a log saved before it
         // was kept asks the server, when there is one to ask.
         if (saved.sides) setSideSource(saved.sides);
-        else if (live) learnSides(resume.cfg, () => cancelled);
+        else if (fixtureLive) learnSides(resume.cfg, () => cancelled);
         setEvents(saved.events);
         setCurIn(saved.curIn ?? 0);
         setSaveState({ kind: await storageKind(), restored: true, savedAt: saved.savedAt ?? null });
@@ -773,7 +789,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
         // has a log, it is THE log (SCRBRD-075): the pad replays it and never
         // starts one of its own — a first visit, and the incoming side of a
         // handover, which the protocol hands the log to (spec §4 step 2).
-        const server = live ? await liveLog(resume.cfg) : null;
+        const server = fixtureLive ? await liveLog(resume.cfg) : null;
         if (cancelled) return;
         if (server?.length) {
           for (const e of server) if (e?.id) { serverKnownRef.current.add(e.id); adoptedRef.current.push(e.id); }
@@ -868,8 +884,20 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   useEffect(() => {
     if (!matchId || !live) return;
     let stopped = false;
+    // A Pilot Match's parts (lib/sync.js PilotMode): the roster its events are
+    // mapped by, and where it stands with the server, from its record.
+    const id0 = matchId;
+    const pilot = pilotMode && isPilotId(id0) ? {
+      roster: () => practiceRef.current?.pilot?.roster ?? { slots: {}, teams: { home: "", away: "" } },
+      state: async () => (await loadPilot(id0))?.pilot ?? null,
+      createBody: (o) => createBody(practiceRef.current, o),
+      namesBody: () => namesBody(practiceRef.current),
+      created: async () => { const r = await updatePilotState(id0, { server: "created" }); if (r && !stopped) setPractice(r); },
+      namesPut: async () => { const r = await updatePilotState(id0, { namesSent: true }); if (r && !stopped) setPractice(r); },
+      onRefused: () => demotePilot(id0),
+    } : undefined;
     const ps = new PadSync({
-      matchId, userId: profile()?.user?.id, intent,
+      matchId, userId: profile()?.user?.id, intent, pilot,
       hooks: {
         padLog: () => eventsRef.current,
         adopt: (log) => adoptLog(log, eventsRef.current),
@@ -926,7 +954,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     };
     // `live` and `intent` come from `resume`, which is fixed for the life of
     // the pad (App.jsx keys it by match); listed so the rule has nothing to say.
-  }, [matchId, live, intent]);
+  }, [matchId, live, intent, pilotMode]);
 
   // Persist on every change to the log. Skipped until hydration has finished,
   // or the empty initial state would overwrite the very log being restored.
@@ -988,6 +1016,14 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     setMatch(cfg);
     const sq1=cfg.squad1||[], sq2=cfg.squad2||[];
     const tk1=cfg.teamKey1||cfg.team1, tk2=cfg.teamKey2||cfg.team2;
+    // A Pilot Match is sent, so its opening events carry ids from the start,
+    // minted under its own id (newEventId), and undo voids rather than cuts
+    // (matchIdRef set: there is a server behind it). The second innings'
+    // innings_start here stays the pad's own: the break re-declares it, with
+    // an id, when the chase begins.
+    const sent=!!cfg.pilot&&isPilotId(cfg.matchId);
+    if(sent)matchIdRef.current=cfg.matchId;
+    const stamp=(e)=>sent?{...e,id:newEventId(deviceIdRef.current,cfg.matchId)}:e;
     const bsq1=INT_TEAMS[tk2]?.players.map(p=>p.name)||sq2;
     const bsq2=INT_TEAMS[tk1]?.players.map(p=>p.name)||sq1;
 
@@ -1001,16 +1037,17 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     // order they were picked, so naming the batting side from team1 put the
     // first-picked side's name on the other side's innings whenever it
     // fielded first (SCRBRD-067). In setup a side's name IS its key.
-    const open1=[inningsStart({innings:0,battingTeam:tk1,bowlingTeam:tk2,
-      squad:sq1,bowlingSquad:bsq1,twelfthMan:cfg.twelfth1||null,teamKey:tk1,bowlingTeamKey:tk2,overs:cfg.overs||20,captureProfile})];
+    const open1=[stamp(inningsStart({innings:0,battingTeam:tk1,bowlingTeam:tk2,
+      squad:sq1,bowlingSquad:bsq1,twelfthMan:cfg.twelfth1||null,teamKey:tk1,bowlingTeamKey:tk2,overs:cfg.overs||20,captureProfile}))];
     const open2=[inningsStart({innings:1,battingTeam:tk2,bowlingTeam:tk1,
       squad:sq2,bowlingSquad:bsq2,twelfthMan:cfg.twelfth2||null,teamKey:tk2,bowlingTeamKey:tk1,overs:cfg.overs||20,captureProfile})];
 
     // Openers and opening bowler chosen in setup step 4.
     if(cfg.opener1&&cfg.opener2&&cfg.openBowler){
-      open1.push(battersEvent({innings:0,striker:cfg.opener1,nonStriker:cfg.opener2}));
-      open1.push(bowlerEvent({innings:0,bowler:cfg.openBowler}));
+      open1.push(stamp(battersEvent({innings:0,striker:cfg.opener1,nonStriker:cfg.opener2})));
+      open1.push(stamp(bowlerEvent({innings:0,bowler:cfg.openBowler})));
     }
+    if(sent)for(const e of open1)mintedRef.current.add(e.id);
     setEvents([open1,open2]);
     // A match started here has no fixture id yet; mint one so the log is
     // durable from the first ball rather than from whenever it gets an id.
@@ -1030,19 +1067,39 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   // unset on purpose, as startMatch leaves it: undo reads that as "no server
   // behind this match" (LOCAL_ONLY, undoLastBall) and cuts the last ball out
   // of the log, where a set one would append a void to a log nobody else has.
+  // A Pilot Match starts the same way (its record under pilot:, practice.js
+  // routes it); its outbox then opens because the cfg says pilot.
   const startPractice=async(cfg,record)=>{
     await savePractice(record);
     setPractice(record);
     startMatch(cfg);
     clearDraft();
   };
+  // §3.3 step 2: the server will not take this match from this account (no
+  // grant, phase 2 off). It stays on this phone as a Practice Match: re-keyed
+  // under practice:, its outbox gone, and the pad says so. Never the other way.
+  const demotePilot=async(id)=>{
+    const pid=await demoteToPractice(id);
+    if(!pid)return;
+    const rec=await loadPractice(pid);
+    matchIdRef.current=null;
+    setPractice(rec);
+    setMatch(m=>m?{...m,pilot:false,matchId:pid}:m);
+    setMatchId(pid);
+  };
   // Back into a practice match from the list or the start screen: the saved
   // log and the saved record, as they were, on the pad (or its result).
   const resumePractice=async(id)=>{
     const[rec,saved]=await Promise.all([loadPractice(id),loadMatch(id)]);
     if(!saved?.events?.some(e=>e?.length))return;
-    const cfg=saved.cfg?.practice?saved.cfg:cfgFromRecord(rec,id);
+    const cfg=saved.cfg?.practice?saved.cfg:{...cfgFromRecord(rec,id),...(isPilotId(id)?{pilot:true}:{})};
     setPractice(rec);
+    // A Pilot Match has a server behind it: its ids are minted under its own
+    // id, and what the server already holds is not offered again.
+    if(isPilotId(id)){
+      matchIdRef.current=id;
+      if(Array.isArray(saved.serverHas))saved.events.forEach((evs,i)=>(evs??[]).slice(0,saved.serverHas[i]??0).forEach(e=>e?.id&&serverKnownRef.current.add(e.id)));
+    }
     setMatch(cfg);
     setMatchId(id);
     eventsRef.current=saved.events;
@@ -1057,7 +1114,16 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   useEffect(()=>{
     if(screen!=="setup")return undefined;
     let off=false;
-    inProgressPractice().then(r=>{if(!off)setPracticeOffer(r);}).catch(()=>{});
+    // The names' date on this phone first (§7.2), then what to offer.
+    purgeExpiredNames().catch(()=>0)
+      .then(()=>Promise.all([inProgressPractice(),listPilot().catch(()=>[])]))
+      .then(([r,pilots])=>{
+        if(off)return;
+        const p=pilots.find(x=>!x.complete)??null;
+        setPracticeOffer(!r?p&&{...p,pilot:true}:!p?r:(p.savedAt??0)>(r.savedAt??0)?{...p,pilot:true}:r);
+        setPilotHere(pilots.length);
+      }).catch(()=>{});
+    pilotStatus().then(s=>{if(!off)setPilotNow(s);}).catch(()=>{});
     return()=>{off=true;};
   },[screen]);
   // The shell is told when the pad is on a practice match, so a reload brings
@@ -2156,7 +2222,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
       <SuspendSheet key={modal}
         view={modal==="suspendReplace"?"replace":modal==="suspendReport"?"report":"reason"}
         innings={innings} events={events} curIn={curIn}
-        role={role} matchId={live?matchId:null}
+        role={role} matchId={fixtureLive?matchId:null}
         onSuspend={recordSuspension}
         onReplace={recordReplacement}
         onClose={()=>setModal(null)}/>
@@ -2478,7 +2544,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
         <ExitKey onExit={onExit}/>
         {renderModal()}
         <div style={{width:"100%",maxWidth:"920px"}}>
-          {practiceMode&&<div style={{marginBottom:"16px",textAlign:"center"}}><PracticeLabel/></div>}
+          {practiceMode&&<div style={{marginBottom:"16px",textAlign:"center"}}>{pilotMode?<PilotLabel/>:<PracticeLabel/>}</div>}
           <Glass style={{padding:"36px",textAlign:"center",marginBottom:"28px"}}>
             <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.2em",textTransform:"uppercase",marginBottom:"12px"}}>
               {offer.state==="available"?"Not yet decided":"Match Complete"}
@@ -2510,6 +2576,15 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
               holds scoring.finalise at the home side — offered here, decided
               there. Not for a practice match (its own record) or a tie still
               waiting on its super over. */}
+          {/* A Pilot Match is finished on SCRBRD by its scorer (§7.3): from
+              then on its clocks run from its last ball, and nothing more is
+              taken into its log. */}
+          {pilotMode&&live&&matchId&&offer.state!=="available"&&(
+            <PilotFinish matchId={matchId} attached={!!padStatus?.attached} left={(padStatus?.pending??0)+(padStatus?.held??0)}
+              lastAt={Math.max(0,...events.flat().map(e=>Number.isFinite(e?.clientTs)?e.clientTs:0))}
+              done={practice?.pilot?.finished===true}
+              onDone={async()=>{const r=await updatePilotState(matchId,{finished:true,finishedAt:Date.now()});if(r)setPractice(r);}}/>
+          )}
           {live&&matchId&&!practiceMode&&signedIn()&&offer.state!=="available"&&couldFinalise(match?.schoolId,match?.teamCode)&&(
             <FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}
               left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}/>
@@ -2529,10 +2604,12 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     );
   }
 
-  if(screen==="practice")return (<><GS/><PracticeSetup onStart={startPractice} onCancel={()=>setScreen("setup")}/></>);
+  if(screen==="practice")return (<><GS/><PracticeSetup onStart={startPractice} onCancel={()=>setScreen("setup")} pilot={pilotNow}/></>);
   if(screen==="practice-list")return (<><GS/><PracticeList onBack={()=>setScreen("setup")} onResume={resumePractice}/></>);
+  if(screen==="pilot-list")return (<><GS/><PilotList onBack={()=>setScreen("setup")} onResume={resumePractice}/></>);
   if(screen==="setup")return (<><GS/><SetupScreen onStart={startMatch}
-    practice={{offer:practiceOffer,onStart:()=>setScreen("practice"),onList:()=>setScreen("practice-list"),onResume:resumePractice}}/><ExitKey onExit={onExit}/></>);
+    practice={{offer:practiceOffer,onStart:()=>setScreen("practice"),onList:()=>setScreen("practice-list"),onResume:resumePractice,
+      onPilotList:(pilotNow?.sync||pilotHere>0)?()=>setScreen("pilot-list"):null}}/><ExitKey onExit={onExit}/></>);
 
   /* ── MATCH SCREEN ── */
   const NAV=[{id:"score",icon:"bat",label:"Score"},{id:"cards",icon:"scorebook",label:"Cards"},{id:"analysis",icon:"chart-column",label:"Analysis"},{id:"history",icon:"scroll-text",label:"History"}];
@@ -2542,7 +2619,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   // was refused because one is already pending (to take it) — anyone else
   // has nothing to do here.
   const takeOver=sync.reason==="handover_pending"||sync.reason==="verifying";
-  const showHandover=attached||takeOver;
+  // A Pilot Match is never handed to another person (PILOT_MATCH_PHASE2
+  // §3.1): its holder is always its owner; another phone is a Take over.
+  const showHandover=(attached||takeOver)&&!pilotMode;
   // At a desktop or a tablet on its side, the board and its state sit beside
   // the pad instead of above it (the `pad-split` rule in GS).
   const split=activeTab==="score"&&uiMode==="focus";
@@ -2586,7 +2665,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
               {isSuperOver(inn)?`${superOverTitle(inn.superOver)} · ${pairPlace(innings,curIn)} innings`
                 :chaseSlot?`${superOverTitle(innings[curIn-1].superOver)} · second innings`:`Innings ${curIn+1}`} · {inn?.overs??(chaseSlot?innings[curIn-1].overs:match?.overs)}ov{inn?.revised&&<span style={{color:T.semantic.warning}} title={`revised: ${inn.revised.reason}`}> (revised)</span>}
             </div>
-            {practiceMode&&<PracticeLabel compact saved={saveState.savedAt?savedClock(saveState.savedAt):null}/>}
+            {practiceMode&&(pilotMode
+              ?<PilotLabel compact saved={saveState.savedAt?savedClock(saveState.savedAt):null}/>
+              :<PracticeLabel compact saved={saveState.savedAt?savedClock(saveState.savedAt):null}/>)}
+            {/* §3.3 step 2: a Pilot Match the server would not take, kept here. */}
+            {practiceMode&&!pilotMode&&practice?.demotedFromPilot&&(
+              <p data-testid="pilot-refused" role="status" style={{margin:0,fontFamily:T.type.body,fontSize:"13px",lineHeight:1.35,color:T.content.secondary}}>{PILOT_WORDS.refused}</p>
+            )}
             {practiceMode&&<PracticeWeatherChip {...weatherChip(practice)}/>}
           </div>
           {showHandover&&(
