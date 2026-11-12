@@ -36,7 +36,7 @@ const ok = (n, c, why = []) => {
 };
 
 const files = readdirSync(BOOKS).filter((f) => f.endsWith(".scorebook")).sort();
-ok("there are scorebooks to prove", files.length >= 10, [`${files.length} found`]);
+ok("there are scorebooks to prove", files.length >= 15, [`${files.length} found`]);
 
 for (const f of files) {
   const book = parseScorebook(readFileSync(join(BOOKS, f), "utf8"), f);
