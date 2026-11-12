@@ -11882,7 +11882,7 @@ BEGIN
   INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
                           client_seq, client_ts, kind, ball_type, value, striker_id, bowler_id,
                           dismissal, dismissed_id, theta, radius, placement_source, capture_profile)
-  SELECT p_match, m.school_id, s, 0, p_innings, p_scorer, 'v130-pad', 'v130-' || p_match || '-' || s, s, now(),
+  SELECT p_match, m.school_id, s, 0, p_innings, p_scorer, 'v130d2-pad', 'v130d2-' || p_match || '-' || s, s, now(),
          'ball', CASE WHEN p_dismissal IS NULL THEN 'run' ELSE 'W' END, p_value, p_striker, p_bowler,
          p_dismissal, CASE WHEN p_dismissal IS NULL THEN NULL ELSE p_striker END,
          p_theta, CASE WHEN p_theta IS NULL THEN NULL ELSE 0.6 END,
@@ -11890,12 +11890,14 @@ BEGIN
     FROM match m WHERE m.id = p_match;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- Its own prefix (v130d2.): db/130's section 107 already holds v130.<tag>
+-- accounts by the time this one runs.
 CREATE OR REPLACE FUNCTION _vd2_person(p_tag text, p_role text, p_team text, p_player uuid) RETURNS uuid AS $$
 DECLARE v_u uuid;
   HIL uuid := '11111111-1111-1111-1111-111111111111';
 BEGIN
   INSERT INTO app_user (school_id, email, name, role, player_id, teams)
-  VALUES (HIL, 'v130.' || p_tag || '@example.invalid', 'V130 ' || initcap(p_tag), p_role, p_player,
+  VALUES (HIL, 'v130d2.' || p_tag || '@example.invalid', 'V130D2 ' || initcap(p_tag), p_role, p_player,
           CASE WHEN p_team IS NULL THEN '{}'::text[] ELSE ARRAY[p_team] END)
   RETURNING id INTO v_u;
   INSERT INTO role_assignment (person_id, role, school_id, team_code) VALUES (v_u, p_role, HIL, p_team);
