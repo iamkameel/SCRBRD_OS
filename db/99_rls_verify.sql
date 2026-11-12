@@ -11693,35 +11693,64 @@ CREATE OR REPLACE FUNCTION _v152_owner_reads() RETURNS jsonb AS $$
                                            AND v.payload->>'target' = b.idempotency_key)))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- (cast) Who among _v152_people() the rows label asks: a pupil whose side
--- has a date it ended (a move or a leaving), a guardian whose link is not a
--- live verified one (pending, rejected, revoked, ended or inactive), a named
--- driver of a trip not cancelled, and a coach at a school that is the away
--- side of a fixture with a ball. Counts of people, the owner's.
-CREATE OR REPLACE FUNCTION _v152_cast() RETURNS jsonb AS $$
+-- (cast) The kinds of reader the conditions name, each as the lowest person
+-- id among _v152_people() who is one: a pupil whose side has a date it ended
+-- (a move or a leaving), a guardian whose link is not a live verified one
+-- (pending, rejected, revoked, ended or inactive), a named driver of a trip
+-- not cancelled, and a coach at a school that is the away side of a fixture
+-- with a ball. NULL where nobody is. The owner's.
+CREATE OR REPLACE FUNCTION _v152_kinds() RETURNS TABLE (kind text, person_id uuid) AS $$
   WITH c AS (SELECT * FROM _v152_people() AS x(person_id))
-  SELECT jsonb_build_object(
-    'pupil_dated', (SELECT count(*) FROM c
-                     WHERE person_is_pupil(c.person_id)
-                       AND EXISTS (SELECT 1 FROM team_membership tm
-                                    WHERE tm.left_on IS NOT NULL
-                                      AND tm.player_id IN (SELECT u.player_id FROM app_user u WHERE u.id = c.person_id
-                                                           UNION
-                                                           SELECT g.player_id FROM role_assignment a
-                                                             JOIN assignment_subject g ON g.assignment_id = a.id
-                                                            WHERE a.person_id = c.person_id AND a.role IN ('selfaccess', 'player')))),
-    'guardian_ended', (SELECT count(*) FROM c
-                        WHERE EXISTS (SELECT 1 FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
-                                       WHERE a.person_id = c.person_id AND a.role = 'guardian'
-                                         AND (NOT a.active OR g.verification_state <> 'verified'
-                                              OR g.valid_until <= sa_today() OR a.valid_until <= sa_today()))),
-    'driver', (SELECT count(*) FROM c
-                WHERE EXISTS (SELECT 1 FROM trip t WHERE t.driver_id = c.person_id AND t.cancelled_at IS NULL)),
-    'away_coach', (SELECT count(*) FROM c
-                    WHERE EXISTS (SELECT 1 FROM role_assignment a
-                                   WHERE a.person_id = c.person_id AND a.role = 'coach' AND a.active
-                                     AND a.school_id IN (SELECT m.away_school_id FROM match m
-                                                          WHERE EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id)))))
+  SELECT 'pupil_dated', (SELECT min(c.person_id::text)::uuid FROM c
+                          WHERE person_is_pupil(c.person_id)
+                            AND EXISTS (SELECT 1 FROM team_membership tm
+                                         WHERE tm.left_on IS NOT NULL
+                                           AND tm.player_id IN (SELECT u.player_id FROM app_user u WHERE u.id = c.person_id
+                                                                UNION
+                                                                SELECT g.player_id FROM role_assignment a
+                                                                  JOIN assignment_subject g ON g.assignment_id = a.id
+                                                                 WHERE a.person_id = c.person_id AND a.role IN ('selfaccess', 'player'))))
+  UNION ALL
+  SELECT 'guardian_ended', (SELECT min(c.person_id::text)::uuid FROM c
+                             WHERE EXISTS (SELECT 1 FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+                                            WHERE a.person_id = c.person_id AND a.role = 'guardian'
+                                              AND (NOT a.active OR g.verification_state <> 'verified'
+                                                   OR g.valid_until <= sa_today() OR a.valid_until <= sa_today())))
+  UNION ALL
+  SELECT 'driver', (SELECT min(c.person_id::text)::uuid FROM c
+                     WHERE EXISTS (SELECT 1 FROM trip t WHERE t.driver_id = c.person_id AND t.cancelled_at IS NULL))
+  UNION ALL
+  SELECT 'away_coach', (SELECT min(c.person_id::text)::uuid FROM c
+                         WHERE EXISTS (SELECT 1 FROM role_assignment a
+                                        WHERE a.person_id = c.person_id AND a.role = 'coach' AND a.active
+                                          AND a.school_id IN (SELECT m.away_school_id FROM match m
+                                                               WHERE EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id))))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The readers §126 asks: a fixed sample, not the whole cast. Every one of the
+-- whole cast's readers at every fixture ran past six hours on CI (8299ddab:
+-- 736 people by §126). The sample is, for each kind of assignment (its role,
+-- its school, whether it is a side's or the school's, whether it is a
+-- fixture's, whether it is live), the person with the lowest id holding one;
+-- and the person _v152_kinds() names for each kind. Deterministic: the same
+-- cast gives the same people, in order.
+CREATE OR REPLACE FUNCTION _v152_readers() RETURNS SETOF uuid AS $$
+  SELECT DISTINCT p FROM (
+    (SELECT DISTINCT ON (a.role, a.school_id, a.team_code IS NULL, a.fixture_id IS NULL, a.active) a.person_id AS p
+       FROM role_assignment a
+      ORDER BY a.role, a.school_id, a.team_code IS NULL, a.fixture_id IS NULL, a.active, a.person_id)
+    UNION ALL
+    SELECT k.person_id FROM _v152_kinds() k WHERE k.person_id IS NOT NULL) x
+  ORDER BY 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- (cast) Which person the sample holds for each kind, and how many readers
+-- it has of how many in the cast.
+CREATE OR REPLACE FUNCTION _v152_cast() RETURNS jsonb AS $$
+  SELECT (SELECT jsonb_object_agg(k.kind, k.person_id) FROM _v152_kinds() k
+           WHERE k.person_id IS NULL OR k.person_id IN (SELECT * FROM _v152_readers()))
+         || jsonb_build_object('readers', (SELECT count(*) FROM _v152_readers()),
+                               'cast', (SELECT count(*) FROM _v152_people()))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- (fingerprint) Fable's S2: what the live pin sees that an xmin does not.
@@ -39737,10 +39766,11 @@ $v116$;
   --   (grants)   SELECT for scrbrd_app and nothing else, and nothing for
   --              anybody else (anon and authenticated where they exist); the
   --              exact path not PUBLIC's to call, the re-pin the owner's (S4)
-  --   (rows)     for everybody with an assignment and for nobody: every
-  --              column of every row equal to db/121's view under row
-  --              security (_v152_live_rls)
-  --   (pad)      the same for every account on a pad's credential at each
+  --   (rows)     for a fixed sample of readers (_v152_readers: the lowest id
+  --              of each kind of assignment, and of each kind (cast) names)
+  --              and for nobody: every column of every row equal to db/121's
+  --              view under row security (_v152_live_rls)
+  --   (pad)      the same for every reader of the sample on a pad's credential at each
   --              school's busiest fixture as the host and as the away side
   --              (_v152_matches), and after the plant at the planted fixture:
   --              ball_event's pad guard, match's inside the away branch, and
@@ -39764,9 +39794,11 @@ $v116$;
   --              PUBLIC, anon, authenticated or service_role (Fable's S4)
   --   (owner)    a definer of the owner reads every live ball through the
   --              view, as through db/121's view (the owner's branch)
-  --   (cast)     the readers asked include a pupil whose side has ended, a
+  --   (cast)     the sample includes a pupil whose side has ended, a
   --              guardian whose link is not live, a trip's driver and an
-  --              away school's coach (Fable's S3)
+  --              away school's coach (Fable's S3), and every role the cast
+  --              holds. The whole cast at every label ran past six hours on
+  --              CI; the sample is what each label asks
   --   (fingerprint) in this transaction: a pinned policy re-stated and
   --              re-pinned, then altered, breaks the live pin though its xmin
   --              stays; put back, it holds; the security barrier lifted
@@ -39856,11 +39888,15 @@ $v116$;
     PERFORM _assert(y->>'live' = y->>'rls' AND split_part(y->>'live', ':', 1) = y->>'balls' AND (y->>'balls')::int > 0,
       format('§126 (owner): a definer of the owner reads %s through ball_event_live, %s under db/121''s view, of %s live balls',
              y->>'live', y->>'rls', y->>'balls'));
-    -- (cast) the readers (rows) asks include each kind the conditions name
+    -- (cast) the sample of readers every label below asks holds each kind
+    -- the conditions name, and every role the cast holds
     y := _v152_cast();
-    PERFORM _assert((y->>'pupil_dated')::int > 0 AND (y->>'guardian_ended')::int > 0
-                    AND (y->>'driver')::int > 0 AND (y->>'away_coach')::int > 0,
-      format('§126 (cast): the readers lack a kind: %s', y));
+    PERFORM _assert(y->>'pupil_dated' IS NOT NULL AND y->>'guardian_ended' IS NOT NULL
+                    AND y->>'driver' IS NOT NULL AND y->>'away_coach' IS NOT NULL
+                    AND (SELECT count(DISTINCT a.role) FROM role_assignment a WHERE a.person_id IN (SELECT * FROM _v152_readers()))
+                        = (SELECT count(DISTINCT a.role) FROM role_assignment a),
+      format('§126 (cast): the readers lack a kind, or a role the cast holds: %s', y));
+    RAISE NOTICE '§126 (cast): % readers of a cast of %', y->>'readers', y->>'cast';
     y := NULL;
 
     FOR pass IN 1..2 LOOP
@@ -39871,7 +39907,7 @@ $v116$;
       -- (rows) / (stray)
       PERFORM set_config('app.user_id', '', true);
       n_all := _v152_same(CASE pass WHEN 1 THEN 'rows' ELSE 'stray' END);
-      FOR u IN SELECT * FROM _v152_people() LOOP
+      FOR u IN SELECT * FROM _v152_readers() LOOP
         PERFORM _as(u);
         n := _v152_same(CASE pass WHEN 1 THEN 'rows' ELSE 'stray' END);
         IF pass = 1 THEN
@@ -39931,7 +39967,7 @@ $v116$;
     got := _v152_owner('ALTER TABLE match DISABLE ROW LEVEL SECURITY');
     PERFORM _assert(got = 'ok', format('§126 (match): row security could not be lifted from match: %s', got));
     PERFORM _assert(ball_log_pinned(), '§126 (match): lifting match''s row security broke the live pin');
-    FOR u IN SELECT * FROM _v152_people() LOOP
+    FOR u IN SELECT * FROM _v152_readers() LOOP
       PERFORM _as(u);
       PERFORM _v152_same('match');
       -- and on a pad's credential at each fixture: match's pad guard is no
@@ -39951,7 +39987,7 @@ $v116$;
     got := _v152_owner(format('CREATE POLICY _v152_closed ON ball_event AS RESTRICTIVE FOR SELECT USING (school_id = %L::uuid)', HIL));
     PERFORM _assert(got = 'ok', format('§126 (closed): the policy could not be added: %s', got));
     PERFORM _assert(NOT ball_log_pinned() AND NOT ball_log_text_pinned(), '§126 (closed): a new RESTRICTIVE policy on ball_event left a pin holding');
-    FOR u IN SELECT * FROM _v152_people() LOOP
+    FOR u IN SELECT * FROM _v152_readers() LOOP
       PERFORM _as(u);
       n := _v152_same('closed');
       IF n < coalesce((seen->>u::text)::int, 0) THEN n_less := n_less + 1; END IF;
@@ -39960,7 +39996,7 @@ $v116$;
     PERFORM _assert(got = 'ok', format('§126 (closed): the policy on match could not be added: %s', got));
     got := _v152_owner('DROP POLICY _v152_closed ON ball_event');
     PERFORM _assert(got = 'ok' AND NOT ball_log_pinned(), format('§126 (closed): %s, or a new policy on match left the live pin holding', got));
-    FOR u IN SELECT * FROM _v152_people() LOOP
+    FOR u IN SELECT * FROM _v152_readers() LOOP
       PERFORM _as(u);
       PERFORM _v152_same('closed, match');
     END LOOP;
