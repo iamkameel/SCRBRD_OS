@@ -96,17 +96,17 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
  * and the awards in its runs — and the way to every ball. The focus comes
  * here when it opens, so a screen reader hears what is listed.
  */
-function Drill({ drill, onAll }) {
+function Drill({ drill, lines, onAll }) {
   const head = useRef(/** @type {HTMLParagraphElement | null} */ (null));
   useEffect(() => {
     head.current?.scrollIntoView({ block: "start", behavior: "instant" });
     head.current?.focus({ preventScroll: true });
   }, []);
-  const balls = drill.lines.filter((c) => BALL_KINDS.has(c.kind)).length;
-  const other = drill.lines.length - balls;
+  const balls = lines.filter((c) => BALL_KINDS.has(c.kind)).length;
+  const other = lines.length - balls;
   const what = drill.what ? `${drill.what[0].toUpperCase()}${drill.what.slice(1)}` : "From the chart";
   return (
-    <div data-testid="mc-drill" data-lines={drill.lines.length} style={{ display: "flex", gap: T.space.sm, alignItems: "center", flexWrap: "wrap",
+    <div data-testid="mc-drill" data-lines={lines.length} style={{ display: "flex", gap: T.space.sm, alignItems: "center", flexWrap: "wrap",
       padding: `${T.space.sm} ${T.space.md}`, borderRadius: T.radius.md, border: `1px solid ${T.line.normal}`, background: T.surface.interactive }}>
       <p ref={head} tabIndex={-1} data-testid="mc-drill-what" style={{ ...T.role.body, color: T.content.primary, margin: 0, flex: "1 1 200px", scrollMarginTop: T.space.lg }}>
         <strong>{what}</strong>{` · ${plural(drill.runs, "run")} · ${plural(balls, "ball")}${other ? ` and ${plural(other, "award")}` : ""}, listed below`}
@@ -120,13 +120,33 @@ function Drill({ drill, onAll }) {
   );
 }
 
-/** The chips, then the jump; a chart's balls first, where it opened the tab. */
-export default function CommentaryTools({ chip, setChip, commentary, match, innings, groups, onJump, drill = null, onAll }) {
+const NONE_FOR = { wickets: "No wicket has fallen yet.", fours: "No four has been hit yet.", sixes: "No six has been hit yet." };
+
+/**
+ * The chips, then the jump; a chart's balls first, where it opened the tab
+ * (`drill`, CRI-2.3), with no chip pressed while they are. `jump`: the over
+ * the jump asked for, which this puts at the top of the screen, the focus on
+ * its heading, once the tab (`at`, the Commentary's section) has drawn it.
+ */
+export default function CommentaryTools({ chip, setChip, commentary, match, innings, groups, onJump, jump = null, at = null, drill = null, onAll }) {
+  useEffect(() => {
+    if (!jump) return;
+    const el = [...(at?.current?.querySelectorAll("[data-over-key]") ?? [])].find((x) => x.getAttribute("data-over-key") === jump.key);
+    const head = el?.querySelector("[data-testid='mc-over-title']");
+    if (!(head instanceof HTMLElement)) return;
+    head.scrollIntoView({ block: "start", behavior: "instant" });
+    head.focus({ preventScroll: true });
+  }, [jump, at]);
   return (
     <div data-testid="mc-commentary-tools" style={{ display: "grid", gap: T.space.sm, marginBottom: T.space.md }}>
-      {drill && <Drill drill={drill} onAll={onAll}/>}
-      <Chips chip={chip} setChip={setChip} commentary={commentary}/>
+      {drill && <Drill drill={drill} lines={groups.flatMap((g) => g.lines)} onAll={onAll}/>}
+      <Chips chip={drill ? null : chip} setChip={setChip} commentary={commentary}/>
       <OverJump match={match} innings={innings} groups={groups} onJump={onJump}/>
+      {!groups.length && (
+        <p data-testid="mc-commentary-filtered-none" style={{ ...T.role.body, color: T.content.secondary, padding: `${T.space.xl} 0`, margin: 0 }}>
+          {NONE_FOR[chip] ?? "Nothing to show."}
+        </p>
+      )}
     </div>
   );
 }

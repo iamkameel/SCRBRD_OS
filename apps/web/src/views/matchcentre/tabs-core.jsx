@@ -335,7 +335,6 @@ const OVERS_AT_FIRST = 12;
  * their room is kept, so the lines do not move when they draw.
  */
 const CommentaryTools = lazy(() => import("./commentaryTools.jsx"));
-const NONE_FOR = { wickets: "No wicket has fallen yet.", fours: "No four has been hit yet.", sixes: "No six has been hit yet." };
 
 /** An over's heading, as its group and the jump both say it. */
 const overTitle = (inn, over) => (inn?.superOver != null ? "The over" : `Over ${over + 1}`);
@@ -371,14 +370,6 @@ export function CommentaryTab({ match, commentary, demo, innings, ballKey = null
     el.scrollIntoView({ block: "center", behavior: "instant" });
     el.focus({ preventScroll: true });
   }, [ballKey]);
-  useEffect(() => {
-    if (!jump) return;
-    const el = [...(at.current?.querySelectorAll("[data-over-key]") ?? [])].find((x) => x.getAttribute("data-over-key") === jump.key);
-    const head = el?.querySelector("[data-testid='mc-over-title']");
-    if (!(head instanceof HTMLElement)) return;
-    head.scrollIntoView({ block: "start", behavior: "instant" });
-    head.focus({ preventScroll: true });
-  }, [jump]);
   if (demo) return <Quiet testid="mc-commentary-none">Commentary is written from a match's own ball log. This demonstration fixture has none.</Quiet>;
   if (!commentary.length) return <Quiet testid="mc-commentary-none">Nothing has happened yet. Commentary starts with the first ball.</Quiet>;
   const toOver = (key) => {
@@ -401,11 +392,10 @@ export function CommentaryTab({ match, commentary, demo, innings, ballKey = null
       )}
       <ErrorBoundary name="commentary-tools" fallback={null}>
         <Suspense fallback={<div aria-hidden="true" style={{ minHeight: "96px", marginBottom: T.space.md }}/>}>
-          <CommentaryTools chip={drill ? null : chip} setChip={pickChip} commentary={commentary} match={match} innings={innings} groups={view} onJump={toOver}
-            drill={drill && { what: drill.what, runs: drill.runs, lines: view.flatMap((g) => g.lines) }} onAll={() => setDrill(null)}/>
+          <CommentaryTools chip={chip} setChip={pickChip} commentary={commentary} match={match} innings={innings} groups={view} onJump={toOver}
+            jump={jump} at={at} drill={drill} onAll={() => setDrill(null)}/>
         </Suspense>
       </ErrorBoundary>
-      {!view.length && <Quiet testid="mc-commentary-filtered-none">{NONE_FOR[chip] ?? "Nothing to show."}</Quiet>}
       {visible.map((g) => {
         const head = g.innings !== lastInnings;
         lastInnings = g.innings;
