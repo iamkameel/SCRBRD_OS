@@ -27,7 +27,10 @@
  *      in order; nothing replays on a fresh load; balls that arrive while the
  *      page is open give a moment on the board, tick the run count up, and
  *      end the over with a summary that shows and clears; big-screen mode
- *      draws the board full screen and leaves on Escape or its button.
+ *      draws the board full screen and leaves on Escape or its button;
+ *  10. CRI-2.1, at 360 wide: the Commentary's chips keep exactly the
+ *      deliveries the scorecard counts, by event id, and the over jump goes
+ *      to Over 14 of a longer fixture (fixture-matchcentre.mjs LONG).
  *
  * MC_SHOTS=<dir> also saves every tab at 390 and 1366 wide, in Daylight and
  * Floodlit, into <dir>.
@@ -45,8 +48,8 @@ import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { deriveMatch, deriveInnings, deriveCommentary, runsOffBat, ball, batters, bowler, inningsStart, revision, sealInnings, placementFromTap,
-  scenarioOf, voidEvent } from "@scrbrd/scoring";
-import { buildMatchCentreFixture, writeEvents, HIL } from "./fixture-matchcentre.mjs";
+  scenarioOf, voidEvent, boundaryHit } from "@scrbrd/scoring";
+import { buildMatchCentreFixture, buildLongFixture, writeEvents, HIL } from "./fixture-matchcentre.mjs";
 import { correctionsOf, withCorrectionLines } from "../apps/web/src/lib/corrections.js";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
@@ -1223,6 +1226,100 @@ try {
     ok("his tap on it opens the pad", await until(sc1.s.page, () => !!document.querySelector(".scorer-shell"), 10000));
     ok("no console errors (Enter scoring)", sc1.s.errors.length === 0, sc1.s.errors.join(" | "));
     await sc1.s.ctx.close();
+  }
+
+  group("CRI-2.1: the Commentary's chips keep what the scorecard counts, and the over jump reaches Over 14, at 360 wide");
+  {
+    const NARROW = { width: 360, height: 780 };
+    const c21 = await open({ viewport: NARROW });
+    await signIn(c21.page, /sarah@example\.invalid|Director/);
+    ok("the fixture opens at 360 wide", await openMatch(c21.page, fx.live));
+    const P = c21.page;
+    await pickTab(P, "commentary");
+    await tid(P, "mc-chips").waitFor({ timeout: 4000 }).catch(() => {});
+    const chips = await P.locator('[data-testid^="mc-chip-"]').evaluateAll((els) => els.map((e) => ({
+      id: e.getAttribute("data-testid").slice(8), h: e.getBoundingClientRect().height, w: e.getBoundingClientRect().width,
+      pressed: e.getAttribute("aria-pressed"), count: e.getAttribute("data-count") })));
+    ok("four chips, All pressed, each 44px tall", chips.map((c) => c.id).join() === "all,wickets,fours,sixes"
+       && chips[0].pressed === "true" && chips.slice(1).every((c) => c.pressed === "false") && chips.every((c) => c.h >= 43.5), JSON.stringify(chips));
+    // The scorecard's own counts, from the same fold: both innings.
+    const card = {
+      wickets: inn1.wickets + inn2.wickets,
+      fours: [inn1, inn2].reduce((t, i) => t + i.batsmen.reduce((u, b) => u + b.fours, 0), 0),
+      sixes: [inn1, inn2].reduce((t, i) => t + i.batsmen.reduce((u, b) => u + b.sixes, 0), 0),
+    };
+    ok(`each chip's count is the scorecard's: ${card.wickets} wickets, ${card.fours} fours, ${card.sixes} sixes`,
+       chips.slice(1).every((c) => Number(c.count) === card[c.id]), JSON.stringify(chips.map((c) => c.count)));
+    const allLines = async () => {
+      while (await tid(P, "mc-commentary-more").count()) { await tid(P, "mc-commentary-more").click(); await P.waitForTimeout(200); }
+      return P.locator('[data-testid="mc-line"]').evaluateAll((els) => els.map((e) => ({ key: e.getAttribute("data-key"), kind: e.getAttribute("data-kind") })));
+    };
+    // The deliveries the card counts, by event id: the fold's own ball log.
+    const ids = {
+      wickets: expected.filter((x) => x.kind === "wicket").map((x) => x.key).sort(),
+      fours: [inn1, inn2].flatMap((i) => i.ballLog.filter((b) => boundaryHit(b) === 4).map((b) => `e:${b.id}`)).sort(),
+      sixes: [inn1, inn2].flatMap((i) => i.ballLog.filter((b) => boundaryHit(b) === 6).map((b) => `e:${b.id}`)).sort(),
+    };
+    for (const id of ["wickets", "fours", "sixes"]) {
+      await tid(P, `mc-chip-${id}`).click(); await P.waitForTimeout(300);
+      const lines = await allLines();
+      const kind = id === "wickets" ? "wicket" : id.slice(0, -1);
+      ok(`${id}: pressed, and the lines are exactly the card's ${card[id]} deliveries, by event id`, await tid(P, `mc-chip-${id}`).getAttribute("aria-pressed") === "true"
+         && lines.length === card[id] && lines.every((l) => l.kind === kind) && lines.map((l) => l.key).sort().join() === ids[id].join(),
+         `${lines.length} lines: ${lines.map((l) => l.key).slice(0, 4).join()}`);
+    }
+    await tid(P, "mc-chip-wickets").click(); await P.waitForTimeout(300);
+    const wkOvers = await tid(P, "mc-over-jump").locator("option").evaluateAll((os) => os.filter((o) => o.value).length);
+    ok("with a chip on, the over jump offers only the overs it leaves", wkOvers === await tid(P, "mc-over").count() && wkOvers <= card.wickets, `${wkOvers}`);
+    await tid(P, "mc-chip-all").click(); await P.waitForTimeout(300);
+    ok("All again: every line of the match", (await allLines()).length === told.filter((x) => x.kind !== "over_end").length);
+    ok("at 360 wide, nothing is wider than the screen", await P.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+       await P.evaluate(() => document.documentElement.scrollWidth));
+    const small = await P.evaluate(() => [...document.querySelectorAll('[data-testid="mc-commentary-tools"] *')]
+      .filter((e) => e.children.length === 0 && e.textContent.trim() && parseFloat(getComputedStyle(e).fontSize) < 12).length);
+    ok("...and nothing in the chips or the jump is under 12px", small === 0, small);
+    ok("no console errors (chips)", c21.errors.length === 0, c21.errors.join(" | "));
+    await c21.ctx.close();
+
+    // The over jump, on a match longer than the tab's first twelve overs.
+    const lf = await buildLongFixture(q, fx.players);
+    const longInn = deriveMatch(lf.events).innings[0];
+    ok("a sixteen-over innings, for the jump", longInn.balls === 96, longInn.balls);
+    const j = await open({ viewport: NARROW });
+    await signIn(j.page, /sarah@example\.invalid|Director/);
+    ok("the long fixture opens at 360 wide", await openMatch(j.page, lf.long));
+    const J = j.page;
+    await pickTab(J, "commentary");
+    const sel = tid(J, "mc-over-jump");
+    await sel.waitFor({ timeout: 4000 }).catch(() => {});
+    const opts = await sel.locator("option").evaluateAll((os) => os.filter((o) => o.value).map((o) => o.textContent));
+    const box = await sel.boundingBox().catch(() => null);
+    ok("the jump lists every over, in order, Over 1 to Over 16; 44px tall", opts.length === 16 && opts[0] === "Over 1" && opts[15] === "Over 16" && (box?.height ?? 0) >= 43.5,
+       `${opts.length} ${opts[0]} ${box?.height}`);
+    const drawn = () => J.evaluate(() => [...document.querySelectorAll('[data-testid="mc-over-title"]')].map((e) => e.textContent));
+    ok("the tab opens on the latest twelve overs: Over 2 is not drawn yet", !(await drawn()).includes("Over 2") && (await drawn()).length === 12, (await drawn()).join());
+    await sel.selectOption({ label: "Over 14" });
+    await J.waitForTimeout(400);
+    const at14 = await J.evaluate(() => {
+      const t = [...document.querySelectorAll('[data-testid="mc-over-title"]')].find((e) => e.textContent === "Over 14");
+      const r = t?.getBoundingClientRect();
+      return { found: !!t, top: r?.top ?? -1, inView: !!r && r.top >= 0 && r.bottom <= window.innerHeight, focused: document.activeElement === t,
+        lines: t?.closest('[data-testid="mc-over"]')?.querySelectorAll('[data-testid="mc-line"]').length ?? 0, sel: document.querySelector('[data-testid="mc-over-jump"]')?.value };
+    });
+    ok(`the jump to Over 14: its heading on screen (${Math.round(at14.top)}px from the top), with the focus on it`, at14.found && at14.inView && at14.focused, JSON.stringify(at14));
+    ok("...its six balls under it, the six among them", at14.lines >= 6
+       && await J.evaluate(() => !![...document.querySelectorAll('[data-testid="mc-over-title"]')].find((e) => e.textContent === "Over 14")?.closest('[data-testid="mc-over"]')?.querySelector('[data-kind="six"]')));
+    ok("...and the jump is ready again, for another over", at14.sel === "");
+    await sel.selectOption({ label: "Over 2" });
+    await J.waitForTimeout(400);
+    ok("a jump past the first twelve overs opens the tab far enough back to hold it", await J.evaluate(() => {
+      const t = [...document.querySelectorAll('[data-testid="mc-over-title"]')].find((e) => e.textContent === "Over 2");
+      const r = t?.getBoundingClientRect();
+      return !!r && r.top >= 0 && r.bottom <= window.innerHeight && document.activeElement === t;
+    }));
+    ok("at 360 wide, nothing is wider than the screen (the long fixture)", await J.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    ok("no console errors (over jump)", j.errors.length === 0, j.errors.join(" | "));
+    await j.ctx.close();
   }
 
   group("An error boundary: a panel that throws is a card in its own place, and its neighbours stand");

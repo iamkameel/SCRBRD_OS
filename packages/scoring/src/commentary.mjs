@@ -96,6 +96,89 @@ export const COMMENTARY_KIND = Object.freeze({
 });
 
 /**
+ * CRI-2.1: the Commentary's chips. Each but ALL keeps the lines of one kind,
+ * and only the kinds the scorecard counts: a WICKET line is a wicket that
+ * stood (the fold's innings `wickets`, a free hit's saved batter being a
+ * BALL line), a FOUR or SIX line a boundary off the bat (the batters' 4s and
+ * 6s: boundaryHit(), F7). commentary.test.mjs group M holds each chip to the
+ * fold, line for line.
+ */
+export const COMMENTARY_FILTER = Object.freeze({ ALL: "all", WICKETS: "wickets", FOURS: "fours", SIXES: "sixes" });
+
+/** @type {Readonly<Record<string, string>>} */
+const FILTER_KIND = Object.freeze({
+  [COMMENTARY_FILTER.WICKETS]: COMMENTARY_KIND.WICKET,
+  [COMMENTARY_FILTER.FOURS]: COMMENTARY_KIND.FOUR,
+  [COMMENTARY_FILTER.SIXES]: COMMENTARY_KIND.SIX,
+});
+
+/** The kinds a delivery's own line takes (deliveryLine()). */
+/** @type {ReadonlySet<string>} */
+export const DELIVERY_KINDS = Object.freeze(new Set([COMMENTARY_KIND.BALL, COMMENTARY_KIND.FOUR, COMMENTARY_KIND.SIX, COMMENTARY_KIND.WICKET]));
+
+/**
+ * The event a line was told from, by its key: `e:<id>` for an event's first
+ * line, `e:<id>#<n>` for the lines after it (a milestone the ball brought
+ * up). Null for a line with no event id (an over's summary, an innings' end,
+ * an event with no id).
+ * @param {string | null | undefined} key
+ * @returns {string | null}
+ */
+export function lineEventId(key) {
+  if (typeof key !== "string" || !key.startsWith("e:")) return null;
+  const m = /^e:(.+?)(?:#\d+)?$/.exec(key);
+  return m ? m[1] : null;
+}
+
+/**
+ * Does this line pass the filter? `filter` is a chip (COMMENTARY_FILTER), or
+ * `{ids}`: the deliveries with those event ids, their own lines only (not a
+ * milestone one brought up) — the balls a chart's bar or sector drew (CRI-2.3).
+ * @param {{kind: string, key: string}} item
+ * @param {string | {ids: ReadonlySet<string> | readonly string[]} | null | undefined} filter
+ */
+export function commentaryMatches(item, filter) {
+  if (filter == null || filter === COMMENTARY_FILTER.ALL) return true;
+  if (typeof filter === "object") {
+    if (!DELIVERY_KINDS.has(item.kind)) return false;
+    const id = lineEventId(item.key);
+    if (id == null) return false;
+    const ids = filter.ids;
+    return ids instanceof Set ? ids.has(id) : /** @type {readonly string[]} */ (ids).includes(id);
+  }
+  const kind = FILTER_KIND[filter];
+  return kind != null && item.kind === kind;
+}
+
+/**
+ * The lines a chip keeps, in their order.
+ * @template {{kind: string, key: string}} T
+ * @param {T[]} items
+ * @param {Parameters<typeof commentaryMatches>[1]} filter
+ * @returns {T[]}
+ */
+export function filterCommentary(items = [], filter = COMMENTARY_FILTER.ALL) {
+  if (filter == null || filter === COMMENTARY_FILTER.ALL) return items;
+  const f = typeof filter === "object" && !(filter.ids instanceof Set) ? { ids: new Set(filter.ids) } : filter;
+  return items.filter((x) => commentaryMatches(x, f));
+}
+
+/**
+ * How many lines each chip keeps, for its label ("Wickets 7").
+ * @param {{kind: string}[]} items
+ * @returns {{wickets: number, fours: number, sixes: number}}
+ */
+export function commentaryCounts(items = []) {
+  let wickets = 0, fours = 0, sixes = 0;
+  for (const x of items) {
+    if (x.kind === COMMENTARY_KIND.WICKET) wickets++;
+    else if (x.kind === COMMENTARY_KIND.FOUR) fours++;
+    else if (x.kind === COMMENTARY_KIND.SIX) sixes++;
+  }
+  return { wickets, fours, sixes };
+}
+
+/**
  * Who a reference is, in the line: the part the person is playing at that
  * moment. A role word is what the line says when the caller names nobody.
  * @typedef {"striker" | "non_striker" | "batter" | "bowler" | "fielder" | "keeper"} CommentaryRole

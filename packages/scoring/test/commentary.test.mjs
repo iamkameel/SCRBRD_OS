@@ -18,6 +18,10 @@
  *   K. a public page's ball (SCRBRD-139): the placement made a word on the
  *      server (ballAreas), every coordinate dropped, and the line is the
  *      signed-in line, string for string
+ *   L. a wicket on a wide or a no-ball is told as a wicket
+ *   M. the Commentary's chips (CRI-2.1): over generated matches, each chip
+ *      keeps exactly the deliveries the scorecard counts (the innings'
+ *      wickets, the batters' 4s and 6s) by event id, innings by innings
  */
 import { readFileSync } from "node:fs";
 import {
@@ -25,6 +29,7 @@ import {
   inningsStart, batters, bowler, ball, penalty, retire, inningsEnd, revision, voidEvent, shortRunning,
   sealInnings, deriveInnings, foldSteps, placementFromTap, BALL_TYPE, PENALTY_REASON_TEXT,
   ANGULAR_FAMILIES, angularFamily, ballAreas, AREA_WORDS,
+  COMMENTARY_FILTER, filterCommentary, commentaryCounts, commentaryMatches, lineEventId, deriveMatch, boundaryHit,
 } from "../src/index.mjs";
 
 /** Words without a Law clause bracket, escaped for a RegExp. */
@@ -673,6 +678,121 @@ group("L. A wicket on a wide or a no-ball is told as a wicket, the extra first (
      /no-ball, (out|and that's out): they complete one, and R Pillay is run out at the striker's end \(W Venter\)\..*Free hit to come\.$/.test(wk[1]?.text ?? ""), wk[1]?.text);
   const saved = out.find((x) => /free hit: not out/.test(x.text));
   ok("a stumping off a wide on the free hit: told, and not out", saved?.kind === K.BALL && /^Free hit: K Naidoo to M Cele, wide, stumped, but it's a free hit: not out\.$/.test(saved.text), saved?.text);
+}
+
+group("M. The chips keep exactly what the scorecard counts (CRI-2.1)");
+{
+  // The line's event, by its key.
+  ok("lineEventId: an event's first line", lineEventId("e:dev1:m1:a") === "dev1:m1:a");
+  ok("...a line after it (a milestone)", lineEventId("e:dev1:m1:a#2") === "dev1:m1:a");
+  ok("...nothing for a line with no event", lineEventId("i0:o3") === null && lineEventId("c:5") === null && lineEventId(null) === null);
+  ok("ALL keeps everything, unchanged", (() => { const xs = [{ kind: K.OVER_END, key: "i0:o0" }]; return filterCommentary(xs, COMMENTARY_FILTER.ALL) === xs; })());
+
+  const rng = (/** @type {number} */ s) => () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2 ** 32; };
+  const DISMISSALS = ["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "obstructing_field"];
+  let matches = 0, mism = 0, saved = 0, offExtra = 0, retiredOut = 0, nbBoundaries = 0, overthrows = 0;
+  /** @type {string[]} */ const first = [];
+  let totals = { wickets: 0, fours: 0, sixes: 0 };
+  for (let s = 1; s <= 80; s++) {
+    const r = rng(s * 7 + 3);
+    const pick = /** @template T @param {T[]} xs @returns {T} */ (xs) => xs[Math.floor(r() * xs.length)];
+    seq = s * 100000;
+    /** @type {LogEvent[]} */
+    const log = [];
+    for (const inns of [0, 1]) {
+      const bat = inns === 0 ? H : TYPED, bowl = inns === 0 ? TYPED : H;
+      log.push(I(inningsStart({ battingTeam: inns ? "Westville" : "Hilton College", bowlingTeam: inns ? "Hilton College" : "Westville",
+        squad: inns ? [] : SQUAD, overs: 4, target: inns ? 30 : null }), inns));
+      log.push(I(batters({ striker: bat[0], nonStriker: bat[1] }), inns));
+      let next = 2;
+      // As a scorer taps: a bowler at each over's start, a batter for each one gone.
+      const now = () => deriveInnings(log.filter((e) => e.innings === inns));
+      const newBatter = () => {
+        const st = now();
+        if (st.striker == null) log.push(I(batters({ striker: `${bat[next % bat.length]}-${s}-${inns}-${next++}` }), inns));
+        if (st.nonStriker == null) log.push(I(batters({ nonStriker: `${bat[next % bat.length]}-${s}-${inns}-${next++}` }), inns));
+      };
+      for (let n = 0; n < 34; n++) {
+        const x = r();
+        if (now().complete) break;   // the pad takes no ball once an innings is over
+        if (now().bowler == null) log.push(I(bowler({ bowler: pick(bowl) }), inns));
+        if (x < 0.03) { log.push(I(retire({ batter: /** @type {string} */ (now().striker), reason: pick(["hurt", "out", "timed_out"]) }), inns)); newBatter(); }
+        else if (x < 0.07 && log.at(-1)?.kind === "ball") {
+          // The scorer's undo: the last ball (an approved amendment, voiding one further back, is the walk's).
+          log.push(I(voidEvent({ target: /** @type {string} */ (log.at(-1)?.id) }), inns));
+          newBatter();
+        } else if (x < 0.15) {
+          log.push(I(ball({ type: BALL_TYPE.WICKET, value: r() < 0.3 ? 1 : 0, dismissal: pick(DISMISSALS) }), inns));
+          newBatter();
+        } else if (x < 0.18) {
+          // A wicket off a wide or a no-ball (Law 22.9, 21.17), the runs completed short of a boundary.
+          const type = pick(["Wd", "Nb"]);
+          log.push(I(ball({ type, value: r() < 0.5 ? 1 : 0, dismissal: type === "Wd" ? pick(["stumped", "run_out"]) : "run_out" }), inns));
+          newBatter();
+        } else if (x < 0.22) {
+          // A free hit: the no-ball, then a bowled or caught it saves, or a run out it does not.
+          log.push(I(ball({ type: BALL_TYPE.NO_BALL, value: pick([0, 4]) }), inns));
+          log.push(I(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: pick(["bowled", "caught", "run_out"]) }), inns));
+          newBatter();
+        } else if (x < 0.25) {
+          // A four that is not a boundary: all run, or two and overthrows.
+          log.push(I(ball({ type: BALL_TYPE.RUN, value: 4, boundary: false }), inns));
+        } else {
+          const type = pick(["run", "run", "run", "run", "Wd", "Nb", "B", "LB"]);
+          log.push(I(ball({ type, value: pick([0, 0, 1, 1, 2, 4, 4, 6]),
+            ...(type === "Nb" && r() < 0.3 ? { nbRuns: pick(["byes", "leg_byes"]) } : {}) }), inns));
+        }
+      }
+    }
+    matches++;
+    const out = deriveCommentary(log, { nameOf, sensitive: r() < 0.5 });
+    const fold = deriveMatch(log);
+    const c = commentaryCounts(out);
+    totals = { wickets: totals.wickets + c.wickets, fours: totals.fours + c.fours, sixes: totals.sixes + c.sixes };
+    fold.innings.forEach((inn, n) => {
+      if (!inn) return;
+      const mine = out.filter((x) => x.innings === n);
+      const idsOf = (/** @type {string} */ f) => filterCommentary(mine, f).map((x) => lineEventId(x.key)).sort();
+      // The scorecard's own counts, and the deliveries behind them: the fold's ballLog, by event id.
+      const fours = inn.batsmen.reduce((t, b) => t + b.fours, 0), sixes = inn.batsmen.reduce((t, b) => t + b.sixes, 0);
+      const live = inn.ballLog;
+      const fourIds = live.filter((b) => boundaryHit(b) === 4).map((b) => b.id).sort();
+      const sixIds = live.filter((b) => boundaryHit(b) === 6).map((b) => b.id).sort();
+      saved += live.filter((b) => b.freeHitSaved).length;
+      offExtra += live.filter((b) => (b.type === "Wd" || b.type === "Nb") && b.dismissal && !b.freeHitSaved).length;
+      nbBoundaries += live.filter((b) => b.type === "Nb" && boundaryHit(b) != null).length;
+      overthrows += live.filter((b) => b.boundary === false).length;
+      retiredOut += mine.filter((x) => x.kind === K.WICKET && /retires out|timed out/.test(x.text)).length;
+      const checks = [
+        ["wickets", filterCommentary(mine, COMMENTARY_FILTER.WICKETS).length, inn.wickets],
+        ["fours", idsOf(COMMENTARY_FILTER.FOURS).length, fours],
+        ["sixes", idsOf(COMMENTARY_FILTER.SIXES).length, sixes],
+        ["four ids", idsOf(COMMENTARY_FILTER.FOURS).join(), fourIds.join()],
+        ["six ids", idsOf(COMMENTARY_FILTER.SIXES).join(), sixIds.join()],
+      ];
+      for (const [what, got, want] of checks) {
+        if (got !== want) { mism++; if (!first.length) first.push(`seed ${s} innings ${n} ${what}: chip ${got}, scorecard ${want}`); }
+      }
+      // The wickets chip: one line per fall of wicket.
+      const wk = filterCommentary(mine, COMMENTARY_FILTER.WICKETS);
+      if (wk.length !== inn.fow.length) { mism++; if (!first.length) first.push(`seed ${s} innings ${n}: ${wk.length} wicket lines, ${inn.fow.length} on the fall of wickets`); }
+    });
+  }
+  ok(`over ${matches} generated matches, every chip is the scorecard's count, innings by innings, by event id`, mism === 0, first[0]);
+  ok(`...and they mean something: ${totals.wickets} wickets, ${totals.fours} fours, ${totals.sixes} sixes`, totals.wickets > 300 && totals.fours > 300 && totals.sixes > 100, JSON.stringify(totals));
+  ok(`...through the hard cases: ${saved} free-hit saves, ${offExtra} wickets off an extra, ${retiredOut} retired or timed out, ${nbBoundaries} no-ball boundaries, ${overthrows} fours not to the rope`,
+     saved > 10 && offExtra > 10 && retiredOut > 5 && nbBoundaries > 10 && overthrows > 20);
+
+  // The ids filter (CRI-2.3): a delivery's own line, never the milestone it brought up.
+  const log = [...openA(), run(4), run(6), run(6), run(6), run(6), run(6), run(6), run(4), run(4), run(4), run(4)];
+  const out = deriveCommentary(log, { nameOf });
+  const fifty = out.find((x) => x.kind === K.MILESTONE);
+  const id = /** @type {string} */ (lineEventId(fifty?.key));
+  const kept = filterCommentary(out, { ids: [id] });
+  ok("a ball that brought up a fifty: the ids filter keeps its line, not the fifty's", !!fifty && kept.length === 1 && kept[0].key === `e:${id}` && kept[0].kind !== K.MILESTONE,
+     kept.map((x) => x.key).join());
+  ok("...and commentaryMatches agrees with a Set", out.filter((x) => commentaryMatches(x, { ids: new Set([id]) })).length === 1);
+  ok("an unknown chip keeps nothing", filterCommentary(out, "dots").length === 0);
 }
 
 console.log(`\n${"─".repeat(52)}\nCOMMENTARY SUITE: ${pass} passed, ${fail} failed`);

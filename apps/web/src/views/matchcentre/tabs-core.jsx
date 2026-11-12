@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
-import { formatKind } from "@scrbrd/scoring";
+import { formatKind, COMMENTARY_FILTER, commentaryCounts, commentaryMatches } from "@scrbrd/scoring";
 import { T, contrast } from "../../design/tokens.js";
 import { boardInnings, commentaryByOver, inningsBreak, oversOf, targetOf, teamOf } from "../../lib/matchCentre.js";
 import { Board, chipFill } from "../../ui/board.jsx";
@@ -330,14 +330,100 @@ function CommentaryLine({ item, target = false }) {
 const OVERS_AT_FIRST = 12;
 
 /**
+ * CRI-2.1: the chips. Each keeps one kind of line, and only kinds the
+ * scorecard counts (COMMENTARY_FILTER, @scrbrd/scoring/commentary): the count
+ * on a chip is the card's — the innings' wickets, the batters' 4s and 6s.
+ */
+const CHIPS = [
+  [COMMENTARY_FILTER.ALL, "All", null],
+  [COMMENTARY_FILTER.WICKETS, "Wickets", "wickets"],
+  [COMMENTARY_FILTER.FOURS, "Fours", "fours"],
+  [COMMENTARY_FILTER.SIXES, "Sixes", "sixes"],
+];
+const NONE_FOR = { wickets: "No wicket has fallen yet.", fours: "No four has been hit yet.", sixes: "No six has been hit yet." };
+
+/** The chips: a group of toggles, one pressed, each 44px tall. */
+function CommentaryChips({ chip, setChip, counts }) {
+  return (
+    <div role="group" aria-label="Show" data-testid="mc-chips" style={{ display: "flex", gap: T.space.xs, flexWrap: "wrap" }}>
+      {CHIPS.map(([id, label, count]) => {
+        const on = id === chip;
+        const n = count ? counts[count] : null;
+        return (
+          <button key={id} type="button" aria-pressed={on} onClick={() => setChip(id)} data-testid={`mc-chip-${id}`}
+            {...(n != null ? { "data-count": n, "aria-label": `${label}, ${n}` } : {})} className="pressBtn os-state"
+            style={{ minHeight: "44px", padding: `0 ${T.space.md}`, display: "inline-flex", alignItems: "center", gap: T.space.xs, cursor: "pointer",
+              borderRadius: T.radius.pill, border: `1px solid ${on ? T.content.primary : T.line.normal}`,
+              background: on ? T.content.primary : "transparent", color: on ? T.surface.canvas : T.content.primary,
+              fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
+            {label}
+            {n != null && <span aria-hidden="true" style={{ fontFamily: T.type.mono, fontWeight: 500, color: on ? T.surface.canvas : T.content.secondary }}>{n}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The over jump: every over the tab can show, in the match's order, under its
+ * innings. Choosing one opens the tab far enough back to hold it and puts it
+ * at the top of the screen with the focus on its heading. A native select, so
+ * a phone draws its own picker and a keyboard and a screen reader have it.
+ */
+function OverJump({ match, innings, groups, onJump }) {
+  const byInnings = [];
+  for (const g of [...groups].reverse()) {
+    let b = byInnings[byInnings.length - 1];
+    if (!b || b.innings !== g.innings) { b = { innings: g.innings, overs: [] }; byInnings.push(b); }
+    b.overs.push(g);
+  }
+  if (groups.length < 2) return null;
+  const sideOf = (n) => {
+    const inn = innings[n];
+    if (!inn) return `Innings ${n + 1}`;
+    return `${inn.superOver != null ? `${superOverTitle(inn.superOver)} · ` : ""}${teamOf(match, inn.battingTeam).full} innings`;
+  };
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: T.space.sm, flexWrap: "wrap" }}>
+      <span style={{ ...T.role.label, color: T.content.secondary }}>Jump to</span>
+      <select data-testid="mc-over-jump" value="" onChange={(e) => { if (e.target.value) onJump(e.target.value); }}
+        style={{ minHeight: "44px", minWidth: 0, maxWidth: "100%", flex: "1 1 160px", padding: `0 ${T.space.md}`, borderRadius: T.radius.md,
+          border: `1px solid ${T.line.normal}`, background: T.surface.raised, color: T.content.primary,
+          // 16px: a phone does not zoom the page into a field of that size.
+          fontFamily: T.type.body, fontSize: "16px", boxSizing: "border-box", cursor: "pointer" }}>
+        <option value="">An over…</option>
+        {byInnings.map((b) => (
+          <optgroup key={b.innings} label={sideOf(b.innings)}>
+            {b.overs.map((g) => <option key={g.key} value={g.key}>{overTitle(innings[g.innings], g.over)}</option>)}
+          </optgroup>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** An over's heading, as its group and the jump both say it. */
+const overTitle = (inn, over) => (inn?.superOver != null ? "The over" : `Over ${over + 1}`);
+
+/**
  * `ballKey` (CRI-1.5): the line a scorecard's dismissal asked for. The tab
  * opens far enough back to hold it, puts it in the middle of the screen and
  * the focus on it; `onBack` is the way back to the Scorecard where the reader
  * was (the Match Centre's own history entry, or its tab where it has none).
+ *
+ * CRI-2.1: the chips keep the lines of one kind (a group with none left is
+ * not drawn); the over jump goes to any over the chips leave. Both are this
+ * tab's own state: a reload opens on All.
  */
 export function CommentaryTab({ match, commentary, demo, innings, ballKey = null, onBack = null }) {
   const groups = useMemo(() => commentaryByOver(commentary ?? []), [commentary]);
+  const counts = useMemo(() => commentaryCounts(commentary ?? []), [commentary]);
+  const [chip, setChip] = useState(COMMENTARY_FILTER.ALL);
+  const view = useMemo(() => (chip === COMMENTARY_FILTER.ALL ? groups
+    : groups.map((g) => ({ ...g, lines: g.lines.filter((c) => commentaryMatches(c, chip)) })).filter((g) => g.lines.length)), [groups, chip]);
   const [shown, setShown] = useState(() => shownFor(groups, ballKey, OVERS_AT_FIRST));
+  const [jump, setJump] = useState(/** @type {{key: string, n: number} | null} */ (null));
   const at = useRef(/** @type {HTMLElement | null} */ (null));
   useEffect(() => {
     if (!ballKey) return;
@@ -347,9 +433,23 @@ export function CommentaryTab({ match, commentary, demo, innings, ballKey = null
     el.scrollIntoView({ block: "center", behavior: "instant" });
     el.focus({ preventScroll: true });
   }, [ballKey]);
+  useEffect(() => {
+    if (!jump) return;
+    const el = [...(at.current?.querySelectorAll("[data-over-key]") ?? [])].find((x) => x.getAttribute("data-over-key") === jump.key);
+    const head = el?.querySelector("[data-testid='mc-over-title']");
+    if (!(head instanceof HTMLElement)) return;
+    head.scrollIntoView({ block: "start", behavior: "instant" });
+    head.focus({ preventScroll: true });
+  }, [jump]);
   if (demo) return <Quiet testid="mc-commentary-none">Commentary is written from a match's own ball log. This demonstration fixture has none.</Quiet>;
   if (!commentary.length) return <Quiet testid="mc-commentary-none">Nothing has happened yet. Commentary starts with the first ball.</Quiet>;
-  const visible = groups.slice(0, shown);
+  const toOver = (key) => {
+    const i = view.findIndex((g) => g.key === key);
+    if (i < 0) return;
+    setShown((n) => Math.max(n, i + 1));
+    setJump((j) => ({ key, n: (j?.n ?? 0) + 1 }));
+  };
+  const visible = view.slice(0, shown);
   let lastInnings = null;
   return (
     <section ref={at} data-testid="mc-commentary" aria-label="Commentary, newest first">
@@ -361,12 +461,17 @@ export function CommentaryTab({ match, commentary, demo, innings, ballKey = null
           <span aria-hidden="true">‹</span> Back to the scorecard
         </button>
       )}
+      <div data-testid="mc-commentary-tools" style={{ display: "grid", gap: T.space.sm, marginBottom: T.space.md }}>
+        <CommentaryChips chip={chip} setChip={setChip} counts={counts}/>
+        <OverJump match={match} innings={innings} groups={view} onJump={toOver}/>
+      </div>
+      {!view.length && <Quiet testid="mc-commentary-filtered-none">{NONE_FOR[chip] ?? "Nothing to show."}</Quiet>}
       {visible.map((g) => {
         const head = g.innings !== lastInnings;
         lastInnings = g.innings;
         const inn = innings[g.innings];
         return (
-          <div key={g.key}>
+          <div key={g.key} data-over-key={g.key}>
             {head && (
               <h2 style={{ ...T.role.label, color: T.content.secondary, margin: `${T.space.lg} 0 ${T.space.sm}` }}>
                 {inn ? <>{inn.superOver != null && `${superOverTitle(inn.superOver)} · `}<SideName side={teamOf(match, inn.battingTeam)}/> innings</> : `Innings ${g.innings + 1}`}
@@ -374,7 +479,7 @@ export function CommentaryTab({ match, commentary, demo, innings, ballKey = null
             )}
             <Panel testid="mc-over" style={{ marginBottom: T.space.md }}>
               <div style={{ padding: `${T.space.sm} ${T.space.md}`, background: T.surface.base, display: "grid", gap: "2px" }}>
-                <span style={{ ...T.role.label, color: T.content.primary }}>{inn?.superOver != null ? "The over" : `Over ${g.over + 1}`}</span>
+                <span data-testid="mc-over-title" tabIndex={-1} style={{ ...T.role.label, color: T.content.primary, scrollMarginTop: T.space.lg }}>{overTitle(inn, g.over)}</span>
                 {g.end && <span data-testid="mc-over-end" style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>{g.end.text}</span>}
               </div>
               <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
@@ -384,7 +489,7 @@ export function CommentaryTab({ match, commentary, demo, innings, ballKey = null
           </div>
         );
       })}
-      {groups.length > shown && (
+      {view.length > shown && (
         <button type="button" onClick={() => setShown((n) => n + OVERS_AT_FIRST)} className="pressBtn os-state" data-testid="mc-commentary-more"
           style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, cursor: "pointer", background: "transparent",
             border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, color: T.content.primary,
