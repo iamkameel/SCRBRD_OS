@@ -612,6 +612,34 @@ try {
   await L.waitForTimeout(300);
   ok("...and so does its button", await tid(L, "mc-bigscreen").count() === 0);
 
+  // PUBLIC_BY_TERMS §2.5 (slice 1): the screen faces the crowd, so a boy under
+  // a never-public mark is his position on it — and only there: the Match
+  // Centre beneath still names him for its signed-in reader (083 §7).
+  group("The big screen shows a marked boy by his position, and nobody else (PUBLIC_BY_TERMS §2.5)");
+  const onStrike = after.batsmen.find((b) => b.id === after.striker);
+  const partner = after.batsmen.find((b) => b.id === after.nonStriker);
+  const setter = (await q(`select id from app_user where email = 'sarah@example.invalid'`))[0].id;
+  await q(`insert into player_never_public (player_id, reason, set_on, set_by) values ($1, 'Walk: a mark', sa_today(), $2)`, [onStrike.id, setter]);
+  const bigNames = () => L.locator('[data-testid="mc-bigscreen"] [data-testid="display-batter"] .dv-name').allInnerTexts();
+  await tid(L, "mc-bigscreen-open").click();
+  ok(`...the server answers and his unmarked partner is named (${partner?.name})`, await until(L, (n) =>
+    [...document.querySelectorAll('[data-testid="mc-bigscreen"] [data-testid="display-batter"] .dv-name')].some((e) => e.innerText.trim() === n),
+    8000, partner?.name), (await bigNames()).join(" | "));
+  ok("...the marked batter is 'Batter' on the board", (await bigNames()).includes("Batter") && !(await bigNames()).includes(onStrike?.name),
+     (await bigNames()).join(" | "));
+  ok("...and his name is nowhere on the big screen", !(await tid(L, "mc-bigscreen").innerText()).includes(onStrike?.name));
+  await tid(L, "mc-bigscreen-close").click();
+  await L.waitForTimeout(300);
+  ok("the Match Centre beneath still names him for its signed-in reader", (await text(L)).includes(onStrike?.name));
+  await q(`update player_never_public set ended_on = sa_today(), ended_by = set_by, ended_at = now()
+            where player_id = $1 and ended_on is null`, [onStrike.id]);
+  await tid(L, "mc-bigscreen-open").click();
+  ok("the mark ended, the big screen names him again", await until(L, (n) =>
+    [...document.querySelectorAll('[data-testid="mc-bigscreen"] [data-testid="display-batter"] .dv-name')].some((e) => e.innerText.trim() === n),
+    8000, onStrike?.name), (await bigNames()).join(" | "));
+  await tid(L, "mc-bigscreen-close").click();
+  await L.waitForTimeout(300);
+
   group("SCRBRD-100: the result, decided live, in one clear moment — never replayed, never hiding the score long");
   // Finish the chase, live, with exactly the runs the fold says are needed —
   // no invented score. The innings sits at an over's end (5.0, after the
