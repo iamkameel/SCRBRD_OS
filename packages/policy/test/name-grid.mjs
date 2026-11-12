@@ -51,6 +51,7 @@ export function nameGrid(more = {}) {
       givenOn, endedOn, ...(more.consentExtra ?? {}),
     };
   };
+  /** @type {(Record<string, any>[] | undefined)[]} */
   const sets = [undefined, []];
   for (let i = 0; i < 160; i++) {
     const n = 1 + Math.floor(rand() * 3);

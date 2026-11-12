@@ -86,14 +86,14 @@ group("OFF — no surface is today's rule, exactly: every output is main's");
   const run = (/** @type {any} */ x) => { try { return publicName(x); } catch (/** @type {any} */ e) { return `throw:${e.constructor.name}`; } };
   const digest = (/** @type {Record<string, any>[]} */ grid) => createHash("sha256").update(grid.map(run).join("\n")).digest("hex");
   const plain = nameGrid();
-  ok(`the grid is the one main was read over (${MAIN.n} inputs)`, plain.length === MAIN.n, plain.length);
+  ok(`the grid is the one main was read over (${MAIN.n} inputs)`, plain.length === MAIN.n, String(plain.length));
   ok("...and every answer over it is main's", digest(plain) === MAIN.digest, digest(plain));
   ok("...with byTerms and byTermsAllowed both true on every input: still main's",
      digest(nameGrid({ extra: BY_TERMS })) === MAIN.digest);
   ok("...and with the by-surface consent fields on every record too: still main's",
      digest(nameGrid({ extra: BY_TERMS, consentExtra: { surface: "board", giverLive: false, adult: true } })) === MAIN.digest);
   const named = plain.map(run).filter((x) => !["Batter", "Bowler", "Player"].includes(x)).length;
-  ok("the grid names some and not others, so it tests something", named > 500 && named < plain.length / 2, named);
+  ok("the grid names some and not others, so it tests something", named > 500 && named < plain.length / 2, String(named));
   ok("nobody answered and by terms on, with no surface: not named",
      publicName({ ...BASE, ...BY_TERMS }) === "Batter" && publicName({ ...BASE, byTerms: true, byTermsAllowed: true, consents: undefined }) === "Batter");
   ok("...and with a surface, named: the by-terms route exists only on a surface", at("card", BY_TERMS) === NAMED);
