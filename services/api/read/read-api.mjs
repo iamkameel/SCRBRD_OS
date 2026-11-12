@@ -1532,16 +1532,19 @@ export const READ_QUERIES = {
    * The big screen at the ground: which sides it shows by position (db/153;
    * PUBLIC_BY_TERMS §2.5, slice 1; Kameel, 12 Nov 2026, (a) and (b)).
    *
-   * One row per side the log names (its team key): true when a boy that
-   * side carries is on the field under a never-public mark on the day. No
-   * player id, name, reason, author or date. Only the host's staff who are
-   * not pupils get rows (decided in the function); everyone else gets none,
-   * and the Match Centre offers the big screen only to a reader who got
-   * rows. The screen shows by position every boy this read does not answer
-   * for, so a failed or late read names nobody it should not.
+   * One row per side the log names (its team key): true when the side's
+   * squad for the match (the sheet, else its first innings_start) carries a
+   * boy under a never-public mark on the day — never which boy, and never
+   * the ball he first appears. log_seq: the log's head the read covered. No
+   * player id, name, reason, author or date. Only the host's staff, signed
+   * in, not pupils, not under a pad credential get rows (decided in the
+   * function); everyone else gets none, and the Match Centre offers the big
+   * screen only to a reader who got rows. The screen shows by position every
+   * boy this read does not answer for, so a failed or late read names nobody
+   * it should not.
    */
   ground_screen_sides: {
-    text: `select team, position_only from ground_screen_sides($1)`,
+    text: `select team, position_only, log_seq from ground_screen_sides($1)`,
     params: q => [req(q, "matchId")],
   },
 

@@ -194,7 +194,9 @@ export function boardFromInnings(inn, { target = null, overs = 20, projected = n
   const partnership = st && ns && cp ? { runs: cp.runs, balls: cp.balls } : undefined;
   return {
     team: inn.battingTeam, total: inn.runs, wickets: inn.wickets, overs: fmtOv(inn.balls), sub,
-    batters: [st, ns].filter(Boolean).map((b) => ({ name: b.name, runs: b.runs, balls: b.balls, onStrike: b.id === inn.striker })),
+    // The id travels so a screen can key a row by the boy, not his name: two
+    // batters shown by position are both "Batter" (PUBLIC_BY_TERMS §2.5).
+    batters: [st, ns].filter(Boolean).map((b) => ({ id: b.id, name: b.name, runs: b.runs, balls: b.balls, onStrike: b.id === inn.striker })),
     partnership,
     bowler: bw ? { name: bw.name, wickets: bw.wickets, runs: bw.runs, overs: fmtOv(bw.balls) } : undefined,
     thisOver: thisOver.map(boardBall),

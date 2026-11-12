@@ -435,7 +435,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // only to a reader the server answers, the host's staff who are not pupils,
   // on the staff screen; the answer says which sides it shows by position.
   // Asked once to offer it, and on every ball while it is open.
-  const groundSides = useGroundSides(match.id, log.events, staffScreen && !log.demo && played.length > 0, big);
+  const groundSides = useGroundSides(match.id, log.events, log.head ?? null, staffScreen && !log.demo && played.length > 0, big);
 
   // A rain delay or interruption (SCRBRD-100 item 1): the one signal the log
   // actually carries, off the innings the board is showing.

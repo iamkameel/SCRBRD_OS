@@ -45,8 +45,8 @@ import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { deriveMatch, deriveInnings, deriveCommentary, runsOffBat, ball, batters, bowler, inningsStart, revision, sealInnings, placementFromTap,
-  scenarioOf, voidEvent } from "@scrbrd/scoring";
-import { buildMatchCentreFixture, writeEvents, HIL } from "./fixture-matchcentre.mjs";
+  scenarioOf, voidEvent, BALL_TYPE } from "@scrbrd/scoring";
+import { buildMatchCentreFixture, writeEvents, HIL, WES } from "./fixture-matchcentre.mjs";
 import { correctionsOf, withCorrectionLines } from "../apps/web/src/lib/corrections.js";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
@@ -767,7 +767,7 @@ try {
   await mark(fielder.id);
   let said = await openBig();
   ok("the big screen asks which sides, and is told per side, with no player id",
-     Array.isArray(said?.rows) && said.rows.length === 2 && said.rows.every((r) => JSON.stringify(Object.keys(r).sort()) === '["position_only","team"]')
+     Array.isArray(said?.rows) && said.rows.length === 2 && said.rows.every((r) => JSON.stringify(Object.keys(r).sort()) === '["log_seq","position_only","team"]')
      && said.rows.filter((r) => r.position_only).length === 1 && !/[0-9a-f]{8}-[0-9a-f]{4}-/.test(JSON.stringify(said)), JSON.stringify(said));
   ok("a marked boy in the field: both batters, of the other side, keep their names",
      JSON.stringify((await bigNames()).sort()) === JSON.stringify([onStrike?.name, partner?.name].sort()), (await bigNames()).join(" | "));
@@ -792,6 +792,46 @@ try {
      && JSON.stringify((await bigNames()).sort()) === JSON.stringify([onStrike?.name, partner?.name].sort()), (await bigNames()).join(" | "));
   await tid(L, "mc-bigscreen-close").click();
   await L.waitForTimeout(300);
+
+  // Review B1: a catch as the pad writes it (`fielder` the scorecard's name,
+  // `fielders` his reference) by a marked boy who has neither bowled nor
+  // kept. His side is position-only from its squad, and no "c <his name>"
+  // reaches the screen. A fixture of its own, so the live one's log is not moved.
+  {
+    const byName = (/** @type {string} */ n) => fx.players[n];
+    const [hb1, hb2, hb3] = ["D Erasmus", "R Pillai", "S Naidu"];
+    const [wb1, wb2, wb3] = ["B Mkhabela", "C Botha", "F Singh"];
+    const catchId = (await q(
+      `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+       values ($1, '1XI', $2, '1XI', 'Westville Boys'' High 1XI', now() - interval '30 minutes', 'cricket', 'T20', 20, 'live') returning id`,
+      [HIL, WES]))[0].id;
+    let cn = 0;
+    const atC = (/** @type {any} */ ev) => ({ ...ev, innings: 0, id: `mc-catch-${++cn}`, clientTs: Date.parse("2026-11-12T10:00:00Z") + cn * 20000 });
+    await writeEvents(q, catchId, [
+      atC(inningsStart({ battingTeam: "1XI", bowlingTeam: "Westville Boys' High 1XI", teamKey: "1XI", bowlingTeamKey: "Westville Boys' High 1XI",
+        squad: [hb1, hb2, hb3].map((n) => ({ id: byName(n), name: n })), bowlingSquad: [wb1, wb2, wb3].map((n) => ({ id: byName(n), name: n })), overs: 20 })),
+      atC(batters({ striker: byName(hb1), nonStriker: byName(hb2) })), atC(bowler({ bowler: byName(wb1) })),
+      atC(ball({ value: 1 })), atC(ball({ value: 1 })),
+      atC(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "caught", fielder: wb2, fielders: [byName(wb2)] })),
+      atC(batters({ striker: byName(hb3) })),
+    ]);
+    await mark(byName(wb2));
+    const cs = await open();
+    ok("the director of sport signs in (a catch in the pad's shape)", await signIn(cs.page, /sarah@example\.invalid|Director/));
+    ok("...the fixture opens", await openMatch(cs.page, catchId));
+    const answered = cs.page.waitForResponse((r) => r.url().includes("/api/read/ground_screen_sides"), { timeout: 8000 }).catch(() => null);
+    await tid(cs.page, "mc-bigscreen-open").click({ timeout: 6000 }).catch(() => {});
+    const said2 = await (await answered)?.json().catch(() => null);
+    await cs.page.waitForTimeout(500);
+    ok("the catcher's side is position-only, from its squad, before he has bowled or kept",
+       JSON.stringify((said2?.rows ?? []).map((r) => [r.team, r.position_only]).sort()) === JSON.stringify([["1XI", false], ["Westville Boys' High 1XI", true]]),
+       JSON.stringify(said2));
+    const bigC = await tid(cs.page, "mc-bigscreen").innerText().catch(() => "");
+    ok("no 'c C Botha', nor his name, anywhere on the big screen", !bigC.includes(wb2) && !/c C Botha/.test(bigC), bigC.slice(0, 300));
+    ok("...and the batters, of the other side, are named", [hb2, hb3].every((n) => bigC.includes(n)), bigC.slice(0, 300));
+    await cs.ctx.close();
+    await unmark(byName(wb2));
+  }
 
   group("SCRBRD-100: the result, decided live, in one clear moment — never replayed, never hiding the score long");
   // Finish the chase, live, with exactly the runs the fold says are needed —
