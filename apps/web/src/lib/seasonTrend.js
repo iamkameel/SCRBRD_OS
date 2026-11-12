@@ -14,8 +14,8 @@
  * claim nothing about the record.
  *
  *   points       every innings he batted in the season, in the read's order
- *                (ended_at, match, innings: the form guide's order), drawn
- *                from the first
+ *                (the match's start, the match, the innings), drawn from
+ *                the first
  *   the line     runs an innings over his last five innings (a rolling five),
  *                a point at each innings from the 5th; drawn only once BOTH
  *                floors are met: 6 innings in the season, and 30 balls faced
@@ -57,7 +57,7 @@ const round1 = (/** @type {number} */ v) => Math.round(v * 10) / 10;
 
 /**
  * @typedef {{ playerId: string, name: string | null, season: string | null, currentSeason: boolean,
- *   matchId: string, innings: number, endedAt: string | null, runs: number, ballsFaced: number | null,
+ *   matchId: string, innings: number, endedAt: string | null, startsAt: string | null, runs: number, ballsFaced: number | null,
  *   out: boolean, source: "scored" | "scorebook" }} InningsRow
  * @typedef {{ n: number, runs: number, balls: number | null, out: boolean, source: "scored" | "scorebook",
  *   matchId: string, innings: number, on: string | null }} Point
@@ -91,7 +91,9 @@ export function seasonPoints(rows, season) {
     out: r.out === true,
     source: r.source === "scorebook" ? "scorebook" : "scored",
     matchId: r.matchId, innings: r.innings,
-    on: r.endedAt ?? null,
+    // The match's start, never ended_at: that is when the server took the
+    // last ball in, which for a match scored offline is the day it synced.
+    on: r.startsAt ?? null,
   }));
 }
 
@@ -194,11 +196,16 @@ export function lineState(points, { self = false } = {}) {
 export function trendNotes(points, { self = false, current = true } = {}) {
   const out = [];
   const st = lineState(points, { self });
-  const when = current ? "this season" : "that season";
+  // This season is still being played: the line is to come (B3's words). A
+  // finished season is not: it says why there is none, with no "yet".
   if (st.short === "innings") {
-    out.push(`The line starts once ${self ? "you have" : "he has"} batted ${MIN_INNINGS} times ${when}. Until then each innings is shown on its own.`);
+    out.push(current
+      ? `The line starts once ${self ? "you have" : "he has"} batted ${MIN_INNINGS} times this season. Until then each innings is shown on its own.`
+      : `There is no line: ${self ? "you" : "he"} batted fewer than ${MIN_INNINGS} times that season, so each innings is shown on its own.`);
   } else if (st.short === "balls") {
-    out.push(`The line starts once ${self ? "your" : "his"} last five innings hold ${MIN_BALLS_FACED} balls faced. Until then each innings is shown on its own.`);
+    out.push(current
+      ? `The line starts once ${self ? "your" : "his"} last five innings hold ${MIN_BALLS_FACED} balls faced. Until then each innings is shown on its own.`
+      : `There is no line: ${self ? "your" : "his"} last five innings that season hold fewer than ${MIN_BALLS_FACED} balls faced, so each innings is shown on its own.`);
   }
   const f = seasonFigures(points);
   if (f.bookInnings > 0) {
@@ -215,22 +222,23 @@ export function trendNotes(points, { self = false, current = true } = {}) {
  * The spoken summary (GA-I31): what the chart shows, in one short paragraph,
  * for a screen reader. The same figures the chart and its table draw; no
  * verdict, no ranking, no other boy.
- * @param {{ who: string, season: string | null, points: Point[], self?: boolean }} p
+ * @param {{ who: string, season: string | null, points: Point[], self?: boolean, current?: boolean }} p
+ *   current: the season on show is this season; a finished one says no "yet"
  */
-export function spokenSummary({ who, season, points, self = false }) {
+export function spokenSummary({ who, season, points, self = false, current = true }) {
   if (!points.length) return season ? `${who}: no innings in the ${season} school season.` : `${who}: no innings.`;
   const f = seasonFigures(points);
   const st = lineState(points, { self });
   const parts = [
     `${who}, the ${season} school season: ${f.innings} innings, ${f.runs} run${f.runs === 1 ? "" : "s"}, ${f.notOuts} not out.`,
-    `Average ${f.average == null ? "none yet, no dismissal" : f.average}. Strike rate ${f.strikeRate == null ? "none, no balls recorded" : f.strikeRate}.`,
+    `Average ${f.average == null ? `none${current ? " yet" : ""}, no dismissal` : f.average}. Strike rate ${f.strikeRate == null ? "none, no balls recorded" : f.strikeRate}.`,
     `Runs in each innings, in order: ${points.map((p) => `${p.runs}${p.out ? "" : " not out"}`).join(", ")}.`,
   ];
   if (st.draw) {
     const line = rollingFive(points);
     parts.push(`${LINE_LABEL}: ${line[0].v} at innings ${line[0].n}, ${line[line.length - 1].v} at innings ${line[line.length - 1].n}.`);
   } else {
-    parts.push("No line is drawn yet.");
+    parts.push(current ? "No line is drawn yet." : "No line is drawn.");
   }
   return parts.join(" ");
 }

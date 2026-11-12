@@ -225,10 +225,10 @@ function SeasonTab({ me, role, career }) {
       )) : <NoneOr read={seasonsRead} what="your seasons" none="No season on record yet." onRetry={() => setNonce((n) => n + 1)} testid="passport-season-none"/>}
       {/* GA-I23 slice 2 (B2, B5): his own season, innings by innings, read
           through his own self link; a team-mate's he never reads (Q7). */}
+      {/* Quiet when he has no innings at all, as the family Home is. */}
       {signedIn() && (
-        <Card label="Innings by innings" testid="passport-trend">
-          <SeasonTrend role={role} playerId={me.id} who="You" self bare/>
-        </Card>
+        <SeasonTrend role={role} playerId={me.id} who="You" self bare quietWhenNone
+          frame={(panel) => <Card label="Innings by innings" testid="passport-trend">{panel}</Card>}/>
       )}
       {career?.form?.length > 0 && (
         <Card label="Form · last innings first" testid="passport-form">

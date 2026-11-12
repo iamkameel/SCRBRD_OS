@@ -1272,14 +1272,15 @@ export function asSeasonCareer(r) {
  * One innings of one boy's season (innings_by_season, GA-I23 slice 2, B1):
  * the read's columns renamed, and nothing worked out. `ballsFaced` stays null
  * where a scorebook recorded none (never 0); `source` is "scored" or
- * "scorebook". lib/seasonTrend.js draws from these.
+ * "scorebook"; `startsAt` is the match's start, the innings' date (never
+ * `endedAt`, the server's insert time). lib/seasonTrend.js draws from these.
  */
 export function asInnings(r) {
   const n = (/** @type {unknown} */ v) => (v == null || v === "" ? null : Number(v));
   return {
     playerId: r.player_id, name: r.full_name ?? null, team: r.team_code ?? null, schoolId: r.school_id ?? null,
     season: r.season ?? null, currentSeason: r.current_season === true,
-    matchId: r.match_id, innings: Number(r.innings), endedAt: r.ended_at ?? null,
+    matchId: r.match_id, innings: Number(r.innings), endedAt: r.ended_at ?? null, startsAt: r.starts_at ?? null,
     runs: n(r.runs) ?? 0, ballsFaced: n(r.balls_faced), out: r.out === true,
     source: r.source === "scorebook" ? "scorebook" : "scored",
   };

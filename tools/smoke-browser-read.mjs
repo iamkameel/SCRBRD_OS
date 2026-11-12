@@ -2915,7 +2915,14 @@ try {
       const inningsOf = async (tok, boy) => (await (await fetch(`${API}/api/read/innings_by_season?playerId=${boy}`, { headers: { authorization: `Bearer ${tok}` } })).json())?.rows ?? [];
       const coachRows = await inningsOf(await tokOf("coach@example.invalid"), BEKKER);
       ok("B2: the seed gives T Bekker an innings this season, read by his coach", coachRows.some((r) => r.current_season), JSON.stringify(coachRows).slice(0, 200));
-      ok("B2: the coach of another side (2XI) reads none of a 1XI boy's innings", (await inningsOf(await tokOf("coach2@example.invalid"), BEKKER)).length === 0);
+      // A failed sign-in would read as nothing too: the token is asked for first,
+      // and the read is asked with it and must answer 200 with no rows.
+      const coach2Tok = await tokOf("coach2@example.invalid");
+      ok("B2: the coach of another side (2XI) signs in", !!coach2Tok);
+      const coach2Read = coach2Tok ? await fetch(`${API}/api/read/innings_by_season?playerId=${BEKKER}`, { headers: { authorization: `Bearer ${coach2Tok}` } }) : null;
+      const coach2Rows = coach2Read ? ((await coach2Read.json().catch(() => null))?.rows ?? null) : null;
+      ok("B2: ...and reads none of a 1XI boy's innings (answered, with no rows)", coach2Read?.status === 200 && Array.isArray(coach2Rows) && coach2Rows.length === 0,
+         `${coach2Read?.status} ${JSON.stringify(coach2Rows)?.slice(0, 120)}`);
       const co = await open();
       const cq = (id) => co.page.locator(`[data-testid="${id}"]`);
       ok("B2: the 1XI coach signs in", await signIn(co.page, /coach@example\.invalid/));

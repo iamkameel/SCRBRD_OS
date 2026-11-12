@@ -37,49 +37,78 @@ import {
  */
 
 /**
- * The panel for one boy, read for him alone.
- * @param {{ role: string, playerId: string | null, who: string, self?: boolean, testid?: string, bare?: boolean }} props
- *   who   the name the panel uses ("R Pillay"), or "You" on his own screen
+ * Whether a family screen leaves the panel out: the read has answered, with
+ * no error, and holds no innings at all. On a parent's Home or the boy's own
+ * Passport a card that says nothing is noise, and "that you may see" on a
+ * screen about her own child reads as something held back (the Bests card's
+ * rule, family.jsx). Loading and failing still draw, and say so.
+ * @param {{ loading?: boolean, error?: unknown, rows?: unknown[] }} read
  */
-export function SeasonTrend({ role, playerId, who, self = false, testid = "season-trend", bare = false }) {
+export const quietWhenEmpty = (read) => !read.loading && !read.error && (read.rows?.length ?? 0) === 0;
+
+/**
+ * The panel for one boy, read for him alone.
+ * @param {{ role: string, playerId: string | null, who: string, self?: boolean, testid?: string, bare?: boolean,
+ *   quietWhenNone?: boolean, frame?: ((panel: import("react").ReactNode) => import("react").ReactNode) | null }} props
+ *   who            the name the panel uses ("R Pillay"), or "You" on his own screen
+ *   quietWhenNone  draw nothing, frame included, for a boy with no innings at all (the family screens)
+ *   frame          the card the panel sits in, so a quiet panel leaves no empty card behind
+ */
+export function SeasonTrend({ role, playerId, who, self = false, testid = "season-trend", bare = false, quietWhenNone = false, frame = null }) {
   const [nonce, setNonce] = useState(0);
   const read = useBoyRead("innings_by_season", role, playerId, nonce, signedIn());
   if (!signedIn() || !playerId) return null;
+  if (quietWhenNone && quietWhenEmpty(read)) return null;
   // Keyed on the boy: nothing chosen for one boy is carried to the next.
-  return (
+  const panel = (
     <SeasonTrendView key={playerId} rows={read.rows} who={who} self={self} testid={testid} bare={bare}
       said={readState(read, { what: self ? "your innings" : `${who}'s innings` })}
       onRetry={() => setNonce((n) => n + 1)}/>
   );
+  return frame ? frame(panel) : panel;
 }
 
 /**
  * The Analytics performance tab's: pick a player of the side on screen, then
  * his panel. The list is the players this reader already reads for the side;
  * the read behind the panel is gated per boy on the server all the same.
- * @param {{ role: string, players: { id: string, name: string }[] }} props
+ * Until the roster read answers, or if it fails, the card says that, and
+ * says "no player" only once the read has answered with none.
+ * @param {{ role: string, players: { id: string, name: string }[],
+ *   read?: { loading?: boolean, error?: unknown, status?: number | null, disabled?: string | null, rows?: unknown[] } | null,
+ *   onRetry?: () => void }} props
+ *   read  the `players` read's own state (usePlayersWithCareerState().players)
  */
-export function AnalyticsSeasonTrend({ role, players }) {
-  const [picked, setPicked] = useState(players.length === 1 ? players[0].id : "");
-  const who = players.find((p) => p.id === picked) ?? null;
+export function AnalyticsSeasonTrend({ role, players, read = null, onRetry }) {
+  const [picked, setPicked] = useState("");
+  // One player in view: he is the one. Worked out on each render, so a
+  // roster that answers after the first paint still picks him.
+  const id = picked || (players.length === 1 ? players[0].id : "");
+  const who = players.find((p) => p.id === id) ?? null;
+  const roster = read ? readState(read, { what: "the players" }) : null;
+  const waiting = roster != null && roster.state !== "ok" && roster.state !== "empty";
   return (
     <Card sx={{ padding: T.space.lg, marginBottom: T.space.lg }} data-testid="season-trend-pick">
       <h3 style={heading()}>Innings by innings</h3>
-      {players.length === 0 ? (
+      {waiting ? (
+        <ReadState read={roster} onRetry={onRetry} testId="season-trend-players-read-state"/>
+      ) : players.length === 0 ? (
         <p data-testid="season-trend-no-players" style={sentence()}>No player of this side that you may see, so there are no innings to show.</p>
       ) : (
         <label style={{ display: "flex", flexDirection: "column", gap: T.space.xs, marginBottom: who ? T.space.md : 0 }}>
           <span style={labelStyle()}>Player</span>
-          <select value={picked} onChange={(e) => setPicked(e.target.value)} data-testid="season-trend-player" style={selectStyle()}>
+          <select value={id} onChange={(e) => setPicked(e.target.value)} data-testid="season-trend-player" style={selectStyle()}>
             <option value="">Pick a player</option>
             {players.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>
       )}
-      {players.length > 0 && !who && (
+      {!waiting && players.length > 0 && !who && (
         <p data-testid="season-trend-none-picked" style={{ ...sentence(), marginTop: T.space.md }}>Pick a player to see his season innings by innings.</p>
       )}
-      {who && <SeasonTrend role={role} playerId={who.id} who={who.name} testid="season-trend" bare/>}
+      {/* Keyed on the boy: a new pick starts by reading, never with the
+          last boy's answer filtered to nothing. */}
+      {!waiting && who && <SeasonTrend key={who.id} role={role} playerId={who.id} who={who.name} testid="season-trend" bare/>}
     </Card>
   );
 }
@@ -133,11 +162,13 @@ export function SeasonTrendView({ rows, said, who, self = false, onRetry, testid
         </p>
       ) : (
         <>
-          {choice.seasons.length > 1 || (!season && choice.seasons.length > 0) ? (
+          {/* Offered while there is a season to move to and back from: with
+              no innings this season, "This season" stays a choice. */}
+          {choice.seasons.length > 1 || !choice.current ? (
             <label style={{ display: "flex", flexDirection: "column", gap: T.space.xs }}>
               <span style={labelStyle()}>Season</span>
               <select value={season ?? ""} onChange={(e) => setChosen(e.target.value)} data-testid={`${testid}-season`} style={selectStyle()}>
-                {!season && <option value="">This season</option>}
+                {!choice.current && <option value="">This season</option>}
                 {choice.seasons.map((s) => <option key={s} value={s}>{s}{s === choice.current ? " (this season)" : ""}</option>)}
               </select>
             </label>
@@ -157,7 +188,7 @@ export function SeasonTrendView({ rows, said, who, self = false, onRetry, testid
                   ["Runs", figs.runs],
                   ["Innings", figs.innings],
                   ["Not out", figs.notOuts],
-                  ["Average", figs.average ?? "no average yet"],
+                  ["Average", figs.average ?? (current ? "no average yet" : "no average")],
                   ["Strike rate", figs.strikeRate ?? "no balls recorded"],
                 ].map(([k, v]) => (
                   <div key={k}>
@@ -189,7 +220,7 @@ export function SeasonTrendView({ rows, said, who, self = false, onRetry, testid
                       : <circle key={p.n} {...common} cx={p.x} cy={p.y} r="4.5"/>;
                   })}
                 </svg>
-                <p id={sumId} className="sr-only" data-testid={`${testid}-summary`}>{spokenSummary({ who: self ? "You" : who, season, points, self })}</p>
+                <p id={sumId} className="sr-only" data-testid={`${testid}-summary`}>{spokenSummary({ who: self ? "You" : who, season, points, self, current })}</p>
                 <Legend line={st.draw} book={figs.bookInnings > 0}/>
                 <p aria-hidden="true" style={{ ...sentence(), fontSize: `${T.floor.read}px`, display: "flex", justifyContent: "space-between", gap: T.space.md }}>
                   <span>Innings 1</span><span>{points.length > 1 ? `Innings ${points.length}` : ""}</span>

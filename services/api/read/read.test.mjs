@@ -213,9 +213,12 @@ group("A. innings_by_season (GA-I23 slice 2, B1): career's scope, one boy, gated
     ok(`${r} holds neither staff capability`, !holds(r));
   ok("what an innings is: runs, balls, out, when, which match and innings",
      ["runs", "balls_faced", "out", "ended_at", "match_id", "innings", "season", "source"].every((c) => new RegExp(`as ${c}\\b|i\\.${c}\\b`).test(t)));
+  ok("...and the day it was played: the match's start, not the server's insert time", /i\.ended_at, m\.starts_at,/.test(t));
   ok("a scorebook innings says so, from the summary in the log", /then 'scorebook' else 'scored' end\s+as source/.test(t));
   ok("balls faced is not coalesced: a book with no balls is NULL, never 0", !/coalesce\(i\.balls_faced/.test(t));
-  ok("oldest first, ties broken as the form guide breaks them", /order by i\.ended_at, i\.match_id, i\.innings$/.test(t.trim()));
+  // By the match's start, not ended_at (max server_ts): a match scored offline
+  // and sent days later must not sort, or be dated, by the day it arrived.
+  ok("oldest first by the match's start, then the match and the innings", /order by m\.starts_at, i\.match_id, i\.innings$/.test(t.trim()));
 
   const B = "aaaaaaaa-0000-0000-0000-000000000005";
   const { pool, log } = fakePool({ "from player_innings": [{ player_id: B, runs: 23 }] });

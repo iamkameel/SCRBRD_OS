@@ -92,7 +92,7 @@ function AnalyticsView({ role }) {
           {/* GA-I23 slice 2 (B2): one boy's season, innings by innings, over
               innings_by_season, gated per boy on the server (B1). Signed in
               only: a named child's innings are never a demonstration. */}
-          {signedIn()&&<AnalyticsSeasonTrend key={`trend-${teamFilter??"none"}`} role={role} players={players.map(p=>({id:p.id,name:p.name}))}/>}
+          {signedIn()&&<AnalyticsSeasonTrend key={`trend-${teamFilter??"none"}`} role={role} players={players.map(p=>({id:p.id,name:p.name}))} read={CAREER.players}/>}
           {!signedIn()&&<DemoWorm/>}
           {/* The four bar charts below are the career read (every season on record). */}
           <div style={{marginBottom:"12px"}}>

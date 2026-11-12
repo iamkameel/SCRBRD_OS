@@ -154,10 +154,10 @@ function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead
         {/* GA-I23 slice 2 (B2, Q8): her child's season, innings by innings,
             one child at a time, read for him alone (innings_by_season's
             family arm: a verified, live link). */}
+        {/* Quiet when he has no innings at all, as his Bests are below. */}
         {signedIn() && (
-          <Card label="Innings by innings" testid="family-trend">
-            <SeasonTrend role={role} playerId={child.id} who={child.knownAs || child.name} bare/>
-          </Card>
+          <SeasonTrend role={role} playerId={child.id} who={child.knownAs || child.name} bare quietWhenNone
+            frame={(panel) => <Card label="Innings by innings" testid="family-trend">{panel}</Card>}/>
         )}
         {/* RECOGNITION R5 (D23): her child's own bests; no board, nobody else's child. */}
         <PersonalBests role={role} playerId={child.id} who={`${child.knownAs || child.name}'s`} testid="family-bests" quietWhenNone/>

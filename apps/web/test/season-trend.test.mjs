@@ -36,7 +36,7 @@ import {
 } from "../src/lib/seasonTrend.js";
 import { denominatorWords } from "../src/ui/sourceLine.jsx";
 import { ChartTablesOpen } from "../src/ui/ChartTable.jsx";
-import { SeasonTrendView } from "../src/views/seasontrend.jsx";
+import { AnalyticsSeasonTrend, SeasonTrendView, quietWhenEmpty } from "../src/views/seasontrend.jsx";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${String(d).slice(0, 400)}`); } };
@@ -51,6 +51,7 @@ const raw = (runs, balls, out, o = {}) => ({
   player_id: "p5", full_name: "R Pillay", team_code: "1XI", school_id: "HIL",
   season: o.season ?? "2026", current_season: (o.season ?? "2026") === "2026",
   match_id: `m${++k}`, innings: 1, ended_at: `2026-0${1 + (k % 9)}-1${k % 10}T10:00:00.000Z`,
+  starts_at: `2026-0${1 + (k % 9)}-1${k % 10}T07:00:00.000Z`,
   runs, balls_faced: balls, out, source: o.book ? "scorebook" : "scored",
 });
 const rows = (list) => list.map((r) => asInnings(r));
@@ -69,6 +70,20 @@ group("The adapter: the read's columns renamed, nothing worked out");
   ok("out is the read's, false unless true", a.out === false && asInnings({ out: true }).out === true && asInnings({}).out === false);
   ok("balls of 0 recorded stay 0", asInnings({ balls_faced: 0 }).ballsFaced === 0);
   ok("the client knows how to read it live", liveResources().includes("innings_by_season"));
+  ok("the match's start is carried as the innings' date", asInnings({ starts_at: "2026-03-01T07:00:00Z" }).startsAt === "2026-03-01T07:00:00Z"
+     && asInnings({}).startsAt === null);
+}
+
+group("The date is the match's start, never the server's insert time (review S3)");
+{
+  // Scored offline at a ground with no signal on 7 March, sent on 16 March:
+  // ended_at (max server_ts) is the 16th; the innings was played on the 7th.
+  const late = { ...raw(31, 28, true), starts_at: "2026-03-07T07:00:00.000Z", ended_at: "2026-03-16T18:40:00.000Z" };
+  const p = seasonPoints(rows([late]), "2026");
+  ok("a point's date is the match's start", p[0].on === "2026-03-07T07:00:00.000Z");
+  const t = trendTable({ who: "R Pillay", season: "2026", points: p });
+  ok("...and the table's Date column says the day it was played", t[0].rows[0][1] === "7 Mar 2026", t[0].rows[0][1]);
+  ok("a row with no start has no date, not the insert time", trendTable({ who: "X", season: "2026", points: seasonPoints(rows([{ ...late, starts_at: null }]), "2026") })[0].rows[0][1] === null);
 }
 
 group("The floors are Q12's, and the 30 is the rating's own");
@@ -176,7 +191,62 @@ group("Did not bat");
   ok("...with his earlier season a choice away", /data-testid="season-trend-season"/.test(html) && /<option value="2025">2025<\/option>/.test(html));
   const opened = view(old, { initial: { season: "2025" } });
   ok("choosing it draws that season's innings, under 'that season'", (opened.match(/data-testid="season-trend-point"/g) ?? []).length === 2
-     && /batted 6 times that season/.test(text(opened)) && /The 2025 school season/.test(text(opened)));
+     && /batted fewer than 6 times that season/.test(text(opened)) && /The 2025 school season/.test(text(opened)));
+  ok("...and the select stays, with this season a choice back (review N4)", /data-testid="season-trend-season"/.test(opened)
+     && /<option value="">This season<\/option>/.test(opened) && /<option value="2025" selected="">2025<\/option>/.test(opened), opened.slice(opened.indexOf("<select"), opened.indexOf("</select>")));
+  const one = view(rows([raw(12, 10, true)]));
+  ok("one season, this season: no select to offer", !/data-testid="season-trend-season"/.test(one));
+}
+
+group("A finished season says no \"yet\" and no \"Until then\" (review N3)");
+{
+  const four = pts([raw(10, 12, true, { season: "2025" }), raw(20, 15, false, { season: "2025" }), raw(30, 25, false, { season: "2025" }), raw(0, 2, false, { season: "2025" })], "2025");
+  const done = trendNotes(four, { current: false }).join(" ");
+  ok("under 6 innings: why there is no line, in the past", done.includes("There is no line: he batted fewer than 6 times that season, so each innings is shown on its own."), done);
+  ok("...and never 'yet' or 'Until then'", !/\byet\b|Until then/.test(done));
+  const thin = pts([50, 3, 4, 5, 2, 1].map((r, i) => raw(r, [60, 4, 4, 5, 5, 4][i], true, { season: "2025" })), "2025");
+  const thinNote = trendNotes(thin, { current: false }).join(" ");
+  ok("under 30 balls: the same, in the past", thinNote.includes("There is no line: his last five innings that season hold fewer than 30 balls faced, so each innings is shown on its own.") && !/Until then/.test(thinNote), thinNote);
+  const sum = spokenSummary({ who: "X", season: "2025", points: four, current: false });
+  ok("the summary: 'No line is drawn.', 'none, no dismissal'", /No line is drawn\./.test(sum) && !/\byet\b/.test(sum)
+     && /Average none, no dismissal/.test(spokenSummary({ who: "X", season: "2025", points: pts([raw(4, 4, false, { season: "2025" })], "2025"), current: false })), sum);
+  ok("this season keeps B3's words", /The line starts once he has batted 6 times this season\. Until then/.test(trendNotes(four).join(" "))
+     && /No line is drawn yet\./.test(spokenSummary({ who: "X", season: "2025", points: four })));
+  const html = view(rows([raw(9, 9, false, { season: "2025" }), raw(1, 1, false, { season: "2025" })]), { initial: { season: "2025" } });
+  ok("the panel: 'no average', not 'no average yet', for a finished season", /no average\b/.test(text(html)) && !/no average yet/.test(text(html)) && !/\byet\b/.test(text(html)), text(html).slice(0, 300));
+}
+
+group("Analytics' picker waits for the roster, and says so (review S1)");
+{
+  const pick = (read, players = []) => renderToStaticMarkup(h(AnalyticsSeasonTrend, { role: "coach", players, read }));
+  const loading = pick({ rows: [], loading: true, error: null, status: null });
+  ok("loading: 'Reading the players…', never 'No player of this side'", /Reading the players/.test(text(loading)) && !/No player of this side/.test(text(loading)) && !/season-trend-player"/.test(loading), text(loading));
+  const failed = pick({ rows: [], loading: false, error: "unreachable", status: null });
+  ok("failed: 'Could not read the players', never 'No player'", /Could not read the players/.test(text(failed)) && !/No player of this side/.test(text(failed)), text(failed));
+  const refused = pick({ rows: [], loading: false, error: "forbidden", status: 403 });
+  ok("refused: 'Your role may not read the players'", /Your role may not read the players/.test(text(refused)) && !/No player of this side/.test(text(refused)), text(refused));
+  const none = pick({ rows: [], loading: false, error: null, status: null });
+  ok("answered with none: only then 'No player of this side that you may see'", /No player of this side that you may see/.test(text(none)));
+  const two = pick({ rows: [{}, {}], loading: false, error: null, status: null }, [{ id: "a", name: "A One" }, { id: "b", name: "B Two" }]);
+  ok("answered with players: the list, none picked, and the sentence that says so", /data-testid="season-trend-player"/.test(two) && /data-testid="season-trend-none-picked"/.test(two) && /A One/.test(two));
+  const src = read("../src/views/seasontrend.jsx");
+  ok("a new pick remounts the boy's panel, so the last boy's answer never flashes (review N5)", /<SeasonTrend key=\{who\.id\}/.test(src));
+  ok("Analytics hands the roster read in", /<AnalyticsSeasonTrend [^\n]*read=\{CAREER\.players\}\/>/.test(read("../src/views/AnalyticsView.jsx")));
+}
+
+group("The family screens are quiet with no innings at all (review S4)");
+{
+  ok("answered, no rows: quiet", quietWhenEmpty({ loading: false, error: null, rows: [] }) === true);
+  ok("loading: drawn, saying so", quietWhenEmpty({ loading: true, error: null, rows: [] }) === false);
+  ok("failed: drawn, saying so", quietWhenEmpty({ loading: false, error: "unreachable", rows: [] }) === false);
+  ok("innings: drawn", quietWhenEmpty({ loading: false, error: null, rows: [{}] }) === false);
+  const fam = read("../src/views/family/family.jsx"), pup = read("../src/views/family/pupil.jsx"), v = read("../src/views/seasontrend.jsx");
+  ok("the parent's Home and the Passport ask for it, the card inside the frame so none is left empty",
+     /quietWhenNone\s+frame=\{\(panel\) => <Card label="Innings by innings" testid="family-trend">/.test(fam)
+     && /quietWhenNone\s+frame=\{\(panel\) => <Card label="Innings by innings" testid="passport-trend">/.test(pup));
+  ok("...and the panel returns nothing, frame and all, when quiet", /if \(quietWhenNone && quietWhenEmpty\(read\)\) return null;/.test(v));
+  ok("Analytics does not: there a staff reader picked the boy, and the careful words stay", !/quietWhenNone/.test(read("../src/views/AnalyticsView.jsx"))
+     && !/<SeasonTrend key=\{who\.id\}[^>]*quietWhenNone/.test(v));
 }
 
 group("A read with nothing, or refused, or failed: words, never an empty chart");

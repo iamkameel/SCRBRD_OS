@@ -3171,8 +3171,8 @@ export const READ_QUERIES = {
    * docs/design/SCENARIO_AND_TREND_design.md §B2.2, §B4, §B5).
    *
    * One row per innings he batted: runs, balls faced, out or not out, oldest
-   * first (the form guide's order, `career`'s `form`, turned round for a
-   * line). Over player_innings (db/87), the view `career`'s form guide
+   * first by the match's start (below; not by ended_at, which a late sync
+   * moves). Over player_innings (db/87), the view `career`'s form guide
    * reads, joined to `match` for the season by the one rule (db/44) and to
    * `player` for the name. Nothing is stored and nothing is cached: both
    * views skip a void and its target, so a corrected ball is gone from the
@@ -3226,13 +3226,20 @@ export const READ_QUERIES = {
    * Summed over a season, these rows are career_by_season's runs, and the
    * scorebook ones its `book_innings` (the trend walk proves both).
    *
+   * THE DATE AND THE ORDER ARE THE MATCH'S START (`starts_at`), then the
+   * match and the innings. `ended_at` is max(server_ts), the time the
+   * server took the last ball in, so a match scored offline at a ground
+   * with no signal and sent on Monday would read as Monday's and sort after
+   * a match played since; a scorebook innings is dated by the match's start
+   * anyway (db/64). `ended_at` is still returned, for what it says.
+   *
    * Leaves as no file (exports.mjs, his figures across matches).
    */
   innings_by_season: {
     text: `select i.player_id, p.full_name, p.team_code, p.school_id,
                   school_season_of(m.starts_at)                                    as season,
                   school_season_of(m.starts_at) = (select school_season_of(now())) as current_season,
-                  i.match_id, i.innings, i.ended_at,
+                  i.match_id, i.innings, i.ended_at, m.starts_at,
                   i.runs::int                                                      as runs,
                   i.balls_faced::int                                               as balls_faced,
                   coalesce(i.out, false)                                           as out,
@@ -3257,7 +3264,7 @@ export const READ_QUERIES = {
                             or app_can('player.roster.read', p.school_id, his.team, p.id, NULL::uuid)
                             or app_can('analytics.read', p.school_id, p.team_code, p.id, NULL::uuid)
                             or app_can('analytics.read', p.school_id, his.team, p.id, NULL::uuid))))
-            order by i.ended_at, i.match_id, i.innings`,
+            order by m.starts_at, i.match_id, i.innings`,
     params: q => [uuidParam(q, "playerId", true), seasonParam(q)],
   },
 

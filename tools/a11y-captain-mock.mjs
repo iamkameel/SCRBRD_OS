@@ -110,7 +110,7 @@ export function captainApi() {
     innings_by_season: (q) => (q.get("playerId") === IDS.pillay
       ? [[12, 15, true], [0, 3, true], [34, null, true, true], [27, 22, false], [8, 11, true], [41, 30, true], [5, 9, false]].map(([runs, balls, out, book], i) => ({
         player_id: IDS.pillay, full_name: NAMES.pillay, team_code: "1XI", school_id: HIL, season, current_season: true,
-        match_id: `ca000000-0000-0000-0000-0000000001${String(i).padStart(2, "0")}`, innings: 1, ended_at: `${season}-0${2 + i}-14T12:00:00.000Z`,
+        match_id: `ca000000-0000-0000-0000-0000000001${String(i).padStart(2, "0")}`, innings: 1, ended_at: `${season}-0${2 + i}-14T12:00:00.000Z`, starts_at: `${season}-0${2 + i}-14T07:00:00.000Z`,
         runs, balls_faced: balls, out, source: book ? "scorebook" : "scored" }))
       : []),
     bowling_directives: () => [{ age_band: "open", max_overs_per_spell: null, max_overs_per_day: null, clause_code: null }],

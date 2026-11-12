@@ -283,8 +283,12 @@ try {
   }
   {
     const rows = await inningsRows(coach, P1);
-    ok("one row per innings he batted, oldest first",
-       rows.every((r, i) => i === 0 || new Date(r.ended_at) >= new Date(rows[i - 1].ended_at)));
+    ok("one row per innings he batted, oldest first by the match's start",
+       rows.length > 1 && rows.every((r, i) => i === 0 || new Date(r.starts_at) >= new Date(rows[i - 1].starts_at)));
+    const starts = new Map((await q(`select id, starts_at from match where id = any($1::uuid[])`, [rows.map((r) => r.match_id)]))
+      .map((m) => [m.id, m.starts_at.toISOString()]));
+    ok("...each dated by its match's start, not by when the server took the ball in",
+       rows.every((r) => typeof r.starts_at === "string" && starts.get(r.match_id) === new Date(r.starts_at).toISOString()), rows.map((r) => [r.match_id.slice(-4), r.starts_at]));
     ok("every row is his, in the season asked for", rows.every((r) => r.player_id === P1 && r.season === SEASON && r.current_season === true));
     ok("each innings is the runs, balls and out the log holds",
        mine(rows).length === made.get(P1).size
