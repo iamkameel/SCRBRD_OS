@@ -13,6 +13,8 @@
 
 12 Nov 2026: #299 merged (merge fda88860): the public-by-terms design, approved by Kameel 11 Nov ('All 9 as recommended'); slices 1–8 to be built now, off until counsel (Kameel 12 Nov: 'Build 1-8, switched off').
 
+12 Nov 2026: four merges recorded. #304 (merge e67369a4): season trend B3, the side's season, match by match (GA-I23). #307 (merge d0fccbdb): scenario controls A2, the ground display shows the scenario line, no stepper (GA-I29). #305 (merge 4309f6f0): CRI-2.1, commentary chips and a jump to any over. #306 (merge bfb4a681): CRI-2.3, tap a chart to see the balls behind it.
+
 12 Nov 2026 (late): three merges recorded. #301 (merge 0c50e488): REACH-D2, a pupil reads his own figures, not his team-mates'; the captain's season rows and Compare "Me v a team-mate" are kept. #309 (merge 050ccf15): CRI-2.5, three spectator charts. #311 (merge 16d79dea): CRI-2.2, a source line on every chart, with "Shots captured for N of M balls".
 
 ## Rules
@@ -762,8 +764,8 @@ for the owner's key, a platform administrator, a school administrator and a two-
 - **Skills history walk, flaky fixed** — **Done 2026-10-29** (#210, commit 3a63fbd): the walk waits for the since-the-last-look read after a save, and no longer reads the stale panel.
 - **Two browser-walk races, fixed** — **Done 2026-10-30** (#218, commit 76e7de9): the skills-history bar now waits for its re-read; the retire walk (`smoke-browser-retire`) waits for the pad's write.
 - **Skills door for the pupil (GA-I26a)** — **Partly done 2026-11-11** (#279, merge a63aa6a4): the pupil's Skills door.
-- **Scenario controls (GA-I29)** — **Decided 2026-11-11** (Kameel, in chat, 11 Nov 2026): "Scenario controls (GA-I29) - probability and forecasts are based scoring-rates and overs and what's achievable etc." No entry existed for GA-I29; this line was added on 11 Nov. **Partly done 2026-11-12** (#293, merge commit 6e852aad): the scenario controls design is done for Kameel's review; the build is open. **Partly done 2026-11-12** (#298, merge ee3cbe6e): A0+A1, one projection and the Match Centre panel; A2 is open.
-- **Season trend (GA-I23)** — **Partly done 2026-11-12** (#293, merge commit 6e852aad): slice 2 design, for Kameel's review. Build open. No entry existed for GA-I23; this line was added on 12 Nov. **Partly done 2026-11-12** (#297, merge e774cda7): B1, the innings-by-innings and side-season reads. **Partly done 2026-11-12** (#300, merge aea244a3): B2, a player's innings panel on Analytics, a parent's Home and the pupil's Passport. B3 is open.
+- ~~**Scenario controls (GA-I29)**~~ — **Decided 2026-11-11** (Kameel, in chat, 11 Nov 2026): "Scenario controls (GA-I29) - probability and forecasts are based scoring-rates and overs and what's achievable etc." No entry existed for GA-I29; this line was added on 11 Nov. **Partly done 2026-11-12** (#293, merge commit 6e852aad): the scenario controls design is done for Kameel's review; the build is open. **Partly done 2026-11-12** (#298, merge ee3cbe6e): A0+A1, one projection and the Match Centre panel; A2 is open. **Done 2026-11-12** (#307, merge d0fccbdb): A2, the ground display shows the scenario line, no stepper.
+- ~~**Season trend (GA-I23)**~~ — **Partly done 2026-11-12** (#293, merge commit 6e852aad): slice 2 design, for Kameel's review. Build open. No entry existed for GA-I23; this line was added on 12 Nov. **Partly done 2026-11-12** (#297, merge e774cda7): B1, the innings-by-innings and side-season reads. **Partly done 2026-11-12** (#300, merge aea244a3): B2, a player's innings panel on Analytics, a parent's Home and the pupil's Passport. **Done 2026-11-12** (#304, merge e67369a4): B3, the side's season, match by match.
 - **Pilot Match phase 2 (R0 design, with Kameel's answers to its five calls; slices 1–3 behind the switch, db/151)** — **Partly done 2026-11-12** (#290, merge commit 5cea2275; #291, merge commit 5b6f9725): the design and slices 1 to 3 are merged. Slices 4 onward remain: the public page, promotion and the purge job. No entry existed for pilot match phase 2; this line was added on 12 Nov.
 
 ## Match page grammar — from the ESPNcricinfo audits (added 2026-10-23)
@@ -793,8 +795,12 @@ one duplicates an existing entry, strike the `CRI-*` line and point at the older
 
 **Sprint 1 complete 2026-11-11** (#266, merge commit 060e0a2b): CRI-1.4 to CRI-1.8 are done.
 
-**Sprint 2:** CRI-2.1 commentary chips and over jump · ~~CRI-2.2 `sourceLine` and capture coverage on every chart~~ ·
-CRI-2.3 chart-to-delivery drill-down · CRI-2.4 reader freshness and low-bandwidth mode · ~~CRI-2.5 three spectator charts~~.
+**Sprint 2:** ~~CRI-2.1 commentary chips and over jump~~ · ~~CRI-2.2 `sourceLine` and capture coverage on every chart~~ ·
+~~CRI-2.3 chart-to-delivery drill-down~~ · CRI-2.4 reader freshness and low-bandwidth mode · ~~CRI-2.5 three spectator charts~~.
+
+**Done 2026-11-12** (#305, merge 4309f6f0): CRI-2.1, commentary chips and a jump to any over.
+
+**Done 2026-11-12** (#306, merge bfb4a681): CRI-2.3, tap a chart to see the balls behind it.
 
 - **CRI-2.2** — **Done 2026-11-12** (#311, merge 16d79dea): a source line on every chart, with "Shots captured for N of M balls".
 - **CRI-2.5** — **Done 2026-11-12** (#309, merge 050ccf15): three spectator charts.
