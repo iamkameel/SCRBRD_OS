@@ -11858,6 +11858,165 @@ CREATE OR REPLACE FUNCTION _v151_facts(p_id uuid) RETURNS jsonb AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/151 (section 129) ─────────────────────────────────────────────
 
+-- ┌── REACH-D2 (section 130) ───────────────────────────────────────────
+-- A team-mate's figures to a pupil (REACH_parent_pupil.md §6.6 path (b);
+-- Kameel, 7 Nov 2026, with the two exceptions kept on 11 Nov, and the
+-- pupil-staffer kept closed on 12 Nov). No migration: the gate is in the
+-- API's reads (services/api/read/read-api.mjs REACH_FAMILY_OR_STAFF,
+-- REACH_SELF_CTES, REACH_SEASON_ARMS), and §130 runs those three texts as
+-- each persona; read.test.mjs holds the copies equal.
+-- Hilton's 9XI, invented here, all nineteen: C the season's captain, N1 and
+-- N2 his team-mates; O a 8XI boy who never played for 9XI; U a 8XI boy
+-- named on 9XI's sheet (playing up). Accounts: C, N1 and N2 each sign in
+-- as himself (`player` on 9XI and a verified self link), and N2 also holds
+-- a `coach` assignment on 9XI (a pupil-staffer); N1's mother (a verified
+-- guardian); 9XI's coach; 8XI's coach; Hilton's director of sport; the
+-- scorer. Matches, both 9XI's (a trial: the side bats and bowls at itself):
+--   M   this season: C and N1 face N2 (N1 bowled by him); N2 faces C, N1 and U
+--   ML  last season: C and N1 face N2
+CREATE OR REPLACE FUNCTION _vd2_ball(p_match uuid, p_innings smallint, p_striker uuid, p_bowler uuid, p_value integer,
+                                      p_theta integer, p_dismissal text, p_scorer uuid) RETURNS void AS $$
+DECLARE s integer;
+BEGIN
+  s := coalesce((SELECT max(seq) FROM ball_event WHERE match_id = p_match), 0) + 1;
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                          client_seq, client_ts, kind, ball_type, value, striker_id, bowler_id,
+                          dismissal, dismissed_id, theta, radius, placement_source, capture_profile)
+  SELECT p_match, m.school_id, s, 0, p_innings, p_scorer, 'v130-pad', 'v130-' || p_match || '-' || s, s, now(),
+         'ball', CASE WHEN p_dismissal IS NULL THEN 'run' ELSE 'W' END, p_value, p_striker, p_bowler,
+         p_dismissal, CASE WHEN p_dismissal IS NULL THEN NULL ELSE p_striker END,
+         p_theta, CASE WHEN p_theta IS NULL THEN NULL ELSE 0.6 END,
+         CASE WHEN p_theta IS NULL THEN NULL ELSE 'point' END, CASE WHEN p_theta IS NULL THEN NULL ELSE 'full' END
+    FROM match m WHERE m.id = p_match;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _vd2_person(p_tag text, p_role text, p_team text, p_player uuid) RETURNS uuid AS $$
+DECLARE v_u uuid;
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+BEGIN
+  INSERT INTO app_user (school_id, email, name, role, player_id, teams)
+  VALUES (HIL, 'v130.' || p_tag || '@example.invalid', 'V130 ' || initcap(p_tag), p_role, p_player,
+          CASE WHEN p_team IS NULL THEN '{}'::text[] ELSE ARRAY[p_team] END)
+  RETURNING id INTO v_u;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code) VALUES (v_u, p_role, HIL, p_team);
+  RETURN v_u;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A link of an account to a boy, verified by the office.
+CREATE OR REPLACE FUNCTION _vd2_link(p_user uuid, p_role text, p_player uuid, p_rel text) RETURNS void AS $$
+DECLARE a uuid;
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  -- The verifier: Hilton's office, as the seed has one.
+  v_office uuid := (SELECT r.person_id FROM role_assignment r WHERE r.role = 'schooladmin' AND r.school_id = HIL
+                     ORDER BY r.person_id LIMIT 1);
+BEGIN
+  SELECT id INTO a FROM role_assignment WHERE person_id = p_user AND role = p_role;
+  IF a IS NULL THEN
+    INSERT INTO role_assignment (person_id, role, school_id) VALUES (p_user, p_role, HIL) RETURNING id INTO a;
+  END IF;
+  IF p_rel = 'parent' THEN
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at)
+    VALUES (a, p_player, p_rel, 'verified', v_office, now(), 'granted', 'vd2-terms', now());
+  ELSE
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at)
+    VALUES (a, p_player, p_rel, 'verified', v_office, now());
+  END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _vd2_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  v_now  timestamptz := (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg';
+  v_last timestamptz := (make_date(extract(year FROM sa_today())::int - 1, 6, 15)::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg';
+  ids jsonb := '{}'; p uuid; m uuid; k text; t text; i int; sc uuid;
+  C uuid; N1 uuid; N2 uuid; U uuid;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  FOR i, k, t IN SELECT * FROM (VALUES (1, 'c', '9XI'), (2, 'n1', '9XI'), (3, 'n2', '9XI'), (4, 'o', '8XI'), (5, 'u', '8XI')) z(i, k, t) LOOP
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES (HIL, t, 'Verify OneThirty ' || initcap(k), 1300 + i, 'allrounder', make_date(extract(year FROM sa_today())::int - 19, 3, i))
+    RETURNING id INTO p;
+    ids := ids || jsonb_build_object(k, p);
+  END LOOP;
+  C := ids->>'c'; N1 := ids->>'n1'; N2 := ids->>'n2'; U := ids->>'u';
+  -- The three pupils: `player` on the side, and a verified self link.
+  FOREACH k IN ARRAY ARRAY['c', 'n1', 'n2'] LOOP
+    p := _vd2_person('pupil' || k, 'player', '9XI', (ids->>k)::uuid);
+    PERFORM _vd2_link(p, 'selfaccess', (ids->>k)::uuid, 'self');
+    ids := ids || jsonb_build_object('u_' || k, p);
+  END LOOP;
+  -- N2 also coaches his own side (the pupil-staffer).
+  INSERT INTO role_assignment (person_id, role, school_id, team_code) VALUES ((ids->>'u_n2')::uuid, 'coach', HIL, '9XI');
+  ids := ids || jsonb_build_object(
+    'coach',  _vd2_person('coach',  'coach',           '9XI', NULL),
+    'ocoach', _vd2_person('ocoach', 'coach',           '8XI', NULL),
+    'dos',    _vd2_person('dos',    'directorofsport', NULL,   NULL),
+    'scorer', _vd2_person('scorer', 'scorer',          NULL,   NULL),
+    'mother', _vd2_person('mother', 'guardian',        NULL,   NULL));
+  PERFORM _vd2_link((ids->>'mother')::uuid, 'guardian', N1, 'parent');
+  sc := ids->>'scorer';
+  -- The captaincy, this season.
+  INSERT INTO honour (player_id, kind, season_id, awarded_on, decided_by)
+  VALUES (C, 'captain', (SELECT f.id FROM season_for(sa_today(), 'school') f), sa_today() - 30, (ids->>'dos')::uuid)
+  RETURNING id INTO p;
+  ids := ids || jsonb_build_object('honour', p,
+    'season', (SELECT f.label FROM season_for(sa_today(), 'school') f),
+    'last', (SELECT f.label FROM season_for((v_last AT TIME ZONE 'Africa/Johannesburg')::date, 'school') f),
+    'last_id', (SELECT f.id FROM season_for((v_last AT TIME ZONE 'Africa/Johannesburg')::date, 'school') f));
+  FOR k IN SELECT unnest(ARRAY['M', 'ML']) LOOP
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+    VALUES (HIL, '9XI', 'Verify OneThirty Trial', CASE WHEN k = 'M' THEN v_now ELSE v_last END, 'cricket', 'T20', 20, 'complete')
+    RETURNING id INTO m;
+    INSERT INTO match_squad (match_id, player_id, side)
+    SELECT m, x, 'home' FROM unnest(CASE WHEN k = 'M' THEN ARRAY[C, N1, N2, U] ELSE ARRAY[C, N1, N2] END) x;
+    -- C faces N2: 1, 0, 4 (a measured point each); N1 faces N2: 2, 1, bowled.
+    PERFORM _vd2_ball(m, 0::smallint, C,  N2, 1, 30,  NULL, sc);
+    PERFORM _vd2_ball(m, 0::smallint, C,  N2, 0, NULL, NULL, sc);
+    PERFORM _vd2_ball(m, 0::smallint, C,  N2, 4, 90,  NULL, sc);
+    PERFORM _vd2_ball(m, 0::smallint, N1, N2, 2, 200, NULL, sc);
+    PERFORM _vd2_ball(m, 0::smallint, N1, N2, 1, 210, NULL, sc);
+    PERFORM _vd2_ball(m, 0::smallint, N1, N2, 0, NULL, 'bowled', sc);
+    IF k = 'M' THEN
+      -- N2 faces C, N1 and the boy playing up.
+      PERFORM _vd2_ball(m, 1::smallint, N2, C,  1, 45, NULL, sc);
+      PERFORM _vd2_ball(m, 1::smallint, N2, N1, 2, 50, NULL, sc);
+      PERFORM _vd2_ball(m, 1::smallint, N2, U,  3, 55, NULL, sc);
+    END IF;
+    ids := ids || jsonb_build_object(k, m);
+  END LOOP;
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The owner's answer to the question the read's copy asks: is_captain_of()
+-- (db/144), which the application may not call.
+CREATE OR REPLACE FUNCTION _vd2_captain(p_player uuid, p_team text, p_season text) RETURNS boolean AS $$
+  SELECT is_captain_of(p_player, p_team, (SELECT s.id FROM season s WHERE s.level = 'school' AND s.label = p_season))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The owner's hand on the honour, for the withdrawal and a vice-captaincy.
+CREATE OR REPLACE FUNCTION _vd2_honour(p_id uuid, p_withdraw boolean) RETURNS void AS $$
+  UPDATE honour SET withdrawn_at = CASE WHEN p_withdraw THEN now() END,
+                    withdrawn_reason = CASE WHEN p_withdraw THEN 'v130: withdrawn' END
+   WHERE id = p_id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _vd2_award(p_player uuid, p_kind text, p_season uuid, p_decider uuid) RETURNS uuid AS $$
+  INSERT INTO honour (player_id, kind, season_id, awarded_on, decided_by)
+  VALUES (p_player, p_kind, p_season, sa_today() - 10, p_decider) RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A query as the caller (invoker: under his row security), its rows folded
+-- to "name@season" or "name", sorted, the fixture's surname only. $1 is the
+-- season, $2 the one boy asked for, as the read's own parameters are.
+CREATE OR REPLACE FUNCTION _vd2_rows(p_sql text, p_mate uuid DEFAULT NULL) RETURNS text AS $$
+DECLARE got text;
+BEGIN
+  EXECUTE format('SELECT coalesce(string_agg(DISTINCT z.k, %L ORDER BY z.k), %L) FROM (%s) z', ',', '', p_sql)
+    INTO got USING NULL::text, p_mate;
+  RETURN got;
+END $$ LANGUAGE plpgsql;
+-- └── REACH-D2 (section 130) ───────────────────────────────────────────
+
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -40170,6 +40329,233 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 129
   -- └── db/151 (section 129) ──────────────────────────────────────────
+  -- ┌── REACH-D2 (section 130) ───────────────────────────────────────
+  -- ── 130. A team-mate's figures to a pupil (REACH-D2; REACH §6.6 path (b)) ──
+  -- Kameel, 7 Nov 2026: a pupil no longer reads team-mates' career, season
+  -- or wagon-wheel figures. 11 Nov: two exceptions kept, the captain's side
+  -- season figures and "Me v a team-mate" (one team-mate's season). 12 Nov:
+  -- a pupil who also holds a staff assignment stays closed. Staged by
+  -- _vd2_stage(); everything below is scrbrd_app under each person's own
+  -- row security, running the read's own three texts (between the markers;
+  -- read.test.mjs holds them equal to read-api.mjs's).
+  -- Labels:
+  --   (own)       each pupil his own career, seasons, wheel and breakdown
+  --   (mate)      a team-mate's career, seasons, wheel, match-ups and
+  --               dismissal breakdown refused, the captain's included
+  --   (captain)   the captain his side's season rows for his season only,
+  --               nothing lifetime; gone when the honour is withdrawn; a
+  --               captaincy last season opens last season only; the copy is
+  --               is_captain_of() row for row
+  --   (compare)   one team-mate's season, this season, only when named, only
+  --               on his own side
+  --   (staffer)   a pupil holding a coach's assignment on his side too reads
+  --               no team-mate (Kameel, 12 Nov)
+  --   (parent)    a parent her own child and no other boy
+  --   (staff)     the side's coach his side and the boy who played up for
+  --               it, not another side's boy; that side's coach the reverse;
+  --               the director of sport every side
+  -- Each guard was falsified once in this copy and the section run alone
+  -- against a seeded database; each went red at the first assertion able
+  -- to see it (read.test.mjs holds this copy to the API's):
+  --   the staff arm open to a pupil      → (own/mate): N1's career read holds C,N1,N2
+  --   the captain's season test removed  → (captain): his seasons hold last season's side
+  --   the card's season test removed     → (compare): N1 naming N2 reads N2's two seasons
+  --   the card's side test removed       → (compare): the pupil-staffer naming U reads U
+  --   the sheet arm removed              → (staff): 9XI's coach reads C,N1,N2
+  --   a withdrawn honour counted         → (captain): after the withdrawal, the side
+  --   the pairs' gate removed            → (own/mate): N1's match-ups hold four pairs
+  DECLARE
+    y jsonb := _vd2_stage();
+    S text; L text;
+    U_C uuid; U_N1 uuid; U_N2 uuid; U_MUM uuid; U_CO uuid; U_OCO uuid; U_DOS uuid;
+    v_g text := $g130$
+-- reach_family_or_staff:begin
+(is_family_of(p.id)
+              or ((select not app_reader_is_pupil())
+                  and (app_can('player.profile.read', p.school_id, p.team_code, p.id, NULL::uuid)
+                       or exists (select 1 from match_squad q join match m on m.id = q.match_id
+                                   where q.player_id = p.id and not q.withdrawn
+                                     and app_can('player.profile.read', p.school_id,
+                                                 case when q.side = 'away' then m.away_team_code else m.team_code end,
+                                                 p.id, NULL::uuid)))))
+-- reach_family_or_staff:end
+$g130$;
+    v_c text := $c130$
+-- reach_self_ctes:begin
+reach_self as materialized (
+             select c.id as self_id, c.school_id as self_school, c.team_code as self_team
+               from role_assignment a
+               join assignment_subject g on g.assignment_id = a.id
+               join player c on c.id = g.player_id
+              where a.person_id = app_user_id() and a.role = 'selfaccess' and a.active
+                and g.relationship = 'self' and g.verification_state = 'verified'
+                and (a.valid_from is null or a.valid_from <= sa_today())
+                and (a.valid_until is null or a.valid_until > sa_today())
+                and (a.expires_at is null or a.expires_at > now())
+                and (g.valid_from is null or g.valid_from <= sa_today())
+                and (g.valid_until is null or g.valid_until > sa_today())
+                and not app_pad_scoped() and app_support_access_id() is null
+                and is_family_of(c.id)),
+           reach_captaincy as materialized (
+             select distinct k.self_school as cap_school, k.self_team as cap_team, s.label as cap_season
+               from reach_self k
+               join honour h on h.player_id = k.self_id
+               join season s on s.id = h.season_id
+              where h.kind in ('captain', 'vice_captain') and h.withdrawn_at is null
+                and h.school_id = k.self_school and h.team_code = k.self_team
+                and s.level = 'school')
+-- reach_self_ctes:end
+$c130$;
+    v_s text := $s130$
+-- reach_season_arms:begin
+(exists (select 1 from reach_captaincy k
+                        where k.cap_school = p.school_id and k.cap_team = p.team_code and k.cap_season = season)
+               or ($2::uuid is not null and p.id = $2::uuid
+                   and season = (select school_season_of(now()))
+                   and exists (select 1 from reach_self k
+                                where k.self_school = p.school_id and k.self_team = p.team_code and k.self_id <> p.id)))
+-- reach_season_arms:end
+$s130$;
+    nm text := $n$replace(p.full_name, 'Verify OneThirty ', '')$n$;
+    q_career text; q_seasons text; q_wheel text; q_breakdown text; q_pairs text;
+    v_last_h uuid; v_vice uuid;
+    got text;
+  BEGIN
+    S := y->>'season'; L := y->>'last';
+    U_C := y->>'u_c'; U_N1 := y->>'u_n1'; U_N2 := y->>'u_n2'; U_MUM := y->>'mother';
+    U_CO := y->>'coach'; U_OCO := y->>'ocoach'; U_DOS := y->>'dos';
+    PERFORM _assert(S IS NOT NULL AND L IS NOT NULL AND S <> L, format('§130: the fixture is void — seasons %s and %s', S, L));
+    -- The reads, each as the API asks it of a boy `p`: career (one row a
+    -- boy), career_by_season, the wheel (player_shot_points: his balls with
+    -- a point), how he is out and takes wickets, and a match's pairs.
+    q_career := 'select ' || nm || ' as k from player p where p.full_name like ''Verify OneThirty %'' and ' || v_g;
+    q_seasons := 'with ' || v_c || ' select ' || nm || ' || ''@'' || x.season as k'
+              || ' from (select player_id, season from player_batting_by_season union select player_id, season from player_bowling_by_season) x'
+              || ' join player p on p.id = x.player_id'
+              || ' where p.full_name like ''Verify OneThirty %'' and ($2::uuid is null or p.id = $2::uuid) and (' || v_g || ' or ' || v_s || ')';
+    q_wheel := 'select ' || nm || ' as k from ball_event_career b join player p on p.id = b.striker_id'
+            || ' where b.match_id in (' || quote_literal(y->>'M') || ', ' || quote_literal(y->>'ML') || ') and b.theta is not null and ' || v_g;
+    q_breakdown := 'select ' || nm || ' || '':bat'' as k from player p join player_dismissal_breakdown d on d.player_id = p.id'
+                || ' where p.full_name like ''Verify OneThirty %'' and ' || v_g
+                || ' union all select ' || nm || ' || '':bowl'' from player p join player_wicket_breakdown w on w.player_id = p.id'
+                || ' where p.full_name like ''Verify OneThirty %'' and ' || v_g;
+    q_pairs := 'select replace(bat.full_name, ''Verify OneThirty '', '''') || ''>'' || replace(bowl.full_name, ''Verify OneThirty '', '''') as k'
+            || ' from (select b.striker_id, b.bowler_id from ball_event_career b where b.match_id = ' || quote_literal(y->>'M')
+            || ' group by b.striker_id, b.bowler_id'
+            || ' having exists (select 1 from player p where p.id = b.striker_id and ' || v_g || ')'
+            || ' or exists (select 1 from player p where p.id = b.bowler_id and ' || v_g || ')) z'
+            || ' join player bat on bat.id = z.striker_id join player bowl on bowl.id = z.bowler_id';
+
+    -- (own) and (mate): each pupil reads himself, and no team-mate.
+    PERFORM _as(U_N1);
+    PERFORM _assert((SELECT count(*) FROM player p WHERE p.full_name LIKE 'Verify OneThirty %' AND p.team_code = '9XI') = 3,
+      '§130: the fixture is void — N1 cannot read his side''s three rows (the gate would be proved against nothing)');
+    got := _vd2_rows(q_career);
+    PERFORM _assert(got = 'N1', format('§130 (own/mate): N1''s career read holds %s', got));
+    got := _vd2_rows(q_seasons);
+    PERFORM _assert(got = 'N1@' || L || ',N1@' || S, format('§130 (own/mate): N1''s seasons hold %s', got));
+    got := _vd2_rows(q_wheel);
+    PERFORM _assert(got = 'N1', format('§130 (own/mate): N1''s wheel read draws %s', got));
+    got := _vd2_rows(q_breakdown);
+    PERFORM _assert(got = 'N1:bat', format('§130 (own/mate): N1''s breakdown holds %s (N2''s wicket of him is N2''s)', got));
+    got := _vd2_rows(q_pairs);
+    PERFORM _assert(got = 'N1>N2,N2>N1', format('§130 (own/mate): N1''s match-ups hold %s', got));
+
+    PERFORM _as(U_C);
+    got := _vd2_rows(q_career);
+    PERFORM _assert(got = 'C', format('§130 (captain): the captain''s career read holds %s, not his own alone (nothing lifetime)', got));
+    got := _vd2_rows(q_wheel);
+    PERFORM _assert(got = 'C', format('§130 (captain): the captain''s wheel read draws %s', got));
+    got := _vd2_rows(q_breakdown);
+    PERFORM _assert(got = '', format('§130 (captain): the captain reads a team-mate''s breakdown: %s', got));
+    got := _vd2_rows(q_pairs);
+    PERFORM _assert(got = 'C>N2,N2>C', format('§130 (captain): the captain''s match-ups hold %s', got));
+    -- (captain) his side's seasons, this season only; never the boy who
+    -- played up (not of his side).
+    got := _vd2_rows(q_seasons);
+    PERFORM _assert(got = 'C@' || L || ',C@' || S || ',N1@' || S || ',N2@' || S,
+      format('§130 (captain): the captain''s seasons hold %s', got));
+    -- The copy asks is_captain_of()'s question: one live captaincy, 9XI, this season.
+    EXECUTE 'CREATE TEMP VIEW _vd2_captaincy AS WITH ' || v_c || ' SELECT cap_team, cap_season FROM reach_captaincy';
+    PERFORM _assert((SELECT string_agg(cap_team || '@' || cap_season, ',') FROM _vd2_captaincy) = '9XI@' || S
+                    AND _vd2_captain((y->>'c')::uuid, '9XI', S) AND NOT _vd2_captain((y->>'c')::uuid, '9XI', L),
+      '§130 (captain): the read''s captaincy is not is_captain_of()''s');
+    -- Withdrawn: the side's rows go with it.
+    PERFORM _vd2_honour((y->>'honour')::uuid, true);
+    got := _vd2_rows(q_seasons);
+    PERFORM _assert(got = 'C@' || L || ',C@' || S AND NOT EXISTS (SELECT 1 FROM _vd2_captaincy)
+                    AND NOT _vd2_captain((y->>'c')::uuid, '9XI', S),
+      format('§130 (captain): after the withdrawal the captain''s seasons hold %s', got));
+    -- A vice-captain leads the side too (138 D1).
+    v_vice := _vd2_award((y->>'c')::uuid, 'vice_captain', (SELECT f.id FROM season_for(sa_today(), 'school') f), U_DOS);
+    got := _vd2_rows(q_seasons);
+    PERFORM _assert(got = 'C@' || L || ',C@' || S || ',N1@' || S || ',N2@' || S AND _vd2_captain((y->>'c')::uuid, '9XI', S),
+      format('§130 (captain): the vice-captain''s seasons hold %s', got));
+    PERFORM _vd2_honour(v_vice, true);
+
+    -- A captaincy last season opens last season's rows, and not this one's.
+    v_last_h := _vd2_award((y->>'n1')::uuid, 'captain', (y->>'last_id')::uuid, U_DOS);
+    PERFORM _as(U_N1);
+    got := _vd2_rows(q_seasons);
+    PERFORM _assert(got = 'C@' || L || ',N1@' || L || ',N1@' || S || ',N2@' || L
+                    AND (SELECT string_agg(cap_team || '@' || cap_season, ',') FROM _vd2_captaincy) = '9XI@' || L
+                    AND _vd2_captain((y->>'n1')::uuid, '9XI', L) AND NOT _vd2_captain((y->>'n1')::uuid, '9XI', S),
+      format('§130 (captain): last season''s captain''s seasons hold %s', got));
+    PERFORM _vd2_honour(v_last_h, true);
+
+    -- (compare) one team-mate, named, this season, his own side.
+    got := _vd2_rows(q_seasons, (y->>'n2')::uuid);
+    PERFORM _assert(got = 'N2@' || S, format('§130 (compare): N1 naming N2 reads %s', got));
+    got := _vd2_rows(q_seasons, (y->>'c')::uuid);
+    PERFORM _assert(got = 'C@' || S, format('§130 (compare): N1 naming the captain reads %s', got));
+    got := _vd2_rows(q_seasons, (y->>'u')::uuid);
+    PERFORM _assert(got = '', format('§130 (compare): N1 naming a boy of another side who played for his reads %s', got));
+    got := _vd2_rows(q_seasons, (y->>'o')::uuid);
+    PERFORM _assert(got = '', format('§130 (compare): N1 naming another side''s boy reads %s', got));
+    got := _vd2_rows(q_seasons, (y->>'n1')::uuid);
+    PERFORM _assert(got = 'N1@' || L || ',N1@' || S, format('§130 (compare): N1 naming himself reads %s', got));
+    -- Named, the career, wheel and pairs stay his own (no exception there).
+    PERFORM _assert(_vd2_rows(q_career) = 'N1' AND _vd2_rows(q_wheel) = 'N1',
+      '§130 (compare): naming a team-mate opened something beyond his season');
+
+    -- (staffer) N2: a pupil, and 9XI's coach as well.
+    PERFORM _as(U_N2);
+    PERFORM _assert(_vd2_rows(q_career) = 'N2', format('§130 (staffer): the pupil-staffer''s career read holds %s', _vd2_rows(q_career)));
+    PERFORM _assert(_vd2_rows(q_seasons) = 'N2@' || L || ',N2@' || S, format('§130 (staffer): his seasons hold %s', _vd2_rows(q_seasons)));
+    PERFORM _assert(_vd2_rows(q_wheel) = 'N2', format('§130 (staffer): his wheel read draws %s', _vd2_rows(q_wheel)));
+    PERFORM _assert(_vd2_rows(q_seasons, (y->>'n1')::uuid) = 'N1@' || S,
+      format('§130 (staffer): his card naming N1 reads %s', _vd2_rows(q_seasons, (y->>'n1')::uuid)));
+    -- He reads U's row as a coach (the roster), so only the card's own side
+    -- test keeps the boy who played up for 9XI, of 8XI, off it: N1 cannot
+    -- read U at all, and could not show it.
+    PERFORM _assert(EXISTS (SELECT 1 FROM player WHERE id = (y->>'u')::uuid) AND _vd2_rows(q_seasons, (y->>'u')::uuid) = '',
+      format('§130 (compare): the pupil-staffer''s card naming a boy of another side reads %s', _vd2_rows(q_seasons, (y->>'u')::uuid)));
+
+    -- (parent) N1's mother: her son, nobody else, and no exception of a pupil's.
+    PERFORM _as(U_MUM);
+    PERFORM _assert(_vd2_rows(q_career) = 'N1', format('§130 (parent): the mother''s career read holds %s', _vd2_rows(q_career)));
+    PERFORM _assert(_vd2_rows(q_seasons) = 'N1@' || L || ',N1@' || S, format('§130 (parent): her seasons hold %s', _vd2_rows(q_seasons)));
+    PERFORM _assert(_vd2_rows(q_seasons, (y->>'n2')::uuid) = '', '§130 (parent): naming a team-mate opened his season to her');
+    PERFORM _assert(_vd2_rows(q_wheel) = 'N1' AND _vd2_rows(q_breakdown) = 'N1:bat',
+      format('§130 (parent): her wheel %s, her breakdown %s', _vd2_rows(q_wheel), _vd2_rows(q_breakdown)));
+
+    -- (staff)
+    PERFORM _as(U_CO);
+    PERFORM _assert(_vd2_rows(q_career) = 'C,N1,N2,U', format('§130 (staff): 9XI''s coach reads %s', _vd2_rows(q_career)));
+    PERFORM _assert(_vd2_rows(q_seasons) = 'C@' || L || ',C@' || S || ',N1@' || L || ',N1@' || S || ',N2@' || L || ',N2@' || S || ',U@' || S,
+      format('§130 (staff): 9XI''s coach''s seasons hold %s', _vd2_rows(q_seasons)));
+    PERFORM _assert(_vd2_rows(q_wheel) = 'C,N1,N2' AND _vd2_rows(q_breakdown) = 'N1:bat,N2:bowl'
+                    AND _vd2_rows(q_pairs) = 'C>N2,N1>N2,N2>C,N2>N1,N2>U',
+      format('§130 (staff): 9XI''s coach: wheel %s, breakdown %s, pairs %s', _vd2_rows(q_wheel), _vd2_rows(q_breakdown), _vd2_rows(q_pairs)));
+    PERFORM _as(U_OCO);
+    PERFORM _assert(_vd2_rows(q_career) = 'O,U', format('§130 (staff): 8XI''s coach reads %s', _vd2_rows(q_career)));
+    PERFORM _as(U_DOS);
+    PERFORM _assert(_vd2_rows(q_career) = 'C,N1,N2,O,U', format('§130 (staff): the director of sport reads %s', _vd2_rows(q_career)));
+    EXECUTE 'DROP VIEW _vd2_captaincy';
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 130
+  -- └── REACH-D2 (section 130) ───────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
