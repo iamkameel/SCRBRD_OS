@@ -277,7 +277,7 @@ try {
     const scId = (await q(
       `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
        values ($1, '1XI', $3, $2, now() - interval '30 minutes', 'cricket', 'T20', 20, 'live') returning id`, [HIL, null, LONG]))[0].id;
-    await q(`insert into match_toss (match_id, school_id, won_by, decision) values ($1, $2, 'home', 'field')`, [scId, HIL]);
+    await q(`insert into match_toss (match_id, school_id, won_by, decision) values ($1, $2, 'away', 'bat')`, [scId, HIL]);
     /** @type {any[]} */
     const scLog = [];
     let sn = 0;
@@ -368,7 +368,7 @@ try {
       if (!el) return null;
       const edge = el.getBoundingClientRect().right;
       // Every line, the source line's scope among them, ends inside the card: nothing is cut off by its overflow.
-      const cut = [...el.querySelectorAll('[data-testid^="mc-scenario-"], [data-part]')].filter((x) => x.getBoundingClientRect().right > edge + 1 || x.scrollWidth > x.clientWidth + 1)
+      const cut = [...el.querySelectorAll('[data-testid^="mc-scenario-"]:not(.sr-only), [data-part]')].filter((x) => x.getBoundingClientRect().right > edge + 1 || x.scrollWidth > x.clientWidth + 1)
         .map((x) => x.getAttribute("data-testid") ?? x.getAttribute("data-part"));
       return { wide: el.scrollWidth > el.clientWidth + 1, cut, page: document.documentElement.scrollWidth > innerWidth + 1 };
     });
