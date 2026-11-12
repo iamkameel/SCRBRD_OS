@@ -103,6 +103,16 @@ export function captainApi() {
     seasons: () => [{ id: "ca000000-0000-0000-0000-0000000000e1", level: "school", label: season, starts_on: `${season}-01-01`, ends_on: `${season}-12-31`, cutoff_on: `${season}-01-01`, current: true }],
     match_squad: (q) => squad(q.get("matchId")),
     career_by_season: () => career,
+    // GA-I23 B2: his own season, innings by innings, enough for the line (7
+    // innings, over 30 balls in the last five), one from a scorebook with no
+    // balls recorded, so the panel draws every part it has: points, the line,
+    // the legend, the notes and the table.
+    innings_by_season: (q) => (q.get("playerId") === IDS.pillay
+      ? [[12, 15, true], [0, 3, true], [34, null, true, true], [27, 22, false], [8, 11, true], [41, 30, true], [5, 9, false]].map(([runs, balls, out, book], i) => ({
+        player_id: IDS.pillay, full_name: NAMES.pillay, team_code: "1XI", school_id: HIL, season, current_season: true,
+        match_id: `ca000000-0000-0000-0000-0000000001${String(i).padStart(2, "0")}`, innings: 1, ended_at: `${season}-0${2 + i}-14T12:00:00.000Z`,
+        runs, balls_faced: balls, out, source: book ? "scorebook" : "scored" }))
+      : []),
     bowling_directives: () => [{ age_band: "open", max_overs_per_spell: null, max_overs_per_day: null, clause_code: null }],
     pitch_report: () => [{ match_id: MATCH.day, surface: "firm", grass: "covered", bounce: "even", pace: "quick", favours: "seam", covers_on: false, notes: null,
       bounce_rating: null, pace_rating: null, outfield: null, reported_at: "2026-10-02T06:00:00.000Z" }],

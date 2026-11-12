@@ -185,7 +185,7 @@ const TYPE_FLOOR_CEILING = {
   // (the director of sport, against tools/a11y-listing-mock.mjs), at 1280 wide and, with an m, at 390: the switch
   // off, on and a reader's (disabled, with its reason), the line, the form, the form with a refusal showing.
   // Measured inside their own regions. Born at 0, and kept there.
-  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0,
+  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0,
   // GA-I13: the scorer's home, on a phone, measured inside its own region — a Resume card with a count, the
   // fixtures with their states, the lines before the toss. Born at 0, and kept there.
   scorerhome: 0,
@@ -250,7 +250,7 @@ const TAP_FLOOR_CEILING = {
   // (the director of sport, against tools/a11y-listing-mock.mjs), at 1280 wide and, with an m, at 390: the switch
   // off, on and a reader's (disabled, with its reason), the line, the form, the form with a refusal showing.
   // Measured inside their own regions. Born at 0, and kept there.
-  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0,
+  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0,
 };
 
 /**
@@ -296,7 +296,7 @@ const CONTRAST_CEILING = {
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
               practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
               importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
-              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0,
+              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0,
               scorerhome: 0 },
   daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
@@ -307,7 +307,7 @@ const CONTRAST_CEILING = {
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
               practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
               importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
-              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0,
+              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0,
               scorerhome: 0 },
 };
 
@@ -372,7 +372,7 @@ const EMOJI_CEILING = {
   // (the director of sport, against tools/a11y-listing-mock.mjs), at 1280 wide and, with an m, at 390: the switch
   // off, on and a reader's (disabled, with its reason), the line, the form, the form with a refusal showing.
   // Measured inside their own regions. Born at 0, and kept there.
-  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0,
+  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0,
   // GA-I13: the scorer's home.
   scorerhome: 0,
 };
@@ -754,6 +754,16 @@ async function captainWalk(theme) {
     await afterReads(page, 1500);
     ok("the Captain tab is drawn, after the match", await tid("mc-captain").count() === 1);
     await check("captainafter");
+    // GA-I23 B2: his Passport's innings-by-innings panel, the line drawn and
+    // its table open, measured inside its own card by the same ratchets.
+    await tap("mnav-passport", 1800);
+    await page.waitForSelector('[data-testid="passport-trend"] [data-testid="season-trend"][data-line="drawn"]', { timeout: 8000 }).catch(() => {});
+    ok("the Passport's innings-by-innings panel draws, with its line", await page.locator('[data-testid="passport-trend"] [data-testid="season-trend-line"]').count() === 1);
+    await tap("season-trend-table-toggle", 400);
+    ok("...and its table opens", await tid("season-trend-table").count() === 1);
+    ok("...and its chart is described by the spoken summary", await page.locator('[data-testid="season-trend-chart"][role="img"][aria-describedby]').count() === 1
+       && /7 innings/.test(await tid("season-trend-summary").textContent({ timeout: 2000 }).catch(() => "") ?? ""));
+    await check("trend", '[data-testid="passport-trend"]');
     ok(`no page errors on the captain's screens`, errors.length === 0, errors.join(" | "));
   } catch (e) {
     ok(`the ${T_} captain walk threw: ${e.message?.slice(0, 160)}`, false);
