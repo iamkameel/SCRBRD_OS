@@ -8,7 +8,7 @@ import { placeWords } from "./field.js";
 import { boardFromInnings } from "./boardData.js";
 import { WagonWheel } from "./panels.jsx";
 import { ALL_SHOTS_FLAT, SHOT_CATS } from "./shots.js";
-import { EXTRAS, NB_DEFAULT, NB_FROM, NB_TYPES, extraCall, extraOf, nbFreeHit, runsWords } from "./extras.js";
+import { EXTRAS, NB_DEFAULT, NB_FROM, NB_TYPES, extraCall, extraOf, nbFreeHit, nbNotBoundary, runsWords } from "./extras.js";
 
 /**
  * THE PAD — step 2 of the redesign (DESIGN_DIRECTION §4).
@@ -391,13 +391,29 @@ function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true, wi
                 style={{ ...keyBase("44px"), ...segment(nb.type === t.id) }}>{t.label}</button>
             ))}
           </div>
-          <div role="radiogroup" aria-label="Whose runs?" data-testid="nb-runs-from"
-            style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: T.space.xs }}>
-            {NB_FROM.map((f) => (
-              <button key={f.label} type="button" role="radio" aria-checked={nb.from === f.id} data-testid={`nb-runs-${f.id ?? "bat"}`}
-                className="pressBtn os-state" onClick={() => setNb((p) => ({ ...p, from: f.id }))}
-                style={{ ...keyBase("44px"), ...segment(nb.from === f.id) }}>{f.label}</button>
-            ))}
+          {/* Whose runs, and — off the bat — whether a four or six reached the
+              rope (RECOGNITION R12, P8), on ONE row: the panel opens over the
+              pad's keys and never over the board (smoke-a11y), so the toggle
+              takes the row's last quarter rather than a row of its own. One
+              tap says "all run": the runs are the batter's with no four or
+              six. Untouched, a four or six off the bat is a boundary, as the
+              run keys' are. Byes are never a batter's boundary, so it is not
+              offered for them. 14px here, so "Off the bat" in a quarter less
+              stays one 44px key. */}
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,3fr) minmax(0,1fr)", gap: T.space.xs }}>
+            <div role="radiogroup" aria-label="Whose runs?" data-testid="nb-runs-from"
+              style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: T.space.xs }}>
+              {NB_FROM.map((f) => (
+                <button key={f.label} type="button" role="radio" aria-checked={nb.from === f.id} data-testid={`nb-runs-${f.id ?? "bat"}`}
+                  className="pressBtn os-state" onClick={() => setNb((p) => ({ ...p, from: f.id }))}
+                  style={{ ...keyBase("44px"), ...segment(nb.from === f.id), fontSize: "14px" }}>{f.label}</button>
+              ))}
+            </div>
+            {nb.from == null ? (
+              <button type="button" aria-pressed={nb.notBoundary === true} data-testid="nb-not-boundary" aria-label="All run, not a boundary"
+                className="pressBtn os-state" onClick={() => setNb((p) => ({ ...p, notBoundary: !p.notBoundary }))}
+                style={{ ...keyBase("44px"), ...segment(nb.notBoundary === true), fontSize: "14px" }}>All run</button>
+            ) : <span aria-hidden="true"/>}
           </div>
           {/* No free hit in a declaration or timed match (the fold's
               inn.freeHits, from the fixture's format; SCRBRD-113). */}
@@ -424,7 +440,7 @@ function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true, wi
           const likely = n === x.likely;
           return (
             <button key={n} ref={likely ? likelyRef : undefined} type="button" data-testid={`extra-run-${n}`} data-likely={likely || undefined}
-              aria-label={`${runsWords(kind, n)}${wicket ? ", then the wicket" : likely ? " (the usual)" : ""}`}
+              aria-label={`${runsWords(kind, n)}${isNb && nbNotBoundary(nb, n) ? ", not a boundary" : ""}${wicket ? ", then the wicket" : likely ? " (the usual)" : ""}`}
               className="pressBtn os-state" onClick={() => onRuns(n, nb, wicket)}
               style={{ ...keyBase("56px"), ...T.role.figure.md, fontSize: "24px",
                 ...(likely ? { background: T.content.primary, color: T.surface.canvas, border: `2px solid ${T.content.primary}` } : {}) }}>
@@ -657,7 +673,7 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
     // A wicket on the wide or the no-ball: the engine opens the wicket
     // sheet with the extra's answers, and records nothing until it confirms.
     if (wicket && onExtraWicket && (extra === "Wd" || extra === "Nb")) {
-      if (extra === "Nb") onExtraWicket("Nb", n, nb.type, n > 0 ? nb.from : null);
+      if (extra === "Nb") onExtraWicket("Nb", n, nb.type, n > 0 ? nb.from : null, ...(nbNotBoundary(nb, n) ? [true] : []));
       else onExtraWicket("Wd", n);
       if (basic) setExtra(null); else reset();
       return;

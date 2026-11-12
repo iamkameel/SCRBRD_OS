@@ -36,7 +36,7 @@
 import { superOverNumber } from "./events.mjs";
 import { KIND, BALL_TYPE, isLegal, normaliseDismissal, chargedToBowler, standsOnFreeHit, DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, DERIVED_END_REASONS, RETIREMENT_DISMISSAL, RUN_OUT_END, SUSPENSION_SCOPE, runsOffBat, inningsEnd } from "./events.mjs";
 import { NB_RUNS, runsToBowler, boundaryHit, givesFreeHit } from "./events.mjs";
-import { countsInOver, FACES_NEXT, isWicketBall } from "./events.mjs";
+import { countsInOver, FACES_NEXT, isWicketBall, fieldersFit } from "./events.mjs";
 import { lawsEdition, LAWS_EDITION } from "./edition.mjs";
 import { conditionsOf, freeHit, oversPerInnings } from "./conditions.mjs";
 import { CAPTURE_PROFILE } from "./placement.mjs";
@@ -1339,6 +1339,43 @@ function settleInnings(inn) {
 export function isKeeperRef(keeperRef, keeperName, fielder) {
   if (keeperRef == null || typeof fielder !== "string" || fielder === "") return false;
   return fielder === keeperRef || (keeperName != null && fielder === keeperName);
+}
+
+/**
+ * What a fielder did for a wicket (RECOGNITION R12, P2).
+ * @typedef {"catch" | "stumping" | "run_out"} FieldingAct
+ */
+/**
+ * One fielder's credit for one wicket: who (a player id, or the name as
+ * typed), what he did, and whether he was the keeper on the record at that
+ * ball (the ball log's keeperId).
+ * @typedef {{ref: string, act: FieldingAct, keeper: boolean}} FieldingCredit
+ */
+const FIELDING_ACT = /** @type {ReadonlyMap<unknown, FieldingAct>} */ (new Map([
+  [DISMISSAL.CAUGHT, "catch"], [DISMISSAL.STUMPED, "stumping"], [DISMISSAL.RUN_OUT, "run_out"],
+]));
+
+/**
+ * The fielding a delivery the fold logged credits (RECOGNITION R12, P2):
+ * one credit for each fielder its `fielders` names (FIELDED_DISMISSALS, the
+ * contribution rule: each fielder of a run out one run out), for a catch, a
+ * stumping or a run out that stood. Nothing for a wicket a free hit saved,
+ * for any other way out, or for a wicket that names no fielder by reference
+ * — a log from before the pad asked, or a scorer who named nobody: unknown,
+ * never nought, and never guessed from the scorecard's text. Read from the
+ * ball log, so the fold's own rules decide what stood and a void takes the
+ * credit away with the ball. One rule: facts.mjs reads it, and db/150's
+ * fielding_credit is its mirror in SQL, held equal by smoke-fold-figures.
+ * @param {Partial<BallLogEntry> | null | undefined} entry
+ * @returns {FieldingCredit[]}
+ */
+export function fieldingCredits(entry) {
+  if (entry == null || entry.kind !== KIND.BALL || !isWicketBall(entry) || entry.freeHitSaved === true) return [];
+  const mode = normaliseDismissal(entry.dismissal);
+  const act = FIELDING_ACT.get(mode);
+  if (act == null || !fieldersFit(entry.fielders, mode)) return [];
+  const keeper = typeof entry.keeperId === "string" ? entry.keeperId : null;
+  return /** @type {string[]} */ (entry.fielders).map((ref) => ({ ref, act, keeper: keeper != null && ref === keeper }));
 }
 
 /**

@@ -30,7 +30,7 @@
  *
  * WHAT HE WRITES. Ids and figures. There is no text field to send.
  */
-import { deriveFacts, fromRow, suggestPlayerOfMatch, matchFigures, figuresWords, BASIS_WORDS, POTM_BASIS, FACTS_VERSION } from "@scrbrd/scoring";
+import { deriveFacts, fromRow, suggestPlayerOfMatch, matchFigures, figuresWords, basisWords, potmBasis, POTM_BASIS, FACTS_VERSION } from "@scrbrd/scoring";
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { EVENT_COLUMNS_SEEN, matchFoldContext } from "./events-api.mjs";
 import { potmWords } from "./potm-api.mjs";
@@ -115,8 +115,11 @@ export function nominationRoutes({ pool, secret }) {
     const { rows: evs } = await client.query(`select ${EVENT_COLUMNS_SEEN} from ball_event where match_id = $1 order by seq`, [id]);
     const ctx = await matchFoldContext(client, id);
     const facts = deriveFacts(evs.map(fromRow), roster, { ctx: /** @type {any} */ (ctx) });
-    const figures = new Map(matchFigures(facts, roster).map((f) => [f.playerId, figuresWords(f)]));
-    return { figures, suggestions: suggestPlayerOfMatch(facts, roster) };
+    // RECOGNITION R12: with fielding where every fielding wicket names its
+    // fielders (potmBasis); the nomination and the award store which.
+    const basis = potmBasis(facts);
+    const figures = new Map(matchFigures(facts, roster, basis).map((f) => [f.playerId, figuresWords(f)]));
+    return { figures, basis, suggestions: suggestPlayerOfMatch(facts, roster, undefined, basis) };
   }
 
   /** The side's full sheet, as ids, through the door that answered the side (his own id first). @param {any} s @param {string | null} me */
@@ -133,16 +136,19 @@ export function nominationRoutes({ pool, secret }) {
       let suggestions = [];
       /** @type {Map<string, string>} */
       let figures = new Map();
+      /** @type {string | null} */
+      let basis = null;
       if (r.may_nominate) {
         const w = await working(client, id, rosterOf({ sheet }, mine));
         figures = w.figures;
+        basis = w.basis;
         const names = new Map(sheet.map((/** @type {any} */ x) => [x.playerId, x.name]));
         // The coach's suggestions, as he sees them; the captain's own name is
         // left off his list (he cannot choose himself), never re-ranked.
         suggestions = w.suggestions.filter((x) => names.has(x.playerId)).map((x) => ({ ...x, name: names.get(x.playerId) }));
       }
       out.push({
-        side: r.side, heading: r.heading, nominatedAs: r.nominated_as, coachName: r.coach_name ?? null,
+        side: r.side, heading: r.heading, nominatedAs: r.nominated_as, coachName: r.coach_name ?? null, basisKey: basis,
         mayNominate: r.may_nominate === true, refusal: r.refusal ?? null,
         refusalWords: r.refusal ? captainWords(r.refusal) : null,
         closesAt: r.closes_at, headSeq: r.head_seq,
@@ -164,8 +170,15 @@ export function nominationRoutes({ pool, secret }) {
       return runAsPrincipal(pool, secret, as(req), async (client) => {
         const captain = await captainSides(client, id);
         const { rows } = await client.query(`select * from match_nomination_state($1)`, [id]);
+        // D17's line for the captain as for the coach: dropped once fielding
+        // is counted (RECOGNITION R12). The match's, from its log, for every
+        // reader — a coach, a captain whose window closed — not only a
+        // captain who may nominate. It does not depend on the roster
+        // (potmBasis() reads the whole log's credits), and it is read from the
+        // log as this reader may read it, as every figure here is.
+        const basis = captain.find((c) => c.basisKey)?.basisKey ?? (await working(client, id, [])).basis;
         return {
-          matchId: id, basis: BASIS_WORDS, captain,
+          matchId: id, basis: basisWords(basis), basisKey: basis, captain,
           staff: rows.map((r) => ({
             side: r.side, nominationId: r.nomination_id, nomineeId: r.nominee_id, nomineeName: r.nominee_name,
             nominatedAs: r.nominated_as, status: r.status, nominatedAt: r.nominated_at, closesAt: r.closes_at,
@@ -189,7 +202,7 @@ export function nominationRoutes({ pool, secret }) {
         let derived = { version: 1, basis: POTM_BASIS, factsVersion: FACTS_VERSION, headSeq: b.headSeq, suggestions: [], nominee: { playerId: b.playerId, figures: "" } };
         if (s) {
           const w = await working(client, id, rosterOf({ sheet: s.sheet }, s.self_id ?? null));
-          derived = { ...derived,
+          derived = { ...derived, basis: w.basis,
             suggestions: w.suggestions.map((x) => ({ playerId: x.playerId, figures: x.figures })),
             nominee: { playerId: b.playerId, figures: w.figures.get(b.playerId) ?? "Did not bat or bowl" } };
         }
@@ -221,7 +234,7 @@ export function nominationRoutes({ pool, secret }) {
             `select s.player_id from match_squad s where s.match_id = $1 and s.side = $2 and not s.withdrawn`, [id, s?.side ?? "home"]);
           const roster = sheet.map((x) => x.player_id);
           const w = await working(client, id, roster);
-          derived = { version: 1, basis: POTM_BASIS, factsVersion: FACTS_VERSION, headSeq: b.headSeq,
+          derived = { version: 1, basis: w.basis, factsVersion: FACTS_VERSION, headSeq: b.headSeq,
             suggestions: w.suggestions.map((x) => ({ playerId: x.playerId, figures: x.figures })),
             awardee: { playerId: awardee ?? null, figures: awardee ? w.figures.get(awardee) ?? "Did not bat or bowl" : "" } };
         }

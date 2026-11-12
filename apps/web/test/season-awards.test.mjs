@@ -13,7 +13,9 @@ import { MIN_BALLS_BOWLED, MIN_BALLS_FACED } from "@scrbrd/scoring";
 import {
   ALL_SEASONS, awardSeasons, bestBattingAverages, bestBowlingEconomies, defaultAwardSeason, mvpRanking, mvpScore,
   playersForSeason, PLAYING_ROLES, rankingMethod, showsRankings, topRunScorers, topWicketTakers,
+  fieldingForSeason, fieldingDismissals, keepingDismissals, topFielders, topKeepers,
 } from "../src/lib/seasonAwards.js";
+import { asSeasonCareer } from "../src/lib/live.js";
 import { ROLE_IDENTITY } from "../src/design/roles.js";
 import { ROLES as POLICY_ROLES } from "@scrbrd/policy/roles";
 
@@ -198,6 +200,38 @@ group("Recognition R5b: each ranking says its method, in plain words");
   ok("the bowling index states its minimum, from the package", rankingMethod("bowling", "2026").includes(`at least ${MIN_BALLS_BOWLED} balls`));
   ok("the MVP says it averages the two and never ranks a refused rating", /averaged where a player has both/.test(rankingMethod("mvp")) && /never a rating either index refused/.test(rankingMethod("mvp")));
   ok("every kind has words, and none is under a sentence", ["runs", "wickets", "batting", "bowling", "mvp", "average", "wicketCount"].every((k) => /^Ranked by .+\.$/.test(rankingMethod(/** @type {any} */ (k)))));
+}
+
+group("Fielding and keeping (RECOGNITION R12)");
+{
+  // Season rows as asSeasonCareer() maps the read's columns.
+  const row = (id, season, f) => asSeasonCareer({ player_id: id, full_name: id, team_code: "1XI", school_id: "HIL", season,
+    runs: 0, bat_matches: 0, dismissals: 0, runs_conceded: 0, balls_bowled: 0, wickets: 0, ...f });
+  const rows = [
+    row("fred", "2025", { catches: 2, run_outs: 1 }), row("fred", "2026", { catches: 1 }),
+    row("sam", "2026", { catches: 2, run_outs: 2 }),
+    row("kyle", "2026", { catches: 1, keeping_catches: 3, stumpings: 2, innings_kept: 4 }),
+    row("ned", "2026", {}),
+  ];
+  ok("the read's columns map, nought where absent", rows[2].runOuts === 2 && rows[3].keepingCatches === 3 && rows[3].inningsKept === 4
+     && rows[4].catches === 0 && rows[4].stumpings === 0);
+  const players = ["fred", "sam", "kyle", "ned"].map((id) => player({ id, name: id }));
+  const season = fieldingForSeason(players, rows, "2026");
+  ok("a season's fielders: most catches and run outs first, nobody with none",
+     topFielders(season).map((p) => p.id).join() === "sam,fred,kyle", topFielders(season).map((p) => p.id));
+  const all = fieldingForSeason(players, rows, ALL_SEASONS);
+  ok("every season sums his seasons", fieldingDismissals(all.find((p) => p.id === "fred")) === 4
+     && topFielders(all).map((p) => p.id).join() === "fred,sam,kyle", topFielders(all).map((p) => p.id));
+  ok("...level on dismissals, more catches first", (() => {
+    const t = topFielders([{ ...player({ id: "a" }), catches: 1, runOuts: 2 }, { ...player({ id: "b" }), catches: 3, runOuts: 0 }]);
+    return t[0].id === "b";
+  })());
+  ok("keepers: dismissals as the keeper, only those who have one",
+     topKeepers(season).map((p) => p.id).join() === "kyle" && keepingDismissals(season.find((p) => p.id === "kyle")) === 5);
+  ok("the methods say what is counted, and that an unnamed fielder counts for nobody",
+     /catches and run outs in the 2026 school season/.test(rankingMethod("fielding", "2026"))
+     && /counts for nobody/.test(rankingMethod("fielding", "2026"))
+     && /dismissals as wicket-keeper across every season on record/.test(rankingMethod("keeping", ALL_SEASONS)));
 }
 
 console.log("\n" + "─".repeat(52));

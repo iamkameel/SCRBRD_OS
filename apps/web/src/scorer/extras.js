@@ -53,6 +53,16 @@ export const NB_FROM = Object.freeze([
 ]);
 export const NB_DEFAULT = Object.freeze({ type: "front_foot", from: null });
 /**
+ * Four or six off a no-ball that did not reach the rope (RECOGNITION R12,
+ * P8): all run, or with overthrows. The scorer says so with one tap on the
+ * panel ("All run, not a boundary"); untouched, a four or six off the bat is
+ * a boundary, as the run keys' "Four, boundary" and "Six, maximum" are. Only
+ * runs off the bat that are four or six carry it: byes are no boundary of
+ * the batter's, and no other figure is one.
+ * @param {{from?: string|null, notBoundary?: boolean} | null | undefined} nb  @param {number} runs
+ */
+export const nbNotBoundary = (nb, runs) => nb?.notBoundary === true && nb.from == null && (runs === 4 || runs === 6);
+/**
  * Whether this kind of no-ball earns a free hit: a front-foot one only
  * (Kameel, 28 Oct 2026, the Laws audit Q2 and F12), the engine's own rule
  * (givesFreeHit(), FREE_HIT_NB_TYPES), so the panel's note and the fold's
@@ -83,14 +93,16 @@ export function runsWords(kind, n) {
  * @param {"Wd"|"Nb"|"B"|"LB"} kind
  * @param {number} runs
  * @param {{basic?: boolean, shot?: string|null, area?: {seg: number, zone: string}|null,
- *          nb?: {type: string, from: string|null}}} [pad]  what the pad knows so far
+ *          nb?: {type: string, from: string|null, notBoundary?: boolean}}} [pad]  what the pad knows so far
  */
 export function extraCall(kind, runs, { basic = false, shot = null, area = null, nb = NB_DEFAULT } = {}) {
   switch (kind) {
     case "Wd": return { to: "wide", args: [runs] };
     // Whose the runs are is asked only of runs there are (SCRBRD-068): with
     // none, the answer is not written, whatever the panel showed.
-    case "Nb": return { to: "noBall", args: [nb.type, runs, runs > 0 ? nb.from : null] };
+    // A four or six all run is said only when the scorer said it (P8): the
+    // call is otherwise the three arguments it always was.
+    case "Nb": return { to: "noBall", args: [nb.type, runs, runs > 0 ? nb.from : null, ...(nbNotBoundary(nb, runs) ? [true] : [])] };
     case "B":
     case "LB":
       // Basic Scoring never has a shot or an area; the three phases carry

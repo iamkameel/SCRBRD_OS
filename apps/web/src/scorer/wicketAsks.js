@@ -1,4 +1,4 @@
-import { DISMISSAL, standsOnFreeHit } from "@scrbrd/scoring";
+import { DISMISSAL, FIELDER_REF_MAX, standsOnFreeHit } from "@scrbrd/scoring";
 
 /**
  * What the wicket sheet asks, by the way out chosen — one rule, so a test can
@@ -39,14 +39,42 @@ export function wicketAsks({ mode, offExtra, freeHit = false, stopped = false, r
  * The detail the sheet's Confirm hands confirmWicket(): only what was asked,
  * so a wicket the sheet did not ask about is the event it always was.
  * @param {ReturnType<typeof wicketAsks>} asks
- * @param {{who?: string | null, strikerId?: string | null, runs?: number, from?: string | null, end?: string | null, faces?: string | null, asksFaces?: boolean}} a
+ * @param {{who?: string | null, strikerId?: string | null, runs?: number, from?: string | null, end?: string | null, faces?: string | null, asksFaces?: boolean, fielders?: string[]}} a
  */
-export function wicketDetail(asks, { who = null, strikerId = null, runs = 0, from = null, end = null, faces = null, asksFaces = false }) {
+export function wicketDetail(asks, { who = null, strikerId = null, runs = 0, from = null, end = null, faces = null, asksFaces = false, fielders = [] }) {
   return {
     dismissed: asks.who && who !== strikerId ? who : null,
     runs: asks.runs ? runs : 0,
     nbRuns: asks.whose ? from : null,
     outAt: asks.end ? end : null,
     facesNext: asksFaces ? faces : null,
+    // Who fielded it, as references (RECOGNITION R12, P2): only when the
+    // sheet named somebody, so every other wicket is the detail it was.
+    ...(fielders.length ? { fielders } : {}),
   };
+}
+
+/**
+ * The fielders a wicket sheet's answer names, as references (RECOGNITION
+ * R12, P2; events.mjs FIELDED_DISMISSALS): a squad member's id where the pad
+ * holds one (else his name, which is how the fold knows him, as a bowler),
+ * the twelfth man's id, or the name as typed for a substitute or the other
+ * side's boy. Each named once, in the order named; empty when nobody was.
+ * @param {string[]} names  the names chosen or typed, in order
+ * @param {{id?: string|null, name: string}[]} [squad]  the fielding side the sheet offered
+ * @param {{id?: string|null, name: string} | null} [twelfth]
+ * @returns {string[]}
+ */
+export function fielderRefs(names, squad = [], twelfth = null) {
+  const out = [];
+  for (const raw of names) {
+    const name = typeof raw === "string" ? raw.trim() : "";
+    // A name longer than the event holds is no reference: the wicket keeps
+    // its scorecard text and credits nobody (unknown, never guessed).
+    if (!name || name.length > FIELDER_REF_MAX) continue;
+    const p = (squad || []).find((x) => x?.name === name) ?? (twelfth && twelfth.name === name ? twelfth : null);
+    const ref = p ? (p.id ?? p.name) : name;
+    if (typeof ref === "string" && ref && !out.includes(ref)) out.push(ref);
+  }
+  return out;
 }

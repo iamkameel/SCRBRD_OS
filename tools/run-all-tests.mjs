@@ -45,6 +45,9 @@ const SUITES = [
   // The wicket-keeper (SCRBRD-126): the event, the keeper at each ball, his
   // catches and stumpings, a stumping only his (Law 39), the words.
   ["keeper",   "packages/scoring/test/keeper.test.mjs"],
+  // RECOGNITION R12: who fielded the wicket (P2) — the event, the Laws, the
+  // credit, the facts, old logs folding as they did — and P8's no-ball four.
+  ["fielding", "packages/scoring/test/fielding.test.mjs"],
   // ── SCRBRD-114 phase 3a (db/69): a match's result ──
   // describeResult() over the design's logs (result-logs.mjs, which
   // smoke-fold-figures holds match_result() to): the abandoned seal and two
