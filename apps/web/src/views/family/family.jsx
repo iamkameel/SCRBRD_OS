@@ -26,6 +26,7 @@ import { Action, Card, ChildSwitcher, Line, NoneOr, Page, Title } from "./parts.
 import { readState } from "../../lib/readState.js";
 import { LastMatchCard, LiveCard, NextFixtureCard, NoticesCard, SeasonCard } from "./cards.jsx";
 import { PersonalBests } from "./bests.jsx";
+import { SeasonTrend } from "../seasontrend.jsx";
 import { ChildMatches, FixtureDetail, MatchFor } from "./matches.jsx";
 import { ChildFileCard } from "./childfile.jsx";
 import { LiftsToday, useLiftDay } from "../lifts.jsx";
@@ -150,6 +151,14 @@ function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead
         <LiveCard child={child} matches={matches} now={now} onFollow={(m) => setOpen({ kind: "match", match: m })}/>
         <LastMatchCard child={child} matches={matches} now={now} onOpen={(m) => setOpen({ kind: "match", match: m })}/>
         <SeasonCard child={child} role={role}/>
+        {/* GA-I23 slice 2 (B2, Q8): her child's season, innings by innings,
+            one child at a time, read for him alone (innings_by_season's
+            family arm: a verified, live link). */}
+        {/* Quiet when he has no innings at all, as his Bests are below. */}
+        {signedIn() && (
+          <SeasonTrend role={role} playerId={child.id} who={child.knownAs || child.name} bare quietWhenNone
+            frame={(panel) => <Card label="Innings by innings" testid="family-trend">{panel}</Card>}/>
+        )}
         {/* RECOGNITION R5 (D23): her child's own bests; no board, nobody else's child. */}
         <PersonalBests role={role} playerId={child.id} who={`${child.knownAs || child.name}'s`} testid="family-bests" quietWhenNone/>
         <NoticesCard child={child} role={role} onOpen={nav.includes("notices") ? () => onNav?.("notices") : null}/>

@@ -283,8 +283,12 @@ try {
   }
   {
     const rows = await inningsRows(coach, P1);
-    ok("one row per innings he batted, oldest first",
-       rows.every((r, i) => i === 0 || new Date(r.ended_at) >= new Date(rows[i - 1].ended_at)));
+    ok("one row per innings he batted, oldest first by the match's start",
+       rows.length > 1 && rows.every((r, i) => i === 0 || new Date(r.starts_at) >= new Date(rows[i - 1].starts_at)));
+    const starts = new Map((await q(`select id, starts_at from match where id = any($1::uuid[])`, [rows.map((r) => r.match_id)]))
+      .map((m) => [m.id, m.starts_at.toISOString()]));
+    ok("...each dated by its match's start, not by when the server took the ball in",
+       rows.every((r) => typeof r.starts_at === "string" && starts.get(r.match_id) === new Date(r.starts_at).toISOString()), rows.map((r) => [r.match_id.slice(-4), r.starts_at]));
     ok("every row is his, in the season asked for", rows.every((r) => r.player_id === P1 && r.season === SEASON && r.current_season === true));
     ok("each innings is the runs, balls and out the log holds",
        mine(rows).length === made.get(P1).size
@@ -331,7 +335,7 @@ try {
     await q(`insert into role_assignment (person_id, role, school_id, fixture_id) values ($1, 'scorer', $2, $3)`, [U_PUPIL, HIL, M[0]]);
     ok("scoring a match of his side gives him no team-mate's line", (await inningsRows(pupil, P1)).length === 0);
     // A pupil a school has made the side's team manager is still a pupil
-    // (S2, the safe default, pending Kameel).
+    // (S2; Kameel, 12 Nov: "Keep it closed: a pupil never reads team-mates' innings lines").
     const tmRow = (await one(`insert into role_assignment (person_id, role, school_id, team_code) values ($1, 'teammanager', $2, '1XI') returning id`,
                              [U_PUPIL, HIL])).id;
     ok("(the control: as team manager, career's scope gives him the side's rows)",
