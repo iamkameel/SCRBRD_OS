@@ -7,6 +7,7 @@ import { SourceLine } from "../ui/sourceLine.jsx";
 import { SeasonBars } from "./seasonbars.jsx";
 import { AnalyticsSeasonTrend } from "./seasontrend.jsx";
 import { DemoWorm } from "./demoworm.jsx";
+import { SideSeason } from "./sideseason.jsx";
 import { SRC_BALLS, SRC_FIXTURES, SRC_RECORD, WINDOW_ALL, ballsFacedBasis, isoDay } from "../lib/sourceWords.js";
 import { signedIn } from "../lib/api.js";
 import { usePlayersWithCareerState, useLive } from "../lib/live.js";
@@ -94,6 +95,7 @@ function AnalyticsView({ role }) {
               only: a named child's innings are never a demonstration. */}
           {signedIn()&&<AnalyticsSeasonTrend key={`trend-${teamFilter??"none"}`} role={role} players={players.map(p=>({id:p.id,name:p.name}))} read={CAREER.players}/>}
           {!signedIn()&&<DemoWorm/>}
+          {signedIn()&&<SideSeason role={role} team={teamFilter} players={players}/>}
           {/* The four bar charts below are the career read (every season on record). */}
           <div style={{marginBottom:"12px"}}>
             <SourceLine testid="source-line-performance" demo={!signedIn()} demoWhy="sample players"
