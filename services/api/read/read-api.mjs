@@ -85,8 +85,9 @@ const UNRECORDED_COLUMNS = `coalesce(unrec.innings_without_balls, 0)::int      a
  *     revoked link reads nothing, and a pad's credential never does;
  *   - or, for a reader who is NOT a pupil, a standing assignment that
  *     reads his record: player_read's own two arms (db/09), each asked about
- *     HIM (p.id) and with NO fixture, so an assignment narrowed to one match
- *     (a scorer) never passes. player.profile.read at his side (his side's
+ *     HIM (p.id), with the policy's own any-fixture spelling, so a one-match
+ *     assignment (an adult scorer, an assistant coach for the day) reads what
+ *     it read before. player.profile.read at his side (his side's
  *     staff, a school-wide assignment, and a guardian only for her own
  *     child, whose link names him); or player.roster.read at his school,
  *     any side ('*'), which only the school's staff hold (coach, assistant,
@@ -107,8 +108,8 @@ const UNRECORDED_COLUMNS = `coalesce(unrec.innings_without_balls, 0)::int      a
  */
 export const REACH_FAMILY_OR_STAFF = /* reach_family_or_staff:begin */`(is_family_of(p.id)
               or ((select not app_reader_is_pupil())
-                  and (app_can('player.profile.read', p.school_id, p.team_code, p.id, NULL::uuid)
-                       or app_can('player.roster.read', p.school_id, '*'::text, p.id, NULL::uuid))))`/* reach_family_or_staff:end */;
+                  and (app_can('player.profile.read', p.school_id, p.team_code, p.id, '00000000-0000-0000-0000-000000000000'::uuid)
+                       or app_can('player.roster.read', p.school_id, '*'::text, p.id, '00000000-0000-0000-0000-000000000000'::uuid))))`/* reach_family_or_staff:end */;
 
 /**
  * THE TWO EXCEPTIONS (Kameel, 11 Nov 2026), on `career_by_season` alone:

@@ -40373,8 +40373,8 @@ $v116$;
 -- reach_family_or_staff:begin
 (is_family_of(p.id)
               or ((select not app_reader_is_pupil())
-                  and (app_can('player.profile.read', p.school_id, p.team_code, p.id, NULL::uuid)
-                       or app_can('player.roster.read', p.school_id, '*'::text, p.id, NULL::uuid))))
+                  and (app_can('player.profile.read', p.school_id, p.team_code, p.id, '00000000-0000-0000-0000-000000000000'::uuid)
+                       or app_can('player.roster.read', p.school_id, '*'::text, p.id, '00000000-0000-0000-0000-000000000000'::uuid))))
 -- reach_family_or_staff:end
 $g130$;
     v_c text := $c130$

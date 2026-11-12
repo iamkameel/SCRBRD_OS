@@ -296,10 +296,11 @@ group("A. REACH-D2 (Kameel, 7 and 11 Nov 2026): a boy's figures across matches a
   const g = flat(G);
   ok("the gate opens with the family: his own self link or a guardian's, live (is_family_of)", g.startsWith("(is_family_of(p.id) or"));
   ok("...then staff, and never a pupil (Kameel, 12 Nov: a pupil-staffer stays closed)",
-     g.includes("or ((select not app_reader_is_pupil()) and (app_can('player.profile.read', p.school_id, p.team_code, p.id, NULL::uuid)"));
-  ok("...player_read's two arms, about him, never a fixture-only assignment",
-     !/0000-0000/.test(g) && (g.match(/NULL::uuid/g) ?? []).length === 2
-     && g.includes("or app_can('player.roster.read', p.school_id, '*'::text, p.id, NULL::uuid))))"));
+     g.includes("or ((select not app_reader_is_pupil()) and (app_can('player.profile.read', p.school_id, p.team_code, p.id,"));
+  ok("...player_read's own two arms (db/09), each about him (p.id), as the policy spells the fixture",
+     !/NULL::uuid/.test(g) && (g.match(/p\.id, '00000000-0000-0000-0000-000000000000'::uuid\)/g) ?? []).length === 2
+     && g.includes("app_can('player.profile.read', p.school_id, p.team_code, p.id,")
+     && g.includes("or app_can('player.roster.read', p.school_id, '*'::text, p.id,"));
   ok("...and no capability every pupil holds at his whole side (no performance.read)", !/performance\.read/.test(g));
   const { roleGrants } = await import("@scrbrd/policy/roles");
   ok("the any-side arm is staff's alone: no pupil, guardian, selfaccess or enquiry holds player.roster.read",

@@ -313,11 +313,12 @@ try {
       const r = await innings(pupil, boy);
       ok(`...and none of team-mate ${boy.slice(-2)}'s, though he reads the side's log`, r.status === 200 && r.body.rows.length === 0);
     }
-    // The control: career gives him his team-mates' figures today (REACH M5,
-    // the separate REACH-D2 build). This read does not.
+    // REACH-D2 (Kameel, 7 Nov 2026) closed the season read too: a pupil
+    // reads no team-mate's season unless he names him (Compare) or holds the
+    // captaincy (11 Nov), and he does neither here.
     const career = (await api(`/api/read/career_by_season?season=${SEASON}`, { token: pupil })).body?.rows ?? [];
-    ok("(the control: career_by_season still shows him a team-mate's season, REACH-D2's to close)",
-       career.some((r) => r.player_id === P1));
+    ok("career_by_season shows him no team-mate's season (REACH-D2)",
+       !career.some((r) => r.player_id === P1), JSON.stringify(career.map((r) => r.full_name)));
   }
   {
     // The captain keeps the side's season figures (SCRBRD-138), nothing else.
