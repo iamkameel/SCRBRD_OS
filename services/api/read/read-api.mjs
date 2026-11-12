@@ -1529,18 +1529,19 @@ export const READ_QUERIES = {
   },
 
   /**
-   * The big screen at the ground: who it shows by position (db/153;
-   * PUBLIC_BY_TERMS §2.5, slice 1).
+   * The big screen at the ground: which sides it shows by position (db/153;
+   * PUBLIC_BY_TERMS §2.5, slice 1; Kameel, 12 Nov 2026, (a) and (b)).
    *
-   * One row per player the match's log puts on the field in a role, read
-   * under the caller's own policy on the log: whether the Match Centre's big
-   * screen shows him by his position. True for a boy under a never-public
-   * mark on the day, and for nothing else; never a reason, an author, a date
-   * or a name. The screen shows by position every player this read does not
-   * answer for, so a failed or late read names nobody it should not.
+   * One row per side the log names (its team key): true when a boy that
+   * side carries is on the field under a never-public mark on the day. No
+   * player id, name, reason, author or date. Only the host's staff who are
+   * not pupils get rows (decided in the function); everyone else gets none,
+   * and the Match Centre offers the big screen only to a reader who got
+   * rows. The screen shows by position every boy this read does not answer
+   * for, so a failed or late read names nobody it should not.
    */
-  ground_screen_positions: {
-    text: `select player_id, position_only from ground_screen_positions($1)`,
+  ground_screen_sides: {
+    text: `select team, position_only from ground_screen_sides($1)`,
     params: q => [req(q, "matchId")],
   },
 

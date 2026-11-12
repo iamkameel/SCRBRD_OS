@@ -10,16 +10,20 @@
  * mark (PUBLIC_DATA C5) is shown by his position on it, because a screen
  * facing a crowd is a place he can be found.
  *
- * The server says who (GET /api/read/ground_screen_positions, db/153): one
- * row per player the log puts on the field in a role, `position_only` true
- * for a marked boy. Nothing here decides who is marked; it only puts the
- * position word where the fold and the commentary look for a name.
+ * Kameel, 12 Nov 2026, (b): when any boy on the field is under a mark, his
+ * WHOLE SIDE is shown by position, so the one "Batter" among named boys is
+ * no tell (§3.4). The server says which sides (GET /api/read/
+ * ground_screen_sides, db/153): one row per side the log names,
+ * `position_only` true for a side with a marked boy on the field — never
+ * which boy. Nothing here decides who is marked; it only puts the position
+ * word where the fold and the commentary look for a name.
  *
  * FAIL CLOSED. A player SCRBRD holds a row for (his reference is a uuid) is
- * named only when the server's answer covers him with `position_only`
- * false. Before the first answer, after a read that failed with none, and
- * for a boy who came into the log since the last one, he is his position.
- * A name the scorer typed (L6: no row, so no mark) is left as it was.
+ * named only when he was on the field when the read was asked and every
+ * side carrying him was answered as not position-only. Before the first
+ * answer, after a read that failed with none, and for a boy who came onto
+ * the field since the last one, he is his position. A name the scorer typed
+ * (L6: no row, so no mark) is left as it was.
  *
  * The words are the public projection's (services/api/public/redact.mjs,
  * public/publicLog.js): "Batter" in the batting squad, "Bowler" in the
@@ -33,15 +37,69 @@ export const GROUND_POSITION = Object.freeze({ batter: "Batter", bowler: "Bowler
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Where an event puts a boy on the field: the fields db/153 reads, in the order it reads them. */
+const FIELD_REFS = ["striker", "nonStriker", "bowler", "dismissed", "fielder", "batter", "keeper"];
+
 /**
- * The ids the big screen may name, from the server's rows; null (no answer
- * yet, or none ever) names nobody with a row.
- * @param {{player_id?: string, position_only?: boolean}[] | null | undefined} rows
+ * Every boy with a row the log puts on the field in a role — the set the
+ * server's answer is about, taken when the read is asked.
+ * @param {any[]} events  @returns {Set<string>}
+ */
+export function onField(events = []) {
+  /** @type {Set<string>} */
+  const out = new Set();
+  for (const ev of events) for (const k of FIELD_REFS) if (typeof ev?.[k] === "string" && UUID.test(ev[k])) out.add(ev[k]);
+  return out;
+}
+
+/**
+ * The sides each squad member is carried by, keyed as the log keys them
+ * (db/153 reads the same keys): the batting squad by teamKey or
+ * battingTeam, the fielding squad by bowlingTeamKey or bowlingTeam.
+ * @param {any[]} events  @returns {Map<string, Set<string>>}
+ */
+function squadSides(events) {
+  /** @type {Map<string, Set<string>>} */
+  const out = new Map();
+  const add = (/** @type {any} */ m, /** @type {unknown} */ team) => {
+    const id = m?.id ?? m;
+    if (typeof id !== "string" || typeof team !== "string") return;
+    if (!out.has(id)) out.set(id, new Set());
+    /** @type {Set<string>} */ (out.get(id)).add(team);
+  };
+  for (const ev of events) {
+    if (ev?.kind !== "innings_start") continue;
+    for (const m of ev.squad ?? []) add(m, ev.teamKey ?? ev.battingTeam);
+    for (const m of ev.bowlingSquad ?? []) add(m, ev.bowlingTeamKey ?? ev.bowlingTeam);
+  }
+  return out;
+}
+
+/**
+ * The ids the big screen may name (Kameel, 12 Nov 2026, (b)): a boy who was
+ * on the field when the read was asked (`asked`, onField() then), every
+ * side whose squads carry him answered as not position-only. A side with a
+ * marked boy on the field is position-only, so every boy it carries is his
+ * position; a row with no side (a marked boy no squad carries) names nobody;
+ * no answer (`null`) names nobody with a row.
+ * @param {{rows: {team?: string | null, position_only?: boolean}[], asked: ReadonlySet<string>} | null | undefined} answer
+ * @param {any[]} events  the log the screen folds
  * @returns {ReadonlySet<string>}
  */
-export function namedOnGround(rows) {
-  if (!Array.isArray(rows)) return new Set();
-  return new Set(rows.filter((r) => r && typeof r.player_id === "string" && r.position_only === false).map((r) => r.player_id));
+export function namedOnGround(answer, events = []) {
+  if (!answer || !Array.isArray(answer.rows)) return new Set();
+  /** @type {Map<string, boolean>} side → shown by position */
+  const flags = new Map();
+  for (const r of answer.rows) {
+    if (!r) continue;
+    if (r.team == null) { if (r.position_only !== false) return new Set(); continue; }
+    flags.set(r.team, flags.get(r.team) === true || r.position_only !== false);
+  }
+  const sides = squadSides(events);
+  return new Set([...(answer.asked ?? [])].filter((id) => {
+    const of = sides.get(id);
+    return !!of?.size && [...of].every((t) => flags.get(t) === false);
+  }));
 }
 
 /**

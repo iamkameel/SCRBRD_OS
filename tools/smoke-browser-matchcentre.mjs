@@ -612,31 +612,36 @@ try {
   await L.waitForTimeout(300);
   ok("...and so does its button", await tid(L, "mc-bigscreen").count() === 0);
 
-  // PUBLIC_BY_TERMS §2.5 (slice 1): the screen faces the crowd, so a boy under
-  // a never-public mark is his position on it — and only there: the Match
-  // Centre beneath still names him for its signed-in reader (083 §7).
-  group("The big screen shows a marked boy by his position, and nobody else (PUBLIC_BY_TERMS §2.5)");
+  // PUBLIC_BY_TERMS §2.5 (slice 1; Kameel, 12 Nov 2026, (b)): the screen faces
+  // the crowd, so when a boy under a never-public mark is on the field his
+  // WHOLE SIDE is its position on it — never the one "Batter" among names —
+  // and the other side keeps its names. Only there: the Match Centre beneath
+  // still names him for its signed-in reader (083 §7).
+  group("The big screen shows a marked boy's whole side by position, the other side by name (PUBLIC_BY_TERMS §2.5)");
   const onStrike = after.batsmen.find((b) => b.id === after.striker);
   const partner = after.batsmen.find((b) => b.id === after.nonStriker);
+  const bowlerNames = after.bowlers.map((b) => b.name);
   const setter = (await q(`select id from app_user where email = 'sarah@example.invalid'`))[0].id;
   await q(`insert into player_never_public (player_id, reason, set_on, set_by) values ($1, 'Walk: a mark', sa_today(), $2)`, [onStrike.id, setter]);
   const bigNames = () => L.locator('[data-testid="mc-bigscreen"] [data-testid="display-batter"] .dv-name').allInnerTexts();
+  const bigBowler = () => L.locator('[data-testid="mc-bigscreen"] [data-testid="display-bowler"] .dv-name').innerText().catch(() => "");
   await tid(L, "mc-bigscreen-open").click();
-  ok(`...the server answers and his unmarked partner is named (${partner?.name})`, await until(L, (n) =>
-    [...document.querySelectorAll('[data-testid="mc-bigscreen"] [data-testid="display-batter"] .dv-name')].some((e) => e.innerText.trim() === n),
-    8000, partner?.name), (await bigNames()).join(" | "));
-  ok("...the marked batter is 'Batter' on the board", (await bigNames()).includes("Batter") && !(await bigNames()).includes(onStrike?.name),
-     (await bigNames()).join(" | "));
-  ok("...and his name is nowhere on the big screen", !(await tid(L, "mc-bigscreen").innerText()).includes(onStrike?.name));
+  ok("...the server answers: the fielding side's bowler is named", await until(L, (ns) =>
+    ns.includes(document.querySelector('[data-testid="mc-bigscreen"] [data-testid="display-bowler"] .dv-name')?.innerText.trim()),
+    8000, bowlerNames), await bigBowler());
+  ok("...and both batters, the marked boy's partner too, are 'Batter'",
+     JSON.stringify(await bigNames()) === JSON.stringify(["Batter", "Batter"]), (await bigNames()).join(" | "));
+  const bigText = await tid(L, "mc-bigscreen").innerText();
+  ok("...neither batter's name is anywhere on the big screen", !bigText.includes(onStrike?.name) && !bigText.includes(partner?.name));
   await tid(L, "mc-bigscreen-close").click();
   await L.waitForTimeout(300);
   ok("the Match Centre beneath still names him for its signed-in reader", (await text(L)).includes(onStrike?.name));
   await q(`update player_never_public set ended_on = sa_today(), ended_by = set_by, ended_at = now()
             where player_id = $1 and ended_on is null`, [onStrike.id]);
   await tid(L, "mc-bigscreen-open").click();
-  ok("the mark ended, the big screen names him again", await until(L, (n) =>
+  ok("the mark ended, the big screen names his side again", await until(L, (n) =>
     [...document.querySelectorAll('[data-testid="mc-bigscreen"] [data-testid="display-batter"] .dv-name')].some((e) => e.innerText.trim() === n),
-    8000, onStrike?.name), (await bigNames()).join(" | "));
+    8000, onStrike?.name) && (await bigNames()).includes(partner?.name), (await bigNames()).join(" | "));
   await tid(L, "mc-bigscreen-close").click();
   await L.waitForTimeout(300);
 
@@ -755,6 +760,9 @@ try {
   ok("the head coach signs in", await signIn(ch.page, /coach@example\.invalid|Head Coach/));
   ok("the decided fixture opens", await openMatch(ch.page, fx.live));
   ok("the coach is asked too (scoring.finalise)", await tid(ch.page, "mc-confirm-prompt").count() === 1);
+  // Kameel, 12 Nov 2026, (a): the big screen is the host's staff's, offered where the server answers.
+  ok("the host's coach is offered the big screen",
+     await until(ch.page, () => !!document.querySelector('[data-testid="mc-bigscreen-open"]'), 6000));
   ok("...but cannot open the amendment flow — only the scorer role holds scoring.amend.request",
      await tid(ch.page, "mc-confirm-open").count() === 0 && /scorer/i.test(await tid(ch.page, "mc-confirm-prompt").innerText()));
   ok("no console errors (coach)", ch.errors.length === 0, ch.errors.join(" | "));
@@ -764,6 +772,7 @@ try {
   ok("a spectator signs in", await signIn(watcher.page, /watcher@example\.invalid|Spectator/));
   ok("the decided fixture opens", await openMatch(watcher.page, fx.live));
   ok("a spectator never sees the confirm-or-correct prompt", await tid(watcher.page, "mc-confirm-prompt").count() === 0);
+  ok("...nor is offered the big screen (the server answers him nothing)", await tid(watcher.page, "mc-bigscreen-open").count() === 0);
   ok("...nor the amendment form it would have opened", await tid(watcher.page, "mc-confirm-open").count() === 0);
   ok("no console errors (spectator)", watcher.errors.length === 0, watcher.errors.join(" | "));
   await watcher.ctx.close();
