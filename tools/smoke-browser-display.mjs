@@ -187,10 +187,10 @@ try {
   const fixture = async (/** @type {string} */ status, /** @type {(at: (ev: any, inn: number) => any) => any[]} */ build,
                          // No ground unless the case is about one (par): db/133 refuses two
                          // fixtures on one ground at once, and these are live together.
-                         { ground = null, ago = "1 hour", publish = true } = {}) => {
+                         { ground = null, ago = "1 hour", publish = true, format = "T10" } = {}) => {
     const id = (await q(
       `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
-       values ($1, '1XI', 'Kearsney College 1XI', $2, now() - $4::interval, 'cricket', 'T10', 10, $3) returning id`, [HIL, ground, status, ago]))[0].id;
+       values ($1, '1XI', 'Kearsney College 1XI', $2, now() - $4::interval, 'cricket', $5, 10, $3) returning id`, [HIL, ground, status, ago, format]))[0].id;
     if (publish) await as(SARAH, `select * from fixture_publish($1, 'home', true)`, [id]);
     const at = (/** @type {any} */ ev, /** @type {number} */ inn) => ({ ...ev, innings: inn, id: `disp-${++n}`, clientTs: Date.parse("2026-09-30T08:00:00Z") + n * 30_000 });
     await writeEvents(q, id, build(at));
@@ -401,6 +401,83 @@ try {
        await until(v.page, () => document.querySelector('[data-testid="display"]')?.getAttribute("data-panel") === "partnership", 12000));
     ok("no console errors (the rotation)", v.errors.length === 0, v.errors.join(" | "));
     await v.ctx.close();
+  }
+
+  group("5b. Scenario controls (GA-I29 A2): the scenario line in the rotation, and no stepper");
+  {
+    // Over three and two balls of a first innings (20 legal balls, past the 12-ball minimum), a pair in.
+    const live = (/** @type {any} */ at) => {
+      const all = [...open0(at)];
+      for (let o = 0; o < 3; o++) {
+        if (o) all.push(at(bowler({ bowler: K[o % 2].id }), 0));
+        for (const v of [1, 2, 0, 1, 0, 2]) all.push(at(ball({ value: v }), 0));
+      }
+      all.push(at(bowler({ bowler: K[1].id }), 0));
+      for (const v of [1, 0]) all.push(at(ball({ value: v }), 0));
+      return all;
+    };
+    const SCN = await fixture("live", live);
+    // A chase: Hilton 60 sealed (target 61), Kearsney 18 off three overs.
+    const SCC = await fixture("live", (at) => {
+      const first = firstInnings(at);
+      const need = deriveInnings(first.filter((e) => e.kind !== "innings_end")).runs + 1;
+      const chase = [at(inningsStart({ battingTeam: "Kearsney College 1XI", bowlingTeam: "1XI", teamKey: "Kearsney College 1XI", bowlingTeamKey: "1XI",
+        squad: K, bowlingSquad: H, overs: 10, target: need }), 1), at(batters({ striker: K[0].id, nonStriker: K[1].id }), 1), at(bowler({ bowler: H[0].id }), 1)];
+      for (let o = 0; o < 3; o++) {
+        if (o) chase.push(at(bowler({ bowler: H[o % 2].id }), 1));
+        for (const v of [1, 2, 0, 1, 0, 2]) chase.push(at(ball({ value: v }), 1));
+      }
+      return [...first, ...chase];
+    });
+    // Eight legal balls: under the minimum. Same shape as live(), cut short.
+    const SCY = await fixture("live", (at) => [...open0(at), ...[1, 2, 0, 1, 0, 2, 1, 0].map((v) => at(ball({ value: v }), 0))]);
+    // A declaration match, past 12 balls: nothing is projected.
+    const SCD = await fixture("live", live, { format: "One-Day Declaration" });
+    const SCEN = /^Projected \d+ at \d+\.\d\d an over$|^At their rate so far \(\d+\.\d\d an over\): /;
+    /** Every insight line the rotation shows over `ms`. */
+    const insights = async (/** @type {any} */ page, /** @type {number} */ ms) => {
+      const seen = new Set();
+      const end = Date.now() + ms;
+      while (Date.now() < end) {
+        const t = await tid(page, "display-insight").innerText().catch(() => "");
+        if (t) seen.add(t);
+        await sleep(200);
+      }
+      return [...seen];
+    };
+    const scenarioLines = (/** @type {string[]} */ ls) => ls.filter((l) => SCEN.test(l));
+    const SIZES2 = [[1024, 768], [320, 640]];
+    for (const [w, h] of SIZES2) {
+      const v = await tv(`/display/${SCN.id}`, { width: w, height: h, hooks: { __SCRBRD_DISPLAY_DWELL_MS__: 60000 } });
+      ok(`${w}px: the display draws`, await until(v.page, () => !!document.querySelector('[data-testid="display-panel"] section')));
+      const ls = await insights(v.page, 26000);
+      ok(`${w}px: a first innings past 12 balls: the rotation shows "Projected N at X an over" (${JSON.stringify(ls)})`, scenarioLines(ls).some((l) => /^Projected \d+ at /.test(l)));
+      const nav = await v.page.evaluate(() => ({
+        buttons: document.querySelectorAll("button").length, output: document.querySelectorAll("output").length,
+        panel: document.querySelectorAll('[data-testid*="scenario"], [aria-label*="cenario"]').length,
+        over: document.documentElement.scrollWidth - document.documentElement.clientWidth }));
+      ok(`${w}px: no stepper: no buttons, no <output>, no scenario panel (${JSON.stringify(nav)})`, nav.buttons === 0 && nav.output === 0 && nav.panel === 0);
+      ok(`${w}px: nothing overflows sideways (${nav.over}px)`, nav.over <= 0);
+      ok(`${w}px: nothing under 12px`, (await smallText(v.page)).length === 0, (await smallText(v.page)).join(", "));
+      ok(`${w}px: nothing to press or focus`, (await tappable(v.page)).length === 0);
+      ok(`${w}px: no console errors`, v.errors.length === 0, v.errors.join(" | "));
+      await v.ctx.close();
+    }
+    {
+      const v = await tv(`/display/${SCC.id}`, { hooks: { __SCRBRD_DISPLAY_DWELL_MS__: 60000 } });
+      await until(v.page, () => !!document.querySelector('[data-testid="display-panel"] section'));
+      const ls = await insights(v.page, 26000);
+      ok(`a chase past 12 balls: the rotation shows "At their rate so far (X an over): ..." (${JSON.stringify(ls)})`, ls.some((l) => /^At their rate so far \(\d+\.\d\d an over\): .*(short|spare|last ball|finish|get there)/.test(l)));
+      ok("...and still no stepper", (await v.page.evaluate(() => document.querySelectorAll("button, output").length)) === 0);
+      await v.ctx.close();
+    }
+    for (const [label, id] of [["before 12 balls (8 bowled)", SCY.id], ["a declaration match past 12 balls", SCD.id]]) {
+      const v = await tv(`/display/${id}`, { hooks: { __SCRBRD_DISPLAY_DWELL_MS__: 60000 } });
+      await until(v.page, () => !!document.querySelector('[data-testid="display-panel"] section'));
+      const ls = await insights(v.page, 12000);
+      ok(`${label}: no scenario line (${JSON.stringify(ls)})`, scenarioLines(ls).length === 0 && !ls.some((l) => /Projected|At their rate|At this rate/.test(l)));
+      await v.ctx.close();
+    }
   }
 
   group("6. The break and the result hold");
