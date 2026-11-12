@@ -1269,6 +1269,24 @@ export function asSeasonCareer(r) {
   return { ...asCareer(r), season: r.season ?? null, currentSeason: r.current_season === true };
 }
 
+/**
+ * One innings of one boy's season (innings_by_season, GA-I23 slice 2, B1):
+ * the read's columns renamed, and nothing worked out. `ballsFaced` stays null
+ * where a scorebook recorded none (never 0); `source` is "scored" or
+ * "scorebook"; `startsAt` is the match's start, the innings' date (never
+ * `endedAt`, the server's insert time). lib/seasonTrend.js draws from these.
+ */
+export function asInnings(r) {
+  const n = (/** @type {unknown} */ v) => (v == null || v === "" ? null : Number(v));
+  return {
+    playerId: r.player_id, name: r.full_name ?? null, team: r.team_code ?? null, schoolId: r.school_id ?? null,
+    season: r.season ?? null, currentSeason: r.current_season === true,
+    matchId: r.match_id, innings: Number(r.innings), endedAt: r.ended_at ?? null, startsAt: r.starts_at ?? null,
+    runs: n(r.runs) ?? 0, ballsFaced: n(r.balls_faced), out: r.out === true,
+    source: r.source === "scorebook" ? "scorebook" : "scored",
+  };
+}
+
 function asSkill(r) {
   return { playerId: r.player_id, name: r.full_name, team: r.team_code,
            assessedOn: r.assessed_on, category: r.category, metric: r.metric,
@@ -1476,6 +1494,7 @@ const ADAPT = {
   career: asCareer,
   career_by_season: asSeasonCareer,
   side_season: asSideSeason,
+  innings_by_season: asInnings,
   ratings: asRating,
   notes: asNote,
   dismissal_breakdown: asDismissalBreakdown,
@@ -1613,7 +1632,7 @@ export function liveResources() { return Object.keys(ADAPT); }
 // (demo-season PERF: career 3.5 to 10 s on the demo's season). Under the
 // default ten seconds a pupil's passport said "Could not read your career
 // figures" of a read that was still on its way; these wait for it.
-const SLOW_READS = new Set(["career", "career_by_season", "milestones", "personal_bests", "record_boards"]);
+const SLOW_READS = new Set(["career", "career_by_season", "innings_by_season", "milestones", "personal_bests", "record_boards"]);
 const timeoutFor = (/** @type {string} */ resource) => (SLOW_READS.has(resource) ? 30000 : undefined);
 
 export async function readOnce(resource, query = "") {

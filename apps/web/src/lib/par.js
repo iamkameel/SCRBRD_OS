@@ -1,4 +1,4 @@
-import { RRR_TREND, chaseRates, parEstimate, rainTouched, rrrTrend } from "@scrbrd/scoring";
+import { RRR_TREND, chaseRates, parEstimate, rainTouched, rateText, rrrTrend } from "@scrbrd/scoring";
 
 /**
  * PAR AND PRESSURE, IN WORDS (SCRBRD-133 G2, design §3.3, §3.5) — pure, so
@@ -96,7 +96,7 @@ export function gapWords(runs, par, of = VENUE_PAR) {
 export const gapFigure = (runs, par) => (runs > par ? `+${runs - par}` : runs < par ? `−${par - runs}` : "level");
 
 /** The current run rate to two places, or null before a legal ball. @param {any} inn */
-const crrOf = (inn) => ((inn?.balls ?? 0) > 0 ? ((inn.runs / inn.balls) * 6).toFixed(2) : null);
+const crrOf = (inn) => ((inn?.balls ?? 0) > 0 ? rateText(inn.runs, inn.balls) : null);
 
 /**
  * The second line's words for a screen that shows par (§3.3), or null where it
@@ -134,7 +134,7 @@ export function parWords({ inn, chasing, target, overs, report, rates = null, ra
   const dls = report?.dls;
   if (rained && dls && Number.isInteger(dls.parAt)) return `${head} · ${gapWords(inn.runs, dls.parAt, DLS_PAR)}`;
   if (left <= LAST_TWO_OVERS) return head;
-  const rrr = left > 0 ? ((need / left) * 6).toFixed(2) : null;
+  const rrr = left > 0 ? rateText(need, left) : null;
   if (!rrr) return head;
   const trend = (inn.balls ?? 0) >= TWO_OVERS ? rates?.trend ?? null : null;
   return `${head} · RRR ${rrr}${trend ? `, ${trend}` : ""}`;

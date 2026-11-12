@@ -244,6 +244,14 @@ try {
 
   group("7. The ball, said: a live region that speaks only what arrives");
   {
+    // Ten dot balls first, so the chase is at twelve legal balls and the scenario panel (GA-I29) is drawn
+    // beside the page's live region: its <output> must not count as a second region speaking.
+    {
+      const last = Number((await q(`select max(seq) as s from ball_event where match_id = $1`, [pub]))[0].s);
+      const dots = [...Array.from({ length: 4 }, () => ball({ type: BALL_TYPE.RUN, value: 0 })), bowler({ bowler: ids.erasmus }),
+                    ...Array.from({ length: 6 }, () => ball({ type: BALL_TYPE.RUN, value: 0 }))];
+      await writeEvents(q, pub, dots.map((ev, k) => ({ ...ev, innings: 1, id: `pub-dots-${k}`, clientTs: Date.now() - 60000 + k })), last);
+    }
     // Read every 5 s (the page's floor), from the API's 5 s live cache.
     const lv = await visit(`/live/${pub}`, { init: `window.__SCRBRD_LIVE_MS__ = 1000;` });
     await lv.page.waitForSelector('[data-testid="public-match"]', { timeout: 10000 }).catch(() => {});
@@ -271,10 +279,14 @@ try {
     await put(1, ball({ type: BALL_TYPE.RUN, value: 4 }));
     ok("a new four is announced: \"Four runs\"", await heard("Four runs"), await said());
     heardAll.push(await said());
+    // The scenario panel is drawn here (the chase is past twelve balls), so its aria-live="off" <output> is on the page.
+    ok("the chase's scenario panel is on the page, its outcome an <output> that does not speak",
+       await tid(lv.page, "mc-scenario").count() === 1 && await tid(lv.page, "mc-scenario-outcome").getAttribute("aria-live") === "off");
     ok("...and it is the only live region on the page speaking (the moment on the board is drawn, not said again)",
        // Speaking: a region with words in it. The page's other region (the
        // "Updated · refresh" line, GA-I36) is there and silent while current.
-       await lv.page.evaluate(() => [...document.querySelectorAll('[data-testid="public-match"] [role="status"], [data-testid="public-match"] [aria-live]')]
+       // aria-live="off" (the scenario panel's <output>, GA-I29) is not a region that speaks.
+       await lv.page.evaluate(() => [...document.querySelectorAll('[data-testid="public-match"] [role="status"], [data-testid="public-match"] [aria-live]:not([aria-live="off"])')]
          .filter((el) => el.textContent.trim() !== "").length) === 1);
 
     await mark();
@@ -310,20 +322,38 @@ try {
       at(inningsStart({ battingTeam: "1XI", bowlingTeam: "Kearsney College 1XI", teamKey: "1XI", bowlingTeamKey: "Kearsney College 1XI",
         squad, bowlingSquad: [{ id: OAKES, name: OAKES }], overs: 10 })),
       at(batters({ striker: ids.erasmus, nonStriker: ids.botha })), at(bowler({ bowler: OAKES })),
-      at(ball({ type: BALL_TYPE.RUN, value: 4 })), at(ball({ type: BALL_TYPE.RUN, value: 1 })),
-      at(ball({ type: BALL_TYPE.RUN, value: 0 })), at(ball({ type: BALL_TYPE.RUN, value: 2 })),
+      // Eleven legal balls, 13 runs: one short of the twelve every projection waits for (GA-I29 A-D8).
+      ...[4, 1, 0, 2, 1, 1].map((v) => at(ball({ type: BALL_TYPE.RUN, value: v }))),
+      at(bowler({ bowler: OAKES })),
+      ...[0, 1, 2, 1, 0].map((v) => at(ball({ type: BALL_TYPE.RUN, value: v }))),
     ]);
-    // Worked out here, from the same four balls, not read back from the page.
+    // Worked out here, from the same balls, not read back from the page.
     const rate = (/** @type {number} */ runs, /** @type {number} */ balls) => Math.round(runs + (runs / balls) * (10 * 6 - balls));
     const r = await visit(`/live/${liveId}`, { init: `window.__SCRBRD_LIVE_MS__ = 1000;` });
     await r.page.waitForSelector('[data-testid="mc-board-sub"]', { timeout: 10000 }).catch(() => {});
     const sub = () => tid(r.page, "mc-board-sub").innerText().catch(() => "");
-    ok(`7 off 4 balls, ten overs: "At this rate: ${rate(7, 4)}", beside the run rate`, (await sub()) === `CRR 10.50 · At this rate: ${rate(7, 4)}`, await sub());
-    await writeEvents(q, liveId, [at(ball({ type: BALL_TYPE.RUN, value: 6 }))], 7);
-    ok(`a six arrives and the line follows it: 13 off 5 is "At this rate: ${rate(13, 5)}"`,
-       await r.page.waitForFunction((/** @type {string} */ w) => document.querySelector('[data-testid="mc-board-sub"]')?.textContent?.includes(w), `At this rate: ${rate(13, 5)}`,
+    ok('13 off 11 balls: the run rate alone, "CRR 7.09", and no projection yet', (await sub()) === "CRR 7.09", await sub());
+    ok("...and no scenario panel", await tid(r.page, "mc-scenario").count() === 0);
+    await writeEvents(q, liveId, [at(ball({ type: BALL_TYPE.RUN, value: 6 }))], 15);
+    ok(`the twelfth ball, a six: 19 off 12 is "At this rate: ${rate(19, 12)}", beside the run rate`,
+       await r.page.waitForFunction((/** @type {string} */ w) => document.querySelector('[data-testid="mc-board-sub"]')?.textContent === w, `CRR 9.50 · At this rate: ${rate(19, 12)}`,
          { timeout: 30000, polling: 100 }).then(() => true, () => false), await sub());
     ok("...and it names nobody", leaks(await sub()).length === 0);
+    ok(`...the scenario panel says the same figure: "At their rate so far (9.50 an over): ${rate(19, 12)} off 10 overs"`,
+       await r.page.waitForFunction((/** @type {string} */ w) => document.querySelector('[data-testid="mc-scenario-own"]')?.textContent === w,
+         `At their rate so far (9.50 an over): ${rate(19, 12)} off 10 overs`, { timeout: 10000, polling: 100 }).then(() => true, () => false),
+       await tid(r.page, "mc-scenario-own").innerText().catch(() => ""));
+    ok("...and names nobody either", leaks(await tid(r.page, "mc-scenario").innerText().catch(() => "")).length === 0);
+    // Full time (GA-I29 A4): the fixture finished, the Summary is the result, and the panel is gone.
+    await q(`update match set status = 'complete' where id = $1`, [liveId]);
+    let gone = false;
+    for (let i = 0; i < 12 && !gone; i++) {
+      await r.page.waitForTimeout(1500);
+      await r.page.reload({ waitUntil: "networkidle" });
+      await r.page.waitForTimeout(800);
+      gone = await tid(r.page, "mc-summary").getAttribute("data-view").catch(() => null) === "result" && await tid(r.page, "mc-scenario").count() === 0;
+    }
+    ok("at full time the Summary is the result, and the scenario panel is gone", gone);
     ok("no console errors (at this rate)", r.errors.length === 0, r.errors.join(" | "));
     await r.ctx.close();
   }

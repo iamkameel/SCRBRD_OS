@@ -69,6 +69,9 @@ const SUITES = [
   // synthetic table only; the structural checks; the D5 grep ──
   ["dls",      "packages/scoring/test/dls.test.mjs"],
   // ── end SCRBRD-130 R2 ──
+  // GA-I29 A0: scenario controls — S1–S10 and every sentence of A3 against
+  // the design's hand figures, exact where a rounding could lie (132.6 v 133)
+  ["scenario", "packages/scoring/test/scenario.test.mjs"],
   // The Laws' 4th Edition from 1 October 2026, by the match date (SCRBRD-113):
   // every rule that differs, asked of a match on 30 September and 1 October.
   ["edition",  "packages/scoring/test/edition.test.mjs"],
@@ -325,6 +328,10 @@ const SUITES = [
   // read, per player per season, and no invented figure is drawn signed in.
   ["season-bars", "apps/web/test/season-bars.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["side-season", "apps/web/test/side-season.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // GA-I23 slice 2 (B2): one boy's season innings by innings, from
+  // innings_by_season: the rolling five, the 6-innings and 30-ball floors,
+  // not-outs, did not bat, scorebook innings, the table and spoken summary.
+  ["season-trend", "apps/web/test/season-trend.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The three solo-test screens, over routes that already existed: the office
   // verifying a parent's link and recording the family's agreement, booking a
   // vehicle and a trip, and signing out everywhere. Who is offered, what is
