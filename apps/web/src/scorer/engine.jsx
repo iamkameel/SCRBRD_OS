@@ -324,7 +324,11 @@ function SyncPill({ sync, storage, onOpenHeld }) {
 // (App.jsx): a live pad that is signed out says so and offers it (SCRBRD-078).
 // `onExit` is the way back to the shell (App.jsx): the first thing in the
 // pad's title bar, and a floating key on the setup and result screens.
-function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
+// `padEntry` is where the scorer's home opened the pad (views/ScorerHomeView.jsx):
+// `{start:"pilot"}` the Practice/Pilot Match setup at its first step, the one
+// quick-start there is; `{resume:id}` a Pilot or Practice Match this phone
+// holds, as the start screen's own Resume opens it. Read once, on mount.
+function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry=null}={}){
   const[screen,setScreen]=useState("setup");
   const[match,setMatch]=useState(null);
   // A Practice Match (lib/practice.js): the record kept beside its ball log, the
@@ -1110,6 +1114,24 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     setModal(null);
     setScreen(foldPad(saved.events,scoringCtxRef.current)[1]?.sealed===true?"result":"match");
   };
+  // Opened from the scorer's home at a step of the pad's own flows (`padEntry`):
+  // the setup, with phase 2's status asked as the start screen asks it and
+  // the names' date run first (§7.2); or a match this phone holds, resumed as
+  // the start screen's Resume does. A match with nothing scored stays on the
+  // start screen, which offers what there is.
+  const entryRef=useRef(padEntry);
+  useEffect(()=>{
+    const e=entryRef.current;
+    if(!e)return undefined;
+    let off=false;
+    if(e.resume){resumePractice(e.resume);return undefined;}
+    if(e.start==="pilot"){
+      setScreen("practice");
+      purgeExpiredNames().catch(()=>0);
+      pilotStatus().then(s=>{if(!off)setPilotNow(s);}).catch(()=>{});
+    }
+    return()=>{off=true;};
+  },[]);
   // The start screen offers a practice match still in progress, first.
   useEffect(()=>{
     if(screen!=="setup")return undefined;

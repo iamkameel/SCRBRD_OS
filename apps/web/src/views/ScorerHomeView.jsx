@@ -6,36 +6,47 @@ import { useDutyCoverage, useLive } from "../lib/live.js";
 import { combineReads, readState } from "../lib/readState.js";
 import { humanDate, humanDateTime } from "../lib/format.js";
 import { deviceMatches } from "../lib/deviceMatches.js";
+import { deviceId } from "../lib/device.js";
+import { loadMatch } from "../lib/persist.js";
+import { listPractice } from "../lib/practice.js";
+import { listPilot, pilotStatus, pilotUuid, mayOfferLive } from "../lib/pilot.js";
 import {
   SESSION_MAX_AGE_MS, STATE_WORDS, nextToPrepare, pendingWords, prepLines, resumeItems, scorerFixtures,
 } from "../lib/scorerHome.js";
-import { EmptyState, ReadState } from "../ui/primitives.jsx";
+import {
+  SANDBOX_WORDS, finishedPilots, homeSections, nowItems, p0Items, scoreLine, startWords, weekOf,
+} from "../lib/scorerDay.js";
+import { ReadState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
+import { Board } from "../ui/board.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { StateLabel } from "../ui/stateLabel.jsx";
 
 // ══════════════════════════════════════════════════════
-//  THE SCORER'S HOME (GA-I13)
+//  THE SCORER'S HOME: the day sheet (GA-I13; R0, ROLE_DASHBOARDS_v1.1 §3D,
+//  §4, §9; the widgets of ROLE_DASHBOARDS_R0_REGISTRY.md)
 //
-// Where a scorer lands after signing in. The day sheet showed him the first
-// live fixture of the school and the school's next one; what he needs is
-// three things, in this order:
+// Where a scorer lands after signing in, in the order his day happens:
 //
-//   1. Resume       a match this device is mid-way through, with what it still
-//                   has to send: one tap reopens the pad, as a reload does.
-//   2. Today/next   the fixtures he may score, the ones he is appointed to
-//                   first (Kameel, 8 Oct: the appointment shapes this list,
-//                   it does not gate the claim), each with the state a scorer
-//                   acts on: not started, on this device, on another device
-//                   (the pad's take-over is the route), complete.
-//   3. Before the   for the next fixture: team sheet, umpires, ground, pitch
-//      toss         report, playing conditions; each missing one with who
-//                   fixes it.
+//   P0          only when one applies: something on this phone not yet sent,
+//               another device holding the scoring of a match on this phone,
+//               events SCRBRD did not take, waiting on him
+//   Now         what this phone is scoring, each on the one Board, and
+//               "Resume scoring"
+//   Start       the quick-start: the pad's own Pilot Match setup, opened at
+//               its first step. There is no second setup
+//   Pilot       finished Pilot Matches, each kept as a sandbox. Promotion is
+//   Matches     R1 (PILOT_MATCH_PHASE2 §6): no promote action
+//   This week   the fixtures he may score, appointed first, and what is
+//               missing before the toss of the next one; only if he has any
 //
-// Every read is one the app already makes; lib/scorerHome.js decides the
-// order and the words, purely. No child is named on this screen: a team
-// sheet is a count. Each section says, per GA-I08, whether its read is still
-// coming, failed, refused or old, and never draws one of those as "none".
+// lib/scorerDay.js decides which sections show and their words, purely;
+// lib/scorerHome.js the fixtures and their states. Every read is one the app
+// already makes, and the phone's own stores come first: with no signal the
+// home is drawn from what the pad saved, and each read that did not answer
+// says so (GA-I08), never "none". No child is named on this screen: the
+// board is drawn without batters or bowler, a team sheet is a count. A work
+// mode: no sponsor slot (§7.1). A Pilot Match is in no figure here.
 // ══════════════════════════════════════════════════════
 
 /** A 44px button: the tap floor, which the shared Btn's sizes are under. */
@@ -55,36 +66,65 @@ function Act({ children, onClick, testId, tone = "primary", label }) {
 // Functions, not constants: a token read at import time keeps the theme it was read under (design.test.mjs).
 const line = () => ({ ...T.role.body, color: T.content.secondary, margin: 0 });
 const strong = () => ({ ...T.role.title.md, color: T.content.primary, margin: 0, overflowWrap: "anywhere" });
+const stack = (gap = T.space.md) => ({ display: "flex", flexDirection: "column", gap });
 
 /** The two sides, in full where the read names them. @param {any} m */
 const sidesOf = (m) => `${m.homeLabel ?? m.homeTeam ?? "Home"} v ${m.awayLabel ?? m.awayTeam ?? "Away"}`;
 
 /**
- * This device's saved fixture logs and their unsent events; re-read on
- * `nonce`. A practice match is not read here: its store is the pad's alone
- * (lib/practice.js), and the pad's start screen offers it, labelled.
+ * Everything this phone holds of its matches, re-read on `nonce`: the pad's
+ * saved fixture logs and its outbox (lib/deviceMatches.js), and the Pilot and
+ * Practice stores with each match's log. All local: this is what the home is
+ * drawn from with no signal.
  */
-function useDevice(nonce) {
-  const [s, setS] = useState({ loading: true, ok: true, saved: [], pending: new Map() });
+function usePhone(nonce) {
+  const [s, setS] = useState({ loading: true, ok: true, saved: [], pending: new Map(), outbox: null, pilots: [], practices: [], storesOk: true });
   useEffect(() => {
     let off = false;
     setS((x) => ({ ...x, loading: true }));
-    deviceMatches()
-      .catch(() => ({ ok: false, saved: [], pending: new Map() }))
-      .then((d) => { if (!off) setS({ loading: false, ...d }); });
+    const withLogs = async (rows) => Promise.all((rows ?? []).map(async (r) => ({ ...r, log: await loadMatch(r.id).catch(() => null) })));
+    Promise.all([
+      deviceMatches().catch(() => ({ ok: false, saved: [], pending: new Map(), outbox: null })),
+      listPilot().then(withLogs).then((rows) => ({ ok: true, rows })).catch(() => ({ ok: false, rows: [] })),
+      listPractice().then(withLogs).then((rows) => ({ ok: true, rows })).catch(() => ({ ok: false, rows: [] })),
+    ]).then(([d, p, q]) => {
+      if (!off) setS({ loading: false, ...d, pilots: p.rows, practices: q.rows, storesOk: p.ok && q.ok });
+    });
     return () => { off = true; };
   }, [nonce]);
   return s;
 }
 
-/** "Today 10:42", "Yesterday 17:05", "3 Oct 14:30": when this device last saved the log. */
-function savedAtWords(ts, now) {
-  const d = new Date(ts), n = new Date(now);
-  const hm = d.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false });
-  const day = (x) => x.toDateString();
-  if (day(d) === day(n)) return `today ${hm}`;
-  if (day(d) === day(new Date(now - 864e5))) return `yesterday ${hm}`;
-  return `${d.toLocaleDateString("en-ZA", { day: "numeric", month: "short" })} ${hm}`;
+/** What SCRBRD last said of this account's Pilot Matches (lib/pilot.js; remembered on this phone for a ground with no signal). */
+function usePilotStatus(nonce) {
+  const [s, setS] = useState({ loading: true, status: null });
+  useEffect(() => {
+    let off = false;
+    setS((x) => ({ ...x, loading: true }));
+    pilotStatus().catch(() => null).then((status) => { if (!off) setS({ loading: false, status }); });
+    return () => { off = true; };
+  }, [nonce]);
+  return s;
+}
+
+/**
+ * The server's own Pilot Matches (GET /api/pilot/mine): who holds each one's
+ * scoring, and those finished that this phone does not have. Asked only with
+ * a sign-in and when there is a Pilot Match to ask about; `rows` null when it
+ * did not answer.
+ */
+function usePilotServer(nonce, wanted) {
+  const [s, setS] = useState({ loading: false, rows: null, error: null, observedAt: null, asked: false });
+  useEffect(() => {
+    if (!wanted || !signedIn()) { setS({ loading: false, rows: null, error: null, observedAt: null, asked: false }); return undefined; }
+    let off = false;
+    setS((x) => ({ ...x, loading: true, asked: true }));
+    api("/api/pilot/mine", { timeoutMs: 5000 })
+      .then((r) => { if (!off) setS({ loading: false, rows: Array.isArray(r?.matches) ? r.matches : [], error: null, observedAt: Date.now(), asked: true }); })
+      .catch((e) => { if (!off) setS({ loading: false, rows: null, error: e ?? "unreachable", observedAt: null, asked: true }); });
+    return () => { off = true; };
+  }, [nonce, wanted]);
+  return s;
 }
 
 /**
@@ -107,10 +147,20 @@ function useFold(matchId, wanted, nonce) {
   return fold;
 }
 
-function ScorerHomeView({ role, onOpenScorer, onNav }) {
+/** "today 10:42", "yesterday 17:05", "3 Oct 14:30": when this phone last saved the log. */
+function savedAtWords(ts, now) {
+  const d = new Date(ts), n = new Date(now);
+  const hm = d.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const day = (x) => x.toDateString();
+  if (day(d) === day(n)) return `today ${hm}`;
+  if (day(d) === day(new Date(now - 864e5))) return `yesterday ${hm}`;
+  return `${d.toLocaleDateString("en-ZA", { day: "numeric", month: "short" })} ${hm}`;
+}
+
+function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
   const [nonce, setNonce] = useState(0);
   const retry = () => setNonce((n) => n + 1);
-  // The clock, ticking, so "last observed 3 minutes ago" moves without a read.
+  // The clock, ticking, so "last observed 3 minutes ago" and a lease's end move without a read.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30e3); return () => clearInterval(t); }, []);
 
@@ -119,7 +169,8 @@ function ScorerHomeView({ role, onOpenScorer, onNav }) {
   const officialsRead = useLive("officials", role, nonce);
   const me = profile();
   // Null in the demonstration: lib/scorerHome.js then lists the client-scoped fixtures as they are.
-  const assignments = live ? me?.assignments ?? [] : null;
+  const mine = me?.assignments;
+  const assignments = useMemo(() => (live ? mine ?? [] : null), [live, mine]);
   const userId = me?.user?.id ?? null;
 
   // First the list without the sessions, to know which fixtures to ask about;
@@ -134,12 +185,30 @@ function ScorerHomeView({ role, onOpenScorer, onNav }) {
   const list = useMemo(() => scorerFixtures({ matches: matchesRead.rows, assignments, officials: officialsRead.rows, userId, coverage, now }),
     [matchesRead.rows, assignments, officialsRead.rows, userId, coverage, now]);
 
-  const device = useDevice(nonce);
+  // ── the phone's own state, first ──
+  const phone = usePhone(nonce);
+  const pilotNow = usePilotStatus(nonce);
+  const pilotOffer = mayOfferLive(pilotNow.status);
+  const pilotServer = usePilotServer(nonce, pilotOffer || phone.pilots.length > 0);
   const matchesAnswered = live && !matchesRead.loading && !matchesRead.error;
-  const resume = resumeItems({ saved: device.saved, pending: device.pending, serverMatches: matchesAnswered ? matchesRead.rows : null });
+  const resume = resumeItems({ saved: phone.saved, pending: phone.pending, serverMatches: matchesAnswered ? matchesRead.rows : null });
+  const nowList = nowItems({ fixtures: resume, pilots: phone.pilots, practices: phone.practices,
+                             pending: phone.outbox?.pending ?? null, held: phone.outbox?.held ?? null });
+
+  // ── P0: from what the phone holds and what the reads said ──
+  const fixtureStates = new Map(list.items.map((i) => [i.match.id, i.state]));
+  const pilotSessions = pilotServer.rows
+    ? new Map(pilotServer.rows.map((m) => [`pilot-${m.id}`, m.session ?? null]))
+    : null;
+  const p0 = p0Items(nowList, { fixtureStates, pilotSessions, device: deviceId(), at: now });
+
+  // ── the finished Pilot Matches, and this week ──
+  const finished = finishedPilots(phone.pilots, pilotServer.rows, pilotUuid);
+  const pilotsKnown = phone.pilots.length + (pilotServer.rows ?? []).filter((m) => !phone.pilots.some((r) => pilotUuid(r.id) === m.id)).length;
+  const { week, later } = weekOf(list, now);
 
   // From the fixtures drawn, whose duty rosters were read.
-  const prep = nextToPrepare(list.shown);
+  const prep = nextToPrepare(week);
   const prepMatch = prep?.match ?? null;
   const fold = useFold(prepMatch?.id, prepMatch ? prepMatch.competitionId != null : false, nonce);
   const prepCov = prepMatch ? coverage.get(prepMatch.id) : null;
@@ -153,13 +222,27 @@ function ScorerHomeView({ role, onOpenScorer, onNav }) {
     ? readState({ rows: ids, loading: coverageLoading && !observedAt, error: null, observedAt },
                 { what: "who is scoring each match", maxAgeMs: SESSION_MAX_AGE_MS, now })
     : null;
-  const deviceRead = readState({ rows: resume, loading: device.loading, error: device.ok ? null : "unreadable" },
-                               { what: "this device's saved matches" });
+  const phoneRead = readState({ rows: nowList, loading: phone.loading, error: phone.ok && phone.storesOk ? null : "unreadable" },
+                              { what: "this phone's saved matches" });
+  // Who holds each Pilot Match's scoring: only said when a Pilot Match is on the board and the answer is not a fresh one.
+  const pilotOnBoard = nowList.some((i) => i.kind === "pilot");
+  const leaseRead = !pilotOnBoard ? null
+    : !pilotServer.asked ? { state: "stale", sentence: "Which phone holds the scoring was not checked with SCRBRD: that needs signal and a sign-in.", retry: false }
+    : readState({ rows: pilotServer.rows ?? [], loading: pilotServer.loading, error: pilotServer.error, observedAt: pilotServer.observedAt },
+                { what: "which phone holds the scoring", maxAgeMs: SESSION_MAX_AGE_MS, now });
+  const finishedRead = readState({ rows: finished, loading: phone.loading, error: phone.storesOk ? null : "unreadable" },
+                                 { what: "this phone's Pilot Matches" });
+
+  const sections = homeSections({ p0: p0.length, pilotOffer, pilotsKnown, week: week.length, weekRead: fixturesRead?.state ?? null });
+  const start = startWords(pilotNow.status, pilotNow.loading);
 
   const open = (m) => onOpenScorer && onOpenScorer(m);
+  /** Open the pad on what this item is: a fixture through the shell's own route, a Pilot or Practice Match by its id. */
+  const openItem = (it) => (it.kind === "fixture" ? open(it.match) : onOpenPad && onOpenPad({ resume: it.matchId }));
+  const labelFor = (it) => (it.kind === "pilot" ? <StateLabel kind="pilot" compact/> : it.kind === "practice" ? <StateLabel kind="practice" compact/> : null);
 
   return (
-    <div className="os-page" data-testid="scorer-home">
+    <div className="os-page" data-testid="scorer-home" data-sections={sections.join(",")}>
       <div style={{ marginBottom: T.space.lg }}>
         <h1 style={{ ...T.role.title.lg, color: T.content.primary, marginBottom: "3px", display: "flex", alignItems: "center", gap: T.space.sm }}>
           <Icon name="notebook-pen"/> Scoring
@@ -170,113 +253,184 @@ function ScorerHomeView({ role, onOpenScorer, onNav }) {
         </div>
       </div>
 
+      {/* P0: only when one applies. Each says its match and opens the pad, where the send, the take-over and the held list are. */}
+      {sections.includes("p0") && (
+        <section data-testid="scorer-p0" aria-labelledby="scorer-p0-title" style={{
+          marginBottom: T.space.md, padding: `${T.space.md} ${T.space.lg}`, borderRadius: T.radius.lg,
+          background: T.surface.raised, border: `1px solid ${T.line.normal}`, borderLeft: `4px solid ${T.semantic.critical}`,
+        }}>
+          <h2 id="scorer-p0-title" style={{ ...T.role.title.md, color: T.content.primary, margin: `0 0 ${T.space.sm}`, display: "flex", alignItems: "center", gap: T.space.xs }}>
+            <Icon name="triangle-alert" style={{ color: T.semantic.criticalText }}/> Needs you first
+          </h2>
+          <ul style={{ listStyle: "none", margin: 0, padding: 0, ...stack() }}>
+            {p0.map((x) => (
+              <li key={x.key} data-testid={`p0-${x.kind}-${x.matchId}`} data-kind={x.kind} style={stack(T.space.xs)}>
+                <p style={{ ...T.role.body, color: T.content.primary, fontWeight: 700, margin: 0 }}>{x.label}</p>
+                <p style={{ ...line(), color: T.content.primary }}>{x.title}</p>
+                <p style={line()}>{x.note}</p>
+                <Act testId={`p0-${x.kind}-${x.matchId}-open`} label={`${x.kind === "queue" ? "Resume scoring" : "Open the pad"}: ${x.title}`}
+                  onClick={() => openItem(x.item)}>{x.kind === "queue" ? "Resume scoring" : "Open the pad"}</Act>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <Bento>
-        {/* 1. Resume: what this device is mid-way through. */}
-        <BentoCard level="a" title="Resume on this device" data-testid="scorer-resume">
-          {deviceRead.state === "loading" || deviceRead.state === "failed"
-            ? <ReadState read={deviceRead} onRetry={retry} compact testId="scorer-resume-read"/>
+        {/* Now: what this phone is scoring, on the one Board. */}
+        <BentoCard level="a" title="Now" data-testid="scorer-resume">
+          {phoneRead.state === "loading" || phoneRead.state === "failed"
+            ? <ReadState read={phoneRead} onRetry={retry} compact testId="scorer-resume-read"/>
             : (
-              <div style={{ display: "flex", flexDirection: "column", gap: T.space.md }}>
-                {resume.length === 0 && (
-                  <p style={line()} data-testid="scorer-resume-empty">Nothing on this device to resume.</p>
+              <div style={stack(T.space.lg)}>
+                {nowList.length === 0 && (
+                  <p style={line()} data-testid="scorer-resume-empty">Nothing on this phone to resume. A match you start or score here is kept here first.</p>
                 )}
-                {resume.map((r) => (
-                  <div key={r.matchId} data-testid={`resume-${r.matchId}`} data-pending={r.pending ?? "unknown"}
-                    style={{ display: "flex", flexDirection: "column", gap: T.space.xs }}>
-                    <p style={strong()}>{r.title}</p>
-                    <p style={line()} data-testid={`resume-${r.matchId}-pending`}>
-                      {pendingWords(r.pending)}{r.savedAt ? ` · saved ${savedAtWords(r.savedAt, now)}` : ""}
+                {leaseRead && leaseRead.state !== "ok" && leaseRead.state !== "empty" && (
+                  <ReadState read={leaseRead} onRetry={retry} compact testId="scorer-lease-read"/>
+                )}
+                {nowList.map((it) => (
+                  <div key={it.key} data-testid={`resume-${it.matchId}`} data-kind={it.kind} data-pending={it.pending ?? "unknown"} style={stack(T.space.sm)}>
+                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: `0 ${T.space.sm}` }}>
+                      <p style={strong()}>{it.title}</p>
+                      {labelFor(it)}
+                    </div>
+                    {it.board
+                      ? <Board {...it.board} size="card" compact testid={`resume-${it.matchId}-board`}/>
+                      : <p style={line()} data-testid={`resume-${it.matchId}-noboard`}>No ball on the board yet.</p>}
+                    <p style={line()} data-testid={`resume-${it.matchId}-pending`}>
+                      {it.kind === "practice" ? "Kept on this phone only: nothing is sent" : pendingWords(it.pending)}
+                      {it.savedAt ? ` · saved ${savedAtWords(it.savedAt, now)}` : ""}
                     </p>
-                    {r.openable
-                      ? <Act testId={`resume-${r.matchId}-open`} onClick={() => open(r.match)}>Resume scoring</Act>
-                      : <p style={line()} data-testid={`resume-${r.matchId}-closed`}>
-                          This match is no longer on your fixture list, so it does not open here. What is saved stays on this device; the school office can help.
+                    {it.openable
+                      ? <Act testId={`resume-${it.matchId}-open`} label={`Resume scoring: ${it.title}`} onClick={() => openItem(it)}>Resume scoring</Act>
+                      : <p style={line()} data-testid={`resume-${it.matchId}-closed`}>
+                          This match is no longer on your fixture list, so it does not open here. What is saved stays on this phone; the school office can help.
                         </p>}
                   </div>
                 ))}
-                {/* A practice match is the pad's own, kept on this phone and
-                    never read here; its start screen offers Resume, labelled. */}
-                <div data-testid="resume-practice" style={{ display: "flex", flexDirection: "column", gap: T.space.xs, paddingTop: T.space.sm, borderTop: `1px solid ${T.line.subtle}` }}>
-                  <p style={line()}>A practice match is resumed or started on the pad itself.</p>
-                  <Act tone="secondary" testId="resume-practice-open" label="Open the pad for a practice match" onClick={() => open(null)}>Open the pad</Act>
-                </div>
               </div>
             )}
         </BentoCard>
 
-        {/* 2. Today and next: appointed first, then the side's other fixtures. */}
-        <BentoCard level="b" title="Today and next" data-testid="scorer-fixtures">
-          {fixturesRead && ["loading", "failed", "forbidden", "disabled"].includes(fixturesRead.state) ? (
-            <ReadState read={fixturesRead} onRetry={retry} compact testId="scorer-fixtures-read"/>
-          ) : list.items.length === 0 ? (
-            <EmptyState message="No fixture you may score is arranged from today on." icon="calendar-days"/>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: T.space.lg }}>
-              {fixturesRead?.state === "partial" && <ReadState read={fixturesRead} onRetry={retry} compact testId="scorer-fixtures-read"/>}
-              {sessionsRead && sessionsRead.state === "stale" && <ReadState read={sessionsRead} onRetry={retry} compact testId="scorer-sessions-read"/>}
-              <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: T.space.lg }} data-testid="scorer-fixture-list">
-                {list.shown.map(({ match: m, appointment: a, group, state, sessionError }) => {
-                  const w = STATE_WORDS[state];
-                  return (
-                    <li key={m.id} data-testid={`fixture-${m.id}`} data-group={group} data-state={state}
-                      style={{ display: "flex", flexDirection: "column", gap: T.space.xs, paddingBottom: T.space.md, borderBottom: `1px solid ${T.line.subtle}` }}>
-                      {a ? (
-                        <p data-testid={`fixture-${m.id}-appointed`} style={{ ...T.role.label, color: T.brand.accentText, margin: 0 }}>
-                          Appointed to score{a.appointedAt ? ` · named ${humanDate(a.appointedAt)}` : ""}
-                        </p>
-                      ) : (
-                        <p style={{ ...T.role.label, color: T.content.tertiary, margin: 0 }}>Your side's fixture</p>
-                      )}
-                      <p style={strong()}>{sidesOf(m)}</p>
-                      <p style={line()}>{humanDateTime(m.date, m.time)}{m.venue ? ` · ${m.venue}` : ""}</p>
-                      {a?.paused && (
-                        <p data-testid={`fixture-${m.id}-paused`} style={{ ...line(), color: T.semantic.warningText }}>
-                          The school office has paused your appointment to this match. They can tell you more.
-                        </p>
-                      )}
-                      <p data-testid={`fixture-${m.id}-state`} style={{ ...line(), color: T.content.primary, fontWeight: 600 }}>{w.label}</p>
-                      {sessionError && (
-                        <p data-testid={`fixture-${m.id}-session-read`} role="alert" style={{ ...line(), color: T.semantic.criticalText }}>
-                          Could not read who is scoring this match.
-                        </p>
-                      )}
-                      {w.note && <p style={line()}>{w.note}</p>}
-                      {w.action
-                        ? <Act testId={`fixture-${m.id}-open`} tone={state === "not_started" || state === "held_here" ? "primary" : "secondary"}
-                            label={`${w.action}: ${sidesOf(m)}`} onClick={() => open(m)}>{w.action}</Act>
-                        : <Act testId={`fixture-${m.id}-centre`} tone="secondary" label={`Match Centre: ${sidesOf(m)}`}
-                            onClick={() => onNav && onNav("matches")}>Match Centre</Act>}
-                    </li>
-                  );
-                })}
-              </ol>
-              {list.later > 0 && <p style={line()} data-testid="scorer-fixtures-later">{list.later} more later; the Match Centre lists them.</p>}
-            </div>
-          )}
+        {/* Start: the pad's own quick-start, opened at its first step. */}
+        <BentoCard level="b" title="Start a match" data-testid="scorer-start" data-state={start.state}>
+          <div style={stack()}>
+            <p style={line()} data-testid="scorer-start-note">{start.note}</p>
+            <Act testId="scorer-start-pilot" label={start.action} onClick={() => onOpenPad && onOpenPad({ start: "pilot" })}>{start.action}</Act>
+            <Act tone="secondary" testId="resume-practice-open" label="Open the pad's start screen" onClick={() => open(null)}>Open the pad</Act>
+          </div>
         </BentoCard>
 
-        {/* 3. Before the toss, for the next fixture not started. */}
-        {prepMatch && (
-          <BentoCard level="c" title="Before the toss" data-testid="scorer-prep">
-            <p style={{ ...strong(), marginBottom: T.space.sm }} data-testid="scorer-prep-match">{sidesOf(prepMatch)} · {humanDateTime(prepMatch.date, prepMatch.time)}</p>
-            {prepDuties === undefined
-              ? <ReadState read={readState({ loading: true }, { what: "the duty roster" })} compact testId="scorer-prep-read"/>
-              : (
-                <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: T.space.sm }}>
-                  {prepLines({ match: prepMatch, duties: prepDuties, fold: prepMatch.competitionId != null && !live ? null : fold }).map((l) => (
-                    <li key={l.key} data-testid={`prep-${l.key}`} data-state={l.state} style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                      <span style={{ ...T.role.body, color: T.content.primary, fontWeight: 600, display: "flex", alignItems: "center", gap: T.space.xs }}>
-                        <Icon name={l.state === "ok" ? "circle-check" : l.state === "missing" ? "triangle-alert" : "hourglass"}
-                          style={{ color: l.state === "ok" ? T.semantic.positive : l.state === "missing" ? T.semantic.warningText : T.content.tertiary }}/>
-                        {l.label}
-                      </span>
-                      <span style={{ ...line(), color: l.state === "unknown" ? T.semantic.criticalText : T.content.secondary }}>
-                        {l.text}{l.who ? ` · ${l.who} sets this` : ""}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+        {/* Finished Pilot Matches: kept as a sandbox. Promotion is R1; nothing here promotes. */}
+        {sections.includes("pilots") && (
+          <BentoCard level="b" title="Pilot Matches" data-testid="scorer-pilots">
+            {finishedRead.state === "loading" || finishedRead.state === "failed" ? (
+              <ReadState read={finishedRead} onRetry={retry} compact testId="scorer-pilots-read"/>
+            ) : (
+              <div style={stack()}>
+                {pilotServer.asked && pilotServer.error && (
+                  <p role="status" data-testid="scorer-pilots-server" style={line()}>Could not read SCRBRD's copies, so these are this phone's.</p>
+                )}
+                {finished.length === 0 ? (
+                  <p style={line()} data-testid="scorer-pilots-empty">{SANDBOX_WORDS.empty}</p>
+                ) : (
+                  <ul data-testid="scorer-pilot-list" style={{ listStyle: "none", margin: 0, padding: 0, ...stack() }}>
+                    {finished.map((r) => (
+                      <li key={r.key} data-testid={`pilot-done-${r.id}`} data-state="sandbox" style={{ ...stack(T.space.xs), paddingBottom: T.space.md, borderBottom: `1px solid ${T.line.subtle}` }}>
+                        <p style={strong()}>{r.title}</p>
+                        {r.lines.length > 0 && <p style={line()}>{r.lines.map(scoreLine).join(" · ")}</p>}
+                        <p style={{ ...line(), color: T.content.primary, fontWeight: 600 }} data-testid={`pilot-done-${r.id}-state`}>
+                          {r.status === "abandoned" ? "Abandoned" : "Finished"} · {SANDBOX_WORDS.kept}
+                        </p>
+                        <p style={line()}>{SANDBOX_WORDS.why}{r.onPhone ? "" : " On SCRBRD, not on this phone: My Pilot Matches brings it here."}</p>
+                        {r.onPhone && (
+                          <Act tone="secondary" testId={`pilot-done-${r.id}-open`} label={`Open the scorecard: ${r.title}`}
+                            onClick={() => onOpenPad && onOpenPad({ resume: r.id })}>Open the scorecard</Act>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </BentoCard>
+        )}
+
+        {/* This week: appointed first, then the side's other fixtures; and before the toss of the next one. */}
+        {sections.includes("week") && (
+          <BentoCard level="b" title="This week" data-testid="scorer-fixtures">
+            {fixturesRead && ["loading", "failed", "forbidden", "disabled"].includes(fixturesRead.state) ? (
+              <ReadState read={fixturesRead} onRetry={retry} compact testId="scorer-fixtures-read"/>
+            ) : (
+              <div style={stack(T.space.lg)}>
+                {fixturesRead?.state === "partial" && <ReadState read={fixturesRead} onRetry={retry} compact testId="scorer-fixtures-read"/>}
+                {sessionsRead && sessionsRead.state === "stale" && <ReadState read={sessionsRead} onRetry={retry} compact testId="scorer-sessions-read"/>}
+                <ol style={{ listStyle: "none", margin: 0, padding: 0, ...stack(T.space.lg) }} data-testid="scorer-fixture-list">
+                  {week.map(({ match: m, appointment: a, group, state, sessionError }) => {
+                    const w = STATE_WORDS[state];
+                    return (
+                      <li key={m.id} data-testid={`fixture-${m.id}`} data-group={group} data-state={state}
+                        style={{ ...stack(T.space.xs), paddingBottom: T.space.md, borderBottom: `1px solid ${T.line.subtle}` }}>
+                        {a ? (
+                          <p data-testid={`fixture-${m.id}-appointed`} style={{ ...T.role.label, color: T.brand.accentText, margin: 0 }}>
+                            Appointed to score{a.appointedAt ? ` · named ${humanDate(a.appointedAt)}` : ""}
+                          </p>
+                        ) : (
+                          <p style={{ ...T.role.label, color: T.content.tertiary, margin: 0 }}>Your side's fixture</p>
+                        )}
+                        <p style={strong()}>{sidesOf(m)}</p>
+                        <p style={line()}>{humanDateTime(m.date, m.time)}{m.venue ? ` · ${m.venue}` : ""}</p>
+                        {a?.paused && (
+                          <p data-testid={`fixture-${m.id}-paused`} style={{ ...line(), color: T.semantic.warningText }}>
+                            The school office has paused your appointment to this match. They can tell you more.
+                          </p>
+                        )}
+                        <p data-testid={`fixture-${m.id}-state`} style={{ ...line(), color: T.content.primary, fontWeight: 600 }}>{w.label}</p>
+                        {sessionError && (
+                          <p data-testid={`fixture-${m.id}-session-read`} role="alert" style={{ ...line(), color: T.semantic.criticalText }}>
+                            Could not read who is scoring this match.
+                          </p>
+                        )}
+                        {w.note && <p style={line()}>{w.note}</p>}
+                        {w.action
+                          ? <Act testId={`fixture-${m.id}-open`} tone={state === "not_started" || state === "held_here" ? "primary" : "secondary"}
+                              label={`${w.action}: ${sidesOf(m)}`} onClick={() => open(m)}>{w.action}</Act>
+                          : <Act testId={`fixture-${m.id}-centre`} tone="secondary" label={`Match Centre: ${sidesOf(m)}`}
+                              onClick={() => onNav && onNav("matches")}>Match Centre</Act>}
+                      </li>
+                    );
+                  })}
+                </ol>
+                {later > 0 && <p style={line()} data-testid="scorer-fixtures-later">{later} more later; the Match Centre lists them.</p>}
+
+                {/* Before the toss, for the next fixture this week not started. */}
+                {prepMatch && (
+                  <div data-testid="scorer-prep" style={{ ...stack(T.space.sm), paddingTop: T.space.sm, borderTop: `1px solid ${T.line.subtle}` }}>
+                    <h3 style={{ ...T.role.label, color: T.content.tertiary, margin: 0 }}>Before the toss</h3>
+                    <p style={strong()} data-testid="scorer-prep-match">{sidesOf(prepMatch)} · {humanDateTime(prepMatch.date, prepMatch.time)}</p>
+                    {prepDuties === undefined
+                      ? <ReadState read={readState({ loading: true }, { what: "the duty roster" })} compact testId="scorer-prep-read"/>
+                      : (
+                        <ul style={{ listStyle: "none", margin: 0, padding: 0, ...stack(T.space.sm) }}>
+                          {prepLines({ match: prepMatch, duties: prepDuties, fold: prepMatch.competitionId != null && !live ? null : fold }).map((l) => (
+                            <li key={l.key} data-testid={`prep-${l.key}`} data-state={l.state} style={stack("2px")}>
+                              <span style={{ ...T.role.body, color: T.content.primary, fontWeight: 600, display: "flex", alignItems: "center", gap: T.space.xs }}>
+                                <Icon name={l.state === "ok" ? "circle-check" : l.state === "missing" ? "triangle-alert" : "hourglass"}
+                                  style={{ color: l.state === "ok" ? T.semantic.positive : l.state === "missing" ? T.semantic.warningText : T.content.tertiary }}/>
+                                {l.label}
+                              </span>
+                              <span style={{ ...line(), color: l.state === "unknown" ? T.semantic.criticalText : T.content.secondary }}>
+                                {l.text}{l.who ? ` · ${l.who} sets this` : ""}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                  </div>
+                )}
+              </div>
+            )}
           </BentoCard>
         )}
       </Bento>

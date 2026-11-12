@@ -387,6 +387,7 @@ const SUITES = [
   // his fixtures appointed first, each one's state for this device, what this
   // device has to resume with its unsent events, and the lines before the toss.
   ["scorer-home", "apps/web/test/scorer-home.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["scorer-day", "apps/web/test/scorer-day.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I07: Squad and Analytics open on the person's own side, and a gate
   // answers from the roles held, as the menu does.
   ["team-context", "apps/web/test/team-context.test.mjs", ["--import", "./tools/register-jsx.mjs"]],

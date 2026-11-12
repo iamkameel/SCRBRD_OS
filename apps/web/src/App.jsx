@@ -205,6 +205,11 @@ export default function SCRBRD_OS() {
   // reopens the scorer's start screen, where Resume is offered first; the match
   // itself is on the phone, not in the session (lib/practice.js).
   const [scorerPractice, setScorerPractice] = useState(false);
+  // Where the scorer's home asked the pad to open (views/ScorerHomeView.jsx):
+  // { start: "pilot" } its Pilot Match setup, { resume: id } a Pilot or
+  // Practice Match this phone holds. Nothing to persist: a reload reopens the
+  // pad's start screen, as for any practice match (`scorerPractice`).
+  const [scorerEntry, setScorerEntry] = useState(null);
   // The login page was opened from a live pad (SCRBRD-078): it offers the
   // real sign-in only — never the demo — and returns to the pad.
   const [loginForPad, setLoginForPad] = useState(false);
@@ -266,7 +271,7 @@ export default function SCRBRD_OS() {
   const handleSignOut = () => {
     signOut();
     clearSession();
-    setScorerOpen(false); setScorerResume(null); setScorerMatchId(null); setScorerPractice(false);
+    setScorerOpen(false); setScorerResume(null); setScorerMatchId(null); setScorerPractice(false); setScorerEntry(null);
     setUsers([]); setUserEdits(false);
     setRole("superadmin"); setUserName("Super Admin"); setPage("dashboard");
     setAppState("login");
@@ -291,6 +296,7 @@ export default function SCRBRD_OS() {
   // failed to reopen after a reload.
   const openScorer = (m, asRole = role, { restored = false } = {}) => {
     if (!canScore(asRole)) return;   // RBAC: scoring is a write capability
+    setScorerEntry(null);
     // A fixture that came from the server carries no seeded scorecard — there
     // is no stored score to seed from, by design. It opens with its match id
     // and the scorer builds the innings from the team sheet, which is what
@@ -339,6 +345,16 @@ export default function SCRBRD_OS() {
     }
     setScorerResume(null);
     setScorerMatchId(m?.id ?? null);
+    setScorerOpen(true);
+  };
+
+  // The scorer's home opens the pad on a match this phone holds, or at its
+  // Pilot Match setup: the pad's own flows, entered at a step (scorer/engine.jsx `padEntry`).
+  const openPad = (entry) => {
+    if (!canScore(role)) return;
+    setScorerResume(null);
+    setScorerMatchId(null);
+    setScorerEntry(entry ?? null);
     setScorerOpen(true);
   };
 
@@ -508,8 +524,10 @@ export default function SCRBRD_OS() {
       <div className="scorer-shell">
         <Suspense fallback={<Loading what="the scorer"/>}>
           <ScorerApp
-            key={scorerResume ? (scorerResume.cfg?.matchId ?? scorerResume.cfg?.team1 ?? "resume") : "new"}
+            key={scorerResume ? (scorerResume.cfg?.matchId ?? scorerResume.cfg?.team1 ?? "resume")
+              : scorerEntry ? `entry:${scorerEntry.resume ?? scorerEntry.start ?? ""}` : "new"}
             resume={scorerResume}
+            padEntry={scorerEntry}
             onPracticeActive={setScorerPractice}
             // The pad asks it once: whether this account files the umpires'
             // report of a suspension itself (SCRBRD-094; rbac/conduct.js).
@@ -518,7 +536,7 @@ export default function SCRBRD_OS() {
             // The way back is the scorer's own: the first key in the pad's
             // title bar (step 2 of the redesign), floating on its setup and
             // result screens. It used to float over the pad's bar from here.
-            onExit={() => { setScorerOpen(false); setScorerResume(null); }}/>
+            onExit={() => { setScorerOpen(false); setScorerResume(null); setScorerEntry(null); }}/>
         </Suspense>
       </div>
     </>
@@ -547,7 +565,7 @@ export default function SCRBRD_OS() {
     && scorerLanding((cap) => holdsAsHeld(role, cap));
   const dashboardView = isDriverLanding ? <DriverDayView role={role}/>
     : isGroundskeeperLanding ? <GroundskeeperDayView role={role}/>
-    : isScorerLanding ? <ScorerHomeView role={role} onNav={setPage} onOpenScorer={openScorer}/>
+    : isScorerLanding ? <ScorerHomeView role={role} onNav={setPage} onOpenScorer={openScorer} onOpenPad={openPad}/>
     : <DashboardView role={role} onNav={setPage} onOpenScorer={openScorer}/>;
   const VIEW_MAP = {
     dashboard:    dashboardView,
