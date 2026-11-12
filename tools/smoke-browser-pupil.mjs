@@ -668,19 +668,8 @@ try {
     ok("his career read answers, with his own row", own.status === 200 && own.rows.some((r) => r.player_id === PILLAY), JSON.stringify(own.rows.map((r) => r.player_id)));
     ok("...and no team-mate's", own.rows.every((r) => r.player_id === PILLAY), JSON.stringify(own.rows.map((r) => r.full_name)));
     // Named, as the Compare card names him (Kameel, 12 Nov): his career and
-    // every season of his, last season's included.
-    const lastLabel = String(Number(SEASON_NOW) - 1);
-    await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
-             values ($1, '1XI', 'Verify Reach Last', $2, 'cricket', 'T20', 20, 'complete')`, [HIL, `${lastLabel}-06-15 09:00+02`]);
-    const lastM = (await q(`select id from match where opponent = 'Verify Reach Last'`))[0].id;
-    const scorer0 = (await q(`select id from app_user where email = 'scorer@example.invalid'`))[0].id;
-    await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq, client_ts,
-                                     kind, ball_type, value, striker_id)
-             values ($1, $2, 1, 1, 1, $3, 'd-reach', $4, 1, now(), 'ball', 'run', 3, $5)`, [lastM, HIL, scorer0, `reach-${lastM}-1`, NAIDOO]);
-    const owned = (await q(`select count(*)::int as n from player_batting_by_season where player_id = $1 and season = $2`, [NAIDOO, lastLabel]))[0].n;
-    const named = await get(`career_by_season?playerId=${NAIDOO}&season=${lastLabel}`);
-    ok("a team-mate named on the season read: his last season's row comes back",
-       owned === 1 && named.rows.length === 1 && named.rows[0].player_id === NAIDOO, `${owned} owned, ${JSON.stringify(named.rows.map((r) => r.season))}`);
+    // his seasons. (Every season of his is §130's to prove: this walk's pupil
+    // reads only the fixtures of the side he is dated to, db/117.)
     const namedCareer = await get(`career?playerId=${NAIDOO}`);
     ok("...and named on career, his row alone", namedCareer.rows.length === 1 && namedCareer.rows[0].player_id === NAIDOO, JSON.stringify(namedCareer.rows.map((r) => r.full_name)));
     const seasons = await get("career_by_season");
@@ -710,8 +699,8 @@ try {
     ok("match-ups unnamed: every pair is one of his", pairs.rows.every((r) => r.batter_id === PILLAY || r.bowler_id === PILLAY), JSON.stringify(pairs.rows.map((r) => `${r.batter_name}>${r.bowler_name}`)));
     // "Me v a team-mate": one team-mate, named, every season of his.
     const mateSeason = await get(`career_by_season?playerId=${NAIDOO}`);
-    ok("Me v a team-mate: naming one team-mate reads his seasons, this one and last, and no other boy's",
-       mateSeason.rows.every((r) => r.player_id === NAIDOO) && [SEASON_NOW, lastLabel].every((x) => mateSeason.rows.some((r) => r.season === x)),
+    ok("Me v a team-mate: naming one team-mate reads his seasons, and no other boy's",
+       mateSeason.rows.length > 0 && mateSeason.rows.every((r) => r.player_id === NAIDOO) && mateSeason.rows.some((r) => r.season === SEASON_NOW),
        JSON.stringify(mateSeason.rows.map((r) => `${r.full_name}@${r.season}`)));
     const elsewhere = (await q(`select id from player where school_id = $1 and team_code is distinct from '1XI' and id in
                                  (select player_id from player_batting_by_season union select player_id from player_bowling_by_season) limit 1`, [HIL]))[0]?.id;
