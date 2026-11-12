@@ -9,6 +9,20 @@
 **Taken from the review, not read by me:** every `file:line` below into `db/08`, `db/47`, `db/59`, `db/62`, `db/71`, `db/116`, `db/122`, `db/128`, `public.mjs`, `public-api.mjs`, `roles.mjs`, `bigscreen.jsx`, `BACKUP_RESTORE.md` and `NEWS_COVER_UPLOADS.md` is the reviewer's finding (`REVIEW.md`, Opus, 11 Nov), cited as given.
 **No child's name appears.** "T Bekker" is the placeholder label the consent screen's own comments use.
 
+## Decided 12 November 2026 (Kameel)
+
+- **Build plan: "Build 1-8, switched off".** Slices 1–8 are built now, and nothing that publishes is switched on before counsel answers §8.
+- **The big screen, 13:05 SAST: "Both as recommended".**
+  - (a) Only staff may open the big screen and make its read.
+  - (b) When any boy on the field is marked never-public, the screen shows that boy's whole side by position, and the read says only "this side by position", never which boy.
+- **The big screen, 17:45 SAST: "Season roster: hide the side all season".** A side shows by position whenever a marked boy is on its season roster, whatever the day's XI.
+- **Engineering notes (the lead's, not Kameel's):**
+  - "staff" means `player.roster.read` or `scoring.start` at the host side, never a pupil, and never a scoring pad's credential;
+  - on a fixture with no team sheet, the away side is always shown by position;
+  - the build is PR #302, db/153.
+
+---
+
 ### Revised 11 Nov after review
 
 - **B1 fixed.** A no given to the old wording is a no on every surface. Wording narrows a yes, never a no (§5.1 line 5, §6.1).
@@ -465,6 +479,7 @@ Every row above is its own record: who, when, which wording, what the screen sho
 18. **The evidence and its retention (sections 11(2)(a), 14).** Is §6.1's record enough to discharge the burden, and how long are by-terms records and notice hashes kept after he leaves?
 19. **The marked child.** On a finished scorecard a marked boy may be the one position among named team-mates. Is that a disclosure the school must prevent?
 20. **Existing families.** Is a non-blocking re-agreement the right route? (Only if Kameel chooses Q3(b): can a notice followed by silence ever be consent?)
+21. **Across several fixtures (added 12 Nov).** A coach who picks the side could narrow down which boy is marked by who is in it. The season-roster rule (12 Nov) closes this for the big screen.
 
 **The fallback ladder, and what each step really costs.**
 
