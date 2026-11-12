@@ -11858,6 +11858,83 @@ CREATE OR REPLACE FUNCTION _v151_facts(p_id uuid) RETURNS jsonb AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/151 (section 129) ─────────────────────────────────────────────
 
+-- ┌── db/153 (section 130) ─────────────────────────────────────────────
+-- The big screen at the ground (PUBLIC_BY_TERMS §2.5, slice 1). Hilton's
+-- 1XI at home to Westville's 1XI, invented here, today, live, the overlay
+-- published with full names (the most a school could choose). Hilton boys:
+-- MRK (marked never-public by the DSO today), OPN (nothing recorded), WAS
+-- (marked last week, the mark ended yesterday), SQD (in the squad, never on
+-- the field); Westville's VIS and WFD. The log: the innings' squads, MRK and
+-- OPN at the crease to VIS, then a ball with WFD in the field written by
+-- reference. Written as the owner, as the scorer's pad and the DSO's door
+-- would.
+CREATE OR REPLACE FUNCTION _v153_ev(p_match uuid, p_kind text, p_striker uuid, p_non uuid, p_bowler uuid, p_payload jsonb) RETURNS void AS $$
+DECLARE v_seq int := (SELECT coalesce(max(seq), 0) + 1 FROM ball_event WHERE match_id = p_match);
+BEGIN
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                          client_ts, kind, ball_type, value, striker_id, non_striker_id, bowler_id, payload)
+  VALUES (p_match, '11111111-1111-1111-1111-111111111111', v_seq, 1, 0, '88888888-0000-0000-0000-000000000006', 'v153',
+          'v153-' || p_match || '-' || v_seq, v_seq, now(), p_kind,
+          CASE WHEN p_kind = 'ball' THEN 'run' END, CASE WHEN p_kind = 'ball' THEN 1 END,
+          p_striker, p_non, p_bowler, p_payload);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _v153_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  WES    uuid := '22222222-2222-2222-2222-222222222222';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  DSO    uuid := '88888888-0000-0000-0000-000000000057';
+  ids jsonb := '{}'; r record; v_p uuid; v_m uuid; i int := 0;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES ('mrk', HIL, 'Marked'), ('opn', HIL, 'Open'), ('was', HIL, 'Wasmarked'),
+                                 ('sqd', HIL, 'Squadonly'), ('vis', WES, 'Visitor'), ('wfd', WES, 'Fielder')) AS v(k, school, surname)
+  LOOP
+    i := i + 1;
+    INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+    VALUES (r.school, '1XI', 'Verify OneFiftyThree ' || r.surname, 'OneFiftyThree ' || r.surname, 1530 + i, 'batter',
+            (sa_today() - interval '17 years 1 month')::date)
+    RETURNING id INTO v_p;
+    ids := ids || jsonb_build_object(r.k, v_p);
+  END LOOP;
+  INSERT INTO player_never_public (player_id, reason, set_on, set_by)
+  VALUES ((ids->>'mrk')::uuid, 'Verify 153: the DSO''s mark', sa_today(), DSO);
+  INSERT INTO player_never_public (player_id, reason, set_on, set_by, ended_on, ended_by, ended_at)
+  VALUES ((ids->>'was')::uuid, 'Verify 153: an ended mark', sa_today() - 7, OFFICE, sa_today() - 1, OFFICE, now() - interval '1 day');
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '1XI', WES, '1XI', 'Westville Boys'' High 1XI', now() - interval '1 hour', 'cricket', 'T20', 20, 'live')
+  RETURNING id INTO v_m;
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by)
+  VALUES (v_m, 'home', HIL, '1XI', true, OFFICE), (v_m, 'away', WES, '1XI', true, OFFICE);
+  INSERT INTO match_broadcast (match_id, school_id, published, published_by, name_display, show_officials, strapline)
+  VALUES (v_m, HIL, true, OFFICE, 'full', false, 'Hilton v Westville · 1XI');
+  PERFORM _v153_ev(v_m, 'innings_start', NULL, NULL, NULL, jsonb_build_object(
+    'battingTeam', '1XI', 'bowlingTeam', 'Westville Boys'' High 1XI',
+    'squad', jsonb_build_array(jsonb_build_object('id', ids->>'mrk', 'name', 'Verify OneFiftyThree Marked'),
+                               jsonb_build_object('id', ids->>'opn', 'name', 'Verify OneFiftyThree Open'),
+                               jsonb_build_object('id', ids->>'was', 'name', 'Verify OneFiftyThree Wasmarked'),
+                               jsonb_build_object('id', ids->>'sqd', 'name', 'Verify OneFiftyThree Squadonly')),
+    'bowlingSquad', jsonb_build_array(jsonb_build_object('id', ids->>'vis', 'name', 'Verify OneFiftyThree Visitor'),
+                                      jsonb_build_object('id', ids->>'wfd', 'name', 'Verify OneFiftyThree Fielder'))));
+  PERFORM _v153_ev(v_m, 'ball', (ids->>'mrk')::uuid, (ids->>'opn')::uuid, (ids->>'vis')::uuid, '{}'::jsonb);
+  PERFORM _v153_ev(v_m, 'ball', (ids->>'opn')::uuid, (ids->>'mrk')::uuid, (ids->>'vis')::uuid,
+                   jsonb_build_object('fielder', ids->>'wfd'));
+  RETURN ids || jsonb_build_object('m', v_m);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The mark ended today, as the DSO's door would end it.
+CREATE OR REPLACE FUNCTION _v153_unmark(p_player uuid) RETURNS void AS $$
+  UPDATE player_never_public SET ended_on = sa_today(), ended_by = set_by, ended_at = now()
+   WHERE player_id = p_player AND ended_on IS NULL
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- How many of the match's log rows the caller reads, under his own policy:
+-- the control that a reader may, or may not, read the log at all.
+CREATE OR REPLACE FUNCTION _v153_log_rows(p_match uuid) RETURNS bigint AS $$
+  SELECT count(*) FROM ball_event WHERE match_id = p_match
+$$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/153 (section 130) ─────────────────────────────────────────────
+
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -40170,6 +40247,110 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 129
   -- └── db/151 (section 129) ──────────────────────────────────────────
+  -- ┌── db/153 (section 130) ─────────────────────────────────────────
+  -- ── 130. The big screen shows a marked boy by position; the caption names no child (db/153, db/149; PUBLIC_BY_TERMS §2.5, slice 1) ──
+  -- Staged by _v153_stage(); every read through scrbrd_app.
+  -- Labels:
+  --   (caption)   with MRK, the marked boy, at the crease, broadcast_state()
+  --               reads 'Batter' / 'Non-striker' / 'Bowler' and no word of
+  --               any boy's name, for signed out, the Hilton coach, the DSO,
+  --               Westville's coach and office
+  --   (control)   each reader below reads the log, or does not
+  --   (marked)    the Hilton coach (who opens the big screen) reads MRK as
+  --               position_only and OPN, VIS and WFD (in the field, by
+  --               reference) as named; SQD, never on the field, is not in
+  --               the answer; WAS, whose mark ended yesterday, is named once
+  --               he comes to the crease
+  --   (away)      Westville's coach reads the same answer
+  --   (none)      signed out, and a reader with no read of the log, get no rows
+  --   (shape)     two columns; no name, reason or date in any row
+  --   (ended)     the DSO ends MRK's mark today: he is named again
+  --   (body)      an invoker with its path pinned, not PUBLIC's, the application's
+  --
+  -- Falsified (12 Nov 2026, on a migrated database inside the section's
+  -- transaction; each went red at its own label; unchanged it passed):
+  --   position_only answering false for everyone                   → (marked)
+  --   the function made SECURITY DEFINER                            → (none)
+  DECLARE
+    y   jsonb := _v153_stage();
+    M   uuid := (y->>'m')::uuid;
+    MRK uuid := (y->>'mrk')::uuid; OPN uuid := (y->>'opn')::uuid; WAS uuid := (y->>'was')::uuid;
+    SQD uuid := (y->>'sqd')::uuid; VIS uuid := (y->>'vis')::uuid; WFD uuid := (y->>'wfd')::uuid;
+    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
+    U_DRV  uuid := '88888888-0000-0000-0000-000000000017';   -- B Ngcobo: transport.read, no fixture.read
+    U_DSO  uuid := '88888888-0000-0000-0000-000000000057';
+    v_row text; v_ans text; v_want text; u uuid; s record;
+  BEGIN
+    -- (caption)
+    FOREACH u IN ARRAY ARRAY[NULL, U_COACH, U_DSO, U_WESC, U_WES_ADM]::uuid[] LOOP
+      IF u IS NULL THEN PERFORM set_config('app.user_id', '', true); ELSE PERFORM _as(u); END IF;
+      SELECT * INTO s FROM broadcast_state(M);
+      SELECT row_to_json(x)::text INTO v_row FROM broadcast_state(M) x;
+      PERFORM _assert(s.striker = 'Batter' AND s.non_striker = 'Non-striker' AND s.bowler = 'Bowler',
+        format('§130 (caption): %s reads %s / %s / %s', coalesce(u::text, 'signed out'), s.striker, s.non_striker, s.bowler));
+      PERFORM _assert(v_row !~* '(Verify|OneFiftyThree|Marked|Wasmarked|Visitor)',
+        format('§130 (caption): a name is in the overlay''s row for %s: %s', coalesce(u::text, 'signed out'), v_row));
+    END LOOP;
+
+    -- (control)
+    PERFORM _as(U_COACH);
+    PERFORM _assert(_v153_log_rows(M) = 3, format('§130 (control): the Hilton coach reads %s of the log''s 3 rows', _v153_log_rows(M)));
+    PERFORM _as(U_WESC);
+    PERFORM _assert(_v153_log_rows(M) = 3, format('§130 (control): Westville''s coach reads %s of the log''s 3 rows', _v153_log_rows(M)));
+    PERFORM _as(U_DRV);
+    PERFORM _assert(_v153_log_rows(M) = 0, format('§130 (control): the driver reads %s of the log''s rows', _v153_log_rows(M)));
+
+    -- (marked)
+    PERFORM _as(U_COACH);
+    SELECT string_agg(g.player_id || ':' || g.position_only, ',' ORDER BY g.player_id) INTO v_ans FROM ground_screen_positions(M) g;
+    PERFORM _assert((SELECT g.position_only FROM ground_screen_positions(M) g WHERE g.player_id = MRK),
+      format('§130 (marked): the marked boy is not position-only for the coach: %s', v_ans));
+    PERFORM _assert((SELECT bool_and(NOT g.position_only) AND count(*) = 3 FROM ground_screen_positions(M) g WHERE g.player_id IN (OPN, VIS, WFD)),
+      format('§130 (marked): an unmarked boy (OPN, VIS, or WFD by reference) is position-only or missing: %s', v_ans));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM ground_screen_positions(M) g WHERE g.player_id IN (SQD, WAS)),
+      format('§130 (marked): a boy who had no role on the field is in the answer: %s', v_ans));
+    PERFORM _assert((SELECT count(*) FROM ground_screen_positions(M)) = 4, format('§130 (marked): the answer is %s', v_ans));
+    -- WAS comes to the crease: his mark ended yesterday, so he is named.
+    PERFORM _v153_ev(M, 'ball', WAS, OPN, VIS, '{}'::jsonb);
+    PERFORM _assert((SELECT NOT g.position_only FROM ground_screen_positions(M) g WHERE g.player_id = WAS),
+      '§130 (marked): a boy whose mark ended yesterday is position-only, or missing, today');
+
+    -- (away)
+    SELECT string_agg(g.player_id || ':' || g.position_only, ',' ORDER BY g.player_id) INTO v_want FROM ground_screen_positions(M) g;
+    PERFORM _as(U_WESC);
+    SELECT string_agg(g.player_id || ':' || g.position_only, ',' ORDER BY g.player_id) INTO v_ans FROM ground_screen_positions(M) g;
+    PERFORM _assert(v_ans = v_want, format('§130 (away): Westville''s coach reads %s; the Hilton coach %s', v_ans, v_want));
+
+    -- (none)
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM ground_screen_positions(M)), '§130 (none): signed out reads the big screen''s answer');
+    PERFORM _as(U_DRV);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM ground_screen_positions(M)), '§130 (none): a reader with no read of the log reads the answer');
+
+    -- (shape)
+    PERFORM _as(U_COACH);
+    PERFORM _assert((SELECT count(*) FROM pg_proc p, unnest(p.proargmodes) AS am(mode)
+                      WHERE p.oid = 'ground_screen_positions(uuid)'::regprocedure AND am.mode = 't') = 2,
+      '§130 (shape): ground_screen_positions() returns more than two columns');
+    SELECT string_agg(row_to_json(g)::text, ' ') INTO v_row FROM ground_screen_positions(M) g;
+    PERFORM _assert(v_row !~* '(Verify|OneFiftyThree|mark|reason|set_on|ended)' AND v_row !~ '"[0-9]{4}-[0-9]{2}-[0-9]{2}"',
+      format('§130 (shape): a name, a reason or a date is in the answer: %s', v_row));
+
+    -- (ended)
+    PERFORM _v153_unmark(MRK);
+    PERFORM _assert((SELECT NOT g.position_only FROM ground_screen_positions(M) g WHERE g.player_id = MRK),
+      '§130 (ended): a mark ended today still shows the boy by position');
+
+    -- (body)
+    PERFORM _assert((SELECT NOT p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']
+                       FROM pg_proc p WHERE p.oid = 'ground_screen_positions(uuid)'::regprocedure),
+      '§130 (body): ground_screen_positions() is a definer, or its path is not pinned');
+    PERFORM _assert(NOT has_function_privilege('public', 'ground_screen_positions(uuid)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'ground_screen_positions(uuid)', 'EXECUTE'),
+      '§130 (body): ground_screen_positions() is PUBLIC''s, or not the application''s');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/153 (section 130) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
