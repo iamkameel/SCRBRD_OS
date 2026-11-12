@@ -80,6 +80,10 @@
  *   fow 1-12 B2 2.3              wicket-score, the batter out, the over he fell in
  *   notinover 6                  optional: how many deliveries the innings had that were not
  *                                one of the over (the @ marks): each was faced, none is a legal ball
+ *   milestone fifty B5 59        optional, one line each: every milestone of the innings the
+ *   milestone hat_trick BW3 3    card states (fifty or hundred, a batter's runs; five_for, a
+ *                                bowler's wickets; hat_trick, three). A card with any of these
+ *                                says it has exactly these, no others.
  *   keeper F2 ct 1 st 1          optional, in the order they kept: the keeper's catches
  *                                and stumpings (a card with none says the fold has none)
  *   bowl BW1 2-0-17-1 wd 1 nb 0  O-M-R-W, the number of wides and no-balls bowled
@@ -162,6 +166,7 @@
  * @property {{wicket: number, runs: number, who: string, over: string}[]} fow
  * @property {{who: string, catches: number, stumpings: number}[]} keepers
  * @property {number} notInOver  deliveries faced that were not one of the over
+ * @property {{kind: string, who: string, value: number}[]} milestones  when any is given, the innings' milestones exactly
  * @property {CardBowler[]} bowling
  */
 
@@ -320,7 +325,7 @@ export function parseScorebook(text, file = "scorebook") {
       case "declare": if (!inn) bad(); /** @type {PaperInnings} */ (inn).lines.push({ kind: "declare", at }); return;
       case "card": {
         inn = null;
-        card = { innings: Number(rest[0]), batting: [], extras: { b: 0, lb: 0, w: 0, nb: 0, p: 0 }, total: -1, wickets: -1, overs: "", fow: [], keepers: [], notInOver: 0, bowling: [] };
+        card = { innings: Number(rest[0]), batting: [], extras: { b: 0, lb: 0, w: 0, nb: 0, p: 0 }, total: -1, wickets: -1, overs: "", fow: [], keepers: [], notInOver: 0, milestones: [], bowling: [] };
         book.cards.push(card);
         return;
       }
@@ -351,6 +356,12 @@ export function parseScorebook(text, file = "scorebook") {
         const m = /^(\d+)-(\d+)$/.exec(rest[0] ?? "");
         if (!card || !m || rest.length !== 3) bad();
         /** @type {Card} */ (card).fow.push({ wicket: Number(/** @type {RegExpExecArray} */ (m)[1]), runs: Number(/** @type {RegExpExecArray} */ (m)[2]), who: rest[1], over: rest[2] });
+        return;
+      }
+      case "milestone": {
+        const bowlerKind = rest[0] === "five_for" || rest[0] === "hat_trick";
+        if (!card || rest.length !== 3 || !(bowlerKind || rest[0] === "fifty" || rest[0] === "hundred") || !(bowlerKind ? /^BW\d+$/ : /^B\d+$/).test(rest[1])) bad();
+        /** @type {Card} */ (card).milestones.push({ kind: rest[0], who: rest[1], value: Number(rest[2]) });
         return;
       }
       case "notinover": if (!card || rest.length !== 1) bad(); /** @type {Card} */ (card).notInOver = Number(rest[0]); return;

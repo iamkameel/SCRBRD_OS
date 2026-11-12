@@ -1,0 +1,124 @@
+# INV-14 — invented. Twenty overs a side: a long match, scored to the last ball.
+# Edge cases: five bowlers, four overs each, in rotation (never two overs
+# running); a maiden-heavy spell (BW1: 4-3-13-1, with a bye in one maiden, a
+# leg bye in another and a wicket in the third; his one expensive over has a
+# no-ball and the free hit hit for six); a hat-trick (BW3, in the 3rd over:
+# bowled, caught, lbw on three balls running, the batters falling at 10 for
+# 1, 2 and 3: "2.3", "2.4", "2.5"); a fifty (B5: 59 off 42); a wicket on the
+# last ball of an over (falls at 6.6); a chase of 148 that reaches it on the
+# very last ball, nine down: won by one wicket.
+# The milestones the fold gives are stated on the card (fifty, hat-trick).
+match INV-14
+title Twenty overs a side, a hat-trick and a one-wicket win
+date 2026-11-14
+overs 20
+sides Home Away
+
+innings 1 Home
+open B1 B2
+over BW1  . . 1b . . .
+over BW2  1 4 . 2 1 .
+over BW3  1 . W:b W:c/F6 W:lbw 2
+over BW4  . 1 4 wd 1 . 2
+over BW5  2 . 1 6 . 1
+over BW1  . . 1lb . . .
+over BW2  4 1 . 1 W:c/F9 1
+over BW3  1 2 . 4 1 .
+over BW4  . . 1 1 4 .
+over BW5  3 . 1 W:b 2 1
+over BW1  . . W:lbw . . .
+over BW2  1 1 4 . 6 1
+over BW3  2 . 1 wd 1 1 .
+over BW4  . 4 1 . W:c/F2 1
+over BW5  1 6 . 1 2 .
+over BW1  1 . 4 1 nb 6 .
+over BW2  . 1 W:b 2 1 4
+over BW3  1 1 4 . 1 6
+over BW4  . 2 1 . . 1
+over BW5  4 1 . 6 2 1
+
+innings 2 Away
+open B1 B2
+over BW1  1 . 4 . 1 1
+over BW2  . 2 W:c/F4 1 . 4
+over BW3  1 1 . 6 2 4
+over BW4  4 . 1 W:b 1 1
+over BW5  . 1 W:c/F8 2 . 1
+over BW1  1 4 . 1 . 2
+over BW2  . . . . 1 W:lbw
+over BW3  1 1 wd 4 . 1 2
+over BW4  2 . 6 1 . 3
+over BW5  1 1 4 . 1 2
+over BW1  . 1 1 . 1 .
+over BW2  4 W:c/F6 . 1 1 2
+over BW3  . 1 . 1 W:st/F1 1
+over BW4  6 . 1 1 2 4
+over BW5  1 . 2 1 4 1
+over BW1  . W:b 1 . 1 1
+over BW2  2 1 W:c/F10 . 1 .
+over BW3  1 4 . 1 2 1
+over BW4  1 W:lbw . 1 6 2
+over BW5  . 1 1 2 1 1
+
+# ── The card, worked by hand ──
+# Home, over by over: 1, 8, 3, 9, 10 | 1, 7, 8, 6, 7 | 0, 13, 6, 6, 10 | 13, 8, 13, 4, 14 = 147.
+card 1
+bat B1 1 7 0 0 b BW3
+bat B2 23 21 2 1 c F9 b BW2
+bat B3 0 1 0 0 c F6 b BW3
+bat B4 0 1 0 0 lbw b BW3
+bat B5 59 42 5 3 b BW2
+bat B6 6 6 0 0 b BW5
+bat B7 3 5 0 0 lbw b BW1
+bat B8 2 8 0 0 c F2 b BW4
+bat B9 27 17 3 1 not out
+bat B10 21 13 1 1 not out
+extras b 1 lb 1 w 2 nb 1 p 0
+total 147/8 20.0
+fow 1-10 B1 2.3
+fow 2-10 B3 2.4
+fow 3-10 B4 2.5
+fow 4-38 B2 6.5
+fow 5-57 B6 9.4
+fow 6-60 B7 10.3
+fow 7-84 B8 13.5
+fow 8-109 B5 16.3
+milestone fifty B5 59
+milestone hat_trick BW3 3
+bowl BW1 4-3-13-1 wd 0 nb 1
+bowl BW2 4-0-36-2 wd 0 nb 0
+bowl BW3 4-0-30-3 wd 1 nb 0
+bowl BW4 4-0-25-1 wd 1 nb 0
+bowl BW5 4-0-41-1 wd 0 nb 0
+
+# Away, needing 148, over by over: 7, 7, 14, 7, 4 | 8, 1, 10, 12, 9 | 3, 8, 3, 14, 9 | 3, 4, 9, 10, 6 = 148.
+card 2
+bat B1 4 5 0 0 c F4 b BW2
+bat B2 44 37 5 1 st F1 b BW3
+bat B3 14 7 1 1 b BW4
+bat B4 1 2 0 0 c F8 b BW5
+bat B5 6 7 0 0 lbw b BW2
+bat B6 18 14 2 0 c F6 b BW2
+bat B7 11 11 1 0 b BW1
+bat B8 18 12 1 1 c F10 b BW2
+bat B9 10 9 1 0 lbw b BW4
+bat B10 16 10 0 1 not out
+bat B11 5 6 0 0 not out
+extras b 0 lb 0 w 1 nb 0 p 0
+total 148/9 20.0
+fow 1-9 B1 1.3
+fow 2-33 B3 3.4
+fow 3-36 B4 4.3
+fow 4-48 B5 6.6
+fow 5-86 B6 11.2
+fow 6-92 B2 12.5
+fow 7-116 B7 15.2
+fow 8-122 B8 16.3
+fow 9-133 B9 18.2
+bowl BW1 4-0-21-1 wd 0 nb 0
+bowl BW2 4-0-20-4 wd 0 nb 0
+bowl BW3 4-0-36-1 wd 1 nb 0
+bowl BW4 4-0-43-2 wd 0 nb 0
+bowl BW5 4-0-28-1 wd 0 nb 0
+
+result Away won by 1 wicket

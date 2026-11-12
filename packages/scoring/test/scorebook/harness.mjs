@@ -24,7 +24,7 @@
  */
 import {
   inningsStart, batters, bowler, ball, retire, penalty, revision, shortRunning, sealInnings, noPlacement,
-  notInOverDelivery, bowlerSuspended, keeper, lawsEdition,
+  notInOverDelivery, bowlerSuspended, keeper, lawsEdition, deriveFacts,
   deriveInningsList, deriveMatch, lawsRefusal, fmtOvers,
   PLACEMENT_NULL, CAPTURE_PROFILE, RETIRE_REASON, INNINGS_END_REASON,
 } from "../../src/index.mjs";
@@ -355,6 +355,22 @@ export function prove(book) {
   const match = deriveMatch(built.log, contextOf(book));
   const mismatches = [...built.problems];
   for (const card of book.cards) mismatches.push(...compareCard(book.match, match.innings[card.innings - 1], card));
+  // The milestones a card states (opt-in): the facts the fold gives, innings by innings.
+  if (book.cards.some((c) => c.milestones.length)) {
+    const facts = deriveFacts(built.log, () => true, { ctx: contextOf(book) });
+    for (const card of book.cards) {
+      if (!card.milestones.length) continue;
+      const paper = book.innings[card.innings - 1];
+      const other = book.sides[0] === paper.side ? book.sides[1] : book.sides[0];
+      const key = (/** @type {string} */ kind, /** @type {string} */ who, /** @type {number} */ value) => `${kind} ${who} ${value}`;
+      const want = card.milestones.map((m) => key(m.kind, m.who, m.value)).sort();
+      const got = facts.milestones.filter((m) => m.innings === card.innings - 1).map((m) => {
+        const bowlerKind = m.kind === "five_for" || m.kind === "hat_trick";
+        return key(m.kind, m.player.slice((bowlerKind ? other : paper.side).length + 1), m.value);
+      }).sort();
+      if (want.join("; ") !== got.join("; ")) mismatches.push(`${book.match} innings ${card.innings} · milestones: expected ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
+    }
+  }
   if (book.cards.length !== match.innings.length) mismatches.push(`${book.match}: ${book.cards.length} cards for ${match.innings.length} innings`);
   const text = match.result?.text ?? null;
   if (text !== book.result) mismatches.push(`${book.match} · result: expected ${JSON.stringify(book.result)}, got ${JSON.stringify(text)}`);
