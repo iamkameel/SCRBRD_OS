@@ -15,6 +15,7 @@ import { ConductTab } from "./discipline.jsx";
 import { readsConduct } from "../rbac/conduct.js";
 import { Icon } from "../ui/icons.jsx";
 import { SourceLine } from "../ui/sourceLine.jsx";
+import { Sourced } from "../ui/sourced.jsx";
 import { SRC_BALLS, SRC_RECORD, WINDOW_ALL, dateWindow } from "../lib/sourceWords.js";
 import { MIN_BALLS_BOWLED, MIN_BALLS_FACED } from "@scrbrd/scoring";
 import { SealMark } from "../ui/sealMark.jsx";
@@ -782,13 +783,12 @@ function CareerWagonWheel({ player, role }) {
     matchOptions.push({ id: b.matchId, label: b.startsAt ? humanDate(b.startsAt) : "Unknown date" });
   }
 
+  // CRI-2.2: one line over the four charts below, all drawn from the same shot rows. The read returns only
+  // the shots with a position, so the line counts those; how many balls had none is not in it to say.
   return (
-    <>
-      {!loading&&!error&&(
-        <SourceLine testid="source-line-wagon" source={SRC_BALLS} scope="This player, every shot placed on the field"
-          window={dateWindow(rows.map((b) => b.startsAt))}
-          denominator={{ n: rows.length, unit: "shot with a position", plural: "shots with a position" }}/>
-      )}
+    <Sourced testid="source-line-wagon" line={!loading && !error ? { source: SRC_BALLS, scope: "This player, every shot placed on the field",
+      window: dateWindow(rows.map((b) => b.startsAt)),
+      denominator: { n: rows.length, unit: "shot with a position", plural: "shots with a position" } } : null}>
       <div data-testid="career-wagon-wheel">
         {loading ? <EmptyState loading/>
          : error ? <EmptyState error/>
@@ -818,7 +818,7 @@ function CareerWagonWheel({ player, role }) {
           title="Wagon-wheel analysis"
         />
       )}
-    </>
+    </Sourced>
   );
 }
 

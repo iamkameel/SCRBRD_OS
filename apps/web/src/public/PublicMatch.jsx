@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
-import { boardInnings, boundaryCount, matchLine, revisionNotice, sidesOf, statusSentence, tossWords } from "../lib/matchCentre.js";
+import { boardInnings, boundaryCount, matchLine, revisionNotice, sidesOf, statusSentence, teamOf, tossWords } from "../lib/matchCentre.js";
 import { humanDateTime } from "../lib/format.js";
 import { SummaryTab, CommentaryTab, PartnershipsTab } from "../views/matchcentre/tabs-core.jsx";
+import { SourcedLazy, ballsLine, shotsCaptured } from "../ui/sourcedLazy.jsx";
 import { InningsToggle, ScorecardTab } from "../views/matchcentre/scorecard.jsx";
 import { HeaderScores, StatusLine } from "../views/matchcentre/scores.jsx";
 import { matchInningsOf } from "../lib/superOver.js";
@@ -157,7 +158,11 @@ function TeamAnalyticsTab({ match, innings, inningsSel, setInningsSel, sectors }
       </div>
       <H>Where the runs went — the side, by sector</H>
       {sectors == null ? <Quiet>Loading…</Quiet> : !mine.length ? <Quiet testid="mc-sectors-none">No placement was recorded for this innings.</Quiet> : (
-        <TeamWheel sectors={mine} most={most}/>
+        // CRI-2.2: the side's innings, and how many of its balls carried a placement (a scoring shot placed).
+        <SourcedLazy line={ballsLine(`${teamOf(match, inn.battingTeam).full} innings`, inn.balls ?? 0,
+          shotsCaptured(mine.reduce((a, s) => a + s.shots, 0), inn.ballLog.length))} testid="source-line-sectors">
+          <TeamWheel sectors={mine} most={most}/>
+        </SourcedLazy>
       )}
     </section>
   );

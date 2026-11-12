@@ -157,6 +157,9 @@ const SUITES = [
   // CRI-2.5: the whole analysis under analytics.read for the fixture's side;
   // a parent, a pupil, a spectator: the worm, runs per over, the partnerships.
   ["match-analysis",    "apps/web/test/match-analysis.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // CRI-2.2: no chart without a source line — every chart in the Match Centre's, the pad's, the
+  // profile's and the ground display's files inside a block that carries one.
+  ["sourced",           "apps/web/test/sourced.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // CRI-1.1: the board's last-wicket and freshness rows, from the fold, held
   // to literal markup and the same on the pad, the Match Centre and the
   // public page (whose row says the fold's labels, never a name).
