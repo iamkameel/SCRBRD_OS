@@ -27,7 +27,12 @@ export { SummaryTab, CommentaryTab, PartnershipsTab };
 
 // ── Analytics ───────────────────────────────────────────
 
-export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs, events = null, focus = null }) {
+/**
+ * `toBalls` (CRI-2.3): a Manhattan bar or a wagon-wheel area leads to the
+ * Commentary, filtered to its balls by event id (MatchView's, signed in and
+ * not a demonstration; null leaves the charts as they were).
+ */
+export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs, events = null, focus = null, toBalls = null }) {
   const [wheelOf, setWheelOf] = useState(null);
   const inn = innings[inningsSel];
   if (!inn) return <Quiet testid="mc-analytics-empty">Nothing has been scored yet.</Quiet>;
@@ -62,7 +67,8 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs,
       </div>
       {innings.length > 1 && (<><H>Match worm</H><WormChart innings={innings} curIn={innings.length - 1} match={cfg} events={events}/></>)}
       <H>Runs per over</H>
-      <ManhattanChart inn={inn} match={cfg} projection={proj[inningsSel]}/>
+      <ManhattanChart inn={inn} match={cfg} projection={proj[inningsSel]}
+        onOver={toBalls ? (o) => toBalls({ ids: o.parts.map((x) => x.id).filter(Boolean), what: `over ${o.over + 1}`, runs: o.runs }) : null}/>
       <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)", gap: T.space.md }}>
         <div><H>Batting impact</H><BatsmanChart inn={inn}/></div>
         <div><H>Bowling economy</H><BowlerChart inn={inn}/></div>
@@ -98,6 +104,7 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs,
             handOf={(strikerId) => batHandOf(inn, strikerId)}
             batters={offered.map((b) => ({ id: b.id, name: b.name }))}
             bowlers={inn.bowlers.filter((b) => b.balls > 0).map((b) => ({ id: b.id, name: b.name }))}
+            onArea={toBalls ? (ar) => toBalls({ ids: ar.ids, what: ar.label, runs: ar.runs }) : null}
           />
         </ErrorBoundary>
       </div>

@@ -350,12 +350,17 @@ const overTitle = (inn, over) => (inn?.superOver != null ? "The over" : `Over ${
  * not drawn); the over jump goes to any over the chips leave. Both are this
  * tab's own state: a reload opens on All.
  */
-export function CommentaryTab({ match, commentary, demo, innings, ballKey = null, onBack = null }) {
+export function CommentaryTab({ match, commentary, demo, innings, ballKey = null, onBack = null, backLabel = "Back to the scorecard", balls = null }) {
   const groups = useMemo(() => commentaryByOver(commentary ?? []), [commentary]);
   const [chip, setChip] = useState(COMMENTARY_FILTER.ALL);
-  const view = useMemo(() => (chip === COMMENTARY_FILTER.ALL ? groups
-    : groups.map((g) => ({ ...g, lines: g.lines.filter((c) => commentaryMatches(c, chip)) })).filter((g) => g.lines.length)), [groups, chip]);
-  const [shown, setShown] = useState(() => shownFor(groups, ballKey, OVERS_AT_FIRST));
+  // CRI-2.3: the balls a chart's bar or area asked for, by event id, until the reader asks for the rest.
+  const [drill, setDrill] = useState(() => (balls?.ids?.length ? { ...balls, ids: new Set(balls.ids) } : null));
+  const filter = useMemo(() => (drill ? { ids: drill.ids } : chip), [drill, chip]);
+  const view = useMemo(() => (filter === COMMENTARY_FILTER.ALL ? groups
+    : groups.map((g) => ({ ...g, lines: g.lines.filter((c) => commentaryMatches(c, filter)) })).filter((g) => g.lines.length)), [groups, filter]);
+  // Far enough back to hold the ball asked for, or every over a chart's balls are in.
+  const [shown, setShown] = useState(() => (drill ? Math.max(OVERS_AT_FIRST, view.length) : shownFor(groups, ballKey, OVERS_AT_FIRST)));
+  const pickChip = (id) => { setDrill(null); setChip(id); };
   const [jump, setJump] = useState(/** @type {{key: string, n: number} | null} */ (null));
   const at = useRef(/** @type {HTMLElement | null} */ (null));
   useEffect(() => {
@@ -391,12 +396,13 @@ export function CommentaryTab({ match, commentary, demo, innings, ballKey = null
           style={{ minHeight: "44px", padding: `0 ${T.space.md}`, marginBottom: T.space.sm, display: "inline-flex", alignItems: "center", gap: T.space.xs,
             cursor: "pointer", background: "transparent", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill,
             color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
-          <span aria-hidden="true">‹</span> Back to the scorecard
+          <span aria-hidden="true">‹</span> {backLabel}
         </button>
       )}
       <ErrorBoundary name="commentary-tools" fallback={null}>
         <Suspense fallback={<div aria-hidden="true" style={{ minHeight: "96px", marginBottom: T.space.md }}/>}>
-          <CommentaryTools chip={chip} setChip={setChip} commentary={commentary} match={match} innings={innings} groups={view} onJump={toOver}/>
+          <CommentaryTools chip={drill ? null : chip} setChip={pickChip} commentary={commentary} match={match} innings={innings} groups={view} onJump={toOver}
+            drill={drill && { what: drill.what, runs: drill.runs, lines: view.flatMap((g) => g.lines) }} onAll={() => setDrill(null)}/>
         </Suspense>
       </ErrorBoundary>
       {!view.length && <Quiet testid="mc-commentary-filtered-none">{NONE_FOR[chip] ?? "Nothing to show."}</Quiet>}

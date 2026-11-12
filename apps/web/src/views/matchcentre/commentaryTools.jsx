@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { COMMENTARY_FILTER, commentaryCounts } from "@scrbrd/scoring";
 import { T } from "../../design/tokens.js";
 import { teamOf } from "../../lib/matchCentre.js";
@@ -88,10 +88,43 @@ function OverJump({ match, innings, groups, onJump }) {
   );
 }
 
-/** The chips, then the jump. */
-export default function CommentaryTools({ chip, setChip, commentary, match, innings, groups, onJump }) {
+const BALL_KINDS = new Set(["ball", "four", "six", "wicket"]);
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * CRI-2.3: what a chart's bar or area opened the Commentary on — its balls,
+ * and the awards in its runs — and the way to every ball. The focus comes
+ * here when it opens, so a screen reader hears what is listed.
+ */
+function Drill({ drill, onAll }) {
+  const head = useRef(/** @type {HTMLParagraphElement | null} */ (null));
+  useEffect(() => {
+    head.current?.scrollIntoView({ block: "start", behavior: "instant" });
+    head.current?.focus({ preventScroll: true });
+  }, []);
+  const balls = drill.lines.filter((c) => BALL_KINDS.has(c.kind)).length;
+  const other = drill.lines.length - balls;
+  const what = drill.what ? `${drill.what[0].toUpperCase()}${drill.what.slice(1)}` : "From the chart";
+  return (
+    <div data-testid="mc-drill" data-lines={drill.lines.length} style={{ display: "flex", gap: T.space.sm, alignItems: "center", flexWrap: "wrap",
+      padding: `${T.space.sm} ${T.space.md}`, borderRadius: T.radius.md, border: `1px solid ${T.line.normal}`, background: T.surface.interactive }}>
+      <p ref={head} tabIndex={-1} data-testid="mc-drill-what" style={{ ...T.role.body, color: T.content.primary, margin: 0, flex: "1 1 200px", scrollMarginTop: T.space.lg }}>
+        <strong>{what}</strong>{` · ${plural(drill.runs, "run")} · ${plural(balls, "ball")}${other ? ` and ${plural(other, "award")}` : ""}, listed below`}
+      </p>
+      <button type="button" data-testid="mc-drill-all" onClick={onAll} className="pressBtn os-state"
+        style={{ minHeight: "44px", padding: `0 ${T.space.md}`, borderRadius: T.radius.pill, cursor: "pointer", background: "transparent",
+          border: `1px solid ${T.line.normal}`, color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
+        Every ball
+      </button>
+    </div>
+  );
+}
+
+/** The chips, then the jump; a chart's balls first, where it opened the tab. */
+export default function CommentaryTools({ chip, setChip, commentary, match, innings, groups, onJump, drill = null, onAll }) {
   return (
     <div data-testid="mc-commentary-tools" style={{ display: "grid", gap: T.space.sm, marginBottom: T.space.md }}>
+      {drill && <Drill drill={drill} onAll={onAll}/>}
       <Chips chip={chip} setChip={setChip} commentary={commentary}/>
       <OverJump match={match} innings={innings} groups={groups} onJump={onJump}/>
     </div>

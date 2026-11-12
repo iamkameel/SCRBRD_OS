@@ -23,7 +23,7 @@ import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   deriveInnings, deriveInningsList, inningsStart, batters, bowler, ball, penalty, retire, revision, voidEvent,
-  BALL_TYPE, DISMISSAL, NOT_IN_OVER, notInOverDelivery,
+  BALL_TYPE, DISMISSAL, NOT_IN_OVER, notInOverDelivery, deriveCommentary, filterCommentary, lineEventId,
 } from "@scrbrd/scoring";
 import { WormChart, ManhattanChart, RunRateChart, AnalysisDashboard } from "../src/scorer/charts.jsx";
 import { projectInnings, projectMatch, runRates, deliveryRuns } from "../src/scorer/chartData.js";
@@ -329,7 +329,7 @@ console.log("\nF. The shared projection, over generated innings");
   let seed = 42;
   const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
   const pick = (a) => a[Math.floor(rnd() * a.length)];
-  let worst = null, checked = 0;
+  let worst = null, checked = 0, drillWorst = null, barsSeen = 0, awarded = 0;
   for (let t = 0; t < 150; t++) {
     const logs = [0, 1].map((i) => {
       const e = [...open(i, { overs: 3, teamKey: i ? "B" : "A", target: i ? 999 : null })];
@@ -361,9 +361,20 @@ console.log("\nF. The shared projection, over generated innings");
     });
     const list = deriveInningsList(logs);
     const projs = projectMatch(list, { events: logs });
+    // CRI-2.3: a bar's balls, as the Commentary lists them (filtered by event id).
+    const told = deriveCommentary(logs.flat());
     projs.forEach((p, i) => {
       const inn = list[i];
       checked++;
+      for (const o of p.overs) {
+        const ids = o.parts.map((x) => x.id);
+        const listed = filterCommentary(told, { ids }).map((x) => lineEventId(x.key));
+        const sum = o.parts.reduce((s, x) => s + x.runs, 0);
+        if (sum !== o.runs) drillWorst ??= { t, i, over: o.over, problem: `parts sum ${sum}, bar ${o.runs}` };
+        if (ids.some((x) => x == null)) drillWorst ??= { t, i, over: o.over, problem: "a part with no event id" };
+        if (listed.length !== ids.length || listed.some((x) => !ids.includes(x))) drillWorst ??= { t, i, over: o.over, problem: `${ids.length} parts, ${listed.length} lines` };
+        barsSeen++; if (o.parts.some((x) => !inn.ballLog.some((b) => b.id === x.id))) awarded++;
+      }
       const end = p.points.at(-1)?.runs;
       const bars = p.overs.reduce((s, o) => s + o.runs, 0);
       const nums = [...p.points.flatMap((q) => [q.ball, q.runs]), ...p.overs.flatMap((o) => [o.runs, o.cum, o.balls])];
@@ -381,6 +392,8 @@ console.log("\nF. The shared projection, over generated innings");
   }
   ok(`${checked} generated innings: the worm ends on the fold's total, bars + credits add up to it, balls and wickets agree, every number finite`,
      worst == null, worst);
+  ok(`CRI-2.3: each of ${barsSeen} bars lists its events (${awarded} with a penalty award among them), each by one commentary line, and they add up to the bar's runs`,
+     drillWorst == null && barsSeen > 500 && awarded > 20, JSON.stringify(drillWorst));
 }
 {
   const e = [...open(0, { overs: 1 }), b(0, BALL_TYPE.WIDE, 0), b(0, BALL_TYPE.NO_BALL, 4), ...Array.from({ length: 6 }, () => dot(0))];

@@ -120,7 +120,9 @@ export function filterBalls(balls = [], { batterId = null, bowlerId = null, matc
  *
  * `areas` is all eight named areas, always, each with its runs and its
  * boundary count (fours and sixes), zero rather than omitted when nothing
- * went there, so a panel can draw all eight every time.
+ * went there, so a panel can draw all eight every time — and `ids`, the
+ * event ids of the balls that went there, whose values add up to its runs:
+ * the balls an area lists in the Commentary (CRI-2.3).
  *
  * `excluded` says what a percentage or an area could not use: `unplaced`
  * (no theta and no seg at all — a leave, a pad, an unassessed delivery) and
@@ -146,6 +148,8 @@ export function wagonAnalysis(balls = [], { batHandFor = () => "R", chip = null 
   const sideRuns = { off: 0, leg: 0 };
   const areaRuns = Object.fromEntries(AREAS.map((a) => [a.key, 0]));
   const areaBoundaries = Object.fromEntries(AREAS.map((a) => [a.key, 0]));
+  /** @type {Record<string, string[]>} */
+  const areaIds = Object.fromEntries(AREAS.map((a) => [a.key, []]));
   let unplaced = 0, straight = 0;
   for (const b of balls) {
     if (!isPlaced(b)) { unplaced += 1; continue; }
@@ -154,6 +158,7 @@ export function wagonAnalysis(balls = [], { batHandFor = () => "R", chip = null 
     const v = Number(b.value) || 0;
     sideRuns[/** @type {"off" | "leg"} */ (side)] += v;
     areaRuns[area] += v;
+    if (b.id != null) areaIds[area].push(b.id);
     if (boundaryHit(b) != null) areaBoundaries[area] += 1;   // F7: to the rope, not any four or six
   }
   const total = sideRuns.off + sideRuns.leg;
@@ -163,6 +168,6 @@ export function wagonAnalysis(balls = [], { batHandFor = () => "R", chip = null 
     leg: { runs: sideRuns.leg, pct: pct(sideRuns.leg) },
     total,
   };
-  const areas = AREAS.map((a) => ({ ...a, runs: areaRuns[a.key], boundaries: areaBoundaries[a.key] }));
+  const areas = AREAS.map((a) => ({ ...a, runs: areaRuns[a.key], boundaries: areaBoundaries[a.key], ids: areaIds[a.key] }));
   return { chips, shown, sides, areas, excluded: { unplaced, straight } };
 }

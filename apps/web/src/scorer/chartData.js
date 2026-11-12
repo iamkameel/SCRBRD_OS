@@ -60,11 +60,11 @@ export function allotmentOf(inn, fallback) {
  * fold added. Null when the log is not this innings' (its deliveries do not
  * match the fold's), so nothing is placed from it.
  * @param {any[] | null | undefined} events  @param {number} deliveries
- * @returns {{after: number, runs: number}[] | null}
+ * @returns {{after: number, runs: number, id: string | null}[] | null}
  */
 function awardsOf(events, deliveries) {
   if (!Array.isArray(events) || !events.length) return null;
-  /** @type {{after: number, runs: number}[]} */
+  /** @type {{after: number, runs: number, id: string | null}[]} */
   const out = [];
   let k = 0, prev = 0;
   try {
@@ -72,7 +72,7 @@ function awardsOf(events, deliveries) {
       const runs = n(inn.runs);
       if (ev.kind === KIND.BALL) k++;
       else if (ev.kind === KIND.INNINGS_SUMMARY) return null;
-      else if (runs !== prev) out.push({ after: k, runs: runs - prev });
+      else if (runs !== prev) out.push({ after: k, runs: runs - prev, id: ev.id ?? null });
       prev = runs;
     }
   } catch { return null; }
@@ -82,7 +82,11 @@ function awardsOf(events, deliveries) {
 /**
  * @typedef {{ball: number, runs: number}} WormPoint
  * @typedef {{ball: number, runs: number, n: number, name: string, how: string}} WormWicket
- * @typedef {{over: number, runs: number, wickets: number, balls: number, complete: boolean, cum: number}} OverBar
+ * @typedef {{id: string | null, runs: number}} OverPart  an event in an over's bar, and the runs it added (CRI-2.3)
+ * @typedef {{over: number, runs: number, wickets: number, balls: number, complete: boolean, cum: number, parts: OverPart[]}} OverBar
+ *   `parts`: every delivery in the over and every award placed in it, by event
+ *   id, with its runs; they add up to `runs`, so a bar's balls can be listed
+ *   (the Commentary, filtered by id) and every run in it traced to one
  * @typedef {{
  *   points: WormPoint[], wickets: WormWicket[], overs: OverBar[],
  *   total: number, balls: number, allotment: number,
@@ -126,7 +130,7 @@ export function projectInnings(inn, { events = null, opening = null, overs } = {
   /** @param {number} over */
   const bar = (over) => {
     let b = bars.get(over);
-    if (!b) { b = { over, runs: 0, wickets: 0, balls: 0, complete: false, cum: 0 }; bars.set(over, b); }
+    if (!b) { b = { over, runs: 0, wickets: 0, balls: 0, complete: false, cum: 0, parts: [] }; bars.set(over, b); }
     return b;
   };
 
@@ -138,7 +142,9 @@ export function projectInnings(inn, { events = null, opening = null, overs } = {
       runs += awards[a].runs;
       // An award belongs to the over of the delivery before it: the ball
       // that struck the helmet, the fielder's offence on that ball.
-      bar(lastOver).runs += awards[a].runs;
+      const ov = bar(lastOver);
+      ov.runs += awards[a].runs;
+      ov.parts.push({ id: awards[a].id, runs: awards[a].runs });
       points.push({ ball: x, runs });
       a++;
     }
@@ -149,6 +155,7 @@ export function projectInnings(inn, { events = null, opening = null, overs } = {
     const r = deliveryRuns(b);
     const ov = bar(over);
     ov.runs += r;
+    ov.parts.push({ id: b.id ?? null, runs: r });
     if (countsInOver(b)) { x += 1; ov.balls += 1; }
     if (isOut(b)) ov.wickets += 1;
     runs += r;

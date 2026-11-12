@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useTheme } from "../../design/theme.js";
 import { deriveMatch, fromRow } from "@scrbrd/scoring";
@@ -335,15 +335,36 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // Commentary ends the jump; the Scorecard, drawn again, puts itself back and says so.
   const [ballAt, setBallAt] = useState(/** @type {string | null} */ (null));
   const [cardAt, setCardAt] = useState(/** @type {{innings: number, openId: string, scrollTop: number} | null} */ (null));
-  useEffect(() => { if (tab !== "commentary") setBallAt(null); }, [tab]);
+  // CRI-2.3: a chart's bar or area opens the Commentary at its balls (`ballsAt`: their event ids, and
+  // what they are), and the Analytics tab's scroll is kept for the way back, as the Scorecard's is.
+  const [ballsAt, setBallsAt] = useState(/** @type {{ids: string[], what: string, runs: number} | null} */ (null));
+  const chartAt = useRef(/** @type {number | null} */ (null));
+  useEffect(() => {
+    if (tab !== "commentary") { setBallAt(null); setBallsAt(null); }
+    if (tab !== "commentary" && tab !== "analytics") chartAt.current = null;
+  }, [tab]);
+  useEffect(() => {
+    if (tab !== "analytics" || chartAt.current == null) return;
+    const top = chartAt.current;
+    chartAt.current = null;
+    // After the tab is drawn: the page where the reader left it.
+    requestAnimationFrame(() => { const el = document.querySelector('[data-testid="mc-analytics"]'); if (el) scrollerOf(el).scrollTop = top; });
+  }, [tab]);
   const toBall = ({ key, innings: at, openId, from }) => {
     setCardAt({ innings: at, openId, scrollTop: scrollerOf(from).scrollTop });
     setBallAt(key);
     setTab("commentary");
   };
+  const toBalls = (balls) => {
+    const el = document.querySelector('[data-testid="mc-analytics"]');
+    chartAt.current = el ? scrollerOf(el).scrollTop : null;
+    setBallsAt(balls);
+    setTab("commentary");
+  };
   // Back: the browser's own step where the Match Centre gave the tab an address (the jump was a new
   // entry), else the tab itself.
   const backToCard = () => { if (route) window.history.back(); else setTab("scorecard"); };
+  const backToCharts = () => { if (route) window.history.back(); else setTab("analytics"); };
   // ...of the match's own innings: a super over has its block on the
   // Scorecard and the board on the Summary, and no place in the toggles.
   const inningsSel = picked ?? Math.max(0, matchInningsOf(played).length - 1);
@@ -466,7 +487,9 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
     onNav, onOpenDuties,
     // CRI-1.5: the Scorecard's dismissals open the Commentary at their ball, and the way back.
     toBall: signedIn() && !log.demo ? toBall : null, restore: cardAt, onRestored: () => setCardAt(null),
-    ballKey: ballAt, onBack: ballAt ? backToCard : null };
+    ballKey: ballAt, onBack: ballAt ? backToCard : ballsAt ? backToCharts : null, backLabel: ballsAt ? "Back to the charts" : "Back to the scorecard",
+    // CRI-2.3: a chart's bar or area opens the Commentary at its balls.
+    toBalls: signedIn() && !log.demo ? toBalls : null, balls: ballsAt };
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id} style={{ minWidth: 0 }}>
