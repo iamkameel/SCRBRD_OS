@@ -11667,6 +11667,19 @@ BEGIN
                             'rejudged', v_first.id, 'rejudged_striker', v_other);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- The plant's ball and void taken out again once (stray) has asked of them,
+-- so the later labels read the log as it stands (no ball at another school):
+-- while one is there, every read of ball_event_live also asks the reader's
+-- own SELECT of the whole log once, which across the cast in (match) and
+-- (closed) ran for hours. The re-judged striker stays. True when both are gone.
+CREATE OR REPLACE FUNCTION _v152_unplant(p_plant jsonb) RETURNS boolean AS $$
+BEGIN
+  ALTER TABLE ball_event DISABLE TRIGGER USER;
+  DELETE FROM ball_event WHERE id IN ((p_plant->>'stray')::bigint, (p_plant->>'void')::bigint);
+  ALTER TABLE ball_event ENABLE TRIGGER USER;
+  RETURN NOT EXISTS (SELECT 1 FROM ball_event WHERE id IN ((p_plant->>'stray')::bigint, (p_plant->>'void')::bigint));
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- This session's rows through ball_event_live against db/121's view under
 -- row security: equal, every column, or §126 fails naming the reader and the
 -- label. Returns how many rows the session reads.
@@ -39666,12 +39679,14 @@ $v116$;
   --              own sub-select would not
   --   (stray)    the same once a ball and a void are planted at the other
   --              school of a host's fixture; the stray ball read by some and
-  --              not others, the void's target read where the void is not
+  --              not others, the void's target read where the void is not;
+  --              then both taken out again (_v152_unplant), so the labels
+  --              below read the log as it stands
   --   (closed)   a RESTRICTIVE policy added to ball_event, then one to match
   --              (the review's B1): both pins break at once, the view reads
   --              exactly what the tables' own SELECT returns for everybody,
-  --              and somebody reads less than before; dropped, both pins
-  --              hold again
+  --              and somebody reads less than at (rows), before the plant;
+  --              dropped, both pins hold again
   -- Falsified once each (11 Nov 2026), the view broken with its pins made to
   -- hold and this section run on the seed: the exact path dropped went red at
   -- (closed); the per-ball branch at (stray); the away arm at (rows); match's
@@ -39703,6 +39718,9 @@ $v116$;
     n_hid   int := 0;
     n_less  int := 0;
     seen    jsonb := '{}';
+    b_stray boolean;
+    b_host  boolean;
+    b_tgt   boolean;
   BEGIN
     -- (pinned)
     PERFORM _assert(ball_log_policies_unpinned() IS NULL, format('§126 (pinned): %s', ball_log_policies_unpinned()));
@@ -39745,13 +39763,24 @@ $v116$;
       FOR u IN SELECT * FROM _v152_people() LOOP
         PERFORM _as(u);
         n := _v152_same(CASE pass WHEN 1 THEN 'rows' ELSE 'stray' END);
-        IF pass = 1 AND n > 0 THEN n_some := n_some + 1; END IF;
-        IF pass = 2 THEN
+        IF pass = 1 THEN
+          IF n > 0 THEN n_some := n_some + 1; END IF;
+          -- what each reads before the plant, for (closed)
           seen := seen || jsonb_build_object(u::text, n);
-          IF EXISTS (SELECT 1 FROM ball_event_live l WHERE l.id = (y->>'stray')::bigint) THEN n_stray := n_stray + 1;
-          ELSIF EXISTS (SELECT 1 FROM ball_event_live l WHERE l.match_id = (y->>'match')::uuid AND l.school_id = HIL) THEN n_host := n_host + 1; END IF;
-          IF EXISTS (SELECT 1 FROM ball_event_live l WHERE l.id = (y->>'target')::bigint) THEN n_tgt := n_tgt + 1;
-          ELSIF EXISTS (SELECT 1 FROM ball_event_live l WHERE l.match_id = (y->>'match')::uuid AND l.school_id = HIL) THEN n_hid := n_hid + 1; END IF;
+        END IF;
+        IF pass = 2 THEN
+          -- the stray ball, the host's balls of the fixture, the void's target:
+          -- one read of the view (each read asks the whole log once while the
+          -- stray ball is there)
+          SELECT coalesce(bool_or(l.id = (y->>'stray')::bigint), false),
+                 coalesce(bool_or(l.match_id = (y->>'match')::uuid AND l.school_id = HIL), false),
+                 coalesce(bool_or(l.id = (y->>'target')::bigint), false)
+            INTO b_stray, b_host, b_tgt
+            FROM ball_event_live l
+           WHERE l.id IN ((y->>'stray')::bigint, (y->>'target')::bigint)
+              OR (l.match_id = (y->>'match')::uuid AND l.school_id = HIL);
+          IF b_stray THEN n_stray := n_stray + 1; ELSIF b_host THEN n_host := n_host + 1; END IF;
+          IF b_tgt THEN n_tgt := n_tgt + 1; ELSIF b_host THEN n_hid := n_hid + 1; END IF;
         END IF;
         -- (pad) a pad's credential at each school's busiest fixture, either
         -- end; after the plant, at the planted fixture (its re-judged striker),
@@ -39773,6 +39802,8 @@ $v116$;
     PERFORM _assert(n_stray > 0 AND n_host > 0 AND n_tgt > 0 AND n_hid > 0,
       format('§126 (stray): the stray ball read by %s, the host''s balls without it by %s, the void''s target by %s and hidden from %s',
              n_stray, n_host, n_tgt, n_hid));
+    PERFORM _assert(_v152_unplant(y), format('§126 (stray): the planted ball and void were not taken out: %s', y));
+    PERFORM _assert(ball_log_pinned() AND ball_log_text_pinned(), '§126 (stray): taking the plant out broke a pin');
 
     -- (support) a platform administrator's support session at each school.
     PERFORM _as(U_PLAT);
