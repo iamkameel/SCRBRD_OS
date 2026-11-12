@@ -307,8 +307,8 @@ group("A. REACH-D2 (Kameel, 7 and 11 Nov 2026): a boy's figures across matches a
   ok("...and no capability every pupil holds at his whole side (no performance.read)", !/performance\.read/.test(g));
   const { ROLE_CAPABILITIES } = await import("@scrbrd/policy/roles");
   const rosterHolders = Object.entries(ROLE_CAPABILITIES).filter(([, caps]) => [...caps].includes("player.roster.read")).map(([r]) => r).sort();
-  ok("the any-side arm is the school's staff's alone: exactly these roles hold player.roster.read",
-     rosterHolders.join() === "assistantcoach,coach,directorofsport,principal,schooladmin,sportsadmin,superadmin,teammanager", rosterHolders.join());
+  ok(`the any-side arm is the school's staff's alone: exactly these roles hold player.roster.read (${rosterHolders.join()})`,
+     rosterHolders.join() === "assistantcoach,coach,directorofsport,principal,schooladmin,sportsadmin,superadmin,teammanager");
 
   // Every read of a boy's figures across matches carries it.
   const has = (/** @type {string} */ r) => flat(READ_QUERIES[r].text).includes(g);
