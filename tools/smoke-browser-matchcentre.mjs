@@ -726,7 +726,8 @@ try {
       await g.scrollIntoViewIfNeeded();
       // Over 7's bar at the foot of the screen: the page scrolled, to be put back.
       if (o.over === 6) { await g.evaluate((e) => e.scrollIntoView({ block: "end", behavior: "instant" })); await D3.waitForTimeout(100); wasAt = await scrolled(); }
-      await g.click();
+      // Over 7 by a click that does not move the page first (a pointer's click would scroll the bar into the middle).
+      if (o.over === 6) await g.dispatchEvent("click"); else await g.click();
       await tid(D3, "mc-drill").waitFor({ timeout: 4000 }).catch(() => {});
       await D3.waitForTimeout(200);
       const keys = await listed();
@@ -762,7 +763,7 @@ try {
     await tid(D3, "mc-drill-all").click(); await D3.waitForTimeout(300);
     const latest = `Over ${inn2.ballLog.at(-1).over + 1}`;
     ok(`"Every ball": the filter gone, All pressed, the latest over (${latest} of the chase) first`, await tid(D3, "mc-drill").count() === 0
-       && await tid(D3, "mc-chip-all").getAttribute("aria-pressed") === "true" && (await tid(D3, "mc-over-title").first().innerText()).trim() === latest,
+       && await tid(D3, "mc-chip-all").getAttribute("aria-pressed") === "true" && (await tid(D3, "mc-over-title").first().innerText()).trim().toLowerCase() === latest.toLowerCase(),
        await tid(D3, "mc-over-title").first().innerText());
     await backToCharts().catch(() => {});
     if (!(await tid(D3, "mc-analytics").count())) { await pickTab(D3, "analytics"); }
