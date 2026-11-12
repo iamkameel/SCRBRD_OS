@@ -741,62 +741,49 @@ try {
   ok("...and so does its button", await tid(L, "mc-bigscreen").count() === 0);
 
   // PUBLIC_BY_TERMS §2.5 (slice 1; Kameel, 12 Nov 2026, (b)): the screen faces
-  // the crowd, so when a boy under a never-public mark is on the field his
-  // WHOLE SIDE is its position on it — never the one "Batter" among names —
-  // and the other side keeps its names. Only there: the Match Centre beneath
-  // still names him for its signed-in reader (083 §7).
-  group("The big screen shows a marked boy's whole side by position, the other side by name (PUBLIC_BY_TERMS §2.5)");
+  // the crowd, so when a side's squad carries a boy under a never-public mark
+  // the WHOLE SIDE is its position on it — never the one "Batter" among
+  // names — and the other side keeps its names. Only there: the Match Centre
+  // beneath still names them for its signed-in reader (083 §7). With no sheet
+  // (this fixture has none) an away boy's mark is never asked (review B4), so
+  // the away side is always by position.
+  group("The big screen: a side by position, the other by name (PUBLIC_BY_TERMS §2.5)");
   const onStrike = after.batsmen.find((b) => b.id === after.striker);
   const partner = after.batsmen.find((b) => b.id === after.nonStriker);
-  const fielder = after.bowlers[0];
   const setter = (await q(`select id from app_user where email = 'sarah@example.invalid'`))[0].id;
   const mark = (/** @type {string} */ id) =>
     q(`insert into player_never_public (player_id, reason, set_on, set_by) values ($1, 'Walk: a mark', sa_today(), $2)`, [id, setter]);
   const unmark = (/** @type {string} */ id) => q(`update player_never_public set ended_on = sa_today(), ended_by = set_by, ended_at = now()
                                                    where player_id = $1 and ended_on is null`, [id]);
-  const bigNames = () => L.locator('[data-testid="mc-bigscreen"] [data-testid="display-batter"] .dv-name').allInnerTexts();
+  const bigNames = (/** @type {any} */ page) => page.locator('[data-testid="mc-bigscreen"] [data-testid="display-batter"] .dv-name').allInnerTexts();
   // Open the big screen and wait for its own read (it asks afresh on opening), then a paint.
-  const openBig = async () => {
-    const answered = L.waitForResponse((r) => r.url().includes("/api/read/ground_screen_sides"), { timeout: 8000 }).catch(() => null);
-    await tid(L, "mc-bigscreen-open").click();
+  const openBig = async (/** @type {any} */ page) => {
+    const answered = page.waitForResponse((r) => r.url().includes("/api/read/ground_screen_sides"), { timeout: 8000 }).catch(() => null);
+    await tid(page, "mc-bigscreen-open").click({ timeout: 6000 }).catch(() => {});
     const r = await answered;
-    await L.waitForTimeout(400);
+    await page.waitForTimeout(500);
     return r ? r.json().catch(() => null) : null;
   };
-  // The fielding side's opening bowler, who has been on the field, is marked: his side by position, the batting side by name.
-  await mark(fielder.id);
-  let said = await openBig();
-  ok("the big screen asks which sides, and is told per side, with no player id",
+  const closeBig = async (/** @type {any} */ page) => { await tid(page, "mc-bigscreen-close").click().catch(() => {}); await page.waitForTimeout(300); };
+  const flags = (/** @type {any} */ said) => JSON.stringify((said?.rows ?? []).map((r) => [r.team, r.position_only]).sort());
+  let said = await openBig(L);
+  ok("the big screen asks which sides, and is told per side, with the log's head and no player id",
      Array.isArray(said?.rows) && said.rows.length === 2 && said.rows.every((r) => JSON.stringify(Object.keys(r).sort()) === '["log_seq","position_only","team"]')
-     && said.rows.filter((r) => r.position_only).length === 1 && !/[0-9a-f]{8}-[0-9a-f]{4}-/.test(JSON.stringify(said)), JSON.stringify(said));
-  ok("a marked boy in the field: both batters, of the other side, keep their names",
-     JSON.stringify((await bigNames()).sort()) === JSON.stringify([onStrike?.name, partner?.name].sort()), (await bigNames()).join(" | "));
-  ok("...and the marked bowler's name is nowhere on the big screen", !(await tid(L, "mc-bigscreen").innerText()).includes(fielder?.name));
-  await tid(L, "mc-bigscreen-close").click();
-  await L.waitForTimeout(300);
-  await unmark(fielder.id);
-  // The batter on strike is marked: his whole side, his partner too, by position.
-  await mark(onStrike.id);
-  said = await openBig();
-  ok("the batter on strike marked: the server says his side by position", said?.rows?.filter((r) => r.position_only).length === 1, JSON.stringify(said));
-  ok("...and both batters, the marked boy's partner too, are 'Batter'",
-     JSON.stringify(await bigNames()) === JSON.stringify(["Batter", "Batter"]), (await bigNames()).join(" | "));
+     && !/[0-9a-f]{8}-[0-9a-f]{4}-/.test(JSON.stringify(said)), JSON.stringify(said));
+  ok("no sheet: the away side is by position, the host's named",
+     flags(said) === JSON.stringify([["1XI", false], ["Westville Boys' High 1XI", true]]), JSON.stringify(said));
+  ok("...so both batters, of the away side, are 'Batter'",
+     JSON.stringify(await bigNames(L)) === JSON.stringify(["Batter", "Batter"]), (await bigNames(L)).join(" | "));
   const bigText = await tid(L, "mc-bigscreen").innerText();
   ok("...neither batter's name is anywhere on the big screen", !bigText.includes(onStrike?.name) && !bigText.includes(partner?.name));
-  await tid(L, "mc-bigscreen-close").click();
-  await L.waitForTimeout(300);
-  ok("the Match Centre beneath still names him for its signed-in reader", (await text(L)).includes(onStrike?.name));
-  await unmark(onStrike.id);
-  said = await openBig();
-  ok("the mark ended, the big screen names his side again", said?.rows?.every((r) => r.position_only === false)
-     && JSON.stringify((await bigNames()).sort()) === JSON.stringify([onStrike?.name, partner?.name].sort()), (await bigNames()).join(" | "));
-  await tid(L, "mc-bigscreen-close").click();
-  await L.waitForTimeout(300);
+  await closeBig(L);
+  ok("the Match Centre beneath still names them for its signed-in reader", (await text(L)).includes(onStrike?.name));
 
   // Review B1: a catch as the pad writes it (`fielder` the scorecard's name,
-  // `fielders` his reference) by a marked boy who has neither bowled nor
-  // kept. His side is position-only from its squad, and no "c <his name>"
-  // reaches the screen. A fixture of its own, so the live one's log is not moved.
+  // `fielders` his reference) by a marked away boy who has neither bowled
+  // nor kept: no "c <his name>" reaches the screen. Then a marked host boy
+  // turns his whole side to positions, and back when the mark ends. A
+  // fixture of its own, so the live one's log is not moved.
   {
     const byName = (/** @type {string} */ n) => fx.players[n];
     const [hb1, hb2, hb3] = ["D Erasmus", "R Pillai", "S Naidu"];
@@ -817,20 +804,32 @@ try {
     ]);
     await mark(byName(wb2));
     const cs = await open();
-    ok("the director of sport signs in (a catch in the pad's shape)", await signIn(cs.page, /sarah@example\.invalid|Director/));
-    ok("...the fixture opens", await openMatch(cs.page, catchId));
-    const answered = cs.page.waitForResponse((r) => r.url().includes("/api/read/ground_screen_sides"), { timeout: 8000 }).catch(() => null);
-    await tid(cs.page, "mc-bigscreen-open").click({ timeout: 6000 }).catch(() => {});
-    const said2 = await (await answered)?.json().catch(() => null);
-    await cs.page.waitForTimeout(500);
-    ok("the catcher's side is position-only, from its squad, before he has bowled or kept",
-       JSON.stringify((said2?.rows ?? []).map((r) => [r.team, r.position_only]).sort()) === JSON.stringify([["1XI", false], ["Westville Boys' High 1XI", true]]),
-       JSON.stringify(said2));
-    const bigC = await tid(cs.page, "mc-bigscreen").innerText().catch(() => "");
+    const P = cs.page;
+    ok("the director of sport signs in (a catch in the pad's shape)", await signIn(P, /sarah@example\.invalid|Director/));
+    ok("...the fixture opens", await openMatch(P, catchId));
+    let s2 = await openBig(P);
+    ok("the catcher's side is by position, the batting side named",
+       flags(s2) === JSON.stringify([["1XI", false], ["Westville Boys' High 1XI", true]]), JSON.stringify(s2));
+    let bigC = await tid(P, "mc-bigscreen").innerText().catch(() => "");
     ok("no 'c C Botha', nor his name, anywhere on the big screen", !bigC.includes(wb2) && !/c C Botha/.test(bigC), bigC.slice(0, 300));
     ok("...and the batters, of the other side, are named", [hb2, hb3].every((n) => bigC.includes(n)), bigC.slice(0, 300));
-    await cs.ctx.close();
+    await closeBig(P);
     await unmark(byName(wb2));
+    // The host side's opener, out already, is marked: his whole side, the two batters in now too, by position.
+    await mark(byName(hb1));
+    s2 = await openBig(P);
+    ok("a marked host boy: the server says his side by position", flags(s2) === JSON.stringify([["1XI", true], ["Westville Boys' High 1XI", true]]), JSON.stringify(s2));
+    ok("...and both batters, his team-mates, are 'Batter'", JSON.stringify(await bigNames(P)) === JSON.stringify(["Batter", "Batter"]), (await bigNames(P)).join(" | "));
+    bigC = await tid(P, "mc-bigscreen").innerText().catch(() => "");
+    ok("...no host boy's name anywhere on the big screen", [hb1, hb2, hb3].every((n) => !bigC.includes(n)), bigC.slice(0, 300));
+    await closeBig(P);
+    ok("the Match Centre beneath still names them", (await text(P)).includes(hb2));
+    await unmark(byName(hb1));
+    s2 = await openBig(P);
+    ok("the mark ended: the host side named again", flags(s2) === JSON.stringify([["1XI", false], ["Westville Boys' High 1XI", true]])
+       && JSON.stringify((await bigNames(P)).sort()) === JSON.stringify([hb2, hb3].sort()), (await bigNames(P)).join(" | "));
+    await closeBig(P);
+    await cs.ctx.close();
   }
 
   group("SCRBRD-100: the result, decided live, in one clear moment — never replayed, never hiding the score long");

@@ -23,8 +23,8 @@
 -- the field for the whole of his side's fielding innings, so "on the field"
 -- and "in the XI" differ by no more than part of a batting innings.
 --
--- Safe to paste again: CREATE OR REPLACE, then REVOKE and GRANT; the guard
--- only reads.
+-- Safe to paste again: DROP and CREATE the one function (nothing depends on
+-- it), then REVOKE and GRANT; the guard only reads.
 --
 -- ── WHAT MOVES ──────────────────────────────────────────────────────
 --   - ground_screen_positions(uuid), the first draft's per-boy read (never
@@ -46,9 +46,13 @@
 --       hold, or a side none of whose members is on it, makes it true
 --       without asking any mark: a log cannot carry a boy onto the screen
 --       by name past the sheet, and a fabricated squad learns nothing.
---     * no sheet: position_only is a mark on any member. A member who is
---       not a player of either school in the match makes it true without
---       asking his mark, so no child of another school can be probed.
+--     * no sheet: position_only is a mark on any member who is a player of
+--       the HOST school. A member who is not (the away school's boy, any
+--       other school's, or no player) makes it true without asking his
+--       mark: a log written by whoever holds scoring.edit cannot probe a
+--       child of another school, the away side's included, whose school
+--       anyone with fixture.create may pick. On a sheetless fixture the
+--       away side is therefore always shown by position.
 --   Consents, names-off and the by-terms switches do not govern the
 --   school's own scoreboard (§2.5).
 --
@@ -104,6 +108,9 @@ BEGIN
 END $guard$;
 
 DROP FUNCTION IF EXISTS ground_screen_positions(uuid);
+-- Its return type grew log_seq while unpasted, and CREATE OR REPLACE cannot
+-- change a return type: made afresh, and granted again below.
+DROP FUNCTION IF EXISTS ground_screen_sides(uuid);
 
 CREATE OR REPLACE FUNCTION ground_screen_sides(p_match uuid)
 RETURNS TABLE (team text, position_only boolean, log_seq bigint) AS $$
@@ -155,10 +162,13 @@ RETURNS TABLE (team text, position_only boolean, log_seq bigint) AS $$
                       WHERE q.side IN (SELECT q2.side FROM members x JOIN sheet q2 ON q2.player_id = x.ref::uuid WHERE x.team = f.team)
                         AND coalesce((public_name_facts(q.player_id, NULL, sa_today()) ->> 'neverPublic')::boolean, true))
         ELSE
-          -- No sheet: a member of neither school is true, unasked; else a mark on any member.
+          -- No sheet: a member who is not a host-school player (the away
+          -- school's, any other school's, or no player) is true, unasked;
+          -- else a mark on a host-school member.
           EXISTS (SELECT 1 FROM members x WHERE x.team = f.team
-                   AND NOT EXISTS (SELECT 1 FROM player p, m WHERE p.id = x.ref::uuid AND p.school_id IN (m.school_id, m.away_school_id)))
+                   AND NOT EXISTS (SELECT 1 FROM player p, m WHERE p.id = x.ref::uuid AND p.school_id = m.school_id))
           OR EXISTS (SELECT 1 FROM members x WHERE x.team = f.team
+                      AND EXISTS (SELECT 1 FROM player p, m WHERE p.id = x.ref::uuid AND p.school_id = m.school_id)
                       AND coalesce((public_name_facts(x.ref::uuid, NULL, sa_today()) ->> 'neverPublic')::boolean, true))
       END AS position_only
       FROM firsts f
