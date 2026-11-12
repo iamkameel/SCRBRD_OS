@@ -596,8 +596,17 @@ try {
     ok("a team-mate's career?playerId= is refused: not one row of his", named.status === 200 && !named.rows.some((r) => r.player_id === NAIDOO), JSON.stringify(named.rows.map((r) => r.full_name)));
     const seasons = await get("career_by_season");
     ok("his seasons: his own rows and nobody else's", seasons.rows.length > 0 && seasons.rows.every((r) => r.player_id === PILLAY), JSON.stringify(seasons.rows.map((r) => `${r.full_name}@${r.season}`)));
+    // One measured shot of his own, in a fixture of the walk's, so his wheel has a ball to return.
+    const scorer = (await q(`select id from app_user where email = 'scorer@example.invalid'`))[0].id;
+    const WHEELM = (await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+                             values ($1, '1XI', 'Verify Reach XI', '2026-09-05 09:00+02', 'cricket', 'T20', 20, 'complete') returning id`, [HIL]))[0].id;
+    await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq, client_ts,
+                                     kind, ball_type, value, striker_id, bowler_id, theta, radius, placement_source, capture_profile)
+             values ($1, $2, 1, 1, 1, $3, 'd-reach', $4, 1, now(), 'ball', 'run', 2, $5, $6, 40, 0.5, 'point', 'full')`,
+            [WHEELM, HIL, scorer, `reach-${WHEELM}-1`, PILLAY, NAIDOO]);
+    const theirs = (await q(`select count(*)::int as n from ball_event_career where striker_id = $1 and kind = 'ball' and (theta is not null or seg is not null)`, [PILLAY]))[0].n;
     const wheel = await get(`player_shot_points?playerId=${PILLAY}`);
-    ok("his own wheel is read", wheel.status === 200 && wheel.rows.length > 0, wheel.rows.length);
+    ok("his own wheel is read, every placed ball of his", wheel.status === 200 && wheel.rows.length > 0 && wheel.rows.length === theirs, `${wheel.rows.length} of ${theirs}`);
     for (const mate of [NAIDOO, WHITFIELD]) {
       ok(`a team-mate's wheel is refused (${mate.slice(-2)})`, (await get(`player_shot_points?playerId=${mate}`)).rows.length === 0);
       ok(`...his match-ups (${mate.slice(-2)})`, (await get(`matchups?batterId=${mate}`)).rows.every((r) => r.batter_id === PILLAY || r.bowler_id === PILLAY));
