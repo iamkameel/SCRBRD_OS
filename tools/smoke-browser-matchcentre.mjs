@@ -44,7 +44,8 @@ import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
-import { deriveMatch, deriveInnings, deriveCommentary, runsOffBat, ball, batters, bowler, inningsStart, revision, sealInnings, placementFromTap } from "@scrbrd/scoring";
+import { deriveMatch, deriveInnings, deriveCommentary, runsOffBat, ball, batters, bowler, inningsStart, revision, sealInnings, placementFromTap,
+  scenarioOf, voidEvent } from "@scrbrd/scoring";
 import { buildMatchCentreFixture, writeEvents, HIL } from "./fixture-matchcentre.mjs";
 import { correctionsOf, withCorrectionLines } from "../apps/web/src/lib/corrections.js";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
@@ -235,8 +236,10 @@ try {
     squad: [{ id: "rb1", name: "Rain One" }, { id: "rb2", name: "Rain Two" }], bowlingSquad: [], overs: 20 }));
   addRev(batters({ striker: "rb1", nonStriker: "rb2" }));
   addRev(bowler({ bowler: "Rain Bowler" }));
-  addRev(ball({ value: 1 }));
-  addRev(ball({ value: 4 }));
+  // Twelve legal balls before the cut: no projection is made from fewer (GA-I29 A-D8).
+  for (const v of [1, 4, 0, 1, 2, 0]) addRev(ball({ value: v }));
+  addRev(bowler({ bowler: "Rain Bowler Two" }));
+  for (const v of [1, 1, 0, 4, 0, 1]) addRev(ball({ value: v }));
   addRev(revision({ overs: 14, target: null, reason: "rain" }));
   await writeEvents(q, revId, revLog);
   const revS = await open();
@@ -254,11 +257,115 @@ try {
   const revSub = await tid(revS.page, "mc-board-sub").innerText().catch(() => "");
   ok(`the first innings' board says "At this rate: ${revRate}" (${revInn.runs} off ${revInn.balls}, ${revOvers} overs), beside the run rate`,
      revSub.includes(`At this rate: ${revRate}`) && /CRR \d/.test(revSub) && revSub.indexOf("CRR") < revSub.indexOf("At this rate"), revSub);
+  // GA-I29 A3: a first innings the umpires cut is projected to its new allotment, and the words say so.
+  await tid(revS.page, "mc-scenario").waitFor({ timeout: 8000 }).catch(() => {});
+  const revCrr = ((6 * revInn.runs) / revInn.balls).toFixed(2);
+  const revOwn = await tid(revS.page, "mc-scenario-own").innerText().catch(() => "");
+  ok(`the scenario panel projects to the cut: "At their rate so far (${revCrr} an over): ${revRate} off 14 overs (revised from 20)"`,
+     revOwn === `At their rate so far (${revCrr} an over): ${revRate} off 14 overs (revised from 20)`, revOwn);
   ok("no console errors (revision)", revS.errors.length === 0, revS.errors.join(" | "));
   await revS.ctx.close();
   // Done with it: taken out of "live" so the later "nothing live" screenshot
   // still shows the true empty state rather than this one fixture.
   await q(`update match set status = 'complete' where id = $1`, [revId]);
+
+  group("GA-I29: scenarios — from 12 legal balls, a stepper a keyboard drives, a void that moves the outcome and keeps the rate");
+  {
+    // A first innings of twenty overs, live, with no ground (db/133: the T10 below is on the Oval).
+    const scId = (await q(
+      `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
+       values ($1, '1XI', 'Scenario Test Opponent', $2, now() - interval '30 minutes', 'cricket', 'T20', 20, 'live') returning id`, [HIL, null]))[0].id;
+    await q(`insert into match_toss (match_id, school_id, won_by, decision) values ($1, $2, 'home', 'bat')`, [scId, HIL]);
+    /** @type {any[]} */
+    const scLog = [];
+    let sn = 0;
+    const addSc = (ev) => { const e = { ...ev, innings: 0, id: `mc-sc-${++sn}`, clientTs: Date.parse("2026-11-12T08:00:00Z") + sn * 20000 }; scLog.push(e); return e; };
+    addSc(inningsStart({ battingTeam: "1XI", bowlingTeam: "Scenario Test Opponent", teamKey: "1XI", bowlingTeamKey: "Scenario Test Opponent",
+      squad: Array.from({ length: 11 }, (_, k) => ({ id: `sc${k}`, name: `Scen ${k + 1}` })), bowlingSquad: [], overs: 20 }));
+    addSc(batters({ striker: "sc0", nonStriker: "sc1" }));
+    addSc(bowler({ bowler: "Scen Bowler" }));
+    for (const v of [1, 0, 4, 1, 0, 2]) addSc(ball({ value: v }));
+    addSc(bowler({ bowler: "Scen Bowler Two" }));
+    for (const v of [1, 1, 0, 6, 1]) addSc(ball({ value: v }));
+    await writeEvents(q, scId, scLog);
+    /** Write events after those already written, in order. @param {any[]} more */
+    const writeMore = async (more) => { const from = scLog.length; for (const e of more) addSc(e); await writeEvents(q, scId, scLog.slice(from), from); return scLog.slice(from); };
+    const eleven = deriveMatch(scLog).innings[0];
+    ok("the fixture is 17 off 11 legal balls", eleven.runs === 17 && eleven.balls === 11, `${eleven.runs}/${eleven.balls}`);
+    const sc = await open({ liveMs: 1000, viewport: PHONE });
+    ok("the director of sport signs in", await signIn(sc.page, /sarah@example\.invalid|Director/));
+    ok("the fixture opens", await openMatch(sc.page, scId));
+    const S = sc.page;
+    await afterReads(S, 2500);
+    ok("11 legal balls: no scenario panel, and no \"At this rate\" (A-D8: twelve, on every surface)",
+       await tid(S, "mc-board").count() === 1 && await tid(S, "mc-scenario").count() === 0 && !/At this rate/.test(await tid(S, "mc-board-sub").innerText().catch(() => "")));
+    // The twelfth ball: 19 off 12. Every figure worked out here, by hand.
+    await writeMore([ball({ value: 2 })]);
+    const R = 19, b = 12, L = 120 - b;
+    const proj = (/** @type {number} */ halves) => Math.round(R + (halves / 2) * L / 6);
+    ok("the twelfth ball draws the panel", await until(S, () => !!document.querySelector('[data-testid="mc-scenario"]'), 12000));
+    const own = await tid(S, "mc-scenario-own").innerText().catch(() => "");
+    ok('"At their rate so far (9.50 an over): 190 off 20 overs" (19 × 120 ÷ 12)', own === "At their rate so far (9.50 an over): 190 off 20 overs", own);
+    ok('...and the board\'s "At this rate: 190" beside it, one figure', (await tid(S, "mc-board-sub").innerText().catch(() => "")).includes("At this rate: 190"));
+    const hand = await tid(S, "mc-scenario-hand").innerText().catch(() => "");
+    ok('..."10 wickets in hand · 108 balls left (18 overs)"', hand === "10 wickets in hand · 108 balls left (18 overs)", hand);
+    const src = (await tid(S, "mc-scenario-source").innerText().catch(() => "")).replace(/\s+/g, " ");
+    ok(`...the source line: scored balls, Hilton's innings, 2 of 20 overs, from 12 balls ("${src}")`,
+       /Source Scored balls/.test(src) && /Scope Hilton College 1XI, this innings/.test(src) && /Window 2 of 20 overs/.test(src) && /Basis From 12 balls\./.test(src));
+    ok("...the footnote", (await tid(S, "mc-scenario-footnote").innerText().catch(() => "")).startsWith("Arithmetic on the score so far, not a forecast."));
+    const rate = () => tid(S, "mc-scenario-rate").innerText().catch(() => "");
+    const outcome = () => tid(S, "mc-scenario-outcome").innerText().catch(() => "");
+    ok(`the stepper opens on the rate so far to the half, 9.5, and says ${proj(19)}`, (await rate()) === "9.5" && (await outcome()) === `an over: ${proj(19)}`, `${await rate()} ${await outcome()}`);
+    const geom = await S.evaluate(() => {
+      const box = (/** @type {string} */ id) => { const r = document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect(); return r ? [r.width, r.height] : [0, 0]; };
+      const panel = document.querySelector('[data-testid="mc-scenario"]');
+      const small = [...(panel?.querySelectorAll("*") ?? [])].filter((e) => [...e.childNodes].some((n) => n.nodeType === 3 && (n.textContent ?? "").trim())
+        && parseFloat(getComputedStyle(e).fontSize) < 12).length;
+      const out = document.querySelector('[data-testid="mc-scenario-outcome"]');
+      return { down: box("mc-scenario-down"), up: box("mc-scenario-up"), small, live: out?.getAttribute("aria-live"), tag: out?.tagName,
+               for: out?.getAttribute("for") ?? "", ids: [document.querySelector('[data-testid="mc-scenario-down"]')?.id, document.querySelector('[data-testid="mc-scenario-up"]')?.id],
+               wide: panel ? panel.scrollWidth > panel.clientWidth + 1 : true };
+    });
+    ok(`the two buttons are 44px targets (${geom.down.join("×")}, ${geom.up.join("×")})`, geom.down.every((x) => x >= 44) && geom.up.every((x) => x >= 44));
+    ok("nothing in the panel under 12px", geom.small === 0, geom.small);
+    ok("the outcome is an <output> for the two buttons, and not a live region (the page's own speaks for new balls)",
+       geom.tag === "OUTPUT" && geom.live === "off" && geom.ids.every((x) => !!x && geom.for.split(" ").includes(x)), JSON.stringify(geom));
+    ok("...nothing wider than the panel at 390", !geom.wide);
+    await tid(S, "mc-scenario-up").focus();
+    await S.keyboard.press("Enter");
+    ok(`Enter on + raises it to 10.0: ${proj(20)}`, await until(S, (w) => document.querySelector('[data-testid="mc-scenario-rate"]')?.textContent === "10.0"
+       && document.querySelector('[data-testid="mc-scenario-outcome"]')?.textContent === w, 3000, `an over: ${proj(20)}`), `${await rate()} ${await outcome()}`);
+    ok("...the focus stays on the button", await S.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "mc-scenario-up");
+    await S.keyboard.press("Space");
+    ok(`Space raises it to 10.5: ${proj(21)}`, (await rate()) === "10.5" && (await outcome()) === `an over: ${proj(21)}`, `${await rate()} ${await outcome()}`);
+    await S.keyboard.press("Shift+Tab");
+    ok("Shift+Tab reaches −", await S.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "mc-scenario-down");
+    await S.keyboard.press("Enter");
+    const saidNow = `If they score at 10.0 an over: ${proj(20)}`;
+    const saidText = () => tid(S, "mc-scenario-said").innerText().catch(() => "");
+    ok(`...Enter lowers it to 10.0, and the polite status says the line: "${saidNow}"`, (await rate()) === "10.0" && (await saidText()) === saidNow, await saidText());
+    // A six, the thirteenth ball: the outcome moves, the reader's rate does not, and nothing is announced.
+    const [, six] = await writeMore([bowler({ bowler: "Scen Bowler" }), ball({ value: 6 })]);
+    const at13 = Math.round(25 + 10 * 107 / 6);
+    ok(`a six arrives (25 off 13): the outcome is ${at13}, the rate still 10.0`,
+       await until(S, (w) => document.querySelector('[data-testid="mc-scenario-outcome"]')?.textContent === w, 12000, `an over: ${at13}`) && (await rate()) === "10.0",
+       `${await rate()} ${await outcome()}`);
+    ok("...and the status still says what the reader last asked for, not the new ball", (await saidText()) === saidNow, await saidText());
+    // The six voided (GA-I36): back to 19 off 12, the outcome back with it; the rate stays the reader's.
+    await writeMore([voidEvent({ target: six.id, reason: "scorer_undo" })]);
+    ok(`the six voided: the outcome back to ${proj(20)}, the rate still 10.0`,
+       await until(S, (w) => document.querySelector('[data-testid="mc-scenario-outcome"]')?.textContent === w, 12000, `an over: ${proj(20)}`) && (await rate()) === "10.0",
+       `${await rate()} ${await outcome()}`);
+    ok("...and the rest of the panel with it: 190 again", (await tid(S, "mc-scenario-own").innerText().catch(() => "")) === "At their rate so far (9.50 an over): 190 off 20 overs");
+    const words = await tid(S, "mc-scenario").innerText().catch(() => "");
+    ok("the panel names no player and prints no percentage", !/Scen \d|%|chance|likely/.test(words), words);
+    await S.setViewportSize({ width: 320, height: 700 });
+    await S.waitForTimeout(300);
+    ok("at 320 wide nothing in the panel is wider than it", await S.evaluate(() => { const el = document.querySelector('[data-testid="mc-scenario"]'); return !!el && el.scrollWidth <= el.clientWidth + 1; }));
+    ok("no console errors (scenarios)", sc.errors.length === 0, sc.errors.join(" | "));
+    await sc.ctx.close();
+    await q(`update match set status = 'complete' where id = $1`, [scId]);
+  }
 
   group("A real, scored fixture on the ball log, folded here by the same package");
   const fx = await buildMatchCentreFixture(q);
@@ -337,6 +444,14 @@ try {
   ok(`the board's total is the fold's (${inn2.runs}/${inn2.wickets})`, total === `${inn2.runs}/${inn2.wickets}`, total);
   ok("...the chase in words", new RegExp(`Need ${inn2.target - inn2.runs} off ${60 - inn2.balls}`).test(await tid(p, "mc-board-sub").innerText()));
   ok("...and no \"At this rate\" in a second innings: the required rate is what the chase shows", !/At this rate/.test(await tid(p, "mc-board-sub").innerText()));
+  {
+    // GA-I29: the chase's scenarios, held to the package's own words over the same log.
+    const sc2 = scenarioOf({ innings: fold.innings, index: 1, target: inn2.target, overs: inn2.overs, events: evs });
+    await tid(p, "mc-scenario").waitFor({ timeout: 8000 }).catch(() => {});
+    const need = await tid(p, "mc-scenario-need").innerText().catch(() => "");
+    ok(`the chase's scenario panel: "${sc2?.lines.find((l) => l.key === "need")?.text}"`, !!sc2 && need === sc2.lines.find((l) => l.key === "need")?.text, need);
+    ok("...its wickets in hand", (await tid(p, "mc-scenario-hand").innerText().catch(() => "")) === sc2?.lines.find((l) => l.key === "hand")?.text);
+  }
   ok("...the latest lines are the generator's",(await tid(p, "mc-latest").innerText()).includes(expected.filter((c) => c.kind !== "over_end").at(-1).text));
 
   group("Scorecard: the prototype's layout, from the fold");
@@ -558,6 +673,8 @@ try {
   ok("a fresh load plays no moment and no over summary (two reads later)",
      await tid(L, "mc-moment").count() === 0 && await tid(L, "mc-over-summary").count() === 0);
 
+  ok("GA-I29: the chase's scenario panel is drawn while it is being played", await tid(L, "mc-scenario").count() === 1);
+
   group("What arrives while the page is open: a moment, the runs ticking, the over's summary");
   const before = (await tid(L, "mc-board-total").innerText()).replace(/\s/g, "");
   const late = [
@@ -630,6 +747,7 @@ try {
   await writeEvents(q, fx.live, closing, evs.length + late.length);
   const finalMatch = deriveMatch([...evs, ...late, ...closing]);
   ok("the chase is won", finalMatch.result?.winner === "Westville Boys' High 1XI", JSON.stringify(finalMatch.result));
+  ok("GA-I29: once play has decided it, the scenario panel is gone", await until(L, () => !document.querySelector('[data-testid="mc-scenario"]'), 8000));
   ok("the result arrives as a moment on the board — held no longer than a milestone",
      await until(L, () => document.querySelector('[data-testid="mc-moment"][data-kind="result"]')?.innerText.includes("won by"), 8000));
   // CRI-1.7: the result is full time, and the Summary is the result view the moment it arrives; the totals stay in view.
@@ -678,6 +796,7 @@ try {
        && facts[1].includes(`${bowl2.wickets}/${bowl2.runs}`), facts.join(" | ").slice(0, 300));
     ok("...the live board, the latest balls and \"at this rate\" have given way to it", await tid(F, "mc-board").count() === 0
        && await tid(F, "mc-latest").count() === 0 && !/At this rate/.test(await tid(F, "mc-summary").innerText()));
+    ok("...and so has the scenario panel (GA-I29: none at full time)", await tid(F, "mc-scenario").count() === 0);
     ok("...the worm, the highlights and all the commentary one tap away stay", await tid(F, "mc-worm-panel").count() === 1
        && await tid(F, "mc-highlights").count() === 1 && await tid(F, "mc-all-commentary").count() === 1);
     await tid(F, "mc-all-commentary").click({ timeout: 4000 }).catch(() => {});
