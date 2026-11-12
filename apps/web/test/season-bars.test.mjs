@@ -32,7 +32,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { asSeasonCareer } from "../src/lib/live.js";
 import { readState } from "../src/lib/readState.js";
 import {
-  SQUAD_LIMIT, SEASON_LIMIT, basisFor, demoSeasonRows, playerBars, seasonChoice, seasonsWindow, sidePlayers, squadBars, whoIs,
+  SQUAD_LIMIT, SEASON_LIMIT, basisFor, demoSeasonRows, playerBars, seasonChoice, seasonsWindow, sidePlayers, squadBars, squadSeasonRows, whoIs,
 } from "../src/lib/seasonBars.js";
 import { SeasonBarsView } from "../src/views/seasonbars.jsx";
 
@@ -114,6 +114,27 @@ group("Who the chart is about");
   const html = view({ rows: one });
   ok("the screen draws his seasons, not a squad, and says why", /data-mode="player"/.test(html) && /read shows you one player of this side/.test(text(html)), text(html).slice(0, 200));
   ok("...with no player picker, as there is only one", !/season-bars-player/.test(html));
+}
+
+group("REACH-D2: the captain's read, and never a leaders chart of one bar");
+{
+  // What the read gives a captain (Kameel, 11 Nov 2026): his own seasons, and
+  // his side's rows for the season he holds the captaincy only.
+  const cap = [
+    raw("cap", "C Captain", "1XI", "2026", { current: true, row: { bat_matches: 3, runs: 70, balls_faced: 60, dismissals: 2 } }),
+    raw("m1", "M Mate", "1XI", "2026", { current: true, row: { bat_matches: 3, runs: 90, balls_faced: 80, dismissals: 3 } }),
+    raw("cap", "C Captain", "1XI", "2025", { row: { bat_matches: 4, runs: 40, balls_faced: 50, dismissals: 4 } }),
+  ].map(asSeasonCareer);
+  ok("the seasons a leaders chart may be drawn for are those with two players in view",
+     squadSeasonRows(cap).map((r) => `${r.id}@${r.season}`).join() === "cap@2026,m1@2026");
+  ok("...and none where every season shows one", squadSeasonRows([cap[0], cap[2]]).length === 0);
+  const html = view({ rows: cap });
+  const opts = [...html.matchAll(/<option value="(\d{4})"/g)].map((m) => m[1]);
+  ok("the captain's season chooser offers only his captaincy's season, not a past season of his alone", opts.join() === "2026", opts.join());
+  ok("...and the chart is the side's, two bars", /data-mode="squad"/.test(html) && bars(html).length === 2, JSON.stringify(bars(html)));
+  const pupil = view({ rows: [cap[0], cap[2]] });
+  ok("a pupil who is not captain: his own seasons, said in words, no leaders chart",
+     /data-mode="player"/.test(pupil) && /read shows you one player of this side/.test(text(pupil)) && !/season-bars-player/.test(pupil), text(pupil).slice(0, 160));
 }
 
 group("What the panel draws, from the read's rows (signed in)");
