@@ -331,7 +331,7 @@ try {
     await q(`insert into role_assignment (person_id, role, school_id, fixture_id) values ($1, 'scorer', $2, $3)`, [U_PUPIL, HIL, M[0]]);
     ok("scoring a match of his side gives him no team-mate's line", (await inningsRows(pupil, P1)).length === 0);
     // A pupil a school has made the side's team manager is still a pupil
-    // (S2, the safe default, pending Kameel).
+    // (S2; Kameel, 12 Nov: "Keep it closed: a pupil never reads team-mates' innings lines").
     const tmRow = (await one(`insert into role_assignment (person_id, role, school_id, team_code) values ($1, 'teammanager', $2, '1XI') returning id`,
                              [U_PUPIL, HIL])).id;
     ok("(the control: as team manager, career's scope gives him the side's rows)",

@@ -3199,14 +3199,17 @@ export const READ_QUERIES = {
    *     (their own side), directorofsport, principal, schooladmin (the
    *     office), sportsadmin, analyst (school-wide), and superadmin (every
    *     school; its every read is logged platform-wide). Neither capability
-   *     is in the `player` bundle, `guardian` or `selfaccess`.
+   *     is in the `player` bundle, `guardian` or `selfaccess`. This narrow
+   *     staff reader is decided (Kameel, 12 Nov: "Keep it narrow (coaching
+   *     and analytics staff only)").
    * So a pupil reads his own innings and no team-mate's: the captain
    * included (Kameel, 11 Nov: "the side's season figures, nothing else"; an
    * innings-by-innings line is not season figures), and a pupil given a
-   * staff assignment too (not app_reader_is_pupil(), the safe default,
-   * pending Kameel). A parent reads her own child's; a member of staff of
-   * another side who is also a parent of a boy on this one reads that boy's
-   * and none of his team-mates' (the staff arm asks about the boy's side,
+   * staff assignment too (not app_reader_is_pupil(); decided, Kameel, 12
+   * Nov: "Keep it closed: a pupil never reads team-mates' innings lines").
+   * A parent reads her own child's; a member of staff of another side who
+   * is also a parent of a boy on this one reads that boy's and none of his
+   * team-mates' (the staff arm asks about the boy's side,
    * never '*'). The other school's readers fail the staff arm (another
    * school) and the family arm (not his family). The public has no token,
    * and there is no public route.
