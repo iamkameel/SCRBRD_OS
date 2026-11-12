@@ -11869,7 +11869,9 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- Westville boy, marked, for the sheet. A pupil of Hilton's (PUP, his own
 -- account) who also holds a scorer's role at Hilton. The log holds only the
 -- first innings_start: no ball has named anybody yet, and there is no
--- sheet. Written as the owner,
+-- sheet. Its own readers too (_v71_people()): Hilton's 1XI coach, a scorer,
+-- the director of sport, Westville's 1XI coach and office, a driver, a DSO,
+-- and OPN's verified guardian. Written as the owner,
 -- as the scorer's pad and the DSO's door would.
 CREATE OR REPLACE FUNCTION _v153_ev(p_match uuid, p_kind text, p_type text, p_striker uuid, p_non uuid, p_bowler uuid,
                                     p_dismissal text, p_payload jsonb) RETURNS void AS $$
@@ -11924,6 +11926,22 @@ BEGIN
   VALUES (HIL, 'v153.pupil.scorer@example.invalid', 'V153 Pupil Scorer', 'scorer', (ids->>'pup')::uuid) RETURNING id INTO v_u;
   INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_u, 'scorer', HIL);
   ids := ids || jsonb_build_object('pupil_user', v_u);
+  -- The section's own readers: nothing an earlier section did to the seed's
+  -- people (a revoked coach, an ended assignment) reaches them.
+  ids := ids || _v71_people('v153', ARRAY[
+    ARRAY['coach',     'coach',           HIL::text, '1XI', ''],
+    ARRAY['scorer',    'scorer',          HIL::text, '',    ''],
+    ARRAY['director',  'directorofsport', HIL::text, '',    ''],
+    ARRAY['wescoach',  'coach',           WES::text, '1XI', ''],
+    ARRAY['wesoffice', 'schooladmin',     WES::text, '',    ''],
+    ARRAY['driver',    'driver',          HIL::text, '',    ''],
+    ARRAY['dso',       'dso',             HIL::text, '',    ''],
+    ARRAY['parent',    'guardian',        HIL::text, '',    '']]);
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  SELECT a.id, (ids->>'opn')::uuid, 'parent', 'verified', OFFICE, now() - interval '30 days', 'granted', 'popia-2026-01',
+         now() - interval '30 days', OFFICE, sa_today() - 30
+    FROM role_assignment a WHERE a.person_id = (ids->>'parent')::uuid;
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
   VALUES (HIL, '1XI', WES, '1XI', 'Westville Boys'' High 1XI', now() - interval '1 hour', 'cricket', 'T20', 20, 'live')
   RETURNING id INTO v_m;
@@ -40299,7 +40317,8 @@ $v116$;
   -- └── db/151 (section 129) ──────────────────────────────────────────
   -- ┌── db/153 (section 130) ─────────────────────────────────────────
   -- ── 130. The big screen: a side carrying a marked boy by position, for the host's staff only; the caption names no child (db/153, db/149; PUBLIC_BY_TERMS §2.5, slice 1; Kameel 12 Nov 2026 (a), (b)) ──
-  -- Staged by _v153_stage(); every read through scrbrd_app. No sheet until (sheet).
+  -- Staged by _v153_stage(), its own fixture and its own readers; every read
+  -- through scrbrd_app. No sheet until (sheet).
   -- Labels:
   --   (early)     with only the first innings_start in the log, before any
   --               event names MRK, the Hilton coach reads Hilton's 1XI true:
@@ -40355,12 +40374,16 @@ $v116$;
     NOS uuid := (y->>'nos')::uuid; VIS uuid := (y->>'vis')::uuid; WFD uuid := (y->>'wfd')::uuid;
     SHM uuid := (y->>'shm')::uuid; OTH uuid := (y->>'oth')::uuid;
     PUP uuid := (y->>'pupil_user')::uuid;
-    U_WESC uuid := '88888888-0000-0000-0000-00000000001a';   -- S Pillay, coach, Westville 1XI
-    U_DRV  uuid := '88888888-0000-0000-0000-000000000017';   -- B Ngcobo: transport.read, no fixture.read
-    U_DSO  uuid := '88888888-0000-0000-0000-000000000057';
-    U_PAR  uuid := '88888888-0000-0000-0000-000000000005';   -- guardian of R Pillay
-    U_SCR  uuid := '88888888-0000-0000-0000-000000000006';   -- the scorer
-    U_DOS  uuid := '88888888-0000-0000-0000-000000000007';   -- the director of sport
+    -- Every reader is the section's own (_v153_stage()): the seed's are
+    -- changed by earlier sections (§12 revokes the seed's 1XI coach).
+    U_COACH   uuid := (y->>'coach')::uuid;     -- coach, Hilton 1XI
+    U_SCR     uuid := (y->>'scorer')::uuid;    -- scorer, Hilton
+    U_DOS     uuid := (y->>'director')::uuid;  -- director of sport, Hilton
+    U_WESC    uuid := (y->>'wescoach')::uuid;  -- coach, Westville 1XI
+    U_WES_ADM uuid := (y->>'wesoffice')::uuid; -- office, Westville
+    U_DRV     uuid := (y->>'driver')::uuid;    -- driver, Hilton: no fixture.read
+    U_PAR     uuid := (y->>'parent')::uuid;    -- OPN's verified guardian
+    U_DSO     uuid := (y->>'dso')::uuid;       -- DSO, Hilton
     WES_KEY text := 'Westville Boys'' High 1XI';
     v_row text; v_ans text; v_before text; u uuid; k text; s record;
   BEGIN
