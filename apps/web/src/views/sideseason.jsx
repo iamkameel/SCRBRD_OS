@@ -37,7 +37,7 @@ export function SideSeason({ role, team, school }) {
     return (
       <Card sx={{ padding: T.space.lg, marginBottom: T.space.lg }} data-testid="side-season-panel">
         <Title/>
-        <p data-testid="side-season-none" style={{ ...bodyText, margin: 0 }}>Pick a side to see its season, match by match.</p>
+        <p data-testid="side-season-none" style={{ ...bodyText(), margin: 0 }}>Pick a side to see its season, match by match.</p>
       </Card>
     );
   }
@@ -50,7 +50,7 @@ function SideSeasonRead({ role, team, school }) {
   return <SideSeasonView rows={read.rows} said={readState(read, { what: "the side’s completed matches" })} team={team} onRetry={() => setNonce((n) => n + 1)}/>;
 }
 
-const bodyText = { fontFamily: T.type.body, fontSize: "14px", lineHeight: 1.5, color: T.content.secondary };
+const bodyText = () => ({ fontFamily: T.type.body, fontSize: "14px", lineHeight: 1.5, color: T.content.secondary });
 const Title = () => (
   <h3 style={{ margin: `0 0 ${T.space.sm}`, fontFamily: T.type.head, fontSize: "14px", fontWeight: 700, color: T.content.primary }}>
     Season, match by match
@@ -123,7 +123,7 @@ export function SideSeasonView({ rows, said, team, onRetry, initial = {} }) {
       <p className="sr-only" data-testid="side-season-spoken">{spokenSummary(points)}</p>
 
       {points.length === 0 ? (
-        <p data-testid="side-season-none" style={{ ...bodyText, margin: 0 }}>
+        <p data-testid="side-season-none" style={{ ...bodyText(), margin: 0 }}>
           No completed limited-overs matches for {team ?? "this side"} in the {season ?? "current"} school season that you may see.
         </p>
       ) : (
@@ -156,7 +156,7 @@ export function SideSeasonView({ rows, said, team, onRetry, initial = {} }) {
           <ol data-testid="side-season-list" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: T.space.sm }}>
             {points.map((p) => (
               <li key={p.matchId} data-testid="side-season-match" data-rain={p.rainCut ? "true" : undefined}
-                style={{ ...bodyText, color: T.content.primary, overflowWrap: "anywhere" }}>
+                style={{ ...bodyText(), color: T.content.primary, overflowWrap: "anywhere" }}>
                 <span style={{ fontWeight: 700 }}>{p.n}. {p.opponent ? `v ${p.opponent}` : "Match"}</span>
                 {p.date && <span style={{ ...label, fontWeight: 400 }}>{` · ${p.date}`}</span>}
                 <br/>
