@@ -424,6 +424,15 @@ Consequences: the close of REACH-D2 (7 Nov) excludes these two exceptions. Path 
 
 ---
 
+### Decided 12 November 2026 (Kameel)
+
+Kameel's decisions of 12 November 2026, recorded word for word:
+
+1. Pupil who also holds a staff role: "Keep it closed: a pupil never reads team-mates' innings lines".
+2. The Compare "Me v a team-mate" card: "Keep the card exactly as before (career and match-ups too)". A pupil can open each team-mate in turn, one at a time, on his own side. The build is PR #301.
+
+---
+
 ## 8 · What this document does not reopen
 
 - **`db/96`** (the coach's plan reaches the side; `news_plan_reach()`), **`db/100`** (a guardian reads the balls of her child's side's fixtures, home and away; per-boy figures stay gated), **`db/101`** (ordinary team posts reach the side; a boy on the sheet and his guardians read that fixture's plan), **`db/102`** (named suppressions to the school's managers and the person named). This design's helper must agree with them (§6.1 proof 1); it does not change them.
