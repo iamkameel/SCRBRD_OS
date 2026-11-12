@@ -88,7 +88,7 @@
  * @typedef {object} Delivery
  * @property {"run" | "B" | "LB" | "Wd" | "Nb" | "W"} type
  * @property {number} value          runs as the event carries them
- * @property {boolean} [notBoundary] 4r, 6r
+ * @property {boolean} [notBoundary] four or six all run: not a boundary
  * @property {"byes" | "leg_byes"} [nbRuns]
  * @property {boolean} [shortRun]
  * @property {Wicket} [wicket]

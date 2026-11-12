@@ -21,6 +21,10 @@ const SUITES = [
   // balls and the card worked by hand — scored through the pad's event path,
   // folded, and every figure held to the card (test/scorebook/).
   ["scorebook-proof", "packages/scoring/test/scorebook-proof.test.mjs"],
+  // ...and the same scorebooks through the scorer's own emission (delivery.js,
+  // retire.js, penalty.js, wicketAsks.js): the identical log, so the harness
+  // and the pad cannot drift; engine.jsx's inline builders pinned by text.
+  ["scorebook-pad", "apps/web/test/scorebook-pad.test.mjs"],
   ["design",   "apps/web/test/design.test.mjs"],
   ["analytics","apps/web/test/analytics.test.mjs"],
   ["home-routing","apps/web/test/home-routing.test.mjs"],
