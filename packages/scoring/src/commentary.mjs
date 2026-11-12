@@ -112,10 +112,6 @@ const FILTER_KIND = Object.freeze({
   [COMMENTARY_FILTER.SIXES]: COMMENTARY_KIND.SIX,
 });
 
-/** The kinds a delivery's own line takes (deliveryLine()). */
-/** @type {ReadonlySet<string>} */
-export const DELIVERY_KINDS = Object.freeze(new Set([COMMENTARY_KIND.BALL, COMMENTARY_KIND.FOUR, COMMENTARY_KIND.SIX, COMMENTARY_KIND.WICKET]));
-
 /**
  * The event a line was told from, by its key: `e:<id>` for an event's first
  * line, `e:<id>#<n>` for the lines after it (a milestone the ball brought
@@ -132,17 +128,17 @@ export function lineEventId(key) {
 
 /**
  * Does this line pass the filter? `filter` is a chip (COMMENTARY_FILTER), or
- * `{ids}`: the deliveries with those event ids, their own lines only (not a
- * milestone one brought up) — the balls a chart's bar or sector drew (CRI-2.3).
+ * `{ids}`: the events with those ids, each by its own first line (a ball's
+ * line, not a milestone it brought up; a penalty's award) — the balls and
+ * awards a chart's bar or sector drew (CRI-2.3).
  * @param {{kind: string, key: string}} item
  * @param {string | {ids: ReadonlySet<string> | readonly string[]} | null | undefined} filter
  */
 export function commentaryMatches(item, filter) {
   if (filter == null || filter === COMMENTARY_FILTER.ALL) return true;
   if (typeof filter === "object") {
-    if (!DELIVERY_KINDS.has(item.kind)) return false;
     const id = lineEventId(item.key);
-    if (id == null) return false;
+    if (id == null || item.key !== `e:${id}`) return false;
     const ids = filter.ids;
     return ids instanceof Set ? ids.has(id) : /** @type {readonly string[]} */ (ids).includes(id);
   }

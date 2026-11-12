@@ -118,7 +118,14 @@ function WormChart({innings,match,events=null}){
   );
 }
 
-function ManhattanChart({inn,match,events=null,projection=null}){
+/**
+ * `onOver` (CRI-2.3, the Match Centre's): a bar leads to its balls. Its whole
+ * column takes a pointer's tap, and a picker under the chart (44px) takes a
+ * keyboard's and a screen reader's; either hands the bar (its `parts`, by
+ * event id) to the caller. Without it the chart is as the pad draws it.
+ */
+function ManhattanChart({inn,match,events=null,projection=null,onOver=null}){
+  const[pick,setPick]=useState("");
   // The fold's runs per over (chartData.js, GA-I05): a wide's and a no-ball's
   // own run in, penalty runs in the over they were awarded, every over
   // bowled — the one in progress, or the one the innings ended in, too.
@@ -164,7 +171,8 @@ function ManhattanChart({inn,match,events=null,projection=null}){
             // The over still being bowled is drawn lighter: its bar can grow.
             const inPlay=live&&!o.complete&&o===ovData[ovData.length-1];
             return (
-              <g key={o.over}>
+              <g key={o.over} {...(onOver?{onClick:()=>onOver(o),style:{cursor:"pointer"},"data-drill-over":o.over+1}:{})}>
+                {onOver&&<rect x={(o.over/overs)*cw} y={0} width={cw/overs} height={ch} fill="transparent"/>}
                 <rect x={bx} y={by} width={barW} height={Math.max(1,bh)}
                   fill={barColor(o.runs,o.wickets)} opacity={inPlay?0.45:0.8} rx={2} data-over={o.over+1} data-runs={o.runs}>
                   <title>{"Over "+(o.over+1)+": "+o.runs+" run"+(o.runs===1?"":"s")+(o.wickets?", "+o.wickets+" wicket"+(o.wickets===1?"":"s"):"")+(inPlay?" so far":"")}</title>
@@ -188,6 +196,25 @@ function ManhattanChart({inn,match,events=null,projection=null}){
           </div>
         ))}
       </div>
+      {onOver&&(
+        <div style={{display:"flex",gap:T.space.sm,flexWrap:"wrap",alignItems:"center",marginTop:T.space.sm}}>
+          <label style={{display:"flex",gap:T.space.sm,alignItems:"center",flex:"1 1 200px",minWidth:0}}>
+            <span style={{...T.role.label,color:T.content.secondary}}>Balls of</span>
+            <select data-testid="manhattan-pick" value={pick} onChange={e=>setPick(e.target.value)}
+              style={{flex:"1 1 auto",minWidth:0,minHeight:"48px",padding:`0 ${T.space.md}`,borderRadius:T.radius.md,border:`1px solid ${T.content.tertiary}`,
+                background:T.surface.raised,color:T.content.primary,fontFamily:T.type.body,fontSize:"16px",boxSizing:"border-box"}}>
+              <option value="">An over…</option>
+              {ovData.map(o=><option key={o.over} value={String(o.over)}>{`Over ${o.over+1} · ${o.runs} run${o.runs===1?"":"s"}`}</option>)}
+            </select>
+          </label>
+          <button type="button" data-testid="manhattan-show" disabled={pick===""} className="pressBtn os-state"
+            onClick={()=>{const o=ovData.find(x=>String(x.over)===pick);if(o)onOver(o);}}
+            style={{minHeight:"48px",padding:`0 ${T.space.md}`,borderRadius:T.radius.pill,cursor:pick===""?"default":"pointer",background:"transparent",
+              border:`1px solid ${T.line.normal}`,color:pick===""?T.content.secondary:T.content.primary,fontFamily:T.type.body,fontSize:"14px",fontWeight:600}}>
+            Show in commentary
+          </button>
+        </div>
+      )}
       <ChartTable testid="manhattan-table" tables={manTable}/>
     </Card>
   );

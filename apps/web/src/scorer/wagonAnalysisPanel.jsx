@@ -40,8 +40,11 @@ import { isOut } from "./format.js";
  * @param {string} [p.title]
  * @param {boolean} [p.showPercent]  false drops the "%" under each side's bar
  *   (the Coach tab, whose never-list bars a percentage: SCRBRD-136 3.7).
+ * @param {((area: {key: string, label: string, runs: number, ids: string[]}) => void) | null} [p.onArea]
+ *   CRI-2.3, the Match Centre's: an area with balls in it is a button that
+ *   hands them (by event id, under the batter and bowler in view) to the caller.
  */
-function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fixedBatter = null, bowlers = [], matches = null, title = "Wagon-wheel analysis", showPercent = true }) {
+function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fixedBatter = null, bowlers = [], matches = null, title = "Wagon-wheel analysis", showPercent = true, onArea = null }) {
   const [selBatter, setSelBatter] = useState(null);
   const [selBowler, setSelBowler] = useState(null);
   const [selMatch, setSelMatch] = useState(null);
@@ -102,17 +105,33 @@ function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fi
     </div>
   );
 
-  /** @param {{key: string, label: string, runs: number, boundaries: number}} p */
-  const AreaCell = ({ label, runs, boundaries }) => (
-    <div data-testid={`wagon-area-${label.toLowerCase().replace(/\s+/g, "-")}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline",
-      padding: `${T.space.xs} ${T.space.sm}`, borderBottom: `1px solid ${T.line.subtle}`, gap: T.space.sm }}>
-      <span style={{ ...T.role.body, fontSize: "13px", color: T.content.primary }}>{label}</span>
-      <span style={{ display: "flex", gap: T.space.sm, alignItems: "baseline" }}>
-        <span style={{ ...T.role.figure.sm, fontSize: "13px", color: T.content.primary }}>{runs}</span>
-        {boundaries > 0 && <span style={{ ...T.role.figure.sm, fontSize: "12px", color: T.content.secondary }}>{boundaries} {boundaries === 1 ? "boundary" : "boundaries"}</span>}
-      </span>
-    </div>
-  );
+  /** @param {{area: {key: string, label: string, runs: number, boundaries: number, ids: string[]}}} p */
+  const AreaCell = ({ area }) => {
+    const { label, runs, boundaries, ids } = area;
+    const drill = onArea && ids.length > 0;
+    const inner = (
+      <>
+        <span style={{ ...T.role.body, fontSize: "13px", color: T.content.primary }}>{label}</span>
+        <span style={{ display: "flex", gap: T.space.sm, alignItems: "baseline" }}>
+          <span style={{ ...T.role.figure.sm, fontSize: "13px", color: T.content.primary }}>{runs}</span>
+          {boundaries > 0 && <span style={{ ...T.role.figure.sm, fontSize: "12px", color: T.content.secondary }}>{boundaries} {boundaries === 1 ? "boundary" : "boundaries"}</span>}
+          {drill && <span aria-hidden="true" style={{ color: T.content.secondary }}>›</span>}
+        </span>
+      </>
+    );
+    const box = { display: "flex", justifyContent: "space-between", alignItems: drill ? "center" : "baseline", width: "100%",
+      padding: `${T.space.xs} ${T.space.sm}`, borderBottom: `1px solid ${T.line.subtle}`, gap: T.space.sm };
+    const testid = `wagon-area-${label.toLowerCase().replace(/\s+/g, "-")}`;
+    return drill ? (
+      <button type="button" data-testid={testid} data-balls={ids.length} onClick={() => onArea(area)} className="pressBtn os-state"
+        aria-label={`${label}: ${runs} run${runs === 1 ? "" : "s"} from ${ids.length} ball${ids.length === 1 ? "" : "s"}. Show them in the commentary`}
+        // It wraps as the row it replaces does (200% zoom on a phone): no wider than its column.
+        style={{ ...box, flexWrap: "wrap", minWidth: 0, boxSizing: "border-box", minHeight: "48px", cursor: "pointer", background: "transparent", border: "none",
+          borderBottom: box.borderBottom, textAlign: "left", font: "inherit" }}>
+        {inner}
+      </button>
+    ) : <div data-testid={testid} style={box}>{inner}</div>;
+  };
 
   const offAreas = a.areas.filter((x) => x.side === "off");
   const legAreas = a.areas.filter((x) => x.side === "leg");
@@ -203,13 +222,13 @@ function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fi
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)", gap: T.space.md, marginTop: T.space.md }}>
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div style={{ ...T.role.label, color: T.content.secondary, marginBottom: T.space.xs }}>Off side areas</div>
-              {offAreas.map((ar) => <AreaCell key={ar.key} label={ar.label} runs={ar.runs} boundaries={ar.boundaries}/>)}
+              {offAreas.map((ar) => <AreaCell key={ar.key} area={ar}/>)}
             </div>
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div style={{ ...T.role.label, color: T.content.secondary, marginBottom: T.space.xs }}>On side areas</div>
-              {legAreas.map((ar) => <AreaCell key={ar.key} label={ar.label} runs={ar.runs} boundaries={ar.boundaries}/>)}
+              {legAreas.map((ar) => <AreaCell key={ar.key} area={ar}/>)}
             </div>
           </div>
 

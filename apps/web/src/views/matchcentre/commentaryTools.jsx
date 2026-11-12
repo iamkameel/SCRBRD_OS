@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { COMMENTARY_FILTER, commentaryCounts } from "@scrbrd/scoring";
 import { T } from "../../design/tokens.js";
 import { teamOf } from "../../lib/matchCentre.js";
@@ -90,12 +90,65 @@ function OverJump({ match, innings, groups, onJump }) {
   );
 }
 
-/** The chips, then the jump. */
-export default function CommentaryTools({ chip, setChip, commentary, match, innings, groups, onJump }) {
+const BALL_KINDS = new Set(["ball", "four", "six", "wicket"]);
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * CRI-2.3: what a chart's bar or area opened the Commentary on — its balls,
+ * and the awards in its runs — and the way to every ball. The focus comes
+ * here when it opens, so a screen reader hears what is listed.
+ */
+function Drill({ drill, lines, onAll }) {
+  const head = useRef(/** @type {HTMLParagraphElement | null} */ (null));
+  useEffect(() => {
+    head.current?.scrollIntoView({ block: "start", behavior: "instant" });
+    head.current?.focus({ preventScroll: true });
+  }, []);
+  const balls = lines.filter((c) => BALL_KINDS.has(c.kind)).length;
+  const other = lines.length - balls;
+  const what = drill.what ? `${drill.what[0].toUpperCase()}${drill.what.slice(1)}` : "From the chart";
+  return (
+    <div data-testid="mc-drill" data-lines={lines.length} style={{ display: "flex", gap: T.space.sm, alignItems: "center", flexWrap: "wrap",
+      padding: `${T.space.sm} ${T.space.md}`, borderRadius: T.radius.md, border: `1px solid ${T.line.normal}`, background: T.surface.interactive }}>
+      <p ref={head} tabIndex={-1} data-testid="mc-drill-what" style={{ ...T.role.body, color: T.content.primary, margin: 0, flex: "1 1 200px", scrollMarginTop: T.space.lg }}>
+        <strong>{what}</strong>{` · ${plural(drill.runs, "run")} · ${plural(balls, "ball")}${other ? ` and ${plural(other, "award")}` : ""}, listed below`}
+      </p>
+      <button type="button" data-testid="mc-drill-all" onClick={onAll} className="pressBtn os-state"
+        style={{ minHeight: "48px", padding: `0 ${T.space.md}`, borderRadius: T.radius.pill, cursor: "pointer", background: "transparent",
+          border: `1px solid ${T.line.normal}`, color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
+        Every ball
+      </button>
+    </div>
+  );
+}
+
+const NONE_FOR = { wickets: "No wicket has fallen yet.", fours: "No four has been hit yet.", sixes: "No six has been hit yet." };
+
+/**
+ * The chips, then the jump; a chart's balls first, where it opened the tab
+ * (`drill`, CRI-2.3), with no chip pressed while they are. `jump`: the over
+ * the jump asked for, which this puts at the top of the screen, the focus on
+ * its heading, once the tab (`at`, the Commentary's section) has drawn it.
+ */
+export default function CommentaryTools({ chip, setChip, commentary, match, innings, groups, onJump, jump = null, at = null, drill = null, onAll }) {
+  useEffect(() => {
+    if (!jump) return;
+    const el = [...(at?.current?.querySelectorAll("[data-over-key]") ?? [])].find((x) => x.getAttribute("data-over-key") === jump.key);
+    const head = el?.querySelector("[data-testid='mc-over-title']");
+    if (!(head instanceof HTMLElement)) return;
+    head.scrollIntoView({ block: "start", behavior: "instant" });
+    head.focus({ preventScroll: true });
+  }, [jump, at]);
   return (
     <div data-testid="mc-commentary-tools" style={{ display: "grid", gap: T.space.sm, marginBottom: T.space.md }}>
-      <Chips chip={chip} setChip={setChip} commentary={commentary}/>
+      {drill && <Drill drill={drill} lines={groups.flatMap((g) => g.lines)} onAll={onAll}/>}
+      <Chips chip={drill ? null : chip} setChip={setChip} commentary={commentary}/>
       <OverJump match={match} innings={innings} groups={groups} onJump={onJump}/>
+      {!groups.length && (
+        <p data-testid="mc-commentary-filtered-none" style={{ ...T.role.body, color: T.content.secondary, padding: `${T.space.xl} 0`, margin: 0 }}>
+          {NONE_FOR[chip] ?? "Nothing to show."}
+        </p>
+      )}
     </div>
   );
 }

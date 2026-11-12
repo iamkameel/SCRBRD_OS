@@ -102,6 +102,19 @@ const lh = wagonAnalysis(lhInnings, { batHandFor: () => "L" });
 // batterSector(3,"L")=9 (point, off, 2 runs): every tap reads through the LEFT-hander's own sector.
 ok("every ball reads through the left-hander's own sector, not the screen's", lh.sides.leg.runs === 5 && lh.sides.off.runs === 2);
 
+group("CRI-2.3: an area's balls, by event id, add up to its runs");
+{
+  const withIds = innings.map((b, i) => ({ ...b, id: `b${i}` }));
+  const x = wagonAnalysis(withIds, { batHandFor: () => "R" });
+  const byId = new Map(withIds.map((b) => [b.id, b]));
+  ok("every area's ids are balls that went there, and their runs are its runs",
+     x.areas.every((ar) => ar.ids.reduce((s, id) => s + (Number(byId.get(id)?.value) || 0), 0) === ar.runs));
+  ok("cover lists its one ball; an area nothing went to lists none", x.areas.find((ar) => ar.key === "cover").ids.join() === "b0"
+     && x.areas.find((ar) => ar.key === "fine_leg").ids.length === 0);
+  ok("every placed ball off the straight line is in exactly one area", x.areas.flatMap((ar) => ar.ids).length === x.chips.all - x.excluded.straight
+     && new Set(x.areas.flatMap((ar) => ar.ids)).size === x.chips.all - x.excluded.straight);
+}
+
 group("Falsification: two edits that should each break a specific assertion")
 console.log("  (see the report for the two edits made and reverted by hand)");
 
