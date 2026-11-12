@@ -171,8 +171,11 @@ function DisplayBoard({ match, state, shownRuns, moment, overSummary, paused, an
       </div>
       {(props.batters.length > 0 || props.partnership) && (
         <div className="dv-row dv-batters">
-          {props.batters.map((b) => (
-            <span key={b.name} className="dv-batter" data-testid="display-batter" data-on-strike={!marked || b.onStrike ? "true" : "false"}>
+          {/* Keyed by end, not by name: two batters shown by position are both
+              "Batter", and a key they share leaves a stale row behind when the
+              names come back (PUBLIC_BY_TERMS §2.5; the public display alike). */}
+          {props.batters.map((b, i) => (
+            <span key={i} className="dv-batter" data-testid="display-batter" data-on-strike={!marked || b.onStrike ? "true" : "false"}>
               <span className="dv-mark" aria-hidden="true">●</span>
               {b.onStrike && <span className="sr-only">on strike: </span>}
               <span className="dv-name">{b.name}</span> <Figure value={b.runs ?? 0}/><span className="dv-dim"> ({b.balls})</span>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { deriveMatch } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
 import { DisplayView, useWakeLock } from "../../display/DisplayView.jsx";
-import { forGround, groundInnings, groundNameOf, namedOnGround, onField } from "../../display/groundNames.js";
+import { forGround, groundInnings, groundNameOf, namedOnGround, playersOnField } from "../../display/groundNames.js";
 import { api } from "../../lib/api.js";
 import { nameBook, teamOf } from "../../lib/matchCentre.js";
 import { superOverCommentary } from "../../lib/superOver.js";
@@ -76,7 +76,7 @@ export function BigScreen({ match, events, fold, players = [], sides = null, res
 /**
  * Which sides the big screen shows by position (GET /api/read/
  * ground_screen_sides, db/153): `{rows, asked}`, the server's rows and the
- * boys on the field when it was asked (onField()), or null before the first
+ * boys on the field when it was asked (playersOnField()), or null before the first
  * answer. Asked when `on` turns on or `follow` changes; again on every new
  * ball while `follow` (the screen is open), and after a failed read; a
  * failed read keeps what was answered last. No rows is the server's "not
@@ -93,7 +93,7 @@ export function useGroundSides(matchId, events, on, follow = false) {
   useEffect(() => {
     if (!on) { setAnswer(null); return undefined; }
     let cancelled = false;
-    const asked = onField(held.current ?? []);
+    const asked = playersOnField(held.current ?? []);
     api(`/api/read/ground_screen_sides?matchId=${encodeURIComponent(matchId)}`)
       .then((d) => { if (!cancelled) { setAnswer({ rows: Array.isArray(d?.rows) ? d.rows : [], asked }); setFailed(false); } })
       .catch(() => { if (!cancelled) setFailed(true); });

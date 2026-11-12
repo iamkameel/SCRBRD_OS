@@ -8,7 +8,7 @@
 // big screen. Everyone here is invented.
 import { deriveMatch, inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
-import { GROUND_POSITION, byPosition, forGround, groundInnings, groundNameOf, namedOnGround, onField } from "../src/display/groundNames.js";
+import { GROUND_POSITION, byPosition, forGround, groundInnings, groundNameOf, namedOnGround, playersOnField } from "../src/display/groundNames.js";
 import { nameBook } from "../src/lib/matchCentre.js";
 import { displayState, fallOfWicket, bowlingPanel, partnershipPanel } from "../src/display/data.js";
 
@@ -43,7 +43,7 @@ const LOG = [
 const PLAYERS = [...H, ...K];
 /** The server's answer (db/153) and what was on the field when it was asked. */
 const answer = (/** @type {Record<string, boolean>} */ flags, extra = /** @type {any[]} */ ([]), log = LOG) =>
-  ({ rows: [...Object.entries(flags).map(([team, position_only]) => ({ team, position_only })), ...extra], asked: onField(log) });
+  ({ rows: [...Object.entries(flags).map(([team, position_only]) => ({ team, position_only })), ...extra], asked: playersOnField(log) });
 const AWAY_MARKED = answer({ [HOME]: false, [AWAY]: true });
 
 /** The big screen's fold and commentary, as bigscreen.jsx makes them. */
@@ -62,7 +62,7 @@ const everyText = (/** @type {any} */ s) => JSON.stringify({ inn: s.inn, c: s.co
 console.log("A. The server's answer, per side");
 {
   ok("no answer names nobody with a row", namedOnGround(null, LOG).size === 0 && namedOnGround(undefined, LOG).size === 0);
-  const field = onField(LOG);
+  const field = playersOnField(LOG);
   ok("on the field: the six boys the log puts there in a role, by reference",
      field.size === 6 && [H[0], H[1], H[2], H[3], K[0], K[2]].every((p) => field.has(p.id)), [...field].join(" "));
   const n = namedOnGround(AWAY_MARKED, LOG);
@@ -77,7 +77,7 @@ console.log("A. The server's answer, per side");
      namedOnGround(answer({ [HOME]: false }, [{ team: AWAY, position_only: false }, { team: AWAY, position_only: true }]), LOG)
        .size === 4);
   ok("an answer that is not a clear false names nobody",
-     namedOnGround({ rows: [{ team: HOME, position_only: null }, { team: AWAY }], asked: onField(LOG) }, LOG).size === 0);
+     namedOnGround({ rows: [{ team: HOME, position_only: null }, { team: AWAY }], asked: playersOnField(LOG) }, LOG).size === 0);
   ok("a name the scorer typed (no row) is not a position: nothing marks him", !byPosition(new Set(), "Typed Name"));
 }
 

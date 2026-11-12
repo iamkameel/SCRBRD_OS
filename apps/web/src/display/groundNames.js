@@ -45,7 +45,7 @@ const FIELD_REFS = ["striker", "nonStriker", "bowler", "dismissed", "fielder", "
  * server's answer is about, taken when the read is asked.
  * @param {any[]} events  @returns {Set<string>}
  */
-export function onField(events = []) {
+export function playersOnField(events = []) {
   /** @type {Set<string>} */
   const out = new Set();
   for (const ev of events) for (const k of FIELD_REFS) if (typeof ev?.[k] === "string" && UUID.test(ev[k])) out.add(ev[k]);
@@ -77,7 +77,7 @@ function squadSides(events) {
 
 /**
  * The ids the big screen may name (Kameel, 12 Nov 2026, (b)): a boy who was
- * on the field when the read was asked (`asked`, onField() then), every
+ * on the field when the read was asked (`asked`, playersOnField() then), every
  * side whose squads carry him answered as not position-only. A side with a
  * marked boy on the field is position-only, so every boy it carries is his
  * position; a row with no side (a marked boy no squad carries) names nobody;

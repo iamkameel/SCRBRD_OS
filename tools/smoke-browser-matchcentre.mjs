@@ -620,15 +620,37 @@ try {
   group("The big screen shows a marked boy's whole side by position, the other side by name (PUBLIC_BY_TERMS §2.5)");
   const onStrike = after.batsmen.find((b) => b.id === after.striker);
   const partner = after.batsmen.find((b) => b.id === after.nonStriker);
-  const bowlerNames = after.bowlers.map((b) => b.name);
+  const fielder = after.bowlers[0];
   const setter = (await q(`select id from app_user where email = 'sarah@example.invalid'`))[0].id;
-  await q(`insert into player_never_public (player_id, reason, set_on, set_by) values ($1, 'Walk: a mark', sa_today(), $2)`, [onStrike.id, setter]);
+  const mark = (/** @type {string} */ id) =>
+    q(`insert into player_never_public (player_id, reason, set_on, set_by) values ($1, 'Walk: a mark', sa_today(), $2)`, [id, setter]);
+  const unmark = (/** @type {string} */ id) => q(`update player_never_public set ended_on = sa_today(), ended_by = set_by, ended_at = now()
+                                                   where player_id = $1 and ended_on is null`, [id]);
   const bigNames = () => L.locator('[data-testid="mc-bigscreen"] [data-testid="display-batter"] .dv-name').allInnerTexts();
-  const bigBowler = () => L.locator('[data-testid="mc-bigscreen"] [data-testid="display-bowler"] .dv-name').innerText().catch(() => "");
-  await tid(L, "mc-bigscreen-open").click();
-  ok("...the server answers: the fielding side's bowler is named", await until(L, (ns) =>
-    ns.includes(document.querySelector('[data-testid="mc-bigscreen"] [data-testid="display-bowler"] .dv-name')?.innerText.trim()),
-    8000, bowlerNames), await bigBowler());
+  // Open the big screen and wait for its own read (it asks afresh on opening), then a paint.
+  const openBig = async () => {
+    const answered = L.waitForResponse((r) => r.url().includes("/api/read/ground_screen_sides"), { timeout: 8000 }).catch(() => null);
+    await tid(L, "mc-bigscreen-open").click();
+    const r = await answered;
+    await L.waitForTimeout(400);
+    return r ? r.json().catch(() => null) : null;
+  };
+  // The fielding side's opening bowler, who has been on the field, is marked: his side by position, the batting side by name.
+  await mark(fielder.id);
+  let said = await openBig();
+  ok("the big screen asks which sides, and is told per side, with no player id",
+     Array.isArray(said?.rows) && said.rows.length === 2 && said.rows.every((r) => JSON.stringify(Object.keys(r).sort()) === '["position_only","team"]')
+     && said.rows.filter((r) => r.position_only).length === 1 && !/[0-9a-f]{8}-[0-9a-f]{4}-/.test(JSON.stringify(said)), JSON.stringify(said));
+  ok("a marked boy in the field: both batters, of the other side, keep their names",
+     JSON.stringify((await bigNames()).sort()) === JSON.stringify([onStrike?.name, partner?.name].sort()), (await bigNames()).join(" | "));
+  ok("...and the marked bowler's name is nowhere on the big screen", !(await tid(L, "mc-bigscreen").innerText()).includes(fielder?.name));
+  await tid(L, "mc-bigscreen-close").click();
+  await L.waitForTimeout(300);
+  await unmark(fielder.id);
+  // The batter on strike is marked: his whole side, his partner too, by position.
+  await mark(onStrike.id);
+  said = await openBig();
+  ok("the batter on strike marked: the server says his side by position", said?.rows?.filter((r) => r.position_only).length === 1, JSON.stringify(said));
   ok("...and both batters, the marked boy's partner too, are 'Batter'",
      JSON.stringify(await bigNames()) === JSON.stringify(["Batter", "Batter"]), (await bigNames()).join(" | "));
   const bigText = await tid(L, "mc-bigscreen").innerText();
@@ -636,12 +658,10 @@ try {
   await tid(L, "mc-bigscreen-close").click();
   await L.waitForTimeout(300);
   ok("the Match Centre beneath still names him for its signed-in reader", (await text(L)).includes(onStrike?.name));
-  await q(`update player_never_public set ended_on = sa_today(), ended_by = set_by, ended_at = now()
-            where player_id = $1 and ended_on is null`, [onStrike.id]);
-  await tid(L, "mc-bigscreen-open").click();
-  ok("the mark ended, the big screen names his side again", await until(L, (n) =>
-    [...document.querySelectorAll('[data-testid="mc-bigscreen"] [data-testid="display-batter"] .dv-name')].some((e) => e.innerText.trim() === n),
-    8000, onStrike?.name) && (await bigNames()).includes(partner?.name), (await bigNames()).join(" | "));
+  await unmark(onStrike.id);
+  said = await openBig();
+  ok("the mark ended, the big screen names his side again", said?.rows?.every((r) => r.position_only === false)
+     && JSON.stringify((await bigNames()).sort()) === JSON.stringify([onStrike?.name, partner?.name].sort()), (await bigNames()).join(" | "));
   await tid(L, "mc-bigscreen-close").click();
   await L.waitForTimeout(300);
 
