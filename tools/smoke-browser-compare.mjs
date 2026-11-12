@@ -22,6 +22,9 @@
  *     screen says when it read (D14).
  *   - A PUPIL COMPARES HIMSELF WITH ONE TEAM-MATE ONLY (D10, Q1): he is the
  *     left column, there is one picker, and it holds his side, never himself.
+ *     Since REACH-D2 the card is as it was (Kameel, 12 Nov 2026: "career and
+ *     match-ups too"): the picker is built from the roster (`players`), and
+ *     each of the team-mate's figures is a read that names him.
  *   - A PARENT HAS NO COMPARE (D11, Q2): no Analytics, no card, anywhere in
  *     her app.
  *   - 12px and 44px over the compare screen at 390 wide, both people.
@@ -225,6 +228,8 @@ try {
   };
   await balls(20, WHITFIELD, NAIDOO, [0, 1, 0, 2]);
   await balls(40, CELE, WHITFIELD, [1, 0, 4, 1, 0]);
+  // The pupil's own figures this season, so his card has two columns to draw.
+  await balls(12, PILLAY, NAIDOO, [1, 0, 2]);
   // The two the coach compares carry a fitness word and a birthday, so the
   // DOM can be held apart from their values, not only from the column names.
   const coachTok = await tokenOf("coach@example.invalid");
@@ -243,7 +248,7 @@ try {
   const SECRET_VALUES = new RegExp(secrets.flatMap((s) => [s.iso, s.dmy]).map((v) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
   ok("the career read still returns the boy who has left, to the analyst (so the picker is what keeps him out)",
      analystCareer.some((r) => r.player_id === LEFT.id && r.team_code == null), LEFT);
-  ok("...and returns the coach other sides' boys in outline", coachCareer.some((r) => r.team_code !== "1XI"));
+  ok("...and returns the coach other sides' boys in outline (REACH-D2 narrows the pupil, not the staff)", coachCareer.some((r) => r.team_code !== "1XI"));
 
   // ══ The coach ══
   group("The 1XI coach: Compare on Analytics, his side only");
@@ -397,17 +402,36 @@ try {
   ok("Passport opens", await go(p.page, "passport"));
   const pFrom = p.asked.length;
   await tid(p.page, "passport-tab-compare").click({ timeout: 5000 }).catch(() => {});
-  ok("the career read behind his picker answers", await answered(p.page));
+  ok("the roster read behind his picker answers", await answered(p.page));
   ok("the card is his: 'Me v a team-mate'", await tid(p.page, "compare").getAttribute("data-mode") === "pupil" && /Me v a team-mate/i.test(await inner(p.page, "compare-head")));
   ok("HE IS THE LEFT COLUMN, and not a choice", /R Pillay/.test(await inner(p.page, "compare-self")) && await tid(p.page, "compare-pick-a").count() === 0);
   ok("ONE PICKER: never two team-mates against each other", await p.page.locator('[data-testid="compare"] select').count() === 1);
-  const pupilCareer = await career(await tokenOf("pillay@example.invalid"));
-  const mates = pupilCareer.filter((r) => r.team_code === "1XI" && r.school_id === HIL && r.player_id !== PILLAY).map((r) => r.player_id).sort();
+  const pupilTok = await tokenOf("pillay@example.invalid");
+  const pupilCareer = await career(pupilTok);
+  ok("REACH-D2: his career read is his own row, no team-mate's", pupilCareer.length === 1 && pupilCareer[0].player_id === PILLAY,
+     JSON.stringify(pupilCareer.map((r) => r.full_name)));
+  const roster = (await call("/api/read/players", pupilTok)).body?.rows ?? [];
+  const mates = roster.filter((r) => r.team_code === "1XI" && r.school_id === HIL && r.id !== PILLAY).map((r) => r.id).sort();
   const offeredP = (await options(p.page, "compare-pick-b")).sort();
-  ok("...holding his side's boys", offeredP.join() === mates.join(), `${offeredP.length} offered, ${mates.length} team-mates`);
-  ok("...never himself, and no boy of another side", !offeredP.includes(PILLAY) && offeredP.every((id) => pupilCareer.find((r) => r.player_id === id)?.team_code === "1XI"));
+  ok("...his picker holds his side's boys, from the roster", mates.length > 0 && offeredP.join() === mates.join(), `${offeredP.length} offered, ${mates.length} team-mates`);
+  ok("...never himself, and no boy of another side", !offeredP.includes(PILLAY) && offeredP.every((id) => roster.find((r) => r.id === id)?.team_code === "1XI"));
   await tid(p.page, "compare-pick-b").selectOption(set.player_id);
   ok("his figures beside the team-mate's read", await settled(p.page));
+  // Kameel, 12 Nov 2026: "Keep the card exactly as before (career and
+  // match-ups too)". Each of the team-mate's figures is a read that names him.
+  const asked = p.asked.slice(pFrom);
+  ok("...the team-mate's career, seasons and match-ups are each read naming him",
+     [`/api/read/career?playerId=${set.player_id}`, `/api/read/career_by_season?playerId=${set.player_id}`, `/api/read/matchups?batterId=${set.player_id}`]
+       .every((u) => asked.includes(u)), asked.join(" "));
+  const mateCareer = (await call(`/api/read/career?playerId=${set.player_id}`, pupilTok)).body?.rows ?? [];
+  ok("...the server answers the named career with his row alone", mateCareer.length === 1 && mateCareer[0].player_id === set.player_id, JSON.stringify(mateCareer.map((r) => r.full_name)));
+  ok("...and the card's Every season column is that career's runs",
+     (await inner(p.page, "compare-bat-runs-b")).trim().startsWith(String(mateCareer[0]?.runs)), await inner(p.page, "compare-bat-runs-b"));
+  ok("the season buttons and the pace-and-spin panel are drawn, as before",
+     await tid(p.page, "compare-window").count() === 1 && await tid(p.page, "compare-season-all").count() === 1
+     && await tid(p.page, "compare-matchups").count() === 1 && await tid(p.page, "compare-pupil-scope").count() === 0);
+  const elsewhere = (await call(`/api/read/career?playerId=${LEFT.id}`, pupilTok)).body?.rows ?? [];
+  ok("...a boy of another side named on career reads nothing", elsewhere.length === 0);
   const head = await p.page.$$eval('[data-testid="compare-bat-table"] thead th', (ths) => ths.map((t) => t.innerText.trim()));
   ok("...himself on the left, the team-mate on the right", head[0]?.toLowerCase() === "r pillay" && head[2]?.toLowerCase() === set.full_name.toLowerCase(), head.join(" | "));
   ok("...the floor applies to him as to anyone", (await p.page.$$eval('[data-testid="compare"] td[data-held="true"]', (els) => els.length)) >= 1);
