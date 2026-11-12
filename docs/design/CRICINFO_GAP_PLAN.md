@@ -1,6 +1,8 @@
 # Cricinfo audit — gap analysis and implementation plan
 
 **Decided 2026-10-23 (Kameel):** all six open decisions settled; see §9. Sprint 0 approved.
+
+12 Nov 2026 (Kameel): "All of it now": Sprint 3 and StatsMagic are pulled before the pilot.
 Written from two audits of ESPNcricinfo (both in `audit/`) checked against `main` @ `37f5884`.
 Living copy for comments: https://claude.ai/artifact/364Tdggp65zF43gHHkEqgi
 

@@ -298,6 +298,16 @@ Both views skip a void and its target on every read (`ball_event_live`, `ball_ev
 | **Q11** | **Bowling innings by innings** (slice B4) needs a migration. Build it after B2 and B3, or leave the bowler's trend at the season bars? | **After B2 and B3**, if coaches ask for it in the pilot. |
 | **Q12** | The minimums for a trend line: **6 innings and 30 balls** for a batter, **5 matches** for a side? | **Yes.** They are the rating floor's 30 balls and the least a rolling five needs to be a line. |
 
+## Decided 12 November 2026
+
+Kameel's decisions of 12 November 2026, recorded word for word:
+
+- Staff reader for the innings line: "Keep it narrow (coaching and analytics staff only)".
+- A pupil who also holds a staff role: "Keep it closed: a pupil never reads team-mates' innings lines".
+- A pupil's own innings line on his Passport: "Yes, keep it on his Passport".
+
+Engineering note (the lead's call, not Kameel's): the innings line is dated and ordered by the match's start (`starts_at`), not `ended_at`.
+
 ## What I could not settle from what I read
 
 1. **`match_live_score`'s scope** for `side_season`: I did not read db/45 or db/48, so whether the view is `security_invoker`, and whether a scorebook's innings (`innings_summary`) appears in it, are B1's to establish before the read is written.
