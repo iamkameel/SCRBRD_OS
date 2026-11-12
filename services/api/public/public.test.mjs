@@ -27,7 +27,7 @@ import {
 import { PUBLIC_EVENT_FIELDS, PUBLIC_EVENT_COMMON, projectLog, playerPseudonym, eventPseudonym, nameFor, RETIRED_NOT_OUT, areasOf } from "./redact.mjs";
 import {
   publicPages, PublicCache, RateLimit, clientAddress, shellHtml, THEME_BOOT, NOT_FOUND, LIVE_TTL_MS, SETTLED_TTL_MS, RATE, parLeaks,
-  isPublicPath,
+  isPublicPath, cacheTtl, HOT_PER_MINUTE,
 } from "./public-api.mjs";
 import { publicationRoutes } from "../write/publication-api.mjs";
 import { signToken } from "../auth/auth.mjs";
@@ -654,6 +654,33 @@ console.log("\n── The cache ──");
   ok("past 2,000 requests a minute a fixture is hot", hot.hit(M1) === true);
   clock += 60_000;
   ok("...and the next minute starts cold, with last minute's counts forgotten", hot.hit(M1) === false && hot.hits.size === 1);
+}
+
+console.log("\n── No doubling for a labelled entry (PUBLIC_BY_TERMS §2.4, slice 2; must-never 11) ──");
+{
+  ok("a labelled part lives 60 s settled and 5 s live, hot or not",
+     cacheTtl({ status: "complete", hot: true, labelled: true }) === SETTLED_TTL_MS
+     && cacheTtl({ status: "complete", hot: false, labelled: true }) === SETTLED_TTL_MS
+     && cacheTtl({ status: "live", hot: true, labelled: true }) === LIVE_TTL_MS && SETTLED_TTL_MS === 60_000);
+  ok("...while team facts still double when a fixture is hot",
+     cacheTtl({ status: "complete", hot: true, labelled: false }) === 2 * SETTLED_TTL_MS
+     && cacheTtl({ status: "live", hot: true, labelled: false }) === 2 * LIVE_TTL_MS
+     && cacheTtl({ status: "complete", hot: false, labelled: false }) === SETTLED_TTL_MS);
+  // Through the router: a hot fixture's log (it carries `people`) and its
+  // header (whose servedOn is the day every label is judged on) are held for
+  // 60 s; its sectors, team-level, for 120 s.
+  const site = await serve({});
+  const ip = { ip: "203.0.113.77" };
+  for (let i = 0; i <= HOT_PER_MINUTE; i++) site.site.cache.hit(M1);
+  const l = await site.get(`/api/public/matches/${M1}/log`, ip);
+  const sh = await site.get(`/api/public/matches/${M1}/shots`, ip);
+  const held = site.site.cache.entries.get(M1);
+  ok("hot: the log and the header are held 60 s, not 120 s; the sectors double",
+     l.status === 200 && sh.status === 200 && held?.log?.ttl === SETTLED_TTL_MS && held?.header?.ttl === SETTLED_TTL_MS
+     && held?.shots?.ttl === 2 * SETTLED_TTL_MS, { log: held?.log?.ttl, header: held?.header?.ttl, shots: held?.shots?.ttl });
+  const edge = l.headers["cache-control"];
+  ok("...and the log is no-store at the edge", edge === "no-store", edge);
+  await site.close();
 }
 
 console.log("\n── A publish through this API is never served stale ──");

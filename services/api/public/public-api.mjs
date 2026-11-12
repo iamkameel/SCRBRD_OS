@@ -50,7 +50,7 @@
  *
  * CACHING (§2.6). Each read is cached per fixture for 5 s while it is live and
  * 60 s otherwise (doubled while one fixture takes more than HOT_PER_MINUTE
- * requests a minute), and dropped at once when db/59's triggers say something
+ * requests a minute, except the log, which carries labels: cacheTtl()), and dropped at once when db/59's triggers say something
  * it depends on changed (LISTEN public_data_changed): a withdrawn consent, a
  * never-public mark, a names-off switch, a publication, a guardian link, a
  * surname. If the LISTEN connection is down the TTL is the ceiling, and on
@@ -95,6 +95,20 @@ import { safeErr } from "../log-safe.mjs";
 export const LIVE_TTL_MS = 5_000;
 export const SETTLED_TTL_MS = 60_000;
 export const HOT_PER_MINUTE = 2_000;
+
+/**
+ * How long one cached part lives: 5 s while the fixture is live, 60 s
+ * otherwise, doubled while the fixture is hot — EXCEPT a part that carries a
+ * label (a child's initial and surname: the log's `people`). That is never
+ * doubled, so with the listener down a name switched off is gone within 60 s,
+ * the ceiling 083 §2.6 accepted (PUBLIC_BY_TERMS §2.4 and must-never 11,
+ * slice 2). Team facts may still double.
+ * @param {{status?: string, hot: boolean, labelled: boolean}} part
+ * @returns {number} milliseconds
+ */
+export function cacheTtl({ status, hot, labelled }) {
+  return (status === "live" ? LIVE_TTL_MS : SETTLED_TTL_MS) * (hot && !labelled ? 2 : 1);
+}
 export const RATE = Object.freeze({ perMinute: 360, burst: 60 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -451,10 +465,16 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
   };
 
   /** @param {any} h @param {boolean} hot */
-  const ttlFor = (h, hot) => (h?.status === "live" ? LIVE_TTL_MS : SETTLED_TTL_MS) * (hot ? 2 : 1);
+  const ttlFor = (h, hot) => cacheTtl({ status: h?.status, hot, labelled: false });
 
-  /** The header, or null for a fixture that is not served. @param {string} id @param {boolean} hot */
-  const header = (id, hot) => cache.get(id, "header", SETTLED_TTL_MS * (hot ? 2 : 1), async () => {
+  /**
+   * The header, or null for a fixture that is not served. Its `servedOn` is
+   * the day every label in the log is judged on, so it is held as a labelled
+   * part: never doubled, and a withdrawal just past midnight is not judged on
+   * yesterday for two minutes (PUBLIC_BY_TERMS §2.4).
+   * @param {string} id @param {boolean} hot
+   */
+  const header = (id, hot) => cache.get(id, "header", cacheTtl({ hot, labelled: true }), async () => {
     const { rows } = await asNobody((c) => c.query(`select * from public_match_header($1)`, [id]));
     const r = rows[0];
     if (!r) return null;
@@ -485,13 +505,16 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
     // A live fixture's header lives 5 s, not 60: re-read once the short TTL is up.
     if (h && h.status === "live") {
       const e = cache.entry(id);
-      if (e.header) e.header.ttl = ttlFor(h, hot);
+      if (e.header) e.header.ttl = cacheTtl({ status: h.status, hot, labelled: true });
     }
     return h;
   });
 
   /** @param {string} id @param {any} h @param {boolean} hot @returns {Promise<PublicLog>} */
-  const log = (id, h, hot) => cache.get(id, "log", ttlFor(h, hot), async () => {
+  // The log carries labels (`people`): its life is never doubled, so a
+  // switch turned off reaches it within SETTLED_TTL_MS with the listener
+  // down (PUBLIC_BY_TERMS §2.4, slice 2).
+  const log = (id, h, hot) => cache.get(id, "log", cacheTtl({ status: h?.status, hot, labelled: true }), async () => {
     const { people, rows } = await asNobody(async (c) => {
       // People first: an event that arrives between the two reads names
       // someone this set lacks, and he is shown as a position until the next
