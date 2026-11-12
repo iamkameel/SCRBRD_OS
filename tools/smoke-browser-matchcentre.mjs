@@ -847,17 +847,29 @@ try {
       await click(s.page, /^Sign In$/, 5000);
       await afterReads(s.page, 2200);
       ok(`${label} signs in`, (await tid(s.page, "persona-bar").count()) === 1 || /Match Centre|Dashboard/i.test(await text(s.page)));
-      let opened;
-      if (family) {
-        await s.page.locator('[data-testid="mnav-mymatches"], [data-testid="nav-mymatches"]').first().click({ timeout: 6000 }).catch(() => {});
-        await afterReads(s.page, 1800);
-        // The fixture is live: the family list draws it as a live row (a played row once it is over).
-        await s.page.locator(`[data-testid="live-row-${fx.live}"], [data-testid="played-row-${fx.live}"]`).first().click({ timeout: 6000 }).catch(() => {});
-        await tid(s.page, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
-        await afterReads(s.page, 1500);
-        opened = (await tid(s.page, "match-view").count()) === 1;
-      } else opened = await openMatch(s.page, fx.live);
-      ok(`...and opens the fixture${family ? ", from the family's own Matches" : ""}`, opened);
+      // A reader in the staff app opens it from Match Centre; a family's app has its own way in: the live
+      // card's "Follow the match" on Home, else its Matches list, where a live fixture is a live row.
+      let opened = await openMatch(s.page, fx.live);
+      if (!opened && family) {
+        const ways = [
+          async () => { await tid(s.page, "live-follow").first().click({ timeout: 4000 }); },
+          async () => {
+            await s.page.locator('[data-testid="mnav-fixtures"], [data-testid="nav-fixtures"], [data-testid="mnav-mymatches"], [data-testid="nav-mymatches"]').first().click({ timeout: 4000 });
+            await afterReads(s.page, 1500);
+            await s.page.locator(`[data-testid="live-row-${fx.live}"], [data-testid="played-row-${fx.live}"]`).first().click({ timeout: 4000 });
+          },
+        ];
+        for (const way of ways) {
+          if (opened) break;
+          await way().catch(() => {});
+          await tid(s.page, "match-view").waitFor({ timeout: 8000 }).catch(() => {});
+          await afterReads(s.page, 1200);
+          opened = (await tid(s.page, "match-view").count()) === 1;
+        }
+        if (!opened) console.log("  · seen:", (await s.page.evaluate(() => [...document.querySelectorAll("[data-testid]")].map((e) => e.getAttribute("data-testid"))
+          .filter((t) => /nav|row|live|card|follow/.test(t)).slice(0, 40).join(" "))));
+      }
+      ok("...and opens the fixture", opened);
       if (!opened) { await s.ctx.close(); continue; }
       const c = await chartsOf(s.page);
       ok(`${label}: ${want.length} charts, ${want.join(", ")} (${analysis})`, c.analysis === analysis && c.charts.join() === want.join(), JSON.stringify(c));
