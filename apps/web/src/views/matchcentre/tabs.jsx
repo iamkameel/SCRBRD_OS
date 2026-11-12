@@ -104,6 +104,10 @@ export function AnalyticsTab({ match, role = null, innings, inningsSel, setInnin
   // reader may not open (§2.1 P4), so it is not offered. The whole innings
   // stays, as every spectator has it.
   const offered = inn.batsmen.filter((b) => b.balls > 0 && (!focus || focus.has(b.id)));
+  // CRI-2.5 (b), the lead's call: a family reader's three charts keep G13's own wheel — his child's
+  // shots, and nobody else's, with no whole-innings wheel. With no child of his batting, no section.
+  const familyShots = !full && !!focus && offered.length > 0;
+  const shotsOf = full ? wheelOf : (offered.find((b) => b.id === wheelOf) ?? offered[0])?.id ?? null;
   const legal = inn.ballLog.filter((b) => b.type !== "Wd" && b.type !== "Nb");
   const dots = legal.filter((b) => (b.type ?? "run") === "run" && b.value === 0).length;
   // Fours and sixes are boundaries (the Laws audit F7): the engine's one test.
@@ -117,7 +121,7 @@ export function AnalyticsTab({ match, role = null, innings, inningsSel, setInnin
   const scope = `${sideName} innings`;
   const both = innings.filter(Boolean).reduce((n, x) => n + (x.balls ?? 0), 0);
   const placed = (balls) => balls.filter((b) => b.theta != null || b.seg != null).length;
-  const theirs = wheelOf ? inn.ballLog.filter((b) => b.strikerId === wheelOf) : inn.ballLog;
+  const theirs = shotsOf ? inn.ballLog.filter((b) => b.strikerId === shotsOf) : inn.ballLog;
   /** @param {{l: string, v: any}} p */
   const Kpi = ({ l, v }) => (
     <div style={{ flex: "1 1 120px", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md, padding: `${T.space.sm} ${T.space.md}`, background: T.surface.raised }}>
@@ -148,15 +152,18 @@ export function AnalyticsTab({ match, role = null, innings, inningsSel, setInnin
       <Sourced line={ballsLine(scope, inn.balls ?? 0)} testid="source-line-partnership">
         <PartnershipChart inn={inn}/>
       </Sourced>
-      {full && (<>
+      {full && (
       <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)", gap: T.space.md }}>
         <div><H>Batting impact</H><Sourced line={ballsLine(scope, inn.balls ?? 0)} testid="source-line-batsman"><BatsmanChart inn={inn}/></Sourced></div>
         <div><H>Bowling economy</H><Sourced line={ballsLine(scope, inn.balls ?? 0)} testid="source-line-bowler"><BowlerChart inn={inn}/></Sourced></div>
       </div>
+      )}
+      {(full || familyShots) && (
+      <div data-testid="mc-shot-placement">
       <H>Shot placement</H>
       <div role="group" aria-label="Whose shots" style={{ display: "flex", gap: T.space.xs, flexWrap: "wrap", marginBottom: T.space.sm }}>
-        {[{ id: null, name: "Whole innings" }, ...offered].map((b) => {
-          const on = wheelOf === (b.id ?? null);
+        {[...(full ? [{ id: null, name: "Whole innings" }] : []), ...offered].map((b) => {
+          const on = shotsOf === (b.id ?? null);
           return (
             <button key={b.id ?? "all"} type="button" aria-pressed={on} onClick={() => setWheelOf(b.id ?? null)} className="pressBtn os-state"
               style={{ minHeight: "44px", padding: `0 ${T.space.md}`, borderRadius: T.radius.pill, cursor: "pointer",
@@ -167,13 +174,16 @@ export function AnalyticsTab({ match, role = null, innings, inningsSel, setInnin
           );
         })}
       </div>
-      <Sourced line={ballsLine(wheelOf ? "One batter, this innings" : scope, theirs.length, shotsCaptured(placed(theirs), theirs.length))} testid="source-line-shots">
-        <ShotWheel inn={inn} playerId={wheelOf} title={wheelOf ? (inn.batsmen.find((b) => b.id === wheelOf)?.name ?? "Wagon wheel") : "Wagon wheel"}/>
+      <Sourced line={ballsLine(shotsOf ? "One batter, this innings" : scope, theirs.length, shotsCaptured(placed(theirs), theirs.length))} testid="source-line-shots">
+        <ShotWheel inn={inn} playerId={shotsOf} title={shotsOf ? (inn.batsmen.find((b) => b.id === shotsOf)?.name ?? "Wagon wheel") : "Wagon wheel"}/>
         <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)", gap: T.space.md }}>
-          <ShotHeatMap inn={inn} playerId={wheelOf}/>
-          <ShotSpider inn={inn} playerId={wheelOf}/>
+          <ShotHeatMap inn={inn} playerId={shotsOf}/>
+          <ShotSpider inn={inn} playerId={shotsOf}/>
         </div>
       </Sourced>
+      </div>
+      )}
+      {full && (<>
       {/* SCRBRD-102: filters by batter and bowler, run chips that isolate a
           subset of spokes, off side against on side, and the eight named
           areas with their runs and boundaries. */}

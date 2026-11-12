@@ -372,7 +372,8 @@ try {
   await pickTab(s.page, "analytics").catch(() => {});
   await afterReads(s.page, 800);
   const whose = await s.page.$$eval('[aria-label="Whose shots"] button', (els) => els.map((e) => e.innerText.trim()));
-  ok("Analytics offers a wheel for him only, beside the whole innings", whose.join() === "Whole innings,R Pillay", whose.join());
+  // CRI-2.5 (b): a pupil's three charts keep his own wheel, by his name alone, and no whole-innings wheel.
+  ok("Analytics offers his own wheel only: no whole innings, nobody else's", whose.join() === "R Pillay", whose.join());
   await tid(s.page, "mc-back").click({ timeout: 4000 }).catch(() => {});
   await s.page.waitForTimeout(600);
 

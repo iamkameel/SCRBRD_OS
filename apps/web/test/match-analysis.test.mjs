@@ -10,6 +10,12 @@
  * all of them, assistant coaches, team managers, scorers, admins and medical
  * included. No capability and no grant changes for it.
  *
+ * AND THE FAMILY'S OWN WHEEL (the lead's call (b), 13 Nov 2026): in family
+ * mode (step 4 G13: a parent's child, a pupil himself) the three charts keep
+ * the per-player wheel, heat map and spider for the reader's own child, and
+ * only his: no whole-innings wheel, no other child's. A family reader whose
+ * child did not bat in the innings has no shot-placement section at all.
+ *
  *   node --import ./tools/register-jsx.mjs apps/web/test/match-analysis.test.mjs
  */
 import { createElement as h } from "react";
@@ -57,12 +63,23 @@ group("The three, drawn (a guardian's session)");
   for (const v of [0, 1, 1, 4, 0, 0]) add(ball({ type: BALL_TYPE.RUN, value: v }));
   const innings = deriveMatch(ev).innings;
   const FIXTURE = { id: "m1", schoolId: "hil", homeTeam: "1XI", status: "live" };
-  const draw = (role) => renderToStaticMarkup(h(AnalyticsTab, { match: FIXTURE, role, innings, inningsSel: 0, setInningsSel: () => {}, overs: 2, events: ev }));
+  const draw = (role, focus = null) => renderToStaticMarkup(h(AnalyticsTab, { match: FIXTURE, role, innings, inningsSel: 0, setInningsSel: () => {}, overs: 2, events: ev, focus }));
   const toggles = (html) => [...html.matchAll(/data-testid="([a-z]+)-table-toggle"/g)].map((m) => m[1]);
   const g = draw("guardian");
   ok("the guardian: runs per over and the partnerships (one innings, so no worm)", /data-analysis="spectator"/.test(g) && toggles(g).join() === "manhattan,partnership", toggles(g));
   ok("...no batting impact, bowling economy, wheel, heat map, spider or wagon-wheel analysis",
      !/shot-wheel|wagon-analysis|Batting impact|Bowling economy|shot-heat-map|shot-spider/.test(g));
+  ok("...and, with no child of his batting, no shot-placement section", !/mc-shot-placement|Whose shots/.test(g));
+  const whose = (html) => [...(/aria-label="Whose shots"[^>]*>([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "").matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
+  const mine = draw("guardian", new Set(["a"]));
+  ok("a guardian whose boy batted: the three, and his boy's shots — his name alone, no whole innings",
+     /data-analysis="spectator"/.test(mine) && /mc-shot-placement/.test(mine) && whose(mine).join() === "a", whose(mine));
+  ok("...the wheel, heat map and spider are his (no other child's chooser, no batting impact or wagon analysis)",
+     !/Whole innings|Batting impact|Bowling economy|wagon-analysis/.test(mine));
+  const notHere = draw("guardian", new Set(["someone-else"]));
+  ok("a guardian whose child is not in the innings: the three, and no shot-placement section", !/mc-shot-placement|Whose shots/.test(notHere));
+  const pupil = draw("player", new Set(["b"]));
+  ok("a pupil: his own shots, by his name alone", whose(pupil).join() === "b", whose(pupil));
   const c = draw("assistantcoach");
   // These balls carry no placement, so the wheel, the heat map and the spider say so rather than draw.
   ok("the assistant coach: every chart", /data-analysis="full"/.test(c) && toggles(c).join() === "manhattan,partnership,batsman,bowler" && /Shot placement/.test(c)
