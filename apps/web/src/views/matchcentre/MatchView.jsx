@@ -325,7 +325,8 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   const staffScreen = signedIn() && !captain && !focus?.length;
   const corrections = useCorrections(match, staffScreen && !log.demo, log.events?.length ?? 0);
   const [sheet, setSheet] = useState(!!initialCorrections);
-  const played = log.innings.filter(Boolean);
+  // One array while the fold stands, so the tabs' memos (the worm, the scenario panel) hold between renders.
+  const played = useMemo(() => log.innings.filter(Boolean), [log.innings]);
   // The innings the Scorecard, Partnerships and Analytics tabs are on: the
   // one in play, until the reader picks another.
   const [picked, setPicked] = useState(null);

@@ -158,6 +158,63 @@ const click = async (page, re, ms = 4000) => {
   await page.waitForTimeout(300);
   return true;
 };
+/** A dev-login token, and one read's rows as that reader: the screen's checks compare with these. */
+const devToken = async (email) => (await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+  body: JSON.stringify({ email, deviceId: "pupil-walk-trend" }) })).json())?.token;
+const readRows = async (token, path) => (await (await fetch(`${API}/api/read/${path}`, { headers: { authorization: `Bearer ${token}` } })).json().catch(() => null))?.rows ?? [];
+/**
+ * GA-I23 B2: the season-trend panel under `root`, against the read's own
+ * rows for that boy: the season it opened on, a point per innings of it,
+ * the runs, the scorebook's points; the table behind "Show as table"; the
+ * spoken summary; and at 320px nothing wider than the screen.
+ */
+async function trendChecks(page, root, rows, who) {
+  const panel = page.locator(`[data-testid="${root}"] [data-testid="season-trend"]`).first();
+  await page.waitForFunction((r) => { const el = document.querySelector(`[data-testid="${r}"] [data-testid="season-trend"]`); return el && el.getAttribute("data-state") !== "loading"; },
+    root, { timeout: 15000 }).catch(() => {});
+  ok(`${who}: the innings-by-innings panel draws`, await panel.count() === 1);
+  const current = rows.find((r) => r.current_season)?.season ?? "";
+  ok(`${who}: it opens on this season, the read's own label`, (await panel.getAttribute("data-season").catch(() => null)) === current, `${current} · ${await panel.getAttribute("data-season").catch(() => "")}`);
+  const these = rows.filter((r) => r.season === current);
+  const points = await panel.locator('[data-testid="season-trend-point"]').evaluateAll((els) => els.map((e) => ({ runs: e.getAttribute("data-runs"), source: e.getAttribute("data-source"), out: e.getAttribute("data-out") })));
+  if (!current) {
+    ok(`${who}: no innings this season, said in words, no chart`, /Did not bat this season\./.test(await panel.innerText()) && points.length === 0);
+    return;
+  }
+  ok(`${who}: a point per innings the read returned, in its order`, JSON.stringify(points) === JSON.stringify(these.map((r) => ({ runs: String(r.runs), source: r.source, out: r.out ? "true" : "false" }))),
+     JSON.stringify(points) + " vs " + JSON.stringify(these.map((r) => [r.runs, r.source, r.out])));
+  const runs = (await panel.locator('[data-figure="Runs"]').innerText().catch(() => "")).trim();
+  ok(`${who}: the season's runs are the read's sum`, runs === String(these.reduce((s, r) => s + Number(r.runs), 0)), runs);
+  const said = (await panel.innerText()).replace(/\s+/g, " ");
+  if (these.length < 6) ok(`${who}: under 6 innings, no line, and the basis says so in B3's words`,
+    await panel.getAttribute("data-line") === "none" && new RegExp(`Only ${these.length} innings, fewer than the 6 this needs\\. A guide, not a result\\.`).test(said), said.slice(0, 300));
+  if (these.some((r) => r.source === "scorebook")) ok(`${who}: a scorebook innings is a point of its own, and the note says it is the book's`, points.some((p) => p.source === "scorebook") && /from a scorebook/.test(said), said.slice(0, 300));
+  ok(`${who}: no verdict words (Q9)`, !/\b(in form|improving|declining|best|struggling)\b/i.test(said), said.slice(0, 200));
+  const summary = await panel.locator('[data-testid="season-trend-summary"]').textContent().catch(() => "");
+  ok(`${who}: a spoken summary, read out for the chart and hidden on screen`, new RegExp(`${these.length} innings`).test(summary ?? "")
+     && await panel.locator('[data-testid="season-trend-summary"].sr-only').count() === 1
+     && (await panel.locator('[data-testid="season-trend-chart"]').getAttribute("aria-describedby")) === await panel.locator('[data-testid="season-trend-summary"]').getAttribute("id"), summary);
+  const toggle = panel.locator('[data-testid="season-trend-table-toggle"]');
+  await toggle.click({ timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(200);
+  const tableRows = await panel.locator('[data-testid="season-trend-table"] tbody tr').count();
+  ok(`${who}: Show as table opens a table, a row per innings`, await toggle.getAttribute("aria-expanded") === "true" && tableRows === these.length, tableRows);
+  const tb = await toggle.boundingBox();
+  ok(`${who}: ...its button 44px`, (tb?.height ?? 0) >= 43.5, tb?.height);
+  await toggle.click({ timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(200);
+  ok(`${who}: ...and Hide table closes it`, await panel.locator('[data-testid="season-trend-table"]').count() === 0 && await toggle.getAttribute("aria-expanded") === "false");
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.waitForTimeout(400);
+  const fit = await page.evaluate((r) => {
+    const el = document.querySelector(`[data-testid="${r}"]`);
+    const wide = el ? [...el.querySelectorAll("*")].filter((n) => n.getBoundingClientRect().right > window.innerWidth + 0.5).map((n) => n.tagName + (n.getAttribute("data-testid") ? `#${n.getAttribute("data-testid")}` : "")) : ["no panel"];
+    return { page: document.documentElement.scrollWidth, inner: window.innerWidth, wide };
+  }, root);
+  ok(`${who}: at 320px nothing overflows, the page or the panel`, fit.page <= fit.inner && fit.wide.length === 0, JSON.stringify(fit).slice(0, 300));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(300);
+}
 async function signIn(page) {
   await click(page, /Get Started|Log In/, 5000);
   await page.waitForTimeout(500);
@@ -354,6 +411,23 @@ try {
   ok("...and his average, figures first", /AVG 34/.test(boardSaid), boardSaid.replace(/\n/g, " / "));
   const seasonSaid = await inner(s.page, "passport-panel-season");
   ok("the season tab carries his season", /34 runs/.test(seasonSaid), seasonSaid.replace(/\n/g, " / "));
+  {
+    // GA-I23 B2 (B5, Q7): his own season, innings by innings, through his
+    // self link; a team-mate's line he never reads, by screen or by the read.
+    const pupilTok = await devToken("pillay@example.invalid");
+    const own = await readRows(pupilTok, `innings_by_season?playerId=${PILLAY}`);
+    ok("B2: his own innings read back to him (the scorebook innings included)", own.length >= 1 && own.some((r) => r.source === "scorebook"), JSON.stringify(own).slice(0, 200));
+    await trendChecks(s.page, "passport-trend", own, "his Passport");
+    const mine = await inner(s.page, "passport-trend");
+    ok("B2: his panel names no team-mate", !/Whitfield|Bekker|Naidoo|Cele/.test(mine), mine.slice(0, 200));
+    for (const [name, boy] of [["Whitfield", WHITFIELD], ["Bekker", BEKKER]]) {
+      ok(`B2: the read gives him no team-mate's innings (${name})`, (await readRows(pupilTok, `innings_by_season?playerId=${boy}`)).length === 0);
+    }
+    ok("B2: and his app offers no Analytics, so no picker of another boy's line",
+       await s.page.locator('[data-testid="mnav-analytics"], [data-testid="nav-analytics"], [data-testid="season-trend-player"]').count() === 0);
+    const tm = await devToken("spectator@example.invalid");
+    ok("B2: a team-mate pupil (spectator@, `player` on the 1st XI) reads none of his innings", !!tm && (await readRows(tm, `innings_by_season?playerId=${PILLAY}`)).length === 0);
+  }
   await tid(s.page, "passport-tab-wheel").click({ timeout: 4000 }).catch(() => {});
   await afterReads(s.page, 1500);
   ok("the Wheel tab draws his own wheel (SCRBRD-102)", await tid(s.page, "career-wagon-wheel").count() === 1);
@@ -1106,6 +1180,25 @@ try {
     const toKids = await q(`select count(*)::int as n from notification n join app_user u on u.id = n.recipient_id
                              where n.subject_id = $1 and u.player_id is not null`, [R4M]);
     ok("nothing about it went to a child alone", toKids[0].n === 0, toKids[0].n);
+  }
+  {
+    // GA-I23 B2 (Q8): his parent sees his innings-by-innings line on his own
+    // Home, one child at a time, read for him alone; no team-mate's.
+    group("B2: his parent sees his season, innings by innings, on his Home");
+    const parentTok = await devToken("parent@example.invalid");
+    const hers = await readRows(parentTok, `innings_by_season?playerId=${PILLAY}`);
+    ok("B2: the read gives his parent his innings", hers.length >= 1, hers.length);
+    ok("B2: ...and no team-mate's", (await readRows(parentTok, `innings_by_season?playerId=${WHITFIELD}`)).length === 0);
+    const tp = await open();
+    ok("B2: his parent signs in", await signInAs(tp.page, "parent@example.invalid"));
+    await afterReads(tp.page, 1500);
+    await trendChecks(tp.page, "family-trend", hers, "his parent's Home");
+    const scope = await inner(tp.page, "family-trend");
+    ok("B2: her panel is her child's, by name, and nobody else's", /One player: /.test(scope) && !/Whitfield|Bekker|Naidoo|Cele/.test(scope), scope.slice(0, 200));
+    const ft = await floors(tp.page);
+    ok(`B2: her Home with the panel: nothing under 12px (${ft.small.length}), nothing tapped under 44px (${ft.tiny.length})`, ft.small.length === 0 && ft.tiny.length === 0, [...ft.small, ...ft.tiny].slice(0, 4).join(" · "));
+    ok("B2: no scoping refusals and no page errors", tp.refusals.length === 0 && tp.errors.length === 0, tp.refusals[0] ?? tp.errors.join(" | "));
+    await tp.ctx.close();
   }
   await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: withdrawn' where id = $1`, [keptAgain]);
   ok("the walk leaves no live captaincy of his behind", (await q(`select count(*)::int as n from honour where player_id = $1 and withdrawn_at is null`, [PILLAY]))[0].n === 0);

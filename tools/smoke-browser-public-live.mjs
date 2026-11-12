@@ -53,7 +53,7 @@ import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { writeEvents, HIL } from "./fixture-matchcentre.mjs";
-import { ball, batters, bowler, inningsStart, retire, penalty, placementFromTap, BALL_TYPE } from "@scrbrd/scoring";
+import { ball, batters, bowler, inningsStart, retire, penalty, placementFromTap, voidEvent, BALL_TYPE } from "@scrbrd/scoring";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { pickTab } from "./walk-tabs.mjs";
 
@@ -355,7 +355,9 @@ try {
   // cache; the ground display is the one that reads ?since= (reads.js), and its
   // reads are captured below. So: the next log read whose `last` holds the new ball.
   const seqNew = log.length + 1;
-  await writeEvents(q, LIVE, [at(ball({ type: BALL_TYPE.RUN, value: 4, shot: "cut", ...placementFromTap({ angle: 250, radius: 1 }) }))], log.length);
+  const arrival = at(ball({ type: BALL_TYPE.RUN, value: 4, shot: "cut", ...placementFromTap({ angle: 250, radius: 1 }) }));
+  await writeEvents(q, LIVE, [arrival], log.length);
+  log.push(arrival);
   const arrived = await page.waitForResponse(async (r) => {
     if (!/\/api\/public\/matches\/[^/]+\/log(\?|$)/.test(r.url())) return false;
     try { return Number((await r.json()).last) >= seqNew; } catch { return false; }
@@ -439,6 +441,65 @@ try {
   ok("nothing was read from a signed-in route", sent.every((r) => !/\/api\/(read|matches|auth|me)\b/.test(new URL(r.url).pathname)),
      sent.map((r) => new URL(r.url).pathname).filter((p) => /\/api\/(read|matches|auth|me)\b/.test(p)).join(" "));
   await ctx.close();
+
+  group("5. Scenarios on the public page (GA-I29): from 12 legal balls, team figures only, a stepper, a void that keeps the rate");
+  {
+    /** Write events after the log so far, in order. @param {any[]} more */
+    const writeMore = async (more) => { const from = log.length; const evs = more.map((e) => at(e)); log.push(...evs); await writeEvents(q, LIVE, evs, from); return evs; };
+    await writeMore([1, 0, 2, 1].map((v) => ball({ type: BALL_TYPE.RUN, value: v })));
+    const { deriveMatch } = await import("@scrbrd/scoring");
+    const now = () => /** @type {any} */ (deriveMatch(log).innings[0]);
+    ok("the seed's fixture is at 11 legal balls", now().balls === 11, now().balls);
+    const sctx = await browser.newContext({ viewport: { width: 390, height: 844 }, extraHTTPHeaders: { "x-forwarded-for": "10.85.0.2" } });
+    await offline(sctx);
+    const sp = await sctx.newPage();
+    watchReads(sp);
+    const serr = /** @type {string[]} */ ([]);
+    sp.on("pageerror", (e) => serr.push(`pageerror: ${e.message}`));
+    sp.on("console", (msg) => { if (msg.type() === "error" && !/Failed to load resource/.test(msg.text())) serr.push(`console.error: ${msg.text()}`); });
+    await sp.addInitScript(`window.__SCRBRD_LIVE_MS__ = 1000;`);
+    await sp.goto(`${BASE}/live/${LIVE}`, { waitUntil: "networkidle" });
+    await sp.waitForSelector('[data-testid="mc-board"]', { timeout: 10000 }).catch(() => {});
+    await afterReads(sp, 1500);
+    ok("11 legal balls: the board, and no scenario panel", await sp.locator('[data-testid="mc-board"]').count() === 1
+       && await sp.locator('[data-testid="mc-scenario"]').count() === 0);
+    const waitText = (/** @type {string} */ id, /** @type {string} */ want, ms = 30000) => sp.waitForFunction(([i, w]) => document.querySelector(`[data-testid="${i}"]`)?.textContent === w,
+      [id, want], { timeout: ms, polling: 100 }).then(() => true, () => false);
+    const textOf = (/** @type {string} */ id) => sp.locator(`[data-testid="${id}"]`).first().innerText().catch(() => "");
+    await writeMore([ball({ type: BALL_TYPE.RUN, value: 2 })]);
+    const t12 = now();
+    const R = t12.runs, b = t12.balls, L = 120 - b;
+    const crr = ((6 * R) / b).toFixed(2), proj = (/** @type {number} */ h) => Math.round(R + (h / 2) * L / 6);
+    const open = Math.round((12 * R) / b);
+    ok(`the twelfth ball (${R} off ${b}) draws the panel: "At their rate so far (${crr} an over): ${Math.round((R * 120) / b)} off 20 overs"`,
+       await waitText("mc-scenario-own", `At their rate so far (${crr} an over): ${Math.round((R * 120) / b)} off 20 overs`), await textOf("mc-scenario-own"));
+    ok(`...the stepper opens at ${(open / 2).toFixed(1)}: ${proj(open)}`, (await textOf("mc-scenario-rate")) === (open / 2).toFixed(1)
+       && (await textOf("mc-scenario-outcome")) === `an over: ${proj(open)}`, `${await textOf("mc-scenario-rate")} ${await textOf("mc-scenario-outcome")}`);
+    const src = (await textOf("mc-scenario-source")).replace(/\s+/g, " ");
+    ok(`...its source line says the side, never a boy ("${src}")`, /Scope Hilton College 1XI, this innings/.test(src) && /Basis From 12 balls\./.test(src));
+    const boxes = await sp.evaluate(() => ["mc-scenario-down", "mc-scenario-up"].map((id) => { const r = document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect(); return r ? Math.min(r.width, r.height) : 0; }));
+    ok(`the stepper's buttons are 44px targets (${boxes.join(", ")})`, boxes.every((x) => x >= 44));
+    await sp.locator('[data-testid="mc-scenario-up"]').focus();
+    await sp.keyboard.press("Enter");
+    const mine = open + 1;
+    ok(`Enter on + raises the rate to ${(mine / 2).toFixed(1)}: ${proj(mine)}`, await waitText("mc-scenario-outcome", `an over: ${proj(mine)}`, 3000)
+       && (await textOf("mc-scenario-rate")) === (mine / 2).toFixed(1), `${await textOf("mc-scenario-rate")} ${await textOf("mc-scenario-outcome")}`);
+    // A four, and then the four voided: the outcome moves and comes back; the rate stays the reader's.
+    const [, four] = await writeMore([bowler({ bowler: TYPED[0] }), ball({ type: BALL_TYPE.RUN, value: 4 })]);
+    const t13 = now();
+    const at13 = Math.round(t13.runs + (mine / 2) * (120 - t13.balls) / 6);
+    ok(`a four arrives (${t13.runs} off ${t13.balls}): the outcome is ${at13}, the rate still ${(mine / 2).toFixed(1)}`,
+       await waitText("mc-scenario-outcome", `an over: ${at13}`) && (await textOf("mc-scenario-rate")) === (mine / 2).toFixed(1), `${await textOf("mc-scenario-rate")} ${await textOf("mc-scenario-outcome")}`);
+    await writeMore([voidEvent({ target: four.id, reason: "scorer_undo" })]);
+    ok(`the four voided: the outcome back to ${proj(mine)}, the rate still ${(mine / 2).toFixed(1)}`,
+       await waitText("mc-scenario-outcome", `an over: ${proj(mine)}`) && (await textOf("mc-scenario-rate")) === (mine / 2).toFixed(1), `${await textOf("mc-scenario-rate")} ${await textOf("mc-scenario-outcome")}`);
+    const words = await textOf("mc-scenario");
+    const named = scan(words, needles);
+    ok("the panel holds no pupil's name or typed name, and no percentage", named.length === 0 && !/%/.test(words), [...new Set(named)].slice(0, 4).join(" | "));
+    // Full time is browser-public's (section 8, its own fixture): a finished seed fixture cannot be put back.
+    ok("no console errors (scenarios)", serr.length === 0, serr.join(" | "));
+    await sctx.close();
+  }
 } catch (e) {
   fail++;
   console.log("  ✗ the walk threw:", /** @type {any} */ (e)?.stack ?? e);
