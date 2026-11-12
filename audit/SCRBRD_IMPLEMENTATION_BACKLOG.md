@@ -9,6 +9,8 @@
 
 7 Nov 2026: Kameel closed REACH-D2 (a pupil no longer reads team-mates' career figures; the parents' terms popia-2026-01 stand); the ratings fix shipped in #273 (commit 89cb61bd, live since 7 Nov); the career-figure build is open (see "Close REACH-D2" below). Skills' Overall radar (#274) closes SCRBRD-047.
 
+12 Nov 2026: three merges recorded. #297 (merge e774cda7): season trend B1, the innings-by-innings and side-season reads (GA-I23). #298 (merge ee3cbe6e): scenario controls A0+A1, one projection and the Match Centre panel (GA-I29). #300 (merge aea244a3): season trend B2, a player's innings panel on Analytics, a parent's Home and the pupil's Passport (GA-I23). Left open: B3 and A2.
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -756,8 +758,8 @@ for the owner's key, a platform administrator, a school administrator and a two-
 - **Skills history walk, flaky fixed** — **Done 2026-10-29** (#210, commit 3a63fbd): the walk waits for the since-the-last-look read after a save, and no longer reads the stale panel.
 - **Two browser-walk races, fixed** — **Done 2026-10-30** (#218, commit 76e7de9): the skills-history bar now waits for its re-read; the retire walk (`smoke-browser-retire`) waits for the pad's write.
 - **Skills door for the pupil (GA-I26a)** — **Partly done 2026-11-11** (#279, merge a63aa6a4): the pupil's Skills door.
-- **Scenario controls (GA-I29)** — **Decided 2026-11-11** (Kameel, in chat, 11 Nov 2026): "Scenario controls (GA-I29) - probability and forecasts are based scoring-rates and overs and what's achievable etc." No entry existed for GA-I29; this line was added on 11 Nov. **Partly done 2026-11-12** (#293, merge commit 6e852aad): the scenario controls design is done for Kameel's review; the build is open.
-- **Season trend (GA-I23)** — **Partly done 2026-11-12** (#293, merge commit 6e852aad): slice 2 design, for Kameel's review. Build open. No entry existed for GA-I23; this line was added on 12 Nov.
+- **Scenario controls (GA-I29)** — **Decided 2026-11-11** (Kameel, in chat, 11 Nov 2026): "Scenario controls (GA-I29) - probability and forecasts are based scoring-rates and overs and what's achievable etc." No entry existed for GA-I29; this line was added on 11 Nov. **Partly done 2026-11-12** (#293, merge commit 6e852aad): the scenario controls design is done for Kameel's review; the build is open. **Partly done 2026-11-12** (#298, merge ee3cbe6e): A0+A1, one projection and the Match Centre panel; A2 is open.
+- **Season trend (GA-I23)** — **Partly done 2026-11-12** (#293, merge commit 6e852aad): slice 2 design, for Kameel's review. Build open. No entry existed for GA-I23; this line was added on 12 Nov. **Partly done 2026-11-12** (#297, merge e774cda7): B1, the innings-by-innings and side-season reads. **Partly done 2026-11-12** (#300, merge aea244a3): B2, a player's innings panel on Analytics, a parent's Home and the pupil's Passport. B3 is open.
 - **Pilot Match phase 2 (R0 design, with Kameel's answers to its five calls; slices 1–3 behind the switch, db/151)** — **Partly done 2026-11-12** (#290, merge commit 5cea2275; #291, merge commit 5b6f9725): the design and slices 1 to 3 are merged. Slices 4 onward remain: the public page, promotion and the purge job. No entry existed for pilot match phase 2; this line was added on 12 Nov.
 
 ## Match page grammar — from the ESPNcricinfo audits (added 2026-10-23)
