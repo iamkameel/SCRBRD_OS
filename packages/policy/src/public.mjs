@@ -10,7 +10,10 @@
  *   SURFACES, surface(id)    §2. What each public surface may carry, as data,
  *                            so a read asks surface("A3") and is told "not
  *                            public" rather than restating the decision.
- *   NEVER_PUBLIC             §3. Table columns, and whole tables, that no
+ *   STREAM_CAPTION           D2's own rule: the role words the stream
+ *                            caption carries for every child, and the
+ *                            by-terms route closed to it (PUBLIC_BY_TERMS §1.3).
+ *   NEVER_PUBLIC            §3. Table columns, and whole tables, that no
  *                            public read may select, whatever the consent.
  *   publicName(facts)        §1.2–1.4 and §4. What a public page shows for one
  *                            player: "D Erasmus", or his position.
@@ -125,6 +128,31 @@ export function surface(id) {
   }
   return SURFACES[id];
 }
+
+/**
+ * D2, THE STREAM CAPTION: ITS OWN RULE, NEVER publicName()'s
+ * (docs/design/PUBLIC_BY_TERMS.md §1.3 and slice 1; Kameel, 11 Nov 2026,
+ * Q1(e): "the stream caption: role words ('Batter') until its own consent").
+ *
+ * The caption sits beside a moving image of a boy's face, so no answer a
+ * family has given to the public-name question, and no default by terms,
+ * reaches it. It carries these words for every child, whoever he is,
+ * whatever the fixture's name_display, until a stream consent (SAFEGUARDING
+ * K1, `media_consent` purpose `stream_name`) is designed and built in its own
+ * migration. broadcast_state() (db/149) is where the words are served; this
+ * is the same decision in code, and packages/policy/test/public.test.mjs
+ * holds the latest SQL body that defines broadcast_state() to these words.
+ *
+ * THE SEAM FOR SLICE 2. When publicName() learns `byTermsAllowed`, the
+ * stream's caption never takes the by-terms route: whatever reads a caption
+ * name through publicName() passes STREAM_CAPTION.byTermsAllowed, which is
+ * the literal `false`, and the suite fails if it is ever anything else.
+ */
+export const STREAM_CAPTION = Object.freeze({
+  surface: "D2",
+  words: Object.freeze({ striker: "Batter", nonStriker: "Non-striker", bowler: "Bowler" }),
+  byTermsAllowed: /** @type {false} */ (false),
+});
 
 /**
  * D1, as the value a public page sends: the X-Robots-Tag header and the

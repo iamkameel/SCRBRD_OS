@@ -1529,6 +1529,22 @@ export const READ_QUERIES = {
   },
 
   /**
+   * The big screen at the ground: who it shows by position (db/153;
+   * PUBLIC_BY_TERMS §2.5, slice 1).
+   *
+   * One row per player the match's log puts on the field in a role, read
+   * under the caller's own policy on the log: whether the Match Centre's big
+   * screen shows him by his position. True for a boy under a never-public
+   * mark on the day, and for nothing else; never a reason, an author, a date
+   * or a name. The screen shows by position every player this read does not
+   * answer for, so a failed or late read names nobody it should not.
+   */
+  ground_screen_positions: {
+    text: `select player_id, position_only from ground_screen_positions($1)`,
+    params: q => [req(q, "matchId")],
+  },
+
+  /**
    * The school's sponsors, and what may be advertised at all.
    *
    * Read under sponsorship.read via the table's own policy — a school office

@@ -498,8 +498,8 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
         )}
         </span>
       </div>
-      {big && <BigScreen match={match} events={log.events} fold={log.fold} innings={played} result={result} settled={settled}
-        commentary={commentary} par={par} onClose={() => setBig(false)}/>}
+      {big && <BigScreen match={match} events={log.events} fold={log.fold} players={PLAYERS} result={result} settled={settled}
+        par={par} onClose={() => setBig(false)}/>}
 
       <header style={{ display: "grid", gap: T.space.sm }}>
         <div style={{ display: "flex", alignItems: "center", gap: T.space.sm, flexWrap: "wrap" }}>
