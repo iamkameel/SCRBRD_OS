@@ -1,39 +1,41 @@
-import { roleGrants, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
-import { endCovered } from "./cockpit.js";
+import { PERSONA_NAV } from "../design/roles.js";
+import { heldRoles } from "./features.js";
 
 /**
- * CRI-2.5: who reads a match's whole analysis on the signed-in Analytics tab,
- * and who its three spectator charts (docs/design/CRICINFO_GAP_PLAN.md
- * Sprint 2; the Lessons audit: "the public analytics surface is small").
+ * CRI-2.5: which of the signed-in Analytics tab's layouts a reader is drawn
+ * (docs/design/CRICINFO_GAP_PLAN.md Sprint 2; the Lessons audit: "the public
+ * analytics surface is small").
  *
- * THE CAPABILITY is `analytics.read` ("See aggregate analysis",
- * packages/policy): the one the Analytics module and Compare open under. A
- * role is never named: an assignment is asked what it grants. It must be one
- * that is about a side or a school, never one that names a person (a
- * guardian's, a pupil's own, an enquiry), and it must cover this fixture's
- * side as the Coach tab's does (endCovered(), lib/cockpit.js) — or be
- * platform-wide (no school). Everyone else, a parent, a pupil, a spectator,
- * has the three: the worm with its wickets, runs per over, and the
- * partnerships. Fails closed: no assignments, the three.
+ * PRESENTATION, NOT ACCESS (the lead's call, 13 Nov 2026). Every reader of a
+ * fixture already reads its whole ball log; the three-chart view only draws
+ * less of it. So it is decided as the shell decides which app to lay out —
+ * by persona, from the roles this session holds (heldRoles(), lib/features.js,
+ * the set personaOf() reads) — and no capability or grant changes:
  *
- * This is layout, not authority: the charts draw the fold of a log every
- * signed-in reader of the fixture already has, and the per-player wheel's
- * own gate (family mode, tabs.jsx) stands inside the whole analysis.
+ *   - a reader whose every role is a family's or a pupil's (the personas'
+ *     roles, PERSONA_NAV: guardian; player and selfaccess) or a follower's
+ *     (spectator) has the three: the worm with its wickets, runs per over and
+ *     the partnerships;
+ *   - anybody holding any other role, which is every staff role — coaches and
+ *     assistant coaches, team managers, scorers, admins, medical — keeps every
+ *     chart. A coach who is also a parent holds a staff role, so he keeps them.
+ *
+ * Fails open to the whole analysis when nothing is held (a demonstration with
+ * no role): it is what the tab drew before CRI-2.5.
  */
-export const FULL_ANALYSIS_CAPABILITY = "analytics.read";
+export const THREE_CHART_ROLES = Object.freeze(new Set([
+  ...Object.values(PERSONA_NAV).flatMap((p) => p.roles),
+  "spectator",
+]));
 
 /**
- * @param {{role: string, school: string | null, team: string | null, fixture?: string | null, subjects?: string[]}[] | null | undefined} assignments
- * @param {any} match  the Match Centre's fixture row
- * @returns {boolean}
+ * @param {string[]} roles  the roles held
+ * @returns {boolean}  true: the whole analysis; false: the three charts
  */
-export function fullAnalysis(assignments, match) {
-  if (!match?.id) return false;
-  return (assignments ?? []).some((a) => {
-    if (!a?.role || SUBJECT_SCOPED_ROLES.includes(a.role) || (a.subjects?.length ?? 0) > 0) return false;
-    if (!roleGrants(a.role, FULL_ANALYSIS_CAPABILITY)) return false;
-    if (a.fixture && a.fixture !== match.id) return false;
-    if (!a.school && !a.team) return true;          // platform-wide
-    return endCovered(a, match) != null;
-  });
+export function fullAnalysisFor(roles) {
+  const held = [...new Set(roles ?? [])].filter(Boolean);
+  return !held.length || !held.every((r) => THREE_CHART_ROLES.has(r));
 }
+
+/** The session's own: the roles it holds, or the demonstration's persona. @param {string} role  the shell's badge role */
+export const fullAnalysis = (role) => fullAnalysisFor(heldRoles(role));

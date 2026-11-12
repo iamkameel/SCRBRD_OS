@@ -1,17 +1,22 @@
 /**
- * CRI-2.5: who reads a match's whole analysis on the signed-in Analytics tab
- * (lib/matchAnalysis.js), and who the three spectator charts. Decided by
- * capability — analytics.read, through an assignment about a side or a school
- * that covers this fixture — and never by a role's name: the table below is
- * derived from roles.mjs, so a bundle that gains or loses the capability
- * moves its row here without anybody editing a list of titles.
+ * CRI-2.5: which layout of the signed-in Analytics tab a reader is drawn
+ * (lib/matchAnalysis.js).
+ *
+ * THE RULE (the lead's call, 13 Nov 2026): the three-chart view is
+ * presentation, not access — every reader of a match already reads its ball
+ * log — so it is decided by persona, not by a capability. Pupils, guardians
+ * and followers (the spectator role) get the three charts: the worm with its
+ * wicket pins, runs per over, and the partnerships. Every staff role keeps
+ * all of them, assistant coaches, team managers, scorers, admins and medical
+ * included. No capability and no grant changes for it.
  *
  *   node --import ./tools/register-jsx.mjs apps/web/test/match-analysis.test.mjs
  */
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ROLES, SUBJECT_SCOPED_ROLES, roleGrants } from "@scrbrd/policy/roles";
-import { FULL_ANALYSIS_CAPABILITY, fullAnalysis } from "../src/lib/matchAnalysis.js";
+import { ROLES } from "@scrbrd/policy/roles";
+import { THREE_CHART_ROLES, fullAnalysisFor } from "../src/lib/matchAnalysis.js";
+import { PERSONA_NAV } from "../src/design/roles.js";
 import { deriveMatch, inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 import { AnalyticsTab } from "../src/views/matchcentre/tabs.jsx";
 
@@ -19,38 +24,27 @@ let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
 const group = (t) => console.log("\n" + t);
 
-const HIL = "hil", WES = "wes";
-const FIXTURE = { id: "m1", schoolId: HIL, homeTeam: "1XI", awaySchoolId: WES, awayTeamCode: "2XI", status: "live" };
+const FAMILY = ["guardian", "player", "selfaccess", "spectator"];
 
-group("The capability, and who holds it");
+group("The rule: pupils, guardians and followers get three; every staff role keeps all");
 {
-  ok("the capability is analytics.read", FULL_ANALYSIS_CAPABILITY === "analytics.read");
-  // Every role, with an assignment at the home school on the home side: the whole analysis exactly when
-  // its bundle grants analytics.read and the assignment is not about a named person.
-  const wrong = ROLES.filter((role) => {
-    const subjects = SUBJECT_SCOPED_ROLES.includes(role) ? ["p1"] : [];
-    const got = fullAnalysis([{ role, school: HIL, team: "1XI", subjects }], FIXTURE);
-    return got !== (roleGrants(role, "analytics.read") && !SUBJECT_SCOPED_ROLES.includes(role));
-  });
-  ok("every role in roles.mjs: the whole analysis exactly when its bundle grants analytics.read", wrong.length === 0, wrong);
-  const has = (role) => fullAnalysis([{ role, school: HIL, team: role === "coach" || role === "player" ? "1XI" : null }], FIXTURE);
-  ok("a parent (guardian), a pupil (player, his own file), a spectator: the three", !fullAnalysis([{ role: "guardian", school: HIL, team: null, subjects: ["p1"] }], FIXTURE)
-     && !has("player") && !fullAnalysis([{ role: "selfaccess", school: HIL, team: null, subjects: ["p1"] }], FIXTURE) && !has("spectator"));
-  ok("the coach of the side, the director of sport, the principal, the analyst: the whole analysis", has("coach") && has("directorofsport") && has("principal") && has("analyst"));
+  ok("the three-chart readers are the family and pupil personas' roles and the follower's, and no others",
+     [...THREE_CHART_ROLES].sort().join() === [...FAMILY].sort().join()
+     && Object.values(PERSONA_NAV).flatMap((p) => p.roles).every((r) => THREE_CHART_ROLES.has(r)), [...THREE_CHART_ROLES]);
+  for (const r of FAMILY) ok(`${r}: the three charts`, fullAnalysisFor([r]) === false);
+  ok("a pupil as the session holds him (player and selfaccess): the three", fullAnalysisFor(["player", "selfaccess"]) === false);
+  ok("a parent who also follows the school: the three", fullAnalysisFor(["guardian", "spectator"]) === false);
+  const staff = ROLES.filter((r) => !FAMILY.includes(r));
+  const lost = staff.filter((r) => !fullAnalysisFor([r]));
+  ok(`every one of the ${staff.length} other roles in roles.mjs keeps every chart`, lost.length === 0 && staff.length > 15, lost);
+  for (const r of ["coach", "assistantcoach", "teammanager", "scorer", "schooladmin", "sportsadmin", "medical", "directorofsport", "principal", "analyst"]) {
+    ok(`${r}: every chart`, fullAnalysisFor([r]) === true);
+  }
+  ok("a coach who is also a parent holds a staff role, and keeps every chart", fullAnalysisFor(["coach", "guardian"]) === true);
+  ok("nothing held (a demonstration with no role): every chart, as before CRI-2.5", fullAnalysisFor([]) === true && fullAnalysisFor(null) === true);
 }
 
-group("Scope: this fixture's side, as the Coach tab reads it");
-{
-  ok("the away school's coach of the away side", fullAnalysis([{ role: "coach", school: WES, team: "2XI" }], FIXTURE));
-  ok("not the coach of another side at the home school", !fullAnalysis([{ role: "coach", school: HIL, team: "U14A" }], FIXTURE));
-  ok("not the director of sport of a school not in the fixture", !fullAnalysis([{ role: "directorofsport", school: "kea", team: null }], FIXTURE));
-  ok("a platform-wide assignment that grants it", fullAnalysis([{ role: "superadmin", school: null, team: null }], FIXTURE) === roleGrants("superadmin", "analytics.read"));
-  ok("one qualifying assignment among others is enough", fullAnalysis([{ role: "guardian", school: HIL, team: null, subjects: ["p1"] }, { role: "coach", school: HIL, team: "1XI" }], FIXTURE));
-  ok("an assignment naming a person never qualifies, whatever it grants", !fullAnalysis([{ role: "coach", school: HIL, team: "1XI", subjects: ["p1"] }], FIXTURE));
-  ok("fails closed: no assignments, no fixture", !fullAnalysis(null, FIXTURE) && !fullAnalysis([], FIXTURE) && !fullAnalysis([{ role: "coach", school: HIL, team: "1XI" }], null));
-}
-
-group("The three, drawn (signed out here, so no assignment: the spectator's layout)");
+group("The three, drawn (a guardian's session)");
 {
   const ev = [];
   let k = 0;
@@ -62,11 +56,17 @@ group("The three, drawn (signed out here, so no assignment: the spectator's layo
   add(bowler({ bowler: "y" }));
   for (const v of [0, 1, 1, 4, 0, 0]) add(ball({ type: BALL_TYPE.RUN, value: v }));
   const innings = deriveMatch(ev).innings;
-  const html = renderToStaticMarkup(h(AnalyticsTab, { match: FIXTURE, innings, inningsSel: 0, setInningsSel: () => {}, overs: 2, events: ev }));
-  const toggles = [...html.matchAll(/data-testid="([a-z]+)-table-toggle"/g)].map((m) => m[1]);
-  ok("the spectator's layout: runs per over and the partnerships (one innings, so no worm)", /data-analysis="spectator"/.test(html) && toggles.join() === "manhattan,partnership", toggles);
+  const FIXTURE = { id: "m1", schoolId: "hil", homeTeam: "1XI", status: "live" };
+  const draw = (role) => renderToStaticMarkup(h(AnalyticsTab, { match: FIXTURE, role, innings, inningsSel: 0, setInningsSel: () => {}, overs: 2, events: ev }));
+  const toggles = (html) => [...html.matchAll(/data-testid="([a-z]+)-table-toggle"/g)].map((m) => m[1]);
+  const g = draw("guardian");
+  ok("the guardian: runs per over and the partnerships (one innings, so no worm)", /data-analysis="spectator"/.test(g) && toggles(g).join() === "manhattan,partnership", toggles(g));
   ok("...no batting impact, bowling economy, wheel, heat map, spider or wagon-wheel analysis",
-     !/shot-wheel|wagon-analysis|Batting impact|Bowling economy|shot-heat-map|shot-spider/.test(html));
+     !/shot-wheel|wagon-analysis|Batting impact|Bowling economy|shot-heat-map|shot-spider/.test(g));
+  const c = draw("assistantcoach");
+  // These balls carry no placement, so the wheel, the heat map and the spider say so rather than draw.
+  ok("the assistant coach: every chart", /data-analysis="full"/.test(c) && toggles(c).join() === "manhattan,partnership,batsman,bowler" && /Shot placement/.test(c)
+     && /wagon-analysis/.test(c), toggles(c));
 }
 
 console.log(`\nMATCH ANALYSIS: ${pass} passed, ${fail} failed`);

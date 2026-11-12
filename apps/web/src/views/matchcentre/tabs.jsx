@@ -11,7 +11,6 @@ import { overParts } from "../../scorer/overParts.js";
 import { WagonAnalysisPanel } from "../../scorer/wagonAnalysisPanel.jsx";
 import { ErrorBoundary } from "../../ui/ErrorBoundary.jsx";
 import { ChartTable } from "../../ui/ChartTable.jsx";
-import { profile } from "../../lib/session.js";
 import { fullAnalysis } from "../../lib/matchAnalysis.js";
 import { InningsToggle } from "./scorecard.jsx";
 import { scrollerOf } from "../../lib/toBall.js";
@@ -78,7 +77,7 @@ function PartnershipChart({ inn }) {
  * Commentary, filtered to its balls by event id (MatchView's, signed in and
  * not a demonstration; null leaves the charts as they were).
  */
-export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs, events = null, focus = null, toBalls = null,
+export function AnalyticsTab({ match, role = null, innings, inningsSel, setInningsSel, overs, events = null, focus = null, toBalls = null,
   chartsAt = null, onChartsRestored = null }) {
   const [wheelOf, setWheelOf] = useState(null);
   const at = useRef(/** @type {HTMLElement | null} */ (null));
@@ -90,9 +89,9 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs,
     onChartsRestored?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // CRI-2.5: the whole analysis under analytics.read for this fixture's side (lib/matchAnalysis.js);
-  // a parent, a pupil, a spectator: the worm, runs per over and the partnerships.
-  const full = fullAnalysis(profile()?.assignments, match);
+  // CRI-2.5, by persona (lib/matchAnalysis.js): a parent, a pupil, a follower has the worm, runs per
+  // over and the partnerships; every staff role the whole analysis. Presentation: all read the same log.
+  const full = fullAnalysis(role);
   const inn = innings[inningsSel];
   if (!inn) return <Quiet testid="mc-analytics-empty">Nothing has been scored yet.</Quiet>;
   /** A chart's balls, and where the page is, for the way back. */

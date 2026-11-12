@@ -36,7 +36,8 @@
  *      and the way back is the charts where the page was;
  *  12. CRI-2.5: a parent and a pupil have the three spectator charts on
  *      Analytics (the worm with its wickets, runs per over, the
- *      partnerships), the side's coach and the director of sport every one.
+ *      partnerships), and the coach, the scorer and the director of sport every
+ *      one: by persona, as the shell lays out its app (lib/matchAnalysis.js).
  *
  * MC_SHOTS=<dir> also saves every tab at 390 and 1366 wide, in Daylight and
  * Floodlit, into <dir>.
@@ -806,7 +807,7 @@ try {
     await d23.ctx.close();
   }
 
-  group("CRI-2.5: a parent and a pupil have three charts on Analytics (the worm with its wickets, runs per over, the partnerships); the coach and the director every one");
+  group("CRI-2.5, by persona: a parent and a pupil have three charts on Analytics (the worm with its wickets, runs per over, the partnerships); the coach, the scorer and the director every one");
   {
     const ALL = ["worm", "manhattan", "partnership", "batsman", "bowler", "wheel", "heat", "spider"];
     const THREE = ["worm", "manhattan", "partnership"];
@@ -834,6 +835,7 @@ try {
       ["the parent (guardian)", "parent@example.invalid", THREE, "spectator", true],
       ["the pupil (player, 1st XI)", "spectator@example.invalid", THREE, "spectator", true],
       ["the 1st XI's coach", "coach@example.invalid", ALL, "full", false],
+      ["the scorer (staff, no analytics.read)", "scorer@example.invalid", ALL, "full", false],
       ["the director of sport", "sarah@example.invalid", ALL, "full", false],
     ];
     const stands2 = inn2.partnerships.length + (inn2.striker && inn2.nonStriker ? 1 : 0);
@@ -849,7 +851,8 @@ try {
       if (family) {
         await s.page.locator('[data-testid="mnav-mymatches"], [data-testid="nav-mymatches"]').first().click({ timeout: 6000 }).catch(() => {});
         await afterReads(s.page, 1800);
-        await tid(s.page, `fixture-row-${fx.live}`).first().click({ timeout: 6000 }).catch(() => {});
+        // The fixture is live: the family list draws it as a live row (a played row once it is over).
+        await s.page.locator(`[data-testid="live-row-${fx.live}"], [data-testid="played-row-${fx.live}"]`).first().click({ timeout: 6000 }).catch(() => {});
         await tid(s.page, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
         await afterReads(s.page, 1500);
         opened = (await tid(s.page, "match-view").count()) === 1;
