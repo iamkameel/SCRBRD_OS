@@ -1,4 +1,4 @@
-import { formatKind } from "@scrbrd/scoring";
+import { projectedTotal } from "@scrbrd/scoring";
 import { RR, fmtOv, isOut } from "./format.js";
 import { superOverBlock } from "../lib/superOver.js";
 import { parWords } from "../lib/par.js";
@@ -56,11 +56,14 @@ export function chaseLine(inn, target, overs) {
  * Plain arithmetic, stated as such: no weight for the wickets that have gone,
  * for the overs still to come or for the pitch, and no model. It is what the
  * run rate already on the board comes to, and nothing it claims to know more.
+ * GA-I29 A0: one definition, @scrbrd/scoring scenario.mjs (S5 at the rate so
+ * far), which the scenario panel and the "Projected" insight read too.
  *
  * NULL — the line is left off — when it would say nothing true or nothing
- * useful: in a second innings (the required rate is on the board), before a
- * legal ball has been bowled (nothing to rate; a first-ball wide is runs with
- * no ball), when the format has no over limit (a declaration or timed match),
+ * useful: in a second innings (the required rate is on the board), before
+ * twelve legal balls have been bowled (A-D8, Kameel's Q3: one minimum for
+ * every projection, on every surface; a first-ball wide is runs with no
+ * ball), when the format has no over limit (a declaration or timed match),
  * when the innings has no overs to reckon against, and once the innings is
  * over (its total is on the board).
  * @param {any} inn  a folded innings (packages/scoring's replay)
@@ -69,13 +72,8 @@ export function chaseLine(inn, target, overs) {
  * @returns {number | null}
  */
 export function atThisRate(inn, { overs = null, chasing = false, format = null } = {}) {
-  if (!inn || chasing) return null;
-  if (formatKind(format) === "declaration") return null;
-  if (!Number.isInteger(overs) || /** @type {number} */ (overs) <= 0) return null;
-  if (!(inn.balls > 0) || inn.complete) return null;
-  const left = /** @type {number} */ (overs) * 6 - inn.balls;
-  if (left <= 0) return null;
-  return Math.round(inn.runs + (inn.runs / inn.balls) * left);
+  if (!Number.isInteger(overs)) return null;
+  return projectedTotal(inn, { overs, chasing, format })?.runs ?? null;
 }
 
 // ── SCRBRD-130 R1: the rain line (design §1, §5) ──

@@ -27,5 +27,6 @@ export * from "./summary.mjs";
 export * from "./venue.mjs";   // SCRBRD-130 R3
 export * from "./dls.mjs";     // SCRBRD-130 R2
 export * from "./pressure.mjs";   // SCRBRD-133 G2: par and pressure at a point
+export * from "./scenario.mjs";   // GA-I29 A0: scenario controls, arithmetic on the innings' own record
 export * from "./facts.mjs";      // Recognition R1: milestones and bests from the fold
 export * from "./potm.mjs";       // Recognition R6: Player of the Match suggestions from the facts

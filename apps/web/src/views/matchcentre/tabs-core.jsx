@@ -205,7 +205,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   const other = teamOf(match, inn.bowlingTeam);
   const estimate = estimateLine({ inn, target, par: pressure, decided: settled,
     sides: { batting: phone ? side.short : side.full, fielding: phone ? other.short : other.full } });
-  const insight = !props ? [] : boardInsights(inn, { target, overs: inOvers });
+  const insight = !props ? [] : boardInsights(inn, { target, overs: inOvers, format: match.format, innings });
   const latest = [...commentary].reverse().filter((c) => c.kind !== "over_end").slice(0, 3);
   // CRI-1.1: how fresh the board is, while the match is being played — `okAt`
   // is the page's last good read of the log. Once play has decided it the
