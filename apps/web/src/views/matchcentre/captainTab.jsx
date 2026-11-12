@@ -132,7 +132,11 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
   const bat = mine.filter((x) => x.side === "batting");
   const field = mine.filter((x) => x.side === "bowling");
   const batters = bat.flatMap((x) => x.inn.batsmen.filter((b) => b.balls > 0 || b.runs > 0 || b.status === "out"));
-  const matchups = useMatchups(decided ? [...new Set(batters.map((b) => b.id))] : []);
+  // His own match-ups only (REACH-D2; Kameel, 11 Nov 2026: the captaincy
+  // adds "the side's season figures, nothing else"). The server refuses a
+  // pupil a team-mate's match-ups, so none is asked for.
+  const mineBatted = batters.filter((b) => b.id === me.id);
+  const matchups = useMatchups(decided ? [...new Set(mineBatted.map((b) => b.id))] : []);
 
   if (!innings.length) {
     return (
@@ -235,9 +239,12 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
         </Part>
       )}
 
-      {decided && batters.some((b) => matchupTypes(matchups[b.id]).length) && (
-        <Part label="Our batters against pace and spin" testid="mc-captain-matchups">
-          {batters.filter((b) => matchupTypes(matchups[b.id]).length).map((b) => (
+      {decided && mineBatted.some((b) => matchupTypes(matchups[b.id]).length) && (
+        <Part label="Your batting against pace and spin" testid="mc-captain-matchups">
+          <p data-testid="mc-captain-matchups-own" style={{ ...body(), fontSize: "14px", color: T.content.secondary }}>
+            Your own match-ups. A team-mate&rsquo;s are his own, so they are not shown here.
+          </p>
+          {mineBatted.filter((b) => matchupTypes(matchups[b.id]).length).map((b) => (
             <div key={b.id} style={{ display: "grid", gap: "2px" }}>
               <span style={body()}>{b.name}</span>
               {matchupTypes(matchups[b.id]).map((t) => (

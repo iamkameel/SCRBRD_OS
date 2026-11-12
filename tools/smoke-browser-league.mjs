@@ -436,10 +436,13 @@ try {
   ok("the ground is closed for two days and the closure is listed", (await tid(own.page, "go-closure").count()) === 1 && /Outfield being relaid/.test(await said(own.page, "go-closures")), await said(own.page, "go-closures"));
   await fill(own.page, "go-end-a", "Pavilion End"); await fill(own.page, "go-end-b", "School End");
   await tap(own.page, "go-ends-save");
+  // wait for the save's answer, not a fixed pause: on a slow runner the row was read before the write
+  await tid(own.page, "go-status").filter({ hasText: /Pavilion End and School End/ }).first().waitFor({ timeout: 15000 }).catch(() => {});
   const [ends] = await dbq(`select end_a_name, end_b_name from ground where id = $1`, [OVAL]);
   ok("the ends are named and kept", ends?.end_a_name === "Pavilion End" && ends?.end_b_name === "School End" && /Pavilion End and School End/.test(await said(own.page, "go-status")), JSON.stringify(ends));
   await fill(own.page, "go-end-b", "Pavilion End");
   await tap(own.page, "go-ends-save");
+  await tid(own.page, "go-ends-error").filter({ hasText: /Name both ends/ }).first().waitFor({ timeout: 15000 }).catch(() => {});
   ok("the same name twice is refused, in words", /Name both ends/.test(await said(own.page, "go-ends-error")), await said(own.page, "go-ends-error"));
   await shot(own.page, "5-ground");
   const fGo = await floors(own.page, "go-root");
