@@ -27,7 +27,13 @@
  *      in order; nothing replays on a fresh load; balls that arrive while the
  *      page is open give a moment on the board, tick the run count up, and
  *      end the over with a summary that shows and clears; big-screen mode
- *      draws the board full screen and leaves on Escape or its button.
+ *      draws the board full screen and leaves on Escape or its button;
+ *  10. CRI-2.1, at 360 wide: the Commentary's chips keep exactly the
+ *      deliveries the scorecard counts, by event id, and the over jump goes
+ *      to Over 14 of a longer fixture (fixture-matchcentre.mjs LONG);
+ *  11. CRI-2.3: every Manhattan bar and every wagon-wheel area with balls in
+ *      it opens the Commentary at exactly its events, adding up to its runs,
+ *      and the way back is the charts where the page was.
  *
  * MC_SHOTS=<dir> also saves every tab at 390 and 1366 wide, in Daylight and
  * Floodlit, into <dir>.
@@ -45,9 +51,12 @@ import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { deriveMatch, deriveInnings, deriveCommentary, runsOffBat, ball, batters, bowler, inningsStart, revision, sealInnings, placementFromTap,
-  scenarioOf, voidEvent } from "@scrbrd/scoring";
-import { buildMatchCentreFixture, writeEvents, HIL } from "./fixture-matchcentre.mjs";
+  scenarioOf, voidEvent, boundaryHit, batHandOf } from "@scrbrd/scoring";
+import { buildMatchCentreFixture, buildLongFixture, writeEvents, HIL } from "./fixture-matchcentre.mjs";
 import { correctionsOf, withCorrectionLines } from "../apps/web/src/lib/corrections.js";
+import { projectMatch } from "../apps/web/src/scorer/chartData.js";
+import { overParts } from "../apps/web/src/scorer/overParts.js";
+import { wagonAnalysis } from "../apps/web/src/scorer/wagonAnalysis.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { pickTab } from "./walk-tabs.mjs";
@@ -551,6 +560,61 @@ try {
   ok("the free hit is told, and the wicket it saved", /Free hit: .* bowled, but it's a free hit: not out\./.test(body));
   ok("no id reaches a line", !/[0-9a-f]{8}-[0-9a-f]{4}-/.test(body));
 
+  group("CRI-2.1: at 360 wide, the Commentary's chips keep exactly what the scorecard counts, by event id");
+  {
+    const NARROW = { width: 360, height: 780 };
+    const c21 = await open({ viewport: NARROW });
+    await signIn(c21.page, /sarah@example\.invalid|Director/);
+    ok("the fixture opens at 360 wide", await openMatch(c21.page, fx.live));
+    const P = c21.page;
+    await pickTab(P, "commentary");
+    await tid(P, "mc-chips").waitFor({ timeout: 4000 }).catch(() => {});
+    const chips = await P.locator('[data-testid^="mc-chip-"]').evaluateAll((els) => els.map((e) => ({
+      id: e.getAttribute("data-testid").slice(8), h: e.getBoundingClientRect().height, w: e.getBoundingClientRect().width,
+      pressed: e.getAttribute("aria-pressed"), count: e.getAttribute("data-count") })));
+    ok("four chips, All pressed, each 44px tall", chips.map((c) => c.id).join() === "all,wickets,fours,sixes"
+       && chips[0].pressed === "true" && chips.slice(1).every((c) => c.pressed === "false") && chips.every((c) => c.h >= 43.5), JSON.stringify(chips));
+    // The scorecard's own counts, from the same fold: both innings.
+    const card = {
+      wickets: inn1.wickets + inn2.wickets,
+      fours: [inn1, inn2].reduce((t, i) => t + i.batsmen.reduce((u, b) => u + b.fours, 0), 0),
+      sixes: [inn1, inn2].reduce((t, i) => t + i.batsmen.reduce((u, b) => u + b.sixes, 0), 0),
+    };
+    ok(`each chip's count is the scorecard's: ${card.wickets} wickets, ${card.fours} fours, ${card.sixes} sixes`,
+       chips.slice(1).every((c) => Number(c.count) === card[c.id]), JSON.stringify(chips.map((c) => c.count)));
+    const allLines = async () => {
+      while (await tid(P, "mc-commentary-more").count()) { await tid(P, "mc-commentary-more").click(); await P.waitForTimeout(200); }
+      return P.locator('[data-testid="mc-line"]').evaluateAll((els) => els.map((e) => ({ key: e.getAttribute("data-key"), kind: e.getAttribute("data-kind") })));
+    };
+    // The deliveries the card counts, by event id: the fold's own ball log.
+    const ids = {
+      wickets: expected.filter((x) => x.kind === "wicket").map((x) => x.key).sort(),
+      fours: [inn1, inn2].flatMap((i) => i.ballLog.filter((b) => boundaryHit(b) === 4).map((b) => `e:${b.id}`)).sort(),
+      sixes: [inn1, inn2].flatMap((i) => i.ballLog.filter((b) => boundaryHit(b) === 6).map((b) => `e:${b.id}`)).sort(),
+    };
+    for (const id of ["wickets", "fours", "sixes"]) {
+      await tid(P, `mc-chip-${id}`).click(); await P.waitForTimeout(300);
+      const lines = await allLines();
+      const kind = { wickets: "wicket", fours: "four", sixes: "six" }[id];
+      ok(`${id}: pressed, and the lines are exactly the card's ${card[id]} deliveries, by event id`, await tid(P, `mc-chip-${id}`).getAttribute("aria-pressed") === "true"
+         && lines.length === card[id] && lines.every((l) => l.kind === kind) && lines.map((l) => l.key).sort().join() === ids[id].join(),
+         `${lines.length} lines: ${lines.map((l) => l.key).sort().join()} want ${ids[id].join()}`);
+    }
+    await tid(P, "mc-chip-wickets").click(); await P.waitForTimeout(300);
+    const wkOvers = await tid(P, "mc-over-jump").locator("option").evaluateAll((os) => os.filter((o) => o.value).length);
+    ok("with a chip on, the over jump offers only the overs it leaves", wkOvers === await tid(P, "mc-over").count() && wkOvers <= card.wickets, `${wkOvers}`);
+    await tid(P, "mc-chip-all").click(); await P.waitForTimeout(300);
+    ok("All again: every line of the match", (await allLines()).length === told.filter((x) => x.kind !== "over_end").length);
+    ok("at 360 wide, nothing is wider than the screen", await P.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+       await P.evaluate(() => document.documentElement.scrollWidth));
+    const small = await P.evaluate(() => [...document.querySelectorAll('[data-testid="mc-commentary-tools"] *')]
+      .filter((e) => e.children.length === 0 && e.textContent.trim() && parseFloat(getComputedStyle(e).fontSize) < 12).length);
+    ok("...and nothing in the chips or the jump is under 12px", small === 0, small);
+    ok("no console errors (chips)", c21.errors.length === 0, c21.errors.join(" | "));
+    await c21.ctx.close();
+
+  }
+
   group("Partnerships, Analytics and Match details");
   await tab(p, "partnerships");
   await tid(p, "mc-innings-0").click(); await p.waitForTimeout(200);
@@ -632,6 +696,113 @@ try {
     await p.waitForTimeout(200);
     ok("a second tap shuts each one: no table is left", await A.locator("table").count() === 0 && await A.locator('[data-testid$="-table-toggle"][aria-expanded="true"]').count() === 0);
   }
+  group("CRI-2.3: a Manhattan bar and a wagon-wheel area open the Commentary at their balls, by event id; every run traced to a listed ball");
+  {
+    const d23 = await open({ viewport: PHONE });
+    await signIn(d23.page, /sarah@example\.invalid|Director/);
+    ok("the fixture opens", await openMatch(d23.page, fx.live));
+    const D3 = d23.page;
+    const scrolled = () => D3.evaluate(() => Math.max(document.getElementById("os-content")?.scrollTop ?? 0, window.scrollY));
+    await pickTab(D3, "analytics");
+    await tid(D3, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
+    await D3.waitForTimeout(300);
+    // The bars' events, as the chart projects them: the same projection, over the same log.
+    const proj1 = projectMatch(fold.innings, { events: evs, overs: 10 })[0];
+    const parts1 = overParts(inn1, evs.filter((e) => (e.innings ?? 0) === 0));
+    const partsOf = (o) => parts1.get(o.over) ?? [];
+    const runsOf = new Map([...parts1.values()].flat().map((x) => [x.id, x.runs]));
+    const listed = () => D3.locator('[data-testid="mc-line"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-key")));
+    const backToCharts = async () => {
+      await tid(D3, "mc-back-to-scorecard").click({ timeout: 4000 });
+      await tid(D3, "mc-analytics").waitFor({ timeout: 4000 }).catch(() => {});
+      await D3.waitForTimeout(300);
+    };
+    let traced = 0, runsTraced = 0;
+    /** @type {string[]} */ const bad = [];
+    let wasAt = 0, backAt = 0, banner = "";
+    for (const o of proj1.overs) {
+      const g = D3.locator(`[data-drill-over="${o.over + 1}"]`);
+      if (!(await g.count())) { bad.push(`over ${o.over + 1}: no bar to tap`); continue; }
+      await g.scrollIntoViewIfNeeded();
+      // Over 7's bar at the foot of the screen: the page scrolled, to be put back.
+      if (o.over === 6) { await g.evaluate((e) => e.scrollIntoView({ block: "end", behavior: "instant" })); await D3.waitForTimeout(100); wasAt = await scrolled(); }
+      // Over 7 by a click that does not move the page first (a pointer's click would scroll the bar into the middle).
+      if (o.over === 6) await g.dispatchEvent("click"); else await g.click();
+      await tid(D3, "mc-drill").waitFor({ timeout: 4000 }).catch(() => {});
+      await D3.waitForTimeout(200);
+      const keys = await listed();
+      const want = partsOf(o).map((x) => `e:${x.id}`).sort();
+      const sum = keys.reduce((s, k) => s + (runsOf.get(k.slice(2)) ?? NaN), 0);
+      if (keys.slice().sort().join() !== want.join()) bad.push(`over ${o.over + 1}: listed ${keys.length}, the bar's ${want.length}`);
+      else if (sum !== o.runs) bad.push(`over ${o.over + 1}: listed balls add to ${sum}, the bar says ${o.runs}`);
+      else { traced++; runsTraced += sum; }
+      if (o.over === 2) banner = await tid(D3, "mc-drill-what").innerText();
+      await backToCharts();
+      if (o.over === 6) backAt = await scrolled();
+    }
+    ok(`every one of the first innings' ${proj1.overs.length} bars lists exactly its own events in the Commentary, and they add up to the bar's runs`,
+       bad.length === 0 && traced === proj1.overs.length, bad.join(" | "));
+    ok(`...so every run of the ${inn1.runs} is traced to a listed ball (${runsTraced} in the bars, ${proj1.opening + proj1.closing} not placed in an over)`,
+       runsTraced + proj1.opening + proj1.closing === inn1.runs, `${runsTraced} + ${proj1.opening + proj1.closing}`);
+    const o3 = proj1.overs[2];
+    ok(`over 3, with the helmet's five: the line names the over, its runs, its balls and the award (${banner})`,
+       new RegExp(`^Over 3 · ${o3.runs} runs · \\d+ balls and 1 award, listed below$`).test(banner), banner);
+    ok(`the way back is the charts, where the page was (${backAt}px, was ${wasAt}px)`, Math.abs(backAt - wasAt) <= 2 && wasAt > 100, `${backAt} ${wasAt}`);
+    // The keyboard's way: the picker under the chart.
+    const pick = tid(D3, "manhattan-pick");
+    const pickBox = await pick.boundingBox().catch(() => null);
+    const showBox = await tid(D3, "manhattan-show").boundingBox().catch(() => null);
+    ok("a picker and its button under the chart, 44px each, the button shut until an over is chosen", (pickBox?.height ?? 0) >= 43.5 && (showBox?.height ?? 0) >= 43.5
+       && await tid(D3, "manhattan-show").isDisabled());
+    await pick.selectOption({ label: `Over 5 · ${proj1.overs[4].runs} runs` });
+    await tid(D3, "manhattan-show").click();
+    await tid(D3, "mc-drill").waitFor({ timeout: 4000 }).catch(() => {});
+    await D3.waitForTimeout(200);
+    ok("...over 5 by the picker: the same balls as its bar", (await listed()).sort().join() === partsOf(proj1.overs[4]).map((x) => `e:${x.id}`).sort().join());
+    ok("...the focus on the line saying what is listed", await D3.evaluate(() => document.activeElement?.getAttribute("data-testid") === "mc-drill-what"));
+    await tid(D3, "mc-drill-all").click(); await D3.waitForTimeout(300);
+    const latest = `Over ${inn2.ballLog.at(-1).over + 1}`;
+    ok(`"Every ball": the filter gone, All pressed, the latest over (${latest} of the chase) first`, await tid(D3, "mc-drill").count() === 0
+       && await tid(D3, "mc-chip-all").getAttribute("aria-pressed") === "true" && (await tid(D3, "mc-over-title").first().innerText()).trim().toLowerCase() === latest.toLowerCase(),
+       await tid(D3, "mc-over-title").first().innerText());
+    await backToCharts().catch(() => {});
+    if (!(await tid(D3, "mc-analytics").count())) { await pickTab(D3, "analytics"); }
+    await tid(D3, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
+    await D3.waitForTimeout(300);
+
+    // A wagon-wheel area: the balls that went there, by event id, adding up to its runs.
+    const wa = wagonAnalysis(inn1.ballLog, { batHandFor: (b) => batHandOf(inn1, b.strikerId) });
+    const areas = wa.areas.filter((a) => a.ids.length > 0);
+    const valueOf = new Map(inn1.ballLog.map((b) => [b.id, Number(b.value) || 0]));
+    const badA = [];
+    let tapsOk = true;
+    for (const ar of areas) {
+      const id = `wagon-area-${ar.label.toLowerCase().replace(/\s+/g, "-")}`;
+      const cell = tid(D3, id);
+      // Read in the page in one step: a live fixture's poll draws the panel again under a locator.
+      const box = await D3.evaluate((t) => { const e = document.querySelector(`[data-testid="${t}"]`); return e && { h: e.getBoundingClientRect().height, tag: e.tagName }; }, id);
+      if (!box || box.h < 43.5 || box.tag !== "BUTTON") { tapsOk = false; badA.push(`${ar.label}: not a 44px button (${JSON.stringify(box)})`); continue; }
+      await cell.click();
+      await tid(D3, "mc-drill").waitFor({ timeout: 4000 }).catch(() => {});
+      await D3.waitForTimeout(200);
+      const keys = await listed();
+      const sum = keys.reduce((s, k) => s + (valueOf.get(k.slice(2)) ?? NaN), 0);
+      if (keys.slice().sort().join() !== ar.ids.map((x) => `e:${x}`).sort().join()) badA.push(`${ar.label}: listed ${keys.length}, the area's ${ar.ids.length}`);
+      else if (sum !== ar.runs) badA.push(`${ar.label}: ${sum} listed, ${ar.runs} on the area`);
+      await backToCharts();
+      await tid(D3, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
+      await D3.waitForTimeout(200);
+    }
+    ok(`each of the ${areas.length} areas with balls in it is a 44px button`, tapsOk && areas.length >= 4, badA.join(" | "));
+    ok("...and lists exactly its balls, adding up to its runs", badA.length === 0, badA.join(" | "));
+    const empty = wa.areas.find((a) => a.ids.length === 0);
+    ok(`an area nothing went to (${empty?.label ?? "none"}) is not a button`, !empty
+       || await tid(D3, `wagon-area-${empty.label.toLowerCase().replace(/\s+/g, "-")}`).evaluate((e) => e.tagName !== "BUTTON"));
+    ok("at 390 wide, nothing is wider than the screen (the drill-down)", await D3.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    ok("no console errors (drill-down)", d23.errors.length === 0, d23.errors.join(" | "));
+    await d23.ctx.close();
+  }
+
   await tab(p, "details");
   const det = await tid(p, "mc-details").innerText();
   ok("the format, the ground and the toss", /T10 · 10 overs a side/.test(det) && /Gordon Sherwood Oval/.test(det)
@@ -1223,6 +1394,50 @@ try {
     ok("his tap on it opens the pad", await until(sc1.s.page, () => !!document.querySelector(".scorer-shell"), 10000));
     ok("no console errors (Enter scoring)", sc1.s.errors.length === 0, sc1.s.errors.join(" | "));
     await sc1.s.ctx.close();
+  }
+
+  group("CRI-2.1: the over jump reaches Over 14 of a longer fixture, at 360 wide");
+  {
+    const NARROW = { width: 360, height: 780 };
+    // The over jump, on a match longer than the tab's first twelve overs.
+    const lf = await buildLongFixture(q, fx.players);
+    const longInn = deriveMatch(lf.events).innings[0];
+    ok("a sixteen-over innings, for the jump", longInn.balls === 96, longInn.balls);
+    const j = await open({ viewport: NARROW });
+    await signIn(j.page, /sarah@example\.invalid|Director/);
+    ok("the long fixture opens at 360 wide", await openMatch(j.page, lf.long));
+    const J = j.page;
+    await pickTab(J, "commentary");
+    const sel = tid(J, "mc-over-jump");
+    await sel.waitFor({ timeout: 4000 }).catch(() => {});
+    const opts = await sel.locator("option").evaluateAll((os) => os.filter((o) => o.value).map((o) => o.textContent));
+    const box = await sel.boundingBox().catch(() => null);
+    ok("the jump lists every over, in order, Over 1 to Over 16; 44px tall", opts.length === 16 && opts[0] === "Over 1" && opts[15] === "Over 16" && (box?.height ?? 0) >= 43.5,
+       `${opts.length} ${opts[0]} ${box?.height}`);
+    const drawn = () => J.evaluate(() => [...document.querySelectorAll('[data-testid="mc-over-title"]')].map((e) => e.textContent));
+    ok("the tab opens on the latest twelve overs: Over 2 is not drawn yet", !(await drawn()).includes("Over 2") && (await drawn()).length === 12, (await drawn()).join());
+    await sel.selectOption({ label: "Over 14" });
+    await J.waitForTimeout(400);
+    const at14 = await J.evaluate(() => {
+      const t = [...document.querySelectorAll('[data-testid="mc-over-title"]')].find((e) => e.textContent === "Over 14");
+      const r = t?.getBoundingClientRect();
+      return { found: !!t, top: r?.top ?? -1, inView: !!r && r.top >= 0 && r.bottom <= window.innerHeight, focused: document.activeElement === t,
+        lines: t?.closest('[data-testid="mc-over"]')?.querySelectorAll('[data-testid="mc-line"]').length ?? 0, sel: document.querySelector('[data-testid="mc-over-jump"]')?.value };
+    });
+    ok(`the jump to Over 14: its heading on screen (${Math.round(at14.top)}px from the top), with the focus on it`, at14.found && at14.inView && at14.focused, JSON.stringify(at14));
+    ok("...its six balls under it, the six among them", at14.lines >= 6
+       && await J.evaluate(() => !![...document.querySelectorAll('[data-testid="mc-over-title"]')].find((e) => e.textContent === "Over 14")?.closest('[data-testid="mc-over"]')?.querySelector('[data-kind="six"]')));
+    ok("...and the jump is ready again, for another over", at14.sel === "");
+    await sel.selectOption({ label: "Over 2" });
+    await J.waitForTimeout(400);
+    ok("a jump past the first twelve overs opens the tab far enough back to hold it", await J.evaluate(() => {
+      const t = [...document.querySelectorAll('[data-testid="mc-over-title"]')].find((e) => e.textContent === "Over 2");
+      const r = t?.getBoundingClientRect();
+      return !!r && r.top >= 0 && r.bottom <= window.innerHeight && document.activeElement === t;
+    }));
+    ok("at 360 wide, nothing is wider than the screen (the long fixture)", await J.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    ok("no console errors (over jump)", j.errors.length === 0, j.errors.join(" | "));
+    await j.ctx.close();
   }
 
   group("An error boundary: a panel that throws is a card in its own place, and its neighbours stand");

@@ -201,7 +201,7 @@ Two panels on the same tab, under the season bars, each over a read of its own (
 |---|---|
 | **Measures** | per innings he batted in the season: runs, balls faced, out or not out ("23*"). Beside the panel, the season so far: runs; average (`runs ÷ dismissals`, "no average yet" with no dismissal, never 0); strike rate (`100 × runs ÷ balls faced`) |
 | **The line** | **runs per innings over his last five innings** (a rolling five). Runs per innings, not the average, because its denominator is fixed: an average of a boy retired at 30 three times with no dismissal does not exist, and a not-out in a five-innings window swings it hugely |
-| **Window** | one school season; innings ordered by `ended_at`, match and innings, the form guide's order (`career`'s `form`) |
+| **Window** | one school season; innings ordered by the match's start (`starts_at`), match and innings (changed from `ended_at` on 12 Nov; see "Decided 12 November 2026"), the form guide's order (`career`'s `form`) |
 | **Denominator** | innings (the line), balls faced (the strike rate) |
 | **Minimum before the line shows** | **6 innings in the season with balls recorded, and 30 balls faced in the five-innings window** (`MIN_BALLS_FACED`, rating.mjs). Six because a rolling five needs a sixth innings to make two points of a line. Points are drawn from the first innings |
 | **Scorebook innings** | *Corrected by B1 (13 Nov 2026).* `player_innings` carries a scorebook's batting rows as innings of their own (db/64, db/87: its `summary_batting_line` arm), so an innings imported from a scorebook **is** returned innings by innings, marked `source = 'scorebook'`, with `balls_faced` NULL where the book recorded no balls (never 0). B2 draws it as a point, and leaves a NULL `balls_faced` out of the strike rate and out of the 30-ball floor (the innings counts towards the 6, its balls towards nothing). Summed over a season, the innings are `career_by_season`'s runs, and the scorebook ones its `book_innings` (the trend walk proves both) |
@@ -232,7 +232,7 @@ Both are SELECTs added to `services/api/read/read-api.mjs`, over views that exis
 
 | Read | Over | Scope | Notes |
 |---|---|---|---|
-| **`innings_by_season`** | `player_innings` (db/87, `security_invoker`, over `ball_event_career`), joined to `match` for `school_season_of(m.starts_at)` and to `player` for the name | the `career` read's, row for row (the invoker views and `player`'s RLS), **narrowed for a pupil** (B5) | `?season=` and `?player=` parameters; one row per player per innings; `runs`, `balls_faced`, `out`, `ended_at`, `match_id`, `innings` |
+| **`innings_by_season`** | `player_innings` (db/87, `security_invoker`, over `ball_event_career`), joined to `match` for `school_season_of(m.starts_at)` and to `player` for the name | the `career` read's, row for row (the invoker views and `player`'s RLS), **narrowed for a pupil** (B5) | `?season=` and `?player=` parameters; one row per player per innings; `runs`, `balls_faced`, `out`, `ended_at`, `starts_at`, `match_id`, `innings` |
 | **`side_season`** | `match_live_score` (per match per innings: runs, wickets, legal balls), joined to `match` (allotment, `starts_at`, `status`) and `match_result()` | the reader's fixtures (`match_read`) | team-level; completed limited-overs fixtures only |
 
 Both views skip a void and its target on every read (`ball_event_live`, `ball_event_career`), so a correction is in the next read and nothing needs invalidating (GA-I36 §3, the careers row: **works**; D10, no "corrected at" on a career). The client holds no cache beyond the open screen.
@@ -297,6 +297,16 @@ Both views skip a void and its target on every read (`ball_event_live`, `ball_ev
 | **Q10** | The side's season panel: rates over the **balls actually bowled** (not net run rate's full allotment for an all-out side); signed in for anyone who may read the side's fixtures; **not public**? | **Yes to all three.** NRR's convention belongs to the standings table, which has it already. |
 | **Q11** | **Bowling innings by innings** (slice B4) needs a migration. Build it after B2 and B3, or leave the bowler's trend at the season bars? | **After B2 and B3**, if coaches ask for it in the pilot. |
 | **Q12** | The minimums for a trend line: **6 innings and 30 balls** for a batter, **5 matches** for a side? | **Yes.** They are the rating floor's 30 balls and the least a rolling five needs to be a line. |
+
+## Decided 12 November 2026
+
+Kameel's decisions of 12 November 2026, recorded word for word:
+
+- Staff reader for the innings line: "Keep it narrow (coaching and analytics staff only)".
+- A pupil who also holds a staff role: "Keep it closed: a pupil never reads team-mates' innings lines".
+- A pupil's own innings line on his Passport: "Yes, keep it on his Passport".
+
+Engineering note (the lead's call, not Kameel's): the innings line is dated and ordered by the match's start (`starts_at`), not `ended_at`.
 
 ## What I could not settle from what I read
 

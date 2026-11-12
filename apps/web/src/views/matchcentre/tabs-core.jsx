@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
-import { formatKind } from "@scrbrd/scoring";
+import { formatKind, COMMENTARY_FILTER, commentaryMatches } from "@scrbrd/scoring";
 import { T, contrast } from "../../design/tokens.js";
 import { boardInnings, commentaryByOver, inningsBreak, oversOf, targetOf, teamOf } from "../../lib/matchCentre.js";
 import { Board, chipFill } from "../../ui/board.jsx";
@@ -330,14 +330,37 @@ function CommentaryLine({ item, target = false }) {
 const OVERS_AT_FIRST = 12;
 
 /**
+ * CRI-2.1: the chips and the over jump (commentaryTools.jsx), a chunk of
+ * their own: the public page's static graph has a ceiling. Until it arrives
+ * their room is kept, so the lines do not move when they draw.
+ */
+const CommentaryTools = lazy(() => import("./commentaryTools.jsx"));
+
+/** An over's heading, as its group and the jump both say it. */
+const overTitle = (inn, over) => (inn?.superOver != null ? "The over" : `Over ${over + 1}`);
+
+/**
  * `ballKey` (CRI-1.5): the line a scorecard's dismissal asked for. The tab
  * opens far enough back to hold it, puts it in the middle of the screen and
  * the focus on it; `onBack` is the way back to the Scorecard where the reader
  * was (the Match Centre's own history entry, or its tab where it has none).
+ *
+ * CRI-2.1: the chips keep the lines of one kind (a group with none left is
+ * not drawn); the over jump goes to any over the chips leave. Both are this
+ * tab's own state: a reload opens on All.
  */
-export function CommentaryTab({ match, commentary, demo, innings, ballKey = null, onBack = null }) {
+export function CommentaryTab({ match, commentary, demo, innings, ballKey = null, onBack = null, backLabel = "Back to the scorecard", balls = null }) {
   const groups = useMemo(() => commentaryByOver(commentary ?? []), [commentary]);
-  const [shown, setShown] = useState(() => shownFor(groups, ballKey, OVERS_AT_FIRST));
+  const [chip, setChip] = useState(COMMENTARY_FILTER.ALL);
+  // CRI-2.3: the balls a chart's bar or area asked for, by event id, until the reader asks for the rest.
+  const [drill, setDrill] = useState(() => (balls?.ids?.length ? { ...balls, ids: new Set(balls.ids) } : null));
+  const filter = useMemo(() => (drill ? { ids: drill.ids } : chip), [drill, chip]);
+  const view = useMemo(() => (filter === COMMENTARY_FILTER.ALL ? groups
+    : groups.map((g) => ({ ...g, lines: g.lines.filter((c) => commentaryMatches(c, filter)) })).filter((g) => g.lines.length)), [groups, filter]);
+  // Far enough back to hold the ball asked for, or every over a chart's balls are in.
+  const [shown, setShown] = useState(() => (drill ? Math.max(OVERS_AT_FIRST, view.length) : shownFor(groups, ballKey, OVERS_AT_FIRST)));
+  const pickChip = (id) => { setDrill(null); setChip(id); };
+  const [jump, setJump] = useState(/** @type {{key: string, n: number} | null} */ (null));
   const at = useRef(/** @type {HTMLElement | null} */ (null));
   useEffect(() => {
     if (!ballKey) return;
@@ -349,7 +372,13 @@ export function CommentaryTab({ match, commentary, demo, innings, ballKey = null
   }, [ballKey]);
   if (demo) return <Quiet testid="mc-commentary-none">Commentary is written from a match's own ball log. This demonstration fixture has none.</Quiet>;
   if (!commentary.length) return <Quiet testid="mc-commentary-none">Nothing has happened yet. Commentary starts with the first ball.</Quiet>;
-  const visible = groups.slice(0, shown);
+  const toOver = (key) => {
+    const i = view.findIndex((g) => g.key === key);
+    if (i < 0) return;
+    setShown((n) => Math.max(n, i + 1));
+    setJump((j) => ({ key, n: (j?.n ?? 0) + 1 }));
+  };
+  const visible = view.slice(0, shown);
   let lastInnings = null;
   return (
     <section ref={at} data-testid="mc-commentary" aria-label="Commentary, newest first">
@@ -358,15 +387,21 @@ export function CommentaryTab({ match, commentary, demo, innings, ballKey = null
           style={{ minHeight: "44px", padding: `0 ${T.space.md}`, marginBottom: T.space.sm, display: "inline-flex", alignItems: "center", gap: T.space.xs,
             cursor: "pointer", background: "transparent", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill,
             color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
-          <span aria-hidden="true">‹</span> Back to the scorecard
+          <span aria-hidden="true">‹</span> {backLabel}
         </button>
       )}
+      <ErrorBoundary name="commentary-tools" fallback={null}>
+        <Suspense fallback={<div aria-hidden="true" style={{ minHeight: "96px", marginBottom: T.space.md }}/>}>
+          <CommentaryTools chip={chip} setChip={pickChip} commentary={commentary} match={match} innings={innings} groups={view} onJump={toOver}
+            jump={jump} at={at} drill={drill} onAll={() => setDrill(null)}/>
+        </Suspense>
+      </ErrorBoundary>
       {visible.map((g) => {
         const head = g.innings !== lastInnings;
         lastInnings = g.innings;
         const inn = innings[g.innings];
         return (
-          <div key={g.key}>
+          <div key={g.key} data-over-key={g.key}>
             {head && (
               <h2 style={{ ...T.role.label, color: T.content.secondary, margin: `${T.space.lg} 0 ${T.space.sm}` }}>
                 {inn ? <>{inn.superOver != null && `${superOverTitle(inn.superOver)} · `}<SideName side={teamOf(match, inn.battingTeam)}/> innings</> : `Innings ${g.innings + 1}`}
@@ -374,7 +409,7 @@ export function CommentaryTab({ match, commentary, demo, innings, ballKey = null
             )}
             <Panel testid="mc-over" style={{ marginBottom: T.space.md }}>
               <div style={{ padding: `${T.space.sm} ${T.space.md}`, background: T.surface.base, display: "grid", gap: "2px" }}>
-                <span style={{ ...T.role.label, color: T.content.primary }}>{inn?.superOver != null ? "The over" : `Over ${g.over + 1}`}</span>
+                <span data-testid="mc-over-title" tabIndex={-1} style={{ ...T.role.label, color: T.content.primary, scrollMarginTop: T.space.lg }}>{overTitle(inn, g.over)}</span>
                 {g.end && <span data-testid="mc-over-end" style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>{g.end.text}</span>}
               </div>
               <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
@@ -384,7 +419,7 @@ export function CommentaryTab({ match, commentary, demo, innings, ballKey = null
           </div>
         );
       })}
-      {groups.length > shown && (
+      {view.length > shown && (
         <button type="button" onClick={() => setShown((n) => n + OVERS_AT_FIRST)} className="pressBtn os-state" data-testid="mc-commentary-more"
           style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, cursor: "pointer", background: "transparent",
             border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, color: T.content.primary,

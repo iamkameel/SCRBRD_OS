@@ -220,3 +220,34 @@ export async function buildMatchCentreFixture(q) {
   await writeEvents(q, brk, brkLog);
   return { live, brk, events: { [live]: [...first, ...second], [brk]: brkLog }, players };
 }
+
+/**
+ * LONG (CRI-2.1's over jump): Hilton College 1XI v Northwood 1XI (not on
+ * SCRBRD, the scorer types their names), a T20 sixteen overs into its first
+ * innings — longer than the Commentary's first twelve overs, so the jump to
+ * an over has somewhere to go. Built after buildMatchCentreFixture(), whose
+ * players it takes: a wicket in overs 3, 7 and 11, a six in over 14.
+ * @param {(text: string, params?: any[]) => Promise<any[]>} q
+ * @param {Record<string, string>} players  name → id, from buildMatchCentreFixture()
+ * @returns {Promise<{long: string, events: any[]}>}
+ */
+export async function buildLongFixture(q, players) {
+  const long = (await q(
+    `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
+     values ($1, '1XI', 'Northwood 1XI', $2, now() - interval '90 minutes', 'cricket', 'T20', 20, 'live') returning id`,
+    // No ground: the T10 holds the Oval (db/133).
+    [HIL, null]))[0].id;
+  const H = HIL_XI.map((nm) => players[nm]);
+  const tokens = [];
+  for (let over = 1; over <= 16; over++) {
+    tokens.push("1", "0", "4", over === 14 ? "6" : "2", [3, 7, 11].includes(over) ? "W:bowled" : "0", "1");
+  }
+  const events = scoreInnings({
+    innings: 0, idp: "mc-long",
+    start: { battingTeam: "1XI", bowlingTeam: "Northwood 1XI", teamKey: "1XI", bowlingTeamKey: "Northwood 1XI",
+      squad: HIL_XI.map((nm) => ({ id: players[nm], name: nm })), bowlingSquad: [], overs: 20 },
+    openers: [H[0], H[1]], order: H.slice(2), attack: ["N Typedbowler", "O Keyedin", "P Enteredhere"], tokens,
+  });
+  await writeEvents(q, long, events);
+  return { long, events };
+}

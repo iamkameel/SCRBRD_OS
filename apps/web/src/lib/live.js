@@ -28,6 +28,7 @@ import { api, signedIn } from "./api.js";
 import { saClock, saDate } from "./saTime.js";
 import { combineReads } from "./readState.js";
 import { asNotification } from "./notifications.js";
+import { asSideSeason } from "./sideSeason.js";
 import { scoped, scopedSkills, scopedWeather, demoSummary } from "../rbac/index.js";
 
 /** DB fixture status → the vocabulary the views filter on. */
@@ -1492,6 +1493,7 @@ const ADAPT = {
   training_plan: asPlanLine,
   career: asCareer,
   career_by_season: asSeasonCareer,
+  side_season: asSideSeason,
   innings_by_season: asInnings,
   ratings: asRating,
   notes: asNote,
