@@ -11714,7 +11714,7 @@ CREATE OR REPLACE FUNCTION _v152_cast() RETURNS jsonb AS $$
                         WHERE EXISTS (SELECT 1 FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
                                        WHERE a.person_id = c.person_id AND a.role = 'guardian'
                                          AND (NOT a.active OR g.verification_state <> 'verified'
-                                              OR g.valid_until <= current_date OR a.valid_until <= current_date))),
+                                              OR g.valid_until <= sa_today() OR a.valid_until <= sa_today()))),
     'driver', (SELECT count(*) FROM c
                 WHERE EXISTS (SELECT 1 FROM trip t WHERE t.driver_id = c.person_id AND t.cancelled_at IS NULL)),
     'away_coach', (SELECT count(*) FROM c
