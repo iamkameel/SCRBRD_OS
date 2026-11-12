@@ -413,6 +413,8 @@ Kameel's decisions of 7 November 2026 (08:30 SAST) on the pupil ratings read, re
 
 Status after these decisions: the ratings fix is shipped (`services/api/read/read-api.mjs`, PR #273). REACH-D2 is closed as a decision; its build (§6.6, path (a) or (b)) is open and not started.
 
+Built and merged #301 (12 Nov 2026).
+
 ### Decided 11 November 2026 (Kameel)
 
 Kameel's decisions of 11 November 2026 on two exceptions to REACH-D2, recorded word for word:

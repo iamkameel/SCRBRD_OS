@@ -13,6 +13,8 @@
 
 12 Nov 2026: #299 merged (merge fda88860): the public-by-terms design, approved by Kameel 11 Nov ('All 9 as recommended'); slices 1–8 to be built now, off until counsel (Kameel 12 Nov: 'Build 1-8, switched off').
 
+12 Nov 2026 (late): three merges recorded. #301 (merge 0c50e488): REACH-D2, a pupil reads his own figures, not his team-mates'; the captain's season rows and Compare "Me v a team-mate" are kept. #309 (merge 050ccf15): CRI-2.5, three spectator charts. #311 (merge 16d79dea): CRI-2.2, a source line on every chart, with "Shots captured for N of M balls".
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -791,8 +793,11 @@ one duplicates an existing entry, strike the `CRI-*` line and point at the older
 
 **Sprint 1 complete 2026-11-11** (#266, merge commit 060e0a2b): CRI-1.4 to CRI-1.8 are done.
 
-**Sprint 2:** CRI-2.1 commentary chips and over jump · CRI-2.2 `sourceLine` and capture coverage on every chart ·
-CRI-2.3 chart-to-delivery drill-down · CRI-2.4 reader freshness and low-bandwidth mode · CRI-2.5 three spectator charts.
+**Sprint 2:** CRI-2.1 commentary chips and over jump · ~~CRI-2.2 `sourceLine` and capture coverage on every chart~~ ·
+CRI-2.3 chart-to-delivery drill-down · CRI-2.4 reader freshness and low-bandwidth mode · ~~CRI-2.5 three spectator charts~~.
+
+- **CRI-2.2** — **Done 2026-11-12** (#311, merge 16d79dea): a source line on every chart, with "Shots captured for N of M balls".
+- **CRI-2.5** — **Done 2026-11-12** (#309, merge 050ccf15): three spectator charts.
 
 **Sprint 3 (after pilot evidence):** CRI-3.1 notifications S2–S5 with follow and a Result-only default ·
 CRI-3.2 tap-to-passport · CRI-3.3 match impact as PoM suggestion (after recognition §7 scoring fixes) ·
@@ -4870,6 +4875,7 @@ scorecard's row expansion for another child (§10 departure 11).
 
 ### Close REACH-D2: pupil reads of team-mates' career figures
 **Priority:** P1 · **Domain:** Families / Privacy · **Type:** build, Opus (Kameel, 7 Nov 2026; `docs/design/REACH_parent_pupil.md` §6.6 and §7)
+**Partly done 2026-11-12** (#301, merge 0c50e488): a pupil reads his own figures, not his team-mates'; the two exceptions (the captain's season rows, and Compare "Me v a team-mate", career and every season and match-ups with him as the batter) are kept. Still open per this entry: the popia-2026-02 sentence 14 redraft in `CONSENT_V2.md`, before -02 is issued.
 **Not started.** A pupil reads a team-mate's career, season and wagon-wheel pages today: `player.performance.read` is in the `player` bundle (`roles.mjs:330–335`), so the five per-boy reads (`career`, `career_by_season`, `dismissal_breakdown`, `player_shot_points`, `bowler_day`) answer a team-mate. Decided 14 Oct as "leave them open"; closed by Kameel on 7 Nov 2026: a pupil no longer reads team-mates' career figures, and the parents' terms (popia-2026-01) stand as written ("his name on the sheet and scorecard, nothing more"). The ratings fix (PR #273) is done and is not this entry.
 **Exceptions (Kameel, 11 Nov 2026), both kept:** (1) the Compare card, "Me v a team-mate" (GA-I24 D10): a pupil sets one team-mate's season figures beside his own; (2) the captain's view (SCRBRD-138): the boy holding the captaincy reads his side's season figures, nothing else. Path (a) is ruled out: removing `player.performance.read` from the `player` bundle would break both.
 **Build:** path (b), the five reads gated on `is_family_of(player) OR` a staff capability `OR` 138's captain gate, in `read-api.mjs`, with `read.test.mjs` holding the SQL equal to `db/99`'s copy. The Compare card and the captain's season table keep their reads through their own gates. Sentence 14 of popia-2026-02 needs the redraft in `CONSENT_V2.md` before -02 is issued.
