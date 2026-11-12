@@ -3,12 +3,17 @@
 import { spawn } from "node:child_process";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { BALL_TYPE, ball, batters, bowler, deriveMatch, fromRow, inningsStart } from "@scrbrd/scoring";
+import { writeEvents } from "./fixture-matchcentre.mjs";
+import { opensPassportOf } from "../apps/web/src/lib/passportLink.js";
 const PORT = port(8872), BASE = `http://127.0.0.1:${PORT}`;
 const DB = ownerUrl();
-const WES = "22222222-2222-2222-2222-222222222222";
+const HIL = "11111111-1111-1111-1111-111111111111", WES = "22222222-2222-2222-2222-222222222222";
 const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005", WHITFIELD = "aaaaaaaa-0000-0000-0000-000000000001";
+const BEKKER = "aaaaaaaa-0000-0000-0000-000000000002", MAHLANGU = "aaaaaaaa-0000-0000-0000-000000000011";   // Mahlangu is U13A, playing up
+const MKHIZE = "bbbbbbbb-0000-0000-0000-000000000001", BOTHA = "bbbbbbbb-0000-0000-0000-000000000002";     // Westville's 1XI
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
 const group = (t) => console.log("\n" + t);
 const server = spawn(process.execPath, ["services/api/server.mjs"], { env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_ENV: "development", ALLOW_DEV_LOGIN: "1", SESSION_SECRET: "smoke-passport" }, stdio: ["ignore", "pipe", "pipe"] });
 const serverErr = []; server.stderr.on("data", (d) => serverErr.push(d.toString()));
@@ -28,6 +33,108 @@ try {
   const wesOffice = await login("registrar.wes@example.invalid");
   // A pupil of his own side (the seed's spectator@ account holds `player` on the 1st XI).
   const mate = await login("spectator@example.invalid");
+
+  // CRI-3.2, tap-to-passport ("parent own child; coach squad; public nothing").
+  // A finished match on the real log: Hilton's 1XI bat (R Pillay, J Whitfield,
+  // and L Mahlangu, a U13A boy playing up), Westville's bowl; then Westville
+  // bat and Pillay and T Bekker bowl. Each reader's scorecard is the Match
+  // Centre's own: the events read as him, folded by @scrbrd/scoring; each
+  // row's link is the client's own rule (lib/passportLink.js) over his session
+  // and his roster read; and every link drawn is a passport the read opens.
+  // Run first, before any family has named another school.
+  group("CRI-3.2: a scorecard row offers his passport to his family, himself and his side's staff; nobody else; nothing signed out");
+  {
+    const M = (await q(`insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+                        values ($1, '1XI', $2, '1XI', 'Westville Boys'' High 1XI', '2026-10-10 09:00+02', 'cricket', 'T20', 20, 'complete') returning id`, [HIL, WES]))[0].id;
+    const names = Object.fromEntries((await q(`select id, full_name from player where id = any($1::uuid[])`,
+      [[PILLAY, WHITFIELD, BEKKER, MAHLANGU, MKHIZE, BOTHA]])).map((r) => [r.id, r.full_name]));
+    const squad = (ids) => ids.map((id) => ({ id, name: names[id] }));
+    const HOME = [PILLAY, WHITFIELD, MAHLANGU, BEKKER], AWAY = [MKHIZE, BOTHA];
+    const log = [];
+    let n = 0;
+    const add = (innings, ev) => log.push({ ...ev, innings, id: `cri32-${innings}-${++n}`, clientTs: Date.parse("2026-10-10T07:00:00Z") + n * 30000 });
+    add(0, inningsStart({ battingTeam: "1XI", bowlingTeam: "Westville Boys' High 1XI", teamKey: "1XI", bowlingTeamKey: "Westville Boys' High 1XI",
+                          squad: squad(HOME), bowlingSquad: squad(AWAY), overs: 20 }));
+    add(0, batters({ striker: PILLAY, nonStriker: WHITFIELD }));
+    add(0, bowler({ bowler: MKHIZE }));
+    for (const v of [1, 4, 0]) add(0, ball({ type: BALL_TYPE.RUN, value: v }));
+    add(0, ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled" }));
+    add(0, batters({ striker: MAHLANGU }));
+    for (const v of [2, 1]) add(0, ball({ type: BALL_TYPE.RUN, value: v }));
+    add(1, inningsStart({ battingTeam: "Westville Boys' High 1XI", bowlingTeam: "1XI", teamKey: "Westville Boys' High 1XI", bowlingTeamKey: "1XI",
+                          squad: squad(AWAY), bowlingSquad: squad(HOME), overs: 20 }));
+    add(1, batters({ striker: MKHIZE, nonStriker: BOTHA }));
+    add(1, bowler({ bowler: PILLAY }));
+    for (const v of [1, 0, 0, 6, 0, 1]) add(1, ball({ type: BALL_TYPE.RUN, value: v }));
+    add(1, bowler({ bowler: BEKKER }));
+    add(1, ball({ type: BALL_TYPE.RUN, value: 0 }));
+    await writeEvents(q, M, log);
+
+    /** The scorecard's rows as this reader's Match Centre draws them, and those it offers a passport on. */
+    const card = async (tok) => {
+      const ev = await api(`/api/matches/${M}/events`, { token: tok });
+      const folded = deriveMatch((ev.body?.events ?? []).map(fromRow), ev.body?.fold ?? {});
+      const rows = folded.innings.flatMap((inn) => [...inn.batsmen, ...inn.bowlers].map((r) => r.id));
+      const session = tok ? (await api("/api/session", { token: tok })).body : null;
+      const roster = tok ? ((await api("/api/read/players", { token: tok })).body?.rows ?? []) : [];
+      const links = [...new Set(rows.filter((id) => {
+        const p = roster.find((r) => r.id === id);
+        return opensPassportOf({ id, school: p?.school_id ?? null, team: p?.team_code ?? null }, session?.assignments ?? []);
+      }))].sort();
+      // Which rows the read itself admits this reader to: passport_name(), the
+      // passport's own door with passport()'s gate, answers his name or null
+      // (an admitted boy with nothing on record yet still has a name).
+      const admitted = [];
+      for (const id of new Set(rows)) {
+        if (tok && (await api(`/api/read/passport_name?playerId=${id}`, { token: tok })).body?.rows?.[0]?.name) admitted.push(id);
+      }
+      return { status: ev.status, rows: [...new Set(rows)].sort(), links, admitted: admitted.sort() };
+    };
+    /** Never a link the read refuses: every link drawn is a boy the read admits. */
+    const within = (r) => r.links.every((id) => r.admitted.includes(id));
+    const ALL = [...HOME, ...AWAY].sort();
+    const want = (...ids) => ids.sort().join();
+
+    const mum = await card(parent);
+    ok("the scorecard folds every boy who batted or bowled", mum.status === 200 && mum.rows.join() === ALL.join(), mum.rows);
+    ok("a parent: a link on her own child's row (batting and bowling), and on no other boy's", mum.links.join() === want(PILLAY), mum.links);
+    ok("...exactly the boys the read admits her to", within(mum) && mum.admitted.join() === want(PILLAY), mum.admitted);
+    ok("...it opens: his passport, every line with its source", await passport(PILLAY, parent).then((l) => l.length > 0 && l.every((x) => x.source_school && x.recorded_by && x.confidence)));
+    ok("...a team-mate's row offers her nothing, and the read would give her nothing", (await passport(WHITFIELD, parent)).length === 0);
+    const other = await card(otherMum);
+    ok("another parent: her own son's row only", other.links.join() === want(WHITFIELD) && within(other), other.links);
+
+    const pupil = await card(boy);
+    ok("REACH-D2: the pupil, his own rows, and no team-mate's", pupil.links.join() === want(PILLAY) && within(pupil), pupil.links);
+    ok("...his own opens", (await passport(PILLAY, boy)).length > 0);
+    ok("...a team-mate's would not, so it is not offered", (await passport(WHITFIELD, boy)).length === 0 && (await passport(BEKKER, boy)).length === 0);
+    const team = await card(mate);
+    ok("a team-mate with no self link of his own: no link on any row, and the read admits him to none", team.links.length === 0 && team.admitted.length === 0, team);
+
+    const c = await card(coach);
+    ok("his coach: every boy of his own side, and not the boy playing up from U13A, nor Westville's", c.links.join() === want(PILLAY, WHITFIELD, BEKKER), c.links);
+    ok("...exactly the boys the read admits him to", within(c) && c.admitted.join() === c.links.join(), c.admitted);
+    const opened = await Promise.all(c.links.map((id) => passport(id, coach)));
+    ok("...his record opens, each line with its source", opened[c.links.indexOf(PILLAY)]?.length > 0 && opened[c.links.indexOf(WHITFIELD)]?.length > 0
+       && opened.flat().every((x) => x.source_school && x.recorded_by && x.confidence), opened.map((l) => l.length));
+    ok("...the U13A boy's would not open for him: that is why it is not offered", (await passport(MAHLANGU, coach)).length === 0);
+    ok("...nor Westville's boys'", (await passport(MKHIZE, coach)).length === 0 && (await passport(BOTHA, coach)).length === 0);
+    ok("...nothing medical, nothing from his file, no note, no rating on any of them", !JSON.stringify(opened).match(/injur|address|id_number|note|rating/i));
+    const away = await card(wes);
+    ok("the away coach: his own boys only, the ones the read admits him to", away.links.join() === want(MKHIZE, BOTHA) && within(away) && away.admitted.join() === away.links.join(), away);
+    ok("...a boy of his with nothing on record yet opens on no line (the sheet says so), not a refusal",
+       (await passport(MKHIZE, wes)).length === 0 && away.admitted.includes(MKHIZE));
+
+    const looker = await card(watcher);
+    ok("a spectator signed in: no link on any row, and the read admits him to none", looker.links.length === 0 && looker.admitted.length === 0, looker);
+    const out = await card(null);
+    ok("signed out: the signed-in scorecard is not served, and no row has a link", out.status === 401 && out.links.length === 0, out.status);
+    ok("...nor does the passport answer", (await api(`/api/read/passport?playerId=${PILLAY}`)).status === 401);
+    // The public page passes the scorecard no passportOf (apps/web/test/passport-link.test.mjs); its reads carry none either.
+    const pub = [await api(`/api/public/matches/${M}`), await api(`/api/public/matches/${M}/log`)];
+    ok("...and the public match answers carry no passport line", pub.every((r) => [200, 404].includes(r.status))
+       && !pub.some((r) => /passport|the match record|cap #|the team sheets/i.test(JSON.stringify(r.body ?? ""))), pub.map((r) => r.status));
+  }
 
   group("The record stays home until the family says otherwise");
   {
