@@ -554,6 +554,61 @@ try {
   ok("the free hit is told, and the wicket it saved", /Free hit: .* bowled, but it's a free hit: not out\./.test(body));
   ok("no id reaches a line", !/[0-9a-f]{8}-[0-9a-f]{4}-/.test(body));
 
+  group("CRI-2.1: at 360 wide, the Commentary's chips keep exactly what the scorecard counts, by event id");
+  {
+    const NARROW = { width: 360, height: 780 };
+    const c21 = await open({ viewport: NARROW });
+    await signIn(c21.page, /sarah@example\.invalid|Director/);
+    ok("the fixture opens at 360 wide", await openMatch(c21.page, fx.live));
+    const P = c21.page;
+    await pickTab(P, "commentary");
+    await tid(P, "mc-chips").waitFor({ timeout: 4000 }).catch(() => {});
+    const chips = await P.locator('[data-testid^="mc-chip-"]').evaluateAll((els) => els.map((e) => ({
+      id: e.getAttribute("data-testid").slice(8), h: e.getBoundingClientRect().height, w: e.getBoundingClientRect().width,
+      pressed: e.getAttribute("aria-pressed"), count: e.getAttribute("data-count") })));
+    ok("four chips, All pressed, each 44px tall", chips.map((c) => c.id).join() === "all,wickets,fours,sixes"
+       && chips[0].pressed === "true" && chips.slice(1).every((c) => c.pressed === "false") && chips.every((c) => c.h >= 43.5), JSON.stringify(chips));
+    // The scorecard's own counts, from the same fold: both innings.
+    const card = {
+      wickets: inn1.wickets + inn2.wickets,
+      fours: [inn1, inn2].reduce((t, i) => t + i.batsmen.reduce((u, b) => u + b.fours, 0), 0),
+      sixes: [inn1, inn2].reduce((t, i) => t + i.batsmen.reduce((u, b) => u + b.sixes, 0), 0),
+    };
+    ok(`each chip's count is the scorecard's: ${card.wickets} wickets, ${card.fours} fours, ${card.sixes} sixes`,
+       chips.slice(1).every((c) => Number(c.count) === card[c.id]), JSON.stringify(chips.map((c) => c.count)));
+    const allLines = async () => {
+      while (await tid(P, "mc-commentary-more").count()) { await tid(P, "mc-commentary-more").click(); await P.waitForTimeout(200); }
+      return P.locator('[data-testid="mc-line"]').evaluateAll((els) => els.map((e) => ({ key: e.getAttribute("data-key"), kind: e.getAttribute("data-kind") })));
+    };
+    // The deliveries the card counts, by event id: the fold's own ball log.
+    const ids = {
+      wickets: expected.filter((x) => x.kind === "wicket").map((x) => x.key).sort(),
+      fours: [inn1, inn2].flatMap((i) => i.ballLog.filter((b) => boundaryHit(b) === 4).map((b) => `e:${b.id}`)).sort(),
+      sixes: [inn1, inn2].flatMap((i) => i.ballLog.filter((b) => boundaryHit(b) === 6).map((b) => `e:${b.id}`)).sort(),
+    };
+    for (const id of ["wickets", "fours", "sixes"]) {
+      await tid(P, `mc-chip-${id}`).click(); await P.waitForTimeout(300);
+      const lines = await allLines();
+      const kind = { wickets: "wicket", fours: "four", sixes: "six" }[id];
+      ok(`${id}: pressed, and the lines are exactly the card's ${card[id]} deliveries, by event id`, await tid(P, `mc-chip-${id}`).getAttribute("aria-pressed") === "true"
+         && lines.length === card[id] && lines.every((l) => l.kind === kind) && lines.map((l) => l.key).sort().join() === ids[id].join(),
+         `${lines.length} lines: ${lines.map((l) => l.key).sort().join()} want ${ids[id].join()}`);
+    }
+    await tid(P, "mc-chip-wickets").click(); await P.waitForTimeout(300);
+    const wkOvers = await tid(P, "mc-over-jump").locator("option").evaluateAll((os) => os.filter((o) => o.value).length);
+    ok("with a chip on, the over jump offers only the overs it leaves", wkOvers === await tid(P, "mc-over").count() && wkOvers <= card.wickets, `${wkOvers}`);
+    await tid(P, "mc-chip-all").click(); await P.waitForTimeout(300);
+    ok("All again: every line of the match", (await allLines()).length === told.filter((x) => x.kind !== "over_end").length);
+    ok("at 360 wide, nothing is wider than the screen", await P.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+       await P.evaluate(() => document.documentElement.scrollWidth));
+    const small = await P.evaluate(() => [...document.querySelectorAll('[data-testid="mc-commentary-tools"] *')]
+      .filter((e) => e.children.length === 0 && e.textContent.trim() && parseFloat(getComputedStyle(e).fontSize) < 12).length);
+    ok("...and nothing in the chips or the jump is under 12px", small === 0, small);
+    ok("no console errors (chips)", c21.errors.length === 0, c21.errors.join(" | "));
+    await c21.ctx.close();
+
+  }
+
   group("Partnerships, Analytics and Match details");
   await tab(p, "partnerships");
   await tid(p, "mc-innings-0").click(); await p.waitForTimeout(200);
@@ -1228,59 +1283,9 @@ try {
     await sc1.s.ctx.close();
   }
 
-  group("CRI-2.1: the Commentary's chips keep what the scorecard counts, and the over jump reaches Over 14, at 360 wide");
+  group("CRI-2.1: the over jump reaches Over 14 of a longer fixture, at 360 wide");
   {
     const NARROW = { width: 360, height: 780 };
-    const c21 = await open({ viewport: NARROW });
-    await signIn(c21.page, /sarah@example\.invalid|Director/);
-    ok("the fixture opens at 360 wide", await openMatch(c21.page, fx.live));
-    const P = c21.page;
-    await pickTab(P, "commentary");
-    await tid(P, "mc-chips").waitFor({ timeout: 4000 }).catch(() => {});
-    const chips = await P.locator('[data-testid^="mc-chip-"]').evaluateAll((els) => els.map((e) => ({
-      id: e.getAttribute("data-testid").slice(8), h: e.getBoundingClientRect().height, w: e.getBoundingClientRect().width,
-      pressed: e.getAttribute("aria-pressed"), count: e.getAttribute("data-count") })));
-    ok("four chips, All pressed, each 44px tall", chips.map((c) => c.id).join() === "all,wickets,fours,sixes"
-       && chips[0].pressed === "true" && chips.slice(1).every((c) => c.pressed === "false") && chips.every((c) => c.h >= 43.5), JSON.stringify(chips));
-    // The scorecard's own counts, from the same fold: both innings.
-    const card = {
-      wickets: inn1.wickets + inn2.wickets,
-      fours: [inn1, inn2].reduce((t, i) => t + i.batsmen.reduce((u, b) => u + b.fours, 0), 0),
-      sixes: [inn1, inn2].reduce((t, i) => t + i.batsmen.reduce((u, b) => u + b.sixes, 0), 0),
-    };
-    ok(`each chip's count is the scorecard's: ${card.wickets} wickets, ${card.fours} fours, ${card.sixes} sixes`,
-       chips.slice(1).every((c) => Number(c.count) === card[c.id]), JSON.stringify(chips.map((c) => c.count)));
-    const allLines = async () => {
-      while (await tid(P, "mc-commentary-more").count()) { await tid(P, "mc-commentary-more").click(); await P.waitForTimeout(200); }
-      return P.locator('[data-testid="mc-line"]').evaluateAll((els) => els.map((e) => ({ key: e.getAttribute("data-key"), kind: e.getAttribute("data-kind") })));
-    };
-    // The deliveries the card counts, by event id: the fold's own ball log.
-    const ids = {
-      wickets: expected.filter((x) => x.kind === "wicket").map((x) => x.key).sort(),
-      fours: [inn1, inn2].flatMap((i) => i.ballLog.filter((b) => boundaryHit(b) === 4).map((b) => `e:${b.id}`)).sort(),
-      sixes: [inn1, inn2].flatMap((i) => i.ballLog.filter((b) => boundaryHit(b) === 6).map((b) => `e:${b.id}`)).sort(),
-    };
-    for (const id of ["wickets", "fours", "sixes"]) {
-      await tid(P, `mc-chip-${id}`).click(); await P.waitForTimeout(300);
-      const lines = await allLines();
-      const kind = id === "wickets" ? "wicket" : id.slice(0, -1);
-      ok(`${id}: pressed, and the lines are exactly the card's ${card[id]} deliveries, by event id`, await tid(P, `mc-chip-${id}`).getAttribute("aria-pressed") === "true"
-         && lines.length === card[id] && lines.every((l) => l.kind === kind) && lines.map((l) => l.key).sort().join() === ids[id].join(),
-         `${lines.length} lines: ${lines.map((l) => l.key).slice(0, 4).join()}`);
-    }
-    await tid(P, "mc-chip-wickets").click(); await P.waitForTimeout(300);
-    const wkOvers = await tid(P, "mc-over-jump").locator("option").evaluateAll((os) => os.filter((o) => o.value).length);
-    ok("with a chip on, the over jump offers only the overs it leaves", wkOvers === await tid(P, "mc-over").count() && wkOvers <= card.wickets, `${wkOvers}`);
-    await tid(P, "mc-chip-all").click(); await P.waitForTimeout(300);
-    ok("All again: every line of the match", (await allLines()).length === told.filter((x) => x.kind !== "over_end").length);
-    ok("at 360 wide, nothing is wider than the screen", await P.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
-       await P.evaluate(() => document.documentElement.scrollWidth));
-    const small = await P.evaluate(() => [...document.querySelectorAll('[data-testid="mc-commentary-tools"] *')]
-      .filter((e) => e.children.length === 0 && e.textContent.trim() && parseFloat(getComputedStyle(e).fontSize) < 12).length);
-    ok("...and nothing in the chips or the jump is under 12px", small === 0, small);
-    ok("no console errors (chips)", c21.errors.length === 0, c21.errors.join(" | "));
-    await c21.ctx.close();
-
     // The over jump, on a match longer than the tab's first twelve overs.
     const lf = await buildLongFixture(q, fx.players);
     const longInn = deriveMatch(lf.events).innings[0];
