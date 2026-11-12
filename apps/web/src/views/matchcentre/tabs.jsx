@@ -103,6 +103,10 @@ export function AnalyticsTab({ match, role = null, innings, inningsSel, setInnin
   // reader may not open (§2.1 P4), so it is not offered. The whole innings
   // stays, as every spectator has it.
   const offered = inn.batsmen.filter((b) => b.balls > 0 && (!focus || focus.has(b.id)));
+  // CRI-2.5 (b), the lead's call: a family reader's three charts keep G13's own wheel — his child's
+  // shots, and nobody else's, with no whole-innings wheel. With no child of his batting, no section.
+  const familyShots = !full && !!focus && offered.length > 0;
+  const shotsOf = full ? wheelOf : (offered.find((b) => b.id === wheelOf) ?? offered[0])?.id ?? null;
   const legal = inn.ballLog.filter((b) => b.type !== "Wd" && b.type !== "Nb");
   const dots = legal.filter((b) => (b.type ?? "run") === "run" && b.value === 0).length;
   // Fours and sixes are boundaries (the Laws audit F7): the engine's one test.
@@ -133,15 +137,18 @@ export function AnalyticsTab({ match, role = null, innings, inningsSel, setInnin
         onOver={drill ? (o) => drill({ ids: (parts?.get(o.over) ?? []).map((x) => x.id).filter(Boolean), what: `over ${o.over + 1}`, runs: o.runs }) : null}/>
       <H>Partnerships</H>
       <PartnershipChart inn={inn}/>
-      {full && (<>
+      {full && (
       <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)", gap: T.space.md }}>
         <div><H>Batting impact</H><BatsmanChart inn={inn}/></div>
         <div><H>Bowling economy</H><BowlerChart inn={inn}/></div>
       </div>
+      )}
+      {(full || familyShots) && (
+      <div data-testid="mc-shot-placement">
       <H>Shot placement</H>
       <div role="group" aria-label="Whose shots" style={{ display: "flex", gap: T.space.xs, flexWrap: "wrap", marginBottom: T.space.sm }}>
-        {[{ id: null, name: "Whole innings" }, ...offered].map((b) => {
-          const on = wheelOf === (b.id ?? null);
+        {[...(full ? [{ id: null, name: "Whole innings" }] : []), ...offered].map((b) => {
+          const on = shotsOf === (b.id ?? null);
           return (
             <button key={b.id ?? "all"} type="button" aria-pressed={on} onClick={() => setWheelOf(b.id ?? null)} className="pressBtn os-state"
               style={{ minHeight: "44px", padding: `0 ${T.space.md}`, borderRadius: T.radius.pill, cursor: "pointer",
@@ -152,11 +159,14 @@ export function AnalyticsTab({ match, role = null, innings, inningsSel, setInnin
           );
         })}
       </div>
-      <ShotWheel inn={inn} playerId={wheelOf} title={wheelOf ? (inn.batsmen.find((b) => b.id === wheelOf)?.name ?? "Wagon wheel") : "Wagon wheel"}/>
+      <ShotWheel inn={inn} playerId={shotsOf} title={shotsOf ? (inn.batsmen.find((b) => b.id === shotsOf)?.name ?? "Wagon wheel") : "Wagon wheel"}/>
       <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)", gap: T.space.md, marginTop: T.space.md }}>
-        <ShotHeatMap inn={inn} playerId={wheelOf}/>
-        <ShotSpider inn={inn} playerId={wheelOf}/>
+        <ShotHeatMap inn={inn} playerId={shotsOf}/>
+        <ShotSpider inn={inn} playerId={shotsOf}/>
       </div>
+      </div>
+      )}
+      {full && (<>
       {/* SCRBRD-102: filters by batter and bowler, run chips that isolate a
           subset of spokes, off side against on side, and the eight named
           areas with their runs and boundaries. */}

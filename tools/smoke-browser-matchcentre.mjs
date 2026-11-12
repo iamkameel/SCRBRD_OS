@@ -824,6 +824,7 @@ try {
           charts: [...(A?.querySelectorAll('[data-testid$="-table-toggle"]') ?? [])].map((e) => e.getAttribute("data-testid").replace(/-table-toggle$/, "")),
           wagon: !!A?.querySelector('[data-testid="wagon-analysis"]'),
           wheel: !!A?.querySelector('[data-testid="shot-wheel"]'),
+          placement: !!A?.querySelector('[data-testid="mc-shot-placement"]'),
           pins: A?.querySelectorAll('circle[r="4.5"]').length ?? 0,
           stands: A?.querySelectorAll('[data-testid="mc-partnership-bar"]').length ?? 0,
           wide: document.documentElement.scrollWidth > window.innerWidth + 1,
@@ -875,7 +876,8 @@ try {
       ok(`${label}: ${want.length} charts, ${want.join(", ")} (${analysis})`, c.analysis === analysis && c.charts.join() === want.join(), JSON.stringify(c));
       ok(`...the worm with its ${inn1.fow.length + inn2.fow.length} wicket pins, and a bar for each of the second innings' ${stands2} stands`,
          c.pins === inn1.fow.length + inn2.fow.length && c.stands === stands2, `${c.pins} pins, ${c.stands} stands`);
-      if (analysis === "spectator") ok("...no wheel, no wagon-wheel analysis", !c.wheel && !c.wagon);
+      // CRI-2.5 (b): a family keeps its own child's wheel; none of these readers' children is in this fixture.
+      if (analysis === "spectator") ok("...no child of theirs in the match: no shot-placement section, no wheel, no wagon-wheel analysis", !c.placement && !c.wheel && !c.wagon);
       else ok("...the wheel and the wagon-wheel analysis", c.wheel && c.wagon);
       ok("...nothing wider than the screen at 390", !c.wide);
       ok(`no console errors (${label})`, s.errors.length === 0, s.errors.join(" | "));
