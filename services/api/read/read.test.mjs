@@ -168,9 +168,101 @@ group("A. career_by_season (SCRBRD-086): the career read's scope, one grain fine
      q2?.params?.length === 2 && q2?.params?.[0] === null && q2?.params?.[1] === null);
   ok("no module gates it, as none gates career", !log.some((l) => l.text.includes("my_feature_enabled")));
 
+  ok("innings_by_season files an innings by the same function",
+     /school_season_of\(m\.starts_at\)\s+as season/.test(READ_QUERIES.innings_by_season.text));
   ok("the fixture list files a match by the same function the season views do",
      /school_season_of\(m\.starts_at\) as season/.test(READ_QUERIES.matches.text));
   ok("`career` itself is untouched: no season anywhere in it", !/season/.test(READ_QUERIES.career.text));
+}
+
+group("A. innings_by_season (GA-I23 slice 2, B1): career's scope, one boy, gated per boy from day one");
+{
+  const t = READ_QUERIES.innings_by_season.text;
+  const flat = t.replace(/--[^\n]*/g, "").replace(/\s+/g, " ");
+  ok("reads player_innings, the view career's form guide reads", /from player_innings i\b/.test(t) && /player_innings/.test(READ_QUERIES.career.text));
+  // The log only through the invoker career view, and only to ask whether an
+  // innings was summarised: never the raw table, never a second fold.
+  ok("never the raw ball log nor the live view", !/\bball_event\b(?!_career)|ball_event_live/.test(t));
+  ok("...and the career view only for the summary marker", (t.match(/ball_event_career/g) ?? []).length === 1
+     && /e\.kind = 'innings_summary'/.test(t));
+  ok("names a boy only through the policed player table", /join player p on p\.id = i\.player_id/.test(t));
+  ok("and a match through the policed match table", /join match m on m\.id = i\.match_id/.test(t));
+  ok("one boy per read: the player is the first parameter", /where i\.player_id = \$1/.test(t));
+  // THE GATE (B5, Q7). An AND on top of the invoker scope: his family, or a
+  // reader who is not a pupil holding a staff capability about HIS side; no
+  // arm that names a fixture, so a match-scoped assignment (a scorer, a
+  // pupil scoring, a one-fixture assistant coach) never passes it.
+  const arms = (/** @type {string} */ cap) =>
+    `app_can('${cap}', p.school_id, p.team_code, p.id, NULL::uuid) or app_can('${cap}', p.school_id, his.team, p.id, NULL::uuid)`;
+  ok("the gate is ANDed onto the scope, never ORed past it",
+     flat.includes(`and (is_family_of(p.id) or ((select not app_reader_is_pupil()) and (${arms("player.roster.read")} or ${arms("analytics.read")}))) order by`));
+  ok("...the staff arm asks about his side or his match side, never '*' (a staff-parent reads no team-mate)",
+     !/'\*'/.test(t) && /when m\.school_id = p\.school_id then m\.team_code\s+when m\.away_school_id = p\.school_id then m\.away_team_code end as team\) his/.test(t));
+  ok("...asked with no fixture, so a fixture-scoped assignment refuses",
+     (flat.match(/app_can\(/g) ?? []).length === 4 && (flat.match(/, NULL::uuid\)/g) ?? []).length === 4
+     && !/00000000-0000-0000-0000-000000000000/.test(t));
+  ok("...and no captain's door: no honour, no pupil's team arm", !/captain|honour|pupil_side_on|player\.performance\.read/.test(t));
+  // The staff arm from the policy itself, as an exact set: a role that
+  // gains either capability later (fitness, the DSO) fails here rather than
+  // quietly reading every boy's line.
+  const { ROLE_CAPABILITIES } = await import("@scrbrd/policy/roles");
+  const holds = (/** @type {string} */ role) => ["player.roster.read", "analytics.read"].some((c) => ROLE_CAPABILITIES[role]?.includes(c));
+  const STAFF = ["analyst", "assistantcoach", "coach", "directorofsport", "principal", "schooladmin", "sportsadmin", "superadmin", "teammanager"];
+  const passing = Object.keys(ROLE_CAPABILITIES).filter(holds).sort();
+  ok(`exactly these roles pass the staff arm (${passing.join()})`, passing.join() === STAFF.join());
+  for (const r of ["player", "selfaccess", "guardian", "scorer", "spectator", "enquiry", "media", "official", "medical", "fitness", "dso", "scout"])
+    ok(`${r} holds neither staff capability`, !holds(r));
+  ok("what an innings is: runs, balls, out, when, which match and innings",
+     ["runs", "balls_faced", "out", "ended_at", "match_id", "innings", "season", "source"].every((c) => new RegExp(`as ${c}\\b|i\\.${c}\\b`).test(t)));
+  ok("a scorebook innings says so, from the summary in the log", /then 'scorebook' else 'scored' end\s+as source/.test(t));
+  ok("balls faced is not coalesced: a book with no balls is NULL, never 0", !/coalesce\(i\.balls_faced/.test(t));
+  ok("oldest first, ties broken as the form guide breaks them", /order by i\.ended_at, i\.match_id, i\.innings$/.test(t.trim()));
+
+  const B = "aaaaaaaa-0000-0000-0000-000000000005";
+  const { pool, log } = fakePool({ "from player_innings": [{ player_id: B, runs: 23 }] });
+  const rows = await readResource(pool, SECRET, bearer("uPupil"), "innings_by_season", { playerId: B, season: "2026" });
+  const q1 = log.filter((l) => l.text.includes("from player_innings")).at(-1);
+  ok("the boy and the season are parameters, never spliced", JSON.stringify(q1?.params) === `["${B}","2026"]`
+     && !q1?.text.includes(B) && rows.length === 1);
+  await readResource(pool, SECRET, bearer("uPupil"), "innings_by_season", { playerId: B });
+  ok("no season is null: every season", log.filter((l) => l.text.includes("from player_innings")).at(-1)?.params?.[1] === null);
+  for (const [why, query] of /** @type {[string, Record<string, string>][]} */ ([["no boy", {}], ["not a uuid", { playerId: "x' or true --" }],
+                                                                                ["a season that is not a season", { playerId: B, season: "2026' or '1'='1" }]])) {
+    const fp = fakePool({});
+    let status = 0;
+    try { await readResource(fp.pool, SECRET, bearer("uPupil"), "innings_by_season", query); } catch (/** @type {any} */ e) { status = e.status; }
+    ok(`${why} is a 400, with nothing read`, status === 400 && fp.log.length === 0);
+  }
+  ok("no module gates it, as none gates career", !log.some((l) => l.text.includes("my_feature_enabled")));
+  ok("it leaves as no file", NOT_EXPORTED.has("innings_by_season"));
+  ok("...and is watched as career_by_season is", Array.isArray(RESTRICTED_FIELDS.innings_by_season));
+}
+
+group("A. side_season (GA-I23 slice 2, B1): a side's completed matches, team-level, under the fixture's own scope");
+{
+  const t = READ_QUERIES.side_season.text;
+  ok("reads the fixtures through the policed match table", /from match m\b/.test(t));
+  ok("the figures from match_live_score, for and against", /left join match_live_score f\b/.test(t) && /left join match_live_score a\b/.test(t));
+  ok("which side batted, the allotment and the result from match_result()", /cross join lateral match_result\(m\.id\) r/.test(t)
+     && /'overs'/.test(t) && /'revised'/.test(t) && /r\.outcome/.test(t));
+  ok("a super over is not the match's runs", (t.match(/super_over' = 'null'::jsonb/g) ?? []).length === 3);
+  ok("completed limited-overs cricket only", /m\.status = 'complete'/.test(t) && /m\.sport = 'cricket'/.test(t) && /m\.overs is not null/.test(t));
+  ok("team-level: no boy, no name, no ball", !/\bplayer\b|full_name|striker|bowler|ball_event/.test(t));
+  ok("the side at either end of the fixture", /m\.school_id = \$1 and m\.team_code = \$2/.test(t) && /m\.away_school_id = \$1 and m\.away_team_code = \$2/.test(t));
+  ok("balls actually bowled (Q10): legal balls, never the allotment times six", /legal_balls::int as for_balls/.test(t) && !/\* 6/.test(t));
+  const S = "11111111-1111-1111-1111-111111111111";
+  const { pool, log } = fakePool({ "match_live_score": [{ match_id: "m1", for_runs: 140 }] });
+  await readResource(pool, SECRET, bearer("uCoach"), "side_season", { schoolId: S, teamCode: "1XI", season: "2026" });
+  ok("school, side and season are parameters", JSON.stringify(log.filter((l) => l.text.includes("match_live_score")).at(-1)?.params) === `["${S}","1XI","2026"]`);
+  for (const [why, query] of /** @type {[string, Record<string, string>][]} */ ([["no school", { teamCode: "1XI" }], ["no side", { schoolId: S }],
+                                                                                ["a side that is not a side", { schoolId: S, teamCode: "1XI'; --" }],
+                                                                                ["a season that is not a season", { schoolId: S, teamCode: "1XI", season: "last" }]])) {
+    const fp = fakePool({});
+    let status = 0;
+    try { await readResource(fp.pool, SECRET, bearer("uCoach"), "side_season", query); } catch (/** @type {any} */ e) { status = e.status; }
+    ok(`${why} is a 400, with nothing read`, status === 400 && fp.log.length === 0);
+  }
+  ok("it leaves as no file (the allowlist is the door)", NOT_EXPORTED.has("side_season") || !Object.hasOwn(EXPORTABLE, "side_season"));
 }
 
 group("A. my_children (step 4 G1): the caller's own live guardian links, and the proof runs the same text");

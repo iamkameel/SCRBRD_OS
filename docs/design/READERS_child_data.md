@@ -37,7 +37,7 @@ Sensitivity is `capabilities.mjs:487-600`'s scale: 0 public, 1 internal, 2 restr
 | A4 | **Contact and home** | email, phone, address, guardian text, hometown, boarding house | 2 | `player.*` (`player.pii.read`) |
 | A5 | **Body measures** | height, weight | 3 | `player.height/weight` (`player.biometric.read`) |
 | B | **This match's figures** | the log, the scorecard, the board | 0 | `ball_event` (`fixture.read`, both anchors, `SCRBRD-136-137_away_visibility.md:74-84`) |
-| B2 | **Career and season figures, per boy** | `career`, `career_by_season`, wheel, dismissal breakdown, matchups | 0 in code (see §6 X7) | views over `ball_event_career` (`player.performance.read`) |
+| B2 | **Career and season figures, per boy** | `career`, `career_by_season`, `innings_by_season` (a season innings by innings, GA-I23 B1), wheel, dismissal breakdown, matchups; and team-level, `side_season` (a side's matches, no boy named) | 0 in code (see §6 X7) | views over `ball_event_career` (`player.performance.read`); `innings_by_season` also gated per boy (§B2 below) |
 | C | **Availability** | the answer, who said it, `reason_kind`, `note` | 2 | `match_availability`, `_history` (`availability.read`) |
 | D | **The team sheet** | the eleven, order, the captain mark (SR-6, not built) | 1 | `match_squad` (`player.profile.read`, per side); `fixture_sheet()` for the family (REACH R-H, not built) |
 | E | **Honours and recognition** | honours, caps, milestones, bests, records; withdrawn mark; `withdrawn_reason`; nominations | 0–3 | `honour` (`player.profile.read`); reason masked (`recognition.decide`, design); nominations: none yet |
@@ -161,6 +161,18 @@ What the log never carries about a boy: age, limit, injury, reason, note (`SCRBR
 | other school's family | never | `player.performance.read` per boy | `SCRBRD-136-137_away_visibility.md:176` |
 | scout | yes, consented boys | `scouting_candidates()`: name, team, career figures | `roles.mjs:491-501` |
 | public | never | A3, A4: no player page, no leaderboard, no figure for one child across matches | `PUBLIC_DATA.md:57-58`; `GA-I24-I25_compare_and_combine.md:76` |
+
+**The season, innings by innings (`innings_by_season`, GA-I23 slice 2 B1; `SCENARIO_AND_TREND_design.md` §B5, Kameel's Q7 and Q8, 12 Nov 2026).** Narrower than the rows above, by a per-boy gate on top of `career`'s scope:
+
+| reader | may | condition | source |
+|---|---|---|---|
+| pupil | himself only | never a team-mate's line, the captain included, a pupil scoring a match, and a pupil given a staff assignment (`not app_reader_is_pupil()`, the safe default, pending Kameel) | `SCENARIO_AND_TREND_design.md` Q7; `read-api.mjs` `innings_by_season` |
+| parent | her own child only, one per read | `is_family_of()`: a verified link live today; pending, ended or revoked reads nothing | Q8 |
+| staff | his side's boys | `player.roster.read` or `analytics.read` about the boy's own side or the side he played for, with no fixture: coach, assistant coach, team manager (their side); director of sport, principal, office (schooladmin), sportsadmin, analyst (school-wide); superadmin (logged platform-wide). A member of staff of another side who is also a parent reads his own boy's line and no team-mate's | §B5; `read.test.mjs` holds the exact set |
+| scorer, medical, fitness, media, scout, enquiry, spectator, official | never | none holds either capability, or holds it only on a fixture | `read.test.mjs` |
+| other school, public | never | other school fails both arms; no token, no public route | §B5 |
+
+`side_season` is team-level: a side's completed limited-overs matches, for and against, for anyone signed in who may read the side's fixtures (a reader at the other school gets only the fixtures his side played against this one); never public (Q10).
 
 Agreed, with one decided asymmetry worth saying plainly: a pupil reads a team-mate's season figures and a parent does not (`REACH_parent_pupil.md:373`, the alternative taken). Skills, ratings, health, load, availability, age and discipline never enter a comparison (`GA-I24-I25_compare_and_combine.md:39`).
 

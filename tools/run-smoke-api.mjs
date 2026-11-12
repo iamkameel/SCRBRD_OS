@@ -222,6 +222,11 @@ const WALKS = [
   // the office's ordinary route answers the nomination.
   "colours",
   "season",
+  // GA-I23 slice 2, B1: the season trend's two reads. A boy's innings by
+  // innings to himself, his family on a live link and his side's staff, no
+  // team-mate (the captain included), no other school, no public; a side's
+  // completed matches, team-level; the sums and a voided ball.
+  "trend",
   "requests",
   "enrol",
   // The pilot's load (PILOT_LOAD.md gaps 3 and 4): parents in bulk, each row
