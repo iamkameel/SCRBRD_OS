@@ -1,6 +1,6 @@
 import { D } from "../design/tokens.js";
 import { fmtOv, isOut } from "./format.js";
-import { boundaryHit } from "@scrbrd/scoring";
+import { boundaryHit, ownRateChaseLine, projectedTotal } from "@scrbrd/scoring";
 
 /** A four or a six to the rope, as the engine judges it (boundaryHit(), the Laws audit F7). @param {any} b */
 const isBoundary = (b) => boundaryHit(b) != null;
@@ -137,16 +137,18 @@ const inReach = (runs, reach, marks = [50, 100, 150, 200]) => {
 /**
  * The lines the board's `insight` slot takes turns with, from the fold alone:
  * a milestone in reach for a batter, for the stand or for a bowler; the
- * projected total in a first innings; a boundary drought; the last wicket.
+ * projected total in a first innings, or in a chase where its rate so far
+ * would take it; a boundary drought; the last wicket.
  * Only what the innings can say — a line with nothing behind it is not
  * written, so an innings too young to say anything gives none and the slot is
  * not drawn. Spectator screens only (the pad never shows Tier 2).
  *
  * @param {object} inn  a folded innings
- * @param {{target?: number|null, overs?: number}} [o]
+ * @param {{target?: number|null, overs?: number, format?: unknown}} [o]
+ *   `format` match.format (a declaration match projects nothing)
  * @returns {string[]}
  */
-const boardInsights = (inn, { target = null, overs = 20 } = {}) => {
+const boardInsights = (inn, { target = null, overs = 20, format = null } = {}) => {
   if (!inn || !inn.balls || inn.complete) return [];
   const out = [];
   const pair = [inn.striker, inn.nonStriker].map((id) => inn.batsmen?.find((b) => b.id === id)).filter(Boolean);
@@ -161,11 +163,16 @@ const boardInsights = (inn, { target = null, overs = 20 } = {}) => {
   }
   const bw = inn.bowlers?.find((b) => b.id === inn.bowler);
   if (bw && bw.wickets === 4) out.push(`${bw.name} needs one more for five wickets`);
-  // The projection only in a first innings, and only once four overs have
-  // given it something to project from.
-  if (target == null && inn.balls >= 24 && inn.balls < overs * 6) {
-    const rr = inn.runs / (inn.balls / 6);
-    out.push(`Projected ${Math.round(rr * overs)} at ${rr.toFixed(2)} an over`);
+  // GA-I29 A0: the projection is @scrbrd/scoring scenario.mjs's, at its one
+  // minimum of twelve legal balls (A-D8): in a first innings the total at the
+  // rate so far (S5), in a chase where that rate would take it (S8) — the line
+  // the ground display's rotation carries, with no stepper (A5, Q6).
+  if (target == null) {
+    const p = projectedTotal(inn, { overs, format });
+    if (p) out.push(`Projected ${p.runs} at ${p.crr} an over`);
+  } else {
+    const own = ownRateChaseLine(inn, { target, overs, format });
+    if (own) out.push(own);
   }
   // Legal deliveries since the last boundary (a four or six to the rope, F7).
   let dry = 0;

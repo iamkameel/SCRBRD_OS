@@ -1,11 +1,12 @@
-import { isWicketBall } from "@scrbrd/scoring";
+import { isWicketBall, rateText } from "@scrbrd/scoring";
 
 /* ═══════════════════════════════════════════════════════
    SCORECARD
 ═══════════════════════════════════════════════════════ */
 const SR=(r,b)=>b===0?"—":((r/b)*100).toFixed(1);
 
-const RR=(r,b)=>b===0?"—":((r/(b/6))||0).toFixed(2);
+// The run rate is @scrbrd/scoring rateText(), the one formatter every screen's CRR and RRR use (GA-I29 S1).
+const RR=(r,b)=>b===0?"—":(rateText(r,b)??"—");
 
 const fmtOv=b=>`${Math.floor(b/6)}.${b%6}`;
 

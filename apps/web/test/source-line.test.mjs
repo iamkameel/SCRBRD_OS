@@ -188,7 +188,12 @@ group("The screens use it, with no per-view line left beside it");
   for (const id of ["compare-batting", "compare-bowling", "compare-matchups"]) ok(`Compare: the ${id.replace("compare-", "")} panel has a line`, new RegExp(`testid="source-line-${id}"`).test(cp));
   const sh = read("../src/views/SeasonHistoryView.jsx");
   ok("The season archive's ladders have one", /testid=\{`source-line-season-ladder-\$\{comp\.id\}`\}/.test(sh));
-  // The public pages must not pull it in: the only importers are the signed-in views.
+  // The public pages must not pull it in statically: the only importers are the signed-in views, and the
+  // Match Centre's scenario panel (GA-I29 A1, design §A3: "<SourceLine>, on the panel", signed in and
+  // public), which tabs-core.jsx loads as a chunk of its own, so the public entry's static graph is untouched.
+  const tc = read("../src/views/matchcentre/tabs-core.jsx");
+  ok("the scenario panel has a line", /<SourceLine testid="mc-scenario-source"/.test(read("../src/views/matchcentre/scenario.jsx")));
+  ok("...and tabs-core.jsx reaches it only lazily", /lazy\(\(\) => import\("\.\/scenario\.jsx"\)/.test(tc) && !/^import[^\n]*scenario\.jsx/m.test(tc));
   const importers = [];
   const walk = (dir) => {
     for (const e of readdirSync(new URL(dir, import.meta.url), { withFileTypes: true })) {
@@ -198,7 +203,7 @@ group("The screens use it, with no per-view line left beside it");
     }
   };
   walk("../src/");
-  ok("only the signed-in views import it", importers.length > 0 && importers.every((f) => /^(views\/(AnalyticsView|LeagueView|ProfilesView|SeasonHistoryView|seasonbars|demoworm|compare)\.jsx|lib\/seasonBars\.js|ui\/sourceLine\.jsx|lib\/sourceWords\.js)$/.test(f)), importers.join(" "));
+  ok("only the signed-in views import it, and the scenario panel (its own lazy chunk on the public page, Q2)", importers.length > 0 && importers.every((f) => /^(views\/(AnalyticsView|LeagueView|ProfilesView|SeasonHistoryView|seasonbars|demoworm|compare)\.jsx|views\/matchcentre\/scenario\.jsx|lib\/seasonBars\.js|ui\/sourceLine\.jsx|lib\/sourceWords\.js)$/.test(f)), importers.join(" "));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
