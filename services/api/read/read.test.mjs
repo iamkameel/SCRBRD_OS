@@ -187,22 +187,30 @@ group("A. innings_by_season (GA-I23 slice 2, B1): career's scope, one boy, gated
   ok("names a boy only through the policed player table", /join player p on p\.id = i\.player_id/.test(t));
   ok("and a match through the policed match table", /join match m on m\.id = i\.match_id/.test(t));
   ok("one boy per read: the player is the first parameter", /where i\.player_id = \$1/.test(t));
-  // THE GATE (B5, Q7). An AND on top of the invoker scope, three arms, each
-  // about this boy; no arm that names a fixture, so a match-scoped
-  // assignment (a scorer, a pupil scoring) never passes it.
+  // THE GATE (B5, Q7). An AND on top of the invoker scope: his family, or a
+  // reader who is not a pupil holding a staff capability about HIS side; no
+  // arm that names a fixture, so a match-scoped assignment (a scorer, a
+  // pupil scoring, a one-fixture assistant coach) never passes it.
+  const arms = (/** @type {string} */ cap) =>
+    `app_can('${cap}', p.school_id, p.team_code, p.id, NULL::uuid) or app_can('${cap}', p.school_id, his.team, p.id, NULL::uuid)`;
   ok("the gate is ANDed onto the scope, never ORed past it",
-     /and \(is_family_of\(p\.id\) or app_can\('player\.roster\.read', p\.school_id, '\*'::text, p\.id, NULL::uuid\) or app_can\('analytics\.read', p\.school_id, '\*'::text, p\.id, NULL::uuid\)\) order by/.test(flat));
+     flat.includes(`and (is_family_of(p.id) or ((select not app_reader_is_pupil()) and (${arms("player.roster.read")} or ${arms("analytics.read")}))) order by`));
+  ok("...the staff arm asks about his side or his match side, never '*' (a staff-parent reads no team-mate)",
+     !/'\*'/.test(t) && /when m\.school_id = p\.school_id then m\.team_code\s+when m\.away_school_id = p\.school_id then m\.away_team_code end as team\) his/.test(t));
   ok("...asked with no fixture, so a fixture-scoped assignment refuses",
-     (flat.match(/app_can\(/g) ?? []).length === 2 && !/00000000-0000-0000-0000-000000000000/.test(t));
-  ok("...and no captain's door: no honour, no team arm", !/captain|honour|pupil_side_on|player\.performance\.read/.test(t));
-  // The staff arm from the policy itself: neither capability reaches a boy,
-  // his family or a scorer, and both reach the side's staff.
+     (flat.match(/app_can\(/g) ?? []).length === 4 && (flat.match(/, NULL::uuid\)/g) ?? []).length === 4
+     && !/00000000-0000-0000-0000-000000000000/.test(t));
+  ok("...and no captain's door: no honour, no pupil's team arm", !/captain|honour|pupil_side_on|player\.performance\.read/.test(t));
+  // The staff arm from the policy itself, as an exact set: a role that
+  // gains either capability later (fitness, the DSO) fails here rather than
+  // quietly reading every boy's line.
   const { ROLE_CAPABILITIES } = await import("@scrbrd/policy/roles");
   const holds = (/** @type {string} */ role) => ["player.roster.read", "analytics.read"].some((c) => ROLE_CAPABILITIES[role]?.includes(c));
-  for (const r of ["player", "selfaccess", "guardian", "scorer", "spectator", "enquiry", "media", "official"])
+  const STAFF = ["analyst", "assistantcoach", "coach", "directorofsport", "principal", "schooladmin", "sportsadmin", "superadmin", "teammanager"];
+  const passing = Object.keys(ROLE_CAPABILITIES).filter(holds).sort();
+  ok("exactly these roles pass the staff arm", passing.join() === STAFF.join(), passing.join());
+  for (const r of ["player", "selfaccess", "guardian", "scorer", "spectator", "enquiry", "media", "official", "medical", "fitness", "dso", "scout"])
     ok(`${r} holds neither staff capability`, !holds(r));
-  for (const r of ["coach", "assistantcoach", "teammanager", "directorofsport", "analyst", "principal"])
-    ok(`${r} holds one of them`, holds(r));
   ok("what an innings is: runs, balls, out, when, which match and innings",
      ["runs", "balls_faced", "out", "ended_at", "match_id", "innings", "season", "source"].every((c) => new RegExp(`as ${c}\\b|i\\.${c}\\b`).test(t)));
   ok("a scorebook innings says so, from the summary in the log", /then 'scorebook' else 'scored' end\s+as source/.test(t));
@@ -217,7 +225,8 @@ group("A. innings_by_season (GA-I23 slice 2, B1): career's scope, one boy, gated
      && !q1?.text.includes(B) && rows.length === 1);
   await readResource(pool, SECRET, bearer("uPupil"), "innings_by_season", { playerId: B });
   ok("no season is null: every season", log.filter((l) => l.text.includes("from player_innings")).at(-1)?.params?.[1] === null);
-  for (const [why, query] of /** @type {[string, Record<string, string>][]} */ ([["no boy", {}], ["not a uuid", { playerId: "x' or true --" }]])) {
+  for (const [why, query] of /** @type {[string, Record<string, string>][]} */ ([["no boy", {}], ["not a uuid", { playerId: "x' or true --" }],
+                                                                                ["a season that is not a season", { playerId: B, season: "2026' or '1'='1" }]])) {
     const fp = fakePool({});
     let status = 0;
     try { await readResource(fp.pool, SECRET, bearer("uPupil"), "innings_by_season", query); } catch (/** @type {any} */ e) { status = e.status; }
@@ -245,7 +254,8 @@ group("A. side_season (GA-I23 slice 2, B1): a side's completed matches, team-lev
   await readResource(pool, SECRET, bearer("uCoach"), "side_season", { schoolId: S, teamCode: "1XI", season: "2026" });
   ok("school, side and season are parameters", JSON.stringify(log.filter((l) => l.text.includes("match_live_score")).at(-1)?.params) === `["${S}","1XI","2026"]`);
   for (const [why, query] of /** @type {[string, Record<string, string>][]} */ ([["no school", { teamCode: "1XI" }], ["no side", { schoolId: S }],
-                                                                                ["a side that is not a side", { schoolId: S, teamCode: "1XI'; --" }]])) {
+                                                                                ["a side that is not a side", { schoolId: S, teamCode: "1XI'; --" }],
+                                                                                ["a season that is not a season", { schoolId: S, teamCode: "1XI", season: "last" }]])) {
     const fp = fakePool({});
     let status = 0;
     try { await readResource(fp.pool, SECRET, bearer("uCoach"), "side_season", query); } catch (/** @type {any} */ e) { status = e.status; }

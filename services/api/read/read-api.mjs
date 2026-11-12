@@ -3187,18 +3187,29 @@ export const READ_QUERIES = {
    *   - is_family_of(): his own self link, or a guardian's verified, live
    *     link to him. A pending, ended or revoked link reads nothing, and a
    *     pad's credential never does;
-   *   - or a staff capability at his school, asked with NO fixture, so an
-   *     assignment narrowed to one match (a scorer, a pupil scoring) never
-   *     passes: player.roster.read (director, office, coach, assistant
-   *     coach, team manager) or analytics.read (the analyst). Neither is in
-   *     the `player` bundle, `guardian` or `selfaccess`.
-   * So a pupil reads his own innings and no team-mate's, the captain
+   *   - or, for a reader who is not a pupil, a staff capability about HIS
+   *     SIDE: player.roster.read or analytics.read, asked at his school for
+   *     his own side (p.team_code) or for the side he played for in that
+   *     match (his school's end of it, so a boy playing up is his match
+   *     side's staff's too), and with NO fixture, so an assignment narrowed
+   *     to one match (a scorer, a pupil scoring, an assistant coach for one
+   *     fixture) never passes. A school-wide assignment (team NULL) passes
+   *     at every side of its school. The roles that hold either capability,
+   *     held exactly by read.test.mjs: coach, assistantcoach, teammanager
+   *     (their own side), directorofsport, principal, schooladmin (the
+   *     office), sportsadmin, analyst (school-wide), and superadmin (every
+   *     school; its every read is logged platform-wide). Neither capability
+   *     is in the `player` bundle, `guardian` or `selfaccess`.
+   * So a pupil reads his own innings and no team-mate's: the captain
    * included (Kameel, 11 Nov: "the side's season figures, nothing else"; an
-   * innings-by-innings line is not season figures), and a parent her own
-   * child's. The team `'*'` does not widen a coach past his side: the rows
-   * he gets are still the ones `career` gives him. The other school's
-   * readers fail the staff arm (another school) and the family arm (not his
-   * family). The public has no token, and there is no public route.
+   * innings-by-innings line is not season figures), and a pupil given a
+   * staff assignment too (not app_reader_is_pupil(), the safe default,
+   * pending Kameel). A parent reads her own child's; a member of staff of
+   * another side who is also a parent of a boy on this one reads that boy's
+   * and none of his team-mates' (the staff arm asks about the boy's side,
+   * never '*'). The other school's readers fail the staff arm (another
+   * school) and the family arm (not his family). The public has no token,
+   * and there is no public route.
    *
    * ONE BOY PER READ. `playerId` is required: a parent reads one child at a
    * time (STEP4 decision 1, never two children merged), and nobody gets a
@@ -3229,15 +3240,22 @@ export const READ_QUERIES = {
              from player_innings i
              join player p on p.id = i.player_id
              join match m on m.id = i.match_id
+             -- The side he played for in this match: his school's end of it.
+             cross join lateral (
+               select case when m.school_id = p.school_id then m.team_code
+                           when m.away_school_id = p.school_id then m.away_team_code end as team) his
             where i.player_id = $1
               and ($2::text is null or school_season_of(m.starts_at) = $2)
-              -- The per-boy gate (B5, Q7). Asked once per boy, not per
-              -- innings: one boy per read, and the answers are STABLE.
+              -- The per-boy gate (B5, Q7), asked for each innings row: one
+              -- boy per read, a season's innings, so a few dozen asks.
               and (is_family_of(p.id)
-                   or app_can('player.roster.read', p.school_id, '*'::text, p.id, NULL::uuid)
-                   or app_can('analytics.read', p.school_id, '*'::text, p.id, NULL::uuid))
+                   or ((select not app_reader_is_pupil())
+                       and (app_can('player.roster.read', p.school_id, p.team_code, p.id, NULL::uuid)
+                            or app_can('player.roster.read', p.school_id, his.team, p.id, NULL::uuid)
+                            or app_can('analytics.read', p.school_id, p.team_code, p.id, NULL::uuid)
+                            or app_can('analytics.read', p.school_id, his.team, p.id, NULL::uuid))))
             order by i.ended_at, i.match_id, i.innings`,
-    params: q => [uuidParam(q, "playerId", true), q?.season || null],
+    params: q => [uuidParam(q, "playerId", true), seasonParam(q)],
   },
 
   /**
@@ -3312,7 +3330,7 @@ export const READ_QUERIES = {
                     where e.v->'super_over' = 'null'::jsonb) <= 2
               and ($3::text is null or school_season_of(m.starts_at) = $3)
             order by m.starts_at, m.id`,
-    params: q => [uuidParam(q, "schoolId", true), teamParam(req(q, "teamCode")), q?.season || null],
+    params: q => [uuidParam(q, "schoolId", true), teamParam(req(q, "teamCode")), seasonParam(q)],
   },
 
   /**
@@ -3905,6 +3923,18 @@ function uuidParam(q, key, required = false) {
   }
   if (!UUID_RE.test(String(v))) { const e = /** @type {DressedError} */ (new Error(`bad_param:${key}`)); e.status = 400; throw e; }
   return v;
+}
+
+/**
+ * A season label from the query: absent (null) or a school season ("2026")
+ * or a club one ("2026/27"); anything else is a 400, as a bad uuid is.
+ * @param {Record<string, string> | undefined} q
+ */
+function seasonParam(q) {
+  const v = q?.season;
+  if (v === undefined || v === null || v === "") return null;
+  if (!/^\d{4}(\/\d{2})?$/.test(String(v))) { const e = /** @type {DressedError} */ (new Error("bad_param:season")); e.status = 400; throw e; }
+  return String(v);
 }
 
 /**

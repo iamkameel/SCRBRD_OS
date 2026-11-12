@@ -5,16 +5,28 @@
  *
  *   innings_by_season  one boy's season, innings by innings. Career's scope,
  *                      row for row, then gated per boy: his family on a live
- *                      link (his own self link included), or staff at his
- *                      school asked with no fixture. One boy per read.
+ *                      link (his own self link included), or a reader who
+ *                      is not a pupil holding a staff capability about his
+ *                      side, asked with no fixture. One boy per read.
  *   side_season        a side's completed limited-overs matches, for and
  *                      against, team-level, under the fixture's own scope.
  *
  * Who reads what, against a real database: a pupil his own line and no
- * team-mate's (the captain and a pupil scoring a match included); a parent
- * her own child's and nobody else's, a pending, ended or revoked link
- * nothing; the side's staff every boy's; a Westville reader no Hilton boy,
- * even on a fixture both schools read; nobody without a token. And the
+ * team-mate's (the captain, a pupil scoring a match and a pupil made a team
+ * manager included); a parent her own child's and nobody else's, a pending,
+ * ended or revoked link nothing; a coach of another side who is a parent of
+ * a 1XI boy his own boy's and no team-mate's; the side's staff every boy's;
+ * a Westville reader no Hilton boy, even on a fixture both schools read;
+ * nobody without a token.
+ *
+ * WHICH LINES PROVE THE GATE, AND WHICH THE SCOPE. With the per-boy gate
+ * removed, these fail, so they prove it: the pupil to a team-mate, the
+ * captain, the pupil scoring, the pupil team manager, the staff-parent to
+ * his boy's team-mate, the one-fixture assistant coach, the scorer and the
+ * medical staff. These pass without it, because `career`'s own scope already
+ * refuses them, and are here to hold that scope: the pending, ended and
+ * revoked links, a parent asking for another child, the coach of another
+ * side, the spectator, Westville's coach and office, and no token. And the
  * figures: a boy's innings sum to career_by_season's runs, his scorebook
  * innings are its book_innings, and a voided ball is gone from the next read
  * of both reads.
@@ -288,7 +300,7 @@ try {
     ok("another season reads nothing", (await inningsRows(coach, P1, "2025")).length === 0);
     ok("no season reads every season", (await inningsRows(coach, P1, null)).length >= rows.length);
   }
-  ok("a coach of another side at the school reads none of the 1XI's: '*' does not widen career's scope",
+  ok("a coach of another side at the school reads none of the 1XI's",
      (await inningsRows(u14, P1)).length === 0);
 
   group("A pupil reads his own line and no team-mate's (Q7)");
@@ -318,6 +330,16 @@ try {
     // A pupil scoring a match is on a fixture-scoped assignment: never staff.
     await q(`insert into role_assignment (person_id, role, school_id, fixture_id) values ($1, 'scorer', $2, $3)`, [U_PUPIL, HIL, M[0]]);
     ok("scoring a match of his side gives him no team-mate's line", (await inningsRows(pupil, P1)).length === 0);
+    // A pupil a school has made the side's team manager is still a pupil
+    // (S2, the safe default, pending Kameel).
+    const tmRow = (await one(`insert into role_assignment (person_id, role, school_id, team_code) values ($1, 'teammanager', $2, '1XI') returning id`,
+                             [U_PUPIL, HIL])).id;
+    ok("(the control: as team manager, career's scope gives him the side's rows)",
+       ((await api(`/api/read/career_by_season?season=${SEASON}`, { token: pupil })).body?.rows ?? []).some((r) => r.player_id === P2));
+    ok("a pupil made the 1XI's team manager reads no team-mate's line", (await inningsRows(pupil, P1)).length === 0
+       && (await inningsRows(pupil, P2)).length === 0);
+    ok("...and his own still", (await inningsRows(pupil, P5)).length === expectedFor(P5).length);
+    await q(`update role_assignment set active = false where id = $1`, [tmRow]);
   }
 
   group("A parent reads her own child's line, one child at a time (Q8)");
@@ -340,6 +362,16 @@ try {
   ok("a scorer, though he reads the side's log", (await inningsRows(scorer, P1)).length === 0);
   ok("the school's medical staff (not staff of the side's cricket)", (await inningsRows(medic, P1)).length === 0);
   ok("a spectator", (await inningsRows(watcher, P1)).length === 0);
+  {
+    // An assistant coach for one fixture of the side holds player.roster.read,
+    // but on a fixture-scoped assignment: the gate asks with no fixture.
+    const ac = await person("ac.trend@example.invalid", "A Assistant", "coach");
+    await q(`insert into role_assignment (person_id, role, school_id, team_code, fixture_id) values ($1, 'assistantcoach', $2, '1XI', $3)`, [ac, HIL, M[0]]);
+    const acTok = await login("ac.trend@example.invalid");
+    ok("(the control: career's scope gives the one-fixture assistant coach J Whitfield's figures)",
+       ((await api(`/api/read/career_by_season?season=${SEASON}`, { token: acTok })).body?.rows ?? []).some((r) => r.player_id === P1));
+    ok("an assistant coach for one fixture reads no boy's line", (await inningsRows(acTok, P1)).length === 0);
+  }
   {
     const live = (await api(`/api/read/live_score?matchId=${SHARED}`, { token: wesCoach })).body?.rows ?? [];
     ok("(Westville's coach reads the fixture both schools played)", live.length === 2);
@@ -401,11 +433,31 @@ try {
     ok("...and from his own end, his side is the away side and Hilton the opponent",
        fromWes.length === 1 && fromWes[0].side === "away" && fromWes[0].result === "lost"
        && fromWes[0].for_runs === totals.get(SHARED).against.runs && fromWes[0].against_runs === totals.get(SHARED).for.runs, fromWes[0]);
-    ok("Westville's office reads nothing of Hilton's other matches",
-       (await sideRows(wesOffice)).every((x) => x.match_id === SHARED));
+    const office = await sideRows(wesOffice);
+    ok("Westville's office reads the shared fixture and nothing of Hilton's other matches",
+       office.length === 1 && office[0].match_id === SHARED, office.map((x) => x.match_id));
     const r = await side(null);
     ok("no token: the public reads no side's season (Q10, not public)", r.status === 401);
     ok("a side that is not a side is a 400", (await api(`/api/read/side_season?schoolId=${HIL}&teamCode=nonsense`, { token: coach })).status === 400);
+    ok("a season that is not a season is a 400, on both reads",
+       (await api(`/api/read/side_season?schoolId=${HIL}&teamCode=1XI&season=last`, { token: coach })).status === 400
+       && (await api(`/api/read/innings_by_season?playerId=${P1}&season=2026x`, { token: coach })).status === 400);
+  }
+
+  group("A member of staff who is also a parent reads his own boy's line, and no team-mate's (S1)");
+  {
+    // The U14A coach holds player.roster.read; his son is J Whitfield of the
+    // 1XI, on a verified link, so the 1XI's log reaches him as a parent.
+    const u14id = (await one(`select id from app_user where email = 'u14coach@example.invalid'`)).id;
+    const ga = (await one(`insert into role_assignment (person_id, role, school_id) values ($1, 'guardian', $2) returning id`, [u14id, HIL])).id;
+    await q(`insert into assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                             consent_state, consent_version, consent_at)
+             values ($1, $2, 'parent', 'verified', $3, now(), 'granted', 'popia-2026-01', now())`, [ga, P1, U_REGISTRAR]);
+    ok("he reads his own boy's line, as his parent", (await inningsRows(u14, P1)).length === expectedFor(P1).length);
+    ok("(the control: career's scope gives him a team-mate's season now)",
+       ((await api(`/api/read/career_by_season?season=${SEASON}`, { token: u14 })).body?.rows ?? []).some((r) => r.player_id === P2));
+    ok("...and no team-mate's: his staff capability is about the U14A, not the 1XI",
+       (await inningsRows(u14, P2)).length === 0 && (await inningsRows(u14, P5)).length === 0);
   }
 
   group("The figures: the innings sum to the season, and the scorebook's are its book_innings");
