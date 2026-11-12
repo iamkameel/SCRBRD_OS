@@ -16,7 +16,7 @@ import { panelsOf, LOAD_SENTENCE } from "../src/lib/cockpit.js";
 import { FORBIDDEN_FIELDS, NEVER_ON_THE_COCKPIT, OTHER_SIDE_IDS } from "../src/lib/cockpitNever.js";
 import { EXCEPTION_WORDS } from "../src/lib/liftWords.js";
 import {
-  RULES, RULE_ORDER, TRAILS, MATCHUP_FLOOR, MATCHUP_GROWTH, evaluate, trailLine, isSeen, markSeen, unseen, ruleS1, ruleS2a, ruleS2b, ruleS2c, ruleS3, ruleS4a, ruleS4b, ruleS5, ruleS6, ruleS7, ruleS8, ruleS9, ruleS10, ruleS11, ruleS12,
+  RULES, RULE_ORDER, TRAILS, MATCHUP_FLOOR, MATCHUP_GROWTH, evaluate, trailLine, isSeen, markSeen, unseen, ruleS1, ruleS2a, ruleS2b, ruleS2c, ruleS3, ruleS4a, ruleS4b, ruleS5, ruleS6, ruleS7, ruleS8, ruleS9, ruleS10, ruleS11, ruleS12, ruleS13,
 } from "../src/lib/signals.js";
 
 let pass = 0, fail = 0;
@@ -287,7 +287,9 @@ group("S12 · A notice for this fixture, as published");
 group("Every rule: its gate, its order, its words");
 {
   const everyone = base({ gate: COACH });
-  ok("the twelve rules (S1 to S12, S2 and S4 in parts; S2c from phase B) are listed, in the design's order", RULE_ORDER.join() === "S1,S2a,S2b,S2c,S3,S4a,S4b,S5,S6,S7,S8,S9,S10,S11,S12");
+  ok("the thirteen rules (S1 to S13, S2 and S4 in parts; S2c from phase B; S13 from GA-I27 slice 2) are listed, in the design's order", RULE_ORDER.join() === "S1,S2a,S2b,S2c,S3,S4a,S4b,S5,S6,S7,S8,S9,S10,S11,S12,S13");
+  ok("S13 is gated by the note's own capability and reads coaching_points (GA-I26a AH-D2, AH-D3)",
+     JSON.stringify(RULES.S13) === JSON.stringify({ title: "A coaching point for this fixture", via: ["player.note.read"], source: "coaching_points" }));
   ok("S2c sits between S2b and S3, under the load capability, from bowler_day and the frozen conditions",
      JSON.stringify(RULES.S2c) === JSON.stringify({ title: "A bowler at the day's limit", via: ["player.workload.read"], source: "bowler_day, the frozen conditions" }));
   ok("every rule names a read and a capability that lets him see it", Object.values(RULES).every((r) => r.source && r.via.length > 0 && r.title));
@@ -319,7 +321,7 @@ group("GA-I27 · Every card's evidence trail: the rule's own inputs, its time fr
   const T0 = NOW - 120000;                                     // 13:58 on the SA clock
   const AT = { trips: T0 + 3000, match_squad: T0, lift_expected: T0 + 5000, fold: T0 + 1000, bowling_spells: T0 + 2000, bowler_day: T0 + 4000, readiness: T0 + 6000,
     matchups: T0 + 7000, matchup_coverage: T0 + 7000, match_duties: T0 + 8000, weather: T0 + 9000, "playing-conditions": T0 + 10000, workload: T0 + 11000, notifications: T0 + 12000,
-    lift_exceptions: T0 + 13000 };
+    lift_exceptions: T0 + 13000, coaching_points: T0 + 14000 };
   const HEAD = 412;
   // Every row carries fields no rule reads, each with a value that must never reach a trail.
   const POISON = { reasonKind: "ZZREASON", note: "ZZNOTE", injuryType: "ZZINJURY", severity: "ZZSEVERE", monitored: true, openFlag: true, ewmaRatio: 9.87, acwr: 8.76,
@@ -342,6 +344,8 @@ group("GA-I27 · Every card's evidence trail: the rule's own inputs, its time fr
     weather: p({ rainChancePct: 70, playable: true, condition: "Showers", tempC: 18, forecast: "Rain likely from 14:00" }),
     conditions: { state: "defaults", cap: null, freeHit: true },
     notices: [p({ id: "n1", type: "notice", title: "The sheet has changed", body: "The sheet for tonight was changed by the selector.", subjectKind: "match", subjectId: "m1" })],
+    points: [p({ id: "cp1", playerId: "p1", name: "D Erasmus", matchId: "m1", body: "Front foot is late to the pitch against the quicks", rule: "S5", read: "matchups",
+      params: { playerId: "p1", type: "pace" }, text: ["D Erasmus v pace · 46 balls · 31 runs · out 3 times"], asOf: T0 - 86400e3, observedOn: "2026-10-11", withdrawn: false })],
     ...o,
   });
   const OFFICE = gateOf("sportsadmin", { teamCode: null });
@@ -353,6 +357,27 @@ group("GA-I27 · Every card's evidence trail: the rule's own inputs, its time fr
   const want = (...f) => JSON.stringify(f.map(([label, value, unit]) => (unit ? { label, value, unit } : { label, value })));
 
   ok("every rule has its trail's row, and every rule fires once in this context", RULE_ORDER.every((r) => TRAILS[r] && one(r)), RULE_ORDER.filter((r) => !one(r)));
+  {
+    // S13 (GA-I27 slice 2, C-D5): the point as written, what it stood on, and
+    // now, from the same matchups read S5 drew. 46 balls then and 48 now is
+    // play, not a correction.
+    const k = one("S13");
+    ok("S13: the boy and the sentence, as written", k?.lines[0] === "D Erasmus: Front foot is late to the pitch against the quicks", k?.lines);
+    ok("...what it stood on, with its time", /^stood on: D Erasmus v pace · 46 balls · 31 runs · out 3 times · as at /.test(k?.lines[1] ?? ""), k?.lines[1]);
+    ok("...and now, from today's read, without 'corrected' (more balls is play)", /^now: D Erasmus v pace · 48 balls · 31 runs · out 3 times · as at [^·]+$/.test(k?.lines[2] ?? ""), k?.lines[2]);
+    ok("...its trail: coaching_points, as written, the boy's development panel", k?.evidence.read === "coaching_points" && k?.evidence.window === "as written" && k?.evidence.screen?.route === "skills" && k?.evidence.params.playerId === "p1");
+    const s13 = (o) => ruleS13(full(o));
+    ok("S13: a withdrawn point is no signal", s13({ points: [{ ...full().points[0], withdrawn: true }] }).length === 0);
+    ok("...nor a point about another fixture", s13({ points: [{ ...full().points[0], matchId: "m2" }] }).length === 0);
+    ok("...nor anything when the read was not made (the reader holds no player.note.read)", s13({ points: null }).length === 0);
+    const fewer = s13({ matchups: { p1: { rows: [{ bowlingStyle: "Right-arm fast", balls: 45, runs: 31, dismissals: 3 }], coverage: null } } })[0];
+    ok("...fewer balls than it stood on can only be a correction, and says so", /^now: D Erasmus v pace · 45 balls · 31 runs · out 3 times · as at .+ · corrected$/.test(fewer?.lines[2] ?? ""), fewer?.lines[2]);
+    const same = s13({ matchups: { p1: { rows: [{ bowlingStyle: "Right-arm fast", balls: 46, runs: 31, dismissals: 3 }], coverage: null } } })[0];
+    ok("...the same figure draws no 'now' line", same?.lines.length === 2, same?.lines);
+    const off = s13({ matchups: null })[0];
+    ok("...a boy whose matchups were not read: stood on, and no invented 'now'", off?.lines.length === 2 && /^stood on:/.test(off?.lines[1] ?? ""), off?.lines);
+    ok("...a changed 'now' brings a seen card back (its key carries it)", same?.key !== k?.key);
+  }
   ok("every card carries evidence: a read, a window, its figures", all.every((k) => k.evidence && k.evidence.read && k.evidence.window && k.evidence.figures.length >= 1));
   ok("the read it names is one of the card's own sources", all.every((k) => k.source.includes(k.evidence.read)), all.filter((k) => !k.source.includes(k.evidence.read)).map((k) => k.rule));
 
@@ -404,7 +429,7 @@ group("GA-I27 · Every card's evidence trail: the rule's own inputs, its time fr
   const ids = all.flatMap((k) => Object.entries(k.evidence.params).filter(([n]) => /player|batter|bowler/i.test(n)).filter(([, v]) => !k.base.includes(String(v))).map(([n, v]) => `${k.rule}: ${n}=${v}`));
   ok("params name a boy only when the card does (his id is in the card's base)", ids.length === 0, ids);
   ok("no trail names a second boy: S5's names its batter alone, S6 and S7 none", Object.keys(one("S5").evidence.params).join() === "playerId,type" && Object.keys(one("S6").evidence.params).length === 0 && Object.keys(one("S7").evidence.params).length === 0);
-  ok("the screens are the existing ones (C-D3: no fifth destination); S9 has none", all.every((k) => k.evidence.screen === null || ["logistics", "scorecard", "training", "squad", "profile", "duties", "competitions", "notifications"].includes(k.evidence.screen.route))
+  ok("the screens are the existing ones (C-D3: no fifth destination; S13 the boy's development panel, GA-I27 §5.2); S9 has none", all.every((k) => k.evidence.screen === null || ["logistics", "scorecard", "training", "squad", "profile", "duties", "competitions", "notifications", "skills"].includes(k.evidence.screen.route))
      && one("S9").evidence.screen === null);
   ok("the team manager's cards carry no load read's name, for he has no load card", !/bowler_day|bowling_spells|workload/.test(JSON.stringify(evaluate(full({ gate: MANAGER })).map((k) => k.evidence))));
 }

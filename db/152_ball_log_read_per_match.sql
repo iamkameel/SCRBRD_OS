@@ -1,5 +1,5 @@
 -- ══════════════════════════════════════════════════════════════════
---  147 · The ball log's reads ask once a match, not once a ball
+--  152 · The ball log's reads ask once a match, not once a ball
 -- ══════════════════════════════════════════════════════════════════
 --
 -- HAND-WRITTEN. A speed fix with no change to who reads what. The diagnosis
@@ -143,7 +143,7 @@ CREATE OR REPLACE FUNCTION ball_log_norm(p text) RETURNS text
   SET search_path = pg_catalog, public, pg_temp
 AS $$ SELECT regexp_replace(btrim(p), '[[:space:]]+', ' ', 'g') $$;
 COMMENT ON FUNCTION ball_log_norm(text) IS
-  'db/147: a policy''s or view''s deparse with its whitespace normalised (nothing else) for the pins.';
+  'db/152: a policy''s or view''s deparse with its whitespace normalised (nothing else) for the pins.';
 
 -- NULL when every SELECT policy on ball_event, match and ball_event_rejudged
 -- is the one below and ball_event's read only match_id and school_id; else
@@ -169,7 +169,7 @@ AS $$
      WHERE p.polrelid IN ('ball_event'::regclass, 'match'::regclass, 'ball_event_rejudged'::regclass)
        AND p.polcmd IN ('r', '*')),
   wrong AS (
-    SELECT format('%s.%s is not the policy db/147''s ball_event_live states', coalesce(l.tbl, k.tbl), coalesce(l.pol, k.pol)) AS why
+    SELECT format('%s.%s is not the policy db/152''s ball_event_live states', coalesce(l.tbl, k.tbl), coalesce(l.pol, k.pol)) AS why
       FROM pinned k FULL JOIN live l ON l.tbl = k.tbl AND l.pol = k.pol
      WHERE k.pol IS NULL OR l.pol IS NULL OR l.permissive IS DISTINCT FROM k.permissive
         OR NOT l.to_public OR l.h IS DISTINCT FROM k.h
@@ -186,7 +186,7 @@ AS $$
   SELECT string_agg(why, '; ' ORDER BY why) FROM wrong
 $$;
 COMMENT ON FUNCTION ball_log_policies_unpinned() IS
-  'db/147: NULL while the SELECT policies of ball_event, match and ball_event_rejudged are those ball_event_live states once a match; else what changed.';
+  'db/152: NULL while the SELECT policies of ball_event, match and ball_event_rejudged are those ball_event_live states once a match; else what changed.';
 
 -- The text pin: the policies pinned AND ball_event_live this file's own text
 -- (S2). Milliseconds (two deparses): the paste, the verifier and the re-pin
@@ -199,7 +199,7 @@ AS $$
      AND md5(ball_log_norm(pg_get_viewdef('ball_event_live'::regclass))) = '818cb7d85603be38940bfa87ea48ed01'
 $$;
 COMMENT ON FUNCTION ball_log_text_pinned() IS
-  'db/147: true while the SELECT policies of ball_event, match and ball_event_rejudged and ball_event_live''s own text are those db/147 pinned.';
+  'db/152: true while the SELECT policies of ball_event, match and ball_event_rejudged and ball_event_live''s own text are those db/152 pinned.';
 
 -- The live pin's fingerprint: each SELECT policy row of the three tables and
 -- ball_event_live's rule, by oid and by the transaction that last wrote it.
@@ -218,7 +218,7 @@ AS $$
                     WHERE r.ev_class = 'ball_event_live'::regclass AND r.rulename = '_RETURN'), '')
 $$;
 COMMENT ON FUNCTION ball_log_fingerprint() IS
-  'db/147: the catalogue rows ball_event_live''s restated conditions stand on (the three tables'' SELECT policies and the view''s rule), by oid and xmin.';
+  'db/152: the catalogue rows ball_event_live''s restated conditions stand on (the three tables'' SELECT policies and the view''s rule), by oid and xmin.';
 
 CREATE TABLE IF NOT EXISTS ball_log_pin (
   id          smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -228,7 +228,7 @@ CREATE TABLE IF NOT EXISTS ball_log_pin (
 ALTER TABLE ball_log_pin ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON ball_log_pin FROM PUBLIC;
 COMMENT ON TABLE ball_log_pin IS
-  'db/147: the fingerprint ball_log_repin() recorded once the text pin held. ball_log_pinned() compares the live catalogue with it.';
+  'db/152: the fingerprint ball_log_repin() recorded once the text pin held. ball_log_pinned() compares the live catalogue with it.';
 
 -- The live pin: asked by ball_event_live at every use. A definer only to read
 -- ball_log_pin; the catalogue it compares is the same for every caller.
@@ -239,7 +239,7 @@ AS $$
   SELECT coalesce((SELECT p.fingerprint = ball_log_fingerprint() FROM ball_log_pin p WHERE p.id = 1), false)
 $$;
 COMMENT ON FUNCTION ball_log_pinned() IS
-  'db/147: true while nothing ball_event_live''s restated conditions stand on has changed since ball_log_repin(); false sends the view down the exact path.';
+  'db/152: true while nothing ball_event_live''s restated conditions stand on has changed since ball_log_repin(); false sends the view down the exact path.';
 
 -- The re-pin: the owner's, after this file, after a restore (new xmins), or
 -- after a re-statement of the view. It records the fingerprint only if the
@@ -251,14 +251,14 @@ AS $$
 BEGIN
   IF NOT ball_log_text_pinned() THEN
     RAISE EXCEPTION 'ball_log_repin: not pinned: %',
-      coalesce(ball_log_policies_unpinned(), 'ball_event_live is not db/147''s text');
+      coalesce(ball_log_policies_unpinned(), 'ball_event_live is not db/152''s text');
   END IF;
   INSERT INTO ball_log_pin (id, fingerprint) VALUES (1, ball_log_fingerprint())
   ON CONFLICT (id) DO UPDATE SET fingerprint = EXCLUDED.fingerprint, pinned_at = now();
   RETURN ball_log_fingerprint();
 END $$;
 COMMENT ON FUNCTION ball_log_repin() IS
-  'db/147: re-record ball_event_live''s live pin, only if its text pin holds. The owner''s alone.';
+  'db/152: re-record ball_event_live''s live pin, only if its text pin holds. The owner''s alone.';
 REVOKE ALL ON FUNCTION ball_log_repin() FROM PUBLIC;
 REVOKE ALL ON FUNCTION ball_log_pinned() FROM PUBLIC;
 
@@ -272,10 +272,10 @@ BEGIN
   -- db/121's (taken on Postgres 16, exactly or with its whitespace normalised) or this file's.
   IF h_def <> '4618aeab505ce9ea9bdd2ec08ca6bed5'
      AND h_norm NOT IN ('e03b4e5540e04513a0d53734b02c837e', '818cb7d85603be38940bfa87ea48ed01') THEN
-    RAISE EXCEPTION 'db/147: ball_event_live is neither db/121''s nor this file''s (md5 %, normalised %); read what changed it before pasting', h_def, h_norm;
+    RAISE EXCEPTION 'db/152: ball_event_live is neither db/121''s nor this file''s (md5 %, normalised %); read what changed it before pasting', h_def, h_norm;
   END IF;
   IF wrong IS NOT NULL THEN
-    RAISE EXCEPTION 'db/147: %', wrong;
+    RAISE EXCEPTION 'db/152: %', wrong;
   END IF;
 END $guard$;
 
@@ -289,7 +289,7 @@ BEGIN
   RETURN QUERY SELECT b.id FROM ball_event b;
 END $$;
 COMMENT ON FUNCTION ball_event_visible_ids() IS
-  'db/147: the ids of the balls the caller may read: its own SELECT of ball_event, under ball_event''s policies (SECURITY INVOKER). ball_event_live''s exact path.';
+  'db/152: the ids of the balls the caller may read: its own SELECT of ball_event, under ball_event''s policies (SECURITY INVOKER). ball_event_live''s exact path.';
 
 CREATE OR REPLACE FUNCTION ball_event_rejudged_visible_keys() RETURNS TABLE (match_id uuid, seq integer)
   LANGUAGE plpgsql STABLE SECURITY INVOKER
@@ -299,7 +299,7 @@ BEGIN
   RETURN QUERY SELECT r.match_id, r.seq FROM ball_event_rejudged r;
 END $$;
 COMMENT ON FUNCTION ball_event_rejudged_visible_keys() IS
-  'db/147: the re-judged strikers (db/121) the caller may read: its own SELECT of ball_event_rejudged (SECURITY INVOKER). ball_event_live''s exact path.';
+  'db/152: the re-judged strikers (db/121) the caller may read: its own SELECT of ball_event_rejudged (SECURITY INVOKER). ball_event_live''s exact path.';
 
 REVOKE ALL ON FUNCTION ball_event_visible_ids() FROM PUBLIC;
 REVOKE ALL ON FUNCTION ball_event_rejudged_visible_keys() FROM PUBLIC;
@@ -412,7 +412,7 @@ SELECT b.id, b.match_id, b.school_id, b.seq, b.epoch, b.innings,
                      ELSE v.id IN (SELECT ball_event_visible_ids()) END);
 
 COMMENT ON VIEW ball_event_live IS
-  'db/147: the ball log as the reader may read it, voids applied. Runs as its owner (security_barrier) and asks ball_event''s read conditions as the reader once a match while ball_log_pinned(); else the reader''s own SELECT. db/99 §9 and §126 hold it.';
+  'db/152: the ball log as the reader may read it, voids applied. Runs as its owner (security_barrier) and asks ball_event''s read conditions as the reader once a match while ball_log_pinned(); else the reader''s own SELECT. db/99 §9 and §126 hold it.';
 
 -- §4 · Who may select from it (S4): the application, and only SELECT.
 REVOKE ALL ON ball_event_live FROM PUBLIC;
@@ -434,22 +434,22 @@ DECLARE
   opts text[] := (SELECT reloptions FROM pg_class WHERE oid = 'ball_event_live'::regclass);
 BEGIN
   IF NOT (opts @> ARRAY['security_barrier=true'] AND opts @> ARRAY['security_invoker=false']) THEN
-    RAISE EXCEPTION 'db/147: ball_event_live is not an owner''s security barrier view (%)', opts;
+    RAISE EXCEPTION 'db/152: ball_event_live is not an owner''s security barrier view (%)', opts;
   END IF;
   IF (SELECT relowner FROM pg_class WHERE oid = 'ball_event_live'::regclass)
      <> (SELECT relowner FROM pg_class WHERE oid = 'ball_event'::regclass) THEN
-    RAISE EXCEPTION 'db/147: ball_event_live is not owned by ball_event''s owner';
+    RAISE EXCEPTION 'db/152: ball_event_live is not owned by ball_event''s owner';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_proc WHERE prosecdef AND oid IN ('ball_event_visible_ids()'::regprocedure,
                'ball_event_rejudged_visible_keys()'::regprocedure, 'ball_log_policies_unpinned()'::regprocedure,
                'ball_log_text_pinned()'::regprocedure, 'ball_log_fingerprint()'::regprocedure))
      OR EXISTS (SELECT 1 FROM pg_proc WHERE NOT prosecdef AND oid IN ('ball_log_pinned()'::regprocedure, 'ball_log_repin()'::regprocedure)) THEN
-    RAISE EXCEPTION 'db/147: an exact-path or pin function runs as the wrong role';
+    RAISE EXCEPTION 'db/152: an exact-path or pin function runs as the wrong role';
   END IF;
   -- The text pin must hold now (it raises, naming what differs, if not) …
   PERFORM ball_log_repin();
   -- … and the live pin with it, in this transaction.
   IF NOT ball_log_pinned() THEN
-    RAISE EXCEPTION 'db/147: ball_event_live is not pinned after its own paste';
+    RAISE EXCEPTION 'db/152: ball_event_live is not pinned after its own paste';
   END IF;
 END $check$;

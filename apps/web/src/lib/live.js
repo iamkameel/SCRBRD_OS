@@ -829,14 +829,15 @@ const d10 = (v) => (v ? String(v).slice(0, 10) : null);
  * R4 (db/140): a milestone says where it came from — the side he played for, its
  * innings, the day the scorer's seal stands for it (null until then), its source
  * ('ball log', 'scorebook', 'team sheet') and the fixture's class; a withdrawn
- * honour carries the day it was withdrawn, and reaches only its three readers (D3).
+ * honour carries the day it was withdrawn, and reaches only its three readers (D3);
+ * R10 (db/148) with its kind, 'correction' or 'other' (D21), never its reason.
  */
 function asRecognition(r) {
   return { family: r.family, kind: r.kind, label: r.label, value: r.value, season: r.season, on: d10(r.on_date),
            matchId: r.match_id, opponent: r.opponent, isPublic: r.is_public, citation: r.citation, id: r.ref_id,
            withdrawnOn: d10(r.withdrawn_on), sideCode: r.side_code ?? null, innings: r.innings ?? null,
            sealedOn: d10(r.sealed_on), source: r.source ?? null, fixtureClass: r.fixture_class ?? null,
-           noBoard: r.no_board ?? null, live: true };
+           noBoard: r.no_board ?? null, withdrawnKind: r.withdrawn_kind ?? null, live: true };
 }
 /**
  * One of a boy's personal bests (RECOGNITION R5, db/141 player_best()): his
@@ -1244,6 +1245,13 @@ export function asCareer(r) {
     // such; undefined would crash the .map() that draws it.
     form: Array.isArray(r.form) ? r.form.map(Number) : [],
     bowlAvg: wkts > 0 ? round2(conceded / wkts) : null,
+    // Fielding and keeping (RECOGNITION R12, db/150), on the by-season read:
+    // the catches and run outs a wicket names him for, and his keeping
+    // record. A count of what the log credits him with, so nought is
+    // "nothing credited", never "dropped nothing".
+    catches: Number(r.catches ?? 0), runOuts: Number(r.run_outs ?? 0),
+    keepingCatches: Number(r.keeping_catches ?? 0), stumpings: Number(r.stumpings ?? 0),
+    inningsKept: Number(r.innings_kept ?? 0),
     live: true,
   };
 }
@@ -1306,7 +1314,13 @@ function asSince(r) {
 function asPoint(r) {
   return { id: r.id, playerId: r.player_id, body: r.body, observedOn: r.observed_on ? String(r.observed_on).slice(0, 10) : null,
            author: r.author_name || null, read: r.evidence_read, skillId: r.evidence_params?.skillId ?? null,
-           withdrawn: !!r.withdrawn_at, live: true };
+           withdrawn: !!r.withdrawn_at, live: true,
+           // The pointer as stored (GA-I27 §6): what the point stood on, for
+           // the "stood on / now" lines (C-D5). Read under player.note.read.
+           name: r.full_name ?? null, matchId: r.match_id ?? null, rule: r.evidence_rule ?? null,
+           params: r.evidence_params ?? null, head: r.evidence_head ?? null,
+           asOf: r.evidence_as_of ? Date.parse(r.evidence_as_of) : null, text: Array.isArray(r.evidence_text) ? r.evidence_text : null,
+           writtenAt: r.created_at ? Date.parse(r.created_at) : null, withdrawnAt: r.withdrawn_at ? Date.parse(r.withdrawn_at) : null };
 }
 
 /** One drill on a session's plan: it names no boy. */

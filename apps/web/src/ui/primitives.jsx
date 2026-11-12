@@ -11,12 +11,26 @@ import { Icon, isIcon } from "./icons.jsx";
 
 // `rest` carries data-* and aria-* attributes through to the element, so a
 // card can be found by a stable id or named for a screen reader.
-const Card = ({ children, sx, className="card-hover", onClick, ...rest }) => (
-  <div onClick={onClick} className={className} {...rest} style={{
-    background:D.surf1, border:`1px solid ${D.border}`,
-    borderRadius:D.lg, overflow:"hidden", ...sx
-  }}>{children}</div>
-);
+//
+// A card that opens something (`onClick`) is a native button, not a <div>
+// with a click on it: the interface review of 11 Nov 2026 found the Match
+// Centre's card, which opens Match Details, never reached by Tab (WCAG
+// 2.1.1). The button lies across the whole card, under its content
+// (GLOBAL_CSS `.os-card-action`, `.os-card-content`): a tap anywhere on the
+// card that is not one of its own buttons or links falls through the content
+// to it, and Tab, Enter and Space reach it like any other button. Its name is
+// `label` (what pressing it does), and `expanded` / `controls` say what it opens.
+const Card = ({ children, sx, className="card-hover", onClick, label, expanded, controls, ...rest }) => {
+  const style = { background:D.surf1, border:`1px solid ${D.border}`, borderRadius:D.lg, overflow:"hidden", ...sx };
+  if (!onClick) return <div className={className} {...rest} style={style}>{children}</div>;
+  return (
+    <div className={className} {...rest} style={{ position:"relative", ...style }}>
+      <button type="button" className="os-card-action" onClick={onClick} aria-label={label}
+        aria-expanded={expanded} aria-controls={controls}/>
+      <div className="os-card-content">{children}</div>
+    </div>
+  );
+};
 
 // `icon` on a card or an empty state is a name from ui/icons.jsx.
 const KPICard = ({ label, value, sub, icon, color=D.indigo, trend }) => (

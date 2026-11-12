@@ -260,6 +260,70 @@ const figures = async () => (await dbq(
           coalesce(sum(case when kind='ball' and ball_type not in ('Wd','Nb') then 1 else 0 end),0)::int b
      from ball_event_live where match_id = $1`, [MATCH]))[0];
 
+/**
+ * The interface review of 11 Nov 2026 (scorer pad, finding 1): on a phone the
+ * pad's docked strip (Wide, No ball, Bye, Leg bye, Dot, Undo) covered the Area
+ * step's field — all of it under a banner at 390×844, and at 320×640 — and a
+ * tap where the field was drawn landed on Dot and recorded a ball. Now, at both
+ * sizes: every zone of the field (twelve sectors, three rings, and the middle)
+ * and its prompt are on screen, clear of the strip and the title bar, and the
+ * point there is the field's; a tap on it places the ball (the Outcome step)
+ * and records nothing; stepping back puts the page where the ball began.
+ */
+async function fieldClear(page, label) {
+  for (const [w, h] of [[390, 844], [320, 640]]) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.waitForTimeout(400);
+    if (await tid(page, "basic-pad").count()) {
+      await tid(page, "pad-menu").click({ timeout: 2500 });
+      await tid(page, "pad-basic-scoring").click({ timeout: 2500 });
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(400);
+    }
+    // Where the ball begins: the shot key in view (on a small phone the
+    // scorer scrolls to it), and the page's place noted.
+    const y0 = await page.evaluate(() => { scrollTo(0, 0); document.querySelector('[data-testid="shot-drive"]')?.scrollIntoView({ block: "center" }); return Math.round(scrollY); });
+    await tid(page, "shot-drive").click({ timeout: 3000 });
+    await page.waitForTimeout(500);
+    const g = await page.evaluate(() => {
+      const box = (s) => document.querySelector(s)?.getBoundingClientRect();
+      const field = box('[data-testid="phase-area"] [data-testid="wagon-field"]'), prompt = box('[data-testid="area-prompt"]');
+      const head = box('[data-testid="pad-titlebar"]'), strip = box('[data-testid="pad-strip"]');
+      if (!field || !prompt || !head || !strip) return { missing: true };
+      const at = (x, y) => document.elementFromPoint(x, y);
+      const cx = field.left + field.width / 2, cy = field.top + field.height / 2, R = field.width / 2;
+      const pts = [[cx, cy]];
+      for (let s = 0; s < 12; s++) for (const r of [0.3, 0.6, 0.9]) {
+        const a = ((s * 30 + 15) * Math.PI) / 180;
+        pts.push([cx + Math.sin(a) * R * r, cy - Math.cos(a) * R * r]);
+      }
+      const off = pts.filter(([x, y]) => !at(x, y)?.closest('[data-testid="phase-area"] [data-testid="wagon-field"]'))
+        .map(([x, y]) => `${Math.round(x)},${Math.round(y)}:${at(x, y)?.closest("[data-testid]")?.getAttribute("data-testid") ?? "none"}`);
+      return { n: pts.length, hit: pts.length - off.length, off: off.slice(0, 4), scrollY: Math.round(scrollY),
+               field: [Math.round(field.top), Math.round(field.bottom)], prompt: [Math.round(prompt.top), Math.round(prompt.bottom)],
+               head: Math.round(head.bottom), strip: Math.round(strip.top),
+               clear: field.top >= head.bottom && field.bottom <= strip.top && prompt.top >= head.bottom && prompt.bottom <= strip.top,
+               promptSeen: !!at(prompt.left + 4, prompt.top + prompt.height / 2)?.closest('[data-testid="area-prompt"]') };
+    });
+    ok(`${label}, ${w}×${h}: the Area step's field and its prompt are on screen, clear of the strip and the title bar — every zone of the field reaches it (${g.hit}/${g.n})`,
+       !g.missing && g.hit === g.n && g.clear && g.promptSeen, JSON.stringify(g));
+    const before = (await serverLog()).length, kept = ((await queued(page)) ?? []).length;
+    const f = await tid(page, "wagon-field").first().boundingBox();
+    await page.mouse.click(f.x + f.width * 0.3, f.y + f.height * 0.2);
+    await page.waitForTimeout(1200);
+    ok(`${label}, ${w}×${h}: a tap on the field places the ball and records nothing — no dot`,
+       (await tid(page, "three-phase-pad").getAttribute("data-phase")) === "3" && (await serverLog()).length === before
+       && ((await queued(page)) ?? []).length === kept, `phase ${await tid(page, "three-phase-pad").getAttribute("data-phase")}, log ${before} → ${(await serverLog()).length}`);
+    await tid(page, "step-1").click({ timeout: 3000 });
+    await page.waitForTimeout(400);
+    ok(`${label}, ${w}×${h}: ...and stepping back to the shot puts the page where the ball began`,
+       (await tid(page, "three-phase-pad").getAttribute("data-phase")) === "1" && Math.abs((await page.evaluate(() => scrollY)) - y0) <= 1,
+       `scrollY ${await page.evaluate(() => scrollY)}, began at ${y0}`);
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.waitForTimeout(300);
+}
+
 let A, B;
 try {
   for (let i = 0; i < 60; i++) {
@@ -364,9 +428,13 @@ try {
   const note = await banner(B.page);
   ok("...\"The server's last ball came in at\" the time, to check against the scoreboard and the book",
      note.text.includes(hm2) && /scoreboard and the book/.test(note.text), note.text);
+  await clearBlockers(B.page);
+  await fieldClear(B.page, "under the note");
+  ok("...the note is still showing", (await banner(B.page)).reason === "takeover_note", JSON.stringify(await banner(B.page)));
   ok("...Checked puts it away", await (async () => { await tid(B.page, "sync-note-checked").click({ timeout: 3000 }); return until(B.page, async () => (await banner(B.page)).reason === null, 5000); })(),
      JSON.stringify(await banner(B.page)));
   ok("B's pill says Sent", await until(B.page, async () => (await pill(B.page)) === "Sent", 8000), await pill(B.page));
+  await fieldClear(B.page, "with no banner");
 
   group("A, quiet, keeps a ball; B scores one; A comes back (P5)");
   ok("A taps a ball with no signal", await tapFace(A.page, "1"));

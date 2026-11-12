@@ -121,6 +121,8 @@ export const REFUSAL_CAUSE = Object.freeze({
   not_at_crease: () => "That batter is not in. Was it the other one?",
   // SCRBRD-126. No name: the keeper's is not one of the fold's batters or bowlers.
   stumped_not_keeper: () => "Only the wicket-keeper stumps a batter. Did the gloves change hands? Record the new keeper first.",
+  // RECOGNITION R12 (P2). No name: a fielder is not one of the fold's batters or bowlers.
+  fielders_invalid: () => "Name the catcher or the keeper once, or one or two fielders for a run out. Was a batter picked by mistake?",
   void_not_latest: () => "Something was recorded after it. Undo that first, or ask for an amendment.",
   void_already_voided: () => "It was already undone, perhaps on another device.",
   short_run_unmatched: () => "The five for short running go straight after that delivery, recorded with no runs.",

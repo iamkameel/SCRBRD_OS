@@ -20,7 +20,7 @@ Steps marked S need a fixture on a server. Production has no seed, and its roste
 
 ☐ Phone A: tap **Continue with Google**. Phone B: type your email and a fresh office code in **Sign-in code**, tap **Sign In**. Phone C: either. You should reach the app, not **Waiting for your school office**. A code works once: note who issued it.
 
-☐ Tap **Match Centre** (bottom bar, or under **More**). The Saturday 31 October 2026 fixture is listed with **Start Scoring →** (or **Open Live Scorer →** once live). Do not open it.
+☐ Tap **Match Centre** (bottom bar, or under **More**). The Saturday 31 October 2026 fixture is listed with **Start scoring →** (or **Open live scorer →** once live). Do not open it.
 
 ## 3. Pick the side (look only)
 
@@ -32,11 +32,11 @@ The coach steps are not rehearsed with a real save. **Pick the side** lists the 
 
 ☐ **Match Centre**, **Open SCRBRD Scorer**, **Start Practice Match**. Choose Custom overs, 2. Type two made-up teams and eleven made-up names each ("Test Batter 1").
 
-☐ At **The toss** pick a winner, then **Bat**. Name the openers and the **Opening Bowler**. The pad shows the practice label "Practice match · kept on this phone".
+☐ At **The toss** pick a winner, then **Bat**. Name the openers and the **Opening bowler**. The pad shows the practice label "Practice match · kept on this phone".
 
 ☐ Open the **Pad menu**, tap **Basic Scoring**. Score a **Dot**, a four, a single and a **Wide**, then balls until the over ends (six legal balls). See the new-over sheet; pick a bowler.
 
-☐ Score a **Wicket**, choose how out, tap **Confirm Out**. Pick the next batter on **Batting Order**, or type a name and tap **Go**.
+☐ Score a **Wicket**, choose how out, tap **Confirm out**. Pick the next batter on **Batting order**, or type a name and tap **Go**.
 
 ☐ Tap **Undo**. See the last ball disappear and the score go back.
 

@@ -164,11 +164,11 @@ async function fillCrease(stopAt = null) {
     }
     const title = ((await dlg.locator("h2").first().innerText().catch(() => "")) || "").trim();
     if (stopAt && stopAt.test(title)) return;
-    if (/Batting Order/.test(title)) {
+    if (/Batting Order/i.test(title)) {
       const pick = page.locator('[role="dialog"] [data-testid="batter-choice"]:not(:has([data-testid="batter-superover-note"]))').first();
       if (await pick.count()) { await pick.click({ timeout: 2000 }); await page.waitForTimeout(500); }
       else if (!(await typeIn("Player name"))) return;
-    } else if (/Opening Bowler|Over \d+ Complete|Change of Bowler/.test(title)) {
+    } else if (/Opening Bowler|Over \d+ Complete|Change of Bowler/i.test(title)) {
       const pick = page.locator('[role="dialog"] [data-testid="bowler-choice"]:not([disabled]):not(:has([data-testid="bowler-superover-note"]))').first();
       if (await pick.count()) { await pick.click({ timeout: 2000 }); await page.waitForTimeout(500); }
       else if (!(await typeIn("Bowler name"))) return;
@@ -384,7 +384,7 @@ try {
   ok("the sheet is Super over 2", (await page.locator('[role="dialog"] h2').first().innerText()) === "Super over 2");
   ok("it says one has been played already", /played 1 super over already/.test(await said("superover-eligibility") + await said("superover-sheet")), await said("superover-sheet"));
   await tap("superover-confirm");
-  await fillCrease(/Batting Order/);
+  await fillCrease(/Batting Order/i);
   const noted = page.locator('[role="dialog"] [data-testid="batter-superover-note"]');
   ok("the batter who was out in the first is named: may not bat in this one", (await noted.count()) === 1 && (await noted.first().innerText()) === "Out in super over 1: may not bat in this one",
      `${await noted.count()} ${await noted.first().innerText().catch(() => "")}`);
@@ -405,7 +405,7 @@ try {
   await closeInnings();
   ok("the chase of 9", /\b9\b/.test(await page.locator('[role="dialog"]').innerText()), await page.locator('[role="dialog"]').innerText());
   await tap("innings2-start");
-  await fillCrease(/Opening Bowler/);
+  await fillCrease(/Opening Bowler/i);
   const bowlNote = page.locator('[role="dialog"] [data-testid="bowler-superover-note"]');
   ok("the bowler of the first is named: may not bowl in this one", (await bowlNote.count()) >= 1 && (await bowlNote.first().innerText()) === "Bowled super over 1: may not bowl in this one",
      `${await bowlNote.count()} ${await bowlNote.first().innerText().catch(() => "")}`);

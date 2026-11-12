@@ -31,6 +31,13 @@
  *      (R6's honour, the side told once) — never as the nominee's guardian,
  *      by either door; the director records no award; the captain's tab
  *      reads each outcome; the audit log words them.
+ *   7. A CORRECTION REACHES THE AWARD (RECOGNITION R10, db/148): an
+ *      amendment voids a six of the awardee's; the award stands (never
+ *      withdrawn, nobody else awarded), its working kept the SQL mirror's
+ *      figures, the same words the coach saw; the coach alone is told and
+ *      reads the review on his To-resolve list and his sheet; the director,
+ *      the principal, a parent and another coach read nothing; only the
+ *      coach lets it stand, once.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-recognition.mjs
@@ -348,6 +355,7 @@ try {
     const wOf = async (tok) => (await recog(PILLAY, tok)).find((x) => x.ref_id === pin);
     const w = await wOf(parent);
     ok("his parent still reads it, withdrawn, with the date", w && /^\d{4}-\d{2}-\d{2}/.test(String(w.withdrawn_on)));
+    ok("...and its kind, 'other' by the ordinary route (R10, db/148)", w?.withdrawn_kind === "other", JSON.stringify(w));
     ok("...so does he, and the director of sport", Boolean((await wOf(pupil))?.withdrawn_on) && Boolean((await wOf(head))?.withdrawn_on));
     ok("...but not his coach: it has left every screen another child can open", !(await wOf(coach)));
     ok("...and nobody is sent the reason", !(await recog(PILLAY, head)).some((x) => "withdrawn_reason" in x || JSON.stringify(x).includes("Awarded in error")));
@@ -512,6 +520,69 @@ try {
     ok("a coach reads no audit log", (ca.body?.rows?.length ?? 0) === 0, JSON.stringify(ca.body).slice(0, 300));
   }
 
+  group("Player of the Match with fielding: D17's line dropped (RECOGNITION R12, db/150)");
+  {
+    const WES = "22222222-2222-2222-2222-222222222222";
+    const STARTS = "2026-10-17T10:00:00+02:00";
+    const T0 = Date.parse("2026-10-17T08:00:00Z");
+    const HXI = [WHITFIELD, BEKKER, NAIDOO, PILLAY].map((id, i) => ({ id, name: `Hilton ${i + 1}` }));
+    const WXI = ["01", "02"].map((n) => ({ id: `bbbbbbbb-0000-0000-0000-0000000000${n}`, name: `Westville ${n}` }));
+    const scorer = await login("scorer@example.invalid");
+    const potm = (m, tok) => api(`/api/matches/${m}/player-of-match`, { token: tok });
+    const give = (m, tok, playerId, headSeq) => api(`/api/matches/${m}/player-of-match`, { method: "POST", token: tok, body: { playerId, headSeq } });
+    const [{ id: M }] = await q(
+      `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+       values ($1, '1XI', $2, '1XI', 'Westville', $3, 'cricket', 'T20', 1, 'scheduled') returning id`, [HIL, WES, STARTS]);
+    for (const p of HXI) await q(`insert into match_squad (match_id, player_id, side) values ($1, $2, 'home')`, [M, p.id]);
+    for (const p of WXI) await q(`insert into match_squad (match_id, player_id, side) values ($1, $2, 'away')`, [M, p.id]);
+    // Hilton one off the over, Whitfield's; Westville run out off the first
+    // ball by Pillay and Whitfield, named by reference (P2), all out.
+    const claim = await api(`/api/matches/${M}/session/claim`, { method: "POST", token: scorer, body: { device: "device-recognition" } });
+    let cs = 0, k = 0;
+    const innings = [
+      { bat: "1XI", bowl: "Westville 1XI", squad: HXI, bowlingSquad: WXI, balls: [1, 0, 0, 0, 0, 0].map((v) => ball({ type: BALL_TYPE.RUN, value: v })) },
+      { bat: "Westville 1XI", bowl: "1XI", squad: WXI, bowlingSquad: [HXI[1], HXI[0]], target: 2,
+        balls: [ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "run_out", fielder: "Hilton 4/Hilton 1", fielders: [PILLAY, WHITFIELD], outAt: "striker_end" })] },
+    ];
+    let refused = [];
+    for (const [i, inn] of innings.entries()) {
+      const evs = [inningsStart({ battingTeam: inn.bat, bowlingTeam: inn.bowl, squad: inn.squad, bowlingSquad: inn.bowlingSquad, overs: 1, target: inn.target ?? null }),
+        batters({ striker: inn.squad[0].id, nonStriker: inn.squad[1].id }), bowler({ bowler: inn.bowlingSquad[0].id }), ...inn.balls]
+        .map((e) => ({ ...e, innings: i }));
+      evs.push({ ...sealInnings(deriveInnings(evs)), innings: i });
+      const r = await api(`/api/matches/${M}/events`, { method: "POST", token: scorer, body: { events: evs.map((ev) => ({
+        epoch: claim.body?.epoch, deviceId: "device-recognition", idempotencyKey: `potm-r12-${M}-${++k}`, clientSeq: ++cs, clientTs: T0 + k * 20_000, innings: i, payload: ev })) } });
+      refused = refused.concat(r.body?.refused ?? []);
+    }
+    ok("the match is scored on the write path, the run out naming its two fielders", claim.body?.ok === true && refused.length === 0, JSON.stringify(refused).slice(0, 300));
+    await q(`update match set status = 'complete' where id = $1`, [M]);
+    const credits = await q(`select fielder_ref, act from fielding_credit where match_id = $1 order by fielder_no`, [M]);
+    ok("fielding_credit: one run out each (the contribution rule)", credits.length === 2 && credits[0].fielder_ref === PILLAY
+       && credits[1].fielder_ref === WHITFIELD && credits.every((c) => c.act === "run_out"), JSON.stringify(credits));
+    const st = await potm(M, coach);
+    const home = st.body?.sides?.[0];
+    ok("every fielding wicket names its fielders: fielding counts, and the line is dropped",
+       st.status === 200 && st.body?.basis === null && st.body?.basisKey === "batting_bowling_fielding", JSON.stringify(st.body).slice(0, 300));
+    ok("...the suggestions count it: Whitfield's run and run out (11) before Pillay's run out (10), in words",
+       home?.suggestions?.length === 2 && home.suggestions[0].playerId === WHITFIELD && home.suggestions[0].figures === "1* (1) · 1 run out"
+       && home.suggestions[1].playerId === PILLAY && home.suggestions[1].figures === "1 run out", JSON.stringify(home?.suggestions));
+    const a = await give(M, coach, PILLAY, home?.headSeq);
+    ok("the coach awards it to the fielder", a.status === 200 && a.body?.ok === true, JSON.stringify(a.body));
+    const h = (await q(`select derived_from from honour where id = $1`, [a.body?.honourId]))[0];
+    ok("...and the award stores the basis it was read on (db/150's match_award)",
+       h?.derived_from?.basis === "batting_bowling_fielding" && h.derived_from.awardee?.figures === "1 run out"
+       && h.derived_from.suggestions?.length === 2, JSON.stringify(h?.derived_from));
+    const forged = await q(`select ok, reason from match_award($1, $2, $3::jsonb)`, [M, WHITFIELD,
+      JSON.stringify({ version: 1, basis: "batting_bowling_fielding_and_charm", headSeq: home?.headSeq, suggestions: [], awardee: { playerId: WHITFIELD, figures: "x" } })])
+      .catch((e) => [{ ok: false, reason: String(e.message) }]);
+    ok("...a basis it does not know is refused", forged[0]?.ok === false, JSON.stringify(forged));
+    // The review's S4: the nomination route says the match's basis to a coach,
+    // who may not nominate, as potm-api does.
+    const ns = await api(`/api/matches/${M}/player-of-match/nomination`, { token: coach });
+    ok("...and the nomination route says the same basis to the coach, the line dropped",
+       ns.status === 200 && ns.body?.basisKey === "batting_bowling_fielding" && ns.body?.basis === null, JSON.stringify(ns.body).slice(0, 300));
+  }
+
   group("Player of the Match, the captain's nomination (RECOGNITION R7, db/144)");
   {
     const WES = "22222222-2222-2222-2222-222222222222";
@@ -655,6 +726,110 @@ try {
        && audit.some((r) => r.action === "Confirmed the captain's nomination for Player of the Match" && r.actor === coachName)
        && audit.some((r) => r.action === "Recorded no award on the captain's nomination for Player of the Match" && r.subject === "S Naidoo"),
        JSON.stringify(audit.filter((r) => /nominat/i.test(r.action))).slice(0, 600));
+  }
+
+  group("A correction reaches the award (RECOGNITION R10, db/148)");
+  {
+    const WES = "22222222-2222-2222-2222-222222222222";
+    const T0 = Date.parse("2026-10-17T08:00:00Z");
+    const HXI = [WHITFIELD, BEKKER, NAIDOO, PILLAY].map((id, i) => ({ id, name: `Hilton ${i + 1}` }));
+    const WXI = ["01", "02"].map((n) => ({ id: `bbbbbbbb-0000-0000-0000-0000000000${n}`, name: `Westville ${n}` }));
+    const scorer = await login("scorer@example.invalid");
+    const toReview = (tok) => api("/api/player-of-match/to-review", { token: tok });
+    const stand = (id, tok) => api(`/api/player-of-match/reviews/${id}/stand`, { method: "POST", token: tok, body: {} });
+    const [{ id: M }] = await q(
+      `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+       values ($1, '1XI', $2, '1XI', 'Westville', '2026-10-17T10:00:00+02:00', 'cricket', 'T20', 1, 'scheduled') returning id`, [HIL, WES]);
+    for (const p of HXI) await q(`insert into match_squad (match_id, player_id, side) values ($1, $2, 'home')`, [M, p.id]);
+    for (const p of WXI) await q(`insert into match_squad (match_id, player_id, side) values ($1, $2, 'away')`, [M, p.id]);
+    // Whitfield 17* off 6 (6, 4, 6, 0, 0, 1); Westville two dots and a wicket for Bekker.
+    // Each ball stamped with its striker and bowler, as the pad stamps it
+    // (scorer engine.jsx): the career views, and so the SQL mirror, read the stamps.
+    const W1 = WXI[0].id;
+    const claim = await api(`/api/matches/${M}/session/claim`, { method: "POST", token: scorer, body: { device: "device-recognition" } });
+    let cs = 0, k = 0, refused = [];
+    const innings = [
+      { bat: "1XI", bowl: "Westville 1XI", squad: HXI, bowlingSquad: WXI,
+        balls: [6, 4, 6, 0, 0, 1].map((v) => ball({ type: BALL_TYPE.RUN, value: v, striker: WHITFIELD, bowler: W1 })) },
+      { bat: "Westville 1XI", bowl: "1XI", squad: WXI, bowlingSquad: [HXI[1], HXI[0]], target: 18,
+        balls: [ball({ type: BALL_TYPE.RUN, value: 0, striker: W1, bowler: BEKKER }), ball({ type: BALL_TYPE.RUN, value: 0, striker: W1, bowler: BEKKER }),
+                ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "bowled", striker: W1, bowler: BEKKER })] },
+    ];
+    for (const [i, inn] of innings.entries()) {
+      const evs = [inningsStart({ battingTeam: inn.bat, bowlingTeam: inn.bowl, squad: inn.squad, bowlingSquad: inn.bowlingSquad, overs: 1, target: inn.target ?? null }),
+        batters({ striker: inn.squad[0].id, nonStriker: inn.squad[1].id }), bowler({ bowler: inn.bowlingSquad[0].id }), ...inn.balls]
+        .map((e) => ({ ...e, innings: i }));
+      evs.push({ ...sealInnings(deriveInnings(evs)), innings: i });
+      const r = await api(`/api/matches/${M}/events`, { method: "POST", token: scorer, body: { events: evs.map((ev) => ({
+        epoch: claim.body?.epoch, deviceId: "device-recognition", idempotencyKey: `r10-${M}-${++k}`, clientSeq: ++cs, clientTs: T0 + k * 20_000, innings: i, payload: ev })) } });
+      refused = refused.concat(r.body?.refused ?? []);
+    }
+    await api(`/api/matches/${M}/session/release`, { method: "POST", token: scorer, body: { device: "device-recognition" } }).catch(() => null);
+    await q(`update match set status = 'complete' where id = $1`, [M]);
+    ok("a match is scored on the write path, sealed and finished", claim.body?.ok === true && refused.length === 0
+       && (await q(`select match_verified($1) v`, [M]))[0].v === true, JSON.stringify(refused).slice(0, 300));
+
+    ok("before any correction there is nothing to review", (await toReview(coach)).status === 200 && (await toReview(coach)).body?.rows?.length === 0);
+    const hs = (await api(`/api/matches/${M}/player-of-match`, { token: coach })).body?.sides?.[0]?.headSeq;
+    const a = await api(`/api/matches/${M}/player-of-match`, { method: "POST", token: coach, body: { playerId: WHITFIELD, headSeq: hs } });
+    ok("the coach awards J Whitfield", a.status === 200 && !!a.body?.honourId, JSON.stringify(a.body));
+    const h0 = (await q(`select derived_from from honour where id = $1`, [a.body?.honourId]))[0]?.derived_from;
+    ok("...the award keeps the SQL mirror's figures, the same words the coach saw (packages/scoring's)",
+       h0?.awardee?.figures === "17* (6)" && h0?.figuresSql === h0.awardee.figures, JSON.stringify(h0));
+
+    // The scorer asks, the director of sport approves: the first six never was.
+    const six = `r10-${M}-4`;
+    const asked = await api(`/api/matches/${M}/amendments`, { method: "POST", token: scorer, body: { targetKey: six, reason: "The first six was a dot ball." } });
+    const ap = await api(`/api/amendments/${asked.body?.id}/decide`, { method: "POST", token: head, body: { approve: true } });
+    ok("an amendment voids his first six", asked.status === 200 && ap.body?.ok === true, JSON.stringify([asked.body, ap.body]));
+    const h1 = (await q(`select withdrawn_at, withdrawn_kind from honour where id = $1`, [a.body?.honourId]))[0];
+    ok("the award stands: not withdrawn", h1.withdrawn_at === null && h1.withdrawn_kind === null);
+    ok("...and nobody else is awarded", (await q(`select count(*)::int n from honour where match_id = $1`, [M]))[0].n === 1);
+    ok("...the side's notice of it stands", (await q(`select retracted_at from notification where kind = 'recognition' and subject_id = $1
+                                                        and title like 'Player of the Match · %: J Whitfield'`, [M]))[0]?.retracted_at === null);
+    const rv = await toReview(coach);
+    const row = rv.body?.rows?.[0];
+    ok("the coach has one award to review, with the figures it cited and the figures now",
+       rv.status === 200 && rv.body.rows.length === 1 && row.matchId === M && row.honourId === a.body.honourId && row.playerName === "J Whitfield"
+       && row.figuresBefore === "17* (6)" && row.figuresNow === "11* (5)" && row.resultMoved === false && row.mayWithdraw === true && row.decidedByMe === true,
+       JSON.stringify(rv.body));
+    const side = (await api(`/api/matches/${M}/player-of-match`, { token: coach })).body?.sides?.[0];
+    ok("...and on his sheet, beside the standing award", side?.standing?.honourId === a.body.honourId && side.review?.reviewId === row?.reviewId, JSON.stringify(side));
+    const told = (await notices(coach)).filter((x) => / v .*: the scorecard was corrected$/.test(x.title ?? ""));
+    const words = (await q(`select body from notification where subject_id = $1 and title like '%the scorecard was corrected'`, [M]))[0]?.body;
+    ok("...he is told, in §7's words", told.length === 1
+       && words === "J Whitfield: the figures this award cited have changed: 17* (6) → 11* (5). Withdraw, or let it stand.", JSON.stringify([told, words]));
+    ok("...and only he: one notice, his alone", (await q(`select count(*)::int n, bool_and(recipient_id = $2) mine from notification
+                                                         where subject_id = $1 and title like '%the scorecard was corrected'`, [M, await idOf("coach@example.invalid")]))[0].mine === true);
+    for (const [who, tok] of [["the director of sport", head], ["the principal", principal], ["a parent", parent], ["another coach", coach2], ["the office", registrar]]) {
+      const r = await toReview(tok);
+      ok(`${who} has nothing to review`, r.status === 200 && r.body?.rows?.length === 0, JSON.stringify(r.body));
+      ok(`...and reads no notice of it`, !(await notices(tok)).some((x) => /the scorecard was corrected$/.test(x.title ?? "")));
+    }
+    ok("the director's sheet carries no review of it", !(await api(`/api/matches/${M}/player-of-match`, { token: head })).body?.sides?.some((x) => x.review));
+    const no = await stand(row?.reviewId, head);
+    ok("the director may not let it stand", no.status === 403 && no.body?.error === "not_permitted", JSON.stringify(no.body));
+    const yes = await stand(row?.reviewId, coach);
+    ok("the coach lets it stand", yes.status === 200 && yes.body?.ok === true, JSON.stringify(yes.body));
+    ok("...the review is closed with his name", (await q(`select outcome, closed_by from recognition_review where id = $1`, [row?.reviewId]))[0]?.closed_by
+       === await idOf("coach@example.invalid"));
+    ok("...nothing is left to review", (await toReview(coach)).body?.rows?.length === 0);
+    const twice = await stand(row?.reviewId, coach);
+    ok("...and twice is refused in words", twice.status === 422 && twice.body?.error === "already_closed" && twice.body?.message === "This review is already closed.", JSON.stringify(twice.body));
+    ok("a review id that is not one is a 404", (await stand("not-an-id", coach)).status === 404);
+    const lg = await rows("/api/read/audit_log?kinds=recognition", head);
+    const coachName10 = (await q(`select name from app_user where email = 'coach@example.invalid'`))[0].name;
+    ok("the audit log words it, and names the coach", lg.some((r) => /^Let Player of the Match — v Westville.* stand after a correction$/.test(r.action)
+       && r.actor === coachName10 && r.detail?.review === row?.reviewId),
+       JSON.stringify(lg.filter((r) => /^Let /.test(r.action))));
+    // Withdrawn as a correction after all: the boy's and his parent's card say so (decided 11 Nov 2026).
+    ok("the director withdraws it as a correction", (await api(`/api/matches/${M}/player-of-match/withdraw`, { method: "POST", token: head,
+       body: { honourId: a.body?.honourId, kind: "correction", reason: "The six was a dot ball after all" } })).body?.ok === true);
+    const wp = await login("parent.whitfield@example.invalid");
+    const card = (await recog(WHITFIELD, wp)).find((x) => x.ref_id === a.body?.honourId);
+    ok("his parent reads it withdrawn, kind correction, never the reason", card?.withdrawn_kind === "correction" && !!card.withdrawn_on
+       && !JSON.stringify(card).includes("dot ball after all"), JSON.stringify(card));
+    ok("...and the director reads the kind too", (await recog(WHITFIELD, head)).find((x) => x.ref_id === a.body?.honourId)?.withdrawn_kind === "correction");
   }
 
   ok("the server logged no errors", serverErr.join("").trim() === "");

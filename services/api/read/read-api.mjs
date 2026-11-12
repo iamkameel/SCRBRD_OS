@@ -41,6 +41,23 @@ const UNRECORDED_ZERO = (/** @type {string} */ alias, /** @type {string} */ col)
  * (from `book`, over summary_batting_line) is how many of his batting innings
  * came from a scorebook, for the screens' one-line note.
  */
+/**
+ * A boy's fielding and keeping (RECOGNITION R12, db/150), from the fielding
+ * view joined as `fld`: catches and run outs where a wicket names him, and
+ * his keeping record. Nought where he has no row — a count of acts, and a
+ * wicket that names nobody is nobody's (the Awards tab says so). On the
+ * by-season read only: the lifetime `career` read's estimated cost crossed
+ * PostgreSQL's JIT optimisation threshold with the keeping record joined
+ * (seven seconds compiling on the demo season), so the Awards tab sums a
+ * boy's seasons for "every season" instead (seasonAwards.js
+ * fieldingForSeason). player_fielding_career is there for a reader of one boy.
+ */
+const FIELDING_COLUMNS = `coalesce(fld.catches, 0)::int         as catches,
+                  coalesce(fld.run_outs, 0)::int        as run_outs,
+                  coalesce(fld.keeping_catches, 0)::int as keeping_catches,
+                  coalesce(fld.stumpings, 0)::int       as stumpings,
+                  coalesce(fld.innings_kept, 0)::int    as innings_kept,`;
+
 const UNRECORDED_COLUMNS = `coalesce(unrec.innings_without_balls, 0)::int      as innings_without_balls,
                   coalesce(unrec.runs_without_balls, 0)::int         as runs_without_balls,
                   coalesce(unrec.innings_without_boundaries, 0)::int as innings_without_boundaries,
@@ -1499,10 +1516,12 @@ export const READ_QUERIES = {
    * so the publication row stands in for the viewer's permission — an overlay
    * is watched by people with no account and cannot lean on theirs.
    *
-   * Names arrive ALREADY REDUCED to whatever the school chose. If a fixture is
-   * set to initials, no full name is in this payload: not in a field the
-   * widget declines to render, not in a console, not in a screenshot of a
-   * network tab. The widget is presentation; this is the security.
+   * No child is named (db/149; Kameel, 11 Nov 2026, Q1(e)): the striker,
+   * non-striker and bowler arrive as "Batter", "Non-striker" and "Bowler"
+   * whatever name_display says, until a stream consent exists. No name or
+   * initial is in this payload: not in a field the widget declines to
+   * render, not in a console, not in a screenshot of a network tab. The
+   * widget is presentation; this is the security.
    */
   broadcast_state: {
     text: `select * from broadcast_state($1)`,
@@ -2126,11 +2145,12 @@ export const READ_QUERIES = {
    * are awarded, caps are earned, milestones happen; none is a score. Since
    * db/140 (R4) a milestone says where it came from (sealed_on, source, the
    * side and the fixture class) and a withdrawn honour, with withdrawn_on and
-   * never its reason, reaches the pupil, his guardian and the deciders (D3).
+   * never its reason, reaches the pupil, his guardian and the deciders (D3);
+   * since db/148 (R10) with its kind, correction or other (D21).
    */
   recognition: {
     text: `select family, kind, label, value, season, on_date, match_id, opponent, is_public, citation, ref_id,
-                  withdrawn_on, side_code, innings, sealed_on, source, fixture_class, no_board
+                  withdrawn_on, side_code, innings, sealed_on, source, fixture_class, no_board, withdrawn_kind
              from recognition($1::uuid)`,
     params: q => [req(q, "playerId")],
   },
@@ -3116,6 +3136,7 @@ export const READ_QUERIES = {
                   ${UNRECORDED_ZERO("bowl", "wides")}
                   ${UNRECORDED_ZERO("bowl", "no_balls")}
                   ${UNRECORDED_COLUMNS}
+                  ${FIELDING_COLUMNS}
                   coalesce(bowl.wickets, 0)              as wickets
              from (select * from player_batting_by_season    where $1::text is null or season = $1) bat
              -- USING merges the keys, so a player who only bowled in a season
@@ -3123,6 +3144,10 @@ export const READ_QUERIES = {
              full join (select * from player_dismissals_by_season where $1::text is null or season = $1) dis
                using (player_id, season)
              full join (select * from player_bowling_by_season    where $1::text is null or season = $1) bowl
+               using (player_id, season)
+             -- RECOGNITION R12 (db/150): a boy who only fielded or kept in a
+             -- season has his row for it too.
+             full join (select * from player_fielding_by_season   where $1::text is null or season = $1) fld
                using (player_id, season)
              join player p on p.id = player_id
              -- Aliased apart from the merged key: a second bare season would

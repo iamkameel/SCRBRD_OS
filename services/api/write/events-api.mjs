@@ -239,6 +239,13 @@ const CHECK_REASON = {
   // db/68's door: what the Laws refuse at commit (Law 39, SCRBRD-126), for a
   // row that reaches the table another way — a held event released.
   ball_event_stumped_by_keeper: "stumped_not_keeper",
+  // db/151: a Pilot Match's own screen, raised from inside the write itself
+  // (pilot_insert, pilot_hold) when a caller stepped round the API's.
+  name_in_event: "name_in_event",
+  unknown_slot: "unknown_slot",
+  free_text: "free_text",
+  // db/150's door (RECOGNITION R12, P2): the fielders a way out may name.
+  ball_event_wicket_fielders: "fielders_invalid",
 };
 
 /**
@@ -326,6 +333,19 @@ const FINGERPRINT_OF = `ball_event_fingerprint(jsonb_populate_record(null::ball_
  * holds them durably, apart from the outbox, for exactly that).
  */
 export async function appendEvents(pool, secret, bearer, matchId, events) {
+  checkBatch(events);
+  return runAsPrincipal(pool, secret, bearer, (client, principal) =>
+    appendBatch(client, principal, FIXTURE_STORE, matchId, events));
+}
+
+/**
+ * A batch's shape, checked before any transaction opens: a non-empty array,
+ * every event with its identity, and a wicket's dismissal from the
+ * vocabulary (normalised in place). Throws a 400 naming the first fault;
+ * nothing has been written. Every log's batch passes it (pilot-api.mjs too).
+ * @param {IncomingEvent[]} events
+ */
+export function checkBatch(events) {
   if (!Array.isArray(events) || events.length === 0) { const e = /** @type {DressedError} */ (new Error("no_events")); e.status = 400; throw e; }
 
   // AN EVENT WITHOUT ITS IDENTITY CANNOT BE ANSWERED FOR. Every result bucket
@@ -370,220 +390,291 @@ export async function appendEvents(pool, secret, bearer, matchId, events) {
     }
     p.dismissal = d;
   }
+}
 
-  return runAsPrincipal(pool, secret, bearer, async (client, principal) => {
-    // THE DEVICE IS THE PRINCIPAL'S (SCRBRD-087). It is bound into the token
-    // (or the resume credential), never restated by the body. The lease check
-    // used to be asked about events[0].deviceId: every write stayed on the
-    // token's device (the ball_event INSERT policy), but the same person on a
-    // second device could keep the FIRST device's lease alive with a batch
-    // that wrote nothing, and that refresh committed. A batch is one device's
-    // queue; one that names any other device is not this device's, and is
-    // refused whole, before anything — the lease included — is touched.
-    const device = principal.deviceId;
-    const other = events.findIndex((ev) => ev.deviceId !== device);
-    if (!device || other !== -1) {
-      const e = /** @type {DressedError} */ (new Error("device_mismatch"));
-      e.status = 403; e.detail = { index: Math.max(other, 0) };
-      throw e;
-    }
+/**
+ * Where a batch's log lives (PILOT_MATCH_PHASE2 §3.1): the things the core
+ * below asks of the database, and nothing else. A fixture's is FIXTURE_STORE,
+ * today's SQL exactly; a Pilot Match's is pilot-api.mjs's PILOT_STORE, over
+ * db/151's functions. The core — the device check, the per-match lock,
+ * dedupe by fingerprint, the Laws over the fold, value refusals, the
+ * authoritative seq, held for a stale epoch — is one, so a lesson learnt on
+ * one log is learnt on both, and there is no second copy to drift.
+ * @typedef {object} LogStore
+ * @property {(client: any, matchId: string, device: string, epoch: number) => Promise<LeaseCheck>} lease
+ *   serialises the match's writes (the lock is held to commit) and refreshes a live lease this device holds
+ * @property {(client: any, matchId: string) => Promise<unknown>} prepare  once per batch, for the token's device, before its first event
+ * @property {(client: any, matchId: string) => Promise<BallEventRow[]>} log  the log so far, in seq order, as EVENT_COLUMNS reads it
+ * @property {(client: any, matchId: string) => Promise<FoldCtx>} foldContext  how the fold is told about the match
+ * @property {(client: any, matchId: string, key: string, colsJson: string) =>
+ *   Promise<{written?: {seq: number, same: boolean}, held?: {same: boolean}}>} dedupe
+ *   the key already written (and whether it is this event), else already held
+ * @property {(client: any, matchId: string, ev: IncomingEvent, lease: LeaseCheck, colsJson: string) => Promise<unknown>} hold
+ *   held for a person: not the token's device, generation or live lease
+ * @property {(client: any, matchId: string, ev: IncomingEvent, colsJson: string) => Promise<number>} insert  written; its seq
+ * @property {(client: any, matchId: string, ev: IncomingEvent, cols: Record<string, any>) => Promise<RefusalCode | null>} [screen]
+ *   refused before anything else, whoever holds the token (a Pilot Match's names, slots and free text)
+ * @property {(client: any, matchId: string, lease: LeaseCheck, result: AppendResult) => Promise<unknown>} [after]
+ *   anything the store adds to the answer once the batch is judged
+ */
 
-    // Serialise all writes for this match, and refresh the lease if this
-    // caller holds the token. Both happen inside scoring_lease_check because
-    // scoring_session has no UPDATE policy by design, and Postgres will not
-    // lock a row FOR UPDATE that the UPDATE policy does not admit — doing it
-    // from here silently returned no rows and quarantined a live scorer's
-    // whole over. See db/02_schema_scoring.sql.
-    //
-    // The epoch is taken from the first event: a batch is one device's queue,
-    // so they share an epoch, and anything that does not is caught per-event
-    // below and routed to quarantine.
+/** @type {LogStore} The fixture's log: ball_event, ball_event_quarantine, scoring_session. */
+export const FIXTURE_STORE = {
+  // scoring_lease_check(): see the core, where it is asked.
+  lease: async (client, matchId, device, epoch) => {
     const { rows: lrows } = await client.query(
       `select * from scoring_lease_check($1, $2, $3)`,
-      [matchId, device, events[0].epoch]);
-    /** @type {LeaseCheck} */
-    const lease = lrows[0] || { found: false, holds: false, epoch: null };
-
-    // THE MATCH'S PLAYING CONDITIONS ARE FIXED FIRST (SCRBRD-114, db/61):
-    // inside the per-match lock scoring_lease_check() now holds, before the
-    // match's first event can be written, the document is resolved from the
-    // version in force on the match's start day and frozen. Here, once per
-    // batch and outside the per-event savepoints below, so a first event
-    // refused and rolled back cannot take the fix with it while the next is
-    // written. Only for the device holding the token, with an event of its
-    // generation to write. A no-op once fixed, and for a match scored before
-    // db/61 (no backfill, D4). Never a refusal (D1).
-    if (lease.holds && events.some((ev) => ev.epoch === lease.epoch)) await fixMatchConditions(client, matchId);
-
-    /** @type {AppendResult} */
-    const result = { accepted: [], duplicates: [], quarantined: [], conflicts: [], refused: [] };
-
-    // The match as the Laws read it, folded ONCE, on the first event that
-    // needs judging, and extended as each event is accepted — so the fifth
-    // ball of a batch is judged against the four before it, not against the
-    // log as it stood when the request arrived. Safe to hold across the
-    // batch because scoring_lease_check above holds the per-match lock.
-    /** @type {MatchFold|null} */
-    let fold = null;
-    const loadFold = async () => {
-      /** @type {{ rows: BallEventRow[] }} */
-      const { rows } = await client.query(
-        `select ${EVENT_COLUMNS} from ball_event where match_id = $1 order by seq`, [matchId]);
-      return new MatchFold(rows.map(fromRow), await matchFoldContext(client, matchId));
-    };
-
-    /**
-     * Steps 1–4 for one event: everything that touches the database. Run by the
-     * loop below inside a savepoint, so a value the table refuses refuses this
-     * event and not the batch.
-     * @param {IncomingEvent} ev  @param {Record<string, any>} cols  columnsFor(ev)
-     */
-    const writeOne = async (ev, cols) => {
-      const colsJson = JSON.stringify(cols);
-
-      // 1. idempotency — is this key already stored, and is it THIS event?
-      //    A key is one event's identity (newEventId). The same key with the
-      //    same content is a retry and costs nothing. The same key with other
-      //    content is two events claiming one identity: it is refused and
-      //    reported, because answering "duplicate" would tell the device its
-      //    ball was recorded when the server kept a different one.
-      const { rows: dup } = await client.query(
-        `select seq, fingerprint = ${FINGERPRINT_OF} as same from ball_event where idempotency_key = $1`,
-        [ev.idempotencyKey, colsJson]);
-      if (dup[0]) {
-        if (dup[0].same) result.duplicates.push({ idempotencyKey: ev.idempotencyKey, seq: dup[0].seq });
-        else result.conflicts.push({ idempotencyKey: ev.idempotencyKey, seq: dup[0].seq, reason: "idempotency_conflict" });
-        return;
-      }
-      // ...and the same question of a key already HELD. A NULL fingerprint
-      // is a row quarantined before db/36, which cannot be fingerprinted in
-      // SQL (see there): it is answered as the write path always answered it.
-      const { rows: held } = await client.query(
-        `select fingerprint is null or fingerprint = ${FINGERPRINT_OF} as same
-           from ball_event_quarantine where idempotency_key = $1`,
-        [ev.idempotencyKey, colsJson]);
-      if (held[0] && !held[0].same) {
-        result.conflicts.push({ idempotencyKey: ev.idempotencyKey, seq: null, reason: "idempotency_conflict" });
-        return;
-      }
-      // The SAME event, held under a stale token and re-sent now, goes on
-      // like any other: if this device holds the token it is judged and
-      // written live below, exactly as a new ball would be, and writing it
-      // closes the held copy as 'superseded' in the same statement (db/37's
-      // trigger) — so nobody is later asked to release a ball already in the
-      // log. Answering "duplicate" instead would tell the device its ball was
-      // recorded while the log still lacked it, and every ball after it would
-      // be judged against a log one short.
-
-      // 2. token/epoch/lease gate (the DB RLS enforces this too; we check here to
-      //    ROUTE mismatches to quarantine rather than get an opaque RLS failure).
-      const authed = lease.holds && ev.epoch === lease.epoch && ev.deviceId === device;
-      if (!authed) {
-        await client.query(
-          `insert into ball_event_quarantine
-             (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id, idempotency_key, body, fingerprint)
-           values ($1, match_school($1), $2, $3, app_user_id(), $4, $5, $6,
-                   ball_event_fingerprint(jsonb_populate_record(null::ball_event, $7::jsonb)))
-           on conflict (idempotency_key) do nothing`,
-          [matchId, ev.epoch, lease.epoch, ev.deviceId, ev.idempotencyKey, JSON.stringify(ev), colsJson]);
-        result.quarantined.push({
-          idempotencyKey: ev.idempotencyKey,
-          // db/33: a ball sent at a complete match is held for a person to
-          // decide, and says why — not mistaken for a stale token.
-          // db/132: and a called-off match likewise, with its own word.
-          reason: lease.state === "match_complete" || lease.state === "match_abandoned" ? lease.state
-                : lease.found ? "stale_epoch_or_lease" : "no_session",
-        });
-        return;
-      }
-
-      // 3. The Laws. Judged on the event exactly as it will be stored and read
-      //    back (fromRow of these columns), so the fold that judges it and the
-      //    fold that later replays it see the same thing.
-      //
-      //    A refusal is PER EVENT, in `refused`, and the rest of the batch is
-      //    still judged — not a 4xx for the whole request. A batch is one
-      //    phone's offline queue, sent in order and resent until it settles.
-      //    A 4xx would leave every event pending, so the phone would send the
-      //    same batch, be refused the same way, and never sync again: one
-      //    illegal ball at 11:05 would wedge the whole afternoon behind it,
-      //    and a handover (which needs an empty outbox) would become
-      //    impossible. Per event, the illegal one is named and handed back —
-      //    the device holds it for a person (packages/sync) — and the legal
-      //    ones after it are judged on their own against the log without it.
-      //    Nothing is dropped: every event lands in exactly one bucket.
-      if (!fold) fold = await loadFold();
-      const candidate = fromRow({ ...cols, idempotency_key: ev.idempotencyKey });
-      const why = lawsRefusal(fold.view(), candidate) ?? superOverRefusal(fold.ctx, candidate);
-      if (why) { result.refused.push({ idempotencyKey: ev.idempotencyKey, reason: why }); return; }
-
-      // 4. allocate the authoritative seq and insert (RLS WITH CHECK is the final guard)
-      const { rows: mx } = await client.query(
-        `select coalesce(max(seq), 0) + 1 as next from ball_event where match_id = $1`, [matchId]);
-      const seq = mx[0].next;
-      await client.query(
-        `insert into ball_event
-           (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-            idempotency_key, client_seq, client_ts, kind, ball_type, value, shot, contact, trajectory,
-            seg, zone, striker_id, non_striker_id, bowler_id, dismissed_id, dismissal, payload,
-            theta, radius, placement_source, placement_null, close_position, capture_profile)
-         select $1, match_school($1), $2, $3, r.innings, app_user_id(), $4,
-                $5, $6, $7, r.kind, r.ball_type, r.value, r.shot, r.contact, r.trajectory, r.seg, r.zone,
-                r.striker_id, r.non_striker_id, r.bowler_id, r.dismissed_id, r.dismissal, r.payload,
-                r.theta, r.radius, r.placement_source, r.placement_null, r.close_position, r.capture_profile
-           from jsonb_populate_record(null::ball_event, $8::jsonb) r`,
-        [matchId, seq, ev.epoch, ev.deviceId,
-         ev.idempotencyKey, ev.clientSeq, new Date(ev.clientTs ?? Date.now()), colsJson]);
-
-      fold.push({ ...candidate, seq });
-      result.accepted.push({ idempotencyKey: ev.idempotencyKey, seq });
-    };
-
-    for (const ev of events) {
-      const cols = columnsFor(matchId, ev);
-
-      // 0. A VALUE THE RECORD CANNOT HOLD REFUSES THIS EVENT, NOT THE BATCH
-      //    (SCRBRD-077). A contact, trajectory or placement outside a column
-      //    CHECK used to make the INSERT throw: the whole batch was a 500, and
-      //    the device resent it forever — the wedge step 3 exists to prevent.
-      //    Two checks, neither holding a copy of a vocabulary:
-      //
-      //    - At the door, before the database is touched, the placement
-      //      vocabularies packages/scoring owns (placement.mjs:
-      //      PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE), read from
-      //      there. A refused value is refused whether or not the device
-      //      holds the token: holding it would only move the failure to the
-      //      day somebody tried to release it.
-      //    - Everything else the table constrains — contact and trajectory,
-      //      whose only vocabulary is db/07's CHECK, theta and radius ranges,
-      //      a zone, a malformed number — is judged by those CHECKs
-      //      themselves: steps 1-4 run in a savepoint, and a CHECK violation
-      //      or malformed value (SQLSTATE 23514, class 22) rolls back that
-      //      one event and names it. Anything else still fails the request.
-      //      An event routed to quarantine meets them only when released
-      //      (quarantineRoutes answers value_refused then, not a 500).
-      const bad = vocabularyRefusal(cols);
-      if (bad) { result.refused.push({ idempotencyKey: ev.idempotencyKey, ...bad }); continue; }
-      await client.query("savepoint event_write");
-      try {
-        await writeOne(ev, cols);
-        await client.query("release savepoint event_write");
-      } catch (e) {
-        const why = valueRefusal(e);
-        if (!why) throw e;
-        await client.query("rollback to savepoint event_write");
-        result.refused.push({ idempotencyKey: ev.idempotencyKey, ...why });
-      }
-    }
-    // The pen-holder's line (TWO_PHONES R3, db/135): how many balls from
-    // another phone are set aside on this match, undecided. Asked only by the
-    // device that holds the pen, which is the only one the function answers.
+      [matchId, device, epoch]);
+    return lrows[0] || { found: false, holds: false, epoch: null };
+  },
+  prepare: (client, matchId) => fixMatchConditions(client, matchId),
+  log: async (client, matchId) => {
+    /** @type {{ rows: BallEventRow[] }} */
+    const { rows } = await client.query(
+      `select ${EVENT_COLUMNS} from ball_event where match_id = $1 order by seq`, [matchId]);
+    return rows;
+  },
+  foldContext: (client, matchId) => matchFoldContext(client, matchId),
+  dedupe: async (client, _matchId, key, colsJson) => {
+    const { rows: dup } = await client.query(
+      `select seq, fingerprint = ${FINGERPRINT_OF} as same from ball_event where idempotency_key = $1`,
+      [key, colsJson]);
+    if (dup[0]) return { written: { seq: dup[0].seq, same: dup[0].same } };
+    // ...and the same question of a key already HELD. A NULL fingerprint
+    // is a row quarantined before db/36, which cannot be fingerprinted in
+    // SQL (see there): it is answered as the write path always answered it.
+    const { rows: held } = await client.query(
+      `select fingerprint is null or fingerprint = ${FINGERPRINT_OF} as same
+         from ball_event_quarantine where idempotency_key = $1`,
+      [key, colsJson]);
+    return held[0] ? { held: { same: held[0].same } } : {};
+  },
+  hold: (client, matchId, ev, lease, colsJson) => client.query(
+    `insert into ball_event_quarantine
+       (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id, idempotency_key, body, fingerprint)
+     values ($1, match_school($1), $2, $3, app_user_id(), $4, $5, $6,
+             ball_event_fingerprint(jsonb_populate_record(null::ball_event, $7::jsonb)))
+     on conflict (idempotency_key) do nothing`,
+    [matchId, ev.epoch, lease.epoch, ev.deviceId, ev.idempotencyKey, JSON.stringify(ev), colsJson]),
+  insert: async (client, matchId, ev, colsJson) => {
+    const { rows: mx } = await client.query(
+      `select coalesce(max(seq), 0) + 1 as next from ball_event where match_id = $1`, [matchId]);
+    const seq = mx[0].next;
+    await client.query(
+      `insert into ball_event
+         (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+          idempotency_key, client_seq, client_ts, kind, ball_type, value, shot, contact, trajectory,
+          seg, zone, striker_id, non_striker_id, bowler_id, dismissed_id, dismissal, payload,
+          theta, radius, placement_source, placement_null, close_position, capture_profile)
+       select $1, match_school($1), $2, $3, r.innings, app_user_id(), $4,
+              $5, $6, $7, r.kind, r.ball_type, r.value, r.shot, r.contact, r.trajectory, r.seg, r.zone,
+              r.striker_id, r.non_striker_id, r.bowler_id, r.dismissed_id, r.dismissal, r.payload,
+              r.theta, r.radius, r.placement_source, r.placement_null, r.close_position, r.capture_profile
+         from jsonb_populate_record(null::ball_event, $8::jsonb) r`,
+      [matchId, seq, ev.epoch, ev.deviceId,
+       ev.idempotencyKey, ev.clientSeq, new Date(ev.clientTs ?? Date.now()), colsJson]);
+    return seq;
+  },
+  // The pen-holder's line (TWO_PHONES R3, db/135): how many balls from
+  // another phone are set aside on this match, undecided. Asked only by the
+  // device that holds the pen, which is the only one the function answers.
+  after: async (client, matchId, lease, result) => {
     if (lease.holds) {
       const { rows: sa } = await client.query(`select second_account_waiting($1) as n`, [matchId]);
       result.secondAccount = sa[0]?.n ?? 0;
     }
-    return result;
-  });
+  },
+};
+
+/**
+ * One batch, judged and written inside the caller's transaction: the core
+ * every log shares (see LogStore). appendEvents() checks the batch's shape
+ * first, then runs this as the caller; pilot-api.mjs does the same for a
+ * Pilot Match.
+ * @param {{ query: Function }} client  the caller's connection, in its transaction
+ * @param {{ deviceId?: string | null }} principal
+ * @param {LogStore} store
+ * @param {string} matchId
+ * @param {IncomingEvent[]} events
+ * @returns {Promise<AppendResult>}
+ */
+export async function appendBatch(client, principal, store, matchId, events) {
+  // THE DEVICE IS THE PRINCIPAL'S (SCRBRD-087). It is bound into the token
+  // (or the resume credential), never restated by the body. The lease check
+  // used to be asked about events[0].deviceId: every write stayed on the
+  // token's device (the ball_event INSERT policy), but the same person on a
+  // second device could keep the FIRST device's lease alive with a batch
+  // that wrote nothing, and that refresh committed. A batch is one device's
+  // queue; one that names any other device is not this device's, and is
+  // refused whole, before anything — the lease included — is touched.
+  const device = principal.deviceId;
+  const other = events.findIndex((ev) => ev.deviceId !== device);
+  if (!device || other !== -1) {
+    const e = /** @type {DressedError} */ (new Error("device_mismatch"));
+    e.status = 403; e.detail = { index: Math.max(other, 0) };
+    throw e;
+  }
+
+  // Serialise all writes for this match, and refresh the lease if this
+  // caller holds the token. Both happen inside scoring_lease_check because
+  // scoring_session has no UPDATE policy by design, and Postgres will not
+  // lock a row FOR UPDATE that the UPDATE policy does not admit — doing it
+  // from here silently returned no rows and quarantined a live scorer's
+  // whole over. See db/02_schema_scoring.sql.
+  //
+  // The epoch is taken from the first event: a batch is one device's queue,
+  // so they share an epoch, and anything that does not is caught per-event
+  // below and routed to quarantine.
+  const lease = await store.lease(client, matchId, device, events[0].epoch);
+
+  // THE MATCH'S PLAYING CONDITIONS ARE FIXED FIRST (SCRBRD-114, db/61):
+  // inside the per-match lock scoring_lease_check() now holds, before the
+  // match's first event can be written, the document is resolved from the
+  // version in force on the match's start day and frozen. Here, once per
+  // batch and outside the per-event savepoints below, so a first event
+  // refused and rolled back cannot take the fix with it while the next is
+  // written. Only for the device holding the token, with an event of its
+  // generation to write. A no-op once fixed, and for a match scored before
+  // db/61 (no backfill, D4). Never a refusal (D1).
+  if (lease.holds && events.some((ev) => ev.epoch === lease.epoch)) await store.prepare(client, matchId);
+
+  /** @type {AppendResult} */
+  const result = { accepted: [], duplicates: [], quarantined: [], conflicts: [], refused: [] };
+
+  // The match as the Laws read it, folded ONCE, on the first event that
+  // needs judging, and extended as each event is accepted — so the fifth
+  // ball of a batch is judged against the four before it, not against the
+  // log as it stood when the request arrived. Safe to hold across the
+  // batch because scoring_lease_check above holds the per-match lock.
+  /** @type {MatchFold|null} */
+  let fold = null;
+  const loadFold = async () =>
+    new MatchFold((await store.log(client, matchId)).map(fromRow), await store.foldContext(client, matchId));
+
+  /**
+   * Steps 1–4 for one event: everything that touches the database. Run by the
+   * loop below inside a savepoint, so a value the table refuses refuses this
+   * event and not the batch.
+   * @param {IncomingEvent} ev  @param {Record<string, any>} cols  columnsFor(ev)
+   */
+  const writeOne = async (ev, cols) => {
+    const colsJson = JSON.stringify(cols);
+
+    // 0b. What this log refuses before anything else, whoever holds the
+    //     token: nothing for a fixture; a Pilot Match's names, unknown
+    //     slots and free text (pilot-api.mjs, db/151 pilot_event_refusal).
+    const screened = store.screen ? await store.screen(client, matchId, ev, cols) : null;
+    if (screened) { result.refused.push({ idempotencyKey: ev.idempotencyKey, reason: screened }); return; }
+
+    // 1. idempotency — is this key already stored, and is it THIS event?
+    //    A key is one event's identity (newEventId). The same key with the
+    //    same content is a retry and costs nothing. The same key with other
+    //    content is two events claiming one identity: it is refused and
+    //    reported, because answering "duplicate" would tell the device its
+    //    ball was recorded when the server kept a different one.
+    const known = await store.dedupe(client, matchId, ev.idempotencyKey, colsJson);
+    if (known.written) {
+      if (known.written.same) result.duplicates.push({ idempotencyKey: ev.idempotencyKey, seq: known.written.seq });
+      else result.conflicts.push({ idempotencyKey: ev.idempotencyKey, seq: known.written.seq, reason: "idempotency_conflict" });
+      return;
+    }
+    // ...and the same question of a key already HELD (the store answers both).
+    if (known.held && !known.held.same) {
+      result.conflicts.push({ idempotencyKey: ev.idempotencyKey, seq: null, reason: "idempotency_conflict" });
+      return;
+    }
+    // The SAME event, held under a stale token and re-sent now, goes on
+    // like any other: if this device holds the token it is judged and
+    // written live below, exactly as a new ball would be, and writing it
+    // closes the held copy as 'superseded' in the same statement (db/37's
+    // trigger) — so nobody is later asked to release a ball already in the
+    // log. Answering "duplicate" instead would tell the device its ball was
+    // recorded while the log still lacked it, and every ball after it would
+    // be judged against a log one short.
+
+    // 2. token/epoch/lease gate (the DB RLS enforces this too; we check here to
+    //    ROUTE mismatches to quarantine rather than get an opaque RLS failure).
+    const authed = lease.holds && ev.epoch === lease.epoch && ev.deviceId === device;
+    if (!authed) {
+      await store.hold(client, matchId, ev, lease, colsJson);
+      result.quarantined.push({
+        idempotencyKey: ev.idempotencyKey,
+        // db/33: a ball sent at a complete match is held for a person to
+        // decide, and says why — not mistaken for a stale token.
+        // db/132: and a called-off match likewise, with its own word.
+        reason: lease.state === "match_complete" || lease.state === "match_abandoned" ? lease.state
+              : lease.found ? "stale_epoch_or_lease" : "no_session",
+      });
+      return;
+    }
+
+    // 3. The Laws. Judged on the event exactly as it will be stored and read
+    //    back (fromRow of these columns), so the fold that judges it and the
+    //    fold that later replays it see the same thing.
+    //
+    //    A refusal is PER EVENT, in `refused`, and the rest of the batch is
+    //    still judged — not a 4xx for the whole request. A batch is one
+    //    phone's offline queue, sent in order and resent until it settles.
+    //    A 4xx would leave every event pending, so the phone would send the
+    //    same batch, be refused the same way, and never sync again: one
+    //    illegal ball at 11:05 would wedge the whole afternoon behind it,
+    //    and a handover (which needs an empty outbox) would become
+    //    impossible. Per event, the illegal one is named and handed back —
+    //    the device holds it for a person (packages/sync) — and the legal
+    //    ones after it are judged on their own against the log without it.
+    //    Nothing is dropped: every event lands in exactly one bucket.
+    if (!fold) fold = await loadFold();
+    const candidate = fromRow({ ...cols, idempotency_key: ev.idempotencyKey });
+    const why = lawsRefusal(fold.view(), candidate) ?? superOverRefusal(fold.ctx, candidate);
+    if (why) { result.refused.push({ idempotencyKey: ev.idempotencyKey, reason: why }); return; }
+
+    // 4. allocate the authoritative seq and insert (RLS WITH CHECK is the final guard)
+    const seq = await store.insert(client, matchId, ev, colsJson);
+
+    fold.push({ ...candidate, seq });
+    result.accepted.push({ idempotencyKey: ev.idempotencyKey, seq });
+  };
+
+  for (const ev of events) {
+    const cols = columnsFor(matchId, ev);
+
+    // 0. A VALUE THE RECORD CANNOT HOLD REFUSES THIS EVENT, NOT THE BATCH
+    //    (SCRBRD-077). A contact, trajectory or placement outside a column
+    //    CHECK used to make the INSERT throw: the whole batch was a 500, and
+    //    the device resent it forever — the wedge step 3 exists to prevent.
+    //    Two checks, neither holding a copy of a vocabulary:
+    //
+    //    - At the door, before the database is touched, the placement
+    //      vocabularies packages/scoring owns (placement.mjs:
+    //      PLACEMENT_SOURCE, PLACEMENT_NULL, CAPTURE_PROFILE), read from
+    //      there. A refused value is refused whether or not the device
+    //      holds the token: holding it would only move the failure to the
+    //      day somebody tried to release it.
+    //    - Everything else the table constrains — contact and trajectory,
+    //      whose only vocabulary is db/07's CHECK, theta and radius ranges,
+    //      a zone, a malformed number — is judged by those CHECKs
+    //      themselves: steps 1-4 run in a savepoint, and a CHECK violation
+    //      or malformed value (SQLSTATE 23514, class 22) rolls back that
+    //      one event and names it. Anything else still fails the request.
+    //      An event routed to quarantine meets them only when released
+    //      (quarantineRoutes answers value_refused then, not a 500).
+    const bad = vocabularyRefusal(cols);
+    if (bad) { result.refused.push({ idempotencyKey: ev.idempotencyKey, ...bad }); continue; }
+    await client.query("savepoint event_write");
+    try {
+      await writeOne(ev, cols);
+      await client.query("release savepoint event_write");
+    } catch (e) {
+      const why = valueRefusal(e);
+      if (!why) throw e;
+      await client.query("rollback to savepoint event_write");
+      result.refused.push({ idempotencyKey: ev.idempotencyKey, ...why });
+    }
+  }
+  // Whatever the store adds once the batch is judged (the fixture's
+  // second-account line).
+  if (store.after) await store.after(client, matchId, lease, result);
+  return result;
 }
 
 /**

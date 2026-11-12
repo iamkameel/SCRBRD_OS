@@ -2,6 +2,14 @@
 
 Project-level instructions for Claude Code working in this repository.
 
+## Ownership
+
+Added 2026-11-11 (Kameel): "you own the code. you are responsible for accuracy." The
+lead decides what is the lead's to decide (what goes into the repository, what a
+fix needs, whether a claim is true) and checks it before saying it, rather than
+handing Kameel a choice that only needs doing right. Kameel's calls stay his:
+product, privacy and anything CLAUDE.md names as his.
+
 ## Subagent routing
 
 When building out this project, use subagents. Route each subagent to Fable,
@@ -224,7 +232,8 @@ improve-animations, find-animation-opportunities, emil-design-eng,
 apple-design, mobile-native, break-ui, prototype, …), Jakub Krehel's
 (better-interface and the `better-*` set, interface-review, break, variant,
 state-machine, build-design), Elaya's landing-page-design, and tastemaker
-(with ideagram). Each skill keeps its upstream MIT licence beside it
+(with ideagram). Added 2026-11-11 (Kameel): Benji Taylor's stageshow, for
+mock product screens on marketing pages and feature cards. Each skill keeps its upstream MIT licence beside it
 (`LICENSE.upstream`); the source commits are in `.claude/skills/SOURCES.md`.
 
 Use them on screens and the public pages: interface-review or better-interface

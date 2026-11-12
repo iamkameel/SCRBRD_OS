@@ -29,9 +29,10 @@ const EvidenceTrail = lazy(() => import("./EvidenceTrail.jsx").then((m) => ({ de
  *
  * @param {{feed: ReturnType<typeof import("./useCockpit.js").useFeed>, gate: {role: string}, onClose: () => void,
  *   openScreen?: ((card: any) => (() => void) | null) | null,
+ *   makePoint?: ((card: any) => (() => void) | null) | null,
  *   log?: {stale: boolean, refreshing: boolean, failed: boolean, okAt: number | null, refresh: () => void} | null}} p
  */
-export function FeedDrawer({ feed, gate, onClose, openScreen = null, log = null }) {
+export function FeedDrawer({ feed, gate, onClose, openScreen = null, makePoint = null, log = null }) {
   const panel = useRef(/** @type {HTMLDivElement | null} */ (null));
   const [showSeen, setShowSeen] = useState(false);
   const [trails, setTrails] = useState(() => /** @type {Set<string>} */ (new Set()));
@@ -108,6 +109,13 @@ export function FeedDrawer({ feed, gate, onClose, openScreen = null, log = null 
               <p style={quiet()}>
                 From {c.source}. You see it through {gate.role} with {c.via.join(", ")}.
               </p>
+              {/* GA-I27 slice 2: from S5, the boy's development panel with this
+                  card as the pointer. The drawer itself writes nothing (C-D6). */}
+              {(() => { const go = makePoint ? makePoint(c) : null; return go && (
+                <button type="button" data-testid={`signal-point-${c.rule}`} className="os-state" onClick={go} style={{ ...btn(), justifySelf: "start" }}>
+                  Make a coaching point of this
+                </button>
+              ); })()}
               {c.dismissable
                 ? (!seen && <button type="button" data-testid={`signal-seen-${c.rule}`} className="os-state" onClick={() => feed.dismiss(c)} style={{ ...btn(), justifySelf: "start" }}>Seen</button>)
                 : <p style={quiet()}>This clears by itself.</p>}

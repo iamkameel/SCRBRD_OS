@@ -150,7 +150,11 @@ if (args.has("--reset")) {
     "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND backend_type = 'client backend'"]).out) || 0;
   for (let i = 0; i < 40 && others() > 0; i++) sleep(250);
   for (let attempt = 1; ; attempt++) {
-    const r = run(["-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"]);
+    // Our own schemas beside public (db/151's `pilot`) go too: their tables
+    // hold keys into public's, and a schema left standing would refuse its
+    // own CREATE SCHEMA on the way back.
+    const own = projectObjects(DB_DIR).schemas.map((x) => `DROP SCHEMA IF EXISTS "${x}" CASCADE; `).join("");
+    const r = run(["-c", `${own}DROP SCHEMA public CASCADE; CREATE SCHEMA public;`]);
     if (r.ok) { if (r.out) console.log(r.out); console.log("✓ reset schema"); break; }
     if (attempt < 3 && /deadlock detected/.test(r.out)) { console.log(`  reset schema met a deadlock (attempt ${attempt}); trying again`); sleep(1000); continue; }
     console.error(`✗ reset schema\n${r.out}`); process.exit(1);

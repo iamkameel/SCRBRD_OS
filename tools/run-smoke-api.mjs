@@ -37,6 +37,8 @@ import { readdirSync } from "node:fs";
 // previous walk's writes would make them pass or fail for the wrong reason.
 const WALKS = [
   "read", "sync", "handover", "handover-crash", "fold",
+  // Pilot Match phase 2 (db/151): the write path, the grant, the one not-found.
+  "pilot-sync",
   // A handover verifies against THIS innings, penalty runs included (SCRBRD-088, db/45).
   "handover-innings",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
@@ -404,6 +406,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // wide through the pad; the board, the server's fold, match_live_score,
   // the scorecard, the career read and the public page say the same score.
   "browser-wicket-on-extra",
+  // 11 Nov 2026 (Kameel, on his phone): a tap on the Area step's field opened
+  // the wicket sheet or recorded runs, through the same tap's click landing on
+  // the Outcome key drawn where the field was. Touch-emulated on nine phones:
+  // every point of the field places the ball and records nothing.
+  "browser-field-tap",
   // Recognition R2: the pad's moments are the facts' (deriveFacts): every
   // milestone a ball earns (a fifty and the side's 50 on one six), a run out
   // breaking a hat-trick, a wicket ball's ALL OUT queued behind it; every
@@ -604,6 +611,9 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // all deleted from the page's own confirmation, and nothing left in
   // IndexedDB or localStorage; 390 wide.
   "browser-practice",
+  // Pilot Match phase 2, slice 3 (db/151): the phone sends a granted account's
+  // match with no name in a ball; an ungranted one stays on the phone, in words.
+  "browser-pilot",
   // Settings → Import and the Staff screen: the office has the tab and a coach
   // does not; the template downloads; a file with one bad line shows that line
   // in the route's words and keeps Import disabled; a clean file is checked,
@@ -635,6 +645,13 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // the design's never-words, the hairline still under reduced motion, a
   // director refused by the server in words, four register states and no fifth.
   "browser-skills-history",
+  // GA-I27 slice 2 (C4): coaching points from a browser — "Make a coaching
+  // point of this" from S5 in the drawer and from a dot on the strip, the
+  // field refusing a never-word and another boy's name, S13 in the drawer,
+  // stood on / now after a voided ball ("corrected"), withdrawn and struck;
+  // read by the coach, the assistant and the director; never the team
+  // manager, the boy himself or his parent, by screen or by the read.
+  "browser-coaching-points",
   // The pilot's whole journey, end to end, the walk a founder's demo is
   // recorded from (RECORD_VIDEO=<dir>): the office schedules a fixture and
   // moves it, a parent answers for his son, the scorer scores on a phone with
@@ -694,6 +711,7 @@ const WEIGHTS = {
   "browser-public": 70, "browser-cleanup": 70, "browser-suspension": 70,
   "browser-laws4": 70, "browser-handover": 60, "browser-handover-offline": 70, "browser-support": 60,
   "browser-takeover": 90, "browser-two-phones": 180,
+  "browser-field-tap": 400,
   "browser-pad-resume": 60, "browser-sync-drop": 60, "browser-dossier": 60, "browser-offline-undo": 50,
   "browser-wagonwheel": 50, "browser-results": 50, "browser-drs": 50,
   "browser-safeguarding": 50, "browser-playing-conditions": 50,

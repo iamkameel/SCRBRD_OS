@@ -6,6 +6,9 @@
  *              mayAward, refusal, standing, mayWithdraw, suggestions, sheet }] }
  *   POST /api/matches/:id/player-of-match            { playerId, headSeq } → { ok, honourId }
  *   POST /api/matches/:id/player-of-match/withdraw   { honourId, kind, reason } → { ok }
+ *   A side's `review` (R10, db/148): the open review of its standing award,
+ *   when a correction moved what it stood on and the reader is its decider
+ *   (recognition-api.mjs reviewOf()); null otherwise.
  *
  * WHO. Every rule is db/142's: match_award_state() answers a side only to a
  * holder of recognition.match.award over it (the side's coach, the director
@@ -19,17 +22,21 @@
  * THE SUGGESTIONS (D17). R1's facts (deriveFacts()) over the match's log as
  * the caller reads it, the side's sheet the only roster, packages/scoring's
  * suggestPlayerOfMatch(): two or three, figures in words, never
- * pre-selected, "Based on batting and bowling only." The award stores them
- * as derived_from, worked out again here at the head the coach saw: when the
+ * pre-selected, "Based on batting and bowling only." until fielding is
+ * scored: where every catch, stumping and run out of the match names its
+ * fielders (RECOGNITION R12, potmBasis()), fielding counts and the line is
+ * dropped (`basis` null; `basisKey` says which). The award stores them, and
+ * the basis, as derived_from, worked out again here at the head the coach saw: when the
  * log has moved since, the door refuses `stale` and the sheet reads again.
  *
  * WHAT IS NEVER SENT. Another side's sheet; a reason (withdrawal reasons are
  * written here and read by nobody through this route); who else was looked at.
  */
-import { deriveFacts, fromRow, suggestPlayerOfMatch, matchFigures, figuresWords, BASIS_WORDS, POTM_BASIS, FACTS_VERSION } from "@scrbrd/scoring";
+import { deriveFacts, fromRow, suggestPlayerOfMatch, matchFigures, figuresWords, basisWords, potmBasis, POTM_BASIS, FACTS_VERSION } from "@scrbrd/scoring";
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { EVENT_COLUMNS_SEEN, matchFoldContext } from "./events-api.mjs";
 import { safeErr } from "../log-safe.mjs";
+import { reviewOf } from "./recognition-api.mjs";
 /** @import { RouteDeps, IdHandler } from "../api-types.mjs" */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -104,21 +111,24 @@ export function potmRoutes({ pool, secret }) {
     /** @typedef {{side: string, player_id: string, batting_no: number | null, full_name: string}} SheetRow */
     /** @type {SheetRow[]} */
     const rowsOf = sheet;
-    /** @type {Map<string, {sheet: any[], suggestions: any[], figures: Map<string, string>}>} */
+    /** @type {Map<string, {sheet: any[], suggestions: any[], figures: Map<string, string>, basis: string}>} */
     const out = new Map();
     for (const s of sides) {
       const mine = rowsOf.filter((x) => x.side === s.side);
       const ids = mine.map((x) => x.player_id);
       const facts = deriveFacts(evs.map(fromRow), ids, { ctx: /** @type {any} */ (ctx) });
-      const figures = new Map(matchFigures(facts, ids).map((f) => [f.playerId, figuresWords(f)]));
+      // RECOGNITION R12: fielding counts where every fielding wicket names
+      // its fielders (potmBasis), and the decision stores which.
+      const basis = potmBasis(facts);
+      const figures = new Map(matchFigures(facts, ids, basis).map((f) => [f.playerId, figuresWords(f)]));
       const names = new Map(mine.map((x) => [x.player_id, x.full_name]));
       const conflicts = new Set(s.conflicts ?? []);
       // D10: a boy whose guardian the reader is cannot be chosen, and the
       // line says who decides instead.
       const conflictWords = potmWords("guardian_conflict", s.instead ?? null);
       out.set(s.side, {
-        figures,
-        suggestions: suggestPlayerOfMatch(facts, ids).map((x) => ({ ...x, name: names.get(x.playerId) ?? null,
+        figures, basis,
+        suggestions: suggestPlayerOfMatch(facts, ids, undefined, basis).map((x) => ({ ...x, name: names.get(x.playerId) ?? null,
           conflict: conflicts.has(x.playerId), conflictWords: conflicts.has(x.playerId) ? conflictWords : null })),
         sheet: mine.map((x) => ({ playerId: x.player_id, name: x.full_name, figures: figures.get(x.player_id) ?? null,
           conflict: conflicts.has(x.player_id), conflictWords: conflicts.has(x.player_id) ? conflictWords : null })),
@@ -133,8 +143,15 @@ export function potmRoutes({ pool, secret }) {
       return runAsPrincipal(pool, secret, as(req), async (client) => {
         const { rows } = await client.query(`select * from match_award_state($1)`, [id]);
         const work = await working(client, id, rows);
+        // One log, one basis for every side of it; D17's line, or none once
+        // fielding is counted (RECOGNITION R12).
+        const basis = [...work.values()][0]?.basis ?? POTM_BASIS;
+        // R10 (db/148): a correction moved what a standing award stood on;
+        // the review is the decider's (the door answers nobody else).
+        const { rows: rv } = await client.query(`select * from recognition_reviews_open($1)`, [id]);
+        const reviews = new Map(rv.map((x) => [x.honour_id, reviewOf(x)]));
         return {
-          matchId: id, basis: BASIS_WORDS,
+          matchId: id, basis: basisWords(basis), basisKey: basis,
           sides: rows.map((r) => ({
             side: r.side, schoolId: r.school_id, teamCode: r.team_code, label: r.side_label, opponent: r.opponent_label,
             heading: r.heading, verified: r.verified === true, headSeq: r.head_seq,
@@ -143,6 +160,7 @@ export function potmRoutes({ pool, secret }) {
             standing: r.honour_id ? { honourId: r.honour_id, playerId: r.player_id, name: r.player_name,
                                       awardedAt: r.awarded_at, decidedBy: r.decided_by_name } : null,
             mayWithdraw: r.can_withdraw === true,
+            review: r.honour_id ? reviews.get(r.honour_id) ?? null : null,
             suggestions: r.can_award ? work.get(r.side)?.suggestions ?? [] : [],
             sheet: r.can_award ? work.get(r.side)?.sheet ?? [] : [],
           })),
@@ -162,7 +180,7 @@ export function potmRoutes({ pool, secret }) {
         // which refusal it is either way.
         const side = [...work.entries()].find(([, w]) => w.sheet.some((/** @type {any} */ x) => x.playerId === b.playerId));
         const derived = {
-          version: 1, basis: POTM_BASIS, factsVersion: FACTS_VERSION, headSeq: b.headSeq,
+          version: 1, basis: side ? side[1].basis : POTM_BASIS, factsVersion: FACTS_VERSION, headSeq: b.headSeq,
           suggestions: side ? side[1].suggestions.map((/** @type {any} */ x) => ({ playerId: x.playerId, figures: x.figures })) : [],
           awardee: { playerId: b.playerId, figures: side ? side[1].figures.get(b.playerId) ?? "Did not bat or bowl" : "" },
         };

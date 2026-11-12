@@ -245,7 +245,7 @@ try {
   ok("the card now says Postponed", (await tid(dos.page, `mc-card-status-${M2}`).getAttribute("data-state").catch(() => null)) === "postponed"
      && (await inner(dos.page, `mc-card-status-${M2}`)).trim() === "Postponed", await inner(dos.page, `mc-card-status-${M2}`));
   ok("...and so does the database", (await m2Of())?.status === "postponed");
-  ok("...with no Start Scoring on it", (await tid(dos.page, `match-card-${M2}`).locator("button", { hasText: /Start Scoring/ }).count()) === 0);
+  ok("...with no Start Scoring on it", (await tid(dos.page, `match-card-${M2}`).locator("button", { hasText: /Start Scoring/i }).count()) === 0);
 
   // ── The parent: Postponed on the fixture, and the notice ──
   group("R Pillay's parent sees Postponed on the fixture, and a notice that names no child");

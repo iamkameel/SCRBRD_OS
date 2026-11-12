@@ -176,7 +176,8 @@ function SquadView({ role }) {
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"12px"}}>
             {players.map(p=>(
-              <Card key={p.id} data-testid={`squad-card-${p.id}`} onClick={()=>{setSelected(p);setAct(null);}} sx={{
+              <Card key={p.id} data-testid={`squad-card-${p.id}`} onClick={()=>{setSelected(p);setAct(null);}}
+                label={`Player details: ${p.name}`} expanded={selected?.id===p.id} sx={{
                 padding:"14px",cursor:"pointer",
                 border:`1px solid ${selected?.id===p.id?D.sky+"55":seesFitness&&p.fitness==="injured"?D.rose+"22":D.border}`,
                 background:selected?.id===p.id?D.sky+"08":seesFitness&&p.fitness==="injured"?D.rose+"05":D.surf1,

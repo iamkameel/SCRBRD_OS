@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { deriveInnings, inningsStart, batters, bowler, ball, BALL_TYPE, dismissalsOffExtra } from "@scrbrd/scoring";
 import { deliveryEvents, noBallEvent, extraWicketEvent } from "../src/scorer/delivery.js";
-import { EXTRAS, extraCall, NB_TYPES, NB_FROM } from "../src/scorer/extras.js";
+import { EXTRAS, extraCall, NB_TYPES, NB_FROM, nbNotBoundary } from "../src/scorer/extras.js";
 import { WideSheet, NoBallSheet } from "../src/scorer/sheets.jsx";
 
 let pass = 0, fail = 0;
@@ -124,9 +124,9 @@ function focus(st, kind, n, { nb = { type: "front_foot", from: null }, wk = null
   const props = { onWide: prop(eng, "Pad inn", "onWide"), onNoBall: prop(eng, "Pad inn", "onNoBall"),
     onExtraWicket: prop(eng, "Pad inn", "onExtraWicket"), onCommitDetailed: "()=>{throw new Error('commit')}" };
   const p = Object.fromEntries(Object.entries(props).map(([k, v]) => [k, s.make(v)]));
-  const recordExtra = new Function("extra", "basic", "shot", "area", "extraCall", "setExtra", "reset",
+  const recordExtra = new Function("extra", "basic", "shot", "area", "extraCall", "nbNotBoundary", "setExtra", "reset",
     "onWide", "onNoBall", "onExtraWicket", "onCommitDetailed", `return (${constFn(pad, "recordExtra")});`)(
-    kind, false, null, null, extraCall, () => {}, () => {}, p.onWide, p.onNoBall, p.onExtraWicket, p.onCommitDetailed);
+    kind, false, null, null, extraCall, nbNotBoundary, () => {}, () => {}, p.onWide, p.onNoBall, p.onExtraWicket, p.onCommitDetailed);
   recordExtra(n, nb, !!wk);
   if (wk) e.confirmWicket(wk);
   return e.events;
@@ -142,8 +142,12 @@ function pro(st, kind, n, { nb = { type: "front_foot", from: null }, wk = null }
   const confirm = sheetConfirm(e.modal);
   if (!confirm) return [`no sheet for modal ${e.modal}`];
   const onConfirm = s.make(confirm);
-  // NoBallSheet: onConfirm(nbType, runs, runs>0?from:null, wicket); WideSheet: onConfirm(runs, wicket).
-  if (kind === "Wd") onConfirm(n, !!wk); else onConfirm(nb.type, n, n > 0 ? nb.from : null, !!wk);
+  // NoBallSheet: onConfirm(nbType, runs, runs>0?from:null, wicket), and a
+  // fifth `true` when a four or six off the bat was all run (P8, the sheet's
+  // allRun); WideSheet: onConfirm(runs, wicket).
+  if (kind === "Wd") onConfirm(n, !!wk);
+  else if (nbNotBoundary(nb, n)) onConfirm(nb.type, n, nb.from, !!wk, true);
+  else onConfirm(nb.type, n, n > 0 ? nb.from : null, !!wk);
   if (wk) e.confirmWicket(wk);
   return e.events;
 }
@@ -196,6 +200,17 @@ group("2. A no-ball: the same event from either mode");
   }
   console.log(`  (${compared} no-balls scored both ways; ${differ.length} differ)`);
   ok(`${compared} no-balls, Focus and Pro: byte-identical`, compared === 4 * 3 * 3 * 7 * 2 && differ.length === 0, differ.slice(0, 2).join(" | "));
+  // RECOGNITION R12 (P8): a four or six off the bat, all run, said on the
+  // pad's panel or the sheet: the same event either way, boundary: false.
+  const d2 = []; let c2 = 0;
+  for (const st of states) for (const t of NB_TYPES) for (const n of [4, 6]) {
+    const nb = { type: t.id, from: null, notBoundary: true };
+    const a = focus(st, "Nb", n, { nb }), b = pro(st, "Nb", n, { nb });
+    c2++; if (bytes(a) !== bytes(b) || a[0]?.boundary !== false) d2.push(`${t.id} ${n}: ${bytes(a).slice(0, 120)} ≠ ${bytes(b).slice(0, 120)}`);
+    const aw = focus(st, "Nb", n, { nb, wk: WK.run_out }), bw = pro(st, "Nb", n, { nb, wk: WK.run_out });
+    c2++; if (bytes(aw) !== bytes(bw) || aw[0]?.boundary !== false || aw[0]?.dismissal !== "run_out") d2.push(`${t.id} ${n} + run out`);
+  }
+  ok(`${c2} no-balls all run, Focus and Pro: byte-identical, boundary: false`, c2 === 4 * 3 * 2 * 2 && d2.length === 0, d2.slice(0, 2).join(" | "));
 }
 
 group("3. The sheets ask what the pad asks");
@@ -211,6 +226,8 @@ group("3. The sheets ask what the pad asks");
   const nb = renderToStaticMarkup(h(NoBallSheet, { onConfirm: noop, onClose: noop }));
   ok("the no-ball sheet offers the pad's no-ball runs", bytes(keys(nb, "nb-run-")) === bytes(EXTRAS.find((x) => x.kind === "Nb").runs), bytes(keys(nb, "nb-run-")));
   ok("the no-ball sheet confirms (type, runs, whose only with runs, wicket)", /onConfirm\(nbType,runs,runs>0\?from:null,wicket\)/.test(sheets));
+  ok("...and asks, of a four or six off the bat, whether it reached the boundary (P8)",
+     /data-testid="nb-boundary"/.test(sheets) && /allRun\?onConfirm\(nbType,runs,from,wicket,true\)/.test(sheets));
   ok("the hub's WIDE and NO BALL keys call the engine's onWide and onNoBall",
      /<button onClick=\{onWide\}/.test(src("apps/web/src/scorer/scoring.jsx")) && /<button onClick=\{onNoBall\}/.test(src("apps/web/src/scorer/scoring.jsx")));
 }

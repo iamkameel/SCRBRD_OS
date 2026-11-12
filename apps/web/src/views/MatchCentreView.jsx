@@ -265,7 +265,9 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
             const sides = sidesOf(m);
             const status = statusSentence(m, null, { result: resultsSaid[m.id] ?? null });
             return (
-              <Card key={m.id} data-testid={`match-card-${m.id}`} onClick={()=>setSelMatch(isSel?null:m)} sx={{
+              <Card key={m.id} data-testid={`match-card-${m.id}`} onClick={()=>setSelMatch(isSel?null:m)}
+                label={`Match details: ${sides.home.full} v ${sides.away.full}, ${humanDate(m.date)}`}
+                expanded={isSel} controls={isSel?"match-details":undefined} sx={{
                 background:isLive?`linear-gradient(135deg,${D.emerald}08,${D.surf1})`:D.surf1,
                 border:`1px solid ${isSel?D.sky+"55":isLive?D.emerald+"22":D.border}`,cursor:"pointer",
               }}>
@@ -308,7 +310,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                           — over this fixture, by the routes' own capability —
                           and being wrong here shows a button that then says
                           no, never the wrong data. */}
-                      {(isLive||m.status==="upcoming")&&scoresHere(m)&&<Btn variant="success" data-testid={`mc-score-${m.id}`} onClick={e=>{e.stopPropagation();onOpenScorer&&onOpenScorer(m);}}>{isLive?"Open Live Scorer →":"Start Scoring →"}</Btn>}
+                      {(isLive||m.status==="upcoming")&&scoresHere(m)&&<Btn variant="success" data-testid={`mc-score-${m.id}`} onClick={e=>{e.stopPropagation();onOpenScorer&&onOpenScorer(m);}}>{isLive?"Open live scorer →":"Start scoring →"}</Btn>}
                       {/* The fixture's own Match Centre (step 3c), for every
                           fixture — NOT gated on `m.scorecard`, which is a mock-only
                           field: asMatch() sets it null for every live row because
@@ -347,10 +349,17 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
           const ground = selMatch.groundId ? GROUNDS.find(g=>g.id===selMatch.groundId) : null;
           const pitch  = ground?.pitches?.[0];
           return (
-            <Card data-testid="match-details" data-match={selMatch.id} sx={{padding:"16px",position:"sticky",top:"16px",maxHeight:"calc(100vh - 100px)",overflowY:"auto"}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:"12px"}}>
+            <Card id="match-details" data-testid="match-details" data-match={selMatch.id} sx={{padding:"16px",position:"sticky",top:"16px",maxHeight:"calc(100vh - 100px)",overflowY:"auto"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
                 <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Match Details</div>
-                <button onClick={()=>setSelMatch(null)} style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"16px"}}>✕</button>
+                {/* 44 square, named for what it does: it was a 13×19 "✕" (interface review, 11 Nov 2026). */}
+                <button type="button" onClick={()=>{const id=selMatch.id;setSelMatch(null);
+                  // Focus goes back to the card that opened it, not to the top of the page.
+                  requestAnimationFrame(()=>document.querySelector(`[data-testid="match-card-${id}"] .os-card-action`)?.focus());}} aria-label="Close match details" data-testid="match-details-close" className="pressBtn"
+                  style={{minWidth:"44px",minHeight:"44px",margin:"-10px -10px -10px 0",display:"inline-flex",alignItems:"center",justifyContent:"center",
+                    background:"none",border:"none",borderRadius:T.radius.md,cursor:"pointer",color:D.textMuted,fontSize:"16px"}}>
+                  <span aria-hidden="true">✕</span>
+                </button>
               </div>
               {w&&<div style={{marginBottom:"12px"}}><WeatherChip w={w} status={selMatch.status}/></div>}
               {/* Rescheduling and calling off — fixture.update, at the HOST's
@@ -456,8 +465,9 @@ function NoMatchesPanel({ matches, filter, teamFilter, onOpen }) {
   const Row = ({ m }) => {
     const sides = sidesOf(m);
     return (
-      <button onClick={()=>onOpen(m)} data-testid="mc-nomatches-row" className="pressBtn" style={{
-        display:"flex",width:"100%",justifyContent:"space-between",alignItems:"center",gap:"10px",
+      // 44 tall, the tap floor: the rows were 32 (interface review, 11 Nov 2026).
+      <button type="button" onClick={()=>onOpen(m)} data-testid="mc-nomatches-row" className="pressBtn" style={{
+        display:"flex",width:"100%",minHeight:"44px",justifyContent:"space-between",alignItems:"center",gap:"10px",
         padding:"8px 10px",borderRadius:D.md,border:`1px solid ${D.border}`,background:D.surf2,
         cursor:"pointer",textAlign:"left",fontFamily:D.body,fontSize:"12px",color:D.textPrimary,
       }}>

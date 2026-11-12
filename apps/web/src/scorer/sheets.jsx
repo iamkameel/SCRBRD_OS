@@ -12,8 +12,12 @@ import { batterChoices, bowlerChoices, unavailableWords } from "./prompts.js";
 import { KeeperRow } from "./keeperSheet.jsx";
 import { OFF_SIDE_ASK, OFF_SIDE_MARK, OFF_SIDE_WHY, offSide } from "./side.js";
 import { Proposal, useProposal } from "./rainSheet.jsx";
-import { extraOf, NB_FROM, nbFreeHit } from "./extras.js";
-import { wicketAsks, wicketDetail } from "./wicketAsks.js";
+import { extraOf, NB_FROM, nbFreeHit, nbNotBoundary } from "./extras.js";
+import { wicketAsks, wicketDetail, fielderRefs } from "./wicketAsks.js";
+
+/** A choice that is on, the way the pad marks one: the primary ink's ring on the interactive surface. Never a state hue. */
+const chosen = (on) => ({ border: `1px solid ${on ? T.content.primary : D.border}`, background: on ? T.surface.interactive : D.surf2,
+  color: on ? T.content.primary : D.textSecondary });
 
 /* ═══════════════════════════════════════════════════════
    SHOT SELECTOR SHEET
@@ -69,6 +73,9 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
   const[from,setFrom]=useState(null);
   const FROM=[{id:null,label:"Off the bat"},{id:NB_RUNS.BYES,label:"Byes"},{id:NB_RUNS.LEG_BYES,label:"Leg byes"}];
   const[wicket,setWicket]=useState(false);
+  // Four or six off the bat that did not reach the rope (RECOGNITION R12, P8).
+  const[notBoundary,setNotBoundary]=useState(false);
+  const allRun=nbNotBoundary({from,notBoundary},runs);
   // Off any no-ball a batter is out only run out, hit the ball twice or
   // obstructing the field (Law 21.17, 4th Edition; 21.18 in the 3rd).
   // Both: 1 penalty run + any runs scored (the bat's only when off the bat), doesn't count as legal delivery
@@ -81,7 +88,7 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
       note:"Umpire warning issued. Bowler may be removed. Same dismissal rules apply."},
   ];
   return (
-    <Sheet title="No Ball" accent={D.amber} onClose={onClose}>
+    <Sheet title="No ball" accent={D.amber} onClose={onClose}>
       <div style={{paddingTop:"14px",display:"flex",flexDirection:"column",gap:"14px"}}>
         {types.map(t=>(
           <button key={t.id} onClick={()=>setNbType(t.id)} className="pressBtn" style={{
@@ -159,6 +166,21 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
             </div>
           </div>
         )}
+        {/* Four or six off the bat: did it reach the rope (RECOGNITION R12,
+            P8)? Untouched it is a boundary, as the run keys' are; all run,
+            or with overthrows, it is the batter's runs and no four or six. */}
+        {from==null&&(runs===4||runs===6)&&(
+          <div data-testid="nb-boundary">
+            <Lbl sx={{marginBottom:"8px"}}>Did it reach the boundary?</Lbl>
+            <div style={{display:"flex",gap:"6px"}}>
+              {[[false,"Yes"],[true,"No, all run"]].map(([on,label])=>(
+                <button key={label} type="button" data-testid={`nb-boundary-${on?"no":"yes"}`} aria-pressed={notBoundary===on} onClick={()=>setNotBoundary(on)} className="pressBtn" style={{
+                  flex:1,minHeight:"44px",padding:"10px 0",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:600,
+                  ...chosen(notBoundary===on)}}>{label}</button>
+              ))}
+            </div>
+          </div>
+        )}
         {/* And a wicket? (Law 21.17): off a no ball only run out, hit the
             ball twice or obstructing the field. Yes moves on to the wicket
             sheet, which offers just those; nothing is recorded until it
@@ -169,8 +191,7 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
             {[[false,"No"],[true,"Yes"]].map(([on,label])=>(
               <button key={label} type="button" data-testid={`nb-wicket-${on?"yes":"no"}`} aria-pressed={wicket===on} onClick={()=>setWicket(on)} className="pressBtn" style={{
                 flex:1,minHeight:"44px",padding:"10px 0",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:600,
-                border:`1px solid ${wicket===on?D.rose+"77":D.border}`,background:wicket===on?`${D.rose}1a`:D.surf2,
-                color:wicket===on?D.roseText:D.textMuted}}>{label}</button>
+                ...chosen(wicket===on)}}>{label}</button>
             ))}
           </div>
           {wicket&&(
@@ -179,7 +200,7 @@ function NoBallSheet({onConfirm,onClose,edition=3,freeHits=true}){
             </div>
           )}
         </div>
-        <Btn variant="amber" size="lg" full data-testid="nb-confirm" onClick={()=>onConfirm(nbType,runs,runs>0?from:null,wicket)} sx={{borderRadius:D.md}}>
+        <Btn variant="amber" size="lg" full data-testid="nb-confirm" onClick={()=>allRun?onConfirm(nbType,runs,from,wicket,true):onConfirm(nbType,runs,runs>0?from:null,wicket)} sx={{borderRadius:D.md}}>
           {wicket?"Next: the wicket":`Confirm No Ball (${runs+1} runs)`}
         </Btn>
       </div>
@@ -235,8 +256,7 @@ function WideSheet({onConfirm,onClose,edition=3}){
             {[[false,"No"],[true,"Yes"]].map(([on,label])=>(
               <button key={label} type="button" data-testid={`wd-wicket-${on?"yes":"no"}`} aria-pressed={wicket===on} onClick={()=>setWicket(on)} className="pressBtn" style={{
                 flex:1,minHeight:"44px",padding:"10px 0",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"13px",fontWeight:600,
-                border:`1px solid ${wicket===on?D.rose+"77":D.border}`,background:wicket===on?`${D.rose}1a`:D.surf2,
-                color:wicket===on?D.roseText:D.textMuted}}>{label}</button>
+                ...chosen(wicket===on)}}>{label}</button>
             ))}
           </div>
           {wicket&&(
@@ -637,7 +657,7 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
   const mayResumeWithConsent=timedOut?[]:resumableWithConsent;
   const asking=mayResumeWithConsent.find(b=>b.id===consentFor)??null;
   return (
-    <Sheet title="Batting Order" accent={D.emerald} onClose={onClose}>
+    <Sheet title="Batting order" accent={D.emerald} onClose={onClose}>
       <div style={{paddingTop:"12px"}}>
         {header&&<div style={{marginBottom:"14px"}}>{header}</div>}
         {/* At crease */}
@@ -872,6 +892,12 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
   const asksCatch=!offExtra&&mode===DISMISSAL.OBSTRUCTING_FIELD&&edition===4&&!!striker&&!!nonStriker;
   const asksFaces=asksCatch&&stopped;
   const[fielder,setFielder]=useState("");
+  // A run out's second fielder (RECOGNITION R12, P2): the one who threw or
+  // handed the ball to the one who put the wicket down. Asked only when the
+  // scorer taps "Add a second fielder", so a tap on the list still chooses
+  // one fielder, as it always did.
+  const[second,setSecond]=useState("");
+  const[adding,setAdding]=useState(false);
   const[fielterFilter,setFielderFilter]=useState("");
   // Whose wicket, where the mode leaves it open. Retired out is either
   // batter's; the rest default to the striker, as the event does.
@@ -909,8 +935,21 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
   const displayFielder=isStumped?wkName||fielder:fielder;
   const filteredFielders=(fieldingSquad||[])
     .filter(p=>!fielterFilter||p.name.toLowerCase().includes(fielterFilter.toLowerCase()));
+  const pickFielder=(name)=>{
+    if(isRunOut&&adding&&fielder&&name!==fielder){setSecond(name);setAdding(false);return;}
+    setFielder(name);
+    if(second===name)setSecond("");
+  };
+  // The fielders as references (P2): the keeper on a stumping, the catcher,
+  // the run out's one or two. The scorecard's text is the names, as before;
+  // a run out by two reads "run out (A/B)".
+  const wkRef=keeper?.id??(()=>{const w=(fieldingSquad||[]).find(p=>p.role==="WK");return w?(w.id??w.name):null;})();
+  const fielderNames=isStumped?[]:isRunOut&&second?[fielder,second]:[fielder];
+  const fielders=isStumped?(wkName&&wkRef?[wkRef]:[]):needsFielder?fielderRefs(fielderNames,fieldingSquad,twelfth):[];
+  const fielderText=isRunOut&&fielder&&second?`${fielder}/${second}`:displayFielder;
   const handleMode=(m)=>{
     setMode(m);
+    setSecond("");setAdding(false);
     setFielder("");
     setFielderFilter("");
     setWho(striker?.id??null);
@@ -920,9 +959,13 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
   };
   const whoName=who===nonStriker?.id?nonStriker?.name:(striker?.name??batName);
   const pill=(on)=>({flex:1,minHeight:"44px",padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"15px",fontWeight:500,
-    border:"1px solid "+(on?D.rose+"55":D.border),background:on?D.rose+"1a":D.surf2,color:on?D.roseText:D.textSecondary});
+    ...chosen(on)});
+  // A wicket is recorded, not an error: the sheet takes the wicket's own
+  // colour (T.run.wicket, the board's W chip), and what is chosen is marked
+  // as every other choice on the pad is, not in the danger hue (tokens.js:
+  // "State, never sport. A wicket is not an error"; interface review, 11 Nov 2026).
   return (
-    <Sheet title="WICKET!" accent={D.rose} onClose={onClose}>
+    <Sheet title="Wicket" accent={T.run.wicket} onClose={onClose}>
       <div style={{color:D.textSecondary,fontSize:"13px",fontFamily:D.body,marginBottom:"14px",paddingTop:"4px"}}>
         {asksWho?whoName:batName} is dismissed
       </div>
@@ -937,9 +980,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
         {modes.map(m=>(
           <button key={m} data-testid={`wicket-mode-${m}`} onClick={()=>handleMode(m)} className="pressBtn" style={{
             minHeight:"48px",padding:"8px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"15px",fontWeight:500,
-            border:"1px solid "+(mode===m?D.rose+"55":D.border),
-            background:mode===m?D.rose+"1a":D.surf2,
-            color:mode===m?D.roseText:D.textSecondary,transition:"background-color .15s, border-color .15s, color .15s, transform 150ms ease-out"}}>
+            ...chosen(mode===m),transition:"background-color .15s, border-color .15s, color .15s, transform 150ms ease-out"}}>
             {DISMISSAL_LABEL[m]}
           </button>
         ))}
@@ -1038,18 +1079,18 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
               color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"9px 13px",marginBottom:"8px"}}/>
           <div style={{display:"flex",flexDirection:"column",gap:"4px",maxHeight:"180px",overflowY:"auto",overscrollBehavior:"contain"}}>
             {filteredFielders.map(p=>(
-              <button key={p.name} onClick={()=>setFielder(p.name)} className="pressBtn" style={{
-                display:"flex",alignItems:"center",gap:"8px",padding:"8px 12px",borderRadius:D.md,
-                border:"1px solid "+(fielder===p.name?D.sky+"55":D.border),
-                background:fielder===p.name?D.sky+"12":D.surf2,
+              <button key={p.name} onClick={()=>pickFielder(p.name)} className="pressBtn" aria-pressed={fielder===p.name||second===p.name} style={{
+                display:"flex",alignItems:"center",gap:"8px",padding:"8px 12px",borderRadius:D.md,minHeight:"44px",
+                border:"1px solid "+(fielder===p.name||second===p.name?D.sky+"55":D.border),
+                background:fielder===p.name||second===p.name?D.sky+"12":D.surf2,
                 cursor:"pointer",textAlign:"left",transition:"background-color .12s, border-color .12s, color .12s, transform 150ms ease-out"}}>
-                <span style={{fontFamily:D.body,fontSize:"13px",color:fielder===p.name?D.sky:D.textPrimary,fontWeight:500,flex:1}}>{p.name}</span>
+                <span style={{fontFamily:D.body,fontSize:"13px",color:fielder===p.name||second===p.name?D.sky:D.textPrimary,fontWeight:500,flex:1}}>{p.name}</span>
                 <Badge color={p.role==="WK"?D.violet:p.role==="ALL"?D.amber:p.role==="BOWL"?D.orange:D.sky}>{p.role}</Badge>
               </button>
             ))}
           </div>
           {twelfth&&(
-            <button type="button" data-testid="wicket-twelfth" onClick={()=>setFielder(twelfth.name)} className="pressBtn" style={{
+            <button type="button" data-testid="wicket-twelfth" onClick={()=>pickFielder(twelfth.name)} className="pressBtn" style={{
               display:"flex",alignItems:"center",gap:"8px",width:"100%",minHeight:"44px",marginTop:"6px",padding:"8px 12px",borderRadius:D.md,
               border:"1px solid "+(fielder===twelfth.name?D.sky+"55":D.border),
               background:fielder===twelfth.name?D.sky+"12":D.surf2,cursor:"pointer",textAlign:"left"}}>
@@ -1057,9 +1098,24 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
               <Badge color={D.violet}>12th Man</Badge>
             </button>
           )}
+          {/* A run out by two (P2): each is credited one run out. */}
+          {isRunOut&&fielder&&(second?(
+            <div data-testid="wicket-second" style={{display:"flex",alignItems:"center",gap:"8px",marginTop:"6px"}}>
+              <span style={{fontFamily:D.body,fontSize:"13px",color:D.textPrimary,flex:1}}>Run out by {fielder} and {second}</span>
+              <button type="button" data-testid="wicket-second-remove" onClick={()=>setSecond("")} className="pressBtn" style={{
+                minHeight:"44px",padding:"0 12px",borderRadius:D.md,border:"1px solid "+D.border,background:D.surf2,cursor:"pointer",
+                fontFamily:D.body,fontSize:"13px",color:D.textPrimary}}>Remove {second}</button>
+            </div>
+          ):(
+            <button type="button" data-testid="wicket-add-second" aria-pressed={adding} onClick={()=>setAdding(a=>!a)} className="pressBtn" style={{
+              width:"100%",minHeight:"44px",marginTop:"6px",padding:"8px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
+              fontFamily:D.body,fontSize:"13px",fontWeight:500,...chosen(adding)}}>
+              {adding?"Now tap the second fielder":"Add a second fielder"}
+            </button>
+          ))}
           {!fielder&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.amber,marginTop:"6px"}}>{twelfth?"Or type a substitute's name below:":"Or type name below:"}</div>}
           <input value={!fieldingSquad.find(p=>p.name===fielder)&&fielder!==twelfth?.name&&fielder?fielder:""} 
-            onChange={e=>setFielder(e.target.value)} placeholder="Type any name…" aria-label="Fielder not in the squad"
+            onChange={e=>{setFielder(e.target.value);setSecond("");setAdding(false);}} placeholder="Type any name…" aria-label="Fielder not in the squad"
             style={{width:"100%",background:D.surf2,border:"1px solid "+D.border,borderRadius:D.md,marginTop:"6px",
               color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"9px 13px"}}/>
         </div>
@@ -1074,9 +1130,9 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
       )}
       <div style={{display:"flex",gap:"10px",marginTop:"4px"}}>
         <Btn variant="ghost" sx={{flex:1,minHeight:"48px",fontSize:"15px",borderRadius:D.md}} onClick={onClose}>Cancel</Btn>
-        <Btn variant="danger" sx={{flex:2,minHeight:"48px",fontSize:"16px",borderRadius:D.md}} data-testid="wicket-confirm" disabled={(asksEnd&&!end)||(asksFaces&&!faces)}
+        <Btn variant="primary" sx={{flex:2,minHeight:"48px",fontSize:"16px",borderRadius:D.md}} data-testid="wicket-confirm" disabled={(asksEnd&&!end)||(asksFaces&&!faces)}
           onClick={()=>{if(asksEnd&&!end)return;if(asksFaces&&!faces)return;
-            onConfirm(mode,displayFielder,wicketDetail(asks,{who,strikerId:striker?.id??null,runs,from,end,faces,asksFaces}));}}>Confirm Out</Btn>
+            onConfirm(mode,fielderText,wicketDetail(asks,{who,strikerId:striker?.id??null,runs,from,end,faces,asksFaces,fielders}));}}>Confirm out</Btn>
       </div>
     </Sheet>
   );
@@ -1127,7 +1183,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
     ? choices.rows.filter(p=>String(p.name).toLowerCase().includes(filter.toLowerCase()))
     : choices.rows;
   return (
-    <Sheet title={midOver?"Change of Bowler":ovNum===0?"Opening Bowler":`Over ${ovNum} Complete`} accent={D.amber} onClose={onClose}>
+    <Sheet title={midOver?"Change of bowler":ovNum===0?"Opening bowler":`Over ${ovNum} complete`} accent={D.amber} onClose={onClose}>
       <div style={{paddingTop:"8px"}}>
         {header}
         {/* Who is keeping (SCRBRD-126): asked with the opening bowler and at
@@ -1246,7 +1302,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
  * and from nothing when nothing was, so a scorer who presses Start without
  * touching it changes nothing about how the match reads.
  */
-function Innings2Sheet({target,teamName,overs,declared=null,note=null,rain=false,propose=null,why="offline",onClose,onStart,title="Innings Break",startLabel="Start 2nd Innings →",lead=null}){
+function Innings2Sheet({target,teamName,overs,declared=null,note=null,rain=false,propose=null,why="offline",onClose,onStart,title="Innings break",startLabel="Start 2nd Innings →",lead=null}){
   const[profile,setProfile]=useState(declared);
   // ── SCRBRD-130 R1: the umpires' figures for the chase (design §1, §2.2) ──
   // After rain cut the first innings, or when the interval was lost, the
@@ -1445,7 +1501,7 @@ function NextInningsSheet({inningsNo,innings,plan,followOnOffered=false,lead=0,d
   const pill=(on)=>({flex:1,minHeight:"44px",padding:"10px",borderRadius:D.md,cursor:"pointer",fontFamily:D.body,fontSize:"15px",fontWeight:500,
     border:"1px solid "+(on?D.indigo+"66":D.border),background:on?D.indigo+"1a":D.surf2,color:on?D.textPrimary:D.textSecondary});
   return (
-    <Sheet title="Innings Break" accent={D.indigo} onClose={onClose}>
+    <Sheet title="Innings break" accent={D.indigo} onClose={onClose}>
       <div style={{textAlign:"center",padding:"20px 0 24px"}}>
         {line&&<div data-testid="next-innings-lead" style={{fontFamily:T.type.body,fontSize:"15px",lineHeight:1.4,color:T.content.primary,margin:"0 0 12px"}}>{line}</div>}
         <div style={{fontFamily:D.body,fontSize:"14px",color:D.textMuted,marginBottom:"8px"}}>Innings {inningsNo}</div>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { api, signedIn } from "../../lib/api.js";
-import { confirmWords, potmShortName, standingWords, WITHDRAW_KINDS, POTM_REASON_MIN, POTM_REASON_MAX, FALLBACK } from "../../lib/potm.js";
+import { confirmWords, potmShortName, reviewWords, standingWords, STOOD_WORDS, WITHDRAW_KINDS, POTM_REASON_MIN, POTM_REASON_MAX, FALLBACK } from "../../lib/potm.js";
 import { NO_AWARD_DONE, NO_AWARD_WORDS, staffLine } from "../../lib/nomination.js";
 import { Icon } from "../../ui/icons.jsx";
 import { CardHead, Panel } from "./bits.jsx";
@@ -25,6 +25,12 @@ import { CardHead, Panel } from "./bits.jsx";
  *               tap and a confirm sheet), Choose another (the same
  *               suggestions; the award answers the nomination), or No award.
  *               A guardian of the nominee is told who decides instead.
+ *   R10 (db/148) A scorecard correction moved what the standing award stood
+ *               on: its decider reads "The figures this award cited have
+ *               changed: 100* (18) → 99* (17). Withdraw, or let it stand."
+ *               (§7), and either withdraws it (the kind already "after a
+ *               scorecard correction") or lets it stand, one tap. The award
+ *               stands until he does; nothing is said to the side meanwhile.
  *
  * Floors: 12px text and up, 44px targets (56px for the one tap), the state of
  * a choice is a radio and words, never colour alone; nothing moves, so
@@ -68,7 +74,9 @@ export function usePotm(match, on, seen) {
     post(`/api/matches/${match.id}/player-of-match/withdraw`, { honourId, kind, reason }), [match.id, post]);
   const decide = useCallback((/** @type {string} */ nominationId, /** @type {string} */ action, /** @type {string | null} */ playerId, /** @type {number} */ headSeq) =>
     post(`/api/matches/${match.id}/player-of-match/nomination/decide`, { nominationId, action, playerId, headSeq }), [match.id, post]);
-  return { data, reload, award, withdraw, decide };
+  const stand = useCallback((/** @type {string} */ reviewId) =>
+    post(`/api/player-of-match/reviews/${reviewId}/stand`, {}), [post]);
+  return { data, reload, award, withdraw, decide, stand };
 }
 
 const btn = (/** @type {boolean} */ strong, tall = false) => ({
@@ -131,6 +139,12 @@ function PotmSide({ s, basis, two, potm, nom }) {
     setSaid(r.ok ? { ok: true, text: `Awarded: ${potmShortName(pick.name)} is Player of the Match, and the side is told.` }
                  : { ok: false, text: r.text ?? FALLBACK });
   };
+  const goStand = async () => {
+    setBusy(true); setSaid(null);
+    const r = await potm.stand(s.review.reviewId);
+    setBusy(false);
+    setSaid(r.ok ? { ok: true, text: STOOD_WORDS } : { ok: false, text: r.text ?? FALLBACK });
+  };
   const goWithdraw = async () => {
     const text = reason.trim();
     if (!kind) { setSaid({ ok: false, text: "Say whether it is withdrawn after a scorecard correction or for another reason." }); return; }
@@ -169,8 +183,23 @@ function PotmSide({ s, basis, two, potm, nom }) {
           <p data-testid="mc-potm-standing" style={{ ...T.role.body, color: T.content.primary, margin: 0, display: "flex", gap: T.space.xs, alignItems: "center" }}>
             <Icon name="award"/> {standingWords(s.standing)}
           </p>
+          {s.review && step !== "withdraw" && (
+            // R10 (D19): the correction returns the award to its decider. Words, not colour: the line says it.
+            <div data-testid="mc-potm-review" role="group" aria-labelledby={`mc-potm-review-${s.side}`}
+              style={{ display: "grid", gap: T.space.sm, padding: T.space.md, borderRadius: T.radius.md, border: `1px solid ${T.line.normal}`, background: T.surface.raised }}>
+              <p id={`mc-potm-review-${s.side}`} data-testid="mc-potm-review-words" style={{ ...T.role.body, color: T.content.primary, margin: 0, display: "flex", gap: T.space.xs, alignItems: "flex-start" }}>
+                <Icon name="triangle-alert"/> <span>{reviewWords(s.review)}</span>
+              </p>
+              {s.review.mayWithdraw && (
+                <button type="button" data-testid="mc-potm-stand" disabled={busy} onClick={goStand}
+                  className="pressBtn os-state" style={{ ...btn(false), justifySelf: "start" }}>
+                  {busy ? "Saving…" : "Let it stand"}
+                </button>
+              )}
+            </div>
+          )}
           {s.mayWithdraw && step !== "withdraw" && (
-            <button type="button" data-testid="mc-potm-withdraw" onClick={() => { setSaid(null); setStep("withdraw"); }}
+            <button type="button" data-testid="mc-potm-withdraw" onClick={() => { setSaid(null); if (s.review) setKind("correction"); setStep("withdraw"); }}
               className="pressBtn os-state" style={{ ...btn(false), justifySelf: "start" }}>
               <Icon name="rotate-ccw"/> Withdraw the award
             </button>

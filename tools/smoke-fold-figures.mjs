@@ -17,6 +17,8 @@
  *   player_wicket_breakdown     wickets by method                     per bowler
  *   opposition_squad()          every batting and bowling column, both ways round
  *   keeper_dismissal            the keeper's catches and stumpings, per innings and keeper
+ *   fielding_credit             each fielder a wicket names (RECOGNITION R12, db/150)
+ *   player_fielding_career      catches, run outs, keeping                per fielder
  *   player_keeping_career       matches and innings kept, catches, stumpings  per keeper
  *   scoring_verify_takeover()   the runs, wickets and balls it expects
  *   /api/read/matchups          balls, runs, fours, sixes, dots, dismissals, as a coach
@@ -64,6 +66,13 @@
  * for a boy with no other record, never nought; the dossier with his runs and
  * no dot; the matchups untouched; voided, all of it gone.
  *
+ * And who fielded the wicket (RECOGNITION R12, P2; db/150): on a ninth
+ * stream, most catches, stumpings and run outs name their fielders as
+ * references — the keeper by id, another of the fielding side, a typed
+ * substitute, a run out by two — and the rest name nobody. What
+ * fieldingCredits() and the facts say is what fielding_credit and
+ * player_fielding_career say; db/150's door refuses a list that does not fit.
+ *
  * And a wicket on a wide or a no-ball (Law 22.9, 21.17; db/87): stumped,
  * hit wicket, run out and obstructing off a wide; run out, hit twice and
  * obstructing off a no-ball — the striker's or the non-striker's, a run out
@@ -92,6 +101,7 @@ import {
 import { countsInOver, NOT_IN_OVER, keeperOf, isKeeperRef, isWicketBall, boundaryHit } from "@scrbrd/scoring";
 import { resultFromRow } from "@scrbrd/scoring";   // SCRBRD-130 R1
 import { deriveFacts, FACT_KIND } from "@scrbrd/scoring";   // Recognition R1
+import { fieldingCredits } from "@scrbrd/scoring";   // Recognition R12
 import { fixtureClass, COMP_TYPES } from "@scrbrd/scoring";   // Recognition R3
 import { matchFoldContext, EVENT_COLUMNS } from "../services/api/write/events-api.mjs";
 import { rejudgeAfterAmendment } from "../services/api/write/rejudge.mjs";   // the Laws audit F4, db/121
@@ -177,12 +187,28 @@ const rnd7 = () => (s7 = (s7 * 1103515245 + 12345) % 2147483648) / 2147483648;
 // A wicket on a wide or a no-ball (Law 22.9, 21.17; db/87) draws on an eighth.
 let s8 = 8686;
 const rnd8 = () => (s8 = (s8 * 1103515245 + 12345) % 2147483648) / 2147483648;
+// Who fielded the wicket (RECOGNITION R12, db/150) draws on a ninth: the
+// field changes no figure, so every innings is otherwise the one it was.
+let s9 = 9191;
+const rnd9 = () => (s9 = (s9 * 1103515245 + 12345) % 2147483648) / 2147483648;
+const TYPED_SUB = "S Typed-Substitute";
+// MATCH's sheet, as the seed has it: four of Hilton's eleven, at home (the
+// review's S3: db/150's door credits a fielder named by id only from the
+// fielding side's sheet). Held to the database before the logs are written.
+const MATCH_SHEET = new Set(["01", "02", "03", "05"].map((n) => `aaaaaaaa-0000-0000-0000-0000000000${n}`));
+/** The ids db/150's ball_fielder_on_side() lets field this ball: the sheet's, on the bowler's side, else the side the striker is not on. */
+const fieldingIds = (/** @type {any} */ at) => {
+  const field = MATCH_SHEET.has(at.bowler) ? "home" : MATCH_SHEET.has(at.striker) ? "away" : null;
+  return field === "away" ? [] : [...MATCH_SHEET].filter((x) => x !== at.striker && x !== at.nonStriker);
+};
 const OFF_WIDE = ["run_out", "stumped", "hit_wicket", "obstructing_field"];
 const OFF_NO_BALL = ["run_out", "hit_twice", "obstructing_field"];
 const gen = { suspensions: 0, splitOvers: 0, hurtReturns: 0, padRetires: 0, padMidOver: 0, padReturns: 0, hurtWaits: 0, hurtRefused: 0,
               consentReturns: 0, notInOver: 0, keepers: 0, keeperChanges: 0, keeperMidOver: 0, keeperUndone: 0,
               catchByRef: 0, catchByName: 0, catchOther: 0, stumpByRef: 0, stumpByName: 0, stumpNobody: 0,
-              offWide: 0, offNoBall: 0 };
+              offWide: 0, offNoBall: 0,
+              fieldersCatch: 0, fieldersKeeperCatch: 0, fieldersStump: 0, fieldersRunOut: 0, fieldersRunOutTwo: 0, fieldersTyped: 0,
+              fieldersNone: 0 };
 /** @template T @param {T[]} xs @returns {T} */
 const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
 /** @template T @param {T[]} xs */
@@ -292,7 +318,36 @@ function builder(no, overs, o = {}) {
         else if (how === "caught" && r7 < 0.85) { fielder = { fielder: OTHER_FIELDER }; gen.catchOther++; }
         else if (how === "stumped") gen.stumpNobody++;
       }
-      return push({ kind: "ball", striker: at.striker, nonStriker: at.nonStriker, bowler: at.bowler, ...e, ...fielder });
+      // Who fielded it, as references (RECOGNITION R12, P2), on the ninth
+      // stream: most fielding wickets name theirs, some name nobody.
+      /** @type {Record<string, any>} */ let named = {};
+      if (isWicketBall(e) && e.fielders === undefined && (how === "caught" || how === "stumped" || how === "run_out")) {
+        const r9 = rnd9();
+        const k = keeperOf(at);
+        // Only the fielding side's, as db/150's door allows; a typed
+        // substitute where the side in the field has nobody on the sheet.
+        const side = fieldingIds(at);
+        const one = () => (!side.length || rnd9() < 0.15 ? (gen.fieldersTyped++, TYPED_SUB) : side[Math.floor(rnd9() * side.length)]);
+        const fn = /** @type {any} */ (fielder).fielder ?? e.fielder;
+        const keeperMay = (/** @type {any} */ kk) => kk && (!isId(kk.id) || side.includes(kk.id));
+        if (r9 >= 0.7) gen.fieldersNone++;
+        else if (how === "stumped") {
+          // The keeper's alone (Law 39): by his reference, or nobody while
+          // none is recorded or he is not the fielding side's on the sheet.
+          if (keeperMay(k)) { named = { fielders: [k.id] }; gen.fieldersStump++; } else gen.fieldersNone++;
+        } else if (how === "caught") {
+          if (k && (fn === k.id || fn === k.name)) {
+            if (keeperMay(k)) { named = { fielders: [k.id] }; gen.fieldersKeeperCatch++; } else gen.fieldersNone++;
+          } else { named = { fielders: [one()] }; }
+          gen.fieldersCatch++;
+        } else {
+          const a = one();
+          const b2 = rnd9() < 0.4 ? side.find((x) => x !== a) : undefined;
+          named = { fielders: b2 ? [a, b2] : [a] };
+          gen.fieldersRunOut++; if (b2) gen.fieldersRunOutTwo++;
+        }
+      }
+      return push({ kind: "ball", striker: at.striker, nonStriker: at.nonStriker, bowler: at.bowler, ...e, ...fielder, ...named });
     },
     /**
      * The umpires suspend the bowler on, mid-over (SCRBRD-094 item 2), and
@@ -908,7 +963,13 @@ async function career(/** @type {string[]} */ players = PLAYERS) {
     keeping.set(r.player_id, { matches: Number(r.matches), innings: Number(r.innings_kept), catches: Number(r.catches),
                                stumpings: Number(r.stumpings) });
   }
-  return { bat, bowl, dismissals, dismissalBy, wicketBy, batView, bowlView, dismissalsView, keeping };
+  // The fielding (RECOGNITION R12, db/150).
+  /** @type {Map<string, any>} */ const fielding = new Map();
+  for (const r of await q(`select * from player_fielding_career where player_id = any($1)`, [players])) {
+    fielding.set(r.player_id, { catches: Number(r.catches), runOuts: Number(r.run_outs), keepingCatches: Number(r.keeping_catches),
+                                stumpings: Number(r.stumpings), inningsKept: Number(r.innings_kept) });
+  }
+  return { bat, bowl, dismissals, dismissalBy, wicketBy, batView, bowlView, dismissalsView, keeping, fielding };
 }
 
 /** opposition_squad() for a fixture against the other school, a day inside the window (db/46), as a coach of this one. */
@@ -1556,6 +1617,46 @@ try {
     }
   }
 
+  group("Who fielded the wicket: fielding_credit and player_fielding_career are the fold (RECOGNITION R12, db/150)");
+  {
+    console.log(`  fielders named on ${gen.fieldersCatch} catches (${gen.fieldersKeeperCatch} the keeper's), ${gen.fieldersStump} stumpings, ` +
+                `${gen.fieldersRunOut} run outs (${gen.fieldersRunOutTwo} by two), ${gen.fieldersTyped} a typed substitute; ${gen.fieldersNone} name nobody`);
+    ok("...not vacuous: catches, the keeper's, stumpings, run outs by one and two, a typed name, and wickets naming nobody",
+       gen.fieldersCatch >= 5 && gen.fieldersKeeperCatch >= 1 && gen.fieldersStump >= 1 && gen.fieldersRunOut >= 5
+       && gen.fieldersRunOutTwo >= 1 && gen.fieldersTyped >= 1 && gen.fieldersNone >= 5, JSON.stringify(gen));
+    // The fold's credits, ball by ball, as the career log reads them: the
+    // innings that are no super over (the generator writes none).
+    /** @type {Map<string, number>} */ const want = new Map();
+    for (const [no, inn] of byInnings) {
+      for (const x of inn.ballLog) for (const c of fieldingCredits(x)) {
+        const key = `${no}|${x.seq}|${c.ref}|${c.act}`;
+        want.set(key, (want.get(key) ?? 0) + 1);
+      }
+    }
+    const got = new Map((await q(`select innings, seq, fielder_ref, act, count(*)::int n from fielding_credit
+                                   where match_id = $1 group by 1, 2, 3, 4`, [MATCH]))
+      .map((r) => [`${r.innings}|${r.seq}|${r.fielder_ref}|${r.act}`, r.n]));
+    const sheet = (await q(`select player_id from match_squad where match_id = $1 and not withdrawn and side = 'home'`, [MATCH])).map((r) => r.player_id);
+    ok("MATCH's sheet is the four the generator names from", sheet.length === MATCH_SHEET.size && sheet.every((x) => MATCH_SHEET.has(x)), JSON.stringify(sheet));
+    const bad = differences(want, got);
+    ok(`fielding_credit: every fielder of every standing catch, stumping and run out (${want.size})`, bad.length === 0 && want.size >= 10, show(bad));
+    // A boy's career moved by exactly the facts' fielding lines.
+    const facts = deriveFacts(rows.map(fromRow), PLAYERS, { ctx: {} });
+    /** @type {Map<string, any>} */ const wantF = new Map(PLAYERS.map((p) => [p, { catches: 0, runOuts: 0 }]));
+    for (const l of facts.fielding) { const w = wantF.get(l.player); if (w) { w.catches += l.catches; w.runOuts += l.runOuts; } }
+    const fD = deltas(car0.fielding, car1.fielding, ["catches", "runOuts"]);
+    for (const f of ["catches", "runOuts"]) {
+      const b2 = fieldDifferences(wantF, fD, [f]);
+      ok(`player_fielding_career ${f}, per fielder: the facts' fielding lines`, b2.length === 0, show(b2));
+    }
+    ok("...and its keeping is db/68's keeping record", fieldDifferences(
+      new Map(PLAYERS.map((p) => [p, { keepingCatches: e.keeping.get(p)?.catches ?? 0, stumpings: e.keeping.get(p)?.stumpings ?? 0,
+                                       inningsKept: e.keeping.get(p)?.innings ?? 0 }])),
+      deltas(car0.fielding, car1.fielding, ["keepingCatches", "stumpings", "inningsKept"]), ["keepingCatches", "stumpings", "inningsKept"]).length === 0);
+    ok("a typed substitute holds no career figure", !car1.fielding.has(TYPED_SUB) && got.size > 0
+       && [...got.keys()].some((k) => k.includes(TYPED_SUB)));
+  }
+
   group("The opposition's figures, both ways round");
   const oppH1 = await opposition(HIL, WES, "coach@example.invalid");
   const oppW1 = await opposition(WES, HIL, "coach.wes@example.invalid");
@@ -2068,6 +2169,38 @@ try {
   const takenOff = await Promise.all([["Wd", "stumped"], ["Wd", "run_out"], ["Nb", "run_out"], ["Nb", "hit_twice"]]
     .map(([bt, d], i) => tryInsert(M_DOOR, 20 + i, { kind: "ball", ball_type: bt, value: 0, dismissal: d, striker: PLAYERS[1] }, scorer)));
   ok("...a stumping or a run out off a wide, a run out or hit twice off a no-ball, taken", takenOff.every((t) => t.ok), JSON.stringify(takenOff));
+  // db/150's door (RECOGNITION R12): the fielders a way out may name.
+  const DOOR_FIELDERS = "ball_event_wicket_fielders";
+  const fieldersBad = await Promise.all([
+    { ball_type: "W", dismissal: "caught", payload: { fielders: ["A", "B"] } },
+    { ball_type: "W", dismissal: "run_out", payload: { fielders: ["A", "A"] } },
+    { ball_type: "W", dismissal: "run_out", payload: { fielders: ["A", "B", "C"] } },
+    { ball_type: "W", dismissal: "bowled", payload: { fielders: ["A"] } },
+    { ball_type: "run", value: 1, payload: { fielders: ["A"] } },
+    { ball_type: "W", dismissal: "caught", payload: { fielders: [] } },
+    { ball_type: "W", dismissal: "caught", payload: { fielders: "A" } },
+  ].map((c, i) => tryInsert(M_DOOR, 30 + i, { kind: "ball", value: 0, striker: PLAYERS[1], ...c }, scorer)));
+  ok("db/150: two on a catch, a name twice, three on a run out, any on a bowled or a run, none, or no list: refused",
+     fieldersBad.every((t) => !t.ok && t.code === "23514" && t.table === "ball_event" && t.constraint === DOOR_FIELDERS),
+     JSON.stringify(fieldersBad));
+  const fieldersOk = await Promise.all([
+    { ball_type: "W", dismissal: "caught", payload: { fielders: [PLAYERS[6]] } },
+    { ball_type: "W", dismissal: "run_out", payload: { fielders: [PLAYERS[6], "S Sub"] } },
+    { ball_type: "Wd", dismissal: "run_out", payload: { fielders: [PLAYERS[6]] } },
+    { ball_type: "W", dismissal: "caught", payload: { fielders: null } },
+  ].map((c, i) => tryInsert(M_DOOR, 40 + i, { kind: "ball", value: 0, striker: PLAYERS[1], ...c }, scorer)));
+  ok("...a catch by one, a run out by two (a typed name among them), off a wide, a JSON null: taken", fieldersOk.every((t) => t.ok), JSON.stringify(fieldersOk));
+  // The review's S3: a fielder named by id is the fielding side's. MATCH has
+  // a home sheet; refused rows write nothing, so it is asked of MATCH itself.
+  const [onSheet, offSheet, notInMatch] = [HIL_1XI[1], OTHERS[0], WES_1XI[0]];
+  const offSide = await Promise.all([offSheet, notInMatch].map((f, i) => tryInsert(MATCH, 900001 + i,
+    { kind: "ball", ball_type: "W", value: 0, dismissal: "caught", striker: null, bowler: HIL_1XI[0], payload: { fielders: [f] } }, scorer)));
+  ok("db/150: a boy not on the sheet, or another school's boy, named as the catcher: refused",
+     offSide.every((t) => !t.ok && t.code === "23514" && t.constraint === DOOR_FIELDERS), JSON.stringify(offSide));
+  const side = async (/** @type {string | null} */ b, /** @type {string | null} */ s, /** @type {string} */ f) =>
+    (await q(`select ball_fielder_on_side($1, 0::smallint, 2147483647, $2, $3, $4) ok`, [MATCH, b, s, f]))[0].ok;
+  ok("...the bowler's team-mate on the sheet may; a team-mate while his side bats (the striker on the sheet, a typed bowler) may not; a typed name may",
+     await side(HIL_1XI[0], null, onSheet) === true && await side(null, HIL_1XI[0], onSheet) === false && await side(null, HIL_1XI[0], "S Sub") === true);
 
   // The API: a ball with no type from a client that sends one is refused on
   // its own, named, and the rest of the batch written (SCRBRD-077).

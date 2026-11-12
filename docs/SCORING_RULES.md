@@ -886,3 +886,33 @@ mode's one-tap WIDE takes no runs and no wicket, as before. `replay.test.mjs` gr
   wide or a no-ball at the overs bowled so far; a retirement at the last ball bowled.
 - **Not built:** a "one short" key (F6, Q7: record the runs made and change ends by hand, which F3 now keeps safe); a
   ball released from quarantine re-judged (F14, not decided).
+
+## Who fielded the wicket, and a no-ball's four all run (RECOGNITION R12, db/150)
+
+Kameel approved slice R12 on 11 Nov 2026 ("Yes, after the pad fixes").
+
+- **`fielders` on a wicket (P2).** The fielders the scorer named, in order: one for a catch (the catcher; the bowler
+  for caught and bowled), one for a stumping (the keeper, Law 39), one or two for a run out (Law 38). Each is a player
+  id where SCRBRD holds a row and the name as typed where it does not — a substitute (Law 24), the other side's boy —
+  the rule striker and bowler follow. `fielder` stays the scorecard's text; a run out by two reads `run out (A/B)`.
+  `FIELDED_DISMISSALS`, `fieldersFit()`; refused by the constructor, by the Laws at commit (`fielders_invalid`: the
+  wrong number for the way out, a name twice, a batter at the crease; a stumping's fielder not the keeper on the
+  record is `stumped_not_keeper`, as its `fielder` is) and by db/150's door. The wicket sheet names them; a run out
+  offers *Add a second fielder*.
+- **The run-out contribution rule.** Each fielder named in a run out is credited one run out; the wicket is one
+  wicket for the side. `fieldingCredits()` (replay.mjs) reads the ball log the fold leaves: only a catch, stumping or
+  run out that stood (a free hit saves a catch and a stumping), never a voided ball.
+- **Unknown is not nought.** A wicket that names nobody by reference — every wicket before R12, a scorer who named
+  nobody, a scorebook card's "c Naidoo" — credits nobody. Nothing is read from the scorecard's text. The facts count
+  such wickets (`unattributed`), and Player of the Match counts fielding only where it is nought.
+- **The fold does not move.** No figure, card line or keeping count reads `fielders`; db/68's keeping record still
+  matches a keeper's catch by his reference or his name. `tools/replay-equality.mjs` folds every log in a database
+  and the scoring tests' logs with the engine at a ref and this one: 66 of 66 identical against main on the seed and
+  the demo season (11 Nov 2026).
+- **A no-ball's four or six all run (P8).** The pad's no-ball panel has *All run, not a boundary* (one tap, off by
+  default) and the no-ball sheet asks *Did it reach the boundary?* of a four or six off the bat; said, the no-ball
+  carries `boundary: false`, which `boundaryHit()` and db/121's `ball_boundary()` already read. Byes are never a
+  batter's boundary. Untouched, every no-ball is the event it was.
+- **SQL.** db/150: `ball_fielders_fit()`, the door `ball_event_wicket_fielders`, `fielding_credit` (one row per
+  credit), and `player_fielding_act` / `_career` / `_by_season` (credits, and db/68's keeping record). Held equal to
+  the fold by `tools/smoke-fold-figures.mjs`.

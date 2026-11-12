@@ -30,6 +30,8 @@ const SUITES = [
   // What a signed-out page may show about a pupil (SCRBRD-083): the surfaces,
   // the never-public list against every masked column, the name rule.
   ["public",   "packages/policy/test/public.test.mjs"],
+  // Pilot Match phase 2 (db/151): no migration but the pilot's names schema pilot.
+  ["pilot-isolation", "packages/policy/test/pilot-isolation.test.mjs"],
   // The plan's word list (SCRBRD-138 phase B §3): SG-10's words in code, the
   // one copy the news route and the composer both read.
   ["words",    "packages/policy/test/words.test.mjs"],
@@ -45,6 +47,9 @@ const SUITES = [
   // The wicket-keeper (SCRBRD-126): the event, the keeper at each ball, his
   // catches and stumpings, a stumping only his (Law 39), the words.
   ["keeper",   "packages/scoring/test/keeper.test.mjs"],
+  // RECOGNITION R12: who fielded the wicket (P2) — the event, the Laws, the
+  // credit, the facts, old logs folding as they did — and P8's no-ball four.
+  ["fielding", "packages/scoring/test/fielding.test.mjs"],
   // ── SCRBRD-114 phase 3a (db/69): a match's result ──
   // describeResult() over the design's logs (result-logs.mjs, which
   // smoke-fold-figures holds match_result() to): the abandoned seal and two
@@ -114,6 +119,8 @@ const SUITES = [
   // The pad's Area step records a point, the same event as the Pro hub's for
   // the same tap (SCRBRD-101). Imports pad.jsx, so it needs the transform.
   ["pad-point", "apps/web/test/pad-point.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // A tap on the field places the ball and presses nothing that replaces it (11 Nov 2026).
+  ["follow-through", "apps/web/test/follow-through.test.mjs"],
   // The pad's half of the Laws audit (28 Oct 2026): the run out's end on every
   // run out, whose the runs were, obstruction, the free-hit note, runs not a
   // boundary, a Two-Day's four innings.
@@ -209,6 +216,10 @@ const SUITES = [
   // overs, batters, bowler, undo), no route to the sync path or to any normal
   // list, delete one and delete all, the weather record, the scorecard file.
   ["practice", "apps/web/test/practice.test.mjs"],
+  // Pilot Match phase 2: no name on the wire (a property test), and phase 1's locks.
+  ["pilot-wire", "apps/web/test/pilotWire.test.mjs"],
+  // ...and the phone's pilot store: slots, what leaves, the refusal, the names' date.
+  ["pilot-store", "apps/web/test/pilot.test.mjs"],
   // A panel that throws is a quiet card in its place, logs its name and the
   // message once, and resets on "Try again" (ui/ErrorBoundary.jsx); same transform.
   ["error-boundary", "apps/web/test/error-boundary.test.mjs", ["--import", "./tools/register-jsx.mjs"]],

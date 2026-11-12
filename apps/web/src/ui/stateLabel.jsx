@@ -36,6 +36,8 @@ import { Icon } from "./icons.jsx";
 export const STATE_WORDS = Object.freeze({
   demo: "Demo",
   practice: "Practice match · kept on this phone",
+  // PILOT_MATCH_PHASE2 §3.6: a Pilot Match, sent to SCRBRD, its names never shown.
+  pilot: "Pilot match · names kept private",
   readonly: "Read only",
   provisional: "Provisional",
   review: "Under review",
@@ -48,6 +50,7 @@ export const STATE_KINDS = Object.freeze(Object.keys(STATE_WORDS));
 const KIND = {
   demo: { icon: "sparkles", tone: () => T.semantic.warningText, weight: 700 },
   practice: { icon: "smartphone", tone: () => T.content.secondary, weight: 600 },
+  pilot: { icon: "lock", tone: () => T.content.secondary, weight: 600 },
   readonly: { icon: "lock", tone: () => T.content.secondary, weight: 600 },
   provisional: { icon: "hourglass", tone: () => T.content.secondary, weight: 600 },
   review: { icon: "scale", tone: () => T.semantic.warningText, weight: 700 },
@@ -56,7 +59,7 @@ const KIND = {
 
 /**
  * @param {object} props
- * @param {"demo" | "practice" | "readonly" | "provisional" | "review" | "official"} props.kind
+ * @param {"demo" | "practice" | "pilot" | "readonly" | "provisional" | "review" | "official"} props.kind
  * @param {string | null} [props.why]   one short line, after the words: why it is this state, where known
  * @param {boolean} [props.compact]     12px rather than 13px (the floor is 12)
  * @param {import("react").ReactNode} [props.children]  anything that belongs on the same line (a practice match's "last saved")

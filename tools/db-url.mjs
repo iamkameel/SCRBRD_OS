@@ -52,6 +52,37 @@ export const dbName = () => DB;
  */
 export const lockFile = () => (DB === "scrbrd" ? "/tmp/scrbrd-db.lock" : `/tmp/scrbrd-db-${DB}.lock`);
 
+/**
+ * Is this connection string a database on this machine: 127.0.0.1,
+ * localhost, or a Unix socket (no host, or a `host=/path` parameter)? Not the
+ * compose service `db`, and nothing unparseable. For a walk that writes what
+ * must never reach a real database (the Pilot Match walks turn its switches
+ * on), so a production DATABASE_URL left in a shell is refused before any
+ * connection is made.
+ * @param {string} url
+ */
+export function onThisMachine(url) {
+  let u;
+  try { u = new URL(url); } catch { return false; }
+  if (!/^postgres(ql)?:$/.test(u.protocol)) return false;
+  const param = u.searchParams.get("host");
+  if (param != null) return param.startsWith("/");
+  return u.hostname === "" || u.hostname === "127.0.0.1" || u.hostname === "localhost";
+}
+
+/**
+ * Stop a walk unless both its connection strings are on this machine.
+ * @param {string} walk
+ */
+export function refuseUnlessLocal(walk) {
+  for (const [what, url] of [["DATABASE_URL", ownerUrl()], ["APP_DATABASE_URL", appUrl()]]) {
+    if (!onThisMachine(url)) {
+      console.error(`✗ ${walk}: refusing ${what}, which is not a database on this machine (127.0.0.1, localhost or a Unix socket).`);
+      process.exit(2);
+    }
+  }
+}
+
 // Chromium (and every browser built on it) refuses to navigate to a fixed
 // list of ports associated with well-known plaintext protocols —
 // net::ERR_UNSAFE_PORT — a fact no walk's literal port number ever had to

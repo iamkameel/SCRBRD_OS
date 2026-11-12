@@ -7,6 +7,8 @@
 
 4 Nov 2026: the wagon wheel is pilot-critical, not optional (Kameel: 'wagon wheel is a given! definitely not optional!'); spectators read every side's team posts but no player stats or passports (supersedes REACH-D3); a read-only pilot security audit ran and its fixes are being built (db/132).
 
+7 Nov 2026: Kameel closed REACH-D2 (a pupil no longer reads team-mates' career figures; the parents' terms popia-2026-01 stand); the ratings fix shipped in #273 (commit 89cb61bd, live since 7 Nov); the career-figure build is open (see "Close REACH-D2" below). Skills' Overall radar (#274) closes SCRBRD-047.
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -753,6 +755,8 @@ for the owner's key, a platform administrator, a school administrator and a two-
 - **Skills rewards, par refusals and Training, 2026-10-29** — **Done 2026-10-29** (#194 via #211, commit 0da75d4): rewards behind the Skills module, logged per school; a par refusal logs the rule it refused under; Training on the team manager's menu; the Skills history browser walk (GA-I26a A3).
 - **Skills history walk, flaky fixed** — **Done 2026-10-29** (#210, commit 3a63fbd): the walk waits for the since-the-last-look read after a save, and no longer reads the stale panel.
 - **Two browser-walk races, fixed** — **Done 2026-10-30** (#218, commit 76e7de9): the skills-history bar now waits for its re-read; the retire walk (`smoke-browser-retire`) waits for the pad's write.
+- **Skills door for the pupil (GA-I26a)** — **Partly done 2026-11-11** (#279, merge a63aa6a4): the pupil's Skills door.
+- **Scenario controls (GA-I29)** — **Decided 2026-11-11** (Kameel, in chat, 11 Nov 2026): "Scenario controls (GA-I29) - probability and forecasts are based scoring-rates and overs and what's achievable etc." No entry existed for GA-I29; this line was added on 11 Nov.
 
 ## Match page grammar — from the ESPNcricinfo audits (added 2026-10-23)
 
@@ -772,12 +776,14 @@ one duplicates an existing entry, strike the `CRI-*` line and point at the older
 - ~~**CRI-1.1** — `Board`: last-wicket and "updated · sync" rows. Evidence: `ui/board.jsx:214` has no last-wicket prop.~~ **Done 2026-10-29** (#206, commit 5a44f4d): the board shows the last wicket and an "updated · sync" row.
 - ~~**CRI-1.2** — `statusSentence()` shared by fixture list, board and push. Evidence: `scores.jsx` prints innings lines only.~~ **Done 2026-10-29** (#206, commit 5a44f4d): one status sentence, shared by the fixture list, the board and push.
 - ~~**CRI-1.3** — Tabs Summary, Scorecard, Commentary + More; a route per tab. Evidence: `MatchView.jsx:60–66`.~~ **Done 2026-10-30** (#213, commit cc48221): on a phone the match page shows Summary, Scorecard and Commentary plus a More menu, and each tab has its own address.
-- **CRI-1.4** — "Enter scoring" on the match page, authorised scorer only. Policy test required first.
-- **CRI-1.5** — Scorecard dismissal → that ball in Commentary; back restores state.
-- **CRI-1.6** — Sticky scorecard header and scroll cue at 360px.
-- **CRI-1.7** — Summary becomes the result view after full time.
-- **CRI-1.8** — Win probability from the par line, labelled "par estimate" (decided 2026-10-23).
+- ~~**CRI-1.4** — "Enter scoring" on the match page, authorised scorer only. Policy test required first.~~ **Done 2026-11-11** (#266, merge commit 060e0a2b).
+- ~~**CRI-1.5** — Scorecard dismissal → that ball in Commentary; back restores state.~~ **Done 2026-11-11** (#266, merge commit 060e0a2b).
+- ~~**CRI-1.6** — Sticky scorecard header and scroll cue at 360px.~~ **Done 2026-11-11** (#266, merge commit 060e0a2b).
+- ~~**CRI-1.7** — Summary becomes the result view after full time.~~ **Done 2026-11-11** (#266, merge commit 060e0a2b).
+- ~~**CRI-1.8** — Win probability from the par line, labelled "par estimate" (decided 2026-10-23).~~ **Done 2026-11-11** (#266, merge commit 060e0a2b).
 - **Phone More menu: Tab leaves it** — **Done 2026-10-30** (#214, commit a1262cb): on the match page's phone More menu, Tab leaves the menu and closes it, following the WAI-ARIA menu button pattern (a follow-up to CRI-1.3).
+
+**Sprint 1 complete 2026-11-11** (#266, merge commit 060e0a2b): CRI-1.4 to CRI-1.8 are done.
 
 **Sprint 2:** CRI-2.1 commentary chips and over jump · CRI-2.2 `sourceLine` and capture coverage on every chart ·
 CRI-2.3 chart-to-delivery drill-down · CRI-2.4 reader freshness and low-bandwidth mode · CRI-2.5 three spectator charts.
@@ -1763,8 +1769,8 @@ already-correct. Risk LOW. Migration UNKNOWN until the audit.
 - **SCRBRD-046** — KDE heatmap over the wagon wheel. `placementEngine.ts` specifies continuous 2D Gaussian
   kernel density for shot distribution; `kde|density` returns zero hits. Same story as -045: the data is
   captured, the read does not exist. Pairs with the blueprint's zone-based comparative analytics. Risk LOW.
-- **SCRBRD-047** — Player skill radar over the rubric axes (`PlayerSkillRadarChart.tsx`). The rubric
-  exists and is tested; the radar does not. Risk LOW.
+- ~~**SCRBRD-047** — Player skill radar over the rubric axes (`PlayerSkillRadarChart.tsx`). The rubric
+  exists and is tested; the radar does not. Risk LOW.~~ **Done 2026-11-07** (#274, commit 8c013c30): one Overall radar over the rubric axes on the Skills Matrix, the squad snapshot and Profiles (`apps/web/src/lib/radar.js`, `ui/overallRadar.jsx`).
 - **SCRBRD-048** — Notifications name the role and scope that generated them. §19: *"multi-role users
   should see the role and scope that generated each notification."* Also §13's *"a role switch visibly
   changes action and dashboard context"* — worth auditing whether the switcher shows the active role **and
@@ -3480,6 +3486,8 @@ and a NULL type and a W with no method reach the views through `ball_event_live`
 
 **Partly done 2026-10-31:** recognition slice R3, the fixture class (`docs/design/RECOGNITION_reconciliation.md`, R3 row), which decides which fixtures count toward awards and records: competitive, festival or friendly, and the reason a match stands on no board. A friendly is a fixture with no competition (db/127) (#228, commit 516c548).
 
+**Partly done 2026-11-11:** recognition slices R5c (capabilities and the carve-out; db/145 `recognition_decide`) and R8 (Colours; db/146) (#268, merge commit 259c34b8), live on both databases since 7 Nov.
+
 ### ~~SCRBRD-088~~ — CLOSED · A handover in the second innings cannot verify
 **Closed 2026-09-25** in `105e467` (#37): db/45, as the build note below records.
 **Priority:** P1 · **Domain:** Scoring / handover · **Type:** bug (found by db/43, 2026-09-25)
@@ -4134,6 +4142,8 @@ Kameel, after a look at beta-2's four cockpits (`iamkameel/scrbrd-beta-2`, `Coac
 **Partly done 2026-10-14:** SCRBRD-136/137 away visibility: the ball log follows the fixture (db/97) (#147).
 
 **Partly done 2026-10-15:** Coach cards slice 1: "Where this comes from" on every signal card (GA-I27 C1 + C2) (#151).
+
+**Partly done 2026-11-11:** the pupil's Skills door and coaching points (GA-I27 C4) (#279, merge a63aa6a4).
 
 **Decided (Kameel, 2026-10-02), with SCRBRD-136:** D1–D16 of `docs/design/SCRBRD-136-137_coach_cockpit_and_feed.md` as recommended. Phase A (the Coach tab, the Dashboard card and the drawer over existing reads, no migration) first; the lead's three read findings are one small Opus fix beside it.
 
@@ -4846,6 +4856,19 @@ the design's §10. **Open:** phases B (consents read and public-name route, G2/G
 D (photo consent record), E (SCRBRD-110's cards), F (invoices, if Q1 says yes); Q10's narrow team-sheet read; the
 scorecard's row expansion for another child (§10 departure 11).
 
+### Close REACH-D2: pupil reads of team-mates' career figures
+**Priority:** P1 · **Domain:** Families / Privacy · **Type:** build, Opus (Kameel, 7 Nov 2026; `docs/design/REACH_parent_pupil.md` §6.6 and §7)
+**Not started.** A pupil reads a team-mate's career, season and wagon-wheel pages today: `player.performance.read` is in the `player` bundle (`roles.mjs:330–335`), so the five per-boy reads (`career`, `career_by_season`, `dismissal_breakdown`, `player_shot_points`, `bowler_day`) answer a team-mate. Decided 14 Oct as "leave them open"; closed by Kameel on 7 Nov 2026: a pupil no longer reads team-mates' career figures, and the parents' terms (popia-2026-01) stand as written ("his name on the sheet and scorecard, nothing more"). The ratings fix (PR #273) is done and is not this entry.
+**Exceptions (Kameel, 11 Nov 2026), both kept:** (1) the Compare card, "Me v a team-mate" (GA-I24 D10): a pupil sets one team-mate's season figures beside his own; (2) the captain's view (SCRBRD-138): the boy holding the captaincy reads his side's season figures, nothing else. Path (a) is ruled out: removing `player.performance.read` from the `player` bundle would break both.
+**Build:** path (b), the five reads gated on `is_family_of(player) OR` a staff capability `OR` 138's captain gate, in `read-api.mjs`, with `read.test.mjs` holding the SQL equal to `db/99`'s copy. The Compare card and the captain's season table keep their reads through their own gates. Sentence 14 of popia-2026-02 needs the redraft in `CONSENT_V2.md` before -02 is issued.
+**Acceptance criteria:**
+- [ ] A pupil's `career?playerId=` for a team-mate is refused; his own career and wagon wheel are still read.
+- [ ] The captain's tab reads as SCRBRD-138 decided.
+- [ ] The Compare card (one team-mate's season figures beside his own) and the captain's season table (SCRBRD-138) still work.
+- [ ] The match scorecard is unchanged (Q4).
+- [ ] `db/99` pupil walk asserts the above, and is green.
+**Regression risk:** MEDIUM (a pupil's read narrows; the captain's tab is the one place it could break).
+
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
 **Priority:** P2 · **Domain:** Front-end · **Type:** product polish (Kameel, 2026-09-26; checklist at
 https://claude.ai/artifact/63zVkqVAotrYYQk9dGUhAp; the rule is DESIGN_DIRECTION §1a)
@@ -5304,3 +5327,18 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - #254 (commit a2aab597, 2026-11-05): The parent's action list, A2: an ended link said plainly, and the school's terms (popia-2026-01) agreed in the app.
 - #253 (commit 2086c5bc, 2026-11-06): The platform owner's reads of a child are found by the school's "who read" (db/139).
 - #257 (commit 347aae8b, 2026-11-06): Backlog: recorded #248–#252 (docs only).
+
+## Merged 6–7 Nov 2026 with no backlog entry
+
+- #269 (commit 22d32776, 2026-11-06): Fixture and training days and times on the SA clock, not UTC (`apps/web/src/lib/saTime.js`).
+- #270 (commit 9d0caf60, 2026-11-07): Home page: a 3D floodlit ground you fly through on scroll (three.js, loaded after paint).
+- #271 (commit ca3988f9, 2026-11-07): The newsfeed on the home page and in the News view, with post covers (`apps/web/src/lib/newsFeed.js`).
+- #272 (commit ec96188a, 2026-11-07): The 'panel couldn't be shown' crash in Analytics, and two reads that failed for want of a school.
+- #273 (commit 89cb61bd, 2026-11-07): Ratings returns a boy's row only to readers of his development record: a pupil reads his own, a parent none (`services/api/read/read-api.mjs`). Part of the 7 Nov decisions; REACH-D2's career-figure build stays open (see "Close REACH-D2").
+- #274 (commit 8c013c30, 2026-11-07): Skills: one Overall radar on the Skills Matrix, the squad snapshot and Profiles. Closes SCRBRD-047 (struck through above).
+- #275 (commit a03e62d0, 2026-11-07): Demo dress rehearsal: 17 fixes to what a viewer would notice (labels, times, live card, signals, reads).
+
+## Merged 11 Nov 2026 with no backlog entry
+
+- #276 (merge commit 2e77e530, 2026-11-11): Docs: Kameel's 7 Nov and 11 Nov ratings decisions, and the 6–7 Nov merges.
+- #277 (merge commit 65f52f02, 2026-11-11): The stageshow skill (Benji Taylor, MIT) in `.claude/skills`.

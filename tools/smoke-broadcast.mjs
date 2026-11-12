@@ -9,11 +9,14 @@
  * The assertions that matter are about what leaves the API, not about what a
  * screen draws. A scoreboard at the boundary is seen by people who walked to
  * the ground; a stream overlay is permanent, copyable, and watched by an
- * audience nobody at the match chose. Both carry children's names.
+ * audience nobody at the match chose.
  *
  *   1. NOT PUBLISHED, NOTHING. A fixture nobody has opted in yields no state.
- *   2. THE MASKING IS SERVER-SIDE. Set a fixture to initials and the full name
- *      is not in the payload — not in an unrendered field, not in a console.
+ *   2. NO CHILD IS NAMED (db/149; Kameel, 11 Nov 2026, Q1(e): "the stream
+ *      caption: role words ('Batter') until its own consent"). Whatever the
+ *      fixture's name_display, and even for a boy the public page would name,
+ *      the overlay says "Batter", "Non-striker", "Bowler": no name, initial or
+ *      surname anywhere in the payload, signed in or signed out.
  *   3. PUBLISHING IS ITS OWN CAPABILITY. Scheduling a match is not
  *      broadcasting one.
  *   4. THE OVERLAY CARRIES NOTHING ELSE. No identifiers, no dates of birth, no
@@ -25,6 +28,7 @@
 import { spawn } from "node:child_process";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { nameFor } from "../services/api/public/redact.mjs";
 
 const PORT = port(8830);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -129,7 +133,38 @@ try {
      [401, 403].includes((await publish(m, undefined, { published: true })).status));
   ok("still nothing on the air", (await overlay(m, head)) === null);
 
-  group("The default is initials, and the full name never leaves the server");
+  // The batter is a boy the PUBLIC PAGE would name: a verified guardian's
+  // consent, live, and Hilton's side of the fixture published. The overlay
+  // still does not (Q1(e)): its own consent does not exist yet.
+  const office = (await q(`select id from app_user where email = 'registrar@example.invalid'`))[0]?.id
+    ?? (await q(`select id from app_user where school_id = $1 order by email limit 1`, [HIL]))[0].id;
+  {
+    const gu = (await q(`insert into app_user (school_id, email, name, role)
+                         values ($1, 'broadcast.parent@example.invalid', 'Broadcast Parent', 'guardian') returning id`, [HIL]))[0].id;
+    const ga = (await q(`insert into role_assignment (person_id, role, school_id) values ($1, 'guardian', $2) returning id`, [gu, HIL]))[0].id;
+    const gl = (await q(
+      `insert into assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                       consent_state, consent_version, consent_at, created_by, valid_from)
+       values ($1, $2, 'parent', 'verified', $3, now() - interval '30 days', 'granted', 'popia-2026-01',
+               now() - interval '30 days', $3, sa_today() - 30) returning id`, [ga, bat.id, office]))[0].id;
+    await q(`insert into public_name_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
+             values ($1, 'guardian', $2, $3, 'public-names-2026-09', sa_today() - 10, $4)`, [bat.id, ga, gl, office]);
+    await q(`update public_names_off set names_off = false where school_id = $1`, [HIL]);
+    await q(`insert into fixture_publication (match_id, side, school_id, team_code, published, set_by)
+             values ($1, 'home', $2, '1XI', true, $3)`, [m, HIL, office]);
+  }
+  const people = await q(`select * from public_match_people($1)`, [m]);
+  const servedOn = people[0]?.served_on;
+  ok("control: the public page would name the batter (publicName() over its own read)",
+     !!nameFor(people.find((p) => p.player_id === bat.id), servedOn));
+
+  /** Every word of every child's name, which no overlay payload may carry. */
+  const nameWords = [bat, other, bowl].flatMap((p) => p.full_name.split(" "));
+  const leaks = (/** @type {string} */ s) => nameWords.filter((w) => s.includes(w));
+  const roles = (/** @type {any} */ s) =>
+    s?.striker === "Batter" && s?.non_striker === "Non-striker" && s?.bowler === "Bowler";
+
+  group("No child is named: role words, whatever the school chose");
   const up = await publish(m, head, { published: true, strapline: "Hilton v Michaelhouse · 1st XI" });
   ok("the director of sport can publish", up.status === 200);
   ok("...and it defaults to initials without anybody choosing", up.body?.name_display === "initials");
@@ -141,13 +176,26 @@ try {
   ok("the score is the derived one, not a stored one",
      Number(st?.runs) === expectedRuns && Number(st?.legal_balls) === 12);
   ok("...with the overs a human says out loud", st?.overs === "2.0");
-  ok("the striker is reduced to an initial and a surname",
-     st?.striker === `${bat.full_name[0]} ${bat.full_name.split(" ").slice(-1)[0]}`);
-  // THE ONE THAT MATTERS. Not "the widget renders initials" — the full name is
-  // not in the response at all.
-  ok("the batter's full name is nowhere in the payload", !payload.includes(bat.full_name));
-  ok("...nor the non-striker's", !payload.includes(other.full_name));
-  ok("...nor the bowler's", !payload.includes(bowl.full_name));
+  // THE ONE THAT MATTERS. Not "the widget renders a role" — no name, initial
+  // or surname is in the response at all, the consented boy's included.
+  ok("the striker, non-striker and bowler are role words", roles(st));
+  ok("no word of any child's name is in the payload", leaks(payload).length === 0);
+
+  // Signed out: the database function the API reads, called as the
+  // application with nobody signed in, gives the same row.
+  {
+    const app = new pg.Client({ connectionString: appUrl() });
+    await app.connect();
+    try {
+      await app.query("begin");
+      await app.query("select set_config('app.user_id', '', true)");
+      const out = (await app.query("select * from broadcast_state($1)", [m])).rows[0];
+      await app.query("rollback");
+      ok("signed out reads the same row as the director of sport",
+         JSON.stringify(out) === JSON.stringify(st) && roles(out));
+    } finally { await app.end(); }
+  }
+  ok("a coach signed in reads the same names: none", roles(await overlay(m, coach)));
 
   group("The overlay carries nothing but the scoreboard");
   const keys = Object.keys(st ?? {});
@@ -157,12 +205,12 @@ try {
   ok("no contact details", !keys.some((k) => /email|phone|address|guardian/i.test(k)));
   ok("the strapline the school chose is there", st?.strapline === "Hilton v Michaelhouse · 1st XI");
 
-  group("Naming a child in full is a decision, and it is recorded as one");
+  group("A school choosing full names still names nobody (Q1(e))");
   const full = await publish(m, head, { published: true, nameDisplay: "full" });
-  ok("a school may choose it deliberately", full.body?.name_display === "full");
+  ok("the setting is kept as the school chose it", full.body?.name_display === "full");
   const named = await overlayRaw(m, head);
-  ok("...and only then does the whole name appear",
-     JSON.stringify(named.body).includes(bat.full_name));
+  ok("...and the overlay still says only the roles", roles(named.body?.rows?.[0]));
+  ok("...with no word of any child's name in the payload", leaks(JSON.stringify(named.body)).length === 0);
   ok("the row remembers who decided",
      !!(await q(`select published_by from match_broadcast where match_id = $1`, [m]))[0]?.published_by);
 
@@ -170,10 +218,8 @@ try {
   await publish(m, head, { published: true, nameDisplay: "none" });
   const anon = await overlayRaw(m, head);
   const anonSt = anon.body?.rows?.[0];
-  ok("no player is named", anonSt?.striker === null && anonSt?.bowler === null);
-  ok("...and no name is in the payload either",
-     !JSON.stringify(anon.body).includes(bat.full_name) &&
-     !JSON.stringify(anon.body).includes(bat.full_name.split(" ").slice(-1)[0]));
+  ok("no player is named: the same role words", roles(anonSt));
+  ok("...and no name is in the payload either", leaks(JSON.stringify(anon.body)).length === 0);
   ok("but the score still goes out — that is the point of the screen",
      Number(anonSt?.runs) === expectedRuns);
 

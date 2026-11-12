@@ -2382,10 +2382,10 @@ read asks `passport_consent_recipient_ok()`, and `POST /api/passport/consent`
 asks it first (answering `not_his_union` or `not_a_school`). Not to be
 pasted before Kameel's review.
 <!-- ── end db/124 ── -->
-<!-- ── db/147: the ball log's reads ask once a match ── -->
-#### The ball log's reads ask once a match, not once a ball (db/147)
+<!-- ── db/152: the ball log's reads ask once a match ── -->
+#### The ball log's reads ask once a match, not once a ball (db/152)
 
-`db/147_ball_log_read_per_match.sql` is a speed fix with no change to who
+`db/152_ball_log_read_per_match.sql` is a speed fix with no change to who
 reads what. Every career, season, milestone, best, record, spell and
 live-score read goes through `ball_event_live`, and each of its scans of the
 log ran `ball_event_read` on every ball, so a career read took seconds at
@@ -2406,7 +2406,7 @@ unchanged and still guard every direct read of the table.
 Any `CREATE`, `ALTER` or `DROP POLICY` on those three tables, or a re-created
 view, breaks the live pin at once. From then on the view reads exactly what
 the reader's own `SELECT` of each table returns: correct, and as slow as before
-db/147, until the view is re-stated for the new policies. The verifier says so
+db/152, until the view is re-stated for the new policies. The verifier says so
 (§9, §126). **After a restore into a new database** (new catalogue xmins) the
 view also reads that way. To bring the speed back, the owner runs
 `SELECT ball_log_repin();`. It re-pins only if the text pin holds, and
@@ -2438,19 +2438,19 @@ No other table, and no column, row or policy, changes. It refuses to run
 unless the view in place is db/121's or its own, or if a policy it states has
 changed. A second paste changes nothing.
 
-Paste `node tools/bundle-sql.mjs --apply 147` after 146, then the verify
+Paste `node tools/bundle-sql.mjs --apply 152` after 151, then the verify
 bundle. §126 is its proof:
 - the view row for row against db/121's own definition under row security,
   for every seeded reader;
-- on a pad's credential at every fixture, either side's;
+- on a pad's credential at each school's busiest fixture, at either end;
 - in support sessions, and with match's row security lifted;
 - with a ball, a void and a re-judged striker planted;
 - with a RESTRICTIVE policy added, for the fail-closed path.
 
 §9 names the view as its one exception. **Schema first**: the API built with
-it refuses to start without db/147 (`expected-migrations.json`); it needs
+it refuses to start without db/152 (`expected-migrations.json`); it needs
 nothing new from it to run.
-<!-- ── end db/147 ── -->
+<!-- ── end db/152 ── -->
 
 ### 5 · Cloud Run, the first time
 

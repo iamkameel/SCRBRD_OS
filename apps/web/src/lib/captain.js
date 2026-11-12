@@ -244,6 +244,24 @@ export function matchupWords(t) {
   return `${t.runs} off ${t.balls} ball${t.balls === 1 ? "" : "s"}, ${out}`;
 }
 
+/**
+ * The S5 card's first line, "R Pillay v pace · 36 balls · 42 runs · not out":
+ * one function, so a coaching point that stood on it is re-derived in the
+ * same words (GA-I27 C-D5) and the two can be compared.
+ * @param {string} name @param {{type: string, balls: number, runs: number, out: number}} t
+ */
+export function matchupLine(name, t) {
+  const n = (/** @type {number} */ k, /** @type {string} */ one) => `${k} ${one}${k === 1 ? "" : "s"}`;
+  return `${name} v ${t.type} · ${n(t.balls, "ball")} · ${n(t.runs, "run")} · ${t.out === 0 ? "not out" : t.out === 1 ? "out once" : `out ${t.out} times`}`;
+}
+
+/** The figures back out of matchupLine()'s words, or null. @param {string | null | undefined} line */
+export function matchupFigures(line) {
+  const m = /\bv (pace|spin) · (\d+) balls? · (\d+) runs? · (not out|out once|out (\d+) times)$/.exec(String(line ?? ""));
+  if (!m) return null;
+  return { type: m[1], balls: Number(m[2]), runs: Number(m[3]), out: m[4] === "not out" ? 0 : m[4] === "out once" ? 1 : Number(m[5]) };
+}
+
 // ── What the tab never says (§4) ───────────────────────
 
 /**

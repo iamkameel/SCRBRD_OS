@@ -8,7 +8,7 @@ Open `scrbrd.onrender.com/app`. Tap **Continue with Google**, or type your email
 
 ## Open the match
 
-Tap **Match Centre** (bottom bar, or under **More**). On the fixture tap **Open Live Scorer →** if live, **Start Scoring →** if not. Answer the sheets: **The toss** (winner, then **Bat** or **Bowl**), openers, **Opening Bowler**. If a bar says **Can't score yet**, tap its button.
+Tap **Match Centre** (bottom bar, or under **More**). On the fixture tap **Open live scorer →** if live, **Start scoring →** if not. Answer the sheets: **The toss** (winner, then **Bat** or **Bowl**), openers, **Opening bowler**. If a bar says **Can't score yet**, tap its button.
 
 ## Score a ball
 
@@ -16,7 +16,7 @@ The pad asks **Shot**, **Area**, **Outcome**: tap the runs on **Outcome**. For o
 
 Under the keys: **Dot**, **Wide**, **No ball**, **Bye**, **Leg bye**. Tap an extra, then its runs.
 
-**Wicket**: choose how out and the fielder, then **Confirm Out**. Pick the next batter on **Batting Order**, or type a name and tap **Go**. Pick each new bowler the same way.
+**Wicket**: choose how out and the fielder, then **Confirm out**. Pick the next batter on **Batting order**, or type a name and tap **Go**. Pick each new bowler the same way.
 
 **Undo**, beside **Dot**, takes back the last ball, even with no signal.
 

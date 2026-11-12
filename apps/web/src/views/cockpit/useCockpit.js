@@ -58,7 +58,7 @@ export function useCockpit({ match, gate, lifts = false, matchups = false, seen 
       const squad = await timed("match_squad", readLive("match_squad", q));
       const sheet = (squad ?? []).filter((r) => r.side === end && !r.twelfth);
       const [readiness, workload, spells, phases, trips, duties, officials, pitch, weather, conditions, notices, opposition, directives,
-        liftRows, liftExc] = await Promise.all([
+        liftRows, liftExc, points] = await Promise.all([
         panels.side ? timed("readiness", readLive("readiness", q)) : null,
         panels.load ? timed("workload", readLive("workload", teamCode ? { teamCode } : null)) : null,
         panels.load ? timed("bowling_spells", readLive("bowling_spells", q)) : null,
@@ -74,6 +74,10 @@ export function useCockpit({ match, gate, lifts = false, matchups = false, seen 
         panels.day ? readLive("bowling_directives") : null,
         lifts && panels.lifts ? timed("lift_expected", api(`/api/matches/${id}/lifts/expected`).then((r) => r.rows ?? []).catch(() => null)) : null,
         lifts && panels.liftOffice && school ? timed("lift_exceptions", api(`/api/lifts/exceptions?schoolId=${school}&matchId=${id}`).then((r) => r.rows ?? []).catch(() => null)) : null,
+        // S13 (GA-I27 slice 2): this fixture's coaching points, asked for only
+        // by a reader whose assignment holds player.note.read; the server
+        // answers under the note's policy and logs the read.
+        panels.points ? timed("coaching_points", readLive("coaching_points", q)) : null,
       ]);
       // Our boys against pace and spin: one read per boy on the sheet, with its coverage beside it.
       let by = null;
@@ -96,7 +100,7 @@ export function useCockpit({ match, gate, lifts = false, matchups = false, seen 
         conditionsRaw: conditions, conditions: panels.day ? conditionsState(conditions) : null,
         terms: termsFromConditions(conditions),
         notices, opposition: opposition?.[0] ?? null, directives,
-        lifts: liftRows == null ? null : liftRows, liftExceptions: liftExc, matchups: by,
+        lifts: liftRows == null ? null : liftRows, liftExceptions: liftExc, matchups: by, points,
         at,
       });
       setLoading(false);
@@ -186,7 +190,7 @@ export function useFeed({ match, gate, cockpit, fielding = [], capFor = null, bo
       lifts: reads.lifts != null ? liftCounts(reads.lifts, now) : null,
       liftExceptions: reads.liftExceptions ?? null, weather: reads.weather ?? null, duties: reads.duties ?? null,
       conditions: reads.conditions ?? { state: "failed", cap: null, freeHit: null }, notices: reads.notices ?? null,
-      matchups: reads.matchups ?? null, fielding, capFor, bowlerDay, docDayFor,
+      matchups: reads.matchups ?? null, points: reads.points ?? null, fielding, capFor, bowlerDay, docDayFor,
       at: { ...(reads.at ?? {}), ...(dayAt != null ? { bowler_day: dayAt } : {}), ...(foldAt != null ? { fold: foldAt } : {}) },
       head: head ?? null,
     });
