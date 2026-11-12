@@ -11693,15 +11693,16 @@ CREATE OR REPLACE FUNCTION _v152_owner_reads() RETURNS jsonb AS $$
                                            AND v.payload->>'target' = b.idempotency_key)))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- (cast) The kinds of reader the conditions name, each as the lowest person
--- id among _v152_people() who is one: a pupil whose side has a date it ended
+-- (cast) The kinds of reader the conditions name, each as the person among
+-- _v152_people() who is one with the first email (this file's people are
+-- named, '<tag>.<who>@example.invalid', and their ids are random), then id: a pupil whose side has a date it ended
 -- (a move or a leaving), a guardian whose link is not a live verified one
 -- (pending, rejected, revoked, ended or inactive), a named driver of a trip
 -- not cancelled, and a coach at a school that is the away side of a fixture
 -- with a ball. NULL where nobody is. The owner's.
 CREATE OR REPLACE FUNCTION _v152_kinds() RETURNS TABLE (kind text, person_id uuid) AS $$
-  WITH c AS (SELECT * FROM _v152_people() AS x(person_id))
-  SELECT 'pupil_dated', (SELECT min(c.person_id::text)::uuid FROM c
+  WITH c AS (SELECT x.person_id, u.email FROM _v152_people() AS x(person_id) LEFT JOIN app_user u ON u.id = x.person_id)
+  SELECT 'pupil_dated', (SELECT c.person_id FROM c
                           WHERE person_is_pupil(c.person_id)
                             AND EXISTS (SELECT 1 FROM team_membership tm
                                          WHERE tm.left_on IS NOT NULL
@@ -11709,36 +11710,40 @@ CREATE OR REPLACE FUNCTION _v152_kinds() RETURNS TABLE (kind text, person_id uui
                                                                 UNION
                                                                 SELECT g.player_id FROM role_assignment a
                                                                   JOIN assignment_subject g ON g.assignment_id = a.id
-                                                                 WHERE a.person_id = c.person_id AND a.role IN ('selfaccess', 'player'))))
+                                                                 WHERE a.person_id = c.person_id AND a.role IN ('selfaccess', 'player')))
+                          ORDER BY c.email, c.person_id LIMIT 1)
   UNION ALL
-  SELECT 'guardian_ended', (SELECT min(c.person_id::text)::uuid FROM c
+  SELECT 'guardian_ended', (SELECT c.person_id FROM c
                              WHERE EXISTS (SELECT 1 FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
                                             WHERE a.person_id = c.person_id AND a.role = 'guardian'
                                               AND (NOT a.active OR g.verification_state <> 'verified'
-                                                   OR g.valid_until <= sa_today() OR a.valid_until <= sa_today())))
+                                                   OR g.valid_until <= sa_today() OR a.valid_until <= sa_today()))
+                             ORDER BY c.email, c.person_id LIMIT 1)
   UNION ALL
-  SELECT 'driver', (SELECT min(c.person_id::text)::uuid FROM c
-                     WHERE EXISTS (SELECT 1 FROM trip t WHERE t.driver_id = c.person_id AND t.cancelled_at IS NULL))
+  SELECT 'driver', (SELECT c.person_id FROM c
+                     WHERE EXISTS (SELECT 1 FROM trip t WHERE t.driver_id = c.person_id AND t.cancelled_at IS NULL)
+                     ORDER BY c.email, c.person_id LIMIT 1)
   UNION ALL
-  SELECT 'away_coach', (SELECT min(c.person_id::text)::uuid FROM c
+  SELECT 'away_coach', (SELECT c.person_id FROM c
                          WHERE EXISTS (SELECT 1 FROM role_assignment a
                                         WHERE a.person_id = c.person_id AND a.role = 'coach' AND a.active
                                           AND a.school_id IN (SELECT m.away_school_id FROM match m
-                                                               WHERE EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id))))
+                                                               WHERE EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id)))
+                         ORDER BY c.email, c.person_id LIMIT 1)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The readers §126 asks: a fixed sample, not the whole cast. Every one of the
 -- whole cast's readers at every fixture ran past six hours on CI (8299ddab:
 -- 736 people by §126). The sample is, for each kind of assignment (its role,
 -- its school, whether it is a side's or the school's, whether it is a
--- fixture's, whether it is live), the person with the lowest id holding one;
--- and the person _v152_kinds() names for each kind. Deterministic: the same
--- cast gives the same people, in order.
+-- fixture's, whether it is live), the person holding one with the first
+-- email, then id; and the person _v152_kinds() names for each kind. Named,
+-- not drawn: the same file and seed give the same people.
 CREATE OR REPLACE FUNCTION _v152_readers() RETURNS SETOF uuid AS $$
   SELECT DISTINCT p FROM (
     (SELECT DISTINCT ON (a.role, a.school_id, a.team_code IS NULL, a.fixture_id IS NULL, a.active) a.person_id AS p
-       FROM role_assignment a
-      ORDER BY a.role, a.school_id, a.team_code IS NULL, a.fixture_id IS NULL, a.active, a.person_id)
+       FROM role_assignment a LEFT JOIN app_user u ON u.id = a.person_id
+      ORDER BY a.role, a.school_id, a.team_code IS NULL, a.fixture_id IS NULL, a.active, u.email, a.person_id)
     UNION ALL
     SELECT k.person_id FROM _v152_kinds() k WHERE k.person_id IS NOT NULL) x
   ORDER BY 1
@@ -11750,7 +11755,10 @@ CREATE OR REPLACE FUNCTION _v152_cast() RETURNS jsonb AS $$
   SELECT (SELECT jsonb_object_agg(k.kind, k.person_id) FROM _v152_kinds() k
            WHERE k.person_id IS NULL OR k.person_id IN (SELECT * FROM _v152_readers()))
          || jsonb_build_object('readers', (SELECT count(*) FROM _v152_readers()),
-                               'cast', (SELECT count(*) FROM _v152_people()))
+                               'cast', (SELECT count(*) FROM _v152_people()),
+                               -- who they are, by name: the same on every run
+                               'sample', (SELECT md5(string_agg(coalesce(u.email, r::text), ' ' ORDER BY coalesce(u.email, r::text)))
+                                            FROM _v152_readers() r LEFT JOIN app_user u ON u.id = r))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- (fingerprint) Fable's S2: what the live pin sees that an xmin does not.
@@ -39766,8 +39774,8 @@ $v116$;
   --   (grants)   SELECT for scrbrd_app and nothing else, and nothing for
   --              anybody else (anon and authenticated where they exist); the
   --              exact path not PUBLIC's to call, the re-pin the owner's (S4)
-  --   (rows)     for a fixed sample of readers (_v152_readers: the lowest id
-  --              of each kind of assignment, and of each kind (cast) names)
+  --   (rows)     for a fixed sample of readers (_v152_readers: by email, the
+  --              first of each kind of assignment and of each kind (cast) names)
   --              and for nobody: every column of every row equal to db/121's
   --              view under row security (_v152_live_rls)
   --   (pad)      the same for every reader of the sample on a pad's credential at each
@@ -39896,7 +39904,7 @@ $v116$;
                     AND (SELECT count(DISTINCT a.role) FROM role_assignment a WHERE a.person_id IN (SELECT * FROM _v152_readers()))
                         = (SELECT count(DISTINCT a.role) FROM role_assignment a),
       format('§126 (cast): the readers lack a kind, or a role the cast holds: %s', y));
-    RAISE NOTICE '§126 (cast): % readers of a cast of %', y->>'readers', y->>'cast';
+    RAISE NOTICE '§126 (cast): % readers of a cast of % (sample %)', y->>'readers', y->>'cast', y->>'sample';
     y := NULL;
 
     FOR pass IN 1..2 LOOP
