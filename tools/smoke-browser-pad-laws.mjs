@@ -381,6 +381,21 @@ try {
   ok("off the bat is the default, and is not written", hitRow?.value === 1 && !("nbRuns" in (hitRow?.payload ?? {})));
   ok("...the run is the striker's", hitNb.inn.batsmen.find((b) => b.id === nbStriker)?.runs === runsBefore + 1);
   ok("...and one run, so they crossed", hitNb.inn.striker !== nbStriker && hitNb.inn.nonStriker === nbStriker);
+  // RECOGNITION R12 (P8): a four or six off the bat all run is said on the
+  // panel with one tap; untouched, the panel records as it always did. Asked
+  // and cancelled here, so the innings is the one the walk goes on with
+  // (the event itself: pad-feel and pro-extras-parity).
+  await click(/^(NB|No ball)/, 3000);
+  await page.waitForTimeout(400);
+  ok("R12: off the bat, the no-ball panel offers \"All run, not a boundary\", off", await tid("nb-not-boundary").count() === 1
+     && (await tid("nb-not-boundary").getAttribute("aria-pressed")) === "false");
+  await tap("nb-not-boundary");
+  ok("...one tap says it, and the four's key says so", (await tid("nb-not-boundary").getAttribute("aria-pressed")) === "true"
+     && /not a boundary/.test((await tid("extra-run-4").getAttribute("aria-label")) ?? "")
+     && !/not a boundary/.test((await tid("extra-run-3").getAttribute("aria-label")) ?? ""));
+  await tap("nb-runs-byes");
+  ok("...byes are no batter's boundary: not offered", await tid("nb-not-boundary").count() === 0);
+  await tap("extra-cancel");
 
   // ── SCRBRD-069 ───────────────────────────────────────────────
   group("SCRBRD-069: a run out after a completed run — which end?");
@@ -551,6 +566,9 @@ try {
   ok("the server stored the stumping, credited to him", st1Row?.dismissal === "stumped" && st1Row?.payload?.fielder === K1.name,
      JSON.stringify(st1Row && { dismissal: st1Row.dismissal, fielder: st1Row.payload?.fielder }));
   ok("...and its fold gives it to him", st1.inn.keepers.find((k) => k.id === K1.id)?.stumpings === 1, JSON.stringify(st1.inn.keepers));
+  // RECOGNITION R12 (P2): the keeper by reference, beside the card's text.
+  ok("R12: the stumping names its fielder by reference: the keeper's id", JSON.stringify(st1Row?.payload?.fielders) === JSON.stringify([K1.id]),
+     JSON.stringify(st1Row?.payload?.fielders));
   ok("the over is under way", st1.inn.balls % 6 !== 0);
   await makeReady();
   await tap("pad-menu");

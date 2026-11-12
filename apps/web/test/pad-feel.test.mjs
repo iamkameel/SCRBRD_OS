@@ -105,7 +105,7 @@ const LEGACY = {
 const ENGINE = {
   wide: (st, runs) => deliveryEvents({ curIn: st.curIn, before: st.before, freeHit: st.freeHit, type: "Wd", value: runs,
     shot: null, seg: null, zone: null, approach: st.hubApproach }),
-  noBall: (st, nbType, runs, nbRuns) => [noBallEvent({ inn: st.inn, nbType, runs, nbRuns, selShot: st.selShot, selSeg: st.selSeg })],
+  noBall: (st, nbType, runs, nbRuns, notBoundary = false) => [noBallEvent({ inn: st.inn, nbType, runs, nbRuns, selShot: st.selShot, selSeg: st.selSeg, notBoundary })],
   commit: (st, type, value, shot, seg, zone) => deliveryEvents({ curIn: st.curIn, before: st.before, freeHit: st.freeHit, type, value,
     shot, seg, zone, approach: null }),
 };
@@ -175,10 +175,41 @@ group("1. Every extra, both ways: the same bytes");
      && /onConfirm=\{\(runs,wicket\)=>\{if\(wicket\)openExtraWicket\("Wd",runs\);else\{setModal\(null\);recordWide\(runs\);\}\}\}/.test(eng));
   ok("engine: onCommitDetailed is commitBall(type,value,shot,seg,zone,null,placement)",
      /const onCommitDetailed=\(type,value,shot,seg,zone,placement\)=>\{\s*if\(!guardReady\(\)\)return;\s*commitBall\(type,value,shot,seg,zone,null,placement\);/.test(eng));
-  ok("engine: recordNoBall emits noBallEvent({inn,nbType,runs,nbRuns,selShot,selSeg})",
-     /const recordNoBall=\(nbType,runs,nbRuns\)=>\{\s*const nb=noBallEvent\(\{inn,nbType,runs,nbRuns,selShot,selSeg\}\);\s*emit\(nb\);/.test(eng));
+  // RECOGNITION R12 (P8): one more argument, false unless the scorer said
+  // a four or six off the bat was all run.
+  ok("engine: recordNoBall emits noBallEvent({inn,nbType,runs,nbRuns,selShot,selSeg,notBoundary})",
+     /const recordNoBall=\(nbType,runs,nbRuns,notBoundary=false\)=>\{\s*const nb=noBallEvent\(\{inn,nbType,runs,nbRuns,selShot,selSeg,notBoundary\}\);\s*emit\(nb\);/.test(eng));
   ok("engine: the no-ball sheet confirms through the same recordNoBall, or — a wicket too — the wicket sheet",
-     /<NoBallSheet\s+edition=\{lawsEdition\(\{innings,events\}\)\} freeHits=\{inn\?\.freeHits!==false\}\s+onConfirm=\{\(nbType,runs,nbRuns,wicket\)=>wicket\?openExtraWicket\("Nb",runs,nbType,nbRuns\):recordNoBall\(nbType,runs,nbRuns\)\}/.test(eng));
+     /<NoBallSheet\s+edition=\{lawsEdition\(\{innings,events\}\)\} freeHits=\{inn\?\.freeHits!==false\}\s+onConfirm=\{\(nbType,runs,nbRuns,wicket,notBoundary=false\)=>wicket\?openExtraWicket\("Nb",runs,nbType,nbRuns,notBoundary\):recordNoBall\(nbType,runs,nbRuns,notBoundary\)\}/.test(eng));
+  // P8: a no-ball's four or six off the bat, all run. Untouched, the call and
+  // its event are the ones above, byte for byte; said, the same event with
+  // `boundary: false` and nothing else, and the fold's four or six goes.
+  {
+    const st = states[0];
+    const said = (n, from = null) => now(st, "Nb", n, { nb: { type: "front_foot", from, notBoundary: true } });
+    const asItWas = (n, from = null) => LEGACY.noBall(st, "front_foot", n, from);
+    const strip = (/** @type {object} */ e) => { const { boundary, ...rest } = /** @type {any} */ (e); return rest; };
+    ok("P8: a no-ball's four all run is the no-ball it was, with boundary: false and nothing else",
+       said(4)[0].boundary === false && bytes([strip(said(4)[0])]) === bytes(asItWas(4)));
+    ok("...a six too", said(6)[0].boundary === false && bytes([strip(said(6)[0])]) === bytes(asItWas(6)));
+    ok("...but no other runs, and never byes or leg byes: those are the events they were",
+       [0, 1, 2, 3, 5].every((n) => bytes(said(n)) === bytes(asItWas(n)))
+       && bytes(said(4, "byes")) === bytes(asItWas(4, "byes")) && bytes(said(4, "leg_byes")) === bytes(asItWas(4, "leg_byes")));
+    ok("...and the call says it only then: three arguments otherwise, as before",
+       extraCall("Nb", 4, { nb: { type: "front_foot", from: null } }).args.length === 3
+       && extraCall("Nb", 4, { nb: { type: "front_foot", from: null, notBoundary: true } }).args[3] === true
+       && extraCall("Nb", 3, { nb: { type: "front_foot", from: null, notBoundary: true } }).args.length === 3);
+    const fold = (/** @type {any[]} */ evs) => deriveInnings([...open(), ...evs]);
+    const keyed = fold(asItWas(4)).batsmen.find((b) => b.runs === 4);
+    const allRun = fold(said(4)).batsmen.find((b) => b.runs === 4);
+    ok("...the fold: the four off a no-ball keyed is a four; all run, the same runs and no four",
+       keyed?.fours === 1 && allRun?.fours === 0 && fold(said(4)).runs === fold(asItWas(4)).runs);
+    const nbw = extraWicketEvent({ inn: st.inn, extra: { type: "Nb", runs: 4, nbType: "front_foot", nbRuns: null, notBoundary: true },
+      wicket: { dismissal: "run_out", fielder: null, dismissed: null, outAt: "bowler_end" } });
+    ok("...and a wicket on it carries the same: the four all run, then the run out", nbw.boundary === false && nbw.dismissal === "run_out");
+    ok("pad: the no-ball panel's toggle says it, and the wicket path passes it on",
+       /data-testid="nb-not-boundary"/.test(pad) && /onExtraWicket\("Nb", n, nb\.type, n > 0 \? nb\.from : null, \.\.\.\(nbNotBoundary\(nb, n\) \? \[true\] : \[\]\)\)/.test(pad));
+  }
   // A wicket on a wide or a no-ball (Law 22.9, 21.17): the same extra, byte
   // for byte, carrying the wicket — and nothing else changed.
   {
@@ -194,7 +225,7 @@ group("1. Every extra, both ways: the same bytes");
     }
     ok("a wicket on a wide or a no-ball is that extra's event, with the wicket on it", differ.length === 0, differ.slice(0, 2).join(" | "));
     ok("engine: the wicket sheet builds it through extraWicketEvent", /extraWicketEvent\(\{inn,extra:offExtra,freeHit,approach:hubApproach,/.test(eng));
-    ok("pad: a wide or no-ball with the wicket key on goes to onExtraWicket", /onExtraWicket\("Nb", n, nb\.type, n > 0 \? nb\.from : null\)/.test(pad)
+    ok("pad: a wide or no-ball with the wicket key on goes to onExtraWicket", /onExtraWicket\("Nb", n, nb\.type, n > 0 \? nb\.from : null/.test(pad)
        && /onExtraWicket\("Wd", n\)/.test(pad) && /onExtraWicket=\{openExtraWicket\}/.test(eng));
   }
   ok("engine: commitBall builds through deliveryEvents with the engine's own state",

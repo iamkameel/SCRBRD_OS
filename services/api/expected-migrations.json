@@ -143,5 +143,6 @@
   "146_colours.sql",
   "148_award_corrections.sql",
   "149_overlay_name_gate.sql",
+  "150_fielding.sql",
   "151_pilot_match.sql"
 ]

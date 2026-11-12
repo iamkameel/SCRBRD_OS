@@ -244,6 +244,8 @@ const CHECK_REASON = {
   name_in_event: "name_in_event",
   unknown_slot: "unknown_slot",
   free_text: "free_text",
+  // db/150's door (RECOGNITION R12, P2): the fielders a way out may name.
+  ball_event_wicket_fielders: "fielders_invalid",
 };
 
 /**

@@ -1445,8 +1445,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   // the pad's two taps (SCRBRD-100 item 3) both record it here, unchanged
   // from the sheet's own confirm. The pad asks guardReady() at its first
   // tap, as a tap on No ball always did before the sheet opened.
-  const recordNoBall=(nbType,runs,nbRuns)=>{
-    const nb=noBallEvent({inn,nbType,runs,nbRuns,selShot,selSeg});
+  // `notBoundary` (RECOGNITION R12, P8): four or six off the bat all run.
+  const recordNoBall=(nbType,runs,nbRuns,notBoundary=false)=>{
+    const nb=noBallEvent({inn,nbType,runs,nbRuns,selShot,selSeg,notBoundary});
     emit(nb);
     setSelSeg(null);setModal(null);scoreKeyRef.current++;
     hapticTick();
@@ -1461,9 +1462,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
   // were), and the wicket sheet asks the rest, offering only the ways out the
   // Law allows off it. Nothing is recorded until it confirms: one event, the
   // extra carrying the wicket (confirmWicket).
-  const openExtraWicket=(type,runs,nbType=null,nbRuns=null)=>{
+  const openExtraWicket=(type,runs,nbType=null,nbRuns=null,notBoundary=false)=>{
     if(!guardReady())return;
-    setModalCtx({extra:{type,runs,nbType,nbRuns}});
+    setModalCtx({extra:{type,runs,nbType,nbRuns,...(notBoundary?{notBoundary:true}:{})}});
     setModal("wicket");
   };
 
@@ -1871,10 +1872,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     // one (a point, or "didn't travel"), else the bare seg and zone as before.
     const offExtra=modalCtx?.extra??null;
     const ev=offExtra?extraWicketEvent({inn,extra:offExtra,freeHit,approach:hubApproach,
-      wicket:{dismissal:mode,fielder,dismissed:extra.dismissed??null,outAt:extra.outAt??null}})
+      wicket:{dismissal:mode,fielder,...(extra.fielders?{fielders:extra.fielders}:{}),dismissed:extra.dismissed??null,outAt:extra.outAt??null}})
     :ballEvent({type:"W",value:extra.runs??0,shot:modalCtx?.shot||null,
       ...(modalCtx?.placement??{seg:modalCtx?.seg??null,zone:modalCtx?.zone??null}),
       dismissal:mode,fielder:fielder||null,freeHit,
+      // Who fielded it, as references (RECOGNITION R12, P2): the catcher, the
+      // keeper on a stumping, the run out's one or two. Only when named.
+      ...(extra.fielders?{fielders:extra.fielders}:{}),
       ...crease(inn),
       ...(extra.dismissed?{dismissed:extra.dismissed}:{}),
       ...(extra.outAt?{outAt:extra.outAt}:{}),
@@ -2104,7 +2108,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
     if(modal==="noBall")return (
       <NoBallSheet
         edition={lawsEdition({innings,events})} freeHits={inn?.freeHits!==false}
-        onConfirm={(nbType,runs,nbRuns,wicket)=>wicket?openExtraWicket("Nb",runs,nbType,nbRuns):recordNoBall(nbType,runs,nbRuns)}
+        onConfirm={(nbType,runs,nbRuns,wicket,notBoundary=false)=>wicket?openExtraWicket("Nb",runs,nbType,nbRuns,notBoundary):recordNoBall(nbType,runs,nbRuns,notBoundary)}
         onClose={()=>setModal(null)}/>
     );
 

@@ -755,6 +755,8 @@ for the owner's key, a platform administrator, a school administrator and a two-
 - **Skills rewards, par refusals and Training, 2026-10-29** — **Done 2026-10-29** (#194 via #211, commit 0da75d4): rewards behind the Skills module, logged per school; a par refusal logs the rule it refused under; Training on the team manager's menu; the Skills history browser walk (GA-I26a A3).
 - **Skills history walk, flaky fixed** — **Done 2026-10-29** (#210, commit 3a63fbd): the walk waits for the since-the-last-look read after a save, and no longer reads the stale panel.
 - **Two browser-walk races, fixed** — **Done 2026-10-30** (#218, commit 76e7de9): the skills-history bar now waits for its re-read; the retire walk (`smoke-browser-retire`) waits for the pad's write.
+- **Skills door for the pupil (GA-I26a)** — **Partly done 2026-11-11** (#279, merge a63aa6a4): the pupil's Skills door.
+- **Scenario controls (GA-I29)** — **Decided 2026-11-11** (Kameel, in chat, 11 Nov 2026): "Scenario controls (GA-I29) - probability and forecasts are based scoring-rates and overs and what's achievable etc." No entry existed for GA-I29; this line was added on 11 Nov.
 
 ## Match page grammar — from the ESPNcricinfo audits (added 2026-10-23)
 
@@ -4140,6 +4142,8 @@ Kameel, after a look at beta-2's four cockpits (`iamkameel/scrbrd-beta-2`, `Coac
 **Partly done 2026-10-14:** SCRBRD-136/137 away visibility: the ball log follows the fixture (db/97) (#147).
 
 **Partly done 2026-10-15:** Coach cards slice 1: "Where this comes from" on every signal card (GA-I27 C1 + C2) (#151).
+
+**Partly done 2026-11-11:** the pupil's Skills door and coaching points (GA-I27 C4) (#279, merge a63aa6a4).
 
 **Decided (Kameel, 2026-10-02), with SCRBRD-136:** D1–D16 of `docs/design/SCRBRD-136-137_coach_cockpit_and_feed.md` as recommended. Phase A (the Coach tab, the Dashboard card and the drawer over existing reads, no migration) first; the lead's three read findings are one small Opus fix beside it.
 

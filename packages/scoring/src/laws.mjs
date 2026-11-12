@@ -58,7 +58,7 @@ import { KIND, BALL_TYPE, DISMISSAL, BOWLER_CHANGE_REASONS, NB_RUNS_VALUES, NB_R
 import { WITHDRAWN_PENALTY_REASONS } from "./events.mjs";
 import { INNINGS_END_REASON } from "./events.mjs";   // SCRBRD-130 R1
 import { FACES_NEXT, FACES_NEXT_VALUES, NOT_IN_OVER, suspensionScope, normaliseDismissal } from "./events.mjs";
-import { dismissalsOffExtra, isWicketBall } from "./events.mjs";
+import { dismissalsOffExtra, isWicketBall, fieldersFit } from "./events.mjs";
 import { lawsEdition, LAWS_EDITION } from "./edition.mjs";
 import { retirementDismissal, isMidOver, isKeeperRef, keeperOf, pairState, PAIR_STATE } from "./replay.mjs";
 import { superOverNumber } from "./events.mjs";
@@ -94,6 +94,8 @@ export const REFUSAL = Object.freeze({
   NOT_AT_CREASE:          "not_at_crease",          // dismissed / retiring batter is not batting
   // The wicket-keeper (SCRBRD-126). Law 39: a stumping is the keeper's.
   STUMPED_NOT_KEEPER:     "stumped_not_keeper",     // a stumping credited to a fielder who was not keeping
+  // Who fielded the wicket (RECOGNITION R12, P2; FIELDED_DISMISSALS).
+  FIELDERS_INVALID:       "fielders_invalid",       // not one this way out names, a name twice, or a batter at the crease
   CONSECUTIVE_OVERS:      "consecutive_overs",      // Law 17.6: not two overs, or parts, running
   MID_OVER_NO_REASON:     "mid_over_no_reason",     // Law 17.7.1: a change during an over says why (SCRBRD-080)
   // A dismissal with no delivery (SCRBRD-081).
@@ -173,6 +175,8 @@ export const REFUSAL_TEXT = Object.freeze({
   not_at_crease: "that batter is not at the crease",
   // Law 39. No clause number in the words.
   stumped_not_keeper: "a stumping is the wicket-keeper's, and the fielder named was not the keeper at that ball",
+  // RECOGNITION R12 (P2). No clause number in the words.
+  fielders_invalid: "a catch or a stumping names one fielder and a run out one or two, each once, and never a batter at the crease",
   consecutive_overs: "a bowler may not bowl two overs in a row",
   // Law 17.7.1. No clause number in the words: Kameel is verifying them against the current Code.
   mid_over_no_reason: "the bowler was changed during an over without saying why — injury or suspension",
@@ -649,6 +653,24 @@ function ballRefusal(innings, inn, i, ev, edition) {
       && typeof ev.fielder === "string" && ev.fielder !== "") {
     const k = keeperOf(inPlay);
     if (k != null && !isKeeperRef(k.id, k.name, ev.fielder)) return REFUSAL.STUMPED_NOT_KEEPER;
+  }
+
+  // Who fielded it (RECOGNITION R12, P2): one for a catch or a stumping, one
+  // or two for a run out, each named once (fieldersFit, the constructor's
+  // rule and db/150's), and never a batter at the crease. A stumping's is
+  // the keeper while one is on the record, as its `fielder` is. A wicket
+  // that names nobody is as it always was.
+  if (ev.fielders != null) {
+    const mode = normaliseDismissal(ev.dismissal);
+    const list = /** @type {unknown[]} */ (Array.isArray(ev.fielders) ? ev.fielders : []);
+    if (!wicket || !fieldersFit(ev.fielders, mode)
+        || list.some((f) => f != null && (f === inPlay.striker || f === inPlay.nonStriker))) {
+      return REFUSAL.FIELDERS_INVALID;
+    }
+    if (mode === DISMISSAL.STUMPED) {
+      const k = keeperOf(inPlay);
+      if (k != null && !isKeeperRef(k.id, k.name, list[0])) return REFUSAL.STUMPED_NOT_KEEPER;
+    }
   }
 
   // A delivery that does not count in the over (Law 17.3.2.5; SCRBRD-113):

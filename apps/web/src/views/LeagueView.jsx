@@ -23,6 +23,7 @@ import { schoolsWhere } from "../lib/session.js";
 import {
   ALL_SEASONS, awardSeasons, bestBattingAverages, bestBowlingEconomies, defaultAwardSeason, mvpRanking,
   playersForSeason, rankingMethod, scoped, showsRankings, topRunScorers, topWicketTakers,
+  fieldingForSeason, fieldingDismissals, keepingDismissals, topFielders, topKeepers,
 } from "../lib/seasonAwards.js";
 import { heldRoles } from "../lib/features.js";
 import { Icon } from "../ui/icons.jsx";
@@ -138,6 +139,9 @@ function LeagueView({ role, homeBar = null }) {
   const seasonPending = awardsSeason == null && SEASON_CAREER.loading;
   const activeSeason = awardsSeason ?? defaultAwardSeason(seasonChoice);
   const AWARD_PLAYERS = activeSeason === ALL_SEASONS ? PLAYERS : playersForSeason(PLAYERS, SEASON_CAREER.rows, activeSeason);
+  // Fielding and keeping (RECOGNITION R12) ride only on the season read:
+  // every season is each boy's seasons summed.
+  const FIELDING_PLAYERS = fieldingForSeason(PLAYERS, SEASON_CAREER.rows, activeSeason);
   // What the lists on screen are ranked from, and whether it arrived. Every
   // season is the players read with `career` over it; one season is that
   // season's rows of `career_by_season`. A read that failed or timed out is
@@ -498,6 +502,20 @@ function LeagueView({ role, homeBar = null }) {
                   primary={p=>p.index} primaryLabel="index" secondary={p=>p.econ} secondaryLabel="econ"
                   empty="Nobody here has bowled the 36 balls the index needs yet."
                   method={rankingMethod("bowling", activeSeason)}/>
+              </div>
+              {/* RECOGNITION R12: fielding and keeping, from the wickets
+                  that name their fielder, and the keeping record. */}
+              <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px",marginTop:"14px"}}>
+                <RankedList testId="awards-fielders" icon="hand" title="Top Fielders" color={D.emerald}
+                  rows={SEASON_CAREER.error ? [] : topFielders(FIELDING_PLAYERS, awardScope)}
+                  primary={fieldingDismissals} primaryLabel="ct + ro" secondary={p=>p.catches} secondaryLabel="ct"
+                  empty={SEASON_CAREER.error ? "The fielding could not be loaded." : "No catch or run out here names its fielder yet."}
+                  method={rankingMethod("fielding", activeSeason)}/>
+                <RankedList testId="awards-keepers" icon="gloves" title="Top Wicketkeepers" color={D.violet}
+                  rows={SEASON_CAREER.error ? [] : topKeepers(FIELDING_PLAYERS, awardScope)}
+                  primary={keepingDismissals} primaryLabel="ct + st" secondary={p=>p.stumpings} secondaryLabel="st"
+                  empty={SEASON_CAREER.error ? "The keeping could not be loaded." : "No keeper here has a catch or a stumping on record yet."}
+                  method={rankingMethod("keeping", activeSeason)}/>
               </div>
               <div style={{marginTop:"14px"}}>
                 <RankedList testId="awards-mvp" icon="trophy" title="MVP Ranking" color={D.amber}

@@ -6,7 +6,7 @@ is held privately. This repository is public, and the report cites exact lines f
 weaknesses that are not yet fixed, so it is not committed here. This file is the plan
 built from it. It is the record of what is open, what is scheduled and what is closed.
 
-**Status as of 21 October 2026.** The freeze lifted on 14 Oct. Open items join the build queue after wave 1 (the cockpit and register phase B builds).
+**Status as of 11 November 2026.** The freeze lifted on 14 Oct. Open items join the build queue after wave 1 (the cockpit and register phase B builds).
 
 ## The decision
 
@@ -46,6 +46,10 @@ ticket takes a SCRBRD number, and that number is noted here.
 7. I19 medical review worklist (Kameel, 8 Oct: in scope for this release). Fable's design (`docs/design/GA-I19_medical_review.md`) is approved as recommended at 08:01. Slice 0 (InjuryView's phase words, no migration) builds now. Slice A waits on two answers from outside the app: Q0 (will the school have a physio, the medical role) and Q2 (the information officer's written confirmation that injury records stand on guardian consent).
 8. Official result (Kameel, 8 Oct, 12:49: "approved as recommended"; `docs/design/OFFICIAL_RESULT.md`): Q1 the organiser confirms a competition result; Q2 a 7-day dispute window per competition; Q3 "Under review" is never public; Q4 records wait for official, the family card and Player of the Match don't; Q5 a confirmer may withdraw within the window; Q6 abandoned matches may be confirmed; Q7 no pre-freeze slice; Q8 the home school's confirmation stands alone when the away side isn't on SCRBRD. Slice 1 (Opus, one migration) is queued after the gap-analysis items.
 9. Corrections (GA-I36, Kameel, 8 Oct, 13:03): trim the public bundle rather than raise its 470 KB ceiling (Kameel: "use the ponytail skill"). The "Corrected" chip shows only for approved amendments and released balls, not for a scorer's undo during play.
+
+## Decided 2026-11-11 (Kameel)
+
+1. "Scenario controls (GA-I29) - probability and forecasts are based scoring-rates and overs and what's achievable etc." (Kameel, in chat, 11 Nov 2026)
 
 ## Phase A: repair and establish trust (before or around the pilot)
 
@@ -98,7 +102,7 @@ shown.
 | I22 | Panel-level source and scope | Sonnet, Opus review | done · merged #113 |
 | I23 | A real season trend | Sonnet, Opus review | slice 1 · merged #115 |
 | I24–I25 | The analyst workspace and two-player comparison | Fable design, then Opus | design approved 8 Oct · merged #118; S1 (Compare) is #175, has Kameel's go and merges after wave 3; S1 (Compare) merged #175 (22 Oct) |
-| I26a, I27, I29, I32 | Assessment history and the drill loop; evidence-linked coach cards; scenario controls; the narrow-screen, keyboard and daylight pass | Sonnet, Opus review | I26a: design merged #159, A1+A2 merged #163; A3 screens merged #187 (22 Oct). I27: design merged #142, slice 1 merged #151. I32: #169 in the wave 3 merges, 21 Oct; #169 merged 22 Oct. I29: open |
+| I26a, I27, I29, I32 | Assessment history and the drill loop; evidence-linked coach cards; scenario controls; the narrow-screen, keyboard and daylight pass | Sonnet, Opus review | I26a: design merged #159, A1+A2 merged #163; A3 screens merged #187 (22 Oct). I27: design merged #142, slice 1 merged #151. I32: #169 in the wave 3 merges, 21 Oct; #169 merged 22 Oct. I26a/I27: the pupil's Skills door and coaching points (GA-I27 C4) merged #279 (11 Nov). I29: scope decided 11 Nov (projections from scoring rates, overs and what's achievable); design in progress. |
 | I28 | Shot-wheel filtering | Sonnet, Opus review | done · merged #111 |
 | I30 | Grounds, transport and competition homes | Sonnet, Opus review | done · merged #122 |
 | I31 | Full-name chart tables; every chart gets "Show as table" and a spoken summary | Sonnet, Opus review | done · merged #121 |
