@@ -38,7 +38,8 @@ function Chips({ chip, setChip, commentary }) {
         return (
           <button key={id} type="button" aria-pressed={on} onClick={() => setChip(id)} data-testid={`mc-chip-${id}`}
             {...(n != null ? { "data-count": n, "aria-label": `${label}, ${n}` } : {})} className="pressBtn os-state"
-            style={{ minHeight: "44px", padding: `0 ${T.space.md}`, display: "inline-flex", alignItems: "center", gap: T.space.xs, cursor: "pointer",
+            // 48px each way: a 44px minimum laid out in a wrapping row measured a hair under it (browser-narrow).
+            style={{ minHeight: "48px", minWidth: "48px", padding: `0 ${T.space.md}`, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: T.space.xs, cursor: "pointer",
               borderRadius: T.radius.pill, border: `1px solid ${on ? T.content.primary : T.line.normal}`,
               background: on ? T.content.primary : "transparent", color: on ? T.surface.canvas : T.content.primary,
               fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
@@ -73,8 +74,9 @@ function OverJump({ match, innings, groups, onJump }) {
     <label style={{ display: "flex", alignItems: "center", gap: T.space.sm, flexWrap: "wrap" }}>
       <span style={{ ...T.role.label, color: T.content.secondary }}>Jump to</span>
       <select data-testid="mc-over-jump" value="" onChange={(e) => { if (e.target.value) onJump(e.target.value); }}
-        style={{ minHeight: "44px", minWidth: 0, maxWidth: "100%", flex: "1 1 160px", padding: `0 ${T.space.md}`, borderRadius: T.radius.md,
-          border: `1px solid ${T.line.normal}`, background: T.surface.raised, color: T.content.primary,
+        style={{ minHeight: "48px", minWidth: 0, maxWidth: "100%", flex: "1 1 160px", padding: `0 ${T.space.md}`, borderRadius: T.radius.md,
+          // A field's edge: the tertiary ink every input's border uses, 3:1 in both themes (WCAG 1.4.11).
+          border: `1px solid ${T.content.tertiary}`, background: T.surface.raised, color: T.content.primary,
           // 16px: a phone does not zoom the page into a field of that size.
           fontFamily: T.type.body, fontSize: "16px", boxSizing: "border-box", cursor: "pointer" }}>
         <option value="">An over…</option>
