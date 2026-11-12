@@ -208,7 +208,7 @@ group("A. innings_by_season (GA-I23 slice 2, B1): career's scope, one boy, gated
   const holds = (/** @type {string} */ role) => ["player.roster.read", "analytics.read"].some((c) => ROLE_CAPABILITIES[role]?.includes(c));
   const STAFF = ["analyst", "assistantcoach", "coach", "directorofsport", "principal", "schooladmin", "sportsadmin", "superadmin", "teammanager"];
   const passing = Object.keys(ROLE_CAPABILITIES).filter(holds).sort();
-  ok("exactly these roles pass the staff arm", passing.join() === STAFF.join(), passing.join());
+  ok(`exactly these roles pass the staff arm (${passing.join()})`, passing.join() === STAFF.join());
   for (const r of ["player", "selfaccess", "guardian", "scorer", "spectator", "enquiry", "media", "official", "medical", "fitness", "dso", "scout"])
     ok(`${r} holds neither staff capability`, !holds(r));
   ok("what an innings is: runs, balls, out, when, which match and innings",
