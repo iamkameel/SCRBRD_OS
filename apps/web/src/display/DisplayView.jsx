@@ -150,7 +150,7 @@ function DisplayBoard({ match, state, shownRuns, moment, overSummary, paused, an
   const side = teamOf(match, state.inn.battingTeam);
   const estimate = estimateLine({ inn: state.inn, target: state.target, par,
     sides: { batting: side.short, fielding: teamOf(match, state.inn.bowlingTeam).short } });
-  const insight = boardInsights(state.inn, { target: state.target, overs: state.overs });
+  const insight = boardInsights(state.inn, { target: state.target, overs: state.overs, format: match?.format });
   const marked = props.batters.some((b) => b.onStrike);
   return (
     <div className="dv-board" data-testid="display-board" aria-label={`Scoreboard: ${side.full}, ${props.total} for ${props.wickets}, ${props.overs} overs`}>

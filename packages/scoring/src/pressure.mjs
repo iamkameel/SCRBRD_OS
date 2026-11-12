@@ -126,7 +126,7 @@ export function inningsAtOverEnds(events, ctx, n, { only = null } = {}) {
  * chase's start, for "three overs ago" when fewer than three are bowled.
  * @param {any[]} events  @param {any} ctx  @param {number} n  @param {any} inn  the innings, folded whole
  */
-function inningsAtStart(events, ctx, n, inn) {
+export function inningsAtStart(events, ctx, n, inn) {
   const first = inn.ballLog?.[0]?.id;
   const voided = voidedOf(events);
   const i = first == null ? events.length : events.findIndex((e) => e?.id === first);

@@ -61,10 +61,12 @@ export class ErrorBoundary extends Component {
   reset = () => this.setState({ failed: false });
 
   render() {
-    const { name, children } = this.props;
+    const { name, children, fallback } = this.props;
     if (!this.state.failed) {
       return TEST_HOOKS ? <><TestThrow name={name}/>{children}</> : children;
     }
+    // A panel that is optional says nothing when it fails (`fallback`, null): the scenario panel (GA-I29).
+    if (fallback !== undefined) return fallback;
     return (
       <div role="alert" data-testid="panel-error" data-panel={name ?? undefined}
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: T.space.md, flexWrap: "wrap",

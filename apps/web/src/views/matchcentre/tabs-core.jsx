@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { formatKind } from "@scrbrd/scoring";
 import { T, contrast } from "../../design/tokens.js";
 import { boardInnings, commentaryByOver, inningsBreak, oversOf, targetOf, teamOf } from "../../lib/matchCentre.js";
@@ -14,6 +14,7 @@ import { wormOf } from "../../lib/chartSeries.js";
 import { RateTrack } from "../../ui/parTrack.jsx";
 import { Worm } from "../../ui/charts/worm.jsx";
 import { shownFor } from "../../lib/toBall.js";
+import { ErrorBoundary } from "../../ui/ErrorBoundary.jsx";
 
 /**
  * The Match Centre's tabs that the public page (SCRBRD-083, src/public/)
@@ -26,6 +27,13 @@ import { shownFor } from "../../lib/toBall.js";
  */
 
 // ── Summary ─────────────────────────────────────────────
+
+// GA-I29 A1: the scenario panel is its own chunk, fetched the first time a
+// Summary is drawn live: the public entry's static graph has a ceiling
+// (tools/check-bundle.mjs). The panel's sentences (@scrbrd/scoring
+// scenario-panel.mjs) go with it; what the board and the insight line need
+// (scenario.mjs) is already in the static graph.
+const ScenarioPanel = lazy(() => import("./scenario.jsx").then((m) => ({ default: m.ScenarioPanel })));
 
 
 /** The innings break (§10 item 10, p2): the first innings in four facts. */
@@ -205,7 +213,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   const other = teamOf(match, inn.bowlingTeam);
   const estimate = estimateLine({ inn, target, par: pressure, decided: settled,
     sides: { batting: phone ? side.short : side.full, fielding: phone ? other.short : other.full } });
-  const insight = !props ? [] : boardInsights(inn, { target, overs: inOvers });
+  const insight = !props ? [] : boardInsights(inn, { target, overs: inOvers, format: match.format });
   const latest = [...commentary].reverse().filter((c) => c.kind !== "over_end").slice(0, 3);
   // CRI-1.1: how fresh the board is, while the match is being played — `okAt`
   // is the page's last good read of the log. Once play has decided it the
@@ -232,6 +240,16 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
       )}
       {/* SCRBRD-130 R2: the calculator beside the umpires' figure, the server's; the signed-in page passes it. */}
       {rainPanel}
+      {/* GA-I29 A1: scenarios — arithmetic on this innings' own record, signed in and public alike, team-level,
+          from 12 legal balls (scenario.jsx; @scrbrd/scoring scenarioOf() says when it is drawn). */}
+      {/* Its own boundary, with no card of its own when it fails: a chunk that cannot be fetched (a deploy, the
+          ground's signal) leaves the Summary as it was, and the board is never taken with it. */}
+      <ErrorBoundary name="scenarios" fallback={null}>
+        <Suspense fallback={null}>
+          <ScenarioPanel innings={innings} index={index} target={target} overs={inOvers} format={match.format} events={events} fold={fold}
+            decided={!!result || settled} atBreak={atBreak} estimate={!!estimate} team={side.full}/>
+        </Suspense>
+      </ErrorBoundary>
       <OverSummary item={overSummary} announce={!quietMoments}/>
       {/* The worm, with the par (G2): the innings in play, the target, the
           ground's par or the DLS par dashed — the server's figures. */}

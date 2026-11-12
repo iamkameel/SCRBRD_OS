@@ -69,6 +69,9 @@ const SUITES = [
   // synthetic table only; the structural checks; the D5 grep ──
   ["dls",      "packages/scoring/test/dls.test.mjs"],
   // ── end SCRBRD-130 R2 ──
+  // GA-I29 A0: scenario controls — S1–S10 and every sentence of A3 against
+  // the design's hand figures, exact where a rounding could lie (132.6 v 133)
+  ["scenario", "packages/scoring/test/scenario.test.mjs"],
   // The Laws' 4th Edition from 1 October 2026, by the match date (SCRBRD-113):
   // every rule that differs, asked of a match on 30 September and 1 October.
   ["edition",  "packages/scoring/test/edition.test.mjs"],
