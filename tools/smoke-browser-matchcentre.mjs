@@ -33,7 +33,14 @@
  *      to Over 14 of a longer fixture (fixture-matchcentre.mjs LONG);
  *  11. CRI-2.3: every Manhattan bar and every wagon-wheel area with balls in
  *      it opens the Commentary at exactly its events, adding up to its runs,
- *      and the way back is the charts where the page was.
+ *      and the way back is the charts where the page was;
+ *  12. CRI-2.5: a parent and a pupil have the three spectator charts on
+ *      Analytics (the worm with its wickets, runs per over, the
+ *      partnerships), and the coach, the scorer and the director of sport every
+ *      one: by persona, as the shell lays out its app (lib/matchAnalysis.js);
+ *  13. CRI-2.2, at 360 wide: every chart on the Summary and on Analytics sits
+ *      under a line saying what it stands on, the shots' line with "Shots
+ *      captured for N of M balls".
  *
  * MC_SHOTS=<dir> also saves every tab at 390 and 1366 wide, in Daylight and
  * Floodlit, into <dir>.
@@ -801,6 +808,123 @@ try {
     ok("at 390 wide, nothing is wider than the screen (the drill-down)", await D3.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     ok("no console errors (drill-down)", d23.errors.length === 0, d23.errors.join(" | "));
     await d23.ctx.close();
+  }
+
+  group("CRI-2.5, by persona: a parent and a pupil have three charts on Analytics (the worm with its wickets, runs per over, the partnerships); the coach, the scorer and the director every one");
+  {
+    const ALL = ["worm", "manhattan", "partnership", "batsman", "bowler", "wheel", "heat", "spider"];
+    const THREE = ["worm", "manhattan", "partnership"];
+    /** The charts the Analytics tab draws, by their tables' toggles, and what else is there. */
+    const chartsOf = async (P) => {
+      await pickTab(P, "analytics");
+      await tid(P, "mc-analytics").waitFor({ timeout: 6000 }).catch(() => {});
+      await tid(P, "mc-innings-1").click({ timeout: 3000 }).catch(() => {});
+      await P.waitForTimeout(300);
+      return P.evaluate(() => {
+        const A = document.querySelector('[data-testid="mc-analytics"]');
+        return {
+          analysis: A?.getAttribute("data-analysis") ?? null,
+          charts: [...(A?.querySelectorAll('[data-testid$="-table-toggle"]') ?? [])].map((e) => e.getAttribute("data-testid").replace(/-table-toggle$/, "")),
+          wagon: !!A?.querySelector('[data-testid="wagon-analysis"]'),
+          wheel: !!A?.querySelector('[data-testid="shot-wheel"]'),
+          placement: !!A?.querySelector('[data-testid="mc-shot-placement"]'),
+          pins: A?.querySelectorAll('circle[r="4.5"]').length ?? 0,
+          stands: A?.querySelectorAll('[data-testid="mc-partnership-bar"]').length ?? 0,
+          wide: document.documentElement.scrollWidth > window.innerWidth + 1,
+        };
+      });
+    };
+    // A family opens the fixture from its own Matches (family mode: the child's 1st XI plays in it).
+    const who = [
+      ["the parent (guardian)", "parent@example.invalid", THREE, "spectator", true],
+      ["the pupil (player, 1st XI)", "spectator@example.invalid", THREE, "spectator", true],
+      ["the 1st XI's coach", "coach@example.invalid", ALL, "full", false],
+      ["the scorer (staff, no analytics.read)", "scorer@example.invalid", ALL, "full", false],
+      ["the director of sport", "sarah@example.invalid", ALL, "full", false],
+    ];
+    const stands2 = inn2.partnerships.length + (inn2.striker && inn2.nonStriker ? 1 : 0);
+    for (const [label, email, want, analysis, family] of who) {
+      const s = await open({ viewport: PHONE });
+      await click(s.page, /Get Started|Log In/, 5000);
+      await s.page.waitForTimeout(500);
+      await s.page.locator("#login-email").fill(email);
+      await click(s.page, /^Sign In$/, 5000);
+      await afterReads(s.page, 2200);
+      ok(`${label} signs in`, (await tid(s.page, "persona-bar").count()) === 1 || /Match Centre|Dashboard/i.test(await text(s.page)));
+      // A reader in the staff app opens it from Match Centre; a family's app has its own way in: the live
+      // card's "Follow the match" on Home, else its Matches list, where a live fixture is a live row.
+      let opened = await openMatch(s.page, fx.live);
+      if (!opened && family) {
+        const ways = [
+          async () => { await tid(s.page, "live-follow").first().click({ timeout: 4000 }); },
+          async () => {
+            await s.page.locator('[data-testid="mnav-fixtures"], [data-testid="nav-fixtures"], [data-testid="mnav-mymatches"], [data-testid="nav-mymatches"]').first().click({ timeout: 4000 });
+            await afterReads(s.page, 1500);
+            await s.page.locator(`[data-testid="live-row-${fx.live}"], [data-testid="played-row-${fx.live}"]`).first().click({ timeout: 4000 });
+          },
+        ];
+        for (const way of ways) {
+          if (opened) break;
+          await way().catch(() => {});
+          await tid(s.page, "match-view").waitFor({ timeout: 8000 }).catch(() => {});
+          await afterReads(s.page, 1200);
+          opened = (await tid(s.page, "match-view").count()) === 1;
+        }
+        if (!opened) console.log("  · seen:", (await s.page.evaluate(() => [...document.querySelectorAll("[data-testid]")].map((e) => e.getAttribute("data-testid"))
+          .filter((t) => /nav|row|live|card|follow/.test(t)).slice(0, 40).join(" "))));
+      }
+      ok("...and opens the fixture", opened);
+      if (!opened) { await s.ctx.close(); continue; }
+      const c = await chartsOf(s.page);
+      ok(`${label}: ${want.length} charts, ${want.join(", ")} (${analysis})`, c.analysis === analysis && c.charts.join() === want.join(), JSON.stringify(c));
+      ok(`...the worm with its ${inn1.fow.length + inn2.fow.length} wicket pins, and a bar for each of the second innings' ${stands2} stands`,
+         c.pins === inn1.fow.length + inn2.fow.length && c.stands === stands2, `${c.pins} pins, ${c.stands} stands`);
+      // CRI-2.5 (b): a family keeps its own child's wheel; none of these readers' children is in this fixture.
+      if (analysis === "spectator") ok("...no child of theirs in the match: no shot-placement section, no wheel, no wagon-wheel analysis", !c.placement && !c.wheel && !c.wagon);
+      else ok("...the wheel and the wagon-wheel analysis", c.wheel && c.wagon);
+      ok("...nothing wider than the screen at 390", !c.wide);
+      ok(`no console errors (${label})`, s.errors.length === 0, s.errors.join(" | "));
+      await s.ctx.close();
+    }
+  }
+
+  group("CRI-2.2: at 360 wide, every chart on the Summary and on Analytics sits under a line saying what it stands on");
+  {
+    const s22 = await open({ viewport: { width: 360, height: 780 } });
+    await signIn(s22.page, /sarah@example\.invalid|Director/);
+    ok("the fixture opens at 360 wide", await openMatch(s22.page, fx.live));
+    const S = s22.page;
+    /** Every chart in a panel, and whether a line is over it: a [data-sourced] ancestor holding a source line. */
+    const audit = (root) => S.evaluate((root) => {
+      const R = document.querySelector(root);
+      const charts = [...(R?.querySelectorAll('[role="img"]') ?? [])].filter((e) => e.getBoundingClientRect().width > 0);
+      const bare = charts.filter((c) => !c.closest("[data-sourced]")?.querySelector('[data-testid^="source-line"]'))
+        .map((c) => c.getAttribute("aria-label")?.slice(0, 40) ?? c.closest("[data-testid]")?.getAttribute("data-testid"));
+      const lines = [...(R?.querySelectorAll('[data-sourced] [data-testid^="source-line"]') ?? [])];
+      const small = lines.flatMap((l) => [...l.querySelectorAll("*"), l]).filter((e) => e.children.length === 0 && e.textContent.trim()
+        && parseFloat(getComputedStyle(e).fontSize) < 12).length;
+      return { charts: charts.length, bare, lines: lines.map((l) => l.innerText.replace(/\s+/g, " ").trim()), small,
+        wide: document.documentElement.scrollWidth > window.innerWidth + 1 };
+    }, root);
+    await pickTab(S, "summary");
+    await tid(S, "source-line-worm").waitFor({ timeout: 6000 }).catch(() => {});
+    const sum = await audit('[data-testid="mc-summary"]');
+    ok(`the Summary: ${sum.charts} chart${sum.charts === 1 ? "" : "s"} (the worm), each under a line`, sum.charts >= 1 && sum.bare.length === 0, JSON.stringify(sum.bare));
+    ok("...the worm's line: scored balls, both innings, the fold's balls", sum.lines.some((l) => /Scored balls/.test(l) && /Both innings/.test(l) && l.includes(`From ${inn1.balls + inn2.balls} balls`)),
+       sum.lines.join(" | "));
+    ok("...and the board's, under the board: this innings' balls", await tid(S, "source-line-board").count() === 1
+       && (await tid(S, "source-line-board").innerText()).includes(`From ${inn2.balls} balls`));
+    await pickTab(S, "analytics");
+    await tid(S, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
+    await tid(S, "source-line-shots").waitFor({ timeout: 6000 }).catch(() => {});
+    const an = await audit('[data-testid="mc-analytics"]');
+    ok(`Analytics: ${an.charts} charts, each under a line`, an.charts >= 6 && an.bare.length === 0, JSON.stringify(an.bare));
+    const placedN = inn1.ballLog.filter((b) => b.theta != null || b.seg != null).length;
+    ok(`...the shots' line says how many balls carried one: "Shots captured for ${placedN} of ${inn1.ballLog.length} balls."`,
+       an.lines.some((l) => l.includes(`Shots captured for ${placedN} of ${inn1.ballLog.length} balls.`)), an.lines.join(" | "));
+    ok("...nothing in any line under 12px, and nothing wider than the screen", sum.small === 0 && an.small === 0 && !sum.wide && !an.wide, `${sum.small} ${an.small}`);
+    ok("no console errors (source lines)", s22.errors.length === 0, s22.errors.join(" | "));
+    await s22.ctx.close();
   }
 
   await tab(p, "details");
