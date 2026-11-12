@@ -39654,8 +39654,9 @@ $v116$;
   --   (rows)     for everybody with an assignment and for nobody: every
   --              column of every row equal to db/121's view under row
   --              security (_v152_live_rls)
-  --   (pad)      the same for every account on a pad's credential at every
-  --              fixture with a ball, the host's side's and the away side's:
+  --   (pad)      the same for every account on a pad's credential at each
+  --              school's busiest fixture as the host and as the away side
+  --              (_v152_matches), and after the plant at the planted fixture:
   --              ball_event's pad guard, match's inside the away branch, and
   --              the re-judged striker's
   --   (support)  the same in a platform administrator's support session at
@@ -39752,9 +39753,11 @@ $v116$;
           IF EXISTS (SELECT 1 FROM ball_event_live l WHERE l.id = (y->>'target')::bigint) THEN n_tgt := n_tgt + 1;
           ELSIF EXISTS (SELECT 1 FROM ball_event_live l WHERE l.match_id = (y->>'match')::uuid AND l.school_id = HIL) THEN n_hid := n_hid + 1; END IF;
         END IF;
-        -- (pad) a pad's credential at every fixture with a ball, either side's;
-        -- after the plant, at the planted fixture (its re-judged striker).
-        FOR mm IN SELECT x FROM _v152_matches() x WHERE pass = 1 OR x = (y->>'match')::uuid LOOP
+        -- (pad) a pad's credential at each school's busiest fixture, either
+        -- end; after the plant, at the planted fixture (its re-judged striker),
+        -- whether or not it is one of those.
+        FOR mm IN SELECT x FROM _v152_matches() x WHERE pass = 1
+                  UNION SELECT (y->>'match')::uuid WHERE pass = 2 LOOP
           PERFORM set_config('app.scope', 'pad', true);
           PERFORM set_config('app.match_id', mm::text, true);
           IF _v152_same('pad') > 0 THEN n_pad := n_pad + 1; END IF;
