@@ -619,6 +619,12 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // Pilot Match phase 2, slice 3 (db/151): the phone sends a granted account's
   // match with no name in a ball; an ungranted one stays on the phone, in words.
   "browser-pilot",
+  // R0 solo walkthroughs (ROLE_DASHBOARDS_v1.1 section 9, 10): a Pilot Match from
+  // the scorer's home to a finished result, scored offline and back with no
+  // doubles, a ball undone, called off part-way, left out of every stat,
+  // standing and season figure and off every public read, signed out; says
+  // what is not built (promotion, the public live page) as a finding.
+  "browser-pilot-r0",
   // Settings → Import and the Staff screen: the office has the tab and a coach
   // does not; the template downloads; a file with one bad line shows that line
   // in the route's words and keeps Import disabled; a clean file is checked,
