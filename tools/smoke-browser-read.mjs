@@ -2901,6 +2901,89 @@ try {
       const bodyText = await text(s.page);
       ok("...signed in: no Demo label, no demonstration worm, no invented 'Season Scores — Last 8 Matches'",
          !/\bDemo\b/.test(bodyText) && await sq("demo-worm").count() === 0 && !/Last 8 Matches/i.test(bodyText) && !/illustrative/i.test(bodyText));
+      // GA-I23 slice B3: the side's season panel, match by match, over side_season.
+      // The seed has few completed 1XI matches, so this adds six of its own (scored
+      // balls, invented sides) and compares what is drawn with the read's own rows.
+      {
+        const U_COACH = "88888888-0000-0000-0000-000000000004";
+        for (let k = 0; k < 6; k++) {
+          const mid = (await owner.query(
+            `insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+             values ($1, '1XI', $2, now() - ($3 || ' days')::interval, 'cricket', 'T20', 20, 'live') returning id`, [HIL, `B3 Verify XI ${k + 1}`, String(k + 1)])).rows[0].id;
+          let seq = 0;
+          const ev = (inns, kind, f = {}) => owner.query(
+            `insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                                     client_seq, client_ts, server_ts, kind, ball_type, value, payload)
+             values ($1, $2, $3, 1, $4, $5, 'device-b3', $6, $3, now(), now(), $7, $8, $9, $10)`,
+            [mid, HIL, ++seq, inns, U_COACH, `b3-${mid.slice(-4)}-${seq}`, kind, f.ballType ?? null, f.value ?? null, f.payload ?? {}]);
+          for (const inns of [1, 2]) {
+            await ev(inns, "innings_start", { payload: { battingTeam: inns === 1 ? "Hilton 1XI" : `B3 Verify XI ${k + 1}`, teamKey: inns === 1 ? "1XI" : `B3 Verify XI ${k + 1}`, overs: 20 } });
+            for (let b = 0; b < 12 + k; b++) await ev(inns, "ball", { ballType: "run", value: (b + k + inns) % 5 });
+          }
+          await owner.query(`update match set status = 'complete' where id = $1`, [mid]);
+        }
+        const auth = { headers: { authorization: `Bearer ${sarahTok}` } };
+        const sideRows = (await (await fetch(`${API}/api/read/side_season?schoolId=${HIL}&teamCode=1XI`, auth)).json())?.rows ?? [];
+        const openSeason = sideRows.find((r) => r.current_season)?.season ?? [...new Set(sideRows.map((r) => r.season))].sort().reverse()[0];
+        const inSeason = sideRows.filter((r) => r.season === openSeason);
+        ok("the read has a season of completed 1XI matches to compare with", inSeason.length >= 6, inSeason.length);
+        await s.page.reload();
+        await afterReads(s.page, 1500);
+        ok("Analytics reopens for her", await nav(s.page, /Analytics/));
+        await sq("analytics-team-1XI").click({ timeout: 4000 }).catch(() => {});
+        await s.page.waitForFunction((n) => document.querySelectorAll('[data-testid="side-season-match"]').length === n, inSeason.length, { timeout: 9000 }).catch(() => {});
+        const listed = await s.page.locator('[data-testid="side-season-match"]').count();
+        ok("the side's season lists one match for each of the read's rows", listed === inSeason.length, `${listed} vs ${inSeason.length}`);
+        const figured = inSeason.filter((r) => r.for_runs != null && r.for_balls != null).length;
+        const pointsDrawn = await s.page.locator('[data-testid="side-season-point"]').count();
+        ok("...and one point for each of them that has figures: N points equal the read's rows", pointsDrawn === figured && pointsDrawn >= 6, `${pointsDrawn} vs ${figured}`);
+        const rates = await s.page.evaluate(() => [...document.querySelectorAll('[data-testid="side-season-point"]')].map((e) => e.getAttribute("data-rate")));
+        const wantRates = inSeason.filter((r) => r.for_runs != null && r.for_balls > 0).sort((a, b) => String(a.starts_at).localeCompare(String(b.starts_at)))
+          .map((r) => ((6 * Number(r.for_runs)) / Number(r.for_balls)).toFixed(2));
+        ok("...each at the rate the read's runs and balls give: 6 x runs / balls", JSON.stringify(rates) === JSON.stringify(wantRates), rates.join() + " vs " + wantRates.join());
+        ok("the line is drawn (six matches, past the 5th)", await s.page.locator('[data-testid="side-season-chart"] polyline').count() === 2);
+        const sidePanel = (await sq("side-season-panel").innerText().catch(() => "")).replace(/\s+/g, " ");
+        ok("...with its source line: source, scope, window and basis", /Source Scored balls and scorebook imports/.test(sidePanel) && /Scope 1XI against the opposition/.test(sidePanel)
+           && new RegExp(`The ${openSeason} school season`).test(sidePanel) && new RegExp(`Basis From ${inSeason.length} completed matches`).test(sidePanel), sidePanel.slice(0, 300));
+        ok("...no verdict word", !/in form|improving|declining|struggling/i.test(sidePanel));
+        ok("...the spoken sentence is in the page, hidden from the eye", /Run rate this season so far, after \d+ completed matches/.test(await sq("side-season-spoken").textContent().catch(() => "")));
+        // The table toggle.
+        const tog = sq("side-season-table-toggle");
+        ok("Show as table is a tap of 44px or more", (await tog.boundingBox())?.height >= 43.5);
+        ok("...closed, no table is in the page", await sq("side-season-table").count() === 0);
+        await tog.click({ timeout: 4000 });
+        ok("...open, a table with a row for each match", await sq("side-season-table-table").locator("tbody tr").count() === inSeason.length);
+        await tog.click({ timeout: 4000 });
+        ok("...and it closes again", await sq("side-season-table").count() === 0);
+        // 320px: nothing overflows, with the table open too.
+        await s.page.setViewportSize({ width: 320, height: 700 });
+        await tog.click({ timeout: 4000 });
+        await s.page.waitForTimeout(200);
+        const fit = await s.page.evaluate(() => {
+          const root = document.querySelector('[data-testid="side-season-panel"]');
+          const r = root.getBoundingClientRect();
+          return { page: document.documentElement.scrollWidth - window.innerWidth, panel: Math.round(root.scrollWidth - r.width),
+                   wide: [...root.querySelectorAll("*")].filter((e) => !e.closest('[data-testid="side-season-table"]') && e.getBoundingClientRect().right > window.innerWidth + 1).length };
+        });
+        ok("at 320px nothing overflows: not the page, not the panel, no element outside the table's own scroll", fit.page <= 0 && fit.panel <= 0 && fit.wide === 0, JSON.stringify(fit));
+        await tog.click({ timeout: 4000 });
+        await s.page.setViewportSize({ width: 1280, height: 900 });
+        const small = await s.page.evaluate(() => [...document.querySelectorAll('[data-testid="side-season-panel"] *')]
+          .filter((e) => [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 12 && !e.closest(".sr-only")).length);
+        ok("nothing in the panel is set under 12px", small === 0, small);
+        // Signed out (no server to reach): the demonstration still shows, the real panel does not.
+        const demoCtx = await open();
+        await demoCtx.ctx.route("**/api/**", (r) => r.abort());
+        await demoCtx.page.goto(`http://localhost:${WEB_PORT}/`);
+        await click(demoCtx.page, /Get Started|Log In/, 5000);
+        await click(demoCtx.page, /Explore the demo/, 6000);
+        await afterReads(demoCtx.page, 1500);
+        ok("Analytics opens signed out", await nav(demoCtx.page, /Analytics/));
+        ok("signed out, the demonstration worm still shows, labelled Demo", await demoCtx.page.locator('[data-testid="demo-worm"]').count() === 1
+           && /Demo/.test(await demoCtx.page.locator('[data-testid="source-line-worm"]').innerText().catch(() => "")));
+        ok("...and the side's season panel, which is the read's, is not drawn", await demoCtx.page.locator('[data-testid="side-season-panel"]').count() === 0);
+        await demoCtx.ctx.close();
+      }
       ok("no scoping refusals or page errors for her", s.refusals.length === 0 && s.errors.length === 0, s.errors.join(" | "));
       await s.ctx.close();
     } finally { await owner.end().catch(() => {}); }
