@@ -19,11 +19,18 @@
 -- boy first took the field, or with the day's XI, would say which boy, to
 -- the crowd and to every reader of the read, and a selection (a one-boy
 -- sheet, a one-boy squad written into the log) could ask about one boy. So
--- the host side is position-only whenever any boy on its roster, the host
--- school's players of that team on the day as roster_on() dates side
--- membership (team_membership, db/08), is under a never-public mark today:
--- every fixture of the side, all season, whoever is picked. The day's
--- sheet, its innings_start squads and its XI decide nothing about the flag.
+-- the host side is position-only whenever any boy who was on its roster at
+-- any point in the current school season (season_for(today, 'school'),
+-- db/08; team_membership's dated rows for the host school, team and the
+-- match's sport, from the season's start to today) is under a never-public
+-- mark today: every fixture of the side, all season, whoever is picked.
+-- The day's sheet, its innings_start squads and its XI decide nothing about
+-- the flag. A marked boy who LEAVES the team mid-season keeps it on to the
+-- season's end, so a move does not turn it off and tell; a marked boy who
+-- JOINS turns it on from the day he joins. That joining is a tell, and the
+-- one this rule leaves (for counsel's list, beside §8 item 19): a reader who
+-- sees the side's screen go to positions on the day one boy joined knows
+-- which boy.
 --
 -- Safe to paste again: DROP and CREATE the one function (nothing depends on
 -- it), then REVOKE and GRANT; the guard only reads.
@@ -42,8 +49,9 @@
 --   WHICH SIDE IS THE HOST'S. A side is keyed as the log keys it; its members
 --   are the boys the FIRST innings_start naming it carries for it (its squad
 --   when batting, its bowlingSquad when fielding). Then:
---     * every member is on the host roster: it is the host side, and its
---       flag is the host roster's (above) — the same for any selection;
+--     * every member is on the host roster today (roster_on(), the match's
+--       sport): it is the host side, and its flag is the season roster's
+--       (above) — the same for any selection;
 --     * anything else (the away side; a member off the host roster, such as
 --       a boy playing up from another team, a guest or another school's
 --       child; a side with no member SCRBRD holds a row for): true, and no
@@ -73,12 +81,25 @@
 --         as the host's staff for the day, as the scorer's role does.
 --         Guardian, player, selfaccess, spectator, driver,
 --         transportcoordinator, dso and medical hold neither.
+--       * and not one who may move boys between sides but may not read the
+--         mark: player.profile.manage at the host side without
+--         player.public.withhold there (the capability db/47's
+--         player_never_public_read policy asks). Such a reader could move
+--         one boy onto the side and compare the flags, a probe of one boy's
+--         mark. Today that is the sportsadmin; the director of sport, the
+--         office and the principal hold both, the coach neither. The lead's
+--         safe default, pending Kameel. By capability, never by title.
 --       The away school is not asked about: it is the host's ground screen.
 --       Anyone else gets no rows. No policy or bundle changes.
 --
 --   SECURITY DEFINER, so the gate is the whole of the answer to "may he
 --   ask", and the log, the roster and the mark are read as the owner. db/99's
 --   db/50 definers check lists it (it names scoring.start).
+--   roster_on() (db/08) is plain SQL under its caller's policies, and here it
+--   MUST run as this definer's owner: the roster has to be the whole side
+--   whoever asks. Under the reader's own reach it would be the part of the
+--   side he may see, so the flag could differ from reader to reader, and a
+--   marked boy outside one reader's reach would not turn the side.
 --
 -- Nothing else. broadcast_state() (db/149) already names no child.
 --
@@ -97,6 +118,7 @@ BEGIN
      OR to_regprocedure('app_can(text,uuid,text,uuid,uuid)') IS NULL
      OR to_regprocedure('app_pad_scoped()') IS NULL
      OR to_regprocedure('roster_on(uuid,text,date,text)') IS NULL OR to_regclass('team_membership') IS NULL
+     OR to_regprocedure('season_for(date,text)') IS NULL
      OR to_regprocedure('sa_today()') IS NULL THEN
     RAISE EXCEPTION 'db/153: the public name rule (db/47, db/116), the public read path (db/59), the pad scope (db/50), the readers'' pupil test (db/116) or the dated roster (db/08) is missing; apply every file before this one (through db/151, and db/152 where it is pasted) first';
   END IF;
@@ -117,12 +139,15 @@ CREATE OR REPLACE FUNCTION ground_screen_sides(p_match uuid)
 RETURNS TABLE (team text, position_only boolean, log_seq bigint) AS $$
   WITH m AS (
     -- The fixture, only for the host's staff, signed in, not pupils.
-    SELECT mt.id, mt.school_id, mt.team_code FROM match mt
+    SELECT mt.id, mt.school_id, mt.team_code, mt.sport FROM match mt
      WHERE mt.id = p_match
        AND NOT app_pad_scoped()
        AND NOT coalesce(app_reader_is_pupil(), true)
        AND (app_can('player.roster.read', mt.school_id, mt.team_code, '00000000-0000-0000-0000-000000000000'::uuid, mt.id)
             OR app_can('scoring.start', mt.school_id, mt.team_code, '00000000-0000-0000-0000-000000000000'::uuid, mt.id))
+       -- Not one who may move boys between sides but not read the mark.
+       AND NOT (app_can('player.profile.manage', mt.school_id, mt.team_code, '00000000-0000-0000-0000-000000000000'::uuid, mt.id)
+                AND NOT app_can('player.public.withhold', mt.school_id, mt.team_code, '00000000-0000-0000-0000-000000000000'::uuid, mt.id))
   ),
   starts AS (
     SELECT b.seq, b.payload FROM ball_event b JOIN m ON m.id = b.match_id WHERE b.kind = 'innings_start'
@@ -148,12 +173,21 @@ RETURNS TABLE (team text, position_only boolean, log_seq bigint) AS $$
                            FROM jsonb_array_elements(f.squad) AS e(member)) x
      WHERE x.ref ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
   ),
-  -- The host roster on the day (roster_on(), db/08), and its flag.
+  -- The host roster today (roster_on(), db/08, the match's sport): who
+  -- makes a side the host's.
   roster AS (
-    SELECT r.player_id FROM m CROSS JOIN LATERAL roster_on(m.school_id, m.team_code, sa_today()) r
+    SELECT r.player_id FROM m CROSS JOIN LATERAL roster_on(m.school_id, m.team_code, sa_today(), m.sport) r
+  ),
+  -- Everyone on it at any point this school season, to today: whose mark
+  -- turns the side.
+  season_roster AS (
+    SELECT DISTINCT t.player_id
+      FROM m CROSS JOIN LATERAL season_for(sa_today(), 'school') se
+      JOIN team_membership t ON t.school_id = m.school_id AND t.team_code = m.team_code AND t.sport = m.sport
+     WHERE t.joined_on <= sa_today() AND (t.left_on IS NULL OR t.left_on > se.starts_on)
   ),
   host AS (
-    SELECT EXISTS (SELECT 1 FROM roster r
+    SELECT EXISTS (SELECT 1 FROM season_roster r
                     WHERE coalesce((public_name_facts(r.player_id, NULL, sa_today()) ->> 'neverPublic')::boolean, true)) AS flag
   ),
   judged AS (
@@ -201,8 +235,12 @@ BEGIN
   IF position('NOT app_pad_scoped()' IN v_src) = 0 OR position('NOT coalesce(app_reader_is_pupil(), true)' IN v_src) = 0
      OR position('''player.roster.read'', mt.school_id, mt.team_code' IN v_src) = 0
      OR position('''scoring.start'', mt.school_id, mt.team_code' IN v_src) = 0
+     OR position('AND NOT (app_can(''player.profile.manage''' IN v_src) = 0
+     OR position('AND NOT app_can(''player.public.withhold''' IN v_src) = 0
+     OR position('roster_on(m.school_id, m.team_code, sa_today(), m.sport)' IN v_src) = 0
+     OR position('season_for(sa_today(), ''school'')' IN v_src) = 0
      OR v_src ~* 'app_can\([^)]*away_school_id' THEN
-    RAISE EXCEPTION 'db/153: ground_screen_sides() is not gated to the host''s staff, signed in, not pupils, not under a pad credential';
+    RAISE EXCEPTION 'db/153: ground_screen_sides() is not gated to the host''s staff (signed in, not pupils, not under a pad credential, not a roster-mover who cannot read the mark), or does not read the season roster by the match''s sport';
   END IF;
   IF v_src ~* '\m(player_never_public|public_name_consent|full_name|surname|known_as|reason)\M' THEN
     RAISE EXCEPTION 'db/153: ground_screen_sides() reads a mark, a consent or a name directly';
