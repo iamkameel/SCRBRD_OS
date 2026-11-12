@@ -331,6 +331,7 @@ const SUITES = [
   // GA-I23: the Analytics performance tab's season bars are the career_by_season
   // read, per player per season, and no invented figure is drawn signed in.
   ["season-bars", "apps/web/test/season-bars.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["side-season", "apps/web/test/side-season.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I23 slice 2 (B2): one boy's season innings by innings, from
   // innings_by_season: the rolling five, the 6-innings and 30-ball floors,
   // not-outs, did not bat, scorebook innings, the table and spoken summary.

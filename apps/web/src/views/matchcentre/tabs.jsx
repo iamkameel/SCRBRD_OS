@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { batHandOf } from "@scrbrd/scoring";
 import { T } from "../../design/tokens.js";
 import { api, signedIn } from "../../lib/api.js";
@@ -7,9 +7,11 @@ import { WeatherChip } from "../shared.jsx";
 import { boundaryCount, teamOf } from "../../lib/matchCentre.js";
 import { BatsmanChart, BowlerChart, ManhattanChart, ShotHeatMap, ShotSpider, ShotWheel, WormChart } from "../../scorer/charts.jsx";
 import { projectMatch } from "../../scorer/chartData.js";
+import { overParts } from "../../scorer/overParts.js";
 import { WagonAnalysisPanel } from "../../scorer/wagonAnalysisPanel.jsx";
 import { ErrorBoundary } from "../../ui/ErrorBoundary.jsx";
 import { InningsToggle } from "./scorecard.jsx";
+import { scrollerOf } from "../../lib/toBall.js";
 import { Panel, Quiet } from "./bits.jsx";
 
 /**
@@ -27,10 +29,29 @@ export { SummaryTab, CommentaryTab, PartnershipsTab };
 
 // ── Analytics ───────────────────────────────────────────
 
-export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs, events = null, focus = null }) {
+/**
+ * `toBalls` (CRI-2.3): a Manhattan bar or a wagon-wheel area leads to the
+ * Commentary, filtered to its balls by event id (MatchView's, signed in and
+ * not a demonstration; null leaves the charts as they were).
+ */
+export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs, events = null, focus = null, toBalls = null,
+  chartsAt = null, onChartsRestored = null }) {
   const [wheelOf, setWheelOf] = useState(null);
+  const at = useRef(/** @type {HTMLElement | null} */ (null));
+  // CRI-2.3: once, as the tab is drawn again after a chart's balls: the page where the reader left it.
+  useLayoutEffect(() => {
+    if (!chartsAt) return;
+    const sc = scrollerOf(at.current);
+    if (sc) sc.scrollTop = chartsAt.scrollTop ?? 0;
+    onChartsRestored?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const inn = innings[inningsSel];
   if (!inn) return <Quiet testid="mc-analytics-empty">Nothing has been scored yet.</Quiet>;
+  /** A chart's balls, and where the page is, for the way back. */
+  const drill = toBalls ? (balls) => toBalls(balls, at.current) : null;
+  // Each bar's events, placed as the projection places their runs (scorer/overParts.js).
+  const parts = drill ? overParts(inn, (events ?? []).filter((e) => (e.innings ?? 0) === inningsSel)) : null;
   // Family mode (step 4 G13): a per-player wheel is offered for the reader's
   // own child (or the pupil himself) only — another child's row is one this
   // reader may not open (§2.1 P4), so it is not offered. The whole innings
@@ -52,7 +73,7 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs,
   );
   const H = ({ children }) => <h2 style={{ ...T.role.label, color: T.content.secondary, margin: `${T.space.lg} 0 ${T.space.sm}` }}>{children}</h2>;
   return (
-    <section data-testid="mc-analytics" aria-label="Analytics">
+    <section ref={at} data-testid="mc-analytics" aria-label="Analytics">
       <InningsToggle match={match} innings={innings} inningsSel={inningsSel} setInningsSel={(i) => { setInningsSel(i); setWheelOf(null); }}/>
       <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
         <Kpi l="Run rate" v={inn.balls ? ((inn.runs / inn.balls) * 6).toFixed(2) : "—"}/>
@@ -62,7 +83,8 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs,
       </div>
       {innings.length > 1 && (<><H>Match worm</H><WormChart innings={innings} curIn={innings.length - 1} match={cfg} events={events}/></>)}
       <H>Runs per over</H>
-      <ManhattanChart inn={inn} match={cfg} projection={proj[inningsSel]}/>
+      <ManhattanChart inn={inn} match={cfg} projection={proj[inningsSel]}
+        onOver={drill ? (o) => drill({ ids: (parts?.get(o.over) ?? []).map((x) => x.id).filter(Boolean), what: `over ${o.over + 1}`, runs: o.runs }) : null}/>
       <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)", gap: T.space.md }}>
         <div><H>Batting impact</H><BatsmanChart inn={inn}/></div>
         <div><H>Bowling economy</H><BowlerChart inn={inn}/></div>
@@ -98,6 +120,7 @@ export function AnalyticsTab({ match, innings, inningsSel, setInningsSel, overs,
             handOf={(strikerId) => batHandOf(inn, strikerId)}
             batters={offered.map((b) => ({ id: b.id, name: b.name }))}
             bowlers={inn.bowlers.filter((b) => b.balls > 0).map((b) => ({ id: b.id, name: b.name }))}
+            onArea={drill ? (ar) => drill({ ids: ar.ids, what: ar.label, runs: ar.runs }) : null}
           />
         </ErrorBoundary>
       </div>
