@@ -394,6 +394,9 @@ const SUITES = [
   // shown — his family's, his office's, his own side's — and no team-mate's.
   ["consent-readers", "apps/web/test/consent-readers.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["union-reads", "apps/web/test/union-reads.test.mjs"],
+  // CRI-3.2: a scorecard row offers a boy's passport only to a reader the
+  // passport read admits (his family, himself, his side's staff, his office).
+  ["passport-link", "apps/web/test/passport-link.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I30: one home per domain (Competitions, Transport, Grounds). For every
   // role, a home's sections and links are the menu's own answer for their
   // source destination, and a role that reaches none of a home's parts has no
