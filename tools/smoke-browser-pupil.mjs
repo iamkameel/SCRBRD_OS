@@ -29,6 +29,14 @@
  *     card, no Top Performers or Awards tab, no MVP, though his reads carry
  *     his side's figures;
  *   - no scoping refusals, no page errors;
+ *   - A TEAM-MATE'S FIGURES ARE REFUSED (REACH-D2, Kameel 7 Nov 2026; the
+ *     two exceptions of 11 Nov, and 12 Nov's "career and match-ups too"):
+ *     unnamed, his reads are his own; a team-mate NAMED, as "Me v a
+ *     team-mate" names him, gives his career, every season and his batting
+ *     match-ups, and never his wheel, bests or dismissal breakdown; a boy of
+ *     another side named gives nothing; the captain reads his side's season
+ *     rows for his season and nothing lifetime, and loses them with the
+ *     honour;
  *   - THE CAPTAIN'S VIEW (SCRBRD-138 phase A): the seed's pupil is awarded
  *     `captain` for the walk and it is withdrawn after. With it, his Home
  *     carries the card, his fixture the section, his match the tab; a
@@ -372,7 +380,8 @@ try {
   await pickTab(s.page, "analytics").catch(() => {});
   await afterReads(s.page, 800);
   const whose = await s.page.$$eval('[aria-label="Whose shots"] button', (els) => els.map((e) => e.innerText.trim()));
-  ok("Analytics offers a wheel for him only, beside the whole innings", whose.join() === "Whole innings,R Pillay", whose.join());
+  // CRI-2.5 (b): a pupil's three charts keep his own wheel, by his name alone, and no whole-innings wheel.
+  ok("Analytics offers his own wheel only: no whole innings, nobody else's", whose.join() === "R Pillay", whose.join());
   await tid(s.page, "mc-back").click({ timeout: 4000 }).catch(() => {});
   await s.page.waitForTimeout(600);
 
@@ -507,9 +516,12 @@ try {
   {
     const { token } = await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: "spectator@example.invalid", deviceId: "pupil-walk-ranks" }) })).json();
-    const career = (await (await fetch(`${API}/api/read/career`, { headers: { authorization: `Bearer ${token}` } })).json()).rows ?? [];
-    const withRuns = career.filter((r) => Number(r.runs ?? r.bat_runs ?? 0) > 0);
-    ok("his career read carries his side's figures, several boys' (what a ranking would be built from)", withRuns.length >= 2, JSON.stringify(career.slice(0, 3)));
+    // REACH-D2 (Kameel, 7 Nov 2026): his reads no longer carry his side's
+    // figures. He has no file of his own, so they carry nobody's.
+    const getRows = async (r) => (await (await fetch(`${API}/api/read/${r}`, { headers: { authorization: `Bearer ${token}` } })).json()).rows ?? [];
+    const career = await getRows("career");
+    ok("his career read carries no boy's figures: no team-mate's, and he has no file (REACH-D2)", career.length === 0, JSON.stringify(career.slice(0, 3)));
+    ok("...nor his seasons read", (await getRows("career_by_season")).length === 0);
     const r = await open({ phone: false });
     await click(r.page, /Get Started|Log In/, 5000);
     await r.page.waitForTimeout(500);
@@ -645,6 +657,56 @@ try {
     out.errors = x.errors.length; out.refusals = x.refusals.length;
     await x.ctx.close();
     return out;
+  }
+
+  group("A team-mate's figures are refused to a pupil (REACH-D2), and his own are his");
+  {
+    const { token } = await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "pillay@example.invalid", deviceId: "pupil-reach-d2" }) })).json();
+    const get = async (r) => { const res = await fetch(`${API}/api/read/${r}`, { headers: { authorization: `Bearer ${token}` } }); return { status: res.status, rows: (await res.json()).rows ?? [] }; };
+    const SEASON_NOW = (await q(`select label from season_for(sa_today(), 'school')`))[0].label;
+    const own = await get("career");
+    ok("his career read answers, with his own row", own.status === 200 && own.rows.some((r) => r.player_id === PILLAY), JSON.stringify(own.rows.map((r) => r.player_id)));
+    ok("...and no team-mate's", own.rows.every((r) => r.player_id === PILLAY), JSON.stringify(own.rows.map((r) => r.full_name)));
+    // Named, as the Compare card names him (Kameel, 12 Nov): his career and
+    // his seasons. (Every season of his is §130's to prove: this walk's pupil
+    // reads only the fixtures of the side he is dated to, db/117.)
+    const namedCareer = await get(`career?playerId=${NAIDOO}`);
+    ok("...and named on career, his row alone", namedCareer.rows.length === 1 && namedCareer.rows[0].player_id === NAIDOO, JSON.stringify(namedCareer.rows.map((r) => r.full_name)));
+    const seasons = await get("career_by_season");
+    ok("his seasons: his own rows and nobody else's", seasons.rows.length > 0 && seasons.rows.every((r) => r.player_id === PILLAY), JSON.stringify(seasons.rows.map((r) => `${r.full_name}@${r.season}`)));
+    // One measured shot of his own, in a fixture of the walk's, so his wheel has a ball to return
+    // (off a bowler with no record here, so no match-up the captain's walk below counts moves).
+    const scorer = (await q(`select id from app_user where email = 'scorer@example.invalid'`))[0].id;
+    const WHEELM = (await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+                             values ($1, '1XI', 'Verify Reach XI', '2026-09-05 09:00+02', 'cricket', 'T20', 20, 'complete') returning id`, [HIL]))[0].id;
+    await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq, client_ts,
+                                     kind, ball_type, value, striker_id, bowler_id, theta, radius, placement_source, capture_profile)
+             values ($1, $2, 1, 1, 1, $3, 'd-reach', $4, 1, now(), 'ball', 'run', 2, $5, null, 40, 0.5, 'point', 'full')`,
+            [WHEELM, HIL, scorer, `reach-${WHEELM}-1`, PILLAY]);
+    const theirs = (await q(`select count(*)::int as n from ball_event_career where striker_id = $1 and kind = 'ball' and (theta is not null or seg is not null)`, [PILLAY]))[0].n;
+    const wheel = await get(`player_shot_points?playerId=${PILLAY}`);
+    ok("his own wheel is read, every placed ball of his", wheel.status === 200 && wheel.rows.length > 0 && wheel.rows.length === theirs, `${wheel.rows.length} of ${theirs}`);
+    for (const mate of [NAIDOO, WHITFIELD]) {
+      ok(`a team-mate's wheel is refused (${mate.slice(-2)})`, (await get(`player_shot_points?playerId=${mate}`)).rows.length === 0);
+      ok(`...his bests (${mate.slice(-2)})`, (await get(`personal_bests?playerId=${mate}`)).rows.length === 0);
+      // The card's own read: named as the batter, his pairs and nothing else.
+      ok(`...named as the batter, his match-ups are his pairs only (${mate.slice(-2)})`,
+         (await get(`matchups?batterId=${mate}`)).rows.every((r) => r.batter_id === mate));
+    }
+    const how = await get("dismissal_breakdown");
+    ok("how he is out: his own rows only", how.rows.every((r) => r.player_id === PILLAY), JSON.stringify(how.rows.map((r) => r.full_name)));
+    const pairs = await get("matchups");
+    ok("match-ups unnamed: every pair is one of his", pairs.rows.every((r) => r.batter_id === PILLAY || r.bowler_id === PILLAY), JSON.stringify(pairs.rows.map((r) => `${r.batter_name}>${r.bowler_name}`)));
+    // "Me v a team-mate": one team-mate, named, every season of his.
+    const mateSeason = await get(`career_by_season?playerId=${NAIDOO}`);
+    ok("Me v a team-mate: naming one team-mate reads his seasons, and no other boy's",
+       mateSeason.rows.length > 0 && mateSeason.rows.every((r) => r.player_id === NAIDOO) && mateSeason.rows.some((r) => r.season === SEASON_NOW),
+       JSON.stringify(mateSeason.rows.map((r) => `${r.full_name}@${r.season}`)));
+    const elsewhere = (await q(`select id from player where school_id = $1 and team_code is distinct from '1XI' and id in
+                                 (select player_id from player_batting_by_season union select player_id from player_bowling_by_season) limit 1`, [HIL]))[0]?.id;
+    if (elsewhere) ok("...and naming a boy of another side reads nothing", (await get(`career_by_season?playerId=${elsewhere}`)).rows.length === 0
+       && (await get(`career?playerId=${elsewhere}`)).rows.length === 0);
   }
 
   group("Without the honour: no card, no section, no tab — and nothing suggests one is missing");
@@ -797,6 +859,22 @@ try {
     ok("honours: his own live captaincy is on the read, as a row of the side", honours.some((h) => h.player_id === PILLAY && h.kind === "captain" && h.team_code === "1XI" && h.school_id === HIL));
   }
 
+  group("The captain's reads (REACH-D2's exception, 11 Nov): his side's season figures, nothing else");
+  {
+    const { token } = await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "pillay@example.invalid", deviceId: "pupil-captain-reach" }) })).json();
+    const get = async (r) => (await (await fetch(`${API}/api/read/${r}`, { headers: { authorization: `Bearer ${token}` } })).json()).rows ?? [];
+    const rows = await get("career_by_season");
+    const mates = rows.filter((r) => r.player_id !== PILLAY);
+    ok("his side's season rows reach him: team-mates of the 1XI", mates.length > 0 && mates.every((r) => r.team_code === "1XI" && r.school_id === HIL),
+       JSON.stringify(rows.map((r) => `${r.full_name}@${r.season}`)));
+    ok("...for the season he holds the captaincy only", mates.every((r) => r.season === SEASON.label), JSON.stringify(mates.map((r) => r.season)));
+    ok("nothing lifetime: his career read is his own row", (await get("career")).every((r) => r.player_id === PILLAY));
+    ok("...no team-mate's wheel, breakdown or match-ups", (await get(`player_shot_points?playerId=${NAIDOO}`)).length === 0
+       && (await get("dismissal_breakdown")).every((r) => r.player_id === PILLAY)
+       && (await get("matchups")).every((r) => r.batter_id === PILLAY || r.bowler_id === PILLAY));
+  }
+
   group("Withdrawn: gone on the next load");
   await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: withdrawn' where id = $1`, [honourId]);
   {
@@ -806,6 +884,8 @@ try {
       body: JSON.stringify({ email: "pillay@example.invalid", deviceId: "pupil-captain-walk2" }) })).json();
     const hs = (await (await fetch(`${API}/api/read/honours`, { headers: { authorization: `Bearer ${token}` } })).json()).rows ?? [];
     ok("...the read no longer returns it", !hs.some((h) => h.player_id === PILLAY && h.kind === "captain"));
+    const cbs = (await (await fetch(`${API}/api/read/career_by_season`, { headers: { authorization: `Bearer ${token}` } })).json()).rows ?? [];
+    ok("...and his seasons read is his own rows again (REACH-D2)", cbs.length > 0 && cbs.every((r) => r.player_id === PILLAY), JSON.stringify(cbs.map((r) => r.full_name)));
   }
 
   group("A vice-captain has the same view, under his own label");

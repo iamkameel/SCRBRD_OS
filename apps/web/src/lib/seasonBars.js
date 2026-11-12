@@ -69,6 +69,24 @@ export function seasonChoice(rows) {
 }
 
 /**
+ * The rows of the seasons in which the read shows more than one player: the
+ * seasons a "side's leaders" chart can be drawn for. Since REACH-D2 (Kameel,
+ * 7 and 11 Nov 2026) a pupil's read holds his own rows and, while he holds
+ * the captaincy, his side's for that season only; a season in which he is
+ * the only player in view is his, not a leaders chart of one bar. Empty
+ * when no season holds two players.
+ * @param {any[]} rows
+ */
+export function squadSeasonRows(rows) {
+  const by = new Map();
+  for (const r of rows) {
+    if (!r || typeof r.season !== "string" || !r.season || r.id == null) continue;
+    (by.get(r.season) ?? by.set(r.season, new Set()).get(r.season)).add(r.id);
+  }
+  return rows.filter((r) => r && (by.get(r.season)?.size ?? 0) > 1);
+}
+
+/**
  * The players in a side who have a season row, for the picker: most runs
  * across the seasons shown first, ties by name. One entry per player.
  * @param {any[]} rows  @param {string|null} team

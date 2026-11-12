@@ -56,6 +56,7 @@ import { deliveryOf } from "./delivery.js";
 import { fmtOv, isOut } from "./format.js";
 import { ALL_SHOTS } from "./shots.js";
 import { AnalysisDashboard, ManhattanChart } from "./charts.jsx";
+import { Sourced, ballsLine } from "../ui/sourced.jsx";
 import { projectMatch } from "./chartData.js";
 import { FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, ballWords, buildEventCfg, momentQueue, wicketMomentCfg } from "./panels.jsx";
 import { ballMilestones } from "./milestones.js";
@@ -2882,7 +2883,11 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null}={}){
                   );
                   if(cardId==="commentary")return (
                     <div key="commentary" {...dragProps}>
-                      <ErrorBoundary name="runs per over"><ManhattanChart inn={inn} match={match} projection={chartProj[curIn]}/></ErrorBoundary>
+                      <ErrorBoundary name="runs per over">
+                        <Sourced line={ballsLine("This innings", inn?.balls ?? 0)} testid="source-line-pad-manhattan">
+                          <ManhattanChart inn={inn} match={match} projection={chartProj[curIn]}/>
+                        </Sourced>
+                      </ErrorBoundary>
                     </div>
                   );
                   return null;

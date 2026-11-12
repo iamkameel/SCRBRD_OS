@@ -203,7 +203,11 @@ group("The screens use it, with no per-view line left beside it");
     }
   };
   walk("../src/");
-  ok("only the signed-in views import it, and the scenario panel (its own lazy chunk on the public page, Q2)", importers.length > 0 && importers.every((f) => /^(views\/(AnalyticsView|LeagueView|ProfilesView|SeasonHistoryView|seasonbars|seasontrend|sideseason|demoworm|compare)\.jsx|views\/matchcentre\/scenario\.jsx|lib\/(?:seasonBars|seasonTrend|sideSeason)\.js|ui\/sourceLine\.jsx|lib\/sourceWords\.js)$/.test(f)), importers.join(" "));
+  ok("only the signed-in views import it, and the scenario panel (its own lazy chunk on the public page, Q2)", importers.length > 0 && importers.every((f) => /^(views\/(AnalyticsView|LeagueView|ProfilesView|SeasonHistoryView|seasonbars|seasontrend|sideseason|demoworm|compare)\.jsx|views\/matchcentre\/scenario\.jsx|lib\/(?:seasonBars|seasonTrend|sideSeason)\.js|ui\/sourceLine\.jsx|lib\/sourceWords\.js|ui\/sourced(?:Lazy)?\.jsx)$/.test(f)), importers.join(" "));
+  // CRI-2.2: the chart blocks. ui/sourced.jsx is the signed-in screens'; ui/sourcedLazy.jsx is the public
+  // files' and reaches the line only as a chunk of its own, never statically.
+  const lz = read("../src/ui/sourcedLazy.jsx");
+  ok("CRI-2.2: the public files' block reaches the line only lazily", /lazy\(\(\) => import\("\.\/sourceLine\.jsx"\)/.test(lz) && !/^import[^\n]*sourceLine/m.test(lz));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

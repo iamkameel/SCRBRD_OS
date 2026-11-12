@@ -4,10 +4,11 @@ import { Card, ReadState } from "../ui/primitives.jsx";
 import { SourceLine } from "../ui/sourceLine.jsx";
 import { signedIn } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
+import { personaOf } from "../lib/features.js";
 import { readState } from "../lib/readState.js";
 import { SRC_RECORD, seasonWindow } from "../lib/sourceWords.js";
 import {
-  METRICS, basisFor, demoSeasonRows, playerBars, seasonChoice, seasonsWindow, sidePlayers, squadBars, whoIs,
+  METRICS, basisFor, demoSeasonRows, playerBars, seasonChoice, seasonsWindow, sidePlayers, squadBars, squadSeasonRows, whoIs,
 } from "../lib/seasonBars.js";
 
 /**
@@ -20,6 +21,12 @@ import {
  *   A player picked    that player's seasons, a bar each, oldest first
  *   One player in view the read shows this reader only one player of the
  *                      side (a pupil, a parent), so it is that player
+ *
+ * Since REACH-D2 a pupil's read is his own rows (and, while he is captain,
+ * his side's for that season), so a non-captain pupil sees his own seasons
+ * with the line that says why, and the side's leaders are offered only for a
+ * season in which the read shows more than one player: never a one-bar
+ * leaders chart.
  *
  * The rows are exactly what the read returns to this reader. A season he did
  * not bat or bowl in is a row that says so, never a bar of nought. Signed out
@@ -40,7 +47,7 @@ export function SeasonBars({ role, team, demoPlayers }) {
   const [nonce, setNonce] = useState(0);
   const read = useLive("career_by_season", role, nonce);
   return (
-    <SeasonBarsView demo={demo} team={team} onRetry={() => setNonce((n) => n + 1)}
+    <SeasonBarsView demo={demo} team={team} onRetry={() => setNonce((n) => n + 1)} pupil={personaOf(role) === "pupil"}
       rows={demo ? demoSeasonRows(demoPlayers) : read.rows}
       said={demo ? null : readState(read, { what: "the season figures" })}/>
   );
@@ -56,8 +63,9 @@ export function SeasonBars({ role, team, demoPlayers }) {
  * @param {string | null} props.team
  * @param {() => void} [props.onRetry]
  * @param {{ metric?: "runs"|"wkts", picked?: string, season?: string | null }} [props.initial]  where the controls start
+ * @param {boolean} [props.pupil]  the reader is a pupil: the panel says what REACH-D2 withholds from him, and why
  */
-export function SeasonBarsView({ demo, rows, said, team, onRetry, initial = {} }) {
+export function SeasonBarsView({ demo, rows, said, team, onRetry, initial = {}, pupil = false }) {
   const [metric, setMetric] = useState(/** @type {"runs"|"wkts"} */ (initial.metric ?? "runs"));
   const [picked, setPicked] = useState(initial.picked ?? "");
   const [chosenSeason, setChosenSeason] = useState(/** @type {string | null} */ (initial.season ?? null));
@@ -65,7 +73,9 @@ export function SeasonBarsView({ demo, rows, said, team, onRetry, initial = {} }
   const players = sidePlayers(inSide, team);
   const who = whoIs(picked, players);
   const alone = !picked && players.length === 1;
-  const choice = seasonChoice(inSide);
+  // The leaders chart's seasons: those that show more than one player.
+  const squadRows = players.length > 1 ? squadSeasonRows(inSide) : inSide;
+  const choice = seasonChoice(squadRows.length ? squadRows : inSide);
   const season = chosenSeason && choice.seasons.includes(chosenSeason) ? chosenSeason : choice.open;
   const m = METRICS[metric];
   const name = players.find((p) => p.id === who)?.name ?? "";
@@ -84,8 +94,18 @@ export function SeasonBarsView({ demo, rows, said, team, onRetry, initial = {} }
   const scope = who ? `One player: ${name}` : `${side}, ${howMany} by ${m.label.toLowerCase()}`;
   const window = who ? seasonsWindow(one?.bars.map((b) => b.season) ?? []) : seasonWindow(season);
   // One sentence that belongs to this panel alone: why these players, or why this one.
-  const note = alone ? "The read shows you one player of this side, so these are their seasons."
-    : squad && squad.eligible > 0 ? "No player is picked, so this is the side\u2019s leaders for the season. Pick a player to see their seasons."
+  // The seasons the leaders chart leaves out because they show one player:
+  // for a captain, the seasons he did not hold the captaincy (REACH-D2).
+  const leftOut = squadRows.length && squadRows !== inSide
+    ? seasonChoice(inSide).seasons.filter((s) => !choice.seasons.includes(s)) : [];
+  const note = alone
+    ? (pupil ? "You see your own figures; your team-mates\u2019 are theirs. So these are your seasons."
+             : "The read shows you one player of this side, so these are their seasons.")
+    : squad && squad.eligible > 0
+      ? ["No player is picked, so this is the side\u2019s leaders for the season. Pick a player to see their seasons.",
+         pupil && leftOut.length
+           ? `${leftOut.join(", ")} ${leftOut.length === 1 ? "is" : "are"} left out: you see the side\u2019s figures only for a season you hold the captaincy.`
+           : null].filter(Boolean).join(" ")
     : null;
   const fill = metric === "runs" ? T.sport.batting : T.sport.bowling;
   const label = { fontFamily: T.type.body, fontSize: `${T.floor.read}px`, fontWeight: 600, color: T.content.secondary };
