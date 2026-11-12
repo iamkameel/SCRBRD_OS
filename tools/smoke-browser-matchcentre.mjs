@@ -37,7 +37,10 @@
  *  12. CRI-2.5: a parent and a pupil have the three spectator charts on
  *      Analytics (the worm with its wickets, runs per over, the
  *      partnerships), and the coach, the scorer and the director of sport every
- *      one: by persona, as the shell lays out its app (lib/matchAnalysis.js).
+ *      one: by persona, as the shell lays out its app (lib/matchAnalysis.js);
+ *  13. CRI-2.2, at 360 wide: every chart on the Summary and on Analytics sits
+ *      under a line saying what it stands on, the shots' line with "Shots
+ *      captured for N of M balls".
  *
  * MC_SHOTS=<dir> also saves every tab at 390 and 1366 wide, in Daylight and
  * Floodlit, into <dir>.
@@ -881,6 +884,45 @@ try {
       ok(`no console errors (${label})`, s.errors.length === 0, s.errors.join(" | "));
       await s.ctx.close();
     }
+  }
+
+  group("CRI-2.2: at 360 wide, every chart on the Summary and on Analytics sits under a line saying what it stands on");
+  {
+    const s22 = await open({ viewport: { width: 360, height: 780 } });
+    await signIn(s22.page, /sarah@example\.invalid|Director/);
+    ok("the fixture opens at 360 wide", await openMatch(s22.page, fx.live));
+    const S = s22.page;
+    /** Every chart in a panel, and whether a line is over it: a [data-sourced] ancestor holding a source line. */
+    const audit = (root) => S.evaluate((root) => {
+      const R = document.querySelector(root);
+      const charts = [...(R?.querySelectorAll('[role="img"]') ?? [])].filter((e) => e.getBoundingClientRect().width > 0);
+      const bare = charts.filter((c) => !c.closest("[data-sourced]")?.querySelector('[data-testid^="source-line"]'))
+        .map((c) => c.getAttribute("aria-label")?.slice(0, 40) ?? c.closest("[data-testid]")?.getAttribute("data-testid"));
+      const lines = [...(R?.querySelectorAll('[data-sourced] [data-testid^="source-line"]') ?? [])];
+      const small = lines.flatMap((l) => [...l.querySelectorAll("*"), l]).filter((e) => e.children.length === 0 && e.textContent.trim()
+        && parseFloat(getComputedStyle(e).fontSize) < 12).length;
+      return { charts: charts.length, bare, lines: lines.map((l) => l.innerText.replace(/\s+/g, " ").trim()), small,
+        wide: document.documentElement.scrollWidth > window.innerWidth + 1 };
+    }, root);
+    await pickTab(S, "summary");
+    await tid(S, "source-line-worm").waitFor({ timeout: 6000 }).catch(() => {});
+    const sum = await audit('[data-testid="mc-summary"]');
+    ok(`the Summary: ${sum.charts} chart${sum.charts === 1 ? "" : "s"} (the worm), each under a line`, sum.charts >= 1 && sum.bare.length === 0, JSON.stringify(sum.bare));
+    ok("...the worm's line: scored balls, both innings, the fold's balls", sum.lines.some((l) => /Scored balls/.test(l) && /Both innings/.test(l) && l.includes(`From ${inn1.balls + inn2.balls} balls`)),
+       sum.lines.join(" | "));
+    ok("...and the board's, under the board: this innings' balls", await tid(S, "source-line-board").count() === 1
+       && (await tid(S, "source-line-board").innerText()).includes(`From ${inn2.balls} balls`));
+    await pickTab(S, "analytics");
+    await tid(S, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
+    await tid(S, "source-line-shots").waitFor({ timeout: 6000 }).catch(() => {});
+    const an = await audit('[data-testid="mc-analytics"]');
+    ok(`Analytics: ${an.charts} charts, each under a line`, an.charts >= 6 && an.bare.length === 0, JSON.stringify(an.bare));
+    const placedN = inn1.ballLog.filter((b) => b.theta != null || b.seg != null).length;
+    ok(`...the shots' line says how many balls carried one: "Shots captured for ${placedN} of ${inn1.ballLog.length} balls."`,
+       an.lines.some((l) => l.includes(`Shots captured for ${placedN} of ${inn1.ballLog.length} balls.`)), an.lines.join(" | "));
+    ok("...nothing in any line under 12px, and nothing wider than the screen", sum.small === 0 && an.small === 0 && !sum.wide && !an.wide, `${sum.small} ${an.small}`);
+    ok("no console errors (source lines)", s22.errors.length === 0, s22.errors.join(" | "));
+    await s22.ctx.close();
   }
 
   await tab(p, "details");

@@ -11,6 +11,7 @@ import { overParts } from "../../scorer/overParts.js";
 import { WagonAnalysisPanel } from "../../scorer/wagonAnalysisPanel.jsx";
 import { ErrorBoundary } from "../../ui/ErrorBoundary.jsx";
 import { ChartTable } from "../../ui/ChartTable.jsx";
+import { Sourced, ballsLine, shotsCaptured } from "../../ui/sourced.jsx";
 import { fullAnalysis } from "../../lib/matchAnalysis.js";
 import { InningsToggle } from "./scorecard.jsx";
 import { scrollerOf } from "../../lib/toBall.js";
@@ -110,6 +111,13 @@ export function AnalyticsTab({ match, role = null, innings, inningsSel, setInnin
   const cfg = { overs };
   // The worm and the bars from one projection of the fold and its log (GA-I05).
   const proj = projectMatch(innings, { events, overs });
+  // CRI-2.2: what each chart stands on. The innings by its side, the balls by the fold's count; a chart
+  // that draws shots says how many of the balls carried one.
+  const sideName = teamOf(match, inn.battingTeam).full;
+  const scope = `${sideName} innings`;
+  const both = innings.filter(Boolean).reduce((n, x) => n + (x.balls ?? 0), 0);
+  const placed = (balls) => balls.filter((b) => b.theta != null || b.seg != null).length;
+  const theirs = wheelOf ? inn.ballLog.filter((b) => b.strikerId === wheelOf) : inn.ballLog;
   /** @param {{l: string, v: any}} p */
   const Kpi = ({ l, v }) => (
     <div style={{ flex: "1 1 120px", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md, padding: `${T.space.sm} ${T.space.md}`, background: T.surface.raised }}>
@@ -127,16 +135,23 @@ export function AnalyticsTab({ match, role = null, innings, inningsSel, setInnin
         <Kpi l="Boundaries" v={bnds}/>
         <Kpi l="Extras" v={Object.values(inn.extras).reduce((a, b) => a + b, 0)}/>
       </div>
-      {innings.length > 1 && (<><H>Match worm</H><WormChart innings={innings} curIn={innings.length - 1} match={cfg} events={events}/></>)}
+      {innings.length > 1 && (<><H>Match worm</H>
+        <Sourced line={ballsLine("Both innings", both)} testid="source-line-worm">
+          <WormChart innings={innings} curIn={innings.length - 1} match={cfg} events={events}/>
+        </Sourced></>)}
       <H>Runs per over</H>
-      <ManhattanChart inn={inn} match={cfg} projection={proj[inningsSel]}
-        onOver={drill ? (o) => drill({ ids: (parts?.get(o.over) ?? []).map((x) => x.id).filter(Boolean), what: `over ${o.over + 1}`, runs: o.runs }) : null}/>
+      <Sourced line={ballsLine(scope, inn.balls ?? 0)} testid="source-line-manhattan">
+        <ManhattanChart inn={inn} match={cfg} projection={proj[inningsSel]}
+          onOver={drill ? (o) => drill({ ids: (parts?.get(o.over) ?? []).map((x) => x.id).filter(Boolean), what: `over ${o.over + 1}`, runs: o.runs }) : null}/>
+      </Sourced>
       <H>Partnerships</H>
-      <PartnershipChart inn={inn}/>
+      <Sourced line={ballsLine(scope, inn.balls ?? 0)} testid="source-line-partnership">
+        <PartnershipChart inn={inn}/>
+      </Sourced>
       {full && (<>
       <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)", gap: T.space.md }}>
-        <div><H>Batting impact</H><BatsmanChart inn={inn}/></div>
-        <div><H>Bowling economy</H><BowlerChart inn={inn}/></div>
+        <div><H>Batting impact</H><Sourced line={ballsLine(scope, inn.balls ?? 0)} testid="source-line-batsman"><BatsmanChart inn={inn}/></Sourced></div>
+        <div><H>Bowling economy</H><Sourced line={ballsLine(scope, inn.balls ?? 0)} testid="source-line-bowler"><BowlerChart inn={inn}/></Sourced></div>
       </div>
       <H>Shot placement</H>
       <div role="group" aria-label="Whose shots" style={{ display: "flex", gap: T.space.xs, flexWrap: "wrap", marginBottom: T.space.sm }}>
@@ -152,11 +167,13 @@ export function AnalyticsTab({ match, role = null, innings, inningsSel, setInnin
           );
         })}
       </div>
-      <ShotWheel inn={inn} playerId={wheelOf} title={wheelOf ? (inn.batsmen.find((b) => b.id === wheelOf)?.name ?? "Wagon wheel") : "Wagon wheel"}/>
-      <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)", gap: T.space.md, marginTop: T.space.md }}>
-        <ShotHeatMap inn={inn} playerId={wheelOf}/>
-        <ShotSpider inn={inn} playerId={wheelOf}/>
-      </div>
+      <Sourced line={ballsLine(wheelOf ? "One batter, this innings" : scope, theirs.length, shotsCaptured(placed(theirs), theirs.length))} testid="source-line-shots">
+        <ShotWheel inn={inn} playerId={wheelOf} title={wheelOf ? (inn.batsmen.find((b) => b.id === wheelOf)?.name ?? "Wagon wheel") : "Wagon wheel"}/>
+        <div style={{ display: "grid", gridTemplateColumns: "var(--g-2,1fr 1fr)", gap: T.space.md }}>
+          <ShotHeatMap inn={inn} playerId={wheelOf}/>
+          <ShotSpider inn={inn} playerId={wheelOf}/>
+        </div>
+      </Sourced>
       {/* SCRBRD-102: filters by batter and bowler, run chips that isolate a
           subset of spokes, off side against on side, and the eight named
           areas with their runs and boundaries. */}
@@ -164,6 +181,7 @@ export function AnalyticsTab({ match, role = null, innings, inningsSel, setInnin
         {/* Its own boundary: the heaviest panel here, so the figures and
             charts above it stay if it is the one that fails. */}
         <ErrorBoundary name="wagon-wheel analysis">
+          <Sourced line={ballsLine(scope, inn.ballLog.length, shotsCaptured(placed(inn.ballLog), inn.ballLog.length))} testid="source-line-wagon-analysis">
           <WagonAnalysisPanel
             balls={inn.ballLog}
             handOf={(strikerId) => batHandOf(inn, strikerId)}
@@ -171,6 +189,7 @@ export function AnalyticsTab({ match, role = null, innings, inningsSel, setInnin
             bowlers={inn.bowlers.filter((b) => b.balls > 0).map((b) => ({ id: b.id, name: b.name }))}
             onArea={drill ? (ar) => drill({ ids: ar.ids, what: ar.label, runs: ar.runs }) : null}
           />
+          </Sourced>
         </ErrorBoundary>
       </div>
       </>)}
