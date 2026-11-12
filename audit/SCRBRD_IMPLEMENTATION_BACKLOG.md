@@ -756,7 +756,9 @@ for the owner's key, a platform administrator, a school administrator and a two-
 - **Skills history walk, flaky fixed** — **Done 2026-10-29** (#210, commit 3a63fbd): the walk waits for the since-the-last-look read after a save, and no longer reads the stale panel.
 - **Two browser-walk races, fixed** — **Done 2026-10-30** (#218, commit 76e7de9): the skills-history bar now waits for its re-read; the retire walk (`smoke-browser-retire`) waits for the pad's write.
 - **Skills door for the pupil (GA-I26a)** — **Partly done 2026-11-11** (#279, merge a63aa6a4): the pupil's Skills door.
-- **Scenario controls (GA-I29)** — **Decided 2026-11-11** (Kameel, in chat, 11 Nov 2026): "Scenario controls (GA-I29) - probability and forecasts are based scoring-rates and overs and what's achievable etc." No entry existed for GA-I29; this line was added on 11 Nov.
+- **Scenario controls (GA-I29)** — **Decided 2026-11-11** (Kameel, in chat, 11 Nov 2026): "Scenario controls (GA-I29) - probability and forecasts are based scoring-rates and overs and what's achievable etc." No entry existed for GA-I29; this line was added on 11 Nov. **Partly done 2026-11-12** (#293, merge commit 6e852aad): the scenario controls design is done for Kameel's review; the build is open.
+- **Season trend (GA-I23)** — **Partly done 2026-11-12** (#293, merge commit 6e852aad): slice 2 design, for Kameel's review. Build open. No entry existed for GA-I23; this line was added on 12 Nov.
+- **Pilot Match phase 2 (R0 design, with Kameel's answers to its five calls; slices 1–3 behind the switch, db/151)** — **Partly done 2026-11-12** (#290, merge commit 5cea2275; #291, merge commit 5b6f9725): the design and slices 1 to 3 are merged. Slices 4 onward remain: the public page, promotion and the purge job. No entry existed for pilot match phase 2; this line was added on 12 Nov.
 
 ## Match page grammar — from the ESPNcricinfo audits (added 2026-10-23)
 
@@ -3488,6 +3490,8 @@ and a NULL type and a W with no method reach the views through `ball_event_live`
 
 **Partly done 2026-11-11:** recognition slices R5c (capabilities and the carve-out; db/145 `recognition_decide`) and R8 (Colours; db/146) (#268, merge commit 259c34b8), live on both databases since 7 Nov.
 
+**Partly done 2026-11-12:** recognition slice R12, fielding counts toward awards (db/150) (#288, merge commit 61863b18).
+
 ### ~~SCRBRD-088~~ — CLOSED · A handover in the second innings cannot verify
 **Closed 2026-09-25** in `105e467` (#37): db/45, as the build note below records.
 **Priority:** P1 · **Domain:** Scoring / handover · **Type:** bug (found by db/43, 2026-09-25)
@@ -3817,6 +3821,8 @@ for the same tap), `design.test.mjs` (the wheel's colours), `tools/smoke-browser
 - A no-ball hit from the three-phase pad still loses its area (the no-ball sheet reads the hub's selection).
 - The one-tap Dot mid-ball, with no area chosen, records `not_required` / `quick` as before, not `skipped`.
 
+**Fixed 2026-11-12** (#287, merge commit 83351948): a tap on the field places the ball and presses nothing else; it no longer records a wicket on its own.
+
 ### SCRBRD-102 — A wagon-wheel analysis panel: filters, run chips, off and on side, areas per side
 **Built 2026-09-27.** **Priority:** P2 · **Domain:** Front-end / analytics · **Type:** feature (Kameel's earlier SCRBRD designs, 2026-09-27)
 Kameel's earlier designs had a wagon-wheel analysis panel. It should appear in the Match Centre's Performance tab and on a player's profile:
@@ -3900,6 +3906,8 @@ Schools stream matches to YouTube and Facebook. The overlay is a transparent pag
 - a short "FOUR 4 FOUR" or "SIX 6 SIX" banner, following DESIGN_DIRECTION §3.6.
 
 **Blocked:** a stream is public, so the names it shows wait on the public-data rule's step 3 and on consent (SCRBRD-083, SCRBRD-092). Until then it can show role words only. It reads `broadcast_state()`, which is already public-safe.
+
+**Partly done 2026-11-12** (#285, merge commit 74203aad): db/149, the stream overlay names no child. The names it may show stay blocked as above.
 
 ### SCRBRD-105 — Match Centre summary: what Kameel's earlier design had that step 3c may not
 **Priority:** P2 · **Domain:** Front-end · **Type:** gap check, then build (2026-09-27)
@@ -5341,4 +5349,6 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 ## Merged 11 Nov 2026 with no backlog entry
 
 - #276 (merge commit 2e77e530, 2026-11-11): Docs: Kameel's 7 Nov and 11 Nov ratings decisions, and the 6–7 Nov merges.
+- #283 (merge commit 5a718b80, 2026-11-11): Design: role-based dashboard spec v1.1 (Kameel, 11 Nov).
+- #286 (merge commit 3b9cc820, 2026-11-11): CI uses the runner's own psql, with apt only as a retried fallback, and installs Chromium without apt when the Ubuntu mirrors can't be reached.
 - #277 (merge commit 65f52f02, 2026-11-11): The stageshow skill (Benji Taylor, MIT) in `.claude/skills`.
