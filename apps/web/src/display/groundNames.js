@@ -14,16 +14,18 @@
  * WHOLE SIDE is shown by position, so the one "Batter" among named boys is
  * no tell (§3.4). The server says which sides (GET /api/read/
  * ground_screen_sides, db/153): one row per side the log names,
- * `position_only` true for a side whose squad for the match carries a
- * marked boy — fixed by who the side is, never by the ball a boy first
- * appears, so it never says which boy. Nothing here decides who is marked;
- * it only puts the position word where the fold and the commentary look
- * for a name.
+ * `position_only` true for the host side whenever its season roster holds a
+ * marked boy (Kameel, 12 Nov, 17:45: "Season roster: hide the side all
+ * season"), and always for the away side — never by the day's selection or
+ * the ball a boy first appears, so it never says which boy. The SERVER'S
+ * FLAG PER SIDE IS WHAT COUNTS: nothing here decides who is marked, or which
+ * side is the host's; it only puts the position word where the fold and
+ * the commentary look for a name.
  *
  * FAIL CLOSED. A player SCRBRD holds a row for (his reference is a uuid) is
  * named only when the FIRST innings_start naming a side carries him for it
- * (the same members the server judged), and every side that carries him
- * there was answered as not position-only. Before the first answer, after a
+ * (the members the server keyed that side's row by), and every side that
+ * carries him there was answered as not position-only. Before the first answer, after a
  * read that failed, and for a boy no side's first squad carries, he is his
  * position. A catch is the pad's shape: `fielder` the name the scorecard
  * prints, `fielders` the references; either one belonging to a boy shown by

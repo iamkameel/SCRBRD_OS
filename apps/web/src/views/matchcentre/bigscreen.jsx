@@ -16,9 +16,10 @@ import { superOverCommentary } from "../../lib/superOver.js";
  * the fixture's Publication section.
  *
  * A MARKED BOY'S SIDE BY POSITION (PUBLIC_BY_TERMS §2.5, slice 1; Kameel,
- * 12 Nov 2026, "Both as recommended"). The screen faces the crowd, so when a
- * boy of a side's squad is under a never-public mark, his whole side is
- * "Batter", "Bowler" or "Fielder" on it — never the one position among
+ * 12 Nov 2026, "Both as recommended", and "Season roster: hide the side all
+ * season"). The screen faces the crowd, so while a boy on the host side's
+ * roster is under a never-public mark, the whole side is — and the away
+ * side always is — "Batter", "Bowler" or "Fielder" on it — never the one position among
  * names — while the Match Centre beneath still names them for its
  * signed-in reader (083 §7). The server says which sides (db/153), and the
  * log is folded and told again here under that answer

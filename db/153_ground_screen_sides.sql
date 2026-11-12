@@ -14,14 +14,16 @@
 --       "this side by position", never which boy (§3.4: one "Batter" among
 --       named boys is a tell).
 --
--- NEVER WHICH BOY, READ AS THE SQUAD (the lead's engineering reading of
--- (b), 12 Nov, after review). A flag that turned on at the ball a marked
--- boy first took the field would say which boy, to the crowd and to every
--- reader of the read. So a side's flag is fixed by who the side IS, not by
--- who has appeared: a side is position-only when any boy of its squad for
--- this match is under a never-public mark today. Every boy of an XI is on
--- the field for the whole of his side's fielding innings, so "on the field"
--- and "in the XI" differ by no more than part of a batting innings.
+-- THE SEASON ROSTER (Kameel, 12 Nov 2026, 17:45 SAST: "Season roster:
+-- hide the side all season"). A flag that turned on at the ball a marked
+-- boy first took the field, or with the day's XI, would say which boy, to
+-- the crowd and to every reader of the read, and a selection (a one-boy
+-- sheet, a one-boy squad written into the log) could ask about one boy. So
+-- the host side is position-only whenever any boy on its roster, the host
+-- school's players of that team on the day as roster_on() dates side
+-- membership (team_membership, db/08), is under a never-public mark today:
+-- every fixture of the side, all season, whoever is picked. The day's
+-- sheet, its innings_start squads and its XI decide nothing about the flag.
 --
 -- Safe to paste again: DROP and CREATE the one function (nothing depends on
 -- it), then REVOKE and GRANT; the guard only reads.
@@ -37,22 +39,20 @@
 --       of the log the read covered, so a screen whose log is ahead asks
 --       again. No player id, name, reason, author or date leaves it.
 --
---   WHO A SIDE IS. Its members are the boys the FIRST innings_start naming
---   it carries for it (its squad when batting, its bowlingSquad when
---   fielding) — fixed from that event, not from any ball. Then:
---     * the match has a sheet (match_squad, not withdrawn): the sheet's
---       side(s) its members stand on, and position_only is a never-public
---       mark on any boy of those sheet sides. A member the sheet does not
---       hold, or a side none of whose members is on it, makes it true
---       without asking any mark: a log cannot carry a boy onto the screen
---       by name past the sheet, and a fabricated squad learns nothing.
---     * no sheet: position_only is a mark on any member who is a player of
---       the HOST school. A member who is not (the away school's boy, any
---       other school's, or no player) makes it true without asking his
---       mark: a log written by whoever holds scoring.edit cannot probe a
---       child of another school, the away side's included, whose school
---       anyone with fixture.create may pick. On a sheetless fixture the
---       away side is therefore always shown by position.
+--   WHICH SIDE IS THE HOST'S. A side is keyed as the log keys it; its members
+--   are the boys the FIRST innings_start naming it carries for it (its squad
+--   when batting, its bowlingSquad when fielding). Then:
+--     * every member is on the host roster: it is the host side, and its
+--       flag is the host roster's (above) — the same for any selection;
+--     * anything else (the away side; a member off the host roster, such as
+--       a boy playing up from another team, a guest or another school's
+--       child; a side with no member SCRBRD holds a row for): true, and no
+--       mark is asked. An away boy's mark is never asked, sheet or no sheet,
+--       so a log written by whoever holds scoring.edit, or a fixture whose
+--       other school anyone with fixture.create may pick, probes nobody. The
+--       away side is always shown by position; a sheet does not change that,
+--       because the host's staff hold no read of an away boy's mark and an
+--       away sheet is the other school's to write.
 --   Consents, names-off and the by-terms switches do not govern the
 --   school's own scoreboard (§2.5).
 --
@@ -77,7 +77,7 @@
 --       Anyone else gets no rows. No policy or bundle changes.
 --
 --   SECURITY DEFINER, so the gate is the whole of the answer to "may he
---   ask", and the log, the sheet and the mark are read as the owner. db/99's
+--   ask", and the log, the roster and the mark are read as the owner. db/99's
 --   db/50 definers check lists it (it names scoring.start).
 --
 -- Nothing else. broadcast_state() (db/149) already names no child.
@@ -89,15 +89,16 @@
 DO $guard$
 DECLARE v_facts jsonb;
 BEGIN
-  IF to_regclass('ball_event') IS NULL OR to_regclass('match') IS NULL OR to_regclass('match_squad') IS NULL
+  IF to_regclass('ball_event') IS NULL OR to_regclass('match') IS NULL
      OR to_regclass('player') IS NULL OR to_regclass('player_never_public') IS NULL
      OR to_regprocedure('public_name_facts(uuid,text,date)') IS NULL
      OR to_regprocedure('app_reader_is_pupil()') IS NULL
      OR to_regprocedure('public_json_array(jsonb)') IS NULL
      OR to_regprocedure('app_can(text,uuid,text,uuid,uuid)') IS NULL
      OR to_regprocedure('app_pad_scoped()') IS NULL
+     OR to_regprocedure('roster_on(uuid,text,date,text)') IS NULL OR to_regclass('team_membership') IS NULL
      OR to_regprocedure('sa_today()') IS NULL THEN
-    RAISE EXCEPTION 'db/153: the public name rule (db/47, db/116), the public read path (db/59), the pad scope (db/50) or the readers'' pupil test (db/116) is missing; apply every file before this one (through db/151, and db/152 where it is pasted) first';
+    RAISE EXCEPTION 'db/153: the public name rule (db/47, db/116), the public read path (db/59), the pad scope (db/50), the readers'' pupil test (db/116) or the dated roster (db/08) is missing; apply every file before this one (through db/151, and db/152 where it is pasted) first';
   END IF;
   -- public_name_facts() still answers the mark as `neverPublic` (a later
   -- slice re-makes it: PUBLIC_BY_TERMS §6.2).
@@ -116,7 +117,7 @@ CREATE OR REPLACE FUNCTION ground_screen_sides(p_match uuid)
 RETURNS TABLE (team text, position_only boolean, log_seq bigint) AS $$
   WITH m AS (
     -- The fixture, only for the host's staff, signed in, not pupils.
-    SELECT mt.id, mt.school_id, mt.away_school_id FROM match mt
+    SELECT mt.id, mt.school_id, mt.team_code FROM match mt
      WHERE mt.id = p_match
        AND NOT app_pad_scoped()
        AND NOT coalesce(app_reader_is_pupil(), true)
@@ -147,30 +148,22 @@ RETURNS TABLE (team text, position_only boolean, log_seq bigint) AS $$
                            FROM jsonb_array_elements(f.squad) AS e(member)) x
      WHERE x.ref ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
   ),
-  sheet AS (
-    SELECT q.player_id, q.side FROM match_squad q JOIN m ON m.id = q.match_id WHERE NOT q.withdrawn
+  -- The host roster on the day (roster_on(), db/08), and its flag.
+  roster AS (
+    SELECT r.player_id FROM m CROSS JOIN LATERAL roster_on(m.school_id, m.team_code, sa_today()) r
+  ),
+  host AS (
+    SELECT EXISTS (SELECT 1 FROM roster r
+                    WHERE coalesce((public_name_facts(r.player_id, NULL, sa_today()) ->> 'neverPublic')::boolean, true)) AS flag
   ),
   judged AS (
     SELECT f.team,
-      CASE
-        WHEN EXISTS (SELECT 1 FROM sheet) THEN
-          -- A member the sheet does not hold, or no member on it: true, unasked.
-          EXISTS (SELECT 1 FROM members x WHERE x.team = f.team
-                   AND NOT EXISTS (SELECT 1 FROM sheet q WHERE q.player_id = x.ref::uuid))
-          OR NOT EXISTS (SELECT 1 FROM members x JOIN sheet q ON q.player_id = x.ref::uuid WHERE x.team = f.team)
-          OR EXISTS (SELECT 1 FROM sheet q
-                      WHERE q.side IN (SELECT q2.side FROM members x JOIN sheet q2 ON q2.player_id = x.ref::uuid WHERE x.team = f.team)
-                        AND coalesce((public_name_facts(q.player_id, NULL, sa_today()) ->> 'neverPublic')::boolean, true))
-        ELSE
-          -- No sheet: a member who is not a host-school player (the away
-          -- school's, any other school's, or no player) is true, unasked;
-          -- else a mark on a host-school member.
-          EXISTS (SELECT 1 FROM members x WHERE x.team = f.team
-                   AND NOT EXISTS (SELECT 1 FROM player p, m WHERE p.id = x.ref::uuid AND p.school_id = m.school_id))
-          OR EXISTS (SELECT 1 FROM members x WHERE x.team = f.team
-                      AND EXISTS (SELECT 1 FROM player p, m WHERE p.id = x.ref::uuid AND p.school_id = m.school_id)
-                      AND coalesce((public_name_facts(x.ref::uuid, NULL, sa_today()) ->> 'neverPublic')::boolean, true))
-      END AS position_only
+      CASE WHEN EXISTS (SELECT 1 FROM members x WHERE x.team = f.team)
+                AND NOT EXISTS (SELECT 1 FROM members x WHERE x.team = f.team
+                                   AND x.ref::uuid NOT IN (SELECT r.player_id FROM roster r))
+           THEN (SELECT h.flag FROM host h)
+           -- Not the host side, or not wholly: true, and no mark asked.
+           ELSE true END AS position_only
       FROM firsts f
   )
   SELECT j.team, j.position_only,

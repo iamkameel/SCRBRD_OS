@@ -11860,19 +11860,21 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 
 -- ┌── db/153 (section 130) ─────────────────────────────────────────────
 -- The big screen at the ground (PUBLIC_BY_TERMS §2.5, slice 1; Kameel, 12
--- Nov 2026, (a) and (b)). Hilton's 1XI at home to Westville's 1XI, invented
--- here, today, live, the overlay published with full names (the most a
--- school could choose). Hilton's squad: MRK (marked never-public by the DSO
--- today), OPN (nothing recorded), WAS (marked last week, the mark ended
--- yesterday), SQD. Westville's squad: VIS, WFD. Outside every squad: NOS (a
--- Hilton boy, marked) and OTH (a boy of a third school, marked). SHM, a
--- Westville boy, marked, for the sheet. A pupil of Hilton's (PUP, his own
--- account) who also holds a scorer's role at Hilton. The log holds only the
--- first innings_start: no ball has named anybody yet, and there is no
--- sheet. Its own readers too (_v71_people()): Hilton's 1XI coach, a scorer,
--- the director of sport, Westville's 1XI coach and office, a driver, a DSO,
--- and OPN's verified guardian. Written as the owner,
--- as the scorer's pad and the DSO's door would.
+-- Nov 2026, (a), (b), and 17:45: "Season roster: hide the side all season").
+-- Hilton's 9XI, a side only §106 touches (so no earlier section's mark on
+-- a seed side reaches it), at home to Westville's 1XI, invented here, today,
+-- live, the overlay published with full names (the most a school could
+-- choose). The 9XI roster: MRK (marked never-public by the DSO today),
+-- OPN (nothing recorded), WAS (marked last week, the mark ended yesterday),
+-- SQD. Off it: NOS (Hilton's U19D, marked), PUP (Hilton's U19D, a pupil
+-- with his own account and a scorer's role at Hilton) and OTH (a third
+-- school's, marked). Westville's VIS, WFD and SHM (marked). The log holds
+-- only the first innings_start (Hilton's squad MRK, OPN, WAS, SQD to
+-- Westville's VIS, WFD): no ball has named anybody yet, and there is no
+-- sheet. Its own readers too (_v71_people()): Hilton's 9XI coach, a
+-- scorer, the director of sport, Westville's 1XI coach and office, a driver,
+-- a DSO, and OPN's verified guardian. Written as the owner, as the scorer's
+-- pad and the DSO's door would.
 CREATE OR REPLACE FUNCTION _v153_ev(p_match uuid, p_kind text, p_type text, p_striker uuid, p_non uuid, p_bowler uuid,
                                     p_dismissal text, p_payload jsonb) RETURNS void AS $$
 DECLARE v_seq int := (SELECT coalesce(max(seq), 0) + 1 FROM ball_event WHERE match_id = p_match);
@@ -11912,7 +11914,7 @@ BEGIN
   LOOP
     i := i + 1;
     INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
-    VALUES (r.school, '1XI', 'Verify OneFiftyThree ' || r.surname, 'OneFiftyThree ' || r.surname, 1530 + i, 'batter',
+    VALUES (r.school, CASE WHEN r.school <> HIL THEN '1XI' WHEN r.k IN ('nos', 'pup') THEN 'U19D' ELSE '9XI' END, 'Verify OneFiftyThree ' || r.surname, 'OneFiftyThree ' || r.surname, 1530 + i, 'batter',
             (sa_today() - interval '17 years 1 month')::date)
     RETURNING id INTO v_p;
     ids := ids || jsonb_build_object(r.k, v_p);
@@ -11929,7 +11931,7 @@ BEGIN
   -- The section's own readers: nothing an earlier section did to the seed's
   -- people (a revoked coach, an ended assignment) reaches them.
   ids := ids || _v71_people('v153', ARRAY[
-    ARRAY['coach',     'coach',           HIL::text, '1XI', ''],
+    ARRAY['coach',     'coach',           HIL::text, '9XI', ''],
     ARRAY['scorer',    'scorer',          HIL::text, '',    ''],
     ARRAY['director',  'directorofsport', HIL::text, '',    ''],
     ARRAY['wescoach',  'coach',           WES::text, '1XI', ''],
@@ -11943,10 +11945,10 @@ BEGIN
          now() - interval '30 days', OFFICE, sa_today() - 30
     FROM role_assignment a WHERE a.person_id = (ids->>'parent')::uuid;
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
-  VALUES (HIL, '1XI', WES, '1XI', 'Westville Boys'' High 1XI', now() - interval '1 hour', 'cricket', 'T20', 20, 'live')
+  VALUES (HIL, '9XI', WES, '1XI', 'Westville Boys'' High 1XI', now() - interval '1 hour', 'cricket', 'T20', 20, 'live')
   RETURNING id INTO v_m;
   INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by)
-  VALUES (v_m, 'home', HIL, '1XI', true, OFFICE), (v_m, 'away', WES, '1XI', true, OFFICE);
+  VALUES (v_m, 'home', HIL, '9XI', true, OFFICE), (v_m, 'away', WES, '1XI', true, OFFICE);
   INSERT INTO match_broadcast (match_id, school_id, published, published_by, name_display, show_officials, strapline)
   VALUES (v_m, HIL, true, OFFICE, 'full', false, 'Hilton v Westville · 1XI');
   PERFORM _v153_start(v_m, '1XI', 'Westville Boys'' High 1XI',
@@ -40316,42 +40318,40 @@ $v116$;
   -- └── end of section 129
   -- └── db/151 (section 129) ──────────────────────────────────────────
   -- ┌── db/153 (section 130) ─────────────────────────────────────────
-  -- ── 130. The big screen: a side carrying a marked boy by position, for the host's staff only; the caption names no child (db/153, db/149; PUBLIC_BY_TERMS §2.5, slice 1; Kameel 12 Nov 2026 (a), (b)) ──
-  -- Staged by _v153_stage(), its own fixture and its own readers; every read
-  -- through scrbrd_app. No sheet until (sheet).
+  -- ── 130. The big screen: the host side by position all season when its roster holds a marked boy, the away side always, for the host's staff only; the caption names no child (db/153, db/149; PUBLIC_BY_TERMS §2.5, slice 1; Kameel 12 Nov 2026 (a), (b), "Season roster") ──
+  -- Staged by _v153_stage(), its own fixture, side and readers; every read
+  -- through scrbrd_app. No sheet until (selection).
   -- Labels:
   --   (early)     with only the first innings_start in the log, before any
-  --               event names MRK, the Hilton coach reads Hilton's 1XI true:
-  --               the flag is the squad's, fixed from the start, never the
-  --               ball a boy first appears
+  --               event names MRK, the coach reads the host side true and
+  --               Westville's true: the roster decides, never a ball
   --   (caption)   with MRK at the crease, broadcast_state() reads 'Batter' /
   --               'Non-striker' / 'Bowler' and no word of any boy's name,
   --               for signed out, the Hilton coach, the DSO, Westville's
   --               coach and office
   --   (sides)     the Hilton coach, the scorer and the director of sport read
   --               the same answer, with log_seq the log's head
-  --   (control)   the pupil scorer holds scoring.start at Hilton's 1XI and is
-  --               a pupil; Westville's coach reads the log
+  --   (control)   the pupil scorer holds scoring.start at Hilton's 9XI and
+  --               is a pupil; Westville's coach reads the log
   --   (none)      the pupil scorer, a parent, Westville's coach and office,
   --               the driver and signed out read no rows
   --   (pad)       the scorer under his pad credential for this match reads no rows
-  --   (away)      no sheet: Westville's side, and a side of one marked
-  --               Westville boy or of one unmarked one, are true whether the
-  --               mark stands or has ended — no away boy's mark is asked
-  --   (reveals)   NOS (marked, Hilton, in no squad) and OTH (marked, another
-  --               school) on the field, and OTH in a later innings_start's
-  --               squad and in a new side's: no side moves, and the new side
-  --               is true whether or not OTH is marked
-  --   (sheet)     with a sheet, a side is judged by its sheet side:
-  --               Westville's is named; SHM, on Westville's sheet but in no
-  --               log squad, turns it true; a log member the sheet does not
-  --               hold makes his side true unasked
-  --   (catch)     with the sheet, a mark set on WFD during play turns
-  --               Westville's side true at once, before he is named; his
-  --               catch in the pad's shape (fielder his name, fielders his
+  --   (away)      a side of one marked Westville boy, or one unmarked, and
+  --               Westville's own, are true before and after the mark ends:
+  --               no away boy's mark is asked
+  --   (reveals)   NOS (marked, off the roster) and OTH (marked, another
+  --               school) on the field, in a later innings_start's squads and
+  --               in a side of their own: no side moves, and their sides are
+  --               true whether or not they are marked
+  --   (catch)     a catch in the pad's shape (fielder his name, fielders his
   --               id) changes nothing
-  --   (ended)     MRK's mark ended today: Hilton's side is named again (WAS's
-  --               mark ended yesterday)
+  --   (selection) no selection moves the host's flag: a one-boy squad of
+  --               OPN, unmarked, written into the log, and a one-boy sheet
+  --               of OPN, both read true while MRK, on the roster, is marked
+  --   (ended)     MRK's mark ended today: the host side is named again (WAS's
+  --               ended yesterday; NOS is off the roster), and the one-boy
+  --               squad with it; a mark set on SQD during play turns it true
+  --               at once, before he is named
   --   (shape)     three columns, team, position_only, log_seq; no player id,
   --               name, reason or date in any row
   --   (body)      a definer with its path pinned, not PUBLIC's or a platform
@@ -40359,13 +40359,10 @@ $v116$;
   --
   -- Falsified (12 Nov 2026, on a migrated database inside the section's
   -- transaction; each went red at its own label; unchanged it passed):
-  --   B2: the flag from the log's on-field references, not the squad → (early)
+  --   B2: the flag from the log's on-field references, not the roster → (early)
   --   B3: the pad-scope test out, and fixture.read let in             → (pad)
-  --   B4: marks looked up for boys outside the squads                 → (sheet)
-  --       (NOS on the field turns Westville true; before the sheet no
-  --       side is false for it to move)
-  --   B4: with no sheet, an away boy's mark asked                     → (sides)
-  --       (Westville named on a sheetless fixture)
+  --   B4: an away boy's mark asked, as the host's are                  → (early)
+  --   the flag from a side's members, not the roster                  → (selection)
   --   B1: the client's catcher (ground-names.test.mjs, its own falsification)
   DECLARE
     y   jsonb := _v153_stage();
@@ -40376,7 +40373,7 @@ $v116$;
     PUP uuid := (y->>'pupil_user')::uuid;
     -- Every reader is the section's own (_v153_stage()): the seed's are
     -- changed by earlier sections (§12 revokes the seed's 1XI coach).
-    U_COACH   uuid := (y->>'coach')::uuid;     -- coach, Hilton 1XI
+    U_COACH   uuid := (y->>'coach')::uuid;     -- coach, Hilton 9XI
     U_SCR     uuid := (y->>'scorer')::uuid;    -- scorer, Hilton
     U_DOS     uuid := (y->>'director')::uuid;  -- director of sport, Hilton
     U_WESC    uuid := (y->>'wescoach')::uuid;  -- coach, Westville 1XI
@@ -40391,7 +40388,8 @@ $v116$;
     PERFORM _as(U_COACH);
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = M AND b.kind <> 'innings_start'),
       '§130 (early): the stage put a ball in the log');
-    PERFORM _assert(_v153_flag(M, '1XI'), format('§130 (early): before MRK is named in any event the coach reads %s', _v153_sides(M)));
+    PERFORM _assert(_v153_sides(M) = '1XI:true,Westville Boys'' High 1XI:true',
+      format('§130 (early): before MRK is named in any event the coach reads %s', _v153_sides(M)));
 
     -- The first over: MRK and OPN to VIS.
     PERFORM _v153_ev(M, 'ball', 'run', MRK, OPN, VIS, NULL, '{}'::jsonb);
@@ -40422,8 +40420,8 @@ $v116$;
 
     -- (control)
     PERFORM _as(PUP);
-    PERFORM _assert(app_can('scoring.start', HIL, '1XI', '00000000-0000-0000-0000-000000000000'::uuid, M) AND app_reader_is_pupil(),
-      '§130 (control): the pupil scorer does not hold scoring.start at Hilton''s 1XI, or is not a pupil');
+    PERFORM _assert(app_can('scoring.start', HIL, '9XI', '00000000-0000-0000-0000-000000000000'::uuid, M) AND app_reader_is_pupil(),
+      '§130 (control): the pupil scorer does not hold scoring.start at Hilton''s 9XI, or is not a pupil');
     PERFORM _as(U_WESC);
     PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id = M) = 3, '§130 (control): Westville''s coach does not read the log');
 
@@ -40444,7 +40442,7 @@ $v116$;
     PERFORM set_config('app.scope', '', true);
     PERFORM set_config('app.match_id', '', true);
 
-    -- (away) no sheet: an away boy's mark is never asked.
+    -- (away) an away boy's mark is never asked.
     PERFORM _as(U_COACH);
     PERFORM _v153_start(M, 'Verify Away One', '1XI', ARRAY[SHM], ARRAY[]::uuid[]);
     PERFORM _v153_start(M, 'Verify Away Two', '1XI', ARRAY[VIS], ARRAY[]::uuid[]);
@@ -40453,44 +40451,44 @@ $v116$;
     PERFORM _v153_unmark(SHM);
     PERFORM _assert(_v153_flag(M, 'Verify Away One') AND _v153_flag(M, 'Verify Away Two') AND _v153_flag(M, WES_KEY),
       format('§130 (away): the away boy''s mark ending moved a side: %s', _v153_sides(M)));
-    PERFORM _v153_mark(SHM);
 
-    -- (reveals) boys no squad carries, marked, on the field and in later squads.
+    -- (reveals) boys off the roster, marked, on the field, in later squads and in sides of their own.
     v_before := _v153_sides(M);
     PERFORM _v153_ev(M, 'ball', 'run', NOS, OPN, OTH, NULL, jsonb_build_object('keeper', OTH, 'batter', NOS));
-    PERFORM _assert(_v153_sides(M) = v_before, format('§130 (reveals): unsquadded marked boys on the field moved %s to %s', v_before, _v153_sides(M)));
+    PERFORM _assert(_v153_sides(M) = v_before, format('§130 (reveals): marked boys off the roster on the field moved %s to %s', v_before, _v153_sides(M)));
     PERFORM _v153_start(M, WES_KEY, '1XI', ARRAY[VIS, WFD, OTH], ARRAY[MRK, OPN, NOS]);
     PERFORM _assert(_v153_sides(M) = v_before, format('§130 (reveals): a later innings_start''s squads moved %s to %s', v_before, _v153_sides(M)));
     PERFORM _v153_start(M, 'Verify Stuffed XI', '1XI', ARRAY[OTH], ARRAY[]::uuid[]);
-    PERFORM _assert(_v153_flag(M, 'Verify Stuffed XI'), format('§130 (reveals): a stuffed side reads %s', _v153_sides(M)));
+    PERFORM _v153_start(M, 'Verify Off Roster', '1XI', ARRAY[NOS], ARRAY[]::uuid[]);
+    PERFORM _assert(_v153_flag(M, 'Verify Stuffed XI') AND _v153_flag(M, 'Verify Off Roster'),
+      format('§130 (reveals): a side of a boy off the roster reads %s', _v153_sides(M)));
     PERFORM _v153_unmark(OTH);
-    PERFORM _assert(_v153_flag(M, 'Verify Stuffed XI'), format('§130 (reveals): the other school''s boy''s mark ending moved %s', _v153_sides(M)));
+    PERFORM _v153_unmark(NOS);
+    PERFORM _assert(_v153_flag(M, 'Verify Stuffed XI') AND _v153_flag(M, 'Verify Off Roster'),
+      format('§130 (reveals): their marks ending moved %s', _v153_sides(M)));
 
-    -- (sheet)
-    PERFORM _v153_sheet(M, MRK, 'home'); PERFORM _v153_sheet(M, OPN, 'home');
-    PERFORM _v153_sheet(M, WAS, 'home'); PERFORM _v153_sheet(M, SQD, 'home');
-    PERFORM _v153_sheet(M, VIS, 'away'); PERFORM _v153_sheet(M, WFD, 'away');
-    PERFORM _assert(_v153_flag(M, '1XI') AND NOT _v153_flag(M, WES_KEY) AND _v153_flag(M, 'Verify Stuffed XI')
-                    AND _v153_flag(M, 'Verify Away One'),
-      format('§130 (sheet): on the sheet the coach reads %s', _v153_sides(M)));
-    PERFORM _v153_sheet(M, SHM, 'away');
-    PERFORM _assert(_v153_flag(M, WES_KEY), format('§130 (sheet): SHM on Westville''s sheet, the coach reads %s', _v153_sides(M)));
-    PERFORM _v153_unmark(SHM);
-    PERFORM _assert(NOT _v153_flag(M, WES_KEY), format('§130 (sheet): SHM''s mark ended, the coach reads %s', _v153_sides(M)));
-
-    -- (catch) a mark set during play; then his catch, as the pad writes it.
-    PERFORM _v153_mark(WFD);
-    PERFORM _assert(_v153_flag(M, WES_KEY), format('§130 (catch): the mark on WFD, not yet named, reads %s', _v153_sides(M)));
+    -- (catch) his catch, as the pad writes it.
     v_ans := _v153_sides(M);
     PERFORM _v153_ev(M, 'ball', 'W', MRK, OPN, VIS, 'caught',
                      jsonb_build_object('fielder', 'Verify OneFiftyThree Fielder', 'fielders', jsonb_build_array(WFD), 'dismissed', MRK));
-    PERFORM _assert(_v153_sides(M) = v_ans, format('§130 (catch): his catch moved the answer to %s', _v153_sides(M)));
-    PERFORM _v153_unmark(WFD);
-    PERFORM _assert(NOT _v153_flag(M, WES_KEY), format('§130 (catch): his mark ended, the coach reads %s', _v153_sides(M)));
+    PERFORM _assert(_v153_sides(M) = v_ans, format('§130 (catch): a catch moved the answer to %s', _v153_sides(M)));
 
-    -- (ended)
+    -- (selection) a one-boy squad, then a one-boy sheet, of an unmarked roster boy.
+    PERFORM _v153_start(M, 'Verify One', '1XI', ARRAY[OPN], ARRAY[]::uuid[]);
+    PERFORM _assert(_v153_flag(M, 'Verify One') AND _v153_flag(M, '1XI'),
+      format('§130 (selection): a one-boy squad of OPN, unmarked, with MRK marked, reads %s', _v153_sides(M)));
+    PERFORM _v153_sheet(M, OPN, 'home');
+    PERFORM _assert(_v153_flag(M, 'Verify One') AND _v153_flag(M, '1XI'),
+      format('§130 (selection): a one-boy sheet of OPN, with MRK marked, reads %s', _v153_sides(M)));
+
+    -- (ended), then a mark set during play.
     PERFORM _v153_unmark(MRK);
-    PERFORM _assert(NOT _v153_flag(M, '1XI') AND NOT _v153_flag(M, WES_KEY), format('§130 (ended): the coach reads %s', _v153_sides(M)));
+    PERFORM _assert(NOT _v153_flag(M, '1XI') AND NOT _v153_flag(M, 'Verify One') AND _v153_flag(M, WES_KEY),
+      format('§130 (ended): the coach reads %s', _v153_sides(M)));
+    PERFORM _v153_mark(SQD);
+    PERFORM _assert(_v153_flag(M, '1XI') AND _v153_flag(M, 'Verify One'),
+      format('§130 (ended): a mark set on SQD, never named in an event, reads %s', _v153_sides(M)));
+    PERFORM _v153_unmark(SQD);
 
     -- (shape)
     PERFORM _assert((SELECT array_agg(a ORDER BY o) FROM pg_proc p,

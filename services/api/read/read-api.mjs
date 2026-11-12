@@ -1532,10 +1532,10 @@ export const READ_QUERIES = {
    * The big screen at the ground: which sides it shows by position (db/153;
    * PUBLIC_BY_TERMS §2.5, slice 1; Kameel, 12 Nov 2026, (a) and (b)).
    *
-   * One row per side the log names (its team key): true when the side's
-   * squad for the match (the sheet, else its first innings_start) carries a
-   * boy under a never-public mark on the day — never which boy, and never
-   * the ball he first appears. log_seq: the log's head the read covered. No
+   * One row per side the log names (its team key): the host side true
+   * whenever a boy on its season roster is under a never-public mark today
+   * (Kameel, 12 Nov, "Season roster"), the away side always — never which
+   * boy, never the day's selection, never the ball he first appears. log_seq: the log's head the read covered. No
    * player id, name, reason, author or date. Only the host's staff, signed
    * in, not pupils, not under a pad credential get rows (decided in the
    * function); everyone else gets none, and the Match Centre offers the big
