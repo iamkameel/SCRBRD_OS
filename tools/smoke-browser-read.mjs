@@ -2963,23 +2963,34 @@ try {
         await s.page.waitForTimeout(200);
         const fit = await s.page.evaluate(() => {
           const root = document.querySelector('[data-testid="side-season-panel"]');
-          const r = root.getBoundingClientRect();
-          return { page: document.documentElement.scrollWidth - window.innerWidth, panel: Math.round(root.scrollWidth - r.width),
-                   wide: [...root.querySelectorAll("*")].filter((e) => !e.closest('[data-testid="side-season-table"]') && e.getBoundingClientRect().right > window.innerWidth + 1).length };
+          const inTable = (e) => e.closest('[data-testid="side-season-table"]') || e.closest(".sr-only");
+          const els = [...root.querySelectorAll("*")].filter((e) => !inTable(e));
+          return { page: document.documentElement.scrollWidth - window.innerWidth,
+                   clipped: els.filter((e) => e.clientWidth > 0 && e.scrollWidth > e.clientWidth + 1).length,
+                   wide: els.filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1).length,
+                   region: Math.round(document.querySelector('[data-testid="side-season-table"]').getBoundingClientRect().right - window.innerWidth) };
         });
-        ok("at 320px nothing overflows: not the page, not the panel, no element outside the table's own scroll", fit.page <= 0 && fit.panel <= 0 && fit.wide === 0, JSON.stringify(fit));
+        ok("at 320px nothing overflows: not the page, no element of the panel, and the table scrolls inside its own region", fit.page <= 0 && fit.clipped === 0 && fit.wide === 0 && fit.region <= 0, JSON.stringify(fit));
         await tog.click({ timeout: 4000 });
         await s.page.setViewportSize({ width: 1280, height: 900 });
         const small = await s.page.evaluate(() => [...document.querySelectorAll('[data-testid="side-season-panel"] *')]
           .filter((e) => [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 12 && !e.closest(".sr-only")).length);
         ok("nothing in the panel is set under 12px", small === 0, small);
         // Signed out (no server to reach): the demonstration still shows, the real panel does not.
-        const demoCtx = await open();
-        await demoCtx.ctx.route("**/api/**", (r) => r.abort());
-        await demoCtx.page.goto(`http://localhost:${WEB_PORT}/`);
+        const dctx = await browser.newContext();
+        await offline(dctx);
+        const dpage = await dctx.newPage();
+        // A dead API base is how the app decides there is no server, and the demo entry is only offered then.
+        await dpage.addInitScript(`window.__SCRBRD_API_BASE__ = "http://127.0.0.1:9";`);
+        await dpage.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+        const demoCtx = { ctx: dctx, page: dpage };
         await click(demoCtx.page, /Get Started|Log In/, 5000);
-        await click(demoCtx.page, /Explore the demo/, 6000);
-        await afterReads(demoCtx.page, 1500);
+        await demoCtx.page.waitForTimeout(800);
+        await demoCtx.page.locator('[data-testid="login-demo"]').click({ timeout: 6000 }).catch(() => {});
+        await afterReads(demoCtx.page, 2000);
+        await demoCtx.page.locator('[data-testid="topbar-role"]').click({ timeout: 4000 }).catch(() => {});
+        await demoCtx.page.locator('[data-testid="role-option-coach"]').click({ timeout: 4000 }).catch(() => {});
+        await afterReads(demoCtx.page, 1000);
         ok("Analytics opens signed out", await nav(demoCtx.page, /Analytics/));
         ok("signed out, the demonstration worm still shows, labelled Demo", await demoCtx.page.locator('[data-testid="demo-worm"]').count() === 1
            && /Demo/.test(await demoCtx.page.locator('[data-testid="source-line-worm"]').innerText().catch(() => "")));
