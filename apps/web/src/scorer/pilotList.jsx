@@ -156,6 +156,53 @@ export function PilotList({ onBack, onResume }) {
 }
 
 /**
+ * Call a Pilot Match off on SCRBRD (§7.3): the pad's call-off (Play stopped,
+ * then End the innings in the chase with no par: no result) is recorded on
+ * this phone as it is made (`callOff`: the reason code and the time), and sent
+ * here, on its own, once every ball has gone, as finish waits for them: the
+ * server takes nothing more into an abandoned match's log, so the seal must
+ * be there first. A send that fails is held, and goes again the next time
+ * every ball is on SCRBRD, or on "Try again". `at` is the pad's own time of
+ * the call-off, from which the names' 30 days run.
+ * @param {{matchId: string, code: string, at: number, attached: boolean, left: number, done: boolean, onDone: () => Promise<unknown>}} props
+ */
+export function PilotCallOff({ matchId, code, at, attached, left, done, onDone }) {
+  const [state, setState] = useState(/** @type {"idle" | "busy" | "done" | "failed"} */ (done ? "done" : "idle"));
+  const ready = attached && left === 0;
+  const send = async () => {
+    setState("busy");
+    try {
+      const r = await api(`/api/pilot/${pilotUuid(matchId)}/abandon`, { method: "POST", body: { reason: code, at } });
+      // Already called off (or finished) on SCRBRD: nothing left to send.
+      if (r?.ok === true || r?.reason === "not_live") { await onDone(); setState("done"); } else setState("failed");
+    } catch { setState("failed"); }
+  };
+  // Sent on its own once every ball has gone; held after a failure until the
+  // phone is ready again (the next time it holds the scoring with nothing waiting).
+  useEffect(() => {
+    if (ready && state === "idle") send();
+    if (!ready && state === "failed") setState("idle");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, state]);
+  return (
+    <section data-testid="pilot-calloff" data-state={state} style={{ ...S.card(), marginBottom: T.space.lg }} aria-label="Call this Pilot Match off">
+      {state === "done"
+        ? <p role="status" data-testid="pilot-called-off" style={S.body()}>Called off on SCRBRD. Nothing more is sent for this match.</p>
+        : <>
+            <p style={S.body()}>{state === "busy" ? "Calling the match off on SCRBRD…"
+              : "Called off here. It is called off on SCRBRD once every ball has gone: it waits for signal and a sign-in."}</p>
+            {state === "failed" && (
+              <>
+                <p role="status" style={S.note("bad")}>It could not be called off on SCRBRD. It is held here and goes again when there is signal.</p>
+                <button type="button" className="pressBtn" style={S.primary(true)} data-testid="pilot-calloff-retry" onClick={send}>Try again</button>
+              </>
+            )}
+          </>}
+    </section>
+  );
+}
+
+/**
  * Finish a Pilot Match on SCRBRD (§7.3), from the pad's result screen: one
  * press, once every ball has gone. Its end is then its last ball (`lastAt`,
  * the pad's own time), from which the names' 30 days run, and the server

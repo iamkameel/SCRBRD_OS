@@ -29,8 +29,8 @@ import { loadMatch, saveMatch, saveAside, storageKind, isPracticeId, isPilotId }
 import { PracticeSetup, PracticeList, PracticeWeatherSheet, withWeatherChange } from "./practice.jsx";
 import { PracticeLabel, PilotLabel, PracticeWeatherChip } from "./practiceLabel.jsx";
 import { clearDraft, inProgressPractice, loadPractice, savePractice, updatePractice, savedClock, cfgFromRecord, weatherChip } from "../lib/practice.js";
-import { PILOT_WORDS, createBody, namesBody, demoteToPractice, listPilot, loadPilot, pilotStatus, purgeExpiredNames, updatePilotState } from "../lib/pilot.js";
-import { PilotList, PilotFinish } from "./pilotList.jsx";
+import { PILOT_WORDS, createBody, namesBody, demoteToPractice, listPilot, loadPilot, pilotStatus, purgeExpiredNames, updatePilotState, abandonCode } from "../lib/pilot.js";
+import { PilotList, PilotFinish, PilotCallOff } from "./pilotList.jsx";
 import { scorecardFileName, scorecardText, saveTextFile } from "../lib/practiceExport.js";
 import { api, signedIn } from "../lib/api.js";
 import { couldFinalise, profile } from "../lib/session.js";
@@ -1156,9 +1156,14 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     onPracticeActive((practiceMode&&(screen==="match"||screen==="result"))||(screen==="setup"&&!!practiceOffer));
     return()=>onPracticeActive(false);
   },[practiceMode,screen,practiceOffer,onPracticeActive]);
+  // The record's writes, one after another: each reads the record and writes
+  // it back whole, so two at once (the end of the match and a Pilot Match's
+  // call-off, in the same tap) would each drop the other's field.
+  const recordChainRef=useRef(Promise.resolve(null));
+  const recordWrite=(fn)=>{const p=recordChainRef.current.then(fn).catch(()=>null);recordChainRef.current=p;return p;};
   // Finished: the record says so (the start screen reads it to stop offering it).
   useEffect(()=>{
-    if(practiceMode&&matchOver&&matchId&&practice?.status!=="complete")updatePractice(matchId,{status:"complete"}).then(r=>{if(r)setPractice(r);});
+    if(practiceMode&&matchOver&&matchId&&practice?.status!=="complete")recordWrite(()=>updatePractice(matchId,{status:"complete"})).then(r=>{if(r)setPractice(r);});
   },[practiceMode,matchOver,matchId,practice?.status]);
   // A weather change from the pad's menu: the scorer's own look at the sky,
   // kept with the over and ball it was seen at.
@@ -2084,8 +2089,17 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     }
     const seal=sealInnings(inn,INNINGS_END_REASON.ABANDONED);
     if(asks(seal))return;
+    // A Pilot Match called off (§7.3): the chase cut short with no par is no
+    // result, so the match itself is abandoned on SCRBRD, with the reason the
+    // scorer gave when play stopped. Recorded here first, and sent by the
+    // result screen's PilotCallOff once the seal has gone (scorer/pilotList.jsx).
+    // A first innings cut short goes on to the chase, and a par decides the
+    // match (Finish, as ever): neither is a call-off. A fixture is untouched.
+    const callsOff=pilotMode&&par==null&&matchChaseOf(innings,curIn)!=null&&!isSuperOver(inn);
+    const code=callsOff?abandonCode(inn.stopped?.reason):null;
     emit(...evs,seal);
     setModal(null);
+    if(callsOff){const at=Date.now();recordWrite(()=>updatePilotState(matchId,{callOff:{code,at}})).then(r=>{if(r)setPractice(r);});}
     afterMatchInnings(curIn);
   };
   // ── end SCRBRD-130 R1 ──
@@ -2602,7 +2616,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
           {/* A Pilot Match is finished on SCRBRD by its scorer (§7.3): from
               then on its clocks run from its last ball, and nothing more is
               taken into its log. */}
-          {pilotMode&&live&&matchId&&offer.state!=="available"&&(
+          {pilotMode&&live&&matchId&&offer.state!=="available"&&practice?.pilot?.callOff&&(
+            <PilotCallOff matchId={matchId} code={practice.pilot.callOff.code} at={practice.pilot.callOff.at}
+              attached={!!padStatus?.attached} left={(padStatus?.pending??0)+(padStatus?.held??0)}
+              done={practice?.pilot?.abandoned===true}
+              onDone={async()=>{const r=await recordWrite(()=>updatePilotState(matchId,{abandoned:true,finishedAt:practice.pilot.callOff.at}));if(r)setPractice(r);}}/>
+          )}
+          {pilotMode&&live&&matchId&&offer.state!=="available"&&!practice?.pilot?.callOff&&(
             <PilotFinish matchId={matchId} attached={!!padStatus?.attached} left={(padStatus?.pending??0)+(padStatus?.held??0)}
               lastAt={Math.max(0,...events.flat().map(e=>Number.isFinite(e?.clientTs)?e.clientTs:0))}
               done={practice?.pilot?.finished===true}

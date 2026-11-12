@@ -13,8 +13,9 @@
  *      them as held and does not say Sent; on reconnect each goes once.
  *   3  A correction: a ball undone, and the board, the scorecard and the
  *      server's log all agree.
- *   4  Abandoned: play stopped and the innings cut short on the pad; the
- *      match then called off on the server (the one place it can be today);
+ *   4  Abandoned: play stopped and the first innings cut short on the pad,
+ *      which goes on to the chase; then the chase cut short with no par, no
+ *      result, and the phone calls the match off on SCRBRD itself (F1);
  *      what remains and what the scorer sees.
  *   5  The sandbox: no stat, record, standing or season figure moves; no typed
  *      name or pilot id on any public read, signed out.
@@ -406,30 +407,46 @@ try {
 
   // ── 4 ──────────────────────────────────────────────────────────────
   group("4. Abandoned");
-  const calls = spawnSync("grep", ["-rnE", "pilot.*abandon|/abandon", "apps/web/src", "--include=*.js", "--include=*.jsx"]).stdout.toString();
-  // A known gap, pinned: when slice 3 or 4 gives the phone a way, this fails and the walk grows a check.
-  ok("the phone has no way to call a Pilot Match off: no client code calls /api/pilot/:id/abandon", !/\/api\/pilot/.test(calls), calls.slice(0, 200));
-  finding("PILOT_MATCH_PHASE2 section 7.3 (abandonment): the server's POST /api/pilot/:id/abandon (services/api/write/pilot-api.mjs:266, db/151 pilot_abandon:1028) has no caller on the phone, so a scorer cannot mark a Pilot Match abandoned. The only call-off the pad has is the innings-level Play stopped / End innings sheet, which seals an innings 'abandoned' but leaves the pilot match 'live' on the server.");
-  await P.tap("pad-menu"); await P.tap("pad-play-stopped");
-  await P.tap("stop-reason-rain"); await P.tap("stop-confirm");
-  await P.page.waitForTimeout(800);
-  ok("Play stopped (rain): the banner says so", (await P.has("rain-banner")) && /Play stopped \(rain\)/.test(await P.tid("rain-banner-words").innerText()));
-  await P.tap("rain-end"); await P.tap("rain-end-confirm");
-  await afterReads(P.page, 1500);
-  await serverEvents(uuid2, nBefore + 6, 8000);
+  const calls = spawnSync("grep", ["-rnE", "/abandon", "apps/web/src", "--include=*.js", "--include=*.jsx"]).stdout.toString();
+  // F1 (was a pinned gap): the phone calls the match off on SCRBRD itself, from the result screen (scorer/pilotList.jsx PilotCallOff).
+  ok("the phone calls a Pilot Match off: client code calls /api/pilot/:id/abandon", /\/api\/pilot\/.*\/abandon/.test(calls), calls.slice(0, 200));
+  /** Play stopped for rain, then End the innings, with no par. */
+  const callOff = async () => {
+    await P.tap("pad-menu"); await P.tap("pad-play-stopped");
+    await P.tap("stop-reason-rain"); await P.tap("stop-confirm");
+    await P.page.waitForTimeout(800);
+    const banner = (await P.has("rain-banner")) && /Play stopped \(rain\)/.test(await P.tid("rain-banner-words").innerText());
+    await P.tap("rain-end"); await P.tap("rain-end-confirm");
+    await afterReads(P.page, 1500);
+    return banner;
+  };
+  ok("Play stopped (rain): the banner says so", await callOff());
+  await serverEvents(uuid2, nBefore + 4, 8000);
   const seal = await one(`select payload->>'reason' r from pilot.ball_event where match_id = $1 and kind = 'innings_end' order by id desc limit 1`, [uuid2]);
-  ok("End innings: the server holds the seal as 'abandoned'", seal?.r === "abandoned", JSON.stringify(seal));
-  ok("...yet the pilot match is still 'live' on the server: nothing marks it abandoned", (await one(`select status from pilot.match where id = $1`, [uuid2])).status === "live");
-  const tok = await loginToken(SCORER);
-  const post = (/** @type {string} */ path, /** @type {any} */ body) => fetch(`${API}${path}`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${tok}` }, body: JSON.stringify(body) }).then((r) => r.json());
-  const ab = await post(`/api/pilot/${uuid2}/abandon`, { reason: "weather" });
-  ok("the server's abandon (the scorer's own token, a coded reason) is accepted", ab?.ok === true, JSON.stringify(ab));
-  const m2 = await one(`select status, abandon_reason, finished_at, names_purge_after from pilot.match where id = $1`, [uuid2]);
+  ok("End innings, the first: the server holds the seal as 'abandoned'", seal?.r === "abandoned", JSON.stringify(seal));
+  ok("...a first innings cut short goes on to the chase: the match is still 'live' on the server, not called off",
+     (await one(`select status from pilot.match where id = $1`, [uuid2])).status === "live");
+  await startChase(P, [B2[0], B2[1]], A2[0]);
+  await P.tap("run-1");
+  ok("the chase is on, one ball in", /1 for 0/.test(await P.board()), await P.board());
+  ok("Play stopped (rain) in the chase", await callOff());
+  ok("End innings in the chase with no par: no result, and the result screen", await P.has("pad-result"), (await P.text()).slice(0, 300));
+  let m2 = null;
+  for (let i = 0; i < 40; i++) {
+    m2 = await one(`select status, abandon_reason, finished_at, names_purge_after from pilot.match where id = $1`, [uuid2]);
+    if (m2?.status === "abandoned") break;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  ok("...the phone called the match off on SCRBRD on its own, once the seal had gone, with the stop's reason kept (rain → weather)",
+     m2?.status === "abandoned" && m2.abandon_reason === "weather", JSON.stringify(m2));
+  ok("...and the result screen says so", await P.has("pilot-called-off"), (await P.text()).slice(-300));
   ok("...status abandoned, the reason a code, an end time, and the names' 30 days run from it",
      m2.status === "abandoned" && m2.abandon_reason === "weather" && m2.finished_at && m2.names_purge_after
      && Math.abs(Date.parse(m2.names_purge_after) - Date.parse(m2.finished_at) - 30 * 86400000) < 2000, JSON.stringify(m2));
   ok("what remains: the log, and the five typed names until their date",
      (await count(uuid2)) > 10 && Number((await one(`select count(*) n from pilot.name where match_id = $1`, [uuid2])).n) === 8);
+  const tok = await loginToken(SCORER);
+  const post = (/** @type {string} */ path, /** @type {any} */ body) => fetch(`${API}${path}`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${tok}` }, body: JSON.stringify(body) }).then((r) => r.json());
   const late = await post(`/api/pilot/${uuid2}/session/claim`, { device: "r0-late" });
   ok("...an abandoned match takes no new claim", late?.ok === false, JSON.stringify(late));
   const ab2 = await post(`/api/pilot/${uuid2}/abandon`, { reason: "weather" });

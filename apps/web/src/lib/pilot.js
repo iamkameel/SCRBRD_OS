@@ -471,3 +471,15 @@ export async function restoreFromServer(uuidOfMatch, { call = api } = {}) {
   if (!(await saveMatch(id, { events: log, curIn: inningsInPlay(log), cfg, serverHas: log.map((evs) => evs.length) }))) throw new Error("not_saved");
   return id;
 }
+
+// ── Called off (§7.3) ────────────────────────────────────────────────
+
+/**
+ * The pad's stop reasons (@scrbrd/scoring STOP_REASON) as the codes
+ * pilot_abandon() takes (db/151): the reason the scorer gave on the Play
+ * stopped sheet, kept, in the server's vocabulary.
+ */
+export const ABANDON_CODE = Object.freeze({ rain: "weather", bad_light: "light", wet_ground: "ground", other: "other" });
+/** @param {unknown} stopReason */
+export const abandonCode = (stopReason) =>
+  (typeof stopReason === "string" && Object.hasOwn(ABANDON_CODE, stopReason) ? ABANDON_CODE[/** @type {keyof typeof ABANDON_CODE} */ (stopReason)] : "other");
