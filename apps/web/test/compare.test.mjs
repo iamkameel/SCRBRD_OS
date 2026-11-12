@@ -148,8 +148,17 @@ group("Nothing kept (D9), no verdict (D3), and only the four reads (D1)");
   ok("no store is written or read", !/localStorage|sessionStorage|indexedDB|IndexedDB|caches\.|persist\.js|setPref|getPref/.test(both));
   ok("no download, share, export, print or pin", !/download|navigator\.share|\/api\/export|window\.print|clipboard|\bpin\b/i.test(both));
   const reads = new Set([...code(src).matchAll(/use(?:Live|ReadFor)\("(\w+)"/g)].map((m) => m[1]));
-  ok("it reads career, career_by_season, matchups and matchup_coverage, and nothing else",
-     [...reads].sort().join() === "career,career_by_season,matchup_coverage,matchups", [...reads].join());
+  ok("it reads career (players for a pupil's picker), career_by_season, matchups and matchup_coverage, and nothing else",
+     [...reads].sort().join() === "career_by_season,matchup_coverage,matchups"
+     && /useLive\(pupil \? "players" : "career", role, nonce\)/.test(code(src)), [...reads].join());
+  // REACH-D2 (Kameel, 7 and 11 Nov 2026): the pupil's card is one team-mate's season.
+  ok("a pupil's card asks no match-up, and the team-mate's season by his id alone",
+     /const staffReady = ready && !pupil;/.test(code(src)) && /useReadFor\("matchups", staffReady \?/.test(code(src))
+     && /useReadFor\("matchup_coverage", staffReady \?/.test(code(src))
+     && /useReadFor\("career_by_season", pupil && ready \? \{ playerId: bId \} : null, nonce\)/.test(code(src)));
+  ok("...draws no season buttons and no match-up panel for him, and says why in words",
+     /!pupil && seasons\.length > 0/.test(code(src)) && /\{!pupil && <MatchupPanel/.test(code(src))
+     && /his career, his match-ups and his wheel are his own/.test(src));
   ok("no colour of judgement: no green, red, amber or a status tone", !/emerald|rose|amber|T\.status|D\.(sky|indigo)|brand\.(green|lime)/.test(code(src)));
   ok("no verdict words", !/better|worse|winner|\brank(ing|s)?\b|ahead of|behind\b|\bbest\b|outperform/i.test(code(src)));
   ok("no absence words", !/missed|absent|did not play|unavailable|appearances/i.test(code(src)));

@@ -7,7 +7,7 @@ import { useLive } from "../lib/live.js";
 import { readState } from "../lib/readState.js";
 import { SRC_RECORD, seasonWindow } from "../lib/sourceWords.js";
 import {
-  METRICS, basisFor, demoSeasonRows, playerBars, seasonChoice, seasonsWindow, sidePlayers, squadBars, whoIs,
+  METRICS, basisFor, demoSeasonRows, playerBars, seasonChoice, seasonsWindow, sidePlayers, squadBars, squadSeasonRows, whoIs,
 } from "../lib/seasonBars.js";
 
 /**
@@ -20,6 +20,12 @@ import {
  *   A player picked    that player's seasons, a bar each, oldest first
  *   One player in view the read shows this reader only one player of the
  *                      side (a pupil, a parent), so it is that player
+ *
+ * Since REACH-D2 a pupil's read is his own rows (and, while he is captain,
+ * his side's for that season), so a non-captain pupil sees his own seasons
+ * with the line that says why, and the side's leaders are offered only for a
+ * season in which the read shows more than one player: never a one-bar
+ * leaders chart.
  *
  * The rows are exactly what the read returns to this reader. A season he did
  * not bat or bowl in is a row that says so, never a bar of nought. Signed out
@@ -65,7 +71,9 @@ export function SeasonBarsView({ demo, rows, said, team, onRetry, initial = {} }
   const players = sidePlayers(inSide, team);
   const who = whoIs(picked, players);
   const alone = !picked && players.length === 1;
-  const choice = seasonChoice(inSide);
+  // The leaders chart's seasons: those that show more than one player.
+  const squadRows = players.length > 1 ? squadSeasonRows(inSide) : inSide;
+  const choice = seasonChoice(squadRows.length ? squadRows : inSide);
   const season = chosenSeason && choice.seasons.includes(chosenSeason) ? chosenSeason : choice.open;
   const m = METRICS[metric];
   const name = players.find((p) => p.id === who)?.name ?? "";
