@@ -43,10 +43,19 @@
  * looks the squads up in INT_TEAMS only to fall back to the lists it was
  * given (scorer/engine.jsx startMatch, lines 829-862), so a typed team needs
  * no engine change.
+ *
+ * PHASE 2 (docs/design/PILOT_MATCH_PHASE2.md) — lib/pilot.js. A Pilot Match is
+ * this setup and this pad with phase 2 switched on: sent to SCRBRD, scored on
+ * slot ids, kept under `pilot:` keys. Everything above stays true, word for
+ * word, for every `practice-` id: a Practice Match is never sent, and nothing
+ * turns one into a Pilot Match. The record store below answers for both
+ * (savePractice/loadPractice/updatePractice route a `pilot-` id to
+ * `pilot:meta:`), and the draft is kept under `pilot:draft` once "Send live"
+ * is chosen.
  */
 import { AGE_GROUPS } from "./league.js";
 import {
-  PRACTICE_ID_PREFIX, isPracticeId, putRecord, getRecord, deleteRecord, recordKeys, loadMatch, clearMatch,
+  PRACTICE_ID_PREFIX, isPracticeId, isPilotId, putRecord, getRecord, deleteRecord, recordKeys, loadMatch, clearMatch,
 } from "./persist.js";
 import { foldPad } from "../scorer/penalty.js";
 import { getWeatherHint } from "./weatherHint.js";
@@ -458,6 +467,8 @@ export function weatherChangeWords(c) {
 // ── The setup, as a draft ────────────────────────────────────────────
 
 const DRAFT_KEY = "practice:draft";
+/** The draft of a setup that chose "Send live to SCRBRD" (phase 2): its own prefix. */
+const PILOT_DRAFT_KEY = "pilot:draft";
 
 /** The setup before it is started: blank. */
 export function blankDraft() {
@@ -471,13 +482,22 @@ export function blankDraft() {
   };
 }
 
-/** @param {any} d */
-export async function saveDraft(d) { return putRecord(DRAFT_KEY, { ...d, savedAt: Date.now() }); }
+/**
+ * Kept under the prefix of what it will start: `pilot:draft` once "Send
+ * live" is chosen, `practice:draft` otherwise, and never both.
+ * @param {any} d
+ */
+export async function saveDraft(d) {
+  const [key, other] = d?.mode === "pilot" ? [PILOT_DRAFT_KEY, DRAFT_KEY] : [DRAFT_KEY, PILOT_DRAFT_KEY];
+  const ok = await putRecord(key, { ...d, savedAt: Date.now() });
+  await deleteRecord(other);
+  return ok;
+}
 export async function loadDraft() {
-  const d = await getRecord(DRAFT_KEY);
+  const d = (await getRecord(PILOT_DRAFT_KEY)) ?? (await getRecord(DRAFT_KEY));
   return d && d.v === 1 && Array.isArray(d.teams) && Array.isArray(d.squads) ? d : null;
 }
-export async function clearDraft() { return deleteRecord(DRAFT_KEY); }
+export async function clearDraft() { await deleteRecord(PILOT_DRAFT_KEY); return deleteRecord(DRAFT_KEY); }
 
 // ── Where the phone is ───────────────────────────────────────────────
 
@@ -615,16 +635,18 @@ export function cfgFromRecord(rec, id) {
 
 const META = "practice:meta:";
 const LOG = "practice:log:";
+/** A record's key: `pilot:meta:` for a Pilot Match (lib/pilot.js), else the practice one. @param {string} id */
+const metaKey = (id) => (isPilotId(id) ? `pilot:meta:${id}` : META + id);
 
-export async function savePractice(rec) { return putRecord(META + rec.id, { ...rec, updatedAt: Date.now() }); }
-export async function loadPractice(id) { return getRecord(META + id); }
+export async function savePractice(rec) { return putRecord(metaKey(rec.id), { ...rec, updatedAt: Date.now() }); }
+export async function loadPractice(id) { return getRecord(metaKey(id)); }
 
 /** Merge a patch into a stored record and keep it. @param {string} id @param {object} patch */
 export async function updatePractice(id, patch) {
   const cur = await loadPractice(id);
   if (!cur) return null;
   const next = { ...cur, ...patch, updatedAt: Date.now() };
-  return (await putRecord(META + id, next)) ? next : null;
+  return (await putRecord(metaKey(id), next)) ? next : null;
 }
 
 /**

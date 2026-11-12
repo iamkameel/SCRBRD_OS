@@ -37,6 +37,8 @@ import { readdirSync } from "node:fs";
 // previous walk's writes would make them pass or fail for the wrong reason.
 const WALKS = [
   "read", "sync", "handover", "handover-crash", "fold",
+  // Pilot Match phase 2 (db/151): the write path, the grant, the one not-found.
+  "pilot-sync",
   // A handover verifies against THIS innings, penalty runs included (SCRBRD-088, db/45).
   "handover-innings",
   "assess", "access", "eligibility", "roster", "audit", "guardian",
@@ -609,6 +611,9 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // all deleted from the page's own confirmation, and nothing left in
   // IndexedDB or localStorage; 390 wide.
   "browser-practice",
+  // Pilot Match phase 2, slice 3 (db/151): the phone sends a granted account's
+  // match with no name in a ball; an ungranted one stays on the phone, in words.
+  "browser-pilot",
   // Settings → Import and the Staff screen: the office has the tab and a coach
   // does not; the template downloads; a file with one bad line shows that line
   // in the route's words and keeps Import disabled; a clean file is checked,

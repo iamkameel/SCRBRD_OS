@@ -46,6 +46,14 @@ const KINDS = /** @type {const} */ ({
   renamed: new RegExp(String.raw`\bALTER\s+(TABLE|VIEW|MATERIALIZED\s+VIEW|FUNCTION|PROCEDURE|TYPE|DOMAIN|SEQUENCE)\s+(?:IF\s+EXISTS\s+)?[^;]*?\bRENAME\s+TO\s+${ID}`, "gi"),
 });
 
+/**
+ * The schemas of our own beside public, by a fixed list — never read from a
+ * migration's text, where a `CREATE SCHEMA IF NOT EXISTS extensions` would
+ * put a host's own schema on the drop list. A schema joins this list in the
+ * same change as the migration that creates it.
+ */
+export const PROJECT_SCHEMAS = Object.freeze(["pilot"]);
+
 /** `public.foo` → foo; `"Foo"` → Foo; bare → lower case; another schema → null. */
 const nameOf = (/** @type {string} */ raw) => {
   const parts = raw.split(/\s*\.\s*/);
@@ -58,9 +66,10 @@ const nameOf = (/** @type {string} */ raw) => {
 const stripComments = (/** @type {string} */ sql) => sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ");
 
 /**
- * Every object this repository's migrations create in `public`, by kind.
+ * Every object this repository's migrations create in `public`, by kind,
+ * and every schema of its own they create beside it (db/151's `pilot`).
  * @param {string} dbDir
- * @returns {{ tables: string[], views: string[], routines: string[], types: string[], sequences: string[] }}
+ * @returns {{ tables: string[], views: string[], routines: string[], types: string[], sequences: string[], schemas: string[] }}
  */
 export function projectObjects(dbDir) {
   /** @type {Record<string, Set<string>>} */
@@ -83,7 +92,7 @@ export function projectObjects(dbDir) {
   }
   const sorted = (/** @type {Set<string>} */ s) => [...s].sort();
   return { tables: sorted(found.tables), views: sorted(found.views), routines: sorted(found.routines),
-           types: sorted(found.types), sequences: sorted(found.sequences) };
+           types: sorted(found.types), sequences: sorted(found.sequences), schemas: [...PROJECT_SCHEMAS] };
 }
 
 const arr = (/** @type {string[]} */ xs) => xs.length
@@ -92,7 +101,10 @@ const arr = (/** @type {string[]} */ xs) => xs.length
 
 /**
  * The teardown, as one DO block: drops, in `public`, exactly the objects
- * named, and never one that belongs to an extension.
+ * named, and never one that belongs to an extension — and each schema of
+ * our own whole (`pilot`: nothing outside it may depend on it, db/151's
+ * isolation check, and its tables' keys into ours are ours, not somebody
+ * else's objects built on ours).
  * @param {ReturnType<typeof projectObjects>} o
  */
 export function teardownSql(o) {
@@ -109,8 +121,10 @@ DECLARE
   ours_routines  text[] := ${arr(o.routines)};
   ours_types     text[] := ${arr(o.types)};
   ours_sequences text[] := ${arr(o.sequences)};
+  ours_schemas   text[] := ${arr(o.schemas ?? [])};
   foreign_deps   text;
 BEGIN
+
   -- FIRST, A REFUSAL. CASCADE on one of ours would take with it anything of
   -- somebody else's built on it: their view over our table, their function
   -- taking our type, their table with a column of our enum or a foreign key
@@ -129,6 +143,17 @@ BEGIN
     SELECT t.oid, 'pg_type'::regclass FROM pg_type t
       JOIN pg_namespace ns ON ns.oid = t.typnamespace
      WHERE ns.nspname = 'public' AND t.typname = ANY (ours_types)
+    -- Everything in a schema of our own is ours, so what somebody else built
+    -- on it stops the reset too, before the schema goes CASCADE.
+    UNION ALL
+    SELECT c.oid, 'pg_class'::regclass FROM pg_class c
+      JOIN pg_namespace ns ON ns.oid = c.relnamespace WHERE ns.nspname = ANY (ours_schemas)
+    UNION ALL
+    SELECT p.oid, 'pg_proc'::regclass FROM pg_proc p
+      JOIN pg_namespace ns ON ns.oid = p.pronamespace WHERE ns.nspname = ANY (ours_schemas)
+    UNION ALL
+    SELECT t.oid, 'pg_type'::regclass FROM pg_type t
+      JOIN pg_namespace ns ON ns.oid = t.typnamespace WHERE ns.nspname = ANY (ours_schemas)
   ), dependent AS (
     -- Each dependent, by what it hangs off: the relation a view's rule, a
     -- constraint, a default, a trigger or a policy belongs to; the routine;
@@ -162,6 +187,13 @@ BEGIN
     RAISE EXCEPTION 'refusing to reset: these are not this project''s, and depend on its objects: %', foreign_deps
       USING HINT = 'Nothing was dropped. Remove or detach them first: the reset drops only what db/ creates.';
   END IF;
+
+  -- Our own schemas, whole (db/151's pilot): nothing outside them may
+  -- depend on them (its isolation check), and their keys into public are ours.
+  FOR r IN SELECT nspname FROM pg_namespace WHERE nspname = ANY (ours_schemas) LOOP
+    EXECUTE format('DROP SCHEMA IF EXISTS %I CASCADE', r.nspname);
+    n := n + 1;
+  END LOOP;
 
   -- Views first: a view over a table we are about to drop would go with it
   -- under CASCADE anyway, but dropping them explicitly keeps the count honest.

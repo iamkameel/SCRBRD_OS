@@ -30,6 +30,8 @@ const SUITES = [
   // What a signed-out page may show about a pupil (SCRBRD-083): the surfaces,
   // the never-public list against every masked column, the name rule.
   ["public",   "packages/policy/test/public.test.mjs"],
+  // Pilot Match phase 2 (db/151): no migration but the pilot's names schema pilot.
+  ["pilot-isolation", "packages/policy/test/pilot-isolation.test.mjs"],
   // The plan's word list (SCRBRD-138 phase B §3): SG-10's words in code, the
   // one copy the news route and the composer both read.
   ["words",    "packages/policy/test/words.test.mjs"],
@@ -214,6 +216,10 @@ const SUITES = [
   // overs, batters, bowler, undo), no route to the sync path or to any normal
   // list, delete one and delete all, the weather record, the scorecard file.
   ["practice", "apps/web/test/practice.test.mjs"],
+  // Pilot Match phase 2: no name on the wire (a property test), and phase 1's locks.
+  ["pilot-wire", "apps/web/test/pilotWire.test.mjs"],
+  // ...and the phone's pilot store: slots, what leaves, the refusal, the names' date.
+  ["pilot-store", "apps/web/test/pilot.test.mjs"],
   // A panel that throws is a quiet card in its place, logs its name and the
   // message once, and resets on "Try again" (ui/ErrorBoundary.jsx); same transform.
   ["error-boundary", "apps/web/test/error-boundary.test.mjs", ["--import", "./tools/register-jsx.mjs"]],

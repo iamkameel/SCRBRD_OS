@@ -298,7 +298,8 @@ group("F. The sandbox: nothing reaches sync, nothing shows in a normal list");
     else if (/\.(jsx?|mjs)$/.test(e.name) && /from\s+["'][^"']*\/lib\/practice(Export)?\.js["']|from\s+["']\.\/practice(Export)?\.js["']/.test(readFileSync(p, "utf8"))) readers.push(p.replace(/\\/g, "/"));
   } };
   walk("apps/web/src");
-  ok("only the scorer's own modules import the practice store", readers.length > 0 && readers.every((r) => /\/scorer\//.test(r) || /\/lib\/practice(Export)?\.js$/.test(r)), readers.join(", "));
+  // ...and lib/pilot.js, phase 2's store beside it (PILOT_MATCH_PHASE2), which the scorer alone imports in turn.
+  ok("only the scorer's own modules import the practice store", readers.length > 0 && readers.every((r) => /\/scorer\//.test(r) || /\/lib\/(practice(Export)?|pilot)\.js$/.test(r)), readers.join(", "));
   const persistReaders = [];
   const walk2 = (dir) => { for (const e of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, e.name);
@@ -306,7 +307,7 @@ group("F. The sandbox: nothing reaches sync, nothing shows in a normal list");
     else if (/\.(jsx?|mjs)$/.test(e.name) && /\b(recordKeys|putRecord|getRecord|deleteRecord)\b/.test(readFileSync(p, "utf8"))) persistReaders.push(p.replace(/\\/g, "/"));
   } };
   walk2("apps/web/src");
-  ok("...and the generic record door is used by persist.js and the practice store alone", persistReaders.every((r) => /lib\/(persist|practice)\.js$/.test(r)), persistReaders.join(", "));
+  ok("...and the generic record door is used by persist.js, the practice store and the pilot store alone", persistReaders.every((r) => /lib\/(persist|practice|pilot)\.js$/.test(r)), persistReaders.join(", "));
   ok("no module that lists fixtures, stats or tables mentions a practice match",
     !["lib/matchCentre.js", "lib/league.js", "lib/standings.js", "lib/live.js", "lib/seasonAwards.js", "lib/people.js", "views/MatchCentreView.jsx"]
       .some((f) => /practice/i.test(readFileSync(join("apps/web/src", f), "utf8"))));

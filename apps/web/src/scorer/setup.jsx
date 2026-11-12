@@ -518,14 +518,16 @@ function SquadBuilder({teamKey, selected11, setSelected11, twelfthMan, setTwelft
    of them is one tap away. Everything about them is kept on this phone
    (lib/practice.js), and the card says so.
 ═══════════════════════════════════════════════════════ */
-function PracticeEntry({offer,onStart,onList,onResume}){
+// `onPilotList` (PILOT_MATCH_PHASE2): My Pilot Matches, offered once phase 2
+// is on for this account or a Pilot Match is on this phone; null otherwise.
+function PracticeEntry({offer,onStart,onList,onResume,onPilotList=null}){
   const score=(offer?.lines||[]).map(l=>`${l.team} ${l.runs}/${l.wickets} (${Math.floor(l.balls/6)}.${l.balls%6})`).join(" · ");
   return (
     <div data-testid="practice-entry" style={{width:"100%",maxWidth:"520px",display:"flex",flexDirection:"column",gap:"10px",marginBottom:"16px"}}>
       {offer&&(
         <Glass style={{padding:"16px 18px"}}>
           <div data-testid="practice-resume-card" style={{display:"flex",flexDirection:"column",gap:"10px"}}>
-            <Lbl>Practice match in progress</Lbl>
+            <Lbl>{offer.pilot?"Pilot match in progress":"Practice match in progress"}</Lbl>
             <div style={{fontFamily:D.body,fontSize:"16px",fontWeight:600,color:D.textPrimary,overflowWrap:"anywhere"}}>{offer.title}</div>
             <div style={{fontFamily:D.body,fontSize:"14px",color:D.textSecondary,overflowWrap:"anywhere"}}>
               {score||"Nothing scored yet"}
@@ -541,6 +543,11 @@ function PracticeEntry({offer,onStart,onList,onResume}){
       <Btn variant="ghost" size="lg" full data-testid="practice-list-open" onClick={onList} sx={{borderRadius:D.md}}>
         Practice Matches
       </Btn>
+      {onPilotList&&(
+        <Btn variant="ghost" size="lg" full data-testid="pilot-list-open" onClick={onPilotList} sx={{borderRadius:D.md}}>
+          My Pilot Matches
+        </Btn>
+      )}
       <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,textAlign:"center"}}>
         A practice match is kept on this phone only. It is never sent anywhere or counted.
       </div>
