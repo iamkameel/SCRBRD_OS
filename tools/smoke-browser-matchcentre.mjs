@@ -777,10 +777,11 @@ try {
     const badA = [];
     let tapsOk = true;
     for (const ar of areas) {
-      const cell = tid(D3, `wagon-area-${ar.label.toLowerCase().replace(/\s+/g, "-")}`);
-      const box = await cell.boundingBox().catch(() => null);
-      if (!box || box.height < 43.5 || await cell.evaluate((e) => e.tagName) !== "BUTTON") { tapsOk = false; badA.push(`${ar.label}: not a 44px button`); continue; }
-      await cell.scrollIntoViewIfNeeded();
+      const id = `wagon-area-${ar.label.toLowerCase().replace(/\s+/g, "-")}`;
+      const cell = tid(D3, id);
+      // Read in the page in one step: a live fixture's poll draws the panel again under a locator.
+      const box = await D3.evaluate((t) => { const e = document.querySelector(`[data-testid="${t}"]`); return e && { h: e.getBoundingClientRect().height, tag: e.tagName }; }, id);
+      if (!box || box.h < 43.5 || box.tag !== "BUTTON") { tapsOk = false; badA.push(`${ar.label}: not a 44px button (${JSON.stringify(box)})`); continue; }
       await cell.click();
       await tid(D3, "mc-drill").waitFor({ timeout: 4000 }).catch(() => {});
       await D3.waitForTimeout(200);
