@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { deriveMatch } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
 import { DisplayView, useWakeLock } from "../../display/DisplayView.jsx";
-import { answeredThrough, forGround, groundInnings, groundNameOf, namedOnGround, publicLabels } from "../../display/groundNames.js";
+import { answeredThrough, forGround, groundInnings, groundNameOf, labelsFromAnswer, namedOnGround } from "../../display/groundNames.js";
 import { api } from "../../lib/api.js";
 import { teamOf } from "../../lib/matchCentre.js";
 import { superOverCommentary } from "../../lib/superOver.js";
@@ -32,10 +32,11 @@ import { superOverCommentary } from "../../lib/superOver.js";
  * AND ONLY WHERE THE PUBLIC PAGE NAMES HIM (Kameel, 12 Nov 2026, 21:00: "we
  * should be masking the names of any boy that doesn't have a public
  * profile"). A boy is named, and by its label, only where the public live
- * page of this match names him: the screen reads the public page's own log
- * (usePublicNames below, GET /api/public/matches/:id/log, anonymous whatever
- * it carries), so it adds no data and no privacy surface. On a fixture
- * that is not published, or when that read fails, nobody is named.
+ * page of this match would name him: the server asks the public page's own
+ * rule (useGroundNames below, GET /api/matches/:id/ground-names, behind
+ * ground_screen_sides()'s gate), whether or not the public pages are on.
+ * On a fixture that is not published, or when that read fails, nobody is
+ * named. The screen never reads the public routes.
  *
  * ONLY THE HOST'S STAFF (Kameel's (a)). The read answers nobody else (the
  * function decides: not a pupil, and player.roster.read or scoring.start at
@@ -62,10 +63,10 @@ export function BigScreen({ match, events, fold, sides = null, result, settled, 
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
-  const pub = usePublicNames(match.id, events?.length ?? 0);
+  const labels = useGroundNames(match.id, events?.length ?? 0);
   const ground = useMemo(() => {
     const log = events ?? [];
-    const named = namedOnGround(sides, log, publicLabels(pub, log));
+    const named = namedOnGround(sides, log, labelsFromAnswer(labels));
     const { events: evs, spoken, hidden } = forGround(log, named);
     const folded = deriveMatch(evs, fold ?? {});
     groundInnings(folded.innings, named, hidden);
@@ -76,7 +77,7 @@ export function BigScreen({ match, events, fold, sides = null, result, settled, 
     // log; only whom it may name differs.
     const commentary = superOverCommentary(deriveCommentary(spoken, { ctx: fold ?? {}, nameOf, teamName }), folded.innings, { teamName });
     return { events: evs, played, commentary };
-  }, [events, fold, sides, pub, match]);
+  }, [events, fold, sides, labels, match]);
   return (
     <DisplayView match={match} events={ground.events} fold={fold ?? {}} innings={ground.played} result={result} settled={settled}
       commentary={ground.commentary} ready settings={{ theme: "floodlit", dwell: "normal", reduceMotion: false }}
@@ -88,15 +89,15 @@ export function BigScreen({ match, events, fold, sides = null, result, settled, 
 export const GROUND_REASK_MS = 45_000;
 
 /**
- * The public live page's own read of this match (GET /api/public/matches/
- * :id/log): `{events, people}`, or null before it answers, after it fails,
- * and for a fixture that is not published (a 404). Asked when the screen
- * opens, on every new ball and every GROUND_REASK_MS.
+ * Whom the big screen may name (GET /api/matches/:id/ground-names): the
+ * labels the public live page would show, or null before it answers and
+ * after it fails. Asked when the screen opens, on every new ball and every
+ * GROUND_REASK_MS.
  * @param {string} matchId  @param {unknown} seen
- * @returns {{events: any[], people: Record<string, string>} | null}
+ * @returns {{labels: Record<string, string>} | null}
  */
-function usePublicNames(matchId, seen) {
-  const [pub, setPub] = useState(/** @type {{events: any[], people: Record<string, string>} | null} */ (null));
+function useGroundNames(matchId, seen) {
+  const [answer, setAnswer] = useState(/** @type {{labels: Record<string, string>} | null} */ (null));
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setTick((x) => x + 1), GROUND_REASK_MS);
@@ -104,12 +105,12 @@ function usePublicNames(matchId, seen) {
   }, []);
   useEffect(() => {
     let cancelled = false;
-    api(`/api/public/matches/${encodeURIComponent(matchId)}/log`)
-      .then((d) => { if (!cancelled) setPub(Array.isArray(d?.events) && d?.people && typeof d.people === "object" ? { events: d.events, people: d.people } : null); })
-      .catch(() => { if (!cancelled) setPub(null); });
+    api(`/api/matches/${encodeURIComponent(matchId)}/ground-names`)
+      .then((d) => { if (!cancelled) setAnswer(d?.labels && typeof d.labels === "object" ? { labels: d.labels } : null); })
+      .catch(() => { if (!cancelled) setAnswer(null); });
     return () => { cancelled = true; };
   }, [matchId, seen, tick]);
-  return pub;
+  return answer;
 }
 
 /**

@@ -59,6 +59,7 @@ import { overParts } from "../apps/web/src/scorer/overParts.js";
 import { wagonAnalysis } from "../apps/web/src/scorer/wagonAnalysis.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { nameFor } from "../services/api/public/redact.mjs";
 import { pickTab } from "./walk-tabs.mjs";
 
 const WEB_PORT = port(5361);
@@ -930,8 +931,8 @@ try {
   // Open the big screen and wait for its own read (it asks afresh on opening), then a paint.
   const openBig = async (/** @type {any} */ page) => {
     const answered = page.waitForResponse((r) => r.url().includes("/api/read/ground_screen_sides"), { timeout: 8000 }).catch(() => null);
-    // ...and the public page's own read, which says whom the screen may name (Kameel, 12 Nov, 21:00).
-    const pub = page.waitForResponse((r) => /\/api\/public\/matches\/[^/]+\/log/.test(r.url()), { timeout: 8000 }).catch(() => null);
+    // ...and whom it may name: the public page's labels, from the signed-in read (Kameel, 12 Nov, 21:00).
+    const pub = page.waitForResponse((r) => /\/api\/matches\/[^/]+\/ground-names/.test(r.url()), { timeout: 8000 }).catch(() => null);
     await tid(page, "mc-bigscreen-open").click({ timeout: 6000 }).catch(() => {});
     await pub;
     const r = await answered;
@@ -997,10 +998,11 @@ try {
                values ($1, 'guardian', $2, $3, 'public-names-2026-09', sa_today() - 10, $4)`, [byName(hb2), ga, gl, office]);
       await q(`update public_names_off set names_off = false where school_id = $1`, [HIL]);
     }
-    const pubNames = await fetch(`${API}/api/public/matches/${catchId}/log`).then((r) => r.json()).catch(() => null);
-    const pubLabels = Object.values(pubNames?.people ?? {});
-    ok("control: the public page names R Pillai and not S Naidu", pubLabels.some((l) => /Pillai/.test(String(l))) && !pubLabels.some((l) => /Naidu/.test(String(l))),
-       JSON.stringify(pubNames?.people));
+    // The control, over the public page's own facts and rule (public_match_people(), nameFor()), with the public pages off as they are here.
+    const facts = await q(`select * from public_match_people($1)`, [catchId]);
+    const wouldName = facts.map((r) => nameFor(r, r.served_on)).filter(Boolean);
+    ok("control: the public page would name R Pillai and not S Naidu", wouldName.some((l) => /Pillai/.test(String(l))) && !wouldName.some((l) => /Naidu/.test(String(l))),
+       JSON.stringify(wouldName));
     await mark(byName(wb2));
     const cs = await open();
     const P = cs.page;

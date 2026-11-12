@@ -27,7 +27,7 @@
  * profile"). On top of the side rule, a boy is named only where the public
  * live page of the same match names him, and by the label it names him by:
  * the public page's own read, so the screen shows the crowd nothing the
- * public page would not (publicLabels()). A name the scorer typed (L6) is
+ * public page would not (labelsFromAnswer(): the server asks the public page's own rule, whether or not the public pages are on). A name the scorer typed (L6) is
  * a position, as it is there.
  *
  * FAIL CLOSED. A boy is named only when the FIRST innings_start naming a
@@ -85,54 +85,28 @@ function squadSides(events) {
 }
 
 /**
- * The boys the PUBLIC LIVE PAGE of this match names, by their signed-in id,
- * with the label it names them by (Kameel, 12 Nov 2026, 21:00: "we should be
- * masking the names of any boy that doesn't have a public profile"). The
- * answer is the public page's own read (GET /api/public/matches/:id/log,
- * public-api.mjs), the rule applied on the server by publicName() over
- * public_match_people(): `people` maps a pseudonym to the label of exactly
- * the boys the public page names, and each innings_start's squads carry
- * those pseudonyms in the order the signed-in log carries the ids. So the
- * k-th innings_start of each log is lined up, squad by squad and place by
- * place; a squad whose length differs, an innings that differs, a count of
- * innings_start that differs, or a boy given two labels names nobody there.
- * Nothing here decides who is named; null (no public answer: the read
- * failed, or the fixture is not published) names nobody.
- * @param {{events?: any[], people?: Record<string, string>} | null | undefined} pub
- * @param {any[]} events  the signed-in log
+ * The boys the PUBLIC LIVE PAGE of this match would name, by their
+ * signed-in id, with the label it would name them by (Kameel, 12 Nov 2026,
+ * 21:00: "we should be masking the names of any boy that doesn't have a
+ * public profile"), from the server's answer (GET /api/matches/:id/
+ * ground-names, ground-names-api.mjs: public_match_people() through
+ * nameFor(), the public log's own rule, behind ground_screen_sides()'s
+ * gate). Nothing here decides who is named; null (no answer, or one that
+ * failed) names nobody.
+ * @param {{labels?: Record<string, unknown>} | null | undefined} d
  * @returns {Map<string, string> | null}  id → the public label
  */
-export function publicLabels(pub, events = []) {
-  if (!pub || !Array.isArray(pub.events) || !pub.people || typeof pub.people !== "object") return null;
-  const mine = events.filter((e) => e?.kind === "innings_start");
-  const theirs = pub.events.filter((e) => e?.kind === "innings_start");
+export function labelsFromAnswer(d) {
+  if (!d || typeof d.labels !== "object" || d.labels === null) return null;
   /** @type {Map<string, string>} */
   const out = new Map();
-  /** @type {Set<string>} */
-  const torn = new Set();
-  if (mine.length !== theirs.length) return out;
-  mine.forEach((ev, k) => {
-    const pe = theirs[k];
-    if ((pe?.innings ?? 0) !== (ev?.innings ?? 0)) return;
-    for (const key of ["squad", "bowlingSquad"]) {
-      const a = Array.isArray(ev[key]) ? ev[key] : [], b = Array.isArray(pe[key]) ? pe[key] : [];
-      if (a.length !== b.length) continue;
-      a.forEach((/** @type {any} */ m, /** @type {number} */ i) => {
-        const id = m?.id ?? m, ref = b[i]?.id ?? b[i];
-        const label = typeof ref === "string" && Object.hasOwn(pub.people, ref) ? pub.people[ref] : null;
-        if (typeof id !== "string" || !UUID.test(id) || typeof label !== "string" || !label.trim()) return;
-        if (out.has(id) && out.get(id) !== label) torn.add(id);
-        out.set(id, label);
-      });
-    }
-  });
-  for (const id of torn) out.delete(id);
+  for (const [id, l] of Object.entries(d.labels)) if (UUID.test(id) && typeof l === "string" && l.trim()) out.set(id, l);
   return out;
 }
 
 /**
  * The boys the big screen names, with the label it names them by: those
- * the public live page names (`labels`, publicLabels()), and of those only
+ * the public live page would name (`labels`, labelsFromAnswer()), and of those only
  * the boys whom a side's first squad carries with every side carrying him
  * answered as not position-only (Kameel, 12 Nov 2026, (b), and the season
  * roster). Both answers are needed: without either, nobody is named.

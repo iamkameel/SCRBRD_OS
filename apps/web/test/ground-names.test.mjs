@@ -5,8 +5,9 @@
 // the names of any boy that doesn't have a public profile"), a boy is named
 // only where the public live page of the match names him, by its label.
 // apps/web/src/display/groundNames.js over a log built with
-// @scrbrd/scoring's own constructors and a public log made as the server
-// makes it (pseudonyms in the same places, `people` for the named), folded
+// @scrbrd/scoring's own constructors and the server's labels (GET
+// /api/matches/:id/ground-names: nameFor() over public_match_people()'s
+// rows, ground-names-api.mjs groundLabels()), folded
 // and told as the Match Centre's big screen does it
 // (views/matchcentre/bigscreen.jsx). Catches are written in the pad's shape:
 // `fielder` the scorecard's name text, `fielders` the references. db/99 §130
@@ -14,7 +15,8 @@
 // a real big screen. Everyone here is invented.
 import { deriveMatch, inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
-import { GROUND_POSITION, answeredThrough, byPosition, forGround, groundInnings, groundNameOf, namedOnGround, publicLabels } from "../src/display/groundNames.js";
+import { GROUND_POSITION, answeredThrough, byPosition, forGround, groundInnings, groundNameOf, labelsFromAnswer, namedOnGround } from "../src/display/groundNames.js";
+import { groundLabels } from "../../../services/api/read/ground-names-api.mjs";
 import { displayState, fallOfWicket, bowlingPanel, partnershipPanel } from "../src/display/data.js";
 
 let pass = 0, fail = 0;
@@ -57,21 +59,18 @@ const LOG = [
 ];
 const PLAYERS = [...H, ...K, LATE];
 
-/** The public page's log of the same match, as public-api.mjs serves it: pseudonyms in place of ids, `people` for the boys it names. */
-function publicOf(/** @type {Set<string>} */ namedIds, log = LOG) {
-  const pseud = (/** @type {string} */ x) => `p${x.slice(0, 2)}${x.slice(-9)}`;
-  /** @type {Record<string, string>} */
-  const people = {};
-  const events = log.map((ev) => {
-    if (ev.kind !== "innings_start") return { kind: ev.kind, innings: ev.innings };
-    const member = (/** @type {any} */ m) => {
-      const p = PLAYERS.find((x) => x.id === m.id);
-      if (p && namedIds.has(p.id)) people[pseud(p.id)] = label(p);
-      return { id: pseud(m.id), label: p && namedIds.has(p.id) ? label(p) : "Batter" };
-    };
-    return { kind: ev.kind, innings: ev.innings, squad: ev.squad.map(member), bowlingSquad: ev.bowlingSquad.map(member) };
-  });
-  return { events, people };
+/**
+ * The server's answer (ground-names-api.mjs): groundLabels() over rows as
+ * public_match_people() returns them — the boys in `namedIds` with a live,
+ * competent consent, the rest with none — so the label is publicName()'s own.
+ */
+function publicOf(/** @type {Set<string>} */ namedIds) {
+  const rows = PLAYERS.map((p) => ({
+    player_id: p.id, school_published: true, full_name: p.name, surname: p.name.split(" ")[1], known_as: null, served_on: "2026-11-12",
+    facts: { neverPublic: false, namesOff: false,
+             consents: namedIds.has(p.id) ? [{ by: "guardian", competent: true, givenOn: "2026-11-01", endedOn: null }] : [] },
+  }));
+  return { labels: groundLabels(rows) };
 }
 const EVERYONE = new Set(PLAYERS.map((p) => p.id));
 /** The server's answer (db/153). */
@@ -81,7 +80,7 @@ const AWAY_MARKED = answer({ [HOME]: false, [AWAY]: true });
 
 /** The big screen's fold and commentary, as bigscreen.jsx makes them. */
 function screen(/** @type {any} */ ans, pub = publicOf(EVERYONE)) {
-  const named = namedOnGround(ans, LOG, publicLabels(pub, LOG));
+  const named = namedOnGround(ans, LOG, labelsFromAnswer(pub));
   const { events, spoken, hidden } = forGround(LOG, named);
   const folded = deriveMatch(events, {});
   groundInnings(folded.innings, named, hidden);
@@ -95,19 +94,15 @@ const AWAY_WORDS = [...K.map((p) => p.name), ...K.map(label), "Awayfour"];
 
 console.log("A. The answers: the server's per side, the public page's per boy");
 {
-  const L = publicLabels(publicOf(EVERYONE), LOG);
+  const L = labelsFromAnswer(publicOf(EVERYONE));
   ok("no answer names nobody with a row", namedOnGround(null, LOG, L).size === 0 && namedOnGround(undefined, LOG, L).size === 0);
-  ok("no public answer names nobody", namedOnGround(answer({ [HOME]: false, [AWAY]: false }), LOG, null).size === 0
-     && publicLabels(null, LOG) === null && publicLabels({ events: [] }, LOG) === null);
-  ok("the public labels line up with the signed-in ids, place by place",
+  ok("no labels answer names nobody", namedOnGround(answer({ [HOME]: false, [AWAY]: false }), LOG, null).size === 0
+     && labelsFromAnswer(null) === null && labelsFromAnswer(/** @type {any} */ ({})) === null);
+  ok("the server's labels are publicName()'s: initial and surname, for the boys it names",
      L?.get(H[0].id) === label(H[0]) && L?.get(K[5].id) === label(K[5]) && L?.get(LATE.id) === label(LATE), JSON.stringify([...(L ?? [])].slice(0, 3)));
-  ok("...a count of innings_start that differs names nobody", publicLabels({ ...publicOf(EVERYONE), events: publicOf(EVERYONE).events.slice(0, 5) }, LOG)?.size === 0);
-  const short = publicOf(EVERYONE);
-  const at2 = short.events.findIndex((e, i) => i > 0 && e.kind === "innings_start");
-  short.events[at2] = { ...short.events[at2], squad: short.events[at2].squad.slice(1) };
-  const ls = publicLabels(short, LOG);
-  ok("...a squad whose length differs names nobody from it (LATE, only there), the others from where they line up",
-     !ls?.has(LATE.id) && ls?.get(K[0].id) === label(K[0]), JSON.stringify([...(ls ?? [])].length));
+  ok("...and none for a boy with no public name", labelsFromAnswer(publicOf(new Set([H[1].id])))?.size === 1);
+  ok("a key that is not a player id, or a blank label, names nobody",
+     labelsFromAnswer({ labels: { "Typed Name": "T Name", [H[0].id]: " ", [H[1].id]: 7 } })?.size === 0);
   const n = namedOnGround(AWAY_MARKED, LOG, L);
   ok("a side answered position-only names none of the boys its first squad carries", K.every((p) => !n.has(p.id)));
   ok("...and every boy of the other side's squad the public page names is named, by its label", H.every((p) => n.get(p.id) === label(p)));
