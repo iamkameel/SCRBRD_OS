@@ -217,17 +217,10 @@ function FocusTag({ label }) {
 const focusEdge = (lit) => (lit ? { borderLeft: `4px solid ${T.brand.accentText}` } : {});
 
 /**
- * CRI-3.2: the way to a boy's passport, on his row, only where the page was
- * handed one for him (MatchView's passportOf, lib/passportLink.js): the public
- * page passes none, and a reader the passport read would refuse gets none.
+ * A batter's row, which opens for a signed-in reader. CRI-3.2: `passport` is
+ * the link to his passport, drawn by MatchView's passportOf (lib/passportLink.js)
+ * where the passport read would admit this reader; the public page passes none.
  */
-const rowBtn = {
-  minHeight: "44px", padding: `0 ${T.space.lg}`, cursor: "pointer", background: "transparent",
-  border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill,
-  color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500,
-};
-
-/** A batter's row, which opens for a signed-in reader. */
 function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, profile, passport = null, Wheel, kept = false, lit = false, litLabel = null }) {
   const notOut = b.status !== "out";
   const counts = open ? runCounts(inn, b.id) : null;
@@ -287,8 +280,15 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, prof
           ))}
           {(profile || passport) && (
             <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
-              {profile && <button type="button" onClick={profile} className="pressBtn os-state" style={rowBtn}>Open profile</button>}
-              {passport && <button type="button" onClick={passport} data-testid="mc-passport-open" className="pressBtn os-state" style={rowBtn}>Passport</button>}
+              {profile && (
+                <button type="button" onClick={profile} className="pressBtn os-state"
+                  style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, cursor: "pointer",
+                    background: "transparent", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill,
+                    color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
+                  Open profile
+                </button>
+              )}
+              {passport}
             </div>
           )}
         </div>
@@ -389,7 +389,6 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
           style={{ border: `1px solid ${T.line.normal}`, borderRadius: T.radius.lg, overflow: "hidden" }}>
           <HeadRow cols={BOWL_COLS} label="Bowling" icon="ball" heads={["O", "M", "R", "W", "Econ"]}/>
           {inn.bowlers.map((bw) => {
-            const pass = passportOf(bw.id, bw.name);
             const nm = <>{bw.name}{focus?.has(bw.id) && focusLabel && <FocusTag label={focusLabel}/>}</>;
             return (
             <div key={bw.id} role="row" data-testid="mc-bowl-row" data-focus={focus?.has(bw.id) ? "true" : undefined}
@@ -399,13 +398,7 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
               <span role="rowheader" style={{ ...T.role.body, fontSize: "15px", fontWeight: 600, color: T.content.primary, minWidth: 0,
                 display: "flex", alignItems: "center", gap: T.space.xs, flexWrap: "wrap" }}>
                 {/* CRI-3.2: his passport in one tap, where this reader may read it. */}
-                {pass ? (
-                  <button type="button" onClick={pass} data-testid="mc-passport-open" className="os-state"
-                    style={{ minHeight: "44px", minWidth: 0, padding: 0, display: "flex", alignItems: "center", gap: T.space.xs, flexWrap: "wrap",
-                      cursor: "pointer", background: "transparent", border: "none", borderRadius: T.radius.sm, color: "inherit", font: "inherit", textAlign: "left" }}>
-                    {nm}<span style={{ fontSize: "13px", fontWeight: 500, color: T.content.secondary, whiteSpace: "nowrap" }}>Passport ›</span>
-                  </button>
-                ) : nm}
+                {passportOf(bw.id, bw.name, nm) ?? nm}
               </span>
               <Figs values={[oversOf(bw.balls), bw.maidens, bw.runs, bw.wickets, econ(bw.runs, bw.balls)]} strong={3}/>
             </div>

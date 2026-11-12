@@ -42,6 +42,31 @@ import { opensPassportOf } from "../../lib/passportLink.js";
 const PassportSheet = lazy(() => import("./passportSheet.jsx"));
 
 /**
+ * CRI-3.2: the link on a scorecard row to a boy's passport, drawn here and not
+ * in the scorecard the public page shares (its bundle pays for nothing it
+ * cannot draw). With `label` (a bowler's name) the name itself is the link, one
+ * tap; without (a batter's opened row) it is a Passport button beside Open profile.
+ * @param {{onOpen: (e: any) => void, label?: any}} p
+ */
+function PassportLink({ onOpen, label = null }) {
+  if (label != null) return (
+    <button type="button" onClick={onOpen} data-testid="mc-passport-open" className="os-state"
+      style={{ minHeight: "44px", minWidth: 0, padding: 0, display: "flex", alignItems: "center", gap: T.space.xs, flexWrap: "wrap",
+        cursor: "pointer", background: "transparent", border: "none", borderRadius: T.radius.sm, color: "inherit", font: "inherit", textAlign: "left" }}>
+      {label}<span style={{ fontSize: "13px", fontWeight: 500, color: T.content.secondary, whiteSpace: "nowrap" }}>Passport ›</span>
+    </button>
+  );
+  return (
+    <button type="button" onClick={onOpen} data-testid="mc-passport-open" className="pressBtn os-state"
+      style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, cursor: "pointer", background: "transparent",
+        border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill,
+        color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
+      Passport
+    </button>
+  );
+}
+
+/**
  * THE MATCH CENTRE — one fixture, followed (DESIGN_DIRECTION §10, step 3c).
  *
  * Kameel's 2.0 spectator Match Center, rebuilt on the redesign's foundations:
@@ -478,11 +503,11 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // side are his roster row's, never the fixture's. Signed out, in the
   // demonstration and on the public page (which passes none), no row does.
   const [pass, setPass] = useState(/** @type {{id: string, name: string, from: HTMLElement | null} | null} */ (null));
-  const passportOf = (/** @type {string} */ id, /** @type {string} */ name) => {
+  const passportOf = (/** @type {string} */ id, /** @type {string} */ name, /** @type {any} */ label = null) => {
     if (!signedIn() || log.demo || !id) return null;
     const p = PLAYERS.find((x) => x.id === id);
     if (!opensPassportOf({ id, school: p?.school ?? null, team: p?.team ?? null }, profile()?.assignments)) return null;
-    return (/** @type {any} */ e) => setPass({ id, name, from: e?.currentTarget ?? null });
+    return <PassportLink label={label} onOpen={(e) => setPass({ id, name, from: e?.currentTarget ?? null })}/>;
   };
 
   const ctx = { match, role, innings: played, result, commentary: told, events: log.events, demo: log.demo, overs: log.overs,
