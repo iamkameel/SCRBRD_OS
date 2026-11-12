@@ -5350,5 +5350,5 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 
 - #276 (merge commit 2e77e530, 2026-11-11): Docs: Kameel's 7 Nov and 11 Nov ratings decisions, and the 6–7 Nov merges.
 - #283 (merge commit 5a718b80, 2026-11-11): Design: role-based dashboard spec v1.1 (Kameel, 11 Nov).
-- #286 (merge commit 3b9cc820, 2026-11-11): CI uses the runner's own psql; apt only as a retried fallback.
+- #286 (merge commit 3b9cc820, 2026-11-11): CI uses the runner's own psql, with apt only as a retried fallback, and installs Chromium without apt when the Ubuntu mirrors can't be reached.
 - #277 (merge commit 65f52f02, 2026-11-11): The stageshow skill (Benji Taylor, MIT) in `.claude/skills`.
