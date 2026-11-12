@@ -64,9 +64,9 @@ export function AnalyticsSeasonTrend({ role, players }) {
   const who = players.find((p) => p.id === picked) ?? null;
   return (
     <Card sx={{ padding: T.space.lg, marginBottom: T.space.lg }} data-testid="season-trend-pick">
-      <h3 style={heading}>Innings by innings</h3>
+      <h3 style={heading()}>Innings by innings</h3>
       {players.length === 0 ? (
-        <p data-testid="season-trend-no-players" style={sentence}>No player of this side that you may see, so there are no innings to show.</p>
+        <p data-testid="season-trend-no-players" style={sentence()}>No player of this side that you may see, so there are no innings to show.</p>
       ) : (
         <label style={{ display: "flex", flexDirection: "column", gap: T.space.xs, marginBottom: who ? T.space.md : 0 }}>
           <span style={labelStyle()}>Player</span>
@@ -77,16 +77,16 @@ export function AnalyticsSeasonTrend({ role, players }) {
         </label>
       )}
       {players.length > 0 && !who && (
-        <p data-testid="season-trend-none-picked" style={{ ...sentence, marginTop: T.space.md }}>Pick a player to see his season innings by innings.</p>
+        <p data-testid="season-trend-none-picked" style={{ ...sentence(), marginTop: T.space.md }}>Pick a player to see his season innings by innings.</p>
       )}
       {who && <SeasonTrend role={role} playerId={who.id} who={who.name} testid="season-trend" bare/>}
     </Card>
   );
 }
 
-const heading = { margin: `0 0 ${T.space.sm}`, fontFamily: T.type.head, fontSize: "14px", fontWeight: 700, color: T.content.primary };
-const sentence = { margin: 0, fontFamily: T.type.body, fontSize: "14px", lineHeight: 1.5, color: T.content.secondary };
 // Read at render, never at import: the theme can change under a mounted page.
+const heading = () => ({ margin: `0 0 ${T.space.sm}`, fontFamily: T.type.head, fontSize: "14px", fontWeight: 700, color: T.content.primary });
+const sentence = () => ({ margin: 0, fontFamily: T.type.body, fontSize: "14px", lineHeight: 1.5, color: T.content.secondary });
 const labelStyle = () => ({ fontFamily: T.type.body, fontSize: `${T.floor.read}px`, fontWeight: 600, color: T.content.secondary });
 const selectStyle = () => ({
   ...T.role.control, minHeight: `${T.floor.target}px`, padding: `0 ${T.space.md}`, borderRadius: T.radius.md,
@@ -128,7 +128,7 @@ export function SeasonTrendView({ rows, said, who, self = false, onRetry, testid
       {said.state !== "ok" && said.state !== "empty" ? (
         <ReadState read={said} onRetry={onRetry} testId={`${testid}-read-state`}/>
       ) : rows.length === 0 ? (
-        <p data-testid={`${testid}-none`} style={sentence}>
+        <p data-testid={`${testid}-none`} style={sentence()}>
           {self ? "No innings of yours on record yet." : `No innings for ${who} that you may see.`} Innings are counted from scored balls and scorebook imports.
         </p>
       ) : (
@@ -144,7 +144,7 @@ export function SeasonTrendView({ rows, said, who, self = false, onRetry, testid
           ) : null}
 
           {!season ? (
-            <p data-testid={`${testid}-dnb`} style={sentence}>Did not bat this season.</p>
+            <p data-testid={`${testid}-dnb`} style={sentence()}>Did not bat this season.</p>
           ) : (
             <>
               <SourceLine testid={`source-line-${testid}`} source={SRC_RECORD} scope={self ? "You" : `One player: ${who}`}
@@ -168,7 +168,7 @@ export function SeasonTrendView({ rows, said, who, self = false, onRetry, testid
               </dl>
 
               <figure style={{ margin: 0, display: "grid", gap: T.space.xs, minWidth: 0 }}>
-                <p style={{ ...sentence, fontSize: `${T.floor.read}px` }}>
+                <p style={{ ...sentence(), fontSize: `${T.floor.read}px` }}>
                   Runs in each innings, 0 to {g.top}, in the order played{st.draw ? `. ${LINE_LABEL}: ${latest?.v} at the ${ordinal(latest?.n ?? 0)} innings` : ""}.
                 </p>
                 <svg data-testid={`${testid}-chart`} viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet"
@@ -191,7 +191,7 @@ export function SeasonTrendView({ rows, said, who, self = false, onRetry, testid
                 </svg>
                 <p id={sumId} className="sr-only" data-testid={`${testid}-summary`}>{spokenSummary({ who: self ? "You" : who, season, points, self })}</p>
                 <Legend line={st.draw} book={figs.bookInnings > 0}/>
-                <p aria-hidden="true" style={{ ...sentence, fontSize: `${T.floor.read}px`, display: "flex", justifyContent: "space-between", gap: T.space.md }}>
+                <p aria-hidden="true" style={{ ...sentence(), fontSize: `${T.floor.read}px`, display: "flex", justifyContent: "space-between", gap: T.space.md }}>
                   <span>Innings 1</span><span>{points.length > 1 ? `Innings ${points.length}` : ""}</span>
                 </p>
               </figure>
@@ -211,7 +211,7 @@ export function SeasonTrendView({ rows, said, who, self = false, onRetry, testid
   if (bare) return body;
   return (
     <Card sx={{ padding: T.space.lg }} data-testid={`${testid}-card`}>
-      <h3 style={heading}>Innings by innings</h3>
+      <h3 style={heading()}>Innings by innings</h3>
       {body}
     </Card>
   );
@@ -224,7 +224,7 @@ function Legend({ line, book }) {
   const item = { display: "inline-flex", alignItems: "center", gap: T.space.xs };
   const glyph = (/** @type {import("react").ReactNode} */ g) => <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" style={{ flexShrink: 0 }}>{g}</svg>;
   return (
-    <p style={{ ...sentence, fontSize: `${T.floor.read}px`, display: "flex", flexWrap: "wrap", gap: `${T.space.xs} ${T.space.lg}` }}>
+    <p style={{ ...sentence(), fontSize: `${T.floor.read}px`, display: "flex", flexWrap: "wrap", gap: `${T.space.xs} ${T.space.lg}` }}>
       <span style={item}>{glyph(<circle cx="7" cy="7" r="4.5" fill={T.sport.batting} stroke={T.sport.batting} strokeWidth="2"/>)}out</span>
       <span style={item}>{glyph(<circle cx="7" cy="7" r="4.5" fill={T.surface.raised} stroke={T.sport.batting} strokeWidth="2"/>)}not out</span>
       {book && <span style={item}>{glyph(<rect x="2.5" y="2.5" width="9" height="9" fill={T.surface.raised} stroke={T.sport.batting} strokeWidth="2"/>)}from a scorebook</span>}
