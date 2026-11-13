@@ -17,12 +17,14 @@
  *          list and every version the code, the migrations and (from slice 4)
  *          the SQL list write.
  *
- * One expectation is pending, printed and not asserted: Reading 3, Kameel's call.
+ *   R3     Reading 3 (13 Nov 2026, Kameel): a no line 5 does not count still
+ *          stops the default, but never overrides a counted yes.
  *
  * Falsified by: letting a no's surface narrow it (B1 fails); dropping
  * `giverLive` from a yes (B2 fails); reading `byTermsAllowed` truthily (line 6
  * fails); reading `byTerms` with no surface (OFF fails); a version on the
- * list in another order (the order group fails).
+ * list in another order (the order group fails); letting the default name him
+ * over an uncounted no, or letting that no outweigh a counted yes (R3 fails).
  *
  * Invented names only.
  *
@@ -50,13 +52,6 @@ const ok = (/** @type {string} */ n, /** @type {unknown} */ c, d = "") => {
 const group = (/** @type {string} */ t) => console.log("\n" + t);
 /** @param {() => unknown} f */
 const throws = (f) => { try { f(); return false; } catch { return true; } };
-let pending = 0;
-/**
- * An expectation that waits on a decision: named and printed, never asserted
- * either way, so the suite neither pins the open answer nor hides it.
- * @param {string} n @param {string} why
- */
-const skip = (n, why) => { console.log(`- SKIPPED ${n} — ${why}`); pending++; };
 
 const ON = "2026-11-26";
 const NAMED = "T Bekker";
@@ -235,13 +230,71 @@ group("§5.1 line 5, B2 — a no never lapses by someone else's act; a yes needs
      only({ consents: [g({ giverLive: false })], ...BY_TERMS }, ALL));
   ok("a yes not competent the day it was given names nobody",
      only({ consents: [g({ competent: false })] }, []) && only({ consents: [g({ competent: /** @type {any} */ ("yes") })] }, []));
-  // Reading 3 (REVIEW_S2): §5.1 line 5 counts a no only from a giver competent
-  // that day; §0.4 and must-never 3 say no default outvotes a no, whoever gave
-  // it. As built the default names him over such a no. Not asserted until
-  // Kameel decides.
-  skip("whether the default names him over a no given while its giver was not competent", "Reading 3: Kameel's call");
+  // Reading 3 is decided: its group follows this one.
   ok("a record from someone the rule does not know counts neither way",
      only({ consents: [/** @type {any} */ ({ ...gNo(), by: "coach" })], ...BY_TERMS }, ALL));
+}
+
+// ═══════════════════════════════════════════════════════════════════
+group("§5.1 Reading 3 — a no that is not counted still stops the default, never a counted yes");
+// ═══════════════════════════════════════════════════════════════════
+{
+  // 13 Nov 2026 (Kameel): "As recommended: an uncounted no still stops the
+  // default." Line 5 counts a no only from a giver competent the day it was
+  // given; §0.4 and must-never 3 say no default outvotes a no, whoever gave it.
+  // So such a no stops line 6, and only line 6.
+  /** A guardian's no given before her link was verified: not competent that day. @param {Partial<NameConsent>} [c] */
+  const unNo = (c = {}) => gNo({ competent: false, ...c });
+
+  // An uncounted no, with no counted answer.
+  ok("an uncounted no and nothing counted, by terms on: not named anywhere",
+     only({ consents: [unNo()], ...BY_TERMS }, []), each({ consents: [unNo()], ...BY_TERMS }));
+  ok("...with its competence missing or truthy but not true, the same",
+     only({ consents: [unNo({ competent: undefined })], ...BY_TERMS }, [])
+     && only({ consents: [unNo({ competent: /** @type {any} */ ("yes") })], ...BY_TERMS }, []));
+  ok("...an uncounted withdrawal is a no too",
+     only({ consents: [g({ competent: false, givenOn: "2026-06-01", endedOn: "2026-10-03" })], ...BY_TERMS }, []));
+  ok("...and so is his own, given while it did not count (whoever gave it)",
+     only({ consents: [pNo({ competent: false })], ...BY_TERMS }, []));
+  ok("...its giver since revoked: still a no (must-never 3)",
+     only({ consents: [unNo({ giverLive: false })], ...BY_TERMS }, []));
+  ok("...on the surfaces its wording reaches: a no to card leaves live and board to the default (B1)",
+     only({ consents: [unNo({ surface: "card" })], ...BY_TERMS }, ["live", "board"]),
+     each({ consents: [unNo({ surface: "card" })], ...BY_TERMS }));
+  ok("...and one dated after the day served has not begun",
+     only({ consents: [unNo({ givenOn: "2026-12-01" })], ...BY_TERMS }, ALL));
+
+  // An uncounted no, then a later counted yes.
+  const thenYes = [unNo({ givenOn: "2026-10-03" }), g({ givenOn: "2026-11-01" })];
+  ok("an uncounted no, then his verified other guardian's yes: named on the yes's surfaces",
+     only({ consents: thenYes }, ["card", "live"]), each({ consents: thenYes }));
+  ok("...by terms on: card and live by the yes; board, which the yes never named, stopped by the no",
+     only({ consents: thenYes, ...BY_TERMS }, ["card", "live"]), each({ consents: thenYes, ...BY_TERMS }));
+  ok("...the same giver's own yes once her link is verified: named",
+     only({ consents: [unNo({ givenOn: "2026-10-03" }), g({ givenOn: "2026-11-01", surface: "board" })], ...BY_TERMS }, ["board"]));
+
+  // A counted yes, then a later uncounted no: the latest COUNTED answer is the
+  // yes, and a counted yes names him. Line 5 decides, so the uncounted no is
+  // never read there; it stops only the default, where no counted answer is.
+  const thenNo = [g({ givenOn: "2026-10-01" }), unNo({ givenOn: "2026-11-01" })];
+  ok("a counted yes, then a later uncounted no: named, the counted yes being the latest counted answer",
+     only({ consents: thenNo }, ["card", "live"]), each({ consents: thenNo }));
+  ok("...but not named by default where the yes does not reach: board, by terms on",
+     only({ consents: thenNo, ...BY_TERMS }, ["card", "live"]), each({ consents: thenNo, ...BY_TERMS }));
+  ok("...the same on a one-surface yes",
+     only({ consents: [g({ surface: "live", givenOn: "2026-10-01" }), unNo({ givenOn: "2026-11-01" })], ...BY_TERMS }, ["live"]));
+  ok("...a counted no is still a no, whatever uncounted answer follows",
+     only({ consents: [gNo({ givenOn: "2026-10-01" }), g({ competent: false, givenOn: "2026-11-01" })], ...BY_TERMS }, []));
+
+  // The adult switch: once he has a record given at eighteen, only his records count.
+  const adultYes = p({ adult: true, givenOn: "2026-09-01" });
+  ok("his yes at eighteen, then his guardian's uncounted no: named, only his records being read",
+     only({ consents: [adultYes, unNo({ givenOn: "2026-11-01" })], ...BY_TERMS }, ["card", "live"]),
+     each({ consents: [adultYes, unNo({ givenOn: "2026-11-01" })], ...BY_TERMS }));
+  ok("...and his own uncounted no after it does not outweigh it either",
+     only({ consents: [adultYes, pNo({ competent: false, givenOn: "2026-11-01" })], ...BY_TERMS }, ["card", "live"]));
+  ok("...while his own counted no at eighteen does",
+     only({ consents: [adultYes, pNo({ adult: true, givenOn: "2026-11-01" })], ...BY_TERMS }, []));
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -384,5 +437,5 @@ const sqlList = (sql) => {
 }
 
 console.log("\n" + "─".repeat(52));
-console.log(`PUBLIC BY TERMS: ${pass} passed, ${fail} failed, ${pending} pending a decision`);
+console.log(`PUBLIC BY TERMS: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
