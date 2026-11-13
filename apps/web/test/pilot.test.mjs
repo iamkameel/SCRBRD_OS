@@ -182,7 +182,13 @@ group("F. Who may read the pilot store");
     else if (/\.(jsx?|mjs)$/.test(e.name) && /from\s+["'][^"']*\/lib\/pilot\.js["']|from\s+["']\.\/pilot\.js["']/.test(readFileSync(p, "utf8"))) readers.push(p.replace(/\\/g, "/"));
   } };
   walk(join(import.meta.dirname, "../src"));
-  ok("only the scorer's own modules import it", readers.length > 0 && readers.every((r) => /\/scorer\//.test(r)), readers.join(", "));
+  // The scorer's own home (R0, views/ScorerHomeView.jsx) reads it too, on this phone only: a Pilot Match in
+  // progress on Now (its board drawn with no batter or bowler) and the finished ones kept as a sandbox, by
+  // their sides' names; no typed player name is drawn (apps/web/test/scorer-day.test.mjs, browser-scorer-home G).
+  ok("only the scorer's own modules import it", readers.length > 0 && readers.every((r) => /\/scorer\//.test(r) || /\/views\/ScorerHomeView\.jsx$/.test(r)), readers.join(", "));
+  const home = readFileSync(join(import.meta.dirname, "../src/views/ScorerHomeView.jsx"), "utf8");
+  ok("...and the home takes no name from it: no roster, slot, squad or player field read",
+    !/\.roster\b|\.slots\b|squad|\.players\b|full_name|namesBody|restoreFromServer/.test(home), "ScorerHomeView.jsx");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
