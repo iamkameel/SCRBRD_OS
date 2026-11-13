@@ -1,0 +1,59 @@
+# INV-07 — invented. Four overs a side; penalty runs both ways.
+# Edge cases: five penalty runs to the batting side (in its total); five to
+# the fielding side in the first innings — the chasing side opens its innings
+# on five; deliberate short running in the chase — no run stands, the
+# delivery counts and is faced, five to the side that batted first, added to
+# THEIR total after their innings, and the chase's target rising with them
+# (38 at the break, 43 after it: at 38 for 1 the chase is not over); five to
+# the batting side in the chase.
+match INV-07
+title Four overs, penalty runs
+date 2026-11-07
+overs 4
+sides Home Away
+
+innings 1 Home
+open B1 B2
+over BW1  1 . 4 pen+5:helmet_struck 2 . 1
+over BW2  W:b 2 1 pen-5:time_wasting . 4 .
+over BW3  6 1 1 . 2 .
+over BW1  1 4 W:c/F4 1 1 .
+
+innings 2 Away
+open B1 B2
+over BW1  4 1 sr . 2 6
+over BW2  1 . W:lbw 4 pen+5:fielding_time_wasting 1 1
+over BW3  2 1 . 4 1 .
+over BW1  1 W:b 4
+
+# ── The card, worked by hand ──
+# Home: 13 (8 and five penalty runs), 7, 10, 7 = 37 at the break; the five
+# for Away's short running are Home's too: 42.
+card 1
+bat B1 8 7 1 0 not out
+bat B2 7 6 1 0 b BW2
+bat B3 16 9 1 1 c F4 b BW1
+bat B4 1 2 0 0 not out
+extras b 0 lb 0 w 0 nb 0 p 10
+total 42/2 4.0
+fow 1-13 B2 1.1
+fow 2-35 B3 3.3
+bowl BW1 2-0-15-1 wd 0 nb 0
+bowl BW2 1-0-7-1 wd 0 nb 0
+bowl BW3 1-0-10-0 wd 0 nb 0
+
+# Away open on 5; 13, 12 (7 and five), 8, 5 = 43, the target 37 + 1 + 5.
+card 2
+bat B1 10 8 1 0 b BW1
+bat B2 8 6 0 1 lbw b BW2
+bat B3 11 6 2 0 not out
+bat B4 4 1 1 0 not out
+extras b 0 lb 0 w 0 nb 0 p 10
+total 43/2 3.3
+fow 1-19 B2 1.3
+fow 2-39 B1 3.2
+bowl BW1 1.3-0-18-1 wd 0 nb 0
+bowl BW2 1-0-7-1 wd 0 nb 0
+bowl BW3 1-0-8-0 wd 0 nb 0
+
+result Away won by 8 wickets

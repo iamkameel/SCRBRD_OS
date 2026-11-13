@@ -17,6 +17,14 @@ const SUITES = [
   ["rejudge",  "services/api/write/rejudge.test.mjs"],
   // TWO_PHONES R5: the pen's book and a second account lined up by legal ball.
   ["second-account", "services/api/write/second-account.test.mjs"],
+  // The scoring proof (Kameel, 12 Nov 2026): invented matches' paper — the
+  // balls and the card worked by hand — scored through the pad's event path,
+  // folded, and every figure held to the card (test/scorebook/).
+  ["scorebook-proof", "packages/scoring/test/scorebook-proof.test.mjs"],
+  // ...and the same scorebooks through the scorer's own emission (delivery.js,
+  // retire.js, penalty.js, wicketAsks.js): the identical log, so the harness
+  // and the pad cannot drift; engine.jsx's inline builders pinned by text.
+  ["scorebook-pad", "apps/web/test/scorebook-pad.test.mjs"],
   ["design",   "apps/web/test/design.test.mjs"],
   ["analytics","apps/web/test/analytics.test.mjs"],
   ["home-routing","apps/web/test/home-routing.test.mjs"],
