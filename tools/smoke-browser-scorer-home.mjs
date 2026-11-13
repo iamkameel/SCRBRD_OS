@@ -18,8 +18,20 @@
  *   D. Reloaded with no signal (the token is gone with the reload): the
  *      home opens again, the Resume card is still there with the same count,
  *      and one tap reopens the pad on the same score.
- *   E. A scorer with no fixture: both sections say so, each in its own words.
+ *   E. A scorer with no fixture: Now says so; This week is not drawn.
  *   F. A coach, who also scores, keeps the day sheet.
+ *   G. R0, a Pilot Match from the home (the switches on, the scorer granted):
+ *      Start Pilot Match opens the pad's own setup; part-way through, Now
+ *      draws it on the Board with no player named, and Resume scoring goes
+ *      back to the same score; finished on SCRBRD, it is listed under Pilot
+ *      Matches, Finished, kept as a sandbox, with no promote action.
+ *   H. At 360: no tap under 43.5px, no text under 12px, no sideways scroll,
+ *      one column in the day's order.
+ *
+ * The day sheet's order (lib/scorerDay.js): P0 (only when one applies),
+ * Now, Start, Pilot Matches, This week; `data-sections` on the home says
+ * which are drawn. A asserts no session (no P0); C and D the offline queue
+ * (the P0 card first, the Board from the phone's own log).
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-scorer-home.mjs
@@ -33,7 +45,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
-import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { ownerUrl, appUrl, port, refuseUnlessLocal } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 
 const WEB_PORT = port(5313);
@@ -75,8 +87,24 @@ const web = createServer(async (req, res) => {
 });
 await new Promise((r) => web.listen(WEB_PORT, r));
 
+// G turns the Pilot Match's switches on: never against a database that is not on this machine.
+refuseUnlessLocal("smoke-browser-scorer-home");
 const pool = new pg.Pool({ connectionString: DB });
 const dbq = async (text, params) => (await pool.query(text, params)).rows;
+const sql = (text, params) => pool.query(text, params);
+// A switch on, in a test database, as browser-pilot turns it (db/151's guard wants the purge to exist).
+const switchOn = async (key) => {
+  const c = await pool.connect();
+  try {
+    await c.query(`begin;
+      create function public.pilot_purge_expired() returns void language sql as '';
+      update pilot.switch set enabled = true where key = '${key}';
+      drop function public.pilot_purge_expired();
+      commit;`);
+  } catch (e) { await c.query("rollback").catch(() => {}); throw e; } finally { c.release(); }
+};
+let pilotOn = false;
+await dbq(`update pilot.switch set enabled = false`);
 const browser = await chromium.launch({ ...launchOptions() });
 const errors = [];
 
@@ -213,6 +241,14 @@ try {
   await click(/^Sign In$/, 5000);
   ok("he lands on the scorer's home, not the day sheet", await home() && (await tid("day-sheet").count()) === 0);
   ok("nothing on this device to resume, said as that", await until(async () => (await tid("scorer-resume-empty").count()) === 1), (await text()).slice(0, 200));
+  // The day sheet (R0): with no session, nothing on the P0 card; Pilot Matches are switched off, so that section is not drawn.
+  const sectionsOf = async () => (await tid("scorer-home").first().getAttribute("data-sections").catch(() => "")) ?? "";
+  ok("no session: the sections are Now, Start and This week, in that order (no P0, no Pilot Matches)",
+     await until(async () => (await sectionsOf()) === "now,start,week"), await sectionsOf());
+  ok("...no P0 card at all", (await tid("scorer-p0").count()) === 0);
+  ok("...Start a match is the pad's own setup, and says a Practice Match stays on this phone while Pilot Matches are off",
+     /^Start Practice Match$/.test((await tid("scorer-start-pilot").innerText().catch(() => "")).trim())
+     && /stays on this phone/.test(await tid("scorer-start-note").innerText().catch(() => "")), await tid("scorer-start").innerText().catch(() => ""));
   ok("his fixtures are listed", await until(async () => (await tid(`fixture-${APPT}`).count()) === 1 && (await tid(`fixture-${MINE}`).count()) === 1));
   const order = await page.$$eval('[data-testid="scorer-fixture-list"] > li', (ls) => ls.map((l) => ({ id: l.dataset.testid.slice(8), group: l.dataset.group, state: l.dataset.state })));
   if (DEBUG) console.log("[debug] order", JSON.stringify(order));
@@ -270,6 +306,12 @@ try {
   await exitPad();
   ok("back home", await home());
   ok("Resume on this device: today's fixture", await until(async () => (await tid(`resume-${MINE}`).count()) === 1, 8000), (await text()).slice(0, 300));
+  ok("...on the one Board, from this phone's own log (5 for 0)", /for 0/.test((await attr(`resume-${MINE}-board`, "aria-label")) ?? ""), await attr(`resume-${MINE}-board`, "aria-label"));
+  ok("the P0 card, first: the offline queue, with the outbox's count and Resume scoring",
+     await until(async () => (await tid(`p0-queue-${MINE}`).count()) === 1)
+     && (await tid(`p0-queue-${MINE}`).innerText().catch(() => "")).startsWith(`${queued} to send`)
+     && /Resume scoring/.test(await tid(`p0-queue-${MINE}-open`).innerText().catch(() => "")), await tid("scorer-p0").innerText().catch(() => ""));
+  ok("...the sections: P0, Now, Start, This week (its read failed, and it says so)", (await sectionsOf()) === "p0,now,start,week", await sectionsOf());
   ok(`...with what is still to send counted (${queued})`, Number(await attr(`resume-${MINE}`, "data-pending")) === queued
      && (await tid(`resume-${MINE}-pending`).innerText().catch(() => "")).startsWith(`${queued} to send`), await attr(`resume-${MINE}`, "data-pending"));
   ok("the fixture list did not answer, and says so (not 'none')",
@@ -307,8 +349,10 @@ try {
   ok("he lands on the scorer's home", homeE, (await E.page.$eval("body", (el) => el.innerText).catch(() => "")).slice(0, 200));
   await afterReads(E.page, 1500);
   ok("Resume: nothing on this device", (await tE("scorer-resume-empty").count()) === 1);
-  ok("Today and next: no fixture he may score, said as that",
-     /No fixture you may score is arranged from today on/.test(await tE("scorer-fixtures").innerText().catch(() => "")));
+  // R0: This week is drawn only when he has a fixture in it, or its read did not answer.
+  ok("This week: not drawn, as he has no fixture (the read answered none)",
+     (await tE("scorer-fixtures").count()) === 0 && (await tE("scorer-home").getAttribute("data-sections")) === "now,start",
+     await tE("scorer-home").getAttribute("data-sections"));
   ok("...and nothing before the toss", (await tE("scorer-prep").count()) === 0);
   await E.ctx.close();
 
@@ -323,6 +367,147 @@ try {
   ok("the coach lands on the day sheet", sheet && (await F.page.locator('[data-testid="scorer-home"]').count()) === 0);
   await F.ctx.close();
 
+
+  group("G. A Pilot Match from the home: started there, a live session on the board, finished, kept as a sandbox");
+  await switchOn("pilot_sync");
+  await sql(`insert into pilot.scorer (user_id) values ($1) on conflict (user_id) do update set ended_at = null`, [scorer.id]);
+  pilotOn = true;
+  const G = await open();
+  const g = G.page;
+  const tG = (id) => g.locator(`[data-testid="${id}"]`);
+  const tapG = async (id, ms = 350) => { await tG(id).first().click({ timeout: 6000 }); await g.waitForTimeout(ms); };
+  const clickG = async (re, ms = 4000) => {
+    const l = g.locator("button:not([disabled])", { hasText: re }).first();
+    if (!(await l.count())) return false;
+    try { await l.click({ timeout: ms }); } catch { return false; }
+    await g.waitForTimeout(300);
+    return true;
+  };
+  const untilG = async (fn, ms = 12000) => { for (let t = 0; t < ms; t += 300) { if (await fn()) return true; await g.waitForTimeout(300); } return !!(await fn()); };
+  const textG = () => g.$eval("body", (el) => el.innerText).catch(() => "");
+  const homeG = () => untilG(async () => (await tG("scorer-home").count()) === 1, 10000);
+  const sectionsG = async () => (await tG("scorer-home").first().getAttribute("data-sections").catch(() => "")) ?? "";
+  const boardG = async () => ((await g.locator('[role="status"][aria-live="polite"]').filter({ hasText: / for \d+, / }).first().textContent().catch(() => "")) || "").trim();
+  const exitG = async () => {
+    for (let i = 0; i < 3 && (await g.locator('[role="dialog"]').count()); i++) { await g.keyboard.press("Escape"); await g.waitForTimeout(400); }
+    await g.locator(".os-exit-scorer").first().click({ timeout: 4000 }).catch(() => {});
+    await g.waitForTimeout(1200);
+  };
+  const basicG = async () => {
+    if (await tG("basic-pad").count()) return true;
+    await tapG("pad-menu"); await tapG("pad-basic-scoring");
+    return (await tG("basic-pad").count()) > 0;
+  };
+  await clickG(/Get Started|Log In/, 5000);
+  await g.waitForTimeout(500);
+  await clickG(/Scorer/, 4000);
+  await clickG(/^Sign In$/, 5000);
+  ok("the scorer lands on his home", await homeG());
+  await afterReads(g, 1200);
+  ok("Start a match: his account sends Pilot Matches, so it says Start Pilot Match",
+     await untilG(async () => (await tG("scorer-start").first().getAttribute("data-state").catch(() => null)) === "pilot")
+     && /^Start Pilot Match$/.test((await tG("scorer-start-pilot").innerText().catch(() => "")).trim()), await tG("scorer-start").innerText().catch(() => ""));
+  ok("...and the Pilot Matches section is drawn, its empty state saying what a finished one will be",
+     (await sectionsG()).split(",").includes("pilots") && /No finished Pilot Match yet/.test(await tG("scorer-pilots-empty").innerText().catch(() => "")), await sectionsG());
+  ok("nothing applies yet: no P0 card", (await tG("scorer-p0").count()) === 0 && !(await sectionsG()).startsWith("p0"));
+
+  await tapG("scorer-start-pilot", 1200);
+  ok("Start Pilot Match opens the pad's own setup, at its first step, offering Send live",
+     await untilG(async () => (await tG("pilot-choice").count()) === 1 && (await tG("practice-page").count()) === 1, 8000), (await textG()).slice(0, 200));
+  await tapG("practice-overs-custom");
+  await tG("practice-overs-input").fill("1");
+  await tG("practice-venue").fill("Home Walk Oval");
+  await tapG("practice-next");
+  await tG("practice-school-0").fill("Hilton"); await tG("practice-division-0").selectOption("U13"); await tapG("practice-class-0-B");
+  await tG("practice-school-1").fill("Kearsney"); await tG("practice-division-1").selectOption("U13"); await tapG("practice-class-1-B");
+  await tapG("practice-next");
+  const HOME = ["Golf One", "Golf Two", "Golf Three"], AWAY = ["Hotel One", "Hotel Two", "Hotel Three"];
+  await tG("practice-paste-0").fill(HOME.join("\n")); await tapG("practice-add-0"); await tapG("practice-next");
+  await tG("practice-paste-1").fill(AWAY.join("\n")); await tapG("practice-add-1"); await tapG("practice-next");
+  await g.locator("button[role=radio]", { hasText: "Hilton U13B" }).first().click({ timeout: 4000 });
+  await g.locator("button[role=radio]", { hasText: /^Bat$/ }).click({ timeout: 4000 });
+  await clickG(/Confirm Toss/);
+  await g.locator("button", { hasText: HOME[0] }).first().click({ timeout: 3000 });
+  await g.locator("button", { hasText: HOME[1] }).first().click({ timeout: 3000 });
+  await clickG(/Select Opening Bowler/);
+  await g.locator("button", { hasText: AWAY[0] }).first().click({ timeout: 3000 });
+  await clickG(/Start Match/);
+  await g.waitForTimeout(1200);
+  ok("on the pad, as a Pilot Match", await basicG() && /^Pilot match/.test((await tG("pilot-label").first().innerText().catch(() => "")).trim()));
+  for (const k of ["run-1", "run-4", "run-0"]) await tapG(k);
+  const boardMid = await boardG();
+  ok("three balls: 5 for 0", /5 for 0/.test(boardMid), boardMid);
+  await afterReads(g, 1500);
+  await exitG();
+  ok("back home", await homeG());
+  await afterReads(g, 1200);
+  const pid = await untilG(async () => (await g.locator('[data-testid^="resume-pilot-"][data-kind="pilot"]').count()) === 1, 8000)
+    ? (await g.locator('[data-testid^="resume-pilot-"][data-kind="pilot"]').first().getAttribute("data-testid")).slice("resume-".length) : null;
+  ok("Now: the Pilot Match in progress, labelled one", !!pid && /Pilot match/.test(await tG(`resume-${pid}`).innerText().catch(() => "")), pid);
+  ok("...on the one Board, its own score from this phone's log: 5 for 0, 0.3 overs",
+     /Scoreboard: Hilton U13B, 5 for 0, 0\.3 overs/.test((await tG(`resume-${pid}-board`).getAttribute("aria-label").catch(() => "")) ?? ""),
+     await tG(`resume-${pid}-board`).getAttribute("aria-label").catch(() => ""));
+  ok("...and no player named on the home: the board draws no batter or bowler", !/Golf|Hotel/.test(await tG("scorer-home").innerText().catch(() => "")));
+  ok("...with Resume scoring", /Resume scoring/.test(await tG(`resume-${pid}-open`).innerText().catch(() => "")));
+  ok("the Start entry comes after Now", (await sectionsG()).indexOf("now") < (await sectionsG()).indexOf("start"), await sectionsG());
+
+  await tapG(`resume-${pid}-open`, 2500);
+  ok("Resume scoring reopens the pad on the same score", await untilG(async () => /5 for 0/.test(await boardG()), 10000), await boardG());
+  await basicG();
+  for (const k of ["run-2", "run-6", "run-1"]) await tapG(k);
+  ok("the first innings over: 14 for 0", await untilG(async () => (await tG("innings-review").count()) === 1, 6000) && /14 for 0/.test(await boardG()), await boardG());
+  await tapG("review-confirm", 800);
+  await clickG(/Start 2nd Innings/); await g.waitForTimeout(700);
+  await g.locator("button", { hasText: AWAY[0] }).first().click({ timeout: 3000 }); await g.waitForTimeout(400);
+  await g.locator("button", { hasText: AWAY[1] }).first().click({ timeout: 3000 }); await g.waitForTimeout(400);
+  await g.locator("button", { hasText: HOME[0] }).first().click({ timeout: 3000 }); await g.waitForTimeout(600);
+  await basicG();
+  for (const k of ["run-6", "run-6", "run-4"]) await tapG(k);
+  ok("the target is reached", await untilG(async () => (await tG("innings-review").count()) === 1, 6000));
+  await tapG("review-confirm", 1000);
+  ok("the result screen, with Finish the match on SCRBRD", await untilG(async () => (await tG("pad-result").count()) === 1 && (await tG("pilot-finish-button").isEnabled().catch(() => false)), 15000),
+     (await textG()).slice(-300));
+  await tapG("pilot-finish-button", 600);
+  ok("finished on SCRBRD", await untilG(async () => (await tG("pilot-finished").count()) === 1, 8000));
+  const uuid = pid.slice("pilot-".length);
+  ok("...the server says so", (await dbq(`select status from pilot.match where id = $1`, [uuid]))[0]?.status === "finished");
+  await exitG();
+  ok("back home", await homeG());
+  await afterReads(g, 1500);
+  ok("Pilot Matches: it is listed, Finished, kept as a sandbox, counted in no figure",
+     await untilG(async () => (await tG(`pilot-done-${pid}`).count()) === 1, 8000)
+     && /Finished · Kept as a sandbox/.test(await tG(`pilot-done-${pid}-state`).innerText().catch(() => ""))
+     && /no figure, standing or record/.test(await tG(`pilot-done-${pid}`).innerText().catch(() => "")), await tG("scorer-pilots").innerText().catch(() => ""));
+  ok("...with its own score, and no promote action (R1)", /Hilton U13B 14\/0/.test(await tG(`pilot-done-${pid}`).innerText().catch(() => ""))
+     && !/promot/i.test(await tG("scorer-home").innerText().catch(() => "")));
+  ok("...and it is no longer on Now", (await tG(`resume-${pid}`).count()) === 0 && (await tG("scorer-resume-empty").count()) === 1);
+  ok("no sponsor slot on the home (a work mode)", !/sponsor/i.test(await tG("scorer-home").innerHTML().catch(() => "")));
+
+  group("H. At 360: the same home, nothing under the floors, no sideways scroll");
+  await g.setViewportSize({ width: 360, height: 780 });
+  await g.waitForTimeout(600);
+  const floor = await g.evaluate(() => {
+    const root = document.querySelector('[data-testid="scorer-home"]');
+    if (!root) return null;
+    const small = [], tiny = [];
+    for (const el of root.querySelectorAll("button, a[href], input, select, [role=button]")) {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0 && (r.height < 43.5 || r.width < 43.5)) small.push(`${el.getAttribute("data-testid") ?? el.textContent?.trim().slice(0, 20)} ${Math.round(r.width)}x${Math.round(r.height)}`);
+    }
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      if (!(n.nodeValue || "").trim() || !n.parentElement) continue;
+      if (parseFloat(getComputedStyle(n.parentElement).fontSize) < 12) tiny.push((n.nodeValue || "").trim().slice(0, 30));
+    }
+    return { small, tiny, sideways: document.documentElement.scrollWidth > window.innerWidth + 1 };
+  });
+  ok("every tap in it is 44px or more (>= 43.5)", floor && floor.small.length === 0, JSON.stringify(floor?.small));
+  ok("no text in it under 12px", floor && floor.tiny.length === 0, JSON.stringify(floor?.tiny));
+  ok("no sideways scroll at 360", floor && !floor.sideways);
+  const ys = await g.evaluate(() => ["scorer-resume", "scorer-start", "scorer-pilots"].map((id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect().top ?? -1));
+  ok("one column, in the day's order: Now, Start, Pilot Matches", ys.every((y) => y >= 0) && ys[0] < ys[1] && ys[1] < ys[2], JSON.stringify(ys));
+  await G.ctx.close();
+
   ok("no application errors", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {
   ok(`the browser walk threw: ${e.message?.slice(0, 200)}`, false);
@@ -332,6 +517,19 @@ try {
   // or an audit row behind it stays (both are kept by design); it is today's,
   // the walk's own, and holds no event.
   for (const id of made.sessions) await dbq(`delete from scoring_session where match_id = $1`, [id]).catch(() => {});
+  // G's Pilot Match, and the switches, back as they were. The pilot log is append-only but for a
+  // transaction that says it is deleting (db/151), as pilot_delete_one() does.
+  if (pilotOn) {
+    const c = await pool.connect();
+    try {
+      await c.query("begin");
+      await c.query("select set_config('pilot.deleting', 'on', true)");
+      await c.query(`delete from pilot.match where owner_user_id = (select id from app_user where email = 'scorer@example.invalid')`);
+      await c.query("commit");
+    } catch { await c.query("rollback").catch(() => {}); } finally { c.release(); }
+    await dbq(`update pilot.scorer set ended_at = now() where user_id = (select id from app_user where email = 'scorer@example.invalid')`).catch(() => {});
+  }
+  await dbq(`update pilot.switch set enabled = false`).catch(() => {});
   for (const id of made.matches) {
     await dbq(`delete from match_official where match_id = $1`, [id]).catch(() => {});
     await dbq(`delete from match where id = $1`, [id]).catch(() => {});
