@@ -285,21 +285,19 @@ try {
   wrongSide = await fixture(HIL, "2XI", { awaySchool: WES, awayTeam: "2XI", days: WINDOW - 1 });
 
   // ── Off by default, on screen ───────────────────────────────────
-  group("Switched off, the coach is told so rather than shown a blank");
+  // Switched off is HIDDEN for that user (Kameel, 13 Nov 2026): no dossier
+  // button at all, rather than a dossier that opens onto "switched off".
+  group("Switched off, the dossier is hidden from the coach");
   {
     const coach = await open();
     ok("the Hilton 1XI coach signs in", await signIn(coach.page, "coach@example.invalid"));
     ok("Match Centre opens", await nav(coach.page, /Match Centre/));
-    ok("the dossier is offered on an upcoming fixture",
-       (await coach.page.locator(`[data-testid="dossier-open-${soon}"]`).count()) === 1);
-    ok("it opens", await openDossier(coach.page, soon));
-    const off = await coach.page.locator('[data-testid="dossier"]').innerText();
-    if (DEBUG) console.log("[debug] feature off:\n" + off);
-    // The feature being off reaches the client as a 403 the read layer
-    // translates, so there is no context row and the panel must still say why.
-    ok("...and says the feature is switched off, not that there is no data",
-       /switched off/i.test(off), off.replace(/\s+/g, " ").slice(0, 160));
-    ok("...naming no Westville pupil while it is off", !/Mkhize|Botha/.test(off));
+    await coach.page.waitForTimeout(1500);
+    ok("the dossier is not offered on an upcoming fixture while the feature is off",
+       (await coach.page.locator(`[data-testid="dossier-open-${soon}"]`).count()) === 0);
+    ok("...and no dossier is drawn", (await coach.page.locator('[data-testid="dossier"]').count()) === 0);
+    const page = await coach.page.locator("main").innerText().catch(() => "");
+    ok("...naming no Westville pupil while it is off", !/Mkhize|Botha/.test(page));
     await coach.ctx.close();
   }
 
