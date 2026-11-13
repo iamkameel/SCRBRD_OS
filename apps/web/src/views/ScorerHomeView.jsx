@@ -34,13 +34,19 @@ import { StateLabel } from "../ui/stateLabel.jsx";
 //               another device holding the scoring of a match on this phone,
 //               events SCRBRD did not take, waiting on him
 //   Now         what this phone is scoring, each on the one Board, and
-//               "Resume scoring"
+//               "Resume scoring"; and his side's live fixture that is not on
+//               this phone, with its status sentence and "Open the pad"
+//               (EXPERIENCE_PASS slice 1, d)
 //   Start       the quick-start: the pad's own Pilot Match setup, opened at
 //               its first step. There is no second setup
+//   Your last   after a match: what he scored in the last one this phone
+//   match       finished, as a plain record (§3.9). No points or rankings
 //   Pilot       finished Pilot Matches, each kept as a sandbox. Promotion is
 //   Matches     R1 (PILOT_MATCH_PHASE2 §6): no promote action
-//   This week   the fixtures he may score, appointed first, and what is
-//               missing before the toss of the next one; only if he has any
+//   This week   the fixtures he may score, appointed first, each with its
+//               status sentence (lib/matchCentre.js statusSentence, the Match
+//               Centre's), and what is missing before the toss of the next
+//               one; only if he has any
 //
 // lib/scorerDay.js decides which sections show and their words, purely;
 // lib/scorerHome.js the fixtures and their states. Every read is one the app

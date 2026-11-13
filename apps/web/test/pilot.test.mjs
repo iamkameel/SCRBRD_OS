@@ -197,7 +197,9 @@ group("F. Who may read the pilot store");
   // The scorer's own home (R0, views/ScorerHomeView.jsx) reads it too, on this phone only: a Pilot Match in
   // progress on Now (its board drawn with no batter or bowler) and the finished ones kept as a sandbox, by
   // their sides' names; no typed player name is drawn (apps/web/test/scorer-day.test.mjs, browser-scorer-home G).
-  ok("only the scorer's own modules import it", readers.length > 0 && readers.every((r) => /\/scorer\//.test(r) || /\/views\/ScorerHomeView\.jsx$/.test(r) || /\/lib\/scorerDay\.js$/.test(r)), readers.join(", "));
+  // The scoring block (views/ScoringBlock.jsx, experience pass slice 1) reads the same home rows and the
+  // account's own Pilot status, for an account with no school; no typed player name is drawn (browser-first-score).
+  ok("only the scorer's own modules import it", readers.length > 0 && readers.every((r) => /\/scorer\//.test(r) || /\/views\/(ScorerHomeView|ScoringBlock)\.jsx$/.test(r) || /\/lib\/scorerDay\.js$/.test(r)), readers.join(", "));
   // Review S6: the home and its two libs; a log reaches them only as a board (lib/boardOfLog.js homeRow).
   const homeFiles = ["../src/views/ScorerHomeView.jsx", "../src/lib/scorerDay.js", "../src/lib/boardOfLog.js"];
   const home = homeFiles.map((f) => readFileSync(join(import.meta.dirname, f), "utf8")).join("\n").replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");
@@ -223,7 +225,7 @@ group("F. Who may read the pilot store");
     if (e.isDirectory()) w(p); else if (/\.(jsx?|mjs)$/.test(e.name) && re.test(readFileSync(p, "utf8"))) out.push(p.replace(/\\/g, "/"));
   } }; w(join(import.meta.dirname, "../src")); return out; };
   const dayReaders = libReaders(/from\s*["'][^"']*\/scorerDay\.js["']|import\(\s*["'][^"']*scorerDay\.js["']/);
-  ok("only the scorer's home imports lib/scorerDay.js", dayReaders.length === 1 && /\/views\/ScorerHomeView\.jsx$/.test(dayReaders[0]), dayReaders.join(", "));
+  ok("only the scorer's home and the scoring block import lib/scorerDay.js", dayReaders.length === 2 && dayReaders.every((r) => /\/views\/(ScorerHomeView|ScoringBlock)\.jsx$/.test(r)), dayReaders.join(", "));
   const bolReaders = libReaders(/from\s*["'][^"']*\/boardOfLog\.js["']|import\(\s*["'][^"']*boardOfLog\.js["']/);
   ok("lib/boardOfLog.js is imported only by the home's scorerDay and the two stores that hand it rows",
     bolReaders.length > 0 && bolReaders.every((r) => /\/lib\/(scorerDay|pilot|practice)\.js$/.test(r)), bolReaders.join(", "));

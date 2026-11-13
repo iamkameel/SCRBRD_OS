@@ -23,6 +23,14 @@ const ScoringBlock = lazy(() => import("../views/ScoringBlock.jsx").then((m) => 
 //  ask. Nothing else — the database proves that table by table (db/99 §60) —
 //  and this screen asks for nothing it could not safely hear.
 //
+//  AND A MATCH OF THEIR OWN (EXPERIENCE_PASS slice 1; Q3, 13 Nov 2026):
+//  "Start a match" first, the pad's own setup, a Practice Match for anyone
+//  signed in (it never leaves the phone) and a Pilot Match only where SCRBRD
+//  has granted the account, which the server decides. The scoring block
+//  (views/ScoringBlock.jsx) reads this phone's own matches and the account's
+//  own Pilot status, nothing of a school's or a child's. Opening the pad
+//  grants no role (App.jsx openPadNoSchool).
+//
 //  WHAT IT WILL NOT DO, and the tests hold it to it (signin.test.mjs):
 //    - assign a role. Every path here ends in a REQUEST that a person at the
 //      school answers.
