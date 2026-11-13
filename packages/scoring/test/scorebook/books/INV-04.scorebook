@@ -1,0 +1,72 @@
+# INV-04 — invented. Two overs a side in a cup: level, and a super over decides it.
+# Edge cases: a tie under a cup's conditions (a tie goes to a super over); the
+# super over's two innings, the side batting second in the match batting
+# first; openers out of the batting order; two wickets ending a super over
+# before its six balls; a non-striker who never faced.
+match INV-04
+title Two overs, a tie and a super over
+date 2026-11-04
+overs 2
+sides Home Away
+conditions cup
+
+innings 1 Home
+open B1 B2
+over BW1  4 . 1 6 . 1
+over BW2  W:b 2 . nb 1 1 .
+
+innings 2 Away
+open B1 B2
+over BW1  1 4 . 2b 6 .
+over BW2  1 W:c/F9 1 . 1 1
+
+super 1 Away
+open B1 B4
+over BW3  4 W:b 1 6 . 2
+
+super 1 Home
+open B3 B1
+over BW4  6 W:c/F2 4 W:lbw
+
+# ── The card, worked by hand ──
+card 1
+bat B1 6 4 1 0 not out
+bat B2 7 4 0 1 b BW2
+bat B3 3 5 0 0 not out
+extras b 0 lb 0 w 0 nb 1 p 0
+total 17/1 2.0
+fow 1-12 B2 1.1
+bowl BW1 1-0-12-0 wd 0 nb 0
+bowl BW2 1-0-5-1 wd 0 nb 1
+
+card 2
+bat B1 3 4 0 0 not out
+bat B2 10 6 1 1 c F9 b BW2
+bat B3 2 2 0 0 not out
+extras b 2 lb 0 w 0 nb 0 p 0
+total 17/1 2.0
+fow 1-14 B2 1.2
+bowl BW1 1-0-11-0 wd 0 nb 0
+bowl BW2 1-0-4-1 wd 0 nb 0
+
+# The super over: Away 13/1, Home 10/2 off four balls.
+card 3
+bat B1 4 2 1 0 b BW3
+bat B4 8 3 0 1 not out
+bat B2 1 1 0 0 not out
+extras b 0 lb 0 w 0 nb 0 p 0
+total 13/1 1.0
+fow 1-4 B1 0.2
+bowl BW3 1-0-13-1 wd 0 nb 0
+
+card 4
+bat B3 6 2 0 1 c F2 b BW4
+bat B1 0 0 0 0 not out
+bat B2 4 2 1 0 lbw b BW4
+extras b 0 lb 0 w 0 nb 0 p 0
+total 10/2 0.4
+fow 1-6 B3 0.2
+fow 2-10 B2 0.4
+bowl BW4 0.4-0-10-2 wd 0 nb 0
+
+result Match tied; Away won the super over
