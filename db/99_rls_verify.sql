@@ -12327,7 +12327,9 @@ END $$ LANGUAGE plpgsql;
 -- the 9XI from the season's start until today), OLD (U19D now, on the 9XI
 -- last season) and OTH (a third school's, marked). Westville's VIS, WFD and SHM (marked), and WNX
 -- (marked, on Westville's own 9XI: the side the host's is named after, at
--- the other school, the season roster's school filter's oracle). The log holds
+-- the other school, the season roster's school filter's oracle). FUT
+-- (Hilton's U19D today, on the 9XI from a month on) and BND (on the 9XI
+-- last season, until the day this season began). The log holds
 -- only the first innings_start (Hilton's squad MRK, OPN, WAS, SQD to
 -- Westville's VIS, WFD): no ball has named anybody yet, and there is no
 -- sheet. Its own readers too (_v71_people()): Hilton's 9XI coach, a
@@ -12359,6 +12361,20 @@ CREATE OR REPLACE FUNCTION _v153_start(p_match uuid, p_bat text, p_bowl text, p_
     'bowlingSquad', (SELECT coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'name', p.full_name) ORDER BY o), '[]')
                        FROM unnest(p_bowling) WITH ORDINALITY u(id, o) JOIN player p ON p.id = u.id)))
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A batting squad of {id, name} members and members written as a bare id
+-- string (the pad's older shape: db/153 reads both).
+CREATE OR REPLACE FUNCTION _v153_start_mixed(p_match uuid, p_bat text, p_objects uuid[], p_bare uuid[]) RETURNS void AS $$
+  SELECT _v153_ev(p_match, 'innings_start', NULL, NULL, NULL, NULL, NULL, jsonb_build_object(
+    'battingTeam', p_bat, 'teamKey', p_bat, 'bowlingTeam', 'Verify Nobody', 'bowlingTeamKey', 'Verify Nobody',
+    'squad', (SELECT coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'name', p.full_name) ORDER BY o), '[]')
+                FROM unnest(p_objects) WITH ORDINALITY u(id, o) JOIN player p ON p.id = u.id)
+             || (SELECT coalesce(jsonb_agg(to_jsonb(u.id::text) ORDER BY o), '[]') FROM unnest(p_bare) WITH ORDINALITY u(id, o)),
+    'bowlingSquad', '[]'::jsonb))
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A support hour run out, as its clock would (role_assignment.expires_at).
+CREATE OR REPLACE FUNCTION _v153_end_support(p_assignment uuid) RETURNS void AS $$
+  UPDATE role_assignment SET expires_at = now() - interval '1 second' WHERE id = p_assignment
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v153_start_bare(p_match uuid, p_bat text, p_bowl text, p_squad uuid[], p_bowling uuid[]) RETURNS void AS $$
   SELECT _v153_ev(p_match, 'innings_start', NULL, NULL, NULL, NULL, NULL, jsonb_build_object(
     'battingTeam', p_bat, 'bowlingTeam', p_bowl,
@@ -12383,11 +12399,12 @@ BEGIN
                                  ('sqd', HIL, 'Squadonly'), ('nos', HIL, 'Nosquad'), ('pup', HIL, 'Pupilscorer'),
                                  ('vis', WES, 'Visitor'), ('wfd', WES, 'Fielder'), ('shm', WES, 'Sheetmarked'),
                                  ('lft', HIL, 'Leftthisseason'), ('old', HIL, 'Leftlastseason'),
-                                 ('oth', THIRD, 'Elsewhere'), ('wnx', WES, 'Westnine')) AS v(k, school, surname)
+                                 ('oth', THIRD, 'Elsewhere'), ('wnx', WES, 'Westnine'),
+                                 ('fut', HIL, 'Joinslater'), ('bnd', HIL, 'Lefttheday')) AS v(k, school, surname)
   LOOP
     i := i + 1;
     INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
-    VALUES (r.school, CASE WHEN r.k = 'wnx' THEN '9XI' WHEN r.school <> HIL THEN '1XI' WHEN r.k IN ('nos', 'pup', 'lft', 'old') THEN 'U19D' ELSE '9XI' END, 'Verify OneFiftyThree ' || r.surname, 'OneFiftyThree ' || r.surname, 1530 + i, 'batter',
+    VALUES (r.school, CASE WHEN r.k = 'wnx' THEN '9XI' WHEN r.school <> HIL THEN '1XI' WHEN r.k IN ('nos', 'pup', 'lft', 'old', 'fut', 'bnd') THEN 'U19D' ELSE '9XI' END, 'Verify OneFiftyThree ' || r.surname, 'OneFiftyThree ' || r.surname, 1530 + i, 'batter',
             (sa_today() - interval '17 years 1 month')::date)
     RETURNING id INTO v_p;
     ids := ids || jsonb_build_object(r.k, v_p);
@@ -12398,7 +12415,13 @@ BEGIN
   INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, left_on, reason)
   SELECT (ids->>'lft')::uuid, HIL, 'cricket', '9XI', se.starts_on, sa_today(), 'joined' FROM season_for(sa_today(), 'school') se
   UNION ALL
-  SELECT (ids->>'old')::uuid, HIL, 'cricket', '9XI', se.starts_on - 300, se.starts_on - 30, 'joined' FROM season_for(sa_today(), 'school') se;
+  SELECT (ids->>'old')::uuid, HIL, 'cricket', '9XI', se.starts_on - 300, se.starts_on - 30, 'joined' FROM season_for(sa_today(), 'school') se
+  UNION ALL
+  SELECT (ids->>'bnd')::uuid, HIL, 'cricket', '9XI', se.starts_on - 200, se.starts_on, 'joined' FROM season_for(sa_today(), 'school') se;
+  -- FUT's move to the 9XI, dated a month on.
+  UPDATE team_membership SET left_on = sa_today() + 30 WHERE player_id = (ids->>'fut')::uuid AND left_on IS NULL;
+  INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason)
+  VALUES ((ids->>'fut')::uuid, HIL, 'cricket', '9XI', sa_today() + 30, 'moved');
   INSERT INTO player_never_public (player_id, reason, set_on, set_by, ended_on, ended_by, ended_at)
   VALUES ((ids->>'was')::uuid, 'Verify 153: an ended mark', sa_today() - 7, OFFICE, sa_today() - 1, OFFICE, now() - interval '1 day');
   -- The pupil scorer: his own account, and a scorer's role at his school.
@@ -12406,6 +12429,19 @@ BEGIN
   VALUES (HIL, 'v153.pupil.scorer@example.invalid', 'V153 Pupil Scorer', 'scorer', (ids->>'pup')::uuid) RETURNING id INTO v_u;
   INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_u, 'scorer', HIL);
   ids := ids || jsonb_build_object('pupil_user', v_u);
+  -- A superadmin of the section's own, and a support hour at Hilton as the
+  -- office (as support_access_begin() writes it).
+  INSERT INTO app_user (school_id, email, name, role) VALUES (NULL, 'v153.super@example.invalid', 'V153 Super', 'superadmin') RETURNING id INTO v_u;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_u, 'superadmin', NULL);
+  ids := ids || jsonb_build_object('super', v_u);
+  INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v153.support@example.invalid', 'V153 Support', 'platformadmin') RETURNING id INTO v_u;
+  PERFORM set_config('app.user_id', v_u::text, true);
+  INSERT INTO role_assignment (person_id, role, school_id, active, valid_from, expires_at)
+  VALUES (v_u, 'schooladmin', HIL, true, sa_today(), now() + interval '1 hour') RETURNING id INTO v_p;
+  INSERT INTO support_access (actor_id, school_id, role, reason, assignment_id, expires_at)
+  VALUES (v_u, HIL, 'schooladmin', 'Verify 153: a support hour at Hilton.', v_p, now() + interval '1 hour');
+  PERFORM set_config('app.user_id', '', true);
+  ids := ids || jsonb_build_object('support', v_u, 'support_a', v_p);
   -- The section's own readers: nothing an earlier section did to the seed's
   -- people (a revoked coach, an ended assignment) reaches them.
   ids := ids || _v71_people('v153', ARRAY[
@@ -41466,6 +41502,15 @@ $m130$;
   --   (keys)      a side keyed only by battingTeam / bowlingTeam is read as
   --               the screen reads it; one innings_start naming both squads
   --               by one key is its batting squad (S3)
+  --   (edges)     the re-check's arms (13 Nov): a side whose first squad is
+  --               empty is true; a squad member written as a bare id string
+  --               is a member (S2): roster boys with a bare-id boy playing up
+  --               read true, a bare-id side of roster boys false and named;
+  --               FUT, marked, on the 9XI only from a month on, and BND,
+  --               marked, who left it the day the season began, turn
+  --               nothing; a superadmin reads the answer; a support hour at
+  --               Hilton as the office reads it as app_can() answers the
+  --               office, and nothing once the hour has run out
   --   (away2)     (away) and (reveals) again with no marked boy on the host
   --               roster, so the host side is false and they are not vacuous
   --   (season)    the season roster: LFT, marked, on the 9XI earlier this
@@ -41492,7 +41537,10 @@ $m130$;
   --   the flag from today's roster, not the season's                 → (season)
   --   the roster-mover's refusal taken out of the gate               → (probe)
   --   B1: the client's catcher (ground-names.test.mjs, its own falsification)
-  -- And after Fable's red-team (13 Nov 2026), the same way:
+  -- And after Fable's red-team (13 Nov 2026), the same way (and, after the
+  -- re-check: the bare-id branch out → (edges); the empty-squad test out →
+  -- (edges); a membership dated ahead counted → (edges); the season's first
+  -- day counted as in it → (edges)):
   --   the player.roster.read arm out                                  → (sides), the team manager
   --   the scoring.start arm out                                       → (sides), the scorer
   --   the gate anchored on the reader's own side, not the fixture's   → (anchor)
@@ -41522,6 +41570,9 @@ $m130$;
     U_SPA     uuid := (y->>'sportsadmin')::uuid; -- sportsadmin, Hilton: moves boys, may not read the mark
     U_TM      uuid := (y->>'teammgr')::uuid;   -- team manager, Hilton 9XI: player.roster.read, no scoring.start
     U_U19     uuid := (y->>'u19coach')::uuid;  -- coach, Hilton U19D
+    U_SUPER   uuid := (y->>'super')::uuid;     -- a superadmin
+    U_SUP     uuid := (y->>'support')::uuid;   -- a support hour at Hilton, as the office
+    FUT uuid := (y->>'fut')::uuid; BND uuid := (y->>'bnd')::uuid;
     LFT uuid := (y->>'lft')::uuid; OLD uuid := (y->>'old')::uuid;
     U_WESC    uuid := (y->>'wescoach')::uuid;  -- coach, Westville 1XI
     U_WES_ADM uuid := (y->>'wesoffice')::uuid; -- office, Westville
@@ -41687,6 +41738,33 @@ $m130$;
     PERFORM _v153_start(M, 'Verify Both', 'Verify Both', ARRAY[OPN], ARRAY[NOS]);
     PERFORM _assert(_v153_flag(M, 'Verify Both') IS FALSE AND _v153_ids(M, 'Verify Both') = _v153_set(OPN),
       format('§131 (keys): one innings_start naming both squads by one key is not its batting squad: %s, %s', _v153_flag(M, 'Verify Both'), _v153_ids(M, 'Verify Both')));
+
+    -- (edges)
+    PERFORM _v153_start(M, 'Verify Empty', '1XI', ARRAY[]::uuid[], ARRAY[]::uuid[]);
+    PERFORM _assert(_v153_flag(M, 'Verify Empty') AND _v153_ids(M, 'Verify Empty') = ARRAY[]::uuid[],
+      format('§131 (edges): a side whose first squad is empty reads %s', _v153_sides(M)));
+    PERFORM _v153_start_mixed(M, 'Verify Bare Mixed', ARRAY[OPN, SQD], ARRAY[NOS]);
+    PERFORM _v153_start_mixed(M, 'Verify Bare Roster', ARRAY[OPN], ARRAY[SQD]);
+    PERFORM _assert(_v153_flag(M, 'Verify Bare Mixed') AND _v153_ids(M, 'Verify Bare Mixed') = ARRAY[]::uuid[],
+      format('§131 (edges): roster boys with a bare-id boy playing up read %s', _v153_sides(M)));
+    PERFORM _assert(_v153_flag(M, 'Verify Bare Roster') IS FALSE AND _v153_ids(M, 'Verify Bare Roster') = _v153_set(OPN, SQD),
+      format('§131 (edges): a side of roster boys, one written as a bare id, reads %s, %s', _v153_flag(M, 'Verify Bare Roster'), _v153_ids(M, 'Verify Bare Roster')));
+    PERFORM _v153_mark(FUT);
+    PERFORM _assert(NOT _v153_flag(M, '1XI'), format('§131 (edges): FUT, on the 9XI only from a month on, turns it: %s', _v153_sides(M)));
+    PERFORM _v153_unmark(FUT);
+    IF sa_today() > (SELECT se.starts_on FROM season_for(sa_today(), 'school') se) THEN
+      PERFORM _v153_mark(BND);
+      PERFORM _assert(NOT _v153_flag(M, '1XI'), format('§131 (edges): BND, who left the day the season began, turns it: %s', _v153_sides(M)));
+      PERFORM _v153_unmark(BND);
+    END IF;
+    v_ans := _v153_sides(M);
+    PERFORM _as(U_SUPER);
+    PERFORM _assert(_v153_sides(M) = v_ans, format('§131 (edges): a superadmin reads %s, the coach %s', _v153_sides(M), v_ans));
+    PERFORM _as(U_SUP);
+    PERFORM _assert(_v153_sides(M) = v_ans, format('§131 (edges): a support hour as the office reads %s, the coach %s', _v153_sides(M), v_ans));
+    PERFORM _v153_end_support((y->>'support_a')::uuid);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM ground_screen_names(M)), format('§131 (edges): a support hour run out reads %s', _v153_sides(M)));
+    PERFORM _as(U_COACH);
 
     -- (away2) (away) and (reveals) with no marked boy on the host roster.
     PERFORM _v153_mark(SHM);

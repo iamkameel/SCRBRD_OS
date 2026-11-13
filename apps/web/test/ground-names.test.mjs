@@ -15,7 +15,7 @@
 // a real big screen. Everyone here is invented.
 import { deriveMatch, inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
-import { GROUND_POSITION, answeredThrough, byPosition, forGround, groundAnswerOf, groundInnings, groundNameOf, labelsFromAnswer, namedOnGround } from "../src/display/groundNames.js";
+import { GROUND_POSITION, answerFor, answeredThrough, byPosition, forGround, groundAnswerOf, groundInnings, groundNameOf, labelsFromAnswer, namedOnGround } from "../src/display/groundNames.js";
 import { groundAnswer, groundLabels } from "../../../services/api/read/ground-names-api.mjs";
 import { displayState, fallOfWicket, bowlingPanel, partnershipPanel } from "../src/display/data.js";
 
@@ -139,6 +139,9 @@ console.log("\nA2. One answer, one snapshot (ground_screen_names(), Fable's red-
   ok("the screen reads both from the one answer", a !== null && a.rows.length === 2 && a.labels?.size === H.length && answeredThrough(a) === 41);
   const n = namedOnGround(a, LOG, a?.labels ?? null);
   ok("...and names the host side by its labels and the away side by position", n.size === H.length && K.every((p) => !n.has(p.id)));
+  ok("an answer about another match is no answer, and one held from the match before is not used (NIT 2)",
+     groundAnswerOf(JSON.parse(JSON.stringify(d)), "m2") === null && answerFor(a, "m2") === null && answerFor(a, "m1") === a
+     && answerFor(null, "m1") === null && groundAnswerOf({ sides: [], labels: {} }) === null);
   ok("an answer without sides is no answer: nobody is named",
      groundAnswerOf({ labels: d.labels }) === null && groundAnswerOf(null) === null && groundAnswerOf({ sides: "x" }) === null);
   const marked = groundAnswerOf(groundAnswer("m1", [{ team: HOME, position_only: true, log_seq: 42, people: [] },

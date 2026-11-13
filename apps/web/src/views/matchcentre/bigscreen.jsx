@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { deriveMatch } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
 import { DisplayView, useWakeLock } from "../../display/DisplayView.jsx";
-import { answeredThrough, forGround, groundAnswerOf, groundInnings, groundNameOf, namedOnGround } from "../../display/groundNames.js";
+import { answerFor, answeredThrough, forGround, groundAnswerOf, groundInnings, groundNameOf, namedOnGround } from "../../display/groundNames.js";
 import { api } from "../../lib/api.js";
 import { teamOf } from "../../lib/matchCentre.js";
 import { superOverCommentary } from "../../lib/superOver.js";
@@ -99,10 +99,12 @@ export const GROUND_REASK_MS = 45_000;
  * every GROUND_REASK_MS, and whenever the log on screen (`head`, its
  * highest seq) is ahead of the seq the answer covered (its log_seq).
  * @param {string} matchId  @param {any[] | null | undefined} events  @param {number | null} head
- * @returns {{rows: any[], labels: Map<string, string> | null} | null}
+ * @returns {{matchId: string, rows: any[], labels: Map<string, string> | null} | null}
  */
 function useGroundAnswer(matchId, events, head) {
-  const [answer, setAnswer] = useState(/** @type {{rows: any[], labels: Map<string, string> | null} | null} */ (null));
+  const [held, setAnswer] = useState(/** @type {{matchId: string, rows: any[], labels: Map<string, string> | null} | null} */ (null));
+  // Only this match's answer, never the one held from the match before.
+  const answer = answerFor(held, matchId);
   const [tick, setTick] = useState(0);
   const through = answeredThrough(answer);
   const behind = head != null && through != null && head > through;
@@ -114,7 +116,7 @@ function useGroundAnswer(matchId, events, head) {
   useEffect(() => {
     let cancelled = false;
     api(`/api/matches/${encodeURIComponent(matchId)}/ground-names`)
-      .then((d) => { if (!cancelled) setAnswer(groundAnswerOf(d)); })
+      .then((d) => { if (!cancelled) setAnswer(groundAnswerOf(d, matchId)); })
       .catch(() => { if (!cancelled) setAnswer(null); });
     return () => { cancelled = true; };
   }, [matchId, seen, tick, behind]);

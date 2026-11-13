@@ -108,15 +108,25 @@ export function labelsFromAnswer(d) {
  * The big screen's ONE answer (GET /api/matches/:id/ground-names,
  * ground_screen_names(), db/153; Fable's red-team, 13 Nov, B1): the sides
  * and the labels the database gave in one statement, so they never come
- * from two moments. `{rows, labels}`, or null for anything else (nobody is
- * named).
- * @param {any} d
- * @returns {{rows: any[], labels: Map<string, string> | null} | null}
+ * from two moments. `{matchId, rows, labels}`, or null for anything else
+ * (nobody is named), an answer about another match included.
+ * @param {any} d  @param {string} [matchId]  the match the screen shows
+ * @returns {{matchId: string, rows: any[], labels: Map<string, string> | null} | null}
  */
-export function groundAnswerOf(d) {
-  if (!d || !Array.isArray(d.sides)) return null;
-  return { rows: d.sides, labels: labelsFromAnswer(d) };
+export function groundAnswerOf(d, matchId) {
+  if (!d || !Array.isArray(d.sides) || typeof d.matchId !== "string") return null;
+  if (matchId !== undefined && d.matchId !== matchId) return null;
+  return { matchId: d.matchId, rows: d.sides, labels: labelsFromAnswer(d) };
 }
+
+/**
+ * The answer the screen may use for the match it shows: the one it holds
+ * only while it is that match's (the re-check of 13 Nov, NIT 2: a match
+ * changed under the screen lends it no other match's labels, even for a
+ * moment before the new answer arrives).
+ * @template {{matchId: string}} T  @param {T | null | undefined} held  @param {string} matchId  @returns {T | null}
+ */
+export const answerFor = (held, matchId) => (held && held.matchId === matchId ? held : null);
 
 /**
  * The boys the big screen names, with the label it names them by: those

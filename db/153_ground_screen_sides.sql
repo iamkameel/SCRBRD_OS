@@ -31,6 +31,14 @@
 -- one this rule leaves (for counsel's list, beside §8 item 19): a reader who
 -- sees the side's screen go to positions on the day one boy joined knows
 -- which boy.
+-- And a second, beside it (the re-check of 13 Nov, S1), also for counsel's
+-- list as a known limit: a boy who moved from team A to team B this season
+-- sits on both season rosters, so a mark set on him turns BOTH sides
+-- position-only on the same day. A scorer assigned school-wide (scoring.start
+-- with no team) reads every team's flags, and the boys who moved between A
+-- and B this season are often one boy. The gate is unchanged here; whether
+-- the scorer arm should ask an assignment to the fixture is Kameel's to
+-- decide, in a later file.
 --
 -- Safe to paste again: DROP and CREATE the one function (nothing depends on
 -- it), then REVOKE and GRANT; the guard only reads.
@@ -296,6 +304,14 @@ BEGIN
   FOREACH f IN ARRAY ARRAY['ground_screen_names(uuid)', 'ground_screen_sides(uuid)'] LOOP
     IF has_function_privilege('public', f, 'EXECUTE') OR NOT has_function_privilege('scrbrd_app', f, 'EXECUTE') THEN
       RAISE EXCEPTION 'db/153: % is executable by PUBLIC, or not by the application', f;
+    END IF;
+    -- Nobody but the owner and the application holds anything on it (as
+    -- db/151's pilot isolation reads it): every grant, not four names.
+    IF EXISTS (SELECT 1 FROM pg_proc p
+                CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                WHERE p.oid = f::regprocedure AND a.grantee <> p.proowner
+                  AND NOT (a.grantee = 'scrbrd_app'::regrole AND a.privilege_type = 'EXECUTE')) THEN
+      RAISE EXCEPTION 'db/153: % may be called by a role other than its owner and the application', f;
     END IF;
     FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
       IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) AND has_function_privilege(r, f, 'EXECUTE') THEN
