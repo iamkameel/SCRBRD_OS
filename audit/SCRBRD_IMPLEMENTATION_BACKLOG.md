@@ -17,6 +17,8 @@
 
 12 Nov 2026 (late): three merges recorded. #301 (merge 0c50e488): REACH-D2, a pupil reads his own figures, not his team-mates'; the captain's season rows and Compare "Me v a team-mate" are kept. #309 (merge 050ccf15): CRI-2.5, three spectator charts. #311 (merge 16d79dea): CRI-2.2, a source line on every chart, with "Shots captured for N of M balls".
 
+13 Nov 2026: two merges recorded. #310 (merge 67e6e674): the scoring proof, Kameel's 12 Nov call: ten invented matches, each with a hand-worked card, replayed through the engine and through the pad's own emission code; every figure equal, no engine change. No entry existed for it; this line records it, and part 2 (five more books) is #316. #315 (merge e303f38c): browser-read waits for the fixture chips to settle instead of a fixed two seconds (it failed main's browser shard 1 on a slow runner).
+
 ## Rules
 
 - Order by dependency, not merely severity.
