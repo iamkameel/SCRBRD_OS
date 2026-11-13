@@ -92,7 +92,12 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   and the guardian's terms (added 2026-11-05, Kameel: "give it to fable"; the
   plain-language terms a parent agrees to in the app for a child, GA-I20 D7,
   version popia-2026-01: what is kept, who reads it, how long, how to withdraw
-  or ask for it, each sentence traced to what the designs and the code do).
+  or ask for it, each sentence traced to what the designs and the code do)
+  and the experience pass (added 2026-11-13, Kameel: "this is a job for fable
+  5.2"; one design pass, sections 1 and 2 of docs/redesign/EXPERIENCE_PASS.md
+  only: where every destination lives, per persona, with the menus before and
+  after; and the first run per role, step by step, with what is asked and
+  when; the rest of the document is Opus's, and Opus reviews it).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
