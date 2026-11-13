@@ -177,9 +177,11 @@ export function StopSheet({ onConfirm, onClose }) {
 /**
  * While play is stopped: where, and the two ways on.
  * @param {{stopped: {reason: string, balls: number, runs: number, wickets: number, at: number | null}, isChase: boolean,
- *          onResume: () => void, onEnd: () => void}} p
+ *          onResume: () => void, onEnd: () => void, onCallOff?: (() => void) | null}} p
+ *   `onCallOff`, given only for a Pilot Match in its first innings (review S2): "Call the match off",
+ *   no result, when play will not resume at all. A fixture's banner is unchanged.
  */
-export function RainBanner({ stopped, isChase, onResume, onEnd }) {
+export function RainBanner({ stopped, isChase, onResume, onEnd, onCallOff = null }) {
   useTheme();
   return (
     <div role="status" aria-live="polite" data-testid="rain-banner"
@@ -198,6 +200,9 @@ export function RainBanner({ stopped, isChase, onResume, onEnd }) {
         <button type="button" data-testid="rain-resume" className="pressBtn os-state"
           style={{ ...secondary(), background: T.content.primary, color: T.surface.base, border: "none" }} onClick={onResume}>Resume</button>
         <button type="button" data-testid="rain-end" className="pressBtn os-state" style={secondary()} onClick={onEnd}>End innings (rain)</button>
+        {onCallOff && (
+          <button type="button" data-testid="rain-calloff" className="pressBtn os-state" style={secondary()} onClick={onCallOff}>Call the match off</button>
+        )}
       </div>
     </div>
   );

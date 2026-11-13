@@ -59,6 +59,7 @@ import {
 } from "./persist.js";
 import { foldPad } from "../scorer/penalty.js";
 import { getWeatherHint } from "./weatherHint.js";
+import { homeRow } from "./boardOfLog.js";
 
 export { isPracticeId, PRACTICE_ID_PREFIX };
 
@@ -658,7 +659,8 @@ export function summarise(meta, log) {
   const events = Array.isArray(log?.events) ? log.events : [[], []];
   const innings = (() => { try { return foldPad(events, {}).filter((i) => i && i.battingTeam); } catch { return []; } })();
   const lines = innings.map((i) => ({ team: i.battingTeam, runs: i.runs, wickets: i.wickets, balls: i.balls, overs: i.overs }));
-  const complete = innings.length >= 2 && innings[1]?.sealed === true;
+  // A Pilot Match called off (in either innings) is over too (re-check 1): no Resume, and on its result.
+  const complete = (innings.length >= 2 && innings[1]?.sealed === true) || !!meta?.pilot?.callOff;
   return {
     id: meta?.id ?? null,
     title: meta?.teams?.length === 2 ? `${meta.teams[0].display_name} v ${meta.teams[1].display_name}` : "Practice match",
@@ -682,6 +684,23 @@ export async function listPractice() {
   for (const id of ids) {
     const [meta, log] = await Promise.all([loadPractice(id), loadMatch(id)]);
     rows.push({ id, meta, ...summarise(meta ?? { id }, log) });
+  }
+  return rows.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
+}
+
+/**
+ * Every practice match on this phone as the scorer's home is handed it
+ * (lib/boardOfLog.js homeRow): its board and title, never its log or a name
+ * (review S6).
+ */
+export async function practiceHomeRows() {
+  const metaKeys = (await recordKeys(META)) ?? [];
+  const logKeys = (await recordKeys(LOG)) ?? [];
+  const ids = [...new Set([...metaKeys.map((k) => k.slice(META.length)), ...logKeys.map((k) => k.slice(LOG.length))])];
+  const rows = [];
+  for (const id of ids) {
+    const [meta, log] = await Promise.all([loadPractice(id), loadMatch(id)]);
+    rows.push(homeRow(id, meta, log, summarise(meta ?? { id }, log), { logSaved: logKeys.includes(LOG + id) }));
   }
   return rows.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
 }

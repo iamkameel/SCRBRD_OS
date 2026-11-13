@@ -47,6 +47,7 @@ import { positionWords, pilotUnwire, holdsAName } from "./pilotWire.js";
 import { indexedDbStorage, padLogFrom, inningsInPlay } from "@scrbrd/sync";
 import { fromRow } from "@scrbrd/scoring";
 import { deviceId } from "./device.js";
+import { homeRow } from "./boardOfLog.js";
 
 export { isPilotId, PILOT_ID_PREFIX };
 
@@ -288,6 +289,25 @@ export async function listPilot() {
   return rows.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
 }
 
+/**
+ * Every Pilot Match on this phone as the scorer's home is handed it
+ * (lib/boardOfLog.js homeRow): its board and title, never its log or a name
+ * (review S6). The purge of expired names runs first.
+ */
+export async function pilotHomeRows() {
+  await purgeExpiredNames().catch(() => 0);
+  const metaKeys = (await recordKeys(META)) ?? [];
+  const logKeys = (await recordKeys("pilot:log:")) ?? [];
+  const ids = [...new Set([...metaKeys.map((k) => k.slice(META.length)), ...logKeys.map((k) => k.slice("pilot:log:".length))])];
+  const rows = [];
+  for (const id of ids) {
+    const [meta, log] = await Promise.all([loadPilot(id), loadMatch(id)]);
+    const sum = summarise(meta ?? { id }, log);
+    rows.push(homeRow(id, meta, log, { ...sum, title: meta?.teams?.length === 2 ? `${meta.teams[0].display_name} v ${meta.teams[1].display_name}` : "Pilot match" }, { logSaved: logKeys.includes(`pilot:log:${id}`) }));
+  }
+  return rows.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
+}
+
 /** This match's outbox on this phone (packages/sync), removed. @param {string} id */
 async function clearOutbox(id) {
   try { if (typeof indexedDB !== "undefined") await indexedDbStorage({ matchId: id, deviceId: deviceId() }).clearMatch(); } catch { /* none */ }
@@ -305,6 +325,7 @@ export async function deletePilotHere(id) {
   await clearMatch(id);
   await deleteRecord(META + id);
   await clearOutbox(id);
+  clearWriteFailed(id); // a failed-write note for a match no longer here says nothing (re-check 1)
   for (const k of (await recordKeys(`aside:${id}:`)) ?? []) await deleteRecord(k);
   const left = await recordKeys("");
   return !!left && !left.some((k) => k.includes(id));
@@ -313,7 +334,7 @@ export async function deletePilotHere(id) {
 /** Every `pilot:` key, the pilot draft and anything set aside for one, gone. Resolves `{removed, left}`. */
 export async function deleteAllPilotHere() {
   const ids = ((await recordKeys(META)) ?? []).map((k) => k.slice(META.length));
-  for (const id of ids) await clearOutbox(id);
+  for (const id of ids) { await clearOutbox(id); clearWriteFailed(id); }
   const keys = [...((await recordKeys("pilot:")) ?? []), ...((await recordKeys(`aside:${PILOT_ID_PREFIX}`)) ?? [])];
   for (const k of keys) await deleteRecord(k);
   const left = [...((await recordKeys("pilot:")) ?? []), ...((await recordKeys(`aside:${PILOT_ID_PREFIX}`)) ?? [])];
@@ -402,11 +423,67 @@ export function withoutNames(rec, log) {
 }
 
 /**
+ * A log about to be saved for a match whose names have gone (review B1, the
+ * belt to the purge's braces): every name in it is put back to its position,
+ * so no save can write a typed name into a match marked `namesPurged`, even
+ * from a pad that read the log before the purge. The purged roster has no
+ * names left, so they are learnt from the log's own squads ({id, name} on a
+ * slot); a twelfth man is his side's twelfth slot; a fielder no squad names
+ * (a substitute typed in) is "Substitute". A log with nothing to scrub, or a
+ * record whose names have not gone, is returned as it is.
+ * @param {any} rec  the stored record @param {any} log  the log to be saved
+ */
+export function scrubPurgedLog(rec, log) {
+  if (!rec?.pilot?.namesPurged || !log || typeof log !== "object") return log;
+  const slots = rec.pilot.roster?.slots ?? {};
+  const meta = Array.isArray(rec.pilot.slots) ? rec.pilot.slots : [];
+  const pos = (/** @type {string} */ id) => (slots[id] ? positionWords(slots[id].side, slots[id].list_no) : null);
+  const isPos = (/** @type {unknown} */ n) => typeof n === "string" && /^(Home|Away) No\. \d+$/.test(n);
+  const byName = new Map();
+  const learn = (/** @type {any} */ p) => { if (p && typeof p === "object" && typeof p.id === "string" && slots[p.id] && typeof p.name === "string" && !isPos(p.name)) byName.set(p.name, p.id); };
+  const events = Array.isArray(log.events) ? log.events : [];
+  for (const sq of [log.cfg?.squad1, log.cfg?.squad2]) (Array.isArray(sq) ? sq : []).forEach(learn);
+  for (const evs of events) for (const e of evs ?? []) { (Array.isArray(e?.squad) ? e.squad : []).forEach(learn); (Array.isArray(e?.bowlingSquad) ? e.bowlingSquad : []).forEach(learn); }
+  const sideOf = (/** @type {any} */ sq) => { const p = (Array.isArray(sq) ? sq : []).find((x) => x?.id && slots[x.id]); return p ? slots[p.id].side : null; };
+  const twelfth = (/** @type {string|null} */ side) => { const s = side ? meta.find((x) => x?.side === side && x?.twelfth) : null; return s ? positionWords(s.side, s.list_no) : null; };
+  const p = (/** @type {any} */ x) => (x && typeof x === "object" && typeof x.id === "string" && slots[x.id] ? { ...x, name: pos(x.id) } : x);
+  const fielder = (/** @type {unknown} */ n) => (typeof n !== "string" || isPos(n) ? n : byName.has(n) ? pos(byName.get(n)) : "Substitute");
+  const twelfthMan = (/** @type {unknown} */ n, /** @type {any} */ sq) => (typeof n !== "string" || isPos(n) ? n : twelfth(sideOf(sq)));
+  const out = events.map((/** @type {any[]} */ evs) => (evs ?? []).map((e) => ({
+    ...e,
+    ...(Array.isArray(e.squad) ? { squad: e.squad.map(p) } : {}),
+    ...(Array.isArray(e.bowlingSquad) ? { bowlingSquad: e.bowlingSquad.map(p) } : {}),
+    ...(e.twelfthMan != null ? { twelfthMan: twelfthMan(e.twelfthMan, e.squad) } : {}),
+    ...(e.fielder != null ? { fielder: fielder(e.fielder) } : {}),
+  })));
+  const cfg = log.cfg ? {
+    ...log.cfg,
+    ...(Array.isArray(log.cfg.squad1) ? { squad1: log.cfg.squad1.map(p) } : {}),
+    ...(Array.isArray(log.cfg.squad2) ? { squad2: log.cfg.squad2.map(p) } : {}),
+    ...(log.cfg.twelfth1 != null ? { twelfth1: twelfthMan(log.cfg.twelfth1, log.cfg.squad1) } : {}),
+    ...(log.cfg.twelfth2 != null ? { twelfth2: twelfthMan(log.cfg.twelfth2, log.cfg.squad2) } : {}),
+  } : log.cfg;
+  return { ...log, events: Array.isArray(log.events) ? out : log.events, cfg };
+}
+
+/**
  * On each open: every Pilot Match on this phone whose names' date has
  * passed loses its names here, as on the server. The match stays, on
  * positions. Resolves how many were purged.
+ *
+ * One at a time: each call runs after any purge already under way, so a
+ * caller that awaits it (the pad's resume, before it reads a log: review B1)
+ * reads only what a finished purge left.
  */
-export async function purgeExpiredNames(now = Date.now()) {
+let purgeChain = Promise.resolve(0);
+export function purgeExpiredNames(now = Date.now()) {
+  const run = purgeChain.catch(() => 0).then(() => purgeNow(now));
+  purgeChain = run.catch(() => 0);
+  return run;
+}
+
+/** @param {number} now */
+async function purgeNow(now) {
   let n = 0;
   for (const k of (await recordKeys(META)) ?? []) {
     const id = k.slice(META.length);
@@ -471,3 +548,79 @@ export async function restoreFromServer(uuidOfMatch, { call = api } = {}) {
   if (!(await saveMatch(id, { events: log, curIn: inningsInPlay(log), cfg, serverHas: log.map((evs) => evs.length) }))) throw new Error("not_saved");
   return id;
 }
+
+// ── Called off (§7.3) ────────────────────────────────────────────────
+
+/**
+ * The pad's stop reasons (@scrbrd/scoring STOP_REASON) as the codes
+ * pilot_abandon() takes (db/151): the reason the scorer gave on the Play
+ * stopped sheet, kept, in the server's vocabulary.
+ */
+export const ABANDON_CODE = Object.freeze({ rain: "weather", bad_light: "light", wet_ground: "ground", other: "other" });
+/** @param {unknown} stopReason */
+export const abandonCode = (stopReason) =>
+  (typeof stopReason === "string" && Object.hasOwn(ABANDON_CODE, stopReason) ? ABANDON_CODE[/** @type {keyof typeof ABANDON_CODE} */ (stopReason)] : "other");
+
+/**
+ * Where a Pilot Match stands, in words. The server's status wins where this
+ * phone has heard it (pilot_header's `live`, `finished`, `abandoned`); then
+ * what the server told this phone before (`abandoned`, `finished` on its
+ * record); then a call-off made here and not yet on SCRBRD, "Calling off…"
+ * (review S1: never "Called off" before the server has it); then the pad's
+ * own end of the match.
+ * @param {{meta?: any, complete?: boolean, serverStatus?: string | null}} [o]
+ * @returns {"In progress" | "Finished" | "Called off" | "Calling off…"}
+ */
+export function pilotStateWords({ meta = null, complete = false, serverStatus = null } = {}) {
+  if (serverStatus === "abandoned") return "Called off";
+  if (serverStatus === "finished") return "Finished";
+  if (meta?.pilot?.abandoned === true) return "Called off";
+  if (meta?.pilot?.finished === true) return "Finished";
+  if (meta?.pilot?.callOff) return "Calling off…";
+  return complete ? "Finished" : "In progress";
+}
+
+/**
+ * May the call-off go to SCRBRD now (review B2)? Only once the innings' seal
+ * it rests on is there: `seal` is "gone" when this phone's outbox has sent it
+ * (or SCRBRD already had it), and the phone holds the scoring with nothing
+ * waiting. Sent sooner, the server is abandoned before the seal arrives, and
+ * holds it (db/151): its log would have no end to the innings.
+ * @param {{attached?: boolean, pending?: number, held?: number, seal?: "gone" | "pending" | "held" | "unknown" | null}} o
+ */
+export const callOffReady = ({ attached = false, pending = 0, held = 0, seal = null } = {}) =>
+  attached === true && pending === 0 && held === 0 && seal === "gone";
+
+/**
+ * What the call-off is waiting on, in words (review N3): the real reason.
+ * @param {Parameters<typeof callOffReady>[0]} o
+ */
+export function callOffWaitWords({ attached = false, pending = 0, held = 0, seal = null } = {}) {
+  if (held > 0 || seal === "held") return "It waits on events SCRBRD did not take: open the held list on the pad and correct or discard them.";
+  if (!attached) return "It waits until this phone holds the scoring on SCRBRD: that needs signal and a sign-in.";
+  if (pending > 0) return `It waits for ${pending} still to send from this phone.`;
+  return "It waits for the end of the innings to reach SCRBRD.";
+}
+
+// ── A record write that did not save (review S3) ────────────────────
+//
+// The pad's record writes go through one chain (scorer/engine.jsx
+// recordWrite). One that does not save is noted here, in this phone's
+// localStorage beside the record, so the scorer's home can say so on its P0
+// card instead of the write being lost without a word. Cleared by the next
+// write of that match that saves.
+const WRITE_FAILED_KEY = "scrbrd:pilot-write-failed";
+const readFailures = () => {
+  try { const v = JSON.parse(globalThis.localStorage?.getItem(WRITE_FAILED_KEY) ?? "{}"); return v && typeof v === "object" ? v : {}; }
+  catch { return {}; }
+};
+/** @param {string} id @param {string} what  what did not save, in words @param {number} [at] */
+export function noteWriteFailed(id, what, at = Date.now()) {
+  try { const all = readFailures(); all[id] = { what, at }; globalThis.localStorage?.setItem(WRITE_FAILED_KEY, JSON.stringify(all)); } catch { /* nothing more to try */ }
+}
+/** @param {string} id */
+export function clearWriteFailed(id) {
+  try { const all = readFailures(); if (!all[id]) return; delete all[id]; globalThis.localStorage?.setItem(WRITE_FAILED_KEY, JSON.stringify(all)); } catch { /* nothing more to try */ }
+}
+/** Every match with a write that did not save: `{id: {what, at}}`. */
+export const writeFailures = () => readFailures();

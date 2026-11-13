@@ -249,7 +249,9 @@ export function resumeItems({ saved, pending, serverMatches }) {
     const m = server ?? { id: s.matchId, homeTeam: cfg.team1, awayTeam: cfg.team2, overs: cfg.overs, live: true,
                           startsAt: cfg.startsAt ?? null, format: cfg.format ?? null };
     out.push({ matchId: s.matchId, title: `${m.homeTeam ?? cfg.team1 ?? "Home"} v ${m.awayTeam ?? cfg.team2 ?? "Away"}`,
-               pending: n, savedAt: s.savedAt ?? null, finished, openable, match: openable ? { ...m, live: true } : null });
+               pending: n, savedAt: s.savedAt ?? null, finished, openable, match: openable ? { ...m, live: true } : null,
+               // The log itself, for the home's board (lib/scorerDay.js boardOfLog): what this device scored.
+               events: s.events, curIn: s.curIn ?? null, overs: cfg.overs ?? null });
   }
   return out.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
 }

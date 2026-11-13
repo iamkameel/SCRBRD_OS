@@ -4,7 +4,7 @@ import { PracticePage, practiceStyles } from "./practice.jsx";
 import { savedWords } from "../lib/practice.js";
 import { api, signedIn } from "../lib/api.js";
 import {
-  deleteAllPilotHere, deletePilotHere, deletePilotOnServer, listPilot, pilotUuid, restoreFromServer,
+  callOffReady, callOffWaitWords, deleteAllPilotHere, deletePilotHere, deletePilotOnServer, listPilot, pilotStateWords, pilotUuid, restoreFromServer,
 } from "../lib/pilot.js";
 
 /**
@@ -36,6 +36,9 @@ const sentWords = (meta) => meta?.pilot?.server === "created" ? "On SCRBRD" : "N
 export function PilotList({ onBack, onResume }) {
   const [rows, setRows] = useState(/** @type {any[] | null} */ (null));
   const [theirs, setTheirs] = useState(/** @type {any[] | null} */ (null));
+  // The server's status of each match this account has there (pilot_mine():
+  // live, finished, abandoned), by uuid; empty when it did not answer.
+  const [status, setStatus] = useState(/** @type {Map<string, string>} */ (new Map()));
   const [ask, setAsk] = useState(/** @type {string | null} */ (null));
   const [said, setSaid] = useState("");
   const [busy, setBusy] = useState(false);
@@ -44,12 +47,13 @@ export function PilotList({ onBack, onResume }) {
   const refresh = async () => {
     const here = await listPilot();
     setRows(here);
-    if (!signedIn()) { setTheirs(null); return; }
+    if (!signedIn()) { setTheirs(null); setStatus(new Map()); return; }
     try {
       const r = await api("/api/pilot/mine", { timeoutMs: 5000 });
       const ids = new Set(here.map((x) => pilotUuid(x.id)));
+      setStatus(new Map((r?.matches ?? []).map((/** @type {any} */ m) => [m.id, m.status])));
       setTheirs((r?.matches ?? []).filter((/** @type {any} */ m) => !ids.has(m.id)));
-    } catch { setTheirs(null); }
+    } catch { setTheirs(null); setStatus(new Map()); }
   };
   useEffect(() => { refresh(); }, []);
   useEffect(() => { if (ask) /** @type {any} */ (confirmRef.current)?.focus(); }, [ask]);
@@ -99,7 +103,7 @@ export function PilotList({ onBack, onResume }) {
           <h2 style={S.h2()}>{r.title}</h2>
           <p style={S.body()}>{r.lines.length ? r.lines.map(scoreLine).join(" · ") : "Nothing scored yet"}</p>
           <p style={S.body()}>
-            {r.complete ? "Finished" : "In progress"}{" · "}<span data-testid="pilot-row-sent">{sentWords(r.meta)}</span>
+            <span data-testid="pilot-row-state">{pilotStateWords({ meta: r.meta, complete: r.complete, serverStatus: status.get(pilotUuid(r.id) ?? "") ?? null })}</span>{" · "}<span data-testid="pilot-row-sent">{sentWords(r.meta)}</span>
             {" · "}last saved {savedWords(r.savedAt)}
           </p>
           {ask === r.id ? (
@@ -122,7 +126,7 @@ export function PilotList({ onBack, onResume }) {
       {theirs && theirs.length > 0 && (
         <section style={S.card()} aria-labelledby="pilot-theirs">
           <h2 id="pilot-theirs" style={S.h2()}>On SCRBRD, not on this phone</h2>
-          {theirs.map((m) => { const state = m.status === "live" ? "In progress" : "Finished"; return (
+          {theirs.map((m) => { const state = pilotStateWords({ serverStatus: m.status }); return (
             <div key={m.id} data-testid="pilot-server-row" data-id={m.id} style={{ display: "grid", gap: T.space.xs }}>
               <p style={{ ...S.body(), color: T.content.primary, fontWeight: 600 }}>{title(m)}</p>
               <p style={S.body()}>{`${state} · started ${savedWords(Date.parse(m.startsAt))} · ${m.events} events`}</p>
@@ -154,6 +158,66 @@ export function PilotList({ onBack, onResume }) {
     </PracticePage>
   );
 }
+
+/**
+ * Call a Pilot Match off on SCRBRD (§7.3). The pad's call-off (Play stopped,
+ * then End the innings in the chase with no par, or Call the match off in the
+ * first innings: no result) is recorded on this phone as it is made
+ * (`callOff`: the reason code, the time, and the id of the innings' seal it
+ * rests on), and sent here, on its own, only once that seal has gone (review
+ * B2: lib/pilot.js callOffReady): the server takes nothing more into an
+ * abandoned match's log, so the seal must be there first. A send that fails
+ * is held, and goes again the next time the phone is ready, or on "Try
+ * again". `at` is the pad's own time of the call-off, from which the names'
+ * 30 days run. A `not_live` answer means SCRBRD has already ended the match:
+ * its own status (called off, or finished elsewhere: N2) is read and recorded.
+ * @param {{matchId: string, code: string, at: number, attached: boolean, pending: number, held: number,
+ *          seal: "gone" | "pending" | "held" | "unknown" | null, done: boolean,
+ *          onDone: (status: "abandoned" | "finished") => Promise<unknown>}} props
+ */
+export function PilotCallOff({ matchId, code, at, attached, pending, held, seal, done, onDone }) {
+  const [state, setState] = useState(/** @type {"idle" | "busy" | "done" | "failed"} */ (done ? "done" : "idle"));
+  useEffect(() => { if (done) setState("done"); }, [done]);
+  const wait = { attached, pending, held, seal };
+  const ready = callOffReady(wait);
+  const send = async () => {
+    setState("busy");
+    try {
+      const r = await api(`/api/pilot/${pilotUuid(matchId)}/abandon`, { method: "POST", body: { reason: code, at } });
+      if (r?.ok === true) { await onDone("abandoned"); setState("done"); return; }
+      if (r?.reason === "not_live") {
+        // Ended on SCRBRD already: by this call-off, or finished from another phone.
+        const h = await api(`/api/pilot/${pilotUuid(matchId)}`).catch(() => null);
+        if (h?.status === "abandoned" || h?.status === "finished") { await onDone(h.status); setState("done"); return; }
+      }
+      setState("failed");
+    } catch { setState("failed"); }
+  };
+  // Sent on its own once the seal has gone; held after a failure until the
+  // phone is ready again.
+  useEffect(() => {
+    if (ready && state === "idle") send();
+    if (!ready && state === "failed") setState("idle");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, state]);
+  return (
+    <section data-testid="pilot-calloff" data-state={state} style={{ ...S.card(), marginBottom: T.space.lg }} aria-label="Call this Pilot Match off">
+      {state === "done"
+        ? <p role="status" data-testid="pilot-called-off" style={S.body()}>Ended on SCRBRD. Nothing more is sent for this match.</p>
+        : <>
+            <p data-testid="pilot-calloff-wait" style={S.body()}>{state === "busy" ? "Calling the match off on SCRBRD…"
+              : `Calling off: done on this phone, not yet on SCRBRD. ${callOffWaitWords(wait)}`}</p>
+            {state === "failed" && (
+              <>
+                <p role="status" style={S.note("bad")}>It could not be called off on SCRBRD. It is held here and goes again when there is signal.</p>
+                <button type="button" className="pressBtn" style={S.primary(true)} data-testid="pilot-calloff-retry" onClick={send}>Try again</button>
+              </>
+            )}
+          </>}
+    </section>
+  );
+}
+
 
 /**
  * Finish a Pilot Match on SCRBRD (§7.3), from the pad's result screen: one

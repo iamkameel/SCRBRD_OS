@@ -241,8 +241,12 @@ group("The screen: no child named, the floors, practice left to the pad");
   const reads = [...view.matchAll(/useLive\("([a-z_]+)"/g)].map((m) => m[1]);
   ok("it reads the fixtures and the officials, and nothing about a child", JSON.stringify(reads) === JSON.stringify(["matches", "officials"]), reads);
   ok("no roster, availability, readiness, squad or player read", !/players|readiness|availability|match_squad|roster_on|injur/.test(view + lib));
-  ok("a practice match is never read here: its store is the pad's, which offers it with its PracticeLabel",
-    !/from\s+["'][^"']*(practice|practiceLabel)(\.jsx?)?["']/.test(view + lib) && /onClick=\{\(\) => open\(null\)\}/.test(view));
+  // R0 (the day sheet, lib/scorerDay.js): a practice match in progress is on
+  // Now, read from this phone's own store and drawn with its label; it is
+  // opened on the pad, never sent from here (nothing here writes or sends).
+  ok("a practice match is read from this phone alone, labelled as one, and the pad is still a tap away",
+    /from "\.\.\/lib\/practice\.js"/.test(view) && /kind="practice"/.test(view) && /onClick=\{\(\) => open\(null\)\}/.test(view)
+    && !/method:\s*"POST"/.test(view));
   ok("every button is 44px tall at least", /minHeight: "44px"/.test(view) && !/<Btn\b/.test(view));
   ok("nothing set under 12px", ![...view.matchAll(/fontSize:\s*"(\d+)px"/g)].some((m) => Number(m[1]) < 12));
   ok("no motion of its own (nothing for reduced motion to stop)", !/transition|animation|@keyframes/.test(view));
