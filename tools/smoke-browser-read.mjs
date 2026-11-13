@@ -3556,6 +3556,19 @@ try {
     await C.ctx.close();
   }
 
+  // The fixture chips have drawn and settled ("failed": every chip says the
+  // read failed; "answered": none does), or 15 s pass. The assertions after it
+  // still judge what is on screen, so a read that never settles fails as before.
+  const chipsSettle = (page, mode) => page.waitForFunction(
+    (m) => {
+      const words = [...document.querySelectorAll('[data-testid^="fixture-chip-"]')].map((e) => e.innerText.trim());
+      if (words.length === 0) return false;
+      return m === "failed"
+        ? words.every((t) => /^Could not read the answer$/.test(t))
+        : !words.some((t) => /Could not read/.test(t));
+    },
+    mode, { timeout: 15000 }).catch(() => {});
+
   group("An availability read that fails does not say 'No answer' (GA-I08)");
   {
     const C = await open();
@@ -3563,8 +3576,10 @@ try {
     await C.page.route("**/api/read/availability*", (r) => (failing ? r.abort("timedout") : r.continue()));
     ok("the guardian signs in", await signIn(C.page, /parent@example\.invalid/));
     await C.page.locator('[data-testid="nav-fixtures"]').first().click({ timeout: 6000 }).catch(() => {});
-    await C.page.waitForTimeout(2000);
     const chips = C.page.locator('[data-testid^="fixture-chip-"]');
+    // Wait for the failed reads to settle on every chip, not a fixed time: on a
+    // slow CI runner two seconds was not always enough.
+    await chipsSettle(C.page, "failed");
     const n = await chips.count();
     const words = [];
     for (let i = 0; i < n; i++) words.push((await chips.nth(i).innerText().catch(() => "")).trim());
@@ -3573,7 +3588,7 @@ try {
     failing = false;
     await C.page.locator('[data-testid="nav-children"]').first().click({ timeout: 6000 }).catch(() => {});
     await C.page.locator('[data-testid="nav-fixtures"]').first().click({ timeout: 6000 }).catch(() => {});
-    await C.page.waitForTimeout(2000);
+    await chipsSettle(C.page, "answered");
     const after = [];
     for (let i = 0; i < await chips.count(); i++) after.push((await chips.nth(i).innerText().catch(() => "")).trim());
     ok("read again (the same path), the chips say what was answered, and none says 'Could not read'", after.length > 0 && !after.some((w) => /Could not read/.test(w)), after);
