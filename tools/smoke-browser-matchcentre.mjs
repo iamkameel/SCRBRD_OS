@@ -67,6 +67,7 @@ import { wagonAnalysis } from "../apps/web/src/scorer/wagonAnalysis.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { pickTab } from "./walk-tabs.mjs";
+import { rowLinks, sheetChecks } from "./walk-passport.mjs";
 
 const WEB_PORT = port(5361);
 const API_PORT = port(8961);
@@ -1154,6 +1155,27 @@ try {
   ok("the coach is asked too (scoring.finalise)", await tid(ch.page, "mc-confirm-prompt").count() === 1);
   ok("...but cannot open the amendment flow — only the scorer role holds scoring.amend.request",
      await tid(ch.page, "mc-confirm-open").count() === 0 && /scorer/i.test(await tid(ch.page, "mc-confirm-prompt").innerText()));
+  // CRI-3.2 ("coach squad"): every row of his own side offers the boy's passport; no Westville row does.
+  {
+    await pickTab(ch.page, "scorecard").catch(() => {});
+    await afterReads(ch.page, 600);
+    await tid(ch.page, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
+    await ch.page.waitForTimeout(300);
+    const first = await rowLinks(ch.page);
+    const batted = await ch.page.locator('[data-testid="mc-bat-row"]:has([data-testid="mc-bat-open"])').count();
+    ok("CRI-3.2: Hilton batting, the coach is offered every Hilton batter's passport, and no Westville bowler's",
+       batted > 0 && first.bat.length === batted && first.bowl.length === 0, JSON.stringify(first));
+    await tid(ch.page, "mc-innings-1").click({ timeout: 4000 }).catch(() => {});
+    await ch.page.waitForTimeout(300);
+    const second = await rowLinks(ch.page);
+    const bowled = await ch.page.locator('[data-testid="mc-bowl-row"]').count();
+    ok("...Westville batting: no Westville batter's, and every Hilton bowler's, in one tap on his name",
+       bowled > 0 && second.bat.length === 0 && second.bowl.length === bowled, JSON.stringify(second));
+    const link = ch.page.locator('[data-testid="mc-bowl-row"] [data-testid="mc-passport-open"]').first();
+    const who = (await link.innerText()).replace(/Passport ›/, "").trim();
+    await sheetChecks(ch.page, link, ok, { who: "CRI-3.2, the coach", name: new RegExp(`^${who.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`), lines: null });
+    await tid(ch.page, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
+  }
   ok("no console errors (coach)", ch.errors.length === 0, ch.errors.join(" | "));
   await ch.ctx.close();
 

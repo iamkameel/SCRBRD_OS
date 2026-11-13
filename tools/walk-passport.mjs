@@ -41,7 +41,7 @@ export async function rowLinks(page) {
  * @param {import("playwright-core").Page} page
  * @param {import("playwright-core").Locator} link
  * @param {(n: string, c: boolean, d?: unknown) => void} ok
- * @param {{who: string, name: RegExp, lines?: boolean}} o  lines: whether his record has lines (else the sheet says it has none)
+ * @param {{who: string, name: RegExp, lines?: boolean | null}} o  lines: whether his record has lines (false: the sheet says it has none; null: either, as the read answers)
  */
 export async function sheetChecks(page, link, ok, { who, name, lines = true }) {
   const sheet = page.locator('[data-testid="passport-sheet"]');
@@ -54,7 +54,7 @@ export async function sheetChecks(page, link, ok, { who, name, lines = true }) {
      && name.test(await page.locator('[data-testid="passport-sheet-name"]').innerText().catch(() => "")));
   const state = await sheet.getAttribute("data-state").catch(() => null);
   const n = await page.locator('[data-testid="passport-sheet-line"]').count();
-  if (lines) ok(`${who}: his passport's lines, each with where it came from`, state === "ok" && n > 0
+  if (lines || (lines === null && state === "ok")) ok(`${who}: his passport's lines, each with where it came from`, state === "ok" && n > 0
      && await page.locator('[data-testid="passport-sheet-source"]').count() === n, `${state} · ${n}`);
   else ok(`${who}: nothing on his record yet, said in words`, state === "empty" && /Nothing on his record yet\./.test(await sheet.innerText()), state);
   ok(`${who}: no injury, address, id number, note or rating on it`, !/injur|address|id number|note|rating/i.test(await sheet.innerText()));
