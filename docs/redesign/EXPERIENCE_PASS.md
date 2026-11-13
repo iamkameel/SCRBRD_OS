@@ -1,9 +1,7 @@
 # Experience pass: where things live, and the first run
 
-Status: **design, for Kameel's review** (13 Nov 2026). Nothing here is built, and nothing is
-built until the questions at the end are answered on the Build Board.
-
-Kameel answered all 25 questions in §5 on 13 Nov 2026: every one as recommended. The slices in §4 are built on those answers.
+Status: **decided** (13 Nov 2026). Kameel answered all 25 questions in §5 on the Build Board,
+every one as recommended. The slices in §4 are built in order from those answers; none is built yet.
 
 Brief (Kameel, 13 Nov 2026): information is scattered and not always where a person looks
 for it. Each person gets one home and a short menu; everything else is reached from the
@@ -393,7 +391,7 @@ community, that is the existing `spectator` request, and the office decides it.
 
 Whether step 3 offers a **Pilot Match** (sent to SCRBRD) or a **Practice Match** (this
 phone only) to an account with no school is Q3. Today it can offer neither (B7). Whether
-names may be skipped is Q5; until it is answered, this first run keeps the names step as it is. The words the walks
+names may be skipped is Q5, answered yes (as recommended) on 13 Nov, so a Practice or Pilot Match may start on positions; the names step stays for anyone who wants it. The words the walks
 assert stay as they are: "Start Pilot Match", "Start Practice Match", "stays on this
 phone", "Resume scoring".
 
