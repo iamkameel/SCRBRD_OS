@@ -164,14 +164,16 @@ group("A. career_by_season (SCRBRD-086): the career read's scope, one grain fine
   ok("?season= is a parameter, never spliced into the SQL", q1?.params?.[0] === "2026" && !q1?.text.includes("'2026'") && rows.length === 1);
   await readResource(pool, SECRET, bearer("uCoach"), "career_by_season");
   const q2 = log.filter((l) => l.text.includes("player_batting_by_season")).at(-1);
-  ok("no season is null — every season", q2?.params?.length === 1 && q2?.params?.[0] === null);
+  ok("no season is null — every season; no boy is null — every boy the reader may read",
+     q2?.params?.length === 2 && q2?.params?.[0] === null && q2?.params?.[1] === null);
   ok("no module gates it, as none gates career", !log.some((l) => l.text.includes("my_feature_enabled")));
 
   ok("innings_by_season files an innings by the same function",
      /school_season_of\(m\.starts_at\)\s+as season/.test(READ_QUERIES.innings_by_season.text));
   ok("the fixture list files a match by the same function the season views do",
      /school_season_of\(m\.starts_at\) as season/.test(READ_QUERIES.matches.text));
-  ok("`career` itself is untouched: no season anywhere in it", !/season/.test(READ_QUERIES.career.text));
+  ok("`career` itself is untouched: no season anywhere in it (but REACH-D2's self CTE)",
+     !/season/.test(READ_QUERIES.career.text.replace((await import("./read-api.mjs")).REACH_SELF_CTES, "")));
 }
 
 group("A. innings_by_season (GA-I23 slice 2, B1): career's scope, one boy, gated per boy from day one");
@@ -289,6 +291,78 @@ group("A. my_children (step 4 G1): the caller's own live guardian links, and the
   const src = readFileSync(new URL("./read-api.mjs", import.meta.url), "utf8");
   ok("db/99 §49 proves this exact read, not a copy that has drifted",
      norm(between(sql)).length > 100 && norm(between(sql)) === norm(between(src)) && norm(between(src)) === norm(t));
+}
+
+group("A. REACH-D2 (Kameel, 7 and 11 Nov 2026): a boy's figures across matches are his, his family's and his side's staff's");
+{
+  const { REACH_FAMILY_OR_STAFF: G, REACH_SELF_CTES: C, REACH_CAPTAIN_ARM: S, REACH_ONE_MATE: M, reachOneMate } = await import("./read-api.mjs");
+  const flat = (/** @type {string} */ s) => s.replace(/--[^\n]*/g, "").replace(/\s+/g, " ").trim();
+  const g = flat(G);
+  ok("the gate opens with the family: his own self link or a guardian's, live (is_family_of)", g.startsWith("(is_family_of(p.id) or"));
+  ok("...then staff, and never a pupil (Kameel, 12 Nov: a pupil-staffer stays closed)",
+     g.includes("or ((select not app_reader_is_pupil()) and (app_can('player.profile.read', p.school_id, p.team_code, p.id,"));
+  ok("...player_read's own two arms (db/09), each about him (p.id), as the policy spells the fixture",
+     !/NULL::uuid/.test(g) && (g.match(/p\.id, '00000000-0000-0000-0000-000000000000'::uuid\)/g) ?? []).length === 2
+     && g.includes("app_can('player.profile.read', p.school_id, p.team_code, p.id,")
+     && g.includes("or app_can('player.roster.read', p.school_id, '*'::text, p.id,"));
+  ok("...and no capability every pupil holds at his whole side (no performance.read)", !/performance\.read/.test(g));
+  const { ROLE_CAPABILITIES } = await import("@scrbrd/policy/roles");
+  const rosterHolders = Object.entries(ROLE_CAPABILITIES).filter(([, caps]) => [...caps].includes("player.roster.read")).map(([r]) => r).sort();
+  ok(`the any-side arm is the school's staff's alone: exactly these roles hold player.roster.read (${rosterHolders.join()})`,
+     rosterHolders.join() === "assistantcoach,coach,directorofsport,principal,schooladmin,sportsadmin,superadmin,teammanager");
+
+  // Every read of a boy's figures across matches carries it.
+  const has = (/** @type {string} */ r) => flat(READ_QUERIES[r].text).includes(g);
+  for (const r of ["career", "career_by_season", "dismissal_breakdown", "player_shot_points", "matchups", "matchup_coverage", "personal_bests"]) {
+    ok(`${r} asks the gate`, has(r));
+  }
+  ok("career: one row a boy, under the gate or the one team-mate named, narrowed by ?playerId=",
+     flat(READ_QUERIES.career.text).includes(`where ($1::uuid is null or p.id = $1::uuid) and (${g} or ${flat(reachOneMate(1))}) order by p.full_name`)
+     && READ_QUERIES.career.params?.({}).join() === "" && READ_QUERIES.career.params?.({}).length === 1);
+  ok("dismissal_breakdown: both halves", flat(READ_QUERIES.dismissal_breakdown.text).split(g).length === 3);
+  ok("matchups: a pair is admitted by its batter (or the one batter named) or its bowler, after the grouping",
+     flat(READ_QUERIES.matchups.text).includes(`having exists (select 1 from player p where p.id = b.striker_id and (${g} or ${flat(reachOneMate(1))})) or exists (select 1 from player p where p.id = b.bowler_id and ${g})`));
+  ok("matchup_coverage: the named batter's balls, under the gate or the one team-mate named",
+     flat(READ_QUERIES.matchup_coverage.text).includes(`(striker_id = $1 and exists (select 1 from player p where p.id = $1 and (${g} or ${flat(reachOneMate(1))})))`));
+  ok("the one team-mate is asked of each read's own parameter", reachOneMate(1).includes("$1::uuid is not null and p.id = $1::uuid") && !reachOneMate(1).includes("$2"));
+  ok("personal_bests: the boy asked of the gate beside player_best()'s own",
+     flat(READ_QUERIES.personal_bests.text).includes(`and exists (select 1 from player p where p.id = $1::uuid and ${g})`));
+
+  // The captain's arm is career_by_season's alone; the one team-mate is the
+  // Compare card's four reads' alone (Kameel, 12 Nov: "career and match-ups too").
+  const cbs = flat(READ_QUERIES.career_by_season.text);
+  ok("career_by_season carries the captain and the one team-mate, ORed beside the gate",
+     cbs.startsWith(`with ${flat(C)} select`) && cbs.includes(`and (${g} or ${flat(S)} or ${flat(M)})`));
+  ok("...the captain's arm is in no other read",
+     ["career", "dismissal_breakdown", "player_shot_points", "matchups", "matchup_coverage", "personal_bests"]
+       .every((r) => !READ_QUERIES[r].text.includes("reach_captaincy k")));
+  ok("...and the wheel, the breakdown and the bests take no team-mate",
+     ["dismissal_breakdown", "player_shot_points", "personal_bests"].every((r) => !READ_QUERIES[r].text.includes("reach_self")));
+  ok("...?playerId= narrows every reader's rows to that one boy", cbs.includes("where ($2::uuid is null or p.id = $2::uuid) and ("));
+  ok("the captain: his own live self link, a live captaincy or vice-captaincy, his side and school, that season's label",
+     flat(C).includes("a.role = 'selfaccess'") && flat(C).includes("g.relationship = 'self' and g.verification_state = 'verified'")
+     && flat(C).includes("not app_pad_scoped() and app_support_access_id() is null and is_family_of(c.id)")
+     && flat(C).includes("h.kind in ('captain', 'vice_captain') and h.withdrawn_at is null")
+     && flat(C).includes("h.school_id = k.self_school and h.team_code = k.self_team")
+     && flat(S).includes("k.cap_school = p.school_id and k.cap_team = p.team_code and k.cap_season = season"));
+  ok("Me v a team-mate: the one boy named, on his own side, never himself, every season",
+     flat(M).includes("$2::uuid is not null and p.id = $2::uuid")
+     && flat(M).includes("k.self_school = p.school_id and k.self_team = p.team_code and k.self_id <> p.id") && !/season/.test(M));
+  ok("today is sa_today() and the season the server's, never current_date", !/current_date/.test(flat(C) + flat(S) + flat(M) + g));
+  ok("career_by_season's playerId is a checked uuid", (() => {
+    try { READ_QUERIES.career_by_season.params?.({ playerId: "x' or 1=1" }); return false; } catch (e) { return /bad_param:playerId/.test(String(e)); }
+  })());
+
+  // db/99 §130 runs these three texts as each persona. The copies are one text.
+  const { readFileSync } = await import("node:fs");
+  const sql = readFileSync(new URL("../../../db/99_rls_verify.sql", import.meta.url), "utf8");
+  const src = readFileSync(new URL("./read-api.mjs", import.meta.url), "utf8");
+  const between = (/** @type {string} */ s, /** @type {string} */ k) => s.split(`${k}:begin`)[1]?.split(`${k}:end`)[0] ?? "";
+  const norm = (/** @type {string} */ s) => s.replace(/\*\/|\/\*|`|--/g, " ").replace(/\s+/g, " ").trim();
+  for (const [k, v] of [["reach_family_or_staff", G], ["reach_self_ctes", C], ["reach_captain_arm", S], ["reach_one_mate", M]]) {
+    ok(`db/99 §130 proves ${k} exactly, not a copy that has drifted`,
+       norm(between(sql, k)).length > 80 && norm(between(sql, k)) === norm(between(src, k)) && norm(between(src, k)) === norm(v));
+  }
 }
 
 group("A. my_links (GA-I20 A2, N4): her own links in every state, no child unless live, and the proof runs the same text");
@@ -441,15 +515,15 @@ group("A. The cockpit's reads (SCRBRD-136/137 phase B §5, §1.4): the lead's fi
   // Away visibility (db/97): the visiting school reads a shared fixture's
   // balls, so a read of one boy across fixtures asks his record as well.
   ok("bowling_spells names a bowler only through his record (join player, under player_read)", bs.includes("join player p on p.id = s.bowler_id"));
-  ok("player_shot_points draws a boy's wheel only for a reader of his record",
-     flat(READ_QUERIES.player_shot_points.text).includes("where b.striker_id = $1 and exists (select 1 from player p where p.id = $1)"));
-  ok("matchup_coverage counts a named batter's balls only for a reader of his record",
-     flat(READ_QUERIES.matchup_coverage.text).includes("($1::uuid is null or (striker_id = $1 and exists (select 1 from player p where p.id = $1)))"));
+  ok("player_shot_points draws a boy's wheel only for a reader of his record, and only where his figures are the reader's (REACH-D2)",
+     flat(READ_QUERIES.player_shot_points.text).includes("where b.striker_id = $1 and exists (select 1 from player p where p.id = $1 and (is_family_of(p.id)"));
+  ok("matchup_coverage counts a named batter's balls only for a reader of his record, and only where his figures are the reader's",
+     flat(READ_QUERIES.matchup_coverage.text).includes("($1::uuid is null or (striker_id = $1 and exists (select 1 from player p where p.id = $1 and ((is_family_of(p.id)"));
   ok("bowling_breaches carries no gate of its own (bowling_breach's policy is player.workload.read)",
      !/app_can/.test(flat(READ_QUERIES.bowling_breaches.text)));
   ok("workload's comment names the gate workload() asks, not player.development.read",
      !/development/.test((await import("node:fs")).readFileSync(new URL("./read-api.mjs", import.meta.url), "utf8")
-       .split("\n").slice(0, 2000).join("\n").match(/\/\*\s*\n\s*\* WORKLOAD:[\s\S]*?\*\//)?.[0] ?? "development"));
+       .split("\n").slice(0, 2400).join("\n").match(/\/\*\s*\n\s*\* WORKLOAD:[\s\S]*?\*\//)?.[0] ?? "development"));
 
   const bd = READ_QUERIES.bowler_day;
   const params = /** @type {(q: Record<string, string>) => unknown[]} */ (bd.params);

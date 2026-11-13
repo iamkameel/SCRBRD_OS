@@ -11,6 +11,7 @@ import { Icon } from "../ui/icons.jsx";
 import { ChartTable } from "../ui/ChartTable.jsx";
 import { chaseEndWords, projectInnings, projectMatch, runRates } from "./chartData.js";
 import { matchChaseOf } from "../lib/superOver.js";
+import { Sourced, ballsLine, shotsCaptured } from "../ui/sourced.jsx";
 
 /* ═══════════════════════════════════════════════════════
    INTEL DASHBOARD TAB
@@ -653,6 +654,11 @@ function AnalysisDashboard({inn,match,curIn,innings,events=null}){
   const isChase=chase!=null;
   const sig=buildSignals(inn,overs,target,isChase);
   const[activeView,setActiveView]=useState("charts");
+  // CRI-2.2: what the charts stand on, one line over each view's charts.
+  const balls=inn?.balls??0,log=inn?.ballLog??[];
+  const line=ballsLine("This innings",balls);
+  const both=ballsLine(innings?.length>1?"Every innings":"This innings",(innings??[]).reduce((n,x)=>n+(x?.balls??0),0));
+  const shots=ballsLine("This innings",log.length,shotsCaptured(log.filter(b=>b.theta!=null||b.seg!=null).length,log.length));
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"16px"}}>
       {/* Sub-nav */}
@@ -672,15 +678,19 @@ function AnalysisDashboard({inn,match,curIn,innings,events=null}){
       {activeView==="charts"&&(
         <div className="sc-grid-2">
           <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
-            <WormChart innings={innings} curIn={curIn} match={match} events={events}/>
-            <RunRateChart inn={inn} match={match} target={target} projection={proj}/>
+            <Sourced line={both} testid="source-line-pad-worm"><WormChart innings={innings} curIn={curIn} match={match} events={events}/></Sourced>
+            <Sourced line={line} testid="source-line-pad-rate"><RunRateChart inn={inn} match={match} target={target} projection={proj}/></Sourced>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
-            <ManhattanChart inn={inn} match={match} projection={proj}/>
-            <BatsmanChart inn={inn}/>
-            <BowlerChart inn={inn}/>
-            <ShotHeatMap inn={inn}/>
-            <ShotSpider inn={inn}/>
+            <Sourced line={line} testid="source-line-pad-charts">
+              <ManhattanChart inn={inn} match={match} projection={proj}/>
+              <BatsmanChart inn={inn}/>
+              <BowlerChart inn={inn}/>
+            </Sourced>
+            <Sourced line={shots} testid="source-line-pad-shots">
+              <ShotHeatMap inn={inn}/>
+              <ShotSpider inn={inn}/>
+            </Sourced>
           </div>
         </div>
       )}
@@ -713,19 +723,19 @@ function AnalysisDashboard({inn,match,curIn,innings,events=null}){
               )}
             </div>
           )}
-          <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+          <Sourced line={line} testid="source-line-pad-signals" style={{gap:"12px"}}>
             <BatsmanChart inn={inn}/>
             <BowlerChart inn={inn}/>
-          </div>
+          </Sourced>
         </div>
       )}
       {activeView==="intelligence"&&(
         <div className="sc-grid-2">
           <IntelPanel inn={inn} overs={overs} target={target} isChase={isChase}/>
-          <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+          <Sourced line={line} testid="source-line-pad-intel" style={{gap:"12px"}}>
             <BatsmanChart inn={inn}/>
             <BowlerChart inn={inn}/>
-          </div>
+          </Sourced>
         </div>
       )}
     </div>

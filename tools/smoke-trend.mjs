@@ -317,17 +317,18 @@ try {
       const r = await innings(pupil, boy);
       ok(`...and none of team-mate ${boy.slice(-2)}'s, though he reads the side's log`, r.status === 200 && r.body.rows.length === 0);
     }
-    // The control: career gives him his team-mates' figures today (REACH M5,
-    // the separate REACH-D2 build). This read does not.
+    // REACH-D2 (Kameel, 7 Nov 2026) closed the season read too: a pupil
+    // reads no team-mate's season unless he names him (Compare) or holds the
+    // captaincy (11 Nov), and he does neither here.
     const career = (await api(`/api/read/career_by_season?season=${SEASON}`, { token: pupil })).body?.rows ?? [];
-    ok("(the control: career_by_season still shows him a team-mate's season, REACH-D2's to close)",
-       career.some((r) => r.player_id === P1));
+    ok("career_by_season shows him no team-mate's season (REACH-D2)",
+       !career.some((r) => r.player_id === P1), JSON.stringify(career.map((r) => r.full_name)));
   }
   {
     // The captain keeps the side's season figures (SCRBRD-138), nothing else.
     const season = (await one(`select id from season where level = 'school' and label = $1`, [SEASON])).id;
-    await q(`insert into honour (player_id, school_id, team_code, kind, season_id, awarded_by) values ($1, $2, '1XI', 'captain', $3, $4)`,
-            [P5, HIL, season, U_COACH]);
+    const capId = (await one(`insert into honour (player_id, school_id, team_code, kind, season_id, awarded_by) values ($1, $2, '1XI', 'captain', $3, $4) returning id`,
+            [P5, HIL, season, U_COACH])).id;
     ok("he is the 1XI's captain now", (await one(`select is_captain_of($1, '1XI', $2) c`, [P5, season])).c === true);
     ok("...and still reads no team-mate's innings", (await inningsRows(pupil, P1)).length === 0 && (await inningsRows(pupil, P2)).length === 0);
     ok("...and his own still", (await inningsRows(pupil, P5)).length === expectedFor(P5).length);
@@ -335,11 +336,15 @@ try {
     await q(`insert into role_assignment (person_id, role, school_id, fixture_id) values ($1, 'scorer', $2, $3)`, [U_PUPIL, HIL, M[0]]);
     ok("scoring a match of his side gives him no team-mate's line", (await inningsRows(pupil, P1)).length === 0);
     // A pupil a school has made the side's team manager is still a pupil
-    // (S2; Kameel, 12 Nov: "Keep it closed: a pupil never reads team-mates' innings lines").
+    // (Kameel, 12 Nov 2026: "Keep it closed: a pupil never reads team-mates'
+    // innings lines"). The captaincy is withdrawn first, so nothing but the
+    // staff assignment could admit him: REACH-D2's season gate refuses him too.
+    await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: withdrawn' where id = $1`, [capId]);
     const tmRow = (await one(`insert into role_assignment (person_id, role, school_id, team_code) values ($1, 'teammanager', $2, '1XI') returning id`,
                              [U_PUPIL, HIL])).id;
-    ok("(the control: as team manager, career's scope gives him the side's rows)",
-       ((await api(`/api/read/career_by_season?season=${SEASON}`, { token: pupil })).body?.rows ?? []).some((r) => r.player_id === P2));
+    const asTm = (await api(`/api/read/career_by_season?season=${SEASON}`, { token: pupil })).body?.rows ?? [];
+    ok("as team manager, with no captaincy, career_by_season gives him no team-mate's season (REACH-D2)",
+       asTm.length > 0 && asTm.every((r) => r.player_id === P5), JSON.stringify(asTm.map((r) => r.full_name)));
     ok("a pupil made the 1XI's team manager reads no team-mate's line", (await inningsRows(pupil, P1)).length === 0
        && (await inningsRows(pupil, P2)).length === 0);
     ok("...and his own still", (await inningsRows(pupil, P5)).length === expectedFor(P5).length);
