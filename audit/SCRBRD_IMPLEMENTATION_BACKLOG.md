@@ -19,6 +19,8 @@
 
 13 Nov 2026: two merges recorded. #310 (merge 67e6e674): the scoring proof, Kameel's 12 Nov call: ten invented matches, each with a hand-worked card, replayed through the engine and through the pad's own emission code; every figure equal, no engine change. No entry existed for it; this line records it, and part 2 (five more books) is #316. #315 (merge e303f38c): browser-read waits for the fixture chips to settle instead of a fixed two seconds (it failed main's browser shard 1 on a slow runner).
 
+13 Nov 2026 (morning): ten merges recorded. #282 (merge 17ae32e9): read speed, db/152; the ball log's read is checked once per match, not once per ball. Pasted on the demo and production 13 Nov. No entry existed for it; this line is the record. #313 (merge 6c4972c3): R0 widget registry, docs/design/ROLE_DASHBOARDS_R0_REGISTRY.md (11 widgets: 3 exist, 5 partial, 3 missing). #314 (merge c65d03ea): R0 solo walkthroughs, a Pilot Match end to end on a phone (browser-pilot-r0). #316 (merge c60298bb): scoring proof part 2, five more hand-worked scorebooks (INV-11 to INV-15); 15 books and 30 cards in all, every figure equal, no engine change. #317 (merge a25c24bf): public by terms slice 2, the naming rule (§5.1), off everywhere; equal to main over 136,098 calls. #318 (merge 268da601): CRI-3.2, tap a scorecard name to open his passport. #319 (merge b5354bfc): R0 scorer's home, a day sheet; the phone calls a Pilot Match off; the list says Called off. #320 (merge 6c4279b6): SHIPPED record for db/152. #321 (merge 12be5de4): public by terms, Reading 3. An uncounted no still stops the by-terms default (Kameel, 13 Nov). The rule is still off. #322 (merge 8acc88fe): CRI-3.2 follow-up. No scorecard passport link for the platform's own accounts (Kameel, 13 Nov).
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -808,7 +810,7 @@ one duplicates an existing entry, strike the `CRI-*` line and point at the older
 - **CRI-2.5** — **Done 2026-11-12** (#309, merge 050ccf15): three spectator charts.
 
 **Sprint 3 (after pilot evidence):** CRI-3.1 notifications S2–S5 with follow and a Result-only default ·
-CRI-3.2 tap-to-passport · CRI-3.3 match impact as PoM suggestion (after recognition §7 scoring fixes) ·
+~~CRI-3.2 tap-to-passport~~ **Done 2026-11-13** (#318, merge 268da601; follow-up #322, merge 8acc88fe): tap a scorecard name to open his passport. · CRI-3.3 match impact as PoM suggestion (after recognition §7 scoring fixes) ·
 CRI-3.4 StatsMagic (the Analytics Explorer, renamed by Kameel 2026-10-28; SCRBRD's counterpart of Cricinfo's Statsguru), one Fable design pass (allowed 2026-10-23).
 
 **Partly done 2026-10-28:** CRI-3.1 decision recorded (#198, `6d23aa0`): notifications S2–S5 come before the pilot, S3 push included (Kameel, 23 Oct). Nothing built; the Sprint 3 placement above is superseded.
