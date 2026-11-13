@@ -13,6 +13,7 @@ import { ShotWheel } from "../../scorer/charts.jsx";
 import { ReportPlan } from "../family/plan.jsx";
 import { CaptainPotm } from "./captainPotm.jsx";
 import { Panel, Quiet } from "./bits.jsx";
+import { Sourced, ballsLine, shotsCaptured } from "../../ui/sourced.jsx";
 
 /**
  * THE CAPTAIN TAB (SCRBRD-138 phase A, C3 to C5; docs/design/
@@ -217,7 +218,10 @@ export function CaptainTab({ match, role, innings, result, commentary, overs, ph
 
       {field.filter((x) => x.inn.ballLog?.length).map(({ inn: o, i }) => (
         <div key={`wheel-${i}`} data-testid="mc-captain-wheel">
-          <ShotWheel inn={o} playerId={null} title="Where they have scored" table={false}/>
+          <Sourced line={ballsLine("Their innings", o.ballLog.length,
+            shotsCaptured(o.ballLog.filter((b) => b.theta != null || b.seg != null).length, o.ballLog.length))} testid="source-line-captain-wheel">
+            <ShotWheel inn={o} playerId={null} title="Where they have scored" table={false}/>
+          </Sourced>
         </div>
       ))}
 
