@@ -11574,6 +11574,270 @@ CREATE OR REPLACE FUNCTION _v148_void(p_match uuid, p_target text) RETURNS text 
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/148 (section 125) ─────────────────────────────────────────────
 
+-- ┌── db/152 (section 126) ─────────────────────────────────────────────
+-- db/121's ball_event_live, word for word, as its caller (security_invoker
+-- over ball_event, under row security per ball): the rows db/152's owner's
+-- view, which asks the policy's conditions once a match, must equal.
+CREATE OR REPLACE VIEW _v152_live_rls WITH (security_invoker = true) AS
+SELECT b.id, b.match_id, b.school_id, b.seq, b.epoch, b.innings,
+       b.scorer_user_id, b.device_id, b.idempotency_key, b.client_seq, b.client_ts, b.server_ts,
+       b.kind,
+       CASE WHEN b.kind = 'retire' AND b.ball_type = 'W'
+                 AND retirement_resumed(b.match_id, b.innings, b.seq, b.payload->>'batter') THEN NULL
+            ELSE ball_type_as_folded(b.kind, b.ball_type) END AS ball_type,
+       b.value, b.shot, b.contact, b.trajectory, b.seg, b.zone,
+       CASE WHEN r.seq IS NOT NULL THEN r.striker_id ELSE b.striker_id END AS striker_id,
+       b.non_striker_id, b.bowler_id, b.dismissed_id,
+       CASE WHEN b.kind = 'retire' AND b.ball_type = 'W'
+                 AND retirement_resumed(b.match_id, b.innings, b.seq, b.payload->>'batter') THEN NULL
+            ELSE b.dismissal END AS dismissal,
+       b.payload, b.recovered,
+       b.theta, b.radius, b.placement_source, b.placement_null, b.close_position, b.capture_profile,
+       (SELECT innings_super_over(s.payload)
+          FROM ball_event s
+         WHERE s.match_id = b.match_id AND s.innings = b.innings AND s.kind = 'innings_start'
+           AND NOT EXISTS (SELECT 1 FROM ball_event v
+                            WHERE v.match_id = s.match_id AND v.kind = 'void' AND v.payload->>'target' = s.idempotency_key)
+         ORDER BY s.seq DESC LIMIT 1)                                   AS super_over
+  FROM ball_event b
+  LEFT JOIN ball_event_rejudged r ON r.match_id = b.match_id AND r.seq = b.seq
+ WHERE b.kind <> 'void'
+   AND NOT EXISTS (
+         SELECT 1 FROM ball_event v
+          WHERE v.match_id = b.match_id
+            AND v.kind = 'void'
+            AND v.payload->>'target' = b.idempotency_key);
+GRANT SELECT ON _v152_live_rls TO scrbrd_app;
+
+-- Every column of every row a view gives this session, as "rows:md5".
+CREATE OR REPLACE FUNCTION _v152_rows(p_view regclass) RETURNS text AS $$
+DECLARE got text;
+BEGIN
+  EXECUTE format('SELECT count(*) || '':'' || coalesce(md5(string_agg(t::text, E''\n'' ORDER BY t.id)), ''-'') FROM %s t', p_view)
+     INTO got;
+  RETURN got;
+END $$ LANGUAGE plpgsql STABLE;
+
+-- Everybody with an assignment, the owner's list (app_user is not the
+-- application's to list).
+CREATE OR REPLACE FUNCTION _v152_people() RETURNS SETOF uuid AS $$
+  SELECT DISTINCT person_id FROM role_assignment ORDER BY 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A ball and a void at the OTHER school of a host's fixture: the per-ball
+-- path db/152 keeps for a ball not at its match's school. Every writer
+-- stamps the match's school, so only the owner can plant one; the log's
+-- triggers are lifted for the two rows (the file rolls back either way).
+-- The void targets the host's last ball of the fixture, so a reader of the
+-- host's balls who may not read the void still reads that ball. The fixture
+-- has no away side: ball_event_read's away arm admits every ball of a
+-- fixture whatever its school, so where there is one (in the full verifier,
+-- 13 Nov, Hilton's busiest was Hilton's 15XI v its own 16XI) every reader of
+-- the host's balls also reads the stray one, and (stray) has nobody to tell
+-- apart.
+CREATE OR REPLACE FUNCTION _v152_plant(p_host uuid, p_other uuid) RETURNS jsonb AS $$
+DECLARE v_m uuid; v_inn smallint; v_seq int; v_target ball_event; v_stray bigint; v_void bigint;
+        v_first ball_event; v_other uuid; v_amend uuid;
+BEGIN
+  SELECT b.match_id INTO v_m FROM ball_event b JOIN match m ON m.id = b.match_id
+   WHERE m.school_id = p_host AND b.school_id = p_host AND b.kind = 'ball' AND b.striker_id IS NOT NULL
+     AND m.away_school_id IS NULL
+   GROUP BY b.match_id ORDER BY count(*) DESC, b.match_id LIMIT 1;
+  SELECT * INTO v_target FROM ball_event WHERE match_id = v_m AND kind = 'ball' ORDER BY seq DESC LIMIT 1;
+  v_seq := (SELECT max(seq) FROM ball_event WHERE match_id = v_m);
+  ALTER TABLE ball_event DISABLE TRIGGER USER;
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                          client_seq, client_ts, kind, ball_type, value, payload, fingerprint)
+  VALUES (v_m, p_other, v_seq + 1, v_target.epoch, v_target.innings, v_target.scorer_user_id, 'v152', 'v152-stray',
+          v_seq + 1, now(), 'ball', 'run', 1, '{}', 'v152-stray')
+  RETURNING id INTO v_stray;
+  -- (fingerprint: the trigger that stamps it is among those lifted)
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key,
+                          client_seq, client_ts, kind, payload, fingerprint)
+  VALUES (v_m, p_other, v_seq + 2, v_target.epoch, v_target.innings, v_target.scorer_user_id, 'v152', 'v152-void',
+          v_seq + 2, now(), 'void', jsonb_build_object('target', v_target.idempotency_key), 'v152-void')
+  RETURNING id INTO v_void;
+  ALTER TABLE ball_event ENABLE TRIGGER USER;
+  -- A re-judged striker (db/121) on the host's first ball with one, so the
+  -- re-judged row's pad guard counts: another player of the fixture's log.
+  SELECT * INTO v_first FROM ball_event
+   WHERE match_id = v_m AND school_id = p_host AND kind = 'ball' AND striker_id IS NOT NULL ORDER BY seq LIMIT 1;
+  v_other := (SELECT p.id FROM player p WHERE p.school_id = p_host AND p.id <> v_first.striker_id ORDER BY p.id LIMIT 1);
+  INSERT INTO scoring_amendment (match_id, school_id, target_key, reason, requested_by)
+  VALUES (v_m, p_host, v_first.idempotency_key, 'db/99 §126: a re-judged striker', v_first.scorer_user_id)
+  RETURNING id INTO v_amend;
+  ALTER TABLE ball_event_rejudged DISABLE TRIGGER USER;
+  INSERT INTO ball_event_rejudged (match_id, seq, striker_id, amendment_id) VALUES (v_m, v_first.seq, v_other, v_amend);
+  ALTER TABLE ball_event_rejudged ENABLE TRIGGER USER;
+  RETURN jsonb_build_object('match', v_m, 'stray', v_stray, 'void', v_void, 'target', v_target.id,
+                            'rejudged', v_first.id, 'rejudged_striker', v_other);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The plant's ball and void taken out again once (stray) has asked of them,
+-- so the later labels read the log as it stands (no ball at another school):
+-- while one is there, every read of ball_event_live also asks the reader's
+-- own SELECT of the whole log once, which across the cast in (match) and
+-- (closed) ran for hours. The re-judged striker stays. True when both are gone.
+CREATE OR REPLACE FUNCTION _v152_unplant(p_plant jsonb) RETURNS boolean AS $$
+BEGIN
+  ALTER TABLE ball_event DISABLE TRIGGER USER;
+  DELETE FROM ball_event WHERE id IN ((p_plant->>'stray')::bigint, (p_plant->>'void')::bigint);
+  ALTER TABLE ball_event ENABLE TRIGGER USER;
+  RETURN NOT EXISTS (SELECT 1 FROM ball_event WHERE id IN ((p_plant->>'stray')::bigint, (p_plant->>'void')::bigint));
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- (owner) The view read by a definer of its owner (the seal and milestone
+-- triggers, the fold's helpers, the importer's commit): row security does not
+-- apply to the caller, so every live ball, as db/121's view gives the same
+-- caller. Both reads' "rows:md5", and the log's balls that are neither a void
+-- nor voided, for the count.
+CREATE OR REPLACE FUNCTION _v152_owner_reads() RETURNS jsonb AS $$
+  SELECT jsonb_build_object('live', _v152_rows('ball_event_live'), 'rls', _v152_rows('_v152_live_rls'),
+           'balls', (SELECT count(*) FROM ball_event b
+                      WHERE b.kind <> 'void'
+                        AND NOT EXISTS (SELECT 1 FROM ball_event v WHERE v.match_id = b.match_id AND v.kind = 'void'
+                                           AND v.payload->>'target' = b.idempotency_key)))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- (cast) The kinds of reader the conditions name, each as the person among
+-- _v152_people() who is one with the first email (this file's people are
+-- named, '<tag>.<who>@example.invalid', and their ids are random), then id: a pupil whose side has a date it ended
+-- (a move or a leaving), a guardian whose link is not a live verified one
+-- (pending, rejected, revoked, ended or inactive), a named driver of a trip
+-- not cancelled, and a coach at a school that is the away side of a fixture
+-- with a ball. NULL where nobody is. The owner's.
+CREATE OR REPLACE FUNCTION _v152_kinds() RETURNS TABLE (kind text, person_id uuid) AS $$
+  WITH c AS (SELECT x.person_id, u.email FROM _v152_people() AS x(person_id) LEFT JOIN app_user u ON u.id = x.person_id)
+  SELECT 'pupil_dated', (SELECT c.person_id FROM c
+                          WHERE person_is_pupil(c.person_id)
+                            AND EXISTS (SELECT 1 FROM team_membership tm
+                                         WHERE tm.left_on IS NOT NULL
+                                           AND tm.player_id IN (SELECT u.player_id FROM app_user u WHERE u.id = c.person_id
+                                                                UNION
+                                                                SELECT g.player_id FROM role_assignment a
+                                                                  JOIN assignment_subject g ON g.assignment_id = a.id
+                                                                 WHERE a.person_id = c.person_id AND a.role IN ('selfaccess', 'player')))
+                          ORDER BY c.email, c.person_id LIMIT 1)
+  UNION ALL
+  SELECT 'guardian_ended', (SELECT c.person_id FROM c
+                             WHERE EXISTS (SELECT 1 FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+                                            WHERE a.person_id = c.person_id AND a.role = 'guardian'
+                                              AND (NOT a.active OR g.verification_state <> 'verified'
+                                                   OR g.valid_until <= sa_today() OR a.valid_until <= sa_today()))
+                             ORDER BY c.email, c.person_id LIMIT 1)
+  UNION ALL
+  SELECT 'driver', (SELECT c.person_id FROM c
+                     WHERE EXISTS (SELECT 1 FROM trip t WHERE t.driver_id = c.person_id AND t.cancelled_at IS NULL)
+                     ORDER BY c.email, c.person_id LIMIT 1)
+  UNION ALL
+  SELECT 'away_coach', (SELECT c.person_id FROM c
+                         WHERE EXISTS (SELECT 1 FROM role_assignment a
+                                        WHERE a.person_id = c.person_id AND a.role = 'coach' AND a.active
+                                          AND a.school_id IN (SELECT m.away_school_id FROM match m
+                                                               WHERE EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id)))
+                         ORDER BY c.email, c.person_id LIMIT 1)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The readers §126 asks: a fixed sample, not the whole cast. Every one of the
+-- whole cast's readers at every fixture ran past six hours on CI (8299ddab:
+-- 736 people by §126). The sample is, for each kind of assignment (its role,
+-- its school, whether it is a side's or the school's, whether it is a
+-- fixture's, whether it is live), the person holding one with the first
+-- email, then id; and the person _v152_kinds() names for each kind. Named,
+-- not drawn: the same file and seed give the same people.
+CREATE OR REPLACE FUNCTION _v152_readers() RETURNS SETOF uuid AS $$
+  SELECT DISTINCT p FROM (
+    (SELECT DISTINCT ON (a.role, a.school_id, a.team_code IS NULL, a.fixture_id IS NULL, a.active) a.person_id AS p
+       FROM role_assignment a LEFT JOIN app_user u ON u.id = a.person_id
+      ORDER BY a.role, a.school_id, a.team_code IS NULL, a.fixture_id IS NULL, a.active, u.email, a.person_id)
+    UNION ALL
+    SELECT k.person_id FROM _v152_kinds() k WHERE k.person_id IS NOT NULL) x
+  ORDER BY 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- (cast) Which person the sample holds for each kind, and how many readers
+-- it has of how many in the cast.
+CREATE OR REPLACE FUNCTION _v152_cast() RETURNS jsonb AS $$
+  SELECT (SELECT jsonb_object_agg(k.kind, k.person_id) FROM _v152_kinds() k
+           WHERE k.person_id IS NULL OR k.person_id IN (SELECT * FROM _v152_readers()))
+         || jsonb_build_object('readers', (SELECT count(*) FROM _v152_readers()),
+                               'cast', (SELECT count(*) FROM _v152_people()),
+                               -- who they are, by name: the same on every run
+                               'sample', (SELECT md5(string_agg(coalesce(u.email, r::text), ' ' ORDER BY coalesce(u.email, r::text)))
+                                            FROM _v152_readers() r LEFT JOIN app_user u ON u.id = r))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- (fingerprint) Fable's S2: what the live pin sees that an xmin does not.
+-- In this transaction, which then wrote the row: a pinned policy re-stated
+-- word for word, re-pinned, then altered (the xmin stays this transaction's,
+-- so only the stored expression's md5 can move the fingerprint) and put back;
+-- then the view's security barrier lifted and put back (pg_class, not the
+-- rule). Each step's ball_log_pinned(), then a re-pin so the file reads on
+-- as before. The file rolls back either way.
+CREATE OR REPLACE FUNCTION _v152_same_txn() RETURNS jsonb AS $$
+DECLARE q text; out jsonb := '{}';
+BEGIN
+  SELECT pg_get_expr(p.polqual, p.polrelid) INTO q FROM pg_policy p
+   WHERE p.polrelid = 'ball_event_rejudged'::regclass AND p.polname = 'ball_event_rejudged_read';
+  EXECUTE format('ALTER POLICY ball_event_rejudged_read ON ball_event_rejudged USING (%s)', q);
+  out := out || jsonb_build_object('restated_text_pinned', ball_log_text_pinned());
+  PERFORM ball_log_repin();
+  out := out || jsonb_build_object('repinned', ball_log_pinned());
+  ALTER POLICY ball_event_rejudged_read ON ball_event_rejudged USING (false);
+  out := out || jsonb_build_object('altered_after_repin', ball_log_pinned());
+  EXECUTE format('ALTER POLICY ball_event_rejudged_read ON ball_event_rejudged USING (%s)', q);
+  out := out || jsonb_build_object('put_back', ball_log_pinned());
+  ALTER VIEW ball_event_live SET (security_barrier = false);
+  out := out || jsonb_build_object('barrier_lifted', ball_log_pinned(), 'barrier_lifted_text', ball_log_text_pinned());
+  ALTER VIEW ball_event_live SET (security_barrier = true);
+  PERFORM ball_log_repin();
+  RETURN out || jsonb_build_object('end', ball_log_pinned() AND ball_log_text_pinned());
+EXCEPTION WHEN OTHERS THEN
+  RETURN out || jsonb_build_object('error', SQLSTATE || '|' || SQLERRM);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- This session's rows through ball_event_live against db/121's view under
+-- row security: equal, every column, or §126 fails naming the reader and the
+-- label. Returns how many rows the session reads.
+CREATE OR REPLACE FUNCTION _v152_same(p_what text) RETURNS int AS $$
+DECLARE a text := _v152_rows('ball_event_live'); b text := _v152_rows('_v152_live_rls');
+BEGIN
+  PERFORM _assert(a = b, format('§126 (%s): %s reads %s through ball_event_live and %s under row security (scope %s, match %s)',
+                                p_what, coalesce(nullif(current_setting('app.user_id', true), ''), 'nobody'), a, b,
+                                coalesce(nullif(current_setting('app.scope', true), ''), '-'),
+                                coalesce(nullif(current_setting('app.match_id', true), ''), '-')));
+  RETURN split_part(a, ':', 1)::int;
+END $$ LANGUAGE plpgsql;
+
+-- The fixtures a pad's credential is held at (the owner's list): for each
+-- school, its fixture with the most balls as the host and as the away side,
+-- so a pad at either end of a fixture is asked. Every reader at every fixture
+-- of this file's whole cast ran past two hours.
+CREATE OR REPLACE FUNCTION _v152_matches() RETURNS SETOF uuid AS $$
+  SELECT DISTINCT x.match_id FROM (
+    (SELECT DISTINCT ON (m.school_id) b.match_id
+       FROM ball_event b JOIN match m ON m.id = b.match_id
+      GROUP BY m.school_id, b.match_id ORDER BY m.school_id, count(*) DESC, b.match_id)
+    UNION ALL
+    (SELECT DISTINCT ON (m.away_school_id) b.match_id
+       FROM ball_event b JOIN match m ON m.id = b.match_id
+      WHERE m.away_school_id IS NOT NULL
+      GROUP BY m.away_school_id, b.match_id ORDER BY m.away_school_id, count(*) DESC, b.match_id)) x
+  ORDER BY 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The owner's DDL the fallback's proof needs (a policy added and dropped, row
+-- security lifted from match and put back, the live pin re-recorded); 'ok'
+-- or the error. The file rolls back either way.
+CREATE OR REPLACE FUNCTION _v152_owner(p_sql text) RETURNS text AS $$
+BEGIN
+  EXECUTE p_sql;
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE || '|' || SQLERRM;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/152 (section 126) ─────────────────────────────────────────────
+
 -- ┌── db/149 (section 127) ─────────────────────────────────────────────
 -- The stream overlay names no child (Kameel, 11 Nov 2026, Q1(e)). Hilton's
 -- U18A at home to Westville's U18A, invented here, today, the overlay
@@ -12471,10 +12735,23 @@ BEGIN
   -- each one looked exactly right.
   -- (It asks for security_invoker=true: a view altered to security_invoker=false
   -- once read as passing, because the option's NAME was all that was asked.)
+  -- ONE EXCEPTION, by name: ball_event_live (db/152) runs as its owner so its
+  -- scan of the log does not run ball_event's policy per ball; it states the
+  -- policy's conditions once a match, behind a security barrier, while its
+  -- pins hold (the policies' texts and its own, and the live fingerprint);
+  -- otherwise it reads exactly the reader's own SELECT. §126 holds it to
+  -- that, row for row against db/121's view run under row security. Any
+  -- other view as its owner is still red.
   PERFORM _assert(
     (SELECT bool_and(coalesce('security_invoker=true' = ANY (reloptions), false))
-       FROM pg_class WHERE relkind = 'v' AND relnamespace = 'public'::regnamespace),
+       FROM pg_class WHERE relkind = 'v' AND relnamespace = 'public'::regnamespace
+        AND oid <> 'ball_event_live'::regclass),
     'a view in public runs as its owner and bypasses row-level security');
+  PERFORM _assert(
+    coalesce((SELECT reloptions @> ARRAY['security_barrier=true'] FROM pg_class WHERE oid = 'ball_event_live'::regclass), false)
+    AND ball_log_text_pinned() AND ball_log_pinned(),
+    format('ball_event_live runs as its owner without a security barrier, or what it restates has changed (db/152, §126): %s',
+           coalesce(ball_log_policies_unpinned(), CASE WHEN ball_log_text_pinned() THEN 'the live pin is not recorded (ball_log_repin())' ELSE 'the view is not db/152''s text' END)));
 
   PERFORM _as(U_COACH);
   SELECT count(*) INTO n FROM player_masked WHERE school_id = WES;
@@ -27150,10 +27427,14 @@ $v49$;
                                    AND p.polname <> 'ball_event_read'
                                    AND concat(pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid)) LIKE '%away\_%'),
       '§75 (text): a write or a pad table''s policy names the away side');
-    PERFORM _assert((SELECT bool_and(coalesce(c.reloptions, '{}') @> ARRAY['security_invoker=true']) AND count(*) = 5
-                       FROM pg_class c WHERE c.oid IN ('ball_event_live'::regclass, 'bowler_over'::regclass, 'bowler_spell'::regclass,
-                                                       'ball_event_career'::regclass, 'match_live_score'::regclass)),
-      '§75 (text): a view the away branch rides is not security_invoker');
+    -- ball_event_live is db/152's owner's view, which states the away branch
+    -- itself once a match; §126 holds it to the policy row for row.
+    PERFORM _assert((SELECT bool_and(coalesce(c.reloptions, '{}') @> ARRAY['security_invoker=true']) AND count(*) = 4
+                       FROM pg_class c WHERE c.oid IN ('bowler_over'::regclass, 'bowler_spell'::regclass,
+                                                       'ball_event_career'::regclass, 'match_live_score'::regclass))
+                    AND coalesce((SELECT c.reloptions @> ARRAY['security_barrier=true'] FROM pg_class c WHERE c.oid = 'ball_event_live'::regclass), false)
+                    AND position('away_school_id' IN pg_get_viewdef('ball_event_live'::regclass)) > 0,
+      '§75 (text): a view the away branch rides is not security_invoker, or ball_event_live does not state the away branch behind a security barrier');
 
     -- (day)
     PERFORM _as((z->>'wescoach')::uuid);
@@ -39676,6 +39957,275 @@ $v116$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/148 (section 125) ──────────────────────────────────────────
+
+  -- ┌── db/152 (section 126) ─────────────────────────────────────────
+  -- ── 126. The ball log asks once a match, and fails closed (db/152) ──
+  -- ball_event_live runs as its owner and states ball_event's read
+  -- conditions once a match while its pins hold (§9 names it as the one such
+  -- view); when they do not, it reads exactly the reader's own SELECT.
+  -- Labels:
+  --   (pinned)   the text pin and the live pin hold; whitespace is all the
+  --              text pin folds: regrouped brackets and a literal's case are
+  --              different texts (the security review's S1)
+  --   (shape)    an owner's security barrier view, the owner ball_event's;
+  --              the exact path and the text pin as the caller, the live pin
+  --              a definer
+  --   (grants)   SELECT for scrbrd_app and nothing else, and nothing for
+  --              anybody else (anon and authenticated where they exist); the
+  --              exact path not PUBLIC's to call, the re-pin the owner's (S4)
+  --   (rows)     for a fixed sample of readers (_v152_readers: by email, the
+  --              first of each kind of assignment and of each kind (cast) names)
+  --              and for nobody: every column of every row equal to db/121's
+  --              view under row security (_v152_live_rls)
+  --   (pad)      the same for every reader of the sample on a pad's credential at each
+  --              school's busiest fixture as the host and as the away side
+  --              (_v152_matches), and after the plant at the planted fixture:
+  --              ball_event's pad guard, match's inside the away branch, and
+  --              the re-judged striker's
+  --   (support)  the same in a platform administrator's support session at
+  --              either school
+  --   (match)    the same with row security lifted from match: the away
+  --              branch's read of match then asks no policy, as the policy's
+  --              own sub-select would not
+  --   (stray)    the same once a ball and a void are planted at the other
+  --              school of a host's fixture; the stray ball read by some and
+  --              not others, the void's target read where the void is not;
+  --              then both taken out again (_v152_unplant), so the labels
+  --              below read the log as it stands
+  --   (closed)   a RESTRICTIVE policy added to ball_event, then one to match
+  --              (the review's B1): both pins break at once, the view reads
+  --              exactly what the tables' own SELECT returns for everybody,
+  --              and somebody reads less than at (rows), before the plant;
+  --              dropped, both pins hold again
+  --   (grants) also: no db/152 function and nothing on ball_log_pin for
+  --              PUBLIC, anon, authenticated or service_role (Fable's S4)
+  --   (owner)    a definer of the owner reads every live ball through the
+  --              view, as through db/121's view (the owner's branch)
+  --   (cast)     the sample includes a pupil whose side has ended, a
+  --              guardian whose link is not live, a trip's driver and an
+  --              away school's coach (Fable's S3), and every role the cast
+  --              holds. The whole cast at every label ran past six hours on
+  --              CI; the sample is what each label asks
+  --   (fingerprint) in this transaction: a pinned policy re-stated and
+  --              re-pinned, then altered, breaks the live pin though its xmin
+  --              stays; put back, it holds; the security barrier lifted
+  --              breaks it while the text pin holds (Fable's S2)
+  -- Falsified once each (11 Nov 2026), the view broken with its pins made to
+  -- hold and this section run on the seed: the exact path dropped went red at
+  -- (closed); the per-ball branch at (stray); the away arm at (rows); match's
+  -- pad guard inside the away branch at (pad); the row_security_active
+  -- ('match') split at (match, pad); the re-judged row's pad guard at (pad).
+  -- Three arms cannot be seen by any reader, and are held by the text pin
+  -- alone (any edit to the view breaks it, and the view reads the exact path):
+  -- the trip-driver and my_fixture_ends arms inside the away branch (app_can()
+  -- and pupil_side_on() answer a NULL person as they answer match_read's
+  -- sentinel, so whenever the ball's away arm holds, match_read's away arm
+  -- does too), and ball_event's own pad guard (a pad credential's app_can()
+  -- and session sets already reach its match alone).
+  DECLARE
+    u       uuid;
+    mm      uuid;
+    pass    int;
+    y       jsonb;
+    got     text;
+    ok      boolean;
+    sid     uuid;
+    sch     uuid;
+    n       int;
+    n_some  int := 0;
+    n_all   int;
+    n_pad   int := 0;
+    n_stray int := 0;
+    n_host  int := 0;
+    n_tgt   int := 0;
+    n_hid   int := 0;
+    n_less  int := 0;
+    seen    jsonb := '{}';
+    b_stray boolean;
+    b_host  boolean;
+    b_tgt   boolean;
+  BEGIN
+    -- (pinned)
+    PERFORM _assert(ball_log_policies_unpinned() IS NULL, format('§126 (pinned): %s', ball_log_policies_unpinned()));
+    PERFORM _assert(ball_log_text_pinned() AND ball_log_pinned(), '§126 (pinned): ball_event_live''s text pin or its live pin does not hold');
+    PERFORM _assert(ball_log_norm('(((a = 1) AND (b = 1)) OR (c = 1))') <> ball_log_norm('((a = 1) AND ((b = 1) OR (c = 1)))')
+                    AND ball_log_norm('''Fixture.Read''') <> ball_log_norm('''fixture.read''')
+                    AND ball_log_norm(E'(a =  1)\n   AND (b = 1)') = ball_log_norm('(a = 1) AND (b = 1)'),
+      '§126 (pinned): the text pin folds brackets or a literal''s case, or not whitespace');
+    -- (shape)
+    PERFORM _assert((SELECT c.reloptions @> ARRAY['security_barrier=true', 'security_invoker=false']
+                        AND c.relowner = (SELECT t.relowner FROM pg_class t WHERE t.oid = 'ball_event'::regclass)
+                       FROM pg_class c WHERE c.oid = 'ball_event_live'::regclass)
+                    AND NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.prosecdef AND p.oid IN (
+                          'ball_event_visible_ids()'::regprocedure, 'ball_event_rejudged_visible_keys()'::regprocedure,
+                          'ball_log_policies_unpinned()'::regprocedure, 'ball_log_text_pinned()'::regprocedure,
+                          'ball_log_fingerprint()'::regprocedure))
+                    AND (SELECT p.prosecdef FROM pg_proc p WHERE p.oid = 'ball_log_pinned()'::regprocedure),
+      '§126 (shape): ball_event_live is not an owner''s security barrier view, or a pin or the exact path runs as the wrong role');
+    -- (grants)
+    PERFORM _assert(has_table_privilege('scrbrd_app', 'ball_event_live', 'SELECT')
+                    AND NOT has_table_privilege('scrbrd_app', 'ball_event_live', 'INSERT')
+                    AND NOT has_table_privilege('scrbrd_app', 'ball_event_live', 'UPDATE')
+                    AND NOT has_table_privilege('scrbrd_app', 'ball_event_live', 'DELETE')
+                    AND NOT EXISTS (SELECT 1 FROM pg_class c, aclexplode(c.relacl) x
+                                     WHERE c.oid = 'ball_event_live'::regclass
+                                       AND x.grantee NOT IN (c.relowner, (SELECT r.oid FROM pg_roles r WHERE r.rolname = 'scrbrd_app')))
+                    AND NOT has_function_privilege('public', 'ball_event_visible_ids()', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'ball_event_rejudged_visible_keys()', 'EXECUTE')
+                    AND NOT has_function_privilege('scrbrd_app', 'ball_log_repin()', 'EXECUTE'),
+      '§126 (grants): somebody but scrbrd_app selects from ball_event_live, scrbrd_app may write it, or the exact path or the re-pin is PUBLIC''s');
+    -- … and every function of db/152 and ball_log_pin, for PUBLIC and for
+    -- Supabase's three roles where they exist (Fable's S4)
+    SELECT string_agg(r || ' ' || f, ', ') INTO got
+      FROM unnest(ARRAY['ball_log_norm(text)', 'ball_log_policies_unpinned()', 'ball_log_text_pinned()',
+                        'ball_log_fingerprint()', 'ball_log_pinned()', 'ball_log_repin()',
+                        'ball_event_visible_ids()', 'ball_event_rejudged_visible_keys()']) f,
+           unnest(ARRAY['public', 'anon', 'authenticated', 'service_role']) r
+     WHERE (r = 'public' OR EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r))
+       AND has_function_privilege(r, f, 'EXECUTE');
+    PERFORM _assert(got IS NULL, format('§126 (grants): may call a db/152 function: %s', got));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_class c, aclexplode(c.relacl) x
+                                 WHERE c.oid = 'ball_log_pin'::regclass AND x.grantee <> c.relowner)
+                    AND NOT EXISTS (SELECT 1 FROM pg_class c, aclexplode(c.relacl) x
+                                     WHERE c.oid = 'ball_event_live'::regclass
+                                       AND x.grantee IN (SELECT r.oid FROM pg_roles r WHERE r.rolname IN ('anon', 'authenticated', 'service_role'))),
+      '§126 (grants): somebody but its owner holds a privilege on ball_log_pin, or a Supabase role on ball_event_live');
+    -- (owner) a definer of the owner reads every live ball, as db/121's view
+    y := _v152_owner_reads();
+    PERFORM _assert(y->>'live' = y->>'rls' AND split_part(y->>'live', ':', 1) = y->>'balls' AND (y->>'balls')::int > 0,
+      format('§126 (owner): a definer of the owner reads %s through ball_event_live, %s under db/121''s view, of %s live balls',
+             y->>'live', y->>'rls', y->>'balls'));
+    -- (cast) the sample of readers every label below asks holds each kind
+    -- the conditions name, and every role the cast holds
+    y := _v152_cast();
+    PERFORM _assert(y->>'pupil_dated' IS NOT NULL AND y->>'guardian_ended' IS NOT NULL
+                    AND y->>'driver' IS NOT NULL AND y->>'away_coach' IS NOT NULL
+                    AND (SELECT count(DISTINCT a.role) FROM role_assignment a WHERE a.person_id IN (SELECT * FROM _v152_readers()))
+                        = (SELECT count(DISTINCT a.role) FROM role_assignment a),
+      format('§126 (cast): the readers lack a kind, or a role the cast holds: %s', y));
+    RAISE NOTICE '§126 (cast): % readers of a cast of % (sample %)', y->>'readers', y->>'cast', y->>'sample';
+    y := NULL;
+
+    FOR pass IN 1..2 LOOP
+      IF pass = 2 THEN
+        y := _v152_plant(HIL, WES);
+        PERFORM _assert(y->>'stray' IS NOT NULL AND y->>'void' IS NOT NULL, format('§126 (stray): nothing was planted: %s', y));
+      END IF;
+      -- (rows) / (stray)
+      PERFORM set_config('app.user_id', '', true);
+      n_all := _v152_same(CASE pass WHEN 1 THEN 'rows' ELSE 'stray' END);
+      FOR u IN SELECT * FROM _v152_readers() LOOP
+        PERFORM _as(u);
+        n := _v152_same(CASE pass WHEN 1 THEN 'rows' ELSE 'stray' END);
+        IF pass = 1 THEN
+          IF n > 0 THEN n_some := n_some + 1; END IF;
+          -- what each reads before the plant, for (closed)
+          seen := seen || jsonb_build_object(u::text, n);
+        END IF;
+        IF pass = 2 THEN
+          -- the stray ball, the host's balls of the fixture, the void's target:
+          -- one read of the view (each read asks the whole log once while the
+          -- stray ball is there)
+          SELECT coalesce(bool_or(l.id = (y->>'stray')::bigint), false),
+                 coalesce(bool_or(l.match_id = (y->>'match')::uuid AND l.school_id = HIL), false),
+                 coalesce(bool_or(l.id = (y->>'target')::bigint), false)
+            INTO b_stray, b_host, b_tgt
+            FROM ball_event_live l
+           WHERE l.id IN ((y->>'stray')::bigint, (y->>'target')::bigint)
+              OR (l.match_id = (y->>'match')::uuid AND l.school_id = HIL);
+          IF b_stray THEN n_stray := n_stray + 1; ELSIF b_host THEN n_host := n_host + 1; END IF;
+          IF b_tgt THEN n_tgt := n_tgt + 1; ELSIF b_host THEN n_hid := n_hid + 1; END IF;
+        END IF;
+        -- (pad) a pad's credential at each school's busiest fixture, either
+        -- end; after the plant, at the planted fixture (its re-judged striker),
+        -- whether or not it is one of those.
+        FOR mm IN SELECT x FROM _v152_matches() x WHERE pass = 1
+                  UNION SELECT (y->>'match')::uuid WHERE pass = 2 LOOP
+          PERFORM set_config('app.scope', 'pad', true);
+          PERFORM set_config('app.match_id', mm::text, true);
+          IF _v152_same('pad') > 0 THEN n_pad := n_pad + 1; END IF;
+        END LOOP;
+        PERFORM set_config('app.scope', '', true);
+        PERFORM set_config('app.match_id', '', true);
+      END LOOP;
+    END LOOP;
+    PERFORM _assert(n_some > 0 AND n_all = 0 AND n_pad > 0,
+      format('§126 (rows): %s readers read a ball, nobody read %s, %s pad credentials read one', n_some, n_all, n_pad));
+    PERFORM _assert(y->>'rejudged_striker' IS NOT NULL,
+      format('§126 (pad): no re-judged striker was planted: %s', y));
+    PERFORM _assert(n_stray > 0 AND n_host > 0 AND n_tgt > 0 AND n_hid > 0,
+      format('§126 (stray): the stray ball read by %s, the host''s balls without it by %s, the void''s target by %s and hidden from %s',
+             n_stray, n_host, n_tgt, n_hid));
+    PERFORM _assert(_v152_unplant(y), format('§126 (stray): the planted ball and void were not taken out: %s', y));
+    PERFORM _assert(ball_log_pinned() AND ball_log_text_pinned(), '§126 (stray): taking the plant out broke a pin');
+
+    -- (support) a platform administrator's support session at each school.
+    PERFORM _as(U_PLAT);
+    FOREACH sch IN ARRAY ARRAY[HIL, WES] LOOP
+      SELECT s.ok, s.reason, s.id INTO ok, got, sid
+        FROM support_access_begin(sch, 'schooladmin', 'db/152 §126: the ball log in a support session') s;
+      PERFORM _assert(ok, format('§126 (support): no support session began at %s: %s', sch, got));
+      PERFORM _v152_same('support');
+      PERFORM support_access_end(sid);
+    END LOOP;
+
+    -- (match) row security lifted from match: the pins still hold, and the
+    -- away branch asks no policy of match, as the policy's sub-select would not.
+    got := _v152_owner('ALTER TABLE match DISABLE ROW LEVEL SECURITY');
+    PERFORM _assert(got = 'ok', format('§126 (match): row security could not be lifted from match: %s', got));
+    PERFORM _assert(ball_log_pinned(), '§126 (match): lifting match''s row security broke the live pin');
+    FOR u IN SELECT * FROM _v152_readers() LOOP
+      PERFORM _as(u);
+      PERFORM _v152_same('match');
+      -- and on a pad's credential at each fixture: match's pad guard is no
+      -- part of the away branch once match asks no policy
+      FOR mm IN SELECT * FROM _v152_matches() LOOP
+        PERFORM set_config('app.scope', 'pad', true);
+        PERFORM set_config('app.match_id', mm::text, true);
+        PERFORM _v152_same('match, pad');
+      END LOOP;
+      PERFORM set_config('app.scope', '', true);
+      PERFORM set_config('app.match_id', '', true);
+    END LOOP;
+    got := _v152_owner('ALTER TABLE match ENABLE ROW LEVEL SECURITY');
+    PERFORM _assert(got = 'ok', format('§126 (match): row security could not be put back on match: %s', got));
+
+    -- (closed) a RESTRICTIVE policy on ball_event, then one on match.
+    got := _v152_owner(format('CREATE POLICY _v152_closed ON ball_event AS RESTRICTIVE FOR SELECT USING (school_id = %L::uuid)', HIL));
+    PERFORM _assert(got = 'ok', format('§126 (closed): the policy could not be added: %s', got));
+    PERFORM _assert(NOT ball_log_pinned() AND NOT ball_log_text_pinned(), '§126 (closed): a new RESTRICTIVE policy on ball_event left a pin holding');
+    FOR u IN SELECT * FROM _v152_readers() LOOP
+      PERFORM _as(u);
+      n := _v152_same('closed');
+      IF n < coalesce((seen->>u::text)::int, 0) THEN n_less := n_less + 1; END IF;
+    END LOOP;
+    got := _v152_owner('CREATE POLICY _v152_closed_m ON match AS RESTRICTIVE FOR SELECT USING (away_school_id IS NULL)');
+    PERFORM _assert(got = 'ok', format('§126 (closed): the policy on match could not be added: %s', got));
+    got := _v152_owner('DROP POLICY _v152_closed ON ball_event');
+    PERFORM _assert(got = 'ok' AND NOT ball_log_pinned(), format('§126 (closed): %s, or a new policy on match left the live pin holding', got));
+    FOR u IN SELECT * FROM _v152_readers() LOOP
+      PERFORM _as(u);
+      PERFORM _v152_same('closed, match');
+    END LOOP;
+    got := _v152_owner('DROP POLICY _v152_closed_m ON match');
+    PERFORM _assert(got = 'ok', format('§126 (closed): the policy on match could not be dropped: %s', got));
+    PERFORM _assert(ball_log_pinned() AND ball_log_text_pinned(), '§126 (closed): the pins did not hold again once the policies were dropped');
+    PERFORM _assert(n_less > 0, format('§126 (closed): nobody read less under the RESTRICTIVE policy (%s)', n_less));
+
+    -- (fingerprint) an ALTER POLICY after the re-pin in the same transaction,
+    -- and the security barrier lifted, each break the live pin; put back, the
+    -- pins hold (Fable's S2)
+    y := _v152_same_txn();
+    PERFORM _assert(y->>'error' IS NULL
+                    AND (y->>'restated_text_pinned')::boolean AND (y->>'repinned')::boolean
+                    AND NOT (y->>'altered_after_repin')::boolean AND (y->>'put_back')::boolean
+                    AND NOT (y->>'barrier_lifted')::boolean AND (y->>'barrier_lifted_text')::boolean
+                    AND (y->>'end')::boolean,
+      format('§126 (fingerprint): %s', y));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── end of section 126
+  -- └── db/152 (section 126) ──────────────────────────────────────────
   -- ┌── db/149 (section 127) ─────────────────────────────────────────
   -- ── 127. The stream overlay names no child (db/149; PUBLIC_DATA D2; Kameel 11 Nov 2026, Q1(e)) ──
   -- Staged by _v149_stage(); every read is broadcast_state() through

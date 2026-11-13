@@ -1390,9 +1390,19 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && path === "/api/health") {
     let db = "unreachable";
     try { await pool.query("select 1"); db = "ok"; } catch { /* reported as unreachable */ }
+    // Whether ball_event_live reads the fast way (db/152): false is correct
+    // but slow, every career and live-score read paying the whole log, until
+    // the owner runs ball_log_repin() (DEPLOYING.md). null when not asked.
+    /** @type {boolean | null} */
+    let ballLogPinned = null;
+    if (db === "ok") {
+      try { ballLogPinned = (await pool.query("select ball_log_pinned() as pinned")).rows[0]?.pinned === true; }
+      catch { /* reported as null */ }
+    }
     return json(res, 200, {
       ok: db === "ok",
       db,
+      ball_log_pinned: ballLogPinned,
       ai: aiConfigured() ? "configured" : "no_credentials",
       auth: DEV && process.env.ALLOW_DEV_LOGIN === "1" ? "dev_login_enabled" : "token_only",
       read: liveResources(),

@@ -144,5 +144,6 @@
   "148_award_corrections.sql",
   "149_overlay_name_gate.sql",
   "150_fielding.sql",
-  "151_pilot_match.sql"
+  "151_pilot_match.sql",
+  "152_ball_log_read_per_match.sql"
 ]
