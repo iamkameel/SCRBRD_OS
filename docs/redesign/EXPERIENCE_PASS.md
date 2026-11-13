@@ -17,8 +17,8 @@ the end, with a recommendation.
 
 How it was checked: every finding about today names its file and line at `origin/main`
 `959df992`. Menu counts come from running `design/roles.js` through `design/homes.js`
-(`collapseHomes`), which is what the shell draws. Screenshots were not ready when this was
-written, so no finding rests on one. No child is named; "T Bekker" is the placeholder the
+(`collapseHomes`), which is what the shell draws. Sections 1 and 2 were drafted before the
+screenshots were ready, and the shots were cited afterwards (below). No child is named; "T Bekker" is the placeholder the
 consent designs already use, and the schools are invented.
 
 Sections 1 and 2 were the first pass; sections 3 (stats and moments), 4 (six slices) and 5
@@ -26,8 +26,13 @@ Sections 1 and 2 were the first pass; sections 3 (stats and moments), 4 (six sli
 arrived after both were drafted (`audit/experience-screens/` on `claude/wip-experience-shots`
 at `ff9dd6b7`, with `NOTES.md`: 246 pictures, nine personas, 390 and 1366, Daylight and
 Floodlit). Each visual finding now cites them by file; `…/` stands for that folder, and `…-1366-daylight.jpg`
-after a full name is the same screen at the other width. Every finding is about layout,
-order or words, not colour: the Floodlit shots checked (the coach's home) show the same
+after a full name is the same screen at the other width. **Every shot cited here exists at
+390 and 1366 in both themes**: swap `-daylight` for `-floodlit` in the name. The exceptions
+are the menu drawers (390 only, both themes), the onboarding flow (step one only) and the
+signed-in spectator's big screen (not reached in either theme; NOTES.md "Not reached").
+Every finding is about layout, order or words, not colour. For every screen cited, NOTES.md's
+narrow audit gives the same counts in Floodlit as in Daylight, and the Floodlit shots opened
+(the coach's, parent's and scorer's homes, the passport, the public home page) show the same
 layout, the board black in both, and no defect of one theme alone. They
 were reviewed by hand against the interface-review headings (layout, words, type, colour,
 access), as that skill is not installed in this session.
@@ -46,7 +51,7 @@ access), as that skill is not installed in this session.
 | A4 | The homes pattern gathers **three domains**, and two of them (Logistics, Fields) are the same area linking to each other. It has no home for a match day, a team or the school office. | `design/homes.js:30-60` |
 | A5 | **Fourteen destinations are reached only from the menu** in a literal scan of the code: Analytics, Injuries, Calendar, To resolve, Officials, Sponsors, Modules, Newsfeed, Management, Rulebook, Pitch Deck, Selection, and nearly so Squad and Staff. No link was found from a match to its team or its ground. (The scan is literal; a link built another way would not show.) | `MAP.md` §3, checked against `App.jsx:570-607` |
 | A6 | Only the Match Centre has an address. Every other screen is one piece of state, and a player's page is a shared variable set before the page changes, so a player, a team and a ground cannot be linked to, shared or returned to. | `App.jsx:168-173` (`page`), `:198` and `:572` (`profileTarget`), `:441` (the one route) |
-| A7 | "To resolve" and "Officials" are offered to anyone who may read a fixture, so a **spectator's menu carries "To resolve"** and an umpires' register. His Today also carries the staff readiness chips ("Team sheet · nothing on record", "Transport · nothing on record") and a board of an unlisted U16A match with two boys named. | `roles.js:217`, `:222`; spectator's menu computed (11 entries); `audit/experience-screens/spectator-signed-in-home-390-daylight.jpg` |
+| A7 | "To resolve" and "Officials" are offered to anyone who may read a fixture, so a **spectator's menu carries "To resolve"** and an umpires' register. His Today also carries the staff readiness chips ("Team sheet · nothing on record", "Transport · nothing on record") and a board of an unlisted U16A match with two boys named (allowed: a spectator of his own school reads names on the signed-in scorecard, `READERS_child_data.md:117`; the finding is the clutter, not a leak). | `roles.js:217`, `:222`; spectator's menu computed (11 entries); `audit/experience-screens/spectator-signed-in-home-390-daylight.jpg` |
 | A8 | **A pupil who also scores loses the pupil's four-item app** and gets an 18-entry staff menu with Injuries, Skills, Training, Logistics and Fields. The persona rule needs every role a person holds to be on the persona's list. A parent who scores loses the family app the same way. Most scorers are expected to be under 18 (`ROLE_DASHBOARDS_v1.1` §2). | `roles.js:344-350` (`personaFor`); `player + selfaccess + scorer` computed |
 | A9 | Settings is **1,564 lines and nine tabs for five different audiences**. It opens on "People" for everyone, and six tabs have no gate, so a parent who taps her own name lands on "Settings & Access Control", People. Her health-monitoring consent is on the third tab. | `views/SettingsView.jsx:64-77` (tabs), `:143` (opens on `users`), `:268` (filter), `:799`; `shell/PersonaBar.jsx:32` |
 | A10 | Landing by capability already exists: a driver, a groundskeeper and a scorer each open on their own day screen, chosen by what they hold, with no role named. That is the precedent for everything below. | `App.jsx:556-569` |
@@ -272,7 +277,7 @@ Five seconds is counted from the first signed-in screen. Two steps are taps afte
 
 | Persona | Sees what needs them in five seconds? | Most common task, and steps | Verdict |
 |---|---|---|---|
-| Director of sport | Yes, if "Needs you" is the first block of Today, across his teams | Clear a blocker: tap the row → the exact screen | **Passes only if each row lands on the fix**, not on a list. Today the overview links to Squad and the Match Centre and nowhere else (`views/ReadinessOverview.jsx:235-251`, `:374`). With several teams, any task not in the queue costs a third step (pick the team). **Fails there.** |
+| Director of sport | Yes, if "Needs you" is the first block of Today, across his teams | Clear a blocker: tap the row → the exact screen | **Passes only if each row lands on the fix**, not on a list. Today most rows open a whole destination (Squad, Logistics, Competitions, Management, Settings or Staff) rather than the fix; only a fixture's duties, side or result open on that fixture (`views/ReadinessOverview.jsx:235-251`, `:374`). With several teams, any task not in the queue costs a third step (pick the team). **Fails there.** |
 | The office | Yes: waiting parents, claims and missing records are "Needs you" rows | Verify a parent's link: row → the pupil's family links → Verify | **Fails by one step** when the claim names a child in free text and the office must find the pupil first. That step is the safeguard (SCRBRD-140 D5) and should stay. |
 | Coach | Yes, once the next fixture's chips lead. **Today they do not:** on a phone the next fixture is the fourth card, about 1,480px down, under the cockpit's "Match day" and "Recent matches", and the same fixture is on the screen twice (`audit/experience-screens/coach-home-390-daylight.jpg`, `…/coach-home-390-floodlit.jpg`, `…/coach-home-1366-daylight.jpg`) | Pick the XI: Team sheet chip → the sheet (1). Plan training: Team → Training (2) | Passes on steps; **fails five seconds on a phone today** (Slice 5) |
 | Team manager | Yes: transport and answers outstanding | Check the bus: Transport chip → the trip (1) | Passes |
@@ -280,7 +285,7 @@ Five seconds is counted from the first signed-in screen. Two steps are taps afte
 | Parent | Yes: the action list is near the top of the child's section (second, after the next fixture). **While his match is live, the live card is fourth**, about 1,050px down on a phone, a figure with no sentence (`audit/experience-screens/parent-home-390-daylight.jpg`, `…/parent-home-1366-daylight.jpg`) | Answer availability, in place (1). See his score: the `Board` → the match (1) | Passes on steps. **Fails five seconds while his match is live** (Slice 4). With children at two schools it is two sections and a scroll, by decision (§6); the second child may be below the fold. |
 | Pupil | Yes | Answer availability (1). Open his Passport (1) | Passes |
 | Captain | Yes, when the captain's block is first on Home on a match day | Pick Player of the Match: card → choose (2) | Passes, subject to SCRBRD-138's rules, not reopened |
-| Spectator, signed out | **Fails on the home page today** on a phone: the page opens on the film and the live strip follows it (`home/main.jsx`, `Hero` then `LiveStrip`). With one match live, the first 2,400px are the film and the hero's buttons; the only sign of it is a "1 live" pill in the header (`audit/experience-screens/spectator-signed-out-public-home-390-daylight.jpg`, `…-1366-daylight.jpg`). From a shared link it passes outright: the sentence "Westville Boys' High 1XI need 74 runs off 33 balls" is above the board (`…/spectator-signed-out-live-match-summary-390-daylight.jpg`) | Watch a live match: one tap from the home page; none from a link | Passes on steps; five seconds depends on Q8 |
+| Spectator, signed out | **Fails on the home page today** on a phone: the page opens on the film and the live strip follows it (`home/main.jsx`, `Hero` then `LiveStrip`). With one match live, the first 2,400px are the film and the hero's buttons; the only signs of it are a "1 live" pill in the header and a "Follow a match" button in the hero, with no score (`audit/experience-screens/spectator-signed-out-public-home-390-daylight.jpg`, `…-1366-daylight.jpg`). From a shared link it passes outright: the sentence "Westville Boys' High 1XI need 74 runs off 33 balls" is above the board (`…/spectator-signed-out-live-match-summary-390-daylight.jpg`) | Watch a live match: one tap from the home page; none from a link | Passes on steps; five seconds depends on Q8 |
 | Spectator, signed in | Yes, if a followed school's live match leads Today | Open it: one tap | Passes if following exists (Q9); "Follow this match" is not built (`MAP.md` §7f) |
 | Platform admin | Yes: incidents first | Open a school's incident: row → the school (2) | Passes |
 | Anyone, opening the app cold | **Fails.** A reload drops the session by design, so every cold open is the sign-in screen first (`auth/NoSchool.jsx:321-329`; `App.jsx:396-401`) | n/a | Stated plainly; Q10 |
@@ -293,11 +298,11 @@ Five seconds is counted from the first signed-in screen. Two steps are taps afte
 
 | # | Finding | Evidence |
 |---|---|---|
-| B1 | There are **two sign-up doors that ask different questions**. "Create an account" opens the older flow, which offers ten role tiles and posts a request. "Continue with Google" opens the newer no-school screen, which offers four kinds of person. | `auth/LoginPage.jsx:327-329` → `App.jsx:284`, `:505-512` → `auth/OnboardingFlow.jsx:96-107`, `:168`; Google → `App.jsx:230-232`, `:495-503` → `auth/NoSchool.jsx:179-203`, `lib/joinSchool.js:40-44` |
-| B2 | The older flow shows **nothing real before it asks for a role**. Step one is a line of welcome that promises to "tailor the platform to your role"; step two is the role grid; there are up to six steps. It ends on "You're all set" and a button reading "Enter SCRBRD", which on a live server sends a request and returns the person to sign-in. | `OnboardingFlow.jsx:217-226`, `:228`, `:122-127`, `:361-389`, `:412`, `:161-172`; `App.jsx:287`; `audit/experience-screens/new-account-onboard-1-step-390-daylight.png`, `…-1366-daylight.png` (step one's words, as NOTES.md records them) |
+| B1 | There are **two sign-up doors that ask different questions**. "Create an account" opens the older flow, which offers ten role tiles and posts a request. "Continue with Google" opens the newer no-school screen, which offers four kinds of person. | `auth/LoginPage.jsx:327-329` → `App.jsx:280`, `:505-512` → `auth/OnboardingFlow.jsx:96-107`, `:168`; Google → `App.jsx:230-232`, `:495-503` → `auth/NoSchool.jsx:179-203`, `lib/joinSchool.js:40-44` |
+| B2 | The older flow shows **nothing real before it asks for a role**. Step one is a line of welcome that promises to "tailor the platform to your role"; step two is the role grid; there are up to six steps. It ends on "You're all set" and a button reading "Enter SCRBRD", which on a live server sends a request and returns the person to sign-in. | `OnboardingFlow.jsx:217-226`, `:228`, `:122-127`, `:361-389`, `:412`, `:161-172`; `App.jsx:283`; `audit/experience-screens/new-account-onboard-1-step-390-daylight.png`, `…-1366-daylight.png` (step one's words, as NOTES.md records them) |
 | B3 | Its last step **promises screens the person will not have**: a parent is told about Match Centre and Logistics, a pupil about Analytics, Training and Injuries. Their apps are Home, Matches, Notices, Family and Home, Matches, Passport, Me. | `OnboardingFlow.jsx:187-195`; `roles.js:332-337` |
 | B4 | It draws from the 1.0 alias names `D.indigo` and `D.violet`, which now point at `T.brand.blue` and `T.sport.fielding`. No off-palette colour, but it is the old look: a blue-to-violet progress bar and a glass panel. The sign-in page sets its fonts by name, not by type role. | `OnboardingFlow.jsx:207`, `:236-241`; `design/tokens.js:642-643`; `LoginPage.jsx:220-221` |
-| B5 | The sign-in page greets everyone with "Welcome back" and shows nothing of the product. | `LoginPage.jsx:220`; `audit/experience-screens/new-account-landing-or-login-390-daylight.jpg`, `…-1366-daylight.jpg` (NOTES.md: 4 taps under 44px, 2 weak contrasts) |
+| B5 | The sign-in page greets everyone with "Welcome back" and shows nothing of the product. | `LoginPage.jsx:220`; `audit/experience-screens/new-account-landing-or-login-390-daylight.jpg`, `…-1366-daylight.jpg`, `…-390-floodlit.jpg`, `…-1366-floodlit.jpg` (NOTES.md: 4 taps under 44px and 2 weak contrasts in each theme) |
 | B6 | The no-school screen has the right rules (it assigns nothing, looks no child up, says the same sentence whoever the child is) and the staff register lets a listed member of staff straight in. But it **asks for a school and who you are before showing anything**, and a school that is not listed is a dead end. On this deployment its last card, "Worried about a child?", is a dead end too: "The Guardian's app link has not been set on this platform yet", with no other way to reach a DSO. | `NoSchool.jsx:13-32`, `:77-83`, `:99-108`, `:179-203`, `:213-216`, `:186`, `:194`; `audit/experience-screens/new-account-no-school-390-daylight.png`, `…-1366-daylight.png` |
 | B7 | **A new account cannot bowl a ball.** The scorer's home is drawn only for an account that already holds the right to start scoring; the no-school screen has no door to the pad; a Pilot Match is offered only to an account SCRBRD has granted, and a Practice Match can never become one. | `App.jsx:564-565`; `NoSchool.jsx` (no pad entry); `lib/scorerDay.js:296-318`; `lib/pilot.js:28-34` |
 | B8 | The pad can already send a scorer to sign in and bring him back with nothing lost. | `App.jsx:526`; `LoginPage.jsx:222` |
@@ -515,7 +520,7 @@ Each table's "Who" column uses these words. They restate the rules; they decide 
 |---|---|---|
 | **Public** | Signed out. Team-level facts; a child named only by `publicName()` (initial and surname, with consent or by terms on a finished card, never while play is on without his own yes) | `PUBLIC_DATA.md` L1–L7, A1–A8, D1–D4; `PUBLIC_BY_TERMS.md` §1.1–1.2 |
 | **School** | A signed-in reader the server lets read the fixture or side | the read's own gate |
-| **Family** | The child himself and his verified guardians, about him only | `REACH_FAMILY_OR_STAFF` (`read-api.mjs:2317-2324`) |
+| **Family** | The child himself and his verified guardians, about him only | `REACH_FAMILY_OR_STAFF` (`read-api.mjs:109-112`; used by `personal_bests`, `:2317-2324`) |
 | **Staff** | Staff of his side who are not pupils | the same reads' staff branch |
 
 Never on any surface below: N1–N5, a page per player, a leaderboard of children, a figure
@@ -531,7 +536,7 @@ across matches in public, a photograph (`PUBLIC_DATA` §3, A3, A4, A8; `PUBLIC_B
 | **From a figure to its balls.** Tap a batter's runs or balls → the commentary of only his balls; a bowler's figures → only his; a stand on Partnerships → only its balls | the commentary lines over the log; the key scheme `lib/toBall.js` and `dismissalKey()` already use | derivation: filter the generator's lines by striker or bowler id, client side, from stored events | **School only.** Public keeps kind filters: a per-boy view of his balls is a per-player page in all but name (A4, L7) | "25 balls, 3 shown as dots off the bat" style count above the list, from the same lines |
 | The **innings-break card** promoted to the first thing on Summary while the break lasts | `inningsBreak()`, `lib/matchCentre.js:319`; `InningsBreakCard`, `tabs-core.jsx:41` | exists | Public (names by the live rule) and school | strike rate only from ten balls, as built (`:327`) |
 | Par estimate, rate track, worm, Manhattan, partnerships, each with its source line | `/api/matches/:id/par` (`server.mjs:1010`); `chartSeries.js`; `sourcedLazy.jsx` | exists (CRI-1.8, CRI-2.2, CRI-2.5) | Public three charts, school all | exists: "From 214 balls"; shots "captured for N of M balls" |
-| A **share** action: the page's own link, with a preview that names no child | `navigator.share`, falling back to copying the link | derivation: none; the page's preview text is team-level (`statusSentence()` and team names) | Anyone who has the page | none |
+| A **share** action: the page's own link, with a preview that names no child | `navigator.share`, falling back to copying the link | derivation: none; the page's preview text is team-level (`statusSentence()` and team names); the link's own preview already names nobody (`public-api.mjs:406-409`, asserted at `public.test.mjs:571`) | Anyone who has the page | none |
 | Player of the Match, once given, on the result board | `GET /api/matches/:id/player-of-match` (`server.mjs:795`) | exists | Public by the finished-card rule; school | none |
 
 ### 3.4 The passport (the pupil's, the parent's child file, the staff player page)
@@ -571,7 +576,7 @@ across matches in public, a photograph (`PUBLIC_DATA` §3, A3, A4, A8; `PUBLIC_B
 | The insight line, as built, held to team-level lines and the named boy's own on a family's screen | `boardInsights()`, returned as `{text, about}` so a screen can tell which name a line carries | derivation: structure the strings it already makes (Q22) | Public and school as now; on a family screen only lines about nobody or about him | none |
 
 The display already runs itself (`display/Rotation.jsx`) and keeps a marked boy's side by
-position (`bigscreen.jsx:10-17`, db/153). Nothing here changes what it names.
+position (`views/matchcentre/bigscreen.jsx:18-29`, db/153). Nothing here changes what it names.
 
 ### 3.8 The spectator's home
 
@@ -746,7 +751,7 @@ as failed, as §1.10 does.
 
 | | |
 |---|---|
-| **Scope** | §1.6 and §2.7: the School home (People, Access, Record, Modules, Sponsors); Settings taken apart, each part moved whole; the Platform home; the set-up list for a school with no fixtures; "A parent is waiting" as a "Needs you" row; the Safeguarding Officer's landing (Q6). Figures here are counts with their denominators ("12 of 40 pupils have no verified guardian"), never a percentage without one (`ROLE_DASHBOARDS` §6). |
+| **Scope** | §1.6 and §2.7: the School home (People, Access, Record, Modules, Sponsors); Settings taken apart, each part moved whole; the Platform home; the set-up list for a school with no fixtures; "A parent is waiting" as a "Needs you" row; the Safeguarding Officer's landing (Q6). Figures here are counts with their denominators ("12 of 40 pupils cannot sign in yet", from Settings' own `noAccount`, `SettingsView.jsx:175`, `:394`), never a percentage without one (`ROLE_DASHBOARDS` §6). |
 | **Files** | `views/SettingsView.jsx` (by part, §1.6), `views/staffRegister.jsx`, `views/importer.jsx`, `views/guardianlink.jsx`, `views/publicname.jsx`, `views/ManagementView.jsx`, `views/ModulesView.jsx`, `views/SponsorsView.jsx`, `views/support.jsx`, `views/dlsTables.jsx`, `design/homes.js`, `App.jsx:556-569` (the DSO's landing) |
 | **Builds, reviews** | **Opus**: the parts carry policy gates, the audit, names-off and a child picker (`SettingsView.jsx:1229-1472`). Moving `D` to `T` on a screen it touches goes with it (`DESIGN_DIRECTION` §7). **Opus** reviews. |
 | **Migration** | None. |
