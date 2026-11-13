@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, signedIn } from "../../lib/api.js";
-import { conditionsState, isMatchDay } from "../../lib/cockpit.js";
+import { conditionsState, isMatchDay, withSwitches } from "../../lib/cockpit.js";
+import { useFeatures } from "../../lib/features.js";
 import { readOnce, readQuery } from "../../lib/live.js";
 import { chooseSchoolFixtures, fixtureRows, groupByDay, headerOf, isQueueReader, liftExceptionRows, officeReader, officeRows, resultRows, resultsReader } from "../../lib/queue.js";
 import { isForbidden, isModuleOff } from "../../lib/readState.js";
@@ -79,7 +80,13 @@ const POOL = 4;
  * @param {{matches: any[], assignments: any[] | null | undefined, now: number}} o
  */
 export function useQueue({ matches, assignments, now }) {
-  const picks = useMemo(() => chooseSchoolFixtures(matches, assignments, now), [matches, assignments, now]);
+  // A panel whose module is switched off for this person is neither read nor drawn (lib/cockpit.js withSwitches).
+  const { features } = useFeatures();
+  const picks = useMemo(() => {
+    const c = chooseSchoolFixtures(matches, assignments, now);
+    const sw = (/** @type {{match: any, gate: any}} */ p) => ({ ...p, gate: withSwitches(p.gate, features) });
+    return { inWindow: c.inWindow.map(sw), later: c.later.map(sw) };
+  }, [matches, assignments, now, features]);
   const offices = useMemo(() => officeReader(assignments), [assignments]);
   const [laterShown, setLaterShown] = useState(0);
   const wanted = useMemo(() => [...picks.inWindow, ...picks.later.slice(0, laterShown)], [picks, laterShown]);

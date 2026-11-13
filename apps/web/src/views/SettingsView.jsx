@@ -7,7 +7,7 @@ import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Sele
 import { Metric, MetricGroup } from "../ui/data.jsx";
 import { useLive, useRows } from "../lib/live.js";
 import { profile, schoolsWhere } from "../lib/session.js";
-import { useSports } from "../lib/features.js";
+import { sportsOn, useSports } from "../lib/features.js";
 import { holdsCapability } from "../rbac/index.js";
 import { ownRecordsOf, passportConsentReader, readsScoutingOf } from "../lib/held.js";
 import { unionReadLines, unionReadWords } from "../lib/unionReads.js";
@@ -1180,7 +1180,10 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
   const me = profile();
   const live = signedIn();
   const sportsState = useSports();
-  const sports = sportsState?.sports ?? [];
+  // Switched off is hidden (Kameel, 13 Nov 2026): the sports and the modules
+  // drawn here are the ones on for this person. The Modules screen, where a
+  // school throws the switches, still lists every one.
+  const sports = sportsOn(sportsState?.sports);
   const features = useRows("my_features", role);
   const schools = useMemo(() => {
     const m = new Map();
@@ -1194,7 +1197,6 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
     return [...m.values()];
   }, [me, players]);
   const platformWide = (me?.assignments ?? []).some((a) => !a.school);
-  const modulesOff = features.filter((f) => f.kind === "module" && !f.enabled);
   const modulesOn = features.filter((f) => f.kind === "module" && f.enabled);
 
   return (
@@ -1245,28 +1247,18 @@ function SchoolTab({ role, users, players, staff, coaches, canAudit }) {
                   <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textPrimary, fontWeight: 600 }}>{sp.label ?? sp.code}</div>
                   <div style={MONO()}>{sp.engine ? `${sp.engine} engine` : "no scoring engine"} · {sp.fixtures ?? 0} fixture{sp.fixtures === 1 ? "" : "s"}</div>
                 </div>
-                <Badge color={sp.enabled ? D.emerald : D.textMuted}>{sp.enabled ? "On" : "Off"}</Badge>
+                <Badge color={D.emerald}>On</Badge>
               </div>
             ))}
         </Panel>
         <Panel>
-          <CardHead title="Modules" sub="What is switched on for you, resolved across every school you belong to: off at any of them is off. The Modules screen is where a school changes this."/>
-          {features.length === 0
+          <CardHead title="Modules" sub="What is switched on for you, resolved across every school you belong to: off at any of them is off, and is not listed. The Modules screen is where a school changes this."/>
+          {modulesOn.length === 0
             ? <EmptyState icon="puzzle" message={live ? "Nothing to show." : "Sign in to see your modules."}/>
             : (
-              <>
-                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: modulesOff.length ? "10px" : 0 }}>
-                  {modulesOn.map((f) => <Badge key={f.key} color={D.emerald}>{f.label ?? f.key}</Badge>)}
-                </div>
-                {modulesOff.length > 0 && (
-                  <>
-                    <div style={{ ...EYEBROW(), marginBottom: "6px" }}>Off</div>
-                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                      {modulesOff.map((f) => <Badge key={f.key} color={D.textMuted}>{f.label ?? f.key}</Badge>)}
-                    </div>
-                  </>
-                )}
-              </>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }} data-testid="settings-modules-on">
+                {modulesOn.map((f) => <Badge key={f.key} color={D.emerald}>{f.label ?? f.key}</Badge>)}
+              </div>
             )}
         </Panel>
       </div>

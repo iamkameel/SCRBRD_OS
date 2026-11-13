@@ -3,7 +3,8 @@ import { T } from "../../design/tokens.js";
 import { signedIn } from "../../lib/api.js";
 import { profile } from "../../lib/session.js";
 import { requestCoach } from "../../lib/cockpitNav.js";
-import { busOf, isMatchDay, sideFoot, sideRows } from "../../lib/cockpit.js";
+import { busOf, isMatchDay, sideFoot, sideRows, withSwitches } from "../../lib/cockpit.js";
+import { useFeatures } from "../../lib/features.js";
 import { humanDate, humanDateTime } from "../../lib/format.js";
 import { sidesOf } from "../../lib/matchCentre.js";
 import { chooseFixtures, countOf } from "../../lib/queue.js";
@@ -35,7 +36,13 @@ import { useCockpit, useFeed } from "./useCockpit.js";
 export function MatchDayCard({ matches, onNav }) {
   const now = useMemo(() => Date.now(), []);
   const assignments = signedIn() ? profile()?.assignments : null;
-  const picks = useMemo(() => chooseFixtures(matches, assignments, now), [matches, assignments, now]);
+  // A panel whose module is switched off for this person is not drawn (lib/cockpit.js withSwitches).
+  const { features } = useFeatures();
+  const chosen = useMemo(() => chooseFixtures(matches, assignments, now), [matches, assignments, now]);
+  const picks = useMemo(() => {
+    const sw = (/** @type {{match: any, gate: any}} */ p) => ({ ...p, gate: withSwitches(p.gate, features) });
+    return { all: chosen.all.map(sw), shown: chosen.shown.map(sw), later: chosen.later.map(sw) };
+  }, [chosen, features]);
   const [later, setLater] = useState(false);
   const laterId = useId();
   const total = picks.all.length;

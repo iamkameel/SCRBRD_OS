@@ -228,6 +228,10 @@ const SUITES = [
   // The pitch deck's live slides: the demonstration match is a real folded log,
   // the showcase reads nothing, every frame is inert and draws the app's own ids.
   ["deck-showcase", "apps/web/test/deck-showcase.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Switched off is hidden for that user and still records (Kameel, 13 Nov
+  // 2026): the feature map's one test, the sports and cockpit panels drawn,
+  // the day sheet with modules off, and which write routes keep their gate.
+  ["switched-off", "apps/web/test/switched-off.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Renders the pad's "can't score yet" panel from a folded innings, same transform.
   ["blocked",  "apps/web/test/scoring-blocked.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // What a live pad says about the server when it cannot send (SCRBRD-078), same transform.

@@ -25,7 +25,8 @@ import { liveRefreshMs, useMoments, useTicker } from "./live.js";
 import { BigScreen, useGroundSides } from "./bigscreen.jsx";
 import { CaptainTab } from "./captainTab.jsx";
 import { termsOf } from "../../lib/captain.js";
-import { cockpitGate } from "../../lib/cockpit.js";
+import { cockpitGate, withSwitches } from "../../lib/cockpit.js";
+import { useFeatures } from "../../lib/features.js";
 import { profile } from "../../lib/session.js";
 import { CoachTab } from "../cockpit/CoachTab.jsx";
 import { clockWords, correctedAt, correctionsOf, inningsWords, correctionText, withCorrectionLines } from "../../lib/corrections.js";
@@ -342,8 +343,10 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   const log = useMatchLog(match, PLAYERS);
   const phone = useIsMobile(NARROW_PX);
   // The Coach tab: signed in, the staff screen (not a family's or the captain's), and a grant on this side.
-  const staff = useMemo(() => (signedIn() && !captain && !focus?.length ? cockpitGate(profile()?.assignments, match) : null),
-    [match, captain, focus]);
+  // A panel whose module is switched off for this person is not drawn (lib/cockpit.js withSwitches).
+  const { features } = useFeatures();
+  const staff = useMemo(() => (signedIn() && !captain && !focus?.length ? withSwitches(cockpitGate(profile()?.assignments, match), features) : null),
+    [match, captain, focus, features]);
   // The tabs this reader has: the six, and his own after the Summary where he holds one.
   const tabs = captain ? [TABS[0], CAPTAIN_TAB, ...TABS.slice(1)] : staff ? [TABS[0], COACH_TAB, ...TABS.slice(1)] : TABS;
   // CRI-1.3: where the Match Centre gives the fixture an address (`route`, MatchCentreView), the tab is the

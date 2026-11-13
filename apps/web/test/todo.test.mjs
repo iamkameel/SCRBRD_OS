@@ -383,8 +383,8 @@ group("What you have agreed: the version, the time and the giver, in the server'
   const other = recordOf({ child: ROHAN_G, now: NOW, consents: [], publicName: { mine: { state: "withdrawn", actor: "guardian", endedOn: "2026-03-01", version: "v1", recordedAt: "2026-02-01T08:00:00Z" } } });
   ok("another giver is 'the guardian', never a name", other.lines.find((l) => l.key === "public_name").detail === "turned off by the guardian · 1 Feb 2026 10:00 · v1");
   const off = recordOf({ child: ROHAN_G, now: NOW, consents: [{ kind: "health", playerId: "p-rohan", relation: "guardian", moduleOn: false, state: "not_answered" }], publicName: OFF });
-  ok("the module off: 'Health monitoring: not in use at Hilton College', said once; no public-name line where the read is not hers",
-     off.lines.map((l) => `${l.label}: ${l.words}`).join("|") === "The school's terms: agreed|Health monitoring: not in use at Hilton College", off.lines);
+  ok("the module off: no health monitoring line at all (switched off is hidden); no public-name line where the read is not hers",
+     off.lines.map((l) => `${l.label}: ${l.words}`).join("|") === "The school's terms: agreed", off.lines);
   ok("a read failing is said as one", recordOf({ child: ROHAN_G, now: NOW, consents: null, publicName: null }).lines.filter((l) => /^Could not read/.test(l.words)).length === 2);
   const ending = recordOf({ child: { ...ROHAN_G, until: "2026-10-30" }, now: NOW, consents: [{ kind: "health", playerId: "p-rohan", relation: "guardian", adult: true, moduleOn: true, state: "given" }] });
   ok("the link ending within thirty days, and an adult's consents his own: two information lines, no row",

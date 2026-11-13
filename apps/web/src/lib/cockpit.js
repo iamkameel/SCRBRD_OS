@@ -50,6 +50,30 @@ export const PANEL_CAPABILITY = Object.freeze({
 
 /** @typedef {{[K in keyof typeof PANEL_CAPABILITY]: boolean}} Panels */
 
+/**
+ * The panels that draw a module's data, by the module that owns it: a panel
+ * whose module is switched off for the reader is not drawn (Kameel, 13 Nov
+ * 2026: switched off is hidden). The bus is Logistics'; the dossier is
+ * Opposition intelligence's (its read is refused when off as well). The lift
+ * panels are NOT here on purpose: a lift already on the road is seen through
+ * whatever is switched since (server.mjs, the day's routes are never gated).
+ */
+export const PANEL_MODULE = Object.freeze({ bus: "logistics", opposition: "opposition" });
+
+/**
+ * A gate with the switched-off modules' panels taken out. Only ever narrows:
+ * a panel the gate did not grant stays ungranted. Layout, not authority.
+ * @template {{panels: Panels} | null | undefined} G
+ * @param {G} gate  @param {Record<string, boolean> | null | undefined} features  my_features, key to on
+ * @returns {G}
+ */
+export function withSwitches(gate, features) {
+  if (!gate) return gate;
+  const off = Object.entries(PANEL_MODULE).filter(([p, k]) => gate.panels[/** @type {keyof Panels} */ (p)] && features?.[k] === false);
+  if (!off.length) return gate;
+  return { ...gate, panels: { ...gate.panels, ...Object.fromEntries(off.map(([p]) => [p, false])) } };
+}
+
 /** The panels one role's bundle grants: pure over roles.mjs. @param {string} role @returns {Panels} */
 export function panelsOf(role) {
   return /** @type {Panels} */ (Object.fromEntries(Object.entries(PANEL_CAPABILITY)

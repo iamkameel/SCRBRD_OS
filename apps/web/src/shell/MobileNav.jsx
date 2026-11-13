@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { NAV_META, groupNav } from "../design/roles.js";
-import { useSports, sportBadge } from "../lib/features.js";
+import { useSports, sportBadge, sportsOn } from "../lib/features.js";
 import { useMenu } from "../lib/homeNav.js";
 import { D, T, inkOn, themed } from "../design/tokens.js";
 import { Icon } from "../ui/icons.jsx";
@@ -44,7 +44,8 @@ const BADGE_TONE = themed(() => ({ emerald:D.emerald, sky:D.sky, amber:D.amber }
 
 function SportSwitcher() {
   const [open, setOpen] = useState(false);
-  const { sports } = useSports();
+  // Only the sports switched on: one that is off is hidden, not badged SOON.
+  const sports = sportsOn(useSports().sports);
   // The one on the button is the sport that is both granted and scorable —
   // the one whose scorer's screen exists. Falls back to the first granted
   // sport, then to cricket, so the button is never blank while the read is in
@@ -80,7 +81,8 @@ function SportSwitcher() {
 
 function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onSignOut }) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const { sports } = useSports();
+  // Only the sports switched on, as the switcher above.
+  const sports = sportsOn(useSports().sports);
   // Same list the sidebar draws, from the same place. Two components computing
   // a menu two ways is how a destination comes to exist on a phone and not on
   // a laptop.

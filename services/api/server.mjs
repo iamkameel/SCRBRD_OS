@@ -651,10 +651,14 @@ const MATCH_ROUTES = [
   // NOT module-gated: a side is picked from availability, and a school that
   // could not collect it would be picking blind.
   [/^\/api\/matches\/([^/]+)\/availability$/,     "POST", avail.declare],
-  // Getting the side there. Module-gated on logistics: a school that does not
-  // run its transport through SCRBRD should not be asked to.
-  [/^\/api\/matches\/([^/]+)\/trip$/,             "POST", trips.trip, "logistics"],
-  [/^\/api\/trips\/([^/]+)\/mark$/,               "POST", trips.mark, "logistics"],
+  // Getting the side there. NOT module-gated (Kameel, 13 Nov 2026: "Anything
+  // that's switched off for a user should be hidden for that user but still
+  // record data"). Logistics holds no child's own data, so a trip and the
+  // driver's marks are stored while the module is off; the shell hides the
+  // module and every read of it (apps/web/src/lib/features.js). Nothing here is
+  // sent to anybody.
+  [/^\/api\/matches\/([^/]+)\/trip$/,             "POST", trips.trip],
+  [/^\/api\/trips\/([^/]+)\/mark$/,               "POST", trips.mark],
   // The toss. Frozen by the database once a delivery exists.
   [/^\/api\/matches\/([^/]+)\/toss$/,              "POST", toss.record],
   // One match's toss, which is what the pad reads (not every fixture's).
@@ -702,11 +706,16 @@ const MATCH_ROUTES = [
   // a thing a school switches off.
   [/^\/api\/admin\/reward-weights\/([^/]+)$/,   "POST", rewards.set],
   // Putting a fixture on a public screen, and saying how much of a child's
-  // name may go on it.
-  [/^\/api\/matches\/([^/]+)\/broadcast$/,          "POST", bcast.publish, "broadcast"],
+  // name may go on it. NOT module-gated here, because the switched-off rule
+  // (13 Nov 2026) keeps the settings stored; but PUBLISHING is an outward act,
+  // so the handler itself refuses `published: true` while the feature is off
+  // (scouting-api.mjs broadcastRoutes). Storing, not publishing.
+  [/^\/api\/matches\/([^/]+)\/broadcast$/,          "POST", bcast.publish],
   // Appointing the officials. officiating.assign, which until now had nothing
-  // it could be exercised on.
-  [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint, "officials"],
+  // it could be exercised on. NOT module-gated: an appointment holds no
+  // child's data and sends nothing, so it is stored while Officials is off
+  // (13 Nov 2026), and hidden with the module.
+  [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint],
   // The register itself: platform- and competition-level, not a school
   // module, so no module gate — the policies on official/official_accreditation
   // decide (officiating.registry.manage).
@@ -1207,7 +1216,8 @@ const SCOUT_ROUTES = [
   // is how a school starts, and a school cannot switch off the thing it needs
   // before it has any data to switch anything off with.
   [/^\/api\/import\/([^/]+)$/,                             "POST", bulk.run],
-  [/^\/api\/vehicles$/,                                    "POST", trips.vehicle, "logistics"],
+  // The fleet. NOT module-gated: stored while Logistics is off (13 Nov 2026).
+  [/^\/api\/vehicles$/,                                    "POST", trips.vehicle],
   // A person's own phone. No id: it always means "me", so the capture group
   // is absent exactly as scout registration's is. NOT module-gated — a
   // notice about a child in hospital is not a module somebody may switch off.
@@ -1226,7 +1236,11 @@ const SCOUT_ROUTES = [
   // not a module somebody may switch off — and the sport it is in is gated in
   // the database, which catches a seed and an import too.
   [/^\/api\/fixtures$/,                                    "POST", fixtures.create],
-  [/^\/api\/sponsors$/,                                    "POST", sponsors.create, "sponsors"],
+  // Signing a sponsor is stored while Sponsors is off (13 Nov 2026): a brand
+  // on the school's books, shown to nobody. PLACING one stays gated: a
+  // placement puts the brand on a scoreboard, an overlay or a fixture list,
+  // which is an outward act, not storing.
+  [/^\/api\/sponsors$/,                                    "POST", sponsors.create],
   [/^\/api\/sponsorships$/,                                "POST", sponsors.place,  "sponsors"],
 ];
 

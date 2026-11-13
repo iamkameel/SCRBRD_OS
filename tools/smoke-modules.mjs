@@ -319,8 +319,16 @@ try {
     await q(`delete from feature_grant`);
   }
 
-  group("The write side closes too — for every module that owns a write");
+  group("The write side: refused for a child's data, recorded for the rest (13 Nov 2026)");
   {
+    // KAMEEL'S RULE, 13 Nov 2026: "Anything that's switched off for a user
+    // should be hidden for that user but still record data." A module that
+    // holds no child's own data (officials, sponsors' signing, logistics)
+    // STORES while it is off: `records: true` below, the write lands with the
+    // module off and nothing is shown. A module that holds a child's data
+    // (skills, injuries) keeps refusing, as it always has. Training is the
+    // lead's call and keeps refusing until it is made. Fields keeps its gate:
+    // it was not among the seven.
     // A module that refused reads while still accepting writes would be the
     // worst kind of half-working setting: the half that works is the half
     // nobody checks.
@@ -348,7 +356,7 @@ try {
     // replaces the panel and a ground report corrects the last one, so a
     // row count would not tell a refused write from an upsert.
     const WRITES = [
-      { module: "officials", token: head,
+      { module: "officials", token: head, records: true,
         write: (k) => post(`/api/matches/${m}/officials`, head, { officials: [{ duty: "umpire", name: `Umpire ${k}` }] }),
         landed: (k) => count(`select count(*)::int c from match_official where match_id = $1 and person_name = $2 and not withdrawn`, [m, `Umpire ${k}`]) },
       { module: "training", token: coach,
@@ -359,7 +367,7 @@ try {
         write: (k) => post(`/api/players/${P}/assessment`, coach, { assessedOn: day(k),
           scores: { technical: { footwork: 10 + k, timing: 15, power: 14, catching: 15 }, mental: { concentration: 17, composure: 15 } } }),
         landed: (k) => count(`select count(*)::int c from player_skill where player_id = $1 and metric = 'footwork' and assessed_on = $2 and score = $3`, [P, day(k), 10 + k]) },
-      { module: "sponsors", token: registrar,
+      { module: "sponsors", token: registrar, records: true,
         write: (k) => post("/api/sponsors", registrar, { schoolId: HIL, name: `Gate Probe ${k}`, category: "banking" }),
         landed: (k) => count(`select count(*)::int c from sponsor where name = $1`, [`Gate Probe ${k}`]) },
       { module: "fields", token: head,
@@ -372,7 +380,10 @@ try {
           dateInjured: new Date().toISOString().slice(0, 10),
           nextReviewOn: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) }),
         landed: (k) => count(`select count(*)::int c from injury where injury_type = $1`, [`Gate probe ${k}`]) },
-      { module: "logistics", token: registrar,
+      { module: "logistics", token: registrar, records: true,
+        write: (k) => post(`/api/matches/${m}/trip`, registrar, { pickup: `Gate probe ${k}` }),
+        landed: (k) => count(`select count(*)::int c from trip where match_id = $1 and pickup = $2`, [m, `Gate probe ${k}`]) },
+      { module: "logistics", token: registrar, records: true,
         write: (k) => post("/api/vehicles", registrar, { schoolId: HIL, registration: `KZN 7${String(k).padStart(2, "0")} AA`, description: "probe", kind: "minibus", capacity: 8 }),
         landed: (k) => count(`select count(*)::int c from vehicle where registration = $1`, [`KZN 7${String(k).padStart(2, "0")} AA`]) },
     ];
@@ -382,9 +393,15 @@ try {
       ok(`${w.module}: the write lands while the module is on`, on.status === 200 && (await w.landed(k)) === 1, `${on.status} ${JSON.stringify(on.body)}`);
       await suppress(w.module, registrar, { schoolId: HIL, hidden: true });
       const off = await w.write(++k);
-      ok(`${w.module}: ...and is refused once it is off`, off.status === 403, `${off.status} ${JSON.stringify(off.body)}`);
-      ok(`${w.module}: ...naming the module`, off.body?.module === w.module);
-      ok(`${w.module}: ...with nothing written`, (await w.landed(k)) === 0);
+      if (w.records) {
+        ok(`${w.module}: ...and still lands once it is off (switched off records)`,
+           off.status === 200 && (await w.landed(k)) === 1, `${off.status} ${JSON.stringify(off.body)}`);
+        ok(`${w.module}: ...while its reads stay hidden`, (await read("my_features", w.token)).body?.rows?.some((r) => r.key === w.module && r.enabled === false));
+      } else {
+        ok(`${w.module}: ...and is refused once it is off`, off.status === 403, `${off.status} ${JSON.stringify(off.body)}`);
+        ok(`${w.module}: ...naming the module`, off.body?.module === w.module);
+        ok(`${w.module}: ...with nothing written`, (await w.landed(k)) === 0);
+      }
       await suppress(w.module, registrar, { schoolId: HIL, hidden: false });
       const again = await w.write(++k);
       ok(`${w.module}: ...and lands again once it is back on`, again.status === 200 && (await w.landed(k)) === 1, `${again.status} ${JSON.stringify(again.body)}`);
@@ -397,6 +414,30 @@ try {
     for (const key of ["officials", "training", "skills", "sponsors", "fields", "logistics", "injuries"]) {
       ok(`the table covers ${key}`, covered.has(key));
     }
+    // A sponsor PLACED is on a scoreboard, an overlay or a fixture list: an
+    // outward act, so it stays refused while Sponsors is off.
+    const brand = (await q(`select id from sponsor where school_id = $1 and active order by name limit 1`, [HIL]))[0]?.id;
+    await suppress("sponsors", registrar, { schoolId: HIL, hidden: true });
+    const placed = await post("/api/sponsorships", registrar, { sponsorId: brand, placement: "fixture_list", startsOn: "2027-01-10", endsOn: "2027-01-20" });
+    ok("sponsors: a placement is still refused while off (it would put the brand on a public surface)",
+       placed.status === 403 && placed.body?.module === "sponsors", `${placed.status} ${JSON.stringify(placed.body)}`);
+    await suppress("sponsors", registrar, { schoolId: HIL, hidden: false });
+
+    // Broadcast: the overlay's settings are stored while it is off; putting
+    // the fixture ON a public screen is publishing, and stays refused.
+    const bc = (body) => post(`/api/matches/${m}/broadcast`, head, body);
+    await suppress("broadcast", registrar, { schoolId: HIL, hidden: true });
+    const kept = await bc({ published: false, strapline: "Gate probe kept" });
+    ok("broadcast: off, the overlay's settings are stored", kept.status === 200
+       && (await count(`select count(*)::int c from match_broadcast where match_id = $1 and strapline = 'Gate probe kept' and not published`, [m])) === 1,
+       `${kept.status} ${JSON.stringify(kept.body)}`);
+    const pub = await bc({ published: true, strapline: "Gate probe published" });
+    ok("broadcast: ...but publishing is refused while off, naming the feature", pub.status === 403 && pub.body?.module === "broadcast",
+       `${pub.status} ${JSON.stringify(pub.body)}`);
+    ok("broadcast: ...and nothing was published", (await count(`select count(*)::int c from match_broadcast where match_id = $1 and published`, [m])) === 0);
+    await suppress("broadcast", registrar, { schoolId: HIL, hidden: false });
+    const pubOn = await bc({ published: true, strapline: "Gate probe published" });
+    ok("broadcast: ...and publishes once it is back on", pubOn.status === 200 && pubOn.body?.published === true, `${pubOn.status} ${JSON.stringify(pubOn.body)}`);
   }
 
   group("What a family may say no to is never a module");

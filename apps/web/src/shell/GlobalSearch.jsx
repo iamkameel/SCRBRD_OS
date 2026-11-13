@@ -5,6 +5,7 @@ import { SCHOOLS_REGISTRY } from "../data/institution.js";
 import { ROLES } from "../design/roles.js";
 import { D, T } from "../design/tokens.js";
 import { useRows } from "../lib/live.js";
+import { navOff, useFeatures } from "../lib/features.js";
 import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
@@ -60,13 +61,19 @@ function GlobalSearch({ role, onNav, onClose }) {
   const ALL_STAFF     = useRows("staff", role)
     .concat(COACH_ROWS.map(c=>({...c,role:"coach",name:c.name})));
 
+  // A result or a quick link whose destination's module is switched off is
+  // not offered (Kameel, 13 Nov 2026: switched off is hidden). Module only:
+  // which rows come back is still the reads' answer.
+  const { features } = useFeatures();
+  const on = (/** @type {string} */ page) => !navOff(features, page);
+
   const results = q.length < 2 ? [] : [
     ...ALL_PLAYERS.filter(p=>p.name.toLowerCase().includes(q.toLowerCase())).slice(0,4).map(p=>({
       type:"player", icon:ROLES.player?.icon ?? "bat",
       label:p.name, sub:[p.role, p.team, p.schoolName].filter(Boolean).join(" · "),
       action:()=>{ onNav("profiles"); onClose(); },
     })),
-    ...ALL_STAFF.filter(s=>s.name.toLowerCase().includes(q.toLowerCase())).slice(0,3).map(s=>({
+    ...(on("staff") ? ALL_STAFF : []).filter(s=>s.name.toLowerCase().includes(q.toLowerCase())).slice(0,3).map(s=>({
       type:"staff", icon:"user",
       label:s.name, sub:[s.role, s.school].filter(Boolean).join(" · "),
       action:()=>{ onNav("staff"); onClose(); },
@@ -76,7 +83,7 @@ function GlobalSearch({ role, onNav, onClose }) {
       label:`${m.homeTeam} vs ${m.awayTeam}`, sub:[m.date, m.format, m.status].filter(Boolean).join(" · "),
       action:()=>{ onNav("matches"); onClose(); },
     })),
-    ...ALL_COMPS.filter(c=>c.name.toLowerCase().includes(q.toLowerCase())).slice(0,2).map(c=>({
+    ...(on("competitions") ? ALL_COMPS : []).filter(c=>c.name.toLowerCase().includes(q.toLowerCase())).slice(0,2).map(c=>({
       type:"competition", icon:"trophy",
       label:c.name, sub:c.format,
       action:()=>{ onNav("competitions"); onClose(); },
@@ -167,7 +174,7 @@ function GlobalSearch({ role, onNav, onClose }) {
           <div style={{padding:"20px 16px"}}>
             <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:D.textMuted,marginBottom:"12px"}}>Quick Access</div>
             <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
-              {[["bat","Players","profiles"],["chart-column","Analytics","analytics"],["trophy","Competitions","competitions"],["calendar","Calendar","calendar"],["ground","Fields","fields"]].map(([ic,l,p])=>(
+              {[["bat","Players","profiles"],["chart-column","Analytics","analytics"],["trophy","Competitions","competitions"],["calendar","Calendar","calendar"],["ground","Fields","fields"]].filter(([,,p])=>on(p)).map(([ic,l,p])=>(
                 <button key={p} onClick={()=>{onNav(p);onClose();}} className="pressBtn" style={{display:"inline-flex",alignItems:"center",gap:"5px",padding:"6px 12px",minHeight:"44px",borderRadius:D.pill,cursor:"pointer",background:D.surf2,border:`1px solid ${D.border}`,fontFamily:D.head,fontSize:"12px",color:D.textMuted}}><Icon name={ic}/>{l}</button>
               ))}
             </div>

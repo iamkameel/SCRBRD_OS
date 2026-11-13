@@ -8,6 +8,7 @@ import { requestCoach, requestCorrections, requestDuties, requestResult } from "
 import { useLive } from "../lib/live.js";
 import { clockTime, headerWords } from "../lib/queue.js";
 import { readState } from "../lib/readState.js";
+import { navOff, useFeatures } from "../lib/features.js";
 import { profile } from "../lib/session.js";
 import { Card, EmptyState, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { humanDate } from "../lib/format.js";
@@ -222,7 +223,10 @@ function ReadinessOverview({ role, onNav }) {
   const now = useMemo(() => Date.now(), []);
   const assignments = signedIn() ? profile()?.assignments : null;
   const q = useQueue({ matches, assignments, now });
-  const nav = ROLES[role]?.nav ?? [];
+  // A door onto a page whose module is switched off is not offered: the row
+  // falls back to the fixture, as for a reader with no screen for it.
+  const { features } = useFeatures();
+  const nav = (ROLES[role]?.nav ?? []).filter((p) => !navOff(features, p));
   const byId = useMemo(() => new Map(matches.map((m) => [m.id, m])), [matches]);
   const schools = new Set((assignments ?? []).map((a) => a.school).filter(Boolean)).size;
 
