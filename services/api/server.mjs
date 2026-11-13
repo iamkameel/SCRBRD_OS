@@ -509,6 +509,8 @@ const training = trainingRoutes({ pool, secret: SECRET });
 const publication = publicationRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
 const sheet = sheetRoutes({ pool, secret: SECRET });
 const groundNames = groundNamesRoutes({ pool, secret: SECRET });
+/** Pattern routes answered with Cache-Control: no-store. */
+const NO_STORE_ROUTES = new Set([groundNames.read]);
 const listing = listingRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
 const publicName = publicNameRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
 const playing = playingConditionsRoutes({ pool, secret: SECRET });
@@ -1535,6 +1537,9 @@ const server = createServer(async (req, res) => {
       // wire means a row in the database, and a client that reads the moment
       // it hears back finds what it was told about.
       const out = shim(res);
+      // A read kept nowhere (the big screen's one answer, db/153): set before
+      // the answer is written, as the read path's readIsNoStore() is.
+      if (NO_STORE_ROUTES.has(handler)) res.setHeader("cache-control", "no-store");
 
       // A RETRY WRITES ONCE. A write that carries an Idempotency-Key header
       // is answered from its receipt (db/15_request_replay.sql) when the same

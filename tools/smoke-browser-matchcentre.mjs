@@ -1053,23 +1053,25 @@ try {
   const unmark = (/** @type {string} */ id) => q(`update player_never_public set ended_on = sa_today(), ended_by = set_by, ended_at = now()
                                                    where player_id = $1 and ended_on is null`, [id]);
   const bigNames = (/** @type {any} */ page) => page.locator('[data-testid="mc-bigscreen"] [data-testid="display-batter"] .dv-name').allInnerTexts();
-  // Open the big screen and wait for its own read (it asks afresh on opening), then a paint.
+  // Open the big screen and wait for its one read (it asks afresh on opening:
+  // the sides and the public page's labels together, Fable's red-team B1), then a paint.
   const openBig = async (/** @type {any} */ page) => {
-    const answered = page.waitForResponse((r) => r.url().includes("/api/read/ground_screen_sides"), { timeout: 8000 }).catch(() => null);
-    // ...and whom it may name: the public page's labels, from the signed-in read (Kameel, 12 Nov, 21:00).
-    const pub = page.waitForResponse((r) => /\/api\/matches\/[^/]+\/ground-names/.test(r.url()), { timeout: 8000 }).catch(() => null);
+    const answered = page.waitForResponse((r) => /\/api\/matches\/[^/]+\/ground-names/.test(r.url()), { timeout: 8000 }).catch(() => null);
     await tid(page, "mc-bigscreen-open").click({ timeout: 6000 }).catch(() => {});
-    await pub;
     const r = await answered;
     await page.waitForTimeout(500);
-    return r ? r.json().catch(() => null) : null;
+    const d = r ? await r.json().catch(() => null) : null;
+    return d ? { rows: d.sides, labels: d.labels ?? {}, keys: Object.keys(d).sort(), cache: r.headers()["cache-control"] ?? "" } : null;
   };
   const closeBig = async (/** @type {any} */ page) => { await tid(page, "mc-bigscreen-close").click().catch(() => {}); await page.waitForTimeout(300); };
   const flags = (/** @type {any} */ said) => JSON.stringify((said?.rows ?? []).map((r) => [r.team, r.position_only]).sort());
   let said = await openBig(L);
-  ok("the big screen asks which sides, and is told per side, with the log's head and no player id",
+  ok("the big screen asks one read, told per side with the log's head and no player id, kept nowhere",
      Array.isArray(said?.rows) && said.rows.length === 2 && said.rows.every((r) => JSON.stringify(Object.keys(r).sort()) === '["log_seq","position_only","team"]')
-     && !/[0-9a-f]{8}-[0-9a-f]{4}-/.test(JSON.stringify(said)), JSON.stringify(said));
+     && !/[0-9a-f]{8}-[0-9a-f]{4}-/.test(JSON.stringify(said.rows)) && JSON.stringify(said.keys) === '["labels","matchId","sides"]'
+     && /no-store/.test(said.cache), JSON.stringify(said));
+  ok("...and no label for a boy of the side by position", ![after.striker, after.nonStriker].some((x) => x && Object.hasOwn(said?.labels ?? {}, x)),
+     JSON.stringify(Object.keys(said?.labels ?? {})));
   ok("no sheet: the away side is by position, the host's named",
      flags(said) === JSON.stringify([["1XI", false], ["Westville Boys' High 1XI", true]]), JSON.stringify(said));
   ok("...so both batters, of the away side, are 'Batter'",
@@ -1136,6 +1138,9 @@ try {
     let s2 = await openBig(P);
     ok("the catcher's side is by position, the batting side named",
        flags(s2) === JSON.stringify([["1XI", false], ["Westville Boys' High 1XI", true]]), JSON.stringify(s2));
+    ok("...the one answer's labels: R Pillai's alone, no away boy's, not S Naidu's",
+       JSON.stringify(Object.keys(s2?.labels ?? {})) === JSON.stringify([byName(hb2)]) && /Pillai/.test(String(s2?.labels?.[byName(hb2)])),
+       JSON.stringify(s2?.labels));
     let bigC = await tid(P, "mc-bigscreen").innerText().catch(() => "");
     ok("no 'c C Botha', nor his name, anywhere on the big screen", !bigC.includes(wb2) && !/c C Botha/.test(bigC), bigC.slice(0, 300));
     ok("the batter the public page names is named; the one it does not is 'Batter'",
@@ -1147,6 +1152,7 @@ try {
     await mark(byName(hb1));
     s2 = await openBig(P);
     ok("a marked host boy: the server says his side by position", flags(s2) === JSON.stringify([["1XI", true], ["Westville Boys' High 1XI", true]]), JSON.stringify(s2));
+    ok("...and, in the same answer, no label at all: nothing to set beside the flag (B1)", Object.keys(s2?.labels ?? { x: 1 }).length === 0, JSON.stringify(s2?.labels));
     ok("...and both batters, his team-mates, are 'Batter'", JSON.stringify(await bigNames(P)) === JSON.stringify(["Batter", "Batter"]), (await bigNames(P)).join(" | "));
     bigC = await tid(P, "mc-bigscreen").innerText().catch(() => "");
     ok("...no host boy's name anywhere on the big screen, the consented one's included", [hb1, hb2, hb3].every((n) => !bigC.includes(n)) && !/Pillai/.test(bigC),

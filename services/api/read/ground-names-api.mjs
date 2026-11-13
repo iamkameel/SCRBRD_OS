@@ -30,7 +30,8 @@
  * LABELS ONLY. The label the public page would show, keyed by the player id
  * the signed-in log carries. No reason, no consent, no mark, no date, no
  * name beyond the label: the name columns go no further than nameFor(). A
- * boy left out is shown by position. Never cached (no-store).
+ * boy left out is shown by position. Never cached: server.mjs answers it
+ * with Cache-Control: no-store (NO_STORE_ROUTES).
  *
  * What a host staff reader can infer (READERS_child_data K: a coach reads no
  * consent): which boys the public page would not name. The crowd sees the
@@ -61,7 +62,6 @@ export function groundLabels(people) {
 export function groundNamesRoutes({ pool, secret }) {
   return {
     read: async (req, res) => {
-      res.setHeader?.("cache-control", "no-store");
       const id = String(req.params.id ?? "");
       if (!UUID.test(id)) return res.status(404).json({ error: "no_such_fixture" });
       try {
