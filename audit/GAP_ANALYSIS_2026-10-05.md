@@ -1,5 +1,7 @@
 # Comparative gap analysis (5 October 2026): the plan
 
+12 Nov 2026: every Phase A, B and C item is merged; Phase D lives in its own post-pilot stream.
+
 Kameel's deep comparison of SCRBRD_OS (`2b55618`) with the scrbrd-beta-2 prototype
 (`42c48a6`) was added to the pipeline on 7 October 2026. The full report (about 200 KB)
 is held privately. This repository is public, and the report cites exact lines for
@@ -100,9 +102,9 @@ shown.
 | GA | What | Tier | Status |
 |---|---|---|---|
 | I22 | Panel-level source and scope | Sonnet, Opus review | done · merged #113 |
-| I23 | A real season trend | Sonnet, Opus review | slice 1 · merged #115; slice 2: B1 merged #297, B2 merged #300 (12 Nov); B3 left |
+| I23 | A real season trend | Sonnet, Opus review | done · slice 1 merged #115; slice 2: B1 merged #297, B2 merged #300, B3 merged #304 (12 Nov) |
 | I24–I25 | The analyst workspace and two-player comparison | Fable design, then Opus | design approved 8 Oct · merged #118; S1 (Compare) is #175, has Kameel's go and merges after wave 3; S1 (Compare) merged #175 (22 Oct) |
-| I26a, I27, I29, I32 | Assessment history and the drill loop; evidence-linked coach cards; scenario controls; the narrow-screen, keyboard and daylight pass | Sonnet, Opus review | I26a: design merged #159, A1+A2 merged #163; A3 screens merged #187 (22 Oct). I27: design merged #142, slice 1 merged #151. I32: #169 in the wave 3 merges, 21 Oct; #169 merged 22 Oct. I26a/I27: the pupil's Skills door and coaching points (GA-I27 C4) merged #279 (11 Nov). I29: scope decided 11 Nov (projections from scoring rates, overs and what's achievable); A0+A1 merged #298 (12 Nov); A2 left. |
+| I26a, I27, I29, I32 | Assessment history and the drill loop; evidence-linked coach cards; scenario controls; the narrow-screen, keyboard and daylight pass | Sonnet, Opus review | I26a: design merged #159, A1+A2 merged #163; A3 screens merged #187 (22 Oct). I27: design merged #142, slice 1 merged #151. I32: #169 in the wave 3 merges, 21 Oct; #169 merged 22 Oct. I26a/I27: the pupil's Skills door and coaching points (GA-I27 C4) merged #279 (11 Nov). I29: scope decided 11 Nov (projections from scoring rates, overs and what's achievable); A0+A1 merged #298 (12 Nov); A2 merged #307 (12 Nov), I29 done. |
 | I28 | Shot-wheel filtering | Sonnet, Opus review | done · merged #111 |
 | I30 | Grounds, transport and competition homes | Sonnet, Opus review | done · merged #122 |
 | I31 | Full-name chart tables; every chart gets "Show as table" and a spoken summary | Sonnet, Opus review | done · merged #121 |

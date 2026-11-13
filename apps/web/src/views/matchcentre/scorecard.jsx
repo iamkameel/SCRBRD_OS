@@ -216,8 +216,12 @@ function FocusTag({ label }) {
 }
 const focusEdge = (lit) => (lit ? { borderLeft: `4px solid ${T.brand.accentText}` } : {});
 
-/** A batter's row, which opens for a signed-in reader. */
-function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, profile, Wheel, kept = false, lit = false, litLabel = null }) {
+/**
+ * A batter's row, which opens for a signed-in reader. CRI-3.2: `passport` is
+ * the link to his passport, drawn by MatchView's passportOf (lib/passportLink.js)
+ * where the passport read would admit this reader; the public page passes none.
+ */
+function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, profile, passport = null, Wheel, kept = false, lit = false, litLabel = null }) {
   const notOut = b.status !== "out";
   const counts = open ? runCounts(inn, b.id) : null;
   const opens = !!onToggle;
@@ -274,13 +278,18 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, prof
               {commentaryLine}
             </p>
           ))}
-          {profile && (
-            <button type="button" onClick={profile} className="pressBtn os-state"
-              style={{ justifySelf: "start", minHeight: "44px", padding: `0 ${T.space.lg}`, cursor: "pointer",
-                background: "transparent", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill,
-                color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
-              Open profile
-            </button>
+          {(profile || passport) && (
+            <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
+              {profile && (
+                <button type="button" onClick={profile} className="pressBtn os-state"
+                  style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, cursor: "pointer",
+                    background: "transparent", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill,
+                    color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
+                  Open profile
+                </button>
+              )}
+              {passport}
+            </div>
           )}
         </div>
       )}
@@ -293,7 +302,7 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, prof
  * wickets. `idx` is its place in the match's list of innings (the log's
  * innings number): the scorecard of a match innings, or of a super over's.
  */
-function InningsBody({ match, innings, idx, commentary, events, opens, profileOf, Wheel, focus, focusLabel, toBall = null, restore = null }) {
+function InningsBody({ match, innings, idx, commentary, events, opens, profileOf, passportOf, Wheel, focus, focusLabel, toBall = null, restore = null }) {
   // CRI-1.5: back from the Commentary, the row the reader had open is open again.
   const [openId, setOpenId] = useState(() => (restore?.innings === idx ? restore.openId ?? null : null));
   const inningsSel = idx;
@@ -345,7 +354,7 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
               onToggle={opens ? () => setOpenId(openId === b.id ? null : b.id) : null}
               commentaryLine={line}
               onBall={line && toBall ? (e) => toBall({ key, innings: idx, openId: b.id, from: e.currentTarget }) : null}
-              profile={profileOf(b.id)} Wheel={Wheel} kept={kept.has(b.id)} lit={!!focus?.has(b.id)} litLabel={focusLabel}/>
+              profile={profileOf(b.id)} passport={passportOf(b.id, b.name)} Wheel={Wheel} kept={kept.has(b.id)} lit={!!focus?.has(b.id)} litLabel={focusLabel}/>
           );
         })}
         {dnb.map((p) => (
@@ -379,18 +388,22 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
         <CardTable label="Bowling" testid="mc-bowling" outer={{ marginTop: T.space.lg }}
           style={{ border: `1px solid ${T.line.normal}`, borderRadius: T.radius.lg, overflow: "hidden" }}>
           <HeadRow cols={BOWL_COLS} label="Bowling" icon="ball" heads={["O", "M", "R", "W", "Econ"]}/>
-          {inn.bowlers.map((bw) => (
-            <div key={bw.id} role="row" data-focus={focus?.has(bw.id) ? "true" : undefined}
+          {inn.bowlers.map((bw) => {
+            const nm = <>{bw.name}{focus?.has(bw.id) && focusLabel && <FocusTag label={focusLabel}/>}</>;
+            return (
+            <div key={bw.id} role="row" data-testid="mc-bowl-row" data-focus={focus?.has(bw.id) ? "true" : undefined}
               style={{ display: "grid", gridTemplateColumns: BOWL_COLS, gap: T.space.xs, alignItems: "center",
               padding: `${T.space.sm} ${T.space.md}`, minHeight: "44px", borderBottom: `1px solid ${T.line.subtle}`,
               ...(focus?.has(bw.id) ? { background: T.surface.interactive, ...focusEdge(true) } : {}) }}>
               <span role="rowheader" style={{ ...T.role.body, fontSize: "15px", fontWeight: 600, color: T.content.primary, minWidth: 0,
                 display: "flex", alignItems: "center", gap: T.space.xs, flexWrap: "wrap" }}>
-                {bw.name}{focus?.has(bw.id) && focusLabel && <FocusTag label={focusLabel}/>}
+                {/* CRI-3.2: his passport in one tap, where this reader may read it. */}
+                {passportOf(bw.id, bw.name, nm) ?? nm}
               </span>
               <Figs values={[oversOf(bw.balls), bw.maidens, bw.runs, bw.wickets, econ(bw.runs, bw.balls)]} strong={3}/>
             </div>
-          ))}
+            );
+          })}
           {(inn.bowlerChanges ?? []).map((c, i) => {
             const nm = (id) => inn.bowlers.find((b) => b.id === id)?.name ?? "another bowler";
             return (
@@ -480,7 +493,7 @@ function SuperOverBlock({ pair, ...rest }) {
  * that place again, coming back — the row reopened and the page where it was
  * — and `onRestored` says it has been put back. The public page passes none.
  */
-export function ScorecardTab({ match, innings, commentary, events, inningsSel, setInningsSel, opens = false, profileOf = () => null, Wheel = null, focus = null, focusLabel = null,
+export function ScorecardTab({ match, innings, commentary, events, inningsSel, setInningsSel, opens = false, profileOf = () => null, passportOf = () => null, Wheel = null, focus = null, focusLabel = null,
                                toBall = null, restore = null, onRestored = null }) {
   const at = useRef(/** @type {HTMLElement | null} */ (null));
   // Once, as the tab is drawn again: the page back where the reader left it.
@@ -496,7 +509,7 @@ export function ScorecardTab({ match, innings, commentary, events, inningsSel, s
   const sel = innings[inningsSel] && !isSuperOver(innings[inningsSel]) ? inningsSel : Math.max(0, innings.findIndex((x) => x && !isSuperOver(x)));
   const inn = innings[sel];
   if (!inn) return <Quiet testid="mc-scorecard-empty">Nothing has been scored yet.</Quiet>;
-  const body = { match, innings, commentary, events, opens, profileOf, Wheel, focus, focusLabel, toBall, restore };
+  const body = { match, innings, commentary, events, opens, profileOf, passportOf, Wheel, focus, focusLabel, toBall, restore };
   return (
     <section ref={at} data-testid="mc-scorecard" aria-label="Scorecard">
       <InningsToggle match={match} innings={innings} inningsSel={sel} setInningsSel={setInningsSel}/>

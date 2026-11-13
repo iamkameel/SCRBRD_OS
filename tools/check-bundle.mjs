@@ -244,6 +244,8 @@ const OUTSIDE_ENTRY = [
   // school are fetched on first use (App.jsx); the sign-in page stays static.
   ["the sign-up flow (OnboardingFlow.jsx)", "signup-health-consent"],
   ["the account with no school (NoSchool.jsx)", "join-claim-checking"],
+  // CRI-3.2: a boy's passport over the scorecard, fetched on the first tap.
+  ["the passport sheet (passportSheet.jsx)", "passport-sheet-lines"],
 ];
 const others = js.filter((f) => !entryGraph.includes(f)).map((f) => readFileSync(f, "utf8"));
 const entryKB = Math.round(entryGraph.reduce((n, f) => n + statSync(f).size, 0) / 1024);
@@ -252,6 +254,13 @@ if (entryKB > ENTRY_LIMIT_KB) splitProblems.push(`the entry chunk and its static
 for (const [what, marker] of OUTSIDE_ENTRY) {
   if (entryText.includes(marker)) splitProblems.push(`${what} is in the entry chunk ("${marker}" found there) — something in the entry graph imports it statically`);
   else if (!others.some((t) => t.includes(marker))) splitProblems.push(`${what} is in no chunk at all ("${marker}" not found) — the marker or the screen went missing`);
+}
+// CRI-3.2: the passport sheet is a chunk of its own, not folded into the Match
+// Centre's (whose marker is its Big screen button): a reader who never taps a
+// row never downloads it.
+{
+  const sheetChunks = others.filter((t) => t.includes("passport-sheet-lines"));
+  if (sheetChunks.some((t) => t.includes("mc-bigscreen-open"))) splitProblems.push("the passport sheet is in the Match Centre's chunk — passportSheet.jsx is imported statically somewhere");
 }
 if (splitProblems.length) {
   console.error(`✗ CODE SPLITTING UNDONE — entry chunk ${relative(".", entry)}`);
@@ -309,6 +318,8 @@ const NOT_PUBLIC = [
   ["a signed-in match route",            "/api/matches/"],
   ["the Firebase SDK",                   "@firebase/app"],
   ["the service worker's registration",  "serviceWorker"],
+  // CRI-3.2: "public nothing". The passport sheet is the signed-in Match Centre's.
+  ["the passport sheet (passportSheet.jsx)", "passport-sheet-lines"],
 ];
 const publicProblems = [];
 let publicKB = 0, publicWholeKB = 0;

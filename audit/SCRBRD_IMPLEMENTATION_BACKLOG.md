@@ -13,6 +13,12 @@
 
 12 Nov 2026: #299 merged (merge fda88860): the public-by-terms design, approved by Kameel 11 Nov ('All 9 as recommended'); slices 1–8 to be built now, off until counsel (Kameel 12 Nov: 'Build 1-8, switched off').
 
+12 Nov 2026: four merges recorded. #304 (merge e67369a4): season trend B3, the side's season, match by match (GA-I23). #307 (merge d0fccbdb): scenario controls A2, the ground display shows the scenario line, no stepper (GA-I29). #305 (merge 4309f6f0): CRI-2.1, commentary chips and a jump to any over. #306 (merge bfb4a681): CRI-2.3, tap a chart to see the balls behind it.
+
+12 Nov 2026 (late): three merges recorded. #301 (merge 0c50e488): REACH-D2, a pupil reads his own figures, not his team-mates'; the captain's season rows and Compare "Me v a team-mate" are kept. #309 (merge 050ccf15): CRI-2.5, three spectator charts. #311 (merge 16d79dea): CRI-2.2, a source line on every chart, with "Shots captured for N of M balls".
+
+13 Nov 2026: two merges recorded. #310 (merge 67e6e674): the scoring proof, Kameel's 12 Nov call: ten invented matches, each with a hand-worked card, replayed through the engine and through the pad's own emission code; every figure equal, no engine change. No entry existed for it; this line records it, and part 2 (five more books) is #316. #315 (merge e303f38c): browser-read waits for the fixture chips to settle instead of a fixed two seconds (it failed main's browser shard 1 on a slow runner).
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -760,8 +766,8 @@ for the owner's key, a platform administrator, a school administrator and a two-
 - **Skills history walk, flaky fixed** — **Done 2026-10-29** (#210, commit 3a63fbd): the walk waits for the since-the-last-look read after a save, and no longer reads the stale panel.
 - **Two browser-walk races, fixed** — **Done 2026-10-30** (#218, commit 76e7de9): the skills-history bar now waits for its re-read; the retire walk (`smoke-browser-retire`) waits for the pad's write.
 - **Skills door for the pupil (GA-I26a)** — **Partly done 2026-11-11** (#279, merge a63aa6a4): the pupil's Skills door.
-- **Scenario controls (GA-I29)** — **Decided 2026-11-11** (Kameel, in chat, 11 Nov 2026): "Scenario controls (GA-I29) - probability and forecasts are based scoring-rates and overs and what's achievable etc." No entry existed for GA-I29; this line was added on 11 Nov. **Partly done 2026-11-12** (#293, merge commit 6e852aad): the scenario controls design is done for Kameel's review; the build is open. **Partly done 2026-11-12** (#298, merge ee3cbe6e): A0+A1, one projection and the Match Centre panel; A2 is open.
-- **Season trend (GA-I23)** — **Partly done 2026-11-12** (#293, merge commit 6e852aad): slice 2 design, for Kameel's review. Build open. No entry existed for GA-I23; this line was added on 12 Nov. **Partly done 2026-11-12** (#297, merge e774cda7): B1, the innings-by-innings and side-season reads. **Partly done 2026-11-12** (#300, merge aea244a3): B2, a player's innings panel on Analytics, a parent's Home and the pupil's Passport. B3 is open.
+- ~~**Scenario controls (GA-I29)**~~ — **Decided 2026-11-11** (Kameel, in chat, 11 Nov 2026): "Scenario controls (GA-I29) - probability and forecasts are based scoring-rates and overs and what's achievable etc." No entry existed for GA-I29; this line was added on 11 Nov. **Partly done 2026-11-12** (#293, merge commit 6e852aad): the scenario controls design is done for Kameel's review; the build is open. **Partly done 2026-11-12** (#298, merge ee3cbe6e): A0+A1, one projection and the Match Centre panel; A2 is open. **Done 2026-11-12** (#307, merge d0fccbdb): A2, the ground display shows the scenario line, no stepper.
+- ~~**Season trend (GA-I23)**~~ — **Partly done 2026-11-12** (#293, merge commit 6e852aad): slice 2 design, for Kameel's review. Build open. No entry existed for GA-I23; this line was added on 12 Nov. **Partly done 2026-11-12** (#297, merge e774cda7): B1, the innings-by-innings and side-season reads. **Partly done 2026-11-12** (#300, merge aea244a3): B2, a player's innings panel on Analytics, a parent's Home and the pupil's Passport. **Done 2026-11-12** (#304, merge e67369a4): B3, the side's season, match by match.
 - **Pilot Match phase 2 (R0 design, with Kameel's answers to its five calls; slices 1–3 behind the switch, db/151)** — **Partly done 2026-11-12** (#290, merge commit 5cea2275; #291, merge commit 5b6f9725): the design and slices 1 to 3 are merged. Slices 4 onward remain: the public page, promotion and the purge job. No entry existed for pilot match phase 2; this line was added on 12 Nov.
 
 ## Match page grammar — from the ESPNcricinfo audits (added 2026-10-23)
@@ -791,8 +797,15 @@ one duplicates an existing entry, strike the `CRI-*` line and point at the older
 
 **Sprint 1 complete 2026-11-11** (#266, merge commit 060e0a2b): CRI-1.4 to CRI-1.8 are done.
 
-**Sprint 2:** CRI-2.1 commentary chips and over jump · CRI-2.2 `sourceLine` and capture coverage on every chart ·
-CRI-2.3 chart-to-delivery drill-down · CRI-2.4 reader freshness and low-bandwidth mode · CRI-2.5 three spectator charts.
+**Sprint 2:** ~~CRI-2.1 commentary chips and over jump~~ · ~~CRI-2.2 `sourceLine` and capture coverage on every chart~~ ·
+~~CRI-2.3 chart-to-delivery drill-down~~ · CRI-2.4 reader freshness and low-bandwidth mode · ~~CRI-2.5 three spectator charts~~.
+
+**Done 2026-11-12** (#305, merge 4309f6f0): CRI-2.1, commentary chips and a jump to any over.
+
+**Done 2026-11-12** (#306, merge bfb4a681): CRI-2.3, tap a chart to see the balls behind it.
+
+- **CRI-2.2** — **Done 2026-11-12** (#311, merge 16d79dea): a source line on every chart, with "Shots captured for N of M balls".
+- **CRI-2.5** — **Done 2026-11-12** (#309, merge 050ccf15): three spectator charts.
 
 **Sprint 3 (after pilot evidence):** CRI-3.1 notifications S2–S5 with follow and a Result-only default ·
 CRI-3.2 tap-to-passport · CRI-3.3 match impact as PoM suggestion (after recognition §7 scoring fixes) ·
@@ -4870,15 +4883,16 @@ scorecard's row expansion for another child (§10 departure 11).
 
 ### Close REACH-D2: pupil reads of team-mates' career figures
 **Priority:** P1 · **Domain:** Families / Privacy · **Type:** build, Opus (Kameel, 7 Nov 2026; `docs/design/REACH_parent_pupil.md` §6.6 and §7)
-**Not started.** A pupil reads a team-mate's career, season and wagon-wheel pages today: `player.performance.read` is in the `player` bundle (`roles.mjs:330–335`), so the five per-boy reads (`career`, `career_by_season`, `dismissal_breakdown`, `player_shot_points`, `bowler_day`) answer a team-mate. Decided 14 Oct as "leave them open"; closed by Kameel on 7 Nov 2026: a pupil no longer reads team-mates' career figures, and the parents' terms (popia-2026-01) stand as written ("his name on the sheet and scorecard, nothing more"). The ratings fix (PR #273) is done and is not this entry.
+**Partly done 2026-11-12** (#301, merge 0c50e488): a pupil reads his own figures, not his team-mates'; the two exceptions (the captain's season rows, and Compare "Me v a team-mate", career and every season and match-ups with him as the batter) are kept. Still open per this entry: the popia-2026-02 sentence 14 redraft in `CONSENT_V2.md`, before -02 is issued.
+**Before #301 (kept for the record):** A pupil reads a team-mate's career, season and wagon-wheel pages today: `player.performance.read` is in the `player` bundle (`roles.mjs:330–335`), so the five per-boy reads (`career`, `career_by_season`, `dismissal_breakdown`, `player_shot_points`, `bowler_day`) answer a team-mate. Decided 14 Oct as "leave them open"; closed by Kameel on 7 Nov 2026: a pupil no longer reads team-mates' career figures, and the parents' terms (popia-2026-01) stand as written ("his name on the sheet and scorecard, nothing more"). The ratings fix (PR #273) is done and is not this entry.
 **Exceptions (Kameel, 11 Nov 2026), both kept:** (1) the Compare card, "Me v a team-mate" (GA-I24 D10): a pupil sets one team-mate's season figures beside his own; (2) the captain's view (SCRBRD-138): the boy holding the captaincy reads his side's season figures, nothing else. Path (a) is ruled out: removing `player.performance.read` from the `player` bundle would break both.
 **Build:** path (b), the five reads gated on `is_family_of(player) OR` a staff capability `OR` 138's captain gate, in `read-api.mjs`, with `read.test.mjs` holding the SQL equal to `db/99`'s copy. The Compare card and the captain's season table keep their reads through their own gates. Sentence 14 of popia-2026-02 needs the redraft in `CONSENT_V2.md` before -02 is issued.
 **Acceptance criteria:**
-- [ ] A pupil's `career?playerId=` for a team-mate is refused; his own career and wagon wheel are still read.
-- [ ] The captain's tab reads as SCRBRD-138 decided.
-- [ ] The Compare card (one team-mate's season figures beside his own) and the captain's season table (SCRBRD-138) still work.
-- [ ] The match scorecard is unchanged (Q4).
-- [ ] `db/99` pupil walk asserts the above, and is green.
+- [x] A pupil's `career?playerId=` for a team-mate is refused; his own career and wagon wheel are still read. (#301: db/99 §130, browser-pupil, browser-compare)
+- [x] The captain's tab reads as SCRBRD-138 decided. (#301: db/99 §130, browser-pupil, browser-compare)
+- [x] The Compare card (one team-mate's season figures beside his own) and the captain's season table (SCRBRD-138) still work. (#301: db/99 §130, browser-pupil, browser-compare)
+- [x] The match scorecard is unchanged (Q4). (#301: db/99 §130, browser-pupil, browser-compare)
+- [x] `db/99` pupil walk asserts the above, and is green. (#301: db/99 §130, browser-pupil, browser-compare)
 **Regression risk:** MEDIUM (a pupil's read narrows; the captain's tab is the one place it could break).
 
 ### SCRBRD-100 — The premium-feel checklist: what is left after step 3c
