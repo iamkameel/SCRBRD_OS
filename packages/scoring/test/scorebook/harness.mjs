@@ -16,6 +16,13 @@
  * builds one scorebook through the pad's functions themselves and holds the
  * two logs equal, so this file and the pad cannot drift.
  *
+ * Added with INV-11 to INV-15, from the same code: the no-ball's kind
+ * (delivery.js noBallEvent: front foot, height, beamer), a delivery not in
+ * the over (penalty.js notInOverEvents), a bowler suspended (suspension.js
+ * suspendEvent, engine.jsx recordSuspension), the wicket-keeper (engine.jsx
+ * addKeeper), a declaration match's format, and the milestones the facts
+ * give (deriveFacts) held to a card that states them.
+ *
  * Every event is also asked of the Laws (lawsRefusal) before it is added, as
  * the server asks it at commit: a paper the server would refuse is reported.
  *
@@ -24,6 +31,7 @@
  */
 import {
   inningsStart, batters, bowler, ball, retire, penalty, revision, shortRunning, sealInnings, noPlacement,
+  notInOverDelivery, bowlerSuspended, keeper, lawsEdition, deriveFacts,
   deriveInningsList, deriveMatch, lawsRefusal, fmtOvers,
   PLACEMENT_NULL, CAPTURE_PROFILE, RETIRE_REASON, INNINGS_END_REASON,
 } from "../../src/index.mjs";
@@ -40,12 +48,16 @@ const CUP = Object.freeze({ "format.kind": "limited", "format.innings_per_side":
 /** A league's: a tie stands. */
 const LEAGUE = Object.freeze({ "format.kind": "limited", "format.innings_per_side": 1, "result.tie_break": "none" });
 
+/** A declaration match's: one innings a side, no free hit (the format says so, as the fixture's `match.format` does). */
+const DECLARATION = Object.freeze({ "format.kind": "declaration", "format.innings_per_side": 1, "result.tie_break": "none" });
+
 /** The fold's context for a scorebook: its date, its conditions, its sides. @param {Scorebook} book */
 export function contextOf(book) {
   const [home, away] = book.sides;
   return {
     startsAt: `${book.date}T08:00:00Z`,
-    ...(book.conditions === "cup" ? { conditions: CUP } : book.conditions === "league" ? { conditions: LEAGUE } : {}),
+    ...(book.conditions === "cup" ? { conditions: CUP } : book.conditions === "league" ? { conditions: LEAGUE }
+      : book.conditions === "declaration" ? { conditions: DECLARATION, format: "One-Day Declaration" } : {}),
     sides: { home, away }, names: { home, away },
   };
 }
@@ -96,7 +108,7 @@ const wicketFields = (w) => (w ? {
  * @param {any} inn @param {Delivery} d @param {any} wk
  */
 const noBallOf = (inn, d, wk) => ball(/** @type {any} */ ({
-  type: "Nb", value: d.value, shot: null, seg: null, zone: null, nbType: "front_foot",
+  type: "Nb", value: d.value, shot: null, seg: null, zone: null, nbType: d.nbType ?? "front_foot",
   ...(d.value > 0 && d.nbRuns ? { nbRuns: d.nbRuns } : {}),
   ...(d.notBoundary ? { boundary: false } : {}),
   ...crease(inn), ...wicketFields(wk),
@@ -145,6 +157,8 @@ export function deliveryEvents(inn, i, fieldSide, d) {
     }))];
   }
   const delivery = deliveryOf({ type: d.type, value: d.value, freeHit, crease: crease(inn), notBoundary: d.notBoundary });
+  // delivery.js notInOverEvents(): the delivery marked, then the five to the batting side.
+  if (d.notInOver) return [...notInOverDelivery(/** @type {any} */ ({ ...delivery, innings: i }), d.notInOver)];
   if (d.shortRun) return [...shortRunning(/** @type {any} */ ({ ...delivery, innings: i }))];
   return [ball(/** @type {any} */ (delivery))];
 }
@@ -246,6 +260,15 @@ export function buildLog(book) {
           }
           case "pen": emit(i, what, [penalty({ runs: 5, toBattingTeam: /** @type {number} */ (step.runs) > 0, reason: step.reason })]); break;
           case "bw": emit(i, what, [bowler({ bowler: idOf(other, /** @type {string} */ (step.who)), reason: step.reason })]); break;
+          // suspension.js bowlerToSuspend() and suspendEvent(): the bowler on (or who bowled the last ball), the reason, the match's Edition.
+          case "susp": {
+            const cur = innAt(i);
+            const who = cur.bowler ?? (cur.ballLog ?? []).at(-1)?.bowlerId ?? null;
+            emit(i, what, [bowlerSuspended(/** @type {any} */ ({ bowler: who, reason: step.reason, edition: lawsEdition(view()) }))]);
+            break;
+          }
+          // engine.jsx addKeeper(): keeperEvent({keeper: id}).
+          case "kp": emit(i, what, [keeper({ keeper: idOf(other, /** @type {string} */ (step.who)) })]); break;
           default: break;
         }
       }
@@ -312,6 +335,14 @@ export function compareCard(match, inn, card) {
     eq(`bowl ${want.who} no-balls`, want.noBalls, got.noBalls);
   }
 
+  eq("keepers, in the order they kept", card.keepers.map((k) => k.who).join(" "), (inn.keepers ?? []).map((/** @type {any} */ k) => k.name).join(" "));
+  for (const want of card.keepers) {
+    const got = (inn.keepers ?? []).find((/** @type {any} */ k) => k.name === want.who);
+    if (!got) continue;
+    eq(`keeper ${want.who} catches`, want.catches, got.catches);
+    eq(`keeper ${want.who} stumpings`, want.stumpings, got.stumpings);
+  }
+
   eq("falls of wicket", card.fow.length, inn.fow.length);
   card.fow.forEach((want, k) => {
     const got = inn.fow[k];
@@ -331,6 +362,22 @@ export function prove(book) {
   const match = deriveMatch(built.log, contextOf(book));
   const mismatches = [...built.problems];
   for (const card of book.cards) mismatches.push(...compareCard(book.match, match.innings[card.innings - 1], card));
+  // The milestones a card states (opt-in): the facts the fold gives, innings by innings.
+  if (book.cards.some((c) => c.milestones.length)) {
+    const facts = deriveFacts(built.log, () => true, { ctx: contextOf(book) });
+    for (const card of book.cards) {
+      if (!card.milestones.length) continue;
+      const paper = book.innings[card.innings - 1];
+      const other = book.sides[0] === paper.side ? book.sides[1] : book.sides[0];
+      const key = (/** @type {string} */ kind, /** @type {string} */ who, /** @type {number} */ value) => `${kind} ${who} ${value}`;
+      const want = card.milestones.map((m) => key(m.kind, m.who, m.value)).sort();
+      const got = facts.milestones.filter((m) => m.innings === card.innings - 1).map((m) => {
+        const bowlerKind = m.kind === "five_for" || m.kind === "hat_trick";
+        return key(m.kind, m.player.slice((bowlerKind ? other : paper.side).length + 1), m.value);
+      }).sort();
+      if (want.join("; ") !== got.join("; ")) mismatches.push(`${book.match} innings ${card.innings} · milestones: expected ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
+    }
+  }
   if (book.cards.length !== match.innings.length) mismatches.push(`${book.match}: ${book.cards.length} cards for ${match.innings.length} innings`);
   const text = match.result?.text ?? null;
   if (text !== book.result) mismatches.push(`${book.match} · result: expected ${JSON.stringify(book.result)}, got ${JSON.stringify(text)}`);

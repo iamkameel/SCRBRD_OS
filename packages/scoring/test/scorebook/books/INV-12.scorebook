@@ -1,0 +1,93 @@
+# INV-12 — invented. Four overs a side: the wicket-keeper.
+# Edge cases: the gloves named at the start (kp:F1), changed mid-over when the
+# keeper is hurt (kp:F2, the bowler bowling on) and given back (kp:F1 again:
+# the same line on the card, F1 and F2 in the order they first kept); a
+# catch credited to the keeper by his number (a catch by F5 is no keeper's);
+# stumpings credited to whoever keeps at the time, one off a wide (the
+# bowler's wicket, no ball of the over: falls at 1.4); a catch by the keeper
+# off a free hit saved, which is no wicket and no keeper's catch; a run out
+# by the keeper, which is neither a catch nor a stumping; five penalty runs
+# to the batting side for the keeper's unfair movement (in its total, none
+# the bowler's) and five for a fielder's; a maiden with three wickets; a
+# chase lost by one run.
+match INV-12
+title Four overs, the wicket-keeper
+date 2026-11-12
+overs 4
+sides Home Away
+
+innings 1 Home
+open B1 B2
+over BW1  kp:F1 1 W:c/F1 4 pen+5:keeper_movement . W:st/F1 1
+over BW2  2 1 kp:F2 W:c/F2 W:st/F2 wd&W:st/F2 . 1
+over BW3  kp:F1 4 1 W:c/F5 3 W:st/F1 6
+over BW4  1 2 nb W:c/F1 1 W:b W:c/F1
+
+innings 2 Away
+open B1 B2
+over BW1  kp:F1 4 1 W:ro/F1 2 W:c/F1 6
+over BW2  1 pen+5:fielder_movement 4 W:st/F1 1 2 .
+over BW3  W:lbw 1 . W:c/F7 wd+2 4 W:b
+over BW4  . W:c/F1 . W:st/F1 . W:b
+
+# ── The card, worked by hand ──
+# Home, over by over: 11, 5, 14, 5 = 35 (five of the first over's 11 are penalty runs).
+card 1
+bat B1 1 2 0 0 c F2 b BW2
+bat B2 0 1 0 0 c F1 b BW1
+bat B3 4 3 1 0 st F1 b BW1
+bat B4 4 4 0 0 c F5 b BW3
+bat B5 0 1 0 0 st F2 b BW2
+bat B6 0 0 0 0 st F2 b BW2
+bat B7 6 5 1 0 st F1 b BW3
+bat B8 4 3 0 0 b BW4
+bat B9 9 5 0 1 not out
+bat B10 0 1 0 0 c F1 b BW4
+extras b 0 lb 0 w 1 nb 1 p 5
+total 35/9 4.0
+fow 1-1 B2 0.2
+fow 2-10 B3 0.5
+fow 3-14 B1 1.3
+fow 4-14 B5 1.4
+fow 5-15 B6 1.4
+fow 6-21 B4 2.3
+fow 7-24 B7 2.5
+fow 8-35 B8 3.5
+fow 9-35 B10 3.6
+keeper F1 ct 2 st 2
+keeper F2 ct 1 st 2
+bowl BW1 1-0-6-2 wd 0 nb 0
+bowl BW2 1-0-5-3 wd 1 nb 0
+bowl BW3 1-0-14-2 wd 0 nb 0
+bowl BW4 1-0-5-2 wd 0 nb 1
+
+# Away, needing 36: 13, 13 (five of them penalty runs), 8, 0 = 34.
+card 2
+bat B1 8 7 1 0 c F7 b BW3
+bat B2 0 1 0 0 run out (F1)
+bat B3 2 2 0 0 c F1 b BW1
+bat B4 10 3 1 1 st F1 b BW2
+bat B5 1 2 0 0 lbw b BW3
+bat B6 1 3 0 0 c F1 b BW4
+bat B7 4 2 1 0 b BW3
+bat B8 0 0 0 0 not out
+bat B9 0 2 0 0 st F1 b BW4
+bat B10 0 2 0 0 b BW4
+extras b 0 lb 0 w 3 nb 0 p 5
+total 34/9 4.0
+fow 1-5 B2 0.3
+fow 2-7 B3 0.5
+fow 3-23 B4 1.3
+fow 4-26 B5 2.1
+fow 5-27 B1 2.4
+fow 6-34 B7 2.6
+fow 7-34 B6 3.2
+fow 8-34 B9 3.4
+fow 9-34 B10 3.6
+keeper F1 ct 2 st 2
+bowl BW1 1-0-13-1 wd 0 nb 0
+bowl BW2 1-0-8-1 wd 0 nb 0
+bowl BW3 1-0-8-3 wd 1 nb 0
+bowl BW4 1-1-0-3 wd 0 nb 0
+
+result Home won by 1 run
