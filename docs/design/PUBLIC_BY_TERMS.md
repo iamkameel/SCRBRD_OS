@@ -16,6 +16,7 @@
   - (a) Only staff may open the big screen and make its read.
   - (b) When any boy on the field is marked never-public, the screen shows that boy's whole side by position, and the read says only "this side by position", never which boy.
 - **The big screen, 17:45 SAST: "Season roster: hide the side all season".** A side shows by position whenever a marked boy is on its season roster, whatever the day's XI.
+- 13 Nov 2026 (Kameel): Reading 3 as recommended: a no that isn't counted still stops the by-terms default, but never overrides a later counted yes.
 - **Engineering notes (the lead's, not Kameel's):**
   - "staff" means `player.roster.read` or `scoring.start` at the host side, never a pupil, and never a scoring pad's credential;
   - on a fixture with no team sheet, the away side is always shown by position;

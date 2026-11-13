@@ -599,7 +599,8 @@ const OLD_WORDING_YES = Object.freeze(["card", "live"]);
  *            (the old wording: card and live)
  *   6  no explicit answer counts: named only if the caller allows by terms
  *      (`byTermsAllowed === true`) and the database found line 6 to hold
- *      (`byTerms === true`)
+ *      (`byTerms === true`) — and nobody, guardian or pupil, has a no for
+ *      this surface that line 5 does not count (Reading 3, below)
  *   7  otherwise not named
  *
  * @param {NameFacts} facts
@@ -612,8 +613,9 @@ function surfaceStands(facts, on, at) {
   if (facts.neverPublic !== false) return false;                                                                 // 2
   if (facts.namesOff !== false) return false;                                                                    // 3
 
-  const counting = (Array.isArray(facts.consents) ? facts.consents : []).filter((c) =>
-    c != null && c.competent === true && (c.by === "guardian" || c.by === "pupil"));
+  const known = (Array.isArray(facts.consents) ? facts.consents : []).filter((c) =>
+    c != null && (c.by === "guardian" || c.by === "pupil"));
+  const counting = known.filter((c) => c.competent === true);
 
   // 4. His own.
   const his = counting.filter((c) => c.by === "pupil");
@@ -624,6 +626,15 @@ function surfaceStands(facts, on, at) {
   // 5. The latest explicit answer from a guardian.
   const theirs = latestAnswer(counting.filter((c) => c.by === "guardian").flatMap((c) => answersOf(c, on, at)));
   if (theirs !== null) return theirs;
+
+  // Reading 3 (13 Nov 2026, Kameel: "As recommended: an uncounted no still
+  // stops the default"). A no line 5 does not count — its giver was not
+  // competent the day it was given, say a guardian whose link was not yet
+  // verified — still stops line 6 (§0.4, must-never 3: no default outvotes a
+  // no, whoever gave it). It is read only here, once no counted answer
+  // decided, so it never overrides a counted yes, earlier or later; and past
+  // the adult switch (line 4) it is never reached.
+  if (known.some((c) => c.competent !== true && answersOf(c, on, at).some((a) => !a.yes))) return false;
 
   // 6. Public by terms; 7, otherwise not named.
   return facts.byTermsAllowed === true && facts.byTerms === true;
