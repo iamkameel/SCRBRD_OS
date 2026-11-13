@@ -38,6 +38,10 @@ const SUITES = [
   // What a signed-out page may show about a pupil (SCRBRD-083): the surfaces,
   // the never-public list against every masked column, the name rule.
   ["public",   "packages/policy/test/public.test.mjs"],
+  // PUBLIC_BY_TERMS slice 2: §5.1 line by line on card, live and board (B1,
+  // B2, must-nevers 1, 3, 5, 7); no surface is main's answer over a grid;
+  // the terms versions, in order, and their drift test.
+  ["public-by-terms", "packages/policy/test/public-by-terms.test.mjs"],
   // Pilot Match phase 2 (db/151): no migration but the pilot's names schema pilot.
   ["pilot-isolation", "packages/policy/test/pilot-isolation.test.mjs"],
   // The plan's word list (SCRBRD-138 phase B §3): SG-10's words in code, the

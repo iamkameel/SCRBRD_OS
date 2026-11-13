@@ -19,6 +19,11 @@
  *                            surname and known-as when the office recorded
  *                            them (db/47), a heuristic over the full name
  *                            when it did not.
+ *   NAME_SURFACES            PUBLIC_BY_TERMS §1.1: card, live, board — the
+ *                            surfaces publicName() judges one by one.
+ *   TERMS_VERSIONS, termsAtLeast(v, floor)
+ *                            PUBLIC_BY_TERMS §4.1: the guardian's terms
+ *                            versions, in order, compared through the list.
  *
  * PURE. No database, no network, no clock. The facts a decision needs are
  * gathered on the server by the read that serves the page (§6 step 3) and
@@ -397,6 +402,24 @@ export const POSITION_LABELS = Object.freeze({
  * @property {string|null} [endedOn]
  *   YYYY-MM-DD, the day it stopped: withdrawn, or superseded by a newer
  *   version. A recorded "no" is a record that ends the day it begins.
+ *
+ * Read only when the page names its surface (NameFacts.surface; see
+ * "BY SURFACE" at publicName()). Without one these are ignored.
+ * @property {"card"|"live"|"board"|null} [surface]
+ *   the surface its wording named. `null` is the old single wording
+ *   (`public-names-2026-10`, "public match pages"): a yes on it names `card`
+ *   and `live`, never `board`; a no on it covers all three (§5.1 line 5,
+ *   B1). Anything else, a missing field included, is a wording nobody can
+ *   read: its yes names nowhere and its no covers everything.
+ * @property {boolean} [giverLive]
+ *   whether its giver passes db/122's consent_giver_live() TODAY: active, in
+ *   its dates, not suspended, verified. Only a yes needs it (B2). Under this
+ *   reading `competent` is about the day the record was given and nothing
+ *   later: what has happened to the giver's link since does not unmake a no.
+ * @property {boolean} [adult]
+ *   a pupil's record only: he was eighteen on the day he gave it. A pupil's
+ *   yes counts only with it, and once he has a record with it, only his
+ *   records are read (§5.1 line 4, C6).
  */
 
 /**
@@ -437,6 +460,20 @@ export const POSITION_LABELS = Object.freeze({
  * @property {string|null} [surname]  player.surname, when the office recorded one (db/47)
  * @property {string|null} [knownAs]  player.known_as: the name he goes by, which gives the initial
  * @property {string} [label]  shown instead of a name: "Batter", "Bowler", "Fielder" …
+ * @property {"card"|"live"|"board"} [surface]
+ *   PUBLIC_BY_TERMS §1.1: which surface the name is for — the scorecard once
+ *   the match has ended, the live page while play is on, the honours board.
+ *   Given, the rule is §5.1's, line by line; omitted, it is the rule as it
+ *   stood before that design, unchanged (see "BY SURFACE" below).
+ * @property {boolean} [byTerms]
+ *   §5.1 line 6, entire, as the database worked it out for this surface and
+ *   the day served: the platform setting, the school's basis, a by-terms
+ *   record from a guardian live today, its stored choice, and the seven days.
+ *   No date, giver or choice comes with it.
+ * @property {boolean} [byTermsAllowed]
+ *   the caller's literal: whether this read may name a child by terms at all.
+ *   `false` at the stream overlay (STREAM_CAPTION, §1.3), an access pack and
+ *   a shared card (§9.6); only an exact `true` opens line 6.
  */
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -480,26 +517,226 @@ const isDay = (s) => {
  * It follows that a page carrying names cannot be cached past the day, nor for
  * long within it: a withdrawal has to reach it "at once" (§1.6).
  *
+ * BY SURFACE (docs/design/PUBLIC_BY_TERMS.md §5.1, slice 2). A read that
+ * passes `surface` — "card", "live" or "board" — is judged by §5.1, line by
+ * line, the first line that applies deciding, a missing fact a no
+ * (surfaceStands() below). A read that passes none is judged exactly as
+ * above, whatever else it passes: `byTerms` and the new consent fields are
+ * not read, so nothing can be named by terms on that path. Every public read
+ * today passes none, so every public page says what it said before this
+ * design; slice 3 moves the reads onto a surface together with the facts
+ * (db/149's four-argument public_name_facts()) the surface path needs.
+ *
  * @param {NameFacts} facts
  * @returns {string}  "D Erasmus", or the label
  * @throws {TypeError} when `on` is not a YYYY-MM-DD day — there is no default,
  *   because a default "today" is a clock, and the wrong day is a wrong answer
+ * @throws {RangeError} when `surface` is given and is not card, live or
+ *   board: a typo'd surface is refused loudly, never answered
  */
 export function publicName(facts) {
   const { on } = facts;
   if (!isDay(on)) throw new TypeError(`publicName needs the day the page is served as YYYY-MM-DD, not ${JSON.stringify(on)}`);
   const label = typeof facts.label === "string" && facts.label.trim() ? facts.label.trim() : POSITION_LABELS.player;
+  const by = facts.surface;
+  if (by !== undefined && !NAME_SURFACES.includes(/** @type {any} */ (by))) {
+    throw new RangeError(`publicName judges the surfaces ${NAME_SURFACES.join(", ")}, not ${JSON.stringify(by)} — PUBLIC_BY_TERMS §1.1`);
+  }
 
-  const named = facts.neverPublic === false        // C5
-    && facts.typed === false                        // L6
-    && facts.schoolOnPlatform === true              // L5
-    && facts.schoolPublished === true               // §1.1
-    && facts.namesOff === false                     // C4
-    && consentStands(facts.consents, on);           // C1, C2, C3, C6
+  const named = by === undefined
+    ? facts.neverPublic === false                   // C5
+      && facts.typed === false                      // L6
+      && facts.schoolOnPlatform === true            // L5
+      && facts.schoolPublished === true             // §1.1
+      && facts.namesOff === false                   // C4
+      && consentStands(facts.consents, on)          // C1, C2, C3, C6
+    : surfaceStands(facts, on, by);                 // PUBLIC_BY_TERMS §5.1
 
   // A consenting boy whose record has no usable name is still a position.
   return (named && initialAndSurname(facts.fullName, { surname: facts.surname, knownAs: facts.knownAs })) || label;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  PUBLIC_BY_TERMS §5.1 — the rule in order, one surface at a time
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * §1.1's three surfaces: the scorecard after the match, the live page while
+ * play is on, the school's honours board. The only surfaces a public-name
+ * consent or a by-terms record can reach; the stream caption is D2's own rule
+ * (STREAM_CAPTION) and is never one of these.
+ * @type {readonly ("card"|"live"|"board")[]}
+ */
+export const NAME_SURFACES = Object.freeze(/** @type {const} */ (["card", "live", "board"]));
+
+/**
+ * The surfaces a yes to the old single wording (`public-names-2026-10`,
+ * "public match pages") names: the match pages, live and after. Never the
+ * board. Its no covers all three (B1: wording narrows a yes, never a no).
+ */
+const OLD_WORDING_YES = Object.freeze(["card", "live"]);
+
+/**
+ * §5.1 for one child, one surface and the day served. Lines 1–7, in order.
+ *
+ *   1  the surface exists for him: not a typed name (L6), his side's school
+ *      on the platform (L5), and the surface published for him
+ *      (`schoolPublished`: his side of the fixture for card and live; for
+ *      board, the read serving the board passes it only for an honour that
+ *      is public, not withdrawn, and awarded at the school being read)
+ *   2  a never-public mark → not named
+ *   3  names off for his age group or the side's, or no date of birth on
+ *      file (the database folds that into `namesOff`) → not named
+ *   4  his own standing no, from twelve → not named. Once he has a record
+ *      given at eighteen or later, only his records are read: line 5 over his
+ *      own, and line 6 is not reached (a by-terms record is a guardian's)
+ *   5  the latest explicit answer for this surface, by the day it was given;
+ *      a no wins a tie on the day:
+ *        B2  a no counts if its giver was competent the day it was given;
+ *            a yes only if its giver is also live today (`giverLive`)
+ *        B1  a no covers every surface its wording could reach (the old
+ *            wording: all three); a yes only the surfaces its wording named
+ *            (the old wording: card and live)
+ *   6  no explicit answer counts: named only if the caller allows by terms
+ *      (`byTermsAllowed === true`) and the database found line 6 to hold
+ *      (`byTerms === true`)
+ *   7  otherwise not named
+ *
+ * @param {NameFacts} facts
+ * @param {string} on  YYYY-MM-DD
+ * @param {"card"|"live"|"board"} at
+ * @returns {boolean}
+ */
+function surfaceStands(facts, on, at) {
+  if (!(facts.typed === false && facts.schoolOnPlatform === true && facts.schoolPublished === true)) return false; // 1
+  if (facts.neverPublic !== false) return false;                                                                 // 2
+  if (facts.namesOff !== false) return false;                                                                    // 3
+
+  const counting = (Array.isArray(facts.consents) ? facts.consents : []).filter((c) =>
+    c != null && c.competent === true && (c.by === "guardian" || c.by === "pupil"));
+
+  // 4. His own.
+  const his = counting.filter((c) => c.by === "pupil");
+  const hisAnswers = his.flatMap((c) => answersOf(c, on, at));
+  if (his.some((c) => c.adult === true && isDay(c.givenOn) && c.givenOn <= on)) return latestAnswer(hisAnswers) === true;
+  if (hisAnswers.some((a) => !a.yes)) return false;
+
+  // 5. The latest explicit answer from a guardian.
+  const theirs = latestAnswer(counting.filter((c) => c.by === "guardian").flatMap((c) => answersOf(c, on, at)));
+  if (theirs !== null) return theirs;
+
+  // 6. Public by terms; 7, otherwise not named.
+  return facts.byTermsAllowed === true && facts.byTerms === true;
+}
+
+/**
+ * The explicit answers one record gives for surface `at`, by the day each was
+ * given. A record is one giver's latest act on one wording, as
+ * public_name_facts() passes it (DISTINCT ON the giver, db/116), so its end
+ * is that giver's own no — a withdrawal — never another record's start:
+ *
+ *   a refusal, a record ending the day it begins → a no that day
+ *   any other record                              → a yes the day it began,
+ *                                                   and a no the day it ended
+ *
+ * A record that begins after `on` has not begun. A day that cannot be read
+ * fails closed: an unreadable start or end, or an end before the start, is a
+ * no on `on`, the latest it could be.
+ *
+ * @param {NameConsent} c  competent, by a guardian or the pupil
+ * @param {string} on
+ * @param {"card"|"live"|"board"} at
+ * @returns {{day: string, yes: boolean}[]}
+ */
+function answersOf(c, on, at) {
+  const wording = c.surface;
+  const noHere = !NAME_SURFACES.includes(/** @type {any} */ (wording)) || wording === at;
+  const yesHere = wording === null ? OLD_WORDING_YES.includes(at) : wording === at;
+  /** @type {{day: string, yes: boolean}[]} */
+  const out = [];
+  if (!isDay(c.givenOn)) return noHere ? [{ day: on, yes: false }] : out;
+  if (c.givenOn > on) return out;
+  if (c.endedOn === c.givenOn) return noHere ? [{ day: c.givenOn, yes: false }] : out;
+  // An end before its start is a record nobody can read (db/47's CHECK keeps
+  // it out of SQL, but the rule does not lean on that): a no on `on`.
+  if (isDay(c.endedOn) && c.endedOn < c.givenOn) return noHere ? [{ day: on, yes: false }] : out;
+  if (yesHere && c.giverLive === true && (c.by === "guardian" || c.adult === true)) out.push({ day: c.givenOn, yes: true });
+  if (c.endedOn != null && noHere) {
+    if (!isDay(c.endedOn)) out.push({ day: on, yes: false });
+    else if (c.endedOn <= on) out.push({ day: c.endedOn, yes: false });
+  }
+  return out;
+}
+
+/**
+ * The latest answer: true for a yes, false for a no, null when there is none.
+ * A tie on the day goes to the no (§5a: a no is never outvoted by a yes).
+ * @param {{day: string, yes: boolean}[]} answers
+ * @returns {boolean|null}
+ */
+function latestAnswer(answers) {
+  if (!answers.length) return null;
+  const day = answers.reduce((d, a) => (a.day > d ? a.day : d), "");
+  return answers.filter((a) => a.day === day).every((a) => a.yes);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  PUBLIC_BY_TERMS §4.1 — the terms versions
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * The guardian's terms, by version. Compared through TERMS_VERSIONS, never by
+ * string order (§4.1).
+ *
+ *   ISSUED     the terms in force today (GUARDIAN_TERMS; the web's
+ *              GUARDIAN_TERMS_VERSION and every `self` link's literal)
+ *   OPT_IN     CONSENT_V2's, approved 6 Nov 2026 and never issued: reserved
+ *              for tier C
+ *   BY_TERMS   this design's tier A: agreeing to it, on a screen that showed
+ *              the public notice, is the act that can make a child public by
+ *              terms. The first version guardian_terms_agree() alone records
+ *              (§6.1, slice 4)
+ *
+ *   FORCED_CHOICE  tier B's words (§4.6): the parent chooses each detail
+ *              before she agrees. Held beside tier A's from the start, so a
+ *              fall to tier B is a setting; its hash lands in slice 5
+ */
+export const TERMS = Object.freeze({
+  ISSUED: "popia-2026-01",
+  OPT_IN: "popia-2026-02",
+  BY_TERMS: "popia-2026-03",
+  FORCED_CHOICE: "popia-2026-04",
+});
+
+/**
+ * Every terms version, oldest first. The SQL copy (slice 4) is held to this
+ * one, in order, by packages/policy/test/public-by-terms.test.mjs, as
+ * notifications.mjs KINDS is held to its migration.
+ * @type {readonly string[]}
+ */
+export const TERMS_VERSIONS = Object.freeze([TERMS.ISSUED, TERMS.OPT_IN, TERMS.BY_TERMS, TERMS.FORCED_CHOICE]);
+
+/**
+ * A version's place in TERMS_VERSIONS.
+ * @param {unknown} version
+ * @returns {number}
+ * @throws {RangeError} for a version the list does not hold: an unknown
+ *   version is refused, never ordered by its spelling
+ */
+export function termsRank(version) {
+  const i = TERMS_VERSIONS.indexOf(/** @type {any} */ (version));
+  if (i < 0) throw new RangeError(`no terms version ${JSON.stringify(version)} — PUBLIC_BY_TERMS §4.1 lists ${TERMS_VERSIONS.join(", ")}`);
+  return i;
+}
+
+/**
+ * Whether `version` is `floor` or later, by the list: termsAtLeast(v,
+ * TERMS.BY_TERMS) is "-03 or later", which the two old writers refuse
+ * (§6.1).
+ * @param {unknown} version @param {unknown} floor
+ * @throws {RangeError} when either is not on the list
+ */
+export const termsAtLeast = (version, floor) => termsRank(version) >= termsRank(floor);
 
 /**
  * Whether a consent that counts is live on the day `on`.
