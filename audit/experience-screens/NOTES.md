@@ -7,7 +7,7 @@ Evidence for a design pass on the whole product. Produced by `tools/shots-experi
 - Pilot Matches: the tool turns the `pilot_sync` switch on and grants the seeded scorer in its own database, as smoke-browser-scorer-home does, so the scorer can start one.
 - Audit: `narrowAudit` (tools/a11y-narrow.mjs), the narrow walk's own measurement, in the page: counts of sideways scroll, off-screen, clipped, overlap, text under 12px (small), taps under 44px (tiny), contrast below WCAG (weak). The 44px tap floor is a phone floor; read `tiny` at 1366 as secondary. Shell findings (sidebar, bottom bar) are counted in every row.
 - Pictures: PNG, or JPEG at quality 70 where the PNG ran over about 300 KB; a page taller than 2400px is cut at 2400px. The shell scrolls its main, so the viewport is grown to the content's height first; on a phone the fixed bottom bar is drawn at the foot of the picture, over the last content.
-- 246 pictures, 28.9 MB.
+- 246 pictures, 21 MB (PNGs over 100 KB re-saved as JPEG q70 afterwards).
 
 ## Destinations picked, and why
 
