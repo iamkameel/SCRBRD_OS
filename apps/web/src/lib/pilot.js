@@ -303,7 +303,7 @@ export async function pilotHomeRows() {
   for (const id of ids) {
     const [meta, log] = await Promise.all([loadPilot(id), loadMatch(id)]);
     const sum = summarise(meta ?? { id }, log);
-    rows.push(homeRow(id, meta, log, { ...sum, title: meta?.teams?.length === 2 ? `${meta.teams[0].display_name} v ${meta.teams[1].display_name}` : "Pilot match" }));
+    rows.push(homeRow(id, meta, log, { ...sum, title: meta?.teams?.length === 2 ? `${meta.teams[0].display_name} v ${meta.teams[1].display_name}` : "Pilot match" }, { logSaved: logKeys.includes(`pilot:log:${id}`) }));
   }
   return rows.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
 }
@@ -325,6 +325,7 @@ export async function deletePilotHere(id) {
   await clearMatch(id);
   await deleteRecord(META + id);
   await clearOutbox(id);
+  clearWriteFailed(id); // a failed-write note for a match no longer here says nothing (re-check 1)
   for (const k of (await recordKeys(`aside:${id}:`)) ?? []) await deleteRecord(k);
   const left = await recordKeys("");
   return !!left && !left.some((k) => k.includes(id));
@@ -333,7 +334,7 @@ export async function deletePilotHere(id) {
 /** Every `pilot:` key, the pilot draft and anything set aside for one, gone. Resolves `{removed, left}`. */
 export async function deleteAllPilotHere() {
   const ids = ((await recordKeys(META)) ?? []).map((k) => k.slice(META.length));
-  for (const id of ids) await clearOutbox(id);
+  for (const id of ids) { await clearOutbox(id); clearWriteFailed(id); }
   const keys = [...((await recordKeys("pilot:")) ?? []), ...((await recordKeys(`aside:${PILOT_ID_PREFIX}`)) ?? [])];
   for (const k of keys) await deleteRecord(k);
   const left = [...((await recordKeys("pilot:")) ?? []), ...((await recordKeys(`aside:${PILOT_ID_PREFIX}`)) ?? [])];

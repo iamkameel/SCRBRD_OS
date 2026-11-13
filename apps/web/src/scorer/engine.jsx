@@ -362,6 +362,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   };
   // The call-off as tapped, for the result screen, whether or not its record saved (S3).
   const[callOffHere,setCallOffHere]=useState(null);
+  // The call-off in force: the record's, or the one tapped here whose save has not landed (S3).
+  // A called-off Pilot Match is over (re-check 1): its result screen, and no more scoring.
+  const callOffNow=practice?.pilot?.callOff??callOffHere;
   // Phase 2, as the server last said (pilotStatus): whether the setup offers
   // "Send live to SCRBRD", and the start screen My Pilot Matches.
   const[pilotNow,setPilotNow]=useState(null);
@@ -607,6 +610,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   const padLock = live && !attached && (padStatus?.reason === "handover_pending" || padStatus?.reason === "verifying");
   const padLockRef = useRef(false);
   padLockRef.current = padLock;
+  // A Pilot Match called off takes no more events (re-check 1): the seal it rests on is the last.
+  const calledOffRef = useRef(false);
+  calledOffRef.current = pilotMode && !!callOffNow;
 
   /**
    * Everything in the log that the outbox does not already answer for goes
@@ -653,7 +659,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   // `emitAt` names the innings: a super over opens one that the pad has no
   // log for yet (SCRBRD-114 phase 3b), and the pad's log grows to it.
   const emitAt = (at, ...evs) => {
-    if (padLockRef.current) return;
+    if (padLockRef.current || calledOffRef.current) return;
     setEvents(prev => {
       const cp = [...prev];
       while (cp.length <= at) cp.push([]);
@@ -1019,7 +1025,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   // match queues none of it again; everything after it would be new.
   // A tied match whose conditions provide a super over is not over at the
   // second innings' seal: the pair is still to come, or in play.
-  const matchOver = innings[1]?.sealed === true && offer.state !== "available" && !superOverInPlay(innings);
+  // A Pilot Match called off is over too, in either innings (re-check 1).
+  const matchOver = (innings[1]?.sealed === true && offer.state !== "available" && !superOverInPlay(innings)) || (pilotMode && !!callOffNow);
   useEffect(() => {
     const ps = syncRef.current, engine = ps?.engine, st = padStatus;
     if (!engine || !st || engine.cleared || !hydratedRef.current) return;
@@ -1138,7 +1145,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     setSaveState({kind:await storageKind(),restored:true,savedAt:saved.savedAt??null});
     hydratedRef.current=true;
     setModal(null);
-    setScreen(foldPad(saved.events,scoringCtxRef.current)[1]?.sealed===true?"result":"match");
+    // A called-off Pilot Match reopens on its result, never the pad (re-check 1).
+    setScreen(foldPad(saved.events,scoringCtxRef.current)[1]?.sealed===true||(isPilotId(id)&&rec?.pilot?.callOff)?"result":"match");
   };
   // Opened from the scorer's home at a step of the pad's own flows (`padEntry`):
   // the setup, with phase 2's status asked as the start screen asks it and
@@ -2121,7 +2129,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     const code=callsOff?abandonCode(inn.stopped?.reason):null;
     emit(...evs,seal);
     setModal(null);
-    if(callsOff)recordCallOff({code,at:Date.now(),sealId:seal.id});
+    if(callsOff)recordCallOff({code,at:Date.now(),sealId:seal.id,innings:curIn});
     afterMatchInnings(curIn);
   };
   /** Keep a Pilot Match's call-off: on screen at once, and on this phone through the chain. */
@@ -2140,7 +2148,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     if(asks(seal))return;
     emit(seal);
     setModal(null);
-    recordCallOff({code:abandonCode(inn.stopped?.reason),at:Date.now(),sealId:seal.id});
+    recordCallOff({code:abandonCode(inn.stopped?.reason),at:Date.now(),sealId:seal.id,innings:curIn});
     setScreen("result");
   };
   /** Where the seal a call-off rests on stands in this phone's outbox (review B2). */
@@ -2153,8 +2161,22 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     if(eng.pending.some((e)=>e.idempotencyKey===id))return "pending";
     return eng.isKnown(id)?"gone":"unknown";
   };
-  // The call-off in force: the record's, or the one tapped here whose save has not landed (S3).
-  const callOffNow=practice?.pilot?.callOff??callOffHere;
+  /**
+   * The seal a call-off waits for (re-check 1). Its own id, and where this
+   * phone no longer knows that id (the held seal discarded, or recorded again
+   * under a new id; a call-off saved before the id was kept), the innings'
+   * own last event when that is a seal: the call-off then goes once it is sent.
+   */
+  const callOffSeal=(c)=>{
+    const own=sealState(c?.sealId);
+    if(own&&own!=="unknown")return own;
+    const at=Number.isInteger(c?.innings)?[c.innings]:events.map((_,i)=>i).reverse();
+    for(const i of at){
+      const last=(events[i]??[]).at(-1);
+      if(last?.kind==="innings_end"&&last.id&&last.id!==c?.sealId)return sealState(last.id);
+    }
+    return own;
+  };
   // Review S4: SCRBRD refused the claim because the match is already called
   // off there (the call-off went, and this phone's note of it was lost). The
   // record says so, and the call-off card closes.
@@ -2683,7 +2705,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
               taken into its log. */}
           {pilotMode&&live&&matchId&&offer.state!=="available"&&callOffNow&&(
             <PilotCallOff matchId={matchId} code={callOffNow.code} at={callOffNow.at}
-              attached={!!padStatus?.attached} pending={padStatus?.pending??0} held={padStatus?.held??0} seal={sealState(callOffNow.sealId)}
+              attached={!!padStatus?.attached} pending={padStatus?.pending??0} held={padStatus?.held??0} seal={callOffSeal(callOffNow)}
               done={practice?.pilot?.abandoned===true||practice?.pilot?.finished===true}
               onDone={async(status)=>{const r=await recordWrite(matchId,"that it was called off",()=>updatePilotState(matchId,status==="finished"
                 ?{finished:true,finishedAt:callOffNow.at}:{abandoned:true,finishedAt:callOffNow.at}));if(r)setPractice(r);}}/>

@@ -15,6 +15,7 @@ import {
   SECTION_ORDER, SANDBOX_WORDS, WEEK_DAYS, boardOfLog, finishedPilots, homeSections, nowItems, p0Items, scoreLine, startWords, weekOf,
 } from "../src/lib/scorerDay.js";
 import { homeRow } from "../src/lib/boardOfLog.js";
+import { summarise } from "../src/lib/practice.js";
 import { heldByMatch, pendingByMatch } from "../src/lib/deviceMatches.js";
 import { abandonCode, callOffReady, callOffWaitWords, pilotStateWords, pilotUuid } from "../src/lib/pilot.js";
 
@@ -206,6 +207,19 @@ group("Review S1, S3, S5, S6: nothing of a match left unsaid; nothing of a name 
   ok("S3: a record write that did not save is a P0 item that says what", w.length === 1 && w[0].kind === "write" && /the call-off/.test(w[0].note) && w[0].title === "W v Z");
   ok("...after the rest, in the order", p0Items(balls, { failures: [{ id: "pilot-w", what: "x" }] }).map((x) => x.kind).join() === "queue,write");
   ok("N5: while the grant is unknown the button says Start a match", startWords(null, true).action === "Start a match");
+  // Re-check 1: a call-off makes the match over, in either innings.
+  const firstOnly = { events: log(4), curIn: 0 };
+  ok("a first-innings call-off is over: summarise() says complete", summarise({ pilot: { callOff: { code: "weather", at: NOW } } }, firstOnly).complete === true
+    && summarise({ pilot: {} }, firstOnly).complete === false);
+  const calledOffRow = homeRow("pilot-c", { pilot: { callOff: { code: "weather" }, abandoned: true }, match: { overs: 5 } }, firstOnly,
+    summarise({ pilot: { callOff: { code: "weather" } } }, firstOnly));
+  ok("...and once SCRBRD has it, the home has nothing of it on Now", nowItems({ pilots: [{ ...calledOffRow, title: "C v D" }], pending: new Map(), held: new Map() }).length === 0);
+  const unsentRow = homeRow("pilot-c", { pilot: { callOff: { code: "weather" } }, match: { overs: 5 } }, firstOnly, summarise({ pilot: { callOff: { code: "weather" } } }, firstOnly));
+  const unsentNow = nowItems({ pilots: [{ ...unsentRow, title: "C v D" }], pending: new Map(), held: new Map() });
+  ok("...while its call-off is unsent it is a P0 'Calling off' item, marked over (the home keeps it off Now)",
+    unsentNow.length === 1 && unsentNow[0].finished === true && p0Items(unsentNow).some((x) => x.kind === "calloff"));
+  ok("re-check 1: a record saved before its first log save is no read error", homeRow("pilot-n", { pilot: {} }, null, { title: "N", lines: [], complete: false, savedAt: NOW }, { logSaved: false }).logError === false
+    && homeRow("pilot-n", { pilot: {} }, null, { title: "N", lines: [], complete: false, savedAt: NOW }, { logSaved: true }).logError === true);
   // S6: what a store hands the home holds no name, and the home and its lib take none.
   const row = homeRow("pilot-h", { pilot: { roster: { slots: { s1: { name: "Golf One" } } }, slots: [], callOff: null }, players: [{ full_name: "Golf One" }], match: { overs: 1 } },
     { events: log(1, 2), curIn: 0, cfg: { squad1: SQ_A } }, { title: "Hilton U13B v Kearsney U13B", lines: [], complete: false, savedAt: NOW });

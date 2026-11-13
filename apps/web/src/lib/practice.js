@@ -659,7 +659,8 @@ export function summarise(meta, log) {
   const events = Array.isArray(log?.events) ? log.events : [[], []];
   const innings = (() => { try { return foldPad(events, {}).filter((i) => i && i.battingTeam); } catch { return []; } })();
   const lines = innings.map((i) => ({ team: i.battingTeam, runs: i.runs, wickets: i.wickets, balls: i.balls, overs: i.overs }));
-  const complete = innings.length >= 2 && innings[1]?.sealed === true;
+  // A Pilot Match called off (in either innings) is over too (re-check 1): no Resume, and on its result.
+  const complete = (innings.length >= 2 && innings[1]?.sealed === true) || !!meta?.pilot?.callOff;
   return {
     id: meta?.id ?? null,
     title: meta?.teams?.length === 2 ? `${meta.teams[0].display_name} v ${meta.teams[1].display_name}` : "Practice match",
@@ -699,7 +700,7 @@ export async function practiceHomeRows() {
   const rows = [];
   for (const id of ids) {
     const [meta, log] = await Promise.all([loadPractice(id), loadMatch(id)]);
-    rows.push(homeRow(id, meta, log, summarise(meta ?? { id }, log)));
+    rows.push(homeRow(id, meta, log, summarise(meta ?? { id }, log), { logSaved: logKeys.includes(LOG + id) }));
   }
   return rows.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
 }

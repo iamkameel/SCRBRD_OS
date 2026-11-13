@@ -42,13 +42,15 @@ export function boardOfLog(events, { curIn = null, overs = null } = {}) {
  * log this phone could read (review S5).
  * @param {string} id @param {any} meta @param {any} log
  * @param {{title: string, lines: any[], complete: boolean, savedAt: number | null}} sum  the store's summarise()
+ * @param {{logSaved?: boolean}} [o]  whether this phone holds a log key for it at all
  */
-export function homeRow(id, meta, log, sum) {
+export function homeRow(id, meta, log, sum, { logSaved = true } = {}) {
   const p = meta?.pilot ?? null;
   return {
     id, title: sum.title, lines: sum.lines, complete: sum.complete, savedAt: sum.savedAt,
     hasEvents: (Array.isArray(log?.events) ? log.events : []).some((e) => Array.isArray(e) && e.length),
-    logError: !!meta && !log,
+    // A log key this phone has and could not read; not a record saved before its first log save (re-check 1).
+    logError: !!meta && logSaved && !log,
     board: boardOfLog(log?.events, { curIn: log?.curIn ?? null, overs: meta?.match?.overs ?? log?.cfg?.overs ?? null }),
     meta: {
       match: { overs: meta?.match?.overs ?? null },

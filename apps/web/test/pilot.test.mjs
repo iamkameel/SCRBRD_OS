@@ -208,11 +208,25 @@ group("F. Who may read the pilot store");
   const walkLog = (/** @type {string} */ dir) => { for (const e of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, e.name);
     if (e.isDirectory()) walkLog(p);
-    else if (/\.(jsx?|mjs)$/.test(e.name) && /import\s*\{[^}]*\bloadMatch\b[^}]*\}\s*from\s*["'][^"']*persist\.js["']/.test(readFileSync(p, "utf8"))) logReaders.push(p.replace(/\\/g, "/"));
+    // A named import of loadMatch, or the whole module (`import * as X`, re-check 1), or a dynamic import of it.
+    else if (/\.(jsx?|mjs)$/.test(e.name) && e.name !== "persist.js"
+      && /import\s*\{[^}]*\bloadMatch\b[^}]*\}\s*from\s*["'][^"']*persist\.js["']|import\s*\*\s*as\s+\w+\s+from\s*["'][^"']*persist\.js["']|import\(\s*["'][^"']*persist\.js["']\s*\)/.test(readFileSync(p, "utf8"))) logReaders.push(p.replace(/\\/g, "/"));
   } };
   walkLog(join(import.meta.dirname, "../src"));
-  ok("loadMatch is imported only by the scorer's modules and the practice and pilot stores (not by the home)",
+  ok("loadMatch (or all of persist.js) is imported only by the scorer's modules and the practice and pilot stores (not by the home)",
     logReaders.length > 0 && logReaders.every((r) => /\/scorer\//.test(r) || /\/lib\/(practice|pilot)\.js$/.test(r)), logReaders.join(", "));
+  const guardSelf = /import\s*\*\s*as\s+\w+\s+from\s*["'][^"']*persist\.js["']/.test('import * as P from "../src/lib/persist.js"');
+  ok("...and the guard sees an `import * as` of persist.js", guardSelf);
+  // Re-check 1: the home's libs are the home's. scorerDay.js only the home imports; boardOfLog.js the home's libs and the two stores that hand it rows.
+  const libReaders = (/** @type {RegExp} */ re) => { const out = []; const w = (/** @type {string} */ dir) => { for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) w(p); else if (/\.(jsx?|mjs)$/.test(e.name) && re.test(readFileSync(p, "utf8"))) out.push(p.replace(/\\/g, "/"));
+  } }; w(join(import.meta.dirname, "../src")); return out; };
+  const dayReaders = libReaders(/from\s*["'][^"']*\/scorerDay\.js["']|import\(\s*["'][^"']*scorerDay\.js["']/);
+  ok("only the scorer's home imports lib/scorerDay.js", dayReaders.length === 1 && /\/views\/ScorerHomeView\.jsx$/.test(dayReaders[0]), dayReaders.join(", "));
+  const bolReaders = libReaders(/from\s*["'][^"']*\/boardOfLog\.js["']|import\(\s*["'][^"']*boardOfLog\.js["']/);
+  ok("lib/boardOfLog.js is imported only by the home's scorerDay and the two stores that hand it rows",
+    bolReaders.length > 0 && bolReaders.every((r) => /\/lib\/(scorerDay|pilot|practice)\.js$/.test(r)), bolReaders.join(", "));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

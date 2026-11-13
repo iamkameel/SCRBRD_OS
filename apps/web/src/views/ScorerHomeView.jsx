@@ -193,6 +193,9 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
   const resume = resumeItems({ saved: phone.saved, pending: phone.pending, serverMatches: matchesAnswered ? matchesRead.rows : null });
   const nowList = nowItems({ fixtures: resume, pilots: phone.pilots, practices: phone.practices,
                              pending: phone.outbox?.pending ?? null, held: phone.outbox?.held ?? null });
+  // Now is what this phone is part-way through: a Pilot Match that is over (finished, or called off)
+  // is not, though what of it is unsent stays on the P0 card (re-check 1; review S1).
+  const nowShown = nowList.filter((i) => !i.finished);
 
   // ── P0: from what the phone holds and what the reads said ──
   const fixtureStates = new Map(list.items.map((i) => [i.match.id, i.state]));
@@ -223,10 +226,10 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
     ? readState({ rows: ids, loading: coverageLoading && !observedAt, error: null, observedAt },
                 { what: "who is scoring each match", maxAgeMs: SESSION_MAX_AGE_MS, now })
     : null;
-  const phoneRead = readState({ rows: nowList, loading: phone.loading, error: phone.ok && phone.storesOk ? null : "unreadable" },
+  const phoneRead = readState({ rows: nowShown, loading: phone.loading, error: phone.ok && phone.storesOk ? null : "unreadable" },
                               { what: "this phone's saved matches" });
   // Who holds each Pilot Match's scoring: only said when a Pilot Match is on the board and the answer is not a fresh one.
-  const pilotOnBoard = nowList.some((i) => i.kind === "pilot");
+  const pilotOnBoard = nowShown.some((i) => i.kind === "pilot");
   const leaseRead = !pilotOnBoard ? null
     : !pilotServer.asked ? { state: "stale", sentence: "Which phone holds the scoring was not checked with SCRBRD: that needs signal and a sign-in.", retry: false }
     : readState({ rows: pilotServer.rows ?? [], loading: pilotServer.loading, error: pilotServer.error, observedAt: pilotServer.observedAt },
@@ -284,13 +287,13 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
             ? <ReadState read={phoneRead} onRetry={retry} compact testId="scorer-resume-read"/>
             : (
               <div style={stack(T.space.lg)}>
-                {nowList.length === 0 && (
+                {nowShown.length === 0 && (
                   <p style={line()} data-testid="scorer-resume-empty">Nothing on this phone to resume. A match you start or score here is kept here first.</p>
                 )}
                 {leaseRead && leaseRead.state !== "ok" && leaseRead.state !== "empty" && (
                   <ReadState read={leaseRead} onRetry={retry} compact testId="scorer-lease-read"/>
                 )}
-                {nowList.map((it) => (
+                {nowShown.map((it) => (
                   <div key={it.key} data-testid={`resume-${it.matchId}`} data-kind={it.kind} data-pending={it.pending ?? "unknown"} style={stack(T.space.sm)}>
                     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: `0 ${T.space.sm}` }}>
                       <p style={strong()}>{it.title}</p>

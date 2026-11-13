@@ -520,6 +520,56 @@ try {
   ok("...and from the saved log: the pad's save did not write them back", !!after.log && !/Golf|Hotel/.test(JSON.stringify(after.log)),
      (JSON.stringify(after.log ?? {}).match(/(Golf|Hotel) \w+/g) ?? []).slice(0, 4).join(", "));
   ok("...nor were they shown on the pad", !/Golf|Hotel/.test(shown), (shown.match(/(Golf|Hotel) \w+/g) ?? []).slice(0, 4).join(", "));
+
+  group("G3. Called off in the first innings: over, off Now, and reopened on its result, never the pad (review re-check 1)");
+  await tapG("scorer-start-pilot", 1200);
+  await untilG(async () => (await tG("practice-page").count()) === 1, 8000);
+  await tapG("practice-overs-custom");
+  await tG("practice-overs-input").fill("5");
+  await tapG("practice-next");
+  await tG("practice-school-0").fill("Hilton"); await tG("practice-division-0").selectOption("U14"); await tapG("practice-class-0-A");
+  await tG("practice-school-1").fill("Kearsney"); await tG("practice-division-1").selectOption("U14"); await tapG("practice-class-1-A");
+  await tapG("practice-next");
+  const K = ["Kilo One", "Kilo Two", "Kilo Three"], M = ["Mike One", "Mike Two", "Mike Three"];
+  await tG("practice-paste-0").fill(K.join("\n")); await tapG("practice-add-0"); await tapG("practice-next");
+  await tG("practice-paste-1").fill(M.join("\n")); await tapG("practice-add-1"); await tapG("practice-next");
+  await g.locator("button[role=radio]", { hasText: "Hilton U14A" }).first().click({ timeout: 4000 });
+  await g.locator("button[role=radio]", { hasText: /^Bat$/ }).click({ timeout: 4000 });
+  await clickG(/Confirm Toss/);
+  await g.locator("button", { hasText: K[0] }).first().click({ timeout: 3000 });
+  await g.locator("button", { hasText: K[1] }).first().click({ timeout: 3000 });
+  await clickG(/Select Opening Bowler/);
+  await g.locator("button", { hasText: M[0] }).first().click({ timeout: 3000 });
+  await clickG(/Start Match/);
+  await g.waitForTimeout(1200);
+  await basicG();
+  await tapG("run-4");
+  await afterReads(g, 1500);
+  await tapG("pad-menu"); await tapG("pad-play-stopped");
+  await tapG("stop-reason-rain"); await tapG("stop-confirm", 800);
+  ok("play stopped in the first innings: Call the match off is offered", (await tG("rain-calloff").count()) === 1);
+  await tapG("rain-calloff", 1500);
+  ok("...the result screen says no result", /No result/.test(await tG("pad-result").innerText().catch(() => "")));
+  const pid3 = (await g.evaluate(async () => {
+    const db = await new Promise((res, rej) => { const q = indexedDB.open("scrbrd"); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+    const keys = await new Promise((res) => { const q = db.transaction("kv").objectStore("kv").getAllKeys(); q.onsuccess = () => res(q.result); });
+    db.close();
+    return keys.filter((k) => String(k).startsWith("pilot:meta:pilot-")).map((k) => String(k).slice("pilot:meta:".length));
+  })).find((k) => k !== pid) ?? null;
+  ok("...called off on SCRBRD", await untilG(async () => (await dbq(`select status from pilot.match where id = $1`, [pid3?.slice("pilot-".length)]))[0]?.status === "abandoned", 15000), pid3);
+  await exitG();
+  ok("back home", await homeG());
+  await afterReads(g, 1500);
+  ok("...not on Now: nothing to resume", (await tG(`resume-${pid3}`).count()) === 0, await tG("scorer-resume").innerText().catch(() => ""));
+  ok("...listed under Pilot Matches, Called off, kept as a sandbox",
+     await untilG(async () => /Called off · Kept as a sandbox/.test(await tG(`pilot-done-${pid3}-state`).innerText().catch(() => "")), 8000),
+     await tG("scorer-pilots").innerText().catch(() => ""));
+  ok("...and no P0 item for it", (await g.locator(`[data-testid^="p0-"][data-testid$="-${pid3}"]`).count()) === 0);
+  await tapG(`pilot-done-${pid3}-open`, 2500);
+  ok("reopened from the home: on its result screen", await untilG(async () => (await tG("pad-result").count()) === 1, 10000), (await textG()).slice(0, 200));
+  ok("...and no pad: no run key to score with", (await g.locator('[data-testid^="run-"]').count()) === 0 && (await tG("basic-pad").count()) === 0);
+  await exitG();
+  await homeG();
   group("H. At 360: the same home, nothing under the floors, no sideways scroll");
   await g.setViewportSize({ width: 360, height: 780 });
   await g.waitForTimeout(600);
