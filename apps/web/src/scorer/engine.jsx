@@ -72,6 +72,7 @@ import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { hapticTick } from "./haptic.js";
 import { undoWords, entry } from "./prompts.js";
 import { KeeperSheet } from "./keeperSheet.jsx";
+import { openingEvents } from "./opening.js";
 
 /** " — WICKET: Stumped" after a wide or a no-ball that carries a wicket (Law 22.9, 21.17), else nothing; a free hit's save says so. */
 const extraWicketWords=(b)=>!isWicketBall(b)?"":b.freeHitSaved
@@ -1046,8 +1047,6 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
 
   const startMatch=cfg=>{
     setMatch(cfg);
-    const sq1=cfg.squad1||[], sq2=cfg.squad2||[];
-    const tk1=cfg.teamKey1||cfg.team1, tk2=cfg.teamKey2||cfg.team2;
     // A Pilot Match is sent, so its opening events carry ids from the start,
     // minted under its own id (newEventId), and undo voids rather than cuts
     // (matchIdRef set: there is a server behind it). The second innings'
@@ -1056,29 +1055,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     const sent=!!cfg.pilot&&isPilotId(cfg.matchId);
     if(sent)matchIdRef.current=cfg.matchId;
     const stamp=(e)=>sent?{...e,id:newEventId(deviceIdRef.current,cfg.matchId)}:e;
-    const bsq1=INT_TEAMS[tk2]?.players.map(p=>p.name)||sq2;
-    const bsq2=INT_TEAMS[tk1]?.players.map(p=>p.name)||sq1;
-
-    // Opening an innings is an event, not an object. Both innings are opened
-    // up front so the second already knows its squads when the chase begins.
-    // The capture profile chosen at setup is declared on BOTH, for the same
-    // reason (SCRBRD-039); the innings break may change the second's.
-    const captureProfile=cfg.captureProfile??undefined;
-    // The side names follow the keys, which setup already ordered by the toss
-    // (setup.jsx: teamKey1 is whoever bats first). team1/team2 stay in the
-    // order they were picked, so naming the batting side from team1 put the
-    // first-picked side's name on the other side's innings whenever it
-    // fielded first (SCRBRD-067). In setup a side's name IS its key.
-    const open1=[stamp(inningsStart({innings:0,battingTeam:tk1,bowlingTeam:tk2,
-      squad:sq1,bowlingSquad:bsq1,twelfthMan:cfg.twelfth1||null,teamKey:tk1,bowlingTeamKey:tk2,overs:cfg.overs||20,captureProfile}))];
-    const open2=[inningsStart({innings:1,battingTeam:tk2,bowlingTeam:tk1,
-      squad:sq2,bowlingSquad:bsq2,twelfthMan:cfg.twelfth2||null,teamKey:tk2,bowlingTeamKey:tk1,overs:cfg.overs||20,captureProfile})];
-
-    // Openers and opening bowler chosen in setup step 4.
-    if(cfg.opener1&&cfg.opener2&&cfg.openBowler){
-      open1.push(stamp(battersEvent({innings:0,striker:cfg.opener1,nonStriker:cfg.opener2})));
-      open1.push(stamp(bowlerEvent({innings:0,bowler:cfg.openBowler})));
-    }
+    // Opening an innings is an event, not an object: both innings, and the
+    // openers and the opening bowler, from the config (scorer/opening.js).
+    const [open1,open2]=openingEvents(cfg,{intTeams:INT_TEAMS,stamp});
     if(sent)for(const e of open1)mintedRef.current.add(e.id);
     setEvents([open1,open2]);
     // A match started here has no fixture id yet; mint one so the log is

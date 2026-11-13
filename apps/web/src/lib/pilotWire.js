@@ -132,8 +132,16 @@ export function valueFits(k, v) {
 function index(roster) {
   const names = new Map();
   const slots = new Set(Object.keys(roster?.slots ?? {}));
+  // A slot with no name (a side scored by position, Q5, or one whose names'
+  // date has passed) is shown by its position, "Home No. 3", and the pad keeps
+  // a fielder or a twelfth man in those words: they name that slot and no
+  // one else. Kept apart from `names`, which the last check reads: a
+  // position is not a name.
+  /** @type {Map<string, string>} */
+  const positions = new Map();
   for (const [id, s] of Object.entries(roster?.slots ?? {})) {
     if (s?.name && normKey(s.name)) names.set(normKey(s.name), id);
+    else if (s && (s.side === "home" || s.side === "away") && Number.isInteger(s.list_no)) positions.set(normKey(positionWords(s.side, s.list_no)), id);
   }
   /** @type {Map<string, "home" | "away">} */
   const sideOf = new Map();
@@ -142,7 +150,7 @@ function index(roster) {
     const n = roster?.teams?.[side];
     if (n && normKey(n)) sideOf.set(normKey(n), side);
   }
-  return { names, slots, sideOf };
+  return { names, positions, slots, sideOf };
 }
 
 /**
@@ -156,7 +164,7 @@ function slotOf(v, ix) {
   const raw = typeof v === "object" ? /** @type {any} */ (v).id ?? /** @type {any} */ (v).name : v;
   if (typeof raw !== "string") return null;
   if (ix.slots.has(raw)) return raw;
-  return ix.names.get(normKey(raw)) ?? null;
+  return ix.names.get(normKey(raw)) ?? ix.positions.get(normKey(raw)) ?? null;
 }
 
 /**
