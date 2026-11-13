@@ -640,8 +640,8 @@ function surfaceStands(facts, on, at) {
  *                                                   and a no the day it ended
  *
  * A record that begins after `on` has not begun. A day that cannot be read
- * fails closed: an unreadable start or end is a no on `on`, the latest it
- * could be.
+ * fails closed: an unreadable start or end, or an end before the start, is a
+ * no on `on`, the latest it could be.
  *
  * @param {NameConsent} c  competent, by a guardian or the pupil
  * @param {string} on
@@ -657,6 +657,9 @@ function answersOf(c, on, at) {
   if (!isDay(c.givenOn)) return noHere ? [{ day: on, yes: false }] : out;
   if (c.givenOn > on) return out;
   if (c.endedOn === c.givenOn) return noHere ? [{ day: c.givenOn, yes: false }] : out;
+  // An end before its start is a record nobody can read (db/47's CHECK keeps
+  // it out of SQL, but the rule does not lean on that): a no on `on`.
+  if (isDay(c.endedOn) && c.endedOn < c.givenOn) return noHere ? [{ day: on, yes: false }] : out;
   if (yesHere && c.giverLive === true && (c.by === "guardian" || c.adult === true)) out.push({ day: c.givenOn, yes: true });
   if (c.endedOn != null && noHere) {
     if (!isDay(c.endedOn)) out.push({ day: on, yes: false });
@@ -694,12 +697,15 @@ function latestAnswer(answers) {
  *              terms. The first version guardian_terms_agree() alone records
  *              (§6.1, slice 4)
  *
- * Tier B's words, `popia-2026-04`, join with their hash in slice 5.
+ *   FORCED_CHOICE  tier B's words (§4.6): the parent chooses each detail
+ *              before she agrees. Held beside tier A's from the start, so a
+ *              fall to tier B is a setting; its hash lands in slice 5
  */
 export const TERMS = Object.freeze({
   ISSUED: "popia-2026-01",
   OPT_IN: "popia-2026-02",
   BY_TERMS: "popia-2026-03",
+  FORCED_CHOICE: "popia-2026-04",
 });
 
 /**
@@ -708,7 +714,7 @@ export const TERMS = Object.freeze({
  * notifications.mjs KINDS is held to its migration.
  * @type {readonly string[]}
  */
-export const TERMS_VERSIONS = Object.freeze([TERMS.ISSUED, TERMS.OPT_IN, TERMS.BY_TERMS]);
+export const TERMS_VERSIONS = Object.freeze([TERMS.ISSUED, TERMS.OPT_IN, TERMS.BY_TERMS, TERMS.FORCED_CHOICE]);
 
 /**
  * A version's place in TERMS_VERSIONS.

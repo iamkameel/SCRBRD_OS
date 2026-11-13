@@ -17,6 +17,8 @@
  *          list and every version the code, the migrations and (from slice 4)
  *          the SQL list write.
  *
+ * One expectation is pending, printed and not asserted: Reading 3, Kameel's call.
+ *
  * Falsified by: letting a no's surface narrow it (B1 fails); dropping
  * `giverLive` from a yes (B2 fails); reading `byTermsAllowed` truthily (line 6
  * fails); reading `byTerms` with no surface (OFF fails); a version on the
@@ -48,6 +50,13 @@ const ok = (/** @type {string} */ n, /** @type {unknown} */ c, d = "") => {
 const group = (/** @type {string} */ t) => console.log("\n" + t);
 /** @param {() => unknown} f */
 const throws = (f) => { try { f(); return false; } catch { return true; } };
+/**
+ * An expectation that waits on a decision: named and printed, never asserted
+ * either way, so the suite neither pins the open answer nor hides it.
+ * @param {string} n @param {string} why
+ */
+let pending = 0;
+const skip = (n, why) => { console.log(`- SKIPPED ${n} — ${why}`); pending++; };
 
 const ON = "2026-11-26";
 const NAMED = "T Bekker";
@@ -224,10 +233,13 @@ group("§5.1 line 5, B2 — a no never lapses by someone else's act; a yes needs
      && only({ consents: [g({ giverLive: /** @type {any} */ (1) })] }, []));
   ok("...and is not an answer, so the default may still name him (her terms record is the database's to judge)",
      only({ consents: [g({ giverLive: false })], ...BY_TERMS }, ALL));
-  ok("a record not competent the day it was given counts neither way",
-     only({ consents: [gNo({ competent: false })], ...BY_TERMS }, ALL)
-     && only({ consents: [g({ competent: false })] }, [])
-     && only({ consents: [gNo({ competent: /** @type {any} */ ("yes") })], ...BY_TERMS }, ALL));
+  ok("a yes not competent the day it was given names nobody",
+     only({ consents: [g({ competent: false })] }, []) && only({ consents: [g({ competent: /** @type {any} */ ("yes") })] }, []));
+  // Reading 3 (REVIEW_S2): §5.1 line 5 counts a no only from a giver competent
+  // that day; §0.4 and must-never 3 say no default outvotes a no, whoever gave
+  // it. As built the default names him over such a no. Not asserted until
+  // Kameel decides.
+  skip("whether the default names him over a no given while its giver was not competent", "Reading 3: Kameel's call");
   ok("a record from someone the rule does not know counts neither way",
      only({ consents: [/** @type {any} */ ({ ...gNo(), by: "coach" })], ...BY_TERMS }, ALL));
 }
@@ -251,6 +263,11 @@ group("§5.1 line 5 — the latest explicit answer, by the day it was given");
      && only({ on: "2026-10-10", consents: [g({ givenOn: "2026-10-01", endedOn: "2026-10-10" })] }, []));
   ok("an answer dated after the day served has not begun",
      only({ consents: [g({ givenOn: "2026-12-01" })] }, []) && only({ consents: [g(), gNo({ givenOn: "2026-12-01" })] }, ["card", "live"]));
+  ok("an end before its start is a no on the day served, on every surface its wording reaches (main does not name him either)",
+     only({ consents: [g({ givenOn: "2026-10-10", endedOn: "2026-10-05" })], ...BY_TERMS }, [])
+     && only({ consents: [g({ givenOn: "2026-10-10", endedOn: "2026-10-05", surface: "card" })], ...BY_TERMS }, ["live", "board"])
+     && only({ consents: [g({ givenOn: "2026-10-10", endedOn: "2026-10-05" }), g({ givenOn: ON })] }, [])
+     && publicName({ ...BASE, consents: [g({ givenOn: "2026-10-10", endedOn: "2026-10-05" })] }) === "Batter");
   ok("a day that cannot be read is a no, the latest it could be",
      only({ consents: [g({ givenOn: "2026-11-25" }), g({ givenOn: "03/10/2026" })], ...BY_TERMS }, [])
      && only({ consents: [g({ givenOn: "2026-10-01", endedOn: "soon" })], ...BY_TERMS }, [])
@@ -296,17 +313,19 @@ for (const s of ALL) {
 group("§4.1 — the terms versions: one ordered list, never string order");
 // ═══════════════════════════════════════════════════════════════════
 {
-  ok("popia-2026-01, -02, -03, oldest first, frozen",
-     JSON.stringify(TERMS_VERSIONS) === JSON.stringify(["popia-2026-01", "popia-2026-02", "popia-2026-03"])
+  ok("popia-2026-01, -02, -03, -04, oldest first, frozen",
+     JSON.stringify(TERMS_VERSIONS) === JSON.stringify(["popia-2026-01", "popia-2026-02", "popia-2026-03", "popia-2026-04"])
      && Object.isFrozen(TERMS_VERSIONS) && Object.isFrozen(TERMS));
-  ok("ISSUED is -01 (in force), OPT_IN is -02 (tier C, reserved), BY_TERMS is -03 (tier A)",
-     TERMS.ISSUED === "popia-2026-01" && TERMS.OPT_IN === "popia-2026-02" && TERMS.BY_TERMS === "popia-2026-03");
+  ok("ISSUED is -01 (in force), OPT_IN is -02 (tier C, reserved), BY_TERMS is -03 (tier A), FORCED_CHOICE is -04 (tier B)",
+     TERMS.ISSUED === "popia-2026-01" && TERMS.OPT_IN === "popia-2026-02" && TERMS.BY_TERMS === "popia-2026-03"
+     && TERMS.FORCED_CHOICE === "popia-2026-04");
   ok("ranked by the list", TERMS_VERSIONS.every((v, i) => termsRank(v) === i));
-  ok("-03 or later: -03 is, -01 and -02 are not",
-     termsAtLeast(TERMS.BY_TERMS, TERMS.BY_TERMS) && !termsAtLeast(TERMS.ISSUED, TERMS.BY_TERMS) && !termsAtLeast(TERMS.OPT_IN, TERMS.BY_TERMS));
+  ok("-03 or later: -03 and -04 are, -01 and -02 are not",
+     termsAtLeast(TERMS.BY_TERMS, TERMS.BY_TERMS) && termsAtLeast(TERMS.FORCED_CHOICE, TERMS.BY_TERMS)
+     && !termsAtLeast(TERMS.ISSUED, TERMS.BY_TERMS) && !termsAtLeast(TERMS.OPT_IN, TERMS.BY_TERMS));
   ok("a version the list does not hold is refused, even one that sorts later as a string",
      throws(() => termsRank("popia-2026-10")) && throws(() => termsAtLeast("popia-2026-10", TERMS.BY_TERMS))
-     && throws(() => termsAtLeast(TERMS.BY_TERMS, "popia-2026-04")) && throws(() => termsRank(undefined)) && throws(() => termsRank(" popia-2026-01")));
+     && throws(() => termsAtLeast(TERMS.BY_TERMS, "popia-2026-05")) && throws(() => termsRank(undefined)) && throws(() => termsRank(" popia-2026-01")));
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -358,12 +377,12 @@ const sqlList = (sql) => {
   } else {
     ok("no migration writes terms_versions() yet (slice 4, db/150): there is one copy, this one", writing.length === 0);
   }
-  const good = `CREATE OR REPLACE FUNCTION terms_versions() RETURNS text[] AS $$ SELECT ARRAY['popia-2026-01','popia-2026-02','popia-2026-03']::text[] $$ LANGUAGE sql IMMUTABLE;`;
+  const good = `CREATE OR REPLACE FUNCTION terms_versions() RETURNS text[] AS $$ SELECT ARRAY['popia-2026-01','popia-2026-02','popia-2026-03','popia-2026-04']::text[] $$ LANGUAGE sql IMMUTABLE;`;
   ok("the reader finds the list in a body written like that", JSON.stringify(sqlList(good)) === JSON.stringify(TERMS_VERSIONS));
   ok("...and sees two swapped", JSON.stringify(sqlList(good.replace("'popia-2026-02','popia-2026-03'", "'popia-2026-03','popia-2026-02'"))) !== JSON.stringify(TERMS_VERSIONS));
-  ok("...and one more", JSON.stringify(sqlList(good.replace("]::", ",'popia-2026-04']::"))) !== JSON.stringify(TERMS_VERSIONS));
+  ok("...and one more", JSON.stringify(sqlList(good.replace("]::", ",'popia-2026-05']::"))) !== JSON.stringify(TERMS_VERSIONS));
 }
 
 console.log("\n" + "─".repeat(52));
-console.log(`PUBLIC BY TERMS: ${pass} passed, ${fail} failed`);
+console.log(`PUBLIC BY TERMS: ${pass} passed, ${fail} failed, ${pending} pending a decision`);
 process.exit(fail ? 1 : 0);
