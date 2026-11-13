@@ -3,6 +3,7 @@ import { T } from "../../design/tokens.js";
 import { useLive } from "../../lib/live.js";
 import { readState } from "../../lib/readState.js";
 import { humanDate } from "../../lib/format.js";
+import { scrollerOf } from "../../lib/toBall.js";
 
 /**
  * A BOY'S PASSPORT, OVER THE SCORECARD (CRI-3.2, G13).
@@ -13,8 +14,16 @@ import { humanDate } from "../../lib/format.js";
  * nothing else: `passport($1)` (db/124), his cricket record with where each
  * line came from and how sure the record is. It is the read his own Passport
  * screen and his profile's card already make; this adds no read and widens
- * none. The server decides every line, and a reader it refuses is answered
- * with none, which this says as "nothing on his record" rather than guessing.
+ * none. The server decides every line.
+ *
+ * REFUSED IS NOT EMPTY. passport() answers a reader it refuses and a boy with
+ * no record alike, with no line. So the sheet also asks passport_name(), the
+ * passport's own door (db/124): his name where passport() would open to this
+ * reader, null where it would not. Neither logs anything for the readers a
+ * link is drawn for (only a union's named reader is logged, and he is given no
+ * link). Refused, the sheet says "You can't open his passport now." (the link
+ * can be wider than the read: lib/passportLink.js names how); admitted with no
+ * line, "Nothing on his record yet." (sheetState below).
  *
  * Nothing medical, no rating, no coach's note and nothing from his file is on
  * the passport (db/116 A1), so none is here. His name is the one on the
@@ -28,6 +37,7 @@ import { humanDate } from "../../lib/format.js";
  * A dialog: focus moves to its heading on open and stays inside it; Escape,
  * the close button and the scrim close it; focus goes back to the row's
  * button it was opened from. Under reduced motion it appears without moving.
+ * While it is open the page behind it does not scroll.
  */
 
 const FAMILY_WORDS = /** @type {Record<string, string>} */ ({ career: "Career", cap: "Caps", honour: "Honours", milestone: "Milestones" });
@@ -59,6 +69,21 @@ const sheetCss = () => `@keyframes mcPassIn{from{opacity:0;transform:translateY(
 @media (prefers-reduced-motion: reduce){.mc-pass-scrim,.mc-pass-card{animation:none!important}}
 :root[data-reduce-motion] .mc-pass-scrim,:root[data-reduce-motion] .mc-pass-card{animation:none!important}`;
 
+/**
+ * What the sheet says, from its two reads: `door` (passport_name) decides
+ * whether the passport is open to this reader at all, `read` (passport) what
+ * is on it. Pure, so apps/web/test/passport-link.test.mjs proves the words.
+ * @param {any} read  @param {any} door
+ * @returns {{state: string, sentence: string | null, retry: boolean}}
+ */
+export function sheetState(read, door) {
+  const opened = readState(door, { what: "his passport" });
+  if (opened.state !== "ok" && opened.state !== "empty") return opened;
+  if (opened.state === "empty" || !door.rows[0]?.name) return { state: "refused", sentence: "You can't open his passport now.", retry: false };
+  const lines = readState(read, { what: "his passport" });
+  return lines.state === "empty" ? { ...lines, sentence: "Nothing on his record yet." } : lines;
+}
+
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
@@ -72,13 +97,20 @@ export default function PassportSheet({ player, role, onClose }) {
   const opener = useRef(/** @type {Element | null} */ (player.from ?? (typeof document !== "undefined" ? document.activeElement : null)));
   const [nonce, setNonce] = useState(0);
   const read = useLive("passport", role, nonce, { playerId: player.id });
-  const said = readState(read, { what: "his passport" });
+  const door = useLive("passport_name", role, nonce, { playerId: player.id });
+  const said = sheetState(read, door);
   const name = player.name || "This player";
 
   useEffect(() => {
     head.current?.focus();
     const back = opener.current;
+    // The page behind stays where it is (a phone scrolls it under the scrim
+    // otherwise): the body, and the scroller the row sits in.
+    const held = [...new Set([document.body, back ? scrollerOf(back) : null].filter(Boolean))]
+      .map((el) => ({ el: /** @type {HTMLElement} */ (el), was: /** @type {HTMLElement} */ (el).style.overflow }));
+    for (const h of held) h.el.style.overflow = "hidden";
     return () => {
+      for (const h of held) h.el.style.overflow = h.was;
       if (back && typeof (/** @type {any} */ (back)).focus === "function" && document.contains(back)) /** @type {HTMLElement} */ (back).focus();
     };
   }, []);
@@ -110,7 +142,7 @@ export default function PassportSheet({ player, role, onClose }) {
       <style>{sheetCss()}</style>
       <div ref={card} role="dialog" aria-modal="true" aria-labelledby={headingId} data-testid="passport-sheet" data-player={player.id}
         data-state={said.state} className="mc-pass-card"
-        style={{ width: "100%", maxWidth: "560px", maxHeight: "85vh", overflowY: "auto", overflowX: "hidden", boxSizing: "border-box",
+        style={{ width: "100%", maxWidth: "560px", maxHeight: "85vh", overflowY: "auto", overflowX: "hidden", overscrollBehavior: "contain", boxSizing: "border-box",
           background: T.surface.overlay, color: T.content.primary, border: `1px solid ${T.line.normal}`, borderBottom: "none",
           borderRadius: `${T.radius.lg} ${T.radius.lg} 0 0`, boxShadow: T.elevation.lg,
           padding: `${T.space.md} ${T.space.md} calc(${T.space.lg} + env(safe-area-inset-bottom))`, display: "grid", gap: T.space.md }}>
@@ -134,7 +166,7 @@ export default function PassportSheet({ player, role, onClose }) {
         {said.state !== "ok" && (
           <div role="status" data-testid="passport-sheet-state" style={{ display: "grid", gap: T.space.sm, justifyItems: "start" }}>
             <p style={{ ...T.role.body, color: T.content.primary, margin: 0 }}>
-              {said.state === "empty" ? "Nothing on his record yet." : said.sentence}
+              {said.sentence}
             </p>
             {said.retry && (
               <button type="button" onClick={() => setNonce((n) => n + 1)} data-testid="passport-sheet-retry" className="pressBtn os-state"

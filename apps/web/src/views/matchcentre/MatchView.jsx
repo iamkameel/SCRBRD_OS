@@ -45,19 +45,20 @@ const PassportSheet = lazy(() => import("./passportSheet.jsx"));
  * CRI-3.2: the link on a scorecard row to a boy's passport, drawn here and not
  * in the scorecard the public page shares (its bundle pays for nothing it
  * cannot draw). With `label` (a bowler's name) the name itself is the link, one
- * tap; without (a batter's opened row) it is a Passport button beside Open profile.
- * @param {{onOpen: (e: any) => void, label?: any}} p
+ * tap; without (a batter's opened row) it is a Passport button beside Open profile,
+ * named "Passport, {his name}" for a screen reader, the name the scorecard shows.
+ * @param {{onOpen: (e: any) => void, name: string, label?: any}} p
  */
-function PassportLink({ onOpen, label = null }) {
+function PassportLink({ onOpen, name, label = null }) {
   if (label != null) return (
     <button type="button" onClick={onOpen} data-testid="mc-passport-open" className="os-state"
       style={{ minHeight: "44px", minWidth: 0, padding: 0, display: "flex", alignItems: "center", gap: T.space.xs, flexWrap: "wrap",
         cursor: "pointer", background: "transparent", border: "none", borderRadius: T.radius.sm, color: "inherit", font: "inherit", textAlign: "left" }}>
-      {label}<span style={{ fontSize: "13px", fontWeight: 500, color: T.content.secondary, whiteSpace: "nowrap" }}>Passport ›</span>
+      {label}<span style={{ fontSize: "13px", fontWeight: 500, color: T.content.secondary, whiteSpace: "nowrap" }}>Passport <span aria-hidden="true">›</span></span>
     </button>
   );
   return (
-    <button type="button" onClick={onOpen} data-testid="mc-passport-open" className="pressBtn os-state"
+    <button type="button" onClick={onOpen} data-testid="mc-passport-open" className="pressBtn os-state" aria-label={`Passport, ${name}`}
       style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, cursor: "pointer", background: "transparent",
         border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill,
         color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
@@ -503,11 +504,21 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // side are his roster row's, never the fixture's. Signed out, in the
   // demonstration and on the public page (which passes none), no row does.
   const [pass, setPass] = useState(/** @type {{id: string, name: string, from: HTMLElement | null} | null} */ (null));
+  // The boys on this scorecard who get a link, decided once per change of the
+  // card's boys or the roster, not per row on every render (a live tick redraws).
+  const cardIds = [...new Set(played.flatMap((inn) => [...(inn.batsmen ?? []), ...(inn.bowlers ?? [])].map((r) => r.id)))].join(",");
+  const linkable = useMemo(() => {
+    if (!signedIn() || log.demo || !cardIds) return new Set();
+    const roster = new Map(PLAYERS.map((x) => [x.id, x]));
+    const asg = profile()?.assignments;
+    return new Set(cardIds.split(",").filter((id) => {
+      const p = roster.get(id);
+      return opensPassportOf({ id, school: p?.school ?? null, team: p?.team ?? null }, asg);
+    }));
+  }, [cardIds, PLAYERS, log.demo]);
   const passportOf = (/** @type {string} */ id, /** @type {string} */ name, /** @type {any} */ label = null) => {
-    if (!signedIn() || log.demo || !id) return null;
-    const p = PLAYERS.find((x) => x.id === id);
-    if (!opensPassportOf({ id, school: p?.school ?? null, team: p?.team ?? null }, profile()?.assignments)) return null;
-    return <PassportLink label={label} onOpen={(e) => setPass({ id, name, from: e?.currentTarget ?? null })}/>;
+    if (!id || !linkable.has(id)) return null;
+    return <PassportLink name={name} label={label} onOpen={(e) => setPass({ id, name, from: e?.currentTarget ?? null })}/>;
   };
 
   const ctx = { match, role, innings: played, result, commentary: told, events: log.events, demo: log.demo, overs: log.overs,

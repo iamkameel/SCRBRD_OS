@@ -33,10 +33,26 @@
  *                                         opened only on purpose, from the
  *                                         selector's own screen.
  *
- * What the session cannot say, and so where the read may still refuse a link
- * this draws: an assignment under an unlifted duty suspension (db/35), which
- * the session lists as live. The sheet then says "Nothing on his record" (an
- * answer of no lines), never a figure of somebody else's.
+ * A DUTY SUSPENSION (db/34, db/35) never reaches a link. app_can() skips an
+ * assignment with an unlifted suspension, and the session does not say which
+ * are suspended (the person cannot read duty_suspension; only the office can).
+ * But a suspension rests only on a duty's own assignment, which duty_link()
+ * writes with the fixture's id (db/34), the linked guard keeps that way, and
+ * the application role cannot re-point; and this rule skips every one-fixture
+ * assignment. apps/web/test/passport-link.test.mjs holds db/34 to that.
+ *
+ * WHERE THE LINK CAN STILL BE WIDER THAN THE READ, and the sheet then says
+ * "You can't open his passport now." (it asks passport_name(), the same gate),
+ * never "nothing on his record" and never a line of anybody's:
+ *   - the clock: the session judges a role and a family link live by South
+ *     African date (sa_today(), services/api/auth/auth-db.mjs), app_can() and
+ *     is_family_of() by the database's (UTC). From 00:00 to 02:00 SAST a role
+ *     or link that starts that day is live here and not yet there;
+ *   - a stale session: the assignments are read once per sign-in, so a role
+ *     revoked or a link ended since still draws a link until the next one;
+ *   - a stale roster row: his school and side are the roster read's as it was
+ *     loaded, so a boy moved to another side since still reads as his old
+ *     side's until the roster is read again.
  *
  * Signed out, in the demonstration (no assignments), and on the public page
  * (which passes no `passportOf` at all): no link. Pure, so

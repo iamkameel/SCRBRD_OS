@@ -83,8 +83,9 @@ group("2 · No wider than the read: db/124's arms, and db/124 the last word");
   ok("the school-wide arm's are the SQL's (guardian.link.manage, any side)",
      school.join() === [...PASSPORT_ARMS.school].sort().join(), school);
   ok("...and the own-school arm calls app_can no other way", calls.length === side.length + school.length && calls.length === 3, calls);
-  ok("the side arm asks about him (p.id), the school arm about anybody (the zero id)",
+  ok("the side arm asks about him (p.id) with no fixture, both its capabilities exactly; the school arm about anybody (the zero id)",
      /app_can\('team\.select', p\.school_id, p\.team_code, p\.id, NULL::uuid\)/.test(own)
+     && /app_can\('player\.profile\.manage', p\.school_id, p\.team_code, p\.id, NULL::uuid\)/.test(own)
      && /app_can\('guardian\.link\.manage', p\.school_id, '\*'::text,\s*'00000000-0000-0000-0000-000000000000'::uuid, NULL::uuid\)/.test(own));
   ok("passport() itself still opens only through passport_open_not_union() or the union arm",
      /IF NOT passport_open_not_union\(p_player\) THEN[\s\S]*?v_union := passport_union_consent\(p_player\);/.test(sql));
@@ -95,7 +96,48 @@ group("2 · No wider than the read: db/124's arms, and db/124 the last word");
   ok("...and passport()", last(/FUNCTION passport\(p_player/) === "124_union_passport.sql", last(/FUNCTION passport\(p_player/));
   ok("...and is_family_of() is db/119's, read through the session's liveSubjects",
      last(/FUNCTION is_family_of\(/) === "119_family_of_live.sql" && /liveSubjects: a\.live_subjects/.test(src("../../../services/api/auth/auth-db.mjs")));
-  ok("the read the sheet makes is passport($1) and only that", /from passport\(\$1::uuid\)/.test(src("../../../services/api/read/read-api.mjs")));
+  const readApi = src("../../../services/api/read/read-api.mjs");
+  ok("the reads the sheet makes are passport($1) and passport_name($1), and only those",
+     /from passport\(\$1::uuid\)/.test(readApi) && /select passport_name\(\$1::uuid\) as name/.test(readApi));
+  // app_can() is how the side and school arms scope (the link's reaches() copies it).
+  ok("app_can() is db/50's, the scoping the link copies; a later one means this link is reviewed again",
+     last(/FUNCTION app_can\(/) === "50_pad_resume.sql", last(/FUNCTION app_can\(/));
+  // Who holds the gate's capabilities is roles.mjs's here and role_capability's
+  // there: db/01 writes the table whole; no later migration may add or take a
+  // row for one of the three without this link being looked at again.
+  const GATE = [...PASSPORT_ARMS.side, ...PASSPORT_ARMS.school];
+  const touches = [];
+  for (const f of files.filter((x) => parseInt(x) > 1 && !x.startsWith("99_"))) {
+    const text = src(`../../../db/${f}`).replace(/--[^\n]*/g, "");
+    for (const stmt of text.split(";")) {
+      if (!/\b(INSERT\s+INTO|DELETE\s+FROM|UPDATE)\s+role_capability\b/i.test(stmt)) continue;
+      const pats = [...stmt.matchAll(/capability\s+(?:NOT\s+)?I?LIKE\s+'([^']+)'/gi)].map((m) => new RegExp(`^${m[1].replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*").replace(/_/g, ".")}$`));
+      const broad = /^\s*(DELETE\s+FROM|UPDATE)/i.test(stmt.trim()) && !/capability\s*(=|IN\b|I?LIKE)/i.test(stmt);
+      if (GATE.some((c) => stmt.includes(`'${c}'`) || pats.some((p) => p.test(c))) || broad) touches.push(f);
+    }
+  }
+  ok("no migration after db/01 adds or takes a role_capability row for team.select, player.profile.manage or guardian.link.manage",
+     touches.length === 0, touches);
+  ok("...and db/01 still grants them as roles.mjs does", GATE.every((c) => ROLES.filter((r) => roleGrants(r, c)).every((r) =>
+     new RegExp(`\\('${r}',\\s*'${c.replace(/\./g, "\\.")}'\\)`).test(src("../../../db/01_authz.sql")))));
+}
+
+group("2b · A duty suspension never reaches a link: it rests only on a one-fixture assignment, which the link skips");
+{
+  const d34 = src("../../../db/34_duty_authority.sql");
+  ok("a suspension is written by duty_suspend() alone, on the duty's own assignment (match_official.assignment_id)",
+     /INSERT INTO duty_suspension \(duty_id, assignment_id, school_id, suspended_by, reason\)\s*VALUES \(d\.id, d\.assignment_id,/.test(d34)
+     && /REVOKE INSERT, UPDATE, DELETE ON duty_suspension FROM scrbrd_app/.test(d34));
+  ok("...that assignment is duty_link()'s, made for the one fixture",
+     /INSERT INTO role_assignment \(person_id, role, school_id, team_code, fixture_id\)\s*VALUES \(d\.person_id, v_role, d\.school_id, NULL, d\.match_id\)/.test(d34)
+     && /UPDATE match_official SET assignment_id = v_new/.test(d34));
+  ok("...kept one-fixture by the linked guard, and not re-pointed by the application role",
+     /NEW\.fixture_id\s+IS DISTINCT FROM OLD\.fixture_id/.test(d34) && /the application role can write match_official\.assignment_id directly/.test(d34));
+  const files = readdirSync(new URL("../../../db/", import.meta.url)).filter((f) => /^\d+_.*\.sql$/.test(f) && parseInt(f) > 34 && !f.startsWith("99_"));
+  const later = files.filter((f) => /INSERT INTO duty_suspension|SET assignment_id|FUNCTION duty_link\(|FUNCTION duty_suspend\(|FUNCTION role_assignment_linked_guard\(/.test(src(`../../../db/${f}`)));
+  ok("...and no later migration writes a suspension, re-points a duty or redefines those three", later.length === 0, later);
+  ok("so the link's skip of every one-fixture assignment covers every suspended one",
+     !opensPassportOf(BOY, [as("coach", HIL, "1XI", { fixture: "f1" })]) && !opensPassportOf(BOY, [as("directorofsport", HIL, null, { fixture: "f1" })]));
 }
 
 group("3 · Every role: a link only through one of the gate's capabilities");
@@ -123,7 +165,13 @@ group("4 · The wiring: the Match Centre asks, the public page has nothing, the 
   const sheet = src("../src/views/matchcentre/passportSheet.jsx");
   const pub = src("../src/public/PublicMatch.jsx");
   ok("MatchView draws a link only signed in, off a real log, and only where opensPassportOf() says so",
-     /const passportOf = [\s\S]{0,200}if \(!signedIn\(\) \|\| log\.demo \|\| !id\) return null;[\s\S]{0,200}opensPassportOf\(\{ id, school: p\?\.school \?\? null, team: p\?\.team \?\? null \}, profile\(\)\?\.assignments\)/.test(mv));
+     /const linkable = useMemo\(\(\) => \{\s*if \(!signedIn\(\) \|\| log\.demo \|\| !cardIds\) return new Set\(\);[\s\S]{0,300}opensPassportOf\(\{ id, school: p\?\.school \?\? null, team: p\?\.team \?\? null \}, asg\)/.test(mv)
+     && /const asg = profile\(\)\?\.assignments;/.test(mv)
+     && /const passportOf = [^\n]*\n\s*if \(!id \|\| !linkable\.has\(id\)\) return null;/.test(mv));
+  ok("N2: the boys who get a link are decided once per change of the card or the roster, not per row",
+     /\}, \[cardIds, PLAYERS, log\.demo\]\);/.test(mv) && !/PLAYERS\.find\(\(x\) => x\.id === id\)/.test(mv.split("const linkable")[1] ?? ""));
+  ok("N1: the bowler link's › is hidden from a screen reader; the batter's button is named with his name",
+     /Passport <span aria-hidden="true">›<\/span>/.test(mv) && /aria-label=\{`Passport, \$\{name\}`\}/.test(mv));
   ok("...the sheet is a lazy import there, and nowhere statically",
      /const PassportSheet = lazy\(\(\) => import\("\.\/passportSheet\.jsx"\)\)/.test(mv) && !/import [^;]*from "\.\/passportSheet\.jsx"/.test(mv));
   ok("the scorecard has no link of its own: none unless handed passportOf", /passportOf = \(\) => null/.test(sc) && !/import[^;]*passport(Link|Sheet)/.test(sc));
@@ -131,7 +179,10 @@ group("4 · The wiring: the Match Centre asks, the public page has nothing, the 
   ok("...nor does anything under public/", readdirSync(new URL("../src/public/", import.meta.url))
      .filter((f) => /\.jsx?$/.test(f)).every((f) => !/passportOf|passportLink|passportSheet/.test(src(`../src/public/${f}`))));
   const reads = [...sheet.matchAll(/useLive\("([a-z_]+)"/g)].map((m) => m[1]);
-  ok("the sheet makes one read, the passport, for this boy", reads.join() === "passport" && /useLive\("passport", role, nonce, \{ playerId: player\.id \}\)/.test(sheet), reads);
+  ok("the sheet makes two reads for this boy: the passport, and its door (passport_name, S1)", reads.join() === "passport,passport_name"
+     && /useLive\("passport", role, nonce, \{ playerId: player\.id \}\)/.test(sheet) && /useLive\("passport_name", role, nonce, \{ playerId: player\.id \}\)/.test(sheet), reads);
+  ok("N3: the page behind does not scroll while it is open, and is given back as it was",
+     /h\.el\.style\.overflow = "hidden"/.test(sheet) && /h\.el\.style\.overflow = h\.was/.test(sheet) && /overscrollBehavior: "contain"/.test(sheet));
   ok("...no api() or fetch of its own", !/\bapi\(|fetch\(/.test(sheet));
   const sizes = [...sheet.matchAll(/fontSize:\s*"(\d+)px"/g), ...sc.matchAll(/fontSize:\s*"(\d+)px"/g)].map((m) => Number(m[1]));
   ok("nothing under 12px in the sheet or the scorecard", sizes.every((n) => n >= 12), sizes.filter((n) => n < 12));
@@ -144,9 +195,29 @@ group("4 · The wiring: the Match Centre asks, the public page has nothing, the 
 }
 
 {
-  const { groupLines } = await import("../src/views/matchcentre/passportSheet.jsx");
+  const { groupLines, sheetState } = await import("../src/views/matchcentre/passportSheet.jsx");
   const g = groupLines([{ family: "milestone", label: "50" }, { family: "cap", label: "1XI cap #4" }, { family: "career", label: "Batting" }, { family: "honour", label: "Colours" }]);
   ok("the sheet's sections run career, caps, honours, milestones", g.map((x) => x.family).join() === "career,cap,honour,milestone");
+
+  group("5 · S1: refused is not empty");
+  const answered = (rows) => ({ rows, loading: false, error: null, status: null, live: true });
+  const line = { family: "career", label: "Batting", value: "34 runs in 1 innings" };
+  const refused = sheetState(answered([]), answered([{ name: null }]));
+  ok("the read refuses him (passport_name null): \"You can't open his passport now.\", no retry, no lines",
+     refused.state === "refused" && refused.sentence === "You can't open his passport now." && !refused.retry, refused);
+  ok("...even if passport() had somehow answered lines, they are not drawn (the door decides)",
+     sheetState(answered([line]), answered([{ name: null }])).state === "refused");
+  ok("...a door that answered no row at all is shut, not open", sheetState(answered([]), answered([])).state === "refused");
+  const empty = sheetState(answered([]), answered([{ name: "R Pillay" }]));
+  ok("the read admits him and his record is empty: \"Nothing on his record yet.\"", empty.state === "empty" && empty.sentence === "Nothing on his record yet.", empty);
+  ok("admitted with lines: drawn", sheetState(answered([line]), answered([{ name: "R Pillay" }])).state === "ok");
+  ok("either read still on its way: reading, never refused or empty",
+     sheetState(answered([]), { rows: [], loading: true, error: null }).state === "loading"
+     && sheetState({ rows: [], loading: true, error: null }, answered([{ name: "R Pillay" }])).state === "loading");
+  const failed = sheetState(answered([]), { rows: [], loading: false, error: "unreachable", status: null });
+  ok("the door's read failed: said as a failure with a retry, not as refused", failed.state === "failed" && failed.retry, failed);
+  ok("the passport's read failed with the door open: a failure with a retry, not empty",
+     sheetState({ rows: [], loading: false, error: "unreachable", status: null }, answered([{ name: "R Pillay" }])).state === "failed");
 }
 
 console.log(`\n${"─".repeat(52)}\nPASSPORT LINK: ${pass} passed, ${fail} failed`);
