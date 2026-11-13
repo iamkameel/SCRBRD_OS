@@ -17,8 +17,9 @@
  *   node --import ./tools/register-jsx.mjs apps/web/test/passport-link.test.mjs
  */
 import { readFileSync, readdirSync } from "node:fs";
-import { FAMILY_ROLES, PASSPORT_ARMS, opensPassportOf } from "../src/lib/passportLink.js";
+import { FAMILY_ROLES, PASSPORT_ARMS, PLATFORM_ROLES, opensPassportOf } from "../src/lib/passportLink.js";
 import { ROLES, roleGrants, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
+import { ROLE_IDENTITY } from "../src/design/roles.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
@@ -54,7 +55,19 @@ ok("...a coach named for one boy reaches that boy on a live link only",
 ok("the director and the sports admin, school-wide: every boy at the school", who([as("directorofsport")]) === "boy,mate,u14"
    && who([as("sportsadmin")]) === "boy,mate,u14");
 ok("the office (guardian.link.manage), any side at its school", who([as("schooladmin")]) === "boy,mate,u14" && who([as("principal")]) === "boy,mate,u14");
-ok("the platform account, tenant-less, reaches every school as app_can() does", who([as("superadmin", null)]) === "boy,mate,u14,away");
+// Kameel, 13 Nov 2026: no scorecard passport link for the platform account.
+ok("the platform account (superadmin), tenant-less: no link on any school's rows, though the read would open them",
+   who([as("superadmin", null)]) === "" && who([as("superadmin")]) === "" && who([as("superadmin", WES, "1XI")]) === "");
+ok("...nor the platform administrator", who([as("platformadmin", null)]) === "" && who([as("platformadmin")]) === "");
+ok("...the platform's roles are the ones holding a platform-only capability, and the design's platform family, exactly",
+   PLATFORM_ROLES.join() === "superadmin,platformadmin"
+   && [...PLATFORM_ROLES].sort().join() === Object.keys(ROLE_IDENTITY).filter((r) => ROLE_IDENTITY[r].family === "platform").sort().join(),
+   PLATFORM_ROLES);
+ok("...a platform reader who also coaches keeps the coach's link, and only the coach's",
+   who([as("superadmin", null), as("coach", HIL, "1XI")]) === "boy,mate"
+   && who([as("coach", WES, "1XI"), as("superadmin", null)]) === "away");
+ok("...who is also the office at one school keeps that school's", who([as("platformadmin", null), as("schooladmin")]) === "boy,mate,u14");
+ok("...who is also a parent keeps her own child's", who([as("superadmin", null), fam("guardian", ["u14"])]) === "u14");
 ok("a scorer's one-fixture assignment: none (passport() asks with no fixture)",
    who([as("scorer", HIL, "1XI", { fixture: "f1" })]) === "" && who([as("coach", HIL, "1XI", { fixture: "f1" })]) === "");
 ok("a spectator, an umpire, a physio: none", who([as("spectator")]) === "" && who([as("umpire")]) === "" && who([as("physio", HIL, "1XI")]) === "");
@@ -149,12 +162,13 @@ group("3 · Every role: a link only through one of the gate's capabilities");
     // The widest assignment the role can hold: tenant-less, no side, naming nobody.
     const wide = [as(role, null)];
     const any = everyPlace.some((p) => opensPassportOf(p, wide));
-    const grants = !FAMILY_ROLES.includes(role) && !SUBJECT_SCOPED_ROLES.includes(role) && ARM_CAPS.some((c) => roleGrants(role, c));
+    const grants = !FAMILY_ROLES.includes(role) && !SUBJECT_SCOPED_ROLES.includes(role) && !PLATFORM_ROLES.includes(role)
+      && ARM_CAPS.some((c) => roleGrants(role, c));
     if (any !== grants) wrong.push(role);
     // A family role naming the boy on a link not live: never.
     if (opensPassportOf(BOY, [{ ...as(role), subjects: ["boy"], liveSubjects: [] }]) && !grants) wrong.push(`${role}:pending`);
   }
-  ok("a role gets a link exactly when it holds a gate capability and is not person-scoped", wrong.length === 0, wrong);
+  ok("a role gets a link exactly when it holds a gate capability and is neither person-scoped nor the platform's", wrong.length === 0, wrong);
   ok("the family roles are is_family_of()'s two", FAMILY_ROLES.join() === "guardian,selfaccess");
 }
 

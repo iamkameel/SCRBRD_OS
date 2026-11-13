@@ -33,6 +33,15 @@
  *                                         opened only on purpose, from the
  *                                         selector's own screen.
  *
+ * THE PLATFORM'S OWN ACCOUNTS draw no link (Kameel, 13 Nov 2026). superadmin,
+ * and any role that holds a platform-only capability (PLATFORM_ROLES below),
+ * reaches arm 2 tenant-less, so the read would open every school's boys for
+ * it; but a passport is the family's and his school's, and the platform has no
+ * business being offered one on a scorecard row. So this skips every such
+ * assignment: a reader who holds only platform roles gets no link anywhere,
+ * and one who also holds a school role (or a family link) keeps exactly that
+ * role's links. Narrower than the read, like arms 4 and 5.
+ *
  * A DUTY SUSPENSION (db/34, db/35) never reaches a link. app_can() skips an
  * assignment with an unlifted suspension, and the session does not say which
  * are suspended (the person cannot read duty_suspension; only the office can).
@@ -58,7 +67,8 @@
  * (which passes no `passportOf` at all): no link. Pure, so
  * apps/web/test/passport-link.test.mjs proves it under plain node.
  */
-import { roleGrants, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
+import { ROLES, roleGrants, SUBJECT_SCOPED_ROLES } from "@scrbrd/policy/roles";
+import { PLATFORM_ONLY } from "@scrbrd/policy/capabilities";
 
 /** The two roles is_family_of() reads (db/119). */
 export const FAMILY_ROLES = Object.freeze(["guardian", "selfaccess"]);
@@ -73,6 +83,13 @@ export const PASSPORT_ARMS = Object.freeze({
   side: Object.freeze(["team.select", "player.profile.manage"]),
   school: Object.freeze(["guardian.link.manage"]),
 });
+
+/**
+ * The platform's own roles: every role that holds a PLATFORM_ONLY capability,
+ * which app_holds() honours only from a tenant-less assignment
+ * (capabilities.mjs). Today superadmin and platformadmin. None draws a link.
+ */
+export const PLATFORM_ROLES = Object.freeze(ROLES.filter((r) => PLATFORM_ONLY.some((c) => roleGrants(r, c))));
 
 const list = (/** @type {unknown} */ v) => (Array.isArray(v) ? v : []);
 
@@ -111,6 +128,8 @@ export function opensPassportOf(player, assignments, o = {}) {
   for (const a of list(assignments)) {
     if (!a || !a.role) continue;
     if (a.expiresAt != null && !(Date.parse(a.expiresAt) > now)) continue;
+    // The platform's own: no link, whatever it reaches (13 Nov 2026).
+    if (PLATFORM_ROLES.includes(a.role)) continue;
     if (FAMILY_ROLES.includes(a.role)) {
       // liveSubjects only: `subjects` names a pending or ended link too, and
       // is_family_of() does not.
