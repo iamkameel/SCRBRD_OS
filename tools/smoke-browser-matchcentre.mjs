@@ -58,14 +58,15 @@ import { readFile, mkdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { deriveMatch, deriveInnings, deriveCommentary, runsOffBat, ball, batters, bowler, inningsStart, revision, sealInnings, placementFromTap,
-  scenarioOf, voidEvent, boundaryHit, batHandOf } from "@scrbrd/scoring";
-import { buildMatchCentreFixture, buildLongFixture, writeEvents, HIL } from "./fixture-matchcentre.mjs";
+  scenarioOf, voidEvent, boundaryHit, batHandOf, BALL_TYPE } from "@scrbrd/scoring";
+import { buildMatchCentreFixture, buildLongFixture, writeEvents, HIL, WES } from "./fixture-matchcentre.mjs";
 import { correctionsOf, withCorrectionLines } from "../apps/web/src/lib/corrections.js";
 import { projectMatch } from "../apps/web/src/scorer/chartData.js";
 import { overParts } from "../apps/web/src/scorer/overParts.js";
 import { wagonAnalysis } from "../apps/web/src/scorer/wagonAnalysis.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { nameFor } from "../services/api/public/redact.mjs";
 import { pickTab } from "./walk-tabs.mjs";
 import { refusedChecks, rowLinks, sheetChecks } from "./walk-passport.mjs";
 
@@ -1036,6 +1037,137 @@ try {
   await L.waitForTimeout(300);
   ok("...and so does its button", await tid(L, "mc-bigscreen").count() === 0);
 
+  // PUBLIC_BY_TERMS §2.5 (slice 1; Kameel, 12 Nov 2026, (b)): the screen faces
+  // the crowd, so when a side's squad carries a boy under a never-public mark
+  // the WHOLE SIDE is its position on it — never the one "Batter" among
+  // names — and the other side keeps its names. Only there: the Match Centre
+  // beneath still names them for its signed-in reader (083 §7). With no sheet
+  // (this fixture has none) an away boy's mark is never asked (review B4), so
+  // the away side is always by position.
+  group("The big screen: a side by position, the other by name (PUBLIC_BY_TERMS §2.5)");
+  const onStrike = after.batsmen.find((b) => b.id === after.striker);
+  const partner = after.batsmen.find((b) => b.id === after.nonStriker);
+  const setter = (await q(`select id from app_user where email = 'sarah@example.invalid'`))[0].id;
+  const mark = (/** @type {string} */ id) =>
+    q(`insert into player_never_public (player_id, reason, set_on, set_by) values ($1, 'Walk: a mark', sa_today(), $2)`, [id, setter]);
+  const unmark = (/** @type {string} */ id) => q(`update player_never_public set ended_on = sa_today(), ended_by = set_by, ended_at = now()
+                                                   where player_id = $1 and ended_on is null`, [id]);
+  const bigNames = (/** @type {any} */ page) => page.locator('[data-testid="mc-bigscreen"] [data-testid="display-batter"] .dv-name').allInnerTexts();
+  // Open the big screen and wait for its one read (it asks afresh on opening:
+  // the sides and the public page's labels together, Fable's red-team B1), then a paint.
+  const openBig = async (/** @type {any} */ page) => {
+    const answered = page.waitForResponse((r) => /\/api\/matches\/[^/]+\/ground-names/.test(r.url()), { timeout: 8000 }).catch(() => null);
+    await tid(page, "mc-bigscreen-open").click({ timeout: 6000 }).catch(() => {});
+    const r = await answered;
+    await page.waitForTimeout(500);
+    const d = r ? await r.json().catch(() => null) : null;
+    return d ? { rows: d.sides, labels: d.labels ?? {}, keys: Object.keys(d).sort(), cache: r.headers()["cache-control"] ?? "" } : null;
+  };
+  const closeBig = async (/** @type {any} */ page) => { await tid(page, "mc-bigscreen-close").click().catch(() => {}); await page.waitForTimeout(300); };
+  const flags = (/** @type {any} */ said) => JSON.stringify((said?.rows ?? []).map((r) => [r.team, r.position_only]).sort());
+  let said = await openBig(L);
+  ok("the big screen asks one read, told per side with the log's head and no player id, kept nowhere",
+     Array.isArray(said?.rows) && said.rows.length === 2 && said.rows.every((r) => JSON.stringify(Object.keys(r).sort()) === '["log_seq","position_only","team"]')
+     && !/[0-9a-f]{8}-[0-9a-f]{4}-/.test(JSON.stringify(said.rows)) && JSON.stringify(said.keys) === '["labels","matchId","sides"]'
+     && /no-store/.test(said.cache), JSON.stringify(said));
+  ok("...and no label for a boy of the side by position", ![after.striker, after.nonStriker].some((x) => x && Object.hasOwn(said?.labels ?? {}, x)),
+     JSON.stringify(Object.keys(said?.labels ?? {})));
+  ok("no sheet: the away side is by position, the host's named",
+     flags(said) === JSON.stringify([["1XI", false], ["Westville Boys' High 1XI", true]]), JSON.stringify(said));
+  ok("...so both batters, of the away side, are 'Batter'",
+     JSON.stringify(await bigNames(L)) === JSON.stringify(["Batter", "Batter"]), (await bigNames(L)).join(" | "));
+  const bigText = await tid(L, "mc-bigscreen").innerText();
+  ok("...neither batter's name is anywhere on the big screen", !bigText.includes(onStrike?.name) && !bigText.includes(partner?.name));
+  await closeBig(L);
+  ok("the Match Centre beneath still names them for its signed-in reader", (await text(L)).includes(onStrike?.name));
+
+  // Review B1: a catch as the pad writes it (`fielder` the scorecard's name,
+  // `fielders` his reference) by a marked away boy who has neither bowled
+  // nor kept: no "c <his name>" reaches the screen. Kameel, 12 Nov 2026,
+  // 21:00 ("we should be masking the names of any boy that doesn't have a
+  // public profile"): the fixture is published, R Pillai has his guardian's
+  // public-name consent and S Naidu has none, so the screen names the one the
+  // public page names and shows the other by position. Then a marked host boy
+  // turns his whole side to positions, the consented boy included, and back
+  // when the mark ends. A fixture of its own, so the live one's log is not moved.
+  {
+    const byName = (/** @type {string} */ n) => fx.players[n];
+    const [hb1, hb2, hb3] = ["D Erasmus", "R Pillai", "S Naidu"];
+    const [wb1, wb2, wb3] = ["B Mkhabela", "C Botha", "F Singh"];
+    const catchId = (await q(
+      `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+       values ($1, '1XI', $2, '1XI', 'Westville Boys'' High 1XI', now() - interval '30 minutes', 'cricket', 'T20', 20, 'live') returning id`,
+      [HIL, WES]))[0].id;
+    let cn = 0;
+    const atC = (/** @type {any} */ ev) => ({ ...ev, innings: 0, id: `mc-catch-${++cn}`, clientTs: Date.parse("2026-11-12T10:00:00Z") + cn * 20000 });
+    await writeEvents(q, catchId, [
+      atC(inningsStart({ battingTeam: "1XI", bowlingTeam: "Westville Boys' High 1XI", teamKey: "1XI", bowlingTeamKey: "Westville Boys' High 1XI",
+        squad: [hb1, hb2, hb3].map((n) => ({ id: byName(n), name: n })), bowlingSquad: [wb1, wb2, wb3].map((n) => ({ id: byName(n), name: n })), overs: 20 })),
+      atC(batters({ striker: byName(hb1), nonStriker: byName(hb2) })), atC(bowler({ bowler: byName(wb1) })),
+      atC(ball({ value: 1 })), atC(ball({ value: 1 })),
+      atC(ball({ type: BALL_TYPE.WICKET, value: 0, dismissal: "caught", fielder: wb2, fielders: [byName(wb2)] })),
+      atC(batters({ striker: byName(hb3) })),
+    ]);
+    // Published, as the office would; R Pillai consented, as his guardian would through the office.
+    const office = (await q(`select id from app_user where email = 'registrar@example.invalid'`))[0]?.id ?? setter;
+    await q(`insert into fixture_publication (match_id, side, school_id, team_code, published, set_by)
+             values ($1, 'home', $2, '1XI', true, $3)`, [catchId, HIL, office]);
+    {
+      const gu = (await q(`insert into app_user (school_id, email, name, role)
+                           values ($1, 'mc.catch.parent@example.invalid', 'MC Catch Parent', 'guardian') returning id`, [HIL]))[0].id;
+      const ga = (await q(`insert into role_assignment (person_id, role, school_id) values ($1, 'guardian', $2) returning id`, [gu, HIL]))[0].id;
+      const gl = (await q(
+        `insert into assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                         consent_state, consent_version, consent_at, created_by, valid_from)
+         values ($1, $2, 'parent', 'verified', $3, now() - interval '30 days', 'granted', 'popia-2026-01',
+                 now() - interval '30 days', $3, sa_today() - 30) returning id`, [ga, byName(hb2), office]))[0].id;
+      await q(`insert into public_name_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by)
+               values ($1, 'guardian', $2, $3, 'public-names-2026-09', sa_today() - 10, $4)`, [byName(hb2), ga, gl, office]);
+      await q(`update public_names_off set names_off = false where school_id = $1`, [HIL]);
+    }
+    // The control, over the public page's own facts and rule (public_match_people(), nameFor()), with the public pages off as they are here.
+    const facts = await q(`select * from public_match_people($1)`, [catchId]);
+    const wouldName = facts.map((r) => nameFor(r, r.served_on)).filter(Boolean);
+    ok("control: the public page would name R Pillai and not S Naidu", wouldName.some((l) => /Pillai/.test(String(l))) && !wouldName.some((l) => /Naidu/.test(String(l))),
+       JSON.stringify(wouldName));
+    await mark(byName(wb2));
+    const cs = await open();
+    const P = cs.page;
+    ok("the director of sport signs in (a catch in the pad's shape)", await signIn(P, /sarah@example\.invalid|Director/));
+    ok("...the fixture opens", await openMatch(P, catchId));
+    let s2 = await openBig(P);
+    ok("the catcher's side is by position, the batting side named",
+       flags(s2) === JSON.stringify([["1XI", false], ["Westville Boys' High 1XI", true]]), JSON.stringify(s2));
+    ok("...the one answer's labels: R Pillai's alone, no away boy's, not S Naidu's",
+       JSON.stringify(Object.keys(s2?.labels ?? {})) === JSON.stringify([byName(hb2)]) && /Pillai/.test(String(s2?.labels?.[byName(hb2)])),
+       JSON.stringify(s2?.labels));
+    let bigC = await tid(P, "mc-bigscreen").innerText().catch(() => "");
+    ok("no 'c C Botha', nor his name, anywhere on the big screen", !bigC.includes(wb2) && !/c C Botha/.test(bigC), bigC.slice(0, 300));
+    ok("the batter the public page names is named; the one it does not is 'Batter'",
+       JSON.stringify((await bigNames(P)).map((n) => (/Pillai/.test(n) ? "Pillai" : n)).sort()) === JSON.stringify(["Batter", "Pillai"])
+       && !bigC.includes(hb3), (await bigNames(P)).join(" | "));
+    await closeBig(P);
+    await unmark(byName(wb2));
+    // The host side's opener, out already, is marked: his whole side, the two batters in now too, by position.
+    await mark(byName(hb1));
+    s2 = await openBig(P);
+    ok("a marked host boy: the server says his side by position", flags(s2) === JSON.stringify([["1XI", true], ["Westville Boys' High 1XI", true]]), JSON.stringify(s2));
+    ok("...and, in the same answer, no label at all: nothing to set beside the flag (B1)", Object.keys(s2?.labels ?? { x: 1 }).length === 0, JSON.stringify(s2?.labels));
+    ok("...and both batters, his team-mates, are 'Batter'", JSON.stringify(await bigNames(P)) === JSON.stringify(["Batter", "Batter"]), (await bigNames(P)).join(" | "));
+    bigC = await tid(P, "mc-bigscreen").innerText().catch(() => "");
+    ok("...no host boy's name anywhere on the big screen, the consented one's included", [hb1, hb2, hb3].every((n) => !bigC.includes(n)) && !/Pillai/.test(bigC),
+       bigC.slice(0, 300));
+    await closeBig(P);
+    ok("the Match Centre beneath still names them", (await text(P)).includes(hb2));
+    await unmark(byName(hb1));
+    s2 = await openBig(P);
+    ok("the mark ended: the host side named again, as the public page names it", flags(s2) === JSON.stringify([["1XI", false], ["Westville Boys' High 1XI", true]])
+       && JSON.stringify((await bigNames(P)).map((n) => (/Pillai/.test(n) ? "Pillai" : n)).sort()) === JSON.stringify(["Batter", "Pillai"]),
+       (await bigNames(P)).join(" | "));
+    await closeBig(P);
+    await cs.ctx.close();
+  }
+
   group("SCRBRD-100: the result, decided live, in one clear moment — never replayed, never hiding the score long");
   // Finish the chase, live, with exactly the runs the fold says are needed —
   // no invented score. The innings sits at an over's end (5.0, after the
@@ -1153,6 +1285,9 @@ try {
   ok("the head coach signs in", await signIn(ch.page, /coach@example\.invalid|Head Coach/));
   ok("the decided fixture opens", await openMatch(ch.page, fx.live));
   ok("the coach is asked too (scoring.finalise)", await tid(ch.page, "mc-confirm-prompt").count() === 1);
+  // Kameel, 12 Nov 2026, (a): the big screen is the host's staff's, offered where the server answers.
+  ok("the host's coach is offered the big screen",
+     await until(ch.page, () => !!document.querySelector('[data-testid="mc-bigscreen-open"]'), 6000));
   ok("...but cannot open the amendment flow — only the scorer role holds scoring.amend.request",
      await tid(ch.page, "mc-confirm-open").count() === 0 && /scorer/i.test(await tid(ch.page, "mc-confirm-prompt").innerText()));
   // CRI-3.2 ("coach squad"): every row of his own side offers the boy's passport; no Westville row does.
@@ -1184,6 +1319,7 @@ try {
   ok("a spectator signs in", await signIn(watcher.page, /watcher@example\.invalid|Spectator/));
   ok("the decided fixture opens", await openMatch(watcher.page, fx.live));
   ok("a spectator never sees the confirm-or-correct prompt", await tid(watcher.page, "mc-confirm-prompt").count() === 0);
+  ok("...nor is offered the big screen (the server answers him nothing)", await tid(watcher.page, "mc-bigscreen-open").count() === 0);
   ok("...nor the amendment form it would have opened", await tid(watcher.page, "mc-confirm-open").count() === 0);
   ok("no console errors (spectator)", watcher.errors.length === 0, watcher.errors.join(" | "));
   await watcher.ctx.close();

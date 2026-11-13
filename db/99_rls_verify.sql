@@ -12314,6 +12314,232 @@ BEGIN
   RETURN got;
 END $$ LANGUAGE plpgsql;
 -- └── REACH-D2 (section 130) ───────────────────────────────────────────
+-- ┌── db/153 (section 131) ─────────────────────────────────────────────
+-- The big screen at the ground (PUBLIC_BY_TERMS §2.5, slice 1; Kameel, 12
+-- Nov 2026, (a), (b), and 17:45: "Season roster: hide the side all season").
+-- Hilton's 9XI, a side only §106 touches (so no earlier section's mark on
+-- a seed side reaches it), at home to Westville's 1XI, invented here, today,
+-- live, the overlay published with full names (the most a school could
+-- choose). The 9XI roster: MRK (marked never-public by the DSO today),
+-- OPN (nothing recorded), WAS (marked last week, the mark ended yesterday),
+-- SQD. Off it: NOS (Hilton's U19D, marked), PUP (Hilton's U19D, a pupil
+-- with his own account and a scorer's role at Hilton), LFT (U19D now, on
+-- the 9XI from the season's start until today), OLD (U19D now, on the 9XI
+-- last season) and OTH (a third school's, marked). Westville's VIS, WFD and SHM (marked), and WNX
+-- (marked, on Westville's own 9XI: the side the host's is named after, at
+-- the other school, the season roster's school filter's oracle). FUT
+-- (Hilton's U19D today, on the 9XI from a month on) and BND (on the 9XI
+-- last season, until the day this season began). The log holds
+-- only the first innings_start (Hilton's squad MRK, OPN, WAS, SQD to
+-- Westville's VIS, WFD): no ball has named anybody yet, and there is no
+-- sheet. Its own readers too (_v71_people()): Hilton's 9XI coach, a
+-- scorer, the director of sport, a sportsadmin (moves boys between sides,
+-- may not read the mark), the 9XI's team manager (player.roster.read, no
+-- scoring.start), Hilton's U19D coach (the same school, another side),
+-- Westville's 1XI coach and office, a driver, a DSO, and OPN's verified
+-- guardian. Written as the owner, as the scorer's
+-- pad and the DSO's door would.
+CREATE OR REPLACE FUNCTION _v153_ev(p_match uuid, p_kind text, p_type text, p_striker uuid, p_non uuid, p_bowler uuid,
+                                    p_dismissal text, p_payload jsonb) RETURNS void AS $$
+DECLARE v_seq int := (SELECT coalesce(max(seq), 0) + 1 FROM ball_event WHERE match_id = p_match);
+BEGIN
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                          client_ts, kind, ball_type, value, striker_id, non_striker_id, bowler_id, dismissal, payload)
+  VALUES (p_match, '11111111-1111-1111-1111-111111111111', v_seq, 1, 0, '88888888-0000-0000-0000-000000000006', 'v153',
+          'v153-' || p_match || '-' || v_seq, v_seq, now(), p_kind,
+          p_type, CASE WHEN p_kind = 'ball' THEN CASE WHEN p_type = 'W' THEN 0 ELSE 1 END END,
+          p_striker, p_non, p_bowler, p_dismissal, p_payload);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One innings_start, its squads as the pad writes them ({id, name}); and
+-- one keyed only by battingTeam and bowlingTeam, as an older pad wrote it.
+CREATE OR REPLACE FUNCTION _v153_start(p_match uuid, p_bat text, p_bowl text, p_squad uuid[], p_bowling uuid[]) RETURNS void AS $$
+  SELECT _v153_ev(p_match, 'innings_start', NULL, NULL, NULL, NULL, NULL, jsonb_build_object(
+    'battingTeam', p_bat, 'teamKey', p_bat, 'bowlingTeam', p_bowl, 'bowlingTeamKey', p_bowl,
+    'squad', (SELECT coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'name', p.full_name) ORDER BY o), '[]')
+                FROM unnest(p_squad) WITH ORDINALITY u(id, o) JOIN player p ON p.id = u.id),
+    'bowlingSquad', (SELECT coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'name', p.full_name) ORDER BY o), '[]')
+                       FROM unnest(p_bowling) WITH ORDINALITY u(id, o) JOIN player p ON p.id = u.id)))
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A batting squad of {id, name} members and members written as a bare id
+-- string (the pad's older shape: db/153 reads both).
+CREATE OR REPLACE FUNCTION _v153_start_mixed(p_match uuid, p_bat text, p_objects uuid[], p_bare uuid[]) RETURNS void AS $$
+  SELECT _v153_ev(p_match, 'innings_start', NULL, NULL, NULL, NULL, NULL, jsonb_build_object(
+    'battingTeam', p_bat, 'teamKey', p_bat, 'bowlingTeam', 'Verify Nobody', 'bowlingTeamKey', 'Verify Nobody',
+    'squad', (SELECT coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'name', p.full_name) ORDER BY o), '[]')
+                FROM unnest(p_objects) WITH ORDINALITY u(id, o) JOIN player p ON p.id = u.id)
+             || (SELECT coalesce(jsonb_agg(to_jsonb(u.id::text) ORDER BY o), '[]') FROM unnest(p_bare) WITH ORDINALITY u(id, o)),
+    'bowlingSquad', '[]'::jsonb))
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A support hour run out, as its clock would (role_assignment.expires_at).
+CREATE OR REPLACE FUNCTION _v153_end_support(p_assignment uuid) RETURNS void AS $$
+  UPDATE role_assignment SET expires_at = now() - interval '1 second' WHERE id = p_assignment
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v153_start_bare(p_match uuid, p_bat text, p_bowl text, p_squad uuid[], p_bowling uuid[]) RETURNS void AS $$
+  SELECT _v153_ev(p_match, 'innings_start', NULL, NULL, NULL, NULL, NULL, jsonb_build_object(
+    'battingTeam', p_bat, 'bowlingTeam', p_bowl,
+    'squad', (SELECT coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'name', p.full_name) ORDER BY o), '[]')
+                FROM unnest(p_squad) WITH ORDINALITY u(id, o) JOIN player p ON p.id = u.id),
+    'bowlingSquad', (SELECT coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'name', p.full_name) ORDER BY o), '[]')
+                       FROM unnest(p_bowling) WITH ORDINALITY u(id, o) JOIN player p ON p.id = u.id)))
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _v153_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  WES    uuid := '22222222-2222-2222-2222-222222222222';
+  THIRD  uuid := 'f1530000-0000-0000-0000-000000000003';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  DSO    uuid := '88888888-0000-0000-0000-000000000057';
+  ids jsonb := '{}'; r record; v_p uuid; v_m uuid; v_u uuid; i int := 0;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  INSERT INTO school (id, code, name) VALUES (THIRD, 'verify-153', 'Verify 153 Third School');
+  FOR r IN SELECT * FROM (VALUES ('mrk', HIL, 'Marked'), ('opn', HIL, 'Open'), ('was', HIL, 'Wasmarked'),
+                                 ('sqd', HIL, 'Squadonly'), ('nos', HIL, 'Nosquad'), ('pup', HIL, 'Pupilscorer'),
+                                 ('vis', WES, 'Visitor'), ('wfd', WES, 'Fielder'), ('shm', WES, 'Sheetmarked'),
+                                 ('lft', HIL, 'Leftthisseason'), ('old', HIL, 'Leftlastseason'),
+                                 ('oth', THIRD, 'Elsewhere'), ('wnx', WES, 'Westnine'),
+                                 ('fut', HIL, 'Joinslater'), ('bnd', HIL, 'Lefttheday')) AS v(k, school, surname)
+  LOOP
+    i := i + 1;
+    INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+    VALUES (r.school, CASE WHEN r.k = 'wnx' THEN '9XI' WHEN r.school <> HIL THEN '1XI' WHEN r.k IN ('nos', 'pup', 'lft', 'old', 'fut', 'bnd') THEN 'U19D' ELSE '9XI' END, 'Verify OneFiftyThree ' || r.surname, 'OneFiftyThree ' || r.surname, 1530 + i, 'batter',
+            (sa_today() - interval '17 years 1 month')::date)
+    RETURNING id INTO v_p;
+    ids := ids || jsonb_build_object(r.k, v_p);
+  END LOOP;
+  INSERT INTO player_never_public (player_id, reason, set_on, set_by)
+  SELECT (ids->>k)::uuid, 'Verify 153: the DSO''s mark', sa_today(), DSO FROM unnest(ARRAY['mrk', 'nos', 'shm', 'oth', 'wnx']) k;
+  -- LFT's and OLD's time on the 9XI, as a move's history writes it (db/08).
+  INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, left_on, reason)
+  SELECT (ids->>'lft')::uuid, HIL, 'cricket', '9XI', se.starts_on, sa_today(), 'joined' FROM season_for(sa_today(), 'school') se
+  UNION ALL
+  SELECT (ids->>'old')::uuid, HIL, 'cricket', '9XI', se.starts_on - 300, se.starts_on - 30, 'joined' FROM season_for(sa_today(), 'school') se
+  UNION ALL
+  SELECT (ids->>'bnd')::uuid, HIL, 'cricket', '9XI', se.starts_on - 200, se.starts_on, 'joined' FROM season_for(sa_today(), 'school') se;
+  -- FUT's move to the 9XI, dated a month on.
+  UPDATE team_membership SET left_on = sa_today() + 30 WHERE player_id = (ids->>'fut')::uuid AND left_on IS NULL;
+  INSERT INTO team_membership (player_id, school_id, sport, team_code, joined_on, reason)
+  VALUES ((ids->>'fut')::uuid, HIL, 'cricket', '9XI', sa_today() + 30, 'moved');
+  INSERT INTO player_never_public (player_id, reason, set_on, set_by, ended_on, ended_by, ended_at)
+  VALUES ((ids->>'was')::uuid, 'Verify 153: an ended mark', sa_today() - 7, OFFICE, sa_today() - 1, OFFICE, now() - interval '1 day');
+  -- The pupil scorer: his own account, and a scorer's role at his school.
+  INSERT INTO app_user (school_id, email, name, role, player_id)
+  VALUES (HIL, 'v153.pupil.scorer@example.invalid', 'V153 Pupil Scorer', 'scorer', (ids->>'pup')::uuid) RETURNING id INTO v_u;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_u, 'scorer', HIL);
+  ids := ids || jsonb_build_object('pupil_user', v_u);
+  -- A superadmin of the section's own, and a support hour at Hilton as the
+  -- office (as support_access_begin() writes it).
+  INSERT INTO app_user (school_id, email, name, role) VALUES (NULL, 'v153.super@example.invalid', 'V153 Super', 'superadmin') RETURNING id INTO v_u;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_u, 'superadmin', NULL);
+  ids := ids || jsonb_build_object('super', v_u);
+  INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v153.support@example.invalid', 'V153 Support', 'platformadmin') RETURNING id INTO v_u;
+  PERFORM set_config('app.user_id', v_u::text, true);
+  INSERT INTO role_assignment (person_id, role, school_id, active, valid_from, expires_at)
+  VALUES (v_u, 'schooladmin', HIL, true, sa_today(), now() + interval '1 hour') RETURNING id INTO v_p;
+  INSERT INTO support_access (actor_id, school_id, role, reason, assignment_id, expires_at)
+  VALUES (v_u, HIL, 'schooladmin', 'Verify 153: a support hour at Hilton.', v_p, now() + interval '1 hour');
+  PERFORM set_config('app.user_id', '', true);
+  ids := ids || jsonb_build_object('support', v_u, 'support_a', v_p);
+  -- The section's own readers: nothing an earlier section did to the seed's
+  -- people (a revoked coach, an ended assignment) reaches them.
+  ids := ids || _v71_people('v153', ARRAY[
+    ARRAY['coach',     'coach',           HIL::text, '9XI', ''],
+    ARRAY['scorer',    'scorer',          HIL::text, '',    ''],
+    ARRAY['director',  'directorofsport', HIL::text, '',    ''],
+    ARRAY['sportsadmin', 'sportsadmin',   HIL::text, '',    ''],
+    ARRAY['teammgr',   'teammanager',     HIL::text, '9XI', ''],
+    ARRAY['u19coach',  'coach',           HIL::text, 'U19D', ''],
+    ARRAY['wescoach',  'coach',           WES::text, '1XI', ''],
+    ARRAY['wesoffice', 'schooladmin',     WES::text, '',    ''],
+    ARRAY['driver',    'driver',          HIL::text, '',    ''],
+    ARRAY['dso',       'dso',             HIL::text, '',    ''],
+    ARRAY['parent',    'guardian',        HIL::text, '',    '']]);
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  SELECT a.id, (ids->>'opn')::uuid, 'parent', 'verified', OFFICE, now() - interval '30 days', 'granted', 'popia-2026-01',
+         now() - interval '30 days', OFFICE, sa_today() - 30
+    FROM role_assignment a WHERE a.person_id = (ids->>'parent')::uuid;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, '9XI', WES, '1XI', 'Westville Boys'' High 1XI', now() - interval '1 hour', 'cricket', 'T20', 20, 'live')
+  RETURNING id INTO v_m;
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by)
+  VALUES (v_m, 'home', HIL, '9XI', true, OFFICE), (v_m, 'away', WES, '1XI', true, OFFICE);
+  INSERT INTO match_broadcast (match_id, school_id, published, published_by, name_display, show_officials, strapline)
+  VALUES (v_m, HIL, true, OFFICE, 'full', false, 'Hilton v Westville · 1XI');
+  PERFORM _v153_start(v_m, '1XI', 'Westville Boys'' High 1XI',
+                      ARRAY[(ids->>'mrk')::uuid, (ids->>'opn')::uuid, (ids->>'was')::uuid, (ids->>'sqd')::uuid],
+                      ARRAY[(ids->>'vis')::uuid, (ids->>'wfd')::uuid]);
+  RETURN ids || jsonb_build_object('m', v_m);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A mark set, or ended today, as the DSO's door would.
+CREATE OR REPLACE FUNCTION _v153_mark(p_player uuid) RETURNS void AS $$
+  INSERT INTO player_never_public (player_id, reason, set_on, set_by)
+  VALUES (p_player, 'Verify 153: a mark set during play', sa_today(), '88888888-0000-0000-0000-000000000057')
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v153_unmark(p_player uuid) RETURNS void AS $$
+  UPDATE player_never_public SET ended_on = sa_today(), ended_by = set_by, ended_at = now()
+   WHERE player_id = p_player AND ended_on IS NULL
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The match's sheet, as the coach's door would write it: the boy first
+-- registered to play (a verified guardian's link and consent, db/08), as
+-- the office's door would.
+CREATE OR REPLACE FUNCTION _v153_sheet(p_match uuid, p_player uuid, p_side text) RETURNS void AS $$
+DECLARE v_u uuid; v_a uuid; v_school uuid := (SELECT school_id FROM player WHERE id = p_player);
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+BEGIN
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (v_school, 'v153.parent.' || p_player || '@example.invalid', 'V153 Parent', 'guardian') RETURNING id INTO v_u;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (v_u, 'guardian', v_school) RETURNING id INTO v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (v_a, p_player, 'parent', 'verified', OFFICE, now() - interval '30 days', 'granted', 'popia-2026-01',
+          now() - interval '30 days', OFFICE, sa_today() - 30);
+  INSERT INTO match_squad (match_id, player_id, side) VALUES (p_match, p_player, p_side);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The highest seq of the match's log, as the owner reads it.
+CREATE OR REPLACE FUNCTION _v153_head(p_match uuid) RETURNS bigint AS $$
+  SELECT coalesce(max(seq), 0)::bigint FROM ball_event WHERE match_id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The big screen's answer as one string, for one reader: team:flag, sorted.
+CREATE OR REPLACE FUNCTION _v153_sides(p_match uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(coalesce(g.team, '(none)') || ':' || g.position_only, ',' ORDER BY g.team NULLS FIRST), '')
+    FROM ground_screen_sides(p_match) g
+$$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp;
+-- One side's flag, for one reader; NULL when the answer has no such side.
+CREATE OR REPLACE FUNCTION _v153_flag(p_match uuid, p_team text) RETURNS boolean AS $$
+  SELECT g.position_only FROM ground_screen_sides(p_match) g WHERE g.team = p_team
+$$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp;
+-- The ids the one read (ground_screen_names()) sends facts for, for one
+-- reader: for one side, or (p_team NULL) for every side; sorted. NULL when
+-- the answer has no such side.
+CREATE OR REPLACE FUNCTION _v153_ids(p_match uuid, p_team text) RETURNS uuid[] AS $$
+  SELECT CASE WHEN p_team IS NOT NULL AND NOT EXISTS (SELECT 1 FROM ground_screen_names(p_match) g WHERE g.team = p_team) THEN NULL
+         ELSE coalesce((SELECT array_agg(DISTINCT (e ->> 'player_id')::uuid ORDER BY (e ->> 'player_id')::uuid)
+                          FROM ground_screen_names(p_match) g CROSS JOIN LATERAL jsonb_array_elements(g.people) e
+                         WHERE p_team IS NULL OR g.team = p_team), ARRAY[]::uuid[]) END
+$$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp;
+-- Whether every side the one read answers position-only carries no facts.
+CREATE OR REPLACE FUNCTION _v153_quiet(p_match uuid) RETURNS boolean AS $$
+  SELECT NOT EXISTS (SELECT 1 FROM ground_screen_names(p_match) g WHERE g.position_only IS NOT FALSE AND g.people <> '[]'::jsonb)
+$$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp;
+-- Whether a boy is under an open mark and on a school's side today, as the
+-- owner reads it (the mark is not the reader's to read).
+CREATE OR REPLACE FUNCTION _v153_marked_on(p_player uuid, p_school uuid, p_team text) RETURNS boolean AS $$
+  SELECT EXISTS (SELECT 1 FROM player_never_public n JOIN team_membership t ON t.player_id = n.player_id
+                  WHERE n.player_id = p_player AND n.ended_on IS NULL AND t.school_id = p_school AND t.team_code = p_team
+                    AND t.sport = 'cricket' AND t.left_on IS NULL)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A set of ids, sorted, to compare with _v153_ids().
+CREATE OR REPLACE FUNCTION _v153_set(VARIADIC p uuid[]) RETURNS uuid[] AS $$
+  SELECT coalesce(array_agg(DISTINCT x ORDER BY x), ARRAY[]::uuid[]) FROM unnest(p) x
+$$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
+-- └── db/153 (section 131) ─────────────────────────────────────────────
 
 
 -- From here on we are the unprivileged application role, so every read below
@@ -16775,7 +17001,14 @@ BEGIN
     -- a.role <> 'player'), the pad guard included word for word: under pad
     -- scope it answers as app_can() does, or less; the owner's alone, asked
     -- only by pupil_side_on(), which only ever narrows an app_can() yes.
-    PERFORM _assert(detail = 'app_can_but_player,ball_event_payload_seen,competition_entrant_reader,duty_status,duty_suspended,match_conditions_fix,match_conditions_resolve,match_fold_context,'
+    -- ground_screen_names (db/153, PUBLIC_BY_TERMS §2.5): player.roster.read
+    -- or scoring.start at the host's side, not a pupil; refused outright
+    -- under pad scope (`AND NOT app_pad_scoped()` before it asks), so a
+    -- credential never reads it (§131 (pad)). A side's flag, the log's head,
+    -- and, only for a side answered false, the public page's own facts
+    -- (public_match_people(), db/59) for its first squad (§131 (names)).
+    -- ground_screen_sides, its flags, is that read as the caller, no definer.
+    PERFORM _assert(detail = 'app_can_but_player,ball_event_payload_seen,competition_entrant_reader,duty_status,duty_suspended,ground_screen_names,match_conditions_fix,match_conditions_resolve,match_fold_context,'
                              || 'match_playing_conditions,match_result_readable,my_alert_choices,my_child_fixtures,my_own_sheet_fixtures,my_own_side_fixtures,pad_resume_issue,pad_resume_reclaim,pad_resume_toss,progression_check,'
                              || 'result_official_notices,result_staff,safeguarding_concern_raise,scoring_arm_handover,scoring_claim,'
                              || 'scoring_claim_handover,scoring_lease_check,scoring_takeover,scoring_verify_takeover,trip_fixture_driver_only',
@@ -41217,6 +41450,401 @@ $m130$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 130
   -- └── REACH-D2 (section 130) ───────────────────────────────────────
+  -- ┌── db/153 (section 131) ─────────────────────────────────────────
+  -- ── 131. The big screen: the host side by position all season when its roster holds a marked boy, the away side always, for the host's staff only; the caption names no child (db/153, db/149; PUBLIC_BY_TERMS §2.5, slice 1; Kameel 12 Nov 2026 (a), (b), "Season roster") ──
+  -- Staged by _v153_stage(), its own fixture, side and readers; every read
+  -- through scrbrd_app. No sheet until (selection).
+  -- Labels:
+  --   (early)     with only the first innings_start in the log, before any
+  --               event names MRK, the coach reads the host side true and
+  --               Westville's true: the roster decides, never a ball
+  --   (caption)   with MRK at the crease, broadcast_state() reads 'Batter' /
+  --               'Non-striker' / 'Bowler' and no word of any boy's name,
+  --               for signed out, the Hilton coach, the DSO, Westville's
+  --               coach and office
+  --   (sides)     the Hilton coach, the scorer (scoring.start alone), the
+  --               team manager (player.roster.read alone) and the director
+  --               of sport read the same answer, with log_seq the log's head
+  --   (one read)  ground_screen_names() (B1): while a side is position-only
+  --               it carries no boy's facts, for every reader; the flags
+  --               ground_screen_sides() reads are its own, row for row
+  --   (anchor)    Hilton's U19D coach, the same school's staff at another
+  --               side, reads no rows
+  --   (control)   the pupil scorer holds scoring.start at Hilton's 9XI and
+  --               is a pupil; Westville's coach reads the log
+  --   (none)      the pupil scorer, a parent, Westville's coach and office,
+  --               the driver and signed out read no rows
+  --   (pad)       the scorer under his pad credential for this match reads no rows
+  --   (away)      a side of one marked Westville boy, or one unmarked, and
+  --               Westville's own, are true before and after the mark ends:
+  --               no away boy's mark is asked
+  --   (reveals)   NOS (marked, off the roster) and OTH (marked, another
+  --               school) on the field, in a later innings_start's squads and
+  --               in a side of their own: no side moves, and their sides are
+  --               true whether or not they are marked
+  --   (catch)     a catch in the pad's shape (fielder his name, fielders his
+  --               id) changes nothing
+  --   (selection) no selection moves the host's flag: a one-boy squad of
+  --               OPN, unmarked, written into the log, and a one-boy sheet
+  --               of OPN, both read true while MRK, on the roster, is marked
+  --   (ended)     MRK's mark ended today: the host side is named again (WAS's
+  --               ended yesterday; NOS is off the roster; WNX, marked, is on
+  --               Westville's 9XI, not Hilton's), and the one-boy squad with
+  --               it; a mark set on SQD during play turns it true at once,
+  --               before he is named
+  --   (names)     with the host side false, the one read sends facts for
+  --               exactly its first squad (MRK, OPN, WAS, SQD), the public
+  --               page's own (public_match_people()), and for no away boy,
+  --               no boy only a later innings_start carries, and no side
+  --               answered true; when SQD's mark turns it, none at all
+  --   (mixed)     a side of roster boys and a Hilton boy playing up from the
+  --               U19D is true, marked or not: wholly on the roster, not any
+  --   (keys)      a side keyed only by battingTeam / bowlingTeam is read as
+  --               the screen reads it; one innings_start naming both squads
+  --               by one key is its batting squad (S3)
+  --   (edges)     the re-check's arms (13 Nov): a side whose first squad is
+  --               empty is true; a squad member written as a bare id string
+  --               is a member (S2): roster boys with a bare-id boy playing up
+  --               read true, a bare-id side of roster boys false and named;
+  --               FUT, marked, on the 9XI only from a month on, and BND,
+  --               marked, who left it the day the season began, turn
+  --               nothing; a superadmin reads the answer; a support hour at
+  --               Hilton as the office reads it as app_can() answers the
+  --               office, and nothing once the hour has run out
+  --   (away2)     (away) and (reveals) again with no marked boy on the host
+  --               roster, so the host side is false and they are not vacuous
+  --   (season)    the season roster: LFT, marked, on the 9XI earlier this
+  --               season and gone from it today, turns the side true; OLD,
+  --               marked, who left it last season, does not
+  --   (probe)     the sportsadmin (player.profile.manage, not
+  --               player.public.withhold, and player.roster.read) reads no
+  --               rows; the director of sport (both) does
+  --   (shape)     three columns, team, position_only, log_seq; no player id,
+  --               name, reason or date in any row
+  --   (body)      the one read a definer with its path pinned and the pad
+  --               term in its gate (db/50's app_can() also refuses a pad
+  --               credential everything but fixture.read and scoring.edit,
+  --               so no reader shows the term alone: its text does); the
+  --               flags the same read as the caller; neither PUBLIC's nor a
+  --               platform role's, both the application's
+  --
+  -- Falsified (12 Nov 2026, on a migrated database inside the section's
+  -- transaction; each went red at its own label; unchanged it passed):
+  --   B2: the flag from the log's on-field references, not the roster → (early)
+  --   B3: the pad-scope test out, and fixture.read let in             → (pad)
+  --   B4: an away boy's mark asked, as the host's are                  → (early)
+  --   the flag from a side's members, not the roster                  → (selection)
+  --   the flag from today's roster, not the season's                 → (season)
+  --   the roster-mover's refusal taken out of the gate               → (probe)
+  --   B1: the client's catcher (ground-names.test.mjs, its own falsification)
+  -- And after Fable's red-team (13 Nov 2026), the same way (and, after the
+  -- re-check: the bare-id branch out → (edges); the empty-squad test out →
+  -- (edges); a membership dated ahead counted → (edges); the season's first
+  -- day counted as in it → (edges)):
+  --   the player.roster.read arm out                                  → (sides), the team manager
+  --   the scoring.start arm out                                       → (sides), the scorer
+  --   the gate anchored on the reader's own side, not the fixture's   → (anchor)
+  --   "wholly on the roster" made "any member on it"                  → (mixed)
+  --   the roster any boy of the school, not the side's (playing up)   → (names)
+  --   the season roster's school filter out                           → (ended), WNX
+  --   battingTeam / bowlingTeam not read without teamKey              → (keys)
+  --   the batting-first tie-break reversed (S3)                       → (keys)
+  --   an away side judged as the host's                               → (ended), (away2)
+  --   marks of the boys on the field asked                            → (ended), (away2)
+  --   B1: facts sent for a side answered true                         → (one read)
+  --   B1: facts for every boy the log names, not the side's           → (names)
+  --   B1: facts for every side's first squad, not this side's         → (names)
+  --   the pad term out of the gate (app_can() refuses it as well)     → (body)
+  DECLARE
+    y   jsonb := _v153_stage();
+    M   uuid := (y->>'m')::uuid;
+    MRK uuid := (y->>'mrk')::uuid; OPN uuid := (y->>'opn')::uuid; WAS uuid := (y->>'was')::uuid; SQD uuid := (y->>'sqd')::uuid;
+    NOS uuid := (y->>'nos')::uuid; VIS uuid := (y->>'vis')::uuid; WFD uuid := (y->>'wfd')::uuid;
+    SHM uuid := (y->>'shm')::uuid; OTH uuid := (y->>'oth')::uuid;
+    PUP uuid := (y->>'pupil_user')::uuid;
+    -- Every reader is the section's own (_v153_stage()): the seed's are
+    -- changed by earlier sections (§12 revokes the seed's 1XI coach).
+    U_COACH   uuid := (y->>'coach')::uuid;     -- coach, Hilton 9XI
+    U_SCR     uuid := (y->>'scorer')::uuid;    -- scorer, Hilton
+    U_DOS     uuid := (y->>'director')::uuid;  -- director of sport, Hilton
+    U_SPA     uuid := (y->>'sportsadmin')::uuid; -- sportsadmin, Hilton: moves boys, may not read the mark
+    U_TM      uuid := (y->>'teammgr')::uuid;   -- team manager, Hilton 9XI: player.roster.read, no scoring.start
+    U_U19     uuid := (y->>'u19coach')::uuid;  -- coach, Hilton U19D
+    U_SUPER   uuid := (y->>'super')::uuid;     -- a superadmin
+    U_SUP     uuid := (y->>'support')::uuid;   -- a support hour at Hilton, as the office
+    FUT uuid := (y->>'fut')::uuid; BND uuid := (y->>'bnd')::uuid;
+    LFT uuid := (y->>'lft')::uuid; OLD uuid := (y->>'old')::uuid;
+    U_WESC    uuid := (y->>'wescoach')::uuid;  -- coach, Westville 1XI
+    U_WES_ADM uuid := (y->>'wesoffice')::uuid; -- office, Westville
+    U_DRV     uuid := (y->>'driver')::uuid;    -- driver, Hilton: no fixture.read
+    U_PAR     uuid := (y->>'parent')::uuid;    -- OPN's verified guardian
+    U_DSO     uuid := (y->>'dso')::uuid;       -- DSO, Hilton
+    WES_KEY text := 'Westville Boys'' High 1XI';
+    WES uuid := '22222222-2222-2222-2222-222222222222';
+    v_row text; v_ans text; v_before text; u uuid; k text; s record;
+  BEGIN
+    -- (early)
+    PERFORM _as(U_COACH);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = M AND b.kind <> 'innings_start'),
+      '§131 (early): the stage put a ball in the log');
+    PERFORM _assert(_v153_sides(M) = '1XI:true,Westville Boys'' High 1XI:true',
+      format('§131 (early): before MRK is named in any event the coach reads %s', _v153_sides(M)));
+
+    -- The first over: MRK and OPN to VIS.
+    PERFORM _v153_ev(M, 'ball', 'run', MRK, OPN, VIS, NULL, '{}'::jsonb);
+    PERFORM _v153_ev(M, 'ball', 'run', OPN, MRK, VIS, NULL, '{}'::jsonb);
+
+    -- (caption)
+    FOREACH u IN ARRAY ARRAY[NULL, U_COACH, U_DSO, U_WESC, U_WES_ADM]::uuid[] LOOP
+      IF u IS NULL THEN PERFORM set_config('app.user_id', '', true); ELSE PERFORM _as(u); END IF;
+      SELECT * INTO s FROM broadcast_state(M);
+      SELECT row_to_json(x)::text INTO v_row FROM broadcast_state(M) x;
+      PERFORM _assert(s.striker = 'Batter' AND s.non_striker = 'Non-striker' AND s.bowler = 'Bowler',
+        format('§131 (caption): %s reads %s / %s / %s', coalesce(u::text, 'signed out'), s.striker, s.non_striker, s.bowler));
+      PERFORM _assert(v_row !~* '(Verify|OneFiftyThree|Marked|Wasmarked|Visitor)',
+        format('§131 (caption): a name is in the overlay''s row for %s: %s', coalesce(u::text, 'signed out'), v_row));
+    END LOOP;
+
+    -- (sides)
+    PERFORM _as(U_COACH);
+    v_before := _v153_sides(M);
+    PERFORM _assert(v_before = '1XI:true,Westville Boys'' High 1XI:true', format('§131 (sides): the coach reads %s', v_before));
+    FOR u, k IN SELECT * FROM (VALUES (U_COACH, 'the Hilton coach'), (U_SCR, 'the scorer'), (U_TM, 'the team manager'),
+                                      (U_DOS, 'the director of sport')) z(a, b) LOOP
+      PERFORM _as(u);
+      v_ans := _v153_sides(M);
+      PERFORM _assert(v_ans = v_before, format('§131 (sides): %s reads %s, the coach %s', k, v_ans, v_before));
+      PERFORM _assert((SELECT bool_and(g.log_seq = _v153_head(M)) FROM ground_screen_sides(M) g),
+        format('§131 (sides): %s''s log_seq is not the log''s head %s', k, _v153_head(M)));
+      -- (one read)
+      PERFORM _assert(_v153_quiet(M) AND _v153_ids(M, NULL) = ARRAY[]::uuid[],
+        format('§131 (one read): with both sides position-only %s is sent facts for %s', k, _v153_ids(M, NULL)));
+      PERFORM _assert((SELECT array_agg(g.team || ':' || g.position_only || ':' || g.log_seq ORDER BY g.team) FROM ground_screen_names(M) g)
+                      IS NOT DISTINCT FROM (SELECT array_agg(g.team || ':' || g.position_only || ':' || g.log_seq ORDER BY g.team) FROM ground_screen_sides(M) g),
+        format('§131 (one read): %s''s flags are not the one read''s', k));
+    END LOOP;
+    PERFORM _as(U_TM);
+    PERFORM _assert(app_can('player.roster.read', HIL, '9XI', '00000000-0000-0000-0000-000000000000'::uuid, M)
+                    AND NOT app_can('scoring.start', HIL, '9XI', '00000000-0000-0000-0000-000000000000'::uuid, M),
+      '§131 (sides): the team manager does not hold player.roster.read alone');
+    PERFORM _as(U_SCR);
+    PERFORM _assert(app_can('scoring.start', HIL, '9XI', '00000000-0000-0000-0000-000000000000'::uuid, M)
+                    AND NOT app_can('player.roster.read', HIL, '9XI', '00000000-0000-0000-0000-000000000000'::uuid, M),
+      '§131 (sides): the scorer does not hold scoring.start alone');
+
+    -- (anchor)
+    PERFORM _as(U_U19);
+    PERFORM _assert(app_can('player.roster.read', HIL, 'U19D', '00000000-0000-0000-0000-000000000000'::uuid, NULL)
+                    AND NOT app_can('player.roster.read', HIL, '9XI', '00000000-0000-0000-0000-000000000000'::uuid, M),
+      '§131 (anchor): the U19D coach does not hold player.roster.read at his own side only');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM ground_screen_names(M)), format('§131 (anchor): the U19D coach reads %s', _v153_sides(M)));
+
+    -- (control)
+    PERFORM _as(PUP);
+    PERFORM _assert(app_can('scoring.start', HIL, '9XI', '00000000-0000-0000-0000-000000000000'::uuid, M) AND app_reader_is_pupil(),
+      '§131 (control): the pupil scorer does not hold scoring.start at Hilton''s 9XI, or is not a pupil');
+    PERFORM _as(U_WESC);
+    PERFORM _assert((SELECT count(*) FROM ball_event WHERE match_id = M) = 3, '§131 (control): Westville''s coach does not read the log');
+
+    -- (none)
+    FOR u, k IN SELECT * FROM (VALUES (PUP, 'the pupil scorer'), (U_PAR, 'a parent'), (U_WESC, 'Westville''s coach'),
+                                      (U_WES_ADM, 'Westville''s office'), (U_DRV, 'the driver')) z(a, b) LOOP
+      PERFORM _as(u);
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM ground_screen_names(M)), format('§131 (none): %s reads %s', k, _v153_sides(M)));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM ground_screen_names(M)), '§131 (none): signed out reads the big screen''s answer');
+
+    -- (pad)
+    PERFORM _as(U_SCR);
+    PERFORM set_config('app.scope', 'pad', true);
+    PERFORM set_config('app.match_id', M::text, true);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM ground_screen_names(M)), format('§131 (pad): the scorer under a pad credential reads %s', _v153_sides(M)));
+    PERFORM set_config('app.scope', '', true);
+    PERFORM set_config('app.match_id', '', true);
+
+    -- (away) an away boy's mark is never asked.
+    PERFORM _as(U_COACH);
+    PERFORM _v153_start(M, 'Verify Away One', '1XI', ARRAY[SHM], ARRAY[]::uuid[]);
+    PERFORM _v153_start(M, 'Verify Away Two', '1XI', ARRAY[VIS], ARRAY[]::uuid[]);
+    PERFORM _assert(_v153_flag(M, 'Verify Away One') AND _v153_flag(M, 'Verify Away Two') AND _v153_flag(M, WES_KEY),
+      format('§131 (away): a side of away boys, marked or not, is not true: %s', _v153_sides(M)));
+    PERFORM _v153_unmark(SHM);
+    PERFORM _assert(_v153_flag(M, 'Verify Away One') AND _v153_flag(M, 'Verify Away Two') AND _v153_flag(M, WES_KEY),
+      format('§131 (away): the away boy''s mark ending moved a side: %s', _v153_sides(M)));
+
+    -- (reveals) boys off the roster, marked, on the field, in later squads and in sides of their own.
+    v_before := _v153_sides(M);
+    PERFORM _v153_ev(M, 'ball', 'run', NOS, OPN, OTH, NULL, jsonb_build_object('keeper', OTH, 'batter', NOS));
+    PERFORM _assert(_v153_sides(M) = v_before, format('§131 (reveals): marked boys off the roster on the field moved %s to %s', v_before, _v153_sides(M)));
+    PERFORM _v153_start(M, WES_KEY, '1XI', ARRAY[VIS, WFD, OTH], ARRAY[MRK, OPN, NOS]);
+    PERFORM _assert(_v153_sides(M) = v_before, format('§131 (reveals): a later innings_start''s squads moved %s to %s', v_before, _v153_sides(M)));
+    PERFORM _v153_start(M, 'Verify Stuffed XI', '1XI', ARRAY[OTH], ARRAY[]::uuid[]);
+    PERFORM _v153_start(M, 'Verify Off Roster', '1XI', ARRAY[NOS], ARRAY[]::uuid[]);
+    PERFORM _assert(_v153_flag(M, 'Verify Stuffed XI') AND _v153_flag(M, 'Verify Off Roster'),
+      format('§131 (reveals): a side of a boy off the roster reads %s', _v153_sides(M)));
+    PERFORM _v153_unmark(OTH);
+    PERFORM _v153_unmark(NOS);
+    PERFORM _assert(_v153_flag(M, 'Verify Stuffed XI') AND _v153_flag(M, 'Verify Off Roster'),
+      format('§131 (reveals): their marks ending moved %s', _v153_sides(M)));
+
+    -- (catch) his catch, as the pad writes it.
+    v_ans := _v153_sides(M);
+    PERFORM _v153_ev(M, 'ball', 'W', MRK, OPN, VIS, 'caught',
+                     jsonb_build_object('fielder', 'Verify OneFiftyThree Fielder', 'fielders', jsonb_build_array(WFD), 'dismissed', MRK));
+    PERFORM _assert(_v153_sides(M) = v_ans, format('§131 (catch): a catch moved the answer to %s', _v153_sides(M)));
+
+    -- (selection) a one-boy squad, then a one-boy sheet, of an unmarked roster boy.
+    PERFORM _v153_start(M, 'Verify One', '1XI', ARRAY[OPN], ARRAY[]::uuid[]);
+    PERFORM _assert(_v153_flag(M, 'Verify One') AND _v153_flag(M, '1XI'),
+      format('§131 (selection): a one-boy squad of OPN, unmarked, with MRK marked, reads %s', _v153_sides(M)));
+    PERFORM _v153_sheet(M, OPN, 'home');
+    PERFORM _assert(_v153_flag(M, 'Verify One') AND _v153_flag(M, '1XI'),
+      format('§131 (selection): a one-boy sheet of OPN, with MRK marked, reads %s', _v153_sides(M)));
+
+    -- (ended), then a mark set during play.
+    PERFORM _v153_unmark(MRK);
+    PERFORM _assert(NOT _v153_flag(M, '1XI') AND NOT _v153_flag(M, 'Verify One') AND _v153_flag(M, WES_KEY),
+      format('§131 (ended): the coach reads %s', _v153_sides(M)));
+    PERFORM _assert(_v153_marked_on((y->>'wnx')::uuid, WES, '9XI'),
+      '§131 (ended): WNX, on Westville''s 9XI, is not marked: the school filter has no oracle');
+
+    -- (names) the one read's facts, with the host side false.
+    PERFORM _assert(_v153_ids(M, '1XI') = _v153_set(MRK, OPN, WAS, SQD),
+      format('§131 (names): the host side is sent facts for %s, not its first squad', _v153_ids(M, '1XI')));
+    PERFORM _assert(_v153_ids(M, 'Verify One') = _v153_set(OPN) AND _v153_ids(M, WES_KEY) = ARRAY[]::uuid[] AND _v153_quiet(M),
+      format('§131 (names): a one-boy side, the away side or a side answered true is sent %s / %s', _v153_ids(M, 'Verify One'), _v153_ids(M, WES_KEY)));
+    PERFORM _assert(NOT (_v153_ids(M, NULL) && ARRAY[VIS, WFD, SHM, NOS, OTH, (y->>'wnx')::uuid]),
+      format('§131 (names): an away boy, or a boy only a later innings_start carries, is sent: %s', _v153_ids(M, NULL)));
+    PERFORM _assert((SELECT g.people FROM ground_screen_names(M) g WHERE g.team = '1XI')
+                    = (SELECT jsonb_agg(to_jsonb(pp) ORDER BY pp.player_id) FROM public_match_people(M) pp
+                        WHERE pp.player_id = ANY (ARRAY[MRK, OPN, WAS, SQD])),
+      '§131 (names): the host side''s facts are not the public page''s own');
+
+    -- (mixed) roster boys with a Hilton boy playing up from the U19D.
+    PERFORM _v153_mark(NOS);
+    PERFORM _v153_start(M, 'Verify Playing Up', '1XI', ARRAY[OPN, SQD, NOS], ARRAY[]::uuid[]);
+    PERFORM _assert(_v153_flag(M, 'Verify Playing Up') AND _v153_ids(M, 'Verify Playing Up') = ARRAY[]::uuid[] AND NOT _v153_flag(M, '1XI'),
+      format('§131 (mixed): a side with a boy playing up, NOS marked, reads %s', _v153_sides(M)));
+    PERFORM _v153_unmark(NOS);
+    PERFORM _assert(_v153_flag(M, 'Verify Playing Up'), format('§131 (mixed): NOS unmarked, a side with him playing up reads %s', _v153_sides(M)));
+
+    -- (keys)
+    PERFORM _v153_start_bare(M, 'Verify Bare Bat', 'Verify Bare Field', ARRAY[OPN], ARRAY[SQD]);
+    PERFORM _assert(_v153_flag(M, 'Verify Bare Bat') IS FALSE AND _v153_flag(M, 'Verify Bare Field') IS FALSE
+                    AND _v153_ids(M, 'Verify Bare Bat') = _v153_set(OPN) AND _v153_ids(M, 'Verify Bare Field') = _v153_set(SQD),
+      format('§131 (keys): sides keyed only by battingTeam and bowlingTeam read %s', _v153_sides(M)));
+    PERFORM _v153_mark(NOS);
+    PERFORM _v153_start(M, 'Verify Both', 'Verify Both', ARRAY[OPN], ARRAY[NOS]);
+    PERFORM _assert(_v153_flag(M, 'Verify Both') IS FALSE AND _v153_ids(M, 'Verify Both') = _v153_set(OPN),
+      format('§131 (keys): one innings_start naming both squads by one key is not its batting squad: %s, %s', _v153_flag(M, 'Verify Both'), _v153_ids(M, 'Verify Both')));
+
+    -- (edges)
+    PERFORM _v153_start(M, 'Verify Empty', '1XI', ARRAY[]::uuid[], ARRAY[]::uuid[]);
+    PERFORM _assert(_v153_flag(M, 'Verify Empty') AND _v153_ids(M, 'Verify Empty') = ARRAY[]::uuid[],
+      format('§131 (edges): a side whose first squad is empty reads %s', _v153_sides(M)));
+    PERFORM _v153_start_mixed(M, 'Verify Bare Mixed', ARRAY[OPN, SQD], ARRAY[NOS]);
+    PERFORM _v153_start_mixed(M, 'Verify Bare Roster', ARRAY[OPN], ARRAY[SQD]);
+    PERFORM _assert(_v153_flag(M, 'Verify Bare Mixed') AND _v153_ids(M, 'Verify Bare Mixed') = ARRAY[]::uuid[],
+      format('§131 (edges): roster boys with a bare-id boy playing up read %s', _v153_sides(M)));
+    PERFORM _assert(_v153_flag(M, 'Verify Bare Roster') IS FALSE AND _v153_ids(M, 'Verify Bare Roster') = _v153_set(OPN, SQD),
+      format('§131 (edges): a side of roster boys, one written as a bare id, reads %s, %s', _v153_flag(M, 'Verify Bare Roster'), _v153_ids(M, 'Verify Bare Roster')));
+    PERFORM _v153_mark(FUT);
+    PERFORM _assert(NOT _v153_flag(M, '1XI'), format('§131 (edges): FUT, on the 9XI only from a month on, turns it: %s', _v153_sides(M)));
+    PERFORM _v153_unmark(FUT);
+    IF sa_today() > (SELECT se.starts_on FROM season_for(sa_today(), 'school') se) THEN
+      PERFORM _v153_mark(BND);
+      PERFORM _assert(NOT _v153_flag(M, '1XI'), format('§131 (edges): BND, who left the day the season began, turns it: %s', _v153_sides(M)));
+      PERFORM _v153_unmark(BND);
+    END IF;
+    v_ans := _v153_sides(M);
+    PERFORM _as(U_SUPER);
+    PERFORM _assert(_v153_sides(M) = v_ans, format('§131 (edges): a superadmin reads %s, the coach %s', _v153_sides(M), v_ans));
+    PERFORM _as(U_SUP);
+    PERFORM _assert(_v153_sides(M) = v_ans, format('§131 (edges): a support hour as the office reads %s, the coach %s', _v153_sides(M), v_ans));
+    PERFORM _v153_end_support((y->>'support_a')::uuid);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM ground_screen_names(M)), format('§131 (edges): a support hour run out reads %s', _v153_sides(M)));
+    PERFORM _as(U_COACH);
+
+    -- (away2) (away) and (reveals) with no marked boy on the host roster.
+    PERFORM _v153_mark(SHM);
+    PERFORM _v153_mark(OTH);
+    PERFORM _assert(NOT _v153_flag(M, '1XI') AND _v153_flag(M, 'Verify Away One') AND _v153_flag(M, 'Verify Away Two') AND _v153_flag(M, WES_KEY),
+      format('§131 (away2): with the host side false, an away side, marked or not, reads %s', _v153_sides(M)));
+    v_before := _v153_sides(M);
+    PERFORM _v153_ev(M, 'ball', 'run', NOS, OPN, OTH, NULL, jsonb_build_object('keeper', OTH, 'batter', NOS));
+    PERFORM _v153_start(M, WES_KEY, '1XI', ARRAY[VIS, OTH], ARRAY[MRK, NOS]);
+    PERFORM _assert(_v153_sides(M) = v_before AND _v153_flag(M, 'Verify Stuffed XI') AND _v153_flag(M, 'Verify Off Roster'),
+      format('§131 (away2): marked boys off the roster, on the field and in later squads, moved %s to %s', v_before, _v153_sides(M)));
+    PERFORM _assert(NOT (_v153_ids(M, NULL) && ARRAY[VIS, WFD, SHM, NOS, OTH]),
+      format('§131 (away2): an away or off-roster boy is sent: %s', _v153_ids(M, NULL)));
+    PERFORM _v153_unmark(SHM);
+    PERFORM _v153_unmark(OTH);
+    PERFORM _v153_unmark(NOS);
+
+    PERFORM _v153_mark(SQD);
+    PERFORM _assert(_v153_flag(M, '1XI') AND _v153_flag(M, 'Verify One'),
+      format('§131 (ended): a mark set on SQD, never named in an event, reads %s', _v153_sides(M)));
+    -- (names) the side turned: no boy's facts beside it.
+    PERFORM _assert(_v153_ids(M, '1XI') = ARRAY[]::uuid[] AND _v153_ids(M, 'Verify One') = ARRAY[]::uuid[] AND _v153_quiet(M),
+      format('§131 (names): with SQD''s mark the host side is still sent %s', _v153_ids(M, NULL)));
+    PERFORM _v153_unmark(SQD);
+
+    -- (season)
+    PERFORM _as(U_COACH);
+    PERFORM _assert(NOT _v153_flag(M, '1XI'), format('§131 (season): before LFT''s mark the coach reads %s', _v153_sides(M)));
+    PERFORM _v153_mark(LFT);
+    IF sa_today() > (SELECT se.starts_on FROM season_for(sa_today(), 'school') se) THEN
+      PERFORM _assert(_v153_flag(M, '1XI'),
+        format('§131 (season): LFT, marked, on the 9XI earlier this season, does not turn it: %s', _v153_sides(M)));
+    END IF;
+    PERFORM _v153_unmark(LFT);
+    PERFORM _v153_mark(OLD);
+    PERFORM _assert(NOT _v153_flag(M, '1XI'), format('§131 (season): OLD, who left last season, turns the side: %s', _v153_sides(M)));
+    PERFORM _v153_unmark(OLD);
+
+    -- (probe)
+    PERFORM _as(U_SPA);
+    PERFORM _assert(app_can('player.profile.manage', HIL, '9XI', '00000000-0000-0000-0000-000000000000'::uuid, M)
+                    AND app_can('player.roster.read', HIL, '9XI', '00000000-0000-0000-0000-000000000000'::uuid, M)
+                    AND NOT app_can('player.public.withhold', HIL, '9XI', '00000000-0000-0000-0000-000000000000'::uuid, M),
+      '§131 (probe): the sportsadmin does not hold what the case is about');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM ground_screen_names(M)), format('§131 (probe): the sportsadmin reads %s', _v153_sides(M)));
+    PERFORM _as(U_DOS);
+    PERFORM _assert(EXISTS (SELECT 1 FROM ground_screen_sides(M)), '§131 (probe): the director of sport, who holds both, reads no rows');
+    PERFORM _as(U_COACH);
+
+    -- (shape)
+    PERFORM _assert((SELECT array_agg(a ORDER BY o) FROM pg_proc p,
+                            unnest(p.proargnames, p.proargmodes) WITH ORDINALITY AS t(a, md, o)
+                      WHERE p.oid = 'ground_screen_sides(uuid)'::regprocedure AND t.md = 't') = ARRAY['team', 'position_only', 'log_seq'],
+      '§131 (shape): ground_screen_sides() returns other columns than team, position_only and log_seq');
+    PERFORM _assert((SELECT array_agg(a ORDER BY o) FROM pg_proc p,
+                            unnest(p.proargnames, p.proargmodes) WITH ORDINALITY AS t(a, md, o)
+                      WHERE p.oid = 'ground_screen_names(uuid)'::regprocedure AND t.md = 't') = ARRAY['team', 'position_only', 'log_seq', 'people'],
+      '§131 (shape): ground_screen_names() returns other columns than team, position_only, log_seq and people');
+    SELECT string_agg(row_to_json(g)::text, ' ') INTO v_row FROM ground_screen_sides(M) g;
+    PERFORM _assert(v_row !~* '(OneFiftyThree|mark|reason|player|[0-9a-f]{8}-[0-9a-f]{4}-)' AND v_row !~ '"[0-9]{4}-[0-9]{2}-[0-9]{2}"',
+      format('§131 (shape): a player id, a name, a reason or a date is in the answer: %s', v_row));
+
+    -- (body)
+    PERFORM _assert((SELECT p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']
+                            AND position('NOT app_pad_scoped()' IN p.prosrc) > 0
+                       FROM pg_proc p WHERE p.oid = 'ground_screen_names(uuid)'::regprocedure),
+      '§131 (body): ground_screen_names() is not a definer, its path is not pinned, or its gate lost the pad term');
+    PERFORM _assert((SELECT NOT p.prosecdef AND position('FROM ground_screen_names(p_match)' IN p.prosrc) > 0
+                       FROM pg_proc p WHERE p.oid = 'ground_screen_sides(uuid)'::regprocedure),
+      '§131 (body): ground_screen_sides() is not the one read as the caller');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM unnest(ARRAY['ground_screen_names(uuid)', 'ground_screen_sides(uuid)']) f
+                                 WHERE has_function_privilege('public', f, 'EXECUTE')
+                                    OR NOT has_function_privilege('scrbrd_app', f, 'EXECUTE')
+                                    OR EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolname IN ('anon', 'authenticated', 'service_role')
+                                                  AND has_function_privilege(r.rolname, f, 'EXECUTE')))
+                    AND to_regprocedure('ground_screen_positions(uuid)') IS NULL,
+      '§131 (body): the big screen''s reads are PUBLIC''s or a platform role''s, or not the application''s, or the first draft survives');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/153 (section 131) ──────────────────────────────────────────
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

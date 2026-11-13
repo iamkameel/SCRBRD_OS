@@ -33,8 +33,9 @@ import { dirname, join } from "node:path";
 import {
   DECISIONS, SURFACES, surface, ROBOTS,
   NEVER_PUBLIC_RULES, NEVER_PUBLIC, PUBLIC_DESPITE_MASK, neverPublicRule, assertPublicSelect,
-  POSITION_LABELS, publicName, initialAndSurname,
+  POSITION_LABELS, publicName, initialAndSurname, STREAM_CAPTION,
 } from "../src/public.mjs";
+import { READ_QUERIES } from "../../../services/api/read/read-api.mjs";
 import { TABLES, maskedColumns } from "../src/tables.mjs";
 import { migrationFiles, migrationNumber } from "../../../services/api/migration-names.mjs";
 /** @import { NameFacts, NameConsent } from "../src/public.mjs" */
@@ -938,6 +939,51 @@ group("§6 step 3 — the signed-out reads name their columns, and none §3 forb
        === JSON.stringify(["id", "school", "team_code", "title", "body", "published_at"]), returns);
   const withAuthor = newsBody.replace("SELECT n.id, s.name", "SELECT n.id, n.author_id, s.name");
   ok("...and the check sees an author_id slipped in", (selectedBy(withAuthor).tables.news_post ?? []).includes("author_id"));
+}
+
+// ═══════════════════════════════════════════════════════════════════
+group("D2 — the stream caption's own rule: role words for every child (PUBLIC_BY_TERMS §1.3, slice 1)");
+// ═══════════════════════════════════════════════════════════════════
+{
+  ok("the caption's words are Batter, Non-striker and Bowler",
+     JSON.stringify(STREAM_CAPTION.words) === JSON.stringify({ striker: "Batter", nonStriker: "Non-striker", bowler: "Bowler" }));
+  ok("...for surface D2, frozen", STREAM_CAPTION.surface === "D2" && Object.isFrozen(STREAM_CAPTION) && Object.isFrozen(STREAM_CAPTION.words));
+  ok("the by-terms route is closed to it: byTermsAllowed is the literal false", STREAM_CAPTION.byTermsAllowed === false);
+  ok("...and D2 is never decided by the name rule, so publicName() does not reach it",
+     surface("D2").decision !== "name_rule" && surface("D2").decision === "team_level");
+  ok("no word of the caption is a name or an initial: each is a role word the public pages use",
+     Object.values(STREAM_CAPTION.words).every((w) => /^(Batter|Non-striker|Bowler)$/.test(w))
+     && [POSITION_LABELS.batter, POSITION_LABELS.bowler].every((w) => Object.values(STREAM_CAPTION.words).includes(w)));
+
+  // The SQL that serves the caption says the same words, and reads no name.
+  /** @param {string} sql  @returns {string | null} broadcast_state()'s body in this file */
+  const bodyIn = (sql) => /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+broadcast_state\s*\(\s*p_match\s+uuid\s*\)[\s\S]*?AS\s+\$\$([\s\S]*?)\$\$\s*LANGUAGE/i.exec(stripComments(sql))?.[1] ?? null;
+  /** @param {string} body @returns {string[]} what is wrong with a caption body */
+  const captionProblems = (body) => {
+    const out = [];
+    const words = [...body.matchAll(/THEN\s+'([^']*)'\s+END\s*,/gi)].map((m) => m[1]);
+    const want = [STREAM_CAPTION.words.striker, STREAM_CAPTION.words.nonStriker, STREAM_CAPTION.words.bowler];
+    if (JSON.stringify(words) !== JSON.stringify(want)) out.push(`caption words ${JSON.stringify(words)}, not ${JSON.stringify(want)}`);
+    for (const t of ["broadcast_name", "full_name", "surname", "known_as", "player", "striker_id", "non_striker_id", "bowler_id"]) {
+      if (new RegExp(`\\b${t}\\b`, "i").test(body)) out.push(`reads ${t}`);
+    }
+    return out;
+  };
+  const defining = migrationFiles(DB).filter((f) => bodyIn(readFileSync(join(DB, f), "utf8")) != null);
+  const latest = defining[defining.length - 1];
+  const body = latest ? bodyIn(readFileSync(join(DB, latest), "utf8")) ?? "" : "";
+  ok(`the latest broadcast_state() (${latest}) serves the caption's words, in its order, and reads no player or name`,
+     !!latest && migrationNumber(latest) >= 149 && captionProblems(body).length === 0, captionProblems(body).join(" | "));
+  const before = defining.filter((f) => migrationNumber(f) < 149).pop();
+  const old = before ? bodyIn(readFileSync(join(DB, before), "utf8")) ?? "" : "";
+  ok(`...and the check fails on the body before db/149 (${before}), which named the boys`,
+     !!before && captionProblems(old).some((p) => /broadcast_name|caption words/.test(p)), captionProblems(old).join(" | "));
+  ok("...and on a body with a name slipped back in",
+     captionProblems(body.replace(/THEN\s+'Batter'\s+END/i, "THEN broadcast_name(p.full_name, b.name_display) END")).length > 0);
+  // The read the overlay calls serves the function's row as it is: no name is
+  // put back between the database and the screen.
+  ok("the overlay's read is broadcast_state() itself, with nothing layered on it",
+     READ_QUERIES.broadcast_state?.text === "select * from broadcast_state($1)", READ_QUERIES.broadcast_state?.text);
 }
 
 console.log("\n" + "─".repeat(52));

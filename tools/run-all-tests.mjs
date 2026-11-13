@@ -208,6 +208,10 @@ const SUITES = [
   // the dwell, the skip, a wicket's interrupt resuming where it was, the holds
   // — and its panels over built logs (display/rotation.js, display/data.js).
   ["rotation",          "apps/web/test/rotation.test.mjs"],
+  // PUBLIC_BY_TERMS §2.5 (slice 1): the big screen at the ground shows a boy
+  // under a never-public mark by his position, fails closed before the
+  // server answers, and leaves every other name as the log has it.
+  ["ground-names",      "apps/web/test/ground-names.test.mjs"],
   // Par and pressure (SCRBRD-133 G2): every row of §3.3 against hand figures —
   // the server's report (@scrbrd/scoring parReport()), the Board's words, the
   // rate track and the worm's par line — and no resource computed by a page.

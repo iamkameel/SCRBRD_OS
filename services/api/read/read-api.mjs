@@ -1652,6 +1652,27 @@ export const READ_QUERIES = {
   },
 
   /**
+   * The big screen at the ground: which sides it shows by position (db/153;
+   * PUBLIC_BY_TERMS §2.5, slice 1; Kameel, 12 Nov 2026, (a) and (b)).
+   *
+   * One row per side the log names (its team key): the host side true
+   * whenever a boy on its season roster is under a never-public mark today
+   * (Kameel, 12 Nov, "Season roster"), the away side always — never which
+   * boy, never the day's selection, never the ball he first appears. log_seq: the log's head the read covered. No
+   * player id, name, reason, author or date. Only the host's staff, signed
+   * in, not pupils, not under a pad credential get rows (decided in the
+   * function); everyone else gets none, and the Match Centre offers the big
+   * screen only to a reader who got rows. The screen shows by position every
+   * boy this read does not answer for, so a failed or late read names nobody
+   * it should not.
+   */
+  ground_screen_sides: {
+    noStore: true,
+    text: `select team, position_only, log_seq from ground_screen_sides($1)`,
+    params: q => [req(q, "matchId")],
+  },
+
+  /**
    * The school's sponsors, and what may be advertised at all.
    *
    * Read under sponsorship.read via the table's own policy — a school office

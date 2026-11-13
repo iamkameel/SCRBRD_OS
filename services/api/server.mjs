@@ -46,6 +46,7 @@
  *   POST /api/ai/stats-magic, /api/ai/commentary
  *   GET/POST /api/matches/:id/publication      a side of a fixture on the public pages
  *   GET  /api/matches/:id/sheet                the team sheet, names and order, to its family (db/131)
+ *   GET  /api/matches/:id/ground-names         the big screen's one answer: sides and the public page's labels (db/153)
  *   GET/POST /api/schools/:id/listing          a school's matches on the public home page
  *   POST /api/news/:id/public/{request,approve,withdraw}  a notice on the public home page (db/83)
  *   POST /api/news/:id/edit · /delete             change an unsent plan; throw away one never sent (db/110)
@@ -120,6 +121,7 @@ import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
 import { publicationRoutes } from "./write/publication-api.mjs";
 import { sheetRoutes } from "./read/sheet-api.mjs";
+import { groundNamesRoutes } from "./read/ground-names-api.mjs";
 import { listingRoutes } from "./write/listing-api.mjs";
 import { publicNameRoutes } from "./write/public-name-api.mjs";
 import { scorebookRoutes, scorebookFileRoutes } from "./write/scorebook-api.mjs";
@@ -506,6 +508,9 @@ const training = trainingRoutes({ pool, secret: SECRET });
 // not when db/59's notification arrives (publication-api.mjs).
 const publication = publicationRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
 const sheet = sheetRoutes({ pool, secret: SECRET });
+const groundNames = groundNamesRoutes({ pool, secret: SECRET });
+/** Pattern routes answered with Cache-Control: no-store. */
+const NO_STORE_ROUTES = new Set([groundNames.read]);
 const listing = listingRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
 const publicName = publicNameRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
 const playing = playingConditionsRoutes({ pool, secret: SECRET });
@@ -730,6 +735,11 @@ const MATCH_ROUTES = [
   // (db/131) decides who, per end, as the caller. Not module-gated, as the
   // fixture is not.
   [/^\/api\/matches\/([^/]+)\/sheet$/,             "GET",  sheet.read],
+  // The big screen's one answer (PUBLIC_BY_TERMS §2.5; Kameel, 12 Nov 2026,
+  // 21:00; Fable's red-team, 13 Nov, B1): each side's flag and the labels
+  // the public page would show, from ground_screen_names() (db/153) alone
+  // (ground-names-api.mjs). Not module-gated, as the sheet is not.
+  [/^\/api\/matches\/([^/]+)\/ground-names$/,      "GET",  groundNames.read],
   // A school's matches on the public home page (SCRBRD-142, db/82):
   // public_listing_set() decides who — broadcast.publish at the school, no
   // team. Not module-gated, as publication is not: taking a school off the
@@ -1527,6 +1537,9 @@ const server = createServer(async (req, res) => {
       // wire means a row in the database, and a client that reads the moment
       // it hears back finds what it was told about.
       const out = shim(res);
+      // A read kept nowhere (the big screen's one answer, db/153): set before
+      // the answer is written, as the read path's readIsNoStore() is.
+      if (NO_STORE_ROUTES.has(handler)) res.setHeader("cache-control", "no-store");
 
       // A RETRY WRITES ONCE. A write that carries an Idempotency-Key header
       // is answered from its receipt (db/15_request_replay.sql) when the same

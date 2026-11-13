@@ -22,7 +22,7 @@ import { ConfirmScorecardPrompt, OnwardLinks, PreTossCard, RevisionBanner } from
 import { OfficialLine, OfficialPanel, useOfficial } from "./official.jsx";
 import { PotmPanel, usePotm } from "./potm.jsx";
 import { liveRefreshMs, useMoments, useTicker } from "./live.js";
-import { BigScreen } from "./bigscreen.jsx";
+import { BigScreen, useGroundSides } from "./bigscreen.jsx";
 import { CaptainTab } from "./captainTab.jsx";
 import { termsOf } from "../../lib/captain.js";
 import { cockpitGate } from "../../lib/cockpit.js";
@@ -474,6 +474,11 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   const boardInn = played[bi.index] ?? null;
   const shownRuns = useTicker(boardInn?.runs, `${match.id}:${bi.index}`);
   const [big, setBig] = useState(false);
+  // The big screen (PUBLIC_BY_TERMS §2.5; Kameel, 12 Nov 2026, (a)): offered
+  // only to a reader the server answers, the host's staff who are not pupils,
+  // on the staff screen; the answer says which sides it shows by position.
+  // Asked once to offer it, and on every ball while it is open.
+  const groundSides = useGroundSides(match.id, log.events, staffScreen && !log.demo && played.length > 0);
 
   // A rain delay or interruption (SCRBRD-100 item 1): the one signal the log
   // actually carries, off the innings the board is showing.
@@ -546,7 +551,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
           <Icon name="chevron-left"/> {backLabel}
         </button>
         <span style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
-        {!log.demo && played.length > 0 && (
+        {!log.demo && played.length > 0 && groundSides?.rows.length > 0 && (
           <button type="button" onClick={() => setBig(true)} data-testid="mc-bigscreen-open" className="pressBtn os-state"
             style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
               background: T.board.face, color: T.board.figure, border: `1px solid ${T.board.rule}`, borderRadius: T.radius.pill,
@@ -567,8 +572,8 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
         )}
         </span>
       </div>
-      {big && <BigScreen match={match} events={log.events} fold={log.fold} innings={played} result={result} settled={settled}
-        commentary={commentary} par={par} onClose={() => setBig(false)}/>}
+      {big && <BigScreen key={match.id} match={match} events={log.events} head={log.head ?? null} fold={log.fold} result={result} settled={settled}
+        par={par} onClose={() => setBig(false)}/>}
 
       <header style={{ display: "grid", gap: T.space.sm }}>
         <div style={{ display: "flex", alignItems: "center", gap: T.space.sm, flexWrap: "wrap" }}>
