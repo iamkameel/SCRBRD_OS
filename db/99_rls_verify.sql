@@ -11630,16 +11630,18 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- triggers are lifted for the two rows (the file rolls back either way).
 -- The void targets the host's last ball of the fixture, so a reader of the
 -- host's balls who may not read the void still reads that ball. The fixture
--- is not one the other school plays in: at Hilton's busiest such fixture
--- against Westville, in the full verifier (12 Nov), every reader of the
--- host's balls also read Westville's, so (stray) had nobody to tell apart.
+-- has no away side: ball_event_read's away arm admits every ball of a
+-- fixture whatever its school, so where there is one (in the full verifier,
+-- 13 Nov, Hilton's busiest was Hilton's 15XI v its own 16XI) every reader of
+-- the host's balls also reads the stray one, and (stray) has nobody to tell
+-- apart.
 CREATE OR REPLACE FUNCTION _v152_plant(p_host uuid, p_other uuid) RETURNS jsonb AS $$
 DECLARE v_m uuid; v_inn smallint; v_seq int; v_target ball_event; v_stray bigint; v_void bigint;
         v_first ball_event; v_other uuid; v_amend uuid;
 BEGIN
   SELECT b.match_id INTO v_m FROM ball_event b JOIN match m ON m.id = b.match_id
    WHERE m.school_id = p_host AND b.school_id = p_host AND b.kind = 'ball' AND b.striker_id IS NOT NULL
-     AND m.away_school_id IS DISTINCT FROM p_other
+     AND m.away_school_id IS NULL
    GROUP BY b.match_id ORDER BY count(*) DESC, b.match_id LIMIT 1;
   SELECT * INTO v_target FROM ball_event WHERE match_id = v_m AND kind = 'ball' ORDER BY seq DESC LIMIT 1;
   v_seq := (SELECT max(seq) FROM ball_event WHERE match_id = v_m);
