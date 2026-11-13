@@ -156,11 +156,15 @@ export function eventPseudonym(secret, matchId, key) {
  * @typedef {object} PersonRow
  * @property {string} player_id
  * @property {boolean} school_published
- * @property {{consents?: any[], neverPublic?: boolean, namesOff?: boolean}} facts
+ * @property {{consents?: any[], neverPublic?: boolean, namesOff?: boolean, byTerms?: boolean}} facts
  * @property {string | null} full_name
  * @property {string | null} surname
  * @property {string | null} known_as
  * @property {string} [served_on]
+ * @property {"card"|"live"|null} [surface]
+ *   public_name_surface() (db/155): the surface the page names for, by the
+ *   fixture's status, or null while the per-surface rule is switched off.
+ *   With it, the facts are public_name_facts()'s for that surface (§5.1)
  */
 
 const NOBODY = "\u0000";
@@ -177,7 +181,13 @@ const NOBODY = "\u0000";
 export function nameFor(person, on) {
   if (!person) return null;
   const f = person.facts ?? {};
+  // PUBLIC_BY_TERMS §6.2 (db/155): the surface the database named for this
+  // read, `card` or `live` by the fixture's status, or none while the switch
+  // is off, when the rule is the one it was before that design. No
+  // byTermsAllowed: a match page is not opened to line 6 before slice 4.
+  const surface = person.surface === "card" || person.surface === "live" ? person.surface : undefined;
   const shown = publicName({
+    ...(surface ? { surface, byTerms: f.byTerms } : {}),
     on,
     fullName: person.full_name,
     surname: person.surname,

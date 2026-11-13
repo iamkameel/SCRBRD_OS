@@ -519,7 +519,12 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
       // People first: an event that arrives between the two reads names
       // someone this set lacks, and he is shown as a position until the next
       // read — never the other way round.
-      const people = /** @type {PersonRow[]} */ ((await c.query(`select * from public_match_people($1)`, [id])).rows);
+      // Each boy's facts for the surface the fixture's status gives, live or
+      // card, and that surface beside them (db/155); none while the
+      // per-surface rule is switched off, which is the read before db/155.
+      const people = /** @type {PersonRow[]} */ ((await c.query(
+        `select x.*, s.surface from public_name_surface($1) s(surface) cross join lateral public_match_people($1, s.surface) x`,
+        [id])).rows);
       const rows = /** @type {LogRow[]} */ ((await c.query(`select * from public_match_log($1, 0)`, [id])).rows);
       return { people, rows };
     });

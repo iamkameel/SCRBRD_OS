@@ -229,6 +229,16 @@ export const FEATURES = {
     kind: "feature", label: "Scorebook reader",
     reads: [],
   },
+  // PUBLIC_BY_TERMS slice 3 (db/155): the public match page judges each
+  // name for its surface (live while play is on, the scorecard after) by
+  // publicName()'s per-surface rule (§5.1). OFF and locked: built switched
+  // off (Kameel, 12 Nov 2026), the platform's alone, never a school's. The
+  // database asks it (public_name_surface()); slice 4's platform setting
+  // replaces it. Owns no read: the public page is its own route.
+  public_name_surfaces: {
+    kind: "feature", label: "Public names by surface",
+    reads: [],
+  },
 };
 
 /**
