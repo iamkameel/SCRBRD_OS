@@ -47,6 +47,7 @@ import { positionWords, pilotUnwire, holdsAName } from "./pilotWire.js";
 import { indexedDbStorage, padLogFrom, inningsInPlay } from "@scrbrd/sync";
 import { fromRow } from "@scrbrd/scoring";
 import { deviceId } from "./device.js";
+import { homeRow } from "./boardOfLog.js";
 
 export { isPilotId, PILOT_ID_PREFIX };
 
@@ -284,6 +285,25 @@ export async function listPilot() {
   for (const id of ids) {
     const [meta, log] = await Promise.all([loadPilot(id), loadMatch(id)]);
     rows.push({ id, meta, ...summarise(meta ?? { id }, log), title: meta?.teams?.length === 2 ? `${meta.teams[0].display_name} v ${meta.teams[1].display_name}` : "Pilot match" });
+  }
+  return rows.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
+}
+
+/**
+ * Every Pilot Match on this phone as the scorer's home is handed it
+ * (lib/boardOfLog.js homeRow): its board and title, never its log or a name
+ * (review S6). The purge of expired names runs first.
+ */
+export async function pilotHomeRows() {
+  await purgeExpiredNames().catch(() => 0);
+  const metaKeys = (await recordKeys(META)) ?? [];
+  const logKeys = (await recordKeys("pilot:log:")) ?? [];
+  const ids = [...new Set([...metaKeys.map((k) => k.slice(META.length)), ...logKeys.map((k) => k.slice("pilot:log:".length))])];
+  const rows = [];
+  for (const id of ids) {
+    const [meta, log] = await Promise.all([loadPilot(id), loadMatch(id)]);
+    const sum = summarise(meta ?? { id }, log);
+    rows.push(homeRow(id, meta, log, { ...sum, title: meta?.teams?.length === 2 ? `${meta.teams[0].display_name} v ${meta.teams[1].display_name}` : "Pilot match" }));
   }
   return rows.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
 }
@@ -541,17 +561,65 @@ export const abandonCode = (stopReason) =>
   (typeof stopReason === "string" && Object.hasOwn(ABANDON_CODE, stopReason) ? ABANDON_CODE[/** @type {keyof typeof ABANDON_CODE} */ (stopReason)] : "other");
 
 /**
- * Where a Pilot Match stands, in one of three words: "In progress",
- * "Finished", "Called off". The server's status wins where this phone has
- * heard it (pilot_header's `live`, `finished`, `abandoned`); otherwise this
- * phone's own record: a call-off made here (sent, or held for signal), then
- * the pad's own end of the match.
+ * Where a Pilot Match stands, in words. The server's status wins where this
+ * phone has heard it (pilot_header's `live`, `finished`, `abandoned`); then
+ * what the server told this phone before (`abandoned`, `finished` on its
+ * record); then a call-off made here and not yet on SCRBRD, "Calling off…"
+ * (review S1: never "Called off" before the server has it); then the pad's
+ * own end of the match.
  * @param {{meta?: any, complete?: boolean, serverStatus?: string | null}} [o]
- * @returns {"In progress" | "Finished" | "Called off"}
+ * @returns {"In progress" | "Finished" | "Called off" | "Calling off…"}
  */
 export function pilotStateWords({ meta = null, complete = false, serverStatus = null } = {}) {
   if (serverStatus === "abandoned") return "Called off";
   if (serverStatus === "finished") return "Finished";
-  if (meta?.pilot?.callOff || meta?.pilot?.abandoned) return "Called off";
-  return complete || meta?.pilot?.finished === true ? "Finished" : "In progress";
+  if (meta?.pilot?.abandoned === true) return "Called off";
+  if (meta?.pilot?.finished === true) return "Finished";
+  if (meta?.pilot?.callOff) return "Calling off…";
+  return complete ? "Finished" : "In progress";
 }
+
+/**
+ * May the call-off go to SCRBRD now (review B2)? Only once the innings' seal
+ * it rests on is there: `seal` is "gone" when this phone's outbox has sent it
+ * (or SCRBRD already had it), and the phone holds the scoring with nothing
+ * waiting. Sent sooner, the server is abandoned before the seal arrives, and
+ * holds it (db/151): its log would have no end to the innings.
+ * @param {{attached?: boolean, pending?: number, held?: number, seal?: "gone" | "pending" | "held" | "unknown" | null}} o
+ */
+export const callOffReady = ({ attached = false, pending = 0, held = 0, seal = null } = {}) =>
+  attached === true && pending === 0 && held === 0 && seal === "gone";
+
+/**
+ * What the call-off is waiting on, in words (review N3): the real reason.
+ * @param {Parameters<typeof callOffReady>[0]} o
+ */
+export function callOffWaitWords({ attached = false, pending = 0, held = 0, seal = null } = {}) {
+  if (held > 0 || seal === "held") return "It waits on events SCRBRD did not take: open the held list on the pad and correct or discard them.";
+  if (!attached) return "It waits until this phone holds the scoring on SCRBRD: that needs signal and a sign-in.";
+  if (pending > 0) return `It waits for ${pending} still to send from this phone.`;
+  return "It waits for the end of the innings to reach SCRBRD.";
+}
+
+// ── A record write that did not save (review S3) ────────────────────
+//
+// The pad's record writes go through one chain (scorer/engine.jsx
+// recordWrite). One that does not save is noted here, in this phone's
+// localStorage beside the record, so the scorer's home can say so on its P0
+// card instead of the write being lost without a word. Cleared by the next
+// write of that match that saves.
+const WRITE_FAILED_KEY = "scrbrd:pilot-write-failed";
+const readFailures = () => {
+  try { const v = JSON.parse(globalThis.localStorage?.getItem(WRITE_FAILED_KEY) ?? "{}"); return v && typeof v === "object" ? v : {}; }
+  catch { return {}; }
+};
+/** @param {string} id @param {string} what  what did not save, in words @param {number} [at] */
+export function noteWriteFailed(id, what, at = Date.now()) {
+  try { const all = readFailures(); all[id] = { what, at }; globalThis.localStorage?.setItem(WRITE_FAILED_KEY, JSON.stringify(all)); } catch { /* nothing more to try */ }
+}
+/** @param {string} id */
+export function clearWriteFailed(id) {
+  try { const all = readFailures(); if (!all[id]) return; delete all[id]; globalThis.localStorage?.setItem(WRITE_FAILED_KEY, JSON.stringify(all)); } catch { /* nothing more to try */ }
+}
+/** Every match with a write that did not save: `{id: {what, at}}`. */
+export const writeFailures = () => readFailures();

@@ -14,8 +14,9 @@ import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring"
 import {
   SECTION_ORDER, SANDBOX_WORDS, WEEK_DAYS, boardOfLog, finishedPilots, homeSections, nowItems, p0Items, scoreLine, startWords, weekOf,
 } from "../src/lib/scorerDay.js";
+import { homeRow } from "../src/lib/boardOfLog.js";
 import { heldByMatch, pendingByMatch } from "../src/lib/deviceMatches.js";
-import { abandonCode, pilotStateWords, pilotUuid } from "../src/lib/pilot.js";
+import { abandonCode, callOffReady, callOffWaitWords, pilotStateWords, pilotUuid } from "../src/lib/pilot.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
@@ -160,13 +161,16 @@ group("Pilot Matches: finished ones are kept as a sandbox; nothing promotes");
   ok("its own score, from its own log", scoreLine(rows[0].lines[0]) === "A 84/3 (12.0 ov)");
   ok("with the server unread, the phone's alone", finishedPilots(phone, null, pilotUuid).length === 1);
   ok("a match the server called off is drawn called off", finishedPilots(phone, [{ ...server[0], status: "abandoned" }], pilotUuid)[0].status === "abandoned");
-  ok("...and one called off on this phone, not yet heard back", finishedPilots([{ ...phone[0], meta: { pilot: { callOff: { code: "weather", at: NOW } } } }], null, pilotUuid)[0].status === "abandoned");
+  ok("...and one called off on this phone, not yet heard back, is Calling off…, never Called off (S1)",
+    finishedPilots([{ ...phone[0], meta: { pilot: { callOff: { code: "weather", at: NOW } } } }], null, pilotUuid)[0].words === "Calling off…");
+  ok("the server's status ranks first (N1): SCRBRD finished it though this phone has a call-off",
+    finishedPilots([{ ...phone[0], meta: { pilot: { callOff: { code: "weather", at: NOW } } } }], [{ ...server[0], status: "finished" }], pilotUuid)[0].words === "Finished");
   ok("...a plain finish is finished", rows[0].status === "finished");
   ok("three words, the server's status first: In progress, Finished, Called off",
     pilotStateWords({ serverStatus: "live" }) === "In progress" && pilotStateWords({ serverStatus: "finished" }) === "Finished"
     && pilotStateWords({ serverStatus: "abandoned", complete: true }) === "Called off");
-  ok("...then this phone's: a call-off made here, then the pad's own end",
-    pilotStateWords({ meta: { pilot: { callOff: { code: "light" } } }, complete: true }) === "Called off"
+  ok("...then this phone's: what SCRBRD said before, then a call-off not yet on SCRBRD (Calling off…, S1), then the pad's own end",
+    pilotStateWords({ meta: { pilot: { callOff: { code: "light" } } }, complete: true }) === "Calling off…" && pilotStateWords({ meta: { pilot: { callOff: { code: "light" }, abandoned: true } } }) === "Called off" && pilotStateWords({ meta: { pilot: { callOff: { code: "light" }, finished: true } } }) === "Finished"
     && pilotStateWords({ complete: true }) === "Finished" && pilotStateWords({}) === "In progress");
   ok("the stop's reason is kept as the server's code", abandonCode("rain") === "weather" && abandonCode("bad_light") === "light"
     && abandonCode("wet_ground") === "ground" && abandonCode("other") === "other" && abandonCode(undefined) === "other");
@@ -177,6 +181,55 @@ group("Pilot Matches: finished ones are kept as a sandbox; nothing promotes");
   ok("...and no sponsor slot: a work mode (§7.1)", !/sponsor/i.test(view.replace(/\/\/.*$|\/\*[\s\S]*?\*\/|\{\/\*[\s\S]*?\*\/\}/gm, "")));
   ok("...and no KPI tile", !/KPICard|kpi/i.test(view));
   ok("...and the board is the one Board component", /import \{ Board \} from "\.\.\/ui\/board\.jsx"/.test(view));
+}
+
+group("Review S1, S3, S5, S6: nothing of a match left unsaid; nothing of a name handed over");
+{
+  const fin = (o = {}) => ({ id: "pilot-f", title: "F v G", complete: true, savedAt: NOW, hasEvents: true, board: { team: "F", total: 9, wickets: 1, overs: "1.0", thisOver: [] }, ...o });
+  const gone = nowItems({ pilots: [fin({ meta: { pilot: { finished: true } } })], pending: new Map(), held: new Map() });
+  ok("a finished Pilot Match with everything sent is not on Now", gone.length === 0);
+  const balls = nowItems({ pilots: [fin()], pending: new Map([["pilot-f", 2]]), held: new Map() });
+  ok("S1: finished, but two still to send: on Now, and a P0 queue item", balls.length === 1 && p0Items(balls).some((x) => x.kind === "queue"));
+  const held = nowItems({ pilots: [fin()], pending: new Map(), held: new Map([["pilot-f", 1]]) });
+  ok("S1: finished, one held: a P0 held item", p0Items(held).some((x) => x.kind === "held"));
+  const unread = nowItems({ pilots: [fin()], pending: null, held: null });
+  ok("S1: finished, its outbox unreadable: kept on Now (Could not count), not dropped", unread.length === 1 && unread[0].pending === null);
+  const calling = nowItems({ pilots: [fin({ meta: { pilot: { callOff: { code: "weather", at: NOW, sealId: "s1" } } } })], pending: new Map(), held: new Map() });
+  ok("S1: finished, its call-off not yet on SCRBRD: a P0 'Calling off' item", p0Items(calling).some((x) => x.kind === "calloff" && /Calling off/.test(x.label)));
+  ok("...and once SCRBRD has it, none", nowItems({ pilots: [fin({ meta: { pilot: { callOff: { code: "weather" }, abandoned: true } } })], pending: new Map(), held: new Map() }).length === 0);
+  ok("...a finished match is no lease conflict", !p0Items(calling, { pilotSessions: new Map([["pilot-f", { holderDevice: "dev-other", leaseUntil: new Date(NOW + 6e4).toISOString() }]]), device: "dev-me", at: NOW })
+    .some((x) => x.kind === "lease"));
+  const lost = nowItems({ pilots: [{ id: "pilot-x", title: "X v Y", complete: false, logError: true, savedAt: NOW }], pending: new Map(), held: new Map() });
+  ok("S5: a Pilot Match whose log could not be read is an error item, never dropped", lost.length === 1 && lost[0].error === true && lost[0].board === null);
+  ok("...said on the P0 card", p0Items(lost).some((x) => x.kind === "unread"));
+  const w = p0Items([], { failures: [{ id: "pilot-w", what: "the call-off", title: "W v Z" }] });
+  ok("S3: a record write that did not save is a P0 item that says what", w.length === 1 && w[0].kind === "write" && /the call-off/.test(w[0].note) && w[0].title === "W v Z");
+  ok("...after the rest, in the order", p0Items(balls, { failures: [{ id: "pilot-w", what: "x" }] }).map((x) => x.kind).join() === "queue,write");
+  ok("N5: while the grant is unknown the button says Start a match", startWords(null, true).action === "Start a match");
+  // S6: what a store hands the home holds no name, and the home and its lib take none.
+  const row = homeRow("pilot-h", { pilot: { roster: { slots: { s1: { name: "Golf One" } } }, slots: [], callOff: null }, players: [{ full_name: "Golf One" }], match: { overs: 1 } },
+    { events: log(1, 2), curIn: 0, cfg: { squad1: SQ_A } }, { title: "Hilton U13B v Kearsney U13B", lines: [], complete: false, savedAt: NOW });
+  ok("S6: a home row carries the board and the title, and no name of the log, the roster or the players",
+    !/Alpha|Bravo|Golf/.test(JSON.stringify(row)) && row.board?.total === 3 && row.hasEvents === true && !("log" in row), JSON.stringify(row).slice(0, 200));
+  const src = ["../src/views/ScorerHomeView.jsx", "../src/lib/scorerDay.js", "../src/lib/boardOfLog.js"].map((f) => readFileSync(new URL(f, import.meta.url), "utf8")).join("\n");
+  ok("S6: the home, scorerDay and boardOfLog read no roster, slot, squad, player or name field, and the home loads no log itself",
+    !/\.roster\b|\.slots\b|\.squad|squad1|\.players\b|full_name|namesBody|restoreFromServer/.test(src.replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, ""))
+    && !/loadMatch|from "\.\.\/lib\/persist\.js"/.test(readFileSync(new URL("../src/views/ScorerHomeView.jsx", import.meta.url), "utf8")));
+}
+
+group("The call-off goes only after the seal it rests on (review B2)");
+{
+  // The window the review found: the seal emitted and the call-off saved in one tap, the outbox not yet holding the seal.
+  ok("attached, nothing counted waiting, but the seal not yet in the outbox: not yet", !callOffReady({ attached: true, pending: 0, held: 0, seal: "unknown" }));
+  ok("the seal queued: not yet", !callOffReady({ attached: true, pending: 1, held: 0, seal: "pending" }));
+  ok("...queued, though the counts have not caught up: not yet", !callOffReady({ attached: true, pending: 0, held: 0, seal: "pending" }));
+  ok("the seal held for a person: not yet", !callOffReady({ attached: true, pending: 0, held: 1, seal: "held" }));
+  ok("the seal gone, but the phone does not hold the scoring: not yet", !callOffReady({ attached: false, pending: 0, held: 0, seal: "gone" }));
+  ok("the seal gone, something else still to send: not yet", !callOffReady({ attached: true, pending: 2, held: 0, seal: "gone" }));
+  ok("the seal on SCRBRD, nothing waiting, holding the scoring: now", callOffReady({ attached: true, pending: 0, held: 0, seal: "gone" }));
+  ok("the waiting words name the real reason (N3)", /held list/.test(callOffWaitWords({ attached: true, held: 1 }))
+    && /holds the scoring/.test(callOffWaitWords({ attached: false })) && /2 still to send/.test(callOffWaitWords({ attached: true, pending: 2 }))
+    && /end of the innings/.test(callOffWaitWords({ attached: true, seal: "pending" })));
 }
 
 group("This week: the next seven days of his list");

@@ -197,10 +197,22 @@ group("F. Who may read the pilot store");
   // The scorer's own home (R0, views/ScorerHomeView.jsx) reads it too, on this phone only: a Pilot Match in
   // progress on Now (its board drawn with no batter or bowler) and the finished ones kept as a sandbox, by
   // their sides' names; no typed player name is drawn (apps/web/test/scorer-day.test.mjs, browser-scorer-home G).
-  ok("only the scorer's own modules import it", readers.length > 0 && readers.every((r) => /\/scorer\//.test(r) || /\/views\/ScorerHomeView\.jsx$/.test(r)), readers.join(", "));
-  const home = readFileSync(join(import.meta.dirname, "../src/views/ScorerHomeView.jsx"), "utf8");
-  ok("...and the home takes no name from it: no roster, slot, squad or player field read",
-    !/\.roster\b|\.slots\b|squad|\.players\b|full_name|namesBody|restoreFromServer/.test(home), "ScorerHomeView.jsx");
+  ok("only the scorer's own modules import it", readers.length > 0 && readers.every((r) => /\/scorer\//.test(r) || /\/views\/ScorerHomeView\.jsx$/.test(r) || /\/lib\/scorerDay\.js$/.test(r)), readers.join(", "));
+  // Review S6: the home and its two libs; a log reaches them only as a board (lib/boardOfLog.js homeRow).
+  const homeFiles = ["../src/views/ScorerHomeView.jsx", "../src/lib/scorerDay.js", "../src/lib/boardOfLog.js"];
+  const home = homeFiles.map((f) => readFileSync(join(import.meta.dirname, f), "utf8")).join("\n").replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");
+  ok("...and the home takes no name from it: no roster, slot, squad or player field read (the view, scorerDay, boardOfLog)",
+    !/\.roster\b|\.slots\b|squad|\.players\b|full_name|namesBody|restoreFromServer/.test(home), homeFiles.join(", "));
+  // Review S6: persist.js's loadMatch hands over a whole log, names and all: only the scorer's own modules and the two stores import it.
+  const logReaders = [];
+  const walkLog = (/** @type {string} */ dir) => { for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) walkLog(p);
+    else if (/\.(jsx?|mjs)$/.test(e.name) && /import\s*\{[^}]*\bloadMatch\b[^}]*\}\s*from\s*["'][^"']*persist\.js["']/.test(readFileSync(p, "utf8"))) logReaders.push(p.replace(/\\/g, "/"));
+  } };
+  walkLog(join(import.meta.dirname, "../src"));
+  ok("loadMatch is imported only by the scorer's modules and the practice and pilot stores (not by the home)",
+    logReaders.length > 0 && logReaders.every((r) => /\/scorer\//.test(r) || /\/lib\/(practice|pilot)\.js$/.test(r)), logReaders.join(", "));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

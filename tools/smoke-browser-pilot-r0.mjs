@@ -440,6 +440,11 @@ try {
   ok("...the phone called the match off on SCRBRD on its own, once the seal had gone, with the stop's reason kept (rain → weather)",
      m2?.status === "abandoned" && m2.abandon_reason === "weather", JSON.stringify(m2));
   ok("...and the result screen says so", await P.has("pilot-called-off"), (await P.text()).slice(-300));
+  // Review B2: the call-off went only after the seal it rests on: both innings' seals are in the server's log, and nothing is held.
+  const seals = await one(`select count(*) n from pilot.ball_event where match_id = $1 and kind = 'innings_end' and payload->>'reason' = 'abandoned'`, [uuid2]);
+  const heldN = await one(`select count(*) n from pilot.held where match_id = $1 and resolved_at is null`, [uuid2]);
+  ok("...after its seal: the server's log holds both innings' ends, and nothing is held (review B2)",
+     Number(seals.n) === 2 && Number(heldN.n) === 0, JSON.stringify({ seals: seals.n, held: heldN.n }));
   ok("...status abandoned, the reason a code, an end time, and the names' 30 days run from it",
      m2.status === "abandoned" && m2.abandon_reason === "weather" && m2.finished_at && m2.names_purge_after
      && Math.abs(Date.parse(m2.names_purge_after) - Date.parse(m2.finished_at) - 30 * 86400000) < 2000, JSON.stringify(m2));
@@ -459,6 +464,33 @@ try {
   // F2 (was a finding): the row's word reads the server's status, and the phone's own call-off before it hears back.
   ok("...and says Called off, not In progress or Finished", /Called off/.test(rowTxt) && !/In progress|Finished/.test(rowTxt), rowTxt);
   await P.tap("practice-back");
+
+  group("4b. Called off in the first innings (review S2): no more play, no result");
+  const A3 = ["India One", "India Two", "India Three"], B3 = ["Juliet One", "Juliet Two", "Juliet Three"];
+  await quickStart(P, { overs: 5, venue: "Invented Common", home: A3, away: B3 });
+  const uuid3 = (await pilotIds(P)).find((x) => x !== uuid1 && x !== uuid2);
+  await P.tap("run-2");
+  await serverEvents(uuid3, 4);
+  await P.tap("pad-menu"); await P.tap("pad-play-stopped");
+  await P.tap("stop-reason-bad_light");
+  await P.tap("stop-confirm");
+  await P.page.waitForTimeout(800);
+  ok("Play stopped in the first innings: the banner offers Call the match off", await P.has("rain-calloff"));
+  await P.tap("rain-calloff");
+  await afterReads(P.page, 1500);
+  ok("...the result screen says no result, called off, with the call-off card", /No result/.test(await P.tid("pad-result").innerText().catch(() => "")) && (await P.has("pilot-calloff")), (await P.text()).slice(0, 300));
+  let m3 = null;
+  for (let i = 0; i < 40; i++) {
+    m3 = await one(`select status, abandon_reason from pilot.match where id = $1`, [uuid3]);
+    if (m3?.status === "abandoned") break;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  ok("...called off on SCRBRD by the phone, the stop's reason kept as its code (bad light → light)", m3?.status === "abandoned" && m3.abandon_reason === "light", JSON.stringify(m3));
+  const seal3 = await one(`select count(*) n from pilot.ball_event where match_id = $1 and kind = 'innings_end' and payload->>'reason' = 'abandoned'`, [uuid3]);
+  const held3 = await one(`select count(*) n from pilot.held where match_id = $1 and resolved_at is null`, [uuid3]);
+  ok("...after the first innings' seal reached SCRBRD, nothing held", Number(seal3.n) === 1 && Number(held3.n) === 0, JSON.stringify({ seal: seal3.n, held: held3.n }));
+  ok("...and the card says it is ended on SCRBRD", await P.has("pilot-called-off"));
+  await P.tap("exit-scorer"); await openScorer(P);
 
   // ── 5 ──────────────────────────────────────────────────────────────
   group("5. The sandbox: no figure moves, no name is public");

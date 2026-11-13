@@ -7,9 +7,8 @@ import { combineReads, readState } from "../lib/readState.js";
 import { humanDate, humanDateTime } from "../lib/format.js";
 import { deviceMatches } from "../lib/deviceMatches.js";
 import { deviceId } from "../lib/device.js";
-import { loadMatch } from "../lib/persist.js";
-import { listPractice } from "../lib/practice.js";
-import { listPilot, pilotStatus, pilotUuid, mayOfferLive } from "../lib/pilot.js";
+import { practiceHomeRows } from "../lib/practice.js";
+import { pilotHomeRows, pilotStatus, pilotUuid, mayOfferLive, writeFailures } from "../lib/pilot.js";
 import {
   SESSION_MAX_AGE_MS, STATE_WORDS, nextToPrepare, pendingWords, prepLines, resumeItems, scorerFixtures,
 } from "../lib/scorerHome.js";
@@ -82,11 +81,11 @@ function usePhone(nonce) {
   useEffect(() => {
     let off = false;
     setS((x) => ({ ...x, loading: true }));
-    const withLogs = async (rows) => Promise.all((rows ?? []).map(async (r) => ({ ...r, log: await loadMatch(r.id).catch(() => null) })));
+    // The stores hand the home each match's board and title, never its log or a name (review S6).
     Promise.all([
       deviceMatches().catch(() => ({ ok: false, saved: [], pending: new Map(), outbox: null })),
-      listPilot().then(withLogs).then((rows) => ({ ok: true, rows })).catch(() => ({ ok: false, rows: [] })),
-      listPractice().then(withLogs).then((rows) => ({ ok: true, rows })).catch(() => ({ ok: false, rows: [] })),
+      pilotHomeRows().then((rows) => ({ ok: true, rows })).catch(() => ({ ok: false, rows: [] })),
+      practiceHomeRows().then((rows) => ({ ok: true, rows })).catch(() => ({ ok: false, rows: [] })),
     ]).then(([d, p, q]) => {
       if (!off) setS({ loading: false, ...d, pilots: p.rows, practices: q.rows, storesOk: p.ok && q.ok });
     });
@@ -200,7 +199,9 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
   const pilotSessions = pilotServer.rows
     ? new Map(pilotServer.rows.map((m) => [`pilot-${m.id}`, m.session ?? null]))
     : null;
-  const p0 = p0Items(nowList, { fixtureStates, pilotSessions, device: deviceId(), at: now });
+  // A record write the pad could not save (review S3), said on the P0 card.
+  const failures = Object.entries(writeFailures()).map(([id, f]) => ({ id, what: f?.what ?? "a change", title: phone.pilots.find((r) => r.id === id)?.title ?? null }));
+  const p0 = p0Items(nowList, { fixtureStates, pilotSessions, device: deviceId(), at: now, failures });
 
   // ── the finished Pilot Matches, and this week ──
   const finished = finishedPilots(phone.pilots, pilotServer.rows, pilotUuid);
@@ -265,8 +266,8 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
           <ul style={{ listStyle: "none", margin: 0, padding: 0, ...stack() }}>
             {p0.map((x) => (
               <li key={x.key} data-testid={`p0-${x.kind}-${x.matchId}`} data-kind={x.kind} style={stack(T.space.xs)}>
-                <p style={{ ...T.role.body, color: T.content.primary, fontWeight: 700, margin: 0 }}>{x.label}</p>
-                <p style={{ ...line(), color: T.content.primary }}>{x.title}</p>
+                <p style={{ ...T.role.body, color: T.content.primary, fontWeight: 700, margin: 0, overflowWrap: "anywhere" }}>{x.label}</p>
+                <p style={{ ...line(), color: T.content.primary, overflowWrap: "anywhere" }}>{x.title}</p>
                 <p style={line()}>{x.note}</p>
                 <Act testId={`p0-${x.kind}-${x.matchId}-open`} label={`${x.kind === "queue" ? "Resume scoring" : "Open the pad"}: ${x.title}`}
                   onClick={() => openItem(x.item)}>{x.kind === "queue" ? "Resume scoring" : "Open the pad"}</Act>
@@ -295,7 +296,9 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                       <p style={strong()}>{it.title}</p>
                       {labelFor(it)}
                     </div>
-                    {it.board
+                    {it.error
+                      ? <p role="alert" style={{ ...line(), color: T.semantic.criticalText }} data-testid={`resume-${it.matchId}-unread`}>Could not read this match's balls on this phone. Nothing is deleted.</p>
+                      : it.board
                       ? <Board {...it.board} size="card" compact testid={`resume-${it.matchId}-board`}/>
                       : <p style={line()} data-testid={`resume-${it.matchId}-noboard`}>No ball on the board yet.</p>}
                     <p style={line()} data-testid={`resume-${it.matchId}-pending`}>
@@ -339,9 +342,9 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                     {finished.map((r) => (
                       <li key={r.key} data-testid={`pilot-done-${r.id}`} data-state="sandbox" style={{ ...stack(T.space.xs), paddingBottom: T.space.md, borderBottom: `1px solid ${T.line.subtle}` }}>
                         <p style={strong()}>{r.title}</p>
-                        {r.lines.length > 0 && <p style={line()}>{r.lines.map(scoreLine).join(" · ")}</p>}
+                        {r.lines.length > 0 && <p style={{ ...line(), overflowWrap: "anywhere" }}>{r.lines.map(scoreLine).join(" · ")}</p>}
                         <p style={{ ...line(), color: T.content.primary, fontWeight: 600 }} data-testid={`pilot-done-${r.id}-state`}>
-                          {r.status === "abandoned" ? "Called off" : "Finished"} · {SANDBOX_WORDS.kept}
+                          {r.words} · {SANDBOX_WORDS.kept}
                         </p>
                         <p style={line()}>{SANDBOX_WORDS.why}{r.onPhone ? "" : " On SCRBRD, not on this phone: My Pilot Matches brings it here."}</p>
                         {r.onPhone && (

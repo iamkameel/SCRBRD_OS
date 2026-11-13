@@ -4,7 +4,7 @@ import { PracticePage, practiceStyles } from "./practice.jsx";
 import { savedWords } from "../lib/practice.js";
 import { api, signedIn } from "../lib/api.js";
 import {
-  deleteAllPilotHere, deletePilotHere, deletePilotOnServer, listPilot, pilotStateWords, pilotUuid, restoreFromServer,
+  callOffReady, callOffWaitWords, deleteAllPilotHere, deletePilotHere, deletePilotOnServer, listPilot, pilotStateWords, pilotUuid, restoreFromServer,
 } from "../lib/pilot.js";
 
 /**
@@ -160,29 +160,41 @@ export function PilotList({ onBack, onResume }) {
 }
 
 /**
- * Call a Pilot Match off on SCRBRD (§7.3): the pad's call-off (Play stopped,
- * then End the innings in the chase with no par: no result) is recorded on
- * this phone as it is made (`callOff`: the reason code and the time), and sent
- * here, on its own, once every ball has gone, as finish waits for them: the
- * server takes nothing more into an abandoned match's log, so the seal must
- * be there first. A send that fails is held, and goes again the next time
- * every ball is on SCRBRD, or on "Try again". `at` is the pad's own time of
- * the call-off, from which the names' 30 days run.
- * @param {{matchId: string, code: string, at: number, attached: boolean, left: number, done: boolean, onDone: () => Promise<unknown>}} props
+ * Call a Pilot Match off on SCRBRD (§7.3). The pad's call-off (Play stopped,
+ * then End the innings in the chase with no par, or Call the match off in the
+ * first innings: no result) is recorded on this phone as it is made
+ * (`callOff`: the reason code, the time, and the id of the innings' seal it
+ * rests on), and sent here, on its own, only once that seal has gone (review
+ * B2: lib/pilot.js callOffReady): the server takes nothing more into an
+ * abandoned match's log, so the seal must be there first. A send that fails
+ * is held, and goes again the next time the phone is ready, or on "Try
+ * again". `at` is the pad's own time of the call-off, from which the names'
+ * 30 days run. A `not_live` answer means SCRBRD has already ended the match:
+ * its own status (called off, or finished elsewhere: N2) is read and recorded.
+ * @param {{matchId: string, code: string, at: number, attached: boolean, pending: number, held: number,
+ *          seal: "gone" | "pending" | "held" | "unknown" | null, done: boolean,
+ *          onDone: (status: "abandoned" | "finished") => Promise<unknown>}} props
  */
-export function PilotCallOff({ matchId, code, at, attached, left, done, onDone }) {
+export function PilotCallOff({ matchId, code, at, attached, pending, held, seal, done, onDone }) {
   const [state, setState] = useState(/** @type {"idle" | "busy" | "done" | "failed"} */ (done ? "done" : "idle"));
-  const ready = attached && left === 0;
+  useEffect(() => { if (done) setState("done"); }, [done]);
+  const wait = { attached, pending, held, seal };
+  const ready = callOffReady(wait);
   const send = async () => {
     setState("busy");
     try {
       const r = await api(`/api/pilot/${pilotUuid(matchId)}/abandon`, { method: "POST", body: { reason: code, at } });
-      // Already called off (or finished) on SCRBRD: nothing left to send.
-      if (r?.ok === true || r?.reason === "not_live") { await onDone(); setState("done"); } else setState("failed");
+      if (r?.ok === true) { await onDone("abandoned"); setState("done"); return; }
+      if (r?.reason === "not_live") {
+        // Ended on SCRBRD already: by this call-off, or finished from another phone.
+        const h = await api(`/api/pilot/${pilotUuid(matchId)}`).catch(() => null);
+        if (h?.status === "abandoned" || h?.status === "finished") { await onDone(h.status); setState("done"); return; }
+      }
+      setState("failed");
     } catch { setState("failed"); }
   };
-  // Sent on its own once every ball has gone; held after a failure until the
-  // phone is ready again (the next time it holds the scoring with nothing waiting).
+  // Sent on its own once the seal has gone; held after a failure until the
+  // phone is ready again.
   useEffect(() => {
     if (ready && state === "idle") send();
     if (!ready && state === "failed") setState("idle");
@@ -191,10 +203,10 @@ export function PilotCallOff({ matchId, code, at, attached, left, done, onDone }
   return (
     <section data-testid="pilot-calloff" data-state={state} style={{ ...S.card(), marginBottom: T.space.lg }} aria-label="Call this Pilot Match off">
       {state === "done"
-        ? <p role="status" data-testid="pilot-called-off" style={S.body()}>Called off on SCRBRD. Nothing more is sent for this match.</p>
+        ? <p role="status" data-testid="pilot-called-off" style={S.body()}>Ended on SCRBRD. Nothing more is sent for this match.</p>
         : <>
-            <p style={S.body()}>{state === "busy" ? "Calling the match off on SCRBRD…"
-              : "Called off here. It is called off on SCRBRD once every ball has gone: it waits for signal and a sign-in."}</p>
+            <p data-testid="pilot-calloff-wait" style={S.body()}>{state === "busy" ? "Calling the match off on SCRBRD…"
+              : `Calling off: done on this phone, not yet on SCRBRD. ${callOffWaitWords(wait)}`}</p>
             {state === "failed" && (
               <>
                 <p role="status" style={S.note("bad")}>It could not be called off on SCRBRD. It is held here and goes again when there is signal.</p>
@@ -205,6 +217,7 @@ export function PilotCallOff({ matchId, code, at, attached, left, done, onDone }
     </section>
   );
 }
+
 
 /**
  * Finish a Pilot Match on SCRBRD (§7.3), from the pad's result screen: one

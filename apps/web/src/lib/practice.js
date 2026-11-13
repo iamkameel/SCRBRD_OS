@@ -59,6 +59,7 @@ import {
 } from "./persist.js";
 import { foldPad } from "../scorer/penalty.js";
 import { getWeatherHint } from "./weatherHint.js";
+import { homeRow } from "./boardOfLog.js";
 
 export { isPracticeId, PRACTICE_ID_PREFIX };
 
@@ -682,6 +683,23 @@ export async function listPractice() {
   for (const id of ids) {
     const [meta, log] = await Promise.all([loadPractice(id), loadMatch(id)]);
     rows.push({ id, meta, ...summarise(meta ?? { id }, log) });
+  }
+  return rows.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
+}
+
+/**
+ * Every practice match on this phone as the scorer's home is handed it
+ * (lib/boardOfLog.js homeRow): its board and title, never its log or a name
+ * (review S6).
+ */
+export async function practiceHomeRows() {
+  const metaKeys = (await recordKeys(META)) ?? [];
+  const logKeys = (await recordKeys(LOG)) ?? [];
+  const ids = [...new Set([...metaKeys.map((k) => k.slice(META.length)), ...logKeys.map((k) => k.slice(LOG.length))])];
+  const rows = [];
+  for (const id of ids) {
+    const [meta, log] = await Promise.all([loadPractice(id), loadMatch(id)]);
+    rows.push(homeRow(id, meta, log, summarise(meta ?? { id }, log)));
   }
   return rows.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
 }

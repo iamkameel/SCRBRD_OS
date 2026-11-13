@@ -33,9 +33,10 @@
  * PURE. No React, no DOM, no storage, no clock of its own: `now` is passed in.
  * apps/web/test/scorer-day.test.mjs holds it.
  */
-import { foldPad } from "../scorer/penalty.js";
-import { boardFromInnings } from "../scorer/boardData.js";
+import { boardOfLog } from "./boardOfLog.js";
+export { boardOfLog };
 import { saDay, startOf } from "./scorerHome.js";
+import { pilotStateWords } from "./pilot.js";
 
 /** The sections, in the order the home draws them. */
 export const SECTION_ORDER = Object.freeze(["p0", "now", "start", "pilots", "week"]);
@@ -46,31 +47,6 @@ export const WEEK_DAYS = 7;
 
 /** A read state that is not an answer: the section stays, and says so. */
 const UNANSWERED = new Set(["loading", "failed", "forbidden", "disabled", "partial", "stale"]);
-
-// ── The board, from the phone's own log ──────────────────────────────
-
-/**
- * The board for a log this phone holds: the innings in play, folded as the
- * pad folds it, drawn with no player's name (no batters, no bowler, no last
- * wicket). Null when the log holds no innings yet, or does not fold.
- * @param {any[][] | null | undefined} events  the pad's log, one array per innings
- * @param {{curIn?: number | null, overs?: number | null}} [o]
- */
-export function boardOfLog(events, { curIn = null, overs = null } = {}) {
-  if (!Array.isArray(events)) return null;
-  let innings;
-  try { innings = foldPad(events, {}); } catch { return null; }
-  if (!Array.isArray(innings)) return null;
-  const at = Number.isInteger(curIn) && innings[/** @type {number} */ (curIn)]?.battingTeam ? /** @type {number} */ (curIn)
-    : innings.reduce((last, inn, i) => (inn?.battingTeam ? i : last), -1);
-  const inn = at >= 0 ? innings[at] : null;
-  if (!inn?.battingTeam) return null;
-  const o = Number.isFinite(overs) && /** @type {number} */ (overs) > 0 ? /** @type {number} */ (overs) : inn.overs ?? 20;
-  const target = at >= 1 ? (inn.target ?? (Number.isFinite(innings[0]?.runs) ? innings[0].runs + 1 : null)) : null;
-  const b = boardFromInnings(inn, { target, overs: o });
-  if (!b) return null;
-  return { team: b.team, total: b.total, wickets: b.wickets, overs: b.overs, sub: b.sub ?? undefined, thisOver: b.thisOver ?? [] };
-}
 
 // ── Now: what this phone is scoring ──────────────────────────────────
 
@@ -100,13 +76,29 @@ export function nowItems({ fixtures = [], pilots = [], practices = [], pending =
   }
   for (const [kind, rows] of /** @type {const} */ ([["pilot", pilots], ["practice", practices]])) {
     for (const r of rows ?? []) {
-      if (!r?.id || r.complete) continue;
-      if (!(r.log?.events ?? []).some((/** @type {any} */ e) => Array.isArray(e) && e.length)) continue;
+      if (!r?.id) continue;
+      const sent = kind === "practice";
+      const p = sent ? 0 : count(pending, r.id), h = sent ? 0 : count(held, r.id);
+      // Review S1: a finished Pilot Match stays while anything of it has not
+      // reached SCRBRD (balls, held events, an outbox nobody could read, or its
+      // call-off), as resumeItems() keeps a fixture's log.
+      const callingOff = kind === "pilot" && !!r.meta?.pilot?.callOff && r.meta?.pilot?.abandoned !== true && r.meta?.pilot?.finished !== true;
+      const unsent = kind === "pilot" && (p == null || h == null || p > 0 || h > 0 || callingOff);
+      if (r.complete && !unsent) continue;
+      // Review S5: a match whose log this phone could not read is said, never dropped.
+      if (r.logError) {
+        out.push({ key: r.id, kind, matchId: r.id, title: r.title, pending: p, held: h, savedAt: r.savedAt ?? null, openable: true, match: null,
+                   board: null, error: true, finished: !!r.complete, callingOff });
+        continue;
+      }
+      // A store row (lib/pilot.js pilotHomeRows) brings its board and whether it has events, never its log (review S6).
+      const scored = typeof r.hasEvents === "boolean" ? r.hasEvents : (r.log?.events ?? []).some((/** @type {any} */ e) => Array.isArray(e) && e.length);
+      if (!scored) continue;
       out.push({ key: r.id, kind, matchId: r.id, title: r.title,
         // A practice match is never sent anywhere, so it has no outbox at all.
-        pending: kind === "practice" ? 0 : count(pending, r.id), held: kind === "practice" ? 0 : count(held, r.id),
-        savedAt: r.savedAt ?? null, openable: true, match: null,
-        board: boardOfLog(r.log?.events, { curIn: r.log?.curIn ?? null, overs: r.meta?.match?.overs ?? r.log?.cfg?.overs ?? null }) });
+        pending: p, held: h,
+        savedAt: r.savedAt ?? null, openable: true, match: null, finished: !!r.complete, callingOff,
+        board: "board" in r ? r.board : boardOfLog(r.log?.events, { curIn: r.log?.curIn ?? null, overs: r.meta?.match?.overs ?? r.log?.cfg?.overs ?? null }) });
     }
   }
   return out.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
@@ -137,6 +129,15 @@ export const P0_WORDS = Object.freeze({
     pilot_active: "Only the phone that holds the scoring sends. What this phone scores waits until it holds it again.",
     pilot_lapsed: "Open the pad here to take over, then carry on.",
   },
+  // Review S1: a call-off made on this phone, not yet on SCRBRD.
+  calloff: "Calling off · not yet on SCRBRD",
+  calloffNote: "Open the pad: it calls the match off on SCRBRD once the end of the innings has gone.",
+  // Review S5: a match whose balls this phone could not read.
+  unread: "Could not read this match's balls on this phone",
+  unreadNote: "Open the pad to try again. Nothing is deleted.",
+  // Review S3: a change to the match's record that did not save.
+  write: "A change to this match did not save on this phone",
+  writeNote: (/** @type {string} */ what) => `What did not save: ${what}. Open the pad to try again.`,
 });
 
 /**
@@ -153,11 +154,12 @@ export const P0_WORDS = Object.freeze({
  *        pilot id → the server's session for it (GET /api/pilot/mine); null when that read did not answer
  * @param {string | null} [o.device]  this phone's device id
  * @param {number} [o.at]              the clock
- * @returns {{kind: "queue"|"lease"|"held", key: string, matchId: string, title: string, label: string, note: string, item: any}[]}
+ * @param {{id: string, what: string, title?: string | null}[]} [o.failures]  record writes that did not save (lib/pilot.js writeFailures)
+ * @returns {{kind: "queue"|"lease"|"held"|"calloff"|"unread"|"write", key: string, matchId: string, title: string, label: string, note: string, item: any}[]}
  */
-export function p0Items(now, { fixtureStates = null, pilotSessions = null, device = null, at = 0 } = {}) {
+export function p0Items(now, { fixtureStates = null, pilotSessions = null, device = null, at = 0, failures = [] } = {}) {
   /** @type {any[]} */
-  const queue = [], lease = [], held = [];
+  const queue = [], lease = [], held = [], calloff = [], unread = [], write = [];
   for (const it of now ?? []) {
     if (it.openable === false) continue;
     if (typeof it.pending === "number" && it.pending > 0) {
@@ -167,7 +169,7 @@ export function p0Items(now, { fixtureStates = null, pilotSessions = null, devic
     if (it.kind === "fixture") {
       const st = fixtureStates?.get?.(it.matchId) ?? null;
       if (st && HELD_ELSEWHERE.has(st)) why = st;
-    } else if (it.kind === "pilot" && device) {
+    } else if (it.kind === "pilot" && device && !it.finished) {
       const s = pilotSessions?.get?.(it.matchId) ?? null;
       if (s?.holderDevice && s.holderDevice !== device) {
         const until = Date.parse(s.leaseUntil ?? "");
@@ -181,8 +183,15 @@ export function p0Items(now, { fixtureStates = null, pilotSessions = null, devic
     if (typeof it.held === "number" && it.held > 0) {
       held.push({ kind: "held", key: `held-${it.key}`, matchId: it.matchId, title: it.title, label: P0_WORDS.held(it.held), note: P0_WORDS.heldNote, item: it });
     }
+    if (it.callingOff) calloff.push({ kind: "calloff", key: `calloff-${it.key}`, matchId: it.matchId, title: it.title, label: P0_WORDS.calloff, note: P0_WORDS.calloffNote, item: it });
+    if (it.error) unread.push({ kind: "unread", key: `unread-${it.key}`, matchId: it.matchId, title: it.title, label: P0_WORDS.unread, note: P0_WORDS.unreadNote, item: it });
   }
-  return [...queue, ...lease, ...held];
+  for (const f of failures ?? []) {
+    if (!f?.id) continue;
+    const item = (now ?? []).find((i) => i.matchId === f.id) ?? { key: f.id, kind: "pilot", matchId: f.id, title: f.title ?? "A Pilot Match", openable: true };
+    write.push({ kind: "write", key: `write-${f.id}`, matchId: f.id, title: item.title, label: P0_WORDS.write, note: P0_WORDS.writeNote(f.what || "a change"), item });
+  }
+  return [...queue, ...lease, ...held, ...calloff, ...unread, ...write];
 }
 
 // ── Finished Pilot Matches: kept as a sandbox ────────────────────────
@@ -211,15 +220,17 @@ export function finishedPilots(phone, server, uuidOf) {
     if (!r?.id) continue;
     here.add(uuidOf(r.id));
     if (!r.complete) continue;
-    // Called off (lib/pilot.js pilotStateWords): the server says so, or this phone made the call-off.
-    const off = served.get(uuidOf(r.id)) === "abandoned" || !!r.meta?.pilot?.callOff || r.meta?.pilot?.abandoned === true;
-    out.push({ key: r.id, id: r.id, title: r.title, onPhone: true, status: off ? "abandoned" : "finished", lines: r.lines ?? [], at: r.savedAt ?? null });
+    // Review N1: the server's status first, then this phone's, as My Pilot Matches says it (lib/pilot.js pilotStateWords).
+    const words = pilotStateWords({ meta: r.meta, complete: true, serverStatus: served.get(uuidOf(r.id) ?? "") ?? null });
+    out.push({ key: r.id, id: r.id, title: r.title, onPhone: true, words,
+               status: words === "Called off" ? "abandoned" : words === "Calling off…" ? "calling_off" : "finished",
+               lines: r.lines ?? [], at: r.savedAt ?? null });
   }
   for (const m of server ?? []) {
     if (!m?.id || here.has(m.id)) continue;
     if (m.status !== "finished" && m.status !== "abandoned") continue;
     const sides = Array.isArray(m.sides) && m.sides.length === 2 ? `${m.sides[0].display_name} v ${m.sides[1].display_name}` : "Pilot match";
-    out.push({ key: `server-${m.id}`, id: m.id, title: sides, onPhone: false, status: m.status, lines: [],
+    out.push({ key: `server-${m.id}`, id: m.id, title: sides, onPhone: false, status: m.status, words: pilotStateWords({ serverStatus: m.status }), lines: [],
                at: Date.parse(m.endedAt ?? m.lastEventAt ?? m.startsAt ?? "") || null });
   }
   return out.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
@@ -292,7 +303,8 @@ export function homeSections({ p0 = 0, pilotOffer = false, pilotsKnown = 0, week
  */
 export function startWords(status, loading = false) {
   const what = "Venue, overs, both sides and their players typed in, the toss, then the pad.";
-  if (loading && !status) return { state: "loading", action: "Start Pilot Match", note: `${what} Checking whether your account sends Pilot Matches…` };
+  // Review N5: "Start a match" until the grant is known; the setup may offer practice only.
+  if (loading && !status) return { state: "loading", action: "Start a match", note: `${what} Checking whether your account sends Pilot Matches…` };
   if (status?.sync && status?.granted) {
     return { state: "pilot", action: "Start Pilot Match",
              note: `${what} Sent to SCRBRD as you score, so you can carry on on another phone. The live page shows the score and team names only.` };
