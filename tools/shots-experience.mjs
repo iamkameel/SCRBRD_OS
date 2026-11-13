@@ -323,26 +323,15 @@ async function runPersona(P, width, scheme, theme, fx) {
       if (!(await go(page, k))) { miss(P.persona, k, width, theme, `no "${k}" in this persona's menu at this width`); continue; }
       await take(page, { persona: P.persona, screen: k, route: route(k) }, width, theme);
       if (P.parent && k === "family") {
-        // The child-linking flow lives on the family screen's links; the terms are a row on the child's file (Home).
-        // Shot above. Nothing more to open here.
+        // The terms are a row on the child's card on the Family screen (GA-I20 A2); the link rows sit on the same screen.
+        const row = page.locator('[data-testid^="family-open-terms-"]').first();
+        if (await row.count()) {
+          await row.click({ timeout: 4000 }).catch(() => {});
+          await afterReads(page, 900);
+          if (await tid(page, "family-terms-text").count()) await take(page, { persona: P.persona, screen: "terms", route: "/app > Family > the child's card > the school's terms" }, width, theme);
+          else miss(P.persona, "terms", width, theme, "the terms row opened no terms panel");
+        } else miss(P.persona, "terms", width, theme, "no terms row (family-open-terms-*) on the Family screen");
       }
-    }
-
-    if (P.parent) {
-      // The terms: Home > the child's file > "Read and agree" (GA-I20 A2).
-      await go(page, "children");
-      const open = page.locator('[data-testid^="family-open-terms-"]').first();
-      if (!(await open.count())) {
-        const child = page.locator('[data-testid^="family-open-"], [data-testid^="family-child"], [data-testid="family-children"] button').first();
-        if (await child.count()) { await child.click({ timeout: 3000 }).catch(() => {}); await afterReads(page, 1000); }
-      }
-      if (await open.count()) {
-        await open.click({ timeout: 4000 }).catch(() => {});
-        await afterReads(page, 900);
-        if (await tid(page, "family-terms-text").count()) await take(page, { persona: P.persona, screen: "terms", route: "/app > Home > child > Read and agree" }, width, theme);
-        else miss(P.persona, "terms", width, theme, "the terms row opened no terms panel");
-      } else miss(P.persona, "terms", width, theme, "no terms row (family-open-terms-*) on the child's home");
-      // Linking another child: the account's own "Other links" card and the sign-up request are first-run screens (see "New account").
     }
 
     if (P.watcher) {
@@ -480,34 +469,32 @@ async function runFirstRun(width, scheme, theme) {
       if (!(await create.count())) return miss(persona, "onboarding", width, theme, "no Create an account link on the sign-in screen");
       await create.click({ timeout: 4000 }); await page.waitForTimeout(800);
       let n = 1;
-      const step = (name, route) => take(page, { persona, screen: `onboard-${n++}-${name}`, route }, width, theme);
-      await step("welcome", "/app > Create an account > step 1");
-      const next = async (re = /Continue|Next|Get Started|Let.s go|Start/i) => { const b = page.locator("button:not([disabled])", { hasText: re }).first(); if (await b.count()) { await b.click({ timeout: 3000 }).catch(() => {}); await page.waitForTimeout(900); return true; } return false; };
-      await next();
-      await step("role", "/app > Create an account > role");
-      // choosing a role advances on its own
-      const role = page.locator("button", { hasText: /Parent \/ Guardian/ }).first();
-      if (await role.count()) { await role.click({ timeout: 3000 }).catch(() => {}); await page.waitForTimeout(1200); }
-      if (await page.locator("button", { hasText: /Hilton/ }).count() && !(await page.locator('input[type="email"], input[placeholder*="name" i]').count())) {
-        await step("school", "/app > Create an account > school");
-        await page.locator("button", { hasText: /Hilton/ }).first().click({ timeout: 3000 }).catch(() => {}); await page.waitForTimeout(1200);
+      const heading = async () => ((await page.locator("h1:visible, h2:visible").first().innerText().catch(() => "")) || "").replace(/\s+/g, " ").trim();
+      const seen = new Set();
+      const nextBtn = (re) => page.locator("button:not([disabled])", { hasText: re }).first();
+      for (let i = 0; i < 9; i++) {
+        const h = await heading();
+        if (seen.has(h) && i > 0) break;
+        seen.add(h);
+        await take(page, { persona, screen: `onboard-${n++}-${slug(h).slice(0, 24) || "step"}`, route: `/app > Create an account > step ${i + 1} ("${h.slice(0, 40)}")` }, width, theme);
+        // act on the step: a role or a school chosen advances by itself; a form is filled; else Continue
+        if (/role/i.test(h)) { await page.locator("button", { hasText: /Parent \/ Guardian/ }).first().click({ timeout: 3000 }).catch(() => {}); }
+        else if (/school/i.test(h)) { await page.locator("button", { hasText: /Hilton/ }).first().click({ timeout: 3000 }).catch(() => {}); }
+        else {
+          const inputs = page.locator("input:visible");
+          for (let k = 0; k < await inputs.count(); k++) {
+            const type = await inputs.nth(k).getAttribute("type");
+            const hint = ((await inputs.nth(k).getAttribute("placeholder")) || "") + ((await inputs.nth(k).getAttribute("aria-label")) || "") + ((await inputs.nth(k).getAttribute("id")) || "");
+            if (type === "email" || /email/i.test(hint)) await inputs.nth(k).fill("newcomer.example@example.invalid").catch(() => {});
+            else if (!type || type === "text") await inputs.nth(k).fill(/child|player|link/i.test(hint) ? "Example Child" : "Newcomer Example").catch(() => {});
+          }
+          await page.waitForTimeout(300);
+          const b = nextBtn(/Continue|Next|Get Started|Let.s go|Skip/i);
+          if (await b.count()) await b.click({ timeout: 3000 }).catch(() => {});
+          else break;   // the last step: nothing more is pressed (no request is sent)
+        }
+        await page.waitForTimeout(1100);
       }
-      await step("profile", "/app > Create an account > your details");
-      const inputs = page.locator("input:visible");
-      const total = await inputs.count();
-      for (let i = 0; i < total; i++) {
-        const type = await inputs.nth(i).getAttribute("type");
-        const ph = ((await inputs.nth(i).getAttribute("placeholder")) || "") + ((await inputs.nth(i).getAttribute("aria-label")) || "");
-        if (type === "email" || /email/i.test(ph)) await inputs.nth(i).fill("newcomer.example@example.invalid").catch(() => {});
-        else if (!type || type === "text") await inputs.nth(i).fill(/child|player|link/i.test(ph) ? "Example Child" : "Newcomer Example").catch(() => {});
-      }
-      await page.waitForTimeout(300);
-      await next(/Continue|Next/i);
-      await step("next-after-profile", "/app > Create an account > after your details");
-      await next(/Continue|Next|Skip/i);
-      await step("further", "/app > Create an account > a further step");
-      await next(/Continue|Next|Skip|Done|Finish|Request|Send/i);
-      await step("last", "/app > Create an account > the last step reached");
     } catch (e) { miss(persona, "onboarding (rest)", width, theme, e.message.slice(0, 160)); } finally { await ctx.close(); }
   }
 }
@@ -561,6 +548,16 @@ try {
     await q(`insert into pilot.scorer (user_id) select id from app_user where email = 'scorer@example.invalid' on conflict (user_id) do update set ended_at = null`).catch((e) => console.log("!! pilot scorer:", e.message.slice(0, 120)));
   }
   const fx = await buildMatchCentreFixture(q);
+  // The public pages answer only for a fixture its school has published and listed: Sarah, the director of sport,
+  // does it through the app's own functions, as the school would (smoke-browser-public-live).
+  try {
+    const sarah = (await q(`select id from app_user where email = 'sarah@example.invalid'`))[0].id;
+    const app = new pg.Pool({ connectionString: appUrl() });
+    const as = async (text, params) => { const c = await app.connect(); try { await c.query("BEGIN"); await c.query("select set_config('app.user_id', $1, true), set_config('app.device_id', 'shots-experience', true)", [sarah]); await c.query(text, params); await c.query("COMMIT"); } catch (e) { await c.query("ROLLBACK"); throw e; } finally { c.release(); } };
+    await as(`select * from fixture_publish($1, 'home', true)`, [fx.live]);
+    await as(`select * from public_listing_set($1, true)`, [HIL]);
+    await app.end();
+  } catch (e) { console.log("!! could not publish the live fixture:", e.message.slice(0, 160)); }
 
   for (const [scheme, theme] of THEMES) {
     for (const width of WIDTHS) {
