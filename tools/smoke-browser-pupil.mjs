@@ -81,6 +81,7 @@ import { ATTACK, buildCaptainFixtures, fixConditions, PLAY } from "./fixture-cap
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { pickTab, tabIds } from "./walk-tabs.mjs";
 import { rankingsOnScreen } from "./walk-rankings.mjs";
+import { rowLinks, sheetChecks } from "./walk-passport.mjs";
 
 const WEB_PORT = port(4366);
 const API_PORT = port(8966);
@@ -377,6 +378,15 @@ try {
   await afterReads(s.page, 800);
   const lit = await s.page.$$eval('[data-testid="mc-bat-row"][data-focus="true"]', (els) => els.map((e) => e.innerText));
   ok("the scorecard lights his row, and only his, with a word", lit.length === 1 && /R Pillay/.test(lit[0]) && /\bYou\b/i.test(lit[0]), lit.join(" | "));
+  // CRI-3.2 (REACH-D2): his own row offers his passport, and no team-mate's does.
+  {
+    const links = await rowLinks(s.page);
+    ok("CRI-3.2: his own row offers his passport, no team-mate's row does", links.bat.join() === "R Pillay" && links.bowl.length === 0, JSON.stringify(links));
+    const mine = s.page.locator('[data-testid="mc-bat-row"][data-focus="true"]');
+    await mine.locator('[data-testid="mc-bat-open"]').click({ timeout: 4000 });
+    await sheetChecks(s.page, mine.locator('[data-testid="mc-passport-open"]'), ok, { who: "CRI-3.2, the pupil", name: /^R Pillay$/ });
+    await mine.locator('[data-testid="mc-bat-open"]').click({ timeout: 4000 });
+  }
   await pickTab(s.page, "analytics").catch(() => {});
   await afterReads(s.page, 800);
   const whose = await s.page.$$eval('[aria-label="Whose shots"] button', (els) => els.map((e) => e.innerText.trim()));
