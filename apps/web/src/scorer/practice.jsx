@@ -446,19 +446,17 @@ export function PracticeSetup({ onStart, onCancel, pilot = null }) {
             </section>
           ))}
           {teamsWhy && <p role="status" style={S.note("bad")}>{teamsWhy}</p>}
-          {typedAny ? (
-            <button type="button" className="pressBtn" style={S.primary(teamsOk)} disabled={!teamsOk} data-testid="practice-next" onClick={() => go(2)}>Next: the first squad</button>
-          ) : (
+          {/* Q5: no names needed. On a fresh draft, going on by position comes first; practice-next
+              keeps its words and its step in every state (the walks' ids and words stand). */}
+          {!typedAny && (
             <>
-              {/* Q5: no names needed. Positions by default; the names step stays for anyone who wants it. */}
               <p data-testid="practice-positions-note" style={S.note()}>
                 {`No names needed: the pad shows each player by position. ${names[0] || "The first team"} is Home No. 1 to 11, ${names[1] || "the second"} Away No. 1 to 11.`}
               </p>
-              <button type="button" className="pressBtn" style={S.primary(teamsOk)} disabled={!teamsOk} data-testid="practice-positions" onClick={byPositions}>Next: the toss</button>
-              <button type="button" className="pressBtn" style={{ ...S.secondary(), width: "100%", opacity: teamsOk ? 1 : 0.5, cursor: teamsOk ? "pointer" : "not-allowed" }}
-                disabled={!teamsOk} data-testid="practice-next" onClick={() => go(2)}>Type the players' names</button>
+              <button type="button" className="pressBtn" style={S.primary(teamsOk)} disabled={!teamsOk} data-testid="practice-positions" onClick={byPositions}>Score by position: on to the toss</button>
             </>
           )}
+          <button type="button" className="pressBtn" style={S.primary(teamsOk)} disabled={!teamsOk} data-testid="practice-next" onClick={() => go(2)}>Next: the first squad</button>
         </>
       )}
 

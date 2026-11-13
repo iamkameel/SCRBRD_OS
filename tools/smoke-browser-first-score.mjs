@@ -15,7 +15,7 @@
  *      (the account is granted nothing; Pilot Matches are off as shipped),
  *      its players' names said to be optional. The account holds nothing.
  *   2. THE FIRST BALL, NO NAME TYPED: the pad's own setup opens at its first
- *      step; the overs, the two sides, then "Next: the toss" with no squad
+ *      step; the overs, the two sides, then "Score by position: on to the toss" (practice-positions; practice-next keeps "Next: the first squad") with no squad
  *      screen; the toss; the openers and bowler by position (Home No. 1,
  *      Home No. 2, Away No. 1); the pad. One run moves the Board. Nothing is
  *      typed into a name field, no shell and no role is drawn, and nothing
@@ -221,7 +221,8 @@ try {
   await tid("practice-division-1").selectOption("U13");
   await tap("practice-class-1-B");
   ok("the teams step offers the toss next, players by position, and the names step beside it",
-     (await has("practice-positions")) && /Next: the toss/.test(await tid("practice-positions").innerText()) && (await has("practice-next"))
+     (await has("practice-positions")) && /^Score by position: on to the toss$/.test((await tid("practice-positions").innerText()).trim())
+     && /^Next: the first squad$/.test((await tid("practice-next").innerText()).trim())
      && /Home No\. 1 to 11/.test(await tid("practice-positions-note").innerText()), (await text()).slice(-400));
   const f2 = await floors("main");
   ok("...nothing under 12px, nothing under 44px on it", floorsOk(f2), [...f2.small, ...f2.tiny].join(" | "));
