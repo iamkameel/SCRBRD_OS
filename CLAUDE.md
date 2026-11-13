@@ -291,3 +291,22 @@ screen. They advise; this repository's rules win where they differ:
   second one (`.tastemaker/style-lock.md`) beside them.
 - Routing: complex frontend code goes to Opus (2026-10-29, above); simple
   screens and styling go to Sonnet; review to Opus.
+
+### Images: Magnific (added 2026-11-13, Kameel)
+
+"You can use the Magnific mcp to generate images for the app if and when
+required. There is also a stock library." So the app's images (an empty
+state, a ground, a hero, an icon set, a texture) may be generated or taken
+from Magnific's stock, when a screen needs one. The rules above still win:
+
+- **No child, real or generated**, in any image, on any page: no faces, no
+  figures that read as a pupil, no school crests or kit that point at a real
+  school. Grounds, equipment, weather and abstract shapes are fine.
+- **No real person, brand or school** imitated, and nothing that reads as a
+  photograph of a real match.
+- **Check the price first** (`simulate_cost`) and keep it to what a screen
+  needs; credits are Kameel's.
+- Images ship as static assets inside the bundle ceilings, with `alt` text
+  (or `alt=""` when decorative), sized for 390 and 1366 and both themes.
+- Opus or Sonnet asks for an image in its brief; the lead reviews it before it
+  lands. Haiku never generates.
