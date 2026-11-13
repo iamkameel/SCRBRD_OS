@@ -29,7 +29,7 @@ import { loadMatch, saveMatch, saveAside, storageKind, isPracticeId, isPilotId }
 import { PracticeSetup, PracticeList, PracticeWeatherSheet, withWeatherChange } from "./practice.jsx";
 import { PracticeLabel, PilotLabel, PracticeWeatherChip } from "./practiceLabel.jsx";
 import { clearDraft, inProgressPractice, loadPractice, savePractice, updatePractice, savedClock, cfgFromRecord, weatherChip } from "../lib/practice.js";
-import { PILOT_WORDS, createBody, namesBody, demoteToPractice, listPilot, loadPilot, pilotStatus, purgeExpiredNames, updatePilotState, abandonCode } from "../lib/pilot.js";
+import { PILOT_WORDS, createBody, namesBody, demoteToPractice, listPilot, loadPilot, pilotStatus, purgeExpiredNames, updatePilotState, abandonCode, scrubPurgedLog } from "../lib/pilot.js";
 import { PilotList, PilotFinish, PilotCallOff } from "./pilotList.jsx";
 import { scorecardFileName, scorecardText, saveTextFile } from "../lib/practiceExport.js";
 import { api, signedIn } from "../lib/api.js";
@@ -976,13 +976,16 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     const gate = Promise.all([...withdrawalsRef.current]);
     (async () => {
       if (!(await gate).every(Boolean)) return;
-      const ok = await saveMatch(matchId, { events, curIn, cfg: match,
+      const snapshot = { events, curIn, cfg: match,
         ...(serverHasRef.current ? { serverHas: serverHasRef.current } : {}),
         // The playing conditions the log is folded under (SCRBRD-114), for a
         // reload with no session to ask.
         ...(foldRef.current ? { fold: foldRef.current } : {}),
         // Where each end's side came from (scorer/side.js), for a reload.
-        ...(sideSourceRef.current ? { sides: sideSourceRef.current } : {}) });
+        ...(sideSourceRef.current ? { sides: sideSourceRef.current } : {}) };
+      // A Pilot Match whose names have gone (§7.2) is saved with none, whatever
+      // this pad holds: no save writes a typed name back (review B1).
+      const ok = await saveMatch(matchId, isPilotId(matchId) ? scrubPurgedLog(await loadPilot(matchId), snapshot) : snapshot);
       if (!cancelled && ok) setSaveState(s => ({ ...s, savedAt: Date.now() }));
     })();
     return () => { cancelled = true; };
@@ -1095,6 +1098,11 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   // Back into a practice match from the list or the start screen: the saved
   // log and the saved record, as they were, on the pad (or its result).
   const resumePractice=async(id)=>{
+    // A Pilot Match's names' date first (§7.2, review B1): the purge runs, and
+    // finishes, before its log is read, so the pad never holds names the purge
+    // has taken, whichever screen opened it. purgeExpiredNames() runs one at a
+    // time, so this waits for one already under way too.
+    if(isPilotId(id))await purgeExpiredNames().catch(()=>0);
     const[rec,saved]=await Promise.all([loadPractice(id),loadMatch(id)]);
     if(!saved?.events?.some(e=>e?.length))return;
     const cfg=saved.cfg?.practice?saved.cfg:{...cfgFromRecord(rec,id),...(isPilotId(id)?{pilot:true}:{})};
@@ -1125,6 +1133,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     const e=entryRef.current;
     if(!e)return undefined;
     let off=false;
+    // resumePractice() purges a Pilot Match's expired names before it reads its log.
     if(e.resume){resumePractice(e.resume);return undefined;}
     if(e.start==="pilot"){
       setScreen("practice");

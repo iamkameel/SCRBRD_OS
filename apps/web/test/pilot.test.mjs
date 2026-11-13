@@ -163,6 +163,18 @@ group("E. The names' date, on the phone");
   ok("...and no typed name is left in its record or its log", !ALL.some((n) => after.includes(n)), after.slice(0, 300));
   ok("...the players read as their positions", after.includes("Home No. 2") && after.includes("Away No. 2"));
   ok("...once: a second pass purges nothing", (await P.purgeExpiredNames(lastBall + 60 * DAY)) === 0);
+  // Review B1: a pad that read the log BEFORE the purge saves it again. The save is scrubbed first.
+  const stale = { ...log, cfg: c2 };
+  ok("set up: the stale log the pad holds still has the names", ALL.some((n) => JSON.stringify(stale).includes(n)));
+  const scrubbed = JSON.stringify(P.scrubPurgedLog(await P.loadPilot(id2), stale));
+  ok("a save into a match whose names have gone carries none of them (squads, twelfth man, fielder, the config)",
+     !ALL.some((n) => scrubbed.includes(n)) && scrubbed.includes("Home No. 1") && scrubbed.includes("Away No. 2"), scrubbed.slice(0, 300));
+  ok("...the twelfth man is his side's twelfth slot", /"twelfthMan":"Home No\. 3"/.test(scrubbed), scrubbed.match(/"twelfthMan":"[^"]*"/)?.[0]);
+  ok("...a match whose names have not gone is saved as it is", P.scrubPurgedLog(r2, stale) === stale);
+  // Review B1: purges run one at a time, so one awaited after another begins reads what the first left.
+  const order = [];
+  await Promise.all([P.purgeExpiredNames(lastBall + 61 * DAY).then(() => order.push("a")), P.purgeExpiredNames(lastBall + 62 * DAY).then(() => order.push("b"))]);
+  ok("purges run in order, one after another", order.join() === "a,b", order.join());
   // The server's date, where it is earlier, wins.
   const id3 = P.newPilotId();
   const r3 = P.pilotRecord(draft, id3, P.pilotSlots(draft), 1000);

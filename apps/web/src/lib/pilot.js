@@ -402,11 +402,67 @@ export function withoutNames(rec, log) {
 }
 
 /**
+ * A log about to be saved for a match whose names have gone (review B1, the
+ * belt to the purge's braces): every name in it is put back to its position,
+ * so no save can write a typed name into a match marked `namesPurged`, even
+ * from a pad that read the log before the purge. The purged roster has no
+ * names left, so they are learnt from the log's own squads ({id, name} on a
+ * slot); a twelfth man is his side's twelfth slot; a fielder no squad names
+ * (a substitute typed in) is "Substitute". A log with nothing to scrub, or a
+ * record whose names have not gone, is returned as it is.
+ * @param {any} rec  the stored record @param {any} log  the log to be saved
+ */
+export function scrubPurgedLog(rec, log) {
+  if (!rec?.pilot?.namesPurged || !log || typeof log !== "object") return log;
+  const slots = rec.pilot.roster?.slots ?? {};
+  const meta = Array.isArray(rec.pilot.slots) ? rec.pilot.slots : [];
+  const pos = (/** @type {string} */ id) => (slots[id] ? positionWords(slots[id].side, slots[id].list_no) : null);
+  const isPos = (/** @type {unknown} */ n) => typeof n === "string" && /^(Home|Away) No\. \d+$/.test(n);
+  const byName = new Map();
+  const learn = (/** @type {any} */ p) => { if (p && typeof p === "object" && typeof p.id === "string" && slots[p.id] && typeof p.name === "string" && !isPos(p.name)) byName.set(p.name, p.id); };
+  const events = Array.isArray(log.events) ? log.events : [];
+  for (const sq of [log.cfg?.squad1, log.cfg?.squad2]) (Array.isArray(sq) ? sq : []).forEach(learn);
+  for (const evs of events) for (const e of evs ?? []) { (Array.isArray(e?.squad) ? e.squad : []).forEach(learn); (Array.isArray(e?.bowlingSquad) ? e.bowlingSquad : []).forEach(learn); }
+  const sideOf = (/** @type {any} */ sq) => { const p = (Array.isArray(sq) ? sq : []).find((x) => x?.id && slots[x.id]); return p ? slots[p.id].side : null; };
+  const twelfth = (/** @type {string|null} */ side) => { const s = side ? meta.find((x) => x?.side === side && x?.twelfth) : null; return s ? positionWords(s.side, s.list_no) : null; };
+  const p = (/** @type {any} */ x) => (x && typeof x === "object" && typeof x.id === "string" && slots[x.id] ? { ...x, name: pos(x.id) } : x);
+  const fielder = (/** @type {unknown} */ n) => (typeof n !== "string" || isPos(n) ? n : byName.has(n) ? pos(byName.get(n)) : "Substitute");
+  const twelfthMan = (/** @type {unknown} */ n, /** @type {any} */ sq) => (typeof n !== "string" || isPos(n) ? n : twelfth(sideOf(sq)));
+  const out = events.map((/** @type {any[]} */ evs) => (evs ?? []).map((e) => ({
+    ...e,
+    ...(Array.isArray(e.squad) ? { squad: e.squad.map(p) } : {}),
+    ...(Array.isArray(e.bowlingSquad) ? { bowlingSquad: e.bowlingSquad.map(p) } : {}),
+    ...(e.twelfthMan != null ? { twelfthMan: twelfthMan(e.twelfthMan, e.squad) } : {}),
+    ...(e.fielder != null ? { fielder: fielder(e.fielder) } : {}),
+  })));
+  const cfg = log.cfg ? {
+    ...log.cfg,
+    ...(Array.isArray(log.cfg.squad1) ? { squad1: log.cfg.squad1.map(p) } : {}),
+    ...(Array.isArray(log.cfg.squad2) ? { squad2: log.cfg.squad2.map(p) } : {}),
+    ...(log.cfg.twelfth1 != null ? { twelfth1: twelfthMan(log.cfg.twelfth1, log.cfg.squad1) } : {}),
+    ...(log.cfg.twelfth2 != null ? { twelfth2: twelfthMan(log.cfg.twelfth2, log.cfg.squad2) } : {}),
+  } : log.cfg;
+  return { ...log, events: Array.isArray(log.events) ? out : log.events, cfg };
+}
+
+/**
  * On each open: every Pilot Match on this phone whose names' date has
  * passed loses its names here, as on the server. The match stays, on
  * positions. Resolves how many were purged.
+ *
+ * One at a time: each call runs after any purge already under way, so a
+ * caller that awaits it (the pad's resume, before it reads a log: review B1)
+ * reads only what a finished purge left.
  */
-export async function purgeExpiredNames(now = Date.now()) {
+let purgeChain = Promise.resolve(0);
+export function purgeExpiredNames(now = Date.now()) {
+  const run = purgeChain.catch(() => 0).then(() => purgeNow(now));
+  purgeChain = run.catch(() => 0);
+  return run;
+}
+
+/** @param {number} now */
+async function purgeNow(now) {
   let n = 0;
   for (const k of (await recordKeys(META)) ?? []) {
     const id = k.slice(META.length);

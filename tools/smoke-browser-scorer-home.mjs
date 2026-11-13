@@ -483,6 +483,43 @@ try {
   ok("...and it is no longer on Now", (await tG(`resume-${pid}`).count()) === 0 && (await tG("scorer-resume-empty").count()) === 1);
   ok("no sponsor slot on the home (a work mode)", !/sponsor/i.test(await tG("scorer-home").innerHTML().catch(() => "")));
 
+
+  group("G2. Past its names' date: opened from the home, the purge goes first and nothing writes the names back (review B1)");
+  /** This phone's record and log of a Pilot Match, as stored (persist.js: IndexedDB scrbrd/kv). */
+  const stored = (id) => g.evaluate(async (k) => {
+    const db = await new Promise((res, rej) => { const q = indexedDB.open("scrbrd"); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+    const get = (key) => new Promise((res) => { const q = db.transaction("kv").objectStore("kv").get(key); q.onsuccess = () => res(q.result ?? null); q.onerror = () => res(null); });
+    const out = { rec: await get(`pilot:meta:${k}`), log: await get(`pilot:log:${k}`) };
+    db.close();
+    return out;
+  }, id);
+  // Its end moved 40 days back, on this phone: the record's dates and every event's time, as if it had ended then.
+  await g.evaluate(async ({ k, old }) => {
+    const db = await new Promise((res, rej) => { const q = indexedDB.open("scrbrd"); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+    const get = (key) => new Promise((res) => { const q = db.transaction("kv").objectStore("kv").get(key); q.onsuccess = () => res(q.result ?? null); });
+    const put = (key, v) => new Promise((res) => { const t = db.transaction("kv", "readwrite"); t.objectStore("kv").put(v, key); t.oncomplete = () => res(null); });
+    const rec = await get(`pilot:meta:${k}`), log = await get(`pilot:log:${k}`);
+    rec.createdAt = old;
+    rec.pilot = { ...rec.pilot, finishedAt: old, serverNamesPurgeAfter: new Date(old + 30 * 864e5).toISOString() };
+    log.events = log.events.map((evs) => (evs ?? []).map((e) => ({ ...e, clientTs: old })));
+    await put(`pilot:meta:${k}`, rec);
+    await put(`pilot:log:${k}`, log);
+    db.close();
+  }, { k: pid, old: Date.now() - 40 * 864e5 });
+  const before = await stored(pid);
+  ok("set up: the phone's log still holds the typed names, its date passed", /Golf One/.test(JSON.stringify(before.log)) && !before.rec?.pilot?.namesPurged);
+  await tapG(`pilot-done-${pid}-open`, 2500);
+  ok("Open the scorecard: the pad opens on its result", await untilG(async () => (await tG("pad-result").count()) === 1, 10000), (await textG()).slice(0, 200));
+  await g.waitForTimeout(2500);
+  const shown = await textG();
+  await exitG();
+  await homeG();
+  await g.waitForTimeout(1500);
+  const after = await stored(pid);
+  ok("...the names are gone from the record", after.rec?.pilot?.namesPurged === true && !/Golf|Hotel/.test(JSON.stringify(after.rec)), JSON.stringify(after.rec?.pilot?.namesPurged));
+  ok("...and from the saved log: the pad's save did not write them back", !!after.log && !/Golf|Hotel/.test(JSON.stringify(after.log)),
+     (JSON.stringify(after.log ?? {}).match(/(Golf|Hotel) \w+/g) ?? []).slice(0, 4).join(", "));
+  ok("...nor were they shown on the pad", !/Golf|Hotel/.test(shown), (shown.match(/(Golf|Hotel) \w+/g) ?? []).slice(0, 4).join(", "));
   group("H. At 360: the same home, nothing under the floors, no sideways scroll");
   await g.setViewportSize({ width: 360, height: 780 });
   await g.waitForTimeout(600);
