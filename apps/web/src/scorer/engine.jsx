@@ -330,8 +330,14 @@ function SyncPill({ sync, storage, onOpenHeld }) {
 // `{start:"pilot"}` the Practice/Pilot Match setup at its first step, the one
 // quick-start there is; `{resume:id}` a Pilot or Practice Match this phone
 // holds, as the start screen's own Resume opens it. Read once, on mount.
-function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry=null}={}){
-  const[screen,setScreen]=useState("setup");
+// `padEntry.homeOnly` (an account with no school, Q3: App.jsx): the pad is a
+// Practice or Pilot Match's and nothing else. Its start screen, with a
+// fixture's or the demonstration's matches, is never drawn; every way back to
+// it is the way home instead. `onJoinSchool`, given only then, is offered on
+// a decided result, never during play (§2.5 step 6).
+function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry=null,onJoinSchool=null}={}){
+  const homeOnly=padEntry?.homeOnly===true;
+  const[screen,setScreen]=useState(homeOnly&&padEntry?.start==="pilot"?"practice":"setup");
   const[match,setMatch]=useState(null);
   // A Practice Match (lib/practice.js): the record kept beside its ball log, the
   // one the start screen offers to resume, and whether the pad is on one.
@@ -1107,7 +1113,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     // time, so this waits for one already under way too.
     if(isPilotId(id))await purgeExpiredNames().catch(()=>0);
     const[rec,saved]=await Promise.all([loadPractice(id),loadMatch(id)]);
-    if(!saved?.events?.some(e=>e?.length))return;
+    if(!saved?.events?.some(e=>e?.length))return false;
     const cfg=saved.cfg?.practice?saved.cfg:{...cfgFromRecord(rec,id),...(isPilotId(id)?{pilot:true}:{})};
     setPractice(rec);
     // A Pilot Match has a server behind it: its ids are minted under its own
@@ -1126,6 +1132,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     setModal(null);
     // A called-off Pilot Match reopens on its result, never the pad (re-check 1).
     setScreen(foldPad(saved.events,scoringCtxRef.current)[1]?.sealed===true||(isPilotId(id)&&rec?.pilot?.callOff)?"result":"match");
+    return true;
   };
   // Opened from the scorer's home at a step of the pad's own flows (`padEntry`):
   // the setup, with phase 2's status asked as the start screen asks it and
@@ -1138,14 +1145,27 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     if(!e)return undefined;
     let off=false;
     // resumePractice() purges a Pilot Match's expired names before it reads its log.
-    if(e.resume){resumePractice(e.resume);return undefined;}
+    // With no start screen to fall back on (homeOnly), a match that will not open goes home.
+    if(e.resume){resumePractice(e.resume).then(r=>{if(!r&&homeOnly)onExit?.();}).catch(()=>{if(homeOnly)onExit?.();});return undefined;}
     if(e.start==="pilot"){
       setScreen("practice");
       purgeExpiredNames().catch(()=>0);
       pilotStatus().then(s=>{if(!off)setPilotNow(s);}).catch(()=>{});
     }
     return()=>{off=true;};
+    // Read once, on mount: where the pad was opened (padEntry, homeOnly, onExit with it).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
+  // homeOnly: the start screen is never this pad's. Once the pad has left it
+  // (the setup, a resumed match), a way back to it is the way home.
+  const leftSetupRef=useRef(false);
+  useEffect(()=>{
+    if(!homeOnly)return;
+    if(screen!=="setup"){leftSetupRef.current=true;return;}
+    if(leftSetupRef.current)onExit?.();
+    // On a change of screen only: the shell's onExit is a new function on each of its draws.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[screen,homeOnly]);
   // The start screen offers a practice match still in progress, first.
   useEffect(()=>{
     if(screen!=="setup")return undefined;
@@ -2699,14 +2719,22 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
             <FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}
               left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}/>
           )}
+          {/* §2.5 step 6: at the result of a Practice or Pilot Match, an
+              account with no school is asked once; never during play. */}
+          {practiceMode&&onJoinSchool&&offer.state!=="available"&&(
+            <div data-testid="pad-join-school" style={{display:"flex",flexDirection:"column",alignItems:"center",gap:T.space.sm,marginBottom:"28px",textAlign:"center"}}>
+              <p style={{...T.role.body,color:T.content.secondary,margin:0}}>Staff on the school's list are let in at once; anyone else sends the school a request.</p>
+              <Btn variant="tonal" size="lg" data-testid="pad-join-school-open" onClick={onJoinSchool}>Scoring for a school? Join it</Btn>
+            </div>
+          )}
           <div style={{textAlign:"center",display:"flex",gap:"12px",justifyContent:"center",flexWrap:"wrap"}}>
             {practiceMode&&(
               <Btn variant="tonal" size="lg" data-testid="practice-save-scorecard" onClick={saveScorecard}>
                 Save the scorecard
               </Btn>
             )}
-            <Btn variant="primary" size="lg" onClick={()=>{setScreen("setup");setEvents([[],[]]);setCurIn(0);setMatch(null);setPractice(null);setSelSeg(null);}}>
-              {practiceMode?"Back to the start":"New Match"}
+            <Btn variant="primary" size="lg" onClick={()=>{if(homeOnly){onExit?.();return;}setScreen("setup");setEvents([[],[]]);setCurIn(0);setMatch(null);setPractice(null);setSelSeg(null);}}>
+              {homeOnly?"Back home":practiceMode?"Back to the start":"New Match"}
             </Btn>
           </div>
         </div>
@@ -2714,7 +2742,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     );
   }
 
-  if(screen==="practice")return (<><GS/><PracticeSetup onStart={startPractice} onCancel={()=>setScreen("setup")} pilot={pilotNow}/></>);
+  if(screen==="practice")return (<><GS/><PracticeSetup onStart={startPractice} onCancel={homeOnly?()=>onExit?.():()=>setScreen("setup")} pilot={pilotNow}/></>);
+  // homeOnly: never the start screen (above); a match still opening, or on its way home.
+  if(screen==="setup"&&homeOnly)return (<><GS/><div role="status" data-testid="pad-opening" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:T.surface.canvas,color:T.content.secondary,...T.role.body}}>Opening…</div><ExitKey onExit={onExit}/></>);
   if(screen==="practice-list")return (<><GS/><PracticeList onBack={()=>setScreen("setup")} onResume={resumePractice}/></>);
   if(screen==="pilot-list")return (<><GS/><PilotList onBack={()=>setScreen("setup")} onResume={resumePractice}/></>);
   if(screen==="setup")return (<><GS/><SetupScreen onStart={startMatch}

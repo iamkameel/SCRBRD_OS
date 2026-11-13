@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { Suspense, lazy, useEffect, useId, useState } from "react";
 import { ROLES } from "../design/roles.js";
 import { T, clr } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
@@ -9,6 +9,10 @@ import {
   EXTRA_MAX, CHILD_MAX, YEAR_MAX, buildRequest, joinWords, sentWords, withdrawWords, withdrew,
 } from "../lib/joinSchool.js";
 import { claimFailure, claimResult } from "../lib/registerClaim.js";
+
+// "Start a match", what this phone holds, and the last match's plain record
+// (views/ScoringBlock.jsx): fetched with the screen, in a chunk of its own.
+const ScoringBlock = lazy(() => import("../views/ScoringBlock.jsx").then((m) => ({ default: m.ScoringBlock })));
 
 // ══════════════════════════════════════════════════════
 //  AN ACCOUNT WITH NO SCHOOL  (SCRBRD-140 §4, §5)
@@ -176,8 +180,8 @@ export function JoinSchool({ schools, onSent, onJoined, post = api }) {
   }
 
   return (
-    <div data-testid="join-school" style={card()}>
-      <h2 style={{ margin: "0 0 4px", fontFamily: FONT.head, fontSize: "18px", fontWeight: 800, color: T.content.primary }}>Join a school</h2>
+    <div data-testid="join-school" id="join-school" style={card()}>
+      <h2 id="join-school-title" tabIndex={-1} style={{ margin: "0 0 4px", fontFamily: FONT.head, fontSize: "18px", fontWeight: 800, color: T.content.primary, outline: "none" }}>Join a school</h2>
       <div style={{ ...text(14), marginBottom: "16px" }}>Say which school and who you are. Somebody at the school answers; nothing is given to you until they do.</div>
 
       {/* 1 · The school */}
@@ -292,8 +296,15 @@ export function JoinSchool({ schools, onSent, onJoined, post = api }) {
 /**
  * The screen. `name` is what the shell knows of the person; `onSignOut` is
  * the shell's sign-out (which clears the persisted session too).
+ *
+ * `onOpenPad` (Q3, Kameel 13 Nov 2026): the shell's way into the pad's own
+ * setup, or to a Practice or Pilot Match this phone holds. With it, "Start a
+ * match" leads the screen (§2.5 step 3). It grants nothing: a Practice Match
+ * never leaves the phone, and a Pilot Match is the server's to allow.
+ * `joinFirst` changes when the pad's "Scoring for a school? Join it" brought
+ * the person back: the join form is scrolled to and focused.
  */
-export function NoSchool({ name, onSignOut, onJoined }) {
+export function NoSchool({ name, onSignOut, onJoined, onOpenPad = null, joinFirst = 0 }) {
   const [nudge, setNudge] = useState(0);
   const rows = useLive("role_requests", "spectator", nudge).rows;
   const [schools, setSchools] = useState(null);
@@ -305,6 +316,18 @@ export function NoSchool({ name, onSignOut, onJoined }) {
     api("/api/schools").then((r) => { if (!off) setSchools((r?.rows ?? []).map((x) => ({ id: x.id, name: x.name }))); }).catch(() => { if (!off) setSchools([]); });
     return () => { off = true; };
   }, []);
+
+  // Back from the pad's "Join it", or the record's: the join form, scrolled to and focused.
+  const [askJoin, setAskJoin] = useState(joinFirst);
+  useEffect(() => { if (joinFirst) setAskJoin(joinFirst); }, [joinFirst]);
+  useEffect(() => {
+    if (!askJoin || schools === null) return;
+    const h = document.getElementById("join-school-title");
+    if (!h) return;
+    const still = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    h.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "start" });
+    h.focus({ preventScroll: true });
+  }, [askJoin, schools]);
 
   // A withdraw that did not happen is said in words, above the list, because a
   // request that was answered first leaves the pending row (and its words) behind.
@@ -337,7 +360,14 @@ export function NoSchool({ name, onSignOut, onJoined }) {
       <main style={{ maxWidth: "520px", width: "100%" }}>
         <h1 data-testid="no-school-title" style={{ margin: "0 0 4px", fontFamily: FONT.head, fontSize: "22px", fontWeight: 800, color: T.content.primary }}>Hello {name || me?.name || "there"}</h1>
         <div style={{ ...text(14), marginBottom: "4px" }}>You are signed in{me?.email ? <> as <span data-testid="no-school-email" style={{ color: T.content.primary }}>{me.email}</span></> : ""}, and not at a school yet.</div>
-        <div style={{ ...text(14), marginBottom: "20px" }}>Your account holds nothing until a school says yes. Until then you can see this page and nothing else.</div>
+        <div style={{ ...text(14), marginBottom: "20px" }}>Your account holds nothing of a school's until a school says yes.{onOpenPad ? " You can score a match on this phone meanwhile." : " Until then you can see this page and nothing else."}</div>
+
+        {/* §2.5 step 3: "Start a match" first. Its own chunk: the scoring block draws the Board. */}
+        {onOpenPad && (
+          <Suspense fallback={<div role="status" style={{ ...text(14), marginBottom: "16px" }}>Loading scoring…</div>}>
+            <ScoringBlock onOpenPad={onOpenPad} onJoin={() => setAskJoin((n) => n + 1)}/>
+          </Suspense>
+        )}
 
         {rows.length > 0 && (
           <div style={{ marginBottom: "16px" }} data-testid="no-school-requests">
