@@ -489,7 +489,159 @@ Each gives the finding first, then the recommendation. The lead turns these into
 
 ## 3. Stats and moments
 
-To be written by the next pass. Not part of sections 1 and 2.
+Figures first, as `DESIGN_DIRECTION` §1 says, carried to every place a person already looks.
+Fun lives on the scoreboard and spectator side only (§1a). Every figure below names the read
+it comes from; where none gives it, the row says which derivation it needs and from which
+stored data. Nothing here ranks a pupil in public, keeps a streak or counts down at a child.
+
+### 3.1 What is true today
+
+| # | Finding | Evidence |
+|---|---|---|
+| C1 | The **status sentence** ("Westville 1XI need 45 runs off 34 balls") is built and shared by the match list, the match header and the public page. It is **not** on the day sheet's next fixture or week, the scorer's home, the parent's live card or the public home strip. The strip shows figures and, once finished, the result. | `lib/matchCentre.js:435`; callers `views/MatchCentreView.jsx:266`, `views/matchcentre/MatchView.jsx:440`, `public/PublicMatch.jsx:277`; none in `views/DashboardView.jsx`, `views/ScorerHomeView.jsx`, `views/family/cards.jsx:77-92`; `home/sections/LiveStrip.jsx:82-124` |
+| C2 | The **insight line** (Tier 2) is built and drawn on the Match Centre's Summary, the public page (same `SummaryTab`), the day sheet's Now and the ground display. Its lines are plain strings and some name a boy ("T Bekker needs 4 for fifty"). | `scorer/signals.js:151-188`; `views/matchcentre/tabs-core.jsx:219,232`; `views/DashboardView.jsx:387`; `display/DisplayView.jsx:153,204` |
+| C3 | **A child's rates are shown with no floor and no denominator** on his passport's board (AVG, SR, ECON) and on his parent's season card ("average 41"), while Compare refuses a rate under thirty legal balls. Neither screen has a source line. | `views/family/pupil.jsx:203`; `views/family/cards.jsx:141-145`; `lib/compare.js` header (D4); `packages/scoring/src/placement.mjs:531-538` (`evidenceLabel`); `sourceLine` count 0 in both files |
+| C4 | Two sizes of **moment** are built (a four, six or wicket for 1.2 s; a milestone or the result for 1.5 s). SCRBRD-133's decided catalogue has nineteen, with times of 2.5 s to 6 s, and its `lib/moments.js` is not built. The **over story** exists only on the ground display. | `views/matchcentre/live.js:14-22`; `docs/design/SCRBRD-133_immersive_match_centre.md` §5.2 (D1–D16 decided); `display/panels.jsx:260` (`OverStory`) |
+| C5 | The board has no **free-hit** or **hat-trick-ball** tag for spectators, though the fold and the facts carry both. | `ui/board.jsx:281` (props); `packages/scoring/src/facts.mjs:104-109`; SCRBRD-133 §5.2 rows 7, 9 |
+| C6 | **No match page can be shared.** The only share action in the app is on News. | `grep navigator.share` → `views/NewsView.jsx` only |
+| C7 | **Following** is not built, and the notifications model has a closed list of kinds and four audience shapes, none of them "people who follow a school". | `docs/design/NOTIFICATIONS.md` D1, D7; SCRBRD-100 (backlog :4979) |
+| C8 | **A team's figures live in three places**: its records under Leagues, its season under Analytics, its squad under Squad. A pupil finds his side's records on his Matches. | `views/LeagueView.jsx:550`; `views/sideseason.jsx`, `views/AnalyticsView.jsx`; `views/family/pupil.jsx:120` |
+| C9 | The **record boards** already say their coverage, their minimum and what awaits the scorer's seal. Personal bests already mark "awaiting verification". | `views/records.jsx:101-117`; `lib/bests.js` header |
+| C10 | From a chart to its balls is built (CRI-2.3). From a **scorecard figure** to its balls is not: the commentary filters by kind (All, Wickets, Fours, Sixes), never by batter or bowler. | `views/matchcentre/commentaryTools.jsx` (`CHIPS`); `CRICINFO_GAP_PLAN.md` §6 CRI-2.3 merged #306 |
+| C11 | Season rankings (top scorers, an MVP order) exist and are **staff only**; a pupil's record board carries no ordered list. | `lib/seasonAwards.js:248` (`showsRankings`); `views/LeagueView.jsx:488-522`; `read-api.mjs:2327-2337` (`reader_view`) |
+| C12 | `ROLE_DASHBOARDS` §3D proposes, for R3, a scorer profile "with points, streak badges and partner rewards". Most scorers are expected to be under 18. | `ROLE_DASHBOARDS_v1.1.md:128`, `:64` |
+
+### 3.2 Who may see what, in short
+
+Each table's "Who" column uses these words. They restate the rules; they decide nothing.
+
+| Word | Means | Rule |
+|---|---|---|
+| **Public** | Signed out. Team-level facts; a child named only by `publicName()` (initial and surname, with consent or by terms on a finished card, never while play is on without his own yes) | `PUBLIC_DATA.md` L1–L7, A1–A8, D1–D4; `PUBLIC_BY_TERMS.md` §1.1–1.2 |
+| **School** | A signed-in reader the server lets read the fixture or side | the read's own gate |
+| **Family** | The child himself and his verified guardians, about him only | `REACH_FAMILY_OR_STAFF` (`read-api.mjs:2317-2324`) |
+| **Staff** | Staff of his side who are not pupils | the same reads' staff branch |
+
+Never on any surface below: N1–N5, a page per player, a leaderboard of children, a figure
+across matches in public, a photograph (`PUBLIC_DATA` §3, A3, A4, A8; `PUBLIC_BY_TERMS` §1.2).
+
+### 3.3 The match page (Match Centre and public page)
+
+| Gains | Read | Today | Who | Denominator and coverage |
+|---|---|---|---|---|
+| The status sentence under the board on every tab, not only the header | `statusSentence()`, `lib/matchCentre.js:435`, over `/api/matches/:id/events` (`server.mjs:636`) or the public log | exists; placement only | Public and school | none needed: it is a fact |
+| **Free hit** and **Hat-trick ball** tags beside the over's chips, until the next counted ball | the fold's `inn.freeHit`; `MOMENT_KIND.HAT_TRICK_BALL` (`facts.mjs:108`) | derivation: none, a new `Board` prop the pad never passes | Public and school | none |
+| The **over story** on Summary: one row per over, bowler, chips, runs, wickets, score after it; tap opens that over's lines | `OverStory` (`display/panels.jsx:260`), lifted as SCRBRD-133 §6 says | exists on the display; lift | Public (bowler by the name rule) and school | its own: "12 of 20 overs" |
+| **From a figure to its balls.** Tap a batter's runs or balls → the commentary of only his balls; a bowler's figures → only his; a stand on Partnerships → only its balls | the commentary lines over the log; the key scheme `lib/toBall.js` and `dismissalKey()` already use | derivation: filter the generator's lines by striker or bowler id, client side, from stored events | **School only.** Public keeps kind filters: a per-boy view of his balls is a per-player page in all but name (A4, L7) | "25 balls, 3 shown as dots off the bat" style count above the list, from the same lines |
+| The **innings-break card** promoted to the first thing on Summary while the break lasts | `inningsBreak()`, `lib/matchCentre.js:319`; `InningsBreakCard`, `tabs-core.jsx:41` | exists | Public (names by the live rule) and school | strike rate only from ten balls, as built (`:327`) |
+| Par estimate, rate track, worm, Manhattan, partnerships, each with its source line | `/api/matches/:id/par` (`server.mjs:1010`); `chartSeries.js`; `sourcedLazy.jsx` | exists (CRI-1.8, CRI-2.2, CRI-2.5) | Public three charts, school all | exists: "From 214 balls"; shots "captured for N of M balls" |
+| A **share** action: the page's own link, with a preview that names no child | `navigator.share`, falling back to copying the link | derivation: none; the page's preview text is team-level (`statusSentence()` and team names) | Anyone who has the page | none |
+| Player of the Match, once given, on the result board | `GET /api/matches/:id/player-of-match` (`server.mjs:795`) | exists | Public by the finished-card rule; school | none |
+
+### 3.4 The passport (the pupil's, the parent's child file, the staff player page)
+
+| Gains | Read | Today | Who | Denominator and coverage |
+|---|---|---|---|---|
+| **Every rate with its denominator and the floor.** Average, strike rate and economy drawn only from thirty legal balls; below that the count and the word ("8 balls: a guide, not a figure") | `career` (`read-api.mjs:3208`, `balls_faced`, `balls_bowled`, `UNRECORDED_*`); `evidenceLabel()` | derivation: none, a rule moved from Compare to every child's rate (Q-N3) | Family, staff | "From 14 innings, 212 balls" |
+| A **source line** on the board: how many innings were scored ball by ball and how many came from a scorebook | `innings_by_season` (`read-api.mjs:3435-3447`, `source`) | derivation: count by `source` | Family, staff | "2 of 14 innings from a scorebook; their balls were not recorded" |
+| **Tap a figure → the innings behind it → that innings's balls** | `innings_by_season` (`match_id`, `innings`); the match page's batter filter (§3.3) | derivation: none beyond §3.3 | Family, staff; a team-mate's never (REACH-D2) | each step says its count |
+| Personal bests, milestones, honours, each with its seal or "awaiting verification" | `personal_bests` (`:2317`), `recognition` (`:2295`) | exists | Family, staff. A pupil reads his own; a parent her child's | the seal is the coverage |
+| Form, last innings first, each a link to its match | `career.form`, `innings_by_season` | exists as text (`pupil.jsx:233-237`); links are the derivation | Family, staff | the count of innings shown |
+
+### 3.5 The team (one page, from any side's name; §1.4)
+
+| Gains | Read | Today | Who | Denominator and coverage |
+|---|---|---|---|---|
+| Results, newest first, each its status sentence; form as W, L, T, D, NR | `matches` (`read-api.mjs:230`), `resultText()` | exists; gathered | School; results Public (A1) | "Last 5 completed; 1 abandoned, not counted" (`ROLE_DASHBOARDS` §6) |
+| Season run rate, match by match, with the season line from the fifth match | `side_season` (`:3494`), `lib/sideSeason.js` | exists under Analytics; moved | School | "From 9 completed matches, 1,640 balls"; a match the reader cannot read is said, never zero |
+| Its place in each competition table | `GET /api/competitions/:id/standings` (`server.mjs:989`) | exists | Public (A1) and school | "Played 6 of 10" |
+| Records: holder, former holders, coverage, awaiting | `record_boards` (`:2338`) | exists under Leagues; moved | Staff full; pupil the holders only; family and Public none | as built (C9) |
+| Caps, in cap order | `caps` (`:2347`) | exists | School | none |
+| Head to head with the next opponent | `derby_record` (`:3098`) | exists | School | "4 matches since 2024" |
+
+### 3.6 Records and compare
+
+| Surface | Gains | Read | Today | Who | Denominator and coverage |
+|---|---|---|---|---|---|
+| Records | Reached from the team and from a passport's "school record" line; tap a holder's figure → that innings's balls | `record_boards` (`:2338`); §3.3 filter | exists; links are the derivation | as §3.5 | as built |
+| Compare | Each match-up line opens the balls behind it; the coverage line stays above | `matchups` (`:2982`), `matchup_coverage` (`:3057`) | exists (GA-I24 S1); links are the derivation | as decided (GA-I24 D2, D10): nothing widens | as built: the floor and `sourceLine` |
+
+### 3.7 The board and the big screen
+
+| Gains | Read | Today | Who | Denominator and coverage |
+|---|---|---|---|---|
+| SCRBRD-133's moment catalogue, through one pure `lib/moments.js` shared by the Match Centre, the public page and the display | the commentary lines and the fold before and after each read (`live.js:28-48`) | derivation: built to SCRBRD-133 §5.2, which is decided | Public and school, each card in its surface's names | none |
+| Free hit and hat-trick-ball tags (§3.3) | as §3.3 | as §3.3 | as §3.3 | none |
+| The insight line, as built, held to team-level lines and the named boy's own on a family's screen | `boardInsights()`, returned as `{text, about}` so a screen can tell which name a line carries | derivation: structure the strings it already makes (Q-N7) | Public and school as now; on a family screen only lines about nobody or about him | none |
+
+The display already runs itself (`display/Rotation.jsx`) and keeps a marked boy's side by
+position (`bigscreen.jsx:10-17`, db/153). Nothing here changes what it names.
+
+### 3.8 The spectator's home
+
+| Gains | Read | Today | Who | Denominator and coverage |
+|---|---|---|---|---|
+| **Signed out:** each strip card says its status sentence ("Northfield need 45 off 34") | `GET /api/public/live` (`public-api.mjs:603-610`), which carries `scores` and `overs` but no target and no revision | derivation: the target is first-innings runs plus one **only when no revision exists**, and the read cannot say. Needs `public_live_fixtures()` to return `target` and `revised` (a migration; Q-N1) | Public | none |
+| **Signed out:** the live `Board` first when a listed match is live (§2.3, Q8) | the same read | exists; order only | Public | none |
+| **Signed in, following:** followed schools' live boards first, then today, then results, each its sentence | the same public read, filtered to the schools he follows | derivation: a list of followed schools per account (a migration; Q9) | Public facts only, whatever else he may read | none |
+
+### 3.9 The scorer's home
+
+| Gains | Read | Today | Who | Denominator and coverage |
+|---|---|---|---|---|
+| Each fixture in "This week" says its status sentence | `scorerFixtures()` rows, `lib/scorerHome.js`; `statusSentence()` with no fold | derivation: none | Him | none |
+| After a match: **what he scored**, as a plain record ("126 balls, 2 corrections filed, all sent") | the phone's own store and `GET /api/matches/:id/corrections` (`server.mjs:646`) | derivation: count events and corrections he wrote | Him only | the match's own balls |
+| A Pilot Match stays in no figure, standing or record | `lib/scorerDay.js` (`SANDBOX_WORDS`) | exists; the words are asserted (`smoke-browser-scorer-home.mjs:480`) | Him | n/a |
+
+No points, ranks or streaks for scoring (C12, rejected below).
+
+### 3.10 The coach's day sheet
+
+| Gains | Read | Today | Who | Denominator and coverage |
+|---|---|---|---|---|
+| Next fixture: its status sentence ("Starts at 10:00", "Toss: Eastbrook won and chose to bat") under the opponent | `matches`; `statusSentence()`, `tossWords()` | derivation: none | Staff | none |
+| This week: each fixture played says its result; each to come its start | `matches` | derivation: none | Staff | none |
+| **Last match**, one line: the result and the side's top score and best bowling, his own squad by name | `inningsBreak()` over the fold of the last completed fixture | exists as a function; placement | Staff | strike rate only from ten balls |
+| The side's season, one line: "Season run rate 5.84 from 9 matches" | `side_season` (`:3494`) | exists; placement | Staff | its count of matches and balls |
+| Who is out stays the status tier, and the queue stays SCRBRD-136's | `injuries` (`:356`), `cockpit/useQueue.js` | exists | Staff by tier | n/a |
+
+### 3.11 The moments
+
+Every moment is triggered by an event or a fold state that **arrives while the page is open**,
+never by the clock and never replayed on a reload (`live.js:1-11`). Motion uses the existing
+tokens (`design/tokens.js:556-568`). The global reduced-motion block cuts every animation and
+names the moment classes (`tokens.js:985-996`); each fallback below is what is left after it.
+
+| Moment | Trigger (event or state) | Where | Motion | Reduced motion | Public? |
+|---|---|---|---|---|---|
+| Figure flip and run ticker | a board figure changes | every board, the pad's included | `flip` 190 ms `swift`; ticker one run a flip, last eight runs (`live.js:111-128`) | a cut to the new figure | yes |
+| Four, six | a line of kind `four`, `six` arrives | spectator boards | the beat card, 190 ms in, held 2.5 s (SCRBRD-133 §5.2 rows 1–2) | appears, held, gone; the polite live region says it | yes |
+| Wicket; fifty and beyond; partnership; five wickets; hat-trick | kind `wicket` or `milestone`, matched as §5.2 rows 3–8 say, merged per §5.3 | spectator boards | big card: `interrupt` 1100 ms in, held, 190 ms out; corner only, never over the total | appears, held, gone | yes, names by the live rule |
+| Free hit; hat-trick ball | `inn.freeHit`; two of his in two | spectator boards | a tag beside the chips; no motion | the same | yes |
+| **Over summary** | kind `over_end` | Summary, public page, display | the line under the chips, 6 s (`OVER_SUMMARY_MS`), `.mc-moment` entrance | appears and goes | yes |
+| **Innings-break card** | `statusSentence()` state `innings_break` (the fold: an innings complete, the next not begun) | Summary first, the display's panel, the parent's live card as team figures | `os-panel-in` 280 ms once, then still | appears | yes; names by the live rule, otherwise "Batter 3" |
+| Target set; innings closed; revision; play stopped | `innings_start`, `innings_end`, `revision`, `inn.stopped` | spectator boards | big card, as above; "play stopped" held | appears, held | yes |
+| **Result** | the result line (`result:<match>`) | spectator boards; the parent's live card turns into the result | big card, held; then the Summary is the result view (CRI-1.7) | appears | yes, `reasons: false` |
+| **Highlights** | every four, six, wicket and milestone, in order | Summary, public page | none: a list | none | yes |
+| **Milestones and honours** for a family | a `recognition` notice (`NOTIFICATIONS.md` D1), or a milestone line on his record | the child's section of Home, his Passport's Honours | none beyond the card's `os-panel-in` the first time it is seen | none | an honour only if marked public, by the board rule (A5, R11) |
+| An honour or milestone **taken back** by a correction | the notice retracted (NOTIFICATIONS D18, S5) | wherever it showed | it goes; no motion | the same | the public board drops it on the next read |
+| **Follow and alerts** | a followed school's listed fixture: its first event (live), the innings break, the result. Result-only by default | push, as a pointer only ("You have a new notice.", D14); the person's Today | none | none | the pointer names nothing; the page is the public one |
+| **Share** | the person taps Share | Match Centre, public page | the system sheet | the same | the link only |
+
+**Rejected, and why.**
+
+| Candidate | Why not |
+|---|---|
+| Points, streaks or badges for scorers (C12) | A pressure mechanic on children who score; the brief rules it out |
+| A leaderboard or "top run-scorers" of a competition, in public or to pupils and parents | `PUBLIC_DATA` A3, `PUBLIC_BY_TERMS` §1.2; C11 stays staff only and does not grow |
+| A milestone or match **image card** to post on WhatsApp or Instagram | It leaves the platform and cannot be recalled; a named card needs an explicit yes that is not built (`PUBLIC_BY_TERMS` §1.2; SCRBRD-100 item 2). Link only (Q-N4) |
+| Any celebration on the pad | `DESIGN_DIRECTION` §1a: a flash on the pad's own board, at most about 600 ms, and nothing more |
+| A countdown to the start, or "live" from the start time | The clock never declares a state (`ROLE_DASHBOARDS` §5) |
+| Charts that draw themselves on the analysis tabs | Data being read; motion hinders it. Growth ball by ball stays on the display (SCRBRD-133 §4) |
+| A push for every boundary or wicket | Too often to be worth a phone; pupils get no medium push 21:00–06:00 (D21) |
+| Moving between homes or sections | Tens to hundreds of times a day; a cut |
+| A new predictor or a percentage for a side losing | `DESIGN_DIRECTION` decision 10 stands: the par estimate, labelled, nothing more |
+| "Personal best" or "season first" notes in public | A figure across matches is never public (`PUBLIC_BY_TERMS` §1.2) |
 
 ## 4. Slices, in build order
 
