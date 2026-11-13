@@ -384,6 +384,8 @@ try {
     ok("CRI-3.2: his own row offers his passport, no team-mate's row does", links.bat.join() === "R Pillay" && links.bowl.length === 0, JSON.stringify(links));
     const mine = s.page.locator('[data-testid="mc-bat-row"][data-focus="true"]');
     await mine.locator('[data-testid="mc-bat-open"]').click({ timeout: 4000 });
+    ok("CRI-3.2 (N1): his Passport button is named with his name for a screen reader",
+       await mine.locator('[data-testid="mc-passport-open"]').getAttribute("aria-label") === "Passport, R Pillay");
     await sheetChecks(s.page, mine.locator('[data-testid="mc-passport-open"]'), ok, { who: "CRI-3.2, the pupil", name: /^R Pillay$/ });
     await mine.locator('[data-testid="mc-bat-open"]').click({ timeout: 4000 });
   }

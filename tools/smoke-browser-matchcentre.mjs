@@ -67,7 +67,7 @@ import { wagonAnalysis } from "../apps/web/src/scorer/wagonAnalysis.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { pickTab } from "./walk-tabs.mjs";
-import { rowLinks, sheetChecks } from "./walk-passport.mjs";
+import { refusedChecks, rowLinks, sheetChecks } from "./walk-passport.mjs";
 
 const WEB_PORT = port(5361);
 const API_PORT = port(8961);
@@ -1174,6 +1174,7 @@ try {
     const link = ch.page.locator('[data-testid="mc-bowl-row"] [data-testid="mc-passport-open"]').first();
     const who = (await link.innerText()).replace(/Passport ›/, "").trim();
     await sheetChecks(ch.page, link, ok, { who: "CRI-3.2, the coach", name: new RegExp(`^${who.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`), lines: null });
+    await refusedChecks(ch.page, link, ok, "CRI-3.2, the coach (S1)");
     await tid(ch.page, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
   }
   ok("no console errors (coach)", ch.errors.length === 0, ch.errors.join(" | "));

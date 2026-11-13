@@ -71,12 +71,15 @@ export async function sheetChecks(page, link, ok, { who, name, lines = true }) {
   });
   ok(`${who}: nothing under 12px, every control 44px`, floors.small.length === 0 && floors.tiny.length === 0, floors);
   ok(`${who}: focus moves into it, and nothing runs off the side`, floors.inside && !floors.sideways, floors);
+  const held = () => page.evaluate(() => getComputedStyle(document.body).overflow);
+  ok(`${who}: the page behind it does not scroll while it is open (N3)`, await held() === "hidden", await held());
   for (let i = 0; i < 4; i++) await page.keyboard.press("Tab");
   ok(`${who}: Tab stays inside it`, await page.evaluate(() => !!document.querySelector('[data-testid="passport-sheet"]')?.contains(document.activeElement)));
   await page.keyboard.press("Escape");
   await page.waitForTimeout(200);
   ok(`${who}: Escape closes it, and focus is back on the link it was opened from`, await sheet.count() === 0
      && await link.evaluate((el) => el === document.activeElement).catch(() => false));
+  ok(`${who}: ...and the page scrolls again`, await held() !== "hidden", await held());
   await page.emulateMedia({ reducedMotion: "reduce" });
   await link.click({ timeout: 4000 });
   await sheet.waitFor({ timeout: 8000 }).catch(() => {});
@@ -87,4 +90,47 @@ export async function sheetChecks(page, link, ok, { who, name, lines = true }) {
   await page.waitForTimeout(200);
   ok(`${who}: the close button closes it, focus back on the link`, await sheet.count() === 0 && await link.evaluate((el) => el === document.activeElement).catch(() => false));
   await page.emulateMedia({ reducedMotion: "no-preference" });
+}
+
+/**
+ * S1, refused is not empty: the sheet says which, from passport_name() (the
+ * passport's own door). A refusal the link cannot see coming (the clock window,
+ * a stale session or roster row: lib/passportLink.js) is staged by answering the
+ * door with null in the page; an admitted boy with no line by answering the
+ * passport with none. Each answer is the shape the server gives.
+ * @param {import("playwright-core").Page} page
+ * @param {import("playwright-core").Locator} link
+ * @param {(n: string, c: boolean, d?: unknown) => void} ok
+ * @param {string} who
+ */
+export async function refusedChecks(page, link, ok, who) {
+  const sheet = page.locator('[data-testid="passport-sheet"]');
+  const settle = () => page.waitForFunction(() => { const s = document.querySelector('[data-testid="passport-sheet"]'); return s && s.getAttribute("data-state") !== "loading"; },
+    null, { timeout: 10000 }).catch(() => {});
+  // The real response, its body replaced: its headers (CORS among them) are the server's; a preflight goes through.
+  const answer = (rows) => async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const real = await route.fetch();
+    return route.fulfill({ response: real, contentType: "application/json", body: JSON.stringify({ rows }) });
+  };
+  const door = (u) => u.pathname === "/api/read/passport_name", lines = (u) => u.pathname === "/api/read/passport";
+  await page.route(door, answer([{ name: null }]));
+  await link.click({ timeout: 4000 });
+  await sheet.waitFor({ timeout: 8000 }).catch(() => {});
+  await settle();
+  const said = await sheet.innerText().catch(() => "");
+  ok(`${who}: the read refuses him: "You can't open his passport now.", and no line`,
+     await sheet.getAttribute("data-state") === "refused" && /You can't open his passport now\./.test(said) && !/Nothing on his record/.test(said)
+     && await page.locator('[data-testid="passport-sheet-line"]').count() === 0, said.slice(0, 200));
+  await page.keyboard.press("Escape");
+  await page.unroute(door);
+  await page.route(lines, answer([]));
+  await link.click({ timeout: 4000 });
+  await sheet.waitFor({ timeout: 8000 }).catch(() => {});
+  await settle();
+  const none = await sheet.innerText().catch(() => "");
+  ok(`${who}: the read admits him and his record is empty: "Nothing on his record yet."`,
+     await sheet.getAttribute("data-state") === "empty" && /Nothing on his record yet\./.test(none) && !/can't open/.test(none), none.slice(0, 200));
+  await page.keyboard.press("Escape");
+  await page.unroute(lines);
 }
