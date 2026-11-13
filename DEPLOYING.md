@@ -2480,6 +2480,20 @@ bundle. §126 is its proof:
 it refuses to start without db/152 (`expected-migrations.json`); it needs
 nothing new from it to run.
 <!-- ── end db/152 ── -->
+<!-- ── db/153: the big screen hides a marked boy's side by position ── -->
+#### The big screen hides a marked boy's side by position (db/153)
+
+`db/153_ground_screen_sides.sql` is public by terms, slice 1 (PR #302, merge
+84ede520). If any boy on a side is marked (his family has not agreed to public
+names), the big screen shows that side by position only. The read returns no
+names for that side. It adds `ground_screen_names(match)` (SECURITY DEFINER)
+and `ground_screen_sides()`, a wrapper. The route is
+`/api/matches/:id/ground-names`.
+
+Pasted on the demo and production, 13 Nov 2026. Hash-checked:
+`sha256 28da1a71c35241a4794ced52b7c67fdf5fae3961b63e01e64e3b3cc634e77cd2`,
+from commit b88d539a.
+<!-- ── end db/153 ── -->
 
 ### 5 · Cloud Run, the first time
 
