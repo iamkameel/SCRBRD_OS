@@ -36,9 +36,9 @@
 -- sits on both season rosters, so a mark set on him turns BOTH sides
 -- position-only on the same day. A scorer assigned school-wide (scoring.start
 -- with no team) reads every team's flags, and the boys who moved between A
--- and B this season are often one boy. The gate is unchanged here; whether
--- the scorer arm should ask an assignment to the fixture is Kameel's to
--- decide, in a later file.
+-- and B this season are often one boy. Kept for the pilot, the gate as
+-- built (Kameel, 13 Nov 2026, 11:40 UTC: "keep as built"), and on counsel's
+-- list.
 --
 -- Safe to paste again: DROP and CREATE the one function (nothing depends on
 -- it), then REVOKE and GRANT; the guard only reads.
