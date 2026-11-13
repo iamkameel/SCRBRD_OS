@@ -2382,6 +2382,104 @@ read asks `passport_consent_recipient_ok()`, and `POST /api/passport/consent`
 asks it first (answering `not_his_union` or `not_a_school`). Not to be
 pasted before Kameel's review.
 <!-- ── end db/124 ── -->
+<!-- ── db/152: the ball log's reads ask once a match ── -->
+#### The ball log's reads ask once a match, not once a ball (db/152)
+
+`db/152_ball_log_read_per_match.sql` is a speed fix with no change to who
+reads what. Every career, season, milestone, best, record, spell and
+live-score read goes through `ball_event_live`, and each of its scans of the
+log ran `ball_event_read` on every ball, so a career read took seconds at
+3 000 balls and minutes at a pilot season's size. `ball_event_live` now runs
+as its owner, behind a security barrier, and asks the policy's own conditions
+once a match. A caller row security does not apply to (the owner's definers,
+the triggers) reads every ball, as before. `ball_event`'s policies are
+unchanged and still guard every direct read of the table.
+
+**It fails closed.** The conditions it restates are pinned twice:
+- the text pin (`ball_log_text_pinned()`): every SELECT policy on
+  `ball_event`, `match` and `ball_event_rejudged`, and the view itself, by
+  the md5 of its text with only whitespace normalised;
+- the live pin (`ball_log_pinned()`, asked by the view on every read): the
+  catalogue rows of those policies and of the view (oid, xmin and the md5 of
+  the stored expression), the policies' kind and roles, and the view's
+  options and owner, against the fingerprint `ball_log_repin()` recorded when
+  the text pin held.
+
+Any `CREATE`, `ALTER` or `DROP POLICY` on those three tables, a re-created
+view, or an `ALTER VIEW` of its options or owner breaks the live pin at once,
+even in the transaction that re-pinned. From then on the view reads exactly what
+the reader's own `SELECT` of each table returns: correct, and as slow as before
+db/152, until the view is re-stated for the new policies. The verifier says so
+(§9, §126). **After a restore into a new database** (new catalogue xmins) the
+view also reads that way. To bring the speed back, the owner runs
+`SELECT ball_log_repin();`. It re-pins only if the text pin holds, and
+otherwise names what differs.
+
+**When to run `SELECT ball_log_repin();`** (as the owner, in the SQL editor):
+- after a restore into a new database, or a Supabase pause and restore;
+- after a major Postgres upgrade (if it refuses, the new server's deparse
+  differs: re-take the pins in a migration first);
+- after anything re-runs `pad_scope_guard_install()` (db/50) or otherwise
+  drops and re-creates a SELECT policy on `ball_event`, `match` or
+  `ball_event_rejudged`, even with the same text: put the call at the foot
+  of that migration.
+
+**Unpinned means correct but slow.** Every reader still reads exactly what
+the tables' policies allow; every career, milestone, best and live-score read
+pays a row-security scan of the whole log, seconds at a pilot season's size.
+`GET /api/health` reports `"ball_log_pinned": true` or `false` (`null` when
+the database is unreachable). Check it after every paste, restore and upgrade;
+`false` on match day is the cue to re-pin.
+
+**The text pins are Postgres 16's deparse.** On a server whose deparse
+differs by more than whitespace the paste refuses to run and names the
+policy. Re-take the pins on that version first; nothing is half-applied.
+Checked on 17.6 (production) and 17.11 (the demo), 12 Nov 2026: every pinned
+policy hash and db/121's view hash match the file, so the guard passes.
+
+**Grants (Supabase).** `ball_event_live` is SELECT for `scrbrd_app` and
+nothing else. PUBLIC, `anon`, `authenticated` and `service_role` are revoked
+where they exist, and so are all eight functions and `ball_log_pin` (PUBLIC
+does not reach Supabase's roles). The application may call every function but
+`ball_log_repin()`, which is the owner's, and has nothing on `ball_log_pin`. Supabase's security advisor will flag this
+view as `security_definer_view` (lint 0010). That is expected and is this
+design: **do not "fix" it by setting `security_invoker` back on.** That would
+put the per-ball cost back, and §9 and §126 would go red.
+
+**What it does to a live database.** It adds:
+- one table, `ball_log_pin` (one row, the fingerprint; row security on, no
+  policy, no privilege for the application);
+- eight functions: `ball_log_norm()`, `ball_log_policies_unpinned()`,
+  `ball_log_text_pinned()` and `ball_log_fingerprint()` (catalogue reads, as
+  the caller), `ball_log_pinned()` and `ball_log_repin()` (definers, for the
+  pin row), and `ball_event_visible_ids()` and
+  `ball_event_rejudged_visible_keys()` (the caller's own SELECT);
+- `ball_event_live`, re-created with the same columns and rows.
+
+No other table, and no column, row or policy, changes. It refuses to run
+unless the view in place is db/121's or its own, or if a policy it states has
+changed. A second paste changes nothing.
+
+Paste `node tools/bundle-sql.mjs --apply 152` after 151, then the verify
+bundle. §126 is its proof:
+- the view row for row against db/121's own definition under row security,
+  for every seeded reader;
+- on a pad's credential at each school's busiest fixture, at either end;
+- in support sessions, and with match's row security lifted;
+- with a ball, a void and a re-judged striker planted;
+- with a RESTRICTIVE policy added, for the fail-closed path;
+- read by a definer of the owner (every live ball);
+- with the readers including a pupil whose side ended, a guardian whose link
+  is not live, a trip's driver and an away school's coach;
+- with a policy altered after a re-pin in the same transaction, and the
+  security barrier lifted: each breaks the live pin;
+- with no db/152 function and nothing on `ball_log_pin` for PUBLIC, `anon`,
+  `authenticated` or `service_role`.
+
+§9 names the view as its one exception. **Schema first**: the API built with
+it refuses to start without db/152 (`expected-migrations.json`); it needs
+nothing new from it to run.
+<!-- ── end db/152 ── -->
 
 ### 5 · Cloud Run, the first time
 

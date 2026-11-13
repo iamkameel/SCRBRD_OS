@@ -342,7 +342,7 @@ Opus builds every policy, helper and migration (CLAUDE.md: authorization, schema
 
 ### 6.6 Group R-F · A team-mate's figures (M5; after §7 D2 and §5 item 12)
 
-**Not built. REACH-D2 was decided "Leave them open" (14 Oct) and closed by Kameel on 7 Nov 2026 (§7): the build below is open and not started (backlog: "Close REACH-D2").**
+**Built by path (b) and merged #301 (merge 0c50e488, 12 Nov 2026), with both 11 Nov exceptions kept.** Before that: REACH-D2 was decided "Leave them open" (14 Oct) and closed by Kameel on 7 Nov 2026 (§7), and the build below was open (backlog: "Close REACH-D2").
 
 - **Path (a) is ruled out since 11 Nov 2026.** Removing `player.performance.read` from the `player` bundle would break the Compare card (GA-I24 D10) and the captain's season table (138 C2), both kept as exceptions; the build must keep both working.
 - Path (a), had 138 not depended on it (no longer open): `player.performance.read` leaves the `player` bundle (`roles.mjs:330–335`); `role_capability` updated by the migration; `selfaccess` keeps it.
@@ -412,6 +412,8 @@ Kameel's decisions of 7 November 2026 (08:30 SAST) on the pupil ratings read, re
 4. The API fix shipped in PR #273 (commit 89cb61bd), live on both Render services since 7 Nov 2026.
 
 Status after these decisions: the ratings fix is shipped (`services/api/read/read-api.mjs`, PR #273). REACH-D2 is closed as a decision; its build (§6.6, path (a) or (b)) is open and not started.
+
+Built and merged #301 (12 Nov 2026).
 
 ### Decided 11 November 2026 (Kameel)
 

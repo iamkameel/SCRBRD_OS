@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useTheme } from "../../design/theme.js";
 import { deriveMatch, fromRow } from "@scrbrd/scoring";
@@ -36,6 +36,36 @@ import { StateLabel } from "../../ui/stateLabel.jsx";
 import { TabStrip, panelLabel } from "./tabStrip.jsx";
 import { NARROW_PX, tabOr } from "../../lib/matchTabs.js";
 import { scrollerOf } from "../../lib/toBall.js";
+import { opensPassportOf } from "../../lib/passportLink.js";
+
+// CRI-3.2: a boy's passport over the scorecard, its own chunk, fetched on the first tap.
+const PassportSheet = lazy(() => import("./passportSheet.jsx"));
+
+/**
+ * CRI-3.2: the link on a scorecard row to a boy's passport, drawn here and not
+ * in the scorecard the public page shares (its bundle pays for nothing it
+ * cannot draw). With `label` (a bowler's name) the name itself is the link, one
+ * tap; without (a batter's opened row) it is a Passport button beside Open profile,
+ * named "Passport, {his name}" for a screen reader, the name the scorecard shows.
+ * @param {{onOpen: (e: any) => void, name: string, label?: any}} p
+ */
+function PassportLink({ onOpen, name, label = null }) {
+  if (label != null) return (
+    <button type="button" onClick={onOpen} data-testid="mc-passport-open" className="os-state"
+      style={{ minHeight: "44px", minWidth: 0, padding: 0, display: "flex", alignItems: "center", gap: T.space.xs, flexWrap: "wrap",
+        cursor: "pointer", background: "transparent", border: "none", borderRadius: T.radius.sm, color: "inherit", font: "inherit", textAlign: "left" }}>
+      {label}<span style={{ fontSize: "13px", fontWeight: 500, color: T.content.secondary, whiteSpace: "nowrap" }}>Passport <span aria-hidden="true">›</span></span>
+    </button>
+  );
+  return (
+    <button type="button" onClick={onOpen} data-testid="mc-passport-open" className="pressBtn os-state" aria-label={`Passport, ${name}`}
+      style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, cursor: "pointer", background: "transparent",
+        border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill,
+        color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
+      Passport
+    </button>
+  );
+}
 
 /**
  * THE MATCH CENTRE — one fixture, followed (DESIGN_DIRECTION §10, step 3c).
@@ -472,10 +502,33 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
     const p = PLAYERS.find((x) => x.id === id);
     return p ? () => setProf(filterRecord(role, "players", p)) : null;
   };
+  // CRI-3.2 ("parent own child; coach squad; public nothing"): a row offers
+  // his passport only where the passport read would answer this reader
+  // (lib/passportLink.js, no wider than passport()'s own arms): his family,
+  // himself, his own side's staff and his school's office. His school and
+  // side are his roster row's, never the fixture's. Signed out, in the
+  // demonstration and on the public page (which passes none), no row does.
+  const [pass, setPass] = useState(/** @type {{id: string, name: string, from: HTMLElement | null} | null} */ (null));
+  // The boys on this scorecard who get a link, decided once per change of the
+  // card's boys or the roster, not per row on every render (a live tick redraws).
+  const cardIds = [...new Set(played.flatMap((inn) => [...(inn.batsmen ?? []), ...(inn.bowlers ?? [])].map((r) => r.id)))].join(",");
+  const linkable = useMemo(() => {
+    if (!signedIn() || log.demo || !cardIds) return new Set();
+    const roster = new Map(PLAYERS.map((x) => [x.id, x]));
+    const asg = profile()?.assignments;
+    return new Set(cardIds.split(",").filter((id) => {
+      const p = roster.get(id);
+      return opensPassportOf({ id, school: p?.school ?? null, team: p?.team ?? null }, asg);
+    }));
+  }, [cardIds, PLAYERS, log.demo]);
+  const passportOf = (/** @type {string} */ id, /** @type {string} */ name, /** @type {any} */ label = null) => {
+    if (!id || !linkable.has(id)) return null;
+    return <PassportLink name={name} label={label} onOpen={(e) => setPass({ id, name, from: e?.currentTarget ?? null })}/>;
+  };
 
   const ctx = { match, role, innings: played, result, commentary: told, events: log.events, demo: log.demo, overs: log.overs,
     inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
-    moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, Wheel: ShotWheel,
+    moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, passportOf, Wheel: ShotWheel,
     focus: focus?.length ? new Set(focus) : null, focusLabel, venueLine, rainLine, par, fold: log.fold, settled,
     captain, terms: captain || staff ? termsOf(log.fold) : null,
     staff, eventCount: log.events?.length ?? 0, initialDrawer,
@@ -602,6 +655,11 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
       </div>
       {prof && <PlayerProfileModal player={prof} role={role} onClose={() => setProf(null)}
         onFullProfile={onNavProfile ? (id) => { setProf(null); onNavProfile(id); } : null}/>}
+      {pass && (
+        <Suspense fallback={null}>
+          <PassportSheet key={pass.id} player={pass} role={role} onClose={() => setPass(null)}/>
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -33,13 +33,14 @@ import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import {
   inningsStart, batters as battersEvent, bowler as bowlerEvent, ball as ballEvent, retire as retireEvent,
-  revision as revisionEvent, sealInnings, RETIRE_REASON, INNINGS_END_REASON, DISMISSAL,
+  revision as revisionEvent, sealInnings, keeper as keeperEvent, lawsEdition, RETIRE_REASON, INNINGS_END_REASON, DISMISSAL,
 } from "@scrbrd/scoring";
 import { deliveryEvents, noBallEvent, extraWicketEvent, crease } from "../src/scorer/delivery.js";
 import { extraCall } from "../src/scorer/extras.js";
 import { retireHurtEvent, resumeEvent } from "../src/scorer/retire.js";
 import { awardEvent, foldPad } from "../src/scorer/penalty.js";
 import { wicketDetail, fielderRefs } from "../src/scorer/wicketAsks.js";
+import { bowlerToSuspend, suspendEvent } from "../src/scorer/suspension.js";
 import { parseScorebook } from "../../../packages/scoring/test/scorebook/format.mjs";
 import { buildLog, clockOf, contextOf, idOf } from "../../../packages/scoring/test/scorebook/harness.mjs";
 
@@ -113,10 +114,10 @@ function padLog(book) {
         }
       };
       // commitBall(type, value, shot, seg, zone, approach, placement, opts) on Basic Scoring.
-      const commitBall = (type, value, shot, seg, zone, approach, placement, { shortRun = false, notBoundary = false } = {}) => {
+      const commitBall = (type, value, shot, seg, zone, approach, placement, { shortRun = false, notBoundary = false, notInOver = null } = {}) => {
         const before = inn();
         emit(...deliveryEvents({ curIn, before, freeHit: before.freeHit, type, value, shot, seg, zone, approach, placement,
-          shortRun, nbType: null, facesNext: null, disallowed: null, notInOver: null, notBoundary }));
+          shortRun, nbType: null, facesNext: null, disallowed: null, notInOver, notBoundary }));
       };
       // engine.jsx confirmWicket(mode, fielder, extra), with modalCtx as
       // onWicketCtx (no shot, no area) or openExtraWicket left it.
@@ -142,16 +143,18 @@ function padLog(book) {
           const from = d.type === "W" ? d.nbRuns : null;
           const { mode, fielderText, detail } = sheetAnswer(i, fieldSquad, d.wicket, d.type === "W" ? d.value : 0, from);
           const modalCtx = d.type === "W" ? { shot: null, seg: null, zone: null, placement: null }
-            : { extra: { type: d.type, runs: d.value, nbType: d.type === "Nb" ? "front_foot" : null, nbRuns: d.type === "Nb" && d.value > 0 ? d.nbRuns ?? null : null,
+            : { extra: { type: d.type, runs: d.value, nbType: d.type === "Nb" ? d.nbType ?? "front_foot" : null, nbRuns: d.type === "Nb" && d.value > 0 ? d.nbRuns ?? null : null,
               ...(d.notBoundary ? { notBoundary: true } : {}) } };
           confirmWicket(mode, fielderText, detail, modalCtx);
           return;
         }
         if (d.shortRun) { commitBall("run", 0, null, null, null, null, undefined, { shortRun: true }); return; }
+        // engine.jsx recordNotInOver(): commitBall with the reason (the pad's sheet, its own button).
+        const nio = d.notInOver ? { notInOver: d.notInOver } : {};
         if (d.type === "run" && d.notBoundary) { commitBall("run", d.value, null, null, null, null, undefined, { notBoundary: true }); return; }
-        if (d.type === "run") { commitBall("run", d.value, null, null, null, null, undefined); return; }
-        const call = extraCall(d.type, d.value, { basic: true, nb: { type: "front_foot", from: d.nbRuns ?? null, ...(d.notBoundary ? { notBoundary: true } : {}) } });
-        if (call.to === "commit") { const [type, value, shot, seg, zone] = call.args; commitBall(type, value, shot, seg, zone, undefined, undefined); return; }
+        if (d.type === "run") { commitBall("run", d.value, null, null, null, null, undefined, nio); return; }
+        const call = extraCall(d.type, d.value, { basic: true, nb: { type: d.nbType ?? "front_foot", from: d.nbRuns ?? null, ...(d.notBoundary ? { notBoundary: true } : {}) } });
+        if (call.to === "commit") { const [type, value, shot, seg, zone] = call.args; commitBall(type, value, shot, seg, zone, undefined, undefined, nio); return; }
         if (call.to === "wide") { commitBall("Wd", call.args[0], null, null, null, null); return; }
         // recordNoBall(nbType, runs, nbRuns, notBoundary)
         const [nbType, runs, nbRuns, notBoundary = false] = call.args;
@@ -174,6 +177,10 @@ function padLog(book) {
           else if (step.kind === "timed") { used.add(step.who); emit(retireEvent({ batter: id, reason: RETIRE_REASON.TIMED_OUT })); }
           else if (step.kind === "pen") emit(awardEvent(curIn, { toBattingTeam: step.runs > 0, reason: step.reason }));
           else if (step.kind === "bw") addBowler(idOf(other, step.who), step.reason);
+          // engine.jsx recordSuspension(): suspendEvent(curIn, bowlerToSuspend(inn), reason, lawsEdition({innings, events})).
+          else if (step.kind === "susp") emit(suspendEvent(curIn, bowlerToSuspend(i), step.reason, lawsEdition({ innings: match().innings, events })));
+          // engine.jsx addKeeper(id): keeperEvent({keeper: id}).
+          else if (step.kind === "kp") emit(keeperEvent({ keeper: idOf(other, step.who) }));
         }
       }
       if (!paper.lines.some((l) => l.kind === "declare")) emit(sealInnings(inn()));
@@ -190,7 +197,7 @@ const strip = (e) => { const { id: _id, ...rest } = e; return rest; };
 group("A. Every scorebook, through the pad's own emission, is the harness's log");
 {
   const files = readdirSync(BOOKS).filter((f) => f.endsWith(".scorebook")).sort();
-  ok("there are scorebooks", files.length >= 10, files.length);
+  ok("there are scorebooks", files.length >= 15, files.length);
   for (const f of files) {
     const book = parseScorebook(readFileSync(join(BOOKS, f), "utf8"), f);
     const harness = buildLog(book);
@@ -224,6 +231,10 @@ group("B. engine.jsx still builds what A builds inline");
   has("commitBall builds every delivery through deliveryEvents()",
     /const evs=deliveryEvents\(\{curIn,before,freeHit,type,value,shot,seg,zone,approach,placement,shortRun,nbType,facesNext,disallowed,notInOver,notBoundary\}\);/);
   has("recordWide: commitBall with the wide's runs", /const recordWide=\(runs\)=>\{ if\(!guardReady\(\)\)return; commitBall\("Wd",runs,null,null,null,hubApproach\);/);
+  has("recordSuspension: suspendEvent() with the bowler to suspend and the match's Edition",
+    /const recordSuspension=\(reason\)=>\{ const who=bowlerToSuspend\(inn\); const ev=suspendEvent\(curIn,who,reason,lawsEdition\(\{innings,events\}\)\);/);
+  has("addKeeper: keeperEvent({keeper})", /const addKeeper=id=>emit\(keeperEvent\(\{keeper:id\}\)\);/);
+  has("recordNotInOver: commitBall with the reason", /commitBall\(type,value,null,null,null,null,undefined,\{nbType,notInOver:reason,facesNext\}\);/);
   has("recordNoBall: noBallEvent()", /const recordNoBall=\(nbType,runs,nbRuns,notBoundary=false\)=>\{ const nb=noBallEvent\(\{inn,nbType,runs,nbRuns,selShot,selSeg,notBoundary\}\);/);
   has("recordShortRun: commitBall with no runs, a short run", /commitBall\(type,0,null,null,null,null,undefined,\{shortRun:true,nbType,disallowed:reason,facesNext\}\);/);
   has("Runs, not a boundary: commitBall with notBoundary", /commitBall\("run",n,null,null,null,hubApproach,undefined,\{notBoundary:true\}\);/);

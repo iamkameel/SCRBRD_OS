@@ -1438,6 +1438,10 @@ const ADAPT = {
   sign_in_claims: (r) => r,
   drills: asDrill,
   passport: asPassportLine,
+  // CRI-3.2: the passport's own door (db/124): his name where passport() would
+  // open to the reader, null where it would not. No mock twin: the sheet that
+  // asks is signed in only.
+  passport_name: (r) => ({ name: r.name ?? null }),
   passport_consents: asPassportConsent,
   passport_union_reads: asPassportUnionRead,
   scouting_consent: asScoutingConsent,

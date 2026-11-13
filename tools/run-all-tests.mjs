@@ -38,6 +38,10 @@ const SUITES = [
   // What a signed-out page may show about a pupil (SCRBRD-083): the surfaces,
   // the never-public list against every masked column, the name rule.
   ["public",   "packages/policy/test/public.test.mjs"],
+  // PUBLIC_BY_TERMS slice 2: §5.1 line by line on card, live and board (B1,
+  // B2, must-nevers 1, 3, 5, 7); no surface is main's answer over a grid;
+  // the terms versions, in order, and their drift test.
+  ["public-by-terms", "packages/policy/test/public-by-terms.test.mjs"],
   // Pilot Match phase 2 (db/151): no migration but the pilot's names schema pilot.
   ["pilot-isolation", "packages/policy/test/pilot-isolation.test.mjs"],
   // The plan's word list (SCRBRD-138 phase B §3): SG-10's words in code, the
@@ -412,6 +416,9 @@ const SUITES = [
   // shown — his family's, his office's, his own side's — and no team-mate's.
   ["consent-readers", "apps/web/test/consent-readers.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["union-reads", "apps/web/test/union-reads.test.mjs"],
+  // CRI-3.2: a scorecard row offers a boy's passport only to a reader the
+  // passport read admits (his family, himself, his side's staff, his office).
+  ["passport-link", "apps/web/test/passport-link.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I30: one home per domain (Competitions, Transport, Grounds). For every
   // role, a home's sections and links are the menu's own answer for their
   // source destination, and a role that reaches none of a home's parts has no
