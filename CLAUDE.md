@@ -299,9 +299,11 @@ required. There is also a stock library." So the app's images (an empty
 state, a ground, a hero, an icon set, a texture) may be generated or taken
 from Magnific's stock, when a screen needs one. The rules above still win:
 
-- **No child, real or generated**, in any image, on any page: no faces, no
-  figures that read as a pupil, no school crests or kit that point at a real
-  school. Grounds, equipment, weather and abstract shapes are fine.
+- **Generated children are fine** (Kameel, 13 Nov: "we can generate images
+  of children. that's not an issue."). A **real** child's photograph still
+  never goes on a public page (`docs/policy/PUBLIC_DATA.md`), and a generated
+  child must not be made to look like a particular real pupil, or wear a real
+  school's crest or kit.
 - **No real person, brand or school** imitated, and nothing that reads as a
   photograph of a real match.
 - **Check the price first** (`simulate_cost`) and keep it to what a screen
