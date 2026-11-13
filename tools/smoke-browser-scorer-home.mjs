@@ -240,7 +240,14 @@ try {
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
   ok("he lands on the scorer's home, not the day sheet", await home() && (await tid("day-sheet").count()) === 0);
-  ok("nothing on this device to resume, said as that", await until(async () => (await tid("scorer-resume-empty").count()) === 1), (await text()).slice(0, 200));
+  // Experience pass slice 1 (d): nothing is on this device, but his side's fixture is live, so Now holds it,
+  // with its sentence and the pad, in place of "Nothing on this phone to resume" (kept for when nothing of his is live: E).
+  ok("nothing on this device, and his side's live fixture is on Now: its sentence and Open the pad",
+     await until(async () => (await tid(`now-live-${OTHER}`).count()) === 1)
+     && (await tid(`now-live-${OTHER}-sentence`).innerText().catch(() => "")).trim().length > 0
+     && /^Open the pad$/.test((await tid(`now-live-${OTHER}-open`).innerText().catch(() => "")).trim()), (await tid("scorer-resume").innerText().catch(() => "")).slice(0, 300));
+  ok("...in place of Nothing on this phone to resume", (await tid("scorer-resume-empty").count()) === 0 && (await tid(`resume-${OTHER}`).count()) === 0);
+  ok("...and only the live one: a fixture not started stays in This week", (await page.locator('[data-testid^="now-live-"][data-state]').count()) === 1);
   // The day sheet (R0): with no session, nothing on the P0 card; Pilot Matches are switched off, so that section is not drawn.
   const sectionsOf = async () => (await tid("scorer-home").first().getAttribute("data-sections").catch(() => "")) ?? "";
   ok("no session: the sections are Now, Start and This week, in that order (no P0, no Pilot Matches)",
@@ -263,6 +270,12 @@ try {
      && /another device is scoring/.test(await tid(`fixture-${OTHER}-state`).innerText().catch(() => "")), 10000));
   ok("...and offers the pad, whose take-over is the route, not a claim from here",
      /Open the pad/.test(await tid(`fixture-${OTHER}-open`).innerText().catch(() => "")) && /hands over/.test(await tid(`fixture-${OTHER}`).innerText().catch(() => "")));
+  // Slice 1 (b): each fixture says its status sentence, the Match Centre's (lib/matchCentre.js statusSentence).
+  ok("...and its status sentence, the same as Now's for it",
+     (await tid(`fixture-${OTHER}-sentence`).innerText().catch(() => "")).trim() !== ""
+     && (await tid(`fixture-${OTHER}-sentence`).innerText().catch(() => "")).trim() === (await tid(`now-live-${OTHER}-sentence`).innerText().catch(() => "?")).trim());
+  ok("a fixture still to play says when, or that it has not started",
+     /Starts at|Not started|won the toss/.test(`${await tid(`fixture-${MINE}-sentence`).innerText().catch(() => "")} ${await tid(`fixture-${MINE}-state`).innerText().catch(() => "")}`));
   ok("no claim was made by drawing the home",
      (await dbq(`select holder_device from scoring_session where match_id = $1`, [OTHER]))[0]?.holder_device === "dev-another-phone"
      && (await dbq(`select 1 from scoring_session where match_id = any($1::uuid[])`, [[APPT, MINE]])).length === 0);
@@ -480,7 +493,15 @@ try {
      && /no figure, standing or record/.test(await tG(`pilot-done-${pid}`).innerText().catch(() => "")), await tG("scorer-pilots").innerText().catch(() => ""));
   ok("...with its own score, and no promote action (R1)", /Hilton U13B 14\/0/.test(await tG(`pilot-done-${pid}`).innerText().catch(() => ""))
      && !/promot/i.test(await tG("scorer-home").innerText().catch(() => "")));
-  ok("...and it is no longer on Now", (await tG(`resume-${pid}`).count()) === 0 && (await tG("scorer-resume-empty").count()) === 1);
+  // Slice 1 (b): after a match, what he scored as a plain record (§3.9): no points, streaks or rankings.
+  ok("Your last match: what he scored, as a plain record, all sent",
+     await untilG(async () => (await tG("scorer-record-match").count()) === 1, 6000)
+     && /You scored \d+ balls?, (no|\d+) corrections?, all sent\./.test(await tG("scorer-record-match-words").innerText().catch(() => "")),
+     await tG("scorer-record").innerText().catch(() => "(none)"));
+  ok("...and nothing that ranks it", !/point|streak|rank|best|leader/i.test(await tG("scorer-record").innerText().catch(() => "")));
+  // Now says it has nothing to resume, or holds his side's live fixture in its place (slice 1, d).
+  ok("...and it is no longer on Now", (await tG(`resume-${pid}`).count()) === 0
+     && ((await tG("scorer-resume-empty").count()) === 1 || (await g.locator('[data-testid^="now-live-"][data-state]').count()) > 0));
   ok("no sponsor slot on the home (a work mode)", !/sponsor/i.test(await tG("scorer-home").innerHTML().catch(() => "")));
 
 
