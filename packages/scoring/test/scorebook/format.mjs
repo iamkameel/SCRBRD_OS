@@ -19,7 +19,8 @@
  *   date 2026-11-01              decides the Edition of the Laws (4th from 1 Oct 2026)
  *   overs 5                      overs per innings
  *   sides Home Away              home first; the keys every other line uses
- *   conditions cup               optional: cup (a tie goes to a super over) or league
+ *   conditions cup               optional: cup (a tie goes to a super over), league,
+ *                                or declaration (a declaration match: no free hit)
  *
  *   innings 1 Home               the side batting; the other fields
  *   innings 2 Away overs=4 target=31   the umpires' figures at the break, if any
@@ -36,6 +37,10 @@
  *   2b 1lb        byes, leg byes
  *   wd  wd+2      a wide; a wide and the runs run (or the boundary) off it
  *   nb  nb+4      a no-ball; and runs off the bat (4 and 6 boundaries)
+ *   nbh nbbm      the pad's other no-ball kinds: a waist-high full toss (height)
+ *                 and a beamer. Neither earns a free hit (only the front-foot nb
+ *                 does); every nb mark below may carry either (nbh+2, nbbm+1&W:…).
+ *                 The pad offers no "back foot" kind: front foot, waist high, beamer.
  *   nb+4r         a no-ball, four off the bat all run
  *   nb+2b nb+1lb  a no-ball and byes / leg byes off it
  *   sr            a delivery the umpire called deliberate short running: no
@@ -46,12 +51,22 @@
  *                 out), +Nb / +Nlb (byes, leg byes completed), ns (the
  *                 non-striker is out), end=s / end=b (the end he was out at)
  *   wd&W:st/F1    a wicket off a wide; nb+1&W:ro/F2,ns,end=b off a no-ball
+ *   1@illegal_fielding  a fair delivery that does not count in the over (Law 17.3.2.5),
+ *                 and the five penalty runs to the batting side that go with it. The
+ *                 reason is one of fielder_returning, illegal_fielding,
+ *                 distracting_striker, obstructing_batter; the mark before the @ is
+ *                 a run, bye or leg bye mark (the runs that stand), never a wicket.
  * Between deliveries, on the over's line:
  *   rh:B4         B4 retires hurt          back:B4  he resumes, at the empty end
  *   rto:B4        B4 retires out           timed:B5 B5, due in, is timed out
  *   pen+5:helmet_struck   five penalty runs to the batting side, for a reason
  *   pen-5:time_wasting    five to the fielding side
  *   bw:BW3/injury         BW3 finishes the over (injury | suspended)
+ *   susp:beamers  the umpires suspend the bowler now bowling, for the reason named
+ *                 (one of the engine's SUSPENSION_REASON); a bw:BWn/suspended
+ *                 follows on the same line when the over is unfinished
+ *   kp:F2         F2 takes the wicket-keeper's gloves (the fielding side's keeper
+ *                 event). While a keeper is on record a stumping is his alone.
  * The next batter in the order walks in whenever an end is empty and a
  * delivery is next: the paper's batting order is the order they came in.
  *
@@ -63,6 +78,14 @@
  *   extras b 1 lb 2 w 3 nb 1 p 0 byes, leg byes, wide runs, no-ball runs, penalty runs
  *   total 87/4 5.0               runs/wickets and the overs bowled
  *   fow 1-12 B2 2.3              wicket-score, the batter out, the over he fell in
+ *   notinover 6                  optional: how many deliveries the innings had that were not
+ *                                one of the over (the @ marks): each was faced, none is a legal ball
+ *   milestone fifty B5 59        optional, one line each: every milestone of the innings the
+ *   milestone hat_trick BW3 3    card states (fifty or hundred, a batter's runs; five_for, a
+ *                                bowler's wickets; hat_trick, three). A card with any of these
+ *                                says it has exactly these, no others.
+ *   keeper F2 ct 1 st 1          optional, in the order they kept: the keeper's catches
+ *                                and stumpings (a card with none says the fold has none)
  *   bowl BW1 2-0-17-1 wd 1 nb 0  O-M-R-W, the number of wides and no-balls bowled
  *   result Away won by 6 wickets the result as the paper writes it
  *
@@ -76,10 +99,10 @@
 
 /**
  * @typedef {object} Step  one mark on the paper, in the order it was written
- * @property {"ball" | "rh" | "back" | "rto" | "timed" | "pen" | "bw"} kind
+ * @property {"ball" | "rh" | "back" | "rto" | "timed" | "pen" | "bw" | "susp" | "kp"} kind
  * @property {string} text   the mark as written, for a mismatch's message
  * @property {Delivery} [d]
- * @property {string} [who]  the batter (rh, back, rto, timed) or the bowler (bw)
+ * @property {string} [who]  the batter (rh, back, rto, timed), the bowler (bw) or the keeper (kp)
  * @property {number} [runs] penalty runs, signed: + to the batting side
  * @property {string} [reason]
  */
@@ -91,6 +114,8 @@
  * @property {boolean} [notBoundary] four or six all run: not a boundary
  * @property {"byes" | "leg_byes"} [nbRuns]
  * @property {boolean} [shortRun]
+ * @property {"height" | "beamer"} [nbType]  a no-ball's kind when not the front foot
+ * @property {string} [notInOver]            the reason the delivery is not one of the over
  * @property {Wicket} [wicket]
  */
 
@@ -139,6 +164,9 @@
  * @property {{b: number, lb: number, w: number, nb: number, p: number}} extras
  * @property {number} total  @property {number} wickets  @property {string} overs
  * @property {{wicket: number, runs: number, who: string, over: string}[]} fow
+ * @property {{who: string, catches: number, stumpings: number}[]} keepers
+ * @property {number} notInOver  deliveries faced that were not one of the over
+ * @property {{kind: string, who: string, value: number}[]} milestones  when any is given, the innings' milestones exactly
  * @property {CardBowler[]} bowling
  */
 
@@ -158,6 +186,8 @@ const HOW = Object.freeze({
   ro: "run_out", ob: "obstructing_field", ht: "hit_twice",
 });
 const FIELDED = new Set(["c", "st"]);
+/** The offences whose delivery is not one of the over (events.mjs NOT_IN_OVER), spelt out so the fixture does not borrow the engine's list. */
+const NOT_IN_OVER = new Set(["fielder_returning", "illegal_fielding", "distracting_striker", "obstructing_batter"]);
 const PLAYER = /^(B|BW|F)([1-9]|1[01])$/;
 
 /** @param {string} msg @param {string} file @param {number} at @returns {never} */
@@ -193,6 +223,13 @@ function parseWicket(s, bad) {
  * One delivery mark. @param {string} t @param {() => never} bad @returns {Delivery}
  */
 export function parseDelivery(t, bad) {
+  if (t.includes("@")) {
+    // A delivery that does not count in the over: the mark, then @ and why.
+    const [mark, reason] = t.split("@");
+    const d = parseDelivery(mark, bad);
+    if (!NOT_IN_OVER.has(reason) || d.wicket || d.type === "W" || d.type === "Wd" || d.type === "Nb" || d.shortRun) bad();
+    return { ...d, notInOver: reason };
+  }
   if (t === "." || t === "0") return { type: "run", value: 0 };
   if (/^[1-6]$/.test(t)) return { type: "run", value: Number(t) };
   if (/^[46]r$/.test(t)) return { type: "run", value: Number(t[0]), notBoundary: true };
@@ -204,12 +241,14 @@ export function parseDelivery(t, bad) {
     return { type: "W", value: w.value, wicket: w.wicket, ...(w.nbRuns ? { nbRuns: w.nbRuns } : {}) };
   }
   const [extra, wk] = t.split("&");
-  m = /^(wd|nb)(?:\+([0-6])(r|b|lb)?)?$/.exec(extra);
+  m = /^(wd|nbh|nbbm|nb)(?:\+([0-6])(r|b|lb)?)?$/.exec(extra);
   if (!m) bad();
   const type = m[1] === "wd" ? "Wd" : "Nb";
   const value = Number(m[2] ?? 0);
   /** @type {Delivery} */
   const d = { type, value };
+  if (m[1] === "nbh") d.nbType = "height";
+  if (m[1] === "nbbm") d.nbType = "beamer";
   if (m[3] === "r") { if (type !== "Nb") bad(); d.notBoundary = true; }
   if (m[3] === "b" || m[3] === "lb") { if (type !== "Nb") bad(); d.nbRuns = m[3] === "b" ? "byes" : "leg_byes"; }
   if (wk != null) {
@@ -227,6 +266,10 @@ function parseStep(t, bad) {
   if (m) return { kind: "pen", runs: (m[1] === "+" ? 1 : -1) * Number(m[2]), reason: m[3], text: t };
   m = /^bw:(BW\d+)\/(injury|suspended)$/.exec(t);
   if (m) return { kind: "bw", who: m[1], reason: m[2], text: t };
+  m = /^susp:([a-z_]+)$/.exec(t);
+  if (m) return { kind: "susp", reason: m[1], text: t };
+  m = /^kp:(F\d+)$/.exec(t);
+  if (m) return { kind: "kp", who: m[1], text: t };
   return { kind: "ball", d: parseDelivery(t, bad), text: t };
 }
 
@@ -282,7 +325,7 @@ export function parseScorebook(text, file = "scorebook") {
       case "declare": if (!inn) bad(); /** @type {PaperInnings} */ (inn).lines.push({ kind: "declare", at }); return;
       case "card": {
         inn = null;
-        card = { innings: Number(rest[0]), batting: [], extras: { b: 0, lb: 0, w: 0, nb: 0, p: 0 }, total: -1, wickets: -1, overs: "", fow: [], bowling: [] };
+        card = { innings: Number(rest[0]), batting: [], extras: { b: 0, lb: 0, w: 0, nb: 0, p: 0 }, total: -1, wickets: -1, overs: "", fow: [], keepers: [], notInOver: 0, milestones: [], bowling: [] };
         book.cards.push(card);
         return;
       }
@@ -313,6 +356,18 @@ export function parseScorebook(text, file = "scorebook") {
         const m = /^(\d+)-(\d+)$/.exec(rest[0] ?? "");
         if (!card || !m || rest.length !== 3) bad();
         /** @type {Card} */ (card).fow.push({ wicket: Number(/** @type {RegExpExecArray} */ (m)[1]), runs: Number(/** @type {RegExpExecArray} */ (m)[2]), who: rest[1], over: rest[2] });
+        return;
+      }
+      case "milestone": {
+        const bowlerKind = rest[0] === "five_for" || rest[0] === "hat_trick";
+        if (!card || rest.length !== 3 || !(bowlerKind || rest[0] === "fifty" || rest[0] === "hundred") || !(bowlerKind ? /^BW\d+$/ : /^B\d+$/).test(rest[1])) bad();
+        /** @type {Card} */ (card).milestones.push({ kind: rest[0], who: rest[1], value: Number(rest[2]) });
+        return;
+      }
+      case "notinover": if (!card || rest.length !== 1) bad(); /** @type {Card} */ (card).notInOver = Number(rest[0]); return;
+      case "keeper": {
+        if (!card || rest.length !== 5 || !/^F\d+$/.test(rest[0]) || rest[1] !== "ct" || rest[3] !== "st") bad();
+        /** @type {Card} */ (card).keepers.push({ who: rest[0], catches: Number(rest[2]), stumpings: Number(rest[4]) });
         return;
       }
       case "bowl": {
@@ -356,7 +411,7 @@ export function cardArithmetic(c) {
   const wides = sum(c.bowling.map((b) => b.wides));
   if (wides > c.extras.w || (wides === 0) !== (c.extras.w === 0)) out.push(`bowlers' wides ${wides} cannot give ${c.extras.w} wide runs`);
   const faced = sum(c.batting.map((b) => b.balls));
-  if (faced !== ballsOf(c.overs) + nbs) out.push(`balls faced ${faced}, not the legal balls ${ballsOf(c.overs)} and no-balls ${nbs}`);
+  if (faced !== ballsOf(c.overs) + nbs + c.notInOver) out.push(`balls faced ${faced}, not the legal balls ${ballsOf(c.overs)}, no-balls ${nbs} and deliveries not in the over ${c.notInOver}`);
   const out_ = c.batting.filter((b) => b.howOut !== "not out" && b.howOut !== "retired hurt").length;
   if (out_ !== c.wickets) out.push(`${out_} batters out, not ${c.wickets} wickets`);
   if (c.fow.length !== c.wickets) out.push(`${c.fow.length} falls of wicket, not ${c.wickets}`);
@@ -364,6 +419,10 @@ export function cardArithmetic(c) {
   const toBowlers = c.batting.filter((b) => b.howOut !== "not out" && b.howOut !== "retired hurt" && !notBowler.test(b.howOut)).length;
   const taken = sum(c.bowling.map((b) => b.wickets));
   if (taken !== toBowlers) out.push(`bowlers took ${taken}, the batters' column says ${toBowlers}`);
+  const stumped = c.batting.filter((b) => /^st /.test(b.howOut)).length;
+  const caught = c.batting.filter((b) => /^c /.test(b.howOut)).length;
+  if (sum(c.keepers.map((k) => k.stumpings)) > stumped) out.push(`keepers' stumpings ${sum(c.keepers.map((k) => k.stumpings))}, more than the ${stumped} stumped`);
+  if (sum(c.keepers.map((k) => k.catches)) > caught) out.push(`keepers' catches ${sum(c.keepers.map((k) => k.catches))}, more than the ${caught} caught`);
   c.fow.forEach((f, i) => {
     if (f.wicket !== i + 1) out.push(`fall of wicket ${i + 1} numbered ${f.wicket}`);
     if (i > 0 && f.runs < c.fow[i - 1].runs) out.push(`fall of wicket ${i + 1} at ${f.runs}, below the one before`);

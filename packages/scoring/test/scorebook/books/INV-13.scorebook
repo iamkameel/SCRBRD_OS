@@ -1,0 +1,79 @@
+# INV-13 — invented. Four overs a side: deliveries that are not one of the over.
+# Edge cases (Law 17.3.2.5: a fielder returning without leave, fielding the
+# ball illegally, or distracting the striker): the delivery is bowled and
+# faced but is no ball of the over, no ball in the bowler's figures, and the
+# over goes on past it; the five penalty runs go to the batting side and are
+# nobody's to bowl; the runs that stand do rotate the strike (3, odd), and
+# a bye or a leg bye that stands is a bye or a leg bye; a bowler's over of
+# six dots with one such delivery in it is still a maiden (over 1: seven
+# deliveries, 1-1-0-0); a free hit passed over by one (a no-ball, the not-
+# in-the-over bye, then the bowled that the free hit saves); a free hit
+# that follows a no-ball and a distraction, and is hit for six.
+match INV-13
+title Four overs, deliveries not in the over
+date 2026-11-13
+overs 4
+sides Home Away
+
+innings 1 Home
+open B1 B2
+over BW1  . .@distracting_striker . . . . .
+over BW2  2@illegal_fielding 1 nb 1b@fielder_returning W:b 4 W:b 1 .
+over BW3  4 3@illegal_fielding .@distracting_striker 6 W:c/F5 1 W:lbw 2
+over BW4  6 1 .@fielder_returning 4 W:b 3 2
+
+innings 2 Away
+open B1 B2
+over BW1  6 4 1lb@fielder_returning W:b 2 W:c/F8 1
+over BW2  .@illegal_fielding 1 nb .@distracting_striker 6 W:lbw 3 2 .
+over BW3  4 1 W:c/F2 2@illegal_fielding 4 W:b 1
+over BW4  W:c/F6 4 . W:b 1 3
+
+# ── The card, worked by hand ──
+# Home, over by over: 5, 20, 26, 21 = 72. Penalty runs: 5 + 10 + 10 + 5 = 30.
+card 1
+bat B1 6 13 0 1 c F5 b BW3
+bat B2 7 5 1 0 b BW2
+bat B3 8 4 1 0 lbw b BW3
+bat B4 10 4 0 1 not out
+bat B5 6 4 1 0 b BW4
+bat B6 3 1 0 0 not out
+extras b 1 lb 0 w 0 nb 1 p 30
+total 72/4 4.0
+fow 1-24 B2 1.4
+fow 2-48 B1 2.3
+fow 3-49 B3 2.5
+fow 4-67 B5 3.4
+notinover 6
+bowl BW1 1-1-0-0 wd 0 nb 0
+bowl BW2 1-0-9-1 wd 0 nb 1
+bowl BW3 1-0-16-2 wd 0 nb 0
+bowl BW4 1-0-16-1 wd 0 nb 0
+
+# Away, needing 73: 19, 23, 17, 8 = 67. Penalty runs: 5 + 10 + 5 = 20.
+card 2
+bat B1 16 7 1 2 lbw b BW2
+bat B2 0 1 0 0 b BW1
+bat B3 2 2 0 0 c F8 b BW1
+bat B4 4 6 0 0 c F2 b BW3
+bat B5 11 4 1 0 not out
+bat B6 6 3 1 0 b BW3
+bat B7 1 2 0 0 c F6 b BW4
+bat B8 4 3 1 0 b BW4
+bat B9 1 1 0 0 not out
+extras b 0 lb 1 w 0 nb 1 p 20
+total 67/7 4.0
+fow 1-16 B2 0.3
+fow 2-18 B3 0.5
+fow 3-37 B1 1.3
+fow 4-47 B4 2.3
+fow 5-58 B6 2.5
+fow 6-59 B7 3.1
+fow 7-63 B8 3.4
+notinover 4
+bowl BW1 1-0-13-2 wd 0 nb 0
+bowl BW2 1-0-13-1 wd 0 nb 1
+bowl BW3 1-0-12-2 wd 0 nb 0
+bowl BW4 1-0-8-2 wd 0 nb 0
+
+result Home won by 5 runs
