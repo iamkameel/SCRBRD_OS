@@ -120,7 +120,7 @@ group("C. Pilot: the same shape on the wire, no position and no name on it");
 {
   const sN = P.pilotSlots(named), sP = P.pilotSlots(nameless);
   ok("a side by position gets its slots as a named one does", sP.slots.length === 22 && sP.slots.every((s) => UUID.test(s.id)) && sP.slots.filter((s) => s.side === "home").map((s) => s.batting_no).join() === "1,2,3,4,5,6,7,8,9,10,11");
-  ok("...and its roster keeps no name", Object.values(sP.roster.slots).every((s) => s.name === null));
+  ok("...and its roster keeps no name, each slot marked a position", Object.values(sP.roster.slots).every((s) => s.name === null && s.position === true));
   const cN = P.pilotCfg(named, { id: "pilot-11111111-1111-4111-8111-111111111111", opener1: HOME[0], opener2: HOME[1], openBowler: AWAY[0] }, sN);
   const lu = practice.playingSquads(nameless.squads).map(practice.lineUp);
   const cP = P.pilotCfg(nameless, { id: "pilot-22222222-2222-4222-8222-222222222222", opener1: lu[0].xi[0], opener2: lu[0].xi[1], openBowler: lu[1].xi[0] }, sP);
@@ -159,6 +159,11 @@ group("D. A named Pilot Match is as it was");
   ok("...a named fielder still leaves as his slot", w.ok && UUID.test(/** @type {any} */ (w).event.fielder));
   const typedPos = pilotWire({ kind: "ball", type: "run", value: 0, fielder: "Away No. 4", striker: c.opener1, nonStriker: c.opener2, bowler: c.openBowler }, r.pilot.roster);
   ok("...and a position word names no slot that has a name (a substitute: left off)", typedPos.ok && /** @type {any} */ (typedPos).event.fielder === null);
+  // Review (slice 1): a slot whose name has gone (purged, or a second phone the names never reached) is no
+  // position slot: its fielder in position words is left off, as before Q5. Nothing on the wire moves for it.
+  const gone = { ...r.pilot.roster, slots: Object.fromEntries(Object.entries(r.pilot.roster.slots).map(([k, x]) => [k, { ...x, name: null }])) };
+  const purged = pilotWire({ kind: "ball", type: "W", value: 0, dismissal: "caught", fielder: "Away No. 4", striker: c.opener1, nonStriker: c.opener2, bowler: c.openBowler }, gone);
+  ok("...and a named match whose names have gone sends its fielder as before (left off)", purged.ok && /** @type {any} */ (purged).event.fielder === null, JSON.stringify(purged));
 }
 
 console.log(`\npositions: ${pass} passed, ${fail} failed`);

@@ -200,10 +200,10 @@ group("F. Who may read the pilot store");
   // The scoring block (views/ScoringBlock.jsx, experience pass slice 1) reads the same home rows and the
   // account's own Pilot status, for an account with no school; no typed player name is drawn (browser-first-score).
   ok("only the scorer's own modules import it", readers.length > 0 && readers.every((r) => /\/scorer\//.test(r) || /\/views\/(ScorerHomeView|ScoringBlock)\.jsx$/.test(r) || /\/lib\/scorerDay\.js$/.test(r)), readers.join(", "));
-  // Review S6: the home and its two libs; a log reaches them only as a board (lib/boardOfLog.js homeRow).
-  const homeFiles = ["../src/views/ScorerHomeView.jsx", "../src/lib/scorerDay.js", "../src/lib/boardOfLog.js"];
+  // Review S6: the home, the scoring block (slice 1) and the two libs; a log reaches them only as a board (lib/boardOfLog.js homeRow).
+  const homeFiles = ["../src/views/ScorerHomeView.jsx", "../src/views/ScoringBlock.jsx", "../src/lib/scorerDay.js", "../src/lib/boardOfLog.js"];
   const home = homeFiles.map((f) => readFileSync(join(import.meta.dirname, f), "utf8")).join("\n").replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");
-  ok("...and the home takes no name from it: no roster, slot, squad or player field read (the view, scorerDay, boardOfLog)",
+  ok("...and the home takes no name from it: no roster, slot, squad or player field read (the view, the scoring block, scorerDay, boardOfLog)",
     !/\.roster\b|\.slots\b|squad|\.players\b|full_name|namesBody|restoreFromServer/.test(home), homeFiles.join(", "));
   // Review S6: persist.js's loadMatch hands over a whole log, names and all: only the scorer's own modules and the two stores import it.
   const logReaders = [];

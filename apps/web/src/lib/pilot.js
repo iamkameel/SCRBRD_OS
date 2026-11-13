@@ -148,7 +148,8 @@ export function pilotSlots(draft) {
       // A side scored by position (Q5) has no name to keep: the slot is its
       // position, which the pad shows ("Home No. 3"), and nothing is offered
       // to SCRBRD as a name (namesBody sends only the names there are).
-      roster.slots[id] = { side: sides[s], list_no: i + 1, name: isPosition(p) ? null : p.name };
+      // `position` marks it so (pilotWire.js index): the pad's "Home No. 3" is this slot.
+      roster.slots[id] = isPosition(p) ? { side: sides[s], list_no: i + 1, name: null, position: true } : { side: sides[s], list_no: i + 1, name: p.name };
     });
   });
   return { slots, roster };
