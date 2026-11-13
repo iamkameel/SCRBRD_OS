@@ -125,6 +125,16 @@ try {
     ok("...a boy of his with nothing on record yet opens on no line (the sheet says so), not a refusal",
        (await passport(MKHIZE, wes)).length === 0 && away.admitted.includes(MKHIZE));
 
+    // Kameel, 13 Nov 2026: the platform account is offered no passport on any
+    // row, though passport() would open every boy's for it (the link is
+    // narrower than the read, never wider).
+    const plat = await card(await login("owner@example.invalid"));
+    ok("the platform account (superadmin): every row folds, and no row offers a passport", plat.status === 200
+       && plat.rows.join() === ALL.join() && plat.links.length === 0, plat.links);
+    ok("...though the read would admit it to every boy", plat.admitted.join() === ALL.join(), plat.admitted);
+    const ops = await card(await login("platform@example.invalid"));
+    ok("...nor the platform administrator", ops.links.length === 0, ops);
+
     const looker = await card(watcher);
     ok("a spectator signed in: no link on any row, and the read admits him to none", looker.links.length === 0 && looker.admitted.length === 0, looker);
     const out = await card(null);
