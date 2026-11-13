@@ -525,7 +525,14 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
     });
     // The fold context the page is sent (foldContext()), so the words for
     // where each ball went come from the fold the page itself runs.
-    return projectLog({ rows, people, secret: /** @type {string} */ (secret), matchId: id, on: h.servedOn, ctx: foldContext(h) });
+    // The names are judged on the day public_match_people() itself served
+    // (its served_on, sa_today() in the same read as the facts), not on the
+    // cached header's: just past midnight the header can hold yesterday for
+    // its own 60 s, and the two lives would add up to 120 s of names judged
+    // on yesterday (must-never 11). With nobody on the sheet there is no name
+    // to judge, and the header's day stands.
+    const day = people[0]?.served_on ?? h.servedOn;
+    return projectLog({ rows, people, secret: /** @type {string} */ (secret), matchId: id, on: day, ctx: foldContext(h) });
   });
 
   /** @param {string} id @param {any} h @param {boolean} hot */
@@ -542,7 +549,7 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
    * ground's record moves when an innings there is sealed, not with a ball.
    * @param {string} id @param {boolean} hot
    */
-  const parInputs = (id, hot) => cache.get(id, "parInputs", SETTLED_TTL_MS * (hot ? 2 : 1), async () => {
+  const parInputs = (id, hot) => cache.get(id, "parInputs", cacheTtl({ hot, labelled: false }), async () => {
     const { venueRows, tableRows } = await asNobody(async (c) => ({
       venueRows: (await c.query(`select * from public_venue_par($1)`, [id])).rows,
       tableRows: (await c.query(`select * from public_dls_table($1)`, [id])).rows,
@@ -580,7 +587,7 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
   };
 
   /** A published competition's table, or null. @param {string} id @param {boolean} hot */
-  const standings = (id, hot) => cache.get(id, "standings", SETTLED_TTL_MS * (hot ? 2 : 1), async () => {
+  const standings = (id, hot) => cache.get(id, "standings", cacheTtl({ hot, labelled: false }), async () => {
     const { rows } = await asNobody((c) => c.query(`select * from public_competition_standing($1)`, [id]));
     if (!rows.length) return null;
     return rows.map((r) => ({

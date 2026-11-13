@@ -402,7 +402,9 @@ console.log("\n── The router, over a fake database ──");
  * M1 published, M2 not (the header answers nothing, as db/59 does). It
  * records every app.user_id set, and counts reads.
  */
-const seen = { users: /** @type {string[]} */ ([]), reads: 0, status: "complete", alsoServed: new Set(), awayOnly: new Set() };
+const seen = { users: /** @type {string[]} */ ([]), reads: 0, status: "complete", alsoServed: new Set(), awayOnly: new Set(),
+  /** the header's served_on, when a test holds it at another day @type {string | null} */ headerDay: null,
+  /** public_match_people()'s rows, when a test replaces them @type {any[] | null} */ people: null };
 const fakePool = {
   query: async () => ({ rows: [] }),
   connect: async () => ({
@@ -418,7 +420,7 @@ const fakePool = {
         home_label: "Hilton College 1XI", home_code: "HIL", home_team: "1XI", away_label: "Westville Boys' High 1XI", away_code: "WES",
         away_team: "1XI", away_on_platform: true, sport: "cricket", format: "T10", overs: 10, starts_at: "2026-09-26T08:00:00Z",
         ground: "Gordon Sherwood Oval", status: seen.status, toss_won_by: "home", toss_decision: "bat", home_published: !seen.awayOnly.has(params[0]),
-        away_published: true, scores: [{ innings: 0, runs: 25, wickets: 2, balls: 12 }], served_on: ON }] : [] };
+        away_published: true, scores: [{ innings: 0, runs: 25, wickets: 2, balls: 12 }], served_on: seen.headerDay ?? ON }] : [] };
       // The match's frozen playing conditions (SCRBRD-114, db/61): this one has none.
       if (/public_match_conditions/.test(text)) return { rows: [] };
       // The result (SCRBRD-114 phase 3a, db/69), as structure, and a published competition's table.
@@ -429,7 +431,7 @@ const fakePool = {
         { rank: 1, division: null, side: "Hilton College 1XI", played: 2, won: 2, lost: 0, tied: 0, drawn: 0, no_result: 0, points: "8", nrr: "1.250", basis: "computed" },
         { rank: 2, division: null, side: "Westville Boys' High 1XI", played: 2, won: 0, lost: 2, tied: 0, drawn: 0, no_result: 0, points: "0", nrr: "-1.250", basis: "computed" },
       ] : [] };
-      if (/public_match_people/.test(text)) return { rows: served ? PEOPLE : [] };
+      if (/public_match_people/.test(text)) return { rows: served ? (seen.people ?? PEOPLE) : [] };
       if (/public_match_log/.test(text)) return { rows: served ? ROWS : [] };
       if (/public_shot_sectors/.test(text)) return { rows: served ? [{ innings: 0, sector: 9, shots: 1, runs: 4 }] : [] };
       // SCRBRD-133 G2 (db/88): the ground's par for a published fixture — six
@@ -680,6 +682,28 @@ console.log("\n── No doubling for a labelled entry (PUBLIC_BY_TERMS §2.4, s
      && held?.shots?.ttl === 2 * SETTLED_TTL_MS, { log: held?.log?.ttl, header: held?.header?.ttl, shots: held?.shots?.ttl });
   const edge = l.headers["cache-control"];
   ok("...and the log is no-store at the edge", edge === "no-store", edge);
+  await site.close();
+}
+{
+  // Just past midnight with the listener down: the header still holds
+  // yesterday (2026-09-27) for its 60 s, and his consent was withdrawn today
+  // (ON). The log judges him on the day its own people read served, so he is
+  // a position on the first read of the new day, not for a second 60 s.
+  const yesterday = "2026-09-27";
+  const withdrawnToday = [{ by: "guardian", competent: true, givenOn: "2026-01-10", endedOn: ON }];
+  const site = await serve({});
+  const ip = { ip: "203.0.113.78" };
+  seen.headerDay = yesterday;
+  const named = JSON.parse((await site.get(`/api/public/matches/${M1}/log`, ip)).body).people;
+  ok("control: with yesterday's header and his consent standing, he is named", Object.values(named).includes("D Erasmus"), named);
+  site.site.cache.drop({ k: "match", id: M1 });
+  seen.people = PEOPLE.map((r) => (r.player_id === P.erasmus ? { ...r, facts: { ...r.facts, consents: withdrawnToday } } : r));
+  const header = await site.get(`/api/public/matches/${M1}`, ip);
+  ok("...the header is yesterday's", header.status === 200 && site.site.cache.entries.get(M1)?.header?.value?.servedOn === yesterday);
+  const l = JSON.parse((await site.get(`/api/public/matches/${M1}/log`, ip)).body).people;
+  ok("a consent withdrawn today, with the header still on yesterday: the log judges on its own read's day and does not name him",
+     !Object.values(l).includes("D Erasmus") && Object.values(l).includes("R van der Bowlmerwe"), l);
+  seen.headerDay = null; seen.people = null;
   await site.close();
 }
 

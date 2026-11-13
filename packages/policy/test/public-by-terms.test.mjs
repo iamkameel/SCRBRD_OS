@@ -50,12 +50,12 @@ const ok = (/** @type {string} */ n, /** @type {unknown} */ c, d = "") => {
 const group = (/** @type {string} */ t) => console.log("\n" + t);
 /** @param {() => unknown} f */
 const throws = (f) => { try { f(); return false; } catch { return true; } };
+let pending = 0;
 /**
  * An expectation that waits on a decision: named and printed, never asserted
  * either way, so the suite neither pins the open answer nor hides it.
  * @param {string} n @param {string} why
  */
-let pending = 0;
 const skip = (n, why) => { console.log(`- SKIPPED ${n} — ${why}`); pending++; };
 
 const ON = "2026-11-26";
