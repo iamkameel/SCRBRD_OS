@@ -17,6 +17,14 @@ const SUITES = [
   ["rejudge",  "services/api/write/rejudge.test.mjs"],
   // TWO_PHONES R5: the pen's book and a second account lined up by legal ball.
   ["second-account", "services/api/write/second-account.test.mjs"],
+  // The scoring proof (Kameel, 12 Nov 2026): invented matches' paper — the
+  // balls and the card worked by hand — scored through the pad's event path,
+  // folded, and every figure held to the card (test/scorebook/).
+  ["scorebook-proof", "packages/scoring/test/scorebook-proof.test.mjs"],
+  // ...and the same scorebooks through the scorer's own emission (delivery.js,
+  // retire.js, penalty.js, wicketAsks.js): the identical log, so the harness
+  // and the pad cannot drift; engine.jsx's inline builders pinned by text.
+  ["scorebook-pad", "apps/web/test/scorebook-pad.test.mjs"],
   ["design",   "apps/web/test/design.test.mjs"],
   ["analytics","apps/web/test/analytics.test.mjs"],
   ["home-routing","apps/web/test/home-routing.test.mjs"],
@@ -154,6 +162,12 @@ const SUITES = [
   // CRI-1.3: on a phone Summary, Scorecard and Commentary, the rest under More;
   // one address per tab, signed in and public, read back both ways.
   ["match-tabs",        "apps/web/test/match-tabs.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // CRI-2.5: the whole analysis under analytics.read for the fixture's side;
+  // a parent, a pupil, a spectator: the worm, runs per over, the partnerships.
+  ["match-analysis",    "apps/web/test/match-analysis.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // CRI-2.2: no chart without a source line — every chart in the Match Centre's, the pad's, the
+  // profile's and the ground display's files inside a block that carries one.
+  ["sourced",           "apps/web/test/sourced.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // CRI-1.1: the board's last-wicket and freshness rows, from the fold, held
   // to literal markup and the same on the pad, the Match Centre and the
   // public page (whose row says the fold's labels, never a name).

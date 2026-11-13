@@ -15,6 +15,7 @@ import { RateTrack } from "../../ui/parTrack.jsx";
 import { Worm } from "../../ui/charts/worm.jsx";
 import { shownFor } from "../../lib/toBall.js";
 import { ErrorBoundary } from "../../ui/ErrorBoundary.jsx";
+import { SourcedLazy, ballsLine } from "../../ui/sourcedLazy.jsx";
 
 /**
  * The Match Centre's tabs that the public page (SCRBRD-083, src/public/)
@@ -147,6 +148,8 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   const rates = useMemo(() => (chasing ? chaseRates(events ?? [], fold ?? {}, index) : null), [chasing, events, fold, index]);
   const worm = useMemo(() => (inn ? wormOf({ match, played: innings, index, events, overs, report: par }) : null),
     [inn, match, innings, index, events, overs, par]);
+  // CRI-2.2: what the worm stands on — every innings it draws, by the fold's balls.
+  const wormLine = ballsLine(innings.filter(Boolean).length > 1 ? "Both innings" : "This innings", innings.reduce((n, x) => n + (x?.balls ?? 0), 0));
   // SCRBRD-130 R2: the calculator beside the umpires' figure, the server's; the signed-in page passes it.
   // A rain-decided match keeps it in its result view: the umpires' par and SCRBRD's are the result's own story.
   const rainPanel = rainLine && (
@@ -172,13 +175,13 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
         {worm && (
           <Panel testid="mc-worm-panel">
             <CardHead icon="trending-up">Worm</CardHead>
-            <div style={{ padding: `0 ${T.space.lg} ${T.space.md}` }}>
+            <SourcedLazy line={wormLine} testid="source-line-worm" style={{ padding: `${T.space.sm} ${T.space.lg} ${T.space.md}` }}>
               <Worm lines={worm.lines} balls={worm.balls} target={worm.target} par={worm.par} revised={worm.revised}
                 umpiresPar={worm.umpiresPar} said={worm.said} height="160px" testid="mc-worm"
                 textStyle={{ fontFamily: T.type.body, fontSize: "12px" }}
                 palette={{ main: T.content.primary, dim: T.content.tertiary, target: T.brand.accentText, par: T.brand.accentText,
                            rule: T.line.normal, text: T.content.secondary, label: T.content.primary }}/>
-            </div>
+            </SourcedLazy>
           </Panel>
         )}
         <ResultFacts match={match} innings={innings}/>
@@ -222,6 +225,8 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   return (
     <div style={{ display: "grid", gap: T.space.lg }} data-testid="mc-summary">
       {props && (
+        // CRI-2.2: the rate track is drawn inside the board, so its line is under the board.
+        <SourcedLazy line={ballsLine(`${side.full} innings`, inn.balls ?? 0)} testid="source-line-board" after>
         <div style={{ position: "relative" }}>
           <Board {...props} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="mc-board"
             insight={insight.length ? insight : undefined} updated={updated} estimate={estimate}
@@ -229,6 +234,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
               palette={{ line: T.board.dim, bar: T.board.lime, dot: T.board.figure, text: T.board.dim, gap: T.board.lime }}/> : null}/>
           <MomentMark moment={moment} announce={!quietMoments}/>
         </div>
+        </SourcedLazy>
       )}
       {/* SCRBRD-130 R3: venue par at this point, the server's; the signed-in page passes it.
           Once the Board's second line says the gap to the ground's par (G2), this
@@ -256,13 +262,13 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
       {worm && (
         <Panel testid="mc-worm-panel">
           <CardHead icon="trending-up">Worm</CardHead>
-          <div style={{ padding: `0 ${T.space.lg} ${T.space.md}` }}>
+          <SourcedLazy line={wormLine} testid="source-line-worm" style={{ padding: `${T.space.sm} ${T.space.lg} ${T.space.md}` }}>
             <Worm lines={worm.lines} balls={worm.balls} target={worm.target} par={worm.par} revised={worm.revised}
               umpiresPar={worm.umpiresPar} said={worm.said} height="160px" testid="mc-worm"
               textStyle={{ fontFamily: T.type.body, fontSize: "12px" }}
               palette={{ main: T.content.primary, dim: T.content.tertiary, target: T.brand.accentText, par: T.brand.accentText,
                          rule: T.line.normal, text: T.content.secondary, label: T.content.primary }}/>
-          </div>
+          </SourcedLazy>
         </Panel>
       )}
       {atBreak && <InningsBreakCard match={match} innings={innings} overs={overs}/>}

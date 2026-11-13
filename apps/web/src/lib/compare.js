@@ -181,8 +181,10 @@ export function pickable(rows, scopes) {
 /**
  * A pupil's picker (D10, Q1): team-mates on his own current side, never
  * himself. He is the left column and there is only one picker, so two
- * team-mates are never placed against each other.
- * @param {Record<string, any>[]} rows  @param {{id: string, team: string | null, school?: string | null}} me
+ * team-mates are never placed against each other. Built from the roster he
+ * already reads (`players`: names, ids, sides), never from team-mates'
+ * career rows, which the server no longer gives a pupil (REACH-D2).
+ * @param {Record<string, any>[]} rows  roster rows (asPlayer)  @param {{id: string, team: string | null, school?: string | null}} me
  */
 export function teamMates(rows, me) {
   if (!me?.team) return [];
