@@ -23,6 +23,8 @@
 
 13 Nov 2026 (morning): ten merges recorded. #282 (merge 17ae32e9): read speed, db/152; the ball log's read is checked once per match, not once per ball. Pasted on the demo and production 13 Nov. No entry existed for it; this line is the record. #313 (merge 6c4972c3): R0 widget registry, docs/design/ROLE_DASHBOARDS_R0_REGISTRY.md (11 widgets: 3 exist, 5 partial, 3 missing). #314 (merge c65d03ea): R0 solo walkthroughs, a Pilot Match end to end on a phone (browser-pilot-r0). #316 (merge c60298bb): scoring proof part 2, five more hand-worked scorebooks (INV-11 to INV-15); 15 books and 30 cards in all, every figure equal, no engine change. #317 (merge a25c24bf): public by terms slice 2, the naming rule (§5.1), off everywhere; equal to main over 136,098 calls. #318 (merge 268da601): CRI-3.2, tap a scorecard name to open his passport. #319 (merge b5354bfc): R0 scorer's home, a day sheet; the phone calls a Pilot Match off; the list says Called off. #320 (merge 6c4279b6): SHIPPED record for db/152. #321 (merge 12be5de4): public by terms, Reading 3. An uncounted no still stops the by-terms default (Kameel, 13 Nov). The rule is still off. #322 (merge 8acc88fe): CRI-3.2 follow-up. No scorecard passport link for the platform's own accounts (Kameel, 13 Nov).
 
+13 Nov 2026 (night): the experience pass (docs/redesign/EXPERIENCE_PASS.md, PR #326) was designed and reviewed, and Kameel answered its 25 questions as recommended. Six slices, in order: 1 the scorer's home and starting a Pilot Match; 2 the spectator's match page; 3 first run; 4 parent and pupil; 5 the coach's day sheet and the homes; 6 the office. Slices 3 and 4 carry migrations (Fable's red-team on Kameel's say, his word before each paste).
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -5321,6 +5323,17 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - ~~**The 30-minute token and one-time office codes** mean a production scorer must be issued a new code to go on
   sending mid-match — see SCRBRD-078's open item. (P1 before launch)~~ **Closed 2026-09-26** with SCRBRD-078
   option B (db/50, the pad's resume credential).
+
+---
+
+### Experience pass — where things live, and the first run (2026-11-13)
+**Domain:** Design / UX · **Decided 13 Nov 2026:** all 25 questions in `docs/redesign/EXPERIENCE_PASS.md` §5 as recommended. Slices 3 and 4 carry migrations.
+- [ ] Slice 1 · The scorer's home and starting a Pilot Match
+- [ ] Slice 2 · The spectator's match page
+- [ ] Slice 3 · First run (migrations)
+- [ ] Slice 4 · Parent and pupil (migrations)
+- [ ] Slice 5 · The coach's day sheet, and the homes
+- [ ] Slice 6 · The office
 
 ---
 
