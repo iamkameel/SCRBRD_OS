@@ -46,7 +46,7 @@
  *   POST /api/ai/stats-magic, /api/ai/commentary
  *   GET/POST /api/matches/:id/publication      a side of a fixture on the public pages
  *   GET  /api/matches/:id/sheet                the team sheet, names and order, to its family (db/131)
- *   GET  /api/matches/:id/ground-names         whom the big screen may name, the public page's labels (db/153's gate)
+ *   GET  /api/matches/:id/ground-names         the big screen's one answer: sides and the public page's labels (db/153)
  *   GET/POST /api/schools/:id/listing          a school's matches on the public home page
  *   POST /api/news/:id/public/{request,approve,withdraw}  a notice on the public home page (db/83)
  *   POST /api/news/:id/edit · /delete             change an unsent plan; throw away one never sent (db/110)
@@ -733,10 +733,10 @@ const MATCH_ROUTES = [
   // (db/131) decides who, per end, as the caller. Not module-gated, as the
   // fixture is not.
   [/^\/api\/matches\/([^/]+)\/sheet$/,             "GET",  sheet.read],
-  // The big screen's names (PUBLIC_BY_TERMS §2.5; Kameel, 12 Nov 2026,
-  // 21:00): the labels the public page would show, behind
-  // ground_screen_sides()'s gate (ground-names-api.mjs). Not module-gated,
-  // as the sheet is not.
+  // The big screen's one answer (PUBLIC_BY_TERMS §2.5; Kameel, 12 Nov 2026,
+  // 21:00; Fable's red-team, 13 Nov, B1): each side's flag and the labels
+  // the public page would show, from ground_screen_names() (db/153) alone
+  // (ground-names-api.mjs). Not module-gated, as the sheet is not.
   [/^\/api\/matches\/([^/]+)\/ground-names$/,      "GET",  groundNames.read],
   // A school's matches on the public home page (SCRBRD-142, db/82):
   // public_listing_set() decides who — broadcast.publish at the school, no

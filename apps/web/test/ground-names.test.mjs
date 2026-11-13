@@ -10,13 +10,13 @@
 // rows, ground-names-api.mjs groundLabels()), folded
 // and told as the Match Centre's big screen does it
 // (views/matchcentre/bigscreen.jsx). Catches are written in the pad's shape:
-// `fielder` the scorecard's name text, `fielders` the references. db/99 §130
+// `fielder` the scorecard's name text, `fielders` the references. db/99 §131
 // proves the server's per-side answer; smoke-browser-matchcentre walks it on
 // a real big screen. Everyone here is invented.
 import { deriveMatch, inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
-import { GROUND_POSITION, answeredThrough, byPosition, forGround, groundInnings, groundNameOf, labelsFromAnswer, namedOnGround } from "../src/display/groundNames.js";
-import { groundLabels } from "../../../services/api/read/ground-names-api.mjs";
+import { GROUND_POSITION, answeredThrough, byPosition, forGround, groundAnswerOf, groundInnings, groundNameOf, labelsFromAnswer, namedOnGround } from "../src/display/groundNames.js";
+import { groundAnswer, groundLabels } from "../../../services/api/read/ground-names-api.mjs";
 import { displayState, fallOfWicket, bowlingPanel, partnershipPanel } from "../src/display/data.js";
 
 let pass = 0, fail = 0;
@@ -64,13 +64,15 @@ const PLAYERS = [...H, ...K, LATE];
  * public_match_people() returns them — the boys in `namedIds` with a live,
  * competent consent, the rest with none — so the label is publicName()'s own.
  */
-function publicOf(/** @type {Set<string>} */ namedIds) {
-  const rows = PLAYERS.map((p) => ({
+function factsOf(/** @type {Set<string>} */ namedIds, who = PLAYERS) {
+  return who.map((p) => ({
     player_id: p.id, school_published: true, full_name: p.name, surname: p.name.split(" ")[1], known_as: null, served_on: "2026-11-12",
     facts: { neverPublic: false, namesOff: false,
              consents: namedIds.has(p.id) ? [{ by: "guardian", competent: true, givenOn: "2026-11-01", endedOn: null }] : [] },
   }));
-  return { labels: groundLabels(rows) };
+}
+function publicOf(/** @type {Set<string>} */ namedIds) {
+  return { labels: groundLabels(factsOf(namedIds)) };
 }
 const EVERYONE = new Set(PLAYERS.map((p) => p.id));
 /** The server's answer (db/153). */
@@ -117,6 +119,32 @@ console.log("A. The answers: the server's per side, the public page's per boy");
   ok("the answer's log_seq is what it covered", answeredThrough(answer({}, 7)) === null && answeredThrough(AWAY_MARKED) === 99
      && answeredThrough({ rows: [{ team: HOME, position_only: false, log_seq: "12" }] }) === 12 && answeredThrough(null) === null);
   ok("a name the scorer typed is a position, as on the public page", byPosition(new Map(), "Typed Name"));
+}
+
+console.log("\nA2. One answer, one snapshot (ground_screen_names(), Fable's red-team B1)");
+{
+  // The rows as ground_screen_names() returns them: facts only for a side answered false.
+  const rows = [{ team: HOME, position_only: false, log_seq: "41", people: factsOf(EVERYONE, H) },
+                { team: AWAY, position_only: true, log_seq: "41", people: [] }];
+  const d = groundAnswer("m1", rows);
+  ok("the route's answer is the sides as answered, and labels from the false side's facts alone",
+     d.matchId === "m1" && d.sides.length === 2 && d.sides[0].log_seq === 41 && d.sides[1].position_only === true
+     && Object.keys(d.labels).length === H.length && H.every((p) => d.labels[p.id] === label(p)), JSON.stringify(d.sides));
+  const smuggled = groundAnswer("m1", [{ team: AWAY, position_only: true, log_seq: 41, people: factsOf(EVERYONE, K) },
+                                       { team: HOME, position_only: null, log_seq: 41, people: factsOf(EVERYONE, H) }]);
+  ok("facts beside a side answered anything but false lend no label, and the side stays position-only",
+     Object.keys(smuggled.labels).length === 0 && smuggled.sides.every((x) => x.position_only === true), JSON.stringify(smuggled));
+  ok("no rows (not the host's staff) is no sides and no labels", (() => { const z = groundAnswer("m1", []); return z.sides.length === 0 && Object.keys(z.labels).length === 0; })());
+  const a = groundAnswerOf(JSON.parse(JSON.stringify(d)));
+  ok("the screen reads both from the one answer", a !== null && a.rows.length === 2 && a.labels?.size === H.length && answeredThrough(a) === 41);
+  const n = namedOnGround(a, LOG, a?.labels ?? null);
+  ok("...and names the host side by its labels and the away side by position", n.size === H.length && K.every((p) => !n.has(p.id)));
+  ok("an answer without sides is no answer: nobody is named",
+     groundAnswerOf({ labels: d.labels }) === null && groundAnswerOf(null) === null && groundAnswerOf({ sides: "x" }) === null);
+  const marked = groundAnswerOf(groundAnswer("m1", [{ team: HOME, position_only: true, log_seq: 42, people: [] },
+                                                    { team: AWAY, position_only: true, log_seq: 42, people: [] }]));
+  ok("a host side turned position-only carries no labels to set beside it", marked?.labels?.size === 0
+     && namedOnGround(marked, LOG, marked?.labels ?? null).size === 0);
 }
 
 console.log("\nB. The marked boy's whole side by position, the other side by the public page's labels");

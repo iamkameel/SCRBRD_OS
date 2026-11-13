@@ -12,8 +12,8 @@
  *
  * Kameel, 12 Nov 2026, (b): when any boy on the field is under a mark, his
  * WHOLE SIDE is shown by position, so the one "Batter" among named boys is
- * no tell (§3.4). The server says which sides (GET /api/read/
- * ground_screen_sides, db/153): one row per side the log names,
+ * no tell (§3.4). The server says which sides (GET /api/matches/:id/
+ * ground-names, db/153's ground_screen_names()): one row per side the log names,
  * `position_only` true for the host side whenever its season roster holds a
  * marked boy (Kameel, 12 Nov, 17:45: "Season roster: hide the side all
  * season"), and always for the away side — never by the day's selection or
@@ -89,9 +89,9 @@ function squadSides(events) {
  * signed-in id, with the label it would name them by (Kameel, 12 Nov 2026,
  * 21:00: "we should be masking the names of any boy that doesn't have a
  * public profile"), from the server's answer (GET /api/matches/:id/
- * ground-names, ground-names-api.mjs: public_match_people() through
- * nameFor(), the public log's own rule, behind ground_screen_sides()'s
- * gate). Nothing here decides who is named; null (no answer, or one that
+ * ground-names, ground-names-api.mjs: nameFor(), the public log's own
+ * rule, over the facts ground_screen_names() sent for a side answered
+ * false). Nothing here decides who is named; null (no answer, or one that
  * failed) names nobody.
  * @param {{labels?: Record<string, unknown>} | null | undefined} d
  * @returns {Map<string, string> | null}  id → the public label
@@ -102,6 +102,20 @@ export function labelsFromAnswer(d) {
   const out = new Map();
   for (const [id, l] of Object.entries(d.labels)) if (UUID.test(id) && typeof l === "string" && l.trim()) out.set(id, l);
   return out;
+}
+
+/**
+ * The big screen's ONE answer (GET /api/matches/:id/ground-names,
+ * ground_screen_names(), db/153; Fable's red-team, 13 Nov, B1): the sides
+ * and the labels the database gave in one statement, so they never come
+ * from two moments. `{rows, labels}`, or null for anything else (nobody is
+ * named).
+ * @param {any} d
+ * @returns {{rows: any[], labels: Map<string, string> | null} | null}
+ */
+export function groundAnswerOf(d) {
+  if (!d || !Array.isArray(d.sides)) return null;
+  return { rows: d.sides, labels: labelsFromAnswer(d) };
 }
 
 /**

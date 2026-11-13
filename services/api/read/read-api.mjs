@@ -1667,6 +1667,7 @@ export const READ_QUERIES = {
    * it should not.
    */
   ground_screen_sides: {
+    noStore: true,
     text: `select team, position_only, log_seq from ground_screen_sides($1)`,
     params: q => [req(q, "matchId")],
   },

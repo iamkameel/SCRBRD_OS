@@ -38,17 +38,34 @@
 -- ── WHAT MOVES ──────────────────────────────────────────────────────
 --   - ground_screen_positions(uuid), the first draft's per-boy read (never
 --       shipped; dropped where a dev database has it).
+--   + ground_screen_names(match uuid) → (team, position_only, log_seq, people)
+--       THE ONE READ (Fable's red-team, 13 Nov, B1, S1, S2). One row per side
+--       the log's innings_start events name, keyed by the team key the log
+--       carries (payload teamKey or battingTeam for the batting squad,
+--       bowlingTeamKey or bowlingTeam for the fielding one, as the fold and
+--       the screen read them). log_seq is the highest seq of the log the
+--       read covered, so a screen whose log is ahead asks again. `people`
+--       is '[]' for every side answered true; for a side answered false (only
+--       ever the host side, wholly on today's roster), the public page's own
+--       facts (public_match_people(), db/59) for exactly that side's
+--       first-squad boys, from which the API makes the public page's labels
+--       with publicName() (redact.mjs nameFor(): the one rule). Sides and
+--       facts come from ONE statement and so one snapshot: a position-only
+--       side carries no boy's facts at all, so flag and labels can never
+--       together single out the boy whose mark turned it, nor can a mark set
+--       between two reads show one boy flipping alone. No away boy, and no
+--       boy only a later innings_start carries, is ever in `people`.
 --   + ground_screen_sides(match uuid) → (team, position_only, log_seq)
---       One row per side the log's innings_start events name, keyed by the
---       team key the log carries (payload teamKey or battingTeam for the
---       batting squad, bowlingTeamKey or bowlingTeam for the fielding one,
---       as the fold and the screen read them). log_seq is the highest seq
---       of the log the read covered, so a screen whose log is ahead asks
---       again. No player id, name, reason, author or date leaves it.
+--       The same answer without `people`, for the Match Centre to know
+--       whether to offer the big screen: ground_screen_names() itself, as
+--       the caller, so there is one gate and one rule.
 --
 --   WHICH SIDE IS THE HOST'S. A side is keyed as the log keys it; its members
 --   are the boys the FIRST innings_start naming it carries for it (its squad
---   when batting, its bowlingSquad when fielding). Then:
+--   when batting, its bowlingSquad when fielding; where one innings_start
+--   names both squads by the same key, its batting squad, as the screen
+--   reads it: review S3). The log is read raw, voided innings_start
+--   included, as the screen's own read of the log is (review S4). Then:
 --     * every member is on the host roster today (roster_on(), the match's
 --       sport): it is the host side, and its flag is the season roster's
 --       (above) — the same for any selection;
@@ -115,6 +132,7 @@ BEGIN
      OR to_regprocedure('public_name_facts(uuid,text,date)') IS NULL
      OR to_regprocedure('app_reader_is_pupil()') IS NULL
      OR to_regprocedure('public_json_array(jsonb)') IS NULL
+     OR to_regprocedure('public_match_people(uuid)') IS NULL
      OR to_regprocedure('app_can(text,uuid,text,uuid,uuid)') IS NULL
      OR to_regprocedure('app_pad_scoped()') IS NULL
      OR to_regprocedure('roster_on(uuid,text,date,text)') IS NULL OR to_regclass('team_membership') IS NULL
@@ -134,9 +152,10 @@ DROP FUNCTION IF EXISTS ground_screen_positions(uuid);
 -- Its return type grew log_seq while unpasted, and CREATE OR REPLACE cannot
 -- change a return type: made afresh, and granted again below.
 DROP FUNCTION IF EXISTS ground_screen_sides(uuid);
+DROP FUNCTION IF EXISTS ground_screen_names(uuid);
 
-CREATE OR REPLACE FUNCTION ground_screen_sides(p_match uuid)
-RETURNS TABLE (team text, position_only boolean, log_seq bigint) AS $$
+CREATE OR REPLACE FUNCTION ground_screen_names(p_match uuid)
+RETURNS TABLE (team text, position_only boolean, log_seq bigint, people jsonb) AS $$
   WITH m AS (
     -- The fixture, only for the host's staff, signed in, not pupils.
     SELECT mt.id, mt.school_id, mt.team_code, mt.sport FROM match mt
@@ -152,17 +171,18 @@ RETURNS TABLE (team text, position_only boolean, log_seq bigint) AS $$
   starts AS (
     SELECT b.seq, b.payload FROM ball_event b JOIN m ON m.id = b.match_id WHERE b.kind = 'innings_start'
   ),
-  -- Each side as the log names it, with the squad it carries there.
+  -- Each side as the log names it, with the squad it carries there; `ord`
+  -- puts an innings_start's batting squad before its fielding one.
   named AS (
-    SELECT s.seq, coalesce(s.payload ->> 'teamKey', s.payload ->> 'battingTeam') AS team, public_json_array(s.payload -> 'squad') AS squad
+    SELECT s.seq, 0 AS ord, coalesce(s.payload ->> 'teamKey', s.payload ->> 'battingTeam') AS team, public_json_array(s.payload -> 'squad') AS squad
       FROM starts s
     UNION ALL
-    SELECT s.seq, coalesce(s.payload ->> 'bowlingTeamKey', s.payload ->> 'bowlingTeam'), public_json_array(s.payload -> 'bowlingSquad')
+    SELECT s.seq, 1, coalesce(s.payload ->> 'bowlingTeamKey', s.payload ->> 'bowlingTeam'), public_json_array(s.payload -> 'bowlingSquad')
       FROM starts s
   ),
   -- Its members: the first innings_start that names it, and no later one.
   firsts AS (
-    SELECT DISTINCT ON (n.team) n.team, n.squad FROM named n WHERE n.team IS NOT NULL ORDER BY n.team, n.seq
+    SELECT DISTINCT ON (n.team) n.team, n.squad FROM named n WHERE n.team IS NOT NULL ORDER BY n.team, n.seq, n.ord
   ),
   members AS (
     SELECT f.team, x.ref
@@ -199,38 +219,63 @@ RETURNS TABLE (team text, position_only boolean, log_seq bigint) AS $$
            -- Not the host side, or not wholly: true, and no mark asked.
            ELSE true END AS position_only
       FROM firsts f
+  ),
+  -- The public page's facts, only for the boys of a side answered false.
+  facts AS (
+    SELECT pp.* FROM public_match_people(p_match) pp
+     WHERE EXISTS (SELECT 1 FROM m)
   )
   SELECT j.team, j.position_only,
-         (SELECT coalesce(max(b.seq), 0)::bigint FROM ball_event b JOIN m ON m.id = b.match_id)
+         (SELECT coalesce(max(b.seq), 0)::bigint FROM ball_event b JOIN m ON m.id = b.match_id),
+         CASE WHEN j.position_only IS FALSE THEN
+           coalesce((SELECT jsonb_agg(to_jsonb(fc) ORDER BY fc.player_id) FROM facts fc
+                      WHERE fc.player_id IN (SELECT x.ref::uuid FROM members x WHERE x.team = j.team)), '[]'::jsonb)
+         ELSE '[]'::jsonb END
     FROM judged j
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The flags alone, for offering the screen: the one read above, as the caller.
+CREATE OR REPLACE FUNCTION ground_screen_sides(p_match uuid)
+RETURNS TABLE (team text, position_only boolean, log_seq bigint) AS $$
+  SELECT g.team, g.position_only, g.log_seq FROM ground_screen_names(p_match) g
+$$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp;
 
 -- The application's, and nobody else's. Not PUBLIC, and not a managed
 -- host's API roles, which get EXECUTE on every new function by default
 -- privilege (db/29, db/47).
-REVOKE ALL ON FUNCTION ground_screen_sides(uuid) FROM PUBLIC;
-DO $revoke_platform_roles$
-DECLARE r text;
+DO $grants$
+DECLARE r text; f text;
 BEGIN
-  FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
-      EXECUTE format('REVOKE ALL ON FUNCTION ground_screen_sides(uuid) FROM %I', r);
-    END IF;
+  FOREACH f IN ARRAY ARRAY['ground_screen_names(uuid)', 'ground_screen_sides(uuid)'] LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
+      END IF;
+    END LOOP;
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO scrbrd_app', f);
   END LOOP;
-END $revoke_platform_roles$;
-GRANT EXECUTE ON FUNCTION ground_screen_sides(uuid) TO scrbrd_app;
+END $grants$;
 
--- After: a definer with its path pinned, gated as above, reading the mark
--- only through public_name_facts(), returning no player, and nobody's but
--- the application's.
+-- After: the one read a definer with its path pinned, gated as above,
+-- reading the mark only through public_name_facts(), sending no
+-- position-only side's facts; the flags the same read as the caller; both
+-- nobody's but the application's.
 DO $after$
-DECLARE v_src text; r text;
+DECLARE v_src text; r text; f text;
 BEGIN
   SELECT p.prosrc INTO v_src FROM pg_proc p
-   WHERE p.oid = 'ground_screen_sides(uuid)'::regprocedure AND p.prosecdef
+   WHERE p.oid = 'ground_screen_names(uuid)'::regprocedure AND p.prosecdef
      AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp'];
   IF v_src IS NULL THEN
-    RAISE EXCEPTION 'db/153: ground_screen_sides() is not a definer with its search path pinned';
+    RAISE EXCEPTION 'db/153: ground_screen_names() is not a definer with its search path pinned';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'ground_screen_sides(uuid)'::regprocedure AND NOT p.prosecdef
+                    AND regexp_replace(p.prosrc, '\s+', ' ', 'g') ~ '^ ?SELECT g\.team, g\.position_only, g\.log_seq FROM ground_screen_names\(p_match\) g ?$') THEN
+    RAISE EXCEPTION 'db/153: ground_screen_sides() is not ground_screen_names() as the caller';
+  END IF;
+  IF position('CASE WHEN j.position_only IS FALSE THEN' IN v_src) = 0 OR position('ORDER BY n.team, n.seq, n.ord' IN v_src) = 0 THEN
+    RAISE EXCEPTION 'db/153: ground_screen_names() sends a position-only side''s facts, or keeps no batting-first tie-break';
   END IF;
   IF position('NOT app_pad_scoped()' IN v_src) = 0 OR position('NOT coalesce(app_reader_is_pupil(), true)' IN v_src) = 0
      OR position('''player.roster.read'', mt.school_id, mt.team_code' IN v_src) = 0
@@ -240,20 +285,22 @@ BEGIN
      OR position('roster_on(m.school_id, m.team_code, sa_today(), m.sport)' IN v_src) = 0
      OR position('season_for(sa_today(), ''school'')' IN v_src) = 0
      OR v_src ~* 'app_can\([^)]*away_school_id' THEN
-    RAISE EXCEPTION 'db/153: ground_screen_sides() is not gated to the host''s staff (signed in, not pupils, not under a pad credential, not a roster-mover who cannot read the mark), or does not read the season roster by the match''s sport';
+    RAISE EXCEPTION 'db/153: ground_screen_names() is not gated to the host''s staff (signed in, not pupils, not under a pad credential, not a roster-mover who cannot read the mark), or does not read the season roster by the match''s sport';
   END IF;
   IF v_src ~* '\m(player_never_public|public_name_consent|full_name|surname|known_as|reason)\M' THEN
-    RAISE EXCEPTION 'db/153: ground_screen_sides() reads a mark, a consent or a name directly';
+    RAISE EXCEPTION 'db/153: ground_screen_names() reads a mark, a consent or a name directly';
   END IF;
   IF to_regprocedure('ground_screen_positions(uuid)') IS NOT NULL THEN
     RAISE EXCEPTION 'db/153: the first draft''s ground_screen_positions() is still there';
   END IF;
-  IF has_function_privilege('public', 'ground_screen_sides(uuid)', 'EXECUTE') THEN
-    RAISE EXCEPTION 'db/153: ground_screen_sides() is executable by PUBLIC';
-  END IF;
-  FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) AND has_function_privilege(r, 'ground_screen_sides(uuid)', 'EXECUTE') THEN
-      RAISE EXCEPTION 'db/153: ground_screen_sides() is executable by %', r;
+  FOREACH f IN ARRAY ARRAY['ground_screen_names(uuid)', 'ground_screen_sides(uuid)'] LOOP
+    IF has_function_privilege('public', f, 'EXECUTE') OR NOT has_function_privilege('scrbrd_app', f, 'EXECUTE') THEN
+      RAISE EXCEPTION 'db/153: % is executable by PUBLIC, or not by the application', f;
     END IF;
+    FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) AND has_function_privilege(r, f, 'EXECUTE') THEN
+        RAISE EXCEPTION 'db/153: % is executable by %', f, r;
+      END IF;
+    END LOOP;
   END LOOP;
 END $after$;
