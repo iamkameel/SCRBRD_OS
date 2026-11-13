@@ -645,7 +645,139 @@ names the moment classes (`tokens.js:985-996`); each fallback below is what is l
 
 ## 4. Slices, in build order
 
-To be written after section 3. Not part of sections 1 and 2.
+Six slices, in Kameel's order. Each is one or more PRs behind the walks that exist, under
+CLAUDE.md's routing: complex frontend and anything that renders a child's data to Opus,
+simple screens over existing reads to Sonnet, review by Opus, schema by Opus with a red-team
+and Kameel's word before the paste, maps and records by Haiku. Each starts with **Haiku's map**
+(files, routes, tests and walks it will touch, with `file:line`) and ends with **Haiku's
+records** (the backlog, the roadmap, `CRICINFO_GAP_PLAN.md`, the gap analysis plan).
+
+**What every slice keeps.** The pad's test ids and asserted words (`MAP.md` §9) do not
+change; where a slice comes near them it says so. Floors: nothing under 12px, nothing tapped
+under 44px, reduced motion honoured. No new runtime dependency. Bundle ceilings from
+`tools/check-bundle.mjs`: the app's entry **500 KB** (`:236`; 441 KB after the 29 Oct trim,
+`:243`), the public page's static graph **470 KB** (`:311`; 447 KB when last measured, `:310`),
+the home page's first paint **260 KB** (`:394`) and its lazy graph **800 KB** (`:395`). These
+are the file's own last measurements; this pass ran no build, so each builder measures first.
+The public graph has the least room: anything it gains is a lazy chunk, as Commentary's
+chips already are (`commentaryTools.jsx` header).
+
+**Worst cases for every slice** (break-ui's catalogue, applied here; each is a fixture in the
+slice's walk or unit test, through the same read the demo data uses):
+
+| Case | Value | What must hold |
+|---|---|---|
+| Long side name | "Westville Boys' High School U14C (Development)" | the board uses `school.code`; the sentence wraps, never truncates a figure |
+| Long boy's name | "T Bekker-van der Westhuizen" | wraps on a passport and a team page; the board's batter row ellipsises the name, never the runs |
+| Zero | no fixtures, no innings, no balls, no honours | one line saying what will appear, and the next step (SCRBRD-100 "Left, shared" 2) |
+| One | 1 innings, 1 ball, 1 match | "1 innings", "1 ball"; no rate (the floor) |
+| Huge | 312 innings, 1,284 notices, 48 fixtures this week | counts with a separator; long lists paged or grouped by date |
+| Not read | a read that failed | said in words, never "0" (`pupil.jsx:188-192` already does this) |
+| Two schools | a parent with children at two schools | two sections that never merge (`DESIGN_DIRECTION` §6) |
+| Marked boy | a never-public mark on a team-mate | public surfaces by position, as db/153 and `publicName()` decide |
+
+**How Kameel will know.** Each slice ends with a check on the demo, timed with a phone's
+stopwatch at 390 wide: **five seconds** from the first signed-in screen to the thing that
+needs the person, and **two taps** to their most common task. A check that fails is reported
+as failed, as §1.10 does.
+
+### Slice 1 · The scorer's home and starting a Pilot Match
+
+| | |
+|---|---|
+| **Scope** | (a) "Start a match" on the no-school home opens the pad's own setup (§2.5 step 3), as a Practice Match for any signed-in account and a Pilot Match for a granted one (Q3 in §5). (b) The scorer's home gains the status sentence on each fixture of "This week" and the plain record after a match (§3.9). (c) After the result on a Practice or Pilot Match: "Scoring for a school? Join it" (§2.5 step 6), never during play. |
+| **Files** | `auth/NoSchool.jsx`, `views/ScorerHomeView.jsx`, `lib/scorerDay.js`, `lib/scorerHome.js`, `lib/pilot.js` (read only unless Q3 widens the grant), `App.jsx:556-569` (landing) |
+| **Builds, reviews** | Opus builds (the scorer's surface and its entry to the pad; CLAUDE.md "Scoring engine … the scorer UI's event emission"). Opus reviews a second time, fresh. |
+| **Migration** | None for a Practice Match: it never leaves the phone (`lib/pilot.js:29-34`). Widening Pilot Matches beyond granted accounts is a server grant (R1, later): Opus, with a red-team and Kameel's word. |
+| **Walks** | Existing: `scorer-home`, `pilot`, `pilot-flow`, `pilot-r0`, `practice`, `solo`, `pad-resume`, `signup`, `offline-day`, `smoke-a11y`, `check-bundle`. New: `browser-first-score`: a new Google account with no school reaches the first ball, sees the `Board` move, and finds the match under "Now" after a reload |
+| **Near the pad's words** | `scorer-home`, `day-sheet`, `scorer-start-pilot`, "Start Pilot Match", "Start Practice Match", "stays on this phone", "Resume scoring", "No finished Pilot Match yet", "Pilot match", "no figure, standing or record" (`smoke-browser-scorer-home.mjs:251-480`). All kept, none reworded. The no-school home reuses `startWords()` (`scorerDay.js:304-318`) rather than writing its own. |
+| **Bundle** | The pad stays a lazy chunk (`App.jsx:514-530`); the no-school screen is already outside the entry (`check-bundle.mjs:243-246`). Expected change to the entry: none. |
+| **You'll know** | On the demo, sign in as a new account with no school. **Five seconds:** "Start a match" is the first thing on the screen. **Two steps:** tap it, fill the two names and overs, take the toss, and the first ball moves the board. Reload: the match is under "Now" with "Resume scoring". |
+
+### Slice 2 · The spectator's match page
+
+| | |
+|---|---|
+| **Scope** | §3.3 and §3.7: `lib/moments.js` to SCRBRD-133 §5.2–5.3 on all three surfaces; the free-hit and hat-trick-ball tags; the over story on Summary; the status sentence under the board on every tab; from a scorecard figure to its balls (signed in); the innings-break card first during the break; share (the link); the insight line structured so a family screen keeps only lines about nobody or about the child. The match's links outward (§1.4) wait for Slice 5's addresses, except the player, which exists. |
+| **Files** | new `lib/moments.js` and its test; `views/matchcentre/live.js`, `spectator.jsx`, `tabs-core.jsx`, `scorecard.jsx`, `commentaryTools.jsx`, `MatchView.jsx`; `ui/board.jsx` (two optional props); `display/panels.jsx` (lift `OverStory`); `public/PublicMatch.jsx`; `scorer/signals.js` (`boardInsights` returns `{text, about}`) |
+| **Builds, reviews** | **Opus**: `lib/moments.js` (a wrong trigger is a silent lie on a public screen, SCRBRD-133 §8 G3), the `Board` props (the `Board` sits on the pad), `boardInsights`' shape (it names children), the per-boy filter and its gate. **Sonnet**: the over story on Summary, the share button, the sentence's placement. **Opus** reviews all, and checks each card's public safety. |
+| **Migration** | None. |
+| **Walks** | Existing: `matchcentre`, `public`, `public-live`, `display`, `read`, `narrow`, `superover`, `rain`, `corrections`, `padfeel` and `pad-moments` (the pad must show none of it), `smoke-public` (no child's identity in any signed-out response), `smoke-a11y`, `check-bundle`. New, from SCRBRD-133 §8 G3: a four's card appears once and never on reload; a six that brings a fifty is one card; seven arrivals in one read cut to state with no card; reduced motion leaves no animation class. Plus: the batter filter is absent signed out; the share sheet's text names no child. |
+| **Near the pad's words** | `Board` gains props the pad never passes; the pad's own "Free hit" banner (`padfeel.mjs:310`) is untouched. `pad-moments` guards that no spectator moment reaches the pad. |
+| **Bundle** | The public graph is the tight one (470 KB). `lib/moments.js` is pure and small; the over story and the batter filter are lazy, fetched with the tab that draws them, as `commentaryTools.jsx` is. The builder reports the public graph's size before and after. |
+| **You'll know** | Open a live demo match at 390, signed out, as a parent from a WhatsApp link would. **Five seconds:** the score and its sentence ("Northfield need 45 runs off 34 balls") without scrolling. A four arrives: a card in the board's corner, the total never covered. Turn on reduced motion: the card appears and goes, nothing slides. Signed in, **two steps**: tap Scorecard, tap a batter's runs, and only his balls are listed with their count. |
+
+### Slice 3 · First run
+
+| | |
+|---|---|
+| **Scope** | §2.2–§2.10: one door (Google or a code); the older role-tile flow retired from the live site (Q12); the no-school screen as a home in the day sheet's order; the public home page's first screen by state (Q8) with its three doors; the strip's status sentences (§3.8); "Ask SCRBRD to add my school" (Q14). |
+| **Files** | `auth/LoginPage.jsx`, `auth/NoSchool.jsx`, `auth/OnboardingFlow.jsx` (demo only), `App.jsx:486-512`, `home/main.jsx:128-155`, `home/sections/Hero.jsx`, `LiveStrip.jsx`, `Schools.jsx`; for the sentence, `public_live_fixtures()` and `services/api/public/public-api.mjs:603-610` |
+| **Builds, reviews** | **Opus** for the sign-in and the no-school home (SCRBRD-140's rules; who may link to a school) and for the migration. **Sonnet** for the home page's order and doors and the strip's sentence, over the read. **Opus** reviews. |
+| **Migration** | **Two, each with a red-team and Kameel's word.** (1) `public_live_fixtures()` re-emitted with `target` and `revised` (Q-N1), with `db/99` proving it returns nothing else new. (2) A request to add a school: a row with the school's name, town and the person's job, read by the platform alone (Q14). |
+| **Walks** | Existing: `signup`, `home`, `listing`, `public-live`, `second-account`, `accounts`, `signout`, `smoke-public`, `smoke-a11y`, `check-bundle` (the home page's 260 KB first paint). New: `browser-first-run`, per persona as §2.4–§2.8 lay out: a spectator from a link to Follow; a parent from "My child plays" to "Sent to the school"; a coach on the register to Today; and the home page in each state of §2.3. |
+| **Near the pad's words** | None. |
+| **Bundle** | The home page: the live `Board` first means its figures paint before the film; the film stays lazy (`check-bundle.mjs:394-397`). The old onboarding stays out of the entry (`:244`). |
+| **You'll know** | On the demo's home page with a listed live match, at 390, signed out: **five seconds**, the live board and its sentence are the first screen. **Two steps** to watch: tap the board, and the match is open. With no match listed, the film plays as now. Sign in with a new Google account: nobody asks "what's your role?". |
+
+### Slice 4 · Parent and pupil
+
+| | |
+|---|---|
+| **Scope** | §3.4 and the persona parts of §1: a pupil or parent who scores keeps the four-item app (Q3); health consent to Family, on the child's file (Q15); the waiting parent reads the terms and is told when the office answers (Q13); the passport's rates with their floor and denominator, its source line, and from a figure to its innings and balls; the parent's live card says the status sentence and keeps only lines about nobody or her child; the season card's average under the floor (Q-N3). |
+| **Files** | `design/roles.js:332-355` (`personaFor`), `views/family/pupil.jsx`, `cards.jsx`, `family.jsx`, `childfile.jsx`, `terms.jsx`, `views/healthconsent.jsx`, `auth/NoSchool.jsx:259-260` (the sentence about health consent), `views/SettingsView.jsx:745,799` (what moves out), `lib/compare.js` (the floor, shared) |
+| **Builds, reviews** | **Opus** builds all of it: it renders a child's data and changes the persona rule. **Opus** reviews, fresh. |
+| **Migration** | Only if no trigger already writes a `system` notice when the office verifies a link (NOTIFICATIONS D1 lists the kind; Haiku's map checks for the writer). If none, one small migration: Opus, red-team, Kameel's word. |
+| **Walks** | Existing: `pupil`, `consent`, `lifts`, `read` (the guardian steps), `passport-union`, `compare`, `awards`, `potm`, `seasons`, `public-name`, `scorer-home` (a pupil who scores), `smoke-a11y`, `db/99` if a migration ships. New: a pupil holding `scorer` keeps the four-item bar and sees "Appointed to score" on Home; a child with one innings of three balls shows runs and "3 balls" and no average; a parent with children at two schools sees two sections; a waiting parent opens the terms and cannot agree. |
+| **Near the pad's words** | "Appointed to score" (`smoke-browser-scorer-home.mjs:257`) is reused on the pupil's Home, word for word. |
+| **Bundle** | Entry: the persona change is in `roles.js`, already in the entry; the passport's drill opens the match page, which is lazy. |
+| **You'll know** | Sign in as the demo pupil. **Five seconds:** his next match and what he must answer are first. **Two steps:** Passport, then tap his runs, and the innings behind them are listed with how many came from a scorebook. Sign in as the demo parent with two children: both sections, each with its own actions. As a pupil who scores: four items on the bar, the scoring block on Home. |
+
+### Slice 5 · The coach's day sheet, and the homes
+
+| | |
+|---|---|
+| **Scope** | §1.2–§1.5 and §1.9 for staff: Today, Matches, Team and Logistics as the menu; the header (bell, "Raise a concern", the person's name); "To resolve" only for someone who can act (Q7); addresses for a player, a team and a ground (Q5); the team page of §3.5; the day sheet's figures of §3.10; "Needs you" rows that land on the fix (§1.10). |
+| **Files** | `design/homes.js`, `design/roles.js:199-297` (Q7 only), `lib/homeNav.js`, `shell/Sidebar.jsx`, `shell/MobileNav.jsx:88-89`, `shell/TopBar.jsx`, `shell/HomeBar.jsx`, `App.jsx:168-173,441,570-607`, `lib/matchTabs.js`, `views/DashboardView.jsx`, `views/ReadinessOverview.jsx:235-251,374`, `views/SquadView.jsx`, `views/sideseason.jsx`, `views/records.jsx` |
+| **Builds, reviews** | **Opus**: the shell, the addresses and `roles.js` (cross-cutting; policy). **Sonnet**: the team page's sections and the day sheet's lines, over reads that exist. **Opus** reviews. |
+| **Migration** | None. Q7 changes the capability map in code; `db/99` and `rls.test.mjs` prove nothing widens. |
+| **Walks** | Existing: `dayof`, `read`, `cockpit`, `queue`, `matchcentre`, `narrow`, `injuries`, `skills-history`, `coaching-points`, `league`, `results`, `smoke-readiness`, `smoke-summary`, `smoke-a11y`, `check-bundle`, and **every walk that taps a folded `nav-` id**: Haiku lists them before the build (Q2), and each moves to `home-<home>-section-<key>`. New: `browser-homes`: each persona of §1.7 sees exactly the "after" menu; a phone bar has no "More"; a team page opened by address shows the same figures as the side's Analytics did. |
+| **Near the pad's words** | `day-sheet` (`smoke-browser-scorer-home.mjs:366`) is kept as Today's test id. |
+| **Bundle** | Entry: the shell shrinks (fewer menu items); the team page is lazy. |
+| **You'll know** | Sign in as the demo coach on a match day. **Five seconds:** the next fixture's sentence and its chips that are not done. **Two steps:** tap "Team sheet" and the sheet is open for that fixture; tap Team, then Training. On a phone, four items on the bar and no "More". As the director with three teams: the first "Needs you" row opens the screen that fixes it. |
+
+### Slice 6 · The office
+
+| | |
+|---|---|
+| **Scope** | §1.6 and §2.7: the School home (People, Access, Record, Modules, Sponsors); Settings taken apart, each part moved whole; the Platform home; the set-up list for a school with no fixtures; "A parent is waiting" as a "Needs you" row; the Safeguarding Officer's landing (Q6). Figures here are counts with their denominators ("12 of 40 pupils have no verified guardian"), never a percentage without one (`ROLE_DASHBOARDS` §6). |
+| **Files** | `views/SettingsView.jsx` (by part, §1.6), `views/staffRegister.jsx`, `views/importer.jsx`, `views/guardianlink.jsx`, `views/publicname.jsx`, `views/ManagementView.jsx`, `views/ModulesView.jsx`, `views/SponsorsView.jsx`, `views/support.jsx`, `views/dlsTables.jsx`, `design/homes.js`, `App.jsx:556-569` (the DSO's landing) |
+| **Builds, reviews** | **Opus**: the parts carry policy gates, the audit, names-off and a child picker (`SettingsView.jsx:1229-1472`). Moving `D` to `T` on a screen it touches goes with it (`DESIGN_DIRECTION` §7). **Opus** reviews. |
+| **Migration** | None. |
+| **Walks** | Existing: `accounts`, `import`, `management`, `public-name`, `listing`, `consent`, `signup` (claims), `support`, `safeguarding`, `second-account`, `suspension`, `smoke-a11y`, `check-bundle`. New: a parent's own name opens only her own settings; a new school's Today shows the set-up list, each line going as it becomes true. |
+| **Near the pad's words** | None. |
+| **Bundle** | Entry: Settings is already outside it (`check-bundle.mjs:238`); each moved part stays lazy. |
+| **You'll know** | Sign in as the demo office. **Five seconds:** "A parent is waiting" is the first row. **Two steps** to the claim's pupil when the claim names him; three when it names him in free text, by decision (§1.10). Sign in as the demo parent and tap her name: her own settings, no "People" tab. |
+
+### After each merge
+
+Haiku strikes the closed entries through in `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md` with the
+PR and commit, and updates `CRICINFO_GAP_PLAN.md` (G2, G3, G10, G11, G15 as each closes) and
+the gap analysis plan. Two backlog lines are already stale and should be corrected then:
+SCRBRD-100 says Player of the Match has "no data anywhere" (it has a route,
+`server.mjs:795`) and that no route lists pending amendments (`GET /api/corrections`,
+`server.mjs:1092`).
+
+### What is dropped, and why
+
+| Item | From | Why |
+|---|---|---|
+| Image cards for WhatsApp and Instagram | SCRBRD-100 "Sharing", `DESIGN_DIRECTION` §10 item 11 | Needs an explicit-yes consent that is not built (`PUBLIC_BY_TERMS` §1.2). The link is shared instead (Slice 2) |
+| Scorer points, streaks, partner rewards | `ROLE_DASHBOARDS` §3D R3 | A pressure mechanic on children (§3.11) |
+| Impact score as the PoM suggestion | `CRICINFO_GAP_PLAN` G14, CRI-3.3 | Waits on the recognition fixes it already names; not this pass |
+| StatsMagic, the explorer | G16, CRI-3.4 | Its own Fable pass; this pass only links into it from figures |
+| Natural-language search, editorial recaps | UX-16, UX-17 | Not stats-forward for a school day; after the pilot |
+| A crest on every board | `DESIGN_DIRECTION` §10 | Needs its own small migration and an upload; the short code stands in |
 
 ## 5. Questions for Kameel
 
