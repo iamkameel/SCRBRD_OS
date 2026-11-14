@@ -13101,6 +13101,13 @@ BEGIN
           '88888888-0000-0000-0000-000000000006');
   PERFORM _v149_ball(v_m, 'aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
                      'bbbbbbbb-0000-0000-0000-000000000001');
+  -- A sponsor's board on this fixture's overlay, placed for this fixture.
+  WITH sp AS (
+    INSERT INTO sponsor (school_id, name, category, logo_text, logo_bg)
+    VALUES ('11111111-1111-1111-1111-111111111111', 'V156 Kestrel Outfitters', 'sportswear', 'KESTREL', '#1f4e79')
+    RETURNING id)
+  INSERT INTO sponsorship (school_id, sponsor_id, placement, match_id, starts_on, ends_on)
+  SELECT '11111111-1111-1111-1111-111111111111', sp.id, 'broadcast_overlay', v_m, sa_today() - 1, sa_today() + 30 FROM sp;
   RETURN v_m;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- §134's readers, made here, one role each: none of the seed's people is
@@ -43058,7 +43065,8 @@ $m130$;
   -- ┌── db/156 (section 134) ─────────────────────────────────────────
   -- ── 134. Switched off is hidden on the read side as well: the overlay's officials while Officials is off, the whole overlay while Broadcast is off, and a DRS review across schools while its own school has DRS off (db/156; Kameel 13 Nov 2026) ──
   -- Staged by _v156_stage(): Hilton's 1XI at home to Westville's, live, its
-  -- overlay published with officials shown, one umpire, one ball. Every
+  -- overlay published with officials shown, one umpire, one ball, and a
+  -- sponsor's board placed on that fixture's overlay. Every
   -- read through scrbrd_app, signed out unless said; each switch hidden by
   -- a school's own suppression (_v156_hide()) and lifted again. The readers
   -- are made here (_v156_person()), not the seed's, whom earlier sections
@@ -43074,6 +43082,12 @@ $m130$;
   --                the overlay served nothing; the grant gone, both back
   --   (platform)   the platform default off and no grant: the same; a grant
   --                true for Hilton brings each back
+  --   (sponsors)   the sponsor's board shown while Sponsors is on at Hilton;
+  --                gone (its three columns NULL, the score still served)
+  --                with Sponsors hidden at Hilton, with Hilton's plan
+  --                granted false, and with the platform off and no grant;
+  --                back each time it is on; still shown with Sponsors off at
+  --                Westville, the away school; the sponsorship still stored
   --   (broadcast)  with Broadcast off at Hilton, no row (an unpublished
   --                fixture's shape), signed out and signed in, the
   --                publication still stored; off at Westville only (not the
@@ -43097,7 +43111,7 @@ $m130$;
   --   (on-off)     a review stored while DRS is on at Hilton is read by
   --                Westville, and not once Hilton switches it off
   --   (body)       broadcast_state() is db/156's body with the broadcast
-  --                block, a stable definer with its path pinned and EXECUTE
+  --                block and the sponsor gate, a stable definer with its path pinned and EXECUTE
   --                to its owner and PUBLIC exactly; drs_review_shown() a
   --                definer with its path pinned, the application's alone;
   --                drs_review_shown_while_on one RESTRICTIVE SELECT policy
@@ -43115,6 +43129,8 @@ $m130$;
   -- (on-off); and red at their own label when drs_review_shown() asked
   -- the reader as the person → (person), or lost its scoring.correct leg
   -- → (drs) (the scorer's own INSERT … RETURNING is refused).
+  -- The sponsor gate (Kameel, 15 Nov 2026, on Fable's S1) removed from the
+  -- sponsor CTE                                                          → (sponsors)
   DECLARE
     M uuid;
     s record;
@@ -43198,6 +43214,40 @@ $m130$;
     PERFORM _assert(s.match_id = M, '§134 (platform): a grant true for Hilton does not bring its overlay back');
     PERFORM _v156_grant('broadcast', HIL, NULL);
     PERFORM _v156_flag('broadcast', v_flag);
+
+    -- (sponsors)
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.sponsor_name = 'V156 Kestrel Outfitters' AND s.sponsor_logo = 'KESTREL' AND s.sponsor_bg = '#1f4e79',
+      format('§134 (sponsors): with Sponsors on the board reads %s / %s / %s', s.sponsor_name, s.sponsor_logo, s.sponsor_bg));
+    PERFORM _v156_hide('sponsors', HIL, NULL, true);
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.match_id = M AND s.runs >= 1 AND s.sponsor_name IS NULL AND s.sponsor_logo IS NULL AND s.sponsor_bg IS NULL,
+      format('§134 (sponsors): with Sponsors hidden at Hilton the board reads %s / %s / %s', s.sponsor_name, s.sponsor_logo, s.sponsor_bg));
+    PERFORM _assert(_v156_count(format('SELECT count(*)::int FROM sponsorship WHERE match_id = %L AND placement = ''broadcast_overlay''', M)) = 1,
+      '§134 (sponsors): the sponsorship is not still stored while Sponsors is off');
+    PERFORM _v156_hide('sponsors', HIL, NULL, false);
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.sponsor_name = 'V156 Kestrel Outfitters', format('§134 (sponsors): with Sponsors on again the board reads %s', s.sponsor_name));
+    PERFORM _v156_grant('sponsors', HIL, false);
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.match_id = M AND s.sponsor_name IS NULL,
+      format('§134 (sponsors): with Hilton''s Sponsors granted false the board reads %s', s.sponsor_name));
+    PERFORM _v156_grant('sponsors', HIL, NULL);
+    v_flag := _v156_flag('sponsors', false);
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.match_id = M AND s.sponsor_name IS NULL,
+      format('§134 (sponsors): with Sponsors off for the platform and no grant the board reads %s', s.sponsor_name));
+    PERFORM _v156_grant('sponsors', HIL, true);
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.sponsor_name = 'V156 Kestrel Outfitters',
+      format('§134 (sponsors): a grant true for Hilton does not bring its board back (%s)', s.sponsor_name));
+    PERFORM _v156_grant('sponsors', HIL, NULL);
+    PERFORM _v156_flag('sponsors', v_flag);
+    PERFORM _v156_hide('sponsors', WES, NULL, true);
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.sponsor_name = 'V156 Kestrel Outfitters',
+      format('§134 (sponsors): Sponsors off at Westville, the away school, took Hilton''s board off (%s)', s.sponsor_name));
+    PERFORM _v156_hide('sponsors', WES, NULL, false);
 
     -- (broadcast)
     PERFORM _v156_hide('broadcast', HIL, NULL, true);
@@ -43317,11 +43367,11 @@ $m130$;
     PERFORM _v156_drs_platform(v_was);
 
     -- (body)
-    PERFORM _assert((SELECT md5(regexp_replace(btrim(p.prosrc), '\s+', ' ', 'g')) = 'e3707e8319d9370fabd8a8d97dde89be'
+    PERFORM _assert((SELECT md5(regexp_replace(btrim(p.prosrc), '\s+', ' ', 'g')) = '783f25935f09da16aba5786a2b76fd1e'
                             AND p.prosecdef AND p.provolatile = 's'
                             AND p.proconfig = ARRAY['search_path=pg_catalog, public, pg_temp']
                        FROM pg_proc p WHERE p.oid = to_regprocedure('broadcast_state(uuid)')),
-      '§134 (body): broadcast_state() is not db/156''s body with the broadcast block, or not a stable definer with its path pinned');
+      '§134 (body): broadcast_state() is not db/156''s body with the broadcast block and the sponsor gate, or not a stable definer with its path pinned');
     PERFORM _assert(_v156_acl('broadcast_state(uuid)')
                       = (SELECT ARRAY[p.proowner::regrole::text || ':EXECUTE', 'PUBLIC:EXECUTE'] FROM pg_proc p
                           WHERE p.oid = to_regprocedure('broadcast_state(uuid)')),

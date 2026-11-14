@@ -358,6 +358,43 @@ try {
   ok("the platform switches Broadcast back on, and the overlay is as it was",
      (await setFlag("broadcast", { enabled: true, reason: "Smoke: broadcast back on" })).status === 200
        && Number((await overlay(m, head))?.runs) === expectedRuns);
+
+  // Sponsors switched off takes the sponsor's board off the overlay (Kameel,
+  // 15 Nov 2026, on Fable's S1); the sponsorship stays stored.
+  group("Sponsors switched off: the board leaves the overlay, the sponsorship kept (db/156)");
+  {
+    const sp = (await q(`insert into sponsor (school_id, name, category, logo_text, logo_bg)
+                         values ($1, 'Smoke Kestrel Outfitters', 'sportswear', 'KESTREL', '#1f4e79') returning id`, [HIL]))[0].id;
+    await q(`insert into sponsorship (school_id, sponsor_id, placement, match_id, starts_on, ends_on)
+             values ($1, $2, 'broadcast_overlay', $3, sa_today() - 1, sa_today() + 30)`, [HIL, sp, m]);
+  }
+  const board = async () => (await signedOut(m))[0]?.sponsor_name ?? null;
+  ok("with Sponsors on, the board is on the overlay", (await board()) === "Smoke Kestrel Outfitters");
+  ok("Hilton switches Sponsors off: the board is gone",
+     (await suppress("sponsors", registrar, { schoolId: HIL, hidden: true, reason: "Smoke: sponsors off" })).status === 200
+       && (await board()) === null);
+  ok("...the score still goes out", Number((await signedOut(m))[0]?.runs) === expectedRuns);
+  ok("...and the sponsorship is still stored",
+     (await q(`select count(*)::int c from sponsorship where match_id = $1 and placement = 'broadcast_overlay'`, [m]))[0].c === 1);
+  ok("switched on again, the board is back",
+     (await suppress("sponsors", registrar, { schoolId: HIL, hidden: false })).status === 200
+       && (await board()) === "Smoke Kestrel Outfitters");
+  ok("Hilton's plan without Sponsors: the board is gone",
+     (await grant("sponsors", { schoolId: HIL, granted: false, note: "Smoke: not in the plan" })).status === 200
+       && (await board()) === null);
+  await noGrant("sponsors");
+  ok("Sponsors off for the platform, no grant: the board is gone",
+     (await setFlag("sponsors", { enabled: false, reason: "Smoke: sponsors off" })).status === 200
+       && (await board()) === null);
+  ok("...and a grant for Hilton brings it back",
+     (await grant("sponsors", { schoolId: HIL, granted: true, note: "Smoke: in the plan" })).status === 200
+       && (await board()) === "Smoke Kestrel Outfitters");
+  await noGrant("sponsors");
+  await setFlag("sponsors", { enabled: true, reason: "Smoke: sponsors back on" });
+  ok("Sponsors off at Westville, not the fixture's school, leaves Hilton's board on",
+     (await suppress("sponsors", wesAdmin, { schoolId: WES, hidden: true, reason: "Smoke: sponsors off" })).status === 200
+       && (await board()) === "Smoke Kestrel Outfitters");
+  await suppress("sponsors", wesAdmin, { schoolId: WES, hidden: false });
   await publish(m, head, { published: true, showOfficials: false });
   ok("...unless the school turns it off", (await overlay(m, head))?.officials === null);
 

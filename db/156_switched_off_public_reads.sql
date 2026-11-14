@@ -15,7 +15,7 @@
 --       DEFINER, pinned search path, volatility and grants as they are
 --       (CREATE OR REPLACE keeps the ACL: EXECUTE to PUBLIC, on purpose, as
 --       the overlay is watched signed out). db/149's body word for word bar
---       two gates:
+--       three gates:
 --     (1) OFFICIALS. The umpires are named only while the Officials module
 --         is on for the fixture's school as well as shown by the school's
 --         overlay setting: feature_enabled('officials', m.school_id, NULL).
@@ -28,6 +28,11 @@
 --         published before its school switched Broadcast off kept serving
 --         its score signed out. The publication row stays stored, so the
 --         overlay is back the moment Broadcast is.
+--     (3) SPONSORS (Kameel, 15 Nov 2026, on Fable's S1). The sponsor's
+--         board is on the overlay only while the Sponsors module is on for
+--         the fixture's school: feature_enabled('sponsors', m.school_id,
+--         NULL). A placement made while it was on stayed served after the
+--         school switched Sponsors off. The sponsorship stays stored.
 --   + drs_review_shown(uuid)  and the RESTRICTIVE SELECT policy
 --       drs_review_shown_while_on on drs_review: a review is read only
 --       while DRS is on for ITS OWN school (the fixture's, match_school(),
@@ -100,8 +105,8 @@ BEGIN
   END IF;
   SELECT pg_temp._v156_fold(p.prosrc) INTO v FROM pg_proc p WHERE p.oid = 'broadcast_state(uuid)'::regprocedure;
   IF v NOT IN ('18f0dbbd3cfb19df50eb8eebbd5c0530',   -- db/149's
-               'e3707e8319d9370fabd8a8d97dde89be',                       -- this file's
-               '4d81c14036bc587b805b5479eb33fc1d') THEN                  -- this file's, the broadcast block held
+               '783f25935f09da16aba5786a2b76fd1e',                       -- this file's
+               '476e7078c6e4241629dde5651e299a27') THEN                  -- this file's, the broadcast block held
     RAISE EXCEPTION 'db/156: broadcast_state(uuid) is not db/149''s body or this file''s (md5 % of its folded body); look before replacing it', v;
   END IF;
   IF to_regprocedure('drs_review_shown(uuid)') IS NOT NULL THEN
@@ -185,6 +190,8 @@ RETURNS TABLE (
      WHERE s.placement = 'broadcast_overlay'
        AND (s.match_id IS NULL OR s.match_id = m.id)
        AND sa_today() BETWEEN s.starts_on AND s.ends_on
+       -- db/156: switched off is hidden — the board only while Sponsors is on.
+       AND feature_enabled('sponsors', m.school_id, NULL::uuid)
      ORDER BY s.match_id NULLS LAST, s.agreed_at DESC
      LIMIT 1
   )
@@ -269,7 +276,7 @@ BEGIN
   SELECT pg_temp._v156_fold(p.prosrc) INTO v FROM pg_proc p
    WHERE p.oid = 'broadcast_state(uuid)'::regprocedure AND p.prosecdef AND p.provolatile = 's'
      AND p.proconfig = ARRAY['search_path=pg_catalog, public, pg_temp'];
-  IF v IS NULL OR v NOT IN ('e3707e8319d9370fabd8a8d97dde89be', '4d81c14036bc587b805b5479eb33fc1d') THEN
+  IF v IS NULL OR v NOT IN ('783f25935f09da16aba5786a2b76fd1e', '476e7078c6e4241629dde5651e299a27') THEN
     RAISE EXCEPTION 'db/156: broadcast_state() is not this file''s body (md5 %), or not a stable definer with its search path pinned', v;
   END IF;
   IF (SELECT p.prosrc FROM pg_proc p WHERE p.oid = 'broadcast_state(uuid)'::regprocedure)
