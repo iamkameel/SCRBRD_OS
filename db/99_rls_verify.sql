@@ -13103,6 +13103,19 @@ BEGIN
                      'bbbbbbbb-0000-0000-0000-000000000001');
   RETURN v_m;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A coach of Hilton's 1XI made here: fixture.read at the side, and not
+-- scoring.correct. Not the seed's (…0004): section 12 revokes him, for good,
+-- inside this transaction.
+CREATE OR REPLACE FUNCTION _v156_coach() RETURNS uuid AS $$
+DECLARE v_u uuid;
+BEGIN
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'v156.coach@example.invalid', 'V156 Coach 1XI', 'coach')
+  RETURNING id INTO v_u;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  VALUES (v_u, 'coach', '11111111-1111-1111-1111-111111111111', '1XI');
+  RETURN v_u;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A school hiding a switch for itself (p_person NULL) or for one person, as
 -- its administrator's suppression does; p_hidden false lifts it.
 CREATE OR REPLACE FUNCTION _v156_hide(p_key text, p_school uuid, p_person uuid, p_hidden boolean) RETURNS void AS $$
@@ -43065,8 +43078,9 @@ $m130$;
   --                has DRS on, both read it
   --   (breadth)    while it is off, the writer's leg lets through who holds
   --                scoring.correct (Hilton's director of sport reads the
-  --                row at the table) and nobody else (the 1XI coach, who
-  --                holds fixture.read alone, reads none)
+  --                row at the table) and nobody else (a 1XI coach, who
+  --                holds fixture.read alone, reads none: one made here by
+  --                _v156_coach(), as section 12 revokes the seed's for good)
   --   (upsert)     while it is off, the API's statement, INSERT … ON
   --                CONFLICT DO UPDATE on the existing row, corrects it and
   --                reads it back as the same row; Westville still reads none
@@ -43104,11 +43118,13 @@ $m130$;
     v_seq2 int;
     v_was boolean;
     v_flag boolean;
+    v_coach uuid;
     n int;
     u uuid;
   BEGIN
     PERFORM set_config('app.user_id', '', true);
     M := _v156_stage();
+    v_coach := _v156_coach();
 
     -- (officials)
     PERFORM _assert(feature_enabled('officials', HIL, NULL), '§134 (officials): Officials is not on for Hilton to begin with');
@@ -43220,7 +43236,7 @@ $m130$;
       '§134 (breadth): Hilton''s director of sport does not hold scoring.correct over the fixture: it proves nothing');
     SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
     PERFORM _assert(n = 1, format('§134 (breadth): Hilton''s director of sport, who may write it, reads %s review(s) at the table while DRS is off', n));
-    PERFORM _as(U_COACH);
+    PERFORM _as(v_coach);
     PERFORM _assert(fixture_reach('fixture.read', M)
                     AND NOT app_can('scoring.correct', HIL, '1XI', '00000000-0000-0000-0000-000000000000'::uuid, M),
       '§134 (breadth): the 1XI coach does not reach the fixture, or holds scoring.correct: it proves nothing');
