@@ -143,10 +143,17 @@ const inReach = (runs, reach, marks = [50, 100, 150, 200]) => {
  * written, so an innings too young to say anything gives none and the slot is
  * not drawn. Spectator screens only (the pad never shows Tier 2).
  *
+ * Each line says whom it is about (EXPERIENCE_PASS Q10, decided 13 Nov):
+ * `about` is null for a line that names nobody (the stand, the projection,
+ * the drought), the player's id for one that names a boy, and "?" for one
+ * that names a boy the fold gives no id for. A family's or a pupil's screen
+ * keeps only lines about nobody or about its own boy (aboutWhom() below), so
+ * "?" is never kept there.
+ *
  * @param {object} inn  a folded innings
  * @param {{target?: number|null, overs?: number, format?: unknown}} [o]
  *   `format` match.format (a declaration match projects nothing)
- * @returns {string[]}
+ * @returns {{text: string, about: string | null}[]}
  */
 const boardInsights = (inn, { target = null, overs = 20, format = null } = {}) => {
   if (!inn || !inn.balls || inn.complete) return [];
@@ -154,25 +161,25 @@ const boardInsights = (inn, { target = null, overs = 20, format = null } = {}) =
   const pair = [inn.striker, inn.nonStriker].map((id) => inn.batsmen?.find((b) => b.id === id)).filter(Boolean);
   for (const b of pair) {
     const r = inReach(b.runs ?? 0, 10);
-    if (r) out.push(`${b.name} needs ${r.need} for ${MILESTONE_WORD[r.mark]}`);
+    if (r) out.push({ text: `${b.name} needs ${r.need} for ${MILESTONE_WORD[r.mark]}`, about: b.id ?? "?" });
   }
   const cp = inn.curPartner;
   if (pair.length === 2 && cp) {
     const r = inReach(cp.runs ?? 0, 10, [50, 100, 150]);
-    if (r) out.push(`The stand needs ${r.need} for a ${r.mark === 50 ? "fifty" : r.mark === 100 ? "hundred" : r.mark} partnership`);
+    if (r) out.push({ text: `The stand needs ${r.need} for a ${r.mark === 50 ? "fifty" : r.mark === 100 ? "hundred" : r.mark} partnership`, about: null });
   }
   const bw = inn.bowlers?.find((b) => b.id === inn.bowler);
-  if (bw && bw.wickets === 4) out.push(`${bw.name} needs one more for five wickets`);
+  if (bw && bw.wickets === 4) out.push({ text: `${bw.name} needs one more for five wickets`, about: bw.id ?? "?" });
   // GA-I29 A0: the projection is @scrbrd/scoring scenario.mjs's, at its one
   // minimum of twelve legal balls (A-D8): in a first innings the total at the
   // rate so far (S5), in a chase where that rate would take it (S8) — the line
   // the ground display's rotation carries, with no stepper (A5, Q6).
   if (target == null) {
     const p = projectedTotal(inn, { overs, format });
-    if (p) out.push(`Projected ${p.runs} at ${p.crr} an over`);
+    if (p) out.push({ text: `Projected ${p.runs} at ${p.crr} an over`, about: null });
   } else {
     const own = ownRateChaseLine(inn, { target, overs, format });
-    if (own) out.push(own);
+    if (own) out.push({ text: own, about: null });
   }
   // Legal deliveries since the last boundary (a four or six to the rope, F7).
   let dry = 0;
@@ -181,10 +188,24 @@ const boardInsights = (inn, { target = null, overs = 20, format = null } = {}) =
     if (isBoundary(b)) break;
     if (b.type !== "Wd" && b.type !== "Nb") dry++;
   }
-  if (dry >= 18) out.push(`No boundary for ${dry} balls`);
+  if (dry >= 18) out.push({ text: `No boundary for ${dry} balls`, about: null });
   const fw = inn.fow?.[inn.fow.length - 1];
-  if (fw) out.push(`Last wicket: ${fw.batsman} at ${fw.runs}/${fw.wickets}, ${fw.overs} overs`);
+  if (fw) {
+    // The fold's fall of wickets carries his name, not his id: the one batter out under that name, or "?".
+    const out1 = (inn.batsmen ?? []).filter((b) => b.status === "out" && b.name === fw.batsman);
+    out.push({ text: `Last wicket: ${fw.batsman} at ${fw.runs}/${fw.wickets}, ${fw.overs} overs`, about: out1.length === 1 ? out1[0].id ?? "?" : "?" });
+  }
   return out;
 };
 
-export { boardInsights, buildNarratives, buildSignals, getPhase };
+/**
+ * The insight lines a screen may draw, as text (Q10): every line, or with
+ * `focus` (the ids a family's or pupil's screen is for) only the lines about
+ * nobody and about him.
+ * @param {{text: string, about: string | null}[]} lines  @param {Set<string> | null} [focus]
+ * @returns {string[]}
+ */
+const aboutWhom = (lines, focus = null) =>
+  lines.filter((l) => !focus || l.about == null || focus.has(l.about)).map((l) => l.text);
+
+export { aboutWhom, boardInsights, buildNarratives, buildSignals, getPhase };

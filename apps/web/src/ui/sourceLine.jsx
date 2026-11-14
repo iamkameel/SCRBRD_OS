@@ -1,5 +1,5 @@
 import { T } from "../design/tokens.js";
-import { Icon } from "./icons.jsx";
+import { Icon } from "./iconCore.jsx";
 import { StateLabel } from "./stateLabel.jsx";
 
 /**

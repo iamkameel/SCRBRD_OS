@@ -1,5 +1,5 @@
 import { T } from "../design/tokens.js";
-import { Icon } from "./icons.jsx";
+import { Icon } from "./iconCore.jsx";
 
 /**
  * One label for what a screen's figures are, so nobody takes a demonstration

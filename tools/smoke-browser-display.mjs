@@ -42,6 +42,10 @@
  *      the director of sport: the link and its QR code, the three settings
  *      in the link, and "N of M named on public surfaces · K shown by
  *      position" — the count the live page itself shows, and no name.
+ *  10. EXPERIENCE_PASS Slice 2 (Q18, Q19), signed in: the Match Centre links
+ *      the ground display for a fixture Hilton has published and for none it
+ *      has withdrawn, and its Share hands over the public page's link where
+ *      there is one, else its own, naming no child either way.
  *
  * The test hooks are the page's own: window.__SCRBRD_LIVE_MS__ (the poll),
  * __SCRBRD_DISPLAY_DWELL_MS__ (the dwell) and __SCRBRD_DISPLAY_SLEEP_MS__.
@@ -58,7 +62,7 @@ import pg from "pg";
 import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
-import { buildPublicFixture, HIL } from "./fixture-public.mjs";
+import { buildPublicFixture, EXPECTED, HIL, KEARSNEY, PEOPLE, TYPED_FIELDER } from "./fixture-public.mjs";
 import { writeEvents } from "./fixture-matchcentre.mjs";
 import { ball, batters, bowler, inningsStart, sealInnings, deriveInnings, BALL_TYPE, INNINGS_END_REASON, parEstimate } from "@scrbrd/scoring";
 
@@ -770,6 +774,54 @@ try {
     await sleep(4000);
     ok("...and it stops reading", v.requests.length === r1, String(v.requests.length - r1));
     await v.ctx.close();
+  }
+
+  group("10. Slice 2: the signed-in Match Centre's Ground display link, published fixtures only, and its Share (Q18, Q19)");
+  {
+    const childWords = [...new Set([...Object.values(PEOPLE).map((x) => String(x[0])), ...KEARSNEY, TYPED_FIELDER]
+      .flatMap((n) => [n, ...n.split(" ")]).concat(Object.values(EXPECTED)))];
+    const SHARE = `window.__shared = []; Object.defineProperty(navigator, "share", { configurable: true, value: async (d) => { window.__shared.push(d); } });`;
+    /** Sarah, signed in, on one fixture's Match Centre (a reload signs out, so each address signs in afresh). */
+    const at = async (/** @type {string} */ id) => {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, extraHTTPHeaders: { "x-forwarded-for": `10.85.1.${++ipN}` } });
+      await offline(ctx);
+      const page = await ctx.newPage();
+      const errors = [];
+      page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+      await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(BASE)};`);
+      await page.addInitScript(SHARE);
+      await page.goto(`${BASE}/app/matches/${id}`, { waitUntil: "networkidle" });
+      const press = async (/** @type {RegExp} */ re) => {
+        const b = page.locator("button:not([disabled])", { hasText: re }).first();
+        if (await b.count()) { await b.click({ timeout: 5000 }).catch(() => {}); await sleep(500); }
+      };
+      await press(/Get Started|Log In/); await press(/sarah@example\.invalid|Director/); await press(/^Sign In$/);
+      await until(page, () => !!document.querySelector('[data-testid="match-view"]'), 20000);
+      await until(page, () => !!document.querySelector('[data-testid="mc-share"]'), 10000);
+      return { ctx, page, errors };
+    };
+    const a = await at(pub);
+    const href = await tid(a.page, "mc-ground-display").getAttribute("href").catch(() => null);
+    ok("Hilton has published: the Match Centre links the ground display, at its own address", href === `/display/${pub}`, String(href));
+    await tid(a.page, "mc-share").click({ timeout: 4000 }).catch(() => {});
+    await sleep(300);
+    const shared = /** @type {any[]} */ (await a.page.evaluate(() => /** @type {any} */ (window).__shared));
+    ok("...and Share hands over the public page's link, whose preview names no child", shared?.length === 1 && shared[0].url === `${BASE}/live/${pub}`, JSON.stringify(shared));
+    const words = JSON.stringify(shared ?? []);
+    ok("...with the sides and the sentence, and no child's name", /Hilton College 1XI v /.test(shared?.[0]?.title ?? "")
+       && childWords.every((w) => !words.includes(w)) && leaks(`${shared?.[0]?.title ?? ""} ${shared?.[0]?.text ?? ""}`).length === 0, words);
+    ok("no page errors (published)", a.errors.length === 0, a.errors.join(" | "));
+    await a.ctx.close();
+    // ROT's publication was withdrawn above (4b): no display is served, so no link.
+    const b = await at(ROT.id);
+    await sleep(800);
+    ok("a fixture Hilton has withdrawn: no Ground display link", await tid(b.page, "match-view").count() === 1 && await tid(b.page, "mc-ground-display").count() === 0);
+    await tid(b.page, "mc-share").click({ timeout: 4000 }).catch(() => {});
+    await sleep(300);
+    const own = /** @type {any[]} */ (await b.page.evaluate(() => /** @type {any} */ (window).__shared));
+    ok("...and Share hands over the Match Centre's own address, nothing public", own?.length === 1 && own[0].url === `${BASE}/app/matches/${ROT.id}`, JSON.stringify(own));
+    ok("no page errors (withdrawn)", b.errors.length === 0, b.errors.join(" | "));
+    await b.ctx.close();
   }
   void pub2;
 } catch (e) {

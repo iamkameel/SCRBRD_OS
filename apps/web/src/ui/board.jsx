@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { T, contrast } from "../design/tokens.js";
-import { Icon } from "./icons.jsx";
+import { Icon } from "./iconCore.jsx";
 import { freshnessWords } from "../lib/announce.js";
 
 /**

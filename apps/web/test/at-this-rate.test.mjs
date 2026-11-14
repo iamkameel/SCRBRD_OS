@@ -68,7 +68,8 @@ ok("a chase is untouched", /^Need 106 off 48 · CRR 7.00 · RRR /.test(chase.sub
 
 console.log("\nE. One rate, one figure (GA-I29 S1: @scrbrd/scoring rateText() on every screen)");
 {
-  const { boardInsights } = await import("../src/scorer/signals.js");
+  const { aboutWhom, boardInsights: structured } = await import("../src/scorer/signals.js");
+  const boardInsights = (/** @type {any} */ i, /** @type {any} */ o) => aboutWhom(structured(i, o));
   const { scenarioOf } = await import("@scrbrd/scoring");
   const { RR } = await import("../src/scorer/format.js");
   const { parWords } = await import("../src/lib/par.js");

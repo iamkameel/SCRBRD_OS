@@ -41,6 +41,12 @@
  *  13. CRI-2.2, at 360 wide: every chart on the Summary and on Analytics sits
  *      under a line saying what it stands on, the shots' line with "Shots
  *      captured for N of M balls".
+ *  14. EXPERIENCE_PASS Slice 2 (Q9): a batter's runs and a bowler's figures,
+ *      signed in, open the Commentary at exactly his balls, by event id, with
+ *      their count; back is the Scorecard, its innings and the row as they
+ *      were; a family's screen offers it for its own boy only (none here).
+ *      The status sentence is said once, under the board on the Summary and
+ *      in the header on every other tab (§3.3).
  *
  * MC_SHOTS=<dir> also saves every tab at 390 and 1366 wide, in Daylight and
  * Floodlit, into <dir>.
@@ -469,6 +475,15 @@ try {
   ok("...and the match line no longer says the innings as well", !/innings/i.test(line), line);
 
   group("Summary: the Board, with the fold's own figures");
+  /** Where the status sentence is drawn (EXPERIENCE_PASS §3.3): how many, in the tab's panel or not, after the board or not. */
+  const sentenceAt = (/** @type {any} */ P) => P.evaluate(() => {
+    const l = document.querySelectorAll('[data-testid="mc-status-line"], [data-testid="mc-result"]');
+    const panel = document.querySelector('[role="tabpanel"]');
+    const board = document.querySelector('[data-testid="mc-board"]');
+    return { n: l.length, inPanel: !!l[0] && !!panel?.contains(l[0]), underBoard: !!l[0] && !!board && !!(board.compareDocumentPosition(l[0]) & 4) };
+  });
+  const liveAt = await sentenceAt(p);
+  ok("§3.3: while it is being played, the status sentence is said once, under the board", liveAt.n === 1 && liveAt.inPanel && liveAt.underBoard, JSON.stringify(liveAt));
   const total = (await tid(p, "mc-board-total").innerText()).replace(/\s/g, "");
   ok(`the board's total is the fold's (${inn2.runs}/${inn2.wickets})`, total === `${inn2.runs}/${inn2.wickets}`, total);
   ok("...the chase in words", new RegExp(`Need ${inn2.target - inn2.runs} off ${60 - inn2.balls}`).test(await tid(p, "mc-board-sub").innerText()));
@@ -877,6 +892,13 @@ try {
       }
       ok("...and opens the fixture", opened);
       if (!opened) { await s.ctx.close(); continue; }
+      // EXPERIENCE_PASS Q9: in family mode a figure opens only his own boy's balls, and none of theirs plays here.
+      await pickTab(s.page, "scorecard");
+      await tid(s.page, "mc-scorecard").waitFor({ timeout: 6000 }).catch(() => {});
+      const taps = await s.page.locator('[data-testid="mc-bat-balls"], [data-testid="mc-bowl-balls"]').count();
+      const familyMode = family && !(await tid(s.page, "mc-back").innerText().catch(() => "")).includes("All matches");
+      if (familyMode) ok(`${label}, in family mode: no figure opens another child's balls`, taps === 0, String(taps));
+      else ok(`${label}: the scorecard's figures open their balls (${taps})`, taps > 0, String(taps));
       const c = await chartsOf(s.page);
       ok(`${label}: ${want.length} charts, ${want.join(", ")} (${analysis})`, c.analysis === analysis && c.charts.join() === want.join(), JSON.stringify(c));
       ok(`...the worm with its ${inn1.fow.length + inn2.fow.length} wicket pins, and a bar for each of the second innings' ${stands2} stands`,
@@ -1489,6 +1511,66 @@ try {
        && await tid(P5, "mc-back-to-scorecard").count() === 0);
     ok("no console errors (scorecard to ball)", ph5.errors.length === 0, ph5.errors.join(" | "));
     await ph5.ctx.close();
+  }
+
+  group("EXPERIENCE_PASS Q9: a batter's runs and a bowler's figures open the Commentary at his balls alone; back is the Scorecard as it was");
+  {
+    const ph9 = await open({ viewport: PHONE });
+    await signIn(ph9.page, /sarah@example\.invalid|Director/);
+    ok("the fixture opens on a phone", await openMatch(ph9.page, fx.live));
+    const P9 = ph9.page;
+    // §3.3: the match is decided by now (above): the result view's board says the result itself, so the
+    // header keeps the sentence, once; and on the Scorecard it is the header's, once.
+    const onSummary = await sentenceAt(P9);
+    ok("the result view: the sentence once, in the header", await tid(P9, "mc-result-view").count() === 1 && onSummary.n === 1 && !onSummary.inPanel,
+       JSON.stringify(onSummary));
+    await pickTab(P9, "scorecard");
+    const onCard = await sentenceAt(P9);
+    ok("...and on the Scorecard once, in the header", onCard.n === 1 && !onCard.inPanel, JSON.stringify(onCard));
+    await tid(P9, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
+    await P9.waitForTimeout(300);
+    const keysShown = () => P9.locator('[data-testid="mc-line"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-key")));
+    // The first innings' top scorer: the balls he faced (never a wide) and the one that got him out.
+    const bat = [...inn1.batsmen].filter((b) => b.balls > 0).sort((a, b) => b.runs - a.runs)[0];
+    const outBall = inn1.ballLog.find((b) => b.type === "W" && !b.freeHitSaved && (b.dismissed ?? b.strikerId) === bat.id);
+    const wantBat = new Set(inn1.ballLog.filter((b) => b.strikerId === bat.id && b.type !== "Wd").map((b) => `e:${b.id}`).concat(outBall ? [`e:${outBall.id}`] : []));
+    const batRow = tid(P9, "mc-bat-row").filter({ hasText: bat.name }).first();
+    const batBtn = batRow.locator('[data-testid="mc-bat-balls"]');
+    const bb = await batBtn.boundingBox().catch(() => null);
+    ok(`${bat.name}'s runs are a button, 44px tall and at least 44 wide`, (bb?.height ?? 0) >= 44 && (bb?.width ?? 0) >= 44, JSON.stringify(bb));
+    ok("...named for what it opens", /^Balls faced by /.test(await batBtn.getAttribute("aria-label").catch(() => "") ?? ""));
+    await batBtn.click({ timeout: 4000 }).catch(() => {});
+    await tid(P9, "mc-drill").waitFor({ timeout: 6000 }).catch(() => {});
+    await P9.waitForTimeout(300);
+    const batKeys = await keysShown();
+    ok(`the Commentary lists exactly his ${wantBat.size} balls, by event id`, batKeys.length === wantBat.size && batKeys.every((k) => wantBat.has(k)),
+       `${batKeys.length} shown, ${wantBat.size} wanted`);
+    const batWhat = await tid(P9, "mc-drill-what").innerText().catch(() => "");
+    ok(`...with what they are and their count: "${batWhat}"`, batWhat.startsWith(`${bat.name} batting`) && batWhat.includes(`${bat.runs} run`)
+       && batWhat.includes(`${batKeys.length} ball`), batWhat);
+    const backBtn = tid(P9, "mc-back-to-scorecard");
+    ok("...and a way back to the scorecard, 44px", ((await backBtn.boundingBox().catch(() => null))?.height ?? 0) >= 44
+       && /Back to the scorecard/.test(await backBtn.innerText().catch(() => "")));
+    await backBtn.click({ timeout: 4000 }).catch(() => {});
+    await tid(P9, "mc-scorecard").waitFor({ timeout: 4000 }).catch(() => {});
+    await P9.waitForTimeout(300);
+    ok("back: the Scorecard, on the first innings", await tid(P9, "mc-tab-scorecard").getAttribute("aria-selected") === "true"
+       && await tid(P9, "mc-innings-0").getAttribute("aria-pressed") === "true");
+    // The bowler who bowled most in the first innings: every delivery he bowled.
+    const bw = [...inn1.bowlers].sort((a, b) => b.balls - a.balls)[0];
+    const wantBowl = new Set(inn1.ballLog.filter((b) => b.bowlerId === bw.id).map((b) => `e:${b.id}`));
+    await tid(P9, "mc-bowl-row").filter({ hasText: bw.name }).first().locator('[data-testid="mc-bowl-balls"]').click({ timeout: 4000 }).catch(() => {});
+    await tid(P9, "mc-drill").waitFor({ timeout: 6000 }).catch(() => {});
+    await P9.waitForTimeout(300);
+    const bowlKeys = await keysShown();
+    ok(`${bw.name}'s figures: exactly the ${wantBowl.size} deliveries he bowled`, bowlKeys.length === wantBowl.size && bowlKeys.every((k) => wantBowl.has(k)),
+       `${bowlKeys.length} shown, ${wantBowl.size} wanted`);
+    ok("...headed as his bowling", (await tid(P9, "mc-drill-what").innerText().catch(() => "")).startsWith(`${bw.name} bowling`));
+    await tid(P9, "mc-drill-all").click({ timeout: 4000 }).catch(() => {});
+    await P9.waitForTimeout(300);
+    ok("\"Every ball\" lists the rest again", (await keysShown()).length > wantBowl.size);
+    ok("no console errors (figure to balls)", ph9.errors.length === 0, ph9.errors.join(" | "));
+    await ph9.ctx.close();
   }
 
   group("CRI-1.6: on a phone the scorecard's header stays at the top as its rows scroll; a scroll cue where the table is wider than the screen");

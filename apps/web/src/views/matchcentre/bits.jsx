@@ -1,5 +1,5 @@
 import { T } from "../../design/tokens.js";
-import { Icon } from "../../ui/icons.jsx";
+import { Icon } from "../../ui/iconCore.jsx";
 
 /**
  * A side's name, in full where there is room and by code where not
