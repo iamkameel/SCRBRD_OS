@@ -13127,6 +13127,27 @@ BEGIN
    WHERE key = 'drs_review';
   RETURN v_was;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A switch's platform default (feature_flag.enabled), as its logged door
+-- would set it; returns what it was, to put back.
+CREATE OR REPLACE FUNCTION _v156_flag(p_key text, p_on boolean) RETURNS boolean AS $$
+DECLARE v_was boolean;
+BEGIN
+  SELECT enabled INTO v_was FROM feature_flag WHERE key = p_key;
+  UPDATE feature_flag SET enabled = p_on, changed_by = '88888888-0000-0000-0000-000000000014', changed_at = now()
+   WHERE key = p_key;
+  RETURN v_was;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A school's plan for a switch (feature_grant): granted true or false, or
+-- NULL for no grant at all (the platform default stands).
+CREATE OR REPLACE FUNCTION _v156_grant(p_key text, p_school uuid, p_granted boolean) RETURNS void AS $$
+BEGIN
+  IF p_granted IS NULL THEN
+    DELETE FROM feature_grant WHERE key = p_key AND school_id = p_school;
+  ELSE
+    INSERT INTO feature_grant (key, school_id, granted, note) VALUES (p_key, p_school, p_granted, 'db/99 section 134')
+    ON CONFLICT (key, school_id) DO UPDATE SET granted = excluded.granted;
+  END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- Facts about rows, past RLS: the section asks the table, not the reader.
 CREATE OR REPLACE FUNCTION _v156_count(p_sql text) RETURNS integer AS $$
 DECLARE n integer;
@@ -43027,6 +43048,12 @@ $m130$;
   --   (officials)  the umpire named while Officials is on at Hilton; with it
   --                off, NULL, the score still served and the appointment
   --                still stored; named again once it is on
+  --   (officials-away) off at Westville only (not the fixture's school),
+  --                the umpire still named; off at Hilton as well, not
+  --   (grant)      Hilton's plan granted false: officials not named, and
+  --                the overlay served nothing; the grant gone, both back
+  --   (platform)   the platform default off and no grant: the same; a grant
+  --                true for Hilton brings each back
   --   (broadcast)  with Broadcast off at Hilton, no row (an unpublished
   --                fixture's shape), signed out and signed in, the
   --                publication still stored; off at Westville only (not the
@@ -43036,8 +43063,19 @@ $m130$;
   --                corrects it; Westville's administrator, who has DRS on,
   --                reads none of it, nor does a Hilton guardian; once Hilton
   --                has DRS on, both read it
+  --   (breadth)    while it is off, the writer's leg lets through who holds
+  --                scoring.correct (Hilton's director of sport reads the
+  --                row at the table) and nobody else (the 1XI coach, who
+  --                holds fixture.read alone, reads none)
+  --   (upsert)     while it is off, the API's statement, INSERT … ON
+  --                CONFLICT DO UPDATE on the existing row, corrects it and
+  --                reads it back as the same row; Westville still reads none
   --   (person)     DRS hidden from the scorer alone: his review is still
-  --                read by Westville's administrator
+  --                read by Westville's administrator; hidden from a Hilton
+  --                guardian alone, he still reads it at the table (the
+  --                person is NULL); hidden for Hilton, he does not
+  --   (on-off)     a review stored while DRS is on at Hilton is read by
+  --                Westville, and not once Hilton switches it off
   --   (body)       broadcast_state() is db/156's body with the broadcast
   --                block, a stable definer with its path pinned and EXECUTE
   --                to its owner and PUBLIC exactly; drs_review_shown() a
@@ -43051,12 +43089,21 @@ $m130$;
   --   the officials' CASE without feature_enabled('officials', …)        → (officials)
   --   the broadcast block held (its three lines deleted)                 → (broadcast)
   --   drs_review_shown_while_on dropped                                  → (drs)
+  -- And the cases Fable's red-team asked for (14 Nov 2026), each red with
+  -- db/156 undone (with _assert made to warn, so every one was seen):
+  -- (officials-away), (grant), (platform), (breadth), (upsert), (person),
+  -- (on-off); and red at their own label when drs_review_shown() asked
+  -- the reader as the person → (person), or lost its scoring.correct leg
+  -- → (drs) (the scorer's own INSERT … RETURNING is refused).
   DECLARE
     M uuid;
     s record;
     v_id uuid;
+    v_id2 uuid;
     v_seq int;
+    v_seq2 int;
     v_was boolean;
+    v_flag boolean;
     n int;
     u uuid;
   BEGIN
@@ -43076,6 +43123,53 @@ $m130$;
     PERFORM _v156_hide('officials', HIL, NULL, false);
     SELECT * INTO s FROM broadcast_state(M);
     PERFORM _assert(s.officials = 'Adult Umpire Sibiya', format('§134 (officials): with Officials on again the umpire reads %s', s.officials));
+
+    -- (officials-away)
+    PERFORM _v156_hide('officials', WES, NULL, true);
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.officials = 'Adult Umpire Sibiya',
+      format('§134 (officials-away): Officials off at Westville, the away school, unnamed Hilton''s umpire (%s)', s.officials));
+    PERFORM _v156_hide('officials', HIL, NULL, true);
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.match_id = M AND s.officials IS NULL,
+      format('§134 (officials-away): Officials off at both schools, the umpire reads %s', s.officials));
+    PERFORM _v156_hide('officials', HIL, NULL, false);
+    PERFORM _v156_hide('officials', WES, NULL, false);
+
+    -- (grant)
+    PERFORM _v156_grant('officials', HIL, false);
+    PERFORM _assert(NOT feature_enabled('officials', HIL, NULL), '§134 (grant): a grant false leaves Officials on for Hilton');
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.match_id = M AND s.officials IS NULL,
+      format('§134 (grant): with Hilton''s Officials granted false the umpire reads %s', s.officials));
+    PERFORM _v156_grant('officials', HIL, NULL);
+    PERFORM _v156_grant('broadcast', HIL, false);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM broadcast_state(M)), '§134 (grant): with Hilton''s Broadcast granted false the overlay has a row');
+    PERFORM _v156_grant('broadcast', HIL, NULL);
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.match_id = M AND s.officials = 'Adult Umpire Sibiya',
+      '§134 (grant): with both grants gone the overlay and its umpire are not back');
+
+    -- (platform)
+    v_flag := _v156_flag('officials', false);
+    PERFORM _assert(NOT feature_enabled('officials', HIL, NULL), '§134 (platform): Officials reads as on for Hilton with the platform off and no grant');
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.match_id = M AND s.officials IS NULL,
+      format('§134 (platform): with Officials off for the platform and no grant the umpire reads %s', s.officials));
+    PERFORM _v156_grant('officials', HIL, true);
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.officials = 'Adult Umpire Sibiya',
+      format('§134 (platform): a grant true for Hilton does not bring its umpire back (%s)', s.officials));
+    PERFORM _v156_grant('officials', HIL, NULL);
+    PERFORM _v156_flag('officials', v_flag);
+    v_flag := _v156_flag('broadcast', false);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM broadcast_state(M)),
+      '§134 (platform): with Broadcast off for the platform and no grant the overlay has a row');
+    PERFORM _v156_grant('broadcast', HIL, true);
+    SELECT * INTO s FROM broadcast_state(M);
+    PERFORM _assert(s.match_id = M, '§134 (platform): a grant true for Hilton does not bring its overlay back');
+    PERFORM _v156_grant('broadcast', HIL, NULL);
+    PERFORM _v156_flag('broadcast', v_flag);
 
     -- (broadcast)
     PERFORM _v156_hide('broadcast', HIL, NULL, true);
@@ -43119,6 +43213,33 @@ $m130$;
     PERFORM _as(U_PARENT);
     SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
     PERFORM _assert(n = 0, format('§134 (drs): a Hilton guardian reads %s review(s) while DRS is off at Hilton', n));
+
+    -- (breadth)
+    PERFORM _as(U_SARAH);
+    PERFORM _assert(app_can('scoring.correct', HIL, '1XI', '00000000-0000-0000-0000-000000000000'::uuid, M),
+      '§134 (breadth): Hilton''s director of sport does not hold scoring.correct over the fixture: it proves nothing');
+    SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
+    PERFORM _assert(n = 1, format('§134 (breadth): Hilton''s director of sport, who may write it, reads %s review(s) at the table while DRS is off', n));
+    PERFORM _as(U_COACH);
+    PERFORM _assert(fixture_reach('fixture.read', M)
+                    AND NOT app_can('scoring.correct', HIL, '1XI', '00000000-0000-0000-0000-000000000000'::uuid, M),
+      '§134 (breadth): the 1XI coach does not reach the fixture, or holds scoring.correct: it proves nothing');
+    SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
+    PERFORM _assert(n = 0, format('§134 (breadth): the 1XI coach, fixture.read alone, reads %s review(s) while DRS is off at Hilton', n));
+
+    -- (upsert)
+    PERFORM _as(U_SCORER);
+    INSERT INTO drs_review (match_id, school_id, ball_seq, called_by, on_field, outcome, evidence_source, reviewed_by)
+    VALUES (M, match_school(M), v_seq, 'fielding', 'not_out', 'upheld', 'video_replay', U_SCORER)
+    ON CONFLICT (match_id, ball_seq) DO UPDATE
+      SET outcome = excluded.outcome, evidence_source = excluded.evidence_source, reviewed_by = excluded.reviewed_by
+    RETURNING id INTO v_id2;
+    PERFORM _assert(v_id2 = v_id, '§134 (upsert): the scorer''s second record of the ball did not read back as the same row while DRS is off');
+    PERFORM _assert(_v156_count(format('SELECT count(*)::int FROM drs_review WHERE match_id = %L AND outcome = ''upheld'' AND evidence_source = ''video_replay''', M)) = 1,
+      '§134 (upsert): the second record did not correct the one row');
+    PERFORM _as(U_WES_ADM);
+    SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
+    PERFORM _assert(n = 0, format('§134 (upsert): after the correction Westville''s administrator reads %s review(s) while DRS is off at Hilton', n));
     PERFORM _v156_hide('drs_review', HIL, NULL, false);
     PERFORM _as(U_WES_ADM);
     SELECT count(*) INTO n FROM drs_review WHERE match_id = M AND outcome = 'upheld';
@@ -43137,6 +43258,34 @@ $m130$;
     PERFORM _assert(n = 1, format('§134 (person): DRS hidden from the scorer alone hid his review from Westville (%s read)', n));
     PERFORM set_config('app.user_id', '', true);
     PERFORM _v156_hide('drs_review', HIL, U_SCORER, false);
+    PERFORM _v156_hide('drs_review', HIL, U_PARENT, true);
+    PERFORM _assert(NOT feature_enabled('drs_review', HIL, U_PARENT), '§134 (person): DRS is not hidden from the Hilton guardian');
+    PERFORM _as(U_PARENT);
+    SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
+    PERFORM _assert(n = 1, format('§134 (person): DRS hidden from a Hilton guardian alone hid the review from him at the table (%s read): the table asks no person', n));
+    PERFORM _v156_hide('drs_review', HIL, NULL, true);
+    SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
+    PERFORM _assert(n = 0, format('§134 (person): hidden for Hilton as well, the guardian reads %s review(s)', n));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v156_hide('drs_review', HIL, NULL, false);
+    PERFORM _v156_hide('drs_review', HIL, U_PARENT, false);
+
+    -- (on-off)
+    PERFORM _v149_ball(M, 'aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+                       'bbbbbbbb-0000-0000-0000-000000000001');
+    v_seq2 := _v156_count(format('SELECT max(seq)::int FROM ball_event WHERE match_id = %L AND kind = ''ball''', M));
+    PERFORM _assert(feature_enabled('drs_review', HIL, NULL) AND v_seq2 > v_seq, '§134 (on-off): DRS is not on at Hilton, or no second ball');
+    PERFORM _as(U_SCORER);
+    INSERT INTO drs_review (match_id, school_id, ball_seq, called_by, on_field, outcome, evidence_source, reviewed_by)
+    VALUES (M, match_school(M), v_seq2, 'batting', 'out', 'overturned', 'umpire_eye', U_SCORER);
+    PERFORM _as(U_WES_ADM);
+    SELECT count(*) INTO n FROM drs_review WHERE match_id = M AND ball_seq = v_seq2;
+    PERFORM _assert(n = 1, format('§134 (on-off): Westville''s administrator reads %s of the review stored while DRS was on', n));
+    PERFORM _v156_hide('drs_review', HIL, NULL, true);
+    SELECT count(*) INTO n FROM drs_review WHERE match_id = M AND ball_seq = v_seq2;
+    PERFORM _assert(n = 0, format('§134 (on-off): with Hilton switching DRS off, Westville''s administrator still reads %s review(s) stored while it was on', n));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v156_hide('drs_review', HIL, NULL, false);
     PERFORM _v156_drs_platform(v_was);
 
     -- (body)

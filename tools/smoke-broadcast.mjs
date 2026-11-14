@@ -290,6 +290,14 @@ try {
   ok("switched on again, the umpire is named",
      (await suppress("officials", registrar, { schoolId: HIL, hidden: false })).status === 200
        && (await overlay(m, head))?.officials === "Thandeka Mahlangu");
+  ok("Officials off at Westville, not the fixture's school, leaves Hilton's umpire named",
+     (await suppress("officials", wesAdmin, { schoolId: WES, hidden: true, reason: "Smoke: officials off" })).status === 200
+       && (await overlay(m, head))?.officials === "Thandeka Mahlangu");
+  ok("...and off at Hilton as well, he is not",
+     (await suppress("officials", registrar, { schoolId: HIL, hidden: true, reason: "Smoke: officials off" })).status === 200
+       && (await signedOut(m))[0]?.officials === null);
+  await suppress("officials", registrar, { schoolId: HIL, hidden: false });
+  await suppress("officials", wesAdmin, { schoolId: WES, hidden: false });
 
   // A fixture published before its school switched Broadcast off serves
   // nothing: the shape of an unpublished fixture. The publication is kept,
@@ -313,6 +321,42 @@ try {
        && (await signedOut(m)).length === 1);
   ok("switched on again everywhere, the overlay is back as it was",
      (await suppress("broadcast", wesAdmin, { schoolId: WES, hidden: false })).status === 200
+       && Number((await overlay(m, head))?.runs) === expectedRuns);
+
+  // The other two levels of the same switch (db/08's resolver): the school's
+  // plan (a grant false) and the platform's default (off, with no grant).
+  group("Off by the school's plan, or by the platform: hidden the same way (db/156)");
+  const platform = await login("platform@example.invalid");     // platform.feature.manage
+  const grant = (key, body) => api(`/api/admin/modules/${key}/grant`, { method: "POST", token: platform, body });
+  const setFlag = (key, body) => api(`/api/admin/features/${key}`, { method: "POST", token: platform, body });
+  const noGrant = (key) => q(`delete from feature_grant where key = $1 and school_id = $2`, [key, HIL]);
+  ok("Hilton's plan without Officials: the umpire is not named",
+     (await grant("officials", { schoolId: HIL, granted: false, note: "Smoke: not in the plan" })).status === 200
+       && (await signedOut(m))[0]?.officials === null);
+  await noGrant("officials");
+  ok("Hilton's plan without Broadcast: nothing on the air",
+     (await grant("broadcast", { schoolId: HIL, granted: false, note: "Smoke: not in the plan" })).status === 200
+       && (await signedOut(m)).length === 0);
+  await noGrant("broadcast");
+  ok("...and with both grants gone, the overlay and its umpire are back",
+     (await signedOut(m))[0]?.officials === "Thandeka Mahlangu");
+  ok("Officials off for the platform, no grant: the umpire is not named",
+     (await setFlag("officials", { enabled: false, reason: "Smoke: officials off" })).status === 200
+       && (await signedOut(m))[0]?.officials === null);
+  ok("...and a grant for Hilton names him again",
+     (await grant("officials", { schoolId: HIL, granted: true, note: "Smoke: in the plan" })).status === 200
+       && (await signedOut(m))[0]?.officials === "Thandeka Mahlangu");
+  await noGrant("officials");
+  await setFlag("officials", { enabled: true, reason: "Smoke: officials back on" });
+  ok("Broadcast off for the platform, no grant: nothing on the air",
+     (await setFlag("broadcast", { enabled: false, reason: "Smoke: broadcast off" })).status === 200
+       && (await signedOut(m)).length === 0);
+  ok("...and a grant for Hilton puts it back on",
+     (await grant("broadcast", { schoolId: HIL, granted: true, note: "Smoke: in the plan" })).status === 200
+       && (await signedOut(m)).length === 1);
+  await noGrant("broadcast");
+  ok("the platform switches Broadcast back on, and the overlay is as it was",
+     (await setFlag("broadcast", { enabled: true, reason: "Smoke: broadcast back on" })).status === 200
        && Number((await overlay(m, head))?.runs) === expectedRuns);
   await publish(m, head, { published: true, showOfficials: false });
   ok("...unless the school turns it off", (await overlay(m, head))?.officials === null);

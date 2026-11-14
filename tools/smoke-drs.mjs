@@ -243,21 +243,50 @@ try {
   ok("Hilton's scorer still records a review of the away fixture (db/154)", (await review(m2, scorer, A_REVIEW)).status === 200);
   ok("...and it is stored",
      (await q(`select count(*)::int c from drs_review where match_id = $1`, [m2]))[0].c === 1);
+  // The API's own statement on an existing row (INSERT … ON CONFLICT DO
+  // UPDATE … RETURNING) while DRS is off: the writer still reads it back.
+  ok("a second record of the same ball while it is off is accepted",
+     (await review(m2, scorer, { ...A_REVIEW, outcome: "upheld", evidenceSource: "video_replay" })).status === 200);
+  ok("...and corrects the one row",
+     (await q(`select count(*)::int c from drs_review where match_id = $1 and outcome = 'upheld' and evidence_source = 'video_replay'`, [m2]))[0].c === 1
+       && (await q(`select count(*)::int c from drs_review where match_id = $1`, [m2]))[0].c === 1);
   {
     const wes = await reviewsRaw(m2, wesAdmin);
     ok("Westville's reader, DRS on for him, is served none of it",
        wes.status === 200 && (wes.body?.rows ?? []).length === 0, JSON.stringify(wes.body));
   }
   ok("...and Hilton's own director of sport is refused (it is off for him)", (await reviewsRaw(m2, head)).status === 403);
-  ok("once Hilton switches DRS on, Westville's reader is served the review",
+  ok("once Hilton switches DRS on, Westville's reader is served the review, as corrected",
      (await suppress("drs_review", registrar, { schoolId: HIL, hidden: false })).status === 200
-       && (await reviews(m2, wesAdmin)).length === 1);
+       && (await reviews(m2, wesAdmin))[0]?.outcome === "upheld");
+  // The reader's side: DRS on at Hilton, hidden by Westville for itself.
+  ok("Westville hiding DRS for itself: its reader is refused (403)",
+     (await suppress("drs_review", wesAdmin, { schoolId: WES, hidden: true, reason: "Not for us." })).status === 200
+       && (await reviewsRaw(m2, wesAdmin)).status === 403);
+  // (Not Hilton's director: she is also a guardian at Westville, and off at
+  // any school a reader belongs to is off for her, by design.)
+  ok("...while Hilton's scorer is still served it",
+     (await reviews(m2, scorer)).length === 1);
+  await suppress("drs_review", wesAdmin, { schoolId: WES, hidden: false });
   ok("DRS hidden from the scorer alone: he is refused his own panel",
      (await suppress("drs_review", registrar, { schoolId: HIL, personId: su, hidden: true, reason: "Not for him." })).status === 200
        && (await reviewsRaw(m2, scorer)).status === 403);
   ok("...while his review is still served to Westville and to Hilton's director",
      (await reviews(m2, wesAdmin)).length === 1 && (await reviews(m2, head)).length === 1);
   await suppress("drs_review", registrar, { schoolId: HIL, personId: su, hidden: false });
+  // Stored while on, then switched off: hidden from the other school too.
+  await q(
+    `insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                             idempotency_key, client_seq, client_ts, kind, ball_type, value, dismissal, payload)
+     values ($1,$2,2,1,0,$3,'device-drs',$4,2,now(),'ball','W',0,'lbw','{}'::jsonb)`,
+    [m2, HIL, su, `drs156b-${Date.now()}-${Math.random()}`]);
+  ok("a review recorded while DRS is on at Hilton is served to Westville",
+     (await review(m2, scorer, { ...A_REVIEW, ballSeq: 2 })).status === 200
+       && (await reviews(m2, wesAdmin)).length === 2);
+  ok("...and not once Hilton switches it off",
+     (await suppress("drs_review", registrar, { schoolId: HIL, hidden: true, reason: "Not this term." })).status === 200
+       && (await reviewsRaw(m2, wesAdmin)).status === 200 && (await reviews(m2, wesAdmin)).length === 0);
+  await suppress("drs_review", registrar, { schoolId: HIL, hidden: false });
   await setFlag("drs_review", platform, { enabled: false, reason: "Cameras removed for winter." });
 
   group("An unknown feature is off, not on");
