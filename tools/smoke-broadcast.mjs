@@ -34,6 +34,7 @@ const PORT = port(8830);
 const BASE = `http://127.0.0.1:${PORT}`;
 const DB = ownerUrl();
 const HIL = "11111111-1111-1111-1111-111111111111";
+const WES = "22222222-2222-2222-2222-222222222222";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 240)}` : ""); } };
@@ -65,6 +66,23 @@ const publish = (matchId, token, body) =>
 const overlayRaw = async (matchId, token) =>
   await api(`/api/read/broadcast_state?matchId=${matchId}`, { token });
 const overlay = async (matchId, token) => (await overlayRaw(matchId, token)).body?.rows?.[0] ?? null;
+// A school's administrator hiding a switch for the whole school (db/08's
+// suppression door), and lifting it.
+const suppress = (key, token, body) =>
+  api(`/api/admin/modules/${key}/suppress`, { method: "POST", token, body });
+// What the overlay serves signed out: the database function the API reads,
+// called as the application with nobody signed in.
+const signedOut = async (/** @type {string} */ matchId) => {
+  const app = new pg.Client({ connectionString: appUrl() });
+  await app.connect();
+  try {
+    await app.query("begin");
+    await app.query("select set_config('app.user_id', '', true)");
+    const rows = (await app.query("select * from broadcast_state($1)", [matchId])).rows;
+    await app.query("rollback");
+    return rows;
+  } finally { await app.end(); }
+};
 
 const pool = new pg.Pool({ connectionString: DB });
 const q = async (t, p) => (await pool.query(t, p)).rows;
@@ -184,16 +202,9 @@ try {
   // Signed out: the database function the API reads, called as the
   // application with nobody signed in, gives the same row.
   {
-    const app = new pg.Client({ connectionString: appUrl() });
-    await app.connect();
-    try {
-      await app.query("begin");
-      await app.query("select set_config('app.user_id', '', true)");
-      const out = (await app.query("select * from broadcast_state($1)", [m])).rows[0];
-      await app.query("rollback");
-      ok("signed out reads the same row as the director of sport",
-         JSON.stringify(out) === JSON.stringify(st) && roles(out));
-    } finally { await app.end(); }
+    const out = (await signedOut(m))[0];
+    ok("signed out reads the same row as the director of sport",
+       JSON.stringify(out) === JSON.stringify(st) && roles(out));
   }
   ok("a coach signed in reads the same names: none", roles(await overlay(m, coach)));
 
@@ -258,6 +269,51 @@ try {
   await publish(m, head, { published: true });
   ok("an umpire is named in full even when the players are initialled",
      (await overlay(m, head))?.officials === "Thandeka Mahlangu");
+
+  // db/156 (Kameel, 13 Nov 2026: "Anything that's Switched Off for a user
+  // should be hidden for that user but still record data"). A school that
+  // switches Officials off after appointing has its umpires named nowhere,
+  // the signed-out overlay included; the appointment is kept.
+  group("Officials switched off at the school: not named on the overlay, still appointed (db/156)");
+  const registrar = await login("registrar@example.invalid");   // schooladmin: school.feature.manage at Hilton
+  const wesAdmin  = await login("registrar.wes@example.invalid"); // schooladmin at Westville
+  ok("the school administrator switches Officials off",
+     (await suppress("officials", registrar, { schoolId: HIL, hidden: true, reason: "Smoke: officials off" })).status === 200);
+  {
+    const st = await overlay(m, head);
+    ok("the umpire is not named, though the school still shows officials", st?.officials === null && roles(st), JSON.stringify(st));
+    ok("...nor signed out", (await signedOut(m))[0]?.officials === null);
+    ok("...and the score still goes out", Number(st?.runs) === expectedRuns);
+    ok("...while the appointment is still stored",
+       (await q(`select count(*)::int c from match_official where match_id = $1 and not withdrawn`, [m]))[0].c === 1);
+  }
+  ok("switched on again, the umpire is named",
+     (await suppress("officials", registrar, { schoolId: HIL, hidden: false })).status === 200
+       && (await overlay(m, head))?.officials === "Thandeka Mahlangu");
+
+  // A fixture published before its school switched Broadcast off serves
+  // nothing: the shape of an unpublished fixture. The publication is kept,
+  // so the overlay is back the moment Broadcast is.
+  group("Broadcast switched off at the school: nothing on the air, the publication kept (db/156)");
+  ok("the school administrator switches Broadcast off",
+     (await suppress("broadcast", registrar, { schoolId: HIL, hidden: true, reason: "Smoke: broadcast off" })).status === 200);
+  ok("signed out, the overlay has no state", (await signedOut(m)).length === 0);
+  {
+    const wes = await overlayRaw(m, wesAdmin);
+    ok("a Westville reader, Broadcast on for him, gets no state for Hilton's fixture",
+       wes.status === 200 && (wes.body?.rows ?? []).length === 0, JSON.stringify(wes.body));
+  }
+  ok("Hilton's own director of sport is refused the read (it is off for him)",
+     (await overlayRaw(m, head)).status === 403);
+  ok("...while the publication is still stored",
+     (await q(`select published from match_broadcast where match_id = $1`, [m]))[0]?.published === true);
+  ok("Broadcast off at Westville, not the fixture's school, leaves Hilton's overlay on the air",
+     (await suppress("broadcast", registrar, { schoolId: HIL, hidden: false })).status === 200
+       && (await suppress("broadcast", wesAdmin, { schoolId: WES, hidden: true, reason: "Smoke: broadcast off" })).status === 200
+       && (await signedOut(m)).length === 1);
+  ok("switched on again everywhere, the overlay is back as it was",
+     (await suppress("broadcast", wesAdmin, { schoolId: WES, hidden: false })).status === 200
+       && Number((await overlay(m, head))?.runs) === expectedRuns);
   await publish(m, head, { published: true, showOfficials: false });
   ok("...unless the school turns it off", (await overlay(m, head))?.officials === null);
 

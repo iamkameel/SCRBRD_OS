@@ -33,9 +33,10 @@ const PORT = port(8829);
 const BASE = `http://127.0.0.1:${PORT}`;
 const DB = ownerUrl();
 const HIL = "11111111-1111-1111-1111-111111111111";
+const WES = "22222222-2222-2222-2222-222222222222";
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) pass++; else { fail++; console.log("  ✗", n); } };
+const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 240)}` : ""); } };
 const group = (t) => console.log("\n" + t);
 
 const server = spawn(process.execPath, ["services/api/server.mjs"], {
@@ -70,6 +71,10 @@ const reviews = async (matchId, token) =>
   (await reviewsRaw(matchId, token)).body?.rows || [];
 const flags = async (token) =>
   (await api("/api/read/feature_flags", { token })).body?.rows || [];
+// A school's administrator hiding a switch, for the school or for one
+// person (personId), and lifting it.
+const suppress = (key, token, body) =>
+  api(`/api/admin/modules/${key}/suppress`, { method: "POST", token, body });
 
 const pool = new pg.Pool({ connectionString: DB });
 const q = async (t, p) => (await pool.query(t, p)).rows;
@@ -211,6 +216,48 @@ try {
      (await setFlag("drs_review", platform, { enabled: true, reason: "Cameras back." })).status === 200
        && (await reviews(m, head)).length === 1
        && (await reviews(m, head))[0]?.outcome === "upheld");
+  await setFlag("drs_review", platform, { enabled: false, reason: "Cameras removed for winter." });
+
+  // db/156. DRS on for the platform, so for both schools, and then hidden by
+  // Hilton for itself. A review Hilton's scorer records meanwhile is stored
+  // (db/154) and served to nobody: not to Hilton, for whom it is off, and
+  // not to Westville's reader, for whom it is on, because it is off for the
+  // review's own school. Once Hilton switches it on, Westville reads it. A
+  // scorer from whom DRS is hidden alone still has his review read by others.
+  group("A review stored while its own school has DRS off is not served to the other school (db/156)");
+  const registrar = await login("registrar@example.invalid");     // schooladmin at Hilton
+  const wesAdmin  = await login("registrar.wes@example.invalid"); // schooladmin at Westville
+  const m2 = (await q(
+    `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, format, overs, status)
+     values ($1,'1XI',$2,'1XI','Westville Boys'' High', now() - interval '1 day','T20',20,'complete') returning id`,
+    [HIL, WES]))[0].id;
+  await q(
+    `insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                             idempotency_key, client_seq, client_ts, kind, ball_type, value, dismissal, payload)
+     values ($1,$2,1,1,0,$3,'device-drs',$4,1,now(),'ball','W',0,'lbw','{}'::jsonb)`,
+    [m2, HIL, su, `drs156-${Date.now()}-${Math.random()}`]);
+  ok("the platform administrator switches DRS on",
+     (await setFlag("drs_review", platform, { enabled: true, reason: "Ball-tracking at both grounds for the derby." })).status === 200);
+  ok("Hilton's administrator hides it for Hilton",
+     (await suppress("drs_review", registrar, { schoolId: HIL, hidden: true, reason: "Not this term." })).status === 200);
+  ok("Hilton's scorer still records a review of the away fixture (db/154)", (await review(m2, scorer, A_REVIEW)).status === 200);
+  ok("...and it is stored",
+     (await q(`select count(*)::int c from drs_review where match_id = $1`, [m2]))[0].c === 1);
+  {
+    const wes = await reviewsRaw(m2, wesAdmin);
+    ok("Westville's reader, DRS on for him, is served none of it",
+       wes.status === 200 && (wes.body?.rows ?? []).length === 0, JSON.stringify(wes.body));
+  }
+  ok("...and Hilton's own director of sport is refused (it is off for him)", (await reviewsRaw(m2, head)).status === 403);
+  ok("once Hilton switches DRS on, Westville's reader is served the review",
+     (await suppress("drs_review", registrar, { schoolId: HIL, hidden: false })).status === 200
+       && (await reviews(m2, wesAdmin)).length === 1);
+  ok("DRS hidden from the scorer alone: he is refused his own panel",
+     (await suppress("drs_review", registrar, { schoolId: HIL, personId: su, hidden: true, reason: "Not for him." })).status === 200
+       && (await reviewsRaw(m2, scorer)).status === 403);
+  ok("...while his review is still served to Westville and to Hilton's director",
+     (await reviews(m2, wesAdmin)).length === 1 && (await reviews(m2, head)).length === 1);
+  await suppress("drs_review", registrar, { schoolId: HIL, personId: su, hidden: false });
   await setFlag("drs_review", platform, { enabled: false, reason: "Cameras removed for winter." });
 
   group("An unknown feature is off, not on");
