@@ -533,6 +533,10 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // Q18 and Q19: Share, and the public ground display for a fixture its home school has published.
   const published = usePublished(match, signedIn() && !log.demo);
   const shareUrl = published?.any ? `${window.location.origin}/live/${match.id}` : route ? window.location.origin + window.location.pathname : null;
+  // What leaves the page is the public page's sentence: an organiser's reason is free text, the signed-in
+  // reader's alone (the public read words the result with reasons: false), so it is never shared.
+  const why = server?.decision?.reason ? `: ${String(server.decision.reason).trim()}` : null;
+  const shareText = why && status.text.endsWith(why) ? status.text.slice(0, -why.length) : status.text;
 
   // A rain delay or interruption (SCRBRD-100 item 1): the one signal the log
   // actually carries, off the innings the board is showing.
@@ -634,7 +638,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
           Q19: the ground display only where the server serves it. Never on a demonstration fixture. */}
       {!log.demo && (shareUrl || published?.home) && (
         <div style={{ marginBottom: T.space.md }}>
-          <PageLinks share={shareUrl ? { url: shareUrl, title: `${sides.home.full} v ${sides.away.full}`, text: status.text } : null}
+          <PageLinks share={shareUrl ? { url: shareUrl, title: `${sides.home.full} v ${sides.away.full}`, text: shareText } : null}
             display={published?.home ? `/display/${match.id}` : null}/>
         </div>
       )}
