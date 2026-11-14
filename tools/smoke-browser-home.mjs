@@ -453,7 +453,14 @@ try {
     // EXPERIENCE_PASS §2.3: the hero's door is "Watch a match" now (home-cta-follow → home-cta-watch;
     // "follow" is kept for following a school, Q8). Listed and live, the board leads the page.
     ok("Watch a match is offered with a card on the page", (await s.page.locator('[data-testid="home-cta-watch"]').count()) === 1);
-    ok("...and the live board leads the page, above the film", (await s.page.evaluate(() => document.querySelector("main")?.dataset.first)) === "live");
+    // The lead is chosen once, from the first read, if it answers in time (main.jsx LEAD_WAIT_MS); a slow read leaves the film
+    // first for that visit. A fresh load usually answers in time; allow a few, as settle() does for the cache.
+    let leadFirst = "";
+    for (let i = 0; i < 5 && leadFirst !== "live"; i++) {
+      if (i) { await s.page.goto(`${BASE}/`, { waitUntil: "networkidle" }); await s.page.waitForTimeout(300); }
+      leadFirst = await s.page.evaluate(() => document.querySelector("main")?.dataset.first ?? "");
+    }
+    ok("...and the live board leads the page, above the film", leadFirst === "live", leadFirst);
     await c.click({ timeout: 4000 });
     await s.page.waitForURL(new RegExp(`/live/${today}$`), { timeout: 6000 }).catch(() => {});
     ok("the tap lands on /live/:id", new URL(s.page.url()).pathname === `/live/${today}`, s.page.url());

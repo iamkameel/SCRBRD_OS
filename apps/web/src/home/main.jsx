@@ -84,7 +84,7 @@ function useLive() {
 }
 
 /** How long the page waits for the first read before it settles on the film. */
-const LEAD_WAIT_MS = 400;
+const LEAD_WAIT_MS = 600;
 
 /**
  * The first screen, chosen ONCE per visit (EXPERIENCE_PASS §2.3, Q6). From the
