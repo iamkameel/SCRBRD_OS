@@ -148,5 +148,6 @@
   "152_ball_log_read_per_match.sql",
   "153_ground_screen_sides.sql",
   "154_switched_off_records.sql",
-  "155_public_name_surfaces.sql"
+  "155_public_name_surfaces.sql",
+  "156_switched_off_public_reads.sql"
 ]
