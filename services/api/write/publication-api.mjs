@@ -44,20 +44,24 @@ import { nameFor } from "../public/redact.mjs";
  * question through public_name_facts() for the side's team, published as the
  * side is. Each through nameFor(), redact.mjs's: publicName() and nothing else.
  */
+// The surface (db/155): the one the public page names for, live or card by
+// the fixture's status, so the count is the page's; none while the
+// per-surface rule is switched off, which is the count before db/155.
 const NAMES_SQL = `
   with m as (
     select id, case when $2 = 'home' then school_id else away_school_id end as school,
-           case when $2 = 'home' then team_code else away_team_code end as team
+           case when $2 = 'home' then team_code else away_team_code end as team,
+           public_name_surface(id) as surface
       from match where id = $1),
   logged as (
-    select x.player_id, x.school_published, x.facts, x.full_name, x.surname, x.known_as, x.served_on
-      from public_match_people($1) x
-      join player p on p.id = x.player_id
-      join m on p.school_id = m.school),
+    select x.player_id, x.school_published, x.facts, x.full_name, x.surname, x.known_as, x.served_on, m.surface
+      from m
+      cross join lateral public_match_people($1, m.surface) x
+      join player p on p.id = x.player_id and p.school_id = m.school),
   sheet as (
     select p.id as player_id, fixture_side_published(m.id, $2) as school_published,
-           public_name_facts(p.id, m.team, sa_today()) as facts,
-           p.full_name, p.surname, p.known_as, to_char(sa_today(), 'YYYY-MM-DD') as served_on
+           public_name_facts(p.id, m.team, sa_today(), m.surface) as facts,
+           p.full_name, p.surname, p.known_as, to_char(sa_today(), 'YYYY-MM-DD') as served_on, m.surface
       from match_squad q
       join m on q.match_id = m.id
       join player p on p.id = q.player_id and p.school_id = m.school

@@ -178,6 +178,15 @@ group("§5.1 line 4 — his own standing no, from twelve; from eighteen, his rec
      only({ consents: [pNo({ givenOn: "2025-03-01" }), p({ adult: true, givenOn: "2026-09-01" })] }, ["card", "live"]));
   ok("his yes at eighteen needs a live self link (B2)",
      only({ consents: [p({ adult: true, giverLive: false })], ...BY_TERMS }, []));
+  // SF-2 (Fable, 14 Nov 2026): the database passes only the wordings that
+  // reach a surface, so his record on another wording arrives as ownAdult.
+  ok("from eighteen, his record on another wording (ownAdult) hands this surface to his records: his guardian's yes is not read",
+     at("card", { consents: [g()], ownAdult: true, ...BY_TERMS }) === "Batter"
+     && at("card", { consents: [g()], ...BY_TERMS }) === NAMED);
+  ok("...and his own yes on this surface names him there",
+     at("card", { consents: [gNo({ givenOn: "2026-10-01" }), p({ adult: true, surface: "card" })], ownAdult: true }) === NAMED);
+  ok("...and ownAdult counts only as an exact true",
+     at("card", { consents: [g()], ownAdult: /** @type {any} */ ("true") }) === NAMED);
   ok("a record of his dated after the day served has not begun",
      only({ consents: [g({ surface: "card" }), pNo({ givenOn: "2026-12-01" })] }, ["card"])
      && only({ consents: [g({ surface: "card" }), p({ adult: true, surface: "live", givenOn: "2026-12-01" })] }, ["card"]));

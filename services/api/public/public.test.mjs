@@ -395,6 +395,29 @@ ok("unpublished side: a position", nameFor(PEOPLE[4], ON) === null);
 ok("consented and published: named", nameFor(PEOPLE[0], ON) === "D Erasmus");
 ok("a known-as gives the initial, never the known-as", nameFor({ ...PEOPLE[3], facts: { ...PEOPLE[3].facts, namesOff: false } }, ON) === "T Offington");
 
+// PUBLIC_BY_TERMS slice 3 (db/155): the row's surface, from
+// public_name_surface(), picks the rule. None (the switch off) is the rule
+// before that design, whatever else the facts carry.
+{
+  // `any`: the last case hands nameFor() a surface PersonRow does not allow.
+  const yesOn = (/** @type {any} */ surface, extra = {}) => ({
+    ...PEOPLE[0], surface,
+    facts: { neverPublic: false, namesOff: false, byTerms: true,
+             consents: [{ by: "guardian", competent: true, givenOn: "2026-09-01", endedOn: null, surface: "card", giverLive: true, ...extra }] } });
+  ok("no surface: the old rule (a card-wording yes reads as the old wording's)", nameFor(yesOn(null), ON) === "D Erasmus");
+  ok("card: a card-wording yes names him", nameFor(yesOn("card"), ON) === "D Erasmus");
+  ok("live: a card-wording yes does not", nameFor(yesOn("live"), ON) === null);
+  ok("card: a yes whose giver is not live today does not (B2)", nameFor(yesOn("card", { giverLive: false }), ON) === null);
+  ok("live: byTerms from the facts never names him: the page passes no byTermsAllowed",
+     nameFor({ ...yesOn("live"), facts: { ...yesOn("live").facts, consents: [] } }, ON) === null);
+  // Fail closed: a surface the page does not serve hides the name, where the
+  // old rule (the same facts, no surface) would name him.
+  ok("a surface the page does not serve (board) hides the name", nameFor(yesOn("board"), ON) === null && nameFor(yesOn(null), ON) === "D Erasmus");
+  ok("card: the database's ownAdult reaches the rule: his own record elsewhere hands card to him (SF-2)",
+     nameFor({ ...yesOn("card"), facts: { ...yesOn("card").facts, ownAdult: true } }, ON) === null);
+  ok("...and so does one nobody serves", nameFor(yesOn("stream"), ON) === null && nameFor(yesOn(""), ON) === null);
+}
+
 // ═════════════════════════════════════════════════════════════════
 console.log("\n── The router, over a fake database ──");
 /**

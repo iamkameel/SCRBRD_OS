@@ -116,6 +116,9 @@ export function publicNameRoutes({ pool, secret, onChange }) {
                from player p where p.id = $1`, [id, NIL]);
           if (!p) return null;
           const me = principal.userId;
+          // This screen writes and reads the old single wording, the only one
+          // a family answers today (db/155: surface NULL); an answer to one
+          // surface's wording is not this screen's to show (slice 6's is).
           // His own live, verified link to this child — a guardian's, or the
           // pupil's own — in my_children's terms. Through it, his latest act.
           const [link] = await q(
@@ -139,6 +142,7 @@ export function publicNameRoutes({ pool, secret, onChange }) {
           if (link) {
             const [r] = await q(
               `select * from public_name_consent where player_id = $1 and giver_link_id = $2
+                  and surface is null
                 order by seq desc limit 1`, [id, link.id]);
             mine = { as: link.role === "selfaccess" ? "pupil" : "guardian", ...answer(r, me, me) };
           }
@@ -152,6 +156,7 @@ export function publicNameRoutes({ pool, secret, onChange }) {
                  join role_assignment a on a.id = s.assignment_id and a.role = 'guardian' and a.active
                  join app_user u on u.id = a.person_id
                  left join public_name_consent c on c.giver_link_id = s.id and c.player_id = s.player_id
+                                                and c.surface is null
                 where s.player_id = $1
                   and (a.valid_from  is null or a.valid_from  <= sa_today())
                   and (a.valid_until is null or a.valid_until >  sa_today())

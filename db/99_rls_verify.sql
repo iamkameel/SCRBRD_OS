@@ -12578,6 +12578,510 @@ BEGIN
   RETURN n;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/154 (section 132) ─────────────────────────────────────────────
+-- ┌── db/155 (section 133) ─────────────────────────────────────────────
+-- Public by terms, slice 3: surfaces and the no (PUBLIC_BY_TERMS §11 row 3,
+-- §5.1, §6.1-6.2, §10). Hilton's U16B, eight boys invented here, each with
+-- the links the cases need, all made 400 days ago so a record backdated a
+-- few weeks still has its link behind it (db/122's test asks that the link
+-- was there when the record was given):
+--   TWO    14: MUM and DAD, both verified guardians; his own pupil account
+--   REV    14: REVMUM and REVDAD, whose links the office revokes after they
+--          answered (B2)
+--   OUT    14: OUTMUM and OUTDAD, whose links date out after they answered (B2)
+--   REP    14: his own pupil account, replaced after he said no (B2)
+--   ADULT  18 and a month, still at school: ADULTMUM; his own account
+--   YOUNG  11: his own account
+--   SILENT 14: nobody has answered
+--   TWOLINK 14: TLMUM, with two verified links to him on one assignment;
+--          the office revokes the one she answered through (SF-1)
+-- STRANGER is a guardian of nobody; PRINCIPAL is Hilton's. Today's live
+-- fixture, the U16B at home, published, its first innings_start carrying
+-- the eight, for the read the
+-- public page makes. Written as the owner, as the office's doors would.
+
+-- db/116's and db/59's bodies, verbatim (their folded md5s are the shipped
+-- ones, checked in section 133), under names of their own: the "before" the
+-- dark proof holds the live functions to. _v155_people_59() calls
+-- public_name_facts() as db/59 did, which is now db/155's; that one is held
+-- to _v155_facts_116() separately, so between them the read is db/59's over
+-- db/116's facts.
+CREATE OR REPLACE FUNCTION _v155_consent_set_116(
+  p_player    uuid,
+  p_yes       boolean,
+  p_version   text,
+  p_guardian  uuid DEFAULT NULL,
+  p_form_name text DEFAULT NULL,
+  p_form_date date DEFAULT NULL
+) RETURNS TABLE (ok boolean, reason text) AS $$
+DECLARE
+  v_school uuid;
+  v_born   date;
+  v_by     text;
+  v_asg    uuid;
+  v_link   uuid;
+  v_today  date := sa_today();
+  v_open   public_name_consent%ROWTYPE;
+BEGIN
+  IF app_user_id() IS NULL THEN RETURN QUERY SELECT false, 'not_signed_in'; RETURN; END IF;
+  p_form_name := nullif(btrim(p_form_name), '');
+  IF p_yes IS NULL THEN RETURN QUERY SELECT false, 'no_answer'; RETURN; END IF;
+  IF p_version IS NULL OR btrim(p_version) = '' THEN
+    RETURN QUERY SELECT false, 'no_consent_version'; RETURN;
+  END IF;
+  SELECT p.school_id, p.born INTO v_school, v_born FROM player p WHERE p.id = p_player;
+  IF v_school IS NULL THEN RETURN QUERY SELECT false, 'no_such_player'; RETURN; END IF;
+
+  IF p_guardian IS NULL THEN
+    -- The caller answers for himself. A form is the office's evidence, not his.
+    IF p_form_name IS NOT NULL OR p_form_date IS NOT NULL THEN
+      RETURN QUERY SELECT false, 'form_is_for_the_office'; RETURN;
+    END IF;
+    SELECT l.assignment_id, l.link_id INTO v_asg, v_link
+      FROM public_name_live_link(app_user_id(), p_player, 'guardian') l;
+    IF v_link IS NOT NULL THEN
+      -- From his eighteenth birthday a guardian may take his name off while
+      -- he is at school, and never put it on (option C).
+      IF v_born IS NOT NULL AND majority_on(v_born) <= v_today THEN
+        IF p_yes THEN RETURN QUERY SELECT false, 'adult_consents_for_himself'; RETURN; END IF;
+        IF NOT still_at_school(p_player) THEN
+          RETURN QUERY SELECT false, 'player_is_an_adult'; RETURN;
+        END IF;
+      END IF;
+      v_by := 'guardian';
+    ELSE
+      SELECT l.assignment_id, l.link_id INTO v_asg, v_link
+        FROM public_name_live_link(app_user_id(), p_player, 'selfaccess') l;
+      IF v_link IS NULL THEN RETURN QUERY SELECT false, 'not_permitted'; RETURN; END IF;
+      -- His "yes" counts from eighteen; his "no" from twelve (READERS Q7). An
+      -- unknown date of birth is neither.
+      IF p_yes AND (v_born IS NULL OR majority_on(v_born) > v_today) THEN
+        RETURN QUERY SELECT false, 'not_yet_eighteen'; RETURN;
+      END IF;
+      IF NOT p_yes AND (v_born IS NULL OR (v_born + interval '12 years')::date > v_today) THEN
+        RETURN QUERY SELECT false, 'not_yet_twelve'; RETURN;
+      END IF;
+      v_by := 'pupil';
+    END IF;
+  ELSE
+    IF NOT app_can('guardian.link.manage', v_school, '*'::text,
+                   '00000000-0000-0000-0000-000000000000'::uuid,
+                   '00000000-0000-0000-0000-000000000000'::uuid) THEN
+      RETURN QUERY SELECT false, 'not_permitted'; RETURN;
+    END IF;
+    SELECT l.assignment_id, l.link_id INTO v_asg, v_link
+      FROM public_name_live_link(p_guardian, p_player, 'guardian') l;
+    IF v_link IS NULL THEN RETURN QUERY SELECT false, 'no_verified_link'; RETURN; END IF;
+    -- The office records her answer by the same rule as her own (option C).
+    IF v_born IS NOT NULL AND majority_on(v_born) <= v_today THEN
+      IF p_yes THEN RETURN QUERY SELECT false, 'adult_consents_for_himself'; RETURN; END IF;
+      IF NOT still_at_school(p_player) THEN
+        RETURN QUERY SELECT false, 'player_is_an_adult'; RETURN;
+      END IF;
+    END IF;
+    IF (p_form_name IS NULL) <> (p_form_date IS NULL)
+       OR (p_yes AND p_form_name IS NULL) THEN
+      RETURN QUERY SELECT false, 'form_required'; RETURN;
+    END IF;
+    IF p_form_date > v_today THEN RETURN QUERY SELECT false, 'form_in_future'; RETURN; END IF;
+    v_by := 'guardian';
+  END IF;
+
+  SELECT * INTO v_open FROM public_name_consent c
+   WHERE c.player_id = p_player AND c.giver_link_id = v_link AND c.ended_on IS NULL
+   FOR UPDATE;
+
+  IF p_yes THEN
+    IF FOUND AND v_open.version = p_version THEN
+      RETURN QUERY SELECT false, 'already_given'; RETURN;
+    END IF;
+    IF FOUND THEN
+      UPDATE public_name_consent
+         SET ended_on = v_today, end_reason = 'superseded', ended_by = app_user_id(), ended_at = now()
+       WHERE id = v_open.id;
+    END IF;
+    INSERT INTO public_name_consent
+      (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on,
+       form_name, form_date, recorded_by)
+    VALUES (p_player, v_by, v_asg, v_link, p_version, v_today,
+            p_form_name, p_form_date, app_user_id());
+  ELSIF FOUND THEN
+    UPDATE public_name_consent
+       SET ended_on = v_today, end_reason = 'withdrawn', ended_by = app_user_id(), ended_at = now()
+     WHERE id = v_open.id;
+  ELSE
+    INSERT INTO public_name_consent
+      (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, ended_on,
+       end_reason, form_name, form_date, recorded_by, ended_by, ended_at)
+    VALUES (p_player, v_by, v_asg, v_link, p_version, v_today, v_today,
+            'refused', p_form_name, p_form_date, app_user_id(), app_user_id(), now());
+  END IF;
+
+  RETURN QUERY SELECT true, NULL::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _v155_facts_116(p_player uuid, p_side text DEFAULT NULL,
+                                             p_on date DEFAULT sa_today())
+RETURNS jsonb AS $$
+  SELECT jsonb_build_object(
+    'consents', coalesce((
+      SELECT jsonb_agg(jsonb_build_object(
+               'by',        x.given_by,
+               'competent', x.competent,
+               'givenOn',   to_char(x.given_on, 'YYYY-MM-DD'),
+               'endedOn',   to_char(x.ended_on, 'YYYY-MM-DD'))
+             ORDER BY x.given_on, x.seq)
+        FROM (
+          SELECT DISTINCT ON (c.giver_link_id)
+                 c.seq, c.given_by, c.given_on, c.ended_on,
+                 coalesce(
+                   g.verification_state = 'verified'
+                   AND g.valid_from <= c.given_on
+                   AND (g.valid_until IS NULL OR g.valid_until > c.given_on)
+                   AND g.verified_at IS NOT NULL
+                   AND (g.verified_at AT TIME ZONE 'Africa/Johannesburg')::date <= c.given_on
+                   AND CASE c.given_by
+                         WHEN 'guardian' THEN a.role = 'guardian' AND g.relationship IS DISTINCT FROM 'self'
+                                              AND (p.born IS NULL OR c.given_on < majority_on(p.born)
+                                                   OR (c.end_reason = 'refused' AND c.ended_on = c.given_on
+                                                       AND EXISTS (
+                                                         SELECT 1 FROM team_membership m
+                                                           JOIN school s ON s.id = m.school_id AND s.kind = 'school'
+                                                          WHERE m.player_id = p.id
+                                                            AND m.joined_on <= c.given_on
+                                                            AND (m.left_on IS NULL OR m.left_on > c.given_on))))
+                         -- His own: anything from eighteen; a refusal from
+                         -- twelve (READERS Q7).
+                         WHEN 'pupil'    THEN a.role = 'selfaccess' AND g.relationship = 'self'
+                                              AND p.born IS NOT NULL
+                                              AND (majority_on(p.born) <= c.given_on
+                                                   OR (c.end_reason = 'refused' AND c.ended_on = c.given_on
+                                                       AND (p.born + interval '12 years')::date <= c.given_on))
+                       END, false) AS competent
+            FROM public_name_consent c
+            JOIN assignment_subject g ON g.id = c.giver_link_id AND g.assignment_id = c.giver_assignment_id
+                                     AND g.player_id = c.player_id
+            JOIN role_assignment a ON a.id = c.giver_assignment_id
+           WHERE c.player_id = p.id
+           ORDER BY c.giver_link_id, c.seq DESC
+        ) x), '[]'::jsonb),
+    'neverPublic', EXISTS (
+      SELECT 1 FROM player_never_public m
+       WHERE m.player_id = p.id AND (m.ended_on IS NULL OR m.ended_on > p_on)),
+    'namesOff', EXISTS (
+      SELECT 1 FROM public_names_off o
+       WHERE o.school_id = p.school_id AND o.names_off
+         AND (o.age_group IN (birth_age_group(p.born, p_on), team_age_group(p.team_code), team_age_group(p_side))
+              OR p.born IS NULL)))
+    FROM player p
+   WHERE p.id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _v155_people_59(p_match uuid)
+RETURNS TABLE (
+  player_id uuid, school_published boolean, facts jsonb,
+  full_name text, surname text, known_as text, served_on text
+) AS $$
+  WITH refs AS (
+    SELECT b.striker_id AS pid FROM ball_event b WHERE b.match_id = p_match
+    UNION SELECT b.non_striker_id FROM ball_event b WHERE b.match_id = p_match
+    UNION SELECT b.bowler_id FROM ball_event b WHERE b.match_id = p_match
+    UNION SELECT b.dismissed_id FROM ball_event b WHERE b.match_id = p_match
+    UNION SELECT public_ref_uuid(b.payload ->> 'striker') FROM ball_event b WHERE b.match_id = p_match
+    UNION SELECT public_ref_uuid(b.payload ->> 'nonStriker') FROM ball_event b WHERE b.match_id = p_match
+    UNION SELECT public_ref_uuid(b.payload ->> 'bowler') FROM ball_event b WHERE b.match_id = p_match
+    UNION SELECT public_ref_uuid(b.payload ->> 'dismissed') FROM ball_event b WHERE b.match_id = p_match
+    UNION SELECT public_ref_uuid(b.payload ->> 'fielder') FROM ball_event b WHERE b.match_id = p_match
+    UNION SELECT public_ref_uuid(b.payload ->> 'batter') FROM ball_event b WHERE b.match_id = p_match
+    UNION SELECT public_ref_uuid(coalesce(e.member ->> 'id', e.member #>> '{}'))
+            FROM ball_event b
+            CROSS JOIN LATERAL jsonb_array_elements(public_json_array(b.payload -> 'squad')
+                                                    || public_json_array(b.payload -> 'bowlingSquad')) AS e(member)
+           WHERE b.match_id = p_match AND b.kind = 'innings_start'
+  )
+  SELECT p.id,
+         coalesce(x.published, false),
+         public_name_facts(p.id, x.team, sa_today())
+           || jsonb_build_object('namesOff', coalesce(x.names_off, true)),
+         p.full_name, p.surname, p.known_as,
+         to_char(sa_today(), 'YYYY-MM-DD')
+    FROM refs r
+    JOIN player p ON p.id = r.pid
+    JOIN match m ON m.id = p_match
+    CROSS JOIN LATERAL (
+      SELECT bool_and(fixture_side_published(m.id, s.side)) AS published,
+             bool_or((public_name_facts(p.id, s.team, sa_today()) ->> 'namesOff')::boolean) AS names_off,
+             min(s.team) AS team
+        FROM (VALUES ('home', m.school_id, m.team_code),
+                     ('away', m.away_school_id, m.away_team_code)) AS s(side, school, team)
+       WHERE s.school = p.school_id
+    ) x
+   WHERE public_fixture_served(m.id)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A folded body's md5, as db/155's guard reads it.
+CREATE OR REPLACE FUNCTION _v155_md5(p_fn text) RETURNS text AS $$
+  SELECT md5(regexp_replace(btrim(p.prosrc), '\s+', ' ', 'g')) FROM pg_proc p WHERE p.oid = to_regprocedure(p_fn)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One account and its verified link to a boy, the link begun and verified
+-- 400 days ago: a guardian
+-- ('parent'), or the boy's own ('self', a selfaccess assignment).
+CREATE OR REPLACE FUNCTION _v155_link(p_tag text, p_player uuid, p_self boolean) RETURNS uuid AS $$
+DECLARE HIL uuid := '11111111-1111-1111-1111-111111111111';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  v_u uuid; v_a uuid;
+BEGIN
+  INSERT INTO app_user (school_id, email, name, role, player_id)
+  VALUES (HIL, 'v155.' || p_tag || '@example.invalid', 'V155 ' || initcap(p_tag),
+          CASE WHEN p_self THEN 'player' ELSE 'guardian' END, CASE WHEN p_self THEN p_player END)
+  RETURNING id INTO v_u;
+  INSERT INTO role_assignment (person_id, role, school_id)
+  VALUES (v_u, CASE WHEN p_self THEN 'selfaccess' ELSE 'guardian' END, HIL)
+  RETURNING id INTO v_a;
+  IF p_player IS NOT NULL THEN
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from, created_at)
+    VALUES (v_a, p_player, CASE WHEN p_self THEN 'self' ELSE 'parent' END, 'verified', OFFICE, now() - interval '400 days',
+            'granted', 'popia-2026-01', now() - interval '400 days', OFFICE, sa_today() - 400, now() - interval '400 days');
+  END IF;
+  RETURN v_u;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE FUNCTION _v155_stage() RETURNS jsonb AS $$
+DECLARE HIL uuid := '11111111-1111-1111-1111-111111111111';
+  OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+  ids jsonb := '{}'; r record; i int := 0; v_p uuid; v_m uuid;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES ('two', 14), ('rev', 14), ('out', 14), ('rep', 14), ('adult', 18),
+                                 ('young', 11), ('silent', 14), ('twolink', 14)) AS v(k, age) LOOP
+    i := i + 1;
+    INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+    VALUES (HIL, 'U16B', 'Verify OneFiftyFive ' || initcap(r.k), 'OneFiftyFive ' || initcap(r.k), 1550 + i, 'batter',
+            (sa_today() - make_interval(years => r.age, days => 30))::date)
+    RETURNING id INTO v_p;
+    -- At school since he was born: the record's day is always a school day.
+    UPDATE team_membership SET joined_on = (sa_today() - make_interval(years => r.age, days => 30))::date WHERE player_id = v_p;
+    ids := ids || jsonb_build_object(r.k, v_p);
+  END LOOP;
+  ids := ids || jsonb_build_object(
+    'mum',      _v155_link('mum',      (ids->>'two')::uuid,   false),
+    'dad',      _v155_link('dad',      (ids->>'two')::uuid,   false),
+    'two_self', _v155_link('two.self', (ids->>'two')::uuid,   true),
+    'revmum',   _v155_link('revmum',   (ids->>'rev')::uuid,   false),
+    'revdad',   _v155_link('revdad',   (ids->>'rev')::uuid,   false),
+    'outmum',   _v155_link('outmum',   (ids->>'out')::uuid,   false),
+    'outdad',   _v155_link('outdad',   (ids->>'out')::uuid,   false),
+    'rep_self', _v155_link('rep.self', (ids->>'rep')::uuid,   true),
+    'adultmum', _v155_link('adultmum', (ids->>'adult')::uuid, false),
+    'adult_self', _v155_link('adult.self', (ids->>'adult')::uuid, true),
+    'young_self', _v155_link('young.self', (ids->>'young')::uuid, true),
+    'stranger', _v155_link('stranger', NULL, false),
+    'tlmum',    _v155_link('tlmum',    (ids->>'twolink')::uuid, false));
+  -- TLMUM's second verified link to TWOLINK, on the same assignment (dated
+  -- to end in a year, so the one-open-link index allows it), verified
+  -- earlier than her first, so the door answers through the first.
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from, valid_until, created_at)
+  SELECT a.id, (ids->>'twolink')::uuid, 'parent', 'verified', OFFICE, now() - interval '500 days',
+         'granted', 'popia-2026-01', now() - interval '500 days', OFFICE, sa_today() - 500, sa_today() + 365, now() - interval '500 days'
+    FROM role_assignment a WHERE a.person_id = (ids->>'tlmum')::uuid;
+  ids := ids || _v71_people('v155', ARRAY[ARRAY['principal', 'principal', HIL::text, '', '']]);
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U16B', 'Verify OneFiftyFive XI', now() - interval '1 hour', 'cricket', 'T20', 20, 'live')
+  RETURNING id INTO v_m;
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by)
+  VALUES (v_m, 'home', HIL, 'U16B', true, OFFICE);
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                          client_ts, kind, payload)
+  VALUES (v_m, HIL, 1, 1, 0, '88888888-0000-0000-0000-000000000006', 'v155', 'v155-' || v_m || '-1', 1, now(), 'innings_start',
+          jsonb_build_object('battingTeam', 'U16B', 'teamKey', 'U16B', 'bowlingTeam', 'Verify OneFiftyFive XI',
+            'squad', (SELECT jsonb_agg(jsonb_build_object('id', ids->>k) ORDER BY k)
+                        FROM unnest(ARRAY['two', 'rev', 'out', 'rep', 'adult', 'young', 'silent', 'twolink']) k)));
+  RETURN ids || jsonb_build_object('m', v_m);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One giver's records about a boy, wound back d days, as if given then.
+-- The days only: when each was recorded stays after his link was made (a
+-- role_assignment's created_at is stamped on insert and kept), as db/122's
+-- test of a live giver asks.
+CREATE OR REPLACE FUNCTION _v155_back(p_player uuid, p_person uuid, d int) RETURNS void AS $$
+  UPDATE public_name_consent c
+     SET given_on = given_on - d, ended_on = ended_on - d
+   WHERE c.player_id = p_player
+     AND c.giver_assignment_id IN (SELECT a.id FROM role_assignment a WHERE a.person_id = p_person)
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A giver's link to a boy, after the answer: revoked by the office on p_on
+-- (db/109's door sets the state and the end), or dated out on p_on.
+CREATE OR REPLACE FUNCTION _v155_unlink(p_player uuid, p_person uuid, p_revoke boolean, p_on date) RETURNS void AS $$
+  UPDATE assignment_subject s
+     SET verification_state = CASE WHEN p_revoke THEN 'revoked' ELSE s.verification_state END, valid_until = p_on
+   WHERE s.player_id = p_player
+     AND s.assignment_id IN (SELECT a.id FROM role_assignment a WHERE a.person_id = p_person)
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The link a giver answered through (her latest record's), revoked by the
+-- office on p_on; any other link of hers to the boy stays.
+CREATE OR REPLACE FUNCTION _v155_revoke_giving_link(p_player uuid, p_person uuid, p_on date) RETURNS void AS $$
+  UPDATE assignment_subject s SET verification_state = 'revoked', valid_until = p_on
+   WHERE s.id = (SELECT c.giver_link_id FROM public_name_consent c JOIN role_assignment a ON a.id = c.giver_assignment_id
+                  WHERE c.player_id = p_player AND a.person_id = p_person ORDER BY c.seq DESC LIMIT 1)
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/122's test of the person alone, as the owner asks it: whether she still
+-- holds a live link to the boy made before her latest answer.
+CREATE OR REPLACE FUNCTION _v155_person_live(p_player uuid, p_person uuid) RETURNS boolean AS $$
+  SELECT consent_giver_live(p_person, p_player, (SELECT max(c.recorded_at) FROM public_name_consent c
+                                                    JOIN role_assignment a ON a.id = c.giver_assignment_id
+                                                   WHERE c.player_id = p_player AND a.person_id = p_person))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A school's grant of the switch, as the platform's commercial door writes
+-- one (db/08): it must move nothing, because the switch is the platform's.
+CREATE OR REPLACE FUNCTION _v155_grant(p_on boolean) RETURNS void AS $$
+  INSERT INTO feature_grant (key, school_id, granted, note)
+  VALUES ('public_name_surfaces', '11111111-1111-1111-1111-111111111111', p_on, 'Verify 155: a school grant')
+  ON CONFLICT (key, school_id) DO UPDATE SET granted = EXCLUDED.granted
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A pupil's own link replaced: the old one revoked on p_on, a new one
+-- verified today in its place.
+CREATE OR REPLACE FUNCTION _v155_replace_self(p_player uuid, p_person uuid, p_on date) RETURNS void AS $$
+DECLARE v_a uuid := (SELECT a.id FROM role_assignment a WHERE a.person_id = p_person AND a.role = 'selfaccess');
+BEGIN
+  UPDATE assignment_subject SET verification_state = 'revoked', valid_until = p_on
+   WHERE player_id = p_player AND assignment_id = v_a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (v_a, p_player, 'self', 'verified', '88888888-0000-0000-0000-00000000000c', now(),
+          'granted', 'popia-2026-01', now(), '88888888-0000-0000-0000-00000000000c', sa_today());
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The records about a boy, as the owner reads them, ids and clocks left out:
+-- what a door wrote, for comparing two doors.
+CREATE OR REPLACE FUNCTION _v155_rows(p_player uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(concat_ws('|', c.given_by, c.giver_assignment_id, c.giver_link_id, c.version, c.given_on,
+                                       c.ended_on, c.end_reason, c.form_name, c.form_date, c.recorded_by, c.ended_by,
+                                       coalesce(c.surface, '(old)')), ';' ORDER BY c.seq), '')
+    FROM public_name_consent c WHERE c.player_id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/116's door and the live 6-argument one, each called once by p_actor
+-- and rolled back: NULL when both answer and write alike, else the two.
+CREATE OR REPLACE FUNCTION _v155_door_same(p_actor uuid, p_player uuid, p_yes boolean, p_version text,
+                                           p_guardian uuid, p_form_name text, p_form_date date) RETURNS text AS $$
+DECLARE a text; b text; ra text; rb text; v_was text := coalesce(current_setting('app.user_id', true), '');
+BEGIN
+  PERFORM set_config('app.user_id', coalesce(p_actor::text, ''), true);
+  BEGIN
+    SELECT row(s.ok, s.reason)::text INTO a
+      FROM _v155_consent_set_116(p_player, p_yes, p_version, p_guardian, p_form_name, p_form_date) s;
+    ra := _v155_rows(p_player);
+    RAISE EXCEPTION 'v155: undo' USING ERRCODE = 'P0V55';
+  EXCEPTION WHEN SQLSTATE 'P0V55' THEN NULL;
+  END;
+  BEGIN
+    SELECT row(s.ok, s.reason)::text INTO b
+      FROM public_name_consent_set(p_player, p_yes, p_version, p_guardian, p_form_name, p_form_date) s;
+    rb := _v155_rows(p_player);
+    RAISE EXCEPTION 'v155: undo' USING ERRCODE = 'P0V55';
+  EXCEPTION WHEN SQLSTATE 'P0V55' THEN NULL;
+  END;
+  PERFORM set_config('app.user_id', v_was, true);
+  RETURN CASE WHEN a IS NOT DISTINCT FROM b AND ra IS NOT DISTINCT FROM rb AND a IS NOT NULL THEN NULL
+              ELSE format('db/116: %s %s; live: %s %s', a, ra, b, rb) END;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- THE DARK PROOF, the facts: every player the verifier has made by now, on
+-- five sides and three days, in each form a caller uses (one, two and three
+-- arguments, and four with no surface), against db/116's body. Returns the
+-- number of calls compared and the first that differed.
+CREATE OR REPLACE FUNCTION _v155_dark_facts() RETURNS jsonb AS $$
+  WITH g AS (
+    SELECT p.id, s.side, d.day
+      FROM player p
+     CROSS JOIN LATERAL (VALUES (NULL::text), (p.team_code), ('1XI'), ('U15A'), ('U19D')) AS s(side)
+     CROSS JOIN (VALUES (sa_today()), (sa_today() - 200), (sa_today() + 400)) AS d(day)),
+  c AS (
+    SELECT g.*, _v155_facts_116(g.id, g.side, g.day) AS was,
+           public_name_facts(g.id, g.side, g.day) AS three,
+           public_name_facts(g.id, g.side, g.day, NULL::text) AS four
+      FROM g),
+  o AS (
+    SELECT p.id, _v155_facts_116(p.id) AS was1, public_name_facts(p.id) AS one,
+           _v155_facts_116(p.id, p.team_code) AS was2, public_name_facts(p.id, p.team_code) AS two
+      FROM player p)
+  SELECT jsonb_build_object(
+    'calls', (SELECT 2 * count(*) FROM c) + (SELECT 2 * count(*) FROM o),
+    'players', (SELECT count(*) FROM o),
+    'withConsents', (SELECT count(*) FROM o WHERE jsonb_array_length(o.was1 -> 'consents') > 0),
+    'differ', (SELECT count(*) FROM c WHERE c.three IS DISTINCT FROM c.was OR c.four IS DISTINCT FROM c.was)
+            + (SELECT count(*) FROM o WHERE o.one IS DISTINCT FROM o.was1 OR o.two IS DISTINCT FROM o.was2),
+    'first', (SELECT format('%s %s %s: was %s, now %s / %s', c.id, c.side, c.day, c.was, c.three, c.four) FROM c
+               WHERE c.three IS DISTINCT FROM c.was OR c.four IS DISTINCT FROM c.was LIMIT 1))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- ...and the public page's people: every match, row for row and in order,
+-- the 1-argument read and the 2-argument with no surface, against db/59's.
+CREATE OR REPLACE FUNCTION _v155_dark_people() RETURNS jsonb AS $$
+  WITH c AS (
+    SELECT m.id,
+           ARRAY(SELECT row_to_json(x)::text FROM _v155_people_59(m.id) x) AS was,
+           ARRAY(SELECT row_to_json(x)::text FROM public_match_people(m.id) x) AS one,
+           ARRAY(SELECT row_to_json(x)::text FROM public_match_people(m.id, NULL::text) x) AS two
+      FROM match m)
+  SELECT jsonb_build_object(
+    'matches', count(*), 'rows', coalesce(sum(cardinality(c.was)), 0),
+    'named', (SELECT count(*) FROM c, unnest(c.was) w WHERE w::jsonb #> '{facts,consents}' <> '[]'::jsonb),
+    'differ', count(*) FILTER (WHERE c.one IS DISTINCT FROM c.was OR c.two IS DISTINCT FROM c.was),
+    'first', min(c.id::text) FILTER (WHERE c.one IS DISTINCT FROM c.was OR c.two IS DISTINCT FROM c.was))
+    FROM c
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- public_name_surface() for every match, as the owner enumerates them.
+CREATE OR REPLACE FUNCTION _v155_surfaces() RETURNS text AS $$
+  SELECT coalesce(string_agg(DISTINCT m.status || ':' || coalesce(public_name_surface(m.id), '(none)'), ',' ORDER BY m.status || ':' || coalesce(public_name_surface(m.id), '(none)')), '')
+    FROM match m
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Must-never 3 and 1 while slice 4 is unbuilt: no player, on any surface,
+-- is public by terms. The number of answers that say he is.
+CREATE OR REPLACE FUNCTION _v155_by_terms() RETURNS jsonb AS $$
+  SELECT jsonb_build_object('calls', count(*),
+           'byTerms', count(*) FILTER (WHERE public_name_facts(p.id, NULL, sa_today(), s.s) -> 'byTerms' IS DISTINCT FROM 'false'::jsonb))
+    FROM player p CROSS JOIN unnest(ARRAY['card', 'live', 'board']) AS s(s)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The switch's row, as the owner reads it: enabled, locked, kind.
+CREATE OR REPLACE FUNCTION _v155_flag() RETURNS text AS $$
+  SELECT row(f.enabled, f.locked, f.kind)::text FROM feature_flag f WHERE f.key = 'public_name_surfaces'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The switch, as the platform's door would set it.
+CREATE OR REPLACE FUNCTION _v155_switch(p_on boolean) RETURNS void AS $$
+  UPDATE feature_flag SET enabled = p_on, changed_at = now() WHERE key = 'public_name_surfaces'
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A record written past the door, as the owner: the CHECK and the index
+-- are the last word. True when the row was refused.
+CREATE OR REPLACE FUNCTION _v155_insert_refused(p_player uuid, p_person uuid, p_surface text) RETURNS boolean AS $$
+BEGIN
+  INSERT INTO public_name_consent (player_id, given_by, giver_assignment_id, giver_link_id, version, given_on, recorded_by, surface)
+  SELECT p_player, 'guardian', s.assignment_id, s.id, 'public-names-2026-10', sa_today(), p_person, p_surface
+    FROM assignment_subject s JOIN role_assignment a ON a.id = s.assignment_id
+   WHERE s.player_id = p_player AND a.person_id = p_person
+   LIMIT 1;
+  RAISE EXCEPTION 'v155: undo' USING ERRCODE = 'P0V55';
+EXCEPTION
+  WHEN check_violation OR unique_violation THEN RETURN true;
+  WHEN SQLSTATE 'P0V55' THEN RETURN false;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- How many of a facts answer's records hold every key/value of p.
+CREATE OR REPLACE FUNCTION _v155_n(f jsonb, p jsonb) RETURNS int AS $$
+  SELECT count(*)::int FROM jsonb_array_elements(coalesce(f -> 'consents', '[]'::jsonb)) e WHERE e @> p
+$$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
+-- └── db/155 (section 133) ─────────────────────────────────────────────
 
 
 -- From here on we are the unprivileged application role, so every read below
@@ -41980,6 +42484,460 @@ $m130$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/154 (section 132) ──────────────────────────────────────────
+  -- ┌── db/155 (section 133) ─────────────────────────────────────────
+  -- ── 133. Public by terms, slice 3: each answer for the surface its wording named; a no on every surface its wording could reach and whatever happens to its giver's link since; and, switched off, every public read as it was (db/155; PUBLIC_BY_TERMS §11 row 3, §5.1, §6.1-6.2, §10) ──
+  -- Staged by _v155_stage(): seven Hilton U16B boys and their links, and a
+  -- live fixture of theirs; every read through scrbrd_app, every write
+  -- through the doors as the person who would make it, wound back by the
+  -- owner where a case needs a day before today.
+  -- Labels:
+  --   (dark-ref)    the "before" is the shipped code: _v155_facts_116(),
+  --                 _v155_consent_set_116() and _v155_people_59() fold to
+  --                 db/116's and db/59's md5s, the ones db/155's guard reads
+  --   (dark-door)   the 6-argument door answers and writes as db/116's did,
+  --                 for every refusal it has, a yes, a no with nothing open,
+  --                 a withdrawal, a supersession and an answer already given,
+  --                 by the guardian, the pupil and the office
+  --   (dark-facts)  with every record the verifier has made by now, the
+  --                 section's own included (refusals, withdrawals, revoked
+  --                 and dated-out links, a replaced pupil account, the
+  --                 eighteen-year-old's), public_name_facts() in its 1-, 2-,
+  --                 3- and 4-argument (no surface) forms answers what db/116's
+  --                 body answers, for every player, on five sides and three
+  --                 days
+  --   (dark-people) public_match_people(), and the 2-argument read with no
+  --                 surface, answer db/59's rows for every match, row for row
+  --                 and in order
+  --   (dark-switch) the switch is there, off and locked; public_name_surface()
+  --                 answers nothing for any fixture while it is off, so the
+  --                 API reads exactly as before
+  --   (B2)          a no counts by its giver's competence on the day it was
+  --                 given: REVMUM's (her link revoked since), OUTMUM's (dated
+  --                 out since) and REP's own (his account replaced since) are
+  --                 competent on every surface; only a yes needs its giver
+  --                 live today: REVDAD's and OUTDAD's are not, MUM's is.
+  --                 The old facts keep the old reading (revoked: not
+  --                 competent), because the old rule is what runs while dark
+  --   (B1)          a no to the old wording is on card, live and board: MUM's;
+  --                 a yes to one surface's wording reaches that surface
+  --                 alone: DAD's card yes, not live, not board; a no to one
+  --                 surface's wording reaches that surface alone, DAD's board
+  --                 no; and the old facts read a no to a surface's wording as
+  --                 a no (the old rule has one wording), never its yes
+  --   (two-links)   TLMUM answered yes through one of her two verified links to
+  --                 TWOLINK, and the office revoked that one: she still passes
+  --                 db/122's test of the person, and her yes is live on no
+  --                 surface (Fable's red-team, SF-1); the old facts do not
+  --                 count it either
+  --   (own-adult)   ADULT's own card yes at eighteen hands every surface to
+  --                 his records (ownAdult), live and board included, where his
+  --                 card wording never reaches (SF-2); before it nobody's, and
+  --                 TWO's and REP's own nos at fourteen never
+  --   (who)         a school's principal cannot turn the switch on, and a
+  --                 school's grant of it gives no fixture a surface
+  --   (door)        per wording: DAD's board no ends nothing of his old
+  --                 wording; his card yes is already given at the same
+  --                 version, supersedes only his card record at another, and
+  --                 his card no withdraws only that; one open record per
+  --                 giver per wording, the index's last word
+  --   (two)         two guardians: on card, MUM's old no and DAD's records,
+  --                 each giver's own, in the order given; on live, MUM's no
+  --                 and DAD's old yes only
+  --   (eighteen)    ADULT's own card yes is his, adult and live; ADULTMUM's
+  --                 yes is refused (adult_consents_for_himself) and her no,
+  --                 while he is at school, counts; TWO's own live yes is
+  --                 refused (not_yet_eighteen), his live no counts and is not
+  --                 an adult's; YOUNG's no is refused (not_yet_twelve)
+  --   (never-1)     SILENT: no record and no default, on any surface
+  --   (never-3)     nobody, on any surface, is public by terms: byTerms is
+  --                 false for every player (no default exists to outvote a no)
+  --   (never-6)     the shape: the old three keys; on a surface five, and each
+  --                 record by, competent, givenOn, endedOn, surface,
+  --                 giverLive (and adult, a pupil's); no date of birth, no
+  --                 id, no wording's version
+  --   (never-7)     no surface but card, live and board: the door refuses
+  --                 'stream', 'overlay' and '' (no_such_surface) and writes
+  --                 nothing; the facts raise; the owner's own insert is
+  --                 refused by the CHECK
+  --   (switch)      on: a fixture not over is live, a scheduled one included
+  --                 (SF-3), a completed one card, no such fixture none; the page's
+  --                 people for live carry the live facts; off again: none
+  --   (body)        the old signatures are the one body each; the new forms
+  --                 take no defaults; all seven definers, path pinned, the
+  --                 application's and nobody else's
+  --
+  -- Falsified (13 Nov 2026, on a migrated database inside the section's
+  -- transaction; each went red at its own label; unchanged it passed):
+  --   the 3-argument form given a surface (card)                     → (dark-facts)
+  --   the 1-argument public_match_people() given a surface (card)     → (dark-people)
+  --   the 6-argument door given a surface (card)                      → (dark-door)
+  --   the pupil's "yes before eighteen" refusal taken out             → (dark-door), through the 6-argument door
+  --   the switch not asked by public_name_surface()                   → (dark-switch)
+  --   the surface read's competence asking the link's state today     → (B2)
+  --   every giver live today                                          → (B2)
+  --   every wording read on every surface                             → (B1), DAD's board no on card
+  --   the old facts reading a surface's open yes as the old wording's → (B1)
+  --   the old facts dropping a no given to a surface's wording        → (B1)
+  --   the door's open record looked up across every wording           → (setup), DAD's card yes "already given"
+  --   the records in reverse order                                    → (two)
+  --   no record an adult's                                            → (eighteen)
+  --   byTerms true                                                    → (never-1)
+  --   a wording's version in the facts                                → (never-6)
+  --   the facts answering any surface                                 → (never-7)
+  --   the door taking any surface                                     → (never-7): the CHECK refuses the row
+  --   public_name_surface() answering card whatever the status        → (switch)
+  --   public_name_surface() executable by PUBLIC                      → (body)
+  -- And after Fable's red-team (14 Nov 2026), the three bodies as they were:
+  --   SF-1: a yes live whenever the person is, not its own link       → (two-links)
+  --   SF-2: no ownAdult; and ownAdult over this surface's wordings    → (own-adult)
+  --   SF-3: live only while the status is live                        → (switch)
+  DECLARE
+    y      jsonb := _v155_stage();
+    M      uuid := (y->>'m')::uuid;
+    TWO    uuid := (y->>'two')::uuid;
+    REV    uuid := (y->>'rev')::uuid;
+    OUTB   uuid := (y->>'out')::uuid;
+    REP    uuid := (y->>'rep')::uuid;
+    ADULT  uuid := (y->>'adult')::uuid;
+    YOUNG  uuid := (y->>'young')::uuid;
+    SILENT uuid := (y->>'silent')::uuid;
+    TWOLINK uuid := (y->>'twolink')::uuid;
+    MUM    uuid := (y->>'mum')::uuid;
+    DAD    uuid := (y->>'dad')::uuid;
+    OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
+    W      text := 'public-names-2026-10';
+    f      jsonb;
+    g      jsonb;
+    v      text;
+    n      int;
+    s      text;
+  BEGIN
+    -- (dark-ref)
+    PERFORM _assert(_v155_md5('_v155_facts_116(uuid,text,date)') = 'b0e0f3c15f891e2c862c310c4c7dbb45'
+                    AND _v155_md5('_v155_consent_set_116(uuid,boolean,text,uuid,text,date)') = 'b39a68ab76e425f51a76ba0881c560a7'
+                    AND _v155_md5('_v155_people_59(uuid)') = '7ff11b3fe1bf34d2bc802c01946a6871',
+      '§133 (dark-ref): the "before" bodies are not db/116''s and db/59''s as shipped');
+
+    -- The old wording's answers, through the 6-argument door, as each giver.
+    PERFORM _as(MUM);
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, false, W)), '§133 (setup): MUM''s no');
+    PERFORM _as(DAD);
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, true, W)), '§133 (setup): DAD''s yes');
+    PERFORM _as((y->>'revmum')::uuid);
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(REV, false, W)), '§133 (setup): REVMUM''s no');
+    PERFORM _as((y->>'revdad')::uuid);
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(REV, true, W)), '§133 (setup): REVDAD''s yes');
+    PERFORM _as((y->>'outmum')::uuid);
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(OUTB, false, W)), '§133 (setup): OUTMUM''s no');
+    PERFORM _as((y->>'outdad')::uuid);
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(OUTB, true, W)), '§133 (setup): OUTDAD''s yes');
+    PERFORM _as((y->>'rep_self')::uuid);
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(REP, false, W)), '§133 (setup): REP''s own no, from twelve');
+    PERFORM _as((y->>'adultmum')::uuid);
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(ADULT, false, W)), '§133 (setup): ADULTMUM''s no while he is at school');
+    PERFORM _as((y->>'tlmum')::uuid);
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWOLINK, true, W)), '§133 (setup): TLMUM''s yes');
+    PERFORM set_config('app.user_id', '', true);
+    -- Given weeks ago; then the links move.
+    PERFORM _v155_back(TWO, DAD, 30);
+    PERFORM _v155_back(TWO, MUM, 20);
+    PERFORM _v155_back(REV, (y->>'revmum')::uuid, 20);
+    PERFORM _v155_back(REV, (y->>'revdad')::uuid, 20);
+    PERFORM _v155_back(OUTB, (y->>'outmum')::uuid, 20);
+    PERFORM _v155_back(OUTB, (y->>'outdad')::uuid, 20);
+    PERFORM _v155_back(REP, (y->>'rep_self')::uuid, 20);
+    PERFORM _v155_back(ADULT, (y->>'adultmum')::uuid, 20);
+    PERFORM _v155_back(TWOLINK, (y->>'tlmum')::uuid, 20);
+    PERFORM _v155_revoke_giving_link(TWOLINK, (y->>'tlmum')::uuid, sa_today() - 10);
+    PERFORM _v155_unlink(REV, (y->>'revmum')::uuid, true, sa_today() - 10);
+    PERFORM _v155_unlink(REV, (y->>'revdad')::uuid, true, sa_today() - 10);
+    PERFORM _v155_unlink(OUTB, (y->>'outmum')::uuid, false, sa_today() - 5);
+    PERFORM _v155_unlink(OUTB, (y->>'outdad')::uuid, false, sa_today() - 5);
+    PERFORM _v155_replace_self(REP, (y->>'rep_self')::uuid, sa_today() - 10);
+
+    -- (dark-door): each refusal, then each write, by db/116's door and the live one.
+    FOR v IN
+      SELECT format('%s %s', t.k, _v155_door_same(t.actor, t.player, t.yes, t.version, t.guardian, t.form_name, t.form_date))
+        FROM (VALUES
+          ('signed out',          NULL::uuid,                 TWO,               true,  W,     NULL::uuid, NULL::text, NULL::date),
+          ('no answer',           MUM,                        TWO,               NULL,  W,     NULL, NULL, NULL),
+          ('no version',          MUM,                        TWO,               true,  ' ',   NULL, NULL, NULL),
+          ('no such player',      MUM,                        gen_random_uuid(), true,  W,     NULL, NULL, NULL),
+          ('form, not office',    MUM,                        TWO,               true,  W,     NULL, 'Form', sa_today()),
+          ('a stranger',          (y->>'stranger')::uuid,     TWO,               true,  W,     NULL, NULL, NULL),
+          ('pupil yes, 14',       (y->>'two_self')::uuid,     TWO,               true,  W,     NULL, NULL, NULL),
+          ('pupil no, 11',        (y->>'young_self')::uuid,   YOUNG,             false, W,     NULL, NULL, NULL),
+          ('pupil no, 14',        (y->>'two_self')::uuid,     TWO,               false, W,     NULL, NULL, NULL),
+          ('adult''s guardian yes', (y->>'adultmum')::uuid,   ADULT,             true,  W,     NULL, NULL, NULL),
+          ('adult''s guardian no again', (y->>'adultmum')::uuid, ADULT,          false, W,     NULL, NULL, NULL),
+          ('adult''s own yes',    (y->>'adult_self')::uuid,   ADULT,             true,  W,     NULL, NULL, NULL),
+          ('revoked giver',       (y->>'revmum')::uuid,       REV,               false, W,     NULL, NULL, NULL),
+          ('office, no form',     OFFICE,                     TWO,               true,  W,     MUM, NULL, NULL),
+          ('office, half a form', OFFICE,                     TWO,               false, W,     MUM, 'Form', NULL),
+          ('office, form ahead',  OFFICE,                     TWO,               true,  W,     MUM, 'Form', sa_today() + 1),
+          ('office, no link',     OFFICE,                     TWO,               true,  W,     (y->>'stranger')::uuid, 'Form', sa_today()),
+          ('not the office',      (y->>'stranger')::uuid,     TWO,               true,  W,     MUM, 'Form', sa_today()),
+          ('office, a yes',       OFFICE,                     TWO,               true,  W,     MUM, 'Form', sa_today()),
+          ('office, a no',        OFFICE,                     SILENT,            false, W,     MUM, NULL, NULL),
+          ('dad: already given',  DAD,                        TWO,               true,  W,     NULL, NULL, NULL),
+          ('dad: a new version',  DAD,                        TWO,               true,  'public-names-2026-09', NULL, NULL, NULL),
+          ('dad: withdrawn',      DAD,                        TWO,               false, W,     NULL, NULL, NULL),
+          ('mum: a yes after no', MUM,                        TWO,               true,  W,     NULL, NULL, NULL),
+          ('silent''s nobody',    MUM,                        SILENT,            true,  W,     NULL, NULL, NULL)
+        ) AS t(k, actor, player, yes, version, guardian, form_name, form_date)
+    LOOP
+      PERFORM _assert(v !~ ' db/116: ', format('§133 (dark-door): the 6-argument door is not db/116''s: %s', v));
+      n := coalesce(n, 0) + 1;
+    END LOOP;
+    PERFORM _assert(n = 25, format('§133 (dark-door): %s cases ran, not 25', n));
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (dark-facts)
+    g := _v155_dark_facts();
+    PERFORM _assert((g->>'differ')::int = 0, format('§133 (dark-facts): public_name_facts() is not db/116''s: %s', g));
+    PERFORM _assert((g->>'calls')::int >= 500 AND (g->>'withConsents')::int >= 5,
+      format('§133 (dark-facts): too few calls, or too few players with a record, to show anything: %s', g));
+    RAISE NOTICE '§133 (dark-facts): % calls over % players (% with a record): equal to db/116''s', g->>'calls', g->>'players', g->>'withConsents';
+    -- (dark-people)
+    g := _v155_dark_people();
+    PERFORM _assert((g->>'differ')::int = 0, format('§133 (dark-people): public_match_people() is not db/59''s: %s', g));
+    PERFORM _assert((g->>'matches')::int >= 5 AND (g->>'rows')::int >= 7 AND (g->>'named')::int >= 4,
+      format('§133 (dark-people): too few matches or rows to show anything: %s', g));
+    RAISE NOTICE '§133 (dark-people): % matches, % rows (% with a record): equal to db/59''s', g->>'matches', g->>'rows', g->>'named';
+    -- (dark-switch)
+    PERFORM _assert(_v155_flag() = '(f,t,feature)',
+      '§133 (dark-switch): the switch is not there, off and locked');
+    v := _v155_surfaces();
+    PERFORM _assert(v <> '' AND v !~ ':(card|live)', format('§133 (dark-switch): a surface is named while the switch is off: %s', v));
+    PERFORM _assert(public_name_surface(M) IS NULL AND public_name_surface(gen_random_uuid()) IS NULL,
+      '§133 (dark-switch): the live fixture has a surface while the switch is off');
+
+    -- (B2)
+    FOREACH s IN ARRAY ARRAY['card', 'live', 'board'] LOOP
+      f := public_name_facts(REV, NULL, sa_today(), s);
+      PERFORM _assert(_v155_n(f, '{"by": "guardian", "competent": true, "giverLive": false, "surface": null}') = 2
+                      AND _v155_n(f, '{"competent": false}') = 0,
+        format('§133 (B2): on %s, REVMUM''s no and REVDAD''s yes are not both competent on the day, and neither live: %s', s, f));
+      f := public_name_facts(OUTB, NULL, sa_today(), s);
+      PERFORM _assert(_v155_n(f, '{"by": "guardian", "competent": true, "giverLive": false}') = 2,
+        format('§133 (B2): on %s, OUTMUM''s no and OUTDAD''s yes are not competent on the day and dated out: %s', s, f));
+      f := public_name_facts(REP, NULL, sa_today(), s);
+      PERFORM _assert(_v155_n(f, '{"by": "pupil", "competent": true, "adult": false}') = 1 AND jsonb_array_length(f -> 'consents') = 1,
+        format('§133 (B2): on %s, REP''s own no is not competent after his account was replaced: %s', s, f));
+      f := public_name_facts(TWO, NULL, sa_today(), s);
+      PERFORM _assert(_v155_n(f, '{"by": "guardian", "competent": true, "giverLive": true}') = 2,
+        format('§133 (B2): on %s, MUM''s and DAD''s answers are not competent and live: %s', s, f));
+    END LOOP;
+    f := public_name_facts(REV, NULL, sa_today());
+    PERFORM _assert(_v155_n(f, '{"competent": false}') = 2 AND NOT (f -> 'consents' -> 0 ? 'giverLive'),
+      format('§133 (B2): the old facts no longer read a revoked giver as db/116 did: %s', f));
+    -- (two-links): TLMUM's yes went through the link the office revoked; she
+    -- still holds a live link to TWOLINK, so the person passes db/122's test.
+    -- The yes is not live through it: not on any surface (SF-1), and the old
+    -- facts do not count it either.
+    PERFORM _assert(_v155_person_live(TWOLINK, (y->>'tlmum')::uuid),
+      '§133 (two-links): TLMUM no longer holds a second live link, so the case shows nothing');
+    FOREACH s IN ARRAY ARRAY['card', 'live', 'board'] LOOP
+      f := public_name_facts(TWOLINK, NULL, sa_today(), s);
+      PERFORM _assert(_v155_n(f, '{"by": "guardian", "competent": true, "giverLive": false}') = 1
+                      AND jsonb_array_length(f -> 'consents') = 1,
+        format('§133 (two-links): on %s, TLMUM''s yes on her revoked link is live through her other link: %s', s, f));
+    END LOOP;
+    PERFORM _assert(_v155_n(public_name_facts(TWOLINK, NULL, sa_today()), '{"competent": false}') = 1,
+      '§133 (two-links): the old facts count TLMUM''s yes on her revoked link');
+    -- (own-adult), before he has a record of his own: nobody's own record yet.
+    FOREACH s IN ARRAY ARRAY['card', 'live', 'board'] LOOP
+      PERFORM _assert(public_name_facts(ADULT, NULL, sa_today(), s) -> 'ownAdult' = 'false'::jsonb
+                      AND public_name_facts(REP, NULL, sa_today(), s) -> 'ownAdult' = 'false'::jsonb,
+        format('§133 (own-adult): on %s, ADULT has no record of his own, or REP''s no at fourteen is an adult''s', s));
+    END LOOP;
+
+    -- Each wording's own answers, through the 7-argument door.
+    PERFORM _as(DAD);
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, true, W, NULL, NULL, NULL, 'card')), '§133 (setup): DAD''s card yes');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v155_back(TWO, DAD, 10);   -- his old yes is now -40, his card yes -10
+    PERFORM _as(DAD);
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, false, W, NULL, NULL, NULL, 'board')), '§133 (setup): DAD''s board no');
+
+    -- (B1)
+    FOREACH s IN ARRAY ARRAY['card', 'live', 'board'] LOOP
+      f := public_name_facts(TWO, NULL, sa_today(), s);
+      PERFORM _assert(_v155_n(f, jsonb_build_object('by', 'guardian', 'surface', NULL, 'givenOn', to_char(sa_today() - 20, 'YYYY-MM-DD'),
+                                                    'endedOn', to_char(sa_today() - 20, 'YYYY-MM-DD'), 'competent', true)) = 1,
+        format('§133 (B1): MUM''s no to the old wording is not on %s: %s', s, f));
+      PERFORM _assert(_v155_n(f, '{"surface": "card"}') = CASE s WHEN 'card' THEN 1 ELSE 0 END,
+        format('§133 (B1): DAD''s card yes reaches %s: %s', s, f));
+      PERFORM _assert(_v155_n(f, '{"surface": "board"}') = CASE s WHEN 'board' THEN 1 ELSE 0 END,
+        format('§133 (B1): DAD''s board no reaches %s: %s', s, f));
+      PERFORM _assert(_v155_n(f, '{"surface": "live"}') = 0, format('§133 (B1): a live record on %s with none given: %s', s, f));
+    END LOOP;
+    f := public_name_facts(TWO, NULL, sa_today());
+    PERFORM _assert(jsonb_array_length(f -> 'consents') = 3
+                    AND _v155_n(f, jsonb_build_object('by', 'guardian', 'givenOn', to_char(sa_today(), 'YYYY-MM-DD'),
+                                                      'endedOn', to_char(sa_today(), 'YYYY-MM-DD'))) = 1,
+      format('§133 (B1): the old facts do not read DAD''s board no as a no today, or read his card yes: %s', f));
+
+    -- (door)
+    PERFORM _assert((SELECT count(*) FROM public_name_facts(TWO, NULL, sa_today(), 'card') x,
+                            jsonb_array_elements(x -> 'consents') e
+                      WHERE e @> '{"surface": null}' AND e ->> 'endedOn' IS NULL AND e ->> 'givenOn' = to_char(sa_today() - 40, 'YYYY-MM-DD')) = 1,
+      '§133 (door): DAD''s board no ended his old-wording yes');
+    PERFORM _assert((SELECT row(ok, reason)::text FROM public_name_consent_set(TWO, true, W, NULL, NULL, NULL, 'card')) = '(f,already_given)',
+      '§133 (door): DAD''s card yes at the same version is not already given');
+    n := _consent_rows(TWO);
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, true, 'public-names-2026-09', NULL, NULL, NULL, 'card')),
+      '§133 (door): DAD''s card yes at another version');
+    f := public_name_facts(TWO, NULL, sa_today(), 'card');
+    PERFORM _assert(_consent_rows(TWO) = n + 1
+                    AND _v155_n(f, jsonb_build_object('surface', 'card', 'givenOn', to_char(sa_today(), 'YYYY-MM-DD'))) = 1
+                    AND _v155_n(f, '{"surface": "card"}') = 1
+                    AND (SELECT count(*) FROM jsonb_array_elements(f -> 'consents') e WHERE e @> '{"surface": null}' AND e ->> 'endedOn' IS NULL) = 1,
+      format('§133 (door): DAD''s new card yes did not supersede his card record alone: %s', f));
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, false, W, NULL, NULL, NULL, 'card')), '§133 (door): DAD''s card no');
+    f := public_name_facts(TWO, NULL, sa_today(), 'card');
+    PERFORM _assert(_v155_n(f, jsonb_build_object('surface', 'card', 'endedOn', to_char(sa_today(), 'YYYY-MM-DD'))) = 1
+                    AND (SELECT count(*) FROM jsonb_array_elements(f -> 'consents') e WHERE e @> '{"surface": null}' AND e ->> 'endedOn' IS NULL) = 1,
+      format('§133 (door): DAD''s card no did not withdraw his card yes alone: %s', f));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v155_insert_refused(TWO, DAD, NULL) AND NOT _v155_insert_refused(TWO, DAD, 'live'),
+      '§133 (door): two open records for one giver on one wording, or none allowed on a new one');
+
+    -- (two)
+    f := public_name_facts(TWO, NULL, sa_today(), 'card');
+    PERFORM _assert(_v155_n(f, '{"by": "guardian"}') = 3 AND _v155_n(f, '{"by": "pupil"}') = 0
+                    AND (SELECT array_agg(e ->> 'givenOn' ORDER BY o) FROM jsonb_array_elements(f -> 'consents') WITH ORDINALITY x(e, o))
+                        = ARRAY[to_char(sa_today() - 40, 'YYYY-MM-DD'), to_char(sa_today() - 20, 'YYYY-MM-DD'), to_char(sa_today(), 'YYYY-MM-DD')],
+      format('§133 (two): on card, not MUM''s no and DAD''s two records, in the order given: %s', f));
+    f := public_name_facts(TWO, NULL, sa_today(), 'live');
+    PERFORM _assert(jsonb_array_length(f -> 'consents') = 2 AND _v155_n(f, '{"surface": null}') = 2,
+      format('§133 (two): on live, not MUM''s no and DAD''s old yes alone: %s', f));
+
+    -- (eighteen)
+    PERFORM _as((y->>'adult_self')::uuid);
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(ADULT, true, W, NULL, NULL, NULL, 'card')), '§133 (eighteen): ADULT''s own card yes');
+    f := public_name_facts(ADULT, NULL, sa_today(), 'card');
+    PERFORM _assert(_v155_n(f, '{"by": "pupil", "surface": "card", "competent": true, "adult": true, "giverLive": true}') = 1
+                    AND _v155_n(f, '{"by": "guardian", "competent": true, "surface": null}') = 1,
+      format('§133 (eighteen): ADULT''s own yes is not an adult''s and live, or ADULTMUM''s no at school does not count: %s', f));
+    -- (own-adult): his card yes is a record of his own at eighteen, on every
+    -- surface, the ones his card wording never reaches included (SF-2).
+    FOREACH s IN ARRAY ARRAY['card', 'live', 'board'] LOOP
+      f := public_name_facts(ADULT, NULL, sa_today(), s);
+      PERFORM _assert(f -> 'ownAdult' = 'true'::jsonb AND (s = 'card' OR _v155_n(f, '{"by": "pupil"}') = 0),
+        format('§133 (own-adult): on %s, ADULT''s own card yes does not hand the surface to him: %s', s, f));
+    END LOOP;
+    PERFORM _as((y->>'adultmum')::uuid);
+    PERFORM _assert((SELECT row(ok, reason)::text FROM public_name_consent_set(ADULT, true, W, NULL, NULL, NULL, 'live')) = '(f,adult_consents_for_himself)',
+      '§133 (eighteen): ADULTMUM''s live yes, after eighteen, is not refused');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(ADULT, false, W, NULL, NULL, NULL, 'live')), '§133 (eighteen): ADULTMUM''s live no');
+    PERFORM _assert(_v155_n(public_name_facts(ADULT, NULL, sa_today(), 'live'), '{"by": "guardian", "surface": "live", "competent": true}') = 1,
+      '§133 (eighteen): ADULTMUM''s live no, while he is at school, does not count');
+    PERFORM _as((y->>'two_self')::uuid);
+    PERFORM _assert((SELECT row(ok, reason)::text FROM public_name_consent_set(TWO, true, W, NULL, NULL, NULL, 'live')) = '(f,not_yet_eighteen)',
+      '§133 (eighteen): TWO''s own live yes at fourteen is not refused');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, false, W, NULL, NULL, NULL, 'live')), '§133 (eighteen): TWO''s own live no');
+    f := public_name_facts(TWO, NULL, sa_today(), 'live');
+    PERFORM _assert(_v155_n(f, '{"by": "pupil", "surface": "live", "competent": true, "adult": false}') = 1
+                    AND _v155_n(public_name_facts(TWO, NULL, sa_today(), 'card'), '{"by": "pupil"}') = 0,
+      format('§133 (eighteen): TWO''s own live no is not his competent no on live alone: %s', f));
+    PERFORM _assert(f -> 'ownAdult' = 'false'::jsonb, format('§133 (own-adult): TWO''s own no at fourteen is an adult''s: %s', f));
+    PERFORM _as((y->>'young_self')::uuid);
+    PERFORM _assert((SELECT row(ok, reason)::text FROM public_name_consent_set(YOUNG, false, W, NULL, NULL, NULL, 'card')) = '(f,not_yet_twelve)',
+      '§133 (eighteen): YOUNG''s card no at eleven is not refused');
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (never-1)
+    FOREACH s IN ARRAY ARRAY['card', 'live', 'board'] LOOP
+      f := public_name_facts(SILENT, NULL, sa_today(), s);
+      PERFORM _assert(f -> 'consents' = '[]'::jsonb AND f -> 'byTerms' = 'false'::jsonb,
+        format('§133 (never-1): SILENT, whom nobody answered for, has a record or a default on %s: %s', s, f));
+    END LOOP;
+    -- (never-3)
+    g := _v155_by_terms();
+    PERFORM _assert((g->>'byTerms')::int = 0 AND (g->>'calls')::int > 0,
+      format('§133 (never-3): somebody is public by terms before slice 4: %s', g));
+    -- (never-6)
+    f := public_name_facts(ADULT, NULL, sa_today(), 'card');
+    PERFORM _assert((SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(f) k) = ARRAY['byTerms', 'consents', 'namesOff', 'neverPublic', 'ownAdult']
+                    AND (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(public_name_facts(ADULT, NULL, sa_today())) k) = ARRAY['consents', 'namesOff', 'neverPublic']
+                    AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(f -> 'consents') e
+                                     WHERE (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(e) k)
+                                           <> CASE e ->> 'by' WHEN 'pupil' THEN ARRAY['adult', 'by', 'competent', 'endedOn', 'givenOn', 'giverLive', 'surface']
+                                                              ELSE ARRAY['by', 'competent', 'endedOn', 'givenOn', 'giverLive', 'surface'] END)
+                    AND f::text !~* '([0-9a-f]{8}-[0-9a-f]{4}-|public-names|popia|reason|refused|withdrawn)'
+                    AND position(to_char((sa_today() - make_interval(years => 18, days => 30))::date, 'YYYY-MM-DD') IN f::text) = 0,
+      format('§133 (never-6): the facts carry a key, an id, a wording, a reason or his date of birth they should not: %s', f));
+    -- (never-7)
+    PERFORM _as(MUM);
+    n := _consent_rows(TWO);
+    FOREACH s IN ARRAY ARRAY['stream', 'overlay', ''] LOOP
+      PERFORM _assert((SELECT row(ok, reason)::text FROM public_name_consent_set(TWO, false, W, NULL, NULL, NULL, s)) = '(f,no_such_surface)',
+        format('§133 (never-7): the door took the surface %L', s));
+    END LOOP;
+    PERFORM _assert(_consent_rows(TWO) = n, '§133 (never-7): a refused surface left a record');
+    PERFORM set_config('app.user_id', '', true);
+    BEGIN
+      PERFORM public_name_facts(TWO, NULL, sa_today(), 'stream');
+      PERFORM _assert(false, '§133 (never-7): the facts answered the surface stream');
+    EXCEPTION WHEN invalid_parameter_value THEN NULL;
+    END;
+    PERFORM _assert(_v155_insert_refused(TWO, MUM, 'stream'), '§133 (never-7): the owner''s record on the surface stream was not refused');
+
+    -- (who): a school's principal cannot turn the switch on (db/08's policy:
+    -- platform.feature.manage), and a school's grant of it moves nothing.
+    PERFORM _as((y->>'principal')::uuid);
+    UPDATE feature_flag SET enabled = true WHERE key = 'public_name_surfaces';
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(n = 0 AND _v155_flag() = '(f,t,feature)', '§133 (who): a school''s principal turned the switch on');
+    PERFORM _v155_grant(true);
+    PERFORM _assert(public_name_surface(M) IS NULL, '§133 (who): a school''s grant of the switch gave the live fixture a surface');
+    PERFORM _v155_grant(false);
+
+    -- (switch)
+    PERFORM _v155_switch(true);
+    v := _v155_surfaces();
+    PERFORM _assert(public_name_surface(M) = 'live' AND public_name_surface(gen_random_uuid()) IS NULL
+                    AND v ~ 'live:live' AND v ~ 'scheduled:live' AND v ~ 'complete:card'
+                    AND v !~ '(complete|abandoned):(live|\(none\))' AND v !~ '(live|scheduled|postponed):(card|\(none\))',
+      format('§133 (switch): on, a fixture not over (scheduled included) is not live, or one over is not card, or no such fixture has none: %s', v));
+    PERFORM _assert((SELECT count(*) FROM public_match_people(M, public_name_surface(M)) x) = 8
+                    AND NOT EXISTS (SELECT 1 FROM public_match_people(M, public_name_surface(M)) x
+                                     WHERE x.facts IS DISTINCT FROM public_name_facts(x.player_id, 'U16B', sa_today(), 'live')
+                                                                    || jsonb_build_object('namesOff', x.facts -> 'namesOff')
+                                        OR NOT (x.facts ? 'byTerms')),
+      '§133 (switch): the page''s people, on live, are not the live facts');
+    PERFORM _assert((SELECT count(*) FROM public_match_people(M) x WHERE x.facts ? 'byTerms') = 0,
+      '§133 (switch): the big screen''s read (one argument) moved with the switch');
+    PERFORM _v155_switch(false);
+    PERFORM _assert(public_name_surface(M) IS NULL, '§133 (switch): off again, the live fixture still has a surface');
+
+    -- (body)
+    PERFORM _assert((SELECT bool_and(p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']
+                                     AND NOT has_function_privilege('public', p.oid, 'EXECUTE')
+                                     AND has_function_privilege('scrbrd_app', p.oid, 'EXECUTE')
+                                     AND NOT EXISTS (SELECT 1 FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                                                      WHERE a.grantee <> p.proowner
+                                                        AND NOT (a.grantee = 'scrbrd_app'::regrole AND a.privilege_type = 'EXECUTE'))) AND count(*) = 7
+                       FROM pg_proc p
+                      WHERE p.oid IN ('public_name_facts(uuid,text,date,text)'::regprocedure, 'public_name_facts(uuid,text,date)'::regprocedure,
+                                      'public_name_consent_set(uuid,boolean,text,uuid,text,date,text)'::regprocedure,
+                                      'public_name_consent_set(uuid,boolean,text,uuid,text,date)'::regprocedure,
+                                      'public_match_people(uuid,text)'::regprocedure, 'public_match_people(uuid)'::regprocedure,
+                                      'public_name_surface(uuid)'::regprocedure)),
+      '§133 (body): a function is not a definer with its path pinned, or is callable by a role other than its owner and the application');
+    PERFORM _assert((SELECT bool_and(p.pronargdefaults = 0) FROM pg_proc p
+                      WHERE p.oid IN ('public_name_facts(uuid,text,date,text)'::regprocedure,
+                                      'public_name_consent_set(uuid,boolean,text,uuid,text,date,text)'::regprocedure,
+                                      'public_match_people(uuid,text)'::regprocedure))
+                    AND _v155_md5('public_name_facts(uuid,text,date)') = 'dc920c0a2a8887ba2653d76981d30218'
+                    AND _v155_md5('public_name_consent_set(uuid,boolean,text,uuid,text,date)') = '1d29900b929f9ce256c6e2b003c9558e'
+                    AND _v155_md5('public_match_people(uuid)') = '9eaf0820a9262868e5f704104ed91e89',
+      '§133 (body): a new form takes a default, or an old signature is not db/155''s wrapper');
+  END;
+  -- └── db/155 (section 133) ──────────────────────────────────────────
+  PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 

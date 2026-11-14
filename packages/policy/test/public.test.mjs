@@ -419,6 +419,8 @@ const HAND_WRITTEN_SINCE_47 = {
     form_date: "the day the form was signed, not a date of birth",
     recorded_at: "when it was recorded",
     ended_at: "when it was ended",
+    // db/155 (PUBLIC_BY_TERMS §6.1).
+    surface: "the surface its wording named (card, live, board; none for the old wording): a fact the rule reads",
   },
   player_never_public: {},
   // db/60: the health-monitoring consent is never public as a whole (N2).

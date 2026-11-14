@@ -146,5 +146,6 @@
   "150_fielding.sql",
   "151_pilot_match.sql",
   "152_ball_log_read_per_match.sql",
-  "153_ground_screen_sides.sql"
+  "153_ground_screen_sides.sql",
+  "155_public_name_surfaces.sql"
 ]
