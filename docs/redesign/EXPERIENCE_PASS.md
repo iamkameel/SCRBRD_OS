@@ -693,6 +693,8 @@ as failed, as §1.10 does.
 
 ### Slice 1 · The scorer's home and starting a Pilot Match
 
+**Built and merged 14 Nov 2026 (#327, 660a5630).** Not built: adding a name during play.
+
 | | |
 |---|---|
 | **Scope** | (a) "Start a match" on the no-school home opens the pad's own setup (§2.5 step 3), as it stands, names step included, unless Q5 is answered yes, as a Practice Match for any signed-in account and a Pilot Match for a granted one (Q3). *Q5 was answered yes (as recommended, option b) on 13 Nov: names may be skipped, for Practice and Pilot Matches only.* (b) The scorer's home gains the status sentence on each fixture of "This week" and the plain record after a match (§3.9). (c) After the result on a Practice or Pilot Match: "Scoring for a school? Join it" (§2.5 step 6), never during play. (d) "Now" holds his side's live fixture with its sentence and "Open the pad" when nothing is on this phone, in place of "Nothing on this phone to resume" over two live fixtures lower down (C1; §1.10; `audit/experience-screens/scorer-home-390-daylight.jpg`). The sentence "Nothing on this phone to resume" stays for when nothing of his is live. |
