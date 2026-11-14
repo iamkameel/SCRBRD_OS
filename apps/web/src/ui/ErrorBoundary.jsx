@@ -68,8 +68,8 @@ export class ErrorBoundary extends Component {
     // A panel that is optional says nothing when it fails (`fallback`, null): the scenario panel (GA-I29).
     if (fallback !== undefined) return fallback;
     // `before`: what the panel drew that must outlive it (a live Summary's status sentence, EXPERIENCE_PASS §3.3).
-    return (
-      <>{before}<div role="alert" data-testid="panel-error" data-panel={name ?? undefined}
+    const card = (
+      <div role="alert" data-testid="panel-error" data-panel={name ?? undefined}
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: T.space.md, flexWrap: "wrap",
           padding: `${T.space.md} ${T.space.lg}`, border: `1px solid ${T.line.normal}`, borderRadius: T.radius.lg,
           background: T.surface.raised }}>
@@ -82,7 +82,8 @@ export class ErrorBoundary extends Component {
             fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
           Try again
         </button>
-      </div></>
+      </div>
     );
+    return before ? <>{before}{card}</> : card;
   }
 }
