@@ -33,10 +33,11 @@
 -- lists it, and its reason names no person or process. Off, public_name_surface() answers NULL and
 -- every read runs as before. On, the public match page and a publication's
 -- count judge each name by §5.1 for the surface the fixture's status gives:
--- `live` while play is on (status 'live'), `card` otherwise. Turning it on
--- can never name a child the old rule does not: §5.1 lines 1-5 are the old
--- rule's checks with three narrowings (a no outlives its giver's link, B2;
--- a yes needs its giver live today, B2; a no nobody counted still stops the
+-- `card` once the match is over (completed or abandoned), `live` otherwise.
+-- On today's records, turning it on can never name a child the old rule
+-- does not: §5.1 lines 1-5 are the old rule's checks with three narrowings
+-- (a no outlives its giver's link, B2; a yes needs its giver, and the very
+-- link it was given through, live today, B2; a no nobody counted still stops the
 -- default, Reading 3), and line 6 cannot fire, because `byTerms` is a
 -- literal false until slice 4 builds the platform setting, the school's
 -- basis and the by-terms record, and the public page passes no
@@ -89,12 +90,16 @@
 --                      giver the right kind for the boy's age then. Not the
 --                      link's state today: revoked, dated out, replaced or
 --                      an account disabled since does not unmake a no
---           giverLive  db/122's consent_giver_live() of its giver today:
---                      only a yes needs it (publicName() reads it so)
+--           giverLive  db/122's consent_giver_live() of its giver today,
+--                      and the link it was given through verified and in its
+--                      dates today: only a yes needs it (publicName() reads
+--                      it so)
 --           surface    its wording: NULL (old) or the surface
 --           adult      a pupil's record only: he was eighteen that day
---         and byTerms, literally false (slice 4 works out line 6). Four
---         keys. No date of birth, giver, reason or version leaves it.
+--         and ownAdult, whether he has a competent record of his own given
+--         at eighteen or later on ANY wording (§5.1 line 4: then only his
+--         records are read, on every surface), and byTerms, literally false
+--         (slice 4 works out line 6). Five keys. No date of birth, giver, reason or version leaves it.
 --       Any other surface raises (22023), as publicName() refuses one.
 --   ~ public_name_facts(uuid, text DEFAULT NULL, date DEFAULT sa_today())
 --       db/116's signature over the 4-argument body with no surface. Its
@@ -122,10 +127,10 @@
 --       db/153's ground_screen_names() and its needs-check read. The big
 --       screen is the school's own scoreboard (§2.5), and stays on it.
 --   + public_name_surface(match uuid) → text
---       NULL while the switch is off (and for no such fixture); else `live`
---       while play is on, `card` once it is not (§1.1: "The moment it
+--       NULL while the switch is off (and for no such fixture); else `card`
+--       once the match is over (completed or abandoned: §1.1, "The moment it
 --       completes, the same page is the scorecard and the card rule
---       applies").
+--       applies"), and `live` for every other status, scheduled included.
 --   The API (same change): public-api.mjs's log reads public_match_people(
 --   match, public_name_surface(match)) and passes the surface to
 --   publicName() through redact.mjs nameFor(); publication-api.mjs's count
@@ -178,10 +183,10 @@ BEGIN
       ('public_name_consent_set(uuid,boolean,text,uuid,text,date)', 'b39a68ab76e425f51a76ba0881c560a7', '1d29900b929f9ce256c6e2b003c9558e', true),
       ('public_match_people(uuid)', '7ff11b3fe1bf34d2bc802c01946a6871', '9eaf0820a9262868e5f704104ed91e89', true),
       -- The bodies added: absent, or this file's.
-      ('public_name_facts(uuid,text,date,text)', NULL, '6f824f307ad0f5c35c13dc2415954075', false),
+      ('public_name_facts(uuid,text,date,text)', NULL, '2c17114ec132fe6b0cf9e18487af79b5', false),
       ('public_name_consent_set(uuid,boolean,text,uuid,text,date,text)', NULL, 'b9213df6600dfc50bc2bf1896f5397ec', false),
       ('public_match_people(uuid,text)', NULL, 'ec7899e97920da22bfaf083f4ae4a0cd', false),
-      ('public_name_surface(uuid)', NULL, 'c5d8a36f8b085d7de499c2631041f993', false)
+      ('public_name_surface(uuid)', NULL, '26a9c0885cf12aeb393f52124d7ee3cf', false)
     ) t(fn, was, mine, needed)
   LOOP
     SELECT pg_temp._v155_fold(p.prosrc) INTO v FROM pg_proc p WHERE p.oid = to_regprocedure(r.fn);
@@ -340,8 +345,16 @@ BEGIN
                                                    OR (c.end_reason = 'refused' AND c.ended_on = c.given_on
                                                        AND (p.born + interval '12 years')::date <= c.given_on))
                        END, false) AS competent,
-                 -- B2: only a yes needs its giver live, and live TODAY.
-                 coalesce(consent_giver_live(a.person_id, c.player_id, c.recorded_at), false) AS giver_live,
+                 -- B2: only a yes needs its giver live, and live TODAY: the
+                 -- person (db/122's test, which asks for any live link of
+                 -- hers made before the answer) and the very link she gave
+                 -- it through, verified and in its dates today. A yes on a
+                 -- link since revoked never counts through another link
+                 -- (Fable's red-team, 14 Nov 2026, SF-1).
+                 coalesce(consent_giver_live(a.person_id, c.player_id, c.recorded_at)
+                          AND g.verification_state = 'verified'
+                          AND g.valid_from <= sa_today()
+                          AND (g.valid_until IS NULL OR g.valid_until > sa_today()), false) AS giver_live,
                  coalesce(p.born IS NOT NULL AND majority_on(p.born) <= c.given_on, false) AS adult
             FROM public_name_consent c
             JOIN assignment_subject g ON g.id = c.giver_link_id AND g.assignment_id = c.giver_assignment_id
@@ -360,6 +373,23 @@ BEGIN
        WHERE o.school_id = p.school_id AND o.names_off
          AND (o.age_group IN (birth_age_group(p.born, p_on), team_age_group(p.team_code), team_age_group(p_side))
               OR p.born IS NULL)),
+    -- §5.1 line 4: "From eighteen, once he has any record of his own, only
+    -- his records are read from here on." Any record: on every wording, not
+    -- only the ones that reach this surface (SF-2). His own record, competent
+    -- (as `competent` above reads a pupil's) and given at eighteen or later,
+    -- by the day served.
+    'ownAdult', EXISTS (
+      SELECT 1 FROM public_name_consent c
+        JOIN assignment_subject g ON g.id = c.giver_link_id AND g.assignment_id = c.giver_assignment_id
+                                 AND g.player_id = c.player_id
+        JOIN role_assignment a ON a.id = c.giver_assignment_id
+       WHERE c.player_id = p.id AND c.given_by = 'pupil' AND c.given_on <= p_on
+         AND a.role = 'selfaccess' AND g.relationship = 'self'
+         AND p.born IS NOT NULL AND majority_on(p.born) <= c.given_on
+         AND g.valid_from <= c.given_on
+         AND (g.valid_until IS NULL OR g.valid_until > c.given_on)
+         AND g.verified_at IS NOT NULL
+         AND (g.verified_at AT TIME ZONE 'Africa/Johannesburg')::date <= c.given_on),
     -- §5.1 line 6. Slice 4 works it out; until then nobody is public by terms.
     'byTerms', false)
     FROM player p
@@ -579,13 +609,14 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 /**
  * The surface a public match page names for: NULL while the switch is off
  * (every read then runs as before db/155), and for no such fixture; else
- * `live` while play is on and `card` once it is not. "While play is on is
- * the fixture's own status: from the first event until the match is
- * completed" (§1.1); a fixture scheduled, completed or abandoned is a
- * scorecard.
+ * `card` once the match is over (completed or abandoned) and `live`
+ * otherwise. "While play is on is the fixture's own status: from the first
+ * event until the match is completed" (§1.1). A fixture still `scheduled`
+ * whose balls have synced is play in progress, so anything but over is
+ * live: the stricter surface (Fable's red-team, 14 Nov 2026, SF-3).
  */
 CREATE OR REPLACE FUNCTION public_name_surface(p_match uuid) RETURNS text AS $$
-  SELECT CASE WHEN m.status = 'live' THEN 'live' ELSE 'card' END
+  SELECT CASE WHEN m.status IN ('complete', 'abandoned') THEN 'card' ELSE 'live' END
     FROM match m
    WHERE m.id = p_match AND feature_enabled('public_name_surfaces')
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -678,19 +709,21 @@ BEGIN
     RAISE EXCEPTION 'db/155: public_name_consent.surface, its CHECK or the one-open-per-wording index is not as this file makes it';
   END IF;
 
-  -- The switch is there, a platform feature that no school grant moves.
-  IF (SELECT row(kind, locked)::text FROM feature_flag WHERE key = 'public_name_surfaces') IS DISTINCT FROM '(feature,t)' THEN
-    RAISE EXCEPTION 'db/155: the public_name_surfaces switch is missing, or not a locked feature';
+  -- The switch is there, a platform feature that no school grant moves, and
+  -- off unless a person has turned it on (changed_by is theirs).
+  IF (SELECT row(kind, locked)::text FROM feature_flag WHERE key = 'public_name_surfaces') IS DISTINCT FROM '(feature,t)'
+     OR (SELECT enabled AND changed_by IS NULL FROM feature_flag WHERE key = 'public_name_surfaces') THEN
+    RAISE EXCEPTION 'db/155: the public_name_surfaces switch is missing, not a locked feature, or on with nobody''s name on it';
   END IF;
 
-  -- The shapes: today's three keys with no surface; four with one, byTerms
+  -- The shapes: today's three keys with no surface; five with one, byTerms
   -- false; an unknown surface refused.
   SELECT p.id INTO v_pl FROM player p ORDER BY p.id LIMIT 1;
   IF v_pl IS NOT NULL THEN
     v_old := public_name_facts(v_pl, NULL, sa_today());
     v := public_name_facts(v_pl, NULL, sa_today(), 'card');
     IF (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(v_old) k) IS DISTINCT FROM ARRAY['consents', 'namesOff', 'neverPublic']
-       OR (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(v) k) IS DISTINCT FROM ARRAY['byTerms', 'consents', 'namesOff', 'neverPublic']
+       OR (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(v) k) IS DISTINCT FROM ARRAY['byTerms', 'consents', 'namesOff', 'neverPublic', 'ownAdult']
        OR v -> 'byTerms' IS DISTINCT FROM 'false'::jsonb THEN
       RAISE EXCEPTION 'db/155: public_name_facts() does not answer the shapes this file says (% / %)', v_old, v;
     END IF;

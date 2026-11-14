@@ -413,6 +413,8 @@ ok("a known-as gives the initial, never the known-as", nameFor({ ...PEOPLE[3], f
   // Fail closed: a surface the page does not serve hides the name, where the
   // old rule (the same facts, no surface) would name him.
   ok("a surface the page does not serve (board) hides the name", nameFor(yesOn("board"), ON) === null && nameFor(yesOn(null), ON) === "D Erasmus");
+  ok("card: the database's ownAdult reaches the rule: his own record elsewhere hands card to him (SF-2)",
+     nameFor({ ...yesOn("card"), facts: { ...yesOn("card").facts, ownAdult: true } }, ON) === null);
   ok("...and so does one nobody serves", nameFor(yesOn("stream"), ON) === null && nameFor(yesOn(""), ON) === null);
 }
 

@@ -156,7 +156,7 @@ export function eventPseudonym(secret, matchId, key) {
  * @typedef {object} PersonRow
  * @property {string} player_id
  * @property {boolean} school_published
- * @property {{consents?: any[], neverPublic?: boolean, namesOff?: boolean, byTerms?: boolean}} facts
+ * @property {{consents?: any[], neverPublic?: boolean, namesOff?: boolean, byTerms?: boolean, ownAdult?: boolean}} facts
  * @property {string | null} full_name
  * @property {string | null} surname
  * @property {string | null} known_as
@@ -190,7 +190,7 @@ export function nameFor(person, on) {
   // old rule (whose yes would name him on card and live).
   if (person.surface != null && surface === undefined) return null;
   const shown = publicName({
-    ...(surface ? { surface, byTerms: f.byTerms } : {}),
+    ...(surface ? { surface, byTerms: f.byTerms, ownAdult: f.ownAdult } : {}),
     on,
     fullName: person.full_name,
     surname: person.surname,

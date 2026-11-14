@@ -12543,7 +12543,7 @@ $$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
 
 -- ┌── db/155 (section 133) ─────────────────────────────────────────────
 -- Public by terms, slice 3: surfaces and the no (PUBLIC_BY_TERMS §11 row 3,
--- §5.1, §6.1-6.2, §10). Hilton's U16B, seven boys invented here, each with
+-- §5.1, §6.1-6.2, §10). Hilton's U16B, eight boys invented here, each with
 -- the links the cases need, all made 400 days ago so a record backdated a
 -- few weeks still has its link behind it (db/122's test asks that the link
 -- was there when the record was given):
@@ -12555,8 +12555,11 @@ $$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
 --   ADULT  18 and a month, still at school: ADULTMUM; his own account
 --   YOUNG  11: his own account
 --   SILENT 14: nobody has answered
--- STRANGER is a guardian of nobody. Today's live fixture, the U16B at home,
--- published, its first innings_start carrying the seven, for the read the
+--   TWOLINK 14: TLMUM, with two verified links to him on one assignment;
+--          the office revokes the one she answered through (SF-1)
+-- STRANGER is a guardian of nobody; PRINCIPAL is Hilton's. Today's live
+-- fixture, the U16B at home, published, its first innings_start carrying
+-- the eight, for the read the
 -- public page makes. Written as the owner, as the office's doors would.
 
 -- db/116's and db/59's bodies, verbatim (their folded md5s are the shipped
@@ -12813,7 +12816,7 @@ DECLARE HIL uuid := '11111111-1111-1111-1111-111111111111';
   ids jsonb := '{}'; r record; i int := 0; v_p uuid; v_m uuid;
 BEGIN
   FOR r IN SELECT * FROM (VALUES ('two', 14), ('rev', 14), ('out', 14), ('rep', 14), ('adult', 18),
-                                 ('young', 11), ('silent', 14)) AS v(k, age) LOOP
+                                 ('young', 11), ('silent', 14), ('twolink', 14)) AS v(k, age) LOOP
     i := i + 1;
     INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
     VALUES (HIL, 'U16B', 'Verify OneFiftyFive ' || initcap(r.k), 'OneFiftyFive ' || initcap(r.k), 1550 + i, 'batter',
@@ -12835,7 +12838,17 @@ BEGIN
     'adultmum', _v155_link('adultmum', (ids->>'adult')::uuid, false),
     'adult_self', _v155_link('adult.self', (ids->>'adult')::uuid, true),
     'young_self', _v155_link('young.self', (ids->>'young')::uuid, true),
-    'stranger', _v155_link('stranger', NULL, false));
+    'stranger', _v155_link('stranger', NULL, false),
+    'tlmum',    _v155_link('tlmum',    (ids->>'twolink')::uuid, false));
+  -- TLMUM's second verified link to TWOLINK, on the same assignment (dated
+  -- to end in a year, so the one-open-link index allows it), verified
+  -- earlier than her first, so the door answers through the first.
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from, valid_until, created_at)
+  SELECT a.id, (ids->>'twolink')::uuid, 'parent', 'verified', OFFICE, now() - interval '500 days',
+         'granted', 'popia-2026-01', now() - interval '500 days', OFFICE, sa_today() - 500, sa_today() + 365, now() - interval '500 days'
+    FROM role_assignment a WHERE a.person_id = (ids->>'tlmum')::uuid;
+  ids := ids || _v71_people('v155', ARRAY[ARRAY['principal', 'principal', HIL::text, '', '']]);
   INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
   VALUES (HIL, 'U16B', 'Verify OneFiftyFive XI', now() - interval '1 hour', 'cricket', 'T20', 20, 'live')
   RETURNING id INTO v_m;
@@ -12846,7 +12859,7 @@ BEGIN
   VALUES (v_m, HIL, 1, 1, 0, '88888888-0000-0000-0000-000000000006', 'v155', 'v155-' || v_m || '-1', 1, now(), 'innings_start',
           jsonb_build_object('battingTeam', 'U16B', 'teamKey', 'U16B', 'bowlingTeam', 'Verify OneFiftyFive XI',
             'squad', (SELECT jsonb_agg(jsonb_build_object('id', ids->>k) ORDER BY k)
-                        FROM unnest(ARRAY['two', 'rev', 'out', 'rep', 'adult', 'young', 'silent']) k)));
+                        FROM unnest(ARRAY['two', 'rev', 'out', 'rep', 'adult', 'young', 'silent', 'twolink']) k)));
   RETURN ids || jsonb_build_object('m', v_m);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -12868,6 +12881,30 @@ CREATE OR REPLACE FUNCTION _v155_unlink(p_player uuid, p_person uuid, p_revoke b
      SET verification_state = CASE WHEN p_revoke THEN 'revoked' ELSE s.verification_state END, valid_until = p_on
    WHERE s.player_id = p_player
      AND s.assignment_id IN (SELECT a.id FROM role_assignment a WHERE a.person_id = p_person)
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The link a giver answered through (her latest record's), revoked by the
+-- office on p_on; any other link of hers to the boy stays.
+CREATE OR REPLACE FUNCTION _v155_revoke_giving_link(p_player uuid, p_person uuid, p_on date) RETURNS void AS $$
+  UPDATE assignment_subject s SET verification_state = 'revoked', valid_until = p_on
+   WHERE s.id = (SELECT c.giver_link_id FROM public_name_consent c JOIN role_assignment a ON a.id = c.giver_assignment_id
+                  WHERE c.player_id = p_player AND a.person_id = p_person ORDER BY c.seq DESC LIMIT 1)
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/122's test of the person alone, as the owner asks it: whether she still
+-- holds a live link to the boy made before her latest answer.
+CREATE OR REPLACE FUNCTION _v155_person_live(p_player uuid, p_person uuid) RETURNS boolean AS $$
+  SELECT consent_giver_live(p_person, p_player, (SELECT max(c.recorded_at) FROM public_name_consent c
+                                                    JOIN role_assignment a ON a.id = c.giver_assignment_id
+                                                   WHERE c.player_id = p_player AND a.person_id = p_person))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A school's grant of the switch, as the platform's commercial door writes
+-- one (db/08): it must move nothing, because the switch is the platform's.
+CREATE OR REPLACE FUNCTION _v155_grant(p_on boolean) RETURNS void AS $$
+  INSERT INTO feature_grant (key, school_id, granted, note)
+  VALUES ('public_name_surfaces', '11111111-1111-1111-1111-111111111111', p_on, 'Verify 155: a school grant')
+  ON CONFLICT (key, school_id) DO UPDATE SET granted = EXCLUDED.granted
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- A pupil's own link replaced: the old one revoked on p_on, a new one
@@ -42353,6 +42390,17 @@ $m130$;
   --                 surface's wording reaches that surface alone, DAD's board
   --                 no; and the old facts read a no to a surface's wording as
   --                 a no (the old rule has one wording), never its yes
+  --   (two-links)   TLMUM answered yes through one of her two verified links to
+  --                 TWOLINK, and the office revoked that one: she still passes
+  --                 db/122's test of the person, and her yes is live on no
+  --                 surface (Fable's red-team, SF-1); the old facts do not
+  --                 count it either
+  --   (own-adult)   ADULT's own card yes at eighteen hands every surface to
+  --                 his records (ownAdult), live and board included, where his
+  --                 card wording never reaches (SF-2); before it nobody's, and
+  --                 TWO's and REP's own nos at fourteen never
+  --   (who)         a school's principal cannot turn the switch on, and a
+  --                 school's grant of it gives no fixture a surface
   --   (door)        per wording: DAD's board no ends nothing of his old
   --                 wording; his card yes is already given at the same
   --                 version, supersedes only his card record at another, and
@@ -42369,7 +42417,7 @@ $m130$;
   --   (never-1)     SILENT: no record and no default, on any surface
   --   (never-3)     nobody, on any surface, is public by terms: byTerms is
   --                 false for every player (no default exists to outvote a no)
-  --   (never-6)     the shape: the old three keys; on a surface four, and each
+  --   (never-6)     the shape: the old three keys; on a surface five, and each
   --                 record by, competent, givenOn, endedOn, surface,
   --                 giverLive (and adult, a pupil's); no date of birth, no
   --                 id, no wording's version
@@ -42377,8 +42425,8 @@ $m130$;
   --                 'stream', 'overlay' and '' (no_such_surface) and writes
   --                 nothing; the facts raise; the owner's own insert is
   --                 refused by the CHECK
-  --   (switch)      on: the live fixture's surface is live, a completed and
-  --                 a scheduled one's card, no such fixture none; the page's
+  --   (switch)      on: a fixture not over is live, a scheduled one included
+  --                 (SF-3), a completed one card, no such fixture none; the page's
   --                 people for live carry the live facts; off again: none
   --   (body)        the old signatures are the one body each; the new forms
   --                 take no defaults; all seven definers, path pinned, the
@@ -42405,6 +42453,10 @@ $m130$;
   --   the door taking any surface                                     → (never-7): the CHECK refuses the row
   --   public_name_surface() answering card whatever the status        → (switch)
   --   public_name_surface() executable by PUBLIC                      → (body)
+  -- And after Fable's red-team (14 Nov 2026), the three bodies as they were:
+  --   SF-1: a yes live whenever the person is, not its own link       → (two-links)
+  --   SF-2: no ownAdult; and ownAdult over this surface's wordings    → (own-adult)
+  --   SF-3: live only while the status is live                        → (switch)
   DECLARE
     y      jsonb := _v155_stage();
     M      uuid := (y->>'m')::uuid;
@@ -42415,6 +42467,7 @@ $m130$;
     ADULT  uuid := (y->>'adult')::uuid;
     YOUNG  uuid := (y->>'young')::uuid;
     SILENT uuid := (y->>'silent')::uuid;
+    TWOLINK uuid := (y->>'twolink')::uuid;
     MUM    uuid := (y->>'mum')::uuid;
     DAD    uuid := (y->>'dad')::uuid;
     OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
@@ -42448,6 +42501,8 @@ $m130$;
     PERFORM _assert((SELECT ok FROM public_name_consent_set(REP, false, W)), '§133 (setup): REP''s own no, from twelve');
     PERFORM _as((y->>'adultmum')::uuid);
     PERFORM _assert((SELECT ok FROM public_name_consent_set(ADULT, false, W)), '§133 (setup): ADULTMUM''s no while he is at school');
+    PERFORM _as((y->>'tlmum')::uuid);
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWOLINK, true, W)), '§133 (setup): TLMUM''s yes');
     PERFORM set_config('app.user_id', '', true);
     -- Given weeks ago; then the links move.
     PERFORM _v155_back(TWO, DAD, 30);
@@ -42458,6 +42513,8 @@ $m130$;
     PERFORM _v155_back(OUTB, (y->>'outdad')::uuid, 20);
     PERFORM _v155_back(REP, (y->>'rep_self')::uuid, 20);
     PERFORM _v155_back(ADULT, (y->>'adultmum')::uuid, 20);
+    PERFORM _v155_back(TWOLINK, (y->>'tlmum')::uuid, 20);
+    PERFORM _v155_revoke_giving_link(TWOLINK, (y->>'tlmum')::uuid, sa_today() - 10);
     PERFORM _v155_unlink(REV, (y->>'revmum')::uuid, true, sa_today() - 10);
     PERFORM _v155_unlink(REV, (y->>'revdad')::uuid, true, sa_today() - 10);
     PERFORM _v155_unlink(OUTB, (y->>'outmum')::uuid, false, sa_today() - 5);
@@ -42540,6 +42597,26 @@ $m130$;
     f := public_name_facts(REV, NULL, sa_today());
     PERFORM _assert(_v155_n(f, '{"competent": false}') = 2 AND NOT (f -> 'consents' -> 0 ? 'giverLive'),
       format('§133 (B2): the old facts no longer read a revoked giver as db/116 did: %s', f));
+    -- (two-links): TLMUM's yes went through the link the office revoked; she
+    -- still holds a live link to TWOLINK, so the person passes db/122's test.
+    -- The yes is not live through it: not on any surface (SF-1), and the old
+    -- facts do not count it either.
+    PERFORM _assert(_v155_person_live(TWOLINK, (y->>'tlmum')::uuid),
+      '§133 (two-links): TLMUM no longer holds a second live link, so the case shows nothing');
+    FOREACH s IN ARRAY ARRAY['card', 'live', 'board'] LOOP
+      f := public_name_facts(TWOLINK, NULL, sa_today(), s);
+      PERFORM _assert(_v155_n(f, '{"by": "guardian", "competent": true, "giverLive": false}') = 1
+                      AND jsonb_array_length(f -> 'consents') = 1,
+        format('§133 (two-links): on %s, TLMUM''s yes on her revoked link is live through her other link: %s', s, f));
+    END LOOP;
+    PERFORM _assert(_v155_n(public_name_facts(TWOLINK, NULL, sa_today()), '{"competent": false}') = 1,
+      '§133 (two-links): the old facts count TLMUM''s yes on her revoked link');
+    -- (own-adult), before he has a record of his own: nobody's own record yet.
+    FOREACH s IN ARRAY ARRAY['card', 'live', 'board'] LOOP
+      PERFORM _assert(public_name_facts(ADULT, NULL, sa_today(), s) -> 'ownAdult' = 'false'::jsonb
+                      AND public_name_facts(REP, NULL, sa_today(), s) -> 'ownAdult' = 'false'::jsonb,
+        format('§133 (own-adult): on %s, ADULT has no record of his own, or REP''s no at fourteen is an adult''s', s));
+    END LOOP;
 
     -- Each wording's own answers, through the 7-argument door.
     PERFORM _as(DAD);
@@ -42609,6 +42686,13 @@ $m130$;
     PERFORM _assert(_v155_n(f, '{"by": "pupil", "surface": "card", "competent": true, "adult": true, "giverLive": true}') = 1
                     AND _v155_n(f, '{"by": "guardian", "competent": true, "surface": null}') = 1,
       format('§133 (eighteen): ADULT''s own yes is not an adult''s and live, or ADULTMUM''s no at school does not count: %s', f));
+    -- (own-adult): his card yes is a record of his own at eighteen, on every
+    -- surface, the ones his card wording never reaches included (SF-2).
+    FOREACH s IN ARRAY ARRAY['card', 'live', 'board'] LOOP
+      f := public_name_facts(ADULT, NULL, sa_today(), s);
+      PERFORM _assert(f -> 'ownAdult' = 'true'::jsonb AND (s = 'card' OR _v155_n(f, '{"by": "pupil"}') = 0),
+        format('§133 (own-adult): on %s, ADULT''s own card yes does not hand the surface to him: %s', s, f));
+    END LOOP;
     PERFORM _as((y->>'adultmum')::uuid);
     PERFORM _assert((SELECT row(ok, reason)::text FROM public_name_consent_set(ADULT, true, W, NULL, NULL, NULL, 'live')) = '(f,adult_consents_for_himself)',
       '§133 (eighteen): ADULTMUM''s live yes, after eighteen, is not refused');
@@ -42623,6 +42707,7 @@ $m130$;
     PERFORM _assert(_v155_n(f, '{"by": "pupil", "surface": "live", "competent": true, "adult": false}') = 1
                     AND _v155_n(public_name_facts(TWO, NULL, sa_today(), 'card'), '{"by": "pupil"}') = 0,
       format('§133 (eighteen): TWO''s own live no is not his competent no on live alone: %s', f));
+    PERFORM _assert(f -> 'ownAdult' = 'false'::jsonb, format('§133 (own-adult): TWO''s own no at fourteen is an adult''s: %s', f));
     PERFORM _as((y->>'young_self')::uuid);
     PERFORM _assert((SELECT row(ok, reason)::text FROM public_name_consent_set(YOUNG, false, W, NULL, NULL, NULL, 'card')) = '(f,not_yet_twelve)',
       '§133 (eighteen): YOUNG''s card no at eleven is not refused');
@@ -42640,7 +42725,7 @@ $m130$;
       format('§133 (never-3): somebody is public by terms before slice 4: %s', g));
     -- (never-6)
     f := public_name_facts(ADULT, NULL, sa_today(), 'card');
-    PERFORM _assert((SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(f) k) = ARRAY['byTerms', 'consents', 'namesOff', 'neverPublic']
+    PERFORM _assert((SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(f) k) = ARRAY['byTerms', 'consents', 'namesOff', 'neverPublic', 'ownAdult']
                     AND (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(public_name_facts(ADULT, NULL, sa_today())) k) = ARRAY['consents', 'namesOff', 'neverPublic']
                     AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(f -> 'consents') e
                                      WHERE (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(e) k)
@@ -42665,13 +42750,25 @@ $m130$;
     END;
     PERFORM _assert(_v155_insert_refused(TWO, MUM, 'stream'), '§133 (never-7): the owner''s record on the surface stream was not refused');
 
+    -- (who): a school's principal cannot turn the switch on (db/08's policy:
+    -- platform.feature.manage), and a school's grant of it moves nothing.
+    PERFORM _as((y->>'principal')::uuid);
+    UPDATE feature_flag SET enabled = true WHERE key = 'public_name_surfaces';
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(n = 0 AND _v155_flag() = '(f,t,feature)', '§133 (who): a school''s principal turned the switch on');
+    PERFORM _v155_grant(true);
+    PERFORM _assert(public_name_surface(M) IS NULL, '§133 (who): a school''s grant of the switch gave the live fixture a surface');
+    PERFORM _v155_grant(false);
+
     -- (switch)
     PERFORM _v155_switch(true);
     v := _v155_surfaces();
     PERFORM _assert(public_name_surface(M) = 'live' AND public_name_surface(gen_random_uuid()) IS NULL
-                    AND v ~ 'live:live' AND v ~ ':card' AND v !~ 'live:(card|\(none\))' AND v !~ '(complete|scheduled|abandoned):(live|\(none\))',
-      format('§133 (switch): on, a fixture in play is not live, or one not in play is not card, or no such fixture has one: %s', v));
-    PERFORM _assert((SELECT count(*) FROM public_match_people(M, public_name_surface(M)) x) = 7
+                    AND v ~ 'live:live' AND v ~ 'scheduled:live' AND v ~ 'complete:card'
+                    AND v !~ '(complete|abandoned):(live|\(none\))' AND v !~ '(live|scheduled|postponed):(card|\(none\))',
+      format('§133 (switch): on, a fixture not over (scheduled included) is not live, or one over is not card, or no such fixture has none: %s', v));
+    PERFORM _assert((SELECT count(*) FROM public_match_people(M, public_name_surface(M)) x) = 8
                     AND NOT EXISTS (SELECT 1 FROM public_match_people(M, public_name_surface(M)) x
                                      WHERE x.facts IS DISTINCT FROM public_name_facts(x.player_id, 'U16B', sa_today(), 'live')
                                                                     || jsonb_build_object('namesOff', x.facts -> 'namesOff')

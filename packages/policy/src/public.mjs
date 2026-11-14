@@ -498,6 +498,12 @@ export const POSITION_LABELS = Object.freeze({
  *   the day served: the platform setting, the school's basis, a by-terms
  *   record from a guardian live today, its stored choice, and the seven days.
  *   No date, giver or choice comes with it.
+ * @property {boolean} [ownAdult]
+ *   §5.1 line 4, on the surface path only: he has a competent record of his
+ *   own, given at eighteen or later, on ANY wording by the day served, as
+ *   public_name_facts() works it out over every wording (db/155). Exactly
+ *   `true` hands this surface to his records alone, even where none of them
+ *   reaches it (then he is not named). No date or wording comes with it.
  * @property {boolean} [byTermsAllowed]
  *   the caller's literal: whether this read may name a child by terms at all.
  *   `false` at the stream overlay (STREAM_CAPTION, §1.3), an access pack and
@@ -648,7 +654,12 @@ function surfaceStands(facts, on, at) {
   // 4. His own.
   const his = counting.filter((c) => c.by === "pupil");
   const hisAnswers = his.flatMap((c) => answersOf(c, on, at));
-  if (his.some((c) => c.adult === true && isDay(c.givenOn) && c.givenOn <= on)) return latestAnswer(hisAnswers) === true;
+  // "Any record of his own": on any wording, which the database answers as
+  // `ownAdult` over every wording (db/155), since the records passed are
+  // only the wordings that reach this surface.
+  if (facts.ownAdult === true || his.some((c) => c.adult === true && isDay(c.givenOn) && c.givenOn <= on)) {
+    return latestAnswer(hisAnswers) === true;
+  }
   if (hisAnswers.some((a) => !a.yes)) return false;
 
   // 5. The latest explicit answer from a guardian.
