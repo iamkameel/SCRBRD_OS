@@ -12541,7 +12541,7 @@ CREATE OR REPLACE FUNCTION _v153_set(VARIADIC p uuid[]) RETURNS uuid[] AS $$
 $$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
 -- └── db/153 (section 131) ─────────────────────────────────────────────
 
--- ┌── db/155 (section 132) ─────────────────────────────────────────────
+-- ┌── db/155 (section 133) ─────────────────────────────────────────────
 -- Public by terms, slice 3: surfaces and the no (PUBLIC_BY_TERMS §11 row 3,
 -- §5.1, §6.1-6.2, §10). Hilton's U16B, seven boys invented here, each with
 -- the links the cases need, all made 400 days ago so a record backdated a
@@ -12560,7 +12560,7 @@ $$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
 -- public page makes. Written as the owner, as the office's doors would.
 
 -- db/116's and db/59's bodies, verbatim (their folded md5s are the shipped
--- ones, checked in section 132), under names of their own: the "before" the
+-- ones, checked in section 133), under names of their own: the "before" the
 -- dark proof holds the live functions to. _v155_people_59() calls
 -- public_name_facts() as db/59 did, which is now db/155's; that one is held
 -- to _v155_facts_116() separately, so between them the read is db/59's over
@@ -13007,7 +13007,7 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 CREATE OR REPLACE FUNCTION _v155_n(f jsonb, p jsonb) RETURNS int AS $$
   SELECT count(*)::int FROM jsonb_array_elements(coalesce(f -> 'consents', '[]'::jsonb)) e WHERE e @> p
 $$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
--- └── db/155 (section 132) ─────────────────────────────────────────────
+-- └── db/155 (section 133) ─────────────────────────────────────────────
 
 
 -- From here on we are the unprivileged application role, so every read below
@@ -42313,8 +42313,8 @@ $m130$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/153 (section 131) ──────────────────────────────────────────
-  -- ┌── db/155 (section 132) ─────────────────────────────────────────
-  -- ── 132. Public by terms, slice 3: each answer for the surface its wording named; a no on every surface its wording could reach and whatever happens to its giver's link since; and, switched off, every public read as it was (db/155; PUBLIC_BY_TERMS §11 row 3, §5.1, §6.1-6.2, §10) ──
+  -- ┌── db/155 (section 133) ─────────────────────────────────────────
+  -- ── 133. Public by terms, slice 3: each answer for the surface its wording named; a no on every surface its wording could reach and whatever happens to its giver's link since; and, switched off, every public read as it was (db/155; PUBLIC_BY_TERMS §11 row 3, §5.1, §6.1-6.2, §10) ──
   -- Staged by _v155_stage(): seven Hilton U16B boys and their links, and a
   -- live fixture of theirs; every read through scrbrd_app, every write
   -- through the doors as the person who would make it, wound back by the
@@ -42429,25 +42429,25 @@ $m130$;
     PERFORM _assert(_v155_md5('_v155_facts_116(uuid,text,date)') = 'b0e0f3c15f891e2c862c310c4c7dbb45'
                     AND _v155_md5('_v155_consent_set_116(uuid,boolean,text,uuid,text,date)') = 'b39a68ab76e425f51a76ba0881c560a7'
                     AND _v155_md5('_v155_people_59(uuid)') = '7ff11b3fe1bf34d2bc802c01946a6871',
-      '§132 (dark-ref): the "before" bodies are not db/116''s and db/59''s as shipped');
+      '§133 (dark-ref): the "before" bodies are not db/116''s and db/59''s as shipped');
 
     -- The old wording's answers, through the 6-argument door, as each giver.
     PERFORM _as(MUM);
-    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, false, W)), '§132 (setup): MUM''s no');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, false, W)), '§133 (setup): MUM''s no');
     PERFORM _as(DAD);
-    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, true, W)), '§132 (setup): DAD''s yes');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, true, W)), '§133 (setup): DAD''s yes');
     PERFORM _as((y->>'revmum')::uuid);
-    PERFORM _assert((SELECT ok FROM public_name_consent_set(REV, false, W)), '§132 (setup): REVMUM''s no');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(REV, false, W)), '§133 (setup): REVMUM''s no');
     PERFORM _as((y->>'revdad')::uuid);
-    PERFORM _assert((SELECT ok FROM public_name_consent_set(REV, true, W)), '§132 (setup): REVDAD''s yes');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(REV, true, W)), '§133 (setup): REVDAD''s yes');
     PERFORM _as((y->>'outmum')::uuid);
-    PERFORM _assert((SELECT ok FROM public_name_consent_set(OUTB, false, W)), '§132 (setup): OUTMUM''s no');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(OUTB, false, W)), '§133 (setup): OUTMUM''s no');
     PERFORM _as((y->>'outdad')::uuid);
-    PERFORM _assert((SELECT ok FROM public_name_consent_set(OUTB, true, W)), '§132 (setup): OUTDAD''s yes');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(OUTB, true, W)), '§133 (setup): OUTDAD''s yes');
     PERFORM _as((y->>'rep_self')::uuid);
-    PERFORM _assert((SELECT ok FROM public_name_consent_set(REP, false, W)), '§132 (setup): REP''s own no, from twelve');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(REP, false, W)), '§133 (setup): REP''s own no, from twelve');
     PERFORM _as((y->>'adultmum')::uuid);
-    PERFORM _assert((SELECT ok FROM public_name_consent_set(ADULT, false, W)), '§132 (setup): ADULTMUM''s no while he is at school');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(ADULT, false, W)), '§133 (setup): ADULTMUM''s no while he is at school');
     PERFORM set_config('app.user_id', '', true);
     -- Given weeks ago; then the links move.
     PERFORM _v155_back(TWO, DAD, 30);
@@ -42495,149 +42495,149 @@ $m130$;
           ('silent''s nobody',    MUM,                        SILENT,            true,  W,     NULL, NULL, NULL)
         ) AS t(k, actor, player, yes, version, guardian, form_name, form_date)
     LOOP
-      PERFORM _assert(v !~ ' db/116: ', format('§132 (dark-door): the 6-argument door is not db/116''s: %s', v));
+      PERFORM _assert(v !~ ' db/116: ', format('§133 (dark-door): the 6-argument door is not db/116''s: %s', v));
       n := coalesce(n, 0) + 1;
     END LOOP;
-    PERFORM _assert(n = 25, format('§132 (dark-door): %s cases ran, not 25', n));
+    PERFORM _assert(n = 25, format('§133 (dark-door): %s cases ran, not 25', n));
     PERFORM set_config('app.user_id', '', true);
 
     -- (dark-facts)
     g := _v155_dark_facts();
-    PERFORM _assert((g->>'differ')::int = 0, format('§132 (dark-facts): public_name_facts() is not db/116''s: %s', g));
+    PERFORM _assert((g->>'differ')::int = 0, format('§133 (dark-facts): public_name_facts() is not db/116''s: %s', g));
     PERFORM _assert((g->>'calls')::int >= 500 AND (g->>'withConsents')::int >= 5,
-      format('§132 (dark-facts): too few calls, or too few players with a record, to show anything: %s', g));
-    RAISE NOTICE '§132 (dark-facts): % calls over % players (% with a record): equal to db/116''s', g->>'calls', g->>'players', g->>'withConsents';
+      format('§133 (dark-facts): too few calls, or too few players with a record, to show anything: %s', g));
+    RAISE NOTICE '§133 (dark-facts): % calls over % players (% with a record): equal to db/116''s', g->>'calls', g->>'players', g->>'withConsents';
     -- (dark-people)
     g := _v155_dark_people();
-    PERFORM _assert((g->>'differ')::int = 0, format('§132 (dark-people): public_match_people() is not db/59''s: %s', g));
+    PERFORM _assert((g->>'differ')::int = 0, format('§133 (dark-people): public_match_people() is not db/59''s: %s', g));
     PERFORM _assert((g->>'matches')::int >= 5 AND (g->>'rows')::int >= 7 AND (g->>'named')::int >= 4,
-      format('§132 (dark-people): too few matches or rows to show anything: %s', g));
-    RAISE NOTICE '§132 (dark-people): % matches, % rows (% with a record): equal to db/59''s', g->>'matches', g->>'rows', g->>'named';
+      format('§133 (dark-people): too few matches or rows to show anything: %s', g));
+    RAISE NOTICE '§133 (dark-people): % matches, % rows (% with a record): equal to db/59''s', g->>'matches', g->>'rows', g->>'named';
     -- (dark-switch)
     PERFORM _assert(_v155_flag() = '(f,t,feature)',
-      '§132 (dark-switch): the switch is not there, off and locked');
+      '§133 (dark-switch): the switch is not there, off and locked');
     v := _v155_surfaces();
-    PERFORM _assert(v <> '' AND v !~ ':(card|live)', format('§132 (dark-switch): a surface is named while the switch is off: %s', v));
+    PERFORM _assert(v <> '' AND v !~ ':(card|live)', format('§133 (dark-switch): a surface is named while the switch is off: %s', v));
     PERFORM _assert(public_name_surface(M) IS NULL AND public_name_surface(gen_random_uuid()) IS NULL,
-      '§132 (dark-switch): the live fixture has a surface while the switch is off');
+      '§133 (dark-switch): the live fixture has a surface while the switch is off');
 
     -- (B2)
     FOREACH s IN ARRAY ARRAY['card', 'live', 'board'] LOOP
       f := public_name_facts(REV, NULL, sa_today(), s);
       PERFORM _assert(_v155_n(f, '{"by": "guardian", "competent": true, "giverLive": false, "surface": null}') = 2
                       AND _v155_n(f, '{"competent": false}') = 0,
-        format('§132 (B2): on %s, REVMUM''s no and REVDAD''s yes are not both competent on the day, and neither live: %s', s, f));
+        format('§133 (B2): on %s, REVMUM''s no and REVDAD''s yes are not both competent on the day, and neither live: %s', s, f));
       f := public_name_facts(OUTB, NULL, sa_today(), s);
       PERFORM _assert(_v155_n(f, '{"by": "guardian", "competent": true, "giverLive": false}') = 2,
-        format('§132 (B2): on %s, OUTMUM''s no and OUTDAD''s yes are not competent on the day and dated out: %s', s, f));
+        format('§133 (B2): on %s, OUTMUM''s no and OUTDAD''s yes are not competent on the day and dated out: %s', s, f));
       f := public_name_facts(REP, NULL, sa_today(), s);
       PERFORM _assert(_v155_n(f, '{"by": "pupil", "competent": true, "adult": false}') = 1 AND jsonb_array_length(f -> 'consents') = 1,
-        format('§132 (B2): on %s, REP''s own no is not competent after his account was replaced: %s', s, f));
+        format('§133 (B2): on %s, REP''s own no is not competent after his account was replaced: %s', s, f));
       f := public_name_facts(TWO, NULL, sa_today(), s);
       PERFORM _assert(_v155_n(f, '{"by": "guardian", "competent": true, "giverLive": true}') = 2,
-        format('§132 (B2): on %s, MUM''s and DAD''s answers are not competent and live: %s', s, f));
+        format('§133 (B2): on %s, MUM''s and DAD''s answers are not competent and live: %s', s, f));
     END LOOP;
     f := public_name_facts(REV, NULL, sa_today());
     PERFORM _assert(_v155_n(f, '{"competent": false}') = 2 AND NOT (f -> 'consents' -> 0 ? 'giverLive'),
-      format('§132 (B2): the old facts no longer read a revoked giver as db/116 did: %s', f));
+      format('§133 (B2): the old facts no longer read a revoked giver as db/116 did: %s', f));
 
     -- Each wording's own answers, through the 7-argument door.
     PERFORM _as(DAD);
-    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, true, W, NULL, NULL, NULL, 'card')), '§132 (setup): DAD''s card yes');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, true, W, NULL, NULL, NULL, 'card')), '§133 (setup): DAD''s card yes');
     PERFORM set_config('app.user_id', '', true);
     PERFORM _v155_back(TWO, DAD, 10);   -- his old yes is now -40, his card yes -10
     PERFORM _as(DAD);
-    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, false, W, NULL, NULL, NULL, 'board')), '§132 (setup): DAD''s board no');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, false, W, NULL, NULL, NULL, 'board')), '§133 (setup): DAD''s board no');
 
     -- (B1)
     FOREACH s IN ARRAY ARRAY['card', 'live', 'board'] LOOP
       f := public_name_facts(TWO, NULL, sa_today(), s);
       PERFORM _assert(_v155_n(f, jsonb_build_object('by', 'guardian', 'surface', NULL, 'givenOn', to_char(sa_today() - 20, 'YYYY-MM-DD'),
                                                     'endedOn', to_char(sa_today() - 20, 'YYYY-MM-DD'), 'competent', true)) = 1,
-        format('§132 (B1): MUM''s no to the old wording is not on %s: %s', s, f));
+        format('§133 (B1): MUM''s no to the old wording is not on %s: %s', s, f));
       PERFORM _assert(_v155_n(f, '{"surface": "card"}') = CASE s WHEN 'card' THEN 1 ELSE 0 END,
-        format('§132 (B1): DAD''s card yes reaches %s: %s', s, f));
+        format('§133 (B1): DAD''s card yes reaches %s: %s', s, f));
       PERFORM _assert(_v155_n(f, '{"surface": "board"}') = CASE s WHEN 'board' THEN 1 ELSE 0 END,
-        format('§132 (B1): DAD''s board no reaches %s: %s', s, f));
-      PERFORM _assert(_v155_n(f, '{"surface": "live"}') = 0, format('§132 (B1): a live record on %s with none given: %s', s, f));
+        format('§133 (B1): DAD''s board no reaches %s: %s', s, f));
+      PERFORM _assert(_v155_n(f, '{"surface": "live"}') = 0, format('§133 (B1): a live record on %s with none given: %s', s, f));
     END LOOP;
     f := public_name_facts(TWO, NULL, sa_today());
     PERFORM _assert(jsonb_array_length(f -> 'consents') = 3
                     AND _v155_n(f, jsonb_build_object('by', 'guardian', 'givenOn', to_char(sa_today(), 'YYYY-MM-DD'),
                                                       'endedOn', to_char(sa_today(), 'YYYY-MM-DD'))) = 1,
-      format('§132 (B1): the old facts do not read DAD''s board no as a no today, or read his card yes: %s', f));
+      format('§133 (B1): the old facts do not read DAD''s board no as a no today, or read his card yes: %s', f));
 
     -- (door)
     PERFORM _assert((SELECT count(*) FROM public_name_facts(TWO, NULL, sa_today(), 'card') x,
                             jsonb_array_elements(x -> 'consents') e
                       WHERE e @> '{"surface": null}' AND e ->> 'endedOn' IS NULL AND e ->> 'givenOn' = to_char(sa_today() - 40, 'YYYY-MM-DD')) = 1,
-      '§132 (door): DAD''s board no ended his old-wording yes');
+      '§133 (door): DAD''s board no ended his old-wording yes');
     PERFORM _assert((SELECT row(ok, reason)::text FROM public_name_consent_set(TWO, true, W, NULL, NULL, NULL, 'card')) = '(f,already_given)',
-      '§132 (door): DAD''s card yes at the same version is not already given');
+      '§133 (door): DAD''s card yes at the same version is not already given');
     n := _consent_rows(TWO);
     PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, true, 'public-names-2026-09', NULL, NULL, NULL, 'card')),
-      '§132 (door): DAD''s card yes at another version');
+      '§133 (door): DAD''s card yes at another version');
     f := public_name_facts(TWO, NULL, sa_today(), 'card');
     PERFORM _assert(_consent_rows(TWO) = n + 1
                     AND _v155_n(f, jsonb_build_object('surface', 'card', 'givenOn', to_char(sa_today(), 'YYYY-MM-DD'))) = 1
                     AND _v155_n(f, '{"surface": "card"}') = 1
                     AND (SELECT count(*) FROM jsonb_array_elements(f -> 'consents') e WHERE e @> '{"surface": null}' AND e ->> 'endedOn' IS NULL) = 1,
-      format('§132 (door): DAD''s new card yes did not supersede his card record alone: %s', f));
-    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, false, W, NULL, NULL, NULL, 'card')), '§132 (door): DAD''s card no');
+      format('§133 (door): DAD''s new card yes did not supersede his card record alone: %s', f));
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, false, W, NULL, NULL, NULL, 'card')), '§133 (door): DAD''s card no');
     f := public_name_facts(TWO, NULL, sa_today(), 'card');
     PERFORM _assert(_v155_n(f, jsonb_build_object('surface', 'card', 'endedOn', to_char(sa_today(), 'YYYY-MM-DD'))) = 1
                     AND (SELECT count(*) FROM jsonb_array_elements(f -> 'consents') e WHERE e @> '{"surface": null}' AND e ->> 'endedOn' IS NULL) = 1,
-      format('§132 (door): DAD''s card no did not withdraw his card yes alone: %s', f));
+      format('§133 (door): DAD''s card no did not withdraw his card yes alone: %s', f));
     PERFORM set_config('app.user_id', '', true);
     PERFORM _assert(_v155_insert_refused(TWO, DAD, NULL) AND NOT _v155_insert_refused(TWO, DAD, 'live'),
-      '§132 (door): two open records for one giver on one wording, or none allowed on a new one');
+      '§133 (door): two open records for one giver on one wording, or none allowed on a new one');
 
     -- (two)
     f := public_name_facts(TWO, NULL, sa_today(), 'card');
     PERFORM _assert(_v155_n(f, '{"by": "guardian"}') = 3 AND _v155_n(f, '{"by": "pupil"}') = 0
                     AND (SELECT array_agg(e ->> 'givenOn' ORDER BY o) FROM jsonb_array_elements(f -> 'consents') WITH ORDINALITY x(e, o))
                         = ARRAY[to_char(sa_today() - 40, 'YYYY-MM-DD'), to_char(sa_today() - 20, 'YYYY-MM-DD'), to_char(sa_today(), 'YYYY-MM-DD')],
-      format('§132 (two): on card, not MUM''s no and DAD''s two records, in the order given: %s', f));
+      format('§133 (two): on card, not MUM''s no and DAD''s two records, in the order given: %s', f));
     f := public_name_facts(TWO, NULL, sa_today(), 'live');
     PERFORM _assert(jsonb_array_length(f -> 'consents') = 2 AND _v155_n(f, '{"surface": null}') = 2,
-      format('§132 (two): on live, not MUM''s no and DAD''s old yes alone: %s', f));
+      format('§133 (two): on live, not MUM''s no and DAD''s old yes alone: %s', f));
 
     -- (eighteen)
     PERFORM _as((y->>'adult_self')::uuid);
-    PERFORM _assert((SELECT ok FROM public_name_consent_set(ADULT, true, W, NULL, NULL, NULL, 'card')), '§132 (eighteen): ADULT''s own card yes');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(ADULT, true, W, NULL, NULL, NULL, 'card')), '§133 (eighteen): ADULT''s own card yes');
     f := public_name_facts(ADULT, NULL, sa_today(), 'card');
     PERFORM _assert(_v155_n(f, '{"by": "pupil", "surface": "card", "competent": true, "adult": true, "giverLive": true}') = 1
                     AND _v155_n(f, '{"by": "guardian", "competent": true, "surface": null}') = 1,
-      format('§132 (eighteen): ADULT''s own yes is not an adult''s and live, or ADULTMUM''s no at school does not count: %s', f));
+      format('§133 (eighteen): ADULT''s own yes is not an adult''s and live, or ADULTMUM''s no at school does not count: %s', f));
     PERFORM _as((y->>'adultmum')::uuid);
     PERFORM _assert((SELECT row(ok, reason)::text FROM public_name_consent_set(ADULT, true, W, NULL, NULL, NULL, 'live')) = '(f,adult_consents_for_himself)',
-      '§132 (eighteen): ADULTMUM''s live yes, after eighteen, is not refused');
-    PERFORM _assert((SELECT ok FROM public_name_consent_set(ADULT, false, W, NULL, NULL, NULL, 'live')), '§132 (eighteen): ADULTMUM''s live no');
+      '§133 (eighteen): ADULTMUM''s live yes, after eighteen, is not refused');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(ADULT, false, W, NULL, NULL, NULL, 'live')), '§133 (eighteen): ADULTMUM''s live no');
     PERFORM _assert(_v155_n(public_name_facts(ADULT, NULL, sa_today(), 'live'), '{"by": "guardian", "surface": "live", "competent": true}') = 1,
-      '§132 (eighteen): ADULTMUM''s live no, while he is at school, does not count');
+      '§133 (eighteen): ADULTMUM''s live no, while he is at school, does not count');
     PERFORM _as((y->>'two_self')::uuid);
     PERFORM _assert((SELECT row(ok, reason)::text FROM public_name_consent_set(TWO, true, W, NULL, NULL, NULL, 'live')) = '(f,not_yet_eighteen)',
-      '§132 (eighteen): TWO''s own live yes at fourteen is not refused');
-    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, false, W, NULL, NULL, NULL, 'live')), '§132 (eighteen): TWO''s own live no');
+      '§133 (eighteen): TWO''s own live yes at fourteen is not refused');
+    PERFORM _assert((SELECT ok FROM public_name_consent_set(TWO, false, W, NULL, NULL, NULL, 'live')), '§133 (eighteen): TWO''s own live no');
     f := public_name_facts(TWO, NULL, sa_today(), 'live');
     PERFORM _assert(_v155_n(f, '{"by": "pupil", "surface": "live", "competent": true, "adult": false}') = 1
                     AND _v155_n(public_name_facts(TWO, NULL, sa_today(), 'card'), '{"by": "pupil"}') = 0,
-      format('§132 (eighteen): TWO''s own live no is not his competent no on live alone: %s', f));
+      format('§133 (eighteen): TWO''s own live no is not his competent no on live alone: %s', f));
     PERFORM _as((y->>'young_self')::uuid);
     PERFORM _assert((SELECT row(ok, reason)::text FROM public_name_consent_set(YOUNG, false, W, NULL, NULL, NULL, 'card')) = '(f,not_yet_twelve)',
-      '§132 (eighteen): YOUNG''s card no at eleven is not refused');
+      '§133 (eighteen): YOUNG''s card no at eleven is not refused');
     PERFORM set_config('app.user_id', '', true);
 
     -- (never-1)
     FOREACH s IN ARRAY ARRAY['card', 'live', 'board'] LOOP
       f := public_name_facts(SILENT, NULL, sa_today(), s);
       PERFORM _assert(f -> 'consents' = '[]'::jsonb AND f -> 'byTerms' = 'false'::jsonb,
-        format('§132 (never-1): SILENT, whom nobody answered for, has a record or a default on %s: %s', s, f));
+        format('§133 (never-1): SILENT, whom nobody answered for, has a record or a default on %s: %s', s, f));
     END LOOP;
     -- (never-3)
     g := _v155_by_terms();
     PERFORM _assert((g->>'byTerms')::int = 0 AND (g->>'calls')::int > 0,
-      format('§132 (never-3): somebody is public by terms before slice 4: %s', g));
+      format('§133 (never-3): somebody is public by terms before slice 4: %s', g));
     -- (never-6)
     f := public_name_facts(ADULT, NULL, sa_today(), 'card');
     PERFORM _assert((SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(f) k) = ARRAY['byTerms', 'consents', 'namesOff', 'neverPublic']
@@ -42648,39 +42648,39 @@ $m130$;
                                                               ELSE ARRAY['by', 'competent', 'endedOn', 'givenOn', 'giverLive', 'surface'] END)
                     AND f::text !~* '([0-9a-f]{8}-[0-9a-f]{4}-|public-names|popia|reason|refused|withdrawn)'
                     AND position(to_char((sa_today() - make_interval(years => 18, days => 30))::date, 'YYYY-MM-DD') IN f::text) = 0,
-      format('§132 (never-6): the facts carry a key, an id, a wording, a reason or his date of birth they should not: %s', f));
+      format('§133 (never-6): the facts carry a key, an id, a wording, a reason or his date of birth they should not: %s', f));
     -- (never-7)
     PERFORM _as(MUM);
     n := _consent_rows(TWO);
     FOREACH s IN ARRAY ARRAY['stream', 'overlay', ''] LOOP
       PERFORM _assert((SELECT row(ok, reason)::text FROM public_name_consent_set(TWO, false, W, NULL, NULL, NULL, s)) = '(f,no_such_surface)',
-        format('§132 (never-7): the door took the surface %L', s));
+        format('§133 (never-7): the door took the surface %L', s));
     END LOOP;
-    PERFORM _assert(_consent_rows(TWO) = n, '§132 (never-7): a refused surface left a record');
+    PERFORM _assert(_consent_rows(TWO) = n, '§133 (never-7): a refused surface left a record');
     PERFORM set_config('app.user_id', '', true);
     BEGIN
       PERFORM public_name_facts(TWO, NULL, sa_today(), 'stream');
-      PERFORM _assert(false, '§132 (never-7): the facts answered the surface stream');
+      PERFORM _assert(false, '§133 (never-7): the facts answered the surface stream');
     EXCEPTION WHEN invalid_parameter_value THEN NULL;
     END;
-    PERFORM _assert(_v155_insert_refused(TWO, MUM, 'stream'), '§132 (never-7): the owner''s record on the surface stream was not refused');
+    PERFORM _assert(_v155_insert_refused(TWO, MUM, 'stream'), '§133 (never-7): the owner''s record on the surface stream was not refused');
 
     -- (switch)
     PERFORM _v155_switch(true);
     v := _v155_surfaces();
     PERFORM _assert(public_name_surface(M) = 'live' AND public_name_surface(gen_random_uuid()) IS NULL
                     AND v ~ 'live:live' AND v ~ ':card' AND v !~ 'live:(card|\(none\))' AND v !~ '(complete|scheduled|abandoned):(live|\(none\))',
-      format('§132 (switch): on, a fixture in play is not live, or one not in play is not card, or no such fixture has one: %s', v));
+      format('§133 (switch): on, a fixture in play is not live, or one not in play is not card, or no such fixture has one: %s', v));
     PERFORM _assert((SELECT count(*) FROM public_match_people(M, public_name_surface(M)) x) = 7
                     AND NOT EXISTS (SELECT 1 FROM public_match_people(M, public_name_surface(M)) x
                                      WHERE x.facts IS DISTINCT FROM public_name_facts(x.player_id, 'U16B', sa_today(), 'live')
                                                                     || jsonb_build_object('namesOff', x.facts -> 'namesOff')
                                         OR NOT (x.facts ? 'byTerms')),
-      '§132 (switch): the page''s people, on live, are not the live facts');
+      '§133 (switch): the page''s people, on live, are not the live facts');
     PERFORM _assert((SELECT count(*) FROM public_match_people(M) x WHERE x.facts ? 'byTerms') = 0,
-      '§132 (switch): the big screen''s read (one argument) moved with the switch');
+      '§133 (switch): the big screen''s read (one argument) moved with the switch');
     PERFORM _v155_switch(false);
-    PERFORM _assert(public_name_surface(M) IS NULL, '§132 (switch): off again, the live fixture still has a surface');
+    PERFORM _assert(public_name_surface(M) IS NULL, '§133 (switch): off again, the live fixture still has a surface');
 
     -- (body)
     PERFORM _assert((SELECT bool_and(p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']
@@ -42695,7 +42695,7 @@ $m130$;
                                       'public_name_consent_set(uuid,boolean,text,uuid,text,date)'::regprocedure,
                                       'public_match_people(uuid,text)'::regprocedure, 'public_match_people(uuid)'::regprocedure,
                                       'public_name_surface(uuid)'::regprocedure)),
-      '§132 (body): a function is not a definer with its path pinned, or is callable by a role other than its owner and the application');
+      '§133 (body): a function is not a definer with its path pinned, or is callable by a role other than its owner and the application');
     PERFORM _assert((SELECT bool_and(p.pronargdefaults = 0) FROM pg_proc p
                       WHERE p.oid IN ('public_name_facts(uuid,text,date,text)'::regprocedure,
                                       'public_name_consent_set(uuid,boolean,text,uuid,text,date,text)'::regprocedure,
@@ -42703,9 +42703,9 @@ $m130$;
                     AND _v155_md5('public_name_facts(uuid,text,date)') = 'dc920c0a2a8887ba2653d76981d30218'
                     AND _v155_md5('public_name_consent_set(uuid,boolean,text,uuid,text,date)') = '1d29900b929f9ce256c6e2b003c9558e'
                     AND _v155_md5('public_match_people(uuid)') = '9eaf0820a9262868e5f704104ed91e89',
-      '§132 (body): a new form takes a default, or an old signature is not db/155''s wrapper');
+      '§133 (body): a new form takes a default, or an old signature is not db/155''s wrapper');
   END;
-  -- └── db/155 (section 132) ──────────────────────────────────────────
+  -- └── db/155 (section 133) ──────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

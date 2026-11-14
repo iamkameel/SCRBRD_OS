@@ -19,7 +19,7 @@
 -- existing caller reaches the same body through the same signature, and
 -- every row on the record today is the old single wording (surface NULL),
 -- which those bodies read exactly as db/116 and db/59 did. The proof is
--- db/99 §132 (dark): db/116's and db/59's bodies, held verbatim by their
+-- db/99 §133 (dark): db/116's and db/59's bodies, held verbatim by their
 -- shipped md5s, against the live functions over every player, side, day
 -- and match the verifier has made by then.
 --
@@ -138,7 +138,7 @@
 -- these bodies (db/153's needs-check reads the 3-argument signature and the
 -- `neverPublic` key, both kept) is broken by it.
 --
--- Its proof is db/99 §132; the walks are smoke-public-name, smoke-public,
+-- Its proof is db/99 §133; the walks are smoke-public-name, smoke-public,
 -- smoke-browser-public-name, smoke-browser-public and
 -- smoke-browser-public-live, unchanged.
 
