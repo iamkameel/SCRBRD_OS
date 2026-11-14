@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { announceArrivals } from "../../lib/announce.js";
+import { endsHeld, enqueue, isGap, lineBall, momentsFrom, SHOW_MS } from "../../lib/moments.js";
 
 /**
  * The spectator board's moments (Kameel's premium-feel checklist, step 3c):
@@ -10,19 +11,8 @@ import { announceArrivals } from "../../lib/announce.js";
  * nothing: only a line that ARRIVES while the page is open is a moment.
  */
 
-/** A four, a six or a wicket: a short beat. A milestone or the result: a bigger one. */
-const BEAT = new Set(["four", "six", "wicket"]);
-/** The bigger moments — never longer than the milestone slot (§3.6: never over about 1.5s). */
-const BIG = new Set(["milestone", "result"]);
-/**
- * How long each shows: over the board's left-hand corner, never its total,
- * and under a second and a half, so the score is never kept from anyone.
- */
-const BEAT_MS = 1200, MILESTONE_MS = 1500;
-/** The gentle over summary between overs. */
+/** The gentle over summary between overs (SCRBRD-133 §5.2 row 10). */
 export const OVER_SUMMARY_MS = 6000;
-/** At most this many moments wait their turn; a burst after a slow read plays its latest. */
-const QUEUE_MAX = 4;
 
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -73,29 +63,75 @@ export function useAnnouncement(items, events, ready) {
 }
 
 /**
- * The moment on show (a line of commentary with its kind, or null) and the
- * over summary on show (the generator's end-of-over line, or null).
+ * The moment on show and the over summary on show (SCRBRD-133 §5,
+ * EXPERIENCE_PASS Slice 2). Which card a read earns, its size, its time, the
+ * merge and the queue are lib/moments.js's, one module for the Match Centre,
+ * the public page and the ground display; this hook only keeps the time.
+ *
+ * `innings` is the fold the lines were told from (the page's played innings):
+ * the fold before a read and after it are what a card is matched on, as the
+ * catalogue's triggers say. `side` names a side, as the page writes it.
+ *
+ * Only what arrives while the page is open: the first read seeds what has
+ * been seen, so a reload plays nothing; a line on a ball an earlier read
+ * already drew (a correction moved it there, GA-I36) is no card. A held card
+ * (play stopped, a super over tied) stays until play moves again: a delivery,
+ * an interruption's line or an innings starting or ending, never a quiet
+ * correction line. The result shows for the long time (6 s) and the page's
+ * result view, or the display's Result panel, holds it from there. A gap
+ * (more than six deliveries in one read) plays no card and no over summary.
+ * @param {{key: string, kind: string}[]} items  the commentary lines, with any synthetic result line
+ * @param {boolean} ready  the first read is in
+ * @param {any[] | null} [innings]  the fold's innings those lines were told from
+ * @param {(inn: any) => string} [side]
+ * @param {string[] | null} [focus]  a family's or a pupil's screen: the ids it is for (Q10)
  */
-export function useMoments(items, ready) {
-  const arrived = useArrivals(items, ready);
-  const queue = useRef([]);
-  const [moment, setMoment] = useState(null);
-  const [overSummary, setOverSummary] = useState(null);
+export function useMoments(items, ready, innings = null, side = undefined, focus = null) {
+  const seen = useRef(/** @type {Set<string> | null} */ (null));
+  const balls = useRef(/** @type {Set<string>} */ (new Set()));
+  const last = useRef(/** @type {any[] | null} */ (null));
+  const queue = useRef(/** @type {any[]} */ ([]));
+  const showing = useRef(/** @type {any} */ (null));
+  const named = useRef(side);
+  const lit = useRef(focus);
+  const [moment, setMoment] = useState(/** @type {any} */ (null));
+  const [overSummary, setOverSummary] = useState(/** @type {any} */ (null));
+  useEffect(() => { named.current = side; lit.current = focus; });
+  const show = (/** @type {any} */ card) => { showing.current = card ?? null; setMoment(card ?? null); };
 
   useEffect(() => {
-    if (!arrived.n) return;
-    const next = arrived.items.filter((i) => BEAT.has(i.kind) || BIG.has(i.kind));
-    queue.current = [...queue.current, ...next].slice(-QUEUE_MAX);
-    if (!moment && queue.current.length) setMoment(queue.current.shift());
-    const end = arrived.items.filter((i) => i.kind === "over_end").pop();
+    if (!ready) return;
+    const drawn = balls.current;
+    if (seen.current == null) {
+      seen.current = new Set(items.map((i) => i.key));
+      for (const i of items) { const b = lineBall(i); if (b) drawn.add(b); }
+      last.current = innings;
+      return;
+    }
+    const was = seen.current;
+    const fresh = items.filter((i) => !was.has(i.key));
+    for (const i of fresh) was.add(i.key);
+    const before = last.current;
+    last.current = innings;
+    if (!fresh.length) return;
+    const cards = momentsFrom(fresh, before ? { innings: before } : null, { innings: innings ?? [] },
+      { ...(named.current ? { side: named.current } : {}), seen: new Set(drawn), focus: lit.current });
+    for (const i of fresh) { const b = lineBall(i); if (b) drawn.add(b); }
+    // A held card gives way once play moves again or the result comes, never to a quiet correction line.
+    if (endsHeld(showing.current, fresh, cards)) show(null);
+    queue.current = enqueue(queue.current, cards, showing.current);
+    if (!showing.current && queue.current.length) show(queue.current.shift());
+    const end = isGap(fresh) ? null : fresh.filter((i) => i.kind === "over_end").pop();
     if (end) setOverSummary(end);
-    // Only the arrivals decide; the moment on show is read, not watched.
+    // Only the arrivals decide; `innings` is read as it stood with them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arrived]);
+  }, [items, ready]);
 
   useEffect(() => {
     if (!moment) return undefined;
-    const t = setTimeout(() => setMoment(queue.current.shift() ?? null), BIG.has(moment.kind) ? MILESTONE_MS : BEAT_MS);
+    const ms = moment.ms ?? (moment.kind === "result" ? SHOW_MS.long : null);
+    if (ms == null) return undefined;
+    const t = setTimeout(() => show(queue.current.shift() ?? null), ms);
     return () => clearTimeout(t);
   }, [moment]);
 

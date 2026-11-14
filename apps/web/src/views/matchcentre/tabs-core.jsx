@@ -9,6 +9,7 @@ import { InningsToggle } from "./scorecard.jsx";
 import { CardHead, Panel, Quiet, SideName } from "./bits.jsx";
 import { Highlights, MomentMark, OverSummary, ResultBoard } from "./spectator.jsx";
 import { StatusLine } from "./scores.jsx";
+import { boardTags } from "../../lib/moments.js";
 import { matchChaseOf, superOverTitle, twoInningsPlayed } from "../../lib/superOver.js";
 import { chaseRates, estimateLine, rainTouched, rateTrack, reportFor } from "../../lib/par.js";
 import { wormOf } from "../../lib/chartSeries.js";
@@ -36,6 +37,8 @@ import { SourcedLazy, ballsLine } from "../../ui/sourcedLazy.jsx";
 // scenario-panel.mjs) go with it; what the board and the insight line need
 // (scenario.mjs) is already in the static graph.
 const ScenarioPanel = lazy(() => import("./scenario.jsx").then((m) => ({ default: m.ScenarioPanel })));
+// EXPERIENCE_PASS Slice 2: the over story, lifted from the ground display, its own chunk for the same reason.
+const OverStory = lazy(() => import("./overStory.jsx"));
 
 
 /** The innings break (§10 item 10, p2): the first innings in four facts. */
@@ -244,12 +247,14 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   const updated = match.status === "live" && !settled && okAt != null ? { at: okAt, status: "Live" } : undefined;
   return (
     <div style={{ display: "grid", gap: T.space.lg }} data-testid="mc-summary">
+      {/* §3.11: while the break lasts, its card is the first thing on the Summary. */}
+      {atBreak && <InningsBreakCard match={match} innings={innings} overs={overs}/>}
       {props && (
         // CRI-2.2: the rate track is drawn inside the board, so its line is under the board.
         <SourcedLazy line={ballsLine(`${side.full} innings`, inn.balls ?? 0)} testid="source-line-board" after>
         <div style={{ position: "relative" }}>
           <Board {...props} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="mc-board"
-            insight={insight.length ? insight : undefined} updated={updated} estimate={estimate}
+            insight={insight.length ? insight : undefined} updated={updated} estimate={estimate} tags={boardTags(inn, commentary, index)}
             extra={track ? <RateTrack track={track} testid="mc-rate-track" textStyle={{ fontFamily: T.type.body, fontSize: "13px" }}
               palette={{ line: T.board.dim, bar: T.board.lime, dot: T.board.figure, text: T.board.dim, gap: T.board.lime }}/> : null}/>
           <MomentMark moment={moment} announce={!quietMoments}/>
@@ -284,6 +289,12 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
           </SourcedLazy>
         </Panel>
       )}
+      {/* §3.3: the over story, one row an over, newest first; a row opens to its lines. */}
+      <ErrorBoundary name="over story" fallback={null}>
+        <Suspense fallback={null}>
+          <OverStory inn={inn} index={index} events={events} fold={fold} commentary={commentary} overs={inOvers}/>
+        </Suspense>
+      </ErrorBoundary>
       {/* GA-I29 A1: scenarios — arithmetic on this innings' own record, signed in and public alike, team-level,
           from 12 legal balls (scenario.jsx; @scrbrd/scoring scenarioOf() says when it is drawn). */}
       {/* Its own boundary, with no card of its own when it fails: a chunk that cannot be fetched (a deploy, the
@@ -294,7 +305,6 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
             decided={!!result || settled} atBreak={atBreak} estimate={!!estimate} team={side.full}/>
         </Suspense>
       </ErrorBoundary>
-      {atBreak && <InningsBreakCard match={match} innings={innings} overs={overs}/>}
       {latest.length > 0 && (
         <Panel testid="mc-latest">
           <CardHead icon="scorebook">Latest</CardHead>

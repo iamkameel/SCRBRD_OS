@@ -484,6 +484,25 @@ try {
   });
   const liveAt = await sentenceAt(p);
   ok("§3.3: while it is being played, the status sentence is said once, under the board", liveAt.n === 1 && liveAt.inPanel && liveAt.underBoard, JSON.stringify(liveAt));
+  {
+    // EXPERIENCE_PASS §3.3: the over story on the Summary — one row an over, newest first, a row opening to its lines.
+    await tid(p, "mc-over-story").waitFor({ timeout: 8000 }).catch(() => {});
+    const rows = await p.locator('[data-testid="mc-over-row"]').evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-over"))));
+    const bowled = inn2.overLog.length;
+    ok(`the over story: the last six of the ${bowled} overs, newest first (${rows.join(",")})`,
+       rows.length === Math.min(6, bowled) && rows[0] === bowled && rows.every((r, i) => i === 0 || r === rows[i - 1] - 1), rows.join(","));
+    ok("...saying how many it stands on", new RegExp(`^${bowled} of ${inn2.overs} overs`).test(await tid(p, "mc-over-story-count").innerText().catch(() => "")));
+    const first = p.locator('[data-testid="mc-over-row"] button').first();
+    const h = (await first.boundingBox().catch(() => null))?.height ?? 0;
+    await first.click({ timeout: 4000 }).catch(() => {});
+    // Newest first, as the Commentary tab has them (SCRBRD-133 §6.4).
+    const want = expected.filter((c) => c.innings === 1 && c.over === bowled - 1).map((c) => c.text).reverse();
+    const lines = await p.locator('[data-testid="mc-over-lines"] li').allInnerTexts().catch(() => []);
+    ok(`...a row, 44px, opens to that over's lines, the generator's own (${lines.length})`, h >= 44 && await first.getAttribute("aria-expanded") === "true"
+       && lines.length === want.length && want.every((t, i) => lines[i]?.includes(t)), JSON.stringify(lines.slice(0, 2)));
+    await first.click({ timeout: 4000 }).catch(() => {});
+    ok("...and a second tap closes it", await tid(p, "mc-over-lines").count() === 0);
+  }
   const total = (await tid(p, "mc-board-total").innerText()).replace(/\s/g, "");
   ok(`the board's total is the fold's (${inn2.runs}/${inn2.wickets})`, total === `${inn2.runs}/${inn2.wickets}`, total);
   ok("...the chase in words", new RegExp(`Need ${inn2.target - inn2.runs} off ${60 - inn2.balls}`).test(await tid(p, "mc-board-sub").innerText()));
@@ -1017,6 +1036,19 @@ try {
   const seen = new Set();
   const watch = setInterval(async () => { seen.add((await tid(L, "mc-board-runs").innerText().catch(() => "")).trim()); }, 60);
   ok("a four gets its beat on the board", await until(L, () => !!document.querySelector('[data-testid="mc-moment"][data-kind="four"]'), 8000));
+  const fourSeen = Date.now();
+  // Review S2: the card is said once, the ball's own line with it; its visible words are hidden from the region.
+  const fourSaid = await L.evaluate(() => {
+    const m = document.querySelector('[data-testid="mc-moment"]');
+    return { said: m?.querySelector('[data-testid="mc-moment-said"]')?.textContent ?? "", role: m?.getAttribute("role"),
+      hidden: [...(m?.querySelectorAll('[data-testid^="mc-moment-"]:not([data-testid="mc-moment-said"])') ?? [])].every((e) => e.getAttribute("aria-hidden") === "true") };
+  });
+  const fourLine = deriveCommentary([...evs, ...late], { nameOf: (r) => byId[r] ?? r, teamName: (_k, n) => FULL[n] ?? n })
+    .find((c) => c.key === "e:mc-live-late-1")?.text ?? "∅";
+  ok(`...said once, with its line: "${fourSaid.said}"`, fourSaid.role === "status" && fourSaid.hidden && fourSaid.said === `Four: ${fourLine}`, JSON.stringify(fourSaid));
+  // Review N3: timed from first sight, still there at two seconds, gone by three and a half.
+  await L.waitForTimeout(Math.max(0, 2000 - (Date.now() - fourSeen)));
+  ok("...still on the board two seconds after it came (a 2.5 s beat, not 1.2)", await tid(L, "mc-moment").count() === 1);
   ok("...beside the total, which stays in view", await tid(L, "mc-board-total").isVisible());
   ok(`the board reaches the new total (${after.runs}/${after.wickets})`, await until(L, (want) =>
     document.querySelector('[data-testid="mc-board-total"]')?.innerText.replace(/\s/g, "") === want, 6000, `${after.runs}/${after.wickets}`), before);
@@ -1025,7 +1057,9 @@ try {
   ok(`...ticking up through the runs between, not jumping (${[...new Set(ticks)].join(" ")})`, new Set(ticks).size >= 2, [...seen].join(","));
   ok("the over's summary shows", await until(L, () => /End of over 5:/.test(document.querySelector('[data-testid="mc-over-summary"]')?.innerText ?? ""), 8000));
   ok("...the generator's own line, with the score", (await tid(L, "mc-over-summary").innerText().catch(() => "")).includes(`${after.runs}/${after.wickets}`));
-  ok("the moment clears within a second and a half", await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), 2500));
+  // SCRBRD-133 §5.2 (decided 2 Oct; EXPERIENCE_PASS C4): a four's beat shows for 2.5 s, no longer.
+  ok("the moment clears after its two and a half seconds", await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), Math.max(500, 3500 - (Date.now() - fourSeen))),
+     `${Date.now() - fourSeen} ms after it was seen`);
   ok("the over summary clears after a few seconds", await until(L, () => !document.querySelector('[data-testid="mc-over-summary"]'), 9000));
 
   group("Big-screen mode: the board, full screen, from the boundary");
@@ -1209,14 +1243,15 @@ try {
   const finalMatch = deriveMatch([...evs, ...late, ...closing]);
   ok("the chase is won", finalMatch.result?.winner === "Westville Boys' High 1XI", JSON.stringify(finalMatch.result));
   ok("GA-I29: once play has decided it, the scenario panel is gone", await until(L, () => !document.querySelector('[data-testid="mc-scenario"]'), 8000));
-  ok("the result arrives as a moment on the board — held no longer than a milestone",
+  ok("the result arrives as a moment on the board",
      await until(L, () => document.querySelector('[data-testid="mc-moment"][data-kind="result"]')?.innerText.includes("won by"), 8000));
   // CRI-1.7: the result is full time, and the Summary is the result view the moment it arrives; the totals stay in view.
   ok("...over the Summary's result view, whose totals stay in view throughout", await tid(L, "mc-result-view").isVisible().catch(() => false)
      && await tid(L, "mc-result-total").last().isVisible().catch(() => false));
   if (SHOTS) { await mkdir(SHOTS, { recursive: true }); await L.screenshot({ path: join(SHOTS, "fulltime-result-moment-1280-floodlit.png") }).catch(() => {}); }
-  ok("the moment clears within a second and a half — the score is never hidden for long (§3.6)",
-     await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), 2500));
+  // §5.2 row 13: the result's card is the long one, 6 s; the result view holds it from there, the totals in view throughout.
+  ok("the moment clears after its six seconds, the totals in view throughout",
+     await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), 7500));
   ok("the header now says Result, and gives the winner and the margin in words",
      await until(L, () => document.querySelector('[data-testid="mc-status"]')?.textContent === "Result", 8000));
   const resultLine = await tid(L, "mc-result").innerText().catch(() => "");
@@ -1849,6 +1884,18 @@ try {
     await B.waitForTimeout(500);
     ok("Try again, once the fault has gone, brings the panel back", await tid(B, "panel-error").count() === 0 && await tid(B, "mc-line").count() > 0);
     ok("...and logged nothing more: a retry that works is silent", panelLogs.length === 2, panelLogs.join(" | "));
+
+    // EXPERIENCE_PASS §3.3 (review N4): a live Summary says the status sentence under its board; when that panel
+    // throws, its boundary keeps the sentence above the card, so the page never loses where the match stands.
+    await B.evaluate(() => { window.__SCRBRD_TEST_THROW__ = "summary"; });
+    await tid(B, "mc-back").click();
+    await B.waitForTimeout(400);
+    ok("the innings-break fixture opens, its Summary made to throw", await openMatch(B, fx.brk));
+    await tid(B, "panel-error").waitFor({ timeout: 6000 }).catch(() => {});
+    const kept = await B.locator('[data-testid="mc-status-line"]').allInnerTexts();
+    ok(`a live Summary that throws: its card, and the status sentence kept once above it ("${kept[0] ?? ""}")`,
+       await B.locator('[data-testid="panel-error"][data-panel="summary"]').count() === 1 && kept.length === 1 && /^Innings break: /.test(kept[0] ?? ""), JSON.stringify(kept));
+    await B.evaluate(() => { window.__SCRBRD_TEST_THROW__ = null; });
 
     // The routed view: the shell's boundary, keyed on the page.
     await tid(B, "mc-back").click();

@@ -1,6 +1,15 @@
 import { dismissalKey } from "./matchCentre.js";
 
 /**
+ * Whose figures may open their balls on this screen (Q9; STEP4 P4): every
+ * player's on a staff or spectator screen, and on a family's or a pupil's
+ * screen (`focus`, the ids it is for: the family's own server-scoped read)
+ * only his own boy's, as Analytics offers only his wheel.
+ * @param {readonly string[] | null | undefined} focus  @param {string} id
+ */
+export const mayListBalls = (focus, id) => !focus?.length || focus.includes(id);
+
+/**
  * EXPERIENCE_PASS §3.3, Q9 (decided 13 Nov): from a scorecard figure to its
  * balls. A batter's runs list the deliveries he faced, and the one that got
  * him out; a bowler's figures list every delivery he bowled. The Commentary

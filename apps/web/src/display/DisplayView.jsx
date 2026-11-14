@@ -4,6 +4,7 @@ import { Figure, INSIGHT_MS } from "../ui/board.jsx";
 import { aboutWhom, boardInsights } from "../scorer/signals.js";
 import { teamOf, sidesOf } from "../lib/matchCentre.js";
 import { MomentMark, OverSummary } from "../views/matchcentre/spectator.jsx";
+import { boardTags } from "../lib/moments.js";
 import { useArrivals, useMoments, useTicker } from "../views/matchcentre/live.js";
 import { DAYLIGHT_DIM, boardOf, clockAt, displayState, parOf, trackOf } from "./data.js";
 import { RateTrack } from "../ui/parTrack.jsx";
@@ -136,7 +137,7 @@ function DisplayInsight({ lines, paused }) {
 }
 
 /** The Board band (§2.2 B): team, total, overs, the second line, the pair, the stand, the bowler, this over. */
-function DisplayBoard({ match, state, shownRuns, moment, overSummary, paused, announce, tp, par }) {
+function DisplayBoard({ match, state, shownRuns, moment, overSummary, paused, announce, tp, par, tags = [] }) {
   const props = boardOf(state, par);
   if (!props) {
     const sides = sidesOf(match);
@@ -198,6 +199,7 @@ function DisplayBoard({ match, state, shownRuns, moment, overSummary, paused, an
           <span className="dv-chips">
             <Chips marks={props.thisOver} label="This over"/>
             {state.inn.freeHit && <span className="dv-tag" data-testid="display-free-hit">Free hit</span>}
+            {tags.includes("Hat-trick ball") && <span className="dv-tag" data-testid="display-hat-trick-ball">Hat-trick ball</span>}
           </span>
         </div>
       )}
@@ -236,7 +238,7 @@ export function DisplayView({ match, events, fold, innings, result, settled, com
   const feed = useMemo(() => (settled && result && commentary.length
     ? [...commentary, { innings: Math.max(0, state.played.length - 1), over: 0, ball: 0, kind: "result", text: result, key: `result:${match.id}` }]
     : commentary), [commentary, settled, result, match.id, state.played.length]);
-  const { moment, overSummary } = useMoments(feed, ready);
+  const { moment, overSummary } = useMoments(feed, ready, innings, (inn) => teamOf(match, inn.battingTeam).short);
   const shownRuns = useTicker(state.inn?.runs, `${match.id}:${state.index}`);
   const { panel, interrupt } = useRotation({ available: state.available, hold: state.hold, dwell: settings.dwell, paused: paused || !!status.sleeping });
 
@@ -264,7 +266,7 @@ export function DisplayView({ match, events, fold, innings, result, settled, com
       style={vars}>
       <style>{sheet()}</style>
       {onClose && <ExitButton onClose={onClose}/>}
-      <DisplayBoard match={match} state={state} shownRuns={shownRuns} moment={status.sleeping ? null : moment}
+      <DisplayBoard match={match} state={state} shownRuns={shownRuns} moment={status.sleeping ? null : moment} tags={boardTags(state.inn, commentary, state.index)}
         overSummary={status.sleeping ? null : overSummary} paused={paused || !!status.sleeping} announce={announce}
         tp={onClose ? "mc-bigscreen" : "display"} par={pressure}/>
       <div className="dv-panel" data-testid="display-panel">

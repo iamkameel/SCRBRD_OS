@@ -37,7 +37,7 @@ import { StateLabel } from "../../ui/stateLabel.jsx";
 import { TabStrip, panelLabel } from "./tabStrip.jsx";
 import { NARROW_PX, tabOr } from "../../lib/matchTabs.js";
 import { scrollerOf } from "../../lib/toBall.js";
-import { ballsOf } from "../../lib/ballsOf.js";
+import { ballsOf, mayListBalls } from "../../lib/ballsOf.js";
 import PageLinks from "./pageLinks.jsx";
 import { opensPassportOf } from "../../lib/passportLink.js";
 
@@ -424,7 +424,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // they were. A family's or a pupil's screen offers it for its own boy only, as Analytics offers his
   // wheel (STEP4 P4: the screen does not offer another child's row). None for a row with no balls.
   const figureTap = signedIn() && !log.demo ? (/** @type {"bat" | "bowl"} */ kind, /** @type {any} */ row, /** @type {number} */ at) => {
-    if (focus?.length && !focus.includes(row.id)) return null;
+    if (!mayListBalls(focus, row.id)) return null;
     const inn = played[at];
     const ids = ballsOf(inn, kind, row.id, (log.events ?? []).filter((e) => (e.innings ?? 0) === at));
     if (!ids.length) return null;
@@ -488,6 +488,8 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   const over = settled || match.status === "complete";
   // CRI-1.2: where the match stands, in one sentence — the list's card asks the same function. A
   // demonstration's innings are a reconstruction, so its sentence is the fixture's own, as the card's is.
+  // §3.3: a live Summary says it under its board, so the header does not; its boundary keeps it if the panel fails.
+  const summarySays = tab === "summary" && !log.loading && !log.error && !summaryIsResult({ match, innings: played, result, settled });
   const status = statusSentence(match, log.demo ? null : { innings: played, result: log.result, conditions: log.fold?.conditions }, { result });
   // One quiet `correction` line each, team-level, never a moment card.
   const told = useMemo(() => withCorrectionLines(commentary, log.events ?? [], fixes, over), [commentary, log.events, fixes, over]);
@@ -520,7 +522,9 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // The spectator's moments: only what arrives while the page is open, so a
   // reload replays nothing. And the board's run count, ticking up to a new
   // total rather than jumping to it.
-  const { moment, overSummary } = useMoments(momentsFeed, !log.loading && !!log.events);
+  // Q10 (the lead's call, 14 Nov): on a family's or a pupil's screen a card about another boy drops the line naming him.
+  const { moment, overSummary } = useMoments(momentsFeed, !log.loading && !!log.events, played, (inn) => teamOf(match, inn.battingTeam).full,
+    focus?.length ? focus : null);
   const bi = boardInnings(played, log.result);
   const boardInn = played[bi.index] ?? null;
   const shownRuns = useTicker(boardInn?.runs, `${match.id}:${bi.index}`);
@@ -660,13 +664,14 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
         <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
           {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
         </h1>
-        {played.length > 0 && <HeaderScores match={match} played={played} corrected={corrected}/>}
+        {/* GA-I36 §5 (Kameel, 14 Nov: "one mark, beside the innings line that moved"). */}
+        {played.length > 0 && <HeaderScores match={match} played={played} movedInnings={corrected}
+          mark={!log.demo && correctedAt(fixes) != null ? <CorrectedChip at={correctedAt(fixes)} lines={correctionLines}/> : null}/>}
         {/* CRI-1.2: where the match stands, in the sentence its card in the list says too — here on every
             tab but a live Summary, which says it under its board (EXPERIENCE_PASS §3.3), so it is said once. */}
-        {(tab !== "summary" || log.loading || log.error || summaryIsResult({ match, innings: played, result, settled })) && <StatusLine st={status} except={["upcoming"]}/>}
+        {!summarySays && <StatusLine st={status} except={["upcoming"]}/>}
         {!log.demo && <OfficialLine official={official} names={{ home: sides.home.full, away: sides.away.full }}/>}
         {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
-        {!log.demo && <CorrectedChip at={correctedAt(fixes)} lines={correctionLines}/>}
         {!log.demo && <StaleLine stale={log.stale} refreshing={log.refreshing} failed={log.failed} okAt={log.okAt} onRefresh={log.refresh}/>}
         {corrections.words && (
           <button type="button" data-testid="mc-corrections-open" onClick={() => { corrections.reload(); setSheet(true); }} className="pressBtn os-state"
@@ -713,7 +718,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
           // One boundary per tab's panel, keyed on the tab: a panel that
           // throws is a card in its own place, and the header, the tab bar
           // and the other five tabs stay.
-          : <ErrorBoundary key={tab} name={tab === "details" ? "match details" : tab}>
+          : <ErrorBoundary key={tab} name={tab === "details" ? "match details" : tab} before={summarySays ? <StatusLine st={status} except={["upcoming"]}/> : null}>
             {tab === "summary" ? <SummaryTab {...ctx}/>
               : tab === "captain" && captain ? <CaptainTab {...ctx}/>
               : tab === "coach" && staff ? <CoachTab {...ctx}/>
