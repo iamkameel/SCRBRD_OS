@@ -13103,19 +13103,23 @@ BEGIN
                      'bbbbbbbb-0000-0000-0000-000000000001');
   RETURN v_m;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- A coach of Hilton's 1XI made here: fixture.read at the side, and not
--- scoring.correct. Not the seed's (…0004): section 12 revokes him, for good,
--- inside this transaction.
-CREATE OR REPLACE FUNCTION _v156_coach() RETURNS uuid AS $$
+-- §134's readers, made here, one role each: none of the seed's people is
+-- relied on, because earlier sections change them for the rest of the
+-- transaction (section 12 revokes the 1XI coach, …0004, and expires R
+-- Pillay's guardian link, so U_PARENT reaches no 1XI fixture).
+CREATE OR REPLACE FUNCTION _v156_person(p_tag text, p_role text, p_school uuid, p_team text) RETURNS uuid AS $$
 DECLARE v_u uuid;
 BEGIN
   INSERT INTO app_user (school_id, email, name, role)
-  VALUES ('11111111-1111-1111-1111-111111111111', 'v156.coach@example.invalid', 'V156 Coach 1XI', 'coach')
+  VALUES (p_school, 'v156.' || p_tag || '@example.invalid', 'V156 ' || p_tag, p_role)
   RETURNING id INTO v_u;
-  INSERT INTO role_assignment (person_id, role, school_id, team_code)
-  VALUES (v_u, 'coach', '11111111-1111-1111-1111-111111111111', '1XI');
+  INSERT INTO role_assignment (person_id, role, school_id, team_code) VALUES (v_u, p_role, p_school, p_team);
   RETURN v_u;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A coach of Hilton's 1XI: fixture.read at the side, and not scoring.correct.
+CREATE OR REPLACE FUNCTION _v156_coach() RETURNS uuid AS $$
+  SELECT _v156_person('coach', 'coach', '11111111-1111-1111-1111-111111111111', '1XI')
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A school hiding a switch for itself (p_person NULL) or for one person, as
 -- its administrator's suppression does; p_hidden false lifts it.
 CREATE OR REPLACE FUNCTION _v156_hide(p_key text, p_school uuid, p_person uuid, p_hidden boolean) RETURNS void AS $$
@@ -43056,7 +43060,10 @@ $m130$;
   -- Staged by _v156_stage(): Hilton's 1XI at home to Westville's, live, its
   -- overlay published with officials shown, one umpire, one ball. Every
   -- read through scrbrd_app, signed out unless said; each switch hidden by
-  -- a school's own suppression (_v156_hide()) and lifted again.
+  -- a school's own suppression (_v156_hide()) and lifted again. The readers
+  -- are made here (_v156_person()), not the seed's, whom earlier sections
+  -- change for good: Hilton's scorer, its director of sport, a 1XI coach
+  -- (fixture.read alone) and Westville's administrator.
   -- Labels:
   --   (officials)  the umpire named while Officials is on at Hilton; with it
   --                off, NULL, the score still served and the appointment
@@ -43074,19 +43081,18 @@ $m130$;
   --   (drs)        with DRS on for the platform and hidden at Hilton, the
   --                scorer records a review (its RETURNING read back) and
   --                corrects it; Westville's administrator, who has DRS on,
-  --                reads none of it, nor does a Hilton guardian; once Hilton
+  --                reads none of it, nor does the 1XI coach; once Hilton
   --                has DRS on, both read it
   --   (breadth)    while it is off, the writer's leg lets through who holds
   --                scoring.correct (Hilton's director of sport reads the
-  --                row at the table) and nobody else (a 1XI coach, who
-  --                holds fixture.read alone, reads none: one made here by
-  --                _v156_coach(), as section 12 revokes the seed's for good)
+  --                row at the table) and nobody else (the 1XI coach, who
+  --                holds fixture.read alone, reads none)
   --   (upsert)     while it is off, the API's statement, INSERT … ON
   --                CONFLICT DO UPDATE on the existing row, corrects it and
   --                reads it back as the same row; Westville still reads none
   --   (person)     DRS hidden from the scorer alone: his review is still
-  --                read by Westville's administrator; hidden from a Hilton
-  --                guardian alone, he still reads it at the table (the
+  --                read by Westville's administrator; hidden from the 1XI
+  --                coach alone, he still reads it at the table (the
   --                person is NULL); hidden for Hilton, he does not
   --   (on-off)     a review stored while DRS is on at Hilton is read by
   --                Westville, and not once Hilton switches it off
@@ -43119,12 +43125,18 @@ $m130$;
     v_was boolean;
     v_flag boolean;
     v_coach uuid;
+    V_SCORER uuid;
+    V_DIRECTOR uuid;
+    V_WESADM uuid;
     n int;
     u uuid;
   BEGIN
     PERFORM set_config('app.user_id', '', true);
     M := _v156_stage();
     v_coach := _v156_coach();
+    V_SCORER := _v156_person('scorer', 'scorer', HIL, NULL);
+    V_DIRECTOR := _v156_person('director', 'directorofsport', HIL, NULL);
+    V_WESADM := _v156_person('wesadmin', 'schooladmin', WES, NULL);
 
     -- (officials)
     PERFORM _assert(feature_enabled('officials', HIL, NULL), '§134 (officials): Officials is not on for Hilton to begin with');
@@ -43190,7 +43202,7 @@ $m130$;
     -- (broadcast)
     PERFORM _v156_hide('broadcast', HIL, NULL, true);
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM broadcast_state(M)), '§134 (broadcast): with Broadcast off at Hilton the overlay has a row signed out');
-    FOREACH u IN ARRAY ARRAY[U_SARAH, U_WES_ADM]::uuid[] LOOP
+    FOREACH u IN ARRAY ARRAY[V_DIRECTOR, V_WESADM]::uuid[] LOOP
       PERFORM _as(u);
       PERFORM _assert(NOT EXISTS (SELECT 1 FROM broadcast_state(M)), format('§134 (broadcast): with Broadcast off at Hilton %s reads an overlay row', u));
     END LOOP;
@@ -43212,9 +43224,9 @@ $m130$;
     PERFORM _assert(NOT feature_enabled('drs_review', HIL, NULL) AND feature_enabled('drs_review', WES, NULL),
       '§134 (drs): DRS is not off at Hilton and on at Westville');
     v_seq := _v156_count(format('SELECT max(seq)::int FROM ball_event WHERE match_id = %L AND kind = ''ball''', M));
-    PERFORM _as(U_SCORER);
+    PERFORM _as(V_SCORER);
     INSERT INTO drs_review (match_id, school_id, ball_seq, called_by, on_field, outcome, evidence_source, reviewed_by)
-    VALUES (M, match_school(M), v_seq, 'fielding', 'not_out', 'overturned', 'umpire_eye', U_SCORER)
+    VALUES (M, match_school(M), v_seq, 'fielding', 'not_out', 'overturned', 'umpire_eye', V_SCORER)
     RETURNING id INTO v_id;
     PERFORM _assert(v_id IS NOT NULL, '§134 (drs): the scorer''s review did not read back while DRS is off at Hilton');
     UPDATE drs_review SET outcome = 'upheld' WHERE match_id = M AND ball_seq = v_seq;
@@ -43222,16 +43234,16 @@ $m130$;
     PERFORM _assert(n = 1, format('§134 (drs): the scorer corrected %s review(s) while DRS is off at Hilton, not one', n));
     PERFORM _assert(_v156_count(format('SELECT count(*)::int FROM drs_review WHERE match_id = %L AND outcome = ''upheld''', M)) = 1,
       '§134 (drs): the review is not stored, corrected, while DRS is off at Hilton');
-    PERFORM _as(U_WES_ADM);
+    PERFORM _as(V_WESADM);
     PERFORM _assert(fixture_reach('fixture.read', M), '§134 (drs): Westville''s administrator does not reach the fixture: it proves nothing');
     SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
     PERFORM _assert(n = 0, format('§134 (drs): Westville''s administrator, DRS on, reads %s review(s) Hilton stored with DRS off', n));
-    PERFORM _as(U_PARENT);
+    PERFORM _as(v_coach);
     SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
-    PERFORM _assert(n = 0, format('§134 (drs): a Hilton guardian reads %s review(s) while DRS is off at Hilton', n));
+    PERFORM _assert(n = 0, format('§134 (drs): the 1XI coach reads %s review(s) while DRS is off at Hilton', n));
 
     -- (breadth)
-    PERFORM _as(U_SARAH);
+    PERFORM _as(V_DIRECTOR);
     PERFORM _assert(app_can('scoring.correct', HIL, '1XI', '00000000-0000-0000-0000-000000000000'::uuid, M),
       '§134 (breadth): Hilton''s director of sport does not hold scoring.correct over the fixture: it proves nothing');
     SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
@@ -43244,57 +43256,57 @@ $m130$;
     PERFORM _assert(n = 0, format('§134 (breadth): the 1XI coach, fixture.read alone, reads %s review(s) while DRS is off at Hilton', n));
 
     -- (upsert)
-    PERFORM _as(U_SCORER);
+    PERFORM _as(V_SCORER);
     INSERT INTO drs_review (match_id, school_id, ball_seq, called_by, on_field, outcome, evidence_source, reviewed_by)
-    VALUES (M, match_school(M), v_seq, 'fielding', 'not_out', 'upheld', 'video_replay', U_SCORER)
+    VALUES (M, match_school(M), v_seq, 'fielding', 'not_out', 'upheld', 'video_replay', V_SCORER)
     ON CONFLICT (match_id, ball_seq) DO UPDATE
       SET outcome = excluded.outcome, evidence_source = excluded.evidence_source, reviewed_by = excluded.reviewed_by
     RETURNING id INTO v_id2;
     PERFORM _assert(v_id2 = v_id, '§134 (upsert): the scorer''s second record of the ball did not read back as the same row while DRS is off');
     PERFORM _assert(_v156_count(format('SELECT count(*)::int FROM drs_review WHERE match_id = %L AND outcome = ''upheld'' AND evidence_source = ''video_replay''', M)) = 1,
       '§134 (upsert): the second record did not correct the one row');
-    PERFORM _as(U_WES_ADM);
+    PERFORM _as(V_WESADM);
     SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
     PERFORM _assert(n = 0, format('§134 (upsert): after the correction Westville''s administrator reads %s review(s) while DRS is off at Hilton', n));
     PERFORM _v156_hide('drs_review', HIL, NULL, false);
-    PERFORM _as(U_WES_ADM);
+    PERFORM _as(V_WESADM);
     SELECT count(*) INTO n FROM drs_review WHERE match_id = M AND outcome = 'upheld';
     PERFORM _assert(n = 1, format('§134 (drs): with DRS on at Hilton, Westville''s administrator reads %s review(s), not the one', n));
-    PERFORM _as(U_PARENT);
+    PERFORM _as(v_coach);
     SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
-    PERFORM _assert(n = 1, format('§134 (drs): with DRS on at Hilton, the Hilton guardian reads %s review(s), not the one', n));
+    PERFORM _assert(n = 1, format('§134 (drs): with DRS on at Hilton, the 1XI coach reads %s review(s), not the one', n));
 
     -- (person)
     PERFORM set_config('app.user_id', '', true);
-    PERFORM _v156_hide('drs_review', HIL, U_SCORER, true);
-    PERFORM _assert(NOT feature_enabled('drs_review', HIL, U_SCORER) AND feature_enabled('drs_review', HIL, NULL),
+    PERFORM _v156_hide('drs_review', HIL, V_SCORER, true);
+    PERFORM _assert(NOT feature_enabled('drs_review', HIL, V_SCORER) AND feature_enabled('drs_review', HIL, NULL),
       '§134 (person): DRS is not hidden from the scorer alone');
-    PERFORM _as(U_WES_ADM);
+    PERFORM _as(V_WESADM);
     SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
     PERFORM _assert(n = 1, format('§134 (person): DRS hidden from the scorer alone hid his review from Westville (%s read)', n));
     PERFORM set_config('app.user_id', '', true);
-    PERFORM _v156_hide('drs_review', HIL, U_SCORER, false);
-    PERFORM _v156_hide('drs_review', HIL, U_PARENT, true);
-    PERFORM _assert(NOT feature_enabled('drs_review', HIL, U_PARENT), '§134 (person): DRS is not hidden from the Hilton guardian');
-    PERFORM _as(U_PARENT);
+    PERFORM _v156_hide('drs_review', HIL, V_SCORER, false);
+    PERFORM _v156_hide('drs_review', HIL, v_coach, true);
+    PERFORM _assert(NOT feature_enabled('drs_review', HIL, v_coach), '§134 (person): DRS is not hidden from the 1XI coach');
+    PERFORM _as(v_coach);
     SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
-    PERFORM _assert(n = 1, format('§134 (person): DRS hidden from a Hilton guardian alone hid the review from him at the table (%s read): the table asks no person', n));
+    PERFORM _assert(n = 1, format('§134 (person): DRS hidden from the 1XI coach alone hid the review from him at the table (%s read): the table asks no person', n));
     PERFORM _v156_hide('drs_review', HIL, NULL, true);
     SELECT count(*) INTO n FROM drs_review WHERE match_id = M;
-    PERFORM _assert(n = 0, format('§134 (person): hidden for Hilton as well, the guardian reads %s review(s)', n));
+    PERFORM _assert(n = 0, format('§134 (person): hidden for Hilton as well, the coach reads %s review(s)', n));
     PERFORM set_config('app.user_id', '', true);
     PERFORM _v156_hide('drs_review', HIL, NULL, false);
-    PERFORM _v156_hide('drs_review', HIL, U_PARENT, false);
+    PERFORM _v156_hide('drs_review', HIL, v_coach, false);
 
     -- (on-off)
     PERFORM _v149_ball(M, 'aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
                        'bbbbbbbb-0000-0000-0000-000000000001');
     v_seq2 := _v156_count(format('SELECT max(seq)::int FROM ball_event WHERE match_id = %L AND kind = ''ball''', M));
     PERFORM _assert(feature_enabled('drs_review', HIL, NULL) AND v_seq2 > v_seq, '§134 (on-off): DRS is not on at Hilton, or no second ball');
-    PERFORM _as(U_SCORER);
+    PERFORM _as(V_SCORER);
     INSERT INTO drs_review (match_id, school_id, ball_seq, called_by, on_field, outcome, evidence_source, reviewed_by)
-    VALUES (M, match_school(M), v_seq2, 'batting', 'out', 'overturned', 'umpire_eye', U_SCORER);
-    PERFORM _as(U_WES_ADM);
+    VALUES (M, match_school(M), v_seq2, 'batting', 'out', 'overturned', 'umpire_eye', V_SCORER);
+    PERFORM _as(V_WESADM);
     SELECT count(*) INTO n FROM drs_review WHERE match_id = M AND ball_seq = v_seq2;
     PERFORM _assert(n = 1, format('§134 (on-off): Westville''s administrator reads %s of the review stored while DRS was on', n));
     PERFORM _v156_hide('drs_review', HIL, NULL, true);
