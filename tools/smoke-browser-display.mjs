@@ -809,7 +809,7 @@ try {
     ok("...and Share hands over the public page's link, whose preview names no child", shared?.length === 1 && shared[0].url === `${BASE}/live/${pub}`, JSON.stringify(shared));
     const words = JSON.stringify(shared ?? []);
     ok("...with the sides and the sentence, and no child's name", /Hilton College 1XI v /.test(shared?.[0]?.title ?? "")
-       && childWords.every((w) => !words.includes(w)) && leaks(words).length === 0, words);
+       && childWords.every((w) => !words.includes(w)) && leaks(`${shared?.[0]?.title ?? ""} ${shared?.[0]?.text ?? ""}`).length === 0, words);
     ok("no page errors (published)", a.errors.length === 0, a.errors.join(" | "));
     await a.ctx.close();
     // ROT's publication was withdrawn above (4b): no display is served, so no link.

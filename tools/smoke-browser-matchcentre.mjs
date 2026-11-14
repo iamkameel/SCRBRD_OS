@@ -475,6 +475,15 @@ try {
   ok("...and the match line no longer says the innings as well", !/innings/i.test(line), line);
 
   group("Summary: the Board, with the fold's own figures");
+  /** Where the status sentence is drawn (EXPERIENCE_PASS §3.3): how many, in the tab's panel or not, after the board or not. */
+  const sentenceAt = (/** @type {any} */ P) => P.evaluate(() => {
+    const l = document.querySelectorAll('[data-testid="mc-status-line"], [data-testid="mc-result"]');
+    const panel = document.querySelector('[role="tabpanel"]');
+    const board = document.querySelector('[data-testid="mc-board"]');
+    return { n: l.length, inPanel: !!l[0] && !!panel?.contains(l[0]), underBoard: !!l[0] && !!board && !!(board.compareDocumentPosition(l[0]) & 4) };
+  });
+  const liveAt = await sentenceAt(p);
+  ok("§3.3: while it is being played, the status sentence is said once, under the board", liveAt.n === 1 && liveAt.inPanel && liveAt.underBoard, JSON.stringify(liveAt));
   const total = (await tid(p, "mc-board-total").innerText()).replace(/\s/g, "");
   ok(`the board's total is the fold's (${inn2.runs}/${inn2.wickets})`, total === `${inn2.runs}/${inn2.wickets}`, total);
   ok("...the chase in words", new RegExp(`Need ${inn2.target - inn2.runs} off ${60 - inn2.balls}`).test(await tid(p, "mc-board-sub").innerText()));
@@ -1510,17 +1519,13 @@ try {
     await signIn(ph9.page, /sarah@example\.invalid|Director/);
     ok("the fixture opens on a phone", await openMatch(ph9.page, fx.live));
     const P9 = ph9.page;
-    // §3.3: the status sentence once, under the board on the Summary, in the header on every other tab.
-    const placed = () => P9.evaluate(() => {
-      const l = document.querySelectorAll('[data-testid="mc-status-line"], [data-testid="mc-result"]');
-      const panel = document.querySelector('[role="tabpanel"]');
-      return { n: l.length, inPanel: !!l[0] && !!panel?.contains(l[0]),
-        underBoard: !!l[0] && !!document.querySelector('[data-testid="mc-board"]') && !!(document.querySelector('[data-testid="mc-board"]').compareDocumentPosition(l[0]) & 4) };
-    });
-    const onSummary = await placed();
-    ok("Summary: the status sentence once, under the board", onSummary.n === 1 && onSummary.inPanel && onSummary.underBoard, JSON.stringify(onSummary));
+    // §3.3: the match is decided by now (above): the result view's board says the result itself, so the
+    // header keeps the sentence, once; and on the Scorecard it is the header's, once.
+    const onSummary = await sentenceAt(P9);
+    ok("the result view: the sentence once, in the header", await tid(P9, "mc-result-view").count() === 1 && onSummary.n === 1 && !onSummary.inPanel,
+       JSON.stringify(onSummary));
     await pickTab(P9, "scorecard");
-    const onCard = await placed();
+    const onCard = await sentenceAt(P9);
     ok("...and on the Scorecard once, in the header", onCard.n === 1 && !onCard.inPanel, JSON.stringify(onCard));
     await tid(P9, "mc-innings-0").click({ timeout: 4000 }).catch(() => {});
     await P9.waitForTimeout(300);

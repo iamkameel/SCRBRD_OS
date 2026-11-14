@@ -459,9 +459,12 @@ try {
     const shared = /** @type {any[]} */ (await v.page.evaluate(() => /** @type {any} */ (window).__shared));
     ok("Share hands the system's sheet the page's own link", shared?.length === 1 && shared[0].url === `${BASE}/live/${pub}`, JSON.stringify(shared));
     ok("...with the two sides and the status sentence the page shows", shared?.[0]?.title === "Hilton College 1XI v Westville Boys' High 1XI"
-       && shared[0].text === await tid(v.page, "mc-status-line").innerText().catch(() => "∅"), JSON.stringify(shared?.[0]));
+       && shared[0].text === await v.page.locator('[data-testid="mc-status-line"], [data-testid="mc-result"]').first().innerText().catch(() => "∅"),
+       JSON.stringify(shared?.[0]));
+    // (The link carries the fixture's own uuid, which is no pseudonym: the words are checked as text, the whole for names.)
     const words = JSON.stringify(shared ?? []);
-    ok("...and names no child, consented or not", named(words).length === 0 && leaks(words).length === 0, named(words).join(","));
+    const said = `${shared?.[0]?.title ?? ""} ${shared?.[0]?.text ?? ""}`;
+    ok("...and names no child, consented or not", named(words).length === 0 && leaks(said).length === 0, [...named(words), ...leaks(said)].join(","));
     // The preview a chat app draws from the link: the shell's own tags.
     const shell = await (await fetch(`${BASE}/live/${pub}`, { headers: { "x-forwarded-for": "10.84.7.7" } })).text();
     const og = [...shell.matchAll(/<meta property="og:[a-z]+" content="([^"]*)"/g)].map((m) => m[1]).join(" | ");
