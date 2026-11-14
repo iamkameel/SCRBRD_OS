@@ -1,6 +1,6 @@
 import { T } from "../../design/tokens.js";
 import { humanDateTime } from "../../lib/format.js";
-import { Icon } from "../../ui/icons.jsx";
+import { Icon } from "../../ui/iconCore.jsx";
 import { observedStamp } from "../../lib/weatherStamp.js";
 import { CardHead, Panel } from "./bits.jsx";
 

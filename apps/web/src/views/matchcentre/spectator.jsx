@@ -1,7 +1,7 @@
 import { T, contrast } from "../../design/tokens.js";
 import { chipFill } from "../../ui/board.jsx";
 import { oversOf, teamOf } from "../../lib/matchCentre.js";
-import { Icon } from "../../ui/icons.jsx";
+import { Icon } from "../../ui/iconCore.jsx";
 import { SideName } from "./bits.jsx";
 import { BEAT_WORD, overSummaryText } from "../../lib/announce.js";
 import { superOverTitle } from "../../lib/superOver.js";

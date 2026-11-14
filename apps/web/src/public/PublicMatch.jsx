@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { boardInnings, boundaryCount, matchLine, revisionNotice, sidesOf, statusSentence, teamOf, tossWords } from "../lib/matchCentre.js";
@@ -49,6 +49,9 @@ import { navigate, usePath } from "../lib/route.js";
  * Match details is the header's (no official, no weather, no pitch report);
  * nothing opens a profile.
  */
+
+// EXPERIENCE_PASS Slice 2 (Q18, Q19): Share and the ground display's link, a chunk of their own (the static graph's ceiling).
+const PageLinks = lazy(() => import("../views/matchcentre/pageLinks.jsx"));
 
 const TABS = [
   { id: "summary",      label: "Summary" },
@@ -279,6 +282,7 @@ export function PublicMatch({ matchId, view }) {
   const ctx = { match, innings: played, result, commentary: fixes?.commentary ?? commentary, events, fold: data.fold, par: data.par, settled: story?.settled ?? false,
     demo: false, overs: match.overs || 20,
     inningsSel, setInningsSel: setPicked, phone, setTab, moment, overSummary, shownRuns,
+    status: st,             // EXPERIENCE_PASS §3.3: the Summary says it under the board; the header, on every other tab
     okAt: data.okAt,        // CRI-1.1: the board's "Updated 4 s ago · Live"
     quietMoments: true };   // the region below says it; the moment is drawn, not said twice
 
@@ -309,7 +313,7 @@ export function PublicMatch({ matchId, view }) {
             {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
           </h1>
           {played.length > 0 && <HeaderScores match={match} played={played} corrected={fixes?.corrected}/>}
-          <StatusLine st={st} except={["upcoming"]}/>
+          {tab !== "summary" && <StatusLine st={st} except={["upcoming"]}/>}
           {/* OFFICIAL_RESULT D11, Q3: "Provisional" or "Official result · confirmed 20:15, 11 Oct" — the
               time only, never who, never a reason, and never "Under review" (the server says a disputed
               result is not official). Announced when a poll changes it. */}
@@ -319,6 +323,14 @@ export function PublicMatch({ matchId, view }) {
           {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
           {/* GA-I36 §5: when, team-level — never who asked, who approved or why. */}
           {fx && fixes && <fx.CorrectedChip at={fixes.at} lines={() => [fixes.line]}/>}
+          {/* Q18: the page's own link, the sides and the sentence, never a boy. Q19: the ground display, which the
+              server serves exactly when the home side is published (SCRBRD-133 D2), so the link is drawn only then. */}
+          <ErrorBoundary name="page links" fallback={null}>
+            <Suspense fallback={null}>
+              <PageLinks share={{ url: window.location.origin + window.location.pathname, title: `${sides.home.full} v ${sides.away.full}`, text: st.text }}
+                display={data.header?.published?.home === true ? `/display/${matchId}` : null}/>
+            </Suspense>
+          </ErrorBoundary>
           {fx && !isLive && <fx.SettledWatch matchId={matchId} last={data.last} note={data.note}/>}
           <div role="status" aria-live="polite" data-testid="mc-stale-region">
             {fx && <fx.StaleLine bare stale={data.stale} refreshing={data.refreshing} failed={!!data.error} okAt={data.okAt} onRefresh={data.refresh}/>}

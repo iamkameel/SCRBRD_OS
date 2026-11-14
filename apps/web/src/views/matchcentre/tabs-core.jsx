@@ -4,10 +4,11 @@ import { T, contrast } from "../../design/tokens.js";
 import { boardInnings, commentaryByOver, inningsBreak, oversOf, targetOf, teamOf } from "../../lib/matchCentre.js";
 import { Board, chipFill } from "../../ui/board.jsx";
 import { atThisRate, boardFromInnings } from "../../scorer/boardData.js";
-import { boardInsights } from "../../scorer/signals.js";
+import { aboutWhom, boardInsights } from "../../scorer/signals.js";
 import { InningsToggle } from "./scorecard.jsx";
 import { CardHead, Panel, Quiet, SideName } from "./bits.jsx";
 import { Highlights, MomentMark, OverSummary, ResultBoard } from "./spectator.jsx";
+import { StatusLine } from "./scores.jsx";
 import { matchChaseOf, superOverTitle, twoInningsPlayed } from "../../lib/superOver.js";
 import { chaseRates, estimateLine, rainTouched, rateTrack, reportFor } from "../../lib/par.js";
 import { wormOf } from "../../lib/chartSeries.js";
@@ -136,8 +137,16 @@ function ResultFacts({ match, innings }) {
 // on the public page, GET /api/matches/:id/par signed in — with `events` and
 // `fold`, the log and its context, for the chase's rates; `settled`, play has
 // decided it.
+//
+// `status` (EXPERIENCE_PASS §3.3, Slice 2): the page's status sentence
+// (lib/matchCentre.js statusSentence()), drawn here under the board, where
+// the Summary has one; the page's header draws it on every other tab, so it
+// is said once. `focus` (Q10): a family's or a pupil's screen, whose insight
+// line keeps only the lines about nobody and about its own boy.
 export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns, quietMoments = false,
-                             venueLine = null, rainLine = null, par = null, events = null, fold = null, settled = false, okAt = null }) {
+                             venueLine = null, rainLine = null, par = null, events = null, fold = null, settled = false, okAt = null,
+                             status = null, focus = null }) {
+  const said = status && <StatusLine st={status} except={["upcoming"]}/>;
   const { index, atBreak } = boardInnings(innings, result ? {} : null);
   const inn = innings[index];
   const chaseNow = matchChaseOf(innings, index);
@@ -171,6 +180,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
           <ResultBoard match={match} innings={innings} result={result}/>
           <MomentMark moment={moment} announce={!quietMoments}/>
         </div>
+        {said}
         {rainPanel}
         {worm && (
           <Panel testid="mc-worm-panel">
@@ -199,7 +209,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
       </div>
     );
   }
-  if (!innings.length) return <Quiet testid="mc-summary-empty">Nothing has been scored yet. The board opens with the first ball.</Quiet>;
+  if (!innings.length) return <>{said}<Quiet testid="mc-summary-empty">Nothing has been scored yet. The board opens with the first ball.</Quiet></>;
   const target = chaseNow?.target ?? null;
   const inOvers = inn.overs ?? overs;
   // "At this rate", in a first innings still being played (scorer/boardData.js
@@ -216,7 +226,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   const other = teamOf(match, inn.bowlingTeam);
   const estimate = estimateLine({ inn, target, par: pressure, decided: settled,
     sides: { batting: phone ? side.short : side.full, fielding: phone ? other.short : other.full } });
-  const insight = !props ? [] : boardInsights(inn, { target, overs: inOvers, format: match.format });
+  const insight = !props ? [] : aboutWhom(boardInsights(inn, { target, overs: inOvers, format: match.format }), focus);
   const latest = [...commentary].reverse().filter((c) => c.kind !== "over_end").slice(0, 3);
   // CRI-1.1: how fresh the board is, while the match is being played — `okAt`
   // is the page's last good read of the log. Once play has decided it the
@@ -236,6 +246,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
         </div>
         </SourcedLazy>
       )}
+      {said}
       {/* SCRBRD-130 R3: venue par at this point, the server's; the signed-in page passes it.
           Once the Board's second line says the gap to the ground's par (G2), this
           line would say the same thing a second time, so it gives way. */}
@@ -246,19 +257,11 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
       )}
       {/* SCRBRD-130 R2: the calculator beside the umpires' figure, the server's; the signed-in page passes it. */}
       {rainPanel}
-      {/* GA-I29 A1: scenarios — arithmetic on this innings' own record, signed in and public alike, team-level,
-          from 12 legal balls (scenario.jsx; @scrbrd/scoring scenarioOf() says when it is drawn). */}
-      {/* Its own boundary, with no card of its own when it fails: a chunk that cannot be fetched (a deploy, the
-          ground's signal) leaves the Summary as it was, and the board is never taken with it. */}
-      <ErrorBoundary name="scenarios" fallback={null}>
-        <Suspense fallback={null}>
-          <ScenarioPanel innings={innings} index={index} target={target} overs={inOvers} format={match.format} events={events} fold={fold}
-            decided={!!result || settled} atBreak={atBreak} estimate={!!estimate} team={side.full}/>
-        </Suspense>
-      </ErrorBoundary>
       <OverSummary item={overSummary} announce={!quietMoments}/>
       {/* The worm, with the par (G2): the innings in play, the target, the
-          ground's par or the DLS par dashed — the server's figures. */}
+          ground's par or the DLS par dashed — the server's figures. The chart
+          comes before the scenarios (EXPERIENCE_PASS C14): a screen-tall
+          stepper no longer pushes the worm and the latest balls down. */}
       {worm && (
         <Panel testid="mc-worm-panel">
           <CardHead icon="trending-up">Worm</CardHead>
@@ -271,6 +274,16 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
           </SourcedLazy>
         </Panel>
       )}
+      {/* GA-I29 A1: scenarios — arithmetic on this innings' own record, signed in and public alike, team-level,
+          from 12 legal balls (scenario.jsx; @scrbrd/scoring scenarioOf() says when it is drawn). */}
+      {/* Its own boundary, with no card of its own when it fails: a chunk that cannot be fetched (a deploy, the
+          ground's signal) leaves the Summary as it was, and the board is never taken with it. */}
+      <ErrorBoundary name="scenarios" fallback={null}>
+        <Suspense fallback={null}>
+          <ScenarioPanel innings={innings} index={index} target={target} overs={inOvers} format={match.format} events={events} fold={fold}
+            decided={!!result || settled} atBreak={atBreak} estimate={!!estimate} team={side.full}/>
+        </Suspense>
+      </ErrorBoundary>
       {atBreak && <InningsBreakCard match={match} innings={innings} overs={overs}/>}
       {latest.length > 0 && (
         <Panel testid="mc-latest">

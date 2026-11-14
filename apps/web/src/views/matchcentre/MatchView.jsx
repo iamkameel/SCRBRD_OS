@@ -3,7 +3,7 @@ import { T } from "../../design/tokens.js";
 import { useTheme } from "../../design/theme.js";
 import { deriveMatch, fromRow } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
-import { api, signedIn } from "../../lib/api.js";
+import { api, apiStatus, signedIn } from "../../lib/api.js";
 import { useRows, useWeather } from "../../lib/live.js";
 import { boardInnings, matchLine, nameBook, resultText, revisionNotice, sidesOf, statusSentence, teamOf } from "../../lib/matchCentre.js";
 import { seedCompletedMatch } from "../../scorer/seed.js";
@@ -37,6 +37,8 @@ import { StateLabel } from "../../ui/stateLabel.jsx";
 import { TabStrip, panelLabel } from "./tabStrip.jsx";
 import { NARROW_PX, tabOr } from "../../lib/matchTabs.js";
 import { scrollerOf } from "../../lib/toBall.js";
+import { ballsOf } from "../../lib/ballsOf.js";
+import PageLinks from "./pageLinks.jsx";
 import { opensPassportOf } from "../../lib/passportLink.js";
 
 // CRI-3.2: a boy's passport over the scorecard, its own chunk, fetched on the first tap.
@@ -262,6 +264,37 @@ function useParReport(match, demo, seen) {
 }
 // ── end SCRBRD-133 G2 ──
 
+// ── EXPERIENCE_PASS Slice 2 (Q18, Q19): is the fixture on the public pages? ──
+/**
+ * Each side's publication as this reader's own read gives it (GET
+ * /api/matches/:id/publication: fixture_publication under its own policy, a
+ * side he may not read answering unpublished) and whether this deployment
+ * serves public pages at all (/api/health, as the Publication section asks).
+ * `home`: the ground display is served (SCRBRD-133 D2: the home side's
+ * publication); `any`: the public live page is. Null until known, and on any
+ * failure: no link is drawn on a guess.
+ * @param {any} match  @param {boolean} on
+ * @returns {{home: boolean, any: boolean} | null}
+ */
+function usePublished(match, on) {
+  const [pub, setPub] = useState(/** @type {{home: boolean, any: boolean} | null} */ (null));
+  useEffect(() => {
+    if (!on) { setPub(null); return undefined; }
+    let cancelled = false;
+    Promise.all([api(`/api/matches/${match.id}/publication`), apiStatus()])
+      .then(([r, s]) => {
+        if (cancelled) return;
+        const side = (/** @type {string} */ k) => (r?.sides ?? []).some((/** @type {any} */ x) => x.side === k && x.published === true);
+        const pagesOn = s?.health?.public === "on" || s?.health?.public === "on_without_notifications";
+        setPub({ home: pagesOn && side("home"), any: pagesOn && (side("home") || side("away")) });
+      })
+      .catch(() => { if (!cancelled) setPub(null); });
+    return () => { cancelled = true; };
+  }, [match.id, on]);
+  return pub;
+}
+// ── end Slice 2 ──
+
 // ── SCRBRD-130 R2: the rain panel's calculated line (db/75, dls.mjs) ──
 /**
  * The server's DLS proposal beside the umpires' figure (GET /api/matches/:id/dls),
@@ -370,7 +403,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   const [cardAt, setCardAt] = useState(/** @type {{innings: number, openId: string, scrollTop: number} | null} */ (null));
   // CRI-2.3: a chart's bar or area opens the Commentary at its balls (`ballsAt`: their event ids, and
   // what they are), and the Analytics tab's scroll is kept for the way back, as the Scorecard's is.
-  const [ballsAt, setBallsAt] = useState(/** @type {{ids: string[], what: string, runs: number} | null} */ (null));
+  const [ballsAt, setBallsAt] = useState(/** @type {{ids: string[], what: string, runs: number, from?: string} | null} */ (null));
   const [chartsAt, setChartsAt] = useState(/** @type {{scrollTop: number} | null} */ (null));
   useEffect(() => {
     if (tab !== "commentary") { setBallAt(null); setBallsAt(null); }
@@ -386,6 +419,21 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
     setBallsAt(balls);
     setTab("commentary");
   };
+  // EXPERIENCE_PASS Q9 (decided 13 Nov): a scorecard figure opens the Commentary at that player's balls
+  // alone — signed in only, never the public page — and back is the Scorecard, the row and the page as
+  // they were. A family's or a pupil's screen offers it for its own boy only, as Analytics offers his
+  // wheel (STEP4 P4: the screen does not offer another child's row). None for a row with no balls.
+  const figureTap = signedIn() && !log.demo ? (/** @type {"bat" | "bowl"} */ kind, /** @type {any} */ row, /** @type {number} */ at) => {
+    if (focus?.length && !focus.includes(row.id)) return null;
+    const inn = played[at];
+    const ids = ballsOf(inn, kind, row.id, (log.events ?? []).filter((e) => (e.innings ?? 0) === at));
+    if (!ids.length) return null;
+    return (/** @type {any} */ e, /** @type {string | null} */ openId) => {
+      setCardAt({ innings: at, openId, scrollTop: scrollerOf(e?.currentTarget).scrollTop });
+      setBallsAt({ ids, what: `${row.name} ${kind === "bat" ? "batting" : "bowling"}`, runs: row.runs ?? 0, from: "scorecard" });
+      setTab("commentary");
+    };
+  } : null;
   // Back: the browser's own step where the Match Centre gave the tab an address (the jump was a new
   // entry), else the tab itself.
   const backToCard = () => { if (route) window.history.back(); else setTab("scorecard"); };
@@ -482,6 +530,9 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // on the staff screen; the answer says which sides it shows by position.
   // Asked once to offer it, and on every ball while it is open.
   const groundSides = useGroundSides(match.id, log.events, staffScreen && !log.demo && played.length > 0);
+  // Q18 and Q19: Share, and the public ground display for a fixture its home school has published.
+  const published = usePublished(match, signedIn() && !log.demo);
+  const shareUrl = published?.any ? `${window.location.origin}/live/${match.id}` : route ? window.location.origin + window.location.pathname : null;
 
   // A rain delay or interruption (SCRBRD-100 item 1): the one signal the log
   // actually carries, off the innings the board is showing.
@@ -532,6 +583,8 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   const ctx = { match, role, innings: played, result, commentary: told, events: log.events, demo: log.demo, overs: log.overs,
     inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
     moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, passportOf, Wheel: ShotWheel,
+    // EXPERIENCE_PASS §3.3: the Summary says where the match stands under its board; the header, on every other tab.
+    status,
     focus: focus?.length ? new Set(focus) : null, focusLabel, venueLine, rainLine, par, fold: log.fold, settled,
     captain, terms: captain || staff ? termsOf(log.fold) : null,
     staff, eventCount: log.events?.length ?? 0, initialDrawer,
@@ -540,7 +593,8 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
     onNav, onOpenDuties,
     // CRI-1.5: the Scorecard's dismissals open the Commentary at their ball, and the way back.
     toBall: signedIn() && !log.demo ? toBall : null, restore: cardAt, onRestored: () => setCardAt(null),
-    ballKey: ballAt, onBack: ballAt ? backToCard : ballsAt ? backToCharts : null, backLabel: ballsAt ? "Back to the charts" : "Back to the scorecard",
+    ballKey: ballAt, onBack: ballAt || ballsAt?.from === "scorecard" ? backToCard : ballsAt ? backToCharts : null,
+    backLabel: ballsAt && ballsAt.from !== "scorecard" ? "Back to the charts" : "Back to the scorecard", figureTap,
     // CRI-2.3: a chart's bar or area opens the Commentary at its balls.
     toBalls: signedIn() && !log.demo ? toBalls : null, balls: ballsAt, chartsAt, onChartsRestored: () => setChartsAt(null) };
 
@@ -575,6 +629,15 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
         )}
         </span>
       </div>
+      {/* Q18: the public page's link where the fixture is published (its preview names the sides and the score,
+          nobody else), else this page's own; a screen with no address of its own and nothing public shares nothing.
+          Q19: the ground display only where the server serves it. Never on a demonstration fixture. */}
+      {!log.demo && (shareUrl || published?.home) && (
+        <div style={{ marginBottom: T.space.md }}>
+          <PageLinks share={shareUrl ? { url: shareUrl, title: `${sides.home.full} v ${sides.away.full}`, text: status.text } : null}
+            display={published?.home ? `/display/${match.id}` : null}/>
+        </div>
+      )}
       {big && <BigScreen key={match.id} match={match} events={log.events} head={log.head ?? null} fold={log.fold} result={result} settled={settled}
         par={par} onClose={() => setBig(false)}/>}
 
@@ -594,8 +657,9 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
           {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
         </h1>
         {played.length > 0 && <HeaderScores match={match} played={played} corrected={corrected}/>}
-        {/* CRI-1.2: where the match stands, in the sentence its card in the list says too. */}
-        <StatusLine st={status} except={["upcoming"]}/>
+        {/* CRI-1.2: where the match stands, in the sentence its card in the list says too — here on every
+            tab but a drawn Summary, which says it under its board (EXPERIENCE_PASS §3.3), so it is said once. */}
+        {!(tab === "summary" && !log.loading && !log.error) && <StatusLine st={status} except={["upcoming"]}/>}
         {!log.demo && <OfficialLine official={official} names={{ home: sides.home.full, away: sides.away.full }}/>}
         {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
         {!log.demo && <CorrectedChip at={correctedAt(fixes)} lines={correctionLines}/>}

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { didNotBat, dismissalKey, extrasOf, fowLines, keepersOfSide, oversOf, runCounts, teamOf } from "../../lib/matchCentre.js";
-import { Icon } from "../../ui/icons.jsx";
+import { Icon } from "../../ui/iconCore.jsx";
 import { SideName, Quiet } from "./bits.jsx";
 import { isSuperOver, superOverTitle, superOversOf } from "../../lib/superOver.js";
 import { scrollerOf } from "../../lib/toBall.js";
@@ -77,11 +77,22 @@ function HeadRow({ cols, heads, label, icon }) {
   );
 }
 
-/** Figures, right-aligned and tabular. */
-function Figs({ values, strong = 0 }) {
+/**
+ * Figures, right-aligned and tabular. `tap` (EXPERIENCE_PASS Q9, signed in
+ * only): the figure at `at` and the one after it are one 44px button to that
+ * player's balls in the Commentary — inside the cell, so the table keeps its
+ * cells, and over the next one, so the target is wide enough. The figure is
+ * underlined, never a colour alone.
+ */
+function Figs({ values, strong = 0, tap = null }) {
   return values.map((v, i) => (
     <span key={i} role="cell" style={{ ...T.role.figure.sm, textAlign: "right", color: i === strong ? T.content.primary : T.content.secondary,
-      fontWeight: i === strong ? 500 : 400 }}>{v ?? "–"}</span>
+      fontWeight: i === strong ? 500 : 400, ...(tap?.at === i ? { position: "relative", textDecoration: "underline dotted", textUnderlineOffset: "3px" } : {}) }}>
+      {v ?? "–"}
+      {tap?.at === i && <button type="button" onClick={tap.on} aria-label={tap.label} data-testid={tap.id} className="os-state"
+        style={{ position: "absolute", left: 0, top: "50%", width: tap.w, height: "44px", transform: "translateY(-50%)", padding: 0,
+          border: "none", borderRadius: T.radius.sm, background: "transparent", cursor: "pointer" }}/>}
+    </span>
   ));
 }
 
@@ -221,7 +232,7 @@ const focusEdge = (lit) => (lit ? { borderLeft: `4px solid ${T.brand.accentText}
  * the link to his passport, drawn by MatchView's passportOf (lib/passportLink.js)
  * where the passport read would admit this reader; the public page passes none.
  */
-function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, profile, passport = null, Wheel, kept = false, lit = false, litLabel = null }) {
+function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, onFigs = null, profile, passport = null, Wheel, kept = false, lit = false, litLabel = null }) {
   const notOut = b.status !== "out";
   const counts = open ? runCounts(inn, b.id) : null;
   const opens = !!onToggle;
@@ -247,7 +258,8 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, prof
             {nameCell}
           </button>
         ) : <span role="rowheader">{nameCell}</span>}
-        <Figs values={[b.runs, b.balls, b.fours, b.sixes, sr(b.runs, b.balls)]}/>
+        <Figs values={[b.runs, b.balls, b.fours, b.sixes, sr(b.runs, b.balls)]}
+          tap={onFigs && { at: 0, w: "72px", on: onFigs, id: "mc-bat-balls", label: `Balls faced by ${b.name}, ${b.runs} off ${b.balls}, in the commentary` }}/>
       </div>
       {open && (
         <div data-testid="mc-player-row" style={{ padding: `0 ${T.space.md} ${T.space.md}`, display: "grid", gap: T.space.md }}>
@@ -302,7 +314,7 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, prof
  * wickets. `idx` is its place in the match's list of innings (the log's
  * innings number): the scorecard of a match innings, or of a super over's.
  */
-function InningsBody({ match, innings, idx, commentary, events, opens, profileOf, passportOf, Wheel, focus, focusLabel, toBall = null, restore = null }) {
+function InningsBody({ match, innings, idx, commentary, events, opens, profileOf, passportOf, Wheel, focus, focusLabel, toBall = null, restore = null, figureTap = null }) {
   // CRI-1.5: back from the Commentary, the row the reader had open is open again.
   const [openId, setOpenId] = useState(() => (restore?.innings === idx ? restore.openId ?? null : null));
   const inningsSel = idx;
@@ -349,11 +361,13 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
         {inn.batsmen.map((b) => {
           const key = b.status === "out" ? dismissalKey(inn, b.id, innEvents) : null;
           const line = key ? byKey.get(key)?.text ?? null : null;
+          const figs = figureTap?.("bat", b, idx);
           return (
             <BatterRow key={b.id} b={b} inn={inn} open={openId === b.id}
               onToggle={opens ? () => setOpenId(openId === b.id ? null : b.id) : null}
               commentaryLine={line}
               onBall={line && toBall ? (e) => toBall({ key, innings: idx, openId: b.id, from: e.currentTarget }) : null}
+              onFigs={figs ? (e) => figs(e, openId) : null}
               profile={profileOf(b.id)} passport={passportOf(b.id, b.name)} Wheel={Wheel} kept={kept.has(b.id)} lit={!!focus?.has(b.id)} litLabel={focusLabel}/>
           );
         })}
@@ -390,6 +404,7 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
           <HeadRow cols={BOWL_COLS} label="Bowling" icon="ball" heads={["O", "M", "R", "W", "Econ"]}/>
           {inn.bowlers.map((bw) => {
             const nm = <>{bw.name}{focus?.has(bw.id) && focusLabel && <FocusTag label={focusLabel}/>}</>;
+            const figs = figureTap?.("bowl", bw, idx);
             return (
             <div key={bw.id} role="row" data-testid="mc-bowl-row" data-focus={focus?.has(bw.id) ? "true" : undefined}
               style={{ display: "grid", gridTemplateColumns: BOWL_COLS, gap: T.space.xs, alignItems: "center",
@@ -400,7 +415,8 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
                 {/* CRI-3.2: his passport in one tap, where this reader may read it. */}
                 {passportOf(bw.id, bw.name, nm) ?? nm}
               </span>
-              <Figs values={[oversOf(bw.balls), bw.maidens, bw.runs, bw.wickets, econ(bw.runs, bw.balls)]} strong={3}/>
+              <Figs values={[oversOf(bw.balls), bw.maidens, bw.runs, bw.wickets, econ(bw.runs, bw.balls)]} strong={3}
+                tap={figs && { at: 2, w: "68px", on: (e) => figs(e, openId), id: "mc-bowl-balls", label: `Balls bowled by ${bw.name}, ${bw.wickets} for ${bw.runs}, in the commentary` }}/>
             </div>
             );
           })}
@@ -492,9 +508,14 @@ function SuperOverBlock({ pair, ...rest }) {
  * dismissal's line does, saying which innings and row it left; `restore` is
  * that place again, coming back — the row reopened and the page where it was
  * — and `onRestored` says it has been put back. The public page passes none.
+ *
+ * `figureTap` (EXPERIENCE_PASS Q9): `(kind, row, innings) => ((e, openId) => void) | null`,
+ * MatchView's, signed in only — a batter's runs or a bowler's figures open the
+ * Commentary at his balls alone. The public page passes none: a per-boy list
+ * of balls is a player page in all but name (PUBLIC_DATA A4, L7).
  */
 export function ScorecardTab({ match, innings, commentary, events, inningsSel, setInningsSel, opens = false, profileOf = () => null, passportOf = () => null, Wheel = null, focus = null, focusLabel = null,
-                               toBall = null, restore = null, onRestored = null }) {
+                               toBall = null, restore = null, onRestored = null, figureTap = null }) {
   const at = useRef(/** @type {HTMLElement | null} */ (null));
   // Once, as the tab is drawn again: the page back where the reader left it.
   useLayoutEffect(() => {
@@ -509,7 +530,7 @@ export function ScorecardTab({ match, innings, commentary, events, inningsSel, s
   const sel = innings[inningsSel] && !isSuperOver(innings[inningsSel]) ? inningsSel : Math.max(0, innings.findIndex((x) => x && !isSuperOver(x)));
   const inn = innings[sel];
   if (!inn) return <Quiet testid="mc-scorecard-empty">Nothing has been scored yet.</Quiet>;
-  const body = { match, innings, commentary, events, opens, profileOf, passportOf, Wheel, focus, focusLabel, toBall, restore };
+  const body = { match, innings, commentary, events, opens, profileOf, passportOf, Wheel, focus, focusLabel, toBall, restore, figureTap };
   return (
     <section ref={at} data-testid="mc-scorecard" aria-label="Scorecard">
       <InningsToggle match={match} innings={innings} inningsSel={sel} setInningsSel={setInningsSel}/>

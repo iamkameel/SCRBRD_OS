@@ -26,6 +26,12 @@
  *      reads "The bowler to D Erasmus, driven through cover for four"; an
  *      unconsented boy's placed ball names the place and not him; and no
  *      response the page received carried a coordinate.
+ *  10. EXPERIENCE_PASS Slice 2: Share hands the system sheet the page's own
+ *      link, the sides and the status sentence, and no child's name, as the
+ *      link's preview (the shell's og tags) names none (Q18); a Ground display
+ *      link where the home side has published, none where only the away side
+ *      has (Q19, SCRBRD-133 D2); and no scorecard figure opens one boy's
+ *      balls (Q9: signed in only).
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-public.mjs
@@ -36,7 +42,7 @@ import pg from "pg";
 import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
-import { buildPublicFixture, EXPECTED, HIL } from "./fixture-public.mjs";
+import { buildPublicFixture, EXPECTED, HIL, KEARSNEY, PEOPLE, TYPED_FIELDER } from "./fixture-public.mjs";
 import { writeEvents } from "./fixture-matchcentre.mjs";
 import { ball, batters, bowler, inningsStart, BALL_TYPE } from "@scrbrd/scoring";
 import { RATE } from "../services/api/public/public-api.mjs";
@@ -433,6 +439,57 @@ try {
        answered >= RATE.burst && answered <= RATE.burst + 3 && codes.every((c) => c === 200 || c === 429), codes.join(","));
     ok("...and the page itself answers 429 with Retry-After", res?.status() === 429 && Number(res?.headers()["retry-after"]) >= 1);
     await ctx.close();
+  }
+
+  group("10. Slice 2: Share names no child; the ground display's link only where it is served; no boy's balls in public (Q9, Q18, Q19)");
+  {
+    // Every name a boy in this fixture has, whole and by its parts, and the labels the rule gives the consented.
+    const childWords = [...new Set([...Object.values(PEOPLE).map((x) => String(x[0])), ...KEARSNEY, TYPED_FIELDER, "Twelfth Mansfield"]
+      .flatMap((n) => [n, ...n.split(" ")]).concat(Object.values(EXPECTED)))];
+    const named = (/** @type {string} */ s) => childWords.filter((w) => s.includes(w));
+    const SHARE = `window.__shared = []; Object.defineProperty(navigator, "share", { configurable: true, value: async (d) => { window.__shared.push(d); } });`;
+    const v = await visit(`/live/${pub}`, { width: 390, init: SHARE });
+    await v.page.waitForSelector('[data-testid="mc-share"]', { timeout: 10000 }).catch(() => {});
+    const href = await tid(v.page, "mc-ground-display").getAttribute("href").catch(() => null);
+    ok("Hilton has published: a Ground display link, to the display's own address", href === `/display/${pub}`, String(href));
+    const boxes = await v.page.evaluate(() => ["mc-share", "mc-ground-display"].map((t) => document.querySelector(`[data-testid="${t}"]`)?.getBoundingClientRect().height ?? 0));
+    ok("...beside Share, each 44px tall", boxes.every((h) => h >= 44), boxes.join(","));
+    await tid(v.page, "mc-share").click({ timeout: 4000 }).catch(() => {});
+    await v.page.waitForTimeout(300);
+    const shared = /** @type {any[]} */ (await v.page.evaluate(() => /** @type {any} */ (window).__shared));
+    ok("Share hands the system's sheet the page's own link", shared?.length === 1 && shared[0].url === `${BASE}/live/${pub}`, JSON.stringify(shared));
+    ok("...with the two sides and the status sentence the page shows", shared?.[0]?.title === "Hilton College 1XI v Westville Boys' High 1XI"
+       && shared[0].text === await tid(v.page, "mc-status-line").innerText().catch(() => "∅"), JSON.stringify(shared?.[0]));
+    const words = JSON.stringify(shared ?? []);
+    ok("...and names no child, consented or not", named(words).length === 0 && leaks(words).length === 0, named(words).join(","));
+    // The preview a chat app draws from the link: the shell's own tags.
+    const shell = await (await fetch(`${BASE}/live/${pub}`, { headers: { "x-forwarded-for": "10.84.7.7" } })).text();
+    const og = [...shell.matchAll(/<meta property="og:[a-z]+" content="([^"]*)"/g)].map((m) => m[1]).join(" | ");
+    ok(`the link's preview names the sides, and no child: "${og}"`, /Hilton College 1XI v Westville Boys/.test(og) && named(og).length === 0, og);
+    await tab(v.page, "scorecard");
+    await tid(v.page, "mc-innings-0").click({ timeout: 3000 }).catch(() => {});
+    await v.page.waitForTimeout(300);
+    ok("Q9: no batter's runs and no bowler's figures open a list of one boy's balls",
+       await tid(v.page, "mc-bat-row").count() > 0 && await tid(v.page, "mc-bat-balls").count() === 0 && await tid(v.page, "mc-bowl-balls").count() === 0);
+    ok("no console errors (share)", v.errors.length === 0, v.errors.join(" | "));
+    await v.ctx.close();
+    // Published by the away side alone: the live page is served, its display is not (SCRBRD-133 D2).
+    const WESPUB = await userId("publisher.wes@example.invalid");
+    await as(SARAH, `select * from fixture_publish($1, 'home', false)`, [pub]);
+    await as(WESPUB, `select * from fixture_publish($1, 'away', true)`, [pub]);
+    let shown = null;
+    for (let i = 0; i < 20; i++) {
+      shown = await visit(`/live/${pub}`);
+      await shown.page.waitForSelector('[data-testid="mc-share"]', { timeout: 8000 }).catch(() => {});
+      if (await tid(shown.page, "mc-ground-display").count() === 0) break;
+      await shown.ctx.close();
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    const disp = await fetch(`${BASE}/display/${pub}`, { headers: { "x-forwarded-for": "10.84.7.8" } });
+    ok("Westville alone has published: the live page and Share, and no Ground display link",
+       await tid(shown.page, "public-match").count() === 1 && await tid(shown.page, "mc-share").count() === 1 && await tid(shown.page, "mc-ground-display").count() === 0);
+    ok("...as the server says: its /display is not found", disp.status === 404, String(disp.status));
+    await shown.ctx.close();
   }
 } catch (e) {
   fail++;
