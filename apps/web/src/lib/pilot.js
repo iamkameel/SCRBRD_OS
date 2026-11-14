@@ -532,9 +532,19 @@ export async function restoreFromServer(uuidOfMatch, { call = api } = {}) {
   const id = `${PILOT_ID_PREFIX}${uuidOfMatch}`;
   const nameOf = new Map(names.map((n) => [n.slot, n.name]));
   const side = (/** @type {string} */ s) => (h.sides ?? []).find((/** @type {any} */ x) => x.side === s) ?? {};
+  // A slot that arrives with no name is shown on this phone as its position
+  // ("Away No. 4", pilotWire.js slotEntry), and the pad keeps a fielder or a
+  // twelfth man in those words. `position` marks it so (pilotWire.js index):
+  // those words are this slot, which the server already holds, so the catch
+  // keeps its fielder. A slot that arrives with its name is not marked: when
+  // its date passes (withoutNames) it is sent as main sends it, as on the
+  // first phone.
   /** @type {import("./pilotWire.js").PilotRoster} */
   const roster = {
-    slots: Object.fromEntries((h.slots ?? []).map((/** @type {any} */ s) => [s.id, { side: s.side, list_no: s.list_no, name: nameOf.get(s.id) ?? null }])),
+    slots: Object.fromEntries((h.slots ?? []).map((/** @type {any} */ s) => {
+      const name = nameOf.get(s.id) ?? null;
+      return [s.id, name ? { side: s.side, list_no: s.list_no, name } : { side: s.side, list_no: s.list_no, name: null, position: true }];
+    })),
     teams: { home: side("home").display_name ?? "Home", away: side("away").display_name ?? "Away" },
   };
   const now = Date.now();
