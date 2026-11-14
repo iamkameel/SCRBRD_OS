@@ -450,7 +450,10 @@ try {
     const all = await text(s.page);
     ok("no ground's name anywhere on the page (D3)", !all.includes(groundName) && !/Sherwood|Westville Main/.test(all));
     ok("...and no child's name", namesIn(all).length === 0, namesIn(all).join(", "));
-    ok("Follow a match is offered with a card on the page", (await s.page.locator('[data-testid="home-cta-follow"]').count()) === 1);
+    // EXPERIENCE_PASS §2.3: the hero's door is "Watch a match" now (home-cta-follow → home-cta-watch;
+    // "follow" is kept for following a school, Q8). Listed and live, the board leads the page.
+    ok("Watch a match is offered with a card on the page", (await s.page.locator('[data-testid="home-cta-watch"]').count()) === 1);
+    ok("...and the live board leads the page, above the film", (await s.page.evaluate(() => document.querySelector("main")?.dataset.first)) === "live");
     await c.click({ timeout: 4000 });
     await s.page.waitForURL(new RegExp(`/live/${today}$`), { timeout: 6000 }).catch(() => {});
     ok("the tap lands on /live/:id", new URL(s.page.url()).pathname === `/live/${today}`, s.page.url());
