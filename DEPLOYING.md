@@ -2497,7 +2497,7 @@ from commit b88d539a.
 <!-- ── db/154: DRS reviews store while DRS is off ── -->
 #### DRS reviews store while DRS is off (db/154)
 
-`db/154_switched_off_records.sql` is switched off (PR #332, squash 204aad69).
+`db/154_switched_off_records.sql` is the DRS part of the switched-off rule (Kameel, 13 Nov: hidden for the user, still recorded). PR #332, squash 204aad69.
 It re-creates only `drs_review_feature_gate()`, so a DRS review row is stored
 while DRS is off. Other sports' fixtures stay refused (Kameel, 14 Nov).
 
