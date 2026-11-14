@@ -31,7 +31,7 @@ import { SELF_REGISTRABLE_STAFF_ROLES } from "@scrbrd/policy/roles";
 
 /**
  * Roles a member of staff may ask for here, from the policy's self-registrable
- * list, which /api/onboard also holds a stranger to. The server also checks
+ * list, the join screen's contract (the retired /api/onboard was held to it too). The server also checks
  * each one (role_request_grantable).
  */
 export const STAFF_ROLES = SELF_REGISTRABLE_STAFF_ROLES;

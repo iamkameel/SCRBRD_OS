@@ -21,7 +21,7 @@
  *      upload or withdraw; withdraw, and the redaction count
  *   6. a declined parent claim tells the DSO, naming nobody, and not the
  *      office; three in thirty days pause the asker — POST /api/requests and
- *      the register's claim say so in words, signed-out onboarding does not;
+ *      the register's claim say so in words, and signed out there is no door (404);
  *      the office may not lift it, the DSO does
  *
  *   node tools/migrate.mjs --reset --seed
@@ -261,7 +261,8 @@ try {
     ok("the asker is paused, and told so in words", asked.status === 409 && asked.body?.error === "request_cooldown"
        && asked.body?.detail === "You can't send a request right now. Ask the school office.", asked.body);
     const onboard = await api("/api/onboard", { method: "POST", body: { email: ASKER, name: "Walk Asker", role: "scorer", schoolId: HIL } });
-    ok("signed out, onboarding says nothing of it", onboard.status === 200 && onboard.body?.requested === true, onboard.body);
+    // POST /api/onboard is retired (EXPERIENCE_PASS Q13, slice 3a): signed out there is no door to ask through, so nothing can say anything of the pause.
+    ok("signed out, the retired onboarding door answers 404 and says nothing of it", onboard.status === 404 && !/cooldown|paused|right now/i.test(JSON.stringify(onboard.body ?? "")), onboard.body);
     await upload(office, { rows: [{ name: "Walk Asker", email: ASKER, role: "scorer" }], commit: true });
     const c = await claim(asker);
     ok("the register's claim says the same", c.status === 409 && c.body?.error === "request_cooldown" && inWords(c.body?.detail), c.body);

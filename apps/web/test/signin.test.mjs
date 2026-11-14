@@ -309,23 +309,24 @@ group("Where it sits in the app");
   ok("a signed-in account with no assignment goes to the no-school screen", /assignments\.length === 0/.test(app) && /<NoSchool /.test(app) && !/PendingRequests/.test(app));
 }
 
-group("What a stranger may register for is one list, the screens' and the route's (E1)");
+group("What a person with no school may ask for is one list, the join screen's (E1)");
 {
-  // POST /api/onboard refuses any role outside SELF_REGISTRABLE_ROLES. Each
-  // sign-up screen draws from the same list, so neither can offer what the
-  // route refuses, and the route refuses nothing a screen offers.
+  // SELF_REGISTRABLE_ROLES is the join screen's contract. The unauthenticated
+  // POST /api/onboard that was also held to it is retired (EXPERIENCE_PASS
+  // Q13, slice 3a); the join screen offers exactly the list, no more, no less.
   ok("the join screen's staff list is the policy's", STAFF_ROLES === SELF_REGISTRABLE_STAFF_ROLES);
   const joinOffers = new Set([
     ...STAFF_ROLES,
     ...["parent", "pupil", "follower"].map((k) => buildRequest(k, "s", { child: "A Child", relationship: "Mother", adult: "yes" }))
       .map((r) => r.ok ? r.body.role : null).filter(Boolean),
   ]);
-  const onboarding = src("../src/auth/OnboardingFlow.jsx");
-  const onboardingOffers = new Set([...onboarding.matchAll(/\{\s*id:"([a-z]+)",\s*icon:/g)].map((m) => m[1]));
-  ok("the onboarding screen's roles were found", onboardingOffers.size >= 8);
-  ok("...and it filters them through the same list",
-     /SELF_REGISTRABLE_ROLES\.includes\(/.test(onboarding) && /from "@scrbrd\/policy\/roles"/.test(onboarding));
-  const offered = new Set([...joinOffers, ...onboardingOffers]);
+  // One door (EXPERIENCE_PASS Q13, 13 Nov 2026): the role-tile sign-up is
+  // retired, so the join screen is the only screen that offers a role.
+  const gone = (() => { try { src("../src/auth/OnboardingFlow.jsx"); return false; } catch { return true; } })();
+  ok("the role-tile sign-up is retired: its screen is gone", gone);
+  ok("...nothing in the app opens it, and the sign-in screen has no door to it",
+     !/auth\/OnboardingFlow|appState === "onboarding"\) return/.test(src("../src/App.jsx")) && !/Create an account|onSignUp/.test(src("../src/auth/LoginPage.jsx")));
+  const offered = joinOffers;
   ok("every role a screen offers is self-registrable",
      [...offered].every((r) => SELF_REGISTRABLE_ROLES.includes(r)), [...offered].filter((r) => !SELF_REGISTRABLE_ROLES.includes(r)));
   ok("...and every self-registrable role is offered by a screen",

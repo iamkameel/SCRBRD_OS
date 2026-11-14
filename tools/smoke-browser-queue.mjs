@@ -252,7 +252,9 @@ try {
   }
   // Requests: a stranger asks before the email is verified; a signed-in person asks for himself.
   const watcher = await login("watcher@example.invalid");
-  const r1 = await call("/api/onboard", { method: "POST", body: { email: "qa.stranger@example.invalid", name: "Q Stranger", role: "coach", schoolId: HIL, teamCode: "7XI", note: "Joining." } });
+  // The stranger's row the retired POST /api/onboard made, by owner SQL as the route made it (db/84 still marks it unverified).
+  const r1 = await q(`select onboard_request('qa.stranger@example.invalid', 'Q Stranger', 'coach', $1, '7XI', 'Joining.')`, [HIL])
+    .then(() => ({ status: 200 }), (e) => ({ status: 0, body: { error: e.message } }));
   const r2 = await call("/api/requests", { method: "POST", token: watcher, body: { role: "assistantcoach", schoolId: HIL, teamCode: "7XI", note: "Hello." } });
   ok("a stranger's request and a signed-in person's are made", r1.status === 200 && (r2.status === 200 || r2.status === 201), [r1.status, r2.status]);
   const CELE = (await q(`select id from app_user where email = 'parent.cele@example.invalid'`))[0].id;

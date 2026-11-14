@@ -288,8 +288,9 @@ try {
 
   group("6. A pending request and an ended link: said, and nothing of a child");
   {
-    const r = await api("/api/onboard", { method: "POST", body: { email: "pending.parent@example.invalid", name: "P Parent", role: "guardian", schoolId: HIL,
-      note: "For my son in the 1st XI" } });
+    // The retired POST /api/onboard's stranger (EXPERIENCE_PASS Q13, slice 3a), made by owner SQL as the route made it.
+    const r = await q(`select onboard_request($1, $2, 'guardian', $3, null, $4)`, ["pending.parent@example.invalid", "P Parent", HIL, "For my son in the 1st XI"])
+      .then(() => ({ status: 200 }), (e) => ({ status: 0, body: { error: e.message } }));
     ok("a stranger asks to be linked as a guardian", r.status === 200 || r.status === 201, r.body);
     const stranger = await login("pending.parent@example.invalid");
     const reqs = (await read("role_requests", stranger)).body?.rows ?? [];

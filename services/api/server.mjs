@@ -825,8 +825,9 @@ const PLAYER_ROUTES = [
   // The rewards figure. A GET on the id-bearing table, keyed on nothing: the
   // rows are whoever the principal may read, narrowed by ?teamCode.
   [/^\/api\/rewards$/,                              "GET",  rewards.figures],
-  // Asking for a role, and answering. /api/onboard and /api/schools carry no
-  // principal: a stranger gets an account with nothing in it and a request.
+  // Asking for a role, and answering. /api/schools carries no principal; the
+  // stranger's sign-up (/api/onboard) is retired (EXPERIENCE_PASS Q13): a
+  // request is asked signed in, from the no-school home.
   [/^\/api\/schools$/,                              "GET",  requests.schools],
   // The ways a person signs in (SCRBRD-140, db/81): their own, and the
   // office's claims list and revocations. Every decision is a db/81 function.
@@ -843,7 +844,6 @@ const PLAYER_ROUTES = [
   [/^\/api\/auth\/users\/([^/]+)\/preview$/,        "GET",  signIn.preview],
   [/^\/api\/auth\/claims\/([^/]+)\/confirm$/,        "POST", signIn.confirmClaim],
   [/^\/api\/auth\/claims\/([^/]+)\/decline$/,        "POST", signIn.declineClaim],
-  [/^\/api\/onboard$/,                              "POST", requests.onboard],
   [/^\/api\/requests$/,                             "POST", requests.request],
   [/^\/api\/requests\/([^/]+)\/withdraw$/,           "POST", requests.withdraw],
   [/^\/api\/requests\/([^/]+)\/decide$/,             "POST", requests.decide],
