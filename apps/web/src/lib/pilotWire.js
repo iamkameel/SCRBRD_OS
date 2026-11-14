@@ -132,13 +132,14 @@ export function valueFits(k, v) {
 function index(roster) {
   const names = new Map();
   const slots = new Set(Object.keys(roster?.slots ?? {}));
-  // A slot of a side scored by position (Q5: `position`, set by pilotSlots)
+  // A slot of a side scored by position (Q5: `position`, set by pilotSlots),
+  // or one a second phone was given with no name (set by restoreFromServer),
   // is shown as "Home No. 3", and the pad keeps a fielder or a twelfth man in
   // those words: they name that slot and no one else. Only such a slot: a
-  // slot whose name has gone (its date passed, or a second phone the names
-  // never reached) is sent as it was before Q5, so nothing on the wire
-  // changes for a match started with names. Kept apart from `names`, which
-  // the last check reads: a position is not a name.
+  // slot whose name has gone on this phone (its date passed, withoutNames)
+  // is sent as it was before Q5, so nothing on the wire changes for a match
+  // held with names. Kept apart from `names`, which the last check reads: a
+  // position is not a name.
   /** @type {Map<string, string>} */
   const positions = new Map();
   for (const [id, s] of Object.entries(roster?.slots ?? {})) {
