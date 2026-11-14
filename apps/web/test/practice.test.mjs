@@ -301,8 +301,10 @@ group("F. The sandbox: nothing reaches sync, nothing shows in a normal list");
   // ...and lib/pilot.js, phase 2's store beside it (PILOT_MATCH_PHASE2), which the scorer alone imports in turn.
   // The scorer's own home (R0, views/ScorerHomeView.jsx) reads it too: on this phone only, to put a practice
   // match in progress on Now with its label; it names no player (apps/web/test/scorer-day.test.mjs, browser-scorer-home G).
+  // ...and the scoring block (views/ScoringBlock.jsx, experience pass slice 1): the same rows the home reads,
+  // for an account with no school, on this phone only, with no player named (browser-first-score).
   ok("only the scorer's own modules import the practice store", readers.length > 0 && readers.every((r) => /\/scorer\//.test(r) || /\/lib\/(practice(Export)?|pilot)\.js$/.test(r)
-    || /\/views\/ScorerHomeView\.jsx$/.test(r)), readers.join(", "));
+    || /\/views\/(ScorerHomeView|ScoringBlock)\.jsx$/.test(r)), readers.join(", "));
   const persistReaders = [];
   const walk2 = (dir) => { for (const e of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, e.name);

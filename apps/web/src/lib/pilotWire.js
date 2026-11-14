@@ -124,7 +124,7 @@ export function valueFits(k, v) {
 /**
  * The roster a Pilot Match is scored against.
  * @typedef {object} PilotRoster
- * @property {Record<string, {side: "home" | "away", list_no: number, name?: string | null}>} slots
+ * @property {Record<string, {side: "home" | "away", list_no: number, name?: string | null, position?: boolean}>} slots
  * @property {{home: string, away: string}} teams   each side's display name
  */
 
@@ -132,8 +132,18 @@ export function valueFits(k, v) {
 function index(roster) {
   const names = new Map();
   const slots = new Set(Object.keys(roster?.slots ?? {}));
+  // A slot of a side scored by position (Q5: `position`, set by pilotSlots)
+  // is shown as "Home No. 3", and the pad keeps a fielder or a twelfth man in
+  // those words: they name that slot and no one else. Only such a slot: a
+  // slot whose name has gone (its date passed, or a second phone the names
+  // never reached) is sent as it was before Q5, so nothing on the wire
+  // changes for a match started with names. Kept apart from `names`, which
+  // the last check reads: a position is not a name.
+  /** @type {Map<string, string>} */
+  const positions = new Map();
   for (const [id, s] of Object.entries(roster?.slots ?? {})) {
     if (s?.name && normKey(s.name)) names.set(normKey(s.name), id);
+    else if (s?.position === true && (s.side === "home" || s.side === "away") && Number.isInteger(s.list_no)) positions.set(normKey(positionWords(s.side, s.list_no)), id);
   }
   /** @type {Map<string, "home" | "away">} */
   const sideOf = new Map();
@@ -142,7 +152,7 @@ function index(roster) {
     const n = roster?.teams?.[side];
     if (n && normKey(n)) sideOf.set(normKey(n), side);
   }
-  return { names, slots, sideOf };
+  return { names, positions, slots, sideOf };
 }
 
 /**
@@ -156,7 +166,7 @@ function slotOf(v, ix) {
   const raw = typeof v === "object" ? /** @type {any} */ (v).id ?? /** @type {any} */ (v).name : v;
   if (typeof raw !== "string") return null;
   if (ix.slots.has(raw)) return raw;
-  return ix.names.get(normKey(raw)) ?? null;
+  return ix.names.get(normKey(raw)) ?? ix.positions.get(normKey(raw)) ?? null;
 }
 
 /**

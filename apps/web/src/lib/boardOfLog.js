@@ -34,6 +34,22 @@ export function boardOfLog(events, { curIn = null, overs = null } = {}) {
 
 
 /**
+ * What the scorer recorded in a log this phone holds (§3.9's plain record):
+ * the deliveries he scored, less any he took back, and the corrections, each
+ * a `void` of an event already sent (a Practice Match's undo cuts the ball
+ * from the log instead, and leaves nothing to count). Counts only: no name,
+ * no figure of anybody's.
+ * @param {any[][] | null | undefined} events
+ * @returns {{balls: number, corrections: number}}
+ */
+export function scoredOf(events) {
+  const all = (Array.isArray(events) ? events : []).flatMap((evs) => (Array.isArray(evs) ? evs : [])).filter((e) => e && typeof e === "object");
+  const voids = all.filter((e) => e.kind === "void");
+  const gone = new Set(voids.map((e) => e.target).filter((t) => typeof t === "string"));
+  return { balls: all.filter((e) => e.kind === "ball" && !(typeof e.id === "string" && gone.has(e.id))).length, corrections: voids.length };
+}
+
+/**
  * One match as the scorer's home is handed it by its store (lib/pilot.js
  * pilotHomeRows, lib/practice.js practiceHomeRows): its title, its innings'
  * scores, whether it is over, its board, and the few record fields the home
@@ -52,6 +68,7 @@ export function homeRow(id, meta, log, sum, { logSaved = true } = {}) {
     // A log key this phone has and could not read; not a record saved before its first log save (re-check 1).
     logError: !!meta && logSaved && !log,
     board: boardOfLog(log?.events, { curIn: log?.curIn ?? null, overs: meta?.match?.overs ?? log?.cfg?.overs ?? null }),
+    scored: scoredOf(log?.events),
     meta: {
       match: { overs: meta?.match?.overs ?? null },
       ...(p ? { pilot: { server: p.server ?? null, callOff: p.callOff ?? null, abandoned: p.abandoned === true, finished: p.finished === true } } : {}),

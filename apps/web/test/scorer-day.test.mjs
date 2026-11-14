@@ -13,8 +13,9 @@ import { readFileSync } from "node:fs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 import {
   SECTION_ORDER, SANDBOX_WORDS, WEEK_DAYS, boardOfLog, finishedPilots, homeSections, nowItems, p0Items, scoreLine, startWords, weekOf,
+  lastRecord, liveOffPhone, recordWords,
 } from "../src/lib/scorerDay.js";
-import { homeRow } from "../src/lib/boardOfLog.js";
+import { homeRow, scoredOf } from "../src/lib/boardOfLog.js";
 import { summarise } from "../src/lib/practice.js";
 import { heldByMatch, pendingByMatch } from "../src/lib/deviceMatches.js";
 import { abandonCode, callOffReady, callOffWaitWords, pilotStateWords, pilotUuid } from "../src/lib/pilot.js";
@@ -38,7 +39,8 @@ const log = (...rs) => [[
 
 group("The sections, in the order the day happens");
 {
-  ok("the order is P0, Now, Start, Pilot Matches, This week", SECTION_ORDER.join() === "p0,now,start,pilots,week", SECTION_ORDER);
+  ok("the order is P0, Now, Start, the last match's record, Pilot Matches, This week", SECTION_ORDER.join() === "p0,now,start,record,pilots,week", SECTION_ORDER);
+  ok("the record only after a match this phone finished", !homeSections({}).includes("record") && homeSections({ record: true }).join() === "now,start,record");
   const none = homeSections({});
   ok("nothing applies: Now (its empty state) and Start only", none.join() === "now,start", none);
   ok("a P0 item puts the card first", homeSections({ p0: 1 })[0] === "p0");
@@ -51,7 +53,7 @@ group("The sections, in the order the day happens");
   for (const st of ["loading", "failed", "forbidden", "disabled", "partial", "stale"]) {
     ok(`...but when the read is ${st}, it stays and says so (never drawn as none)`, homeSections({ week: 0, weekRead: st }).includes("week"));
   }
-  const all = homeSections({ p0: 2, pilotOffer: true, week: 3, weekRead: "ok" });
+  const all = homeSections({ p0: 2, pilotOffer: true, week: 3, weekRead: "ok", record: true });
   ok("everything at once keeps the order", all.join() === SECTION_ORDER.join(), all);
   ok("each list is a subsequence of the order", [none, all, homeSections({ p0: 1, week: 1, weekRead: "ok" })]
     .every((l) => l.every((k, i) => i === 0 || SECTION_ORDER.indexOf(l[i - 1]) < SECTION_ORDER.indexOf(k))));
@@ -270,6 +272,38 @@ group("Start: the pad's own setup, its words from what SCRBRD said");
   ok("still asking: says so", startWords(null, true).state === "loading" && /Checking/.test(startWords(null, true).note));
   ok("every state says what the setup asks: venue, both sides, their players", ["pilot", "off", "unknown"].every((k) =>
     /Venue/.test(startWords(k === "pilot" ? { sync: true, granted: true } : k === "off" ? { sync: false } : null).note)));
+  ok("...and that the players' names are optional, by position (Q5)", ["pilot", "off", "unknown", "loading"].every((k) =>
+    /names are optional/.test(startWords(k === "pilot" ? { sync: true, granted: true } : k === "off" ? { sync: false } : null, k === "loading").note)));
+}
+
+group("After a match: the plain record (§3.9), and Now's live fixture not on this phone");
+{
+  const id = (/** @type {string} */ s) => `${s}:x`;
+  const ev = [[
+    inningsStart({ innings: 0, battingTeam: "H", bowlingTeam: "K", squad: SQ_A, bowlingSquad: SQ_B, overs: 5, clientTs: T0 }),
+    { ...runs(1), id: id("b1") }, { ...runs(4), id: id("b2") }, { ...runs(0), id: id("b3") },
+    { kind: "void", innings: 0, target: id("b3"), reason: "wrong_ball", id: id("v1") },
+  ], []];
+  ok("the phone's log counted: balls less the one taken back, and the correction", scoredOf(ev).balls === 2 && scoredOf(ev).corrections === 1, scoredOf(ev));
+  ok("...nothing to count is none, not a failure", scoredOf(null).balls === 0 && scoredOf([[], []]).corrections === 0);
+  ok("a Pilot Match: balls, corrections, all sent", recordWords({ kind: "pilot", balls: 126, corrections: 2, pending: 0, held: 0 }) === "126 balls, 2 corrections, all sent");
+  ok("...one of each in the singular", recordWords({ kind: "pilot", balls: 1, corrections: 1, pending: 0, held: 0 }) === "1 ball, 1 correction, all sent");
+  ok("...none filed said as none", recordWords({ kind: "pilot", balls: 12, corrections: 0, pending: 0, held: 0 }) === "12 balls, no corrections, all sent");
+  ok("...what is left to send counted, with a separator", recordWords({ kind: "pilot", balls: 1284, corrections: 0, pending: 3, held: 1 }) === "1,284 balls, no corrections, 4 still to send");
+  ok("...an outbox nobody could read is said, never 0", /could not be counted/.test(recordWords({ kind: "pilot", balls: 3, corrections: 0, pending: null, held: null })));
+  ok("a Practice Match: its balls, kept on this phone (its undo leaves nothing to count)", recordWords({ kind: "practice", balls: 40, corrections: 0, pending: null, held: null }) === "40 balls, kept on this phone only");
+  ok("no points, streak, rank or standing in any of the words", !/point|streak|rank|standing|record of|best/i.test(
+    ["pilot", "practice"].map((k) => recordWords({ kind: /** @type {any} */ (k), balls: 5, corrections: 1, pending: 0, held: 0 })).join(" ")));
+  const done = (/** @type {string} */ rid, /** @type {number} */ at, over = {}) => ({ id: rid, title: `${rid} v Z`, lines: [], complete: true, savedAt: at, scored: { balls: 6, corrections: 0 }, ...over });
+  ok("the last finished match on this phone, Practice or Pilot", lastRecord({ practices: [done("practice-a", 1)], pilots: [done("pilot-b", 2)], pending: new Map(), held: new Map() })?.id === "pilot-b");
+  ok("...none finished: no record", lastRecord({ practices: [done("practice-a", 1, { complete: false })], pilots: [] }) === null);
+  ok("...a finished match with no ball scored is no record", lastRecord({ practices: [done("practice-a", 1, { scored: { balls: 0, corrections: 0 } })] }) === null);
+  ok("...a Pilot Match's unsent events counted from the outbox", /2 still to send/.test(lastRecord({ pilots: [done("pilot-b", 2)], pending: new Map([["pilot-b", 2]]), held: new Map() })?.words ?? ""));
+  ok("homeRow carries the counts, never the log", (() => { const r = homeRow("pilot-q", { match: { overs: 5 } }, { events: ev }, summarise({}, { events: ev })); return r.scored.balls === 2 && !("log" in r) && !("events" in r); })());
+  const items = [{ match: { id: "m-live", status: "live" } }, { match: { id: "m-here", status: "live" } }, { match: { id: "m-next", status: "upcoming" } }];
+  const off = liveOffPhone(items, [{ kind: "fixture", matchId: "m-here" }, { kind: "practice", matchId: "m-live" }]);
+  ok("Now's live fixtures: his side's live ones this phone does not hold", off.length === 1 && off[0].match.id === "m-live", off.map((i) => i.match.id));
+  ok("...none live: none", liveOffPhone([{ match: { id: "m", status: "complete" } }], []).length === 0 && liveOffPhone(null, null).length === 0);
 }
 
 console.log(`\n${"─".repeat(52)}\nSCORER DAY: ${pass} passed, ${fail} failed`);

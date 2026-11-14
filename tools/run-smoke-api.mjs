@@ -613,6 +613,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // ways to sign in (add, refuse, remove), and the office's Claims list; 12px
   // and 44px, both themes.
   "browser-signup",
+  // The scorer's first run (EXPERIENCE_PASS slice 1; Q3, Q5, Q25): a new
+  // account with no school reaches the first ball of a Practice Match with no
+  // name typed, sees the Board move, finds it under Now after a reload and a
+  // sign-in, and at the result is offered the school, never during play.
+  "browser-first-score",
   // Practice Match, phase 1: a scorer starts one from the start screen with
   // typed teams and pasted squads, scores an over, reloads mid-over and
   // resumes with undo intact, changes the weather at an over and ball; every

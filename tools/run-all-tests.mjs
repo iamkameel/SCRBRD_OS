@@ -245,6 +245,10 @@ const SUITES = [
   ["pilot-wire", "apps/web/test/pilotWire.test.mjs"],
   // ...and the phone's pilot store: slots, what leaves, the refusal, the names' date.
   ["pilot-store", "apps/web/test/pilot.test.mjs"],
+  // Q5 (13 Nov 2026): a Practice or Pilot Match scored by position writes
+  // events of the same shape as one with typed names, and no position or
+  // name leaves the phone in a Pilot Match's.
+  ["positions", "apps/web/test/positions.test.mjs"],
   // A panel that throws is a quiet card in its place, logs its name and the
   // message once, and resets on "Try again" (ui/ErrorBoundary.jsx); same transform.
   ["error-boundary", "apps/web/test/error-boundary.test.mjs", ["--import", "./tools/register-jsx.mjs"]],

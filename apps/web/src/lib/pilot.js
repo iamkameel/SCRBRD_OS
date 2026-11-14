@@ -42,7 +42,7 @@ import {
 } from "./persist.js";
 import { api, signedIn } from "./api.js";
 import { profile } from "./session.js";
-import { lineUp, practiceTeamName, oversOf, practiceRecord, summarise } from "./practice.js";
+import { lineUp, practiceTeamName, oversOf, practiceRecord, summarise, playingSquads, isPosition } from "./practice.js";
 import { positionWords, pilotUnwire, holdsAName } from "./pilotWire.js";
 import { indexedDbStorage, padLogFrom, inningsInPlay } from "@scrbrd/sync";
 import { fromRow } from "@scrbrd/scoring";
@@ -139,13 +139,17 @@ export function pilotSlots(draft) {
   const slots = [];
   /** @type {import("./pilotWire.js").PilotRoster} */
   const roster = { slots: {}, teams: { home: practiceTeamName(draft.teams[0]), away: practiceTeamName(draft.teams[1]) } };
-  draft.squads.forEach((/** @type {any[]} */ sq, /** @type {number} */ s) => {
+  playingSquads(draft.squads).forEach((/** @type {any[]} */ sq, /** @type {number} */ s) => {
     const xi = lineUp(sq).xi;
     sq.forEach((p, i) => {
       const id = uuid();
       const batting_no = p.twelfth ? null : xi.indexOf(p.name) >= 0 ? xi.indexOf(p.name) + 1 : null;
       slots.push({ id, side: sides[s], list_no: i + 1, batting_no, twelfth: !!p.twelfth });
-      roster.slots[id] = { side: sides[s], list_no: i + 1, name: p.name };
+      // A side scored by position (Q5) has no name to keep: the slot is its
+      // position, which the pad shows ("Home No. 3"), and nothing is offered
+      // to SCRBRD as a name (namesBody sends only the names there are).
+      // `position` marks it so (pilotWire.js index): the pad's "Home No. 3" is this slot.
+      roster.slots[id] = isPosition(p) ? { side: sides[s], list_no: i + 1, name: null, position: true } : { side: sides[s], list_no: i + 1, name: p.name };
     });
   });
   return { slots, roster };
@@ -164,11 +168,16 @@ export function pilotCfg(draft, { id, opener1, opener2, openBowler }, p) {
   const sides = ["home", "away"];
   const first = draft.bat === 0 ? draft.toss : 1 - draft.toss;
   const b = first, f = 1 - first;
+  const squads = playingSquads(draft.squads);
+  // Each of the XI by his place in the list, the slot's own key: a side
+  // scored by position has no name on its roster to match (Q5). A list has
+  // no name twice (practice.js validateSquad), so the place is the name's.
   /** @param {number} s */
   const squadOf = (s) => {
-    const xi = lineUp(draft.squads[s]).xi;
+    const xi = lineUp(squads[s]).xi;
     return xi.map((name) => {
-      const sl = Object.entries(p.roster.slots).find(([, x]) => x.side === sides[s] && x.name === name);
+      const n = squads[s].findIndex((/** @type {any} */ x) => x.name === name) + 1;
+      const sl = Object.entries(p.roster.slots).find(([, x]) => x.side === sides[s] && x.list_no === n);
       return { id: sl?.[0] ?? name, name };
     });
   };
@@ -179,7 +188,7 @@ export function pilotCfg(draft, { id, opener1, opener2, openBowler }, p) {
     team1: names[0], team2: names[1],
     overs: oversOf(draft.overs) ?? 20, toss: draft.toss, bat: draft.bat, captureProfile: draft.captureProfile,
     squad1: squadOf(b), squad2: squadOf(f),
-    twelfth1: lineUp(draft.squads[b]).twelfth, twelfth2: lineUp(draft.squads[f]).twelfth,
+    twelfth1: lineUp(squads[b]).twelfth, twelfth2: lineUp(squads[f]).twelfth,
     teamKey1: names[b], teamKey2: names[f],
     opener1: slotFor(b, opener1), opener2: slotFor(b, opener2), openBowler: slotFor(f, openBowler),
   };

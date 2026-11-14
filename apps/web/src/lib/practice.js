@@ -60,6 +60,7 @@ import {
 import { foldPad } from "../scorer/penalty.js";
 import { getWeatherHint } from "./weatherHint.js";
 import { homeRow } from "./boardOfLog.js";
+import { positionWords } from "./pilotWire.js";
 
 export { isPracticeId, PRACTICE_ID_PREFIX };
 
@@ -145,9 +146,14 @@ export function duplicatesOf(names) {
 
 /** @typedef {{name: string, twelfth: boolean}} SquadPlayer */
 
-/** Append names (all of them: the screen flags what is wrong). @param {SquadPlayer[]} players @param {string[]} names @returns {SquadPlayer[]} */
+/**
+ * Append names (all of them: the screen flags what is wrong). A side that was
+ * playing by position takes the typed names in place of its positions: a name
+ * typed is the scorer choosing names for that side.
+ * @param {SquadPlayer[]} players @param {string[]} names @returns {SquadPlayer[]}
+ */
 export function addNames(players, names) {
-  return [...players, ...names.map((name) => ({ name, twelfth: false }))];
+  return [...players.filter((p) => !isPosition(p)), ...names.map((name) => ({ name, twelfth: false }))];
 }
 
 /** Move one entry up (-1) or down (+1). @param {SquadPlayer[]} players @param {number} i @param {-1 | 1} dir */
@@ -217,6 +223,42 @@ export function lineUp(players) {
   const twelfth = players.find((p) => p.twelfth)?.name ?? null;
   const rest = players.filter((p) => !p.twelfth).map((p) => p.name);
   return { xi: rest.slice(0, XI_SIZE), reserves: rest.slice(XI_SIZE), twelfth };
+}
+
+// ── Scoring by position (Q5, Kameel 13 Nov 2026: as recommended) ─────
+//
+// A Practice or Pilot Match may skip the names and score each side by
+// position: "Home No. 1" to "Home No. 11", the words the pad already shows
+// for a player whose name has gone (lib/pilotWire.js positionWords). Never a
+// school fixture: its players come from the school's own team sheet, and
+// this setup is not how one starts. What the pad records is unchanged: a
+// position is a squad entry as a typed name is, so the events have the same
+// shape (apps/web/test/positions.test.mjs holds it). A position is not a
+// name, so a Pilot Match keeps none on its roster (lib/pilot.js pilotSlots)
+// and nothing is offered to SCRBRD as one.
+
+/** Is this squad entry a position, not a typed name? @param {any} p */
+export const isPosition = (p) => p?.position === true;
+
+/**
+ * A side by position: the XI, "Home No. 1" to "Home No. 11" (the first team
+ * typed is home), each marked `position`.
+ * @param {"home" | "away"} side
+ */
+export function positionSquad(side) {
+  return Array.from({ length: XI_SIZE }, (_, i) => ({ name: positionWords(side, i + 1), twelfth: false, position: true }));
+}
+
+/** Does this side hold any typed name? @param {any[]} players */
+export const hasTypedNames = (players) => (players ?? []).some((p) => !isPosition(p));
+
+/**
+ * The squads a match starts on: a side with nothing in its list plays by
+ * position. A side with names keeps them as they are.
+ * @param {any[][]} squads
+ */
+export function playingSquads(squads) {
+  return (squads ?? [[], []]).map((sq, s) => ((sq ?? []).length ? sq : positionSquad(s === 0 ? "home" : "away")));
 }
 
 // ── The team ─────────────────────────────────────────────────────────
@@ -561,7 +603,7 @@ export function newPracticeId() {
  */
 export function practiceCfg(draft, { id, opener1, opener2, openBowler }) {
   const names = draft.teams.map(practiceTeamName);
-  const lu = draft.squads.map(lineUp);
+  const lu = playingSquads(draft.squads).map(lineUp);
   const first = draft.bat === 0 ? draft.toss : 1 - draft.toss;
   const b = first, f = 1 - first;
   return {
@@ -584,7 +626,7 @@ export function practiceRecord(draft, id, now = Date.now()) {
   const sides = ["home", "away"];
   const players = [];
   const match_squad = [];
-  draft.squads.forEach((sq, s) => {
+  playingSquads(draft.squads).forEach((sq, s) => {
     const lu = lineUp(sq);
     sq.forEach((p, i) => {
       const pid = `${id}:${sides[s]}:${i + 1}`;
