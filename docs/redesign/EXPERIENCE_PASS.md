@@ -708,6 +708,8 @@ as failed, as §1.10 does.
 
 ### Slice 2 · The spectator's match page
 
+**Slice 2a built 14 Nov 2026 (#334, 0b8f0240).** The rest of slice 2 is not built.
+
 | | |
 |---|---|
 | **Scope** | §3.3 and §3.7: `lib/moments.js` to SCRBRD-133 §5.2–5.3 on all three surfaces; the free-hit and hat-trick-ball tags; the over story on Summary; the status sentence under the board on every tab; from a scorecard figure to its balls (signed in); the innings-break card first during the break; share (the link); the insight line structured so a family screen keeps only lines about nobody or about the child. The match's links outward (§1.4) wait for Slice 5's addresses, except the player, which exists. On spectator surfaces, Scenarios moves under the charts and "Corrected" is said once (C14). A "Ground display" link to `/display/:id` for a fixture the school has published, if Q19 is answered yes (C17; it was, on 13 Nov, as recommended: the link, for published fixtures only). |

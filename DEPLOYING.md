@@ -2494,6 +2494,17 @@ Pasted on the demo and production, 13 Nov 2026. Hash-checked:
 `sha256 28da1a71c35241a4794ced52b7c67fdf5fae3961b63e01e64e3b3cc634e77cd2`,
 from commit b88d539a.
 <!-- ── end db/153 ── -->
+<!-- ── db/154: DRS reviews store while DRS is off ── -->
+#### DRS reviews store while DRS is off (db/154)
+
+`db/154_switched_off_records.sql` is switched off (PR #332, squash 204aad69).
+It re-creates only `drs_review_feature_gate()`, so a DRS review row is stored
+while DRS is off. Other sports' fixtures stay refused (Kameel, 14 Nov).
+
+Pasted on the demo and production, 14 Nov 2026, on Kameel's word. Hash-checked:
+`sha256 b7104f5696211bf2f0bdffcb10a32064188e9a4de14ef5c7f8ae440ec3149207`,
+from commit c4b5096b. Production was live on it at 14:46 SAST.
+<!-- ── end db/154 ── -->
 <!-- ── db/155: public names per surface, shipped dark ── -->
 #### Public names per surface, shipped dark (db/155)
 
