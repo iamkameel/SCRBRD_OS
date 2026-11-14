@@ -1,7 +1,7 @@
 # Experience pass: where things live, and the first run
 
 Status: **decided** (13 Nov 2026). Kameel answered all 25 questions in §5 on the Build Board,
-every one as recommended. The slices in §4 are built in order from those answers; none is built yet.
+every one as recommended. The slices in §4 are built in order from those answers; slice 1 is built (#327) and slice 2a (#334); the rest are not built yet.
 
 Brief (Kameel, 13 Nov 2026): information is scattered and not always where a person looks
 for it. Each person gets one home and a short menu; everything else is reached from the
@@ -707,6 +707,8 @@ as failed, as §1.10 does.
 | **You'll know** | On the demo, sign in as a new account with no school. **Five seconds:** "Start a match" is the first thing on the screen. **Steps, honestly:** one tap opens the set-up; while the names step stands it is six screens (where it goes, the schools, two squads of names, the toss, the openers) before the first ball moves the board, so starting does **not** meet two steps; if Q5 is answered yes (it was, on 13 Nov), it is the overs, the two sides, the toss and the first ball. Reload, then sign in again (a reload signs everyone out, Q25): the match is under "Now" with "Resume scoring". |
 
 ### Slice 2 · The spectator's match page
+
+**Slice 2a built 14 Nov 2026 (#334, 0b8f0240).** The rest of slice 2 is not built.
 
 | | |
 |---|---|
