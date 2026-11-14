@@ -159,7 +159,7 @@ export function chipFill(kind) {
   return T.chip[kind] ?? T.chip.extra;
 }
 
-function Chip({ mark }) {
+export function Chip({ mark }) {
   const c = chipFor(mark);
   const fill = chipFill(c.kind);
   return (
@@ -279,7 +279,7 @@ function SubLine({ text }) {
 }
 
 export function Board({ team, total, wickets, overs, sub, batters = [], partnership, bowler, thisOver = [], insight, compact = false,
-  size = "pad", testid = "board", extra = null, lastWicket, updated, estimate = null }) {
+  size = "pad", testid = "board", extra = null, lastWicket, updated, estimate = null, tags = [] }) {
   // On the pad the total is figure.board, 56 on a phone and 72 on a tablet;
   // the size comes from `.os-board-total` because an inline style cannot say
   // "from 768px". On a card it is figure.lg.
@@ -338,7 +338,7 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
         </p>
       )}
 
-      {(batters.length > 0 || partnership || bowler || chips.length > 0) && (
+      {(batters.length > 0 || partnership || bowler || chips.length > 0 || tags.length > 0) && (
         <div style={{ borderTop: `1px solid ${B.rule}`, marginTop: T.space.sm, paddingTop: compact ? T.space.xs : T.space.sm, display: "grid", gap: T.space.xs }}>
           {batters.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: `${T.space.xs} ${T.space.lg}` }}>
@@ -380,10 +380,16 @@ export function Board({ team, total, wickets, overs, sub, batters = [], partners
               )}
             </div>
           )}
-          {chips.length > 0 && (
+          {(chips.length > 0 || tags.length > 0) && (
             <div data-testid={`${testid}-over`}
               style={{ position: "relative", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end", gap: T.space.xs }}>
-              <span className="sr-only">This over: {chips.map((c) => c.say).join(", ")}</span>
+              {/* SCRBRD-133 §5.2 rows 7, 9 (EXPERIENCE_PASS C5): "Free hit" and "Hat-trick ball", words beside
+                  the chips, still; spectator boards only (lib/moments.js boardTags()), the pad passes none. */}
+              {tags.map((t) => (
+                <span key={t} data-testid={`${testid}-tag`} style={{ fontFamily: T.type.body, fontSize: "13px", fontWeight: 700, lineHeight: 1.2,
+                  color: B.lime, border: `1px solid ${B.lime}`, borderRadius: T.radius.pill, padding: "2px 8px", whiteSpace: "nowrap" }}>{t}</span>
+              ))}
+              {chips.length > 0 && <span className="sr-only">This over: {chips.map((c) => c.say).join(", ")}</span>}
               {thisOver.map((b, i) => <Chip key={i} mark={b}/>)}
             </div>
           )}

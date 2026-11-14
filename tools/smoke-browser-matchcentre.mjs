@@ -1025,7 +1025,8 @@ try {
   ok(`...ticking up through the runs between, not jumping (${[...new Set(ticks)].join(" ")})`, new Set(ticks).size >= 2, [...seen].join(","));
   ok("the over's summary shows", await until(L, () => /End of over 5:/.test(document.querySelector('[data-testid="mc-over-summary"]')?.innerText ?? ""), 8000));
   ok("...the generator's own line, with the score", (await tid(L, "mc-over-summary").innerText().catch(() => "")).includes(`${after.runs}/${after.wickets}`));
-  ok("the moment clears within a second and a half", await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), 2500));
+  // SCRBRD-133 §5.2 (decided 2 Oct; EXPERIENCE_PASS C4): a four's beat shows for 2.5 s, no longer.
+  ok("the moment clears after its two and a half seconds", await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), 3500));
   ok("the over summary clears after a few seconds", await until(L, () => !document.querySelector('[data-testid="mc-over-summary"]'), 9000));
 
   group("Big-screen mode: the board, full screen, from the boundary");
@@ -1209,14 +1210,15 @@ try {
   const finalMatch = deriveMatch([...evs, ...late, ...closing]);
   ok("the chase is won", finalMatch.result?.winner === "Westville Boys' High 1XI", JSON.stringify(finalMatch.result));
   ok("GA-I29: once play has decided it, the scenario panel is gone", await until(L, () => !document.querySelector('[data-testid="mc-scenario"]'), 8000));
-  ok("the result arrives as a moment on the board — held no longer than a milestone",
+  ok("the result arrives as a moment on the board",
      await until(L, () => document.querySelector('[data-testid="mc-moment"][data-kind="result"]')?.innerText.includes("won by"), 8000));
   // CRI-1.7: the result is full time, and the Summary is the result view the moment it arrives; the totals stay in view.
   ok("...over the Summary's result view, whose totals stay in view throughout", await tid(L, "mc-result-view").isVisible().catch(() => false)
      && await tid(L, "mc-result-total").last().isVisible().catch(() => false));
   if (SHOTS) { await mkdir(SHOTS, { recursive: true }); await L.screenshot({ path: join(SHOTS, "fulltime-result-moment-1280-floodlit.png") }).catch(() => {}); }
-  ok("the moment clears within a second and a half — the score is never hidden for long (§3.6)",
-     await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), 2500));
+  // §5.2 row 13: the result's card is the long one, 6 s; the result view holds it from there, the totals in view throughout.
+  ok("the moment clears after its six seconds, the totals in view throughout",
+     await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), 7500));
   ok("the header now says Result, and gives the winner and the margin in words",
      await until(L, () => document.querySelector('[data-testid="mc-status"]')?.textContent === "Result", 8000));
   const resultLine = await tid(L, "mc-result").innerText().catch(() => "");

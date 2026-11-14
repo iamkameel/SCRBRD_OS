@@ -520,7 +520,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // The spectator's moments: only what arrives while the page is open, so a
   // reload replays nothing. And the board's run count, ticking up to a new
   // total rather than jumping to it.
-  const { moment, overSummary } = useMoments(momentsFeed, !log.loading && !!log.events);
+  const { moment, overSummary } = useMoments(momentsFeed, !log.loading && !!log.events, played, (inn) => teamOf(match, inn.battingTeam).full);
   const bi = boardInnings(played, log.result);
   const boardInn = played[bi.index] ?? null;
   const shownRuns = useTicker(boardInn?.runs, `${match.id}:${bi.index}`);

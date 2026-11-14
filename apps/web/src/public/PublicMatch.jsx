@@ -254,7 +254,7 @@ export function PublicMatch({ matchId, view }) {
   const commentary = story?.commentary ?? [];
   const liveSO = story?.liveSO ?? null;
   const result = story?.result ?? null;
-  const { moment, overSummary } = useMoments(commentary, !data.loading && !!match);
+  const { moment, overSummary } = useMoments(commentary, !data.loading && !!match, played, (inn) => (match ? teamOf(match, inn.battingTeam).full : ""));
   // What a screen reader is told as each ball arrives (lib/announce.js): the
   // newest only, and nothing for the log as it stood on first load.
   const said = useAnnouncement(commentary, data.events, !data.loading && !!match);

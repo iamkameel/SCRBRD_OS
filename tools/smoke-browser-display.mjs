@@ -42,6 +42,10 @@
  *      the director of sport: the link and its QR code, the three settings
  *      in the link, and "N of M named on public surfaces · K shown by
  *      position" — the count the live page itself shows, and no name.
+ *  11. SCRBRD-133 G3 (EXPERIENCE_PASS Slice 2): a six that brings up a fifty
+ *      is one card, FIFTY "with a six", never a six's; a four's card comes
+ *      once and never on a reload; seven deliveries in one read cut to the
+ *      state with no card; Reduce motion leaves nothing animating.
  *  10. EXPERIENCE_PASS Slice 2 (Q18, Q19), signed in: the Match Centre links
  *      the ground display for a fixture Hilton has published and for none it
  *      has withdrawn, and its Share hands over the public page's link where
@@ -822,6 +826,76 @@ try {
     ok("...and Share hands over the Match Centre's own address, nothing public", own?.length === 1 && own[0].url === `${BASE}/app/matches/${ROT.id}`, JSON.stringify(own));
     ok("no page errors (withdrawn)", b.errors.length === 0, b.errors.join(" | "));
     await b.ctx.close();
+  }
+
+  group("11. G3: the moment cards — one card a ball, once, none for a gap, and Reduce motion animates nothing");
+  {
+    // MOM: H[0] on 44, the stand on 46, H[0] on strike in the third over.
+    const MOM = await fixture("live", (at) => [...open0(at), ...[4, 4, 4, 4, 4, 4].map((v) => at(ball({ value: v }), 0)),
+      at(bowler({ bowler: K[1].id }), 0), at(ball({ value: 1 }), 0), ...[4, 4, 4, 4, 4].map((v) => at(ball({ value: v }), 0)),
+      at(bowler({ bowler: K[0].id }), 0), at(ball({ value: 1 }), 0)]);
+    /** Every card the page drew, by kind and words, as each is added. */
+    const WATCH = () => {
+      /** @type {any} */ (window).__cards = [];
+      new MutationObserver((ms) => {
+        for (const m of ms) for (const n of m.addedNodes) {
+          if (!(n instanceof HTMLElement)) continue;
+          for (const el of [n, ...n.querySelectorAll('[data-testid="mc-moment"]')]) {
+            if (el.getAttribute?.("data-testid") === "mc-moment") /** @type {any} */ (window).__cards.push({ kind: el.getAttribute("data-kind"), text: el.innerText });
+          }
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    };
+    const cards = (/** @type {any} */ page) => page.evaluate(() => /** @type {any} */ (window).__cards ?? []);
+    const v = await tv(`/display/${MOM.id}`);
+    await until(v.page, () => !!document.querySelector('[data-testid="display-total"]'));
+    await v.page.evaluate(WATCH);
+    await sleep(2500);
+    ok("on load: no card (nothing is replayed)", (await cards(v.page)).length === 0, JSON.stringify(await cards(v.page)));
+    await writeEvents(q, MOM.id, [MOM.at(ball({ value: 6 }), 0)], await lastSeq(MOM.id));
+    ok("a six that brings up a fifty: a card", await until(v.page, () => (/** @type {any} */ (window).__cards ?? []).length > 0, 10000));
+    await sleep(5000);
+    const fifty = await cards(v.page);
+    ok(`...one card, FIFTY "with a six", never a six's of its own (${JSON.stringify(fifty)})`, fifty.length === 1 && fifty[0].kind === "fifty"
+       && /with a six/.test(fifty[0].text) && /Fifty/.test(fifty[0].text) && leaks(fifty[0].text).length === 0);
+    await writeEvents(q, MOM.id, [MOM.at(ball({ value: 4 }), 0)], await lastSeq(MOM.id));
+    ok("a four: its beat", await until(v.page, () => (/** @type {any} */ (window).__cards ?? []).some((c) => c.kind === "four"), 10000));
+    const t0 = Date.now();
+    ok("...gone after its two and a half seconds", await until(v.page, () => !document.querySelector('[data-testid="mc-moment"]'), 6000));
+    const held = Date.now() - t0;
+    await sleep(3000);
+    const fours = (await cards(v.page)).filter((c) => c.kind === "four");
+    ok(`...shown once, though the page read the log again since (${fours.length})`, fours.length === 1 && held < 4000, `${fours.length} cards, ${held} ms after it was seen`);
+    await v.page.reload({ waitUntil: "domcontentloaded" });
+    await until(v.page, () => !!document.querySelector('[data-testid="display-total"]'));
+    await v.page.evaluate(WATCH);
+    await sleep(3500);
+    ok("a reload: the four's card is not shown again", (await cards(v.page)).length === 0, JSON.stringify(await cards(v.page)));
+    // Seven deliveries in one read: the third over's last three, a bowler, four more.
+    await writeEvents(q, MOM.id, [...[1, 0, 4].map((x) => MOM.at(ball({ value: x }), 0)), MOM.at(bowler({ bowler: K[1].id }), 0),
+      ...[4, 0, 6, 1].map((x) => MOM.at(ball({ value: x }), 0))], await lastSeq(MOM.id));
+    // 46 before the six, then 6 and 4, then 1 + 0 + 4 and 4 + 0 + 6 + 1: worked out here, not read off the page.
+    const runsNow = 46 + 6 + 4 + 5 + 11;
+    ok(`seven deliveries in one read: the board cuts to the score (${runsNow})`,
+       await until(v.page, (/** @type {number} */ r) => (document.querySelector('[data-testid="display-total"]')?.textContent ?? "").includes(String(r)), 10000, runsNow),
+       await tid(v.page, "display-total").innerText().catch(() => ""));
+    await sleep(3000);
+    ok("...and no card for any of them", (await cards(v.page)).length === 0, JSON.stringify(await cards(v.page)));
+    ok("no console errors (the cards)", v.errors.length === 0, v.errors.join(" | "));
+    await v.ctx.close();
+    // Reduce motion: the card appears, holds and goes; nothing slides.
+    const r = await tv(`/display/${MOM.id}?motion=reduce`);
+    await until(r.page, () => !!document.querySelector('[data-testid="display-total"]'));
+    await r.page.evaluate(WATCH);
+    await sleep(1500);
+    await writeEvents(q, MOM.id, [MOM.at(ball({ value: 4 }), 0)], await lastSeq(MOM.id));
+    ok("Reduce motion: the four's card still comes", await until(r.page, () => !!document.querySelector('[data-testid="mc-moment"]'), 10000));
+    const anim = await r.page.evaluate(() => ({
+      running: document.getAnimations().filter((a) => a.playState === "running").map((a) => /** @type {any} */ (a).animationName ?? "?"),
+      name: getComputedStyle(/** @type {Element} */ (document.querySelector('[data-testid="mc-moment"]'))).animationName,
+    }));
+    ok(`...with no animation on the page (${JSON.stringify(anim)})`, anim.running.length === 0 && anim.name === "none");
+    await r.ctx.close();
   }
   void pub2;
 } catch (e) {

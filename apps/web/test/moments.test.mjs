@@ -9,7 +9,7 @@
  */
 import { inningsStart, batters, bowler, ball, revision, penalty, playStopped, sealInnings, deriveMatch, deriveInnings,
   deriveCommentary, BALL_TYPE } from "@scrbrd/scoring";
-import { momentsFrom, enqueue, SIZE, SHOW_MS, GAP, QUEUE_MAX } from "../src/lib/moments.js";
+import { boardTags, momentsFrom, enqueue, SIZE, SHOW_MS, GAP, QUEUE_MAX } from "../src/lib/moments.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
@@ -179,6 +179,30 @@ group("The gap: more than six deliveries in one read cut to state, with no card"
   for (let i = 0; i < GAP + 1; i++) g.add(0, ball({ value: i === 0 ? 6 : 4 }));
   const r = g.read();
   ok(`${GAP + 1} deliveries in one read: no card at all`, GAP === 6 && r.cards.length === 0, said(r.cards));
+  const withResult = momentsFrom([...r.fresh, { kind: "result", key: "result:m", innings: 0, text: "Home XI won" }], null, r.fold);
+  ok("...but the result that came with them is still its card: the state the board cuts to", said(withResult).join() === "result: Home XI won", said(withResult));
+}
+
+group("7, 9. The board's tags: Free hit, Hat-trick ball, until the next counted ball");
+{
+  const g = game();
+  g.add(0, ball({ type: BALL_TYPE.NO_BALL, value: 0 }));
+  let r = g.read();
+  const tags = () => boardTags(r.fold.innings[0], deriveCommentary(g.log, { nameOf }), 0);
+  ok("a no-ball: \"Free hit\"", tags().join() === "Free hit", tags());
+  g.add(0, ball({ value: 1 }));
+  r = g.read();
+  ok("...gone after the free hit", tags().length === 0, tags());
+  g.add(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), batters({ striker: "h2" }), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), batters({ striker: "h3" }));
+  r = g.read();
+  ok("two of his in two: \"Hat-trick ball\"", tags().join() === "Hat-trick ball", tags());
+  g.add(0, ball({ type: BALL_TYPE.WIDE, value: 0 }));
+  r = g.read();
+  ok("...a wide neither makes nor breaks it: still", tags().join() === "Hat-trick ball", tags());
+  g.add(0, ball({ value: 0 }));
+  r = g.read();
+  ok("...his next counted ball ends it", tags().length === 0, tags());
+  ok("a finished innings has no tag", boardTags({ ...r.fold.innings[0], complete: true, freeHit: true }, [], 0).length === 0);
 }
 
 group("§5.3: the queue");

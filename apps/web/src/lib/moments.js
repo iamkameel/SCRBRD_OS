@@ -23,7 +23,8 @@
  * ONLY WHAT ARRIVES. The caller passes the lines new since its last read and
  * nothing on the first: a reload replays nothing (live.js useArrivals()).
  * More than GAP deliveries in one read is a gap (the phone slept, the tab was
- * hidden, §4.4): no card at all; the board cuts to where the match stands.
+ * hidden, §4.4): no card for any of them; the board cuts to where the match
+ * stands, and only the result, which is that state, is still its card.
  */
 
 /** A card's size: a beat (the chip's colour), a big card (the board's lime), or held until the state changes. */
@@ -73,8 +74,10 @@ const ballOf = (/** @type {{key?: string}} */ c) => { const m = /^e:(.+?)(?:#\d+
  * @returns {Card[]}
  */
 export function momentsFrom(arrivals, before, after, { side = (inn) => String(inn?.battingTeam ?? "") } = {}) {
-  const lines = Array.isArray(arrivals) ? arrivals : [];
-  if (lines.filter((c) => DELIVERY.has(c?.kind)).length > GAP) return [];
+  const all = Array.isArray(arrivals) ? arrivals : [];
+  // A gap plays no steps: only what the state now is (the result) is still said, as the board cuts to it.
+  const gap = all.filter((c) => DELIVERY.has(c?.kind)).length > GAP;
+  const lines = gap ? all.filter((c) => c?.kind === "result") : all;
   const was = before?.innings ?? [];
   const now = after?.innings ?? [];
   /** @type {Card[]} */
@@ -156,7 +159,7 @@ export function momentsFrom(arrivals, before, after, { side = (inn) => String(in
   // Fold states (§5.2 rows 14 and 18), held until the state changes.
   const last = now.length ? now[now.length - 1] : null;
   const lastWas = was[now.length - 1] ?? null;
-  if (last?.stopped && !lastWas?.stopped && lines.length) {
+  if (!gap && last?.stopped && !lastWas?.stopped && lines.length) {
     const why = { rain: "rain", bad_light: "bad light", wet_ground: "a wet ground" }[String(last.stopped.reason)] ?? null;
     cards.push({ key: `stopped:${now.length - 1}:${last.interruptions?.length ?? 0}`, kind: "stopped", size: SIZE.HELD, ms: null,
       title: "Play stopped", body: `${why ? `${why} · ` : ""}${oversText(last.balls ?? 0)} ov, ${last.runs}/${last.wickets}`, eyebrow: null, line: null });
@@ -190,6 +193,29 @@ function mergeByBall(cards) {
       eyebrow: four ? `with a ${four.kind}` : wicket && top.kind !== "hat_trick" && top.kind !== "five_wickets" ? "with a wicket" : null,
     };
   });
+}
+
+/**
+ * The board's two tags (§5.2 rows 7 and 9; EXPERIENCE_PASS C5), words beside
+ * the chips, no motion: "Free hit" while the fold says the next ball is one,
+ * and "Hat-trick ball" from the generator's "on a hat-trick" line until that
+ * bowler's next counted ball (a wide or a no-ball neither makes nor breaks a
+ * hat-trick, as facts.mjs reads it). Names nobody.
+ * @param {any} inn  the innings the board shows  @param {any[]} lines  the commentary  @param {number} n  that innings' number
+ * @returns {string[]}
+ */
+export function boardTags(inn, lines, n) {
+  if (!inn || inn.complete) return [];
+  const out = [];
+  if (inn.freeHit === true) out.push("Free hit");
+  const on = [...(lines ?? [])].reverse().find((c) => c?.innings === n && c.kind === "milestone" && c.moment?.kind === "hat_trick_ball");
+  if (on) {
+    const log = Array.isArray(inn.ballLog) ? inn.ballLog : [];
+    const at = log.findIndex((/** @type {any} */ b) => String(b.id) === ballOf(on));
+    const later = at < 0 ? [] : log.slice(at + 1);
+    if (at >= 0 && !later.some((/** @type {any} */ b) => (b.bowlerId ?? b.bowler) === on.moment.player && b.type !== "Wd" && b.type !== "Nb")) out.push("Hat-trick ball");
+  }
+  return out;
 }
 
 /**
