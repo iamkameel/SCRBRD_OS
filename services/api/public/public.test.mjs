@@ -399,7 +399,8 @@ ok("a known-as gives the initial, never the known-as", nameFor({ ...PEOPLE[3], f
 // public_name_surface(), picks the rule. None (the switch off) is the rule
 // before that design, whatever else the facts carry.
 {
-  const yesOn = (/** @type {string|null} */ surface, extra = {}) => ({
+  // `any`: the last case hands nameFor() a surface PersonRow does not allow.
+  const yesOn = (/** @type {any} */ surface, extra = {}) => ({
     ...PEOPLE[0], surface,
     facts: { neverPublic: false, namesOff: false, byTerms: true,
              consents: [{ by: "guardian", competent: true, givenOn: "2026-09-01", endedOn: null, surface: "card", giverLive: true, ...extra }] } });
