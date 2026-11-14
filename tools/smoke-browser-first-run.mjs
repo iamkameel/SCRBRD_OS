@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The first run, slice 3a (EXPERIENCE_PASS §2.2–§2.8, Q6, Q13, Q22; decided
+ * The first run, slice 3a (EXPERIENCE_PASS §2.2–§2.8, Q6, Q13; decided
  * as recommended on 13 Nov 2026), in a real browser against the real server,
  * signed out at 390 × 844 and then through sign-in.
  *
@@ -26,8 +26,7 @@
  *      (Start a match, Join a school, Your requests, Worried about a child?),
  *      the empty requests section says what will show there, the join form
  *      opens with "parent or guardian" chosen, and the door's hint leaves the
- *      address. "Ask SCRBRD to add my school" is there with its words and its
- *      Send off, and asks for nothing. The account holds nothing.
+ *      address. The account holds nothing.
  *   3. A COACH ON THE REGISTER. The office lists a coach; he signs in with
  *      Google, chooses the school and "I work at the school", is told he is
  *      listed, and Open the school lands him on Today with no second sign-in.
@@ -333,13 +332,6 @@ try {
        (await tid(P, "join-kind-parent").getAttribute("aria-pressed")) === "true" && (await tid(P, "join-form-parent").count()) === 1);
     ok("...with the health note, separate and off", /separate, and off/.test(await tid(P, "join-health-note").innerText().catch(() => "")));
 
-    // Q22: the door for a school that is not listed, its words, its Send off.
-    await tid(P, "ask-add-school-door").click({ timeout: 4000 });
-    const ask = await tid(P, "ask-add-school-panel").innerText().catch(() => "");
-    ok("'Ask SCRBRD to add my school' says what the note holds and who answers", /the school's name, its town, and your job/.test(ask) && /A person at SCRBRD reads it/.test(ask), ask);
-    ok("...says plainly that it cannot be sent yet, with no 'coming soon'", /cannot send the note yet/.test(ask) && !/coming soon/i.test(ask), ask);
-    ok("...its Send is off, and it asks for nothing (no field)",
-       await tid(P, "ask-add-school-send").isDisabled() && (await tid(P, "ask-add-school-panel").locator("input, textarea, select").count()) === 0);
     const fl = await floors(P);
     ok("the no-school home: nothing under 12px, nothing tapped under 44px", fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].slice(0, 4).join(" · "));
     ok("...and no sideways scroll at 390", !(await wide(P)));

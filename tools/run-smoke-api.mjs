@@ -618,7 +618,7 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // name typed, sees the Board move, finds it under Now after a reload and a
   // sign-in, and at the result is offered the school, never during play.
   "browser-first-score",
-  // The first run, slice 3a (EXPERIENCE_PASS §2.2–§2.8; Q6, Q13, Q22): the home
+  // The first run, slice 3a (EXPERIENCE_PASS §2.2–§2.8; Q6, Q13): the home
   // page's first screen in each state of the public read (the live board and its
   // sentence first, one tap to the match; Today; a result; the film), its three
   // doors; one door to sign in, a new Google account on the no-school home with no

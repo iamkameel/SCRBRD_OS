@@ -109,37 +109,6 @@ function HelpLine() {
 }
 
 /**
- * "Ask SCRBRD to add my school" (EXPERIENCE_PASS §2.7, Q22, 13 Nov 2026), in
- * place of the dead end a school that is not listed used to be. Slice 3a draws
- * the door and its words only: the note is the school's name, its town and the
- * person's job, answered by a person at SCRBRD, and the row that would hold it
- * is slice 3b's migration. Until that ships there is nowhere to keep a note,
- * so this asks for nothing (no field takes a word) and its Send is off.
- */
-function AskAddSchool() {
-  const [open, setOpen] = useState(false);
-  const panel = useId();
-  return (
-    <div data-testid="ask-add-school" style={{ marginTop: "10px" }}>
-      <button type="button" className="pressBtn" aria-expanded={open} aria-controls={panel} data-testid="ask-add-school-door"
-        onClick={() => setOpen((o) => !o)}
-        style={{ display: "flex", alignItems: "center", minHeight: "44px", padding: "0", background: "none", border: "none", cursor: "pointer",
-          fontFamily: FONT.body, fontSize: "14px", fontWeight: 600, color: T.brand.blueText, textAlign: "left" }}>
-        My school is not here: ask SCRBRD to add my school
-      </button>
-      {open && (
-        <div id={panel} data-testid="ask-add-school-panel" style={{ ...text(14), padding: "12px 14px", borderRadius: "10px",
-          border: `1px solid ${T.line.normal}`, background: T.surface.base, marginTop: "4px" }}>
-          <div style={{ marginBottom: "8px" }}>The note says three things: the school's name, its town, and your job there. A person at SCRBRD reads it and answers you on this page. Nothing is given to you until the school is on SCRBRD and says yes.</div>
-          <div data-testid="ask-add-school-note" style={{ ...text(13), marginBottom: "10px" }}>This page cannot send the note yet, so Send is off. Meanwhile you can score a match on this phone.</div>
-          <Btn kind="primary" disabled data-testid="ask-add-school-send">Send the note</Btn>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
  * The join form. `post` is api() unless a test hands in another.
  *
  * A member of staff who chooses their school is first asked of the school's
@@ -241,7 +210,6 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
             {shown.length === 0 && <div style={text(14)}>No school's name has those letters in it.</div>}
           </div>
         </>}
-        <AskAddSchool/>
       </div>
 
       {/* 2 · Who you are */}
