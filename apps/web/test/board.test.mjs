@@ -192,7 +192,8 @@ group("The pad's board is compact; every other board is not (§4 rule 1)");
 
 group("Tier 2 lines come from the fold, and say nothing the fold cannot");
 {
-  const { boardInsights } = await import("../src/scorer/signals.js");
+  const { boardInsights: structured, aboutWhom } = await import("../src/scorer/signals.js");
+  const boardInsights = (/** @type {any} */ i, /** @type {any} */ o) => structured(i, o).map((l) => l.text);
   const inn = {
     runs: 142, wickets: 3, balls: 86, complete: false, striker: "a", nonStriker: "b", bowler: "k",
     batsmen: [{ id: "a", name: "D Erasmus", runs: 46, balls: 30 }, { id: "b", name: "R Pillay", runs: 17, balls: 12 }],
@@ -227,6 +228,24 @@ group("Tier 2 lines come from the fold, and say nothing the fold cannot");
   ok("...a limited-overs one does", boardInsights(inn, { overs: 20, format: "T20" }).includes("Projected 198 at 9.91 an over"));
   ok("an innings with no balls, or a finished one, says nothing",
      boardInsights({ ...inn, balls: 0 }).length === 0 && boardInsights({ ...inn, complete: true }).length === 0);
+  // EXPERIENCE_PASS Q10 (decided 13 Nov): each line says whom it is about, and a family's or a pupil's
+  // screen keeps only the lines about nobody and about its own boy.
+  const all = structured(inn, { overs: 20 });
+  const about = (/** @type {RegExp} */ re) => all.find((l) => re.test(l.text))?.about;
+  ok("Q10: a batter's milestone is about him", about(/^D Erasmus needs/) === "a");
+  ok("...a bowler's, about him", about(/^K Naidoo needs/) === "k");
+  ok("...the stand, the projection and the drought, about nobody",
+     about(/^The stand needs/) === null && about(/^Projected/) === null && about(/^No boundary/) === null);
+  ok("...the last wicket, with no batter of that name out on the card, about somebody unknown (\"?\")", about(/^Last wicket/) === "?");
+  const outInn = { ...inn, batsmen: [...inn.batsmen, { id: "t", name: "T Botha", runs: 30, balls: 25, status: "out" }] };
+  ok("...and about him where the card has exactly one batter out by that name",
+     structured(outInn, { overs: 20 }).find((l) => /^Last wicket/.test(l.text))?.about === "t");
+  ok("aboutWhom with no focus: every line, as text", aboutWhom(all).length === all.length && aboutWhom(all).every((l) => typeof l === "string"));
+  const mine = aboutWhom(all, new Set(["a"]));
+  ok("...for D Erasmus's family: his own line and the lines about nobody, no other boy's",
+     mine.includes("D Erasmus needs 4 for fifty") && mine.includes("The stand needs 7 for a fifty partnership")
+     && !mine.some((l) => /K Naidoo|T Botha/.test(l)), mine.join(" | "));
+  ok("...an unknown boy's line is never kept on a family screen", !aboutWhom(all, new Set(["a", "?x"])).some((l) => /^Last wicket/.test(l)));
 }
 
 group("The pad's moments read the facts (Recognition R2; the hat-trick ball, §10)");

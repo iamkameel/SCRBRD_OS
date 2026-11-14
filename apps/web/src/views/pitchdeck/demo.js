@@ -5,7 +5,7 @@ import { seedRng } from "../../scorer/seed.js";
 import { teamOf } from "../../lib/matchCentre.js";
 import { undoWords } from "../../scorer/prompts.js";
 import { boardFromInnings } from "../../scorer/boardData.js";
-import { boardInsights } from "../../scorer/signals.js";
+import { aboutWhom, boardInsights } from "../../scorer/signals.js";
 import { addDays, dateStr, today } from "../../lib/format.js";
 
 /**
@@ -156,7 +156,7 @@ export function buildDaySheet(d) {
   // No last-wicket row on the deck's day sheet (CRI-1.1 is the Match Centre's and the public page's).
   const raw = boardFromInnings(d.chasing, { target: d.target, overs: d.overs });
   const props = raw ? { ...raw, lastWicket: undefined } : null;
-  const insight = boardInsights(d.chasing, { target: d.target, overs: d.overs });
+  const insight = aboutWhom(boardInsights(d.chasing, { target: d.target, overs: d.overs }));
   const next = { id: "deck-next", homeTeam: HOME, awayTeam: ASHDOWN, status: "upcoming", date: day(1), time: "13:00", venue: "Ashdown High, Top Field" };
   return {
     role: "coach",
