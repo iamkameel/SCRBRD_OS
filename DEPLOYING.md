@@ -2494,6 +2494,20 @@ Pasted on the demo and production, 13 Nov 2026. Hash-checked:
 `sha256 28da1a71c35241a4794ced52b7c67fdf5fae3961b63e01e64e3b3cc634e77cd2`,
 from commit b88d539a.
 <!-- ── end db/153 ── -->
+<!-- ── db/155: public names per surface, shipped dark ── -->
+#### Public names per surface, shipped dark (db/155)
+
+`db/155_public_name_surfaces.sql` is public by terms, slice 3 (PR #329, merge
+05a92708). A family's "no" can now be per surface (live, card, board), through a
+surface column, a 4-argument `public_name_facts()` and per-surface consent. It
+ships dark: the new switch `public_name_surfaces` is off and locked to the
+platform and hidden from every school, so every public read keeps today's rule.
+The old signatures are kept as wrappers, because db/153 calls them.
+
+Pasted on the demo and production, 14 Nov 2026. Hash-checked:
+`sha256 bd558badc5aa0d456c377f4399ab7c8a010771165b1db25e26323ae0de84a2ab`,
+from commit 3225edda. The switch `public_name_surfaces` is off on both.
+<!-- ── end db/155 ── -->
 
 ### 5 · Cloud Run, the first time
 

@@ -12,9 +12,11 @@
  *
  *   1. THE FEATURE WORKS. Turn it on and a review records correctly, with the
  *      Law 36 components and — always — how they were known.
- *   2. THE SWITCH IS REAL. Off means off for everybody, including a caller who
- *      never loads the UI. A feature whose only guard is a hidden button is a
- *      feature everyone with a fetch call still has.
+ *   2. THE SWITCH IS REAL. Off means hidden for everybody, including a caller
+ *      who never loads the UI: the reviews are not served. Since db/154
+ *      (Kameel, 13 Nov 2026: "Anything that's switched off for a user should
+ *      be hidden for that user but still record data") a review written while
+ *      it is off is STORED, and shown only once it is on.
  *
  * And the third, which is the reason the flag exists at all: a review can
  * never be recorded without saying whether a person judged it, a replay showed
@@ -110,16 +112,14 @@ try {
   ok("...with a reason a person can read in a year's time",
      /ball-tracking|cameras/i.test(declared?.reason || ""));
 
-  group("Off means off for everybody, not just for people who use the screen");
-  // The whole point. This request never touched a UI.
+  group("Off: hidden for everybody, and still recorded (db/154)");
+  // This request never touched a UI. The review is stored; nobody is shown it.
   const blocked = await review(m, head, A_REVIEW);
-  ok("a director of sport holding scoring.correct is still refused", blocked.status === 409);
-  ok("...and told which switch, rather than 'invalid'", blocked.body?.error === "feature_disabled");
-  ok("...with a message naming the flag and who can move it",
-     /feature_flag\.drs_review/.test(blocked.body?.detail || "") &&
-     /platform\.feature\.manage/.test(blocked.body?.detail || ""));
-  ok("a scorer likewise", (await review(m, scorer, A_REVIEW)).status === 409);
-  ok("nothing was written", (await reviews(m, head)).length === 0);
+  ok("a director of sport holding scoring.correct records a review while it is off", blocked.status === 200);
+  ok("a scorer likewise (the same ball: it corrects the first)", (await review(m, scorer, A_REVIEW)).status === 200);
+  ok("...and it is stored, one row for the ball",
+     (await q(`select count(*)::int c from drs_review where match_id = $1`, [m]))[0].c === 1);
+  ok("...but it is not served while the feature is off", (await reviewsRaw(m, head)).status === 403);
 
   group("Only a platform capability can move the switch");
   ok("a director of sport cannot enable it",
@@ -186,7 +186,7 @@ try {
   ok("...and it is the corrected one", all[0]?.outcome === "upheld");
   ok("...whose evidence source moved with it", all[0]?.evidence_source === "video_replay");
 
-  group("Switching it back off stops new reviews without erasing old ones");
+  group("Switching it back off hides the reviews without erasing them, and still records");
   // A flag governs what may be recorded, never what was. Deleting history
   // because a feature was withdrawn would be a worse fabrication than the one
   // the flag exists to prevent.
@@ -202,7 +202,8 @@ try {
   // stronger statement of the original principle than "still readable" was.
   ok("the platform administrator switches it off",
      (await setFlag("drs_review", platform, { enabled: false, reason: "Cameras removed for winter." })).status === 200);
-  ok("a new review is refused again", (await review(m, head, { ...A_REVIEW, ballSeq: 1 })).status === 409);
+  ok("a review made while it is off is stored, not refused (db/154)",
+     (await review(m, head, { ...A_REVIEW, ballSeq: 1, outcome: "upheld", evidenceSource: "video_replay" })).status === 200);
   ok("...and the reviews stop being served", (await reviewsRaw(m, head)).status === 403);
   ok("...but NOTHING WAS DELETED",
      (await q(`select count(*)::int c from drs_review where match_id = $1`, [m]))[0].c === 1);
