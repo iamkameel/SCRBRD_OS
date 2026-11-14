@@ -311,13 +311,15 @@ export default function SCRBRD_OS() {
    * would write the previous person's role straight back into the session that
    * was just cleared.
    */
-  const handleSignOut = () => {
+  // `keepDoor`: "Sign in again" on a page restored after a reload is the same
+  // person carrying on, so the home page's door (?door=parent) still applies.
+  const handleSignOut = ({ keepDoor = false } = {}) => {
     signOut();
     clearSession();
     setScorerOpen(false); setScorerResume(null); setScorerMatchId(null); setScorerPractice(false); setScorerEntry(null);
     setUsers([]); setUserEdits(false);
     setRole("superadmin"); setUserName("Super Admin"); setPage("dashboard");
-    setDoor(null);
+    if (!keepDoor) setDoor(null);
     setAppState("login");
   };
 
@@ -588,7 +590,7 @@ export default function SCRBRD_OS() {
             left the persisted session behind, so a reload put the next person
             back where the last one stood. */}
         <Suspense fallback={<Loading what="your account"/>}>
-          <NoSchool name={userName} onSignOut={handleSignOut} onJoined={handleJoined} onOpenPad={openPadNoSchool} joinFirst={joinFirst} kindFirst={door}/>
+          <NoSchool name={userName} onSignOut={() => handleSignOut()} onSignInAgain={() => handleSignOut({ keepDoor: true })} onJoined={handleJoined} onOpenPad={openPadNoSchool} joinFirst={joinFirst} kindFirst={door}/>
         </Suspense>
       </>
     );

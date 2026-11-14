@@ -124,7 +124,7 @@ export function Hero({ appHref = "/app", hasStrip = false, skipTo = "#home-after
             <LinkButton href={skipTo} testId="home-skip-film" tone="night">Skip the film</LinkButton>
           </div>
           <p data-testid="home-cta-note" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: "14px", color: QUIET, lineHeight: 1.55, margin: "16px 0 0", maxWidth: "440px" }}>
-            Your school's office gives you your code.{" "}
+            Sign in with Google, or with a code from your school office.{" "}
             {hasStrip ? "On match day, ask your school for the live link, or look here." : "On match day, ask your school for the live link."}
           </p>
         </div>

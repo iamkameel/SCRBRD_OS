@@ -37,7 +37,8 @@ import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { READ_QUERIES } from "../services/api/read/read-api.mjs";
-import { appUrl, port } from "./db-url.mjs";
+import pg from "pg";
+import { appUrl, ownerUrl, port } from "./db-url.mjs";
 
 const PORT = port(8981);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -174,13 +175,18 @@ try {
   ok("...and the reference data the narrowing hid", sportsNow.body?.rows?.length > 0, sportsNow.body);
 
   group("3b. A request filed for an address, then Google: still marked as asked unverified (db/84)");
-  // POST /api/onboard is unauthenticated: anybody may file a request in an
-  // address's name. When the address's owner later signs in with Google, the
-  // stub is linked to him — and the request must not start to look like his.
+  // The unauthenticated POST /api/onboard let anybody file a request in an
+  // address's name. It is retired (EXPERIENCE_PASS Q13, slice 3a), but its
+  // stubs exist in databases that ran it, so the stub is made here by owner
+  // SQL, as the route made it: onboard_request() (db/08) with no app.user_id.
+  // When the address's owner later signs in with Google, the stub is linked
+  // to him, and the request must not start to look like his.
   const STUB_EMAIL = `walk.stub.${RUN}@example.invalid`;
-  const filed = await api("/api/onboard", { method: "POST",
-    body: { email: STUB_EMAIL, name: "Somebody Typed This", role: "guardian", schoolId: HIL, note: "the boy in the U13A side" } });
-  ok("a request is filed for an address, signed out", filed.status === 200 && filed.body?.requested === true, filed);
+  const owner = new pg.Pool({ connectionString: ownerUrl() });
+  const filed = await owner.query(`select onboard_request($1, $2, 'guardian', $3, null, 'the boy in the U13A side') as id`, [STUB_EMAIL, "Somebody Typed This", HIL])
+    .then((x) => x.rows[0]?.id ?? null, (e) => { console.log("   ", e.message); return null; });
+  await owner.end().catch(() => {});
+  ok("a request is filed for an address, signed out (the retired route's stub)", !!filed, filed);
   const linkedIn = await exchange(idToken(`walk-stub-${RUN}`, STUB_EMAIL));
   ok("the address's Google sign-in links the stub", linkedIn.status === 200 && linkedIn.body?.outcome === "linked", linkedIn);
   const officeList = await api("/api/read/role_requests", { token: office });

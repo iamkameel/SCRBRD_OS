@@ -1,16 +1,18 @@
 /**
  * SCRBRD — asking for a role, and answering.
  *
- * Nobody assigns themselves anything. A stranger onboards into an account
- * with nothing in it and a pending request; a person already here asks for
- * another role the same way; somebody who may grant that role at that
- * school answers through decide_role_request(), which checks the
- * decider's authority itself. See the note above role_request in db/08.
+ * Nobody assigns themselves anything. A signed-in person (a Google account
+ * with no school, or anybody already here) asks for a role at a school with
+ * POST /api/requests; somebody who may grant that role at that school answers
+ * through decide_role_request(), which checks the decider's authority itself.
+ * See the note above role_request in db/08.
  *
- * /api/onboard and /api/schools are the two unauthenticated routes in this
- * service, and both run through SECURITY DEFINER functions that do one
- * narrow thing. Onboarding does not say whether the email was already
- * known: the answer is "requested" either way.
+ * /api/schools is the one unauthenticated route in this service, through a
+ * SECURITY DEFINER function that does one narrow thing. The stranger's
+ * sign-up, POST /api/onboard, is retired (EXPERIENCE_PASS Q13, slice 3a): it
+ * opened an account for a typed address, with a school and a role label,
+ * and no screen calls it since the role-tile sign-up went. One door now:
+ * Google or the office's code, then a request from the no-school home.
  *
  * ENROLMENT is the same machinery pointed the other way — the office opening
  * an account for somebody already in the building, instead of waiting to be
@@ -18,7 +20,6 @@
  * writing the assignment itself.
  */
 import { runAsPrincipal, issueLoginCode } from "../auth/auth-db.mjs";
-import { SELF_REGISTRABLE_ROLES } from "@scrbrd/policy/roles";
 import { COOLDOWN_WORDS } from "./register-api.mjs";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs):
@@ -101,8 +102,7 @@ export function requestRoutes({ pool, secret }) {
   // db/86: superadmin and platformadmin belong to no school, and a request is
   // always at one, so granting one never works (decide_role_request refuses).
   // Refused when it is FILED, not left pending for an answer that cannot
-  // come — and, on /api/onboard, before onboard_request() opens an account
-  // labelled with a platform role for a stranger. The same code the enrol
+  // come. The same code the enrol
   // path's refusal uses (ENROL_STATUS), so the screens say it one way.
   const refusePlatformRole = (/** @type {string} */ role) => {
     if (PLATFORM_ROLES.includes(role)) throw err("platform_role_needs_no_school", 422);
@@ -111,30 +111,6 @@ export function requestRoutes({ pool, secret }) {
   return {
     // GET /api/schools — id and name, for choosing one.
     schools: handle(async () => ({ rows: (await pool.query(`select * from public_schools()`)).rows })),
-
-    // POST /api/onboard { email, name, role, schoolId, teamCode?, note? } — unauthenticated
-    onboard: handle(async (req) => {
-      const b = req.body || {};
-      const f = fields(b);
-      refusePlatformRole(f.role);
-      // A stranger asks only for what the sign-up screens offer. onboard_request()
-      // labels the new account with this role, so anything else (`principal`,
-      // `dso`, …) is refused here, before the database is asked anything.
-      if (!SELF_REGISTRABLE_ROLES.includes(f.role)) throw err("role_not_self_registrable", 422);
-      const email = String(b.email ?? "").trim();
-      const name = String(b.name ?? "").trim();
-      if (name.length < 2) throw err("name_required");
-      try {
-        await pool.query(`select onboard_request($1, $2, $3, $4, $5, $6)`, [email, name, f.role, f.school, f.team, f.note]);
-      } catch (/** @type {any} */ e) {
-        // db/93's cooldown is the state of whichever account the typed
-        // address belongs to. Signed out, the asker has not shown it is
-        // theirs, and onboarding never says whether an address was known:
-        // the answer is "requested" either way, and nothing was written.
-        if (!(e.code === "23514" && e.constraint === "request_cooldown")) throw e;
-      }
-      return { requested: true };
-    }),
 
     // POST /api/requests { role, schoolId, teamCode?, playerId?, note? } — a signed-in person asks for another role
     request: handle(async (req) => {

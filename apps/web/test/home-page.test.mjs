@@ -51,10 +51,10 @@ group("A. Signed out: the page draws, and reaches for nothing signed-in");
   ok("no section fetched while rendering", calls.length === 0, calls.join());
   ok("Log in goes to the app", /href="\/app"[^>]*>Log in</.test(html(h(Header, {}))) || /<a href="\/app"/.test(html(h(Header, {}))));
   // EXPERIENCE_PASS §2.3: three doors in place of one "Log in", which stays in the header.
-  ok("the hero's doors are Score a match and My child plays, each saying what it gives, with the office-code line",
+  ok("the hero's doors are Score a match and My child plays, each saying what it gives, with the sign-in line",
     /Score a match Sign in, then score on this phone/.test(text(h(Hero, {}))) && /My child plays Sign in, then ask your child's school/.test(text(h(Hero, {})))
     && /href="\/app"[^>]*data-testid="home-cta-score"/.test(html(h(Hero, {}))) && /href="\/app\?door=parent"[^>]*data-testid="home-cta-child"/.test(html(h(Hero, {})))
-    && /Your school's office gives you your code/.test(text(h(Hero, {}))));
+    && /Sign in with Google, or with a code from your school office\./.test(text(h(Hero, {}))));
   ok("...and the hero no longer carries a Log in of its own (the header's stays)", !/Log in/.test(text(h(Hero, {}))) && /Log in/.test(text(h(Header, {}))));
   ok("no price: not 'free', no pricing promise", !/free|\bR ?\d|per month|pricing/i.test(all.replace(/data-[a-z-]+="[^"]*"/g, "")));
   ok("the hero's Watch a match is only offered when the strip is on the page",

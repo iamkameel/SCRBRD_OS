@@ -93,8 +93,10 @@ try {
   await q(`insert into role_assignment (person_id, role, school_id) select id, 'sportsadmin', school_id from app_user where email = 'queue.sports@example.invalid'`);
   for (const team of ["2XI", "3XI"]) await q(`insert into role_assignment (person_id, role, school_id, team_code) select id, 'coach', school_id, $2 from app_user where email = $1`, ["queue.coach@example.invalid", team]);
 
-  // Two requests: a stranger asks before the email is verified (POST /api/onboard), and a signed-in person asks for himself.
-  const stranger = await api("/api/onboard", { method: "POST", body: { email: "queue.stranger@example.invalid", name: "Q Stranger", role: "coach", schoolId: HIL, teamCode: "U13A", note: "Joining." } });
+  // Two requests: a stranger asks before the email is verified (the retired POST /api/onboard's row, made by owner SQL as
+  // the route made it: onboard_request() with no app.user_id, so db/84 marks it), and a signed-in person asks for himself.
+  const stranger = await q(`select onboard_request('queue.stranger@example.invalid', 'Q Stranger', 'coach', $1, 'U13A', 'Joining.')`, [HIL])
+    .then(() => ({ status: 200 }), (e) => ({ status: 0, body: { error: e.message } }));
   const watcher = await login("watcher@example.invalid");
   const asked = await api("/api/requests", { method: "POST", token: watcher, body: { role: "assistantcoach", schoolId: HIL, teamCode: "U13B", note: "Hello." } });
   ok("a stranger's request is made, and a signed-in person's", stranger.status === 200 && (asked.status === 200 || asked.status === 201), [stranger.status, asked.status, asked.body]);

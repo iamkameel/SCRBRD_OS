@@ -2389,7 +2389,7 @@ export const READ_QUERIES = {
   role_requests: {
     text: `select r.id, r.person_id, u.name, u.email, r.role, r.school_id, s.name as school_name, r.team_code,
                   r.player_id, r.note, r.state, r.requested_at, r.decided_at, r.decided_note, d.name as decided_by_name,
-                  -- Not asked by its person signed in as himself (db/84): POST /api/onboard.
+                  -- Not asked by its person signed in as himself (db/84): the retired /api/onboard's rows.
                   r.asked_unverified,
                   r.person_id = app_user_id() as mine,
                   (r.state = 'pending'

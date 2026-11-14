@@ -1866,7 +1866,7 @@ try {
   /** A new account, as Google's exchange makes one: a name, an address, no school, nothing held. */
   const stranger = async (name) => {
     const email = `${name.toLowerCase().replace(/[^a-z]+/g, ".")}.${tag}@example.invalid`;
-    await owner1.query(`insert into app_user (school_id, email, name, role) values (null, $1, $2, 'spectator')`, [email, `${name} ${tag}`]);
+    await owner1.query(`insert into app_user (school_id, email, name, role) values (null, $1, $2, 'none')`, [email, `${name} ${tag}`]);
     return { email, name: `${name} ${tag}` };
   };
   /** Sign in as that account: it lands on the no-school home, never a shell. */

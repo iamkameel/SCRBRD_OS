@@ -309,11 +309,11 @@ group("Where it sits in the app");
   ok("a signed-in account with no assignment goes to the no-school screen", /assignments\.length === 0/.test(app) && /<NoSchool /.test(app) && !/PendingRequests/.test(app));
 }
 
-group("What a stranger may register for is one list, the screens' and the route's (E1)");
+group("What a person with no school may ask for is one list, the join screen's (E1)");
 {
-  // POST /api/onboard refuses any role outside SELF_REGISTRABLE_ROLES. Each
-  // sign-up screen draws from the same list, so neither can offer what the
-  // route refuses, and the route refuses nothing a screen offers.
+  // SELF_REGISTRABLE_ROLES is the join screen's contract. The unauthenticated
+  // POST /api/onboard that was also held to it is retired (EXPERIENCE_PASS
+  // Q13, slice 3a); the join screen offers exactly the list, no more, no less.
   ok("the join screen's staff list is the policy's", STAFF_ROLES === SELF_REGISTRABLE_STAFF_ROLES);
   const joinOffers = new Set([
     ...STAFF_ROLES,

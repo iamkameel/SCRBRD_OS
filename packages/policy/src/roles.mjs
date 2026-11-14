@@ -808,12 +808,11 @@ export function mayGrantRole(granter, role) {
 
 // ── What a stranger may ask for ─────────────────────────────────
 //
-// POST /api/onboard is unauthenticated: onboard_request() (db/08) opens an
-// account labelled with the asked-for role and files a pending request. The
-// label carries no authority (role_assignment does), but a stranger should not
-// be able to call himself `principal` on the office's Users list either. So
-// the route takes only the roles the sign-up screens offer, and both the
-// screens and the route read them from here (E1, 2026-10-07).
+// The roles the join screen offers a person with no school (NoSchool.jsx's
+// staff list, and the parent, pupil and follower kinds; E1, 2026-10-07). The
+// unauthenticated POST /api/onboard that was also held to this list is
+// retired (EXPERIENCE_PASS Q13, slice 3a); the list stays as the join
+// screen's contract (apps/web/test/signin.test.mjs).
 //
 // A signed-in person asking through POST /api/requests is not held to this
 // list: the database decides what may be requested there.

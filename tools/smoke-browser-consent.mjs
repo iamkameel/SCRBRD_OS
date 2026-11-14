@@ -376,7 +376,7 @@ try {
   group("Asking to join as a parent says it is separate and off");
   await q(`delete from access_log where person_id = $1`, [U_NEW]).catch(() => {});
   await q(`delete from app_user where id = $1`, [U_NEW]);
-  await q(`insert into app_user (id, school_id, email, name, role) values ($1, null, 'a.newparent@example.invalid', 'A Newparent', 'spectator')`, [U_NEW]);
+  await q(`insert into app_user (id, school_id, email, name, role) values ($1, null, 'a.newparent@example.invalid', 'A Newparent', 'none')`, [U_NEW]);
   const signup = await open();
   await signIn(signup.page, "a.newparent@example.invalid");
   await signup.page.waitForSelector('[data-testid="join-school"]', { timeout: 8000 }).catch(() => {});

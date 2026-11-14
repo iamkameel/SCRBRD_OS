@@ -5,8 +5,8 @@
  * route verifies Google's signed statement (firebase-verify.mjs), asks
  * auth_identity_sign_in() (db/81) who that is here, and ends in signToken()
  * — the same thirty-minute, device-bound token { sub, did } a login code
- * ends in, unchanged. It is the third unauthenticated route after
- * /api/onboard and /api/schools, and like them it runs one narrow function.
+ * ends in, unchanged. It is an unauthenticated route, like /api/schools, and
+ * like it runs one narrow function.
  * Rate-limited per address (before anything is verified) and per Google
  * account (after), with the public pages' token bucket.
  *

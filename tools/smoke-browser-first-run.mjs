@@ -268,13 +268,13 @@ try {
     const before = { film: (await top(v.page, "#home-film"))?.top, first: await v.page.evaluate(() => document.querySelector("main")?.dataset.first) };
     await publish([LIVE, LATER]);
     ok("(setup) the public read now lists a second fixture as well", await readUntil([LIVE, LATER]));
-    let polls = 0;
-    v.page.on("request", (r) => { if (new URL(r.url()).pathname === "/api/public/live") polls++; });
-    for (let i = 0; i < 90 && polls < 2; i++) await v.page.waitForTimeout(500);
+    const seen = { polls: 0 };
+    v.page.on("request", (r) => { if (new URL(r.url()).pathname === "/api/public/live") seen.polls++; });
+    for (let i = 0; i < 90 && seen.polls < 2; i++) await v.page.waitForTimeout(500);
     await afterReads(v.page, 800);
     const after = { film: (await top(v.page, "#home-film"))?.top, first: await v.page.evaluate(() => document.querySelector("main")?.dataset.first) };
-    ok("two polls later the lead is the same, and the film has not moved", polls >= 2 && after.first === "live" && Math.abs((after.film ?? 0) - (before.film ?? -99)) < 1,
-       JSON.stringify({ polls, before, after }));
+    ok("two polls later the lead is the same, and the film has not moved", seen.polls >= 2 && after.first === "live" && Math.abs((after.film ?? 0) - (before.film ?? -99)) < 1,
+       JSON.stringify({ polls: seen.polls, before, after }));
     const laterTop = await v.page.evaluate((id) => { const a = document.querySelector(`a[data-testid="home-card"][href="/live/${id}"]`); return a ? a.getBoundingClientRect().top + scrollY : null; }, LATER);
     ok("...the new fixture is drawn below the film, not above it", laterTop !== null && laterTop > (after.film ?? Infinity), String(laterTop));
     ok("...and the live card still leads", await v.page.evaluate((id) => !!document.querySelector(`section[data-lead] a[href="/live/${id}"]`), LIVE));

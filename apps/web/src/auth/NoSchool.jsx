@@ -324,9 +324,10 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
  * sits after Now once the follow list exists (slice 3b, Q8). An empty section
  * says in one line what will appear there.
  */
-export function NoSchool({ name, onSignOut, onJoined, onOpenPad = null, joinFirst = 0, kindFirst = null }) {
+export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOpenPad = null, joinFirst = 0, kindFirst = null }) {
   const [nudge, setNudge] = useState(0);
-  const rows = useLive("role_requests", "spectator", nudge).rows;
+  const asked = useLive("role_requests", "spectator", nudge);
+  const rows = asked.rows;
   const [schools, setSchools] = useState(null);
   const me = profile()?.user;
   const live = signedIn();
@@ -369,7 +370,7 @@ export function NoSchool({ name, onSignOut, onJoined, onOpenPad = null, joinFirs
         <div style={{ maxWidth: "480px", width: "100%" }} data-testid="no-school-signed-out">
           <h1 style={{ margin: "0 0 8px", fontFamily: FONT.head, fontSize: "22px", color: T.content.primary }}>You were signed out</h1>
           <div style={{ ...text(14), marginBottom: "16px" }}>For your security SCRBRD does not keep you signed in when the page reloads. Sign in again to see your requests.</div>
-          <Btn kind="primary" onClick={onSignOut} data-testid="no-school-sign-in-again">Sign in again</Btn>
+          <Btn kind="primary" onClick={onSignInAgain ?? onSignOut} data-testid="no-school-sign-in-again">Sign in again</Btn>
         </div>
       </div>
     );
@@ -395,7 +396,7 @@ export function NoSchool({ name, onSignOut, onJoined, onOpenPad = null, joinFirs
         <div style={{ marginBottom: "16px" }} data-testid="no-school-requests">
             <h2 style={{ margin: "0 0 8px", fontFamily: FONT.head, fontSize: "16px", fontWeight: 800, color: T.content.primary }}>Your requests</h2>
             {withdrawProblem && <div role="alert" data-testid="withdraw-problem" style={{ ...text(13, T.semantic.criticalText), padding: "10px 12px", borderRadius: "8px", background: clr(T.semantic.critical, 0.1), border: `1px solid ${clr(T.semantic.critical, 0.2)}`, marginBottom: "8px" }}>{withdrawProblem}</div>}
-            {rows.length === 0 && <div data-testid="no-school-requests-none" style={text(14)}>A request you send to a school shows here, with the school's answer.</div>}
+            {rows.length === 0 && !asked.loading && <div data-testid="no-school-requests-none" style={text(14)}>A request you send to a school shows here, with the school's answer.</div>}
             {rows.map((r) => (
               <div key={r.id} data-testid={`request-${r.state}`} style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", padding: "12px 14px", border: `1px solid ${T.line.normal}`, borderRadius: "12px", background: T.fill.panel, marginBottom: "8px" }}>
                 <div style={{ flex: 1, minWidth: "180px" }}>
