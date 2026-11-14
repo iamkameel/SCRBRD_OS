@@ -14053,16 +14053,15 @@ BEGIN
   PERFORM _assert(my_feature_enabled('injuries'),
     'the school lifted the suppression and Injuries stayed off');
 
-  -- A sport the school has not been granted. Hockey ships off; since db/154
-  -- (switched off still records, Kameel 13 Nov 2026) a fixture in it is
-  -- STORED while it is off, and the shell hides the sport. The platform then
-  -- grants it, and the same INSERT goes through as before.
+  -- The write the database gates itself. Hockey ships off; the platform
+  -- grants it; the same INSERT then goes through.
   PERFORM _as(U_REGISTRAR);
-  PERFORM _assert(NOT feature_enabled('sport_hockey', HIL, NULL), 'hockey reads as granted to Hilton before the platform granted it');
-  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, status)
-  VALUES (HIL, '1XI', 'Kearsney Off', now() + interval '3 days', 'hockey', 'scheduled');
-  SELECT count(*) INTO n FROM match WHERE sport = 'hockey' AND opponent = 'Kearsney Off';
-  PERFORM _assert(n = 1, 'a fixture in a sport switched off was refused rather than stored (db/154)');
+  BEGIN
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, status)
+    VALUES (HIL, '1XI', 'Kearsney', now() + interval '3 days', 'hockey', 'scheduled');
+    PERFORM _assert(false, 'a fixture was written in a sport the school has not been granted');
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
   PERFORM _as(U_PLAT);
   INSERT INTO feature_grant (key, school_id, granted, changed_by)
   VALUES ('sport_hockey', HIL, true, U_PLAT);
@@ -41885,7 +41884,7 @@ $m130$;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/153 (section 131) ──────────────────────────────────────────
   -- ┌── db/154 (section 132) ─────────────────────────────────────────
-  -- ── 132. Switched off is hidden for that user, but still records: the seven modules that hold no child's own data store while off (the reader's outward read stays refused); the child-data modules' own gates still refuse (db/154; Kameel 13 Nov 2026) ──
+  -- ── 132. Switched off is hidden for that user, but still records: the modules that hold no child's own data and are gated only in the API store while off (the reader's outward read stays refused); the child-data modules' own gates still refuse (Kameel 13 Nov 2026). DRS reviews and other sports' fixtures stay refused in the database until db/154 lands, and are proved there ──
   -- Each module is hidden for the whole of Hilton (_v154_hide(), a school
   -- administrator's suppression), the write made, and the switch lifted.
   -- Every write is through scrbrd_app, as the owner unless a gate asks for
@@ -41897,9 +41896,6 @@ $m130$;
   --               is off (publishing is refused by the API, scouting-api.mjs)
   --   (sponsors)  a sponsor signed stores while Sponsors is off (a placement
   --               stays gated by the API: an outward act)
-  --   (drs)       a DRS review stores while drs_review is off and locked
-  --   (sport)     a fixture in rugby, a sport Hilton has not been granted,
-  --               stores; a sport that does not exist is still refused
   --   (reader)    the scorebook reader's read is NOT lifted: sending page
   --               photos to an outside provider is the outward act, and its
   --               gate is in scorebook_import_read_start() as db/66 left it
@@ -41909,9 +41905,6 @@ $m130$;
   --               their refusal is the API's (server.mjs route tags), held
   --               by apps/web/test/switched-off.test.mjs and
   --               tools/smoke-modules.mjs
-  --   (body)      the two re-created trigger functions ask no feature, the
-  --               sport's is still a definer with its path pinned, and both
-  --               triggers still fire
   DECLARE
     M uuid;
     v_reason text;
@@ -41956,30 +41949,6 @@ $m130$;
       '§132 (sponsors): a sponsor was not stored while Sponsors was off');
     PERFORM _v154_hide('sponsors', false);
 
-    -- (drs)
-    PERFORM _v154_hide('drs_review', true);
-    PERFORM _as(U_OWNER);
-    PERFORM _assert(NOT feature_enabled('drs_review', HIL, U_OWNER), '§132 (drs): DRS reads as on for Hilton');
-    INSERT INTO drs_review (match_id, school_id, ball_seq, called_by, on_field, outcome, evidence_source, reviewed_by)
-    VALUES (M, HIL, (SELECT max(seq) FROM ball_event WHERE match_id = M AND kind = 'ball'), 'fielding', 'not_out', 'upheld', 'umpire_eye', U_OWNER);
-    PERFORM _assert(_v154_count(format('SELECT count(*)::int FROM drs_review WHERE match_id = %L', M)) = 1,
-      '§132 (drs): a DRS review was not stored while the feature was off');
-    PERFORM _v154_hide('drs_review', false);
-
-    -- (sport)
-    PERFORM _as(U_OWNER);
-    PERFORM _assert(NOT feature_enabled('sport_rugby', HIL, NULL), '§132 (sport): rugby reads as granted to Hilton');
-    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, status)
-    VALUES (HIL, '1XI', 'V154 Rugby Probe', now() + interval '3 days', 'rugby', 'scheduled');
-    PERFORM _assert(_v154_count('SELECT count(*)::int FROM match WHERE sport = ''rugby'' AND opponent = ''V154 Rugby Probe''') = 1,
-      '§132 (sport): a fixture in a sport Hilton has not been granted was not stored');
-    BEGIN
-      INSERT INTO match (school_id, team_code, opponent, starts_at, sport, status)
-      VALUES (HIL, '1XI', 'V154 Nowhere', now() + interval '3 days', 'v154_no_such_sport', 'scheduled');
-      PERFORM _assert(false, '§132 (sport): a fixture in a sport that does not exist was stored');
-    EXCEPTION WHEN check_violation OR foreign_key_violation THEN NULL;
-    END;
-
     -- (reader)
     PERFORM _assert((SELECT position('scorebook_reader_on(i.school_id)' IN p.prosrc) > 0 AND position('''reader_off''' IN p.prosrc) > 0
                        FROM pg_proc p WHERE p.oid = 'scorebook_import_read_start(uuid,integer,integer)'::regprocedure),
@@ -42014,17 +41983,6 @@ $m130$;
     SELECT r.reason INTO v_reason FROM scorebook_import_open(M) r;
     PERFORM _assert(v_reason = 'module_disabled', format('§132 (child): with the scorebook importer off, an import opened with %s', coalesce(v_reason, 'ok')));
     PERFORM _v154_hide('scorebook_import', false);
-
-    -- (body)
-    PERFORM _assert((SELECT position('feature_enabled' IN p.prosrc) = 0 FROM pg_proc p WHERE p.oid = 'drs_review_feature_gate()'::regprocedure)
-                    AND (SELECT position('feature_enabled' IN p.prosrc) = 0 AND position('no such sport' IN p.prosrc) > 0
-                                AND p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']
-                           FROM pg_proc p WHERE p.oid = 'match_sport_is_enabled()'::regprocedure),
-      '§132 (body): a re-created trigger function still asks a feature, lost its sport check, or is not a pinned definer');
-    PERFORM _assert((SELECT count(*) FROM pg_trigger t WHERE NOT t.tgisinternal AND t.tgenabled <> 'D'
-                        AND ((t.tgrelid = 'drs_review'::regclass AND t.tgname = 'drs_review_gate')
-                          OR (t.tgrelid = 'match'::regclass AND t.tgname = 'match_sport_is_granted'))) = 2,
-      '§132 (body): the DRS gate or the sport trigger is missing or disabled');
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/154 (section 132) ──────────────────────────────────────────

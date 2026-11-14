@@ -125,13 +125,13 @@ try {
     ok("...and hockey is still off",
        (await sports(coach)).find((s) => s.code === "hockey")?.enabled === false);
 
-    // Switched off is hidden for that user but still records (db/154, Kameel
-    // 13 Nov 2026): a fixture in a sport the school has not been granted is
-    // STORED, and the shell does not draw the sport. Removed again here so
-    // the walk's later counts are the granted sport's alone.
     const before = await fixture("hockey");
-    ok("a fixture in an ungranted sport is stored, not refused", before.ok, before);
-    if (before.ok) await q(`delete from match where id = $1`, [before.id]);
+    ok("a fixture in an ungranted sport is refused", !before.ok && before.code === "23514");
+    // The person who hits this is a sportsmaster typing a hockey fixture into
+    // a product that has not been given hockey. "not permitted" would send
+    // them to their own IT department.
+    ok("...with a message naming the sport", /Hockey/.test(before.message));
+    ok("...and saying who can change it", /platform|plan/i.test(before.message));
 
     ok("the platform can grant it", (await grant("sport_hockey", platform,
       { enabled: true, reason: "Hilton hockey pilot" })).status === 200);
@@ -249,10 +249,9 @@ try {
     ok("...and can still be corrected",
        (await q(`update match set opponent = 'Michaelhouse' where id = $1 returning id`,
                 [kept.id])).length === 1);
-    // It stops nothing now (db/154): a new one is stored, and hidden.
+    // What it stops is NEW ones.
     const after = await fixture("hockey");
-    ok("and a new hockey fixture is still stored while it is off (db/154)", after.ok, after);
-    if (after.ok) await q(`delete from match where id = $1`, [after.id]);
+    ok("but no new hockey fixture can be added", !after.ok && after.code === "23514");
 
     ok("the school can start again", (await suppress("sport_hockey", registrar,
       { schoolId: HIL, hidden: false })).status === 200);
