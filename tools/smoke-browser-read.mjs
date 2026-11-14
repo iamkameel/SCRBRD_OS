@@ -1853,42 +1853,65 @@ try {
     await c.ctx.close();
   }
 
-  // ── Onboarding has a way out ─────────────────────────────────────
-  // A person who clicks "Create an account" by mistake, or who already has an
-  // account, used to have no way back to the login screen from the welcome
-  // step — the only exit was closing the tab. Caught after a live deployment
-  // left someone stuck there.
-  group("Landing on onboarding by mistake still reaches sign-in");
+  // ── One door (EXPERIENCE_PASS Q13, 13 Nov 2026) ─────────────────
+  // The role-tile sign-up these groups used to drive ("Create an account",
+  // its welcome step's "Sign in instead", "Enter SCRBRD", `request-sent`,
+  // `onboard-submit-error`) is retired. A stranger now signs in (Google, or a
+  // code; here the development sign-in) to an account with NO school, and
+  // asks from the no-school home's join form. Each group below keeps its
+  // assertions on that path: `join-sent` for `request-sent`, `join-problem`
+  // for `onboard-submit-error`, and the join form's words for the old ones.
+  const owner1 = new pg.Pool({ connectionString: ownerUrl() });
+  const tag = Date.now().toString(36);
+  /** A new account, as Google's exchange makes one: a name, an address, no school, nothing held. */
+  const stranger = async (name) => {
+    const email = `${name.toLowerCase().replace(/[^a-z]+/g, ".")}.${tag}@example.invalid`;
+    await owner1.query(`insert into app_user (school_id, email, name, role) values (null, $1, $2, 'spectator')`, [email, `${name} ${tag}`]);
+    return { email, name: `${name} ${tag}` };
+  };
+  /** Sign in as that account: it lands on the no-school home, never a shell. */
+  const signInNew = async (page, email) => {
+    await click(page, /Get Started|Log In/, 5000);
+    await page.locator("#login-email").fill(email);
+    await click(page, /^Sign In$/, 5000);
+    await page.locator('[data-testid="join-school"]').waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+  };
+  /** On the join form: the school, then who they are. */
+  const joinAs = async (page, kind) => {
+    const hil = page.locator('[data-testid="join-school-11111111-1111-1111-1111-111111111111"]');
+    if (await hil.count()) await hil.click({ timeout: 4000 });
+    await page.locator(`[data-testid="join-kind-${kind}"]`).click({ timeout: 4000 });
+  };
+
+  group("The sign-in screen has one door: no role-tile sign-up");
   {
     const s = await open();
-    await click(s.page, /Create an account/, 5000); await s.page.waitForTimeout(600);
-    ok("the welcome step offers a way back", await click(s.page, /Sign in instead/, 4000));
-    await s.page.waitForTimeout(500);
-    ok("...and it is the login screen, not another dead end", await s.page.locator("#login-email").count() === 1);
+    await click(s.page, /Get Started|Log In/, 5000);
+    await s.page.locator("#login-email").waitFor({ state: "visible", timeout: 6000 }).catch(() => {});
+    ok("there is no Create an account door", (await s.page.locator("button", { hasText: /Create an account/ }).count()) === 0);
+    ok("...and the screen says how a new person comes in", (await s.page.locator('[data-testid="login-new-here"]').count()) === 1);
+    ok("...and it is the login screen, not a dead end", await s.page.locator("#login-email").count() === 1);
     await s.ctx.close();
   }
 
-  // ── Onboarding ends in a request ────────────────────────────────
-  group("A stranger onboards into a request; the office answers it; then he has a side");
+  // ── Asking ends in a request ────────────────────────────────────
+  group("A stranger asks to join; the office answers it; then he has a side");
   {
+    const zulu = await stranger("N Zulu");
     const s = await open();
-    await click(s.page, /Create an account/, 5000); await s.page.waitForTimeout(600);
-    await click(s.page, /Continue/, 4000);                                   // welcome
-    // Choosing a role or a school now advances on its own — the pick IS the
-    // intent, so there is no separate Continue press to make here anymore.
-    await s.page.locator("button", { hasText: /Head Coach/ }).first().click({ timeout: 4000 });
-    await s.page.waitForTimeout(500);                                       // role auto-advances
-    await s.page.locator("button", { hasText: /Hilton College/ }).first().click({ timeout: 6000 });
-    await s.page.waitForTimeout(500);                                       // school auto-advances
-    await s.page.locator('input[placeholder*="Whitfield"]').fill("N Zulu");
-    await s.page.locator('input[type="email"]').first().fill("n.zulu@example.invalid");
-    await click(s.page, /Continue/, 4000);                                   // profile
-    await click(s.page, /Enter SCRBRD/, 4000);                               // tour → request
-    await afterReads(s.page, 1500);
-    ok("the flow ends in a request, not a role", await s.page.locator('[data-testid="request-sent"]').count() === 1);
-    ok("...and says so in words", /Hilton College has your request/.test(await text(s.page)));
-    await click(s.page, /Back to sign in/, 4000); await s.page.waitForTimeout(500);
-    await s.page.locator("#login-email").fill("n.zulu@example.invalid");
+    await signInNew(s.page, zulu.email);
+    ok("a new account lands on the no-school home, and nobody asks his role",
+       await s.page.locator('[data-testid="no-school-title"]').count() === 1 && !/what.s your role/i.test(await text(s.page)));
+    await joinAs(s.page, "staff");
+    await s.page.locator('[data-testid="join-staff-role"]').waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+    await s.page.locator('[data-testid="join-staff-role"]').selectOption("coach").catch(() => {});
+    await s.page.locator('[data-testid="join-send"]').click({ timeout: 4000 }).catch(() => {});
+    await s.page.locator('[data-testid="join-sent"]').waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+    ok("asking ends in a request, not a role", await s.page.locator('[data-testid="join-sent"]').count() === 1 && await s.page.locator('[data-testid="os-main"]').count() === 0);
+    ok("...and says so in words", /Your request has gone to Hilton College/.test(await text(s.page)));
+    await s.page.locator('[data-testid="no-school-sign-out"]').click({ timeout: 4000 }).catch(() => {});
+    await s.page.waitForTimeout(500);
+    await s.page.locator("#login-email").fill(zulu.email);
     await click(s.page, /^Sign In$/, 5000);
     // Wait for the state the step asserts (the pending request drawn), not a fixed pause: under load the sign-in round trip can outlast any guess.
     await s.page.locator('[data-testid="pending-requests"]').waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
@@ -1914,18 +1937,18 @@ try {
       const panel = o.page.locator('[data-testid="requests-panel"]');
       // Three reads land before the panel draws; wait for the panel, not a clock.
       await panel.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
-      ok("the office sees the request on the management screen", await panel.count() === 1 && /N Zulu/.test(await panel.innerText()));
+      ok("the office sees the request on the management screen", await panel.count() === 1 && (await panel.innerText()).includes(zulu.name));
       ok("...and a follower's request says what he'll see, in one line",
          (await o.page.locator(`[data-testid="request-spectator-reach-${followReq}"]`).innerText({ timeout: 4000 }).catch(() => "")).trim()
            === "He'll see every match and every team's posts, but no player's stats or passport.");
       // He asked to coach and named no side; the office names one. His row:
       // the follower's request above (db/131) waits on the same panel.
-      const zulu = panel.locator('[data-testid^="request-row-"]', { hasText: /N Zulu/ });
-      await zulu.locator('select[aria-label="Which side"]').first().selectOption("1XI").catch(() => {});
-      await zulu.locator("button", { hasText: /^Grant$/ }).first().click({ timeout: 4000 }); await afterReads(o.page, 1500);
+      const row = panel.locator('[data-testid^="request-row-"]', { hasText: zulu.name });
+      await row.locator('select[aria-label="Which side"]').first().selectOption("1XI").catch(() => {});
+      await row.locator("button", { hasText: /^Grant$/ }).first().click({ timeout: 4000 }); await afterReads(o.page, 1500);
       // The panel, not the whole screen: once granted he is on the users list
       // below it, which is the point.
-      ok("...grants it, and it leaves the panel", await panel.count() === 0 || !/N Zulu/.test(await panel.innerText()));
+      ok("...grants it, and it leaves the panel", await panel.count() === 0 || !(await panel.innerText()).includes(zulu.name));
       ok("no console errors (office)", o.errors.length === 0);
     } else {
       ok("the registrar is not on the pilot login; the API walk covers the grant", true);
@@ -1944,26 +1967,19 @@ try {
   // browser through the step that used to crash.
   group("A parent names his child on the way in, and the office reads it");
   {
+    const rz = await stranger("R Zulu");
     const s = await open();
-    await click(s.page, /Create an account/, 5000); await s.page.waitForTimeout(600);
-    await click(s.page, /Continue/, 4000);                                   // welcome
-    await s.page.locator("button", { hasText: /Parent \/ Guardian/ }).first().click({ timeout: 4000 });
-    await s.page.waitForTimeout(500);                                        // role auto-advances
-    await s.page.locator("button", { hasText: /Hilton College/ }).first().click({ timeout: 6000 });
-    await s.page.waitForTimeout(500);                                        // school auto-advances
-    await s.page.locator('input[placeholder*="Whitfield"]').fill("R Zulu");
-    await s.page.locator('input[type="email"]').first().fill("r.zulu@example.invalid");
-    await click(s.page, /Continue/, 4000);                                   // profile
-    ok("the parent-link step is reached, not crashed past",
-       await s.page.locator('input[placeholder*="James Whitfield"]').count() === 1);
-    // This is the exact interaction that used to throw: typing enough to
-    // have triggered a search against the undefined PLAYERS constant.
-    await s.page.locator('input[placeholder*="James Whitfield"]').fill("T Bekker");
+    await signInNew(s.page, rz.email);
+    await joinAs(s.page, "parent");
+    ok("the parent's form is reached, not crashed past",
+       await s.page.locator('[data-testid="join-child"]').count() === 1);
+    // The interaction that used to throw on the old step: typing a child's name.
+    await s.page.locator('[data-testid="join-child"]').fill("T Bekker");
     ok("no console errors after typing a child's name", s.errors.length === 0, s.errors.join(" | "));
-    await click(s.page, /Continue/, 4000);                                   // parent_link
-    await click(s.page, /Enter SCRBRD/, 4000);                               // tour → request
-    await afterReads(s.page, 1500);
-    ok("the flow still ends in a request", await s.page.locator('[data-testid="request-sent"]').count() === 1);
+    await s.page.locator('[data-testid="join-relationship"]').selectOption("Father").catch(() => {});
+    await s.page.locator('[data-testid="join-send"]').click({ timeout: 4000 }).catch(() => {});
+    await s.page.locator('[data-testid="join-sent"]').waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+    ok("the form still ends in a request", await s.page.locator('[data-testid="join-sent"]').count() === 1);
     await s.ctx.close();
 
     const o = await open();
@@ -1973,7 +1989,7 @@ try {
       const panel = o.page.locator('[data-testid="requests-panel"]');
       await panel.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
       ok("...and the child's name reached the office, not just the form",
-         /R Zulu/.test(await panel.innerText()) && /T Bekker/.test(await panel.innerText()));
+         (await panel.innerText()).includes(rz.name) && /T Bekker/.test(await panel.innerText()));
     } else {
       ok("the registrar is not on the pilot login; the note's shape is covered at the API layer", true);
     }
@@ -1988,33 +2004,29 @@ try {
   // tell why, and nothing stopped them submitting it again.
   group("A failed submission is named on screen, and the form still works after");
   {
+    const fa = await stranger("F Ailer");
     const s = await open();
     let failNext = true;
-    await s.page.route("**/api/onboard", (route) => {
-      if (failNext) { failNext = false; return route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"try_again"}' }); }
+    await s.page.route("**/api/requests", (route) => {
+      if (route.request().method() === "POST" && failNext) { failNext = false; return route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"try_again"}' }); }
       return route.continue();
     });
-    await click(s.page, /Create an account/, 5000); await s.page.waitForTimeout(600);
-    await click(s.page, /Continue/, 4000);
-    await s.page.locator("button", { hasText: /Head Coach/ }).first().click({ timeout: 4000 });
-    await s.page.waitForTimeout(500);
-    await s.page.locator("button", { hasText: /Hilton College/ }).first().click({ timeout: 6000 });
-    await s.page.waitForTimeout(500);
-    await s.page.locator('input[placeholder*="Whitfield"]').fill("F Ailer");
-    await s.page.locator('input[type="email"]').first().fill("f.ailer@example.invalid");
-    await click(s.page, /Continue/, 4000);
-    await click(s.page, /Enter SCRBRD/, 4000);
-    await afterReads(s.page, 1200);
-    ok("the refusal is named on the tour screen, not left silent",
-       await s.page.locator('[data-testid="onboard-submit-error"]').isVisible());
-    ok("...and the flow has not moved on to the request-sent screen",
-       await s.page.locator('[data-testid="request-sent"]').count() === 0);
+    await signInNew(s.page, fa.email);
+    await joinAs(s.page, "follower");
+    await s.page.locator('[data-testid="join-send"]').click({ timeout: 4000 }).catch(() => {});
+    await s.page.locator('[data-testid="join-problem"]').waitFor({ state: "visible", timeout: 6000 }).catch(() => {});
+    ok("the refusal is named on the form, not left silent",
+       await s.page.locator('[data-testid="join-problem"]').isVisible());
+    ok("...and the form has not moved on to the request-sent screen",
+       await s.page.locator('[data-testid="join-sent"]').count() === 0);
     ok("the button works again — this was not a dead end",
-       await click(s.page, /Enter SCRBRD/, 4000));
-    await afterReads(s.page, 1200);
+       await s.page.locator('[data-testid="join-send"]').isEnabled().catch(() => false)
+       && await s.page.locator('[data-testid="join-send"]').click({ timeout: 4000 }).then(() => true, () => false));
+    await s.page.locator('[data-testid="join-sent"]').waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
     ok("the retry actually reaches the server this time",
-       await s.page.locator('[data-testid="request-sent"]').count() === 1);
+       await s.page.locator('[data-testid="join-sent"]').count() === 1);
     await s.ctx.close();
+    await owner1.end().catch(() => {});
   }
 
   // ── The shell, by id ────────────────────────────────────────────

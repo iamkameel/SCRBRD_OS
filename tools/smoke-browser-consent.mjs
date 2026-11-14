@@ -24,7 +24,8 @@
  *      still all right — in today's words (her agreement ended on his
  *      birthday: phase 0 has not landed) — answers, and the card goes.
  *   4. STAFF. A coach's Me screen draws neither.
- *   5. SIGN-UP. The guardian's step of the sign-up flow shows the separate,
+ *   5. JOINING AS A PARENT. The no-school home's join form (the role-tile
+ *      sign-up is retired, Q13) shows the separate,
  *      off consent and takes no answer.
  *   6. Nothing on those pieces is set under 12px, nothing pressed is under
  *      44px, and they draw in Daylight as well as Floodlit.
@@ -56,6 +57,8 @@ const REGISTRAR = "88888888-0000-0000-0000-00000000000c";   // the office that v
 const SIPHO = "aaaaaaaa-0000-0000-0000-0000000000b8";
 const U_SIPHO = "88888888-0000-0000-0000-0000000000b8";
 const U_MUM = "88888888-0000-0000-0000-0000000000b9";
+// A new account with no school, for step 5 (the join form's note).
+const U_NEW = "88888888-0000-0000-0000-0000000000bc";
 const A = { self: "a5510000-0000-0000-0000-0000000000b8", player: "a5510000-0000-0000-0000-0000000000b9", mum: "a5510000-0000-0000-0000-0000000000ba" };
 const L = { self: "a5520000-0000-0000-0000-0000000000b8", mum: "a5520000-0000-0000-0000-0000000000b9" };
 
@@ -365,24 +368,30 @@ try {
   await coach.ctx.close();
 
   // ── 5. Sign-up ──────────────────────────────────────────────────
-  group("The sign-up flow says it is separate and off");
+  // One door (EXPERIENCE_PASS Q13, 13 Nov 2026): the role-tile sign-up this
+  // used to drive is retired. A new person signs in (Google, or a code) to an
+  // account with no school, and asks to join as a parent on the no-school
+  // home's join form, which carries the same note: the same three checks,
+  // moved from the old step's `signup-health-consent` to `join-health-note`.
+  group("Asking to join as a parent says it is separate and off");
+  await q(`delete from access_log where person_id = $1`, [U_NEW]).catch(() => {});
+  await q(`delete from app_user where id = $1`, [U_NEW]);
+  await q(`insert into app_user (id, school_id, email, name, role) values ($1, null, 'a.newparent@example.invalid', 'A Newparent', 'spectator')`, [U_NEW]);
   const signup = await open();
-  await click(signup.page, /Create an account/, 5000);
-  await click(signup.page, /^Continue/);
-  await click(signup.page, /Parent \/ Guardian/);
-  await signup.page.waitForTimeout(600);
-  await click(signup.page, /Hilton College/);
-  await signup.page.waitForTimeout(600);
-  await signup.page.fill('input[placeholder="e.g. James Whitfield"]', "A Newparent").catch(() => {});
-  await signup.page.fill('input[placeholder="james@school.co.za"]', "a.newparent@example.invalid").catch(() => {});
-  await click(signup.page, /^Continue/);
-  await signup.page.waitForTimeout(600);
-  const row = await tid(signup.page, "signup-health-consent").innerText().catch(() => "");
-  ok("the guardian's step shows health monitoring as separate and off", /separate, and off/.test(row) && /under Settings, Me/.test(row), row);
+  await signIn(signup.page, "a.newparent@example.invalid");
+  await signup.page.waitForSelector('[data-testid="join-school"]', { timeout: 8000 }).catch(() => {});
+  ok("a new account with no school lands on the no-school home, with no role asked", (await tid(signup.page, "no-school-title").count()) === 1
+     && !/what.s your role/i.test(await text(signup.page)));
+  if (await tid(signup.page, `join-school-${HIL}`).count()) await tid(signup.page, `join-school-${HIL}`).click();
+  await tid(signup.page, "join-kind-parent").click({ timeout: 4000 }).catch(() => {});
+  await signup.page.waitForTimeout(400);
+  const row = await tid(signup.page, "join-health-note").innerText().catch(() => "");
+  ok("the parent's join form shows health monitoring as separate and off", /separate, and off/.test(row) && /under Settings, Me/.test(row), row);
   ok("...and takes no answer (no switch, no box)",
-     (await tid(signup.page, "signup-health-consent").locator("button, input").count()) === 0);
-  const fs = await floors(signup.page, "signup-health-consent");
+     (await tid(signup.page, "join-health-note").count()) === 1 && (await tid(signup.page, "join-health-note").locator("button, input").count()) === 0);
+  const fs = await floors(signup.page, "join-health-note");
   ok("...with no type under 12px", fs.small.length === 0, fs.small.slice(0, 4).join(" · "));
+  ok("no page error on the join form", signup.errors.length === 0, signup.errors.join(" | "));
   await signup.ctx.close();
 
   // ── 6. Daylight ─────────────────────────────────────────────────
@@ -406,7 +415,8 @@ try {
   await q(`delete from health_monitoring_consent where player_id in ($1, $2)`, [PILLAY, SIPHO]).catch(() => {});
   // His sign-in wrote access_log rows under his id; they go with the fixture.
   await q(`delete from access_log where person_id in ($1, $2)`, [U_SIPHO, U_MUM]).catch(() => {});
-  await q(`delete from app_user where id in ($1, $2)`, [U_SIPHO, U_MUM]).catch(() => {});
+  await q(`delete from access_log where person_id = $1`, [U_NEW]).catch(() => {});
+  await q(`delete from app_user where id in ($1, $2, $3)`, [U_SIPHO, U_MUM, U_NEW]).catch(() => {});
   await q(`delete from player where id = $1`, [SIPHO]).catch(() => {});
   await q(`delete from role_request where email = 'a.newparent@example.invalid'`).catch(() => {});
   await q(`delete from feature_grant where key = 'workload_monitoring' and school_id = $1`, [HIL]).catch(() => {});
