@@ -38,8 +38,8 @@ export { boardOfLog };
 import { saDay, startOf } from "./scorerHome.js";
 import { pilotStateWords } from "./pilot.js";
 
-/** The sections, in the order the home draws them. */
-export const SECTION_ORDER = Object.freeze(["p0", "now", "start", "pilots", "week"]);
+/** The sections, in the order the home draws them. `record`: the last match's plain record (§3.9), only after one. */
+export const SECTION_ORDER = Object.freeze(["p0", "now", "start", "record", "pilots", "week"]);
 
 const DAY = 864e5;
 /** The week is seven SA days from today (§4: "7 days by default"). */
@@ -239,6 +239,72 @@ export function finishedPilots(phone, server, uuidOf) {
 /** "Hilton U13B 84/3 (12.0 ov)": an innings' own score. @param {{team: string, runs: number, wickets: number, balls: number}} l */
 export const scoreLine = (l) => `${l.team} ${l.runs}/${l.wickets} (${Math.floor(l.balls / 6)}.${l.balls % 6} ov)`;
 
+// ── After a match: the plain record (§3.9) ───────────────────────────
+//
+// What he scored, and nothing that ranks it: no points, no streak, no
+// standing (C12, rejected). Counted from the phone's own log, by its store
+// (lib/boardOfLog.js scoredOf): the balls he recorded, the corrections he
+// filed (a Pilot Match's voids; a Practice Match's undo leaves no trace, so
+// it has none to count), and whether all of it has reached SCRBRD.
+
+/** "1,284": a count with a separator (§4's worst cases). @param {number} n */
+const withSep = (n) => Math.trunc(n).toLocaleString("en-GB");
+
+/**
+ * The plain record's words: "126 balls, 2 corrections, all sent"; a Practice
+ * Match's "126 balls, kept on this phone only". A count the phone could not
+ * make is said, never 0.
+ * @param {{kind: "practice" | "pilot", balls: number, corrections: number, pending: number | null, held: number | null}} r
+ */
+export function recordWords({ kind, balls, corrections, pending, held }) {
+  const b = `${withSep(balls)} ${balls === 1 ? "ball" : "balls"}`;
+  if (kind === "practice") return `${b}, kept on this phone only`;
+  const c = `${corrections === 0 ? "no" : withSep(corrections)} ${corrections === 1 ? "correction" : "corrections"}`;
+  const left = pending == null || held == null ? null : pending + held;
+  const sent = left == null ? "what is left to send could not be counted" : left === 0 ? "all sent" : `${withSep(left)} still to send`;
+  return `${b}, ${c}, ${sent}`;
+}
+
+/**
+ * The last match this phone finished, Practice or Pilot, as its plain
+ * record, or null when none is over. From the stores' home rows (each with
+ * `scored`, never its log) and the outbox's counts.
+ * @param {object} a
+ * @param {any[]} a.practices  practiceHomeRows()
+ * @param {any[]} a.pilots     pilotHomeRows()
+ * @param {Map<string, number | null> | null} a.pending  unsent events per match; null when the outbox could not be read
+ * @param {Map<string, number | null> | null} a.held
+ * @returns {{key: string, id: string, kind: "practice" | "pilot", title: string, lines: any[], words: string, at: number | null} | null}
+ */
+export function lastRecord({ practices = [], pilots = [], pending = null, held = null }) {
+  /** @param {Map<string, number|null> | null} m @param {string} id */
+  const of = (m, id) => (m == null ? null : m.has(id) ? m.get(id) ?? null : 0);
+  const done = [
+    ...(practices ?? []).map((r) => ({ r, kind: /** @type {const} */ ("practice") })),
+    ...(pilots ?? []).map((r) => ({ r, kind: /** @type {const} */ ("pilot") })),
+  ].filter(({ r }) => r?.id && r.complete && !r.logError && r.scored && r.scored.balls > 0)
+    .sort((a, b) => (b.r.savedAt ?? 0) - (a.r.savedAt ?? 0));
+  if (!done.length) return null;
+  const { r, kind } = done[0];
+  const sent = kind === "practice";
+  return { key: r.id, id: r.id, kind, title: r.title, lines: r.lines ?? [], at: r.savedAt ?? null,
+    words: recordWords({ kind, balls: r.scored.balls, corrections: r.scored.corrections ?? 0,
+                         pending: sent ? 0 : of(pending, r.id), held: sent ? 0 : of(held, r.id) }) };
+}
+
+/**
+ * His side's fixtures that are live and not on this phone (§1.10, C1): what
+ * "Now" holds, with its sentence and "Open the pad", in place of "Nothing on
+ * this phone to resume" over them further down. From scorerFixtures()'s
+ * items, which are the fixtures he may score.
+ * @param {any[]} items  scorerFixtures().items
+ * @param {ReturnType<typeof nowItems>} now  what this phone holds
+ */
+export function liveOffPhone(items, now) {
+  const here = new Set((now ?? []).filter((i) => i.kind === "fixture").map((i) => i.matchId));
+  return (items ?? []).filter((i) => i?.match?.id && i.match.status === "live" && !here.has(i.match.id));
+}
+
 // ── This week: the fixtures he may score ─────────────────────────────
 
 /**
@@ -268,6 +334,8 @@ export function weekOf(list, now) {
  *   p0      when at least one item applies
  *   now     always: an empty phone says so (its empty state)
  *   start   always: the landing already asked for scoring.start
+ *   record  when a Practice or Pilot Match on this phone is over: what he
+ *           scored in it, as a plain record (§3.9)
  *   pilots  when this account may send Pilot Matches, or any is on this
  *           phone or on the server: a scorer with no pilot is not shown one
  *   week    when he has a fixture this week, or the fixtures read did not
@@ -279,13 +347,15 @@ export function weekOf(list, now) {
  * @param {number} s.pilotsKnown Pilot Matches on this phone or the server, finished or not
  * @param {number} s.week        weekOf().week.length
  * @param {string | null} s.weekRead  the fixtures read's state (lib/readState.js), or null in the demonstration
+ * @param {boolean} [s.record]   lastRecord() found a finished match on this phone
  * @returns {string[]}
  */
-export function homeSections({ p0 = 0, pilotOffer = false, pilotsKnown = 0, week = 0, weekRead = null }) {
+export function homeSections({ p0 = 0, pilotOffer = false, pilotsKnown = 0, week = 0, weekRead = null, record = false }) {
   const on = {
     p0: p0 > 0,
     now: true,
     start: true,
+    record: record === true,
     pilots: pilotOffer === true || pilotsKnown > 0,
     week: week > 0 || (weekRead != null && UNANSWERED.has(weekRead)),
   };
@@ -302,7 +372,8 @@ export function homeSections({ p0 = 0, pilotOffer = false, pilotsKnown = 0, week
  * @returns {{state: "loading"|"pilot"|"off"|"not_granted"|"unknown", action: string, note: string}}
  */
 export function startWords(status, loading = false) {
-  const what = "Venue, overs, both sides and their players typed in, the toss, then the pad.";
+  // Q5 (13 Nov 2026): the players' names may be skipped; the pad then shows each by position.
+  const what = "Venue, overs, the two sides and the toss, then the pad. Players' names are optional: without them each plays by position.";
   // Review N5: "Start a match" until the grant is known; the setup may offer practice only.
   if (loading && !status) return { state: "loading", action: "Start a match", note: `${what} Checking whether your account sends Pilot Matches…` };
   if (status?.sync && status?.granted) {

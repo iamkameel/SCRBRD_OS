@@ -311,7 +311,8 @@ try {
     ok("nothing on the screen says found or not found", !FOUND.test(await text(P)), (await text(P)).match(FOUND)?.[0]);
     parentReqs = h.posts.length;
     const reads = h.requests.filter((r) => /\/api\//.test(r)).map((r) => r.replace(/^\w+ /, ""));
-    ok("the only things the screen asked for: schools, her own requests, the help link, the sessions, her requests", reads.every((r) => /^\/api\/(schools|session|read\/role_requests|safeguarding\/contacts|requests)$/.test(r)), [...new Set(reads)]);
+    // ...and, since the experience pass's slice 1, whether her own account may send a Pilot Match (Start a match's words).
+    ok("the only things the screen asked for: schools, her own requests, the help link, the sessions, her requests, her Pilot status", reads.every((r) => /^\/api\/(schools|session|read\/role_requests|safeguarding\/contacts|requests|pilot\/status)$/.test(r)), [...new Set(reads)]);
     ok("...and never a pupil, a child, a squad or a roster", !reads.some((r) => /players|pupils|children|squad|roster|guardians/.test(r)));
     // The list of her requests is re-read from the server after each send, so
     // the second row arrives a moment after "sent" is drawn (CI saw 1).

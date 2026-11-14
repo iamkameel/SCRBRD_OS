@@ -212,7 +212,8 @@ export default function SCRBRD_OS() {
   const [scorerEntry, setScorerEntry] = useState(null);
   // The login page was opened from a live pad (SCRBRD-078): it offers the
   // real sign-in only — never the demo — and returns to the pad.
-  const [loginForPad, setLoginForPad] = useState(false);
+  // The state to go back to ("app", or "pending" for the no-school pad), or false.
+  const [loginForPad, setLoginForPad] = useState(/** @type {false | "app" | "pending"} */ (false));
   const restoredRef = useRef(false);
   const isMobile = useIsMobile();
 
@@ -230,8 +231,13 @@ export default function SCRBRD_OS() {
     // Signed in with nothing: an account whose requests are still with the
     // school. No role, no shell; the requests, and a way out.
     if (p && Array.isArray(p.assignments) && p.assignments.length === 0) {
+      // Back to the no-school pad if the sign-in was its detour; any other pad is closed.
+      if (!scorerEntry?.homeOnly) { setScorerOpen(false); setScorerResume(null); setScorerEntry(null); }
+      setLoginForPad(false);
       setUserName(n || "User"); setAppState("pending"); return;
     }
+    // A school's account never inherits the no-school pad.
+    if (scorerEntry?.homeOnly) { setScorerOpen(false); setScorerEntry(null); }
     setRole(r); setUserName(n || ROLES[r]?.label || "User");
     const nav = ROLES[r]?.nav || [];
     setPage(nav[0] || "dashboard");
@@ -358,6 +364,25 @@ export default function SCRBRD_OS() {
     setScorerOpen(true);
   };
 
+  // An account with no school (Q3, Kameel 13 Nov 2026): "Start a match" opens
+  // the pad's own setup, a Practice Match for anyone signed in and a Pilot
+  // Match only where SCRBRD has granted the account, which the server decides
+  // as it does for anyone (pilot_status, pilot_create). It needs no role and
+  // grants none: `role` stays unset, the pad is told `homeOnly` (its start
+  // screen, with any fixture's matches, is never drawn), and a Practice Match
+  // never leaves the phone. Only the setup and this phone's own Practice and
+  // Pilot Matches are opened this way.
+  const [joinFirst, setJoinFirst] = useState(0);
+  const openPadNoSchool = (entry) => {
+    if (appState !== "pending" || !signedIn()) return;
+    if (!(entry?.start === "pilot" || (typeof entry?.resume === "string" && /^(practice|pilot)-/.test(entry.resume)))) return;
+    setScorerResume(null);
+    setScorerMatchId(null);
+    setScorerEntry({ ...entry, homeOnly: true });
+    setScorerOpen(true);
+  };
+  const closePad = () => { setScorerOpen(false); setScorerResume(null); setScorerEntry(null); };
+
   // ── Session durability ──────────────────────────────────
   // A reload mid-over must not drop the scorer back to the login screen. The
   // match log itself is saved by the scorer; this is the far smaller matter of
@@ -374,7 +399,8 @@ export default function SCRBRD_OS() {
       if (s.role) setRole(s.role);
       if (s.userName) setUserName(s.userName);
       if (s.page) setPage(s.page);
-      if (s.scorerPractice && !s.scorerMatchId) openScorer(null, s.role ?? role, { restored: true });
+      // Not for an account with no school: its pad is opened from its own home, by a person (openPadNoSchool).
+      if (s.scorerPractice && !s.scorerMatchId && s.appState !== "pending") openScorer(null, s.role ?? role, { restored: true });
       if (s.scorerMatchId) {
         // A saved session must not become a way to reopen a fixture the person
         // is no longer allowed to see — so, with a session, the fixture is
@@ -423,7 +449,7 @@ export default function SCRBRD_OS() {
     const c = scorerOpen && scorerResume?.cfg?.live ? scorerResume.cfg : null;
     // Signing in from the pad is a detour: a reload on the way comes back to
     // the pad, which asks again.
-    saveSession({ appState: loginForPad ? "app" : appState, role, userName, page, scorerMatchId: scorerOpen ? scorerMatchId : null, scorerPractice: scorerOpen && scorerPractice,
+    saveSession({ appState: loginForPad || appState, role, userName, page, scorerMatchId: scorerOpen ? scorerMatchId : null, scorerPractice: scorerOpen && scorerPractice,
       scorerCfg: c ? { matchId: c.matchId, team1: c.team1, team2: c.team2, teamCode: c.teamCode, overs: c.overs, live: true,
                        ...(c.startsAt ? { startsAt: c.startsAt } : {}), ...(c.format ? { format: c.format } : {}) } : null });
   }, [appState, role, userName, page, scorerOpen, scorerMatchId, scorerResume, scorerPractice, loginForPad]);
@@ -488,30 +514,12 @@ export default function SCRBRD_OS() {
       {/* From a live pad (SCRBRD-078): the real sign-in only, and back to
           the pad after it — never the demo, whatever the server check said
           while the phone had no signal. */}
-      <LoginPage onLogin={handleLogin} onSignUp={handleLoginSignUp} liveOnly={loginForPad}
-        onBack={loginForPad ? () => { setLoginForPad(false); setAppState("app"); } : undefined}/>
+      <LoginPage onLogin={handleLogin} onSignUp={handleLoginSignUp} liveOnly={!!loginForPad}
+        onBack={loginForPad ? () => { const back = loginForPad; setLoginForPad(false); setAppState(back); } : undefined}/>
     </>
   );
-  if (appState === "pending") return (
-    <><style>{GLOBAL_CSS}</style>
-      {/* The same sign-out the shell uses. This one cleared the profile and
-          left the persisted session behind, so a reload put the next person
-          back where the last one stood. */}
-      <Suspense fallback={<Loading what="your account"/>}>
-        <NoSchool name={userName} onSignOut={handleSignOut} onJoined={handleJoined}/>
-      </Suspense>
-    </>
-  );
-  if (appState === "onboarding") return (
-    <><style>{GLOBAL_CSS}</style>
-      <Suspense fallback={<Loading what="sign-up"/>}>
-        <OnboardingFlow onComplete={handleOnboardComplete}/>
-      </Suspense>
-    </>
-  );
-
-  // ── Live Scorer — full-screen takeover ──
-  if (scorerOpen && canScore(role)) return (
+  // The pad, full-screen, wherever it was opened from.
+  const padView = ({ asRole, onJoinSchool = null }) => (
     <>
       <style>{GLOBAL_CSS}</style>
       {/* The key forces a remount when the scorer is pointed at a different
@@ -531,16 +539,43 @@ export default function SCRBRD_OS() {
             onPracticeActive={setScorerPractice}
             // The pad asks it once: whether this account files the umpires'
             // report of a suspension itself (SCRBRD-094; rbac/conduct.js).
-            role={role}
-            onSignIn={() => { setLoginForPad(true); setAppState("login"); }}
+            role={asRole}
+            onSignIn={() => { setLoginForPad(appState === "pending" ? "pending" : "app"); setAppState("login"); }}
+            onJoinSchool={onJoinSchool}
             // The way back is the scorer's own: the first key in the pad's
             // title bar (step 2 of the redesign), floating on its setup and
             // result screens. It used to float over the pad's bar from here.
-            onExit={() => { setScorerOpen(false); setScorerResume(null); setScorerEntry(null); }}/>
+            onExit={closePad}/>
         </Suspense>
       </div>
     </>
   );
+
+  if (appState === "pending") {
+    // The pad, opened from the no-school home (openPadNoSchool): no role, and back home on exit.
+    if (scorerOpen && scorerEntry?.homeOnly) return padView({ asRole: null, onJoinSchool: () => { closePad(); setJoinFirst((n) => n + 1); } });
+    return (
+      <><style>{GLOBAL_CSS}</style>
+        {/* The same sign-out the shell uses. This one cleared the profile and
+            left the persisted session behind, so a reload put the next person
+            back where the last one stood. */}
+        <Suspense fallback={<Loading what="your account"/>}>
+          <NoSchool name={userName} onSignOut={handleSignOut} onJoined={handleJoined} onOpenPad={openPadNoSchool} joinFirst={joinFirst}/>
+        </Suspense>
+      </>
+    );
+  }
+  if (appState === "onboarding") return (
+    <><style>{GLOBAL_CSS}</style>
+      <Suspense fallback={<Loading what="sign-up"/>}>
+        <OnboardingFlow onComplete={handleOnboardComplete}/>
+      </Suspense>
+    </>
+  );
+
+  // ── Live Scorer — full-screen takeover ──
+  // Never a pad opened from the no-school home here: that one is the pending branch's, with no role.
+  if (scorerOpen && canScore(role) && !scorerEntry?.homeOnly) return padView({ asRole: role });
 
   // ── Main app ──
   //

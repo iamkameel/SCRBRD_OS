@@ -10,7 +10,7 @@ import {
   addNames, applyHint, blankDraft, chooseCondition, conditionLabel, dropHint, fetchWeather, clearDraft, deleteAllPractice, deletePractice, isRepeated, lineUp, listPractice, loadDraft, loadPractice,
   locate, moveAt, newPracticeId, oversOf, parseSquadText, practiceCfg, practiceRecord, removeAt, saveDraft, savedWords,
   sharedNames, sameTeam, practiceTeamName, teamProblems, toggleTwelfth, validateSquad, weatherChange, weatherChangeWords, weatherRecord, weatherStartWords,
-  withoutDuplicates,
+  withoutDuplicates, positionSquad, hasTypedNames,
 } from "../lib/practice.js";
 import { hintStamp } from "../lib/weatherStamp.js";
 import { roundedCoord } from "../lib/weatherHint.js";
@@ -291,6 +291,11 @@ export function PracticeSetup({ onStart, onCancel, pilot = null }) {
   // by default then (§3.5). Otherwise this is a Practice Match, as ever.
   const offerLive = mayOfferLive(pilot);
   const live = offerLive && (draft.mode ?? "pilot") === "pilot";
+  // Q5 (13 Nov 2026): the names may be skipped, and a side with none plays
+  // by position ("Home No. 3"). The first team typed is Home.
+  const sideOf = (/** @type {number} */ i) => (i === 0 ? "home" : "away");
+  const typedAny = hasTypedNames(draft.squads[0]) || hasTypedNames(draft.squads[1]);
+  const byPositions = () => setDraft((d) => ({ ...d, step: 4, squads: d.squads.map((sq, k) => (hasTypedNames(sq) ? sq : positionSquad(sideOf(k)))) }));
   const confirmOpeners = (opener1, opener2, openBowler) => {
     if (started.current) return;
     started.current = true;
@@ -298,8 +303,10 @@ export function PracticeSetup({ onStart, onCancel, pilot = null }) {
       const id = newPilotId();
       const slots = pilotSlots(draft);
       // The notice the scorer read said whether the names go (§3.6): they
-      // go only if it said so, and only while the server says they may.
-      onStart(pilotCfg(draft, { id, opener1, opener2, openBowler }, slots), pilotRecord(draft, id, slots, Date.now(), { namesMayGo: pilot?.names === true }));
+      // go only if it said so, and only while the server says they may. A
+      // match by position has no name, and the scorer who skipped the
+      // names read no notice: its sides go as Home and Away (createBody).
+      onStart(pilotCfg(draft, { id, opener1, opener2, openBowler }, slots), pilotRecord(draft, id, slots, Date.now(), { namesMayGo: pilot?.names === true && typedAny }));
       return;
     }
     const id = newPracticeId();
@@ -318,7 +325,7 @@ export function PracticeSetup({ onStart, onCancel, pilot = null }) {
 
   return (
     <PracticePage title={live ? "Pilot Match" : "Practice Match"} sub={`Step ${step + 1} of ${STEP_TITLES.length} · ${STEP_TITLES[step]}`}
-      onBack={step === 0 ? onCancel : () => go(step - 1)} pilot={live}>
+      onBack={step === 0 ? onCancel : step === 4 && !typedAny ? () => go(1) : () => go(step - 1)} pilot={live}>
       {step === 0 && picked && (
         <div style={S.card()} data-testid="practice-draft-note">
           <p style={S.body()}>Picked up where you left off. Nothing was sent anywhere.</p>
@@ -439,6 +446,16 @@ export function PracticeSetup({ onStart, onCancel, pilot = null }) {
             </section>
           ))}
           {teamsWhy && <p role="status" style={S.note("bad")}>{teamsWhy}</p>}
+          {/* Q5: no names needed. On a fresh draft, going on by position comes first; practice-next
+              keeps its words and its step in every state (the walks' ids and words stand). */}
+          {!typedAny && (
+            <>
+              <p data-testid="practice-positions-note" style={S.note()}>
+                {`No names needed: the pad shows each player by position. ${names[0] || "The first team"} is Home No. 1 to 11, ${names[1] || "the second"} Away No. 1 to 11.`}
+              </p>
+              <button type="button" className="pressBtn" style={S.primary(teamsOk)} disabled={!teamsOk} data-testid="practice-positions" onClick={byPositions}>Score by position: on to the toss</button>
+            </>
+          )}
           <button type="button" className="pressBtn" style={S.primary(teamsOk)} disabled={!teamsOk} data-testid="practice-next" onClick={() => go(2)}>Next: the first squad</button>
         </>
       )}
@@ -450,7 +467,11 @@ export function PracticeSetup({ onStart, onCancel, pilot = null }) {
         const typedNow = typed(i);
         let xi = 0, shownDivider = false;
         const crossBad = i === 1 && shared.length > 0;
-        const canGo = v.ok && !crossBad;
+        // Q5: a side left with no names plays by position; Next fills them in.
+        const none = players.length === 0;
+        const positions = !none && !hasTypedNames(players);
+        const canGo = none || (v.ok && !crossBad);
+        const next = () => { if (none) setSquad(i, positionSquad(sideOf(i))); go(step + 1); };
         return (
           <>
             {/* §3.6: above the first name field, before any name exists. */}
@@ -460,7 +481,7 @@ export function PracticeSetup({ onStart, onCancel, pilot = null }) {
             <section style={S.card()} aria-labelledby={`pm-squad-${i}`}>
               <h2 id={`pm-squad-${i}`} style={S.h2()}>{names[i]}</h2>
               <p style={S.body()}>
-                {`Type a name, or paste a list, one name to a line. Numbers, bullets, commas and blank lines are cleaned up. ${MIN_SQUAD} to ${MAX_SQUAD} names.`}
+                {`Type a name, or paste a list, one name to a line. Numbers, bullets, commas and blank lines are cleaned up. ${MIN_SQUAD} to ${MAX_SQUAD} names, or none: then the side plays by position.`}
               </p>
               <textarea value={paste[i]} onChange={(e) => setPaste((p) => p.map((t, k) => (k === i ? e.target.value : t)))}
                 data-testid={`practice-paste-${i}`} aria-label={`Paste or type names for ${names[i]}`} rows={4} spellCheck={false} autoComplete="off"
@@ -475,7 +496,8 @@ export function PracticeSetup({ onStart, onCancel, pilot = null }) {
 
             <section style={S.card()} aria-labelledby={`pm-list-${i}`}>
               <h2 id={`pm-list-${i}`} style={S.h2()} data-testid={`practice-count-${i}`}>{`${players.length} of ${MAX_SQUAD} names`}</h2>
-              {players.length === 0 && <p style={S.body()}>No names yet.</p>}
+              {none && <p style={S.body()} data-testid={`practice-none-${i}`}>{`No names yet. With none, this side plays as ${sideOf(i) === "home" ? "Home" : "Away"} No. 1 to 11.`}</p>}
+              {positions && <p style={S.body()} data-testid={`practice-by-position-${i}`}>This side plays by position. Type or paste names above to use names instead.</p>}
               <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: T.space.xs }} data-testid={`practice-squad-${i}`}>
                 {players.map((p, k) => {
                   const inXi = !p.twelfth && xi < 11;
@@ -514,7 +536,7 @@ export function PracticeSetup({ onStart, onCancel, pilot = null }) {
                   ];
                 })}
               </ul>
-              {(v.problems.length > 0 || crossBad) && (
+              {!none && (v.problems.length > 0 || crossBad) && (
                 <div role="status" data-testid={`practice-problems-${i}`} style={{ display: "grid", gap: T.space.xs }}>
                   {v.problems.map((x) => <p key={x.code} style={S.note("bad")}>{x.text}</p>)}
                   {crossBad && <p style={S.note("bad")}>{`${shared.join(", ")} ${shared.length === 1 ? "is" : "are"} on both sides. Players are told apart by name, so change one (add an initial).`}</p>}
@@ -525,7 +547,7 @@ export function PracticeSetup({ onStart, onCancel, pilot = null }) {
               )}
             </section>
 
-            <button type="button" className="pressBtn" style={S.primary(canGo)} disabled={!canGo} data-testid="practice-next" onClick={() => go(step + 1)}>
+            <button type="button" className="pressBtn" style={S.primary(canGo)} disabled={!canGo} data-testid="practice-next" onClick={next}>
               {step === 2 ? "Next: the second squad" : "Next: the toss"}
             </button>
           </>

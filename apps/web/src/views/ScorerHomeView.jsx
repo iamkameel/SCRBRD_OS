@@ -13,8 +13,11 @@ import {
   SESSION_MAX_AGE_MS, STATE_WORDS, nextToPrepare, pendingWords, prepLines, resumeItems, scorerFixtures,
 } from "../lib/scorerHome.js";
 import {
-  SANDBOX_WORDS, finishedPilots, homeSections, nowItems, p0Items, scoreLine, startWords, weekOf,
+  SANDBOX_WORDS, finishedPilots, homeSections, lastRecord, liveOffPhone, nowItems, p0Items, scoreLine, startWords, weekOf,
 } from "../lib/scorerDay.js";
+// The one status sentence (CRI-1.2): what the Match Centre's card says of a fixture, said here too.
+import { statusSentence } from "../lib/matchCentre.js";
+import { PlainRecord } from "./ScoringBlock.jsx";
 import { ReadState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
 import { Board } from "../ui/board.jsx";
@@ -31,13 +34,19 @@ import { StateLabel } from "../ui/stateLabel.jsx";
 //               another device holding the scoring of a match on this phone,
 //               events SCRBRD did not take, waiting on him
 //   Now         what this phone is scoring, each on the one Board, and
-//               "Resume scoring"
+//               "Resume scoring"; and his side's live fixture that is not on
+//               this phone, with its status sentence and "Open the pad"
+//               (EXPERIENCE_PASS slice 1, d)
 //   Start       the quick-start: the pad's own Pilot Match setup, opened at
 //               its first step. There is no second setup
+//   Your last   after a match: what he scored in the last one this phone
+//   match       finished, as a plain record (§3.9). No points or rankings
 //   Pilot       finished Pilot Matches, each kept as a sandbox. Promotion is
 //   Matches     R1 (PILOT_MATCH_PHASE2 §6): no promote action
-//   This week   the fixtures he may score, appointed first, and what is
-//               missing before the toss of the next one; only if he has any
+//   This week   the fixtures he may score, appointed first, each with its
+//               status sentence (lib/matchCentre.js statusSentence, the Match
+//               Centre's), and what is missing before the toss of the next
+//               one; only if he has any
 //
 // lib/scorerDay.js decides which sections show and their words, purely;
 // lib/scorerHome.js the fixtures and their states. Every read is one the app
@@ -196,6 +205,10 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
   // Now is what this phone is part-way through: a Pilot Match that is over (finished, or called off)
   // is not, though what of it is unsent stays on the P0 card (re-check 1; review S1).
   const nowShown = nowList.filter((i) => !i.finished);
+  // His side's fixtures that are live and not on this phone (§1.10, C1): "Now" holds them, with their sentence and the pad.
+  const liveElsewhere = liveOffPhone(list.items, nowShown);
+  // After a match: the last one this phone finished, as a plain record (§3.9).
+  const record = lastRecord({ practices: phone.practices, pilots: phone.pilots, pending: phone.outbox?.pending ?? null, held: phone.outbox?.held ?? null });
 
   // ── P0: from what the phone holds and what the reads said ──
   const fixtureStates = new Map(list.items.map((i) => [i.match.id, i.state]));
@@ -237,7 +250,9 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
   const finishedRead = readState({ rows: finished, loading: phone.loading, error: phone.storesOk ? null : "unreadable" },
                                  { what: "this phone's Pilot Matches" });
 
-  const sections = homeSections({ p0: p0.length, pilotOffer, pilotsKnown, week: week.length, weekRead: fixturesRead?.state ?? null });
+  const sections = homeSections({ p0: p0.length, pilotOffer, pilotsKnown, week: week.length, weekRead: fixturesRead?.state ?? null, record: !!record });
+  /** A fixture's status sentence, as the Match Centre's list card says it: no fold here, the fixture's own facts. @param {any} m */
+  const sentenceOf = (m) => statusSentence(m, null).text;
   const start = startWords(pilotNow.status, pilotNow.loading);
 
   const open = (m) => onOpenScorer && onOpenScorer(m);
@@ -287,9 +302,21 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
             ? <ReadState read={phoneRead} onRetry={retry} compact testId="scorer-resume-read"/>
             : (
               <div style={stack(T.space.lg)}>
-                {nowShown.length === 0 && (
+                {nowShown.length === 0 && liveElsewhere.length === 0 && (
                   <p style={line()} data-testid="scorer-resume-empty">Nothing on this phone to resume. A match you start or score here is kept here first.</p>
                 )}
+                {/* His side's live fixture, not on this phone: its sentence, and the pad (whose take-over is the route where another device holds it). */}
+                {liveElsewhere.map(({ match: m, state }) => {
+                  const w = STATE_WORDS[state];
+                  return (
+                    <div key={`live-${m.id}`} data-testid={`now-live-${m.id}`} data-state={state} style={stack(T.space.sm)}>
+                      <p style={strong()}>{sidesOf(m)}</p>
+                      <p style={{ ...line(), color: T.content.primary, fontWeight: 600 }} data-testid={`now-live-${m.id}-sentence`}>{sentenceOf(m)}</p>
+                      {w?.label && <p style={line()} data-testid={`now-live-${m.id}-state`}>{w.label}{w.note ? `. ${w.note}` : ""}</p>}
+                      <Act testId={`now-live-${m.id}-open`} label={`Open the pad: ${sidesOf(m)}`} onClick={() => open(m)}>Open the pad</Act>
+                    </div>
+                  );
+                })}
                 {leaseRead && leaseRead.state !== "ok" && leaseRead.state !== "empty" && (
                   <ReadState read={leaseRead} onRetry={retry} compact testId="scorer-lease-read"/>
                 )}
@@ -327,6 +354,13 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
             <Act tone="secondary" testId="resume-practice-open" label="Open the pad's start screen" onClick={() => open(null)}>Open the pad</Act>
           </div>
         </BentoCard>
+
+        {/* After a match: what he scored, as a plain record (§3.9). No points, streaks or rankings. */}
+        {sections.includes("record") && record && (
+          <BentoCard level="b" title="Your last match" data-testid="scorer-record">
+            <PlainRecord record={record} testId="scorer-record-match"/>
+          </BentoCard>
+        )}
 
         {/* Finished Pilot Matches: kept as a sandbox. Promotion is R1; nothing here promotes. */}
         {sections.includes("pilots") && (
@@ -392,6 +426,8 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                             The school office has paused your appointment to this match. They can tell you more.
                           </p>
                         )}
+                        {/* The status sentence (§3.9), once: where it says what the state says ("Not started"), the state alone. */}
+                        {sentenceOf(m) !== w.label && <p data-testid={`fixture-${m.id}-sentence`} style={{ ...line(), color: T.content.primary }}>{sentenceOf(m)}</p>}
                         <p data-testid={`fixture-${m.id}-state`} style={{ ...line(), color: T.content.primary, fontWeight: 600 }}>{w.label}</p>
                         {sessionError && (
                           <p data-testid={`fixture-${m.id}-session-read`} role="alert" style={{ ...line(), color: T.semantic.criticalText }}>
