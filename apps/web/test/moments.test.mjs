@@ -9,7 +9,7 @@
  */
 import { inningsStart, batters, bowler, ball, revision, penalty, playStopped, sealInnings, deriveMatch, deriveInnings,
   deriveCommentary, BALL_TYPE } from "@scrbrd/scoring";
-import { boardTags, lineBall, momentsFrom, enqueue, SIZE, SHOW_MS, GAP, QUEUE_MAX } from "../src/lib/moments.js";
+import { boardTags, endsHeld, lineBall, momentsFrom, enqueue, SIZE, SHOW_MS, GAP, QUEUE_MAX } from "../src/lib/moments.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
@@ -256,7 +256,11 @@ group("N5. A family's screen: a card about another boy keeps its title, drops th
   const other = momentsFrom(fresh, r0.fold, fold, { focus: ["h5"] });
   ok("another boy's family: FIFTY, and no line naming him", other.length === 1 && other[0].kind === "fifty" && other[0].body === null && other[0].title === "Fifty", said(other));
   const half = momentsFrom(fresh, r0.fold, fold, { focus: ["h0"] });
-  ok("...h0's own family, the card also the stand's with h1: the line names h1 too, so it goes", half[0]?.body === null, said(half));
+  // Review R1: the merged card keeps the line it shows (his fifty, naming only him), not the stand's it outranked.
+  ok("...h0's own family, the ball also the stand's fifty with h1: his own line stays, it names only him",
+     half[0]?.kind === "fifty" && half[0].body === "H Batter0 · 50 off 9" && half[0].about?.join() === "h0", said(half));
+  ok("...and h1's family, whose boy is only in the stand: the title, no line (it names h0)",
+     momentsFrom(fresh, r0.fold, fold, { focus: ["h1"] })[0]?.body === null);
   ok("no focus (staff, public): the line as ever", momentsFrom(fresh, r0.fold, fold)[0]?.body === "H Batter0 · 50 off 9");
   const w = game();
   w.add(0, ball({ value: 2 }), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }));
@@ -265,6 +269,44 @@ group("N5. A family's screen: a card about another boy keeps its title, drops th
   ok("his own boy out: his name and figures, not the dismissal that names the bowler",
      momentsFrom(wl, null, wf, { focus: ["h0"] })[0]?.body === "H Batter0 2 (2)", said(momentsFrom(wl, null, wf, { focus: ["h0"] })));
   ok("another boy out: WICKET, no line", momentsFrom(wl, null, wf, { focus: ["h4"] })[0]?.body === null);
+}
+
+group("R1. A hat-trick on a family's screen: the dismissal only where it names his own boy, else the bowler's line");
+{
+  const g = game();
+  let at = 2;
+  for (let i = 0; i < 3; i++) g.add(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), batters({ striker: `h${at++}` }));
+  const fold = deriveMatch(g.log);
+  const lines = deriveCommentary(g.log, { nameOf });
+  const third = lines.filter((c) => c.key.startsWith(lines.filter((x) => x.kind === "wicket")[2].key));
+  const bowlerFamily = momentsFrom(third, null, fold, { focus: ["a0"] });
+  ok("the bowler's family: HAT-TRICK with his own line, not the dismissal naming another boy", bowlerFamily[0]?.kind === "hat_trick"
+     && bowlerFamily[0].body === "A Bowler0", said(bowlerFamily));
+  const both = momentsFrom(third, null, fold, { focus: ["a0", "h3"] });
+  ok("...a family of both: the dismissal, which names only theirs", both[0]?.body === "H Batter3 0 (1)", said(both));
+  ok("...no focus: the dismissal as ever", /^b A Bowler0 · H Batter3 0 \(1\)$/.test(momentsFrom(third, null, fold)[0]?.body ?? ""), said(momentsFrom(third, null, fold)));
+}
+
+group("R2. A beat's spoken line on a family's screen: only where everyone it names is his");
+{
+  const g = game();
+  g.add(0, ball({ value: 4 }));
+  const r = g.read();
+  const four = (focus) => momentsFrom(r.fresh, null, r.fold, { focus })[0];
+  ok("no focus: the four carries its line to say", (four(null)?.line?.text ?? "").length > 0 && four(null).about?.join() === "h0,a0", four(null)?.about);
+  ok("the batter's family: the bowler is not theirs, so just \"Four\"", four(["h0"])?.title === "Four" && four(["h0"]).line?.text === null);
+  ok("...and a family of both: the line stays", four(["h0", "a0"])?.line?.text === four(null).line.text);
+}
+
+group("R3. A held card gives way to the result, and to play, never to a correction line");
+{
+  const tied = { key: "t", kind: "super_over_tied", size: SIZE.HELD, ms: null, title: "Super over tied", body: null, above: null, line: null };
+  const res = { key: "r", kind: "result", size: SIZE.HELD, ms: null, title: "Match tied", body: null, above: null, line: null };
+  ok("the result arrives with no ball: the tied card gives way", endsHeld(tied, [{ kind: "result" }], [res]));
+  ok("a delivery ends it", endsHeld(tied, [{ kind: "ball" }], []));
+  ok("a correction line does not", !endsHeld(tied, [{ kind: "correction" }], []));
+  ok("the result on show is never displaced", !endsHeld(res, [{ kind: "ball" }], [res]));
+  ok("nothing held on show: nothing to end", !endsHeld(null, [{ kind: "ball" }], [res]));
 }
 
 group("N6. A correction never fires a card: a line on a ball already drawn is none");

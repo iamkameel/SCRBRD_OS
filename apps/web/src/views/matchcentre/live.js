@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { announceArrivals } from "../../lib/announce.js";
-import { enqueue, isGap, lineBall, momentsFrom, SHOW_MS, SIZE } from "../../lib/moments.js";
+import { endsHeld, enqueue, isGap, lineBall, momentsFrom, SHOW_MS } from "../../lib/moments.js";
 
 /**
  * The spectator board's moments (Kameel's premium-feel checklist, step 3c):
@@ -10,9 +10,6 @@ import { enqueue, isGap, lineBall, momentsFrom, SHOW_MS, SIZE } from "../../lib/
  * the fold's own story — so a reload shows the match as it stands and plays
  * nothing: only a line that ARRIVES while the page is open is a moment.
  */
-
-/** What ends a held card: play moving again (a delivery, an interruption's line, an innings starting or ending). */
-const MOVES = new Set(["ball", "four", "six", "wicket", "interruption", "innings_start", "innings_end"]);
 
 /** The gentle over summary between overs (SCRBRD-133 §5.2 row 10). */
 export const OVER_SUMMARY_MS = 6000;
@@ -120,8 +117,8 @@ export function useMoments(items, ready, innings = null, side = undefined, focus
     const cards = momentsFrom(fresh, before ? { innings: before } : null, { innings: innings ?? [] },
       { ...(named.current ? { side: named.current } : {}), seen: new Set(drawn), focus: lit.current });
     for (const i of fresh) { const b = lineBall(i); if (b) drawn.add(b); }
-    // A held card gives way once play moves again, never to a quiet correction line.
-    if (showing.current?.size === SIZE.HELD && showing.current.kind !== "result" && fresh.some((i) => MOVES.has(i.kind))) show(null);
+    // A held card gives way once play moves again or the result comes, never to a quiet correction line.
+    if (endsHeld(showing.current, fresh, cards)) show(null);
     queue.current = enqueue(queue.current, cards, showing.current);
     if (!showing.current && queue.current.length) show(queue.current.shift());
     const end = isGap(fresh) ? null : fresh.filter((i) => i.kind === "over_end").pop();

@@ -108,9 +108,14 @@ export function momentsFrom(arrivals, before, after, { side = (inn) => String(in
 
   for (const c of lines) {
     const inn = now[c.innings];
+    /** The striker and the bowler of the line's ball: whom a beat's spoken line names. */
+    const pair = () => {
+      const b = (inn?.ballLog ?? []).find((/** @type {any} */ x) => String(x.id) === ballOf(c));
+      return b ? [b.strikerId ?? null, b.bowlerId ?? null] : [null];
+    };
     switch (c.kind) {
-      case "four": card(c, "four", SIZE.BEAT, SHOW_MS.beat, "Four"); break;
-      case "six": card(c, "six", SIZE.BEAT, SHOW_MS.beat, "Six"); break;
+      case "four": card(c, "four", SIZE.BEAT, SHOW_MS.beat, "Four", null, pair()); break;
+      case "six": card(c, "six", SIZE.BEAT, SHOW_MS.beat, "Six", null, pair()); break;
       case "wicket": {
         // The batter out on this ball, as the card shows him: "c Pillay b Naidoo · D Erasmus 23 (18)".
         const id = ballOf(c);
@@ -195,10 +200,29 @@ export function momentsFrom(arrivals, before, after, { side = (inn) => String(in
     const key = `stopped:${now.length - 1}:${last.interruptions?.length ?? 0}`;
     cards.push({ key, kind: "stopped", size: SIZE.HELD, ms: null, title: "Play stopped", body: why ? `${why} · ${score}` : score, above: null, line: null });
   }
-  const merged = mergeByBall(cards);
+  const merged = mergeByBall(cards, focus);
   if (!focus?.length) return merged;
-  // Q10 on a family's screen: the line that names another child goes, the title stays.
-  return merged.map((c) => (c.about?.some((id) => id == null || !focus.includes(id)) ? { ...c, body: null } : c));
+  // Q10 on a family's screen: the line that names another child goes, and the line a screen reader would say
+  // with it (a beat's ball, S2); the title stays.
+  return merged.map((c) => (inFocus(c.about, focus) ? c : { ...c, body: null, line: c.line ? { ...c.line, text: null } : null }));
+}
+
+/** Does every boy a line names belong to this screen? (No focus: yes.) @param {(string | null)[] | undefined} about  @param {readonly string[] | null | undefined} focus */
+const inFocus = (about, focus) => !focus?.length || (about ?? []).every((id) => id != null && focus.includes(id));
+
+/** What ends a held card: play moving again (a delivery, an interruption's line, an innings starting or ending). */
+const MOVES = new Set(["ball", "four", "six", "wicket", "interruption", "innings_start", "innings_end"]);
+
+/**
+ * Does the held card on show give way to this read? Play moving again ends it
+ * (never a quiet correction line, N8), and so does the result, which is the
+ * state that follows it (a tied super over the light then ended, R3). The
+ * result itself is never displaced.
+ * @param {Card | null} showing  @param {any[]} fresh  the read's new lines  @param {Card[]} cards  the cards they earned
+ */
+export function endsHeld(showing, fresh, cards) {
+  if (showing?.size !== SIZE.HELD || showing.kind === "result") return false;
+  return cards.some((c) => c.kind === "result") || (fresh ?? []).some((i) => MOVES.has(i?.kind));
 }
 
 /** More than GAP deliveries in one read: a gap (§4.4). @param {any[] | null | undefined} arrivals */
@@ -207,8 +231,15 @@ export const isGap = (arrivals) => (Array.isArray(arrivals) ? arrivals : []).fil
 /** The ball a line was told from (its event id), or null: what `seen` holds. @param {{key?: string}} c */
 export const lineBall = (c) => ballOf(c);
 
-/** A ball's moments are one card: the biggest, with the next as its above (§5.3). @param {Card[]} cards */
-function mergeByBall(cards) {
+/**
+ * A ball's moments are one card: the biggest, with the next as its above
+ * (§5.3). The card keeps the line it shows and whom that line names: a
+ * wicket that is also a hat-trick or a five-for shows the dismissal, unless
+ * on a family's screen it names a boy who is not his, when the bowler's own
+ * line stays (review R1).
+ * @param {Card[]} cards  @param {readonly string[] | null} [focus]
+ */
+function mergeByBall(cards, focus = null) {
   /** @type {Card[]} */
   const out = [];
   /** @type {Map<string, Card[]>} */
@@ -226,11 +257,12 @@ function mergeByBall(cards) {
     const [top, ...rest] = [...same].sort((x, y) => rank(x.kind) - rank(y.kind));
     const four = rest.find((x) => x.kind === "four" || x.kind === "six");
     const wicket = rest.find((x) => x.kind === "wicket");
+    // A wicket that is also a hat-trick or a five-for keeps the dismissal as the card's line.
+    const dismissal = !!wicket?.body && (top.kind === "hat_trick" || top.kind === "five_wickets") && inFocus(wicket.about, focus);
     return {
       ...top,
-      about: same.flatMap((x) => x.about ?? []),
-      // A wicket that is also a hat-trick or a five-for keeps the dismissal as the card's line.
-      body: wicket?.body && (top.kind === "hat_trick" || top.kind === "five_wickets") ? wicket.body : top.body,
+      about: dismissal ? wicket?.about ?? [] : top.about ?? [],
+      body: dismissal ? wicket?.body ?? null : top.body,
       above: four ? `with a ${four.kind}` : wicket && top.kind !== "hat_trick" && top.kind !== "five_wickets" ? "with a wicket" : null,
     };
   });

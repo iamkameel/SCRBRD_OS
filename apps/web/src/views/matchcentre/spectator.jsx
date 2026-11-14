@@ -31,7 +31,8 @@ export function MomentMark({ moment, big = false, announce = true }) {
   const bigMark = moment.size !== "beat";
   const fill = moment.kind === "wicket" ? T.board.figure : bigMark ? T.board.lime : chipFill(moment.kind);
   const ink = inkFor(fill);
-  // Said once (WCAG 4.1.3): the card's words, and for a beat the ball's own line, as before ("Four: … for four").
+  // Said once (WCAG 4.1.3): the card's words, and for a beat the ball's own line, as before ("Four: … for four");
+  // on a family's screen a line naming a boy who is not his is gone (moments.js: `line.text` null), so just "Four".
   // The visible words are hidden from the region where it announces, so nothing is read twice.
   const words = [moment.above, moment.title, moment.body].filter(Boolean).join(". ") + (!bigMark && moment.line?.text ? `: ${moment.line.text}` : "");
   const hide = announce ? "true" : undefined;
