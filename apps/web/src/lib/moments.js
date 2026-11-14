@@ -52,15 +52,15 @@ const DELIVERY = new Set(["ball", "four", "six", "wicket"]);
 
 const WORD = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 const cap = (/** @type {string} */ s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-const oversText = (/** @type {number} */ balls) => `${Math.floor(balls / 6)}${balls % 6 ? `.${balls % 6}` : ""}`;
+const oversText = (/** @type {number} */ balls) => String(Math.floor(balls / 6)) + (balls % 6 ? "." + (balls % 6) : "");
 /** The event a line was told from: `e:<id>` and `e:<id>#<n>` are one ball's. */
 const ballOf = (/** @type {{key?: string}} */ c) => { const m = /^e:(.+?)(?:#\d+)?$/.exec(c?.key ?? ""); return m ? m[1] : null; };
 
 /**
  * @typedef {{key: string, kind: string, size: string, ms: number | null, title: string, body: string | null,
- *   eyebrow: string | null, line: any}} Card
+ *   above: string | null, line: any}} Card
  *   `kind` one of ORDER; `ms` how long it shows (null: held); `title` the card's words, `body` the line under
- *   them, `eyebrow` the small line above (a merged moment's: "with a six"); `line` the commentary line it came from
+ *   them, `above` the small line above (a merged moment's: "with a six"); `line` the commentary line it came from
  */
 
 /**
@@ -83,7 +83,7 @@ export function momentsFrom(arrivals, before, after, { side = (inn) => String(in
   /** @type {Card[]} */
   const cards = [];
   const card = (/** @type {any} */ line, /** @type {string} */ kind, /** @type {string} */ size, /** @type {number | null} */ ms,
-    /** @type {string} */ title, /** @type {string | null} */ body = null) => cards.push({ key: line.key, kind, size, ms, title, body, eyebrow: null, line });
+    /** @type {string} */ title, /** @type {string | null} */ body = null) => cards.push({ key: line.key, kind, size, ms, title, body, above: null, line });
   const nameIn = (/** @type {any} */ inn, /** @type {any} */ id, /** @type {"batsmen" | "bowlers"} */ list) =>
     (inn?.[list] ?? []).find((/** @type {any} */ p) => p.id === id)?.name ?? null;
 
@@ -99,7 +99,7 @@ export function momentsFrom(arrivals, before, after, { side = (inn) => String(in
         const outId = b ? (b.dismissed ?? b.strikerId) : null;
         const bat = outId != null ? (inn?.batsmen ?? []).find((/** @type {any} */ x) => x.id === outId) : null;
         card(c, "wicket", SIZE.BIG, SHOW_MS.short, "Wicket",
-          bat ? `${bat.dismissal ? `${bat.dismissal} · ` : ""}${bat.name} ${bat.runs} (${bat.balls})` : null);
+          bat ? (bat.dismissal ? bat.dismissal + " · " : "") + `${bat.name} ${bat.runs} (${bat.balls})` : null);
         break;
       }
       case "milestone": {
@@ -161,13 +161,14 @@ export function momentsFrom(arrivals, before, after, { side = (inn) => String(in
   const lastWas = was[now.length - 1] ?? null;
   if (!gap && last?.stopped && !lastWas?.stopped && lines.length) {
     const why = { rain: "rain", bad_light: "bad light", wet_ground: "a wet ground" }[String(last.stopped.reason)] ?? null;
-    cards.push({ key: `stopped:${now.length - 1}:${last.interruptions?.length ?? 0}`, kind: "stopped", size: SIZE.HELD, ms: null,
-      title: "Play stopped", body: `${why ? `${why} · ` : ""}${oversText(last.balls ?? 0)} ov, ${last.runs}/${last.wickets}`, eyebrow: null, line: null });
+    const score = `${oversText(last.balls ?? 0)} ov, ${last.runs}/${last.wickets}`;
+    const key = `stopped:${now.length - 1}:${last.interruptions?.length ?? 0}`;
+    cards.push({ key, kind: "stopped", size: SIZE.HELD, ms: null, title: "Play stopped", body: why ? `${why} · ${score}` : score, above: null, line: null });
   }
   return mergeByBall(cards);
 }
 
-/** A ball's moments are one card: the biggest, with the next as its eyebrow (§5.3). @param {Card[]} cards */
+/** A ball's moments are one card: the biggest, with the next as its above (§5.3). @param {Card[]} cards */
 function mergeByBall(cards) {
   /** @type {Card[]} */
   const out = [];
@@ -190,7 +191,7 @@ function mergeByBall(cards) {
       ...top,
       // A wicket that is also a hat-trick or a five-for keeps the dismissal as the card's line.
       body: wicket?.body && (top.kind === "hat_trick" || top.kind === "five_wickets") ? wicket.body : top.body,
-      eyebrow: four ? `with a ${four.kind}` : wicket && top.kind !== "hat_trick" && top.kind !== "five_wickets" ? "with a wicket" : null,
+      above: four ? `with a ${four.kind}` : wicket && top.kind !== "hat_trick" && top.kind !== "five_wickets" ? "with a wicket" : null,
     };
   });
 }

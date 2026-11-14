@@ -484,6 +484,25 @@ try {
   });
   const liveAt = await sentenceAt(p);
   ok("§3.3: while it is being played, the status sentence is said once, under the board", liveAt.n === 1 && liveAt.inPanel && liveAt.underBoard, JSON.stringify(liveAt));
+  {
+    // EXPERIENCE_PASS §3.3: the over story on the Summary — one row an over, newest first, a row opening to its lines.
+    await tid(p, "mc-over-story").waitFor({ timeout: 8000 }).catch(() => {});
+    const rows = await p.locator('[data-testid="mc-over-row"]').evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-over"))));
+    const bowled = inn2.overLog.length;
+    ok(`the over story: the last six of the ${bowled} overs, newest first (${rows.join(",")})`,
+       rows.length === Math.min(6, bowled) && rows[0] === bowled && rows.every((r, i) => i === 0 || r === rows[i - 1] - 1), rows.join(","));
+    ok("...saying how many it stands on", new RegExp(`^${bowled} of ${inn2.overs} overs`).test(await tid(p, "mc-over-story-count").innerText().catch(() => "")));
+    const first = p.locator('[data-testid="mc-over-row"] button').first();
+    const h = (await first.boundingBox().catch(() => null))?.height ?? 0;
+    await first.click({ timeout: 4000 }).catch(() => {});
+    // Newest first, as the Commentary tab has them (SCRBRD-133 §6.4).
+    const want = expected.filter((c) => c.innings === 1 && c.over === bowled - 1).map((c) => c.text).reverse();
+    const lines = await p.locator('[data-testid="mc-over-lines"] li').allInnerTexts().catch(() => []);
+    ok(`...a row, 44px, opens to that over's lines, the generator's own (${lines.length})`, h >= 44 && await first.getAttribute("aria-expanded") === "true"
+       && lines.length === want.length && want.every((t, i) => lines[i]?.includes(t)), JSON.stringify(lines.slice(0, 2)));
+    await first.click({ timeout: 4000 }).catch(() => {});
+    ok("...and a second tap closes it", await tid(p, "mc-over-lines").count() === 0);
+  }
   const total = (await tid(p, "mc-board-total").innerText()).replace(/\s/g, "");
   ok(`the board's total is the fold's (${inn2.runs}/${inn2.wickets})`, total === `${inn2.runs}/${inn2.wickets}`, total);
   ok("...the chase in words", new RegExp(`Need ${inn2.target - inn2.runs} off ${60 - inn2.balls}`).test(await tid(p, "mc-board-sub").innerText()));

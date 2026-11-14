@@ -24,14 +24,14 @@ const inkFor = (fill) => (contrast(fill, T.board.face) >= contrast(fill, T.board
  * lime (a wicket white, as the chip draws one) with its words, the line under
  * them and the small eyebrow above ("with a six"). Its time is moments.js's.
  * Reduced motion makes the entrance a cut (GLOBAL_CSS): it appears, holds and
- * goes. `moment` is a card: {kind, size, title, body, eyebrow}.
+ * goes. `moment` is a card: {kind, size, title, body, above}.
  */
 export function MomentMark({ moment, big = false, announce = true }) {
   if (!moment) return null;
   const bigMark = moment.size !== "beat";
   const fill = moment.kind === "wicket" ? T.board.figure : bigMark ? T.board.lime : chipFill(moment.kind);
   const ink = inkFor(fill);
-  const words = [moment.eyebrow, moment.title, moment.body].filter(Boolean).join(". ");
+  const words = [moment.above, moment.title, moment.body].filter(Boolean).join(". ");
   return (
     <div data-testid="mc-moment" data-kind={moment.kind} data-size={moment.size}
       {...(announce ? { role: "status", "aria-live": "polite" } : { "aria-hidden": "true" })}
@@ -41,7 +41,7 @@ export function MomentMark({ moment, big = false, announce = true }) {
         borderRadius: bigMark ? T.radius.md : T.radius.pill, background: fill, color: ink, boxShadow: T.elevation.md,
         fontFamily: T.type.body, fontWeight: 700, lineHeight: 1.25, display: "grid", gap: "2px",
         fontSize: big ? (bigMark ? "max(20px, 4.4vmin)" : "clamp(18px, 3vmin, 36px)") : (bigMark ? "16px" : "14px") }}>
-      {moment.eyebrow && <span data-testid="mc-moment-eyebrow" style={{ fontSize: big ? "max(12px, 2.4vmin)" : "12px", fontWeight: 600 }}>{moment.eyebrow}</span>}
+      {moment.above && <span data-testid="mc-moment-above" style={{ fontSize: big ? "max(12px, 2.4vmin)" : "12px", fontWeight: 600 }}>{moment.above}</span>}
       <span data-testid="mc-moment-title">{moment.title}</span>
       {bigMark && moment.body && (
         <span data-testid="mc-moment-body" style={{ fontWeight: 500, fontSize: big ? "max(14px, 2.6vmin)" : "13px", overflowWrap: "anywhere" }}>{moment.body}</span>

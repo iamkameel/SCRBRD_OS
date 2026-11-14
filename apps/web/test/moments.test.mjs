@@ -41,7 +41,7 @@ function game({ overs = 20 } = {}) {
   read();
   return { add, read, log };
 }
-const said = (cards) => cards.map((c) => `${c.kind}: ${c.title}${c.body ? ` / ${c.body}` : ""}${c.eyebrow ? ` [${c.eyebrow}]` : ""}`);
+const said = (cards) => cards.map((c) => `${c.kind}: ${c.title}${c.body ? ` / ${c.body}` : ""}${c.above ? ` [${c.above}]` : ""}`);
 
 group("1, 2. A four and a six: a beat, 2.5 s; a run or a dot, none; nothing new, none");
 {
@@ -84,7 +84,7 @@ group("4, 5. Fifty and a fifty stand on one four: one card, FIFTY, \"with a four
   g.add(0, ball({ value: 4 }));
   const r = g.read();
   ok(`h0 to 50 with a four, the stand to 51: "${said(r.cards).join(" | ")}"`, r.cards.length === 1 && r.cards[0].kind === "fifty"
-     && r.cards[0].title === "Fifty" && r.cards[0].eyebrow === "with a four" && r.cards[0].size === SIZE.BIG, said(r.cards));
+     && r.cards[0].title === "Fifty" && r.cards[0].above === "with a four" && r.cards[0].size === SIZE.BIG, said(r.cards));
   ok("...his name and the mark, from the fold: \"H Batter0 · 50 off 10\"", r.cards[0]?.body === "H Batter0 · 50 off 9", r.cards[0]?.body);
   ok("the line it came from carries the fact, not only the words", r.fresh.some((c) => c.kind === "milestone" && c.moment?.kind === "batter_mark" && c.moment.mark === 50)
      && r.fresh.some((c) => c.kind === "milestone" && c.moment?.kind === "partnership" && c.moment.mark === 50), r.fresh.map((c) => c.moment ?? c.kind));
@@ -207,7 +207,7 @@ group("7, 9. The board's tags: Free hit, Hat-trick ball, until the next counted 
 
 group("§5.3: the queue");
 {
-  const c = (kind, size) => ({ key: kind + Math.random(), kind, size, ms: 1, title: kind, body: null, eyebrow: null, line: null });
+  const c = (kind, size) => ({ key: kind + Math.random(), kind, size, ms: 1, title: kind, body: null, above: null, line: null });
   const big = c("wicket", SIZE.BIG), four = c("four", SIZE.BEAT), six = c("six", SIZE.BEAT), held = c("stopped", SIZE.HELD);
   ok("a beat behind a big card on show is dropped", enqueue([], [four], big).length === 0);
   ok("a big card behind a big card waits", enqueue([], [c("fifty", SIZE.BIG)], big).length === 1);
