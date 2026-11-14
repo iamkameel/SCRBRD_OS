@@ -262,6 +262,22 @@ try {
     ok("the card's link is nofollow, to the match page", /\bnofollow\b/.test((await card.getAttribute("rel")) ?? "") && (await card.getAttribute("href")) === `/live/${LIVE}`);
     ok("Watch a match leads to the live board", (await tid(v.page, "home-cta-watch").getAttribute("href")) === "#matches");
     await common(v, "live");
+
+    // The lead is chosen once per visit: two polls later, with a new fixture
+    // listed meanwhile, nothing above the reader has moved.
+    const before = { film: (await top(v.page, "#home-film"))?.top, first: await v.page.evaluate(() => document.querySelector("main")?.dataset.first) };
+    await publish([LIVE, LATER]);
+    ok("(setup) the public read now lists a second fixture as well", await readUntil([LIVE, LATER]));
+    let polls = 0;
+    v.page.on("request", (r) => { if (new URL(r.url()).pathname === "/api/public/live") polls++; });
+    for (let i = 0; i < 90 && polls < 2; i++) await v.page.waitForTimeout(500);
+    await afterReads(v.page, 800);
+    const after = { film: (await top(v.page, "#home-film"))?.top, first: await v.page.evaluate(() => document.querySelector("main")?.dataset.first) };
+    ok("two polls later the lead is the same, and the film has not moved", polls >= 2 && after.first === "live" && Math.abs((after.film ?? 0) - (before.film ?? -99)) < 1,
+       JSON.stringify({ polls, before, after }));
+    const laterTop = await v.page.evaluate((id) => { const a = document.querySelector(`a[data-testid="home-card"][href="/live/${id}"]`); return a ? a.getBoundingClientRect().top + scrollY : null; }, LATER);
+    ok("...the new fixture is drawn below the film, not above it", laterTop !== null && laterTop > (after.film ?? Infinity), String(laterTop));
+    ok("...and the live card still leads", await v.page.evaluate((id) => !!document.querySelector(`section[data-lead] a[href="/live/${id}"]`), LIVE));
     await card.click({ timeout: 5000 });
     await v.page.waitForURL(new RegExp(`/live/${LIVE}$`), { timeout: 8000 }).catch(() => {});
     ok("one tap on the board opens the match", new URL(v.page.url()).pathname === `/live/${LIVE}`, v.page.url());

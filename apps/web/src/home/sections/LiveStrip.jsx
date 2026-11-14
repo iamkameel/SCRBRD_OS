@@ -30,6 +30,9 @@ import { homeBody, homeHead, oversOfBalls, timeOfDay } from "./shared.jsx";
  *         above the film, is main.jsx's (firstScreen, EXPERIENCE_PASS §2.3).
  *   lead  the part drawn as the page's first screen: drawn at once, never held
  *         back by the scroll reveal.
+ *   ids   the two sections' ids, first and second. Default ["matches", "today"]:
+ *         the hero's and the header's #matches lands on the first. A second
+ *         strip on the page passes ids of its own.
  *   nofollow  rel on every card's link. Default "nofollow" (§1.5 item 2).
  *
  * THE SENTENCE (EXPERIENCE_PASS §3.8). A live card says where the match
@@ -273,7 +276,7 @@ export function firstScreen(data) {
   return "film";
 }
 
-export function LiveStrip({ data, show = "all", lead = false, nofollow = "nofollow" }) {
+export function LiveStrip({ data, show = "all", lead = false, ids = ["matches", "today"], nofollow = "nofollow" }) {
   if (!data || !Array.isArray(data.fixtures)) return null;
   const all = arrange(data.fixtures);
   const live = all.filter((f) => f.status === "live");
@@ -283,10 +286,10 @@ export function LiveStrip({ data, show = "all", lead = false, nofollow = "nofoll
   // The hero's "Watch a match" (#matches) lands on the first section this strip draws.
   const parts = [];
   if ((show === "all" || show === "live") && live.length) {
-    parts.push(<Board key="live" id="matches" label="Live now" live lead={lead} asOf={day} ticker={live.map(tickerLine)}><Cards list={live} rel={nofollow} /></Board>);
+    parts.push(<Board key="live" id={ids[0]} label="Live now" live lead={lead} asOf={day} ticker={live.map(tickerLine)}><Cards list={live} rel={nofollow} /></Board>);
   }
   if (show === "all" || show === "today") {
-    const id = parts.length || (show === "today" && live.length) ? "today" : "matches";
+    const id = parts.length || (show === "today" && live.length) ? ids[1] : ids[0];
     if (quiet) {
       parts.push(<Board key="none" id={id} label="Today" asOf={day}>
         <Blank />

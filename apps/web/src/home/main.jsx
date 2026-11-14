@@ -4,7 +4,7 @@ import { GLOBAL_CSS, T } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { Header, LiveStrip, Hero, Tiles, News, Families, Schools, Footer, Privacy, Seam } from "./sections/index.js";
-import { firstScreen } from "./sections/LiveStrip.jsx";
+import { arrange, firstScreen } from "./sections/LiveStrip.jsx";
 import { homeCss } from "./fx.js";
 import { LIVE_POLL_MS, anyLive, readLive, readNews } from "./reads.js";
 import { arenaMode } from "./arena/capable.js";
@@ -53,9 +53,13 @@ const PRIVACY = "/privacy";
 /** The first screen's photograph, { src, alt }, when there is one. See Hero.jsx before filling it. */
 const HERO_PHOTO = null;
 
-/** Today's listed fixtures: null until answered, and on a 404 or a failure. */
+/**
+ * Today's listed fixtures: null until answered, and on a 404 or a failure.
+ * `answered` turns true with the first answer, whatever it was.
+ */
 function useLive() {
   const [live, setLive] = useState(/** @type {Awaited<ReturnType<typeof readLive>>} */ (null));
+  const [answered, setAnswered] = useState(false);
   useEffect(() => {
     let stop = false;
     /** @type {ReturnType<typeof setTimeout> | undefined} */
@@ -64,6 +68,7 @@ function useLive() {
       const next = await readLive();
       if (stop) return;
       setLive(next);
+      setAnswered(true);
       // Poll only while something is live; a hidden tab skips the read and
       // asks again when its turn comes round.
       if (anyLive(next)) timer = setTimeout(function again() {
@@ -75,7 +80,44 @@ function useLive() {
     tick();
     return () => { stop = true; clearTimeout(timer); };
   }, []);
-  return live;
+  return { live, answered };
+}
+
+/** How long the page waits for the first read before it settles on the film. */
+const LEAD_WAIT_MS = 400;
+
+/**
+ * The first screen, chosen ONCE per visit (EXPERIENCE_PASS §2.3, Q6). From the
+ * first answer of the public read, and from nothing later: a poll that finds
+ * a match ended, or a new one started, changes the cards inside the boards
+ * already drawn and never what leads, so nothing moves above the reader.
+ * Until the read answers (LEAD_WAIT_MS at most) the page waits with the
+ * header alone; a read slower than that leaves the film first for the whole
+ * visit, rather than a board arriving above a hero already painted.
+ *
+ * Returns null while waiting, else { first, ids }: firstScreen()'s answer and
+ * the fixtures it put first, which stay in the lead slot whatever their status
+ * becomes (a live match that ends shows its result where it was).
+ * @param {any} live @param {boolean} answered
+ */
+function useLead(live, answered) {
+  const [lead, setLead] = useState(/** @type {null | { first: string, ids: string[] }} */ (null));
+  useEffect(() => {
+    const t = setTimeout(() => setLead((l) => l ?? { first: "film", ids: [] }), LEAD_WAIT_MS);
+    return () => clearTimeout(t);
+  }, []);
+  useEffect(() => {
+    if (!answered) return;
+    setLead((l) => {
+      if (l) return l;
+      const first = firstScreen(live);
+      const all = first === "film" ? [] : arrange(live.fixtures);
+      const ids = (first === "live" ? all.filter((f) => f.status === "live")
+        : all.filter((f) => f.status !== "live")).map((f) => f.id);
+      return { first, ids };
+    });
+  }, [answered, live]);
+  return lead;
 }
 
 /** The approved posts of the schools that list: null until answered, and on a 404 or a failure. */
@@ -133,32 +175,43 @@ function useArena() {
 
 function Home() {
   const { arena, fail } = useArena();
-  const live = useLive();
+  const { live, answered } = useLive();
   const news = useNews();
   useRevealFallback(`${live ? live.fixtures.length : -1}:${news ? news.posts.length : -1}`);
   const liveNow = live ? live.fixtures.filter((f) => f?.status === "live").length : 0;
   const mode = arena?.mode ?? "wait";
-  // The first screen, chosen by the public read's state (EXPERIENCE_PASS §2.3,
-  // Q6): a live board, today's first start or a result leads, above the film;
-  // with nothing listed the film is first, as before.
-  const first = firstScreen(live);
+  // The first screen, chosen once from the first read (useLead): a live
+  // board, today's first start or a result leads, above the film; with
+  // nothing listed the film is first, as before. Every later poll updates the
+  // fixtures in place: the ones that led stay above the film, the rest below.
+  const lead = useLead(live, answered);
+  // A poll that fails keeps the last answer on the page rather than emptying the boards.
+  const kept = useRef(/** @type {any} */ (null));
+  if (live) kept.current = live;
+  const shown = kept.current;
+  const leads = !!lead && lead.first !== "film";
+  const fixtures = shown ? shown.fixtures : [];
+  const top = leads ? { ...shown, fixtures: fixtures.filter((f) => lead.ids.includes(f?.id)) } : null;
+  const rest = leads ? fixtures.filter((f) => !lead.ids.includes(f?.id)) : null;
+  const below = !leads ? shown : rest.length ? { ...shown, fixtures: rest } : null;
   return (
     <>
       <Header appHref={APP} logo={SCRBRD_LOGO} live={liveNow} over/>
-      <main data-arena={mode} data-first={first}>
-        {arena?.mode === "3d" && <Arena forced={arena.forced} onFail={fail}/>}
-        {first === "live" && <LiveStrip data={live} show="live" lead/>}
-        {(first === "today" || first === "result") && <LiveStrip data={live} show="today" lead/>}
-        <Hero appHref={APP} hasStrip={!!live} photo={HERO_PHOTO} mode={mode}/>
-        <div id="home-after-film" tabIndex={-1} style={{ outline: "none", paddingTop: "24px" }}>
-          {(first === "live" || first === "film") && <LiveStrip data={live} show="today"/>}
+      <main data-arena={mode} data-first={lead ? lead.first : "wait"} style={lead ? undefined : { minHeight: "100vh" }}>
+        {lead && <>
+          {arena?.mode === "3d" && <Arena forced={arena.forced} onFail={fail}/>}
+          {leads && <LiveStrip data={top} lead/>}
+          <Hero appHref={APP} hasStrip={!!shown} photo={HERO_PHOTO} mode={mode}/>
+          <div id="home-after-film" tabIndex={-1} style={{ outline: "none", paddingTop: "24px" }}>
+            <LiveStrip data={below} ids={leads ? ["more-matches", "more-today"] : undefined}/>
           <Seam/>
           <Tiles/>
           <News data={news}/>
           <Seam/>
           <Families privacyHref={PRIVACY}/>
           <Schools email={SCHOOLS_EMAIL}/>
-        </div>
+          </div>
+        </>}
       </main>
       <Footer privacyHref={PRIVACY}/>
     </>
