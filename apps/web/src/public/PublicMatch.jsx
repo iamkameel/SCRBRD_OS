@@ -3,7 +3,7 @@ import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { boardInnings, boundaryCount, matchLine, revisionNotice, sidesOf, statusSentence, teamOf, tossWords } from "../lib/matchCentre.js";
 import { humanDateTime } from "../lib/format.js";
-import { SummaryTab, CommentaryTab, PartnershipsTab } from "../views/matchcentre/tabs-core.jsx";
+import { SummaryTab, CommentaryTab, PartnershipsTab, summaryIsResult } from "../views/matchcentre/tabs-core.jsx";
 import { SourcedLazy, ballsLine, shotsCaptured } from "../ui/sourcedLazy.jsx";
 import { InningsToggle, ScorecardTab } from "../views/matchcentre/scorecard.jsx";
 import { HeaderScores, StatusLine } from "../views/matchcentre/scores.jsx";
@@ -313,7 +313,7 @@ export function PublicMatch({ matchId, view }) {
             {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
           </h1>
           {played.length > 0 && <HeaderScores match={match} played={played} corrected={fixes?.corrected}/>}
-          {tab !== "summary" && <StatusLine st={st} except={["upcoming"]}/>}
+          {(tab !== "summary" || summaryIsResult({ match, innings: played, result, settled: story?.settled ?? false })) && <StatusLine st={st} except={["upcoming"]}/>}
           {/* OFFICIAL_RESULT D11, Q3: "Provisional" or "Official result · confirmed 20:15, 11 Oct" — the
               time only, never who, never a reason, and never "Under review" (the server says a disputed
               result is not official). Announced when a poll changes it. */}

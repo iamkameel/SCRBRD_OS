@@ -13,7 +13,7 @@ import { ShotWheel } from "../../scorer/charts.jsx";
 import { useIsMobile } from "../../shell/MobileNav.jsx";
 import { Icon } from "../../ui/icons.jsx";
 import { ErrorBoundary } from "../../ui/ErrorBoundary.jsx";
-import { AnalyticsTab, CommentaryTab, DetailsTab, PartnershipsTab, SummaryTab } from "./tabs.jsx";
+import { AnalyticsTab, CommentaryTab, DetailsTab, PartnershipsTab, SummaryTab, summaryIsResult } from "./tabs.jsx";
 import { ScorecardTab } from "./scorecard.jsx";
 import { HeaderScores, StatusLine } from "./scores.jsx";
 import { liveSuperOverLine, matchInningsOf, superOverCommentary } from "../../lib/superOver.js";
@@ -658,8 +658,8 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
         </h1>
         {played.length > 0 && <HeaderScores match={match} played={played} corrected={corrected}/>}
         {/* CRI-1.2: where the match stands, in the sentence its card in the list says too — here on every
-            tab but a drawn Summary, which says it under its board (EXPERIENCE_PASS §3.3), so it is said once. */}
-        {!(tab === "summary" && !log.loading && !log.error) && <StatusLine st={status} except={["upcoming"]}/>}
+            tab but a live Summary, which says it under its board (EXPERIENCE_PASS §3.3), so it is said once. */}
+        {(tab !== "summary" || log.loading || log.error || summaryIsResult({ match, innings: played, result, settled })) && <StatusLine st={status} except={["upcoming"]}/>}
         {!log.demo && <OfficialLine official={official} names={{ home: sides.home.full, away: sides.away.full }}/>}
         {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
         {!log.demo && <CorrectedChip at={correctedAt(fixes)} lines={correctionLines}/>}

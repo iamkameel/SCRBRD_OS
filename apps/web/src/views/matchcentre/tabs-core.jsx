@@ -131,6 +131,17 @@ function ResultFacts({ match, innings }) {
   );
 }
 
+/**
+ * CRI-1.7: is the Summary the result view? After full time — play has decided
+ * it, or the fixture is finished — with an innings or a result to show. The
+ * result view's board says the result sentence itself, so there the page's
+ * header keeps the status sentence, as it always did; everywhere else the
+ * Summary draws it under its board (EXPERIENCE_PASS §3.3).
+ * @param {{match: any, innings: any[], result?: any, settled?: boolean}} p
+ */
+export const summaryIsResult = ({ match, innings, result = null, settled = false }) =>
+  (settled || match.status === "complete") && (innings.length > 0 || !!result);
+
 // `quietMoments`: the page has a live region of its own (the public page's),
 // so the moment and the over summary are drawn but not announced a second time.
 // `par` (SCRBRD-133 G2): the server's par report — GET /api/public/matches/:id/par
@@ -139,10 +150,11 @@ function ResultFacts({ match, innings }) {
 // decided it.
 //
 // `status` (EXPERIENCE_PASS §3.3, Slice 2): the page's status sentence
-// (lib/matchCentre.js statusSentence()), drawn here under the board, where
-// the Summary has one; the page's header draws it on every other tab, so it
-// is said once. `focus` (Q10): a family's or a pupil's screen, whose insight
-// line keeps only the lines about nobody and about its own boy.
+// (lib/matchCentre.js statusSentence()), drawn here under the board while
+// the match is being played; the page's header draws it on every other tab
+// and over the result view (summaryIsResult()), so it is said once.
+// `focus` (Q10): a family's or a pupil's screen, whose insight line keeps
+// only the lines about nobody and about its own boy.
 export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns, quietMoments = false,
                              venueLine = null, rainLine = null, par = null, events = null, fold = null, settled = false, okAt = null,
                              status = null, focus = null }) {
@@ -172,15 +184,13 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   );
   // CRI-1.7: after full time — play has decided it, or the fixture is finished — the Summary is the result,
   // and the live board, the latest balls and "at this rate" give way to it.
-  const fullTime = settled || match.status === "complete";
-  if (fullTime && (innings.length || result)) {
+  if (summaryIsResult({ match, innings, result, settled })) {
     return (
       <div style={{ display: "grid", gap: T.space.lg }} data-testid="mc-summary" data-view="result">
         <div style={{ position: "relative" }}>
           <ResultBoard match={match} innings={innings} result={result}/>
           <MomentMark moment={moment} announce={!quietMoments}/>
         </div>
-        {said}
         {rainPanel}
         {worm && (
           <Panel testid="mc-worm-panel">
