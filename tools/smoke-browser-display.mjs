@@ -113,14 +113,16 @@ let ipN = 0;
 /**
  * A fresh TV: a context of its own, from an address of its own, signed out,
  * with the page's test hooks set before its script runs.
- * @param {string} path @param {{width?: number, height?: number, hooks?: Record<string, number>}} [o]
+ * @param {string} path @param {{width?: number, height?: number, hooks?: Record<string, number>, script?: string}} [o]
  */
-async function tv(path, { width = 1920, height = 1080, hooks = {} } = {}) {
+async function tv(path, { width = 1920, height = 1080, hooks = {}, script = "" } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height }, extraHTTPHeaders: { "x-forwarded-for": `10.85.0.${++ipN}` } });
   await offline(ctx);
   const page = await ctx.newPage();
   const init = Object.entries({ __SCRBRD_LIVE_MS__: 1000, ...hooks }).map(([k, v]) => `window.${k} = ${JSON.stringify(v)};`).join("\n");
   await page.addInitScript(init);
+  // A script of the walk's own, before the page's: it is there from the first paint, and on every reload.
+  if (script) await page.addInitScript(script);
   const errors = [], requests = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push(`console.error: ${m.text()}`); });
@@ -834,22 +836,21 @@ try {
     const MOM = await fixture("live", (at) => [...open0(at), ...[4, 4, 4, 4, 4, 4].map((v) => at(ball({ value: v }), 0)),
       at(bowler({ bowler: K[1].id }), 0), at(ball({ value: 1 }), 0), ...[4, 4, 4, 4, 4].map((v) => at(ball({ value: v }), 0)),
       at(bowler({ bowler: K[0].id }), 0), at(ball({ value: 1 }), 0)]);
-    /** Every card the page drew, by kind and words, as each is added. */
-    const WATCH = () => {
-      /** @type {any} */ (window).__cards = [];
+    /**
+     * Every card the page draws, by kind and words, as each is added: installed before the page's own script
+     * (review S4), so a card drawn in the first paint after a load or a reload is caught, not missed.
+     */
+    const WATCH = `window.__cards = [];
       new MutationObserver((ms) => {
         for (const m of ms) for (const n of m.addedNodes) {
           if (!(n instanceof HTMLElement)) continue;
-          for (const el of [n, ...n.querySelectorAll('[data-testid="mc-moment"]')]) {
-            if (el.getAttribute?.("data-testid") === "mc-moment") /** @type {any} */ (window).__cards.push({ kind: el.getAttribute("data-kind"), text: el.innerText });
-          }
+          for (const el of [n, ...n.querySelectorAll('[data-testid="mc-moment"]')])
+            if (el.getAttribute && el.getAttribute("data-testid") === "mc-moment") window.__cards.push({ kind: el.getAttribute("data-kind"), text: el.innerText });
         }
-      }).observe(document.body, { childList: true, subtree: true });
-    };
+      }).observe(document, { childList: true, subtree: true });`;
     const cards = (/** @type {any} */ page) => page.evaluate(() => /** @type {any} */ (window).__cards ?? []);
-    const v = await tv(`/display/${MOM.id}`);
+    const v = await tv(`/display/${MOM.id}`, { script: WATCH });
     await until(v.page, () => !!document.querySelector('[data-testid="display-total"]'));
-    await v.page.evaluate(WATCH);
     await sleep(2500);
     ok("on load: no card (nothing is replayed)", (await cards(v.page)).length === 0, JSON.stringify(await cards(v.page)));
     await writeEvents(q, MOM.id, [MOM.at(ball({ value: 6 }), 0)], await lastSeq(MOM.id));
@@ -868,7 +869,6 @@ try {
     ok(`...shown once, though the page read the log again since (${fours.length})`, fours.length === 1 && held < 4000, `${fours.length} cards, ${held} ms after it was seen`);
     await v.page.reload({ waitUntil: "domcontentloaded" });
     await until(v.page, () => !!document.querySelector('[data-testid="display-total"]'));
-    await v.page.evaluate(WATCH);
     await sleep(3500);
     ok("a reload: the four's card is not shown again", (await cards(v.page)).length === 0, JSON.stringify(await cards(v.page)));
     // Seven deliveries in one read: the third over's last three, a bowler, four more.
@@ -884,9 +884,8 @@ try {
     ok("no console errors (the cards)", v.errors.length === 0, v.errors.join(" | "));
     await v.ctx.close();
     // Reduce motion: the card appears, holds and goes; nothing slides.
-    const r = await tv(`/display/${MOM.id}?motion=reduce`);
+    const r = await tv(`/display/${MOM.id}?motion=reduce`, { script: WATCH });
     await until(r.page, () => !!document.querySelector('[data-testid="display-total"]'));
-    await r.page.evaluate(WATCH);
     await sleep(1500);
     await writeEvents(q, MOM.id, [MOM.at(ball({ value: 4 }), 0)], await lastSeq(MOM.id));
     ok("Reduce motion: the four's card still comes", await until(r.page, () => !!document.querySelector('[data-testid="mc-moment"]'), 10000));

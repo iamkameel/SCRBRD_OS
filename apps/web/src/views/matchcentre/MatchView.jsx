@@ -522,7 +522,9 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // The spectator's moments: only what arrives while the page is open, so a
   // reload replays nothing. And the board's run count, ticking up to a new
   // total rather than jumping to it.
-  const { moment, overSummary } = useMoments(momentsFeed, !log.loading && !!log.events, played, (inn) => teamOf(match, inn.battingTeam).full);
+  // Q10 (the lead's call, 14 Nov): on a family's or a pupil's screen a card about another boy drops the line naming him.
+  const { moment, overSummary } = useMoments(momentsFeed, !log.loading && !!log.events, played, (inn) => teamOf(match, inn.battingTeam).full,
+    focus?.length ? focus : null);
   const bi = boardInnings(played, log.result);
   const boardInn = played[bi.index] ?? null;
   const shownRuns = useTicker(boardInn?.runs, `${match.id}:${bi.index}`);
@@ -662,13 +664,14 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
         <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
           {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
         </h1>
-        {played.length > 0 && <HeaderScores match={match} played={played} corrected={corrected}/>}
+        {/* GA-I36 §5 (Kameel, 14 Nov: "one mark, beside the innings line that moved"). */}
+        {played.length > 0 && <HeaderScores match={match} played={played} movedInnings={corrected}
+          mark={!log.demo && correctedAt(fixes) != null ? <CorrectedChip at={correctedAt(fixes)} lines={correctionLines}/> : null}/>}
         {/* CRI-1.2: where the match stands, in the sentence its card in the list says too — here on every
             tab but a live Summary, which says it under its board (EXPERIENCE_PASS §3.3), so it is said once. */}
         {!summarySays && <StatusLine st={status} except={["upcoming"]}/>}
         {!log.demo && <OfficialLine official={official} names={{ home: sides.home.full, away: sides.away.full }}/>}
         {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
-        {!log.demo && <CorrectedChip at={correctedAt(fixes)} lines={correctionLines}/>}
         {!log.demo && <StaleLine stale={log.stale} refreshing={log.refreshing} failed={log.failed} okAt={log.okAt} onRefresh={log.refresh}/>}
         {corrections.words && (
           <button type="button" data-testid="mc-corrections-open" onClick={() => { corrections.reload(); setSheet(true); }} className="pressBtn os-state"

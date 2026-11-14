@@ -31,7 +31,10 @@ export function MomentMark({ moment, big = false, announce = true }) {
   const bigMark = moment.size !== "beat";
   const fill = moment.kind === "wicket" ? T.board.figure : bigMark ? T.board.lime : chipFill(moment.kind);
   const ink = inkFor(fill);
-  const words = [moment.above, moment.title, moment.body].filter(Boolean).join(". ");
+  // Said once (WCAG 4.1.3): the card's words, and for a beat the ball's own line, as before ("Four: … for four").
+  // The visible words are hidden from the region where it announces, so nothing is read twice.
+  const words = [moment.above, moment.title, moment.body].filter(Boolean).join(". ") + (!bigMark && moment.line?.text ? `: ${moment.line.text}` : "");
+  const hide = announce ? "true" : undefined;
   return (
     <div data-testid="mc-moment" data-kind={moment.kind} data-size={moment.size}
       {...(announce ? { role: "status", "aria-live": "polite" } : { "aria-hidden": "true" })}
@@ -41,12 +44,12 @@ export function MomentMark({ moment, big = false, announce = true }) {
         borderRadius: bigMark ? T.radius.md : T.radius.pill, background: fill, color: ink, boxShadow: T.elevation.md,
         fontFamily: T.type.body, fontWeight: 700, lineHeight: 1.25, display: "grid", gap: "2px",
         fontSize: big ? (bigMark ? "max(20px, 4.4vmin)" : "clamp(18px, 3vmin, 36px)") : (bigMark ? "16px" : "14px") }}>
-      {moment.above && <span data-testid="mc-moment-above" style={{ fontSize: big ? "max(12px, 2.4vmin)" : "12px", fontWeight: 600 }}>{moment.above}</span>}
-      <span data-testid="mc-moment-title">{moment.title}</span>
+      {moment.above && <span data-testid="mc-moment-above" aria-hidden={hide} style={{ fontSize: big ? "max(12px, 2.4vmin)" : "12px", fontWeight: 600 }}>{moment.above}</span>}
+      <span data-testid="mc-moment-title" aria-hidden={hide}>{moment.title}</span>
       {bigMark && moment.body && (
-        <span data-testid="mc-moment-body" style={{ fontWeight: 500, fontSize: big ? "max(14px, 2.6vmin)" : "13px", overflowWrap: "anywhere" }}>{moment.body}</span>
+        <span data-testid="mc-moment-body" aria-hidden={hide} style={{ fontWeight: 500, fontSize: big ? "max(14px, 2.6vmin)" : "13px", overflowWrap: "anywhere" }}>{moment.body}</span>
       )}
-      {announce && <span className="sr-only">: {words}</span>}
+      {announce && <span className="sr-only" data-testid="mc-moment-said">{words}</span>}
     </div>
   );
 }

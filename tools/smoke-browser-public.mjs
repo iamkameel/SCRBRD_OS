@@ -32,6 +32,8 @@
  *      link where the home side has published, none where only the away side
  *      has (Q19, SCRBRD-133 D2); and no scorecard figure opens one boy's
  *      balls (Q9: signed in only).
+ *  11. SCRBRD-133 §5.2 row 13 (review S3): a chase won while the page is
+ *      open gives the result its card, the result's words and nobody's name.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-public.mjs
@@ -493,6 +495,44 @@ try {
        await tid(shown.page, "public-match").count() === 1 && await tid(shown.page, "mc-share").count() === 1 && await tid(shown.page, "mc-ground-display").count() === 0);
     ok("...as the server says: its /display is not found", disp.status === 404, String(disp.status));
     await shown.ctx.close();
+  }
+
+  group("11. The result, decided while the public page is open, is a card (§5.2 row 13)");
+  {
+    // One over a side, no ground: Hilton 6, then Kearsney need 7 and get there with the page open.
+    const rid = (await q(
+      `insert into match (school_id, team_code, opponent, ground_id, starts_at, sport, format, overs, status)
+       values ($1, '1XI', 'Kearsney College 1XI', $2, now() - interval '1 hour', 'cricket', 'T10', 1, 'live') returning id`, [HIL, null]))[0].id;
+    await as(SARAH, `select * from fixture_publish($1, 'home', true)`, [rid]);
+    let k = 0;
+    const at = (/** @type {any} */ ev, /** @type {number} */ inn) => ({ ...ev, innings: inn, id: `pub-res-${++k}`, clientTs: Date.parse("2026-09-30T08:00:00Z") + k * 1000 });
+    const squad = ["erasmus", "botha", "markham"].map((x) => ({ id: ids[x], name: x }));
+    const opp = KEARSNEY.map((nm) => ({ id: nm, name: nm }));
+    const first = [at(inningsStart({ battingTeam: "1XI", bowlingTeam: "Kearsney College 1XI", teamKey: "1XI", bowlingTeamKey: "Kearsney College 1XI",
+      squad, bowlingSquad: opp, overs: 1 }), 0), at(batters({ striker: ids.erasmus, nonStriker: ids.botha }), 0), at(bowler({ bowler: KEARSNEY[0] }), 0),
+      ...[1, 1, 1, 1, 1, 1].map((v) => at(ball({ type: BALL_TYPE.RUN, value: v }), 0))];
+    const second = [at(inningsStart({ battingTeam: "Kearsney College 1XI", bowlingTeam: "1XI", teamKey: "Kearsney College 1XI", bowlingTeamKey: "1XI",
+      squad: opp, bowlingSquad: squad, overs: 1, target: 7 }), 1), at(batters({ striker: KEARSNEY[0], nonStriker: KEARSNEY[1] }), 1),
+      at(bowler({ bowler: ids.erasmus }), 1), at(ball({ type: BALL_TYPE.RUN, value: 6 }), 1)];
+    await writeEvents(q, rid, [...first, ...second]);
+    const SEEN = `window.__cards = []; new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) {
+      if (!(n instanceof HTMLElement)) continue; for (const el of [n, ...n.querySelectorAll('[data-testid="mc-moment"]')])
+        if (el.getAttribute && el.getAttribute("data-testid") === "mc-moment") window.__cards.push({ kind: el.getAttribute("data-kind"), text: el.innerText }); } })
+      .observe(document, { childList: true, subtree: true }); window.__SCRBRD_LIVE_MS__ = 1000;`;
+    const r = await visit(`/live/${rid}`, { width: 390, init: SEEN });
+    await r.page.waitForSelector('[data-testid="mc-board"]', { timeout: 10000 }).catch(() => {});
+    await r.page.waitForTimeout(2500);
+    ok("the chase under way: the board, and no card on load", await tid(r.page, "mc-board").count() === 1
+       && (await r.page.evaluate(() => /** @type {any} */ (window).__cards)).length === 0);
+    await writeEvents(q, rid, [at(ball({ type: BALL_TYPE.RUN, value: 1 }), 1)], first.length + second.length);
+    const came = await r.page.waitForFunction(() => (/** @type {any} */ (window).__cards ?? []).some((c) => c.kind === "result"), null,
+      { timeout: 20000, polling: 100 }).then(() => true, () => false);
+    const card = (await r.page.evaluate(() => /** @type {any} */ (window).__cards)).find((c) => c.kind === "result");
+    ok(`the winning run: the result's card, in the result's words ("${card?.text ?? ""}")`, came && /Kearsney College 1XI won by/.test(card?.text ?? ""));
+    ok("...naming nobody", leaks(card?.text ?? "").length === 0 && !/Erasmus|Botha|Oakes|Bramwell/.test(card?.text ?? ""));
+    ok("...over the Summary's result view", await tid(r.page, "mc-summary").getAttribute("data-view").catch(() => null) === "result");
+    ok("no console errors (the result card)", r.errors.length === 0, r.errors.join(" | "));
+    await r.ctx.close();
   }
 } catch (e) {
   fail++;

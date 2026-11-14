@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { announceArrivals } from "../../lib/announce.js";
-import { enqueue, momentsFrom, SHOW_MS, SIZE } from "../../lib/moments.js";
+import { enqueue, isGap, lineBall, momentsFrom, SHOW_MS, SIZE } from "../../lib/moments.js";
 
 /**
  * The spectator board's moments (Kameel's premium-feel checklist, step 3c):
@@ -10,6 +10,9 @@ import { enqueue, momentsFrom, SHOW_MS, SIZE } from "../../lib/moments.js";
  * the fold's own story — so a reload shows the match as it stands and plays
  * nothing: only a line that ARRIVES while the page is open is a moment.
  */
+
+/** What ends a held card: play moving again (a delivery, an interruption's line, an innings starting or ending). */
+const MOVES = new Set(["ball", "four", "six", "wicket", "interruption", "innings_start", "innings_end"]);
 
 /** The gentle over summary between overs (SCRBRD-133 §5.2 row 10). */
 export const OVER_SUMMARY_MS = 6000;
@@ -73,40 +76,55 @@ export function useAnnouncement(items, events, ready) {
  * catalogue's triggers say. `side` names a side, as the page writes it.
  *
  * Only what arrives while the page is open: the first read seeds what has
- * been seen, so a reload plays nothing. A held card (play stopped) stays until
- * the next thing arrives; the result shows for the long time (6 s) and the
- * page's result view, or the display's Result panel, holds it from there.
+ * been seen, so a reload plays nothing; a line on a ball an earlier read
+ * already drew (a correction moved it there, GA-I36) is no card. A held card
+ * (play stopped, a super over tied) stays until play moves again: a delivery,
+ * an interruption's line or an innings starting or ending, never a quiet
+ * correction line. The result shows for the long time (6 s) and the page's
+ * result view, or the display's Result panel, holds it from there. A gap
+ * (more than six deliveries in one read) plays no card and no over summary.
  * @param {{key: string, kind: string}[]} items  the commentary lines, with any synthetic result line
  * @param {boolean} ready  the first read is in
  * @param {any[] | null} [innings]  the fold's innings those lines were told from
  * @param {(inn: any) => string} [side]
+ * @param {string[] | null} [focus]  a family's or a pupil's screen: the ids it is for (Q10)
  */
-export function useMoments(items, ready, innings = null, side = undefined) {
+export function useMoments(items, ready, innings = null, side = undefined, focus = null) {
   const seen = useRef(/** @type {Set<string> | null} */ (null));
+  const balls = useRef(/** @type {Set<string>} */ (new Set()));
   const last = useRef(/** @type {any[] | null} */ (null));
   const queue = useRef(/** @type {any[]} */ ([]));
   const showing = useRef(/** @type {any} */ (null));
   const named = useRef(side);
+  const lit = useRef(focus);
   const [moment, setMoment] = useState(/** @type {any} */ (null));
   const [overSummary, setOverSummary] = useState(/** @type {any} */ (null));
-  useEffect(() => { named.current = side; });
+  useEffect(() => { named.current = side; lit.current = focus; });
   const show = (/** @type {any} */ card) => { showing.current = card ?? null; setMoment(card ?? null); };
 
   useEffect(() => {
     if (!ready) return;
-    if (seen.current == null) { seen.current = new Set(items.map((i) => i.key)); last.current = innings; return; }
+    const drawn = balls.current;
+    if (seen.current == null) {
+      seen.current = new Set(items.map((i) => i.key));
+      for (const i of items) { const b = lineBall(i); if (b) drawn.add(b); }
+      last.current = innings;
+      return;
+    }
     const was = seen.current;
     const fresh = items.filter((i) => !was.has(i.key));
     for (const i of fresh) was.add(i.key);
     const before = last.current;
     last.current = innings;
     if (!fresh.length) return;
-    const cards = momentsFrom(fresh, before ? { innings: before } : null, { innings: innings ?? [] }, named.current ? { side: named.current } : {});
-    // A held card gives way to whatever arrives after it (play resumed).
-    if (showing.current?.size === SIZE.HELD && showing.current.kind !== "result") show(null);
+    const cards = momentsFrom(fresh, before ? { innings: before } : null, { innings: innings ?? [] },
+      { ...(named.current ? { side: named.current } : {}), seen: new Set(drawn), focus: lit.current });
+    for (const i of fresh) { const b = lineBall(i); if (b) drawn.add(b); }
+    // A held card gives way once play moves again, never to a quiet correction line.
+    if (showing.current?.size === SIZE.HELD && showing.current.kind !== "result" && fresh.some((i) => MOVES.has(i.kind))) show(null);
     queue.current = enqueue(queue.current, cards, showing.current);
     if (!showing.current && queue.current.length) show(queue.current.shift());
-    const end = fresh.filter((i) => i.kind === "over_end").pop();
+    const end = isGap(fresh) ? null : fresh.filter((i) => i.kind === "over_end").pop();
     if (end) setOverSummary(end);
     // Only the arrivals decide; `innings` is read as it stood with them.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1036,6 +1036,19 @@ try {
   const seen = new Set();
   const watch = setInterval(async () => { seen.add((await tid(L, "mc-board-runs").innerText().catch(() => "")).trim()); }, 60);
   ok("a four gets its beat on the board", await until(L, () => !!document.querySelector('[data-testid="mc-moment"][data-kind="four"]'), 8000));
+  const fourSeen = Date.now();
+  // Review S2: the card is said once, the ball's own line with it; its visible words are hidden from the region.
+  const fourSaid = await L.evaluate(() => {
+    const m = document.querySelector('[data-testid="mc-moment"]');
+    return { said: m?.querySelector('[data-testid="mc-moment-said"]')?.textContent ?? "", role: m?.getAttribute("role"),
+      hidden: [...(m?.querySelectorAll('[data-testid^="mc-moment-"]:not([data-testid="mc-moment-said"])') ?? [])].every((e) => e.getAttribute("aria-hidden") === "true") };
+  });
+  const fourLine = deriveCommentary([...evs, ...late], { nameOf: (r) => byId[r] ?? r, teamName: (_k, n) => FULL[n] ?? n })
+    .find((c) => c.key === "e:mc-live-late-1")?.text ?? "∅";
+  ok(`...said once, with its line: "${fourSaid.said}"`, fourSaid.role === "status" && fourSaid.hidden && fourSaid.said === `Four: ${fourLine}`, JSON.stringify(fourSaid));
+  // Review N3: timed from first sight, still there at two seconds, gone by three and a half.
+  await L.waitForTimeout(Math.max(0, 2000 - (Date.now() - fourSeen)));
+  ok("...still on the board two seconds after it came (a 2.5 s beat, not 1.2)", await tid(L, "mc-moment").count() === 1);
   ok("...beside the total, which stays in view", await tid(L, "mc-board-total").isVisible());
   ok(`the board reaches the new total (${after.runs}/${after.wickets})`, await until(L, (want) =>
     document.querySelector('[data-testid="mc-board-total"]')?.innerText.replace(/\s/g, "") === want, 6000, `${after.runs}/${after.wickets}`), before);
@@ -1045,7 +1058,8 @@ try {
   ok("the over's summary shows", await until(L, () => /End of over 5:/.test(document.querySelector('[data-testid="mc-over-summary"]')?.innerText ?? ""), 8000));
   ok("...the generator's own line, with the score", (await tid(L, "mc-over-summary").innerText().catch(() => "")).includes(`${after.runs}/${after.wickets}`));
   // SCRBRD-133 §5.2 (decided 2 Oct; EXPERIENCE_PASS C4): a four's beat shows for 2.5 s, no longer.
-  ok("the moment clears after its two and a half seconds", await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), 3500));
+  ok("the moment clears after its two and a half seconds", await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), Math.max(500, 3500 - (Date.now() - fourSeen))),
+     `${Date.now() - fourSeen} ms after it was seen`);
   ok("the over summary clears after a few seconds", await until(L, () => !document.querySelector('[data-testid="mc-over-summary"]'), 9000));
 
   group("Big-screen mode: the board, full screen, from the boundary");
