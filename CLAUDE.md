@@ -141,11 +141,16 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   items), styling, copy and design-system tweaks. Anything more than that is
   complex frontend code and goes to Opus (above).
 - Smoke walks and unit tests for behaviour already designed.
+- Records (added 2026-11-14, Kameel: "Records go to Sonnet; Haiku only maps"):
+  backlog, roadmap and documentation updates that record a decision already
+  made, and the status rows after a merge (steps 2 and 3 below).
 
-### Haiku (`model: "haiku"`) — searches and docs
+### Haiku (`model: "haiku"`) — read-only maps
 
 - Codebase searches: finding where something lives, who calls it, what reads it.
-- Backlog, roadmap and documentation updates that record a decision already made.
+- Read-only only (2026-11-14, Kameel, after four Haiku records agents reached
+  for `archive_session` in one day): Haiku writes no file on a branch that goes
+  to `main`. Records moved to Sonnet (above).
 - Never code, tests, SQL or anything touching policy or minors' data — those go
   to Sonnet or Opus above, even when the change is one line.
 
@@ -162,9 +167,10 @@ the work itself:
    tables, tests and walks the task will touch, with `file:line`, and which
    design doc and decisions govern it. That map goes into the Opus or Sonnet
    brief, which then names exactly what to read.
-2. **After Kameel decides:** Haiku records the decision in the design doc, the
-   backlog, the roadmap and the gap analysis plan, word for word as decided.
-3. **After a merge:** Haiku updates the status rows the merge closes (roadmap,
+2. **After Kameel decides:** Sonnet (Haiku until 2026-11-14) records the
+   decision in the design doc, the backlog, the roadmap and the gap analysis
+   plan, word for word as decided.
+3. **After a merge:** Sonnet (Haiku until 2026-11-14) updates the status rows the merge closes (roadmap,
    gap analysis plan, the backlog `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`,
    `DEPLOYING.md`'s paste list where a migration shipped). In the backlog, a
    closed entry is struck through with the PR and commit that closed it, never
@@ -175,9 +181,9 @@ the work itself:
    evidence against the walks we have), Haiku lists them and Opus decides what
    to build.
 
-Haiku's output is reviewed by the lead before it lands on a branch that goes
-to `main`. Its limits above still stand: no code, tests, SQL, policy or minors'
-data.
+Haiku's and Sonnet's records are reviewed by the lead before they land on a
+branch that goes to `main`. Haiku's limits above still stand: no code, tests,
+SQL, policy or minors' data, and since 2026-11-14 no file written at all.
 
 ## Saving progress
 
