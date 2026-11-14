@@ -4,6 +4,7 @@ import { GLOBAL_CSS, T } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { Header, LiveStrip, Hero, Tiles, News, Families, Schools, Footer, Privacy, Seam } from "./sections/index.js";
+import { firstScreen } from "./sections/LiveStrip.jsx";
 import { homeCss } from "./fx.js";
 import { LIVE_POLL_MS, anyLive, readLive, readNews } from "./reads.js";
 import { arenaMode } from "./arena/capable.js";
@@ -29,9 +30,14 @@ import { Arena } from "./arena/Arena.jsx";
  *
  * The page opens on the film of one delivery (sections/Hero.jsx, film/), and
  * the real content follows it: the strip, the pitch, the news, the promise to
- * families, the schools. While a fixture is live the header carries a link
- * to the strip on every screen, and the hero offers "Follow a match", so a
- * parent who came for the score is one tap from it however far the film is.
+ * families, the schools. EXCEPT on a match day (EXPERIENCE_PASS §2.3, Q6,
+ * 13 Nov 2026): while a listed fixture is live its board, with the status
+ * sentence, is the first screen and the film plays under it; with fixtures
+ * listed and none live, Today leads; with only results, the results lead
+ * (LiveStrip's firstScreen). The state is the read the page already makes.
+ * While a fixture is live the header carries a link to the strip on every
+ * screen. The hero's doors are Watch a match (the strip), Score a match and
+ * My child plays (sign-in, then the pad or the join form).
  * HERO_PHOTO is the photo slot (Hero's `photo`): null until there is one.
  *
  * The arena (6 Nov 2026, Kameel: "make it look and feel like a modern video
@@ -132,15 +138,20 @@ function Home() {
   useRevealFallback(`${live ? live.fixtures.length : -1}:${news ? news.posts.length : -1}`);
   const liveNow = live ? live.fixtures.filter((f) => f?.status === "live").length : 0;
   const mode = arena?.mode ?? "wait";
+  // The first screen, chosen by the public read's state (EXPERIENCE_PASS §2.3,
+  // Q6): a live board, today's first start or a result leads, above the film;
+  // with nothing listed the film is first, as before.
+  const first = firstScreen(live);
   return (
     <>
       <Header appHref={APP} logo={SCRBRD_LOGO} live={liveNow} over/>
-      <main data-arena={mode}>
+      <main data-arena={mode} data-first={first}>
         {arena?.mode === "3d" && <Arena forced={arena.forced} onFail={fail}/>}
+        {first === "live" && <LiveStrip data={live} show="live" lead/>}
+        {(first === "today" || first === "result") && <LiveStrip data={live} show="today" lead/>}
         <Hero appHref={APP} hasStrip={!!live} photo={HERO_PHOTO} mode={mode}/>
         <div id="home-after-film" tabIndex={-1} style={{ outline: "none", paddingTop: "24px" }}>
-          <LiveStrip data={live} show="live"/>
-          <LiveStrip data={live} show="today"/>
+          {(first === "live" || first === "film") && <LiveStrip data={live} show="today"/>}
           <Seam/>
           <Tiles/>
           <News data={news}/>

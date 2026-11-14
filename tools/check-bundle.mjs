@@ -240,9 +240,9 @@ const OUTSIDE_ENTRY = [
   // GA-I27 §5.1: the coach's evidence trail is the cockpit's first lazy
   // boundary (FeedDrawer.jsx), fetched on the first "Where this comes from".
   ["the evidence trail (EvidenceTrail.jsx)", "evidence-trail-figures"],
-  // 29 Oct, the entry trim (500 KB → 441 KB): sign-up and the account with no
-  // school are fetched on first use (App.jsx); the sign-in page stays static.
-  ["the sign-up flow (OnboardingFlow.jsx)", "signup-health-consent"],
+  // 29 Oct, the entry trim (500 KB → 441 KB): the account with no school is
+  // fetched on first use (App.jsx); the sign-in page stays static. The
+  // role-tile sign-up that shared this row is retired (RETIRED below).
   ["the account with no school (NoSchool.jsx)", "join-claim-checking"],
   // CRI-3.2: a boy's passport over the scorecard, fetched on the first tap.
   ["the passport sheet (passportSheet.jsx)", "passport-sheet-lines"],
@@ -254,6 +254,17 @@ if (entryKB > ENTRY_LIMIT_KB) splitProblems.push(`the entry chunk and its static
 for (const [what, marker] of OUTSIDE_ENTRY) {
   if (entryText.includes(marker)) splitProblems.push(`${what} is in the entry chunk ("${marker}" found there) — something in the entry graph imports it statically`);
   else if (!others.some((t) => t.includes(marker))) splitProblems.push(`${what} is in no chunk at all ("${marker}" not found) — the marker or the screen went missing`);
+}
+// One door (EXPERIENCE_PASS Q13, 13 Nov 2026): the role-tile sign-up
+// (OnboardingFlow.jsx) is retired from the site. Stronger than "out of the
+// entry": its test ids are in NO chunk, so neither a static nor a lazy import
+// can bring it back without this failing.
+const RETIRED = [
+  ["the retired role-tile sign-up (OnboardingFlow.jsx)", "signup-health-consent"],
+  ["the retired role-tile sign-up (OnboardingFlow.jsx)", "onboard-submit-error"],
+];
+for (const [what, marker] of RETIRED) {
+  if (entryText.includes(marker) || others.some((t) => t.includes(marker))) splitProblems.push(`${what} is back in the build ("${marker}" found)`);
 }
 // CRI-3.2: the passport sheet is a chunk of its own, not folded into the Match
 // Centre's (whose marker is its Big screen button): a reader who never taps a

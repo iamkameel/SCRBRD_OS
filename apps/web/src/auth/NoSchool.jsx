@@ -109,6 +109,37 @@ function HelpLine() {
 }
 
 /**
+ * "Ask SCRBRD to add my school" (EXPERIENCE_PASS §2.7, Q22, 13 Nov 2026), in
+ * place of the dead end a school that is not listed used to be. Slice 3a draws
+ * the door and its words only: the note is the school's name, its town and the
+ * person's job, answered by a person at SCRBRD, and the row that would hold it
+ * is slice 3b's migration. Until that ships there is nowhere to keep a note,
+ * so this asks for nothing (no field takes a word) and its Send is off.
+ */
+function AskAddSchool() {
+  const [open, setOpen] = useState(false);
+  const panel = useId();
+  return (
+    <div data-testid="ask-add-school" style={{ marginTop: "10px" }}>
+      <button type="button" className="pressBtn" aria-expanded={open} aria-controls={panel} data-testid="ask-add-school-door"
+        onClick={() => setOpen((o) => !o)}
+        style={{ display: "flex", alignItems: "center", minHeight: "44px", padding: "0", background: "none", border: "none", cursor: "pointer",
+          fontFamily: FONT.body, fontSize: "14px", fontWeight: 600, color: T.brand.blueText, textAlign: "left" }}>
+        My school is not here: ask SCRBRD to add my school
+      </button>
+      {open && (
+        <div id={panel} data-testid="ask-add-school-panel" style={{ ...text(14), padding: "12px 14px", borderRadius: "10px",
+          border: `1px solid ${T.line.normal}`, background: T.surface.base, marginTop: "4px" }}>
+          <div style={{ marginBottom: "8px" }}>The note says three things: the school's name, its town, and your job there. A person at SCRBRD reads it and answers you on this page. Nothing is given to you until the school is on SCRBRD and says yes.</div>
+          <div data-testid="ask-add-school-note" style={{ ...text(13), marginBottom: "10px" }}>This page cannot send the note yet, so Send is off. Meanwhile you can score a match on this phone.</div>
+          <Btn kind="primary" disabled data-testid="ask-add-school-send">Send the note</Btn>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * The join form. `post` is api() unless a test hands in another.
  *
  * A member of staff who chooses their school is first asked of the school's
@@ -117,12 +148,16 @@ function HelpLine() {
  * and `onJoined` enters the school. If it grants nothing, the claim says
  * NOTHING: the request form below reads exactly as it would have if the office
  * had listed nobody, so a refused person learns nothing from the claim.
- * @param {{ schools: { id: string, name: string }[], onSent: () => void, onJoined?: () => Promise<void>, post?: typeof api }} p
+ *
+ * `kindFirst` "parent" (the home page's "My child plays", EXPERIENCE_PASS §2.6
+ * step 2) starts the form with "parent or guardian" chosen. Only that kind: a
+ * member of staff is never sent to the register's check by a link.
+ * @param {{ schools: { id: string, name: string }[], onSent: () => void, onJoined?: () => Promise<void>, post?: typeof api, kindFirst?: string | null }} p
  */
-export function JoinSchool({ schools, onSent, onJoined, post = api }) {
+export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = null }) {
   const [schoolId, setSchoolId] = useState(schools.length === 1 ? schools[0].id : null);
   const [q, setQ] = useState("");
-  const [kind, setKind] = useState(null);
+  const [kind, setKind] = useState(kindFirst === "parent" ? "parent" : null);
   const [form, setForm] = useState({ role: "", extra: "", child: "", relationship: "", year: "", adult: "" });
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
@@ -206,6 +241,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api }) {
             {shown.length === 0 && <div style={text(14)}>No school's name has those letters in it.</div>}
           </div>
         </>}
+        <AskAddSchool/>
       </div>
 
       {/* 2 · Who you are */}
@@ -310,9 +346,17 @@ export function JoinSchool({ schools, onSent, onJoined, post = api }) {
  * match" leads the screen (§2.5 step 3). It grants nothing: a Practice Match
  * never leaves the phone, and a Pilot Match is the server's to allow.
  * `joinFirst` changes when the pad's "Scoring for a school? Join it" brought
- * the person back: the join form is scrolled to and focused.
+ * the person back: the join form is scrolled to and focused. `kindFirst`
+ * "parent" is the home page's "My child plays": the join form with the
+ * parent's kind already chosen (JoinSchool).
+ *
+ * THE ORDER IS THE DAY SHEET'S (EXPERIENCE_PASS §2.2, slice 3a): Now (a match
+ * this phone is scoring) and Start a match, from the scoring block; Join a
+ * school; Your requests; and "Worried about a child?" last. Followed schools
+ * sits after Now once the follow list exists (slice 3b, Q8). An empty section
+ * says in one line what will appear there.
  */
-export function NoSchool({ name, onSignOut, onJoined, onOpenPad = null, joinFirst = 0 }) {
+export function NoSchool({ name, onSignOut, onJoined, onOpenPad = null, joinFirst = 0, kindFirst = null }) {
   const [nudge, setNudge] = useState(0);
   const rows = useLive("role_requests", "spectator", nudge).rows;
   const [schools, setSchools] = useState(null);
@@ -377,10 +421,13 @@ export function NoSchool({ name, onSignOut, onJoined, onOpenPad = null, joinFirs
           </Suspense>
         )}
 
-        {rows.length > 0 && (
-          <div style={{ marginBottom: "16px" }} data-testid="no-school-requests">
+        {schools === null ? <div style={text(14)}>Loading the schools…</div>
+          : <JoinSchool schools={schools} onSent={() => setNudge((n) => n + 1)} onJoined={onJoined} kindFirst={kindFirst}/>}
+
+        <div style={{ marginBottom: "16px" }} data-testid="no-school-requests">
             <h2 style={{ margin: "0 0 8px", fontFamily: FONT.head, fontSize: "16px", fontWeight: 800, color: T.content.primary }}>Your requests</h2>
             {withdrawProblem && <div role="alert" data-testid="withdraw-problem" style={{ ...text(13, T.semantic.criticalText), padding: "10px 12px", borderRadius: "8px", background: clr(T.semantic.critical, 0.1), border: `1px solid ${clr(T.semantic.critical, 0.2)}`, marginBottom: "8px" }}>{withdrawProblem}</div>}
+            {rows.length === 0 && <div data-testid="no-school-requests-none" style={text(14)}>A request you send to a school shows here, with the school's answer.</div>}
             {rows.map((r) => (
               <div key={r.id} data-testid={`request-${r.state}`} style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", padding: "12px 14px", border: `1px solid ${T.line.normal}`, borderRadius: "12px", background: T.fill.panel, marginBottom: "8px" }}>
                 <div style={{ flex: 1, minWidth: "180px" }}>
@@ -390,11 +437,7 @@ export function NoSchool({ name, onSignOut, onJoined, onOpenPad = null, joinFirs
                 {r.state === "pending" && <Btn onClick={() => withdraw(r.id)} data-testid="request-withdraw">Withdraw</Btn>}
               </div>
             ))}
-          </div>
-        )}
-
-        {schools === null ? <div style={text(14)}>Loading the schools…</div>
-          : <JoinSchool schools={schools} onSent={() => setNudge((n) => n + 1)} onJoined={onJoined}/>}
+        </div>
 
         <HelpLine/>
 

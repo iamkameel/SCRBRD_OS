@@ -52,7 +52,7 @@ a.pressBtn{position:relative;overflow:hidden}
   .h1-b{animation-delay:.09s}
   .hero-pill{animation:popIn .45s ${T.motion.punch} both}
   .hero-lede{animation:riseIn .5s ${T.motion.ease} .14s both}
-  .hero-ctas{animation:riseIn .5s ${T.motion.ease} .2s both}
+  .hero-doors,.hero-ctas{animation:riseIn .5s ${T.motion.ease} .2s both}
   .film-cap{clip-path:polygon(0 0,calc(100% - 22px) 0,100% 22px,100% 100%,22px 100%,0 calc(100% - 22px));border-radius:4px;position:relative}
   .film-cap::before{content:"";position:absolute;left:0;top:22px;bottom:22px;width:3px;background:${lime};box-shadow:0 0 14px ${lime}}
   .hb-card:hover::after,a.pressBtn:hover::after{transform:translateX(110%);transition:transform .65s ${T.motion.ease}}

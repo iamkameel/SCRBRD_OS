@@ -320,12 +320,13 @@ group("What a stranger may register for is one list, the screens' and the route'
     ...["parent", "pupil", "follower"].map((k) => buildRequest(k, "s", { child: "A Child", relationship: "Mother", adult: "yes" }))
       .map((r) => r.ok ? r.body.role : null).filter(Boolean),
   ]);
-  const onboarding = src("../src/auth/OnboardingFlow.jsx");
-  const onboardingOffers = new Set([...onboarding.matchAll(/\{\s*id:"([a-z]+)",\s*icon:/g)].map((m) => m[1]));
-  ok("the onboarding screen's roles were found", onboardingOffers.size >= 8);
-  ok("...and it filters them through the same list",
-     /SELF_REGISTRABLE_ROLES\.includes\(/.test(onboarding) && /from "@scrbrd\/policy\/roles"/.test(onboarding));
-  const offered = new Set([...joinOffers, ...onboardingOffers]);
+  // One door (EXPERIENCE_PASS Q13, 13 Nov 2026): the role-tile sign-up is
+  // retired, so the join screen is the only screen that offers a role.
+  const gone = (() => { try { src("../src/auth/OnboardingFlow.jsx"); return false; } catch { return true; } })();
+  ok("the role-tile sign-up is retired: its screen is gone", gone);
+  ok("...nothing in the app opens it, and the sign-in screen has no door to it",
+     !/auth\/OnboardingFlow|appState === "onboarding"\) return/.test(src("../src/App.jsx")) && !/Create an account|onSignUp/.test(src("../src/auth/LoginPage.jsx")));
+  const offered = joinOffers;
   ok("every role a screen offers is self-registrable",
      [...offered].every((r) => SELF_REGISTRABLE_ROLES.includes(r)), [...offered].filter((r) => !SELF_REGISTRABLE_ROLES.includes(r)));
   ok("...and every self-registrable role is offered by a screen",

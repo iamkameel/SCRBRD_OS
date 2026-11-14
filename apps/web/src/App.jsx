@@ -102,13 +102,13 @@ const PupilHome         = view(() => import("./views/family/pupil.jsx"),      "P
 const PupilMatches      = view(() => import("./views/family/pupil.jsx"),      "PupilMatches");
 const PupilPassport     = view(() => import("./views/family/pupil.jsx"),      "PupilPassport");
 const PupilMe           = view(() => import("./views/family/pupil.jsx"),      "PupilMe");
-// The two auth screens nobody passes through on an ordinary visit (29 Oct,
-// the entry trim): sign-up, and the account that holds no school yet
-// (SCRBRD-140). Both need the network to do anything, so a chunk fetched on
-// first use costs nothing a person could notice; in the entry they cost
-// every visitor ~40 KB. The sign-in page stays static: it is the first paint.
-const OnboardingFlow    = view(() => import("./auth/OnboardingFlow.jsx"),     "OnboardingFlow");
-const NoSchool          = view(() => import("./auth/NoSchool.jsx"),           "NoSchool");
+// The auth screen nobody passes through on an ordinary visit (29 Oct, the
+// entry trim): the account that holds no school yet (SCRBRD-140). It needs the
+// network to do anything, so a chunk fetched on first use costs nothing a
+// person could notice. The sign-in page stays static: it is the first paint.
+// The older role-tile sign-up (OnboardingFlow) is retired (EXPERIENCE_PASS
+// Q13, 13 Nov 2026): one door, Google or a code, then the no-school home.
+const NoSchool         = view(() => import("./auth/NoSchool.jsx"),           "NoSchool");
 const loadScorer = () => import("./scorer/index.jsx");
 const ScorerApp  = lazy(loadScorer);
 
@@ -176,7 +176,15 @@ export default function SCRBRD_OS() {
   // The app opens on the login screen: the public home page at / is the front
   // door now (SCRBRD-142, home.html), and the app lives at /app. The in-app
   // landing page it replaced is gone.
-  const [appState,  setAppState]  = useState("login"); // login|onboarding|pending|app
+  const [appState,  setAppState]  = useState("login"); // login|pending|app
+  // The home page's "My child plays" door (EXPERIENCE_PASS §2.3, §2.6 step 2)
+  // arrives as /app?door=parent: after sign-in, an account with no school is
+  // shown the join form with "parent or guardian" already chosen. A hint for
+  // which part of the screen to open, and nothing more: it grants nothing,
+  // and an account that belongs to a school ignores it.
+  const [door, setDoor] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get("door") === "parent" ? "parent" : null; } catch { return null; }
+  });
   const [role,      setRole]      = useState("superadmin");
   const [userName,  setUserName]  = useState("Super Admin");
   const [page,      setPageRaw]   = useState("dashboard");
@@ -240,6 +248,17 @@ export default function SCRBRD_OS() {
     if (!nav.includes(page)) setPage(nav[0] ?? "dashboard");
   };
 
+  // The door's hint is read once; it leaves the address so a reload or a
+  // shared link does not carry it.
+  const dropDoor = () => {
+    try {
+      const u = new URL(window.location.href);
+      if (!u.searchParams.has("door")) return;
+      u.searchParams.delete("door");
+      window.history.replaceState(window.history.state, "", u.pathname + u.search + u.hash);
+    } catch { /* the address stays as it was */ }
+  };
+
   // Auth handlers
   const handleLogin = (r, n, p) => {
     // Signed in with nothing: an account whose requests are still with the
@@ -248,8 +267,12 @@ export default function SCRBRD_OS() {
       // Back to the no-school pad if the sign-in was its detour; any other pad is closed.
       if (!scorerEntry?.homeOnly) { setScorerOpen(false); setScorerResume(null); setScorerEntry(null); }
       setLoginForPad(false);
+      // "My child plays": the join form, opened with the parent's kind chosen.
+      if (door === "parent") setJoinFirst((k) => k + 1);
+      dropDoor();
       setUserName(n || "User"); setAppState("pending"); return;
     }
+    setDoor(null); dropDoor();
     // A school's account never inherits the no-school pad.
     if (scorerEntry?.homeOnly) { setScorerOpen(false); setScorerEntry(null); }
     setRole(r); setUserName(n || ROLES[r]?.label || "User");
@@ -294,18 +317,8 @@ export default function SCRBRD_OS() {
     setScorerOpen(false); setScorerResume(null); setScorerMatchId(null); setScorerPractice(false); setScorerEntry(null);
     setUsers([]); setUserEdits(false);
     setRole("superadmin"); setUserName("Super Admin"); setPage("dashboard");
+    setDoor(null);
     setAppState("login");
-  };
-
-  const handleLoginSignUp = () => setAppState("onboarding");
-
-  const handleOnboardComplete = (r, n, schoolId, meta) => {
-    if (meta?.requested) { setAppState("login"); return; }
-    setRole(r || "player");
-    setUserName(n || ROLES[r]?.label || "User");
-    const nav = ROLES[r]?.nav || [];
-    setPage(nav[0] || "dashboard");
-    setAppState("app");
   };
 
   // Launch scorer — with full mid-match state when opened from a live match
@@ -409,7 +422,8 @@ export default function SCRBRD_OS() {
       if (cancelled || !s) { restoredRef.current = true; return; }
       // A session saved before SCRBRD-142 may say "landing", a state that no
       // longer exists: it is the login screen now, never a blank page.
-      if (s.appState) setAppState(s.appState === "landing" ? "login" : s.appState);
+      // So may one saved inside the retired role-tile sign-up, "onboarding" (Q13).
+      if (s.appState) setAppState(s.appState === "landing" || s.appState === "onboarding" ? "login" : s.appState);
       if (s.role) setRole(s.role);
       if (s.userName) setUserName(s.userName);
       if (s.page) setPage(s.page);
@@ -528,7 +542,7 @@ export default function SCRBRD_OS() {
       {/* From a live pad (SCRBRD-078): the real sign-in only, and back to
           the pad after it — never the demo, whatever the server check said
           while the phone had no signal. */}
-      <LoginPage onLogin={handleLogin} onSignUp={handleLoginSignUp} liveOnly={!!loginForPad}
+      <LoginPage onLogin={handleLogin} liveOnly={!!loginForPad}
         onBack={loginForPad ? () => { const back = loginForPad; setLoginForPad(false); setAppState(back); } : undefined}/>
     </>
   );
@@ -574,18 +588,11 @@ export default function SCRBRD_OS() {
             left the persisted session behind, so a reload put the next person
             back where the last one stood. */}
         <Suspense fallback={<Loading what="your account"/>}>
-          <NoSchool name={userName} onSignOut={handleSignOut} onJoined={handleJoined} onOpenPad={openPadNoSchool} joinFirst={joinFirst}/>
+          <NoSchool name={userName} onSignOut={handleSignOut} onJoined={handleJoined} onOpenPad={openPadNoSchool} joinFirst={joinFirst} kindFirst={door}/>
         </Suspense>
       </>
     );
   }
-  if (appState === "onboarding") return (
-    <><style>{GLOBAL_CSS}</style>
-      <Suspense fallback={<Loading what="sign-up"/>}>
-        <OnboardingFlow onComplete={handleOnboardComplete}/>
-      </Suspense>
-    </>
-  );
 
   // ── Live Scorer — full-screen takeover ──
   // Never a pad opened from the no-school home here: that one is the pending branch's, with no role.

@@ -752,14 +752,13 @@ group("Every sign-in and onboarding entry point speaks only policy roles");
 // object keys inside component functions, not exported constants — the same
 // technique the roles-screen check below uses for SettingsView.
 const loginSrc = readFileSync(join(SRC, "auth/LoginPage.jsx"), "utf8");
-const onboardingSrc = readFileSync(join(SRC, "auth/OnboardingFlow.jsx"), "utf8");
+// The role-tile sign-up that also named roles is retired (EXPERIENCE_PASS Q13).
 const entryPointRoles = new Set([
   ...[...loginSrc.matchAll(/\brole:\s*"([a-z]+)"/g)].map((m) => m[1]),
-  ...[...onboardingSrc.matchAll(/\{\s*id:"([a-z]+)",\s*icon:/g)].map((m) => m[1]),
 ]);
-ok(`found sign-in/onboarding roles to check (${entryPointRoles.size})`, entryPointRoles.size > 0);
+ok(`found sign-in roles to check (${entryPointRoles.size})`, entryPointRoles.size > 0);
 for (const r of entryPointRoles)
-  ok(`"${r}" (login or onboarding) is a real policy role, not a legacy name`,
+  ok(`"${r}" (login) is a real policy role, not a legacy name`,
      POLICY_ROLES.includes(r));
 // The function that used to translate a legacy name now has nothing to
 // translate: every policy role must resolve to itself.

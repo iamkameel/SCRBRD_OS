@@ -9,11 +9,13 @@ import { LinkButton } from "./shared.jsx";
  * shot cuts to the scoreboard, and the page's real content follows.
  *
  * Props
- *   appHref   where "Log in" goes. Default "/app".
- *   hasStrip  true when the live strip is on this page. Then "Follow a match"
+ *   appHref   the app, where "Score a match" and "My child plays" go (sign-in
+ *             first; "My child plays" adds ?door=parent, so an account with
+ *             no school is shown the join form as a parent). Default "/app".
+ *   hasStrip  true when the live strip is on this page. Then "Watch a match"
  *             links to it (#matches) and the line under it says to look there.
  *             False (the default, and what a 404 from the strip leaves): no
- *             such button, and the line says to ask the school.
+ *             such door, and the line says to ask the school.
  *   skipTo    where "Skip the film" goes: the first thing after the film.
  *   photo     { src, alt } — THE PHOTO SLOT. A picture for the first screen,
  *             behind the words, when there is one (none is in the repo yet).
@@ -21,8 +23,8 @@ import { LinkButton } from "./shared.jsx";
  *             under it. A photograph of children needs the school's say and a
  *             parent's, as PUBLIC_DATA.md §3 has it, before it is put here.
  *
- * Until SCRBRD-140 ships the honest way in is the office code; when it does
- * "Log in" becomes "Sign in with Google" (§5.2). The page collects nothing.
+ * The doors (EXPERIENCE_PASS §2.3) replaced the one "Log in", which stays in
+ * the header for people who have an account. The page collects nothing.
  *
  * The drawing is film/draw.js and the clock film/engine.js. Everything the
  * film shows is decorative (aria-hidden): the words are in the captions, which
@@ -45,6 +47,19 @@ export const SHOT_COPY = [
 ];
 
 const INK = "#f4f6f3", SOFT = "#c9d1db", QUIET = "#a3adbb", LIME = "#b9f227";
+
+/** One door of the hero: what it is, and in one line what it gives. Over the film, so its own night colours. */
+function Door({ href, testId, title, line, solid = false }) {
+  return (
+    <a href={href} data-testid={testId} className="pressBtn"
+      style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: "2px", minHeight: "44px", padding: "10px 16px",
+        borderRadius: "14px", boxSizing: "border-box", textDecoration: "none",
+        background: solid ? LIME : "rgba(5,8,13,0.62)", border: solid ? "none" : "1px solid rgba(255,255,255,0.32)" }}>
+      <span style={{ fontFamily: "'Syne',sans-serif", fontSize: "15px", fontWeight: 700, color: solid ? "#0b0f0a" : INK }}>{title}</span>
+      <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: "13px", lineHeight: 1.4, color: solid ? "#1d2618" : SOFT }}>{line}</span>
+    </a>
+  );
+}
 
 /** Each shot's camera in the 3D arena (arena/rig.js SHOTS; FILM is this order, home-arena.test.mjs holds the two together). */
 export const SHOT_CAMS = ["runup", "delivery", "bounce", "six", "board"];
@@ -96,9 +111,16 @@ export function Hero({ appHref = "/app", hasStrip = false, skipTo = "#home-after
           <p className="hero-lede" style={{ fontFamily: "'DM Sans',sans-serif", margin: "18px 0 24px", fontSize: "17px", color: SOFT, lineHeight: 1.6, maxWidth: "540px" }}>
             SCRBRD runs a school's cricket from the pavilion to the parent's phone. Scorers score offline, families follow live, and a child's name stays private unless a parent agrees.
           </p>
-          <div className="hero-ctas" style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-            <LinkButton solid href={appHref} testId="home-cta-login">Log in</LinkButton>
-            {hasStrip && <LinkButton href="#matches" testId="home-cta-follow" tone="night">Follow a match</LinkButton>}
+          {/* Three doors in place of one "Log in" (EXPERIENCE_PASS §2.3), each
+              saying what it gives; "Log in" stays in the header. Watch a match
+              is drawn only when the strip is on the page, as its link is. */}
+          <nav aria-label="Ways in" className="hero-doors" data-testid="home-doors"
+            style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,200px),1fr))", gap: "10px", maxWidth: "680px" }}>
+            {hasStrip && <Door href="#matches" testId="home-cta-watch" title="Watch a match" line="Today's listed scores. No account needed." solid/>}
+            <Door href={appHref} testId="home-cta-score" title="Score a match" line="Sign in, then score on this phone." solid={!hasStrip}/>
+            <Door href={`${appHref}?door=parent`} testId="home-cta-child" title="My child plays" line="Sign in, then ask your child's school." />
+          </nav>
+          <div className="hero-ctas" style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center", marginTop: "12px" }}>
             <LinkButton href={skipTo} testId="home-skip-film" tone="night">Skip the film</LinkButton>
           </div>
           <p data-testid="home-cta-note" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: "14px", color: QUIET, lineHeight: 1.55, margin: "16px 0 0", maxWidth: "440px" }}>

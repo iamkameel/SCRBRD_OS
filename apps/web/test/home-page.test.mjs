@@ -20,7 +20,7 @@ import {
   AnalyticsToggle, ANALYTICS_PREF, setAnalyticsPref,
 } from "../src/home/sections/index.js";
 import { ToggleView } from "../src/home/sections/Footer.jsx";
-import { arrange } from "../src/home/sections/LiveStrip.jsx";
+import { arrange, firstScreen, statusSentence } from "../src/home/sections/LiveStrip.jsx";
 import { LEAD, ALSO } from "../src/home/sections/Tiles.jsx";
 import { PRIVACY_RULE, PRIVACY_NEVER } from "../src/home/sections/Privacy.jsx";
 import { analyticsConsented } from "../src/lib/firebase.js";
@@ -50,10 +50,15 @@ group("A. Signed out: the page draws, and reaches for nothing signed-in");
   ok("no request path to a signed-in read", !/\/api\/read\/|\/api\/matches\//.test(all));
   ok("no section fetched while rendering", calls.length === 0, calls.join());
   ok("Log in goes to the app", /href="\/app"[^>]*>Log in</.test(html(h(Header, {}))) || /<a href="\/app"/.test(html(h(Header, {}))));
-  ok("the hero's call is Log in, with the office-code line", /Log in/.test(text(h(Hero, {}))) && /Your school's office gives you your code/.test(text(h(Hero, {}))));
+  // EXPERIENCE_PASS §2.3: three doors in place of one "Log in", which stays in the header.
+  ok("the hero's doors are Score a match and My child plays, each saying what it gives, with the office-code line",
+    /Score a match Sign in, then score on this phone/.test(text(h(Hero, {}))) && /My child plays Sign in, then ask your child's school/.test(text(h(Hero, {})))
+    && /href="\/app"[^>]*data-testid="home-cta-score"/.test(html(h(Hero, {}))) && /href="\/app\?door=parent"[^>]*data-testid="home-cta-child"/.test(html(h(Hero, {})))
+    && /Your school's office gives you your code/.test(text(h(Hero, {}))));
+  ok("...and the hero no longer carries a Log in of its own (the header's stays)", !/Log in/.test(text(h(Hero, {}))) && /Log in/.test(text(h(Header, {}))));
   ok("no price: not 'free', no pricing promise", !/free|\bR ?\d|per month|pricing/i.test(all.replace(/data-[a-z-]+="[^"]*"/g, "")));
-  ok("the hero's Follow a match is only offered when the strip is on the page",
-    !/Follow a match/.test(text(h(Hero, {}))) && /Follow a match/.test(text(h(Hero, { hasStrip: true }))) && /href="#matches"/.test(html(h(Hero, { hasStrip: true }))));
+  ok("the hero's Watch a match is only offered when the strip is on the page",
+    !/Watch a match/.test(text(h(Hero, {}))) && /Watch a match/.test(text(h(Hero, { hasStrip: true }))) && /href="#matches"/.test(html(h(Hero, { hasStrip: true }))));
   ok("the page is a quiet one without data: no strip, no news, no empty box", !/Live now|Today|No matches|>News</.test(text(h("div", null, h(LiveStrip, { data: null }), h(News, { data: null })))));
   ok("the schools section is a mailto and collects nothing", /href="mailto:hello@example.test\?subject=/.test(html(h(Schools, { email: "hello@example.test" }))) && !/<form|<input|<textarea/.test(html(h(Schools, { email: "hello@example.test" }))));
   ok("...and without an address it shows its words and no dead link", !/href=/.test(html(h(Schools, {}))) && /Bring SCRBRD to your school/.test(text(h(Schools, {}))));
@@ -111,6 +116,34 @@ group("C. Live strip and news: nothing until given data, nothing on 404");
   ok("nothing live: the live part draws nothing", html(h(LiveStrip, { data: { fixtures: [fx("a", "scheduled")] }, show: "live" })) === "");
   ok("a real empty answer is one quiet line", /No matches listed today/.test(text(h(LiveStrip, { data: { fixtures: [] } }))) && !/never|not being played/i.test(text(h(LiveStrip, { data: { fixtures: [] } }))));
   ok("an id is never trusted into a path", /href="\/live\/a%2F%22b"/.test(html(h(LiveStrip, { data: { fixtures: [fx("a/\"b", "live")] } }))));
+
+  // EXPERIENCE_PASS §3.8: the status sentence. The chase only from a target the read gives (Q14, slice 3b).
+  const chase = (extra) => fx("ch", "live", { scores: [{ innings: 1, runs: 141, wickets: 6, balls: 120, side: "home" }, { innings: 2, runs: 97, wickets: 3, balls: 86, side: "away" }], ...extra });
+  ok("live, first innings, with a side: the side, its score and the overs, in words",
+    statusSentence(fx("s", "live", { scores: [{ innings: 1, runs: 86, wickets: 3, balls: 76, side: "home" }] })) === "Hilton College 1XI 86/3 after 12.4 overs");
+  ok("...without a side, the innings, never a guessed team", statusSentence(fx("s", "live", { scores: [{ innings: 1, runs: 6, wickets: 0, balls: 6 }] })) === "1st innings 6/0 after 1 over");
+  ok("the chase WITHOUT a target (today's read): the score only, nothing worked out from the first innings",
+    statusSentence(chase({})) === "Westville Boys' High 1XI 97/3 after 14.2 overs" && !/need|target|chasing/i.test(statusSentence(chase({}))));
+  ok("WITH a target: the runs needed off the balls left", statusSentence(chase({ target: 142 })) === "Westville Boys' High 1XI need 45 off 34");
+  ok("...revised: the runs and the revised target, and no balls left (a revision can change the overs)",
+    statusSentence(chase({ target: 130, revised: true })) === "Westville Boys' High 1XI need 33 to win, revised target 130");
+  ok("...a target reached says so", /reached the target of 90/.test(statusSentence(chase({ target: 90 }))));
+  ok("...a target in the first innings is not a chase", statusSentence(fx("s", "live", { target: 150, scores: [{ innings: 1, runs: 20, wickets: 0, balls: 12, side: "home" }] })) === "Hilton College 1XI 20/0 after 2 overs");
+  ok("the other states: a result, a start, abandoned, postponed",
+    statusSentence(fx("r", "complete", { result: "Westville Boys' High 1XI won by 6 wickets" })) === "Westville Boys' High 1XI won by 6 wickets"
+    && /^Starts at \d\d:\d\d$/.test(statusSentence(fx("t", "scheduled"))) && statusSentence(fx("a", "abandoned")) === "Abandoned" && statusSentence(fx("p", "postponed")) === "Postponed");
+  const liveCard = html(h(LiveStrip, { data: { fixtures: [chase({ target: 142 })] }, show: "live", lead: true }));
+  ok("a live card carries its sentence and Watch, inside its one link", /data-testid="home-card-sentence"[^>]*>Westville Boys&#x27;s? High 1XI need 45 off 34|need 45 off 34/.test(liveCard) && /data-testid="home-card-watch"/.test(liveCard));
+  ok("...and the board that leads the page is drawn at once, not held for the scroll reveal", /data-lead=""/.test(liveCard) && !/class="rv"/.test(liveCard));
+  ok("the sentence names no player", !/batter|bowler|\bnot out\b/i.test(text(h(LiveStrip, { data: { fixtures: [chase({ target: 142 })] } }))));
+
+  // EXPERIENCE_PASS §2.3, Q6: the first screen by the read's state.
+  ok("first screen: live → the board; today → Today; results only → the result; nothing → the film",
+    firstScreen({ fixtures: [fx("a", "scheduled"), fx("b", "live")] }) === "live"
+    && firstScreen({ fixtures: [fx("a", "scheduled"), fx("c", "complete")] }) === "today"
+    && firstScreen({ fixtures: [fx("c", "complete")] }) === "result"
+    && firstScreen({ fixtures: [] }) === "film" && firstScreen(null) === "film" && firstScreen({ status: 404 }) === "film"
+    && firstScreen({ fixtures: [fx("x", "cancelled")] }) === "film");
 
   const posts = Array.from({ length: 7 }, (_, i) => ({ id: `n${i}`, school: "Hilton College", team: "1XI", title: `Through to the final ${i}`, body: "The side won today.\nWell played.", publishedAt: "2026-10-02T10:00:00Z" }));
   const news = html(h(News, { data: { posts } }));
