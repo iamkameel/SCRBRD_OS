@@ -16,6 +16,7 @@ import { OppositionDossier } from "./dossier.jsx";
 import { DutyRoster } from "./duties.jsx";
 import { QuarantinePanel } from "./quarantine.jsx";
 import { DrsPanel } from "./drs.jsx";
+import { isOff, useFeatures } from "../lib/features.js";
 import { PublishPanel } from "./publication.jsx";
 import { ReportIncident } from "./discipline.jsx";
 import { AddFixtureModal, RescheduleFixture, SCHOOL_TEAMS } from "./fixtures.jsx";
@@ -154,6 +155,10 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
   // open a panel that says "not you", "not yet" or "not this opponent", the
   // same way canScore() offers a scorer button the database may still refuse.
   const [dossierM, setDossierM] = useState(null);
+  // Opposition intelligence switched off is hidden: no dossier button, rather
+  // than a dossier that opens onto "switched off" (Kameel, 13 Nov 2026).
+  const { features } = useFeatures();
+  const dossierOn = !isOff(features, "opposition");
   // A side's own results, opened from a fixture's "Onward" links
   // (SCRBRD-100 item 4) — the Match Centre list, already filtered to
   // "complete" and to that side. Cleared by picking any other status pill.
@@ -325,7 +330,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                           a report on a match still being played would be
                           reporting on the wrong thing, not merely early. */}
                       {m.status==="complete"&&<Btn variant="ghost" onClick={e=>{e.stopPropagation();setReportM(m);}} data-testid={`report-open-${m.id}`}>Post-match report</Btn>}
-                      {m.status==="upcoming"&&holdsCapability(role,"opposition.read")&&<Btn variant="ghost" onClick={e=>{e.stopPropagation();setDossierM(m);}} data-testid={`dossier-open-${m.id}`}>Dossier</Btn>}
+                      {m.status==="upcoming"&&dossierOn&&holdsCapability(role,"opposition.read")&&<Btn variant="ghost" onClick={e=>{e.stopPropagation();setDossierM(m);}} data-testid={`dossier-open-${m.id}`}>Dossier</Btn>}
                     </div>
                   </div>
                 </div>

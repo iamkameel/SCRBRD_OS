@@ -5,7 +5,8 @@ import { dateStr, today } from "../lib/format.js";
 import { Badge, Card, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { useLive, useWeather } from "../lib/live.js";
-import { combineReads } from "../lib/readState.js";
+import { combineReads, isModuleOff } from "../lib/readState.js";
+import { isOff, useFeatures } from "../lib/features.js";
 import { Icon } from "../ui/icons.jsx";
 
 // ══════════════════════════════════════════════════════
@@ -24,6 +25,9 @@ function CalendarView({ role, onNav }) {
   const trainingRead = useLive("training", role, nonce);
   const MATCHES = matchesRead.rows;
   const TRAINING_SESSIONS = trainingRead.rows;
+  // Training switched off for this person is hidden: no Training in the legend (Kameel, 13 Nov 2026).
+  const { features } = useFeatures();
+  const trainingOff = isOff(features, "training") || isModuleOff(trainingRead);
   const WEATHER = useWeather(role, nonce);
   // "No events on this day" is only said of a calendar that was read. A read
   // that failed, is refused or is still coming says that instead; one of the two
@@ -69,7 +73,7 @@ function CalendarView({ role, onNav }) {
 
   return (
     <div className="os-page">
-      <SectionHeader title="Fixture Calendar" sub="Matches, training sessions and school schedule" color={D.sky}
+      <SectionHeader title="Fixture Calendar" sub={trainingOff ? "Matches and school schedule" : "Matches, training sessions and school schedule"} color={D.sky}
         actions={
           <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
             <button onClick={()=>setMonthOffset(o=>o-1)} className="pressBtn" style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,padding:"5px 12px",cursor:"pointer",color:D.textSecondary,fontSize:"14px"}}>‹</button>
@@ -83,7 +87,7 @@ function CalendarView({ role, onNav }) {
 
       {/* Legend */}
       <div style={{display:"flex",gap:"14px",marginBottom:"16px",flexWrap:"wrap"}}>
-        {[["Match – Live",D.emerald],["Match – Upcoming",D.sky],["Match – Complete",D.textMuted],["Training",D.violet]].map(([l,c])=>(
+        {[["Match – Live",D.emerald],["Match – Upcoming",D.sky],["Match – Complete",D.textMuted],["Training",D.violet]].filter(([l])=>!(trainingOff&&l==="Training")).map(([l,c])=>(
           <div key={l} style={{display:"flex",alignItems:"center",gap:"6px"}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:c}}/>
             <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{l}</span>

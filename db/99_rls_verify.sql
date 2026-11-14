@@ -12541,6 +12541,43 @@ CREATE OR REPLACE FUNCTION _v153_set(VARIADIC p uuid[]) RETURNS uuid[] AS $$
 $$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
 -- └── db/153 (section 131) ─────────────────────────────────────────────
 
+-- ┌── db/154 (section 132) ─────────────────────────────────────────────
+-- Switched off is hidden for that user, but still records (Kameel, 13 Nov
+-- 2026). A module hidden for the whole of Hilton, as a school administrator
+-- hides it (one suppression row, no person), and lifted again; written as the
+-- owner so each step is the switch and nothing else. And one cricket fixture
+-- of the section's own, live, with one ball, for a DRS review to name.
+CREATE OR REPLACE FUNCTION _v154_hide(p_key text, p_hidden boolean) RETURNS void AS $$
+BEGIN
+  IF p_hidden THEN
+    INSERT INTO feature_suppression (key, school_id, reason, hidden_by)
+    SELECT p_key, '11111111-1111-1111-1111-111111111111', 'db/99 section 132', '88888888-0000-0000-0000-000000000022'
+     WHERE NOT EXISTS (SELECT 1 FROM feature_suppression f WHERE f.key = p_key AND f.person_id IS NULL AND f.lifted_at IS NULL
+                          AND f.school_id = '11111111-1111-1111-1111-111111111111');
+  ELSE
+    UPDATE feature_suppression SET lifted_at = now(), lifted_by = '88888888-0000-0000-0000-000000000022'
+     WHERE key = p_key AND person_id IS NULL AND lifted_at IS NULL AND school_id = '11111111-1111-1111-1111-111111111111';
+  END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v154_stage() RETURNS uuid AS $$
+DECLARE v_m uuid;
+BEGIN
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'V154 Probe XI', now() - interval '1 hour', 'cricket', 'T20', 20, 'live')
+  RETURNING id INTO v_m;
+  PERFORM _v153_start(v_m, '1XI', 'V154 Probe XI', ARRAY[]::uuid[], ARRAY[]::uuid[]);
+  PERFORM _v153_ev(v_m, 'ball', 'run', 'aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
+                   'bbbbbbbb-0000-0000-0000-000000000001', NULL, '{}'::jsonb);
+  RETURN v_m;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- How many rows of a probe landed, past RLS: the section asks the table, not the reader.
+CREATE OR REPLACE FUNCTION _v154_count(p_sql text) RETURNS integer AS $$
+DECLARE n integer;
+BEGIN
+  EXECUTE p_sql INTO n;
+  RETURN n;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/154 (section 132) ─────────────────────────────────────────────
 -- ┌── db/155 (section 133) ─────────────────────────────────────────────
 -- Public by terms, slice 3: surfaces and the no (PUBLIC_BY_TERMS §11 row 3,
 -- §5.1, §6.1-6.2, §10). Hilton's U16B, eight boys invented here, each with
@@ -42350,6 +42387,103 @@ $m130$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/153 (section 131) ──────────────────────────────────────────
+  -- ┌── db/154 (section 132) ─────────────────────────────────────────
+  -- ── 132. Switched off is hidden for that user, but still records: the modules that hold no child's own data and are gated only in the API store while off (the reader's outward read stays refused); the child-data modules' own gates still refuse (Kameel 13 Nov 2026). DRS reviews and other sports' fixtures stay refused in the database until db/154 lands, and are proved there ──
+  -- Each module is hidden for the whole of Hilton (_v154_hide(), a school
+  -- administrator's suppression), the write made, and the switch lifted.
+  -- Every write is through scrbrd_app, as the owner unless a gate asks for
+  -- a person at the school.
+  -- Labels:
+  --   (logistics) a trip and a vehicle store while Logistics is off
+  --   (officials) not here: Officials is gated in the API alone, as on main,
+  --               and stays refused there until broadcast_state() names
+  --               officials only while Officials is on (tools/smoke-modules.mjs)
+  --   (broadcast) the overlay's settings store, unpublished, while Broadcast
+  --               is off (publishing is refused by the API, scouting-api.mjs)
+  --   (sponsors)  a sponsor signed stores while Sponsors is off (a placement
+  --               stays gated by the API: an outward act)
+  --   (reader)    the scorebook reader's read is NOT lifted: sending page
+  --               photos to an outside provider is the outward act, and its
+  --               gate is in scorebook_import_read_start() as db/66 left it
+  --   (child)     injuries, workload_monitoring, lift_club and
+  --               scorebook_import still refuse in the database while off.
+  --               skills and scouting have no database gate of their own:
+  --               their refusal is the API's (server.mjs route tags), held
+  --               by apps/web/test/switched-off.test.mjs and
+  --               tools/smoke-modules.mjs
+  DECLARE
+    M uuid;
+    v_reason text;
+    BODY132 text := repeat('Lifts to fixtures are arranged between families. ', 6);
+  BEGIN
+    PERFORM set_config('app.user_id', '', true);
+    M := _v154_stage();
+
+    -- (logistics)
+    PERFORM _v154_hide('logistics', true);
+    PERFORM _as(U_OWNER);
+    PERFORM _assert(NOT feature_enabled('logistics', HIL, NULL), '§132 (logistics): Hilton''s suppression did not switch Logistics off');
+    INSERT INTO trip (match_id, school_id, pickup, arranged_by) VALUES (M, HIL, 'V154 gate probe', U_OWNER);
+    INSERT INTO vehicle (school_id, registration, description, kind, capacity) VALUES (HIL, 'V154 PROBE', 'V154 gate probe', 'minibus', 8);
+    PERFORM _assert(_v154_count(format('SELECT count(*)::int FROM trip WHERE match_id = %L AND pickup = ''V154 gate probe''', M)) = 1
+                    AND _v154_count('SELECT count(*)::int FROM vehicle WHERE registration = ''V154 PROBE''') = 1,
+      '§132 (logistics): a trip or a vehicle was not stored while Logistics was off');
+    PERFORM _v154_hide('logistics', false);
+
+    -- (broadcast)
+    PERFORM _v154_hide('broadcast', true);
+    PERFORM _as(U_OWNER);
+    INSERT INTO match_broadcast (match_id, school_id, published, published_by, name_display, show_officials, strapline)
+    VALUES (M, HIL, false, U_OWNER, 'initials', true, 'V154 kept');
+    PERFORM _assert(_v154_count(format('SELECT count(*)::int FROM match_broadcast WHERE match_id = %L AND strapline = ''V154 kept'' AND NOT published', M)) = 1,
+      '§132 (broadcast): the overlay''s settings were not stored while Broadcast was off');
+    PERFORM _v154_hide('broadcast', false);
+
+    -- (sponsors)
+    PERFORM _v154_hide('sponsors', true);
+    PERFORM _as(U_OWNER);
+    INSERT INTO sponsor (school_id, name, category, created_by) VALUES (HIL, 'V154 Gate Probe', 'banking', U_OWNER);
+    PERFORM _assert(_v154_count('SELECT count(*)::int FROM sponsor WHERE name = ''V154 Gate Probe''') = 1,
+      '§132 (sponsors): a sponsor was not stored while Sponsors was off');
+    PERFORM _v154_hide('sponsors', false);
+
+    -- (reader)
+    PERFORM _assert((SELECT position('scorebook_reader_on(i.school_id)' IN p.prosrc) > 0 AND position('''reader_off''' IN p.prosrc) > 0
+                       FROM pg_proc p WHERE p.oid = 'scorebook_import_read_start(uuid,integer,integer)'::regprocedure),
+      '§132 (reader): the scorebook reader''s read lost its gate: the pages would go to the provider while it is off');
+
+    -- (child)
+    PERFORM _v154_hide('injuries', true);
+    PERFORM _as(U_MEDICAL);
+    SELECT r.reason INTO v_reason FROM injury_record(P_INJURED, 'V154 probe', 'minor', sa_today(), true, sa_today() + 7, sa_today() + 7, false, NULL) r;
+    PERFORM _assert(v_reason = 'module_off', format('§132 (child): with Injuries off, the medic''s record got %s', coalesce(v_reason, 'ok')));
+    PERFORM _v154_hide('injuries', false);
+
+    PERFORM _v154_hide('workload_monitoring', true);
+    PERFORM _as(U_MEDICAL);
+    v_reason := NULL;
+    BEGIN
+      INSERT INTO load_entry (player_id, kind, on_date, band, rpe, minutes) VALUES (P_INJURED, 'nets', sa_today(), '12_24', 6, 40);
+      v_reason := 'stored';
+    EXCEPTION WHEN check_violation THEN v_reason := SQLERRM;
+    END;
+    PERFORM _assert(v_reason = 'workload_monitoring_off', format('§132 (child): with workload monitoring off, a nets load got %s', coalesce(v_reason, 'NULL')));
+    PERFORM _v154_hide('workload_monitoring', false);
+
+    PERFORM _v154_hide('lift_club', true);
+    PERFORM _as(U_HEAD_M);
+    SELECT r.reason INTO v_reason FROM lift_policy_sign(HIL, BODY132, false, true, NULL) r;
+    PERFORM _assert(v_reason = 'module_disabled', format('§132 (child): with lift clubs off, the principal''s policy got %s', coalesce(v_reason, 'ok')));
+    PERFORM _v154_hide('lift_club', false);
+
+    PERFORM _v154_hide('scorebook_import', true);
+    PERFORM _as(U_OWNER);
+    SELECT r.reason INTO v_reason FROM scorebook_import_open(M) r;
+    PERFORM _assert(v_reason = 'module_disabled', format('§132 (child): with the scorebook importer off, an import opened with %s', coalesce(v_reason, 'ok')));
+    PERFORM _v154_hide('scorebook_import', false);
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/154 (section 132) ──────────────────────────────────────────
   -- ┌── db/155 (section 133) ─────────────────────────────────────────
   -- ── 133. Public by terms, slice 3: each answer for the surface its wording named; a no on every surface its wording could reach and whatever happens to its giver's link since; and, switched off, every public read as it was (db/155; PUBLIC_BY_TERMS §11 row 3, §5.1, §6.1-6.2, §10) ──
   -- Staged by _v155_stage(): seven Hilton U16B boys and their links, and a

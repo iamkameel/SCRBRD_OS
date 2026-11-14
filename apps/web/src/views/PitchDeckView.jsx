@@ -5,6 +5,7 @@ import { D, T, clr, textOn, themeName, themed } from "../design/tokens.js";
 import { ROLE_FAMILIES, ROLE_IDENTITY } from "../design/roles.js";
 import { STATUS_LABEL, STATUS_TONE, UPGRADES } from "../data/roadmap.js";
 import { useSummary } from "../lib/live.js";
+import { isOff, useFeatures } from "../lib/features.js";
 import { useNotifications } from "../lib/notifications.js";
 import { profile } from "../lib/session.js";
 import { signedIn } from "../lib/api.js";
@@ -574,6 +575,9 @@ function AccessSlide() {
 const SCHOOL_LEDE = "The dashboard counts nothing in the browser. These figures come from one server-side read scoped to the person asking, so a coach sees their squads and a director of sport sees the school.";
 function SchoolSlide({ role }) {
   const { summary, live, loading, error } = useSummary(role);
+  // A figure whose module is switched off is not drawn, not drawn as a dash
+  // (Kameel, 13 Nov 2026). The summary read already answers it null.
+  const { features } = useFeatures();
   // Unread alerts from the notices' one store, as every badge reads them (D17).
   const { unread } = useNotifications(role);
   const me = profile();
@@ -593,8 +597,8 @@ function SchoolSlide({ role }) {
           <>
             <Stat i={0} n={summary?.activePlayers ?? "—"} cap="Active players" sub={summary?.scopePlayers ? `of ${summary.scopePlayers} in scope` : undefined}/>
             <Stat i={1} n={summary?.upcomingMatches ?? "—"} cap="Upcoming fixtures" sub={summary?.nextMatchAt ? `next ${new Date(summary.nextMatchAt).toLocaleDateString("en-ZA", { day: "numeric", month: "short" })}` : undefined}/>
-            <Stat i={2} n={summary?.sessionsThisWeek ?? "—"} cap="Sessions this week"/>
-            <Stat i={3} n={summary?.injuriesActive ?? "—"} cap="Injuries open" tone={summary?.injuriesActive ? D.amber : undefined}/>
+            {!isOff(features, "training") && <Stat i={2} n={summary?.sessionsThisWeek ?? "—"} cap="Sessions this week"/>}
+            {!isOff(features, "injuries") && <Stat i={3} n={summary?.injuriesActive ?? "—"} cap="Injuries open" tone={summary?.injuriesActive ? T.semantic.warning : undefined}/>}
             <Stat i={4} n={pct(summary?.winRatePct)} cap="Win rate" sub={summary?.scopeMatches ? `${summary.scopeMatches} matches in scope` : undefined}/>
             <Stat i={5} n={unread ?? "—"} cap="Unread alerts"/>
           </>

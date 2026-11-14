@@ -516,8 +516,9 @@ export function recordOf(o) {
     else if (cs.value === null) lines.push({ key: "health", label: "Health monitoring", words: couldNotRead("the consents"), detail: null });
     else {
       const c = cs.value.find((x) => his(x, child) && x.relation !== "self");
-      if (c && c.moduleOn === false) lines.push({ key: "health", label: "Health monitoring", words: `not in use at ${child.schoolName || "the school"}`, detail: null });
-      else if (c) {
+      // Workload monitoring switched off at his school: no line at all (Kameel,
+      // 13 Nov 2026: switched off is hidden), rather than "not in use".
+      if (c && c.moduleOn !== false) {
         const words = c.state === "given" ? "on" : c.state === "not_answered" ? "not answered" : "off";
         const giver = c.givenBy === "self" ? first : giverWords(c);
         lines.push({ key: "health", label: "Health monitoring", words,
