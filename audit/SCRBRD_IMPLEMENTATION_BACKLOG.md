@@ -29,6 +29,8 @@
 
 14 Nov 2026 (later): two merges recorded. #329 (merge 05a92708): "Public by terms, slice 3: surfaces and the no (db/155, ships dark)". It adds `db/155_public_name_surfaces.sql`: a family's "no" can be per surface (live, card, board), through a surface column, a 4-argument `public_name_facts()`, and per-surface consent. It ships dark: the new switch `public_name_surfaces` is off and locked to the platform and hidden from every school, so every public read keeps today's rule. The old signatures are kept as wrappers, because db/153 calls them. Reviewed by Opus, red-teamed by Fable (0 blockers; 3 fixes taken), re-checked by Opus. db/155 was pasted on the demo and production on 14 Nov 2026 on Kameel's word, hash-checked (`sha256 bd558badc5aa0d456c377f4399ab7c8a010771165b1db25e26323ae0de84a2ab`, from commit 3225edda); the switch is off on both. #331 (merge a14f4a3d): db/155 recorded in `db/SHIPPED.sha256` (ledger only).
 
+14 Nov 2026 (afternoon): three merges recorded. #332 (squash 204aad69): "Switched off, db/154: DRS reviews store while DRS is off". It adds `db/154_switched_off_records.sql` (`sha256 b7104f5696211bf2f0bdffcb10a32064188e9a4de14ef5c7f8ae440ec3149207`), which re-creates only `drs_review_feature_gate()`, so a DRS review row is stored while DRS is off. Other sports' fixtures stay refused (Kameel, 14 Nov). Pasted on the demo and production on Kameel's word, hash-checked from commit c4b5096b; production was live on it at 14:46 SAST. #334 (squash 0b8f0240): "Experience slice 2a: the spectator's match page". It adds the status sentence under the board on a live Summary, the worm before Scenarios, a scorecard figure that opens its balls (signed in only), the structured insight line (Q10), and a Ground display link for published fixtures. Share carries no name and no organiser's reason. Public pages went from 469 to 427 KB. No migration. #335 (squash 364a1988): SHIPPED records db/154.
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -5333,7 +5335,7 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 ### Experience pass — where things live, and the first run (2026-11-13)
 **Domain:** Design / UX · **Decided 13 Nov 2026:** all 25 questions in `docs/redesign/EXPERIENCE_PASS.md` §5 as recommended. Slices 3 and 4 carry migrations.
 - [x] ~~Slice 1 · The scorer's home and starting a Pilot Match~~ **Done 14 Nov 2026** (#327, 660a5630)
-- [ ] Slice 2 · The spectator's match page
+- [ ] Slice 2 · The spectator's match page **Partly done 14 Nov 2026** (2a, #334, 0b8f0240; the rest of the slice is not built)
 - [ ] Slice 3 · First run (migrations)
 - [ ] Slice 4 · Parent and pupil (migrations)
 - [ ] Slice 5 · The coach's day sheet, and the homes

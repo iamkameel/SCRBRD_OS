@@ -254,7 +254,16 @@ export function PublicMatch({ matchId, view }) {
   const commentary = story?.commentary ?? [];
   const liveSO = story?.liveSO ?? null;
   const result = story?.result ?? null;
-  const { moment, overSummary } = useMoments(commentary, !data.loading && !!match);
+  // The result, as one moment (SCRBRD-133 §5.2 row 13, public with reasons: false), once play has decided it: the
+  // same synthetic line MatchView and the display add, keyed per match, so it arrives once and a reload replays it never.
+  const settledNow = story?.settled ?? false;
+  const feed = useMemo(() => {
+    const lines = story?.commentary ?? [];
+    return settledNow && result && lines.length && match
+      ? [...lines, { innings: Math.max(0, played.length - 1), over: 0, ball: 0, kind: "result", text: result, key: `result:${match.id}` }]
+      : lines;
+  }, [settledNow, result, story?.commentary, match, played.length]);
+  const { moment, overSummary } = useMoments(feed, !data.loading && !!match, played, (inn) => (match ? teamOf(match, inn.battingTeam).full : ""));
   // What a screen reader is told as each ball arrives (lib/announce.js): the
   // newest only, and nothing for the log as it stood on first load.
   const said = useAnnouncement(commentary, data.events, !data.loading && !!match);
@@ -279,6 +288,9 @@ export function PublicMatch({ matchId, view }) {
   const line = matchLine({ match, competition: null, weather: null });
   const st = statusSentence(match, folded ? { innings: played, result: folded.result, conditions: data.fold?.conditions } : null, { result });
   const notice = revisionNotice(boardInn);
+  // §3.3: a live Summary says the status sentence under its board, so the header does not; if that panel fails,
+  // its boundary keeps the sentence above the card.
+  const summarySays = tab === "summary" && !summaryIsResult({ match, innings: played, result, settled: story?.settled ?? false });
   const ctx = { match, innings: played, result, commentary: fixes?.commentary ?? commentary, events, fold: data.fold, par: data.par, settled: story?.settled ?? false,
     demo: false, overs: match.overs || 20,
     inningsSel, setInningsSel: setPicked, phone, setTab, moment, overSummary, shownRuns,
@@ -312,8 +324,10 @@ export function PublicMatch({ matchId, view }) {
           <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
             {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
           </h1>
-          {played.length > 0 && <HeaderScores match={match} played={played} corrected={fixes?.corrected}/>}
-          {(tab !== "summary" || summaryIsResult({ match, innings: played, result, settled: story?.settled ?? false })) && <StatusLine st={st} except={["upcoming"]}/>}
+          {/* GA-I36 §5 (Kameel, 14 Nov: "one mark, beside the innings line that moved"): when, team-level, never who or why. */}
+          {played.length > 0 && <HeaderScores match={match} played={played} movedInnings={fixes?.corrected}
+            mark={fx && fixes ? <fx.CorrectedChip at={fixes.at} lines={() => [fixes.line]}/> : null}/>}
+          {!summarySays && <StatusLine st={st} except={["upcoming"]}/>}
           {/* OFFICIAL_RESULT D11, Q3: "Provisional" or "Official result · confirmed 20:15, 11 Oct" — the
               time only, never who, never a reason, and never "Under review" (the server says a disputed
               result is not official). Announced when a poll changes it. */}
@@ -321,8 +335,6 @@ export function PublicMatch({ matchId, view }) {
             {(() => { const w = publicOfficial(match.result, match.status); return w ? <StateLabel kind={w.kind} why={w.why} compact/> : null; })()}
           </div>
           {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
-          {/* GA-I36 §5: when, team-level — never who asked, who approved or why. */}
-          {fx && fixes && <fx.CorrectedChip at={fixes.at} lines={() => [fixes.line]}/>}
           {/* Q18: the page's own link, the sides and the sentence, never a boy. Q19: the ground display, which the
               server serves exactly when the home side is published (SCRBRD-133 D2), so the link is drawn only then. */}
           <ErrorBoundary name="page links" fallback={null}>
@@ -346,7 +358,7 @@ export function PublicMatch({ matchId, view }) {
 
         <TabStrip tabs={TABS} tab={tab} setTab={setTab} narrow={phone} label="Match"/>
         <div role="tabpanel" id={`mc-panel-${tab}`} aria-labelledby={panelLabel(TABS, tab, phone)} data-testid={`mc-panel-${tab}`} tabIndex={0} style={{ outline: "none" }}>
-          <ErrorBoundary key={tab} name={tab === "details" ? "match details" : tab}>
+          <ErrorBoundary key={tab} name={tab === "details" ? "match details" : tab} before={summarySays ? <StatusLine st={st} except={["upcoming"]}/> : null}>
             {tab === "summary" ? <SummaryTab {...ctx}/>
               : tab === "scorecard" ? <ScorecardTab {...ctx}/>
               : tab === "commentary" ? <CommentaryTab {...ctx}/>

@@ -3,7 +3,7 @@ import { chipFill } from "../../ui/board.jsx";
 import { oversOf, teamOf } from "../../lib/matchCentre.js";
 import { Icon } from "../../ui/iconCore.jsx";
 import { SideName } from "./bits.jsx";
-import { BEAT_WORD, overSummaryText } from "../../lib/announce.js";
+import { overSummaryText } from "../../lib/announce.js";
 import { superOverTitle } from "../../lib/superOver.js";
 
 /**
@@ -18,29 +18,39 @@ import { superOverTitle } from "../../lib/superOver.js";
 const inkFor = (fill) => (contrast(fill, T.board.face) >= contrast(fill, T.board.figure) ? T.board.face : T.board.figure);
 
 /**
- * A moment, over the board's own left-hand corner — never over the total,
- * which stays where it is, and gone within a second and a half. A four, a six
- * or a wicket is a chip-coloured beat; a milestone is the board's lime, larger,
- * with its words. Reduced motion makes the entrance a cut (GLOBAL_CSS).
+ * A moment card (SCRBRD-133 §5, lib/moments.js), over the board's own
+ * left-hand corner, never over the total, which stays where it is. A beat (a
+ * four, a six) is the chip's colour and its one word; a big card the board's
+ * lime (a wicket white, as the chip draws one) with its words, the line under
+ * them and the small eyebrow above ("with a six"). Its time is moments.js's.
+ * Reduced motion makes the entrance a cut (GLOBAL_CSS): it appears, holds and
+ * goes. `moment` is a card: {kind, size, title, body, above}.
  */
 export function MomentMark({ moment, big = false, announce = true }) {
   if (!moment) return null;
-  // The result — the match's own decided moment (SCRBRD-100 item 3) — reads
-  // the same big, held slot a milestone does: never longer, never hiding the
-  // score for more than about 1.5s (§3.6).
-  const bigMark = moment.kind === "milestone" || moment.kind === "result";
-  const fill = bigMark ? T.board.lime : moment.kind === "wicket" ? T.board.figure : chipFill(moment.kind);
+  const bigMark = moment.size !== "beat";
+  const fill = moment.kind === "wicket" ? T.board.figure : bigMark ? T.board.lime : chipFill(moment.kind);
   const ink = inkFor(fill);
+  // Said once (WCAG 4.1.3): the card's words, and for a beat the ball's own line, as before ("Four: … for four");
+  // on a family's screen a line naming a boy who is not his is gone (moments.js: `line.text` null), so just "Four".
+  // The visible words are hidden from the region where it announces, so nothing is read twice.
+  const words = [moment.above, moment.title, moment.body].filter(Boolean).join(". ") + (!bigMark && moment.line?.text ? `: ${moment.line.text}` : "");
+  const hide = announce ? "true" : undefined;
   return (
-    <div data-testid="mc-moment" data-kind={moment.kind} {...(announce ? { role: "status", "aria-live": "polite" } : { "aria-hidden": "true" })}
+    <div data-testid="mc-moment" data-kind={moment.kind} data-size={moment.size}
+      {...(announce ? { role: "status", "aria-live": "polite" } : { "aria-hidden": "true" })}
       className={bigMark ? "mc-moment-big" : "mc-moment"}
       style={{ position: "absolute", top: big ? T.space.xl : T.space.sm, left: big ? T.space.xl : T.space.lg, zIndex: 2,
         maxWidth: bigMark ? "58%" : "none", padding: bigMark ? `${T.space.sm} ${T.space.lg}` : `${T.space.xs} ${T.space.md}`,
         borderRadius: bigMark ? T.radius.md : T.radius.pill, background: fill, color: ink, boxShadow: T.elevation.md,
-        fontFamily: T.type.body, fontWeight: 700, lineHeight: 1.25,
-        fontSize: big ? (bigMark ? "clamp(20px, 3.4vmin, 44px)" : "clamp(18px, 3vmin, 36px)") : (bigMark ? "16px" : "14px") }}>
-      {bigMark ? moment.text : (BEAT_WORD[moment.kind] ?? moment.text)}
-      {!bigMark && announce && <span className="sr-only">: {moment.text}</span>}
+        fontFamily: T.type.body, fontWeight: 700, lineHeight: 1.25, display: "grid", gap: "2px",
+        fontSize: big ? (bigMark ? "max(20px, 4.4vmin)" : "clamp(18px, 3vmin, 36px)") : (bigMark ? "16px" : "14px") }}>
+      {moment.above && <span data-testid="mc-moment-above" aria-hidden={hide} style={{ fontSize: big ? "max(12px, 2.4vmin)" : "12px", fontWeight: 600 }}>{moment.above}</span>}
+      <span data-testid="mc-moment-title" aria-hidden={hide}>{moment.title}</span>
+      {bigMark && moment.body && (
+        <span data-testid="mc-moment-body" aria-hidden={hide} style={{ fontWeight: 500, fontSize: big ? "max(14px, 2.6vmin)" : "13px", overflowWrap: "anywhere" }}>{moment.body}</span>
+      )}
+      {announce && <span className="sr-only" data-testid="mc-moment-said">{words}</span>}
     </div>
   );
 }

@@ -256,7 +256,15 @@ try {
     ok(`${who}: "Corrected HH:MM"`, /^Corrected \d\d:\d\d$/.test(chip.trim()), chip);
     const cm = await measure(b.page, "mc-corrected");
     ok(`${who}: ...a 44px chip on the 12px floor`, cm.h >= 44 && cm.fs >= 12, JSON.stringify(cm));
-    ok(`${who}: the innings line says it too`, /corrected \d\d:\d\d/.test(await tid(b.page, "mc-score-corrected").first().innerText().catch(() => "")));
+    // GA-I36 §5 (Kameel, 14 Nov: "one mark, beside the innings line that moved"): said once, by that line.
+    const marks = await b.page.evaluate(() => ({
+      chips: document.querySelectorAll('[data-testid="mc-corrected"]').length,
+      words: (document.body.innerText.match(/\bcorrected \d\d:\d\d/gi) ?? []).length,
+      beside: !!document.querySelector('[data-testid="mc-scores"] [data-testid="mc-score-mark"] [data-testid="mc-corrected"]'),
+      plain: document.querySelectorAll('[data-testid="mc-score-corrected"]').length,
+    }));
+    ok(`${who}: one mark, beside the innings line, and no second "corrected" anywhere (${JSON.stringify(marks)})`,
+       marks.chips === 1 && marks.beside && marks.plain === 0 && marks.words === 1);
   }
 
   group("5. What each says of it");

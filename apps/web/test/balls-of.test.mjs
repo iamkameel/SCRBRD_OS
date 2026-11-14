@@ -9,7 +9,7 @@
  *   node apps/web/test/balls-of.test.mjs
  */
 import { inningsStart, batters, bowler, ball, deriveInnings, deriveCommentary, commentaryMatches, BALL_TYPE } from "@scrbrd/scoring";
-import { ballsOf } from "../src/lib/ballsOf.js";
+import { ballsOf, mayListBalls } from "../src/lib/ballsOf.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
@@ -64,6 +64,12 @@ ok("nobody's balls are anybody else's", !b0.some((id) => b1.includes(id)));
 group("nothing to list");
 ok("a player with no balls: none", ballsOf(inn, "bat", "p9", log).length === 0);
 ok("no innings: none", ballsOf(null, "bat", "p0").length === 0 && ballsOf(inn, "bat", null).length === 0);
+
+group("whose figures open (review N1): every player's on a staff screen; on a family's, his own boy's only");
+ok("a staff or spectator screen (no focus): any player", mayListBalls(null, "p0") && mayListBalls([], "p7"));
+ok("a parent's screen for p1: p1's figures open", mayListBalls(["p1"], "p1"));
+ok("...and another boy's do not", !mayListBalls(["p1"], "p0"));
+ok("a parent of two on the card: each of hers", mayListBalls(["p1", "p2"], "p2") && !mayListBalls(["p1", "p2"], "p3"));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

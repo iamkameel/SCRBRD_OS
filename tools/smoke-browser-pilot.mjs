@@ -21,6 +21,9 @@
  *      lacks; Open on this phone brings it, names and all; Take over is a
  *      person's press over the first phone's lapsed lease, with an audit row;
  *      it scores on; the first phone's late ball is held, not written.
+ *   W2p The first match, whose names never left phone A, opened on phone B:
+ *      its players are positions, and a catch by "Away No. 3" is stored
+ *      with that slot as its fielder, not none.
  *   W3 Phase 1 stays put: "Keep on this phone only" is a Practice Match, and
  *      no request leaves for it.
  *   R  The refusal (§3.3 step 2): a match started while granted, the grant
@@ -395,6 +398,37 @@ try {
      await phoneA.tid("sync-banner").innerText().catch(() => ""));
   ok("...which is not in the server's log", Number((await one(`select count(*) n from pilot.ball_event where match_id = $1`, [uuidN])).n) === before + 1);
 
+  group("W2p. Another phone, a match whose names stayed on the first: a catch keeps its fielder's slot");
+  // The first match's notice said its names stay on phone A, so phone B is given its slots and no name:
+  // the pad shows positions, and a catch by "Away No. 3" must reach the server as that slot (slice 2).
+  await phoneB.tap("exit-scorer");
+  await openScorer(phoneB);
+  await phoneB.tap("pilot-list-open");
+  await afterReads(phoneB.page, 1200);
+  await sql(`update pilot.session set lease_until = now() - interval '1 second' where match_id = $1`, [uuidA]);
+  await phoneB.page.locator(`[data-testid="pilot-server-row"][data-id="${uuidA}"] [data-testid="pilot-open-here"]`).click({ timeout: 5000 });
+  await afterReads(phoneB.page, 2500);
+  const padA = await phoneB.text();
+  ok("Open on this phone: the pad, its players as positions, no name", (await phoneB.has("pad-titlebar")) && /Home No\. 1/.test(padA) && !/Alpha|Bravo|Canarytest/.test(padA), padA.slice(0, 300));
+  await phoneB.tap("sync-confirm-takeover");
+  await afterReads(phoneB.page, 2000);
+  await basic(phoneB);
+  const beforeA = Number((await one(`select count(*) n from pilot.ball_event where match_id = $1`, [uuidA])).n);
+  await phoneB.tap("key-wicket");
+  await phoneB.tap("wicket-mode-caught");
+  await phoneB.page.locator("button", { hasText: /^Away No\. 3/ }).first().click({ timeout: 4000 });
+  await phoneB.tap("wicket-confirm");
+  await serverEvents(/** @type {string} */ (uuidA), beforeA + 1);
+  await afterReads(phoneB.page, 1200);
+  const caughtA = await one(`select payload->>'fielder' f from pilot.ball_event where match_id = $1 and dismissal = 'caught' order by seq desc limit 1`, [uuidA]);
+  const away3 = await one(`select id::text from pilot.slot where match_id = $1 and side = 'away' and list_no = 3`, [uuidA]);
+  ok("the stored catch has its fielder's slot, Away No. 3's, not none", !!caughtA?.f && caughtA.f === away3?.id, `${JSON.stringify(caughtA)} v ${away3?.id}`);
+  const dumpA2 = (await one(`select coalesce(string_agg(row_to_json(b)::text, E'\\n'), '') d from pilot.ball_event b where match_id = $1`, [uuidA])).d;
+  ok("...and no name and no position in the server's log", !/No\. \d/.test(dumpA2) && !PLAYERS.some((n) => dumpA2.toLowerCase().includes(n.toLowerCase())));
+  // The batting order asks who is in next: Home No. 3, so the sheet closes before R.
+  await phoneB.page.locator("button", { hasText: "Home No. 3" }).first().click({ timeout: 4000 });
+  await afterReads(phoneB.page, 800);
+
   group("R. The refusal: the grant ends before first contact");
   await phoneB.tap("exit-scorer");
   await openScorer(phoneB);
@@ -402,7 +436,7 @@ try {
   await setUp(phoneB, { home: ["Golf One", "Golf Two"], away: ["Hotel One", "Hotel Two"] });
   await basic(phoneB);
   await phoneB.tap("run-6");
-  const uuidR = (await phoneB.keys()).filter((k) => /\/pilot:meta:pilot-/.test(k)).map((k) => k.replace(/^.*pilot:meta:pilot-/, "")).find((x) => x !== uuidN) ?? null;
+  const uuidR = (await phoneB.keys()).filter((k) => /\/pilot:meta:pilot-/.test(k)).map((k) => k.replace(/^.*pilot:meta:pilot-/, "")).find((x) => x !== uuidN && x !== uuidA) ?? null;
   ok("started live while granted, offline", !!uuidR && (await phoneB.label()).startsWith("Pilot match"), uuidR);
   await sql(`update pilot.scorer set ended_at = now() where user_id = $1`, [SCORER_ID]);
   await phoneB.ctx.setOffline(false);

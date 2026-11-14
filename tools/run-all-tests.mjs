@@ -185,6 +185,8 @@ const SUITES = [
   ["to-ball",           "apps/web/test/to-ball.test.mjs"],
   // EXPERIENCE_PASS Slice 2, Q9: a scorecard figure's balls, signed in only (lib/ballsOf.js).
   ["balls-of",          "apps/web/test/balls-of.test.mjs"],
+  // SCRBRD-133 §5.2–5.3 (G3), EXPERIENCE_PASS Slice 2: every moment card from a built log (lib/moments.js).
+  ["moments",           "apps/web/test/moments.test.mjs"],
   // GA-I36 A0/A1: a correction read off the log (the chip, the line, the
   // innings it moved), the effect folded before a decision, and 300 random
   // logs whose fold with voids equals the fold without the voided rows.
