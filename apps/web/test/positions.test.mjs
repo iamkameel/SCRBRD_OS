@@ -17,7 +17,13 @@
  *      The roster holds no name, so namesBody() offers SCRBRD nothing, and
  *      the record's players read as positions.
  *   D  Nothing else moved: a named Pilot Match's slots, config and wire are
- *      as before (its squads matched by place, which is its name's).
+ *      as before (its squads matched by place, which is its name's), and
+ *      after its names' date (withoutNames) its fielder in position words is
+ *      still left off.
+ *   E  A second phone (restoreFromServer): a slot the server gave it with no
+ *      name is a position, so a catch by "Away No. 4" and a twelfth man as
+ *      "Home No. 12" leave as their slots; a slot that came with its name is
+ *      not, and after its date is sent as D's; a typed name is still refused.
  *
  *   node apps/web/test/positions.test.mjs
  */
@@ -43,6 +49,7 @@ let pass = 0, fail = 0;
 const ok = (/** @type {string} */ n, /** @type {unknown} */ c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 400)}` : ""); } };
 const group = (/** @type {string} */ t) => console.log("\n" + t);
 const POS = /^(Home|Away) No\. \d+$/;
+const CANARY_NAME = "Qa Canarytest";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 const HOME = Array.from({ length: 11 }, (_, i) => `Alpha ${["One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven"][i]}`);
@@ -159,11 +166,75 @@ group("D. A named Pilot Match is as it was");
   ok("...a named fielder still leaves as his slot", w.ok && UUID.test(/** @type {any} */ (w).event.fielder));
   const typedPos = pilotWire({ kind: "ball", type: "run", value: 0, fielder: "Away No. 4", striker: c.opener1, nonStriker: c.opener2, bowler: c.openBowler }, r.pilot.roster);
   ok("...and a position word names no slot that has a name (a substitute: left off)", typedPos.ok && /** @type {any} */ (typedPos).event.fielder === null);
-  // Review (slice 1): a slot whose name has gone (purged, or a second phone the names never reached) is no
-  // position slot: its fielder in position words is left off, as before Q5. Nothing on the wire moves for it.
+  // Review (slice 1): a slot whose name has gone (purged on this phone) is no position slot: its fielder in
+  // position words is left off, as before Q5. Nothing on the wire moves for it. (A second phone the names never
+  // reached is E's: restoreFromServer marks its nameless slots.)
   const gone = { ...r.pilot.roster, slots: Object.fromEntries(Object.entries(r.pilot.roster.slots).map(([k, x]) => [k, { ...x, name: null }])) };
   const purged = pilotWire({ kind: "ball", type: "W", value: 0, dismissal: "caught", fielder: "Away No. 4", striker: c.opener1, nonStriker: c.opener2, bowler: c.openBowler }, gone);
   ok("...and a named match whose names have gone sends its fielder as before (left off)", purged.ok && /** @type {any} */ (purged).event.fielder === null, JSON.stringify(purged));
+  const out = P.withoutNames(r, { events: [[]], cfg: c });
+  ok("...the same through withoutNames itself: no slot marked a position", Object.values(out.rec.pilot.roster.slots).every((x) => x.name === null && x.position !== true));
+  const after = pilotWire({ kind: "ball", type: "W", value: 0, dismissal: "caught", fielder: "Away No. 4", striker: c.opener1, nonStriker: c.opener2, bowler: c.openBowler }, out.rec.pilot.roster);
+  ok("...so its fielder in position words is left off, as main sends it", after.ok && /** @type {any} */ (after).event.fielder === null, JSON.stringify(after));
+}
+
+group("E. A second phone: the slots the server gave it without names are positions");
+{
+  // The server's header for a match, as GET /api/pilot/:id gives it: the slots, no name.
+  const uuidOf = (/** @type {number} */ n) => `${String(n).padStart(8, "0")}-4444-4444-8444-444444444444`;
+  const slots = ["home", "away"].flatMap((side, s) => Array.from({ length: 12 }, (_, i) => ({
+    id: uuidOf(s * 100 + i + 1), side, list_no: i + 1, batting_no: i < 11 ? i + 1 : null, twelfth: i === 11,
+  })));
+  const slotAt = (/** @type {string} */ side, /** @type {number} */ n) => /** @type {any} */ (slots.find((x) => x.side === side && x.list_no === n)).id;
+  /** @param {{slot: string, name: string}[]} names */
+  const server = (names) => async (/** @type {string} */ path) => (
+    path.endsWith("/names") ? { names }
+    : path.endsWith("/events") ? { events: [] }
+    : { slots, overs: 20, startsAt: "2026-11-14T08:00:00.000Z", status: "live", namesPurgeAfter: null,
+        sides: [{ side: "home", display_name: "Hilton U13B" }, { side: "away", display_name: "Kearsney U13B" }] });
+  const catchBy = (/** @type {string} */ fielder) => ({ kind: "ball", type: "W", value: 0, dismissal: "caught", fielder,
+    striker: slotAt("home", 1), nonStriker: slotAt("home", 2), bowler: slotAt("away", 1) });
+  const start = (/** @type {string} */ twelfthMan) => ({ kind: "innings_start", battingTeam: "Hilton U13B", bowlingTeam: "Kearsney U13B",
+    squad: Array.from({ length: 11 }, (_, i) => slotAt("home", i + 1)), bowlingSquad: Array.from({ length: 11 }, (_, i) => slotAt("away", i + 1)), twelfthMan });
+
+  // The names never reached this phone (not sent, or their date passed on the server).
+  const id = await P.restoreFromServer("55555555-5555-4555-8555-555555555555", { call: /** @type {any} */ (server([])) });
+  const rec = await P.loadPilot(id);
+  const roster = rec?.pilot?.roster;
+  ok("restored: every slot without a name, marked a position", !!roster && Object.values(roster.slots).length === 24
+     && Object.values(roster.slots).every((/** @type {any} */ x) => x.name === null && x.position === true));
+  const w = pilotWire(catchBy("Away No. 4"), roster);
+  ok("a second phone's catch by \"Away No. 4\" sends that slot's id", w.ok && /** @type {any} */ (w).event.fielder === slotAt("away", 4), JSON.stringify(w));
+  const t = pilotWire(start("Home No. 12"), roster);
+  ok("...and its twelfth man, \"Home No. 12\", his slot's id", t.ok && /** @type {any} */ (t).event.twelfthMan === slotAt("home", 12), JSON.stringify(t));
+  ok("...with no position on the wire", !JSON.stringify([w, t]).includes("No. "));
+  const typed = pilotWire({ ...catchBy("Away No. 4"), striker: CANARY_NAME }, roster);
+  ok("a typed name in a player's place is still refused", !typed.ok && /** @type {any} */ (typed).reason === "name_on_wire" && /** @type {any} */ (typed).field === "striker", JSON.stringify(typed));
+  const sub = pilotWire(catchBy(CANARY_NAME), roster);
+  ok("...a substitute fielder typed in is left off, never sent", sub.ok && /** @type {any} */ (sub).event.fielder === null && !JSON.stringify(sub).includes(CANARY_NAME));
+
+  // The names did reach it (home's typed, away's scored by position): only the nameless slots are positions.
+  const names = HOME.map((name, i) => ({ slot: slotAt("home", i + 1), name }));
+  const id2 = await P.restoreFromServer("66666666-6666-4666-8666-666666666666", { call: /** @type {any} */ (server(names)) });
+  const rec2 = await P.loadPilot(id2);
+  const r2 = rec2?.pilot?.roster;
+  ok("restored with names: a named slot keeps its name, unmarked; a nameless one is a position",
+     r2?.slots[slotAt("home", 3)]?.name === HOME[2] && r2?.slots[slotAt("home", 3)]?.position !== true && r2?.slots[slotAt("away", 4)]?.position === true);
+  const w2 = pilotWire(catchBy("Away No. 4"), r2);
+  ok("...its catch by \"Away No. 4\" sends that slot", w2.ok && /** @type {any} */ (w2).event.fielder === slotAt("away", 4), JSON.stringify(w2));
+  const w2n = pilotWire({ ...catchBy(HOME[3]), bowler: slotAt("home", 1) }, r2);
+  ok("...a named fielder his slot, and no name on the wire", w2n.ok && /** @type {any} */ (w2n).event.fielder === slotAt("home", 4) && !/Alpha/.test(JSON.stringify(w2n)));
+  const hn = pilotWire(catchBy("Home No. 4"), r2);
+  ok("...\"Home No. 4\" is no slot there: that slot has a name (left off)", hn.ok && /** @type {any} */ (hn).event.fielder === null);
+  // Its names' date passes on this phone: the named slots go back to main's way, the position ones stay positions.
+  const gone = P.withoutNames(/** @type {any} */ (rec2), { events: [[]] });
+  const g = gone.rec.pilot.roster;
+  ok("its names' date passed: no name kept, the named slots not made positions", Object.values(g.slots).every((/** @type {any} */ x) => x.name === null)
+     && g.slots[slotAt("home", 4)].position !== true);
+  const gw = pilotWire(catchBy("Home No. 4"), g);
+  ok("...so a fielder of a once-named slot, in position words, is left off as main sends it", gw.ok && /** @type {any} */ (gw).event.fielder === null, JSON.stringify(gw));
+  const gw2 = pilotWire(catchBy("Away No. 4"), g);
+  ok("...and one of a slot that never had a name still his slot", gw2.ok && /** @type {any} */ (gw2).event.fielder === slotAt("away", 4), JSON.stringify(gw2));
 }
 
 console.log(`\npositions: ${pass} passed, ${fail} failed`);
