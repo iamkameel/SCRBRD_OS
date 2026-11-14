@@ -40,6 +40,7 @@ import { D, inkOn, textOn } from "../design/tokens.js";
 import { Badge, Card } from "../ui/primitives.jsx";
 import { useLive } from "../lib/live.js";
 import { api, signedIn } from "../lib/api.js";
+import { isOff, useFeatures } from "../lib/features.js";
 import { profile, schoolsWhere } from "../lib/session.js";
 import { humanDateTime } from "../lib/format.js";
 import { roleGrants } from "@scrbrd/policy/roles";
@@ -577,6 +578,7 @@ function LiftPolicyForSchool({ school }) {
   const [meet, setMeet] = useState("");
   const [said, setSaid] = useState("");
   const [busy, setBusy] = useState(false);
+  const { features } = useFeatures();
   useEffect(() => {
     let gone = false;
     api(`/api/lifts/policy?schoolId=${school.id}`).then((r) => {
@@ -594,6 +596,10 @@ function LiftPolicyForSchool({ school }) {
     catch (e) { setSaid(say(e)); }
     finally { setBusy(false); }
   };
+  // Lift clubs switched off for this person: the panel is hidden (Kameel,
+  // 13 Nov 2026), unless a signed policy still stands. Withdrawing it is never
+  // module-gated (server.mjs), so the way to stop stays on the screen.
+  if (isOff(features, "lift_club") && !policy) return null;
   const length = text.trim().length;
   return (
     <Card sx={{ padding: "16px", marginTop: "16px" }} data-testid="lift-policy-panel">

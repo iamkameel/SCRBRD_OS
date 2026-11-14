@@ -20,7 +20,7 @@ import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
 import { Sidebar } from "./shell/Sidebar.jsx";
 import { TopBar } from "./shell/TopBar.jsx";
 import { PersonaBar } from "./shell/PersonaBar.jsx";
-import { personaOf } from "./lib/features.js";
+import { navOff, personaOf, useFeatures } from "./lib/features.js";
 import { holdsAsHeld } from "./lib/held.js";
 import { scorerLanding } from "./lib/scorerLanding.js";
 import { clearSession, loadSession, saveSession } from "./lib/persist.js";
@@ -150,6 +150,20 @@ function ViewChange({ page, title }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
   return <div className="sr-only" aria-live="polite" aria-atomic="true" data-testid="view-announcer">{said}</div>;
+}
+
+/**
+ * A page whose module is switched off for this person is not opened: a saved
+ * session or an old link to it lands on Home instead (Kameel, 13 Nov 2026:
+ * switched off is hidden). Its own component so the feature map is read once
+ * the shell is up, signed in, rather than when the login page mounted.
+ * Presentation only: the reads behind the page are refused regardless.
+ */
+function OffPageGuard({ page, home, onNav }) {
+  const { features, ready } = useFeatures();
+  const off = ready && page !== home && navOff(features, page);
+  useEffect(() => { if (off) onNav(home); }, [off, home, onNav]);
+  return null;
 }
 
 export default function SCRBRD_OS() {
@@ -659,6 +673,7 @@ export default function SCRBRD_OS() {
             navigation entry on every single page change — and the nav is up to
             nineteen entries long. Invisible until focused. */}
         <a href="#os-content" className="skip-link" data-testid="skip-link">Skip to content</a>
+        <OffPageGuard page={page} home={home} onNav={setPage}/>
         {!isMobile&&<Sidebar role={role} active={HOME_OF[page] ?? page} onNav={navTo} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut} persona={persona}/>}
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,overflow:"hidden"}}>
           {/* Said on every screen, not once on the login page. The shell can

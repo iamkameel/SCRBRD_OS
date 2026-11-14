@@ -4,6 +4,7 @@ import { roleGrants } from "@scrbrd/policy/roles";
 import { D, inkOn, textOn } from "../design/tokens.js";
 import { holdsCapability } from "../rbac/index.js";
 import { useLive, useRows } from "../lib/live.js";
+import { isOff, useFeatures } from "../lib/features.js";
 import { api, signedIn } from "../lib/api.js";
 import { humanDate } from "../lib/format.js";
 import { decideWords, decidedWords } from "../lib/decideWords.js";
@@ -42,7 +43,7 @@ function ManagementView({ role, onDirectoryChanged }) {
     {id:"users",    cap:"user.role.assign",  icon:"users",       label:"Users",        color:D.indigoText},
     {id:"squad",    cap:"team.manage",       icon:"bat",         label:"Squad",        color:D.sky},
     {id:"fixtures", cap:"fixture.create",    icon:"calendar",    label:"Fixtures",     color:D.amber},
-    {id:"broadcast",cap:"broadcast.publish", icon:"radio-tower", label:"Broadcast",    color:D.roseText},
+    {id:"broadcast",cap:"broadcast.publish", icon:"radio-tower", label:"Broadcast",    color:D.roseText, feature:"broadcast"},
     {id:"audit",    cap:"audit.read",        icon:"search",      label:"Audit log",    color:D.textSecondary},
     {id:"grounds",  cap:"facility.manage",   icon:"ground",      label:"Ground tasks", color:D.teal},
     // RECOGNITION R8 (db/146): the director of sport and the principal decide,
@@ -50,7 +51,10 @@ function ManagementView({ role, onDirectoryChanged }) {
     // this screen is not his (design/roles.js: user.role.assign).
     {id:"colours",  cap:["recognition.decide","recognition.manage"], icon:"award", label:"Colours", color:D.amber},
   ];
-  const tabs = TABS.filter(t=>[].concat(t.cap).some(c=>holdsCapability(role,c)));
+  // A tab whose feature is switched off for this person is not drawn (Kameel,
+  // 13 Nov 2026: switched off is hidden). Only narrows the capability's answer.
+  const { features } = useFeatures();
+  const tabs = TABS.filter(t=>[].concat(t.cap).some(c=>holdsCapability(role,c)) && !isOff(features, t.feature));
   // The screen opens on the first tab this person has.
   const tab = tabs.some(t=>t.id===activeTab) ? activeTab : tabs[0]?.id;
 

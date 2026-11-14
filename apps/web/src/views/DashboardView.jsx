@@ -6,7 +6,8 @@ import { addDays, dateStr, humanDate, humanDateTime, today } from "../lib/format
 import { api, signedIn } from "../lib/api.js";
 import { useDutyCoverage, useLive, useWeatherState } from "../lib/live.js";
 import { useNotifications } from "../lib/notifications.js";
-import { combineReads, readState } from "../lib/readState.js";
+import { combineReads, isModuleOff, readState } from "../lib/readState.js";
+import { isOff, useFeatures } from "../lib/features.js";
 import { holdsAsHeld } from "../lib/held.js";
 import { Btn, EmptyState, ReadState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
@@ -150,18 +151,28 @@ function useLiveScore(matchId) {
  *                is still coming, failed, is refused or switched off says that
  *                instead of the sentence "none" ("Nobody is out" over an
  *                injuries read that failed is good news nobody sent)
+ *   off          the modules switched off for this person: { injuries, training, logistics }.
+ *                Switched off is HIDDEN, not drawn as a refusal or a dash (Kameel,
+ *                13 Nov 2026): no "Who is out" without Injuries, no session in
+ *                "This week" without Training, no bus or Transport chip without
+ *                Logistics. Presentation only; the reads decide what comes back.
  *   onRetry      the one Retry: it re-runs these reads, the same ones, with the same role
  *   onNav, onOpenScorer         the two buttons' handlers
  */
 function DaySheet({ role, live = true, demoNote = "sample fixtures, no server connected", liveMatch = null, board = null, boardState = {},
                     next = null, busTime = null, weather = null, dutyRows = [], weekMatches = [], weekTraining = [], out = [], unread = [],
-                    reads = null, onRetry, onNav, onOpenScorer, matchDay = null, held = true }) {
+                    reads = null, onRetry, onNav, onOpenScorer, matchDay = null, held = true, off = {} }) {
   // The roles the person HOLDS, as the menu is drawn from, not the one badge role: a coach who is also a
   // director of sport keeps the sections the second role reaches (GA-I07). Presentation only. A sheet drawn
   // for a role that is not the viewer's (the pitch deck's coach, `held` false) answers from that role alone.
   const holds = (capability) => holdsAsHeld(role, capability, held ? undefined : []);
   const rc = ROLES[role];
   const hasDuty = (key) => dutyRows.some((r) => r.duty === key);
+  // The week's training, and the chips drawn, with what is switched off taken out.
+  const training = off.training ? [] : weekTraining;
+  const readySlots = off.logistics ? READY_SLOTS.filter((s) => s.key !== "transport") : READY_SLOTS;
+  // With Training off the week is the fixtures alone, and its read is theirs alone.
+  const weekRead = off.training ? reads?.matches : reads?.week;
   // A read that said something other than rows, or "none": null when there is
   // nothing to say beyond what the section already draws.
   const said = (r) => (r && !["ok", "empty", "stale"].includes(r.state) ? r : null);
@@ -218,7 +229,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: T.space.xs, marginTop: T.space.sm }}>
                   {next.venue && <div style={{ ...T.role.body, color: T.content.secondary }}><Icon name="map-pin"/> {next.venue}</div>}
-                  {busTime && <div style={{ ...T.role.body, color: T.content.secondary }}><Icon name="bus"/> Bus {busTime}</div>}
+                  {busTime && !off.logistics && <div style={{ ...T.role.body, color: T.content.secondary }}><Icon name="bus"/> Bus {busTime}</div>}
                   {!weather && reads?.weather?.state === "failed" && (
                     <div data-testid="day-weather-read"><ReadState read={reads.weather} onRetry={onRetry} compact testId="day-weather-read-state"/></div>
                   )}
@@ -233,7 +244,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                   )}
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: T.space.xs, marginTop: T.space.md }}>
-                  {READY_SLOTS.map((s) => {
+                  {readySlots.map((s) => {
                     const on = s.on(hasDuty);
                     return (
                       <span key={s.key} data-testid={`ready-${s.key}`} style={{
@@ -254,7 +265,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
         )}
 
         {/* 3. Who is out — availability, never the clinical tier. */}
-        {holds("medical.status.read") && (
+        {holds("medical.status.read") && !off.injuries && (
           <BentoCard level="c" title="Who is out" data-testid="day-out">
             {out.length === 0 ? draw(reads?.out, (
               <EmptyState message="Nobody is out." icon="circle-check"/>
@@ -274,12 +285,12 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
         {/* 4. This week — training and fixtures, as a list, not a grid. */}
         {(holds("team.read") || holds("fixture.read")) && (
           <BentoCard level="c" title="This week" data-testid="day-week">
-            {weekMatches.length === 0 && weekTraining.length === 0 ? draw(reads?.week, (
+            {weekMatches.length === 0 && training.length === 0 ? draw(weekRead, (
               <EmptyState message="Nothing scheduled this week." icon="calendar"/>
             )) : (
               <div style={{ display: "flex", flexDirection: "column", gap: T.space.sm }}>
                 {/* One of the two reads failed: what is listed is not the whole week. */}
-                {reads?.week?.state === "partial" && <ReadState read={reads.week} onRetry={onRetry} compact testId="week-read-state"/>}
+                {weekRead?.state === "partial" && <ReadState read={weekRead} onRetry={onRetry} compact testId="week-read-state"/>}
                 {holds("fixture.read") && weekMatches.map((m) => (
                   <div key={m.id} data-testid={`week-fixture-${m.id}`} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: `${T.space.xs} ${T.space.sm}` }}>
                     <Icon name="trophy"/>
@@ -287,7 +298,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                     <span style={{ ...T.role.body, color: T.content.secondary }}>{humanDateTime(m.date, m.time)}</span>
                   </div>
                 ))}
-                {holds("team.read") && weekTraining.map((s) => (
+                {holds("team.read") && training.map((s) => (
                   <div key={s.id} data-testid={`week-training-${s.id}`} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: `${T.space.xs} ${T.space.sm}` }}>
                     <Icon name="dumbbell"/>
                     <span style={{ ...T.role.body, color: T.content.primary, flex: "1 1 8em", minWidth: 0, overflowWrap: "anywhere" }}>{s.title}</span>
@@ -394,6 +405,15 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   const dutyRows = next ? (coverage.get(next.id)?.rows ?? []) : [];
   const weather = next ? WEATHER[next.id] : null;
 
+  // What is switched off for this person: the feature map, or the read itself
+  // answering module_disabled (the server's word, which the map only mirrors).
+  const { features } = useFeatures();
+  const off = {
+    injuries: isOff(features, "injuries") || isModuleOff(injuriesRead),
+    training: isOff(features, "training") || isModuleOff(trainingRead),
+    logistics: isOff(features, "logistics"),
+  };
+
   const reads = signedIn() ? {
     matches: readState(matchesRead, { what: "the fixtures" }),
     out: readState(injuriesRead, { what: "the injury list" }),
@@ -406,7 +426,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
     <DaySheet role={role} live={matchesAreLive || signedIn()} liveMatch={liveMatch} board={board} boardState={liveScore}
       next={next} busTime={busTime} weather={weather} dutyRows={dutyRows}
       weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
-      reads={reads} onRetry={() => setNonce((n) => n + 1)}
+      reads={reads} off={off} onRetry={() => setNonce((n) => n + 1)}
       onNav={onNav} onOpenScorer={onOpenScorer}
       matchDay={signedIn() ? <><MatchDayCard matches={MATCHES} onNav={onNav}/><RecentMatches matches={MATCHES} onNav={onNav}/></> : null}/>
   );

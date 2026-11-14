@@ -3278,8 +3278,8 @@ try {
          /The school's terms: agreed/.test(rec) && /popia-2026-01/.test(rec), rec);
       ok("...his name on public pages: on, given by you, with the wording's version and the time it was recorded",
          /Name on public pages: on/.test(rec) && /given by you · \d{1,2} \w{3} \d{4} \d\d:\d\d · public-names-2026-10/.test(rec), rec);
-      ok("...health monitoring said once as not in use at his school (the module is off), and no other person named",
-         /Health monitoring: not in use at Hilton College/.test(rec) && !OTHERS.test(rec), rec);
+      ok("...health monitoring not listed at all (the module is off, and switched off is hidden), and no other person named",
+         !/Health monitoring/.test(rec) && !OTHERS.test(rec), rec);
 
       // ── R9: the last number retired, then one added through the row's door ──
       await owner.query(`update emergency_contact set active = false where player_id = $1 and active`, [PILLAY]);

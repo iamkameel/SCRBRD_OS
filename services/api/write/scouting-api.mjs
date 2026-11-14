@@ -323,6 +323,16 @@ export function broadcastRoutes({ pool, secret }) {
         const strapline = b.strapline == null ? null : String(b.strapline).slice(0, 200);
 
         const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          // SWITCHED OFF RECORDS, IT DOES NOT PUBLISH (Kameel, 13 Nov 2026).
+          // The route is no longer module-gated, so the overlay's settings
+          // are stored while the feature is off. Putting the fixture ON a
+          // public screen is the outward act, and that stays refused while
+          // it is off, asked of the same function the read gate asks. Taking
+          // a fixture off a screen is never refused.
+          if (b.published === true) {
+            const { rows: [gate] } = await client.query(`select my_feature_enabled('broadcast') as on`);
+            if (!gate?.on) throw Object.assign(new Error("module_disabled"), { status: 403 });
+          }
           const r = await client.query(
             `insert into match_broadcast
                (match_id, school_id, published, name_display, show_officials, strapline,
@@ -339,6 +349,7 @@ export function broadcastRoutes({ pool, secret }) {
         });
         res.json(out);
       } catch (/** @type {any} */ e) {
+        if (e.message === "module_disabled") return res.status(403).json({ error: "module_disabled", module: "broadcast" });
         if (e.code === "23514") return res.status(400).json({ error: "invalid_value", detail: e.message });
         if (e.code === "23502" || e.code === "23503") return res.status(404).json({ error: "no_such_match" });
         const status = e.code === "42501" ? 403 : (e.status || 500);

@@ -64,6 +64,37 @@ export function featureOn(key) {
 }
 
 /**
+ * SWITCHED OFF MEANS HIDDEN (Kameel, 13 Nov 2026): "Anything that's switched
+ * off for a user should be hidden for that user but still record data."
+ *
+ * The one test every screen asks of a feature map: is this key answered OFF?
+ * Only an explicit false hides, so unknown stays on (above) and a failed read
+ * draws what it always drew. Presentation only: hiding a thing gives nobody a
+ * capability, and the server still refuses whatever it refuses.
+ * @param {Record<string, boolean> | null | undefined} features
+ * @param {string | null | undefined} key
+ */
+export const isOff = (features, key) => !!key && features?.[key] === false;
+
+/**
+ * A nav destination's module, answered off: the shell's own rule (useNav)
+ * for a door drawn somewhere other than the menu — a search result, a quick
+ * link, a "Open the bus" on a queue row. Module only; the capability half of
+ * whether the door is drawn stays with the screen that draws it.
+ * @param {Record<string, boolean> | null | undefined} features
+ * @param {string} navKey
+ */
+export const navOff = (features, navKey) => isOff(features, MODULE_OF_NAV[navKey]);
+
+/**
+ * The sports to draw: the ones switched on for this session. A sport that is
+ * off is not drawn at all (no "SOON" badge); its fixtures are history the
+ * school keeps, and they still read where fixtures are read.
+ * @param {any[]} sports
+ */
+export const sportsOn = (sports) => (sports ?? []).filter((s) => s?.enabled === true);
+
+/**
  * The feature map for this session, fetched once.
  *
  * Returns `{ features, ready }`. `ready` is worth having: an administrator's
@@ -101,10 +132,7 @@ export function useNav(role) {
   // person may not read what is behind it.
   const held = profile()?.assignments?.map((a) => a.role) ?? [];
   const nav = held.length ? navForRoles([...new Set(held)]) : (ROLES[role]?.nav ?? []);
-  return nav.filter((k) => {
-    const module = MODULE_OF_NAV[k];
-    return !module || features[module] !== false;
-  });
+  return nav.filter((k) => !navOff(features, k));
 }
 
 /**
