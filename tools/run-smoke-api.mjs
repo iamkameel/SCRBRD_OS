@@ -327,6 +327,11 @@ const WALKS = [
   // "no" on the family's word, the never-public mark over a consent, names
   // off per age group — each on the public log's very next request.
   "public-name",
+  // Public by terms slice 3 (db/155): the naming decision with the
+  // per-surface switch on, over the database's own facts: live or card by
+  // status, a yes through a revoked link names nobody, and on names nobody
+  // off does not.
+  "public-surfaces",
   // Parent lift clubs, phase 1 (SCRBRD-124, db/70): the school's two keys, a
   // driver's declaration, a round trip made as one act, consent per boy per
   // lift by version, the fixture moving under it, names and numbers through
