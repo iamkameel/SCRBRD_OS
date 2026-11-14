@@ -279,6 +279,9 @@ export function PublicMatch({ matchId, view }) {
   const line = matchLine({ match, competition: null, weather: null });
   const st = statusSentence(match, folded ? { innings: played, result: folded.result, conditions: data.fold?.conditions } : null, { result });
   const notice = revisionNotice(boardInn);
+  // §3.3: a live Summary says the status sentence under its board, so the header does not; if that panel fails,
+  // its boundary keeps the sentence above the card.
+  const summarySays = tab === "summary" && !summaryIsResult({ match, innings: played, result, settled: story?.settled ?? false });
   const ctx = { match, innings: played, result, commentary: fixes?.commentary ?? commentary, events, fold: data.fold, par: data.par, settled: story?.settled ?? false,
     demo: false, overs: match.overs || 20,
     inningsSel, setInningsSel: setPicked, phone, setTab, moment, overSummary, shownRuns,
@@ -313,7 +316,7 @@ export function PublicMatch({ matchId, view }) {
             {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
           </h1>
           {played.length > 0 && <HeaderScores match={match} played={played} corrected={fixes?.corrected}/>}
-          {(tab !== "summary" || summaryIsResult({ match, innings: played, result, settled: story?.settled ?? false })) && <StatusLine st={st} except={["upcoming"]}/>}
+          {!summarySays && <StatusLine st={st} except={["upcoming"]}/>}
           {/* OFFICIAL_RESULT D11, Q3: "Provisional" or "Official result · confirmed 20:15, 11 Oct" — the
               time only, never who, never a reason, and never "Under review" (the server says a disputed
               result is not official). Announced when a poll changes it. */}
@@ -346,7 +349,7 @@ export function PublicMatch({ matchId, view }) {
 
         <TabStrip tabs={TABS} tab={tab} setTab={setTab} narrow={phone} label="Match"/>
         <div role="tabpanel" id={`mc-panel-${tab}`} aria-labelledby={panelLabel(TABS, tab, phone)} data-testid={`mc-panel-${tab}`} tabIndex={0} style={{ outline: "none" }}>
-          <ErrorBoundary key={tab} name={tab === "details" ? "match details" : tab}>
+          <ErrorBoundary key={tab} name={tab === "details" ? "match details" : tab} before={summarySays ? <StatusLine st={st} except={["upcoming"]}/> : null}>
             {tab === "summary" ? <SummaryTab {...ctx}/>
               : tab === "scorecard" ? <ScorecardTab {...ctx}/>
               : tab === "commentary" ? <CommentaryTab {...ctx}/>

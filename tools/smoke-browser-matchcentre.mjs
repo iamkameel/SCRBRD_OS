@@ -1871,6 +1871,18 @@ try {
     ok("Try again, once the fault has gone, brings the panel back", await tid(B, "panel-error").count() === 0 && await tid(B, "mc-line").count() > 0);
     ok("...and logged nothing more: a retry that works is silent", panelLogs.length === 2, panelLogs.join(" | "));
 
+    // EXPERIENCE_PASS §3.3 (review N4): a live Summary says the status sentence under its board; when that panel
+    // throws, its boundary keeps the sentence above the card, so the page never loses where the match stands.
+    await B.evaluate(() => { window.__SCRBRD_TEST_THROW__ = "summary"; });
+    await tid(B, "mc-back").click();
+    await B.waitForTimeout(400);
+    ok("the innings-break fixture opens, its Summary made to throw", await openMatch(B, fx.brk));
+    await tid(B, "panel-error").waitFor({ timeout: 6000 }).catch(() => {});
+    const kept = await B.locator('[data-testid="mc-status-line"]').allInnerTexts();
+    ok(`a live Summary that throws: its card, and the status sentence kept once above it ("${kept[0] ?? ""}")`,
+       await B.locator('[data-testid="panel-error"][data-panel="summary"]').count() === 1 && kept.length === 1 && /^Innings break: /.test(kept[0] ?? ""), JSON.stringify(kept));
+    await B.evaluate(() => { window.__SCRBRD_TEST_THROW__ = null; });
+
     // The routed view: the shell's boundary, keyed on the page.
     await tid(B, "mc-back").click();
     await B.waitForTimeout(400);
