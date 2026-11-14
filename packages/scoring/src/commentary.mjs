@@ -197,6 +197,18 @@ export const ROLE_WORDS = Object.freeze({
  * @property {string} text
  * @property {string} key      stable across re-renders: from the event's id where it
  *   has one, and its place in the log where it has not
+ * @property {LineMoment} [moment]  a milestone or a penalty line only: what it is, as
+ *   a fact (deriveFacts()'s moment, the stand's mark, the award's side), so a
+ *   reader can tell a fifty from a five-for without reading the words
+ *   (apps/web lib/moments.js, SCRBRD-133 §5.2). Players by the log's own ids
+ */
+
+/**
+ * @typedef {{kind: "batter_mark", player: string, mark: number, balls: number}
+ *   | {kind: "partnership", mark: number, bat1: string | null, bat2: string | null, balls: number}
+ *   | {kind: "bowler_wickets", player: string, wickets: number, runs: number}
+ *   | {kind: "hat_trick" | "hat_trick_ball", player: string}
+ *   | {kind: "penalty", runs: number, toBatting: boolean}} LineMoment
  */
 
 /**
@@ -520,11 +532,12 @@ export function deriveCommentary(events = [], options = {}) {
     /**
      * @param {string} baseKey  @param {number} over  @param {number} ball
      * @param {string} kind  @param {string} text
+     * @param {LineMoment} [moment]  what a milestone or a penalty line is, as a fact (see CommentaryItem)
      */
-    const push = (baseKey, over, ball, kind, text) => {
+    const push = (baseKey, over, ball, kind, text, moment) => {
       const k = keyCount.get(baseKey) ?? 0;
       keyCount.set(baseKey, k + 1);
-      out.push({ innings: n, over, ball, kind, text: cap(text), key: k ? `${baseKey}#${k}` : baseKey });
+      out.push({ innings: n, over, ball, kind, text: cap(text), key: k ? `${baseKey}#${k}` : baseKey, ...(moment ? { moment } : {}) });
     };
     /** Where a line with no delivery of its own goes: after the last ball. */
     const afterLast = () => (lastBall ? { over: lastBall.over, ball: lastBall.ballInOver + 1 } : { over: 0, ball: 0 });
@@ -714,7 +727,8 @@ export function deriveCommentary(events = [], options = {}) {
               : m.mark === 100
                 ? choose(key, "hundred", [`A hundred for ${S}, from ${m.balls} balls.`, `${S} reaches a hundred, from ${m.balls} balls.`])
                 : `${S} reaches ${m.mark}, from ${m.balls} balls.`;
-            push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE, text2);
+            push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE, text2,
+              { kind: MOMENT_KIND.BATTER_MARK, player: m.player, mark: /** @type {number} */ (m.mark), balls: /** @type {number} */ (m.balls) });
           }
           const samePair = cur.wickets === prev.wickets && cur.cp.bat1 === prev.cp.bat1 && cur.cp.bat2 === prev.cp.bat2
             && cur.cp.bat1 != null && cur.cp.bat2 != null;
@@ -723,7 +737,8 @@ export function deriveCommentary(events = [], options = {}) {
               if (prev.cp.runs < mark && cur.cp.runs >= mark) {
                 const what = mark === 50 ? "Fifty" : mark === 100 ? "Hundred" : String(mark);
                 push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE,
-                  `${what} partnership for ${who(cur.cp.bat1, "batter")} and ${who(cur.cp.bat2, "batter")}, from ${cur.cp.balls} balls.`);
+                  `${what} partnership for ${who(cur.cp.bat1, "batter")} and ${who(cur.cp.bat2, "batter")}, from ${cur.cp.balls} balls.`,
+                  { kind: "partnership", mark, bat1: cur.cp.bat1, bat2: cur.cp.bat2, balls: cur.cp.balls });
               }
             }
           }
@@ -735,11 +750,12 @@ export function deriveCommentary(events = [], options = {}) {
             const B = who(m.player, "bowler");
             if (m.kind === MOMENT_KIND.BOWLER_WICKETS) {
               push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE,
-                `${cap(words(/** @type {number} */ (m.wickets)))} wickets for ${B}: ${m.wickets}/${m.runs}.`);
+                `${cap(words(/** @type {number} */ (m.wickets)))} wickets for ${B}: ${m.wickets}/${m.runs}.`,
+                { kind: MOMENT_KIND.BOWLER_WICKETS, player: m.player, wickets: /** @type {number} */ (m.wickets), runs: /** @type {number} */ (m.runs) });
             } else if (m.kind === MOMENT_KIND.HAT_TRICK) {
-              push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE, `A hat-trick for ${B}.`);
+              push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE, `A hat-trick for ${B}.`, { kind: MOMENT_KIND.HAT_TRICK, player: m.player });
             } else if (m.kind === MOMENT_KIND.HAT_TRICK_BALL) {
-              push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE, `${B} is on a hat-trick.`);
+              push(key, pos.over, pos.ball, COMMENTARY_KIND.MILESTONE, `${B} is on a hat-trick.`, { kind: MOMENT_KIND.HAT_TRICK_BALL, player: m.player });
             }
           }
           // The over is done: its summary goes out with whatever happens next.
@@ -759,7 +775,7 @@ export function deriveCommentary(events = [], options = {}) {
           const pos = afterLast();
           const head = `${cap(words(runs))} penalty ${plural(runs, "run")}`;
           if (toBat) {
-            push(key, pos.over, pos.ball, COMMENTARY_KIND.PENALTY, `${head} to ${batTeam}${why}. ${score(cur)}`);
+            push(key, pos.over, pos.ball, COMMENTARY_KIND.PENALTY, `${head} to ${batTeam}${why}. ${score(cur)}`, { kind: "penalty", runs, toBatting: true });
             break;
           }
           const parts = [`${head} to ${fieldTeam}${why}${reason === PENALTY_REASON.SHORT_RUNNING ? "; the runs are disallowed" : ""}.`];
@@ -779,7 +795,8 @@ export function deriveCommentary(events = [], options = {}) {
           }
           if (cur.target != null && prev.target != null && cur.target !== prev.target) parts.push(`The target is now ${cur.target}.`);
           push(key, pos.over, pos.ball,
-            reason === PENALTY_REASON.SHORT_RUNNING ? COMMENTARY_KIND.SHORT_RUNNING : COMMENTARY_KIND.PENALTY, parts.join(" "));
+            reason === PENALTY_REASON.SHORT_RUNNING ? COMMENTARY_KIND.SHORT_RUNNING : COMMENTARY_KIND.PENALTY, parts.join(" "),
+            { kind: "penalty", runs, toBatting: false });
           break;
         }
 
