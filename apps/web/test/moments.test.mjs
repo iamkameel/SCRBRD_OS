@@ -9,7 +9,7 @@
  */
 import { inningsStart, batters, bowler, ball, revision, penalty, playStopped, sealInnings, deriveMatch, deriveInnings,
   deriveCommentary, BALL_TYPE } from "@scrbrd/scoring";
-import { boardTags, momentsFrom, enqueue, SIZE, SHOW_MS, GAP, QUEUE_MAX } from "../src/lib/moments.js";
+import { boardTags, lineBall, momentsFrom, enqueue, SIZE, SHOW_MS, GAP, QUEUE_MAX } from "../src/lib/moments.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
@@ -141,7 +141,7 @@ group("11, 12. Innings closed, then the target");
   g.add(1, revision({ overs: 1, target: 8, reason: "rain" }));
   r = g.read();
   ok(`15. a revision: "${said(r.cards).join(" | ")}"`, r.cards.length === 1 && r.cards[0].kind === "revision" && r.cards[0].title === "Overs revised to 1"
-     && r.cards[0].body === "Target 8 from 1 overs", said(r.cards));
+     && r.cards[0].body === "Target 8 from 1 over", said(r.cards));
   g.add(1, penalty({ runs: 5, toBattingTeam: true }));
   r = g.read();
   ok("16. five penalty runs: to the side, never the boy", said(r.cards).join() === "penalty: 5 penalty runs / to Away XI", said(r.cards));
@@ -168,7 +168,7 @@ group("17. A super over's first innings");
   const so = momentsFrom([{ kind: "innings_start", key: "e:so1", innings: 2, text: "" }], null, fold, { side });
   ok("SUPER OVER, Away XI to bat", said(so).join() === "super_over: Super over / Away XI to bat", said(so));
   const second = momentsFrom([{ kind: "innings_start", key: "e:so2", innings: 3, text: "" }], null, fold, { side });
-  ok("...its second: the target", said(second).join() === "target: Target 9 / from 1 overs", said(second));
+  ok("...its second: the target", said(second).join() === "target: Target 9 / from 1 over", said(second));
 }
 
 group("The gap: more than six deliveries in one read cut to state, with no card");
@@ -203,6 +203,86 @@ group("7, 9. The board's tags: Free hit, Hat-trick ball, until the next counted 
   r = g.read();
   ok("...his next counted ball ends it", tags().length === 0, tags());
   ok("a finished innings has no tag", boardTags({ ...r.fold.innings[0], complete: true, freeHit: true }, [], 0).length === 0);
+}
+
+group("S1. Hat-trick ball only while that bowler is on, never through another's over");
+{
+  const g = game();
+  for (let i = 0; i < 4; i++) g.add(0, ball({ value: 0 }));
+  g.add(0, ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), batters({ striker: "h2" }), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }), batters({ striker: "h3" }));
+  let r = g.read();
+  const tags = () => boardTags(r.fold.innings[0], deriveCommentary(g.log, { nameOf }), 0);
+  ok("two in two with the over's last two balls: between overs, no bowler on, no tag", tags().length === 0, tags());
+  g.add(0, bowler({ bowler: "a1" }), ball({ value: 0 }), ball({ value: 1 }));
+  r = g.read();
+  ok("another bowler's over: no tag on any of his balls", tags().length === 0, tags());
+  for (let i = 0; i < 4; i++) g.add(0, ball({ value: 0 }));
+  g.add(0, bowler({ bowler: "a0" }));
+  r = g.read();
+  ok("the hat-trick bowler back on, his next ball not yet bowled: \"Hat-trick ball\"", tags().join() === "Hat-trick ball", tags());
+  g.add(0, ball({ value: 0 }));
+  r = g.read();
+  ok("...and his next counted ball ends it", tags().length === 0, tags());
+}
+
+group("S5. Super over tied: held, \"another to follow\", never beside a result");
+{
+  const tied = { innings: [{ battingTeam: "Home" }, { battingTeam: "Away" },
+    { battingTeam: "Home", superOver: 1, runs: 8, wickets: 0, balls: 6, complete: true, overs: 1 },
+    { battingTeam: "Away", superOver: 1, runs: 8, wickets: 0, balls: 6, complete: true, overs: 1, target: 9 }] };
+  const before = { innings: [tied.innings[0], tied.innings[1], tied.innings[2], { ...tied.innings[3], runs: 7, balls: 5, complete: false }] };
+  const end = { kind: "innings_end", key: "i3:end", innings: 3, text: "" };
+  const c = momentsFrom([end], before, tied, { side });
+  const t = c.find((x) => x.kind === "super_over_tied");
+  ok(`the pair level, none opened after it: SUPER OVER TIED, held (${said(c).join(" | ")})`, t?.size === SIZE.HELD && t.title === "Super over tied" && t.body === "Another to follow");
+  ok("...not again on a later read", !momentsFrom([], tied, tied).some((x) => x.kind === "super_over_tied"));
+  ok("...and not when the match's result comes with it (the result is that state)",
+     !momentsFrom([end, { kind: "result", key: "result:m", innings: 3, text: "Match tied" }], before, tied).some((x) => x.kind === "super_over_tied"));
+}
+
+group("N5. A family's screen: a card about another boy keeps its title, drops the line that names him");
+{
+  const g = game();
+  for (let i = 0; i < 6; i++) g.add(0, ball({ value: 6 }));
+  g.add(0, bowler({ bowler: "a1" }));
+  g.read();
+  g.add(0, ball({ value: 1 }), ball({ value: 6 }), ball({ value: 4 }));
+  const r0 = g.read();
+  g.add(0, ball({ value: 4 }));
+  const fold = deriveMatch(g.log);
+  const fresh = deriveCommentary(g.log, { nameOf }).filter((c) => c.key.startsWith(`e:${g.log[g.log.length - 1].id}`));
+  const mine = momentsFrom(fresh, r0.fold, fold, { focus: ["h0", "h1"] });
+  ok("his family (both of the stand): FIFTY with its line", mine[0]?.kind === "fifty" && mine[0].body === "H Batter0 · 50 off 9", said(mine));
+  const other = momentsFrom(fresh, r0.fold, fold, { focus: ["h5"] });
+  ok("another boy's family: FIFTY, and no line naming him", other.length === 1 && other[0].kind === "fifty" && other[0].body === null && other[0].title === "Fifty", said(other));
+  const half = momentsFrom(fresh, r0.fold, fold, { focus: ["h0"] });
+  ok("...h0's own family, the card also the stand's with h1: the line names h1 too, so it goes", half[0]?.body === null, said(half));
+  ok("no focus (staff, public): the line as ever", momentsFrom(fresh, r0.fold, fold)[0]?.body === "H Batter0 · 50 off 9");
+  const w = game();
+  w.add(0, ball({ value: 2 }), ball({ type: BALL_TYPE.WICKET, dismissal: "bowled" }));
+  const wf = deriveMatch(w.log);
+  const wl = deriveCommentary(w.log, { nameOf }).filter((c) => c.kind === "wicket");
+  ok("his own boy out: his name and figures, not the dismissal that names the bowler",
+     momentsFrom(wl, null, wf, { focus: ["h0"] })[0]?.body === "H Batter0 2 (2)", said(momentsFrom(wl, null, wf, { focus: ["h0"] })));
+  ok("another boy out: WICKET, no line", momentsFrom(wl, null, wf, { focus: ["h4"] })[0]?.body === null);
+}
+
+group("N6. A correction never fires a card: a line on a ball already drawn is none");
+{
+  const g = game();
+  g.add(0, ball({ value: 4 }));
+  const r = g.read();
+  const seen = new Set(r.fresh.map(lineBall).filter(Boolean));
+  const moved = [{ kind: "milestone", key: `${r.fresh.find((c) => c.kind === "four").key}#1`, innings: 0, moment: { kind: "batter_mark", player: "h0", mark: 50, balls: 30 } }];
+  ok("a fifty moved onto a ball the page drew before: no card", momentsFrom(moved, r.fold, r.fold, { seen }).length === 0);
+  ok("...the same line on a new ball is a card", momentsFrom(moved, r.fold, r.fold).length === 1);
+}
+
+group("N7. A revision written at the break, before the chase opens, is a card from its own figures");
+{
+  const rev = { kind: "revision", key: "e:rv", innings: 1, text: "", moment: { kind: "revision", overs: 16, target: 134 } };
+  const c = momentsFrom([rev], { innings: [{ battingTeam: "Home" }] }, { innings: [{ battingTeam: "Home" }] });
+  ok(`"Overs revised to 16 / Target 134 from 16 overs" (${said(c).join()})`, said(c).join() === "revision: Overs revised to 16 / Target 134 from 16 overs");
 }
 
 group("§5.3: the queue");

@@ -197,7 +197,7 @@ export const ROLE_WORDS = Object.freeze({
  * @property {string} text
  * @property {string} key      stable across re-renders: from the event's id where it
  *   has one, and its place in the log where it has not
- * @property {LineMoment} [moment]  a milestone or a penalty line only: what it is, as
+ * @property {LineMoment} [moment]  a milestone, a penalty or a revision line only: what it is, as
  *   a fact (deriveFacts()'s moment, the stand's mark, the award's side), so a
  *   reader can tell a fifty from a five-for without reading the words
  *   (apps/web lib/moments.js, SCRBRD-133 §5.2). Players by the log's own ids
@@ -208,7 +208,8 @@ export const ROLE_WORDS = Object.freeze({
  *   | {kind: "partnership", mark: number, bat1: string | null, bat2: string | null, balls: number}
  *   | {kind: "bowler_wickets", player: string, wickets: number, runs: number}
  *   | {kind: "hat_trick" | "hat_trick_ball", player: string}
- *   | {kind: "penalty", runs: number, toBatting: boolean}} LineMoment
+ *   | {kind: "penalty", runs: number, toBatting: boolean}
+ *   | {kind: "revision", overs: number | null, target: number | null}} LineMoment
  */
 
 /**
@@ -827,7 +828,8 @@ export function deriveCommentary(events = [], options = {}) {
           // SCRBRD-130 R1: the umpires' par at a termination.
           const par = typeof ev.par === "number" ? `the umpires announce a par score of ${ev.par}` : "";
           const all = [said, par].filter(Boolean).join("; ");
-          if (all) push(key, pos.over, pos.ball, COMMENTARY_KIND.REVISION, `Revision${r ? ` ${r}` : ""}: ${all}.`);
+          if (all) push(key, pos.over, pos.ball, COMMENTARY_KIND.REVISION, `Revision${r ? ` ${r}` : ""}: ${all}.`,
+            { kind: "revision", overs: ev.overs ?? null, target: ev.target ?? null });
           break;
         }
 
