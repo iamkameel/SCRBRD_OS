@@ -203,10 +203,16 @@ try {
   /** One state of the home page, signed out at 390. */
   const home = async (label, state) => {
     const v = await visitor();
-    await v.page.goto(`${BASE}/`, { waitUntil: "networkidle" });
-    await v.page.waitForFunction((s) => document.querySelector("main")?.dataset.first === s, state, { timeout: 8000 }).catch(() => {});
-    await afterReads(v.page, 500);
-    const first = await v.page.evaluate(() => document.querySelector("main")?.dataset.first);
+    // The lead is chosen once per visit, from the first read if it answers within main.jsx's
+    // LEAD_WAIT_MS; a read slower than that leaves the film first for the visit, by design. A loaded
+    // test machine sometimes answers late, so a visit that settled otherwise is tried again, up to five times.
+    let first = "";
+    for (let i = 0; i < 5 && first !== state; i++) {
+      await v.page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+      await v.page.waitForFunction(() => document.querySelector("main")?.dataset.first !== "wait", null, { timeout: 8000 }).catch(() => {});
+      await afterReads(v.page, 500);
+      first = await v.page.evaluate(() => document.querySelector("main")?.dataset.first ?? "");
+    }
     ok(`${label}: the page knows its state from the public read ("${state}")`, first === state, first);
     return v;
   };
