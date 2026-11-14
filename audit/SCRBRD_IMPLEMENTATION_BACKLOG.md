@@ -25,6 +25,8 @@
 
 13 Nov 2026 (night): the experience pass (docs/redesign/EXPERIENCE_PASS.md, PR #326) was designed and reviewed, and Kameel answered its 25 questions as recommended. Six slices, in order: 1 the scorer's home and starting a Pilot Match; 2 the spectator's match page; 3 first run; 4 parent and pupil; 5 the coach's day sheet and the homes; 6 the office. Slices 3 and 4 carry migrations (Fable's red-team on Kameel's say, his word before each paste).
 
+14 Nov 2026: two merges recorded. #327 (merge 660a5630): experience slice 1, the first ball with no school and no names; the scorer's home. A signed-in account with no school can start a Practice Match from the no-school home ("Start a match"); a Pilot Match is still decided by the server's grant. Names are optional for Practice and Pilot Matches, never a school fixture: the new `practice-positions` button scores by position (Home/Away No. 1–11), and `practice-next` keeps its words. The scorer's home shows each fixture's status sentence, a "Your last match" plain record (no points or ranks), and his side's live fixture under "Now"; "Scoring for a school? Join it" shows after a decided result. No migration; a positions-only match writes the same events as a named one (apps/web/test/positions.test.mjs); new walk browser-first-score. Not built: adding a name during play. #328 (merge 5da5d266): switched off, Part A, per Kameel's 13 Nov rule "Anything that's switched off for a user should be hidden for that user but still record data." Anything switched off is hidden for that user, display only. Trips, the driver's marks, vehicles, a sponsor signed and broadcast's settings now store while off. Still refused while off: broadcast publish, sponsor placement, the scorebook reader (a read sends page photos with children's names to an outside AI provider), officials' appointments (until a migration names officials on the public overlay only while Officials is on), training and fields, and the six child-data modules (skills, injuries, workload, scouting, lift club, scorebook import). No migration; db/154 (DRS reviews; other sports' fixtures, pending Kameel's word) stays on branch claude/wip-switched-off.
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -5328,7 +5330,7 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 
 ### Experience pass — where things live, and the first run (2026-11-13)
 **Domain:** Design / UX · **Decided 13 Nov 2026:** all 25 questions in `docs/redesign/EXPERIENCE_PASS.md` §5 as recommended. Slices 3 and 4 carry migrations.
-- [ ] Slice 1 · The scorer's home and starting a Pilot Match
+- [x] ~~Slice 1 · The scorer's home and starting a Pilot Match~~ **Done 14 Nov 2026** (#327, 660a5630)
 - [ ] Slice 2 · The spectator's match page
 - [ ] Slice 3 · First run (migrations)
 - [ ] Slice 4 · Parent and pupil (migrations)
