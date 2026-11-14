@@ -186,6 +186,9 @@ export function nameFor(person, on) {
   // is off, when the rule is the one it was before that design. No
   // byTermsAllowed: a match page is not opened to line 6 before slice 4.
   const surface = person.surface === "card" || person.surface === "live" ? person.surface : undefined;
+  // Any other surface is one this page does not serve: fail closed, never the
+  // old rule (whose yes would name him on card and live).
+  if (person.surface != null && surface === undefined) return null;
   const shown = publicName({
     ...(surface ? { surface, byTerms: f.byTerms } : {}),
     on,

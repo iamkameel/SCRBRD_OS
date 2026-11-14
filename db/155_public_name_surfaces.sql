@@ -27,7 +27,10 @@
 -- locked (db/08: "a FEATURE that arrives switched on has not been decided
 -- about"; locked, so no school grant can move it: it is the platform's,
 -- one setting, written through db/08's logged door under
--- platform.feature.manage). Off, public_name_surface() answers NULL and
+-- platform.feature.manage). HIDDEN (Kameel, 13 Nov 2026: a
+-- switched-off thing is hidden for the user): the API's my_features and
+-- module_settings reads leave its key out, so no school's Modules screen
+-- lists it, and its reason names no person or process. Off, public_name_surface() answers NULL and
 -- every read runs as before. On, the public match page and a publication's
 -- count judge each name by §5.1 for the surface the fixture's status gives:
 -- `live` while play is on (status 'live'), `card` otherwise. Turning it on
@@ -194,13 +197,11 @@ END $guard$;
 
 
 -- ── 1 · The wording each answer was given to (§6.1) ─────────────────
-ALTER TABLE public_name_consent ADD COLUMN IF NOT EXISTS surface text;
-COMMENT ON COLUMN public_name_consent.surface IS
-  'PUBLIC_BY_TERMS §6.1 (db/155): the surface this answer''s wording named, card, live or board. NULL is the old single wording (public-names-2026-10, "public match pages"): its yes names card and live, never board; its no covers all three (§5.1 line 5, B1).';
-
+-- The lock_timeout first, so the column's lock is under it as well.
 DO $surface$
 BEGIN
   PERFORM set_config('lock_timeout', '10s', true);
+  ALTER TABLE public_name_consent ADD COLUMN IF NOT EXISTS surface text;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint
                   WHERE conrelid = 'public_name_consent'::regclass AND conname = 'public_name_consent_surface') THEN
     ALTER TABLE public_name_consent ADD CONSTRAINT public_name_consent_surface
@@ -215,14 +216,14 @@ BEGIN
       ON public_name_consent (player_id, giver_link_id, coalesce(surface, 'old')) WHERE ended_on IS NULL;
   END IF;
 END $surface$;
+COMMENT ON COLUMN public_name_consent.surface IS
+  'PUBLIC_BY_TERMS §6.1 (db/155): the surface this answer''s wording named, card, live or board. NULL is the old single wording (public-names-2026-10, "public match pages"): its yes names card and live, never board; its no covers all three (§5.1 line 5, B1).';
 
 
 -- ── 2 · The switch ─────────────────────────────────────────────────
 INSERT INTO feature_flag (key, kind, label, enabled, locked, reason) VALUES
   ('public_name_surfaces', 'feature', 'Public names by surface', false, true,
-   'PUBLIC_BY_TERMS slice 3 (db/155): the public match page judges each name for its surface (live while play is on, '
-   'the scorecard after), by the per-surface rule. Off and locked: built switched off (Kameel, 12 Nov 2026), and '
-   'on only by the platform, never a school, once the red-team and Kameel say so. Slice 4''s platform setting replaces it.')
+   'Built and held off by the platform: how a match page names a pupil for each surface. Nothing changes while it is off.')
 ON CONFLICT (key) DO NOTHING;
 
 

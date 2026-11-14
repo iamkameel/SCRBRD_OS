@@ -2713,8 +2713,12 @@ export const READ_QUERIES = {
    * Never module-gated itself, for the obvious reason.
    */
   my_features: {
+    // db/155's public_name_surfaces is the platform's own switch for how a
+    // public page judges names, built and held off: hidden from every user
+    // (Kameel, 13 Nov 2026: a switched-off thing is hidden), here and in
+    // module_settings. It owns no destination or read a client draws.
     text: `select f.key, f.kind, f.label, my_feature_enabled(f.key) as enabled
-             from feature_flag f order by f.kind, f.key`,
+             from feature_flag f where f.key <> 'public_name_surfaces' order by f.kind, f.key`,
   },
 
   /**
@@ -2892,6 +2896,7 @@ export const READ_QUERIES = {
                   feature_enabled(f.key, $1::uuid, null)       as resolved
              from feature_flag f
              left join feature_grant g on g.key = f.key and g.school_id = $1
+            where f.key <> 'public_name_surfaces'   -- hidden: see my_features
             order by f.kind, f.key`,
     params: q => [req(q, "schoolId")],
   },
