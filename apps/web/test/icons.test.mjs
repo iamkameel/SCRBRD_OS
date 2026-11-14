@@ -113,6 +113,36 @@ ok(`every literal icon name at a call site resolves (${named} checked)`, unknown
 ok("...and the scan finds them (it is not checking nothing)", named > 150, String(named));
 ok("an unknown name is not an icon", !isIcon("definitely-not-an-icon") && !isIcon(undefined));
 
+// EXPERIENCE_PASS Slice 2: the public page carries ui/iconCore.jsx and not
+// this file's hundred Lucide icons (tools/check-bundle.mjs), so every module
+// it can load, statically or lazily, names only the core's icons and the
+// glyphs. Traced here from its entry through the source's own imports.
+{
+  const { CORE_NAMES } = await import("../src/ui/iconCore.jsx");
+  const core = new Set([...CORE_NAMES, ...GLYPH_NAMES]);
+  const IMPORT = /\bimport\s*(?:[^"'();]*?\bfrom\s*)?["'](\.{1,2}\/[^"']+)["']|\bimport\(\s*["'](\.{1,2}\/[^"']+)["']\s*\)/g;
+  const seen = new Set();
+  const todo = [join(SRC, "public/main.jsx")];
+  while (todo.length) {
+    const f = /** @type {string} */ (todo.pop());
+    if (seen.has(f)) continue;
+    seen.add(f);
+    let src;
+    try { src = readFileSync(f, "utf8"); } catch { continue; }
+    for (const m of src.matchAll(IMPORT)) todo.push(join(f, "..", m[1] ?? m[2]));
+  }
+  const pub = [...seen].filter((f) => /\.(jsx?|mjs)$/.test(f));
+  ok(`the public page's graph, traced from public/main.jsx (${pub.length} modules), never imports ui/icons.jsx`,
+     pub.length > 30 && !pub.some((f) => f.endsWith("ui/icons.jsx")), pub.filter((f) => f.endsWith("ui/icons.jsx")).join(" "));
+  const outside = [];
+  for (const f of pub) {
+    const src = readFileSync(f, "utf8");
+    for (const re of LITERAL) for (const m of src.matchAll(re)) for (const n of m.slice(1).filter(Boolean)) if (!core.has(n)) outside.push(`${relative(SRC, f)}: "${n}"`);
+  }
+  ok("...and every icon it names is the core's or a glyph", outside.length === 0, outside.slice(0, 8).join(" · "));
+  ok("...the core's names are all icons of the whole vocabulary too", CORE_NAMES.every((n) => ICON_NAMES.includes(n)));
+}
+
 group("3. The twelve glyphs, on Lucide's grid");
 const TWELVE = ["bat", "ball", "stumps", "bails-off", "gloves", "pads", "helmet", "overs", "target", "scorebook", "bus", "ground"];
 ok("exactly the twelve the brief names", GLYPH_NAMES.length === 12 && TWELVE.every((n) => GLYPH_NAMES.includes(n)), GLYPH_NAMES.join(","));

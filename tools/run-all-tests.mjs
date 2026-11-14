@@ -183,6 +183,8 @@ const SUITES = [
   // CRI-1.5: every dismissal's key is a commentary line's, and the Commentary
   // opens far enough back (past "Earlier overs") to hold the ball asked for.
   ["to-ball",           "apps/web/test/to-ball.test.mjs"],
+  // EXPERIENCE_PASS Slice 2, Q9: a scorecard figure's balls, signed in only (lib/ballsOf.js).
+  ["balls-of",          "apps/web/test/balls-of.test.mjs"],
   // GA-I36 A0/A1: a correction read off the log (the chip, the line, the
   // innings it moved), the effect folded before a decision, and 300 random
   // logs whose fold with voids equals the fold without the voided rows.

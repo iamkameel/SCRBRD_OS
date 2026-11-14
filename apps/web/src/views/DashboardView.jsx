@@ -16,7 +16,7 @@ import { Icon, isIcon } from "../ui/icons.jsx";
 import { StateLabel } from "../ui/stateLabel.jsx";
 import { boardFromInnings } from "../scorer/boardData.js";
 import { seedCompletedMatch } from "../scorer/seed.js";
-import { boardInsights } from "../scorer/signals.js";
+import { aboutWhom, boardInsights } from "../scorer/signals.js";
 import { parseBalls, parseScore, teamSquad } from "./shared.jsx";
 import { MatchDayCard } from "./cockpit/MatchDayCard.jsx";
 import { RecentMatches } from "./cockpit/RecentMatches.jsx";
@@ -395,7 +395,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
     const overs = liveMatch.overs || inn?.overs || 20;
     const props = boardFromInnings(inn, { target, overs });
     if (props) {
-      const insight = boardInsights(inn, { target, overs });
+      const insight = aboutWhom(boardInsights(inn, { target, overs }));
       board = { ...props, team: props.team || liveMatch.homeTeam, insight: insight.length ? insight : undefined };
     }
   }
