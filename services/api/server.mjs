@@ -686,14 +686,13 @@ const MATCH_ROUTES = [
   //
   // A feature whose writes are already gated in the DATABASE is deliberately
   // not tagged here — see the DRS route below.
-  // NOT tagged, though DRS is a switchable feature. Its write is gated by the
-  // trigger on drs_review instead, which is strictly stronger — it catches a
-  // queued offline write and a direct SQL insert, neither of which reaches
-  // this dispatcher — and which raises a message naming the flag and who can
-  // move it. Tagging it here as well would only mean the dispatcher's generic
-  // "module_disabled" arrived first and replaced the useful sentence with a
-  // useless one. Where a feature's writes already have a database gate, this
-  // table stays out of the way.
+  // NOT tagged, though DRS is a switchable feature: since db/154 (Kameel,
+  // 13 Nov 2026, "switched off is hidden for that user but still records") a
+  // review is STORED while drs_review is off, by the API and by a direct
+  // insert alike; the trigger on drs_review no longer asks the feature. What
+  // stays off is the read (read-api.mjs, OWNER_OF_READ drs_reviews) and the
+  // panel (views/drs.jsx), so a review stored while off is shown only once
+  // DRS is on.
   [/^\/api\/matches\/([^/]+)\/drs$/,               "POST", drs.record],
   [/^\/api\/admin\/features\/([^/]+)$/,            "POST", features.set],
   // The two levels below the platform switch. NEVER module-gated themselves —
