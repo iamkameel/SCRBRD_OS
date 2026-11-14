@@ -57,6 +57,9 @@ export function InningsToggle({ match, innings, inningsSel, setInningsSel }) {
 
 const COLS = "minmax(0,1fr) 36px 32px 30px 28px 62px";
 const BOWL_COLS = "minmax(0,1fr) 36px 28px 36px 28px 62px";
+// Where a figure is a button to its balls (Q9, signed in), its column is 44px, the tap floor.
+const COLS_TAP = "minmax(0,1fr) 44px 32px 30px 28px 62px";
+const BOWL_COLS_TAP = "minmax(0,1fr) 36px 28px 44px 28px 62px";
 
 /**
  * A header row: the label, and the figures' heads right-aligned. On a phone it
@@ -79,19 +82,20 @@ function HeadRow({ cols, heads, label, icon }) {
 
 /**
  * Figures, right-aligned and tabular. `tap` (EXPERIENCE_PASS Q9, signed in
- * only): the figure at `at` and the one after it are one 44px button to that
- * player's balls in the Commentary — inside the cell, so the table keeps its
- * cells, and over the next one, so the target is wide enough. The figure is
- * underlined, never a colour alone.
+ * only): the figure at `at` is a button to that player's balls in the
+ * Commentary, inside its cell (the table keeps its cells), whose column is
+ * then 44px (COLS_TAP), the tap floor. The figure is underlined, never a
+ * colour alone.
  */
 function Figs({ values, strong = 0, tap = null }) {
   return values.map((v, i) => (
     <span key={i} role="cell" style={{ ...T.role.figure.sm, textAlign: "right", color: i === strong ? T.content.primary : T.content.secondary,
-      fontWeight: i === strong ? 500 : 400, ...(tap?.at === i ? { position: "relative", textDecoration: "underline dotted", textUnderlineOffset: "3px" } : {}) }}>
-      {v ?? "–"}
-      {tap?.at === i && <button type="button" onClick={tap.on} aria-label={tap.label} data-testid={tap.id} className="os-state"
-        style={{ position: "absolute", left: 0, top: "50%", width: tap.w, height: "44px", transform: "translateY(-50%)", padding: 0,
-          border: "none", borderRadius: T.radius.sm, background: "transparent", cursor: "pointer" }}/>}
+      fontWeight: i === strong ? 500 : 400 }}>
+      {tap?.at === i ? (
+        <button type="button" onClick={tap.on} aria-label={tap.label} data-testid={tap.id} className="os-state"
+          style={{ width: "100%", minHeight: "44px", padding: 0, border: "none", borderRadius: T.radius.sm, background: "transparent", cursor: "pointer",
+            font: "inherit", color: "inherit", textAlign: "right", textDecoration: "underline dotted", textUnderlineOffset: "3px" }}>{v ?? "–"}</button>
+      ) : v ?? "–"}
     </span>
   ));
 }
@@ -232,13 +236,13 @@ const focusEdge = (lit) => (lit ? { borderLeft: `4px solid ${T.brand.accentText}
  * the link to his passport, drawn by MatchView's passportOf (lib/passportLink.js)
  * where the passport read would admit this reader; the public page passes none.
  */
-function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, onFigs = null, profile, passport = null, Wheel, kept = false, lit = false, litLabel = null }) {
+function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, onFigs = null, cols = COLS, profile, passport = null, Wheel, kept = false, lit = false, litLabel = null }) {
   const notOut = b.status !== "out";
   const counts = open ? runCounts(inn, b.id) : null;
   const opens = !!onToggle;
   const nameCell = (
     <span style={{ minWidth: 0, width: "100%", display: "grid", gap: "2px", textAlign: "left" }}>
-      <span style={{ ...T.role.body, fontSize: "15px", fontWeight: 600, color: T.content.primary, display: "flex", alignItems: "center", gap: T.space.xs, flexWrap: "wrap" }}>
+      <span style={{ ...T.role.body, fontSize: "15px", fontWeight: 600, color: T.content.primary, display: "flex", alignItems: "center", gap: T.space.xs, flexWrap: "wrap", overflowWrap: "anywhere", minWidth: 0 }}>
         {b.name}{kept && <KeeperMark/>}{b.status === "batting" && <span aria-label="not out" style={{ color: T.content.secondary }}>*</span>}
         {lit && litLabel && <FocusTag label={litLabel}/>}
         {opens && <Icon name="chevron-down" style={{ marginLeft: "auto", color: T.content.tertiary, transform: open ? "rotate(180deg)" : "none" }}/>}
@@ -249,7 +253,7 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, onFi
   return (
     <div role="rowgroup" data-testid="mc-bat-row" data-not-out={notOut ? "true" : undefined} data-focus={lit ? "true" : undefined}
       style={{ borderBottom: `1px solid ${T.line.subtle}`, background: notOut || lit ? T.surface.interactive : "transparent", ...focusEdge(lit) }}>
-      <div role="row" style={{ display: "grid", gridTemplateColumns: COLS, gap: T.space.xs, alignItems: "center",
+      <div role="row" style={{ display: "grid", gridTemplateColumns: cols, gap: T.space.xs, alignItems: "center",
         padding: `${T.space.sm} ${T.space.md}`, minHeight: "44px" }}>
         {opens ? (
           <button type="button" onClick={onToggle} aria-expanded={open} data-testid="mc-bat-open" className="os-state"
@@ -259,7 +263,7 @@ function BatterRow({ b, inn, open, onToggle, commentaryLine, onBall = null, onFi
           </button>
         ) : <span role="rowheader">{nameCell}</span>}
         <Figs values={[b.runs, b.balls, b.fours, b.sixes, sr(b.runs, b.balls)]}
-          tap={onFigs && { at: 0, w: "72px", on: onFigs, id: "mc-bat-balls", label: `Balls faced by ${b.name}, ${b.runs} off ${b.balls}, in the commentary` }}/>
+          tap={onFigs && { at: 0, on: onFigs, id: "mc-bat-balls", label: `Balls faced by ${b.name}, ${b.runs} off ${b.balls}, in the commentary` }}/>
       </div>
       {open && (
         <div data-testid="mc-player-row" style={{ padding: `0 ${T.space.md} ${T.space.md}`, display: "grid", gap: T.space.md }}>
@@ -328,6 +332,10 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
   const keepers = inn.keepers ?? [];
   const innEvents = (events ?? []).filter((e) => (e.innings ?? 0) === inningsSel);
   const byKey = new Map((commentary ?? []).map((c) => [c.key, c]));
+  // Q9: the figures' columns widen to the tap floor only where some figure here is a button.
+  const tapsBat = !!figureTap && inn.batsmen.some((b) => figureTap("bat", b, idx));
+  const tapsBowl = !!figureTap && inn.bowlers.some((bw) => figureTap("bowl", bw, idx));
+  const cols = tapsBat ? COLS_TAP : COLS, bowlCols = tapsBowl ? BOWL_COLS_TAP : BOWL_COLS;
   return (
     <div>
       <div data-testid="mc-innings-head" data-from-scorebook={inn.summarised ? "true" : undefined} style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: T.space.md,
@@ -357,7 +365,7 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
       </div>
 
       <CardTable label="Batting" style={{ border: `1px solid ${T.line.normal}`, borderTop: "none" }}>
-        <HeadRow cols={COLS} label="Batting" icon="bat" heads={["R", "B", "4s", "6s", "SR"]}/>
+        <HeadRow cols={cols} label="Batting" icon="bat" heads={["R", "B", "4s", "6s", "SR"]}/>
         {inn.batsmen.map((b) => {
           const key = b.status === "out" ? dismissalKey(inn, b.id, innEvents) : null;
           const line = key ? byKey.get(key)?.text ?? null : null;
@@ -368,11 +376,11 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
               commentaryLine={line}
               onBall={line && toBall ? (e) => toBall({ key, innings: idx, openId: b.id, from: e.currentTarget }) : null}
               onFigs={figs ? (e) => figs(e, openId) : null}
-              profile={profileOf(b.id)} passport={passportOf(b.id, b.name)} Wheel={Wheel} kept={kept.has(b.id)} lit={!!focus?.has(b.id)} litLabel={focusLabel}/>
+              cols={cols} profile={profileOf(b.id)} passport={passportOf(b.id, b.name)} Wheel={Wheel} kept={kept.has(b.id)} lit={!!focus?.has(b.id)} litLabel={focusLabel}/>
           );
         })}
         {dnb.map((p) => (
-          <div key={p.id} role="row" data-testid="mc-dnb" style={{ display: "grid", gridTemplateColumns: COLS, gap: T.space.xs, alignItems: "center",
+          <div key={p.id} role="row" data-testid="mc-dnb" style={{ display: "grid", gridTemplateColumns: cols, gap: T.space.xs, alignItems: "center",
             padding: `${T.space.sm} ${T.space.md}`, minHeight: "44px", borderBottom: `1px solid ${T.line.subtle}` }}>
             <span role="rowheader" style={{ display: "grid", gap: "2px" }}>
               <span style={{ ...T.role.body, fontSize: "15px", fontWeight: 600, color: T.content.primary }}>{p.name}{kept.has(p.id) && <KeeperMark/>}</span>
@@ -401,13 +409,13 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
       {inn.bowlers.length > 0 && (
         <CardTable label="Bowling" testid="mc-bowling" outer={{ marginTop: T.space.lg }}
           style={{ border: `1px solid ${T.line.normal}`, borderRadius: T.radius.lg, overflow: "hidden" }}>
-          <HeadRow cols={BOWL_COLS} label="Bowling" icon="ball" heads={["O", "M", "R", "W", "Econ"]}/>
+          <HeadRow cols={bowlCols} label="Bowling" icon="ball" heads={["O", "M", "R", "W", "Econ"]}/>
           {inn.bowlers.map((bw) => {
             const nm = <>{bw.name}{focus?.has(bw.id) && focusLabel && <FocusTag label={focusLabel}/>}</>;
             const figs = figureTap?.("bowl", bw, idx);
             return (
             <div key={bw.id} role="row" data-testid="mc-bowl-row" data-focus={focus?.has(bw.id) ? "true" : undefined}
-              style={{ display: "grid", gridTemplateColumns: BOWL_COLS, gap: T.space.xs, alignItems: "center",
+              style={{ display: "grid", gridTemplateColumns: bowlCols, gap: T.space.xs, alignItems: "center",
               padding: `${T.space.sm} ${T.space.md}`, minHeight: "44px", borderBottom: `1px solid ${T.line.subtle}`,
               ...(focus?.has(bw.id) ? { background: T.surface.interactive, ...focusEdge(true) } : {}) }}>
               <span role="rowheader" style={{ ...T.role.body, fontSize: "15px", fontWeight: 600, color: T.content.primary, minWidth: 0,
@@ -416,7 +424,7 @@ function InningsBody({ match, innings, idx, commentary, events, opens, profileOf
                 {passportOf(bw.id, bw.name, nm) ?? nm}
               </span>
               <Figs values={[oversOf(bw.balls), bw.maidens, bw.runs, bw.wickets, econ(bw.runs, bw.balls)]} strong={3}
-                tap={figs && { at: 2, w: "68px", on: (e) => figs(e, openId), id: "mc-bowl-balls", label: `Balls bowled by ${bw.name}, ${bw.wickets} for ${bw.runs}, in the commentary` }}/>
+                tap={figs && { at: 2, on: (e) => figs(e, openId), id: "mc-bowl-balls", label: `Balls bowled by ${bw.name}, ${bw.wickets} for ${bw.runs}, in the commentary` }}/>
             </div>
             );
           })}
