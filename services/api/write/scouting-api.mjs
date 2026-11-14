@@ -273,6 +273,9 @@ export function drsRoutes({ pool, secret }) {
         });
         res.json(out);
       } catch (/** @type {any} */ e) {
+        // Since db/154 the database no longer raises the feature gate (a review
+        // stores while DRS is off); the 409 below answers only a database the
+        // file has not reached yet, and goes when every database has it.
         // 23514 is either a CHECK or the feature gate. The gate's message names
         // the flag and who can move it, so it is passed through rather than
         // flattened — a scorer told only "invalid" would go looking for a bug
