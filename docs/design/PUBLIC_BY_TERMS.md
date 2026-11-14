@@ -576,6 +576,8 @@ Everything after slice 1 ships dark: with the platform setting off and every sch
 | 9 | **The access pack** | rows K, K2, M and D4's explicit-yes rule | Opus (minors' PII) | a by-terms team-mate is a position in a pack; no mark distinguishable |
 | 10 | **Runbooks and records** | the restore step, the incidents rows, DEPLOYING's notes; the documents of §9 | Sonnet for runbook text and walks; Haiku for the records | the restore walk ends with the setting off |
 
+Kameel, 14 Nov 2026: Awards closed; slices 4 to 10 wait on counsel (§8) and are not built before.
+
 Slices 1, 2 and 3 are worth building whatever counsel says. Slices 4 to 7 are the opt-out's own.
 
 ---

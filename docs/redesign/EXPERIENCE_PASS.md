@@ -1,7 +1,7 @@
 # Experience pass: where things live, and the first run
 
 Status: **decided** (13 Nov 2026). Kameel answered all 25 questions in §5 on the Build Board,
-every one as recommended. The slices in §4 are built in order from those answers; slice 1 is built (#327) and slice 2a (#334); the rest are not built yet.
+every one as recommended. The slices in §4 are built in order from those answers; slices 1 and 2 are built (#327; #334, #336); the rest are not built yet.
 
 Brief (Kameel, 13 Nov 2026): information is scattered and not always where a person looks
 for it. Each person gets one home and a short menu; everything else is reached from the
@@ -708,7 +708,7 @@ as failed, as §1.10 does.
 
 ### Slice 2 · The spectator's match page
 
-**Slice 2a built 14 Nov 2026 (#334, 0b8f0240).** The rest of slice 2 is not built.
+**Slice 2 built 14 Nov 2026 (2a #334, 2b #336).**
 
 | | |
 |---|---|

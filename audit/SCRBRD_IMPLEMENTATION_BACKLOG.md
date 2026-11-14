@@ -31,6 +31,8 @@
 
 14 Nov 2026 (afternoon): three merges recorded. #332 (squash 204aad69): "Switched off, db/154: DRS reviews store while DRS is off". It adds `db/154_switched_off_records.sql` (`sha256 b7104f5696211bf2f0bdffcb10a32064188e9a4de14ef5c7f8ae440ec3149207`), which re-creates only `drs_review_feature_gate()`, so a DRS review row is stored while DRS is off. Other sports' fixtures stay refused (Kameel, 14 Nov). Pasted on the demo and production on Kameel's word, hash-checked from commit c4b5096b; production was live on it at 14:46 SAST. #334 (squash 0b8f0240): "Experience slice 2a: the spectator's match page". It adds the status sentence under the board on a live Summary, the worm before Scenarios, a scorecard figure that opens its balls (signed in only), the structured insight line (Q10), and a Ground display link for published fixtures. Share carries no name and no organiser's reason. Public pages went from 469 to 427 KB. No migration. #335 (squash 364a1988): SHIPPED records db/154.
 
+14 Nov 2026 (evening): two merges recorded and one decision. #336 (squash 0858d987): "Experience slice 2b: the moments". It adds moment cards on the Match Centre, the public page and the ground display, to SCRBRD-133 §5.2–5.3: fours and sixes 2.5 s; wickets and fifties 4 s; the target, a revision, the super over and innings closed 6 s; the result 6 s, then held by the result view. Play stopped and a tied super over are held cards. A correction is never a card. The generator attaches a `moment` fact to milestone, penalty and revision lines, and every existing line is unchanged. It adds the over story on the Summary, and on a family screen a card about another boy keeps its title and drops his name (Q10). "Corrected" is said once, beside the innings line that moved (C14, Kameel 14 Nov). Public pages are 436 KB. No migration. #338 (squash 99e75be7): "Pilot Match: a catch on a second phone keeps its fielder". A second phone that never got the names now sends a fielder or twelfth man as that position's slot id instead of null. No name goes on the wire, and stored matches are not rewritten. Decided 14 Nov 2026 (Kameel, "Close it now"): Awards is closed. R1 to R10 and R12 are live, and public by terms slices 1 to 3 are live and dark. Slices 4 to 10 (the opt-out, R11 the honours board among them) are parked until counsel answers PUBLIC_BY_TERMS §8.
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -3521,6 +3523,8 @@ and a NULL type and a W with no method reach the views through `ball_event_live`
 
 **Partly done 2026-11-12:** recognition slice R12, fielding counts toward awards (db/150) (#288, merge commit 61863b18).
 
+**Parked 14 Nov 2026 (Kameel):** Awards is closed. Slices 4 to 10 of public by terms, R11 the honours board among them, wait on counsel, PUBLIC_BY_TERMS §8.
+
 ### ~~SCRBRD-088~~ — CLOSED · A handover in the second innings cannot verify
 **Closed 2026-09-25** in `105e467` (#37): db/45, as the build note below records.
 **Priority:** P1 · **Domain:** Scoring / handover · **Type:** bug (found by db/43, 2026-09-25)
@@ -5335,7 +5339,7 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 ### Experience pass — where things live, and the first run (2026-11-13)
 **Domain:** Design / UX · **Decided 13 Nov 2026:** all 25 questions in `docs/redesign/EXPERIENCE_PASS.md` §5 as recommended. Slices 3 and 4 carry migrations.
 - [x] ~~Slice 1 · The scorer's home and starting a Pilot Match~~ **Done 14 Nov 2026** (#327, 660a5630)
-- [ ] Slice 2 · The spectator's match page **Partly done 14 Nov 2026** (2a, #334, 0b8f0240; the rest of the slice is not built)
+- [x] ~~Slice 2 · The spectator's match page~~ **Done 14 Nov 2026** (#334, #336)
 - [ ] Slice 3 · First run (migrations)
 - [ ] Slice 4 · Parent and pupil (migrations)
 - [ ] Slice 5 · The coach's day sheet, and the homes
