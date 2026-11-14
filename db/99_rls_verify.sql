@@ -41891,7 +41891,9 @@ $m130$;
   -- a person at the school.
   -- Labels:
   --   (logistics) a trip and a vehicle store while Logistics is off
-  --   (officials) an appointment stores while Officials is off
+  --   (officials) not here: Officials is gated in the API alone, as on main,
+  --               and stays refused there until broadcast_state() names
+  --               officials only while Officials is on (tools/smoke-modules.mjs)
   --   (broadcast) the overlay's settings store, unpublished, while Broadcast
   --               is off (publishing is refused by the API, scouting-api.mjs)
   --   (sponsors)  a sponsor signed stores while Sponsors is off (a placement
@@ -41923,14 +41925,6 @@ $m130$;
                     AND _v154_count('SELECT count(*)::int FROM vehicle WHERE registration = ''V154 PROBE''') = 1,
       '§132 (logistics): a trip or a vehicle was not stored while Logistics was off');
     PERFORM _v154_hide('logistics', false);
-
-    -- (officials)
-    PERFORM _v154_hide('officials', true);
-    PERFORM _as(U_OWNER);
-    INSERT INTO match_official (match_id, school_id, duty, person_name, appointed_by) VALUES (M, HIL, 'umpire', 'V154 Umpire', U_OWNER);
-    PERFORM _assert(_v154_count(format('SELECT count(*)::int FROM match_official WHERE match_id = %L AND person_name = ''V154 Umpire'' AND NOT withdrawn', M)) = 1,
-      '§132 (officials): an appointment was not stored while Officials was off');
-    PERFORM _v154_hide('officials', false);
 
     -- (broadcast)
     PERFORM _v154_hide('broadcast', true);

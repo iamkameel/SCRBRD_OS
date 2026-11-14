@@ -323,12 +323,14 @@ try {
   {
     // KAMEEL'S RULE, 13 Nov 2026: "Anything that's switched off for a user
     // should be hidden for that user but still record data." A module that
-    // holds no child's own data (officials, sponsors' signing, logistics)
+    // holds no child's own data (sponsors' signing, logistics)
     // STORES while it is off: `records: true` below, the write lands with the
     // module off and nothing is shown. A module that holds a child's data
     // (skills, injuries) keeps refusing, as it always has. Training is the
     // lead's call and keeps refusing until it is made. Fields keeps its gate:
-    // it was not among the seven.
+    // it was not among the seven. Officials keeps its gate too, until
+    // broadcast_state() names officials only while Officials is on (a
+    // migration, with db/154): an appointment is named on the public overlay.
     // A module that refused reads while still accepting writes would be the
     // worst kind of half-working setting: the half that works is the half
     // nobody checks.
@@ -356,7 +358,7 @@ try {
     // replaces the panel and a ground report corrects the last one, so a
     // row count would not tell a refused write from an upsert.
     const WRITES = [
-      { module: "officials", token: head, records: true,
+      { module: "officials", token: head,
         write: (k) => post(`/api/matches/${m}/officials`, head, { officials: [{ duty: "umpire", name: `Umpire ${k}` }] }),
         landed: (k) => count(`select count(*)::int c from match_official where match_id = $1 and person_name = $2 and not withdrawn`, [m, `Umpire ${k}`]) },
       { module: "training", token: coach,

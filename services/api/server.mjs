@@ -712,10 +712,9 @@ const MATCH_ROUTES = [
   // (scouting-api.mjs broadcastRoutes). Storing, not publishing.
   [/^\/api\/matches\/([^/]+)\/broadcast$/,          "POST", bcast.publish],
   // Appointing the officials. officiating.assign, which until now had nothing
-  // it could be exercised on. NOT module-gated: an appointment holds no
-  // child's data and sends nothing, so it is stored while Officials is off
-  // (13 Nov 2026), and hidden with the module.
-  [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint],
+  // it could be exercised on.
+  // Stays refused while Officials is off until a migration makes broadcast_state() name officials only while it is on (to Fable with db/154).
+  [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint, "officials"],
   // The register itself: platform- and competition-level, not a school
   // module, so no module gate — the policies on official/official_accreditation
   // decide (officiating.registry.manage).
