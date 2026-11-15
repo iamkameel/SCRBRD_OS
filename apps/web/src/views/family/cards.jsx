@@ -66,7 +66,8 @@ export function NextFixtureCard({ child, matches, role, self = false, onOpen, on
         <AvailabilityBlock match={next} child={child} role={role} self={self} compact
           action={(status) => <div><Action onClick={() => onOpen(next)} testid="next-fixture-open">{answerVerb(status)}</Action></div>}/>
       </div>
-      <TeamSheetLine match={next} child={child} role={role} self={self}/>
+      {/* Q10 (Kameel, 15 Nov): the eleven on her child's next fixture. His own Home keeps to his line; his fixture draws the side. */}
+      <TeamSheetLine match={next} child={child} role={role} self={self} sheet={!self}/>
     </Card>
   );
 }

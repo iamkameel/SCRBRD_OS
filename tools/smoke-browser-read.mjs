@@ -401,7 +401,9 @@ try {
     ok("...the team sheet: her child's line first ('named, batting 4'), then the side",
        first && /Team sheet: named, batting 4/.test(await ptid("teamsheet-line").first().innerText().catch(() => "")), card);
     ok("...the side by name, in batting order, and nothing else of them",
-       rows.map((r) => r.replace(/\s+/g, " ").trim()).join(" | ") === "1 James Whitfield | 2 T Bekker | 3 S Naidoo | 4 R Pillay", rows.join(" | "));
+       rows.map((r) => r.replace(/\s+/g, " ").trim()).join(" | ") === "1 James Whitfield | 2 T Bekker | 3 S Naidoo | 4 R Pillay · your child", rows.join(" | "));
+    // Q10 (Kameel, 15 Nov: "eleven"): her child's row marked, and no other.
+    ok("...her child's row marked, and only his", (await parent.page.locator('[data-testid="side-sheet-row"][data-his="true"]').count()) === 1);
     ok("...no team-mate's answer, fitness or age on the card", !/injur|rehab|fitness|born|years old|doubtful|unavailable/i.test(card), card);
   }
   await ptid(`availability-set-${PILLAY}-unavailable`).click({ timeout: 4000 }).catch(() => {});
