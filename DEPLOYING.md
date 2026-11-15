@@ -2519,6 +2519,33 @@ Pasted on the demo and production, 14 Nov 2026. Hash-checked:
 `sha256 bd558badc5aa0d456c377f4399ab7c8a010771165b1db25e26323ae0de84a2ab`,
 from commit 3225edda. The switch `public_name_surfaces` is off on both.
 <!-- ── end db/155 ── -->
+<!-- ── db/156: switched off hidden on the public reads ── -->
+#### Switched off is hidden on the public reads (db/156)
+
+`db/156_switched_off_public_reads.sql` (PR #341, head 1f2647aa, merged 15 Nov
+through #342's merge commit 148e3083). A switched-off feature is hidden on the
+public reads: officials are named on the overlay only while Officials is on; the
+overlay serves nothing while Broadcast is off; the sponsor's board leaves while
+Sponsors is off; a DRS review stored while its school had DRS off is not shown
+to the other school.
+
+Pasted on the demo and production, 15 Nov 2026, on Kameel's go. Hash-checked:
+`sha256 d29c67e490df8a06bb993e69d0ab8894edcbea19fe79c73f8ccce1bf7dbcb80f`,
+from commit a3a3101c.
+<!-- ── end db/156 ── -->
+<!-- ── db/157: Supabase's API roles reach nothing of ours ── -->
+#### Supabase's API roles reach nothing of ours (db/157)
+
+`db/157_managed_api_roles.sql` (PR #342, merge commit 148e3083, merged 15 Nov).
+Supabase's API roles (`anon`, `authenticated`, `service_role`) and PUBLIC reach
+nothing SCRBRD owns in schema public; `scrbrd_app` was given explicit grants. It
+is Kameel's "both" of 14 Nov, beside his own Data API switch-off in Supabase's
+dashboard, which is still to do.
+
+Pasted on both databases, 15 Nov 2026. Hash-checked:
+`sha256 57ea0012552facfc54be26bdc6672ce893a1a17b6ac8235a604481cfb29bc6ef`,
+from commit 114d2803.
+<!-- ── end db/157 ── -->
 
 ### 5 · Cloud Run, the first time
 
