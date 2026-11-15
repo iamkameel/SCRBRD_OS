@@ -402,7 +402,7 @@ BEGIN
   END IF;
   SELECT pg_get_expr(p.polqual, p.polrelid) INTO v_q FROM pg_policy p
    WHERE p.polrelid = 'school_add_request'::regclass AND p.polname = 'school_add_request_read' AND p.polcmd = 'r' AND p.polpermissive;
-  IF v_q IS DISTINCT FROM '(((person_id = app_user_id()) OR app_holds(''platform.tenant.manage''::text)) AND ((decided_at IS NULL) OR (decided_at > (now() - ''90 days''::interval))))' THEN
+  IF v_q IS DISTINCT FROM '(((person_id = app_user_id()) OR app_holds(''platform.tenant.manage''::text)) AND (((decided_at IS NULL) AND (requested_at > (now() - ''180 days''::interval))) OR (decided_at > (now() - ''90 days''::interval))))' THEN
     RAISE EXCEPTION 'db/158: school_add_request_read reads %', coalesce(v_q, '(missing)');
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policy p

@@ -13410,7 +13410,10 @@ BEGIN
       ('platoff', 'platformadmin', NULL),
       ('support', NULL,            NULL),
       ('gone',    NULL,            NULL),
-      ('erased',  NULL,            NULL)) AS v(k, role, school)
+      ('erased',  NULL,            NULL),
+      -- A pupil's account at Hilton (its player role is added below, with
+      -- his side), refused (Kameel, 15 Nov: ask a teacher).
+      ('pupil',   NULL,            NULL)) AS v(k, role, school)
   LOOP
     INSERT INTO app_user (school_id, email, name, role)
     VALUES (r.school, 'v158.' || r.k || '@example.invalid', 'V158 ' || initcap(r.k), coalesce(r.role, 'none'))
@@ -13430,6 +13433,8 @@ BEGIN
   -- office (db/34), as §73 stages it.
   PERFORM _v92_pause((ids->>'paused')::uuid, (ids->>'office')::uuid);
   UPDATE app_user SET active = false WHERE id = (ids->>'platoff')::uuid;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  VALUES ((ids->>'pupil')::uuid, 'player', '11111111-1111-1111-1111-111111111111', 'U15A');
   -- A support session as support_access_begin() (db/22) writes one: the
   -- school's own role, an hour long, under the supporter's own uuid.
   INSERT INTO role_assignment (person_id, role, school_id, active, valid_from, expires_at)
@@ -43912,6 +43917,8 @@ $m130$;
   --              asked twice: each refused with its code and nothing written;
   --              somebody whose role has ended may ask; an 80-letter name is
   --              taken
+  --   (pupil)    a pupil's account (a live player role) is refused,
+  --              ask_a_teacher, and nothing is written (Kameel, 15 Nov)
   --   (unseen)   a name or town holding a bidi override or isolate, a
   --              zero-width space, a soft hyphen or a byte-order mark, or no
   --              two letters or digits, is refused; no-break spaces are folded
@@ -43935,7 +43942,10 @@ $m130$;
   --              still read; the owner's purge deletes exactly the answered
   --              rows past ninety days, never an open one, and a second purge
   --              deletes nothing; the application may not call it (Kameel,
-  --              15 Nov: deleted 90 days after the answer)
+  --              15 Nov: deleted 90 days after the answer); an unanswered
+  --              request 180 days old (90 past its lapse) is gone from both
+  --              reads and purged, and one of 179 days is still read and kept
+  --              (Kameel, 15 Nov: deleted 90 days after it lapses)
   --   (ends)     an account removed outright takes its requests with it
   --              (ON DELETE CASCADE); and, a tripwire for ACCOUNT_LIFECYCLE
   --              section 6.3, once account_erase(uuid) exists an erased
@@ -43977,6 +43987,10 @@ $m130$;
   --   the decision without its disabled-account test → (decide)
   --   the foreign key without ON DELETE CASCADE      → (ends)
   --   the read policy open to any school role        → (support)
+  --   the ask without its pupil refusal              → (pupil)
+  --   the read policy without its lapse cut          → (kept)
+  --   the requester without its lapse cut            → (kept)
+  --   the purge without its lapsed arm               → (kept)
   DECLARE
     ids jsonb;
     A uuid; B uuid; C uuid; O uuid; L uuid; X uuid; P uuid; W uuid; S uuid;
@@ -44149,6 +44163,13 @@ $m130$;
     v := _v158_ask('Hoërskool Ëlandskraal', 'eMkhondo', 'teacher');
     PERFORM _assert(v LIKE 'ok:%', format('§136 (unseen): a name with accented letters was answered %s', v));
 
+    -- (pupil)
+    k := _v158_all();
+    PERFORM set_config('app.user_id', ids->>'pupil', true);
+    v := _v158_ask('Verify Cousin School', 'Howick', 'other');
+    PERFORM _assert(v = 'ask_a_teacher', format('§136 (pupil): a pupil''s account asked and was answered %s', v));
+    PERFORM _assert(_v158_all() = k AND _v158_of((ids->>'pupil')::uuid) = 0, '§136 (pupil): a pupil''s refused ask wrote a row');
+
     -- (cap)
     PERFORM _as(A);
     v := _v158_ask('Verify Second School', 'Durban', 'teacher');
@@ -44256,7 +44277,7 @@ $m130$;
                     AND (SELECT count(*) FROM school_add_requester(r1)) = 0,
       '§136 (kept): the asker still reads her request ninety days after its answer');
     PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id IN (r3, r4, r5)) = 3,
-      '§136 (kept): the cut took the asker''s unanswered requests too');
+      '§136 (kept): the cut took the asker''s unanswered requests too (r3 lapsed only ninety days ago)');
     PERFORM _as(P);
     PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id = r1) = 0
                     AND (SELECT count(*) FROM school_add_requester(r1)) = 0,
@@ -44267,10 +44288,27 @@ $m130$;
     PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'school_add_request_purge()', 'EXECUTE'),
       '§136 (kept): the application may call the purge');
     k := _v158_all();
+    -- An unanswered request ninety days past its lapse (180 since it was
+    -- asked) is gone from both reads; one of 179 days is not.
+    PERFORM _v158_age(r3, 180);
+    PERFORM _v158_age(rx, 179);
+    PERFORM _as(A);
+    PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id = r3) = 0
+                    AND (SELECT count(*) FROM school_add_requester(r3)) = 0,
+      '§136 (kept): the asker still reads her request ninety days after it lapsed');
+    PERFORM _as(P);
+    PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id = r3) = 0
+                    AND (SELECT count(*) FROM school_add_requester(r3)) = 0,
+      '§136 (kept): the platform still reads a request ninety days after it lapsed');
+    PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id = rx) = 1
+                    AND (SELECT count(*) FROM school_add_requester(rx)) = 1
+                    AND (SELECT school_add_request_shown(r.state, r.requested_at) FROM school_add_request r WHERE r.id = rx) = 'lapsed',
+      '§136 (kept): a request lapsed eighty-nine days ago is already gone, or does not read lapsed');
     v := _v158_purge();
-    PERFORM _assert(v = '1' AND _v158_row(r1) IS NULL AND _v158_row(rb) IS NOT NULL AND _v158_row(r3) IS NOT NULL
-                    AND _v158_all() = k - 1,
-      format('§136 (kept): the purge deleted %s rows (%s left of %s): not exactly the one answered ninety days ago', v, _v158_all(), k));
+    PERFORM _assert(v = '2' AND _v158_row(r1) IS NULL AND _v158_row(r3) IS NULL
+                    AND _v158_row(rb) IS NOT NULL AND _v158_row(rx) IS NOT NULL AND _v158_row(r4) IS NOT NULL
+                    AND _v158_all() = k - 2,
+      format('§136 (kept): the purge deleted %s rows (%s left of %s): not exactly the one answered ninety days ago and the one lapsed ninety days ago', v, _v158_all(), k));
     v := _v158_purge();
     PERFORM _assert(v = '0', format('§136 (kept): a second purge deleted %s', v));
 

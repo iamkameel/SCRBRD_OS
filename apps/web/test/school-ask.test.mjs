@@ -44,7 +44,7 @@ group("Every refusal of the asker's door has a status and a sentence");
 {
   const codes = reasons(fnBody("school_add_request_ask"));
   const status = statusMap("SCHOOL_ASK_STATUS");
-  ok("the door's refusals were read (six; has_school went, Kameel 15 Nov)", codes.length === 6 && !codes.includes("has_school"), codes);
+  ok("the door's refusals were read (seven: has_school went, ask_a_teacher came, Kameel 15 Nov)", codes.length === 7 && !codes.includes("has_school") && codes.includes("ask_a_teacher"), codes);
   for (const c of codes) {
     ok(`${c}: a status in the route`, Number.isInteger(status[c]) && status[c] >= 400 && status[c] < 500, status[c]);
     ok(`${c}: a plain sentence`, plain(ASK_WORDS[c]), ASK_WORDS[c]);

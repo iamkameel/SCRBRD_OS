@@ -698,9 +698,10 @@ decision.
 | **sessions, codes, claims** | `auth_session` (a day past expiry, built), `login_code` (3 days, built), `pending_claim` | pending claims **90 days** then `expired` | — | — | built / small |
 | **sign-ins** | `auth_identity` | with the account | deleted on erasure (140 §3.8) | — | — |
 | **notifications** | `notification` | **recommend 2 years** | delete | sent | the platform |
-| **requests to add a school** | `school_add_request` (db/158) | open: lapses at 90 days (read, never written); answered: **90 days after the answer** | delete | `decided_at` | the owner, `school_add_request_purge()`; and with the account (ON DELETE CASCADE, `account_erase()`) |
+| **requests to add a school** | `school_add_request` (db/158) | answered: **90 days after the answer**; unanswered: lapses at 90 days, then **90 days after it lapses** (180 after it was asked) | delete | `decided_at`, or `requested_at` | the lead, `school_add_request_purge()`, monthly (DEPLOYING); and with the account (ON DELETE CASCADE, `account_erase()`) |
 
 An answered request to add a school is deleted 90 days after the answer (Kameel, 15 Nov).
+An unanswered request lapses after 90 days and is deleted 90 days after it lapses (Kameel, 15 Nov).
 
 ### 6.3 The account's own end
 

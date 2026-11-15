@@ -2740,6 +2740,10 @@ run twice".
    An API that calls a function the database does not have yet is a `42883`
    on every screen that touches it — a read path that started calling
    `app_is_platform_wide()` before `db/20` had been pasted did exactly that.
+5. **Each month, with the paste routine** (once `db/158` is pasted): the
+   requests to add a school that are past their end are deleted by hand, as
+   the owner, in the SQL Editor: `SELECT school_add_request_purge();` answers
+   how many went. The lead runs `school_add_request_purge()` monthly, with the paste routine, and logs each run on the Build Board (Kameel, 15 Nov).
 
 ### The API refuses to run ahead of its schema
 
