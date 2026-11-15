@@ -13865,7 +13865,7 @@ BEGIN
   RETURNING id INTO u;
   INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'schooladmin', HIL, sa_today() - 30);
   ids := ids || jsonb_build_object('office', u);
-  FOREACH k IN ARRAY ARRAY['ask', 'adult'] LOOP
+  FOREACH k IN ARRAY ARRAY['ask', 'adult', 'second'] LOOP
     INSERT INTO app_user (email, name, role) VALUES ('v161.' || p_tag || '.' || k || '@example.invalid', 'V161 ' || initcap(k), 'none')
     RETURNING id INTO u;
     ids := ids || jsonb_build_object(k, u);
@@ -13902,6 +13902,20 @@ BEGIN
   INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, consent_state, created_by, valid_from, valid_until)
   VALUES (a, p_player, 'parent', 'pending', 'pending', '88888888-0000-0000-0000-00000000000c', sa_today() - 1,
           majority_on((SELECT born FROM player WHERE id = p_player)))
+  RETURNING id INTO s;
+  RETURN s;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A link the office verified, with consent, as the seed's are: its id.
+CREATE OR REPLACE FUNCTION _v161_verified_link(p_person uuid, p_player uuid) RETURNS uuid AS $$
+DECLARE a uuid; s uuid;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES (p_person, 'guardian', '11111111-1111-1111-1111-111111111111', sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p_player, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+          '88888888-0000-0000-0000-00000000000c', sa_today() - 30)
   RETURNING id INTO s;
   RETURN s;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -14089,6 +14103,25 @@ BEGIN
     PERFORM _assert(v = 'no_pending_link' AND cardinality(_v161_stored(ASK)) = 1,
       format('§139 (verify): a second verify answered %s and left %s notices', v, cardinality(_v161_stored(ASK))));
 
+  ELSIF p_case = 'ended' THEN
+    -- (ended) A link the office never verified, ended through db/109's door: that is an answer too, in the same
+    -- words, and never "A link to a child has ended". A verified link that ends keeps db/109's notice.
+    lk := _v161_pending_link(ASK, P);
+    PERFORM _as(OFFICE);
+    SELECT g.ok, g.reason INTO r FROM guardian_link_revoke(lk, 'office', 'Verify 161: not this family, checked.') g;
+    PERFORM _assert(r.ok, format('§139 (ended): the office could not end the pending link (%s)', r.reason));
+    PERFORM _as(ASK);
+    SELECT count(*), max(body) INTO n, v FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 1 AND v = WORDS, format('§139 (ended): the waiting parent reads %s answered notices, saying %s', n, v));
+    PERFORM _assert(cardinality(_v161_stored(ASK)) = 1 AND (_v161_stored(ASK))[1] LIKE T || '|' || WORDS || '|' || lk || '|system|system|%',
+      format('§139 (ended): what is stored for her is %s', array_to_string(_v161_stored(ASK), ' ~ ')));
+    lk := _v161_verified_link(ADULT, P); lk2 := _v161_verified_link((ids->>'second')::uuid, P);
+    PERFORM _as(OFFICE);
+    SELECT g.ok, g.reason INTO r FROM guardian_link_revoke(lk, 'office', 'Verify 161: the family has moved.') g;
+    PERFORM _assert(r.ok, format('§139 (ended): the office could not end the verified link (%s)', r.reason));
+    PERFORM _assert(cardinality(_v161_stored(ADULT)) = 1 AND (_v161_stored(ADULT))[1] LIKE 'A link to a child has ended|%',
+      format('§139 (ended): the verified parent''s notice is %s, not db/109''s', array_to_string(_v161_stored(ADULT), ' ~ ')));
+
   ELSIF p_case = 'pupil' THEN
     -- (pupil) A pupil's account answered by both doors gets nothing; the adult answered beside him gets both.
     req := _v161_ask(PUPIL); req2 := _v161_ask(ADULT);
@@ -14154,7 +14187,7 @@ BEGIN
     FOREACH v IN ARRAY ARRAY['school_answered_words(text)', 'school_answer_subject_is_mine(uuid)', 'guardian_link_verify(uuid,uuid,text,text)'] LOOP
       PERFORM _assert(_v161_acl(v) = 'scrbrd_app:EXECUTE', format('§139 (grants): %s is granted %s', v, coalesce(_v161_acl(v), '(missing)')));
     END LOOP;
-    FOREACH v IN ARRAY ARRAY['school_answered_notice_write(uuid,uuid,uuid)', 'school_answered_notice()'] LOOP
+    FOREACH v IN ARRAY ARRAY['school_answered_notice_write(uuid,uuid,uuid)', 'school_answered_notice()', 'school_answered_on_ending()'] LOOP
       PERFORM _assert(_v161_acl(v) = '', format('§139 (grants): %s is granted %s', v, coalesce(_v161_acl(v), '(missing)')));
     END LOOP;
   ELSE
@@ -45377,6 +45410,11 @@ $m130$;
   --             through guardian_link_verify(): one notice, the same words,
   --             the link its subject; a second verify is db/08's
   --             no_pending_link and writes none
+  --   (ended)   a link the office never verified, ended through db/109's
+  --             guardian_link_revoke(): the waiting parent reads one
+  --             notice, the same words, the link its subject, and never
+  --             "A link to a child has ended"; a verified link ended beside
+  --             it keeps db/109's notice word for word
   --   (pupil)   a pupil's account, answered by both doors (a declined
   --             request, a verified link), holds and reads none; the adult
   --             answered beside him holds both
@@ -45396,7 +45434,7 @@ $m130$;
   --             other school's guardian and a session signed out read
   --             nothing; the other end's names never show to her
   --   (grants)  the words, the read door and the verify door EXECUTE to
-  --             scrbrd_app alone; the writer and the trigger's function
+  --             scrbrd_app alone; the writer and the triggers' functions
   --             granted to nobody (PUBLIC included)
   --
   -- Falsified, each case in its own rolled-back run (the cases called one
@@ -45407,6 +45445,9 @@ $m130$;
   -- → (others) red, and (no), (same), (verify) and (pupil) with it. The
   -- writer without its pupil test → (pupil) red. A decline told in other
   -- words ("It was declined.") → (no) and (same) red.
+  -- (ended): db/161's trigger on guardian_link_ending dropped → red (she
+  -- reads "A link to a child has ended"); its test made "every ending" (the
+  -- verified_at test taken out) → red at the verified parent.
   -- (sheet), with fixture_sheet()'s gate taken out (every live row of the
   -- fixture to anyone signed in) → red at the named guardian (fourteen rows,
   -- both ends); with its family test widened to any guardian link of the
@@ -45417,6 +45458,7 @@ $m130$;
   PERFORM _v161_case('no');
   PERFORM _v161_case('same');
   PERFORM _v161_case('verify');
+  PERFORM _v161_case('ended');
   PERFORM _v161_case('pupil');
   PERFORM _v161_case('others');
   PERFORM _v161_case('sheet');

@@ -57,11 +57,16 @@
 -- Nothing is backfilled: an answer given before the paste wrote no notice
 -- and writes none now.
 --
--- WHAT IT DOES NOT COVER. A pending link the office ends instead of
--- verifying goes through guardian_link_revoke() (db/109), whose own notice
--- says "A link to a child has ended", with its date. That is db/109's, as
--- decided for links that end; for a link that was never verified it tells
--- the answer. It is left for Kameel (the lead's report), not changed here.
+--   (c) the office ends a link it never verified, through
+--       guardian_link_revoke() (db/109). That is an answer to the waiting
+--       parent too (the lead, 15 Nov: Q15's same-words rule governs it), so
+--       db/109's notice for it, "A link to a child has ended" with its date,
+--       is given this file's words instead: an AFTER INSERT trigger on
+--       guardian_link_ending, the row db/109 writes beside its notice,
+--       rewords that notice (its title and body; its kind, audience,
+--       subject and door are db/109's and unchanged) when the link was
+--       never verified (verified_at NULL). A verified link that ends keeps
+--       db/109's notice word for word. db/109's function is not touched.
 --
 -- Q10, THE TEAM SHEET (Kameel, 15 Nov: "eleven"): no SQL here. STEP4 Q10's
 -- shape, the eleven, names and batting order, to a verified, live guardian
@@ -86,6 +91,8 @@
 --       application, so it is granted to nobody (db/57's and db/93's
 --       trigger functions likewise).
 --   + trigger role_request_answered_notice on role_request.
+--   + school_answered_on_ending()  the trigger function for (c); owner-only.
+--   + trigger guardian_link_ending_answered on guardian_link_ending.
 --   ~ guardian_link_verify(uuid, uuid, text, text)  re-emitted, as (b).
 --   Every function: REVOKE ALL FROM PUBLIC; the door and the verify
 --   function GRANT EXECUTE TO scrbrd_app by name; nothing to anon,
@@ -105,9 +112,9 @@ BEGIN
   IF to_regprocedure('app_user_id()') IS NULL OR to_regprocedure('person_is_pupil(uuid)') IS NULL
      OR to_regprocedure('player_school(uuid)') IS NULL OR to_regprocedure('api_role_reach(name)') IS NULL
      OR to_regprocedure('guardian_link_verify(uuid,uuid,text,text)') IS NULL
-     OR to_regclass('role_request') IS NULL OR to_regclass('notification') IS NULL
+     OR to_regclass('role_request') IS NULL OR to_regclass('notification') IS NULL OR to_regclass('guardian_link_ending') IS NULL
      OR NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'notification'::regclass AND attname = 'recipient_id' AND NOT attisdropped) THEN
-    RAISE EXCEPTION 'db/161: app_user_id() (db/01), person_is_pupil() or notification.recipient_id (db/57), player_school() or guardian_link_verify() (db/08), or api_role_reach() (db/157) is missing; apply them first';
+    RAISE EXCEPTION 'db/161: app_user_id() (db/01), person_is_pupil() or notification.recipient_id (db/57), player_school() or guardian_link_verify() (db/08), guardian_link_ending (db/109) or api_role_reach() (db/157) is missing; apply them first';
   END IF;
   SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = 'guardian_link_verify(uuid,uuid,text,text)'::regprocedure;
   -- A second paste finds this file's own body; anything else must be db/08's as db/128 left it.
@@ -221,6 +228,26 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 
+-- (c) A link the office never verified, ended through db/109's door: its
+-- notice says what every answer says. db/109 inserts the notice, then this
+-- row naming it; the row's link is read as it stands after the revoke
+-- (verification_state 'revoked'; verified_at NULL only if never verified).
+CREATE OR REPLACE FUNCTION school_answered_on_ending() RETURNS trigger AS $$
+DECLARE w record;
+BEGIN
+  IF NEW.notice_id IS NULL THEN RETURN NULL; END IF;
+  IF EXISTS (SELECT 1 FROM assignment_subject g WHERE g.id = NEW.link_id AND g.verified_at IS NULL) THEN
+    SELECT * INTO w FROM school_answered_words((SELECT s.name FROM school s WHERE s.id = NEW.school_id));
+    UPDATE notification SET title = w.title, body = w.body WHERE id = NEW.notice_id;
+  END IF;
+  RETURN NULL;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+CREATE OR REPLACE TRIGGER guardian_link_ending_answered
+  AFTER INSERT ON guardian_link_ending
+  FOR EACH ROW EXECUTE FUNCTION school_answered_on_ending();
+
+
 -- ── 3 · The read door ──────────────────────────────────────────────
 -- TRUE when p_subject is a guardian role request of the caller's, or a
 -- guardian link of the caller's. A definer: a parent who was declined holds
@@ -253,7 +280,7 @@ DO $grants$
 DECLARE r text; f text;
 BEGIN
   FOREACH f IN ARRAY ARRAY['school_answered_words(text)', 'school_answered_notice_write(uuid,uuid,uuid)',
-                           'school_answered_notice()', 'school_answer_subject_is_mine(uuid)',
+                           'school_answered_notice()', 'school_answered_on_ending()', 'school_answer_subject_is_mine(uuid)',
                            'guardian_link_verify(uuid,uuid,text,text)'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
   END LOOP;
@@ -265,7 +292,7 @@ BEGIN
   FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       FOREACH f IN ARRAY ARRAY['school_answered_words(text)', 'school_answered_notice_write(uuid,uuid,uuid)',
-                               'school_answered_notice()', 'school_answer_subject_is_mine(uuid)',
+                               'school_answered_notice()', 'school_answered_on_ending()', 'school_answer_subject_is_mine(uuid)',
                                'guardian_link_verify(uuid,uuid,text,text)'] LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
       END LOOP;
@@ -280,13 +307,13 @@ DECLARE v text; r text; want text;
 BEGIN
   -- Every function a definer with the pinned search_path, granted exactly as section 4 says.
   FOREACH r IN ARRAY ARRAY['school_answered_words(text)', 'school_answered_notice_write(uuid,uuid,uuid)',
-                           'school_answered_notice()', 'school_answer_subject_is_mine(uuid)',
+                           'school_answered_notice()', 'school_answered_on_ending()', 'school_answer_subject_is_mine(uuid)',
                            'guardian_link_verify(uuid,uuid,text,text)'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = r::regprocedure AND prosecdef
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))) THEN
       RAISE EXCEPTION 'db/161: % is not a definer with a pinned search_path', r;
     END IF;
-    want := CASE WHEN r IN ('school_answered_notice_write(uuid,uuid,uuid)', 'school_answered_notice()') THEN NULL ELSE 'scrbrd_app:EXECUTE' END;
+    want := CASE WHEN r IN ('school_answered_notice_write(uuid,uuid,uuid)', 'school_answered_notice()', 'school_answered_on_ending()') THEN NULL ELSE 'scrbrd_app:EXECUTE' END;
     SELECT string_agg(coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC') || ':' || x.privilege_type, ',')
       INTO v FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x
      WHERE p.oid = r::regprocedure AND x.grantee <> p.proowner;
@@ -316,6 +343,13 @@ BEGIN
   IF v IS NULL OR v !~ 'AFTER UPDATE OF state ON public\.role_request'
      OR v !~ $re$\(\(old\.state = 'pending'::text\) AND \(new\.state = ANY \(ARRAY\['granted'::text, 'declined'::text\]\)\) AND \(new\.role = 'guardian'::text\)\)$re$ THEN
     RAISE EXCEPTION 'db/161: role_request_answered_notice is %', coalesce(v, '(missing)');
+  END IF;
+
+  -- The ending trigger, after a row of guardian_link_ending is written.
+  SELECT pg_get_triggerdef(t.oid) INTO v FROM pg_trigger t
+   WHERE t.tgrelid = 'guardian_link_ending'::regclass AND t.tgname = 'guardian_link_ending_answered' AND NOT t.tgisinternal;
+  IF v IS NULL OR v !~ 'AFTER INSERT ON public\.guardian_link_ending FOR EACH ROW EXECUTE FUNCTION school_answered_on_ending\(\)' THEN
+    RAISE EXCEPTION 'db/161: guardian_link_ending_answered is %', coalesce(v, '(missing)');
   END IF;
 
   -- The verify door writes the notice, and db/08's body is otherwise intact.
