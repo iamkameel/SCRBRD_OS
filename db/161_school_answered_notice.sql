@@ -63,6 +63,14 @@
 -- decided for links that end; for a link that was never verified it tells
 -- the answer. It is left for Kameel (the lead's report), not changed here.
 --
+-- Q10, THE TEAM SHEET (Kameel, 15 Nov: "eleven"): no SQL here. STEP4 Q10's
+-- shape, the eleven, names and batting order, to a verified, live guardian
+-- of a boy on that end's sheet, that fixture and that end only, is already
+-- db/131's fixture_sheet() (REACH R-H), shipped, proved by db/99 §109. db/99
+-- §139 (sheet) proves it again for the cases Kameel's answer names: a pending
+-- link, an ended link, a boy on no sheet, the other school's guardian, the
+-- other end; each red with the read's gate taken out.
+--
 -- ── WHAT MOVES ─────────────────────────────────────────────────────
 --   + school_answer_subject_is_mine(uuid)  the read door: true when the
 --       notice's subject is a guardian role request of the caller's, or a

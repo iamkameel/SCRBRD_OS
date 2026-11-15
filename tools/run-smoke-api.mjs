@@ -516,8 +516,15 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // words; a coach has neither; 12px and 44px at 390 wide in Daylight.
   "browser-listing",
   // SCRBRD-110 phase 1 (db/60): the health-monitoring consent on Settings → Me,
-  // the eighteen card, and the sign-up row — both themes, 12px and 44px.
+  // the eighteen card, and the sign-up row — both themes, 12px and 44px; since
+// Q16 (Slice 4) on the child's file under Family and the pupil's own Me.
   "browser-consent",
+  // EXPERIENCE_PASS Slice 4: a pupil who scores keeps his four items and sees
+  // "Appointed to score"; three balls are a guide, not a figure; two schools,
+  // two sections; a waiting parent reads the terms and cannot agree, and the
+  // office's answer is one notice (db/161); the DSO card last on both Homes;
+  // the live card leads; the eleven on her child's fixture (Q10).
+  "browser-slice4",
   // GA-I19 slice B (db/111): the Injuries screens. The physio's Reviews due, the
   // Record and Review forms (next review required, +7 and +14, clearing asks
   // first), the left-the-school mark; the coach and the director read it with
