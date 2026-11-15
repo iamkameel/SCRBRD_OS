@@ -92,6 +92,8 @@ export function askSentWords(/** @type {string} */ name) {
 
 /** A refusal from POST /api/school-requests, in the screen's words. */
 export const ASK_WORDS = {
+  // Kameel, 15 Nov: a pupil's account may not ask; it is told to ask a teacher.
+  ask_a_teacher: "Ask a teacher to send this.",
   name_required: "Type the school's name.",
   town_required: "Type the town the school is in.",
   job_invalid: "Choose what you do at the school.",
