@@ -580,8 +580,12 @@ try {
     await P.waitForSelector('[data-testid="follow-offer-HIL"]', { timeout: 10000 }).catch(() => {});
     await tid(P, "follow-offer-HIL").click({ timeout: 5000 });
     await P.waitForURL(/\/app\?follow=HIL&from=/, { timeout: 8000 }).catch(() => {});
+    // This phone was here before: the reload signed him out, and he signs in again, the link's question kept.
+    await P.waitForSelector('[data-testid="google-button"], [data-testid="no-school-sign-in-again"]', { timeout: 10000 }).catch(() => {});
+    if (await tid(P, "no-school-sign-in-again").count()) await tid(P, "no-school-sign-in-again").click({ timeout: 5000 });
     await google(h, idToken(FAN_UID, FAN_EMAIL, "Walk Fan"));
     await P.waitForSelector('[data-testid="follow-confirm"]', { timeout: 12000 }).catch(() => {});
+    ok("...the second time, after signing in again, the link asks again", (await tid(P, "follow-confirm").count()) === 1);
     await tid(P, "follow-confirm").click({ timeout: 5000 });
     await P.waitForSelector('[data-testid="followed-card"]', { timeout: 12000 }).catch(() => {});
     ok("Follow, and only Follow, writes the row", JSON.stringify(((await call("/api/follows", { token: fan0 })).body?.schools ?? []).map((x) => x.code)) === '["HIL"]');
