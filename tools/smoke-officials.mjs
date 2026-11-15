@@ -269,6 +269,24 @@ try {
        (await api(`/api/read/officials?matchId=${away}`, { token: wesAdmin })).status === 403
          && umpires(await duties(wesAdmin, away)).length === 0);
     await suppress("officials", wesAdmin, { schoolId: WES, hidden: false });
+
+    // Fail closed: a duty stored while Officials is off grants nothing
+    // (db/162 duty_link()). The office's link is refused while it is off,
+    // and works once it is on.
+    const SCORER = (await q(`select id from app_user where email = 'scorer@example.invalid'`))[0].id;
+    await suppress("officials", registrar, { schoolId: HIL, hidden: true, reason: "Smoke: SCRBRD-144 link" });
+    ok("with Officials off, the director stores a scorer's duty naming an account",
+       (await appoint(away, head, [{ duty: "scorer", name: "Seed Scorer", personId: SCORER }])).status === 200);
+    const duty = (await q(`select id from match_official where match_id = $1 and duty = 'scorer' and not withdrawn`, [away]))[0]?.id;
+    const refused = await api(`/api/duties/${duty}/link`, { method: "POST", token: registrar, body: {} });
+    ok("...and the office's link is refused while Officials is off, granting nothing",
+       refused.status === 409 && refused.body?.error === "officials_off"
+         && (await q(`select count(*)::int c from role_assignment where fixture_id = $1 and person_id = $2`, [away, SCORER]))[0].c === 0,
+       `${refused.status} ${JSON.stringify(refused.body)}`);
+    await suppress("officials", registrar, { schoolId: HIL, hidden: false });
+    const linked = await api(`/api/duties/${duty}/link`, { method: "POST", token: registrar, body: {} });
+    ok("with Officials on again, the office links it",
+       linked.status === 200 && !!linked.body?.assignmentId, `${linked.status} ${JSON.stringify(linked.body)}`);
   }
 
   group("An appointment to a match that does not exist is refused");

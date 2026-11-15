@@ -43,21 +43,36 @@
 --   and the switch past the caller's own row security), EXECUTE revoked from
 --   PUBLIC and a managed host's API roles, granted to scrbrd_app alone.
 --
---   Every definer that reads match_official (duty_status, duty_suspended,
---   duty_link, duty_suspend, duty_lift, broadcast_state, audit_log,
---   account_offboard_preview, role_assignment_linked_guard) is owned by the
---   table's owner and bypasses its row security, so none of them moves: a
---   duty keeps its authority, its lifecycle and its audit while hidden.
+--   ~ duty_link(uuid)  re-made in place (signature, owner, SECURITY DEFINER,
+--       pinned path and grants as they are; CREATE OR REPLACE keeps the
+--       ACL): the live body (db/34, as db/77 left it) word for word, bar ONE
+--       refusal, FAIL CLOSED. While Officials is off for the fixture's
+--       school (the same switch as above: feature_enabled('officials',
+--       match_school(d.match_id), NULL)), linking a duty is refused with
+--       'officials_off' and nothing is granted. An appointment stored while
+--       Officials is off (switched off records) gives nobody a capability
+--       until the school switches it on and the office links it then. It is
+--       asked after the permission check, so somebody who may not link
+--       learns nothing of the switch. duty_suspend() and duty_lift() are not
+--       touched: taking a scorer's authority away, or pausing it, never
+--       waits on a switch.
+--
+--   The other definers that read match_official (duty_status,
+--   duty_suspended, duty_suspend, duty_lift, broadcast_state, audit_log,
+--   account_offboard_preview, role_assignment_linked_guard) are owned by the
+--   table's owner and bypass its row security, so none of them moves: a
+--   duty keeps its lifecycle and its audit while hidden.
 --
 --   Not touched: db/01, db/09, feature_enabled(), match_official_read, the
---   writes, broadcast_state(), the stored appointments. Nothing here
---   refuses a write, and nothing here deletes a row.
+--   appointment writes, broadcast_state(), the stored appointments. Nothing
+--   here deletes a row.
 --
 -- THE GUARD: official_shown(), if there, must be this file's body, and the
--- policy, if there, this file's. A second paste changes nothing.
+-- policy, if there, this file's; duty_link() must be the live body before
+-- this file (md5 cbe2d29e…) or this file's. A second paste changes nothing.
 --
 -- One transaction: the paste runs the file inside one, so there is no BEGIN
--- or COMMIT here. Its proof is db/99 §136; the walk is smoke-officials.
+-- or COMMIT here. Its proof is db/99 §140; the walk is smoke-officials.
 
 CREATE OR REPLACE FUNCTION pg_temp._v162_fold(t text) RETURNS text AS $$
   SELECT md5(regexp_replace(btrim(t), '\s+', ' ', 'g'))
@@ -91,6 +106,11 @@ BEGIN
                 AND NOT (p.polcmd = 'r' AND NOT p.polpermissive AND p.polroles = '{0}'
                          AND pg_get_expr(p.polqual, p.polrelid) = 'official_shown(match_id)' AND p.polwithcheck IS NULL)) THEN
     RAISE EXCEPTION 'db/162: match_official_shown_while_on is there and is not this file''s policy; look before replacing it';
+  END IF;
+  SELECT pg_temp._v162_fold(p.prosrc) INTO v FROM pg_proc p WHERE p.oid = to_regprocedure('duty_link(uuid)');
+  IF v IS NULL OR v NOT IN ('cbe2d29e2ee1315f239fa8814b5d404d',   -- the live body before this file (db/34, db/77)
+                            '19ba09e6582a08dbe0dddd094db412e4') THEN                 -- this file's
+    RAISE EXCEPTION 'db/162: duty_link(uuid) is missing or not the body this file was written against (md5 % of its folded body); look before replacing it', v;
   END IF;
 END $guard$;
 
@@ -128,9 +148,66 @@ BEGIN
 END $policy$;
 
 
--- ── 2 · After: refuse to commit a file that did not do what it says ──
+-- ── 2 · No duty is linked while Officials is off for its fixture's school ──
+-- The live body word for word, bar the one marked refusal (fail closed).
+CREATE OR REPLACE FUNCTION duty_link(p_duty uuid)
+ RETURNS TABLE(ok boolean, reason text, assignment_id uuid)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  d      match_official%ROWTYPE;
+  v_role text;
+  v_new  uuid;
+BEGIN
+  SELECT * INTO d FROM match_official mo WHERE mo.id = p_duty FOR UPDATE;
+  IF NOT FOUND THEN RETURN QUERY SELECT false, 'no_such_duty', NULL::uuid; RETURN; END IF;
+  v_role := duty_role(d.duty);
+  IF v_role IS NULL
+     OR NOT app_can('user.role.assign', d.school_id, NULL, NULL, NULL)
+     OR NOT app_may_grant_at(v_role, d.school_id) THEN
+    RETURN QUERY SELECT false, 'not_permitted', NULL::uuid; RETURN;
+  END IF;
+  -- db/162 (SCRBRD-144): switched off records but grants nothing. While
+  -- Officials is off for the fixture's school, no duty becomes authority.
+  IF NOT coalesce(feature_enabled('officials', match_school(d.match_id), NULL::uuid), false) THEN
+    RETURN QUERY SELECT false, 'officials_off', NULL::uuid; RETURN;
+  END IF;
+  IF d.withdrawn THEN RETURN QUERY SELECT false, 'duty_withdrawn', NULL::uuid; RETURN; END IF;
+  IF d.person_id IS NULL
+     OR NOT EXISTS (SELECT 1 FROM app_user u WHERE u.id = d.person_id AND u.active) THEN
+    RETURN QUERY SELECT false, 'no_account', NULL::uuid; RETURN;
+  END IF;
+  IF d.assignment_id IS NOT NULL THEN
+    IF EXISTS (SELECT 1 FROM role_assignment r WHERE r.id = d.assignment_id AND r.active) THEN
+      RETURN QUERY SELECT false, 'already_linked', d.assignment_id; RETURN;
+    END IF;
+    IF EXISTS (SELECT 1 FROM duty_suspension s WHERE s.duty_id = d.id AND s.lifted_at IS NULL) THEN
+      RETURN QUERY SELECT false, 'duty_suspended', NULL::uuid; RETURN;
+    END IF;
+  END IF;
+
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, fixture_id)
+  VALUES (d.person_id, v_role, d.school_id, NULL, d.match_id)
+  RETURNING role_assignment.id INTO v_new;
+  UPDATE match_official SET assignment_id = v_new WHERE match_official.id = d.id;
+  RETURN QUERY SELECT true, NULL::text, v_new;
+END $function$;
+
+
+-- ── 3 · After: refuse to commit a file that did not do what it says ──
 DO $after$
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'duty_link(uuid)'::regprocedure AND p.prosecdef
+                    AND p.proconfig = ARRAY['search_path=pg_catalog, public, pg_temp']
+                    AND pg_temp._v162_fold(p.prosrc) = '19ba09e6582a08dbe0dddd094db412e4') THEN
+    RAISE EXCEPTION 'db/162: duty_link() is not this file''s body, or not a definer with its search path pinned';
+  END IF;
+  IF has_function_privilege('public', 'duty_link(uuid)', 'EXECUTE')
+     OR NOT has_function_privilege('scrbrd_app', 'duty_link(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'db/162: duty_link() is callable by PUBLIC, or not by the application (db/157 left it to scrbrd_app)';
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'official_shown(uuid)'::regprocedure AND p.prosecdef
                     AND p.provolatile = 's'
                     AND p.proconfig = ARRAY['search_path=pg_catalog, public, pg_temp']
