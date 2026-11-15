@@ -214,13 +214,14 @@ export function HealthConsentRow({ c, onChanged }) {
  * and `onChanged` are the Me screen's, shared with the eighteen card, so an
  * answer given in either redraws both.
  */
-export function HealthConsentSection({ role, nonce = 0, onChanged, playerId = null }) {
+export function HealthConsentSection({ role, nonce = 0, onChanged, playerId = null, selfOnly = false }) {
   const [nudge, setNudge] = useState(0);
   const { rows } = useLive("consents", role, nonce + nudge);
   // §9.1, Decided 2: hidden per child where that child's school has not
   // switched the module on — `moduleOn !== false` so an older/missing value
   // reads as on, never off. On a child's file, that child alone (Q16).
-  const health = rows.filter((c) => c.kind === "health" && c.moduleOn !== false && (playerId == null || c.playerId === playerId));
+  const health = rows.filter((c) => c.kind === "health" && c.moduleOn !== false && (playerId == null || c.playerId === playerId)
+    && (!selfOnly || c.relation === "self"));
   if (!signedIn() || health.length === 0) return null;
   return <HealthConsentCard rows={health} onChanged={() => { setNudge((n) => n + 1); onChanged?.(); }}/>;
 }

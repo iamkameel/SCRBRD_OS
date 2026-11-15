@@ -23,7 +23,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import {
   COMPARE_FIELDS, COMPARE_FLOOR, NEVER_COMPARED, battingRows, belowFloor, bowlingRows, bySide, compareScopes,
-  childRate, evidenceWord, floorRate, pickable, project, sharedSeasons, teamMates, typeRows,
+  childRate, rowRate, evidenceWord, floorRate, pickable, project, sharedSeasons, teamMates, typeRows,
 } from "../src/lib/compare.js";
 import { asCareer, asSeasonCareer } from "../src/lib/live.js";
 import { RESTRICTED_FIELDS } from "../../../services/api/read/read-api.mjs";
@@ -185,6 +185,16 @@ group("Q12: the floor on every child's rate, the count always (EXPERIENCE_PASS, 
   ok("the floor is Compare's own, not a copy", /childRate\(value, balls\)[\s\S]*n < COMPARE_FLOOR/.test(read("../src/lib/compare.js")));
   const fam = ["views/family/pupil.jsx", "views/family/cards.jsx", "views/family/captain.jsx", "views/seasontrend.jsx", "lib/seasonTrend.js"];
   ok("every family screen that draws a child's rate draws it through childRate", fam.every((f) => /childRate\(/.test(read(`../src/${f}`))), fam.join());
+  // The staff player page (Q12 everywhere): a live row through the floor, on the balls each rate rests on.
+  const live = { live: true, avg: 64, sr: 120, econ: 5.5, bowlAvg: 22, ballsFaced: 8, ballsBowled: 60 };
+  ok("the staff page: 8 balls faced, the average and strike rate are a guide", rowRate(live, "avg").text === "8 balls: a guide, not a figure"
+     && rowRate(live, "sr").held && rowRate(live, "sr").count === "8 balls");
+  ok("...his economy rests on 60 balls bowled, drawn with its count", rowRate(live, "econ").text === "5.5" && rowRate(live, "econ").count === "60 balls"
+     && rowRate(live, "bowlAvg").text === "22");
+  ok("...a scorebook that recorded no balls says so", rowRate({ live: true, avg: 30, ballsFaced: null }, "avg").text === "balls not recorded");
+  ok("...the demonstration's rows, with no ball count, as they are", rowRate({ avg: 41.2 }, "avg").text === "41.2" && rowRate({}, "econ").text === "—");
+  ok("ProfilesView draws its rates through rowRate", (read("../src/views/ProfilesView.jsx").match(/rowRate\(p,"(avg|sr|econ)"\)/g) ?? []).length >= 5
+     && !/stat\(p\.(avg|sr|econ)\)/.test(read("../src/views/ProfilesView.jsx")));
   ok("...and none draws an average with stat() any more", ["views/family/pupil.jsx", "views/family/captain.jsx"].every((f) => !/avg \{?stat\(|stat\([a-z]+\.(avg|sr|econ|bowlAvg)\)/.test(read(`../src/${f}`))));
 }
 

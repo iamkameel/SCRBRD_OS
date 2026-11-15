@@ -142,6 +142,22 @@ export function basisWords(c) {
   return from + book;
 }
 
+/**
+ * A rate on a row as the staff player page holds it (Q12 everywhere): a
+ * live row (lib/live.js asCareer, merged onto the player) through
+ * childRate(), on the balls it rests on, faced for the batting rates and
+ * bowled for the bowling ones. The demonstration's rows carry no ball count
+ * and no child's real figure, so they are drawn as they are.
+ * @param {Record<string, any> | null | undefined} row
+ * @param {"avg" | "sr" | "econ" | "bowlAvg"} kind
+ * @returns {{ text: string, count: string | null, held: boolean }}
+ */
+export function rowRate(row, kind) {
+  const v = row?.[kind];
+  if (!row?.live) return { text: v == null ? "—" : String(v), count: null, held: false };
+  return childRate(v, kind === "econ" || kind === "bowlAvg" ? row.ballsBowled : row.ballsFaced);
+}
+
 /** A count, always drawn: the figure and, for a ball count, its evidence word. */
 const count = (v) => ({ text: v == null ? "—" : String(v), word: null, held: false });
 const balls = (v) => ({ text: v == null ? "—" : String(v), word: evidenceWord(v), held: false });

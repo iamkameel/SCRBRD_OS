@@ -461,6 +461,15 @@ group("SCRBRD-138 phase B: THE PLAN block and C1's line");
   ok("...the line names no player and passes the never-words", !/Naidoo|Smith/.test(card(plan)) && !NEVER_ON_THE_TAB.test(planLine(plan)));
 }
 
+group("Q16's exception: a pupil outside the pupil's app keeps his consent in Settings → Me");
+{
+  const { keepsConsentInSettings } = await import("../src/lib/family.js");
+  ok("a pupil who also coaches (no pupil persona) keeps it", keepsConsentInSettings([{ role: "player" }, { role: "selfaccess" }, { role: "coach" }], null));
+  ok("...so does one with only his own record", keepsConsentInSettings([{ role: "selfaccess" }, { role: "teammanager" }], null));
+  ok("the pupil in his own app does not: his Me has it", !keepsConsentInSettings([{ role: "player" }, { role: "selfaccess" }], "pupil"));
+  ok("a parent, or a coach, does not", !keepsConsentInSettings([{ role: "guardian" }], "family") && !keepsConsentInSettings([{ role: "coach" }], null));
+}
+
 group("C16: the button says Answer until there is an answer");
 {
   ok("no answer: Answer", answerVerb(null) === "Answer");

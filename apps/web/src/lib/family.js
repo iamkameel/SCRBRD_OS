@@ -38,6 +38,19 @@ export function ownRecordId() {
   return a?.subjects?.[0] ?? null;
 }
 
+/**
+ * Does Settings → Me keep his own health-monitoring row and the eighteen card
+ * (Q16's one exception)? They moved to the pupil's own Me; a pupil who is not
+ * the pupil persona (he also holds a staff role, so he has the staff menu and
+ * no pupil's Me) would lose them there. A pupil by db/118's test as the
+ * client can see it: any `player` or `selfaccess` assignment.
+ * @param {{ role?: string }[] | null | undefined} assignments  @param {string | null} persona
+ */
+export function keepsConsentInSettings(assignments, persona) {
+  const pupilRoles = PERSONA_NAV.pupil.roles;
+  return persona !== "pupil" && (assignments ?? []).some((a) => pupilRoles.includes(a?.role ?? ""));
+}
+
 /** Is this fixture one of this child's side's — at either end of a shared fixture? */
 export function isTheirs(m, child) {
   if (!m || !child) return false;

@@ -7,7 +7,9 @@ import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Sele
 import { Metric, MetricGroup } from "../ui/data.jsx";
 import { useLive, useRows } from "../lib/live.js";
 import { profile, schoolsWhere } from "../lib/session.js";
-import { sportsOn, useSports } from "../lib/features.js";
+import { personaOf, sportsOn, useSports } from "../lib/features.js";
+import { keepsConsentInSettings } from "../lib/family.js";
+import { EighteenCard, HealthConsentSection } from "./healthconsent.jsx";
 import { holdsCapability } from "../rbac/index.js";
 import { ownRecordsOf, passportConsentReader, readsScoutingOf } from "../lib/held.js";
 import { unionReadLines, unionReadWords } from "../lib/unionReads.js";
@@ -721,6 +723,11 @@ function BoundariesSection({ role }) {
 
 function MeTab({ role, onSignOut }) {
   const me = profile();
+  // Q16's one exception: a pupil outside the pupil's app (he also holds a staff
+  // role) keeps his own row and the eighteen card here, or he would lose them.
+  const keepConsent = keepsConsentInSettings(me?.assignments, personaOf(role));
+  const [consentNonce, setConsentNonce] = useState(0);
+  const consentChanged = () => setConsentNonce((n) => n + 1);
   const live = signedIn();
   const assignments = me?.assignments ?? [];
   return (
@@ -739,7 +746,10 @@ function MeTab({ role, onSignOut }) {
       {/* Health monitoring's consent, its one-time ask and the eighteen card
           moved whole to Family, on each child's file, and to the pupil's Me
           (EXPERIENCE_PASS Q16, §1.6, decided 13 Nov). Nothing about them
-          changed but where they are found. */}
+          changed but where they are found. A pupil who is not in the pupil's
+          app keeps his own here. */}
+      {keepConsent && <EighteenCard role={role} nonce={consentNonce} onChanged={consentChanged}/>}
+      {keepConsent && <HealthConsentSection role={role} selfOnly nonce={consentNonce} onChanged={consentChanged}/>}
 
       {/* This device's theme (DESIGN_DIRECTION §3.1): second, under who you
           are, because it is the one setting here somebody changes standing
