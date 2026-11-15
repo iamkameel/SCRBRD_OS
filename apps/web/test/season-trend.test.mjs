@@ -142,6 +142,14 @@ group("The 30-ball floor, over the last five only");
      && denominatorWords(stn.basis).text === "From 6 innings, no balls recorded in his last five innings.", denominatorWords(stn.basis)?.text);
 }
 
+group("Review S4: balls a book did not record are null, never 0");
+{
+  const none = seasonFigures(pts([raw(34, null, true, { book: true })]));
+  ok("one scorebook innings with no balls: ballsFaced null", none.ballsFaced === null, JSON.stringify(none));
+  ok("...recorded balls of 0 stay a count", seasonFigures(pts([raw(0, 0, true)])).ballsFaced === 0);
+  ok("...and the summary says the balls were not recorded, never '0 balls'", !/0 balls/.test(spokenSummary({ who: "X", season: "2026", points: pts([raw(34, null, true, { book: true })]) })));
+}
+
 group("Not-outs and the average");
 {
   const p = pts([raw(23, 20, false), raw(30, 25, false), raw(12, 10, false)]);

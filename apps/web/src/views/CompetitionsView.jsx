@@ -3,6 +3,7 @@ import { holdsCapability } from "../rbac/index.js";
 import { D, T, inkOn } from "../design/tokens.js";
 import { Avatar, Badge, Card, SectionHeader, StatusDot } from "../ui/primitives.jsx";
 import { usePlayersWithCareer, useRows } from "../lib/live.js";
+import { heldOutLine, rankable, rowRate } from "../lib/compare.js";
 import { Icon } from "../ui/icons.jsx";
 import { api, signedIn } from "../lib/api.js";
 import { leagueSetupState } from "../lib/league.js";
@@ -215,12 +216,14 @@ function CompetitionsView({ role, homeBar = null }) {
               <div style={{marginBottom:"10px"}}>
                 <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"6px"}}>BATTING</div>
                 <div data-testid="competition-top-batting-method" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"6px"}}>{rankingMethod("average", ALL_SEASONS)}</div>
-                {PLAYERS.filter(p=>p.team==="1XI").sort((a,b)=>b.avg-a.avg).slice(0,3).map((p,i)=>(
+                {/* Q12: an average under thirty balls is a guide, not a figure, and ranks nobody. */}
+                {heldOutLine(PLAYERS.filter(p=>p.team==="1XI"&&p.avg>0),"avg")&&<div data-testid="competition-top-batting-held" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"6px"}}>{heldOutLine(PLAYERS.filter(p=>p.team==="1XI"&&p.avg>0),"avg")}</div>}
+                {PLAYERS.filter(p=>p.team==="1XI"&&rankable(p,"avg")).sort((a,b)=>b.avg-a.avg).slice(0,3).map((p,i)=>(
                   <div key={p.id} style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}}>
                     <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,width:"14px"}}>{i+1}</span>
                     <Avatar name={p.name} size={24} color={D.sky}/>
                     <span style={{flex:1,fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{p.name.split(" ").pop()}</span>
-                    <span style={{fontFamily:D.mono,fontSize:"12px",color:D.amber,fontWeight:500}}>{p.avg}</span>
+                    <span style={{fontFamily:D.mono,fontSize:"12px",color:D.amber,fontWeight:500}}>{rowRate(p,"avg").text}</span>
                   </div>
                 ))}
               </div>

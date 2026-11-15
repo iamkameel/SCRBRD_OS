@@ -191,7 +191,7 @@ export function SeasonTrendView({ rows, said, who, self = false, onRetry, testid
                   ["Runs", figs.runs],
                   ["Innings", figs.innings],
                   ["Not out", figs.notOuts],
-                  ["Balls faced", figs.ballsFaced],
+                  ["Balls faced", childRate(null, figs.ballsFaced).count],
                   ["Average", figs.average == null ? (current ? "no average yet" : "no average") : avgR.held ? avgR.text : figs.average],
                   ["Strike rate", figs.strikeRate == null ? "no balls recorded" : srR.held ? srR.text : figs.strikeRate],
                 ].map(([k, v]) => (

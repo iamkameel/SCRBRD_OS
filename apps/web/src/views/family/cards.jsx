@@ -144,7 +144,7 @@ export function SeasonCard({ child, role, self = false }) {
   const avg = s?.innings ? childRate(s.avg, s.ballsFaced) : null;
   const bits = s ? [
     s.innings ? `${s.runs} runs in ${s.innings} innings` : null,
-    avg ? (avg.held ? avg.text : s.avg != null ? `average ${avg.text} · ${avg.count}` : avg.count) : null,
+    avg ? (avg.held ? `average: ${avg.text}` : s.avg != null ? `average ${avg.text} · ${avg.count}` : avg.count) : null,
     s.ballsBowled ? `${s.wkts} wicket${s.wkts === 1 ? "" : "s"}` : null,
   ].filter(Boolean) : [];
   const said = m && !self ? familyMilestoneLine(m, familyName(child), isFirst(miles, m)) : null;

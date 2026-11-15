@@ -143,7 +143,8 @@ export function seasonFigures(points) {
     average: dismissals > 0 ? round1(runs / dismissals) : null,
     // Over the innings whose balls are recorded, runs and balls both.
     strikeRate: ballsKnown > 0 ? Math.round((100 * runsKnown) / ballsKnown) : null,
-    ballsFaced: ballsKnown,
+    // Null when no innings recorded its balls (SCRBRD-120 D12): never 0.
+    ballsFaced: known.length ? ballsKnown : null,
     bookInnings: book.length,
     bookNoBalls: book.filter((p) => p.balls == null).length,
   };

@@ -205,6 +205,24 @@ try {
     ok("no page error", s.errors.length === 0, s.errors.join(" | "));
     await s.ctx.close();
   }
+  // Review S6: a pupil who scores for his side with no appointment to a fixture (Kameel, 8 Oct: the
+  // appointment only shapes the list) still reaches the pad from his Home: his side's fixture, listed.
+  await q(`delete from role_assignment where id = $1`, [sa.id]);
+  const [side] = await q(`insert into role_assignment (person_id, role, school_id, team_code) values ($1, 'scorer', $2, '1XI') returning id`,
+                         [pupilUser, HIL]);
+  made.assignments.push(side.id);
+  {
+    const s = await open(390);
+    await signIn(s.page, "pillay@example.invalid");
+    const items = await s.page.locator('[data-testid="mnav"] [data-testid^="mnav-"]:not([data-testid$="-badge"])').evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
+    ok("a side-wide pupil scorer, no appointment: still the four items", items.join() === "mnav-myhome,mnav-mymatches,mnav-passport,mnav-me", items.join());
+    await tid(s.page, "appointed-card").first().waitFor({ timeout: 10000 }).catch(() => {});
+    const row = s.page.locator(`[data-testid="appointed"][data-match="${toScore}"]`);
+    const words = await row.locator('[data-testid="appointed-words"]').first().textContent({ timeout: 6000 }).catch(() => "");
+    ok("...his side's fixture is on his Home, in the scorer's home's words", words === "Your side's fixture" && (await row.getAttribute("data-group").catch(() => "")) === "team", words);
+    ok("...with the pad one tap away", (await tid(s.page, "appointed-open").count()) >= 1);
+    await s.ctx.close();
+  }
 
   // ── 2. Q12: three balls ──────────────────────────────────────────
   group("2. A child with three balls: his runs, \"3 balls\", and no average (Q12)");
@@ -227,8 +245,8 @@ try {
     await signIn(s.page, "slice4.threemum@example.invalid");
     await tid(s.page, "season-line").first().waitFor({ timeout: 12000 }).catch(() => {});
     const line = await inner(s.page, "season-line");
-    ok("his season card says his runs and \"3 balls: a guide, not a figure\"", /3 runs in 1 innings/.test(line) && /3 balls: a guide, not a figure/.test(line), line);
-    ok("...and no average", !/average/i.test(line) && !/\b3\.0\b/.test(line), line);
+    ok("his season card says his runs and \"average: 3 balls: a guide, not a figure\"", /3 runs in 1 innings/.test(line) && /average: 3 balls: a guide, not a figure/.test(line), line);
+    ok("...and no average figure", !/average \d/.test(line) && !/\b3\.0\b/.test(line), line);
     const avg = await s.page.locator('[data-testid="family-trend"] dd[data-figure="Average"]').first().innerText({ timeout: 6000 }).catch(() => "");
     ok("the innings-by-innings panel draws the same in place of the average", /3 balls: a guide, not a figure/.test(avg), avg);
     ok("no page error", s.errors.length === 0, s.errors.join(" | "));

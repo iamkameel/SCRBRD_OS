@@ -5,7 +5,7 @@ import { D } from "../design/tokens.js";
 // Hilton's navy: a kit colour, data rather than theme (data/institution.js).
 const HILTON_KIT = "#003366";
 import { SR } from "../scorer/format.js";
-import { stat } from "../lib/format.js";
+import { heldOutLine, rankable, rowRate } from "../lib/compare.js";
 import { Avatar, Badge, Btn, Card, Pill, SectionHeader } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { SeasonHistory } from "./SeasonHistoryView.jsx";
@@ -118,7 +118,9 @@ function LeagueView({ role, homeBar = null }) {
   // Top performers from squad: the demonstration's own school; in a live
   // session the read is already this reader's school, so every row of it.
   const ours = (p) => live || p.school==="HIL";
-  const topBat = PLAYERS.filter(p=>ours(p)&&p.avg>0).sort((a,b)=>b.avg-a.avg).slice(0,5);
+  // Q12: an average under thirty balls faced is a guide, not a figure, and ranks nobody.
+  const topBat = PLAYERS.filter(p=>ours(p)&&p.avg>0&&rankable(p,"avg")).sort((a,b)=>b.avg-a.avg).slice(0,5);
+  const topBatHeld = heldOutLine(PLAYERS.filter(p=>ours(p)&&p.avg>0), "avg");
   const topBowl = PLAYERS.filter(p=>ours(p)&&p.wkts>0).sort((a,b)=>b.wkts-a.wkts).slice(0,5);
 
   // Every school and team this reader's career rows actually carry — never a
@@ -388,6 +390,7 @@ function LeagueView({ role, homeBar = null }) {
                 <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
                   <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}><Icon name="bat"/> Top Batters — {comp.ageGroup}</div>
                   <div data-testid="performers-batting-method" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{rankingMethod("average", ALL_SEASONS)}</div>
+                  {topBatHeld&&<div data-testid="performers-batting-held" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{topBatHeld}</div>}
                 </div>
                 {topBat.map((p,i)=>(
                   <div key={p.id} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px"}}>
@@ -398,11 +401,11 @@ function LeagueView({ role, homeBar = null }) {
                       <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{p.team}</div>
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:700,color:p.avg>=40?D.emerald:D.sky}}>{p.avg}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:700,color:p.avg>=40?D.emerald:D.sky}}>{rowRate(p,"avg").text}</div>
                       <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>avg</div>
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:D.mono,fontSize:"13px",color:D.amber}}>{stat(p.sr)}</div>
+                      <div style={{fontFamily:D.mono,fontSize:rowRate(p,"sr").held?"12px":"13px",color:rowRate(p,"sr").held?D.textMuted:D.amber}}>{rowRate(p,"sr").text}</div>
                       <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>SR</div>
                     </div>
                   </div>
@@ -426,7 +429,7 @@ function LeagueView({ role, homeBar = null }) {
                       <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>wkts</div>
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:D.mono,fontSize:"13px",color:p.econ<=6.5?D.emerald:D.amber}}>{p.econ}</div>
+                      <div style={{fontFamily:D.mono,fontSize:rowRate(p,"econ").held?"12px":"13px",color:rowRate(p,"econ").held?D.textMuted:p.econ<=6.5?D.emerald:D.amber}}>{rowRate(p,"econ").text}</div>
                       <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>econ</div>
                     </div>
                   </div>
@@ -486,20 +489,20 @@ function LeagueView({ role, homeBar = null }) {
               <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px"}}>
                 <RankedList testId="awards-run-scorers" icon="bat" title="Top Run-Scorers" color={D.sky}
                   rows={topRunScorers(AWARD_PLAYERS, awardScope)}
-                  primary={p=>p.runs} primaryLabel="runs" secondary={p=>p.avg} secondaryLabel="avg"
+                  primary={p=>p.runs} primaryLabel="runs" secondary={p=>rowRate(p,"avg").text} secondaryLabel="avg"
                   method={rankingMethod("runs", activeSeason)}/>
                 <RankedList testId="awards-wicket-takers" icon="ball" title="Top Wicket-Takers" color={D.violet}
                   rows={topWicketTakers(AWARD_PLAYERS, awardScope)}
-                  primary={p=>p.wkts} primaryLabel="wkts" secondary={p=>p.econ} secondaryLabel="econ"
+                  primary={p=>p.wkts} primaryLabel="wkts" secondary={p=>rowRate(p,"econ").text} secondaryLabel="econ"
                   method={rankingMethod("wickets", activeSeason)}/>
                 <RankedList testId="awards-batting-index" icon="trending-up" title="Best Batting Index" color={D.emerald}
                   rows={bestBattingAverages(AWARD_PLAYERS, awardScope).map(x=>({...x.player,index:x.index.value}))}
-                  primary={p=>p.index} primaryLabel="index" secondary={p=>p.avg} secondaryLabel="avg"
+                  primary={p=>p.index} primaryLabel="index" secondary={p=>rowRate(p,"avg").text} secondaryLabel="avg"
                   empty="Nobody here has faced the 30 balls the index needs yet."
                   method={rankingMethod("batting", activeSeason)}/>
                 <RankedList testId="awards-bowling-index" icon="trending-down" title="Best Bowling Index" color={D.orange}
                   rows={bestBowlingEconomies(AWARD_PLAYERS, awardScope).map(x=>({...x.player,index:x.index.value}))}
-                  primary={p=>p.index} primaryLabel="index" secondary={p=>p.econ} secondaryLabel="econ"
+                  primary={p=>p.index} primaryLabel="index" secondary={p=>rowRate(p,"econ").text} secondaryLabel="econ"
                   empty="Nobody here has bowled the 36 balls the index needs yet."
                   method={rankingMethod("bowling", activeSeason)}/>
               </div>

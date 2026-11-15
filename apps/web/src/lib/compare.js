@@ -158,6 +158,22 @@ export function rowRate(row, kind) {
   return childRate(v, kind === "econ" || kind === "bowlAvg" ? row.ballsBowled : row.ballsFaced);
 }
 
+/** May this row's rate stand in a ranking or a sorted top-N? Not when the floor holds it (Q12). */
+export function rankable(row, kind) {
+  return !rowRate(row, kind).held;
+}
+
+/**
+ * The line said under a ranking that left rows out on the floor (Q12, the
+ * decided words): null when none was left out.
+ * @param {Record<string, any>[]} rows  the rows that would otherwise be ranked
+ * @param {"avg" | "sr" | "econ" | "bowlAvg"} kind
+ */
+export function heldOutLine(rows, kind) {
+  const n = (rows ?? []).filter((r) => !rankable(r, kind)).length;
+  return n ? `${n} left out: under ${COMPARE_FLOOR} balls a rate is a guide, not a figure.` : null;
+}
+
 /** A count, always drawn: the figure and, for a ball count, its evidence word. */
 const count = (v) => ({ text: v == null ? "—" : String(v), word: null, held: false });
 const balls = (v) => ({ text: v == null ? "—" : String(v), word: evidenceWord(v), held: false });

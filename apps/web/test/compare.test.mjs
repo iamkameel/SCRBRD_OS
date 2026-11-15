@@ -23,7 +23,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import {
   COMPARE_FIELDS, COMPARE_FLOOR, NEVER_COMPARED, battingRows, belowFloor, bowlingRows, bySide, compareScopes,
-  childRate, rowRate, evidenceWord, floorRate, pickable, project, sharedSeasons, teamMates, typeRows,
+  childRate, rowRate, rankable, heldOutLine, evidenceWord, floorRate, pickable, project, sharedSeasons, teamMates, typeRows,
 } from "../src/lib/compare.js";
 import { asCareer, asSeasonCareer } from "../src/lib/live.js";
 import { RESTRICTED_FIELDS } from "../../../services/api/read/read-api.mjs";
@@ -193,6 +193,14 @@ group("Q12: the floor on every child's rate, the count always (EXPERIENCE_PASS, 
      && rowRate(live, "bowlAvg").text === "22");
   ok("...a scorebook that recorded no balls says so", rowRate({ live: true, avg: 30, ballsFaced: null }, "avg").text === "balls not recorded");
   ok("...the demonstration's rows, with no ball count, as they are", rowRate({ avg: 41.2 }, "avg").text === "41.2" && rowRate({}, "econ").text === "—");
+  // Rankings (review S5): a held rate ranks nobody, and the screen says how many it left out.
+  const boys = [{ live: true, avg: 64, ballsFaced: 1 }, { live: true, avg: 30, ballsFaced: 200 }, { live: true, avg: 22, ballsFaced: 31 }];
+  ok("a boy on one ball is not rankable; on thirty-one he is", !rankable(boys[0], "avg") && rankable(boys[2], "avg"));
+  ok("...so he cannot top an average chart", boys.filter((p) => rankable(p, "avg")).sort((a, b) => b.avg - a.avg)[0].avg === 30);
+  ok("...and the line says so, in the decided words", heldOutLine(boys, "avg") === "1 left out: under 30 balls a rate is a guide, not a figure." && heldOutLine(boys.slice(1), "avg") === null);
+  const staff = ["SquadView", "AnalyticsView", "LeagueView", "CompetitionsView", "shared"];
+  ok("Squad, Analytics, League, Competitions and the player card draw rates through rowRate", staff.every((f) => /rowRate\(/.test(read(`../src/views/${f}.jsx`))), staff.join());
+  ok("...and their average rankings ask rankable first", ["AnalyticsView", "LeagueView", "CompetitionsView"].every((f) => /rankable\(p,"avg"\)/.test(read(`../src/views/${f}.jsx`))));
   ok("ProfilesView draws its rates through rowRate", (read("../src/views/ProfilesView.jsx").match(/rowRate\(p,"(avg|sr|econ)"\)/g) ?? []).length >= 5
      && !/stat\(p\.(avg|sr|econ)\)/.test(read("../src/views/ProfilesView.jsx")));
   ok("...and none draws an average with stat() any more", ["views/family/pupil.jsx", "views/family/captain.jsx"].every((f) => !/avg \{?stat\(|stat\([a-z]+\.(avg|sr|econ|bowlAvg)\)/.test(read(`../src/${f}`))));

@@ -341,15 +341,20 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
  * (slice 3b, Q8) leads while one of its schools is live, and sits after Now
  * otherwise. An empty section says in one line what will appear there.
  */
+/** db/161's title (school_answered_words()): the one notice this block draws. */
+export const ANSWERED_TITLE = "The school has answered your request";
+
 /**
- * The notices addressed to her while she has no school (Q15, db/161): "The
- * school has answered your request", the same words for a yes and a no. Her
- * requests list above says which. Unread ones only; reading them is one tap.
+ * The office's answer to her request (Q15, db/161): "The school has answered
+ * your request", the same words for a yes and a no. Her requests list above
+ * says which. That notice alone, unread; any other notice of hers is the
+ * Notices screen's. "Mark as read" marks the ones shown, and nothing else.
  */
 function AnsweredNotices() {
-  const { rows, markAll } = useNotifications("spectator");
-  const unread = rows.filter((n) => n.type === "system" && !n.read);
+  const { rows, open } = useNotifications("spectator");
+  const unread = rows.filter((n) => n.type === "system" && n.title === ANSWERED_TITLE && !n.read);
   if (!unread.length) return null;
+  const markAll = async () => { for (const n of unread) await open(n.id); };
   return (
     <div data-testid="no-school-notices" role="status" style={{ marginTop: "8px", padding: "12px 14px", border: `1px solid ${T.line.normal}`, borderRadius: "12px", background: T.fill.panel }}>
       {unread.map((n) => (
@@ -461,11 +466,13 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
             ))}
             <SchoolAskRows rows={askRows}/>
             {/* Q15: waiting to be linked to a child, she may read the school's terms now; agreeing comes after the office checks. */}
-            {waiting.length > 0 && (
-              <div style={{ marginTop: "8px" }}>
-                <WaitingTerms schoolName={rows.find((r) => r.id === waiting[0].id)?.schoolName ?? null}/>
+            {/* One per school she is waiting on: each school's terms name its own contact. */}
+            {[...new Map(waiting.map((w) => rows.find((r) => r.id === w.id)).filter(Boolean)
+                .map((r) => [r.school ?? r.schoolName, r.schoolName ?? null])).entries()].map(([k, schoolName]) => (
+              <div key={String(k)} style={{ marginTop: "8px" }}>
+                <WaitingTerms schoolName={schoolName}/>
               </div>
-            )}
+            ))}
             {/* Q15: the office's answer, said in a notice with the same words for yes and no; the list above says which. */}
             <AnsweredNotices/>
         </div>
