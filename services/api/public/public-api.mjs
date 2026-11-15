@@ -605,7 +605,8 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
   });
 
   /**
-   * Today's listed fixtures (db/82 public_live_fixtures()), as the home page's
+   * Today's listed fixtures (db/82 public_live_fixtures(), db/159's two
+   * columns with it), as the home page's
    * cards read them. One entry for everybody; 5 s while any card is live, 60 s
    * otherwise. The result is worded as the match page words it, each side by
    * its school and team; the score carries the side that batted.
@@ -632,6 +633,11 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
             wickets: Number(s.wickets ?? 0), balls: Number(s.balls ?? 0),
             side: s.side === "home" || s.side === "away" ? s.side : null })),
           result: result && result.outcome !== "in_progress" ? result.text ?? null : null,
+          // db/159 (EXPERIENCE_PASS Q14): the chase's target, the fold's (the
+          // umpires' revised one where they revised it), and whether the match
+          // was revised. A team fact each; null and false outside a chase.
+          target: Number.isInteger(r.target) && r.target > 0 ? r.target : null,
+          revised: r.revised === true,
         };
       }),
     };

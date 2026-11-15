@@ -38,12 +38,17 @@ import { homeBody, homeHead, oversOfBalls, timeOfDay } from "./shared.jsx";
  * THE SENTENCE (EXPERIENCE_PASS §3.8). A live card says where the match
  * stands in words (statusSentence): "Westville Boys' High 1XI need 45 off 34".
  * The chase is said ONLY from a `target` the read gives. Working it out here
- * from the first innings would be wrong after a rain revision, and the read
- * cannot yet say whether there was one: `target` and `revised` arrive with
- * public_live_fixtures()'s re-emit (slice 3b, Q14). Until then the sentence
- * is the score and the overs, "Hilton College 1XI 86/3 after 12.4 overs".
- * With `revised` true, the balls left are not said either: a revision can
- * change the overs as well as the runs.
+ * from the first innings would be wrong after a rain revision, which only
+ * the server can see: `target` and `revised` come from public_live_fixtures()
+ * (db/159, slice 3b, Q14), and the target only while the innings being
+ * played is a chase (the second; a two-innings match's fourth; never a super
+ * over). Without one the sentence is the score and the overs, "Hilton
+ * College 1XI 86/3 after 12.4 overs". With `revised` true, the balls left
+ * are not said either: a revision can change the overs as well as the runs.
+ *
+ * An innings is named by its place in `scores`, never by its `innings`
+ * number: the log counts innings from 0 (ball_event.innings), so the second
+ * innings is innings 1.
  *
  * THE LOOK. Drawn as the ground's scoreboard (T.board: black in both themes,
  * painted-white figures, lime for a figure that just changed), because on a
@@ -100,7 +105,7 @@ export function statusSentence(f) {
   const who = side ? nameOf(side) : null;
   const runs = count(cur.runs) ?? 0;
   const target = count(f.target);
-  if ((cur.innings ?? 1) >= 2 && target && target > 0) {
+  if (scores.length >= 2 && target && target > 0) {
     const need = target - runs;
     if (need <= 0) return `${who ?? "The side batting second"} ${who ? "have" : "has"} reached the target of ${target}`;
     const overs = count(f.overs);
@@ -110,7 +115,7 @@ export function statusSentence(f) {
     return `${lead} ${ask}${f.revised ? `, revised target ${target}` : ""}`;
   }
   const fig = `${runs}/${count(cur.wickets) ?? 0} after ${oversWords(cur.balls)}`;
-  return who ? `${who} ${fig}` : `${ordinal(cur.innings ?? 1)} innings ${fig}`;
+  return who ? `${who} ${fig}` : `${ordinal(scores.length)} innings ${fig}`;
 }
 
 // The board's own colours: fixed, as the board is (tokens.js `board`).
@@ -175,7 +180,7 @@ function Card({ f, rel }) {
       </div>
       {!bySide && scores.length > 0 && (
         <ul style={{ listStyle: "none", margin: `${T.space.md} 0 0`, padding: 0, ...homeBody(), ...mono(), fontSize: "14px", color: T.board.figure, display: "grid", gap: "4px" }}>
-          {scores.map((s) => <li key={s.innings}><span style={{ color: T.board.dim }}>{ordinal(s.innings)} innings</span> <Fig v={figure(s)} size="14px" /> <span style={{ color: T.board.dim }}>({oversOfBalls(s.balls)})</span></li>)}
+          {scores.map((s, i) => <li key={s.innings}><span style={{ color: T.board.dim }}>{ordinal(i + 1)} innings</span> <Fig v={figure(s)} size="14px" /> <span style={{ color: T.board.dim }}>({oversOfBalls(s.balls)})</span></li>)}
         </ul>
       )}
       {live && (

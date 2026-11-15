@@ -13375,6 +13375,145 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 -- └── db/157 (section 135) ─────────────────────────────────────────────
 
 
+-- ┌── db/159 (section 136) ─────────────────────────────────────────────
+-- db/133's public_live_fixtures(), copied word for word under another name:
+-- the thirteen columns and the rows the read gave before db/159. Its body's
+-- folded md5 is db/133's own (6aa12abd…), which §136 checks first, so the
+-- copy cannot drift from the body it stands for.
+CREATE OR REPLACE FUNCTION _v159_old_live()
+RETURNS TABLE (
+  match_id uuid,
+  home_label text, home_code text,
+  away_label text, away_code text, away_on_platform boolean,
+  status text, format text, overs smallint, starts_at timestamptz,
+  scores jsonb, result jsonb, served_on text
+) AS $$
+  WITH listed AS (
+    SELECT m.id, m.school_id, m.team_code, m.away_school_id, m.away_team_code, m.opponent,
+           m.status, m.format, m.overs, m.starts_at
+      FROM match m
+     WHERE m.starts_at IS NOT NULL
+       AND (m.starts_at AT TIME ZONE 'Africa/Johannesburg')::date = sa_today()
+       AND m.status IN ('scheduled', 'live', 'complete', 'abandoned', 'postponed')
+       AND ((fixture_side_published(m.id, 'home') AND public_school_listed(m.school_id))
+            OR (m.away_school_id IS NOT NULL
+                AND fixture_side_published(m.id, 'away') AND public_school_listed(m.away_school_id)))
+     ORDER BY (m.status = 'live') DESC, m.starts_at, m.id
+     LIMIT 50
+  )
+  SELECT l.id,
+         hs.name, l.team_code,
+         CASE WHEN l.away_school_id IS NULL THEN l.opponent ELSE aws.name END,
+         CASE WHEN l.away_school_id IS NULL THEN NULL ELSE l.away_team_code END,
+         l.away_school_id IS NOT NULL,
+         l.status, l.format, l.overs, l.starts_at,
+         coalesce((SELECT jsonb_agg(jsonb_build_object(
+                            'innings', s.innings, 'runs', s.runs, 'wickets', s.wickets, 'balls', s.legal_balls,
+                            'side', (SELECT x.value->>'side' FROM jsonb_array_elements(r.innings) x
+                                      WHERE (x.value->>'innings')::integer = s.innings
+                                        AND x.value->>'side' IN ('home', 'away') LIMIT 1))
+                            ORDER BY s.innings)
+                     FROM match_live_score s
+                    WHERE s.match_id = l.id), '[]'::jsonb),
+         CASE WHEN r.outcome IS NULL THEN NULL ELSE jsonb_build_object(
+           'outcome', r.outcome, 'margin_kind', r.margin_kind, 'margin', r.margin, 'decided_by', r.decided_by,
+           'winner_side', r.winner_side, 'play_outcome', r.play_outcome, 'play_winner_side', r.play_winner_side,
+           'play_margin_kind', r.play_margin_kind, 'play_margin', r.play_margin,
+           'decision_applied', r.decision_applied, 'decision_kind', r.decision->>'kind',
+           'decision_side', r.decision->>'side', 'decision_overrides_play', (r.decision->>'overrides_play')::boolean,
+           'super_overs', coalesce((SELECT jsonb_agg(jsonb_build_object('n', p.value->'n', 'state', p.value->'state',
+                                                                        'first', p.value->'first', 'winner', p.value->'winner')
+                                                     ORDER BY (p.value->>'n')::integer)
+                                      FROM jsonb_array_elements(r.super_overs) p), '[]'::jsonb)) END,
+         to_char(sa_today(), 'YYYY-MM-DD')
+    FROM listed l
+    JOIN school hs ON hs.id = l.school_id
+    LEFT JOIN school aws ON aws.id = l.away_school_id
+    LEFT JOIN LATERAL match_result_compute(l.id) r ON true
+   ORDER BY (l.status = 'live') DESC, l.starts_at, l.id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Its folded md5, as db/133 and db/159 fold a body.
+CREATE OR REPLACE FUNCTION _v159_md5(p_fn text) RETURNS text AS $$
+  SELECT md5(regexp_replace(btrim(prosrc), '\s+', ' ', 'g')) FROM pg_proc WHERE oid = to_regprocedure(p_fn)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A function's result columns, "name type, …", in order.
+CREATE OR REPLACE FUNCTION _v159_cols(p_fn text) RETURNS text AS $$
+  SELECT string_agg(a.name || ' ' || format_type(a.typ, NULL), ', ' ORDER BY a.ord)
+    FROM pg_proc p, unnest(p.proargnames, p.proallargtypes, p.proargmodes::text[]) WITH ORDINALITY AS a(name, typ, mode, ord)
+   WHERE p.oid = to_regprocedure(p_fn) AND a.mode = 't'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Hilton's fixtures today, as the owner writes them, each with its log: a
+-- chase (c1), a chase the umpires revised (c2), a first innings (c3), a
+-- two-day match's fourth innings (c4), a super over's chase (c5), and a
+-- chase that opened on a target other than the first innings plus one
+-- (c6). No ground, so db/133's clash rule has nothing to refuse. Typed
+-- opponents; a typed name in a ball's payload (never read by the live read).
+CREATE OR REPLACE FUNCTION _seed_159() RETURNS jsonb AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  SCORER uuid := '88888888-0000-0000-0000-000000000006';
+  base   timestamptz := (sa_today()::timestamp + interval '7 hours') AT TIME ZONE 'Africa/Johannesburg';
+  ids    jsonb := '{}';
+  k      text;
+  m      uuid;
+  s      int;
+  opp    text;
+  ev     record;
+BEGIN
+  FOR k IN SELECT unnest(ARRAY['c1', 'c2', 'c3', 'c4', 'c5', 'c6']) LOOP
+    opp := 'Verify Onefiftynine ' || upper(k) || ' 1XI';
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+    VALUES (HIL, '1XI', opp, base + (substr(k, 2)::int) * interval '1 minute', 'cricket',
+            CASE WHEN k = 'c4' THEN 'two-day' ELSE 'T20' END, CASE WHEN k = 'c4' THEN NULL ELSE 20 END, 'live')
+    RETURNING id INTO m;
+    ids := ids || jsonb_build_object(k, m);
+    IF k = 'c4' THEN
+      INSERT INTO match_conditions (match_id, doc, sources, doc_hash)
+      VALUES (m, '{"v":1,"play":{"format.kind":"timed","format.innings_per_side":2},"table":{},"sheet":{}}', '{}', '')
+      ON CONFLICT (match_id) DO NOTHING;
+    END IF;
+    s := 0;
+    FOR ev IN SELECT * FROM (VALUES
+        -- (fixture, innings, kind, value, payload)
+        ('*',  0, 'innings_start', NULL::int, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', opp, 'overs', 20)),
+        ('*',  0, 'ball', 4, '{"bowler": "Typed Onefiftynine"}'::jsonb),
+        ('*',  0, 'ball', 4, '{}'::jsonb),
+        ('c1', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20)),
+        ('c1', 1, 'ball', 1, '{"striker": "Typed Batter"}'::jsonb),
+        ('c2', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20)),
+        ('c2', 1, 'ball', 1, '{}'::jsonb),
+        ('c2', 1, 'revision', NULL, '{"overs": 18, "target": 7, "reason": "rain"}'::jsonb),
+        ('c4', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI')),
+        ('c4', 1, 'ball', 6, '{}'::jsonb),
+        ('c4', 2, 'innings_start', NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', opp)),
+        ('c4', 2, 'ball', 2, '{}'::jsonb),
+        ('c4', 3, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI')),
+        ('c4', 3, 'ball', 1, '{}'::jsonb),
+        ('c5', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20)),
+        ('c5', 1, 'ball', 4, '{}'::jsonb),
+        ('c5', 1, 'ball', 4, '{}'::jsonb),
+        ('c5', 2, 'innings_start', NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', opp, 'overs', 1, 'superOver', 1)),
+        ('c5', 2, 'ball', 4, '{}'::jsonb),
+        ('c5', 3, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 1, 'superOver', 1)),
+        ('c5', 3, 'ball', 1, '{}'::jsonb),
+        ('c6', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20, 'target', 12)),
+        ('c6', 1, 'ball', 2, '{}'::jsonb)) AS v(f, inn, kind, val, payload)
+      WHERE v.f IN ('*', k)
+    LOOP
+      s := s + 1;
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                              client_ts, kind, ball_type, value, payload)
+      VALUES (m, HIL, s, 1, ev.inn, SCORER, 'v159', 'v159-' || m || '-' || s, s, now(), ev.kind,
+              CASE WHEN ev.kind = 'ball' THEN 'run' END, ev.val, ev.payload);
+    END LOOP;
+  END LOOP;
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/159 (section 136) ─────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -43710,6 +43849,110 @@ $m130$;
              coalesce(_v157_reach('anon'), '(nothing)')));
   END;
   -- └── db/157 (section 135) ──────────────────────────────────────────
+  -- ┌── db/159 (section 136) ─────────────────────────────────────────
+  -- ── 136. The home page's live read says the chase's target and whether the match was revised, and nothing else new: the old thirteen columns, and every row they gave, as db/133 left them (db/159; EXPERIENCE_PASS Q14) ──
+  -- _seed_159() builds Hilton's six live fixtures today (header of the
+  -- helper); Hilton's director of sport publishes the home side of each and
+  -- lists the school. Every read signed out, as the API's public read is.
+  -- Labels:
+  --   (copy)     the verifier's copy of db/133's body is db/133's (its
+  --              folded md5), so (old) compares against the real thing
+  --   (columns)  public_live_fixtures() returns db/133's thirteen columns,
+  --              by name and type and in order, then target integer and
+  --              revised boolean, and nothing else
+  --   (old)      every row the read answers, its first thirteen columns,
+  --              is a row db/133's body answers, and the other way round;
+  --              Hilton's six are among them
+  --   (target)   c1 the first innings plus one, not revised; c2 the umpires'
+  --              revised target, revised; c3 a first innings, no target;
+  --              c4 a two-day match's fourth innings, the runs it trails by
+  --              plus one; c5 a super over, no target; c6 a chase opened on
+  --              a typed target other than the first innings plus one, that
+  --              target, revised
+  --   (team)     the two columns are a number of runs and one bit: no
+  --              string, so no name can ride on them
+  --   (grants)   EXECUTE on the read: its owner and scrbrd_app, nobody
+  --              else; fixture_chase() the owner's alone (the application
+  --              cannot call it); and PUBLIC, read at the top of this file,
+  --              reaches neither (db/157's rule)
+  --
+  -- Falsified once each, on a database migrated through db/159, by a
+  -- change made as the owner just before the section ran, in its own
+  -- rolled-back run: db/133's function put back (DROP, db/133's body
+  -- re-made, its grants) → (columns) red; the new body's served_on written
+  -- 'YYYY/MM/DD' → (old) red, 12 rows; fixture_chase() made to ignore a
+  -- typed or revised target (own_target NULL) → (target) red at c2 (9, not
+  -- 7); the mark made NULL in the new body, with (target) skipped → (team)
+  -- red; GRANT EXECUTE on the read TO PUBLIC → (grants) red; GRANT EXECUTE on
+  -- fixture_chase() TO scrbrd_app → (grants) red; the copy's LIMIT 50 made
+  -- 49 → (copy) red.
+  DECLARE
+    ids   jsonb;
+    U_DOS uuid := '88888888-0000-0000-0000-000000000007';   -- Hilton's director of sport (§61's U_SARAH)
+    k text; j jsonb; n int; n2 int; v text; v_ok boolean; v_reason text;
+    want  jsonb := '{"c1": [9, false], "c2": [7, true], "c3": [null, false], "c4": [5, false], "c5": [null, false], "c6": [12, true]}';
+  BEGIN
+    -- (copy)
+    PERFORM _assert(_v159_md5('_v159_old_live()') = '6aa12abde90e18205821fb4b78ef7d26',
+      format('§136 (copy): the verifier''s copy of db/133''s body is not db/133''s (md5 %s)', _v159_md5('_v159_old_live()')));
+
+    -- (columns)
+    v := _v159_cols('public_live_fixtures()');
+    PERFORM _assert(v = _v159_cols('_v159_old_live()') || ', target integer, revised boolean',
+      format('§136 (columns): the live read returns %s', v));
+
+    ids := _seed_159();
+    PERFORM _as(U_DOS);
+    FOR k IN SELECT jsonb_object_keys(ids) LOOP
+      SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish((ids->>k)::uuid, 'home', true) s;
+      PERFORM _assert(v_ok, format('§136: Hilton could not publish %s (%s)', k, v_reason));
+    END LOOP;
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_listing_set(HIL, true) s;
+    PERFORM _assert(v_ok, format('§136: Hilton''s director of sport could not list (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (old)
+    SELECT count(*) INTO n FROM (
+      (SELECT x.match_id, x.home_label, x.home_code, x.away_label, x.away_code, x.away_on_platform, x.status, x.format,
+              x.overs, x.starts_at, x.scores, x.result, x.served_on FROM public_live_fixtures() x
+       EXCEPT ALL SELECT * FROM _v159_old_live())
+      UNION ALL
+      (SELECT * FROM _v159_old_live()
+       EXCEPT ALL SELECT x.match_id, x.home_label, x.home_code, x.away_label, x.away_code, x.away_on_platform, x.status, x.format,
+              x.overs, x.starts_at, x.scores, x.result, x.served_on FROM public_live_fixtures() x)) d;
+    SELECT count(*) INTO n2 FROM public_live_fixtures() x
+     WHERE x.match_id IN (SELECT (ids->>q.key)::uuid FROM jsonb_object_keys(ids) q(key));
+    PERFORM _assert(n = 0 AND n2 = 6,
+      format('§136 (old): %s rows of the old thirteen columns differ from db/133''s body; %s of Hilton''s six answered', n, n2));
+
+    -- (target)
+    FOR k IN SELECT jsonb_object_keys(want) LOOP
+      SELECT to_jsonb(x) INTO j FROM public_live_fixtures() x WHERE x.match_id = (ids->>k)::uuid;
+      PERFORM _assert(j IS NOT NULL AND j->'target' = want->k->0 AND j->'revised' = want->k->1,
+        format('§136 (target): %s reads target %s, revised %s (expected %s); scores %s', k, j->'target', j->'revised', want->k, j->'scores'));
+    END LOOP;
+
+    -- (team)
+    SELECT count(*) INTO n FROM public_live_fixtures() x
+     WHERE jsonb_typeof(to_jsonb(x)->'target') NOT IN ('number', 'null') OR jsonb_typeof(to_jsonb(x)->'revised') <> 'boolean';
+    PERFORM _assert(n = 0 AND _v159_cols('public_live_fixtures()') LIKE '%, target integer, revised boolean',
+      format('§136 (team): %s rows carry a target that is not a number, or a mark that is not a bit', n));
+
+    -- (grants)
+    v := array_to_string(_v156_acl('public_live_fixtures()'), ',');
+    PERFORM _assert(v = (SELECT proowner::regrole::text FROM pg_proc WHERE oid = 'public_live_fixtures()'::regprocedure)
+                        || ':EXECUTE,scrbrd_app:EXECUTE',
+      format('§136 (grants): the live read is granted %s', v));
+    v := array_to_string(_v156_acl('fixture_chase(jsonb,integer)'), ',');
+    PERFORM _assert(v = (SELECT proowner::regrole::text FROM pg_proc WHERE oid = 'fixture_chase(jsonb,integer)'::regprocedure) || ':EXECUTE'
+                    AND NOT has_function_privilege('scrbrd_app', 'fixture_chase(jsonb,integer)', 'EXECUTE'),
+      format('§136 (grants): fixture_chase() is granted %s', v));
+    v := coalesce(_v157_public_at_start(), '');
+    PERFORM _assert(v !~ '(public_live_fixtures|fixture_chase)\(',
+      format('§136 (grants): PUBLIC reaches the live read or its helper: %s', left(v, 600)));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/159 (section 136) ─────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

@@ -128,6 +128,11 @@ group("C. Live strip and news: nothing until given data, nothing on 404");
   ok("...revised: the runs and the revised target, and no balls left (a revision can change the overs)",
     statusSentence(chase({ target: 130, revised: true })) === "Westville Boys' High 1XI need 33 to win, revised target 130");
   ok("...a target reached says so", /reached the target of 90/.test(statusSentence(chase({ target: 90 }))));
+  // db/159's read, as the database numbers innings: from 0.
+  const zero = fx("z", "live", { target: 142, scores: [{ innings: 0, runs: 141, wickets: 6, balls: 120, side: "home" }, { innings: 1, runs: 97, wickets: 3, balls: 86, side: "away" }] });
+  ok("innings numbered from 0, as the log numbers them: the second is the chase", statusSentence(zero) === "Westville Boys' High 1XI need 45 off 34", statusSentence(zero));
+  ok("...and a side-less first innings is the 1st, not the 0th",
+    statusSentence(fx("s", "live", { scores: [{ innings: 0, runs: 6, wickets: 0, balls: 6 }] })) === "1st innings 6/0 after 1 over");
   ok("...a target in the first innings is not a chase", statusSentence(fx("s", "live", { target: 150, scores: [{ innings: 1, runs: 20, wickets: 0, balls: 12, side: "home" }] })) === "Hilton College 1XI 20/0 after 2 overs");
   ok("the other states: a result, a start, abandoned, postponed",
     statusSentence(fx("r", "complete", { result: "Westville Boys' High 1XI won by 6 wickets" })) === "Westville Boys' High 1XI won by 6 wickets"

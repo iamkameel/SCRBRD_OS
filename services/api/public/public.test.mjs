@@ -855,7 +855,7 @@ console.log("\n── The home page's strip: GET /api/public/live (SCRBRD-142, d
 const L = {
   reads: 0, users: /** @type {string[]} */ ([]),
   listed: /** @type {Set<string>} */ (new Set()),
-  /** @type {{id: string, home: string, away: string | null, pub: {home: boolean, away: boolean}, status: string}[]} */
+  /** @type {{id: string, home: string, away: string | null, pub: {home: boolean, away: boolean}, status: string, target?: any, revised?: boolean}[]} */
   fixtures: [],
 };
 const LF = "77777777-0000-0000-0000-0000000001f1";
@@ -871,6 +871,8 @@ const liveRow = (/** @type {typeof L.fixtures[number]} */ f) => ({
         play_winner_side: null, play_margin_kind: null, play_margin: null, decision_applied: false, decision_kind: null,
         decision_side: null, decision_overrides_play: null, super_overs: [] },
   served_on: "2026-10-03",
+  // db/159: the chase's target (the first innings plus one) and the mark.
+  target: f.target === undefined ? 143 : f.target, revised: f.revised ?? false,
   ground: "Gordon Sherwood Oval", player_full_name: "Daniel Erasmus",
 });
 const livePool = {
@@ -931,7 +933,17 @@ const livePool = {
      && JSON.stringify(f.scores.map((/** @type {any} */ s) => s.side)) === '["home","away"]' && f.scores[0].runs === 142, f);
   ok("...a live fixture has no result words yet", f.result === null);
   ok("...and no ground, no player, nothing the API did not name", !/Gordon|Sherwood|ground|Erasmus|Daniel|player/i.test(plain.body)
-     && JSON.stringify(Object.keys(f).sort()) === JSON.stringify(["away", "format", "home", "id", "overs", "result", "scores", "startsAt", "status"]), plain.body);
+     && JSON.stringify(Object.keys(f).sort()) === JSON.stringify(["away", "format", "home", "id", "overs", "result", "revised", "scores", "startsAt", "status", "target"]), plain.body);
+  ok("db/159: the chase's target and the revision mark, as the database gives them", f.target === 143 && f.revised === false, f);
+  L.fixtures[0].target = 130; L.fixtures[0].revised = true; site.changed({ k: "school", id: "x" });
+  const rev = JSON.parse((await read()).body).fixtures[0];
+  ok("...a revised one is passed as it is, marked", rev.target === 130 && rev.revised === true, rev);
+  L.fixtures[0].target = null; L.fixtures[0].revised = false; site.changed({ k: "school", id: "x" });
+  const none = JSON.parse((await read()).body).fixtures[0];
+  ok("...no chase: no target, and not revised", none.target === null && none.revised === false, none);
+  L.fixtures[0].target = "142; drop"; site.changed({ k: "school", id: "x" });
+  ok("...and anything but a whole number of runs is no target", JSON.parse((await read()).body).fixtures[0].target === null);
+  delete L.fixtures[0].target; delete L.fixtures[0].revised; site.changed({ k: "school", id: "x" });
   const staff = await read({ token: "Bearer eyJhbGciOi.staff.token" });
   ok("a staff token changes nothing: the same bytes and headers", staff.body === plain.body && JSON.stringify(staff.headers) === JSON.stringify(plain.headers));
   ok("...and every read ran as nobody", L.users.length > 0 && L.users.every((u) => u === ""), L.users);
