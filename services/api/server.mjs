@@ -851,6 +851,10 @@ const PLAYER_ROUTES = [
   [/^\/api\/requests$/,                             "POST", requests.request],
   [/^\/api\/requests\/([^/]+)\/withdraw$/,           "POST", requests.withdraw],
   [/^\/api\/requests\/([^/]+)\/decide$/,             "POST", requests.decide],
+  // "Ask SCRBRD to add my school" (db/158, Q22): the asker's note, and the
+  // platform's answer. Each decision is a db/158 definer's, under the caller.
+  [/^\/api\/school-requests$/,                      "POST", requests.schoolAsk],
+  [/^\/api\/school-requests\/([^/]+)\/decide$/,      "POST", requests.schoolDecide],
   // The office opening an account for somebody already on the roster — the
   // push half of onboarding. Authenticated: enrol_person() checks
   // user.role.assign and the granter table under the caller's identity.

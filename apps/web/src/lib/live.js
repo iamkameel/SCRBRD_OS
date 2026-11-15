@@ -930,6 +930,13 @@ function asRoleRequest(r) {
            requestedAt: r.requested_at, decidedAt: r.decided_at, decidedNote: r.decided_note, decidedBy: r.decided_by_name,
            mine: r.mine === true, decidable: r.decidable === true, askedUnverified: r.asked_unverified === true, live: true };
 }
+// db/158 (Q22): a request to add a school. The asker's own, or every one for
+// the platform. `state` is as read: "lapsed" after ninety days unanswered.
+function asSchoolAddRequest(r) {
+  return { id: r.id, schoolName: r.school_name, town: r.town, job: r.job, state: r.state,
+           requestedAt: r.requested_at, decidedAt: r.decided_at, name: r.name ?? null, email: r.email ?? null,
+           mine: r.mine === true, decidable: r.decidable === true, live: true };
+}
 function asDrill(r) {
   return { id: r.id, school: r.school_id, name: r.name, category: r.category, duration: r.duration_min, desc: r.description, live: true };
 }
@@ -1433,6 +1440,8 @@ const ADAPT = {
   my_clearances: asClearance,
   clearance_requirements: asRequirement,
   role_requests: asRoleRequest,
+  // db/158 (Q22): no mock twin. Signed in only (the no-school home, the platform's list).
+  school_add_requests: asSchoolAddRequest,
   // SCRBRD-140: no mock twin, and never one (an invented sign-in reads like a real one). Rows stay as the read returns them.
   my_sign_ins: (r) => r,
   sign_in_claims: (r) => r,

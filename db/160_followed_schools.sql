@@ -67,7 +67,7 @@
 --
 -- No other table, column, row, policy or grant moves. Safe to run twice: a
 -- second paste changes nothing. One transaction (the paste runs the file
--- inside one; no BEGIN or COMMIT here). Its proof is db/99 §137; the walks
+-- inside one; no BEGIN or COMMIT here). Its proof is db/99 §138; the walks
 -- are browser-first-run and smoke-public.
 
 

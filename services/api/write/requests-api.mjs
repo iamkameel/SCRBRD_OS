@@ -71,6 +71,31 @@ export const END_ROLE_REFUSALS = {
   refused:            [409, "The database refused to end this role."],
 };
 
+// "Ask SCRBRD to add my school" (db/158, EXPERIENCE_PASS Q22). Each refusal
+// of the two doors and its status; the words are the screens'
+// (apps/web/src/lib/schoolAsk.js), keyed on the same codes.
+/** @type {Record<string, number>} */
+export const SCHOOL_ASK_STATUS = {
+  not_signed_in: 401,
+  has_school:    409,
+  name_required: 422,
+  town_required: 422,
+  job_invalid:   422,
+  already_asked: 409,
+  too_many_open: 409,
+};
+/** @type {Record<string, number>} */
+export const SCHOOL_DECIDE_STATUS = {
+  not_permitted:   403,
+  state_invalid:   422,
+  no_such_request: 404,
+  already_decided: 409,
+  lapsed:          409,
+};
+// The job list, as db/158's CHECK has it. Refused here too, so a typo is a
+// 422 before the database is asked.
+export const SCHOOL_ASK_JOBS = Object.freeze(["coach", "teacher", "sport", "office", "head", "parent", "other"]);
+
 /** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function requestRoutes({ pool, secret }) {
   /** @param {(req: ApiRequest) => Promise<unknown>} fn @returns {Handler} */
@@ -236,6 +261,53 @@ export function requestRoutes({ pool, secret }) {
         const status = e.code === "42501" ? 403 : (e.status || 500);
         return res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error"),
                                           ...(status === 403 ? { detail: END_ROLE_REFUSALS.not_permitted[1] } : {}) });
+      }
+    },
+
+    // POST /api/school-requests { schoolName, town, job }
+    //
+    // ASK SCRBRD TO ADD MY SCHOOL (db/158, Q22). The account with no school
+    // whose school is not in the join list. school_add_request_ask() decides
+    // everything (who may, the cap, the duplicate) and answers with a code;
+    // this turns the code into a status. It creates no school and links
+    // nobody: a person on the platform reads it and answers.
+    schoolAsk: async (req, res) => {
+      const b = req.body || {};
+      const name = typeof b.schoolName === "string" ? b.schoolName.slice(0, 200) : "";
+      const town = typeof b.town === "string" ? b.town.slice(0, 200) : "";
+      const job = typeof b.job === "string" ? b.job : "";
+      if (!SCHOOL_ASK_JOBS.includes(job)) return res.status(422).json({ error: "job_invalid" });
+      try {
+        const r = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) =>
+          (await client.query(`select * from school_add_request_ask($1, $2, $3)`, [name, town, job])).rows[0]);
+        if (r?.ok) return res.json({ id: r.request_id, state: "open" });
+        const code = r?.reason || "refused";
+        return res.status(SCHOOL_ASK_STATUS[code] ?? 422).json({ error: code });
+      } catch (/** @type {any} */ e) {
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        return res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      }
+    },
+
+    // POST /api/school-requests/:id/decide { state: "added" | "declined" }
+    //
+    // The platform's answer (platform.tenant.manage), once. It writes the
+    // answer, who gave it and when; adding the school itself is the existing
+    // path, by a person.
+    schoolDecide: async (req, res) => {
+      const id = String(req.params?.id ?? "");
+      if (!UUID.test(id)) return res.status(404).json({ error: "no_such_request" });
+      const state = req.body?.state;
+      if (state !== "added" && state !== "declined") return res.status(422).json({ error: "state_invalid" });
+      try {
+        const r = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) =>
+          (await client.query(`select * from school_add_request_decide($1, $2)`, [id, state])).rows[0]);
+        if (r?.ok) return res.json({ id, state });
+        const code = r?.reason || "refused";
+        return res.status(SCHOOL_DECIDE_STATUS[code] ?? 422).json({ error: code });
+      } catch (/** @type {any} */ e) {
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        return res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
       }
     },
 

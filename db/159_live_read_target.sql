@@ -58,7 +58,7 @@
 -- old thirteen columns answer exactly what they answered: the after-block
 -- below compares every row the old body gave on this database, at this
 -- paste, column by column, with the new one's first thirteen, and refuses
--- the paste on any difference. db/99 §136 proves it again against a copy of
+-- the paste on any difference. db/99 §137 proves it again against a copy of
 -- db/133's body on fixtures it builds.
 --
 -- NO DEPENDENT. Nothing in db/ calls the function from SQL but db/82's own
@@ -87,7 +87,7 @@
 --
 -- One transaction: the paste runs the file inside one, so there is no BEGIN
 -- or COMMIT here, and no caller sees the function missing between the DROP
--- and the CREATE. Its proof is db/99 §136; the walks are smoke-public,
+-- and the CREATE. Its proof is db/99 §137; the walks are smoke-public,
 -- home, public-live and browser-first-run.
 --
 -- Applies after db/157 (a managed host's API roles), whose rule every grant
