@@ -635,8 +635,10 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
             side: s.side === "home" || s.side === "away" ? s.side : null })),
           result: result && result.outcome !== "in_progress" ? result.text ?? null : null,
           // db/159 (EXPERIENCE_PASS Q14): the chase's target, the fold's (the
-          // umpires' revised one where they revised it), and whether the match
-          // was revised. A team fact each; null and false outside a chase.
+          // umpires' revised one where they revised it), null outside a chase;
+          // and `revised`, true once any innings of the match was revised (an
+          // event, a typed target, or a chase on overs not the fixture's),
+          // inside a chase or not. A team fact each.
           target: Number.isInteger(r.target) && r.target > 0 ? r.target : null,
           revised: r.revised === true,
         };
