@@ -25,7 +25,7 @@ function Side({ side, last, through, testid }) {
   const s = sideSaid(side, last);
   return (
     <div data-testid={testid} data-known={s.known ? "yes" : "no"} style={{ display: "flex", alignItems: "flex-start", gap: "8px", justifyContent: "space-between" }}>
-      <div style={{ minWidth: 0 }}>
+      <div data-testid="bracket-side-said" style={{ minWidth: 0 }}>
         <div style={S.name(through, s.known)}>{s.name}</div>
         {s.note && <div style={S.meta}>{s.note}</div>}
       </div>

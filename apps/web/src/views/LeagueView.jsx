@@ -180,7 +180,7 @@ function LeagueView({ role, homeBar = null }) {
       {/* Competition selector */}
       <div style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap"}}>
         {COMPETITIONS.map(c=>(
-          <button key={c.id} onClick={()=>{setSelComp(c.id);setTab("table");}} className="pressBtn" style={{
+          <button key={c.id} onClick={()=>{setSelComp(c.id);setTab("table");}} data-testid={`league-comp-${c.id}`} aria-pressed={comp?.id===c.id} className="pressBtn" style={{
             padding:"8px 16px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
             border:`1px solid ${selComp===c.id?D.amber+"55":D.border}`,
             background:selComp===c.id?D.amber+"10":D.surf1,

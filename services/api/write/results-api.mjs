@@ -265,10 +265,17 @@ export function resultsRoutes({ pool, secret, onChange }) {
         const { rows: res } = await client.query(`select * from competition_results($1)`, [id]);
         const { rows: fl } = await client.query(
           `select match_id, side, conflict_note, awaiting_winner, played from progression_conflict where competition_id = $1`, [id]);
-        const matches = new Map(res.map((r) => [r.match_id, {
-          startsAt: r.starts_at ?? null, status: r.status ?? null, home: r.home_label ?? null, away: r.away_label ?? null,
-          result: resultOut({ ...r, home_key: r.home_team_code ?? "Home" }, { home: r.home_label, away: r.away_label }, false),
-        }]));
+        // A side the draw entered is called by its entered name, on the card and
+        // in the result's words alike; any other by the fixture's own label.
+        const entered = new Map((p[0]?.entrants ?? []).map((/** @type {any} */ e) => [`${e.schoolId}:${e.teamCode}`, e.name ?? null]));
+        const named = (/** @type {any} */ s, /** @type {any} */ t, /** @type {any} */ label) => (s && t && entered.get(`${s}:${t}`)) || label || null;
+        const matches = new Map(res.map((r) => {
+          const names = { home: named(r.home_school_id, r.home_team_code, r.home_label), away: named(r.away_school_id, r.away_team_code, r.away_label) };
+          return [r.match_id, {
+            startsAt: r.starts_at ?? null, status: r.status ?? null, home: names.home, away: names.away,
+            result: resultOut({ ...r, home_key: r.home_team_code ?? "Home" }, names, false),
+          }];
+        }));
         return bracketOf({
           competition: { id, name: c[0].name, compType: c[0].comp_type },
           plan: p.length ? { id: p[0].id, version: p[0].version, publishedAt: p[0].published_at, entrants: p[0].entrants, plan: p[0].plan } : null,
