@@ -13940,6 +13940,70 @@ CREATE OR REPLACE FUNCTION _v161_acl(p_fn text) RETURNS text AS $$
      WHERE p.oid = to_regprocedure(p_fn) AND x.grantee <> p.proowner), '') END
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- Q10 (Kameel, 15 Nov: "eleven"): a Hilton U14F eleven at home to a
+-- Westville U14F three, in three days, and a Hilton U14F boy on no sheet.
+-- Five parents: one verified and live, of the first boy on the eleven; one
+-- verified and live, of the boy on no sheet; one whose link to the second
+-- boy the office has not verified; one whose verified link to the third
+-- boy ended yesterday; and a Westville parent of a Westville boy on no
+-- sheet. Every boy on a sheet has a verified guardian besides (a boy is
+-- selected only once registered). As the owner; every name invented.
+-- Returns the ids.
+CREATE OR REPLACE FUNCTION _seed_161s(p_tag text) RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  REG uuid := '88888888-0000-0000-0000-00000000000c';
+  U14 date := make_date(extract(year FROM sa_today())::int - 13, 3, 1);
+  a uuid[] := '{}'; w uuid[] := '{}'; v uuid; bench uuid; wbench uuid; f uuid; ids jsonb := '{}'; i int; u uuid; ra uuid;
+  r record;
+BEGIN
+  FOR i IN 1..11 LOOP
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES (HIL, 'U14F', format('Eleven Home %s', lpad(i::text, 2, '0')), 1610 + i, 'batter', U14) RETURNING id INTO v;
+    a := a || v;
+  END LOOP;
+  FOR i IN 1..3 LOOP
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES (WES, 'U14F', format('Eleven Away %s', lpad(i::text, 2, '0')), 1630 + i, 'batter', U14) RETURNING id INTO v;
+    w := w || v;
+  END LOOP;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES (HIL, 'U14F', 'Eleven Bench', 1640, 'bowler', U14) RETURNING id INTO bench;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES (WES, 'U14F', 'Eleven Westbench', 1641, 'bowler', U14) RETURNING id INTO wbench;
+  FOR r IN SELECT * FROM (VALUES ('named', HIL, a[1], 'verified', NULL::date), ('unnamed', HIL, bench, 'verified', NULL::date),
+                                 ('pending', HIL, a[2], 'pending', NULL::date), ('ended', HIL, a[3], 'verified', sa_today() - 1),
+                                 ('wes', WES, wbench, 'verified', NULL::date)) AS t(k, school, boy, state, until) LOOP
+    INSERT INTO app_user (school_id, email, name, role) VALUES (r.school, 'v161s.' || p_tag || '.' || r.k || '@example.invalid', 'V161 ' || initcap(r.k), 'guardian')
+    RETURNING id INTO u;
+    INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'guardian', r.school, sa_today() - 30) RETURNING id INTO ra;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from, valid_until)
+    VALUES (ra, r.boy, 'parent', r.state, CASE WHEN r.state = 'verified' THEN REG END, CASE WHEN r.state = 'verified' THEN now() END,
+            CASE WHEN r.state = 'verified' THEN 'granted' ELSE 'pending' END, CASE WHEN r.state = 'verified' THEN 'popia-2026-01' END,
+            CASE WHEN r.state = 'verified' THEN now() END, REG, sa_today() - 30, r.until);
+    ids := ids || jsonb_build_object(r.k, u);
+  END LOOP;
+  -- Every boy on a sheet is registered (db/116): a verified, consented guardian each, as the seed's are;
+  -- one Hilton and one Westville parent stand in for those families and are asked nothing.
+  FOR r IN SELECT * FROM (VALUES ('rest', HIL, a), ('wesrest', WES, w)) AS t(k, school, boys) LOOP
+    INSERT INTO app_user (school_id, email, name, role) VALUES (r.school, 'v161s.' || p_tag || '.' || r.k || '@example.invalid', 'V161 ' || initcap(r.k), 'guardian')
+    RETURNING id INTO u;
+    INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'guardian', r.school, sa_today() - 30) RETURNING id INTO ra;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    SELECT ra, b, 'parent', 'verified', REG, now(), 'granted', 'popia-2026-01', now(), REG, sa_today() - 30 FROM unnest(r.boys) b;
+  END LOOP;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U14F', WES, 'U14F', 'Westville U14F', ((sa_today() + 3)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f;
+  INSERT INTO match_squad (match_id, player_id, side, batting_no)
+  SELECT f, a[g.n], 'home', g.n FROM generate_series(1, 11) g(n)
+  UNION ALL SELECT f, w[g.n], 'away', g.n FROM generate_series(1, 3) g(n);
+  RETURN ids || jsonb_build_object('f', f);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- One case of §139, run as the caller (scrbrd_app, under each person's
 -- session in turn). Invoker, so every read below meets row security as the
 -- API would. Each case seeds its own people and raises on its first failure.
@@ -14063,6 +14127,27 @@ BEGIN
     END LOOP;
     PERFORM _as(ASK);
     PERFORM _assert(notification_by_id(x) IS NOT NULL, '§139 (others): the asker cannot open her own notice');
+
+  ELSIF p_case = 'sheet' THEN
+    -- (sheet) Q10 (Kameel, 15 Nov: "eleven"), read through db/131's fixture_sheet(), the one narrow read over
+    -- match_squad: the verified, live guardian of a boy on the eleven reads the eleven, names and batting order,
+    -- of his end only; the guardian of a boy on no sheet, a link not yet verified, a link that ended and the
+    -- other school's guardian read nothing; the other end's names never show to her.
+    ids := _seed_161s(p_case);
+    x := (ids->>'f')::uuid;
+    PERFORM _as((ids->>'named')::uuid);
+    SELECT string_agg(s.side || ':' || s.batting_no || ':' || s.name, ',' ORDER BY s.batting_no) INTO v FROM fixture_sheet(x) s;
+    SELECT string_agg('home:' || g.n || ':Eleven Home ' || lpad(g.n::text, 2, '0'), ',' ORDER BY g.n) INTO v2 FROM generate_series(1, 11) g(n);
+    PERFORM _assert(v = v2, format('§139 (sheet): the named boy''s guardian reads %s', coalesce(v, '(nothing)')));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM fixture_sheet(x) s WHERE s.side <> 'home' OR s.name LIKE 'Eleven Away%'),
+      '§139 (sheet): the other end''s names show to her');
+    FOREACH v IN ARRAY ARRAY['unnamed', 'pending', 'ended', 'wes'] LOOP
+      PERFORM _as((ids->>v)::uuid);
+      SELECT count(*) INTO n FROM fixture_sheet(x);
+      PERFORM _assert(n = 0, format('§139 (sheet): the %s guardian reads %s rows of the sheet', v, n));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert((SELECT count(*) FROM fixture_sheet(x)) = 0, '§139 (sheet): signed out, the sheet is read');
 
   ELSIF p_case = 'grants' THEN
     -- (grants) The door, the words and the verify: EXECUTE to scrbrd_app alone; the writer and the trigger's function: nobody's.
@@ -45301,6 +45386,15 @@ $m130$;
   --             Hilton's director of sport, not the owner's key, not a
   --             verified Hilton guardian, not another adult, not a pupil,
   --             not signed out; she opens her own
+  --   (sheet)   Q10 (Kameel, 15 Nov: "eleven"), through db/131's
+  --             fixture_sheet(), the one narrow read over match_squad (no
+  --             new read: db/131 R-H already is STEP4 Q10's shape, and §109
+  --             proves its other readers): the verified, live guardian of a
+  --             boy on the eleven reads the eleven, names and batting
+  --             order, of his end only; the guardian of a boy on no sheet,
+  --             a link not yet verified, a link that ended yesterday, the
+  --             other school's guardian and a session signed out read
+  --             nothing; the other end's names never show to her
   --   (grants)  the words, the read door and the verify door EXECUTE to
   --             scrbrd_app alone; the writer and the trigger's function
   --             granted to nobody (PUBLIC included)
@@ -45313,12 +45407,19 @@ $m130$;
   -- → (others) red, and (no), (same), (verify) and (pupil) with it. The
   -- writer without its pupil test → (pupil) red. A decline told in other
   -- words ("It was declined.") → (no) and (same) red.
+  -- (sheet), with fixture_sheet()'s gate taken out (every live row of the
+  -- fixture to anyone signed in) → red at the named guardian (fourteen rows,
+  -- both ends); with its family test widened to any guardian link of the
+  -- caller's, verified or not, live or ended → red at the pending link; with
+  -- its end test taken out (every end once one is open) → red at the other
+  -- end's names.
   PERFORM _v161_case('yes');
   PERFORM _v161_case('no');
   PERFORM _v161_case('same');
   PERFORM _v161_case('verify');
   PERFORM _v161_case('pupil');
   PERFORM _v161_case('others');
+  PERFORM _v161_case('sheet');
   PERFORM _v161_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/161 (section 139) ─────────────────────────────────────────

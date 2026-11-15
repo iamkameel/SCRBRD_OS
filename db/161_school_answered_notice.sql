@@ -52,7 +52,7 @@
 --       body verbatim, with the notice written after the one row it
 --       verified. db/08 is frozen, so the function is re-emitted here, not
 --       edited there, behind an md5 guard on the live body: a body that is
---       neither db/08's nor this file's refuses the paste. Its signature,
+--       neither db/08's (as db/128 left it) nor this file's refuses the paste. Its signature,
 --       its answers and its grants are unchanged.
 -- Nothing is backfilled: an answer given before the paste wrote no notice
 -- and writes none now.
@@ -110,9 +110,9 @@ BEGIN
     RAISE EXCEPTION 'db/161: app_user_id() (db/01), person_is_pupil() or notification.recipient_id (db/57), player_school() or guardian_link_verify() (db/08), or api_role_reach() (db/157) is missing; apply them first';
   END IF;
   SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = 'guardian_link_verify(uuid,uuid,text,text)'::regprocedure;
-  -- A second paste finds this file's own body; anything else must be db/08's, as shipped.
+  -- A second paste finds this file's own body; anything else must be db/08's as db/128 left it.
   IF position('db/161' IN v_src) = 0 AND md5(v_src) IS DISTINCT FROM '129a9ee450e14dd3cbb11f63ee7b1aef' THEN
-    RAISE EXCEPTION 'db/161: guardian_link_verify() is not db/08''s any more (md5 %); factor the version now in place and move this hash', md5(v_src);
+    RAISE EXCEPTION 'db/161: guardian_link_verify() is not db/08''s as db/128 left it (md5 %); factor the version now in place and move this hash', md5(v_src);
   END IF;
 END $guard$;
 
@@ -156,8 +156,10 @@ CREATE OR REPLACE TRIGGER role_request_answered_notice
   EXECUTE FUNCTION school_answered_notice();
 
 
--- (b) guardian_link_verify(), db/08's body verbatim to its last refusal;
--- then (db/161) the notice to the guardian about the link just verified.
+-- (b) guardian_link_verify(), the live body verbatim to its last refusal:
+-- db/08's, with db/128's one change (current_date read as sa_today(), the
+-- SA day; db/99 §105 holds every body to it). Then (db/161) the notice to
+-- the guardian about the link just verified.
 CREATE OR REPLACE FUNCTION guardian_link_verify(
   p_guardian        uuid,
   p_player          uuid,
@@ -197,7 +199,7 @@ BEGIN
      -- LIVE, not "open-ended". Every guardian link now ends at the child's
      -- majority, so `valid_until IS NULL` selects nothing and this would
      -- quietly stop finding the link it is meant to act on.
-     AND (g.valid_until IS NULL OR g.valid_until > current_date)
+     AND (g.valid_until IS NULL OR g.valid_until > sa_today())
      AND g.verification_state = 'pending'
      AND EXISTS (SELECT 1 FROM role_assignment a
                   WHERE a.id = g.assignment_id
