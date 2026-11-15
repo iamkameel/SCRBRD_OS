@@ -1,12 +1,12 @@
 -- ══════════════════════════════════════════════════════════════════
 --  156 · Switched off is hidden on the read side as well: the overlay's
---        officials and the overlay itself, and a DRS review read across
---        schools
+--        officials, its sponsor's board and the overlay itself, and a DRS
+--        review read across schools
 -- ══════════════════════════════════════════════════════════════════
 --
 -- HAND-WRITTEN. Kameel's rule, 13 Nov 2026: "Anything that's Switched Off
 -- for a user should be hidden for that user but still record data." db/154
--- made a DRS review store while DRS is off. Three reads still served what a
+-- made a DRS review store while DRS is off. Four reads still served what a
 -- switch had turned off; this file closes them. Nothing here refuses a
 -- write, and nothing here deletes a row.
 --
@@ -22,7 +22,7 @@
 --         Officials are adults doing a public job, but a school that
 --         switched Officials off after appointing still had its umpires
 --         named on the signed-out overlay. The appointments stay stored.
---     (2) BROADCAST (HOLDABLE, its own marked block inside the body, see
+--     (2) BROADCAST (its own marked block inside the body; not held, see
 --         below). While the Broadcast feature is off for the fixture's
 --         school, no row: the shape an unpublished fixture gets. A fixture
 --         published before its school switched Broadcast off kept serving
@@ -65,21 +65,23 @@
 --   Not touched: db/01, db/09, feature_enabled(), drs_review_read, the
 --   writes (db/154's trigger), match_broadcast, match_official.
 --
--- ── THE BROADCAST BLOCK MAY BE HELD ────────────────────────────────
+-- ── THE BROADCAST BLOCK IS NOT HELD ────────────────────────────────
 -- Gate (2) is the three lines inside broadcast_state()'s body that open
--- with the "db/156 · BROADCAST SWITCH" mark and close with its "end" mark
--- (the condition between them). To hold it, delete those three lines and
--- nothing else: the guard and the after-block
--- accept the body with them and the body without them (two md5s, both
--- this file's), and every other gate in the file stands. db/99 §134's
--- (broadcast) case then goes red, which is the record that it was held.
+-- with the "db/156 · BROADCAST SWITCH" mark and close with its "end" mark.
+-- It was written to be holdable; Kameel decided (14 Nov 2026) that it is
+-- pasted with the rest. The mark inside the body still says "holdable":
+-- it is part of the body's md5, so it stays, and it is stale. A copy with
+-- those lines deleted is refused: the guard and the after-block accept
+-- this file's one body only.
 --
 -- THE GUARD keys on pg_proc.prosrc as db/149, db/154 and db/155 do: the md5
 -- of the live body of broadcast_state(), its whitespace folded, must be
--- db/149's or one of this file's two. A body moved by another file since
--- stops the paste. drs_review_shown(), if there, must be this file's. A
--- second paste changes nothing. db/149 cannot be pasted again after this
--- file (its guard knows neither of this file's bodies), and must not be.
+-- db/149's or this file's. A body moved by another file since stops the
+-- paste. drs_review_shown(), if there, must be this file's. A second paste
+-- changes nothing. db/149 cannot be pasted again after this file (its
+-- guard does not know this file's body), and must not be. An earlier draft
+-- of this file (sha c1811203…, before the sponsor gate) was never pasted on
+-- demo or production; a database that applied it is refused, and is reset.
 --
 -- One transaction: the paste runs the file inside one, so there is no BEGIN
 -- or COMMIT here. Its proof is db/99 §134; the walks are smoke-broadcast and
@@ -100,13 +102,12 @@ BEGIN
      OR NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'scrbrd_app') THEN
     RAISE EXCEPTION 'db/156: broadcast_state(), drs_review, feature_enabled(), match_school(), match_team(), app_can() or the role scrbrd_app is missing; apply every file before this one (through db/155) first';
   END IF;
-  IF (SELECT count(*) FROM feature_flag WHERE key IN ('broadcast', 'officials', 'drs_review')) <> 3 THEN
-    RAISE EXCEPTION 'db/156: the switches broadcast, officials and drs_review are not all in feature_flag; apply db/08 first';
+  IF (SELECT count(*) FROM feature_flag WHERE key IN ('broadcast', 'officials', 'sponsors', 'drs_review')) <> 4 THEN
+    RAISE EXCEPTION 'db/156: the switches broadcast, officials, sponsors and drs_review are not all in feature_flag; apply db/08 first';
   END IF;
   SELECT pg_temp._v156_fold(p.prosrc) INTO v FROM pg_proc p WHERE p.oid = 'broadcast_state(uuid)'::regprocedure;
   IF v NOT IN ('18f0dbbd3cfb19df50eb8eebbd5c0530',   -- db/149's
-               '783f25935f09da16aba5786a2b76fd1e',                       -- this file's
-               '476e7078c6e4241629dde5651e299a27') THEN                  -- this file's, the broadcast block held
+               '783f25935f09da16aba5786a2b76fd1e') THEN                  -- this file's
     RAISE EXCEPTION 'db/156: broadcast_state(uuid) is not db/149''s body or this file''s (md5 % of its folded body); look before replacing it', v;
   END IF;
   IF to_regprocedure('drs_review_shown(uuid)') IS NOT NULL THEN
@@ -123,13 +124,14 @@ BEGIN
 END $guard$;
 
 
--- ── 1 · The overlay: officials while Officials is on; nothing while Broadcast is off ──
+-- ── 1 · The overlay: officials while Officials is on, the sponsor's board while Sponsors is on; nothing while Broadcast is off ──
 -- The broadcast board (db/48's): an innings with no target of its own takes
 -- the previous innings' total plus one — within its own pair. The first
 -- innings of a super over chases nothing; its second chases the first.
 -- db/149: no child is named — role words until a stream consent exists.
--- db/156: switched off is hidden — officials need Officials on, and the
--- whole board needs Broadcast on, for the fixture's school.
+-- db/156: switched off is hidden — officials need Officials on, the
+-- sponsor's board needs Sponsors on, and the whole board needs Broadcast
+-- on, for the fixture's school.
 CREATE OR REPLACE FUNCTION broadcast_state(p_match uuid)
 RETURNS TABLE (
   match_id uuid, home_team text, away_team text, strapline text,
@@ -270,13 +272,13 @@ END $policy$;
 DO $after$
 DECLARE v text;
 BEGIN
-  -- broadcast_state(): this file's body (with the broadcast block, or held),
+  -- broadcast_state(): this file's body (the broadcast block not held),
   -- a definer with its path pinned, stable, reading no child's name, and
   -- EXECUTE to its owner and PUBLIC exactly: nobody else, nothing more.
   SELECT pg_temp._v156_fold(p.prosrc) INTO v FROM pg_proc p
    WHERE p.oid = 'broadcast_state(uuid)'::regprocedure AND p.prosecdef AND p.provolatile = 's'
      AND p.proconfig = ARRAY['search_path=pg_catalog, public, pg_temp'];
-  IF v IS NULL OR v NOT IN ('783f25935f09da16aba5786a2b76fd1e', '476e7078c6e4241629dde5651e299a27') THEN
+  IF v IS NULL OR v <> '783f25935f09da16aba5786a2b76fd1e' THEN
     RAISE EXCEPTION 'db/156: broadcast_state() is not this file''s body (md5 %), or not a stable definer with its search path pinned', v;
   END IF;
   IF (SELECT p.prosrc FROM pg_proc p WHERE p.oid = 'broadcast_state(uuid)'::regprocedure)
