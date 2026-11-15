@@ -6,8 +6,10 @@
  * date nobody knows yet says "To be decided", with the tie it waits for.
  * Nothing moves, so there is no motion to reduce.
  */
+import { useEffect, useState } from "react";
 import { D } from "../design/tokens.js";
 import { Badge } from "../ui/primitives.jsx";
+import { api } from "../lib/api.js";
 import { HOW_WORDS, roundTitle, sideSaid, whenSaid } from "../lib/bracket.js";
 
 const S = {
@@ -84,6 +86,11 @@ export function KnockoutBracket({ bracket, loading = false, failed = false, onRe
   const last = rounds.length ? rounds[rounds.length - 1].round : 0;
   return (
     <section data-testid="league-bracket" aria-label="Bracket">
+      {bracket.planVersion != null && (
+        <p data-testid="bracket-source" style={{ ...S.meta, margin: "0 0 12px" }}>
+          From the published draw (version {bracket.planVersion}) and the results recorded.
+        </p>
+      )}
       {bracket.champion && <p data-testid="bracket-champion" style={{ ...S.line, color: D.textPrimary, fontWeight: 700, margin: "0 0 12px" }}>Winner: {bracket.champion}</p>}
       <div className="os-bracket" style={/** @type {any} */ ({ "--rounds": Math.max(1, rounds.length) })}>
         {rounds.map((r) => {
@@ -110,4 +117,27 @@ export function KnockoutBracket({ bracket, loading = false, failed = false, onRe
       )}
     </section>
   );
+}
+
+/**
+ * A competition on the platform's bracket, read from the server (GET
+ * /api/competitions/:id/bracket): Competitions and Leagues both draw it.
+ * A failed read is said, with a way to ask again; never drawn as an empty
+ * bracket.
+ * @param {{ competitionId: string }} p
+ */
+export function CompetitionBracket({ competitionId }) {
+  const [nonce, setNonce] = useState(0);
+  const [read, setRead] = useState(/** @type {{ id: string | null, data: any, failed: boolean }} */ ({ id: null, data: null, failed: false }));
+  useEffect(() => {
+    let off = false;
+    setRead((b) => (b.id === competitionId ? { ...b, failed: false } : { id: competitionId, data: null, failed: false }));
+    api(`/api/competitions/${competitionId}/bracket`).then(
+      (data) => { if (!off) setRead({ id: competitionId, data, failed: false }); },
+      () => { if (!off) setRead((b) => ({ id: competitionId, data: b.id === competitionId ? b.data : null, failed: true })); });
+    return () => { off = true; };
+  }, [competitionId, nonce]);
+  const mine = read.id === competitionId;
+  return <KnockoutBracket bracket={mine ? read.data : null} loading={!mine || (!read.data && !read.failed)}
+    failed={mine && read.failed} onRetry={() => setNonce((n) => n + 1)}/>;
 }

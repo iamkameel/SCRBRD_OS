@@ -12,7 +12,7 @@ import { SeasonHistory } from "./SeasonHistoryView.jsx";
 import { RecordBoards } from "./records.jsx";
 import { AddFixtureModal } from "./fixtures.jsx";
 import { PlayingConditions } from "./playingconditions.jsx";
-import { KnockoutBracket } from "./bracket.jsx";
+import { CompetitionBracket, KnockoutBracket } from "./bracket.jsx";
 import { demoBracket } from "../lib/bracket.js";
 
 // The fixture planner (SCRBRD-123) loads when its tab is first opened.
@@ -90,19 +90,6 @@ function LeagueView({ role, homeBar = null }) {
   // tab a competition opens on) means the bracket for a cup.
   const isCup = !!comp && (comp.type==="knockout" || (!comp.live && !!comp.bracket));
   const view = tab==="table" && isCup ? "bracket" : tab;
-  const [bracketNonce, setBracketNonce] = useState(0);
-  const [bracketRead, setBracketRead] = useState(/** @type {{ id: string | null, data: any, failed: boolean }} */ ({ id: null, data: null, failed: false }));
-  const cupId = isCup && comp.live && view==="bracket" ? comp.id : null;
-  useEffect(() => {
-    if (!cupId) return undefined;
-    let off = false;
-    setBracketRead((b) => (b.id === cupId ? { ...b, failed: false } : { id: cupId, data: null, failed: false }));
-    api(`/api/competitions/${cupId}/bracket`).then(
-      (data) => { if (!off) setBracketRead({ id: cupId, data, failed: false }); },
-      () => { if (!off) setBracketRead((b) => ({ id: cupId, data: b.id === cupId ? b.data : null, failed: true })); });
-    return () => { off = true; };
-  }, [cupId, bracketNonce]);
-  const cupBracket = !isCup ? null : comp.live ? (bracketRead.id === comp.id ? bracketRead.data : null) : demoBracket(comp.bracket ?? []);
   const canEdit = holdsCapability(role,"competition.manage");
   // Recognition D23 / A15 (R5b): a list of players ordered by a figure — the
   // Top Performers tab, the Season Awards tab and its MVP — is drawn for
@@ -320,13 +307,12 @@ function LeagueView({ role, homeBar = null }) {
             <Card sx={{padding:"14px 16px"}}>
               <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>{comp.name}</div>
               {comp.live
-                ? <div style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,marginBottom:"14px"}}>
-                    {cupBracket?.drawn ? `From the published draw (version ${cupBracket.planVersion}) and the results recorded.` : "Knockout cup"}
-                  </div>
-                : <div style={{marginBottom:"14px"}}><SourceLine testid="source-line-bracket-demo" demo demoWhy="an invented cup"
-                    scope={`${comp.teams} teams, ${comp.region}`} window={comp.season ?? null}/></div>}
-              <KnockoutBracket bracket={cupBracket} loading={!!comp.live&&!cupBracket&&!bracketRead.failed}
-                failed={!!comp.live&&bracketRead.id===comp.id&&bracketRead.failed} onRetry={()=>setBracketNonce((n)=>n+1)}/>
+                ? <div style={{marginBottom:"10px"}}><CompetitionBracket competitionId={comp.id}/></div>
+                : <>
+                    <div style={{marginBottom:"14px"}}><SourceLine testid="source-line-bracket-demo" demo demoWhy="an invented cup"
+                      scope={`${comp.teams} teams, ${comp.region}`} window={comp.season ?? null}/></div>
+                    <KnockoutBracket bracket={demoBracket(comp.bracket ?? [])}/>
+                  </>}
             </Card>
           )}
 
