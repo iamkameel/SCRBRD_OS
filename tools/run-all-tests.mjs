@@ -508,6 +508,8 @@ const SUITES = [
   ["write",    "services/api/write/write.test.mjs"],
   // The planner's drafts through the fixture route's own validation (SCRBRD-123).
   ["planner-drafts", "services/api/write/planner-drafts.test.mjs"],
+  // SCRBRD-060: a knockout's bracket from the published draw, its fixtures and results.
+  ["bracket", "services/api/write/bracket.test.mjs"],
   ["migrate",  "tools/migrate.test.mjs"],
   // No file under tools/, services/ or packages/ hard-codes the database
   // address outside tools/db-url.mjs, which is what lets a worktree run

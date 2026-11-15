@@ -1025,6 +1025,8 @@ const PLAYER_ROUTES = [
   // corrected result raised (competition.manage at the organiser).
   [/^\/api\/competitions\/([^/]+)\/progression$/,             "GET",  results.progression],
   [/^\/api\/matches\/([^/]+)\/progression\/clear$/,          "POST", results.clearProgression],
+  // SCRBRD-060: a knockout competition's bracket, for whoever can reach it.
+  [/^\/api\/competitions\/([^/]+)\/bracket$/,                "GET",  results.bracket],
   // ── end SCRBRD-114 phase 3c ──
   // Importing a paper scorebook (SCRBRD-120, db/63): photos of the book, a
   // card typed and ticked beside them, a second person's confirmation, and

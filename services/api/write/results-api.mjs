@@ -38,6 +38,7 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { resultFromRow, resultWords } from "@scrbrd/scoring";
+import { bracketOf } from "./bracket.mjs";
 import { safeErr } from "../log-safe.mjs";
 /** @import { RouteDeps, Handler, IdHandler } from "../api-types.mjs" */
 
@@ -236,6 +237,49 @@ export function resultsRoutes({ pool, secret, onChange }) {
       });
     }),
     // ── end SCRBRD-114 phase 3c ──
+
+    // ── SCRBRD-060: a knockout competition's bracket ──
+    // GET /api/competitions/:id/bracket
+    //   → { competitionId, name, compType, drawn, planVersion, publishedAt,
+    //       rounds: [{ round, ties: [{ key, match, matchId, startsAt, plannedAt, status,
+    //                 home: { known, label, from }, away: { … }, result: { text, outcome, how } | null,
+    //                 through, flags: [{ side, note, awaitingWinner, played }] }] }],
+    //       byes: [{ round, label }], champion, fixturesOutsideDraw }
+    //   Built by bracket.mjs from the latest published knockout plan (db/67),
+    //   the fixtures it made, their results (competition_results(), db/69, the
+    //   league table's own read) and db/72's flags. For whoever can reach the
+    //   competition (competition_visible(), as the table): a draft plan is never
+    //   read here, even by its organiser. A decision's reason is not carried;
+    //   the result's words are. Team names only; no boy is named.
+    bracket: handle(async (req) => {
+      const id = idOf(req);
+      return runAsPrincipal(pool, secret, as(req), async (client) => {
+        const { rows: c } = await client.query(`select id, name, comp_type from competition where id = $1`, [id]);
+        if (!c.length) throw err("not_permitted", 403);
+        const { rows: p } = await client.query(
+          `select id, version, published_at, entrants, plan from fixture_plan
+            where competition_id = $1 and state = 'published' and format = 'knockout'
+            order by version desc limit 1`, [id]);
+        const { rows: items } = await client.query(
+          `select fixture_key, match_id from fixture_plan_item where competition_id = $1`, [id]);
+        const { rows: res } = await client.query(`select * from competition_results($1)`, [id]);
+        const { rows: fl } = await client.query(
+          `select match_id, side, conflict_note, awaiting_winner, played from progression_conflict where competition_id = $1`, [id]);
+        const matches = new Map(res.map((r) => [r.match_id, {
+          startsAt: r.starts_at ?? null, status: r.status ?? null, home: r.home_label ?? null, away: r.away_label ?? null,
+          result: resultOut({ ...r, home_key: r.home_team_code ?? "Home" }, { home: r.home_label, away: r.away_label }, false),
+        }]));
+        return bracketOf({
+          competition: { id, name: c[0].name, compType: c[0].comp_type },
+          plan: p.length ? { id: p[0].id, version: p[0].version, publishedAt: p[0].published_at, entrants: p[0].entrants, plan: p[0].plan } : null,
+          items: items.map((i) => ({ fixtureKey: i.fixture_key, matchId: i.match_id })),
+          matches,
+          flags: fl.map((f) => ({ matchId: f.match_id, side: f.side, note: f.conflict_note, awaitingWinner: f.awaiting_winner === true,
+                                  played: f.played === true })),
+        });
+      });
+    }),
+    // ── end SCRBRD-060 ──
 
     // GET /api/competitions/:id/standings
     //   → { competitionId, basis, order, headToHeadListed, overRateKind, canAdjust,
