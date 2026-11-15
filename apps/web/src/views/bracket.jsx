@@ -12,16 +12,18 @@ import { Badge } from "../ui/primitives.jsx";
 import { api } from "../lib/api.js";
 import { HOW_WORDS, roundTitle, sideSaid, whenSaid } from "../lib/bracket.js";
 
-const S = {
+// Read at render, never at import: the tokens follow the theme (design.test).
+const styles = () => ({
   h3: { margin: "0 0 10px", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.amber, letterSpacing: "0.06em", textTransform: "uppercase" },
-  name: (through, known) => ({ fontFamily: D.body, fontSize: "13px", fontWeight: through ? 700 : 500, overflowWrap: "anywhere",
-                               color: known ? D.textPrimary : D.textMuted, fontStyle: known ? "normal" : "italic" }),
+  name: (/** @type {boolean} */ through, /** @type {boolean} */ known) => ({ fontFamily: D.body, fontSize: "13px", fontWeight: through ? 700 : 500,
+    overflowWrap: "anywhere", color: known ? D.textPrimary : D.textMuted, fontStyle: known ? "normal" : "italic" }),
   meta: { fontFamily: D.body, fontSize: "12px", color: D.textMuted, overflowWrap: "anywhere" },
   line: { fontFamily: D.body, fontSize: "12px", color: D.textSecondary, overflowWrap: "anywhere" },
-};
+});
 
 /** @param {{ side: any, last: number, through: boolean, testid: string }} p */
 function Side({ side, last, through, testid }) {
+  const S = styles();
   const s = sideSaid(side, last);
   return (
     <div data-testid={testid} data-known={s.known ? "yes" : "no"} style={{ display: "flex", alignItems: "flex-start", gap: "8px", justifyContent: "space-between" }}>
@@ -36,6 +38,7 @@ function Side({ side, last, through, testid }) {
 
 /** @param {{ tie: any, last: number }} p */
 function Tie({ tie, last }) {
+  const S = styles();
   const when = whenSaid(tie);
   const done = tie.through != null;
   return (
@@ -62,6 +65,7 @@ function Tie({ tie, last }) {
  * @param {{ bracket: any, loading?: boolean, failed?: boolean, onRetry?: () => void }} p
  */
 export function KnockoutBracket({ bracket, loading = false, failed = false, onRetry }) {
+  const S = styles();
   if (loading && !bracket) return <p data-testid="league-bracket-loading" style={{ ...S.line, padding: "24px 0", textAlign: "center" }}>Reading the bracket…</p>;
   if (failed && !bracket) {
     return (
