@@ -19,8 +19,8 @@
  *   hold a child's data (skills, injuries, workload_monitoring, scouting,
  *   lift_club, scorebook_import) keep every tag they had; training keeps its
  *   tags (the lead's call); a sponsor's placement keeps its tag (an outward
- *   act); officials keeps its tag until broadcast_state() names officials
- *   only while Officials is on (a migration, with db/154). tools/smoke-modules.mjs proves the same against a real server, and
+ *   act); officials lost its tag once every read naming an appointment asked
+ *   the switch (SCRBRD-144: db/156, db/162, read-api.mjs OFFICIALS_ON). tools/smoke-modules.mjs proves the same against a real server, and
  *   db/99 §132 the database's half.
  *
  *   node --import ./tools/register-jsx.mjs apps/web/test/switched-off.test.mjs
@@ -112,6 +112,7 @@ const RECORDS = [
   ["logistics: a vehicle", "POST", "/api/vehicles"],
   ["sponsors: a sponsor signed", "POST", "/api/sponsors"],
   ["broadcast: the overlay's settings (publishing refused in the handler)", "POST", `${M}/broadcast`],
+  ["officials: an appointment (named nowhere while off: SCRBRD-144)", "POST", `${M}/officials`],
 ];
 for (const [what, method, path] of RECORDS) ok(`${what} is routed, with no module gate`, tagOf(method, path) === null, tagOf(method, path));
 const REFUSES = [
@@ -129,7 +130,6 @@ const REFUSES = [
   ["training: a session (the lead's call, unchanged)", "POST", "/api/training", "training"],
   ["training: attendance (unchanged)", "POST", "/api/training/x/attendance", "training"],
   ["sponsors: a placement (an outward act)", "POST", "/api/sponsorships", "sponsors"],
-  ["officials: an appointment (it would be named on the public overlay)", "POST", `${M}/officials`, "officials"],
 ];
 for (const [what, method, path, key] of REFUSES) ok(`${what} keeps its gate`, tagOf(method, path) === key, tagOf(method, path));
 const sb = readFileSync(new URL("../../../services/api/write/scouting-api.mjs", import.meta.url), "utf8");
