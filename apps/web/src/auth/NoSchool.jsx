@@ -9,6 +9,7 @@ import {
   EXTRA_MAX, CHILD_MAX, YEAR_MAX, buildRequest, joinWords, sentWords, withdrawWords, withdrew,
 } from "../lib/joinSchool.js";
 import { claimFailure, claimResult } from "../lib/registerClaim.js";
+import { AskSchool, AskSchoolLink, SchoolAskRows } from "./schoolAsk.jsx";
 
 // "Start a match", what this phone holds, and the last match's plain record
 // (views/ScoringBlock.jsx): fetched with the screen, in a chunk of its own.
@@ -121,9 +122,13 @@ function HelpLine() {
  * `kindFirst` "parent" (the home page's "My child plays", EXPERIENCE_PASS §2.6
  * step 2) starts the form with "parent or guardian" chosen. Only that kind: a
  * member of staff is never sent to the register's check by a link.
- * @param {{ schools: { id: string, name: string }[], onSent: () => void, onJoined?: () => Promise<void>, post?: typeof api, kindFirst?: string | null }} p
+ *
+ * `onAskSchool(typed)` (Q22, db/158): the person's school is not in the list,
+ * so the no-school home opens "Ask SCRBRD to add my school" (auth/schoolAsk.jsx)
+ * with what they typed into the search.
+ * @param {{ schools: { id: string, name: string }[], onSent: () => void, onJoined?: () => Promise<void>, post?: typeof api, kindFirst?: string | null, onAskSchool?: ((typed: string) => void) | null }} p
  */
-export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = null }) {
+export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = null, onAskSchool = null }) {
   const [schoolId, setSchoolId] = useState(schools.length === 1 ? schools[0].id : null);
   const [q, setQ] = useState("");
   const [kind, setKind] = useState(kindFirst === "parent" ? "parent" : null);
@@ -200,6 +205,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
       <div role="group" aria-labelledby="join-school-h" style={{ marginBottom: "18px" }}>
         <div id="join-school-h" style={{ fontFamily: FONT.head, fontSize: "13px", fontWeight: 700, color: T.content.primary, marginBottom: "8px" }}>1 · Your school</div>
         {schools.length === 0 && <div style={text(14)}>No school is listed on this platform yet.</div>}
+        {schools.length === 0 && onAskSchool && <AskSchoolLink onAsk={() => onAskSchool("")}/>}
         {schools.length === 1 && <div data-testid="join-only-school" style={text(14, T.content.primary)}>{schools[0].name}</div>}
         {schools.length > 1 && <>
           {schools.length > 6 && (
@@ -207,9 +213,14 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
           )}
           <div style={{ maxHeight: "260px", overflowY: "auto" }}>
             {shown.map((s) => <Choice key={s.id} on={s.id === schoolId} title={s.name} data-testid={`join-school-${s.id}`} onClick={() => { setSchoolId(s.id); setProblem(""); }}/>)}
-            {shown.length === 0 && <div style={text(14)}>No school's name has those letters in it.</div>}
+            {shown.length === 0 && <div data-testid="join-school-none" style={text(14)}>No school's name has those letters in it.{onAskSchool && <> Is your school not on SCRBRD yet?</>}</div>}
+            {shown.length === 0 && onAskSchool && <AskSchoolLink onAsk={() => onAskSchool(q.trim())}/>}
           </div>
         </>}
+        {/* Q22: a school not on SCRBRD is not a dead end. */}
+        {schools.length > 0 && !(schools.length > 1 && shown.length === 0) && onAskSchool && (
+          <div style={{ ...text(13), marginTop: "6px" }}>Not in the list? <AskSchoolLink testId="join-school-missing" onAsk={() => onAskSchool(q.trim())}>Ask SCRBRD to add your school</AskSchoolLink></div>
+        )}
       </div>
 
       {/* 2 · Who you are */}
@@ -328,6 +339,10 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
   const [nudge, setNudge] = useState(0);
   const asked = useLive("role_requests", "spectator", nudge);
   const rows = asked.rows;
+  // Q22 (db/158): the person's own notes asking SCRBRD to add a school, and the note's form when open.
+  const schoolAsks = useLive("school_add_requests", "spectator", nudge);
+  const askRows = schoolAsks.rows.filter((r) => r.mine);
+  const [askSchool, setAskSchool] = useState(null);
   const [schools, setSchools] = useState(null);
   const me = profile()?.user;
   const live = signedIn();
@@ -391,12 +406,13 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
         )}
 
         {schools === null ? <div style={text(14)}>Loading the schools…</div>
-          : <JoinSchool schools={schools} onSent={() => setNudge((n) => n + 1)} onJoined={onJoined} kindFirst={kindFirst}/>}
+          : <JoinSchool schools={schools} onSent={() => setNudge((n) => n + 1)} onJoined={onJoined} kindFirst={kindFirst} onAskSchool={(typed) => setAskSchool(typed)}/>}
+        {askSchool !== null && <AskSchool key={askSchool} startName={askSchool} onSent={() => setNudge((n) => n + 1)} onClose={() => setAskSchool(null)}/>}
 
         <div style={{ marginBottom: "16px" }} data-testid="no-school-requests">
             <h2 style={{ margin: "0 0 8px", fontFamily: FONT.head, fontSize: "16px", fontWeight: 800, color: T.content.primary }}>Your requests</h2>
             {withdrawProblem && <div role="alert" data-testid="withdraw-problem" style={{ ...text(13, T.semantic.criticalText), padding: "10px 12px", borderRadius: "8px", background: clr(T.semantic.critical, 0.1), border: `1px solid ${clr(T.semantic.critical, 0.2)}`, marginBottom: "8px" }}>{withdrawProblem}</div>}
-            {rows.length === 0 && !asked.loading && <div data-testid="no-school-requests-none" style={text(14)}>A request you send to a school shows here, with the school's answer.</div>}
+            {rows.length === 0 && askRows.length === 0 && !asked.loading && !schoolAsks.loading && <div data-testid="no-school-requests-none" style={text(14)}>A request you send to a school shows here, with the school's answer.</div>}
             {rows.map((r) => (
               <div key={r.id} data-testid={`request-${r.state}`} style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", padding: "12px 14px", border: `1px solid ${T.line.normal}`, borderRadius: "12px", background: T.fill.panel, marginBottom: "8px" }}>
                 <div style={{ flex: 1, minWidth: "180px" }}>
@@ -406,6 +422,7 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
                 {r.state === "pending" && <Btn onClick={() => withdraw(r.id)} data-testid="request-withdraw">Withdraw</Btn>}
               </div>
             ))}
+            <SchoolAskRows rows={askRows}/>
         </div>
 
         <HelpLine/>

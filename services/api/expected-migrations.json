@@ -150,5 +150,6 @@
   "154_switched_off_records.sql",
   "155_public_name_surfaces.sql",
   "156_switched_off_public_reads.sql",
-  "157_managed_api_roles.sql"
+  "157_managed_api_roles.sql",
+  "158_school_add_request.sql"
 ]

@@ -336,6 +336,10 @@ export const NEVER_PUBLIC = Object.freeze({
   // decider did about it: a judgement about a child's honour, read by the
   // decider alone (D19). Never on a page; the whole table.
   recognition_review: "N5",
+  // ── db/158, EXPERIENCE_PASS Q22: asking SCRBRD to add a school ──
+  // N4. Who asked, their job at a school and when: read by the asker and the
+  // platform alone (Kameel, 15 Nov). Never on a page; the whole table.
+  school_add_request: "N4",
 });
 
 /**

@@ -340,6 +340,9 @@ const SUITES = [
   // posts, shows refusals in the route's words; every code db/77 answers has them.
   ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["decide-words", "apps/web/test/decide-words.test.mjs"],
+  // Q22 (db/158): "Ask SCRBRD to add my school": every refusal's status and
+  // words, one job list, the note's three fields, and where the screens draw it.
+  ["school-ask", "apps/web/test/school-ask.test.mjs"],
   // GA-I21: one label for demo / practice / read only — and, with the official
   // result (db/114), provisional / under review / official, the state the
   // server gives — and the bowling-ceiling refusal in words.
