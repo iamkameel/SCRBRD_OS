@@ -1,7 +1,7 @@
 # Experience pass: where things live, and the first run
 
 Status: **decided** (13 Nov 2026). Kameel answered all 25 questions in §5 on the Build Board,
-every one as recommended. The slices in §4 are built in order from those answers; slices 1 and 2 are built (#327; #334, #336); the rest are not built yet.
+every one as recommended. The slices in §4 are built in order from those answers; slices 1 and 2 are built (#327; #334, #336); slice 3a is merged (#339), 3b is in progress; the rest are not built yet.
 
 Brief (Kameel, 13 Nov 2026): information is scattered and not always where a person looks
 for it. Each person gets one home and a short menu; everything else is reached from the
