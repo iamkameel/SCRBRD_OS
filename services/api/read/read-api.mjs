@@ -2935,12 +2935,22 @@ export const READ_QUERIES = {
    * it is the one a screen must not omit. A review rendered without saying
    * whether a person judged it or a camera measured it is the fabrication this
    * feature is switched off to avoid.
+   *
+   * SWITCHED OFF IS HIDDEN, row by row (db/156; Kameel, 13 Nov 2026). The
+   * module gate below asks whether DRS is on for the READER. A review is
+   * stored while DRS is off (db/154), so it must also be on for the
+   * review's OWN school, the fixture's: a review written while the home
+   * school had DRS off is not served to the away school's reader who has it
+   * on, and is once the home school switches it on. The person is null on
+   * purpose: a scorer from whom DRS is hidden still has his reviews shown to
+   * everyone else. The table asks the same (drs_review_shown_while_on).
    */
   drs_reviews: {
     text: `select match_id, ball_seq, evidence_source, called_by, on_field, outcome,
                   pitching, impact, wickets, shot_offered, notes, reviewed_at
              from drs_review
             where ($1::uuid is null or match_id = $1)
+              and feature_enabled('drs_review', match_school(match_id), null::uuid)
             order by ball_seq`,
     params: q => [q?.matchId || null],
   },
