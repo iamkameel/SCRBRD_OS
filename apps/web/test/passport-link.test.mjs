@@ -147,8 +147,17 @@ group("2b · A duty suspension never reaches a link: it rests only on a one-fixt
   ok("...kept one-fixture by the linked guard, and not re-pointed by the application role",
      /NEW\.fixture_id\s+IS DISTINCT FROM OLD\.fixture_id/.test(d34) && /the application role can write match_official\.assignment_id directly/.test(d34));
   const files = readdirSync(new URL("../../../db/", import.meta.url)).filter((f) => /^\d+_.*\.sql$/.test(f) && parseInt(f) > 34 && !f.startsWith("99_"));
-  const later = files.filter((f) => /INSERT INTO duty_suspension|SET assignment_id|FUNCTION duty_link\(|FUNCTION duty_suspend\(|FUNCTION role_assignment_linked_guard\(/.test(src(`../../../db/${f}`)));
-  ok("...and no later migration writes a suspension, re-points a duty or redefines those three", later.length === 0, later);
+  // db/162 (SCRBRD-144) re-makes duty_link() to refuse while Officials is
+  // off. It may, only while its body still makes db/34's one-fixture
+  // assignment and links it exactly as db/34 does, and touches nothing else
+  // on this list.
+  const keepsTheLink = (/** @type {string} */ t) =>
+    /INSERT INTO role_assignment \(person_id, role, school_id, team_code, fixture_id\)\s*VALUES \(d\.person_id, v_role, d\.school_id, NULL, d\.match_id\)/.test(t)
+    && (t.match(/SET assignment_id/g) ?? []).length === 1 && /UPDATE match_official SET assignment_id = v_new WHERE match_official\.id = d\.id;/.test(t)
+    && !/INSERT INTO duty_suspension|FUNCTION duty_suspend\(|FUNCTION role_assignment_linked_guard\(/.test(t);
+  const later = files.filter((f) => /INSERT INTO duty_suspension|SET assignment_id|FUNCTION duty_link\(|FUNCTION duty_suspend\(|FUNCTION role_assignment_linked_guard\(/.test(src(`../../../db/${f}`)))
+    .filter((f) => !(f === "162_officials_signed_in_reads.sql" && keepsTheLink(src(`../../../db/${f}`))));
+  ok("...and no later migration writes a suspension, re-points a duty or redefines those three (db/162's duty_link() keeps db/34's link)", later.length === 0, later);
   ok("so the link's skip of every one-fixture assignment covers every suspended one",
      !opensPassportOf(BOY, [as("coach", HIL, "1XI", { fixture: "f1" })]) && !opensPassportOf(BOY, [as("directorofsport", HIL, null, { fixture: "f1" })]));
 }
