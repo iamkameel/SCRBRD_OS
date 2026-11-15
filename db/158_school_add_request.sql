@@ -73,6 +73,15 @@
 -- platform alone (role_requester()'s shape, db/81): a school-less account's
 -- app_user row is not the platform's to read under RLS.
 --
+-- HAND-WRITTEN, NOT GENERATED. packages/policy/src/tables.mjs and
+-- services/api/rls/generate-rls.mjs (TABLES_ADDED_SINCE_09) generate the
+-- policies of a table anchored at a school and governed by app_can() at it.
+-- This one belongs to no school: it is governed by identity (the asker's own
+-- rows) and a platform-only capability, as notification_pref (db/120),
+-- school_register (db/92) and pending_claim (db/81) are, and like them its
+-- policy is written here and named in neither file. db/01 and db/09 do not
+-- move.
+--
 -- ── 5 · NOT PUBLIC'S, AND NOT A MANAGED HOST'S (db/157) ──────────
 -- Every function here: REVOKE ALL FROM PUBLIC, then GRANT EXECUTE TO
 -- scrbrd_app by name. The table: no grant to PUBLIC, anon, authenticated or
@@ -132,7 +141,7 @@ BEGIN
     school_name  text NOT NULL,
     town         text NOT NULL,
     -- What the asker does at the school. A list, not free text: the
-    -- packages' words for it are apps/web/src/lib/schoolAsk.js JOBS.
+    -- screen's words for it are apps/web/src/lib/schoolAsk.js JOBS.
     job          text NOT NULL,
     requested_at timestamptz NOT NULL DEFAULT now(),
     -- The platform's answer. "lapsed" is read, never written (header §3).

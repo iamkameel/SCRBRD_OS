@@ -17,7 +17,7 @@ const FONT = { head: "'Syne',sans-serif", body: "'DM Sans',sans-serif" };
 const text = (size = 14, color = T.content.secondary) => ({ fontFamily: FONT.body, fontSize: `${size}px`, lineHeight: 1.5, color });
 const input = () => ({ width: "100%", minHeight: "44px", boxSizing: "border-box", padding: "10px 12px", borderRadius: "10px",
   background: T.fill.field, border: `1px solid ${T.line.normal}`, color: T.content.primary, fontFamily: FONT.body, fontSize: "16px" });
-const label = { display: "block", fontFamily: FONT.head, fontSize: "12px", fontWeight: 700, color: T.content.secondary, marginBottom: "6px" };
+const label = () => ({ display: "block", fontFamily: FONT.head, fontSize: "12px", fontWeight: 700, color: T.content.secondary, marginBottom: "6px" });
 
 function Btn({ children, kind = "quiet", style, ...rest }) {
   const main = kind === "primary";
@@ -93,15 +93,15 @@ export function AskSchool({ startName = "", onSent, onClose, post = api }) {
       <h2 id="school-ask-title" ref={head} tabIndex={-1} style={{ margin: "0 0 4px", fontFamily: FONT.head, fontSize: "18px", fontWeight: 800, color: T.content.primary, outline: "none" }}>Ask SCRBRD to add my school</h2>
       <div style={{ ...text(14), marginBottom: "16px" }}>{ASK_INTRO}</div>
       <div style={{ marginBottom: "14px" }}>
-        <label htmlFor={nameId} style={label}>The school's name</label>
+        <label htmlFor={nameId} style={label()}>The school's name</label>
         <input id={nameId} value={form.name} maxLength={NAME_MAX} onChange={(e) => set("name", e.target.value)} style={input()} autoComplete="off" data-testid="school-ask-name"/>
       </div>
       <div style={{ marginBottom: "14px" }}>
-        <label htmlFor={townId} style={label}>Its town</label>
+        <label htmlFor={townId} style={label()}>Its town</label>
         <input id={townId} value={form.town} maxLength={TOWN_MAX} onChange={(e) => set("town", e.target.value)} style={input()} autoComplete="off" data-testid="school-ask-town"/>
       </div>
       <div style={{ marginBottom: "14px" }}>
-        <label htmlFor={jobId} style={label}>What do you do there?</label>
+        <label htmlFor={jobId} style={label()}>What do you do there?</label>
         <select id={jobId} value={form.job} onChange={(e) => set("job", e.target.value)} style={input()} data-testid="school-ask-job">
           <option value="">Choose…</option>
           {JOBS.map((j) => <option key={j.id} value={j.id}>{j.label}</option>)}
