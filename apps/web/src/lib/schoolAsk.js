@@ -31,12 +31,27 @@ export const JOBS = Object.freeze([
 const JOB_IDS = JOBS.map((j) => j.id);
 
 /** As db/158 holds them, after the spaces are tidied. */
-export const NAME_MAX = 120;
+export const NAME_MAX = 80;
 export const TOWN_MAX = 80;
 /** How many open requests one account may have at once (db/158's cap). */
 export const OPEN_MAX = 3;
 /** How long an unanswered request stays open (ACCOUNT_LIFECYCLE §6.2). */
 export const OPEN_DAYS = 90;
+/** What the asker is told: answered within a week (Kameel, 15 Nov). */
+export const ANSWER_DAYS = 7;
+
+/**
+ * A request's age for the platform's list: whole days since it was asked,
+ * the words, and whether it is past the week the asker was promised.
+ * @param {string | null | undefined} requestedAt  @param {number} [now]
+ * @returns {{ days: number, words: string, late: boolean }}
+ */
+export function askAge(requestedAt, now = Date.now()) {
+  const ms = Date.parse(String(requestedAt ?? ""));
+  const days = Number.isFinite(ms) ? Math.max(0, Math.floor((now - ms) / 86400000)) : 0;
+  const words = days === 0 ? "asked today" : days === 1 ? "asked 1 day ago" : `asked ${days} days ago`;
+  return { days, words, late: days > ANSWER_DAYS };
+}
 
 // Every run of spaces, the no-break ones included, is one space (db/158).
 const clean = (/** @type {unknown} */ v) => String(v ?? "").replace(/[\s\u00A0\u2007\u202F]+/g, " ").trim();
