@@ -72,12 +72,11 @@ export const ASK_PUPIL = "If you are a pupil, ask a teacher or the school office
 
 /** What is said once a note is sent. */
 export function askSentWords(/** @type {string} */ name) {
-  return `Sent to SCRBRD. A person will read it and answer here, under Your requests. If we add ${clean(name) || "the school"}, you will find it in the list above and can ask to join it. Meanwhile you can score a match on this phone.`;
+  return `Sent to SCRBRD. We'll answer within a week, here under Your requests. If we add ${clean(name) || "the school"}, you will find it in the list above and can ask to join it. Meanwhile you can score a match on this phone.`;
 }
 
 /** A refusal from POST /api/school-requests, in the screen's words. */
 export const ASK_WORDS = {
-  has_school: `Your account already belongs to a school, so this is not the place to ask. Your school's office can write to SCRBRD at ${SCHOOLS_EMAIL}.`,
   name_required: "Type the school's name.",
   town_required: "Type the town the school is in.",
   job_invalid: "Choose what you do at the school.",

@@ -452,7 +452,7 @@ try {
     await P.waitForSelector('[data-testid="school-ask-sent"]', { timeout: 8000 }).catch(() => {});
     await afterReads(P, 800);
     ok("sent: it says what happens next", /^Request sent/.test(await tid(P, "school-ask-sent").innerText().catch(() => ""))
-       && /A person will read it and answer here/.test(await tid(P, "school-ask-sent").innerText().catch(() => "")),
+       && /We.ll answer within a week/.test(await tid(P, "school-ask-sent").innerText().catch(() => "")),
        await tid(P, "school-ask-sent").innerText().catch(() => ""));
     const row = tid(P, "school-request-open");
     ok("the request shows under Your requests, with what happens next",

@@ -44,7 +44,7 @@ group("Every refusal of the asker's door has a status and a sentence");
 {
   const codes = reasons(fnBody("school_add_request_ask"));
   const status = statusMap("SCHOOL_ASK_STATUS");
-  ok("the door's refusals were read (seven)", codes.length === 7, codes);
+  ok("the door's refusals were read (six; has_school went, Kameel 15 Nov)", codes.length === 6 && !codes.includes("has_school"), codes);
   for (const c of codes) {
     ok(`${c}: a status in the route`, Number.isInteger(status[c]) && status[c] >= 400 && status[c] < 500, status[c]);
     ok(`${c}: a plain sentence`, plain(ASK_WORDS[c]), ASK_WORDS[c]);
@@ -102,7 +102,7 @@ group("The note a form becomes");
   ok("another script taken", buildAsk({ name: "Hoërskool Ëlandskraal", town: "eMkhondo", job: "coach" }).ok);
   ok("the limits are db/158's", SQL.includes(`BETWEEN 2 AND ${NAME_MAX}`) && SQL.includes(`BETWEEN 2 AND ${TOWN_MAX}`));
   ok("the cap and the ninety days are db/158's", SQL.includes(`>= ${OPEN_MAX} THEN`) && SQL.includes(`interval '${OPEN_DAYS} days'`));
-  ok("sent: names the school, says a person answers here and how to join after", /Verify High/.test(askSentWords(" Verify High ")) && /answer here/.test(askSentWords("x")) && /ask to join/.test(askSentWords("x")));
+  ok("sent: names the school, says a person answers here and how to join after", /Verify High/.test(askSentWords(" Verify High ")) && /We.ll answer within a week/.test(askSentWords("x")) && /ask to join/.test(askSentWords("x")));
 }
 
 group("Every state says what happens next");

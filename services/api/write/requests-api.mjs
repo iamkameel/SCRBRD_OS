@@ -77,7 +77,6 @@ export const END_ROLE_REFUSALS = {
 /** @type {Record<string, number>} */
 export const SCHOOL_ASK_STATUS = {
   not_signed_in: 401,
-  has_school:    409,
   name_required: 422,
   town_required: 422,
   job_invalid:   422,
