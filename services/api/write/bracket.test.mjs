@@ -33,7 +33,7 @@ const result = (winnerSide, more = {}) => ({
   decisionApplied: false, decision: null, text: winnerSide ? `${winnerSide} side won by 6 runs` : "Match tied", superOvers: [], ...more,
 });
 
-/** @param {string} home @param {string} away @param {any} [r] @param {string} [status] */
+/** @param {string | null} home @param {string | null} away @param {any} [r] @param {string} [status] */
 const fixture = (home, away, r = null, status = "upcoming") => ({ startsAt: "2026-11-20T07:00:00Z", status, home, away, result: r });
 
 // ── 1 · Four entrants: an unplayed round ─────────────────────────
@@ -43,7 +43,7 @@ group("1. Four entrants, nothing made: two semi-finals and a final, every later 
   const b = bracketOf({ competition: COMP, plan, items: [], matches: new Map() });
   ok("drawn, two rounds", b.drawn === true && b.rounds.length === 2 && b.rounds[0].round === 1 && b.rounds[1].round === 2, b);
   ok("round 1 has two ties at positions 1 and 2", b.rounds[0].ties.map((t) => t.match).join() === "1,2", b.rounds[0]);
-  ok("...each side is an entrant, known by its drawn name", b.rounds[0].ties.every((t) => t.home.known && t.away.known && /^School/.test(t.home.label)), b.rounds[0]);
+  ok("...each side is an entrant, known by its drawn name", b.rounds[0].ties.every((t) => t.home.known && t.away.known && /^School/.test(String(t.home.label))), b.rounds[0]);
   const final = b.rounds[1].ties[0];
   ok("the final's sides are not known, and say which tie each waits for",
      !final.home.known && final.home.label === null && final.home.from?.round === 1 && final.home.from?.match === 1
@@ -103,7 +103,7 @@ group("4. Settled otherwise: a super over, a concession, a walkover, an award; a
 
   const plan = drawOf(4);
   const [s1, s2] = plan.plan.fixtures.filter((f) => f.round === 1).sort((a, b) => a.match - b.match);
-  const fin = plan.plan.fixtures.find((f) => f.round === 2);
+  const fin = /** @type {any} */ (plan.plan.fixtures.find((f) => f.round === 2));
   const items = [{ fixtureKey: s1.id, matchId: "m-s1" }, { fixtureKey: s2.id, matchId: "m-s2" }, { fixtureKey: fin.id, matchId: "m-f" }];
   const matches = new Map([
     ["m-s1", fixture("School A 1st XI", "School D 1st XI", result("away", { outcome: "tie", decidedBy: "super_over", text: "Match tied; School D 1st XI won the super over" }), "complete")],
@@ -125,7 +125,7 @@ group("5. A tie with no winner keeps the next side waiting; a db/72 flag reaches
 {
   const plan = drawOf(4);
   const [s1] = plan.plan.fixtures.filter((f) => f.round === 1).sort((a, b) => a.match - b.match);
-  const fin = plan.plan.fixtures.find((f) => f.round === 2);
+  const fin = /** @type {any} */ (plan.plan.fixtures.find((f) => f.round === 2));
   const items = [{ fixtureKey: s1.id, matchId: "m-s1" }, { fixtureKey: fin.id, matchId: "m-f" }];
   const matches = new Map([
     ["m-s1", fixture("School A 1st XI", "School D 1st XI", result(null), "complete")],
