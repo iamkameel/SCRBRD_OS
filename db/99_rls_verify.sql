@@ -19,6 +19,18 @@ SET client_min_messages = warning;
 
 BEGIN;
 
+-- db/157 (section 135): PUBLIC's reach in public as the database stands,
+-- read before this file makes anything of its own (its helpers are PUBLIC's
+-- by Postgres's default), so section 135's (standing) needs no exemption.
+-- The row 'read' says it was taken; it is not where db/157 is missing.
+CREATE TEMP TABLE _v157_start (x text) ON COMMIT DROP;
+DO $v157_start$
+BEGIN
+  IF to_regprocedure('api_role_reach(name)') IS NOT NULL THEN
+    INSERT INTO _v157_start SELECT 'read' UNION ALL SELECT x FROM api_role_reach('public') x;
+  END IF;
+END $v157_start$;
+
 -- Everything below runs as scrbrd_app — the SAME role the API connects as,
 -- created and granted by db/06_app_role.sql rather than invented here. That
 -- matters: a verifier that builds its own lookalike role proves the policies
@@ -13105,7 +13117,9 @@ BEGIN
     END IF;
   END LOOP;
   GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
-  GRANT CREATE ON SCHEMA public TO anon;
+  IF pg_has_role(current_user, (SELECT nspowner FROM pg_namespace WHERE nspname = 'public'), 'USAGE') THEN
+    GRANT CREATE ON SCHEMA public TO anon;
+  END IF;
   GRANT EXECUTE ON FUNCTION onboard_request(text, text, text, uuid, text, text), feature_enabled(text),
                             feature_enabled(text, uuid, uuid) TO anon, authenticated, service_role, PUBLIC;
   GRANT EXECUTE ON FUNCTION broadcast_state(uuid) TO PUBLIC;
@@ -13150,19 +13164,46 @@ CREATE OR REPLACE FUNCTION _v157_left(p_role text) RETURNS text AS $$
   SELECT string_agg(x, '; ' ORDER BY x) FROM api_role_reach(p_role) x WHERE x LIKE 'left %'
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- PUBLIC's reach in public, CREATE on the schema included, leaving out what
--- this transaction wrote (the verifier's own helpers are PUBLIC's by
--- Postgres's default until the sweep below): a row whose xmin is this
--- transaction's, or a subtransaction's of it, has an age of 0 or less.
--- p_all keeps them.
-CREATE OR REPLACE FUNCTION _v157_public(p_all boolean) RETURNS text AS $$
+-- PUBLIC's reach in public now, CREATE on the schema included.
+CREATE OR REPLACE FUNCTION _v157_public() RETURNS text AS $$
   SELECT string_agg(x, '; ' ORDER BY x) FROM api_role_reach('public') x
    WHERE x <> 'schema public USAGE' AND x NOT LIKE 'left %'
-     AND (p_all OR (NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND age(p.xmin) <= 0
-                                   AND x = 'function ' || p.oid::regprocedure::text || ' EXECUTE')
-                    AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND age(c.xmin) <= 0
-                                      AND (x LIKE 'relation ' || c.oid::regclass::text || ' %'
-                                           OR x LIKE 'column ' || c.oid::regclass::text || '.%'))))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- PUBLIC's reach as read at the top of this file, before any helper: NULL
+-- when nothing; '(not read)' when db/157's probe was missing then.
+CREATE OR REPLACE FUNCTION _v157_public_at_start() RETURNS text AS $$
+  SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM _v157_start WHERE x = 'read') THEN '(not read)'
+              ELSE (SELECT string_agg(x, '; ' ORDER BY x) FROM _v157_start
+                     WHERE x NOT IN ('read', 'schema public USAGE') AND x NOT LIKE 'left %') END
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What a role reaches beyond PUBLIC (its own grants and memberships): PUBLIC's
+-- part is (standing)'s reading from the top of the file, so the verifier's own
+-- helpers, PUBLIC's by default, are not counted against the role.
+CREATE OR REPLACE FUNCTION _v157_beyond_public(p_role text) RETURNS text AS $$
+  SELECT string_agg(x, '; ' ORDER BY x) FROM (
+    SELECT x FROM api_role_reach(p_role) x WHERE x <> 'schema public USAGE' AND x NOT LIKE 'left %'
+    EXCEPT
+    SELECT x FROM api_role_reach('public') x) q
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The three roles, as the host has them, before (standing), so its arm for
+-- them runs locally and in CI as it does on the host.
+CREATE OR REPLACE FUNCTION _v157_roles() RETURNS void AS $$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+    IF to_regrole(r) IS NULL THEN
+      EXECUTE format('CREATE ROLE %I NOLOGIN NOINHERIT', r);
+    END IF;
+  END LOOP;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Whether the verifier may act for schema public's owner (db/157 then
+-- closes the schema's own grants; otherwise it leaves them).
+CREATE OR REPLACE FUNCTION _v157_acts_schema() RETURNS boolean AS $$
+  SELECT pg_has_role(current_user, nspowner, 'USAGE') FROM pg_namespace WHERE nspname = 'public'
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- Every grant that names one of the three roles, read from the ACLs, on
@@ -43106,11 +43147,13 @@ $m130$;
   -- ── 135. A managed host's API roles reach nothing of SCRBRD's in public: not by a grant of their own, not through PUBLIC, not on an object made later; what is not SCRBRD's is left and named; and scrbrd_app's reach and the owner's do not move (db/157) ──
   -- Labels:
   --   (standing) the database as migrated: db/157's two functions are the
-  --              owner's alone; PUBLIC reaches no function, relation or
-  --              column a migration made, and may not CREATE in public; no
+  --              owner's alone; PUBLIC, read at the top of this file before
+  --              any helper, reaches no function, relation or column, and
+  --              may not CREATE in public; no
   --              grant on what db/157 may close, and no default privilege of
   --              SCRBRD's owner, names anon, authenticated or service_role;
-  --              where the three exist (the host), they reach nothing
+  --              the three, created here where missing as the host has
+  --              them, reach nothing beyond PUBLIC
   --   (host)     _v157_host() gives the three, and PUBLIC, what a managed
   --              host gives them, and another owner's objects beside ours;
   --              the probe sees every path: the control, so (closed) can fail
@@ -43135,16 +43178,17 @@ $m130$;
                                     OR has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE')
                                     OR has_function_privilege('public', f::regprocedure, 'EXECUTE')),
       '§135 (standing): db/157''s api_role_reach() or api_roles_close() is missing, or is not the owner''s alone');
-    v := _v157_public(false);
+    v := _v157_public_at_start();
     PERFORM _assert(v IS NULL,
       format('§135 (standing): PUBLIC, and so every managed host''s API role, reaches what a migration made: %s', left(v, 1500)));
+    PERFORM _v157_roles();
     v := _v157_named();
     PERFORM _assert(v IS NULL,
       format('§135 (standing): a grant or default privilege db/157 may close names a managed host''s API role: %s', left(v, 1500)));
-    SELECT string_agg(g || ': ' || _v157_reach(g), '; ') INTO v
+    SELECT string_agg(g || ': ' || _v157_beyond_public(g), '; ') INTO v
       FROM unnest(ARRAY['anon', 'authenticated', 'service_role']) g
-     WHERE to_regrole(g) IS NOT NULL AND _v157_reach(g) IS NOT NULL;
-    PERFORM _assert(v IS NULL, format('§135 (standing): on this host a managed API role reaches %s', left(v, 1500)));
+     WHERE _v157_beyond_public(g) IS NOT NULL;
+    PERFORM _assert(v IS NULL, format('§135 (standing): a managed host''s API role reaches, beyond PUBLIC, %s', left(v, 1500)));
 
     -- (host)
     theirs := _v157_host();
@@ -43162,7 +43206,7 @@ $m130$;
                       AND position('relation ball_event_id_seq USAGE' IN v) > 0
                       AND position('relation school_register SELECT' IN v) > 0
                       AND position('column pad_resume_jti.jti SELECT' IN v) > 0
-                      AND (r <> 'anon' OR position('schema public CREATE' IN v) > 0),
+                      AND (r <> 'anon' OR NOT _v157_acts_schema() OR position('schema public CREATE' IN v) > 0),
         format('§135 (host): the probe does not see what the host gives %s, by its own grant or PUBLIC''s', r));
     END LOOP;
     v := coalesce(_v157_named(), '');
@@ -43182,7 +43226,7 @@ $m130$;
       v := _v157_reach(r);
       PERFORM _assert(v IS NULL, format('§135 (closed): %s still reaches %s', r, left(v, 1500)));
     END LOOP;
-    v := _v157_public(true);
+    v := _v157_public();
     PERFORM _assert(v IS NULL, format('§135 (closed): PUBLIC still reaches %s', left(v, 1500)));
     v := _v157_named();
     PERFORM _assert(v IS NULL, format('§135 (closed): a grant or default privilege db/157 may close still names a managed host''s API role: %s', left(v, 1500)));
@@ -43225,7 +43269,7 @@ $m130$;
     v := _v157_named();
     PERFORM _assert(v IS NULL, format('§135 (later): an object made after the sweep names a managed host''s API role: %s', left(v, 1500)));
     PERFORM _assert(_v157_reach('anon') = 'function _v157_later_fn() EXECUTE'
-                    AND _v157_public(true) = 'function _v157_later_fn() EXECUTE',
+                    AND _v157_public() = 'function _v157_later_fn() EXECUTE',
       format('§135 (later): anon reaches %s of what was made after the sweep, where only PUBLIC''s default on the function was expected',
              coalesce(_v157_reach('anon'), '(nothing)')));
   END;

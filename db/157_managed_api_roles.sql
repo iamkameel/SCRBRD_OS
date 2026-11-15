@@ -41,9 +41,11 @@
 -- owner the paster may act for; the schema's own grants where the paster
 -- may act for the schema's owner; default privileges of that same owner.
 -- Anything else (another application's object, the platform's own default
--- privileges, a schema owned by a role the paster is not) is LEFT, never
--- refused: api_role_reach() reports it as a row beginning "left", with the
--- reason, and the file names every such row in a NOTICE.
+-- privileges, a schema owned by a role the paster is not) is LEFT:
+-- api_role_reach() reports it as a row beginning "left", with the reason,
+-- and the file names every such row in a NOTICE. One exception refuses the
+-- paste, named: another owner's view over SCRBRD's relations that PUBLIC or
+-- the three may read, since it can show a child's record.
 --
 -- Two functions stay, owner-only: api_role_reach(role), what a role may do
 -- in public, and api_roles_close(p_keep_app), the sweep, so db/99 can prove
@@ -242,18 +244,20 @@ BEGIN
   RETURN n;
 END $$;
 
--- The two are the owner's alone: taken from PUBLIC before the snapshot,
--- so the sweep below does not hand them to scrbrd_app.
+-- The two are the owner's alone: every grantee but the owner is taken off
+-- them (PUBLIC, and whoever the owner's default privileges named) before the
+-- snapshot, so the sweep below does not hand them to scrbrd_app.
 DO $own$
-DECLARE f text; r text;
+DECLARE g record;
 BEGIN
-  FOREACH f IN ARRAY ARRAY['api_role_reach(name)', 'api_roles_close(boolean)'] LOOP
-    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
-    FOREACH r IN ARRAY ARRAY['scrbrd_app', 'anon', 'authenticated', 'service_role'] LOOP
-      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
-        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
-      END IF;
-    END LOOP;
+  FOR g IN
+    SELECT DISTINCT p.oid::regprocedure::text AS f, a.grantee
+      FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+     WHERE p.oid IN ('api_role_reach(name)'::regprocedure, 'api_roles_close(boolean)'::regprocedure)
+       AND a.grantee <> p.proowner
+  LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %s', g.f,
+                   CASE WHEN g.grantee = 0 THEN 'PUBLIC' ELSE g.grantee::regrole::text END);
   END LOOP;
 END $own$;
 
@@ -287,6 +291,26 @@ BEGIN
     RAISE NOTICE 'db/157: left, not SCRBRD''s to close: %', v;
   END IF;
 
+  -- The one thing left that is refused: another owner's view over SCRBRD's
+  -- relations that PUBLIC or the three may read. It can show a child's
+  -- record however tight SCRBRD's own grants are, so it stops the paste,
+  -- named, for a person to remove or re-own.
+  SELECT string_agg(DISTINCT vw.oid::regclass::text || ' (owner ' || vw.relowner::regrole::text || ', over '
+                    || t.oid::regclass::text || ')', '; ') INTO v
+    FROM pg_class vw
+    JOIN pg_rewrite w ON w.ev_class = vw.oid
+    JOIN pg_depend d ON d.classid = 'pg_rewrite'::regclass AND d.objid = w.oid AND d.refclassid = 'pg_class'::regclass
+    JOIN pg_class t ON t.oid = d.refobjid
+   WHERE vw.relkind IN ('v', 'm') AND vw.relowner <> ours AND t.oid <> vw.oid
+     AND t.relnamespace = 'public'::regnamespace AND t.relowner = ours
+     AND EXISTS (SELECT 1 FROM unnest(ARRAY['public', 'anon', 'authenticated', 'service_role']) r
+                  WHERE (r = 'public' OR to_regrole(r) IS NOT NULL)
+                    AND has_schema_privilege(r, vw.relnamespace, 'USAGE')
+                    AND (has_table_privilege(r, vw.oid, 'SELECT') OR has_any_column_privilege(r, vw.oid, 'SELECT')));
+  IF v IS NOT NULL THEN
+    RAISE EXCEPTION 'db/157: another owner''s view over SCRBRD''s data is readable by PUBLIC or a managed host''s API role: %', v;
+  END IF;
+
   -- PUBLIC and the three reach nothing of SCRBRD's but the schema's USAGE,
   -- and may create nothing in it.
   SELECT string_agg(r || ': ' || x, '; ' ORDER BY r, x) INTO v
@@ -314,7 +338,7 @@ BEGIN
     UNION
     SELECT 'default ' || d.defaclobjtype::text || ' → ' || a.grantee::regrole::text
       FROM pg_default_acl d, aclexplode(d.defaclacl) a
-     WHERE d.defaclnamespace IN (0, 'public'::regnamespace)
+     WHERE d.defaclnamespace IN (0, 'public'::regnamespace) AND d.defaclobjtype IN ('r', 'S', 'f', 'T', 'n')
        AND d.defaclrole = ours
        AND a.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN ('anon', 'authenticated', 'service_role'))) q;
   IF v IS NOT NULL THEN
