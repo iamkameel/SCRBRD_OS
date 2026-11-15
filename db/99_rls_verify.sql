@@ -13183,8 +13183,8 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- later migration would make them.
 CREATE OR REPLACE FUNCTION _v157_new() RETURNS void AS $$
 BEGIN
-  CREATE TABLE _v157_later (id serial PRIMARY KEY, note text);
-  CREATE FUNCTION _v157_later_fn() RETURNS integer LANGUAGE sql AS 'SELECT 1';
+  CREATE TABLE public._v157_later (id serial PRIMARY KEY, note text);
+  CREATE FUNCTION public._v157_later_fn() RETURNS integer LANGUAGE sql AS 'SELECT 1';
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/157 (section 135) ─────────────────────────────────────────────
 
