@@ -84,7 +84,7 @@ export function followRoutes({ pool, secret, today }) {
 
     today: handle(async (req) => {
       const schools = await as(req, list);
-      const t = await today(schools.map((s) => s.code));
+      const t = await today(schools.map((/** @type {any} */ s) => s.code));
       return t ? { asOf: t.asOf, fixtures: t.fixtures, schools } : { asOf: null, fixtures: null, schools };
     }),
   };

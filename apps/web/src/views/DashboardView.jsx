@@ -24,6 +24,8 @@ import { weatherWords } from "../lib/cockpit.js";
 import { observedStamp } from "../lib/weatherStamp.js";
 import { saClock } from "../lib/saTime.js";
 import { sidesOf } from "../lib/matchCentre.js";
+import { useFollowed } from "../lib/follow.js";
+import { FollowedSchools } from "../follow/Followed.jsx";
 
 // ══════════════════════════════════════════════════════
 //  THE DAY SHEET (DESIGN_DIRECTION §5) — replaces the KPI dashboard.
@@ -414,6 +416,12 @@ function DashboardView({ role, onNav, onOpenScorer }) {
     logistics: isOff(features, "logistics"),
   };
 
+  // The follow list (EXPERIENCE_PASS Q8, §1.9; db/160): a followed school's
+  // public live board leads Today; otherwise its block follows the day sheet.
+  // Drawn only for somebody who follows a school (or was just told of one).
+  const followed = useFollowed();
+  const showFollowed = signedIn() && (followed.schools.length > 0 || !!followed.note);
+
   const reads = signedIn() ? {
     matches: readState(matchesRead, { what: "the fixtures" }),
     out: readState(injuriesRead, { what: "the injury list" }),
@@ -422,13 +430,19 @@ function DashboardView({ role, onNav, onOpenScorer }) {
     weather: readState(weatherRead, { what: "the weather" }),
   } : null;
 
+  const followedBlock = showFollowed
+    ? <div className="os-page" data-testid="today-followed"><FollowedSchools followed={followed} lead={followed.live}/></div> : null;
   return (
+    <>
+    {followed.live && followedBlock}
     <DaySheet role={role} live={matchesAreLive || signedIn()} liveMatch={liveMatch} board={board} boardState={liveScore}
       next={next} busTime={busTime} weather={weather} dutyRows={dutyRows}
       weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
       reads={reads} off={off} onRetry={() => setNonce((n) => n + 1)}
       onNav={onNav} onOpenScorer={onOpenScorer}
       matchDay={signedIn() ? <><MatchDayCard matches={MATCHES} onNav={onNav}/><RecentMatches matches={MATCHES} onNav={onNav}/></> : null}/>
+    {!followed.live && followedBlock}
+    </>
   );
 }
 

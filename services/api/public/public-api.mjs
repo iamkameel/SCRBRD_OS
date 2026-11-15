@@ -682,7 +682,7 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
     const l = await live();
     if (!want.size || !l.fixtures.length) return { asOf: l.asOf, fixtures: [] };
     const sides = await sidesOf(l.fixtures.map((/** @type {any} */ f) => f.id));
-    return { asOf: l.asOf, fixtures: l.fixtures.filter((/** @type {any} */ f) => (sides[f.id] ?? []).some((c) => want.has(c))) };
+    return { asOf: l.asOf, fixtures: l.fixtures.filter((/** @type {any} */ f) => (sides[f.id] ?? []).some((/** @type {string} */ c) => want.has(c))) };
   };
 
   /**

@@ -442,6 +442,9 @@ const SUITES = [
   // strip and news hidden on a 404, the analytics toggle writes the pref and
   // starts nothing, the 12px and 44px floors, the copy.
   ["home-page", "apps/web/test/home-page.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // EXPERIENCE_PASS Q8 (db/160): the public page's offer at a pause, the app's
+  // follow hint, and the Followed schools block.
+  ["follow-screens", "apps/web/test/follow.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The home page's arena (Kameel, 6 Nov 2026): the rig's camera and ball, and which picture a device gets.
   ["home-arena", "apps/web/test/home-arena.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The newsfeed's kicker, standfirst, SA bands, per-viewer opened marks, and
