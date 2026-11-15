@@ -837,6 +837,11 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
 .os-news-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:16px}
 .os-news-lead{display:grid;grid-template-columns:minmax(0,1fr)}
 @media (min-width:900px){.os-news-lead{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}}
+/* A knockout's bracket (views/bracket.jsx, SCRBRD-060): one round after
+   another on a phone, the rounds as columns on a wide screen, never wider
+   than the page. Nothing in it moves. */
+.os-bracket{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+@media (min-width:1000px){.os-bracket{grid-template-columns:repeat(var(--rounds,1),minmax(0,1fr))}}
 .os-news-card{cursor:pointer;transition:transform .19s cubic-bezier(.4,0,.2,1),border-color .19s cubic-bezier(.4,0,.2,1)}
 .os-news-cover svg{transition:transform .42s cubic-bezier(.22,1,.36,1)}
 @media (hover:hover){.os-news-card:hover{transform:translateY(-2px)}.os-news-card:hover .os-news-cover svg{transform:scale(1.03)}}
