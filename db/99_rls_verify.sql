@@ -13843,6 +13843,241 @@ CREATE OR REPLACE FUNCTION _v160_table_acl(p_table text) RETURNS text AS $$
    WHERE c.oid = to_regclass(p_table) AND x.grantee <> c.relowner
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/160 (section 138) ─────────────────────────────────────────────
+-- ┌── db/161 (section 139) ─────────────────────────────────────────────
+-- One case's own people, so each case of §139 stands alone and can be
+-- falsified alone: a Hilton pupil of thirteen (the child the parents ask
+-- about, never named in a notice), a Hilton office of its own (schooladmin:
+-- user.role.assign and guardian.link.manage), two accounts with no school
+-- (the asker, and a second adult), and a pupil of Hilton with his own
+-- account. Every name invented, every email the case's own. Returns the ids.
+CREATE OR REPLACE FUNCTION _seed_161(p_tag text) RETURNS jsonb AS $$
+DECLARE
+  HIL  uuid := '11111111-1111-1111-1111-111111111111';
+  REG  uuid := '88888888-0000-0000-0000-00000000000c';
+  ids  jsonb := '{}';
+  p    uuid; u uuid; a uuid; k text;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES (HIL, 'U14A', 'Childname Onesixtyone', 'Onesixtyone', 161, 'batter', (sa_today() - interval '13 years')::date)
+  RETURNING id INTO p;
+  ids := ids || jsonb_build_object('p', p);
+  INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v161.' || p_tag || '.office@example.invalid', 'V161 Office', 'schooladmin')
+  RETURNING id INTO u;
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'schooladmin', HIL, sa_today() - 30);
+  ids := ids || jsonb_build_object('office', u);
+  FOREACH k IN ARRAY ARRAY['ask', 'adult'] LOOP
+    INSERT INTO app_user (email, name, role) VALUES ('v161.' || p_tag || '.' || k || '@example.invalid', 'V161 ' || initcap(k), 'none')
+    RETURNING id INTO u;
+    ids := ids || jsonb_build_object(k, u);
+  END LOOP;
+  -- The pupil: his own player row, his account, his self link (person_is_pupil(), db/57).
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES (HIL, 'U16A', 'Pupil Onesixtyone', 'Onesixtyone', 162, 'bowler', (sa_today() - interval '16 years')::date)
+  RETURNING id INTO p;
+  INSERT INTO app_user (school_id, email, name, role, player_id)
+  VALUES (HIL, 'v161.' || p_tag || '.pupil@example.invalid', 'V161 Pupil', 'player', p) RETURNING id INTO u;
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'selfaccess', HIL, sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p, 'self', 'verified', REG, now(), 'granted', 'popia-2026-01', now(), REG, sa_today() - 30);
+  ids := ids || jsonb_build_object('pupil', u);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A guardian request, as POST /api/requests leaves it (pending), written by
+-- the owner for the person: the pupil's included, whom the form would turn
+-- away, because what is proved is that no notice reaches him whatever door.
+CREATE OR REPLACE FUNCTION _v161_ask(p_person uuid) RETURNS uuid AS $$
+  INSERT INTO role_request (person_id, role, school_id, note)
+  VALUES (p_person, 'guardian', '11111111-1111-1111-1111-111111111111', 'For my son in the U14A')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A link the office established and has not verified (guardian_link_establish()'s row): its id.
+CREATE OR REPLACE FUNCTION _v161_pending_link(p_person uuid, p_player uuid) RETURNS uuid AS $$
+DECLARE a uuid; s uuid;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES (p_person, 'guardian', '11111111-1111-1111-1111-111111111111', sa_today() - 1) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, consent_state, created_by, valid_from, valid_until)
+  VALUES (a, p_player, 'parent', 'pending', 'pending', '88888888-0000-0000-0000-00000000000c', sa_today() - 1,
+          majority_on((SELECT born FROM player WHERE id = p_player)))
+  RETURNING id INTO s;
+  RETURN s;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A request's state moved by the owner, as the asker's own withdrawal leaves it.
+CREATE OR REPLACE FUNCTION _v161_state(p_request uuid, p_state text) RETURNS void AS $$
+  UPDATE role_request SET state = p_state WHERE id = p_request
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What is stored for a person, past row security: "title|body|subject|kind|…" per notice.
+CREATE OR REPLACE FUNCTION _v161_stored(p_person uuid) RETURNS text[] AS $$
+  SELECT coalesce(array_agg(n.title || '|' || coalesce(n.body, '') || '|' || coalesce(n.subject_id::text, '') || '|' || n.kind || '|'
+                            || coalesce(n.subject_kind, '') || '|' || n.urgency || '|' || n.required_capability || '|' || n.is_public
+                            || '|' || coalesce(n.school_id::text, '') || '|' || coalesce(n.team_code, '-') || '|' || coalesce(n.subject_person_id::text, '-')
+                            ORDER BY n.published_at, n.id), '{}')
+    FROM notification n WHERE n.recipient_id = p_person
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The ids of a person's stored notices, past row security.
+CREATE OR REPLACE FUNCTION _v161_ids(p_person uuid) RETURNS uuid[] AS $$
+  SELECT coalesce(array_agg(n.id ORDER BY n.id), '{}') FROM notification n WHERE n.recipient_id = p_person
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- db/93's decline notice to the school's DSOs: how many, and whether any has a recipient.
+CREATE OR REPLACE FUNCTION _v161_dso_notices() RETURNS text AS $$
+  SELECT count(*) || '/' || count(*) FILTER (WHERE recipient_id IS NOT NULL OR kind <> 'safeguarding')
+    FROM notification WHERE school_id = '11111111-1111-1111-1111-111111111111' AND title = 'A parent claim was declined'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- db/57's pupil test, for the fixture's own check (person_is_pupil() is owner-only).
+CREATE OR REPLACE FUNCTION _v161_is_pupil(p_person uuid) RETURNS boolean AS $$
+  SELECT person_is_pupil(p_person)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A function's grants, read from its ACL, the owner left out ("" for none, NULL when it does not exist).
+CREATE OR REPLACE FUNCTION _v161_acl(p_fn text) RETURNS text AS $$
+  SELECT CASE WHEN to_regprocedure(p_fn) IS NULL THEN NULL ELSE coalesce((
+    SELECT string_agg(coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC') || ':' || x.privilege_type, ',' ORDER BY x.grantee)
+      FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x
+     WHERE p.oid = to_regprocedure(p_fn) AND x.grantee <> p.proowner), '') END
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One case of §139, run as the caller (scrbrd_app, under each person's
+-- session in turn). Invoker, so every read below meets row security as the
+-- API would. Each case seeds its own people and raises on its first failure.
+CREATE OR REPLACE FUNCTION _v161_case(p_case text) RETURNS void AS $$
+DECLARE
+  T      text := 'The school has answered your request';
+  WORDS  text := 'The office at Hilton College has answered your request to be linked to a child. Open SCRBRD to see its answer.';
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  U_DOS  uuid := '88888888-0000-0000-0000-000000000007';   -- Sarah, Hilton's director of sport
+  U_KEY  uuid := '88888888-0000-0000-0000-000000000022';   -- superadmin, every capability
+  U_MUM  uuid := '88888888-0000-0000-0000-000000000005';   -- a verified guardian at Hilton
+  ids jsonb; OFFICE uuid; ASK uuid; ADULT uuid; PUPIL uuid; P uuid;
+  req uuid; req2 uuid; lk uuid; lk2 uuid; v text; v2 text; n int; r record; x uuid; dso text;
+BEGIN
+  ids := _seed_161(p_case);
+  OFFICE := (ids->>'office')::uuid; ASK := (ids->>'ask')::uuid; ADULT := (ids->>'adult')::uuid;
+  PUPIL := (ids->>'pupil')::uuid; P := (ids->>'p')::uuid;
+
+  IF p_case = 'yes' THEN
+    -- (yes) The office grants her request: she reads one notice, the words exact, the shape db/109's.
+    req := _v161_ask(ASK);
+    PERFORM _as(ASK);
+    SELECT count(*) INTO n FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 0, format('§139 (yes): before any answer the asker reads %s notices', n));
+    PERFORM _as(OFFICE);
+    SELECT d.ok, d.reason INTO r FROM decide_role_request(req, true, 'Verify 161', P, NULL) d;
+    PERFORM _assert(r.ok, format('§139 (yes): the office could not grant the request (%s)', r.reason));
+    PERFORM _as(ASK);
+    SELECT count(*), max(body) INTO n, v FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 1 AND v = WORDS, format('§139 (yes): the asker reads %s notices, saying %s', n, v));
+    v := array_to_string(_v161_stored(ASK), ' ~ ');
+    PERFORM _assert(v = T || '|' || WORDS || '|' || req || '|system|system|medium|news.read|false|' || HIL || '|-|-',
+      format('§139 (yes): what is stored for her is %s', v));
+    PERFORM _as(OFFICE);
+    SELECT d.reason INTO v FROM decide_role_request(req, true, 'Verify 161', P, NULL) d;
+    PERFORM _assert(v = 'already_decided' AND cardinality(_v161_stored(ASK)) = 1,
+      format('§139 (yes): a second grant answered %s and left %s notices', v, cardinality(_v161_stored(ASK))));
+
+  ELSIF p_case = 'no' THEN
+    -- (no) The office declines: she reads the same one notice; db/93's notice to the DSOs is still written, to no one person.
+    req := _v161_ask(ASK);
+    dso := _v161_dso_notices();
+    PERFORM _as(OFFICE);
+    SELECT d.ok, d.reason INTO r FROM decide_role_request(req, false, 'Verify 161', NULL, NULL) d;
+    PERFORM _assert(r.ok, format('§139 (no): the office could not decline the request (%s)', r.reason));
+    PERFORM _as(ASK);
+    SELECT count(*), max(body) INTO n, v FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 1 AND v = WORDS, format('§139 (no): the declined asker reads %s notices, saying %s', n, v));
+    PERFORM _assert(_v161_stored(ASK) = ARRAY[T || '|' || WORDS || '|' || req || '|system|system|medium|news.read|false|' || HIL || '|-|-'],
+      format('§139 (no): what is stored for her is %s', array_to_string(_v161_stored(ASK), ' ~ ')));
+    PERFORM _assert(split_part(_v161_dso_notices(), '/', 1)::int = split_part(dso, '/', 1)::int + 1
+                    AND split_part(_v161_dso_notices(), '/', 2) = '0',
+      format('§139 (no): db/93''s notice to the DSOs went from %s to %s (count/addressed)', dso, _v161_dso_notices()));
+
+  ELSIF p_case = 'same' THEN
+    -- (same) A yes and a no, in the same words, neither naming the answer nor the child.
+    req := _v161_ask(ASK); req2 := _v161_ask(ADULT);
+    PERFORM _as(OFFICE);
+    SELECT d.ok INTO r FROM decide_role_request(req, true, 'Verify 161', P, NULL) d;
+    SELECT d.ok INTO r FROM decide_role_request(req2, false, 'Verify 161', NULL, NULL) d;
+    PERFORM _as(ASK);
+    SELECT string_agg(title || '|' || body, ',') INTO v FROM my_notifications WHERE title = T;
+    PERFORM _as(ADULT);
+    SELECT string_agg(title || '|' || body, ',') INTO v2 FROM my_notifications WHERE title = T;
+    PERFORM _assert(v IS NOT NULL AND v = v2 AND v = T || '|' || WORDS, format('§139 (same): the yes reads %s; the no reads %s', v, v2));
+    PERFORM _assert(v !~* '\m(granted|declined|approved|refused|verified|accepted|rejected|yes|no)\M' AND v !~ 'Childname|Onesixtyone|U14A|son',
+      format('§139 (same): the words say the answer or name the child: %s', v));
+
+  ELSIF p_case = 'verify' THEN
+    -- (verify) A link the office established and she waited on: guardian_link_verify() tells her, in the same words.
+    lk := _v161_pending_link(ASK, P);
+    PERFORM _as(OFFICE);
+    SELECT g.ok, g.reason INTO r FROM guardian_link_verify(ASK, P, NULL, NULL) g;
+    PERFORM _assert(r.ok, format('§139 (verify): the office could not verify the link (%s)', r.reason));
+    PERFORM _as(ASK);
+    SELECT count(*), max(body) INTO n, v FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 1 AND v = WORDS, format('§139 (verify): the parent reads %s notices, saying %s', n, v));
+    PERFORM _assert(_v161_stored(ASK) = ARRAY[T || '|' || WORDS || '|' || lk || '|system|system|medium|news.read|false|' || HIL || '|-|-'],
+      format('§139 (verify): what is stored for her is %s', array_to_string(_v161_stored(ASK), ' ~ ')));
+    -- db/08's answers stand: a second verify finds no pending link and writes nothing.
+    PERFORM _as(OFFICE);
+    SELECT g.reason INTO v FROM guardian_link_verify(ASK, P, NULL, NULL) g;
+    PERFORM _assert(v = 'no_pending_link' AND cardinality(_v161_stored(ASK)) = 1,
+      format('§139 (verify): a second verify answered %s and left %s notices', v, cardinality(_v161_stored(ASK))));
+
+  ELSIF p_case = 'pupil' THEN
+    -- (pupil) A pupil's account answered by both doors gets nothing; the adult answered beside him gets both.
+    req := _v161_ask(PUPIL); req2 := _v161_ask(ADULT);
+    PERFORM _assert(_v161_is_pupil(PUPIL) AND NOT _v161_is_pupil(ADULT), '§139 (pupil): the fixture is void');
+    lk := _v161_pending_link(PUPIL, P); lk2 := _v161_pending_link(ADULT, P);
+    PERFORM _as(OFFICE);
+    SELECT d.ok INTO r FROM decide_role_request(req, false, 'Verify 161', NULL, NULL) d;
+    PERFORM _assert(r.ok, '§139 (pupil): the office could not decline the pupil''s request');
+    SELECT d.ok INTO r FROM decide_role_request(req2, false, 'Verify 161', NULL, NULL) d;
+    SELECT g.ok INTO r FROM guardian_link_verify(PUPIL, P, NULL, NULL) g;
+    PERFORM _assert(r.ok, '§139 (pupil): the office could not verify the pupil''s link');
+    SELECT g.ok INTO r FROM guardian_link_verify(ADULT, P, NULL, NULL) g;
+    PERFORM _assert(cardinality(_v161_stored(ADULT)) = 2 AND cardinality(_v161_stored(PUPIL)) = 0,
+      format('§139 (pupil): the adult holds %s notices (2 expected); the pupil %s (none)', cardinality(_v161_stored(ADULT)), cardinality(_v161_stored(PUPIL))));
+    PERFORM _as(PUPIL);
+    SELECT count(*) INTO n FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 0, format('§139 (pupil): the pupil reads %s', n));
+
+  ELSIF p_case = 'others' THEN
+    -- (others) Nobody but the asker reads hers: not the office that answered, not the director of sport,
+    -- not the owner's key, not another parent, not an account with no school, not signed out.
+    req := _v161_ask(ASK);
+    req2 := _v161_ask(ADULT);
+    PERFORM _v161_state(req2, 'withdrawn');
+    PERFORM _assert(cardinality(_v161_stored(ADULT)) = 0, '§139 (others): a withdrawn request wrote a notice');
+    PERFORM _as(OFFICE);
+    SELECT d.ok INTO r FROM decide_role_request(req, true, 'Verify 161', P, NULL) d;
+    PERFORM _assert(cardinality(_v161_ids(ASK)) = 1, format('§139 (others): the asker holds %s notices', cardinality(_v161_ids(ASK))));
+    x := (_v161_ids(ASK))[1];
+    FOREACH v IN ARRAY ARRAY[OFFICE::text, U_DOS::text, U_KEY::text, U_MUM::text, ADULT::text, PUPIL::text, ''] LOOP
+      PERFORM set_config('app.user_id', v, true);
+      SELECT count(*) INTO n FROM notification WHERE id = x;
+      SELECT n + count(*) INTO n FROM my_notifications WHERE id = x OR title = T;
+      PERFORM _assert(n = 0 AND notification_by_id(x) IS NULL,
+        format('§139 (others): %s reads the asker''s notice (%s rows)', coalesce(nullif(v, ''), 'signed out'), n));
+    END LOOP;
+    PERFORM _as(ASK);
+    PERFORM _assert(notification_by_id(x) IS NOT NULL, '§139 (others): the asker cannot open her own notice');
+
+  ELSIF p_case = 'grants' THEN
+    -- (grants) The door, the words and the verify: EXECUTE to scrbrd_app alone; the writer and the trigger's function: nobody's.
+    FOREACH v IN ARRAY ARRAY['school_answered_words(text)', 'school_answer_subject_is_mine(uuid)', 'guardian_link_verify(uuid,uuid,text,text)'] LOOP
+      PERFORM _assert(_v161_acl(v) = 'scrbrd_app:EXECUTE', format('§139 (grants): %s is granted %s', v, coalesce(_v161_acl(v), '(missing)')));
+    END LOOP;
+    FOREACH v IN ARRAY ARRAY['school_answered_notice_write(uuid,uuid,uuid)', 'school_answered_notice()'] LOOP
+      PERFORM _assert(_v161_acl(v) = '', format('§139 (grants): %s is granted %s', v, coalesce(_v161_acl(v), '(missing)')));
+    END LOOP;
+  ELSE
+    RAISE EXCEPTION '§139: no case %', p_case;
+  END IF;
+  PERFORM set_config('app.user_id', '', true);
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- └── db/161 (section 139) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -45037,6 +45272,56 @@ $m130$;
   PERFORM set_config('app.user_id', '', true);
   PERFORM set_config('app.scope', '', true);
   -- └── db/160 (section 138) ─────────────────────────────────────────
+  -- ┌── db/161 (section 139) ─────────────────────────────────────────
+  -- ── 139. "The school has answered your request": one notice to the waiting parent, the same words for a yes and a no; never a pupil; nobody else reads it (db/161; EXPERIENCE_PASS Q15) ──
+  -- Each case seeds its own people (_seed_161: a Hilton office of its own,
+  -- an asker and a second adult with no school, a Hilton pupil with his own
+  -- account, and the child asked about) and runs as scrbrd_app under each
+  -- person's session (_v161_case, an invoker). Labels:
+  --   (yes)     the office grants her guardian request: before, she reads
+  --             nothing; after, one notice, the words exact, stored as
+  --             db/109's (system, medium, news.read, not public, the
+  --             request its subject, no child, no side); a second grant is
+  --             already_decided and writes none
+  --   (no)      the office declines: she reads the same one notice, and
+  --             db/93's notice to the DSOs is still written, one more, to
+  --             no one person (db/93 untouched)
+  --   (same)    a yes and a no read the same title and body, which say
+  --             neither the answer nor anything of the child
+  --   (verify)  a link the office established and she waited on, verified
+  --             through guardian_link_verify(): one notice, the same words,
+  --             the link its subject; a second verify is db/08's
+  --             no_pending_link and writes none
+  --   (pupil)   a pupil's account, answered by both doors (a declined
+  --             request, a verified link), holds and reads none; the adult
+  --             answered beside him holds both
+  --   (others)  a withdrawn request writes nothing; nobody but the asker
+  --             reads hers, by the table, my_notifications or
+  --             notification_by_id(): not the office that answered, not
+  --             Hilton's director of sport, not the owner's key, not a
+  --             verified Hilton guardian, not another adult, not a pupil,
+  --             not signed out; she opens her own
+  --   (grants)  the words, the read door and the verify door EXECUTE to
+  --             scrbrd_app alone; the writer and the trigger's function
+  --             granted to nobody (PUBLIC included)
+  --
+  -- Falsified, each case in its own rolled-back run (the cases called one
+  -- by one, every failure caught and reported): db/161 undone (its trigger
+  -- and policy dropped, db/08's guardian_link_verify() put back, its four
+  -- functions dropped) → every case red, (yes) to (grants). The recipient
+  -- cut (db/57) dropped and the door made to admit any reader of the title
+  -- → (others) red, and (no), (same), (verify) and (pupil) with it. The
+  -- writer without its pupil test → (pupil) red. A decline told in other
+  -- words ("It was declined.") → (no) and (same) red.
+  PERFORM _v161_case('yes');
+  PERFORM _v161_case('no');
+  PERFORM _v161_case('same');
+  PERFORM _v161_case('verify');
+  PERFORM _v161_case('pupil');
+  PERFORM _v161_case('others');
+  PERFORM _v161_case('grants');
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/161 (section 139) ─────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
