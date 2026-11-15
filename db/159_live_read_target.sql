@@ -30,9 +30,13 @@
 --         revised  boolean  the umpires revised this match: a revision
 --                           event stands in one of its own innings so far
 --                           (overs or target), or the chase opened on a
---                           target other than the one worked out above.
---                           With it the strip says no balls left, as a
---                           revision can cut the overs (§3.8).
+--                           target other than the one worked out above,
+--                           or on overs other than the fixture's (the
+--                           umpires' figures at the break, Innings2Sheet,
+--                           which write no revision event). With it the
+--                           strip says no balls left: the read carries the
+--                           fixture's overs, and the chase's are no longer
+--                           those (§3.8).
 --       Derived from what the read already computes, and nothing new is
 --       stored: match_result_compute()'s innings (db/121, joined by db/82's
 --       body already), each with its runs, target, revised mark, side and
@@ -42,8 +46,9 @@
 --       left the old one: EXECUTE to scrbrd_app by name, nothing to PUBLIC,
 --       anon, authenticated or service_role. SECURITY DEFINER, search_path
 --       pinned, STABLE, LANGUAGE sql, as before.
---   + fixture_chase(jsonb, integer)  the derivation above, over the innings
---       array and the innings per side. IMMUTABLE, not a definer, reads no
+--   + fixture_chase(jsonb, integer, integer)  the derivation above, over
+--       the innings array, the innings per side and the fixture's overs
+--       (NULL for a match with no over limit). IMMUTABLE, not a definer, reads no
 --       table; the owner's alone (public_school_listed()'s pattern, db/82):
 --       called only from inside the definer above, as its owner.
 --
@@ -69,7 +74,9 @@
 --
 -- THE GUARD keys on pg_proc.prosrc as db/133 does: the md5 of the live
 -- body, its whitespace folded, must be db/133's (6aa12abd…) or this file's.
--- A body moved by another file since stops the paste. A second paste finds
+-- A body moved by another file since stops the paste. An earlier draft of
+-- this file (sha 94adc5f7…, before the overs test) was never pasted on the
+-- demo or production; a database that applied it is refused, and is reset. A second paste finds
 -- this file's body and changes nothing (the function is dropped and made
 -- again, identically, in the same transaction; its grants re-made).
 --
@@ -116,7 +123,7 @@ BEGIN
   END IF;
   v_md5 := pg_temp._v159_fold((SELECT prosrc FROM pg_proc WHERE oid = 'public_live_fixtures()'::regprocedure));
   IF v_md5 NOT IN ('6aa12abde90e18205821fb4b78ef7d26',   -- db/133's
-                   'f4eb927a47c09fa4bac32bf7e4ac7243') THEN   -- this file's
+                   '99b9d9cb1db581e9697c4911bb5e1a62') THEN   -- this file's
     RAISE EXCEPTION 'db/159: public_live_fixtures() is not db/133''s or this file''s (md5 % of its folded body); look before replacing it', v_md5;
   END IF;
   -- Every row, the thirteen columns db/133's body returns, as it answers now.
@@ -133,11 +140,12 @@ END $guard$;
 /**
  * The target and the revision mark of the innings being played, from
  * match_result_compute()'s `innings` (db/121: in innings order, each with
- * runs, target, revised, side, super_over) and the innings per side (1 or
- * 2, the fixture's frozen playing conditions). See the header for the rule.
+ * runs, target, revised, overs, side, super_over), the innings per side
+ * (1 or 2, the fixture's frozen playing conditions) and the fixture's overs
+ * (match.overs, NULL with no limit). See the header for the rule.
  * Reads no table; the owner's alone.
  */
-CREATE OR REPLACE FUNCTION fixture_chase(p_innings jsonb, p_ips integer)
+CREATE OR REPLACE FUNCTION fixture_chase(p_innings jsonb, p_ips integer, p_overs integer)
 RETURNS TABLE (target integer, revised boolean) AS $$
   WITH x AS (
     SELECT y.value AS v, y.n
@@ -159,6 +167,9 @@ RETURNS TABLE (target integer, revised boolean) AS $$
                  AND (c.v->>'target')::numeric = trunc((c.v->>'target')::numeric)
                  AND abs((c.v->>'target')::numeric) < 2147483648
                 THEN (c.v->>'target')::numeric::integer END AS own_target,
+           -- The chase's overs as the fold keeps them (the innings_start's,
+           -- else the document's), set against the fixture's.
+           CASE WHEN jsonb_typeof(c.v->'overs') = 'number' THEN (c.v->>'overs')::numeric END AS own_overs,
            -- Worked out: one innings a side, the first plus one; two, the
            -- runs it trails by over the three before it, plus one. NULL when
            -- an innings' runs are not a number the fold could add.
@@ -173,9 +184,10 @@ RETURNS TABLE (target integer, revised boolean) AS $$
   SELECT (SELECT coalesce(num.own_target, num.worked) FROM num),
          coalesce((SELECT bool_or(o.v->'revised' = 'true'::jsonb) FROM own o, cur WHERE o.n <= cur.n), false)
          OR coalesce((SELECT num.own_target <> num.worked FROM num), false)
+         OR coalesce((SELECT num.own_overs <> p_overs FROM num), false)
 $$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
 
-REVOKE ALL ON FUNCTION fixture_chase(jsonb, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fixture_chase(jsonb, integer, integer) FROM PUBLIC;
 
 
 -- ── 2 · The read, re-made with the two columns ────────────────────
@@ -243,7 +255,7 @@ RETURNS TABLE (
     LEFT JOIN LATERAL match_result_compute(l.id) r ON true
     LEFT JOIN LATERAL fixture_chase(r.innings,
       CASE WHEN (SELECT c.doc->'play'->'format.innings_per_side' FROM match_conditions c WHERE c.match_id = l.id) = '2'::jsonb
-           THEN 2 ELSE 1 END) ch ON true
+           THEN 2 ELSE 1 END, l.overs) ch ON true
    ORDER BY (l.status = 'live') DESC, l.starts_at, l.id
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -256,13 +268,13 @@ DECLARE r text;
 BEGIN
   REVOKE ALL ON FUNCTION public_live_fixtures() FROM PUBLIC;
   GRANT EXECUTE ON FUNCTION public_live_fixtures() TO scrbrd_app;
-  REVOKE ALL ON FUNCTION fixture_chase(jsonb, integer) FROM PUBLIC;
+  REVOKE ALL ON FUNCTION fixture_chase(jsonb, integer, integer) FROM PUBLIC;
   FOREACH r IN ARRAY ARRAY['scrbrd_app', 'anon', 'authenticated', 'service_role'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       IF r <> 'scrbrd_app' THEN
         EXECUTE format('REVOKE ALL ON FUNCTION public_live_fixtures() FROM %I', r);
       END IF;
-      EXECUTE format('REVOKE ALL ON FUNCTION fixture_chase(jsonb, integer) FROM %I', r);
+      EXECUTE format('REVOKE ALL ON FUNCTION fixture_chase(jsonb, integer, integer) FROM %I', r);
     END IF;
   END LOOP;
 END $grants$;
@@ -274,7 +286,7 @@ DECLARE
   v_md5 text; v_cols text; v_acl text; v_diff int; t integer; v boolean;
 BEGIN
   v_md5 := pg_temp._v159_fold((SELECT prosrc FROM pg_proc WHERE oid = 'public_live_fixtures()'::regprocedure));
-  IF v_md5 <> 'f4eb927a47c09fa4bac32bf7e4ac7243' THEN
+  IF v_md5 <> '99b9d9cb1db581e9697c4911bb5e1a62' THEN
     RAISE EXCEPTION 'db/159: public_live_fixtures() is not this file''s after the paste (md5 %)', v_md5;
   END IF;
 
@@ -315,7 +327,7 @@ BEGIN
                     AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))) THEN
     RAISE EXCEPTION 'db/159: public_live_fixtures() is not a STABLE definer with a pinned search_path';
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_proc WHERE oid = 'fixture_chase(jsonb,integer)'::regprocedure AND (prosecdef OR provolatile <> 'i')) THEN
+  IF EXISTS (SELECT 1 FROM pg_proc WHERE oid = 'fixture_chase(jsonb,integer,integer)'::regprocedure AND (prosecdef OR provolatile <> 'i')) THEN
     RAISE EXCEPTION 'db/159: fixture_chase() is a definer, or not IMMUTABLE';
   END IF;
 
@@ -330,7 +342,7 @@ BEGIN
   END IF;
   SELECT string_agg(coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC') || ':' || x.privilege_type, ',')
     INTO v_acl FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x
-   WHERE p.oid = 'fixture_chase(jsonb,integer)'::regprocedure AND x.grantee <> p.proowner;
+   WHERE p.oid = 'fixture_chase(jsonb,integer,integer)'::regprocedure AND x.grantee <> p.proowner;
   IF v_acl IS NOT NULL THEN
     RAISE EXCEPTION 'db/159: fixture_chase() is granted %', v_acl;
   END IF;
@@ -349,43 +361,51 @@ BEGIN
   END IF;
 
   -- The rule, case by case, on innings as match_result_compute() writes them.
-  SELECT c.target, c.revised INTO t, v FROM fixture_chase('[]'::jsonb, 1) c;
+  SELECT c.target, c.revised INTO t, v FROM fixture_chase('[]'::jsonb, 1, 20) c;
   IF t IS NOT NULL OR v THEN RAISE EXCEPTION 'db/159: no innings answered % %', t, v; END IF;
   SELECT c.target, c.revised INTO t, v FROM fixture_chase(
-    '[{"innings":0,"super_over":null,"runs":141,"target":null,"revised":false,"side":"home"}]', 1) c;
+    '[{"innings":0,"super_over":null,"runs":141,"target":null,"revised":false,"side":"home"}]', 1, 20) c;
   IF t IS NOT NULL OR v THEN RAISE EXCEPTION 'db/159: the first innings answered % %', t, v; END IF;
   SELECT c.target, c.revised INTO t, v FROM fixture_chase(
     '[{"innings":0,"super_over":null,"runs":141,"target":null,"revised":false,"side":"home"},
-      {"innings":1,"super_over":null,"runs":97,"target":null,"revised":false,"side":"away"}]', 1) c;
+      {"innings":1,"super_over":null,"runs":97,"target":null,"revised":false,"side":"away"}]', 1, 20) c;
   IF t IS DISTINCT FROM 142 OR v THEN RAISE EXCEPTION 'db/159: the chase of 141 answered % %', t, v; END IF;
   SELECT c.target, c.revised INTO t, v FROM fixture_chase(
     '[{"innings":0,"super_over":null,"runs":141,"target":null,"revised":false,"side":"home"},
-      {"innings":1,"super_over":null,"runs":97,"target":130,"revised":true,"side":"away"}]', 1) c;
+      {"innings":1,"super_over":null,"runs":97,"target":130,"revised":true,"side":"away"}]', 1, 20) c;
   IF t IS DISTINCT FROM 130 OR NOT v THEN RAISE EXCEPTION 'db/159: a revised chase answered % %', t, v; END IF;
   SELECT c.target, c.revised INTO t, v FROM fixture_chase(
     '[{"innings":0,"super_over":null,"runs":141,"target":null,"revised":true,"side":"home"},
-      {"innings":1,"super_over":null,"runs":97,"target":null,"revised":false,"side":"away"}]', 1) c;
+      {"innings":1,"super_over":null,"runs":97,"target":null,"revised":false,"side":"away"}]', 1, 20) c;
   IF t IS DISTINCT FROM 142 OR NOT v THEN RAISE EXCEPTION 'db/159: overs cut in the first innings answered % %', t, v; END IF;
   SELECT c.target, c.revised INTO t, v FROM fixture_chase(
     '[{"innings":0,"super_over":null,"runs":141,"target":null,"revised":false,"side":"home"},
       {"innings":1,"super_over":null,"runs":141,"target":null,"revised":false,"side":"away"},
       {"innings":2,"super_over":1,"runs":9,"target":null,"revised":false,"side":"home"},
-      {"innings":3,"super_over":1,"runs":4,"target":10,"revised":false,"side":"away"}]', 1) c;
+      {"innings":3,"super_over":1,"runs":4,"target":10,"revised":false,"side":"away"}]', 1, 20) c;
   IF t IS NOT NULL OR v THEN RAISE EXCEPTION 'db/159: a super over answered % %', t, v; END IF;
   SELECT c.target, c.revised INTO t, v FROM fixture_chase(
     '[{"innings":0,"super_over":null,"runs":200,"target":null,"revised":false,"side":"home"},
-      {"innings":1,"super_over":null,"runs":150,"target":null,"revised":false,"side":"away"}]', 2) c;
+      {"innings":1,"super_over":null,"runs":150,"target":null,"revised":false,"side":"away"}]', 2, 20) c;
   IF t IS NOT NULL OR v THEN RAISE EXCEPTION 'db/159: a two-innings match''s second innings answered % %', t, v; END IF;
   SELECT c.target, c.revised INTO t, v FROM fixture_chase(
     '[{"innings":0,"super_over":null,"runs":200,"target":null,"revised":false,"side":"home"},
       {"innings":1,"super_over":null,"runs":150,"target":null,"revised":false,"side":"away"},
       {"innings":2,"super_over":null,"runs":120,"target":null,"revised":false,"side":"home"},
-      {"innings":3,"super_over":null,"runs":10,"target":null,"revised":false,"side":"away"}]', 2) c;
+      {"innings":3,"super_over":null,"runs":10,"target":null,"revised":false,"side":"away"}]', 2, 20) c;
   IF t IS DISTINCT FROM 171 OR v THEN RAISE EXCEPTION 'db/159: a fourth innings answered % %', t, v; END IF;
   SELECT c.target, c.revised INTO t, v FROM fixture_chase(
     '[{"innings":0,"super_over":null,"runs":null,"target":null,"revised":false,"side":"home"},
-      {"innings":1,"super_over":null,"runs":3,"target":null,"revised":false,"side":"away"}]', 1) c;
+      {"innings":1,"super_over":null,"runs":3,"target":null,"revised":false,"side":"away"}]', 1, 20) c;
   IF t IS NOT NULL OR v THEN RAISE EXCEPTION 'db/159: a first innings the fold could not add answered % %', t, v; END IF;
+  SELECT c.target, c.revised INTO t, v FROM fixture_chase(
+    '[{"innings":0,"super_over":null,"runs":141,"target":null,"revised":false,"overs":20,"side":"home"},
+      {"innings":1,"super_over":null,"runs":97,"target":null,"revised":false,"overs":15,"side":"away"}]', 1, 20) c;
+  IF t IS DISTINCT FROM 142 OR NOT v THEN RAISE EXCEPTION 'db/159: a chase on fewer overs than the fixture''s answered % %', t, v; END IF;
+  SELECT c.target, c.revised INTO t, v FROM fixture_chase(
+    '[{"innings":0,"super_over":null,"runs":141,"target":null,"revised":false,"overs":20,"side":"home"},
+      {"innings":1,"super_over":null,"runs":97,"target":null,"revised":false,"overs":20,"side":"away"}]', 1, 20) c;
+  IF t IS DISTINCT FROM 142 OR v THEN RAISE EXCEPTION 'db/159: a chase on the fixture''s overs answered % %', t, v; END IF;
 END $check$;
 
 DROP TABLE _v159_before;

@@ -13623,9 +13623,13 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 
 -- Hilton's fixtures today, as the owner writes them, each with its log: a
 -- chase (c1), a chase the umpires revised (c2), a first innings (c3), a
--- two-day match's fourth innings (c4), a super over's chase (c5), and a
--- chase that opened on a target other than the first innings plus one
--- (c6). No ground, so db/133's clash rule has nothing to refuse. Typed
+-- two-day match's fourth innings (c4), a super over's chase (c5), a chase
+-- that opened on a target other than the first innings plus one (c6), a
+-- chase after the first innings' overs were cut and the target left alone
+-- (c7: a revision event of overs only), a two-day match's fourth innings
+-- after a follow-on (c8: the same side batted second and third), and a
+-- chase that opened on fewer overs than the fixture's, with no revision
+-- event (c9: the umpires' figures at the break). No ground, so db/133's clash rule has nothing to refuse. Typed
 -- opponents; a typed name in a ball's payload (never read by the live read).
 CREATE OR REPLACE FUNCTION _seed_159() RETURNS jsonb AS $$
 DECLARE
@@ -13639,14 +13643,14 @@ DECLARE
   opp    text;
   ev     record;
 BEGIN
-  FOR k IN SELECT unnest(ARRAY['c1', 'c2', 'c3', 'c4', 'c5', 'c6']) LOOP
+  FOR k IN SELECT unnest(ARRAY['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9']) LOOP
     opp := 'Verify Onefiftynine ' || upper(k) || ' 1XI';
     INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
     VALUES (HIL, '1XI', opp, base + (substr(k, 2)::int) * interval '1 minute', 'cricket',
-            CASE WHEN k = 'c4' THEN 'two-day' ELSE 'T20' END, CASE WHEN k = 'c4' THEN NULL ELSE 20 END, 'live')
+            CASE WHEN k IN ('c4', 'c8') THEN 'two-day' ELSE 'T20' END, CASE WHEN k IN ('c4', 'c8') THEN NULL ELSE 20 END, 'live')
     RETURNING id INTO m;
     ids := ids || jsonb_build_object(k, m);
-    IF k = 'c4' THEN
+    IF k IN ('c4', 'c8') THEN
       INSERT INTO match_conditions (match_id, doc, sources, doc_hash)
       VALUES (m, '{"v":1,"play":{"format.kind":"timed","format.innings_per_side":2},"table":{},"sheet":{}}', '{}', '')
       ON CONFLICT (match_id) DO NOTHING;
@@ -13676,7 +13680,21 @@ BEGIN
         ('c5', 3, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 1, 'superOver', 1)),
         ('c5', 3, 'ball', 1, '{}'::jsonb),
         ('c6', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20, 'target', 12)),
-        ('c6', 1, 'ball', 2, '{}'::jsonb)) AS v(f, inn, kind, val, payload)
+        ('c6', 1, 'ball', 2, '{}'::jsonb),
+        ('c7', 0, 'revision', NULL, '{"overs": 18, "reason": "rain"}'::jsonb),
+        ('c7', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20)),
+        ('c7', 1, 'ball', 1, '{}'::jsonb),
+        ('c8', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI')),
+        ('c8', 1, 'ball', 2, '{}'::jsonb),
+        ('c8', 2, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI')),
+        ('c8', 2, 'ball', 6, '{}'::jsonb),
+        ('c8', 2, 'ball', 6, '{}'::jsonb),
+        ('c8', 2, 'ball', 6, '{}'::jsonb),
+        ('c8', 2, 'ball', 2, '{}'::jsonb),
+        ('c8', 3, 'innings_start', NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', opp)),
+        ('c8', 3, 'ball', 1, '{}'::jsonb),
+        ('c9', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 15)),
+        ('c9', 1, 'ball', 1, '{}'::jsonb)) AS v(f, inn, kind, val, payload)
       WHERE v.f IN ('*', k)
     LOOP
       s := s + 1;
@@ -44567,7 +44585,7 @@ $m130$;
   -- └── db/158 (section 136) ──────────────────────────────────────────
   -- ┌── db/159 (section 137) ─────────────────────────────────────────
   -- ── 137. The home page's live read says the chase's target and whether the match was revised, and nothing else new: the old thirteen columns, and every row they gave, as db/133 left them (db/159; EXPERIENCE_PASS Q14) ──
-  -- _seed_159() builds Hilton's six live fixtures today (header of the
+  -- _seed_159() builds Hilton's nine live fixtures today (header of the
   -- helper); Hilton's director of sport publishes the home side of each and
   -- lists the school. Every read signed out, as the API's public read is.
   -- Labels:
@@ -44584,7 +44602,14 @@ $m130$;
   --              c4 a two-day match's fourth innings, the runs it trails by
   --              plus one; c5 a super over, no target; c6 a chase opened on
   --              a typed target other than the first innings plus one, that
-  --              target, revised
+  --              target, revised; c7 the first innings' overs cut by a
+  --              revision event and the target left alone, the first innings
+  --              plus one, revised (the event's own mark, and nothing else
+  --              says so); c8 a follow-on's fourth innings, the runs it
+  --              trails by, by side and not by position; c9 a chase opened
+  --              on fifteen overs of the fixture's twenty with no event, the
+  --              first innings plus one, revised (the strip then counts no
+  --              balls from the fixture's overs)
   --   (team)     the two columns are a number of runs and one bit: no
   --              string, so no name can ride on them
   --   (grants)   EXECUTE on the read: its owner and scrbrd_app, nobody
@@ -44601,12 +44626,16 @@ $m130$;
   -- 7); the mark made NULL in the new body, with (target) skipped → (team)
   -- red; GRANT EXECUTE on the read TO PUBLIC → (grants) red; GRANT EXECUTE on
   -- fixture_chase() TO scrbrd_app → (grants) red; the copy's LIMIT 50 made
-  -- 49 → (copy) red.
+  -- 49 → (copy) red. The revision event's own mark dropped from
+  -- fixture_chase() (its bool_or over `revised`) → (target) red at c7; the
+  -- overs test dropped → (target) red at c9; the fourth innings' sign taken
+  -- by position (an odd innings for, an even against) → (target) red at c8.
   DECLARE
     ids   jsonb;
     U_DOS uuid := '88888888-0000-0000-0000-000000000007';   -- Hilton's director of sport (§61's U_SARAH)
     k text; j jsonb; n int; n2 int; v text; v_ok boolean; v_reason text;
-    want  jsonb := '{"c1": [9, false], "c2": [7, true], "c3": [null, false], "c4": [5, false], "c5": [null, false], "c6": [12, true]}';
+    want  jsonb := '{"c1": [9, false], "c2": [7, true], "c3": [null, false], "c4": [5, false], "c5": [null, false], "c6": [12, true],
+                     "c7": [9, true], "c8": [15, false], "c9": [9, true]}';
   BEGIN
     -- (copy)
     PERFORM _assert(_v159_md5('_v159_old_live()') = '6aa12abde90e18205821fb4b78ef7d26',
@@ -44638,8 +44667,8 @@ $m130$;
               x.overs, x.starts_at, x.scores, x.result, x.served_on FROM public_live_fixtures() x)) d;
     SELECT count(*) INTO n2 FROM public_live_fixtures() x
      WHERE x.match_id IN (SELECT (ids->>q.key)::uuid FROM jsonb_object_keys(ids) q(key));
-    PERFORM _assert(n = 0 AND n2 = 6,
-      format('§137 (old): %s rows of the old thirteen columns differ from db/133''s body; %s of Hilton''s six answered', n, n2));
+    PERFORM _assert(n = 0 AND n2 = 9,
+      format('§137 (old): %s rows of the old thirteen columns differ from db/133''s body; %s of Hilton''s nine answered', n, n2));
 
     -- (target)
     FOR k IN SELECT jsonb_object_keys(want) LOOP
@@ -44659,9 +44688,9 @@ $m130$;
     PERFORM _assert(v = (SELECT proowner::regrole::text FROM pg_proc WHERE oid = 'public_live_fixtures()'::regprocedure)
                         || ':EXECUTE,scrbrd_app:EXECUTE',
       format('§137 (grants): the live read is granted %s', v));
-    v := array_to_string(_v156_acl('fixture_chase(jsonb,integer)'), ',');
-    PERFORM _assert(v = (SELECT proowner::regrole::text FROM pg_proc WHERE oid = 'fixture_chase(jsonb,integer)'::regprocedure) || ':EXECUTE'
-                    AND NOT has_function_privilege('scrbrd_app', 'fixture_chase(jsonb,integer)', 'EXECUTE'),
+    v := array_to_string(_v156_acl('fixture_chase(jsonb,integer,integer)'), ',');
+    PERFORM _assert(v = (SELECT proowner::regrole::text FROM pg_proc WHERE oid = 'fixture_chase(jsonb,integer,integer)'::regprocedure) || ':EXECUTE'
+                    AND NOT has_function_privilege('scrbrd_app', 'fixture_chase(jsonb,integer,integer)', 'EXECUTE'),
       format('§137 (grants): fixture_chase() is granted %s', v));
     v := coalesce(_v157_public_at_start(), '');
     PERFORM _assert(v !~ '(public_live_fixtures|fixture_chase)\(',
