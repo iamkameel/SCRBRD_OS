@@ -72,6 +72,8 @@ export function signupApi() {
       return { status: 200, body: { id: "r1000000-0000-0000-0000-000000000001", state: "pending" } };
     }
     if (pathname === "/api/competition-invitations") return { status: 200, body: { invitations: [] } };
+    // The follow list (db/160): an account that follows nothing yet, as a new one does.
+    if (pathname === "/api/follows/today") return { status: 200, body: { asOf: "2026-11-15", fixtures: [], schools: [] } };
     const read = /^\/api\/read\/([a-z_]+)$/.exec(pathname);
     if (read) return { status: 200, body: { resource: read[1], rows: reads[read[1]]?.() ?? [] } };
     return { status: 404, body: { error: "not_found" } };

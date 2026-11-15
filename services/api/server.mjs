@@ -128,6 +128,7 @@ import { scorebookRoutes, scorebookFileRoutes } from "./write/scorebook-api.mjs"
 // SCRBRD-124 phase 1: parent lift clubs (db/70).
 import { liftRoutes } from "./write/lift-api.mjs";
 import { pilotRoutes } from "./write/pilot-api.mjs";
+import { followRoutes } from "./write/follow-api.mjs";
 // Practice Match's live weather hint, from Google (2026-10-02): a hint, never
 // the match's record; nothing stored (weather/weather-api.mjs).
 import { weatherRoutes, weatherConfig } from "./weather/weather-api.mjs";
@@ -536,6 +537,13 @@ const lifts = liftRoutes({ pool, secret: SECRET });
 // Pilot Match phase 2 (db/151): its own schema, behind two switches that db/151
 // leaves off. Every per-match route answers one not-found to anybody but the owner.
 const pilotMatch = pilotRoutes({ pool, secret: SECRET });
+// The follow list (EXPERIENCE_PASS Q8, db/160): its Today is the public list,
+// kept to the caller's schools by the public pages' own filter.
+const follows = followRoutes({ pool, secret: SECRET, today: publicSite.followedToday });
+// A person's own list, and his Today from it: kept nowhere, on a shared school
+// computer least of all.
+NO_STORE_ROUTES.add(follows.list);
+NO_STORE_ROUTES.add(follows.today);
 // The key is read once, here, and goes nowhere but Google's header. Unset,
 // the hint answers 503 weather_unavailable and the scorer picks by hand.
 // Only an enrolled account may spend the quota (db/81's app_enrolled()): a
@@ -1209,6 +1217,18 @@ const PILOT_ROUTES = [
 ];
 // ── end SCRBRD-124 ──
 
+/**
+ * The follow list (EXPERIENCE_PASS Q8, slice 3b; db/160). Signed in; the
+ * caller's own list only. `today` before the id route, which takes a uuid.
+ * @type {Route[]}
+ */
+const FOLLOW_ROUTES = [
+  [/^\/api\/follows$/,                       "GET",    follows.list],
+  [/^\/api\/follows$/,                       "POST",   follows.follow],
+  [/^\/api\/follows\/today$/,                "GET",    follows.today],
+  [/^\/api\/follows\/([0-9a-fA-F-]{36})$/,   "DELETE", follows.unfollow],
+];
+
 /** @type {Route[]} */
 const SCOUT_ROUTES = [
   [/^\/api\/scouts\/accreditation$/,                      "POST", scouting.registerAccreditation, "scouting"],
@@ -1525,7 +1545,7 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    for (const [pattern, method, handler, module] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES, ...SAFEGUARDING_ROUTES, ...LIFT_ROUTES, ...PILOT_ROUTES]) {
+    for (const [pattern, method, handler, module] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES, ...SAFEGUARDING_ROUTES, ...LIFT_ROUTES, ...PILOT_ROUTES, ...FOLLOW_ROUTES]) {
       const m = req.method === method && pattern.exec(path);
       if (!m) continue;
       // The write side of the module gate, in the one place every write route

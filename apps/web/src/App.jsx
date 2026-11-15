@@ -13,6 +13,7 @@ import { D, GLOBAL_CSS, clr } from "./design/tokens.js";
 import { useTheme } from "./design/theme.js";
 import { canScore, holdsCapability, scoped } from "./rbac/index.js";
 import { api, signedIn } from "./lib/api.js";
+import { askFollow, dropFollowAsk, followAsked } from "./lib/follow.js";
 import { useRows } from "./lib/live.js";
 import { useNotifications } from "./lib/notifications.js";
 import { useWaitingInvitations } from "./lib/invitations.js";
@@ -185,6 +186,13 @@ export default function SCRBRD_OS() {
   const [door, setDoor] = useState(() => {
     try { return new URLSearchParams(window.location.search).get("door") === "parent" ? "parent" : null; } catch { return null; }
   });
+  // A match page's "Follow Hilton College's matches" (EXPERIENCE_PASS §2.4
+  // step 3, Q8) arrives as /app?follow=<school code>&from=<match>: after the
+  // one sign-in he lands on his own home, whose Followed schools block ASKS
+  // "Follow Hilton College? Follow · Not now"; only Follow writes the row
+  // (Kameel, 15 Nov: a shared link asks before it follows, one tap, for
+  // everyone). Read once, it leaves the address on sign-in.
+  const [followAsk, setFollowAsk] = useState(() => followAsked());
   const [role,      setRole]      = useState("superadmin");
   const [userName,  setUserName]  = useState("Super Admin");
   const [page,      setPageRaw]   = useState("dashboard");
@@ -261,6 +269,8 @@ export default function SCRBRD_OS() {
 
   // Auth handlers
   const handleLogin = (r, n, p) => {
+    if (followAsk && signedIn()) askFollow(followAsk);
+    setFollowAsk(null); dropFollowAsk();
     // Signed in with nothing: an account whose requests are still with the
     // school. No role, no shell; the requests, and a way out.
     if (p && Array.isArray(p.assignments) && p.assignments.length === 0) {
@@ -319,7 +329,7 @@ export default function SCRBRD_OS() {
     setScorerOpen(false); setScorerResume(null); setScorerMatchId(null); setScorerPractice(false); setScorerEntry(null);
     setUsers([]); setUserEdits(false);
     setRole("superadmin"); setUserName("Super Admin"); setPage("dashboard");
-    if (!keepDoor) setDoor(null);
+    if (!keepDoor) { setDoor(null); setFollowAsk(null); }
     setAppState("login");
   };
 

@@ -340,6 +340,11 @@ export const NEVER_PUBLIC = Object.freeze({
   // N4. Who asked, their job at a school and when: read by the asker and the
   // platform alone (Kameel, 15 Nov). Never on a page; the whole table.
   school_add_request: "N4",
+  // ── db/160, EXPERIENCE_PASS Q8: the follow list ──
+  // N4. Which schools an account watches says who the person is (a pupil's
+  // account may follow too): its owner's alone, never a page's, whichever
+  // column; the whole table.
+  followed_school: "N4",
 });
 
 /**

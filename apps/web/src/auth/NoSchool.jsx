@@ -10,6 +10,9 @@ import {
 } from "../lib/joinSchool.js";
 import { claimFailure, claimResult } from "../lib/registerClaim.js";
 import { AskSchool, AskSchoolLink, SchoolAskRows } from "./schoolAsk.jsx";
+// The follow list (EXPERIENCE_PASS Q8, slice 3b; db/160): the Followed schools block.
+import { useFollowed } from "../lib/follow.js";
+import { FollowedSchools } from "../follow/Followed.jsx";
 
 // "Start a match", what this phone holds, and the last match's plain record
 // (views/ScoringBlock.jsx): fetched with the screen, in a chunk of its own.
@@ -332,8 +335,8 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
  * THE ORDER IS THE DAY SHEET'S (EXPERIENCE_PASS §2.2, slice 3a): Now (a match
  * this phone is scoring) and Start a match, from the scoring block; Join a
  * school; Your requests; and "Worried about a child?" last. Followed schools
- * sits after Now once the follow list exists (slice 3b, Q8). An empty section
- * says in one line what will appear there.
+ * (slice 3b, Q8) leads while one of its schools is live, and sits after Now
+ * otherwise. An empty section says in one line what will appear there.
  */
 export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOpenPad = null, joinFirst = 0, kindFirst = null }) {
   const [nudge, setNudge] = useState(0);
@@ -346,6 +349,7 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
   const [schools, setSchools] = useState(null);
   const me = profile()?.user;
   const live = signedIn();
+  const followed = useFollowed();
 
   useEffect(() => {
     let off = false;
@@ -398,12 +402,18 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
         <div style={{ ...text(14), marginBottom: "4px" }}>You are signed in{me?.email ? <> as <span data-testid="no-school-email" style={{ color: T.content.primary }}>{me.email}</span></> : ""}, and not at a school yet.</div>
         <div style={{ ...text(14), marginBottom: "20px" }}>Your account holds nothing of a school's until a school says yes.{onOpenPad ? " You can score a match on this phone meanwhile." : " Until then you can see this page and nothing else."}</div>
 
+        {/* §2.2, Q8: Followed schools first while one of them is live, or a link's question waits. */}
+        {(followed.live || followed.ask) && <FollowedSchools followed={followed} lead/>}
+
         {/* §2.5 step 3: "Start a match" first. Its own chunk: the scoring block draws the Board. */}
         {onOpenPad && (
           <Suspense fallback={<div role="status" style={{ ...text(14), marginBottom: "16px" }}>Loading scoring…</div>}>
             <ScoringBlock onOpenPad={onOpenPad} onJoin={() => setAskJoin((n) => n + 1)}/>
           </Suspense>
         )}
+
+        {/* ...and after Now otherwise (§2.2). */}
+        {!(followed.live || followed.ask) && <FollowedSchools followed={followed}/>}
 
         {schools === null ? <div style={text(14)}>Loading the schools…</div>
           : <JoinSchool schools={schools} onSent={() => setNudge((n) => n + 1)} onJoined={onJoined} kindFirst={kindFirst} onAskSchool={(typed) => setAskSchool(typed)}/>}

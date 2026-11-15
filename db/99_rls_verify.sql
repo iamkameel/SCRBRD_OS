@@ -13583,6 +13583,266 @@ BEGIN
 END $$ LANGUAGE plpgsql;
 -- └── db/158 (section 136) ─────────────────────────────────────────────
 
+-- ┌── db/159 (section 137) ─────────────────────────────────────────────
+-- db/133's public_live_fixtures(), copied word for word under another name:
+-- the thirteen columns and the rows the read gave before db/159. Its body's
+-- folded md5 is db/133's own (6aa12abd…), which §137 checks first, so the
+-- copy cannot drift from the body it stands for.
+CREATE OR REPLACE FUNCTION _v159_old_live()
+RETURNS TABLE (
+  match_id uuid,
+  home_label text, home_code text,
+  away_label text, away_code text, away_on_platform boolean,
+  status text, format text, overs smallint, starts_at timestamptz,
+  scores jsonb, result jsonb, served_on text
+) AS $$
+  WITH listed AS (
+    SELECT m.id, m.school_id, m.team_code, m.away_school_id, m.away_team_code, m.opponent,
+           m.status, m.format, m.overs, m.starts_at
+      FROM match m
+     WHERE m.starts_at IS NOT NULL
+       AND (m.starts_at AT TIME ZONE 'Africa/Johannesburg')::date = sa_today()
+       AND m.status IN ('scheduled', 'live', 'complete', 'abandoned', 'postponed')
+       AND ((fixture_side_published(m.id, 'home') AND public_school_listed(m.school_id))
+            OR (m.away_school_id IS NOT NULL
+                AND fixture_side_published(m.id, 'away') AND public_school_listed(m.away_school_id)))
+     ORDER BY (m.status = 'live') DESC, m.starts_at, m.id
+     LIMIT 50
+  )
+  SELECT l.id,
+         hs.name, l.team_code,
+         CASE WHEN l.away_school_id IS NULL THEN l.opponent ELSE aws.name END,
+         CASE WHEN l.away_school_id IS NULL THEN NULL ELSE l.away_team_code END,
+         l.away_school_id IS NOT NULL,
+         l.status, l.format, l.overs, l.starts_at,
+         coalesce((SELECT jsonb_agg(jsonb_build_object(
+                            'innings', s.innings, 'runs', s.runs, 'wickets', s.wickets, 'balls', s.legal_balls,
+                            'side', (SELECT x.value->>'side' FROM jsonb_array_elements(r.innings) x
+                                      WHERE (x.value->>'innings')::integer = s.innings
+                                        AND x.value->>'side' IN ('home', 'away') LIMIT 1))
+                            ORDER BY s.innings)
+                     FROM match_live_score s
+                    WHERE s.match_id = l.id), '[]'::jsonb),
+         CASE WHEN r.outcome IS NULL THEN NULL ELSE jsonb_build_object(
+           'outcome', r.outcome, 'margin_kind', r.margin_kind, 'margin', r.margin, 'decided_by', r.decided_by,
+           'winner_side', r.winner_side, 'play_outcome', r.play_outcome, 'play_winner_side', r.play_winner_side,
+           'play_margin_kind', r.play_margin_kind, 'play_margin', r.play_margin,
+           'decision_applied', r.decision_applied, 'decision_kind', r.decision->>'kind',
+           'decision_side', r.decision->>'side', 'decision_overrides_play', (r.decision->>'overrides_play')::boolean,
+           'super_overs', coalesce((SELECT jsonb_agg(jsonb_build_object('n', p.value->'n', 'state', p.value->'state',
+                                                                        'first', p.value->'first', 'winner', p.value->'winner')
+                                                     ORDER BY (p.value->>'n')::integer)
+                                      FROM jsonb_array_elements(r.super_overs) p), '[]'::jsonb)) END,
+         to_char(sa_today(), 'YYYY-MM-DD')
+    FROM listed l
+    JOIN school hs ON hs.id = l.school_id
+    LEFT JOIN school aws ON aws.id = l.away_school_id
+    LEFT JOIN LATERAL match_result_compute(l.id) r ON true
+   ORDER BY (l.status = 'live') DESC, l.starts_at, l.id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Its folded md5, as db/133 and db/159 fold a body.
+CREATE OR REPLACE FUNCTION _v159_md5(p_fn text) RETURNS text AS $$
+  SELECT md5(regexp_replace(btrim(prosrc), '\s+', ' ', 'g')) FROM pg_proc WHERE oid = to_regprocedure(p_fn)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A function's result columns, "name type, …", in order.
+CREATE OR REPLACE FUNCTION _v159_cols(p_fn text) RETURNS text AS $$
+  SELECT string_agg(a.name || ' ' || format_type(a.typ, NULL), ', ' ORDER BY a.ord)
+    FROM pg_proc p, unnest(p.proargnames, p.proallargtypes, p.proargmodes::text[]) WITH ORDINALITY AS a(name, typ, mode, ord)
+   WHERE p.oid = to_regprocedure(p_fn) AND a.mode = 't'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Hilton's fixtures today, as the owner writes them, each with its log: a
+-- chase (c1), a chase the umpires revised (c2), a first innings (c3), a
+-- two-day match's fourth innings (c4), a super over's chase (c5), a chase
+-- that opened on a target other than the first innings plus one (c6), a
+-- chase after the first innings' overs were cut and the target left alone
+-- (c7: a revision event of overs only), a two-day match's fourth innings
+-- after a follow-on (c8: the same side batted second and third), and a
+-- chase that opened on fewer overs than the fixture's, with no revision
+-- event (c9: the umpires' figures at the break). No ground, so db/133's clash rule has nothing to refuse. Typed
+-- opponents; a typed name in a ball's payload (never read by the live read).
+CREATE OR REPLACE FUNCTION _seed_159() RETURNS jsonb AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  SCORER uuid := '88888888-0000-0000-0000-000000000006';
+  base   timestamptz := (sa_today()::timestamp + interval '7 hours') AT TIME ZONE 'Africa/Johannesburg';
+  ids    jsonb := '{}';
+  k      text;
+  m      uuid;
+  s      int;
+  opp    text;
+  ev     record;
+BEGIN
+  FOR k IN SELECT unnest(ARRAY['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9']) LOOP
+    opp := 'Verify Onefiftynine ' || upper(k) || ' 1XI';
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+    VALUES (HIL, '1XI', opp, base + (substr(k, 2)::int) * interval '1 minute', 'cricket',
+            CASE WHEN k IN ('c4', 'c8') THEN 'two-day' ELSE 'T20' END, CASE WHEN k IN ('c4', 'c8') THEN NULL ELSE 20 END, 'live')
+    RETURNING id INTO m;
+    ids := ids || jsonb_build_object(k, m);
+    IF k IN ('c4', 'c8') THEN
+      INSERT INTO match_conditions (match_id, doc, sources, doc_hash)
+      VALUES (m, '{"v":1,"play":{"format.kind":"timed","format.innings_per_side":2},"table":{},"sheet":{}}', '{}', '')
+      ON CONFLICT (match_id) DO NOTHING;
+    END IF;
+    s := 0;
+    FOR ev IN SELECT * FROM (VALUES
+        -- (fixture, innings, kind, value, payload)
+        ('*',  0, 'innings_start', NULL::int, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', opp, 'overs', 20)),
+        ('*',  0, 'ball', 4, '{"bowler": "Typed Onefiftynine"}'::jsonb),
+        ('*',  0, 'ball', 4, '{}'::jsonb),
+        ('c1', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20)),
+        ('c1', 1, 'ball', 1, '{"striker": "Typed Batter"}'::jsonb),
+        ('c2', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20)),
+        ('c2', 1, 'ball', 1, '{}'::jsonb),
+        ('c2', 1, 'revision', NULL, '{"overs": 18, "target": 7, "reason": "rain"}'::jsonb),
+        ('c4', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI')),
+        ('c4', 1, 'ball', 6, '{}'::jsonb),
+        ('c4', 2, 'innings_start', NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', opp)),
+        ('c4', 2, 'ball', 2, '{}'::jsonb),
+        ('c4', 3, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI')),
+        ('c4', 3, 'ball', 1, '{}'::jsonb),
+        ('c5', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20)),
+        ('c5', 1, 'ball', 4, '{}'::jsonb),
+        ('c5', 1, 'ball', 4, '{}'::jsonb),
+        ('c5', 2, 'innings_start', NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', opp, 'overs', 1, 'superOver', 1)),
+        ('c5', 2, 'ball', 4, '{}'::jsonb),
+        ('c5', 3, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 1, 'superOver', 1)),
+        ('c5', 3, 'ball', 1, '{}'::jsonb),
+        ('c6', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20, 'target', 12)),
+        ('c6', 1, 'ball', 2, '{}'::jsonb),
+        ('c7', 0, 'revision', NULL, '{"overs": 18, "reason": "rain"}'::jsonb),
+        ('c7', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20)),
+        ('c7', 1, 'ball', 1, '{}'::jsonb),
+        ('c8', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI')),
+        ('c8', 1, 'ball', 2, '{}'::jsonb),
+        ('c8', 2, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI')),
+        ('c8', 2, 'ball', 6, '{}'::jsonb),
+        ('c8', 2, 'ball', 6, '{}'::jsonb),
+        ('c8', 2, 'ball', 6, '{}'::jsonb),
+        ('c8', 2, 'ball', 2, '{}'::jsonb),
+        ('c8', 3, 'innings_start', NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', opp)),
+        ('c8', 3, 'ball', 1, '{}'::jsonb),
+        ('c9', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 15)),
+        ('c9', 1, 'ball', 1, '{}'::jsonb)) AS v(f, inn, kind, val, payload)
+      WHERE v.f IN ('*', k)
+    LOOP
+      s := s + 1;
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                              client_ts, kind, ball_type, value, payload)
+      VALUES (m, HIL, s, 1, ev.inn, SCORER, 'v159', 'v159-' || m || '-' || s, s, now(), ev.kind,
+              CASE WHEN ev.kind = 'ball' THEN 'run' END, ev.val, ev.payload);
+    END LOOP;
+  END LOOP;
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/159 (section 137) ─────────────────────────────────────────────
+-- ┌── db/160 (section 138) ─────────────────────────────────────────────
+-- A school of its own, Verify Onesixty (code V160), and its fixtures today,
+-- as the owner writes them: v1 at home to a typed side, live; v2 at home to
+-- Westville, only V160's side published; v3 at Westville, V160 away, only
+-- Westville's side published. V160 and Westville both list. An archived
+-- school (V160X), fifty more schools for the limit, and five accounts that
+-- hold nothing: two followers (A, B), one that will be deleted (D), one for
+-- the limit (L) and one for erasure (E). And a pupil of Hilton, fourteen,
+-- with his own account and a self link, and his mother, his verified
+-- guardian with consent given (_seed_81's shape). Every name invented.
+-- Returns the ids.
+CREATE OR REPLACE FUNCTION _seed_160() RETURNS jsonb AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  WES    uuid := '22222222-2222-2222-2222-222222222222';
+  SCORER uuid := '88888888-0000-0000-0000-000000000006';
+  base   timestamptz := (sa_today()::timestamp + interval '8 hours') AT TIME ZONE 'Africa/Johannesburg';
+  p      uuid;
+  a      uuid;
+  ids    jsonb := '{}';
+  v_s    uuid;
+  m      uuid;
+  u      uuid;
+  k      text;
+BEGIN
+  INSERT INTO school (code, name) VALUES ('V160', 'Verify Onesixty College') RETURNING id INTO v_s;
+  ids := ids || jsonb_build_object('school', v_s);
+  INSERT INTO school (code, name, archived_at) VALUES ('V160X', 'Verify Onesixty Archived', now()) RETURNING id INTO u;
+  ids := ids || jsonb_build_object('archived', u);
+  FOR i IN 1..50 LOOP
+    INSERT INTO school (code, name) VALUES ('V160-' || lpad(i::text, 2, '0'), 'Verify Onesixty School ' || i);
+  END LOOP;
+  FOREACH k IN ARRAY ARRAY['a', 'b', 'd', 'l', 'e'] LOOP
+    INSERT INTO app_user (email, name, role) VALUES ('v160.' || k || '@example.invalid', 'V160 ' || upper(k), 'none')
+    RETURNING id INTO u;
+    ids := ids || jsonb_build_object('u_' || k, u);
+  END LOOP;
+  -- The pupil, his account and his self link; his mother and her link.
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES (HIL, NULL, 'Pupil Onesixty', 'Onesixty', 160, 'batter', (sa_today() - interval '14 years')::date)
+  RETURNING id INTO p;
+  ids := ids || jsonb_build_object('p_kid', p);
+  INSERT INTO app_user (school_id, email, name, role, player_id)
+  VALUES (HIL, 'v160.kid@example.invalid', 'V160 Kid', 'player', p) RETURNING id INTO u;
+  ids := ids || jsonb_build_object('u_kid', u);
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'selfaccess', HIL, sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p, 'self', 'verified', SCORER, now(), 'granted', 'popia-2026-01', now(), SCORER, sa_today() - 30);
+  INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v160.mum@example.invalid', 'V160 Mum', 'guardian') RETURNING id INTO u;
+  ids := ids || jsonb_build_object('u_mum', u);
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'guardian', HIL, sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p, 'parent', 'verified', SCORER, now(), 'granted', 'popia-2026-01', now(), SCORER, sa_today() - 30);
+
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (v_s, '1XI', 'Verify Onesixty Typed 1XI', base, 'cricket', 'T20', 20, 'live') RETURNING id INTO m;
+  ids := ids || jsonb_build_object('v1', m);
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by) VALUES (m, 'home', v_s, '1XI', true, SCORER);
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (v_s, '2XI', WES, '2XI', 'Westville Boys'' High 2XI', base + interval '1 hour', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m;
+  ids := ids || jsonb_build_object('v2', m);
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by) VALUES (m, 'home', v_s, '2XI', true, SCORER);
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (WES, 'U14A', v_s, 'U14A', 'Verify Onesixty College U14A', base + interval '2 hours', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m;
+  ids := ids || jsonb_build_object('v3', m);
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by) VALUES (m, 'home', WES, 'U14A', true, SCORER);
+  PERFORM _v160_list(v_s, true);
+  PERFORM _v160_list(WES, true);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A school's listing switch, as its row stands after public_listing_set()
+-- (db/82; its door is proved in §61). The owner writes it here.
+CREATE OR REPLACE FUNCTION _v160_list(p_school uuid, p_on boolean) RETURNS void AS $$
+  INSERT INTO public_listing (school_id, listed, set_by) VALUES (p_school, p_on, '88888888-0000-0000-0000-000000000006')
+  ON CONFLICT (school_id) DO UPDATE SET listed = EXCLUDED.listed, set_at = now()
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A person's rows past row security: what is stored, whoever may read it.
+CREATE OR REPLACE FUNCTION _v160_stored(p_person uuid) RETURNS text AS $$
+  SELECT string_agg(s.code || '@' || f.followed_on, ',' ORDER BY s.code)
+    FROM followed_school f JOIN school s ON s.id = f.school_id WHERE f.person_id = p_person
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A school archived, as the platform archives one.
+CREATE OR REPLACE FUNCTION _v160_archive(p_code text) RETURNS void AS $$
+  UPDATE school SET archived_at = now() WHERE code = p_code
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The account removed, as the owner removes one.
+CREATE OR REPLACE FUNCTION _v160_delete_user(p uuid) RETURNS void AS $$
+  DELETE FROM app_user WHERE id = p
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A table's grants, read from its ACL: "role:PRIVILEGE,…", the owner left out.
+CREATE OR REPLACE FUNCTION _v160_table_acl(p_table text) RETURNS text AS $$
+  SELECT string_agg(coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC') || ':' || x.privilege_type, ','
+                    ORDER BY coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC'), x.privilege_type)
+    FROM pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) x
+   WHERE c.oid = to_regclass(p_table) AND x.grantee <> c.relowner
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/160 (section 138) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -44414,6 +44674,369 @@ $m130$;
     END LOOP;
   END;
   -- └── db/158 (section 136) ──────────────────────────────────────────
+  -- ┌── db/159 (section 137) ─────────────────────────────────────────
+  -- ── 137. The home page's live read says the chase's target and whether the match was revised, and nothing else new: the old thirteen columns, and every row they gave, as db/133 left them (db/159; EXPERIENCE_PASS Q14) ──
+  -- _seed_159() builds Hilton's nine live fixtures today (header of the
+  -- helper); Hilton's director of sport publishes the home side of each and
+  -- lists the school. Every read signed out, as the API's public read is.
+  -- Labels:
+  --   (copy)     the verifier's copy of db/133's body is db/133's (its
+  --              folded md5), so (old) compares against the real thing
+  --   (columns)  public_live_fixtures() returns db/133's thirteen columns,
+  --              by name and type and in order, then target integer and
+  --              revised boolean, and nothing else
+  --   (old)      every row the read answers, its first thirteen columns,
+  --              is a row db/133's body answers, and the other way round;
+  --              Hilton's six are among them
+  --   (target)   c1 the first innings plus one, not revised; c2 the umpires'
+  --              revised target, revised; c3 a first innings, no target;
+  --              c4 a two-day match's fourth innings, the runs it trails by
+  --              plus one; c5 a super over, no target; c6 a chase opened on
+  --              a typed target other than the first innings plus one, that
+  --              target, revised; c7 the first innings' overs cut by a
+  --              revision event and the target left alone, the first innings
+  --              plus one, revised (the event's own mark, and nothing else
+  --              says so); c8 a follow-on's fourth innings, the runs it
+  --              trails by, by side and not by position; c9 a chase opened
+  --              on fifteen overs of the fixture's twenty with no event, the
+  --              first innings plus one, revised (the strip then counts no
+  --              balls from the fixture's overs)
+  --   (team)     the two columns are a number of runs and one bit: no
+  --              string, so no name can ride on them
+  --   (grants)   EXECUTE on the read: its owner and scrbrd_app, nobody
+  --              else; fixture_chase() the owner's alone (the application
+  --              cannot call it); and PUBLIC, read at the top of this file,
+  --              reaches neither (db/157's rule)
+  --
+  -- Falsified once each, on a database migrated through db/159, by a
+  -- change made as the owner just before the section ran, in its own
+  -- rolled-back run: db/133's function put back (DROP, db/133's body
+  -- re-made, its grants) → (columns) red; the new body's served_on written
+  -- 'YYYY/MM/DD' → (old) red, 12 rows; fixture_chase() made to ignore a
+  -- typed or revised target (own_target NULL) → (target) red at c2 (9, not
+  -- 7); the mark made NULL in the new body, with (target) skipped → (team)
+  -- red; GRANT EXECUTE on the read TO PUBLIC → (grants) red; GRANT EXECUTE on
+  -- fixture_chase() TO scrbrd_app → (grants) red; the copy's LIMIT 50 made
+  -- 49 → (copy) red. The revision event's own mark dropped from
+  -- fixture_chase() (its bool_or over `revised`) → (target) red at c7; the
+  -- overs test dropped → (target) red at c9; the fourth innings' sign taken
+  -- by position (an odd innings for, an even against) → (target) red at c8.
+  DECLARE
+    ids   jsonb;
+    U_DOS uuid := '88888888-0000-0000-0000-000000000007';   -- Hilton's director of sport (§61's U_SARAH)
+    k text; j jsonb; n int; n2 int; v text; v_ok boolean; v_reason text;
+    want  jsonb := '{"c1": [9, false], "c2": [7, true], "c3": [null, false], "c4": [5, false], "c5": [null, false], "c6": [12, true],
+                     "c7": [9, true], "c8": [15, false], "c9": [9, true]}';
+  BEGIN
+    -- (copy)
+    PERFORM _assert(_v159_md5('_v159_old_live()') = '6aa12abde90e18205821fb4b78ef7d26',
+      format('§137 (copy): the verifier''s copy of db/133''s body is not db/133''s (md5 %s)', _v159_md5('_v159_old_live()')));
+
+    -- (columns)
+    v := _v159_cols('public_live_fixtures()');
+    PERFORM _assert(v = _v159_cols('_v159_old_live()') || ', target integer, revised boolean',
+      format('§137 (columns): the live read returns %s', v));
+
+    ids := _seed_159();
+    PERFORM _as(U_DOS);
+    FOR k IN SELECT jsonb_object_keys(ids) LOOP
+      SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish((ids->>k)::uuid, 'home', true) s;
+      PERFORM _assert(v_ok, format('§137: Hilton could not publish %s (%s)', k, v_reason));
+    END LOOP;
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_listing_set(HIL, true) s;
+    PERFORM _assert(v_ok, format('§137: Hilton''s director of sport could not list (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (old)
+    SELECT count(*) INTO n FROM (
+      (SELECT x.match_id, x.home_label, x.home_code, x.away_label, x.away_code, x.away_on_platform, x.status, x.format,
+              x.overs, x.starts_at, x.scores, x.result, x.served_on FROM public_live_fixtures() x
+       EXCEPT ALL SELECT * FROM _v159_old_live())
+      UNION ALL
+      (SELECT * FROM _v159_old_live()
+       EXCEPT ALL SELECT x.match_id, x.home_label, x.home_code, x.away_label, x.away_code, x.away_on_platform, x.status, x.format,
+              x.overs, x.starts_at, x.scores, x.result, x.served_on FROM public_live_fixtures() x)) d;
+    SELECT count(*) INTO n2 FROM public_live_fixtures() x
+     WHERE x.match_id IN (SELECT (ids->>q.key)::uuid FROM jsonb_object_keys(ids) q(key));
+    PERFORM _assert(n = 0 AND n2 = 9,
+      format('§137 (old): %s rows of the old thirteen columns differ from db/133''s body; %s of Hilton''s nine answered', n, n2));
+
+    -- (target)
+    FOR k IN SELECT jsonb_object_keys(want) LOOP
+      SELECT to_jsonb(x) INTO j FROM public_live_fixtures() x WHERE x.match_id = (ids->>k)::uuid;
+      PERFORM _assert(j IS NOT NULL AND j->'target' = want->k->0 AND j->'revised' = want->k->1,
+        format('§137 (target): %s reads target %s, revised %s (expected %s); scores %s', k, j->'target', j->'revised', want->k, j->'scores'));
+    END LOOP;
+
+    -- (team)
+    SELECT count(*) INTO n FROM public_live_fixtures() x
+     WHERE jsonb_typeof(to_jsonb(x)->'target') NOT IN ('number', 'null') OR jsonb_typeof(to_jsonb(x)->'revised') <> 'boolean';
+    PERFORM _assert(n = 0 AND _v159_cols('public_live_fixtures()') LIKE '%, target integer, revised boolean',
+      format('§137 (team): %s rows carry a target that is not a number, or a mark that is not a bit', n));
+
+    -- (grants)
+    v := array_to_string(_v156_acl('public_live_fixtures()'), ',');
+    PERFORM _assert(v = (SELECT proowner::regrole::text FROM pg_proc WHERE oid = 'public_live_fixtures()'::regprocedure)
+                        || ':EXECUTE,scrbrd_app:EXECUTE',
+      format('§137 (grants): the live read is granted %s', v));
+    v := array_to_string(_v156_acl('fixture_chase(jsonb,integer,integer)'), ',');
+    PERFORM _assert(v = (SELECT proowner::regrole::text FROM pg_proc WHERE oid = 'fixture_chase(jsonb,integer,integer)'::regprocedure) || ':EXECUTE'
+                    AND NOT has_function_privilege('scrbrd_app', 'fixture_chase(jsonb,integer,integer)', 'EXECUTE'),
+      format('§137 (grants): fixture_chase() is granted %s', v));
+    v := coalesce(_v157_public_at_start(), '');
+    PERFORM _assert(v !~ '(public_live_fixtures|fixture_chase)\(',
+      format('§137 (grants): PUBLIC reaches the live read or its helper: %s', left(v, 600)));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/159 (section 137) ─────────────────────────────────────────
+  -- ┌── db/160 (section 138) ─────────────────────────────────────────
+  -- ── 138. The follow list is its owner's alone, holds two ids and a date, goes with the account, and filters only what the public read already answers (db/160; EXPERIENCE_PASS Q8) ──
+  -- _seed_160() builds its own school (V160) and fixtures, an archived
+  -- school, fifty more, and four accounts with no school (A, B, D, L).
+  -- Labels:
+  --   (shape)    followed_school is the two ids and a date, removed with
+  --              its account and its school; row security on
+  --   (own)      A follows V160 and Westville through follow_school(): his
+  --              two rows, stamped today, are what he reads, directly and
+  --              through followed_schools() (with the names); following
+  --              again changes nothing
+  --   (others)   B, Hilton's director of sport and the owner's key read
+  --              none of A's rows, directly or through followed_schools(),
+  --              and B's DELETE of every row he may removes none of A's
+  --   (pupil)    a pupil's account follows Hilton: nobody else reads it,
+  --              not Hilton's director of sport, not his school's office;
+  --              and a staged pupil's verified guardian, who is his family
+  --              (is_family_of), reads none of his rows, by the table or by
+  --              followed_schools()
+  --   (unfollow) A stops following Westville: by the door, and by his own
+  --              DELETE of a row, which only his own rows answer
+  --   (door)     an unknown code, an archived school, no answer, signed out:
+  --              refused, nothing written
+  --   (pad)      under a pad's credential the doors answer nothing and the
+  --              table reads nothing
+  --   (limit)    L follows fifty schools; the fifty-first is too_many, and
+  --              one he already follows is still ok
+  --   (archived) a school archived after L followed it: following it again
+  --              is refused, and stopping it through the door is not; his
+  --              list no longer names it
+  --   (today)    A's Today, as the API makes it: the public read signed out,
+  --              kept to the schools on his own list by the match header's
+  --              school codes, is v1, v2 and v3, and every one of them is in
+  --              the public read. This is a SQL copy of the filter; the real
+  --              one, followedToday() in services/api/public/public-api.mjs,
+  --              is held by services/api/public/public.test.mjs ("db/160:
+  --              following Westville…" to "…its followers' Today is empty at
+  --              once": a school that stops listing, a typed opponent whose
+  --              label is a followed school's name, a name given as a code)
+  --              and by the walk browser-first-run (groups 5 and 6)
+  --   (delist)   V160 stops listing: its own fixtures leave A's Today at
+  --              once (v1, v2); v3, which Westville lists and publishes,
+  --              stays, as it stays on the home page for everyone
+  --   (removed)  D's account deleted: his rows go with it
+  --   (erased)   a tripwire: the day account_erase(uuid) exists (SCRBRD-140
+  --              §3.8, ACCOUNT_LIFECYCLE §6.3, which keeps the app_user
+  --              row), E's account erased through it holds no follow;
+  --              until then it is staged and skipped
+  --   (grants)   the table: SELECT and DELETE to scrbrd_app, nothing else,
+  --              PUBLIC included; each door EXECUTE to scrbrd_app alone; and
+  --              PUBLIC, read at the top of this file, reaches none of it
+  --              (db/157's rule)
+  --
+  -- Falsified once each in its own rolled-back run, by a change made as the
+  -- owner just before the section ran: db/160 undone (the table and both
+  -- doors dropped) → (shape) red; followed_school_read made USING (true) →
+  -- (others) red; the read policy made to admit Hilton's registrar too (OR
+  -- app_user_id() = his id) → (pupil) red; followed_school_delete made
+  -- USING (true) → (others) red, B's unqualified DELETE taking A's rows; the archived
+  -- test dropped from follow_school() → (door) red; the pad guard on
+  -- SELECT dropped → (pad) red; the limit raised to 51 → (limit) red; the
+  -- person's foreign key made ON DELETE NO ACTION → (shape) red;
+  -- followed_schools() made to answer every row → (others) red; INSERT
+  -- granted to scrbrd_app → (grants) red; EXECUTE on followed_schools()
+  -- granted to PUBLIC → (grants) red. (today) and (delist) were falsified by
+  -- the listing left on (delist red: v1 stays) and by an unpublished v1
+  -- (today red). The guardian's arm: the read policy made to admit a
+  -- caller for whom is_family_of() of the row's account's player is true →
+  -- (pupil) red at the mother. (erased): a stand-in account_erase(uuid)
+  -- that tombstones the account and keeps its rows → (erased) red; one that
+  -- deletes them as well → green. (archived): the archived test put back
+  -- on stopping (archived_at IS NULL alone) → (archived) red.
+  DECLARE
+    ids   jsonb;
+    U_DOS uuid := '88888888-0000-0000-0000-000000000007';   -- Hilton's director of sport (§61's U_SARAH)
+    U_KEY uuid := '88888888-0000-0000-0000-000000000022';   -- superadmin, every capability
+    U_KID uuid := '88888888-0000-0000-0000-000000000001';   -- a pupil: player at Hilton
+    U_OFF uuid := '88888888-0000-0000-0000-00000000000c';   -- Hilton's registrar (guardian.link.manage)
+    A uuid; Bu uuid; D uuid; L uuid; E uuid; KID uuid; MUM uuid;
+    v text; n int; r record; codes text[]; i int;
+  BEGIN
+    -- (shape)
+    PERFORM _assert(to_regclass('followed_school') IS NOT NULL
+                    AND (SELECT string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod), ', ' ORDER BY a.attnum)
+                           FROM pg_attribute a WHERE a.attrelid = to_regclass('followed_school') AND a.attnum > 0 AND NOT a.attisdropped)
+                        = 'person_id uuid, school_id uuid, followed_on date'
+                    AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('followed_school'))
+                    AND (SELECT count(*) FROM pg_constraint c
+                          WHERE c.conrelid = to_regclass('followed_school') AND c.contype = 'f' AND c.confdeltype = 'c'
+                            AND c.confrelid IN ('app_user'::regclass, 'school'::regclass)) = 2,
+      '§138 (shape): followed_school is missing, holds more than two ids and a date, has row security off, or outlives its account or school');
+
+    ids := _seed_160();
+    A := (ids->>'u_a')::uuid; Bu := (ids->>'u_b')::uuid; D := (ids->>'u_d')::uuid; L := (ids->>'u_l')::uuid;
+    E := (ids->>'u_e')::uuid; KID := (ids->>'u_kid')::uuid; MUM := (ids->>'u_mum')::uuid;
+
+    -- (own)
+    PERFORM _as(A);
+    SELECT f.ok, f.reason, f.school_name INTO r FROM follow_school('V160', true) f;
+    PERFORM _assert(r.ok AND r.school_name = 'Verify Onesixty College', format('§138 (own): A could not follow V160 (%s)', r.reason));
+    SELECT f.ok INTO r FROM follow_school('WES', true) f;
+    SELECT f.ok INTO r FROM follow_school('WES', true) f;
+    PERFORM _assert(r.ok, '§138 (own): following Westville again was refused');
+    SELECT string_agg(s.code, ',' ORDER BY s.code) INTO v FROM followed_school f JOIN public_schools() p ON p.id = f.school_id
+      CROSS JOIN LATERAL (SELECT CASE p.name WHEN 'Verify Onesixty College' THEN 'V160' WHEN 'Westville Boys'' High' THEN 'WES' END AS code) s;
+    SELECT count(*) INTO n FROM followed_school;
+    PERFORM _assert(n = 2 AND v = 'V160,WES' AND _v160_stored(A) = 'V160@' || sa_today() || ',WES@' || sa_today(),
+      format('§138 (own): A reads %s rows (%s); stored %s', n, v, _v160_stored(A)));
+    SELECT string_agg(x.code || ':' || x.name, ',' ORDER BY x.code) INTO v FROM followed_schools() x;
+    PERFORM _assert(v = 'V160:Verify Onesixty College,WES:Westville Boys'' High', format('§138 (own): followed_schools() answers %s', v));
+
+    -- (others)
+    FOREACH v IN ARRAY ARRAY[Bu::text, U_DOS::text, U_KEY::text] LOOP
+      PERFORM _as(v::uuid);
+      SELECT count(*) INTO n FROM followed_school f WHERE f.person_id = A;
+      PERFORM _assert(n = 0 AND NOT EXISTS (SELECT 1 FROM followed_schools() x WHERE x.code IN ('V160', 'WES')),
+        format('§138 (others): %s reads %s of A''s rows, or his list', v, n));
+    END LOOP;
+    -- Unqualified, so only the DELETE policy decides (a WHERE would bring
+    -- the read policy in as well).
+    PERFORM _as(Bu);
+    DELETE FROM followed_school;
+    PERFORM _assert(_v160_stored(A) = 'V160@' || sa_today() || ',WES@' || sa_today(),
+      format('§138 (others): B''s DELETE left A with %s', _v160_stored(A)));
+
+    -- (pupil)
+    PERFORM _as(U_KID);
+    SELECT f.ok, f.reason INTO r FROM follow_school('HIL', true) f;
+    PERFORM _assert(r.ok, format('§138 (pupil): the pupil could not follow Hilton (%s)', r.reason));
+    FOREACH v IN ARRAY ARRAY[U_DOS::text, U_OFF::text, U_KEY::text, A::text] LOOP
+      PERFORM _as(v::uuid);
+      SELECT count(*) INTO n FROM followed_school f WHERE f.person_id = U_KID;
+      PERFORM _assert(n = 0, format('§138 (pupil): %s reads %s of the pupil''s follow rows', v, n));
+    END LOOP;
+    PERFORM _assert(_v160_stored(U_KID) = 'HIL@' || sa_today(), format('§138 (pupil): the pupil''s list is stored as %s', _v160_stored(U_KID)));
+    -- The staged pupil, and his verified guardian.
+    PERFORM _as(KID);
+    SELECT f.ok, f.reason INTO r FROM follow_school('WES', true) f;
+    PERFORM _assert(r.ok AND _v160_stored(KID) = 'WES@' || sa_today(), format('§138 (pupil): the staged pupil could not follow Westville (%s)', r.reason));
+    PERFORM _as(MUM);
+    PERFORM _assert(is_family_of((ids->>'p_kid')::uuid), '§138 (pupil): the fixture is void, the mother is not the staged pupil''s family');
+    SELECT count(*) INTO n FROM followed_school f WHERE f.person_id = KID;
+    PERFORM _assert(n = 0 AND NOT EXISTS (SELECT 1 FROM followed_schools()),
+      format('§138 (pupil): his verified guardian reads %s of the pupil''s follow rows, or a list', n));
+
+    -- (unfollow)
+    PERFORM _as(A);
+    SELECT f.ok INTO r FROM follow_school('WES', false) f;
+    PERFORM _assert(r.ok AND _v160_stored(A) = 'V160@' || sa_today(), format('§138 (unfollow): A stopped Westville and holds %s', _v160_stored(A)));
+    PERFORM follow_school('WES', true);
+    DELETE FROM followed_school f WHERE f.school_id = '22222222-2222-2222-2222-222222222222';
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 1 AND _v160_stored(A) = 'V160@' || sa_today() AND _v160_stored(U_KID) = 'HIL@' || sa_today(),
+      format('§138 (unfollow): A''s own DELETE removed %s rows; A holds %s', n, _v160_stored(A)));
+
+    -- (door)
+    SELECT string_agg(coalesce(f.reason, 'ok'), ',') INTO v
+      FROM (SELECT * FROM follow_school('NOPE160', true) UNION ALL SELECT * FROM follow_school('V160X', true)
+            UNION ALL SELECT * FROM follow_school('V160', NULL)) f;
+    PERFORM _assert(v = 'no_such_school,no_such_school,no_answer' AND _v160_stored(A) = 'V160@' || sa_today(),
+      format('§138 (door): an unknown code, an archived school and no answer answered %s; A holds %s', v, _v160_stored(A)));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT f.reason INTO v FROM follow_school('V160', true) f;
+    PERFORM _assert(v = 'not_signed_in' AND NOT EXISTS (SELECT 1 FROM followed_schools()) AND NOT EXISTS (SELECT 1 FROM followed_school),
+      format('§138 (door): signed out, the door answered %s, or a list was read', v));
+
+    -- (pad)
+    PERFORM _as(A);
+    PERFORM set_config('app.scope', 'pad', true);
+    SELECT f.reason INTO v FROM follow_school('WES', true) f;
+    SELECT count(*) INTO n FROM followed_school;
+    PERFORM _assert(v = 'not_signed_in' AND n = 0 AND NOT EXISTS (SELECT 1 FROM followed_schools()),
+      format('§138 (pad): under a pad''s credential the door answered %s and the table %s rows', v, n));
+    PERFORM set_config('app.scope', '', true);
+
+    -- (limit)
+    PERFORM _as(L);
+    FOR i IN 1..50 LOOP
+      PERFORM follow_school('V160-' || lpad(i::text, 2, '0'), true);
+    END LOOP;
+    SELECT count(*) INTO n FROM followed_school;
+    SELECT f.reason INTO v FROM follow_school('V160', true) f;
+    PERFORM _assert(n = 50 AND v = 'too_many' AND (SELECT f.ok FROM follow_school('V160-07', true) f)
+                    AND (SELECT count(*) FROM followed_school) = 50,
+      format('§138 (limit): L holds %s and the fifty-first answered %s', n, v));
+
+    -- (archived)
+    PERFORM _v160_archive('V160-50');
+    SELECT f.reason INTO v FROM follow_school('V160-50', true) f;
+    SELECT f.ok INTO r FROM follow_school('V160-50', false) f;
+    PERFORM _assert(v = 'no_such_school' AND r.ok AND (SELECT count(*) FROM followed_school) = 49
+                    AND NOT EXISTS (SELECT 1 FROM followed_schools() x WHERE x.code = 'V160-50'),
+      format('§138 (archived): following an archived school answered %s; stopping it answered %s, leaving %s', v, r.ok,
+             (SELECT count(*) FROM followed_school)));
+
+    -- (today)
+    PERFORM _as(A);
+    SELECT array_agg(x.code) INTO codes FROM followed_schools() x;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT string_agg(k, ',' ORDER BY k) INTO v FROM (
+      SELECT CASE x.match_id WHEN (ids->>'v1')::uuid THEN 'v1' WHEN (ids->>'v2')::uuid THEN 'v2' WHEN (ids->>'v3')::uuid THEN 'v3'
+                             ELSE x.match_id::text END AS k
+        FROM public_live_fixtures() x CROSS JOIN LATERAL public_match_header(x.match_id) h
+       WHERE h.home_code = ANY (codes) OR h.away_code = ANY (codes)) q;
+    PERFORM _assert(codes = ARRAY['V160'] AND v = 'v1,v2,v3', format('§138 (today): A (following %s) is shown %s', codes, v));
+
+    -- (delist)
+    PERFORM _v160_list((ids->>'school')::uuid, false);
+    SELECT string_agg(k, ',' ORDER BY k) INTO v FROM (
+      SELECT CASE x.match_id WHEN (ids->>'v1')::uuid THEN 'v1' WHEN (ids->>'v2')::uuid THEN 'v2' WHEN (ids->>'v3')::uuid THEN 'v3'
+                             ELSE x.match_id::text END AS k
+        FROM public_live_fixtures() x CROSS JOIN LATERAL public_match_header(x.match_id) h
+       WHERE h.home_code = ANY (codes) OR h.away_code = ANY (codes)) q;
+    PERFORM _assert(v = 'v3', format('§138 (delist): V160 unlisted, A is shown %s (expected v3 alone, Westville''s)', v));
+
+    -- (removed)
+    PERFORM _as(D);
+    PERFORM follow_school('V160', true);
+    PERFORM _assert(_v160_stored(D) = 'V160@' || sa_today(), '§138 (removed): D''s follow was not stored');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v160_delete_user(D);
+    PERFORM _assert(_v160_stored(D) IS NULL, format('§138 (removed): D''s rows outlived his account: %s', _v160_stored(D)));
+
+    -- (erased)
+    PERFORM _as(E);
+    PERFORM follow_school('V160', true);
+    PERFORM _assert(_v160_stored(E) = 'V160@' || sa_today(), '§138 (erased): E''s follow was not stored');
+    IF to_regprocedure('account_erase(uuid)') IS NOT NULL THEN
+      EXECUTE 'SELECT account_erase($1)' USING E;
+      PERFORM _assert(_v160_stored(E) IS NULL, format('§138 (erased): an erased account kept its follows: %s', _v160_stored(E)));
+    END IF;
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (grants)
+    v := _v160_table_acl('followed_school');
+    PERFORM _assert(v = 'scrbrd_app:DELETE,scrbrd_app:SELECT', format('§138 (grants): followed_school is granted %s', v));
+    FOREACH v IN ARRAY ARRAY['follow_school(text,boolean)', 'followed_schools()'] LOOP
+      PERFORM _assert(array_to_string(_v156_acl(v), ',')
+                      = (SELECT proowner::regrole::text FROM pg_proc WHERE oid = v::regprocedure) || ':EXECUTE,scrbrd_app:EXECUTE',
+        format('§138 (grants): %s is granted %s', v, array_to_string(_v156_acl(v), ',')));
+    END LOOP;
+    v := coalesce(_v157_public_at_start(), '');
+    PERFORM _assert(v !~ '(followed_school|follow_school|followed_schools)\M',
+      format('§138 (grants): PUBLIC reaches the follow list or its doors: %s', left(v, 600)));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('app.scope', '', true);
+  -- └── db/160 (section 138) ─────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

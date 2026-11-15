@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react
 import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { boardInnings, boundaryCount, matchLine, revisionNotice, sidesOf, statusSentence, teamOf, tossWords } from "../lib/matchCentre.js";
+import { FollowOffer } from "./followOffer.jsx";
 import { humanDateTime } from "../lib/format.js";
 import { SummaryTab, CommentaryTab, PartnershipsTab, summaryIsResult } from "../views/matchcentre/tabs-core.jsx";
 import { SourcedLazy, ballsLine, shotsCaptured } from "../ui/sourcedLazy.jsx";
@@ -354,6 +355,10 @@ export function PublicMatch({ matchId, view }) {
           {match.status === "upcoming" && played.length === 0 && <PreTossCard match={match} weather={null}/>}
           {notice && <RevisionBanner notice={notice}/>}
         </div>
+        </ErrorBoundary>
+        {/* EXPERIENCE_PASS §2.4 step 2, Q8: at a pause, "Follow Hilton College's matches". An offer, never a wall. */}
+        <ErrorBoundary name="follow offer" fallback={null}>
+          <FollowOffer header={data.header} state={st.state} matchId={matchId}/>
         </ErrorBoundary>
 
         <TabStrip tabs={TABS} tab={tab} setTab={setTab} narrow={phone} label="Match"/>

@@ -127,7 +127,33 @@ group("C. Live strip and news: nothing until given data, nothing on 404");
   ok("WITH a target: the runs needed off the balls left", statusSentence(chase({ target: 142 })) === "Westville Boys' High 1XI need 45 off 34");
   ok("...revised: the runs and the revised target, and no balls left (a revision can change the overs)",
     statusSentence(chase({ target: 130, revised: true })) === "Westville Boys' High 1XI need 33 to win, revised target 130");
-  ok("...a target reached says so", /reached the target of 90/.test(statusSentence(chase({ target: 90 }))));
+  // The Opus re-check of db/159 (15 Nov): no "need" once the chase is over.
+  ok("...a target reached is not a chase: the score, not \"need\"", statusSentence(chase({ target: 90 })) === "Westville Boys' High 1XI 97/3 after 14.2 overs", statusSentence(chase({ target: 90 })));
+  const p12 = fx("p12", "live", { overs: 1, target: 25, result: "Hilton College 1XI won by 19 runs",
+    scores: [{ innings: 0, runs: 24, wickets: 0, balls: 6, side: "home" }, { innings: 1, runs: 5, wickets: 0, balls: 6, side: "away" }] });
+  ok("the reviewer's case: home won, not yet finalised, still live with a target: no \"need 20 to win\"",
+    !/need/.test(statusSentence(p12)) && statusSentence(p12) === "Westville Boys' High 1XI 5/0 after 1 over", statusSentence(p12));
+  ok("...the result's words alone stop it, whatever the balls", !/need/.test(statusSentence(chase({ target: 142, result: "Hilton College 1XI won by 45 runs" }))));
+  ok("...ten wickets down, balls left: no \"need 61 off 60\"",
+    !/need/.test(statusSentence(fx("ao", "live", { target: 142, scores: [{ innings: 0, runs: 141, wickets: 6, balls: 120, side: "home" }, { innings: 1, runs: 81, wickets: 10, balls: 60, side: "away" }] }))));
+  ok("...the balls gone: no \"need\"",
+    !/need/.test(statusSentence(fx("bo", "live", { target: 142, scores: [{ innings: 0, runs: 141, wickets: 6, balls: 120, side: "home" }, { innings: 1, runs: 130, wickets: 4, balls: 120, side: "away" }] }))));
+  const unknown = fx("un", "live", { target: 9, scores: [{ innings: 0, runs: 8, wickets: 0, balls: 6, side: "home" }, { innings: 1, runs: null, wickets: 0, balls: 1, side: "away" }] });
+  ok("a chase whose runs the fold cannot add says no chase, never \"need 9\" from nought", !/need/.test(statusSentence(unknown)), statusSentence(unknown));
+  ok("revised, the target moved: \"revised target\"", /, revised target 130$/.test(statusSentence(chase({ target: 130, revised: true }))));
+  ok("revised, the target the first innings plus one: the overs, never \"revised target\"",
+    statusSentence(chase({ target: 142, revised: true })) === "Westville Boys' High 1XI need 45 to win, overs revised", statusSentence(chase({ target: 142, revised: true })));
+  const two = fx("tw", "live", { overs: null, target: 50, revised: true, scores: [0, 1, 2, 3].map((i) => ({ innings: i, runs: 100, wickets: 10, balls: 300, side: i % 2 ? "away" : "home" })).map((x, i) => (i === 3 ? { ...x, runs: 20, wickets: 2 } : x)) });
+  ok("two innings a side, revised: \"(revised)\" alone, as the read cannot say what", / need 30 to win \(revised\)$/.test(statusSentence(two)), statusSentence(two));
+  const so = fx("so", "live", { scores: [{ innings: 0, runs: 141, wickets: 6, balls: 120 }, { innings: 1, runs: 141, wickets: 8, balls: 120 }, { innings: 2, runs: 9, wickets: 0, balls: 6 }, { innings: 3, runs: 4, wickets: 0, balls: 3 }] });
+  ok("a super over is called one, not the 4th innings", statusSentence(so) === "Super over 4/0 after 0.3 overs", statusSentence(so));
+  const soCard = text(h(LiveStrip, { data: { fixtures: [so] } }));
+  ok("...on the card's list too", /Super over/.test(soCard) && !/3rd innings|4th innings/.test(soCard), soCard);
+  // db/159's read, as the database numbers innings: from 0.
+  const zero = fx("z", "live", { target: 142, scores: [{ innings: 0, runs: 141, wickets: 6, balls: 120, side: "home" }, { innings: 1, runs: 97, wickets: 3, balls: 86, side: "away" }] });
+  ok("innings numbered from 0, as the log numbers them: the second is the chase", statusSentence(zero) === "Westville Boys' High 1XI need 45 off 34", statusSentence(zero));
+  ok("...and a side-less first innings is the 1st, not the 0th",
+    statusSentence(fx("s", "live", { scores: [{ innings: 0, runs: 6, wickets: 0, balls: 6 }] })) === "1st innings 6/0 after 1 over");
   ok("...a target in the first innings is not a chase", statusSentence(fx("s", "live", { target: 150, scores: [{ innings: 1, runs: 20, wickets: 0, balls: 12, side: "home" }] })) === "Hilton College 1XI 20/0 after 2 overs");
   ok("the other states: a result, a start, abandoned, postponed",
     statusSentence(fx("r", "complete", { result: "Westville Boys' High 1XI won by 6 wickets" })) === "Westville Boys' High 1XI won by 6 wickets"
