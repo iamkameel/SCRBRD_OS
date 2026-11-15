@@ -442,9 +442,22 @@ try {
     ok("...and asks for the school's name, its town and a job, nothing else typed",
        (await tid(P, "school-ask").locator("input").count()) === 2 && (await tid(P, "school-ask").locator("textarea").count()) === 0
        && (await tid(P, "school-ask-job").locator("option").count()) === 8);
-    ok("...Send waits for all three", await tid(P, "school-ask-send").isDisabled());
+    // Send is never greyed out with no reason: a missing field is said, marked and focused.
     await tid(P, "school-ask-name").fill(`  ${ASK_SCHOOL} `);
+    await tid(P, "school-ask-town").fill("H");
+    ok("...Send is not greyed out while a field is wrong", !(await tid(P, "school-ask-send").isDisabled()));
+    await tid(P, "school-ask-send").click({ timeout: 4000 });
+    ok("...pressed with a one-letter town, it says what to fix, marks the town and moves to it",
+       /Type the town the school is in\./.test(await tid(P, "school-ask-problem").innerText().catch(() => ""))
+       && (await tid(P, "school-ask-town").getAttribute("aria-invalid")) === "true"
+       && (await tid(P, "school-ask-town").evaluate((el) => el === document.activeElement
+            && el.getAttribute("aria-describedby") === document.querySelector('[data-testid="school-ask-problem"]')?.id)),
+       await tid(P, "school-ask-problem").innerText().catch(() => "(no problem shown)"));
     await tid(P, "school-ask-town").fill("Howick");
+    ok("...and typing clears it", (await tid(P, "school-ask-problem").count()) === 0);
+    await tid(P, "school-ask-send").click({ timeout: 4000 });
+    ok("...then the job, marked and focused", /Choose what you do at the school\./.test(await tid(P, "school-ask-problem").innerText().catch(() => ""))
+       && (await tid(P, "school-ask-job").evaluate((el) => el === document.activeElement && el.getAttribute("aria-invalid") === "true")));
     await tid(P, "school-ask-job").selectOption("coach");
     const fl = await floors(P);
     ok("the note: nothing under 12px, nothing tapped under 44px", fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].slice(0, 4).join(" · "));
@@ -453,14 +466,19 @@ try {
     await P.waitForSelector('[data-testid="school-ask-sent"]', { timeout: 8000 }).catch(() => {});
     await afterReads(P, 800);
     ok("sent: it says what happens next", /^Request sent/.test(await tid(P, "school-ask-sent").innerText().catch(() => ""))
-       && /A person will read it and answer here/.test(await tid(P, "school-ask-sent").innerText().catch(() => "")),
+       && /We.ll answer within a week/.test(await tid(P, "school-ask-sent").innerText().catch(() => "")),
        await tid(P, "school-ask-sent").innerText().catch(() => ""));
     const row = tid(P, "school-request-open");
     ok("the request shows under Your requests, with what happens next",
        (await tid(P, "no-school-requests").locator('[data-testid="school-request-open"]').count()) === 1
        && (await row.innerText().catch(() => "")).includes(`Add ${ASK_SCHOOL}, Howick`)
-       && /With SCRBRD\. A person will read it and answer here\./.test(await row.innerText().catch(() => "")),
+       && /Waiting: a person at SCRBRD will read it and answer here\./.test(await row.innerText().catch(() => "")),
        await row.innerText().catch(() => ""));
+    await tid(P, "school-ask-done").click({ timeout: 4000 });
+    ok("Done closes the note and gives focus back to the door it was opened from",
+       (await tid(P, "school-ask-sent").count()) === 0
+       && (await P.evaluate(() => document.activeElement?.getAttribute("data-testid"))) === "join-school-missing",
+       await P.evaluate(() => document.activeElement?.outerHTML?.slice(0, 120)));
     ok("...and the empty-requests line has gone", (await tid(P, "no-school-requests-none").count()) === 0);
     const db = await q(`select r.school_name, r.town, r.job, r.state, u.email from school_add_request r join app_user u on u.id = r.person_id where u.email = $1`, [ASK_EMAIL]);
     ok("the row is hers, trimmed, open", db.length === 1 && db[0].school_name === ASK_SCHOOL && db[0].town === "Howick" && db[0].job === "coach" && db[0].state === "open", db);
@@ -475,7 +493,7 @@ try {
     ok("another account reads none of it", theirs.status === 200 && (theirs.body?.rows ?? []).length === 0, theirs.body);
     const registrar = await call("/api/auth/dev-login", { method: "POST", body: { email: "registrar@example.invalid", deviceId: "device-first-run-office" } });
     const office = await call("/api/read/school_add_requests", { token: registrar.body?.token });
-    ok("nor does a school's office", office.status === 200 && (office.body?.rows ?? []).every((r) => r.email !== ASK_EMAIL), office.body);
+    ok("nor does a school's office", office.status === 200 && (office.body?.rows ?? []).length === 0, office.body);
     const officeDecide = await call(`/api/school-requests/${(await q(`select r.id from school_add_request r join app_user u on u.id = r.person_id where u.email = $1`, [ASK_EMAIL]))[0]?.id}/decide`,
       { method: "POST", token: registrar.body?.token, body: { state: "added" } });
     ok("...and the office cannot answer it", officeDecide.status === 403 && officeDecide.body?.error === "not_permitted", officeDecide);

@@ -16,6 +16,7 @@
  *      the list: a pupil is sent to a teacher.
  *   3. PLAIN WORDS FOR WHAT HAPPENS NEXT, in every state.
  */
+import { SCHOOLS_EMAIL } from "./contact.js";
 
 /** What the asker does at the school, as db/158's CHECK has the codes. */
 export const JOBS = Object.freeze([
@@ -37,20 +38,30 @@ export const OPEN_MAX = 3;
 /** How long an unanswered request stays open (ACCOUNT_LIFECYCLE §6.2). */
 export const OPEN_DAYS = 90;
 
-const clean = (/** @type {unknown} */ v) => String(v ?? "").replace(/\s+/g, " ").trim();
+// Every run of spaces, the no-break ones included, is one space (db/158).
+const clean = (/** @type {unknown} */ v) => String(v ?? "").replace(/[\s\u00A0\u2007\u202F]+/g, " ").trim();
+// What db/158 refuses in a name or a town: a control character, a soft
+// hyphen, a zero-width, joiner or bidi character, or a byte-order mark. Read
+// on what was typed, before the spaces are folded.
+const UNSEEN = /[\p{Cc}\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/u;
+// Two letters or digits at least, in any script.
+const WORDISH = /[\p{L}\p{N}].*[\p{L}\p{N}]/u;
+const chars = (/** @type {string} */ v) => [...v].length;
 
 /**
- * The note a form becomes, or why not yet.
+ * The note a form becomes, or why not yet, with the field to fix.
  * @param {{ name?: string, town?: string, job?: string }} f
- * @returns {{ ok: true, body: { schoolName: string, town: string, job: string } } | { ok: false, problem: string }}
+ * @returns {{ ok: true, body: { schoolName: string, town: string, job: string } } | { ok: false, problem: string, field: "name" | "town" | "job" }}
  */
 export function buildAsk(f = {}) {
   const name = clean(f.name), town = clean(f.town);
-  if (name.length < 2) return { ok: false, problem: "Type the school's name." };
-  if (name.length > NAME_MAX) return { ok: false, problem: `Keep the school's name under ${NAME_MAX} characters.` };
-  if (town.length < 2) return { ok: false, problem: "Type the town the school is in." };
-  if (town.length > TOWN_MAX) return { ok: false, problem: `Keep the town under ${TOWN_MAX} characters.` };
-  if (!JOB_IDS.includes(String(f.job ?? ""))) return { ok: false, problem: "Choose what you do at the school." };
+  if (chars(name) < 2 || !WORDISH.test(name)) return { ok: false, field: "name", problem: "Type the school's name." };
+  if (chars(name) > NAME_MAX) return { ok: false, field: "name", problem: `Keep the school's name under ${NAME_MAX} characters.` };
+  if (UNSEEN.test(String(f.name ?? ""))) return { ok: false, field: "name", problem: "The school's name has a hidden character in it. Type it again rather than pasting it." };
+  if (chars(town) < 2 || !WORDISH.test(town)) return { ok: false, field: "town", problem: "Type the town the school is in." };
+  if (chars(town) > TOWN_MAX) return { ok: false, field: "town", problem: `Keep the town under ${TOWN_MAX} characters.` };
+  if (UNSEEN.test(String(f.town ?? ""))) return { ok: false, field: "town", problem: "The town has a hidden character in it. Type it again rather than pasting it." };
+  if (!JOB_IDS.includes(String(f.job ?? ""))) return { ok: false, field: "job", problem: "Choose what you do at the school." };
   return { ok: true, body: { schoolName: name, town, job: /** @type {string} */ (f.job) } };
 }
 
@@ -61,12 +72,11 @@ export const ASK_PUPIL = "If you are a pupil, ask a teacher or the school office
 
 /** What is said once a note is sent. */
 export function askSentWords(/** @type {string} */ name) {
-  return `Sent to SCRBRD. A person will read it and answer here, under Your requests. If we add ${clean(name) || "the school"}, you will find it in the list above and can ask to join it. Meanwhile you can score a match on this phone.`;
+  return `Sent to SCRBRD. We'll answer within a week, here under Your requests. If we add ${clean(name) || "the school"}, you will find it in the list above and can ask to join it. Meanwhile you can score a match on this phone.`;
 }
 
 /** A refusal from POST /api/school-requests, in the screen's words. */
 export const ASK_WORDS = {
-  has_school: "Your account already belongs to a school, so this is not the place to ask. Your school's office can write to SCRBRD.",
   name_required: "Type the school's name.",
   town_required: "Type the town the school is in.",
   job_invalid: "Choose what you do at the school.",
@@ -87,9 +97,9 @@ export function askWords(e) {
 
 /** Each state of a request, as the asker reads it: what it means and what comes next. */
 export const ASK_STATE_WORDS = {
-  open: "With SCRBRD. A person will read it and answer here.",
+  open: "Waiting: a person at SCRBRD will read it and answer here.",
   added: "SCRBRD has added this school. Find it in the list under Join a school and ask to join it.",
-  declined: "SCRBRD has not added this school. Your school's office can write to SCRBRD about it.",
+  declined: `SCRBRD has not added this school. Your school's office can write to SCRBRD about it at ${SCHOOLS_EMAIL}.`,
   lapsed: `No answer in ${OPEN_DAYS} days, so this request has closed. You can ask again.`,
 };
 
@@ -97,6 +107,9 @@ export const ASK_STATE_WORDS = {
 export const jobLabel = (id) => JOBS.find((j) => j.id === id)?.label ?? id;
 
 /** The platform's own line, above its list: marking a request adds nothing. */
+/** A platform administrator's own request, on her list: somebody else answers it (db/158 own_request). */
+export const OWN_WORDS = "Your own request, asked before you joined the platform. Somebody else at SCRBRD answers it.";
+
 export const PLATFORM_INTRO = "Marking a request added does not add the school. Add the school and its first office account the usual way, then mark it added, so the person finds it in the list.";
 
 /** A refusal from POST /api/school-requests/:id/decide, in the platform's words. */
@@ -104,6 +117,7 @@ export const DECIDE_WORDS = {
   not_permitted: "Only the platform answers these.",
   state_invalid: "Answer with Added or Decline.",
   no_such_request: "That request is not on the record.",
+  own_request: "That is your own request. Somebody else at SCRBRD answers it.",
   already_decided: "That request was already answered. The list has been read again.",
   lapsed: `That request had waited ${OPEN_DAYS} days and closed. The person can ask again.`,
 };

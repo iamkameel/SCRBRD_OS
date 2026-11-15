@@ -29,17 +29,18 @@
 -- through a role_request a person at the school decides.
 --
 -- ── 2 · WHO MAY ASK ───────────────────────────────────────────────
--- An account with no school: no live role_assignment (active, begun, not
--- ended, not past its hour; the liveness sessionProfile() reads, so whoever
--- lands on the no-school home may ask and nobody else). §2.7 puts the ask on
--- that home's join list and nowhere else; somebody already at a school has
--- that school's office. A paused (duty_suspension) assignment still belongs
--- to its school. Never under a pad's credential. Refusals, each a code the
--- route turns into words:
+-- Any signed-in account (Kameel, 15 Nov 2026, "schoolreq-who: any-account"):
+-- one with no school, and one already at a school asking for another. Never
+-- under a pad's credential. A platform administrator may ask too, and never
+-- answers her own (§5, own_request). Refusals, each a code the route turns
+-- into words:
 --   not_signed_in   no app_user_id(), or a pad's credential
---   has_school      a live assignment
---   name_required   the school's name, 2 to 120 characters after trimming
---   town_required   the town, 2 to 80
+--   name_required   the school's name, 2 to 120 characters after trimming,
+--                   with two letters or digits at least, and no control,
+--                   zero-width or bidi character (a name that reads blank or
+--                   backwards in the platform's list is refused)
+--   town_required   the town, 2 to 80, by the same rule
+-- Spaces, the no-break ones included, are folded to one before the test.
 --   job_invalid     not one of the list below
 --   already_asked   an open request of theirs names this school and town
 --   too_many_open   THE CAP: three open requests per account at once
@@ -57,9 +58,16 @@
 -- The rows themselves go with the account, as §6.2's "sign-ins" row does:
 -- ON DELETE CASCADE from app_user here, and the account's erasure
 -- (account_erase(), SCRBRD-140 §3.8, ACCOUNT_LIFECYCLE §6.3, not built yet)
--- must delete them with its auth_identity rows. Named for Kameel: whether a
--- decided request should also be deleted after a period (§6.2 has no row
--- for it).
+-- must delete them with its auth_identity rows.
+--
+-- AN ANSWERED REQUEST (Kameel, 15 Nov 2026, "schoolreq-keep:
+-- 90d-after-answer"; ACCOUNT_LIFECYCLE §6.2): "An answered request to add a
+-- school is deleted 90 days after the answer." Nothing runs on a clock here
+-- either, as lifts' purge is a person's act (db/76 lift_purge()). So, as
+-- the lapse is: ninety days after decided_at the row is unreadable (the read
+-- policy and school_add_requester() both cut it), and
+-- school_add_request_purge(), the owner's alone, deletes every row past the
+-- cut and answers how many. Open rows are never purged; they lapse.
 --
 -- ── 4 · WHO READS ─────────────────────────────────────────────────
 -- RLS, one permissive policy: the asker's own rows (person_id =
@@ -84,7 +92,7 @@
 --
 -- ── 5 · NOT PUBLIC'S, AND NOT A MANAGED HOST'S (db/157) ──────────
 -- Every function here: REVOKE ALL FROM PUBLIC, then GRANT EXECUTE TO
--- scrbrd_app by name. The table: no grant to PUBLIC, anon, authenticated or
+-- scrbrd_app by name, but the purge, which is the owner's alone. The table: no grant to PUBLIC, anon, authenticated or
 -- service_role, taken back by name where those roles exist. The check at the
 -- foot reads every ACL with aclexplode() and db/157's api_role_reach().
 --
@@ -96,6 +104,8 @@
 --              + school_add_request_ask(text, text, text)      the asker's door
 --              + school_add_request_decide(uuid, text)         the platform's door
 --              + school_add_requester(uuid)                    who asked
+--              + school_add_request_purge()     answered rows past ninety days,
+--                                               deleted; the owner's alone
 -- No other table, column, row, policy or grant moves. No BEGIN or COMMIT; a
 -- second paste changes nothing.
 --
@@ -172,7 +182,8 @@ DO $policies$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'school_add_request'::regclass AND polname = 'school_add_request_read') THEN
     CREATE POLICY school_add_request_read ON school_add_request
-      FOR SELECT USING (person_id = app_user_id() OR app_holds('platform.tenant.manage'));
+      FOR SELECT USING ((person_id = app_user_id() OR app_holds('platform.tenant.manage'))
+                        AND (decided_at IS NULL OR decided_at > now() - interval '90 days'));
   END IF;
   -- db/50's RESTRICTIVE pad guard, on the one command a policy admits.
   IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'school_add_request'::regclass AND polname = 'pad_scope_select') THEN
@@ -204,24 +215,24 @@ CREATE OR REPLACE FUNCTION school_add_request_ask(p_school text, p_town text, p_
 RETURNS TABLE (ok boolean, reason text, request_id uuid) AS $$
 DECLARE
   v_me     uuid := app_user_id();
-  v_school text := regexp_replace(btrim(coalesce(p_school, '')), '\s+', ' ', 'g');
-  v_town   text := regexp_replace(btrim(coalesce(p_town, '')), '\s+', ' ', 'g');
+  -- Every run of spaces, the no-break ones (U+00A0, U+2007, U+202F) too, is one space.
+  v_school text := btrim(regexp_replace(coalesce(p_school, ''), '[\s   ]+', ' ', 'g'));
+  v_town   text := btrim(regexp_replace(coalesce(p_town, ''), '[\s   ]+', ' ', 'g'));
+  -- What a name may not hold: a control character, a soft hyphen, or a
+  -- zero-width, joiner, bidi embedding, override or isolate, or a byte-order
+  -- mark (U+200B–U+200F, U+202A–U+202E, U+2060–U+2064, U+2066–U+2069, U+FEFF).
+  v_unseen text := '[[:cntrl:]­​-‏‪-‮⁠-⁤⁦-⁩﻿]';
   v_id     uuid;
 BEGIN
   IF v_me IS NULL OR app_pad_scoped() THEN
     RETURN QUERY SELECT false, 'not_signed_in'::text, NULL::uuid; RETURN;
   END IF;
-  IF EXISTS (SELECT 1 FROM role_assignment a
-              WHERE a.person_id = v_me AND a.active
-                AND (a.valid_from  IS NULL OR a.valid_from  <= sa_today())
-                AND (a.valid_until IS NULL OR a.valid_until >  sa_today())
-                AND (a.expires_at  IS NULL OR a.expires_at  >  now())) THEN
-    RETURN QUERY SELECT false, 'has_school'::text, NULL::uuid; RETURN;
-  END IF;
-  IF char_length(v_school) NOT BETWEEN 2 AND 120 OR v_school ~ '[[:cntrl:]]' THEN
+  IF char_length(v_school) NOT BETWEEN 2 AND 120 OR v_school ~ v_unseen
+     OR v_school !~ '[[:alnum:]].*[[:alnum:]]' THEN
     RETURN QUERY SELECT false, 'name_required'::text, NULL::uuid; RETURN;
   END IF;
-  IF char_length(v_town) NOT BETWEEN 2 AND 80 OR v_town ~ '[[:cntrl:]]' THEN
+  IF char_length(v_town) NOT BETWEEN 2 AND 80 OR v_town ~ v_unseen
+     OR v_town !~ '[[:alnum:]].*[[:alnum:]]' THEN
     RETURN QUERY SELECT false, 'town_required'::text, NULL::uuid; RETURN;
   END IF;
   IF p_job IS NULL OR p_job NOT IN ('coach', 'teacher', 'sport', 'office', 'head', 'parent', 'other') THEN
@@ -253,8 +264,8 @@ GRANT EXECUTE ON FUNCTION school_add_request_ask(text, text, text) TO scrbrd_app
 
 -- ── 5 · The platform's door ───────────────────────────────────────
 -- "added" or "declined", once, on an open request that has not lapsed, by a
--- holder of platform.tenant.manage (app_holds() refuses a pad's credential).
--- It writes the answer, who gave it and when, and nothing else: no school,
+-- holder of platform.tenant.manage (app_holds() refuses a pad's credential),
+-- never on their own request. It writes the answer, who gave it and when, and nothing else: no school,
 -- no role, no link (header §1).
 CREATE OR REPLACE FUNCTION school_add_request_decide(p_request uuid, p_state text)
 RETURNS TABLE (ok boolean, reason text) AS $$
@@ -271,6 +282,11 @@ BEGIN
   SELECT * INTO r FROM school_add_request WHERE id = p_request FOR UPDATE;
   IF NOT FOUND THEN
     RETURN QUERY SELECT false, 'no_such_request'::text; RETURN;
+  END IF;
+  -- Nobody answers their own: an asker made a platform administrator before
+  -- the answer came does not decide it (separation of duties).
+  IF r.person_id = v_me THEN
+    RETURN QUERY SELECT false, 'own_request'::text; RETURN;
   END IF;
   IF r.state <> 'open' THEN
     RETURN QUERY SELECT false, 'already_decided'::text; RETURN;
@@ -292,9 +308,26 @@ RETURNS TABLE (name text, email text) AS $$
     FROM school_add_request r JOIN app_user u ON u.id = r.person_id
    WHERE r.id = p_request AND NOT app_pad_scoped()
      AND (r.person_id = app_user_id() OR app_holds('platform.tenant.manage'))
+     AND (r.decided_at IS NULL OR r.decided_at > now() - interval '90 days')
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION school_add_requester(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION school_add_requester(uuid) TO scrbrd_app;
+
+
+-- ── 6b · The answered rows' end (header §3): the owner's alone ─────
+-- Deletes every answered request ninety days past its answer, and answers
+-- how many. Open rows are not touched: they lapse (school_add_request_shown()).
+-- Run by the owner, as SELECT school_add_request_purge(); nothing calls it on
+-- a clock, and the application may not.
+CREATE OR REPLACE FUNCTION school_add_request_purge() RETURNS integer AS $$
+DECLARE n integer;
+BEGIN
+  DELETE FROM school_add_request WHERE state <> 'open' AND decided_at <= now() - interval '90 days';
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END $$ LANGUAGE plpgsql VOLATILE SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION school_add_request_purge() FROM PUBLIC;
+REVOKE ALL ON FUNCTION school_add_request_purge() FROM scrbrd_app;
 
 
 -- ── 7 · Not a managed host's API roles (db/157) ───────────────────
@@ -308,6 +341,7 @@ BEGIN
       EXECUTE format('REVOKE ALL ON FUNCTION school_add_request_ask(text, text, text) FROM %I', r);
       EXECUTE format('REVOKE ALL ON FUNCTION school_add_request_decide(uuid, text) FROM %I', r);
       EXECUTE format('REVOKE ALL ON FUNCTION school_add_requester(uuid) FROM %I', r);
+      EXECUTE format('REVOKE ALL ON FUNCTION school_add_request_purge() FROM %I', r);
     END IF;
   END LOOP;
 END $revoke_api_roles$;
@@ -335,7 +369,7 @@ BEGIN
   END IF;
   SELECT pg_get_expr(p.polqual, p.polrelid) INTO v_q FROM pg_policy p
    WHERE p.polrelid = 'school_add_request'::regclass AND p.polname = 'school_add_request_read' AND p.polcmd = 'r' AND p.polpermissive;
-  IF v_q IS DISTINCT FROM '((person_id = app_user_id()) OR app_holds(''platform.tenant.manage''::text))' THEN
+  IF v_q IS DISTINCT FROM '(((person_id = app_user_id()) OR app_holds(''platform.tenant.manage''::text)) AND ((decided_at IS NULL) OR (decided_at > (now() - ''90 days''::interval))))' THEN
     RAISE EXCEPTION 'db/158: school_add_request_read reads %', coalesce(v_q, '(missing)');
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policy p
@@ -386,6 +420,17 @@ BEGIN
                     'school_add_request_decide(uuid,text)'::regprocedure,
                     'school_add_requester(uuid)'::regprocedure)) <> 3 THEN
     RAISE EXCEPTION 'db/158: a door is not SECURITY DEFINER';
+  END IF;
+  -- The purge: the owner's alone, by every grantee in its ACL; pinned; not a definer.
+  SELECT string_agg(coalesce(nullif(a.grantee, 0)::regrole::text, 'PUBLIC') || ':' || a.privilege_type, ', ') INTO v
+    FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+   WHERE p.oid = 'school_add_request_purge()'::regprocedure AND a.grantee <> p.proowner;
+  IF v IS NOT NULL THEN
+    RAISE EXCEPTION 'db/158: school_add_request_purge() grants %', v;
+  END IF;
+  IF (SELECT prosecdef OR NOT ('search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}')))
+        FROM pg_proc WHERE oid = 'school_add_request_purge()'::regprocedure) THEN
+    RAISE EXCEPTION 'db/158: school_add_request_purge() is a definer or has no pinned search_path';
   END IF;
 
   -- And as db/157 reads reach: nothing of this file's for PUBLIC, nor for a

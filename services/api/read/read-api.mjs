@@ -2426,7 +2426,9 @@ export const READ_QUERIES = {
                   r.requested_at, r.decided_at, q.name, q.email,
                   r.person_id = app_user_id() as mine,
                   (school_add_request_shown(r.state, r.requested_at) = 'open'
-                   and app_holds('platform.tenant.manage')) as decidable
+                   and app_holds('platform.tenant.manage')
+                   -- Never one's own (db/158: own_request): no Added or Decline on it.
+                   and r.person_id <> app_user_id()) as decidable
              from school_add_request r
              left join lateral (select x.name, x.email from school_add_requester(r.id) x) q on true
             order by case school_add_request_shown(r.state, r.requested_at) when 'open' then 0 else 1 end,

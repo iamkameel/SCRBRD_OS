@@ -13397,7 +13397,13 @@ BEGIN
       ('left',   'coach',         HIL),
       ('lapsed', 'coach',         HIL),
       ('plat',   'platformadmin', NULL),
-      ('owner',  'superadmin',    NULL)) AS v(k, role, school)
+      ('owner',  'superadmin',    NULL),
+      -- An asker who is later made a platform administrator (own_request),
+      -- one whose only role is paused at Hilton, and a platform administrator
+      -- whose appointment ran out yesterday.
+      ('self',   NULL,            NULL),
+      ('paused', NULL,            NULL),
+      ('platgone', 'platformadmin', NULL)) AS v(k, role, school)
   LOOP
     INSERT INTO app_user (school_id, email, name, role)
     VALUES (r.school, 'v158.' || r.k || '@example.invalid', 'V158 ' || initcap(r.k), coalesce(r.role, 'none'))
@@ -13412,8 +13418,31 @@ BEGIN
   END LOOP;
   UPDATE role_assignment SET active = false WHERE id = (ids->>'a_left')::uuid;
   UPDATE role_assignment SET valid_until = sa_today() WHERE id = (ids->>'a_lapsed')::uuid;
+  UPDATE role_assignment SET valid_until = sa_today() WHERE id = (ids->>'a_platgone')::uuid;
+  -- The paused one: a scorer's duty at Hilton, its assignment paused by the
+  -- office (db/34), as §73 stages it.
+  PERFORM _v92_pause((ids->>'paused')::uuid, (ids->>'office')::uuid);
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- An answered request whose answer was p_days ago, as the owner sets it
+-- (Kameel, 15 Nov: deleted 90 days after the answer).
+CREATE OR REPLACE FUNCTION _v158_age_answer(p_request uuid, p_days integer) RETURNS void AS $$
+BEGIN
+  UPDATE school_add_request SET decided_at = now() - make_interval(days => p_days) WHERE id = p_request;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/158's purge, as its owner runs it: how many rows it deleted.
+CREATE OR REPLACE FUNCTION _v158_purge() RETURNS text AS $$
+BEGIN
+  RETURN school_add_request_purge()::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The asker made a platform administrator, as the owner grants it, after
+-- she asked: nobody answers their own (db/158 own_request).
+CREATE OR REPLACE FUNCTION _v158_make_platform(p_person uuid) RETURNS void AS $$
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (p_person, 'platformadmin', NULL, sa_today())
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- An open request made p_days ago, as the owner sets it (db/158 header
 -- §3's ninety days, without waiting for them).
@@ -13470,9 +13499,11 @@ CREATE OR REPLACE FUNCTION _v158_acl() RETURNS text AS $$
     SELECT p.oid::regprocedure::text || ' ' || coalesce(nullif(a.grantee, 0)::regrole::text, 'PUBLIC') || ':' || a.privilege_type
       FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
      WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN
-             ('school_add_request_shown', 'school_add_request_ask', 'school_add_request_decide', 'school_add_requester')
+             ('school_add_request_shown', 'school_add_request_ask', 'school_add_request_decide', 'school_add_requester',
+              'school_add_request_purge')
        AND a.grantee <> p.proowner
-       AND NOT (a.grantee = 'scrbrd_app'::regrole AND a.privilege_type = 'EXECUTE')) q
+       -- The purge is the owner's alone: the application's EXECUTE counts against it.
+       AND NOT (a.grantee = 'scrbrd_app'::regrole AND a.privilege_type = 'EXECUTE' AND p.proname <> 'school_add_request_purge')) q
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- The two doors as §136 calls them, as the caller (no SECURITY DEFINER of
 -- their own, and late-bound, so a database without db/158 reaches (standing)
@@ -44059,11 +44090,18 @@ $m130$;
   --              asked
   --   (write)    nobody writes the table but through the two doors: not the
   --              asker, not the platform
-  --   (refused)  a live role at a school, the platform's own, nobody signed
-  --              in, a pad's credential, a blank or long name, a short town,
-  --              a job not on the list, the same school asked twice: each
-  --              refused with its code and nothing written; somebody whose
-  --              role has ended may ask
+  --   (anyone)   a coach and the office at a school, one whose role is
+  --              paused, the platform administrator and the owner's key may
+  --              each ask (Kameel, 15 Nov: any signed-in account)
+  --   (refused)  nobody signed in, a pad's credential, a blank or long name,
+  --              a short or long town, a job not on the list, the same school
+  --              asked twice: each refused with its code and nothing written;
+  --              somebody whose role has ended may ask; a 120-letter name is
+  --              taken
+  --   (unseen)   a name or town holding a bidi override or isolate, a
+  --              zero-width space, a soft hyphen or a byte-order mark, or no
+  --              two letters or digits, is refused; no-break spaces are folded
+  --              and trimmed; a name in another script is taken
   --   (cap)      three open at once, and a fourth refused; an answered one
   --              frees its place
   --   (lapsed)   ninety days open reads "lapsed", frees its place, cannot be
@@ -44073,7 +44111,16 @@ $m130$;
   --              not "added" or "declined" and an unknown request are
   --              refused; the platform answers once, with who and when; the
   --              owner's key may too; the asker reads the answer; still no
-  --              school, role or link
+  --              school, role or link; a platform administrator whose
+  --              appointment ran out may not answer
+  --   (self)     an asker made a platform administrator before the answer
+  --              may not answer her own (own_request), and the row is unmoved
+  --   (kept)     ninety days after its answer a request is gone from the
+  --              asker's read, the platform's and who asked; eighty-nine is
+  --              still read; the owner's purge deletes exactly the answered
+  --              rows past ninety days, never an open one, and a second purge
+  --              deletes nothing; the application may not call it (Kameel,
+  --              15 Nov: deleted 90 days after the answer)
   --   (pad)      under a pad's credential the asker reads none of hers
   --   (reach)    nothing of db/158's in what PUBLIC, anon, authenticated or
   --              service_role may do in public (db/157's probe)
@@ -44098,10 +44145,18 @@ $m130$;
   --   the decision without its "already" test      → (decide)
   --   the decision filing the asker under a school → (decide)
   --   the pad guard dropped                        → (pad)
+  --   the decision without its own_request test    → (self)
+  --   the ask without its hidden-character test    → (unseen)
+  --   the ask without its two-letters test         → (unseen)
+  --   the ask's has_school refusal put back        → (anyone)
+  --   the read policy without its ninety-day cut   → (kept)
+  --   the requester without its ninety-day cut     → (kept)
+  --   the purge deleting open rows too             → (kept)
+  --   the purge granted to the application         → (kept), (standing)
   DECLARE
     ids jsonb;
-    A uuid; B uuid; C uuid; O uuid; L uuid; X uuid; P uuid; W uuid;
-    r1 uuid; r2 uuid; r3 uuid; r4 uuid; r5 uuid; rb uuid; rl uuid; rx uuid;
+    A uuid; B uuid; C uuid; O uuid; L uuid; X uuid; P uuid; W uuid; S uuid;
+    r1 uuid; r2 uuid; r3 uuid; r4 uuid; r5 uuid; rb uuid; rl uuid; rx uuid; rs uuid;
     v text; k int; n int; held text; heldb text; g text; ok_ boolean;
     row_ jsonb;
   BEGIN
@@ -44113,8 +44168,9 @@ $m130$;
                     AND to_regprocedure('school_add_request_ask(text,text,text)') IS NOT NULL
                     AND to_regprocedure('school_add_request_decide(uuid,text)') IS NOT NULL
                     AND to_regprocedure('school_add_requester(uuid)') IS NOT NULL
-                    AND to_regprocedure('school_add_request_shown(text,timestamp with time zone)') IS NOT NULL,
-      '§136 (standing): db/158''s table or one of its four functions is missing');
+                    AND to_regprocedure('school_add_request_shown(text,timestamp with time zone)') IS NOT NULL
+                    AND to_regprocedure('school_add_request_purge()') IS NOT NULL,
+      '§136 (standing): db/158''s table or one of its five functions is missing');
     v := _v158_acl();
     PERFORM _assert(v IS NULL, format('§136 (standing): db/158 grants beyond its owner and the application: %s', v));
     PERFORM _assert(has_table_privilege('scrbrd_app', 'school_add_request', 'SELECT')
@@ -44124,7 +44180,7 @@ $m130$;
     ids := _v158_stage();
     A := (ids->>'asker')::uuid;  B := (ids->>'other')::uuid;  C := (ids->>'coach')::uuid;
     O := (ids->>'office')::uuid; L := (ids->>'left')::uuid;   X := (ids->>'lapsed')::uuid;
-    P := (ids->>'plat')::uuid;   W := (ids->>'owner')::uuid;
+    P := (ids->>'plat')::uuid;   W := (ids->>'owner')::uuid;   S := (ids->>'self')::uuid;
     held := _v158_held(A);
     heldb := _v158_held(B);
 
@@ -44153,6 +44209,8 @@ $m130$;
     PERFORM _assert(k = 1 AND n = 1, format('§136 (own): the asker reads %s rows, %s of them hers', k, n));
     PERFORM _assert((SELECT count(*) FROM school_add_requester(r1) q WHERE q.email = 'v158.asker@example.invalid') = 1,
       '§136 (own): the asker cannot read who asked her own request');
+    PERFORM _assert((SELECT count(*) FROM school_add_requester(rb)) = 0,
+      '§136 (own): the asker reads who asked the other account''s request');
 
     -- (other)
     FOREACH g IN ARRAY ARRAY['other', 'coach', 'office', ''] LOOP
@@ -44199,13 +44257,17 @@ $m130$;
     END LOOP;
     PERFORM _assert(_v158_row(r1)->>'state' = 'open' AND _v158_all() = 2, '§136 (write): a refused write moved a row');
 
-    -- (refused)
+    -- (anyone) Kameel, 15 Nov: any signed-in account may ask, one at a school included.
     k := _v158_all();
-    FOREACH g IN ARRAY ARRAY['coach', 'office', 'plat', 'owner'] LOOP
+    FOREACH g IN ARRAY ARRAY['coach', 'office', 'plat', 'owner', 'paused'] LOOP
       PERFORM set_config('app.user_id', ids->>g, true);
       v := _v158_ask('Verify Staff School', 'Howick', 'coach');
-      PERFORM _assert(v = 'has_school', format('§136 (refused): %s, at a school or the platform''s, asked and was answered %s', g, v));
+      PERFORM _assert(v LIKE 'ok:%', format('§136 (anyone): %s, at a school or the platform''s, asked and was answered %s', g, v));
     END LOOP;
+    PERFORM _assert(_v158_all() = k + 5, format('§136 (anyone): five asks wrote %s rows', _v158_all() - k));
+
+    -- (refused)
+    k := _v158_all();
     PERFORM set_config('app.user_id', '', true);
     v := _v158_ask('Verify Nobody School', 'Howick', 'coach');
     PERFORM _assert(v = 'not_signed_in', format('§136 (refused): nobody signed in was answered %s', v));
@@ -44224,6 +44286,18 @@ $m130$;
     PERFORM _assert(v = 'name_required', format('§136 (refused): a name with a control character was answered %s', v));
     v := _v158_ask('Verify Town School', ' H ', 'coach');
     PERFORM _assert(v = 'town_required', format('§136 (refused): a one-letter town was answered %s', v));
+    v := _v158_ask('Verify Town School', repeat('T', 81), 'coach');
+    PERFORM _assert(v = 'town_required', format('§136 (refused): an 81-letter town was answered %s', v));
+
+    -- (unseen)
+    FOREACH g IN ARRAY ARRAY[U&'Verify \202Eloohcs', U&'\200B\200B', U&'Verify \2066High\2069', U&'Ver\00ADify High',
+                              U&'\FEFFVerify High', U&'Verify\200DHigh', '-- --', '..'] LOOP
+      v := _v158_ask(g, 'Howick', 'coach');
+      PERFORM _assert(v = 'name_required', format('§136 (unseen): the name %s was answered %s', to_json(g), v));
+    END LOOP;
+    v := _v158_ask('Verify Unseen Town', U&'Ho\200Bwick', 'coach');
+    PERFORM _assert(v = 'town_required', format('§136 (unseen): a town with a zero-width space was answered %s', v));
+    PERFORM _assert(_v158_all() = k, format('§136 (unseen): a refused name wrote a row (%s, was %s)', _v158_all(), k));
     v := _v158_ask('Verify Job School', 'Howick', 'pupil');
     PERFORM _assert(v = 'job_invalid', format('§136 (refused): the job "pupil" was answered %s', v));
     v := _v158_ask('Verify Job School', 'Howick', NULL);
@@ -44239,6 +44313,17 @@ $m130$;
     v := _v158_ask('Verify Lapsed School', 'Howick', 'teacher');
     PERFORM _assert(v LIKE 'ok:%', format('§136 (refused): somebody whose role ran out yesterday was answered %s', v));
     rx := nullif(split_part(v, ':', 2), '')::uuid;
+    PERFORM _as(L);
+    v := _v158_ask(repeat('V', 119) || 'W', 'Howick', 'teacher');
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (refused): a 120-letter name was answered %s', v));
+    -- (unseen) the no-break spaces folded and trimmed, and another script taken
+    v := _v158_ask(U&'\00A0 Verify\00A0\00A0Nobreak  High\202F', U&'\2007Howick', 'teacher');
+    PERFORM _assert(v LIKE 'ok:%' AND _v158_row(nullif(split_part(v, ':', 2), '')::uuid)->>'school_name' = 'Verify Nobreak High'
+                    AND _v158_row(nullif(split_part(v, ':', 2), '')::uuid)->>'town' = 'Howick',
+      format('§136 (unseen): a name padded with no-break spaces was answered %s, or kept them', v));
+    PERFORM _as(X);
+    v := _v158_ask('Hoërskool Ëlandskraal', 'eMkhondo', 'teacher');
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (unseen): a name with accented letters was answered %s', v));
 
     -- (cap)
     PERFORM _as(A);
@@ -44315,12 +44400,57 @@ $m130$;
     PERFORM _assert(_v158_held(A) = held AND _v158_held(B) = heldb,
       format('§136 (decide): an answer moved a school, a role, a request, a link or the account''s school: %s, was %s',
              _v158_held(A), held));
+    PERFORM set_config('app.user_id', ids->>'platgone', true);
+    v := _v158_decide(rl, 'added');
+    PERFORM _assert(v = 'not_permitted' AND _v158_row(rl)->>'state' = 'open',
+      format('§136 (decide): a platform administrator whose appointment ran out answered: %s', v));
+
+    -- (self)
+    PERFORM _as(S);
+    v := _v158_ask('Verify Self School', 'Howick', 'other');
+    rs := nullif(split_part(v, ':', 2), '')::uuid;
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (self): the account that will be made a platform administrator could not ask: %s', v));
+    PERFORM _v158_make_platform(S);
+    v := _v158_decide(rs, 'added');
+    PERFORM _assert(v = 'own_request', format('§136 (self): the asker, now a platform administrator, answered her own: %s', v));
+    row_ := _v158_row(rs);
+    PERFORM _assert(row_->>'state' = 'open' AND row_->'decided_by' = 'null'::jsonb AND row_->'decided_at' = 'null'::jsonb,
+      format('§136 (self): her own refused answer moved the request: %s', row_));
+    PERFORM _as(P);
+    v := _v158_decide(rs, 'declined');
+    PERFORM _assert(v = 'ok', format('§136 (self): somebody else on the platform could not answer it: %s', v));
+
+    -- (kept)
+    PERFORM _v158_age_answer(r1, 90);
+    PERFORM _v158_age_answer(rb, 89);
+    PERFORM _as(A);
+    PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id = r1) = 0
+                    AND (SELECT count(*) FROM school_add_requester(r1)) = 0,
+      '§136 (kept): the asker still reads her request ninety days after its answer');
+    PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id IN (r3, r4, r5)) = 3,
+      '§136 (kept): the cut took the asker''s unanswered requests too');
+    PERFORM _as(P);
+    PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id = r1) = 0
+                    AND (SELECT count(*) FROM school_add_requester(r1)) = 0,
+      '§136 (kept): the platform still reads a request ninety days after its answer');
+    PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id = rb) = 1
+                    AND (SELECT count(*) FROM school_add_requester(rb)) = 1,
+      '§136 (kept): a request eighty-nine days after its answer is already gone');
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'school_add_request_purge()', 'EXECUTE'),
+      '§136 (kept): the application may call the purge');
+    k := _v158_all();
+    v := _v158_purge();
+    PERFORM _assert(v = '1' AND _v158_row(r1) IS NULL AND _v158_row(rb) IS NOT NULL AND _v158_row(r3) IS NOT NULL
+                    AND _v158_all() = k - 1,
+      format('§136 (kept): the purge deleted %s rows (%s left of %s): not exactly the one answered ninety days ago', v, _v158_all(), k));
+    v := _v158_purge();
+    PERFORM _assert(v = '0', format('§136 (kept): a second purge deleted %s', v));
 
     -- (pad)
     PERFORM _as(A);
     PERFORM set_config('app.scope', 'pad', true);
     SELECT count(*) INTO k FROM school_add_request;
-    SELECT count(*) INTO n FROM school_add_requester(r1);
+    SELECT count(*) INTO n FROM school_add_requester(r4);
     PERFORM set_config('app.scope', '', true);
     PERFORM _assert(k = 0 AND n = 0, format('§136 (pad): under a pad''s credential the asker reads %s requests and %s askers', k, n));
     PERFORM _assert((SELECT count(*) FROM school_add_request) > 0, '§136 (pad): the fixture is void, the asker reads nothing anyway');

@@ -24,6 +24,7 @@ let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 240)}` : ""); } };
 const group = (t) => console.log("\n" + t);
 const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
+const read_ = read;
 const apiError = (status, code) => Object.assign(new Error(code), { status, code });
 const plain = (w) => typeof w === "string" && /\s/.test(w) && !/_/.test(w) && /[.!?]$/.test(w.trim());
 
@@ -43,7 +44,7 @@ group("Every refusal of the asker's door has a status and a sentence");
 {
   const codes = reasons(fnBody("school_add_request_ask"));
   const status = statusMap("SCHOOL_ASK_STATUS");
-  ok("the door's refusals were read (seven)", codes.length === 7, codes);
+  ok("the door's refusals were read (six; has_school went, Kameel 15 Nov)", codes.length === 6 && !codes.includes("has_school"), codes);
   for (const c of codes) {
     ok(`${c}: a status in the route`, Number.isInteger(status[c]) && status[c] >= 400 && status[c] < 500, status[c]);
     ok(`${c}: a plain sentence`, plain(ASK_WORDS[c]), ASK_WORDS[c]);
@@ -57,7 +58,7 @@ group("Every refusal of the platform's door has a status and a sentence");
 {
   const codes = reasons(fnBody("school_add_request_decide"));
   const status = statusMap("SCHOOL_DECIDE_STATUS");
-  ok("the door's refusals were read (five)", codes.length === 5, codes);
+  ok("the door's refusals were read (six)", codes.length === 6, codes);
   for (const c of codes) {
     ok(`${c}: a status in the route`, Number.isInteger(status[c]) && status[c] >= 400 && status[c] < 500, status[c]);
     ok(`${c}: a plain sentence`, plain(DECIDE_WORDS[c]), DECIDE_WORDS[c]);
@@ -90,9 +91,18 @@ group("The note a form becomes");
   ok("no town", !buildAsk({ name: "Verify High", town: "H", job: "coach" }).ok);
   ok("a long town", !buildAsk({ name: "Verify High", town: "H".repeat(TOWN_MAX + 1), job: "coach" }).ok);
   ok("a job not on the list", !buildAsk({ name: "Verify High", town: "Howick", job: "pupil" }).ok);
+  ok("each refusal names its field", buildAsk({ name: "V", town: "Howick", job: "coach" }).field === "name"
+     && buildAsk({ name: "Verify High", town: "H", job: "coach" }).field === "town"
+     && buildAsk({ name: "Verify High", town: "Howick", job: "" }).field === "job");
+  for (const bad of ["Verify ‮loohcs", "​​", "Verify ⁦High⁩", "Ver­ify", "﻿Verify", "-- --"])
+    ok(`a hidden character or no letters refused, as db/158 does: ${JSON.stringify(bad)}`, !buildAsk({ name: bad, town: "Howick", job: "coach" }).ok);
+  ok("...in the town too", !buildAsk({ name: "Verify High", town: "Ho​wick", job: "coach" }).ok);
+  const nb = buildAsk({ name: "  Verify  High ", town: " Howick", job: "coach" });
+  ok("no-break spaces folded and trimmed", nb.ok && nb.body.schoolName === "Verify High" && nb.body.town === "Howick", nb);
+  ok("another script taken", buildAsk({ name: "Hoërskool Ëlandskraal", town: "eMkhondo", job: "coach" }).ok);
   ok("the limits are db/158's", SQL.includes(`BETWEEN 2 AND ${NAME_MAX}`) && SQL.includes(`BETWEEN 2 AND ${TOWN_MAX}`));
   ok("the cap and the ninety days are db/158's", SQL.includes(`>= ${OPEN_MAX} THEN`) && SQL.includes(`interval '${OPEN_DAYS} days'`));
-  ok("sent: names the school, says a person answers here and how to join after", /Verify High/.test(askSentWords(" Verify High ")) && /answer here/.test(askSentWords("x")) && /ask to join/.test(askSentWords("x")));
+  ok("sent: names the school, says a person answers here and how to join after", /Verify High/.test(askSentWords(" Verify High ")) && /We.ll answer within a week/.test(askSentWords("x")) && /ask to join/.test(askSentWords("x")));
 }
 
 group("Every state says what happens next");
@@ -110,7 +120,7 @@ group("The screens");
   const form = read("../src/auth/schoolAsk.jsx");
   ok("the note has two text fields and a list, nothing else typed", (form.match(/<input /g) ?? []).length === 2 && /<select /.test(form) && !/<textarea/.test(form));
   ok("it posts to /api/school-requests and nowhere else", /post\("\/api\/school-requests"/.test(form) && !/\/api\/requests/.test(form));
-  ok("its refusal is an alert", /role="alert" data-testid="school-ask-problem"/.test(form));
+  ok("its refusal is an alert, with the id its field points at", /role="alert" id=\{problemId\} data-testid="school-ask-problem"/.test(form));
   const ns = read("../src/auth/NoSchool.jsx");
   ok("the empty search offers the note", /data-testid="join-school-none"/.test(ns) && /shown\.length === 0 && onAskSchool && <AskSchoolLink/.test(ns));
   ok("...and so does a list with no school in it, and the foot of a list", /schools\.length === 0 && onAskSchool && <AskSchoolLink/.test(ns) && /testId="join-school-missing"/.test(ns));
@@ -121,6 +131,15 @@ group("The screens");
   const panel = read("../src/views/schoolRequests.jsx");
   ok("...with Added and Decline only on what the server calls decidable", /all\.filter\(\(r\) => r\.decidable\)/.test(panel)
      && /school-request-added-/.test(panel) && /school-request-decline-/.test(panel));
+  const readApi = read_("../../../services/api/read/read-api.mjs");
+  const q = readApi.slice(readApi.indexOf("school_add_requests: {"), readApi.indexOf("my_sign_ins: {"));
+  ok("...never one's own: decidable leaves out the reader's own request (own_request)", /and r\.person_id <> app_user_id\(\)\) as decidable/.test(q));
+  const ownRows = panel.slice(panel.indexOf("{own.map("));
+  ok("...her own drawn with no controls", /school-request-own-/.test(ownRows) && !/<button/.test(ownRows.slice(0, ownRows.indexOf("))}"))));
+  ok("the form's Send is greyed only while sending, so its own problems can show", /data-testid="school-ask-send" disabled=\{busy\}/.test(form));
+  ok("...and a problem marks its field and points at it", /aria-invalid=\{bad === "town"/.test(form) && /aria-describedby=\{bad === "town" \? problemId/.test(form));
+  ok("no refusal sends anybody to write without saying where", Object.values(ASK_WORDS).concat(Object.values(ASK_STATE_WORDS))
+     .filter((w) => /write to SCRBRD/.test(w)).every((w) => /@/.test(w)));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
