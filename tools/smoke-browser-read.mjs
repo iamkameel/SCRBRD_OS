@@ -2722,10 +2722,12 @@ try {
       await c.page.locator("button", { hasText: /^career$/i }).first().click({ timeout: 4000 }).catch(() => {});
       await afterReads(c.page, 1400);
       const fig = async (k) => (await c.page.locator(`[data-testid="career-${k}"]`).first().innerText({ timeout: 3000 }).catch(() => null))?.trim() ?? null;
-      ok("his 34 runs are counted: an average of 34 over his one dismissal", await fig("batting-avg") === "34");
+      // Q12 (13 Nov): a child's rate only from thirty recorded balls. With none recorded, the average
+      // (34 over his one dismissal) is not drawn as a figure: the screen says the balls were not recorded.
+      ok("his average is not a figure: no ball of his is recorded (Q12)", await fig("batting-avg") === "balls not recorded");
       ok("balls faced is an em dash, not 0", await fig("balls-faced") === "—");
       ok("fours and sixes are em dashes, not 0", await fig("fours") === "—" && await fig("sixes") === "—");
-      ok("the strike rate is an em dash: no ball is recorded to divide by", await fig("strike-rate") === "—");
+      ok("the strike rate is not drawn either: no ball is recorded to divide by", await fig("strike-rate") === "balls not recorded");
       const note = await c.page.locator('[data-testid="career-book-note"]').first().innerText({ timeout: 3000 }).catch(() => "");
       ok("one short note says the figures include a scorebook, and balls are not recorded", /Includes 1 innings from a scorebook; balls not recorded in 1/.test(note));
       const passport = await c.page.locator('[data-testid="passport-card"]').first().innerText({ timeout: 3000 }).catch(() => "");
