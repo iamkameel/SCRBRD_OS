@@ -13086,12 +13086,17 @@ $$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
 -- ┌── db/157 (section 135) ─────────────────────────────────────────────
 -- A managed host's Data API roles, as Supabase makes them (NOLOGIN,
 -- NOINHERIT), with grants of the kind such a host gives: USAGE on the
--- schema; onboard_request() and both feature_enabled() to the three and
--- PUBLIC; broadcast_state() to PUBLIC. Then what Supabase's
--- default privileges give an older table, view, column and sequence, and
--- those defaults themselves. Created only where missing: on the host the
--- roles are already there. Everything here is undone by the ROLLBACK.
-CREATE OR REPLACE FUNCTION _v157_host() RETURNS void AS $$
+-- schema (and CREATE to anon); onboard_request() and both feature_enabled()
+-- to the three and PUBLIC; broadcast_state() to PUBLIC; an older table, view,
+-- column and sequence; default privileges in public and for every schema.
+-- Then PUBLIC's own grants on a table, a column and a sequence that
+-- scrbrd_app does not otherwise hold, so db/157's relation branch runs. Then,
+-- where the verifier is a superuser (locally and in CI), somebody else's
+-- function, table and default privilege beside ours, granted to anon: db/157
+-- must leave them and say so. Returns whether that last part was staged.
+-- Created only where missing: on the host the roles are already there.
+-- Everything here is undone by the ROLLBACK.
+CREATE OR REPLACE FUNCTION _v157_host() RETURNS boolean AS $$
 DECLARE r text;
 BEGIN
   FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
@@ -13100,30 +13105,59 @@ BEGIN
     END IF;
   END LOOP;
   GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+  GRANT CREATE ON SCHEMA public TO anon;
   GRANT EXECUTE ON FUNCTION onboard_request(text, text, text, uuid, text, text), feature_enabled(text),
                             feature_enabled(text, uuid, uuid) TO anon, authenticated, service_role, PUBLIC;
   GRANT EXECUTE ON FUNCTION broadcast_state(uuid) TO PUBLIC;
   GRANT ALL ON TABLE player, player_masked TO anon, authenticated, service_role;
   GRANT SELECT (name) ON school TO anon, authenticated, service_role;
   GRANT ALL ON SEQUENCE ball_event_id_seq TO anon, authenticated, service_role;
+  GRANT SELECT ON TABLE school_register TO PUBLIC;
+  GRANT SELECT (jti) ON pad_resume_jti TO PUBLIC;
+  GRANT USAGE ON SEQUENCE ball_event_id_seq TO PUBLIC;
   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON TYPES TO anon;
+  ALTER DEFAULT PRIVILEGES GRANT EXECUTE ON FUNCTIONS TO anon;
+  ALTER DEFAULT PRIVILEGES GRANT USAGE ON SCHEMAS TO anon;
+  IF NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) THEN
+    RETURN false;
+  END IF;
+  IF to_regrole('v157_theirs') IS NULL THEN
+    CREATE ROLE v157_theirs NOLOGIN;
+  END IF;
+  CREATE FUNCTION public._v157_theirs_fn() RETURNS integer LANGUAGE sql AS 'SELECT 2';
+  ALTER FUNCTION public._v157_theirs_fn() OWNER TO v157_theirs;
+  GRANT EXECUTE ON FUNCTION public._v157_theirs_fn() TO anon;
+  CREATE TABLE public._v157_theirs_t (id integer);
+  ALTER TABLE public._v157_theirs_t OWNER TO v157_theirs;
+  GRANT SELECT ON public._v157_theirs_t TO anon;
+  ALTER DEFAULT PRIVILEGES FOR ROLE v157_theirs IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon;
+  RETURN true;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- What a role may do in public (db/157's api_role_reach(), which is the
--- owner's alone), the schema's own USAGE left out: NULL when nothing.
+-- owner's alone), leaving out the schema's USAGE (kept through PUBLIC by
+-- design) and what db/157 leaves as not SCRBRD's: NULL when nothing.
 CREATE OR REPLACE FUNCTION _v157_reach(p_role text) RETURNS text AS $$
-  SELECT string_agg(x, '; ' ORDER BY x) FROM api_role_reach(p_role) x WHERE x !~ '^schema '
+  SELECT string_agg(x, '; ' ORDER BY x) FROM api_role_reach(p_role) x
+   WHERE x <> 'schema public USAGE' AND x NOT LIKE 'left %'
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- PUBLIC's reach in public, leaving out what this transaction wrote (the
--- verifier's own helpers are PUBLIC's by Postgres's default until the sweep
--- below): a row whose xmin is this transaction's, or a subtransaction's of
--- it, has an age of 0 or less. p_all keeps them.
+-- What db/157 leaves for a role, and says why.
+CREATE OR REPLACE FUNCTION _v157_left(p_role text) RETURNS text AS $$
+  SELECT string_agg(x, '; ' ORDER BY x) FROM api_role_reach(p_role) x WHERE x LIKE 'left %'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- PUBLIC's reach in public, CREATE on the schema included, leaving out what
+-- this transaction wrote (the verifier's own helpers are PUBLIC's by
+-- Postgres's default until the sweep below): a row whose xmin is this
+-- transaction's, or a subtransaction's of it, has an age of 0 or less.
+-- p_all keeps them.
 CREATE OR REPLACE FUNCTION _v157_public(p_all boolean) RETURNS text AS $$
   SELECT string_agg(x, '; ' ORDER BY x) FROM api_role_reach('public') x
-   WHERE x !~ '^schema '
+   WHERE x <> 'schema public USAGE' AND x NOT LIKE 'left %'
      AND (p_all OR (NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND age(p.xmin) <= 0
                                    AND x = 'function ' || p.oid::regprocedure::text || ' EXECUTE')
                     AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND age(c.xmin) <= 0
@@ -13131,29 +13165,35 @@ CREATE OR REPLACE FUNCTION _v157_public(p_all boolean) RETURNS text AS $$
                                            OR x LIKE 'column ' || c.oid::regclass::text || '.%'))))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- Every grant in public, and every default privilege in public or for all
--- schemas, that names one of the three roles. NULL when none.
+-- Every grant that names one of the three roles, read from the ACLs, on
+-- exactly what db/157 may close: objects in public owned by SCRBRD's owner
+-- (the ledger's), the schema where the verifier may act for its owner, and
+-- that owner's default privileges in public or for every schema. NULL when
+-- none.
 CREATE OR REPLACE FUNCTION _v157_named() RETURNS text AS $$
-  WITH api AS (SELECT oid FROM pg_roles WHERE rolname IN ('anon', 'authenticated', 'service_role'))
+  WITH api AS (SELECT oid FROM pg_roles WHERE rolname IN ('anon', 'authenticated', 'service_role')),
+       o AS (SELECT relowner AS owner FROM pg_class WHERE oid = 'public.schema_migration'::regclass)
   SELECT string_agg(x, '; ' ORDER BY x) FROM (
     SELECT 'schema public → ' || a.grantee::regrole::text AS x
-      FROM pg_namespace s, aclexplode(s.nspacl) a WHERE s.nspname = 'public' AND a.grantee IN (SELECT oid FROM api)
+      FROM pg_namespace s, aclexplode(s.nspacl) a
+     WHERE s.nspname = 'public' AND a.grantee IN (SELECT oid FROM api) AND pg_has_role(current_user, s.nspowner, 'USAGE')
     UNION
     SELECT p.oid::regprocedure::text || ' → ' || a.grantee::regrole::text
-      FROM pg_proc p, aclexplode(p.proacl) a
-     WHERE p.pronamespace = 'public'::regnamespace AND a.grantee IN (SELECT oid FROM api)
+      FROM o, pg_proc p, aclexplode(p.proacl) a
+     WHERE p.pronamespace = 'public'::regnamespace AND p.proowner = o.owner AND a.grantee IN (SELECT oid FROM api)
     UNION
     SELECT c.oid::regclass::text || ' → ' || a.grantee::regrole::text
-      FROM pg_class c, aclexplode(c.relacl) a
-     WHERE c.relnamespace = 'public'::regnamespace AND a.grantee IN (SELECT oid FROM api)
+      FROM o, pg_class c, aclexplode(c.relacl) a
+     WHERE c.relnamespace = 'public'::regnamespace AND c.relowner = o.owner AND a.grantee IN (SELECT oid FROM api)
     UNION
     SELECT c.oid::regclass::text || '.' || t.attname || ' → ' || a.grantee::regrole::text
-      FROM pg_class c JOIN pg_attribute t ON t.attrelid = c.oid, aclexplode(t.attacl) a
-     WHERE c.relnamespace = 'public'::regnamespace AND a.grantee IN (SELECT oid FROM api)
+      FROM o, pg_class c JOIN pg_attribute t ON t.attrelid = c.oid, aclexplode(t.attacl) a
+     WHERE c.relnamespace = 'public'::regnamespace AND c.relowner = o.owner AND a.grantee IN (SELECT oid FROM api)
     UNION
     SELECT 'default ' || d.defaclrole::regrole::text || ' ' || d.defaclobjtype::text || ' → ' || a.grantee::regrole::text
-      FROM pg_default_acl d, aclexplode(d.defaclacl) a
-     WHERE d.defaclnamespace IN (0, 'public'::regnamespace) AND a.grantee IN (SELECT oid FROM api)) q
+      FROM o, pg_default_acl d, aclexplode(d.defaclacl) a
+     WHERE d.defaclnamespace IN (0, 'public'::regnamespace) AND d.defaclrole = o.owner
+       AND a.grantee IN (SELECT oid FROM api)) q
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- scrbrd_app's reach and the owner's, as one list, for a before and after.
@@ -13174,9 +13214,9 @@ CREATE OR REPLACE FUNCTION _v157_acls() RETURNS text AS $$
     (SELECT string_agg(oid::text || defaclacl::text, ',' ORDER BY oid) FROM pg_default_acl)))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- db/157's sweep, as the owner runs it.
+-- db/157's sweep, as the owner runs it on paste day (scrbrd_app keeps).
 CREATE OR REPLACE FUNCTION _v157_close() RETURNS integer AS $$
-  SELECT api_roles_close()
+  SELECT api_roles_close(true)
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- A table (with its sequence) and a function made after the sweep, as a
@@ -43063,18 +43103,22 @@ $m130$;
   END;
   -- └── db/155 (section 133) ──────────────────────────────────────────
   -- ┌── db/157 (section 135) ─────────────────────────────────────────
-  -- ── 135. A managed host's API roles reach nothing in public: not by a grant of their own, not through PUBLIC, not on an object made later; and scrbrd_app's reach and the owner's do not move (db/157) ──
+  -- ── 135. A managed host's API roles reach nothing of SCRBRD's in public: not by a grant of their own, not through PUBLIC, not on an object made later; what is not SCRBRD's is left and named; and scrbrd_app's reach and the owner's do not move (db/157) ──
   -- Labels:
   --   (standing) the database as migrated: db/157's two functions are the
   --              owner's alone; PUBLIC reaches no function, relation or
-  --              column a migration made; no grant and no default
-  --              privilege names anon, authenticated or service_role
-  --   (host)     _v157_host() gives the three what the managed host gives
-  --              them, and the probe sees every path, a grant of their own
-  --              and PUBLIC's alike: the control, so (closed) can fail
-  --   (closed)   after db/157's sweep none of the three reaches a function,
-  --              relation or column in public, the verifier's own helpers
-  --              included, and nothing names them
+  --              column a migration made, and may not CREATE in public; no
+  --              grant on what db/157 may close, and no default privilege of
+  --              SCRBRD's owner, names anon, authenticated or service_role;
+  --              where the three exist (the host), they reach nothing
+  --   (host)     _v157_host() gives the three, and PUBLIC, what a managed
+  --              host gives them, and another owner's objects beside ours;
+  --              the probe sees every path: the control, so (closed) can fail
+  --   (closed)   after db/157's sweep none of the three, nor PUBLIC, reaches
+  --              anything of SCRBRD's, the verifier's own helpers included,
+  --              and nothing it may close names them
+  --   (left)     the other owner's function, table and default privilege
+  --              are untouched, and reported as left, with the reason
   --   (same)     scrbrd_app's reach and the owner's, item by item, are what
   --              they were, and the application still calls the functions
   --   (again)    a second sweep runs nothing and moves no ACL
@@ -43083,10 +43127,10 @@ $m130$;
   --              Postgres's own default, which (standing) refuses in a
   --              migration
   DECLARE
-    v text; r text; n int; acl text; before text[]; after text[];
+    v text; r text; n int; acl text; before text[]; after text[]; theirs boolean;
   BEGIN
     -- (standing)
-    PERFORM _assert(NOT EXISTS (SELECT 1 FROM unnest(ARRAY['api_role_reach(name)', 'api_roles_close()']) f
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM unnest(ARRAY['api_role_reach(name)', 'api_roles_close(boolean)']) f
                                  WHERE to_regprocedure(f) IS NULL
                                     OR has_function_privilege('scrbrd_app', f::regprocedure, 'EXECUTE')
                                     OR has_function_privilege('public', f::regprocedure, 'EXECUTE')),
@@ -43096,10 +43140,14 @@ $m130$;
       format('§135 (standing): PUBLIC, and so every managed host''s API role, reaches what a migration made: %s', left(v, 1500)));
     v := _v157_named();
     PERFORM _assert(v IS NULL,
-      format('§135 (standing): a grant or default privilege in public names a managed host''s API role: %s', left(v, 1500)));
+      format('§135 (standing): a grant or default privilege db/157 may close names a managed host''s API role: %s', left(v, 1500)));
+    SELECT string_agg(g || ': ' || _v157_reach(g), '; ') INTO v
+      FROM unnest(ARRAY['anon', 'authenticated', 'service_role']) g
+     WHERE to_regrole(g) IS NOT NULL AND _v157_reach(g) IS NOT NULL;
+    PERFORM _assert(v IS NULL, format('§135 (standing): on this host a managed API role reaches %s', left(v, 1500)));
 
     -- (host)
-    PERFORM _v157_host();
+    theirs := _v157_host();
     before := _v157_snap();
     FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
       v := coalesce(_v157_reach(r), '');
@@ -43111,11 +43159,20 @@ $m130$;
                       AND position('relation player SELECT' IN v) > 0
                       AND position('relation player_masked SELECT' IN v) > 0
                       AND position('column school.name SELECT' IN v) > 0
-                      AND position('relation ball_event_id_seq USAGE' IN v) > 0,
+                      AND position('relation ball_event_id_seq USAGE' IN v) > 0
+                      AND position('relation school_register SELECT' IN v) > 0
+                      AND position('column pad_resume_jti.jti SELECT' IN v) > 0
+                      AND (r <> 'anon' OR position('schema public CREATE' IN v) > 0),
         format('§135 (host): the probe does not see what the host gives %s, by its own grant or PUBLIC''s', r));
     END LOOP;
-    PERFORM _assert(position('default ' IN coalesce(_v157_named(), '')) > 0,
-      '§135 (host): the host''s default privileges were not staged');
+    v := coalesce(_v157_named(), '');
+    PERFORM _assert(position('default ' IN v) > 0 AND v ~ ' f → anon' AND v ~ ' n → anon' AND v ~ ' T → anon',
+      format('§135 (host): the host''s default privileges were not staged: %s', left(v, 600)));
+    v := coalesce(_v157_left('anon'), '');
+    PERFORM _assert(NOT theirs OR (position('left function _v157_theirs_fn() EXECUTE' IN v) > 0
+                                   AND position('left relation _v157_theirs_t SELECT' IN v) > 0
+                                   AND position('left default privilege of v157_theirs in schema public on f to anon' IN v) > 0),
+      format('§135 (host): another owner''s objects are not reported as left: %s', left(v, 600)));
 
     n := _v157_close();
     PERFORM _assert(n > 0, format('§135 (host): db/157''s sweep ran %s statements against the staged grants', n));
@@ -43128,7 +43185,17 @@ $m130$;
     v := _v157_public(true);
     PERFORM _assert(v IS NULL, format('§135 (closed): PUBLIC still reaches %s', left(v, 1500)));
     v := _v157_named();
-    PERFORM _assert(v IS NULL, format('§135 (closed): a grant or default privilege still names a managed host''s API role: %s', left(v, 1500)));
+    PERFORM _assert(v IS NULL, format('§135 (closed): a grant or default privilege db/157 may close still names a managed host''s API role: %s', left(v, 1500)));
+
+    -- (left)
+    v := coalesce(_v157_left('anon'), '');
+    PERFORM _assert(NOT theirs OR (position('left function _v157_theirs_fn() EXECUTE: its owner v157_theirs is not SCRBRD''s owner' IN v) > 0
+                                   AND position('left relation _v157_theirs_t SELECT' IN v) > 0
+                                   AND position('left default privilege of v157_theirs in schema public on f to anon' IN v) > 0
+                                   AND has_function_privilege('anon', 'public._v157_theirs_fn()', 'EXECUTE')
+                                   AND has_function_privilege('public', 'public._v157_theirs_fn()', 'EXECUTE')
+                                   AND has_table_privilege('anon', 'public._v157_theirs_t', 'SELECT')),
+      format('§135 (left): another owner''s objects were touched, or are not reported as left with the reason: %s', left(v, 900)));
 
     -- (same)
     after := _v157_snap();
@@ -43141,10 +43208,11 @@ $m130$;
       format('§135 (same): scrbrd_app''s reach or the owner''s moved (%s before, %s after): %s',
              cardinality(before), cardinality(after), left(coalesce(v, '(none)'), 1500)));
     PERFORM _assert(has_function_privilege('scrbrd_app', 'onboard_request(text,text,text,uuid,text,text)', 'EXECUTE')
+                    AND has_table_privilege('scrbrd_app', 'school_register', 'SELECT')
                     AND feature_enabled('db157 no such feature') IS FALSE
                     AND feature_enabled('db157 no such feature', HIL, NULL) IS NOT NULL
                     AND NOT EXISTS (SELECT 1 FROM broadcast_state(gen_random_uuid())),
-      '§135 (same): the application cannot call onboard_request(), feature_enabled() or broadcast_state()');
+      '§135 (same): the application cannot call onboard_request(), feature_enabled() or broadcast_state(), or lost what PUBLIC gave it');
 
     -- (again)
     acl := _v157_acls();
