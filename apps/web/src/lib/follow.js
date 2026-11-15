@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, signedIn } from "./api.js";
+import { api, apiBase, signedIn } from "./api.js";
+import { SCHOOL_CODE, schoolOfSide } from "./schoolName.js";
 
 /**
  * THE FOLLOW LIST, client side (EXPERIENCE_PASS Q8, §2.4, §3.8; db/160).
@@ -11,26 +12,36 @@ import { api, signedIn } from "./api.js";
  *
  * THE DOOR FROM A MATCH PAGE. The public page has no sign-in and no API
  * client (tools/check-bundle.mjs holds it), so its "Follow Hilton College's
- * matches" is a plain link to /app?follow=<school code>. The app reads the
- * code once (followAsked()), takes it out of the address (dropFollowAsk()),
- * and after the one sign-in (Google or the office's code) follows it
- * (followFromLink()). The hint grants nothing: it names a school whose
- * matches are public already, and the server refuses a code that names none.
+ * matches" is a plain link to /app?follow=<school code>&from=<match>. The
+ * app reads it once (followAsked()) and takes it out of the address
+ * (dropFollowAsk()). After the one sign-in (Google or the office's code) it
+ * ASKS, and follows nothing until the person taps Follow (Kameel, 15 Nov:
+ * "A shared link asks before it follows: one tap, for everyone."):
+ * askFollow() names the school from that match's public page, the same read
+ * a stranger gets, and only for a side of it that published, so a link
+ * cannot dress one school's code in another's name; confirmFollow() writes
+ * the row; dismissFollow() ("Not now") writes nothing. A link that names no
+ * match, or a school not on that match's page, is not offered.
  *
  * Nothing is pushed (Q23 waits for push delivery).
  */
 
-/** A school's code as the link carries it (school.code: "HIL", "verify-051"). */
-const CODE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
+const CODE = SCHOOL_CODE;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The poll while one of the followed schools' fixtures is live, as the home page's strip polls (home/reads.js). */
 export const FOLLOW_POLL_MS = 15_000;
 
-/** The `follow` hint in the address, if it is a school code; null otherwise. @param {string} [search] */
+/**
+ * The `follow` hint in the address: the school's code and the match it came
+ * from, or null when the code is not one or the match is not an id.
+ * @param {string} [search] @returns {{code: string, from: string} | null}
+ */
 export function followAsked(search = globalThis.location?.search ?? "") {
   try {
-    const v = new URLSearchParams(search).get("follow");
-    return v && CODE.test(v) ? v : null;
+    const q = new URLSearchParams(search);
+    const code = q.get("follow"), from = q.get("from");
+    return code && CODE.test(code) && from && UUID.test(from) ? { code, from: from.toLowerCase() } : null;
   } catch { return null; }
 }
 
@@ -38,8 +49,9 @@ export function followAsked(search = globalThis.location?.search ?? "") {
 export function dropFollowAsk() {
   try {
     const u = new URL(window.location.href);
-    if (!u.searchParams.has("follow")) return;
+    if (!u.searchParams.has("follow") && !u.searchParams.has("from")) return;
     u.searchParams.delete("follow");
+    u.searchParams.delete("from");
     window.history.replaceState(window.history.state, "", u.pathname + u.search + u.hash);
   } catch { /* the address stays as it was */ }
 }
@@ -56,8 +68,54 @@ export function followProblem(e) {
 // The news of a follow made from a link, for the list to say once.
 /** @type {{ name: string } | { problem: string } | null} */
 let lastFollow = null;
+// The question a link asks, until it is answered: { code, name }.
+/** @type {{ code: string, name: string } | null} */
+let pending = null;
 const listeners = new Set();
 const tell = () => { for (const l of listeners) l(); };
+
+/**
+ * A link's question, after the sign-in: name the school from the match's
+ * public page and hold the question for the Followed schools block. Writes
+ * nothing. Resolves to the question, or null when there is nothing to ask.
+ * @param {{code: string, from: string}} ask
+ * @param {typeof fetch} [get] the public read (tests pass their own)
+ */
+export async function askFollow(ask, get = globalThis.fetch) {
+  pending = null; lastFollow = null;
+  try {
+    const res = await get(`${apiBase()}/api/public/matches/${encodeURIComponent(ask.from)}`, { credentials: "omit", headers: { accept: "application/json" } });
+    const m = res.ok ? (await res.json())?.match : null;
+    const sides = m ? [
+      m.published?.home === true ? { code: m.homeCode, name: schoolOfSide(m.homeLabel, m.homeTeam) } : null,
+      m.published?.away === true && m.awayOnPlatform === true ? { code: m.awayCode, name: schoolOfSide(m.awayLabel, m.awayTeam) } : null,
+    ] : [];
+    const side = sides.find((x) => x && x.code === ask.code && x.name);
+    if (side) pending = { code: side.code, name: side.name };
+    else lastFollow = { problem: "That school's match page is not available, so there is nothing to follow from it." };
+  } catch {
+    lastFollow = { problem: "Could not open that school's match page just now. Follow it from the page again." };
+  }
+  tell();
+  return pending;
+}
+
+/** The link's question, if one is waiting. */
+export const followQuestion = () => pending;
+
+/** "Follow": now, and only now, the row is written. */
+export async function confirmFollow() {
+  const ask = pending;
+  if (!ask) return null;
+  pending = null;
+  return followFromLink(ask.code);
+}
+
+/** "Not now": the question goes, and nothing is written. */
+export function dismissFollow() {
+  pending = null; lastFollow = null;
+  tell();
+}
 
 /**
  * Follow the school a match page's link named, as the signed-in person.
@@ -79,17 +137,18 @@ export async function followFromLink(code) {
  * The follower's Today: his list, and the public fixtures of its schools
  * today. Polls while one is live and the page is visible.
  * @returns {{ loading: boolean, failed: boolean, schools: {id: string, code: string, name: string, since: string}[],
- *   data: {asOf: string | null, fixtures: any[] | null} | null, live: boolean, note: any,
+ *   data: {asOf: string | null, fixtures: any[] | null} | null, live: boolean, note: any, ask: {code: string, name: string} | null,
  *   unfollow: (id: string) => Promise<boolean>, reload: () => void }}
  */
 export function useFollowed() {
   const [state, setState] = useState(/** @type {{loading: boolean, failed: boolean, body: any}} */ ({ loading: true, failed: false, body: null }));
   const [nonce, setNonce] = useState(0);
   const [note, setNote] = useState(lastFollow);
+  const [ask, setAsk] = useState(pending);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
   useEffect(() => {
-    const on = () => { setNote(lastFollow); setNonce((n) => n + 1); };
+    const on = () => { setNote(lastFollow); setAsk(pending); setNonce((n) => n + 1); };
     listeners.add(on);
     return () => { listeners.delete(on); };
   }, []);
@@ -134,6 +193,6 @@ export function useFollowed() {
     schools: Array.isArray(body?.schools) ? body.schools : [],
     data: body ? { asOf: body.asOf ?? null, fixtures } : null,
     live: !!fixtures?.some((/** @type {any} */ f) => f.status === "live"),
-    note, unfollow, reload: () => setNonce((n) => n + 1),
+    note, ask, unfollow, reload: () => setNonce((n) => n + 1),
   };
 }

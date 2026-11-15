@@ -402,8 +402,8 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
         <div style={{ ...text(14), marginBottom: "4px" }}>You are signed in{me?.email ? <> as <span data-testid="no-school-email" style={{ color: T.content.primary }}>{me.email}</span></> : ""}, and not at a school yet.</div>
         <div style={{ ...text(14), marginBottom: "20px" }}>Your account holds nothing of a school's until a school says yes.{onOpenPad ? " You can score a match on this phone meanwhile." : " Until then you can see this page and nothing else."}</div>
 
-        {/* §2.2, Q8: Followed schools first while one of them is live. */}
-        {followed.live && <FollowedSchools followed={followed} lead/>}
+        {/* §2.2, Q8: Followed schools first while one of them is live, or a link's question waits. */}
+        {(followed.live || followed.ask) && <FollowedSchools followed={followed} lead/>}
 
         {/* §2.5 step 3: "Start a match" first. Its own chunk: the scoring block draws the Board. */}
         {onOpenPad && (
@@ -413,7 +413,7 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
         )}
 
         {/* ...and after Now otherwise (§2.2). */}
-        {!followed.live && <FollowedSchools followed={followed}/>}
+        {!(followed.live || followed.ask) && <FollowedSchools followed={followed}/>}
 
         {schools === null ? <div style={text(14)}>Loading the schools…</div>
           : <JoinSchool schools={schools} onSent={() => setNudge((n) => n + 1)} onJoined={onJoined} kindFirst={kindFirst} onAskSchool={(typed) => setAskSchool(typed)}/>}

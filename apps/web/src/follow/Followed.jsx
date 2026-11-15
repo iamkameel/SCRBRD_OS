@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { T } from "../design/tokens.js";
 import { arrange, statusSentence } from "../home/sections/LiveStrip.jsx";
+import { confirmFollow, dismissFollow } from "../lib/follow.js";
 
 /**
  * FOLLOWED SCHOOLS (EXPERIENCE_PASS Q8, §1.9, §2.2, §2.4, §3.8; db/160).
@@ -16,15 +17,21 @@ import { arrange, statusSentence } from "../home/sections/LiveStrip.jsx";
  * child, no ground, no official (db/82, db/159). A card links to the match's
  * public page, which names players only by the public rule.
  *
+ * A LINK ASKS FIRST (Kameel, 15 Nov): a match page's Follow link, after the
+ * sign-in, is a question here, "Follow Hilton College?", with Follow and Not
+ * now. Nothing is written until Follow is tapped; Not now writes nothing.
+ *
  * Props
  *   followed  useFollowed()'s answer
- *   lead      drawn as the screen's first block (a followed school is live)
+ *   lead      drawn as the screen's first block (a followed school is live,
+ *             or a link's question waits)
  */
 export function FollowedSchools({ followed, lead = false }) {
-  const { loading, failed, schools, data, note, unfollow } = followed;
+  const { loading, failed, schools, data, note, ask, unfollow } = followed;
   const [busy, setBusy] = useState(/** @type {string | null} */ (null));
   const [problem, setProblem] = useState("");
-  if (loading) return null;
+  const [answering, setAnswering] = useState(false);
+  if (loading && !ask) return null;
   const list = data?.fixtures ? arrange(data.fixtures) : [];
   const stop = async (/** @type {string} */ id, /** @type {string} */ name) => {
     setBusy(id); setProblem("");
@@ -36,10 +43,30 @@ export function FollowedSchools({ followed, lead = false }) {
     <section data-testid="followed-schools" data-lead={lead ? "" : undefined} aria-labelledby="followed-schools-h"
       style={{ borderRadius: "16px", border: `1px solid ${T.line.normal}`, background: T.fill.panel, padding: "20px", marginBottom: "16px" }}>
       <h2 id="followed-schools-h" style={{ fontFamily: T.type.head, fontSize: "16px", fontWeight: 800, margin: "0 0 8px", color: T.content.primary }}>Followed schools</h2>
+      {ask && (
+        <div role="group" aria-labelledby="follow-question" data-testid="follow-question"
+          style={{ border: `1px solid ${T.line.strong}`, borderRadius: "12px", padding: "14px", margin: "0 0 14px", display: "grid", gap: "10px" }}>
+          <p id="follow-question" style={{ ...T.role.body, margin: 0, color: T.content.primary, fontWeight: 600, overflowWrap: "anywhere" }}>Follow {ask.name}?</p>
+          <p style={{ ...T.role.body, margin: 0, fontSize: "13px", color: T.content.secondary }}>Its public matches lead your Today. You can stop at any time.</p>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button type="button" className="pressBtn" data-testid="follow-confirm" disabled={answering}
+              onClick={async () => { setAnswering(true); await confirmFollow(); setAnswering(false); }}
+              style={{ minHeight: "44px", padding: "10px 18px", borderRadius: "999px", border: "none", background: T.light.action, color: T.light.ink,
+                cursor: answering ? "not-allowed" : "pointer", opacity: answering ? 0.5 : 1, fontFamily: T.type.head, fontSize: "13px", fontWeight: 700 }}>
+              {answering ? "Following…" : "Follow"}
+            </button>
+            <button type="button" className="pressBtn" data-testid="follow-not-now" disabled={answering} onClick={() => dismissFollow()}
+              style={{ minHeight: "44px", padding: "10px 18px", borderRadius: "999px", border: `1px solid ${T.line.strong}`, background: "transparent",
+                color: T.content.secondary, cursor: "pointer", fontFamily: T.type.head, fontSize: "13px", fontWeight: 700 }}>
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
       {note && "name" in note && <p role="status" data-testid="followed-note" style={{ ...T.role.body, margin: "0 0 12px", color: T.content.secondary }}>You follow {note.name}. Its matches show here on match days.</p>}
       {note && "problem" in note && <p role="alert" data-testid="followed-problem" style={{ ...T.role.body, margin: "0 0 12px", color: T.semantic.criticalText }}>{note.problem}</p>}
 
-      {schools.length === 0 ? (
+      {schools.length === 0 ? (ask ? null :
         <p data-testid="followed-none" style={{ ...T.role.body, margin: 0, color: T.content.secondary }}>
           Follow a school from one of its match pages, and its matches show here on match days.
         </p>

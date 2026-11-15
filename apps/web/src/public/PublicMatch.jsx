@@ -358,7 +358,7 @@ export function PublicMatch({ matchId, view }) {
         </ErrorBoundary>
         {/* EXPERIENCE_PASS §2.4 step 2, Q8: at a pause, "Follow Hilton College's matches". An offer, never a wall. */}
         <ErrorBoundary name="follow offer" fallback={null}>
-          <FollowOffer header={data.header} state={st.state}/>
+          <FollowOffer header={data.header} state={st.state} matchId={matchId}/>
         </ErrorBoundary>
 
         <TabStrip tabs={TABS} tab={tab} setTab={setTab} narrow={phone} label="Match"/>

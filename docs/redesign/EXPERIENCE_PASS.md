@@ -371,7 +371,7 @@ pages with `nofollow` (`PUBLIC_DATA.md` rule 7).
 |---|---|---|---|---|
 | 1 | A link from a parents' group opens `/live/:id`: the `Board`, the over, the commentary. Or the home page's live `Board` | Nothing | A score is public once the school publishes it | The whole match: Summary, Scorecard, Commentary. Names by the public rule only; a Pilot Match shows the score and team names and no player |
 | 2 | At a pause (innings break, the result): "Follow Northfield's matches" | Nothing yet. It is an offer, never a wall | The moment he might want more | He can ignore it for ever |
-| 3 | He taps Follow | A Google sign-in, with the privacy paragraph on the same screen | Following has to be kept against someone | His Today: the followed school's live match first, then today's, then results (Q8) |
+| 3 | He taps Follow | A Google sign-in, with the privacy paragraph on the same screen. A shared link asks before it follows: one tap, for everyone (Kameel, 15 Nov). | Following has to be kept against someone | His Today: the followed school's live match first, then today's, then results (Q8) |
 
 **Signed in, following a school.** He opens the app and lands on Today, which leads with
 the `Board` if a followed match is live (§1.9). His menu is Today and Matches. He is

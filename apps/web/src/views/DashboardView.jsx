@@ -420,7 +420,8 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   // public live board leads Today; otherwise its block follows the day sheet.
   // Drawn only for somebody who follows a school (or was just told of one).
   const followed = useFollowed();
-  const showFollowed = signedIn() && (followed.schools.length > 0 || !!followed.note);
+  const showFollowed = signedIn() && (followed.schools.length > 0 || !!followed.note || !!followed.ask);
+  const followedFirst = followed.live || !!followed.ask;
 
   const reads = signedIn() ? {
     matches: readState(matchesRead, { what: "the fixtures" }),
@@ -431,17 +432,17 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   } : null;
 
   const followedBlock = showFollowed
-    ? <div className="os-page" data-testid="today-followed"><FollowedSchools followed={followed} lead={followed.live}/></div> : null;
+    ? <div className="os-page" data-testid="today-followed"><FollowedSchools followed={followed} lead={followedFirst}/></div> : null;
   return (
     <>
-    {followed.live && followedBlock}
+    {followedFirst && followedBlock}
     <DaySheet role={role} live={matchesAreLive || signedIn()} liveMatch={liveMatch} board={board} boardState={liveScore}
       next={next} busTime={busTime} weather={weather} dutyRows={dutyRows}
       weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
       reads={reads} off={off} onRetry={() => setNonce((n) => n + 1)}
       onNav={onNav} onOpenScorer={onOpenScorer}
       matchDay={signedIn() ? <><MatchDayCard matches={MATCHES} onNav={onNav}/><RecentMatches matches={MATCHES} onNav={onNav}/></> : null}/>
-    {!followed.live && followedBlock}
+    {!followedFirst && followedBlock}
     </>
   );
 }

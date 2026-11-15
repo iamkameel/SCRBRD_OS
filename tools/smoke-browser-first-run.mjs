@@ -548,17 +548,43 @@ try {
     const offer = tid(P, "follow-offer-HIL");
     ok("at the innings break: \"Follow Hilton College's matches\"", /Follow Hilton College's matches/.test(await offer.innerText().catch(() => "")), await text(P).then((t) => t.slice(0, 300)));
     ok("...a plain link to the app, nofollow, offered for the side that published alone",
-       (await offer.getAttribute("href")) === "/app?follow=HIL" && /\bnofollow\b/.test((await offer.getAttribute("rel")) ?? "") && (await tid(P, "follow-offer-WES").count()) === 0);
+       (await offer.getAttribute("href")) === `/app?follow=HIL&from=${LIVE}` && /\bnofollow\b/.test((await offer.getAttribute("rel")) ?? "") && (await tid(P, "follow-offer-WES").count()) === 0);
     ok("...an offer, never a wall: the board and the tabs are all there", (await tid(P, "mc-panel-summary").count()) === 1 && (await P.locator("[data-testid=follow-offer] form, [data-testid=follow-offer] input").count()) === 0);
     const fl = await floors(P);
     ok("the page with the offer: nothing under 12px, nothing tapped under 44px", fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].slice(0, 4).join(" · "));
     ok("...no child's name", namesIn(await text(P)).length === 0, namesIn(await text(P)).join(", "));
     await offer.click({ timeout: 5000 });
-    await P.waitForURL(/\/app\?follow=HIL$/, { timeout: 8000 }).catch(() => {});
+    await P.waitForURL(/\/app\?follow=HIL&from=/, { timeout: 8000 }).catch(() => {});
     ok("Follow leads to the one sign-in", (await P.locator('[data-testid="google-button"]').count()) === 1 || !!(await P.waitForSelector('[data-testid="google-button"]', { timeout: 8000 }).catch(() => null)), P.url());
     ok("...with the privacy paragraph on the same screen", (await tid(P, "google-notice").count()) === 1);
     await google(h, idToken(FAN_UID, FAN_EMAIL, "Walk Fan"));
+    // A shared link asks before it follows: one tap, for everyone (Kameel, 15 Nov).
+    await P.waitForSelector('[data-testid="follow-question"]', { timeout: 12000 }).catch(() => {});
+    const fan0 = (await call("/api/auth/firebase", { method: "POST", body: { idToken: idToken(FAN_UID, FAN_EMAIL, "Walk Fan"), deviceId: "device-first-run-fan0" } })).body?.token;
+    ok("after the sign-in the link asks: \"Follow Hilton College?\", Follow and Not now",
+       /Follow Hilton College\?/.test(await tid(P, "follow-question").innerText().catch(() => ""))
+       && (await tid(P, "follow-confirm").count()) === 1 && (await tid(P, "follow-not-now").count()) === 1);
+    ok("...and nothing is followed before the tap", ((await call("/api/follows", { token: fan0 })).body?.schools ?? [1]).length === 0);
+    ok("...the question stands first, above Start a match", await P.evaluate(() => {
+      const y = (id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect().top ?? NaN;
+      return document.querySelector('[data-testid="followed-schools"]')?.hasAttribute("data-lead") && y("follow-question") < y("start-match");
+    }));
+    const flq = await floors(P);
+    ok("...nothing under 12px, nothing tapped under 44px", flq.small.length === 0 && flq.tiny.length === 0, [...flq.small, ...flq.tiny].slice(0, 4).join(" · "));
+    await tid(P, "follow-not-now").click({ timeout: 5000 });
+    await P.waitForSelector('[data-testid="followed-none"]', { timeout: 8000 }).catch(() => {});
+    ok("Not now: the question goes, and no row is written", (await tid(P, "follow-question").count()) === 0 && (await tid(P, "followed-none").count()) === 1
+       && ((await call("/api/follows", { token: fan0 })).body?.schools ?? [1]).length === 0);
+    // From the link again, and Follow this time.
+    await P.goto(`${BASE}/live/${LIVE}`, { waitUntil: "networkidle" });
+    await P.waitForSelector('[data-testid="follow-offer-HIL"]', { timeout: 10000 }).catch(() => {});
+    await tid(P, "follow-offer-HIL").click({ timeout: 5000 });
+    await P.waitForURL(/\/app\?follow=HIL&from=/, { timeout: 8000 }).catch(() => {});
+    await google(h, idToken(FAN_UID, FAN_EMAIL, "Walk Fan"));
+    await P.waitForSelector('[data-testid="follow-confirm"]', { timeout: 12000 }).catch(() => {});
+    await tid(P, "follow-confirm").click({ timeout: 5000 });
     await P.waitForSelector('[data-testid="followed-card"]', { timeout: 12000 }).catch(() => {});
+    ok("Follow, and only Follow, writes the row", JSON.stringify(((await call("/api/follows", { token: fan0 })).body?.schools ?? []).map((x) => x.code)) === '["HIL"]');
     ok("he lands on the no-school home, asked no role", (await tid(P, "no-school-title").count()) === 1 && !/what.s your role/i.test(await text(P)));
     ok("...told he follows Hilton College", /You follow Hilton College/.test(await tid(P, "followed-note").innerText().catch(() => "")));
     ok("...Followed schools first, above Start a match, because Hilton is live", await P.evaluate(() => {
