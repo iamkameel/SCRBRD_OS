@@ -181,6 +181,29 @@ export const reachOneMate = (n) => REACH_ONE_MATE.replaceAll("$2::uuid", `$${n}:
 
 // The dismissals that are not the bowler's, as a SQL list, from the one set
 // the reducer reads — so a query cannot restate the law differently.
+/**
+ * A fixture's officials are named only while Officials is on (SCRBRD-144;
+ * Kameel, 13 Nov 2026: switched off is hidden, and still records).
+ *
+ * Two switches, both asked for every appointment a read names:
+ *  - the FIXTURE's school, match_school(), the home side's: db/156's choice
+ *    for the overlay (broadcast_state(), feature_enabled('officials',
+ *    m.school_id, NULL)) and db/162's at the table (official_shown()). So
+ *    Westville's administrator, with Officials on, reads no umpire of
+ *    Hilton's fixture while Hilton has it off.
+ *  - the READER's own, my_feature_enabled(): what the module gate asks of
+ *    the `officials` read, asked here of the reads it does not gate
+ *    (match_duties, duty_suspensions), so one switch hides one thing
+ *    everywhere.
+ * db/162's policy lets whoever may appoint read the row at the table, so
+ * that the sheet can be stored while Officials is off; this is what keeps
+ * him from being SHOWN it. Written inline rather than through
+ * official_shown(), so the read stands with or without db/162 pasted.
+ * @param {string} matchCol  the SQL column holding the appointment's match
+ */
+const OFFICIALS_ON = (matchCol) =>
+  `(feature_enabled('officials', match_school(${matchCol}), null::uuid) and my_feature_enabled('officials'))`;
+
 const NOT_THE_BOWLERS = [...NON_DELIVERY].map((d) => `'${d}'`).join(", ");
 // Runs that are the striker's, as SQL over ball_event `b`: runsOffBat() in
 // packages/scoring. A no-ball's and a wicket ball's are, unless payload.nbRuns
@@ -1481,6 +1504,7 @@ export const READ_QUERIES = {
              from match_official
             where not withdrawn
               and ($1::uuid is null or match_id = $1)
+              and ${OFFICIALS_ON("match_id")}
             order by duty, person_name`,
     params: q => [q?.matchId || null],
   },
@@ -1493,7 +1517,10 @@ export const READ_QUERIES = {
    * read above, assignment_suspended()) and not the reason.
    */
   duty_suspensions: {
-    text: `select s.id, s.duty_id, o.match_id, o.duty, o.person_name,
+    // The suspension is the office's record and is always listed; the name
+    // on the duty follows the Officials switch like every other read of it.
+    text: `select s.id, s.duty_id, o.match_id, o.duty,
+                  case when ${OFFICIALS_ON("o.match_id")} then o.person_name end as person_name,
                   s.suspended_at, s.reason, sb.name as suspended_by_name,
                   s.lifted_at, s.lift_reason, lb.name as lifted_by_name
              from duty_suspension s
@@ -1587,6 +1614,7 @@ export const READ_QUERIES = {
                   null::text                           as held
              from match_official o
             where o.match_id = $1 and not o.withdrawn
+              and ${OFFICIALS_ON("o.match_id")}
             union all
            select 'scoring', coalesce(u.name, ''),
                   s.state::text,

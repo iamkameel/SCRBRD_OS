@@ -712,8 +712,14 @@ const MATCH_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/broadcast$/,          "POST", bcast.publish],
   // Appointing the officials. officiating.assign, which until now had nothing
   // it could be exercised on.
-  // Stays refused while Officials is off until a migration makes broadcast_state() name officials only while it is on (to Fable with db/154).
-  [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint, "officials"],
+  // NOT module-gated (SCRBRD-144): switched off records (Kameel, 13 Nov
+  // 2026), so a sheet is stored while Officials is off and named nowhere
+  // until it is on. Every read that names an appointment asks the switch:
+  // the overlay (db/156, broadcast_state()), the table (db/162,
+  // match_official_shown_while_on) and the API's officials, match_duties and
+  // duty_suspensions (read-api.mjs OFFICIALS_ON), for the fixture's school
+  // and the reader both.
+  [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint],
   // The register itself: platform- and competition-level, not a school
   // module, so no module gate — the policies on official/official_accreditation
   // decide (officiating.registry.manage).
