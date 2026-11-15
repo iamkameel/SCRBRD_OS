@@ -526,7 +526,9 @@ ok("§21.10  holding a commercial capability never carries a sensitive one with 
   // fails here rather than in review.
   // 10 → 6: the Staff screen's four per-role detail panels (scorer, medical,
   // driver, facilities) went with its move onto the school's role assignments.
-  const GATE_CEILING = 6;
+  // 6 → 2: the retired role-tile sign-up (OnboardingFlow.jsx, EXPERIENCE_PASS
+  // Q13) took its four step-by-role checks with it.
+  const GATE_CEILING = 2;
   /** @type {(dir: string) => string[]} */
   const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);

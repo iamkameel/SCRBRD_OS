@@ -73,7 +73,7 @@ const PILOT_ACCOUNTS = [
 // (SCRBRD-078). There is a server behind that pad whatever the check below
 // says — the phone may have had no signal when it asked — so the demo is never
 // offered and a failed sign-in is a failed sign-in. `onBack` returns to the pad.
-function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
+function LoginPage({ onLogin, liveOnly = false, onBack }) {
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   // Whether THIS SERVER accepts the development sign-in. Asked, not assumed.
@@ -323,11 +323,18 @@ function LoginPage({ onLogin, onSignUp, liveOnly = false, onBack }) {
             {loading?"Signing in…":"Sign In"}
           </button>
 
-          <div style={{textAlign:"center"}}>
-            <button onClick={onSignUp} className="pressBtn" style={{background:"none",border:"none",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:T.content.tertiary}}>
-              New to SCRBRD? <span style={{color:T.brand.blueText,fontWeight:600}}>Create an account →</span>
-            </button>
-          </div>
+          {/* One door (EXPERIENCE_PASS §2.2, Q13, 13 Nov 2026): a new person
+              comes in through Google or a code, and is never asked for a
+              role. The account starts with no school; only the school's own
+              register, or its office, links it to a school or a child
+              (SCRBRD-140 §4, §5). The older role-tile sign-up is retired. */}
+          {live === true && !liveOnly && (
+            <div data-testid="login-new-here" style={{textAlign:"center",fontFamily:"'DM Sans',sans-serif",fontSize:"13px",lineHeight:1.5,color:T.content.secondary}}>
+              {googleOn
+                ? "New to SCRBRD? Continue with Google. Your account starts with no school: you can score a match on this phone, and ask a school to let you in."
+                : "New to SCRBRD? Ask your school office for a sign-in code."}
+            </div>
+          )}
         </div>
 
         {/* Accounts. Which list depends on whether there is a server, and the

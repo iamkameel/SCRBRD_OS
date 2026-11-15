@@ -385,7 +385,7 @@ const navFor = (role) => navForRoles([role, ...(ROLE_IDENTITY[role]?.also ?? [])
    own role names via rbac/legacy-roles.js's LEGACY_ROLE_NAMES.
 
    That vocabulary is gone from every entry point that can set the SIGNED-IN
-   role — LoginPage's accounts, OnboardingFlow's persona picker and
+   role — LoginPage's accounts (and, until its retirement, OnboardingFlow) and
    ManagementView's role picker all speak policy role names directly now
    (apps/web/test/design.test.mjs asserts this for the first two). With
    nothing left to translate, `canonicalRole` is identity on every policy

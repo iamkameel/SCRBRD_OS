@@ -117,12 +117,16 @@ function HelpLine() {
  * and `onJoined` enters the school. If it grants nothing, the claim says
  * NOTHING: the request form below reads exactly as it would have if the office
  * had listed nobody, so a refused person learns nothing from the claim.
- * @param {{ schools: { id: string, name: string }[], onSent: () => void, onJoined?: () => Promise<void>, post?: typeof api }} p
+ *
+ * `kindFirst` "parent" (the home page's "My child plays", EXPERIENCE_PASS §2.6
+ * step 2) starts the form with "parent or guardian" chosen. Only that kind: a
+ * member of staff is never sent to the register's check by a link.
+ * @param {{ schools: { id: string, name: string }[], onSent: () => void, onJoined?: () => Promise<void>, post?: typeof api, kindFirst?: string | null }} p
  */
-export function JoinSchool({ schools, onSent, onJoined, post = api }) {
+export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = null }) {
   const [schoolId, setSchoolId] = useState(schools.length === 1 ? schools[0].id : null);
   const [q, setQ] = useState("");
-  const [kind, setKind] = useState(null);
+  const [kind, setKind] = useState(kindFirst === "parent" ? "parent" : null);
   const [form, setForm] = useState({ role: "", extra: "", child: "", relationship: "", year: "", adult: "" });
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
@@ -310,11 +314,20 @@ export function JoinSchool({ schools, onSent, onJoined, post = api }) {
  * match" leads the screen (§2.5 step 3). It grants nothing: a Practice Match
  * never leaves the phone, and a Pilot Match is the server's to allow.
  * `joinFirst` changes when the pad's "Scoring for a school? Join it" brought
- * the person back: the join form is scrolled to and focused.
+ * the person back: the join form is scrolled to and focused. `kindFirst`
+ * "parent" is the home page's "My child plays": the join form with the
+ * parent's kind already chosen (JoinSchool).
+ *
+ * THE ORDER IS THE DAY SHEET'S (EXPERIENCE_PASS §2.2, slice 3a): Now (a match
+ * this phone is scoring) and Start a match, from the scoring block; Join a
+ * school; Your requests; and "Worried about a child?" last. Followed schools
+ * sits after Now once the follow list exists (slice 3b, Q8). An empty section
+ * says in one line what will appear there.
  */
-export function NoSchool({ name, onSignOut, onJoined, onOpenPad = null, joinFirst = 0 }) {
+export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOpenPad = null, joinFirst = 0, kindFirst = null }) {
   const [nudge, setNudge] = useState(0);
-  const rows = useLive("role_requests", "spectator", nudge).rows;
+  const asked = useLive("role_requests", "spectator", nudge);
+  const rows = asked.rows;
   const [schools, setSchools] = useState(null);
   const me = profile()?.user;
   const live = signedIn();
@@ -357,7 +370,7 @@ export function NoSchool({ name, onSignOut, onJoined, onOpenPad = null, joinFirs
         <div style={{ maxWidth: "480px", width: "100%" }} data-testid="no-school-signed-out">
           <h1 style={{ margin: "0 0 8px", fontFamily: FONT.head, fontSize: "22px", color: T.content.primary }}>You were signed out</h1>
           <div style={{ ...text(14), marginBottom: "16px" }}>For your security SCRBRD does not keep you signed in when the page reloads. Sign in again to see your requests.</div>
-          <Btn kind="primary" onClick={onSignOut} data-testid="no-school-sign-in-again">Sign in again</Btn>
+          <Btn kind="primary" onClick={onSignInAgain ?? onSignOut} data-testid="no-school-sign-in-again">Sign in again</Btn>
         </div>
       </div>
     );
@@ -377,10 +390,13 @@ export function NoSchool({ name, onSignOut, onJoined, onOpenPad = null, joinFirs
           </Suspense>
         )}
 
-        {rows.length > 0 && (
-          <div style={{ marginBottom: "16px" }} data-testid="no-school-requests">
+        {schools === null ? <div style={text(14)}>Loading the schools…</div>
+          : <JoinSchool schools={schools} onSent={() => setNudge((n) => n + 1)} onJoined={onJoined} kindFirst={kindFirst}/>}
+
+        <div style={{ marginBottom: "16px" }} data-testid="no-school-requests">
             <h2 style={{ margin: "0 0 8px", fontFamily: FONT.head, fontSize: "16px", fontWeight: 800, color: T.content.primary }}>Your requests</h2>
             {withdrawProblem && <div role="alert" data-testid="withdraw-problem" style={{ ...text(13, T.semantic.criticalText), padding: "10px 12px", borderRadius: "8px", background: clr(T.semantic.critical, 0.1), border: `1px solid ${clr(T.semantic.critical, 0.2)}`, marginBottom: "8px" }}>{withdrawProblem}</div>}
+            {rows.length === 0 && !asked.loading && <div data-testid="no-school-requests-none" style={text(14)}>A request you send to a school shows here, with the school's answer.</div>}
             {rows.map((r) => (
               <div key={r.id} data-testid={`request-${r.state}`} style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", padding: "12px 14px", border: `1px solid ${T.line.normal}`, borderRadius: "12px", background: T.fill.panel, marginBottom: "8px" }}>
                 <div style={{ flex: 1, minWidth: "180px" }}>
@@ -390,11 +406,7 @@ export function NoSchool({ name, onSignOut, onJoined, onOpenPad = null, joinFirs
                 {r.state === "pending" && <Btn onClick={() => withdraw(r.id)} data-testid="request-withdraw">Withdraw</Btn>}
               </div>
             ))}
-          </div>
-        )}
-
-        {schools === null ? <div style={text(14)}>Loading the schools…</div>
-          : <JoinSchool schools={schools} onSent={() => setNudge((n) => n + 1)} onJoined={onJoined}/>}
+        </div>
 
         <HelpLine/>
 

@@ -2,8 +2,13 @@
 /**
  * Nobody assigns themselves anything.
  *
- *   1. A STRANGER ONBOARDS INTO NOTHING: an account, no assignments, one
- *      pending request. Signing in shows the request and nothing else.
+ *   1. A STRANGER'S ACCOUNT HOLDS NOTHING: an account, no assignments, one
+ *      pending request. Signing in shows the request and nothing else. The
+ *      unauthenticated POST /api/onboard that made one is retired
+ *      (EXPERIENCE_PASS Q13, slice 3a) and answers 404; the fixture is made
+ *      by owner SQL with onboard_request() (db/08), as the route ran it, so
+ *      the database's own rules (one request, one account, its refusals)
+ *      are still proven.
  *   2. A REQUEST IS READ BY ITS OWNER AND BY WHOEVER COULD ANSWER IT.
  *   3. ANSWERING NEEDS BOTH: user.role.assign at the school AND being a
  *      granter of that role. The office grants a coach; it cannot grant a
@@ -50,7 +55,17 @@ const api = async (path, { method = "GET", token, body } = {}) => {
 };
 const login = async (email) => (await api("/api/auth/dev-login", { method: "POST", body: { email, deviceId: "device-requests" } })).body?.token;
 const requests = async (tok) => (await api("/api/read/role_requests", { token: tok })).body?.rows ?? [];
-const onboard = (body) => api("/api/onboard", { method: "POST", body });
+/**
+ * The stranger's request the retired POST /api/onboard made, by owner SQL:
+ * onboard_request() (db/08) with no app.user_id, exactly as the route called
+ * it, so db/84 still marks it asked before the address was verified.
+ */
+const onboard = async (b) => {
+  try {
+    await pool.query(`select onboard_request($1, $2, $3, $4, $5, $6)`, [b.email, b.name, b.role, b.schoolId, b.teamCode ?? null, b.note ?? null]);
+    return { status: 200, body: { requested: true } };
+  } catch (e) { return { status: 0, body: { error: e.message } }; }
+};
 const ask = (tok, body) => api("/api/requests", { method: "POST", token: tok, body });
 const decide = (id, tok, body) => api(`/api/requests/${id}/decide`, { method: "POST", token: tok, body });
 const session = async (tok) => (await api("/api/session", { token: tok })).body;
@@ -69,9 +84,12 @@ try {
   const wesAdmin  = await login("registrar.wes@example.invalid");
   const idOf = async (email) => (await q(`select id from app_user where lower(email) = $1`, [email]))[0]?.id;
 
-  group("A stranger onboards into nothing");
+  group("A stranger's account holds nothing; the old sign-up door is gone");
   {
     ok("the schools are listed by name, to anyone", ((await api("/api/schools")).body?.rows ?? []).some((s) => s.name === "Hilton College"));
+    const gone = await api("/api/onboard", { method: "POST", body: { email: "door.gone@example.invalid", name: "D Gone", role: "coach", schoolId: HIL } });
+    ok("POST /api/onboard answers 404: the unauthenticated sign-up is retired", gone.status === 404);
+    ok("...and opened no account", !(await idOf("door.gone@example.invalid")));
     const r = await onboard({ email: "New.Coach@example.invalid", name: "L Mthethwa", role: "coach", schoolId: HIL, teamCode: "U15A", note: "Joining in January." });
     ok("a stranger asks to coach the U15A", r.status === 200 && r.body?.requested === true);
     const uid = await idOf("new.coach@example.invalid");
@@ -89,24 +107,19 @@ try {
        && (await q(`select count(*)::int c from role_request where person_id = $1`, [uid]))[0].c === 1);
     ok("a known email gets a request, not a second account", (await onboard({ email: "coach@example.invalid", name: "P Hendricks", role: "scorer", schoolId: HIL })).status === 200
        && (await q(`select count(*)::int c from app_user where email = 'coach@example.invalid'`))[0].c === 1);
-    ok("a bad email is refused", (await onboard({ email: "not an email", name: "X Y", role: "coach", schoolId: HIL })).status === 422);
-    ok("a role nobody may grant cannot be asked for", (await onboard({ email: "who@example.invalid", name: "X Y", role: "systemarchitect", schoolId: HIL })).status === 422);
-    ok("...nor a school that does not exist", (await onboard({ email: "who@example.invalid", name: "X Y", role: "coach", schoolId: "00000000-0000-0000-0000-00000000dead" })).status === 404);
+    ok("the database refuses a bad email", (await onboard({ email: "not an email", name: "X Y", role: "coach", schoolId: HIL })).body?.error === "email_invalid");
+    ok("...a role nobody may grant", (await onboard({ email: "who@example.invalid", name: "X Y", role: "systemarchitect", schoolId: HIL })).status !== 200);
+    ok("...and a school that does not exist", (await onboard({ email: "who2@example.invalid", name: "X Y", role: "coach", schoolId: "00000000-0000-0000-0000-00000000dead" })).status !== 200);
   }
 
   group("A platform role is refused when it is filed (db/86)");
   {
     // superadmin and platformadmin belong to no school; a request is always
     // at one, and decide_role_request() would never grant it. So it is refused
-    // at the door, with the enrol path's code, rather than left pending — and
-    // on /api/onboard before any account is opened for the stranger.
+    // at the door, with the enrol path's code, rather than left pending. (The
+    // stranger's half of this group went with POST /api/onboard: a request is
+    // asked signed in now, through this door.)
     for (const role of ["superadmin", "platformadmin"]) {
-      const email = `platform.${role}@example.invalid`;
-      const r = await onboard({ email, name: "X Platform", role, schoolId: HIL });
-      ok(`a stranger cannot onboard as ${role}`, r.status === 422 && r.body?.error === "platform_role_needs_no_school");
-      ok("...and no account was opened for them", !(await idOf(email)));
-      ok("...and no request was filed", (await q(`select count(*)::int c from role_request where role = $1`, [role]))[0].c === 0);
-
       const before = (await q(`select count(*)::int c from role_request where person_id = $1`, [await idOf("coach@example.invalid")]))[0].c;
       const a = await ask(coach, { role, schoolId: HIL });
       ok(`a signed-in person cannot ask for ${role}`, a.status === 422 && a.body?.error === "platform_role_needs_no_school");
@@ -116,20 +129,11 @@ try {
     ok("...whoever asks, signed in or not", (await ask(null, { role: "superadmin", schoolId: HIL })).body?.error === "platform_role_needs_no_school");
   }
 
-  group("A stranger asks only for what the sign-up screens offer");
+  group("A signed-in person may ask for what the database allows");
   {
-    // onboard_request() labels the new account with the asked-for role. A
-    // stranger is held to SELF_REGISTRABLE_ROLES (@scrbrd/policy/roles), the
-    // list the sign-up screens draw from; a signed-in person is not.
-    for (const role of ["principal", "dso", "finance"]) {
-      const email = `walk.selfreg.${role}@example.invalid`;
-      const before = (await q(`select count(*)::int c from role_request where role = $1`, [role]))[0].c;
-      const r = await onboard({ email, name: "X Selfreg", role, schoolId: HIL });
-      ok(`onboarding as ${role} is refused`, r.status === 422 && r.body?.error === "role_not_self_registrable");
-      ok("...with no account opened", !(await idOf(email)));
-      ok("...and no request filed", (await q(`select count(*)::int c from role_request where role = $1`, [role]))[0].c === before);
-    }
-    // The signed-in route is unchanged: the database decides what may be asked.
+    // The stranger's self-registrable refusal lived only on the retired
+    // POST /api/onboard. The signed-in route is unchanged: the database
+    // decides what may be asked.
     ok("a signed-in person may still ask for a principal's role", (await ask(coach, { role: "principal", schoolId: HIL })).status === 200);
     ok("...and a role nobody may grant is still refused by the database there",
        (await ask(coach, { role: "systemarchitect", schoolId: HIL })).body?.error === "not_requestable");
