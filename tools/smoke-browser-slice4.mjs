@@ -153,7 +153,7 @@ async function user(email, name, role, school = HIL) {
 }
 async function child(name, team = "U13F", born = "2013-03-01") {
   const [p] = await q(`insert into player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
-                       values ($1, $2, $3, $4, 940, 'batter', $5) returning id`, [HIL, team, name, name.split(" ").pop(), born]);
+                       values ($1, $2, $3, $4, $6, 'batter', $5) returning id`, [HIL, team, name, name.split(" ").pop(), born, 940 + made.players.length]);
   made.players.push(p.id);
   return p.id;
 }
@@ -198,7 +198,8 @@ try {
     ok("...and no More and no staff destination", (await tid(s.page, "mnav-more").count()) === 0 && (await tid(s.page, "mnav-dashboard").count()) === 0);
     ok("he lands on his own Home", (await s.page.locator('[data-testid="os-main"]').getAttribute("data-page").catch(() => "")) === "myhome");
     await tid(s.page, "appointed-card").first().waitFor({ timeout: 10000 }).catch(() => {});
-    const card = await inner(s.page, "appointed-card");
+    // As written, not as drawn: the label's capitals are CSS (innerText would give "APPOINTED TO SCORE").
+    const card = await tid(s.page, "appointed-card").first().textContent({ timeout: 6000 }).catch(() => "");
     ok("Home carries the block: \"Appointed to score\", word for word", /Appointed to score/.test(card) && /Open the pad/.test(card), card);
     ok("...for the fixture he is appointed to", (await s.page.locator(`[data-testid="appointed"][data-match="${toScore}"]`).count()) === 1);
     ok("no page error", s.errors.length === 0, s.errors.join(" | "));
@@ -218,6 +219,8 @@ try {
     await ev(m, "ball", { t: "run", v: 1, s: three });
     await ev(m, "ball", { t: "W", v: 0, s: three });
     await ev(m, "innings_end", { payload: { reason: "declared", confirmed: { runs: 3, wickets: 1, balls: 3 } } });
+    // On the sheet: a parent reads her child's matches through it.
+    await q(`insert into match_squad (match_id, player_id, side, batting_no) values ($1, $2, 'home', 1)`, [m, three]);
     const [c] = await q(`select balls_faced::int as b, runs::int as r from player_batting_career where player_id = $1`, [three]);
     ok("the fixture: one innings, three balls, three runs, out", c?.b === 3 && c?.r === 3, JSON.stringify(c));
     const s = await open();
@@ -340,9 +343,15 @@ try {
   // ── 7. Q10: the eleven ───────────────────────────────────────────
   group("7. Her child's next fixture: the eleven in order, her child marked (Q10, Kameel 15 Nov)");
   {
-    // The seed's 1XI is five boys; the coach fills the eleven from the school's other boys, as he may.
-    const mates = (await q(`select id from player where school_id = $1 and id <> $2 and id <> all($3::uuid[])
-                             order by (team_code = '1XI') desc, squad_no, id limit 10`, [HIL, PILLAY, made.players]));
+    // The seed's 1XI is five boys; the eleven is filled with boys of the walk's own, each registered
+    // (a verified, consented guardian: a minor is selected only then), one parent standing in for theirs.
+    const standIn = await user("slice4.standin@example.invalid", "S Standin", "guardian");
+    const mates = [];
+    for (let i = 1; i <= 10; i++) {
+      const b = await child(`Sheetmate ${String(i).padStart(2, "0")}`, "1XI");
+      await link(standIn, b);
+      mates.push({ id: b });
+    }
     const next = await match({ startsAt: at(2), opponent: "Slice Four Sheet XI" });
     const ids = [mates[0].id, mates[1].id, mates[2].id, PILLAY, ...mates.slice(3).map((r) => r.id)];
     for (let i = 0; i < ids.length; i++) {

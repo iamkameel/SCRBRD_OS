@@ -408,6 +408,9 @@ function HonoursTab({ me, role }) {
 export function PupilMe({ role, onNav }) {
   const { me, loading, error } = useSelf(role);
   const [show, setShow] = useState({ record: false, conduct: false, skills: false });
+  // One answer, two places (as Settings → Me had it): the eighteen card and his own row redraw together.
+  const [consentNonce, setConsentNonce] = useState(0);
+  const consentChanged = () => setConsentNonce((n) => n + 1);
   if (!me) return <NoSelf loading={loading} error={error} testid="pupil-me"/>;
   // His skills, every score with its date and any target his coach set: the
   // Skills screen, opened from his ratings card rather than a fifth item on
@@ -426,9 +429,9 @@ export function PupilMe({ role, onNav }) {
     <Page testid="pupil-me">
       <Title>Me</Title>
       {/* Q16: the eighteen card and his own health-monitoring row live on his Me (EXPERIENCE_PASS §1.6). */}
-      <EighteenCard role={role}/>
+      <EighteenCard role={role} nonce={consentNonce} onChanged={consentChanged}/>
       <Card label="My health" testid="me-health"><Health child={me} role={role} self/></Card>
-      <HealthConsentSection role={role} playerId={me.id}/>
+      <HealthConsentSection role={role} playerId={me.id} nonce={consentNonce} onChanged={consentChanged}/>
       <Card label="My ratings" testid="me-ratings"
         aside={<Action testid="me-skills-open" onClick={() => setShow((s) => ({ ...s, skills: true }))}>Your skills</Action>}>
         <MyRatings me={me} role={role}/>
