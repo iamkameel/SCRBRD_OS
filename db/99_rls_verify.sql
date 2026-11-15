@@ -13413,7 +13413,13 @@ BEGIN
       ('erased',  NULL,            NULL),
       -- A pupil's account at Hilton (its player role is added below, with
       -- his side), refused (Kameel, 15 Nov: ask a teacher).
-      ('pupil',   NULL,            NULL)) AS v(k, role, school)
+      ('pupil',   NULL,            NULL),
+      -- Three pupils the no-school form does reach: one whose player role
+      -- has ended, one whose role ran out yesterday, one linked by his
+      -- player row alone (db/118: "a boy who has left is still a boy").
+      ('pupilgone',  NULL,         NULL),
+      ('pupilrun',   NULL,         NULL),
+      ('pupillink',  NULL,         NULL)) AS v(k, role, school)
   LOOP
     INSERT INTO app_user (school_id, email, name, role)
     VALUES (r.school, 'v158.' || r.k || '@example.invalid', 'V158 ' || initcap(r.k), coalesce(r.role, 'none'))
@@ -13435,6 +13441,17 @@ BEGIN
   UPDATE app_user SET active = false WHERE id = (ids->>'platoff')::uuid;
   INSERT INTO role_assignment (person_id, role, school_id, team_code)
   VALUES ((ids->>'pupil')::uuid, 'player', '11111111-1111-1111-1111-111111111111', 'U15A');
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  VALUES ((ids->>'pupilgone')::uuid, 'player', '11111111-1111-1111-1111-111111111111', 'U15A') RETURNING id INTO v_a;
+  UPDATE role_assignment SET active = false WHERE id = v_a;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
+  VALUES ((ids->>'pupilrun')::uuid, 'player', '11111111-1111-1111-1111-111111111111', 'U15A', sa_today() - 60) RETURNING id INTO v_a;
+  UPDATE role_assignment SET valid_until = sa_today() WHERE id = v_a;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'U15A', 'Verify Onefiftyeight Linked', 158, 'batter',
+          make_date(extract(year FROM sa_today())::int - 14, 3, 1))
+  RETURNING id INTO v_a;
+  UPDATE app_user SET player_id = v_a WHERE id = (ids->>'pupillink')::uuid;
   -- A support session as support_access_begin() (db/22) writes one: the
   -- school's own role, an hour long, under the supporter's own uuid.
   INSERT INTO role_assignment (person_id, role, school_id, active, valid_from, expires_at)
@@ -13443,6 +13460,16 @@ BEGIN
   INSERT INTO support_access (actor_id, school_id, role, reason, assignment_id, expires_at)
   VALUES ((ids->>'support')::uuid, '11111111-1111-1111-1111-111111111111', 'schooladmin', 'Verify 158: a support session.', v_a, now() + interval '1 hour');
   RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A request written straight into the table as the owner, past the ask's
+-- tests, as a row from before the pupil test or another door would be.
+CREATE OR REPLACE FUNCTION _v158_plant(p_person uuid) RETURNS uuid AS $$
+DECLARE v uuid;
+BEGIN
+  INSERT INTO school_add_request (person_id, school_name, town, job)
+  VALUES (p_person, 'Verify Planted School', 'Howick', 'other') RETURNING id INTO v;
+  RETURN v;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- How many requests hold this account, past RLS.
@@ -43917,8 +43944,11 @@ $m130$;
   --              asked twice: each refused with its code and nothing written;
   --              somebody whose role has ended may ask; an 80-letter name is
   --              taken
-  --   (pupil)    a pupil's account (a live player role) is refused,
-  --              ask_a_teacher, and nothing is written (Kameel, 15 Nov)
+  --   (pupil)    a pupil's account is refused, ask_a_teacher, and nothing
+  --              is written (Kameel, 15 Nov), by db/118's rule: a live
+  --              player role, an ended one, one that ran out, and a player
+  --              row with no role at all; and a pupil's row planted past the
+  --              ask gives the platform his name and no address
   --   (unseen)   a name or town holding a bidi override or isolate, a
   --              zero-width space, a soft hyphen or a byte-order mark, or no
   --              two letters or digits, is refused; no-break spaces are folded
@@ -43940,7 +43970,8 @@ $m130$;
   --   (kept)     ninety days after its answer a request is gone from the
   --              asker's read, the platform's and who asked; eighty-nine is
   --              still read; the owner's purge deletes exactly the answered
-  --              rows past ninety days, never an open one, and a second purge
+  --              rows past ninety days and the unanswered ones past 180, never
+  --              a younger open one, and a second purge
   --              deletes nothing; the application may not call it (Kameel,
   --              15 Nov: deleted 90 days after the answer); an unanswered
   --              request 180 days old (90 past its lapse) is gone from both
@@ -43988,13 +44019,16 @@ $m130$;
   --   the foreign key without ON DELETE CASCADE      → (ends)
   --   the read policy open to any school role        → (support)
   --   the ask without its pupil refusal              → (pupil)
+  --   the pupil test live roles only (as at 9eb2f90d) → (pupil)
+  --   the requester returning the raw address        → (pupil)
+  --   the ask without its disabled-account test      → (refused)
   --   the read policy without its lapse cut          → (kept)
   --   the requester without its lapse cut            → (kept)
   --   the purge without its lapsed arm               → (kept)
   DECLARE
     ids jsonb;
     A uuid; B uuid; C uuid; O uuid; L uuid; X uuid; P uuid; W uuid; S uuid;
-    r1 uuid; r2 uuid; r3 uuid; r4 uuid; r5 uuid; rb uuid; rl uuid; rx uuid; rs uuid;
+    r1 uuid; r2 uuid; r3 uuid; r4 uuid; r5 uuid; rb uuid; rl uuid; rx uuid; rs uuid; rx2 uuid;
     v text; k int; n int; held text; heldb text; g text; ok_ boolean;
     row_ jsonb;
   BEGIN
@@ -44109,6 +44143,11 @@ $m130$;
     PERFORM set_config('app.user_id', '', true);
     v := _v158_ask('Verify Nobody School', 'Howick', 'coach');
     PERFORM _assert(v = 'not_signed_in', format('§136 (refused): nobody signed in was answered %s', v));
+    PERFORM set_config('app.user_id', ids->>'platoff', true);
+    v := _v158_ask('Verify Disabled School', 'Howick', 'coach');
+    PERFORM _assert(v = 'not_signed_in' AND _v158_of((ids->>'platoff')::uuid) = 0,
+      format('§136 (refused): a disabled account asked and was answered %s', v));
+    PERFORM set_config('app.user_id', '', true);
     PERFORM _as(A);
     PERFORM set_config('app.scope', 'pad', true);
     v := _v158_ask('Verify Pad School', 'Howick', 'coach');
@@ -44169,6 +44208,20 @@ $m130$;
     v := _v158_ask('Verify Cousin School', 'Howick', 'other');
     PERFORM _assert(v = 'ask_a_teacher', format('§136 (pupil): a pupil''s account asked and was answered %s', v));
     PERFORM _assert(_v158_all() = k AND _v158_of((ids->>'pupil')::uuid) = 0, '§136 (pupil): a pupil''s refused ask wrote a row');
+    FOREACH g IN ARRAY ARRAY['pupilgone', 'pupilrun', 'pupillink'] LOOP
+      PERFORM set_config('app.user_id', ids->>g, true);
+      v := _v158_ask('Verify Cousin School', 'Howick', 'other');
+      PERFORM _assert(v = 'ask_a_teacher' AND _v158_of((ids->>g)::uuid) = 0,
+        format('§136 (pupil): %s, a pupil by db/118''s rule, asked and was answered %s', g, v));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    rx2 := _v158_plant((ids->>'pupillink')::uuid);
+    PERFORM _as(P);
+    PERFORM _assert((SELECT count(*) FROM school_add_requester(rx2) q WHERE q.name = 'V158 Pupillink' AND q.email IS NULL) = 1,
+      '§136 (pupil): the platform reads a pupil''s sign-in address through who asked');
+    PERFORM _as(A);
+    PERFORM _assert((SELECT count(*) FROM school_add_requester(r1) q WHERE q.email = 'v158.asker@example.invalid') = 1,
+      '§136 (pupil): the asker no longer reads her own address through who asked');
 
     -- (cap)
     PERFORM _as(A);
