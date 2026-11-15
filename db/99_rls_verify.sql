@@ -13374,6 +13374,25 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/157 (section 135) ─────────────────────────────────────────────
 
+-- ┌── db/162 (section 136) ─────────────────────────────────────────────
+-- A fixture's officials are read signed in only while Officials is on for
+-- the fixture's school (db/162; SCRBRD-144). Hilton's 1XI at home to
+-- Westville's 1XI, one umpire appointed. The readers are section 134's
+-- kind (_v156_person()), made afresh here.
+CREATE OR REPLACE FUNCTION _v162_stage() RETURNS uuid AS $$
+DECLARE v_m uuid;
+BEGIN
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', '22222222-2222-2222-2222-222222222222', '1XI',
+          'Westville Boys'' High 1XI (V162)', now() + interval '2 days', 'cricket', 'T20', 20, 'scheduled')
+  RETURNING id INTO v_m;
+  INSERT INTO match_official (match_id, school_id, duty, person_name, panel, appointed_by)
+  VALUES (v_m, '11111111-1111-1111-1111-111111111111', 'umpire', 'Adult Umpire Sibiya V162', 'KZN Cricket Umpires',
+          '88888888-0000-0000-0000-000000000006');
+  RETURN v_m;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/162 (section 136) ─────────────────────────────────────────────
+
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -43710,6 +43729,151 @@ $m130$;
              coalesce(_v157_reach('anon'), '(nothing)')));
   END;
   -- └── db/157 (section 135) ──────────────────────────────────────────
+  -- ┌── db/162 (section 136) ─────────────────────────────────────────
+  -- ── 136. A fixture's officials are read signed in only while Officials is on for the fixture's school, db/156's choice; whoever may appoint still reads and writes them at the table; the appointments stay stored (db/162; SCRBRD-144; Kameel 13 Nov 2026) ──
+  -- Staged by _v162_stage(): Hilton's 1XI at home to Westville's, one
+  -- umpire. Every read through scrbrd_app at the table; each switch hidden
+  -- by a school's own suppression (_v156_hide()) or plan (_v156_grant())
+  -- and lifted again. Readers made here: Westville's administrator, a 1XI
+  -- coach (fixture.read alone) and Hilton's director of sport
+  -- (officiating.assign).
+  -- Labels:
+  --   (on)       with Officials on at Hilton, Westville's administrator and
+  --              the coach each read the umpire
+  --   (off)      Officials hidden at Hilton: neither reads a row, the
+  --              appointment still stored
+  --   (writer)   while it is off, the director, who may appoint, reads the
+  --              row at the table, withdraws the panel (an UPDATE) and
+  --              stores a new umpire (an INSERT … RETURNING read back)
+  --   (back)     Officials on again: Westville's administrator and the
+  --              coach read the umpire stored while it was off
+  --   (away)     Officials hidden at Westville only, not the fixture's
+  --              school: the table still serves Hilton's umpire to both
+  --   (grant)    Hilton's plan granted false: neither reads him; the
+  --              grant gone, both do
+  --   (body)     official_shown() a stable definer with its path pinned,
+  --              EXECUTE to its owner and scrbrd_app exactly (aclexplode);
+  --              match_official_shown_while_on one RESTRICTIVE SELECT
+  --              policy asking it, beside match_official_read
+  --
+  -- Falsified (15 Nov 2026, on a migrated database, the section run alone;
+  -- unchanged it passed): the policy's USING made true → (off); official_shown()
+  -- without its officiating.assign leg → (writer).
+  DECLARE
+    M uuid;
+    v_coach uuid;
+    V_DIRECTOR uuid;
+    V_WESADM uuid;
+    v_id uuid;
+    n int;
+    u uuid;
+  BEGIN
+    PERFORM set_config('app.user_id', '', true);
+    M := _v162_stage();
+    v_coach := _v156_person('v162coach', 'coach', HIL, '1XI');
+    V_DIRECTOR := _v156_person('v162director', 'directorofsport', HIL, NULL);
+    V_WESADM := _v156_person('v162wesadmin', 'schooladmin', WES, NULL);
+
+    -- (on)
+    PERFORM _assert(feature_enabled('officials', HIL, NULL) AND feature_enabled('officials', WES, NULL),
+      '§136 (on): Officials is not on for Hilton and Westville to begin with');
+    FOREACH u IN ARRAY ARRAY[V_WESADM, v_coach]::uuid[] LOOP
+      PERFORM _as(u);
+      PERFORM _assert(fixture_reach('fixture.read', M), format('§136 (on): %s does not reach the fixture: it proves nothing', u));
+      SELECT count(*) INTO n FROM match_official WHERE match_id = M AND NOT withdrawn AND person_name = 'Adult Umpire Sibiya V162';
+      PERFORM _assert(n = 1, format('§136 (on): with Officials on at Hilton, %s reads %s umpire(s), not the one', u, n));
+    END LOOP;
+
+    -- (off)
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v156_hide('officials', HIL, NULL, true);
+    PERFORM _assert(NOT feature_enabled('officials', HIL, NULL) AND feature_enabled('officials', WES, NULL),
+      '§136 (off): Officials is not off at Hilton and on at Westville');
+    FOREACH u IN ARRAY ARRAY[V_WESADM, v_coach]::uuid[] LOOP
+      PERFORM _as(u);
+      SELECT count(*) INTO n FROM match_official WHERE match_id = M;
+      PERFORM _assert(n = 0, format('§136 (off): with Officials off at Hilton, %s reads %s appointment(s) of its fixture', u, n));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v156_count(format('SELECT count(*)::int FROM match_official WHERE match_id = %L AND NOT withdrawn', M)) = 1,
+      '§136 (off): the appointment is not still stored while Officials is off');
+
+    -- (writer)
+    PERFORM _as(V_DIRECTOR);
+    PERFORM _assert(app_can('officiating.assign', HIL, '1XI', '00000000-0000-0000-0000-000000000000'::uuid, M),
+      '§136 (writer): Hilton''s director of sport does not hold officiating.assign over the fixture: it proves nothing');
+    SELECT count(*) INTO n FROM match_official WHERE match_id = M AND NOT withdrawn;
+    PERFORM _assert(n = 1, format('§136 (writer): the director, who may appoint, reads %s appointment(s) at the table while Officials is off', n));
+    UPDATE match_official SET withdrawn = true WHERE match_id = M AND NOT withdrawn;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 1, format('§136 (writer): the director withdrew %s appointment(s) while Officials is off, not one', n));
+    INSERT INTO match_official (match_id, school_id, duty, person_name, panel, appointed_by, appointed_at)
+    VALUES (M, match_school(M), 'umpire', 'Adult Umpire Mthembu V162', 'KZN Cricket Umpires', V_DIRECTOR, now())
+    RETURNING id INTO v_id;
+    PERFORM _assert(v_id IS NOT NULL, '§136 (writer): the director''s appointment did not read back while Officials is off');
+    PERFORM _as(V_WESADM);
+    SELECT count(*) INTO n FROM match_official WHERE match_id = M;
+    PERFORM _assert(n = 0, format('§136 (writer): after the new sheet Westville''s administrator reads %s appointment(s) while Officials is off', n));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v156_count(format('SELECT count(*)::int FROM match_official WHERE match_id = %L AND NOT withdrawn AND person_name = ''Adult Umpire Mthembu V162''', M)) = 1,
+      '§136 (writer): the sheet made while Officials is off is not stored');
+
+    -- (back)
+    PERFORM _v156_hide('officials', HIL, NULL, false);
+    FOREACH u IN ARRAY ARRAY[V_WESADM, v_coach]::uuid[] LOOP
+      PERFORM _as(u);
+      SELECT count(*) INTO n FROM match_official WHERE match_id = M AND NOT withdrawn AND person_name = 'Adult Umpire Mthembu V162';
+      PERFORM _assert(n = 1, format('§136 (back): with Officials on again at Hilton, %s reads %s umpire(s), not the one stored while off', u, n));
+    END LOOP;
+
+    -- (away)
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v156_hide('officials', WES, NULL, true);
+    FOREACH u IN ARRAY ARRAY[V_WESADM, v_coach]::uuid[] LOOP
+      PERFORM _as(u);
+      SELECT count(*) INTO n FROM match_official WHERE match_id = M AND NOT withdrawn;
+      PERFORM _assert(n = 1, format('§136 (away): Officials off at Westville, the away school, hid Hilton''s umpire from %s at the table (%s)', u, n));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v156_hide('officials', WES, NULL, false);
+
+    -- (grant)
+    PERFORM _v156_grant('officials', HIL, false);
+    PERFORM _assert(NOT feature_enabled('officials', HIL, NULL), '§136 (grant): a grant false leaves Officials on for Hilton');
+    FOREACH u IN ARRAY ARRAY[V_WESADM, v_coach]::uuid[] LOOP
+      PERFORM _as(u);
+      SELECT count(*) INTO n FROM match_official WHERE match_id = M;
+      PERFORM _assert(n = 0, format('§136 (grant): with Hilton''s Officials granted false, %s reads %s appointment(s)', u, n));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v156_grant('officials', HIL, NULL);
+    FOREACH u IN ARRAY ARRAY[V_WESADM, v_coach]::uuid[] LOOP
+      PERFORM _as(u);
+      SELECT count(*) INTO n FROM match_official WHERE match_id = M AND NOT withdrawn;
+      PERFORM _assert(n = 1, format('§136 (grant): with the grant gone, %s reads %s umpire(s), not the one', u, n));
+    END LOOP;
+
+    -- (body)
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = to_regprocedure('official_shown(uuid)') AND p.prosecdef
+                              AND p.provolatile = 's' AND p.proconfig = ARRAY['search_path=pg_catalog, public, pg_temp']),
+      '§136 (body): official_shown() is missing, or not a stable definer with its search path pinned');
+    PERFORM _assert((SELECT array_agg(coalesce(nullif(a.grantee, 0)::regrole::text, 'PUBLIC') || ':' || a.privilege_type
+                                      ORDER BY a.grantee <> p.proowner, a.grantee::regrole::text)
+                       FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                      WHERE p.oid = to_regprocedure('official_shown(uuid)'))
+                    = (SELECT ARRAY[p.proowner::regrole::text || ':EXECUTE', 'scrbrd_app:EXECUTE']
+                         FROM pg_proc p WHERE p.oid = to_regprocedure('official_shown(uuid)')),
+      format('§136 (body): official_shown() is not EXECUTE to its owner and scrbrd_app exactly: %s', _v156_acl('official_shown(uuid)')));
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = 'match_official'::regclass
+                              AND p.polname = 'match_official_shown_while_on' AND p.polcmd = 'r' AND NOT p.polpermissive
+                              AND p.polroles = '{0}' AND p.polwithcheck IS NULL
+                              AND pg_get_expr(p.polqual, p.polrelid) = 'official_shown(match_id)')
+                    AND EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = 'match_official'::regclass
+                                  AND p.polname = 'match_official_read' AND p.polcmd = 'r' AND p.polpermissive),
+      '§136 (body): match_official_shown_while_on is not one RESTRICTIVE SELECT policy asking official_shown(match_id) beside match_official_read');
+  END;
+  -- └── db/162 (section 136) ──────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
