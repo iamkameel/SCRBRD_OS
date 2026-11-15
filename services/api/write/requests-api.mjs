@@ -89,6 +89,7 @@ export const SCHOOL_DECIDE_STATUS = {
   not_permitted:   403,
   state_invalid:   422,
   no_such_request: 404,
+  own_request:     403,
   already_decided: 409,
   lapsed:          409,
 };

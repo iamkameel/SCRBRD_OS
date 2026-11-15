@@ -8,6 +8,7 @@ import { arrange, firstScreen } from "./sections/LiveStrip.jsx";
 import { homeCss } from "./fx.js";
 import { LIVE_POLL_MS, anyLive, readLive, readNews } from "./reads.js";
 import { arenaMode } from "./arena/capable.js";
+import { SCHOOLS_EMAIL } from "../lib/contact.js";
 import { Arena } from "./arena/Arena.jsx";
 
 /**
@@ -48,7 +49,7 @@ import { Arena } from "./arena/Arena.jsx";
  * data-cam. A scene that fails hands back to the film (useArena).
  */
 const APP = "/app";
-const SCHOOLS_EMAIL = "kameel@maverickdesign.co.za";
+// The address lives in lib/contact.js, shared with the no-school home (Q22).
 const PRIVACY = "/privacy";
 /** The first screen's photograph, { src, alt }, when there is one. See Hero.jsx before filling it. */
 const HERO_PHOTO = null;

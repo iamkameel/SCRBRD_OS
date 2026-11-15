@@ -38,8 +38,12 @@
 -- route turns into words:
 --   not_signed_in   no app_user_id(), or a pad's credential
 --   has_school      a live assignment
---   name_required   the school's name, 2 to 120 characters after trimming
---   town_required   the town, 2 to 80
+--   name_required   the school's name, 2 to 120 characters after trimming,
+--                   with two letters or digits at least, and no control,
+--                   zero-width or bidi character (a name that reads blank or
+--                   backwards in the platform's list is refused)
+--   town_required   the town, 2 to 80, by the same rule
+-- Spaces, the no-break ones included, are folded to one before the test.
 --   job_invalid     not one of the list below
 --   already_asked   an open request of theirs names this school and town
 --   too_many_open   THE CAP: three open requests per account at once
@@ -204,8 +208,13 @@ CREATE OR REPLACE FUNCTION school_add_request_ask(p_school text, p_town text, p_
 RETURNS TABLE (ok boolean, reason text, request_id uuid) AS $$
 DECLARE
   v_me     uuid := app_user_id();
-  v_school text := regexp_replace(btrim(coalesce(p_school, '')), '\s+', ' ', 'g');
-  v_town   text := regexp_replace(btrim(coalesce(p_town, '')), '\s+', ' ', 'g');
+  -- Every run of spaces, the no-break ones (U+00A0, U+2007, U+202F) too, is one space.
+  v_school text := btrim(regexp_replace(coalesce(p_school, ''), '[\s   ]+', ' ', 'g'));
+  v_town   text := btrim(regexp_replace(coalesce(p_town, ''), '[\s   ]+', ' ', 'g'));
+  -- What a name may not hold: a control character, a soft hyphen, or a
+  -- zero-width, joiner, bidi embedding, override or isolate, or a byte-order
+  -- mark (U+200B–U+200F, U+202A–U+202E, U+2060–U+2064, U+2066–U+2069, U+FEFF).
+  v_unseen text := '[[:cntrl:]­​-‏‪-‮⁠-⁤⁦-⁩﻿]';
   v_id     uuid;
 BEGIN
   IF v_me IS NULL OR app_pad_scoped() THEN
@@ -218,10 +227,12 @@ BEGIN
                 AND (a.expires_at  IS NULL OR a.expires_at  >  now())) THEN
     RETURN QUERY SELECT false, 'has_school'::text, NULL::uuid; RETURN;
   END IF;
-  IF char_length(v_school) NOT BETWEEN 2 AND 120 OR v_school ~ '[[:cntrl:]]' THEN
+  IF char_length(v_school) NOT BETWEEN 2 AND 120 OR v_school ~ v_unseen
+     OR v_school !~ '[[:alnum:]].*[[:alnum:]]' THEN
     RETURN QUERY SELECT false, 'name_required'::text, NULL::uuid; RETURN;
   END IF;
-  IF char_length(v_town) NOT BETWEEN 2 AND 80 OR v_town ~ '[[:cntrl:]]' THEN
+  IF char_length(v_town) NOT BETWEEN 2 AND 80 OR v_town ~ v_unseen
+     OR v_town !~ '[[:alnum:]].*[[:alnum:]]' THEN
     RETURN QUERY SELECT false, 'town_required'::text, NULL::uuid; RETURN;
   END IF;
   IF p_job IS NULL OR p_job NOT IN ('coach', 'teacher', 'sport', 'office', 'head', 'parent', 'other') THEN
@@ -253,8 +264,8 @@ GRANT EXECUTE ON FUNCTION school_add_request_ask(text, text, text) TO scrbrd_app
 
 -- ── 5 · The platform's door ───────────────────────────────────────
 -- "added" or "declined", once, on an open request that has not lapsed, by a
--- holder of platform.tenant.manage (app_holds() refuses a pad's credential).
--- It writes the answer, who gave it and when, and nothing else: no school,
+-- holder of platform.tenant.manage (app_holds() refuses a pad's credential),
+-- never on their own request. It writes the answer, who gave it and when, and nothing else: no school,
 -- no role, no link (header §1).
 CREATE OR REPLACE FUNCTION school_add_request_decide(p_request uuid, p_state text)
 RETURNS TABLE (ok boolean, reason text) AS $$
@@ -271,6 +282,11 @@ BEGIN
   SELECT * INTO r FROM school_add_request WHERE id = p_request FOR UPDATE;
   IF NOT FOUND THEN
     RETURN QUERY SELECT false, 'no_such_request'::text; RETURN;
+  END IF;
+  -- Nobody answers their own: an asker made a platform administrator before
+  -- the answer came does not decide it (separation of duties).
+  IF r.person_id = v_me THEN
+    RETURN QUERY SELECT false, 'own_request'::text; RETURN;
   END IF;
   IF r.state <> 'open' THEN
     RETURN QUERY SELECT false, 'already_decided'::text; RETURN;

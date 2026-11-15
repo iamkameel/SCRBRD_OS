@@ -19,6 +19,9 @@ const input = () => ({ width: "100%", minHeight: "44px", boxSizing: "border-box"
   background: T.fill.field, border: `1px solid ${T.line.normal}`, color: T.content.primary, fontFamily: FONT.body, fontSize: "16px" });
 const label = () => ({ display: "block", fontFamily: FONT.head, fontSize: "12px", fontWeight: 700, color: T.content.secondary, marginBottom: "6px" });
 
+// A server refusal about one field, and that field.
+const SERVER_FIELD = { name_required: "name", town_required: "town", job_invalid: "job" };
+
 function Btn({ children, kind = "quiet", style, ...rest }) {
   const main = kind === "primary";
   return (
@@ -51,11 +54,24 @@ export function AskSchool({ startName = "", onSent, onClose, post = api }) {
   const [form, setForm] = useState({ name: startName.slice(0, NAME_MAX), town: "", job: "" });
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
+  // The field the problem is about, marked aria-invalid and focused.
+  const [bad, setBad] = useState(null);
   const [sent, setSent] = useState(null);
   const head = useRef(null);
-  const nameId = useId(), townId = useId(), jobId = useId();
-  const set = (k, v) => { setForm((f) => ({ ...f, [k]: v })); setProblem(""); };
-  const built = buildAsk(form);
+  const fields = { name: useRef(null), town: useRef(null), job: useRef(null) };
+  const nameId = useId(), townId = useId(), jobId = useId(), problemId = useId();
+  const set = (k, v) => { setForm((f) => ({ ...f, [k]: v })); setProblem(""); setBad(null); };
+
+  // Closed (Cancel or Done): focus goes back to the door that opened it, or,
+  // where that has gone, to the join list's own door.
+  useEffect(() => {
+    const opener = document.activeElement;
+    return () => {
+      const back = opener && opener !== document.body && opener.isConnected ? opener
+        : document.querySelector('[data-testid="join-school-missing"], [data-testid="join-school-ask"]');
+      back?.focus?.({ preventScroll: true });
+    };
+  }, []);
 
   // Opened from the list: the note is scrolled to and its heading focused.
   useEffect(() => {
@@ -67,14 +83,19 @@ export function AskSchool({ startName = "", onSent, onClose, post = api }) {
   }, [sent]);
 
   const send = async () => {
+    if (busy) return;
     const r = buildAsk(form);
-    if (!r.ok) { setProblem(r.problem); return; }
-    setBusy(true); setProblem("");
+    if (!r.ok) { setProblem(r.problem); setBad(r.field); fields[r.field].current?.focus(); return; }
+    setBusy(true); setProblem(""); setBad(null);
     try {
       await post("/api/school-requests", { method: "POST", body: r.body });
       setSent(r.body.schoolName);
       onSent?.();
-    } catch (e) { setProblem(askWords(e)); }
+    } catch (e) {
+      setProblem(askWords(e));
+      const field = SERVER_FIELD[e?.code];
+      if (field) { setBad(field); fields[field].current?.focus(); }
+    }
     setBusy(false);
   };
 
@@ -94,23 +115,26 @@ export function AskSchool({ startName = "", onSent, onClose, post = api }) {
       <div style={{ ...text(14), marginBottom: "16px" }}>{ASK_INTRO}</div>
       <div style={{ marginBottom: "14px" }}>
         <label htmlFor={nameId} style={label()}>The school's name</label>
-        <input id={nameId} value={form.name} maxLength={NAME_MAX} onChange={(e) => set("name", e.target.value)} style={input()} autoComplete="off" data-testid="school-ask-name"/>
+        <input id={nameId} ref={fields.name} value={form.name} maxLength={NAME_MAX} onChange={(e) => set("name", e.target.value)} style={input()} autoComplete="off" data-testid="school-ask-name"
+          aria-invalid={bad === "name" || undefined} aria-describedby={bad === "name" ? problemId : undefined}/>
       </div>
       <div style={{ marginBottom: "14px" }}>
         <label htmlFor={townId} style={label()}>Its town</label>
-        <input id={townId} value={form.town} maxLength={TOWN_MAX} onChange={(e) => set("town", e.target.value)} style={input()} autoComplete="off" data-testid="school-ask-town"/>
+        <input id={townId} ref={fields.town} value={form.town} maxLength={TOWN_MAX} onChange={(e) => set("town", e.target.value)} style={input()} autoComplete="off" data-testid="school-ask-town"
+          aria-invalid={bad === "town" || undefined} aria-describedby={bad === "town" ? problemId : undefined}/>
       </div>
       <div style={{ marginBottom: "14px" }}>
         <label htmlFor={jobId} style={label()}>What do you do there?</label>
-        <select id={jobId} value={form.job} onChange={(e) => set("job", e.target.value)} style={input()} data-testid="school-ask-job">
+        <select id={jobId} ref={fields.job} value={form.job} onChange={(e) => set("job", e.target.value)} style={input()} data-testid="school-ask-job"
+          aria-invalid={bad === "job" || undefined} aria-describedby={bad === "job" ? problemId : undefined}>
           <option value="">Choose…</option>
           {JOBS.map((j) => <option key={j.id} value={j.id}>{j.label}</option>)}
         </select>
       </div>
       <div role="note" style={{ ...text(13), marginBottom: "14px" }}>{ASK_PUPIL}</div>
-      {problem && <div role="alert" data-testid="school-ask-problem" style={{ ...text(13, T.semantic.criticalText), padding: "10px 12px", borderRadius: "8px", background: clr(T.semantic.critical, 0.1), border: `1px solid ${clr(T.semantic.critical, 0.2)}`, marginBottom: "12px" }}>{problem}</div>}
+      {problem && <div role="alert" id={problemId} data-testid="school-ask-problem" style={{ ...text(13, T.semantic.criticalText), overflowWrap: "anywhere", padding: "10px 12px", borderRadius: "8px", background: clr(T.semantic.critical, 0.1), border: `1px solid ${clr(T.semantic.critical, 0.2)}`, marginBottom: "12px" }}>{problem}</div>}
       <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-        <Btn kind="primary" data-testid="school-ask-send" disabled={busy || !built.ok} onClick={send}>{busy ? "Sending…" : "Send to SCRBRD"}</Btn>
+        <Btn kind="primary" data-testid="school-ask-send" disabled={busy} onClick={send}>{busy ? "Sending…" : "Send to SCRBRD"}</Btn>
         <Btn data-testid="school-ask-cancel" onClick={onClose}>Cancel</Btn>
       </div>
     </section>
@@ -125,8 +149,8 @@ export function AskSchool({ startName = "", onSent, onClose, post = api }) {
 export function SchoolAskRows({ rows }) {
   return rows.map((r) => (
     <div key={r.id} data-testid={`school-request-${r.state}`} style={{ padding: "12px 14px", border: `1px solid ${T.line.normal}`, borderRadius: "12px", background: T.fill.panel, marginBottom: "8px" }}>
-      <div style={{ ...text(14, T.content.primary), fontWeight: 600 }}>Add {r.schoolName}, {r.town}</div>
-      <div style={text(13, T.content.secondary)}>SCRBRD · {ASK_STATE_WORDS[r.state] ?? r.state}</div>
+      <div style={{ ...text(14, T.content.primary), fontWeight: 600, overflowWrap: "anywhere" }}>Add {r.schoolName}, {r.town}</div>
+      <div style={{ ...text(13, T.content.secondary), overflowWrap: "anywhere" }}>{ASK_STATE_WORDS[r.state] ?? r.state}</div>
     </div>
   ));
 }
