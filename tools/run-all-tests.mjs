@@ -481,6 +481,9 @@ const SUITES = [
   // SCRBRD-140 phase 2 (db/92): the staff register's words for every code
   // db/92 answers, and staff.csv read as the office's spreadsheet writes it.
   ["register-api", "services/api/write/register-api.test.mjs"],
+  // EXPERIENCE_PASS Q8 (db/160): the follow list's routes, as the caller and
+  // nobody else; its Today is the public list kept to his schools.
+  ["follow-api", "services/api/write/follow-api.test.mjs"],
   // Notifications S1 (D1, D2, D5, D17, D18): the lists and the per-kind
   // contract agree with db/89's CHECKs and functions; opening a notice and
   // "Mark all read" write the reader's own receipt and nothing else; one

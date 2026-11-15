@@ -853,7 +853,7 @@ console.log("\n── The home page's strip: GET /api/public/live (SCRBRD-142, d
  * so neither may reach the wire whatever the database hands back.
  */
 const L = {
-  reads: 0, users: /** @type {string[]} */ ([]),
+  reads: 0, sides: 0, users: /** @type {string[]} */ ([]),
   listed: /** @type {Set<string>} */ (new Set()),
   /** @type {{id: string, home: string, away: string | null, pub: {home: boolean, away: boolean}, status: string, target?: any, revised?: boolean}[]} */
   fixtures: [],
@@ -884,6 +884,13 @@ const livePool = {
       if (/set_config\('app\.user_id'|app_session_begin/.test(text)) { L.users.push(params[0]); return { rows: [] }; }
       if (/^(BEGIN|COMMIT|ROLLBACK)/.test(text) || /set_config/.test(text)) return { rows: [] };
       if (/sa_today\(\)/.test(text) && !/public_live_fixtures/.test(text)) return { rows: [{ d: "2026-10-03" }] };
+      if (/unnest\(\$1::uuid\[\]\) x\(id\) cross join lateral public_match_header\(x\.id\) h/.test(text)) {
+        // db/160's filter: each fixture's two schools by code, from the header.
+        L.sides++;
+        const codeOf = (/** @type {string | null} */ n) => n === "Hilton College" ? "HIL" : n === "Westville Boys' High" ? "WES" : null;
+        return { rows: params[0].map((/** @type {string} */ id) => L.fixtures.find((f) => f.id === id)).filter(Boolean)
+          .map((/** @type {any} */ f) => ({ id: f.id, home_code: codeOf(f.home), away_code: codeOf(f.away) })) };
+      }
       if (/public_live_fixtures\(\)/.test(text)) {
         L.reads++;
         return { rows: L.fixtures.filter((f) => (f.pub.home && L.listed.has(f.home)) || (!!f.away && f.pub.away && L.listed.has(f.away)))
@@ -983,6 +990,27 @@ const livePool = {
   await read();
   ok("...but not a player's: the list names nobody", L.reads === before + 2);
   ok("a fixed cache key that no fixture id can be", !/^[0-9a-f-]{36}$/.test("live") && site.cache.entries.has("live"));
+
+  // db/160 (EXPERIENCE_PASS Q8): a follower's Today is this list, kept to his
+  // schools by the codes the public match header gives each side.
+  const LF2 = "77777777-0000-0000-0000-0000000001f2";
+  L.fixtures = [
+    { id: LF, home: HILTON, away: WESTVILLE, pub: { home: true, away: false }, status: "live" },
+    { id: LF2, home: WESTVILLE, away: null, pub: { home: true, away: false }, status: "scheduled" }];
+  world([HILTON, WESTVILLE], { home: true, away: false });
+  const ids2 = async (/** @type {string[]} */ codes) => (await site.followedToday(codes))?.fixtures.map((/** @type {any} */ f) => f.id).join();
+  ok("db/160: following Westville keeps both its fixtures, home and away", (await ids2(["WES"])) === `${LF},${LF2}`, await ids2(["WES"]));
+  ok("...following Hilton keeps Hilton's alone", (await ids2(["HIL"])) === LF);
+  ok("...following nothing keeps nothing", (await ids2([])) === "" && (await ids2(["NOPE"])) === "");
+  const full = JSON.parse((await read()).body);
+  const kept = await site.followedToday(["HIL"]);
+  ok("...a kept fixture is the public card byte for byte", JSON.stringify(kept?.fixtures[0]) === JSON.stringify(full.fixtures.find((/** @type {any} */ f) => f.id === LF)) && kept?.asOf === full.asOf);
+  before = L.reads; const sidesBefore = L.sides;
+  await ids2(["WES"]); await ids2(["HIL"]);
+  ok("...served from the public cache: no second read of the list or the sides", L.reads === before && L.sides === sidesBefore);
+  world([WESTVILLE], { home: true, away: false });
+  ok("...a school that stops listing leaves at once: Hilton's card is gone for its followers", (await ids2(["HIL"])) === "" && (await ids2(["WES"])) === LF2);
+  ok("...and the filter asked the database only as nobody", L.users.every((u) => u === ""));
 
   site.close(); await new Promise((r) => srv.close(() => r(null)));
 
