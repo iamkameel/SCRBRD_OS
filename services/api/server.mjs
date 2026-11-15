@@ -540,6 +540,10 @@ const pilotMatch = pilotRoutes({ pool, secret: SECRET });
 // The follow list (EXPERIENCE_PASS Q8, db/160): its Today is the public list,
 // kept to the caller's schools by the public pages' own filter.
 const follows = followRoutes({ pool, secret: SECRET, today: publicSite.followedToday });
+// A person's own list, and his Today from it: kept nowhere, on a shared school
+// computer least of all.
+NO_STORE_ROUTES.add(follows.list);
+NO_STORE_ROUTES.add(follows.today);
 // The key is read once, here, and goes nowhere but Google's header. Unset,
 // the hint answers 503 weather_unavailable and the scorer picks by hand.
 // Only an enrolled account may spend the quota (db/81's app_enrolled()): a

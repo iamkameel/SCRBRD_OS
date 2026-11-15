@@ -619,6 +619,9 @@ try {
     await v.ctx.close();
     const ft = (await call("/api/follows/today", { token: fan })).body?.fixtures?.find((f) => f.id === LIVE);
     ok("...and the follower's Today carries the same target from the same read", ft?.target === 9 && ft?.revised === false, JSON.stringify(ft));
+    const kept = await Promise.all(["/api/follows", "/api/follows/today"].map((path) => fetch(BASE + path, { headers: { authorization: `Bearer ${fan}` } })
+      .then((r) => `${r.status} ${r.headers.get("cache-control")}`)));
+    ok("...and neither his list nor his Today is kept anywhere: no-store", kept.every((k) => k === "200 no-store"), kept.join(" | "));
     await call(`/api/follows/${HIL}`, { method: "DELETE", token: fan });
   }
 

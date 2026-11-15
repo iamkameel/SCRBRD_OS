@@ -855,12 +855,12 @@ console.log("\n── The home page's strip: GET /api/public/live (SCRBRD-142, d
 const L = {
   reads: 0, sides: 0, users: /** @type {string[]} */ ([]),
   listed: /** @type {Set<string>} */ (new Set()),
-  /** @type {{id: string, home: string, away: string | null, pub: {home: boolean, away: boolean}, status: string, target?: any, revised?: boolean}[]} */
+  /** @type {{id: string, home: string, away: string | null, pub: {home: boolean, away: boolean}, status: string, target?: any, revised?: boolean, typed?: string}[]} */
   fixtures: [],
 };
 const LF = "77777777-0000-0000-0000-0000000001f1";
 const liveRow = (/** @type {typeof L.fixtures[number]} */ f) => ({
-  match_id: f.id, home_label: f.home, home_code: "1XI", away_label: f.away ?? "Verify Typed College 1XI", away_code: f.away ? "1XI" : null,
+  match_id: f.id, home_label: f.home, home_code: "1XI", away_label: f.away ?? f.typed ?? "Verify Typed College 1XI", away_code: f.away ? "1XI" : null,
   away_on_platform: !!f.away, status: f.status, format: "T20", overs: 20, starts_at: "2026-10-03T08:00:00Z",
   scores: [{ innings: 0, runs: 142, wickets: 3, balls: 110, side: "home" }, { innings: 1, runs: 20, wickets: 0, balls: 12, side: "away" }],
   result: f.status === "complete"
@@ -1010,6 +1010,22 @@ const livePool = {
   ok("...served from the public cache: no second read of the list or the sides", L.reads === before && L.sides === sidesBefore);
   world([WESTVILLE], { home: true, away: false });
   ok("...a school that stops listing leaves at once: Hilton's card is gone for its followers", (await ids2(["HIL"])) === "" && (await ids2(["WES"])) === LF2);
+
+  // db/99 §138 names these: the real followedToday(), not a copy. A side is
+  // kept by its school's code on the match header, never by its label: a
+  // typed opponent called "Hilton College" is not Hilton's.
+  const LF3 = "77777777-0000-0000-0000-0000000001f3";
+  L.fixtures = [
+    { id: LF2, home: WESTVILLE, away: null, pub: { home: true, away: false }, status: "scheduled" },
+    { id: LF3, home: WESTVILLE, away: null, typed: HILTON, pub: { home: true, away: false }, status: "live" }];
+  world([WESTVILLE], { home: true, away: false });
+  const fx3 = JSON.parse((await read()).body).fixtures.find((/** @type {any} */ f) => f.id === LF3);
+  ok("(setup) the public card names its typed opponent Hilton College", fx3?.away?.label === HILTON && fx3?.away?.onPlatform === false, fx3);
+  ok("...and following Hilton does not keep it: a label is not a school", (await ids2(["HIL"])) === "");
+  ok("...nor does a school's name or label given as a code", (await ids2([HILTON])) === "" && (await ids2(["1XI"])) === "");
+  ok("...following Westville keeps both of its own", (await ids2(["WES"])) === `${LF3},${LF2}`, await ids2(["WES"]));
+  world([], { home: true, away: false });
+  ok("...and Westville delisted, its followers' Today is empty at once", (await ids2(["WES"])) === "");
   ok("...and the filter asked the database only as nobody", L.users.every((u) => u === ""));
 
   site.close(); await new Promise((r) => srv.close(() => r(null)));

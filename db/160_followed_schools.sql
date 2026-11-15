@@ -41,8 +41,9 @@
 --       following (false) the school with that code, as the caller. A
 --       definer (it reads school past the caller's row security: an account
 --       with no school reads no school row), search_path pinned; refuses
---       with no session or under a pad's credential; refuses an archived or
---       unknown school with one answer; at most 50 schools a person. Answers
+--       with no session or under a pad's credential; refuses to follow an
+--       archived or unknown school, with one answer (stopping one archived
+--       since is allowed); at most 50 schools a person. Answers
 --       the school's id and name, which public_schools() already gives
 --       anybody signed in.
 --   + followed_schools()  the caller's own list with each school's code and
@@ -52,11 +53,12 @@
 --   Both functions: REVOKE ALL FROM PUBLIC, GRANT EXECUTE TO scrbrd_app by
 --   name, revoked from the three API roles (db/157's rule).
 --
--- RETENTION (ACCOUNT_LIFECYCLE §6.2, the row this file adds there): with
--- the account. A row goes when its app_user row is deleted (ON DELETE
--- CASCADE), and account_erase() (SCRBRD-140 §3.8, not built yet) deletes
--- the account's rows with its sign-ins; a school's removal removes its rows
--- too. Disabling an account keeps the list, as it keeps everything else, so
+-- RETENTION (ACCOUNT_LIFECYCLE §6.2, the row this file adds there, and
+-- §6.3's list of what erasure deletes): with the account. A row goes when
+-- its app_user row is deleted (ON DELETE CASCADE). account_erase()
+-- (SCRBRD-140 §3.8, not built yet) keeps the app_user row, so it must
+-- delete these rows itself; db/99 §138 (erased) holds it to that the day it
+-- exists. A school's removal removes its rows too. Disabling an account keeps the list, as it keeps everything else, so
 -- re-enabling gives it back.
 --
 -- RLS: hand-written, as every owner-only table since db/01 is
@@ -83,12 +85,19 @@ END $guard$;
 
 
 -- ── 1 · The list ──────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS followed_school (
-  person_id   uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
-  school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
-  followed_on date NOT NULL DEFAULT sa_today(),
-  PRIMARY KEY (person_id, school_id)
-);
+-- Under a lock_timeout (db/158's pattern): the two foreign keys take a lock
+-- on app_user and on school for the one statement. A paste that is not
+-- granted it in ten seconds stops and changes nothing: paste it again.
+DO $table$
+BEGIN
+  PERFORM set_config('lock_timeout', '10s', true);
+  CREATE TABLE IF NOT EXISTS followed_school (
+    person_id   uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+    school_id   uuid NOT NULL REFERENCES school(id) ON DELETE CASCADE,
+    followed_on date NOT NULL DEFAULT sa_today(),
+    PRIMARY KEY (person_id, school_id)
+  );
+END $table$;
 CREATE INDEX IF NOT EXISTS followed_school_school_idx ON followed_school (school_id);
 
 COMMENT ON TABLE followed_school IS
@@ -96,18 +105,28 @@ COMMENT ON TABLE followed_school IS
 
 
 -- ── 2 · Its owner's alone ─────────────────────────────────────────
+-- Made only where missing (db/158's pattern), so a second paste leaves the
+-- catalogue exactly as it was: a policy dropped and made again is a new row.
+-- The check at the foot refuses a policy that reads anything else.
 ALTER TABLE followed_school ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS followed_school_read ON followed_school;
-CREATE POLICY followed_school_read ON followed_school
-  FOR SELECT USING (person_id = app_user_id());
-
-DROP POLICY IF EXISTS followed_school_delete ON followed_school;
-CREATE POLICY followed_school_delete ON followed_school
-  FOR DELETE USING (person_id = app_user_id());
-
--- Closed to a pad's resume credential, as every table behind RLS since db/50.
-SELECT pad_scope_guard_install('followed_school'::regclass) AS pad_guards;
+DO $policies$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'followed_school'::regclass AND polname = 'followed_school_read') THEN
+    CREATE POLICY followed_school_read ON followed_school
+      FOR SELECT USING (person_id = app_user_id());
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'followed_school'::regclass AND polname = 'followed_school_delete') THEN
+    CREATE POLICY followed_school_delete ON followed_school
+      FOR DELETE USING (person_id = app_user_id());
+  END IF;
+  -- Closed to a pad's resume credential, as every table behind RLS since
+  -- db/50: db/50's RESTRICTIVE guards on the two commands a policy admits.
+  IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'followed_school'::regclass AND polname = 'pad_scope_select')
+     OR NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'followed_school'::regclass AND polname = 'pad_scope_delete') THEN
+    PERFORM pad_scope_guard_install('followed_school'::regclass);
+  END IF;
+END $policies$;
 
 -- db/06's default privileges gave the application SELECT, INSERT and UPDATE.
 -- A follow is made through follow_school() alone; a row never changes.
@@ -119,10 +138,11 @@ GRANT SELECT, DELETE ON followed_school TO scrbrd_app;
 -- ── 3 · The door ──────────────────────────────────────────────────
 /**
  * Follow (p_on true) or stop following (false) the school whose code is
- * p_code, as the caller. One answer for a code that names no school and for
- * an archived one. At most 50 schools a person (too_many); following a
- * school already followed, or stopping one not followed, changes nothing
- * and answers ok.
+ * p_code, as the caller. Following: one answer for a code that names no
+ * school and for an archived one. Stopping: any school the code names,
+ * archived or not, so a school archived since is never stuck on the list.
+ * At most 50 schools a person (too_many); following a school already
+ * followed, or stopping one not followed, changes nothing and answers ok.
  */
 CREATE OR REPLACE FUNCTION follow_school(p_code text, p_on boolean)
 RETURNS TABLE (ok boolean, reason text, school_id uuid, school_name text) AS $$
@@ -136,7 +156,7 @@ BEGIN
   END IF;
   IF p_on IS NULL THEN RETURN QUERY SELECT false, 'no_answer', NULL::uuid, NULL::text; RETURN; END IF;
   SELECT s.id, s.name INTO v_school, v_name
-    FROM school s WHERE s.code = btrim(coalesce(p_code, '')) AND s.archived_at IS NULL;
+    FROM school s WHERE s.code = btrim(coalesce(p_code, '')) AND (s.archived_at IS NULL OR NOT p_on);
   IF v_school IS NULL THEN
     RETURN QUERY SELECT false, 'no_such_school', NULL::uuid, NULL::text; RETURN;
   END IF;
