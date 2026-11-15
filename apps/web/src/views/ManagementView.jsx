@@ -11,6 +11,7 @@ import { decideWords, decidedWords } from "../lib/decideWords.js";
 import { Icon } from "../ui/icons.jsx";
 import { PeoplePanel } from "./people.jsx";
 import { ColoursPanel } from "./colours.jsx";
+import { SchoolRequestsPanel } from "./schoolRequests.jsx";
 
 // ══════════════════════════════════════════════════════
 //  MANAGEMENT VIEW
@@ -85,6 +86,8 @@ function ManagementView({ role, onDirectoryChanged }) {
       {tab==="users"&&(
         <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
           <RequestsPanel role={role} players={PLAYERS}/>
+          {/* Q22 (db/158): the platform's list of schools people asked SCRBRD to add. */}
+          {holdsCapability(role,"platform.tenant.manage")&&<SchoolRequestsPanel/>}
           <PeoplePanel role={role} players={PLAYERS} onDirectoryChanged={onDirectoryChanged}/>
         </div>
       )}
