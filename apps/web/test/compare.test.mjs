@@ -23,7 +23,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import {
   COMPARE_FIELDS, COMPARE_FLOOR, NEVER_COMPARED, battingRows, belowFloor, bowlingRows, bySide, compareScopes,
-  evidenceWord, floorRate, pickable, project, sharedSeasons, teamMates, typeRows,
+  childRate, evidenceWord, floorRate, pickable, project, sharedSeasons, teamMates, typeRows,
 } from "../src/lib/compare.js";
 import { asCareer, asSeasonCareer } from "../src/lib/live.js";
 import { RESTRICTED_FIELDS } from "../../../services/api/read/read-api.mjs";
@@ -170,6 +170,22 @@ group("Nothing kept (D9), no verdict (D3), and only the four reads (D1)");
   // The family app's files, the pupil's own aside: a parent's screens are these.
   const famFiles = readdirSync(new URL("../src/views/family/", import.meta.url)).filter((f) => /\.jsx?$/.test(f) && f !== "pupil.jsx");
   ok("the parent's app draws none (D11)", famFiles.length > 5 && famFiles.every((f) => !/<Compare\b|compare\.jsx/.test(read(`../src/views/family/${f}`))), famFiles.join());
+}
+
+group("Q12: the floor on every child's rate, the count always (EXPERIENCE_PASS, decided 13 Nov)");
+{
+  const three = childRate(12, 3), eight = childRate(64, 8), at30 = childRate(41.5, 30), none = childRate(null, null), zero = childRate(null, 0);
+  ok("three balls: no figure, '3 balls: a guide, not a figure'", three.held && three.text === "3 balls: a guide, not a figure" && three.count === "3 balls", three);
+  ok("eight balls: the decided words, word for word", eight.text === "8 balls: a guide, not a figure", eight);
+  ok("one ball: singular", childRate(5, 1).text === "1 ball: a guide, not a figure");
+  ok("at the floor the figure is drawn as the adapter made it, with its count", !at30.held && at30.text === "41.5" && at30.count === "30 balls", at30);
+  ok("over the floor with no rate (never out): a dash, the count still said", childRate(null, 40).text === "—" && childRate(null, 40).count === "40 balls");
+  ok("a count the scorebook did not record is said so, never 0", none.held && none.text === "balls not recorded", none);
+  ok("no balls at all: the count, and no guide about nothing", zero.held && zero.text === "0 balls", zero);
+  ok("the floor is Compare's own, not a copy", /childRate\(value, balls\)[\s\S]*n < COMPARE_FLOOR/.test(read("../src/lib/compare.js")));
+  const fam = ["views/family/pupil.jsx", "views/family/cards.jsx", "views/family/captain.jsx", "views/seasontrend.jsx", "lib/seasonTrend.js"];
+  ok("every family screen that draws a child's rate draws it through childRate", fam.every((f) => /childRate\(/.test(read(`../src/${f}`))), fam.join());
+  ok("...and none draws an average with stat() any more", ["views/family/pupil.jsx", "views/family/captain.jsx"].every((f) => !/avg \{?stat\(|stat\([a-z]+\.(avg|sr|econ|bowlAvg)\)/.test(read(`../src/${f}`))));
 }
 
 console.log(`\n${"─".repeat(52)}\nCOMPARE: ${pass} passed, ${fail} failed`);

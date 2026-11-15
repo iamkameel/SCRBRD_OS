@@ -14,12 +14,12 @@
  * The words are chosen so a nine-year-old can read them and an
  * eighteen-year-old is not patronised (§1.2).
  */
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useLive, useRatings } from "../../lib/live.js";
 import { signedIn } from "../../lib/api.js";
-import { humanDate, stat } from "../../lib/format.js";
-import { ownRecordId } from "../../lib/family.js";
+import { humanDate } from "../../lib/format.js";
+import { fixturesOf, ownRecordId } from "../../lib/family.js";
 import { withOpponents } from "../../lib/matchCentre.js";
 import { CareerWagonWheel, DismissalMethodCard } from "../ProfilesView.jsx";
 import { Action, Back, Card, Line, NoneOr, Page, Title } from "./parts.jsx";
@@ -37,6 +37,10 @@ import { honourWords, isSealed, isWithdrawn, provenanceOf, seasonOnce } from "..
 import { PersonalBests } from "./bests.jsx";
 import { SeasonTrend } from "../seasontrend.jsx";
 import { RecordBoards } from "../records.jsx";
+import { basisWords, childRate } from "../../lib/compare.js";
+import { AppointedCard, AppointedOnMatch } from "./scoring.jsx";
+import { DsoCard } from "./dso.jsx";
+import { EighteenCard, HealthConsentSection } from "../healthconsent.jsx";
 
 // His Skills door (GA-I26a §4, STEP4 item 7): the staff Skills screen, read
 // under his own assignments, which reach him alone. Its own chunk, loaded
@@ -68,7 +72,7 @@ function NoSelf({ loading, error, testid }) {
 
 // ── S1 · Home ──────────────────────────────────────────
 
-export function PupilHome({ role }) {
+export function PupilHome({ role, onNav, onOpenScorer }) {
   const { me, loading, error } = useSelf(role);
   // Retry bumps this nonce: the same read again, same role, same params.
   const [nonce, setNonce] = useState(0);
@@ -76,32 +80,54 @@ export function PupilHome({ role }) {
   const { rows: matches } = matchesRead;
   const [open, setOpen] = useState(null);
   if (!me) return <NoSelf loading={loading} error={error} testid="pupil-home"/>;
-  if (open?.kind === "match") return <MatchFor match={open.match} child={me} role={role} self matches={matches} onBack={() => setOpen(null)}/>;
-  if (open?.kind === "fixture") return <Page testid="pupil-home"><FixtureDetail match={open.match} child={me} role={role} self onBack={() => setOpen(null)}/></Page>;
+  if (open?.kind === "match") {
+    return (
+      <>
+        <AppointedOnMatch role={role} match={open.match} onOpenScorer={onOpenScorer}/>
+        <MatchFor match={open.match} child={me} role={role} self matches={matches} onBack={() => setOpen(null)}/>
+      </>
+    );
+  }
+  if (open?.kind === "fixture") {
+    return (
+      <Page testid="pupil-home">
+        <AppointedOnMatch role={role} match={open.match} onOpenScorer={onOpenScorer}/>
+        <FixtureDetail match={open.match} child={me} role={role} self onBack={() => setOpen(null)}/>
+      </Page>
+    );
+  }
   const now = Date.now();
+  // §1.9: while his side's match is live, its board leads his Home.
+  const isLive = fixturesOf(matches, me, now).live.length > 0;
+  const live = <LiveCard child={me} matches={matches} self now={now} onFollow={(m) => setOpen({ kind: "match", match: m })}/>;
   return (
     <Page testid="pupil-home">
       <header style={{ display: "grid", gap: "2px" }}>
         <Title testid="pupil-name">{me.name}</Title>
         <Line quiet>{[me.schoolName, me.team].filter(Boolean).join(" · ")}</Line>
       </header>
+      {isLive && live}
       <NextFixtureCard child={me} matches={matches} role={role} self now={now} onOpen={(m) => setOpen({ kind: "fixture", match: m })}
         said={readState(matchesRead, { what: "the fixtures" })} onRetry={() => setNonce((n) => n + 1)}/>
       {/* GA-I20 A1 (D12): his own list, under his next fixture: his answers,
           and a consent only where the server says it is his to give. */}
       <TodoCard child={me} matches={matches} matchesRead={matchesRead} now={now} self
         onOpen={(m) => setOpen({ kind: "fixture", match: m })}/>
+      {/* Q2: appointed to score, he keeps this app; the appointment is a block here. */}
+      <AppointedCard role={role} onOpenScorer={onOpenScorer}/>
       {/* SCRBRD-138 C1: only for a boy who holds the captaincy honour; under his own next fixture, which stays first. */}
       <CaptainCard me={me} role={role} matches={matches} now={now} onOpen={(m, kind) => setOpen({ kind, match: m })}/>
       {/* SCRBRD-124 phase 2 (db/76): his own lifts, for a pupil of eighteen
           still at school (Kameel, 2026-10-01); nothing for anybody younger. */}
       <MyLiftLine/>
-      <LiveCard child={me} matches={matches} self now={now} onFollow={(m) => setOpen({ kind: "match", match: m })}/>
+      {!isLive && live}
       <LastMatchCard child={me} matches={matches} self now={now} onOpen={(m) => setOpen({ kind: "match", match: m })}/>
       <SeasonCard child={me} role={role} self/>
       <TrainingCard child={me} role={role} now={now}/>
       <NoticesCard child={me} role={role}/>
       <NewsCard child={me} role={role}/>
+      {/* Q7: the DSO card, last. */}
+      <DsoCard onRaise={onNav ? () => onNav("safeguarding") : null}/>
     </Page>
   );
 }
@@ -160,7 +186,7 @@ export function PupilPassport({ role }) {
         <Line quiet>{[me.schoolName, me.team, hand(me.batHand)].filter(Boolean).join(" · ")}</Line>
       </header>
       <PassportBoard me={me} role={role} c={c} careerRead={careerRead} onRetry={() => setNonce((n) => n + 1)}/>
-      <div role="tablist" aria-label="Passport" style={{ display: "flex", gap: T.space.xs, overflowX: "auto", borderBottom: `1px solid ${T.line.normal}` }}>
+      <TabRow>
         {TABS.map(([id, label]) => (
           <button key={id} role="tab" type="button" aria-selected={tab === id} data-testid={`passport-tab-${id}`}
             onClick={() => setTab(id)} className="os-state"
@@ -170,7 +196,7 @@ export function PupilPassport({ role }) {
             {label}
           </button>
         ))}
-      </div>
+      </TabRow>
       <div role="tabpanel" data-testid={`passport-panel-${tab}`} style={{ display: "grid", gap: T.space.md }}>
         {tab === "season" && <SeasonTab me={me} role={role} career={c}/>}
         {tab === "career" && <CareerTab me={me} role={role} career={c} careerRead={careerRead} onRetry={() => setNonce((n) => n + 1)}/>}
@@ -179,6 +205,50 @@ export function PupilPassport({ role }) {
         {tab === "compare" && <Compare role={role} self={{ id: me.id, name: me.name, team: me.team, school: me.school }}/>}
       </div>
     </Page>
+  );
+}
+
+/**
+ * The passport's tab row (C15): five tabs that do not fit a phone scroll
+ * sideways, and the row says so. While more lies off either edge, that edge
+ * fades into the page and a chevron sits on it; at the end it is plain. The
+ * fade is drawn over the row, takes no tap, and does not move.
+ */
+function TabRow({ children }) {
+  const row = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const [more, setMore] = useState({ left: false, right: false });
+  const measure = () => {
+    const el = row.current;
+    if (!el) return;
+    const left = el.scrollLeft > 2, right = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
+    setMore((m) => (m.left === left && m.right === right ? m : { left, right }));
+  };
+  useEffect(() => {
+    measure();
+    globalThis.addEventListener?.("resize", measure);
+    return () => globalThis.removeEventListener?.("resize", measure);
+  }, []);
+  const edge = (side) => ({ position: "absolute", top: 0, bottom: "1px", [side]: 0, width: "40px", pointerEvents: "none",
+    display: "flex", alignItems: "center", justifyContent: side === "right" ? "flex-end" : "flex-start", color: T.content.secondary,
+    background: `linear-gradient(to ${side}, transparent, ${T.surface.canvas} 70%)` });
+  return (
+    <div style={{ position: "relative" }} data-testid="passport-tabs" data-more-left={more.left || undefined} data-more-right={more.right || undefined}>
+      <div ref={row} role="tablist" aria-label="Passport" onScroll={measure}
+        style={{ display: "flex", gap: T.space.xs, overflowX: "auto", borderBottom: `1px solid ${T.line.normal}`, scrollbarWidth: "thin" }}>
+        {children}
+      </div>
+      {more.left && <span aria-hidden="true" data-testid="passport-tabs-more-left" style={edge("left")}>‹</span>}
+      {more.right && <span aria-hidden="true" data-testid="passport-tabs-more-right" style={edge("right")}>›</span>}
+    </div>
+  );
+}
+
+/** One rate on the board, or the count and the word in its place (Q12). */
+function RateFig({ k, r, testid }) {
+  return (
+    <span data-testid={testid} data-held={r.held ? "true" : "false"}>
+      {k} {r.held ? <span style={{ ...T.role.body, fontSize: "14px", color: T.board.dim }}>{r.text}</span> : r.text}
+    </span>
   );
 }
 
@@ -200,8 +270,15 @@ function PassportBoard({ me, role, c, careerRead, onRetry }) {
           <Fig k="Wickets" v={c ? c.wkts : careerAnswered ? 0 : "—"} testid="passport-wickets"/>
         </div>
         <div style={{ display: "flex", gap: T.space.lg, flexWrap: "wrap", ...T.role.figure.md, color: T.board.figure }}>
-          <span>AVG {stat(c?.avg)}</span><span>SR {stat(c?.sr)}</span><span>ECON {stat(c?.econ)}</span>
+          {c ? (
+            <>
+              <RateFig k="AVG" r={childRate(c.avg, c.ballsFaced)} testid="passport-avg"/>
+              <RateFig k="SR" r={childRate(c.sr, c.ballsFaced)} testid="passport-sr"/>
+              <RateFig k="ECON" r={childRate(c.econ, c.ballsBowled)} testid="passport-econ"/>
+            </>
+          ) : <><span>AVG —</span><span>SR —</span><span>ECON —</span></>}
         </div>
+        {c && <span data-testid="passport-basis" style={{ ...T.role.body, fontSize: "14px", color: T.board.dim }}>{basisWords(c)}</span>}
         {!careerAnswered && <ReadState compact onBoard read={careerSaid} onRetry={onRetry} testId="passport-career-read-state"/>}
         {cap && <span style={{ ...T.role.body, fontSize: "14px", color: T.board.dim }}>Cap {cap.capNo} · {me.team} · first {humanDate(cap.firstOn)}</span>}
       </section>
@@ -218,9 +295,9 @@ function SeasonTab({ me, role, career }) {
       {seasons.length ? seasons.map((s) => (
         <Card key={s.season ?? "?"} label={`Season ${s.season ?? ""}${s.currentSeason ? " · this season" : ""}`} testid="passport-season">
           <p style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>
-            {s.innings} inns · {s.runs} runs · avg {stat(s.avg)}
+            {s.innings} inns · {s.runs} runs · avg {childRate(s.avg, s.ballsFaced).text}{childRate(s.avg, s.ballsFaced).held ? "" : ` · ${childRate(s.avg, s.ballsFaced).count}`}
           </p>
-          {s.ballsBowled > 0 && <p style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>{s.wkts} wkts · econ {stat(s.econ)}</p>}
+          {s.ballsBowled > 0 && <p style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>{s.wkts} wkts · econ {childRate(s.econ, s.ballsBowled).text}{childRate(s.econ, s.ballsBowled).held ? "" : ` · ${childRate(s.econ, s.ballsBowled).count}`}</p>}
         </Card>
       )) : <NoneOr read={seasonsRead} what="your seasons" none="No season on record yet." onRetry={() => setNonce((n) => n + 1)} testid="passport-season-none"/>}
       {/* GA-I23 slice 2 (B2, B5): his own season, innings by innings, read
@@ -246,13 +323,20 @@ function CareerTab({ me, role, career, careerRead, onRetry }) {
       <Card label="Career" testid="passport-career">
         {career ? (
           <dl style={{ margin: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: T.space.md }}>
-            {[["Innings", career.innings], ["Runs", career.runs], ["Average", stat(career.avg)], ["Strike rate", stat(career.sr)],
-              ["Wickets", career.wkts], ["Economy", stat(career.econ)], ["Bowling average", stat(career.bowlAvg)]].map(([k, v]) => (
-              <div key={k}>
-                <dt style={{ ...T.role.label, color: T.content.secondary }}>{k}</dt>
-                <dd style={{ ...T.role.figure.md, color: T.content.primary, margin: 0 }}>{v}</dd>
-              </div>
-            ))}
+            {[["Innings", career.innings], ["Runs", career.runs], ["Balls faced", childRate(null, career.ballsFaced).count],
+              ["Average", childRate(career.avg, career.ballsFaced)], ["Strike rate", childRate(career.sr, career.ballsFaced)],
+              ["Wickets", career.wkts], ["Balls bowled", childRate(null, career.ballsBowled).count],
+              ["Economy", childRate(career.econ, career.ballsBowled)], ["Bowling average", childRate(career.bowlAvg, career.ballsBowled)]].map(([k, v]) => {
+              const held = typeof v === "object" && v !== null && v.held;
+              const shown = typeof v === "object" && v !== null ? v.text : v;
+              return (
+                <div key={k}>
+                  <dt style={{ ...T.role.label, color: T.content.secondary }}>{k}</dt>
+                  <dd data-figure={k} data-held={held ? "true" : undefined}
+                    style={{ ...(held ? { ...T.role.body, fontSize: "14px", color: T.content.secondary } : { ...T.role.figure.md, color: T.content.primary }), margin: 0 }}>{shown}</dd>
+                </div>
+              );
+            })}
           </dl>
         ) : <NoneOr read={careerRead} what="your career" none="No innings on record yet." onRetry={onRetry} testid="passport-career-none"/>}
       </Card>
@@ -341,7 +425,10 @@ export function PupilMe({ role, onNav }) {
   return (
     <Page testid="pupil-me">
       <Title>Me</Title>
+      {/* Q16: the eighteen card and his own health-monitoring row live on his Me (EXPERIENCE_PASS §1.6). */}
+      <EighteenCard role={role}/>
       <Card label="My health" testid="me-health"><Health child={me} role={role} self/></Card>
+      <HealthConsentSection role={role} playerId={me.id}/>
       <Card label="My ratings" testid="me-ratings"
         aside={<Action testid="me-skills-open" onClick={() => setShow((s) => ({ ...s, skills: true }))}>Your skills</Action>}>
         <MyRatings me={me} role={role}/>

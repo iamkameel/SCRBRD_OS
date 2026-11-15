@@ -11,7 +11,7 @@
  *
  * Floors: body at 15px, nothing under 12px; no motion.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { T } from "../design/tokens.js";
 import { GUARDIAN_TERMS, renderTerms, termsContacts, termsRuns } from "../lib/guardianLink.js";
 
@@ -50,5 +50,39 @@ export function TermsText({ schoolName, onEnd, maxHeight = "55vh", testid = "ter
       ))}
       <p data-testid={`${testid}-end`} style={{ ...para, color: T.content.secondary }}>End of the terms.</p>
     </div>
+  );
+}
+
+/**
+ * THE TERMS FOR A PARENT STILL WAITING (EXPERIENCE_PASS Q15, decided 13 Nov;
+ * §2.6 step 4). While the office has not checked her link she may read the
+ * terms whole, now, and is told she will be asked to agree once it has. There
+ * is no "I agree" here at all: agreeing is for a verified link
+ * (guardian_consent_record(), db/08, refuses anything else), and the screen
+ * does not offer what the server would refuse. Health monitoring is said to
+ * be separate and off, as the join form says.
+ *
+ * No child is named: a waiting parent's screen has no child to name.
+ * @param {{ schoolName?: string | null, testid?: string }} p
+ */
+export function WaitingTerms({ schoolName = null, testid = "waiting-terms" }) {
+  const [open, setOpen] = useState(false);
+  const line = { ...T.role.body, color: T.content.primary, margin: 0 };
+  return (
+    <section data-testid={testid} aria-label="The school's terms"
+      style={{ display: "grid", gap: T.space.sm, padding: `${T.space.md} ${T.space.lg}`, border: `1px solid ${T.line.normal}`,
+        borderRadius: T.radius.lg, background: T.surface.raised }}>
+      <h2 style={{ ...T.role.label, color: T.content.secondary, margin: 0 }}>The school&apos;s terms</h2>
+      <p style={line} data-testid={`${testid}-wait`}>You will be asked to agree once the school has checked your link.</p>
+      <p style={{ ...line, color: T.content.secondary }}>Health monitoring is separate, and off. It is not part of these terms.</p>
+      <div>
+        <button type="button" className="pressBtn os-state" data-testid={`${testid}-open`} aria-expanded={open} onClick={() => setOpen((o) => !o)}
+          style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, borderRadius: T.radius.pill, cursor: "pointer", background: "transparent",
+            color: T.content.primary, border: `1px solid ${T.line.normal}`, ...T.role.control, fontSize: "15px" }}>
+          {open ? "Close the terms" : "Read the terms now"}
+        </button>
+      </div>
+      {open && <TermsText schoolName={schoolName} testid={`${testid}-text`}/>}
+    </section>
   );
 }

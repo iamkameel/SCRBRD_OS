@@ -328,11 +328,18 @@ const groupNav = (keys) =>
 
    Presentation only, like everything in this file: each screen's reads are
    re-authorised server-side, and a wrong answer here draws the wrong menu,
-   never the wrong data. */
+   never the wrong data.
+
+   `keeps` (EXPERIENCE_PASS Q2, decided 13 Nov): a role held BESIDE the
+   persona's own that leaves the persona's app as it is. A pupil or a parent
+   who is also appointed to score keeps the four-item bar; scoring is a block
+   on his Home ("Appointed to score") and on the appointed match, never a
+   fifth item. What he may read as a scorer is unchanged and the server's. */
+const PERSONA_KEEPS = Object.freeze(["scorer"]);
 const PERSONA_NAV = {
-  family: { roles:["guardian"], needs:["guardian"],
+  family: { roles:["guardian"], needs:["guardian"], keeps:PERSONA_KEEPS,
             bar:["children","fixtures","notices","family"], alongside:["children","family"] },
-  pupil:  { roles:["player","selfaccess"], needs:["player","selfaccess"],
+  pupil:  { roles:["player","selfaccess"], needs:["player","selfaccess"], keeps:PERSONA_KEEPS,
             bar:["myhome","mymatches","passport","me"], alongside:[] },
 };
 /** Destinations that belong to a persona's app and never to a staff menu on capability alone. */
@@ -345,7 +352,7 @@ const personaFor = (roles) => {
   const held = [...new Set(roles ?? [])];
   if (!held.length) return null;
   const hit = Object.entries(PERSONA_NAV).find(([, p]) =>
-    held.every((r) => p.roles.includes(r)) && p.needs.every((r) => held.includes(r)));
+    held.every((r) => p.roles.includes(r) || p.keeps.includes(r)) && p.needs.every((r) => held.includes(r)));
   return hit ? hit[0] : null;
 };
 
@@ -450,4 +457,4 @@ const NAV_META = {
   me:           { icon:"id-card", label:"Me"           },
 };
 
-export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, PERSONA_ASIDE, PERSONA_NAV, PERSONA_ONLY, ROLES, ROLE_DAYLIGHT, ROLE_IDENTITY, ROLE_FAMILIES, NAV_ALSO, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles, navGrants, personaFor };
+export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, PERSONA_ASIDE, PERSONA_KEEPS, PERSONA_NAV, PERSONA_ONLY, ROLES, ROLE_DAYLIGHT, ROLE_IDENTITY, ROLE_FAMILIES, NAV_ALSO, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles, navGrants, personaFor };

@@ -391,7 +391,7 @@ const SHOW = {
   },
   families: {
     n: 2, kicker: "For families", title: "A parent decides, and can undo it.",
-    lede: "Health monitoring is off until a parent turns it on, for each child on his own switch. At eighteen the pupil is asked for his own answer, and from then on it is his. These are the screens a family opens under Settings, Me.",
+    lede: "Health monitoring is off until a parent turns it on, for each child on his own switch. At eighteen the pupil is asked for his own answer, and from then on it is his. These are the cards a family finds on the child's file under Family.",
     points: [
       ["Asked once", "The first time a parent's link to a child is verified, Me asks yes or no. \"Not now\" hides it on that device only."],
       ["Withdrawn at once", "Turning it off asks once, in plain words, what happens to what was collected, then takes effect immediately."],

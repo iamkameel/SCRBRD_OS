@@ -25,7 +25,6 @@ import { StaffRegisterPanel, canSeeRegister } from "./staffRegister.jsx";
 // The enrolment form, its words and the one-time code card are shared with the
 // Management screen (views/enrol.jsx): one form, one set of refusals in words.
 import { ENROL_MESSAGE, EnrolModal, IssuedCodeModal, PUPILS_BY_OFFICE, grantableFor, issuedFrom, opensPupilAccounts } from "./enrol.jsx";
-import { EighteenCard, HealthConsentPrompt, HealthConsentSection } from "./healthconsent.jsx";
 // SCRBRD-140: the ways a person signs in (Me), and the office's Google claims (People).
 import { WaysToSignIn } from "./signins.jsx";
 // GA-I03 (db/85): ending every sign-in the person holds, this device's last.
@@ -722,9 +721,6 @@ function BoundariesSection({ role }) {
 
 function MeTab({ role, onSignOut }) {
   const me = profile();
-  // One answer, two places: the eighteen card and the consent section redraw together.
-  const [consentNonce, setConsentNonce] = useState(0);
-  const consentChanged = () => setConsentNonce((n) => n + 1);
   const live = signedIn();
   const assignments = me?.assignments ?? [];
   return (
@@ -740,13 +736,10 @@ function MeTab({ role, onSignOut }) {
         </div>
       </Panel>
 
-      {/* SCRBRD-110 §7.4: asked once, from his eighteenth birthday, when a
-          parent had said yes to health monitoring for him. Drawn only then. */}
-      <EighteenCard role={role} nonce={consentNonce} onChanged={consentChanged}/>
-
-      {/* SCRBRD-110 §9.1, Decided 1: the one-time ask, once a guardian's link
-          to a child is verified and nobody has answered for him yet. */}
-      <HealthConsentPrompt role={role} nonce={consentNonce} onChanged={consentChanged}/>
+      {/* Health monitoring's consent, its one-time ask and the eighteen card
+          moved whole to Family, on each child's file, and to the pupil's Me
+          (EXPERIENCE_PASS Q16, §1.6, decided 13 Nov). Nothing about them
+          changed but where they are found. */}
 
       {/* This device's theme (DESIGN_DIRECTION §3.1): second, under who you
           are, because it is the one setting here somebody changes standing
@@ -793,10 +786,6 @@ function MeTab({ role, onSignOut }) {
             </div>
           )}
       </Panel>
-
-      {/* Health monitoring's own consent (SCRBRD-110 §7): a row per child
-          this person answers for, and his own. Nothing for staff. */}
-      <HealthConsentSection role={role} nonce={consentNonce} onChanged={consentChanged}/>
 
       {/* SCRBRD-124: lift clubs — where she stands, and her yearly
           declaration. The family's own page until STEP 4's Family exists.

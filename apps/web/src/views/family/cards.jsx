@@ -13,7 +13,8 @@ import { resultText, teamOf, withOpponents } from "../../lib/matchCentre.js";
 import { humanDate } from "../../lib/format.js";
 import { fixturesOf, lineFor, noticesFor, opponentOf, endOf } from "../../lib/family.js";
 import { Board } from "../../ui/board.jsx";
-import { Action, AvailabilityBlock, BusLine, Card, Line, TeamSheetLine, WeatherLine, whenOf } from "./parts.jsx";
+import { Action, AvailabilityBlock, BusLine, Card, Line, TeamSheetLine, WeatherLine, answerVerb, whenOf } from "./parts.jsx";
+import { childRate } from "../../lib/compare.js";
 import { useFold } from "./useFold.js";
 import { SealMark } from "../../ui/sealMark.jsx";
 import { familyMilestoneLine, familyName, honourWords, isFirst, isSealed, isWithdrawn, provenanceOf } from "../../lib/recognitionWords.js";
@@ -62,8 +63,8 @@ export function NextFixtureCard({ child, matches, role, self = false, onOpen, on
       <BusLine match={next} role={role}/>
       <WeatherLine match={next} role={role}/>
       <div style={{ border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md, padding: T.space.md, display: "grid", gap: T.space.sm }}>
-        <AvailabilityBlock match={next} child={child} role={role} self={self} compact/>
-        <div><Action onClick={() => onOpen(next)} testid="next-fixture-open">{self ? "Change or answer" : "Change"}</Action></div>
+        <AvailabilityBlock match={next} child={child} role={role} self={self} compact
+          action={(status) => <div><Action onClick={() => onOpen(next)} testid="next-fixture-open">{answerVerb(status)}</Action></div>}/>
       </div>
       <TeamSheetLine match={next} child={child} role={role} self={self}/>
     </Card>
@@ -138,9 +139,11 @@ export function SeasonCard({ child, role, self = false }) {
   const m = miles[0] ?? null;
   const honours = self ? [] : rec.filter((x) => x.family === "honour");
   if (!s && !m && !honours.length) return null;
+  // Q12: his average only from thirty balls faced; under that, the count and "a guide, not a figure".
+  const avg = s?.innings ? childRate(s.avg, s.ballsFaced) : null;
   const bits = s ? [
     s.innings ? `${s.runs} runs in ${s.innings} innings` : null,
-    s.avg != null ? `average ${s.avg}` : null,
+    avg ? (avg.held ? avg.text : s.avg != null ? `average ${avg.text} · ${avg.count}` : avg.count) : null,
     s.ballsBowled ? `${s.wkts} wicket${s.wkts === 1 ? "" : "s"}` : null,
   ].filter(Boolean) : [];
   const said = m && !self ? familyMilestoneLine(m, familyName(child), isFirst(miles, m)) : null;

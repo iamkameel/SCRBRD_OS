@@ -191,7 +191,19 @@ function saidBy(row, child, self) {
  * The row written is the one the coach's Squad already reads, with
  * `declared_by` the person who sent it.
  */
-export function AvailabilityBlock({ match, child, role, self = false, compact = false }) {
+/**
+ * The words on the button that opens the fixture to answer (C16): "Answer"
+ * until there is an answer, "Change" once there is one. A read that has not
+ * answered says neither: "Open the fixture".
+ * @param {string | null | undefined} status  undefined: not known
+ */
+export function answerVerb(status) {
+  if (status === undefined) return "Open the fixture";
+  return status && status !== "needs_reconfirming" ? "Change" : "Answer";
+}
+
+/** `action(status)`: drawn last, given his answer (null for none, undefined while it is not known). */
+export function AvailabilityBlock({ match, child, role, self = false, compact = false, action = null }) {
   const [nonce, setNonce] = useState(0);
   const { rows, loading, error } = useLive("availability", role, nonce, { matchId: match.id });
   const row = rows.find((r) => r.playerId === child.id) ?? null;
@@ -215,8 +227,8 @@ export function AvailabilityBlock({ match, child, role, self = false, compact = 
     } finally { setBusy(false); }
   };
 
-  if (loading && !rows.length) return <Line quiet>Reading the answer…</Line>;
-  if (error) return <Unread what="the answer"/>;
+  if (loading && !rows.length) return <><Line quiet>Reading the answer…</Line>{action?.(undefined)}</>;
+  if (error) return <><Unread what="the answer"/>{action?.(undefined)}</>;
   const by = saidBy(row, child, self);
   return (
     <div data-testid={`availability-${pid}`} style={{ display: "grid", gap: T.space.sm }}>
@@ -277,6 +289,7 @@ export function AvailabilityBlock({ match, child, role, self = false, compact = 
           )}
         </>
       )}
+      {action?.(row?.status ?? null)}
     </div>
   );
 }
