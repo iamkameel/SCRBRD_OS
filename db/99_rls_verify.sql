@@ -13085,9 +13085,9 @@ $$ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp;
 
 -- ┌── db/157 (section 135) ─────────────────────────────────────────────
 -- A managed host's Data API roles, as Supabase makes them (NOLOGIN,
--- NOINHERIT), with the grants the production read of 14 Nov found on these
--- objects: USAGE on the schema; onboard_request() and both feature_enabled()
--- to the three and PUBLIC; broadcast_state() to PUBLIC. Then what Supabase's
+-- NOINHERIT), with grants of the kind such a host gives: USAGE on the
+-- schema; onboard_request() and both feature_enabled() to the three and
+-- PUBLIC; broadcast_state() to PUBLIC. Then what Supabase's
 -- default privileges give an older table, view, column and sequence, and
 -- those defaults themselves. Created only where missing: on the host the
 -- roles are already there. Everything here is undone by the ROLLBACK.
