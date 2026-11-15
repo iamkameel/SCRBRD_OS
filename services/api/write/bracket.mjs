@@ -82,7 +82,10 @@ export function bracketOf({ competition, plan, items, matches, flags = [] }) {
     if (had) return had;
     const matchId = made.get(f.id) ?? null;
     const m = matchId ? matches.get(matchId) ?? null : null;
-    const r = m?.result ?? null;
+    // A fixture not yet finished (match_result()'s in_progress, a ball bowled
+    // or none) has no result to show, unless a decision already named a winner.
+    const raw = m?.result ?? null;
+    const r = raw && (raw.winnerSide || raw.outcome !== "in_progress") ? raw : null;
     const through = r?.winnerSide === "home" || r?.winnerSide === "away" ? r.winnerSide : null;
     /** @param {"home" | "away"} which @returns {BracketSide} */
     const side = (which) => {

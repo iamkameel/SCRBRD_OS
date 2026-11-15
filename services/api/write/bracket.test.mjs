@@ -75,7 +75,7 @@ group("3. A semi-final played: its winner is the final's side before the final i
   const items = [{ fixtureKey: s1.id, matchId: "m-s1" }, { fixtureKey: s2.id, matchId: "m-s2" }];
   const matches = new Map([
     ["m-s1", fixture("School A 1st XI", "School D 1st XI", result("home"), "complete")],
-    ["m-s2", fixture("School B 1st XI", "School C 1st XI")],
+    ["m-s2", fixture("School B 1st XI", "School C 1st XI", result(null, { outcome: "in_progress", playOutcome: "in_progress", text: null }))],   // as competition_results() says an unplayed fixture
     ["m-other", fixture("School A 1st XI", "School B 1st XI")],   // arranged by hand, outside the draw
   ]);
   const b = bracketOf({ competition: COMP, plan, items, matches });
