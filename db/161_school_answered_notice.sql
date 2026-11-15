@@ -51,8 +51,9 @@
 --       waiting on (guardian_link_verify()): re-emitted below, its db/08
 --       body verbatim, with the notice written after the one row it
 --       verified. db/08 is frozen, so the function is re-emitted here, not
---       edited there, behind an md5 guard on the live body: a body that is
---       neither db/08's (as db/128 left it) nor this file's refuses the paste. Its signature,
+--       edited there, behind an md5 guard on the live body: exactly two
+--       bodies pass, db/08's as db/128 left it and this file's own; any
+--       other, a later re-emit included, refuses the paste. Its signature,
 --       its answers and its grants are unchanged.
 -- Nothing is backfilled: an answer given before the paste wrote no notice
 -- and writes none now.
@@ -62,11 +63,20 @@
 --       parent too (the lead, 15 Nov: Q15's same-words rule governs it), so
 --       db/109's notice for it, "A link to a child has ended" with its date,
 --       is given this file's words instead: an AFTER INSERT trigger on
---       guardian_link_ending, the row db/109 writes beside its notice,
---       rewords that notice (its title and body; its kind, audience,
---       subject and door are db/109's and unchanged) when the link was
---       never verified (verified_at NULL). A verified link that ends keeps
---       db/109's notice word for word. db/109's function is not touched.
+--       guardian_link_ending, the row db/109 writes beside its notice
+--       (AFTER INSERT, and AFTER UPDATE OF notice_id: db/109's revoke
+--       upserts the row, and a link db/62 already dated on leaving takes the
+--       UPDATE branch), rewords that notice (its title and body; its kind,
+--       audience, subject and door are db/109's and unchanged) when the link
+--       was never verified (verified_at NULL) AND the notice is about this
+--       link (subject_id = the link). So db/77's role notice, which an ended
+--       guardian ROLE shares across all its links and whose subject is the
+--       role, is never reworded: "A role of yours has ended" stands, even
+--       over a pending link. A verified link that ends keeps db/109's notice
+--       word for word. db/109's function is not touched.
+--   A link the office established on its own (an offline form, not a
+--   request made in the app) is answered "your request to be linked to a
+--   child" too: the family's form is its request.
 --
 -- Q10, THE TEAM SHEET (Kameel, 15 Nov: "eleven"): no SQL here. STEP4 Q10's
 -- shape, the eleven, names and batting order, to a verified, live guardian
@@ -117,9 +127,11 @@ BEGIN
     RAISE EXCEPTION 'db/161: app_user_id() (db/01), person_is_pupil() or notification.recipient_id (db/57), player_school() or guardian_link_verify() (db/08), guardian_link_ending (db/109) or api_role_reach() (db/157) is missing; apply them first';
   END IF;
   SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = 'guardian_link_verify(uuid,uuid,text,text)'::regprocedure;
-  -- A second paste finds this file's own body; anything else must be db/08's as db/128 left it.
-  IF position('db/161' IN v_src) = 0 AND md5(v_src) IS DISTINCT FROM '129a9ee450e14dd3cbb11f63ee7b1aef' THEN
-    RAISE EXCEPTION 'db/161: guardian_link_verify() is not db/08''s as db/128 left it (md5 %); factor the version now in place and move this hash', md5(v_src);
+  -- Exactly two bodies: db/08's as db/128 left it (129a9ee4…), or this
+  -- file's own, on a second paste (7b26d44e…). Anything else, a later
+  -- re-emit included, refuses the paste rather than be overwritten.
+  IF md5(v_src) NOT IN ('129a9ee450e14dd3cbb11f63ee7b1aef', '7b26d44e2fa3f1a6ec32cc06cac9b3ea') THEN
+    RAISE EXCEPTION 'db/161: guardian_link_verify() is neither db/08''s as db/128 left it nor this file''s (md5 %); factor the version now in place and move these hashes', md5(v_src);
   END IF;
 END $guard$;
 
@@ -238,13 +250,14 @@ BEGIN
   IF NEW.notice_id IS NULL THEN RETURN NULL; END IF;
   IF EXISTS (SELECT 1 FROM assignment_subject g WHERE g.id = NEW.link_id AND g.verified_at IS NULL) THEN
     SELECT * INTO w FROM school_answered_words((SELECT s.name FROM school s WHERE s.id = NEW.school_id));
-    UPDATE notification SET title = w.title, body = w.body WHERE id = NEW.notice_id;
+    -- db/109's own notice, about this link; never a shared role notice (db/77, subject the role).
+    UPDATE notification SET title = w.title, body = w.body WHERE id = NEW.notice_id AND subject_id = NEW.link_id;
   END IF;
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 CREATE OR REPLACE TRIGGER guardian_link_ending_answered
-  AFTER INSERT ON guardian_link_ending
+  AFTER INSERT OR UPDATE OF notice_id ON guardian_link_ending
   FOR EACH ROW EXECUTE FUNCTION school_answered_on_ending();
 
 
@@ -345,11 +358,15 @@ BEGIN
     RAISE EXCEPTION 'db/161: role_request_answered_notice is %', coalesce(v, '(missing)');
   END IF;
 
-  -- The ending trigger, after a row of guardian_link_ending is written.
+  -- The ending trigger, after a row of guardian_link_ending is written or its notice changed;
+  -- and its rewording kept to the notice about the link (B1).
   SELECT pg_get_triggerdef(t.oid) INTO v FROM pg_trigger t
    WHERE t.tgrelid = 'guardian_link_ending'::regclass AND t.tgname = 'guardian_link_ending_answered' AND NOT t.tgisinternal;
-  IF v IS NULL OR v !~ 'AFTER INSERT ON public\.guardian_link_ending FOR EACH ROW EXECUTE FUNCTION school_answered_on_ending\(\)' THEN
+  IF v IS NULL OR v !~ 'AFTER INSERT OR UPDATE OF notice_id ON public\.guardian_link_ending FOR EACH ROW EXECUTE FUNCTION school_answered_on_ending\(\)' THEN
     RAISE EXCEPTION 'db/161: guardian_link_ending_answered is %', coalesce(v, '(missing)');
+  END IF;
+  IF position('subject_id = NEW.link_id' IN (SELECT prosrc FROM pg_proc WHERE oid = 'school_answered_on_ending()'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'db/161: school_answered_on_ending() rewords a notice that is not about its link';
   END IF;
 
   -- The verify door writes the notice, and db/08's body is otherwise intact.

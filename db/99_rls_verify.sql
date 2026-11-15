@@ -13920,6 +13920,43 @@ BEGIN
   RETURN s;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- One more Hilton child of thirteen, on no sheet: its id.
+CREATE OR REPLACE FUNCTION _v161_child(p_name text) RETURNS uuid AS $$
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'U14A', p_name, 'Onesixtyone', 163, 'batter', (sa_today() - interval '13 years')::date)
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One guardian assignment holding two links, one verified (to p_verified) and one
+-- the office never verified (to p_pending), as db/08's establish leaves them: the assignment.
+CREATE OR REPLACE FUNCTION _v161_role_two_links(p_person uuid, p_verified uuid, p_pending uuid) RETURNS uuid AS $$
+DECLARE a uuid;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES (p_person, 'guardian', '11111111-1111-1111-1111-111111111111', sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p_verified, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+          '88888888-0000-0000-0000-00000000000c', sa_today() - 30);
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, consent_state, created_by, valid_from, valid_until)
+  VALUES (a, p_pending, 'parent', 'pending', 'pending', '88888888-0000-0000-0000-00000000000c', sa_today() - 30,
+          majority_on((SELECT born FROM player WHERE id = p_pending)));
+  RETURN a;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- He left the school today, as db/62's leaving does it (db/109 dates each of
+-- his guardian links and writes its ending row, 'majority' for a minor): the
+-- links closed. Before, he was at school, so his links were open (db/62
+-- leaves a link undated while he is at school).
+CREATE OR REPLACE FUNCTION _v161_left(p_player uuid) RETURNS integer AS $$
+  UPDATE assignment_subject SET valid_until = NULL WHERE player_id = p_player AND verification_state IN ('pending', 'verified');
+  SELECT guardian_links_close_on_leaving(p_player, sa_today())
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The ending row of a link, as stored: "kind|notice or -".
+CREATE OR REPLACE FUNCTION _v161_ending(p_link uuid) RETURNS text AS $$
+  SELECT e.kind || '|' || coalesce(e.notice_id::text, '-') FROM guardian_link_ending e WHERE e.link_id = p_link
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- A request's state moved by the owner, as the asker's own withdrawal leaves it.
 CREATE OR REPLACE FUNCTION _v161_state(p_request uuid, p_state text) RETURNS void AS $$
   UPDATE role_request SET state = p_state WHERE id = p_request
@@ -14113,7 +14150,7 @@ BEGIN
     PERFORM _as(ASK);
     SELECT count(*), max(body) INTO n, v FROM my_notifications WHERE title = T;
     PERFORM _assert(n = 1 AND v = WORDS, format('§139 (ended): the waiting parent reads %s answered notices, saying %s', n, v));
-    PERFORM _assert(cardinality(_v161_stored(ASK)) = 1 AND (_v161_stored(ASK))[1] LIKE T || '|' || WORDS || '|' || lk || '|system|system|%',
+    PERFORM _assert(_v161_stored(ASK) = ARRAY[T || '|' || WORDS || '|' || lk || '|system|system|medium|news.read|false|' || HIL || '|-|-'],
       format('§139 (ended): what is stored for her is %s', array_to_string(_v161_stored(ASK), ' ~ ')));
     lk := _v161_verified_link(ADULT, P); lk2 := _v161_verified_link((ids->>'second')::uuid, P);
     PERFORM _as(OFFICE);
@@ -14121,6 +14158,36 @@ BEGIN
     PERFORM _assert(r.ok, format('§139 (ended): the office could not end the verified link (%s)', r.reason));
     PERFORM _assert(cardinality(_v161_stored(ADULT)) = 1 AND (_v161_stored(ADULT))[1] LIKE 'A link to a child has ended|%',
       format('§139 (ended): the verified parent''s notice is %s, not db/109''s', array_to_string(_v161_stored(ADULT), ' ~ ')));
+
+  ELSIF p_case = 'role' THEN
+    -- (role) R, the review's B1: the office ends a parent's guardian ROLE (db/77), over one verified link and
+    -- one it never verified. db/109 writes an ending row per link, each naming db/77's one role notice. That
+    -- notice is about the role, not a link, and is never reworded: she reads "A role of yours has ended",
+    -- so she is told her verified link ended, and is never told only that a request was answered.
+    x := _v161_child('Second Onesixtyone');
+    lk2 := _v161_verified_link((ids->>'second')::uuid, P);   -- P keeps a verified parent: the role may end
+    req := _v161_role_two_links(ADULT, P, x);
+    PERFORM _as(OFFICE);
+    SELECT e.ok, e.reason INTO r FROM role_assignment_end(req, 'Verify 161: the family has moved away.') e;
+    PERFORM _assert(r.ok, format('§139 (role): the office could not end her guardian role (%s)', r.reason));
+    PERFORM _assert(cardinality(_v161_stored(ADULT)) = 1 AND (_v161_stored(ADULT))[1] LIKE 'A role of yours has ended|%',
+      format('§139 (role): what is stored for her is %s, not db/77''s role notice', array_to_string(_v161_stored(ADULT), ' ~ ')));
+    PERFORM _as(ADULT);
+    SELECT count(*) INTO n FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 0, format('§139 (role): she reads %s "answered" notices for an ended role', n));
+
+  ELSIF p_case = 'left' THEN
+    -- (left) C, the review's S1: a link the office never verified, already dated by his leaving (db/109 writes
+    -- its 'majority' row), then ended by the office: db/109's revoke takes its upsert's UPDATE branch, and the
+    -- notice it names is answered in the same words, never "A link to a child has ended".
+    lk := _v161_pending_link(ASK, P);
+    n := _v161_left(P);
+    PERFORM _assert(n >= 1 AND _v161_ending(lk) = 'majority|-', format('§139 (left): the fixture is void: %s links closed, %s', n, _v161_ending(lk)));
+    PERFORM _as(OFFICE);
+    SELECT g.ok, g.reason INTO r FROM guardian_link_revoke(lk, 'office', 'Verify 161: not this family, checked.') g;
+    PERFORM _assert(r.ok AND _v161_ending(lk) LIKE 'office|%', format('§139 (left): the revoke answered %s and left %s', r.reason, _v161_ending(lk)));
+    PERFORM _assert(_v161_stored(ASK) = ARRAY[T || '|' || WORDS || '|' || lk || '|system|system|medium|news.read|false|' || HIL || '|-|-'],
+      format('§139 (left): what is stored for her is %s', array_to_string(_v161_stored(ASK), ' ~ ')));
 
   ELSIF p_case = 'pupil' THEN
     -- (pupil) A pupil's account answered by both doors gets nothing; the adult answered beside him gets both.
@@ -45415,6 +45482,14 @@ $m130$;
   --             notice, the same words, the link its subject, and never
   --             "A link to a child has ended"; a verified link ended beside
   --             it keeps db/109's notice word for word
+  --   (role)    the office ends a parent's guardian role over a verified
+  --             link and one never verified (db/77): db/77's role notice,
+  --             shared by both links' ending rows, is never reworded; she
+  --             reads "A role of yours has ended" and no "answered" notice
+  --   (left)    a never-verified link already dated by his leaving
+  --             (db/109's 'majority' row), then revoked: the revoke's
+  --             upsert takes its UPDATE branch, and she reads the answered
+  --             notice in the same words, the whole row pinned
   --   (pupil)   a pupil's account, answered by both doors (a declined
   --             request, a verified link), holds and reads none; the adult
   --             answered beside him holds both
@@ -45439,15 +45514,21 @@ $m130$;
   --
   -- Falsified, each case in its own rolled-back run (the cases called one
   -- by one, every failure caught and reported): db/161 undone (its trigger
-  -- and policy dropped, db/08's guardian_link_verify() put back, its four
-  -- functions dropped) → every case red, (yes) to (grants). The recipient
+  -- and policy dropped, db/08's guardian_link_verify() put back, its
+  -- functions dropped) → every case red but (role) and (sheet): (sheet)
+  -- stands on db/131 alone, and (role) asks that a notice is NOT reworded,
+  -- which nothing does without db/161. The recipient
   -- cut (db/57) dropped and the door made to admit any reader of the title
   -- → (others) red, and (no), (same), (verify) and (pupil) with it. The
   -- writer without its pupil test → (pupil) red. A decline told in other
   -- words ("It was declined.") → (no) and (same) red.
   -- (ended): db/161's trigger on guardian_link_ending dropped → red (she
   -- reads "A link to a child has ended"); its test made "every ending" (the
-  -- verified_at test taken out) → red at the verified parent.
+  -- verified_at test taken out) → red at the verified parent. (role) and (left), run against db/161 as it stood at
+  -- 183eb8fc (no subject test, AFTER INSERT only) → both red: the role's
+  -- notice reworded to "answered"; "A link to a child has ended" after the
+  -- upsert's UPDATE branch. Each red again with the fix taken back out
+  -- (the subject test; then UPDATE OF notice_id).
   -- (sheet), with fixture_sheet()'s gate taken out (every live row of the
   -- fixture to anyone signed in) → red at the named guardian (fourteen rows,
   -- both ends); with its family test widened to any guardian link of the
@@ -45459,6 +45540,8 @@ $m130$;
   PERFORM _v161_case('same');
   PERFORM _v161_case('verify');
   PERFORM _v161_case('ended');
+  PERFORM _v161_case('role');
+  PERFORM _v161_case('left');
   PERFORM _v161_case('pupil');
   PERFORM _v161_case('others');
   PERFORM _v161_case('sheet');
