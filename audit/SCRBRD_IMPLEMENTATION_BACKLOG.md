@@ -5347,6 +5347,34 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - [ ] Slice 5 · The coach's day sheet, and the homes
 - [ ] Slice 6 · The office
 
+### SCRBRD-143 — Account erasure must delete the slice 3b tables (2026-11-15)
+**Priority:** P2 · **Domain:** Privacy / Account lifecycle · **Type:** build, Opus (rides on `account_erase()`)
+**Status:** open, waiting on `account_erase()`.
+**Why:** `account_erase()` is designed (`ACCOUNT_LIFECYCLE` §6.3) but not built. It tombstones the account row and keeps its uuid, so the `ON DELETE CASCADE` on `school_add_request` and `followed_school` never fires, and those rows would outlive an erased account. `db/99` §136 and §138 carry a tripwire that turns red once `account_erase(uuid)` exists, unless it deletes them. §6.3's list now names both tables.
+**Acceptance criteria:**
+- [ ] When `account_erase()` is built, it deletes the account's `school_add_request` and `followed_school` rows.
+- [ ] `db/99` §136 and §138's tripwires are green.
+**Source:** Fable's red-team of `db/158` and `db/160`, 15 Nov 2026 (finding S4).
+
+### SCRBRD-144 — Officials named in signed-in reads while Officials is switched off (2026-11-15)
+**Priority:** P2 · **Domain:** Privacy / Platform controls · **Type:** build, Opus
+**Status:** open.
+**Why:** `db/156` hides officials on the public overlay while Officials is off for the school. Signed-in reads of a match's officials do not yet follow the switch. The appoint gate (`services/api/server.mjs`, around line 715) stays until this is closed.
+**Acceptance criteria:**
+- [ ] A signed-in reader of a school with Officials off sees no official named.
+- [ ] Switching Officials back on shows them.
+- [ ] A `db/99` case proves both.
+**Source:** Fable's red-team of `db/156`, 14 Nov 2026 (finding S4).
+
+### SCRBRD-145 — A stray comment fails an old acceptance check (2026-11-15)
+**Priority:** P3 · **Domain:** Scoring · **Type:** one-line fix, trivial
+**Status:** open, trivial.
+**Why:** SCRBRD-002's box `grep -c "run ?out" packages/scoring/src` → 0 returns 1, because a comment at `packages/scoring/src/events.mjs` (around line 311) quotes the retired regex.
+**Acceptance criteria:**
+- [ ] Reword that comment so the grep returns 0.
+- [ ] Tick SCRBRD-002's box.
+**Source:** the backlog map of 15 Nov 2026.
+
 ---
 
 ## Resume here (written 2026-09-29, weekly budget spent; resets Wed 2026-09-30 01:00)
