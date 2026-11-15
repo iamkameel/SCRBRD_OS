@@ -14,6 +14,7 @@ import { AskSchool, AskSchoolLink, SchoolAskRows } from "./schoolAsk.jsx";
 import { useFollowed } from "../lib/follow.js";
 import { FollowedSchools } from "../follow/Followed.jsx";
 import { WaitingTerms } from "../views/terms.jsx";
+import { pendingWords } from "../lib/family.js";
 import { useNotifications } from "../lib/notifications.js";
 
 // "Start a match", what this phone holds, and the last match's plain record
@@ -369,6 +370,8 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
   // Q22 (db/158): the person's own notes asking SCRBRD to add a school, and the note's form when open.
   const schoolAsks = useLive("school_add_requests", "spectator", nudge);
   const askRows = schoolAsks.rows.filter((r) => r.mine);
+  // Q15: her own requests to be linked to a child, still with the office (lib/family.js's rule).
+  const waiting = pendingWords(rows, Date.now());
   const [askSchool, setAskSchool] = useState(null);
   const [schools, setSchools] = useState(null);
   const me = profile()?.user;
@@ -458,9 +461,9 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
             ))}
             <SchoolAskRows rows={askRows}/>
             {/* Q15: waiting to be linked to a child, she may read the school's terms now; agreeing comes after the office checks. */}
-            {rows.some((r) => r.state === "pending" && r.role === "guardian") && (
+            {waiting.length > 0 && (
               <div style={{ marginTop: "8px" }}>
-                <WaitingTerms schoolName={rows.find((r) => r.state === "pending" && r.role === "guardian")?.schoolName ?? null}/>
+                <WaitingTerms schoolName={rows.find((r) => r.id === waiting[0].id)?.schoolName ?? null}/>
               </div>
             )}
             {/* Q15: the office's answer, said in a notice with the same words for yes and no; the list above says which. */}

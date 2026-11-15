@@ -18,7 +18,7 @@ import {
 import { asLink } from "../src/lib/live.js";
 import { todoOf, countWords } from "../src/lib/todo.js";
 import { tenantWords } from "../src/lib/words.js";
-import { ChildSwitcher, answerVerb, stateWords } from "../src/views/family/parts.jsx";
+import { ChildSwitcher, answerVerb, isHisRow, stateWords } from "../src/views/family/parts.jsx";
 import { basisWords } from "../src/lib/compare.js";
 import { ScorecardTab } from "../src/views/matchcentre/scorecard.jsx";
 import { AnalyticsTab } from "../src/views/matchcentre/tabs.jsx";
@@ -468,6 +468,16 @@ group("C16: the button says Answer until there is an answer");
   ok("answered: Change", ["available", "doubtful", "unavailable"].every((s) => answerVerb(s) === "Change"));
   ok("not known yet: neither", answerVerb(undefined) === "Open the fixture");
   ok("'No answer yet' is still the state's word", stateWords(null).word === "No answer yet");
+}
+
+group("Q10 (Kameel, 15 Nov): the eleven, her child's row marked");
+{
+  const kid = { id: "p1", name: "R Pillay" };
+  const rows = [{ side: "home", battingNo: 3, twelfth: false, name: "T Bekker" }, { side: "home", battingNo: 4, twelfth: false, name: "R Pillay" },
+                { side: "home", battingNo: null, twelfth: true, name: "R Pillay" }];
+  ok("his row by his own place on the sheet", rows.filter((r) => isHisRow(r, kid, { battingNo: 4 })).length === 1 && isHisRow(rows[1], kid, { battingNo: 4 }));
+  ok("...the twelfth man by the mark and his name", rows.filter((r) => isHisRow(r, kid, { twelfth: true })).length === 1 && isHisRow(rows[2], kid, { twelfth: true }));
+  ok("...another boy's row is never his", !isHisRow(rows[0], kid, { battingNo: 4 }) && !isHisRow(rows[0], kid, null));
 }
 
 group("Q12: the passport board's source line (§3.4)");

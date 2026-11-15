@@ -11,14 +11,14 @@
  * who is also staff reads the whole side, and her child's screen still names
  * only her child (§3.1).
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { T } from "../../design/tokens.js";
-import { api } from "../../lib/api.js";
+import { api, signedIn } from "../../lib/api.js";
 import { useLive, useWeather } from "../../lib/live.js";
 import { observedStamp } from "../../lib/weatherStamp.js";
 import { profile } from "../../lib/session.js";
 import { humanDate, humanDateTime } from "../../lib/format.js";
-import { holds } from "../../lib/family.js";
+import { endOf, holds } from "../../lib/family.js";
 import { Icon } from "../../ui/icons.jsx";
 import { ReadState } from "../../ui/primitives.jsx";
 import { readState } from "../../lib/readState.js";
@@ -304,7 +304,7 @@ export function AvailabilityBlock({ match, child, role, self = false, compact = 
  * S3) the side's names and order follow it, from their own narrow read
  * (STEP4 Q10, db/131: matches.jsx SideSheet).
  */
-export function TeamSheetLine({ match, child, role, self = false }) {
+export function TeamSheetLine({ match, child, role, self = false, sheet = true }) {
   const { rows, loading, error, disabled } = useLive("match_squad", role, 0, { matchId: match.id });
   if (loading || disabled) return null;
   if (error) return <Line quiet testid="teamsheet-line">Team sheet: could not be read just now.</Line>;
@@ -315,8 +315,77 @@ export function TeamSheetLine({ match, child, role, self = false }) {
     : self
       ? (rows.length ? "Not in the side this time" : "Side not out yet")
       : "Team sheet: not named yet";
-  return <Line testid="teamsheet-line" strong={!!mine}>{text}</Line>;
+  return (
+    <>
+      <Line testid="teamsheet-line" strong={!!mine}>{text}</Line>
+      {sheet && mine && <SideSheet match={match} child={child} mine={mine} self={self}/>}
+    </>
+  );
 }
+
+/** Is this sheet row his: his place (his own match_squad row), or, with none, his name. */
+export function isHisRow(r, child, mine) {
+  if (mine?.twelfth) return !!r.twelfth && r.name === child.name;
+  if (mine?.battingNo != null) return !r.twelfth && r.battingNo === mine.battingNo;
+  return r.name === child.name;
+}
+
+/**
+ * The side's sheet (P3, S3): every name on it, in batting order, under the
+ * child's own line (REACH R-H, db/131; STEP4 Q10, Kameel 27 Sep 2026: "the
+ * named players and their order — names only, no profiles, ages or photos").
+ *
+ * GET /api/matches/:id/sheet answers, as the reader, the end of the fixture
+ * whose sheet holds a boy he may read: her child's, or his own. The rows are
+ * a name, a place and a twelfth-man mark, and nothing else — no id, no age,
+ * no fitness, no answer (K3, db/55: a child's medical needs are not in
+ * general view). Signed in only: the demonstration draws the line alone, and
+ * no public page draws this. A sheet not out yet, a read that failed and a
+ * reader it does not admit all draw nothing, under the line that says which.
+ *
+ * Q10 (Kameel, 15 Nov 2026: "eleven"): a parent sees the eleven, names and
+ * order, for her child's side and that fixture only, on his Home's next
+ * fixture as on the fixture itself, her child's row marked. The read carries
+ * no player id, so his row is found by his own place on the sheet (his
+ * match_squad row, which his parent reads) and, failing that, his name.
+ */
+function SideSheet({ match, child, mine = null, self = false }) {
+  const id = match.id;
+  const [rows, setRows] = useState(/** @type {any[] | null} */ (null));
+  useEffect(() => {
+    if (!id || !signedIn()) { setRows(null); return undefined; }
+    let cancelled = false;
+    api(`/api/matches/${id}/sheet`)
+      .then((d) => { if (!cancelled) setRows(Array.isArray(d?.rows) ? d.rows : []); })
+      .catch(() => { if (!cancelled) setRows(null); });
+    return () => { cancelled = true; };
+  }, [id]);
+  if (!rows?.length) return null;
+  // One end, the child's. A reader admitted at both ends (staff at both
+  // schools) is shown the end this child plays.
+  const ends = [...new Set(rows.map((r) => r.side))];
+  const end = ends.length === 1 ? ends[0] : endOf(match, child);
+  const side = rows.filter((r) => r.side === end);
+  return (
+    <ol data-testid="side-sheet" aria-label="Team sheet, in batting order"
+      style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "2px" }}>
+      {side.map((r, i) => {
+        const his = isHisRow(r, child, mine);
+        return (
+          <li key={`${end}-${i}`} data-testid="side-sheet-row" data-his={his ? "true" : undefined} aria-current={his ? "true" : undefined}
+            style={{ ...T.role.body, color: T.content.primary, display: "flex", gap: T.space.sm, fontWeight: his ? 700 : 400 }}>
+            <span style={{ minWidth: "2ch", textAlign: "right", color: T.content.secondary, fontVariantNumeric: "tabular-nums" }}>
+              {r.battingNo ?? ""}
+            </span>
+            <span>{r.name}{r.twelfth ? " (12th)" : ""}{his ? <span style={{ fontWeight: 400, color: T.content.secondary }}>{self ? " · you" : " · your child"}</span> : null}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+
 
 // ── The bus (P1, P3, S1) ───────────────────────────────
 
