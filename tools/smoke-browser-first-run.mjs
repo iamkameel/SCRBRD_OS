@@ -30,6 +30,18 @@
  *   3. A COACH ON THE REGISTER. The office lists a coach; he signs in with
  *      Google, chooses the school and "I work at the school", is told he is
  *      listed, and Open the school lands him on Today with no second sign-in.
+ *   4. A SPECTATOR FOLLOWS FROM A MATCH LINK (slice 3b, Q8, §2.4). The live
+ *      fixture's public page offers nothing while the first innings is in
+ *      play; at the innings break it offers "Follow Hilton College's
+ *      matches", a plain link. One Google sign-in later the new account lands
+ *      on the no-school home, its Followed schools block first because the
+ *      school is live, saying he follows it; one tap opens the match. His
+ *      list is Hilton alone, and Stop following empties it.
+ *   5. THE SENTENCE WITH A TARGET (Q14, db/159). The chase begins: the public
+ *      read carries the target, and the home page's live board says "need 8
+ *      off 5"; the follower's Today says the same from the same read.
+ *   6. A FOLLOWER WHO BELONGS TO A SCHOOL. The coach of step 3 follows Hilton,
+ *      signs in, and Today leads with its live board, above the day sheet.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-browser-first-run.mjs
@@ -46,6 +58,8 @@ import { generateKeyPairSync, createSign } from "node:crypto";
 import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { writeEvents } from "./fixture-matchcentre.mjs";
+import { ball, inningsStart, BALL_TYPE } from "@scrbrd/scoring";
 
 const PORT = port(9025);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -397,10 +411,138 @@ try {
     ok("no page errors", h.errors.length === 0, h.errors.join(" | "));
     await h.ctx.close();
   }
+
+  // ── 4 · A spectator follows Hilton from a match link ────────────
+  group("4. A spectator follows Hilton from a match link: offered at the break, one sign-in, his home led by the live board");
+  const FAN_UID = `walk-firstrun-fan-${RUN}`, FAN_EMAIL = `walk.firstrun.fan.${RUN}@example.invalid`;
+  const OPP = "Westville Boys' High 1XI";
+  let n = 0;
+  const t0 = Date.now() - 20 * 60000;
+  const at = (/** @type {number} */ inn, /** @type {any} */ ev) => ({ ...ev, innings: inn, id: `first-run-${RUN}-${++n}`, clientTs: t0 + n * 30000 });
+  // A one-over match, so a short log reaches the break and the chase.
+  await q(`update match set overs = 1 where id = $1`, [LIVE]);
+  await writeEvents(q, LIVE, [
+    at(0, inningsStart({ battingTeam: "1XI", bowlingTeam: OPP, teamKey: "1XI", bowlingTeamKey: OPP, overs: 1 })),
+    at(0, ball({ type: BALL_TYPE.RUN, value: 4 })), at(0, ball({ type: BALL_TYPE.RUN, value: 4 })), at(0, ball({ type: BALL_TYPE.RUN, value: 0 }))]);
+  await publish([LIVE]);
+  ok("(setup) the public read lists the live fixture", await readUntil([LIVE]));
+  {
+    const h = await visitor();
+    const P = h.page;
+    await P.goto(`${BASE}/live/${LIVE}`, { waitUntil: "networkidle" });
+    await P.waitForSelector('[data-testid="public-match"]', { timeout: 10000 }).catch(() => {});
+    await afterReads(P, 800);
+    ok("the match link opens its public page", (await tid(P, "public-match").count()) === 1);
+    ok("...and while the first innings is in play nothing is offered", (await tid(P, "follow-offer").count()) === 0);
+    await writeEvents(q, LIVE, [at(0, ball({ type: BALL_TYPE.RUN, value: 0 })), at(0, ball({ type: BALL_TYPE.RUN, value: 0 })), at(0, ball({ type: BALL_TYPE.RUN, value: 0 }))], 4);
+    await P.reload({ waitUntil: "networkidle" });
+    await P.waitForSelector('[data-testid="follow-offer"]', { timeout: 10000 }).catch(() => {});
+    const offer = tid(P, "follow-offer-HIL");
+    ok("at the innings break: \"Follow Hilton College's matches\"", /Follow Hilton College's matches/.test(await offer.innerText().catch(() => "")), await text(P).then((t) => t.slice(0, 300)));
+    ok("...a plain link to the app, nofollow, offered for the side that published alone",
+       (await offer.getAttribute("href")) === "/app?follow=HIL" && /\bnofollow\b/.test((await offer.getAttribute("rel")) ?? "") && (await tid(P, "follow-offer-WES").count()) === 0);
+    ok("...an offer, never a wall: the board and the tabs are all there", (await tid(P, "mc-panel-summary").count()) === 1 && (await P.locator("[data-testid=follow-offer] form, [data-testid=follow-offer] input").count()) === 0);
+    const fl = await floors(P);
+    ok("the page with the offer: nothing under 12px, nothing tapped under 44px", fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].slice(0, 4).join(" · "));
+    ok("...no child's name", namesIn(await text(P)).length === 0, namesIn(await text(P)).join(", "));
+    await offer.click({ timeout: 5000 });
+    await P.waitForURL(/\/app\?follow=HIL$/, { timeout: 8000 }).catch(() => {});
+    ok("Follow leads to the one sign-in", (await P.locator('[data-testid="google-button"]').count()) === 1 || !!(await P.waitForSelector('[data-testid="google-button"]', { timeout: 8000 }).catch(() => null)), P.url());
+    ok("...with the privacy paragraph on the same screen", (await tid(P, "google-notice").count()) === 1);
+    await google(h, idToken(FAN_UID, FAN_EMAIL, "Walk Fan"));
+    await P.waitForSelector('[data-testid="followed-card"]', { timeout: 12000 }).catch(() => {});
+    ok("he lands on the no-school home, asked no role", (await tid(P, "no-school-title").count()) === 1 && !/what.s your role/i.test(await text(P)));
+    ok("...told he follows Hilton College", /You follow Hilton College/.test(await tid(P, "followed-note").innerText().catch(() => "")));
+    ok("...Followed schools first, above Start a match, because Hilton is live", await P.evaluate(() => {
+      const y = (id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect().top ?? NaN;
+      return document.querySelector('[data-testid="followed-schools"]')?.hasAttribute("data-lead") && y("followed-schools") < y("start-match");
+    }));
+    const card = tid(P, "followed-card").first();
+    ok("...led by the live board, team facts and its sentence", (await card.getAttribute("data-status")) === "live"
+       && /LIVE/.test(await card.innerText()) && /Hilton College 1XI 8\/0 after 1 over/.test(await card.innerText()), await card.innerText().catch(() => ""));
+    ok("...and the follow hint has left the address", !new URL(P.url()).search.includes("follow="), P.url());
+    const fl2 = await floors(P);
+    ok("the follower's home: nothing under 12px, nothing tapped under 44px, no sideways scroll", fl2.small.length === 0 && fl2.tiny.length === 0 && !(await wide(P)),
+       [...fl2.small, ...fl2.tiny].slice(0, 4).join(" · "));
+    ok("...no child's name, no ground", namesIn(await text(P)).length === 0 && !/First Run Ground/.test(await text(P)));
+    const fan = (await call("/api/auth/firebase", { method: "POST", body: { idToken: idToken(FAN_UID, FAN_EMAIL, "Walk Fan"), deviceId: "device-first-run-fan" } })).body?.token;
+    const list = await call("/api/follows", { token: fan });
+    ok("his list is Hilton alone, and he holds no role", JSON.stringify((list.body?.schools ?? []).map((x) => x.code)) === '["HIL"]'
+       && ((await call("/api/session", { token: fan })).body?.assignments ?? [1]).length === 0, list.body);
+    const today = await call("/api/follows/today", { token: fan });
+    ok("...his Today is the public read kept to Hilton: the live fixture, nothing unpublished", JSON.stringify((today.body?.fixtures ?? []).map((f) => f.id)) === JSON.stringify([LIVE]), today.body);
+    ok("...and nobody else reads his list: another account's is empty",
+       ((await call("/api/follows", { token: (await call("/api/auth/firebase", { method: "POST", body: { idToken: idToken(NEW_UID, NEW_EMAIL, "Walk Parent"), deviceId: "device-first-run-3" } })).body?.token })).body?.schools ?? [1]).length === 0);
+    await card.click({ timeout: 5000 });
+    await P.waitForURL(new RegExp(`/live/${LIVE}$`), { timeout: 8000 }).catch(() => {});
+    ok("one tap on the board opens the match", new URL(P.url()).pathname === `/live/${LIVE}`, P.url());
+    ok("no page errors", h.errors.length === 0, h.errors.join(" | "));
+    await h.ctx.close();
+
+    // Stop following, on his home.
+    const h2 = await visitor();
+    await h2.page.goto(`${BASE}/app`, { waitUntil: "networkidle" });
+    await google(h2, idToken(FAN_UID, FAN_EMAIL, "Walk Fan"));
+    await h2.page.waitForSelector('[data-testid="unfollow-HIL"]', { timeout: 10000 }).catch(() => {});
+    await tid(h2.page, "unfollow-HIL").click({ timeout: 5000 });
+    await h2.page.waitForSelector('[data-testid="followed-none"]', { timeout: 8000 }).catch(() => {});
+    ok("Stop following empties his list, and the block says what will show there",
+       (await tid(h2.page, "followed-none").count()) === 1 && ((await call("/api/follows", { token: fan })).body?.schools ?? [1]).length === 0);
+    ok("no page errors (stop following)", h2.errors.length === 0, h2.errors.join(" | "));
+    await h2.ctx.close();
+    await call("/api/follows", { method: "POST", token: fan, body: { code: "HIL" } });
+
+    // ── 5 · The chase: the sentence says it from the read's target ──
+    group("5. The chase begins: the home page's live board says the runs needed off the balls left, from the read's target");
+    await writeEvents(q, LIVE, [
+      at(1, inningsStart({ battingTeam: OPP, bowlingTeam: "1XI", teamKey: OPP, bowlingTeamKey: "1XI", overs: 1 })),
+      at(1, ball({ type: BALL_TYPE.RUN, value: 1 }))], 7);
+    let pub = null;
+    for (let i = 0; i < 40; i++) {
+      pub = (await fetch(`${BASE}/api/public/live`, { headers: { "x-forwarded-for": "10.86.1.2" } }).then((x) => x.json()).catch(() => null))?.fixtures?.find((f) => f.id === LIVE);
+      if (pub?.target != null) break;
+      await new Promise((res) => setTimeout(res, 500));
+    }
+    ok("the public read carries the chase's target, not revised", pub?.target === 9 && pub?.revised === false, JSON.stringify(pub));
+    const v = await home("live with a chase", "live");
+    const said = await tid(v.page, "home-card-sentence").first().innerText().catch(() => "");
+    ok("the live board's sentence: \"Westville Boys' High 1XI need 8 off 5\"", said === "Westville Boys' High 1XI need 8 off 5", said);
+    await common(v, "live with a chase");
+    await v.ctx.close();
+    const ft = (await call("/api/follows/today", { token: fan })).body?.fixtures?.find((f) => f.id === LIVE);
+    ok("...and the follower's Today carries the same target from the same read", ft?.target === 9 && ft?.revised === false, JSON.stringify(ft));
+    await call(`/api/follows/${HIL}`, { method: "DELETE", token: fan });
+  }
+
+  // ── 6 · A follower who belongs to a school ───────────────────────
+  group("6. The coach follows Hilton: Today leads with its live board, above the day sheet");
+  {
+    const coach = (await call("/api/auth/firebase", { method: "POST", body: { idToken: idToken(COACH_UID, COACH_EMAIL, "Walk Coach"), deviceId: "device-first-run-4" } })).body?.token;
+    const f = await call("/api/follows", { method: "POST", token: coach, body: { code: "HIL" } });
+    ok("(setup) the coach follows Hilton", f.status === 200 && f.body?.ok === true, f.body);
+    const h = await visitor();
+    const P = h.page;
+    await P.goto(`${BASE}/app`, { waitUntil: "networkidle" });
+    await google(h, idToken(COACH_UID, COACH_EMAIL, "Walk Coach"));
+    await P.waitForSelector('[data-testid="today-followed"]', { timeout: 12000 }).catch(() => {});
+    await afterReads(P, 800);
+    ok("he lands on Today", (await tid(P, "os-main").getAttribute("data-page").catch(() => "")) === "dashboard");
+    ok("...led by the followed school's live board, above the day sheet", await P.evaluate(() => {
+      const y = (id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect().top ?? NaN;
+      return document.querySelector('[data-testid="followed-schools"]')?.hasAttribute("data-lead") && y("today-followed") < y("day-sheet");
+    }));
+    ok("...its card live, with the sentence", /need 8 off 5/.test(await tid(P, "followed-card").first().innerText().catch(() => "")));
+    ok("no page errors", h.errors.length === 0, h.errors.join(" | "));
+    await h.ctx.close();
+    await call(`/api/follows/${HIL}`, { method: "DELETE", token: coach });
+  }
 } catch (e) {
   fail++;
   console.log("  ✗ the walk threw:", e.stack ?? e.message);
 } finally {
+  // A match with a log is not deleted (ball_event never is): unpublished, it leaves the home page.
+  await q(`update fixture_publication set published = false where match_id = any($1::uuid[])`, [made.matches]).catch(() => {});
+  for (const m of made.matches) await q(`update match set status = 'scheduled', starts_at = now() + interval '3 days' where id = $1 and status = 'live'`, [m]).catch(() => {});
   for (const m of made.matches) await q(`delete from match where id = $1`, [m]).catch(() => {});
   for (const g of made.grounds) await q(`delete from ground where id = $1`, [g]).catch(() => {});
   await browser.close();

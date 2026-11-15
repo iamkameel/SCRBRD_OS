@@ -697,6 +697,7 @@ decision.
 | **access log** | `access_log` | **recommend 5 years** | delete rows; never minimise (a log with holes is not a log) | the row's date | the platform, on a schedule the owner runs |
 | **sessions, codes, claims** | `auth_session` (a day past expiry, built), `login_code` (3 days, built), `pending_claim` | pending claims **90 days** then `expired` | — | — | built / small |
 | **sign-ins** | `auth_identity` | with the account | deleted on erasure (140 §3.8) | — | — |
+| **the follow list** (EXPERIENCE_PASS Q8, db/160) | `followed_school` | with the account | deleted: with its `app_user` row (ON DELETE CASCADE), and by `account_erase()` with the sign-ins; kept while an account is disabled | — | built (db/160) |
 | **notifications** | `notification` | **recommend 2 years** | delete | sent | the platform |
 
 ### 6.3 The account's own end
