@@ -13403,7 +13403,14 @@ BEGIN
       -- whose appointment ran out yesterday.
       ('self',   NULL,            NULL),
       ('paused', NULL,            NULL),
-      ('platgone', 'platformadmin', NULL)) AS v(k, role, school)
+      ('platgone', 'platformadmin', NULL),
+      -- A platform administrator whose account is disabled; somebody whose
+      -- only live role is a support session at Hilton; two accounts that end,
+      -- one removed outright and one erased (when account_erase() exists).
+      ('platoff', 'platformadmin', NULL),
+      ('support', NULL,            NULL),
+      ('gone',    NULL,            NULL),
+      ('erased',  NULL,            NULL)) AS v(k, role, school)
   LOOP
     INSERT INTO app_user (school_id, email, name, role)
     VALUES (r.school, 'v158.' || r.k || '@example.invalid', 'V158 ' || initcap(r.k), coalesce(r.role, 'none'))
@@ -13422,8 +13429,27 @@ BEGIN
   -- The paused one: a scorer's duty at Hilton, its assignment paused by the
   -- office (db/34), as §73 stages it.
   PERFORM _v92_pause((ids->>'paused')::uuid, (ids->>'office')::uuid);
+  UPDATE app_user SET active = false WHERE id = (ids->>'platoff')::uuid;
+  -- A support session as support_access_begin() (db/22) writes one: the
+  -- school's own role, an hour long, under the supporter's own uuid.
+  INSERT INTO role_assignment (person_id, role, school_id, active, valid_from, expires_at)
+  VALUES ((ids->>'support')::uuid, 'schooladmin', '11111111-1111-1111-1111-111111111111', true, sa_today(), now() + interval '1 hour')
+  RETURNING id INTO v_a;
+  INSERT INTO support_access (actor_id, school_id, role, reason, assignment_id, expires_at)
+  VALUES ((ids->>'support')::uuid, '11111111-1111-1111-1111-111111111111', 'schooladmin', 'Verify 158: a support session.', v_a, now() + interval '1 hour');
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- How many requests hold this account, past RLS.
+CREATE OR REPLACE FUNCTION _v158_of(p_person uuid) RETURNS integer AS $$
+BEGIN
+  RETURN (SELECT count(*)::int FROM school_add_request WHERE person_id = p_person);
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The account removed outright, as the owner would (ON DELETE CASCADE).
+CREATE OR REPLACE FUNCTION _v158_remove(p_person uuid) RETURNS void AS $$
+  DELETE FROM app_user WHERE id = p_person
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- An answered request whose answer was p_days ago, as the owner sets it
 -- (Kameel, 15 Nov: deleted 90 days after the answer).
@@ -13482,9 +13508,10 @@ CREATE OR REPLACE FUNCTION _v158_reach(p_role text) RETURNS text AS $$
    WHERE x ~ 'school_add_request|school_add_requester'
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- Every grant on db/158's table and four functions, read from the ACLs,
+-- Every grant on db/158's table and five functions, read from the ACLs,
 -- beyond the owner's own and the application's SELECT (the table) or
--- EXECUTE (each function): NULL when none.
+-- EXECUTE (each function but the purge, which is the owner's alone): NULL
+-- when none.
 CREATE OR REPLACE FUNCTION _v158_acl() RETURNS text AS $$
   SELECT string_agg(x, '; ' ORDER BY x) FROM (
     SELECT 'school_add_request ' || coalesce(nullif(a.grantee, 0)::regrole::text, 'PUBLIC') || ':' || a.privilege_type AS x
@@ -43883,7 +43910,7 @@ $m130$;
   --   (refused)  nobody signed in, a pad's credential, a blank or long name,
   --              a short or long town, a job not on the list, the same school
   --              asked twice: each refused with its code and nothing written;
-  --              somebody whose role has ended may ask; a 120-letter name is
+  --              somebody whose role has ended may ask; an 80-letter name is
   --              taken
   --   (unseen)   a name or town holding a bidi override or isolate, a
   --              zero-width space, a soft hyphen or a byte-order mark, or no
@@ -43899,7 +43926,8 @@ $m130$;
   --              refused; the platform answers once, with who and when; the
   --              owner's key may too; the asker reads the answer; still no
   --              school, role or link; a platform administrator whose
-  --              appointment ran out may not answer
+  --              appointment ran out, or whose account is disabled, may not
+  --              answer
   --   (self)     an asker made a platform administrator before the answer
   --              may not answer her own (own_request), and the row is unmoved
   --   (kept)     ninety days after its answer a request is gone from the
@@ -43908,6 +43936,13 @@ $m130$;
   --              rows past ninety days, never an open one, and a second purge
   --              deletes nothing; the application may not call it (Kameel,
   --              15 Nov: deleted 90 days after the answer)
+  --   (ends)     an account removed outright takes its requests with it
+  --              (ON DELETE CASCADE); and, a tripwire for ACCOUNT_LIFECYCLE
+  --              section 6.3, once account_erase(uuid) exists an erased
+  --              account holds no request either
+  --   (support)  somebody whose only live role is a support session at a
+  --              school reads their own requests and nobody else's, and
+  --              answers none
   --   (pad)      under a pad's credential the asker reads none of hers
   --   (reach)    nothing of db/158's in what PUBLIC, anon, authenticated or
   --              service_role may do in public (db/157's probe)
@@ -43923,7 +43958,6 @@ $m130$;
   --   the read policy without the platform's arm   → (platform)
   --   the requester without its own-or-platform
   --   test                                         → (other)
-  --   the ask without its has_school test          → (refused)
   --   the ask without its duplicate test           → (refused)
   --   the ask's cap raised to 99                   → (cap)
   --   the ask filing the asker under a school      → (ask)
@@ -43940,6 +43974,9 @@ $m130$;
   --   the requester without its ninety-day cut     → (kept)
   --   the purge deleting open rows too             → (kept)
   --   the purge granted to the application         → (kept), (standing)
+  --   the decision without its disabled-account test → (decide)
+  --   the foreign key without ON DELETE CASCADE      → (ends)
+  --   the read policy open to any school role        → (support)
   DECLARE
     ids jsonb;
     A uuid; B uuid; C uuid; O uuid; L uuid; X uuid; P uuid; W uuid; S uuid;
@@ -44067,8 +44104,8 @@ $m130$;
     PERFORM _assert(v = 'name_required', format('§136 (refused): a blank name was answered %s', v));
     v := _v158_ask(' V ', 'Howick', 'coach');
     PERFORM _assert(v = 'name_required', format('§136 (refused): a one-letter name was answered %s', v));
-    v := _v158_ask(repeat('V', 121), 'Howick', 'coach');
-    PERFORM _assert(v = 'name_required', format('§136 (refused): a 121-letter name was answered %s', v));
+    v := _v158_ask(repeat('V', 81), 'Howick', 'coach');
+    PERFORM _assert(v = 'name_required', format('§136 (refused): an 81-letter name was answered %s', v));
     v := _v158_ask('Verify ' || chr(1) || ' School', 'Howick', 'coach');
     PERFORM _assert(v = 'name_required', format('§136 (refused): a name with a control character was answered %s', v));
     v := _v158_ask('Verify Town School', ' H ', 'coach');
@@ -44101,8 +44138,8 @@ $m130$;
     PERFORM _assert(v LIKE 'ok:%', format('§136 (refused): somebody whose role ran out yesterday was answered %s', v));
     rx := nullif(split_part(v, ':', 2), '')::uuid;
     PERFORM _as(L);
-    v := _v158_ask(repeat('V', 119) || 'W', 'Howick', 'teacher');
-    PERFORM _assert(v LIKE 'ok:%', format('§136 (refused): a 120-letter name was answered %s', v));
+    v := _v158_ask(repeat('V', 79) || 'W', 'Howick', 'teacher');
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (refused): an 80-letter name was answered %s', v));
     -- (unseen) the no-break spaces folded and trimmed, and another script taken
     v := _v158_ask(U&'\00A0 Verify\00A0\00A0Nobreak  High\202F', U&'\2007Howick', 'teacher');
     PERFORM _assert(v LIKE 'ok:%' AND _v158_row(nullif(split_part(v, ':', 2), '')::uuid)->>'school_name' = 'Verify Nobreak High'
@@ -44191,6 +44228,10 @@ $m130$;
     v := _v158_decide(rl, 'added');
     PERFORM _assert(v = 'not_permitted' AND _v158_row(rl)->>'state' = 'open',
       format('§136 (decide): a platform administrator whose appointment ran out answered: %s', v));
+    PERFORM set_config('app.user_id', ids->>'platoff', true);
+    v := _v158_decide(rl, 'added');
+    PERFORM _assert(v = 'not_permitted' AND _v158_row(rl)->>'state' = 'open',
+      format('§136 (decide): a platform administrator whose account is disabled answered: %s', v));
 
     -- (self)
     PERFORM _as(S);
@@ -44232,6 +44273,37 @@ $m130$;
       format('§136 (kept): the purge deleted %s rows (%s left of %s): not exactly the one answered ninety days ago', v, _v158_all(), k));
     v := _v158_purge();
     PERFORM _assert(v = '0', format('§136 (kept): a second purge deleted %s', v));
+
+    -- (ends)
+    PERFORM set_config('app.user_id', ids->>'gone', true);
+    v := _v158_ask('Verify Gone School', 'Howick', 'other');
+    PERFORM _assert(v LIKE 'ok:%' AND _v158_of((ids->>'gone')::uuid) = 1,
+      format('§136 (ends): the account to be removed could not ask: %s', v));
+    PERFORM set_config('app.user_id', '', true);
+    k := _v158_all();
+    PERFORM _v158_remove((ids->>'gone')::uuid);
+    PERFORM _assert(_v158_of((ids->>'gone')::uuid) = 0 AND _v158_all() = k - 1,
+      '§136 (ends): an account removed outright left its request behind');
+    IF to_regprocedure('account_erase(uuid)') IS NOT NULL THEN
+      PERFORM set_config('app.user_id', ids->>'erased', true);
+      v := _v158_ask('Verify Erased School', 'Howick', 'other');
+      PERFORM _assert(v LIKE 'ok:%', format('§136 (ends): the account to be erased could not ask: %s', v));
+      EXECUTE 'SELECT account_erase($1)' USING (ids->>'erased')::uuid;
+      PERFORM set_config('app.user_id', '', true);
+      PERFORM _assert(_v158_of((ids->>'erased')::uuid) = 0,
+        '§136 (ends): account_erase() left the account''s requests to add a school (ACCOUNT_LIFECYCLE section 6.3)');
+    END IF;
+
+    -- (support)
+    PERFORM set_config('app.user_id', ids->>'support', true);
+    v := _v158_ask('Verify Support School', 'Howick', 'office');
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (support): the support session could not ask: %s', v));
+    SELECT count(*), count(*) FILTER (WHERE person_id = (ids->>'support')::uuid) INTO k, n FROM school_add_request;
+    PERFORM _assert(k = 1 AND n = 1, format('§136 (support): a support session reads %s requests, %s its own', k, n));
+    PERFORM _assert((SELECT count(*) FROM school_add_requester(r4)) = 0,
+      '§136 (support): a support session reads who asked another''s request');
+    v := _v158_decide(r4, 'added');
+    PERFORM _assert(v = 'not_permitted', format('§136 (support): a support session answered: %s', v));
 
     -- (pad)
     PERFORM _as(A);

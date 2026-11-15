@@ -16,7 +16,7 @@
  */
 import { readFileSync } from "node:fs";
 import {
-  ASK_STATE_WORDS, ASK_WORDS, DECIDE_WORDS, JOBS, NAME_MAX, OPEN_DAYS, OPEN_MAX, TOWN_MAX,
+  ANSWER_DAYS, ASK_STATE_WORDS, ASK_WORDS, DECIDE_WORDS, JOBS, askAge, NAME_MAX, OPEN_DAYS, OPEN_MAX, TOWN_MAX,
   askSentWords, askWords, buildAsk, schoolDecideWords, schoolDecidedWords,
 } from "../src/lib/schoolAsk.js";
 
@@ -94,11 +94,16 @@ group("The note a form becomes");
   ok("each refusal names its field", buildAsk({ name: "V", town: "Howick", job: "coach" }).field === "name"
      && buildAsk({ name: "Verify High", town: "H", job: "coach" }).field === "town"
      && buildAsk({ name: "Verify High", town: "Howick", job: "" }).field === "job");
-  for (const bad of ["Verify ‮loohcs", "​​", "Verify ⁦High⁩", "Ver­ify", "﻿Verify", "-- --"])
+  for (const bad of ["Verify \u202Eloohcs", "\u200B\u200B", "Verify \u2066High\u2069", "Ver\u00ADify", "\uFEFFVerify", "-- --"])
     ok(`a hidden character or no letters refused, as db/158 does: ${JSON.stringify(bad)}`, !buildAsk({ name: bad, town: "Howick", job: "coach" }).ok);
-  ok("...in the town too", !buildAsk({ name: "Verify High", town: "Ho​wick", job: "coach" }).ok);
-  const nb = buildAsk({ name: "  Verify  High ", town: " Howick", job: "coach" });
+  ok("...in the town too", !buildAsk({ name: "Verify High", town: "Ho\u200Bwick", job: "coach" }).ok);
+  const nb = buildAsk({ name: "\u00A0 Verify\u00A0\u00A0High\u202F", town: "\u2007Howick", job: "coach" });
   ok("no-break spaces folded and trimmed", nb.ok && nb.body.schoolName === "Verify High" && nb.body.town === "Howick", nb);
+  const now = Date.parse("2026-11-15T12:00:00Z");
+  ok("a request's age: today, one day, eight days and late", askAge("2026-11-15T08:00:00Z", now).words === "asked today"
+     && askAge("2026-11-14T08:00:00Z", now).words === "asked 1 day ago" && !askAge("2026-11-08T12:00:00Z", now).late
+     && askAge("2026-11-07T08:00:00Z", now).late && askAge("2026-11-07T08:00:00Z", now).words === "asked 8 days ago");
+  ok("...the week is the one the asker was told", ANSWER_DAYS === 7 && /within a week/.test(askSentWords("x")));
   ok("another script taken", buildAsk({ name: "Hoërskool Ëlandskraal", town: "eMkhondo", job: "coach" }).ok);
   ok("the limits are db/158's", SQL.includes(`BETWEEN 2 AND ${NAME_MAX}`) && SQL.includes(`BETWEEN 2 AND ${TOWN_MAX}`));
   ok("the cap and the ninety days are db/158's", SQL.includes(`>= ${OPEN_MAX} THEN`) && SQL.includes(`interval '${OPEN_DAYS} days'`));

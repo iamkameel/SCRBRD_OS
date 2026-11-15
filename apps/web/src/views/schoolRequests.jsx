@@ -4,7 +4,7 @@ import { api } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { humanDate } from "../lib/format.js";
 import { saDate } from "../lib/saTime.js";
-import { OWN_WORDS, PLATFORM_INTRO, jobLabel, schoolDecideWords, schoolDecidedWords } from "../lib/schoolAsk.js";
+import { OWN_WORDS, PLATFORM_INTRO, askAge, jobLabel, schoolDecideWords, schoolDecidedWords } from "../lib/schoolAsk.js";
 
 // ══════════════════════════════════════════════════════
 //  REQUESTS TO ADD A SCHOOL  (EXPERIENCE_PASS Q22; db/158)
@@ -54,7 +54,9 @@ export function SchoolRequestsPanel() {
         <div key={r.id} data-testid={`school-request-row-${r.id}`} style={{display:"flex",alignItems:"center",gap:"10px",padding:"8px 0",borderTop:`1px solid ${D.border}`,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:"200px"}}>
             <div style={{fontFamily:D.body,fontSize:"12px",color:D.textPrimary,fontWeight:600,overflowWrap:"anywhere"}}>{r.schoolName}, {r.town}</div>
-            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,overflowWrap:"anywhere"}}>{r.name ?? "Someone"} <span>{r.email ?? ""}</span> · {jobLabel(r.job)} · asked {humanDate(saDate(r.requestedAt))}</div>
+            <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,overflowWrap:"anywhere"}}>{r.name ?? "Someone"} <span>{r.email ?? ""}</span> · {jobLabel(r.job)} · {humanDate(saDate(r.requestedAt))}, {askAge(r.requestedAt).words}</div>
+            {/* The asker was told a week (Kameel, 15 Nov): past it, said so. */}
+            {askAge(r.requestedAt).late&&<div data-testid={`school-request-late-${r.id}`} style={{fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.roseText}}>Over a week: the person was told they would hear within a week.</div>}
           </div>
           <button onClick={()=>decide(r,"added")} disabled={!!busy} data-testid={`school-request-added-${r.id}`} className="pressBtn" style={{padding:"5px 16px",minHeight:"44px",borderRadius:D.pill,border:"none",cursor:"pointer",background:D.emerald+"22",color:D.emerald,fontFamily:D.head,fontSize:"12px",fontWeight:700}}>Added</button>
           <button onClick={()=>decide(r,"declined")} disabled={!!busy} data-testid={`school-request-decline-${r.id}`} className="pressBtn" style={{padding:"5px 16px",minHeight:"44px",borderRadius:D.pill,border:`1px solid ${D.border}`,cursor:"pointer",background:"transparent",color:D.textMuted,fontFamily:D.head,fontSize:"12px",fontWeight:700}}>Decline</button>

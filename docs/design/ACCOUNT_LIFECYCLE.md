@@ -705,7 +705,7 @@ An answered request to add a school is deleted 90 days after the answer (Kameel,
 ### 6.3 The account's own end
 
 140 §3.8's `account_erase()` is the terminal state, as designed and decided (D10 there): `active = false`,
-email and name tombstoned, every `auth_identity` deleted, every live role ended through db/77 (refusing a
+email and name tombstoned, every `auth_identity` deleted, every `school_add_request` of the account deleted (db/158), every live role ended through db/77 (refusing a
 minor's last verified guardian), the browser deleting the Firebase user, audit rows keeping the uuid. This
 design adds three things:
 
