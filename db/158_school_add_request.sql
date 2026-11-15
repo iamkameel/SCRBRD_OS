@@ -35,10 +35,16 @@
 -- answers her own (section 5, own_request). Refusals, each a code the route turns
 -- into words:
 --   not_signed_in   no app_user_id(), a pad's credential, or a disabled account
---   ask_a_teacher   a pupil's account (a live player or selfaccess role):
---                   "A pupil's account may not ask; it is told to ask a
---                   teacher" (Kameel, 15 Nov 2026, "schoolreq-pupil"), so a
---                   pupil's name never reaches the platform's list
+--   ask_a_teacher   a pupil's account: "A pupil's account may not ask; it is
+--                   told to ask a teacher" (Kameel, 15 Nov 2026,
+--                   "schoolreq-pupil"), so a pupil's name never reaches the
+--                   platform's list. A pupil is db/118's, as
+--                   app_user_email_seen() decides it (Kameel, 28 Oct): linked
+--                   to a player row, or holding a player or selfaccess role,
+--                   ended ones too ("a boy who has left is still a boy").
+--                   db/118 has no helper of its own for it, so the ask states
+--                   the same two arms, and the foot check refuses a paste on
+--                   which app_user_email_seen() no longer reads them.
 --   name_required   the school's name, 2 to 80 characters after trimming,
 --                   with two letters or digits at least, and no control,
 --                   zero-width or bidi character (a name that reads blank or
@@ -118,8 +124,9 @@
 --              + school_add_request_ask(text, text, text)      the asker's door
 --              + school_add_request_decide(uuid, text)         the platform's door
 --              + school_add_requester(uuid)                    who asked
---              + school_add_request_purge()     answered rows past ninety days,
---                                               deleted; the owner's alone
+--              + school_add_request_purge()     answered rows 90 days after the
+--                                               answer, unanswered ones 180 days
+--                                               after the ask, deleted; the owner's alone
 -- No other table, column, row, policy or grant moves. No BEGIN or COMMIT; a
 -- second paste changes nothing.
 --
@@ -137,9 +144,9 @@ BEGIN
   IF to_regprocedure('app_user_id()') IS NULL
      OR to_regprocedure('app_holds(text)') IS NULL
      OR to_regprocedure('app_pad_scoped()') IS NULL
-     OR to_regprocedure('sa_today()') IS NULL
+     OR to_regprocedure('app_user_email_seen(uuid,uuid,text)') IS NULL
      OR to_regprocedure('pad_scope_guard_install(regclass)') IS NULL THEN
-    RAISE EXCEPTION 'db/158: app_user_id(), app_holds(), app_pad_scoped(), sa_today() or pad_scope_guard_install() is missing; apply db/01 to db/157 first';
+    RAISE EXCEPTION 'db/158: app_user_id(), app_holds(), app_pad_scoped(), app_user_email_seen() (db/118) or pad_scope_guard_install() is missing; apply db/01 to db/157 first';
   END IF;
   -- db/157's probe: the check at the foot proves nothing here is PUBLIC's
   -- or a managed host's API role's with it.
@@ -242,13 +249,12 @@ BEGIN
   IF v_me IS NULL OR app_pad_scoped() OR NOT EXISTS (SELECT 1 FROM app_user u WHERE u.id = v_me AND u.active) THEN
     RETURN QUERY SELECT false, 'not_signed_in'::text, NULL::uuid; RETURN;
   END IF;
-  -- A pupil's account: a live player or selfaccess role, by the liveness
-  -- sessionProfile() reads. A paused one still counts.
-  IF EXISTS (SELECT 1 FROM role_assignment a
-              WHERE a.person_id = v_me AND a.active AND a.role IN ('player', 'selfaccess')
-                AND (a.valid_from  IS NULL OR a.valid_from  <= sa_today())
-                AND (a.valid_until IS NULL OR a.valid_until >  sa_today())
-                AND (a.expires_at  IS NULL OR a.expires_at  >  now())) THEN
+  -- A pupil's account, by db/118's rule (header section 2): his player row,
+  -- or a player or selfaccess role, live or ended. Not only a live role: the
+  -- pupils who reach the no-school form are the ones whose roles have ended.
+  IF EXISTS (SELECT 1 FROM app_user u JOIN player p ON p.id = u.player_id WHERE u.id = v_me)
+     OR EXISTS (SELECT 1 FROM role_assignment a
+                 WHERE a.person_id = v_me AND a.role IN ('player', 'selfaccess')) THEN
     RETURN QUERY SELECT false, 'ask_a_teacher'::text, NULL::uuid; RETURN;
   END IF;
   IF char_length(v_school) NOT BETWEEN 2 AND 80 OR v_school ~ v_unseen
@@ -331,7 +337,10 @@ GRANT EXECUTE ON FUNCTION school_add_request_decide(uuid, text) TO scrbrd_app;
 -- -- 6 - Who asked: for the asker and the platform alone -----------
 CREATE OR REPLACE FUNCTION school_add_requester(p_request uuid)
 RETURNS TABLE (name text, email text) AS $$
-  SELECT u.name, u.email
+  -- The address only as db/118 lets this reader see it: a pupil's is the
+  -- office's alone, so a row written before the pupil test, or by any later
+  -- door, cannot hand the platform a pupil's address.
+  SELECT u.name, app_user_email_seen(u.id, u.school_id, u.email)
     FROM school_add_request r JOIN app_user u ON u.id = r.person_id
    WHERE r.id = p_request AND NOT app_pad_scoped()
      AND (r.person_id = app_user_id() OR app_holds('platform.tenant.manage'))
@@ -488,6 +497,21 @@ BEGIN
   END IF;
   IF ('Ho' || chr(235) || 'rskool') !~ '[[:alnum:]].*[[:alnum:]]' THEN
     RAISE EXCEPTION 'db/158: the two-letters test refuses an accented name';
+  END IF;
+  -- The pupil test is db/118's: app_user_email_seen() must still read the
+  -- same two arms (a player row, and a player or selfaccess role of any
+  -- date) that the ask states, or the two have drifted.
+  SELECT regexp_replace(prosrc, '\s+', ' ', 'g') INTO v_q
+    FROM pg_proc WHERE oid = 'app_user_email_seen(uuid,uuid,text)'::regprocedure;
+  IF position('FROM app_user u JOIN player p ON p.id = u.player_id WHERE u.id = p_user' IN v_q) = 0
+     OR position('FROM role_assignment a WHERE a.person_id = p_user AND a.role IN (''player'', ''selfaccess'')) z' IN v_q) = 0 THEN
+    RAISE EXCEPTION 'db/158: app_user_email_seen() no longer reads a pupil as db/118 did; the ask''s pupil test must follow it';
+  END IF;
+  SELECT regexp_replace(prosrc, '\s+', ' ', 'g') INTO v_q
+    FROM pg_proc WHERE oid = 'school_add_request_ask(text,text,text)'::regprocedure;
+  IF position('FROM app_user u JOIN player p ON p.id = u.player_id WHERE u.id = v_me' IN v_q) = 0
+     OR position('WHERE a.person_id = v_me AND a.role IN (''player'', ''selfaccess'')) THEN' IN v_q) = 0 THEN
+    RAISE EXCEPTION 'db/158: the ask''s pupil test is not db/118''s';
   END IF;
 
   -- And as db/157 reads reach: nothing of this file's for PUBLIC, nor for a
