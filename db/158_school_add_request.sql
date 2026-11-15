@@ -35,6 +35,10 @@
 -- answers her own (section 5, own_request). Refusals, each a code the route turns
 -- into words:
 --   not_signed_in   no app_user_id(), a pad's credential, or a disabled account
+--   ask_a_teacher   a pupil's account (a live player or selfaccess role):
+--                   "A pupil's account may not ask; it is told to ask a
+--                   teacher" (Kameel, 15 Nov 2026, "schoolreq-pupil"), so a
+--                   pupil's name never reaches the platform's list
 --   name_required   the school's name, 2 to 80 characters after trimming,
 --                   with two letters or digits at least, and no control,
 --                   zero-width or bidi character (a name that reads blank or
@@ -67,7 +71,17 @@
 -- the lapse is: ninety days after decided_at the row is unreadable (the read
 -- policy and school_add_requester() both cut it), and
 -- school_add_request_purge(), the owner's alone, deletes every row past the
--- cut and answers how many. Open rows are never purged; they lapse.
+-- cut and answers how many.
+--
+-- AN UNANSWERED REQUEST (Kameel, 15 Nov 2026, "schoolreq-lapsed:
+-- 90d-after-lapse"; ACCOUNT_LIFECYCLE section 6.2): "An unanswered request
+-- lapses after 90 days and is deleted 90 days after it lapses." So an open
+-- row is unreadable 180 days after requested_at, by the same two cuts, and
+-- the same purge deletes it.
+--
+-- THE PURGE (Kameel, 15 Nov 2026, "schoolreq-purge: lead-monthly";
+-- DEPLOYING.md): the lead runs it monthly, with the paste routine, and logs
+-- each run on the Build Board.
 --
 -- -- 4 - WHO READS -------------------------------------------------
 -- RLS, one permissive policy: the asker's own rows (person_id =
@@ -123,8 +137,9 @@ BEGIN
   IF to_regprocedure('app_user_id()') IS NULL
      OR to_regprocedure('app_holds(text)') IS NULL
      OR to_regprocedure('app_pad_scoped()') IS NULL
+     OR to_regprocedure('sa_today()') IS NULL
      OR to_regprocedure('pad_scope_guard_install(regclass)') IS NULL THEN
-    RAISE EXCEPTION 'db/158: app_user_id(), app_holds(), app_pad_scoped() or pad_scope_guard_install() is missing; apply db/01 to db/157 first';
+    RAISE EXCEPTION 'db/158: app_user_id(), app_holds(), app_pad_scoped(), sa_today() or pad_scope_guard_install() is missing; apply db/01 to db/157 first';
   END IF;
   -- db/157's probe: the check at the foot proves nothing here is PUBLIC's
   -- or a managed host's API role's with it.
@@ -182,7 +197,8 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'school_add_request'::regclass AND polname = 'school_add_request_read') THEN
     CREATE POLICY school_add_request_read ON school_add_request
       FOR SELECT USING ((person_id = app_user_id() OR app_holds('platform.tenant.manage'))
-                        AND (decided_at IS NULL OR decided_at > now() - interval '90 days'));
+                        AND ((decided_at IS NULL AND requested_at > now() - interval '180 days')
+                             OR decided_at > now() - interval '90 days'));
   END IF;
   -- db/50's RESTRICTIVE pad guard, on the one command a policy admits.
   IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'school_add_request'::regclass AND polname = 'pad_scope_select') THEN
@@ -225,6 +241,15 @@ DECLARE
 BEGIN
   IF v_me IS NULL OR app_pad_scoped() OR NOT EXISTS (SELECT 1 FROM app_user u WHERE u.id = v_me AND u.active) THEN
     RETURN QUERY SELECT false, 'not_signed_in'::text, NULL::uuid; RETURN;
+  END IF;
+  -- A pupil's account: a live player or selfaccess role, by the liveness
+  -- sessionProfile() reads. A paused one still counts.
+  IF EXISTS (SELECT 1 FROM role_assignment a
+              WHERE a.person_id = v_me AND a.active AND a.role IN ('player', 'selfaccess')
+                AND (a.valid_from  IS NULL OR a.valid_from  <= sa_today())
+                AND (a.valid_until IS NULL OR a.valid_until >  sa_today())
+                AND (a.expires_at  IS NULL OR a.expires_at  >  now())) THEN
+    RETURN QUERY SELECT false, 'ask_a_teacher'::text, NULL::uuid; RETURN;
   END IF;
   IF char_length(v_school) NOT BETWEEN 2 AND 80 OR v_school ~ v_unseen
      OR v_school !~ '[[:alnum:]].*[[:alnum:]]' THEN
@@ -310,21 +335,25 @@ RETURNS TABLE (name text, email text) AS $$
     FROM school_add_request r JOIN app_user u ON u.id = r.person_id
    WHERE r.id = p_request AND NOT app_pad_scoped()
      AND (r.person_id = app_user_id() OR app_holds('platform.tenant.manage'))
-     AND (r.decided_at IS NULL OR r.decided_at > now() - interval '90 days')
+     AND ((r.decided_at IS NULL AND r.requested_at > now() - interval '180 days')
+          OR r.decided_at > now() - interval '90 days')
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION school_add_requester(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION school_add_requester(uuid) TO scrbrd_app;
 
 
 -- -- 6b - The answered rows' end (header section 3): the owner's alone -----
--- Deletes every answered request ninety days past its answer, and answers
--- how many. Open rows are not touched: they lapse (school_add_request_shown()).
+-- Deletes every answered request ninety days past its answer, and every
+-- unanswered one ninety days past its lapse (180 days after it was asked),
+-- and answers how many.
 -- Run by the owner, as SELECT school_add_request_purge(); nothing calls it on
 -- a clock, and the application may not.
 CREATE OR REPLACE FUNCTION school_add_request_purge() RETURNS integer AS $$
 DECLARE n integer;
 BEGIN
-  DELETE FROM school_add_request WHERE state <> 'open' AND decided_at <= now() - interval '90 days';
+  DELETE FROM school_add_request
+   WHERE (decided_at IS NOT NULL AND decided_at <= now() - interval '90 days')
+      OR (decided_at IS NULL AND requested_at <= now() - interval '180 days');
   GET DIAGNOSTICS n = ROW_COUNT;
   RETURN n;
 END $$ LANGUAGE plpgsql VOLATILE SET search_path = pg_catalog, public, pg_temp;
