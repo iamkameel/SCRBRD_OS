@@ -566,6 +566,12 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // round robin, shows a fixture's reasons, locks, regenerates and publishes with
   // a per-fixture report; phone, Daylight, the 12px and 44px floors.
   "browser-league",
+  // A knockout's bracket (SCRBRD-060): a cup of three drawn and published by
+  // the planner (a bye, a semi-final, the final held); an entrant school reads
+  // a bracket and no table, "To be decided" for the side not yet known, then
+  // the semi-final's winner Through and the final named; Leagues opens on the
+  // Bracket tab; columns at 1366, stacked at 390, 12px, 44px, Daylight, reduced motion.
+  "browser-bracket",
   // Management → Users on the real directory: each person with every role they
   // hold (ended ones muted and worded), Add user / Add role saved for real, a
   // role the caller may not grant not offered and a forced post refused in

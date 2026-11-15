@@ -119,6 +119,17 @@ try {
      && pub1.body?.counts?.held === 1 && pub1.body.results.find((r) => r.fixtureId === final.id)?.held === "awaiting_winner", show(pub1));
   const semi = Object.fromEntries(pub1.body.results.filter((r) => r.matchId).map((r) => [r.fixtureId, r.matchId]));
   const S1 = semi[final.home.winnerOf], S2 = semi[final.away.winnerOf];
+  // SCRBRD-060: the bracket, read by an entrant school, before a ball.
+  const br1 = await api(`/api/competitions/${CUP}/bracket`, { token: wesAdmin });
+  const fin1 = br1.body?.rounds?.[1]?.ties?.[0];
+  ok("the bracket (SCRBRD-060): drawn, two rounds, the semi-finals with their fixtures",
+     br1.status === 200 && br1.body?.drawn === true && br1.body.rounds.length === 2 && br1.body.rounds[0].ties.length === 2
+     && br1.body.rounds[0].ties.every((t) => t.matchId && t.home.known && t.away.known && t.startsAt && t.result === null), show(br1));
+  ok("...the final not made: its sides to be decided, each naming its semi-final, its date the plan's",
+     fin1 && fin1.matchId === null && fin1.startsAt === null && fin1.plannedAt && !fin1.home.known && fin1.home.label === null
+     && fin1.home.from?.round === 1 && !fin1.away.known && fin1.away.from?.round === 1, JSON.stringify(fin1));
+  const brX = await api(`/api/competitions/00000000-0000-0000-0000-00000000dead/bracket`, { token: wesAdmin });
+  ok("...a competition the reader cannot reach is not_permitted", brX.status === 403 && brX.body?.error === "not_permitted", show(brX));
 
   // ── B ──────────────────────────────────────────────────────────
   group("B. The semi-finals played; publishing again makes the final from their winners");
@@ -139,6 +150,14 @@ try {
      && rows[1].from_match_id === S1 && rows[1].resolved_result_hash === w1.result_hash && rows[1].fixture_key === final.home.winnerOf, JSON.stringify(rows));
   const again = await api(`/api/competitions/${CUP}/plans/${P.id}/publish`, { method: "POST", token: league });
   ok("publishing once more makes nothing new", again.body?.counts?.created === 0 && again.body?.counts?.already === 3, show(again));
+  const br2 = await api(`/api/competitions/${CUP}/bracket`, { token: wesAdmin });
+  const t1 = br2.body?.rounds?.[0]?.ties?.find((t) => t.matchId === S1), t2 = br2.body?.rounds?.[0]?.ties?.find((t) => t.matchId === S2);
+  const fin2 = br2.body?.rounds?.[1]?.ties?.[0];
+  ok("the bracket: the semi-finals' results and who went through (home, then away)",
+     t1?.through === "home" && t1.result?.how === "play" && !!t1.result?.text && t2?.through === "away", show(br2));
+  ok("...the final made, its sides the winners by name, its date the fixture's",
+     fin2?.matchId === F && fin2.home.known && fin2.home.label === t1?.home.label && fin2.away.known && fin2.away.label === t2?.away.label
+     && !!fin2.startsAt && fin2.plannedAt === null && br2.body.champion === null, JSON.stringify(fin2));
   const pr = await api(`/api/competitions/${CUP}/progression`, { token: wesAdmin });
   ok("an entrant school reads the bracket's sides, and may not clear", pr.status === 200 && pr.body?.sides?.length === 2 && pr.body.canClear === false, show(pr));
 
@@ -166,6 +185,10 @@ try {
   const flag = pr2.body?.sides?.find((s) => s.side === "home")?.conflict;
   ok("...and the organiser reads the flag on the bracket", pr2.body?.canClear === true && flag && flag.played === true
      && /changed after this match was played$/.test(flag.note), show(pr2));
+  const br3 = await api(`/api/competitions/${CUP}/bracket`, { token: wesAdmin });
+  const fl = br3.body?.rounds?.[1]?.ties?.[0]?.flags ?? [];
+  ok("the bracket carries the flag on the final, to an entrant school too", fl.length === 1 && fl[0].side === "home" && fl[0].played === true
+     && /changed after this match was played$/.test(fl[0].note), show(br3));
   const c1 = await api(`/api/matches/${F}/progression/clear`, { method: "POST", token: wesAdmin, body: { side: "home", note: "Westville accept the final as played" } });
   ok("a school may not clear it", c1.status === 403, show(c1));
   const c2 = await api(`/api/matches/${F}/progression/clear`, { method: "POST", token: league, body: { side: "home", note: "ok" } });
