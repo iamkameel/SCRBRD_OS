@@ -7,6 +7,7 @@ import { profile } from "../lib/session.js";
 import { BentoCard } from "../ui/surfaces.jsx";
 import { useQueue } from "./cockpit/useQueue.js";
 import { doorsFor } from "./queueDoors.js";
+import { fixFor, requestFix } from "../lib/fixNote.js";
 
 /** How many rows Today shows before "See all on To resolve". */
 export const NEEDS_YOU_SHOWN = 3;
@@ -52,12 +53,17 @@ export function NeedsYou({ role, matches, onNav }) {
 function NeedsYouRead({ reach, matches, onNav }) {
   const now = useMemo(() => Date.now(), []);
   const assignments = profile()?.assignments ?? null;
-  const q = useQueue({ matches, assignments, now });
+  // No-tap mode (review S2): opening Today makes no read the server logs against the people it names. The lifts
+  // expected and the clearance register are read on To resolve, when somebody taps for them.
+  const q = useQueue({ matches, assignments, now, onOpen: true });
   const byId = useMemo(() => new Map(matches.map((m) => [m.id, m])), [matches]);
   if (!q.reader) return null;
   const doorOf = doorsFor({ nav: reach, byId, assignments, onNav });
   const rows = needsYouRows(q);
   const failed = q.header.failed ?? 0;
+  // The register is read on a tap, so Today offers the tap instead of a count it did not read.
+  const register = q.registerOnTap.length > 0 && reach.includes("staff")
+    ? { label: "The register", go: () => { const n = fixFor("register"); if (n) requestFix(n); onNav("staff"); } } : null;
   if (!rows.length && !failed && !q.header.loading) return null;
   const shown = rows.slice(0, NEEDS_YOU_SHOWN);
   const line = { ...T.role.body, color: T.content.secondary, margin: 0 };
@@ -90,6 +96,13 @@ function NeedsYouRead({ reach, matches, onNav }) {
             );
           })}
         </ul>
+        {register && (
+          <button type="button" className="os-state" data-testid="needs-you-register" onClick={register.go}
+            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, justifySelf: "start", background: "transparent", color: T.content.primary,
+              border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, cursor: "pointer", ...T.role.body }}>
+            Check the clearance register <span aria-hidden="true">›</span>
+          </button>
+        )}
         {(rows.length > shown.length || failed > 0) && (
           <button type="button" className="os-state" data-testid="needs-you-all" onClick={() => onNav("readiness")}
             style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, justifySelf: "start", background: "transparent", color: T.content.primary,
