@@ -24,7 +24,7 @@ import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
 import { Sidebar } from "./shell/Sidebar.jsx";
 import { TopBar } from "./shell/TopBar.jsx";
 import { PersonaBar } from "./shell/PersonaBar.jsx";
-import { navOff, personaOf, useFeatures } from "./lib/features.js";
+import { navOff, personaOf, useFeatures, useNav } from "./lib/features.js";
 import { holdsAsHeld } from "./lib/held.js";
 import { scorerLanding } from "./lib/scorerLanding.js";
 import { clearSession, loadSession, saveSession } from "./lib/persist.js";
@@ -516,15 +516,22 @@ export default function SCRBRD_OS() {
   // does not show. Nothing else here is listening for the address, so a
   // plain replaceState does (the Match Centre reads it when it mounts).
   // Written out rather than imported: the entry graph has a ceiling.
+  // The addresses are opened against the menu the person HOLDS (useNav: the assignments held, narrowed by module),
+  // never the badge role's: a pupil or a parent appointed to score is badged "scorer", and his menu is still his
+  // persona's four (Q2). A persona's app opens no staff screen by address at all.
+  const reach = useNav(role);
+  const reachKey = reach.join(",");
+  const reaches = (/** @type {string} */ k) => !personaOf(role) && reach.includes(k);
   const atMatches = () => /^\/app\/matches(\/|$)/.test(window.location.pathname);
   const toApp = () => window.history.replaceState(window.history.state, "", "/app" + window.location.search);
   useEffect(() => {
     if (appState !== "app") return undefined;
-    const go = () => { if (atMatches()) (ROLES[role]?.nav || []).includes("matches") ? setPage("matches") : toApp(); };
+    const go = () => { if (atMatches()) reaches("matches") ? setPage("matches") : toApp(); };
     go();
     window.addEventListener("popstate", go);
     return () => window.removeEventListener("popstate", go);
-  }, [appState, role]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appState, role, reachKey]);
   // The menu's own Match Centre, tapped while a match is open in it, goes back
   // to the list: the open match is the address (/app/matches/<id>), and the page
   // was already "matches", so the tap changed nothing and the coach stayed in
@@ -552,7 +559,7 @@ export default function SCRBRD_OS() {
     const go = () => {
       const t = thingOf(window.location.pathname);
       if (!t) { setThing(null); return; }
-      if (!(ROLES[role]?.nav || []).includes(THING_PAGE[t.kind])) { setThing(null); toApp(); return; }
+      if (!reaches(THING_PAGE[t.kind])) { setThing(null); toApp(); return; }
       setThing(t);
       if (t.kind === "players") setProfileTarget(t.id);
       setPage(THING_PAGE[t.kind]);
@@ -560,7 +567,8 @@ export default function SCRBRD_OS() {
     go();
     window.addEventListener("popstate", go);
     return () => window.removeEventListener("popstate", go);
-  }, [appState, role]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appState, role, reachKey]);
   useEffect(() => {
     if (thing && page !== THING_PAGE[thing.kind]) { setThing(null); if (thingOf(window.location.pathname)) toApp(); }
   }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
