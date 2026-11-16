@@ -1056,9 +1056,12 @@ button{touch-action:manipulation}
   /* The header carries the bell, "Raise a concern", the name and the role on every screen (EXPERIENCE_PASS §1.2). */
   .os-topbar{gap:6px!important;padding:0 8px!important}
 }
-/* The narrowest phones: the live chip goes, since Matches is on the bar under it, so the header's four 44px controls keep their room. */
+/* The narrowest phones: the live chip is its pulsing dot alone, still named "Live matches", and the header's gaps close
+   up, so its six 44px controls keep their room. */
 @media(max-width:359px){
-  .os-topbar-live{display:none!important}
+  .os-topbar{gap:4px!important}
+  .os-topbar-live{padding:0!important;min-width:44px;justify-content:center}
+  .os-topbar-live-text{display:none}
 }
 /* A phone at 200% zoom is under 200px wide: the bars wrap into a second row rather than run off the screen, and the
    page leaves room under the taller bottom bar (I32). */

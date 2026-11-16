@@ -60,7 +60,7 @@ function TopBar({ role, onRoleChange, onNav, userName, active = null, onSignOut 
 
         {/* Live match chip */}
         <button onClick={()=>onNav("matches")} className="pressBtn os-topbar-live" data-testid="topbar-live" aria-label="Live matches" style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 10px",minHeight:"44px",borderRadius:D.pill,background:D.emerald+"14",border:`1px solid ${D.emerald}30`,cursor:"pointer",flexShrink:0}}>
-          <div className="live-dot"/><span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.emerald,letterSpacing:"0.06em",whiteSpace:"nowrap"}}>LIVE</span>
+          <div className="live-dot"/><span className="os-topbar-live-text" style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.emerald,letterSpacing:"0.06em",whiteSpace:"nowrap"}}>LIVE</span>
         </button>
 
         {/* Search bar */}

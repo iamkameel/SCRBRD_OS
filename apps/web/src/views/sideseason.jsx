@@ -9,7 +9,7 @@ import { profile } from "../lib/session.js";
 import { SRC_RECORD, dateWindow, seasonWindow } from "../lib/sourceWords.js";
 import {
   MIN_MATCHES, axisTop, sideSchool, floorNote, inningsText, matchesBasis, rainNote, rateText, seasonOptions, seasonPoints, seasonTable,
-  seasonLineWords, spokenSummary, unreadableNote,
+  spokenSummary, unreadableNote,
 } from "../lib/sideSeason.js";
 
 /**
@@ -180,22 +180,4 @@ export function SideSeasonView({ rows, said, team, onRetry, initial = {} }) {
       )}
     </Card>
   );
-}
-
-/**
- * The side's season in one line, for the day sheet (EXPERIENCE_PASS §3.10):
- * the same `side_season` read and the same season the panel above opens on,
- * so the figure is the one the panel's line ends on (lib/sideSeason.js
- * seasonLineWords). A read that failed is said, never a rate of nothing.
- * @param {{ role: string, school: string, team: string }} p
- */
-export function SeasonLine({ role, school, team }) {
-  const read = useLive("side_season", role, 0, { schoolId: school, teamCode: team });
-  const said = readState(read, { what: "the side’s season" });
-  const { open } = seasonOptions(read.rows);
-  const words = ["ok", "stale"].includes(said.state) ? seasonLineWords(seasonPoints(read.rows, open)) : null;
-  const style = { ...bodyText(), margin: 0 };
-  if (said.state === "loading") return <p data-testid="day-season" data-state="loading" style={style}>Reading the season…</p>;
-  if (!["ok", "stale", "empty"].includes(said.state)) return <p data-testid="day-season" data-state={said.state} style={style}>{said.sentence}</p>;
-  return words ? <p data-testid="day-season" data-state="ok" style={style}>{words}</p> : null;
 }

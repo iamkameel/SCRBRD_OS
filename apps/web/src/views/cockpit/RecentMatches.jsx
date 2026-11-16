@@ -8,7 +8,7 @@ import { shortDate } from "../../lib/cockpit.js";
 import { clockWords, correctedAt, correctionsOf } from "../../lib/corrections.js";
 import { sidesOf } from "../../lib/matchCentre.js";
 import { battingWords, bowlingWords, insights, lastMatchWords, leaders, LEADERS, matchSummary, recentSides } from "../../lib/recentMatches.js";
-import { SeasonLine } from "../sideseason.jsx";
+import { SeasonLine } from "../seasonline.jsx";
 import { BentoCard } from "../../ui/surfaces.jsx";
 
 /**

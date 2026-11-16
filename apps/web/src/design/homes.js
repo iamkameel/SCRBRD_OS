@@ -62,7 +62,7 @@ export const HOMES = {
   // paper; each is the screen it was, under its own capability, so a reader
   // is shown exactly the ones that were his menu entries before.
   squad: {
-    key: "squad", title: "Team", color: "indigo", absorbs: ["profiles", "injuries", "training", "skills", "analytics", "selection"],
+    key: "squad", title: "Team", color: "indigoText", absorbs: ["profiles", "injuries", "training", "skills", "analytics", "selection"],
     sections: [
       { key: "squad",     label: "Squad",     from: "squad"     },
       { key: "profiles",  label: "Players",   from: "profiles"  },

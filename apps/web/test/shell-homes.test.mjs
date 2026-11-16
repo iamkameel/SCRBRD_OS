@@ -9,7 +9,7 @@
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ROLES as POLICY_ROLES, SUBJECT_SCOPED_ROLES, roleGrants } from "@scrbrd/policy/roles";
-import { NAV_ACTS, NAV_CAPABILITY, ROLES, ROLE_IDENTITY, navForRoles, navGrants } from "../src/design/roles.js";
+import { NAV_ACTS, NAV_CAPABILITY, ROLES, navForRoles, navGrants } from "../src/design/roles.js";
 import { collapseHomes } from "../src/design/homes.js";
 import { OFFICE_CAPS, entersQueue } from "../src/lib/queue.js";
 import { THING_PAGE, teamId, teamParts, thingOf, thingPath } from "../src/lib/things.js";
@@ -27,7 +27,6 @@ let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${String(typeof d === "string" ? d : JSON.stringify(d)).slice(0, 300)}`); } };
 const group = (t) => console.log("\n" + t);
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const heldBy = (r) => [r, ...(ROLE_IDENTITY[r]?.also ?? [])];
 
 group("Q17: To resolve is drawn only for a role that can act on one of its rows");
 {

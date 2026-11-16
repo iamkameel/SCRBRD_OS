@@ -1755,7 +1755,8 @@ try {
   {
     const c = await open();
     await signIn(c.page, /sarah@example\.invalid/);
-    ok("the switcher opens", await click(c.page, /Director of Sport|Sarah/, 4000));
+    // The person's name opens Settings in the header now (EXPERIENCE_PASS §1.2); the switcher is its own button.
+    ok("the switcher opens", await c.page.locator('[data-testid="topbar-role"]').click({ timeout: 4000 }).then(() => true, () => false));
     await c.page.waitForTimeout(400);
     const menu = c.page.locator('[role="menu"][aria-label="Switch role"]');
     ok("the menu is drawn", await menu.count() === 1);
@@ -2297,9 +2298,12 @@ try {
       await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
       await signIn(page, /Coach/);
       const mid = (id) => page.locator(`[data-testid="${id}"]`);
-      await mid("mnav-more").click({ timeout: 4000 }); await page.waitForTimeout(500);
-      ok("on a phone the drawer has Competitions and no Leagues", await mid("drawer-competitions").count() === 1 && await mid("drawer-leagues").count() === 0);
-      await mid("drawer-logistics").click({ timeout: 4000 }); await afterReads(page, 1500);
+      // The coach's four homes are the whole bar (EXPERIENCE_PASS Q1): Competitions is a link on the Matches bar.
+      ok("on a phone there is no More, and Matches leads to Competitions with no Leagues entry", await mid("mnav-more").count() === 0
+         && await mid("mnav-competitions").count() === 0 && await mid("mnav-leagues").count() === 0);
+      await mid("mnav-matches").click({ timeout: 4000 }); await afterReads(page, 1200);
+      ok("...the Matches bar links to Competitions", await mid("home-matches-link-competitions").count() === 1);
+      await mid("mnav-logistics").click({ timeout: 4000 }); await afterReads(page, 1500);
       ok("Logistics opens on the phone, with its bar", await mid("home-logistics-sections").count() === 1);
       const fit = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
       ok("...and nothing is wider than the phone", fit);
