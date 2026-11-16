@@ -426,7 +426,8 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   const { list: notificationsRead, rows: NOTIFICATIONS } = useNotifications(role, nonce, { fresh: true });
   const trainingRead = useLive("training", role, nonce);
   const TRAINING = trainingRead.rows;
-  const PLAYERS = useLive("players", role, nonce).rows;
+  const playersRead = useLive("players", role, nonce);
+  const PLAYERS = playersRead.rows;
   const weatherRead = useWeatherState(role, nonce);
   const WEATHER = weatherRead.weather;
 
@@ -461,7 +462,9 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   const out = INJURIES.filter((i) => i.restricted)
     .map((i) => ({ id: i.id, name: PLAYERS.find((p) => p.id === i.player)?.name ?? "—", rtw: i.rtw }));
 
-  const unread = NOTIFICATIONS.filter((n) => !n.read);
+  // A safeguarding notice is never listed on Today (EXPERIENCE_PASS Q7, Slice 6): its title says a concern exists, on
+  // a screen others glance at. The bell's one count carries it for the DSO, and the notice opens his inbox from there.
+  const unread = NOTIFICATIONS.filter((n) => !n.read && n.type !== "safeguarding");
 
   // ── the board for "Now" ──
   // The whole board, from the fold: batters (the striker lit), the stand, the
@@ -535,7 +538,10 @@ function DashboardView({ role, onNav, onOpenScorer }) {
       weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
       reads={reads} off={off} onRetry={() => setNonce((n) => n + 1)}
       onNav={onNav} onOpenScorer={onOpenScorer} chipDoor={chipDoor}
-      needsYou={signedIn() ? <NeedsYou role={role} matches={MATCHES} onNav={onNav}/> : null}
+      // The set-up list leads Needs you for a school with no fixtures (Slice 6), from the fixtures and players read here,
+      // once both have answered whole: a read still out, or failed, draws no list rather than one that is wrong.
+      needsYou={signedIn() ? <NeedsYou role={role} matches={MATCHES} onNav={onNav} players={PLAYERS}
+        matchesAnswered={[matchesRead, playersRead].every((r) => r.live && !r.loading && !r.error)}/> : null}
       nextFold={signedIn() && next ? <MatchDayCard matches={MATCHES} onNav={onNav} only={next.id}/> : null}
       matchDay={signedIn() ? <MatchDayCard matches={MATCHES} onNav={onNav} skip={next?.id ?? null}/> : null}
       lastMatch={signedIn() ? <><LastMatch matches={MATCHES} role={role} onNav={onNav}/><RecentMatches matches={MATCHES} onNav={onNav}/></> : null}

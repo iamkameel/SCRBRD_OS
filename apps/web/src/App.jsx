@@ -727,7 +727,7 @@ export default function SCRBRD_OS() {
     sponsors:     <SponsorsView      role={role}/>,
     modules:      <ModulesView       role={role}/>,
     news:         <NewsView          role={role}/>,
-    notifications:<NotificationsView role={role}/>,
+    notifications:<NotificationsView role={role} onNav={setPage}/>,
     safeguarding: <SafeguardingView  role={role}/>,
     // The person's own Settings, under their name in the header (§1.6): Me, and their own record's passport.
     settings:     <SettingsView      role={role} onSignOut={handleSignOut}/>,

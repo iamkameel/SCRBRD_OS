@@ -651,7 +651,7 @@ function CloseSlide({ onNav }) {
       {onNav && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "22px" }}>
           <button type="button" className="deck-btn" data-primary="true" onClick={() => onNav("matches")} data-testid="deck-open-matches">Open Match Centre</button>
-          <button type="button" className="deck-btn" onClick={() => onNav("settings")}>Settings: Roadmap</button>
+          <button type="button" className="deck-btn" onClick={() => onNav("roadmap")}>Platform: What's built</button>
         </div>
       )}
       <div className="deck-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", marginTop: "26px" }}>

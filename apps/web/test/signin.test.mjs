@@ -303,7 +303,7 @@ group("Where it sits in the app");
 {
   const settings = src("../src/views/SettingsView.jsx");
   ok("Me carries the ways to sign in only when signed in for real", /\{live && <Panel><WaysToSignIn\/><\/Panel>\}/.test(settings));
-  ok("People carries the Claims list only for those who may issue a code", /canClaims\s*=\s*holdsCapability\(role,\s*"user\.invite"\)/.test(settings) && /tab === "users" && canClaims && signedIn\(\)/.test(settings));
+  ok("People carries the Claims list only for those who may issue a code", /canClaims\s*=\s*holdsCapability\(role,\s*"user\.invite"\)/.test(settings) && /\{canClaims && signedIn\(\) && \(\s*<ClaimsPanel/.test(settings) && /function PeoplePart\(/.test(settings));  // Slice 6: People is School, People's part
   ok("...and counts it on the People tab", /\(canClaims \? claims\.rows\.length : 0\)/.test(settings));
   const app = src("../src/App.jsx");
   ok("a signed-in account with no assignment goes to the no-school screen", /assignments\.length === 0/.test(app) && /<NoSchool /.test(app) && !/PendingRequests/.test(app));
