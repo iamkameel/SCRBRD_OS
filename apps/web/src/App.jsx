@@ -98,6 +98,8 @@ const StaffView         = view(() => import("./views/StaffView.jsx"),         "S
 const TrainingView      = view(() => import("./views/TrainingView.jsx"),      "TrainingView");
 // A side's page, opened by its address inside the Team home (EXPERIENCE_PASS Q11, lib/things.js).
 const TeamPage          = view(() => import("./views/TeamPage.jsx"),          "TeamPage");
+// The DSO card, last on the driver's, groundskeeper's and scorer's Todays (Q7); the day sheet draws its own.
+const DsoCard           = view(() => import("./views/family/dso.jsx"),       "DsoCard");
 // Redesign step 4, phase A: the family app and the pupil's app — two small
 // applications inside the same shell, each with its own four destinations.
 const FamilyHome        = view(() => import("./views/family/family.jsx"),     "FamilyHome");
@@ -690,9 +692,12 @@ export default function SCRBRD_OS() {
   // above; the claim is decided in Postgres.
   const isScorerLanding = !isDriverLanding && !isGroundskeeperLanding
     && scorerLanding((cap) => holdsAsHeld(role, cap));
-  const dashboardView = isDriverLanding ? <DriverDayView role={role}/>
-    : isGroundskeeperLanding ? <GroundskeeperDayView role={role}/>
-    : isScorerLanding ? <ScorerHomeView role={role} onNav={setPage} onOpenScorer={openScorer} onOpenPad={openPad}/>
+  // The DSO card goes last on every Today (Q7; review S3): the day sheet draws its own, and the driver's, the
+  // groundskeeper's and the scorer's Todays carry it under theirs. The same card for everyone at the school.
+  const dsoLast = <div className="os-page" data-testid="today-dso-last" style={{ marginTop: "16px" }}><Suspense fallback={null}><DsoCard onRaise={() => setPage("safeguarding")}/></Suspense></div>;
+  const dashboardView = isDriverLanding ? <><DriverDayView role={role}/>{dsoLast}</>
+    : isGroundskeeperLanding ? <><GroundskeeperDayView role={role}/>{dsoLast}</>
+    : isScorerLanding ? <><ScorerHomeView role={role} onNav={setPage} onOpenScorer={openScorer} onOpenPad={openPad}/>{dsoLast}</>
     : <DashboardView role={role} onNav={setPage} onOpenScorer={openScorer}/>;
   const VIEW_MAP = {
     dashboard:    dashboardView,
