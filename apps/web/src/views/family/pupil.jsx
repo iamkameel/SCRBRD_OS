@@ -210,9 +210,9 @@ export function PupilPassport({ role }) {
 
 /**
  * The passport's tab row (C15): five tabs that do not fit a phone scroll
- * sideways, and the row says so. While more lies off either edge, that edge
- * fades into the page and a chevron sits on it; at the end it is plain. The
- * fade is drawn over the row, takes no tap, and does not move.
+ * sideways, and the row says so. While more lies off either edge, a chevron
+ * stands beside that edge, in a slot of its own, never over a tab; at the
+ * end the slot is empty. It takes no tap and does not move.
  */
 function TabRow({ children }) {
   const row = useRef(/** @type {HTMLDivElement | null} */ (null));
@@ -228,17 +228,20 @@ function TabRow({ children }) {
     globalThis.addEventListener?.("resize", measure);
     return () => globalThis.removeEventListener?.("resize", measure);
   }, []);
-  const edge = (side) => ({ position: "absolute", top: 0, bottom: "1px", [side]: 0, width: "40px", pointerEvents: "none",
-    display: "flex", alignItems: "center", justifyContent: side === "right" ? "flex-end" : "flex-start", color: T.content.secondary,
-    background: `linear-gradient(to ${side}, transparent, ${T.surface.canvas} 70%)` });
+  // Each hint has a slot of its own beside the row, never over it (CI's narrow walk: a tab under the
+  // chevron is one a pupil taps thinking it is the chevron). Both slots are always kept, so showing a
+  // chevron moves no tab. Decorative: aria-hidden, takes no tap; 16px, above the 12px floor.
+  const slot = (side) => ({ flex: "0 0 24px", width: "24px", pointerEvents: "none", display: "flex", alignItems: "center",
+    justifyContent: side === "right" ? "flex-end" : "flex-start", color: T.content.secondary, fontSize: "16px", userSelect: "none" });
   return (
-    <div style={{ position: "relative" }} data-testid="passport-tabs" data-more-left={more.left || undefined} data-more-right={more.right || undefined}>
+    <div style={{ display: "flex", alignItems: "stretch", minWidth: 0, borderBottom: `1px solid ${T.line.normal}` }} data-testid="passport-tabs"
+      data-more-left={more.left || undefined} data-more-right={more.right || undefined}>
+      <span aria-hidden="true" style={slot("left")}>{more.left && <span data-testid="passport-tabs-more-left">‹</span>}</span>
       <div ref={row} role="tablist" aria-label="Passport" onScroll={measure}
-        style={{ display: "flex", gap: T.space.xs, overflowX: "auto", borderBottom: `1px solid ${T.line.normal}`, scrollbarWidth: "thin" }}>
+        style={{ flex: "1 1 auto", minWidth: 0, display: "flex", gap: T.space.xs, overflowX: "auto", scrollbarWidth: "thin" }}>
         {children}
       </div>
-      {more.left && <span aria-hidden="true" data-testid="passport-tabs-more-left" style={edge("left")}>‹</span>}
-      {more.right && <span aria-hidden="true" data-testid="passport-tabs-more-right" style={edge("right")}>›</span>}
+      <span aria-hidden="true" style={slot("right")}>{more.right && <span data-testid="passport-tabs-more-right">›</span>}</span>
     </div>
   );
 }
