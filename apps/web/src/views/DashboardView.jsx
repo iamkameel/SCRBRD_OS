@@ -7,7 +7,7 @@ import { api, signedIn } from "../lib/api.js";
 import { useDutyCoverage, useLive, useWeatherState } from "../lib/live.js";
 import { useNotifications } from "../lib/notifications.js";
 import { combineReads, isModuleOff, readState } from "../lib/readState.js";
-import { isOff, useFeatures } from "../lib/features.js";
+import { isOff, useFeatures, useNav } from "../lib/features.js";
 import { holdsAsHeld } from "../lib/held.js";
 import { Btn, EmptyState, ReadState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
@@ -23,7 +23,14 @@ import { RecentMatches } from "./cockpit/RecentMatches.jsx";
 import { weatherWords } from "../lib/cockpit.js";
 import { observedStamp } from "../lib/weatherStamp.js";
 import { saClock } from "../lib/saTime.js";
-import { sidesOf } from "../lib/matchCentre.js";
+import { sidesOf, statusSentence } from "../lib/matchCentre.js";
+import { cockpitGate } from "../lib/cockpit.js";
+import { requestCoach, requestDuties } from "../lib/cockpitNav.js";
+import { fixFor, requestFix } from "../lib/fixNote.js";
+import { profile } from "../lib/session.js";
+import { LastMatch } from "./cockpit/RecentMatches.jsx";
+import { NeedsYou } from "./needsyou.jsx";
+import { DsoCard } from "./family/dso.jsx";
 import { useFollowed } from "../lib/follow.js";
 import { FollowedSchools } from "../follow/Followed.jsx";
 
@@ -82,6 +89,26 @@ const READY_SLOTS = [
   { key: "officials", label: "Officials",     on: (has) => has("umpire") || has("third_umpire") || has("referee") },
   { key: "ground",    label: "Ground report", on: (has) => has("ground") },
 ];
+
+/**
+ * The chips, the ones not done first (EXPERIENCE_PASS §1.9: "Needs you", the chips that are not done), each kind
+ * keeping its place among its own. Pure. @param {typeof READY_SLOTS} slots @param {(key: string) => boolean} has
+ */
+export const chipOrder = (slots, has) => [...slots.filter((s) => !s.on(has)), ...slots.filter((s) => s.on(has))];
+
+/**
+ * "This week": what was played since Monday, said by its result, and what is to come in the next seven days, said
+ * by its start (§3.10). In date order. Pure.
+ * @param {any[]} matches @param {Date} day  today
+ */
+export function weekOf(matches, day) {
+  const monday = dateStr(addDays(day, -((day.getDay() + 6) % 7)));
+  const todayStr = dateStr(day), end = dateStr(addDays(day, 6));
+  const played = (m) => m.status === "complete" || m.status === "abandoned" || m.status === "postponed" || !!m.calledOff;
+  return (matches ?? []).filter((m) => m.date && ((played(m) && m.date >= monday && m.date <= todayStr)
+      || (m.status === "upcoming" && m.date >= todayStr && m.date <= end)))
+    .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? "") || (a.time ?? "").localeCompare(b.time ?? ""));
+}
 
 /**
  * The live match's own score, folded from the ball log — the same
@@ -163,7 +190,8 @@ function useLiveScore(matchId) {
  */
 function DaySheet({ role, live = true, demoNote = "sample fixtures, no server connected", liveMatch = null, board = null, boardState = {},
                     next = null, busTime = null, weather = null, dutyRows = [], weekMatches = [], weekTraining = [], out = [], unread = [],
-                    reads = null, onRetry, onNav, onOpenScorer, matchDay = null, held = true, off = {} }) {
+                    reads = null, onRetry, onNav, onOpenScorer, matchDay = null, held = true, off = {},
+                    needsYou = null, nextFold = null, lastMatch = null, dso = null, chipDoor = null }) {
   // The roles the person HOLDS, as the menu is drawn from, not the one badge role: a coach who is also a
   // director of sport keeps the sections the second role reaches (GA-I07). Presentation only. A sheet drawn
   // for a role that is not the viewer's (the pitch deck's coach, `held` false) answers from that role alone.
@@ -213,19 +241,18 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
           </BentoCard>
         )}
 
-        {/* 1b. Match day — the coach's card for the next fixture within seven days
-            (SCRBRD-136). Handed in, so the pitch deck's frame draws the day
-            sheet without it; it draws nothing for anyone the gate does not admit.
-            The coach's recent matches ride in the same slot, under the same gate
-            (views/cockpit/RecentMatches.jsx, pilot item 5). */}
-        {matchDay}
+        {/* 1b. Needs you — what is waiting on this reader, each row landing on its fix (EXPERIENCE_PASS §1.3, §1.10).
+            Drawn only for someone who can act on a row (Q17), and only when one is open. */}
+        {needsYou}
 
         {/* 2. Today / next — the next fixture, ready or not. */}
         {holds("fixture.read") && (
           <BentoCard level="b" title="Next fixture" data-testid="day-next">
             {next ? (
               <div data-testid={`next-fixture-${next.id}`}>
-                <div style={{ ...T.role.title.md, color: T.content.primary }}>{sidesOf(next).home.full} v {sidesOf(next).away.full}</div>
+                <div style={{ ...T.role.title.md, color: T.content.primary, overflowWrap: "anywhere" }}>{sidesOf(next).home.full} v {sidesOf(next).away.full}</div>
+                {/* Where the fixture stands, in the Match Centre's own sentence (CRI-1.2): "Starts at 10:00", the toss. */}
+                <div data-testid="day-next-status" style={{ ...T.role.body, color: T.content.primary, fontWeight: 600, marginTop: T.space.xs }}>{statusSentence(next).text}</div>
                 <div style={{ ...T.role.body, color: T.content.secondary, marginTop: T.space.xs }}>
                   {humanDateTime(next.date, next.time)}
                 </div>
@@ -246,25 +273,37 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                   )}
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: T.space.xs, marginTop: T.space.md }}>
-                  {readySlots.map((s) => {
+                  {chipOrder(readySlots, hasDuty).map((s) => {
                     const on = s.on(hasDuty);
-                    return (
-                      <span key={s.key} data-testid={`ready-${s.key}`} style={{
-                        padding: "3px 10px", borderRadius: T.radius.pill,
-                        ...T.role.label, textTransform: "none", letterSpacing: 0, fontWeight: 500,
-                        background: on ? D.emerald + "14" : T.surface.interactive,
-                        border: `1px solid ${on ? D.emerald + "38" : T.line.normal}`,
-                        color: on ? D.emerald : T.content.tertiary,
-                      }}>{s.label} · {on ? "on record" : "nothing on record"}</span>
-                    );
+                    const chip = {
+                      padding: "3px 10px", borderRadius: T.radius.pill,
+                      ...T.role.label, textTransform: "none", letterSpacing: 0, fontWeight: on ? 500 : 600,
+                      background: on ? D.emerald + "14" : T.surface.interactive,
+                      border: `1px solid ${on ? D.emerald + "38" : T.line.normal}`,
+                      color: on ? D.emerald : T.content.primary,
+                    };
+                    const words = `${s.label} · ${on ? "on record" : "nothing on record"}`;
+                    // Each chip opens the screen that deals with it, for this fixture (§1.4): the sheet, the trip,
+                    // the duties, the ground. A chip whose screen this reader has none of stays a word and a state.
+                    const go = chipDoor ? chipDoor(s.key, next) : null;
+                    return go
+                      ? <button key={s.key} type="button" className="os-state" data-testid={`ready-${s.key}`} data-on={on ? "true" : "false"} onClick={go}
+                          style={{ ...chip, minHeight: "44px", padding: "0 14px", cursor: "pointer" }}>{words} <span aria-hidden="true">›</span></button>
+                      : <span key={s.key} data-testid={`ready-${s.key}`} data-on={on ? "true" : "false"} style={chip}>{words}</span>;
                   })}
                 </div>
+                {/* The cockpit's match-day card for this same fixture, folded in (C13): the fixture once, not twice. */}
+                {nextFold}
               </div>
             ) : draw(reads?.matches, (
               <EmptyState message="No fixture is arranged yet." icon="calendar-days"/>
             ))}
           </BentoCard>
         )}
+
+        {/* 2b. Match day — the coach's cards for his other fixtures within seven days (SCRBRD-136). Handed in, so the
+            pitch deck's frame draws the day sheet without them; nothing for anyone the gate does not admit. */}
+        {matchDay}
 
         {/* 3. Who is out — availability, never the clinical tier. */}
         {holds("medical.status.read") && !off.injuries && (
@@ -293,13 +332,19 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
               <div style={{ display: "flex", flexDirection: "column", gap: T.space.sm }}>
                 {/* One of the two reads failed: what is listed is not the whole week. */}
                 {weekRead?.state === "partial" && <ReadState read={weekRead} onRetry={onRetry} compact testId="week-read-state"/>}
-                {holds("fixture.read") && weekMatches.map((m) => (
-                  <div key={m.id} data-testid={`week-fixture-${m.id}`} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: `${T.space.xs} ${T.space.sm}` }}>
-                    <Icon name="trophy"/>
-                    <span style={{ ...T.role.body, color: T.content.primary, flex: "1 1 8em", minWidth: 0, overflowWrap: "anywhere" }}>{m.homeTeam} v {m.awayTeam}</span>
-                    <span style={{ ...T.role.body, color: T.content.secondary }}>{humanDateTime(m.date, m.time)}</span>
-                  </div>
-                ))}
+                {holds("fixture.read") && weekMatches.map((m) => {
+                  // A fixture played says its result; one to come its start (§3.10).
+                  const said = statusSentence(m);
+                  const played = m.status !== "upcoming";
+                  return (
+                    <div key={m.id} data-testid={`week-fixture-${m.id}`} data-played={played ? "true" : "false"} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: `${T.space.xs} ${T.space.sm}` }}>
+                      <Icon name="trophy"/>
+                      <span style={{ ...T.role.body, color: T.content.primary, flex: "1 1 8em", minWidth: 0, overflowWrap: "anywhere" }}>{m.homeTeam} v {m.awayTeam}</span>
+                      <span style={{ ...T.role.body, color: T.content.secondary }}>{played ? humanDate(m.date) : humanDateTime(m.date, m.time)}</span>
+                      <span data-testid={`week-fixture-said-${m.id}`} style={{ ...T.role.body, color: played ? T.content.primary : T.content.secondary, flexBasis: "100%" }}>{said.text}</span>
+                    </div>
+                  );
+                })}
                 {holds("team.read") && training.map((s) => (
                   <div key={s.id} data-testid={`week-training-${s.id}`} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: `${T.space.xs} ${T.space.sm}` }}>
                     <Icon name="dumbbell"/>
@@ -311,6 +356,9 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
             )}
           </BentoCard>
         )}
+
+        {/* 4b. Last match, and the side's season, in a line each (§3.10). */}
+        {lastMatch}
 
         {/* 5. Alerts — last, and only unread. Addressed to a person rather
             than read out of a scoped table, so every role that reaches this
@@ -331,6 +379,9 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
           )}
         </BentoCard>
       </Bento>
+      {/* Last on every Today (Q7; SAFEGUARDING_DSO §2.5): the school's DSOs by name and how to reach them. The same
+          card for everyone at the school; nothing on it says whether a concern exists. */}
+      {dso && <div style={{ marginTop: T.space.lg }}>{dso}</div>}
     </div>
   );
 }
@@ -374,7 +425,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   // ── this week: training and fixtures, as a list ──
   const weekStart = dateStr(today);
   const weekEnd = dateStr(addDays(today, 6));
-  const weekMatches = upcoming.filter((m) => m.date && m.date >= weekStart && m.date <= weekEnd);
+  const weekMatches = weekOf(MATCHES, today);
   const weekTraining = TRAINING.filter((s) => s.date && s.date >= weekStart && s.date <= weekEnd)
     .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
 
@@ -431,6 +482,23 @@ function DashboardView({ role, onNav, onOpenScorer }) {
     weather: readState(weatherRead, { what: "the weather" }),
   } : null;
 
+  // Each chip of the next fixture opens what deals with it, for that fixture (EXPERIENCE_PASS §1.4, Slice 5): the
+  // team sheet on its Coach tab where the reader runs the side, else its duties; its trip on Logistics; its
+  // officials on its duties; its ground on Fields. Only a screen this reader reaches (capability and module).
+  const reach = useNav(role);
+  const assignments = signedIn() ? profile()?.assignments : null;
+  const chipDoor = (/** @type {string} */ key, /** @type {any} */ m) => {
+    if (!m?.id) return null;
+    const duties = reach.includes("matches") ? () => { requestDuties(m.id); onNav("matches"); } : null;
+    switch (key) {
+      case "squad": return signedIn() && cockpitGate(assignments, m) && reach.includes("matches") ? () => { requestCoach(m.id, false); onNav("matches"); } : duties;
+      case "transport": return reach.includes("logistics") ? () => { const n = fixFor("bus", { matchId: m.id }); if (n) requestFix(n); onNav("logistics", "transport"); } : duties;
+      case "officials": return duties;
+      case "ground": return reach.includes("fields") ? () => onNav("fields") : duties;
+      default: return null;
+    }
+  };
+
   const followedBlock = showFollowed
     ? <div className="os-page" data-testid="today-followed"><FollowedSchools followed={followed} lead={followedFirst}/></div> : null;
   return (
@@ -440,8 +508,12 @@ function DashboardView({ role, onNav, onOpenScorer }) {
       next={next} busTime={busTime} weather={weather} dutyRows={dutyRows}
       weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
       reads={reads} off={off} onRetry={() => setNonce((n) => n + 1)}
-      onNav={onNav} onOpenScorer={onOpenScorer}
-      matchDay={signedIn() ? <><MatchDayCard matches={MATCHES} onNav={onNav}/><RecentMatches matches={MATCHES} onNav={onNav}/></> : null}/>
+      onNav={onNav} onOpenScorer={onOpenScorer} chipDoor={chipDoor}
+      needsYou={signedIn() ? <NeedsYou role={role} matches={MATCHES} onNav={onNav}/> : null}
+      nextFold={signedIn() && next ? <MatchDayCard matches={MATCHES} onNav={onNav} only={next.id}/> : null}
+      matchDay={signedIn() ? <MatchDayCard matches={MATCHES} onNav={onNav} skip={next?.id ?? null}/> : null}
+      lastMatch={signedIn() ? <><LastMatch matches={MATCHES} role={role} onNav={onNav}/><RecentMatches matches={MATCHES} onNav={onNav}/></> : null}
+      dso={<DsoCard onRaise={() => onNav("safeguarding")}/>}/>
     {!followedFirst && followedBlock}
     </>
   );

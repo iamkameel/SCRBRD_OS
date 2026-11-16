@@ -440,6 +440,7 @@ const SUITES = [
   // source destination, and a role that reaches none of a home's parts has no
   // entry for it; modules; the bar drawn; the 12px and 44px floors.
   ["homes", "apps/web/test/homes.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["shell-homes", "apps/web/test/shell-homes.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["icons",    "apps/web/test/icons.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The public home page's sections (SCRBRD-142 phase 1): signed out, the
   // strip and news hidden on a 404, the analytics toggle writes the pref and

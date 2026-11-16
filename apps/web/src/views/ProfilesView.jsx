@@ -33,7 +33,12 @@ import { honourWords, isSealed, isWithdrawn, provenanceOf } from "../lib/recogni
 // ══════════════════════════════════════════════════════
 //  PROFILES VIEW  — universal rich profiles
 // ══════════════════════════════════════════════════════
-function ProfilesView({ role, profileTarget, onClearTarget }) {
+/**
+ * `addressed`: the player an address named (/app/players/:id, lib/things.js). Opened on him where the roster
+ * read holds him; where it does not, the page says it is not one this account can open, and shows nothing of
+ * him. `onSelectPlayer`: the shell keeps the address on the player in view.
+ */
+function ProfilesView({ role, profileTarget, onClearTarget, addressed = null, onSelectPlayer = null }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const COACHES = useRows("coaches", role);
@@ -78,7 +83,11 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
     setSelId(id);
     setCat(category);
     setTab("overview");
+    if (category === "players") onSelectPlayer?.(id);
   };
+  // An address the roster read does not hold: said, once that read has answered (Q11: the server refuses the rest).
+  const addressAnswered = ["ok", "empty", "partial", "stale"].includes(rosterRead.state);
+  const addressRefused = !!addressed && addressAnswered && !PLAYERS.some((p) => p.id === addressed);
 
   // ── MiniSparkline ──
   const Spark = ({ data, color=D.emerald, height=28 }) => {
@@ -608,6 +617,11 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
   return (
     <div className="os-page">
       <SectionHeader title="Profiles" sub="Players · Coaches · Staff — in-depth profiles with stats and analysis" color={D.violet}/>
+      {addressRefused && (
+        <Card sx={{ padding: "14px 16px", marginBottom: "16px" }} data-testid="address-refused">
+          <span role="status" style={{ fontFamily: D.body, fontSize: "14px", color: D.textPrimary }}>This player&apos;s page is not one this account can open. The players below are the ones it can.</span>
+        </Card>
+      )}
 
       <div style={{display:"grid",gridTemplateColumns:"var(--g-side-l,220px 1fr)",gap:"16px",alignItems:"start"}}>
         {/* Left: entity list */}

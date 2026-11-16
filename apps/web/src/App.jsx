@@ -10,6 +10,8 @@ import { LoginPage } from "./auth/LoginPage.jsx";
 import { NAV_META, PERSONA_NAV, ROLES, navForRoles } from "./design/roles.js";
 import { FRAMED, homeOf } from "./design/homes.js";
 import { HomeBar } from "./shell/HomeBar.jsx";
+import { useFix } from "./lib/fixNote.js";
+import { THING_PAGE, thingOf, thingPath } from "./lib/things.js";
 import { D, GLOBAL_CSS, clr } from "./design/tokens.js";
 import { useTheme } from "./design/theme.js";
 import { canScore, holdsCapability, scoped } from "./rbac/index.js";
@@ -94,6 +96,8 @@ const SkillsView        = view(() => import("./views/SkillsView.jsx"),        "S
 const SquadView         = view(() => import("./views/SquadView.jsx"),         "SquadView");
 const StaffView         = view(() => import("./views/StaffView.jsx"),         "StaffView");
 const TrainingView      = view(() => import("./views/TrainingView.jsx"),      "TrainingView");
+// A side's page, opened by its address inside the Team home (EXPERIENCE_PASS Q11, lib/things.js).
+const TeamPage          = view(() => import("./views/TeamPage.jsx"),          "TeamPage");
 // Redesign step 4, phase A: the family app and the pupil's app — two small
 // applications inside the same shell, each with its own four destinations.
 const FamilyHome        = view(() => import("./views/family/family.jsx"),     "FamilyHome");
@@ -227,6 +231,9 @@ export default function SCRBRD_OS() {
   const refreshDirectory = () => { setUserEdits(false); setUserNonce((n) => n + 1); };
   const [scorerOpen, setScorerOpen] = useState(false);
   const [profileTarget, setProfileTarget] = useState(null);
+  // The thing an address named (/app/players/:id, /app/teams/:id, /app/grounds/:id; lib/things.js), while its
+  // screen is open: { kind, id }, or null.
+  const [thing, setThing] = useState(/** @type {{kind: "players" | "teams" | "grounds", id: string} | null} */ (null));
   const [scorerResume, setScorerResume] = useState(null);
   // The fixture the scorer is on, kept separately from `scorerResume` so it can
   // be persisted: the resume payload carries a whole seeded innings and has no
@@ -536,10 +543,49 @@ export default function SCRBRD_OS() {
     lastPage.current = page;
   }, [page]);
 
+  // Q11: a player's, a team's and a ground's address (lib/things.js), by id only. Arriving on one, once the person
+  // is in, opens the screen that shows it (Team, Players; Team, the side; Fields) on that thing, for a reader whose
+  // menu reaches that screen; anyone else is left at /app. The screen asks its own read, which refuses the rest.
+  // Leaving the screen leaves the address, and the back button onto one is that thing again.
+  useEffect(() => {
+    if (appState !== "app") return undefined;
+    const go = () => {
+      const t = thingOf(window.location.pathname);
+      if (!t) { setThing(null); return; }
+      if (!(ROLES[role]?.nav || []).includes(THING_PAGE[t.kind])) { setThing(null); toApp(); return; }
+      setThing(t);
+      if (t.kind === "players") setProfileTarget(t.id);
+      setPage(THING_PAGE[t.kind]);
+    };
+    go();
+    window.addEventListener("popstate", go);
+    return () => window.removeEventListener("popstate", go);
+  }, [appState, role]);
+  useEffect(() => {
+    if (thing && page !== THING_PAGE[thing.kind]) { setThing(null); if (thingOf(window.location.pathname)) toApp(); }
+  }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Open a thing from inside the app: its address, then its screen. @param {"players" | "teams" | "grounds"} kind @param {string} id */
+  const openThing = (kind, id) => {
+    const path = thingPath(kind, id);
+    if (path) window.history.pushState(null, "", path + window.location.search);
+    setThing(path ? { kind, id } : null);
+    if (kind === "players") setProfileTarget(id);
+    setPage(THING_PAGE[kind]);
+  };
+  /** The thing in view changed on its own screen (another boy, another ground): the address follows, in place. */
+  const followThing = (/** @type {"players" | "grounds"} */ kind, /** @type {string} */ id) => {
+    const path = thingPath(kind, id);
+    if (!path) return;
+    window.history.replaceState(window.history.state, "", path + window.location.search);
+    setThing({ kind, id });
+  };
+
   // Counted by the SERVER over the notices it agreed to send this person
   // (my_notifications, db/89), from the one store every badge reads. A badge
   // is a disclosure: "3 unread" built from rows nobody authorised states a
   // fact about data the reader may not have.
+  // A "Needs you" row that names one thing on the screen it opens (lib/fixNote.js): brought into view once drawn.
+  useFix(page);
   const { unread: unreadCounted } = useNotifications(role);
   const unreadCount = unreadCounted ?? 0;
   // Invitations to leagues waiting for this person's answer. The API writes no
@@ -642,19 +688,21 @@ export default function SCRBRD_OS() {
     : <DashboardView role={role} onNav={setPage} onOpenScorer={openScorer}/>;
   const VIEW_MAP = {
     dashboard:    dashboardView,
-    matches:      <MatchCentreView   role={role} onOpenScorer={openScorer} onNav={setPage} onNavProfile={(id)=>{setProfileTarget(id);setPage("profiles");}}/>,
+    matches:      <MatchCentreView   role={role} onOpenScorer={openScorer} onNav={setPage} onNavProfile={(id)=>openThing("players", id)}/>,
     competitions: <CompetitionsHome  role={role} section={pageSection}/>,
     // Still a route (a saved session, a link): the Competitions home opened on Leagues.
     leagues:      <CompetitionsHome  role={role} section="leagues"/>,
-    squad:        <SquadView         role={role}/>,
-    profiles:     <ProfilesView      role={role} profileTarget={profileTarget} onClearTarget={()=>setProfileTarget(null)}/>,
+    squad:        thing?.kind === "teams" ? <TeamPage role={role} id={thing.id} onNav={setPage}/> : <SquadView role={role}/>,
+    profiles:     <ProfilesView      role={role} profileTarget={profileTarget} onClearTarget={()=>setProfileTarget(null)}
+                    addressed={thing?.kind === "players" ? thing.id : null} onSelectPlayer={(id)=>followThing("players", id)}/>,
     analytics:    <AnalyticsView     role={role}/>,
     skills:       <SkillsView        role={role}/>,
     training:     <TrainingView      role={role}/>,
     injuries:     <InjuryView        role={role}/>,
     logistics:    <LogisticsView     role={role} section={pageSection} onNav={setPage}/>,
     calendar:     <CalendarView      role={role} onNav={setPage}/>,
-    fields:       <FieldsView        role={role} onNav={setPage}/>,
+    fields:       <FieldsView        role={role} onNav={setPage}
+                    groundId={thing?.kind === "grounds" ? thing.id : null} onSelectGround={(id)=>followThing("grounds", id)}/>,
     readiness:    <ReadinessOverview role={role} onNav={setPage}/>,
     staff:        <StaffView         role={role}/>,
     officials:    <OfficialsView     role={role}/>,
@@ -727,7 +775,7 @@ export default function SCRBRD_OS() {
                     destination it came from, drawn only where this reader reaches it (design/homes.js). */}
                 {FRAMED.includes(homeOf(shown)) && (
                   <div className="os-home-frame" data-testid="home-frame">
-                    <HomeBar home={homeOf(shown)} role={role} section={shown} onSection={(k) => navTo(k)} onNav={navTo} scroll/>
+                    <HomeBar home={homeOf(shown)} role={role} section={shown} onSection={(k) => { if (thing) { setThing(null); toApp(); } navTo(k); }} onNav={navTo} scroll/>
                   </div>
                 )}
                 {VIEW_MAP[shown] || VIEW_MAP.dashboard}

@@ -26,7 +26,8 @@ const crackJitter = (seed, i) => {
 // ══════════════════════════════════════════════════════
 //  FIELDS VIEW — rich ground & pitch profiles
 // ══════════════════════════════════════════════════════
-function FieldsView({ role, onNav }) {
+/** `groundId`: the ground an address named (/app/grounds/:id, lib/things.js); `onSelectGround` keeps the address on the one in view. */
+function FieldsView({ role, onNav, groundId = null, onSelectGround = null }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const [groundsNonce, setGroundsNonce] = useState(0);
@@ -49,7 +50,8 @@ function FieldsView({ role, onNav }) {
   // seeding state with GROUNDS[0] captured an empty list on first render and
   // then read `.name` off undefined the moment the fetch resolved. An id
   // survives the list being replaced; a row object does not.
-  const [selId, setSelId]         = useState(null);
+  const [selId, setSelIdRaw]      = useState(groundId);
+  const setSelId = (id) => { setSelIdRaw(id); if (id) onSelectGround?.(id); };
   const [selPitch,  setSelPitch]  = useState(0);
   const [tab, setTab]             = useState("overview");
   const canEdit = holdsCapability(role,"facility.manage");
@@ -63,6 +65,8 @@ function FieldsView({ role, onNav }) {
       onAdded={(g)=>{ setGroundsNonce(n=>n+1); setSelId(g.id); setSelPitch(0); setTab("overview"); }}/>
   );
   const selGround = GROUNDS.find(g => g.id === selId) ?? GROUNDS[0];
+  // An address the grounds read does not hold: said once it has answered, and the first ground it does hold is shown.
+  const addressRefused = !!groundId && selId === groundId && !loading && !error && !GROUNDS.some((g) => g.id === groundId);
   const gk = selGround?.groundskeeper ? STAFF.find(s=>s.id===selGround.groundskeeper) : null;
 
   const condColor = c => c==="Excellent"||c==="Match-ready"?"emerald":c==="Good"?"sky":c==="Fair"||c==="Moderate"?"amber":"rose";
@@ -148,6 +152,11 @@ function FieldsView({ role, onNav }) {
       <SectionHeader title="Fields & Pitch Profiles" sub="Ground management, pitch preparation and surface data" color={D.teal}
         actions={<>{addControl}{canEdit&&<Btn size="sm" data-testid="open-pitch-report" onClick={()=>setReportOpen(true)}>+ Pitch Report</Btn>}</>}/>
       <HomeBar home="fields" role={role} onNav={onNav}/>
+      {addressRefused&&(
+        <Card sx={{padding:"14px 16px",marginBottom:"16px"}} data-testid="address-refused">
+          <span role="status" style={{fontFamily:D.body,fontSize:"14px",color:D.textPrimary}}>That ground is not one this account can open. The grounds below are the ones it can.</span>
+        </Card>
+      )}
       {addForm}
       {reportOpen&&(
         <PitchReportModal ground={selGround} role={role}
