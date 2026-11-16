@@ -723,7 +723,7 @@ as failed, as §1.10 does.
 
 ### Slice 3 · First run
 
-**Built 15 Nov 2026:** 3a #339 (94f282ea); 3b #344 (aa33836e, db/158) and #345 (9d6b287d, db/159 and db/160). Live on both databases.
+**Built 16 Nov 2026:** 3a #339 (94f282ea); 3b #344 (aa33836e, db/158) and #345 (9d6b287d, db/159 and db/160). Live on both databases.
 
 | | |
 |---|---|
