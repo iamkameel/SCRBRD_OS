@@ -140,7 +140,8 @@ function SquadView({ role, onOpenTeam = null }) {
     <div className="os-page">
       <SectionHeader title="Squad Management" sub="Player rosters, profiles and availability" color={D.sky}
         actions={canEdit&&<Btn size="sm" onClick={()=>{setNp(n=>({...n,teamCode:""}));setAddModal(true);}}>+ Add Player</Btn>}/>
-      <div role="group" aria-label="Team" data-testid="squad-teams" style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap",alignItems:"center"}}>
+      <div role="group" aria-label="Team" data-testid="squad-teams" style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
         {teams.map(t=>(
           <button key={t} onClick={()=>chooseTeam(t)} className="pressBtn" aria-pressed={team===t} data-testid={`squad-team-${t}`} style={{
             minHeight:"44px",padding:"7px 18px",borderRadius:D.pill,border:`1px solid ${team===t?D.sky+"55":D.border}`,
@@ -148,7 +149,8 @@ function SquadView({ role, onOpenTeam = null }) {
             fontFamily:D.head,fontSize:"12px",fontWeight:700,color:team===t?D.sky:D.textMuted,
           }}>{t}</button>
         ))}
-        {/* The side's name leads to its page (§3.5: "one page, from any side's name"): results and season. */}
+      </div>
+        {/* Beside the side switch, not in it: the switch is the sides alone. The side's name leads to its page (§3.5: "one page, from any side's name"): results and season. */}
         {onOpenTeam && team && sideSchool(PLAYERS, team, profile()?.assignments ?? []) && (
           <button type="button" onClick={()=>onOpenTeam(sideSchool(PLAYERS, team, profile()?.assignments ?? []), team)} className="pressBtn os-state" data-testid="squad-team-page"
             style={{minHeight:"44px",padding:"7px 18px",borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",cursor:"pointer",
