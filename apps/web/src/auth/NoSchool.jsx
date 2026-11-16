@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useId, useState } from "react";
-import { ROLES } from "../design/roles.js";
+import { PERSONA_NAV, ROLES } from "../design/roles.js";
 import { T, clr } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
@@ -13,12 +13,13 @@ import { AskSchool, AskSchoolLink, SchoolAskRows } from "./schoolAsk.jsx";
 // The follow list (EXPERIENCE_PASS Q8, slice 3b; db/160): the Followed schools block.
 import { useFollowed } from "../lib/follow.js";
 import { FollowedSchools } from "../follow/Followed.jsx";
-import { WaitingTerms } from "../views/terms.jsx";
-import { pendingWords } from "../lib/family.js";
 import { useNotifications } from "../lib/notifications.js";
 
 // "Start a match", what this phone holds, and the last match's plain record
 // (views/ScoringBlock.jsx): fetched with the screen, in a chunk of its own.
+// Q15: the terms, for a parent waiting on the office. Their own chunk, loaded only when she is waiting,
+// so the no-school home (and its signed-out screen) loads no faster or slower for anybody else.
+const WaitingTerms = lazy(() => import("../views/terms.jsx").then((m) => ({ default: m.WaitingTerms })));
 const ScoringBlock = lazy(() => import("../views/ScoringBlock.jsx").then((m) => ({ default: m.ScoringBlock })));
 
 // ══════════════════════════════════════════════════════
@@ -375,8 +376,10 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
   // Q22 (db/158): the person's own notes asking SCRBRD to add a school, and the note's form when open.
   const schoolAsks = useLive("school_add_requests", "spectator", nudge);
   const askRows = schoolAsks.rows.filter((r) => r.mine);
-  // Q15: her own requests to be linked to a child, still with the office (lib/family.js's rule).
-  const waiting = pendingWords(rows, Date.now());
+  // Q15: her own requests to be linked to a child, still with the office (lib/family.js pendingWords's
+  // rule, said here without importing it: that module draws the match centre and the scoring package
+  // into this screen's first load, which a slow phone feels before the sign-in screen appears).
+  const waiting = rows.filter((r) => r.mine && r.state === "pending" && PERSONA_NAV.family.roles.includes(r.role));
   const [askSchool, setAskSchool] = useState(null);
   const [schools, setSchools] = useState(null);
   const me = profile()?.user;
@@ -470,7 +473,7 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
             {[...new Map(waiting.map((w) => rows.find((r) => r.id === w.id)).filter(Boolean)
                 .map((r) => [r.school ?? r.schoolName, r.schoolName ?? null])).entries()].map(([k, schoolName]) => (
               <div key={String(k)} style={{ marginTop: "8px" }}>
-                <WaitingTerms schoolName={schoolName}/>
+                <Suspense fallback={null}><WaitingTerms schoolName={schoolName}/></Suspense>
               </div>
             ))}
             {/* Q15: the office's answer, said in a notice with the same words for yes and no; the list above says which. */}

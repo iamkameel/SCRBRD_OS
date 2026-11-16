@@ -581,7 +581,10 @@ try {
     await tid(P, "follow-offer-HIL").click({ timeout: 5000 });
     await P.waitForURL(/\/app\?follow=HIL&from=/, { timeout: 8000 }).catch(() => {});
     // This phone was here before: the reload signed him out, and he signs in again, the link's question kept.
-    await P.waitForSelector('[data-testid="google-button"], [data-testid="no-school-sign-in-again"]', { timeout: 10000 }).catch(() => {});
+    // The app opens on the sign-in screen for a moment while it restores where this phone was, then shows
+    // the no-school home's "Sign in again" (its chunk loads first). Wait for that screen, not the passing one:
+    // a wait on either took the moment's google-button on a slow runner, and the walk then skipped the tap.
+    await P.waitForSelector('[data-testid="no-school-sign-in-again"]', { timeout: 15000 }).catch(() => {});
     if (await tid(P, "no-school-sign-in-again").count()) await tid(P, "no-school-sign-in-again").click({ timeout: 5000 });
     await google(h, idToken(FAN_UID, FAN_EMAIL, "Walk Fan"));
     await P.waitForSelector('[data-testid="follow-confirm"]', { timeout: 12000 }).catch(() => {});
