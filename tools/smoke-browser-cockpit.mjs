@@ -790,7 +790,12 @@ try {
     const tog = tid(f.page, "matchday-later-toggle");
     ok("...and the other two fold under 'Later · 2 fixtures', closed", /Later · 2 fixtures/.test(await tog.innerText()) && await tog.getAttribute("aria-expanded") === "false", await tog.innerText());
     await afterReads(f.page, 1500);
-    ok("...a folded fixture makes none of its reads until it is opened", !asked.some((u) => u.includes(`matchId=${MICH}`) || u.includes(`matchId=${X[2]}`) || u.includes(`/matches/${MICH}/`)));
+    // Today's "Needs you" now reads the week's fixtures for the queue, as To resolve does (EXPERIENCE_PASS §1.3,
+    // Slice 5), so a request naming a fixture no longer says which block asked. The card's own: a folded fixture
+    // draws no card, and none of the card's match-day reads (the lifts, logged against the children) is made for it.
+    ok("...a folded fixture makes none of its reads until it is opened",
+       await f.page.locator(`[data-testid="day-matchday"][data-match="${MICH}"], [data-testid="day-matchday"][data-match="${X[2]}"]`).count() === 0
+       && !asked.some((u) => /lift/i.test(u) && (u.includes(MICH) || u.includes(X[2]))));
     const f7 = await floors(f.page, '[data-testid="day-matchday"], [data-testid="matchday-later"]');
     ok(`the fold: nothing under 12px (${f7.small.length}), nothing tapped under 44px (${f7.tiny.length})`, f7.small.length === 0 && f7.tiny.length === 0, [...f7.small, ...f7.tiny].slice(0, 4).join(" · "));
     await tog.click({ timeout: 4000 });
