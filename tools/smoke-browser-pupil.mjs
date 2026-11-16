@@ -82,7 +82,7 @@ import { afterReads, watchReads } from "./walk-wait.mjs";
 import { pickTab, tabIds } from "./walk-tabs.mjs";
 import { rankingsOnScreen } from "./walk-rankings.mjs";
 import { rowLinks, sheetChecks } from "./walk-passport.mjs";
-import { destLocator } from "./walk-nav.mjs";
+import { destLocator, destByWord } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4366);
 const API_PORT = port(8966);
@@ -542,7 +542,7 @@ try {
     await r.page.locator('input[type="email"]').first().fill("spectator@example.invalid").catch(() => {});
     await click(r.page, /^Sign In$/, 5000);
     await afterReads(r.page, 2200);
-    const comps = r.page.locator("nav button", { hasText: /^Competitions\d*$/ }).first();
+    const comps = await destByWord(r.page, /^Competitions\d*$/);
     ok("he signs in, to the staff shell (no persona bar, the staff menu)", (await tid(r.page, "os-main").count()) === 1
        && (await tid(r.page, "persona-bar").count()) === 0 && (await r.page.locator("nav button", { hasText: /^\s*(Dashboard|Today)$/ }).count()) > 0);
     const reached = (await comps.count()) > 0 && await comps.click({ timeout: 6000 }).then(() => true, () => false);

@@ -31,6 +31,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destByWord } from "./walk-nav.mjs";
 
 const WEB_PORT = port(5391);
 const API_PORT = port(8891);
@@ -113,7 +114,7 @@ async function signIn(page, who) {
   return /Match Centre|Dashboard|Today|Matches/i.test(await text(page));
 }
 async function nav(page, label) {
-  const l = page.locator("nav button", { hasText: label }).first();
+  const l = (await destByWord(page, label));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1500);

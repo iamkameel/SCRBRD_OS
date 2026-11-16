@@ -57,7 +57,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
-import { destLocator } from "./walk-nav.mjs";
+import { destLocator, destByWord } from "./walk-nav.mjs";
 
 const WEB_PORT = port(5393);
 const API_PORT = port(8897);
@@ -171,7 +171,7 @@ async function nav(page, label) {
     return page.waitForFunction(() => /League Management/.test(document.body.innerText), null, { timeout: 10000 })
       .then(() => true, async () => { if (process.env.LEAGUE_DEBUG) console.log("LEAGUE-DEBUG", JSON.stringify((await page.innerText("body")).slice(0, 600))); return false; });
   }
-  let l = page.locator("nav button", { hasText: label }).first();
+  let l = (await destByWord(page, label));
   if (!(await l.count())) {
     // EXPERIENCE_PASS §1.2 (Slice 5): Competitions sits under Matches and Fields under Logistics, each a link on
     // that home's bar, for a reader who reaches the home it sits under.

@@ -27,6 +27,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destByWord } from "./walk-nav.mjs";
 
 const WEB_PORT = port(5295);
 const API_PORT = port(8795);
@@ -116,7 +117,7 @@ const sast = (ms) => {
   return { date: s.slice(0, 10), time: s.slice(11, 16) };
 };
 async function nav(page, label) {
-  const l = page.locator("nav button", { hasText: label }).first();
+  const l = (await destByWord(page, label));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1500);

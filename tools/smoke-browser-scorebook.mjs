@@ -64,6 +64,7 @@ import { baseCard, TYPED } from "../packages/scoring/test/scorebook-cards.mjs";
 import { jpegWithMetadata, pngWithMetadata } from "../services/api/io/test-images.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destByWord } from "./walk-nav.mjs";
 
 const WEB_PORT = port(5394);
 const API_PORT = port(8894);
@@ -167,7 +168,7 @@ async function signIn(page, email) {
   return (await page.locator("nav button").count()) > 0;
 }
 async function nav(page, label) {
-  const l = page.locator("nav button", { hasText: label }).first();
+  const l = (await destByWord(page, label));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1500);

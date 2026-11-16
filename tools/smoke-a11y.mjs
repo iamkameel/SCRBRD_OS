@@ -55,7 +55,7 @@ import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 import { moreMenuKeys, pickTab } from "./walk-tabs.mjs";
 import { afterReads } from "./walk-wait.mjs";
-import { destLocator } from "./walk-nav.mjs";
+import { destLocator, destByWord } from "./walk-nav.mjs";
 
 const PORT = port(4331);
 const SIGNUP_PORT = port(4332);   // the walk's own build for the sign-in screens (tools/web-test-build.mjs)
@@ -1649,16 +1649,16 @@ async function narrowStaffWalk(theme) {
     await page.waitForTimeout(1200);
     ok(`${T_} @${W}: signed in, with the bar at the bottom`, await tid("mnav").count() === 1);
     await measure(page, theme, "staffdash");
-    await overlay("mnav-more", '[data-testid="drawer"]', "staffdrawer", "More");
+    // A coach's menu is his four homes, all on the bar, with no More (EXPERIENCE_PASS §1.2, Q1).
+    ok(`${T_} @${W}: the coach's bar has no More`, await tid("mnav-more").count() === 0);
+    if (await tid("mnav-more").count()) await overlay("mnav-more", '[data-testid="drawer"]', "staffdrawer", "More");
     await overlay("topbar-role", '[role="menu"]', "staffrolemenu", "the role menu");
     await overlay("topbar-search", '[role="dialog"][aria-label="Search"]', "staffsearch", "search");
 
     // The KPI tiles (ui/primitives.jsx's KPICard: Injuries, Logistics): a label, a figure and a note, each 12px at the least,
-    // and the screens that draw them fit the width. Reached by the More drawer, as a coach reaches them.
+    // and the screens that draw them fit the width. Reached as a coach reaches them: Team, then Who's out; Logistics on the bar.
     for (const [dest, screen] of [["injuries", "staffinjuries"], ["logistics", "stafflogistics"]]) {
-      await tid("mnav-more").click({ timeout: 4000 }).catch(() => {});
-      await page.waitForTimeout(300);
-      await tid(`drawer-${dest}`).click({ timeout: 4000 }).catch(() => {});
+      await (await destLocator(page, dest)).click({ timeout: 4000 }).catch(() => {});
       await page.waitForTimeout(900);
       const kpi = await page.evaluate(() => [...document.querySelectorAll('[data-testid="kpi-card"] *')]
         .filter((e) => [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()))
@@ -1868,7 +1868,8 @@ async function walk(theme) {
     ok("signed in", /Dashboard|Match Centre|Today|Matches/i.test(await page.$eval("body", (e) => e.innerText)));
     await measure(page, theme, "dashboard");
     // SCRBRD-131: the bell's count was 9px, under the floor, and the ratchet let it by.
-    const bell = page.locator('[data-testid="nav-alerts-badge"]');
+    // The bell is in the header now, on every screen (EXPERIENCE_PASS §1.2).
+    const bell = page.locator('[data-testid="nav-alerts-badge"], [data-testid="topbar-alerts-badge"]');
     ok("the notification bell shows its unread count", (await bell.count()) === 1);
     if (await bell.count()) {
       const size = await bell.evaluate((n) => parseFloat(getComputedStyle(n).fontSize));
@@ -2010,7 +2011,7 @@ async function walk(theme) {
     // and wicket breakdowns, and the career wagon wheel — never opened by
     // this walk before either.
     group(`${T_} — a player profile's Career tab`);
-    await page.locator("nav button", { hasText: /Profiles/ }).first().click({ timeout: 6000 });
+    await (await destByWord(page, /Profiles/)).click({ timeout: 6000 });
     await page.waitForTimeout(700);
     await page.locator('[data-testid^="roster-player-"]').first().click({ timeout: 4000 }).catch(() => {});
     await page.waitForTimeout(500);

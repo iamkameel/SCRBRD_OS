@@ -76,7 +76,7 @@ import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
-import { destLocator } from "./walk-nav.mjs";
+import { destLocator, destByWord } from "./walk-nav.mjs";
 
 const PORT = port(8852);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -547,7 +547,7 @@ try {
       await page.locator("#login-email").fill(email, { timeout: 8000 });
       await page.locator("button", { hasText: /^Sign In$/ }).first().click({ timeout: 4000 });
       await page.waitForFunction(() => /Match Centre|Dashboard|Today|Matches/i.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
-      await page.locator("nav button", { hasText: /Newsfeed/ }).first().click({ timeout: 6000 }).catch(() => {});
+      await (await destByWord(page, /Newsfeed/)).click({ timeout: 6000 }).catch(() => {});
       await page.waitForSelector('[data-testid="news-list"]', { timeout: 10000 }).catch(() => {});
       if (DEBUG) console.log(email, page.url(), (await text(page)).slice(0, 1500));
       return { ctx, page, errors };

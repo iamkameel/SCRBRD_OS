@@ -19,10 +19,31 @@ import { HOMES, UNDER, homeOf } from "../apps/web/src/design/homes.js";
 
 /** The menu entry a home is drawn under for this reader: its own key, or the first of its sections he reaches. */
 async function entryOf(page, home) {
-  for (const k of [home, ...HOMES[home].sections.map((s) => s.from)]) {
+  return entryAmong(page, [home, ...HOMES[home].sections.map((s) => s.from)]);
+}
+
+/**
+ * The first of these destinations with a menu entry: on the rail, on the phone's bar, or, where the phone's menu
+ * is still longer than its bar (a director until the School home), in the More drawer, opened for it.
+ * @param {import("playwright-core").Page} page @param {string[]} keys
+ */
+async function entryAmong(page, keys) {
+  for (const k of keys) {
     const l = page.locator(`[data-testid="mnav-${k}"], [data-testid="nav-${k}"]`).first();
     if (await l.count()) return l;
   }
+  const more = page.locator('[data-testid="mnav-more"]').first();
+  if (!(await more.count())) return null;
+  if (!(await page.locator('[data-testid="drawer"]').count())) {
+    await more.click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(400);
+  }
+  for (const k of keys) {
+    const l = page.locator(`[data-testid="drawer-${k}"]`).first();
+    if (await l.count()) return l;
+  }
+  await page.keyboard.press("Escape").catch(() => {});
+  await page.waitForTimeout(200);
   return null;
 }
 
@@ -35,6 +56,9 @@ export async function destLocator(page, key, wait = 900) {
   const direct = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
   if (await direct.count()) return direct;
   if (key === "notifications") return page.locator('[data-testid="topbar-alerts"]').first();
+  // Not a home's section nor under one: its own entry, perhaps in the phone's More drawer.
+  const folded = homeOf(key) !== key;
+  if (!folded && !UNDER[key]) return (await (HOMES[key] ? entryOf(page, key) : entryAmong(page, [key]))) ?? direct;
   const step = async (/** @type {import("playwright-core").Locator | null} */ l) => {
     if (!l || !(await l.count())) return false;
     await l.click({ timeout: 6000 }).catch(() => {});
@@ -51,4 +75,29 @@ export async function destLocator(page, key, wait = 900) {
     return page.locator(`[data-testid="home-${UNDER[key]}-link-${key}"]`).first();
   }
   return direct;
+}
+
+/** The menu's words before the homes, each the destination it opened (EXPERIENCE_PASS §1.5, Q4). */
+const OLD_WORDS = [
+  ["Dashboard", "dashboard"], ["Newsfeed", "news"], ["Match Centre", "matches"], ["Calendar", "calendar"],
+  ["Competitions", "competitions"], ["Leagues", "leagues"], ["Officials", "officials"], ["Squad", "squad"],
+  ["Profiles", "profiles"], ["Selection", "selection"], ["Injuries", "injuries"], ["Analytics", "analytics"],
+  ["Skills", "skills"], ["Training", "training"], ["Fields", "fields"], ["To resolve", "readiness"],
+  ["Alerts", "notifications"], ["Notifications", "notifications"], ["Safeguarding", "safeguarding"],
+  ["Settings", "settings"], ["Rulebook", "rulebook"],
+];
+
+/**
+ * A walk that finds a destination by its menu word: the menu button with that
+ * word if there still is one (the persona bars' words stand, and so do
+ * Logistics, Staff, Sponsors, Management); else the destination that word
+ * named, reached through its home (destLocator).
+ * @param {import("playwright-core").Page} page @param {RegExp | string} label
+ */
+export async function destByWord(page, label) {
+  const l = page.locator("nav button", { hasText: label }).first();
+  if (await l.count()) return l;
+  const re = label instanceof RegExp ? label : new RegExp(String(label));
+  const hit = OLD_WORDS.find(([w]) => re.test(w));
+  return hit ? destLocator(page, hit[1]) : l;
 }

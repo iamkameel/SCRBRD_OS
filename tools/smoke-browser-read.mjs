@@ -38,6 +38,7 @@ import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { bookCard, writeBookInnings } from "./book-innings.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { rankingsOnScreen } from "./walk-rankings.mjs";
+import { destByWord, destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4326);
 const API_PORT = port(8795);
@@ -157,7 +158,7 @@ async function floors(page) {
 }
 
 async function nav(page, label) {
-  const l = page.locator("nav button", { hasText: label }).first();
+  const l = (await destByWord(page, label));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   // The rows arrive over the network, so the assertion has to wait for the
@@ -1084,17 +1085,25 @@ try {
 
     const before = await open();
     ok("the medic signs in (modules)", await signIn(before.page, /medical@example\.invalid|Medical/));
-    const navBefore = await before.page.locator("nav button").allTextContents();
+    // Injuries is Team's "Who's out" section (EXPERIENCE_PASS §1.3): the menu and the Team home's sections, together.
+    const menuAndTeam = async (page) => {
+      const nav = await page.locator("nav button").allTextContents();
+      await page.locator('[data-testid="nav-squad"]').first().click({ timeout: 6000 }).catch(() => {});
+      await page.waitForTimeout(900);
+      const sections = await page.locator('[data-testid^="home-squad-section-"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
+      return { nav, sections, length: nav.length };
+    };
+    const navBefore = await menuAndTeam(before.page);
     ok("Injuries is in the menu while the module is on",
-       navBefore.some((t) => /Injuries/i.test(t)));
+       navBefore.sections.includes("home-squad-section-injuries"), navBefore.sections.join());
     await before.ctx.close().catch(() => {});
 
     ok("a school administrator switches it off", (await hide(true)).ok);
 
     const after = await open();
     ok("the medic signs in again", await signIn(after.page, /medical@example\.invalid|Medical/));
-    const navAfter = await after.page.locator("nav button").allTextContents();
-    ok("...and Injuries is gone from the menu", !navAfter.some((t) => /Injuries/i.test(t)));
+    const navAfter = await menuAndTeam(after.page);
+    ok("...and Injuries is gone from the menu", !navAfter.sections.includes("home-squad-section-injuries") && !navAfter.nav.some((t) => /Injuries/i.test(t)), navAfter.sections.join());
     // The blast-radius assertion. One switch must not take the shell with it.
     ok("...while the rest of the menu is intact", navAfter.length >= navBefore.length - 1);
     ok("no uncaught error with a module switched off", after.errors.length === 0);
@@ -1226,7 +1235,7 @@ try {
   {
     const c = await open();
     await signIn(c.page, /Coach/);
-    await c.page.locator('[data-testid="nav-training"]').click({ timeout: 6000 }); await afterReads(c.page, 1500);
+    await (await destLocator(c.page, "training")).click({ timeout: 6000 }); await afterReads(c.page, 1500);
     ok("the drills tab opens", await click(c.page, /^drills$/i, 4000));
     await afterReads(c.page, 1200);
     ok("the coach is offered a drill of his own", await click(c.page, /\+ Drill/, 4000));
@@ -1395,7 +1404,7 @@ try {
   {
     const c = await open();
     await signIn(c.page, /Coach/);
-    await c.page.locator('[data-testid="nav-training"]').click({ timeout: 6000 }); await afterReads(c.page, 1500);
+    await (await destLocator(c.page, "training")).click({ timeout: 6000 }); await afterReads(c.page, 1500);
     ok("the coach sees his side's load", await c.page.locator('[data-testid="load-panel"]').count() === 1);
     const body = await c.page.locator('[data-testid="load-panel"]').innerText();
     ok("...one row per boy, with the server's word", /S Naidoo/.test(body) && /no bowling|rested|steady|light|rising|spike/i.test(body));
@@ -1404,7 +1413,7 @@ try {
     const p = await open();
     await signIn(p.page, /Parent/);
     if (await p.page.locator('[data-testid="nav-training"]').count()) {
-      await p.page.locator('[data-testid="nav-training"]').click({ timeout: 6000 }); await afterReads(p.page, 1200);
+      await (await destLocator(p.page, "training")).click({ timeout: 6000 }); await afterReads(p.page, 1200);
       ok("a parent's training screen has no load panel", await p.page.locator('[data-testid="load-panel"]').count() === 0);
     } else ok("a parent is not offered the training screen at all", true);
     ok("no console errors", c.errors.length === 0 && p.errors.length === 0);
@@ -1416,7 +1425,7 @@ try {
   {
     const c = await open();
     await signIn(c.page, /Coach/);
-    await c.page.locator('[data-testid="nav-profiles"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
+    await (await destLocator(c.page, "profiles")).click({ timeout: 6000 }); await c.page.waitForTimeout(1200);
     const row = c.page.locator('button:has-text("James Whitfield")').first();
     ok("the coach's roster lists the boy", await row.count() === 1);
     await row.click({ timeout: 8000 }); await c.page.waitForTimeout(2000);
@@ -1436,7 +1445,7 @@ try {
   {
     const c = await open();
     await signIn(c.page, /Coach/);
-    await c.page.locator('[data-testid="nav-competitions"]').click({ timeout: 6000 }); await c.page.waitForTimeout(800);
+    await (await destLocator(c.page, "competitions")).click({ timeout: 6000 }); await c.page.waitForTimeout(800);
     await c.page.locator('[data-testid="home-competitions-section-leagues"]').click({ timeout: 6000 }); await c.page.waitForTimeout(1800);
     const ladder = c.page.locator('[data-testid="live-ladder"]');
     ok("the coach sees a ladder from the server", await ladder.count() === 1);
@@ -1460,7 +1469,7 @@ try {
   {
     const c = await open();
     await signIn(c.page, /Director of Sport/);
-    await c.page.locator('[data-testid="nav-competitions"]').click({ timeout: 6000 }); await c.page.waitForTimeout(800);
+    await (await destLocator(c.page, "competitions")).click({ timeout: 6000 }); await c.page.waitForTimeout(800);
     await c.page.locator('[data-testid="home-competitions-section-leagues"]').click({ timeout: 6000 }); await afterReads(c.page, 1500);
     ok("the form opens", await click(c.page, /\+ Add Fixture/, 4000));
     await c.page.waitForTimeout(500);
@@ -2053,7 +2062,8 @@ try {
     ok("the phone bar is not drawn on a laptop", await tid("mnav").isVisible().catch(() => false) === false);
     await tid("sidebar-toggle").click({ timeout: 4000 }); await c.page.waitForTimeout(400);
     ok("the sidebar collapses", await tid("sidebar").getAttribute("data-collapsed") === "true");
-    ok("...and the entries keep their names", await tid("nav-profiles").getAttribute("aria-label") === "Profiles");
+    // The menu is the homes now (EXPERIENCE_PASS §1.2): Profiles is Team's Players section; the entry's name is Team.
+    ok("...and the entries keep their names", await tid("nav-squad").getAttribute("aria-label") === "Team");
     ok("the top bar's controls are addressable",
        await tid("topbar-search").count() === 1 && await tid("topbar-alerts").count() === 1 && await tid("topbar-role").count() === 1);
     ok("no console errors on the laptop", c.errors.length === 0, c.errors.join(" | "));
@@ -2066,14 +2076,24 @@ try {
     for (const [who, label] of [[/Coach/, "coach"], [/Parent|Guardian/, "guardian"], [/Director of Sport/, "director of sport"]]) {
       const s = await open();
       if (!(await signIn(s.page, who))) { ok(`the ${label} signs in for the sweep`, false); await s.ctx.close(); continue; }
-      const keys = await s.page.$$eval('[data-testid^="nav-"]:not([data-testid^="nav-group-"]):not([data-testid="nav-alerts-badge"])',
+      const entries = await s.page.$$eval('[data-testid^="nav-"]:not([data-testid^="nav-group-"]):not([data-testid$="-badge"])',
                                        (els) => els.map((e) => e.getAttribute("data-testid").slice(4)));
+      // The homes fold destinations into sections (EXPERIENCE_PASS §1.3): each entry, then each section on its bar.
+      const keys = [];
+      for (const k of entries) {
+        keys.push(k);
+        await s.page.locator(`[data-testid="nav-${k}"]`).click({ timeout: 6000 }).catch(() => {});
+        await s.page.waitForTimeout(500);
+        const secs = await s.page.$$eval('[data-testid="home-frame"] [data-testid*="-section-"]',
+          (els) => els.map((e) => (e.getAttribute("data-testid") ?? "").replace(/^home-[a-z]+-section-/, ""))).catch(() => []);
+        for (const x of secs) if (!keys.includes(x) && !entries.includes(x)) keys.push(x);
+      }
       ok(`the ${label} is offered a menu`, keys.length >= 3);
       const broken = [];
       let pokes = 0;
       for (const k of keys) {
         const before = s.errors.length;
-        await s.page.locator(`[data-testid="nav-${k}"]`).click({ timeout: 6000 }).catch(() => broken.push(`${k}: no click`));
+        await (await destLocator(s.page, k)).click({ timeout: 6000 }).catch(() => broken.push(`${k}: no click`));
         await afterReads(s.page, 700);
         const at = await s.page.locator('[data-testid="os-main"]').getAttribute("data-page", { timeout: 3000 }).catch(() => null);
         if (at !== k) broken.push(`${k}: landed on ${at}`);
@@ -2109,7 +2129,7 @@ try {
           // A button may take the person to another screen (the Dashboard's match-day card opens the Coach tab):
           // that is a screen standing, not a break. Come back to this one, so the next poke is on the screen it was chosen from.
           if (await s.page.locator('[data-testid="os-main"]').getAttribute("data-page", { timeout: 1500 }).catch(() => k) !== k) {
-            await s.page.locator(`[data-testid="nav-${k}"]`).click({ timeout: 4000 }).catch(() => {});
+            await (await destLocator(s.page, k)).click({ timeout: 4000 }).catch(() => {});
             await s.page.waitForTimeout(700);
           }
           poked++; pokes++;
@@ -2136,16 +2156,14 @@ try {
     await signIn(page, /Coach/);
     const mid = (id) => page.locator(`[data-testid="${id}"]`);
     ok("the phone bar is drawn", await mid("mnav").isVisible());
-    ok("...with the dashboard and the match centre on it", await mid("mnav-dashboard").count() === 1 && await mid("mnav-matches").count() === 1);
-    ok("...and a More button for the rest", await mid("mnav-more").count() === 1);
+    ok("...with Today and Matches on it", await mid("mnav-dashboard").count() === 1 && await mid("mnav-matches").count() === 1);
+    // EXPERIENCE_PASS Q1 (decided 13 Nov): the homes are the whole menu, all on the phone's bar, and More goes.
+    ok("...the coach's four homes, and no More", await mid("mnav-more").count() === 0 && await page.locator('[data-testid="mnav"] [data-testid^="mnav-"]').count() === 4);
     ok("the sidebar is not", await mid("sidebar").count() === 0);
-    await mid("mnav-more").click({ timeout: 4000 }); await page.waitForTimeout(500);
-    ok("More opens the drawer", await mid("drawer").isVisible());
-    ok("...grouped the same way", await mid("drawer-group-people").count() === 1 && await mid("drawer-group-develop").count() === 1);
-    await mid("drawer-training").click({ timeout: 4000 }); await afterReads(page, 800);
-    ok("a drawer entry navigates and closes the drawer",
-       await mid("os-main").getAttribute("data-page") === "training" && await mid("drawer").count() === 0);
-    ok("...and More now reads as the active place", await mid("mnav-more").getAttribute("aria-expanded") === "false");
+    await mid("mnav-squad").click({ timeout: 4000 }); await afterReads(page, 800);
+    await mid("home-squad-section-training").click({ timeout: 4000 }); await afterReads(page, 800);
+    ok("Team, then its Training section, navigates", await mid("os-main").getAttribute("data-page") === "training");
+    ok("...and Team now reads as the active place", await mid("mnav-squad").getAttribute("aria-current") === "page");
     ok("no console errors on the phone", errors.length === 0, errors.join(" | "));
     await ctx.close();
   }
@@ -2173,16 +2191,17 @@ try {
       const { c, signed, tid } = await asRole(/Coach/);
       ok("the coach signs in (homes)", signed);
       const m = await menuOf(c.page);
-      ok("one entry each for Competitions, Logistics and Fields, and none for Leagues",
-         ["competitions", "logistics", "fields"].every((k) => m.filter((x) => x === k).length === 1) && !m.includes("leagues"), m.join());
-      await tid("nav-competitions").click({ timeout: 6000 }); await afterReads(c.page, 1500);
+      // EXPERIENCE_PASS §1.2 (Slice 5): Competitions sits under Matches and Fields under Logistics, a link on each bar.
+      ok("one entry for Logistics; Competitions and Fields sit under Matches and Logistics; no Leagues",
+         m.filter((x) => x === "logistics").length === 1 && !["competitions", "fields", "leagues"].some((k) => m.includes(k)), m.join());
+      await (await destLocator(c.page, "competitions")).click({ timeout: 6000 }); await afterReads(c.page, 1500);
       ok("Competitions opens on its first section", await tid("os-main").getAttribute("data-page") === "competitions" && await pressed(tid, "home-competitions-section-competitions"));
       ok("...with the Leagues section beside it", await tid("home-competitions-section-leagues").count() === 1 && await tid("home-competitions-sections").getAttribute("role") === "group");
       ok("...the competitions screen's own test ids still there", await c.page.locator('[data-testid^="competition-"]').count() > 0);
       await tid("home-competitions-section-leagues").click({ timeout: 6000 }); await afterReads(c.page, 1800);
       ok("Leagues is the same home, with the league screen under it", /League Management/.test(await text(c.page)) && await tid("league-tab-table").count() === 1
          && await tid("os-main").getAttribute("data-page") === "competitions");
-      ok("...the menu entry stays the current page", await tid("nav-competitions").getAttribute("aria-current") === "page");
+      ok("...the entry it sits under, Matches, stays the current page", await tid("nav-matches").getAttribute("aria-current") === "page");
       ok("...and the section says it is the one open", await pressed(tid, "home-competitions-section-leagues") && !(await pressed(tid, "home-competitions-section-competitions")));
       await tid("home-competitions-section-competitions").click({ timeout: 6000 }); await afterReads(c.page, 1500);
       ok("back to Competitions", await c.page.locator('[data-testid^="competition-"]').count() > 0 && !/League Management/.test(await text(c.page)));
@@ -2196,11 +2215,11 @@ try {
       await tid("home-logistics-section-equipment").click({ timeout: 6000 }); await afterReads(c.page, 1200);
       ok("the Equipment section is the kit register, as before", await tid("kit-register").count() === 1 || await tid("kit-register-empty").count() === 1);
       await tid("home-logistics-link-fields").click({ timeout: 6000 }); await afterReads(c.page, 1500);
-      ok("the link lands on Fields", await tid("os-main").getAttribute("data-page") === "fields" && await tid("nav-fields").getAttribute("aria-current") === "page");
+      ok("the link lands on Fields, under Logistics", await tid("os-main").getAttribute("data-page") === "fields" && await tid("nav-logistics").getAttribute("aria-current") === "page");
       ok("...which links back to the ground schedule", await tid("home-fields-link-logistics-grounds").count() === 1);
       await tid("home-fields-link-logistics-grounds").click({ timeout: 6000 }); await afterReads(c.page, 1500);
       ok("...and that opens Logistics on its Grounds section", await tid("os-main").getAttribute("data-page") === "logistics" && await pressed(tid, "home-logistics-section-grounds"));
-      await tid("nav-fields").click({ timeout: 6000 }); await c.page.waitForTimeout(1000);
+      await (await destLocator(c.page, "fields")).click({ timeout: 6000 }); await c.page.waitForTimeout(1000);
       await tid("nav-logistics").click({ timeout: 6000 }); await afterReads(c.page, 1200);
       ok("a menu choice afterwards opens Logistics on Transport again, not the section a link asked for", await pressed(tid, "home-logistics-section-transport"));
       ok("no console errors on the coach's homes", c.errors.length === 0, c.errors.join(" | "));
@@ -2212,8 +2231,9 @@ try {
       const { c, signed, tid } = await asRole(/Director of Sport/);
       ok("the director of sport signs in (homes)", signed);
       const m = await menuOf(c.page);
-      ok("she has all three homes and no Leagues entry", ["competitions", "logistics", "fields"].every((k) => m.includes(k)) && !m.includes("leagues"), m.join());
-      await tid("nav-competitions").click({ timeout: 6000 });
+      ok("she has Logistics, with Competitions and Fields under Matches and Logistics, and no Leagues entry",
+         m.includes("logistics") && m.includes("matches") && !["competitions", "fields", "leagues"].some((k) => m.includes(k)), m.join());
+      await (await destLocator(c.page, "competitions")).click({ timeout: 6000 });
       // The home loads the competitions screen lazily: wait for its sections, not a fixed pause.
       await tid("home-competitions-sections").waitFor({ timeout: 10000 }).catch(() => {});
       ok("Competitions has both sections", await tid("home-competitions-sections").locator("button").count() === 2);
@@ -2228,8 +2248,9 @@ try {
       const { c, signed, tid } = await asRole(/Principal/);
       ok("the principal signs in (homes)", signed);
       const m = await menuOf(c.page);
-      ok("she has Fields and Competitions, and no Logistics", m.includes("fields") && m.includes("competitions") && !m.includes("logistics") && !m.includes("leagues"), m.join());
-      await tid("nav-fields").click({ timeout: 6000 }); await afterReads(c.page, 1500);
+      // With no Logistics, Fields keeps its entry; Competitions sits under Matches.
+      ok("she has Fields, Competitions under Matches, and no Logistics", m.includes("fields") && !m.includes("competitions") && m.includes("matches") && !m.includes("logistics") && !m.includes("leagues"), m.join());
+      await (await destLocator(c.page, "fields")).click({ timeout: 6000 }); await afterReads(c.page, 1500);
       ok("Fields has no link to the ground schedule: she cannot read it", await tid("os-main").getAttribute("data-page") === "fields" && await c.page.locator('[data-testid^="home-fields-link"]').count() === 0);
       await c.ctx.close();
     }
@@ -2239,8 +2260,8 @@ try {
       const { c, signed, tid } = await asRole(/League Admin/);
       ok("the league admin signs in (homes)", signed);
       const m = await menuOf(c.page);
-      ok("only Competitions of the three, and no Leagues entry", m.includes("competitions") && !["logistics", "fields", "leagues"].some((k) => m.includes(k)), m.join());
-      await tid("nav-competitions").click({ timeout: 6000 }); await afterReads(c.page, 1500);
+      ok("only Competitions of the three, under Matches, and no Leagues entry", m.includes("matches") && !["competitions", "logistics", "fields", "leagues"].some((k) => m.includes(k)), m.join());
+      await (await destLocator(c.page, "competitions")).click({ timeout: 6000 }); await afterReads(c.page, 1500);
       ok("...with both sections", await tid("home-competitions-sections").locator("button").count() === 2);
       await c.ctx.close();
     }
@@ -2459,14 +2480,14 @@ try {
   {
     const d = await open();
     await signIn(d.page, /Director of Sport/);
-    await d.page.locator('[data-testid="nav-officials"]').first().click({ timeout: 6000 }).catch(() => {});
+    await (await destLocator(d.page, "officials")).click({ timeout: 6000 }).catch(() => {});
     await afterReads(d.page, 1500);
     ok("a director of sport is not offered the register", (await d.page.locator('[data-testid="add-official"]').count()) === 0);
     await d.ctx.close();
 
     const l = await open();
     await signIn(l.page, /League Admin/);
-    await l.page.locator('[data-testid="nav-officials"]').first().click({ timeout: 6000 }).catch(() => {});
+    await (await destLocator(l.page, "officials")).click({ timeout: 6000 }).catch(() => {});
     await l.page.waitForTimeout(1500);
     const add = l.page.locator('[data-testid="add-official"]');
     ok("the league administrator is", (await add.count()) === 1);
@@ -2573,7 +2594,7 @@ try {
       // The assertion that actually matters: the app is usable again. This is
       // the one the sweep failed on, and a dialog that closes visually while
       // leaving a backdrop behind would still pass the line above.
-      await tid("nav-rulebook").click({ timeout: 4000 }).catch(() => {});
+      await (await destLocator(c.page, "rulebook")).click({ timeout: 4000 }).catch(() => {});
       await afterReads(c.page, 800);
       ok("...and the menu works again afterwards",
          await tid("os-main").getAttribute("data-page") === "rulebook",
@@ -2605,7 +2626,7 @@ try {
     const c = await open();
     ok("the director of sport signs in", await signIn(c.page, /Director of Sport/));
     const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
-    await tid("nav-fields").click({ timeout: 6000 }); await afterReads(c.page, 1200);
+    await (await destLocator(c.page, "fields")).click({ timeout: 6000 }); await afterReads(c.page, 1200);
     ok("she reaches Fields", await tid("os-main").getAttribute("data-page") === "fields");
 
     ok("the report button is offered — she holds facility.manage",
@@ -2676,7 +2697,7 @@ try {
     const c = await open();
     ok("the director of sport signs in", await signIn(c.page, /sarah@example\.invalid|Director/));
     const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
-    await tid("nav-readiness").click({ timeout: 6000 }); await afterReads(c.page, 3500);
+    await (await destLocator(c.page, "readiness")).click({ timeout: 6000 }); await afterReads(c.page, 3500);
     ok("she reaches To resolve (was Readiness)", await tid("os-main").getAttribute("data-page") === "readiness");
 
     const card = tid(`readiness-fixture-${MATCH}`);

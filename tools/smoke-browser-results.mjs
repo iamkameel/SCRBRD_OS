@@ -35,6 +35,7 @@ import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { toRow } from "@scrbrd/scoring";
 import { buildLog } from "../packages/scoring/test/result-logs.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destByWord } from "./walk-nav.mjs";
 
 const PORT = port(8902);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -134,7 +135,7 @@ async function signIn(page, email) {
   return (await page.locator("nav button").count()) > 0;
 }
 async function toLeague(page, c) {
-  const l = page.locator("nav button", { hasText: /^Competitions$/ }).first();
+  const l = await destByWord(page, /^Competitions$/);
   if (!(await l.count())) return false;
   await l.click({ timeout: 6000 });
   await page.waitForTimeout(1200);
