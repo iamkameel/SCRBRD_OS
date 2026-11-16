@@ -38,7 +38,7 @@ import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { bookCard, writeBookInnings } from "./book-innings.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { rankingsOnScreen } from "./walk-rankings.mjs";
-import { destByWord, destLocator } from "./walk-nav.mjs";
+import { destByWord, destLocator, openSettingsPart } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4326);
 const API_PORT = port(8795);
@@ -1199,8 +1199,11 @@ try {
     // behind it is refused by the function regardless, which the API walk holds.
     ok("a coach is not offered the staff screen", await coach.page.locator('[data-testid="nav-staff"]').count() === 0);
     await coach.page.locator('[data-testid="nav-settings"]').click({ timeout: 6000 }); await coach.page.waitForTimeout(600);
-    // "My clearances" lives on the Me tab now, beside my access and this device.
-    await coach.page.locator('[role="tab"]', { hasText: /^Me$/ }).first().click({ timeout: 4000 }); await afterReads(coach.page, 1200);
+    // "My clearances" lives on Me, beside my access and this device. Since Slice 6 Me is his whole Settings (no tab
+    // strip with one tab), so the tab is tapped only where one is drawn.
+    const meTab = coach.page.locator('[role="tab"]', { hasText: /^Me$/ }).first();
+    if (await meTab.count()) await meTab.click({ timeout: 4000 });
+    await afterReads(coach.page, 1200);
     const mine = await coach.page.locator('[data-testid="my-clearances"]').innerText().catch(() => "");
     ok("...but he sees his own in settings", /first aid certificate/i.test(mine) && /expiring/i.test(mine));
     ok("...and only his own", !/P Moodley|B Ngcobo/.test(mine));
@@ -1291,7 +1294,7 @@ try {
     // `office_only` before writing anything.
     const d = await open();
     await signIn(d.page, /Director of Sport/);
-    await d.page.locator('[data-testid="nav-settings"]').click({ timeout: 6000 }); await d.page.waitForTimeout(1400);
+    await openSettingsPart(d.page, "users", 1400);   // School, People (Settings → People before Slice 6)
     const dCard = d.page.locator('[data-testid="people-without-accounts"]');
     ok("the director of sport sees the card naming the boys who cannot sign in", await dCard.count() === 1);
     ok("...with no Enrol on a boy's chip",
@@ -1313,7 +1316,7 @@ try {
     const c = await open();
     await signIn(c.page, /Registrar|School Admin|registrar@example\.invalid/);
     const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
-    await tid("nav-settings").click({ timeout: 6000 }); await c.page.waitForTimeout(1400);
+    await openSettingsPart(c.page, "users", 1400);   // School, People (Settings → People before Slice 6)
 
     const card = tid("people-without-accounts");
     ok("the card naming the people who cannot sign in is there", await card.count() === 1);
@@ -1364,8 +1367,7 @@ try {
   {
     const head = await open();
     await signIn(head.page, /Director of Sport/);
-    await head.page.locator('[data-testid="nav-settings"]').click({ timeout: 6000 }); await afterReads(head.page, 800);
-    ok("the school tab opens", await click(head.page, /^school$/i, 4000));
+    ok("School, Record opens (Settings' School tab before Slice 6)", await openSettingsPart(head.page, "school", 800));
     await head.page.waitForTimeout(1200);
     const card = head.page.locator('[data-testid="open-ceiling"]');
     ok("the ceiling is offered to the director of sport", await card.count() === 1);
@@ -1391,10 +1393,9 @@ try {
     // A coach may keep the kit; the school's welfare policy is not his to set.
     const c = await open();
     await signIn(c.page, /Coach/);
-    await c.page.locator('[data-testid="nav-settings"]').click({ timeout: 6000 }); await afterReads(c.page, 800);
-    if (await c.page.locator("button", { hasText: /^school$/i }).count()) {
-      await click(c.page, /^school$/i, 4000); await c.page.waitForTimeout(1000);
-    }
+    // He reaches no School, Record (Settings' School tab before Slice 6); his own Settings has no ceiling either.
+    await openSettingsPart(c.page, "school", 800);
+    await c.page.locator('[data-testid="nav-settings"]').click({ timeout: 6000 }).catch(() => {}); await afterReads(c.page, 800);
     ok("a coach is not offered the ceiling at all", await c.page.locator('[data-testid="open-ceiling"]').count() === 0);
     await c.ctx.close();
   }
@@ -2587,8 +2588,8 @@ try {
     const c = await open();
     ok("the director of sport signs in", await signIn(c.page, /Director of Sport/));
     const tid = (id) => c.page.locator(`[data-testid="${id}"]`);
-    await tid("nav-settings").click({ timeout: 6000 }); await afterReads(c.page, 1200);
-    ok("she reaches settings", await tid("os-main").getAttribute("data-page") === "settings");
+    await openSettingsPart(c.page, "users", 1200);
+    ok("she reaches School, People (Settings → People before Slice 6)", await tid("os-main").getAttribute("data-page") === "staff");
 
     // She holds user.role.assign, so the Users tab must offer her enrolment.
     // If this is missing the capability gate has regressed and the rest of the
@@ -2633,7 +2634,7 @@ try {
 
       // Clicking the backdrop is the other way out, and it must not fire when
       // the click lands inside the card — which is the backdrop's own child.
-      await tid("nav-settings").click({ timeout: 4000 }); await c.page.waitForTimeout(1200);
+      await openSettingsPart(c.page, "users", 1200);
       await c.page.locator('[data-testid="enrol-person"]').first().click({ timeout: 4000 });
       await c.page.waitForTimeout(600);
       await c.page.locator('[role="dialog"] h3').click({ timeout: 4000 });

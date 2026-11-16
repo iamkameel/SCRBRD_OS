@@ -57,7 +57,7 @@ import pg from "pg";
 import { GRANTABLE_ROLES, roleGrants } from "../packages/policy/src/roles.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
-import { destLocator } from "./walk-nav.mjs";
+import { destLocator, openSettingsPart } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4372);
 const API_PORT = port(8912);
@@ -691,9 +691,8 @@ try {
   await pf1.ctx.close();
 
   const pf2 = await open();
-  ok("the platform account, again, in Settings → People", await signIn(pf2.page, "platform@example.invalid"));
-  await tid(pf2.page, "nav-settings").first().click({ timeout: 6000 }).catch(() => {});
-  await pf2.page.waitForTimeout(1200);
+  ok("the platform account, again, in School, People (Settings → People before Slice 6)", await signIn(pf2.page, "platform@example.invalid"));
+  await openSettingsPart(pf2.page, "users", 1200).catch(() => false);
   await tid(pf2.page, "enrol-person").click({ timeout: 6000 }).catch(() => {});
   await pf2.page.waitForTimeout(800);
   const pfScorer = `walk.platform.scorer.${Date.now()}@example.invalid`;
@@ -707,7 +706,7 @@ try {
   await afterReads(pf2.page, 2200);
   ok("...and the scorer is appointed at Westville",
      (await q(`select a.role from role_assignment a join app_user u on u.id = a.person_id where u.email = $1 and a.school_id = $2 and a.active`, [pfScorer, WES])).some((a) => a.role === "scorer"));
-  ok("no console errors in Settings", pf2.errors.length === 0, pf2.errors.join(" | "));
+  ok("no console errors on School, People", pf2.errors.length === 0, pf2.errors.join(" | "));
   await pf2.ctx.close();
 
   group("The owner's key may appoint any role, and a child is chosen from that school's roster only");
