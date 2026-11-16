@@ -525,6 +525,12 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // office's answer is one notice (db/161); the DSO card last on both Homes;
   // the live card leads; the eleven on her child's fixture (Q10).
   "browser-slice4",
+  // EXPERIENCE_PASS Slice 5: each persona's menu is its homes (Today, Matches,
+  // Team, Logistics), no More on a phone; the header; To resolve only for who can
+  // act (Q17); the coach's next fixture first with its chips; the DSO card last
+  // on Today (Q7); the team, player and ground addresses (Q11); the director's
+  // first Needs you row lands on the fix.
+  "browser-homes",
   // GA-I19 slice B (db/111): the Injuries screens. The physio's Reviews due, the
   // Record and Review forms (next review required, +7 and +14, clearing asks
   // first), the left-the-school mark; the coach and the director read it with
