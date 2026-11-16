@@ -47,6 +47,7 @@ import { roleGrants } from "../packages/policy/src/roles.mjs";
 import { IMPORTS } from "../services/api/io/import-api.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4386);
 const API_PORT = port(8917);
@@ -123,11 +124,11 @@ async function signIn(page, email, password = "") {
   if (password) await page.fill("#login-password", password);
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  return /Match Centre|Dashboard|Today|Matches/i.test(await text(page));
 }
 /** To a sidebar destination, by the nav's own test id. */
 async function nav(page, key) {
-  const n = tid(page, `nav-${key}`).first();
+  const n = (await destLocator(page, key));
   if (!(await n.count())) {
     if (DEBUG) console.log(`  (no nav-${key}; there is: ${(await page.locator('[data-testid^="nav-"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")))).join(" ")})`);
     return false;

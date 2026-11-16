@@ -37,6 +37,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4363);
 const API_PORT = port(8898);
@@ -118,7 +119,7 @@ async function signIn(page, email) {
 }
 async function go(page, nav) {
   // The rail, or at phone width the bottom bar.
-  const rail = page.locator(`[data-testid="nav-${nav}"]:visible`).first();
+  const rail = (await destLocator(page, nav));
   const bar = (await rail.count()) ? rail : page.locator(`[data-testid="mnav-${nav}"]:visible`).first();
   let l = bar;
   if (!(await bar.count())) {

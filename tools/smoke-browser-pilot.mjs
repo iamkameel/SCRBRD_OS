@@ -177,7 +177,7 @@ async function signInAndOpen(p) {
 async function openScorer(p) {
   await p.page.setViewportSize({ width: 1280, height: 800 });
   await p.page.waitForTimeout(300);
-  await p.page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  await p.page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await p.page.waitForTimeout(1200);
   await p.page.locator("button", { hasText: /Open SCRBRD Scorer/ }).first().click({ timeout: 6000 });
   await p.page.waitForTimeout(1800);

@@ -102,7 +102,7 @@ async function signIn(page, email) {
   if (!(await click(page, new RegExp(email.replace(/[.]/g, "\\.")), 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  return /Match Centre|Dashboard|Today|Matches/i.test(await text(page));
 }
 /** The coach's side page (Squad), where he nominates; then the phone's width. */
 async function toSquadColours(page) {

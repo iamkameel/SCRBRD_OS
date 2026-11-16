@@ -139,7 +139,7 @@ async function signIn(page, email, password = "") {
   if (password) await page.fill("#login-password", password);
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  return /Match Centre|Dashboard|Today|Matches/i.test(await text(page));
 }
 /** To Management → Users, waiting for the list to be drawn rather than for a clock. */
 async function toUsers(page) {

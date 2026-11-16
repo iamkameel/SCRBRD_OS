@@ -175,7 +175,7 @@ const phone = () => page.evaluate(async () => {
 const openScorer = async () => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.waitForTimeout(300);
-  await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await page.waitForTimeout(1200);
   await page.locator("button", { hasText: /Open SCRBRD Scorer/ }).first().click({ timeout: 6000 });
   await page.waitForTimeout(1800);

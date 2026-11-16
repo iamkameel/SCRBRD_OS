@@ -57,6 +57,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(5393);
 const API_PORT = port(8897);
@@ -170,7 +171,13 @@ async function nav(page, label) {
     return page.waitForFunction(() => /League Management/.test(document.body.innerText), null, { timeout: 10000 })
       .then(() => true, async () => { if (process.env.LEAGUE_DEBUG) console.log("LEAGUE-DEBUG", JSON.stringify((await page.innerText("body")).slice(0, 600))); return false; });
   }
-  const l = page.locator("nav button", { hasText: label }).first();
+  let l = page.locator("nav button", { hasText: label }).first();
+  if (!(await l.count())) {
+    // EXPERIENCE_PASS §1.2 (Slice 5): Competitions sits under Matches and Fields under Logistics, each a link on
+    // that home's bar, for a reader who reaches the home it sits under.
+    const key = /Competitions/.test(String(label)) ? "competitions" : /Fields/.test(String(label)) ? "fields" : null;
+    if (key) l = await destLocator(page, key);
+  }
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1500);
@@ -285,9 +292,10 @@ try {
   ok("the invitations: 12px and 44px", floorsOk(fInv), floorsWhy(fInv));
   // The navigation says so without opening Competitions (the API writes no notification yet).
   await settled(hil.page);
-  ok("the navigation badges Competitions with the count, in words a screen reader hears",
-     (await said(hil.page, "nav-invites-badge")) === "2" && (await tid(hil.page, "nav-competitions").getAttribute("aria-label")) === "Competitions, 2 league invitations waiting",
-     `${await said(hil.page, "nav-invites-badge")} | ${await tid(hil.page, "nav-competitions").getAttribute("aria-label")}`);
+  // Competitions sits under Matches (EXPERIENCE_PASS §1.2), so the badge is on Matches, the entry that leads to it.
+  ok("the navigation badges Matches, which leads to Competitions, with the count, in words a screen reader hears",
+     (await said(hil.page, "nav-invites-badge")) === "2" && (await tid(hil.page, "nav-matches").getAttribute("aria-label")) === "Matches, 2 league invitations waiting",
+     `${await said(hil.page, "nav-invites-badge")} | ${await tid(hil.page, "nav-matches").getAttribute("aria-label")}`);
   ok("...the badge's own text is 12px at the least", (await tid(hil.page, "nav-invites-badge").evaluate((n) => parseFloat(getComputedStyle(n).fontSize))) >= 12);
   await tap(hil.page, "invitation-accept");
   // The first answer must land before the second tap. With a fixed 350 ms
@@ -299,7 +307,7 @@ try {
   await hil.page.waitForFunction(() => document.querySelectorAll('[data-testid="invitation"]').length === 0, null, { timeout: 15000 }).catch(() => {});
   ok("Hilton accepts both; the page says so", (await tid(hil.page, "invitation").count()) === 0 && /is now in Walk Schools League/.test(await said(hil.page, "invitations-status")), await said(hil.page, "invitations-status"));
   await settled(hil.page);
-  ok("...and the badge goes with them", !(await has(hil.page, "nav-invites-badge")) && (await tid(hil.page, "nav-competitions").getAttribute("aria-label")) === null);
+  ok("...and the badge goes with them", !(await has(hil.page, "nav-invites-badge")) && (await tid(hil.page, "nav-matches").getAttribute("aria-label")) === null);
   await hil.ctx.close().catch(() => {});
 
   const wes = await open();
@@ -307,7 +315,7 @@ try {
   ok("Competitions opens", await nav(wes.page, /^Competitions\d*$/));
   ok("two invitations, both Westville's", (await tid(wes.page, "invitation").count()) === 2);
   await settled(wes.page);
-  ok("Westville's navigation badges the two", (await said(wes.page, "nav-invites-badge")) === "2" && (await tid(wes.page, "nav-competitions").getAttribute("aria-label")) === "Competitions, 2 league invitations waiting");
+  ok("Westville's navigation badges the two", (await said(wes.page, "nav-invites-badge")) === "2" && (await tid(wes.page, "nav-matches").getAttribute("aria-label")) === "Matches, 2 league invitations waiting");
   const w1 = wes.page.locator('[data-testid="invitation"]', { hasText: /1XI/ });
   const w2 = wes.page.locator('[data-testid="invitation"]', { hasText: /2XI/ });
   await w1.locator('[data-testid="invitation-accept"]').click(); await wes.page.waitForTimeout(700);
@@ -646,8 +654,8 @@ try {
   ok("Hilton's director of sport signs in again", await signIn(hil3.page, "sarah@example.invalid"));
   await settled(hil3.page);
   ok("one invitation is \"1 league invitation waiting\", badged without opening Competitions",
-     (await said(hil3.page, "nav-invites-badge")) === "1" && (await tid(hil3.page, "nav-competitions").getAttribute("aria-label")) === "Competitions, 1 league invitation waiting"
-     && !(await has(hil3.page, "invitations")), await tid(hil3.page, "nav-competitions").getAttribute("aria-label"));
+     (await said(hil3.page, "nav-invites-badge")) === "1" && (await tid(hil3.page, "nav-matches").getAttribute("aria-label")) === "Matches, 1 league invitation waiting"
+     && !(await has(hil3.page, "invitations")), await tid(hil3.page, "nav-matches").getAttribute("aria-label"));
   await nav(hil3.page, /^Competitions\d*$/);
   ok("...and Competitions shows that invitation, from Walk Cup Three", /Walk Cup Three/.test(await said(hil3.page, "invitation")));
   await hil3.ctx.close().catch(() => {});
@@ -656,21 +664,21 @@ try {
   await hil4.ctx.route(/\/api\/competition-invitations$/, (r) => r.abort());
   ok("Hilton signs in (invitation reads will fail)", await signIn(hil4.page, "sarah@example.invalid"));
   await settled(hil4.page);
-  ok("a failed read badges nothing", !(await has(hil4.page, "nav-invites-badge")) && (await tid(hil4.page, "nav-competitions").getAttribute("aria-label")) === null);
+  ok("a failed read badges nothing", !(await has(hil4.page, "nav-invites-badge")) && (await tid(hil4.page, "nav-matches").getAttribute("aria-label")) === null);
   ok("no console errors (a failed invitations read)", hil4.errors.length === 0, hil4.errors.join(" | "));
   await hil4.ctx.close().catch(() => {});
 
   const hil5 = await open("floodlit", { width: 390, height: 844 });
   ok("Hilton signs in on a phone", await signIn(hil5.page, "sarah@example.invalid"));
   await settled(hil5.page);
-  const onBar = await has(hil5.page, "mnav-competitions");
-  const holder = tid(hil5.page, onBar ? "mnav-competitions" : "mnav-more");
-  ok("on a phone the bar says so, in words, on the button that leads to Competitions",
-     (await holder.getAttribute("aria-label")) === (onBar ? "Competitions, 1 league invitation waiting" : "More, 1 league invitation waiting"), await holder.getAttribute("aria-label"));
+  const onBar = await has(hil5.page, "mnav-matches");
+  const holder = tid(hil5.page, onBar ? "mnav-matches" : "mnav-more");
+  ok("on a phone the bar says so, in words, on the button that leads to Competitions (Matches)",
+     (await holder.getAttribute("aria-label")) === (onBar ? "Matches, 1 league invitation waiting" : "More, 1 league invitation waiting"), await holder.getAttribute("aria-label"));
   ok("...with a badge of 12px at the least", (await tid(hil5.page, "mnav-invites-badge").first().evaluate((n) => parseFloat(getComputedStyle(n).fontSize))) >= 12);
   if (!onBar) {
     await tap(hil5.page, "mnav-more");
-    ok("...and the drawer's Competitions says so too", (await tid(hil5.page, "drawer-competitions").getAttribute("aria-label")) === "Competitions, 1 league invitation waiting");
+    ok("...and the drawer's Matches says so too", (await tid(hil5.page, "drawer-matches").getAttribute("aria-label")) === "Matches, 1 league invitation waiting");
   }
   ok("no sideways scroll with the badge", (await hil5.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 0);
   ok("no console errors (phone, badge)", hil5.errors.length === 0, hil5.errors.join(" | "));

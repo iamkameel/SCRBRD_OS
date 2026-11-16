@@ -272,7 +272,7 @@ try {
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
   await afterReads(page, 2200);
-  ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
+  ok("a seeded scorer gets in", /Match Centre|Dashboard|Today|Matches/i.test(await text()));
 
   // ── A ────────────────────────────────────────────────────────
   group("A. A tied cup match scored on the pad: the result as the engine words it, and the button");

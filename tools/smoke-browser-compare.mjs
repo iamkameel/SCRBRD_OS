@@ -43,6 +43,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4378);
 const API_PORT = port(8978);
@@ -122,7 +123,7 @@ async function signIn(page, email) {
   return (await tid(page, "os-main").count()) === 1;
 }
 async function go(page, key) {
-  const l = page.locator(`[data-testid="nav-${key}"], [data-testid="mnav-${key}"]`).first();
+  const l = (await destLocator(page, key));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await page.waitForTimeout(1800);

@@ -163,7 +163,7 @@ const openMichaelhouse = async (page) => page.evaluate(() => {
 
 /** Open the Michaelhouse fixture's pad from the dashboard, as the handover walk does. */
 async function openPad(who) {
-  await who.page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  await who.page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(who.page, 1200);
   const opened = await openMichaelhouse(who.page);
   await afterReads(who.page, 2000);
@@ -261,7 +261,7 @@ try {
 
   group("A scores two balls with signal; they reach the server");
   A = await openAs(/Scorer/);
-  ok("the scorer signs in", /Match Centre|Dashboard/i.test(await A.text()));
+  ok("the scorer signs in", /Match Centre|Dashboard|Today|Matches/i.test(await A.text()));
   ok("opened the real fixture", await openPad(A));
   await clearBlockers(A.page);
   // The first tap on a pad that has only just opened can be spent on a sheet
@@ -317,7 +317,7 @@ try {
 
   group("B takes the match over with the code, while A is offline");
   B = await openAs(/Director of Sport/);
-  ok("the director of sport signs in", /Match Centre|Dashboard/i.test(await B.text()));
+  ok("the director of sport signs in", /Match Centre|Dashboard|Today|Matches/i.test(await B.text()));
   ok("opened the same fixture", await openPad(B));
   ok("B is offered Take over: A's handover is pending", /Take over/i.test(await B.text()));
   await tid(B.page, "open-handover").first().click({ timeout: 3000 });

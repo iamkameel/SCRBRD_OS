@@ -74,6 +74,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { destLocator } from "./walk-nav.mjs";
 // The rankings the tab itself runs (unchanged by SCRBRD-086), so "All
 // seasons" can be held to what the `career` read ranks to — the tab's
 // behaviour before seasons. NOT the new season helpers: the expected season
@@ -220,7 +221,7 @@ async function signIn(page, who) {
   // The pilot accounts appear once the page has found the server.
   if (!(await press(page, who))) return false;
   if (!(await press(page, /^Sign In$/))) return false;
-  return until(page, () => /Match Centre|Dashboard/i.test(document.body.innerText));
+  return until(page, () => /Match Centre|Dashboard|Today|Matches/i.test(document.body.innerText));
 }
 async function nav(page, label) {
   // GA-I30: Leagues is a section of the Competitions home, not a menu entry of its own.
@@ -700,7 +701,7 @@ try {
     // Profiles → one boy, waiting on his own card's words (`mark`), not on a
     // card being there: the last boy's stays drawn until the read answers.
     const profile = async (page, id, mark) => {
-      await page.locator('[data-testid="nav-profiles"]').first().click({ timeout: WAIT }).catch(() => {});
+      await (await destLocator(page, "profiles")).click({ timeout: WAIT }).catch(() => {});
       await page.locator(`[data-testid="roster-player-${id}"]`).first().click({ timeout: WAIT }).catch(() => {});
       return until(page, (m) => new RegExp(m).test(document.querySelector('[data-testid="recognition-card"]')?.innerText ?? ""), mark);
     };

@@ -144,7 +144,7 @@ async function signIn(page, who) {
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  return /Match Centre|Dashboard|Today|Matches/i.test(await text(page));
 }
 const panel = (page) => page.locator('[data-testid="quarantine-panel"]');
 const row = (page, ball) => panel(page).locator("li[data-status]", { hasText: new RegExp(`^${ball.replace(".", "\\.")}\\b`) }).first();
@@ -215,7 +215,7 @@ try {
   const prTok = await devLogin("principal@example.invalid", "sa-principal");
   const pr = await open();
   ok("the principal signs in", await signIn(pr.page, /principal@example\.invalid|Principal/));
-  await pr.page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  await pr.page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await pr.page.waitForTimeout(1200);
   await pr.page.locator(`[data-testid="match-card-${MATCH}"]`).first().click({ timeout: 6000 });
   await afterReads(pr.page, 1500);

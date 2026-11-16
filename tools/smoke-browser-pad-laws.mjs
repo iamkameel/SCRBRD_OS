@@ -225,8 +225,8 @@ try {
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
   await afterReads(page, 2200);
-  ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
-  await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  ok("a seeded scorer gets in", /Match Centre|Dashboard|Today|Matches/i.test(await text()));
+  await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(page, 1200);
   // Wait for the fixtures read to answer, rather than a fixed 1.2 s: on a
   // loaded runner the list had not drawn yet and the walk judged an empty

@@ -202,7 +202,7 @@ const onPad = async () => {
 };
 /** Match Centre → the 1XI v Michaelhouse card → its scorer. */
 const openFixture = async () => {
-  await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(page, 1200);
   // Match Centre draws the fixture's card and its scoring button once its
   // reads answer, which on a first opening can take a while:
@@ -228,7 +228,7 @@ const signIn = async () => {
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
   await afterReads(page, 2200);
-  return /Match Centre|Dashboard/i.test(await text());
+  return /Match Centre|Dashboard|Today|Matches/i.test(await text());
 };
 /**
  * After a reload: back on the pad. The API token lives in memory only and is

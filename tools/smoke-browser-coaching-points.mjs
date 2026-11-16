@@ -46,6 +46,7 @@ import { writeEvents } from "./fixture-matchcentre.mjs";
 import { NEVER_ON_THE_COCKPIT } from "../apps/web/src/lib/cockpitNever.js";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { pickTab } from "./walk-tabs.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4402);
 const API_PORT = port(9002);
@@ -137,7 +138,7 @@ async function signIn(page, email) {
 async function go(page, key) {
   // The drawer is a dialog over the menu: close it first.
   if (await tid(page, "signals").count()) { await page.keyboard.press("Escape"); await tid(page, "signals").waitFor({ state: "detached", timeout: 4000 }).catch(() => {}); }
-  const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
+  const l = (await destLocator(page, key));
   try { await l.waitFor({ timeout: 8000 }); await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1200);
   return true;

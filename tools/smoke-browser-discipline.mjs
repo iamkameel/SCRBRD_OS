@@ -35,6 +35,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4342);
 const API_PORT = port(8842);
@@ -125,10 +126,10 @@ async function signIn(page, email) {
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
   // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
-  return /Match Centre|Dashboard/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
+  return /Match Centre|Dashboard|Today|Matches/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
 async function nav(page, id) {
-  const l = tid(page, `nav-${id}`).first();
+  const l = (await destLocator(page, id));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1500);

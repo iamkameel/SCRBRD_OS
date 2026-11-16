@@ -108,7 +108,7 @@ async function signIn(page, who) {
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  return /Match Centre|Dashboard|Today|Matches/i.test(await text(page));
 }
 async function nav(page, label) {
   // GA-I30: Leagues is a section of the Competitions home, not a menu entry of its own.

@@ -59,6 +59,7 @@ import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { SIGNIN_NOTICE } from "../apps/web/src/lib/signinNotice.js";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4385);
 const API_PORT = port(8985);
@@ -178,7 +179,7 @@ async function devSignIn(h, email) {
   return (await tid(h.page, "os-main").count()) === 1;
 }
 async function go(page, key) {
-  const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
+  const l = (await destLocator(page, key));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1200);

@@ -77,6 +77,7 @@ import { entryTable, LOAD_SENTENCE } from "../apps/web/src/lib/cockpit.js";
 import { NEVER_ON_THE_COCKPIT } from "../apps/web/src/lib/cockpitNever.js";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { pickTab, tabIds } from "./walk-tabs.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4380);
 const API_PORT = port(8980);
@@ -197,7 +198,7 @@ async function signIn(page, email) {
   return (await tid(page, "os-main").count()) === 1;
 }
 async function go(page, key) {
-  const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
+  const l = (await destLocator(page, key));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1600);

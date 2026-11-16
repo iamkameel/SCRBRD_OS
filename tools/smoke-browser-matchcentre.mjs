@@ -75,6 +75,7 @@ import { afterReads, watchReads } from "./walk-wait.mjs";
 import { nameFor } from "../services/api/public/redact.mjs";
 import { pickTab } from "./walk-tabs.mjs";
 import { refusedChecks, rowLinks, sheetChecks } from "./walk-passport.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(5361);
 const API_PORT = port(8961);
@@ -160,7 +161,7 @@ async function signIn(page, who) {
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  return /Match Centre|Dashboard|Today|Matches/i.test(await text(page));
 }
 async function openMatch(page, id) {
   await page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
@@ -886,7 +887,7 @@ try {
       await s.page.locator("#login-email").fill(email);
       await click(s.page, /^Sign In$/, 5000);
       await afterReads(s.page, 2200);
-      ok(`${label} signs in`, (await tid(s.page, "persona-bar").count()) === 1 || /Match Centre|Dashboard/i.test(await text(s.page)));
+      ok(`${label} signs in`, (await tid(s.page, "persona-bar").count()) === 1 || /Match Centre|Dashboard|Today|Matches/i.test(await text(s.page)));
       // A reader in the staff app opens it from Match Centre; a family's app has its own way in: the live
       // card's "Follow the match" on Home, else its Matches list, where a live fixture is a live row.
       let opened = await openMatch(s.page, fx.live);
@@ -1749,7 +1750,7 @@ try {
         await s.page.locator('input[type="email"]').first().fill(who);
         await click(s.page, /^Sign In$/, 5000);
         await afterReads(s.page, 2000);
-        inn = /Match Centre|Dashboard/i.test(await text(s.page));
+        inn = /Match Centre|Dashboard|Today|Matches/i.test(await text(s.page));
       } else inn = await signIn(s.page, who);
       // The list's card first: its scorer button asks the same gate (Kameel, 6 Nov).
       await s.page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
@@ -1901,8 +1902,9 @@ try {
     await tid(B, "mc-back").click();
     await B.waitForTimeout(400);
     await B.evaluate(() => { window.__SCRBRD_TEST_THROW__ = "Calendar"; });
-    const cal = B.locator('[data-testid="nav-calendar"], [data-testid="mnav-calendar"]').first();
-    ok("Calendar is in the director's navigation", await cal.count() === 1);
+    // Calendar is a section of the Matches home (EXPERIENCE_PASS §1.3): Matches, then Calendar.
+    const cal = await destLocator(B, "calendar");
+    ok("Calendar is in the director's navigation, on the Matches home", await cal.count() === 1);
     await cal.click().catch(() => {});
     await afterReads(B, 800);
     ok("a routed view that throws is a card inside <main>", await B.locator('[data-testid="os-main"] [data-testid="panel-error"][data-panel="Calendar"]').count() === 1);

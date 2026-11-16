@@ -50,6 +50,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(5471);
 const API_PORT = port(5472);
@@ -124,10 +125,10 @@ async function signIn(page, email) {
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
   // Staff land on the Dashboard; a parent or a pupil lands in their own app (step 4).
-  return /Match Centre|Dashboard/i.test(await text(page)) || (await tid(page, "persona-bar").count()) === 1;
+  return /Match Centre|Dashboard|Today|Matches/i.test(await text(page)) || (await tid(page, "persona-bar").count()) === 1;
 }
 async function go(page, nav) {
-  const l = tid(page, `nav-${nav}`).first();
+  const l = (await destLocator(page, nav));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1600);
