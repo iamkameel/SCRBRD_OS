@@ -25,6 +25,7 @@ import { T } from "../../design/tokens.js";
 import { signedIn } from "../../lib/api.js";
 import { profile } from "../../lib/session.js";
 import { useLive } from "../../lib/live.js";
+import { personaOf } from "../../lib/features.js";
 import { humanDate, humanDateTime } from "../../lib/format.js";
 import { SCORE_CAPABILITY, scorerFixtures } from "../../lib/scorerHome.js";
 import { Action, Card, Line } from "./parts.jsx";
@@ -35,7 +36,9 @@ const sidesOf = (m) => `${m.homeLabel ?? m.homeTeam ?? "Home"} v ${m.awayLabel ?
 /** The fixtures the person signed in may score, today's and the next, appointed first. Null when he holds no scoring role. */
 export function useAppointed(role) {
   const me = profile();
-  const scores = signedIn() && (me?.assignments ?? []).some((a) => !!a?.role && roleGrants(a.role, SCORE_CAPABILITY));
+  // Only in a persona's own app (Q2): staff who are also parents keep the staff menu, whose scorer's home and
+  // Match Centre already reach the pad, so their family Home draws no second block.
+  const scores = signedIn() && personaOf(role) != null && (me?.assignments ?? []).some((a) => !!a?.role && roleGrants(a.role, SCORE_CAPABILITY));
   const matchesRead = useLive("matches", role);
   const officialsRead = useLive("officials", role);
   const now = Date.now();
