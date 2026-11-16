@@ -42,11 +42,12 @@ export function MatchDayCard({ matches, onNav, only = null, skip = null }) {
   const assignments = signedIn() ? profile()?.assignments : null;
   // A panel whose module is switched off for this person is not drawn (lib/cockpit.js withSwitches).
   const { features } = useFeatures();
+  // Folding takes one card out of the list and leaves the list as it was: the same first few and the same Later,
+  // each card numbered among them all, so the fixture folded into the next-fixture card is still "1 of 3".
   const chosen = useMemo(() => {
     const c = chooseFixtures(matches, assignments, now);
-    if (!only && !skip) return c;
-    const all = c.all.filter((p) => (only ? p.match.id === only : p.match.id !== skip));
-    return { all, shown: all.slice(0, c.shown.length), later: all.slice(c.shown.length) };
+    const keep = (/** @type {{match: any}} */ p) => (only ? p.match.id === only : skip ? p.match.id !== skip : true);
+    return { all: c.all, shown: c.shown.filter(keep), later: c.later.filter(keep) };
   }, [matches, assignments, now, only, skip]);
   const picks = useMemo(() => {
     const sw = (/** @type {{match: any, gate: any}} */ p) => ({ ...p, gate: withSwitches(p.gate, features) });
@@ -55,11 +56,12 @@ export function MatchDayCard({ matches, onNav, only = null, skip = null }) {
   const [later, setLater] = useState(false);
   const laterId = useId();
   const total = picks.all.length;
-  if (!total) return null;
+  if (!picks.shown.length && !picks.later.length) return null;
   const several = total > 1;
-  const draw = (/** @type {{match: any, gate: any}} */ { match, gate }, /** @type {number} */ i) => (
+  const nth = (/** @type {string} */ id) => picks.all.findIndex((p) => p.match.id === id);
+  const draw = (/** @type {{match: any, gate: any}} */ { match, gate }) => (
     <Card key={match.id} match={match} gate={gate} onNav={onNav} now={now} folded={!!only}
-          title={several ? `Match day · ${i + 1} of ${total}` : skip ? "Match day · also this week" : "Match day"} named={several || !!skip}/>
+          title={several ? `Match day · ${nth(match.id) + 1} of ${total}` : "Match day"} named={several}/>
   );
   return (
     <>
@@ -75,7 +77,7 @@ export function MatchDayCard({ matches, onNav, only = null, skip = null }) {
         </BentoCard>
       )}
       {/* Drawn only once opened, so a folded fixture makes none of its reads. */}
-      <div id={laterId} style={{ display: "contents" }}>{later && picks.later.map((p, i) => draw(p, picks.shown.length + i))}</div>
+      <div id={laterId} style={{ display: "contents" }}>{later && picks.later.map((p) => draw(p))}</div>
     </>
   );
 }
@@ -106,12 +108,9 @@ function Card({ match, gate, onNav, now, title, named, folded = false }) {
       <div style={{ padding: folded ? 0 : T.space.lg, display: "grid", gap: T.space.sm }}>
         {/* With one fixture the card says what it always has; with several, which of his sides it is. Folded into the
             next fixture's card, the fixture is already said above it. */}
-        {folded
-          ? <p data-testid="matchday-line" style={{ ...T.role.label, color: T.content.secondary, margin: 0 }}>Match day · {ours}</p>
-          : <>
-              <p data-testid="matchday-line" style={{ ...T.role.title.md, color: T.content.primary, margin: 0 }}>{named ? `${ours} v ${opponent}` : `v ${opponent}`}</p>
-              <p style={line}>{humanDateTime(match.date, match.time)}</p>
-            </>}
+        {folded && <p style={{ ...T.role.label, color: T.content.secondary, margin: 0 }}>{title}</p>}
+        <p data-testid="matchday-line" style={{ ...(folded ? T.role.body : T.role.title.md), fontWeight: 600, color: T.content.primary, margin: 0 }}>{named ? `${ours} v ${opponent}` : `v ${opponent}`}</p>
+        {!folded && <p style={line}>{humanDateTime(match.date, match.time)}</p>}
         {loading ? <p style={line}>Reading the day…</p> : (
           <>
             <p data-testid="matchday-side" style={line}>
