@@ -2273,6 +2273,11 @@ knockout competition (may need a `db/NN` if round/seed is not already inferable 
 **Security / privacy impact:** none — same read data as any other fixture view (`fixture.read`).
 **Data migration required:** possibly, depending on the dependency above.
 **Tests required:** a browser walk against a seeded knockout competition, once the derivation is decided.
+
+**Status (16 Nov 2026): partly done.**
+- [x] ~~The bracket view: `GET /api/competitions/:id/bracket` (a signed-in read) and `views/bracket.jsx`~~ (#347, 856ee2e4)
+- [ ] The bracket on the public page. Kameel, 15 Nov: "Yes, after slice 4". Queued after slice 4: one public read for the bracket (team names, dates, results, who goes through; never a child's name), as its own migration with the usual review and paste.
+- Festivals, Kameel, 15 Nov: "Table, unless run as a knockout draw". That is how it is built.
 **Acceptance criteria:**
 - [ ] A `comp_type = 'knockout'` competition renders a real bracket, not a league table
 - [ ] Not-yet-known teams or dates show an honest placeholder, never an invented one
@@ -5342,7 +5347,7 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 **Domain:** Design / UX · **Decided 13 Nov 2026:** all 25 questions in `docs/redesign/EXPERIENCE_PASS.md` §5 as recommended. Slices 3 and 4 carry migrations.
 - [x] ~~Slice 1 · The scorer's home and starting a Pilot Match~~ **Done 14 Nov 2026** (#327, 660a5630)
 - [x] ~~Slice 2 · The spectator's match page~~ **Done 14 Nov 2026** (#334, #336)
-- [ ] Slice 3 · First run (migrations) — **partly done: 3a merged 14 Nov 2026** (#339, 94f282ea: one door, the no-school home, the home page by state, the strip's status sentence without the target, `POST /api/onboard` retired); **3b in progress** (the follow list, add-my-school and the strip's target; three migrations)
+- [x] ~~Slice 3 · First run (migrations)~~ **Done 15 Nov 2026.** 3a merged 14 Nov (#339, 94f282ea: one door, the no-school home, the home page by state, the strip's status sentence without the target, `POST /api/onboard` retired). 3b merged 15 Nov: #344 (aa33836e, "Ask SCRBRD to add my school", db/158) and #345 (9d6b287d, the live strip's target db/159 and the follow list db/160). db/158, db/159 and db/160 are live on both databases.
 - [ ] Slice 4 · Parent and pupil (migrations)
 - [ ] Slice 5 · The coach's day sheet, and the homes
 - [ ] Slice 6 · The office
