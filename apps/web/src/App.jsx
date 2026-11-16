@@ -11,7 +11,7 @@ import { NAV_META, PERSONA_NAV, ROLES, navForRoles } from "./design/roles.js";
 import { FRAMED, homeOf } from "./design/homes.js";
 import { HomeBar } from "./shell/HomeBar.jsx";
 import { useFix } from "./lib/fixNote.js";
-import { THING_PAGE, thingOf, thingPath } from "./lib/things.js";
+import { THING_PAGE, teamId, thingOf, thingPath } from "./lib/things.js";
 import { D, GLOBAL_CSS, clr } from "./design/tokens.js";
 import { useTheme } from "./design/theme.js";
 import { canScore, holdsCapability, scoped } from "./rbac/index.js";
@@ -705,7 +705,7 @@ export default function SCRBRD_OS() {
     competitions: <CompetitionsHome  role={role} section={pageSection}/>,
     // Still a route (a saved session, a link): the Competitions home opened on Leagues.
     leagues:      <CompetitionsHome  role={role} section="leagues"/>,
-    squad:        thing?.kind === "teams" ? <TeamPage role={role} id={thing.id} onNav={setPage}/> : <SquadView role={role}/>,
+    squad:        thing?.kind === "teams" ? <TeamPage role={role} id={thing.id} onNav={setPage}/> : <SquadView role={role} onOpenTeam={(school, code)=>openThing("teams", teamId(school, code))}/>,
     profiles:     <ProfilesView      role={role} profileTarget={profileTarget} onClearTarget={()=>setProfileTarget(null)}
                     addressed={thing?.kind === "players" ? thing.id : null} onSelectPlayer={(id)=>followThing("players", id)}/>,
     analytics:    <AnalyticsView     role={role}/>,
