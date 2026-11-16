@@ -2179,15 +2179,19 @@ try {
     await dpage.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
     await signIn(dpage, /sarah@example\.invalid/);
     const did = (id) => dpage.locator(`[data-testid="${id}"]`);
-    // Slice 6 (Q1): the School home makes his menu five, all on the bar, and More goes.
-    ok("the director's phone bar: his five homes and no More", await dpage.locator('[data-testid="mnav"] [data-testid^="mnav-"]:not([data-testid$="-badge"]):not([data-testid="mnav-more"])').count() === 5
-       && await did("mnav-more").count() === 0 && await did("mnav-staff").count() === 1);
-    await did("mnav-staff").click({ timeout: 4000 }); await afterReads(dpage, 800);
+    // Slice 6 (Q1): her five homes (School the fifth), and, the seeded director being also a parent at the school, the
+    // family's Home and Family beside them (roles.js PERSONA_NAV `alongside`): seven, so the phone keeps More for the
+    // three past the bar. A director who is not also a parent has five and no More (smoke-a11y, shell-homes).
+    ok("the director's phone bar: four entries and a More holding School and the family's two", await dpage.locator('[data-testid="mnav"] [data-testid^="mnav-"]:not([data-testid$="-badge"]):not([data-testid="mnav-more"])').count() === 4
+       && await did("mnav-more").count() === 1);
+    await did("mnav-more").click({ timeout: 4000 }); await dpage.waitForTimeout(500);
+    ok("More opens the drawer, with School, Home and Family", await did("drawer").isVisible() && await did("drawer-staff").count() === 1 && await did("drawer-children").count() === 1 && await did("drawer-family").count() === 1);
+    await did("drawer-staff").click({ timeout: 4000 }); await afterReads(dpage, 800);
+    ok("a drawer entry navigates and closes the drawer", await did("drawer").count() === 0);
     ok("School opens on People, its bar over the screen", await did("os-main").getAttribute("data-page") === "staff" && await did("home-staff-sections").count() === 1);
     const key = "management";
     await did(`home-staff-section-${key}`).click({ timeout: 4000 }); await afterReads(dpage, 800);
-    ok(`a section (${key}, Access) navigates, and School stays lit`, await did("os-main").getAttribute("data-page") === key
-       && await did("mnav-staff").getAttribute("aria-current") === "page");
+    ok(`a section (${key}, Access) navigates from the School home's bar`, await did("os-main").getAttribute("data-page") === key);
     ok("no console errors on the director's phone", derrors.length === 0, derrors.join(" | "));
     await dctx.close();
   }
