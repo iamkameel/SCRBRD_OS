@@ -43,6 +43,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator, openSettingsPart } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4344);
 const API_PORT = port(8844);
@@ -138,10 +139,12 @@ async function toSettings(page) {
   await afterReads(page, 1500);
   return true;
 }
-const tab = (page, id) => page.locator(`#settings-tab-${id}`);
+/**
+ * What was Settings' tab `id`, where it lives now (EXPERIENCE_PASS §1.6, Slice 6): Support is the Platform home's
+ * Support access, School is School, Record. False when the reader is not offered it.
+ */
 async function openTab(page, id) {
-  if (!(await tab(page, id).count())) return false;
-  await tab(page, id).first().click({ timeout: 6000 });
+  if (!(await openSettingsPart(page, id))) return false;
   await afterReads(page, 1500);
   return true;
 }
@@ -161,7 +164,7 @@ try {
     const d = await open("http://127.0.0.1:9");
     ok("the demonstration's super admin signs in", await signIn(d.page, "admin@hilton.co.za", "admin123"));
     await toSettings(d.page);
-    ok("...and is drawn the Support tab (the demo maps to a platform administrator)", await openTab(d.page, "support"));
+    ok("...and is offered the Platform home's Support access (the demo maps to a platform administrator)", await openTab(d.page, "support"));
     ok("...which says to sign in to the live platform",
        /Sign in to the live platform/.test(await tid(d.page, "support-access").innerText().catch(() => "")));
     ok("...and offers no form that could not be sent", await tid(d.page, "support-begin").count() === 0);
@@ -173,8 +176,9 @@ try {
   const reg = await open();
   ok("the registrar signs in", await signIn(reg.page, "registrar@example.invalid"));
   ok("...and reaches Settings", await toSettings(reg.page));
-  ok("...where the People tab is drawn (the tab strip rendered at all)", await tab(reg.page, "users").count() === 1);
-  ok("...and there is no Support tab", await tab(reg.page, "support").count() === 0);
+  ok("...and reaches School, People (the menu rendered at all)", await openSettingsPart(reg.page, "users") && await tid(reg.page, "part-people").count() === 1);
+  ok("...and there is no Platform home, nor its Support access", await tid(reg.page, "nav-pitchdeck").count() === 0
+     && (await (await destLocator(reg.page, "support")).count()) === 0);
   // Were a tab drawn by mistake, open it: the panel carries its own gate too,
   // and this is what proves that one rather than a tab nobody clicked.
   await openTab(reg.page, "support");
@@ -188,7 +192,7 @@ try {
   const plat = await open();
   ok("Platform Ops signs in", await signIn(plat.page, "platform@example.invalid"));
   ok("...reaches Settings", await toSettings(plat.page));
-  ok("...and is offered the Support tab", await openTab(plat.page, "support"));
+  ok("...and is offered the Platform home's Support access", await openTab(plat.page, "support"));
   ok("the panel is drawn", await tid(plat.page, "support-access").count() === 1);
   ok("...with nothing begun yet", /You have not begun a support session/.test(await tid(plat.page, "support-access").innerText()));
   await afterReads(plat.page, 800);
@@ -259,7 +263,7 @@ try {
   const dos = await open();
   ok("the director of sport at Hilton signs in", await signIn(dos.page, "sarah@example.invalid"));
   await toSettings(dos.page);
-  ok("...opens Settings › School", await openTab(dos.page, "school"));
+  ok("...opens School, Record (Settings › School before Slice 6)", await openTab(dos.page, "school"));
   const schoolLive = await schoolCard(dos.page).innerText().catch(() => "");
   if (DEBUG) console.log("[debug] school's card, live:\n" + schoolLive);
   ok("the school's Support access card names who, and as what", /Platform Ops as Director of Sport/.test(schoolLive), schoolLive.slice(0, 300));
@@ -330,7 +334,7 @@ try {
     const off = await open();
     ok("the school office signs in", await signIn(off.page, "registrar@example.invalid"));
     await toSettings(off.page);
-    ok("...opens Settings › School", await openTab(off.page, "school"));
+    ok("...opens School, Record (Settings › School before Slice 6)", await openTab(off.page, "school"));
     ok("...and the section has a child picker", await tid(off.page, "who-read-search").count() === 1);
     ok("...which names nobody before two letters are typed", await off.page.locator('[data-testid^="who-read-option-"]').count() === 0);
     await tid(off.page, "who-read-search").fill(child.full_name.split(" ").pop().slice(0, 4));

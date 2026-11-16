@@ -9,7 +9,7 @@
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ROLES as POLICY_ROLES, SUBJECT_SCOPED_ROLES, roleGrants } from "@scrbrd/policy/roles";
-import { NAV_ACTS, NAV_CAPABILITY, ROLES, navForRoles, navGrants } from "../src/design/roles.js";
+import { NAV_ACTS, NAV_ALSO, NAV_CAPABILITY, ROLES, navForRoles, navGrants } from "../src/design/roles.js";
 import { collapseHomes } from "../src/design/homes.js";
 import { OFFICE_CAPS, entersQueue } from "../src/lib/queue.js";
 import { THING_PAGE, teamId, teamParts, thingOf, thingPath } from "../src/lib/things.js";
@@ -44,7 +44,7 @@ group("Q17: To resolve is drawn only for a role that can act on one of its rows"
      ["coach", "teammanager", "directorofsport", "schooladmin", "sportsadmin"].every((r) => navGrants(r, "readiness")));
   ok("a guardian and a pupil are never offered it", !navGrants("guardian", "readiness") && !navGrants("selfaccess", "readiness"));
   ok("no other destination is narrowed by it", Object.keys(NAV_CAPABILITY).filter((k) => k !== "readiness").every((k) =>
-    POLICY_ROLES.every((r) => navGrants(r, k) === (NAV_CAPABILITY[k] === null || roleGrants(r, NAV_CAPABILITY[k]) || (k === "training" && roleGrants(r, "team.training.run"))))));
+    POLICY_ROLES.every((r) => navGrants(r, k) === (NAV_CAPABILITY[k] === null || roleGrants(r, NAV_CAPABILITY[k]) || [NAV_ALSO[k] ?? []].flat().some((c) => roleGrants(r, c))))));
   ok("a coach who is also a parent keeps it (the set of roles held)", navForRoles(["coach", "guardian"]).includes("readiness"));
   ok("a spectator's Today has no To resolve section: his menu is Today and Matches", eq(collapseHomes(ROLES.spectator.nav), ["dashboard", "matches"]));
 }
@@ -126,7 +126,10 @@ group("The shell, drawn signed out (the demo)");
      ["mnav-dashboard", "mnav-matches", "mnav-squad", "mnav-logistics"].every((t) => c.includes(`data-testid="${t}"`)) && !c.includes("mnav-more")
      && (c.match(/data-testid="mnav-[a-z]+"/g) ?? []).length === 4, c.slice(0, 200));
   ok("...the words on it", ["Today", "Matches", "Team", "Logistics"].every((w) => c.includes(`>${w}</span>`)));
-  ok("a director of sport, until the School home, keeps More for the rest", phone("directorofsport").includes("mnav-more"));
+  const dos = phone("directorofsport");
+  ok("a director of sport's phone bar is Today, Matches, Team, Logistics, School, and no More (Slice 6)",
+     ["mnav-dashboard", "mnav-matches", "mnav-squad", "mnav-logistics", "mnav-staff"].every((t) => dos.includes(`data-testid="${t}"`)) && !dos.includes("mnav-more")
+     && (dos.match(/data-testid="mnav-[a-z]+"/g) ?? []).length === 5 && dos.includes(">School</span>"), dos.slice(0, 200));
   const top = renderToStaticMarkup(h(TopBar, { role: "coach", onRoleChange: () => {}, onNav: () => {}, userName: "A Coach", active: "dashboard", onSignOut: () => {} }));
   ok("the staff header: the bell, Raise a concern and the person's name", top.includes('data-testid="topbar-alerts"') && /data-testid="nav-safeguarding"[^>]*aria-label="Raise a concern"|aria-label="Raise a concern"[^>]*data-testid="nav-safeguarding"/.test(top)
      && top.includes('data-testid="nav-settings"') && top.includes("A Coach"));

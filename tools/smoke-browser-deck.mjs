@@ -46,6 +46,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4328);
 const API_PORT = port(8797);
@@ -139,8 +140,9 @@ try {
   await page.locator('input[type="email"]').first().fill("platform@example.invalid");
   ok("Platform Ops signs in", await click(/^Sign In$/, 5000) && (await afterReads(page, 2000), (await page.locator('[data-testid="os-main"]').count()) > 0));
   ok("the three.js chunk has not been fetched yet", sceneRequests.length === 0, sceneRequests[0]);
-  const navBtn = page.locator("nav button", { hasText: /Pitch Deck/ }).first();
-  ok("Pitch Deck is on the menu", await navBtn.count() === 1);
+  // Slice 6: the Pitch deck is a section of the Platform home (EXPERIENCE_PASS §1.3), keyed on its own entry.
+  const navBtn = await destLocator(page, "pitchdeck");
+  ok("the Pitch deck is on the menu, as the Platform home", await navBtn.count() === 1 && /Platform/.test(await navBtn.innerText().catch(() => "")));
   await navBtn.click({ timeout: 6000 }).catch(() => {});
   await afterReads(page, 2500);
   ok("the deck is on screen", await count('[data-testid="deck"]') === 1);

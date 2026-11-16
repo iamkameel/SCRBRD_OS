@@ -132,7 +132,11 @@ group("The screens");
   ok("the no-school home reads its own notes and shows them under Your requests",
      /useLive\("school_add_requests"/.test(ns) && /\.filter\(\(r\) => r\.mine\)/.test(ns) && /<SchoolAskRows rows=\{askRows\}\/>/.test(ns));
   const mgmt = read("../src/views/ManagementView.jsx");
-  ok("the platform's list only for platform.tenant.manage", /holdsCapability\(role,"platform\.tenant\.manage"\)&&<SchoolRequestsPanel\/>/.test(mgmt));
+  // Slice 6: the list is the Platform home's School requests, offered by the menu under platform.tenant.manage.
+  const roles = read("../src/design/roles.js");
+  ok("the platform's list only for platform.tenant.manage: the Platform home's section, no longer Management's",
+     /requests:\s+"platform\.tenant\.manage"/.test(roles) && !/<SchoolRequestsPanel/.test(mgmt)
+     && /requests:\s+<SchoolRequestsView\/>/.test(read("../src/App.jsx")));
   const panel = read("../src/views/schoolRequests.jsx");
   ok("...with Added and Decline only on what the server calls decidable", /all\.filter\(\(r\) => r\.decidable\)/.test(panel)
      && /school-request-added-/.test(panel) && /school-request-decline-/.test(panel));

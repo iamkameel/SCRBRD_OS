@@ -55,7 +55,7 @@ import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 import { moreMenuKeys, pickTab } from "./walk-tabs.mjs";
 import { afterReads } from "./walk-wait.mjs";
-import { destLocator, destByWord } from "./walk-nav.mjs";
+import { destLocator, destByWord, openSettingsPart } from "./walk-nav.mjs";
 
 const PORT = port(4331);
 const SIGNUP_PORT = port(4332);   // the walk's own build for the sign-in screens (tools/web-test-build.mjs)
@@ -1028,10 +1028,9 @@ async function importWalk(theme) {
     await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(2400);
     ok("the office signs in", await tid("os-main").count() === 1);
-    await tid("nav-settings").click({ timeout: 5000 }).catch(() => {});
-    await page.locator("#settings-tab-import").click({ timeout: 5000 }).catch(() => {});
+    await openSettingsPart(page, "import").catch(() => false);
     await page.waitForSelector('[data-testid="import-panel"]', { timeout: 8000 }).catch(() => {});
-    ok("the office has Settings → Import", await tid("import-panel").count() === 1);
+    ok("the office has School, People → Import", await tid("import-panel").count() === 1);
     await check("importidle", '[data-testid="import-panel"]');
 
     await tid("import-file").setInputFiles(csv("full_name,born\r\nA,2012-05-05\r\nB,09/08/2012\r\nC,2012-11-23\r\n"));
@@ -1127,10 +1126,9 @@ async function listingWalk(theme, width) {
     ok("the fixture's panel carries the listing line, the does-not-list form", /does not list/.test(await tid("publish-listing").innerText().catch(() => "")));
     await check("listingline", '[data-testid="publish-listing"]');
 
-    await goTo("settings");
-    await page.locator("#settings-tab-school").click({ timeout: 5000 }).catch(() => {});
+    await openSettingsPart(page, "school").catch(() => false);
     await page.waitForSelector(`[data-testid="listing-${HIL}"]`, { timeout: 6000 }).catch(() => {});
-    ok("Settings → School has the listing switch, off", await tid("listing-switch").getAttribute("aria-checked") === "false");
+    ok("School, Record has the listing switch, off", await tid("listing-switch").getAttribute("aria-checked") === "false");
     await check("listing", `[data-testid="listing-${HIL}"]`);
     await tid("listing-switch").click({ timeout: 4000 }).catch(() => {});
     await page.waitForTimeout(800);
@@ -1138,9 +1136,9 @@ async function listingWalk(theme, width) {
     await check("listingon", `[data-testid="listing-${HIL}"]`);
 
     state.mayChange = false;
-    await page.locator("#settings-tab-users").click({ timeout: 5000 }).catch(() => {});
+    await tid("home-staff-section-staff").click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(500);
-    await page.locator("#settings-tab-school").click({ timeout: 5000 }).catch(() => {});
+    await tid("home-staff-section-record").click({ timeout: 5000 }).catch(() => {});
     await page.waitForSelector('[data-testid="listing-why"]', { timeout: 6000 }).catch(() => {});
     ok("a reader who may not change it: the switch is disabled, with the reason", await tid("listing-switch").isDisabled() && await tid("listing-why").count() === 1);
     await check("listingro", `[data-testid="listing-${HIL}"]`);
@@ -1302,17 +1300,9 @@ async function signupWalk(theme) {
     await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(2400);
   };
+  // What was Settings' tab `tab`, where it lives now (Slice 6): Me under the person's name, People on School.
   const toSettings = async (page, tab) => {
-    // On a phone Settings is in the More drawer.
-    const direct = page.locator('[data-testid="mnav-settings"], [data-testid="nav-settings"]').first();
-    if (await direct.count()) await direct.click({ timeout: 6000 }).catch(() => {});
-    else {
-      await page.locator('[data-testid="mnav-more"]').click({ timeout: 6000 }).catch(() => {});
-      await page.waitForTimeout(500);
-      await page.locator('[data-testid="drawer-settings"]').click({ timeout: 6000 }).catch(() => {});
-    }
-    await page.waitForTimeout(1200);
-    await page.locator(`#settings-tab-${tab}`).click({ timeout: 4000 }).catch(() => {});
+    await openSettingsPart(page, tab, 1200).catch(() => false);
     await page.waitForTimeout(1200);
   };
   try {
@@ -1680,11 +1670,16 @@ async function narrowStaffWalk(theme) {
     // the arrows move within it, Escape gives focus back to More, Tab and Shift+Tab leave it and close it.
     ok(`${T_} @${W}: the fixture's tab strip has a More at this width`, await tid("mc-more").count() === 1);
     for (const c of await moreMenuKeys(page)) ok(`${T_} @${W}: More — ${c.name}`, c.pass, c.detail);
-    // The director of sport still has More until the School home (Slice 6; review S5): his drawer, by keyboard, measured.
+    // Slice 6 (Q1): with the School home the director's five homes are all on the bar, and there is no More.
     await tid("topbar-role").click({ timeout: 4000 }).catch(() => {});
     await tid("role-option-directorofsport").click({ timeout: 4000 }).catch(() => {});
     await page.waitForTimeout(1200);
-    ok(`${T_} @${W}: the director's bar keeps More for the rest`, await tid("mnav-more").count() === 1);
+    ok(`${T_} @${W}: the director's bar is his five homes, and no More`, await tid("mnav-more").count() === 0 && await tid("mnav-staff").count() === 1);
+    // The superadmin's recovery key reaches six homes, so his phone keeps More: the drawer, by keyboard, measured.
+    await tid("topbar-role").click({ timeout: 4000 }).catch(() => {});
+    await tid("role-option-superadmin").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    ok(`${T_} @${W}: the superadmin's bar keeps More for the sixth home`, await tid("mnav-more").count() === 1);
     if (await tid("mnav-more").count()) await overlay("mnav-more", '[data-testid="drawer"]', "staffdrawer", "More");
     ok(`${T_} @${W}: no page errors`, errors.length === 0, errors.slice(0, 2).join(" | "));
   } catch (e) {

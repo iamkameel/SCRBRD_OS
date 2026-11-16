@@ -37,7 +37,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
-import { destLocator } from "./walk-nav.mjs";
+import { destLocator, openSettingsPart } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4363);
 const API_PORT = port(8898);
@@ -171,11 +171,9 @@ const listed = async () => (await q(`select listed from public_listing where sch
 const token = async (email) => (await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
   body: JSON.stringify({ email, deviceId: "browser-listing" }) })).json()).token;
 
-/** Settings → School. */
+/** School, Record: what was Settings → School (EXPERIENCE_PASS §1.6, Slice 6). */
 async function toSchool(page) {
-  return (await go(page, "settings"))
-    && await page.locator("#settings-tab-school").click({ timeout: 4000 }).then(() => true, () => false)
-    && (await page.waitForTimeout(1500), true);
+  return (await openSettingsPart(page, "school")) && (await page.waitForTimeout(1500), true);
 }
 /** Match Centre → the fixture's card, opened. */
 async function toPanel(page, id) {

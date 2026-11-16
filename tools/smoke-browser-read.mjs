@@ -1944,8 +1944,8 @@ try {
 
     const o = await open();
     await signIn(o.page, /Registrar|School Admin|registrar@example\.invalid/);
-    if (await o.page.locator('[data-testid="nav-management"]').count()) {
-      await o.page.locator('[data-testid="nav-management"]').click({ timeout: 6000 });
+    if (await (await destLocator(o.page, "management")).count()) {
+      await (await destLocator(o.page, "management")).click({ timeout: 6000 });
       const panel = o.page.locator('[data-testid="requests-panel"]');
       // Three reads land before the panel draws; wait for the panel, not a clock.
       await panel.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
@@ -1996,8 +1996,8 @@ try {
 
     const o = await open();
     await signIn(o.page, /Registrar|School Admin|registrar@example\.invalid/);
-    if (await o.page.locator('[data-testid="nav-management"]').count()) {
-      await o.page.locator('[data-testid="nav-management"]').click({ timeout: 6000 });
+    if (await (await destLocator(o.page, "management")).count()) {
+      await (await destLocator(o.page, "management")).click({ timeout: 6000 });
       const panel = o.page.locator('[data-testid="requests-panel"]');
       await panel.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
       ok("...and the child's name reached the office, not just the form",
@@ -2179,15 +2179,15 @@ try {
     await dpage.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
     await signIn(dpage, /sarah@example\.invalid/);
     const did = (id) => dpage.locator(`[data-testid="${id}"]`);
-    ok("the director's phone bar: four entries and a More for the rest", await dpage.locator('[data-testid="mnav"] [data-testid^="mnav-"]:not([data-testid$="-badge"]):not([data-testid="mnav-more"])').count() === 4
-       && await did("mnav-more").count() === 1);
-    await did("mnav-more").click({ timeout: 4000 }); await dpage.waitForTimeout(500);
-    ok("More opens the drawer", await did("drawer").isVisible());
-    ok("...grouped the same way", await dpage.locator('[data-testid^="drawer-group-"]').count() >= 2);
-    const entry = "drawer-management", key = "management";
-    await did(entry).click({ timeout: 4000 }); await afterReads(dpage, 800);
-    ok(`a drawer entry (${key}) navigates and closes the drawer`, await did("os-main").getAttribute("data-page") === key && await did("drawer").count() === 0);
-    ok("...and More now reads as the active place", await did("mnav-more").getAttribute("aria-expanded") === "false");
+    // Slice 6 (Q1): the School home makes his menu five, all on the bar, and More goes.
+    ok("the director's phone bar: his five homes and no More", await dpage.locator('[data-testid="mnav"] [data-testid^="mnav-"]:not([data-testid$="-badge"]):not([data-testid="mnav-more"])').count() === 5
+       && await did("mnav-more").count() === 0 && await did("mnav-staff").count() === 1);
+    await did("mnav-staff").click({ timeout: 4000 }); await afterReads(dpage, 800);
+    ok("School opens on People, its bar over the screen", await did("os-main").getAttribute("data-page") === "staff" && await did("home-staff-sections").count() === 1);
+    const key = "management";
+    await did(`home-staff-section-${key}`).click({ timeout: 4000 }); await afterReads(dpage, 800);
+    ok(`a section (${key}, Access) navigates, and School stays lit`, await did("os-main").getAttribute("data-page") === key
+       && await did("mnav-staff").getAttribute("aria-current") === "page");
     ok("no console errors on the director's phone", derrors.length === 0, derrors.join(" | "));
     await dctx.close();
   }
