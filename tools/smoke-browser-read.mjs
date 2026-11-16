@@ -2167,6 +2167,29 @@ try {
     ok("...and Team now reads as the active place", await mid("mnav-squad").getAttribute("aria-current") === "page");
     ok("no console errors on the phone", errors.length === 0, errors.join(" | "));
     await ctx.close();
+
+    // The director of sport still has more than five until the School home (Slice 6; review S5): four on the bar,
+    // the rest in the drawer, grouped as the rail is.
+    const dctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await offline(dctx);
+    const dpage = await dctx.newPage();
+    watchReads(dpage);
+    const derrors = []; dpage.on("pageerror", (e) => { derrors.push(e.message); });
+    await dpage.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
+    await dpage.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+    await signIn(dpage, /sarah@example\.invalid/);
+    const did = (id) => dpage.locator(`[data-testid="${id}"]`);
+    ok("the director's phone bar: four entries and a More for the rest", await dpage.locator('[data-testid="mnav"] [data-testid^="mnav-"]:not([data-testid$="-badge"]):not([data-testid="mnav-more"])').count() === 4
+       && await did("mnav-more").count() === 1);
+    await did("mnav-more").click({ timeout: 4000 }); await dpage.waitForTimeout(500);
+    ok("More opens the drawer", await did("drawer").isVisible());
+    ok("...grouped the same way", await dpage.locator('[data-testid^="drawer-group-"]').count() >= 2);
+    const entry = "drawer-management", key = "management";
+    await did(entry).click({ timeout: 4000 }); await afterReads(dpage, 800);
+    ok(`a drawer entry (${key}) navigates and closes the drawer`, await did("os-main").getAttribute("data-page") === key && await did("drawer").count() === 0);
+    ok("...and More now reads as the active place", await did("mnav-more").getAttribute("aria-expanded") === "false");
+    ok("no console errors on the director's phone", derrors.length === 0, derrors.join(" | "));
+    await dctx.close();
   }
 
   // ── One home per domain (GA-I30) ────────────────────────────────

@@ -1680,6 +1680,12 @@ async function narrowStaffWalk(theme) {
     // the arrows move within it, Escape gives focus back to More, Tab and Shift+Tab leave it and close it.
     ok(`${T_} @${W}: the fixture's tab strip has a More at this width`, await tid("mc-more").count() === 1);
     for (const c of await moreMenuKeys(page)) ok(`${T_} @${W}: More — ${c.name}`, c.pass, c.detail);
+    // The director of sport still has More until the School home (Slice 6; review S5): his drawer, by keyboard, measured.
+    await tid("topbar-role").click({ timeout: 4000 }).catch(() => {});
+    await tid("role-option-directorofsport").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    ok(`${T_} @${W}: the director's bar keeps More for the rest`, await tid("mnav-more").count() === 1);
+    if (await tid("mnav-more").count()) await overlay("mnav-more", '[data-testid="drawer"]', "staffdrawer", "More");
     ok(`${T_} @${W}: no page errors`, errors.length === 0, errors.slice(0, 2).join(" | "));
   } catch (e) {
     ok(`the ${T_} @${W} staff shell walk threw: ${/** @type {any} */ (e).message?.slice(0, 120)}`, false);
