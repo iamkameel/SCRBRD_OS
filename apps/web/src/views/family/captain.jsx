@@ -18,7 +18,7 @@ import { bowlingLimit } from "@scrbrd/scoring";
 import { T } from "../../design/tokens.js";
 import { api, signedIn } from "../../lib/api.js";
 import { useLive } from "../../lib/live.js";
-import { stat } from "../../lib/format.js";
+import { childRate } from "../../lib/compare.js";
 import { oversOf } from "../../lib/matchCentre.js";
 import { endOf, fixturesOf, opponentOf } from "../../lib/family.js";
 import { bandLine, bandOfTeam, captaincyOf, currentSchoolSeason, ordinal, pitchWords, planLine, planOf, planRead, sheetOf, termsOf } from "../../lib/captain.js";
@@ -149,8 +149,10 @@ export function CaptainSection({ match, child, role, label }) {
   const figures = sheet.map((r) => {
     const s = career.find((c) => c.id === r.playerId && c.season === season);
     if (!s) return null;
-    const bat = s.innings > 0 ? `${s.innings} inns · ${s.runs} runs · avg ${stat(s.avg)}` : null;
-    const bowl = s.ballsBowled > 0 ? `${oversOf(s.ballsBowled)} ov · ${s.wkts} wkts · econ ${stat(s.econ)}` : null;
+    // Q12: a team-mate's rate is a child's rate too: the floor, the count always.
+    const avg = childRate(s.avg, s.ballsFaced), econ = childRate(s.econ, s.ballsBowled);
+    const bat = s.innings > 0 ? `${s.innings} inns · ${s.runs} runs · avg ${avg.held ? avg.text : `${avg.text} (${avg.count})`}` : null;
+    const bowl = s.ballsBowled > 0 ? `${oversOf(s.ballsBowled)} ov · ${s.wkts} wkts · econ ${econ.held ? econ.text : `${econ.text} (${econ.count})`}` : null;
     const line = [bat, bowl].filter(Boolean).join(" · ");
     return line ? { id: r.playerId, name: r.name, line } : null;
   }).filter(Boolean);

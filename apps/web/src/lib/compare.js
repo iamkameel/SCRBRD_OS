@@ -101,6 +101,79 @@ export function floorRate(value, balls, digits = 2) {
   return { text: Number(value).toFixed(digits), word: null, held: false };
 }
 
+/**
+ * A child's rate anywhere it is drawn (EXPERIENCE_PASS Q12, decided 13 Nov):
+ * the Compare floor on every average, strike rate and economy of a child, on
+ * the passport, the parent's season card, the captain's sheet and the season
+ * panel. Under COMPARE_FLOOR legal balls there is no figure, only the count
+ * and the word: "8 balls: a guide, not a figure". The count is always given,
+ * figure or not, so nothing is hidden. A count the scorebook did not record is
+ * "balls not recorded", never 0 (SCRBRD-120 D12).
+ *
+ * `value` is the rate the adapter already worked out (lib/live.js asCareer),
+ * drawn as it was; this decides only whether it is drawn.
+ * @param {number | null | undefined} value
+ * @param {number | null | undefined} balls  the legal balls it rests on (faced for batting, bowled for bowling)
+ * @returns {{ text: string, count: string, held: boolean }}  text: what stands where the figure would
+ */
+export function childRate(value, balls) {
+  const n = balls == null ? null : Number(balls);
+  if (n == null || !Number.isFinite(n)) return { text: "balls not recorded", count: "balls not recorded", held: true };
+  const count = `${n} ball${n === 1 ? "" : "s"}`;
+  if (n < COMPARE_FLOOR) return { text: n === 0 ? count : `${count}: a guide, not a figure`, count, held: true };
+  const drawn = value != null && Number.isFinite(Number(value));
+  return { text: drawn ? String(value) : "—", count, held: false };
+}
+
+/**
+ * The board's source line (§3.4): what the figures rest on, always, and how
+ * many innings came from a scorebook. Batting only for the scorebook part:
+ * bowling has no per-innings source yet.
+ */
+/** @param {any} c  a career row (lib/live.js asCareer) */
+export function basisWords(c) {
+  if (!c) return null;
+  const faced = childRate(null, c.ballsFaced).count, bowled = childRate(null, c.ballsBowled).count;
+  const from = `From ${c.innings} innings: ${faced} faced, ${bowled} bowled.`;
+  const book = c.bookInnings > 0
+    ? ` ${c.bookInnings} of ${c.innings} innings from a scorebook${c.inningsWithoutBalls > 0
+        ? `; ${c.inningsWithoutBalls === 1 ? "1 has" : `${c.inningsWithoutBalls} have`} no balls recorded` : ""}.`
+    : "";
+  return from + book;
+}
+
+/**
+ * A rate on a row as the staff player page holds it (Q12 everywhere): a
+ * live row (lib/live.js asCareer, merged onto the player) through
+ * childRate(), on the balls it rests on, faced for the batting rates and
+ * bowled for the bowling ones. The demonstration's rows carry no ball count
+ * and no child's real figure, so they are drawn as they are.
+ * @param {Record<string, any> | null | undefined} row
+ * @param {"avg" | "sr" | "econ" | "bowlAvg"} kind
+ * @returns {{ text: string, count: string | null, held: boolean }}
+ */
+export function rowRate(row, kind) {
+  const v = row?.[kind];
+  if (!row?.live) return { text: v == null ? "—" : String(v), count: null, held: false };
+  return childRate(v, kind === "econ" || kind === "bowlAvg" ? row.ballsBowled : row.ballsFaced);
+}
+
+/** May this row's rate stand in a ranking or a sorted top-N? Not when the floor holds it (Q12). */
+export function rankable(row, kind) {
+  return !rowRate(row, kind).held;
+}
+
+/**
+ * The line said under a ranking that left rows out on the floor (Q12, the
+ * decided words): null when none was left out.
+ * @param {Record<string, any>[]} rows  the rows that would otherwise be ranked
+ * @param {"avg" | "sr" | "econ" | "bowlAvg"} kind
+ */
+export function heldOutLine(rows, kind) {
+  const n = (rows ?? []).filter((r) => !rankable(r, kind)).length;
+  return n ? `${n} left out: under ${COMPARE_FLOOR} balls a rate is a guide, not a figure.` : null;
+}
+
 /** A count, always drawn: the figure and, for a ball count, its evidence word. */
 const count = (v) => ({ text: v == null ? "—" : String(v), word: null, held: false });
 const balls = (v) => ({ text: v == null ? "—" : String(v), word: evidenceWord(v), held: false });

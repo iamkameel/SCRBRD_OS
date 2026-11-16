@@ -6,6 +6,7 @@ import { Modal, Pill } from "../ui/primitives.jsx";
 import { teamCodeIn } from "@scrbrd/policy/teams";
 import { Icon, isIcon } from "../ui/icons.jsx";
 import { observedStamp } from "../lib/weatherStamp.js";
+import { rowRate } from "../lib/compare.js";
 
 // ══════════════════════════════════════════════════════
 //  MATCH CENTRE VIEW
@@ -202,10 +203,11 @@ function PlayerProfileModal({ player, role, skills = {}, onClose, onFullProfile 
       {stripped&&<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"12px"}}><Icon name="lock"/> Some personal details are hidden for your role.</div>}
       {/* Season + career stats */}
       <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"12px"}}>
-        <Stat l="Avg" v={player.avg} c={D.emerald}/>
-        <Stat l="SR" v={player.sr} c={D.indigo}/>
+        {/* Q12: a child's rate only from thirty balls; under that, the count and the decided words. */}
+        <Stat l="Avg" v={rowRate(player,"avg").text} c={rowRate(player,"avg").held?D.textMuted:D.emerald}/>
+        <Stat l="SR" v={rowRate(player,"sr").text} c={rowRate(player,"sr").held?D.textMuted:D.indigo}/>
         <Stat l="Wkts" v={player.wkts} c={D.rose}/>
-        <Stat l="Econ" v={player.econ} c={D.amber}/>
+        <Stat l="Econ" v={rowRate(player,"econ").text} c={rowRate(player,"econ").held?D.textMuted:D.amber}/>
         {ct&&<Stat l="Runs" v={ct.runs}/>}
         {ct&&<Stat l="HS" v={ct.hs}/>}
         {ct&&<Stat l="50s/100s" v={`${ct.fifties}/${ct.hundreds}`}/>}

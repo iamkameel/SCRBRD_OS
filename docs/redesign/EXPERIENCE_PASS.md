@@ -747,6 +747,7 @@ as failed, as §1.10 does.
 | **Walks** | Existing: `pupil`, `consent`, `lifts`, `read` (the guardian steps), `passport-union`, `compare`, `awards`, `potm`, `seasons`, `public-name`, `scorer-home` (a pupil who scores), `smoke-a11y`, `db/99` if a migration ships. New: a pupil holding `scorer` keeps the four-item bar and sees "Appointed to score" on Home; a child with one innings of three balls shows runs and "3 balls" and no average; a parent with children at two schools sees two sections; a waiting parent opens the terms and cannot agree; the `safeguarding` walk finds the DSO card on the parent's and the pupil's Home. |
 | **Near the pad's words** | "Appointed to score" (`smoke-browser-scorer-home.mjs:257`) is reused on the pupil's Home, word for word. |
 | **Bundle** | Entry: the persona change is in `roles.js`, already in the entry; the passport's drill opens the match page, which is lazy. |
+| **Team sheet (STEP4 Q10)** | A parent sees the eleven, names and order, for her child's side and that fixture only (Kameel, 15 Nov). |
 | **You'll know** | Sign in as the demo pupil. **Five seconds:** his next match and what he must answer are first. **Two steps:** Passport, then tap his runs, and the innings behind them are listed with how many came from a scorebook. Sign in as the demo parent with two children: both sections, each with its own actions. As a pupil who scores: four items on the bar, the scoring block on Home. |
 
 ### Slice 5 · The coach's day sheet, and the homes

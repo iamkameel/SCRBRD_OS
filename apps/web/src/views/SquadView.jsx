@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { D, textOn } from "../design/tokens.js";
 import { fitnessColor, stat } from "../lib/format.js";
 import { SR } from "../scorer/format.js";
+import { rowRate } from "../lib/compare.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
 import { OverallRadar } from "../ui/overallRadar.jsx";
 import { SegmentedControl } from "../ui/data.jsx";
@@ -200,7 +201,7 @@ function SquadView({ role }) {
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"4px"}}>
                   <div style={{textAlign:"center",padding:"5px",background:D.surf2,borderRadius:D.sm}}>
-                    <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.sky}}>{stat(p.avg)}</div>
+                    <div style={{fontFamily:D.mono,fontSize:rowRate(p,"avg").held?"12px":"13px",fontWeight:500,color:rowRate(p,"avg").held?D.textMuted:D.sky}}>{rowRate(p,"avg").text}</div>
                     <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>avg</div>
                   </div>
                   {p.wkts>0?(
@@ -210,7 +211,7 @@ function SquadView({ role }) {
                     </div>
                   ):(
                     <div style={{textAlign:"center",padding:"5px",background:D.surf2,borderRadius:D.sm}}>
-                      <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.amber}}>{stat(p.sr)}</div>
+                      <div style={{fontFamily:D.mono,fontSize:rowRate(p,"sr").held?"12px":"13px",fontWeight:500,color:rowRate(p,"sr").held?D.textMuted:D.amber}}>{rowRate(p,"sr").text}</div>
                       <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>SR</div>
                     </div>
                   )}
@@ -241,7 +242,7 @@ function SquadView({ role }) {
             <div style={{marginBottom:"14px"}}>
               <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px"}}>SEASON STATS</div>
               <div style={{display:"grid",gridTemplateColumns:"var(--g-3,1fr 1fr 1fr)",gap:"6px"}}>
-                {[["AVG",stat(selected.avg),D.sky],["SR",stat(selected.sr),D.amber],["WKTS",stat(selected.wkts),D.violet],["ECON",stat(selected.econ),D.emerald],["AGE",hasAge(selected.age)?selected.age:"—",D.textMuted],[selected.cap?"ROLE":"",(selected.cap||"").toUpperCase()||"-",D.amber]].filter(([l])=>l).map(([l,v,c])=>(
+                {[["AVG",rowRate(selected,"avg").text,D.sky],["SR",rowRate(selected,"sr").text,D.amber],["WKTS",stat(selected.wkts),D.violet],["ECON",rowRate(selected,"econ").text,D.emerald],["AGE",hasAge(selected.age)?selected.age:"—",D.textMuted],[selected.cap?"ROLE":"",(selected.cap||"").toUpperCase()||"-",D.amber]].filter(([l])=>l).map(([l,v,c])=>(
                   <div key={l} style={{textAlign:"center",padding:"7px 4px",background:D.surf2,borderRadius:D.sm}}>
                     <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:500,color:c}}>{v}</div>
                     <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{l}</div>

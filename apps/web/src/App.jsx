@@ -7,7 +7,7 @@
  */
 import { Suspense, lazy, useState, useEffect, useRef } from "react";
 import { LoginPage } from "./auth/LoginPage.jsx";
-import { NAV_META, ROLES } from "./design/roles.js";
+import { NAV_META, PERSONA_NAV, ROLES, navForRoles } from "./design/roles.js";
 import { HOME_OF } from "./design/homes.js";
 import { D, GLOBAL_CSS, clr } from "./design/tokens.js";
 import { useTheme } from "./design/theme.js";
@@ -286,7 +286,11 @@ export default function SCRBRD_OS() {
     // A school's account never inherits the no-school pad.
     if (scorerEntry?.homeOnly) { setScorerOpen(false); setScorerEntry(null); }
     setRole(r); setUserName(n || ROLES[r]?.label || "User");
-    const nav = ROLES[r]?.nav || [];
+    // The menu of the roles actually held, not of the one badge: a pupil who
+    // is also appointed to score is badged "scorer" (primaryRole) and lands on
+    // his own Home, the pupil's app (EXPERIENCE_PASS Q2).
+    const held = (p?.assignments ?? []).map((a) => a.role);
+    const nav = held.length ? navForRoles(held) : ROLES[r]?.nav || [];
     setPage(nav[0] || "dashboard");
     setLoginForPad(false);
     setAppState("app");
@@ -664,11 +668,11 @@ export default function SCRBRD_OS() {
     pitchdeck:    <PitchDeckView     role={role} onNav={setPage}/>,
     selection:    <SelectionView/>,
     // The family app (step 4 P1–P7) and the pupil's (S1–S4).
-    children:     <FamilyHome        role={role} onNav={setPage}/>,
+    children:     <FamilyHome        role={role} onNav={setPage} onOpenScorer={openScorer}/>,
     fixtures:     <FamilyMatches     role={role}/>,
     notices:      <FamilyNotices     role={role}/>,
     family:       <FamilyFile        role={role} onNav={setPage}/>,
-    myhome:       <PupilHome         role={role}/>,
+    myhome:       <PupilHome         role={role} onNav={setPage} onOpenScorer={openScorer}/>,
     mymatches:    <PupilMatches      role={role}/>,
     passport:     <PupilPassport     role={role}/>,
     me:           <PupilMe           role={role} onNav={setPage}/>,
@@ -680,7 +684,7 @@ export default function SCRBRD_OS() {
   const personaHeader = persona && signedIn();
   // A persona that lands on a page it has no view for opens its own Home,
   // never the staff dashboard.
-  const home = persona ? (ROLES[role]?.nav?.[0] ?? "dashboard") : "dashboard";
+  const home = persona ? (PERSONA_NAV[persona]?.bar?.[0] ?? "dashboard") : "dashboard";
   const shown = VIEW_MAP[page] ? page : home;
 
   return (
