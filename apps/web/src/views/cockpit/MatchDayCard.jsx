@@ -47,6 +47,8 @@ export function MatchDayCard({ matches, onNav, only = null, skip = null }) {
   const chosen = useMemo(() => {
     const c = chooseFixtures(matches, assignments, now);
     const keep = (/** @type {{match: any}} */ p) => (only ? p.match.id === only : skip ? p.match.id !== skip : true);
+    // The fixture folded into the next-fixture card is drawn there, wherever it falls in the list.
+    if (only) return { all: c.all, shown: c.all.filter(keep), later: [] };
     return { all: c.all, shown: c.shown.filter(keep), later: c.later.filter(keep) };
   }, [matches, assignments, now, only, skip]);
   const picks = useMemo(() => {

@@ -433,7 +433,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   const liveMatch = MATCHES.find((m) => m.status === "live");
   const liveScore = useLiveScore(liveMatch?.id);
 
-  const upcoming = MATCHES.filter((m) => m.status === "upcoming").sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+  const upcoming = MATCHES.filter((m) => m.status === "upcoming").sort((a, b) => (a.date ?? "").localeCompare(b.date ?? "") || (a.time ?? "").localeCompare(b.time ?? ""));
   const next = upcoming[0];
 
   // The bus for the next fixture — real trips when there is a session,

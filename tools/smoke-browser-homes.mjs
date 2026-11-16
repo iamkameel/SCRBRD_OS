@@ -27,7 +27,14 @@
  *   7. You'll know, the director: the first "Needs you" row opens the screen
  *      that fixes it (the fixture, or the thing on its screen), not a list.
  *
- * Reads only: it writes nothing to the database.
+ *   8. Review S1, S6: a parent, a pupil, a pupil who scores and a parent who scores opening a player's or a team's
+ *      address are left at /app in their own app; a refused player is named nowhere and nothing keyed on him is read;
+ *      another school's side opens its page with none of its boys named.
+ *   9. Review S2: opening Today makes no logged read nobody tapped for: no lifts expected beyond the match-day
+ *      card's own, none for a fixture folded under Later, and no clearance register for the office.
+ *  10. Review S3: the DSO card last on the driver's, the groundskeeper's and the scorer's Today.
+ *
+ * Its own fixtures, assignments and one account, all removed at the end.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-homes.mjs
@@ -50,6 +57,9 @@ const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
 const HIL = "11111111-1111-1111-1111-111111111111";
 const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005";   // R Pillay, Hilton 1XI
 const WES_CHILD = "bbbbbbbb-0000-0000-0000-000000000001"; // a Westville boy: not on a Hilton coach's roster
+const WES = "22222222-2222-2222-2222-222222222222";
+/** What the walk made, removed at the end. */
+const made = { assignments: /** @type {string[]} */ ([]), matches: /** @type {string[]} */ ([]), users: /** @type {string[]} */ ([]) };
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 400)}` : ""); } };
@@ -317,10 +327,60 @@ try {
     await p.ctx.close();
 
     const r = await open(1280, `/app/players/${WES_CHILD}`);
+    const keyed = [];
+    r.page.on("request", (q2) => { if (q2.url().includes(WES_CHILD)) keyed.push(q2.url()); });
     await signIn(r.page, "coach@example.invalid");
     await tid(r.page, "address-refused").first().waitFor({ timeout: 12000 }).catch(() => {});
-    ok("a player the coach may not read: said so, and nothing of him", await tid(r.page, "address-refused").count() === 1, await inner(r.page, "os-main"));
+    await afterReads(r.page, 1500);
+    const [wesBoy] = await q(`select full_name from player where id = $1`, [WES_CHILD]);
+    ok("a player the coach may not read: said so", await tid(r.page, "address-refused").count() === 1, await inner(r.page, "os-main"));
+    ok("...his name nowhere on the screen", !(await inner(r.page, "os-main")).includes(wesBoy.full_name) && !(await r.page.innerText("body")).includes(wesBoy.full_name));
+    ok("...and no read keyed on him", keyed.length === 0, keyed.join(" | "));
     await r.ctx.close();
+
+    // Another school's side, by its address: its page, its results as far as this account can read them, no boy named.
+    const wesNames = (await q(`select full_name from player where school_id = $1`, [WES])).map((x) => x.full_name);
+    const ws = await open(1280, `/app/teams/${WES}.1XI`);
+    await signIn(ws.page, "coach@example.invalid");
+    await tid(ws.page, "team-page").first().waitFor({ timeout: 12000 }).catch(() => {});
+    await afterReads(ws.page, 2500);
+    const wsText = await inner(ws.page, "os-main");
+    ok("another school's side opens its page, with none of its boys named", await tid(ws.page, "team-page").count() === 1 && !wesNames.some((n) => wsText.includes(n)), wsText.slice(0, 200));
+    ok("...and no page error", ws.errors.length === 0, ws.errors.join(" | "));
+    await ws.ctx.close();
+
+    // The squad's side name leads to the team page (review S4).
+    const sq = await open();
+    await signIn(sq.page, "coach@example.invalid");
+    await tid(sq.page, "nav-squad").click({ timeout: 6000 }).catch(() => {});
+    await afterReads(sq.page, 1500);
+    await tid(sq.page, "squad-team-page").click({ timeout: 6000 }).catch(() => {});
+    await afterReads(sq.page, 1500);
+    ok("the squad's side name opens the team page, by its address", await tid(sq.page, "team-page").count() === 1
+       && /\/app\/teams\/[0-9a-f-]{36}\.1XI$/.test(new URL(sq.page.url()).pathname), sq.page.url());
+    await sq.ctx.close();
+  }
+
+  group("Review S1: a persona's app opens no staff screen by address");
+  {
+    const pupil = (await q(`select id from app_user where email = 'pillay@example.invalid'`))[0].id;
+    const parent = (await q(`select id from app_user where email = 'parent@example.invalid'`))[0].id;
+    const cases = [["a parent", "parent@example.invalid", null], ["a pupil", "pillay@example.invalid", null],
+      ["a pupil who scores", "pillay@example.invalid", pupil], ["a parent who scores", "parent@example.invalid", parent]];
+    for (const [who, email, scorer] of cases) {
+      let sa = null;
+      if (scorer) { [sa] = await q(`insert into role_assignment (person_id, role, school_id, team_code) values ($1, 'scorer', $2, '1XI') returning id`, [scorer, HIL]); made.assignments.push(sa.id); }
+      for (const path of [`/app/players/${PILLAY}`, `/app/teams/${HIL}.1XI`]) {
+        const s = await open(390, path);
+        await signIn(s.page, email);
+        await afterReads(s.page, 1500);
+        const at = new URL(s.page.url()).pathname;
+        ok(`${who} opening ${path.split("/")[2]}'s address stays in his own app, at /app`, at === "/app" && (await tid(s.page, "persona-bar").count()) === 1
+           && !(["profiles", "squad"].includes(await pageNow(s.page) ?? "")) && await tid(s.page, "team-page").count() === 0, `${at} ${await pageNow(s.page)}`);
+        await s.ctx.close();
+      }
+      if (sa) await q(`delete from role_assignment where id = $1`, [sa.id]);
+    }
 
     const [g] = await q(`select id, name from ground where school_id = $1 order by name limit 1`, [HIL]);
     const gp = await open(1280, `/app/grounds/${g.id}`);
@@ -340,6 +400,65 @@ try {
     await afterReads(n.page, 1500);
     ok("an address that names a person opens nothing", await pageNow(n.page) !== "profiles");
     await n.ctx.close();
+  }
+
+  group("Review S2: opening Today makes no logged read nobody tapped for");
+  {
+    // Four of the coach's fixtures today: the match-day card draws the first few and folds the last under Later.
+    const today = [];
+    for (const [name, hh] of [["Homes Walk Ten XI", 10], ["Homes Walk Eleven XI", 11], ["Homes Walk Noon XI", 12], ["Homes Walk One XI", 13]]) {
+      const [m] = await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+        values ($1, '1XI', $2, (sa_today()::timestamp + make_interval(hours => $3::int)) at time zone 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL, name, hh]);
+      today.push(m.id); made.matches.push(m.id);
+    }
+    const s = await open(390);
+    const asked = [];
+    s.page.on("request", (r) => asked.push(r.url()));
+    await signIn(s.page, "coach@example.invalid");
+    await tid(s.page, "day-next").first().waitFor({ timeout: 12000 }).catch(() => {});
+    await afterReads(s.page, 4000);
+    const lifts = (id) => asked.filter((u) => u.includes(`/matches/${id}/lifts/expected`)).length;
+    ok("Today asks each shown fixture's lifts once at most: the card's own read, never the queue's again",
+       today.slice(0, 3).every((id) => lifts(id) <= 1), today.map((id) => lifts(id)).join());
+    ok("...and none for the fixture folded under Later", lifts(today[3]) === 0, String(lifts(today[3])));
+    ok("...nor the lift exceptions, which are read on a tap", !asked.some((u) => /lifts\/exceptions/.test(u)));
+    ok("...nor the clearance register", !asked.some((u) => /clearance_register/.test(u)));
+    await s.ctx.close();
+
+    const o = await open();
+    const oasked = [];
+    o.page.on("request", (r) => oasked.push(r.url()));
+    await signIn(o.page, "registrar@example.invalid");
+    await afterReads(o.page, 4000);
+    ok("the office opening Today reads no clearance register", await pageNow(o.page) === "dashboard" && !oasked.some((u) => /clearance_register/.test(u)),
+       oasked.filter((u) => /clearance/.test(u)).join(" | "));
+    ok("...nor any lifts", !oasked.some((u) => /\/lifts/.test(u)));
+    await tid(o.page, "home-dashboard-section-readiness").click({ timeout: 6000 }).catch(() => {});
+    await afterReads(o.page, 4000);
+    ok("...which To resolve reads when somebody taps for it", oasked.some((u) => /clearance_register/.test(u)));
+    await o.ctx.close();
+  }
+
+  group("Review S3: the DSO card last on every Today");
+  {
+    const [gk] = await q(`insert into app_user (school_id, email, name, role) values ($1, 'homes.ground@example.invalid', 'Homes Walk Groundsman', 'facilities') returning id`, [HIL]);
+    made.users.push(gk.id);
+    const [ga] = await q(`insert into role_assignment (person_id, role, school_id) values ($1, 'facilities', $2) returning id`, [gk.id, HIL]);
+    made.assignments.push(ga.id);
+    for (const [who, email] of [["the driver", "driver@example.invalid"], ["the groundskeeper", "homes.ground@example.invalid"], ["the scorer", "scorer@example.invalid"]]) {
+      const s = await open();
+      await signIn(s.page, email);
+      await tid(s.page, "dso-card").first().waitFor({ timeout: 10000 }).catch(() => {});
+      const last = await tid(s.page, "os-main").evaluate((m) => {
+        const card = m.querySelector('[data-testid="dso-card"]');
+        if (!card) return false;
+        const all = [...m.querySelectorAll("[data-testid]")].filter((e) => !card.contains(e) && e !== card && !e.contains(card));
+        return all.every((e) => card.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_PRECEDING);
+      }).catch(() => false);
+      ok(`${who}'s Today ends with the DSO card`, await pageNow(s.page) === "dashboard" && last, `${await pageNow(s.page)}`);
+      ok(`...and no page error (${who})`, s.errors.length === 0, s.errors.join(" | "));
+      await s.ctx.close();
+    }
   }
 
   group("You'll know: the director's first Needs you row lands on the fix");
@@ -364,6 +483,9 @@ try {
   fail++;
   console.log("  ✗ the walk threw:", e.message);
 } finally {
+  await q(`delete from role_assignment where id = any($1)`, [made.assignments]).catch(() => {});
+  await q(`delete from match where id = any($1)`, [made.matches]).catch(() => {});
+  await q(`delete from app_user where id = any($1)`, [made.users]).catch(() => {});
   await browser.close();
   web.close();
   apiProc.kill();
