@@ -40,9 +40,11 @@ const pill = (on, tone) => ({
 
 /**
  * @param {{ home: string, role: string, section?: string | null, onSection?: (key: string) => void,
- *           onNav?: (page: string, section?: string) => void }} props
+ *           onNav?: (page: string, section?: string) => void, scroll?: boolean }} props
+ *   `scroll`: the section switch keeps to one row and scrolls sideways on a phone rather than wrapping to
+ *   three (the Team home's seven sections, EXPERIENCE_PASS §1.3)
  */
-export function HomeBar({ home, role, section = null, onSection, onNav }) {
+export function HomeBar({ home, role, section = null, onSection, onNav, scroll = false }) {
   const { sections, links } = useHome(role, home);
   const tone = D[HOMES[home].color];
   const title = HOMES[home].title;
@@ -52,10 +54,11 @@ export function HomeBar({ home, role, section = null, onSection, onNav }) {
   return (
     <div data-testid={`home-${home}`} style={{display:"flex",gap:"6px",marginBottom:"16px",flexWrap:"wrap",alignItems:"center"}}>
       {switchOn && (
-        <div role="group" aria-label={`${title}: sections`} data-testid={`home-${home}-sections`} style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+        <div role="group" aria-label={`${title}: sections`} data-testid={`home-${home}-sections`}
+          style={scroll ? {display:"flex",gap:"6px",flexWrap:"nowrap",overflowX:"auto",maxWidth:"100%",minWidth:0,paddingBottom:"2px",scrollbarWidth:"thin"} : {display:"flex",gap:"6px",flexWrap:"wrap"}}>
           {sections.map((s) => (
             <button key={s.key} type="button" aria-pressed={section === s.key} data-testid={`home-${home}-section-${s.key}`}
-              onClick={() => onSection(s.key)} className="pressBtn" style={pill(section === s.key, tone)}>{s.label}</button>
+              onClick={() => onSection(s.key)} className="pressBtn" style={{...pill(section === s.key, tone), ...(scroll ? {flexShrink:0,whiteSpace:"nowrap"} : {})}}>{s.label}</button>
           ))}
         </div>
       )}

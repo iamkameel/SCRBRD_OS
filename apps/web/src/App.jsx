@@ -8,7 +8,8 @@
 import { Suspense, lazy, useState, useEffect, useRef } from "react";
 import { LoginPage } from "./auth/LoginPage.jsx";
 import { NAV_META, PERSONA_NAV, ROLES, navForRoles } from "./design/roles.js";
-import { HOME_OF } from "./design/homes.js";
+import { FRAMED, homeOf } from "./design/homes.js";
+import { HomeBar } from "./shell/HomeBar.jsx";
 import { D, GLOBAL_CSS, clr } from "./design/tokens.js";
 import { useTheme } from "./design/theme.js";
 import { canScore, holdsCapability, scoped } from "./rbac/index.js";
@@ -697,7 +698,7 @@ export default function SCRBRD_OS() {
             nineteen entries long. Invisible until focused. */}
         <a href="#os-content" className="skip-link" data-testid="skip-link">Skip to content</a>
         <OffPageGuard page={page} home={home} onNav={setPage}/>
-        {!isMobile&&<Sidebar role={role} active={HOME_OF[page] ?? page} onNav={navTo} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut} persona={persona}/>}
+        {!isMobile&&<Sidebar role={role} active={page} onNav={navTo} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut} persona={persona}/>}
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,overflow:"hidden"}}>
           {/* Said on every screen, not once on the login page. The shell can
               be reached without a session — the demo entry, a restored
@@ -712,7 +713,7 @@ export default function SCRBRD_OS() {
           )}
           {personaHeader
             ? <PersonaBar active={page} onNav={setPage} onSignOut={handleSignOut} userName={userName}/>
-            : <TopBar role={role} onRoleChange={handleRoleChange} onNav={setPage} userName={userName}/>}
+            : <TopBar role={role} onRoleChange={handleRoleChange} onNav={setPage} userName={userName} active={page} onSignOut={handleSignOut}/>}
           <main id="os-content" tabIndex={-1} className="os-main" data-testid="os-main" data-page={shown} data-persona={persona ?? undefined} style={{flex:1,overflowY:"auto",outline:"none"}}>
             {/* One boundary round the routed view, keyed on the page: a view
                 that throws is replaced by a card in its own place, and the
@@ -722,12 +723,19 @@ export default function SCRBRD_OS() {
             <Suspense fallback={<Loading what={shown}/>}>
               <ViewChange page={shown} title={NAV_META[shown]?.label ?? page}/>
               <ErrorBoundary key={page} name={NAV_META[page]?.label ?? "page"}>
+                {/* Today, Matches and Team (EXPERIENCE_PASS §1.3): the home's sections over the screen, each section the
+                    destination it came from, drawn only where this reader reaches it (design/homes.js). */}
+                {FRAMED.includes(homeOf(shown)) && (
+                  <div className="os-home-frame" data-testid="home-frame">
+                    <HomeBar home={homeOf(shown)} role={role} section={shown} onSection={(k) => navTo(k)} onNav={navTo} scroll/>
+                  </div>
+                )}
                 {VIEW_MAP[shown] || VIEW_MAP.dashboard}
               </ErrorBoundary>
             </Suspense>
           </main>
         </div>
-        {isMobile&&<MobileNav role={role} active={HOME_OF[page] ?? page} onNav={navTo} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut}/>}
+        {isMobile&&<MobileNav role={role} active={page} onNav={navTo} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut}/>}
       </div>
     </>
   );

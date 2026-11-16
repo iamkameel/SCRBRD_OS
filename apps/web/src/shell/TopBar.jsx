@@ -7,7 +7,17 @@ import { Icon } from "../ui/icons.jsx";
 // Opened by a tap, so it is not in the first download (the entry chunk is held to a ceiling, tools/check-bundle.mjs).
 const GlobalSearch = lazy(() => import("./GlobalSearch.jsx").then((m) => ({ default: m.GlobalSearch })));
 
-function TopBar({ role, onRoleChange, onNav, userName }) {
+/**
+ * THE STAFF HEADER. The same three things sit at the top of every screen for
+ * everybody (EXPERIENCE_PASS §1.2 rule 3, Q7): the bell, "Raise a concern" and
+ * the person's own name, which opens their Settings. They left the menu.
+ * `nav-settings` and `nav-safeguarding` are destinations (the shell's
+ * nav-<key> rule, Sidebar.jsx), as on the persona header (PersonaBar.jsx).
+ * "Raise a concern" has no mark of its own: whether any concern exists is said
+ * by nothing here (Q7; SAFEGUARDING_DSO §1 principle 3). The bell's one count
+ * is the server's.
+ */
+function TopBar({ role, onRoleChange, onNav, userName, active = null, onSignOut = null }) {
   // The unread badge is the SERVER's count of the notices it agreed to send
   // this person (my_notifications, db/89), from the one store every badge
   // reads (lib/notifications.js). Counting client-side over rows the browser
@@ -49,7 +59,7 @@ function TopBar({ role, onRoleChange, onNav, userName }) {
       <div data-testid="topbar" className="os-glass os-topbar" style={{height:"52px",borderRadius:0,borderLeft:"none",borderRight:"none",borderTop:"none",display:"flex",alignItems:"center",padding:"0 16px",gap:"10px",flexShrink:0,position:"sticky",top:0,zIndex:100}}>
 
         {/* Live match chip */}
-        <button onClick={()=>onNav("matches")} className="pressBtn" data-testid="topbar-live" aria-label="Live matches" style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 10px",minHeight:"44px",borderRadius:D.pill,background:D.emerald+"14",border:`1px solid ${D.emerald}30`,cursor:"pointer",flexShrink:0}}>
+        <button onClick={()=>onNav("matches")} className="pressBtn os-topbar-live" data-testid="topbar-live" aria-label="Live matches" style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 10px",minHeight:"44px",borderRadius:D.pill,background:D.emerald+"14",border:`1px solid ${D.emerald}30`,cursor:"pointer",flexShrink:0}}>
           <div className="live-dot"/><span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.emerald,letterSpacing:"0.06em",whiteSpace:"nowrap"}}>LIVE</span>
         </button>
 
@@ -68,15 +78,38 @@ function TopBar({ role, onRoleChange, onNav, userName }) {
           {unread>0&&<span data-testid="topbar-alerts-badge" aria-hidden="true" style={{position:"absolute",top:"2px",right:"0",background:T.semantic.critical,color:T.surface.canvas,borderRadius:D.pill,padding:"0 4px",fontFamily:D.mono,fontSize:"12px",lineHeight:1.25,fontWeight:700,minWidth:"16px",textAlign:"center"}}>{unread}</span>}
         </button>
 
+        {/* Raise a concern: everybody's (db/57, CSA p18), on every screen. */}
+        <button type="button" onClick={()=>onNav("safeguarding")} className="pressBtn" data-testid="nav-safeguarding" aria-label="Raise a concern"
+          aria-current={active==="safeguarding"?"page":undefined}
+          style={{display:"flex",alignItems:"center",justifyContent:"center",minWidth:"44px",minHeight:"44px",background:"none",border:"none",cursor:"pointer",fontSize:"16px",flexShrink:0,color:D.textSecondary}}>
+          <Icon name="hand-heart"/>
+        </button>
+
+        {/* The person's own name: their Settings, and only what is theirs (§1.6). */}
+        <button type="button" onClick={()=>onNav("settings")} className="pressBtn" data-testid="nav-settings"
+          aria-label={`Settings: ${userName||ROLES[role]?.label||"you"}`} aria-current={active==="settings"?"page":undefined}
+          style={{display:"flex",alignItems:"center",gap:"6px",padding:"5px 10px",minHeight:"44px",minWidth:"44px",borderRadius:D.pill,background:active==="settings"?D.surf3:"none",border:`1px solid ${active==="settings"?D.borderMed:"transparent"}`,cursor:"pointer",flexShrink:0,justifyContent:"center"}}>
+          <span aria-hidden="true" style={{fontSize:"13px",color:D.textSecondary}}><Icon name="user"/></span>
+          <span className="os-username" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,maxWidth:"120px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName||ROLES[role]?.label}</span>
+        </button>
+
         {/* Role switcher */}
         <div style={{position:"relative",flexShrink:0}}>
-          <button ref={roleBtn} onClick={()=>setRoleOpen(!roleOpen)} className="pressBtn" data-testid="topbar-role" aria-haspopup="menu" aria-expanded={roleOpen} aria-label={`${userName||ROLES[role]?.label}, switch role`} style={{display:"flex",alignItems:"center",gap:"6px",padding:"5px 10px",minHeight:"44px",minWidth:"44px",borderRadius:D.pill,background:D.surf2,border:`1px solid ${D.border}`,cursor:"pointer"}}>
+          <button ref={roleBtn} onClick={()=>setRoleOpen(!roleOpen)} className="pressBtn" data-testid="topbar-role" aria-haspopup="menu" aria-expanded={roleOpen} aria-label={`${ROLES[role]?.label ?? "Role"}, switch role`} style={{display:"flex",alignItems:"center",gap:"6px",padding:"5px 10px",minHeight:"44px",minWidth:"44px",borderRadius:D.pill,background:D.surf2,border:`1px solid ${D.border}`,cursor:"pointer"}}>
             <span style={{fontSize:"13px",color:D.textSecondary}}><Icon name={ROLES[role]?.icon}/></span>
-            <span className="os-username" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,maxWidth:"90px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName||ROLES[role]?.label}</span>
+            <span className="os-username" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,maxWidth:"90px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ROLES[role]?.label}</span>
             <span aria-hidden="true" style={{fontSize:"12px",color:D.textMuted}}>▼</span>
           </button>
           {roleOpen&&(
             <div ref={roleMenu} role="menu" aria-label="Switch role" style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:T.surface.overlay,border:`1px solid ${T.line.normal}`,borderRadius:T.radius.lg,overflowY:"auto",minWidth:"210px",maxHeight:"min(70vh,520px)",zIndex:200,boxShadow:T.elevation.lg}}>
+              {/* The way out, on a phone whose bar has no drawer (the menu is its homes, §1.2), and everywhere else too. */}
+              {onSignOut&&(
+                <button role="menuitem" onClick={()=>{setRoleOpen(false);onSignOut();}} className="pressBtn os-state" data-testid="topbar-signout"
+                  style={{width:"100%",padding:"8px 12px",minHeight:"44px",display:"flex",alignItems:"center",gap:"8px",background:"transparent",border:"none",borderBottom:`1px solid ${T.line.subtle}`,cursor:"pointer",textAlign:"left"}}>
+                  <span aria-hidden="true" style={{color:T.content.secondary}}><Icon name="log-out"/></span>
+                  <span style={{fontFamily:T.type.body,fontSize:"12px",color:T.content.secondary}}>Sign out</span>
+                </button>
+              )}
               <div style={{position:"sticky",top:0,background:T.surface.overlay,padding:"10px 12px 6px",borderBottom:`1px solid ${T.line.subtle}`,fontFamily:T.type.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.content.tertiary}}>Switch Role (Demo)</div>
               {/* Grouped by family, and ONE ENTRY PER ROLE.
                   This menu used to iterate ROLES, which is the LOOKUP table:
