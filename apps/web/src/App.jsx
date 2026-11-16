@@ -788,7 +788,7 @@ export default function SCRBRD_OS() {
                     destination it came from, drawn only where this reader reaches it (design/homes.js). */}
                 {FRAMED.includes(homeOf(shown)) && (
                   <div className="os-home-frame" data-testid="home-frame">
-                    <HomeBar home={homeOf(shown)} role={role} section={shown} onSection={(k) => { if (thing) { setThing(null); toApp(); } navTo(k); }} onNav={navTo} scroll/>
+                    <HomeBar home={homeOf(shown)} role={role} section={shown} onSection={(k) => { if (thing) { setThing(null); toApp(); } navTo(k); }} onNav={navTo} scroll invites={invitesWaiting}/>
                   </div>
                 )}
                 {VIEW_MAP[shown] || VIEW_MAP.dashboard}

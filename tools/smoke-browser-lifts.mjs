@@ -125,7 +125,7 @@ async function signIn(page, email) {
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
   // Staff land on the Dashboard; a parent or a pupil lands in their own app (step 4).
-  return /Match Centre|Dashboard|Today|Matches/i.test(await text(page)) || (await tid(page, "persona-bar").count()) === 1;
+  return (await page.locator('[data-testid="os-main"]').count()) > 0 || (await tid(page, "persona-bar").count()) === 1;
 }
 async function go(page, nav) {
   const l = (await destLocator(page, nav));

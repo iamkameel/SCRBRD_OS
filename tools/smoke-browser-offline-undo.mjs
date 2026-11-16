@@ -228,7 +228,7 @@ const signIn = async () => {
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
   await afterReads(page, 2200);
-  return /Match Centre|Dashboard|Today|Matches/i.test(await text());
+  return (await page.locator('[data-testid="os-main"]').count()) > 0;
 };
 /**
  * After a reload: back on the pad. The API token lives in memory only and is

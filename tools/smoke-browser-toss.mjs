@@ -161,7 +161,7 @@ try {
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
   await afterReads(page, 2200);
-  ok("a seeded scorer gets in", /Match Centre|Dashboard|Today|Matches/i.test(await text()));
+  ok("a seeded scorer gets in", (await page.locator('[data-testid="os-main"]').count()) > 0);
   ok("neither fixture has a toss or a ball yet",
      (await dbq(`select 1 from match_toss where match_id = any($1)`, [[MICHAELHOUSE, KEARSNEY]])).length === 0
      && (await dbq(`select 1 from ball_event where match_id = any($1)`, [[MICHAELHOUSE, KEARSNEY]])).length === 0);

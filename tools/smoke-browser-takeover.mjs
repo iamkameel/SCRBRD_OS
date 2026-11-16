@@ -338,7 +338,7 @@ try {
 
   group("A scores two balls with signal; they reach the server");
   A = await openAs(/Scorer/);
-  ok("the scorer signs in", /Match Centre|Dashboard|Today|Matches/i.test(await A.text()));
+  ok("the scorer signs in", (await A.page.locator('[data-testid="os-main"]').count()) > 0);
   ok("opened the real fixture", await openPad(A));
   await clearBlockers(A.page);
   let tapped = 0;
@@ -372,7 +372,7 @@ try {
   await lapse();
   const lapsed = await sessionRow();
   B = await openAs(/Director of Sport/);
-  ok("the director of sport signs in", /Match Centre|Dashboard|Today|Matches/i.test(await B.text()));
+  ok("the director of sport signs in", (await B.page.locator('[data-testid="os-main"]').count()) > 0);
   ok("opened the same fixture", await openPad(B));
   ok("B is told another phone was scoring, not given the match",
      await until(B.page, async () => (await banner(B.page)).reason === "held_elsewhere", 15000), JSON.stringify(await banner(B.page)));

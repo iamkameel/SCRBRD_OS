@@ -126,7 +126,7 @@ async function signIn(page, email) {
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
   // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
-  return /Match Centre|Dashboard|Today|Matches/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
+  return (await page.locator('[data-testid="os-main"]').count()) > 0 || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
 async function nav(page, id) {
   const l = (await destLocator(page, id));

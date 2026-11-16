@@ -52,6 +52,8 @@ function FieldsView({ role, onNav, groundId = null, onSelectGround = null }) {
   // survives the list being replaced; a row object does not.
   const [selId, setSelIdRaw]      = useState(groundId);
   const setSelId = (id) => { setSelIdRaw(id); if (id) onSelectGround?.(id); };
+  // Back and forward between two grounds' addresses: the page follows the address.
+  useEffect(() => { if (groundId) setSelIdRaw(groundId); }, [groundId]);
   const [selPitch,  setSelPitch]  = useState(0);
   const [tab, setTab]             = useState("overview");
   const canEdit = holdsCapability(role,"facility.manage");

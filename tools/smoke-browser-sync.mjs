@@ -156,7 +156,7 @@ try {
   await click(/^Sign In$/, 5000);
   await page.waitForTimeout(2200);
   if (DEBUG) console.log("[debug] after sign-in:\n" + (await text()).slice(0, 600));
-  ok("a seeded scorer gets in", /Match Centre|Dashboard|Today|Matches/i.test(await text()));
+  ok("a seeded scorer gets in", (await page.locator('[data-testid="os-main"]').count()) > 0);
 
   group("Opening a real fixture");
   await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });

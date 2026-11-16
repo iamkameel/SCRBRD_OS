@@ -245,7 +245,7 @@ try {
 
   group("A holds the pen and scores to 8.2 with signal");
   A = await openAs(/Scorer/);
-  ok("the scorer signs in", /Match Centre|Dashboard|Today|Matches/i.test(await A.text()));
+  ok("the scorer signs in", (await A.page.locator('[data-testid="os-main"]').count()) > 0);
   ok("opened the real fixture", await openPad(A));
   await clearBlockers(A);
   await scoreTo(A, 50);
@@ -265,7 +265,7 @@ try {
 
   group("B confirms a take-over and scores 8.3 to 12.0");
   B = await openAs(/Director of Sport/);
-  ok("the director of sport signs in", /Match Centre|Dashboard|Today|Matches/i.test(await B.text()));
+  ok("the director of sport signs in", (await B.page.locator('[data-testid="os-main"]').count()) > 0);
   ok("opened the same fixture", await openPad(B));
   ok("B is told another phone was scoring, and offered Take over scoring",
      await until(B.page, async () => (await banner(B.page)).reason === "held_elsewhere", 15000)

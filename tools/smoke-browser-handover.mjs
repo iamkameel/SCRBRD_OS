@@ -192,7 +192,7 @@ try {
 
   group("Outgoing device: the scorer opens and plays a few balls");
   outgoing = await openAs(/Scorer/);
-  ok("the scorer signs in", /Match Centre|Dashboard|Today|Matches/i.test(await outgoing.text()));
+  ok("the scorer signs in", (await outgoing.page.locator('[data-testid="os-main"]').count()) > 0);
   await outgoing.page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(outgoing.page, 1200);
   ok("opened the real fixture", await openMichaelhouse(outgoing.page));
@@ -264,7 +264,7 @@ try {
 
   group("Incoming device: opens the same match cold");
   incoming = await openAs(/Director of Sport/);
-  ok("the director of sport signs in", /Match Centre|Dashboard|Today|Matches/i.test(await incoming.text()));
+  ok("the director of sport signs in", (await incoming.page.locator('[data-testid="os-main"]').count()) > 0);
   await incoming.page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(incoming.page, 1200);
   ok("opened the same fixture", await openMichaelhouse(incoming.page));
@@ -362,7 +362,7 @@ try {
   // and says why.
   group("A device that has never opened this fixture replays what the server has (SCRBRD-075)");
   third = await openAs(/Head Coach/);
-  ok("the coach signs in", /Match Centre|Dashboard|Today|Matches/i.test(await third.text()));
+  ok("the coach signs in", (await third.page.locator('[data-testid="os-main"]').count()) > 0);
   await third.page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(third.page, 1200);
   ok("opens the same fixture", await openMichaelhouse(third.page));

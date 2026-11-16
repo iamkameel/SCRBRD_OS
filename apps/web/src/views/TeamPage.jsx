@@ -28,7 +28,7 @@ export function teamResults(points) {
   const abandoned = newest.slice(0, newest.indexOf(shown[shown.length - 1]) + 1).filter((p) => p.result === "abandoned").length;
   const form = shown.map((p) => formLetter(p.result)).filter(Boolean).join(" ");
   const basis = shown.length === 0 ? null
-    : `Last ${shown.length} completed${abandoned ? `; ${abandoned} abandoned, not counted` : ""}`;
+    : `Last ${shown.length} completed, of the matches this account can read${abandoned ? `; ${abandoned} abandoned, not counted` : ""}`;
   return { shown, form, basis };
 }
 
@@ -73,7 +73,7 @@ export function TeamPage({ role, id, onNav }) {
       <Card sx={{ padding: T.space.lg, marginBottom: T.space.lg }} data-testid="team-results">
         <h3 style={{ margin: `0 0 ${T.space.sm}`, ...T.role.title.md, color: T.content.primary }}>Results</h3>
         {!["ok", "stale", "empty"].includes(said.state) ? <ReadState read={said} compact testId="team-results-read" onRetry={() => setNonce((n) => n + 1)}/>
-          : results.shown.length === 0 ? <p data-testid="team-results-none" style={line}>No completed match this season yet. Its results will be listed here, newest first.</p>
+          : results.shown.length === 0 ? <p data-testid="team-results-none" style={line}>No completed match of this side's that this account can read, this season. A match it cannot read is not listed, and is not counted as none.</p>
           : (
             <>
               {results.form && <p data-testid="team-form" style={{ ...T.role.title.md, color: T.content.primary, margin: `0 0 ${T.space.xs}` }}>Form {results.form}</p>}

@@ -114,7 +114,7 @@ group("The day sheet (§3.10)");
   const sp = (result, i) => ({ matchId: `m${i}`, result, resultLine: result, opponent: "X", date: null });
   const tr = teamResults(/** @type {any} */ (["won", "lost", "abandoned", "won", "tied", "no_result", "won"].map(sp)));
   ok("the team's results: last 5 completed, newest first, an abandoned one said and not counted",
-     eq(tr.shown.map((p) => p.matchId), ["m6", "m5", "m4", "m3", "m1"]) && tr.basis === "Last 5 completed; 1 abandoned, not counted" && tr.form === "W NR T W L", tr);
+     eq(tr.shown.map((p) => p.matchId), ["m6", "m5", "m4", "m3", "m1"]) && tr.basis === "Last 5 completed, of the matches this account can read; 1 abandoned, not counted" && tr.form === "W NR T W L", tr);
   ok("form letters", formLetter("won") === "W" && formLetter("draw") === "D" && formLetter(null) === null);
 }
 

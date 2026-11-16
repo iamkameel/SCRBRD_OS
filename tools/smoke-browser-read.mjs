@@ -120,7 +120,7 @@ async function signIn(page, who) {
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
-  return /Match Centre|Dashboard|Today|Matches/i.test(await text(page))
+  return (await page.locator('[data-testid="os-main"]').count()) > 0
       || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
 
@@ -2898,7 +2898,7 @@ try {
       await c.page.locator("#login-email").fill(email);
       await click(c.page, /^Sign In$/, 5000);
       await afterReads(c.page, 2000);
-      ok("the U16B-only coach signs in", /Match Centre|Dashboard|Today|Matches/i.test(await text(c.page)));
+      ok("the U16B-only coach signs in", (await c.page.locator('[data-testid="os-main"]').count()) > 0);
 
       ok("Squad opens", await nav(c.page, /Squad/));
       ok("...on U16B, the one side he holds, and it is the lit tab",

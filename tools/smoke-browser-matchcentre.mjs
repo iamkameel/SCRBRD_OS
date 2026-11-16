@@ -161,7 +161,7 @@ async function signIn(page, who) {
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
-  return /Match Centre|Dashboard|Today|Matches/i.test(await text(page));
+  return (await page.locator('[data-testid="os-main"]').count()) > 0;
 }
 async function openMatch(page, id) {
   await page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
@@ -887,7 +887,7 @@ try {
       await s.page.locator("#login-email").fill(email);
       await click(s.page, /^Sign In$/, 5000);
       await afterReads(s.page, 2200);
-      ok(`${label} signs in`, (await tid(s.page, "persona-bar").count()) === 1 || /Match Centre|Dashboard|Today|Matches/i.test(await text(s.page)));
+      ok(`${label} signs in`, (await tid(s.page, "persona-bar").count()) === 1 || (await s.page.locator('[data-testid="os-main"]').count()) > 0);
       // A reader in the staff app opens it from Match Centre; a family's app has its own way in: the live
       // card's "Follow the match" on Home, else its Matches list, where a live fixture is a live row.
       let opened = await openMatch(s.page, fx.live);
@@ -1750,7 +1750,7 @@ try {
         await s.page.locator('input[type="email"]').first().fill(who);
         await click(s.page, /^Sign In$/, 5000);
         await afterReads(s.page, 2000);
-        inn = /Match Centre|Dashboard|Today|Matches/i.test(await text(s.page));
+        inn = (await s.page.locator('[data-testid="os-main"]').count()) > 0;
       } else inn = await signIn(s.page, who);
       // The list's card first: its scorer button asks the same gate (Kameel, 6 Nov).
       await s.page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});

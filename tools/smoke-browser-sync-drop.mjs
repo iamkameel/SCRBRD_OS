@@ -252,7 +252,7 @@ const signIn = async () => {
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
   await afterReads(page, 2200);
-  return /Match Centre|Dashboard|Today|Matches/i.test(await text());
+  return (await page.locator('[data-testid="os-main"]').count()) > 0;
 };
 /** Wait for the pill to say something, up to `ms` (polls the page's own state). */
 const pillSays = async (/** @type {RegExp} */ re, ms = 12000) => {

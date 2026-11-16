@@ -86,8 +86,12 @@ function ProfilesView({ role, profileTarget, onClearTarget, addressed = null, on
     if (category === "players") onSelectPlayer?.(id);
   };
   // An address the roster read does not hold: said, once that read has answered (Q11: the server refuses the rest).
-  const addressAnswered = ["ok", "empty", "partial", "stale"].includes(rosterRead.state);
-  const addressRefused = !!addressed && addressAnswered && !PLAYERS.some((p) => p.id === addressed);
+  // Only once the roster read has answered whole (a partial read may hold him in the part that failed), and only
+  // with nobody opened: an address that named a coach or a member of staff opens that profile, not this card.
+  const addressAnswered = ["ok", "empty"].includes(rosterRead.state);
+  const addressRefused = !!addressed && addressAnswered && !selEntity && !PLAYERS.some((p) => p.id === addressed);
+  // Back and forward between two players' addresses: the page follows the address.
+  useEffect(() => { if (addressed) setSelId(addressed); }, [addressed]);
 
   // ── MiniSparkline ──
   const Spark = ({ data, color=D.emerald, height=28 }) => {
