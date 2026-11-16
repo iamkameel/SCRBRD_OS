@@ -144,6 +144,26 @@ function useLiveScore(matchId) {
 }
 
 /**
+ * The results of this week's played fixtures, by id: the server's words (GET /api/matches/:id/result, the read the
+ * Match Centre makes), null for a read that failed, absent while asking. Signed in only; the demo has none.
+ * @param {string[]} ids
+ * @returns {Record<string, string | null>}
+ */
+function useWeekResults(ids) {
+  const key = ids.join(",");
+  const [got, setGot] = useState(/** @type {Record<string, string | null>} */ ({}));
+  useEffect(() => {
+    if (!signedIn() || !key) return undefined;
+    let off = false;
+    Promise.all(key.split(",").map((id) => api(`/api/matches/${id}/result`)
+      .then((r) => [id, r?.result?.text ?? "No result recorded"], () => [id, null])))
+      .then((pairs) => { if (!off) setGot(Object.fromEntries(pairs)); });
+    return () => { off = true; };
+  }, [key]);
+  return got;
+}
+
+/**
  * THE DAY SHEET, DRAWN — every figure on it handed in.
  *
  * DashboardView reads five resources and the session, and the drawing of the
@@ -334,7 +354,9 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                 {weekRead?.state === "partial" && <ReadState read={weekRead} onRetry={onRetry} compact testId="week-read-state"/>}
                 {holds("fixture.read") && weekMatches.map((m) => {
                   // A fixture played says its result; one to come its start (§3.10).
-                  const said = statusSentence(m);
+                  // The result read's words where it answered; "could not be read" where it did not; else the sentence.
+                  const said = m.weekResult === null ? { text: "The result could not be read just now." }
+                    : typeof m.weekResult === "string" ? { text: m.weekResult } : statusSentence(m);
                   const played = m.status !== "upcoming";
                   return (
                     <div key={m.id} data-testid={`week-fixture-${m.id}`} data-played={played ? "true" : "false"} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: `${T.space.xs} ${T.space.sm}` }}>
@@ -425,7 +447,11 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   // ── this week: training and fixtures, as a list ──
   const weekStart = dateStr(today);
   const weekEnd = dateStr(addDays(today, 6));
-  const weekMatches = weekOf(MATCHES, today);
+  // A fixture played this week says its result (§3.10): the result read the Match Centre and Recent matches make,
+  // match_result(), asked only for those played this week. The fixture read itself carries no result.
+  const weekPlain = weekOf(MATCHES, today);
+  const weekResults = useWeekResults(weekPlain.filter((m) => m.status !== "upcoming" && !m.calledOff).map((m) => m.id));
+  const weekMatches = weekPlain.map((m) => (weekResults[m.id] === undefined ? m : { ...m, weekResult: weekResults[m.id] }));
   const weekTraining = TRAINING.filter((s) => s.date && s.date >= weekStart && s.date <= weekEnd)
     .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
 
