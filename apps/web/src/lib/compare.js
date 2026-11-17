@@ -143,6 +143,38 @@ export function basisWords(c) {
 }
 
 /**
+ * A child's BATTING AVERAGE (Q12, and Kameel, 16 Nov, on the scorebook's
+ * average: "Show the average with its innings and dismissals, and 'balls not
+ * recorded'"). The average rests on dismissals, not balls, so:
+ *   - every innings has its balls: the floor stands as childRate() draws it
+ *     (under thirty balls, "8 balls: a guide, not a figure");
+ *   - some or all innings have no balls recorded (a paper scorebook's): the
+ *     average is drawn, with what it rests on and the note, never held:
+ *     "34.00 · 1 inns, 1 out · balls not recorded". The recorded balls are
+ *     then not the whole of what the average spans, so flooring on them would
+ *     hold a figure Kameel decided to show.
+ * The strike rate is not this: with no balls it has no denominator, and
+ * childRate() holds it.
+ * @param {number | null | undefined} value  the average the adapter worked out (runs ÷ dismissals)
+ * @param {{ balls?: number | null, innings?: number | null, dismissals?: number | null, withoutBalls?: number | null }} on
+ *   balls: the balls recorded; withoutBalls: the innings with none recorded (0 or missing: every innings has its balls)
+ * @returns {{ text: string, count: string, held: boolean }}
+ */
+export function childAverage(value, { balls = null, innings = null, dismissals = null, withoutBalls = 0 } = {}) {
+  const unrecorded = balls == null || !Number.isFinite(Number(balls)) || Number(withoutBalls ?? 0) > 0;
+  if (!unrecorded) return childRate(value, balls);
+  const drawn = value != null && Number.isFinite(Number(value));
+  const n = Number(innings ?? 0), out = Number(dismissals ?? 0);
+  const text = `${drawn ? Number(value).toFixed(2) : "—"} · ${n} inns, ${out} out · balls not recorded`;
+  return { text, count: balls == null ? "balls not recorded" : childRate(null, balls).count, held: false };
+}
+
+/** A career or season row's batting average (lib/live.js asCareer): childAverage() on the row's own counts. @param {Record<string, any>} row */
+export function careerAverage(row) {
+  return childAverage(row?.avg, { balls: row?.ballsFaced, innings: row?.innings, dismissals: row?.dismissals, withoutBalls: row?.inningsWithoutBalls });
+}
+
+/**
  * A rate on a row as the staff player page holds it (Q12 everywhere): a
  * live row (lib/live.js asCareer, merged onto the player) through
  * childRate(), on the balls it rests on, faced for the batting rates and
@@ -155,6 +187,7 @@ export function basisWords(c) {
 export function rowRate(row, kind) {
   const v = row?.[kind];
   if (!row?.live) return { text: v == null ? "—" : String(v), count: null, held: false };
+  if (kind === "avg") return careerAverage(row);
   return childRate(v, kind === "econ" || kind === "bowlAvg" ? row.ballsBowled : row.ballsFaced);
 }
 
