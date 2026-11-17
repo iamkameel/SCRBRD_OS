@@ -58,11 +58,28 @@
 -- Nothing is backfilled: an answer given before the paste wrote no notice
 -- and writes none now.
 --
+-- NOT TO A DISABLED ACCOUNT (red-team S2). (a) and (b) write nothing to an
+-- account that is not active (app_user.active): a request a disabled
+-- account left pending stays pending (nothing in db/85 or db/90 closes it),
+-- and if the office answers it, nothing waits in the shut account for the
+-- day it is re-enabled. When push delivery ships (push_candidates(),
+-- NOTIFICATIONS S3), this notice goes as D14's pointer and skips a disabled
+-- account as well.
+--
+-- ALSO ON THE RECORD. An asker who is also a DSO at that school reads
+-- db/93's "A parent claim was declined" beside her answered notice on a
+-- decline (db/93 fans out by capability): db/93's behaviour from before
+-- this file, and her requests list says which anyway (red-team N2). The
+-- file is one transaction (the paste wraps it); run statement by
+-- statement, a failure mid-file could leave functions without their
+-- grants revoked (N4). After it, db/128 cannot be pasted again: its guard
+-- finds neither of its two guardian_link_verify() bodies (N5).
+--
 --   (c) the office ends a link it never verified, through
 --       guardian_link_revoke() (db/109). That is an answer to the waiting
 --       parent too (the lead, 15 Nov: Q15's same-words rule governs it), so
 --       db/109's notice for it, "A link to a child has ended" with its date,
---       is given this file's words instead: an AFTER INSERT trigger on
+--       is given this file's words instead: a trigger on
 --       guardian_link_ending, the row db/109 writes beside its notice
 --       (AFTER INSERT, and AFTER UPDATE OF notice_id: db/109's revoke
 --       upserts the row, and a link db/62 already dated on leaving takes the
@@ -74,6 +91,14 @@
 --       role, is never reworded: "A role of yours has ended" stands, even
 --       over a pending link. A verified link that ends keeps db/109's notice
 --       word for word. db/109's function is not touched.
+--       Not for a pupil's account (person_is_pupil(), db/57): he keeps
+--       db/109's own words, "A link to a child has ended", as he has since
+--       db/109, so no pupil holds the answered notice (red-team S1). Whether
+--       an adult whose account also plays should be told as a parent is
+--       Kameel's question; meanwhile the account rule stands, on every path.
+--       Unlike (a) and (b), (c) rewords whatever the account's state: the
+--       notice is db/109's, written to a disabled account too, and its
+--       answered words reveal less than its own (red-team S2).
 --   A link the office established on its own (an offline form, not a
 --   request made in the app) is answered "your request to be linked to a
 --   child" too: the family's form is its request.
@@ -87,6 +112,11 @@
 -- other end; each red with the read's gate taken out.
 --
 -- ── WHAT MOVES ─────────────────────────────────────────────────────
+--   + school_answered_words(text)  the title and body, once; the policy, the
+--       trigger and the verify door all read them from here.
+--   + school_answered_notice_write(uuid, uuid, uuid)  the writer for (a)
+--       and (b): one notice, unless the account is a pupil's or not
+--       active; owner-only.
 --   + school_answer_subject_is_mine(uuid)  the read door: true when the
 --       notice's subject is a guardian role request of the caller's, or a
 --       guardian link of the caller's. A definer (the caller may read
@@ -136,6 +166,16 @@ BEGIN
 END $guard$;
 
 
+-- ── 0b · Ten seconds for a lock, or nothing (db/158's and db/160's pattern) ──
+-- The triggers lock role_request and guardian_link_ending, and the policy
+-- locks notification, which every signed-in phone reads. A paste that
+-- cannot get a lock in ten seconds stops and changes nothing: paste it again.
+DO $lock$
+BEGIN
+  PERFORM set_config('lock_timeout', '10s', true);
+END $lock$;
+
+
 -- ── 1 · The words, once ────────────────────────────────────────────
 -- The one place the notice's words are written: the trigger, the re-emitted
 -- verify and the read door's title test all call it, so the three cannot
@@ -149,11 +189,14 @@ $$ LANGUAGE sql IMMUTABLE SECURITY DEFINER SET search_path = pg_catalog, public,
 
 -- ── 2 · The notice, written ─────────────────────────────────────────
 -- Internal: one notice to p_person about p_subject at p_school, unless the
--- person is a pupil. Owner-only; called by the trigger and the verify door.
+-- person is a pupil or the account is not active. Owner-only; called by the
+-- trigger and the verify door.
 CREATE OR REPLACE FUNCTION school_answered_notice_write(p_person uuid, p_school uuid, p_subject uuid) RETURNS void AS $$
 DECLARE w record;
 BEGIN
   IF p_person IS NULL OR p_school IS NULL OR p_subject IS NULL OR person_is_pupil(p_person) THEN RETURN; END IF;
+  -- Not to an account that is shut (red-team S2).
+  IF NOT EXISTS (SELECT 1 FROM app_user u WHERE u.id = p_person AND u.active) THEN RETURN; END IF;
   SELECT * INTO w FROM school_answered_words((SELECT s.name FROM school s WHERE s.id = p_school));
   INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
                             required_capability, is_public, subject_kind, subject_id, recipient_id)
@@ -248,7 +291,9 @@ CREATE OR REPLACE FUNCTION school_answered_on_ending() RETURNS trigger AS $$
 DECLARE w record;
 BEGIN
   IF NEW.notice_id IS NULL THEN RETURN NULL; END IF;
-  IF EXISTS (SELECT 1 FROM assignment_subject g WHERE g.id = NEW.link_id AND g.verified_at IS NULL) THEN
+  -- A pupil keeps db/109's own words (red-team S1): no pupil holds the answered notice.
+  IF EXISTS (SELECT 1 FROM assignment_subject g WHERE g.id = NEW.link_id AND g.verified_at IS NULL)
+     AND NOT person_is_pupil(NEW.guardian_id) THEN
     SELECT * INTO w FROM school_answered_words((SELECT s.name FROM school s WHERE s.id = NEW.school_id));
     -- db/109's own notice, about this link; never a shared role notice (db/77, subject the role).
     UPDATE notification SET title = w.title, body = w.body WHERE id = NEW.notice_id AND subject_id = NEW.link_id;
@@ -367,6 +412,12 @@ BEGIN
   END IF;
   IF position('subject_id = NEW.link_id' IN (SELECT prosrc FROM pg_proc WHERE oid = 'school_answered_on_ending()'::regprocedure)) = 0 THEN
     RAISE EXCEPTION 'db/161: school_answered_on_ending() rewords a notice that is not about its link';
+  END IF;
+  IF position('NOT person_is_pupil(NEW.guardian_id)' IN (SELECT prosrc FROM pg_proc WHERE oid = 'school_answered_on_ending()'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'db/161: school_answered_on_ending() rewords a pupil''s notice';
+  END IF;
+  IF position('u.active' IN (SELECT prosrc FROM pg_proc WHERE oid = 'school_answered_notice_write(uuid,uuid,uuid)'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'db/161: school_answered_notice_write() writes to a disabled account';
   END IF;
 
   -- The verify door writes the notice, and db/08's body is otherwise intact.
