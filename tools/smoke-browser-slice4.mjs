@@ -320,6 +320,34 @@ try {
     ok("no page error", s.errors.length === 0, s.errors.join(" | "));
     await s.ctx.close();
   }
+  // Red-team S4: a link the office set up from a paper form, then ended unverified. No request of hers
+  // exists, and with her only link her role ends too, so she lands here: the answered notice must point
+  // at something, and the no-school home says the link ended, in Family's words.
+  const formKid = await child("Formlink Kid");
+  const formMum = await user("slice4.formmum@example.invalid", "F Formlink", "guardian");
+  await link(formMum, formKid, "pending");
+  {
+    const [{ id: formLink }] = await q(`select s.id from assignment_subject s join role_assignment a on a.id = s.assignment_id where a.person_id = $1`, [formMum]);
+    const c = await pool.connect();
+    let ended = null;
+    try {
+      await c.query("BEGIN");
+      await c.query("select set_config('app.user_id', $1, true)", [REGISTRAR]);
+      ended = (await c.query("select ok, reason from guardian_link_revoke($1, 'office', 'slice4 walk: not this family, checked.')", [formLink])).rows[0];
+      await c.query("COMMIT");
+    } catch (e) { await c.query("ROLLBACK").catch(() => {}); throw e; } finally { c.release(); }
+    ok("the office ends the link it set up, unverified", ended?.ok === true, JSON.stringify(ended));
+    const s = await open();
+    await signIn(s.page, "slice4.formmum@example.invalid");
+    await tid(s.page, "no-school-notice").first().waitFor({ timeout: 12000 }).catch(() => {});
+    ok("she reads the one answered notice", /The school has answered your request/.test(await inner(s.page, "no-school-notices")));
+    const line = await inner(s.page, "no-school-link");
+    ok("...and the no-school home says where the answer is: her link ended, in Family's words",
+       (await tid(s.page, "no-school-link").count()) === 1 && (await tid(s.page, "no-school-link").getAttribute("data-kind")) === "ended"
+       && /Your link to a child at Hilton College ended on/.test(line) && /The school office can say why/.test(line) && !/Formlink/.test(line), line);
+    ok("no page error", s.errors.length === 0, s.errors.join(" | "));
+    await s.ctx.close();
+  }
 
   // ── 5. Q7: the DSO card ──────────────────────────────────────────
   group("5. The DSO card, last on the parent's and the pupil's Home (Q7)");
