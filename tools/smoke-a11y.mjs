@@ -1948,14 +1948,22 @@ async function walk(theme) {
     await page.keyboard.press("Tab");
     const afterTab = await inMain();
     ok("...so the next Tab lands on the page's first control", afterTab.inside && !afterTab.isMain, JSON.stringify(afterTab));
-    await page.locator('[role="tab"]', { hasText: /^Me$/ }).first().click({ timeout: 4000 }).catch(() => {});
-    await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "tab" && document.activeElement?.textContent?.trim() === "Me",
-      null, { timeout: 4000 }).catch(() => {});
-    const onTab = await page.evaluate(() => document.activeElement?.getAttribute("role") + ":" + document.activeElement?.textContent?.trim());
+    // Slice 6 (EXPERIENCE_PASS §1.6): Settings is the person's own, and with Me its only tab no tab strip is drawn, so
+    // the control the person is on is the one the Tab above reached; where a strip is drawn, it is the Me tab.
+    const meTab = page.locator('[role="tab"]', { hasText: /^Me$/ }).first();
+    if (await meTab.count()) {
+      await meTab.click({ timeout: 4000 }).catch(() => {});
+      await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "tab" && document.activeElement?.textContent?.trim() === "Me",
+        null, { timeout: 4000 }).catch(() => {});
+    }
+    const focusNow = () => page.evaluate(() => {
+      const a = document.activeElement;
+      return a && a !== document.body && document.querySelector("main")?.contains(a) ? `${a.getAttribute("role") ?? a.tagName.toLowerCase()}:${a.textContent?.trim()}` : "";
+    });
+    const onTab = await focusNow();
     await page.waitForTimeout(2500);
     ok("a background refresh of the data moves nothing: focus is where the person left it",
-       await page.evaluate(() => document.activeElement?.getAttribute("role") + ":" + document.activeElement?.textContent?.trim()) === onTab
-       && onTab === "tab:Me", onTab);
+       onTab !== "" && (await focusNow()) === onTab, onTab);
     ok("...and says nothing more", await announcer.textContent() === "Settings, page loaded");
     const settingsChoice = await page.evaluate(() => {
       const g = document.querySelector('[data-testid="theme-choice"]');
