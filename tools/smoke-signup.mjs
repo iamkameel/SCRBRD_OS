@@ -410,8 +410,8 @@ try {
     r = await api("/api/pupil/claim", { method: "POST", token: k2, body: { schoolId: HIL, name: "Zebedee Walkerson" } });
     ok("...and cannot send it again", r.status === 409 && r.body?.error === "already_answered", r);
 
-    // Q9: past its 30 days the office removes it; his Google account then makes a new account.
-    await own.query(`update pupil_claim set last_claim_at = now() - interval '31 days' where user_id = (select id from app_user where email = $1)`, [K2_EMAIL]);
+    // Q9: 30 days past its claim and its decline (db/163 S1), the office removes it; his Google account then makes a new account.
+    await own.query(`update pupil_claim set last_claim_at = now() - interval '31 days', decided_at = now() - interval '31 days' where user_id = (select id from app_user where email = $1)`, [K2_EMAIL]);
     r = await api("/api/pupil-claims/clear", { method: "POST", token: coach, body: { schoolId: HIL } });
     ok("a coach removes nothing", r.status === 200 && r.body?.removed === 0, r);
     r = await api("/api/pupil-claims/clear", { method: "POST", token: office, body: { schoolId: HIL } });
