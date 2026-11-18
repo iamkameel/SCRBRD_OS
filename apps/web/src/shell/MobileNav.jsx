@@ -46,8 +46,8 @@ const BADGE_TONE = themed(() => ({ emerald:D.emerald, sky:D.sky, amber:D.amber }
 function SportSwitcher({ sports: given = null } = {}) {
   const [open, setOpen] = useState(false);
   // Only the sports switched on: one that is off is hidden, not badged SOON.
-  const read = useSports().sports;
-  const sports = sportsOn(given ?? read);
+  const read = sportsOn(useSports().sports);
+  const sports = given ? sportsOn(given) : read;
   // A school that plays one sport has nothing to switch between: a drop-down there is a control that does nothing
   // (glossary review item 4), so it is not drawn. Nor is it while the list is unread or could not be read.
   if (sports.length < 2) return null;
