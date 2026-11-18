@@ -14626,8 +14626,11 @@ BEGIN
     PERFORM _assert(v = 'recognised|true', format('§141 (own): recognised, its state reads %s', v));
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM my_pupil_state() s WHERE row_to_json(s)::text ~ 'Rostername|U16A'),
       '§141 (own): recognised, its state shows the roster''s name for him or his team');
+    -- Hilton's DSOs by name, the seed's among them (earlier sections may appoint more), and nobody else's.
     SELECT string_agg(d.school_id || ':' || d.person_id || ':' || d.held_at, ',') INTO v FROM dso_contacts(NULL) d;
-    PERFORM _assert(v = HIL || ':' || DSO || ':school', format('§141 (own): recognised, its safeguarding card reads %s', coalesce(v, '(nothing)')));
+    PERFORM _assert(EXISTS (SELECT 1 FROM dso_contacts(NULL) d WHERE d.person_id = DSO AND d.name IS NOT NULL)
+                    AND NOT EXISTS (SELECT 1 FROM dso_contacts(NULL) d WHERE d.school_id <> HIL OR d.held_at <> 'school'),
+      format('§141 (own): recognised, its safeguarding card reads %s', coalesce(v, '(nothing)')));
     SELECT count(*) INTO n FROM dso_contacts(WES);
     PERFORM _assert(n = 0, format('§141 (own): it reads %s of Westville''s DSO rows', n));
     -- A Westville claim, still with Westville's office, sees no card at either school.
@@ -14750,9 +14753,14 @@ BEGIN
   ELSIF p_case = 'born' THEN
     -- (born) Q2: the date of birth he types is compared and dropped: after the claim
     -- it is in no column of any table, the access log among them, as a date or as text.
-    arr := ARRAY[to_char(BORN, 'YYYY-MM-DD'), to_char(BORN, 'DD/MM/YYYY'), to_char(BORN, 'YYYYMMDD'), to_char(BORN, 'FMDD FMMonth YYYY')];
     KID := _v163_account('born'); BOY := _v163_boy(HIL, 'born', 15);
-    PERFORM _assert(_v163_find(BORN, arr) = '{}', format('§141 (born): before the claim, the date is already in %s (choose another)', _v163_find(BORN, arr)));
+    -- A date stored nowhere yet (earlier sections write many), so that finding it after means the claim wrote it.
+    FOR n IN 0..60 LOOP
+      arr := ARRAY[to_char(BORN, 'YYYY-MM-DD'), to_char(BORN, 'DD/MM/YYYY'), to_char(BORN, 'YYYYMMDD'), to_char(BORN, 'FMDD FMMonth YYYY')];
+      EXIT WHEN _v163_find(BORN, arr) = '{}';
+      BORN := BORN + 1;
+    END LOOP;
+    PERFORM _assert(_v163_find(BORN, arr) = '{}', format('§141 (born): no date near %s is stored nowhere', BORN));
     PERFORM _as(KID);
     SELECT x.ok, x.reason INTO ok_, why FROM pupil_claim_send(HIL, 'Sipho Testcase', 'Grade 9', BORN) x;
     PERFORM _assert(ok_, format('§141 (born): the claim with a date of birth was not sent (%s)', why));
