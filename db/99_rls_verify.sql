@@ -15004,12 +15004,26 @@ BEGIN
     SELECT x.ok INTO ok_ FROM safeguarding_concern_raise(HIL, 'adult', ARRAY['bullying'], 'suspicion',
       'Somebody at nets keeps shouting at me and pushing me.', 'victim') x;
     PERFORM _assert(ok_, '§141 (held): he could not raise his concern');
+    -- Kameel, 18 Nov ("hide"): before his ordinary date, the office sees that date, as for any claim.
+    PERFORM _as(REG);
+    SELECT x.keep_until::text INTO v FROM pupil_claims(HIL) x WHERE x.id = _v163_claim_id(KID);
+    PERFORM _assert(v = (sa_today() + 30)::text, format('§141 (held): before his date the office''s list reads %s, not his ordinary date', coalesce(v, '(no date)')));
     PERFORM _v163_age(KID, 45);
     PERFORM _v163_decided(KID, 45);   -- re-review S4: both dates past, so only B1 keeps him
     PERFORM _as(REG);
     PERFORM _assert(pupil_claim_clear(HIL) = 0, '§141 (held): the office''s clear removed a concern''s reporter');
-    SELECT coalesce(x.keep_until::text, '-') INTO v FROM pupil_claims(HIL) x WHERE x.id = _v163_claim_id(KID);
-    PERFORM _assert(v = '-', format('§141 (held): the office''s list dates his removal %s', v));
+    -- The clear's count is the list's: beside him, an ordinary claim past its date; the office's list
+    -- shows exactly the claims past their date that the clear then removes (that one, not him).
+    KID2 := _v163_account('held2');
+    PERFORM _as(KID2); PERFORM pupil_claim_send(HIL, 'Lungi Testcase', NULL);
+    PERFORM _v163_age(KID2, 45);
+    PERFORM _as(REG);
+    SELECT count(*) INTO n FROM pupil_claims(HIL) x WHERE x.keep_until < sa_today() AND x.state <> 'open';
+    m := pupil_claim_clear(HIL);
+    PERFORM _assert(n = m AND m >= 1, format('§141 (held): the office''s list shows %s past their date; the clear removed %s', n, m));
+    -- After his date his row is gone from the office's list, as a removed claim's is, while his claim stays.
+    SELECT count(*) INTO n FROM pupil_claims(HIL) x WHERE x.id = _v163_claim_id(KID);
+    PERFORM _assert(n = 0 AND _v163_claim_id(KID) IS NOT NULL, format('§141 (held): past his date the office still lists his claim (%s rows)', n));
     PERFORM _assert(_v163_purge() = 0, '§141 (held): the owner''s sweep removed a concern''s reporter');
     PERFORM _assert(NOT _v163_would_remove(KID), '§141 (held): the remover itself would remove a concern''s reporter');
     PERFORM _as(KID);
@@ -15204,7 +15218,7 @@ BEGIN
                              'pupil_claim_remove_account(uuid)', 'pupil_claim_due(uuid)', 'pupil_claim_purge()',
                              'pupil_claim_refuses_asking()', 'person_is_pupil(uuid)',
                              'pupil_claim_held(uuid)', 'pupil_claim_player_gone()', 'audit_names_pupil(uuid)',
-                             'pupil_recognised_at_locked(uuid,uuid)'] LOOP
+                             'pupil_recognised_at_locked(uuid,uuid)', 'pupil_claim_office_until(uuid)'] LOOP
       PERFORM _assert(_v163_acl(v) = '', format('§141 (grants): %s is granted %s', v, coalesce(_v163_acl(v), '(missing)')));
     END LOOP;
     v := coalesce(_v157_public_at_start(), '');
@@ -46578,7 +46592,8 @@ $m130$;
   --   (held)       B1 (review, 18 Nov): a recognised boy who raised a concern
   --                is never removed, by the clear, the sweep or his own Remove
   --                ('kept'), both his dates long past; no date on the office's
-  --                list or his screen; his roster row's delete refused as any
+  --                list past his ordinary date (shown it before, Kameel "hide")
+  --                or on his screen; his roster row's delete refused as any
   --                referenced row's is (re-review S2), his card kept
   --   (declinedclock) S1: a declined claim is kept 30 days from its decline
   --   (rosterdel)  S2: his roster row deleted sends his claim back to the

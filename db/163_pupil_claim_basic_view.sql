@@ -287,6 +287,19 @@ BEGIN
   RETURN pupil_recognised_at(p_person, p_school);
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- The office's date (Kameel, 18 Nov, on the re-review's S3(b): "hide"):
+-- keep_until without the held arm. The office is shown the ordinary date for
+-- every claim, a concern's reporter's too, so no row reads differently; once
+-- that date has passed, pupil_claims() leaves a held claim out, as a removed
+-- claim would be, and the clear (which reads keep_until, NULL while held)
+-- passes it by without a word, so its count is the list's. The protection,
+-- his own screen and the DSO's view are unchanged.
+CREATE OR REPLACE FUNCTION pupil_claim_office_until(p_claim uuid) RETURNS date AS $$
+  SELECT CASE WHEN c.state = 'open' OR pupil_account_opened(c.user_id) THEN NULL
+              ELSE greatest(sa_date(c.last_claim_at), coalesce(sa_date(c.decided_at), sa_date(c.last_claim_at))) + 30 END
+    FROM pupil_claim c WHERE c.id = p_claim
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- S2 (review, 18 Nov): a recognised boy's roster row can be deleted (a
 -- correction, an erasure). His claim goes back to the office, unmatched:
 -- the account is still the claimant's, it opens nothing, and the office may
@@ -430,7 +443,9 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
  * THE OFFICE'S PUPIL CLAIMS LIST (§5.3). guardian.link.manage at the school;
  * nothing for anybody else, the same as a school with none. His address is
  * here because only the office and the principal read it (R4). The roster
- * name is the office's own read (it already reads the roster).
+ * name is the office's own read (it already reads the roster). Nothing in it
+ * says a claim is kept for a safeguarding concern: such a claim shows its
+ * ordinary date, then leaves the list when that date passes (Kameel, 18 Nov).
  */
 CREATE OR REPLACE FUNCTION pupil_claims(p_school uuid)
 RETURNS TABLE (id uuid, account_id uuid, account_name text, address text, typed_name text, typed_year text,
@@ -438,12 +453,14 @@ RETURNS TABLE (id uuid, account_id uuid, account_name text, address text, typed_
                player_id uuid, player_name text, known_by_name text, known_at timestamptz, decided_at timestamptz) AS $$
   SELECT c.id, c.user_id, u.name, u.email, c.typed_name, c.typed_year, c.first_claim_at, c.last_claim_at,
          CASE WHEN pupil_account_opened(c.user_id) THEN 'open' ELSE c.state END,
-         pupil_claim_keep_until(c.id), c.player_id, p.full_name, kb.name, c.known_at, c.decided_at
+         pupil_claim_office_until(c.id), c.player_id, p.full_name, kb.name, c.known_at, c.decided_at
     FROM pupil_claim c
     JOIN app_user u ON u.id = c.user_id
     LEFT JOIN player p ON p.id = c.player_id
     LEFT JOIN app_user kb ON kb.id = c.known_by
    WHERE c.school_id = p_school AND pupil_claim_office(p_school)
+     -- A concern's reporter past the ordinary date reads as a removed claim does: gone (S3(b), "hide").
+     AND NOT (pupil_claim_held(c.user_id) AND coalesce(pupil_claim_office_until(c.id) < sa_today(), false))
    ORDER BY (c.state = 'with_office') DESC, c.last_claim_at DESC, c.id
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -771,7 +788,7 @@ DECLARE
                              'pupil_claim_remove_account(uuid)', 'pupil_claim_due(uuid)', 'pupil_claim_purge()',
                              'pupil_claim_refuses_asking()', 'person_is_pupil(uuid)',
                              'pupil_claim_held(uuid)', 'pupil_claim_player_gone()', 'audit_names_pupil(uuid)',
-                             'pupil_recognised_at_locked(uuid,uuid)'];
+                             'pupil_recognised_at_locked(uuid,uuid)', 'pupil_claim_office_until(uuid)'];
 BEGIN
   FOREACH f IN ARRAY v_doors LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f::regprocedure);
@@ -847,7 +864,7 @@ BEGIN
                                'pupil_claim_remove_account(uuid)', 'pupil_claim_due(uuid)', 'pupil_claim_purge()',
                                'pupil_claim_refuses_asking()', 'person_is_pupil(uuid)',
                                'pupil_claim_held(uuid)', 'pupil_claim_player_gone()', 'audit_names_pupil(uuid)',
-                               'pupil_recognised_at_locked(uuid,uuid)']) LOOP
+                               'pupil_recognised_at_locked(uuid,uuid)', 'pupil_claim_office_until(uuid)']) LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = f::regprocedure
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))) THEN
       RAISE EXCEPTION 'db/163: % does not pin its search_path', f;

@@ -147,7 +147,7 @@ export const OFFICE_STATE_WORDS = Object.freeze({
 });
 
 /** What the office is told before it decides. */
-export const OFFICE_INTRO = "A pupil under 18 signed in with Google and said he is at this school. Recognising him matches his account to his place on your list: it opens nothing, not his team, his matches or his record. His own page opens when a parent's or guardian's signed consent form is on file and you enrol his account. If you do not know him, decline: the school's safeguarding officers are told that a claim was declined, without his name. An account is kept 30 days from its last claim, or from your answer; one shown with no date is kept until further notice.";
+export const OFFICE_INTRO = "A pupil under 18 signed in with Google and said he is at this school. Recognising him matches his account to his place on your list: it opens nothing, not his team, his matches or his record. His own page opens when a parent's or guardian's signed consent form is on file and you enrol his account. If you do not know him, decline: the school's safeguarding officers are told that a claim was declined, without his name. An account is kept 30 days from its last claim, or from your answer.";
 
 /** Each refusal of recognise and decline, in the office's words. */
 export const OFFICE_WORDS = Object.freeze({
