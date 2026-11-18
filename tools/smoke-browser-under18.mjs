@@ -309,7 +309,10 @@ try {
     ok("he follows Hilton's public matches", (await tid(P, "followed-school-HIL").count()) === 1);
     await holdsTheTable(P, { recognised: false, label: "with the office" });
     const api = [...new Set(h.requests.filter((r) => /^(GET|POST|DELETE) \/api\//.test(r)).map((r) => r.replace(/\/[0-9a-f-]{36}/g, "/:id")))];
-    const allowed = /^(GET|POST) \/api\/(health|session|schools|pupil\/state|pupil\/claim|follows(\/today)?|safeguarding\/contacts|auth\/firebase|read\/(my_sign_ins|role_requests|school_add_requests|my_links|notifications))$/;
+    // The shell's own, for any account: its unread count (read/summary), its waiting competition
+    // invitations and its own Pilot grant (the scoring block). Each answers about the account alone,
+    // and smoke-signup (9) proves every read resource answers him empty.
+    const allowed = /^(GET|POST) \/api\/(health|session|schools|pupil\/state|pupil\/claim|follows(\/today)?|safeguarding\/contacts|auth\/firebase|competition-invitations|pilot\/status|read\/(my_sign_ins|role_requests|school_add_requests|my_links|notifications|summary))$/;
     ok("what the screen asked the server is his own and the public's only", api.every((r) => allowed.test(r)), api.filter((r) => !allowed.test(r)));
     ok("...and no analytics event left the page", !h.requests.some((r) => /google-analytics|googletagmanager|firebaselogging|app-measurement/.test(r)), h.requests.filter((r) => /analytics|measurement/.test(r)));
     // The same reads, as his token: nothing but his own.
