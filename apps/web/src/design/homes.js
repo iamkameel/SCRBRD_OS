@@ -103,6 +103,37 @@ export const HOMES = {
     ],
     links: [{ to: "logistics", section: "grounds", label: "Ground schedule", from: "logistics" }],
   },
+  // School (§1.3, §1.6; Slice 6): the office's work. People is the staff
+  // register's screen with Settings' People and Import parts under it; Access
+  // is Management with Settings' Roles as its reference; Record is Settings'
+  // School part. Each section is the screen it was, under its own capability,
+  // and everyone who reaches Access, Modules or Sponsors reaches People too.
+  staff: {
+    key: "staff", title: "School", color: "violetText", absorbs: ["management", "record", "modules", "sponsors"],
+    sections: [
+      { key: "staff",      label: "People",   from: "staff"      },
+      { key: "management", label: "Access",   from: "management" },
+      { key: "record",     label: "Record",   from: "record"     },
+      { key: "modules",    label: "Modules",  from: "modules"    },
+      { key: "sponsors",   label: "Sponsors", from: "sponsors"   },
+    ],
+    links: [],
+  },
+  // Platform (§1.3; Slice 6): what the platform holds and no school does.
+  // Schools asking to be added, an hour's support access, the rain rule's
+  // table, what is built, and the pitch deck, each under the capability its
+  // panel was drawn for.
+  pitchdeck: {
+    key: "pitchdeck", title: "Platform", color: "indigoText", absorbs: ["requests", "support", "dls", "roadmap"],
+    sections: [
+      { key: "requests",  label: "School requests", from: "requests"  },
+      { key: "support",   label: "Support access",  from: "support"   },
+      { key: "dls",       label: "DLS table",       from: "dls"       },
+      { key: "roadmap",   label: "What's built",    from: "roadmap"   },
+      { key: "pitchdeck", label: "Pitch deck",      from: "pitchdeck" },
+    ],
+    links: [],
+  },
 };
 
 /**
@@ -111,7 +142,7 @@ export const HOMES = {
  * framed home's section keys are the destinations themselves, so choosing a
  * section is choosing that destination and its route.
  */
-export const FRAMED = Object.freeze(["dashboard", "matches", "squad"]);
+export const FRAMED = Object.freeze(["dashboard", "matches", "squad", "staff", "pitchdeck"]);
 
 /**
  * A destination reached from a bar rather than the menu while the reader

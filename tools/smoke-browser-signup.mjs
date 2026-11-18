@@ -59,7 +59,7 @@ import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { SIGNIN_NOTICE } from "../apps/web/src/lib/signinNotice.js";
 import { afterReads, watchReads } from "./walk-wait.mjs";
-import { destLocator } from "./walk-nav.mjs";
+import { destLocator, openSettingsPart } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4385);
 const API_PORT = port(8985);
@@ -185,10 +185,9 @@ async function go(page, key) {
   await afterReads(page, 1200);
   return true;
 }
-/** Settings → a tab. */
+/** What was Settings' tab `tab`, where it lives now (Slice 6): People and Import are School, People; Me is the person's own. */
 async function settingsTab(page, tab) {
-  if (!(await go(page, "settings"))) return false;
-  try { await page.locator(`#settings-tab-${tab}`).click({ timeout: 4000 }); } catch { return false; }
+  if (!(await openSettingsPart(page, tab))) return false;
   await afterReads(page, 1200);
   return true;
 }
@@ -461,7 +460,7 @@ try {
     ok("the Claims list is on People, with the parent's claim", (await tid(o.page, "claims").count()) === 1 && (await parentClaim.count()) === 1, (await tid(o.page, "claims").innerText().catch(() => "")).slice(0, 200));
     ok("...enrolled address beside Google's, no uid", (await parentClaim.locator('[data-testid="claim-enrolled"]').innerText()) === "parent@example.invalid"
        && (await parentClaim.locator('[data-testid="claim-google"]').innerText()) === "parent@example.invalid" && !(await tid(o.page, "claims").innerText()).includes(PARENT_UID));
-    ok("...counted on the People tab", /\d/.test(await o.page.locator("#settings-tab-users").innerText()));
+    ok("...counted on School, People (the People tab before Slice 6)", /\d+ to attend to/.test(await tid(o.page, "people-attention").innerText().catch(() => "")));
     const flc = await floors(o.page, '[data-testid="claims"]');
     ok("the Claims list: nothing under 12px, nothing under 44px", flc.small.length === 0 && flc.tiny.length === 0, [...flc.small, ...flc.tiny].join(" | "));
 

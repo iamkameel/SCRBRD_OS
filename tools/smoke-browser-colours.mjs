@@ -29,6 +29,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(5378);
 const API_PORT = port(8878);
@@ -125,7 +126,7 @@ async function page_goSquad(page) {
 }
 /** Management → Colours (the deciders and the office), then the phone's width. */
 async function toColours(page) {
-  const nav = tid(page, "nav-management").first();
+  const nav = (await destLocator(page, "management"));
   if (!(await nav.count())) { console.log("    (no Management in the nav)"); return false; }
   try { await nav.click({ timeout: 6000 }); } catch { console.log("    (Management would not open)"); return false; }
   const tab = tid(page, "mgmt-tab-colours");
@@ -178,7 +179,7 @@ try {
     const c = await open();
     ok("the 1XI coach signs in", await signIn(c.page, "coach@example.invalid"));
     ok("...and reaches his side's Colours, on Squad (Management is not his)", await toSquadColours(c.page)
-       && (await tid(c.page, "nav-management").count()) === 0);
+       && (await (await destLocator(c.page, "management")).count()) === 0);
     const boys = await tid(c.page, "colours-boy").locator("option").evaluateAll((els) => els.map((e) => e.value).filter(Boolean));
     const side = (await q(`select id from player where school_id = '11111111-1111-1111-1111-111111111111' and team_code = '1XI'`)).map((r) => r.id);
     ok("he is offered his own side's boys, and nobody else's", boys.length > 0 && boys.every((b) => side.includes(b)) && !boys.includes(DLAMINI), boys.join());
@@ -275,7 +276,7 @@ try {
     const g = await open();
     await signIn(g.page, "parent@example.invalid");   // her app is the family's: no staff home to look for
     ok("R Pillay's mother signs in", (await g.page.locator("button", { hasText: /^Sign In$|Get Started/ }).count()) === 0);
-    ok("...and is offered no Management, no Squad and no Colours", (await tid(g.page, "nav-management").count()) === 0
+    ok("...and is offered no Management, no Squad and no Colours", (await (await destLocator(g.page, "management")).count()) === 0
        && (await tid(g.page, "mgmt-tab-colours").count()) === 0 && (await tid(g.page, "colours").count()) === 0);
     await g.ctx.close();
   }

@@ -30,7 +30,7 @@ export function doorsFor({ nav, byId, assignments, onNav }) {
     /** A screen the reader reaches, landed on the row's own thing when the screen draws it. */
     const page = (/** @type {string} */ p, /** @type {string} */ label, /** @type {string | null} */ section = null) => {
       if (!nav.includes(p)) return null;
-      const note = fixFor(a.kind, { matchId: m?.id ?? null, competitionId: m?.competition ?? null });
+      const note = fixFor(a.kind, { matchId: m?.id ?? null, competitionId: m?.competition ?? null, requestId: a.requestId ?? null });
       return { label, go: () => { if (note) requestFix(note); onNav(p, section); } };
     };
     switch (a.kind) {
@@ -40,7 +40,7 @@ export function doorsFor({ nav, byId, assignments, onNav }) {
       case "conditions": return (m?.competition ? page("competitions", "Open the conditions", "competitions") : null) ?? fixture;
       case "fixture": return fixture;
       case "requests": return page("management", "Decide");
-      case "claims": return page("settings", "Confirm");
+      case "claims": return page("staff", "Confirm");
       case "register": return page("staff", "The register");
       case "result": return a.matchId ? { label: a.label, go: () => { requestResult(/** @type {string} */ (a.matchId)); onNav("matches"); } } : null;
       default: return null;

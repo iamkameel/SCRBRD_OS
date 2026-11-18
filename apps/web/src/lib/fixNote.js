@@ -79,16 +79,20 @@ export function useFix(page) {
  * @param {string} kind  @param {{ matchId?: string | null, competitionId?: string | null }} [o]
  * @returns {FixNote | null}
  */
-export function fixFor(kind, { matchId = null, competitionId = null } = {}) {
+export function fixFor(kind, { matchId = null, competitionId = null, requestId = null } = {}) {
   switch (kind) {
     case "bus":
       return matchId ? { page: "logistics", find: [`[data-testid="trip-fixture-${matchId}"]`, `[data-testid="trip-card-${matchId}"]`], fallback: ['[data-testid="transport-book"]'] } : null;
     case "conditions":
       return competitionId ? { page: "competitions", find: [`[data-testid="competition-${competitionId}"]`], click: true } : null;
     case "requests":
-      return { page: "management", find: ['[data-testid="requests-panel"]'] };
+      // "A parent is waiting" lands on her request, where the child it names is (Slice 6); else the panel.
+      return requestId
+        ? { page: "management", find: [`[data-testid="request-row-${requestId}"]`], fallback: ['[data-testid="requests-panel"]'] }
+        : { page: "management", find: ['[data-testid="requests-panel"]'] };
     case "claims":
-      return { page: "settings", find: ['[data-testid="claims"]'] };
+      // School, People since Slice 6 (Settings' People part, EXPERIENCE_PASS §1.6).
+      return { page: "staff", find: ['[data-testid="claims"]'] };
     case "register":
       return { page: "staff", find: ['[data-testid="clearance-register"]'] };
     default:

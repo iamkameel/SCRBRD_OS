@@ -160,7 +160,7 @@ const HOUR = 3600e3;
  * @property {string | null} owner    a role word on the side, or "the office"
  * @property {Deadline | null} deadline
  * @property {string | null} age      "oldest 4 days" where the record has no deadline
- * @property {{kind: string, label: string, matchId?: string, school?: string} | null} action   exactly one door
+ * @property {{kind: string, label: string, matchId?: string, school?: string, requestId?: string | null} | null} action   exactly one door
  * @property {any[] | null} [items]   an adult's own clearance rows, for the register row only
  * @property {string} [read]      for a failed read: which
  * @property {string | null} [error]
@@ -579,7 +579,18 @@ export function officeRows({ school, may, requests = [], claims = [], register =
   if (may.requests) {
     if (requests == null) unread.push(unreadRow(`office:${school}:read:requests`, "requests", "the requests", errors.requests ?? null, school));
     else {
-      const waiting = requests.filter((r) => r.state === "pending" && r.decidable === true && here(r));
+      const all = requests.filter((r) => r.state === "pending" && r.decidable === true && here(r));
+      // "A parent is waiting" (EXPERIENCE_PASS §1.10, Slice 6): a parent asking to be linked to a child is its own
+      // row, the office's first, and lands on the oldest such request. A count; the child is a tap deeper.
+      const parents = all.filter((r) => r.role === "guardian");
+      if (parents.length) {
+        const oldest = [...parents].sort((a, b) => String(a.requestedAt ?? "").localeCompare(String(b.requestedAt ?? "")))[0];
+        rows.push(mk({ id: `office:${school}:O1P`, rule: "O1", count: parents.length,
+          fact: parents.length === 1 ? "A parent is waiting" : `${parents.length} parents are waiting`,
+          source: SOURCE.requests, owner: OFFICE, age: `oldest ${ageWords(oldestOf(parents.map((r) => r.requestedAt)) ?? now, now)}`,
+          action: { kind: "requests", label: "Decide", school, requestId: oldest?.id ?? null } }));
+      }
+      const waiting = all.filter((r) => r.role !== "guardian");
       const unverified = waiting.filter((r) => r.askedUnverified === true).length;
       if (waiting.length) rows.push(mk({ id: `office:${school}:O1`, rule: "O1", count: waiting.length,
         fact: `${waiting.length} ${plural(waiting.length, "request")} waiting${unverified ? ` · ${unverified} asked before the email was verified` : ""}`,

@@ -188,7 +188,8 @@ export function SeasonCard({ child, role, self = false }) {
 export function NoticesCard({ child, role, onOpen }) {
   const { rows } = useNotifications(role);
   const mine = noticesFor(rows, child);
-  const unread = mine.filter((n) => !n.read);
+  // Never a safeguarding notice on Home (EXPERIENCE_PASS Q7): its title says a concern exists; Notices and the bell have it.
+  const unread = mine.filter((n) => !n.read && n.type !== "safeguarding");
   if (!unread.length) return null;
   return (
     <Card label={`Notices · ${unread.length} unread`} testid="notices-card">

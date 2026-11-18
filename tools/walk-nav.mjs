@@ -85,12 +85,46 @@ const OLD_WORDS = [
   ["Skills", "skills"], ["Training", "training"], ["Fields", "fields"], ["To resolve", "readiness"],
   ["Alerts", "notifications"], ["Notifications", "notifications"], ["Safeguarding", "safeguarding"],
   ["Settings", "settings"], ["Rulebook", "rulebook"],
+  // Slice 6: the office's entries are the School home's sections, the platform's the Platform home's.
+  ["Staff", "staff"], ["Management", "management"], ["Modules", "modules"], ["Sponsors", "sponsors"],
+  ["Pitch Deck", "pitchdeck"],
 ];
+
+/**
+ * Settings' tabs before Slice 6, each the destination its part lives at now (EXPERIENCE_PASS §1.6): People and
+ * Import under School, People; Roles under School, Access; School as School, Record; Roadmap, Support and the DLS
+ * table on the Platform home. Me and a pupil's own Passport stay the person's own Settings, under their name.
+ */
+export const SETTINGS_PART = Object.freeze({
+  users: "staff", import: "staff", roles: "management", school: "record",
+  upgrades: "roadmap", support: "support", dls: "dls", me: "settings", passport: "settings",
+});
+
+/**
+ * Open what was Settings' tab `tab`, where it lives now: the section of its home (through destLocator), or the
+ * person's own Settings from the header for Me and Passport, and then that tab where there is a strip to choose
+ * it from. Resolves false when the reader is not offered it (the walk's own "not offered" branch).
+ * @param {import("playwright-core").Page} page @param {string} tab  an old `settings-tab-<tab>` id
+ */
+export async function openSettingsPart(page, tab, wait = 900) {
+  const key = SETTINGS_PART[tab];
+  if (!key) return false;
+  const l = await destLocator(page, key, wait);
+  if (!(await l.count())) return false;
+  await l.click({ timeout: 6000 }).catch(() => {});
+  await page.waitForTimeout(wait);
+  if (key !== "settings") return true;
+  const t = page.locator(`#settings-tab-${tab}`);
+  if (await t.count()) await t.click({ timeout: 4000 }).catch(() => {});
+  else if (tab !== "me") return false;
+  await page.waitForTimeout(300);
+  return true;
+}
 
 /**
  * A walk that finds a destination by its menu word: the menu button with that
  * word if there still is one (the persona bars' words stand, and so do
- * Logistics, Staff, Sponsors, Management); else the destination that word
+ * Logistics); else the destination that word
  * named, reached through its home (destLocator).
  * @param {import("playwright-core").Page} page @param {RegExp | string} label
  */

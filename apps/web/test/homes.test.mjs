@@ -47,8 +47,8 @@ const STAFF_ROLES = POLICY_ROLES.filter((r) => personaFor(heldBy(r)) === null);
 
 group("The homes are built from destinations that exist, under the capability they always had");
 {
-  ok("six homes: Today, Matches, Team, Competitions, Logistics (transport), Fields (grounds)",
-     eq(Object.keys(HOMES), ["dashboard", "matches", "squad", "competitions", "logistics", "fields"]));
+  ok("eight homes: Today, Matches, Team, Competitions, Logistics (transport), Fields (grounds), School, Platform",
+     eq(Object.keys(HOMES), ["dashboard", "matches", "squad", "competitions", "logistics", "fields", "staff", "pitchdeck"]));
   ok("every home key, section source and link target is a destination with a capability",
      Object.values(HOMES).every((hm) => hm.key in NAV_CAPABILITY && hm.sections.every((s) => s.from in NAV_CAPABILITY)
        && hm.links.every((l) => l.to in NAV_CAPABILITY && l.from in NAV_CAPABILITY)));
@@ -64,7 +64,8 @@ group("The homes are built from destinations that exist, under the capability th
      ["competitions", "logistics", "fields"].every((k) => HOMES[k].sections.every((s) => NAV_CAPABILITY[s.from] === NAV_CAPABILITY[k])));
   ok("no home mentions a role by name", !/\b(coach|principal|director|schooladmin|driver|facilities|transportcoordinator)\b/.test(JSON.stringify(HOMES)));
   ok("the destinations folded into homes (§1.5)", eq(HOME_OF, { readiness: "dashboard", news: "dashboard", calendar: "matches", officials: "matches",
-     profiles: "squad", injuries: "squad", training: "squad", skills: "squad", analytics: "squad", selection: "squad", leagues: "competitions" }));
+     profiles: "squad", injuries: "squad", training: "squad", skills: "squad", analytics: "squad", selection: "squad", leagues: "competitions",
+     management: "staff", record: "staff", modules: "staff", sponsors: "staff", requests: "pitchdeck", support: "pitchdeck", dls: "pitchdeck", roadmap: "pitchdeck" }));
   ok("a folded destination keeps its place in the order, capability and module",
      Object.keys(HOME_OF).every((k) => NAV_ORDER.includes(k) && k in NAV_CAPABILITY) && MODULE_OF_NAV.leagues === "leagues");
   ok("section keys are distinct within a home", Object.values(HOMES).every((hm) => new Set(hm.sections.map((s) => s.key)).size === hm.sections.length));
@@ -129,11 +130,34 @@ group("The menus of §1.7, after");
   say("teammanager", ["Today", "Matches", "Team", "Logistics"]);
   say("scorer", ["Today", "Matches", "Team"]);
   say("spectator", ["Today", "Matches"]);
-  // Until the School and Platform homes (Slice 6) the office's destinations stay entries of their own.
-  ok("the director of sport: Today, Matches, Team and Logistics, then his office's entries until Slice 6",
-     eq(words("directorofsport").slice(0, 3), ["Today", "Matches", "Team"]) && words("directorofsport").includes("Logistics")
-     && !words("directorofsport").some((w) => ["Newsfeed", "Calendar", "Competitions", "Officials", "Injuries", "Analytics", "Fields", "To resolve", "Alerts", "Safeguarding", "Settings", "Rulebook"].includes(w)),
-     words("directorofsport").join());
+  // Slice 6: the School and Platform homes (§1.7, §1.8).
+  say("directorofsport", ["Today", "Matches", "Team", "Logistics", "School"]);
+  say("schooladmin", ["Today", "Matches", "Team", "Logistics", "School"]);
+  say("sportsadmin", ["Today", "Matches", "Team", "Logistics", "School"]);
+  say("dso", ["Today", "Matches", "Team", "Logistics", "School"]);
+  say("principal", ["Today", "Matches", "Team", "Fields & pitches", "School"]);
+  say("superadmin", ["Today", "Matches", "Team", "Logistics", "School", "Platform"]);
+  // No Matches, so Competitions and the Rulebook stay entries (§1.5 rows 5 and 34).
+  say("platformadmin", ["Today", "Competitions", "School", "Platform", "Rulebook"]);
+  say("finance", ["Today", "School", "Rulebook"]);
+  // Review SF4: the lift purge (transport.lift.oversee) is on Logistics, Transport, so he keeps §1.8's menu.
+  say("transportcoordinator", ["Today", "Matches", "Squad", "Logistics"]);
+  ok("nobody at a school has more than five entries; only the superadmin's recovery key has six",
+     STAFF_ROLES.every((r) => menu(r).length <= 5 || r === "superadmin"), STAFF_ROLES.filter((r) => menu(r).length > 5).join());
+  const parts = (r, home) => homeParts(home, reachFor(r)).sections.map((s) => s.label);
+  ok("School for the office: People, Access, Record, Modules, Sponsors", eq(parts("schooladmin", "staff"), ["People", "Access", "Record", "Modules", "Sponsors"]));
+  ok("...for the director: no Modules (he cannot hide one)", eq(parts("directorofsport", "staff"), ["People", "Access", "Record", "Sponsors"]));
+  ok("...for the DSO and the sports admin: People and Record, no Access", eq(parts("dso", "staff"), ["People", "Record"]) && eq(parts("sportsadmin", "staff"), ["People", "Record"]));
+  ok("Platform: School requests, Support access, DLS table, What's built, Pitch deck, for the platform alone",
+     eq(parts("platformadmin", "pitchdeck"), ["School requests", "Support access", "DLS table", "What's built", "Pitch deck"])
+     && STAFF_ROLES.filter((r) => homeParts("pitchdeck", reachFor(r)).visible).join() === "superadmin,platformadmin");
+  ok("each School and Platform section under the gate its part had (or the home's, never wider)",
+     STAFF_ROLES.every((r) => homeParts("pitchdeck", reachFor(r)).sections.every((s) => roleGrants(r, NAV_CAPABILITY[s.from])))
+     && STAFF_ROLES.every((r) => !homeParts("staff", reachFor(r)).sections.some((s) => s.from === "record") || ["user.read", "broadcast.publish", "transport.lift.policy", "audit.read"].some((c) => roleGrants(r, c))));
+  ok("every holder of transport.lift.oversee reaches Logistics, where the lift purge is drawn (review SF4)",
+     STAFF_ROLES.filter((r) => roleGrants(r, "transport.lift.oversee")).every((r) => homeParts("logistics", reachFor(r)).sections.some((s) => s.key === "transport")));
+  ok("a coach, a team manager, a scorer, a parent and a pupil reach no School and no Platform",
+     ["coach", "teammanager", "scorer", "guardian", "player"].every((r) => !homeParts("staff", reachFor(r)).visible && !homeParts("pitchdeck", reachFor(r)).visible));
   ok("a union selector's Team is named by its one section, and keyed on it", menu("unionselector").includes("selection") && words("unionselector").includes("Selection") && !menu("unionselector").includes("squad"));
   ok("a scout reaching only the squad is named Squad", words("scout").includes("Squad"));
   ok("a platform admin, with no Matches, keeps Competitions and the Rulebook", menu("platformadmin").includes("competitions") && menu("platformadmin").includes("rulebook"));

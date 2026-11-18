@@ -9,6 +9,7 @@ import { Suspense, lazy, useState, useEffect, useRef } from "react";
 import { LoginPage } from "./auth/LoginPage.jsx";
 import { NAV_META, PERSONA_NAV, ROLES, navForRoles } from "./design/roles.js";
 import { FRAMED, homeOf } from "./design/homes.js";
+import { forgetSetup } from "./lib/setupList.js";
 import { HomeBar } from "./shell/HomeBar.jsx";
 import { useFix } from "./lib/fixNote.js";
 import { THING_PAGE, teamId, thingOf, thingPath } from "./lib/things.js";
@@ -85,6 +86,8 @@ const OfficialsView     = view(() => import("./views/OfficialsView.jsx"),     "O
 const SponsorsView      = view(() => import("./views/SponsorsView.jsx"),      "SponsorsView");
 const ModulesView       = view(() => import("./views/ModulesView.jsx"),       "ModulesView");
 const PitchDeckView     = view(() => import("./views/PitchDeckView.jsx"),     "PitchDeckView");
+// The Platform home's School requests (Q22, db/158): the list ManagementView drew for platform.tenant.manage.
+const SchoolRequestsView = view(() => import("./views/schoolRequests.jsx"),  "SchoolRequestsView");
 const ProfilesView      = view(() => import("./views/ProfilesView.jsx"),      "ProfilesView");
 const ReadinessOverview = view(() => import("./views/ReadinessOverview.jsx"), "ReadinessOverview");
 const RulebookView      = view(() => import("./views/RulebookView.jsx"),      "RulebookView");
@@ -340,6 +343,8 @@ export default function SCRBRD_OS() {
   const handleSignOut = ({ keepDoor = false } = {}) => {
     signOut();
     clearSession();
+    // What the set-up list learned from the screens is this account's: the next one to sign in here starts afresh.
+    forgetSetup();
     setScorerOpen(false); setScorerResume(null); setScorerMatchId(null); setScorerPractice(false); setScorerEntry(null);
     setUsers([]); setUserEdits(false);
     setRole("superadmin"); setUserName("Super Admin"); setPage("dashboard");
@@ -717,17 +722,26 @@ export default function SCRBRD_OS() {
     fields:       <FieldsView        role={role} onNav={setPage}
                     groundId={thing?.kind === "grounds" ? thing.id : null} onSelectGround={(id)=>followThing("grounds", id)}/>,
     readiness:    <ReadinessOverview role={role} onNav={setPage}/>,
-    staff:        <StaffView         role={role}/>,
+    // School (EXPERIENCE_PASS §1.3, §1.6): People is the staff register's screen with Settings' People and Import
+    // under it; Access is Management with Settings' Roles; Record is Settings' School. Each part as it was.
+    staff:        <><StaffView role={role}/><SettingsView role={role} part="people" users={users} setUsers={setUsersTracked} onDirectoryChanged={refreshDirectory}/></>,
+    record:       <SettingsView      role={role} part="record" users={users}/>,
     officials:    <OfficialsView     role={role}/>,
     sponsors:     <SponsorsView      role={role}/>,
     modules:      <ModulesView       role={role}/>,
     news:         <NewsView          role={role}/>,
-    notifications:<NotificationsView role={role}/>,
+    notifications:<NotificationsView role={role} onNav={setPage}/>,
     safeguarding: <SafeguardingView  role={role}/>,
-    settings:     <SettingsView      role={role} users={users} setUsers={setUsersTracked} onDirectoryChanged={refreshDirectory} onSignOut={handleSignOut}/>,
-    management:   <ManagementView    role={role} onDirectoryChanged={refreshDirectory}/>,
+    // The person's own Settings, under their name in the header (§1.6): Me, and their own record's passport.
+    settings:     <SettingsView      role={role} onSignOut={handleSignOut}/>,
+    management:   <ManagementView    role={role} onDirectoryChanged={refreshDirectory} usersAfter={<SettingsView role={role} part="roles" users={users}/>}/>,
     rulebook:     <RulebookView      role={role}/>,
     pitchdeck:    <PitchDeckView     role={role} onNav={setPage}/>,
+    // Platform (§1.3): what no school holds, each under the capability its panel was drawn for.
+    requests:     <SchoolRequestsView role={role}/>,
+    support:      <SettingsView      role={role} part="support"/>,
+    dls:          <SettingsView      role={role} part="dls"/>,
+    roadmap:      <SettingsView      role={role} part="roadmap"/>,
     selection:    <SelectionView/>,
     // The family app (step 4 P1–P7) and the pupil's (S1–S4).
     children:     <FamilyHome        role={role} onNav={setPage} onOpenScorer={openScorer}/>,
@@ -784,7 +798,7 @@ export default function SCRBRD_OS() {
             <Suspense fallback={<Loading what={shown}/>}>
               <ViewChange page={shown} title={NAV_META[shown]?.label ?? page}/>
               <ErrorBoundary key={page} name={NAV_META[page]?.label ?? "page"}>
-                {/* Today, Matches and Team (EXPERIENCE_PASS §1.3): the home's sections over the screen, each section the
+                {/* Today, Matches, Team, School and Platform (EXPERIENCE_PASS §1.3): the home's sections over the screen, each section the
                     destination it came from, drawn only where this reader reaches it (design/homes.js). */}
                 {FRAMED.includes(homeOf(shown)) && (
                   <div className="os-home-frame" data-testid="home-frame">

@@ -8,6 +8,8 @@ import { BentoCard } from "../ui/surfaces.jsx";
 import { useQueue } from "./cockpit/useQueue.js";
 import { doorsFor } from "./queueDoors.js";
 import { fixFor, requestFix } from "../lib/fixNote.js";
+import { holdsAsHeld } from "../lib/held.js";
+import { setupLines } from "../lib/setupList.js";
 
 /** How many rows Today shows before "See all on To resolve". */
 export const NEEDS_YOU_SHOWN = 3;
@@ -40,17 +42,55 @@ export function needsYouRows(q) {
  * draws nothing, and the day sheet below says the day. A school-wide row is a
  * count, never a child's name (GA-I09 §5); the names are a tap deeper.
  *
- * @param {{ role: string, matches: any[], onNav: (page: string, section?: string | null) => void }} p
+ * The set-up list (EXPERIENCE_PASS §1.9, §2.7; Slice 6) leads it for a school with no fixtures yet: drawn from the
+ * same queue rows and the rows Today already reads (`matchesAnswered`, `players`), with no read of its own.
+ *
+ * @param {{ role: string, matches: any[], onNav: (page: string, section?: string | null) => void,
+ *           matchesAnswered?: boolean, players?: any[] }} p
  */
-export function NeedsYou({ role, matches, onNav }) {
+export function NeedsYou({ role, matches, onNav, matchesAnswered = false, players = [] }) {
   const reach = useNav(role);
   const offered = signedIn() && reach.includes("readiness");
   if (!offered) return null;
-  return <NeedsYouRead reach={reach} matches={matches} onNav={onNav}/>;
+  return <NeedsYouRead role={role} reach={reach} matches={matches} onNav={onNav} matchesAnswered={matchesAnswered} players={players}/>;
 }
 
-/** @param {{ reach: string[], matches: any[], onNav: (page: string, section?: string | null) => void }} p */
-function NeedsYouRead({ reach, matches, onNav }) {
+/**
+ * The set-up list's card: each line a row with its owner and one door, the door landing on its fix.
+ * @param {{ lines: import("../lib/setupList.js").SetupLine[], onNav: (page: string, section?: string | null) => void }} p
+ */
+function SetupList({ lines, onNav }) {
+  const line = { ...T.role.body, color: T.content.secondary, margin: 0 };
+  const go = (/** @type {import("../lib/setupList.js").SetupLine} */ l) => () => {
+    if (l.door.fix) requestFix({ page: l.door.page, find: [l.door.fix] });
+    onNav(l.door.page, l.door.section ?? null);
+  };
+  return (
+    <BentoCard level="a" title="Setting up" data-testid="setup-list">
+      <div style={{ display: "grid", gap: T.space.xs }}>
+        <p data-testid="setup-list-header" style={{ ...line, color: T.content.primary, fontWeight: 600 }}>
+          No fixtures yet. {lines.length === 1 ? "One thing" : `${lines.length} things`} to set your school up, each gone once it is done.
+        </p>
+        <ul style={{ margin: 0, padding: 0, display: "grid", gap: T.space.xs }}>
+          {lines.map((l) => (
+            <li key={l.key} data-testid="setup-row" data-key={l.key} style={{ listStyle: "none" }}>
+              <button type="button" className="os-state" data-testid={`setup-open-${l.key}`} onClick={go(l)}
+                style={{ display: "block", width: "100%", minHeight: "44px", padding: `${T.space.sm} ${T.space.md}`, margin: 0, textAlign: "left", cursor: "pointer",
+                  background: "transparent", color: "inherit", font: "inherit", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md }}>
+                <span data-testid="setup-fact" style={{ display: "block", ...T.role.body, fontWeight: 600, color: T.content.primary, overflowWrap: "anywhere" }}>{l.fact}</span>
+                <span style={{ display: "block", ...line }}>{l.owner}</span>
+                <span style={{ display: "block", ...line, color: T.content.primary }}>{l.door.label} <span aria-hidden="true">›</span></span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </BentoCard>
+  );
+}
+
+/** @param {{ role: string, reach: string[], matches: any[], onNav: (page: string, section?: string | null) => void, matchesAnswered: boolean, players: any[] }} p */
+function NeedsYouRead({ role, reach, matches, onNav, matchesAnswered, players }) {
   const now = useMemo(() => Date.now(), []);
   const assignments = profile()?.assignments ?? null;
   // No-tap mode (review S2): opening Today makes no read the server logs against the people it names. The lifts
@@ -61,13 +101,23 @@ function NeedsYouRead({ reach, matches, onNav }) {
   const doorOf = doorsFor({ nav: reach, byId, assignments, onNav });
   const rows = needsYouRows(q);
   const failed = q.header.failed ?? 0;
+  // The set-up list (Slice 6): only for a school with no fixtures, and only once the fixtures read has answered.
+  const officeRowsOpen = q.offices.flatMap((o) => o.rows ?? []).filter((r) => r.state === "open");
+  const setup = setupLines({ reach, mayDo: (c) => holdsAsHeld(role, c),
+    matches: { answered: matchesAnswered, count: matches.length }, players,
+    parentsWaiting: officeRowsOpen.filter((r) => /:O1P$/.test(r.id)).reduce((n, r) => n + r.count, 0),
+    claimsWaiting: officeRowsOpen.filter((r) => r.rule === "O2").reduce((n, r) => n + r.count, 0),
+    account: profile()?.user?.id ?? null, schools: q.offices.map((o) => o.school) });
+  const setupCard = setup ? <SetupList lines={setup} onNav={onNav}/> : null;
   // The register is read on a tap, so Today offers the tap instead of a count it did not read.
   const register = q.registerOnTap.length > 0 && reach.includes("staff")
     ? { label: "The register", go: () => { const n = fixFor("register"); if (n) requestFix(n); onNav("staff"); } } : null;
-  if (!rows.length && !failed && !q.header.loading) return null;
+  if (!rows.length && !failed && !q.header.loading) return setupCard;
   const shown = rows.slice(0, NEEDS_YOU_SHOWN);
   const line = { ...T.role.body, color: T.content.secondary, margin: 0 };
   return (
+    <>
+    {setupCard}
     <BentoCard level="a" title="Needs you" data-testid="needs-you">
       <div style={{ display: "grid", gap: T.space.xs }}>
         <p data-testid="needs-you-header" aria-live="polite" style={{ ...line, color: T.content.primary, fontWeight: 600 }}>
@@ -112,5 +162,6 @@ function NeedsYouRead({ reach, matches, onNav }) {
         )}
       </div>
     </BentoCard>
+    </>
   );
 }

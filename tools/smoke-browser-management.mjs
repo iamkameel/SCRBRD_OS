@@ -57,6 +57,7 @@ import pg from "pg";
 import { GRANTABLE_ROLES, roleGrants } from "../packages/policy/src/roles.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator, openSettingsPart } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4372);
 const API_PORT = port(8912);
@@ -143,7 +144,7 @@ async function signIn(page, email, password = "") {
 }
 /** To Management → Users, waiting for the list to be drawn rather than for a clock. */
 async function toUsers(page) {
-  const nav = tid(page, "nav-management").first();
+  const nav = (await destLocator(page, "management"));
   if (!(await nav.count())) return false;
   try { await nav.click({ timeout: 6000 }); } catch { return false; }
   try { await tid(page, "people-panel").waitFor({ timeout: 10000 }); } catch { return false; }
@@ -550,7 +551,7 @@ try {
   ok("the 1XI coach signs in", await signIn(coach.page, "coach@example.invalid"));
   // Management is offered for user.role.assign (design/roles.js NAV_CAPABILITY);
   // a coach does not hold it, and nothing of the directory is drawn for him.
-  ok("Management is not in a coach's menu", await tid(coach.page, "nav-management").count() === 0);
+  ok("Management is not in a coach's menu", await (await destLocator(coach.page, "management")).count() === 0);
   ok("...so he has no directory, no Add user and no Add role anywhere", await tid(coach.page, "people-panel").count() === 0
      && await tid(coach.page, "add-user").count() === 0 && await coach.page.locator('[data-testid^="add-role-"]').count() === 0);
   await coach.ctx.close();
@@ -606,7 +607,7 @@ try {
   group("A groundskeeper, put in front of Management, has the tab his capability gives him");
   const gk = await open("http://127.0.0.1:9");
   ok("the demonstration's groundskeeper signs in", await signIn(gk.page, "emzimba@hilton.co.za", "ground123"));
-  ok("...and the shell does not offer him Management", await tid(gk.page, "nav-management").count() === 0);
+  ok("...and the shell does not offer him Management", await (await destLocator(gk.page, "management")).count() === 0);
   await gk.page.evaluate(() => new Promise((resolve, reject) => {
     const r = indexedDB.open("scrbrd", 1);
     r.onsuccess = () => {
@@ -690,9 +691,8 @@ try {
   await pf1.ctx.close();
 
   const pf2 = await open();
-  ok("the platform account, again, in Settings → People", await signIn(pf2.page, "platform@example.invalid"));
-  await tid(pf2.page, "nav-settings").first().click({ timeout: 6000 }).catch(() => {});
-  await pf2.page.waitForTimeout(1200);
+  ok("the platform account, again, in School, People (Settings → People before Slice 6)", await signIn(pf2.page, "platform@example.invalid"));
+  await openSettingsPart(pf2.page, "users", 1200).catch(() => false);
   await tid(pf2.page, "enrol-person").click({ timeout: 6000 }).catch(() => {});
   await pf2.page.waitForTimeout(800);
   const pfScorer = `walk.platform.scorer.${Date.now()}@example.invalid`;
@@ -706,7 +706,7 @@ try {
   await afterReads(pf2.page, 2200);
   ok("...and the scorer is appointed at Westville",
      (await q(`select a.role from role_assignment a join app_user u on u.id = a.person_id where u.email = $1 and a.school_id = $2 and a.active`, [pfScorer, WES])).some((a) => a.role === "scorer"));
-  ok("no console errors in Settings", pf2.errors.length === 0, pf2.errors.join(" | "));
+  ok("no console errors on School, People", pf2.errors.length === 0, pf2.errors.join(" | "));
   await pf2.ctx.close();
 
   group("The owner's key may appoint any role, and a child is chosen from that school's roster only");
@@ -801,7 +801,7 @@ try {
 
     const rq = await open();
     ok("the registrar signs in", await signIn(rq.page, "registrar@example.invalid"));
-    await tid(rq.page, "nav-management").first().click({ timeout: 6000 });
+    await (await destLocator(rq.page, "management")).click({ timeout: 6000 });
     await tid(rq.page, "requests-panel").waitFor({ timeout: 10000 }).catch(() => {});
     await rq.page.locator(`[data-testid="request-row-${vanished.id}"]`).waitFor({ timeout: 10000 }).catch(() => {});
     ok("all five requests are in the panel", (await Promise.all([noSide, named, answered, vanished, toDecline].map((r) => tid(rq.page, `request-row-${r.id}`).count()))).every((n) => n === 1));

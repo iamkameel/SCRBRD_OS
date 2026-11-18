@@ -531,6 +531,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // on Today (Q7); the team, player and ground addresses (Q11); the director's
   // first Needs you row lands on the fix.
   "browser-homes",
+  // EXPERIENCE_PASS Slice 6: the office's and the director's five homes (School),
+  // the platform's (Platform); Settings taken apart, a parent's name opening only
+  // her own; "A parent is waiting" first, landing on her request; a new school's
+  // set-up list, each line going as it becomes true; the DSO's route (Q7).
+  "browser-office",
   // GA-I19 slice B (db/111): the Injuries screens. The physio's Reviews due, the
   // Record and Review forms (next review required, +7 and +14, clearing asks
   // first), the left-the-school mark; the coach and the director read it with

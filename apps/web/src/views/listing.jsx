@@ -19,6 +19,8 @@ import { api, signedIn } from "../lib/api.js";
 import { LISTING_READ_ONLY_WHY, LISTING_WORDS, listingRefusal } from "../lib/listing.js";
 import { StateLabel } from "../ui/stateLabel.jsx";
 import { dHead, dNote } from "./publicname.jsx";
+import { learnSetup } from "../lib/setupList.js";
+import { profile } from "../lib/session.js";
 
 /**
  * The listing as this reader may read it, re-read after each change.
@@ -33,7 +35,8 @@ export function useSchoolListing(schoolId) {
     if (!signedIn() || !schoolId) return undefined;
     let gone = false;
     api(`/api/schools/${schoolId}/listing`)
-      .then((data) => { if (!gone) setSt({ loading: false, data, error: false }); })
+      // A choice on record (set_at) tells Today's set-up list that "Decide what is public" is done (lib/setupList.js).
+      .then((data) => { if (!gone) { setSt({ loading: false, data, error: false }); if (data?.setAt) learnSetup("public", schoolId, profile()?.user?.id); } })
       .catch((e) => { if (!gone) setSt({ loading: false, data: null, error: e?.status !== 404 }); });
     return () => { gone = true; };
   }, [schoolId, nonce]);
