@@ -91,6 +91,10 @@
 --     scorebook_school_grant() (db/63): the same line. md5-guarded.
 --   ~ my_own_boy() (db/106), recognition_self_players() (db/144),
 --     my_health_consents() (db/60): nothing for a closed account.
+--   ~ app_user_email_seen() (db/118): an account that has said it is a
+--       pupil (db/163's pupil_claim, recognised or waiting) is a pupil's
+--       for his address, at his claim's school: the office and the
+--       principal there read it, a director of sport does not.
 --   ~ role_request_grant_as() (db/92, db/108, db/128): his own link is
 --       stamped "granted" only when a yes is in force (or he is eighteen);
 --       otherwise "pending", and he waits (Q12).
@@ -162,7 +166,8 @@ INSERT INTO _db164_bodies VALUES
   ('pupil_claims(uuid)',                               '236d0ff30f96f570723d5259109bb247', '608b9e8e2b97267f624afb9401aa67e4'),
   ('pupil_account_opened(uuid)',                       '4ab87c3767211d5c959c4a43da18a2b9', '19eae6d7d5419182ba3eb242a6147b70'),
   ('pupil_claim_waiting(uuid)',                        'e2dca119c869fadd964e73c6d98e0278', '08b401e4f64ebcd5ab38130ac488f81b'),
-  ('pupil_claim_keep_until(uuid)',                     'b64dbe01c336708bac142f86cdf60120', 'a65471e9e4eeb6cd0b3a37772f698c68');
+  ('pupil_claim_keep_until(uuid)',                     'b64dbe01c336708bac142f86cdf60120', 'a65471e9e4eeb6cd0b3a37772f698c68'),
+  ('app_user_email_seen(uuid,uuid,text)',              '7116c9e13ddd993d8b65c9a6656255cf', 'eb52d82ad0748f99a45b9e1aaa11e6c8');
 DO $bodies$
 DECLARE r record; v text;
 BEGIN
@@ -649,7 +654,18 @@ BEGIN
       -- it has no last day (db/163 refuses to remove it anyway).
       ('pupil_claim_keep_until(uuid)', 1,
        'CASE WHEN c.state = ''open'' OR pupil_account_opened(c.user_id) THEN NULL',
-       'CASE WHEN c.state = ''open'' OR pupil_account_opened(c.user_id) OR pupil_signin_is_pupils(c.user_id) THEN NULL')
+       'CASE WHEN c.state = ''open'' OR pupil_account_opened(c.user_id) OR pupil_signin_is_pupils(c.user_id) THEN NULL'),
+      -- db/118's address rule: an account that has said it is a pupil (db/163's
+      -- third case of person_is_pupil(), recognised or still waiting) is a
+      -- pupil's, at the school of his claim, so only that school's office and
+      -- principal read his address (R4) -- also on a request he sent before he
+      -- claimed, which a director of sport otherwise reads.
+      ('app_user_email_seen(uuid,uuid,text)', 1,
+       '           WHERE a.person_id = p_user AND a.role IN (''player'', ''selfaccess'')) z;',
+       '           WHERE a.person_id = p_user AND a.role IN (''player'', ''selfaccess'')' || chr(10)
+         || '          UNION ALL' || chr(10)
+         || '          -- db/164: an account that has said it is a pupil (db/163), at his claim''s school.' || chr(10)
+         || '          SELECT c.school_id FROM pupil_claim c WHERE c.user_id = p_user) z;')
     ) AS t(fn, times, was, now_) LOOP
     SELECT p.prosrc, array_to_string(p.proconfig, ','), p.proacl::text, p.prosecdef, p.provolatile, p.proowner
       INTO v_src, v_cfg, v_acl, v_sec, v_vol, v_own FROM pg_proc p WHERE p.oid = r.fn::regprocedure;

@@ -15221,6 +15221,8 @@ DECLARE
   COACH  uuid := '88888888-0000-0000-0000-000000000004';   -- a Hilton coach
   WESOFF uuid := '88888888-0000-0000-0000-00000000000d';   -- Westville's office
   OWNER  uuid := '88888888-0000-0000-0000-000000000022';   -- the owner's key
+  DOS    uuid := '88888888-0000-0000-0000-000000000007';   -- Hilton's director of sport
+  PRIN   uuid := '88888888-0000-0000-0000-000000000016';   -- Hilton's principal
   K uuid; K2 uuid; B uuid; G uuid; G2 uuid; q uuid; c uuid;
   v text; v2 text; ok_ boolean; why text; inf boolean; r record; n int;
 BEGIN
@@ -15528,6 +15530,37 @@ BEGIN
     PERFORM _assert(NOT _v164_open(K) AND _v164_carry() = 0 AND NOT _v164_open(K), '§142 (carry): a carry-over reopened him behind the office''s no');
     -- The seed's own pupil (R Pillay) kept his sign-in.
     PERFORM _assert(_v164_open('88888888-0000-0000-0000-000000000009'), '§142 (carry): the seed''s pupil was closed');
+
+  ELSIF p_case = 'address' THEN
+    -- (address) db/118's rule (app_user_email_seen()): an account that has said
+    -- it is a pupil (db/163's claim, waiting or recognised) is a pupil's for his
+    -- address. Before the claim a director of sport reads the address on the
+    -- request he sent; after it only his claim's school office and principal
+    -- do, waiting and recognised alike; Westville's office never.
+    K := _v163_account('v164addr'); B := _v163_boy(HIL, 'v164addr', 15);
+    v2 := _v164_email(K);
+    PERFORM _as(K);
+    INSERT INTO role_request (person_id, role, school_id, note) VALUES (K, 'spectator', HIL, 'v164');
+    PERFORM _as(DOS);
+    PERFORM _assert(app_user_email_seen(K, HIL, v2) = v2, '§142 (address): before any claim the director of sport is not shown the address (control)');
+    PERFORM _as(K);
+    SELECT x.ok, x.reason INTO ok_, why FROM pupil_claim_send(HIL, 'Sipho Testcase', 'Grade 9') x;
+    PERFORM _assert(ok_, format('§142 (address): the claim was not sent (%s)', why));
+    PERFORM _as(DOS);
+    PERFORM _assert(app_user_email_seen(K, HIL, v2) IS NULL, '§142 (address): waiting, the director of sport reads his address');
+    PERFORM _assert(app_user_email_seen(K, NULL, v2) IS NULL, '§142 (address): waiting, with no school named, the director of sport reads his address');
+    PERFORM _as(WESOFF);
+    PERFORM _assert(app_user_email_seen(K, HIL, v2) IS NULL, '§142 (address): Westville''s office reads his address');
+    FOREACH q IN ARRAY ARRAY[REG, PRIN] LOOP
+      PERFORM _as(q);
+      PERFORM _assert(app_user_email_seen(K, NULL, v2) = v2, format('§142 (address): %s, his school''s office or principal, is not shown his address', q));
+    END LOOP;
+    PERFORM _as(REG);
+    PERFORM pupil_claim_recognise(_v163_claim_id(K), B);
+    PERFORM _as(DOS);
+    PERFORM _assert(app_user_email_seen(K, HIL, v2) IS NULL, '§142 (address): recognised, the director of sport reads his address');
+    PERFORM _as(K);
+    PERFORM _assert(app_user_email_seen(K, HIL, v2) = v2, '§142 (address): he is not shown his own address');
 
   ELSIF p_case = 'grants' THEN
     -- (grants) The doors are scrbrd_app's alone; the rest, and the record, nobody's.
@@ -47007,11 +47040,16 @@ $m130$;
   --               office's yes, once; never behind the office's no; his
   --               guardian cannot close the school's yes; the seed's pupil
   --               kept his sign-in
+  --   (address)   db/118's address rule treats a pupil's claim, waiting or
+  --               recognised, as a pupil's: a director of sport read the
+  --               address on his earlier request before the claim and not
+  --               after; Westville's office never; his school's office and
+  --               principal do, and so does he
   --   (grants)    the doors are scrbrd_app's alone; the record nobody's
   --
   -- Falsified once each, on a database at claude/wip-hm-b with db/164
   -- applied, the change made as the owner inside the run, and red at its
-  -- own assertion (27 changes, each in a run of its own):
+  -- own assertion (28 changes, each in a run of its own):
   --   yes_stands() without the giver's own no      → (stop) red: left open
   --   her link need not be agreed, AND the terms trigger dropped
   --                                         → (terms) red: he reads 261 rows
@@ -47038,6 +47076,8 @@ $m130$;
   --   my_pupil_state() without 'closed'; pupil_claim_waiting() as db/163
   --   left it                                  → (claim) red at each
   --   the carry-over without its once          → (carry) red
+  --   app_user_email_seen() as db/118 left it  → (address) red: waiting, the
+  --                                           director of sport reads it
   PERFORM _v164_case('closed');
   PERFORM _v164_case('stop');
   PERFORM _v164_case('terms');
@@ -47050,6 +47090,7 @@ $m130$;
   PERFORM _v164_case('tick');
   PERFORM _v164_case('claim');
   PERFORM _v164_case('carry');
+  PERFORM _v164_case('address');
   PERFORM _v164_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/164 (section 142) ─────────────────────────────────────────
