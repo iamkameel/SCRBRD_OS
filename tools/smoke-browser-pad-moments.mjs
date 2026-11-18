@@ -254,11 +254,11 @@ try {
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
   await afterReads(page, 2200);
-  ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
+  ok("a seeded scorer gets in", (await page.locator('[data-testid="os-main"]').count()) > 0);
   // The fixture list can still be arriving on a cold API: asked again, up to three times.
   let opened = false;
   for (let i = 0; i < 3 && !opened; i++) {
-    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+    await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
     await afterReads(page, 1200 + i * 1500);
     opened = await page.evaluate(() => {
       const isBtn = (/** @type {Element} */ b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");

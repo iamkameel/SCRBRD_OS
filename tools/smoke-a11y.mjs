@@ -55,6 +55,7 @@ import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 import { moreMenuKeys, pickTab } from "./walk-tabs.mjs";
 import { afterReads } from "./walk-wait.mjs";
+import { destLocator, destByWord } from "./walk-nav.mjs";
 
 const PORT = port(4331);
 const SIGNUP_PORT = port(4332);   // the walk's own build for the sign-in screens (tools/web-test-build.mjs)
@@ -1092,7 +1093,7 @@ async function listingWalk(theme, width) {
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = "http://localhost:${PORT}";`);
   const tid = (id) => page.locator(`[data-testid="${id}"]`);
   const goTo = async (nav) => {
-    const bar = page.locator(`[data-testid="nav-${nav}"]:visible, [data-testid="mnav-${nav}"]:visible`).first();
+    const bar = (await destLocator(page, nav));
     if (await bar.count()) await bar.click({ timeout: 5000 }).catch(() => {});
     else {
       await page.locator('[data-testid="mnav-more"]').click({ timeout: 5000 }).catch(() => {});
@@ -1188,7 +1189,7 @@ async function selectionWalk(theme, width) {
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = "http://localhost:${PORT}";`);
   const tid = (id) => page.locator(`[data-testid="${id}"]`);
   const goTo = async (nav) => {
-    const bar = page.locator(`[data-testid="nav-${nav}"]:visible, [data-testid="mnav-${nav}"]:visible`).first();
+    const bar = (await destLocator(page, nav));
     if (await bar.count()) await bar.click({ timeout: 5000 }).catch(() => {});
     else {
       await page.locator('[data-testid="mnav-more"]').click({ timeout: 5000 }).catch(() => {});
@@ -1420,7 +1421,7 @@ async function practiceWalk(theme) {
     await click("Head Coach", 4000);
     await click(/^Sign In$/, 5000);
     await page.waitForTimeout(1600);
-    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+    await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(1000);
     await page.locator("button", { hasText: /Open SCRBRD Scorer/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(1500);
@@ -1518,7 +1519,7 @@ async function practiceWalk(theme) {
 
     await tap("exit-scorer", 800);
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 }).catch(() => {});
+    await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 }).catch(() => {});
     await page.waitForTimeout(600);
     await page.locator("button", { hasText: /Open SCRBRD Scorer/ }).first().click({ timeout: 6000 }).catch(() => {});
     await page.waitForTimeout(1200);
@@ -1648,16 +1649,16 @@ async function narrowStaffWalk(theme) {
     await page.waitForTimeout(1200);
     ok(`${T_} @${W}: signed in, with the bar at the bottom`, await tid("mnav").count() === 1);
     await measure(page, theme, "staffdash");
-    await overlay("mnav-more", '[data-testid="drawer"]', "staffdrawer", "More");
+    // A coach's menu is his four homes, all on the bar, with no More (EXPERIENCE_PASS §1.2, Q1).
+    ok(`${T_} @${W}: the coach's bar has no More`, await tid("mnav-more").count() === 0);
+    if (await tid("mnav-more").count()) await overlay("mnav-more", '[data-testid="drawer"]', "staffdrawer", "More");
     await overlay("topbar-role", '[role="menu"]', "staffrolemenu", "the role menu");
     await overlay("topbar-search", '[role="dialog"][aria-label="Search"]', "staffsearch", "search");
 
     // The KPI tiles (ui/primitives.jsx's KPICard: Injuries, Logistics): a label, a figure and a note, each 12px at the least,
-    // and the screens that draw them fit the width. Reached by the More drawer, as a coach reaches them.
+    // and the screens that draw them fit the width. Reached as a coach reaches them: Team, then Who's out; Logistics on the bar.
     for (const [dest, screen] of [["injuries", "staffinjuries"], ["logistics", "stafflogistics"]]) {
-      await tid("mnav-more").click({ timeout: 4000 }).catch(() => {});
-      await page.waitForTimeout(300);
-      await tid(`drawer-${dest}`).click({ timeout: 4000 }).catch(() => {});
+      await (await destLocator(page, dest)).click({ timeout: 4000 }).catch(() => {});
       await page.waitForTimeout(900);
       const kpi = await page.evaluate(() => [...document.querySelectorAll('[data-testid="kpi-card"] *')]
         .filter((e) => [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()))
@@ -1679,6 +1680,12 @@ async function narrowStaffWalk(theme) {
     // the arrows move within it, Escape gives focus back to More, Tab and Shift+Tab leave it and close it.
     ok(`${T_} @${W}: the fixture's tab strip has a More at this width`, await tid("mc-more").count() === 1);
     for (const c of await moreMenuKeys(page)) ok(`${T_} @${W}: More — ${c.name}`, c.pass, c.detail);
+    // The director of sport still has More until the School home (Slice 6; review S5): his drawer, by keyboard, measured.
+    await tid("topbar-role").click({ timeout: 4000 }).catch(() => {});
+    await tid("role-option-directorofsport").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    ok(`${T_} @${W}: the director's bar keeps More for the rest`, await tid("mnav-more").count() === 1);
+    if (await tid("mnav-more").count()) await overlay("mnav-more", '[data-testid="drawer"]', "staffdrawer", "More");
     ok(`${T_} @${W}: no page errors`, errors.length === 0, errors.slice(0, 2).join(" | "));
   } catch (e) {
     ok(`the ${T_} @${W} staff shell walk threw: ${/** @type {any} */ (e).message?.slice(0, 120)}`, false);
@@ -1864,10 +1871,11 @@ async function walk(theme) {
     await click("Head Coach", 4000);
     await click(/^Sign In$/, 5000);
     await page.waitForTimeout(1600);
-    ok("signed in", /Dashboard|Match Centre/i.test(await page.$eval("body", (e) => e.innerText)));
+    ok("signed in", /Dashboard|Match Centre|Today|Matches/i.test(await page.$eval("body", (e) => e.innerText)));
     await measure(page, theme, "dashboard");
     // SCRBRD-131: the bell's count was 9px, under the floor, and the ratchet let it by.
-    const bell = page.locator('[data-testid="nav-alerts-badge"]');
+    // The bell is in the header now, on every screen (EXPERIENCE_PASS §1.2).
+    const bell = page.locator('[data-testid="nav-alerts-badge"], [data-testid="topbar-alerts-badge"]');
     ok("the notification bell shows its unread count", (await bell.count()) === 1);
     if (await bell.count()) {
       const size = await bell.evaluate((n) => parseFloat(getComputedStyle(n).fontSize));
@@ -1933,7 +1941,8 @@ async function walk(theme) {
       return { isMain: a === m, tag: a?.tagName, inside: !!m && m.contains(a), landmark: m?.tagName }; });
 
     // Settings → Me carries the theme control (DESIGN_DIRECTION §3.1).
-    await page.locator("nav button", { hasText: /Settings/ }).first().click({ timeout: 6000 });
+    // Settings is under the person's name in the header now (EXPERIENCE_PASS §1.2, Slice 5).
+    await page.locator('[data-testid="nav-settings"]').first().click({ timeout: 6000 });
     // Waits for the view's own words, not a clock: the view is a lazy chunk, slower than any sleep on a loaded machine.
     const saidSo = (/** @type {string} */ words) => page.waitForFunction((w) => document.querySelector('[data-testid="view-announcer"]')?.textContent === w,
       words, { timeout: 8000 }).catch(() => {});
@@ -1961,9 +1970,10 @@ async function walk(theme) {
        settingsChoice?.role === "radiogroup" && settingsChoice.radios.map((r) => r[0]).join() === "System,Daylight,Floodlit", JSON.stringify(settingsChoice));
     ok("...with System chosen on a device that has chosen nothing", settingsChoice?.radios.find((r) => r[0] === "System")?.[1] === "true");
 
-    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-    await saidSo("Match Centre, page loaded");
-    ok("a second view change: the words change to \"Match Centre, page loaded\"", await announcer.textContent() === "Match Centre, page loaded", await announcer.textContent());
+    await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
+    // The menu word is Matches now (EXPERIENCE_PASS Q4).
+    await saidSo("Matches, page loaded");
+    ok("a second view change: the words change to \"Matches, page loaded\"", await announcer.textContent() === "Matches, page loaded", await announcer.textContent());
     ok("...and focus is on the main landmark again", (await inMain()).isMain);
     await measure(page, theme, "matchcentre");
     // The fixture's own view (step 3c): its Scorecard, the densest tab.
@@ -2007,7 +2017,7 @@ async function walk(theme) {
     // and wicket breakdowns, and the career wagon wheel — never opened by
     // this walk before either.
     group(`${T_} — a player profile's Career tab`);
-    await page.locator("nav button", { hasText: /Profiles/ }).first().click({ timeout: 6000 });
+    await (await destByWord(page, /Profiles/)).click({ timeout: 6000 });
     await page.waitForTimeout(700);
     await page.locator('[data-testid^="roster-player-"]').first().click({ timeout: 4000 }).catch(() => {});
     await page.waitForTimeout(500);
@@ -2030,7 +2040,7 @@ async function walk(theme) {
     ok("...and an emoji in a control is seen", careerProbeEmoji.length > 0, careerProbeEmoji.join(" · "));
     await measure(page, theme, "career");
 
-    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+    await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(800);
     await click(/^Live$/, 2500);
     await click(/Open Live Scorer|Start Scoring/i, 5000);
@@ -2175,8 +2185,9 @@ async function walk(theme) {
     // Out of the pad and through the screens the walk has already loaded.
     await page.locator(".os-exit-scorer").click({ timeout: 3000 }).catch(() => {});
     await page.waitForTimeout(900);
-    for (const [label, to] of [["Match Centre", /Match Centre/], ["Settings", /Settings/], ["Dashboard", /Dashboard/]]) {
-      await page.locator("nav button", { hasText: to }).first().click({ timeout: 6000 }).catch(() => {});
+    // Matches and Today in the menu, Settings under the name in the header (EXPERIENCE_PASS §1.2, Q4).
+    for (const [label, sel] of [["Matches", page.locator("nav button", { hasText: /^\s*Matches/ })], ["Settings", page.locator('[data-testid="nav-settings"]')], ["Today", page.locator("nav button", { hasText: /^\s*Today/ })]]) {
+      await sel.first().click({ timeout: 6000 }).catch(() => {});
       await page.waitForTimeout(800);
       const s = await staleOn(page, stale);
       ok(`...nor on ${label}`, s.hits.length === 0, s.hits.slice(0, 4).join(" · "));
@@ -2184,7 +2195,7 @@ async function walk(theme) {
     await page.emulateMedia({ colorScheme: scheme });
     await page.waitForTimeout(500);
     ok("...and back again", await page.evaluate(() => document.documentElement.dataset.theme) === theme);
-    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+    await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(800);
     await click(/^Live$/, 2500);
     await click(/Open Live Scorer|Start Scoring/i, 5000);
@@ -2307,7 +2318,7 @@ async function padFit() {
       await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
       const click = async (re) => { const l = page.locator("button:not([disabled])", { hasText: re }).first(); if (await l.count()) { await l.click({ timeout: 4000 }).catch(() => {}); await page.waitForTimeout(400); } };
       await click(/Get Started|Log In/); await click("Head Coach"); await click(/^Sign In$/); await page.waitForTimeout(1500);
-      await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+      await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
       await page.waitForTimeout(800); await click(/^Live$/); await click(/Open Live Scorer|Start Scoring/i); await page.waitForTimeout(1600);
       const basic = async (on) => {
         if (((await page.locator('[data-testid="basic-pad"]').count()) > 0) === on) return;

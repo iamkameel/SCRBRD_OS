@@ -53,6 +53,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(5631);
 const API_PORT = port(5632);
@@ -140,13 +141,13 @@ async function signIn(page, email) {
  * client's own abort and judge the failure, not the loading state.
  */
 async function go(page, key, { inFlight = false } = {}) {
-  const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
+  const l = (await destLocator(page, key));
   if (!(await l.count())) {
     // On a phone the less-used screens sit in the drawer under More.
     await tid(page, "mnav-more").click({ timeout: 3000 }).catch(() => {});
     await page.waitForTimeout(400);
   }
-  const m = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"], [data-testid="drawer-${key}"]`).first();
+  const m = (await l.count()) ? l : page.locator(`[data-testid="drawer-${key}"]`).first();
   if (!(await m.count())) return false;
   try { await m.click({ timeout: 6000 }); } catch { return false; }
   if (inFlight) await page.waitForTimeout(1600);

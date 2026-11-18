@@ -120,7 +120,7 @@ function LogisticsView({ role, section = null, onNav }) {
               const w        = WEATHER[m.id];
               const isManifest = manifest?.id===m.id;
               return (
-                <Card key={m.id} sx={{border:`1px solid ${D.border}`,overflow:"visible"}}>
+                <Card key={m.id} data-testid={`trip-card-${m.id}`} sx={{border:`1px solid ${D.border}`,overflow:"visible"}}>
                   <div style={{padding:"16px"}}>
                     <div style={{display:"flex",gap:"14px",alignItems:"flex-start",flexWrap:"wrap"}}>
                       {/* Trip info */}

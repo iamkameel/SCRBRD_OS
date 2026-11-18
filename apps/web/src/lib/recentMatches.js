@@ -33,7 +33,7 @@
  * Pure: proved under plain node (apps/web/test/recentMatches.test.mjs).
  */
 import { cockpitGate, ourInnings, oversOf, startMs } from "./cockpit.js";
-import { COMPARE_FLOOR, floorRate } from "./compare.js";
+import { COMPARE_FLOOR, childRate, floorRate } from "./compare.js";
 
 /** How many finished matches the card covers. */
 export const RECENT_LIMIT = 3;
@@ -249,4 +249,31 @@ export function insights(top, n) {
 function rateHeld(balls, what) {
   return balls == null ? `No ${what}: the balls were not recorded.`
     : `No ${what}: ${balls} ${balls === 1 ? "ball" : "balls"} is fewer than the ${COMPARE_FLOOR} a rate needs.`;
+}
+
+/**
+ * THE DAY SHEET'S "LAST MATCH" (EXPERIENCE_PASS §3.10), in one line: the
+ * result and each side's total, then, where the reader may count our boys'
+ * figures (`figures`, the card's own gate), the side's top score and best
+ * bowling, by name. A strike rate is a child's rate, so it goes through
+ * childRate(): under the floor there is no figure, only the count and its
+ * word (Q12). Pure.
+ * @param {ReturnType<typeof matchSummary>} s  @param {boolean} figures
+ * @returns {{ result: string | null, totals: string | null, top: string | null, best: string | null }}
+ */
+export function lastMatchWords(s, figures) {
+  const l = s.line;
+  const result = l.resultRead ? (l.result ?? "No result recorded") : null;
+  const totals = l.ours != null || l.theirs != null ? `${l.ours ?? "no innings"} v ${l.theirs ?? "no innings"}` : null;
+  if (!figures || !l.carded) return { result, totals, top: null, best: null };
+  const top = leaders([s.boys]);
+  const bat = top.batting[0];
+  let topWords = null;
+  if (bat && bat.runs > 0) {
+    const sr = childRate(bat.balls ? ((100 * bat.runs) / bat.balls).toFixed(1) : null, bat.balls);
+    topWords = `Top score: ${bat.name}, ${battingWords(bat)}${sr.held ? "" : `, strike rate ${sr.text}`}`;
+  }
+  const bowl = top.bowling[0];
+  const best = bowl ? `Best bowling: ${bowl.name}, ${bowlingWords(bowl)}` : null;
+  return { result, totals, top: topWords, best };
 }

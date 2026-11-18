@@ -36,6 +36,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(5481);
 const API_PORT = port(5482);
@@ -132,7 +133,7 @@ async function openDemo(role) {
   return c;
 }
 async function go(page, nav) {
-  const l = tid(page, `nav-${nav}`).first();
+  const l = (await destLocator(page, nav));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1600);

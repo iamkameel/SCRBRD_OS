@@ -199,3 +199,26 @@ export function sideSchool(players, team, assignments = []) {
   const mine = (assignments ?? []).filter((a) => a && a.school && schools.includes(a.school));
   return mine.find((a) => a.team === team)?.school ?? mine.find((a) => a.role !== "guardian")?.school ?? schools[0] ?? null;
 }
+
+/**
+ * The day sheet's one line about the side's season (EXPERIENCE_PASS §3.10):
+ * "Season run rate 5.8 from 9 completed matches, 1,640 balls", the same
+ * season and the same figure the Analytics panel's line ends on. Under
+ * MIN_MATCHES there is no line yet, and it says so; a match whose balls were
+ * not read is left out of the balls, and said. A side's rate, not a child's.
+ * Null with no completed match. Pure.
+ * @param {ReturnType<typeof seasonPoints>} points  one season's, in date order
+ * @returns {string | null}
+ */
+export function seasonLineWords(points) {
+  const n = points.length;
+  if (!n) return null;
+  const counted = points.filter((p) => p.forRuns != null && p.forBalls != null);
+  const balls = counted.reduce((a, p) => a + p.forBalls, 0);
+  const matches = `${n} completed ${n === 1 ? "match" : "matches"}`;
+  if (n < MIN_MATCHES) return `${matches} this season: the season's run rate is drawn from the ${MIN_MATCHES}th.`;
+  const rate = rateText(points[n - 1].soFarFor);
+  const left = n - counted.length;
+  return rate == null ? `${matches} this season, none with its balls on record.`
+    : `Season run rate ${rate} from ${matches}, ${String(balls).replace(/\B(?=(\d{3})+(?!\d))/g, ",")} balls${left ? `; ${left} without balls on record left out` : ""}.`;
+}

@@ -56,6 +56,7 @@ import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { pickTab } from "./walk-tabs.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const PORT = port(8903);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -162,7 +163,7 @@ async function signIn(page, email) {
   return (await page.locator("nav button, [data-testid^='mnav-']").count()) > 0;
 }
 async function go(page, key) {
-  const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
+  const l = (await destLocator(page, key));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1200);

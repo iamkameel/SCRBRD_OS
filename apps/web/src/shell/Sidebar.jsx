@@ -1,7 +1,7 @@
 import pkg from "../../package.json";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { NAV_META, ROLES, groupNav } from "../design/roles.js";
-import { useMenu } from "../lib/homeNav.js";
+import { useMenuItems } from "../lib/homeNav.js";
 import { D, T, inkOn } from "../design/tokens.js";
 import { invitationsWords } from "../lib/invitationCount.js";
 import { SportSwitcher } from "./MobileNav.jsx";
@@ -12,8 +12,11 @@ import { Icon } from "../ui/icons.jsx";
 // ══════════════════════════════════════════════════════
 function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites = 0, userName, onSignOut, persona = null }) {
   // The role's destinations, narrowed by the modules this school has on.
-  // Narrowed only — useMenu() (useNav, with each home drawn once) cannot add a destination the role did not hold.
-  const nav = useMenu(role);
+  // Narrowed only — useMenuItems() (useNav, with each home drawn once) cannot add a destination the role did not hold.
+  // `active` is the open page; the entry lit is its home's (design/homes.js entryFor).
+  const { keys: nav, label, active: lit, ready } = useMenuItems(role, active);
+  // League invitations wait on Competitions, or on the entry it sits under (Matches) when it has none of its own.
+  const invitesOn = nav.includes("competitions") ? "competitions" : nav.find((k) => k === "matches") ?? null;
   const rc  = ROLES[role];
   // Drawn group by group. The grouping is presentation over a list that has
   // already been narrowed twice (capability, then module); it adds nothing.
@@ -55,7 +58,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
           for everybody else, so a screen reader hears "People, group" before
           the entries rather than twenty-two entries in a row. Collapsed, the
           heading has no room and becomes a rule between sections. */}
-      <nav aria-label="Main" data-testid="nav" style={{flex:1,padding:"8px 0",overflowY:"auto"}}>
+      <nav aria-label="Main" data-testid="nav" data-menu-ready={ready ? "true" : "false"} style={{flex:1,padding:"8px 0",overflowY:"auto"}}>
         {groups.map((g, gi)=>(
           <div key={g.key} role="group" aria-labelledby={`nav-group-${g.key}`} data-testid={`nav-group-${g.key}`}>
             {collapsed
@@ -63,13 +66,13 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
               : <div id={`nav-group-${g.key}`} style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,padding:gi>0?"12px 20px 4px":"4px 20px 4px"}}>{g.label}</div>}
             {collapsed&&<span id={`nav-group-${g.key}`} hidden>{g.label}</span>}
             {g.items.map(key=>{
-              const m = NAV_META[key];
-              const isActive = active===key;
+              const m = { ...NAV_META[key], label: label(key) ?? NAV_META[key].label };
+              const isActive = lit===key;
               const isBell = key==="notifications";
               // League invitations waiting for an answer: the count is the
               // badge's text, and the button is named with the words, so it is
               // read as "Competitions, 2 league invitations waiting".
-              const waiting = key==="competitions" ? invites : 0;
+              const waiting = key===invitesOn ? invites : 0;
               const name = waiting>0 ? `${m.label}, ${invitationsWords(waiting)}` : collapsed ? m.label : undefined;
               return (
                 <button key={key} onClick={()=>onNav(key)}

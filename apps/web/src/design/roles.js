@@ -1,4 +1,4 @@
-import { roleGrants } from "@scrbrd/policy/roles";
+import { SUBJECT_SCOPED_ROLES, roleGrants } from "@scrbrd/policy/roles";
 import { themeName } from "./tokens.js";
 
 /* ═══════════════════════════════════════════════════════
@@ -364,10 +364,35 @@ const personaFor = (roles) => {
  */
 const NAV_ALSO = { training: "team.training.run" };
 
-/** Does this role open destination `k`: its capability, or the one NAV_ALSO adds. */
+/**
+ * A destination drawn only for a role that can ACT on what it lists, beside
+ * reading it (EXPERIENCE_PASS Q17, decided 13 Nov). "To resolve" is read under
+ * fixture.read, which a spectator, an official and a scorer hold, and none of
+ * them owns a row on it. It is drawn for a role that holds fixture.read AND
+ * one of the capabilities a row is acted on with, and that is no guardian's,
+ * pupil's or enquirer's (they are scoped to one child): the queue's own
+ * reader rule (lib/queue.js isQueueReader), said per role —
+ *   team.select, player.workload.read   the cockpit's entry: a side's rows
+ *   clearance.read, user.role.assign, user.invite, guardian.link.manage,
+ *   transport.lift.oversee              the office's rows (OFFICE_CAPS)
+ *   result.confirm                      results to confirm (OFFICIAL_RESULT)
+ *   scoring.amend.approve               corrections waiting (O7)
+ *   recognition.match.award             Player of the Match to decide (R7)
+ * ONLY EVER NARROWS: it is asked after the capability above, and a role this
+ * removes the entry from keeps every read it had (apps/web/test/design.test.mjs
+ * holds it to the queue's rule for every role).
+ */
+const NAV_ACTS = Object.freeze({
+  readiness: Object.freeze(["team.select", "player.workload.read", "clearance.read", "user.role.assign", "user.invite",
+    "guardian.link.manage", "transport.lift.oversee", "result.confirm", "scoring.amend.approve", "recognition.match.award"]),
+});
+
+/** Does this role open destination `k`: its capability, or the one NAV_ALSO adds; and, where NAV_ACTS names some, one it acts with. */
 const navGrants = (role, k) => {
   const cap = NAV_CAPABILITY[k];
-  return cap === null || roleGrants(role, cap) || (Object.hasOwn(NAV_ALSO, k) && roleGrants(role, NAV_ALSO[k]));
+  const reads = cap === null || roleGrants(role, cap) || (Object.hasOwn(NAV_ALSO, k) && roleGrants(role, NAV_ALSO[k]));
+  if (!reads || !Object.hasOwn(NAV_ACTS, k)) return reads;
+  return !SUBJECT_SCOPED_ROLES.includes(role) && NAV_ACTS[k].some((c) => roleGrants(role, c));
 };
 
 /** The destinations a SET of roles reaches: what any of them holds. */
@@ -419,11 +444,13 @@ const ROLE_FAMILIES = Object.entries(ROLE_IDENTITY).reduce((acc, [r, id]) => {
 }, {});
 
 const NAV_META = {
-  dashboard:    { icon:"layout-dashboard", label:"Dashboard"    },
-  matches:      { icon:"stumps", label:"Match Centre" },
+  // The homes keep the keys of the destinations they grew from (EXPERIENCE_PASS
+  // §1.2, Q4): Dashboard is Today, Match Centre is Matches, Squad is Team.
+  dashboard:    { icon:"layout-dashboard", label:"Today"        },
+  matches:      { icon:"stumps", label:"Matches"      },
   competitions: { icon:"trophy", label:"Competitions" },
   leagues:      { icon:"clipboard-list", label:"Leagues"      },
-  squad:        { icon:"users", label:"Squad"        },
+  squad:        { icon:"users", label:"Team"         },
   profiles:     { icon:"user", label:"Profiles"     },
   analytics:    { icon:"chart-column", label:"Analytics"    },
   skills:       { icon:"target", label:"Skills"       },
@@ -457,4 +484,4 @@ const NAV_META = {
   me:           { icon:"id-card", label:"Me"           },
 };
 
-export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, PERSONA_ASIDE, PERSONA_KEEPS, PERSONA_NAV, PERSONA_ONLY, ROLES, ROLE_DAYLIGHT, ROLE_IDENTITY, ROLE_FAMILIES, NAV_ALSO, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles, navGrants, personaFor };
+export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, PERSONA_ASIDE, PERSONA_KEEPS, PERSONA_NAV, PERSONA_ONLY, ROLES, ROLE_DAYLIGHT, ROLE_IDENTITY, ROLE_FAMILIES, NAV_ACTS, NAV_ALSO, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles, navGrants, personaFor };

@@ -230,7 +230,7 @@ const onPad = async () => {
 };
 /** Match Centre → the 1XI v Michaelhouse card → its scorer. */
 const openFixture = async () => {
-  await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(page, 1200);
   await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "")),
     null, { timeout: 10000 }).catch(() => {});
@@ -252,7 +252,7 @@ const signIn = async () => {
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
   await afterReads(page, 2200);
-  return /Match Centre|Dashboard/i.test(await text());
+  return (await page.locator('[data-testid="os-main"]').count()) > 0;
 };
 /** Wait for the pill to say something, up to `ms` (polls the page's own state). */
 const pillSays = async (/** @type {RegExp} */ re, ms = 12000) => {

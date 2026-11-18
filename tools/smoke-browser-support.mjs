@@ -129,7 +129,7 @@ async function signIn(page, email, password = "") {
   if (password) await page.fill("#login-password", password);
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  return (await page.locator('[data-testid="os-main"]').count()) > 0;
 }
 async function toSettings(page) {
   const l = tid(page, "nav-settings").first();
