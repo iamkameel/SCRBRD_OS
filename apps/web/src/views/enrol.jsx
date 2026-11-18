@@ -7,6 +7,7 @@ import { Modal } from "../ui/primitives.jsx";
 import { api } from "../lib/api.js";
 import { holdsCapability } from "../rbac/index.js";
 import { reachesEverySchool, schoolsWhere } from "../lib/session.js";
+import { FORM_ON_FILE } from "../lib/ownSignin.js";
 
 // ══════════════════════════════════════════════════════
 //  ENROLMENT, SHARED
@@ -57,6 +58,9 @@ export const ENROL_MESSAGE = {
   missing_token: "You are not signed in.",
   // db/122 §1d: a pupil's account is opened, and his sign-in code issued, by the school office or the principal.
   office_only: "This is a pupil's account. Only the school office or the principal opens it or issues his sign-in code.",
+  // db/164 (Q12): the office's tick, "The signed consent form is on file".
+  form_no_date_of_birth: FORM_ON_FILE.form_no_date_of_birth,
+  form_not_permitted: FORM_ON_FILE.form_not_permitted,
 };
 const UNSAID = "This was not saved. The server refused it for a reason that has no words yet, and nothing was changed.";
 /** The words for a refusal code; a sentence even for a code nobody has written one for. */
@@ -207,6 +211,7 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
     player: initial.player ?? "",
     team: "",
     withCode: codeByDefault,
+    formOnFile: false,
   });
   const set = (k) => (v) => setF((p) => ({ ...p, [k]: v }));
   const [busy, setBusy] = useState(false);
@@ -253,6 +258,9 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
         teamCode: (teamScoped ? f.team : subjectScoped && !forChild ? linked?.team : "") || undefined,
         playerId: subjectScoped && f.player ? f.player : undefined,
         withCode: f.withCode === true && !codeWithheld,
+        // db/164 (Q12): ticked by a person, never assumed. Unticked, his account is
+        // opened and his own page waits for a parent's or guardian's yes.
+        ...(PUPIL_ROLES.includes(f.role) && f.formOnFile === true ? { formOnFile: true } : {}),
       } });
       await onEnrolled?.({ out, name: f.name.trim(), role: f.role, team: teamScoped ? f.team : null });
     } catch (e) {
@@ -309,6 +317,15 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
           color: D.textMuted, lineHeight: 1.5 }}>
           {PUPILS_BY_OFFICE}
         </div>
+      )}
+      {PUPIL_ROLES.includes(f.role) && !pupilByOffice && (
+        <label style={{ display: "flex", alignItems: "flex-start", gap: "10px", minHeight: "44px", cursor: "pointer", padding: "10px 0",
+                        fontFamily: D.body, fontSize: "13px", color: D.textSecondary }}>
+          <input type="checkbox" checked={f.formOnFile === true} data-testid="enrol-form-on-file"
+                 onChange={(e) => set("formOnFile")(e.target.checked)}
+                 style={{ width: "20px", height: "20px", flexShrink: 0, marginTop: "1px" }}/>
+          <span><span style={{ color: D.textPrimary }}>{FORM_ON_FILE.label}</span><br/>{FORM_ON_FILE.hint}</span>
+        </label>
       )}
       {!codeWithheld && !pupilByOffice && (
         <label style={{ display: "flex", alignItems: "center", gap: "10px", minHeight: "44px", cursor: "pointer",

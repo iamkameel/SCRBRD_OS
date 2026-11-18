@@ -21,6 +21,7 @@
  */
 import { runAsPrincipal, issueLoginCode } from "../auth/auth-db.mjs";
 import { COOLDOWN_WORDS, PUPIL_WAITING_WORDS } from "./register-api.mjs";
+import { recordFormOnFile } from "./pupil-signin-api.mjs";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs):
 // pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
@@ -165,7 +166,7 @@ export function requestRoutes({ pool, secret }) {
         return { withdrawn: rowCount };
       })),
 
-    // POST /api/users { email, name, role, schoolId, teamCode?, playerId?, note?, withCode? }
+    // POST /api/users { email, name, role, schoolId, teamCode?, playerId?, note?, withCode?, formOnFile? }
     //                 | { userId, role, schoolId, teamCode?, playerId?, note?, withCode? }
     //
     // ADD A ROLE BY THE ACCOUNT (db/122, Kameel 29 Oct 2026: "Close both
@@ -226,6 +227,10 @@ export function requestRoutes({ pool, secret }) {
             throw err("office_only", 403);
           }
         }
+        // db/164 (Q12): "The signed consent form is on file", ticked by the office
+        // for a pupil under 18, recorded under its name in this transaction,
+        // before the grant door writes his roles and asks for a yes.
+        if (b.formOnFile === true && player) await recordFormOnFile(client, player);
         const { rows } = await client.query(
           `select * from enrol_person($1, $2, $3, $4, $5, $6, $7)`,
           [email, name, f.role, f.school, f.team, player, f.note]);
@@ -317,7 +322,7 @@ export function requestRoutes({ pool, secret }) {
       }
     },
 
-    // POST /api/requests/:id/decide { grant: boolean, note?, playerId?, teamCode? }
+    // POST /api/requests/:id/decide { grant: boolean, note?, playerId?, teamCode?, formOnFile? }
     decide: handle(async (req) => {
       const b = req.body || {};
       if (typeof b.grant !== "boolean") throw err("grant_required");
@@ -326,6 +331,13 @@ export function requestRoutes({ pool, secret }) {
       const team = clean(b.teamCode, 8);
       if (team && !/^[A-Z0-9]{2,8}$/.test(team)) throw err("team_code_invalid");
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        // db/164 (Q12): the office's tick, recorded first, in this transaction.
+        // A refusal of the grant below rolls the tick back with it.
+        if (b.grant === true && b.formOnFile === true) {
+          const { rows: [q] } = await client.query(
+            `select coalesce($2::uuid, r.player_id) as player from role_request r where r.id = $1`, [req.params.id, player]);
+          if (q?.player) await recordFormOnFile(client, q.player);
+        }
         const { rows } = await client.query(`select * from decide_role_request($1, $2, $3, $4, $5)`,
                                             [req.params.id, b.grant, clean(b.note, 300), player, team]);
         const r = rows[0] ?? { ok: false, reason: "no_result" };

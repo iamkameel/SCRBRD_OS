@@ -16,6 +16,8 @@
  *   recognised        "Your school knows this is you. A parent or guardian
  *                     needs to say yes before your own page opens."
  *   declined          the school has answered; never why
+ *   closed            (db/164) a yes was taken back: "Your own page is
+ *                     closed until a parent or guardian says yes again." 
  *
  * HOW A YES COMES, TODAY. Until the honesty model's Migration B, a parent's
  * yes is the school's signed consent form, which the office records when it
@@ -106,6 +108,11 @@ export function stateWords(claim) {
       return { title: "The school has answered", line: "Your own page is not opening from this. If you think that is wrong, ask the school office.", how: null };
     case "open":
       return { title: "Your own page is open", line: "Sign out, then sign in again, to see it.", how: null };
+    // db/164: a yes was taken back (a parent's "Stop his own sign-in", her
+    // withdrawal, her link ending, or the office's record). He is not signed out.
+    case "closed":
+      return { title: "Your own page is closed", line: "Your own page is closed until a parent or guardian says yes again.",
+               how: `Ask a parent or guardian to open SCRBRD and look under Family, or ask the school office at ${at}.` };
     default:
       return { title: "", line: "", how: null };
   }
@@ -138,6 +145,7 @@ export const OFFICE_STATE_WORDS = Object.freeze({
   recognised: "Recognised: waiting for a parent's or guardian's yes",
   declined: "Declined",
   open: "Opened",
+  closed: "Closed: the yes for his own sign-in was taken back",
 });
 
 /** What the office is told before it decides. */

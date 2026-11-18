@@ -12,6 +12,7 @@ import { Icon } from "../ui/icons.jsx";
 import { PeoplePanel } from "./people.jsx";
 import { ColoursPanel } from "./colours.jsx";
 import { SchoolRequestsPanel } from "./schoolRequests.jsx";
+import { FORM_ON_FILE } from "../lib/ownSignin.js";
 
 // ══════════════════════════════════════════════════════
 //  MANAGEMENT VIEW
@@ -349,6 +350,8 @@ function RequestsPanel({ role, players }) {
   const [nudge, setNudge] = useState(0);
   const [pick, setPick] = useState({});
   const [side, setSide] = useState({});
+  // db/164 (Q12): "The signed consent form is on file", ticked per pupil's request.
+  const [form, setForm] = useState({});
   // What the server said to each answer, by request: { ok, text }. Said
   // only after its reply; a refusal stays on the row, and a line whose row has
   // gone from the list (answered, so no longer waiting) is shown under the heading.
@@ -367,7 +370,8 @@ function RequestsPanel({ role, players }) {
     setBusy(r.id);
     setSaid((m) => { const { [r.id]: _dropped, ...rest } = m; return rest; });
     try {
-      await api(`/api/requests/${r.id}/decide`, { method: "POST", body: { grant, playerId: pick[r.id] || r.playerId || null, teamCode: team } });
+      await api(`/api/requests/${r.id}/decide`, { method: "POST", body: { grant, playerId: pick[r.id] || r.playerId || null, teamCode: team,
+        ...(grant && form[r.id] === true ? { formOnFile: true } : {}) } });
       setSaid((m) => ({ ...m, [r.id]: { ok: true, text: decidedWords(grant, label, team) } }));
     } catch (e) {
       setSaid((m) => ({ ...m, [r.id]: { ok: false, text: decideWords(e) } }));
@@ -405,6 +409,13 @@ function RequestsPanel({ role, players }) {
               <option value="">Which player?</option>
               {players.map((p)=><option key={p.id} value={p.id}>{p.name} · {p.team}</option>)}
             </select>
+          )}
+          {["player","selfaccess"].includes(r.role)&&(
+            <label title={FORM_ON_FILE.hint} style={{display:"flex",alignItems:"center",gap:"8px",minHeight:"44px",cursor:"pointer",fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>
+              <input type="checkbox" checked={form[r.id]===true} data-testid={`request-form-on-file-${r.id}`}
+                onChange={(e)=>setForm((m)=>({...m,[r.id]:e.target.checked}))} style={{width:"20px",height:"20px",flexShrink:0}}/>
+              {FORM_ON_FILE.label}
+            </label>
           )}
           {needsSide(r)&&(
             <select value={side[r.id]||""} onChange={(e)=>setSide((p)=>({...p,[r.id]:e.target.value}))} aria-label="Which side" style={sel}>

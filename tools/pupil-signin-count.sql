@@ -17,12 +17,13 @@
 -- An account is a pupil's when it has a roster link (app_user.player_id), a
 -- self link on one of its live assignments, or a live player or selfaccess
 -- assignment. It would close when:
---   no_boy_named     it holds a pupil's role and names no boy (db/81's rule:
---                    his age and his family's yes cannot be known)
 --   no_date_of_birth a boy it answers as has no date of birth on the roster
 --   no_consent       a boy it answers as is under 18 and has no live,
 --                    verified own link stamped "granted" to carry over
--- An eighteen-year-old by the roster is never closed. The last column says
+-- An eighteen-year-old by the roster is never closed. Counted beside, NOT
+-- closed by db/164 and left to Kameel:
+--   no_boy_named     it holds a pupil's role and names no boy (no roster
+--                    link, no self link): no family's yes could ever open it The last column says
 -- whether the account also holds a role that is not a pupil's (a staff
 -- role): those accounts would lose that role's reach too, and Kameel should
 -- see each one by name before the paste (the second query lists them).
@@ -61,13 +62,13 @@ WITH acct AS (
                     AND a.role NOT IN ('player', 'selfaccess')) AS also_holds_another_role
     FROM acct x
 )
-SELECT count(*) FILTER (WHERE no_boy_named OR no_date_of_birth OR no_consent) AS would_close,
+SELECT count(*) FILTER (WHERE NOT no_boy_named AND (no_date_of_birth OR no_consent)) AS would_close,
        count(*)                                                                AS pupil_accounts,
-       count(*) FILTER (WHERE no_boy_named)                                    AS no_boy_named,
        count(*) FILTER (WHERE no_date_of_birth)                                AS no_date_of_birth,
        count(*) FILTER (WHERE no_consent)                                      AS no_consent,
-       count(*) FILTER (WHERE (no_boy_named OR no_date_of_birth OR no_consent)
-                          AND also_holds_another_role)                         AS also_holds_another_role
+       count(*) FILTER (WHERE (no_date_of_birth OR no_consent)
+                          AND also_holds_another_role)                         AS also_holds_another_role,
+       count(*) FILTER (WHERE no_boy_named)                                    AS no_boy_named_not_closed
   FROM verdict;
 
 -- Each account that would close and also holds a role that is not a
@@ -90,8 +91,7 @@ SELECT x.id AS account,
          WHERE a.person_id = x.id AND a.active AND a.role NOT IN ('player', 'selfaccess')) AS other_roles
   FROM acct x
  WHERE EXISTS (SELECT 1 FROM role_assignment a WHERE a.person_id = x.id AND a.active AND a.role NOT IN ('player', 'selfaccess'))
-   AND (NOT EXISTS (SELECT 1 FROM boys b WHERE b.account = x.id)
-        OR EXISTS (SELECT 1 FROM boys b JOIN player p ON p.id = b.player
+   AND (EXISTS (SELECT 1 FROM boys b JOIN player p ON p.id = b.player
                     WHERE b.account = x.id
                       AND (p.born IS NULL
                            OR ((p.born + interval '18 years')::date > (now() AT TIME ZONE 'Africa/Johannesburg')::date

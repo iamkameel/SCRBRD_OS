@@ -24,7 +24,9 @@
  *
  * Routes (all signed in; a pad's resume credential reaches nothing here):
  *   GET  /api/pupil/state                 his own: { claim: null | { state, schoolId, schoolName, name, year,
- *                                           saidOn, sentOn, keepUntil, safeguarding } }
+ *                                           saidOn, sentOn, keepUntil, safeguarding },
+ *                                           ownSignIn: { pupil, open } }  (db/164: state 'closed' when a
+ *                                           no closed his page again)
  *   POST /api/pupil/claim { schoolId, name, year?, born? }   { ok: true } or { error }
  *   POST /api/pupil/remove                his own account, now (only an account that is nothing but a claim)
  *   GET  /api/pupil-claims?schoolId=      the office's Pupil claims list: { rows }
@@ -125,7 +127,18 @@ export function pupilClaimRoutes({ pool, secret }) {
       // The days as the database writes them (YYYY-MM-DD), never a Date: pg would read a date at local midnight.
       const { rows } = await client.query(`select state, school_id, school_name, typed_name, typed_year, said_under_18_on::text, sent_on::text,
                                                  keep_until::text, safeguarding from my_pupil_state()`);
-      return { claim: pupilState(rows[0]) };
+      // db/164: is this a pupil's account, and is his own sign-in in force? A
+      // pupil enrolled by the office, whose page a no has closed, has no claim:
+      // his basic view is drawn from this, in the same sentence ('closed').
+      const { rows: [o] } = await client.query(`select pupil, open, school_id, school_name from my_own_signin()`);
+      const ownSignIn = o ? { pupil: o.pupil === true, open: o.open !== false } : { pupil: false, open: true };
+      /** @type {any} */
+      let claim = pupilState(rows[0]);
+      if (!claim && ownSignIn.pupil && !ownSignIn.open && o?.school_id) {
+        claim = { state: "closed", schoolId: String(o.school_id), schoolName: String(o.school_name ?? ""), name: null, year: null,
+                  saidOn: "", sentOn: "", keepUntil: null, safeguarding: true };
+      }
+      return { claim, ownSignIn };
     }),
 
     claim: handle(async (client, req) => {

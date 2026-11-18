@@ -36,12 +36,17 @@
 --         not followed by the office's no.
 --   Another yes standing keeps him open (Q6).
 --
--- THE GATE. pupil_signin_open(account): false for an account that is a
--- pupil's (its roster link, its own self link, or a live player or
--- selfaccess assignment) when any boy it answers as has no yes in force, or
--- when it holds a pupil's role and names no boy (db/81's trigger's rule).
--- True for every other account, so nothing changes for anybody who is not a
--- pupil. Asked inside app_can(), app_holds(), app_enrolled() and the
+-- THE GATE. pupil_signin_open(account): false for an account that answers
+-- as a boy (its roster link, or a self link on one of its live
+-- assignments) when any boy it answers as has no yes in force. True for
+-- every other account, so nothing changes for anybody who is not a pupil.
+-- An account holding `player` that names no boy at all (no roster link, no
+-- self link) is NOT closed here: no boy, no family and no date of birth
+-- stand behind it, so no yes could ever open it, and what it reads is its
+-- side, not a child's own record. db/81's trigger already refuses it a
+-- Google sign-in. Whether the gate should close it too is left to Kameel
+-- (tools/pupil-signin-count.sql counts them: one on the seed, the
+-- spectator@ pupil persona). Asked inside app_can(), app_holds(), app_enrolled() and the
 -- functions that read the caller's own assignments without app_can():
 -- every assignment of a closed account stops counting, at the next
 -- statement. He is not signed out; his session reads what a signed-out
@@ -267,22 +272,18 @@ CREATE OR REPLACE FUNCTION pupil_signin_in_force(p_player uuid) RETURNS boolean 
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- THE GATE: may this account's assignments count? Yes for any account that
--- is not a pupil's. A pupil's account (its roster link, a self link on one
--- of its live assignments, or a live player or selfaccess assignment) only
--- while every boy it answers as has a yes in force; never when it holds a
--- pupil's role and names no boy (db/81's trigger's rule). NULL (no caller)
--- is open: such a caller holds nothing anyway.
+-- answers as no boy. An account that answers as a boy (its roster link, or
+-- a self link on one of its live assignments) only while every boy it
+-- answers as has a yes in force. (A `player` naming no boy: see the
+-- header.) NULL (no caller) is open: such a caller holds nothing anyway.
 CREATE OR REPLACE FUNCTION pupil_signin_open(p_account uuid) RETURNS boolean AS $$
-  WITH b AS (
-    SELECT u.player_id AS id FROM app_user u WHERE u.id = p_account AND u.player_id IS NOT NULL
-    UNION
-    SELECT g.player_id FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
-     WHERE a.person_id = p_account AND a.active AND g.relationship = 'self')
-  SELECT p_account IS NULL
-      OR CASE WHEN EXISTS (SELECT 1 FROM b)
-              THEN NOT EXISTS (SELECT 1 FROM b WHERE NOT pupil_signin_in_force(b.id))
-              ELSE NOT EXISTS (SELECT 1 FROM role_assignment a
-                                WHERE a.person_id = p_account AND a.active AND a.role IN ('player', 'selfaccess')) END
+  SELECT p_account IS NULL OR NOT EXISTS (
+    SELECT 1 FROM (
+      SELECT u.player_id AS id FROM app_user u WHERE u.id = p_account AND u.player_id IS NOT NULL
+      UNION
+      SELECT g.player_id FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+       WHERE a.person_id = p_account AND a.active AND g.relationship = 'self') b
+     WHERE NOT pupil_signin_in_force(b.id))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp
    COST 500;
 
