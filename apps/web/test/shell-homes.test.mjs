@@ -20,7 +20,8 @@ import { MIN_MATCHES, seasonLineWords } from "../src/lib/sideSeason.js";
 import { needsYouRows } from "../src/views/needsyou.jsx";
 import { chipOrder, weekOf } from "../src/views/DashboardView.jsx";
 import { formLetter, teamResults } from "../src/views/TeamPage.jsx";
-import { MobileNav } from "../src/shell/MobileNav.jsx";
+import { MobileNav, SportSwitcher } from "../src/shell/MobileNav.jsx";
+import { readFileSync } from "node:fs";
 import { TopBar } from "../src/shell/TopBar.jsx";
 import { PersonaBar } from "../src/shell/PersonaBar.jsx";
 
@@ -146,6 +147,24 @@ group("The shell, drawn signed out (the demo)");
        words === "Raise a concern" && name.startsWith(words) && /aria-hidden="true"/.test(btn?.[1] ?? ""), btn?.[0]?.slice(0, 300));
     ok(`${who}: ...and carries no mark or count`, !/\d/.test(words) && !/badge|count/.test(btn?.[1] ?? ""));
   }
+}
+
+group("The sport switcher (glossary review item 4)");
+{
+  const cricket = { code: "cricket", label: "Cricket", enabled: true, engine: "scoring" };
+  const netball = { code: "netball", label: "Netball", enabled: true, engine: "fixtures" };
+  const hockey = { code: "hockey", label: "Hockey", enabled: false, engine: "fixtures" };
+  ok("a school that plays one sport is drawn no switcher", renderToStaticMarkup(h(SportSwitcher, { sports: [cricket] })) === "");
+  ok("...nor one whose other sports are not switched on", renderToStaticMarkup(h(SportSwitcher, { sports: [cricket, hockey] })) === "");
+  ok("...nor while the list is empty (unread, or not read)", renderToStaticMarkup(h(SportSwitcher, { sports: [] })) === "");
+  const two = renderToStaticMarkup(h(SportSwitcher, { sports: [netball, cricket] }));
+  const btn = two.match(/<button[^>]*data-testid="sport-switcher-button"[^>]*>/)?.[0] ?? "";
+  ok("two sports: the switcher is drawn, showing the scorable one", two.includes('data-testid="sport-switcher"') && />Cricket</.test(two), two.slice(0, 300));
+  ok("...its button a 44px target", /min-height:44px/.test(btn), btn);
+  // The options are drawn only when open, so their floor is read from the source.
+  const src = readFileSync(new URL("../src/shell/MobileNav.jsx", import.meta.url), "utf8");
+  const option = src.split("\n").find((l) => l.includes("sport-option-")) ?? "";
+  ok("...and each option a 44px target too", /minHeight:"44px"/.test(option), option.trim().slice(0, 200));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

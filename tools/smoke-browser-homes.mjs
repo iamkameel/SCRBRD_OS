@@ -220,6 +220,9 @@ try {
        narrow?.words === "Raise a concern" && narrow.textShown && narrow.h >= 44 && narrow.inside && narrow.apart && !narrow.sideways, JSON.stringify(narrow));
     await s.page.setViewportSize({ width: 1280, height: 900 });
     await s.page.waitForTimeout(300);
+    // The seed's school plays cricket alone: no drop-down with nothing to choose (glossary review item 4).
+    ok("one sport at this school: the sidebar draws no sport switcher", await tid(s.page, "nav").count() > 0
+       && await tid(s.page, "sport-switcher").count() === 0 && !/ScrbrdOS · Sport/i.test(await s.page.locator("body").innerText().catch(() => "")));
     await tid(s.page, "nav-safeguarding").click({ timeout: 4000 }).catch(() => {});
     await afterReads(s.page, 1200);
     ok("Raise a concern opens Safeguarding", await pageNow(s.page) === "safeguarding");

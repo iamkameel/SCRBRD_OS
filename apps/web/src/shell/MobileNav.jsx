@@ -42,21 +42,21 @@ const SPORT_ICON = {
 };
 const BADGE_TONE = themed(() => ({ emerald:D.emerald, sky:D.sky, amber:D.amber }));
 
-function SportSwitcher() {
+// `sports` is for a test to hand it the list; the shell leaves it out and the switcher reads the school's own.
+function SportSwitcher({ sports: given = null } = {}) {
   const [open, setOpen] = useState(false);
   // Only the sports switched on: one that is off is hidden, not badged SOON.
-  const sports = sportsOn(useSports().sports);
-  // The one on the button is the sport that is both granted and scorable —
-  // the one whose scorer's screen exists. Falls back to the first granted
-  // sport, then to cricket, so the button is never blank while the read is in
-  // flight.
-  const current = sports.find(s => s.enabled && s.scorable)
-               ?? sports.find(s => s.enabled)
-               ?? { code:"cricket", label:"Cricket" };
+  const read = useSports().sports;
+  const sports = sportsOn(given ?? read);
+  // A school that plays one sport has nothing to switch between: a drop-down there is a control that does nothing
+  // (glossary review item 4), so it is not drawn. Nor is it while the list is unread or could not be read.
+  if (sports.length < 2) return null;
+  // The one on the button is the sport that is scorable (the one whose scorer's screen exists), else the first.
+  const current = sports.find(s => s.engine === "scoring") ?? sports[0];
   return (
-    <div style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,position:"relative"}}>
+    <div data-testid="sport-switcher" style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,position:"relative"}}>
       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,marginBottom:"6px"}}>ScrbrdOS · Sport</div>
-      <button onClick={()=>setOpen(!open)} className="pressBtn" style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",borderRadius:D.md,background:D.emerald+"10",border:`1px solid ${D.emerald}28`,cursor:"pointer"}}>
+      <button type="button" onClick={()=>setOpen(!open)} className="pressBtn" data-testid="sport-switcher-button" aria-expanded={open} style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",minHeight:"44px",borderRadius:D.md,background:D.emerald+"10",border:`1px solid ${D.emerald}28`,cursor:"pointer"}}>
         <span style={{fontSize:"14px",color:D.emerald}}><Icon name={SPORT_ICON[current.code] ?? "shirt"}/></span>
         <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.emerald}}>{current.label}</span>
         <span aria-hidden="true" style={{marginLeft:"auto",fontSize:"12px",color:D.textMuted}}>{open?"▴":"▾"}</span>
@@ -67,7 +67,7 @@ function SportSwitcher() {
             const b = sportBadge(s);
             const tone = BADGE_TONE[b.tone] ?? D.textMuted;
             return (
-            <button key={s.code} disabled={!s.enabled} onClick={()=>setOpen(false)} className="pressBtn" style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"9px 12px",background:s.enabled?tone+"10":"transparent",border:"none",cursor:s.enabled?"pointer":"default",opacity:s.enabled?1:.55}}>
+            <button type="button" key={s.code} disabled={!s.enabled} onClick={()=>setOpen(false)} className="pressBtn" data-testid={`sport-option-${s.code}`} style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"9px 12px",minHeight:"44px",background:s.enabled?tone+"10":"transparent",border:"none",cursor:s.enabled?"pointer":"default",opacity:s.enabled?1:.55}}>
               <span style={{fontSize:"13px",color:s.enabled?D.textPrimary:D.textSecondary}}><Icon name={SPORT_ICON[s.code] ?? "shirt"}/></span>
               <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:s.enabled?600:400,color:s.enabled?D.textPrimary:D.textSecondary}}>{s.label}</span>
               <span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",color:tone,background:tone+"16",border:`1px solid ${tone}30`,borderRadius:D.pill,padding:"2px 6px"}}>{b.text}</span>
