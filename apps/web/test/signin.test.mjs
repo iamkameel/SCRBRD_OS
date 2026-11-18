@@ -32,6 +32,7 @@ import { GRANTABLE_ROLES, SUBJECT_SCOPED_ROLES, SELF_REGISTRABLE_ROLES, SELF_REG
 import { exchangeGoogle, exchangeState, EXCHANGE_WORDS, CLAIM_STEPS, CLAIM_MEANWHILE } from "../src/lib/signin.js";
 import { googleConfig, signInConfig, googleFailure, GOOGLE_FAILURE_WORDS, addSignIn, authReady } from "../src/lib/google.js";
 import { SIGNIN_NOTICE, SIGNIN_NOTICE_TITLE } from "../src/lib/signinNotice.js";
+import { FORM_ON_FILE, OWN_SIGNIN_REFUSALS, ownSigninWords } from "../src/lib/ownSignin.js";
 import {
   KINDS, STAFF_ROLES, RELATIONSHIPS, JOIN_WORDS, NOTE_MAX, buildRequest, joinWords, parentNote, sentWords, spectatorAsk,
 } from "../src/lib/joinSchool.js";
@@ -258,6 +259,30 @@ group("A pupil under 18 says who he is (db/163, Q3): it asks for nothing and ope
   ok("...and nothing once he is opened", keepWords({ state: "open", keepUntil: null }) === null);
   ok("the database's day, as written", dayWords("2027-01-01") === "1 January 2027" && dayWords("x") === "");
   ok("removing the account says what goes before it goes", /sign-in and the schools you follow/.test(REMOVE_WORDS.ask));
+
+  // db/164: a yes taken back. §3.4's sentence, word for word; how a yes comes again; no oracle.
+  w = stateWords({ state: "closed", schoolName: "Test School" });
+  ok("closed: §3.4's sentence", w.title === "Your own page is closed" && w.line === "Your own page is closed until a parent or guardian says yes again.", JSON.stringify(w));
+  ok("...and how a yes comes again: Family, or the office", /Family/.test(w.how) && /office at Test School/.test(w.how), w.how);
+  ok("...naming no team, figure or record, and no reason", !FOUND.test(w.line + w.how) && !/\bteam\b|figure|\brecord\b|because|withdrew|revoked/i.test(w.line + w.how));
+  ok("...and no last day: an account holding a pupil's role is never removed", keepWords({ state: "closed", keepUntil: null }) === null);
+  ok("the office names the closed state", typeof OFFICE_STATE_WORDS.closed === "string" && /taken back/.test(OFFICE_STATE_WORDS.closed));
+  {
+    const base = { inForce: false, adult: false, bornKnown: true, yesHow: null, yesBy: null, yesAt: null, yours: false, canAllow: true, canStop: false };
+    ok("own sign-in, closed: he sees what the public sees", /cannot sign in to his own page/.test(ownSigninWords(base, "Sipho")) && /public sees/.test(ownSigninWords(base, "Sipho")));
+    ok("...hers: allowed by you, with the day, and she can stop it",
+       ownSigninWords({ ...base, inForce: true, yesHow: "guardian", yours: true, yesAt: "2026-11-18T08:00:00Z" }, "Sipho") === "You allowed Sipho's own sign-in on 18 November 2026. You can stop it at any time.",
+       ownSigninWords({ ...base, inForce: true, yesHow: "guardian", yours: true, yesAt: "2026-11-18T08:00:00Z" }, "Sipho"));
+    ok("...the other guardian's: named only as the other guardian, and not hers to stop (Q6)",
+       /other guardian allowed/.test(ownSigninWords({ ...base, inForce: true, yesHow: "guardian", yesBy: "the guardian" }, "Sipho"))
+       && /Only they, or the school office/.test(ownSigninWords({ ...base, inForce: true, yesHow: "guardian" }, "Sipho")));
+    ok("...the school's form, or the stamp carried over: ask the office",
+       ["office", "enrolled"].every((how) => /signed consent form on file/.test(ownSigninWords({ ...base, inForce: true, yesHow: how }, "Sipho"))));
+    ok("...no date of birth: closed, and the office records it", /no date of birth/.test(ownSigninWords({ ...base, bornKnown: false }, "Sipho")));
+    ok("...eighteen: his own", ownSigninWords({ ...base, adult: true, inForce: true }, "Sipho") === "Sipho is 18. His own sign-in is his.");
+    ok("every refusal of the tap has words", ["not_permitted", "player_is_an_adult", "terms_not_agreed", "no_date_of_birth", "not_yours_to_stop", "fallback"].every((k) => typeof OWN_SIGNIN_REFUSALS[k] === "string"));
+    ok("the office's tick says what it attests, in the design's words (Q12)", FORM_ON_FILE.label === "The signed consent form is on file" && /waits for a parent/.test(FORM_ON_FILE.hint));
+  }
 
   // The basic view, as drawn: his state first; none of the asking; none of his record.
   const claim = { state: "recognised", schoolId: S, schoolName: "Test School", name: "Test Pupil", year: "Grade 9", saidOn: "2026-11-18", sentOn: "2026-11-18", keepUntil: "2026-12-18", safeguarding: true };

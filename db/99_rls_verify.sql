@@ -159,6 +159,35 @@ CREATE OR REPLACE FUNCTION _set_born(p_player uuid, p_born date) RETURNS void AS
   UPDATE player SET born = p_born WHERE id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- db/164 (SCRBRD-140 Migration B): a boy's own sign-in is open only while a
+-- yes is in force, and the paste carries every own link the office had
+-- stamped 'granted' over as the office's yes (db/164 §6). The sections of
+-- this file written before db/164 seed their pupils the way the office
+-- enrolled them before it, straight into assignment_subject with the stamp
+-- and no yes. This trigger, the verifier's own and gone with its ROLLBACK,
+-- does for each of those rows what db/164 §6 does at the paste: a self link
+-- written 'granted' for a boy with nothing on record carries the office's
+-- yes. It is switched off for §142, which proves the gate itself
+-- (_v164_legacy(false)); nothing in db/ writes such a row after db/164 but
+-- the grant door, and only once a yes is in force.
+CREATE OR REPLACE FUNCTION _v164_legacy_stamp() RETURNS trigger AS $$
+BEGIN
+  IF NEW.relationship = 'self' AND NEW.consent_state = 'granted' AND NEW.verification_state = 'verified'
+     AND NOT EXISTS (SELECT 1 FROM pupil_signin_consent x WHERE x.player_id = NEW.player_id) THEN
+    INSERT INTO pupil_signin_consent (player_id, answer, how, given_by, given_by_name, terms_version, given_at)
+    VALUES (NEW.player_id, 'yes', 'enrolled', NEW.verified_by, 'db/99 fixture', NEW.consent_version, coalesce(NEW.consent_at, now()));
+  END IF;
+  RETURN NULL;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+DROP TRIGGER IF EXISTS _v164_legacy_stamp ON assignment_subject;
+CREATE TRIGGER _v164_legacy_stamp AFTER INSERT OR UPDATE OF consent_state ON assignment_subject
+  FOR EACH ROW EXECUTE FUNCTION _v164_legacy_stamp();
+CREATE OR REPLACE FUNCTION _v164_legacy(p_on boolean) RETURNS void AS $$
+BEGIN
+  IF p_on THEN ALTER TABLE assignment_subject ENABLE TRIGGER _v164_legacy_stamp;
+  ELSE ALTER TABLE assignment_subject DISABLE TRIGGER _v164_legacy_stamp; END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- Wind a live link's end date back to a date already past. This is how the
 -- "expiry is live, there is no cron" claim is made falsifiable: nothing runs
 -- between this and the read that follows it except app_can() itself.
@@ -14726,6 +14755,8 @@ BEGIN
     END;
     -- The office enrols his account with the signed form (today's path): not refused.
     PERFORM _as(REG);
+    -- db/164 (Q12): the signed form is a tick the office records, then the grant.
+    PERFORM pupil_signin_office_set(BOY, true);
     SELECT x.ok, x.reason INTO ok_, why FROM enrol_person('v163.ask@example.invalid', 'V163 Ask', 'player', HIL, NULL, BOY, 'Signed form on file') x;
     PERFORM _assert(ok_, format('§141 (ask): the office could not enrol his account (%s)', coalesce(why, '?')));
     PERFORM _as(KID);
@@ -14918,6 +14949,7 @@ BEGIN
     PERFORM _as(KID2);
     PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
     PERFORM _as(REG);
+    PERFORM pupil_signin_office_set(BOY, true);   -- db/164 (Q12): the tick, then the grant
     PERFORM enrol_person('v163.keep2@example.invalid', 'V163 Keep2', 'player', HIL, NULL, BOY, 'Signed form on file');
     PERFORM _v163_age(KID2, 60);
     PERFORM _assert(pupil_claim_clear(HIL) = 0 AND _v163_purge() = 0, '§141 (keep): an opened account was removed');
@@ -46964,6 +46996,7 @@ $m130$;
   -- applied, the change made as the owner inside the run, and red at its
   -- own assertion (each in a run of its own): see the commit that adds this
   -- section for the list.
+  PERFORM _v164_legacy(false);   -- the gate itself, with no fixture's help
   PERFORM _v164_case('closed');
   PERFORM _v164_case('stop');
   PERFORM _v164_case('terms');
@@ -46978,6 +47011,7 @@ $m130$;
   PERFORM _v164_case('carry');
   PERFORM _v164_case('grants');
   PERFORM set_config('app.user_id', '', true);
+  PERFORM _v164_legacy(true);
   -- └── db/164 (section 142) ─────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';

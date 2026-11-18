@@ -348,7 +348,7 @@ export function OwnSignIn({ child, name, w }) {
         <>
           <Line testid="own-signin-words">{ownSigninWords(state, name, w.place)}</Line>
           {state.canAllow && !state.inForce && (
-            <Line quiet>Until you say yes, {name} sees only the public pages and his school&apos;s safeguarding contacts. You can stop it at any time, and from eighteen it is his.</Line>
+            <Line quiet>Until you say yes, {name} sees only the public pages and his school&apos;s safeguarding contacts. You may stop it at any time, and from eighteen it is his.</Line>
           )}
           <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
             {state.canAllow && <Action primary disabled={busy} onClick={() => answer(true)} testid="own-signin-allow">Allow his own sign-in</Action>}

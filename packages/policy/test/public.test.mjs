@@ -441,6 +441,8 @@ const HAND_WRITTEN_SINCE_47 = {
   recognition_review: {},
   // db/163: a pupil's claim (what he typed, his roster row once known) is never public as a whole (N4).
   pupil_claim: {},
+  // db/164: the yes and the no for a boy's own sign-in is never public as a whole (N4).
+  pupil_signin_consent: {},
 };
 
 /** The db/NN files from 47 on, which is where hand-written pupil tables are held to this. */
