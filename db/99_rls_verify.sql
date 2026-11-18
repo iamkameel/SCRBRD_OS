@@ -159,20 +159,32 @@ CREATE OR REPLACE FUNCTION _set_born(p_player uuid, p_born date) RETURNS void AS
   UPDATE player SET born = p_born WHERE id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER;
 
--- db/164 (SCRBRD-140 Migration B): a boy's own sign-in is open only while a
--- yes is in force, and the paste carries every own link the office had
--- stamped 'granted' over as the office's yes (db/164 §6). The sections of
--- this file written before db/164 seed their pupils as enrolled pupils
--- with no yes on record: straight into assignment_subject with the stamp,
--- or as an account with its roster link (app_user.player_id) and nothing
--- else. These triggers, the verifier's own and gone with its ROLLBACK, give
--- each such boy with nothing on record the office's yes, as an enrolled
--- pupil's own link carries it after the paste (db/164 §6). They are
--- switched off for §142, which proves the gate itself (_v164_legacy(false));
--- nothing in db/ writes a granted own link after db/164 but the grant door,
--- and only once a yes is in force. (On a live database a pupil with a
--- roster link and no granted own link has no yes, and the paste closes him:
--- tools/pupil-signin-count.sql counts them.)
+-- db/164 (SCRBRD-140 Migration B) · FIXTURE SETUP ONLY, AND ONLY HERE.
+-- A boy's own sign-in is open only while a yes is in force, and the paste
+-- carries every own link the office had stamped 'granted' over as the
+-- office's yes (db/164 §6). The sections of this file written before db/164
+-- seed their pupils the way a school's were enrolled before it: straight
+-- into assignment_subject with the stamp, or an account inserted with its
+-- roster link (app_user.player_id). None of them tests the gate; each needs
+-- its pupil open, as he is on a live database after the paste.
+--
+-- So, for those sections and no others, two triggers give such a fixture
+-- pupil with nothing on record the office's yes, at the moment the fixture
+-- INSERTS him. Their limits, each deliberate:
+--   * INSERT only. The grant door UPDATEs app_user.player_id and a yes
+--     UPDATEs a pending own link to 'granted'; neither fires them, so no
+--     door's own write is ever given a yes it did not earn.
+--   * Written in this file alone. db/164 holds no such trigger, and §142
+--     (grants) asserts that no trigger of this name exists on any table.
+--   * Dropped, not disabled, by _v164_legacy_drop() before §141 runs: the
+--     two sections about a pupil's own state (§141, db/163's claim; §142,
+--     db/164's gate) run with the triggers gone, and §142 asserts they are
+--     gone before its first case (_v164_legacy_gone()). Falsified: with
+--     the drop removed, §142 is red at (legacy).
+--   * Gone with the file's ROLLBACK in any case.
+-- (On a live database a pupil with a roster link and no granted own link
+-- has no yes, and the paste closes him: tools/pupil-signin-count.sql
+-- counts them.)
 CREATE OR REPLACE FUNCTION _v164_legacy_stamp() RETURNS trigger AS $$
 BEGIN
   IF TG_TABLE_NAME = 'app_user' THEN
@@ -188,21 +200,23 @@ BEGIN
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 DROP TRIGGER IF EXISTS _v164_legacy_stamp ON assignment_subject;
-CREATE TRIGGER _v164_legacy_stamp AFTER INSERT OR UPDATE OF consent_state ON assignment_subject
+CREATE TRIGGER _v164_legacy_stamp AFTER INSERT ON assignment_subject
   FOR EACH ROW EXECUTE FUNCTION _v164_legacy_stamp();
 DROP TRIGGER IF EXISTS _v164_legacy_stamp ON app_user;
-CREATE TRIGGER _v164_legacy_stamp AFTER INSERT OR UPDATE OF player_id ON app_user
+CREATE TRIGGER _v164_legacy_stamp AFTER INSERT ON app_user
   FOR EACH ROW EXECUTE FUNCTION _v164_legacy_stamp();
-CREATE OR REPLACE FUNCTION _v164_legacy(p_on boolean) RETURNS void AS $$
+-- The end of fixture setup for the older sections: both triggers dropped.
+CREATE OR REPLACE FUNCTION _v164_legacy_drop() RETURNS void AS $$
 BEGIN
-  IF p_on THEN
-    ALTER TABLE assignment_subject ENABLE TRIGGER _v164_legacy_stamp;
-    ALTER TABLE app_user ENABLE TRIGGER _v164_legacy_stamp;
-  ELSE
-    ALTER TABLE assignment_subject DISABLE TRIGGER _v164_legacy_stamp;
-    ALTER TABLE app_user DISABLE TRIGGER _v164_legacy_stamp;
-  END IF;
+  DROP TRIGGER IF EXISTS _v164_legacy_stamp ON assignment_subject;
+  DROP TRIGGER IF EXISTS _v164_legacy_stamp ON app_user;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Are they gone? No trigger of the name, on any table, and none calling the function.
+CREATE OR REPLACE FUNCTION _v164_legacy_gone() RETURNS boolean AS $$
+  SELECT NOT EXISTS (SELECT 1 FROM pg_trigger t
+                      WHERE t.tgname = '_v164_legacy_stamp'
+                         OR t.tgfoid = to_regprocedure('_v164_legacy_stamp()'))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- Wind a live link's end date back to a date already past. This is how the
 -- "expiry is live, there is no cron" claim is made falsifiable: nothing runs
@@ -15162,6 +15176,32 @@ CREATE OR REPLACE FUNCTION _v164_link(p_guardian uuid, p_boy uuid) RETURNS uuid 
   SELECT g.id FROM assignment_subject g JOIN role_assignment a ON a.id = g.assignment_id
    WHERE a.person_id = p_guardian AND g.player_id = p_boy ORDER BY g.created_at DESC LIMIT 1
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A notice at Hilton, as the owner: to a side (p_team), or the system's own to one
+-- account (p_recipient). Its id.
+CREATE OR REPLACE FUNCTION _v164_notice(p_team text, p_recipient uuid) RETURNS uuid AS $$
+  INSERT INTO notification (school_id, team_code, scope_level, kind, title, body, required_capability, published_at, recipient_id)
+  VALUES ('11111111-1111-1111-1111-111111111111', p_team, CASE WHEN p_team IS NULL THEN 'school' ELSE 'team' END,
+          CASE WHEN p_recipient IS NULL THEN 'fixture' ELSE 'system' END,
+          CASE WHEN p_recipient IS NULL THEN 'V164 side notice' ELSE 'V164 system notice' END,
+          'Verify 164.', 'news.read', now() - interval '1 minute', p_recipient)
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An account's assignment of a role, past row security.
+CREATE OR REPLACE FUNCTION _v164_role(p_account uuid, p_role text) RETURNS uuid AS $$
+  SELECT a.id FROM role_assignment a WHERE a.person_id = p_account AND a.role = p_role AND a.active LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A phone for an account, as the owner: the token's id.
+CREATE OR REPLACE FUNCTION _v164_phone(p_account uuid) RETURNS uuid AS $$
+  INSERT INTO device_push_token (person_id, token, platform)
+  VALUES (p_account, 'v164-token-' || p_account::text, 'android')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An account inserted with its roster link alone, the older sections' way (owner): its id.
+CREATE OR REPLACE FUNCTION _v164_roster_account(p_boy uuid, p_tag text) RETURNS uuid AS $$
+  INSERT INTO app_user (school_id, email, name, role, player_id)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'v164.roster.' || p_tag || '@example.invalid', 'V164 Roster', 'player', p_boy)
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A person's name and a school's, past row security.
 CREATE OR REPLACE FUNCTION _v164_name(p_user uuid) RETURNS text AS $$
   SELECT u.name FROM app_user u WHERE u.id = p_user
@@ -15228,7 +15268,50 @@ DECLARE
 BEGIN
   PERFORM set_config('app.user_id', '', true);
 
-  IF p_case = 'closed' THEN
+  IF p_case = 'legacy' THEN
+    -- (legacy) The older sections' fixture triggers (db/99 alone) are gone
+    -- before the first case, so no case here is given a yes it did not earn:
+    -- no trigger of their name or function on any table, and a boy of 15
+    -- inserted as those sections insert one is closed.
+    PERFORM _assert(_v164_legacy_gone(), '§142 (legacy): the older sections'' fixture triggers are still there');
+    B := _v163_boy(HIL, 'v164legacy', 15);
+    K := _v164_roster_account(B, 'legacy');
+    PERFORM _assert(NOT _v164_open(K) AND NOT _v164_in_force(B) AND _v164_record(B) = '',
+                    format('§142 (legacy): a fixture-inserted boy was given a yes (%s)', _v164_record(B)));
+
+  ELSIF p_case = 'notices' THEN
+    -- (notices) His side's notices, and their delivery to his phone. Closed, he
+    -- reads only the system's own notice to him; the side's notice is not his to
+    -- read, nor to be pushed: the fan-out's own question as him
+    -- (push-api.mjs: select 1 from notification where id = $1) answers nothing,
+    -- and a delivery to his phone cannot be written. The office's yes: he reads
+    -- it (the control).
+    K := _v164_pupil('notices', 15); B := _v164_boy(K);
+    q := _v164_notice('U16A', NULL);           -- to his side
+    PERFORM _v164_phone(K);
+    -- The system's own, to him: the office ends his selfaccess role, and he is told (db/77).
+    PERFORM _as(REG);
+    SELECT x.ok, x.reason INTO ok_, why FROM role_assignment_end(_v164_role(K, 'selfaccess'), 'Verify 164: ended by the office.') x;
+    PERFORM _assert(ok_, format('§142 (notices): the office could not end his role (%s)', why));
+    PERFORM _as(K);
+    SELECT count(*) INTO n FROM notification WHERE id = q;
+    PERFORM _assert(n = 0, format('§142 (notices): closed, the fan-out''s question as him finds the side''s notice (%s)', n));
+    SELECT count(*) INTO n FROM my_notifications;
+    PERFORM _assert(n = 1 AND EXISTS (SELECT 1 FROM my_notifications m WHERE m.kind = 'system'),
+                    format('§142 (notices): closed, he reads %s notices (only the system''s own to him)', n));
+    BEGIN
+      INSERT INTO notification_delivery (notification_id, token_id, person_id, payload_kind, state)
+      SELECT q, t.id, app_user_id(), 'full', 'sent' FROM device_push_token t WHERE t.person_id = app_user_id();
+      PERFORM _assert(false, '§142 (notices): closed, a delivery of the side''s notice was written to his phone');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    PERFORM _as(REG);
+    PERFORM pupil_signin_office_set(B, true);
+    PERFORM _as(K);
+    SELECT count(*) INTO n FROM notification WHERE id = q;
+    PERFORM _assert(n = 1, format('§142 (notices): open, he does not read his side''s notice (the control: %s)', n));
+
+  ELSIF p_case = 'closed' THEN
     -- (closed) A pupil under 18 with his own account and no yes: closed. He reads
     -- ZERO rows from every table the application may read (§60's sweep), is not
     -- enrolled, and every function on the list answers him nothing. The office's
@@ -15564,8 +15647,9 @@ BEGIN
 
   ELSIF p_case = 'grants' THEN
     -- (grants) The doors are scrbrd_app's alone; the rest, and the record, nobody's.
+    PERFORM _assert(_v164_legacy_gone(), '§142 (grants): the older sections'' fixture triggers are back');
     FOREACH v IN ARRAY ARRAY['pupil_signin_consent_set(uuid,boolean)', 'pupil_signin_office_set(uuid,boolean)',
-                             'pupil_signin_state(uuid)', 'my_own_signin()'] LOOP
+                             'pupil_signin_state(uuid)', 'my_own_signin()', 'pupil_signin_mine_open()'] LOOP
       PERFORM _assert(_v163_acl(v) = 'scrbrd_app:EXECUTE', format('§142 (grants): %s is granted %s', v, _v163_acl(v)));
     END LOOP;
     FOREACH v IN ARRAY ARRAY['pupil_signin_yes_stands(uuid)', 'pupil_signin_in_force(uuid)', 'pupil_signin_open(uuid)',
@@ -46891,6 +46975,9 @@ $m130$;
   PERFORM _v161_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/161 (section 139) ─────────────────────────────────────────
+  -- db/164: fixture setup for the older sections ends here. The two
+  -- sections about a pupil's own state run without the fixture triggers.
+  PERFORM _v164_legacy_drop();
   -- ┌── db/163 (section 141) ─────────────────────────────────────────
   -- ── 141. "I am a pupil here": the pupil's claim, recognised and waiting, and the basic view's own reads (db/163; SCRBRD-140 honesty model, Migration A) ──
   -- Each case seeds its own people (_v163_account: a first Google sign-in,
@@ -47001,6 +47088,10 @@ $m130$;
   -- and `selfaccess`, his own link pending; _v164_guardian: a verified
   -- parent link, agreed or not) and runs as scrbrd_app under each person's
   -- session (_v164_case, an invoker). Labels:
+  --   (legacy)    the older sections' fixture triggers (db/99 alone, above)
+  --               are gone before the first case: no trigger of their name
+  --               or function on any table; a boy inserted as they insert
+  --               one is closed
   --   (closed)    a boy of 15 with no yes reads ZERO rows from every table
   --               (§60's sweep), is not enrolled, and every function on the
   --               build map's list and every gated reader of his own
@@ -47008,6 +47099,10 @@ $m130$;
   --               narrows; the office's form on file opens him on the next
   --               statement (the control), records the office person's name,
   --               and stamps his own link
+  --   (notices)   closed, he reads only the system's own notice to him:
+  --               not his side's, which the fan-out's question as him does
+  --               not find and to whose delivery his phone cannot be
+  --               written; the office's yes opens it (the control)
   --   (stop)      her yes opens him, recorded with her name and terms
   --               version; her "Stop his own sign-in" closes him on the next
   --               statement in the same session; a new tap reopens
@@ -47049,7 +47144,7 @@ $m130$;
   --
   -- Falsified once each, on a database at claude/wip-hm-b with db/164
   -- applied, the change made as the owner inside the run, and red at its
-  -- own assertion (28 changes, each in a run of its own):
+  -- own assertion (30 changes, each in a run of its own):
   --   yes_stands() without the giver's own no      → (stop) red: left open
   --   her link need not be agreed, AND the terms trigger dropped
   --                                         → (terms) red: he reads 261 rows
@@ -47076,9 +47171,19 @@ $m130$;
   --   my_pupil_state() without 'closed'; pupil_claim_waiting() as db/163
   --   left it                                  → (claim) red at each
   --   the carry-over without its once          → (carry) red
+  --   notification_pupil_signin dropped and the gate out of app_can()
+  --                                         → (notices) red: closed, he reads
+  --                                           his side's notice (with the gate
+  --                                           out and the policy kept, green:
+  --                                           the policy holds by itself; with
+  --                                           the policy dropped and the gate
+  --                                           kept, green: the gate holds)
+  --   _v164_legacy_drop() not called           → (legacy) red
   --   app_user_email_seen() as db/118 left it  → (address) red: waiting, the
   --                                           director of sport reads it
+  PERFORM _v164_case('legacy');
   PERFORM _v164_case('closed');
+  PERFORM _v164_case('notices');
   PERFORM _v164_case('stop');
   PERFORM _v164_case('terms');
   PERFORM _v164_case('revoked');

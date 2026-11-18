@@ -79,6 +79,10 @@
 --   + pupil_signin_state(player)  what the family and the office read.
 --   + my_own_signin()  what the boy's own screen needs: is this a pupil's
 --       account, and is it open.
+--   + notification_pupil_signin (restrictive, on notification): a closed
+--       account reads only the system's own notices addressed to it, and
+--       so a notice to his side is neither read nor pushed to his phone
+--       (§5b); pupil_signin_mine_open() is the policy's question.
 --   + pupil_signin_terms_withdrawn (trigger on assignment_subject): her
 --       withdrawal of the terms is recorded as her no, so agreeing again
 --       later does not quietly reopen her old yes (a new tap is a new yes).
@@ -689,6 +693,36 @@ BEGIN
 END $gate$;
 
 
+-- ── 5b · His notices, and their delivery to his phone ─────────────
+-- Every route by which a notice is read (notification_read and the side's,
+-- the sheet's and the team-wide policies) asks app_can() or my_own_boy(),
+-- which the gate above already closes. This restrictive policy says the
+-- rule once more, on the notice itself, so that no notice route added later
+-- can miss it: an account whose own sign-in is not in force reads only the
+-- system's own notices addressed to it (§3.3's left column: "A parent has
+-- said yes", "The school has answered", a role that ended). Delivery to a
+-- phone follows: services/api/notify/push-api.mjs fanOut() asks, as each
+-- recipient, `select 1 from notification where id = $1` before it sends,
+-- and records the delivery as the recipient under the same policy
+-- (notification_delivery_insert), so a closed boy's phone is sent nothing
+-- and no delivery can be written to him. The question is asked once per
+-- statement (an initplan), not once per row.
+CREATE OR REPLACE FUNCTION pupil_signin_mine_open() RETURNS boolean AS $$
+  SELECT pupil_signin_open(app_user_id())
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+DO $notice$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'notification'::regclass AND polname = 'notification_pupil_signin') THEN
+    CREATE POLICY notification_pupil_signin ON notification AS RESTRICTIVE
+      FOR SELECT USING (
+        (SELECT pupil_signin_mine_open())
+        OR (kind = 'system' AND recipient_id = app_user_id())
+      );
+  END IF;
+END $notice$;
+
+
 -- ── 6 · Nobody enrolled today is closed: the stamp carried over ─────
 -- Every boy whose own link is live, verified and stamped 'granted' (the
 -- office's grant, db/92, or the paths before it) has that stamp carried
@@ -726,7 +760,7 @@ DO $grants$
 DECLARE
   f text; r text;
   v_doors text[] := ARRAY['pupil_signin_consent_set(uuid,boolean)', 'pupil_signin_office_set(uuid,boolean)',
-                          'pupil_signin_state(uuid)', 'my_own_signin()'];
+                          'pupil_signin_state(uuid)', 'my_own_signin()', 'pupil_signin_mine_open()'];
   v_internal text[] := ARRAY['pupil_signin_yes_stands(uuid)', 'pupil_signin_in_force(uuid)', 'pupil_signin_open(uuid)',
                              'pupil_signin_is_pupils(uuid)', 'pupil_signin_stamp(uuid)', 'pupil_signin_after_yes(uuid,text)',
                              'pupil_signin_my_link(uuid)', 'pupil_signin_terms_withdrawn()', 'pupil_signin_carry_over()'];
@@ -768,6 +802,13 @@ BEGIN
                     AND tgname = 'pupil_signin_terms_withdrawn' AND tgenabled = 'O') THEN
     RAISE EXCEPTION 'db/164: the trigger pupil_signin_terms_withdrawn is missing or disabled';
   END IF;
+  -- His notices: the restrictive policy, as written (§5b).
+  SELECT pg_get_expr(p.polqual, p.polrelid) INTO v FROM pg_policy p
+   WHERE p.polrelid = 'notification'::regclass AND p.polname = 'notification_pupil_signin'
+     AND NOT p.polpermissive AND p.polcmd = 'r';
+  IF v IS NULL OR position('pupil_signin_mine_open()' IN v) = 0 THEN
+    RAISE EXCEPTION 'db/164: notification_pupil_signin is %', coalesce(v, '(missing, or not restrictive)');
+  END IF;
   -- Every re-emitted body is exactly this file's.
   FOR r IN SELECT * FROM _db164_bodies LOOP
     IF (SELECT md5(p.prosrc) FROM pg_proc p WHERE p.oid = r.fn::regprocedure) IS DISTINCT FROM r.mine_md5 THEN
@@ -776,7 +817,7 @@ BEGIN
     END IF;
   END LOOP;
   FOR f IN SELECT unnest(ARRAY['pupil_signin_consent_set(uuid,boolean)', 'pupil_signin_office_set(uuid,boolean)',
-                               'pupil_signin_state(uuid)', 'my_own_signin()',
+                               'pupil_signin_state(uuid)', 'my_own_signin()', 'pupil_signin_mine_open()',
                                'pupil_signin_yes_stands(uuid)', 'pupil_signin_in_force(uuid)', 'pupil_signin_open(uuid)',
                                'pupil_signin_is_pupils(uuid)', 'pupil_signin_stamp(uuid)', 'pupil_signin_after_yes(uuid,text)',
                                'pupil_signin_my_link(uuid)', 'pupil_signin_terms_withdrawn()', 'pupil_signin_carry_over()']) LOOP
@@ -792,7 +833,7 @@ BEGIN
       INTO v FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x
      WHERE p.oid = f::regprocedure AND x.grantee <> p.proowner;
     w := CASE WHEN f IN ('pupil_signin_consent_set(uuid,boolean)', 'pupil_signin_office_set(uuid,boolean)',
-                         'pupil_signin_state(uuid)', 'my_own_signin()')
+                         'pupil_signin_state(uuid)', 'my_own_signin()', 'pupil_signin_mine_open()')
               THEN 'scrbrd_app:EXECUTE' ELSE '' END;
     IF v IS DISTINCT FROM w THEN
       RAISE EXCEPTION 'db/164: % is granted %', f, coalesce(nullif(v, ''), 'to nobody');
