@@ -74,7 +74,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
-import { destLocator } from "./walk-nav.mjs";
+import { destByWord, destLocator } from "./walk-nav.mjs";
 // The rankings the tab itself runs (unchanged by SCRBRD-086), so "All
 // seasons" can be held to what the `career` read ranks to — the tab's
 // behaviour before seasons. NOT the new season helpers: the expected season
@@ -234,7 +234,7 @@ async function nav(page, label) {
     if (!(await press(page, /^Leagues$/, '[data-testid="home-competitions-sections"] button'))) return false;
     return until(page, () => /League Management/.test(document.body.innerText));
   }
-  if (!(await press(page, label, "nav button"))) return false;
+  { const l = await destByWord(page, label); if (!(await l.count())) return false; await l.click({ timeout: WAIT }).catch(() => {}); }
   return until(page, () => /League Management/.test(document.body.innerText));
 }
 
@@ -589,7 +589,8 @@ try {
     .map((r) => ({ key: r.season, value: rowFigure(r, metric) == null ? "" : String(rowFigure(r, metric)) }));
   const panelText = (page) => page.locator('[data-testid="season-bars-panel"]').innerText().then((t) => t.replace(/\s+/g, " "));
 
-  ok("Analytics opens", await press(dos.page, /Analytics/, "nav button")
+  // Analytics is Team's Stats section (Slice 5): Team, then Stats.
+  ok("Analytics opens", await (await destByWord(dos.page, /Analytics/)).click({ timeout: WAIT }).then(() => true, () => false)
      && await until(dos.page, () => !!document.querySelector('[data-testid="analytics-teams"]')));
   await dos.page.locator('[data-testid="analytics-team-9XI"]').click({ timeout: WAIT }).catch(() => {});
   ok("...on the 9XI side", await until(dos.page, () => document.querySelector('[data-testid="analytics-team-9XI"]')?.getAttribute("aria-pressed") === "true"));
