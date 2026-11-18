@@ -363,7 +363,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                       <Icon name="trophy"/>
                       <span style={{ ...T.role.body, color: T.content.primary, flex: "1 1 8em", minWidth: 0, overflowWrap: "anywhere" }}>{m.homeTeam} v {m.awayTeam}</span>
                       <span style={{ ...T.role.body, color: T.content.secondary }}>{played ? humanDate(m.date) : humanDateTime(m.date, m.time)}</span>
-                      <span data-testid={`week-fixture-said-${m.id}`} style={{ ...T.role.body, color: played ? T.content.primary : T.content.secondary, flexBasis: "100%" }}>{said.text}</span>
+                      <span data-testid={`week-said-${m.id}`} style={{ ...T.role.body, color: played ? T.content.primary : T.content.secondary, flexBasis: "100%" }}>{said.text}</span>
                     </div>
                   );
                 })}

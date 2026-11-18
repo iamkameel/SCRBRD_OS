@@ -126,8 +126,10 @@ async function signIn(page, email) {
   await afterReads(page, 2500);
 }
 /** The menu as drawn: the rail's entries on a laptop, the bar's on a phone, by key and word. */
-const menuOf = (page, phone = false) => page.$$eval(phone ? '[data-testid="mnav"] [data-testid^="mnav-"]' : '[data-testid="nav"] [data-testid^="nav-"]:not([data-testid^="nav-group-"])',
-  (els) => els.filter((e) => !/badge/.test(e.getAttribute("data-testid") ?? "")).map((e) => ({ key: e.getAttribute("data-testid"), word: (e.innerText || e.getAttribute("aria-label") || "").trim() })));
+// The menu is drawn once the shell has the session's roles; on a slow runner that is after sign-in's reads settle,
+// so the walk waits for an entry before reading the menu (CI 18 Nov read it empty).
+const menuOf = async (page, phone = false) => (await page.waitForSelector(phone ? '[data-testid="mnav"] [data-testid^="mnav-"]' : '[data-testid="nav"] [data-testid^="nav-"]', { timeout: 15000 }).catch(() => null), page.$$eval(phone ? '[data-testid="mnav"] [data-testid^="mnav-"]' : '[data-testid="nav"] [data-testid^="nav-"]:not([data-testid^="nav-group-"])',
+  (els) => els.filter((e) => !/badge/.test(e.getAttribute("data-testid") ?? "")).map((e) => ({ key: e.getAttribute("data-testid"), word: (e.innerText || e.getAttribute("aria-label") || "").trim() }))));
 const pageNow = (page) => tid(page, "os-main").getAttribute("data-page").catch(() => null);
 /** Go to a folded destination as a person does: its home's entry, then its section. */
 async function section(page, home, key, phone = false) {
@@ -261,7 +263,7 @@ try {
     ok("Last match: a result in words", (await inner(s.page, "day-last-result")).length > 3, await inner(s.page, "day-last"));
     const season = await inner(s.page, "day-season");
     ok("...and the side's season in one line, with what it rests on", /completed match/.test(season), season);
-    const week = await s.page.$$eval('[data-testid="day-week"] [data-testid^="week-fixture-said-"]', (els) => els.map((e) => e.textContent ?? ""));
+    const week = await s.page.$$eval('[data-testid="day-week"] [data-testid^="week-said-"]', (els) => els.map((e) => e.textContent ?? ""));
     ok("This week: each fixture says where it stands", week.length > 0 && week.every((t) => t.trim().length > 0), week.join(" | "));
     await s.ctx.close();
   }

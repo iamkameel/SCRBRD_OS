@@ -226,7 +226,11 @@ async function signIn(page, who) {
 async function nav(page, label) {
   // GA-I30: Leagues is a section of the Competitions home, not a menu entry of its own.
   if (/Leagues/.test(String(label))) {
-    if (!(await press(page, /^Competitions\d*$/, "nav button"))) return false;
+    // Slice 5: Competitions sits under Matches, a link on its bar, for a reader who reaches Matches.
+    const comp = await destLocator(page, "competitions");
+    if (!(await comp.count())) return false;
+    await comp.click({ timeout: 6000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="home-competitions-sections"]', { timeout: 10000 }).catch(() => {});
     if (!(await press(page, /^Leagues$/, '[data-testid="home-competitions-sections"] button'))) return false;
     return until(page, () => /League Management/.test(document.body.innerText));
   }
