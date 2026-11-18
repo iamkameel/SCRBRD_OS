@@ -5348,9 +5348,14 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - [x] ~~Slice 1 · The scorer's home and starting a Pilot Match~~ **Done 14 Nov 2026** (#327, 660a5630)
 - [x] ~~Slice 2 · The spectator's match page~~ **Done 14 Nov 2026** (#334, #336)
 - [x] ~~Slice 3 · First run (migrations)~~ **Done 16 Nov 2026.** 3a merged 14 Nov (#339, 94f282ea: one door, the no-school home, the home page by state, the strip's status sentence without the target, `POST /api/onboard` retired). 3b merged 15 and 16 Nov: #344 (15 Nov, aa33836e, "Ask SCRBRD to add my school", db/158) and #345 (16 Nov, 9d6b287d, the live strip's target db/159 and the follow list db/160). db/158, db/159 and db/160 are live on both databases.
-- [ ] Slice 4 · Parent and pupil (migrations)
-- [ ] Slice 5 · The coach's day sheet, and the homes
-- [ ] Slice 6 · The office
+- [ ] Slice 4 · Parent and pupil (migrations): partly done: built and reviewed, PRs #350, #351 and #352 open (#350 is this slice)
+- [ ] Slice 5 · The coach's day sheet, and the homes: partly done: built and reviewed, PRs #350, #351 and #352 open (#351 is this slice)
+- [ ] Slice 6 · The office: partly done: built and reviewed, PRs #350, #351 and #352 open (#352 is this slice)
+- [ ] Slice 5 follow-up: §3.5's competition tables, records, caps and head to head on the team page
+- [ ] Slice 5 follow-up: §1.4's links from a match to its sides and its ground
+- [ ] Slice 5 follow-up: corrections waiting (O7) in Needs you
+- [ ] Slice 5 follow-up: the Rulebook under the person's name
+- [ ] Slice 6 follow-up: a parent's own-name edit; it needs a server write that does not exist (open with Kameel)
 
 ### SCRBRD-143 — Account erasure must delete the slice 3b tables (2026-11-15)
 **Priority:** P2 · **Domain:** Privacy / Account lifecycle · **Type:** build, Opus (rides on `account_erase()`)
