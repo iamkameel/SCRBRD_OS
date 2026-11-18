@@ -7,6 +7,7 @@ import { Icon } from "../ui/icons.jsx";
 import { liftable } from "../lib/staffRegister.js";
 import { LiftPause } from "./liftPause.jsx";
 import { holdsAsHeld } from "../lib/held.js";
+import { requestFix } from "../lib/fixNote.js";
 
 /**
  * Notices (docs/design/NOTIFICATIONS.md D17).
@@ -31,7 +32,8 @@ import { holdsAsHeld } from "../lib/held.js";
  *
  * A safeguarding notice carries "Open the inbox" for a Safeguarding Officer
  * (EXPERIENCE_PASS Q7, Slice 6): he lands on Today like everyone else, and the
- * bell's `high` notice, which names nobody, takes him to his inbox in one tap.
+ * bell's `high` notice, which names nobody, takes him to his inbox in one tap,
+ * landed on it (scrolled to and focused, lib/fixNote.js), below the screen's DSO card.
  * Drawn only for a holder of safeguarding.concern.read; the inbox is the
  * server's, as it always was.
  */
@@ -114,7 +116,7 @@ function NotificationsView({ role, onNav = null }) {
                   {liftable(n) && (isOpen || !n.tiered) && <LiftPause id={n.subjectId}/>}
                   {dso && n.type === "safeguarding" && (
                     <button type="button" className="pressBtn" data-testid="notice-open-inbox"
-                      onClick={() => { if (!n.read) void open(n.id); onNav("safeguarding"); }}
+                      onClick={() => { if (!n.read) void open(n.id); requestFix({ page: "safeguarding", find: ['[data-testid="sg-inbox"]'] }); onNav("safeguarding"); }}
                       style={{marginTop:"6px",minHeight:"44px",padding:"0 16px",borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",
                         color:D.textPrimary,cursor:"pointer",fontFamily:D.head,fontSize:"12px",fontWeight:700}}>
                       Open the inbox <span aria-hidden="true">›</span>

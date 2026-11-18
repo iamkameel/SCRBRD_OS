@@ -374,7 +374,10 @@ try {
     ok("the bell lists the high safeguarding notice, which names nobody", await notice.count() === 1 && !/Pillay|frightened/.test(await notice.innerText().catch(() => "")));
     await notice.locator('[data-testid="notice-open-inbox"]').click({ timeout: 4000 }).catch(() => {});
     await afterReads(d.page, 2500);
-    ok("...and one tap on it opens his inbox", await pageNow(d.page) === "safeguarding" && await tid(d.page, "sg-inbox").count() === 1
+    ok("...and one tap on it opens his inbox, landed on: brought into view and focused (review SF2)", await pageNow(d.page) === "safeguarding" && await tid(d.page, "sg-inbox").count() === 1
+       && await tid(d.page, "sg-inbox").getAttribute("data-fix") === "here"
+       && await d.page.evaluate(() => { const el = document.querySelector('[data-testid="sg-inbox"]'); const r = el?.getBoundingClientRect();
+            return !!el && document.activeElement === el && r.top < window.innerHeight && r.bottom > 0; })
        && await d.page.locator(`[data-testid="sg-inbox-row"][data-reference="${r.reference}"]`).count() === 1);
     ok("no console errors for the DSO", d.errors.length === 0, d.errors.join(" | "));
     await d.ctx.close();

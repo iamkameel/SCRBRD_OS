@@ -123,6 +123,8 @@ group("The Safeguarding Officer's route (Q7): Today, then the bell's notice, the
   ok("a safeguarding notice opens the inbox in one tap, for a holder of safeguarding.concern.read only",
      /const dso = !!onNav && holdsAsHeld\(role, "safeguarding\.concern\.read"\)/.test(notes) && /\{dso && n\.type === "safeguarding" && \(/.test(notes)
      && /onNav\("safeguarding"\)/.test(notes) && /notifications:<NotificationsView role=\{role\} onNav=\{setPage\}\/>/.test(app));
+  ok("...landed on the inbox itself (review SF2): a fix note for sg-inbox before the screen opens",
+     /requestFix\(\{ page: "safeguarding", find: \['\[data-testid="sg-inbox"\]'\] \}\); onNav\("safeguarding"\)/.test(notes));
   ok("...the button is on the row, not inside the opened notice (the bell, then the notice: one tap)",
      notes.indexOf('data-testid="notice-open-inbox"') > notes.indexOf("{liftable(n)") && !/isOpen && dso/.test(notes));
   ok("Today's alerts and Home's notices never list a safeguarding notice", /NOTIFICATIONS\.filter\(\(n\) => !n\.read && n\.type !== "safeguarding"\)/.test(src("../src/views/DashboardView.jsx"))
