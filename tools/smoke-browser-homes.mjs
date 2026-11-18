@@ -420,11 +420,13 @@ try {
 
   group("Review S2: opening Today makes no logged read nobody tapped for");
   {
-    // Four of the coach's fixtures today: the match-day card draws the first few and folds the last under Later.
+    // Four of the coach's fixtures in the next two hours: the match-day card draws the first few and folds the last
+    // under Later. Timed from now, not from the clock's hours: a fixture that started more than six hours ago leaves
+    // the card's window (lib/cockpit.js isWithin), and the last would no longer be the folded one (seen at 16:00).
     const today = [];
-    for (const [name, hh] of [["Homes Walk Ten XI", 10], ["Homes Walk Eleven XI", 11], ["Homes Walk Noon XI", 12], ["Homes Walk One XI", 13]]) {
+    for (const [name, mins] of [["Homes Walk First XI", 30], ["Homes Walk Second XI", 60], ["Homes Walk Third XI", 90], ["Homes Walk Fourth XI", 120]]) {
       const [m] = await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
-        values ($1, '1XI', $2, (sa_today()::timestamp + make_interval(hours => $3::int)) at time zone 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL, name, hh]);
+        values ($1, '1XI', $2, now() + make_interval(mins => $3::int), 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL, name, mins]);
       today.push(m.id); made.matches.push(m.id);
     }
     const s = await open(390);
