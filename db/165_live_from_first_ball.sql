@@ -1,5 +1,5 @@
 -- ══════════════════════════════════════════════════════════════════
---  165 · A fixture is live from its first event
+--  165 · A fixture is live from its first ball
 -- ══════════════════════════════════════════════════════════════════
 --
 -- HAND-WRITTEN. The match-day bug of 18 Nov 2026: a scored fixture never
@@ -15,20 +15,25 @@
 -- match is live solely from the clock; use authoritative fixture/event
 -- state." db/155's public names already read a scheduled match that has
 -- balls as live (Fable SF-3); the status was the one reader left behind.
--- So neither the toss (a column of match, not an event), nor a claim, nor
--- the start time makes a fixture live. The first row the server accepts
--- into ball_event does.
+-- So neither the toss, nor a claim, nor the start time makes a fixture
+-- live. The first DELIVERY the server accepts into ball_event does: a row of
+-- kind 'ball', a wide or a no-ball included. Not the setup the pad sends the
+-- moment the toss is confirmed (innings_start with the squads, the openers,
+-- the bowler), which can be half an hour before play and is the pre-match
+-- line-up (ROLE_DASHBOARDS §5: "Scorer: toss/line-up" before live). So
+-- PUBLIC_BY_TERMS's "first event" is read as the first ball. The scorebook
+-- importer's balls are kind 'ball' too.
 --
 -- WHAT THIS FILE DOES.
 --   1. match_live_on_first_event(), a statement-level AFTER INSERT trigger
 --      on ball_event, as the definer with its search_path pinned. It moves
---      every fixture the statement wrote to that is still 'scheduled' to
---      'live'. Only from 'scheduled': never from 'postponed' (db/133's
+--      every fixture the statement wrote a delivery to that is still
+--      'scheduled' to 'live'. Only from 'scheduled': never from 'postponed' (db/133's
 --      BEFORE trigger refuses the ball there anyway), 'abandoned' or
 --      'complete'. The ball is the act; nobody is given the column, no
 --      capability is added and packages/policy is unchanged.
 --   2. A backfill, match_live_backfill(): a scheduled fixture that already
---      has a log is in play, so it becomes live. The paste prints the count
+--      has a delivery in its log is in play, so it becomes live. The paste prints the count
 --      before and after, and refuses to commit if one is left.
 --
 -- WHAT IT DOES NOT DO. A ball only reaches ball_event through the lease
@@ -36,7 +41,7 @@
 -- quarantined ball goes to ball_event_quarantine and moves nothing. The
 -- importer goes scheduled → live → complete in one transaction, and nobody
 -- sees the middle step. The trigger writes no notice and no audit row: the
--- first event is its own record. Every trigger on match that fires on a
+-- first ball is its own record. Every trigger on match that fires on a
 -- status change was read for → live (LIFECYCLE_DIAGNOSIS §5.1):
 -- availability_ask_again returns early unless the new status is scheduled,
 -- postponed or abandoned; lift_fixture_moved reacts to abandoned or
@@ -48,7 +53,7 @@
 -- to read again, which is the point. db/99 §143 counts the notices.
 -- Locking: the ball's foreign key holds FOR KEY SHARE on the match row, the
 -- UPDATE takes FOR NO KEY UPDATE, and the two do not conflict; after the
--- first event the UPDATE matches no row and takes no lock.
+-- first ball the UPDATE matches no row and takes no lock.
 --
 -- WHO MAY CALL THEM. db/157's rule: REVOKE ALL FROM PUBLIC, then EXECUTE to
 -- scrbrd_app by name on the trigger's function (which cannot be called
@@ -71,12 +76,12 @@ BEGIN
 END $guard$;
 
 
--- ── 1 · The first event makes the fixture live ─────────────────────
+-- ── 1 · The first ball makes the fixture live ──────────────────────
 CREATE OR REPLACE FUNCTION match_live_on_first_event() RETURNS trigger AS $$
 BEGIN
   UPDATE match m SET status = 'live'
    WHERE m.status = 'scheduled'
-     AND m.id IN (SELECT DISTINCT n.match_id FROM match_live_new_events n);
+     AND m.id IN (SELECT DISTINCT n.match_id FROM match_live_new_events n WHERE n.kind = 'ball');
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -86,14 +91,14 @@ CREATE TRIGGER ball_event_match_live AFTER INSERT ON ball_event
   FOR EACH STATEMENT EXECUTE FUNCTION match_live_on_first_event();
 
 -- ── KAMEEL'S CALL, NOT MADE HERE (his board, 18 Nov 2026) ──────────
--- (a) Refuse live → scheduled once the log has an event. db/133 allows it
+-- (a) Refuse live → scheduled once the log has a ball. db/133 allows it
 --     today, so an office edit could flip a scored fixture back to
 --     "Upcoming" (the next ball flips it back). If he says yes, it is one
 --     branch in match_fixture_rules() (db/133 §2, re-emitted under its md5
 --     guard), before its `ELSIF OLD.status = 'postponed'`:
 --
 --       ELSIF OLD.status = 'live' AND NEW.status = 'scheduled'
---             AND EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = NEW.id) THEN
+--             AND EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = NEW.id AND b.kind = 'ball') THEN
 --         RAISE EXCEPTION 'This fixture has been scored, so it is live: call it off (abandoned) rather than put it back.'
 --           USING ERRCODE = 'check_violation', CONSTRAINT = 'match_status_transition';
 --
@@ -123,7 +128,7 @@ CREATE OR REPLACE FUNCTION match_live_backfill() RETURNS integer AS $$
 DECLARE v_moved integer;
 BEGIN
   UPDATE match m SET status = 'live'
-   WHERE m.status = 'scheduled' AND EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id);
+   WHERE m.status = 'scheduled' AND EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id AND b.kind = 'ball');
   GET DIAGNOSTICS v_moved = ROW_COUNT;
   RETURN v_moved;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -138,14 +143,14 @@ BEGIN
     END IF;
   END LOOP;
   SELECT count(*) INTO v_before FROM match m
-   WHERE m.status = 'scheduled' AND EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id);
-  RAISE NOTICE 'db/165: % scheduled fixture(s) with events in their log, before', v_before;
+   WHERE m.status = 'scheduled' AND EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id AND b.kind = 'ball');
+  RAISE NOTICE 'db/165: % scheduled fixture(s) with a ball in their log, before', v_before;
   v_moved := match_live_backfill();
   SELECT count(*) INTO v_after FROM match m
-   WHERE m.status = 'scheduled' AND EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id);
-  RAISE NOTICE 'db/165: % moved to live; % scheduled fixture(s) with events, after', v_moved, v_after;
+   WHERE m.status = 'scheduled' AND EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id AND b.kind = 'ball');
+  RAISE NOTICE 'db/165: % moved to live; % scheduled fixture(s) with a ball, after', v_moved, v_after;
   IF v_after <> 0 THEN
-    RAISE EXCEPTION 'db/165: % scheduled fixture(s) still have events after the backfill', v_after;
+    RAISE EXCEPTION 'db/165: % scheduled fixture(s) still have a ball after the backfill', v_after;
   END IF;
 END $backfill$;
 
@@ -160,8 +165,9 @@ BEGIN
   END IF;
   -- From scheduled alone: the body names no other status to move from.
   SELECT prosrc INTO v FROM pg_proc WHERE oid = 'match_live_on_first_event()'::regprocedure;
-  IF position($w$m.status = 'scheduled'$w$ IN v) = 0 OR v ~ $w$'(postponed|abandoned|complete)'$w$ THEN
-    RAISE EXCEPTION 'db/165: match_live_on_first_event() moves a fixture from somewhere other than scheduled';
+  IF position($w$m.status = 'scheduled'$w$ IN v) = 0 OR position($w$n.kind = 'ball'$w$ IN v) = 0
+     OR v ~ $w$'(postponed|abandoned|complete)'$w$ THEN
+    RAISE EXCEPTION 'db/165: match_live_on_first_event() moves a fixture from somewhere other than scheduled, or on something other than a ball';
   END IF;
   SELECT pg_get_triggerdef(t.oid) INTO v FROM pg_trigger t
    WHERE t.tgrelid = 'ball_event'::regclass AND t.tgname = 'ball_event_match_live' AND NOT t.tgisinternal AND t.tgenabled = 'O';

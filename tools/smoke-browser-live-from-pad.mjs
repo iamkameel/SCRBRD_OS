@@ -11,11 +11,12 @@
  * holds its source to that: no statement of it writes a match row.
  *
  *   1. The office arranges the fixture (POST /api/fixtures, as the form
- *      does): Hilton 1XI at home, one over a side, two hours on. The director
+ *      does): Hilton 1XI at home, one over a side, ten minutes on. The director
  *      of sport publishes the home side. It reads scheduled.
  *   2. A spectator, signed out, opens /live/:id before play: "Fixture".
  *   3. The scorer, on a 390 × 844 phone, opens it from Today and calls the
- *      toss: still scheduled (the toss is not an event). He scores one ball:
+ *      toss: still scheduled once its setup is sent (the line-up is not
+ *      play). He scores one ball:
  *      the fixture is live, with no SQL write, and the coach's Match Centre
  *      and the spectator's page (one reload) say Live.
  *   4. A four: it reaches the spectator's page on the page's own refresh,
@@ -102,6 +103,8 @@ async function close(b) { if (b.closed) return; b.closed = true; await b.ctx.clo
 const tid = (page, id) => page.locator(`[data-testid="${id}"]`);
 const has = async (page, id) => (await tid(page, id).count()) > 0;
 const text = (page) => page.$eval("body", (el) => el.innerText);
+/** A status word as written, whatever case the label's CSS draws it in. */
+const word = async (page, id) => ((await tid(page, id).first().textContent({ timeout: 2000 }).catch(() => "")) || "").trim();
 const inner = async (page, id) => ((await tid(page, id).first().innerText({ timeout: 2000 }).catch(() => "")) || "").trim();
 const until = async (page, fn, ms = 8000, arg = undefined) => {
   try { await page.waitForFunction(fn, arg, { timeout: ms, polling: 100 }); return true; } catch { return false; }
@@ -204,7 +207,10 @@ try {
     await new Promise((r) => setTimeout(r, 250));
   }
   if (apiExited) throw new Error(`the walk's own API did not start: ${apiErr.join("").split("\n").find((l) => /Error/.test(l)) ?? "exited"}`);
-  const START = new Date(Math.ceil((Date.now() + 2 * 3600e3) / 300e3) * 300e3);
+  // Ten minutes on, and on today's date in South Africa whatever the hour:
+  // Today lists a complete fixture only on its own SA day (lib/scorerHome.js).
+  const saMidnight = (() => { const d = new Date(Date.now() + 2 * 3600e3); d.setUTCHours(24, 0, 0, 0); return d.getTime() - 2 * 3600e3; })();
+  const START = new Date(Math.min(Math.ceil((Date.now() + 10 * 60e3) / 60e3) * 60e3, saMidnight - 60e3));
 
   // ── 1 ──────────────────────────────────────────────────────────
   group("1. The office arranges the fixture; the director publishes the home side");
@@ -222,7 +228,7 @@ try {
   group("2. A spectator, signed out, opens the public page before play");
   const pu = await open("public", { path: `/live/${MATCH}` });
   await pu.page.waitForSelector('[data-testid="public-match"]', { timeout: 8000 }).catch(() => {});
-  ok(`the page draws the fixture, as a fixture ("${await inner(pu.page, "mc-status")}")`, await has(pu.page, "public-match") && (await inner(pu.page, "mc-status")) === "Fixture",
+  ok(`the page draws the fixture, as a fixture ("${await word(pu.page, "mc-status")}")`, await has(pu.page, "public-match") && (await word(pu.page, "mc-status")) === "Fixture",
     (await text(pu.page)).slice(0, 300));
 
   // ── 3 ──────────────────────────────────────────────────────────
@@ -239,8 +245,10 @@ try {
   await tap(P, "toss-won-home"); await tap(P, "toss-decision-bat"); await tap(P, "toss-confirm");
   await afterReads(P, 800);
   ok("the toss is on the server", (await q(`select 1 from match_toss where match_id = $1`, [MATCH])).length === 1);
-  ok("...and the fixture is still scheduled: a toss is not play", (await statusOf(MATCH)) === "scheduled", await statusOf(MATCH));
   ok("the pad is ready: the openers in, the bowler named", await ready(P), (await text(P)).slice(0, 500));
+  ok("...its setup is on the server (innings_start, the openers, the bowler)",
+     await waitFor(async () => (await balls(MATCH)).some((r) => r.kind === "innings_start"), 8000), JSON.stringify(await balls(MATCH)));
+  ok("...and the fixture is still scheduled: the toss and the line-up are not play", (await statusOf(MATCH)) === "scheduled", await statusOf(MATCH));
   ok("...on Basic Scoring", await basic(P));
   ok("the first ball, a single, reaches the server", await run(P, 1, 0, 1, MATCH), JSON.stringify(await balls(MATCH)));
   ok("THE FIXTURE IS LIVE, from its first ball, with no SQL write", await waitFor(async () => (await statusOf(MATCH)) === "live", 5000), await statusOf(MATCH));
@@ -248,13 +256,13 @@ try {
   const coach = await open("coach-matchcentre");
   ok("the 1XI coach signs in", await signIn(coach.page, "coach@example.invalid"));
   ok("...and opens the fixture in Match Centre", await openMatch(coach.page, MATCH), (await text(coach.page)).slice(0, 300));
-  ok(`his Match Centre says Live ("${await inner(coach.page, "mc-status")}")`, (await inner(coach.page, "mc-status")) === "Live");
+  ok(`his Match Centre says Live ("${await word(coach.page, "mc-status")}")`, (await word(coach.page, "mc-status")) === "Live");
   ok("no console errors (coach)", coach.errors.length === 0, coach.errors.join(" | "));
   await close(coach);
 
   await pu.page.reload({ waitUntil: "networkidle" });
   await pu.page.waitForSelector('[data-testid="public-match"]', { timeout: 8000 }).catch(() => {});
-  ok(`one reload, and the spectator's page says Live ("${await inner(pu.page, "mc-status")}")`,
+  ok(`one reload, and the spectator's page says Live ("${await word(pu.page, "mc-status")}")`,
     await until(pu.page, () => document.querySelector('[data-testid="mc-status"]')?.textContent?.trim() === "Live", 8000), await inner(pu.page, "mc-status"));
   ok(`...with the single on it (${await inner(pu.page, "mc-scores")})`, await waitFor(async () => (await runsOn(pu.page)) === 1, 8000), await inner(pu.page, "mc-scores"));
 
@@ -263,6 +271,7 @@ try {
   ok("the four reaches the server", await run(P, 4, 0, 2, MATCH), JSON.stringify(await balls(MATCH)));
   const t4 = Date.now();
   const four = await waitFor(async () => (await runsOn(pu.page)) === 5, ONE_REFRESH_MS, 200);
+  note(`the four reached the spectator's page ${Date.now() - t4} ms after the server had it`);
   ok(`the spectator's page shows it without a reload, in ${Date.now() - t4} ms (5 runs: ${await inner(pu.page, "mc-scores")})`, four);
   // docs/policy/PUBLIC_DATA.md L2: on the live surface a boy is his initial and
   // surname, and only with a recorded consent; otherwise "Batter" or "Bowler".
@@ -321,6 +330,7 @@ try {
   ok("...and is back on the pad's result screen, offered Finish the match", await until(P, () => !!document.querySelector('[data-testid="pad-finish"]'), 12000),
     (await text(P)).slice(0, 400));
   await until(P, () => !document.querySelector('[data-testid="pad-finish"]')?.disabled, 10000);
+  note(`the finish panel: attached ${await tid(P, "pad-finish-panel").first().getAttribute("data-attached").catch(() => "?")}, reason "${await tid(P, "pad-finish-panel").first().getAttribute("data-reason").catch(() => "?")}"`);
   await tap(P, "pad-finish");
   ok("he finishes it: 'Finished. The result now waits for confirmation.'",
     await until(P, () => /^Finished\. The result now waits for confirmation\.$/.test(document.querySelector('[data-testid="pad-finish-said"]')?.textContent?.trim() ?? ""), 10000),

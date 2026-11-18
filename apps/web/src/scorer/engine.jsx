@@ -1036,6 +1036,19 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   // second innings' seal: the pair is still to come, or in play.
   // A Pilot Match called off is over too, in either innings (re-check 1).
   const matchOver = (innings[1]?.sealed === true && offer.state !== "available" && !superOverInPlay(innings)) || (pilotMode && !!callOffNow);
+  // A fixture reopened on a log that is already decided (a reload, or the
+  // sign-in from the result screen's "Sign in to finish this match") opens on
+  // its result, where Finish is, not on a closed innings (18 Nov 2026). Asked
+  // once, at the first look after the log is loaded; never during play.
+  const landedRef = useRef(false);
+  useEffect(() => {
+    if (landedRef.current || !hydratedRef.current || !fixtureLive) return;
+    landedRef.current = true;
+    const decided = twoInn
+      ? (innings[3]?.sealed === true || (innings[2]?.sealed === true && inningsDecided(innings))) && offer.state !== "available" && !superOverInPlay(innings)
+      : matchOver;
+    if (decided && screen === "match" && !modal) setScreen("result");
+  }, [innings, matchOver, twoInn, offer.state, fixtureLive, screen, modal]);
   useEffect(() => {
     const ps = syncRef.current, engine = ps?.engine, st = padStatus;
     if (!engine || !st || engine.cleared || !hydratedRef.current) return;
@@ -2725,7 +2738,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
             const finishAs=finishOffer(match?.schoolId,match?.teamCode);
             return finishAs==="finish"
               ?<FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}
-                 left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}/>
+                 left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}
+                 attached={!!padStatus?.attached} reason={padStatus?.reason??null}/>
               :<FinishGate offer={finishAs} onSignIn={onSignIn??null} online={padStatus?.online!==false}/>;
           })()}
           {/* §2.5 step 6: at the result of a Practice or Pilot Match, an
