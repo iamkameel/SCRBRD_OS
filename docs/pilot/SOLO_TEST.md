@@ -140,14 +140,14 @@ Do them in this order on a test day: 1 to 4 before the toss, 5 to 7 during the m
 
 Sign in as `registrar.wes`.
 
-1. Tap **Settings**, then **People**. You see Westville's accounts, and the boys with no account.
+1. Tap **School**, then **People**. You see Westville's accounts, and the boys with no account.
 2. Tap **+ Enrol a person**. Enrol an invented parent for a Westville boy: **Full name** "Test Parent", **Email** `test.parent@example.invalid`, **Role** Parent / Guardian, **Which child** any boy. Tap **Enrol**.
 3. Sign out. Sign in as `test.parent`. Tap **Family**. You see that boy, and the line saying his terms are not agreed yet.
 4. Back as `registrar.wes`: **Team**, a side, that boy, **Edit Profile**. Under **Public match pages**, tap **Record a yes from a signed form** and record it.
 5. On the same **Edit Profile**, under **Guardian links**, choose "Test Parent" under **Parent or guardian**. Tap **Record the agreement**. The page asks, naming the boy, "Test Parent" and the terms version `popia-2026-01`. Tap **Yes, record it**. The page says "Recorded." Sign in as `test.parent` again: the line saying his terms are not agreed is gone.
-6. Back on **Guardian links**, choose another parent and tap **Verify the link**, then **Yes, verify**. That parent has no link to this boy waiting, so the page refuses in words and changes nothing. That is the right answer. (A link waiting to be verified exists only after the office re-links a parent in **Settings**, **People**, once a boy's date of birth is captured.)
-7. Tap **Staff**. Tap **Everyone**, then **Clearance register**. The cast is listed. Most checks are missing: that is right for invented people.
-8. Under **Settings**, **People**, look for **Google sign-ins waiting for you**.
+6. Back on **Guardian links**, choose another parent and tap **Verify the link**, then **Yes, verify**. That parent has no link to this boy waiting, so the page refuses in words and changes nothing. That is the right answer. (A link waiting to be verified exists only after the office re-links a parent in **School**, **People**, once a boy's date of birth is captured.)
+7. Tap **School**. Tap **Everyone**, then **Clearance register**. The cast is listed. Most checks are missing: that is right for invented people.
+8. Under **School**, **People**, look for **Google sign-ins waiting for you**.
 9. **People** → a coach → **Disable account**. The sheet says it signs him out of every device and keeps his roles. Confirm. On phone 2, signed in as that coach, the next tap asks him to sign in again. Back on People, he is listed as **Disabled**; **Enable account** brings him back.
 
 You should see: only Westville's people and boys. Never a Kearsney boy.
@@ -277,7 +277,7 @@ A failure: the driver seeing a trip that is not his; `driver.kea` seeing Westvil
 Sign in as `dos.wes`.
 
 1. **To resolve**: the office's list first, then every Westville fixture in the next seven days by day and team, each with its duty count; the rest folded under Later.
-2. **Officials**, **Staff** and the **Clearance register**: the whole school.
+2. **Officials**, **School** and the **Clearance register**: the whole school.
 3. **Matches**: all twelve fixtures.
 4. After the match, as `scorer2.wes`: on the fixture's full-time card tap "Something to correct", pick a ball and file a correction. The director of sport can approve it: as `dos.wes`, on **To resolve**, open the fixture's Corrections sheet and tap **Approve**; the ball is removed and nothing replaces it. The walk is `tools/smoke-browser-corrections.mjs`, step 3.
 

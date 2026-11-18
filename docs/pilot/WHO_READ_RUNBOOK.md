@@ -15,7 +15,7 @@ Before anyone opens the child's record, check that the asker may ask: step 2 of 
 | # | what you do | about |
 |---|---|---|
 | 1 | Check standing (above). Note the child's roster entry. | 1 min |
-| 2 | Sign in as the office. Open **Settings**, then **School**. Scroll to **On the record: who read what**. | 30 s |
+| 2 | Sign in as the office. Open **School**, then **Record**. Scroll to **On the record: who read what**. | 30 s |
 | 3 | Ask for the reads about **that one child**: the log's per-child question, `GET /api/read/access_log?playerId=<the child's id>`, signed in as the office. | 1 min |
 | 4 | Read the list from the top. Each row is one read: **who**, **what** kind of record, which **fields**, **when**, and **how** (own school, platform, or a support session). | 1 min |
 | 5 | Write the answer for the parent, by role, school and kind of record (below). | 1 to 2 min |
