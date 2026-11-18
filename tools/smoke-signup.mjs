@@ -116,7 +116,10 @@ const sweep = async (token, email) => {
     if (r.status >= 500) leaks.push(`${resource}: ${r.status} ${r.body?.error}`);
     else if (r.status === 200 && r.body?.rows?.length && resource !== "my_sign_ins") {
       const rows = r.body.rows;
-      const own = (resource === "users" || resource === "accounts") && rows.length === 1 && rows[0].email === email;
+      const own = ((resource === "users" || resource === "accounts") && rows.length === 1 && rows[0].email === email)
+        // His own notice settings: a pupil's account (db/163's third case of
+        // person_is_pupil()) has quiet hours on, about no child (db/120).
+        || (resource === "my_notification_prefs" && rows.every((x) => x.subject_player_id === null && x.player_name === null));
       const nothing = rows.every((x) => Object.values(x).every((v) => v === null || v === 0 || v === false || v === ""
                                                                   || (Array.isArray(v) && v.length === 0)));
       if (!own && !nothing) leaks.push(`${resource}: ${JSON.stringify(rows).slice(0, 200)}`);

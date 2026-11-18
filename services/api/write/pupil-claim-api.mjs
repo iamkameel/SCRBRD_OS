@@ -122,7 +122,9 @@ export function pupilClaimRoutes({ pool, secret }) {
 
   return {
     state: handle(async (client) => {
-      const { rows } = await client.query(`select * from my_pupil_state()`);
+      // The days as the database writes them (YYYY-MM-DD), never a Date: pg would read a date at local midnight.
+      const { rows } = await client.query(`select state, school_id, school_name, typed_name, typed_year, said_under_18_on::text, sent_on::text,
+                                                 keep_until::text, safeguarding from my_pupil_state()`);
       return { claim: pupilState(rows[0]) };
     }),
 
@@ -134,7 +136,9 @@ export function pupilClaimRoutes({ pool, secret }) {
       // Compared in the database and dropped there (Q2). Not a real date: refused, as one in the future is.
       let born = null;
       if (b.born != null && b.born !== "") {
-        if (typeof b.born !== "string" || !DAY.test(b.born) || Number.isNaN(Date.parse(`${b.born}T00:00:00Z`))) throw err("born_invalid", 422);
+        // A real day of the calendar: 2012-02-30 is not one (Date would roll it into March).
+        const d = typeof b.born === "string" && DAY.test(b.born) ? new Date(`${b.born}T00:00:00Z`) : null;
+        if (!d || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== b.born) throw err("born_invalid", 422);
         born = b.born;
       }
       const { rows } = await client.query(`select * from pupil_claim_send($1, $2, $3, $4::date)`, [school, name, year, born]);
@@ -148,7 +152,8 @@ export function pupilClaimRoutes({ pool, secret }) {
 
     list: handle(async (client, req) => {
       const school = schoolOf(req.query?.schoolId);
-      const { rows } = await client.query(`select * from pupil_claims($1)`, [school]);
+      const { rows } = await client.query(`select id, account_id, account_name, address, typed_name, typed_year, first_claim_at, last_claim_at, state,
+                                                 keep_until::text, player_id, player_name, known_by_name, known_at, decided_at from pupil_claims($1)`, [school]);
       return { rows: rows.map(officeClaim) };
     }),
 
