@@ -87,7 +87,7 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
   // a menu two ways is how a destination comes to exist on a phone and not on
   // a laptop.
   // `active` is the open page; the entry lit is its home's (design/homes.js entryFor).
-  const { keys: nav, label, active: lit } = useMenuItems(role, active);
+  const { keys: nav, label, active: lit, ready } = useMenuItems(role, active);
   // The homes are the whole menu, at most five for anyone at a school (EXPERIENCE_PASS §1.2, Q1): five or fewer
   // all go on the bar and there is no More. A menu still longer than that (a director until the School home,
   // Slice 6) keeps four on the bar and the rest in the drawer.
@@ -219,7 +219,7 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
           </div>
         </>
       )}
-      <nav aria-label="Main" className="os-bottomnav" data-testid="mnav">
+      <nav aria-label="Main" className="os-bottomnav" data-testid="mnav" data-menu-ready={ready ? "true" : "false"}>
         {primary.map(k=><Item key={k} k={k}/>)}
         {rest.length>0&&<Item k="__more" isMore/>}
       </nav>
