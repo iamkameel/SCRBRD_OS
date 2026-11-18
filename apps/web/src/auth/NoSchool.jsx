@@ -14,6 +14,7 @@ import { AskSchool, AskSchoolLink, SchoolAskRows } from "./schoolAsk.jsx";
 import { useFollowed } from "../lib/follow.js";
 import { FollowedSchools } from "../follow/Followed.jsx";
 import { useNotifications } from "../lib/notifications.js";
+import { linkWords } from "../lib/linkWords.js";
 
 // "Start a match", what this phone holds, and the last match's plain record
 // (views/ScoringBlock.jsx): fetched with the screen, in a chunk of its own.
@@ -380,6 +381,11 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
   // rule, said here without importing it: that module draws the match centre and the scoring package
   // into this screen's first load, which a slow phone feels before the sign-in screen appears).
   const waiting = rows.filter((r) => r.mine && r.state === "pending" && PERSONA_NAV.family.roles.includes(r.role));
+  // Red-team S4: a link the office set up itself (an offline form) and ended, or did not verify, has no
+  // request on the list above; with her role gone with it she is here, and her answered notice must point at
+  // something. Her own links, in Family's words (lib/familyLinks' rule, my_links), are said here too.
+  const linksRead = useLive("my_links", "spectator", nudge);
+  const linkLines = linkWords(linksRead.rows, Date.now()).filter((l) => l.kind !== "pending");
   const [askSchool, setAskSchool] = useState(null);
   const [schools, setSchools] = useState(null);
   const me = profile()?.user;
@@ -457,7 +463,7 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
         <div style={{ marginBottom: "16px" }} data-testid="no-school-requests">
             <h2 style={{ margin: "0 0 8px", fontFamily: FONT.head, fontSize: "16px", fontWeight: 800, color: T.content.primary }}>Your requests</h2>
             {withdrawProblem && <div role="alert" data-testid="withdraw-problem" style={{ ...text(13, T.semantic.criticalText), padding: "10px 12px", borderRadius: "8px", background: clr(T.semantic.critical, 0.1), border: `1px solid ${clr(T.semantic.critical, 0.2)}`, marginBottom: "8px" }}>{withdrawProblem}</div>}
-            {rows.length === 0 && askRows.length === 0 && !asked.loading && !schoolAsks.loading && <div data-testid="no-school-requests-none" style={text(14)}>A request you send to a school shows here, with the school's answer.</div>}
+            {rows.length === 0 && askRows.length === 0 && linkLines.length === 0 && !asked.loading && !schoolAsks.loading && <div data-testid="no-school-requests-none" style={text(14)}>A request you send to a school shows here, with the school's answer.</div>}
             {rows.map((r) => (
               <div key={r.id} data-testid={`request-${r.state}`} style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", padding: "12px 14px", border: `1px solid ${T.line.normal}`, borderRadius: "12px", background: T.fill.panel, marginBottom: "8px" }}>
                 <div style={{ flex: 1, minWidth: "180px" }}>
@@ -468,6 +474,11 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
               </div>
             ))}
             <SchoolAskRows rows={askRows}/>
+            {linkLines.map((l) => (
+              <div key={l.id} data-testid="no-school-link" data-kind={l.kind} style={{ padding: "12px 14px", border: `1px solid ${T.line.normal}`, borderRadius: "12px", background: T.fill.panel, marginBottom: "8px", ...text(14, T.content.primary) }}>
+                {l.words}
+              </div>
+            ))}
             {/* Q15: waiting to be linked to a child, she may read the school's terms now; agreeing comes after the office checks. */}
             {/* One per school she is waiting on: each school's terms name its own contact. */}
             {[...new Map(waiting.map((w) => rows.find((r) => r.id === w.id)).filter(Boolean)

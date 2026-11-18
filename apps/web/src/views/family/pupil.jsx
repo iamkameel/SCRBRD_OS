@@ -37,7 +37,7 @@ import { honourWords, isSealed, isWithdrawn, provenanceOf, seasonOnce } from "..
 import { PersonalBests } from "./bests.jsx";
 import { SeasonTrend } from "../seasontrend.jsx";
 import { RecordBoards } from "../records.jsx";
-import { basisWords, childRate } from "../../lib/compare.js";
+import { basisWords, careerAverage, childRate } from "../../lib/compare.js";
 import { AppointedCard, AppointedOnMatch } from "./scoring.jsx";
 import { DsoCard } from "./dso.jsx";
 import { EighteenCard, HealthConsentSection } from "../healthconsent.jsx";
@@ -275,7 +275,7 @@ function PassportBoard({ me, role, c, careerRead, onRetry }) {
         <div style={{ display: "flex", gap: T.space.lg, flexWrap: "wrap", ...T.role.figure.md, color: T.board.figure }}>
           {c ? (
             <>
-              <RateFig k="AVG" r={childRate(c.avg, c.ballsFaced)} testid="passport-avg"/>
+              <RateFig k="AVG" r={careerAverage(c)} testid="passport-avg"/>
               <RateFig k="SR" r={childRate(c.sr, c.ballsFaced)} testid="passport-sr"/>
               <RateFig k="ECON" r={childRate(c.econ, c.ballsBowled)} testid="passport-econ"/>
             </>
@@ -298,7 +298,7 @@ function SeasonTab({ me, role, career }) {
       {seasons.length ? seasons.map((s) => (
         <Card key={s.season ?? "?"} label={`Season ${s.season ?? ""}${s.currentSeason ? " · this season" : ""}`} testid="passport-season">
           <p style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>
-            {s.innings} inns · {s.runs} runs · avg {childRate(s.avg, s.ballsFaced).text}{childRate(s.avg, s.ballsFaced).held ? "" : ` · ${childRate(s.avg, s.ballsFaced).count}`}
+            {s.innings} inns · {s.runs} runs · avg {careerAverage(s).text}{careerAverage(s).held || /balls not recorded/.test(careerAverage(s).text) ? "" : ` · ${careerAverage(s).count}`}
           </p>
           {s.ballsBowled > 0 && <p style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>{s.wkts} wkts · econ {childRate(s.econ, s.ballsBowled).text}{childRate(s.econ, s.ballsBowled).held ? "" : ` · ${childRate(s.econ, s.ballsBowled).count}`}</p>}
         </Card>
@@ -327,7 +327,7 @@ function CareerTab({ me, role, career, careerRead, onRetry }) {
         {career ? (
           <dl style={{ margin: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: T.space.md }}>
             {[["Innings", career.innings], ["Runs", career.runs], ["Balls faced", childRate(null, career.ballsFaced).count],
-              ["Average", childRate(career.avg, career.ballsFaced)], ["Strike rate", childRate(career.sr, career.ballsFaced)],
+              ["Average", careerAverage(career)], ["Strike rate", childRate(career.sr, career.ballsFaced)],
               ["Wickets", career.wkts], ["Balls bowled", childRate(null, career.ballsBowled).count],
               ["Economy", childRate(career.econ, career.ballsBowled)], ["Bowling average", childRate(career.bowlAvg, career.ballsBowled)]].map(([k, v]) => {
               const held = typeof v === "object" && v !== null && v.held;
