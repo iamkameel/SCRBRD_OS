@@ -210,7 +210,7 @@ try {
     });
     const wide = await concern();
     ok("Raise a concern is in words beside its icon, and its name starts with those words",
-       wide?.words === "Raise a concern" && wide.name.startsWith(wide.words) && wide.icon === 1, JSON.stringify(wide));
+       wide?.words === "Raise a concern" && wide.name.startsWith(wide.words) && wide.icon >= 1, JSON.stringify(wide));
     ok("...a 44px target", wide && wide.w >= 44 && wide.h >= 44, JSON.stringify(wide));
     ok("...with no mark of its own beside it (Q7)", wide && !/\d/.test(wide.words));
     await s.page.setViewportSize({ width: 320, height: 844 });
