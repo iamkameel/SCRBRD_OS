@@ -10135,9 +10135,11 @@ BEGIN
     -- the backfill: the owner's alone; the trigger itself, as db/165 made it and enabled.
     PERFORM _assert(_v165_acl('match_live_on_first_event()') = 'scrbrd_app:EXECUTE',
       format('§143 (grants): match_live_on_first_event() is granted %s', coalesce(_v165_acl('match_live_on_first_event()'), '(missing)')));
+    PERFORM _assert(_v165_acl('match_scored_stays_live()') = 'scrbrd_app:EXECUTE',
+      format('§143 (grants): match_scored_stays_live() is granted %s', coalesce(_v165_acl('match_scored_stays_live()'), '(missing)')));
     PERFORM _assert(_v165_acl('match_live_backfill()') = '',
       format('§143 (grants): match_live_backfill() is granted %s', coalesce(_v165_acl('match_live_backfill()'), '(missing)')));
-    SELECT string_agg(f, ' ') INTO v FROM unnest(ARRAY['match_live_on_first_event()', 'match_live_backfill()']) f
+    SELECT string_agg(f, ' ') INTO v FROM unnest(ARRAY['match_live_on_first_event()', 'match_live_backfill()', 'match_scored_stays_live()']) f
      WHERE NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f::regprocedure AND p.prosecdef
                          AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
         OR has_function_privilege('public', f, 'EXECUTE');
@@ -10145,18 +10147,33 @@ BEGIN
     PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = 'ball_event'::regclass AND t.tgname = 'ball_event_match_live'
                               AND t.tgenabled = 'O' AND t.tgfoid = 'match_live_on_first_event()'::regprocedure),
       '§143 (grants): ball_event_match_live is missing, disabled or calls another function');
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = 'match'::regclass AND t.tgname = 'match_scored_stays_live'
+                              AND t.tgenabled = 'O' AND t.tgfoid = 'match_scored_stays_live()'::regprocedure),
+      '§143 (grants): match_scored_stays_live is missing, disabled or calls another function');
 
-  -- (back) Kameel's call, not made (db/165's marked spot): once a fixture's log has an event, the
-  -- office cannot put it back to scheduled. If he says yes, take this case out of the comment and
-  -- add PERFORM _v165_case('back') to §143's list.
-  -- ELSIF p_case = 'back' THEN
-  --   L := _v165_fixture('back', 'scheduled', 150);
-  --   v := _v165_ball(L, 1);
-  --   PERFORM _assert(v = 'written' AND _v165_status(L) = 'live', format('§143 (back): the staged fixture reads %s, %s', v, _v165_status(L)));
-  --   PERFORM _as(DOS);
-  --   v := _v133_try(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', L));
-  --   PERFORM _assert(v LIKE '23514|match_status_transition|%' AND _v165_status(L) = 'live',
-  --     format('§143 (back): live → scheduled once scored reads %s; it is %s', v, _v165_status(L)));
+  ELSIF p_case = 'back' THEN
+    -- (back) Kameel, 18 Nov 2026: "Refuse it once there are balls." A fixture with a ball log is not put
+    -- back from live to scheduled: not by the office (fixture.update), not by the owner. Refused in
+    -- db/133's words' kind (23514 match_status_transition). A called-off match still goes back on
+    -- (abandoned → scheduled, db/133), log or none; a live fixture with no log may still go back.
+    L := _v165_fixture('back', 'scheduled', 150);
+    v := _v165_ball(L, 1);
+    PERFORM _assert(v = 'written' AND _v165_status(L) = 'live', format('§143 (back): the staged fixture reads %s, %s', v, _v165_status(L)));
+    PERFORM _as(DOS);
+    v := _v133_try(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', L));
+    PERFORM _assert(v LIKE '23514|match_status_transition|This fixture has been scored%' AND _v165_status(L) = 'live',
+      format('§143 (back): the office putting a scored fixture back reads %s; it is %s', v, _v165_status(L)));
+    PERFORM set_config('app.user_id', '', true);
+    v := _v133_owner_probe(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', L));
+    PERFORM _assert(v LIKE '23514|match_status_transition|%', format('§143 (back): the owner putting it back reads %s', v));
+    S := _v165_fixture('back unscored', 'live', 151);
+    PERFORM _as(DOS);
+    v := _v133_try(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', S));
+    PERFORM _assert(v = 'ok' AND _v165_status(S) = 'scheduled', format('§143 (back): a live fixture with no log put back reads %s, %s', v, _v165_status(S)));
+    A := _v165_fixture('back called off', 'abandoned', 152);
+    PERFORM _assert(_v165_ball(A, 1) = 'written', '§143 (back): the called-off fixture''s ball was not written');
+    v := _v133_try(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', A));
+    PERFORM _assert(v = 'ok' AND _v165_status(A) = 'scheduled', format('§143 (back): a scored match called off, put back on, reads %s, %s', v, _v165_status(A)));
   ELSE
     RAISE EXCEPTION '§143: no case %', p_case;
   END IF;
@@ -39373,8 +39390,11 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   --   (grants)     the trigger's function a pinned definer, EXECUTE to
   --                scrbrd_app alone; the backfill the owner's alone; the
   --                trigger present, enabled, calling that function
-  -- (back), live → scheduled refused once scored, is Kameel's call and is
-  -- written, commented out, in _v165_case; it is red today, as it should be.
+  --   (back)       Kameel, 18 Nov 2026, "Refuse it once there are balls":
+  --                live → scheduled refused once the log has a row, for the
+  --                office and the owner alike (match_status_transition); a
+  --                live fixture with no log may go back; a scored match
+  --                called off still goes back on (abandoned → scheduled)
   --
   -- Falsified, each against this database in its own rolled-back run (the
   -- cases called one by one, every failure caught and reported): the
@@ -39384,7 +39404,8 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   -- made a no-op and granted to PUBLIC → (backfill) and (grants) red. The
   -- trigger and the backfill made to count any event, not a ball (the rule
   -- first prototyped, under which the toss's setup made a fixture live) →
-  -- (first) and (backfill) red.
+  -- (first) and (backfill) red. The refusal's trigger dropped → (back) and
+  -- (grants) red.
   PERFORM _v165_case('first');
   PERFORM _v165_case('statement');
   PERFORM _v165_case('others');
@@ -39392,7 +39413,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   PERFORM _v165_case('scorer');
   PERFORM _v165_case('backfill');
   PERFORM _v165_case('grants');
-  -- PERFORM _v165_case('back');   -- Kameel's call (db/165's marked spot)
+  PERFORM _v165_case('back');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/165 (section 143) ─────────────────────────────────────────
 

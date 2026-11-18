@@ -15,8 +15,8 @@
  *      2, bowled, 4 (the over's end, and a new bowler), 1. After each, the
  *      pill reads "No signal · N to send" for the N events in the outbox on disk, its
  *      balls are exactly the taps so far, the server has none of them, and
- *      the banner says nothing (an attached pad with no signal has only the
- *      pill: bannerFor returns null while attached).
+ *      the banner says "No signal." with what is saved (18 Nov 2026: an
+ *      attached pad with no signal used to have only the pill).
  *   C. The signal comes back. No reload, nobody presses anything: the outbox
  *      drains. The pill's words while it drains are recorded, and only fall.
  *      Then: the server's log is the pad's, id for id and in order; each tap
@@ -403,7 +403,9 @@ try {
     const word = await pill();
     ok(`${i + 1}. ...the outbox on disk holds ${i + 1} ball${i ? "s" : ""} (${q.length} events)`, qBalls === i + 1, JSON.stringify(q.map((e) => e.kind)));
     ok(`${i + 1}. ...the pill reads "No signal · ${q.length} to send"`, word === `No signal · ${q.length} to send`, word);
-    ok(`${i + 1}. ...the banner says nothing`, (await banner()) === null, JSON.stringify(await banner()));
+    const said = await banner();
+    ok(`${i + 1}. ...the banner says "No signal.", with what is saved`, said?.reason === "offline" && /^No signal\./.test(said?.text ?? "")
+       && /saved on this device and will send when there is a connection/.test(said?.text ?? ""), JSON.stringify(said));
     ok(`${i + 1}. ...the server has none of them`, (await serverRows()).length === serverBefore);
     heldAtEnd = q.length;
   }
