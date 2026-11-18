@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { roleGrants } from "@scrbrd/policy/roles";
 import { NAV_ALSO, NAV_CAPABILITY, ROLES } from "../src/design/roles.js";
 import { HOMES, homeParts } from "../src/design/homes.js";
-import { forgetSetup, learnSetup, setupLearned, setupLines } from "../src/lib/setupList.js";
+import { forgetSetup, learnSetup, setupKey, setupLearned, setupLines } from "../src/lib/setupList.js";
 import { fixFor } from "../src/lib/fixNote.js";
 import { doorsFor } from "../src/views/queueDoors.js";
 
@@ -70,7 +70,7 @@ group("The set-up list (§2.7): each line opens its fix, and goes when it is tru
 {
   const office = ["dashboard", "matches", "squad", "staff", "management", "record", "readiness"];
   const all = () => true;
-  const base = { reach: office, mayDo: all, matches: { answered: true, count: 0 }, players: [], parentsWaiting: 0, claimsWaiting: 0, known: new Set() };
+  const base = { reach: office, mayDo: all, matches: { answered: true, count: 0 }, players: [], parentsWaiting: 0, claimsWaiting: 0, account: "me", schools: ["A"], known: new Set() };
   const keys = (o) => (setupLines({ ...base, ...o }) ?? []).map((l) => l.key);
   ok("a new school: staff, pupils, teams, the first fixture, and what is public, in §2.7's order", eq(keys({}), ["staff", "pupils", "teams", "fixture", "public"]), keys({}));
   ok("...a parent waiting adds her line before what is public", eq(keys({ parentsWaiting: 1 }), ["staff", "pupils", "teams", "fixture", "parents", "public"]));
@@ -79,7 +79,16 @@ group("The set-up list (§2.7): each line opens its fix, and goes when it is tru
   ok("a Google sign-in claim is not counted as a parent (the read does not say whose account it is)", !keys({ claimsWaiting: 3 }).includes("parents"));
   ok("pupils imported: that line goes; sides made: that one too", !keys({ players: [{ id: "p" }] }).includes("pupils") && keys({ players: [{ id: "p" }] }).includes("teams")
      && !keys({ players: [{ id: "p", team: "U13A" }] }).includes("teams"));
-  ok("the register said a row is listed, and the listing that the school chose: those go", !keys({ known: new Set(["staff"]) }).includes("staff") && !keys({ known: new Set(["public"]) }).includes("public"));
+  ok("the register said a row is listed, and the listing that the school chose: those go", !keys({ known: new Set([setupKey("me", "A", "staff")]) }).includes("staff")
+     && !keys({ known: new Set([setupKey("me", "A", "public")]) }).includes("public"));
+  // Review SF3: what a screen said is this account's, about that school.
+  ok("...never another account's word on the same device", keys({ known: new Set([setupKey("someone", "A", "staff"), setupKey("someone", "A", "public")]) }).includes("staff")
+     && keys({ known: new Set([setupKey("someone", "A", "public")]) }).includes("public"));
+  ok("...nor one school's for another: at two schools, the line goes when both have said so",
+     keys({ schools: ["A", "B"], known: new Set([setupKey("me", "A", "staff")]) }).includes("staff")
+     && !keys({ schools: ["A", "B"], known: new Set([setupKey("me", "A", "staff"), setupKey("me", "B", "staff")]) }).includes("staff"));
+  ok("...and with no account or no school, nothing counts as said", keys({ account: null, known: new Set([setupKey(null, "A", "staff")]) }).includes("staff")
+     && keys({ schools: [], known: new Set([setupKey("me", "A", "staff")]) }).includes("staff"));
   ok("a fixture exists: no list at all", setupLines({ ...base, matches: { answered: true, count: 1 } }) === null);
   ok("the fixtures read not answered yet (or failed): no list, rather than a wrong one", setupLines({ ...base, matches: { answered: false, count: 0 } }) === null);
   ok("a coach (no School home) has no list", setupLines({ ...base, reach: ["dashboard", "matches", "squad", "readiness"] }) === null);
@@ -91,12 +100,15 @@ group("The set-up list (§2.7): each line opens its fix, and goes when it is tru
   ok("...the staff line lands on the register, the pupils line on Import, the public line on Record",
      lines.find((l) => l.key === "staff").door.fix === '[data-testid="register-panel"]' && lines.find((l) => l.key === "pupils").door.fix === '[data-testid="import-panel"]'
      && lines.find((l) => l.key === "public").door.page === "record");
-  forgetSetup(); learnSetup("staff");
-  ok("learnSetup is what the screens say, kept for the session", setupLearned().has("staff") && !setupLearned().has("public"));
+  forgetSetup(); learnSetup("staff", "A", "me"); learnSetup("public", "A", null); learnSetup("public", null, "me");
+  ok("learnSetup keeps what a screen says for one account at one school, and nothing without both",
+     eq([...setupLearned()], [setupKey("me", "A", "staff")]));
   forgetSetup();
+  ok("forgetSetup forgets it all", setupLearned().size === 0);
+  ok("signing out forgets it", /const handleSignOut = [\s\S]{0,300}forgetSetup\(\);/.test(src("../src/App.jsx")));
   const lib = src("../src/lib/setupList.js");
   ok("the set-up list makes no read of its own", !/^\s*import\s|api\(|useLive|useRows|fetch\(/m.test(lib.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")));
-  ok("the register and the listing say so when they draw it", /learnSetup\("staff"\)/.test(src("../src/views/staffRegister.jsx")) && /learnSetup\("public"\)/.test(src("../src/views/listing.jsx")));
+  ok("the register and the listing say so when they draw it", /learnSetup\("staff", school, profile\(\)\?\.user\?\.id\)/.test(src("../src/views/staffRegister.jsx")) && /learnSetup\("public", schoolId, profile\(\)\?\.user\?\.id\)/.test(src("../src/views/listing.jsx")));
   const needs = src("../src/views/needsyou.jsx");
   ok("Today draws it inside Needs you, from the queue's rows and Today's own fixtures and players reads", /setupLines\(\{ reach, mayDo/.test(needs) && /data-testid="setup-list"/.test(needs)
      && /matchesAnswered=\{\[matchesRead, playersRead\]\.every/.test(src("../src/views/DashboardView.jsx")));

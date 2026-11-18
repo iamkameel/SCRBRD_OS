@@ -7,6 +7,7 @@ import { api, signedIn } from "../lib/api.js";
 import { holdsCapability } from "../rbac/index.js";
 import { grantableFor, useAssignableSchools } from "./enrol.jsx";
 import { learnSetup } from "../lib/setupList.js";
+import { profile } from "../lib/session.js";
 import {
   ADULTS_ONLY, MAX_FILE_BYTES, STAFF_TEMPLATE_CSV, STATES, checkWords, clearAsk, clearLabel, clearedWords, dayWords,
   importedWords, isCleared, listableRoles, listedWords, mayCommit, needsSide, previewRows, problemRows, registerErrorWords,
@@ -312,7 +313,7 @@ function RegisterList({ school, mayWrite, nonce, onChanged }) {
     setRows(null); setProblem("");
     api(`/api/register/${encodeURIComponent(school)}?state=${encodeURIComponent(state)}`)
       // A listed row tells Today's set-up list that "List your staff" is done (lib/setupList.js, Slice 6).
-      .then((r) => { if (!off) { setRows(r?.rows ?? []); if (state === "open" && (r?.rows?.length ?? 0) > 0) learnSetup("staff"); } })
+      .then((r) => { if (!off) { setRows(r?.rows ?? []); if (state === "open" && (r?.rows?.length ?? 0) > 0) learnSetup("staff", school, profile()?.user?.id); } })
       .catch((e) => { if (!off) { setRows([]); setProblem(registerErrorWords(e)); } });
     return () => { off = true; };
   }, [school, state, nonce]);

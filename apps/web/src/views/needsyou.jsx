@@ -106,7 +106,8 @@ function NeedsYouRead({ role, reach, matches, onNav, matchesAnswered, players })
   const setup = setupLines({ reach, mayDo: (c) => holdsAsHeld(role, c),
     matches: { answered: matchesAnswered, count: matches.length }, players,
     parentsWaiting: officeRowsOpen.filter((r) => /:O1P$/.test(r.id)).reduce((n, r) => n + r.count, 0),
-    claimsWaiting: officeRowsOpen.filter((r) => r.rule === "O2").reduce((n, r) => n + r.count, 0) });
+    claimsWaiting: officeRowsOpen.filter((r) => r.rule === "O2").reduce((n, r) => n + r.count, 0),
+    account: profile()?.user?.id ?? null, schools: q.offices.map((o) => o.school) });
   const setupCard = setup ? <SetupList lines={setup} onNav={onNav}/> : null;
   // The register is read on a tap, so Today offers the tap instead of a count it did not read.
   const register = q.registerOnTap.length > 0 && reach.includes("staff")

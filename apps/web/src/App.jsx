@@ -9,6 +9,7 @@ import { Suspense, lazy, useState, useEffect, useRef } from "react";
 import { LoginPage } from "./auth/LoginPage.jsx";
 import { NAV_META, PERSONA_NAV, ROLES, navForRoles } from "./design/roles.js";
 import { FRAMED, homeOf } from "./design/homes.js";
+import { forgetSetup } from "./lib/setupList.js";
 import { HomeBar } from "./shell/HomeBar.jsx";
 import { useFix } from "./lib/fixNote.js";
 import { THING_PAGE, teamId, thingOf, thingPath } from "./lib/things.js";
@@ -342,6 +343,8 @@ export default function SCRBRD_OS() {
   const handleSignOut = ({ keepDoor = false } = {}) => {
     signOut();
     clearSession();
+    // What the set-up list learned from the screens is this account's: the next one to sign in here starts afresh.
+    forgetSetup();
     setScorerOpen(false); setScorerResume(null); setScorerMatchId(null); setScorerPractice(false); setScorerEntry(null);
     setUsers([]); setUserEdits(false);
     setRole("superadmin"); setUserName("Super Admin"); setPage("dashboard");

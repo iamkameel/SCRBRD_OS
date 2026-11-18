@@ -13,22 +13,33 @@
  * the queue's own requests and claims rows. Whether the staff register has a
  * row, and whether the office has chosen what is public, are not read on
  * Today: the screen each line opens says so when it draws it (`learnSetup`),
- * and the line goes then. In memory only, so after a reload those two lines
- * come back until their screen is opened again; that is the price of not
- * reading the register or the listing from Today.
+ * and the line goes then. What a screen said is kept per account and per
+ * school (review SF3): one office's register or listing never clears a line
+ * for another account signing in on the same device, nor one school's for
+ * another, and signing out forgets it all (App.jsx handleSignOut). In memory
+ * only, so after a reload those two lines come back until their screen is
+ * opened again; that is the price of not reading the register or the listing
+ * from Today.
  *
  * Pure apart from the small note below, so it is proved under plain node.
  */
 
-/** What the screens a line opens have said this session: "staff" (a register row), "public" (a listing choice). */
+/** What the screens a line opens have said this session, as setupKey()s: "staff" (a register row), "public" (a listing choice). */
 const learned = new Set();
 
-/** A screen says a line is true (staffRegister.jsx: a row is listed; listing.jsx: the school has chosen). @param {"staff" | "public"} kind */
-export function learnSetup(kind) { learned.add(kind); }
+/** One account's word about one school. @param {string | null | undefined} account @param {string | null | undefined} school @param {"staff" | "public"} kind */
+export const setupKey = (account, school, kind) => `${account ?? "-"}|${school ?? "-"}|${kind}`;
+
+/**
+ * A screen says a line is true for this account at this school (staffRegister.jsx: a row is listed there;
+ * listing.jsx: that school has chosen). Nothing is kept without both.
+ * @param {"staff" | "public"} kind @param {string | null | undefined} school @param {string | null | undefined} account
+ */
+export function learnSetup(kind, school, account) { if (school && account) learned.add(setupKey(account, school, kind)); }
 
 /** For a test: what has been said. */
 export const setupLearned = () => new Set(learned);
-/** For a test: forget. */
+/** Forget everything the screens said: on signing out (App.jsx), and in a test. */
 export const forgetSetup = () => learned.clear();
 
 /**
@@ -48,18 +59,22 @@ const OFFICE = "The office";
  *   players: any[],                  the players Today read
  *   parentsWaiting: number,          the queue's parents row count
  *   claimsWaiting: number,           the queue's claims row count
- *   known?: Set<string>,             what the screens have said (defaults to this session's)
+ *   account?: string | null,         who is reading (the session's account id)
+ *   schools?: string[],              the schools the reader sets up (the queue's office schools)
+ *   known?: Set<string>,             what the screens have said, as setupKey()s (defaults to this session's)
  * }} o
  * @returns {SetupLine[] | null}
  */
-export function setupLines({ reach, mayDo, matches, players, parentsWaiting, claimsWaiting, known = learned }) {
+export function setupLines({ reach, mayDo, matches, players, parentsWaiting, claimsWaiting, account = null, schools = [], known = learned }) {
   if (!matches.answered || matches.count > 0) return null;
+  // Said for this account, at every school it sets up: never another account's word, nor another school's.
+  const said = (/** @type {"staff" | "public"} */ kind) => !!account && schools.length > 0 && schools.every((s) => known.has(setupKey(account, s, kind)));
   // The office and the director, setting a school up: whoever reaches the School home.
   if (!reach.includes("staff")) return null;
   /** @type {SetupLine[]} */
   const lines = [];
   // Staff by the register (views/staffRegister.jsx), for whoever may list people on it.
-  if (mayDo("user.role.assign") && !known.has("staff"))
+  if (mayDo("user.role.assign") && !said("staff"))
     lines.push({ key: "staff", fact: "List your staff", owner: OFFICE,
       door: { label: "Open the staff register", page: "staff", fix: '[data-testid="register-panel"]' } });
   // Pupils by import (views/importer.jsx), for whoever may import players.
@@ -78,7 +93,7 @@ export function setupLines({ reach, mayDo, matches, players, parentsWaiting, cla
     lines.push({ key: "parents", fact: parentsWaiting === 1 ? "A parent is waiting" : `${parentsWaiting} parents are waiting`, owner: OFFICE,
       door: { label: "Decide", page: "management", fix: '[data-testid="requests-panel"]' } });
   // What is public: the listing and names-off switches on School, Record, for whoever may change them.
-  if (reach.includes("record") && mayDo("broadcast.publish") && !known.has("public"))
+  if (reach.includes("record") && mayDo("broadcast.publish") && !said("public"))
     lines.push({ key: "public", fact: "Decide what is public", owner: OFFICE,
       door: { label: "Open Record", page: "record", fix: '[data-testid^="listing-"]' } });
   return lines.length ? lines : null;
