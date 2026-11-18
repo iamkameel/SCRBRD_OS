@@ -39,7 +39,7 @@
  */
 import { MIN_BALLS_FACED } from "@scrbrd/scoring";
 import { isoDay } from "./sourceWords.js";
-import { childRate } from "./compare.js";
+import { childAverage, childRate } from "./compare.js";
 
 /** The innings a season needs before the line is drawn (Q12): a rolling five needs a sixth to make two points. */
 export const MIN_INNINGS = 6;
@@ -222,6 +222,11 @@ export function trendNotes(points, { self = false, current = true } = {}) {
 
 /** A rate as the panel draws it (Q12): the figure from thirty balls faced, else the count and the word. */
 const floored = (v, balls) => { const r = childRate(v, balls); return r.held ? r.text : v; };
+/** The season's average as the panel draws it (Kameel, 16 Nov): with its innings and dismissals where balls were not recorded. */
+const averaged = (f) => {
+  const r = childAverage(f.average, { balls: f.ballsFaced, innings: f.innings, dismissals: f.dismissals, withoutBalls: f.bookNoBalls });
+  return r.held || /balls not recorded/.test(r.text) ? r.text : f.average;
+};
 
 /**
  * The spoken summary (GA-I31): what the chart shows, in one short paragraph,
@@ -236,7 +241,7 @@ export function spokenSummary({ who, season, points, self = false, current = tru
   const st = lineState(points, { self });
   const parts = [
     `${who}, the ${season} school season: ${f.innings} innings, ${f.runs} run${f.runs === 1 ? "" : "s"}, ${f.notOuts} not out.`,
-    `Average ${f.average == null ? `none${current ? " yet" : ""}, no dismissal` : floored(f.average, f.ballsFaced)}. Strike rate ${f.strikeRate == null ? "none, no balls recorded" : floored(f.strikeRate, f.ballsFaced)}.`,
+    `Average ${f.average == null ? `none${current ? " yet" : ""}, no dismissal` : averaged(f)}. Strike rate ${f.strikeRate == null ? "none, no balls recorded" : floored(f.strikeRate, f.ballsFaced)}.`,
     `Runs in each innings, in order: ${points.map((p) => `${p.runs}${p.out ? "" : " not out"}`).join(", ")}.`,
   ];
   if (st.draw) {

@@ -608,7 +608,7 @@ No points, ranks or streaks for scoring (C12, rejected below).
 |---|---|---|---|---|
 | Next fixture: its status sentence ("Starts at 10:00", "Toss: Eastbrook won and chose to bat") under the opponent | `matches`; `statusSentence()`, `tossWords()` | derivation: none | Staff | none |
 | This week: each fixture played says its result; each to come its start | `matches` | derivation: none | Staff | none |
-| **Last match**, one line: the result and the side's top score and best bowling, his own squad by name | `inningsBreak()` over the fold of the last completed fixture | exists as a function; placement | Staff | strike rate only from ten balls |
+| **Last match**, one line: the result and the side's top score and best bowling, his own squad by name | `inningsBreak()` over the fold of the last completed fixture | exists as a function; placement | Staff | strike rate only from thirty balls (Kameel, 16 Nov: "30 balls, as Q12 says everywhere"; this supersedes the ten balls first written here) |
 | The side's season, one line: "Season run rate 5.84 from 9 matches" | `side_season` (`:3494`) | exists; placement | Staff | its count of matches and balls |
 | Who is out stays the status tier, and the queue stays SCRBRD-136's | `injuries` (`:356`), `cockpit/useQueue.js` | exists | Staff by tier | n/a |
 
@@ -738,6 +738,8 @@ as failed, as §1.10 does.
 
 ### Slice 4 · Parent and pupil
 
+**Built, in review: #350.** Not merged. Kameel's decisions of 16 Nov 2026: two children are two sections in one scroll, never merged ("scroll"); the answered notice goes "Always, in-app, to the parent who asked", with no opt-in; a scorebook boy's average where balls were not recorded shows "the average with its innings and dismissals, and 'balls not recorded'", and the strike rate stays held (Q12); a guardian role that ended while all its links were still waiting keeps "A role of yours has ended". db/161: "Fable red-teams it on Wednesday, then the paste card"; done 18 Nov, no blockers and four should-fixes, all fixed.
+
 | | |
 |---|---|
 | **Scope** | §3.4 and the persona parts of §1: a pupil or parent who scores keeps the four-item app (Q2); health consent to Family, on the child's file (Q16); the waiting parent reads the terms and is told when the office answers (Q15); the passport's rates with their floor and denominator, its source line, and from a figure to its innings and balls; the parent's live card says the status sentence and keeps only lines about nobody or her child; the season card's average under the floor (Q12). From the shots: while his match is live, the live card leads the child's section instead of sitting fourth (§1.9; `audit/experience-screens/parent-home-390-daylight.jpg`, `…-1366-daylight.jpg`); the availability button says "Answer" until there is an answer (C16); the passport's tab row shows that it scrolls (C15); **the DSO card last on the parent's and the pupil's Home** (Q7; `SAFEGUARDING_DSO.md` §2.5). **The team sheet (Kameel, 15 Nov):** "The eleven, names and order, her child's side only". |
@@ -752,6 +754,8 @@ as failed, as §1.10 does.
 
 ### Slice 5 · The coach's day sheet, and the homes
 
+**Built, in review: #351.** Not merged. Kameel, 16 Nov: the day sheet's "Last match" strike rate floor is "30 balls, as Q12 says everywhere", superseding §3.10's ten balls. Named follow-ups, not decisions: §3.5's competition tables, records, caps and head to head on the team page; §1.4's links from a match to its sides and its ground; corrections waiting (O7) in Needs you; the Rulebook under the person's name.
+
 | | |
 |---|---|
 | **Scope** | §1.2–§1.5 and §1.9 for staff: Today, Matches, Team and Logistics as the menu; the header (bell, "Raise a concern", the person's name); "To resolve" only for someone who can act (Q17); addresses for a player, a team and a ground (Q11); the team page of §3.5; the day sheet's figures of §3.10; "Needs you" rows that land on the fix (§1.10). The day sheet back in its order (C13): Now, then the next fixture once, with the cockpit's "Match day" folded into it and "Recent matches" drawn only when a match has figures (`audit/experience-screens/coach-home-390-daylight.jpg`, `…-390-floodlit.jpg`, `…-1366-daylight.jpg`). **The DSO card last on every Today** (Q7; `SAFEGUARDING_DSO.md` §2.5). The shell's 9px "▾" (`shell/MobileNav.jsx:61`), under the 12px floor at 1366 in both themes on the coach's, scorer's and spectator's homes (NOTES.md, `small 1 … 9px "▾"`, `…/coach-home-1366-daylight.jpg` and `-floodlit.jpg`), raised to the floor. **Last match's strike rate (16 Nov):** Q12's floor, 30 legal balls (`lib/compare.js` `COMPARE_FLOOR`), stands in place of §3.10's "ten balls", which was written before Q12. |
@@ -764,6 +768,8 @@ as failed, as §1.10 does.
 | **You'll know** | Sign in as the demo coach on a match day. **Five seconds:** the next fixture's sentence and its chips that are not done. **Two steps:** tap "Team sheet" and the sheet is open for that fixture; tap Team, then Training. On a phone, four items on the bar and no "More". As the director with three teams: the first "Needs you" row opens the screen that fixes it. |
 
 ### Slice 6 · The office
+
+**Built, in review: #352.** Not merged. Named follow-up, open with Kameel: a parent's own-name edit, which needs a server write that does not exist.
 
 | | |
 |---|---|

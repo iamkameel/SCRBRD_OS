@@ -13944,6 +13944,15 @@ BEGIN
   RETURN a;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- Every link of a guardian assignment made pending again, never verified (the office established them
+-- and verified none): verified_by, verified_at and the consent cleared, as guardian_link_establish() leaves a link.
+CREATE OR REPLACE FUNCTION _v161_all_pending(p_assignment uuid) RETURNS void AS $$
+  UPDATE assignment_subject SET verification_state = 'pending', verified_by = NULL, verified_at = NULL,
+         consent_state = 'pending', consent_version = NULL, consent_at = NULL,
+         valid_until = majority_on((SELECT born FROM player WHERE id = assignment_subject.player_id))
+   WHERE assignment_id = p_assignment
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- He left the school today, as db/62's leaving does it (db/109 dates each of
 -- his guardian links and writes its ending row, 'majority' for a minor): the
 -- links closed. Before, he was at school, so his links were open (db/62
@@ -13955,6 +13964,30 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- The ending row of a link, as stored: "kind|notice or -".
 CREATE OR REPLACE FUNCTION _v161_ending(p_link uuid) RETURNS text AS $$
   SELECT e.kind || '|' || coalesce(e.notice_id::text, '-') FROM guardian_link_ending e WHERE e.link_id = p_link
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A school's own office (schooladmin), for a case that needs a second school: its id.
+CREATE OR REPLACE FUNCTION _v161_office_at(p_school uuid, p_tag text) RETURNS uuid AS $$
+DECLARE u uuid;
+BEGIN
+  INSERT INTO app_user (school_id, email, name, role) VALUES (p_school, 'v161.' || p_tag || '.office2@example.invalid', 'V161 Office Two', 'schooladmin')
+  RETURNING id INTO u;
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'schooladmin', p_school, sa_today() - 30);
+  RETURN u;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A request for any role at any school, as POST /api/requests leaves it: its id.
+CREATE OR REPLACE FUNCTION _v161_ask_for(p_person uuid, p_school uuid, p_role text, p_team text DEFAULT NULL) RETURNS uuid AS $$
+  INSERT INTO role_request (person_id, role, school_id, team_code, note) VALUES (p_person, p_role, p_school, p_team, 'Verify 161')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An account shut or opened, as account_set_active() (db/90) leaves the row.
+CREATE OR REPLACE FUNCTION _v161_set_active(p_person uuid, p_on boolean) RETURNS void AS $$
+  UPDATE app_user SET active = p_on WHERE id = p_person
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- How long each of a person's notices lives (expires_at - published_at), past row security.
+CREATE OR REPLACE FUNCTION _v161_life(p_person uuid) RETURNS text AS $$
+  SELECT string_agg(coalesce((n.expires_at - n.published_at)::text, 'none'), ',' ORDER BY n.published_at, n.id)
+    FROM notification n WHERE n.recipient_id = p_person
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- A request's state moved by the owner, as the asker's own withdrawal leaves it.
@@ -14120,6 +14153,8 @@ BEGIN
     PERFORM _as(ADULT);
     SELECT string_agg(title || '|' || body, ',') INTO v2 FROM my_notifications WHERE title = T;
     PERFORM _assert(v IS NOT NULL AND v = v2 AND v = T || '|' || WORDS, format('§139 (same): the yes reads %s; the no reads %s', v, v2));
+    PERFORM _assert(_v161_life(ASK) IS NOT NULL AND _v161_life(ASK) = _v161_life(ADULT),
+      format('§139 (same): the yes lives %s and the no %s', _v161_life(ASK), _v161_life(ADULT)));
     PERFORM _assert(v !~* '\m(granted|declined|approved|refused|verified|accepted|rejected|yes|no)\M' AND v !~ 'Childname|Onesixtyone|U14A|son',
       format('§139 (same): the words say the answer or name the child: %s', v));
 
@@ -14188,6 +14223,80 @@ BEGIN
     PERFORM _assert(r.ok AND _v161_ending(lk) LIKE 'office|%', format('§139 (left): the revoke answered %s and left %s', r.reason, _v161_ending(lk)));
     PERFORM _assert(_v161_stored(ASK) = ARRAY[T || '|' || WORDS || '|' || lk || '|system|system|medium|news.read|false|' || HIL || '|-|-'],
       format('§139 (left): what is stored for her is %s', array_to_string(_v161_stored(ASK), ' ~ ')));
+
+  ELSIF p_case = 'pupilend' THEN
+    -- (pupilend) Red-team S1: a pupil's account whose pending link the office ends (path (c)) keeps db/109's
+    -- own words; he holds no answered notice, so its presence never says no.
+    lk := _v161_pending_link(PUPIL, P);
+    lk2 := _v161_verified_link(ADULT, P);
+    PERFORM _as(OFFICE);
+    SELECT g.ok, g.reason INTO r FROM guardian_link_revoke(lk, 'office', 'Verify 161: not this family, checked.') g;
+    PERFORM _assert(r.ok, format('§139 (pupilend): the office could not end the pupil''s pending link (%s)', r.reason));
+    PERFORM _assert(cardinality(_v161_stored(PUPIL)) = 1 AND (_v161_stored(PUPIL))[1] LIKE 'A link to a child has ended|%',
+      format('§139 (pupilend): what is stored for the pupil is %s, not db/109''s own notice', array_to_string(_v161_stored(PUPIL), ' ~ ')));
+    PERFORM _as(PUPIL);
+    SELECT count(*) INTO n FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 0, format('§139 (pupilend): the pupil reads %s answered notices', n));
+
+  ELSIF p_case = 'disabled' THEN
+    -- (disabled) Red-team S2: an asker whose account is shut is told nothing, declined or granted; opened
+    -- again, a later answer reaches her.
+    req := _v161_ask(ASK);
+    PERFORM _v161_set_active(ASK, false);
+    PERFORM _as(OFFICE);
+    SELECT d.ok, d.reason INTO r FROM decide_role_request(req, false, 'Verify 161', NULL, NULL) d;
+    PERFORM _assert(r.ok, format('§139 (disabled): the office could not decline (%s)', r.reason));
+    req2 := _v161_ask(ASK);
+    SELECT d.ok, d.reason INTO r FROM decide_role_request(req2, true, 'Verify 161', P, NULL) d;
+    PERFORM _assert(r.ok, format('§139 (disabled): the office could not grant (%s)', r.reason));
+    PERFORM _assert(cardinality(_v161_stored(ASK)) = 0,
+      format('§139 (disabled): a shut account holds %s', array_to_string(_v161_stored(ASK), ' ~ ')));
+    PERFORM _v161_set_active(ASK, true);
+    req := _v161_ask(ASK);
+    PERFORM _as(OFFICE);
+    SELECT d.ok INTO r FROM decide_role_request(req, false, 'Verify 161', NULL, NULL) d;
+    PERFORM _assert(cardinality(_v161_stored(ASK)) = 1 AND (_v161_stored(ASK))[1] LIKE T || '|' || WORDS || '|' || req || '|%',
+      format('§139 (disabled): opened again, she holds %s', array_to_string(_v161_stored(ASK), ' ~ ')));
+
+  ELSIF p_case = 'allpending' THEN
+    -- (allpending) A guardian role ended over links that were ALL never verified keeps db/77's role notice
+    -- (Kameel, 16 Nov): no answered notice.
+    x := _v161_child('Third Onesixtyone');
+    req := _v161_role_two_links(ADULT, x, P);           -- one verified link, which the next line makes pending too
+    PERFORM _v161_all_pending(req);
+    PERFORM _as(OFFICE);
+    SELECT e.ok, e.reason INTO r FROM role_assignment_end(req, 'Verify 161: the family has moved away.') e;
+    PERFORM _assert(r.ok, format('§139 (allpending): the office could not end her guardian role (%s)', r.reason));
+    PERFORM _assert(cardinality(_v161_stored(ADULT)) = 1 AND (_v161_stored(ADULT))[1] LIKE 'A role of yours has ended|%',
+      format('§139 (allpending): what is stored for her is %s', array_to_string(_v161_stored(ADULT), ' ~ ')));
+
+  ELSIF p_case = 'nonguardian' THEN
+    -- (nonguardian) A request for any other role, granted or declined, writes no answered notice.
+    req := _v161_ask_for(ASK, HIL, 'scorer');
+    req2 := _v161_ask_for(ADULT, HIL, 'coach', '1XI');
+    PERFORM _as(OFFICE);
+    SELECT d.ok, d.reason INTO r FROM decide_role_request(req, false, 'Verify 161', NULL, NULL) d;
+    PERFORM _assert(r.ok, format('§139 (nonguardian): the office could not decline the scorer (%s)', r.reason));
+    SELECT d.ok, d.reason INTO r FROM decide_role_request(req2, true, 'Verify 161', NULL, '1XI') d;
+    PERFORM _assert(r.ok, format('§139 (nonguardian): the office could not grant the coach (%s)', r.reason));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM unnest(_v161_stored(ASK) || _v161_stored(ADULT)) z WHERE z LIKE T || '|%'),
+      format('§139 (nonguardian): %s / %s', array_to_string(_v161_stored(ASK), ' ~ '), array_to_string(_v161_stored(ADULT), ' ~ ')));
+
+  ELSIF p_case = 'twoschools' THEN
+    -- (twoschools) Two requests at two schools: one answer each, each naming its own school, its own request its subject.
+    req := _v161_ask(ASK);
+    req2 := _v161_ask_for(ASK, '22222222-2222-2222-2222-222222222222', 'guardian');
+    PERFORM _as(OFFICE);
+    SELECT d.ok INTO r FROM decide_role_request(req, true, 'Verify 161', P, NULL) d;
+    PERFORM _as(_v161_office_at('22222222-2222-2222-2222-222222222222', p_case));
+    SELECT d.ok, d.reason INTO r FROM decide_role_request(req2, false, 'Verify 161', NULL, NULL) d;
+    PERFORM _assert(r.ok, format('§139 (twoschools): Westville could not decline (%s)', r.reason));
+    v := array_to_string(_v161_stored(ASK), ' ~ ');
+    PERFORM _assert(cardinality(_v161_stored(ASK)) = 2
+      AND v LIKE '%' || T || '|' || WORDS || '|' || req || '|system|system|medium|news.read|false|' || HIL || '|-|-%'
+      AND v LIKE '%' || T || '|The office at Westville Boys'' High has answered your request to be linked to a child. Open SCRBRD to see its answer.|'
+                 || req2 || '|system|system|medium|news.read|false|22222222-2222-2222-2222-222222222222|-|-%',
+      format('§139 (twoschools): what is stored for her is %s', v));
 
   ELSIF p_case = 'pupil' THEN
     -- (pupil) A pupil's account answered by both doors gets nothing; the adult answered beside him gets both.
@@ -45490,6 +45599,17 @@ $m130$;
   --             (db/109's 'majority' row), then revoked: the revoke's
   --             upsert takes its UPDATE branch, and she reads the answered
   --             notice in the same words, the whole row pinned
+  --   (pupilend) a pupil's pending link ended by the office (path (c)):
+  --             he keeps db/109's own words, no answered notice (red-team S1)
+  --   (disabled) a shut account is told nothing, declined or granted;
+  --             opened again, the next answer reaches her (red-team S2)
+  --   (allpending) a guardian role ended over links all never verified
+  --             keeps db/77's role notice (Kameel, 16 Nov)
+  --   (nonguardian) a scorer's request declined and a coach's granted
+  --             write no answered notice
+  --   (twoschools) two requests at two schools: one notice each, each its
+  --             own school and its own request; (same) pins the notice's
+  --             life (expires_at - published_at) with its words
   --   (pupil)   a pupil's account, answered by both doors (a declined
   --             request, a verified link), holds and reads none; the adult
   --             answered beside him holds both
@@ -45529,6 +45649,11 @@ $m130$;
   -- notice reworded to "answered"; "A link to a child has ended" after the
   -- upsert's UPDATE branch. Each red again with the fix taken back out
   -- (the subject test; then UPDATE OF notice_id).
+  -- (pupilend), (disabled) red against db/161 at d0ce6187 (no pupil test in
+  -- the ending trigger; no active test in the writer), and red again with
+  -- each test taken back out; (allpending) red with the subject test out;
+  -- (nonguardian) red with the trigger's role test out; (twoschools) red
+  -- with db/161 undone.
   -- (sheet), with fixture_sheet()'s gate taken out (every live row of the
   -- fixture to anyone signed in) → red at the named guardian (fourteen rows,
   -- both ends); with its family test widened to any guardian link of the
@@ -45542,6 +45667,11 @@ $m130$;
   PERFORM _v161_case('ended');
   PERFORM _v161_case('role');
   PERFORM _v161_case('left');
+  PERFORM _v161_case('pupilend');
+  PERFORM _v161_case('disabled');
+  PERFORM _v161_case('allpending');
+  PERFORM _v161_case('nonguardian');
+  PERFORM _v161_case('twoschools');
   PERFORM _v161_case('pupil');
   PERFORM _v161_case('others');
   PERFORM _v161_case('sheet');
