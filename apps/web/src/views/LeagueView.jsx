@@ -12,6 +12,8 @@ import { SeasonHistory } from "./SeasonHistoryView.jsx";
 import { RecordBoards } from "./records.jsx";
 import { AddFixtureModal } from "./fixtures.jsx";
 import { PlayingConditions } from "./playingconditions.jsx";
+import { CompetitionBracket, KnockoutBracket } from "./bracket.jsx";
+import { demoBracket } from "../lib/bracket.js";
 
 // The fixture planner (SCRBRD-123) loads when its tab is first opened.
 const FixturePlanner = lazy(() => import("./planner.jsx").then((m) => ({ default: m.FixturePlanner })));
@@ -82,6 +84,12 @@ function LeagueView({ role, homeBar = null }) {
   // carries its table on the competition row; a live competition has none
   // there and this read is where it comes from — with its divisions.
   const LADDER = useLive("league", role, 0, comp?.live ? { competitionId: comp.id } : null).rows;
+  // SCRBRD-060: a knockout draws its bracket where a league draws its table.
+  // A competition on the platform says so by comp_type; the demonstration's
+  // cup by its own `bracket`. Its first tab is the bracket, so "table" (the
+  // tab a competition opens on) means the bracket for a cup.
+  const isCup = !!comp && (comp.type==="knockout" || (!comp.live && !!comp.bracket));
+  const view = tab==="table" && isCup ? "bracket" : tab;
   const canEdit = holdsCapability(role,"competition.manage");
   // Recognition D23 / A15 (R5b): a list of players ordered by a figure — the
   // Top Performers tab, the Season Awards tab and its MVP — is drawn for
@@ -174,7 +182,7 @@ function LeagueView({ role, homeBar = null }) {
       {/* Competition selector */}
       <div style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap"}}>
         {COMPETITIONS.map(c=>(
-          <button key={c.id} onClick={()=>{setSelComp(c.id);setTab("table");}} className="pressBtn" style={{
+          <button key={c.id} onClick={()=>{setSelComp(c.id);setTab("table");}} data-testid={`league-comp-${c.id}`} aria-pressed={comp?.id===c.id} className="pressBtn" style={{
             padding:"8px 16px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
             border:`1px solid ${selComp===c.id?D.amber+"55":D.border}`,
             background:selComp===c.id?D.amber+"10":D.surf1,
@@ -193,8 +201,9 @@ function LeagueView({ role, homeBar = null }) {
         <>
           {/* Tab bar */}
           <div style={{display:"flex",gap:"6px",marginBottom:"16px",flexWrap:"wrap"}}>
-            {["table","fixtures","results","performers","awards","records","history","conditions","planner"].filter(t=>{
-              if(t==="table") return comp.table||comp.type==="league"||comp.type==="tournament";
+            {["bracket","table","fixtures","results","performers","awards","records","history","conditions","planner"].filter(t=>{
+              if(t==="bracket") return isCup;
+              if(t==="table") return !isCup&&(comp.table||comp.type==="league"||comp.type==="tournament");
               // SCRBRD-114: a competition on the platform has playing conditions; a demonstration row has none to read.
               if(t==="conditions") return !!comp.live;
               // SCRBRD-123: the competition's manager plans its fixtures; the API decides who that is, this offers the tab to those whose role can.
@@ -204,19 +213,19 @@ function LeagueView({ role, homeBar = null }) {
               if(t==="records") return signedIn();
               return true;
             }).map(t=>(
-              <button key={t} aria-pressed={tab===t} data-testid={`league-tab-${t}`} onClick={()=>setTab(t)} className="pressBtn" style={{
+              <button key={t} aria-pressed={view===t} data-testid={`league-tab-${t}`} onClick={()=>setTab(t)} className="pressBtn" style={{
                 padding:"6px 16px",minHeight:"44px",borderRadius:D.pill,cursor:"pointer",textTransform:t==="conditions"||t==="planner"?"none":"capitalize",
-                border:`1px solid ${tab===t?D.amber+"55":D.border}`,background:tab===t?D.amber+"14":"transparent",
-                fontFamily:D.body,fontSize:"12px",fontWeight:tab===t?600:400,color:tab===t?D.amber:D.textMuted,
+                border:`1px solid ${view===t?D.amber+"55":D.border}`,background:view===t?D.amber+"14":"transparent",
+                fontFamily:D.body,fontSize:"12px",fontWeight:view===t?600:400,color:view===t?D.amber:D.textMuted,
               }}>{t==="conditions"?"Playing conditions":t==="planner"?"Fixture planner":t}</button>
             ))}
           </div>
 
           {/* ── TABLE ── */}
-          {tab==="table"&&comp.live&&(LADDER.length?<LiveLadder rows={LADDER} comp={comp}/>:(
+          {view==="table"&&comp.live&&(LADDER.length?<LiveLadder rows={LADDER} comp={comp}/>:(
             <div style={{textAlign:"center",padding:"40px",color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>No standings yet.</div>
           ))}
-          {tab==="table"&&!comp.live&&(comp.table?(
+          {view==="table"&&!comp.live&&(comp.table?(
             <Card>
               <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
@@ -295,30 +304,18 @@ function LeagueView({ role, homeBar = null }) {
             <div style={{textAlign:"center",padding:"40px",color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>No standings table for this competition format.</div>
           ))}
 
-          {/* ── CUP BRACKET ── */}
-          {tab==="table"&&comp.bracket&&(
-            <div style={{marginTop:"16px"}}>
-              <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary,marginBottom:"14px"}}>Cup Bracket</div>
-              <div style={{display:"flex",gap:"16px",overflowX:"auto",paddingBottom:"8px"}}>
-                {comp.bracket.map(round=>(
-                  <div key={round.round} style={{minWidth:"220px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.amber,letterSpacing:"0.06em",marginBottom:"10px"}}>{round.round}</div>
-                    <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-                      {round.fixtures.map((f,i)=>(
-                        <div key={i} style={{padding:"10px 12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${f.status==="complete"?D.emerald+"22":D.border}`}}>
-                          <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:f.status==="complete"?D.textPrimary:D.textSecondary,marginBottom:"4px"}}>{f.home}</div>
-                          <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,marginBottom:"4px"}}>VS</div>
-                          <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:f.status==="complete"?D.textPrimary:D.textSecondary,marginBottom:"6px"}}>{f.away}</div>
-                          {f.result&&<div style={{fontFamily:D.body,fontSize:"12px",color:f.result.includes("Hilton")?D.emerald:D.amber,fontStyle:"italic"}}>{f.result}</div>}
-                          {!f.result&&f.status!=="pending"&&<Badge color={D.sky}>Upcoming</Badge>}
-                          {f.status==="pending"&&<Badge color={D.textMuted}>TBD</Badge>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {/* ── CUP BRACKET (SCRBRD-060) ── */}
+          {view==="bracket"&&(
+            <Card sx={{padding:"14px 16px"}}>
+              <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>{comp.name}</div>
+              {comp.live
+                ? <div style={{marginBottom:"10px"}}><CompetitionBracket competitionId={comp.id}/></div>
+                : <>
+                    <div style={{marginBottom:"14px"}}><SourceLine testid="source-line-bracket-demo" demo demoWhy="an invented cup"
+                      scope={`${comp.teams} teams, ${comp.region}`} window={comp.season ?? null}/></div>
+                    <KnockoutBracket bracket={demoBracket(comp.bracket ?? [])}/>
+                  </>}
+            </Card>
           )}
 
           {/* ── FIXTURES ── */}

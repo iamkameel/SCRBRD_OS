@@ -123,7 +123,7 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 **Tests required:** browser walk: on `live`, `login-google` testid absent or labelled demo; banner present while unsigned.
 **Acceptance criteria:**
 - [ ] Production login page renders no un-labelled client-only entry
-- [ ] While `!signedIn()`, a banner is visible on every view
+- [x] While `!signedIn()`, a banner is visible on every view — met: apps/web/src/App.jsx:693-696 (verified 15 Nov 2026)
 - [ ] `smoke-browser-read` sweep passes
 **Regression risk:** LOW
 
@@ -172,7 +172,7 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 **Tests required:** `db/99` run against a DB migrated **without** `--seed` still passes the owner section.
 **Acceptance criteria:**
 - [ ] `pnpm db:migrate` (no seed) then `db:verify` → owner section OK
-- [ ] `98_seed_pilot.sql` no longer contains the owner rows
+- [ ] `98_seed_pilot.sql` no longer contains the owner rows — overtaken: the closure of 19 Sep keeps the owner row as fixture data (db/98_seed_pilot.sql:362-368) (15 Nov 2026)
 **Regression risk:** LOW
 
 ### ~~SCRBRD-005~~ — CLOSED
@@ -213,9 +213,9 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 **Dependencies:** none. **Security / privacy impact:** removes third-party processing of children's names. **Data migration required:** NO
 **Tests required:** unit test asserting the outbound body contains no roster name; walk asserting StatGuru refuses a client-supplied context.
 **Acceptance criteria:**
-- [ ] Outbound AI request bodies contain no `player.name`
-- [ ] Commentary line rendered in the UI shows real names (re-substituted)
-- [ ] StatGuru ignores client context
+- [x] Outbound AI request bodies contain no `player.name` — met: services/api/ai/ai-service.mjs:110,282-299; services/api/ai/ai.test.mjs:35-38 (verified 15 Nov 2026)
+- [x] Commentary line rendered in the UI shows real names (re-substituted) — met: services/api/ai/ai-service.mjs:299; services/api/ai/ai.test.mjs:41 (verified 15 Nov 2026)
+- [x] StatGuru ignores client context — met: services/api/server.mjs:611-613 (verified 15 Nov 2026)
 **Regression risk:** LOW
 
 ### ~~SCRBRD-006~~ — CLOSED
@@ -260,9 +260,9 @@ None open. No finding in Pass 1 met the P0 bar (cross-tenant read/write, session
 **Dependencies:** none. **Security / privacy impact:** positive. **Data migration required:** NO
 **Tests required:** unit test that `getAnalytics` is not reached without consent; `check-bundle` main chunk shrinks by the Firebase size; `isFirebaseOfflineNoise` filter can be deleted from tests.
 **Acceptance criteria:**
-- [ ] No network call to Firebase before consent (browser walk intercepts requests)
-- [ ] Main chunk < 800 KB
-- [ ] `isFirebaseOfflineNoise` removed
+- [x] No network call to Firebase before consent (browser walk intercepts requests) — met: apps/web/src/lib/firebase.js:52,73-76 (verified 15 Nov 2026)
+- [x] Main chunk < 800 KB — met: tools/check-bundle.mjs:236 (entry ceiling 500 KB) (verified 15 Nov 2026)
+- [x] `isFirebaseOfflineNoise` removed — met: no hit for isFirebaseOfflineNoise outside the audit docs (verified 15 Nov 2026)
 **Regression risk:** LOW
 
 ## Reliability
@@ -389,8 +389,8 @@ already built and are unchanged by this pass.
 **Dependencies:** none. **Security / privacy impact:** none. **Data migration required:** YES (normalisation of existing rows; report-only where ambiguous).
 **Tests required:** `replay.test.mjs` table test over every enum value × (credited?, stands on free hit?); `write.test.mjs` 400 on unknown string; `smoke-csv` rejects an unknown dismissal in an import row.
 **Acceptance criteria:**
-- [ ] `r/o` at `POST /api/events` → 400
-- [ ] Every enum value has a row in the wicket matrix test
+- [ ] `r/o` at `POST /api/events` → 400 — overtaken: packages/scoring/src/events.mjs:314-322 (r/o is normalised to run_out, not refused); packages/scoring/test/replay.test.mjs:132 (15 Nov 2026)
+- [x] Every enum value has a row in the wicket matrix test — met: packages/scoring/test/replay.test.mjs:121-125 (verified 15 Nov 2026)
 - [ ] `grep -c "run ?out" packages/scoring/src` → 0
 **Regression risk:** MEDIUM
 
@@ -1232,9 +1232,9 @@ SCRBRD-034's duty lifecycle needs in order to expire a fixture-scoped role.
 **Dependencies:** informs SCRBRD-034. **Security / privacy impact:** none directly. **Data migration:** NO
 **Tests required:** `authorize.test.mjs`; whichever write walks cover the states found.
 **Acceptance criteria:**
-- [ ] Every implicit workflow-state check in the write handlers is listed with its state
-- [ ] `docs/ARCHITECTURE.md` describes four layers, not three
-- [ ] A test asserts at least one write refused purely on state, with role and scope both valid
+- [x] Every implicit workflow-state check in the write handlers is listed with its state — met: packages/policy/test/invariants.test.mjs:16-26,63-68 (verified 15 Nov 2026)
+- [ ] `docs/ARCHITECTURE.md` describes four layers, not three — overtaken: SCRBRD-031's closure (workflow state is not a layer); docs/ARCHITECTURE.md:94-106 (15 Nov 2026)
+- [x] A test asserts at least one write refused purely on state, with role and scope both valid — met: db/99_rls_verify.sql:37627-37640 (§111 reopen) (verified 15 Nov 2026)
 **Regression risk:** LOW as an inventory; MEDIUM if it becomes a signature change.
 
 ### ~~SCRBRD-032~~ — CLOSED
@@ -1267,8 +1267,8 @@ cost of getting one wrong.
 **Dependencies:** none. **Security / privacy impact:** prevents role explosion. **Data migration:** NO
 **Tests required:** none. `separation.test.mjs` is where a role added against the ADR shows up.
 **Acceptance criteria:**
-- [ ] ADR committed with the test and the worked examples
-- [ ] Referenced from `docs/ARCHITECTURE.md`'s RBAC section
+- [x] ADR committed with the test and the worked examples — met: docs/adr/0003-job-titles-are-not-roles.md; packages/policy/test/separation.test.mjs (verified 15 Nov 2026)
+- [x] Referenced from `docs/ARCHITECTURE.md`'s RBAC section — met: docs/ARCHITECTURE.md:23,129 (verified 15 Nov 2026)
 **Regression risk:** NONE
 
 ## P2 — Concepts the tree does not have
@@ -2036,9 +2036,9 @@ a human cannot do this from the app itself.
 same auth as every other scorer action. **Data migration required:** NO.
 **Tests required:** a browser walk exercising arm → claim → diff-confirm → epoch increment through the UI.
 **Acceptance criteria:**
-- [ ] A scorer can arm and claim a handover from the app, with no direct API call
-- [ ] A disagreement between the two devices' derived state is shown before the token transfers
-- [ ] The code is never carried in a URL
+- [x] A scorer can arm and claim a handover from the app, with no direct API call — met: apps/web/src/scorer/sheets.jsx:399,506 (verified 15 Nov 2026)
+- [x] A disagreement between the two devices' derived state is shown before the token transfers — met: apps/web/src/scorer/sheets.jsx:522-542 (verified 15 Nov 2026)
+- [x] The code is never carried in a URL — met: apps/web/src/lib/handover.js:110-113 (code sent in a POST body) (verified 15 Nov 2026)
 **Regression risk:** LOW — additive UI over an already-tested backend.
 
 ### SCRBRD-057
@@ -2147,8 +2147,8 @@ resource are all already shipped.
 **Tests required:** a browser walk exercising the form against the existing write route and reading the
 result back.
 **Acceptance criteria:**
-- [ ] The "+ Pitch Report" button opens a working form and the report round-trips through the real route
-- [ ] The duty roster's `ground` slot reflects a submitted report, not only "recorded"
+- [x] The "+ Pitch Report" button opens a working form and the report round-trips through the real route — met: apps/web/src/views/FieldsView.jsx:149,442 (verified 15 Nov 2026)
+- [x] The duty roster's `ground` slot reflects a submitted report, not only "recorded" — met: services/api/read/read-api.mjs:1615-1617 (verified 15 Nov 2026)
 **Regression risk:** LOW — additive UI over an already-shipped schema and routes.
 
 ### ~~SCRBRD-059~~ — CLOSED
@@ -2273,9 +2273,14 @@ knockout competition (may need a `db/NN` if round/seed is not already inferable 
 **Security / privacy impact:** none — same read data as any other fixture view (`fixture.read`).
 **Data migration required:** possibly, depending on the dependency above.
 **Tests required:** a browser walk against a seeded knockout competition, once the derivation is decided.
+
+**Status (16 Nov 2026): partly done.**
+- [x] ~~The bracket view: `GET /api/competitions/:id/bracket` (a signed-in read) and `views/bracket.jsx`~~ (#347, 856ee2e4)
+- [ ] The bracket on the public page. Kameel, 15 Nov: "Yes, after slice 4". Queued after slice 4: one public read for the bracket (team names, dates, results, who goes through; never a child's name), as its own migration with the usual review and paste.
+- Festivals, Kameel, 15 Nov: "Table, unless run as a knockout draw". That is how it is built.
 **Acceptance criteria:**
-- [ ] A `comp_type = 'knockout'` competition renders a real bracket, not a league table
-- [ ] Not-yet-known teams or dates show an honest placeholder, never an invented one
+- [x] ~~A `comp_type = 'knockout'` competition renders a real bracket, not a league table~~ (#347, 856ee2e4)
+- [x] ~~Not-yet-known teams or dates show an honest placeholder, never an invented one~~ (#347, 856ee2e4: "To be decided", with the tie it waits for)
 **Regression risk:** LOW — additive view over existing fixture data; does not touch the league path.
 
 ### SCRBRD-061
@@ -2378,9 +2383,9 @@ single-match roster. **Data migration required:** NO.
 **Tests required:** a browser walk confirming coverage counts for a small set of seeded fixtures with
 different duty states match what `MatchCentreView`'s own `DutyRoster` shows for the same fixtures.
 **Acceptance criteria:**
-- [ ] A sportsmaster can see coverage across several upcoming fixtures without opening each one
-- [ ] A slot with nothing on record reads as absent, never as "pending" or "ready"
-- [ ] The coverage count for a fixture matches what that fixture's own `DutyRoster` shows
+- [x] A sportsmaster can see coverage across several upcoming fixtures without opening each one — met: apps/web/src/lib/live.js:1967; apps/web/src/views/ReadinessOverview.jsx:121 (verified 15 Nov 2026)
+- [x] A slot with nothing on record reads as absent, never as "pending" or "ready" — met: apps/web/src/views/duties.jsx:13-21; apps/web/src/views/ReadinessOverview.jsx:121 (verified 15 Nov 2026)
+- [x] The coverage count for a fixture matches what that fixture's own `DutyRoster` shows — met: apps/web/src/lib/live.js:1955-1958,1986; apps/web/src/views/ReadinessOverview.jsx:119 (verified 15 Nov 2026)
 **Regression risk:** LOW — additive read-only view over an already-correct, already-tested resource.
 
 ### ~~SCRBRD-052~~ — CLOSED
@@ -5342,10 +5347,43 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 **Domain:** Design / UX · **Decided 13 Nov 2026:** all 25 questions in `docs/redesign/EXPERIENCE_PASS.md` §5 as recommended. Slices 3 and 4 carry migrations.
 - [x] ~~Slice 1 · The scorer's home and starting a Pilot Match~~ **Done 14 Nov 2026** (#327, 660a5630)
 - [x] ~~Slice 2 · The spectator's match page~~ **Done 14 Nov 2026** (#334, #336)
-- [ ] Slice 3 · First run (migrations) — **partly done: 3a merged 14 Nov 2026** (#339, 94f282ea: one door, the no-school home, the home page by state, the strip's status sentence without the target, `POST /api/onboard` retired); **3b in progress** (the follow list, add-my-school and the strip's target; three migrations)
-- [ ] Slice 4 · Parent and pupil (migrations)
-- [ ] Slice 5 · The coach's day sheet, and the homes
-- [ ] Slice 6 · The office
+- [x] ~~Slice 3 · First run (migrations)~~ **Done 16 Nov 2026.** 3a merged 14 Nov (#339, 94f282ea: one door, the no-school home, the home page by state, the strip's status sentence without the target, `POST /api/onboard` retired). 3b merged 15 and 16 Nov: #344 (15 Nov, aa33836e, "Ask SCRBRD to add my school", db/158) and #345 (16 Nov, 9d6b287d, the live strip's target db/159 and the follow list db/160). db/158, db/159 and db/160 are live on both databases.
+- [ ] Slice 4 · Parent and pupil (migrations): partly done: built and reviewed, PR #350 open
+- [ ] Slice 5 · The coach's day sheet, and the homes: partly done: built and reviewed, PR #351 open
+- [ ] Slice 6 · The office: partly done: built and reviewed, PR #352 open
+- [ ] Slice 5 follow-up: §3.5's competition tables, records, caps and head to head on the team page
+- [ ] Slice 5 follow-up: §1.4's links from a match to its sides and its ground
+- [ ] Slice 5 follow-up: corrections waiting (O7) in Needs you
+- [ ] Slice 5 follow-up: the Rulebook under the person's name
+- [ ] Slice 6 follow-up: a parent's own-name edit; it needs a server write that does not exist (open with Kameel)
+
+### SCRBRD-143 — Account erasure must delete the slice 3b tables (2026-11-15)
+**Priority:** P2 · **Domain:** Privacy / Account lifecycle · **Type:** build, Opus (rides on `account_erase()`)
+**Status:** open, waiting on `account_erase()`.
+**Why:** `account_erase()` is designed (`ACCOUNT_LIFECYCLE` §6.3) but not built. It tombstones the account row and keeps its uuid, so the `ON DELETE CASCADE` on `school_add_request` and `followed_school` never fires, and those rows would outlive an erased account. `db/99` §136 and §138 carry a tripwire that turns red once `account_erase(uuid)` exists, unless it deletes them. §6.3's list now names both tables.
+**Acceptance criteria:**
+- [ ] When `account_erase()` is built, it deletes the account's `school_add_request` and `followed_school` rows.
+- [ ] `db/99` §136 and §138's tripwires are green.
+**Source:** Fable's red-team of `db/158` and `db/160`, 15 Nov 2026 (finding S4).
+
+### SCRBRD-144 — Officials named in signed-in reads while Officials is switched off (2026-11-15)
+**Priority:** P2 · **Domain:** Privacy / Platform controls · **Type:** build, Opus
+**Status:** open.
+**Why:** `db/156` hides officials on the public overlay while Officials is off for the school. Signed-in reads of a match's officials do not yet follow the switch. The appoint gate (`services/api/server.mjs`, around line 715) stays until this is closed.
+**Acceptance criteria:**
+- [ ] A signed-in reader of a school with Officials off sees no official named.
+- [ ] Switching Officials back on shows them.
+- [ ] A `db/99` case proves both.
+**Source:** Fable's red-team of `db/156`, 14 Nov 2026 (finding S4).
+
+### SCRBRD-145 — A stray comment fails an old acceptance check (2026-11-15)
+**Priority:** P3 · **Domain:** Scoring · **Type:** one-line fix, trivial
+**Status:** open, trivial.
+**Why:** SCRBRD-002's box `grep -c "run ?out" packages/scoring/src` → 0 returns 1, because a comment at `packages/scoring/src/events.mjs` (around line 311) quotes the retired regex.
+**Acceptance criteria:**
+- [ ] Reword that comment so the grep returns 0.
+- [ ] Tick SCRBRD-002's box.
+**Source:** the backlog map of 15 Nov 2026.
 
 ---
 

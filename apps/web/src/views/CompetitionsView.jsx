@@ -8,6 +8,7 @@ import { Icon } from "../ui/icons.jsx";
 import { api, signedIn } from "../lib/api.js";
 import { leagueSetupState } from "../lib/league.js";
 import { LeagueInvitations } from "./leagueinvites.jsx";
+import { CompetitionBracket } from "./bracket.jsx";
 import { heldRoles } from "../lib/features.js";
 import { ALL_SEASONS, rankingMethod, showsRankings } from "../lib/seasonAwards.js";
 
@@ -176,7 +177,14 @@ function CompetitionsView({ role, homeBar = null }) {
                 </div>
               )}
             </Card>
-            {comp.live&&(
+            {/* SCRBRD-060: a knockout draws its bracket, never a league table. */}
+            {comp.live&&comp.type==="knockout"&&(
+              <Card sx={{padding:"14px 16px",marginBottom:"16px"}}>
+                <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary,marginBottom:"10px"}}>Bracket</div>
+                <CompetitionBracket competitionId={comp.id}/>
+              </Card>
+            )}
+            {comp.live&&comp.type!=="knockout"&&(
               <Suspense fallback={<div role="status" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginBottom:"16px"}}>Loading the table…</div>}>
                 <Standings competition={{id:comp.id,name:comp.name}}/>
               </Suspense>
