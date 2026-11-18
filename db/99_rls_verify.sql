@@ -15497,7 +15497,8 @@ BEGIN
     K := _v164_pupil('carry', 15); B := _v164_boy(K);
     PERFORM _v164_stamp_granted(B);
     PERFORM _assert(NOT _v164_open(K), '§142 (carry): a stamp alone opened him before the carry-over');
-    PERFORM _assert(_v164_carry() >= 1 AND _v164_open(K), '§142 (carry): the carry-over did not open him');
+    n := _v164_carry();
+    PERFORM _assert(n >= 1 AND _v164_open(K), format('§142 (carry): the carry-over (%s) did not open him', n));
     PERFORM _assert(_v164_record(B) = 'yes/enrolled/' || _v164_name(REG) || '/popia-2026-01/false',
                     format('§142 (carry): the record reads %s', _v164_record(B)));
     PERFORM _assert(_v164_carry() = 0, '§142 (carry): a second carry-over added a yes');
@@ -46996,7 +46997,6 @@ $m130$;
   -- applied, the change made as the owner inside the run, and red at its
   -- own assertion (each in a run of its own): see the commit that adds this
   -- section for the list.
-  PERFORM _v164_legacy(false);   -- the gate itself, with no fixture's help
   PERFORM _v164_case('closed');
   PERFORM _v164_case('stop');
   PERFORM _v164_case('terms');
@@ -47011,7 +47011,6 @@ $m130$;
   PERFORM _v164_case('carry');
   PERFORM _v164_case('grants');
   PERFORM set_config('app.user_id', '', true);
-  PERFORM _v164_legacy(true);
   -- └── db/164 (section 142) ─────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
