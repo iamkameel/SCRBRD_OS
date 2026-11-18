@@ -143,7 +143,7 @@ Sign in as `registrar.wes`.
 1. Tap **Settings**, then **People**. You see Westville's accounts, and the boys with no account.
 2. Tap **+ Enrol a person**. Enrol an invented parent for a Westville boy: **Full name** "Test Parent", **Email** `test.parent@example.invalid`, **Role** Parent / Guardian, **Which child** any boy. Tap **Enrol**.
 3. Sign out. Sign in as `test.parent`. Tap **Family**. You see that boy, and the line saying his terms are not agreed yet.
-4. Back as `registrar.wes`: **Squad**, a side, that boy, **Edit Profile**. Under **Public match pages**, tap **Record a yes from a signed form** and record it.
+4. Back as `registrar.wes`: **Team**, a side, that boy, **Edit Profile**. Under **Public match pages**, tap **Record a yes from a signed form** and record it.
 5. On the same **Edit Profile**, under **Guardian links**, choose "Test Parent" under **Parent or guardian**. Tap **Record the agreement**. The page asks, naming the boy, "Test Parent" and the terms version `popia-2026-01`. Tap **Yes, record it**. The page says "Recorded." Sign in as `test.parent` again: the line saying his terms are not agreed is gone.
 6. Back on **Guardian links**, choose another parent and tap **Verify the link**, then **Yes, verify**. That parent has no link to this boy waiting, so the page refuses in words and changes nothing. That is the right answer. (A link waiting to be verified exists only after the office re-links a parent in **Settings**, **People**, once a boy's date of birth is captured.)
 7. Tap **Staff**. Tap **Everyone**, then **Clearance register**. The cast is listed. Most checks are missing: that is right for invented people.
@@ -162,10 +162,10 @@ Not testable on the demo: Google sign-in is not set up for the demo address, so 
 
 Sign in as `coach.wes.1xi` on phone 2.
 
-1. On the **Dashboard**, the **Match day** card names today's fixture against Kearsney College 1XI, the time and the bus.
+1. On **Today**, the **Match day** card names today's fixture against Kearsney College 1XI, the time and the bus.
 2. Tap **Open the Coach tab**. Read **The side** and **Our bowlers this week**. Tap **Signals**. Tap **Seen** on one card.
-3. Tap **Match Centre**, then today's fixture's card. Under **Match Details**, tap **Pick the side**. Choose eleven boys. Tap **Save the side**.
-4. Tap **Squad**, the 1XI. In **Availability**, tap **Available** or **Doubtful** for two boys.
+3. Tap **Matches**, then today's fixture's card. Under **Match Details**, tap **Pick the side**. Choose eleven boys. Tap **Save the side**.
+4. Tap **Team**, the 1XI. In **Availability**, tap **Available** or **Doubtful** for two boys.
 5. Tap **To resolve**. Today's fixture is listed under today, with what is still open (each row with its own button) and how many of its eight duties are on record.
 
 You should see: only the 1XI's fixtures (today and 17 October). The side saved. Today's fixture counting the scorer and the umpire among its duties on record.
@@ -178,9 +178,9 @@ Then sign in as `coach.kea.1xi` in tab 3. Today's fixture shows from the away en
 
 Sign in as `manager.wes.u14a`.
 
-1. **Match Centre**: only the U14A fixture on 15 October.
+1. **Matches**: only the U14A fixture on 15 October.
 2. Open it. The **Coach** tab shows **The side** and the bus, and no bowling load.
-3. **Squad**, U14A: answer **Availability** for a boy.
+3. **Team**, U14A: answer **Availability** for a boy.
 
 A failure: the bowling load shown to him; another side's fixture.
 
@@ -205,7 +205,7 @@ Then sign in as `pupil.wes.u14a`. Compare. He has **Home**, **Matches**, **Passp
 
 Sign in as `scorer1.wes` on phone 1, after scenario 2 saved the side. The sheet is `SCORER_HELP.md`; these are the checks.
 
-1. **Match Centre**, today's fixture, **Start scoring →**. Answer **The toss**, then **Bat** or **Bowl**, the openers and the **Opening bowler**.
+1. **Matches**, today's fixture, **Start scoring →**. Answer **The toss**, then **Bat** or **Bowl**, the openers and the **Opening bowler**.
 2. Kearsney's names: the pad cannot read another school's team sheet. Type each Kearsney player's name as he comes in ("K Batter 1"). That is expected.
 3. Score an over with a **Dot**, a four, a **Wide** and a **No ball**. Check the score counts one extra for each, and the over has six legal balls.
 4. Score a **Wicket**, then **Confirm out**. Pick the next batter on **Batting order**.
@@ -278,7 +278,7 @@ Sign in as `dos.wes`.
 
 1. **To resolve**: the office's list first, then every Westville fixture in the next seven days by day and team, each with its duty count; the rest folded under Later.
 2. **Officials**, **Staff** and the **Clearance register**: the whole school.
-3. **Match Centre**: all twelve fixtures.
+3. **Matches**: all twelve fixtures.
 4. After the match, as `scorer2.wes`: on the fixture's full-time card tap "Something to correct", pick a ball and file a correction. The director of sport can approve it: as `dos.wes`, on **To resolve**, open the fixture's Corrections sheet and tap **Approve**; the ball is removed and nothing replaces it. The walk is `tools/smoke-browser-corrections.mjs`, step 3.
 
 A failure: a Kearsney record; a fixture missing.
