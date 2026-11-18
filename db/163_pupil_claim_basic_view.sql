@@ -136,7 +136,8 @@ BEGIN
     RAISE EXCEPTION 'db/163: dso_contacts() is neither db/57''s nor this file''s (md5 %); factor the version now in place and move its hash', md5(v);
   END IF;
   v := (SELECT prosrc FROM pg_proc WHERE oid = 'safeguarding_concern_raise(uuid,text,text[],text,text,text,uuid,uuid,text,date,text,text,boolean,uuid)'::regprocedure);
-  IF md5(v) NOT IN ('6982c7aa0395aaf8d4a54d670143546d', '31bd5b3610e7ba29ceefbccd7b671d45') THEN
+  -- db/116's, an earlier db/163's (unlocked condition, replaced in §6), or this file's.
+  IF md5(v) NOT IN ('6982c7aa0395aaf8d4a54d670143546d', '31bd5b3610e7ba29ceefbccd7b671d45', '584ca1d9dd566fa9a1dfe1593bcd8d20') THEN
     RAISE EXCEPTION 'db/163: safeguarding_concern_raise() is neither db/116''s nor this file''s (md5 %); factor the version now in place and move its hash', md5(v);
   END IF;
   -- audit_names_pupil(): db/79's, or this file's own (S3).
@@ -144,6 +145,12 @@ BEGIN
      OR md5((SELECT prosrc FROM pg_proc WHERE oid = 'audit_names_pupil(uuid)'::regprocedure))
         NOT IN ('31f55d10bc253893a6d884b63aa7f241', 'ba193b7840d630e9f685c93622735fa8') THEN
     RAISE EXCEPTION 'db/163: audit_names_pupil() is neither db/79''s nor this file''s; factor the version now in place and move its hash';
+  END IF;
+  -- app_user_email_seen(): db/118's, or this file's own (re-review open point 4).
+  IF to_regprocedure('app_user_email_seen(uuid,uuid,text)') IS NULL
+     OR md5((SELECT prosrc FROM pg_proc WHERE oid = 'app_user_email_seen(uuid,uuid,text)'::regprocedure))
+        NOT IN ('7116c9e13ddd993d8b65c9a6656255cf', 'b8f0ead148cc454cf36ce622e3739857') THEN
+    RAISE EXCEPTION 'db/163: app_user_email_seen() is neither db/118''s nor this file''s; factor the version now in place and move its hash';
   END IF;
   IF to_regclass('safeguarding_concern_reporter') IS NULL THEN
     RAISE EXCEPTION 'db/163: safeguarding_concern_reporter (db/57) is missing; apply it first';
@@ -154,21 +161,14 @@ END $guard$;
 -- ── 0b · Ten seconds for a lock, or nothing (db/158's and db/161's pattern) ──
 -- The triggers lock role_request, school_add_request and player, which
 -- every signed-in request and the roster write. A paste that cannot get a
--- lock in ten seconds stops: paste it again. Inside the paste's transaction
--- (psql -1, the SQL editor's single run) the limit is the transaction's and
--- the whole file rolls back. Run statement by statement, no transaction is
--- open around this block (its transaction began with this statement), so
--- the limit is set for the session instead, and holds for every statement
--- after it; each statement is then its own, and a second paste finishes
--- what a stopped one left (the file is safe to run twice).
-DO $lock$
-BEGIN
-  IF transaction_timestamp() = statement_timestamp() THEN
-    PERFORM set_config('lock_timeout', '10s', false);
-  ELSE
-    PERFORM set_config('lock_timeout', '10s', true);
-  END IF;
-END $lock$;
+-- lock in ten seconds stops: paste it again. A plain SET, so it holds for
+-- every statement after it however the file is run (psql -1, the SQL
+-- editor's single run, statement by statement), and the file's last
+-- statement RESETs it, so a pooled connection is handed back as it came.
+-- Inside a transaction a stopped paste rolls back whole; statement by
+-- statement, a second paste finishes what a stopped one left (the file is
+-- safe to run twice).
+SET lock_timeout = '10s';
 
 
 -- ── 1 · The claim ─────────────────────────────────────────────────
@@ -203,6 +203,7 @@ CREATE TABLE IF NOT EXISTS pupil_claim (
 -- own rule, db/08).
 CREATE UNIQUE INDEX IF NOT EXISTS pupil_claim_one_per_player ON pupil_claim (player_id) WHERE state IN ('recognised', 'open');
 CREATE INDEX IF NOT EXISTS pupil_claim_school_idx ON pupil_claim (school_id, state);
+CREATE INDEX IF NOT EXISTS pupil_claim_player_idx ON pupil_claim (player_id) WHERE player_id IS NOT NULL;
 
 COMMENT ON TABLE pupil_claim IS
   'db/163 (SCRBRD-140 honesty model, Migration A): an account that said it is a pupil under 18 at a school. Holds what he typed and the state; never a date of birth. Functions only.';
@@ -271,13 +272,38 @@ CREATE OR REPLACE FUNCTION pupil_claim_keep_until(p_claim uuid) RETURNS date AS 
     FROM pupil_claim c WHERE c.id = p_claim
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- Re-review S1 (18 Nov): the raise asks "recognised here?" through this,
+-- so a concern is never saved against an account the clear is removing at
+-- that moment. It takes the claim's own advisory lock (the one the clear,
+-- the sweep, Remove, send, recognise and decline take), then asks in a
+-- statement of its own, on what has committed by then: the clear either
+-- finished first (and he is refused, not_your_school) or waits for the
+-- raise (and the reporter is then kept, B1). An account with no claim
+-- takes no lock. VOLATILE, so the second statement reads afresh.
+CREATE OR REPLACE FUNCTION pupil_recognised_at_locked(p_person uuid, p_school uuid) RETURNS boolean AS $$
+BEGIN
+  IF p_person IS NULL OR NOT EXISTS (SELECT 1 FROM pupil_claim c WHERE c.user_id = p_person) THEN RETURN false; END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended('pupil_claim:' || p_person::text, 163));
+  RETURN pupil_recognised_at(p_person, p_school);
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- S2 (review, 18 Nov): a recognised boy's roster row can be deleted (a
 -- correction, an erasure). His claim goes back to the office, unmatched:
 -- the account is still the claimant's, it opens nothing, and the office may
 -- recognise him again against the right row. BEFORE DELETE, so the CHECK
 -- that a recognised claim names its row never meets a NULL.
+-- Re-review S2: except while he is a safeguarding concern's reporter (B1):
+-- then the roster tie is what the concern keeps, and the delete is refused
+-- in exactly the words a roster row still referenced elsewhere is refused
+-- with, so the refusal tells nobody why.
 CREATE OR REPLACE FUNCTION pupil_claim_player_gone() RETURNS trigger AS $$
 BEGIN
+  IF EXISTS (SELECT 1 FROM pupil_claim c WHERE c.player_id = OLD.id AND pupil_claim_held(c.user_id)) THEN
+    RAISE EXCEPTION 'update or delete on table "player" violates foreign key constraint "pupil_claim_player_id_fkey" on table "pupil_claim"'
+      USING ERRCODE = 'foreign_key_violation',
+            DETAIL = format('Key (id)=(%s) is still referenced from table "pupil_claim".', OLD.id),
+            SCHEMA = 'public', TABLE = 'pupil_claim', CONSTRAINT = 'pupil_claim_player_id_fkey';
+  END IF;
   UPDATE pupil_claim
      SET state = 'with_office', player_id = NULL, known_how = NULL, known_by = NULL, known_at = NULL
    WHERE player_id = OLD.id AND state IN ('recognised', 'open');
@@ -433,9 +459,12 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
  */
 CREATE OR REPLACE FUNCTION pupil_claim_recognise(p_claim uuid, p_player uuid)
 RETURNS TABLE (ok boolean, reason text) AS $$
-DECLARE c pupil_claim%ROWTYPE; v_born date; v_school uuid;
+DECLARE c pupil_claim%ROWTYPE; v_born date; v_school uuid; v_user uuid;
 BEGIN
   IF app_user_id() IS NULL THEN RETURN QUERY SELECT false, 'not_signed_in'::text; RETURN; END IF;
+  -- The claim's own lock first, as the clear takes it (re-review N2).
+  SELECT x.user_id INTO v_user FROM pupil_claim x WHERE x.id = p_claim;
+  IF v_user IS NOT NULL THEN PERFORM pg_advisory_xact_lock(hashtextextended('pupil_claim:' || v_user::text, 163)); END IF;
   SELECT * INTO c FROM pupil_claim x WHERE x.id = p_claim FOR UPDATE;
   IF NOT FOUND OR NOT pupil_claim_office(c.school_id) THEN RETURN QUERY SELECT false, 'not_permitted'::text; RETURN; END IF;
   IF c.state <> 'with_office' OR pupil_account_opened(c.user_id) THEN
@@ -471,9 +500,12 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
  */
 CREATE OR REPLACE FUNCTION pupil_claim_decline(p_claim uuid)
 RETURNS TABLE (ok boolean, reason text) AS $$
-DECLARE c pupil_claim%ROWTYPE;
+DECLARE c pupil_claim%ROWTYPE; v_user uuid;
 BEGIN
   IF app_user_id() IS NULL THEN RETURN QUERY SELECT false, 'not_signed_in'::text; RETURN; END IF;
+  -- The claim's own lock first, as the clear takes it (re-review N2).
+  SELECT x.user_id INTO v_user FROM pupil_claim x WHERE x.id = p_claim;
+  IF v_user IS NOT NULL THEN PERFORM pg_advisory_xact_lock(hashtextextended('pupil_claim:' || v_user::text, 163)); END IF;
   SELECT * INTO c FROM pupil_claim x WHERE x.id = p_claim FOR UPDATE;
   IF NOT FOUND OR NOT pupil_claim_office(c.school_id) THEN RETURN QUERY SELECT false, 'not_permitted'::text; RETURN; END IF;
   IF c.state NOT IN ('with_office', 'recognised') OR pupil_account_opened(c.user_id) THEN
@@ -669,11 +701,16 @@ BEGIN
        'AND (person_live_at(app_user_id(), sc.id) OR pupil_recognised_at(app_user_id(), sc.id))'),
       ('safeguarding_concern_raise(uuid,text,text[],text,text,text,uuid,uuid,text,date,text,text,boolean,uuid)'::regprocedure,
        'IF p_school IS NULL OR NOT person_live_at(v_me, p_school) THEN',
-       'IF p_school IS NULL OR NOT (person_live_at(v_me, p_school) OR pupil_recognised_at(v_me, p_school)) THEN')
+       'IF p_school IS NULL OR NOT (person_live_at(v_me, p_school) OR pupil_recognised_at_locked(v_me, p_school)) THEN')
     ) AS t(fn, was, now_) LOOP
     SELECT p.prosrc, array_to_string(p.proconfig, ','), p.proacl::text, p.prosecdef
       INTO v_src, v_cfg, v_acl, v_sec FROM pg_proc p WHERE p.oid = r.fn;
     IF position(r.now_ IN v_src) > 0 THEN CONTINUE; END IF;   -- a second run
+    -- Over an earlier db/163 (before the re-review's S1): its unlocked condition is what is replaced.
+    IF position(r.was IN v_src) = 0
+       AND position('IF p_school IS NULL OR NOT (person_live_at(v_me, p_school) OR pupil_recognised_at(v_me, p_school)) THEN' IN v_src) > 0 THEN
+      r.was := 'IF p_school IS NULL OR NOT (person_live_at(v_me, p_school) OR pupil_recognised_at(v_me, p_school)) THEN';
+    END IF;
     n := (length(v_src) - length(replace(v_src, r.was, ''))) / length(r.was);
     IF n <> 1 THEN
       RAISE EXCEPTION 'db/163: % holds its school condition % times, not once', r.fn, n;
@@ -690,6 +727,38 @@ BEGIN
 END $sg$;
 
 
+-- ── 6b · db/118's address rule: a claimant's address is a pupil's ──
+-- Re-review open point 4: app_user_email_seen() (db/118) read an account
+-- with a claim as an adult's, so anybody who reads its row (a platform
+-- administrator, by its no-school row) read his Google address. One arm is
+-- added to its list of a pupil's schools: the claim's. The claimed school's
+-- office and principal (who read it on Pupil claims already) and he himself
+-- read it; nobody else. Replaced in place and checked, as §6.
+DO $email$
+DECLARE
+  v_fn  regprocedure := 'app_user_email_seen(uuid,uuid,text)'::regprocedure;
+  v_was text := '           WHERE u.id = p_user' || chr(10) || '          UNION ALL' || chr(10) || '          SELECT a.school_id';
+  v_now text := '           WHERE u.id = p_user' || chr(10) || '          UNION ALL' || chr(10)
+             || '          -- db/163: the school he claims, as a pupil''s.' || chr(10)
+             || '          SELECT c.school_id FROM pupil_claim c WHERE c.user_id = p_user' || chr(10)
+             || '          UNION ALL' || chr(10) || '          SELECT a.school_id';
+  v_src text; v_cfg text; v_acl text; v_sec boolean;
+BEGIN
+  SELECT p.prosrc, array_to_string(p.proconfig, ','), p.proacl::text, p.prosecdef INTO v_src, v_cfg, v_acl, v_sec FROM pg_proc p WHERE p.oid = v_fn;
+  IF position(v_now IN v_src) > 0 THEN RETURN; END IF;   -- a second run
+  IF (length(v_src) - length(replace(v_src, v_was, ''))) / length(v_was) <> 1 THEN
+    RAISE EXCEPTION 'db/163: app_user_email_seen() does not hold its pupil arms as db/118 wrote them';
+  END IF;
+  EXECUTE replace(pg_get_functiondef(v_fn), v_was, v_now);
+  IF (SELECT p.prosrc FROM pg_proc p WHERE p.oid = v_fn) IS DISTINCT FROM replace(v_src, v_was, v_now)
+     OR (SELECT array_to_string(p.proconfig, ',') FROM pg_proc p WHERE p.oid = v_fn) IS DISTINCT FROM v_cfg
+     OR (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = v_fn) IS DISTINCT FROM v_acl
+     OR (SELECT p.prosecdef FROM pg_proc p WHERE p.oid = v_fn) IS DISTINCT FROM v_sec THEN
+    RAISE EXCEPTION 'db/163: re-emitting app_user_email_seen() changed more than its pupil arm';
+  END IF;
+END $email$;
+
+
 -- ── 7 · Who may call what ──────────────────────────────────────────
 DO $grants$
 DECLARE
@@ -701,7 +770,8 @@ DECLARE
                              'pupil_claim_office(uuid)', 'pupil_claim_keep_until(uuid)', 'pupil_claim_log(text,uuid,uuid[])',
                              'pupil_claim_remove_account(uuid)', 'pupil_claim_due(uuid)', 'pupil_claim_purge()',
                              'pupil_claim_refuses_asking()', 'person_is_pupil(uuid)',
-                             'pupil_claim_held(uuid)', 'pupil_claim_player_gone()', 'audit_names_pupil(uuid)'];
+                             'pupil_claim_held(uuid)', 'pupil_claim_player_gone()', 'audit_names_pupil(uuid)',
+                             'pupil_recognised_at_locked(uuid,uuid)'];
 BEGIN
   FOREACH f IN ARRAY v_doors LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f::regprocedure);
@@ -745,6 +815,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'player'::regclass AND tgname = 'player_pupil_claim_gone' AND tgenabled = 'O') THEN
     RAISE EXCEPTION 'db/163: the trigger player_pupil_claim_gone is missing or disabled';
   END IF;
+  IF position('FROM pupil_claim c WHERE c.user_id = p_user' IN (SELECT prosrc FROM pg_proc WHERE oid = 'app_user_email_seen(uuid,uuid,text)'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'db/163: app_user_email_seen() does not read a claimant as a pupil';
+  END IF;
   IF position('FROM pupil_claim c WHERE c.user_id = p_person' IN (SELECT prosrc FROM pg_proc WHERE oid = 'audit_names_pupil(uuid)'::regprocedure)) = 0 THEN
     RAISE EXCEPTION 'db/163: audit_names_pupil() does not hold its third case';
   END IF;
@@ -762,7 +835,7 @@ BEGIN
     RAISE EXCEPTION 'db/163: person_is_pupil() does not hold its third case';
   END IF;
   IF position('pupil_recognised_at(app_user_id(), sc.id)' IN (SELECT prosrc FROM pg_proc WHERE oid = 'dso_contacts(uuid)'::regprocedure)) = 0
-     OR position('pupil_recognised_at(v_me, p_school)' IN (SELECT prosrc FROM pg_proc
+     OR position('pupil_recognised_at_locked(v_me, p_school)' IN (SELECT prosrc FROM pg_proc
           WHERE oid = 'safeguarding_concern_raise(uuid,text,text[],text,text,text,uuid,uuid,text,date,text,text,boolean,uuid)'::regprocedure)) = 0 THEN
     RAISE EXCEPTION 'db/163: the safeguarding card or the raise does not reach a recognised pupil';
   END IF;
@@ -773,7 +846,8 @@ BEGIN
                                'pupil_claim_office(uuid)', 'pupil_claim_keep_until(uuid)', 'pupil_claim_log(text,uuid,uuid[])',
                                'pupil_claim_remove_account(uuid)', 'pupil_claim_due(uuid)', 'pupil_claim_purge()',
                                'pupil_claim_refuses_asking()', 'person_is_pupil(uuid)',
-                               'pupil_claim_held(uuid)', 'pupil_claim_player_gone()', 'audit_names_pupil(uuid)']) LOOP
+                               'pupil_claim_held(uuid)', 'pupil_claim_player_gone()', 'audit_names_pupil(uuid)',
+                               'pupil_recognised_at_locked(uuid,uuid)']) LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = f::regprocedure
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))) THEN
       RAISE EXCEPTION 'db/163: % does not pin its search_path', f;
@@ -794,3 +868,8 @@ BEGIN
     END IF;
   END LOOP;
 END $check$;
+
+
+-- ── 9 · The lock limit back as it was (re-review N1): a pooled connection is
+--        handed back as it came.
+RESET lock_timeout;
