@@ -239,6 +239,17 @@ try {
     const h = await open({ viewport: PHONE });
     await toLogin(h);
     ok("Continue with Google is on the sign-in screen", (await tid(h.page, "google-button").count()) === 1 && /Continue with Google/.test(await tid(h.page, "google-button").innerText()));
+    // Glossary review item 7: a title true on a first visit, and the line for someone new leading, above the fields.
+    const head = await h.page.evaluate(() => {
+      const y = (/** @type {string} */ s) => document.querySelector(s)?.getBoundingClientRect().top ?? NaN;
+      return { h1: [...document.querySelectorAll("h1")].map((e) => (e.textContent ?? "").trim()), body: document.body.innerText,
+        order: y('[data-testid="login-title"]') < y('[data-testid="login-new-here"]') && y('[data-testid="login-new-here"]') < y('[data-testid="google-button"]')
+          && y('[data-testid="login-new-here"]') < y("#login-email") };
+    });
+    ok("the sign-in title is \"Sign in to SCRBRD\", its one heading, and nobody is welcomed back",
+       head.h1.length === 1 && head.h1[0] === "Sign in to SCRBRD" && !/Welcome back/i.test(head.body), JSON.stringify(head.h1));
+    ok("...the New to SCRBRD line leads, under the title and above Google and the code form",
+       head.order && /^New to SCRBRD\? Continue with Google\./.test((await tid(h.page, "login-new-here").innerText().catch(() => "")).trim()));
     const shown = sentence(await tid(h.page, "google-notice").innerText());
     ok("the privacy paragraph Kameel signed is on the screen, word for word", shown.includes(sentence(SIGNIN_NOTICE)), shown.slice(0, 120));
     ok("the code form is still there, for anyone without Google", (await h.page.locator("#login-email").count()) === 1 && (await h.page.locator("#login-password").count()) === 1);

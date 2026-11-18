@@ -217,11 +217,28 @@ function LoginPage({ onLogin, liveOnly = false, onBack }) {
       <div style={{width:"100%",maxWidth:"420px"}}>
         <div style={{textAlign:"center",marginBottom:"32px"}}>
           <img src={SCRBRD_LOGO} alt="SCRBRD" style={{height:"30px",objectFit:"contain",filter:"brightness(1.15)",marginBottom:"16px"}}/>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:"22px",fontWeight:800,color:T.content.primary,marginBottom:"6px"}}>Welcome back</div>
-          <div data-testid="login-subtitle" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"13px",color:T.content.tertiary}}>
-            {liveOnly ? "Sign in to send what the scorer has saved on this device. Nothing is lost while you do."
-                      : "Sign in to your SCRBRD account"}
-          </div>
+          {/* A title that is true on a first visit as on the hundredth (glossary review item 7): nobody is
+              welcomed "back" who has never been. The line for someone new leads, under it (below). */}
+          <h1 data-testid="login-title" style={{fontFamily:"'Syne',sans-serif",fontSize:"22px",fontWeight:800,color:T.content.primary,margin:"0 0 6px"}}>Sign in to SCRBRD</h1>
+          {liveOnly && (
+            <div data-testid="login-subtitle" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"13px",color:T.content.tertiary}}>
+              Sign in to send what the scorer has saved on this device. Nothing is lost while you do.
+            </div>
+          )}
+          {/* One door (EXPERIENCE_PASS §2.2, Q13, 13 Nov 2026): a new person
+              comes in through Google or a code, and is never asked for a
+              role. The account starts with no school; only the school's own
+              register, or its office, links it to a school or a child
+              (SCRBRD-140 §4, §5). The older role-tile sign-up is retired.
+              Said first, under the title, so a first visit reads its way in
+              before the fields. */}
+          {live === true && !liveOnly && (
+            <p data-testid="login-new-here" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"14px",lineHeight:1.5,color:T.content.secondary,margin:"8px 0 0"}}>
+              {googleOn
+                ? "New to SCRBRD? Continue with Google. Your account starts with no school: you can score a match on this phone, and ask a school to let you in."
+                : "New to SCRBRD? Ask your school office for a sign-in code."}
+            </p>
+          )}
           {onBack&&(
             <button onClick={onBack} className="pressBtn" data-testid="login-back-to-pad"
               style={{marginTop:"10px",background:"none",border:"none",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:T.brand.blueText}}>
@@ -319,22 +336,10 @@ function LoginPage({ onLogin, liveOnly = false, onBack }) {
               nothing appears to happen. */}
           {error&&<div id="login-error" role="alert" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:T.semantic.criticalText,marginBottom:"12px",padding:"8px 12px",borderRadius:"8px",background:clr(T.semantic.critical,0.1),border:`1px solid ${clr(T.semantic.critical,0.2)}`}}>{error}</div>}
 
-          <button onClick={handleLogin} disabled={loading} className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:T.light.action,border:"none",fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:T.light.ink,marginBottom:"14px",boxShadow:`0 4px 20px ${clr(T.brand.blue,0.35)}`}}>
+          <button onClick={handleLogin} disabled={loading} className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:T.light.action,border:"none",fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:T.light.ink,marginBottom:0,boxShadow:`0 4px 20px ${clr(T.brand.blue,0.35)}`}}>
             {loading?"Signing in…":"Sign In"}
           </button>
 
-          {/* One door (EXPERIENCE_PASS §2.2, Q13, 13 Nov 2026): a new person
-              comes in through Google or a code, and is never asked for a
-              role. The account starts with no school; only the school's own
-              register, or its office, links it to a school or a child
-              (SCRBRD-140 §4, §5). The older role-tile sign-up is retired. */}
-          {live === true && !liveOnly && (
-            <div data-testid="login-new-here" style={{textAlign:"center",fontFamily:"'DM Sans',sans-serif",fontSize:"13px",lineHeight:1.5,color:T.content.secondary}}>
-              {googleOn
-                ? "New to SCRBRD? Continue with Google. Your account starts with no school: you can score a match on this phone, and ask a school to let you in."
-                : "New to SCRBRD? Ask your school office for a sign-in code."}
-            </div>
-          )}
         </div>
 
         {/* Accounts. Which list depends on whether there is a server, and the
