@@ -154,7 +154,7 @@ export function PupilBasic({ name, claim, onSignOut, onRemoved, onOpenPad = null
     try { await api("/api/pupil/remove", { method: "POST" }); onRemoved(); return; }
     catch (e) {
       const code = /** @type {any} */ (e)?.code;
-      setProblem(code === "kept" ? REMOVE_WORDS.kept : code === "not_a_claim" ? REMOVE_WORDS.not_a_claim : REMOVE_WORDS.fallback);
+      setProblem(code === "not_a_claim" ? REMOVE_WORDS.not_a_claim : REMOVE_WORDS.fallback);
     }
     setRemoving(false);
   };

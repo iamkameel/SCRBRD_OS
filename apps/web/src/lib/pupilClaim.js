@@ -28,7 +28,8 @@
  * asks a parent in Migration A: the words say the office decides, on the
  * signed form, and change with Migration B. An account that raised a
  * safeguarding concern is kept (db/163 B1): no date, and his own Remove
- * says why (REMOVE_WORDS.kept).
+ * answers as any account that is not a claim does, in words that tell
+ * whoever holds his phone nothing (re-review S3(a)).
  */
 
 export const NAME_MAX = 80;
@@ -71,7 +72,6 @@ export const CLAIM_WORDS = Object.freeze({
   ask_your_school_office: "This account cannot send a pupil's claim. Ask your school office.",
   already_recognised: "Your school already knows this is you.",
   already_answered: "The school has already answered. Ask the school office.",
-  born_invalid: "That date could not be used.",
   not_signed_in: "You were signed out. Sign in again to send it.",
   missing_token: "You were signed out. Sign in again to send it.",
   token_expired: "You were signed out. Sign in again to send it.",
@@ -130,9 +130,9 @@ export function keepWords(claim) {
 export const REMOVE_WORDS = Object.freeze({
   ask: "Remove this account now? Its sign-in and the schools you follow go with it. You can sign in with Google again later and start afresh.",
   done: "This account has been removed.",
-  not_a_claim: "This account cannot be removed from here. Ask the school office.",
-  // db/163 B1: he raised a safeguarding concern, so the account is kept for it. He knows he raised it.
-  kept: "This account is kept while your school's safeguarding officer has what you raised. Ask them, or the school office.",
+  // Also what an account kept for a safeguarding concern reads (db/163 B1; the API answers it as this):
+  // neutral, because whoever holds his phone may be the adult the concern is about (re-review S3(a)).
+  not_a_claim: "This account can't be removed from here. Ask a teacher you trust.",
   fallback: "The account was not removed. Try again.",
 });
 

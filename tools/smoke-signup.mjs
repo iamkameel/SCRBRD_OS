@@ -345,8 +345,8 @@ try {
       values ($1, 'U15A', 'Walk Rosterboy', 'Rosterboy', 99, 'batter', (current_date - interval '15 years')::date) returning id`, [HIL])).rows[0].id;
     let r = await api("/api/pupil/claim", { method: "POST", token: kid, body: { schoolId: HIL, name: "  Sipho   Walker ", year: "Grade 9", born: BORN } });
     ok("he sends his claim: one answer, whatever he typed", r.status === 200 && r.body?.ok === true && JSON.stringify(Object.keys(r.body)) === '["ok"]', r);
-    r = await api("/api/pupil/claim", { method: "POST", token: kid, body: { schoolId: HIL, name: "Sipho Walker", born: "2012-02-30" } });
-    ok("...an impossible date of birth is refused", r.status === 422 && r.body?.error === "born_invalid", r);
+    r = await api("/api/pupil/claim", { method: "POST", token: kid, body: { schoolId: HIL, name: "Sipho Walker", year: "Grade 9", born: "2012-02-30" } });
+    ok("...a date of birth sent anyway is dropped unread (until Migration C): the same answer", r.status === 200 && r.body?.ok === true, r);
     s = await api("/api/pupil/state", { token: kid });
     const c = s.body?.claim;
     const plus30 = new Date(Date.parse(`${c?.sentOn}T00:00:00Z`) + 30 * 86400000).toISOString().slice(0, 10);

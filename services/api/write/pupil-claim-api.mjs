@@ -8,7 +8,7 @@
  * stranger reads (db/99 §141), and the office matches him to the roster by
  * hand, which recognises him and still opens nothing. Recognised, he sees
  * his school's safeguarding card and may raise a concern (Q8). His account
- * is kept 30 days from his last claim while a yes is sought, then removed
+ * is kept 30 days from his last claim (or the school's answer) while the office decides, then removed
  * by a person (Q9); his screen says so from the first day.
  *
  * WHAT THIS FILE DECIDES: nothing. Every route calls one db/163 function
@@ -16,17 +16,21 @@
  * answers a code, which becomes a status here and words on the screen
  * (apps/web/src/lib/pupilClaim.js).
  *
- * THE DATE OF BIRTH. POST /api/pupil/claim takes `born` (YYYY-MM-DD), for
- * the family list's match (Migration C). It goes to the database as a bind
- * parameter, is compared there and dropped (Q2), and is never written to a
- * log here: no route logs a request body, and an error is logged by its
- * SQLSTATE through safeErr(), never its parameters.
+ * THE DATE OF BIRTH. Dropped here, never passed on, until the family list
+ * (Migration C) has something to compare it with (the re-review's open point
+ * 2): a date sent anyway is not read, not checked and not forwarded, so it
+ * is never a bind parameter a host's statement log could keep. The client
+ * never sends one (lib/pupilClaim.js buildClaim()). db/163's function keeps
+ * its p_born argument, DEFAULT NULL, for Migration C.
  *
  * Routes (all signed in; a pad's resume credential reaches nothing here):
  *   GET  /api/pupil/state                 his own: { claim: null | { state, schoolId, schoolName, name, year,
  *                                           saidOn, sentOn, keepUntil, safeguarding } }
- *   POST /api/pupil/claim { schoolId, name, year?, born? }   { ok: true } or { error }
- *   POST /api/pupil/remove                his own account, now (only an account that is nothing but a claim)
+ *   POST /api/pupil/claim { schoolId, name, year? }   { ok: true } or { error }; a `born` is dropped
+ *   POST /api/pupil/remove                his own account, now (only an account that is nothing but a claim);
+ *                                         an account kept for a safeguarding concern answers not_a_claim,
+ *                                         the same as any other account (re-review S3(a): whoever holds his
+ *                                         phone learns nothing from it)
  *   GET  /api/pupil-claims?schoolId=      the office's Pupil claims list: { rows }
  *   POST /api/pupil-claims/:id/recognise { playerId }
  *   POST /api/pupil-claims/:id/decline
@@ -37,7 +41,6 @@ import { safeErr } from "../log-safe.mjs";
 /** @import { RouteDeps, Handler } from "../api-types.mjs" */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Each answer of the claim's doors, with its status. @type {Record<string, number>} */
 export const PUPIL_CLAIM_STATUS = Object.freeze({
@@ -48,7 +51,6 @@ export const PUPIL_CLAIM_STATUS = Object.freeze({
   no_such_school: 404,
   name_required: 422,
   year_too_long: 422,
-  born_invalid: 422,
   already_recognised: 409,
   already_answered: 409,
   player_not_at_that_school: 422,
@@ -56,8 +58,6 @@ export const PUPIL_CLAIM_STATUS = Object.freeze({
   player_is_an_adult: 409,
   player_required: 422,
   not_a_claim: 409,
-  // db/163 B1: the account raised a safeguarding concern and is kept for it.
-  kept: 409,
 });
 
 /** A my_pupil_state() row, as his screen reads it. @param {any} r */
@@ -135,21 +135,16 @@ export function pupilClaimRoutes({ pool, secret }) {
       const school = schoolOf(b.schoolId);
       const name = typeof b.name === "string" ? b.name.slice(0, 200) : "";
       const year = typeof b.year === "string" ? b.year.slice(0, 100) : null;
-      // Compared in the database and dropped there (Q2). Not a real date: refused, as one in the future is.
-      let born = null;
-      if (b.born != null && b.born !== "") {
-        // A real day of the calendar: 2012-02-30 is not one (Date would roll it into March).
-        const d = typeof b.born === "string" && DAY.test(b.born) ? new Date(`${b.born}T00:00:00Z`) : null;
-        if (!d || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== b.born) throw err("born_invalid", 422);
-        born = b.born;
-      }
-      const { rows } = await client.query(`select * from pupil_claim_send($1, $2, $3, $4::date)`, [school, name, year, born]);
+      // b.born is not read (until Migration C): see the file's head.
+      const { rows } = await client.query(`select * from pupil_claim_send($1, $2, $3)`, [school, name, year]);
       return verdict(rows[0]);
     }),
 
     removeSelf: handle(async (client) => {
       const { rows } = await client.query(`select * from pupil_claim_remove_self()`);
-      return { ...verdict(rows[0]), removed: true };
+      // Kept for a safeguarding concern (db/163 B1): answered as any account that is not a claim.
+      const r = rows[0]?.reason === "kept" ? { ok: false, reason: "not_a_claim" } : rows[0];
+      return { ...verdict(r), removed: true };
     }),
 
     list: handle(async (client, req) => {

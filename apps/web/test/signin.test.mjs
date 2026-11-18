@@ -257,7 +257,9 @@ group("A pupil under 18 says who he is (db/163, Q3): it asks for nothing and ope
   ok("...and promises nobody asks a parent: in Migration A the office decides (review S6)",
      !/is asked|we ask|will ask/i.test(keepWords({ state: "with_office", keepUntil: "2026-12-18" }) + CLAIM_FORM.keep) && /office decides/.test(CLAIM_FORM.keep));
   ok("...declined, 30 days from the school's answer, and what then", /until 18 December 2026, 30 days from the school's answer\. Then it is removed, with the schools you follow\./.test(keepWords({ state: "declined", keepUntil: "2026-12-18" })));
-  ok("a kept account (he raised a concern) says why to him, and only to him", /safeguarding officer has what you raised/.test(REMOVE_WORDS.kept));
+  ok("an account that can't be removed (a kept one among them) is told so neutrally: nothing of a concern (re-review S3(a))",
+     REMOVE_WORDS.not_a_claim === "This account can't be removed from here. Ask a teacher you trust."
+       && !Object.values(REMOVE_WORDS).some((w) => /safeguard|concern|raised|officer/i.test(w)) && !("kept" in REMOVE_WORDS));
   ok("...and nothing once he is opened", keepWords({ state: "open", keepUntil: null }) === null);
   ok("the database's day, as written", dayWords("2027-01-01") === "1 January 2027" && dayWords("x") === "");
   ok("removing the account says what goes before it goes", /sign-in and the schools you follow/.test(REMOVE_WORDS.ask));
