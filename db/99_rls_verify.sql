@@ -162,17 +162,25 @@ $$ LANGUAGE sql SECURITY DEFINER;
 -- db/164 (SCRBRD-140 Migration B): a boy's own sign-in is open only while a
 -- yes is in force, and the paste carries every own link the office had
 -- stamped 'granted' over as the office's yes (db/164 §6). The sections of
--- this file written before db/164 seed their pupils the way the office
--- enrolled them before it, straight into assignment_subject with the stamp
--- and no yes. This trigger, the verifier's own and gone with its ROLLBACK,
--- does for each of those rows what db/164 §6 does at the paste: a self link
--- written 'granted' for a boy with nothing on record carries the office's
--- yes. It is switched off for §142, which proves the gate itself
--- (_v164_legacy(false)); nothing in db/ writes such a row after db/164 but
--- the grant door, and only once a yes is in force.
+-- this file written before db/164 seed their pupils as enrolled pupils
+-- with no yes on record: straight into assignment_subject with the stamp,
+-- or as an account with its roster link (app_user.player_id) and nothing
+-- else. These triggers, the verifier's own and gone with its ROLLBACK, give
+-- each such boy with nothing on record the office's yes, as an enrolled
+-- pupil's own link carries it after the paste (db/164 §6). They are
+-- switched off for §142, which proves the gate itself (_v164_legacy(false));
+-- nothing in db/ writes a granted own link after db/164 but the grant door,
+-- and only once a yes is in force. (On a live database a pupil with a
+-- roster link and no granted own link has no yes, and the paste closes him:
+-- tools/pupil-signin-count.sql counts them.)
 CREATE OR REPLACE FUNCTION _v164_legacy_stamp() RETURNS trigger AS $$
 BEGIN
-  IF NEW.relationship = 'self' AND NEW.consent_state = 'granted' AND NEW.verification_state = 'verified'
+  IF TG_TABLE_NAME = 'app_user' THEN
+    IF NEW.player_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM pupil_signin_consent x WHERE x.player_id = NEW.player_id) THEN
+      INSERT INTO pupil_signin_consent (player_id, answer, how, given_by_name)
+      VALUES (NEW.player_id, 'yes', 'enrolled', 'db/99 fixture');
+    END IF;
+  ELSIF NEW.relationship = 'self' AND NEW.consent_state = 'granted' AND NEW.verification_state = 'verified'
      AND NOT EXISTS (SELECT 1 FROM pupil_signin_consent x WHERE x.player_id = NEW.player_id) THEN
     INSERT INTO pupil_signin_consent (player_id, answer, how, given_by, given_by_name, terms_version, given_at)
     VALUES (NEW.player_id, 'yes', 'enrolled', NEW.verified_by, 'db/99 fixture', NEW.consent_version, coalesce(NEW.consent_at, now()));
@@ -182,10 +190,18 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 DROP TRIGGER IF EXISTS _v164_legacy_stamp ON assignment_subject;
 CREATE TRIGGER _v164_legacy_stamp AFTER INSERT OR UPDATE OF consent_state ON assignment_subject
   FOR EACH ROW EXECUTE FUNCTION _v164_legacy_stamp();
+DROP TRIGGER IF EXISTS _v164_legacy_stamp ON app_user;
+CREATE TRIGGER _v164_legacy_stamp AFTER INSERT OR UPDATE OF player_id ON app_user
+  FOR EACH ROW EXECUTE FUNCTION _v164_legacy_stamp();
 CREATE OR REPLACE FUNCTION _v164_legacy(p_on boolean) RETURNS void AS $$
 BEGIN
-  IF p_on THEN ALTER TABLE assignment_subject ENABLE TRIGGER _v164_legacy_stamp;
-  ELSE ALTER TABLE assignment_subject DISABLE TRIGGER _v164_legacy_stamp; END IF;
+  IF p_on THEN
+    ALTER TABLE assignment_subject ENABLE TRIGGER _v164_legacy_stamp;
+    ALTER TABLE app_user ENABLE TRIGGER _v164_legacy_stamp;
+  ELSE
+    ALTER TABLE assignment_subject DISABLE TRIGGER _v164_legacy_stamp;
+    ALTER TABLE app_user DISABLE TRIGGER _v164_legacy_stamp;
+  END IF;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- Wind a live link's end date back to a date already past. This is how the
@@ -46995,8 +47011,33 @@ $m130$;
   --
   -- Falsified once each, on a database at claude/wip-hm-b with db/164
   -- applied, the change made as the owner inside the run, and red at its
-  -- own assertion (each in a run of its own): see the commit that adds this
-  -- section for the list.
+  -- own assertion (27 changes, each in a run of its own):
+  --   yes_stands() without the giver's own no      → (stop) red: left open
+  --   her link need not be agreed, AND the terms trigger dropped
+  --                                         → (terms) red: he reads 261 rows
+  --     (either alone stays green: the question closes him at once, and the
+  --      trigger's recorded no closes him too; each is the other's backstop)
+  --   the terms trigger dropped alone          → (terms) red: agreeing again
+  --                                           reopened her old yes
+  --   her link need not be live                → (revoked) red: 261 rows
+  --   any guardian's no closes every yes       → (second) red
+  --   pupil_signin_state() for anybody         → (second) red: a coach reads it
+  --   majority_on() < today; <= today + 1      → (birthday) red at each
+  --   no date of birth no longer closes        → (nodob) red
+  --   the gate out of app_can(), app_enrolled(), app_holds(), app_enrolled_at(),
+  --   app_can_but_player(), is_family_of(), lift_at_school(),
+  --   my_health_consents(), my_own_boy(), recognition_self_players()
+  --                                         → (closed) red at each (app_can():
+  --                                           21 rows; app_enrolled(): 244;
+  --                                           the rest at their own answer)
+  --   the gate out of app_can() and app_enrolled() → (code) red: 261 rows
+  --   the gate counting a guardian's links too → (guardian) red: her reads moved
+  --   the grant door stamping 'granted' unasked → (tick) red
+  --   the office's tick recording no yes       → (tick) red
+  --   her yes not opening a recognised boy     → (claim) red
+  --   my_pupil_state() without 'closed'; pupil_claim_waiting() as db/163
+  --   left it                                  → (claim) red at each
+  --   the carry-over without its once          → (carry) red
   PERFORM _v164_case('closed');
   PERFORM _v164_case('stop');
   PERFORM _v164_case('terms');

@@ -483,7 +483,7 @@ try {
     await tid(mum.page, "own-signin-allow").click({ timeout: 6000 }).catch(() => {});
     await afterReads(mum.page, 1500);
     words = await tid(mum.page, "own-signin-words").innerText().catch(() => "");
-    ok("she allows it: the row says so, with Stop beside it", /You allowed Thabo's own sign-in/.test(words) && (await tid(mum.page, "own-signin-stop").count()) === 1, words);
+    ok("she allows it: the row says so, with Stop beside it", /You allowed Thabo Fifteen's own sign-in/.test(words) && (await tid(mum.page, "own-signin-stop").count()) === 1, words);
     const rec = await q(`select answer, how, given_by, terms_version from pupil_signin_consent where player_id = $1 order by seq`, [THABO]);
     ok("...recorded with her, and her terms version", rec.length === 1 && rec[0].answer === "yes" && rec[0].how === "guardian"
        && rec[0].given_by === U_DPILLAY && rec[0].terms_version === "popia-2026-01", JSON.stringify(rec));
