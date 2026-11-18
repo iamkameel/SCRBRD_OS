@@ -61,9 +61,9 @@ function NoSelf({ loading, error, testid }) {
   return (
     <Page testid={testid}>
       <Card label="Your record">
-        {!signedIn() ? <Line>Sign in to see your own record. The demonstration holds nobody's.</Line>
+        {!signedIn() ? <Line>Sign in to see your record. The demo has no real players.</Line>
           : loading ? <Line quiet>Reading your record…</Line>
-          : error ? <Line quiet>Could not load your record just now.</Line>
+          : error ? <Line quiet>Your record would not load. Try again in a moment.</Line>
           : <Line>Your account is not linked to your own record yet. Ask the school office.</Line>}
       </Card>
     </Page>
@@ -152,7 +152,7 @@ export function PupilMatches({ role }) {
 
 // "Compare" is GA-I24-I25 D10 (Q1, Kameel 8 Oct 2026): himself against one
 // team-mate on his own side, figures only, the floor, no verdict.
-const TABS = [["season", "Season"], ["career", "Career"], ["wheel", "Wheel"], ["honours", "Honours"], ["compare", "Compare"]];
+const TABS = [["season", "Season"], ["career", "Career"], ["wheel", "Wagon wheel"], ["honours", "Honours"], ["compare", "Compare"]];
 const hand = (h) => (h === "L" ? "left-hand bat" : h === "R" ? "right-hand bat" : null);
 
 /** One figure on the passport board: the figure in the figure face, its name under it. */
@@ -264,7 +264,7 @@ function PassportBoard({ me, role, c, careerRead, onRetry }) {
   const careerAnswered = careerSaid.state === "ok" || careerSaid.state === "empty";
   const cap = caps.find((r) => r.playerId === me.id) ?? null;
   return (
-      <section data-testid="passport-board" aria-label="Your career, in figures"
+      <section data-testid="passport-board" aria-label="Your career figures"
         style={{ background: T.board.face, border: `1px solid ${T.board.rule}`, borderRadius: T.radius.lg,
           padding: `${T.space.md} ${T.space.lg}`, display: "grid", gap: T.space.md }}>
         <div style={{ display: "flex", gap: T.space.xl, flexWrap: "wrap" }}>
@@ -275,15 +275,15 @@ function PassportBoard({ me, role, c, careerRead, onRetry }) {
         <div style={{ display: "flex", gap: T.space.lg, flexWrap: "wrap", ...T.role.figure.md, color: T.board.figure }}>
           {c ? (
             <>
-              <RateFig k="AVG" r={childRate(c.avg, c.ballsFaced)} testid="passport-avg"/>
-              <RateFig k="SR" r={childRate(c.sr, c.ballsFaced)} testid="passport-sr"/>
-              <RateFig k="ECON" r={childRate(c.econ, c.ballsBowled)} testid="passport-econ"/>
+              <RateFig k="Average" r={childRate(c.avg, c.ballsFaced)} testid="passport-avg"/>
+              <RateFig k="Strike rate" r={childRate(c.sr, c.ballsFaced)} testid="passport-sr"/>
+              <RateFig k="Economy" r={childRate(c.econ, c.ballsBowled)} testid="passport-econ"/>
             </>
-          ) : <><span>AVG —</span><span>SR —</span><span>ECON —</span></>}
+          ) : <><span>Average —</span><span>Strike rate —</span><span>Economy —</span></>}
         </div>
         {c && <span data-testid="passport-basis" style={{ ...T.role.body, fontSize: "14px", color: T.board.dim }}>{basisWords(c)}</span>}
         {!careerAnswered && <ReadState compact onBoard read={careerSaid} onRetry={onRetry} testId="passport-career-read-state"/>}
-        {cap && <span style={{ ...T.role.body, fontSize: "14px", color: T.board.dim }}>Cap {cap.capNo} · {me.team} · first {humanDate(cap.firstOn)}</span>}
+        {cap && <span style={{ ...T.role.body, fontSize: "14px", color: T.board.dim }}>Cap {cap.capNo} · {me.team} · first played {humanDate(cap.firstOn)}</span>}
       </section>
   );
 }
@@ -298,11 +298,11 @@ function SeasonTab({ me, role, career }) {
       {seasons.length ? seasons.map((s) => (
         <Card key={s.season ?? "?"} label={`Season ${s.season ?? ""}${s.currentSeason ? " · this season" : ""}`} testid="passport-season">
           <p style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>
-            {s.innings} inns · {s.runs} runs · avg {childRate(s.avg, s.ballsFaced).text}{childRate(s.avg, s.ballsFaced).held ? "" : ` · ${childRate(s.avg, s.ballsFaced).count}`}
+            {s.innings} innings · {s.runs} runs · average {childRate(s.avg, s.ballsFaced).held ? `(${childRate(s.avg, s.ballsFaced).text})` : childRate(s.avg, s.ballsFaced).text}{childRate(s.avg, s.ballsFaced).held ? "" : ` · ${childRate(s.avg, s.ballsFaced).count}`}
           </p>
-          {s.ballsBowled > 0 && <p style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>{s.wkts} wkts · econ {childRate(s.econ, s.ballsBowled).text}{childRate(s.econ, s.ballsBowled).held ? "" : ` · ${childRate(s.econ, s.ballsBowled).count}`}</p>}
+          {s.ballsBowled > 0 && <p style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>{s.wkts} wickets · economy {childRate(s.econ, s.ballsBowled).text}{childRate(s.econ, s.ballsBowled).held ? "" : ` · ${childRate(s.econ, s.ballsBowled).count}`}</p>}
         </Card>
-      )) : <NoneOr read={seasonsRead} what="your seasons" none="No season on record yet." onRetry={() => setNonce((n) => n + 1)} testid="passport-season-none"/>}
+      )) : <NoneOr read={seasonsRead} what="your seasons" none="No seasons yet. Play a match and it shows here." onRetry={() => setNonce((n) => n + 1)} testid="passport-season-none"/>}
       {/* GA-I23 slice 2 (B2, B5): his own season, innings by innings, read
           through his own self link; a team-mate's he never reads (Q7). */}
       {/* Quiet when he has no innings at all, as the family Home is. */}
@@ -311,7 +311,7 @@ function SeasonTab({ me, role, career }) {
           frame={(panel) => <Card label="Innings by innings" testid="passport-trend">{panel}</Card>}/>
       )}
       {career?.form?.length > 0 && (
-        <Card label="Form · last innings first" testid="passport-form">
+        <Card label="Your last innings · newest first" testid="passport-form">
           <p style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>{career.form.join(" · ")}</p>
         </Card>
       )}
@@ -341,7 +341,7 @@ function CareerTab({ me, role, career, careerRead, onRetry }) {
               );
             })}
           </dl>
-        ) : <NoneOr read={careerRead} what="your career" none="No innings on record yet." onRetry={onRetry} testid="passport-career-none"/>}
+        ) : <NoneOr read={careerRead} what="your career" none="No innings yet. Your first one will show here." onRetry={onRetry} testid="passport-career-none"/>}
       </Card>
       <DismissalMethodCard title="How you're out" testId="passport-how-out" color={T.sport.batting} live={breakdown}
         playerId={me.id} side="batting" emptyMessage="You have not been out yet."/>
@@ -378,7 +378,7 @@ function HonoursTab({ me, role }) {
               {said.length > 0 && <span style={{ color: T.content.secondary }} data-testid="passport-milestone-source"> · {said.join(" · ")}</span>}
             </Line>
           );
-        }) : <NoneOr read={recRead} what="your milestones" none="No milestone yet." onRetry={() => setNonce((n) => n + 1)} testid="passport-milestones-none"/>}
+        }) : <NoneOr read={recRead} what="your milestones" none="No milestones yet. They show here when you reach one." onRetry={() => setNonce((n) => n + 1)} testid="passport-milestones-none"/>}
       </Card>
       <Card label="Honours and caps" testid="passport-honours">
         {honours.length ? honours.map((h, i) => (
@@ -387,10 +387,10 @@ function HonoursTab({ me, role }) {
           isWithdrawn(h)
             ? <Line key={`${h.family}-${h.kind}-${i}`} quiet testid="passport-honour-withdrawn">{honourWords(h)}</Line>
             : <Line key={`${h.family}-${h.kind}-${i}`}>{h.label}{seasonOnce(h) ? ` · ${seasonOnce(h)}` : h.season ? "" : h.on ? ` · ${humanDate(h.on)}` : ""}</Line>
-        )) : <NoneOr read={recRead} what="your honours" none="None on record yet." onRetry={() => setNonce((n) => n + 1)} testid="passport-honours-none"/>}
+        )) : <NoneOr read={recRead} what="your honours" none="No honours yet. They show here when you earn one." onRetry={() => setNonce((n) => n + 1)} testid="passport-honours-none"/>}
       </Card>
       {lines.length > 0 && (
-        <Card label="Passport lines" testid="passport-lines">
+        <Card label="Also on your passport" testid="passport-lines">
           {lines.map((l, i) => (
             <Line key={`${l.family}-${i}`}>{l.label}: {l.value}<span style={{ color: T.content.secondary }}> · {[l.confidence, l.source, l.on].filter(Boolean).join(" · ")}</span></Line>
           ))}
@@ -441,13 +441,13 @@ export function PupilMe({ role, onNav }) {
       </Card>
       <Card label="My record" testid="me-record"
         aside={!show.record && <Action testid="me-record-show" onClick={() => setShow((s) => ({ ...s, record: true }))}>Show</Action>}>
-        {show.record ? <TheirRecord child={me} role={role} self/> : <Line quiet>Your date of birth and address, as the school holds them. For your ID number, ask the school office.</Line>}
+        {show.record ? <TheirRecord child={me} role={role} self/> : <Line quiet>Your date of birth and address, as the school has them. For your ID number, ask the school office.</Line>}
       </Card>
-      <Card label="Conduct matters" testid="me-conduct"
+      <Card label="Your conduct record" testid="me-conduct"
         aside={!show.conduct && <Action testid="me-conduct-show" onClick={() => setShow((s) => ({ ...s, conduct: true }))}>Show</Action>}>
         {show.conduct ? <MyConduct me={me} role={role}/> : <Line quiet>Anything the school has recorded about your conduct. Yours to read.</Line>}
       </Card>
-      {onNav && <div><Action testid="me-settings" onClick={() => onNav("settings")}>Settings: theme, colours, devices</Action></div>}
+      {onNav && <div><Action testid="me-settings" onClick={() => onNav("settings")}>Settings: dark or light, colours, devices</Action></div>}
     </Page>
   );
 }
@@ -456,7 +456,7 @@ function MyRatings({ me, role }) {
   const { ratings, loading, error } = useRatings(role);
   const r = ratings[me.id];
   if (loading && !r) return <Line quiet>Reading your ratings…</Line>;
-  if (error) return <Line quiet>Could not load your ratings just now.</Line>;
+  if (error) return <Line quiet>Your ratings would not load. Try again in a moment.</Line>;
   const bits = r ? [["Batting", r.batting?.value], ["Bowling", r.bowling?.value]].filter(([, v]) => v != null) : [];
   if (!bits.length) return <Line quiet>Your coach has not rated you yet.</Line>;
   return (
@@ -469,9 +469,9 @@ function MyRatings({ me, role }) {
 function MyConduct({ me, role }) {
   const { rows, loading, error } = useLive("disciplinary_records", role);
   const mine = rows.filter((m) => m.playerId === me.id);
-  if (loading && !rows.length) return <Line quiet>Reading…</Line>;
-  if (error) return <Line quiet>Could not load this just now.</Line>;
-  if (!mine.length) return <Line testid="me-conduct-none">Nothing is on record.</Line>;
+  if (loading && !rows.length) return <Line quiet>Loading…</Line>;
+  if (error) return <Line quiet>This would not load. Try again in a moment.</Line>;
+  if (!mine.length) return <Line testid="me-conduct-none">Nothing has been recorded.</Line>;
   return mine.map((m) => (
     <div key={m.id} data-testid={`me-matter-${m.id}`} style={{ border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md, padding: T.space.md, display: "grid", gap: "2px" }}>
       <span style={{ ...T.role.label, color: T.content.secondary }}>{humanDate(m.occurredOn)} · {m.state}</span>

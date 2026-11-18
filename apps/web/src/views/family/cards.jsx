@@ -144,7 +144,7 @@ export function SeasonCard({ child, role, self = false }) {
   const avg = s?.innings ? childRate(s.avg, s.ballsFaced) : null;
   const bits = s ? [
     s.innings ? `${s.runs} runs in ${s.innings} innings` : null,
-    avg ? (avg.held ? `average: ${avg.text}` : s.avg != null ? `average ${avg.text} · ${avg.count}` : avg.count) : null,
+    avg ? (avg.held ? `average (${avg.text})` : s.avg != null ? `average ${avg.text} from ${avg.count}` : avg.count) : null,
     s.ballsBowled ? `${s.wkts} wicket${s.wkts === 1 ? "" : "s"}` : null,
   ].filter(Boolean) : [];
   const said = m && !self ? familyMilestoneLine(m, familyName(child), isFirst(miles, m)) : null;
@@ -154,7 +154,7 @@ export function SeasonCard({ child, role, self = false }) {
       {(s || m) && (
         <Card label={s?.season ? `This season · ${s.season}` : "This season"} testid="season-card">
           {bits.length > 0 && <p data-testid="season-line" style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, margin: 0 }}>{bits.join(" · ")}</p>}
-          {s && !bits.length && <Line quiet>{self ? "You have" : `${child.knownAs || child.name} has`} not batted or bowled this season yet.</Line>}
+          {s && !bits.length && <Line quiet>{self ? "You have" : `${child.knownAs || child.name} has`} not batted or bowled this season yet. Your first match will show here.</Line>}
           {m && (
             <Line testid="season-milestone">
               <SealMark sealed={isSealed(m)} testid="season-milestone-seal"/>{" "}

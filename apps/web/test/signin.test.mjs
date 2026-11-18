@@ -199,7 +199,7 @@ group("Joining a school never says found or not found, and never looks a child u
      && !/Test Child|Child:/.test(sentWords("parent", "Test School")));
   ok("...which says nothing is linked automatically", /nothing is linked automatically/.test(sentWords("parent", "Test School")));
   ok("a request the server refused is told in words", joinWords(apiError(422, "already_pending")) === JOIN_WORDS.already_pending);
-  ok("a request that never arrived says nothing was sent", /nothing was sent/.test(joinWords(new TypeError("x"))));
+  ok("a request that never arrived says nothing was sent", /Nothing was sent/.test(joinWords(new TypeError("x"))));
   // db/86: the server refuses a platform role when it is filed, with the
   // enrol path's code. Its own words, not the fallback.
   ok("a platform role refused at filing is told in its own words",
@@ -231,7 +231,7 @@ group("The join screen as drawn");
   ok("no list of pupils is drawn", !/pupil-list|child-list|Whitfield|Pillay/.test(html));
   ok("none of the screen's words is an oracle", !FOUND.test(html.replace(/<[^>]+>/g, " ")), html.replace(/<[^>]+>/g, " ").match(FOUND)?.[0]);
   html = renderToStaticMarkup(h(JoinSchool, { schools: [], onSent() {} }));
-  ok("with no schools it says so", /No school is listed/.test(html));
+  ok("with no schools it says so", /No schools are on SCRBRD yet/.test(html));
 }
 
 group("The ways to sign in");
