@@ -12,7 +12,12 @@
 FROM node:22-alpine
 
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+# The npm registry has answered 502 to this fetch on CI (18 Nov): asked up to five times, as the workflow asks for
+# the base image, and the build still fails if every try does.
+RUN corepack enable && for try in 1 2 3 4 5; do \
+      corepack prepare pnpm@10.33.0 --activate && break; \
+      [ "$try" = 5 ] && exit 1; sleep $((try * 5)); \
+    done
 
 # The lockfile names every workspace package, so every package.json it names
 # has to be present for --frozen-lockfile to agree with it, even the client's.

@@ -26,7 +26,7 @@ Tap **Staff** (bottom bar, or under **More**). It lists everyone who holds a sta
 
 ## A parent's answer, and the never-public mark
 
-Tap **Squad**, your side, then the boy, then **Edit Profile**. Under **Public match pages** each guardian's answer is shown.
+Tap **Team**, your side, then the boy, then **Edit Profile**. Under **Public match pages** each guardian's answer is shown.
 
 - A family says no, on the phone or in person: tap **Record a no, on the family's word**.
 - A family says yes only on a signed form: tap **Record a yes from a signed form**. Fill in **Which form** and **The date it was signed**, then tap **Record the yes**.
@@ -35,7 +35,7 @@ For a boy who must never be named: under **Never show this child publicly** type
 
 ## A parent's link, and the family's agreement
 
-Tap **Squad**, your side, the boy, then **Edit Profile**. Under **Guardian links**, choose the parent under **Parent or guardian**.
+Tap **Team**, your side, the boy, then **Edit Profile**. Under **Guardian links**, choose the parent under **Parent or guardian**.
 
 - A link not yet checked: tap **Verify the link**, then **Yes, verify**.
 - The family signed the terms: tap **Record the agreement**, then **Yes, record it**. Verify first.
@@ -48,6 +48,6 @@ Tap **Logistics**. Under **Book a bus**, tap **Add a vehicle**, then **Save the 
 
 ## Publish a fixture's public page
 
-Tap **Match Centre**, then the fixture's card to open **Match Details**. Under **Public page** tap **Publish** beside your school's side. Only your own school's side shows the button. Players are named only where the family has said yes: everyone else is shown by position. The link is on the panel. To take it down, tap **Withdraw**.
+Tap **Matches**, then the fixture's card to open **Match Details**. Under **Public page** tap **Publish** beside your school's side. Only your own school's side shows the button. Players are named only where the family has said yes: everyone else is shown by position. The link is on the panel. To take it down, tap **Withdraw**.
 
 If the panel says public pages are switched off, nothing is public yet. Call [who to call].

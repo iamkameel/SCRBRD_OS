@@ -98,6 +98,8 @@ async function open(width = 1280, path = "/") {
   await offline(ctx);
   const page = await ctx.newPage();
   watchReads(page);
+  // WALK_CPU_THROTTLE=6 runs the page at a sixth of this machine's speed, which is CI's timing (the slice 4 builder).
+  if (process.env.WALK_CPU_THROTTLE) await (await ctx.newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate: Number(process.env.WALK_CPU_THROTTLE) });
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -118,16 +120,21 @@ const click = async (page, re, ms = 4000) => {
   await page.waitForTimeout(300);
   return true;
 };
+/** Signs in, and answers whether the app's shell is up for that account (its main area, or a persona's header). */
 async function signIn(page, email) {
   await click(page, /Get Started|Log In/, 5000);
   await page.waitForTimeout(500);
   await page.locator("#login-email").fill(email);
   await click(page, /^Sign In$/, 5000);
+  const landed = await page.waitForSelector('[data-testid="os-main"]', { timeout: 20000 }).then(() => true, () => false);
   await afterReads(page, 2500);
+  return landed;
 }
 /** The menu as drawn: the rail's entries on a laptop, the bar's on a phone, by key and word. */
-const menuOf = (page, phone = false) => page.$$eval(phone ? '[data-testid="mnav"] [data-testid^="mnav-"]' : '[data-testid="nav"] [data-testid^="nav-"]:not([data-testid^="nav-group-"])',
-  (els) => els.filter((e) => !/badge/.test(e.getAttribute("data-testid") ?? "")).map((e) => ({ key: e.getAttribute("data-testid"), word: (e.innerText || e.getAttribute("aria-label") || "").trim() })));
+// The menu as it will stay: the shell marks it ready once the school's module switches have answered (Sidebar.jsx,
+// MobileNav.jsx data-menu-ready), so a half-resolved menu is never read as the answer.
+const menuOf = async (page, phone = false) => (await page.waitForSelector(phone ? '[data-testid="mnav"][data-menu-ready="true"]' : '[data-testid="nav"][data-menu-ready="true"]', { timeout: 15000 }).catch(() => null), page.$$eval(phone ? '[data-testid="mnav"] [data-testid^="mnav-"]' : '[data-testid="nav"] [data-testid^="nav-"]:not([data-testid^="nav-group-"])',
+  (els) => els.filter((e) => !/badge/.test(e.getAttribute("data-testid") ?? "")).map((e) => ({ key: e.getAttribute("data-testid"), word: (e.innerText || e.getAttribute("aria-label") || "").trim() }))));
 const pageNow = (page) => tid(page, "os-main").getAttribute("data-page").catch(() => null);
 /** Go to a folded destination as a person does: its home's entry, then its section. */
 async function section(page, home, key, phone = false) {
@@ -138,6 +145,14 @@ async function section(page, home, key, phone = false) {
 }
 
 try {
+  // The API this walk spawned must be listening before anybody signs in: on a slow runner it was not, the first
+  // sign-in stayed on the sign-in screen, and the coach's menu read empty (CI, 18 Nov; reproduced by booting the API late).
+  let up = false;
+  for (let i = 0; i < 120 && !up; i++) {
+    try { up = (await fetch(`${API}/api/health`).then((x) => x.json()))?.db === "ok"; } catch { /* not up yet */ }
+    if (!up) await new Promise((r) => setTimeout(r, 250));
+  }
+  ok("the API is up before the first sign-in", up);
   group("§1.7: each persona sees exactly the after menu");
   {
     const want = {
@@ -149,11 +164,12 @@ try {
     };
     for (const [email, words] of Object.entries(want)) {
       const s = await open();
-      await signIn(s.page, email);
+      ok(`${email.split("@")[0]} signs in`, await signIn(s.page, email));
       const m = await menuOf(s.page);
       // The persona header's Settings and Raise a concern carry nav- ids too (PersonaBar.jsx); they are not in the rail.
       const rail = m.filter((x) => !["nav-settings", "nav-safeguarding"].includes(x.key)).map((x) => x.word);
-      ok(`${email.split("@")[0]}: ${words.join(" · ")}`, rail.join("|") === words.join("|"), rail.join(" · "));
+      ok(`${email.split("@")[0]}: ${words.join(" · ")}`, rail.join("|") === words.join("|"),
+         `${rail.join(" · ")} | at ${new URL(s.page.url()).pathname}, signed in: ${await tid(s.page, "os-main").count() > 0}, sign-in screen: ${await s.page.locator("#login-email").count() > 0}`);
       ok(`...and no page error (${email.split("@")[0]})`, s.errors.length === 0, s.errors.join(" | "));
       await s.ctx.close();
     }
@@ -261,7 +277,7 @@ try {
     ok("Last match: a result in words", (await inner(s.page, "day-last-result")).length > 3, await inner(s.page, "day-last"));
     const season = await inner(s.page, "day-season");
     ok("...and the side's season in one line, with what it rests on", /completed match/.test(season), season);
-    const week = await s.page.$$eval('[data-testid="day-week"] [data-testid^="week-fixture-said-"]', (els) => els.map((e) => e.textContent ?? ""));
+    const week = await s.page.$$eval('[data-testid="day-week"] [data-testid^="week-said-"]', (els) => els.map((e) => e.textContent ?? ""));
     ok("This week: each fixture says where it stands", week.length > 0 && week.every((t) => t.trim().length > 0), week.join(" | "));
     await s.ctx.close();
   }
@@ -404,11 +420,13 @@ try {
 
   group("Review S2: opening Today makes no logged read nobody tapped for");
   {
-    // Four of the coach's fixtures today: the match-day card draws the first few and folds the last under Later.
+    // Four of the coach's fixtures in the next two hours: the match-day card draws the first few and folds the last
+    // under Later. Timed from now, not from the clock's hours: a fixture that started more than six hours ago leaves
+    // the card's window (lib/cockpit.js isWithin), and the last would no longer be the folded one (seen at 16:00).
     const today = [];
-    for (const [name, hh] of [["Homes Walk Ten XI", 10], ["Homes Walk Eleven XI", 11], ["Homes Walk Noon XI", 12], ["Homes Walk One XI", 13]]) {
+    for (const [name, mins] of [["Homes Walk First XI", 30], ["Homes Walk Second XI", 60], ["Homes Walk Third XI", 90], ["Homes Walk Fourth XI", 120]]) {
       const [m] = await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
-        values ($1, '1XI', $2, (sa_today()::timestamp + make_interval(hours => $3::int)) at time zone 'Africa/Johannesburg', 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL, name, hh]);
+        values ($1, '1XI', $2, now() + make_interval(mins => $3::int), 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL, name, mins]);
       today.push(m.id); made.matches.push(m.id);
     }
     const s = await open(390);

@@ -14,7 +14,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
   // The role's destinations, narrowed by the modules this school has on.
   // Narrowed only — useMenuItems() (useNav, with each home drawn once) cannot add a destination the role did not hold.
   // `active` is the open page; the entry lit is its home's (design/homes.js entryFor).
-  const { keys: nav, label, active: lit } = useMenuItems(role, active);
+  const { keys: nav, label, active: lit, ready } = useMenuItems(role, active);
   // League invitations wait on Competitions, or on the entry it sits under (Matches) when it has none of its own.
   const invitesOn = nav.includes("competitions") ? "competitions" : nav.find((k) => k === "matches") ?? null;
   const rc  = ROLES[role];
@@ -58,7 +58,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
           for everybody else, so a screen reader hears "People, group" before
           the entries rather than twenty-two entries in a row. Collapsed, the
           heading has no room and becomes a rule between sections. */}
-      <nav aria-label="Main" data-testid="nav" style={{flex:1,padding:"8px 0",overflowY:"auto"}}>
+      <nav aria-label="Main" data-testid="nav" data-menu-ready={ready ? "true" : "false"} style={{flex:1,padding:"8px 0",overflowY:"auto"}}>
         {groups.map((g, gi)=>(
           <div key={g.key} role="group" aria-labelledby={`nav-group-${g.key}`} data-testid={`nav-group-${g.key}`}>
             {collapsed
