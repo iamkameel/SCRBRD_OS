@@ -159,8 +159,9 @@ try {
      (await enrol(registrar, body("not-an-email", "N E", SITHOLE, "U13A"))).body?.error === "email_invalid");
 
   group("The code is issued once, and it works");
+  // db/164 (Q12): the office ticks "The signed consent form is on file" for a boy under 18.
   const withCode = await enrol(registrar, { ...body("j.sithole@example.invalid", "J Sithole", SITHOLE, "U13A"),
-                                            withCode: true });
+                                            withCode: true, formOnFile: true });
   ok("the office asks for a code and gets one", withCode.status === 200 && typeof withCode.body?.code === "string");
   ok("...with an expiry, so a code left on a desk does not work forever", !!withCode.body?.expiresAt);
   const stored = await q(`select code_hash from login_code where user_id = $1`, [withCode.body.userId]);
