@@ -140,8 +140,8 @@ group("The menus of §1.7, after");
   // No Matches, so Competitions and the Rulebook stay entries (§1.5 rows 5 and 34).
   say("platformadmin", ["Today", "Competitions", "School", "Platform", "Rulebook"]);
   say("finance", ["Today", "School", "Rulebook"]);
-  // The lift purge (transport.lift.oversee) moved with the school's record, so he keeps it as Record.
-  say("transportcoordinator", ["Today", "Matches", "Squad", "Logistics", "Record"]);
+  // Review SF4: the lift purge (transport.lift.oversee) is on Logistics, Transport, so he keeps §1.8's menu.
+  say("transportcoordinator", ["Today", "Matches", "Squad", "Logistics"]);
   ok("nobody at a school has more than five entries; only the superadmin's recovery key has six",
      STAFF_ROLES.every((r) => menu(r).length <= 5 || r === "superadmin"), STAFF_ROLES.filter((r) => menu(r).length > 5).join());
   const parts = (r, home) => homeParts(home, reachFor(r)).sections.map((s) => s.label);
@@ -153,7 +153,9 @@ group("The menus of §1.7, after");
      && STAFF_ROLES.filter((r) => homeParts("pitchdeck", reachFor(r)).visible).join() === "superadmin,platformadmin");
   ok("each School and Platform section under the gate its part had (or the home's, never wider)",
      STAFF_ROLES.every((r) => homeParts("pitchdeck", reachFor(r)).sections.every((s) => roleGrants(r, NAV_CAPABILITY[s.from])))
-     && STAFF_ROLES.every((r) => !homeParts("staff", reachFor(r)).sections.some((s) => s.from === "record") || ["user.read", "broadcast.publish", "transport.lift.policy", "transport.lift.oversee", "audit.read"].some((c) => roleGrants(r, c))));
+     && STAFF_ROLES.every((r) => !homeParts("staff", reachFor(r)).sections.some((s) => s.from === "record") || ["user.read", "broadcast.publish", "transport.lift.policy", "audit.read"].some((c) => roleGrants(r, c))));
+  ok("every holder of transport.lift.oversee reaches Logistics, where the lift purge is drawn (review SF4)",
+     STAFF_ROLES.filter((r) => roleGrants(r, "transport.lift.oversee")).every((r) => homeParts("logistics", reachFor(r)).sections.some((s) => s.key === "transport")));
   ok("a coach, a team manager, a scorer, a parent and a pupil reach no School and no Platform",
      ["coach", "teammanager", "scorer", "guardian", "player"].every((r) => !homeParts("staff", reachFor(r)).visible && !homeParts("pitchdeck", reachFor(r)).visible));
   ok("a union selector's Team is named by its one section, and keyed on it", menu("unionselector").includes("selection") && words("unionselector").includes("Selection") && !menu("unionselector").includes("squad"));

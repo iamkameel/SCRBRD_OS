@@ -56,12 +56,15 @@ group("Settings, taken apart (§1.6): a person's own Settings is theirs");
 group("The School and Platform homes keep each part's gate (or the home's, never wider)");
 {
   ok("Record: user.read, or a capability one of its panels is drawn under", NAV_CAPABILITY.record === "user.read"
-     && eq([...NAV_ALSO.record], ["broadcast.publish", "transport.lift.policy", "transport.lift.oversee", "audit.read"]));
+     && eq([...NAV_ALSO.record], ["broadcast.publish", "transport.lift.policy", "audit.read"]));
   ok("Platform's sections under the capabilities their panels had", NAV_CAPABILITY.requests === "platform.tenant.manage"
      && NAV_CAPABILITY.support === "platform.support.impersonate" && NAV_CAPABILITY.dls === "platform.reference.manage" && NAV_CAPABILITY.roadmap === "platform.tenant.manage");
   ok("School requests are no longer drawn on Management", !/SchoolRequestsPanel/.test(src("../src/views/ManagementView.jsx")));
   const sections = (r, k) => homeParts(k, ROLES[r].nav).sections.map((s) => s.key);
-  ok("the transport coordinator keeps the lift purge: School, Record only", eq(sections("transportcoordinator", "staff"), ["record"]) && roleGrants("transportcoordinator", "transport.lift.oversee"));
+  ok("the transport coordinator has no School (§1.8), and his lift purge is on Logistics, Transport (review SF4)",
+     !homeParts("staff", ROLES.transportcoordinator.nav).visible && roleGrants("transportcoordinator", "transport.lift.oversee")
+     && sections("transportcoordinator", "logistics").includes("transport")
+     && /schoolsWhere\("transport\.lift\.oversee"\)\.length>0&&\(\s*<div data-testid="logistics-lift-purge"><Suspense fallback=\{null\}><LiftPurgePanel\/>/.test(src("../src/views/LogisticsView.jsx")));
   ok("a parent reaches neither home", !homeParts("staff", ROLES.guardian.nav).visible && !homeParts("pitchdeck", ROLES.guardian.nav).visible);
   ok("School is keyed on Staff and Platform on the Pitch deck (nav-staff, nav-pitchdeck land where they did)", HOMES.staff.key === "staff" && HOMES.pitchdeck.key === "pitchdeck");
 }

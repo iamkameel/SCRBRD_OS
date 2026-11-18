@@ -163,6 +163,24 @@ try {
     await signIn(c.page, "coach@example.invalid");
     ok("a coach reaches neither School nor Platform", await tid(c.page, "nav-staff").count() === 0 && await tid(c.page, "nav-pitchdeck").count() === 0);
     await c.ctx.close();
+    // Review SF4: the transport coordinator keeps §1.8's menu; the lift purge he oversees is on Logistics, Transport.
+    const [tc] = await q(`insert into app_user (school_id, email, name, role) values ($1, 'office.walk.transport@example.invalid', 'Office Walk Transport', 'transportcoordinator') returning id`, [HIL]);
+    made.users.push(tc.id);
+    const [tca] = await q(`insert into role_assignment (person_id, role, school_id) values ($1, 'transportcoordinator', $2) returning id`, [tc.id, HIL]);
+    made.assignments.push(tca.id);
+    const t = await open();
+    await signIn(t.page, "office.walk.transport@example.invalid");
+    ok("the transport coordinator: Today · Matches · Squad · Logistics, and no School or Record", (await words(t.page)).join(" · ") === "Today · Matches · Squad · Logistics"
+       && await tid(t.page, "nav-staff").count() === 0 && await tid(t.page, "nav-record").count() === 0, (await words(t.page)).join(" · "));
+    await tap(t.page, "nav-logistics", 2500);
+    ok("...and the lift purge is drawn for him on Logistics, Transport", await pageNow(t.page) === "logistics" && await tid(t.page, "logistics-lift-purge").count() === 1);
+    ok("...no console errors", t.errors.length === 0, t.errors.join(" | "));
+    await t.ctx.close();
+    const co = await open();
+    await signIn(co.page, "coach@example.invalid");
+    await tap(co.page, "nav-logistics", 2000);
+    ok("a coach's Transport has no lift purge (no transport.lift.oversee)", await tid(co.page, "logistics-lift-purge").count() === 0);
+    await co.ctx.close();
   }
 
   group("2. The School and Platform homes, each section under its own gate");

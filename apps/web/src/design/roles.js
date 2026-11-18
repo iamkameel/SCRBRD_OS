@@ -250,7 +250,8 @@ const NAV_CAPABILITY = {
   // who is offered it, and every read inside is the server's, as it was.
   // The school's record: its figures, the names-off and listing switches, the
   // lift policy and purge, who read what. The office's (user.read), and anyone
-  // who acts on a panel in it (NAV_ALSO below), so nobody loses a switch.
+  // who acts on a panel in it (NAV_ALSO below), so nobody loses a switch; the
+  // lift purge's holders find it on Logistics, Transport as well.
   record:        "user.read",
   // The platform's own (the Platform home): schools asking to be added (db/158),
   // an hour's support access at one school, the rain rule's table, and what is
@@ -386,9 +387,10 @@ const NAV_ALSO = {
   training: "team.training.run",
   // The school's record (Slice 6): the panels it carries are each drawn under
   // their own capability; whoever holds one is offered the section, so the
-  // move out of Settings takes no switch from anybody (the transport
-  // coordinator's lift purge, transport.lift.oversee, among them).
-  record: Object.freeze(["broadcast.publish", "transport.lift.policy", "transport.lift.oversee", "audit.read"]),
+  // move out of Settings takes no switch from anybody. The lift purge
+  // (transport.lift.oversee) is on Logistics, Transport too (review SF4), which
+  // every holder of it reaches, so the transport coordinator keeps §1.8's menu.
+  record: Object.freeze(["broadcast.publish", "transport.lift.policy", "audit.read"]),
 };
 /** The capabilities NAV_ALSO adds for destination `k` (none, one or several). @param {string} k @returns {string[]} */
 const navAlso = (k) => (Object.hasOwn(NAV_ALSO, k) ? [NAV_ALSO[k]].flat() : []);
