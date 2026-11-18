@@ -18,7 +18,8 @@ import {
 import { asLink } from "../src/lib/live.js";
 import { todoOf, countWords } from "../src/lib/todo.js";
 import { tenantWords } from "../src/lib/words.js";
-import { ChildSwitcher, stateWords } from "../src/views/family/parts.jsx";
+import { ChildSwitcher, answerVerb, isHisRow, stateWords } from "../src/views/family/parts.jsx";
+import { basisWords } from "../src/lib/compare.js";
 import { ScorecardTab } from "../src/views/matchcentre/scorecard.jsx";
 import { AnalyticsTab } from "../src/views/matchcentre/tabs.jsx";
 import {
@@ -458,6 +459,43 @@ group("SCRBRD-138 phase B: THE PLAN block and C1's line");
      && card(plan).indexOf("captain-card-side") < card(plan).indexOf("captain-card-plan"));
   ok("...and no line, and no place held for one, without a plan", !/captain-card-plan|plan/i.test(card(null)) && card(null) === card(undefined));
   ok("...the line names no player and passes the never-words", !/Naidoo|Smith/.test(card(plan)) && !NEVER_ON_THE_TAB.test(planLine(plan)));
+}
+
+group("Q16's exception: a pupil outside the pupil's app keeps his consent in Settings → Me");
+{
+  const { keepsConsentInSettings } = await import("../src/lib/family.js");
+  ok("a pupil who also coaches (no pupil persona) keeps it", keepsConsentInSettings([{ role: "player" }, { role: "selfaccess" }, { role: "coach" }], null));
+  ok("...so does one with only his own record", keepsConsentInSettings([{ role: "selfaccess" }, { role: "teammanager" }], null));
+  ok("the pupil in his own app does not: his Me has it", !keepsConsentInSettings([{ role: "player" }, { role: "selfaccess" }], "pupil"));
+  ok("a parent, or a coach, does not", !keepsConsentInSettings([{ role: "guardian" }], "family") && !keepsConsentInSettings([{ role: "coach" }], null));
+}
+
+group("C16: the button says Answer until there is an answer");
+{
+  ok("no answer: Answer", answerVerb(null) === "Answer");
+  ok("asked to reconfirm: Answer", answerVerb("needs_reconfirming") === "Answer");
+  ok("answered: Change", ["available", "doubtful", "unavailable"].every((s) => answerVerb(s) === "Change"));
+  ok("not known yet: neither", answerVerb(undefined) === "Open the fixture");
+  ok("'No answer yet' is still the state's word", stateWords(null).word === "No answer yet");
+}
+
+group("Q10 (Kameel, 15 Nov): the eleven, her child's row marked");
+{
+  const kid = { id: "p1", name: "R Pillay" };
+  const rows = [{ side: "home", battingNo: 3, twelfth: false, name: "T Bekker" }, { side: "home", battingNo: 4, twelfth: false, name: "R Pillay" },
+                { side: "home", battingNo: null, twelfth: true, name: "R Pillay" }];
+  ok("his row by his own place on the sheet", rows.filter((r) => isHisRow(r, kid, { battingNo: 4 })).length === 1 && isHisRow(rows[1], kid, { battingNo: 4 }));
+  ok("...the twelfth man by the mark and his name", rows.filter((r) => isHisRow(r, kid, { twelfth: true })).length === 1 && isHisRow(rows[2], kid, { twelfth: true }));
+  ok("...another boy's row is never his", !isHisRow(rows[0], kid, { battingNo: 4 }) && !isHisRow(rows[0], kid, null));
+}
+
+group("Q12: the passport board's source line (§3.4)");
+{
+  ok("the counts are always said", basisWords({ innings: 1, ballsFaced: 3, ballsBowled: 0, bookInnings: 0, inningsWithoutBalls: 0 })
+     === "From 1 innings: 3 balls faced, 0 balls bowled.");
+  ok("a scorebook innings is said, with what it lacks", basisWords({ innings: 14, ballsFaced: 212, ballsBowled: 96, bookInnings: 2, inningsWithoutBalls: 2 })
+     === "From 14 innings: 212 balls faced, 96 balls bowled. 2 of 14 innings from a scorebook; 2 have no balls recorded.");
+  ok("no career row: no line", basisWords(null) === null);
 }
 
 console.log(`\n${"─".repeat(52)}\nFAMILY APPS: ${pass} passed, ${fail} failed`);

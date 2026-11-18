@@ -39,6 +39,7 @@
  */
 import { MIN_BALLS_FACED } from "@scrbrd/scoring";
 import { isoDay } from "./sourceWords.js";
+import { childAverage, childRate } from "./compare.js";
 
 /** The innings a season needs before the line is drawn (Q12): a rolling five needs a sixth to make two points. */
 export const MIN_INNINGS = 6;
@@ -142,7 +143,8 @@ export function seasonFigures(points) {
     average: dismissals > 0 ? round1(runs / dismissals) : null,
     // Over the innings whose balls are recorded, runs and balls both.
     strikeRate: ballsKnown > 0 ? Math.round((100 * runsKnown) / ballsKnown) : null,
-    ballsFaced: ballsKnown,
+    // Null when no innings recorded its balls (SCRBRD-120 D12): never 0.
+    ballsFaced: known.length ? ballsKnown : null,
     bookInnings: book.length,
     bookNoBalls: book.filter((p) => p.balls == null).length,
   };
@@ -218,6 +220,14 @@ export function trendNotes(points, { self = false, current = true } = {}) {
   return out;
 }
 
+/** A rate as the panel draws it (Q12): the figure from thirty balls faced, else the count and the word. */
+const floored = (v, balls) => { const r = childRate(v, balls); return r.held ? r.text : v; };
+/** The season's average as the panel draws it (Kameel, 16 Nov): with its innings and dismissals where balls were not recorded. */
+const averaged = (f) => {
+  const r = childAverage(f.average, { balls: f.ballsFaced, innings: f.innings, dismissals: f.dismissals, withoutBalls: f.bookNoBalls });
+  return r.held || /balls not recorded/.test(r.text) ? r.text : f.average;
+};
+
 /**
  * The spoken summary (GA-I31): what the chart shows, in one short paragraph,
  * for a screen reader. The same figures the chart and its table draw; no
@@ -231,7 +241,7 @@ export function spokenSummary({ who, season, points, self = false, current = tru
   const st = lineState(points, { self });
   const parts = [
     `${who}, the ${season} school season: ${f.innings} innings, ${f.runs} run${f.runs === 1 ? "" : "s"}, ${f.notOuts} not out.`,
-    `Average ${f.average == null ? `none${current ? " yet" : ""}, no dismissal` : f.average}. Strike rate ${f.strikeRate == null ? "none, no balls recorded" : f.strikeRate}.`,
+    `Average ${f.average == null ? `none${current ? " yet" : ""}, no dismissal` : averaged(f)}. Strike rate ${f.strikeRate == null ? "none, no balls recorded" : floored(f.strikeRate, f.ballsFaced)}.`,
     `Runs in each innings, in order: ${points.map((p) => `${p.runs}${p.out ? "" : " not out"}`).join(", ")}.`,
   ];
   if (st.draw) {

@@ -19,6 +19,7 @@ import { Sourced } from "../ui/sourced.jsx";
 import { SRC_BALLS, SRC_RECORD, WINDOW_ALL, dateWindow } from "../lib/sourceWords.js";
 import { MIN_BALLS_BOWLED, MIN_BALLS_FACED } from "@scrbrd/scoring";
 import { SealMark } from "../ui/sealMark.jsx";
+import { rowRate } from "../lib/compare.js";
 import { honourWords, isSealed, isWithdrawn, provenanceOf } from "../lib/recognitionWords.js";
 
 // ══════════════════════════════════════════════════════
@@ -181,10 +182,11 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
             <>
               {/* Season stats row */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(90px,1fr))",gap:"8px",marginBottom:"18px"}}>
-                {p.avg>0&&<StatBox label="Batting Avg" value={p.avg} color={p.avg>=40?D.emerald:p.avg>=25?D.sky:D.amber} big/>}
-                {p.sr>0&&<StatBox label="Strike Rate" value={p.sr} color={p.sr>=130?D.emerald:p.sr>=100?D.sky:D.amber} big/>}
+                {/* Q12: a child's rate only from thirty balls; under that, the count and "a guide, not a figure". The count is always said. */}
+                {p.avg>0&&(()=>{const r=rowRate(p,"avg");return <StatBox label="Batting Avg" value={r.held?"—":r.text} sub={r.held?r.text:r.count} color={r.held?D.textMuted:p.avg>=40?D.emerald:p.avg>=25?D.sky:D.amber} big/>;})()}
+                {p.sr>0&&(()=>{const r=rowRate(p,"sr");return <StatBox label="Strike Rate" value={r.held?"—":r.text} sub={r.held?r.text:r.count} color={r.held?D.textMuted:p.sr>=130?D.emerald:p.sr>=100?D.sky:D.amber} big/>;})()}
                 {p.wkts>0&&<StatBox label="Wickets" value={p.wkts} color={p.wkts>=15?D.rose:D.violet} big/>}
-                {p.econ>0&&<StatBox label="Economy" value={p.econ} color={D.sky} big/>}
+                {p.econ>0&&(()=>{const r=rowRate(p,"econ");return <StatBox label="Economy" value={r.held?"—":r.text} sub={r.held?r.text:r.count} color={r.held?D.textMuted:D.sky} big/>;})()}
                 {p.careerTotals?.innings&&<StatBox label="Innings" value={p.careerTotals.innings} big/>}
                 {p.careerTotals?.runs&&<StatBox label="Career Runs" value={p.careerTotals.runs} color={D.sky} big/>}
                 {p.careerTotals?.hs&&<StatBox label="High Score" value={p.careerTotals.hs} color={D.amber} big/>}
@@ -270,8 +272,8 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     ["High Score",   p.careerTotals?.hs||"—"],
                     ["Fifties",      p.careerTotals?.fifties||0],
                     ["Hundreds",     p.careerTotals?.hundreds||0],
-                    ["Batting Avg",  stat(p.avg)],
-                    ["Strike Rate",  stat(p.sr)],
+                    ["Batting Avg",  rowRate(p,"avg").text],
+                    ["Strike Rate",  rowRate(p,"sr").text],
                     // Live figures only (the demo rows carry none of these). A
                     // count a scorebook did not record is a dash, never 0, and a
                     // boundary count is "at least N" when an innings left it out.
@@ -311,7 +313,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     {[
                       ["Career Wickets", p.careerTotals?.wktsTotal||"—"],
                       ["Season Wickets", p.wkts],
-                      ["Economy Rate",   stat(p.econ)],
+                      ["Economy Rate",   rowRate(p,"econ").text],
                       ["Balls Bowled",   p.careerTotals?.balls||"—"],
                       ...(p.live?[
                         ["Wides",    atLeast(p.wides,p.bowlingWithoutExtras>0)],

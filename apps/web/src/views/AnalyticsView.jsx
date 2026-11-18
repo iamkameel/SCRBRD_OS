@@ -1,7 +1,7 @@
 
 import { useState } from "react";
 import { D, px, textOn, themed } from "../design/tokens.js";
-import { fitnessColor, stat } from "../lib/format.js";
+import { fitnessColor } from "../lib/format.js";
 import { Avatar, Badge, Card, EmptyState, ProgressBar, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { SourceLine } from "../ui/sourceLine.jsx";
 import { SeasonBars } from "./seasonbars.jsx";
@@ -15,6 +15,13 @@ import { Metric, MetricGroup, dash } from "../ui/data.jsx";
 import { heldTeams } from "../lib/held.js";
 import { pickTeam, teamsOf } from "../lib/teamContext.js";
 import { Compare } from "./compare.jsx";
+import { heldOutLine, rankable, rowRate } from "../lib/compare.js";
+
+/** The floor's line under a ranking (Q12), when it left anybody out. */
+const HeldOut = ({ rows, kind, testid }) => {
+  const line = heldOutLine(rows, kind);
+  return line ? <div data-testid={testid} style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted, marginTop: "6px" }}>{line}</div> : null;
+};
 
 // ══════════════════════════════════════════════════════
 //  ANALYTICS VIEW  — upgraded
@@ -106,13 +113,15 @@ function AnalyticsView({ role }) {
           <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px",marginBottom:"14px"}}>
             <Card sx={{padding:"16px"}}>
               <BarChart label="Batting Averages"
-                data={players.filter(p=>p.avg>0).sort((a,b)=>b.avg-a.avg).slice(0,7).map(p=>({l:p.name.split(" ").pop().slice(0,7),v:p.avg}))}
+                data={players.filter(p=>p.avg>0&&rankable(p,"avg")).sort((a,b)=>b.avg-a.avg).slice(0,7).map(p=>({l:p.name.split(" ").pop().slice(0,7),v:p.avg}))}
                 colorFn={v=>v>=40?D.emerald:v>=25?D.sky:D.amber}/>
+              <HeldOut rows={players.filter(p=>p.avg>0)} kind="avg" testid="analytics-held-avg"/>
             </Card>
             <Card sx={{padding:"16px"}}>
               <BarChart label="Strike Rates"
-                data={players.filter(p=>p.sr>0).sort((a,b)=>b.sr-a.sr).slice(0,7).map(p=>({l:p.name.split(" ").pop().slice(0,7),v:p.sr}))}
+                data={players.filter(p=>p.sr>0&&rankable(p,"sr")).sort((a,b)=>b.sr-a.sr).slice(0,7).map(p=>({l:p.name.split(" ").pop().slice(0,7),v:p.sr}))}
                 maxVal={200} colorFn={v=>v>=130?D.emerald:v>=100?D.sky:D.orange}/>
+              <HeldOut rows={players.filter(p=>p.sr>0)} kind="sr" testid="analytics-held-sr"/>
             </Card>
             <Card sx={{padding:"16px"}}>
               <BarChart label="Wickets Taken"
@@ -121,8 +130,9 @@ function AnalyticsView({ role }) {
             </Card>
             <Card sx={{padding:"16px"}}>
               <BarChart label="Bowling Economy"
-                data={players.filter(p=>p.econ>0).sort((a,b)=>a.econ-b.econ).slice(0,7).map(p=>({l:p.name.split(" ").pop().slice(0,7),v:p.econ}))}
+                data={players.filter(p=>p.econ>0&&rankable(p,"econ")).sort((a,b)=>a.econ-b.econ).slice(0,7).map(p=>({l:p.name.split(" ").pop().slice(0,7),v:p.econ}))}
                 maxVal={12} colorFn={v=>v<=6.5?D.emerald:v<=8?D.amber:D.rose}/>
+              <HeldOut rows={players.filter(p=>p.econ>0)} kind="econ" testid="analytics-held-econ"/>
             </Card>
           </div>
         </>
@@ -175,10 +185,10 @@ function AnalyticsView({ role }) {
                       </td>
                       <td style={{padding:"10px 12px",textAlign:"center"}}><Badge color={rCol}>{p.role}</Badge></td>
                       <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:p.batHand==="L"?D.amber:D.sky}}>{p.batHand}HB</td>
-                      <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",fontWeight:500,color:p.avg>=40?D.emerald:p.avg>=25?D.sky:D.amber}}>{p.avg}</td>
-                      <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:p.sr>=130?D.emerald:p.sr>=100?D.sky:D.amber}}>{stat(p.sr)}</td>
+                      <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",fontWeight:500,color:rowRate(p,"avg").held?D.textMuted:p.avg>=40?D.emerald:p.avg>=25?D.sky:D.amber}}>{rowRate(p,"avg").text}</td>
+                      <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:rowRate(p,"sr").held?D.textMuted:p.sr>=130?D.emerald:p.sr>=100?D.sky:D.amber}}>{rowRate(p,"sr").text}</td>
                       <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:p.wkts>=15?D.rose:p.wkts>=8?D.violet:D.textMuted}}>{p.wkts||"—"}</td>
-                      <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:p.econ&&p.econ<=6.5?D.emerald:p.econ&&p.econ<=8?D.amber:p.econ?D.rose:D.textMuted}}>{p.econ||"—"}</td>
+                      <td style={{padding:"10px 12px",textAlign:"center",fontFamily:D.mono,fontSize:"12px",color:rowRate(p,"econ").held?D.textMuted:p.econ&&p.econ<=6.5?D.emerald:p.econ&&p.econ<=8?D.amber:p.econ?D.rose:D.textMuted}}>{p.econ?rowRate(p,"econ").text:"—"}</td>
                       <td style={{padding:"10px 12px"}}>
                         {/* A boy with no career row (he has not batted in a
                             recorded match) has no form guide at all:

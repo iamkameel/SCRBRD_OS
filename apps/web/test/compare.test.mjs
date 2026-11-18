@@ -23,7 +23,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import {
   COMPARE_FIELDS, COMPARE_FLOOR, NEVER_COMPARED, battingRows, belowFloor, bowlingRows, bySide, compareScopes,
-  evidenceWord, floorRate, pickable, project, sharedSeasons, teamMates, typeRows,
+  childRate, childAverage, careerAverage, rowRate, rankable, heldOutLine, evidenceWord, floorRate, pickable, project, sharedSeasons, teamMates, typeRows,
 } from "../src/lib/compare.js";
 import { asCareer, asSeasonCareer } from "../src/lib/live.js";
 import { RESTRICTED_FIELDS } from "../../../services/api/read/read-api.mjs";
@@ -170,6 +170,62 @@ group("Nothing kept (D9), no verdict (D3), and only the four reads (D1)");
   // The family app's files, the pupil's own aside: a parent's screens are these.
   const famFiles = readdirSync(new URL("../src/views/family/", import.meta.url)).filter((f) => /\.jsx?$/.test(f) && f !== "pupil.jsx");
   ok("the parent's app draws none (D11)", famFiles.length > 5 && famFiles.every((f) => !/<Compare\b|compare\.jsx/.test(read(`../src/views/family/${f}`))), famFiles.join());
+}
+
+group("Q12: the floor on every child's rate, the count always (EXPERIENCE_PASS, decided 13 Nov)");
+{
+  const three = childRate(12, 3), eight = childRate(64, 8), at30 = childRate(41.5, 30), none = childRate(null, null), zero = childRate(null, 0);
+  ok("three balls: no figure, '3 balls: a guide, not a figure'", three.held && three.text === "3 balls: a guide, not a figure" && three.count === "3 balls", three);
+  ok("eight balls: the decided words, word for word", eight.text === "8 balls: a guide, not a figure", eight);
+  ok("one ball: singular", childRate(5, 1).text === "1 ball: a guide, not a figure");
+  ok("at the floor the figure is drawn as the adapter made it, with its count", !at30.held && at30.text === "41.5" && at30.count === "30 balls", at30);
+  ok("over the floor with no rate (never out): a dash, the count still said", childRate(null, 40).text === "—" && childRate(null, 40).count === "40 balls");
+  ok("a count the scorebook did not record is said so, never 0", none.held && none.text === "balls not recorded", none);
+  ok("no balls at all: the count, and no guide about nothing", zero.held && zero.text === "0 balls", zero);
+  ok("the floor is Compare's own, not a copy", /childRate\(value, balls\)[\s\S]*n < COMPARE_FLOOR/.test(read("../src/lib/compare.js")));
+  const fam = ["views/family/pupil.jsx", "views/family/cards.jsx", "views/family/captain.jsx", "views/seasontrend.jsx", "lib/seasonTrend.js"];
+  ok("every family screen that draws a child's rate draws it through childRate or its average", fam.every((f) => /childRate\(|childAverage\(|careerAverage\(/.test(read(`../src/${f}`))), fam.join());
+  // The staff player page (Q12 everywhere): a live row through the floor, on the balls each rate rests on.
+  const live = { live: true, avg: 64, sr: 120, econ: 5.5, bowlAvg: 22, ballsFaced: 8, ballsBowled: 60 };
+  ok("the staff page: 8 balls faced, the average and strike rate are a guide", rowRate(live, "avg").text === "8 balls: a guide, not a figure"
+     && rowRate(live, "sr").held && rowRate(live, "sr").count === "8 balls");
+  ok("...his economy rests on 60 balls bowled, drawn with its count", rowRate(live, "econ").text === "5.5" && rowRate(live, "econ").count === "60 balls"
+     && rowRate(live, "bowlAvg").text === "22");
+  ok("...a scorebook that recorded no balls: the average with its innings and dismissals (Kameel, 16 Nov)",
+     rowRate({ live: true, avg: 30, innings: 2, dismissals: 2, ballsFaced: null, inningsWithoutBalls: 2 }, "avg").text === "30.00 · 2 inns, 2 out · balls not recorded");
+  ok("...and its strike rate is still held: no denominator", rowRate({ live: true, sr: 90, ballsFaced: null }, "sr").text === "balls not recorded" && rowRate({ live: true, sr: 90, ballsFaced: null }, "sr").held);
+  ok("...the demonstration's rows, with no ball count, as they are", rowRate({ avg: 41.2 }, "avg").text === "41.2" && rowRate({}, "econ").text === "—");
+  // Rankings (review S5): a held rate ranks nobody, and the screen says how many it left out.
+  const boys = [{ live: true, avg: 64, ballsFaced: 1 }, { live: true, avg: 30, ballsFaced: 200 }, { live: true, avg: 22, ballsFaced: 31 }];
+  ok("a boy on one ball is not rankable; on thirty-one he is", !rankable(boys[0], "avg") && rankable(boys[2], "avg"));
+  ok("...so he cannot top an average chart", boys.filter((p) => rankable(p, "avg")).sort((a, b) => b.avg - a.avg)[0].avg === 30);
+  ok("...and the line says so, in the decided words", heldOutLine(boys, "avg") === "1 left out: under 30 balls a rate is a guide, not a figure." && heldOutLine(boys.slice(1), "avg") === null);
+  const staff = ["SquadView", "AnalyticsView", "LeagueView", "CompetitionsView", "shared"];
+  ok("Squad, Analytics, League, Competitions and the player card draw rates through rowRate", staff.every((f) => /rowRate\(/.test(read(`../src/views/${f}.jsx`))), staff.join());
+  ok("...and their average rankings ask rankable first", ["AnalyticsView", "LeagueView", "CompetitionsView"].every((f) => /rankable\(p,"avg"\)/.test(read(`../src/views/${f}.jsx`))));
+  ok("ProfilesView draws its rates through rowRate", (read("../src/views/ProfilesView.jsx").match(/rowRate\(p,"(avg|sr|econ)"\)/g) ?? []).length >= 5
+     && !/stat\(p\.(avg|sr|econ)\)/.test(read("../src/views/ProfilesView.jsx")));
+  ok("...and none draws an average with stat() any more", ["views/family/pupil.jsx", "views/family/captain.jsx"].every((f) => !/avg \{?stat\(|stat\([a-z]+\.(avg|sr|econ|bowlAvg)\)/.test(read(`../src/${f}`))));
+}
+
+group("Kameel, 16 Nov: the average where balls are not recorded");
+{
+  // Balls known: the 30-ball floor stands.
+  const known = careerAverage({ avg: 64, innings: 1, dismissals: 1, ballsFaced: 8, inningsWithoutBalls: 0 });
+  ok("balls known, under thirty: held, \"8 balls: a guide, not a figure\"", known.held && known.text === "8 balls: a guide, not a figure", known);
+  ok("balls known, thirty and over: the figure, with its count", careerAverage({ avg: 41.5, innings: 4, dismissals: 2, ballsFaced: 30 }).text === "41.5"
+     && careerAverage({ avg: 41.5, innings: 4, dismissals: 2, ballsFaced: 30 }).count === "30 balls");
+  // Balls unknown: the average with its innings and dismissals, and the note.
+  const none = careerAverage({ avg: 34, innings: 1, dismissals: 1, ballsFaced: null, inningsWithoutBalls: 1 });
+  ok("balls unknown: \"34.00 · 1 inns, 1 out · balls not recorded\", never held", !none.held && none.text === "34.00 · 1 inns, 1 out · balls not recorded", none);
+  ok("...with no dismissal, no figure but still its counts", childAverage(null, { innings: 2, dismissals: 0 }).text === "— · 2 inns, 0 out · balls not recorded");
+  // Partial: some innings with balls, some without. Under thirty recorded, but not every innings has balls: drawn, not held.
+  const part = careerAverage({ avg: 22.5, innings: 3, dismissals: 2, ballsFaced: 12, inningsWithoutBalls: 1 });
+  ok("partial (12 balls recorded, 1 innings without): drawn with its counts, not over-held", !part.held && part.text === "22.50 · 3 inns, 2 out · balls not recorded", part);
+  ok("...and every innings with balls, 12 of them: held", careerAverage({ avg: 22.5, innings: 3, dismissals: 2, ballsFaced: 12, inningsWithoutBalls: 0 }).held);
+  ok("...the strike rate is held when no ball is recorded; where some are, it rests on those balls, under the floor",
+     childRate(150, null).held && rowRate({ live: true, sr: 150, ballsFaced: null }, "sr").text === "balls not recorded"
+     && rowRate({ live: true, sr: 150, ballsFaced: 12, inningsWithoutBalls: 1 }, "sr").text === "12 balls: a guide, not a figure");
 }
 
 console.log(`\n${"─".repeat(52)}\nCOMPARE: ${pass} passed, ${fail} failed`);

@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useId, useState } from "react";
-import { ROLES } from "../design/roles.js";
+import { PERSONA_NAV, ROLES } from "../design/roles.js";
 import { T, clr } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
@@ -13,9 +13,14 @@ import { AskSchool, AskSchoolLink, SchoolAskRows } from "./schoolAsk.jsx";
 // The follow list (EXPERIENCE_PASS Q8, slice 3b; db/160): the Followed schools block.
 import { useFollowed } from "../lib/follow.js";
 import { FollowedSchools } from "../follow/Followed.jsx";
+import { useNotifications } from "../lib/notifications.js";
+import { linkWords } from "../lib/linkWords.js";
 
 // "Start a match", what this phone holds, and the last match's plain record
 // (views/ScoringBlock.jsx): fetched with the screen, in a chunk of its own.
+// Q15: the terms, for a parent waiting on the office. Their own chunk, loaded only when she is waiting,
+// so the no-school home (and its signed-out screen) loads no faster or slower for anybody else.
+const WaitingTerms = lazy(() => import("../views/terms.jsx").then((m) => ({ default: m.WaitingTerms })));
 const ScoringBlock = lazy(() => import("../views/ScoringBlock.jsx").then((m) => ({ default: m.ScoringBlock })));
 
 // ══════════════════════════════════════════════════════
@@ -287,7 +292,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
             <input id={id} value={form.year} maxLength={YEAR_MAX} onChange={(e) => set("year", e.target.value)} style={input()} autoComplete="off"/>)}</Field>
           {/* SCRBRD-092 / SCRBRD-110 §7: health monitoring is a separate yes, given later. */}
           <div role="note" data-testid="join-health-note" style={{ ...text(13), padding: "12px 14px", borderRadius: "10px", border: `1px solid ${T.line.normal}`, background: T.surface.base, marginBottom: "14px" }}>
-            <strong style={{ color: T.content.primary }}>Health monitoring is separate, and off.</strong> It is not part of joining. Once the school has checked that you are your child's parent, you can turn it on, or leave it off, under Settings, Me.
+            <strong style={{ color: T.content.primary }}>Health monitoring is separate, and off.</strong> It is not part of joining. Once the school has checked that you are your child's parent, you can turn it on, or leave it off, on your child's file under Family.
           </div>
         </div>
       )}
@@ -338,6 +343,33 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
  * (slice 3b, Q8) leads while one of its schools is live, and sits after Now
  * otherwise. An empty section says in one line what will appear there.
  */
+/** db/161's title (school_answered_words()): the one notice this block draws. */
+export const ANSWERED_TITLE = "The school has answered your request";
+
+/**
+ * The office's answer to her request (Q15, db/161): "The school has answered
+ * your request", the same words for a yes and a no. Her requests list above
+ * says which. That notice alone, unread; any other notice of hers is the
+ * Notices screen's. "Mark as read" marks the ones shown, and nothing else.
+ */
+function AnsweredNotices() {
+  const { rows, open } = useNotifications("spectator");
+  const unread = rows.filter((n) => n.type === "system" && n.title === ANSWERED_TITLE && !n.read);
+  if (!unread.length) return null;
+  const markAll = async () => { for (const n of unread) await open(n.id); };
+  return (
+    <div data-testid="no-school-notices" role="status" style={{ marginTop: "8px", padding: "12px 14px", border: `1px solid ${T.line.normal}`, borderRadius: "12px", background: T.fill.panel }}>
+      {unread.map((n) => (
+        <div key={n.id} data-testid="no-school-notice" style={{ marginBottom: "8px" }}>
+          <div style={{ ...text(14, T.content.primary), fontWeight: 600 }}>{n.title}</div>
+          {n.body && <div style={text(13, T.content.secondary)}>{n.body}</div>}
+        </div>
+      ))}
+      <Btn onClick={() => { void markAll(); }} data-testid="no-school-notices-read">Mark as read</Btn>
+    </div>
+  );
+}
+
 export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOpenPad = null, joinFirst = 0, kindFirst = null }) {
   const [nudge, setNudge] = useState(0);
   const asked = useLive("role_requests", "spectator", nudge);
@@ -345,6 +377,15 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
   // Q22 (db/158): the person's own notes asking SCRBRD to add a school, and the note's form when open.
   const schoolAsks = useLive("school_add_requests", "spectator", nudge);
   const askRows = schoolAsks.rows.filter((r) => r.mine);
+  // Q15: her own requests to be linked to a child, still with the office (lib/family.js pendingWords's
+  // rule, said here without importing it: that module draws the match centre and the scoring package
+  // into this screen's first load, which a slow phone feels before the sign-in screen appears).
+  const waiting = rows.filter((r) => r.mine && r.state === "pending" && PERSONA_NAV.family.roles.includes(r.role));
+  // Red-team S4: a link the office set up itself (an offline form) and ended, or did not verify, has no
+  // request on the list above; with her role gone with it she is here, and her answered notice must point at
+  // something. Her own links, in Family's words (lib/familyLinks' rule, my_links), are said here too.
+  const linksRead = useLive("my_links", "spectator", nudge);
+  const linkLines = linkWords(linksRead.rows, Date.now()).filter((l) => l.kind !== "pending");
   const [askSchool, setAskSchool] = useState(null);
   const [schools, setSchools] = useState(null);
   const me = profile()?.user;
@@ -422,7 +463,7 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
         <div style={{ marginBottom: "16px" }} data-testid="no-school-requests">
             <h2 style={{ margin: "0 0 8px", fontFamily: FONT.head, fontSize: "16px", fontWeight: 800, color: T.content.primary }}>Your requests</h2>
             {withdrawProblem && <div role="alert" data-testid="withdraw-problem" style={{ ...text(13, T.semantic.criticalText), padding: "10px 12px", borderRadius: "8px", background: clr(T.semantic.critical, 0.1), border: `1px solid ${clr(T.semantic.critical, 0.2)}`, marginBottom: "8px" }}>{withdrawProblem}</div>}
-            {rows.length === 0 && askRows.length === 0 && !asked.loading && !schoolAsks.loading && <div data-testid="no-school-requests-none" style={text(14)}>A request you send to a school shows here, with the school's answer.</div>}
+            {rows.length === 0 && askRows.length === 0 && linkLines.length === 0 && !asked.loading && !schoolAsks.loading && <div data-testid="no-school-requests-none" style={text(14)}>A request you send to a school shows here, with the school's answer.</div>}
             {rows.map((r) => (
               <div key={r.id} data-testid={`request-${r.state}`} style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", padding: "12px 14px", border: `1px solid ${T.line.normal}`, borderRadius: "12px", background: T.fill.panel, marginBottom: "8px" }}>
                 <div style={{ flex: 1, minWidth: "180px" }}>
@@ -433,6 +474,21 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
               </div>
             ))}
             <SchoolAskRows rows={askRows}/>
+            {linkLines.map((l) => (
+              <div key={l.id} data-testid="no-school-link" data-kind={l.kind} style={{ padding: "12px 14px", border: `1px solid ${T.line.normal}`, borderRadius: "12px", background: T.fill.panel, marginBottom: "8px", ...text(14, T.content.primary) }}>
+                {l.words}
+              </div>
+            ))}
+            {/* Q15: waiting to be linked to a child, she may read the school's terms now; agreeing comes after the office checks. */}
+            {/* One per school she is waiting on: each school's terms name its own contact. */}
+            {[...new Map(waiting.map((w) => rows.find((r) => r.id === w.id)).filter(Boolean)
+                .map((r) => [r.school ?? r.schoolName, r.schoolName ?? null])).entries()].map(([k, schoolName]) => (
+              <div key={String(k)} style={{ marginTop: "8px" }}>
+                <Suspense fallback={null}><WaitingTerms schoolName={schoolName}/></Suspense>
+              </div>
+            ))}
+            {/* Q15: the office's answer, said in a notice with the same words for yes and no; the list above says which. */}
+            <AnsweredNotices/>
         </div>
 
         <HelpLine/>

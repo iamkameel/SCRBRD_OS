@@ -347,7 +347,7 @@ try {
     // line, which stays first.
     const rows = (await s.page.locator('[data-testid="side-sheet-row"]').allInnerTexts().catch(() => [])).map((r) => r.replace(/\s+/g, " ").trim());
     ok("...in batting order, from the sheet read, under his own line",
-       rows.join(" | ") === "1 James Whitfield | 2 T Bekker | 3 S Naidoo | 4 R Pillay"
+       rows.join(" | ") === "1 James Whitfield | 2 T Bekker | 3 S Naidoo | 4 R Pillay · you"
        && asked.some((p) => p === `/api/matches/${NEXT}/sheet`)
        && /You're in the side · batting 4/.test(await inner(s.page, "teamsheet-line")), rows.join(" | "));
   }

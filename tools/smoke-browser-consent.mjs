@@ -11,7 +11,8 @@
  *      same endpoint as the switch. "Not now" hides it on that device only
  *      and it is back on another; a yes records her answer and the card
  *      goes everywhere; a no records a refusal and the card goes too.
- *   1. SETTINGS → ME. A parent finds "Health monitoring" with her son's row,
+ *   1. HIS FILE UNDER FAMILY (Q16, decided 13 Nov: moved from Settings →
+ *      Me, nothing else changed). A parent finds "Health monitoring" with her son's row,
  *      off and unanswered; turns it on with one switch and the database holds
  *      her yes; turning it off asks first, in words, and the database holds
  *      the withdrawal.
@@ -130,6 +131,27 @@ async function signIn(page, email) {
   // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
   return /Match Centre|Dashboard/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
+/**
+ * His file under Family, its Consents open (EXPERIENCE_PASS Q16, decided 13
+ * Nov): the one-time card sits on his card, the switch inside Consents.
+ */
+async function toChildFile(page, child) {
+  const l = tid(page, "nav-family").first();
+  if (!(await l.count())) return false;
+  try { await l.click({ timeout: 6000 }); } catch { return false; }
+  try { await tid(page, `family-open-consents-${child}`).click({ timeout: 8000 }); } catch { return false; }
+  await afterReads(page, 1500);
+  return true;
+}
+/** The pupil's own Me (Q16): his eighteen card and his own row. */
+async function toMine(page) {
+  const l = tid(page, "nav-me").first();
+  if (!(await l.count())) return false;
+  try { await l.click({ timeout: 6000 }); } catch { return false; }
+  await afterReads(page, 1500);
+  return (await tid(page, "pupil-me").count()) === 1;
+}
+/** Settings → Me, which no longer draws health monitoring for anybody. */
 async function toMe(page) {
   const l = tid(page, "nav-settings").first();
   if (!(await l.count())) return false;
@@ -203,7 +225,7 @@ try {
   group("The one-time card, once her link to him is verified");
   const first = await open();
   ok("the parent signs in", await signIn(first.page, "parent@example.invalid"));
-  ok("Settings → Me opens", await toMe(first.page));
+  ok("his file under Family opens", await toChildFile(first.page, PILLAY));
   const promptTitle = await tid(first.page, `health-consent-prompt-${PILLAY}`).innerText().catch(() => "");
   ok("the card asks yes or no for him by name", /Health monitoring for R Pillay: yes or no\?/.test(promptTitle), promptTitle.slice(0, 200));
   await tid(first.page, `health-consent-words-prompt-${PILLAY}`).locator("summary").click();
@@ -221,7 +243,7 @@ try {
 
   const another = await open();
   ok("the same parent, on another device", await signIn(another.page, "parent@example.invalid"));
-  ok("Settings → Me opens", await toMe(another.page));
+  ok("his file under Family opens", await toChildFile(another.page, PILLAY));
   ok("...the card is back: \"Not now\" was this device only",
      (await tid(another.page, `health-consent-prompt-${PILLAY}`).count()) === 1);
   await tid(another.page, `health-consent-prompt-yes-${PILLAY}`).click();
@@ -236,11 +258,11 @@ try {
   await another.ctx.close();
   await resetPillay();
 
-  // ── 1. A parent, on Settings → Me ───────────────────────────────
+  // ── 1. A parent, on his file under Family ───────────────────────
   group("A parent turns health monitoring on, and off");
   const parent = await open();
   ok("the parent signs in", await signIn(parent.page, "parent@example.invalid"));
-  ok("Settings → Me opens", await toMe(parent.page));
+  ok("his file under Family opens", await toChildFile(parent.page, PILLAY));
   ok("Health monitoring is drawn for her", (await tid(parent.page, "health-consent-section").count()) === 1);
   const sw = tid(parent.page, `health-consent-switch-${PILLAY}`);
   ok("R Pillay's row is off, and nobody has answered",
@@ -284,7 +306,7 @@ try {
   group("No records a refusal, and the card goes");
   const declines = await open();
   ok("the parent signs in", await signIn(declines.page, "parent@example.invalid"));
-  ok("Settings → Me opens", await toMe(declines.page));
+  ok("his file under Family opens", await toChildFile(declines.page, PILLAY));
   ok("the card is there before she answers", (await tid(declines.page, `health-consent-prompt-${PILLAY}`).count()) === 1);
   await tid(declines.page, `health-consent-prompt-no-${PILLAY}`).click();
   await afterReads(declines.page, 1500);
@@ -304,7 +326,7 @@ try {
   await moduleOn(false);
   const off1 = await open();
   ok("the parent signs in", await signIn(off1.page, "parent@example.invalid"));
-  ok("Settings → Me opens", await toMe(off1.page));
+  ok("his file under Family opens", await toChildFile(off1.page, PILLAY));
   ok("no Health monitoring section and no one-time card",
      (await tid(off1.page, "health-consent-section").count()) === 0
      && (await tid(off1.page, `health-consent-prompt-${PILLAY}`).count()) === 0);
@@ -313,7 +335,7 @@ try {
 
   const off2 = await open();
   ok("Sipho signs in", await signIn(off2.page, "sipho.eighteen@example.invalid"));
-  ok("Settings → Me opens", await toMe(off2.page));
+  ok("his own Me opens", await toMine(off2.page));
   ok("...and no eighteen card, though his mother said yes and he has not answered",
      (await tid(off2.page, "eighteen-card").count()) === 0);
   ok("no page error for him", off2.errors.length === 0, off2.errors.join(" | "));
@@ -322,7 +344,7 @@ try {
   await moduleOn(true);
   const on1 = await open();
   ok("the school switches it back on: the parent signs in", await signIn(on1.page, "parent@example.invalid"));
-  ok("Settings → Me opens", await toMe(on1.page));
+  ok("his file under Family opens", await toChildFile(on1.page, PILLAY));
   ok("the section and the one-time card are back",
      (await tid(on1.page, "health-consent-section").count()) === 1
      && (await tid(on1.page, `health-consent-prompt-${PILLAY}`).count()) === 1);
@@ -331,7 +353,7 @@ try {
 
   const on2 = await open();
   ok("Sipho signs in", await signIn(on2.page, "sipho.eighteen@example.invalid"));
-  ok("Settings → Me opens", await toMe(on2.page));
+  ok("his own Me opens", await toMine(on2.page));
   ok("...and the eighteen card is back too", (await tid(on2.page, "eighteen-card").count()) === 1);
   ok("no page error for him", on2.errors.length === 0, on2.errors.join(" | "));
   await on2.ctx.close();
@@ -340,7 +362,7 @@ try {
   group("He turned eighteen: the card asks him once");
   const sipho = await open();
   ok("Sipho signs in", await signIn(sipho.page, "sipho.eighteen@example.invalid"));
-  ok("Settings → Me opens", await toMe(sipho.page));
+  ok("his own Me opens", await toMine(sipho.page));
   const card = await tid(sipho.page, "eighteen-card").innerText().catch(() => "");
   ok("the card asks whether it is still all right", /You are 18 — is this still all right\?/.test(card), card.slice(0, 200));
   ok("...in today's words: her agreement ended on his birthday (phase 0 flips this)",
@@ -360,6 +382,14 @@ try {
 
   // ── 4. Staff ────────────────────────────────────────────────────
   group("A coach's Me screen draws neither");
+  // And Settings → Me draws it for nobody now (Q16): not the parent who answers on his file.
+  {
+    const s2 = await open();
+    ok("the parent signs in once more", await signIn(s2.page, "parent@example.invalid"));
+    ok("...and her Settings → Me draws no health monitoring", (await toMe(s2.page))
+       && (await tid(s2.page, "health-consent-section").count()) === 0 && (await tid(s2.page, `health-consent-prompt-${PILLAY}`).count()) === 0);
+    await s2.ctx.close();
+  }
   const coach = await open();
   ok("the coach signs in", await signIn(coach.page, "coach@example.invalid"));
   ok("Settings → Me opens", await toMe(coach.page));
@@ -386,7 +416,7 @@ try {
   await tid(signup.page, "join-kind-parent").click({ timeout: 4000 }).catch(() => {});
   await signup.page.waitForTimeout(400);
   const row = await tid(signup.page, "join-health-note").innerText().catch(() => "");
-  ok("the parent's join form shows health monitoring as separate and off", /separate, and off/.test(row) && /under Settings, Me/.test(row), row);
+  ok("the parent's join form shows health monitoring as separate and off", /separate, and off/.test(row) && /on your child's file under Family/.test(row), row);
   ok("...and takes no answer (no switch, no box)",
      (await tid(signup.page, "join-health-note").count()) === 1 && (await tid(signup.page, "join-health-note").locator("button, input").count()) === 0);
   const fs = await floors(signup.page, "join-health-note");
@@ -398,7 +428,7 @@ try {
   group("The section in Daylight");
   const day = await open("daylight");
   ok("the parent signs in again", await signIn(day.page, "parent@example.invalid"));
-  ok("Settings → Me opens in Daylight", await toMe(day.page));
+  ok("his file under Family opens in Daylight", await toChildFile(day.page, PILLAY));
   const theme = await day.page.evaluate(() => document.documentElement.dataset.theme);
   const fl = await floors(day.page, "health-consent-section");
   ok("the theme is Daylight and the page is light", theme === "daylight" && /rgb\((2[0-9]{2}|1[89][0-9]), /.test(fl.bg), `${theme} ${fl.bg}`);

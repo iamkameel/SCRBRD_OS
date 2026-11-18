@@ -8,17 +8,21 @@ import { useLive } from "../lib/live.js";
  *
  * Three pieces, one record:
  *
+ *   WHERE THEY ARE (EXPERIENCE_PASS Q16, decided 13 Nov): on the child's
+ *   file under Family, beside the terms and the public-name switch, for a
+ *   parent; on the pupil's Me for himself. Settings no longer draws them.
+ *   Only the place moved: the wording, the version and every rule stand.
+ *
  *   HealthConsentRow      one child's answer: the wording, where it stands,
- *                         and one switch. The row the sign-up screen
- *                         (SCRBRD-092) draws beside the public-name row when
- *                         that screen exists; today Settings draws it.
- *   HealthConsentSection  Settings → Me: a row per child the signed-in person
- *                         answers for, and his own row (read-only until he is
- *                         eighteen). Nothing at all for staff: the read
- *                         returns them no rows.
- *   EighteenCard          Me: "you are 18 — is this still all right?", asked
- *                         once, from his birthday, when a parent had said yes.
- *   HealthConsentPrompt   Me: the one-time ask, once a guardian's link to a
+ *                         and one switch.
+ *   HealthConsentSection  a row per child the signed-in person answers for,
+ *                         and his own row (read-only until he is eighteen),
+ *                         or the one child `playerId` names. Nothing at all
+ *                         for staff: the read returns them no rows.
+ *   EighteenCard          the pupil's Me: "you are 18 — is this still all
+ *                         right?", asked once, from his birthday, when a
+ *                         parent had said yes.
+ *   HealthConsentPrompt   the child's file: the one-time ask, once a guardian's link to a
  *                         child is verified and nobody has answered for him
  *                         yet (SCRBRD-110 §9.1, Decided 1). Same wording, same
  *                         endpoint as the switch; "Not now" hides it on this
@@ -210,13 +214,14 @@ export function HealthConsentRow({ c, onChanged }) {
  * and `onChanged` are the Me screen's, shared with the eighteen card, so an
  * answer given in either redraws both.
  */
-export function HealthConsentSection({ role, nonce = 0, onChanged }) {
+export function HealthConsentSection({ role, nonce = 0, onChanged, playerId = null, selfOnly = false }) {
   const [nudge, setNudge] = useState(0);
   const { rows } = useLive("consents", role, nonce + nudge);
   // §9.1, Decided 2: hidden per child where that child's school has not
   // switched the module on — `moduleOn !== false` so an older/missing value
-  // reads as on, never off.
-  const health = rows.filter((c) => c.kind === "health" && c.moduleOn !== false);
+  // reads as on, never off. On a child's file, that child alone (Q16).
+  const health = rows.filter((c) => c.kind === "health" && c.moduleOn !== false && (playerId == null || c.playerId === playerId)
+    && (!selfOnly || c.relation === "self"));
   if (!signedIn() || health.length === 0) return null;
   return <HealthConsentCard rows={health} onChanged={() => { setNudge((n) => n + 1); onChanged?.(); }}/>;
 }
@@ -324,13 +329,13 @@ const dismissPrompt = (playerId) => {
  * `state` away from `not_answered`, so the card is gone everywhere, not just
  * on this device. "Not now" only ever removes it from this one screen.
  */
-export function HealthConsentPrompt({ role, nonce = 0, onChanged }) {
+export function HealthConsentPrompt({ role, nonce = 0, onChanged, playerId = null }) {
   const [nudge, setNudge] = useState(0);
   const [busy, setBusy] = useState(null);
   const [said, setSaid] = useState({});
   const { rows } = useLive("consents", role, nonce + nudge);
   const due = rows.filter((c) => c.kind === "health" && c.relation !== "self" && c.state === "not_answered"
-    && c.canSayYes && c.moduleOn !== false && !isPromptDismissed(c.playerId));
+    && c.canSayYes && c.moduleOn !== false && !isPromptDismissed(c.playerId) && (playerId == null || c.playerId === playerId));
   if (!signedIn() || due.length === 0) return null;
   const answer = async (c, yes) => {
     setBusy(c.playerId); setSaid((m) => ({ ...m, [c.playerId]: "" }));

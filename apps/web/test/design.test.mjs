@@ -847,6 +847,14 @@ ok("each persona's bar is a group of its own, so the rail draws one section and 
 // A persona is the SET of roles held, never one badge.
 ok("a guardian, twice over (two schools), is the family persona", personaFor(["guardian", "guardian"]) === "family");
 ok("a player without his own record is not the pupil persona", personaFor(["player"]) === null);
+// EXPERIENCE_PASS Q2 (decided 13 Nov): appointed to score, a pupil or a parent keeps his own app.
+ok("a pupil who also scores keeps the pupil's app: the same four items, no fifth",
+   personaFor(["player", "selfaccess", "scorer"]) === "pupil"
+   && label(navForRoles(["player", "selfaccess", "scorer"])) === "Home · Matches · Passport · Me");
+ok("a parent who also scores keeps the family's app: the same four items",
+   personaFor(["guardian", "scorer"]) === "family" && label(navForRoles(["guardian", "scorer"])) === "Home · Matches · Notices · Family");
+ok("scoring alone is no persona, and a scorer who is also a coach keeps the staff menu",
+   personaFor(["scorer"]) === null && personaFor(["guardian", "scorer", "coach"]) === null && navForRoles(["scorer"]).length > 0);
 ok("a parent who is also staff is not a persona: she keeps the staff menu",
    personaFor(["directorofsport", "coach", "guardian"]) === null && navForRoles(["directorofsport", "coach", "guardian"]).includes("dashboard"));
 ok("...and gains the family's Home and Family beside it, and only those",

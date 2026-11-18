@@ -401,7 +401,9 @@ try {
     ok("...the team sheet: her child's line first ('named, batting 4'), then the side",
        first && /Team sheet: named, batting 4/.test(await ptid("teamsheet-line").first().innerText().catch(() => "")), card);
     ok("...the side by name, in batting order, and nothing else of them",
-       rows.map((r) => r.replace(/\s+/g, " ").trim()).join(" | ") === "1 James Whitfield | 2 T Bekker | 3 S Naidoo | 4 R Pillay", rows.join(" | "));
+       rows.map((r) => r.replace(/\s+/g, " ").trim()).join(" | ") === "1 James Whitfield | 2 T Bekker | 3 S Naidoo | 4 R Pillay · your child", rows.join(" | "));
+    // Q10 (Kameel, 15 Nov: "eleven"): her child's row marked, and no other.
+    ok("...her child's row marked, and only his", (await parent.page.locator('[data-testid="side-sheet-row"][data-his="true"]').count()) === 1);
     ok("...no team-mate's answer, fitness or age on the card", !/injur|rehab|fitness|born|years old|doubtful|unavailable/i.test(card), card);
   }
   await ptid(`availability-set-${PILLAY}-unavailable`).click({ timeout: 4000 }).catch(() => {});
@@ -2720,10 +2722,12 @@ try {
       await c.page.locator("button", { hasText: /^career$/i }).first().click({ timeout: 4000 }).catch(() => {});
       await afterReads(c.page, 1400);
       const fig = async (k) => (await c.page.locator(`[data-testid="career-${k}"]`).first().innerText({ timeout: 3000 }).catch(() => null))?.trim() ?? null;
-      ok("his 34 runs are counted: an average of 34 over his one dismissal", await fig("batting-avg") === "34");
+      // Kameel, 16 Nov: "Show the average with its innings and dismissals, and 'balls not recorded'".
+      ok("his 34 runs are counted: an average of 34 over his one dismissal, with its counts and the note",
+         await fig("batting-avg") === "34.00 · 1 inns, 1 out · balls not recorded", await fig("batting-avg"));
       ok("balls faced is an em dash, not 0", await fig("balls-faced") === "—");
       ok("fours and sixes are em dashes, not 0", await fig("fours") === "—" && await fig("sixes") === "—");
-      ok("the strike rate is an em dash: no ball is recorded to divide by", await fig("strike-rate") === "—");
+      ok("the strike rate is not drawn either: no ball is recorded to divide by", await fig("strike-rate") === "balls not recorded");
       const note = await c.page.locator('[data-testid="career-book-note"]').first().innerText({ timeout: 3000 }).catch(() => "");
       ok("one short note says the figures include a scorebook, and balls are not recorded", /Includes 1 innings from a scorebook; balls not recorded in 1/.test(note));
       const passport = await c.page.locator('[data-testid="passport-card"]').first().innerText({ timeout: 3000 }).catch(() => "");
