@@ -430,7 +430,7 @@ try {
   const runsSaid = await inner(s.page, "passport-runs");
   ok("the board: his 34 runs from the scorebook innings", runsSaid.trim() === "34", `${runsSaid} · ${(await inner(s.page, "passport-board")).replace(/\n/g, " / ")}`);
   const boardSaid = await inner(s.page, "passport-board");
-  ok("...and his average, figures first", /AVG 34/.test(boardSaid), boardSaid.replace(/\n/g, " / "));
+  ok("...and his average, figures first", /Average 34/.test(boardSaid), boardSaid.replace(/\n/g, " / "));
   const seasonSaid = await inner(s.page, "passport-panel-season");
   ok("the season tab carries his season", /34 runs/.test(seasonSaid), seasonSaid.replace(/\n/g, " / "));
   {
