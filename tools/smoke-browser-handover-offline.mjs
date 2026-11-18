@@ -194,7 +194,7 @@ const banner = async (page) => ({
   reason: (await tid(page, "sync-banner").first().getAttribute("data-reason", { timeout: 800 }).catch(() => null)) ?? null,
   text: ((await tid(page, "sync-banner").first().innerText({ timeout: 800 }).catch(() => "")) || "").replace(/\s+/g, " ").trim(),
 });
-/** The sync pill's word, from its accessible name: "Sent", "Held 2", "On device"… */
+/** The sync pill's word, from its accessible name: "Sent", "No signal · 2 to send", "On device"… */
 const pill = async (page) => {
   const l = page.locator('[aria-label^="Sync status:"]').first();
   if (!(await l.count())) return "";

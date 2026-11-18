@@ -5,7 +5,7 @@ import { waitingPhrase, tossLine } from "@scrbrd/sync";
 /**
  * What the pad of a live match says about the server, in words. SCRBRD-078.
  *
- * The pill in the top bar is a word and a count ("Held 3"). That is enough
+ * The pill in the top bar is a word and a count ("No signal · 3 to send"). That is enough
  * while the pad is sending; it is not enough when it CANNOT send and a person
  * has to do something about it — sign in again, move to signal, take over
  * with a code, or know that two logs have come apart. Every one of those used
@@ -167,6 +167,13 @@ export function bannerFor(st, match, asideCount = 0, extra = {}) {
       lead: "The server already had a toss.", text: `${tossLine(conflict.server, home, away)}. This pad now follows it; its own answer (${tossLine(conflict.mine, home, away)}) was not sent.` };
     if (asideCount) return { reason: "aside", tone: "note", lead: "You are scoring on the server's log.",
       text: `${asideCount} event${asideCount === 1 ? "" : "s"} this device had that the server did not ${asideCount === 1 ? "is" : "are"} kept aside on this device, not in this log.` };
+    // Attached and the last send got no answer, with balls still to go (18 Nov
+    // 2026): the same sentences as an unattached pad's, not silence beside an
+    // amber pill. The pill's "waiting" state is the same test (engine.jsx).
+    if (st.pending > 0 && !st.online)
+      return { reason: "offline", tone: "wait", lead: "No signal.", text: saved ? `${saved} and will send when there is a connection.` : "Scoring is saved on this device and will send when there is a connection." };
+    if (st.pending > 0 && reason === "unreachable")
+      return { reason, tone: "wait", lead: "Could not reach the server — trying again.", text: saved ? `${saved}.` : "Scoring is saved on this device meanwhile." };
     return null;
   }
   switch (reason) {

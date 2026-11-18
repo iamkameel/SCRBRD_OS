@@ -44,7 +44,7 @@ The coach steps are not rehearsed with a real save. **Pick the side** lists the 
 
 ☐ (P) Airplane mode on. Score one over. See the pill read **On device**: that is right for a practice match. Airplane mode off. Reopen `https://scrbrd.onrender.com/app`, then on "Practice match in progress" tap Resume. The score is as you left it.
 
-☐ (S) Demonstration copy: airplane mode on, score an over. See **Held** with a count. Airplane mode off. See the count fall, then **Sent**.
+☐ (S) Demonstration copy: airplane mode on, score an over. See **No signal** with a count. Airplane mode off. See the count fall, then **Sent**.
 
 ## 6. Hand over and take over (S)
 

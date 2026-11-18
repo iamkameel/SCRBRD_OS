@@ -104,7 +104,7 @@ const click = async (re, ms = 3000) => {
   await page.waitForTimeout(300);
   return true;
 };
-/** The sync pill's word, from its accessible name: "Sent", "Held 2", "On device"… */
+/** The sync pill's word, from its accessible name: "Sent", "No signal · 2 to send", "On device"… */
 const pill = async () => {
   const l = page.locator('[aria-label^="Sync status:"]').first();
   if (!(await l.count())) return "";

@@ -469,7 +469,8 @@ export default function SCRBRD_OS() {
             const r = rows.find((x) => x.id === s.scorerMatchId);
             // The scorer wants the product's vocabulary, and asMatch lives in
             // lib/live.js behind a hook. Only three fields are needed here.
-            if (r) m = { id: r.id, homeTeam: r.team_code, awayTeam: r.opponent,
+            // The home school goes with it: the result screen's "Finish the match" is offered by it (db/130).
+            if (r) m = { id: r.id, homeTeam: r.team_code, awayTeam: r.opponent, schoolId: r.school_id ?? null,
                          overs: r.overs, live: true, status: r.status, startsAt: r.starts_at ?? null, format: r.format ?? null };
           } catch { /* offline: fall through to what this device has */ }
         }
@@ -484,7 +485,8 @@ export default function SCRBRD_OS() {
         // nothing to ask, leave the scorer on the shell mid-over.
         if (!m && !serverAnswered && s.scorerCfg?.live && s.scorerCfg.matchId === s.scorerMatchId) {
           const c = s.scorerCfg;
-          m = { id: c.matchId, homeTeam: c.team1, awayTeam: c.team2, overs: c.overs, live: true, startsAt: c.startsAt ?? null, format: c.format ?? null };
+          m = { id: c.matchId, homeTeam: c.team1, awayTeam: c.team2, overs: c.overs, live: true, schoolId: c.schoolId ?? null,
+                startsAt: c.startsAt ?? null, format: c.format ?? null };
         }
         // The demo: no session and no live fixture, so the client-side scoping.
         if (!m && !signedIn()) m = scoped("matches", s.role ?? role).find(x => x.id === s.scorerMatchId);
@@ -505,6 +507,7 @@ export default function SCRBRD_OS() {
     // the pad, which asks again.
     saveSession({ appState: loginForPad || appState, role, userName, page, scorerMatchId: scorerOpen ? scorerMatchId : null, scorerPractice: scorerOpen && scorerPractice,
       scorerCfg: c ? { matchId: c.matchId, team1: c.team1, team2: c.team2, teamCode: c.teamCode, overs: c.overs, live: true,
+                       ...(c.schoolId ? { schoolId: c.schoolId } : {}),
                        ...(c.startsAt ? { startsAt: c.startsAt } : {}), ...(c.format ? { format: c.format } : {}) } : null });
   }, [appState, role, userName, page, scorerOpen, scorerMatchId, scorerResume, scorerPractice, loginForPad]);
 

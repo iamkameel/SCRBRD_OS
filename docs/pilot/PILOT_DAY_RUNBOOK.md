@@ -73,7 +73,7 @@ These are roles, not names. The numbers for each role are on the printed card ea
 
 ### Through the innings
 
-- The pavilion screen shows only what has been sent. If the pill says **Held** or **On device**, the screen is behind until the balls go.
+- The pavilion screen shows only what has been sent. If the pill says **No signal** or **On device**, the screen is behind until the balls go.
 - At the end of each innings the check sheet opens. Compare it with the umpires' book, then tap **That is right — close the innings**. If it is wrong, tap **Take back the last ball**. After the first innings tap **Start 2nd Innings →**.
 - A handover needs signal on both phones, because arming and claiming both call the server. The sheet will not arm while balls are unsent or a ball is half entered. Do it between balls, ideally at the end of an over. The steps are in the scorers' guide: **Hand over**, **Hand over scoring**, the six-digit code, **Take over**, **Claim this match**, then the second scorer types the physical scoreboard's figures and taps **Confirm and take over**.
 
@@ -103,7 +103,7 @@ For the pilot (Kameel, 30 Oct 2026) the lead taps **Discard** and the scorer rec
 
 ### No signal at the ground
 
-1. Scoring carries on. The pill says **Held** or **On device**, and the balls are saved on the phone.
+1. Scoring carries on. The pill says **No signal** or **On device**, and the balls are saved on the phone.
 2. If the page reloads or the phone restarts, the pad reopens with its score. If a bar says **Sign in**, tap it and sign in again. If the old code has been used, phone Kameel for a new one (the number is on the day sheet).
 3. When signal returns the balls send by themselves. Wait for **Sent**.
 4. There is no handover without signal.
@@ -127,7 +127,7 @@ The scoring phone keeps its screen awake while it holds the match, where the pho
 
 ### The server or the database is down
 
-Signs: the pill stays **Held** or **On device** although the phone has signal; the health address does not answer, or shows `"db":"unreachable"`; the pavilion screen says "reconnecting".
+Signs: the pill stays **No signal** or **On device** although the phone has signal; the health address does not answer, or shows `"db":"unreachable"`; the pavilion screen says "reconnecting".
 
 1. Keep scoring on the pad. Every ball is saved on the phone before it counts. Nothing is lost while the phone works. Do not reload, clear the match or sign out.
 2. The paper scorebook is kept as always, ball by ball. Today it is the second record: check it against the pad at the end of every over, not only at the innings.
@@ -184,8 +184,8 @@ Another school's boy's details, a name on the pavilion screen where a position s
 
 ### For solo run 2 (27 October) and the production verify (28 October)
 
-- [ ] With the API stopped (or suspended on Render), score six balls on a practice match: the pill says **Held**, not **Refused**; on resume they go to **Sent**.
-- [ ] With the API up and the database string wrong (a test server), the same: the server's 5xx leaves balls **Held**.
+- [ ] With the API stopped (or suspended on Render), score six balls on a practice match: the pill says **No signal** with the count, not **Refused**; on resume they go to **Sent**.
+- [ ] With the API up and the database string wrong (a test server), the same: the server's 5xx leaves balls waiting on the phone, never **Refused**.
 - [ ] `PUBLIC_PAGES` off and on again: the pavilion page 404s, then returns, within a few minutes; note the time it took.
 - [ ] `account_set_active(false)` on a test scorer mid-practice: the pad stops sending and holds; enabled again and signed in, it sends.
 - [ ] A parent's question "who read my child's record" can be answered from "On the record: who read what" by the office in under five minutes.
