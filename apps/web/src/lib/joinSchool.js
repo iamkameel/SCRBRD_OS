@@ -10,10 +10,13 @@
  * THREE RULES, each held by apps/web/test/signin.test.mjs:
  *
  *   1. NOBODY ASSIGNS THEMSELVES ANYTHING. Every kind ends in a request, never
- *      a role. Nothing here is automatic: not for a parent, not for a pupil, and
- *      not for staff either. A member of staff whose office listed them in the
- *      staff register is granted by the SERVER (POST /api/join/register-claim,
- *      db/92), on the address Google verified; this form only asks.
+ *      a role, or in something that opens nothing: "I just want to follow
+ *      matches" follows the school at once (Q10, db/163; a follow grants no
+ *      read), and a pupil under 18 says who he is (rule 3). Nothing here is
+ *      automatic: not for a parent, not for a pupil, and not for staff either.
+ *      A member of staff whose office listed them in the staff register is
+ *      granted by the SERVER (POST /api/join/register-claim, db/92), on the
+ *      address Google verified; this form only asks.
  *   2. A PARENT'S CLAIM ON A CHILD NEVER LOOKS A CHILD UP (§5.3). The child is
  *      free text — a name as the family writes it, a relationship, a year —
  *      travelling in the request's note for the office to match by hand. No
@@ -21,11 +24,15 @@
  *      the same sentence whoever the child is. The screen never says "found",
  *      "not found", "no such pupil" or anything shaped like them: a form that
  *      did would be an oracle for which children attend a school.
- *   3. A PUPIL UNDER EIGHTEEN DOES NOT ASK FOR HIMSELF. His account is the
- *      school's and a parent's decision; the screen says whom to ask. The
- *      eighteen-year-old still at school may ask for `player` himself, and the
- *      office names his roster row. (Under 13, Google will not give him an
- *      account at all: he signs in with a code.)
+ *   3. A PUPIL UNDER EIGHTEEN ASKS FOR NO ROLE (SCRBRD-140 honesty model, Q3,
+ *      Kameel 18 Nov 2026). He may say "I am a pupil here": a pupil's claim
+ *      (POST /api/pupil/claim, db/163, lib/pupilClaim.js), which asks for
+ *      nothing and opens nothing. It puts his account in the basic view and
+ *      a row in front of the office, and from then on the account asks for
+ *      nothing at all. Opening his own page is still the school's and a
+ *      parent's decision. The eighteen-year-old still at school may ask for
+ *      `player` himself, and the office names his roster row. (Under 13,
+ *      Google will not give him an account at all: he signs in with a code.)
  */
 import { SELF_REGISTRABLE_STAFF_ROLES } from "@scrbrd/policy/roles";
 
@@ -40,8 +47,8 @@ export const STAFF_ROLES = SELF_REGISTRABLE_STAFF_ROLES;
 export const KINDS = Object.freeze([
   { id: "staff",    label: "I work at the school",         hint: "A coach, scorer, manager, physio or the office." },
   { id: "parent",   label: "I am a parent or guardian",    hint: "To follow your child's matches and answers." },
-  { id: "pupil",    label: "I am a pupil",                 hint: "Your school office sets up a pupil's account." },
-  { id: "follower", label: "I just want to follow matches", hint: "Scores, fixtures and results." },
+  { id: "pupil",    label: "I am a pupil",                 hint: "Tell your school who you are." },
+  { id: "follower", label: "I just want to follow matches", hint: "Its public scores, fixtures and results. Nothing is asked of the school." },
 ]);
 
 export const RELATIONSHIPS = Object.freeze(["Mother", "Father", "Guardian", "Other"]);
@@ -83,11 +90,13 @@ export function buildRequest(kind, schoolId, f = {}) {
     return { ok: true, body: { role: "guardian", schoolId, note: parentNote(f) } };
   }
   if (kind === "pupil") {
-    // Only an adult still at school asks for himself; anyone else is sent to the office.
-    if (f.adult !== "yes") return { ok: false, problem: "A pupil under 18 is set up by the school office. Ask them for a sign-in code." };
+    // Only an adult still at school asks for a role; under 18 he sends a pupil's claim instead (rule 3).
+    if (f.adult !== "yes") return { ok: false, problem: "A pupil under 18 asks for no role. Tell your school who you are instead, or ask the office for a sign-in code." };
     return { ok: true, body: { role: "player", schoolId, note: clean(f.extra).slice(0, EXTRA_MAX) || null } };
   }
-  if (kind === "follower") return { ok: true, body: { role: "spectator", schoolId, note: null } };
+  // Q10: following is not a request. The spectator request ("Ask the school for
+  // its signed-in view") is asked from a followed school's card (spectatorAsk()).
+  if (kind === "follower") return { ok: false, problem: "Following a school asks nothing of it: press Follow." };
   return { ok: false, problem: "Say who you are first." };
 }
 
@@ -160,16 +169,12 @@ export function sentWords(kind, schoolName) {
 }
 
 /**
- * What a pupil under eighteen is told instead of a form.
+ * Q10: "Ask the school for its signed-in view", from a followed school's card:
+ * the spectator request the join form's follower kind used to send. The
+ * office decides, as before, and what a spectator reads is unchanged.
+ * @param {string} schoolId
  */
-export const PUPIL_UNDER_18 = Object.freeze({
-  title: "A pupil's account is set up by the school office",
-  lines: [
-    "Ask your school office for a sign-in code. They set up a pupil's account, with a parent's consent where you are under 18.",
-    "If you are under 13 you sign in with a code, not with Google.",
-    "A parent who already has an account here can also ask the office to set you up.",
-  ],
-});
+export const spectatorAsk = (schoolId) => ({ role: "spectator", schoolId, note: null });
 
 /**
  * What the words on a request in the list say, by its state.

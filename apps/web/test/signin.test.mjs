@@ -12,11 +12,14 @@
  *     without it has no Google; Firebase's errors have our words; the SDK is a
  *     dynamic import, never a static one; no key is written in the file.
  *   - THE PRIVACY PARAGRAPH on the sign-in screen is the one Kameel signed.
- *   - JOINING A SCHOOL: every kind ends in a request and never a role; a
+ *   - JOINING A SCHOOL: every kind ends in a request and never a role, or in
+ *     something that opens nothing (a follow, Q10; a pupil's claim, Q3); a
  *     parent's child is free text that is never looked up; nothing on the
- *     screen says "found" or "not found"; a pupil under eighteen is sent to
- *     the office and sends nothing; the staff roles are ones the policy lets
- *     an office grant.
+ *     screen says "found" or "not found"; a pupil under eighteen asks for no
+ *     role, and his claim (db/163) promises nothing; the staff roles are ones
+ *     the policy lets an office grant.
+ *   - THE BASIC VIEW (db/163): his state in one true sentence, how long the
+ *     account is kept, and none of the asking.
  *   - THE WAYS TO SIGN IN and THE CLAIMS LIST: what a row says, what a refusal
  *     is called, the screens as drawn.
  *
@@ -26,17 +29,23 @@ import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { GRANTABLE_ROLES, SUBJECT_SCOPED_ROLES, SELF_REGISTRABLE_ROLES, SELF_REGISTRABLE_STAFF_ROLES } from "@scrbrd/policy/roles";
-import { exchangeGoogle, exchangeState, EXCHANGE_WORDS, CLAIM_STEPS } from "../src/lib/signin.js";
+import { exchangeGoogle, exchangeState, EXCHANGE_WORDS, CLAIM_STEPS, CLAIM_MEANWHILE } from "../src/lib/signin.js";
 import { googleConfig, signInConfig, googleFailure, GOOGLE_FAILURE_WORDS, addSignIn, authReady } from "../src/lib/google.js";
 import { SIGNIN_NOTICE, SIGNIN_NOTICE_TITLE } from "../src/lib/signinNotice.js";
 import {
-  KINDS, STAFF_ROLES, RELATIONSHIPS, JOIN_WORDS, PUPIL_UNDER_18, NOTE_MAX, buildRequest, joinWords, parentNote, sentWords,
+  KINDS, STAFF_ROLES, RELATIONSHIPS, JOIN_WORDS, NOTE_MAX, buildRequest, joinWords, parentNote, sentWords, spectatorAsk,
 } from "../src/lib/joinSchool.js";
+import {
+  CLAIM_FORM, CLAIM_WORDS, OFFICE_INTRO, OFFICE_STATE_WORDS, OFFICE_WORDS, REMOVE_WORDS, buildClaim, claimWords, clearWords,
+  dayWords, keepWords, officeWords, rosterMatches, stateWords,
+} from "../src/lib/pupilClaim.js";
+import { PupilBasic } from "../src/auth/PupilBasic.jsx";
+import { PupilClaimRow } from "../src/views/pupilClaims.jsx";
 import { describeSignIn, describeClaim, isLastLive, ordered, signInWords, HOW_WORDS, CLAIM_DONE, CLAIM_WITHHELD } from "../src/lib/signins.js";
 import { JoinSchool } from "../src/auth/NoSchool.jsx";
 import { SignInRow } from "../src/views/signins.jsx";
 import { ClaimRow } from "../src/views/claims.jsx";
-import { SIGN_IN_REFUSALS } from "../../../services/api/auth/signin-api.mjs";
+import { SIGN_IN_REFUSALS, OWN_PAGE_WAITING } from "../../../services/api/auth/signin-api.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 260)}` : ""); } };
@@ -158,7 +167,9 @@ group("Joining a school: every kind ends in a request, never a role");
   ok("four kinds of person", KINDS.map((k) => k.id).join() === "staff,parent,pupil,follower");
   ok("no school, no request", buildRequest("follower", null).ok === false && buildRequest("staff", "", { role: "coach" }).ok === false);
   let r = buildRequest("follower", S);
-  ok("a follower asks for spectator, with no note", r.ok && r.body.role === "spectator" && r.body.schoolId === S && r.body.note === null, r);
+  ok("a follower asks for nothing: following is the front door's own act (Q10)", r.ok === false && /Follow/.test(r.problem), r);
+  r = /** @type {any} */ ({ ok: true, body: spectatorAsk(S) });
+  ok("...and the school's signed-in view is asked from a followed school's card: spectator, with no note", r.body.role === "spectator" && r.body.schoolId === S && r.body.note === null, r);
   r = buildRequest("staff", S, { role: "coach", extra: "  the U15A side  " });
   ok("a coach asks for coach, with her note trimmed", r.ok && r.body.role === "coach" && r.body.note === "the U15A side", r);
   ok("staff must say what they do", buildRequest("staff", S, {}).ok === false && buildRequest("staff", S, { role: "principal" }).ok === false && buildRequest("staff", S, { role: "guardian" }).ok === false);
@@ -177,19 +188,20 @@ group("Joining a school: every kind ends in a request, never a role");
   ok("the note stays under the column's 300", parentNote({ child: "x".repeat(500), relationship: "Mother", year: "y".repeat(500) }).length <= NOTE_MAX);
   ok("every relationship on offer is accepted", RELATIONSHIPS.every((x) => buildRequest("parent", S, { child: "Test Child", relationship: x }).ok));
 
-  ok("a pupil under 18 sends nothing, and is told whom to ask", buildRequest("pupil", S, { adult: "no" }).ok === false && /office/.test(buildRequest("pupil", S, { adult: "no" }).problem) && buildRequest("pupil", S, {}).ok === false);
+  ok("a pupil under 18 asks for no role, and is told what he may do instead", buildRequest("pupil", S, { adult: "no" }).ok === false && /office/.test(buildRequest("pupil", S, { adult: "no" }).problem) && /who you are/.test(buildRequest("pupil", S, { adult: "no" }).problem) && buildRequest("pupil", S, {}).ok === false);
   r = buildRequest("pupil", S, { adult: "yes", extra: "1st XI" });
   ok("an eighteen-year-old at school asks for player himself", r.ok && r.body.role === "player" && r.body.note === "1st XI", r);
   ok("...and no kind can ask for an owner's, platform or safeguarding role from here",
-     ["staff", "parent", "pupil", "follower"].every((k) => { const x = buildRequest(k, S, { role: "coach", child: "Test Child", relationship: "Mother", adult: "yes" }); return x.ok && !["superadmin", "platformadmin", "dso", "selfaccess"].includes(x.body.role); }));
-  ok("the pupil under 18 sees the office, a code and the Google floor of 13",
-     /office/.test(PUPIL_UNDER_18.lines.join(" ")) && /under 13/.test(PUPIL_UNDER_18.lines.join(" ")) && /code/.test(PUPIL_UNDER_18.lines.join(" ")));
+     ["staff", "parent", "pupil"].every((k) => { const x = buildRequest(k, S, { role: "coach", child: "Test Child", relationship: "Mother", adult: "yes" }); return x.ok && !["superadmin", "platformadmin", "dso", "selfaccess"].includes(x.body.role); })
+       && !["superadmin", "platformadmin", "dso", "selfaccess"].includes(spectatorAsk(S).role));
+  ok("the pupil under 18 is told the office checks, and the Google floor of 13 with its code",
+     /school office/.test(CLAIM_FORM.intro) && /under 13/.test(CLAIM_FORM.under13) && /code/.test(CLAIM_FORM.under13));
 }
 
 group("Joining a school never says found or not found, and never looks a child up");
 {
   const all = [
-    ...Object.values(JOIN_WORDS), ...PUPIL_UNDER_18.lines, PUPIL_UNDER_18.title,
+    ...Object.values(JOIN_WORDS), ...Object.values(CLAIM_FORM), ...Object.values(CLAIM_WORDS),
     ...["parent", "pupil", "staff", "follower"].map((k) => sentWords(k, "Test School")),
     ...KINDS.flatMap((k) => [k.label, k.hint]),
     joinWords(apiError(422, "already_pending")), joinWords(apiError(500, "x")), joinWords(new TypeError("x")),
@@ -211,11 +223,82 @@ group("Joining a school never says found or not found, and never looks a child u
   const code = screen.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   ok("the screen reads no list of pupils, children or players", !/\/api\/read\/(players|children|pupils|squad|roster|users|guardians)/.test(code) && !/useRows|useLive\("players/.test(code));
   ok("...and asks only for schools, its own requests and the help link",
-     [...code.matchAll(/api\(\s*[`"]([^`"]+)[`"]/g)].every((m) => /^\/api\/(schools|safeguarding\/contacts|requests\/\$\{id\}\/withdraw)$/.test(m[1])),
+     [...code.matchAll(/api\(\s*[`"]([^`"]+)[`"]/g)].every((m) => /^\/api\/(schools|safeguarding\/contacts|requests\/\$\{id\}\/withdraw|requests|pupil\/state)$/.test(m[1])),
      [...code.matchAll(/api\(\s*[`"]([^`"]+)[`"]/g)].map((m) => m[1]));
   ok("...and the request goes to /api/requests, the ordinary door", /"\/api\/requests"/.test(code));
   ok("the parent's field is a plain input, not a datalist or a picker", !/datalist|autocomplete=|role="combobox"|listbox/.test(code.replace(/autoComplete="off"/g, "")));
   ok("no 'Child's name' suggestions: the input is autoComplete off", /data-testid="join-child"/.test(code) && /autoComplete="off"[^>]*data-testid="join-child"/.test(code));
+}
+
+group("A pupil under 18 says who he is (db/163, Q3): it asks for nothing and opens nothing");
+{
+  const S = "11111111-1111-1111-1111-111111111111";
+  let c = buildClaim(S, { name: "  Test   Pupil ", year: " Grade 9 " });
+  ok("his claim is his school, the name he typed and his year, tidied", c.ok && JSON.stringify(c.body) === JSON.stringify({ schoolId: S, name: "Test Pupil", year: "Grade 9" }), JSON.stringify(c));
+  ok("...and no date of birth: nothing compares it until the family list exists", c.ok && !("born" in c.body));
+  ok("the year is optional", buildClaim(S, { name: "Test Pupil" }).ok && buildClaim(S, { name: "Test Pupil" }).body.year === null);
+  ok("no school, no name, or a year past 20, sends nothing", !buildClaim(null, { name: "Test Pupil" }).ok && !buildClaim(S, { name: "T" }).ok && !buildClaim(S, { name: "12" }).ok && !buildClaim(S, { name: "Test Pupil", year: "y".repeat(21) }).ok);
+  ok("the form says what sending does: a pupil's, under 18, kept 30 days, removed with his follows",
+     /pupil under 18/.test(CLAIM_FORM.keep) && /30 days/.test(CLAIM_FORM.keep) && /removed/.test(CLAIM_FORM.keep) && /schools you follow/.test(CLAIM_FORM.keep));
+  ok("...and promises nothing: nothing about him is opened by it", /Nothing about you is opened/.test(CLAIM_FORM.intro));
+  ok("every refusal has words, and an unknown one still says something", Object.keys(CLAIM_WORDS).every((k) => claimWords(apiError(422, k)) === CLAIM_WORDS[k]) && /\s/.test(claimWords(apiError(422, "weird"))) && /nothing was sent/.test(claimWords(new TypeError("x"))));
+
+  // §3.3's sentences, word for word.
+  let w = stateWords({ state: "recognised", schoolName: "Test School" });
+  ok("recognised: the design's sentence", w.title === "Your school knows this is you." && w.line === "A parent or guardian needs to say yes before your own page opens.", JSON.stringify(w));
+  ok("...and how a yes comes today: the signed form, through the office (Family has nothing to tap until Migration B)", /signed consent form/.test(w.how) && /office/.test(w.how) && !/Family/.test(w.how), w.how);
+  w = stateWords({ state: "with_office", schoolName: "Test School" });
+  ok("with the office: §2.4's sentence for everyone not matched", w.title === "Sent to the school" && w.line === "Somebody at Test School will answer.", JSON.stringify(w));
+  w = stateWords({ state: "declined", schoolName: "Test School" });
+  ok("declined: the school has answered, never why", w.title === "The school has answered" && !/because|not on|list|record|known/i.test(w.line), JSON.stringify(w));
+  const said = ["with_office", "recognised", "declined", "open"].flatMap((st) => Object.values(stateWords({ state: st, schoolName: "Test School" }))).filter(Boolean);
+  ok("no state's words is an oracle, or names a team, a figure or a record", said.every((x) => !FOUND.test(x) && !/\bteam\b|figure|\brecord\b|availability|team-mate/i.test(x)), said.join(" | "));
+  ok("Q9 from the first day: the date, the 30 days, and what then", keepWords({ state: "with_office", keepUntil: "2026-12-18" }) === "This account is kept until 18 December 2026, 30 days from your last claim, while a parent or guardian is asked. If nobody says yes by then, it is removed, with the schools you follow.");
+  ok("...declined, the date and what then", /until 18 December 2026\. Then it is removed, with the schools you follow\./.test(keepWords({ state: "declined", keepUntil: "2026-12-18" })));
+  ok("...and nothing once he is opened", keepWords({ state: "open", keepUntil: null }) === null);
+  ok("the database's day, as written", dayWords("2027-01-01") === "1 January 2027" && dayWords("x") === "");
+  ok("removing the account says what goes before it goes", /sign-in and the schools you follow/.test(REMOVE_WORDS.ask));
+
+  // The basic view, as drawn: his state first; none of the asking; none of his record.
+  const claim = { state: "recognised", schoolId: S, schoolName: "Test School", name: "Test Pupil", year: "Grade 9", saidOn: "2026-11-18", sentOn: "2026-11-18", keepUntil: "2026-12-18", safeguarding: true };
+  const html = renderToStaticMarkup(h(PupilBasic, { name: "Test Pupil", claim, onSignOut() {}, onRemoved() {} }));
+  const txt = html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
+  ok("the basic view leads with his state, its sentence and how", html.includes('data-testid="pupil-state"') && txt.includes("Your school knows this is you.") && txt.includes("A parent or guardian needs to say yes before your own page opens."));
+  ok("...says how long it is kept", html.includes('data-testid="pupil-keep"') && txt.includes("kept until 18 December 2026"));
+  ok("...shows the name he typed, never the roster's", html.includes('data-testid="pupil-typed-name"') && txt.includes("Test Pupil"));
+  ok("...has his account: sign out and remove it", ["no-school-sign-out", "pupil-remove", "pupil-sign-ins"].every((t) => html.includes(`data-testid="${t}"`)));
+  ok("...and none of the asking: no join form, no requests, no 'ask SCRBRD to add a school', no signed-in view to ask for",
+     !["join-school", "join-kind", "join-send", "no-school-requests", "request-withdraw", "join-school-missing", "ask-view-"].some((t) => html.includes(`data-testid="${t}`)), html.slice(0, 300));
+  ok("...and none of his record: no team, no fixtures as his, no figures, no availability, no sponsor",
+     !/U1\dA|1st XI|availability|Passport|batting|bowling|\bruns\b|sponsor/i.test(txt), txt.slice(0, 400));
+  const none = renderToStaticMarkup(h(PupilBasic, { name: "Test Pupil", claim: { ...claim, state: "with_office", safeguarding: false }, onSignOut() {}, onRemoved() {} }));
+  ok("with the office only: The Guardian's line, not his school's card (Q8: recognised only)", none.includes('data-testid="no-school-help"') && !none.includes('data-testid="pupil-safeguarding"'));
+  ok("recognised: his school's safeguarding card, with Raise a concern (Q8)", html.includes('data-testid="pupil-safeguarding"') && html.includes('data-testid="pupil-raise"'));
+  const basic = src("../src/auth/PupilBasic.jsx").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  ok("the basic view reads only its own: its follows, the safeguarding card, its own removal",
+     [...basic.matchAll(/api\(\s*[`"]([^`"]+)[`"]/g)].every((m) => /^\/api\/(follows|safeguarding\/contacts|pupil\/remove)$/.test(m[1])), [...basic.matchAll(/api\(\s*[`"]([^`"]+)[`"]/g)].map((m) => m[1]));
+  ok("...and never a read resource", !/\/api\/read\/|useLive|useRows/.test(basic));
+  ok("the no-school home turns into it when the account has a claim", /api\("\/api\/pupil\/state"\)/.test(src("../src/auth/NoSchool.jsx")) && /<PupilBasic /.test(src("../src/auth/NoSchool.jsx")));
+
+  // The office's side.
+  ok("the office is told recognising opens nothing, and a decline tells the DSOs without his name",
+     /opens nothing/.test(OFFICE_INTRO) && /without his name/.test(OFFICE_INTRO));
+  ok("every office refusal has words", Object.keys(OFFICE_WORDS).every((k) => officeWords(apiError(409, k)) === OFFICE_WORDS[k]));
+  ok("each state is named", ["with_office", "recognised", "declined", "open"].every((k) => typeof OFFICE_STATE_WORDS[k] === "string"));
+  ok("the clear button counts", clearWords(1) === "Remove 1 account past its 30 days" && clearWords(3) === "Remove 3 accounts past their 30 days");
+  const roster = [{ id: "p2", name: "Zed Boy", school: S }, { id: "p1", name: "Abe Boy", school: S }, { id: "p3", name: "Abe Other", school: "other" }];
+  ok("the picker is the office's own school's roster, searched, in name order",
+     rosterMatches(roster, S, "").map((p) => p.id).join() === "p1,p2" && rosterMatches(roster, S, "zed").map((p) => p.id).join() === "p2");
+  const row = renderToStaticMarkup(h(PupilClaimRow, { c: { id: "c1", name: "Test Pupil", year: "Grade 9", address: "test.pupil@example.invalid", state: "with_office", keepUntil: "2026-12-18" },
+    players: roster, school: S, busy: false, onRecognise() {}, onDecline() {} }));
+  ok("a waiting claim: his address, what he typed, the date, a picker, Recognise and Decline",
+     ["pupil-claim-address", "pupil-claim-keep", "pupil-claim-pick", "pupil-claim-recognise", "pupil-claim-decline"].every((t) => row.includes(`data-testid="${t}"`)) && row.includes("test.pupil@example.invalid"));
+
+  // The changed words: claim_required offers the public pages, and still says nothing of the account.
+  ok("claim_required now offers the public pages while the office looks", /public matches/.test(CLAIM_MEANWHILE.words) && CLAIM_MEANWHILE.href === "/"
+     && !/parent|child|pupil|player|guardian|coach/i.test(CLAIM_MEANWHILE.words + CLAIM_MEANWHILE.link));
+  ok("pupil_consent_required, said to the boy on his own account, is the honest sentence, not the office's",
+     OWN_PAGE_WAITING !== SIGN_IN_REFUSALS.pupil_consent_required[1] && /Your school knows this account is yours/.test(OWN_PAGE_WAITING) && /parent or guardian/.test(OWN_PAGE_WAITING));
 }
 
 group("The join screen as drawn");
@@ -319,6 +402,8 @@ group("What a person with no school may ask for is one list, the join screen's (
     ...STAFF_ROLES,
     ...["parent", "pupil", "follower"].map((k) => buildRequest(k, "s", { child: "A Child", relationship: "Mother", adult: "yes" }))
       .map((r) => r.ok ? r.body.role : null).filter(Boolean),
+    // Q10: the spectator request is offered from a followed school's card.
+    spectatorAsk("s").role,
   ]);
   // One door (EXPERIENCE_PASS Q13, 13 Nov 2026): the role-tile sign-up is
   // retired, so the join screen is the only screen that offers a role.

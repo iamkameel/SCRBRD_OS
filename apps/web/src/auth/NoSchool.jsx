@@ -5,9 +5,13 @@ import { api, signedIn } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { profile } from "../lib/session.js";
 import {
-  KINDS, PUPIL_UNDER_18, RELATIONSHIPS, REQUEST_STATE_WORDS, STAFF_ROLES,
-  EXTRA_MAX, CHILD_MAX, YEAR_MAX, buildRequest, joinWords, sentWords, withdrawWords, withdrew,
+  KINDS, RELATIONSHIPS, REQUEST_STATE_WORDS, STAFF_ROLES,
+  EXTRA_MAX, CHILD_MAX, YEAR_MAX, buildRequest, joinWords, sentWords, spectatorAsk, withdrawWords, withdrew,
 } from "../lib/joinSchool.js";
+// "I am a pupil here" (SCRBRD-140 honesty model, Migration A; db/163): the claim form, and the basic view.
+import { CLAIM_FORM, NAME_MAX, YEAR_MAX as CLAIM_YEAR_MAX, buildClaim, claimWords } from "../lib/pupilClaim.js";
+import { followProblem } from "../lib/follow.js";
+import { PupilBasic } from "./PupilBasic.jsx";
 import { claimFailure, claimResult } from "../lib/registerClaim.js";
 import { AskSchool, AskSchoolLink, SchoolAskRows } from "./schoolAsk.jsx";
 // The follow list (EXPERIENCE_PASS Q8, slice 3b; db/160): the Followed schools block.
@@ -136,11 +140,11 @@ function HelpLine() {
  * with what they typed into the search.
  * @param {{ schools: { id: string, name: string }[], onSent: () => void, onJoined?: () => Promise<void>, post?: typeof api, kindFirst?: string | null, onAskSchool?: ((typed: string) => void) | null }} p
  */
-export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = null, onAskSchool = null }) {
+export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = null, onAskSchool = null, onClaimed = null, onFollowed = null }) {
   const [schoolId, setSchoolId] = useState(schools.length === 1 ? schools[0].id : null);
   const [q, setQ] = useState("");
   const [kind, setKind] = useState(kindFirst === "parent" ? "parent" : null);
-  const [form, setForm] = useState({ role: "", extra: "", child: "", relationship: "", year: "", adult: "" });
+  const [form, setForm] = useState({ role: "", extra: "", child: "", relationship: "", year: "", adult: "", name: "", pyear: "" });
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   const [sent, setSent] = useState(null);
@@ -194,12 +198,49 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
     setBusy(false);
   };
 
+  // Q3 (db/163): a pupil under 18 says who he is. It asks for nothing and opens nothing;
+  // the screen becomes his basic view (onClaimed).
+  const claimIt = async () => {
+    const c = buildClaim(schoolId, { name: form.name, year: form.pyear });
+    if (!c.ok) { setProblem(c.problem); return; }
+    setBusy(true); setProblem("");
+    try {
+      await post("/api/pupil/claim", { method: "POST", body: c.body });
+      setBusy(false);
+      onClaimed?.();
+      return;
+    } catch (e) { setProblem(claimWords(e)); }
+    setBusy(false);
+  };
+
+  // Q10 (db/163): "I just want to follow matches" follows the school, at once. No request.
+  const followIt = async () => {
+    if (!schoolId) { setProblem("Choose your school first."); return; }
+    setBusy(true); setProblem("");
+    try {
+      const r = await post("/api/follows", { method: "POST", body: { schoolId } });
+      setSent({ kind: "followed", school: r?.school?.name ?? school?.name ?? "" });
+      onFollowed?.();
+    } catch (e) { setProblem(followProblem(e)); }
+    setBusy(false);
+  };
+
+  if (sent?.kind === "followed") {
+    return (
+      <div role="status" data-testid="join-followed" style={card()}>
+        <div style={{ fontFamily: FONT.head, fontSize: "16px", fontWeight: 800, color: T.content.primary, marginBottom: "6px" }}>You follow {sent.school}</div>
+        <div style={text(14)}>Its public matches lead this page on match days. To see the school's signed-in view, ask from its card under Followed schools.</div>
+        <Btn style={{ marginTop: "14px" }} data-testid="join-another" onClick={() => { setSent(null); setKind(null); }}>Join a school as well</Btn>
+      </div>
+    );
+  }
+
   if (sent) {
     return (
       <div role="status" data-testid="join-sent" style={card()}>
         <div style={{ fontFamily: FONT.head, fontSize: "16px", fontWeight: 800, color: T.content.primary, marginBottom: "6px" }}>Request sent</div>
         <div style={text(14)}>{sentWords(sent.kind, sent.school)}</div>
-        <Btn style={{ marginTop: "14px" }} data-testid="join-another" onClick={() => { setSent(null); setKind(null); setForm({ role: "", extra: "", child: "", relationship: "", year: "", adult: "" }); }}>Ask for something else</Btn>
+        <Btn style={{ marginTop: "14px" }} data-testid="join-another" onClick={() => { setSent(null); setKind(null); setForm({ role: "", extra: "", child: "", relationship: "", year: "", adult: "", name: "", pyear: "" }); }}>Ask for something else</Btn>
       </div>
     );
   }
@@ -301,10 +342,20 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
         <div data-testid="join-form-pupil">
           <Choice on={form.adult === "yes"} title="I am 18 or older and still at school" data-testid="join-pupil-adult" onClick={() => set("adult", "yes")}/>
           <Choice on={form.adult === "no"} title="I am under 18" data-testid="join-pupil-minor" onClick={() => set("adult", "no")}/>
+          {/* Q3 (db/163): he says who he is. It asks for nothing and opens nothing. */}
           {form.adult === "no" && (
-            <div role="note" data-testid="join-pupil-under18" style={{ ...text(14), padding: "12px 14px", borderRadius: "10px", border: `1px solid ${T.line.normal}`, background: T.surface.base, marginBottom: "14px" }}>
-              <div style={{ fontFamily: FONT.head, fontSize: "14px", fontWeight: 700, color: T.content.primary, marginBottom: "6px" }}>{PUPIL_UNDER_18.title}</div>
-              {PUPIL_UNDER_18.lines.map((l) => <div key={l} style={{ marginBottom: "4px" }}>{l}</div>)}
+            <div data-testid="join-pupil-under18">
+              <div role="note" style={{ ...text(14), padding: "12px 14px", borderRadius: "10px", border: `1px solid ${T.line.normal}`, background: T.surface.base, marginBottom: "14px" }}>
+                <div style={{ fontFamily: FONT.head, fontSize: "14px", fontWeight: 700, color: T.content.primary, marginBottom: "6px" }}>{CLAIM_FORM.title}</div>
+                <div style={{ marginBottom: "6px" }}>{CLAIM_FORM.intro}</div>
+                <div>{CLAIM_FORM.under13}</div>
+              </div>
+              <Field label="Your name" hint="As the school would have it on its list.">{(id) => (
+                <input id={id} value={form.name} maxLength={NAME_MAX} onChange={(e) => set("name", e.target.value)} style={input()} autoComplete="name" data-testid="join-pupil-name"/>)}</Field>
+              <Field label="Your year or team (optional)">{(id) => (
+                <input id={id} value={form.pyear} maxLength={CLAIM_YEAR_MAX} onChange={(e) => set("pyear", e.target.value)} style={input()} autoComplete="off" data-testid="join-pupil-year"/>)}</Field>
+              <div role="note" data-testid="join-pupil-keep" style={{ ...text(13), marginBottom: "14px" }}>{CLAIM_FORM.keep}</div>
+              <Btn kind="primary" data-testid="join-pupil-send" disabled={busy || !buildClaim(schoolId, { name: form.name, year: form.pyear }).ok} onClick={claimIt}>{busy ? "Sending…" : "Send to the school"}</Btn>
             </div>
           )}
           {form.adult === "yes" && (
@@ -316,7 +367,10 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
 
       {problem && <div role="alert" data-testid="join-problem" style={{ ...text(13, T.semantic.criticalText), padding: "10px 12px", borderRadius: "8px", background: clr(T.semantic.critical, 0.1), border: `1px solid ${clr(T.semantic.critical, 0.2)}`, marginBottom: "12px" }}>{problem}</div>}
 
-      {schoolId && kind && !(kind === "pupil" && form.adult !== "yes")
+      {schoolId && kind === "follower" && (
+        <Btn kind="primary" data-testid="join-follow" disabled={busy} onClick={followIt}>{busy ? "Following…" : `Follow ${school?.name ?? "the school"}`}</Btn>
+      )}
+      {schoolId && kind && kind !== "follower" && !(kind === "pupil" && form.adult !== "yes")
         && !(kind === "staff" && claim.state !== "none" && claim.state !== "error") && (
         <Btn kind="primary" data-testid="join-send" disabled={busy || !built?.ok} onClick={send}>{busy ? "Sending…" : "Send my request"}</Btn>
       )}
@@ -391,6 +445,25 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
   const me = profile()?.user;
   const live = signedIn();
   const followed = useFollowed();
+  // db/163: has this account said "I am a pupil here, and under 18"? Then it is his basic view
+  // (PupilBasic), not this one. undefined = asking; null = no claim.
+  const [pupil, setPupil] = useState(/** @type {any} */ (undefined));
+  const [pupilNonce, setPupilNonce] = useState(0);
+  useEffect(() => {
+    if (!live) return undefined;
+    let off = false;
+    api("/api/pupil/state").then((r) => { if (!off) setPupil(r?.claim ?? null); }).catch(() => { if (!off) setPupil(null); });
+    return () => { off = true; };
+  }, [live, pupilNonce]);
+  // Q10: "Ask the school for its signed-in view", from a followed school's card: the spectator request, as before.
+  const [viewAsk, setViewAsk] = useState(/** @type {{ id: string, words: string, ok: boolean } | null} */ (null));
+  const askView = async (/** @type {{ id: string, name: string }} */ s) => {
+    try {
+      await api("/api/requests", { method: "POST", body: spectatorAsk(s.id) });
+      setViewAsk({ id: s.id, ok: true, words: sentWords("follower", s.name) });
+      setNudge((n) => n + 1);
+    } catch (e) { setViewAsk({ id: s.id, ok: false, words: joinWords(e) }); }
+  };
 
   useEffect(() => {
     let off = false;
@@ -436,6 +509,18 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
     );
   }
 
+  // A pupil's claim (db/163): his basic view, and nothing of this screen's asking.
+  if (pupil === undefined) {
+    return (
+      <div data-testid="pending-requests" style={{ minHeight: "100vh", display: "flex", justifyContent: "center", padding: "24px 16px", background: T.surface.canvas, boxSizing: "border-box" }}>
+        <div role="status" style={text(14)}>Reading your account…</div>
+      </div>
+    );
+  }
+  if (pupil) {
+    return <PupilBasic name={name} claim={pupil} onSignOut={onSignOut} onRemoved={onSignOut} onOpenPad={onOpenPad}/>;
+  }
+
   return (
     <div data-testid="pending-requests" style={{ minHeight: "100vh", display: "flex", justifyContent: "center", padding: "24px 16px", background: T.surface.canvas, boxSizing: "border-box" }}>
       <main style={{ maxWidth: "520px", width: "100%" }}>
@@ -444,7 +529,7 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
         <div style={{ ...text(14), marginBottom: "20px" }}>Your account holds nothing of a school's until a school says yes.{onOpenPad ? " You can score a match on this phone meanwhile." : " Until then you can see this page and nothing else."}</div>
 
         {/* §2.2, Q8: Followed schools first while one of them is live, or a link's question waits. */}
-        {(followed.live || followed.ask) && <FollowedSchools followed={followed} lead/>}
+        {(followed.live || followed.ask) && <FollowedSchools followed={followed} lead onAskView={askView} viewAsk={viewAsk}/>}
 
         {/* §2.5 step 3: "Start a match" first. Its own chunk: the scoring block draws the Board. */}
         {onOpenPad && (
@@ -454,10 +539,11 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
         )}
 
         {/* ...and after Now otherwise (§2.2). */}
-        {!(followed.live || followed.ask) && <FollowedSchools followed={followed}/>}
+        {!(followed.live || followed.ask) && <FollowedSchools followed={followed} onAskView={askView} viewAsk={viewAsk}/>}
 
         {schools === null ? <div style={text(14)}>Loading the schools…</div>
-          : <JoinSchool schools={schools} onSent={() => setNudge((n) => n + 1)} onJoined={onJoined} kindFirst={kindFirst} onAskSchool={(typed) => setAskSchool(typed)}/>}
+          : <JoinSchool schools={schools} onSent={() => setNudge((n) => n + 1)} onJoined={onJoined} kindFirst={kindFirst} onAskSchool={(typed) => setAskSchool(typed)}
+              onClaimed={() => { setPupil(undefined); setPupilNonce((n) => n + 1); }} onFollowed={() => followed.reload()}/>}
         {askSchool !== null && <AskSchool key={askSchool} startName={askSchool} onSent={() => setNudge((n) => n + 1)} onClose={() => setAskSchool(null)}/>}
 
         <div style={{ marginBottom: "16px" }} data-testid="no-school-requests">

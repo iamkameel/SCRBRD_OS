@@ -32,6 +32,7 @@ import { WaysToSignIn } from "./signins.jsx";
 // GA-I03 (db/85): ending every sign-in the person holds, this device's last.
 import { SignOutEverywhere } from "./signoutall.jsx";
 import { ClaimsPanel } from "./claims.jsx";
+import { PupilClaimsPanel } from "./pupilClaims.jsx";
 // SCRBRD-083 C4 (db/47): a school's names-off switch per age group.
 import { NamesOffPanel } from "./publicname.jsx";
 // SCRBRD-142 phase 2: the school lists its published matches on the home page.
@@ -290,6 +291,8 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
         {tab === "users" && canClaims && signedIn() && (
           <ClaimsPanel rows={claims.rows} loading={claims.loading} onChanged={() => setNonce((n) => n + 1)} onIssueCode={issueCodeFor}/>
         )}
+        {/* db/163: a pupil under 18 who said "I am a pupil here". The office and the principal answer it. */}
+        {tab === "users" && signedIn() && holdsCapability(role, "guardian.link.manage") && <PupilClaimsPanel players={PLAYERS}/>}
         {tab === "users" && (
           <PeopleTab users={users} players={PLAYERS} staff={STAFF} coaches={COACHES}
                      noAccount={noAccount} noDob={noDob} linkEnded={linkEnded}

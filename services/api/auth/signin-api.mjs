@@ -136,11 +136,20 @@ export const SIGN_IN_REFUSALS = {
 /**
  * @param {string} code
  * @param {ApiResponse} res
+ * @param {string | null} [own]  the sentence for this caller, where it is not the office's
  */
-const refuse = (code, res) => {
+const refuse = (code, res, own = null) => {
   const [status, detail] = SIGN_IN_REFUSALS[code] ?? SIGN_IN_REFUSALS.refused;
-  return res.status(status).json({ error: code, detail });
+  return res.status(status).json({ error: code, detail: own ?? detail });
 };
+
+/**
+ * The honesty model (SCRBRD-140 §3.6): the same refusal, said to the boy
+ * himself when he adds Google to his own account from Me. The office's
+ * words above are for the office confirming somebody else's claim; his are
+ * the honest sentence about where he stands, not a door shut on him.
+ */
+export const OWN_PAGE_WAITING = "Your school knows this account is yours. A parent or guardian needs to say yes before Google can open it, through the school's signed consent form. Ask a parent or guardian, or the school office. Until then, keep signing in with your code.";
 
 /**
  * @param {{ pool: Pool, secret: string, verifier: FirebaseVerifier, trustProxyHops?: number, now?: () => number }} deps
@@ -158,7 +167,7 @@ export function signInRoutes({ pool, secret, verifier, trustProxyHops = 0, now =
   const signedIn = (fn) => async (req, res) => {
     try {
       const out = await runAsPrincipal(pool, secret, req.headers?.authorization, (client, principal) => fn(req, client, principal));
-      if (!out.ok) return refuse(out.reason || "refused", res);
+      if (!out.ok) return refuse(out.reason || "refused", res, typeof out.detail === "string" ? out.detail : null);
       const { ok: _ok, reason: _r, ...rest } = out;
       return res.json(rest);
     } catch (/** @type {any} */ e) {
@@ -221,8 +230,8 @@ export function signInRoutes({ pool, secret, verifier, trustProxyHops = 0, now =
         throw e;
       }
       const { rows: [r] } = await client.query(`select * from auth_identity_link_self($1, $2, $3)`, [id.provider, id.uid, id.email]);
-      return r?.ok ? { ok: true, id: r.identity_id, linkedHow: r.linked_how, already: r.reason === "already_linked" }
-                   : { ok: false, reason: r?.reason };
+      if (r?.ok) return { ok: true, id: r.identity_id, linkedHow: r.linked_how, already: r.reason === "already_linked" };
+      return r?.reason === "pupil_consent_required" ? { ok: false, reason: r.reason, detail: OWN_PAGE_WAITING } : { ok: false, reason: r?.reason };
     }),
 
     // POST /api/auth/sign-ins/:id/revoke — one of your own (§3.7). The
