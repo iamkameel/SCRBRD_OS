@@ -27,6 +27,16 @@
  *      the removal is refused (GA-I03, db/85), the remover's own answered
  *      with a fresh token for its device
  *   7. the limits: per address, and per Google account
+ *   9. "I am a pupil here" (db/163, the honesty model's Migration A): a boy
+ *      under 18 sends his claim (and the date of birth he types is in no
+ *      log the server writes); his account still reads nothing, asks for
+ *      nothing (a role, a school added, the register), and may follow; the
+ *      office lists his claim with his address, a coach does not; the office
+ *      recognises him, which opens nothing but his school's safeguarding
+ *      card and the door to raise a concern there; a declined claim tells
+ *      the DSO with no name; the 30-day keep, by the office's button and by
+ *      his own "Remove this account"; "I just want to follow matches"
+ *      follows by the school's id
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-signup.mjs
@@ -78,6 +88,9 @@ const env = { ...process.env, DATABASE_URL: appUrl(), PORT: String(PORT), NODE_E
 const server = spawn(process.execPath, ["services/api/server.mjs"], { env, stdio: ["ignore", "pipe", "pipe"] });
 const serverErr = [];
 server.stderr.on("data", (d) => serverErr.push(d.toString()));
+// Everything the server writes, for "the typed date of birth is in no log" (9).
+const serverOut = [];
+server.stdout.on("data", (d) => serverOut.push(d.toString()));
 
 let addr = 0;
 const api = async (path, { method = "GET", token, body, from } = {}) => {
@@ -90,6 +103,27 @@ const api = async (path, { method = "GET", token, body, from } = {}) => {
   return { status: res.status, body: await res.json().catch(() => null) };
 };
 const exchange = (tok, extra = {}) => api("/api/auth/firebase", { method: "POST", body: { idToken: tok, deviceId: "device-signup", ...extra } });
+/**
+ * Every read resource, as this account: what it answers that is not empty.
+ * Its own account row (users and accounts read app_user, which is the
+ * self-read §4.2 allows), its own sign-ins, and an aggregate over nothing
+ * (one row of zeros and nulls — the summary, a coverage count) are not data.
+ */
+const sweep = async (token, email) => {
+  const leaks = [];
+  for (const resource of Object.keys(READ_QUERIES)) {
+    const r = await api(`/api/read/${resource}`, { token });
+    if (r.status >= 500) leaks.push(`${resource}: ${r.status} ${r.body?.error}`);
+    else if (r.status === 200 && r.body?.rows?.length && resource !== "my_sign_ins") {
+      const rows = r.body.rows;
+      const own = (resource === "users" || resource === "accounts") && rows.length === 1 && rows[0].email === email;
+      const nothing = rows.every((x) => Object.values(x).every((v) => v === null || v === 0 || v === false || v === ""
+                                                                  || (Array.isArray(v) && v.length === 0)));
+      if (!own && !nothing) leaks.push(`${resource}: ${JSON.stringify(rows).slice(0, 200)}`);
+    }
+  }
+  return leaks;
+};
 const login = async (email) => (await api("/api/auth/dev-login", { method: "POST", body: { email, deviceId: "device-signup" } })).body?.token;
 
 try {
@@ -131,21 +165,7 @@ try {
 
   group("2. An account with no school reads nothing but its own");
   {
-    const leaks = [];
-    for (const resource of Object.keys(READ_QUERIES)) {
-      const r = await api(`/api/read/${resource}`, { token: newcomer });
-      if (r.status >= 500) leaks.push(`${resource}: ${r.status} ${r.body?.error}`);
-      else if (r.status === 200 && r.body?.rows?.length && resource !== "my_sign_ins") {
-        const rows = r.body.rows;
-        // Its own account row (users and accounts read app_user, which is the
-        // self-read §4.2 allows), and an aggregate over nothing (one row of
-        // zeros and nulls — the summary, a coverage count) are not data.
-        const own = (resource === "users" || resource === "accounts") && rows.length === 1 && rows[0].email === NEW_EMAIL;
-        const nothing = rows.every((x) => Object.values(x).every((v) => v === null || v === 0 || v === false || v === ""
-                                                                    || (Array.isArray(v) && v.length === 0)));
-        if (!own && !nothing) leaks.push(`${resource}: ${JSON.stringify(rows).slice(0, 200)}`);
-      }
-    }
+    const leaks = await sweep(newcomer, NEW_EMAIL);
     ok(`every read resource (${Object.keys(READ_QUERIES).length}) answers it empty or refuses`, leaks.length === 0, leaks);
     const mine = await api("/api/read/my_sign_ins", { token: newcomer });
     ok("its own sign-ins: one, Google, never the uid", mine.status === 200 && mine.body?.rows?.length === 1
@@ -304,6 +324,109 @@ try {
     const byUid = [];
     for (let i = 0; i < 8; i++) byUid.push((await exchange(idToken(LIMIT_UID, `walk.limit.${RUN}@example.invalid`))).status);
     ok("one Google account from many addresses: six, then 429", byUid.slice(0, 6).every((s) => s === 200) && byUid.slice(6).every((s) => s === 429), byUid);
+  }
+
+  group("9. \"I am a pupil here\" (db/163): a claim asks for nothing and opens nothing");
+  {
+    const KID_UID = `walk-kid-${RUN}`, KID_EMAIL = `walk.kid.${RUN}@example.invalid`;
+    const BORN = `${new Date().getUTCFullYear() - 14}-07-19`;
+    const BORN_FORMS = [BORN, BORN.split("-").reverse().join("/"), BORN.replace(/-/g, "")];
+    const kidIn = await exchange(idToken(KID_UID, KID_EMAIL));
+    const kid = kidIn.body?.token;
+    ok("a boy signs in with Google: a new account", kidIn.status === 200 && kidIn.body?.outcome === "new_account", kidIn);
+    let s = await api("/api/pupil/state", { token: kid });
+    ok("before he says anything, he has no claim", s.status === 200 && s.body?.claim === null, s);
+    // A pupil of fifteen on Hilton's roster, with no account: the owner makes him, as the office's import would.
+    const own = new pg.Pool({ connectionString: ownerUrl() });
+    const boy = (await own.query(`insert into player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+      values ($1, 'U15A', 'Walk Rosterboy', 'Rosterboy', 99, 'batter', (current_date - interval '15 years')::date) returning id`, [HIL])).rows[0].id;
+    let r = await api("/api/pupil/claim", { method: "POST", token: kid, body: { schoolId: HIL, name: "  Sipho   Walker ", year: "Grade 9", born: BORN } });
+    ok("he sends his claim: one answer, whatever he typed", r.status === 200 && r.body?.ok === true && JSON.stringify(Object.keys(r.body)) === '["ok"]', r);
+    r = await api("/api/pupil/claim", { method: "POST", token: kid, body: { schoolId: HIL, name: "Sipho Walker", born: "2012-02-30" } });
+    ok("...an impossible date of birth is refused", r.status === 422 && r.body?.error === "born_invalid", r);
+    s = await api("/api/pupil/state", { token: kid });
+    const c = s.body?.claim;
+    const plus30 = new Date(Date.parse(`${c?.sentOn}T00:00:00Z`) + 30 * 86400000).toISOString().slice(0, 10);
+    ok("his state: with the office, what he typed, kept 30 days, no card", c?.state === "with_office" && c?.schoolName === "Hilton College" && c?.name === "Sipho Walker"
+       && c?.year === "Grade 9" && c?.keepUntil === plus30 && c?.safeguarding === false, s.body);
+    ok("...and never a team, a player id or a birthday", !/playerId|team|born|U15A|Rosterboy/.test(JSON.stringify(s.body)), s.body);
+    let leaks = await sweep(kid, KID_EMAIL);
+    ok(`with the office, every read resource (${Object.keys(READ_QUERIES).length}) answers him empty or refuses`, leaks.length === 0, leaks);
+    r = await api("/api/requests", { method: "POST", token: kid, body: { role: "spectator", schoolId: HIL } });
+    ok("he cannot ask for a role, and is told whom to ask", r.status === 403 && r.body?.error === "ask_your_school_office" && /school office/.test(r.body?.detail ?? ""), r);
+    r = await api("/api/school-requests", { method: "POST", token: kid, body: { schoolName: "Northfield College", town: "Pietermaritzburg", job: "other" } });
+    ok("...nor ask SCRBRD to add a school (Ask a teacher)", r.status === 403 && r.body?.error === "ask_a_teacher", r);
+    r = await api("/api/join/register-claim", { method: "POST", token: kid, body: { schoolId: HIL } });
+    ok("...and the staff register grants him nothing", !(r.body?.granted?.length > 0) && (r.status === 200 || r.status === 403), r);
+    r = await api("/api/follows", { method: "POST", token: kid, body: { schoolId: HIL } });
+    ok("he may follow his school's public matches (by its id, Q10)", r.status === 200 && r.body?.school?.name === "Hilton College", r);
+    r = await api("/api/safeguarding/contacts", { token: kid });
+    ok("not yet recognised: no school's safeguarding card", r.status === 200 && r.body?.rows?.length === 0, r.body);
+
+    // The office's list: his address, what he typed. A coach lists nothing and answers nothing.
+    let list = await api(`/api/pupil-claims?schoolId=${HIL}`, { token: office });
+    const row = list.body?.rows?.find((x) => x.address === KID_EMAIL);
+    ok("the office lists his claim, with his address and what he typed", !!row && row.name === "Sipho Walker" && row.state === "with_office" && row.keepUntil === plus30, list.body);
+    const coach = await login("coach@example.invalid");
+    r = await api(`/api/pupil-claims?schoolId=${HIL}`, { token: coach });
+    ok("a coach lists nothing", r.status === 200 && r.body?.rows?.length === 0, r.body);
+    r = await api(`/api/pupil-claims/${row?.id}/recognise`, { method: "POST", token: coach, body: { playerId: boy } });
+    ok("...and cannot recognise him", r.status === 403 && r.body?.error === "not_permitted", r);
+    r = await api(`/api/pupil-claims/${row?.id}/recognise`, { method: "POST", token: office, body: { playerId: boy } });
+    ok("the office recognises him", r.status === 200 && r.body?.ok === true, r);
+    s = await api("/api/pupil/state", { token: kid });
+    ok("recognised: his state, and his school's card is his (Q8)", s.body?.claim?.state === "recognised" && s.body?.claim?.safeguarding === true, s.body);
+    ok("...still never the roster's name for him", !/Rosterboy|U15A/.test(JSON.stringify(s.body)), s.body);
+    leaks = await sweep(kid, KID_EMAIL);
+    ok("recognised and waiting, every read resource answers him empty or refuses", leaks.length === 0, leaks);
+    ok("...and his session holds no role", (await api("/api/session", { token: kid })).body?.assignments?.length === 0);
+    r = await api("/api/safeguarding/contacts", { token: kid });
+    ok("he reads Hilton's safeguarding officers by name", r.status === 200 && r.body?.rows?.length > 0 && r.body.rows.every((x) => x.schoolId === HIL) && r.body.rows.some((x) => x.name), r.body);
+    r = await api("/api/safeguarding/concerns", { method: "POST", token: kid, body: { schoolId: HIL, aboutKind: "adult", nature: ["bullying"],
+      certainty: "suspicion", account: "Somebody at nets keeps shouting at me and pushing me.", howLearned: "victim" } });
+    ok("...and raises a concern there: a reference, and nothing else", r.status === 200 && /^SG-/.test(r.body?.reference ?? "") && JSON.stringify(Object.keys(r.body).sort()) === '["raisedAt","reference","unheld"]', r);
+    ok("the date of birth he typed is in nothing the server wrote", !BORN_FORMS.some((f) => (serverOut.join("") + serverErr.join("")).includes(f)));
+    const stored = (await own.query(`select count(*)::int as n from access_log where resource::text like '%' || $1 || '%'`, [BORN])).rows[0].n;
+    ok("...nor in the access log", stored === 0, stored);
+
+    // A second boy, whom nobody knows: declined. The DSO is told, with no name.
+    const K2_UID = `walk-kid2-${RUN}`, K2_EMAIL = `walk.kid2.${RUN}@example.invalid`;
+    const k2 = (await exchange(idToken(K2_UID, K2_EMAIL))).body?.token;
+    await api("/api/pupil/claim", { method: "POST", token: k2, body: { schoolId: HIL, name: "Zebedee Walkerson" } });
+    list = await api(`/api/pupil-claims?schoolId=${HIL}`, { token: office });
+    const row2 = list.body?.rows?.find((x) => x.address === K2_EMAIL);
+    r = await api(`/api/pupil-claims/${row2?.id}/decline`, { method: "POST", token: office });
+    ok("the office declines the second", r.status === 200 && r.body?.ok === true, r);
+    const dso = await login("dso@example.invalid");
+    const notes = (await api("/api/read/notifications", { token: dso })).body?.rows ?? [];
+    const told = notes.filter((n) => n.title === "A pupil claim was declined");
+    ok("the DSO is told a pupil claim was declined", told.length >= 1, notes.map((n) => n.title));
+    ok("...naming nobody", told.every((n) => !/Zebedee|Walkerson|walk\.kid2|Sipho/.test(JSON.stringify(n))), told);
+    s = await api("/api/pupil/state", { token: k2 });
+    ok("he reads that the school has answered (declined), never why", s.body?.claim?.state === "declined", s.body);
+    r = await api("/api/pupil/claim", { method: "POST", token: k2, body: { schoolId: HIL, name: "Zebedee Walkerson" } });
+    ok("...and cannot send it again", r.status === 409 && r.body?.error === "already_answered", r);
+
+    // Q9: past its 30 days the office removes it; his Google account then makes a new account.
+    await own.query(`update pupil_claim set last_claim_at = now() - interval '31 days' where user_id = (select id from app_user where email = $1)`, [K2_EMAIL]);
+    r = await api("/api/pupil-claims/clear", { method: "POST", token: coach, body: { schoolId: HIL } });
+    ok("a coach removes nothing", r.status === 200 && r.body?.removed === 0, r);
+    r = await api("/api/pupil-claims/clear", { method: "POST", token: office, body: { schoolId: HIL } });
+    ok("past its 30 days, the office removes it", r.status === 200 && r.body?.removed === 1, r);
+    r = await exchange(idToken(K2_UID, K2_EMAIL));
+    ok("...and his Google account is a stranger again: a new account", r.status === 200 && r.body?.outcome === "new_account", r);
+
+    // His own way out, now.
+    const K3_UID = `walk-kid3-${RUN}`, K3_EMAIL = `walk.kid3.${RUN}@example.invalid`;
+    const k3 = (await exchange(idToken(K3_UID, K3_EMAIL))).body?.token;
+    await api("/api/pupil/claim", { method: "POST", token: k3, body: { schoolId: HIL, name: "Lungi Walker" } });
+    r = await api("/api/pupil/remove", { method: "POST", token: k3 });
+    ok("he removes his account himself", r.status === 200 && r.body?.removed === true, r);
+    r = await exchange(idToken(K3_UID, K3_EMAIL));
+    ok("...and his Google account makes a new one", r.status === 200 && r.body?.outcome === "new_account", r);
+    r = await api("/api/pupil/remove", { method: "POST", token: coach });
+    ok("an account that is not a claim cannot be removed from here", r.status === 409 && r.body?.error === "not_a_claim", r);
+    await own.end().catch(() => {});
   }
 
   group("8. The test key is never the default");
