@@ -248,8 +248,8 @@ try {
     });
     ok("the sign-in title is \"Sign in to SCRBRD\", its one heading, and nobody is welcomed back",
        head.h1.length === 1 && head.h1[0] === "Sign in to SCRBRD" && !/Welcome back/i.test(head.body), JSON.stringify(head.h1));
-    ok("...the New to SCRBRD line leads, under the title and above Google and the code form",
-       head.order && /^New to SCRBRD\? Continue with Google\./.test((await tid(h.page, "login-new-here").innerText().catch(() => "")).trim()));
+    ok("...the New here line leads, under the title and above Google and the code form",
+       head.order && /^New here\? Tap Continue with Google\./.test((await tid(h.page, "login-new-here").innerText().catch(() => "")).trim()));
     const shown = sentence(await tid(h.page, "google-notice").innerText());
     ok("the privacy paragraph Kameel signed is on the screen, word for word", shown.includes(sentence(SIGNIN_NOTICE)), shown.slice(0, 120));
     ok("the code form is still there, for anyone without Google", (await h.page.locator("#login-email").count()) === 1 && (await h.page.locator("#login-password").count()) === 1);
