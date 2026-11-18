@@ -2177,7 +2177,8 @@ async function walk(theme) {
     // surfaces or inks. A colour copied into a constant when its module
     // loaded is exactly what this finds.
     await page.emulateMedia({ colorScheme: flipTo === "daylight" ? "light" : "dark" });
-    await page.waitForTimeout(800);
+    await page.waitForFunction((t) => document.documentElement.dataset.theme === t, flipTo, { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(300);
     const stale = theme === "floodlit" ? FLOODLIT_ONLY : DAYLIGHT_ONLY;
     const pad = await staleOn(page, stale);
     ok("the device's switch applies without a reload", pad.theme === flipTo, pad.theme);
@@ -2196,8 +2197,10 @@ async function walk(theme) {
       ok(`...nor on ${label}`, s.hits.length === 0, s.hits.slice(0, 4).join(" · "));
     }
     await page.emulateMedia({ colorScheme: scheme });
-    await page.waitForTimeout(500);
-    ok("...and back again", await page.evaluate(() => document.documentElement.dataset.theme) === theme);
+    // Back again, waited for as a state: the theme the device now asks for, within 8s, never a fixed half second.
+    await page.waitForFunction((t) => document.documentElement.dataset.theme === t, theme, { timeout: 8000 }).catch(() => {});
+    ok("...and back again", await page.evaluate(() => document.documentElement.dataset.theme) === theme,
+       await page.evaluate(() => `${document.documentElement.dataset.theme} stored=${(() => { try { return localStorage.getItem("scrbrd:theme"); } catch { return "x"; } })()}`));
     await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(800);
     await click(/^Live$/, 2500);
@@ -2241,7 +2244,7 @@ async function walk(theme) {
       await page.evaluate(() => { try { localStorage.removeItem("scrbrd:theme"); } catch { /* nothing to remove */ } });
       await page.reload({ waitUntil: "networkidle" });
     }
-    await page.waitForTimeout(600);
+    await page.waitForFunction((t) => document.documentElement.dataset.theme === t, theme, { timeout: 8000 }).catch(() => {});
     ok("choosing System hands the decision back to the device",
        await page.evaluate(() => document.documentElement.dataset.theme) === theme
        && await page.evaluate(() => { try { return localStorage.getItem("scrbrd:theme"); } catch { return null; } }) === null);
@@ -2251,10 +2254,10 @@ async function walk(theme) {
     const chipFills = () => page.evaluate(() => [...document.querySelectorAll('[data-testid="board-over"] [data-chip]')]
       .filter((c) => c.dataset.chip !== "dot").map((c) => `${c.dataset.chip}:${getComputedStyle(c).backgroundColor}`).join("|"));
     const standardFills = await chipFills();
-    if (!(await page.locator('[data-testid="pad-vision-choice"]').count())) {
-      await page.locator('[data-testid="pad-menu"]').click({ timeout: 3000 }).catch(() => {});
-      await page.waitForTimeout(300);
-    }
+    const padMenu = page.locator('[data-testid="pad-menu"]');
+    await page.waitForTimeout(300);
+    if ((await padMenu.getAttribute("aria-expanded").catch(() => null)) !== "true") await padMenu.click({ timeout: 3000 }).catch(() => {});
+    await page.locator('[data-testid="pad-vision-choice"][role="radiogroup"]').waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
     ok("the menu offers Colours as one radiogroup: Standard, Red-green safe, Blue-yellow safe",
        await page.evaluate(() => [...document.querySelectorAll('[data-testid="pad-vision-choice"][role="radiogroup"] [role="radio"]')]
          .map((b) => b.textContent.trim()).join()) === "Standard,Red-green safe,Blue-yellow safe");
@@ -2275,7 +2278,7 @@ async function walk(theme) {
     ok("Colours survives a reload", await page.evaluate(() => document.documentElement.dataset.vision) === "redgreen");
     if (await page.locator('[data-testid="pad-menu"]').count()) {
       await page.locator('[data-testid="pad-menu"]').click({ timeout: 3000 });
-      await page.waitForTimeout(300);
+      await page.locator('[data-testid="pad-vision-choice-standard"]').waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
       await page.locator('[data-testid="pad-vision-choice-standard"]').click({ timeout: 3000 });
     } else {
       await page.evaluate(() => { try { localStorage.removeItem("scrbrd:vision"); } catch { /* nothing to remove */ } });
