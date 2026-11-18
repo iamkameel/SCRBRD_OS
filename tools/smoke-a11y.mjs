@@ -1963,7 +1963,7 @@ async function walk(theme) {
     const onTab = await focusNow();
     await page.waitForTimeout(2500);
     ok("a background refresh of the data moves nothing: focus is where the person left it",
-       onTab !== "" && (await focusNow()) === onTab, onTab);
+       /^(radio:System|tab:Me)$/.test(onTab) && (await focusNow()) === onTab, onTab);
     ok("...and says nothing more", await announcer.textContent() === "Settings, page loaded");
     const settingsChoice = await page.evaluate(() => {
       const g = document.querySelector('[data-testid="theme-choice"]');

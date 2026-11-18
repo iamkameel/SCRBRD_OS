@@ -734,11 +734,11 @@ export default function SCRBRD_OS() {
     safeguarding: <SafeguardingView  role={role}/>,
     // The person's own Settings, under their name in the header (§1.6): Me, and their own record's passport.
     settings:     <SettingsView      role={role} onSignOut={handleSignOut}/>,
-    management:   <><ManagementView role={role} onDirectoryChanged={refreshDirectory}/><SettingsView role={role} part="roles" users={users}/></>,
+    management:   <ManagementView    role={role} onDirectoryChanged={refreshDirectory} usersAfter={<SettingsView role={role} part="roles" users={users}/>}/>,
     rulebook:     <RulebookView      role={role}/>,
     pitchdeck:    <PitchDeckView     role={role} onNav={setPage}/>,
     // Platform (§1.3): what no school holds, each under the capability its panel was drawn for.
-    requests:     <SchoolRequestsView/>,
+    requests:     <SchoolRequestsView role={role}/>,
     support:      <SettingsView      role={role} part="support"/>,
     dls:          <SettingsView      role={role} part="dls"/>,
     roadmap:      <SettingsView      role={role} part="roadmap"/>,

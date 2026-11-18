@@ -136,7 +136,7 @@ group("The screens");
   const roles = read("../src/design/roles.js");
   ok("the platform's list only for platform.tenant.manage: the Platform home's section, no longer Management's",
      /requests:\s+"platform\.tenant\.manage"/.test(roles) && !/<SchoolRequestsPanel/.test(mgmt)
-     && /requests:\s+<SchoolRequestsView\/>/.test(read("../src/App.jsx")));
+     && /requests:\s+<SchoolRequestsView role=\{role\}\/>/.test(read("../src/App.jsx")));
   const panel = read("../src/views/schoolRequests.jsx");
   ok("...with Added and Decline only on what the server calls decidable", /all\.filter\(\(r\) => r\.decidable\)/.test(panel)
      && /school-request-added-/.test(panel) && /school-request-decline-/.test(panel));

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { SectionHeader } from "../ui/primitives.jsx";
+import { holdsCapability } from "../rbac/index.js";
 import { D, textOn } from "../design/tokens.js";
 import { api } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
@@ -85,7 +86,10 @@ export function SchoolRequestsPanel({ emptyWords = null }) {
  * its own. The menu offers it under that capability (design/roles.js); the
  * read is the server's, as it was.
  */
-export function SchoolRequestsView() {
+export function SchoolRequestsView({ role }) {
+  // Courtesy only, as Support and the DLS table carry: the menu offers the section under this capability, and the
+  // read's row security (school_add_request_read) decides again.
+  if (!holdsCapability(role, "platform.tenant.manage")) return null;
   return (
     <div className="os-page" data-testid="part-requests">
       <SectionHeader title="School requests" sub="Schools people asked SCRBRD to add. Each is answered within a week." color={D.indigo}/>

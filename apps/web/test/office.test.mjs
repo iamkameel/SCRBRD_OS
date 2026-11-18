@@ -43,7 +43,7 @@ group("Settings, taken apart (§1.6): a person's own Settings is theirs");
   const app = src("../src/App.jsx");
   ok("the shell routes each part to its home's section",
      /staff:\s+<><StaffView role=\{role\}\/><SettingsView role=\{role\} part="people"/.test(app) && /record:\s+<SettingsView\s+role=\{role\} part="record"/.test(app)
-     && /management:\s+<><ManagementView[^>]*\/><SettingsView role=\{role\} part="roles"/.test(app)
+     && /management:\s+<ManagementView\s+role=\{role\} onDirectoryChanged=\{refreshDirectory\} usersAfter=\{<SettingsView role=\{role\} part="roles"/.test(app)
      && /support:\s+<SettingsView\s+role=\{role\} part="support"\/>/.test(app) && /dls:\s+<SettingsView\s+role=\{role\} part="dls"\/>/.test(app)
      && /roadmap:\s+<SettingsView\s+role=\{role\} part="roadmap"\/>/.test(app));
   ok("...and Settings itself is the person's own", /settings:\s+<SettingsView\s+role=\{role\} onSignOut=\{handleSignOut\}\/>/.test(app));

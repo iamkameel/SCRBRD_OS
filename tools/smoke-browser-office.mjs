@@ -340,6 +340,21 @@ try {
     await tap(s.page, "home-dashboard-section-dashboard", 3000);
     ok("...a side with a squad: 'Make your teams' goes", !(await lines()).includes("teams"), (await lines()).join());
 
+    // A parent asks to be linked to the new pupil: the parents line comes, opens her request, and goes once answered.
+    const [gp] = await q(`insert into app_user (email, name, role) values ('office.walk.newparent@example.invalid', 'Office Walk New Parent', 'parent') returning id`);
+    made.users.push(gp.id);
+    const [gr] = await q(`insert into role_request (person_id, role, school_id, player_id) values ($1, 'guardian', $2, $3) returning id`, [gp.id, school.id, pl.id]);
+    made.requests.push(gr.id);
+    await tap(s.page, "home-dashboard-section-news", 1500);
+    await tap(s.page, "home-dashboard-section-dashboard", 3500);
+    ok("a parent waiting: 'A parent is waiting' joins the list", (await lines()).includes("parents")
+       && /A parent is waiting/.test(await s.page.locator('[data-testid="setup-row"][data-key="parents"]').innerText().catch(() => "")), (await lines()).join());
+    await tap(s.page, "setup-open-parents", 3000);
+    ok("...it opens Access at the requests", await pageNow(s.page) === "management" && await tid(s.page, "requests-panel").getAttribute("data-fix") === "here");
+    await q(`update role_request set state = 'withdrawn' where id = $1`, [gr.id]);
+    await tap(s.page, "nav-dashboard", 3500);
+    ok("...and goes once nobody waits (she withdrew it)", !(await lines()).includes("parents"), (await lines()).join());
+
     await tap(s.page, "setup-open-public", 3000);
     ok("'Decide what is public' opens School, Record at the listing", await pageNow(s.page) === "record" && await s.page.locator('[data-testid^="listing-"][data-fix="here"]').count() === 1);
     await tid(s.page, "listing-switch").first().click({ timeout: 4000 }).catch(() => {});

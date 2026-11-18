@@ -194,7 +194,7 @@ function RolesPart({ role, users: usersFromApp }) {
   const read = useRows("users", role);
   const users = usersFromApp || read;
   return (
-    <div className="os-page" data-testid="part-roles" style={{ paddingTop: 0 }}>
+    <div data-testid="part-roles">
       <RolesTab users={users} grantable={grantableFor(role)}/>
     </div>
   );
