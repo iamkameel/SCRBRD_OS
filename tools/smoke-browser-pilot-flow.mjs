@@ -452,6 +452,13 @@ try {
   // hit cut for two, leg byes, a flick undone and scored again, a wicket.
   const cover = await placed("drive", -0.45, 0.55, 1);
   ok("the right-hander's drive is named on the off side", /cover|mid-off|extra/i.test(cover), cover);
+  // db/165 (18 Nov 2026): the first ball makes the fixture live, with no
+  // status written by anybody; the toss and the line-up did not.
+  const statusNow = async () => (await q(`select status from match where id = $1`, [MATCH]))[0]?.status;
+  ok("the fixture is live from its first ball", await (async () => {
+    for (let i = 0; i < 40; i++) { if ((await statusNow()) === "live") return true; await P.waitForTimeout(250); }
+    return false;
+  })(), await statusNow());
   await extra("a wide", "key-wide", "extra-run-0");
   const four = await placed("pull", 0.97, 0.0, 4);
   ok("the pull past the rope, square on the leg side, is a boundary to square leg", /square leg/i.test(four), four);
@@ -612,6 +619,19 @@ try {
   ok(`nor may the office, which holds fixture.update and not scoring.finalise (${officeTry.status} ${officeTry.body?.error})`,
     officeTry.status === 403 && officeTry.body?.error === "not_permitted", JSON.stringify(officeTry));
   ok("...and the match is still not complete", (await q(`select status from match where id = $1`, [MATCH]))[0].status !== "complete");
+  // A phone that sleeps or reloads at full time (18 Nov 2026): the pad comes
+  // back on its result, and Finish is not hidden in silence. The token went
+  // with the reload, so the screen says to sign in, and the sign-in comes back.
+  await P.reload({ waitUntil: "networkidle" });
+  await afterReads(P, 1500);
+  ok("after a reload at full time the pad reopens on its result, saying \"Sign in to finish this match.\"",
+    await until(P, () => document.querySelector('[data-testid="pad-finish-signin-lead"]')?.textContent?.trim() === "Sign in to finish this match.", 12000),
+    (await text(P)).slice(0, 400));
+  await tap(P, "pad-finish-signin");
+  await afterReads(P, 800);
+  await signIn(P, "scorer@example.invalid");   // its own check (a menu) is not this screen's: the pad has none
+  ok("...he signs in from it and is back on the result screen", await until(P, () => !!document.querySelector('[data-testid="pad-finish"]'), 12000), (await text(P)).slice(0, 400));
+  await until(P, () => !document.querySelector('[data-testid="pad-finish"]')?.disabled, 10000);
   ok("the result screen offers him Finish the match", await has(P, "pad-finish"), (await text(P)).slice(0, 400));
   const fin = await tid(P, "pad-finish").first().evaluate((e) => ({ h: e.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(e).fontSize) })).catch(() => null);
   ok(`...a 44px key on the 12px floor (${JSON.stringify(fin)})`, !!fin && fin.h >= 44 && fin.fs >= 12);
