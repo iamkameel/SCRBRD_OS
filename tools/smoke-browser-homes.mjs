@@ -193,6 +193,33 @@ try {
        await top.locator('[data-testid="topbar-alerts"]').count() === 1 && await top.locator('[data-testid="nav-safeguarding"]').count() === 1
        && await top.locator('[data-testid="nav-settings"]').count() === 1);
     ok("...and not in the menu", await tid(s.page, "nav").locator('[data-testid="nav-notifications"], [data-testid="nav-safeguarding"], [data-testid="nav-settings"]').count() === 0);
+    // Raise a concern says so in words beside its icon (glossary review item 1), and its name starts with them.
+    const concern = async () => s.page.evaluate(() => {
+      const b = document.querySelector('[data-testid="topbar"] [data-testid="nav-safeguarding"]');
+      if (!b) return null;
+      const r = b.getBoundingClientRect(), t = b.querySelector(".os-concern-text")?.getBoundingClientRect();
+      const bar = [...document.querySelectorAll('[data-testid="topbar"] button')].filter((e) => e.getBoundingClientRect().width > 0)
+        .map((e) => e.getBoundingClientRect());
+      return {
+        words: (b.textContent ?? "").replace(/\s+/g, " ").trim(), name: b.getAttribute("aria-label") ?? "", icon: b.querySelectorAll('[aria-hidden="true"]').length,
+        w: r.width, h: r.height, textShown: !!t && t.width > 0 && t.right <= r.right + 0.5,
+        inside: bar.every((q) => q.left >= 0 && q.right <= window.innerWidth + 0.5 && q.height >= 44 && q.width >= 44),
+        apart: bar.every((q, i) => bar.every((o, j) => j <= i || q.top >= o.bottom || o.top >= q.bottom || q.right <= o.left + 0.5 || o.right <= q.left + 0.5)),
+        sideways: document.documentElement.scrollWidth > window.innerWidth + 1,
+      };
+    });
+    const wide = await concern();
+    ok("Raise a concern is in words beside its icon, and its name starts with those words",
+       wide?.words === "Raise a concern" && wide.name.startsWith(wide.words) && wide.icon === 1, JSON.stringify(wide));
+    ok("...a 44px target", wide && wide.w >= 44 && wide.h >= 44, JSON.stringify(wide));
+    ok("...with no mark of its own beside it (Q7)", wide && !/\d/.test(wide.words));
+    await s.page.setViewportSize({ width: 320, height: 844 });
+    await s.page.waitForTimeout(400);
+    const narrow = await concern();
+    ok("...and at 320 the words still show, every header control is 44px, on the screen and clear of the next, nothing sideways",
+       narrow?.words === "Raise a concern" && narrow.textShown && narrow.h >= 44 && narrow.inside && narrow.apart && !narrow.sideways, JSON.stringify(narrow));
+    await s.page.setViewportSize({ width: 1280, height: 900 });
+    await s.page.waitForTimeout(300);
     await tid(s.page, "nav-safeguarding").click({ timeout: 4000 }).catch(() => {});
     await afterReads(s.page, 1200);
     ok("Raise a concern opens Safeguarding", await pageNow(s.page) === "safeguarding");

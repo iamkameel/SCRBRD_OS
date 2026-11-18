@@ -153,7 +153,9 @@ try {
   ok("nothing on the page is set under 12px", f.small.length === 0, f.small.slice(0, 4).join(" · "));
   ok("nothing pressed on it is under 44px", f.tiny.length === 0, f.tiny.slice(0, 4).join(" · "));
 
-  ok("he opens the form", await click(parent.page, /^Raise a concern$/));
+  // The form's own button, in the page: the header's "Raise a concern" says the same words now (TopBar, PersonaBar).
+  ok("he opens the form", await parent.page.locator('[data-testid="os-main"] button:not([disabled])', { hasText: /^Raise a concern$/ }).first()
+    .click({ timeout: 4000 }).then(() => parent.page.waitForTimeout(300)).then(() => true, () => false));
   const honesty = await tid(parent.page, "sg-honesty").innerText().catch(() => "");
   ok("the form says, in words, that it is confidential and not anonymous",
      /confidential, not anonymous/i.test(honesty) && /DSO will know it came from you/i.test(honesty), honesty);

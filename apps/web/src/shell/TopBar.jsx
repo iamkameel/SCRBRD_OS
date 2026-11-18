@@ -78,11 +78,15 @@ function TopBar({ role, onRoleChange, onNav, userName, active = null, onSignOut 
           {unread>0&&<span data-testid="topbar-alerts-badge" aria-hidden="true" style={{position:"absolute",top:"2px",right:"0",background:T.semantic.critical,color:T.surface.canvas,borderRadius:D.pill,padding:"0 4px",fontFamily:D.mono,fontSize:"12px",lineHeight:1.25,fontWeight:700,minWidth:"16px",textAlign:"center"}}>{unread}</span>}
         </button>
 
-        {/* Raise a concern: everybody's (db/57, CSA p18), on every screen. */}
-        <button type="button" onClick={()=>onNav("safeguarding")} className="pressBtn" data-testid="nav-safeguarding" aria-label="Raise a concern"
+        {/* Raise a concern: everybody's (db/57, CSA p18), on every screen, in words beside its icon (the one way a
+            child has of telling an adult something is wrong is not left to an icon). The name is the words it shows;
+            on a phone they sit on two lines (os-concern-text) so the bar's other controls keep their 44px. */}
+        <button type="button" onClick={()=>onNav("safeguarding")} className="pressBtn os-concern" data-testid="nav-safeguarding" aria-label="Raise a concern"
           aria-current={active==="safeguarding"?"page":undefined}
-          style={{display:"flex",alignItems:"center",justifyContent:"center",minWidth:"44px",minHeight:"44px",background:"none",border:"none",cursor:"pointer",fontSize:"16px",flexShrink:0,color:D.textSecondary}}>
-          <Icon name="hand-heart"/>
+          style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"6px",minWidth:"44px",minHeight:"44px",padding:"0 8px",borderRadius:D.pill,
+            background:active==="safeguarding"?D.surf3:"none",border:`1px solid ${active==="safeguarding"?D.borderMed:"transparent"}`,cursor:"pointer",flexShrink:0,color:D.textSecondary}}>
+          <span aria-hidden="true" style={{display:"flex",fontSize:"16px"}}><Icon name="hand-heart"/></span>
+          <span className="os-concern-text" style={{fontFamily:D.body,fontSize:"12px",lineHeight:1.15,color:D.textSecondary,textAlign:"left",whiteSpace:"nowrap"}}>Raise{"\u00a0"}a concern</span>
         </button>
 
         {/* The person's own name: their Settings, and only what is theirs (§1.6). */}
@@ -98,7 +102,7 @@ function TopBar({ role, onRoleChange, onNav, userName, active = null, onSignOut 
           <button ref={roleBtn} onClick={()=>setRoleOpen(!roleOpen)} className="pressBtn" data-testid="topbar-role" aria-haspopup="menu" aria-expanded={roleOpen} aria-label={`${ROLES[role]?.label ?? "Role"}, switch role`} style={{display:"flex",alignItems:"center",gap:"6px",padding:"5px 10px",minHeight:"44px",minWidth:"44px",borderRadius:D.pill,background:D.surf2,border:`1px solid ${D.border}`,cursor:"pointer"}}>
             <span style={{fontSize:"13px",color:D.textSecondary}}><Icon name={ROLES[role]?.icon}/></span>
             <span className="os-username" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,maxWidth:"90px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ROLES[role]?.label}</span>
-            <span aria-hidden="true" style={{fontSize:"12px",color:D.textMuted}}>▼</span>
+            <span aria-hidden="true" className="os-role-caret" style={{fontSize:"12px",color:D.textMuted}}>▼</span>
           </button>
           {roleOpen&&(
             <div ref={roleMenu} role="menu" aria-label="Switch role" style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:T.surface.overlay,border:`1px solid ${T.line.normal}`,borderRadius:T.radius.lg,overflowY:"auto",minWidth:"210px",maxHeight:"min(70vh,520px)",zIndex:200,boxShadow:T.elevation.lg}}>

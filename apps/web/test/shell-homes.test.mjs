@@ -22,6 +22,7 @@ import { chipOrder, weekOf } from "../src/views/DashboardView.jsx";
 import { formLetter, teamResults } from "../src/views/TeamPage.jsx";
 import { MobileNav } from "../src/shell/MobileNav.jsx";
 import { TopBar } from "../src/shell/TopBar.jsx";
+import { PersonaBar } from "../src/shell/PersonaBar.jsx";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${String(typeof d === "string" ? d : JSON.stringify(d)).slice(0, 300)}`); } };
@@ -135,6 +136,16 @@ group("The shell, drawn signed out (the demo)");
      && top.includes('data-testid="nav-settings"') && top.includes("A Coach"));
   ok("...and no mark beside Raise a concern", !/nav-safeguarding[^]*?badge/.test(top.slice(top.indexOf("nav-safeguarding"), top.indexOf("nav-settings"))));
   ok("every control in it at least 44px", (top.match(/min-height:(\d+)px/g) ?? []).every((m) => parseInt(m.slice(11), 10) >= 44));
+  // Glossary review item 1: "Raise a concern" in words beside its icon, on both headers, its name starting with them.
+  const persona = renderToStaticMarkup(h(PersonaBar, { active: "children", onNav: () => {}, onSignOut: () => {}, userName: "A Parent" }));
+  for (const [who, html] of [["the staff header", top], ["the persona header", persona]]) {
+    const btn = html.match(/<button[^>]*data-testid="nav-safeguarding"[^>]*>([^]*?)<\/button>/);
+    const words = (btn?.[1] ?? "").replace(/<[^>]+>/g, "").replace(/\u00a0|&nbsp;|&#160;/g, " ").trim();
+    const name = btn?.[0].match(/aria-label="([^"]*)"/)?.[1] ?? "";
+    ok(`${who}: Raise a concern shows its words beside the icon, and its name starts with them`,
+       words === "Raise a concern" && name.startsWith(words) && /aria-hidden="true"/.test(btn?.[1] ?? ""), btn?.[0]?.slice(0, 300));
+    ok(`${who}: ...and carries no mark or count`, !/\d/.test(words) && !/badge|count/.test(btn?.[1] ?? ""));
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
