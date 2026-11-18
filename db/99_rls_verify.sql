@@ -9924,6 +9924,224 @@ EXCEPTION WHEN OTHERS THEN
 END $$ LANGUAGE plpgsql;
 -- └── db/133 (section 112) ─────────────────────────────────────────────
 
+-- ┌── db/165 (section 143) ─────────────────────────────────────────────
+-- A fixture is live from its first event. Each case stages its own Hilton
+-- 1XI fixtures, invented, far from any date the seed or another section
+-- books and on no ground, so no clash and no other section's rows; every
+-- opponent is 'V165 …'. The scorer is the seed's (A Wessels, Hilton-wide).
+CREATE OR REPLACE FUNCTION _v165_fixture(p_tag text, p_status text, p_days integer) RETURNS uuid AS $$
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'V165 ' || p_tag,
+          ((sa_today() + p_days)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, p_status)
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A fixture's status, as the owner reads it (no reader's row security in the way).
+CREATE OR REPLACE FUNCTION _v165_status(p_match uuid) RETURNS text AS $$
+  SELECT coalesce((SELECT m.status FROM match m WHERE m.id = p_match), '(none)')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A status set as the owner, for staging only.
+CREATE OR REPLACE FUNCTION _v165_set(p_match uuid, p_status text) RETURNS void AS $$
+  UPDATE match SET status = p_status WHERE id = p_match
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A ball written as the owner, as a definer would (the importer's confirm):
+-- 'written', or 'SQLSTATE constraint' for what refused it.
+CREATE OR REPLACE FUNCTION _v165_ball(p_match uuid, p_seq integer) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, ball_type, value)
+  SELECT p_match, m.school_id, p_seq, 0, 0, '88888888-0000-0000-0000-000000000006', 'v165-owner',
+         'v165-' || p_match || '-' || p_seq, p_seq, now(), 'ball', 'run', 0
+    FROM match m WHERE m.id = p_match;
+  RETURN 'written';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN SQLSTATE || ' ' || coalesce(v_con, '');
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One ball on each of several fixtures, in ONE statement, as the owner: the
+-- trigger is per statement and must find every fixture the statement wrote to.
+CREATE OR REPLACE FUNCTION _v165_balls(p_matches uuid[]) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, ball_type, value)
+  SELECT m.id, m.school_id, 1, 0, 0, '88888888-0000-0000-0000-000000000006', 'v165-owner',
+         'v165-' || m.id || '-1', 1, now(), 'ball', 'run', 0
+    FROM match m WHERE m.id = ANY (p_matches);
+  RETURN 'written';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN SQLSTATE || ' ' || coalesce(v_con, '');
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What a status move could have told or recorded, as the owner: every notice
+-- on the platform, and the fixture's own notices and scoring_audit rows.
+CREATE OR REPLACE FUNCTION _v165_told(p_match uuid) RETURNS text AS $$
+  SELECT (SELECT count(*) FROM notification)::text || '/'
+      || (SELECT count(*) FROM notification n WHERE n.subject_id = p_match)::text || '/'
+      || coalesce((SELECT string_agg(s.event, ' ' ORDER BY s.at, s.id) FROM scoring_audit s WHERE s.match_id = p_match), '')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Scheduled fixtures with an event in their log, over the whole table, as the owner.
+CREATE OR REPLACE FUNCTION _v165_stuck() RETURNS integer AS $$
+  SELECT count(*)::int FROM match m
+   WHERE m.status = 'scheduled' AND EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/165's backfill, as the owner, whose alone it is.
+CREATE OR REPLACE FUNCTION _v165_backfill() RETURNS integer AS $$
+  SELECT match_live_backfill()
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A function's grants, read from its ACL: "role:PRIVILEGE,…", the owner left out; NULL if it is missing.
+CREATE OR REPLACE FUNCTION _v165_acl(p_fn text) RETURNS text AS $$
+  SELECT CASE WHEN to_regprocedure(p_fn) IS NULL THEN NULL ELSE coalesce((
+    SELECT string_agg(coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC') || ':' || x.privilege_type, ',' ORDER BY x.grantee)
+      FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x
+     WHERE p.oid = to_regprocedure(p_fn) AND x.grantee <> p.proowner), '') END
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One case of §143, run as the caller (scrbrd_app, under the scorer's or the
+-- office's session), so every write by a person meets row security as the
+-- API's would. Each case stages its own fixtures and raises on its first failure.
+CREATE OR REPLACE FUNCTION _v165_case(p_case text) RETURNS void AS $$
+DECLARE
+  SC  uuid := '88888888-0000-0000-0000-000000000006';   -- A Wessels, Hilton's scorer
+  DOS uuid := '88888888-0000-0000-0000-000000000007';   -- Sarah, Hilton's director of sport
+  S uuid; S2 uuid; P uuid; A uuid; C uuid; L uuid; Q uuid; B uuid; v text; v2 text; n int; ok boolean; ep int;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  IF p_case = 'first' THEN
+    -- (first) The scorer claims a scheduled fixture (still scheduled: a claim is not play), then
+    -- writes one ball on the write path's terms: the fixture is live, and nothing is told or audited.
+    S := _v165_fixture('first', 'scheduled', 140);
+    PERFORM _as(SC);
+    PERFORM set_config('app.device_id', 'v165-pad', true);
+    SELECT c.ok, c.epoch INTO ok, ep FROM scoring_claim(S, 'v165-pad') c;
+    PERFORM _assert(ok, '§143 (first): the scorer could not claim the fixture');
+    PERFORM _assert(_v165_status(S) = 'scheduled', format('§143 (first): the claim made the fixture %s', _v165_status(S)));
+    v := _v165_told(S);
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                            idempotency_key, client_seq, client_ts, kind, ball_type, value)
+    VALUES (S, match_school(S), 1, ep, 0, SC, 'v165-pad', 'v165-first-1', 1, now(), 'ball', 'run', 0);
+    PERFORM _assert(_v165_status(S) = 'live', format('§143 (first): after the first ball the fixture is %s, not live', _v165_status(S)));
+    PERFORM _assert(_v165_told(S) = v, format('§143 (first): going live told or recorded something: %s, then %s', v, _v165_told(S)));
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                            idempotency_key, client_seq, client_ts, kind, ball_type, value)
+    VALUES (S, match_school(S), 2, ep, 0, SC, 'v165-pad', 'v165-first-2', 2, now(), 'ball', 'run', 4);
+    PERFORM _assert(_v165_status(S) = 'live' AND _v165_told(S) = v,
+      format('§143 (first): the second ball left it %s, %s', _v165_status(S), _v165_told(S)));
+
+  ELSIF p_case = 'statement' THEN
+    -- (statement) One statement writing to two scheduled fixtures makes both live, and a third
+    -- fixture it does not write to stays scheduled.
+    S := _v165_fixture('statement one', 'scheduled', 141);
+    S2 := _v165_fixture('statement two', 'scheduled', 142);
+    Q := _v165_fixture('statement none', 'scheduled', 143);
+    v := _v165_balls(ARRAY[S, S2]);
+    PERFORM _assert(v = 'written' AND _v165_status(S) = 'live' AND _v165_status(S2) = 'live' AND _v165_status(Q) = 'scheduled',
+      format('§143 (statement): %s; the two read %s and %s, the third %s', v, _v165_status(S), _v165_status(S2), _v165_status(Q)));
+
+  ELSIF p_case = 'others' THEN
+    -- (others) Only from scheduled: a postponed fixture refuses the ball (db/133) and stays postponed;
+    -- a ball written as a definer to an abandoned or a complete fixture leaves its status as it was
+    -- (a trigger that moved them would be refused by db/133 and db/132, and take the ball with it);
+    -- a live one stays live.
+    P := _v165_fixture('postponed', 'postponed', 144);
+    A := _v165_fixture('abandoned', 'abandoned', 151);
+    C := _v165_fixture('complete', 'complete', -140);
+    L := _v165_fixture('live', 'live', 0);
+    v := _v165_ball(P, 1);
+    PERFORM _assert(v = '23514 match_postponed' AND _v165_status(P) = 'postponed',
+      format('§143 (others): a ball on a postponed fixture reads %s, and it is %s', v, _v165_status(P)));
+    FOREACH S IN ARRAY ARRAY[A, C, L] LOOP
+      v := _v165_ball(S, 1);
+      v2 := CASE S WHEN A THEN 'abandoned' WHEN C THEN 'complete' ELSE 'live' END;
+      -- Written, as a definer writes it: the trigger neither refuses the ball nor moves the status.
+      PERFORM _assert(v = 'written' AND _v165_status(S) = v2, format('§143 (others): a ball on the %s fixture reads %s, and it is %s', v2, v, _v165_status(S)));
+    END LOOP;
+
+  ELSIF p_case = 'quarantine' THEN
+    -- (quarantine) A ball the server holds for review is not in the log, so it moves nothing.
+    Q := _v165_fixture('quarantined', 'scheduled', 145);
+    PERFORM _as(SC);
+    PERFORM set_config('app.device_id', 'v165-old-pad', true);
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id, idempotency_key, body, fingerprint)
+    VALUES (Q, match_school(Q), 0, 1, SC, 'v165-old-pad', 'v165-q-1', '{"kind":"ball","ballType":"run","value":0}'::jsonb, 'v165-fingerprint');
+    PERFORM _assert(EXISTS (SELECT 1 FROM ball_event_quarantine x WHERE x.idempotency_key = 'v165-q-1'), '§143 (quarantine): the held ball was not stored');
+    PERFORM _assert(_v165_status(Q) = 'scheduled', format('§143 (quarantine): a quarantined ball made the fixture %s', _v165_status(Q)));
+
+  ELSIF p_case = 'scorer' THEN
+    -- (scorer) The scorer still cannot set a fixture's status himself, to live or to complete: row
+    -- security (match_update, db/09: fixture.update) finds no row for him to change.
+    S := _v165_fixture('scorer', 'scheduled', 146);
+    PERFORM _as(SC);
+    UPDATE match SET status = 'live' WHERE id = S;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 0 AND _v165_status(S) = 'scheduled', format('§143 (scorer): his UPDATE to live changed %s rows; it is %s', n, _v165_status(S)));
+    UPDATE match SET status = 'complete' WHERE id = S;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 0 AND _v165_status(S) = 'scheduled', format('§143 (scorer): his UPDATE to complete changed %s rows; it is %s', n, _v165_status(S)));
+
+  ELSIF p_case = 'backfill' THEN
+    -- (backfill) The state the bug left, staged: a fixture with a ball in its log and still scheduled
+    -- (called off once scored, then put back on, db/133's one way back). match_live_backfill() makes
+    -- it live, leaves a scheduled fixture with no log and an abandoned one with a log as they are,
+    -- finds nothing the second time, and leaves no scheduled fixture with events anywhere.
+    B := _v165_fixture('stuck', 'abandoned', 147);
+    S := _v165_fixture('unplayed', 'scheduled', 148);
+    A := _v165_fixture('called off', 'abandoned', 149);
+    PERFORM _assert(_v165_ball(B, 1) = 'written' AND _v165_ball(A, 1) = 'written', '§143 (backfill): the staged balls were not written');
+    PERFORM _v165_set(B, 'scheduled');
+    PERFORM _assert(_v165_status(B) = 'scheduled' AND _v165_stuck() >= 1,
+      format('§143 (backfill): the staged fixture is %s, %s stuck', _v165_status(B), _v165_stuck()));
+    n := _v165_backfill();
+    PERFORM _assert(n >= 1 AND _v165_status(B) = 'live' AND _v165_status(S) = 'scheduled' AND _v165_status(A) = 'abandoned',
+      format('§143 (backfill): moved %s; the stuck one is %s, the unplayed %s, the called off %s',
+             n, _v165_status(B), _v165_status(S), _v165_status(A)));
+    n := _v165_backfill();
+    PERFORM _assert(n = 0 AND _v165_stuck() = 0, format('§143 (backfill): a second run moved %s and left %s stuck', n, _v165_stuck()));
+
+  ELSIF p_case = 'grants' THEN
+    -- (grants) The trigger's function: a definer with its path pinned, EXECUTE to scrbrd_app alone;
+    -- the backfill: the owner's alone; the trigger itself, as db/165 made it and enabled.
+    PERFORM _assert(_v165_acl('match_live_on_first_event()') = 'scrbrd_app:EXECUTE',
+      format('§143 (grants): match_live_on_first_event() is granted %s', coalesce(_v165_acl('match_live_on_first_event()'), '(missing)')));
+    PERFORM _assert(_v165_acl('match_live_backfill()') = '',
+      format('§143 (grants): match_live_backfill() is granted %s', coalesce(_v165_acl('match_live_backfill()'), '(missing)')));
+    SELECT string_agg(f, ' ') INTO v FROM unnest(ARRAY['match_live_on_first_event()', 'match_live_backfill()']) f
+     WHERE NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f::regprocedure AND p.prosecdef
+                         AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
+        OR has_function_privilege('public', f, 'EXECUTE');
+    PERFORM _assert(v IS NULL, format('§143 (grants): not pinned, or PUBLIC''s: %s', v));
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = 'ball_event'::regclass AND t.tgname = 'ball_event_match_live'
+                              AND t.tgenabled = 'O' AND t.tgfoid = 'match_live_on_first_event()'::regprocedure),
+      '§143 (grants): ball_event_match_live is missing, disabled or calls another function');
+
+  -- (back) Kameel's call, not made (db/165's marked spot): once a fixture's log has an event, the
+  -- office cannot put it back to scheduled. If he says yes, take this case out of the comment and
+  -- add PERFORM _v165_case('back') to §143's list.
+  -- ELSIF p_case = 'back' THEN
+  --   L := _v165_fixture('back', 'scheduled', 150);
+  --   v := _v165_ball(L, 1);
+  --   PERFORM _assert(v = 'written' AND _v165_status(L) = 'live', format('§143 (back): the staged fixture reads %s, %s', v, _v165_status(L)));
+  --   PERFORM _as(DOS);
+  --   v := _v133_try(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', L));
+  --   PERFORM _assert(v LIKE '23514|match_status_transition|%' AND _v165_status(L) = 'live',
+  --     format('§143 (back): live → scheduled once scored reads %s; it is %s', v, _v165_status(L)));
+  ELSE
+    RAISE EXCEPTION '§143: no case %', p_case;
+  END IF;
+  PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('app.device_id', '', true);
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- └── db/165 (section 143) ─────────────────────────────────────────────
+
 -- ┌── db/135 (section 113). Two phones scoring one match, slice 1 ─────────
 -- Invented, as the owner. Hilton's U13F at home to Westville's 1XI, live,
 -- one over in the log (MP), with the pen held by the U13F scorer (sc) on
@@ -14372,224 +14590,6 @@ BEGIN
   PERFORM set_config('app.user_id', '', true);
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- └── db/161 (section 139) ─────────────────────────────────────────────
--- ┌── db/165 (section 140) ─────────────────────────────────────────────
--- A fixture is live from its first event. Each case stages its own Hilton
--- 1XI fixtures, invented, far from any date the seed or another section
--- books and on no ground, so no clash and no other section's rows; every
--- opponent is 'V165 …'. The scorer is the seed's (A Wessels, Hilton-wide).
-CREATE OR REPLACE FUNCTION _v165_fixture(p_tag text, p_status text, p_days integer) RETURNS uuid AS $$
-  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
-  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'V165 ' || p_tag,
-          ((sa_today() + p_days)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
-          'cricket', 'T20', 20, p_status)
-  RETURNING id
-$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-
--- A fixture's status, as the owner reads it (no reader's row security in the way).
-CREATE OR REPLACE FUNCTION _v165_status(p_match uuid) RETURNS text AS $$
-  SELECT coalesce((SELECT m.status FROM match m WHERE m.id = p_match), '(none)')
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-
--- A status set as the owner, for staging only.
-CREATE OR REPLACE FUNCTION _v165_set(p_match uuid, p_status text) RETURNS void AS $$
-  UPDATE match SET status = p_status WHERE id = p_match
-$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-
--- A ball written as the owner, as a definer would (the importer's confirm):
--- 'written', or 'SQLSTATE constraint' for what refused it.
-CREATE OR REPLACE FUNCTION _v165_ball(p_match uuid, p_seq integer) RETURNS text AS $$
-DECLARE v_con text;
-BEGIN
-  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-                          idempotency_key, client_seq, client_ts, kind, ball_type, value)
-  SELECT p_match, m.school_id, p_seq, 0, 0, '88888888-0000-0000-0000-000000000006', 'v165-owner',
-         'v165-' || p_match || '-' || p_seq, p_seq, now(), 'ball', 'run', 0
-    FROM match m WHERE m.id = p_match;
-  RETURN 'written';
-EXCEPTION WHEN OTHERS THEN
-  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
-  RETURN SQLSTATE || ' ' || coalesce(v_con, '');
-END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-
--- One ball on each of several fixtures, in ONE statement, as the owner: the
--- trigger is per statement and must find every fixture the statement wrote to.
-CREATE OR REPLACE FUNCTION _v165_balls(p_matches uuid[]) RETURNS text AS $$
-DECLARE v_con text;
-BEGIN
-  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-                          idempotency_key, client_seq, client_ts, kind, ball_type, value)
-  SELECT m.id, m.school_id, 1, 0, 0, '88888888-0000-0000-0000-000000000006', 'v165-owner',
-         'v165-' || m.id || '-1', 1, now(), 'ball', 'run', 0
-    FROM match m WHERE m.id = ANY (p_matches);
-  RETURN 'written';
-EXCEPTION WHEN OTHERS THEN
-  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
-  RETURN SQLSTATE || ' ' || coalesce(v_con, '');
-END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-
--- What a status move could have told or recorded, as the owner: every notice
--- on the platform, and the fixture's own notices and scoring_audit rows.
-CREATE OR REPLACE FUNCTION _v165_told(p_match uuid) RETURNS text AS $$
-  SELECT (SELECT count(*) FROM notification)::text || '/'
-      || (SELECT count(*) FROM notification n WHERE n.subject_id = p_match)::text || '/'
-      || coalesce((SELECT string_agg(s.event, ' ' ORDER BY s.at, s.id) FROM scoring_audit s WHERE s.match_id = p_match), '')
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-
--- Scheduled fixtures with an event in their log, over the whole table, as the owner.
-CREATE OR REPLACE FUNCTION _v165_stuck() RETURNS integer AS $$
-  SELECT count(*)::int FROM match m
-   WHERE m.status = 'scheduled' AND EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id)
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-
--- db/165's backfill, as the owner, whose alone it is.
-CREATE OR REPLACE FUNCTION _v165_backfill() RETURNS integer AS $$
-  SELECT match_live_backfill()
-$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-
--- A function's grants, read from its ACL: "role:PRIVILEGE,…", the owner left out; NULL if it is missing.
-CREATE OR REPLACE FUNCTION _v165_acl(p_fn text) RETURNS text AS $$
-  SELECT CASE WHEN to_regprocedure(p_fn) IS NULL THEN NULL ELSE coalesce((
-    SELECT string_agg(coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC') || ':' || x.privilege_type, ',' ORDER BY x.grantee)
-      FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x
-     WHERE p.oid = to_regprocedure(p_fn) AND x.grantee <> p.proowner), '') END
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-
--- One case of §140, run as the caller (scrbrd_app, under the scorer's or the
--- office's session), so every write by a person meets row security as the
--- API's would. Each case stages its own fixtures and raises on its first failure.
-CREATE OR REPLACE FUNCTION _v165_case(p_case text) RETURNS void AS $$
-DECLARE
-  SC  uuid := '88888888-0000-0000-0000-000000000006';   -- A Wessels, Hilton's scorer
-  DOS uuid := '88888888-0000-0000-0000-000000000007';   -- Sarah, Hilton's director of sport
-  S uuid; S2 uuid; P uuid; A uuid; C uuid; L uuid; Q uuid; B uuid; v text; v2 text; n int; ok boolean; ep int;
-BEGIN
-  PERFORM set_config('app.user_id', '', true);
-  IF p_case = 'first' THEN
-    -- (first) The scorer claims a scheduled fixture (still scheduled: a claim is not play), then
-    -- writes one ball on the write path's terms: the fixture is live, and nothing is told or audited.
-    S := _v165_fixture('first', 'scheduled', 140);
-    PERFORM _as(SC);
-    PERFORM set_config('app.device_id', 'v165-pad', true);
-    SELECT c.ok, c.epoch INTO ok, ep FROM scoring_claim(S, 'v165-pad') c;
-    PERFORM _assert(ok, '§140 (first): the scorer could not claim the fixture');
-    PERFORM _assert(_v165_status(S) = 'scheduled', format('§140 (first): the claim made the fixture %s', _v165_status(S)));
-    v := _v165_told(S);
-    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-                            idempotency_key, client_seq, client_ts, kind, ball_type, value)
-    VALUES (S, match_school(S), 1, ep, 0, SC, 'v165-pad', 'v165-first-1', 1, now(), 'ball', 'run', 0);
-    PERFORM _assert(_v165_status(S) = 'live', format('§140 (first): after the first ball the fixture is %s, not live', _v165_status(S)));
-    PERFORM _assert(_v165_told(S) = v, format('§140 (first): going live told or recorded something: %s, then %s', v, _v165_told(S)));
-    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
-                            idempotency_key, client_seq, client_ts, kind, ball_type, value)
-    VALUES (S, match_school(S), 2, ep, 0, SC, 'v165-pad', 'v165-first-2', 2, now(), 'ball', 'run', 4);
-    PERFORM _assert(_v165_status(S) = 'live' AND _v165_told(S) = v,
-      format('§140 (first): the second ball left it %s, %s', _v165_status(S), _v165_told(S)));
-
-  ELSIF p_case = 'statement' THEN
-    -- (statement) One statement writing to two scheduled fixtures makes both live, and a third
-    -- fixture it does not write to stays scheduled.
-    S := _v165_fixture('statement one', 'scheduled', 141);
-    S2 := _v165_fixture('statement two', 'scheduled', 142);
-    Q := _v165_fixture('statement none', 'scheduled', 143);
-    v := _v165_balls(ARRAY[S, S2]);
-    PERFORM _assert(v = 'written' AND _v165_status(S) = 'live' AND _v165_status(S2) = 'live' AND _v165_status(Q) = 'scheduled',
-      format('§140 (statement): %s; the two read %s and %s, the third %s', v, _v165_status(S), _v165_status(S2), _v165_status(Q)));
-
-  ELSIF p_case = 'others' THEN
-    -- (others) Only from scheduled: a postponed fixture refuses the ball (db/133) and stays postponed;
-    -- a ball written as a definer to an abandoned or a complete fixture leaves its status as it was
-    -- (a trigger that moved them would be refused by db/133 and db/132, and take the ball with it);
-    -- a live one stays live.
-    P := _v165_fixture('postponed', 'postponed', 144);
-    A := _v165_fixture('abandoned', 'abandoned', 151);
-    C := _v165_fixture('complete', 'complete', -140);
-    L := _v165_fixture('live', 'live', 0);
-    v := _v165_ball(P, 1);
-    PERFORM _assert(v = '23514 match_postponed' AND _v165_status(P) = 'postponed',
-      format('§140 (others): a ball on a postponed fixture reads %s, and it is %s', v, _v165_status(P)));
-    FOREACH S IN ARRAY ARRAY[A, C, L] LOOP
-      v := _v165_ball(S, 1);
-      v2 := CASE S WHEN A THEN 'abandoned' WHEN C THEN 'complete' ELSE 'live' END;
-      -- Written, as a definer writes it: the trigger neither refuses the ball nor moves the status.
-      PERFORM _assert(v = 'written' AND _v165_status(S) = v2, format('§140 (others): a ball on the %s fixture reads %s, and it is %s', v2, v, _v165_status(S)));
-    END LOOP;
-
-  ELSIF p_case = 'quarantine' THEN
-    -- (quarantine) A ball the server holds for review is not in the log, so it moves nothing.
-    Q := _v165_fixture('quarantined', 'scheduled', 145);
-    PERFORM _as(SC);
-    PERFORM set_config('app.device_id', 'v165-old-pad', true);
-    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id, idempotency_key, body, fingerprint)
-    VALUES (Q, match_school(Q), 0, 1, SC, 'v165-old-pad', 'v165-q-1', '{"kind":"ball","ballType":"run","value":0}'::jsonb, 'v165-fingerprint');
-    PERFORM _assert(EXISTS (SELECT 1 FROM ball_event_quarantine x WHERE x.idempotency_key = 'v165-q-1'), '§140 (quarantine): the held ball was not stored');
-    PERFORM _assert(_v165_status(Q) = 'scheduled', format('§140 (quarantine): a quarantined ball made the fixture %s', _v165_status(Q)));
-
-  ELSIF p_case = 'scorer' THEN
-    -- (scorer) The scorer still cannot set a fixture's status himself, to live or to complete: row
-    -- security (match_update, db/09: fixture.update) finds no row for him to change.
-    S := _v165_fixture('scorer', 'scheduled', 146);
-    PERFORM _as(SC);
-    UPDATE match SET status = 'live' WHERE id = S;
-    GET DIAGNOSTICS n = ROW_COUNT;
-    PERFORM _assert(n = 0 AND _v165_status(S) = 'scheduled', format('§140 (scorer): his UPDATE to live changed %s rows; it is %s', n, _v165_status(S)));
-    UPDATE match SET status = 'complete' WHERE id = S;
-    GET DIAGNOSTICS n = ROW_COUNT;
-    PERFORM _assert(n = 0 AND _v165_status(S) = 'scheduled', format('§140 (scorer): his UPDATE to complete changed %s rows; it is %s', n, _v165_status(S)));
-
-  ELSIF p_case = 'backfill' THEN
-    -- (backfill) The state the bug left, staged: a fixture with a ball in its log and still scheduled
-    -- (called off once scored, then put back on, db/133's one way back). match_live_backfill() makes
-    -- it live, leaves a scheduled fixture with no log and an abandoned one with a log as they are,
-    -- finds nothing the second time, and leaves no scheduled fixture with events anywhere.
-    B := _v165_fixture('stuck', 'abandoned', 147);
-    S := _v165_fixture('unplayed', 'scheduled', 148);
-    A := _v165_fixture('called off', 'abandoned', 149);
-    PERFORM _assert(_v165_ball(B, 1) = 'written' AND _v165_ball(A, 1) = 'written', '§140 (backfill): the staged balls were not written');
-    PERFORM _v165_set(B, 'scheduled');
-    PERFORM _assert(_v165_status(B) = 'scheduled' AND _v165_stuck() >= 1,
-      format('§140 (backfill): the staged fixture is %s, %s stuck', _v165_status(B), _v165_stuck()));
-    n := _v165_backfill();
-    PERFORM _assert(n >= 1 AND _v165_status(B) = 'live' AND _v165_status(S) = 'scheduled' AND _v165_status(A) = 'abandoned',
-      format('§140 (backfill): moved %s; the stuck one is %s, the unplayed %s, the called off %s',
-             n, _v165_status(B), _v165_status(S), _v165_status(A)));
-    n := _v165_backfill();
-    PERFORM _assert(n = 0 AND _v165_stuck() = 0, format('§140 (backfill): a second run moved %s and left %s stuck', n, _v165_stuck()));
-
-  ELSIF p_case = 'grants' THEN
-    -- (grants) The trigger's function: a definer with its path pinned, EXECUTE to scrbrd_app alone;
-    -- the backfill: the owner's alone; the trigger itself, as db/165 made it and enabled.
-    PERFORM _assert(_v165_acl('match_live_on_first_event()') = 'scrbrd_app:EXECUTE',
-      format('§140 (grants): match_live_on_first_event() is granted %s', coalesce(_v165_acl('match_live_on_first_event()'), '(missing)')));
-    PERFORM _assert(_v165_acl('match_live_backfill()') = '',
-      format('§140 (grants): match_live_backfill() is granted %s', coalesce(_v165_acl('match_live_backfill()'), '(missing)')));
-    SELECT string_agg(f, ' ') INTO v FROM unnest(ARRAY['match_live_on_first_event()', 'match_live_backfill()']) f
-     WHERE NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f::regprocedure AND p.prosecdef
-                         AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
-        OR has_function_privilege('public', f, 'EXECUTE');
-    PERFORM _assert(v IS NULL, format('§140 (grants): not pinned, or PUBLIC''s: %s', v));
-    PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = 'ball_event'::regclass AND t.tgname = 'ball_event_match_live'
-                              AND t.tgenabled = 'O' AND t.tgfoid = 'match_live_on_first_event()'::regprocedure),
-      '§140 (grants): ball_event_match_live is missing, disabled or calls another function');
-
-  -- (back) Kameel's call, not made (db/165's marked spot): once a fixture's log has an event, the
-  -- office cannot put it back to scheduled. If he says yes, take this case out of the comment and
-  -- add PERFORM _v165_case('back') to §140's list.
-  -- ELSIF p_case = 'back' THEN
-  --   L := _v165_fixture('back', 'scheduled', 150);
-  --   v := _v165_ball(L, 1);
-  --   PERFORM _assert(v = 'written' AND _v165_status(L) = 'live', format('§140 (back): the staged fixture reads %s, %s', v, _v165_status(L)));
-  --   PERFORM _as(DOS);
-  --   v := _v133_try(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', L));
-  --   PERFORM _assert(v LIKE '23514|match_status_transition|%' AND _v165_status(L) = 'live',
-  --     format('§140 (back): live → scheduled once scored reads %s; it is %s', v, _v165_status(L)));
-  ELSE
-    RAISE EXCEPTION '§140: no case %', p_case;
-  END IF;
-  PERFORM set_config('app.user_id', '', true);
-  PERFORM set_config('app.device_id', '', true);
-END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
--- └── db/165 (section 140) ─────────────────────────────────────────────
-
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -39321,6 +39321,53 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   -- └── end of section 112
   -- └── db/133 (section 112) ──────────────────────────────────────────
 
+  -- ┌── db/165 (section 143) ─────────────────────────────────────────
+  -- ── 143. A fixture is live from its first event ──
+  -- Placed after §112 (its neighbour: f8 there is live from its first
+  -- ball), not at the end: §140-§142 are taken by open branches that append
+  -- there, so this section merges beside whichever lands first.
+  -- The match-day bug of 18 Nov 2026: nothing moved a scored fixture to
+  -- live. The cases (each stages its own fixtures, _v165_case above):
+  --   (first)      the scorer's claim leaves the fixture scheduled; his
+  --                first ball, written as the write path writes it, makes
+  --                it live; nothing is told (no notice anywhere) or audited;
+  --                the second ball leaves it live
+  --   (statement)  one statement writing to two fixtures makes both live,
+  --                and a third it does not write to stays scheduled
+  --   (others)     only from scheduled: a postponed fixture refuses the
+  --                ball (db/133) and stays postponed; a ball written as a
+  --                definer to an abandoned or a complete fixture is written
+  --                and its status stays; a live one stays live
+  --   (quarantine) a ball held for review moves nothing
+  --   (scorer)     the scorer still cannot UPDATE a status himself, to live
+  --                or to complete: no row is his to change
+  --   (backfill)   a scored fixture staged back to scheduled (called off,
+  --                then put back on) is made live by match_live_backfill();
+  --                an unplayed one and a called-off one are left; a second
+  --                run finds nothing; no scheduled fixture has events
+  --   (grants)     the trigger's function a pinned definer, EXECUTE to
+  --                scrbrd_app alone; the backfill the owner's alone; the
+  --                trigger present, enabled, calling that function
+  -- (back), live → scheduled refused once scored, is Kameel's call and is
+  -- written, commented out, in _v165_case; it is red today, as it should be.
+  --
+  -- Falsified, each against this database in its own rolled-back run (the
+  -- cases called one by one, every failure caught and reported): the
+  -- trigger dropped → (first), (statement) and (grants) red. The trigger
+  -- made to move any status but live → (others) and (backfill) red (db/133
+  -- and db/132 refuse the move and take the ball with it). The backfill
+  -- made a no-op and granted to PUBLIC → (backfill) and (grants) red.
+  PERFORM _v165_case('first');
+  PERFORM _v165_case('statement');
+  PERFORM _v165_case('others');
+  PERFORM _v165_case('quarantine');
+  PERFORM _v165_case('scorer');
+  PERFORM _v165_case('backfill');
+  PERFORM _v165_case('grants');
+  -- PERFORM _v165_case('back');   -- Kameel's call (db/165's marked spot)
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/165 (section 143) ─────────────────────────────────────────
+
   -- ┌── db/135 (section 113) ─────────────────────────────────────────
   -- ── 113. Two phones scoring one match: the second account is told ──
   -- docs/design/TWO_PHONES.md slice 1 (Kameel, 5 Nov 2026, all seven as
@@ -45898,50 +45945,6 @@ $m130$;
   PERFORM _v161_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/161 (section 139) ─────────────────────────────────────────
-
-  -- ┌── db/165 (section 140) ─────────────────────────────────────────
-  -- ── 140. A fixture is live from its first event ──
-  -- The match-day bug of 18 Nov 2026: nothing moved a scored fixture to
-  -- live. The cases (each stages its own fixtures, _v165_case above):
-  --   (first)      the scorer's claim leaves the fixture scheduled; his
-  --                first ball, written as the write path writes it, makes
-  --                it live; nothing is told (no notice anywhere) or audited;
-  --                the second ball leaves it live
-  --   (statement)  one statement writing to two fixtures makes both live,
-  --                and a third it does not write to stays scheduled
-  --   (others)     only from scheduled: a postponed fixture refuses the
-  --                ball (db/133) and stays postponed; a ball written as a
-  --                definer to an abandoned or a complete fixture is written
-  --                and its status stays; a live one stays live
-  --   (quarantine) a ball held for review moves nothing
-  --   (scorer)     the scorer still cannot UPDATE a status himself, to live
-  --                or to complete: no row is his to change
-  --   (backfill)   a scored fixture staged back to scheduled (called off,
-  --                then put back on) is made live by match_live_backfill();
-  --                an unplayed one and a called-off one are left; a second
-  --                run finds nothing; no scheduled fixture has events
-  --   (grants)     the trigger's function a pinned definer, EXECUTE to
-  --                scrbrd_app alone; the backfill the owner's alone; the
-  --                trigger present, enabled, calling that function
-  -- (back), live → scheduled refused once scored, is Kameel's call and is
-  -- written, commented out, in _v165_case; it is red today, as it should be.
-  --
-  -- Falsified, each against this database in its own rolled-back run (the
-  -- cases called one by one, every failure caught and reported): the
-  -- trigger dropped → (first), (statement) and (grants) red. The trigger
-  -- made to move any status but live → (others) and (backfill) red (db/133
-  -- and db/132 refuse the move and take the ball with it). The backfill
-  -- made a no-op and granted to PUBLIC → (backfill) and (grants) red.
-  PERFORM _v165_case('first');
-  PERFORM _v165_case('statement');
-  PERFORM _v165_case('others');
-  PERFORM _v165_case('quarantine');
-  PERFORM _v165_case('scorer');
-  PERFORM _v165_case('backfill');
-  PERFORM _v165_case('grants');
-  -- PERFORM _v165_case('back');   -- Kameel's call (db/165's marked spot)
-  PERFORM set_config('app.user_id', '', true);
-  -- └── db/165 (section 140) ─────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

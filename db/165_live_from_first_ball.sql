@@ -45,7 +45,7 @@
 -- match_status_ends_scoring to postponed; match_result_confirmation_lapse has
 -- no confirmation to lapse on a live match; match_fixture_rules asks nothing
 -- of a status moving along; public_data_changed tells the public read's cache
--- to read again, which is the point. db/99 §140 counts the notices.
+-- to read again, which is the point. db/99 §143 counts the notices.
 -- Locking: the ball's foreign key holds FOR KEY SHARE on the match row, the
 -- UPDATE takes FOR NO KEY UPDATE, and the two do not conflict; after the
 -- first event the UPDATE matches no row and takes no lock.
@@ -58,7 +58,7 @@
 -- Safe to run twice: CREATE OR REPLACE, DROP TRIGGER IF EXISTS before the
 -- CREATE, and a backfill that finds nothing the second time. No BEGIN or
 -- COMMIT: the bundle and the migrator hold the transaction. Running ahead of
--- db/133 is refused. Its proof is db/99 §140.
+-- db/133 is refused. Its proof is db/99 §143.
 
 DO $guard$
 BEGIN
@@ -97,7 +97,7 @@ CREATE TRIGGER ball_event_match_live AFTER INSERT ON ball_event
 --         RAISE EXCEPTION 'This fixture has been scored, so it is live: call it off (abandoned) rather than put it back.'
 --           USING ERRCODE = 'check_violation', CONSTRAINT = 'match_status_transition';
 --
---     and db/99 §140's case (back), written and commented out there, goes in.
+--     and db/99 §143's case (back), written and commented out there, goes in.
 -- ───────────────────────────────────────────────────────────────────
 
 
@@ -116,7 +116,7 @@ END $grants$;
 
 
 -- ── 3 · The backfill: a scheduled fixture with a log is in play ────
--- A function, so db/99 §140 can prove it on a fixture it stages in the
+-- A function, so db/99 §143 can prove it on a fixture it stages in the
 -- state the bug left (a ball on its log, still scheduled). The owner's
 -- alone: it reaches every school's fixtures, and the app has no use for it.
 CREATE OR REPLACE FUNCTION match_live_backfill() RETURNS integer AS $$

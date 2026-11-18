@@ -707,7 +707,14 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // wheel, the parent's result, and the public page's names. It prints the
   // scorer's time per ball with and without the wheel, and says on a line of
   // its own whatever the app cannot do yet.
-  "browser-pilot-flow"];
+  "browser-pilot-flow",
+  // db/165 (18 Nov 2026): a fixture goes live from the pad's first ball, with
+  // no status written in SQL (the walk's source is held to that by
+  // run-smoke-shard.test.mjs); a four reaches the signed-out public page on
+  // its own refresh, naming no child beyond PUBLIC_DATA.md's L2; the scorer's
+  // phone reloads mid-innings, finishes through "Sign in to finish this
+  // match", and Today says Complete.
+  "browser-live-from-pad"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.
