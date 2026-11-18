@@ -90,7 +90,7 @@ export function GuardianLinks({ role, player }) {
 
       {!loading && !readFailed && candidates.length === 0 && (
         <p data-testid="guardian-links-none" style={dNote()}>
-          No parent at this school holds a guardian appointment yet. Enrol the parent under Settings, People first.
+          No parent at this school holds a guardian appointment yet. Enrol the parent on School, People first.
         </p>
       )}
 
