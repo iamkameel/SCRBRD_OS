@@ -452,7 +452,7 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
   useEffect(() => {
     if (!live) return undefined;
     let off = false;
-    api("/api/pupil/state").then((r) => { if (!off) setPupil(r?.claim ?? null); }).catch(() => { if (!off) setPupil(null); });
+    api("/api/pupil/state").then((r) => { if (!off) setPupil(r?.claim ?? null); }).catch(() => { if (!off) setPupil("failed"); });
     return () => { off = true; };
   }, [live, pupilNonce]);
   // Q10: "Ask the school for its signed-in view", from a followed school's card: the spectator request, as before.
@@ -510,6 +510,17 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
   }
 
   // A pupil's claim (db/163): his basic view, and nothing of this screen's asking.
+  if (pupil === "failed") {
+    return (
+      <div data-testid="pending-requests" style={{ minHeight: "100vh", display: "flex", justifyContent: "center", padding: "24px 16px", background: T.surface.canvas, boxSizing: "border-box" }}>
+        <div role="alert" data-testid="no-school-state-failed" style={{ maxWidth: "520px", width: "100%", ...text(14, T.content.primary) }}>
+          <div style={{ marginBottom: "12px" }}>Could not read your account. Try again.</div>
+          <Btn kind="primary" data-testid="no-school-state-retry" onClick={() => { setPupil(undefined); setPupilNonce((n) => n + 1); }}>Try again</Btn>
+          <Btn style={{ marginLeft: "8px" }} onClick={onSignOut}>Sign out</Btn>
+        </div>
+      </div>
+    );
+  }
   if (pupil === undefined) {
     return (
       <div data-testid="pending-requests" style={{ minHeight: "100vh", display: "flex", justifyContent: "center", padding: "24px 16px", background: T.surface.canvas, boxSizing: "border-box" }}>

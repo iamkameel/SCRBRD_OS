@@ -55,7 +55,7 @@ const WEB_PORT = port(4386);
 const API_PORT = port(8986);
 const API = `http://127.0.0.1:${API_PORT}`;
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
-const PHONE = { width: 390, height: 844 }, DESK = { width: 1366, height: 900 };
+const PHONE = { width: 390, height: 844 }, DESK = { width: 1366, height: 900 }, NARROW = { width: 320, height: 640 };
 const HIL = "11111111-1111-1111-1111-111111111111";
 const PROJECT = "scrbrd-os-test";
 const RUN = Date.now().toString(36);
@@ -321,7 +321,7 @@ try {
       const r = await call(`/api/read/${res}`, { token: tok });
       ok(`his token reads no ${res}`, r.status !== 200 || (r.body?.rows ?? []).length === 0, JSON.stringify(r.body).slice(0, 160));
     }
-    for (const [vp, scheme] of [[PHONE, "light"], [DESK, "dark"]]) {
+    for (const [vp, scheme] of [[NARROW, "light"], [PHONE, "light"], [DESK, "dark"]]) {
       await P.setViewportSize(vp);
       await P.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
       await P.waitForTimeout(300);

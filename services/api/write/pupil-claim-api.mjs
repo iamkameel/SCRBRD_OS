@@ -56,6 +56,8 @@ export const PUPIL_CLAIM_STATUS = Object.freeze({
   player_is_an_adult: 409,
   player_required: 422,
   not_a_claim: 409,
+  // db/163 B1: the account raised a safeguarding concern and is kept for it.
+  kept: 409,
 });
 
 /** A my_pupil_state() row, as his screen reads it. @param {any} r */

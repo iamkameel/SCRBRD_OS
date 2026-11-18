@@ -253,8 +253,11 @@ group("A pupil under 18 says who he is (db/163, Q3): it asks for nothing and ope
   ok("declined: the school has answered, never why", w.title === "The school has answered" && !/because|not on|list|record|known/i.test(w.line), JSON.stringify(w));
   const said = ["with_office", "recognised", "declined", "open"].flatMap((st) => Object.values(stateWords({ state: st, schoolName: "Test School" }))).filter(Boolean);
   ok("no state's words is an oracle, or names a team, a figure or a record", said.every((x) => !FOUND.test(x) && !/\bteam\b|figure|\brecord\b|availability|team-mate/i.test(x)), said.join(" | "));
-  ok("Q9 from the first day: the date, the 30 days, and what then", keepWords({ state: "with_office", keepUntil: "2026-12-18" }) === "This account is kept until 18 December 2026, 30 days from your last claim, while a parent or guardian is asked. If nobody says yes by then, it is removed, with the schools you follow.");
-  ok("...declined, the date and what then", /until 18 December 2026\. Then it is removed, with the schools you follow\./.test(keepWords({ state: "declined", keepUntil: "2026-12-18" })));
+  ok("Q9 from the first day: the date, the 30 days, and what then", keepWords({ state: "with_office", keepUntil: "2026-12-18" }) === "This account is kept until 18 December 2026, 30 days from your last claim, while the school office decides. Your own page opens only once the office has a parent's or guardian's signed consent form. If it has not opened by then, the account is removed, with the schools you follow.");
+  ok("...and promises nobody asks a parent: in Migration A the office decides (review S6)",
+     !/is asked|we ask|will ask/i.test(keepWords({ state: "with_office", keepUntil: "2026-12-18" }) + CLAIM_FORM.keep) && /office decides/.test(CLAIM_FORM.keep));
+  ok("...declined, 30 days from the school's answer, and what then", /until 18 December 2026, 30 days from the school's answer\. Then it is removed, with the schools you follow\./.test(keepWords({ state: "declined", keepUntil: "2026-12-18" })));
+  ok("a kept account (he raised a concern) says why to him, and only to him", /safeguarding officer has what you raised/.test(REMOVE_WORDS.kept));
   ok("...and nothing once he is opened", keepWords({ state: "open", keepUntil: null }) === null);
   ok("the database's day, as written", dayWords("2027-01-01") === "1 January 2027" && dayWords("x") === "");
   ok("removing the account says what goes before it goes", /sign-in and the schools you follow/.test(REMOVE_WORDS.ask));
