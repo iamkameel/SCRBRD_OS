@@ -8,7 +8,7 @@
  * and sends his claim. The walk then holds his screen to §3.3: EVERY row of
  * its left column is there, and NO row of its right column is, first with
  * his claim at the office and again once the office has recognised him in
- * its own browser (Settings → People → Pupil claims). Row by row:
+ * its own browser (School → People → Pupil claims). Row by row:
  *
  *   left (must be there)                    right (must not be)
  *   his account: his name, his sign-ins,    Home, Passport and Me; his profile,
@@ -167,11 +167,11 @@ async function go(page, key) {
   await afterReads(page, 1200);
   return true;
 }
-async function settingsTab(page, tab) {
-  if (!(await go(page, "settings"))) return false;
-  try { await page.locator(`#settings-tab-${tab}`).click({ timeout: 4000 }); } catch { return false; }
-  await afterReads(page, 1200);
-  return true;
+// Slice 6 moved Settings' People part whole into the School home (nav "staff").
+async function peoplePart(page) {
+  if (!(await go(page, "staff"))) return false;
+  await page.waitForSelector('[data-testid="part-people"]', { timeout: 6000 }).catch(() => {});
+  return (await tid(page, "part-people").count()) === 1;
 }
 /** §3.2 and §3.5 over a region: nothing read under 12px, nothing tapped under 44px. */
 async function floors(page, region) {
@@ -334,11 +334,11 @@ try {
   }
 
   // ── 3 · The office recognises him, in its own browser ────────────
-  group("3. The office recognises him from Settings → People → Pupil claims; it opens nothing");
+  group("3. The office recognises him from School → People → Pupil claims; it opens nothing");
   {
     const o = await open({ viewport: DESK });
     ok("the office signs in", await devSignIn(o, "registrar@example.invalid"));
-    ok("Settings → People opens", await settingsTab(o.page, "users"));
+    ok("School → People opens", await peoplePart(o.page));
     await o.page.waitForSelector('[data-testid="pupil-claims"]', { timeout: 6000 }).catch(() => {});
     const row = o.page.locator('[data-testid="pupil-claim"]', { hasText: "Sipho Walker" }).first();
     ok("his claim is on the list, with his address and what he typed", (await row.count()) === 1 && (await row.locator('[data-testid="pupil-claim-address"]').innerText()) === KID_EMAIL);
