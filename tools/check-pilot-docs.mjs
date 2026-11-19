@@ -184,7 +184,7 @@ const PIN = new Map([
   ["Home", { in: ["design/roles.js"] }],                      // the parent's bar
   ["Matches", { in: ["design/roles.js"] }],
   ["Family", { in: ["design/roles.js"] }],
-  ["Live", { in: ["views/family/cards.jsx"] }],               // the Home card's label
+  ["Live", { in: ["lib/matchCard.js"] }],                     // the match card's state line (slice 1), on the Home's live card
   ["Follow the match", { in: ["views/family/cards.jsx"] }],
   ["Live now", { in: ["views/family/matches.jsx"] }],
   ["Played", { in: ["views/family/matches.jsx"] }],
