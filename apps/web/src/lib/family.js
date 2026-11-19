@@ -13,6 +13,10 @@ import { roleGrants } from "@scrbrd/policy/roles";
 import { PERSONA_NAV, ROLES } from "../design/roles.js";
 import { profile } from "./session.js";
 import { sidesOf } from "./matchCentre.js";
+// A day in words, and her own links that are not live in words: their own leaf module, so the
+// no-school home reads them without the match centre (lib/linkWords.js); the same functions here.
+import { linkWords, longDate } from "./linkWords.js";
+export { linkWords, longDate };
 
 /**
  * Does this person hold a capability through ANY assignment they actually
@@ -36,6 +40,19 @@ export function ownRecordId() {
   const roles = PERSONA_NAV.pupil.roles;
   const a = (profile()?.assignments ?? []).find((x) => roles.includes(x.role) && Array.isArray(x.subjects) && x.subjects.length);
   return a?.subjects?.[0] ?? null;
+}
+
+/**
+ * Does Settings → Me keep his own health-monitoring row and the eighteen card
+ * (Q16's one exception)? They moved to the pupil's own Me; a pupil who is not
+ * the pupil persona (he also holds a staff role, so he has the staff menu and
+ * no pupil's Me) would lose them there. A pupil by db/118's test as the
+ * client can see it: any `player` or `selfaccess` assignment.
+ * @param {{ role?: string }[] | null | undefined} assignments  @param {string | null} persona
+ */
+export function keepsConsentInSettings(assignments, persona) {
+  const pupilRoles = PERSONA_NAV.pupil.roles;
+  return persona !== "pupil" && (assignments ?? []).some((a) => pupilRoles.includes(a?.role ?? ""));
 }
 
 /** Is this fixture one of this child's side's — at either end of a shared fixture? */
@@ -152,14 +169,6 @@ export function rememberChild(id) {
   try { if (id) globalThis.localStorage?.setItem(KEY, id); } catch { /* private window */ }
 }
 
-const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-/** "2029-03-14" → "14 Mar 2029". */
-export function longDate(iso) {
-  if (!iso) return null;
-  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
-  if (Number.isNaN(d.getTime())) return null;
-  return `${d.getUTCDate()} ${MONTH[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
-}
 
 /**
  * The guardianship line on the parent's own Family card (P6, §3.3), from the
@@ -208,43 +217,6 @@ export function pendingWords(requests, now) {
     });
 }
 
-/**
- * Her own links that are not live, in §4.3's words (GA-I20 A2, D9, §3.3,
- * §3.4), from the `my_links` read: a link the office established and has not
- * verified, one it did not verify, and one that ended. A live link is
- * my_children's to draw, and a link another of hers has replaced is not said.
- * No child is named: the read carries none on these rows, and the school is
- * named from the public list. No reason, ever: the platform holds none.
- *
- * @param {any[] | null | undefined} links  the my_links read
- * @param {number} now
- * @returns {{id: string, kind: "pending" | "rejected" | "ended", words: string}[]}
- */
-export function linkWords(links, now) {
-  const at = (/** @type {string} */ school) => `a child at ${school || "the school"}`;
-  /** @type {{id: string, kind: "pending" | "rejected" | "ended", words: string}[]} */
-  const out = [];
-  for (const l of Array.isArray(links) ? links : []) {
-    if (!l?.current) continue;
-    if (l.status === "pending") {
-      const asked = Date.parse(`${l.askedOn ?? ""}T00:00:00+02:00`);
-      const days = !Number.isFinite(asked) ? null : Math.max(0, Math.floor((now - asked) / 864e5));
-      const ago = days == null ? "" : days === 0 ? " · asked today" : ` · asked ${days} day${days === 1 ? "" : "s"} ago`;
-      out.push({ id: l.id, kind: "pending",
-        words: `Your request to be linked to ${at(l.schoolName)} is with the office${ago}. `
-          + "This does not mean it was approved. When the office verifies the link, your child appears here." });
-    } else if (l.status === "rejected") {
-      const on = longDate(l.askedOn);
-      out.push({ id: l.id, kind: "rejected",
-        words: `The school office did not verify your request${on ? ` of ${on}` : ""}. Ask them.` });
-    } else if (l.status === "ended") {
-      const on = longDate(l.endedOn);
-      out.push({ id: l.id, kind: "ended",
-        words: `Your link to ${at(l.schoolName)} ended${on ? ` on ${on}` : ""}. The school office can say why; the platform does not.` });
-    }
-  }
-  return out;
-}
 
 /**
  * A door from the Home's To-do list into one child's card on Family (GA-I20

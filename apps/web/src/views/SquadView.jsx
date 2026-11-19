@@ -2,13 +2,15 @@ import { useMemo, useState } from "react";
 import { D, textOn } from "../design/tokens.js";
 import { fitnessColor, stat } from "../lib/format.js";
 import { SR } from "../scorer/format.js";
+import { rowRate } from "../lib/compare.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
 import { OverallRadar } from "../ui/overallRadar.jsx";
 import { SegmentedControl } from "../ui/data.jsx";
 import { usePlayersWithCareerState, useSkills } from "../lib/live.js";
 import { readStateFor } from "../lib/readState.js";
 import { api, signedIn } from "../lib/api.js";
-import { schoolsWhere } from "../lib/session.js";
+import { profile, schoolsWhere } from "../lib/session.js";
+import { sideSchool } from "../lib/sideSeason.js";
 import { holdsCapability } from "../rbac/index.js";
 import { heldTeams, holdsAsHeld } from "../lib/held.js";
 import { pickTeam, teamsOf } from "../lib/teamContext.js";
@@ -41,7 +43,8 @@ function schoolBand(age) {
 // ══════════════════════════════════════════════════════
 //  SQUAD VIEW
 // ══════════════════════════════════════════════════════
-function SquadView({ role }) {
+/** `onOpenTeam(school, code)`: the side's own page, by its address (EXPERIENCE_PASS Q11, review S4). */
+function SquadView({ role, onOpenTeam = null }) {
   const [rosterNonce, setRosterNonce] = useState(0);
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
@@ -137,7 +140,8 @@ function SquadView({ role }) {
     <div className="os-page">
       <SectionHeader title="Squad Management" sub="Player rosters, profiles and availability" color={D.sky}
         actions={canEdit&&<Btn size="sm" onClick={()=>{setNp(n=>({...n,teamCode:""}));setAddModal(true);}}>+ Add Player</Btn>}/>
-      <div role="group" aria-label="Team" data-testid="squad-teams" style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap",alignItems:"center"}}>
+      <div role="group" aria-label="Team" data-testid="squad-teams" style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
         {teams.map(t=>(
           <button key={t} onClick={()=>chooseTeam(t)} className="pressBtn" aria-pressed={team===t} data-testid={`squad-team-${t}`} style={{
             minHeight:"44px",padding:"7px 18px",borderRadius:D.pill,border:`1px solid ${team===t?D.sky+"55":D.border}`,
@@ -145,6 +149,15 @@ function SquadView({ role }) {
             fontFamily:D.head,fontSize:"12px",fontWeight:700,color:team===t?D.sky:D.textMuted,
           }}>{t}</button>
         ))}
+      </div>
+        {/* Beside the side switch, not in it: the switch is the sides alone. The side's name leads to its page (§3.5: "one page, from any side's name"): results and season. */}
+        {onOpenTeam && team && sideSchool(PLAYERS, team, profile()?.assignments ?? []) && (
+          <button type="button" onClick={()=>onOpenTeam(sideSchool(PLAYERS, team, profile()?.assignments ?? []), team)} className="pressBtn os-state" data-testid="squad-team-page"
+            style={{minHeight:"44px",padding:"7px 18px",borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",cursor:"pointer",
+              fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary,marginLeft:"auto"}}>
+            {team} team page <span aria-hidden="true">›</span>
+          </button>
+        )}
       </div>
       {/* The side's next fixture: who has answered, who has not, and who is
           asked again because the fixture moved (SCRBRD-122). A guardian's
@@ -200,7 +213,7 @@ function SquadView({ role }) {
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"4px"}}>
                   <div style={{textAlign:"center",padding:"5px",background:D.surf2,borderRadius:D.sm}}>
-                    <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.sky}}>{stat(p.avg)}</div>
+                    <div style={{fontFamily:D.mono,fontSize:rowRate(p,"avg").held?"12px":"13px",fontWeight:500,color:rowRate(p,"avg").held?D.textMuted:D.sky}}>{rowRate(p,"avg").text}</div>
                     <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>avg</div>
                   </div>
                   {p.wkts>0?(
@@ -210,7 +223,7 @@ function SquadView({ role }) {
                     </div>
                   ):(
                     <div style={{textAlign:"center",padding:"5px",background:D.surf2,borderRadius:D.sm}}>
-                      <div style={{fontFamily:D.mono,fontSize:"13px",fontWeight:500,color:D.amber}}>{stat(p.sr)}</div>
+                      <div style={{fontFamily:D.mono,fontSize:rowRate(p,"sr").held?"12px":"13px",fontWeight:500,color:rowRate(p,"sr").held?D.textMuted:D.amber}}>{rowRate(p,"sr").text}</div>
                       <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>SR</div>
                     </div>
                   )}
@@ -241,7 +254,7 @@ function SquadView({ role }) {
             <div style={{marginBottom:"14px"}}>
               <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"8px"}}>SEASON STATS</div>
               <div style={{display:"grid",gridTemplateColumns:"var(--g-3,1fr 1fr 1fr)",gap:"6px"}}>
-                {[["AVG",stat(selected.avg),D.sky],["SR",stat(selected.sr),D.amber],["WKTS",stat(selected.wkts),D.violet],["ECON",stat(selected.econ),D.emerald],["AGE",hasAge(selected.age)?selected.age:"—",D.textMuted],[selected.cap?"ROLE":"",(selected.cap||"").toUpperCase()||"-",D.amber]].filter(([l])=>l).map(([l,v,c])=>(
+                {[["AVG",rowRate(selected,"avg").text,D.sky],["SR",rowRate(selected,"sr").text,D.amber],["WKTS",stat(selected.wkts),D.violet],["ECON",rowRate(selected,"econ").text,D.emerald],["AGE",hasAge(selected.age)?selected.age:"—",D.textMuted],[selected.cap?"ROLE":"",(selected.cap||"").toUpperCase()||"-",D.amber]].filter(([l])=>l).map(([l,v,c])=>(
                   <div key={l} style={{textAlign:"center",padding:"7px 4px",background:D.surf2,borderRadius:D.sm}}>
                     <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:500,color:c}}>{v}</div>
                     <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{l}</div>

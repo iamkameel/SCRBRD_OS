@@ -118,7 +118,8 @@ try {
   const undecided = await finalise(U, scorer);
   ok("U, which the log has not decided: 422 not_decided, in words",
     undecided.status === 422 && undecided.body?.error === "not_decided" && undecided.body?.detail === FINALISE_WORDS.not_decided, show(undecided));
-  ok("...and every refusal left both live, with no audit row", (await status(D)) === "scheduled" && (await status(U)) === "scheduled"
+  // Both are live from their first ball (db/165), and no refusal moved either.
+  ok("...and every refusal left both live, with no audit row", (await status(D)) === "live" && (await status(U)) === "live"
     && (await audits(D)).length === 0 && (await audits(U)).length === 0);
 
   group("B. The scorer finishes D");

@@ -132,7 +132,7 @@ async function openPad(name, dev) {
   await tapBtn(/Scorer/);
   await tapBtn(/^Sign In$/);
   await page.waitForTimeout(2200);
-  const mc = page.locator("button, a", { hasText: /^Match Centre$/ }).first();
+  const mc = page.locator("button, a", { hasText: /^(Match Centre|Matches)$/ }).first();
   await mc.tap({ timeout: 6000 }).catch(() => mc.click({ timeout: 4000 }));
   await afterReads(page, 1200);
   const opened = await page.evaluate(() => {

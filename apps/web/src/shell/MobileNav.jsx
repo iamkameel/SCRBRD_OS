@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { NAV_META, groupNav } from "../design/roles.js";
 import { useSports, sportBadge, sportsOn } from "../lib/features.js";
-import { useMenu } from "../lib/homeNav.js";
+import { useMenuItems } from "../lib/homeNav.js";
 import { D, T, inkOn, themed } from "../design/tokens.js";
 import { Icon } from "../ui/icons.jsx";
 import { invitationsWords } from "../lib/invitationCount.js";
@@ -42,24 +42,24 @@ const SPORT_ICON = {
 };
 const BADGE_TONE = themed(() => ({ emerald:D.emerald, sky:D.sky, amber:D.amber }));
 
-function SportSwitcher() {
+// `sports` is for a test to hand it the list; the shell leaves it out and the switcher reads the school's own.
+function SportSwitcher({ sports: given = null } = {}) {
   const [open, setOpen] = useState(false);
   // Only the sports switched on: one that is off is hidden, not badged SOON.
-  const sports = sportsOn(useSports().sports);
-  // The one on the button is the sport that is both granted and scorable —
-  // the one whose scorer's screen exists. Falls back to the first granted
-  // sport, then to cricket, so the button is never blank while the read is in
-  // flight.
-  const current = sports.find(s => s.enabled && s.scorable)
-               ?? sports.find(s => s.enabled)
-               ?? { code:"cricket", label:"Cricket" };
+  const read = sportsOn(useSports().sports);
+  const sports = given ? sportsOn(given) : read;
+  // A school that plays one sport has nothing to switch between: a drop-down there is a control that does nothing
+  // (glossary review item 4), so it is not drawn. Nor is it while the list is unread or could not be read.
+  if (sports.length < 2) return null;
+  // The one on the button is the sport that is scorable (the one whose scorer's screen exists), else the first.
+  const current = sports.find(s => s.engine === "scoring") ?? sports[0];
   return (
-    <div style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,position:"relative"}}>
+    <div data-testid="sport-switcher" style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,position:"relative"}}>
       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,marginBottom:"6px"}}>ScrbrdOS · Sport</div>
-      <button onClick={()=>setOpen(!open)} className="pressBtn" style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",borderRadius:D.md,background:D.emerald+"10",border:`1px solid ${D.emerald}28`,cursor:"pointer"}}>
+      <button type="button" onClick={()=>setOpen(!open)} className="pressBtn" data-testid="sport-switcher-button" aria-expanded={open} style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"7px 10px",minHeight:"44px",borderRadius:D.md,background:D.emerald+"10",border:`1px solid ${D.emerald}28`,cursor:"pointer"}}>
         <span style={{fontSize:"14px",color:D.emerald}}><Icon name={SPORT_ICON[current.code] ?? "shirt"}/></span>
         <span style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.emerald}}>{current.label}</span>
-        <span style={{marginLeft:"auto",fontSize:"9px",color:D.textMuted}}>{open?"▴":"▾"}</span>
+        <span aria-hidden="true" style={{marginLeft:"auto",fontSize:"12px",color:D.textMuted}}>{open?"▴":"▾"}</span>
       </button>
       {open&&(
         <div style={{position:"absolute",left:"14px",right:"14px",top:"calc(100% - 4px)",zIndex:300,background:D.surf2,border:`1px solid ${D.borderMed}`,borderRadius:D.lg,overflow:"hidden",boxShadow:T.elevation.lg}}>
@@ -67,7 +67,7 @@ function SportSwitcher() {
             const b = sportBadge(s);
             const tone = BADGE_TONE[b.tone] ?? D.textMuted;
             return (
-            <button key={s.code} disabled={!s.enabled} onClick={()=>setOpen(false)} className="pressBtn" style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"9px 12px",background:s.enabled?tone+"10":"transparent",border:"none",cursor:s.enabled?"pointer":"default",opacity:s.enabled?1:.55}}>
+            <button type="button" key={s.code} disabled={!s.enabled} onClick={()=>setOpen(false)} className="pressBtn" data-testid={`sport-option-${s.code}`} style={{width:"100%",display:"flex",alignItems:"center",gap:"8px",padding:"9px 12px",minHeight:"44px",background:s.enabled?tone+"10":"transparent",border:"none",cursor:s.enabled?"pointer":"default",opacity:s.enabled?1:.55}}>
               <span style={{fontSize:"13px",color:s.enabled?D.textPrimary:D.textSecondary}}><Icon name={SPORT_ICON[s.code] ?? "shirt"}/></span>
               <span style={{fontFamily:D.body,fontSize:"12px",fontWeight:s.enabled?600:400,color:s.enabled?D.textPrimary:D.textSecondary}}>{s.label}</span>
               <span style={{marginLeft:"auto",fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.1em",color:tone,background:tone+"16",border:`1px solid ${tone}30`,borderRadius:D.pill,padding:"2px 6px"}}>{b.text}</span>
@@ -86,10 +86,17 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
   // Same list the sidebar draws, from the same place. Two components computing
   // a menu two ways is how a destination comes to exist on a phone and not on
   // a laptop.
-  const nav = useMenu(role);
-  const primary = nav.slice(0, 4);
-  const rest = nav.slice(4);
-  const moreActive = rest.includes(active);
+  // `active` is the open page; the entry lit is its home's (design/homes.js entryFor).
+  const { keys: nav, label, active: lit, ready } = useMenuItems(role, active);
+  // The homes are the whole menu, at most five for anyone at a school (EXPERIENCE_PASS §1.2, Q1): five or fewer
+  // all go on the bar and there is no More. A menu still longer than that (a director until the School home,
+  // Slice 6) keeps four on the bar and the rest in the drawer.
+  const primary = nav.length <= 5 ? nav : nav.slice(0, 4);
+  const rest = nav.length <= 5 ? [] : nav.slice(4);
+  const moreActive = rest.includes(lit);
+  const meta = (/** @type {string} */ k) => ({ ...NAV_META[k], label: label(k) ?? NAV_META[k].label });
+  // League invitations wait on Competitions, or on the entry it sits under (Matches) when it has none of its own.
+  const invitesOn = nav.includes("competitions") ? "competitions" : nav.find((k) => k === "matches") ?? null;
   // League invitations waiting: on Competitions itself where it is one of the
   // four on the bar, otherwise on "More" and on its place in the drawer. The
   // count is the badge's text; the button is named with the words.
@@ -125,10 +132,10 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
     return () => document.removeEventListener("keydown", onKey, true);
   }, [moreOpen]);
   const Item = ({ k, isMore }) => {
-    const m = isMore ? { icon:"menu", label:"More" } : NAV_META[k];
-    const isActive = isMore ? moreActive : active===k;
+    const m = isMore ? { icon:"menu", label:"More" } : meta(k);
+    const isActive = isMore ? moreActive : lit===k;
     const isBell = k==="notifications";
-    const waiting = isMore ? (rest.includes("competitions") ? invites : 0) : (k==="competitions" ? invites : 0);
+    const waiting = isMore ? (invitesOn && rest.includes(invitesOn) ? invites : 0) : (k===invitesOn ? invites : 0);
     const name = waiting>0 ? `${m.label}, ${invitationsWords(waiting)}` : isBell&&notifCount>0 ? `${m.label}, ${notifCount} unread` : m.label;
     return (
       <button onClick={()=>{ isMore ? setMoreOpen(true) : (setMoreOpen(false), onNav(k)); }} className="pressBtn"
@@ -175,8 +182,8 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
                 <div id={`drawer-group-${g.key}`} style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",color:D.textMuted,margin:"2px 4px 8px"}}>{g.label}</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:"8px"}}>
                   {g.items.map(k=>{
-                    const m = NAV_META[k]; const isActive = active===k;
-                    const waiting = k==="competitions" ? invites : 0;
+                    const m = meta(k); const isActive = lit===k;
+                    const waiting = k===invitesOn ? invites : 0;
                     return (
                       <button key={k} onClick={()=>{setMoreOpen(false);onNav(k);}} className="pressBtn"
                         data-testid={`drawer-${k}`} aria-current={isActive?"page":undefined}
@@ -212,7 +219,7 @@ function MobileNav({ role, active, onNav, notifCount, invites = 0, userName, onS
           </div>
         </>
       )}
-      <nav aria-label="Main" className="os-bottomnav" data-testid="mnav">
+      <nav aria-label="Main" className="os-bottomnav" data-testid="mnav" data-menu-ready={ready ? "true" : "false"}>
         {primary.map(k=><Item key={k} k={k}/>)}
         {rest.length>0&&<Item k="__more" isMore/>}
       </nav>

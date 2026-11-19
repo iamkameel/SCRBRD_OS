@@ -30,6 +30,25 @@
  *   3. A COACH ON THE REGISTER. The office lists a coach; he signs in with
  *      Google, chooses the school and "I work at the school", is told he is
  *      listed, and Open the school lands him on Today with no second sign-in.
+ *   4. A SCHOOL NOT ON SCRBRD (slice 3b, Q22, db/158). A new account finds
+ *      "Not in the list? Ask SCRBRD to add your school" under the join list,
+ *      writes the school's name, its town and its job, and sees the request
+ *      under Your requests with what happens next. Nothing is made or linked;
+ *      another account and a school's office read none of it, and the office
+ *      cannot answer it; the platform reads it and answers "added", and her
+ *      next visit reads that, and is sent to the list to join.
+ *   5. A SPECTATOR FOLLOWS FROM A MATCH LINK (slice 3b, Q8, §2.4). The live
+ *      fixture's public page offers nothing while the first innings is in
+ *      play; at the innings break it offers "Follow Hilton College's
+ *      matches", a plain link. One Google sign-in later the new account lands
+ *      on the no-school home, its Followed schools block first because the
+ *      school is live, saying he follows it; one tap opens the match. His
+ *      list is Hilton alone, and Stop following empties it.
+ *   6. THE SENTENCE WITH A TARGET (Q14, db/159). The chase begins: the public
+ *      read carries the target, and the home page's live board says "need 8
+ *      off 5"; the follower's Today says the same from the same read.
+ *   7. A FOLLOWER WHO BELONGS TO A SCHOOL. The coach of step 3 follows Hilton,
+ *      signs in, and Today leads with its live board, above the day sheet.
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-browser-first-run.mjs
@@ -46,6 +65,8 @@ import { generateKeyPairSync, createSign } from "node:crypto";
 import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { writeEvents } from "./fixture-matchcentre.mjs";
+import { ball, inningsStart, BALL_TYPE } from "@scrbrd/scoring";
 
 const PORT = port(9025);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -397,12 +418,291 @@ try {
     ok("no page errors", h.errors.length === 0, h.errors.join(" | "));
     await h.ctx.close();
   }
+
+  // ── 4 · A school not on SCRBRD (slice 3b, Q22, db/158) ──────────
+  group("4. A school not on SCRBRD: a new account asks SCRBRD to add it, and sees the request under Your requests");
+  const ASK_UID = `walk-firstrun-ask-${RUN}`, ASK_EMAIL = `walk.firstrun.ask.${RUN}@example.invalid`;
+  const ASK_SCHOOL = `Walk Firstrun High ${RUN}`;
+  {
+    const schoolsBefore = (await q(`select count(*)::int as n from school`))[0].n;
+    const h = await visitor();
+    const P = h.page;
+    await P.goto(`${BASE}/app`, { waitUntil: "networkidle" });
+    await google(h, idToken(ASK_UID, ASK_EMAIL, "Walk Asker"));
+    await P.waitForSelector('[data-testid="join-school"]', { timeout: 10000 }).catch(() => {});
+    ok("a new account lands on the no-school home", (await tid(P, "no-school-title").count()) === 1);
+    ok("the join list offers the note for a school not in it", (await tid(P, "join-school-missing").count()) === 1
+       && /Ask SCRBRD to add your school/.test(await tid(P, "join-school-missing").innerText().catch(() => "")));
+    await tid(P, "join-school-missing").click({ timeout: 4000 });
+    await P.waitForSelector('[data-testid="school-ask"]', { timeout: 5000 }).catch(() => {});
+    ok("the note opens, its heading focused, and says a person answers and nothing is linked",
+       (await P.evaluate(() => document.activeElement?.id)) === "school-ask-title"
+       && /A person at SCRBRD reads every request/.test(await tid(P, "school-ask").innerText().catch(() => ""))
+       && /not linked to anything/.test(await tid(P, "school-ask").innerText().catch(() => "")));
+    ok("...and asks for the school's name, its town and a job, nothing else typed",
+       (await tid(P, "school-ask").locator("input").count()) === 2 && (await tid(P, "school-ask").locator("textarea").count()) === 0
+       && (await tid(P, "school-ask-job").locator("option").count()) === 8);
+    // Send is never greyed out with no reason: a missing field is said, marked and focused.
+    await tid(P, "school-ask-name").fill(`  ${ASK_SCHOOL} `);
+    await tid(P, "school-ask-town").fill("H");
+    ok("...Send is not greyed out while a field is wrong", !(await tid(P, "school-ask-send").isDisabled()));
+    await tid(P, "school-ask-send").click({ timeout: 4000 });
+    ok("...pressed with a one-letter town, it says what to fix, marks the town and moves to it",
+       /Type the town the school is in\./.test(await tid(P, "school-ask-problem").innerText().catch(() => ""))
+       && (await tid(P, "school-ask-town").getAttribute("aria-invalid")) === "true"
+       && (await tid(P, "school-ask-town").evaluate((el) => el === document.activeElement
+            && el.getAttribute("aria-describedby") === document.querySelector('[data-testid="school-ask-problem"]')?.id)),
+       await tid(P, "school-ask-problem").innerText().catch(() => "(no problem shown)"));
+    await tid(P, "school-ask-town").fill("Howick");
+    ok("...and typing clears it", (await tid(P, "school-ask-problem").count()) === 0);
+    await tid(P, "school-ask-send").click({ timeout: 4000 });
+    ok("...then the job, marked and focused", /Choose what you do at the school\./.test(await tid(P, "school-ask-problem").innerText().catch(() => ""))
+       && (await tid(P, "school-ask-job").evaluate((el) => el === document.activeElement && el.getAttribute("aria-invalid") === "true")));
+    await tid(P, "school-ask-job").selectOption("coach");
+    const fl = await floors(P);
+    ok("the note: nothing under 12px, nothing tapped under 44px", fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].slice(0, 4).join(" · "));
+    ok("...and no sideways scroll at 390", !(await wide(P)));
+    await tid(P, "school-ask-send").click({ timeout: 4000 });
+    await P.waitForSelector('[data-testid="school-ask-sent"]', { timeout: 8000 }).catch(() => {});
+    await afterReads(P, 800);
+    ok("sent: it says what happens next", /^Request sent/.test(await tid(P, "school-ask-sent").innerText().catch(() => ""))
+       && /We.ll answer within a week/.test(await tid(P, "school-ask-sent").innerText().catch(() => "")),
+       await tid(P, "school-ask-sent").innerText().catch(() => ""));
+    const row = tid(P, "school-request-open");
+    ok("the request shows under Your requests, with what happens next",
+       (await tid(P, "no-school-requests").locator('[data-testid="school-request-open"]').count()) === 1
+       && (await row.innerText().catch(() => "")).includes(`Add ${ASK_SCHOOL}, Howick`)
+       && /Waiting: a person at SCRBRD will read it and answer here\./.test(await row.innerText().catch(() => "")),
+       await row.innerText().catch(() => ""));
+    await tid(P, "school-ask-done").click({ timeout: 4000 });
+    ok("Done closes the note and gives focus back to the door it was opened from",
+       (await tid(P, "school-ask-sent").count()) === 0
+       && (await P.evaluate(() => document.activeElement?.getAttribute("data-testid"))) === "join-school-missing",
+       await P.evaluate(() => document.activeElement?.outerHTML?.slice(0, 120)));
+    ok("...and the empty-requests line has gone", (await tid(P, "no-school-requests-none").count()) === 0);
+    const db = await q(`select r.school_name, r.town, r.job, r.state, u.email from school_add_request r join app_user u on u.id = r.person_id where u.email = $1`, [ASK_EMAIL]);
+    ok("the row is hers, trimmed, open", db.length === 1 && db[0].school_name === ASK_SCHOOL && db[0].town === "Howick" && db[0].job === "coach" && db[0].state === "open", db);
+    ok("no school was made", (await q(`select count(*)::int as n from school`))[0].n === schoolsBefore);
+    const mine = await call("/api/auth/firebase", { method: "POST", body: { idToken: idToken(ASK_UID, ASK_EMAIL, "Walk Asker"), deviceId: "device-first-run-ask" } });
+    const s = await call("/api/session", { token: mine.body?.token });
+    ok("...and the account still holds nothing", Array.isArray(s.body?.assignments) && s.body.assignments.length === 0, s.body);
+    const again = await call("/api/school-requests", { method: "POST", token: mine.body?.token, body: { schoolName: ASK_SCHOOL.toUpperCase(), town: "howick", job: "teacher" } });
+    ok("the same school asked again is refused, in words the screen has", again.status === 409 && again.body?.error === "already_asked", again);
+    const other = await call("/api/auth/firebase", { method: "POST", body: { idToken: idToken(NEW_UID, NEW_EMAIL, "Walk Parent"), deviceId: "device-first-run-other" } });
+    const theirs = await call("/api/read/school_add_requests", { token: other.body?.token });
+    ok("another account reads none of it", theirs.status === 200 && (theirs.body?.rows ?? []).length === 0, theirs.body);
+    const registrar = await call("/api/auth/dev-login", { method: "POST", body: { email: "registrar@example.invalid", deviceId: "device-first-run-office" } });
+    const office = await call("/api/read/school_add_requests", { token: registrar.body?.token });
+    ok("nor does a school's office", office.status === 200 && (office.body?.rows ?? []).length === 0, office.body);
+    const officeDecide = await call(`/api/school-requests/${(await q(`select r.id from school_add_request r join app_user u on u.id = r.person_id where u.email = $1`, [ASK_EMAIL]))[0]?.id}/decide`,
+      { method: "POST", token: registrar.body?.token, body: { state: "added" } });
+    ok("...and the office cannot answer it", officeDecide.status === 403 && officeDecide.body?.error === "not_permitted", officeDecide);
+    const plat = (await call("/api/auth/dev-login", { method: "POST", body: { email: "platform@example.invalid", deviceId: "device-first-run-plat" } })).body?.token;
+    const list = await call("/api/read/school_add_requests", { token: plat });
+    const it = (list.body?.rows ?? []).find((r) => r.email === ASK_EMAIL);
+    ok("the platform reads it, who asked and that it may answer", list.status === 200 && it?.school_name === ASK_SCHOOL && it?.name === "Walk Asker" && it?.decidable === true, it ?? list.body);
+    const said = await call(`/api/school-requests/${it?.id}/decide`, { method: "POST", token: plat, body: { state: "added" } });
+    ok("the platform answers: added", said.status === 200 && said.body?.state === "added", said);
+    ok("...which made no school and linked nobody", (await q(`select count(*)::int as n from school`))[0].n === schoolsBefore
+       && ((await call("/api/session", { token: mine.body?.token })).body?.assignments ?? []).length === 0);
+    ok("no page errors", h.errors.length === 0, h.errors.join(" | "));
+    await h.ctx.close();
+
+    // Her next visit reads the answer, and what to do now.
+    const h2 = await visitor();
+    await h2.page.goto(`${BASE}/app`, { waitUntil: "networkidle" });
+    await google(h2, idToken(ASK_UID, ASK_EMAIL, "Walk Asker"));
+    await h2.page.waitForSelector('[data-testid="school-request-added"]', { timeout: 10000 }).catch(() => {});
+    ok("her next visit: the request reads added, and sends her to the list to join",
+       /SCRBRD has added this school\. Find it in the list under Join a school/.test(await tid(h2.page, "school-request-added").innerText().catch(() => "")),
+       await tid(h2.page, "no-school-requests").innerText().catch(() => ""));
+    ok("no page errors on her next visit", h2.errors.length === 0, h2.errors.join(" | "));
+    await h2.ctx.close();
+  }
+
+  // ── 5 · A spectator follows Hilton from a match link ────────────
+  group("5. A spectator follows Hilton from a match link: offered at the break, one sign-in, his home led by the live board");
+  const FAN_UID = `walk-firstrun-fan-${RUN}`, FAN_EMAIL = `walk.firstrun.fan.${RUN}@example.invalid`;
+  const OPP = "Westville Boys' High 1XI";
+  let n = 0;
+  const t0 = Date.now() - 20 * 60000;
+  const at = (/** @type {number} */ inn, /** @type {any} */ ev) => ({ ...ev, innings: inn, id: `first-run-${RUN}-${++n}`, clientTs: t0 + n * 30000 });
+  // A one-over match, so a short log reaches the break and the chase.
+  await q(`update match set overs = 1 where id = $1`, [LIVE]);
+  await writeEvents(q, LIVE, [
+    at(0, inningsStart({ battingTeam: "1XI", bowlingTeam: OPP, teamKey: "1XI", bowlingTeamKey: OPP, overs: 1 })),
+    at(0, ball({ type: BALL_TYPE.RUN, value: 4 })), at(0, ball({ type: BALL_TYPE.RUN, value: 4 })), at(0, ball({ type: BALL_TYPE.RUN, value: 0 }))]);
+  await publish([LIVE]);
+  ok("(setup) the public read lists the live fixture", await readUntil([LIVE]));
+  {
+    const h = await visitor();
+    const P = h.page;
+    await P.goto(`${BASE}/live/${LIVE}`, { waitUntil: "networkidle" });
+    await P.waitForSelector('[data-testid="public-match"]', { timeout: 10000 }).catch(() => {});
+    await afterReads(P, 800);
+    ok("the match link opens its public page", (await tid(P, "public-match").count()) === 1);
+    ok("...and while the first innings is in play nothing is offered", (await tid(P, "follow-offer").count()) === 0);
+    await writeEvents(q, LIVE, [at(0, ball({ type: BALL_TYPE.RUN, value: 0 })), at(0, ball({ type: BALL_TYPE.RUN, value: 0 })), at(0, ball({ type: BALL_TYPE.RUN, value: 0 }))], 4);
+    await P.reload({ waitUntil: "networkidle" });
+    await P.waitForSelector('[data-testid="follow-offer"]', { timeout: 10000 }).catch(() => {});
+    const offer = tid(P, "follow-offer-HIL");
+    ok("at the innings break: \"Follow Hilton College's matches\"", /Follow Hilton College's matches/.test(await offer.innerText().catch(() => "")), await text(P).then((t) => t.slice(0, 300)));
+    ok("...a plain link to the app, nofollow, offered for the side that published alone",
+       (await offer.getAttribute("href")) === `/app?follow=HIL&from=${LIVE}` && /\bnofollow\b/.test((await offer.getAttribute("rel")) ?? "") && (await tid(P, "follow-offer-WES").count()) === 0);
+    ok("...an offer, never a wall: the board and the tabs are all there", (await tid(P, "mc-panel-summary").count()) === 1 && (await P.locator("[data-testid=follow-offer] form, [data-testid=follow-offer] input").count()) === 0);
+    const fl = await floors(P);
+    ok("the page with the offer: nothing under 12px, nothing tapped under 44px", fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].slice(0, 4).join(" · "));
+    ok("...no child's name", namesIn(await text(P)).length === 0, namesIn(await text(P)).join(", "));
+    await offer.click({ timeout: 5000 });
+    await P.waitForURL(/\/app\?follow=HIL&from=/, { timeout: 8000 }).catch(() => {});
+    ok("Follow leads to the one sign-in", (await P.locator('[data-testid="google-button"]').count()) === 1 || !!(await P.waitForSelector('[data-testid="google-button"]', { timeout: 8000 }).catch(() => null)), P.url());
+    ok("...with the privacy paragraph on the same screen", (await tid(P, "google-notice").count()) === 1);
+    await google(h, idToken(FAN_UID, FAN_EMAIL, "Walk Fan"));
+    // A shared link asks before it follows: one tap, for everyone (Kameel, 15 Nov).
+    await P.waitForSelector('[data-testid="follow-question"]', { timeout: 12000 }).catch(() => {});
+    const fan0 = (await call("/api/auth/firebase", { method: "POST", body: { idToken: idToken(FAN_UID, FAN_EMAIL, "Walk Fan"), deviceId: "device-first-run-fan0" } })).body?.token;
+    ok("after the sign-in the link asks: \"Follow Hilton College?\", Follow and Not now",
+       /Follow Hilton College\?/.test(await tid(P, "follow-question").innerText().catch(() => ""))
+       && (await tid(P, "follow-confirm").count()) === 1 && (await tid(P, "follow-not-now").count()) === 1);
+    ok("...and nothing is followed before the tap", ((await call("/api/follows", { token: fan0 })).body?.schools ?? [1]).length === 0);
+    ok("...the question stands first, above Start a match", await P.evaluate(() => {
+      const y = (id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect().top ?? NaN;
+      return document.querySelector('[data-testid="followed-schools"]')?.hasAttribute("data-lead") && y("follow-question") < y("start-match");
+    }));
+    const flq = await floors(P);
+    ok("...nothing under 12px, nothing tapped under 44px", flq.small.length === 0 && flq.tiny.length === 0, [...flq.small, ...flq.tiny].slice(0, 4).join(" · "));
+    await tid(P, "follow-not-now").click({ timeout: 5000 });
+    await P.waitForSelector('[data-testid="followed-none"]', { timeout: 8000 }).catch(() => {});
+    ok("Not now: the question goes, and no row is written", (await tid(P, "follow-question").count()) === 0 && (await tid(P, "followed-none").count()) === 1
+       && ((await call("/api/follows", { token: fan0 })).body?.schools ?? [1]).length === 0);
+    // From the link again, and Follow this time.
+    await P.goto(`${BASE}/live/${LIVE}`, { waitUntil: "networkidle" });
+    await P.waitForSelector('[data-testid="follow-offer-HIL"]', { timeout: 10000 }).catch(() => {});
+    await tid(P, "follow-offer-HIL").click({ timeout: 5000 });
+    await P.waitForURL(/\/app\?follow=HIL&from=/, { timeout: 8000 }).catch(() => {});
+    // This phone was here before: the reload signed him out, and he signs in again, the link's question kept.
+    // The app opens on the sign-in screen for a moment while it restores where this phone was, then shows
+    // the no-school home's "Sign in again" (its chunk loads first). Wait for that screen, not the passing one:
+    // a wait on either took the moment's google-button on a slow runner, and the walk then skipped the tap.
+    await P.waitForSelector('[data-testid="no-school-sign-in-again"]', { timeout: 15000 }).catch(() => {});
+    if (await tid(P, "no-school-sign-in-again").count()) await tid(P, "no-school-sign-in-again").click({ timeout: 5000 });
+    await google(h, idToken(FAN_UID, FAN_EMAIL, "Walk Fan"));
+    await P.waitForSelector('[data-testid="follow-confirm"]', { timeout: 12000 }).catch(() => {});
+    ok("...the second time, after signing in again, the link asks again", (await tid(P, "follow-confirm").count()) === 1);
+    await tid(P, "follow-confirm").click({ timeout: 5000 });
+    await P.waitForSelector('[data-testid="followed-card"]', { timeout: 12000 }).catch(() => {});
+    ok("Follow, and only Follow, writes the row", JSON.stringify(((await call("/api/follows", { token: fan0 })).body?.schools ?? []).map((x) => x.code)) === '["HIL"]');
+    ok("he lands on the no-school home, asked no role", (await tid(P, "no-school-title").count()) === 1 && !/what.s your role/i.test(await text(P)));
+    ok("...told he follows Hilton College", /You follow Hilton College/.test(await tid(P, "followed-note").innerText().catch(() => "")));
+    ok("...Followed schools first, above Start a match, because Hilton is live", await P.evaluate(() => {
+      const y = (id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect().top ?? NaN;
+      return document.querySelector('[data-testid="followed-schools"]')?.hasAttribute("data-lead") && y("followed-schools") < y("start-match");
+    }));
+    const card = tid(P, "followed-card").first();
+    ok("...led by the live board, team facts and its sentence", (await card.getAttribute("data-status")) === "live"
+       && /LIVE/.test(await card.innerText()) && /Hilton College 1XI 8\/0 after 1 over/.test(await card.innerText()), await card.innerText().catch(() => ""));
+    ok("...and the follow hint has left the address", !new URL(P.url()).search.includes("follow="), P.url());
+    const fl2 = await floors(P);
+    ok("the follower's home: nothing under 12px, nothing tapped under 44px, no sideways scroll", fl2.small.length === 0 && fl2.tiny.length === 0 && !(await wide(P)),
+       [...fl2.small, ...fl2.tiny].slice(0, 4).join(" · "));
+    ok("...no child's name, no ground", namesIn(await text(P)).length === 0 && !/First Run Ground/.test(await text(P)));
+    const fan = (await call("/api/auth/firebase", { method: "POST", body: { idToken: idToken(FAN_UID, FAN_EMAIL, "Walk Fan"), deviceId: "device-first-run-fan" } })).body?.token;
+    const list = await call("/api/follows", { token: fan });
+    ok("his list is Hilton alone, and he holds no role", JSON.stringify((list.body?.schools ?? []).map((x) => x.code)) === '["HIL"]'
+       && ((await call("/api/session", { token: fan })).body?.assignments ?? [1]).length === 0, list.body);
+    const today = await call("/api/follows/today", { token: fan });
+    ok("...his Today is the public read kept to Hilton: the live fixture, nothing unpublished", JSON.stringify((today.body?.fixtures ?? []).map((f) => f.id)) === JSON.stringify([LIVE]), today.body);
+    ok("...and nobody else reads his list: another account's is empty",
+       ((await call("/api/follows", { token: (await call("/api/auth/firebase", { method: "POST", body: { idToken: idToken(NEW_UID, NEW_EMAIL, "Walk Parent"), deviceId: "device-first-run-3" } })).body?.token })).body?.schools ?? [1]).length === 0);
+    await card.click({ timeout: 5000 });
+    await P.waitForURL(new RegExp(`/live/${LIVE}$`), { timeout: 8000 }).catch(() => {});
+    ok("one tap on the board opens the match", new URL(P.url()).pathname === `/live/${LIVE}`, P.url());
+    ok("no page errors", h.errors.length === 0, h.errors.join(" | "));
+    await h.ctx.close();
+
+    // Stop following, on his home.
+    const h2 = await visitor();
+    await h2.page.goto(`${BASE}/app`, { waitUntil: "networkidle" });
+    await google(h2, idToken(FAN_UID, FAN_EMAIL, "Walk Fan"));
+    await h2.page.waitForSelector('[data-testid="unfollow-HIL"]', { timeout: 10000 }).catch(() => {});
+    await tid(h2.page, "unfollow-HIL").click({ timeout: 5000 });
+    await h2.page.waitForSelector('[data-testid="followed-none"]', { timeout: 8000 }).catch(() => {});
+    ok("Stop following empties his list, and the block says what will show there",
+       (await tid(h2.page, "followed-none").count()) === 1 && ((await call("/api/follows", { token: fan })).body?.schools ?? [1]).length === 0);
+    ok("no page errors (stop following)", h2.errors.length === 0, h2.errors.join(" | "));
+    await h2.ctx.close();
+    await call("/api/follows", { method: "POST", token: fan, body: { code: "HIL" } });
+
+    // ── 6 · The chase: the sentence says it from the read's target ──
+    group("6. The chase begins: the home page's live board says the runs needed off the balls left, from the read's target");
+    await writeEvents(q, LIVE, [
+      at(1, inningsStart({ battingTeam: OPP, bowlingTeam: "1XI", teamKey: OPP, bowlingTeamKey: "1XI", overs: 1 })),
+      at(1, ball({ type: BALL_TYPE.RUN, value: 1 }))], 7);
+    let pub = null;
+    for (let i = 0; i < 40; i++) {
+      pub = (await fetch(`${BASE}/api/public/live`, { headers: { "x-forwarded-for": "10.86.1.2" } }).then((x) => x.json()).catch(() => null))?.fixtures?.find((f) => f.id === LIVE);
+      if (pub?.target != null) break;
+      await new Promise((res) => setTimeout(res, 500));
+    }
+    ok("the public read carries the chase's target, not revised", pub?.target === 9 && pub?.revised === false, JSON.stringify(pub));
+    const v = await home("live with a chase", "live");
+    const said = await tid(v.page, "home-card-sentence").first().innerText().catch(() => "");
+    ok("the live board's sentence: \"Westville Boys' High 1XI need 8 off 5\"", said === "Westville Boys' High 1XI need 8 off 5", said);
+    await common(v, "live with a chase");
+    await v.ctx.close();
+    const ft = (await call("/api/follows/today", { token: fan })).body?.fixtures?.find((f) => f.id === LIVE);
+    ok("...and the follower's Today carries the same target from the same read", ft?.target === 9 && ft?.revised === false, JSON.stringify(ft));
+    const kept = await Promise.all(["/api/follows", "/api/follows/today"].map((path) => fetch(BASE + path, { headers: { authorization: `Bearer ${fan}` } })
+      .then((r) => `${r.status} ${r.headers.get("cache-control")}`)));
+    ok("...and neither his list nor his Today is kept anywhere: no-store", kept.every((k) => k === "200 no-store"), kept.join(" | "));
+    await call(`/api/follows/${HIL}`, { method: "DELETE", token: fan });
+  }
+
+  // ── 7 · A follower who belongs to a school ───────────────────────
+  group("7. The coach follows Hilton: Today leads with its live board, above the day sheet");
+  {
+    const coach = (await call("/api/auth/firebase", { method: "POST", body: { idToken: idToken(COACH_UID, COACH_EMAIL, "Walk Coach"), deviceId: "device-first-run-4" } })).body?.token;
+    const f = await call("/api/follows", { method: "POST", token: coach, body: { code: "HIL" } });
+    ok("(setup) the coach follows Hilton", f.status === 200 && f.body?.ok === true, f.body);
+    const h = await visitor();
+    const P = h.page;
+    await P.goto(`${BASE}/app`, { waitUntil: "networkidle" });
+    await google(h, idToken(COACH_UID, COACH_EMAIL, "Walk Coach"));
+    await P.waitForSelector('[data-testid="today-followed"]', { timeout: 12000 }).catch(() => {});
+    await afterReads(P, 800);
+    ok("he lands on Today", (await tid(P, "os-main").getAttribute("data-page").catch(() => "")) === "dashboard");
+    ok("...led by the followed school's live board, above the day sheet", await P.evaluate(() => {
+      const y = (id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect().top ?? NaN;
+      return document.querySelector('[data-testid="followed-schools"]')?.hasAttribute("data-lead") && y("today-followed") < y("day-sheet");
+    }));
+    ok("...its card live, with the sentence", /need 8 off 5/.test(await tid(P, "followed-card").first().innerText().catch(() => "")));
+    ok("no page errors", h.errors.length === 0, h.errors.join(" | "));
+    await h.ctx.close();
+    await call(`/api/follows/${HIL}`, { method: "DELETE", token: coach });
+  }
 } catch (e) {
   fail++;
   console.log("  ✗ the walk threw:", e.stack ?? e.message);
 } finally {
+  // A match with a log is not deleted (ball_event never is): unpublished, it leaves the home page.
+  await q(`update fixture_publication set published = false where match_id = any($1::uuid[])`, [made.matches]).catch(() => {});
+  // A live fixture this walk made is called off, not put back to scheduled:
+  // db/165 refuses live → scheduled once there are balls. If that fails, the
+  // walk fails and says so, rather than leave a live fixture for the walks
+  // after it (review S3, 19 Nov 2026).
+  for (const m of made.matches) {
+    try {
+      await q(`update match set status = 'abandoned' where id = $1 and status = 'live'`, [m]);
+    } catch (e) {
+      fail++;
+      console.log(`  ✗ cleanup: the walk's live fixture ${m} could not be called off — ${/** @type {any} */ (e).message}`);
+    }
+  }
+  const stillLive = made.matches.length ? await q(`select id from match where id = any($1::uuid[]) and status = 'live'`, [made.matches]).catch((e) => [{ id: `(unread: ${e.message})` }]) : [];
+  if (stillLive.length) { fail++; console.log(`  ✗ cleanup: live fixtures left behind: ${stillLive.map((r) => r.id).join(", ")}`); }
   for (const m of made.matches) await q(`delete from match where id = $1`, [m]).catch(() => {});
   for (const g of made.grounds) await q(`delete from ground where id = $1`, [g]).catch(() => {});
+  await q(`delete from school_add_request where person_id in (select id from app_user where email like 'walk.firstrun.ask.%')`).catch(() => {});
   await browser.close();
   apiProc.kill();
   await owner.end();

@@ -516,8 +516,26 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // words; a coach has neither; 12px and 44px at 390 wide in Daylight.
   "browser-listing",
   // SCRBRD-110 phase 1 (db/60): the health-monitoring consent on Settings → Me,
-  // the eighteen card, and the sign-up row — both themes, 12px and 44px.
+  // the eighteen card, and the sign-up row — both themes, 12px and 44px; since
+// Q16 (Slice 4) on the child's file under Family and the pupil's own Me.
   "browser-consent",
+  // EXPERIENCE_PASS Slice 4: a pupil who scores keeps his four items and sees
+  // "Appointed to score"; three balls are a guide, not a figure; two schools,
+  // two sections; a waiting parent reads the terms and cannot agree, and the
+  // office's answer is one notice (db/161); the DSO card last on both Homes;
+  // the live card leads; the eleven on her child's fixture (Q10).
+  "browser-slice4",
+  // EXPERIENCE_PASS Slice 5: each persona's menu is its homes (Today, Matches,
+  // Team, Logistics), no More on a phone; the header; To resolve only for who can
+  // act (Q17); the coach's next fixture first with its chips; the DSO card last
+  // on Today (Q7); the team, player and ground addresses (Q11); the director's
+  // first Needs you row lands on the fix.
+  "browser-homes",
+  // EXPERIENCE_PASS Slice 6: the office's and the director's five homes (School),
+  // the platform's (Platform); Settings taken apart, a parent's name opening only
+  // her own; "A parent is waiting" first, landing on her request; a new school's
+  // set-up list, each line going as it becomes true; the DSO's route (Q7).
+  "browser-office",
   // GA-I19 slice B (db/111): the Injuries screens. The physio's Reviews due, the
   // Record and Review forms (next review required, +7 and +14, clearing asks
   // first), the left-the-school mark; the coach and the director read it with
@@ -566,6 +584,12 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // round robin, shows a fixture's reasons, locks, regenerates and publishes with
   // a per-fixture report; phone, Daylight, the 12px and 44px floors.
   "browser-league",
+  // A knockout's bracket (SCRBRD-060): a cup of three drawn and published by
+  // the planner (a bye, a semi-final, the final held); an entrant school reads
+  // a bracket and no table, "To be decided" for the side not yet known, then
+  // the semi-final's winner Through and the final named; Leagues opens on the
+  // Bracket tab; columns at 1366, stacked at 390, 12px, 44px, Daylight, reduced motion.
+  "browser-bracket",
   // Management → Users on the real directory: each person with every role they
   // hold (ended ones muted and worded), Add user / Add role saved for real, a
   // role the caller may not grant not offered and a forced post refused in
@@ -688,7 +712,14 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // wheel, the parent's result, and the public page's names. It prints the
   // scorer's time per ball with and without the wheel, and says on a line of
   // its own whatever the app cannot do yet.
-  "browser-pilot-flow"];
+  "browser-pilot-flow",
+  // db/165 (18 Nov 2026): a fixture goes live from the pad's first ball, with
+  // no status written in SQL (the walk's source is held to that by
+  // run-smoke-shard.test.mjs); a four reaches the signed-out public page on
+  // its own refresh, naming no child beyond PUBLIC_DATA.md's L2; the scorer's
+  // phone reloads mid-innings, finishes through "Sign in to finish this
+  // match", and Today says Complete.
+  "browser-live-from-pad"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

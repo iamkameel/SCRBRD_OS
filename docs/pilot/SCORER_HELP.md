@@ -8,7 +8,7 @@ Open `scrbrd.onrender.com/app`. Tap **Continue with Google**, or type your email
 
 ## Open the match
 
-Tap **Match Centre** (bottom bar, or under **More**). On the fixture tap **Open live scorer →** if live, **Start scoring →** if not. Answer the sheets: **The toss** (winner, then **Bat** or **Bowl**), openers, **Opening bowler**. If a bar says **Can't score yet**, tap its button.
+Tap **Matches** (the menu, or a phone's bottom bar). On the fixture tap **Open live scorer →** if live, **Start scoring →** if not. Answer the sheets: **The toss** (winner, then **Bat** or **Bowl**), openers, **Opening bowler**. If a bar says **Can't score yet**, tap its button.
 
 ## Score a ball
 
@@ -22,7 +22,7 @@ Under the keys: **Dot**, **Wide**, **No ball**, **Bye**, **Leg bye**. Tap an ext
 
 ## The sync pill (under the scoreboard)
 
-**Sent**: all on the server. **Sending**: on their way. **Held**: no signal; saved, sent later. **Refused**: the server turned balls down; tap the pill, read the reason, then **Record again** or **Discard**. **On device**: saved here only.
+**Sent**: all on the server. **Sending**: on their way. **No signal**: saved here, sent later. **Refused**: the server turned balls down; tap the pill, read the reason, then **Record again** or **Discard**. **On device**: saved here only.
 
 ## No signal, or the phone dies
 

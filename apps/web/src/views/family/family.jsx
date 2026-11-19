@@ -21,7 +21,7 @@ import { signedIn } from "../../lib/api.js";
 import { useNav } from "../../lib/features.js";
 import { humanDate } from "../../lib/format.js";
 import { tenantWords } from "../../lib/words.js";
-import { chooseChild, doorTo, linkWords, pendingWords, recallChild, rememberChild } from "../../lib/family.js";
+import { chooseChild, doorTo, fixturesOf, linkWords, pendingWords, recallChild, rememberChild } from "../../lib/family.js";
 import { Action, Card, ChildSwitcher, Line, NoneOr, Page, Title } from "./parts.jsx";
 import { readState } from "../../lib/readState.js";
 import { LastMatchCard, LiveCard, NextFixtureCard, NoticesCard, SeasonCard } from "./cards.jsx";
@@ -31,6 +31,9 @@ import { ChildMatches, FixtureDetail, MatchFor } from "./matches.jsx";
 import { ChildFileCard } from "./childfile.jsx";
 import { LiftsToday, useLiftDay } from "../lifts.jsx";
 import { TodoCard, TodoCount } from "./todo.jsx";
+import { AppointedCard, AppointedOnMatch } from "./scoring.jsx";
+import { DsoCard } from "./dso.jsx";
+import { WaitingTerms } from "../terms.jsx";
 
 /** The children this parent answers for, the one chosen, and the fixture list the cards share. */
 function useChildren(role) {
@@ -70,7 +73,7 @@ function LinkLines({ lines }) {
 }
 
 /** What a family screen says when there is no child to show — and why, honestly. */
-function NoChild({ loading, error, testid }) {
+function NoChild({ loading, error, testid, onRaise = null, role = "guardian", onOpenScorer = null }) {
   // Her own requests to be linked (GA-I20 A1, §3.3): said as pending, and
   // never as approved. Her own rows only (`mine`); no child is named, because
   // the player row is not hers to read until the office verifies the link.
@@ -97,6 +100,10 @@ function NoChild({ loading, error, testid }) {
             {links.failed && <Line quiet testid="family-links-failed">Could not read your other links just now.</Line>}
           </>}
       </Card>
+      {/* Q15: a link still waiting for the office: the terms to read now, never to agree. */}
+      {signedIn() && !loading && !error && (pending.length > 0 || links.lines.some((l) => l.kind === "pending")) && <WaitingTerms/>}
+      {signedIn() && testid === "family-home" && <AppointedCard role={role} onOpenScorer={onOpenScorer}/>}
+      {signedIn() && testid === "family-home" && <DsoCard onRaise={onRaise}/>}
     </Page>
   );
 }
@@ -106,22 +113,38 @@ const schoolLine = (c) => [c.schoolName, c.team].filter(Boolean).join(" · ");
 
 // ── P1 · Home — one child ──────────────────────────────
 
-export function FamilyHome({ role, onNav }) {
+export function FamilyHome({ role, onNav, onOpenScorer }) {
   const { kids, child, choose, loading, error, matches, matchesRead, matchesSaid, retry } = useChildren(role);
   const nav = useNav(role);
   const [open, setOpen] = useState(null);
-  if (!child) return <NoChild loading={loading} error={error} testid="family-home"/>;
-  if (open?.kind === "match") return <MatchFor match={open.match} child={child} role={role} matches={matches} onBack={() => setOpen(null)}/>;
+  const raise = onNav ? () => onNav("safeguarding") : null;
+  if (!child) return <NoChild loading={loading} error={error} testid="family-home" onRaise={raise} role={role} onOpenScorer={onOpenScorer}/>;
+  if (open?.kind === "match") {
+    return (
+      <>
+        <AppointedOnMatch role={role} match={open.match} onOpenScorer={onOpenScorer}/>
+        <MatchFor match={open.match} child={child} role={role} matches={matches} onBack={() => setOpen(null)}/>
+      </>
+    );
+  }
   if (open?.kind === "fixture") {
-    return <Page testid="family-home"><FixtureDetail match={open.match} child={child} role={role} onBack={() => setOpen(null)}/></Page>;
+    return (
+      <Page testid="family-home">
+        <AppointedOnMatch role={role} match={open.match} onOpenScorer={onOpenScorer}/>
+        <FixtureDetail match={open.match} child={child} role={role} onBack={() => setOpen(null)}/>
+      </Page>
+    );
   }
   return <FamilyHomeBody role={role} onNav={onNav} kids={kids} child={child} choose={choose} matches={matches}
-    matchesRead={matchesRead} matchesSaid={matchesSaid} retry={retry} nav={nav} setOpen={setOpen}/>;
+    matchesRead={matchesRead} matchesSaid={matchesSaid} retry={retry} nav={nav} setOpen={setOpen} onOpenScorer={onOpenScorer} onRaise={raise}/>;
 }
 
 /** The Home for the chosen child: its own component, so the day's reads (a hook) are made for him alone. */
-function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead, matchesSaid, retry, nav, setOpen }) {
+function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead, matchesSaid, retry, nav, setOpen, onOpenScorer, onRaise }) {
   const now = Date.now();
+  // §1.9, §1.10: while his match is live, its board leads his section; otherwise it sits after his lifts.
+  const isLive = fixturesOf(matches, child, now).live.length > 0;
+  const live = <LiveCard child={child} matches={matches} now={now} onFollow={(m) => setOpen({ kind: "match", match: m })}/>;
   // The day's lift cards, read once and shared by the list (R7) and the day cards (GA-I20 A1, D8).
   const { day, reload: reloadDay } = useLiftDay(child, matches, now);
   // A door from the list into his card on Family: Consents, or Who to ring.
@@ -129,6 +152,8 @@ function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead
   return (
     <Page testid="family-home">
       <ChildSwitcher kids={kids} chosen={child} onChoose={(c) => { setOpen(null); choose(c); }}/>
+      {/* Q2: her own appointment to score, if she has one: hers, not her child's, so above his section. */}
+      <AppointedCard role={role} onOpenScorer={onOpenScorer}/>
       {/* Keyed on the child: a switch starts every card afresh, so nothing
           read for one child is ever drawn under the other's name. */}
       <div key={child.id} data-testid="family-home-body" data-child={child.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: T.space.md }}>
@@ -136,6 +161,7 @@ function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead
           <Title testid="family-child">{child.knownAs || child.name}</Title>
           <Line quiet testid="family-child-school">{schoolLine(child)}</Line>
         </header>
+        {isLive && live}
         <NextFixtureCard child={child} matches={matches} role={role} now={now} said={matchesSaid} onRetry={retry}
           onOpen={(m) => setOpen({ kind: "fixture", match: m })}
           onMatches={nav.includes("fixtures") ? () => onNav?.("fixtures") : null}/>
@@ -148,7 +174,7 @@ function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead
             number and car, the marks, "confirm collected"; her own card when
             she drives. */}
         <LiftsToday child={child} matches={matches} day={day ?? undefined} onReload={reloadDay}/>
-        <LiveCard child={child} matches={matches} now={now} onFollow={(m) => setOpen({ kind: "match", match: m })}/>
+        {!isLive && live}
         <LastMatchCard child={child} matches={matches} now={now} onOpen={(m) => setOpen({ kind: "match", match: m })}/>
         <SeasonCard child={child} role={role}/>
         {/* GA-I23 slice 2 (B2, Q8): her child's season, innings by innings,
@@ -163,6 +189,8 @@ function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead
         <PersonalBests role={role} playerId={child.id} who={`${child.knownAs || child.name}'s`} testid="family-bests" quietWhenNone/>
         <NoticesCard child={child} role={role} onOpen={nav.includes("notices") ? () => onNav?.("notices") : null}/>
       </div>
+      {/* Q7: the DSO card, last on her Home, outside his section: it is the school's, not his. */}
+      <DsoCard onRaise={onRaise}/>
     </Page>
   );
 }

@@ -697,12 +697,17 @@ decision.
 | **access log** | `access_log` | **recommend 5 years** | delete rows; never minimise (a log with holes is not a log) | the row's date | the platform, on a schedule the owner runs |
 | **sessions, codes, claims** | `auth_session` (a day past expiry, built), `login_code` (3 days, built), `pending_claim` | pending claims **90 days** then `expired` | — | — | built / small |
 | **sign-ins** | `auth_identity` | with the account | deleted on erasure (140 §3.8) | — | — |
+| **the follow list** (EXPERIENCE_PASS Q8, db/160) | `followed_school` | with the account | deleted: with its `app_user` row (ON DELETE CASCADE), and by `account_erase()` with the sign-ins; kept while an account is disabled | — | built (db/160) |
 | **notifications** | `notification` | **recommend 2 years** | delete | sent | the platform |
+| **requests to add a school** | `school_add_request` (db/158) | answered: **90 days after the answer**; unanswered: lapses at 90 days, then **90 days after it lapses** (180 after it was asked) | delete | `decided_at`, or `requested_at` | the lead, `school_add_request_purge()`, monthly (DEPLOYING); and with the account (ON DELETE CASCADE, `account_erase()`) |
+
+An answered request to add a school is deleted 90 days after the answer (Kameel, 15 Nov).
+An unanswered request lapses after 90 days and is deleted 90 days after it lapses (Kameel, 15 Nov).
 
 ### 6.3 The account's own end
 
 140 §3.8's `account_erase()` is the terminal state, as designed and decided (D10 there): `active = false`,
-email and name tombstoned, every `auth_identity` deleted, every live role ended through db/77 (refusing a
+email and name tombstoned, every `auth_identity` deleted, every `school_add_request` of the account deleted (db/158), every `followed_school` row deleted (db/160; the account's own row is kept, so its ON DELETE CASCADE never fires; db/99 §138 (erased) holds it), every live role ended through db/77 (refusing a
 minor's last verified guardian), the browser deleting the Firebase user, audit rows keeping the uuid. This
 design adds three things:
 

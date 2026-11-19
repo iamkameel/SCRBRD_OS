@@ -25,8 +25,8 @@
  *    stand for.
  *  - Case counts: "Sign In" (the sign-in screen) is not "Sign in" (the pad's
  *    banner), and the docs use each where the app does.
- *  - A label built from a template, such as `Held ${n}`, is quoted by its
- *    fixed words only ("Held"), never with the number.
+ *  - A label built from a template, such as `Sending ${n}`, is quoted by its
+ *    fixed words only ("Sending"), never with the number.
  *
  * Also checked: banned phrases that an earlier draft invented, and each
  * one-page help sheet (scorer, coach, parent, office) staying under its word
@@ -81,10 +81,10 @@ const PIN = new Map([
   ["Basic Scoring", { in: ["scorer/engine.jsx"] }],           // menu item
   ["Hand over", { in: ["scorer/engine.jsx"] }],               // title-bar button
   ["Take over", { in: ["scorer/engine.jsx"] }],               // title-bar button when a handover is pending
-  // The sync pill (scorer/engine.jsx SyncPill). Held, Sending, Refused carry a count.
+  // The sync pill (scorer/engine.jsx SyncPill). No signal, Sending, Refused carry a count.
   ["Sent", { in: ["scorer/engine.jsx"] }],
   ["Sending", { in: ["scorer/engine.jsx"], part: "label: `Sending \\$\\{" }],
-  ["Held", { in: ["scorer/engine.jsx"], part: "label: `Held \\$\\{" }],
+  ["No signal", { in: ["scorer/engine.jsx"], part: "label: `No signal · \\$\\{" }],
   ["Refused", { in: ["scorer/engine.jsx"], part: "label: `Refused \\$\\{" }],
   ["For review", { in: ["scorer/engine.jsx"], part: "label: `For review \\$\\{" }],
   ["On device", { in: ["scorer/engine.jsx"] }],
@@ -198,8 +198,13 @@ const PIN = new Map([
   ["Your DSO", { in: ["views/SafeguardingView.jsx"] }],
   // The office's sheet: Settings, the importer, enrolment, claims, Staff, the public-name and publication panels.
   ["Settings", { in: ["design/roles.js"] }],                  // the nav label
-  ["Import", { in: ["views/SettingsView.jsx"] }],             // a tab of Settings
-  ["People", { in: ["views/SettingsView.jsx"] }],             // a tab of Settings
+  // Slice 6 (EXPERIENCE_PASS §1.6): Settings' People and Import are School, People's.
+  ["School", { in: ["design/homes.js"] }],                    // the home's title, the menu's word
+  ["People", { in: ["design/homes.js"] }],                    // School's first section
+  ["Record", { in: ["design/homes.js"] }],                    // School's section with the school's record
+  ["Accounts", { in: ["views/SettingsView.jsx"] }],           // the People part's heading
+  ["Import from a spreadsheet", { in: ["views/importer.jsx"] }],
+  ["Import", { in: ["views/importer.jsx"] }],                 // the importer's button
   ["What are you importing", { in: ["views/importer.jsx"] }],
   ["Players", { in: ["lib/importScreen.js"] }],
   ["Guardians", { in: ["lib/importScreen.js"] }],
@@ -218,7 +223,6 @@ const PIN = new Map([
   ["Confirm it is them", { in: ["views/claims.jsx"] }],
   ["Issue a code instead", { in: ["views/claims.jsx"] }],
   ["Decline", { in: ["views/claims.jsx"] }],
-  ["Staff", { in: ["design/roles.js"] }],                     // the nav label
   ["Everyone", { in: ["views/StaffView.jsx"] }],
   ["Clearance register", { in: ["views/StaffView.jsx"] }],
   ["Hide", { in: ["views/StaffView.jsx"] }],

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { HOMES } from "../design/homes.js";
 import { useHome } from "../lib/homeNav.js";
-import { D } from "../design/tokens.js";
+import { D, T, inkOn } from "../design/tokens.js";
+import { invitationsWords } from "../lib/invitationCount.js";
 
 /* ══════════════════════════════════════════════════════
    HOME BAR (GA-I30)
@@ -40,9 +41,12 @@ const pill = (on, tone) => ({
 
 /**
  * @param {{ home: string, role: string, section?: string | null, onSection?: (key: string) => void,
- *           onNav?: (page: string, section?: string) => void }} props
+ *           onNav?: (page: string, section?: string) => void, scroll?: boolean, invites?: number }} props
+ *   `invites`: league invitations waiting, said on the link to Competitions as the menu says them (the menu's own count)
+ *   `scroll`: the section switch keeps to one row and scrolls sideways on a phone rather than wrapping to
+ *   three (the Team home's seven sections, EXPERIENCE_PASS §1.3)
  */
-export function HomeBar({ home, role, section = null, onSection, onNav }) {
+export function HomeBar({ home, role, section = null, onSection, onNav, scroll = false, invites = 0 }) {
   const { sections, links } = useHome(role, home);
   const tone = D[HOMES[home].color];
   const title = HOMES[home].title;
@@ -52,10 +56,11 @@ export function HomeBar({ home, role, section = null, onSection, onNav }) {
   return (
     <div data-testid={`home-${home}`} style={{display:"flex",gap:"6px",marginBottom:"16px",flexWrap:"wrap",alignItems:"center"}}>
       {switchOn && (
-        <div role="group" aria-label={`${title}: sections`} data-testid={`home-${home}-sections`} style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+        <div role="group" aria-label={`${title}: sections`} data-testid={`home-${home}-sections`}
+          style={scroll ? {display:"flex",gap:"6px",flexWrap:"nowrap",overflowX:"auto",maxWidth:"100%",minWidth:0,paddingBottom:"2px",scrollbarWidth:"thin"} : {display:"flex",gap:"6px",flexWrap:"wrap"}}>
           {sections.map((s) => (
             <button key={s.key} type="button" aria-pressed={section === s.key} data-testid={`home-${home}-section-${s.key}`}
-              onClick={() => onSection(s.key)} className="pressBtn" style={pill(section === s.key, tone)}>{s.label}</button>
+              onClick={() => onSection(s.key)} className="pressBtn" style={{...pill(section === s.key, tone), ...(scroll ? {flexShrink:0,whiteSpace:"nowrap"} : {})}}>{s.label}</button>
           ))}
         </div>
       )}
@@ -64,7 +69,15 @@ export function HomeBar({ home, role, section = null, onSection, onNav }) {
           style={{display:"flex",gap:"6px",flexWrap:"wrap",marginLeft:switchOn ? "auto" : 0}}>
           {shownLinks.map((l) => (
             <button key={l.to + (l.section ?? "")} type="button" data-testid={`home-${home}-link-${l.to}${l.section ? "-" + l.section : ""}`}
-              onClick={() => onNav(l.to, l.section)} className="pressBtn" style={pill(false, tone)}>{l.label} <span aria-hidden="true">→</span></button>
+              aria-label={l.to === "competitions" && invites > 0 ? `${l.label}, ${invitationsWords(invites)}` : undefined}
+              onClick={() => onNav(l.to, l.section)} className="pressBtn" style={pill(false, tone)}>
+              {l.label}
+              {l.to === "competitions" && invites > 0 && (
+                <span data-testid={`home-${home}-link-invites`} aria-hidden="true" style={{ marginLeft: "6px", padding: "0 6px", borderRadius: D.pill, background: T.semantic.warning,
+                  color: inkOn(T.semantic.warning), fontFamily: D.mono, fontSize: "12px", fontWeight: 700 }}>{invites}</span>
+              )}
+              {" "}<span aria-hidden="true">→</span>
+            </button>
           ))}
         </div>
       )}

@@ -9924,6 +9924,274 @@ EXCEPTION WHEN OTHERS THEN
 END $$ LANGUAGE plpgsql;
 -- └── db/133 (section 112) ─────────────────────────────────────────────
 
+-- ┌── db/165 (section 143) ─────────────────────────────────────────────
+-- A fixture is live from its first ball. Each case stages its own Hilton
+-- 1XI fixtures, invented, far from any date the seed or another section
+-- books and on no ground, so no clash and no other section's rows; every
+-- opponent is 'V165 …'. The scorer is the seed's (A Wessels, Hilton-wide).
+CREATE OR REPLACE FUNCTION _v165_fixture(p_tag text, p_status text, p_days integer) RETURNS uuid AS $$
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'V165 ' || p_tag,
+          ((sa_today() + p_days)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, p_status)
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A fixture's status, as the owner reads it (no reader's row security in the way).
+CREATE OR REPLACE FUNCTION _v165_status(p_match uuid) RETURNS text AS $$
+  SELECT coalesce((SELECT m.status FROM match m WHERE m.id = p_match), '(none)')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A status set as the owner, for staging only.
+CREATE OR REPLACE FUNCTION _v165_set(p_match uuid, p_status text) RETURNS void AS $$
+  UPDATE match SET status = p_status WHERE id = p_match
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A ball written as the owner, as a definer would (the importer's confirm):
+-- 'written', or 'SQLSTATE constraint' for what refused it.
+CREATE OR REPLACE FUNCTION _v165_ball(p_match uuid, p_seq integer) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, ball_type, value)
+  SELECT p_match, m.school_id, p_seq, 0, 0, '88888888-0000-0000-0000-000000000006', 'v165-owner',
+         'v165-' || p_match || '-' || p_seq, p_seq, now(), 'ball', 'run', 0
+    FROM match m WHERE m.id = p_match;
+  RETURN 'written';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN SQLSTATE || ' ' || coalesce(v_con, '');
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One ball on each of several fixtures, in ONE statement, as the owner: the
+-- trigger is per statement and must find every fixture the statement wrote to.
+CREATE OR REPLACE FUNCTION _v165_balls(p_matches uuid[]) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, ball_type, value)
+  SELECT m.id, m.school_id, 1, 0, 0, '88888888-0000-0000-0000-000000000006', 'v165-owner',
+         'v165-' || m.id || '-1', 1, now(), 'ball', 'run', 0
+    FROM match m WHERE m.id = ANY (p_matches);
+  RETURN 'written';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN SQLSTATE || ' ' || coalesce(v_con, '');
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What a status move could have told or recorded, as the owner: every notice
+-- on the platform, and the fixture's own notices and scoring_audit rows.
+CREATE OR REPLACE FUNCTION _v165_told(p_match uuid) RETURNS text AS $$
+  SELECT (SELECT count(*) FROM notification)::text || '/'
+      || (SELECT count(*) FROM notification n WHERE n.subject_id = p_match)::text || '/'
+      || coalesce((SELECT string_agg(s.event, ' ' ORDER BY s.at, s.id) FROM scoring_audit s WHERE s.match_id = p_match), '')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Scheduled fixtures with a ball in their log, over the whole table, as the owner.
+CREATE OR REPLACE FUNCTION _v165_stuck() RETURNS integer AS $$
+  SELECT count(*)::int FROM match m
+   WHERE m.status = 'scheduled' AND EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = m.id AND b.kind = 'ball')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The pad's setup at the toss, as the owner: an innings_start, before any ball.
+CREATE OR REPLACE FUNCTION _v165_setup(p_match uuid) RETURNS text AS $$
+DECLARE v_con text;
+BEGIN
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, payload)
+  SELECT p_match, m.school_id, 1, 0, 0, '88888888-0000-0000-0000-000000000006', 'v165-owner',
+         'v165-' || p_match || '-start', 1, now(), 'innings_start', '{}'::jsonb
+    FROM match m WHERE m.id = p_match;
+  RETURN 'written';
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS v_con = CONSTRAINT_NAME;
+  RETURN SQLSTATE || ' ' || coalesce(v_con, '') || ' ' || SQLERRM;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/165's backfill, as the owner, whose alone it is.
+CREATE OR REPLACE FUNCTION _v165_backfill() RETURNS integer AS $$
+  SELECT match_live_backfill()
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A function's grants, read from its ACL: "role:PRIVILEGE,…", the owner left out; NULL if it is missing.
+CREATE OR REPLACE FUNCTION _v165_acl(p_fn text) RETURNS text AS $$
+  SELECT CASE WHEN to_regprocedure(p_fn) IS NULL THEN NULL ELSE coalesce((
+    SELECT string_agg(coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC') || ':' || x.privilege_type, ',' ORDER BY x.grantee)
+      FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x
+     WHERE p.oid = to_regprocedure(p_fn) AND x.grantee <> p.proowner), '') END
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One case of §143, run as the caller (scrbrd_app, under the scorer's or the
+-- office's session), so every write by a person meets row security as the
+-- API's would. Each case stages its own fixtures and raises on its first failure.
+CREATE OR REPLACE FUNCTION _v165_case(p_case text) RETURNS void AS $$
+DECLARE
+  SC  uuid := '88888888-0000-0000-0000-000000000006';   -- A Wessels, Hilton's scorer
+  DOS uuid := '88888888-0000-0000-0000-000000000007';   -- Sarah, Hilton's director of sport
+  S uuid; S2 uuid; P uuid; A uuid; C uuid; L uuid; Q uuid; B uuid; v text; v2 text; n int; ok boolean; ep int;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  IF p_case = 'first' THEN
+    -- (first) The scorer claims a scheduled fixture (still scheduled: a claim is not play), writes the
+    -- toss's setup, an innings_start (still scheduled: the line-up is not play), then one ball on the
+    -- write path's terms: the fixture is live, and nothing is told or audited.
+    S := _v165_fixture('first', 'scheduled', 140);
+    PERFORM _as(SC);
+    PERFORM set_config('app.device_id', 'v165-pad', true);
+    SELECT c.ok, c.epoch INTO ok, ep FROM scoring_claim(S, 'v165-pad') c;
+    PERFORM _assert(ok, '§143 (first): the scorer could not claim the fixture');
+    PERFORM _assert(_v165_status(S) = 'scheduled', format('§143 (first): the claim made the fixture %s', _v165_status(S)));
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                            idempotency_key, client_seq, client_ts, kind, payload)
+    VALUES (S, match_school(S), 1, ep, 0, SC, 'v165-pad', 'v165-first-0', 1, now(), 'innings_start', '{}'::jsonb);
+    PERFORM _assert(_v165_status(S) = 'scheduled', format('§143 (first): the innings_start made the fixture %s', _v165_status(S)));
+    v := _v165_told(S);
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                            idempotency_key, client_seq, client_ts, kind, ball_type, value)
+    VALUES (S, match_school(S), 2, ep, 0, SC, 'v165-pad', 'v165-first-1', 2, now(), 'ball', 'run', 0);
+    PERFORM _assert(_v165_status(S) = 'live', format('§143 (first): after the first ball the fixture is %s, not live', _v165_status(S)));
+    PERFORM _assert(_v165_told(S) = v, format('§143 (first): going live told or recorded something: %s, then %s', v, _v165_told(S)));
+    INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                            idempotency_key, client_seq, client_ts, kind, ball_type, value)
+    VALUES (S, match_school(S), 3, ep, 0, SC, 'v165-pad', 'v165-first-2', 3, now(), 'ball', 'run', 4);
+    PERFORM _assert(_v165_status(S) = 'live' AND _v165_told(S) = v,
+      format('§143 (first): the second ball left it %s, %s', _v165_status(S), _v165_told(S)));
+
+  ELSIF p_case = 'statement' THEN
+    -- (statement) One statement writing to two scheduled fixtures makes both live, and a third
+    -- fixture it does not write to stays scheduled.
+    S := _v165_fixture('statement one', 'scheduled', 141);
+    S2 := _v165_fixture('statement two', 'scheduled', 142);
+    Q := _v165_fixture('statement none', 'scheduled', 143);
+    v := _v165_balls(ARRAY[S, S2]);
+    PERFORM _assert(v = 'written' AND _v165_status(S) = 'live' AND _v165_status(S2) = 'live' AND _v165_status(Q) = 'scheduled',
+      format('§143 (statement): %s; the two read %s and %s, the third %s', v, _v165_status(S), _v165_status(S2), _v165_status(Q)));
+
+  ELSIF p_case = 'others' THEN
+    -- (others) Only from scheduled: a postponed fixture refuses the ball (db/133) and stays postponed;
+    -- a ball written as a definer to an abandoned or a complete fixture leaves its status as it was
+    -- (a trigger that moved them would be refused by db/133 and db/132, and take the ball with it);
+    -- a live one stays live.
+    P := _v165_fixture('postponed', 'postponed', 144);
+    A := _v165_fixture('abandoned', 'abandoned', 151);
+    C := _v165_fixture('complete', 'complete', -140);
+    L := _v165_fixture('live', 'live', 0);
+    v := _v165_ball(P, 1);
+    PERFORM _assert(v = '23514 match_postponed' AND _v165_status(P) = 'postponed',
+      format('§143 (others): a ball on a postponed fixture reads %s, and it is %s', v, _v165_status(P)));
+    FOREACH S IN ARRAY ARRAY[A, C, L] LOOP
+      v := _v165_ball(S, 1);
+      v2 := CASE S WHEN A THEN 'abandoned' WHEN C THEN 'complete' ELSE 'live' END;
+      -- Written, as a definer writes it: the trigger neither refuses the ball nor moves the status.
+      PERFORM _assert(v = 'written' AND _v165_status(S) = v2, format('§143 (others): a ball on the %s fixture reads %s, and it is %s', v2, v, _v165_status(S)));
+    END LOOP;
+
+  ELSIF p_case = 'quarantine' THEN
+    -- (quarantine) A ball the server holds for review is not in the log, so it moves nothing.
+    Q := _v165_fixture('quarantined', 'scheduled', 145);
+    PERFORM _as(SC);
+    PERFORM set_config('app.device_id', 'v165-old-pad', true);
+    INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id, idempotency_key, body, fingerprint)
+    VALUES (Q, match_school(Q), 0, 1, SC, 'v165-old-pad', 'v165-q-1', '{"kind":"ball","ballType":"run","value":0}'::jsonb, 'v165-fingerprint');
+    PERFORM _assert(EXISTS (SELECT 1 FROM ball_event_quarantine x WHERE x.idempotency_key = 'v165-q-1'), '§143 (quarantine): the held ball was not stored');
+    PERFORM _assert(_v165_status(Q) = 'scheduled', format('§143 (quarantine): a quarantined ball made the fixture %s', _v165_status(Q)));
+
+  ELSIF p_case = 'scorer' THEN
+    -- (scorer) The scorer still cannot set a fixture's status himself, to live or to complete: row
+    -- security (match_update, db/09: fixture.update) finds no row for him to change.
+    S := _v165_fixture('scorer', 'scheduled', 146);
+    PERFORM _as(SC);
+    UPDATE match SET status = 'live' WHERE id = S;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 0 AND _v165_status(S) = 'scheduled', format('§143 (scorer): his UPDATE to live changed %s rows; it is %s', n, _v165_status(S)));
+    UPDATE match SET status = 'complete' WHERE id = S;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 0 AND _v165_status(S) = 'scheduled', format('§143 (scorer): his UPDATE to complete changed %s rows; it is %s', n, _v165_status(S)));
+
+  ELSIF p_case = 'backfill' THEN
+    -- (backfill) The state the bug left, staged: a fixture with a ball in its log and still scheduled
+    -- (called off once scored, then put back on, db/133's one way back). match_live_backfill() makes
+    -- it live, leaves a scheduled fixture with only its setup (no ball) and an abandoned one with a
+    -- ball as they are,
+    -- finds nothing the second time, and leaves no scheduled fixture with events anywhere.
+    B := _v165_fixture('stuck', 'abandoned', 147);
+    S := _v165_fixture('unplayed', 'scheduled', 148);
+    A := _v165_fixture('called off', 'abandoned', 149);
+    PERFORM _assert(_v165_ball(B, 1) = 'written' AND _v165_ball(A, 1) = 'written', '§143 (backfill): the staged balls were not written');
+    v := _v165_setup(S);
+    PERFORM _assert(v = 'written', format('§143 (backfill): the unplayed fixture''s setup reads %s', v));
+    PERFORM _v165_set(B, 'scheduled');
+    PERFORM _assert(_v165_status(B) = 'scheduled' AND _v165_stuck() >= 1,
+      format('§143 (backfill): the staged fixture is %s, %s stuck', _v165_status(B), _v165_stuck()));
+    n := _v165_backfill();
+    PERFORM _assert(n >= 1 AND _v165_status(B) = 'live' AND _v165_status(S) = 'scheduled' AND _v165_status(A) = 'abandoned',
+      format('§143 (backfill): moved %s; the stuck one is %s, the unplayed %s, the called off %s',
+             n, _v165_status(B), _v165_status(S), _v165_status(A)));
+    n := _v165_backfill();
+    PERFORM _assert(n = 0 AND _v165_stuck() = 0, format('§143 (backfill): a second run moved %s and left %s stuck', n, _v165_stuck()));
+
+  ELSIF p_case = 'grants' THEN
+    -- (grants) The trigger's function: a definer with its path pinned, EXECUTE to scrbrd_app alone;
+    -- the backfill: the owner's alone; the trigger itself, as db/165 made it and enabled.
+    PERFORM _assert(_v165_acl('match_live_on_first_event()') = 'scrbrd_app:EXECUTE',
+      format('§143 (grants): match_live_on_first_event() is granted %s', coalesce(_v165_acl('match_live_on_first_event()'), '(missing)')));
+    PERFORM _assert(_v165_acl('match_scored_stays_live()') = 'scrbrd_app:EXECUTE',
+      format('§143 (grants): match_scored_stays_live() is granted %s', coalesce(_v165_acl('match_scored_stays_live()'), '(missing)')));
+    PERFORM _assert(_v165_acl('match_live_backfill()') = '',
+      format('§143 (grants): match_live_backfill() is granted %s', coalesce(_v165_acl('match_live_backfill()'), '(missing)')));
+    SELECT string_agg(f, ' ') INTO v FROM unnest(ARRAY['match_live_on_first_event()', 'match_live_backfill()', 'match_scored_stays_live()']) f
+     WHERE NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = f::regprocedure AND p.prosecdef
+                         AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
+        OR has_function_privilege('public', f, 'EXECUTE');
+    PERFORM _assert(v IS NULL, format('§143 (grants): not pinned, or PUBLIC''s: %s', v));
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = 'ball_event'::regclass AND t.tgname = 'ball_event_match_live'
+                              AND t.tgenabled = 'O' AND t.tgfoid = 'match_live_on_first_event()'::regprocedure),
+      '§143 (grants): ball_event_match_live is missing, disabled or calls another function');
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = 'match'::regclass AND t.tgname = 'match_scored_stays_live'
+                              AND t.tgenabled = 'O' AND t.tgfoid = 'match_scored_stays_live()'::regprocedure),
+      '§143 (grants): match_scored_stays_live is missing, disabled or calls another function');
+
+  ELSIF p_case = 'back' THEN
+    -- (back) Kameel, 18 Nov 2026: "Refuse it once there are balls." A fixture with a ball log is not put
+    -- back from live to scheduled: not by the office (fixture.update), not by the owner. Refused in
+    -- db/133's words' kind (23514 match_status_transition). A called-off match still goes back on
+    -- (abandoned → scheduled, db/133), log or none; a live fixture with no log may still go back.
+    L := _v165_fixture('back', 'scheduled', 150);
+    v := _v165_ball(L, 1);
+    PERFORM _assert(v = 'written' AND _v165_status(L) = 'live', format('§143 (back): the staged fixture reads %s, %s', v, _v165_status(L)));
+    PERFORM _as(DOS);
+    v := _v133_try(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', L));
+    PERFORM _assert(v LIKE '23514|match_status_transition|This fixture has been scored%' AND _v165_status(L) = 'live',
+      format('§143 (back): the office putting a scored fixture back reads %s; it is %s', v, _v165_status(L)));
+    PERFORM set_config('app.user_id', '', true);
+    v := _v133_owner_probe(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', L));
+    PERFORM _assert(v LIKE '23514|match_status_transition|%', format('§143 (back): the owner putting it back reads %s', v));
+    S := _v165_fixture('back unscored', 'live', 151);
+    PERFORM _as(DOS);
+    v := _v133_try(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', S));
+    PERFORM _assert(v = 'ok' AND _v165_status(S) = 'scheduled', format('§143 (back): a live fixture with no log put back reads %s, %s', v, _v165_status(S)));
+    -- Balls only, as the trigger counts them (review S2): a fixture with the toss's setup and no ball,
+    -- set live by the office, may still go back to scheduled.
+    Q := _v165_fixture('back setup only', 'scheduled', 153);
+    v := _v165_setup(Q);
+    PERFORM _assert(v = 'written' AND _v165_status(Q) = 'scheduled', format('§143 (back): the setup-only fixture reads %s, %s', v, _v165_status(Q)));
+    v := _v133_try(format('UPDATE match SET status = ''live'' WHERE id = %L', Q));
+    PERFORM _assert(v = 'ok' AND _v165_status(Q) = 'live', format('§143 (back): the office setting the setup-only fixture live reads %s, %s', v, _v165_status(Q)));
+    v := _v133_try(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', Q));
+    PERFORM _assert(v = 'ok' AND _v165_status(Q) = 'scheduled',
+      format('§143 (back): a live fixture with only its setup put back reads %s, %s', v, _v165_status(Q)));
+    A := _v165_fixture('back called off', 'abandoned', 152);
+    PERFORM _assert(_v165_ball(A, 1) = 'written', '§143 (back): the called-off fixture''s ball was not written');
+    v := _v133_try(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', A));
+    PERFORM _assert(v = 'ok' AND _v165_status(A) = 'scheduled', format('§143 (back): a scored match called off, put back on, reads %s, %s', v, _v165_status(A)));
+  ELSE
+    RAISE EXCEPTION '§143: no case %', p_case;
+  END IF;
+  PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('app.device_id', '', true);
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- └── db/165 (section 143) ─────────────────────────────────────────────
+
 -- ┌── db/135 (section 113). Two phones scoring one match, slice 1 ─────────
 -- Invented, as the owner. Hilton's U13F at home to Westville's 1XI, live,
 -- one over in the log (MP), with the pen held by the U13F scorer (sc) on
@@ -13374,6 +13642,1005 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/157 (section 135) ─────────────────────────────────────────────
 
+-- ┌── db/158 (section 136) ─────────────────────────────────────────────
+-- Who §136 is about, its own and invented, so no earlier section's revoking
+-- moves them: two accounts with no school (the asker and another), a coach
+-- and the office at Hilton, a teacher who has left (his one role ended) and
+-- one whose role ran out yesterday, a platform administrator and the
+-- owner's key. The two who left are filed at Hilton still, as such an
+-- account is; they hold nothing live.
+CREATE OR REPLACE FUNCTION _v158_stage() RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  ids jsonb := '{}'::jsonb;
+  r   record;
+  v_u uuid;
+  v_a uuid;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+      ('asker',  NULL::text,      NULL::uuid),
+      ('other',  NULL,            NULL),
+      ('coach',  'coach',         HIL),
+      ('office', 'schooladmin',   HIL),
+      ('left',   'coach',         HIL),
+      ('lapsed', 'coach',         HIL),
+      ('plat',   'platformadmin', NULL),
+      ('owner',  'superadmin',    NULL),
+      -- An asker who is later made a platform administrator (own_request),
+      -- one whose only role is paused at Hilton, and a platform administrator
+      -- whose appointment ran out yesterday.
+      ('self',   NULL,            NULL),
+      ('paused', NULL,            NULL),
+      ('platgone', 'platformadmin', NULL),
+      -- A platform administrator whose account is disabled; somebody whose
+      -- only live role is a support session at Hilton; two accounts that end,
+      -- one removed outright and one erased (when account_erase() exists).
+      ('platoff', 'platformadmin', NULL),
+      ('support', NULL,            NULL),
+      ('gone',    NULL,            NULL),
+      ('erased',  NULL,            NULL),
+      -- A pupil's account at Hilton (its player role is added below, with
+      -- his side), refused (Kameel, 15 Nov: ask a teacher).
+      ('pupil',   NULL,            NULL),
+      -- Three pupils the no-school form does reach: one whose player role
+      -- has ended, one whose role ran out yesterday, one linked by his
+      -- player row alone (db/118: "a boy who has left is still a boy").
+      ('pupilgone',  NULL,         NULL),
+      ('pupilrun',   NULL,         NULL),
+      ('pupillink',  NULL,         NULL)) AS v(k, role, school)
+  LOOP
+    INSERT INTO app_user (school_id, email, name, role)
+    VALUES (r.school, 'v158.' || r.k || '@example.invalid', 'V158 ' || initcap(r.k), coalesce(r.role, 'none'))
+    RETURNING id INTO v_u;
+    ids := ids || jsonb_build_object(r.k, v_u);
+    IF r.role IS NOT NULL THEN
+      INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
+      VALUES (v_u, r.role, r.school, CASE WHEN r.role = 'coach' THEN 'U15A' END, sa_today() - 60)
+      RETURNING id INTO v_a;
+      ids := ids || jsonb_build_object('a_' || r.k, v_a);
+    END IF;
+  END LOOP;
+  UPDATE role_assignment SET active = false WHERE id = (ids->>'a_left')::uuid;
+  UPDATE role_assignment SET valid_until = sa_today() WHERE id = (ids->>'a_lapsed')::uuid;
+  UPDATE role_assignment SET valid_until = sa_today() WHERE id = (ids->>'a_platgone')::uuid;
+  -- The paused one: a scorer's duty at Hilton, its assignment paused by the
+  -- office (db/34), as §73 stages it.
+  PERFORM _v92_pause((ids->>'paused')::uuid, (ids->>'office')::uuid);
+  UPDATE app_user SET active = false WHERE id = (ids->>'platoff')::uuid;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  VALUES ((ids->>'pupil')::uuid, 'player', '11111111-1111-1111-1111-111111111111', 'U15A');
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  VALUES ((ids->>'pupilgone')::uuid, 'player', '11111111-1111-1111-1111-111111111111', 'U15A') RETURNING id INTO v_a;
+  UPDATE role_assignment SET active = false WHERE id = v_a;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_from)
+  VALUES ((ids->>'pupilrun')::uuid, 'player', '11111111-1111-1111-1111-111111111111', 'U15A', sa_today() - 60) RETURNING id INTO v_a;
+  UPDATE role_assignment SET valid_until = sa_today() WHERE id = v_a;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'U15A', 'Verify Onefiftyeight Linked', 158, 'batter',
+          make_date(extract(year FROM sa_today())::int - 14, 3, 1))
+  RETURNING id INTO v_a;
+  UPDATE app_user SET player_id = v_a WHERE id = (ids->>'pupillink')::uuid;
+  -- A support session as support_access_begin() (db/22) writes one: the
+  -- school's own role, an hour long, under the supporter's own uuid.
+  INSERT INTO role_assignment (person_id, role, school_id, active, valid_from, expires_at)
+  VALUES ((ids->>'support')::uuid, 'schooladmin', '11111111-1111-1111-1111-111111111111', true, sa_today(), now() + interval '1 hour')
+  RETURNING id INTO v_a;
+  INSERT INTO support_access (actor_id, school_id, role, reason, assignment_id, expires_at)
+  VALUES ((ids->>'support')::uuid, '11111111-1111-1111-1111-111111111111', 'schooladmin', 'Verify 158: a support session.', v_a, now() + interval '1 hour');
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A request written straight into the table as the owner, past the ask's
+-- tests, as a row from before the pupil test or another door would be.
+CREATE OR REPLACE FUNCTION _v158_plant(p_person uuid) RETURNS uuid AS $$
+DECLARE v uuid;
+BEGIN
+  INSERT INTO school_add_request (person_id, school_name, town, job)
+  VALUES (p_person, 'Verify Planted School', 'Howick', 'other') RETURNING id INTO v;
+  RETURN v;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- How many requests hold this account, past RLS.
+CREATE OR REPLACE FUNCTION _v158_of(p_person uuid) RETURNS integer AS $$
+BEGIN
+  RETURN (SELECT count(*)::int FROM school_add_request WHERE person_id = p_person);
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The account removed outright, as the owner would (ON DELETE CASCADE).
+CREATE OR REPLACE FUNCTION _v158_remove(p_person uuid) RETURNS void AS $$
+  DELETE FROM app_user WHERE id = p_person
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- An answered request whose answer was p_days ago, as the owner sets it
+-- (Kameel, 15 Nov: deleted 90 days after the answer).
+CREATE OR REPLACE FUNCTION _v158_age_answer(p_request uuid, p_days integer) RETURNS void AS $$
+BEGIN
+  UPDATE school_add_request SET decided_at = now() - make_interval(days => p_days) WHERE id = p_request;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/158's purge, as its owner runs it: how many rows it deleted.
+CREATE OR REPLACE FUNCTION _v158_purge() RETURNS text AS $$
+BEGIN
+  RETURN school_add_request_purge()::text;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The asker made a platform administrator, as the owner grants it, after
+-- she asked: nobody answers their own (db/158 own_request).
+CREATE OR REPLACE FUNCTION _v158_make_platform(p_person uuid) RETURNS void AS $$
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (p_person, 'platformadmin', NULL, sa_today())
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- An open request made p_days ago, as the owner sets it (db/158 header
+-- §3's ninety days, without waiting for them).
+CREATE OR REPLACE FUNCTION _v158_age(p_request uuid, p_days integer) RETURNS void AS $$
+BEGIN
+  UPDATE school_add_request SET requested_at = now() - make_interval(days => p_days) WHERE id = p_request;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The whole table, past RLS: how many rows, and one row as stored.
+-- Late-bound (plpgsql), so a database without db/158 still reaches
+-- (standing) and fails there rather than here.
+CREATE OR REPLACE FUNCTION _v158_all() RETURNS integer AS $$
+BEGIN
+  RETURN (SELECT count(*)::int FROM school_add_request);
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v158_row(p_request uuid) RETURNS jsonb AS $$
+BEGIN
+  RETURN (SELECT to_jsonb(r) FROM school_add_request r WHERE r.id = p_request);
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What a person holds of a school, past RLS: schools on the platform, his
+-- role assignments, his role requests, his guardian links. A request to add
+-- a school, and its answer, must move none of them.
+CREATE OR REPLACE FUNCTION _v158_held(p_person uuid) RETURNS text AS $$
+  SELECT concat_ws('/', (SELECT count(*) FROM school),
+                        (SELECT count(*) FROM role_assignment WHERE person_id = p_person),
+                        (SELECT count(*) FROM role_request WHERE person_id = p_person),
+                        (SELECT count(*) FROM assignment_subject s JOIN role_assignment a ON a.id = s.assignment_id
+                          WHERE a.person_id = p_person),
+                        (SELECT coalesce(school_id::text, '-') FROM app_user WHERE id = p_person))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- db/158's objects in what a role may do in public (db/157's probe, the
+-- owner's alone): NULL when nothing.
+CREATE OR REPLACE FUNCTION _v158_reach(p_role text) RETURNS text AS $$
+  SELECT string_agg(x, '; ' ORDER BY x) FROM api_role_reach(p_role) x
+   WHERE x ~ 'school_add_request|school_add_requester'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Every grant on db/158's table and five functions, read from the ACLs,
+-- beyond the owner's own and the application's SELECT (the table) or
+-- EXECUTE (each function but the purge, which is the owner's alone): NULL
+-- when none.
+CREATE OR REPLACE FUNCTION _v158_acl() RETURNS text AS $$
+  SELECT string_agg(x, '; ' ORDER BY x) FROM (
+    SELECT 'school_add_request ' || coalesce(nullif(a.grantee, 0)::regrole::text, 'PUBLIC') || ':' || a.privilege_type AS x
+      FROM pg_class c CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+     WHERE c.oid = to_regclass('public.school_add_request') AND a.grantee <> c.relowner
+       AND NOT (a.grantee = 'scrbrd_app'::regrole AND a.privilege_type = 'SELECT')
+    UNION ALL
+    SELECT 'column school_add_request.' || t.attname || ' ' || coalesce(nullif(a.grantee, 0)::regrole::text, 'PUBLIC')
+      FROM pg_attribute t CROSS JOIN LATERAL aclexplode(t.attacl) a
+     WHERE t.attrelid = to_regclass('public.school_add_request') AND t.attacl IS NOT NULL
+    UNION ALL
+    SELECT p.oid::regprocedure::text || ' ' || coalesce(nullif(a.grantee, 0)::regrole::text, 'PUBLIC') || ':' || a.privilege_type
+      FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+     WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN
+             ('school_add_request_shown', 'school_add_request_ask', 'school_add_request_decide', 'school_add_requester',
+              'school_add_request_purge')
+       AND a.grantee <> p.proowner
+       -- The purge is the owner's alone: the application's EXECUTE counts against it.
+       AND NOT (a.grantee = 'scrbrd_app'::regrole AND a.privilege_type = 'EXECUTE' AND p.proname <> 'school_add_request_purge')) q
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The two doors as §136 calls them, as the caller (no SECURITY DEFINER of
+-- their own, and late-bound, so a database without db/158 reaches (standing)
+-- and fails there): 'ok:<id>' or the refusal's code.
+CREATE OR REPLACE FUNCTION _v158_ask(p_school text, p_town text, p_job text) RETURNS text AS $$
+DECLARE v text;
+BEGIN
+  SELECT CASE WHEN a.ok THEN 'ok:' || a.request_id ELSE coalesce(a.reason, '(no reason)') END INTO v
+    FROM school_add_request_ask(p_school, p_town, p_job) a;
+  RETURN coalesce(v, '(no row)');
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION _v158_decide(p_request uuid, p_state text) RETURNS text AS $$
+DECLARE v text;
+BEGIN
+  SELECT CASE WHEN d.ok THEN 'ok' ELSE coalesce(d.reason, '(no reason)') END INTO v
+    FROM school_add_request_decide(p_request, p_state) d;
+  RETURN coalesce(v, '(no row)');
+END $$ LANGUAGE plpgsql;
+-- └── db/158 (section 136) ─────────────────────────────────────────────
+
+-- ┌── db/159 (section 137) ─────────────────────────────────────────────
+-- db/133's public_live_fixtures(), copied word for word under another name:
+-- the thirteen columns and the rows the read gave before db/159. Its body's
+-- folded md5 is db/133's own (6aa12abd…), which §137 checks first, so the
+-- copy cannot drift from the body it stands for.
+CREATE OR REPLACE FUNCTION _v159_old_live()
+RETURNS TABLE (
+  match_id uuid,
+  home_label text, home_code text,
+  away_label text, away_code text, away_on_platform boolean,
+  status text, format text, overs smallint, starts_at timestamptz,
+  scores jsonb, result jsonb, served_on text
+) AS $$
+  WITH listed AS (
+    SELECT m.id, m.school_id, m.team_code, m.away_school_id, m.away_team_code, m.opponent,
+           m.status, m.format, m.overs, m.starts_at
+      FROM match m
+     WHERE m.starts_at IS NOT NULL
+       AND (m.starts_at AT TIME ZONE 'Africa/Johannesburg')::date = sa_today()
+       AND m.status IN ('scheduled', 'live', 'complete', 'abandoned', 'postponed')
+       AND ((fixture_side_published(m.id, 'home') AND public_school_listed(m.school_id))
+            OR (m.away_school_id IS NOT NULL
+                AND fixture_side_published(m.id, 'away') AND public_school_listed(m.away_school_id)))
+     ORDER BY (m.status = 'live') DESC, m.starts_at, m.id
+     LIMIT 50
+  )
+  SELECT l.id,
+         hs.name, l.team_code,
+         CASE WHEN l.away_school_id IS NULL THEN l.opponent ELSE aws.name END,
+         CASE WHEN l.away_school_id IS NULL THEN NULL ELSE l.away_team_code END,
+         l.away_school_id IS NOT NULL,
+         l.status, l.format, l.overs, l.starts_at,
+         coalesce((SELECT jsonb_agg(jsonb_build_object(
+                            'innings', s.innings, 'runs', s.runs, 'wickets', s.wickets, 'balls', s.legal_balls,
+                            'side', (SELECT x.value->>'side' FROM jsonb_array_elements(r.innings) x
+                                      WHERE (x.value->>'innings')::integer = s.innings
+                                        AND x.value->>'side' IN ('home', 'away') LIMIT 1))
+                            ORDER BY s.innings)
+                     FROM match_live_score s
+                    WHERE s.match_id = l.id), '[]'::jsonb),
+         CASE WHEN r.outcome IS NULL THEN NULL ELSE jsonb_build_object(
+           'outcome', r.outcome, 'margin_kind', r.margin_kind, 'margin', r.margin, 'decided_by', r.decided_by,
+           'winner_side', r.winner_side, 'play_outcome', r.play_outcome, 'play_winner_side', r.play_winner_side,
+           'play_margin_kind', r.play_margin_kind, 'play_margin', r.play_margin,
+           'decision_applied', r.decision_applied, 'decision_kind', r.decision->>'kind',
+           'decision_side', r.decision->>'side', 'decision_overrides_play', (r.decision->>'overrides_play')::boolean,
+           'super_overs', coalesce((SELECT jsonb_agg(jsonb_build_object('n', p.value->'n', 'state', p.value->'state',
+                                                                        'first', p.value->'first', 'winner', p.value->'winner')
+                                                     ORDER BY (p.value->>'n')::integer)
+                                      FROM jsonb_array_elements(r.super_overs) p), '[]'::jsonb)) END,
+         to_char(sa_today(), 'YYYY-MM-DD')
+    FROM listed l
+    JOIN school hs ON hs.id = l.school_id
+    LEFT JOIN school aws ON aws.id = l.away_school_id
+    LEFT JOIN LATERAL match_result_compute(l.id) r ON true
+   ORDER BY (l.status = 'live') DESC, l.starts_at, l.id
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Its folded md5, as db/133 and db/159 fold a body.
+CREATE OR REPLACE FUNCTION _v159_md5(p_fn text) RETURNS text AS $$
+  SELECT md5(regexp_replace(btrim(prosrc), '\s+', ' ', 'g')) FROM pg_proc WHERE oid = to_regprocedure(p_fn)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A function's result columns, "name type, …", in order.
+CREATE OR REPLACE FUNCTION _v159_cols(p_fn text) RETURNS text AS $$
+  SELECT string_agg(a.name || ' ' || format_type(a.typ, NULL), ', ' ORDER BY a.ord)
+    FROM pg_proc p, unnest(p.proargnames, p.proallargtypes, p.proargmodes::text[]) WITH ORDINALITY AS a(name, typ, mode, ord)
+   WHERE p.oid = to_regprocedure(p_fn) AND a.mode = 't'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Hilton's fixtures today, as the owner writes them, each with its log: a
+-- chase (c1), a chase the umpires revised (c2), a first innings (c3), a
+-- two-day match's fourth innings (c4), a super over's chase (c5), a chase
+-- that opened on a target other than the first innings plus one (c6), a
+-- chase after the first innings' overs were cut and the target left alone
+-- (c7: a revision event of overs only), a two-day match's fourth innings
+-- after a follow-on (c8: the same side batted second and third), and a
+-- chase that opened on fewer overs than the fixture's, with no revision
+-- event (c9: the umpires' figures at the break). No ground, so db/133's clash rule has nothing to refuse. Typed
+-- opponents; a typed name in a ball's payload (never read by the live read).
+CREATE OR REPLACE FUNCTION _seed_159() RETURNS jsonb AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  SCORER uuid := '88888888-0000-0000-0000-000000000006';
+  base   timestamptz := (sa_today()::timestamp + interval '7 hours') AT TIME ZONE 'Africa/Johannesburg';
+  ids    jsonb := '{}';
+  k      text;
+  m      uuid;
+  s      int;
+  opp    text;
+  ev     record;
+BEGIN
+  FOR k IN SELECT unnest(ARRAY['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9']) LOOP
+    opp := 'Verify Onefiftynine ' || upper(k) || ' 1XI';
+    INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+    VALUES (HIL, '1XI', opp, base + (substr(k, 2)::int) * interval '1 minute', 'cricket',
+            CASE WHEN k IN ('c4', 'c8') THEN 'two-day' ELSE 'T20' END, CASE WHEN k IN ('c4', 'c8') THEN NULL ELSE 20 END, 'live')
+    RETURNING id INTO m;
+    ids := ids || jsonb_build_object(k, m);
+    IF k IN ('c4', 'c8') THEN
+      INSERT INTO match_conditions (match_id, doc, sources, doc_hash)
+      VALUES (m, '{"v":1,"play":{"format.kind":"timed","format.innings_per_side":2},"table":{},"sheet":{}}', '{}', '')
+      ON CONFLICT (match_id) DO NOTHING;
+    END IF;
+    s := 0;
+    FOR ev IN SELECT * FROM (VALUES
+        -- (fixture, innings, kind, value, payload)
+        ('*',  0, 'innings_start', NULL::int, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', opp, 'overs', 20)),
+        ('*',  0, 'ball', 4, '{"bowler": "Typed Onefiftynine"}'::jsonb),
+        ('*',  0, 'ball', 4, '{}'::jsonb),
+        ('c1', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20)),
+        ('c1', 1, 'ball', 1, '{"striker": "Typed Batter"}'::jsonb),
+        ('c2', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20)),
+        ('c2', 1, 'ball', 1, '{}'::jsonb),
+        ('c2', 1, 'revision', NULL, '{"overs": 18, "target": 7, "reason": "rain"}'::jsonb),
+        ('c4', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI')),
+        ('c4', 1, 'ball', 6, '{}'::jsonb),
+        ('c4', 2, 'innings_start', NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', opp)),
+        ('c4', 2, 'ball', 2, '{}'::jsonb),
+        ('c4', 3, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI')),
+        ('c4', 3, 'ball', 1, '{}'::jsonb),
+        ('c5', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20)),
+        ('c5', 1, 'ball', 4, '{}'::jsonb),
+        ('c5', 1, 'ball', 4, '{}'::jsonb),
+        ('c5', 2, 'innings_start', NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', opp, 'overs', 1, 'superOver', 1)),
+        ('c5', 2, 'ball', 4, '{}'::jsonb),
+        ('c5', 3, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 1, 'superOver', 1)),
+        ('c5', 3, 'ball', 1, '{}'::jsonb),
+        ('c6', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20, 'target', 12)),
+        ('c6', 1, 'ball', 2, '{}'::jsonb),
+        ('c7', 0, 'revision', NULL, '{"overs": 18, "reason": "rain"}'::jsonb),
+        ('c7', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 20)),
+        ('c7', 1, 'ball', 1, '{}'::jsonb),
+        ('c8', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI')),
+        ('c8', 1, 'ball', 2, '{}'::jsonb),
+        ('c8', 2, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI')),
+        ('c8', 2, 'ball', 6, '{}'::jsonb),
+        ('c8', 2, 'ball', 6, '{}'::jsonb),
+        ('c8', 2, 'ball', 6, '{}'::jsonb),
+        ('c8', 2, 'ball', 2, '{}'::jsonb),
+        ('c8', 3, 'innings_start', NULL, jsonb_build_object('battingTeam', '1XI', 'bowlingTeam', opp)),
+        ('c8', 3, 'ball', 1, '{}'::jsonb),
+        ('c9', 1, 'innings_start', NULL, jsonb_build_object('battingTeam', opp, 'bowlingTeam', '1XI', 'overs', 15)),
+        ('c9', 1, 'ball', 1, '{}'::jsonb)) AS v(f, inn, kind, val, payload)
+      WHERE v.f IN ('*', k)
+    LOOP
+      s := s + 1;
+      INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq,
+                              client_ts, kind, ball_type, value, payload)
+      VALUES (m, HIL, s, 1, ev.inn, SCORER, 'v159', 'v159-' || m || '-' || s, s, now(), ev.kind,
+              CASE WHEN ev.kind = 'ball' THEN 'run' END, ev.val, ev.payload);
+    END LOOP;
+  END LOOP;
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/159 (section 137) ─────────────────────────────────────────────
+-- ┌── db/160 (section 138) ─────────────────────────────────────────────
+-- A school of its own, Verify Onesixty (code V160), and its fixtures today,
+-- as the owner writes them: v1 at home to a typed side, live; v2 at home to
+-- Westville, only V160's side published; v3 at Westville, V160 away, only
+-- Westville's side published. V160 and Westville both list. An archived
+-- school (V160X), fifty more schools for the limit, and five accounts that
+-- hold nothing: two followers (A, B), one that will be deleted (D), one for
+-- the limit (L) and one for erasure (E). And a pupil of Hilton, fourteen,
+-- with his own account and a self link, and his mother, his verified
+-- guardian with consent given (_seed_81's shape). Every name invented.
+-- Returns the ids.
+CREATE OR REPLACE FUNCTION _seed_160() RETURNS jsonb AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  WES    uuid := '22222222-2222-2222-2222-222222222222';
+  SCORER uuid := '88888888-0000-0000-0000-000000000006';
+  base   timestamptz := (sa_today()::timestamp + interval '8 hours') AT TIME ZONE 'Africa/Johannesburg';
+  p      uuid;
+  a      uuid;
+  ids    jsonb := '{}';
+  v_s    uuid;
+  m      uuid;
+  u      uuid;
+  k      text;
+BEGIN
+  INSERT INTO school (code, name) VALUES ('V160', 'Verify Onesixty College') RETURNING id INTO v_s;
+  ids := ids || jsonb_build_object('school', v_s);
+  INSERT INTO school (code, name, archived_at) VALUES ('V160X', 'Verify Onesixty Archived', now()) RETURNING id INTO u;
+  ids := ids || jsonb_build_object('archived', u);
+  FOR i IN 1..50 LOOP
+    INSERT INTO school (code, name) VALUES ('V160-' || lpad(i::text, 2, '0'), 'Verify Onesixty School ' || i);
+  END LOOP;
+  FOREACH k IN ARRAY ARRAY['a', 'b', 'd', 'l', 'e'] LOOP
+    INSERT INTO app_user (email, name, role) VALUES ('v160.' || k || '@example.invalid', 'V160 ' || upper(k), 'none')
+    RETURNING id INTO u;
+    ids := ids || jsonb_build_object('u_' || k, u);
+  END LOOP;
+  -- The pupil, his account and his self link; his mother and her link.
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES (HIL, NULL, 'Pupil Onesixty', 'Onesixty', 160, 'batter', (sa_today() - interval '14 years')::date)
+  RETURNING id INTO p;
+  ids := ids || jsonb_build_object('p_kid', p);
+  INSERT INTO app_user (school_id, email, name, role, player_id)
+  VALUES (HIL, 'v160.kid@example.invalid', 'V160 Kid', 'player', p) RETURNING id INTO u;
+  ids := ids || jsonb_build_object('u_kid', u);
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'selfaccess', HIL, sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p, 'self', 'verified', SCORER, now(), 'granted', 'popia-2026-01', now(), SCORER, sa_today() - 30);
+  INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v160.mum@example.invalid', 'V160 Mum', 'guardian') RETURNING id INTO u;
+  ids := ids || jsonb_build_object('u_mum', u);
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'guardian', HIL, sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p, 'parent', 'verified', SCORER, now(), 'granted', 'popia-2026-01', now(), SCORER, sa_today() - 30);
+
+  INSERT INTO match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (v_s, '1XI', 'Verify Onesixty Typed 1XI', base, 'cricket', 'T20', 20, 'live') RETURNING id INTO m;
+  ids := ids || jsonb_build_object('v1', m);
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by) VALUES (m, 'home', v_s, '1XI', true, SCORER);
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (v_s, '2XI', WES, '2XI', 'Westville Boys'' High 2XI', base + interval '1 hour', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m;
+  ids := ids || jsonb_build_object('v2', m);
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by) VALUES (m, 'home', v_s, '2XI', true, SCORER);
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (WES, 'U14A', v_s, 'U14A', 'Verify Onesixty College U14A', base + interval '2 hours', 'cricket', 'T20', 20, 'scheduled') RETURNING id INTO m;
+  ids := ids || jsonb_build_object('v3', m);
+  INSERT INTO fixture_publication (match_id, side, school_id, team_code, published, set_by) VALUES (m, 'home', WES, 'U14A', true, SCORER);
+  PERFORM _v160_list(v_s, true);
+  PERFORM _v160_list(WES, true);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A school's listing switch, as its row stands after public_listing_set()
+-- (db/82; its door is proved in §61). The owner writes it here.
+CREATE OR REPLACE FUNCTION _v160_list(p_school uuid, p_on boolean) RETURNS void AS $$
+  INSERT INTO public_listing (school_id, listed, set_by) VALUES (p_school, p_on, '88888888-0000-0000-0000-000000000006')
+  ON CONFLICT (school_id) DO UPDATE SET listed = EXCLUDED.listed, set_at = now()
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A person's rows past row security: what is stored, whoever may read it.
+CREATE OR REPLACE FUNCTION _v160_stored(p_person uuid) RETURNS text AS $$
+  SELECT string_agg(s.code || '@' || f.followed_on, ',' ORDER BY s.code)
+    FROM followed_school f JOIN school s ON s.id = f.school_id WHERE f.person_id = p_person
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A school archived, as the platform archives one.
+CREATE OR REPLACE FUNCTION _v160_archive(p_code text) RETURNS void AS $$
+  UPDATE school SET archived_at = now() WHERE code = p_code
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The account removed, as the owner removes one.
+CREATE OR REPLACE FUNCTION _v160_delete_user(p uuid) RETURNS void AS $$
+  DELETE FROM app_user WHERE id = p
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A table's grants, read from its ACL: "role:PRIVILEGE,…", the owner left out.
+CREATE OR REPLACE FUNCTION _v160_table_acl(p_table text) RETURNS text AS $$
+  SELECT string_agg(coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC') || ':' || x.privilege_type, ','
+                    ORDER BY coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC'), x.privilege_type)
+    FROM pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) x
+   WHERE c.oid = to_regclass(p_table) AND x.grantee <> c.relowner
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/160 (section 138) ─────────────────────────────────────────────
+-- ┌── db/161 (section 139) ─────────────────────────────────────────────
+-- One case's own people, so each case of §139 stands alone and can be
+-- falsified alone: a Hilton pupil of thirteen (the child the parents ask
+-- about, never named in a notice), a Hilton office of its own (schooladmin:
+-- user.role.assign and guardian.link.manage), two accounts with no school
+-- (the asker, and a second adult), and a pupil of Hilton with his own
+-- account. Every name invented, every email the case's own. Returns the ids.
+CREATE OR REPLACE FUNCTION _seed_161(p_tag text) RETURNS jsonb AS $$
+DECLARE
+  HIL  uuid := '11111111-1111-1111-1111-111111111111';
+  REG  uuid := '88888888-0000-0000-0000-00000000000c';
+  ids  jsonb := '{}';
+  p    uuid; u uuid; a uuid; k text;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES (HIL, 'U14A', 'Childname Onesixtyone', 'Onesixtyone', 161, 'batter', (sa_today() - interval '13 years')::date)
+  RETURNING id INTO p;
+  ids := ids || jsonb_build_object('p', p);
+  INSERT INTO app_user (school_id, email, name, role) VALUES (HIL, 'v161.' || p_tag || '.office@example.invalid', 'V161 Office', 'schooladmin')
+  RETURNING id INTO u;
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'schooladmin', HIL, sa_today() - 30);
+  ids := ids || jsonb_build_object('office', u);
+  FOREACH k IN ARRAY ARRAY['ask', 'adult', 'second'] LOOP
+    INSERT INTO app_user (email, name, role) VALUES ('v161.' || p_tag || '.' || k || '@example.invalid', 'V161 ' || initcap(k), 'none')
+    RETURNING id INTO u;
+    ids := ids || jsonb_build_object(k, u);
+  END LOOP;
+  -- The pupil: his own player row, his account, his self link (person_is_pupil(), db/57).
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES (HIL, 'U16A', 'Pupil Onesixtyone', 'Onesixtyone', 162, 'bowler', (sa_today() - interval '16 years')::date)
+  RETURNING id INTO p;
+  INSERT INTO app_user (school_id, email, name, role, player_id)
+  VALUES (HIL, 'v161.' || p_tag || '.pupil@example.invalid', 'V161 Pupil', 'player', p) RETURNING id INTO u;
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'selfaccess', HIL, sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p, 'self', 'verified', REG, now(), 'granted', 'popia-2026-01', now(), REG, sa_today() - 30);
+  ids := ids || jsonb_build_object('pupil', u);
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A guardian request, as POST /api/requests leaves it (pending), written by
+-- the owner for the person: the pupil's included, whom the form would turn
+-- away, because what is proved is that no notice reaches him whatever door.
+CREATE OR REPLACE FUNCTION _v161_ask(p_person uuid) RETURNS uuid AS $$
+  INSERT INTO role_request (person_id, role, school_id, note)
+  VALUES (p_person, 'guardian', '11111111-1111-1111-1111-111111111111', 'For my son in the U14A')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A link the office established and has not verified (guardian_link_establish()'s row): its id.
+CREATE OR REPLACE FUNCTION _v161_pending_link(p_person uuid, p_player uuid) RETURNS uuid AS $$
+DECLARE a uuid; s uuid;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES (p_person, 'guardian', '11111111-1111-1111-1111-111111111111', sa_today() - 1) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, consent_state, created_by, valid_from, valid_until)
+  VALUES (a, p_player, 'parent', 'pending', 'pending', '88888888-0000-0000-0000-00000000000c', sa_today() - 1,
+          majority_on((SELECT born FROM player WHERE id = p_player)))
+  RETURNING id INTO s;
+  RETURN s;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A link the office verified, with consent, as the seed's are: its id.
+CREATE OR REPLACE FUNCTION _v161_verified_link(p_person uuid, p_player uuid) RETURNS uuid AS $$
+DECLARE a uuid; s uuid;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES (p_person, 'guardian', '11111111-1111-1111-1111-111111111111', sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p_player, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+          '88888888-0000-0000-0000-00000000000c', sa_today() - 30)
+  RETURNING id INTO s;
+  RETURN s;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One more Hilton child of thirteen, on no sheet: its id.
+CREATE OR REPLACE FUNCTION _v161_child(p_name text) RETURNS uuid AS $$
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'U14A', p_name, 'Onesixtyone', 163, 'batter', (sa_today() - interval '13 years')::date)
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One guardian assignment holding two links, one verified (to p_verified) and one
+-- the office never verified (to p_pending), as db/08's establish leaves them: the assignment.
+CREATE OR REPLACE FUNCTION _v161_role_two_links(p_person uuid, p_verified uuid, p_pending uuid) RETURNS uuid AS $$
+DECLARE a uuid;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES (p_person, 'guardian', '11111111-1111-1111-1111-111111111111', sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p_verified, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+          '88888888-0000-0000-0000-00000000000c', sa_today() - 30);
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, consent_state, created_by, valid_from, valid_until)
+  VALUES (a, p_pending, 'parent', 'pending', 'pending', '88888888-0000-0000-0000-00000000000c', sa_today() - 30,
+          majority_on((SELECT born FROM player WHERE id = p_pending)));
+  RETURN a;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Every link of a guardian assignment made pending again, never verified (the office established them
+-- and verified none): verified_by, verified_at and the consent cleared, as guardian_link_establish() leaves a link.
+CREATE OR REPLACE FUNCTION _v161_all_pending(p_assignment uuid) RETURNS void AS $$
+  UPDATE assignment_subject SET verification_state = 'pending', verified_by = NULL, verified_at = NULL,
+         consent_state = 'pending', consent_version = NULL, consent_at = NULL,
+         valid_until = majority_on((SELECT born FROM player WHERE id = assignment_subject.player_id))
+   WHERE assignment_id = p_assignment
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- He left the school today, as db/62's leaving does it (db/109 dates each of
+-- his guardian links and writes its ending row, 'majority' for a minor): the
+-- links closed. Before, he was at school, so his links were open (db/62
+-- leaves a link undated while he is at school).
+CREATE OR REPLACE FUNCTION _v161_left(p_player uuid) RETURNS integer AS $$
+  UPDATE assignment_subject SET valid_until = NULL WHERE player_id = p_player AND verification_state IN ('pending', 'verified');
+  SELECT guardian_links_close_on_leaving(p_player, sa_today())
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The ending row of a link, as stored: "kind|notice or -".
+CREATE OR REPLACE FUNCTION _v161_ending(p_link uuid) RETURNS text AS $$
+  SELECT e.kind || '|' || coalesce(e.notice_id::text, '-') FROM guardian_link_ending e WHERE e.link_id = p_link
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A school's own office (schooladmin), for a case that needs a second school: its id.
+CREATE OR REPLACE FUNCTION _v161_office_at(p_school uuid, p_tag text) RETURNS uuid AS $$
+DECLARE u uuid;
+BEGIN
+  INSERT INTO app_user (school_id, email, name, role) VALUES (p_school, 'v161.' || p_tag || '.office2@example.invalid', 'V161 Office Two', 'schooladmin')
+  RETURNING id INTO u;
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'schooladmin', p_school, sa_today() - 30);
+  RETURN u;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A request for any role at any school, as POST /api/requests leaves it: its id.
+CREATE OR REPLACE FUNCTION _v161_ask_for(p_person uuid, p_school uuid, p_role text, p_team text DEFAULT NULL) RETURNS uuid AS $$
+  INSERT INTO role_request (person_id, role, school_id, team_code, note) VALUES (p_person, p_role, p_school, p_team, 'Verify 161')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An account shut or opened, as account_set_active() (db/90) leaves the row.
+CREATE OR REPLACE FUNCTION _v161_set_active(p_person uuid, p_on boolean) RETURNS void AS $$
+  UPDATE app_user SET active = p_on WHERE id = p_person
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- How long each of a person's notices lives (expires_at - published_at), past row security.
+CREATE OR REPLACE FUNCTION _v161_life(p_person uuid) RETURNS text AS $$
+  SELECT string_agg(coalesce((n.expires_at - n.published_at)::text, 'none'), ',' ORDER BY n.published_at, n.id)
+    FROM notification n WHERE n.recipient_id = p_person
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A request's state moved by the owner, as the asker's own withdrawal leaves it.
+CREATE OR REPLACE FUNCTION _v161_state(p_request uuid, p_state text) RETURNS void AS $$
+  UPDATE role_request SET state = p_state WHERE id = p_request
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What is stored for a person, past row security: "title|body|subject|kind|…" per notice.
+CREATE OR REPLACE FUNCTION _v161_stored(p_person uuid) RETURNS text[] AS $$
+  SELECT coalesce(array_agg(n.title || '|' || coalesce(n.body, '') || '|' || coalesce(n.subject_id::text, '') || '|' || n.kind || '|'
+                            || coalesce(n.subject_kind, '') || '|' || n.urgency || '|' || n.required_capability || '|' || n.is_public
+                            || '|' || coalesce(n.school_id::text, '') || '|' || coalesce(n.team_code, '-') || '|' || coalesce(n.subject_person_id::text, '-')
+                            ORDER BY n.published_at, n.id), '{}')
+    FROM notification n WHERE n.recipient_id = p_person
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The ids of a person's stored notices, past row security.
+CREATE OR REPLACE FUNCTION _v161_ids(p_person uuid) RETURNS uuid[] AS $$
+  SELECT coalesce(array_agg(n.id ORDER BY n.id), '{}') FROM notification n WHERE n.recipient_id = p_person
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- db/93's decline notice to the school's DSOs: how many, and whether any has a recipient.
+CREATE OR REPLACE FUNCTION _v161_dso_notices() RETURNS text AS $$
+  SELECT count(*) || '/' || count(*) FILTER (WHERE recipient_id IS NOT NULL OR kind <> 'safeguarding')
+    FROM notification WHERE school_id = '11111111-1111-1111-1111-111111111111' AND title = 'A parent claim was declined'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- db/57's pupil test, for the fixture's own check (person_is_pupil() is owner-only).
+CREATE OR REPLACE FUNCTION _v161_is_pupil(p_person uuid) RETURNS boolean AS $$
+  SELECT person_is_pupil(p_person)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A function's grants, read from its ACL, the owner left out ("" for none, NULL when it does not exist).
+CREATE OR REPLACE FUNCTION _v161_acl(p_fn text) RETURNS text AS $$
+  SELECT CASE WHEN to_regprocedure(p_fn) IS NULL THEN NULL ELSE coalesce((
+    SELECT string_agg(coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC') || ':' || x.privilege_type, ',' ORDER BY x.grantee)
+      FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x
+     WHERE p.oid = to_regprocedure(p_fn) AND x.grantee <> p.proowner), '') END
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Q10 (Kameel, 15 Nov: "eleven"): a Hilton U14F eleven at home to a
+-- Westville U14F three, in three days, and a Hilton U14F boy on no sheet.
+-- Five parents: one verified and live, of the first boy on the eleven; one
+-- verified and live, of the boy on no sheet; one whose link to the second
+-- boy the office has not verified; one whose verified link to the third
+-- boy ended yesterday; and a Westville parent of a Westville boy on no
+-- sheet. Every boy on a sheet has a verified guardian besides (a boy is
+-- selected only once registered). As the owner; every name invented.
+-- Returns the ids.
+CREATE OR REPLACE FUNCTION _seed_161s(p_tag text) RETURNS jsonb AS $$
+DECLARE
+  HIL uuid := '11111111-1111-1111-1111-111111111111';
+  WES uuid := '22222222-2222-2222-2222-222222222222';
+  REG uuid := '88888888-0000-0000-0000-00000000000c';
+  U14 date := make_date(extract(year FROM sa_today())::int - 13, 3, 1);
+  a uuid[] := '{}'; w uuid[] := '{}'; v uuid; bench uuid; wbench uuid; f uuid; ids jsonb := '{}'; i int; u uuid; ra uuid;
+  r record;
+BEGIN
+  FOR i IN 1..11 LOOP
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES (HIL, 'U14F', format('Eleven Home %s', lpad(i::text, 2, '0')), 1610 + i, 'batter', U14) RETURNING id INTO v;
+    a := a || v;
+  END LOOP;
+  FOR i IN 1..3 LOOP
+    INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+    VALUES (WES, 'U14F', format('Eleven Away %s', lpad(i::text, 2, '0')), 1630 + i, 'batter', U14) RETURNING id INTO v;
+    w := w || v;
+  END LOOP;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES (HIL, 'U14F', 'Eleven Bench', 1640, 'bowler', U14) RETURNING id INTO bench;
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES (WES, 'U14F', 'Eleven Westbench', 1641, 'bowler', U14) RETURNING id INTO wbench;
+  FOR r IN SELECT * FROM (VALUES ('named', HIL, a[1], 'verified', NULL::date), ('unnamed', HIL, bench, 'verified', NULL::date),
+                                 ('pending', HIL, a[2], 'pending', NULL::date), ('ended', HIL, a[3], 'verified', sa_today() - 1),
+                                 ('wes', WES, wbench, 'verified', NULL::date)) AS t(k, school, boy, state, until) LOOP
+    INSERT INTO app_user (school_id, email, name, role) VALUES (r.school, 'v161s.' || p_tag || '.' || r.k || '@example.invalid', 'V161 ' || initcap(r.k), 'guardian')
+    RETURNING id INTO u;
+    INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'guardian', r.school, sa_today() - 30) RETURNING id INTO ra;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from, valid_until)
+    VALUES (ra, r.boy, 'parent', r.state, CASE WHEN r.state = 'verified' THEN REG END, CASE WHEN r.state = 'verified' THEN now() END,
+            CASE WHEN r.state = 'verified' THEN 'granted' ELSE 'pending' END, CASE WHEN r.state = 'verified' THEN 'popia-2026-01' END,
+            CASE WHEN r.state = 'verified' THEN now() END, REG, sa_today() - 30, r.until);
+    ids := ids || jsonb_build_object(r.k, u);
+  END LOOP;
+  -- Every boy on a sheet is registered (db/116): a verified, consented guardian each, as the seed's are;
+  -- one Hilton and one Westville parent stand in for those families and are asked nothing.
+  FOR r IN SELECT * FROM (VALUES ('rest', HIL, a), ('wesrest', WES, w)) AS t(k, school, boys) LOOP
+    INSERT INTO app_user (school_id, email, name, role) VALUES (r.school, 'v161s.' || p_tag || '.' || r.k || '@example.invalid', 'V161 ' || initcap(r.k), 'guardian')
+    RETURNING id INTO u;
+    INSERT INTO role_assignment (person_id, role, school_id, valid_from) VALUES (u, 'guardian', r.school, sa_today() - 30) RETURNING id INTO ra;
+    INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                    consent_state, consent_version, consent_at, created_by, valid_from)
+    SELECT ra, b, 'parent', 'verified', REG, now(), 'granted', 'popia-2026-01', now(), REG, sa_today() - 30 FROM unnest(r.boys) b;
+  END LOOP;
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES (HIL, 'U14F', WES, 'U14F', 'Westville U14F', ((sa_today() + 3)::timestamp + time '09:30') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled') RETURNING id INTO f;
+  INSERT INTO match_squad (match_id, player_id, side, batting_no)
+  SELECT f, a[g.n], 'home', g.n FROM generate_series(1, 11) g(n)
+  UNION ALL SELECT f, w[g.n], 'away', g.n FROM generate_series(1, 3) g(n);
+  RETURN ids || jsonb_build_object('f', f);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One case of §139, run as the caller (scrbrd_app, under each person's
+-- session in turn). Invoker, so every read below meets row security as the
+-- API would. Each case seeds its own people and raises on its first failure.
+CREATE OR REPLACE FUNCTION _v161_case(p_case text) RETURNS void AS $$
+DECLARE
+  T      text := 'The school has answered your request';
+  WORDS  text := 'The office at Hilton College has answered your request to be linked to a child. Open SCRBRD to see its answer.';
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  U_DOS  uuid := '88888888-0000-0000-0000-000000000007';   -- Sarah, Hilton's director of sport
+  U_KEY  uuid := '88888888-0000-0000-0000-000000000022';   -- superadmin, every capability
+  U_MUM  uuid := '88888888-0000-0000-0000-000000000005';   -- a verified guardian at Hilton
+  ids jsonb; OFFICE uuid; ASK uuid; ADULT uuid; PUPIL uuid; P uuid;
+  req uuid; req2 uuid; lk uuid; lk2 uuid; v text; v2 text; n int; r record; x uuid; dso text;
+BEGIN
+  ids := _seed_161(p_case);
+  OFFICE := (ids->>'office')::uuid; ASK := (ids->>'ask')::uuid; ADULT := (ids->>'adult')::uuid;
+  PUPIL := (ids->>'pupil')::uuid; P := (ids->>'p')::uuid;
+
+  IF p_case = 'yes' THEN
+    -- (yes) The office grants her request: she reads one notice, the words exact, the shape db/109's.
+    req := _v161_ask(ASK);
+    PERFORM _as(ASK);
+    SELECT count(*) INTO n FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 0, format('§139 (yes): before any answer the asker reads %s notices', n));
+    PERFORM _as(OFFICE);
+    SELECT d.ok, d.reason INTO r FROM decide_role_request(req, true, 'Verify 161', P, NULL) d;
+    PERFORM _assert(r.ok, format('§139 (yes): the office could not grant the request (%s)', r.reason));
+    PERFORM _as(ASK);
+    SELECT count(*), max(body) INTO n, v FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 1 AND v = WORDS, format('§139 (yes): the asker reads %s notices, saying %s', n, v));
+    v := array_to_string(_v161_stored(ASK), ' ~ ');
+    PERFORM _assert(v = T || '|' || WORDS || '|' || req || '|system|system|medium|news.read|false|' || HIL || '|-|-',
+      format('§139 (yes): what is stored for her is %s', v));
+    PERFORM _as(OFFICE);
+    SELECT d.reason INTO v FROM decide_role_request(req, true, 'Verify 161', P, NULL) d;
+    PERFORM _assert(v = 'already_decided' AND cardinality(_v161_stored(ASK)) = 1,
+      format('§139 (yes): a second grant answered %s and left %s notices', v, cardinality(_v161_stored(ASK))));
+
+  ELSIF p_case = 'no' THEN
+    -- (no) The office declines: she reads the same one notice; db/93's notice to the DSOs is still written, to no one person.
+    req := _v161_ask(ASK);
+    dso := _v161_dso_notices();
+    PERFORM _as(OFFICE);
+    SELECT d.ok, d.reason INTO r FROM decide_role_request(req, false, 'Verify 161', NULL, NULL) d;
+    PERFORM _assert(r.ok, format('§139 (no): the office could not decline the request (%s)', r.reason));
+    PERFORM _as(ASK);
+    SELECT count(*), max(body) INTO n, v FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 1 AND v = WORDS, format('§139 (no): the declined asker reads %s notices, saying %s', n, v));
+    PERFORM _assert(_v161_stored(ASK) = ARRAY[T || '|' || WORDS || '|' || req || '|system|system|medium|news.read|false|' || HIL || '|-|-'],
+      format('§139 (no): what is stored for her is %s', array_to_string(_v161_stored(ASK), ' ~ ')));
+    PERFORM _assert(split_part(_v161_dso_notices(), '/', 1)::int = split_part(dso, '/', 1)::int + 1
+                    AND split_part(_v161_dso_notices(), '/', 2) = '0',
+      format('§139 (no): db/93''s notice to the DSOs went from %s to %s (count/addressed)', dso, _v161_dso_notices()));
+
+  ELSIF p_case = 'same' THEN
+    -- (same) A yes and a no, in the same words, neither naming the answer nor the child.
+    req := _v161_ask(ASK); req2 := _v161_ask(ADULT);
+    PERFORM _as(OFFICE);
+    SELECT d.ok INTO r FROM decide_role_request(req, true, 'Verify 161', P, NULL) d;
+    SELECT d.ok INTO r FROM decide_role_request(req2, false, 'Verify 161', NULL, NULL) d;
+    PERFORM _as(ASK);
+    SELECT string_agg(title || '|' || body, ',') INTO v FROM my_notifications WHERE title = T;
+    PERFORM _as(ADULT);
+    SELECT string_agg(title || '|' || body, ',') INTO v2 FROM my_notifications WHERE title = T;
+    PERFORM _assert(v IS NOT NULL AND v = v2 AND v = T || '|' || WORDS, format('§139 (same): the yes reads %s; the no reads %s', v, v2));
+    PERFORM _assert(_v161_life(ASK) IS NOT NULL AND _v161_life(ASK) = _v161_life(ADULT),
+      format('§139 (same): the yes lives %s and the no %s', _v161_life(ASK), _v161_life(ADULT)));
+    PERFORM _assert(v !~* '\m(granted|declined|approved|refused|verified|accepted|rejected|yes|no)\M' AND v !~ 'Childname|Onesixtyone|U14A|son',
+      format('§139 (same): the words say the answer or name the child: %s', v));
+
+  ELSIF p_case = 'verify' THEN
+    -- (verify) A link the office established and she waited on: guardian_link_verify() tells her, in the same words.
+    lk := _v161_pending_link(ASK, P);
+    PERFORM _as(OFFICE);
+    SELECT g.ok, g.reason INTO r FROM guardian_link_verify(ASK, P, NULL, NULL) g;
+    PERFORM _assert(r.ok, format('§139 (verify): the office could not verify the link (%s)', r.reason));
+    PERFORM _as(ASK);
+    SELECT count(*), max(body) INTO n, v FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 1 AND v = WORDS, format('§139 (verify): the parent reads %s notices, saying %s', n, v));
+    PERFORM _assert(_v161_stored(ASK) = ARRAY[T || '|' || WORDS || '|' || lk || '|system|system|medium|news.read|false|' || HIL || '|-|-'],
+      format('§139 (verify): what is stored for her is %s', array_to_string(_v161_stored(ASK), ' ~ ')));
+    -- db/08's answers stand: a second verify finds no pending link and writes nothing.
+    PERFORM _as(OFFICE);
+    SELECT g.reason INTO v FROM guardian_link_verify(ASK, P, NULL, NULL) g;
+    PERFORM _assert(v = 'no_pending_link' AND cardinality(_v161_stored(ASK)) = 1,
+      format('§139 (verify): a second verify answered %s and left %s notices', v, cardinality(_v161_stored(ASK))));
+
+  ELSIF p_case = 'ended' THEN
+    -- (ended) A link the office never verified, ended through db/109's door: that is an answer too, in the same
+    -- words, and never "A link to a child has ended". A verified link that ends keeps db/109's notice.
+    lk := _v161_pending_link(ASK, P);
+    PERFORM _as(OFFICE);
+    SELECT g.ok, g.reason INTO r FROM guardian_link_revoke(lk, 'office', 'Verify 161: not this family, checked.') g;
+    PERFORM _assert(r.ok, format('§139 (ended): the office could not end the pending link (%s)', r.reason));
+    PERFORM _as(ASK);
+    SELECT count(*), max(body) INTO n, v FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 1 AND v = WORDS, format('§139 (ended): the waiting parent reads %s answered notices, saying %s', n, v));
+    PERFORM _assert(_v161_stored(ASK) = ARRAY[T || '|' || WORDS || '|' || lk || '|system|system|medium|news.read|false|' || HIL || '|-|-'],
+      format('§139 (ended): what is stored for her is %s', array_to_string(_v161_stored(ASK), ' ~ ')));
+    lk := _v161_verified_link(ADULT, P); lk2 := _v161_verified_link((ids->>'second')::uuid, P);
+    PERFORM _as(OFFICE);
+    SELECT g.ok, g.reason INTO r FROM guardian_link_revoke(lk, 'office', 'Verify 161: the family has moved.') g;
+    PERFORM _assert(r.ok, format('§139 (ended): the office could not end the verified link (%s)', r.reason));
+    PERFORM _assert(cardinality(_v161_stored(ADULT)) = 1 AND (_v161_stored(ADULT))[1] LIKE 'A link to a child has ended|%',
+      format('§139 (ended): the verified parent''s notice is %s, not db/109''s', array_to_string(_v161_stored(ADULT), ' ~ ')));
+
+  ELSIF p_case = 'role' THEN
+    -- (role) R, the review's B1: the office ends a parent's guardian ROLE (db/77), over one verified link and
+    -- one it never verified. db/109 writes an ending row per link, each naming db/77's one role notice. That
+    -- notice is about the role, not a link, and is never reworded: she reads "A role of yours has ended",
+    -- so she is told her verified link ended, and is never told only that a request was answered.
+    x := _v161_child('Second Onesixtyone');
+    lk2 := _v161_verified_link((ids->>'second')::uuid, P);   -- P keeps a verified parent: the role may end
+    req := _v161_role_two_links(ADULT, P, x);
+    PERFORM _as(OFFICE);
+    SELECT e.ok, e.reason INTO r FROM role_assignment_end(req, 'Verify 161: the family has moved away.') e;
+    PERFORM _assert(r.ok, format('§139 (role): the office could not end her guardian role (%s)', r.reason));
+    PERFORM _assert(cardinality(_v161_stored(ADULT)) = 1 AND (_v161_stored(ADULT))[1] LIKE 'A role of yours has ended|%',
+      format('§139 (role): what is stored for her is %s, not db/77''s role notice', array_to_string(_v161_stored(ADULT), ' ~ ')));
+    PERFORM _as(ADULT);
+    SELECT count(*) INTO n FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 0, format('§139 (role): she reads %s "answered" notices for an ended role', n));
+
+  ELSIF p_case = 'left' THEN
+    -- (left) C, the review's S1: a link the office never verified, already dated by his leaving (db/109 writes
+    -- its 'majority' row), then ended by the office: db/109's revoke takes its upsert's UPDATE branch, and the
+    -- notice it names is answered in the same words, never "A link to a child has ended".
+    lk := _v161_pending_link(ASK, P);
+    n := _v161_left(P);
+    PERFORM _assert(n >= 1 AND _v161_ending(lk) = 'majority|-', format('§139 (left): the fixture is void: %s links closed, %s', n, _v161_ending(lk)));
+    PERFORM _as(OFFICE);
+    SELECT g.ok, g.reason INTO r FROM guardian_link_revoke(lk, 'office', 'Verify 161: not this family, checked.') g;
+    PERFORM _assert(r.ok AND _v161_ending(lk) LIKE 'office|%', format('§139 (left): the revoke answered %s and left %s', r.reason, _v161_ending(lk)));
+    PERFORM _assert(_v161_stored(ASK) = ARRAY[T || '|' || WORDS || '|' || lk || '|system|system|medium|news.read|false|' || HIL || '|-|-'],
+      format('§139 (left): what is stored for her is %s', array_to_string(_v161_stored(ASK), ' ~ ')));
+
+  ELSIF p_case = 'pupilend' THEN
+    -- (pupilend) Red-team S1: a pupil's account whose pending link the office ends (path (c)) keeps db/109's
+    -- own words; he holds no answered notice, so its presence never says no.
+    lk := _v161_pending_link(PUPIL, P);
+    lk2 := _v161_verified_link(ADULT, P);
+    PERFORM _as(OFFICE);
+    SELECT g.ok, g.reason INTO r FROM guardian_link_revoke(lk, 'office', 'Verify 161: not this family, checked.') g;
+    PERFORM _assert(r.ok, format('§139 (pupilend): the office could not end the pupil''s pending link (%s)', r.reason));
+    PERFORM _assert(cardinality(_v161_stored(PUPIL)) = 1 AND (_v161_stored(PUPIL))[1] LIKE 'A link to a child has ended|%',
+      format('§139 (pupilend): what is stored for the pupil is %s, not db/109''s own notice', array_to_string(_v161_stored(PUPIL), ' ~ ')));
+    PERFORM _as(PUPIL);
+    SELECT count(*) INTO n FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 0, format('§139 (pupilend): the pupil reads %s answered notices', n));
+
+  ELSIF p_case = 'disabled' THEN
+    -- (disabled) Red-team S2: an asker whose account is shut is told nothing, declined or granted; opened
+    -- again, a later answer reaches her.
+    req := _v161_ask(ASK);
+    PERFORM _v161_set_active(ASK, false);
+    PERFORM _as(OFFICE);
+    SELECT d.ok, d.reason INTO r FROM decide_role_request(req, false, 'Verify 161', NULL, NULL) d;
+    PERFORM _assert(r.ok, format('§139 (disabled): the office could not decline (%s)', r.reason));
+    req2 := _v161_ask(ASK);
+    SELECT d.ok, d.reason INTO r FROM decide_role_request(req2, true, 'Verify 161', P, NULL) d;
+    PERFORM _assert(r.ok, format('§139 (disabled): the office could not grant (%s)', r.reason));
+    PERFORM _assert(cardinality(_v161_stored(ASK)) = 0,
+      format('§139 (disabled): a shut account holds %s', array_to_string(_v161_stored(ASK), ' ~ ')));
+    PERFORM _v161_set_active(ASK, true);
+    req := _v161_ask(ASK);
+    PERFORM _as(OFFICE);
+    SELECT d.ok INTO r FROM decide_role_request(req, false, 'Verify 161', NULL, NULL) d;
+    PERFORM _assert(cardinality(_v161_stored(ASK)) = 1 AND (_v161_stored(ASK))[1] LIKE T || '|' || WORDS || '|' || req || '|%',
+      format('§139 (disabled): opened again, she holds %s', array_to_string(_v161_stored(ASK), ' ~ ')));
+
+  ELSIF p_case = 'allpending' THEN
+    -- (allpending) A guardian role ended over links that were ALL never verified keeps db/77's role notice
+    -- (Kameel, 16 Nov): no answered notice.
+    x := _v161_child('Third Onesixtyone');
+    req := _v161_role_two_links(ADULT, x, P);           -- one verified link, which the next line makes pending too
+    PERFORM _v161_all_pending(req);
+    PERFORM _as(OFFICE);
+    SELECT e.ok, e.reason INTO r FROM role_assignment_end(req, 'Verify 161: the family has moved away.') e;
+    PERFORM _assert(r.ok, format('§139 (allpending): the office could not end her guardian role (%s)', r.reason));
+    PERFORM _assert(cardinality(_v161_stored(ADULT)) = 1 AND (_v161_stored(ADULT))[1] LIKE 'A role of yours has ended|%',
+      format('§139 (allpending): what is stored for her is %s', array_to_string(_v161_stored(ADULT), ' ~ ')));
+
+  ELSIF p_case = 'nonguardian' THEN
+    -- (nonguardian) A request for any other role, granted or declined, writes no answered notice.
+    req := _v161_ask_for(ASK, HIL, 'scorer');
+    req2 := _v161_ask_for(ADULT, HIL, 'coach', '1XI');
+    PERFORM _as(OFFICE);
+    SELECT d.ok, d.reason INTO r FROM decide_role_request(req, false, 'Verify 161', NULL, NULL) d;
+    PERFORM _assert(r.ok, format('§139 (nonguardian): the office could not decline the scorer (%s)', r.reason));
+    SELECT d.ok, d.reason INTO r FROM decide_role_request(req2, true, 'Verify 161', NULL, '1XI') d;
+    PERFORM _assert(r.ok, format('§139 (nonguardian): the office could not grant the coach (%s)', r.reason));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM unnest(_v161_stored(ASK) || _v161_stored(ADULT)) z WHERE z LIKE T || '|%'),
+      format('§139 (nonguardian): %s / %s', array_to_string(_v161_stored(ASK), ' ~ '), array_to_string(_v161_stored(ADULT), ' ~ ')));
+
+  ELSIF p_case = 'twoschools' THEN
+    -- (twoschools) Two requests at two schools: one answer each, each naming its own school, its own request its subject.
+    req := _v161_ask(ASK);
+    req2 := _v161_ask_for(ASK, '22222222-2222-2222-2222-222222222222', 'guardian');
+    PERFORM _as(OFFICE);
+    SELECT d.ok INTO r FROM decide_role_request(req, true, 'Verify 161', P, NULL) d;
+    PERFORM _as(_v161_office_at('22222222-2222-2222-2222-222222222222', p_case));
+    SELECT d.ok, d.reason INTO r FROM decide_role_request(req2, false, 'Verify 161', NULL, NULL) d;
+    PERFORM _assert(r.ok, format('§139 (twoschools): Westville could not decline (%s)', r.reason));
+    v := array_to_string(_v161_stored(ASK), ' ~ ');
+    PERFORM _assert(cardinality(_v161_stored(ASK)) = 2
+      AND v LIKE '%' || T || '|' || WORDS || '|' || req || '|system|system|medium|news.read|false|' || HIL || '|-|-%'
+      AND v LIKE '%' || T || '|The office at Westville Boys'' High has answered your request to be linked to a child. Open SCRBRD to see its answer.|'
+                 || req2 || '|system|system|medium|news.read|false|22222222-2222-2222-2222-222222222222|-|-%',
+      format('§139 (twoschools): what is stored for her is %s', v));
+
+  ELSIF p_case = 'pupil' THEN
+    -- (pupil) A pupil's account answered by both doors gets nothing; the adult answered beside him gets both.
+    req := _v161_ask(PUPIL); req2 := _v161_ask(ADULT);
+    PERFORM _assert(_v161_is_pupil(PUPIL) AND NOT _v161_is_pupil(ADULT), '§139 (pupil): the fixture is void');
+    lk := _v161_pending_link(PUPIL, P); lk2 := _v161_pending_link(ADULT, P);
+    PERFORM _as(OFFICE);
+    SELECT d.ok INTO r FROM decide_role_request(req, false, 'Verify 161', NULL, NULL) d;
+    PERFORM _assert(r.ok, '§139 (pupil): the office could not decline the pupil''s request');
+    SELECT d.ok INTO r FROM decide_role_request(req2, false, 'Verify 161', NULL, NULL) d;
+    SELECT g.ok INTO r FROM guardian_link_verify(PUPIL, P, NULL, NULL) g;
+    PERFORM _assert(r.ok, '§139 (pupil): the office could not verify the pupil''s link');
+    SELECT g.ok INTO r FROM guardian_link_verify(ADULT, P, NULL, NULL) g;
+    PERFORM _assert(cardinality(_v161_stored(ADULT)) = 2 AND cardinality(_v161_stored(PUPIL)) = 0,
+      format('§139 (pupil): the adult holds %s notices (2 expected); the pupil %s (none)', cardinality(_v161_stored(ADULT)), cardinality(_v161_stored(PUPIL))));
+    PERFORM _as(PUPIL);
+    SELECT count(*) INTO n FROM my_notifications WHERE title = T;
+    PERFORM _assert(n = 0, format('§139 (pupil): the pupil reads %s', n));
+
+  ELSIF p_case = 'others' THEN
+    -- (others) Nobody but the asker reads hers: not the office that answered, not the director of sport,
+    -- not the owner's key, not another parent, not an account with no school, not signed out.
+    req := _v161_ask(ASK);
+    req2 := _v161_ask(ADULT);
+    PERFORM _v161_state(req2, 'withdrawn');
+    PERFORM _assert(cardinality(_v161_stored(ADULT)) = 0, '§139 (others): a withdrawn request wrote a notice');
+    PERFORM _as(OFFICE);
+    SELECT d.ok INTO r FROM decide_role_request(req, true, 'Verify 161', P, NULL) d;
+    PERFORM _assert(cardinality(_v161_ids(ASK)) = 1, format('§139 (others): the asker holds %s notices', cardinality(_v161_ids(ASK))));
+    x := (_v161_ids(ASK))[1];
+    FOREACH v IN ARRAY ARRAY[OFFICE::text, U_DOS::text, U_KEY::text, U_MUM::text, ADULT::text, PUPIL::text, ''] LOOP
+      PERFORM set_config('app.user_id', v, true);
+      SELECT count(*) INTO n FROM notification WHERE id = x;
+      SELECT n + count(*) INTO n FROM my_notifications WHERE id = x OR title = T;
+      PERFORM _assert(n = 0 AND notification_by_id(x) IS NULL,
+        format('§139 (others): %s reads the asker''s notice (%s rows)', coalesce(nullif(v, ''), 'signed out'), n));
+    END LOOP;
+    PERFORM _as(ASK);
+    PERFORM _assert(notification_by_id(x) IS NOT NULL, '§139 (others): the asker cannot open her own notice');
+
+  ELSIF p_case = 'sheet' THEN
+    -- (sheet) Q10 (Kameel, 15 Nov: "eleven"), read through db/131's fixture_sheet(), the one narrow read over
+    -- match_squad: the verified, live guardian of a boy on the eleven reads the eleven, names and batting order,
+    -- of his end only; the guardian of a boy on no sheet, a link not yet verified, a link that ended and the
+    -- other school's guardian read nothing; the other end's names never show to her.
+    ids := _seed_161s(p_case);
+    x := (ids->>'f')::uuid;
+    PERFORM _as((ids->>'named')::uuid);
+    SELECT string_agg(s.side || ':' || s.batting_no || ':' || s.name, ',' ORDER BY s.batting_no) INTO v FROM fixture_sheet(x) s;
+    SELECT string_agg('home:' || g.n || ':Eleven Home ' || lpad(g.n::text, 2, '0'), ',' ORDER BY g.n) INTO v2 FROM generate_series(1, 11) g(n);
+    PERFORM _assert(v = v2, format('§139 (sheet): the named boy''s guardian reads %s', coalesce(v, '(nothing)')));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM fixture_sheet(x) s WHERE s.side <> 'home' OR s.name LIKE 'Eleven Away%'),
+      '§139 (sheet): the other end''s names show to her');
+    FOREACH v IN ARRAY ARRAY['unnamed', 'pending', 'ended', 'wes'] LOOP
+      PERFORM _as((ids->>v)::uuid);
+      SELECT count(*) INTO n FROM fixture_sheet(x);
+      PERFORM _assert(n = 0, format('§139 (sheet): the %s guardian reads %s rows of the sheet', v, n));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert((SELECT count(*) FROM fixture_sheet(x)) = 0, '§139 (sheet): signed out, the sheet is read');
+
+  ELSIF p_case = 'grants' THEN
+    -- (grants) The door, the words and the verify: EXECUTE to scrbrd_app alone; the writer and the trigger's function: nobody's.
+    FOREACH v IN ARRAY ARRAY['school_answered_words(text)', 'school_answer_subject_is_mine(uuid)', 'guardian_link_verify(uuid,uuid,text,text)'] LOOP
+      PERFORM _assert(_v161_acl(v) = 'scrbrd_app:EXECUTE', format('§139 (grants): %s is granted %s', v, coalesce(_v161_acl(v), '(missing)')));
+    END LOOP;
+    FOREACH v IN ARRAY ARRAY['school_answered_notice_write(uuid,uuid,uuid)', 'school_answered_notice()', 'school_answered_on_ending()'] LOOP
+      PERFORM _assert(_v161_acl(v) = '', format('§139 (grants): %s is granted %s', v, coalesce(_v161_acl(v), '(missing)')));
+    END LOOP;
+  ELSE
+    RAISE EXCEPTION '§139: no case %', p_case;
+  END IF;
+  PERFORM set_config('app.user_id', '', true);
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- └── db/161 (section 139) ─────────────────────────────────────────────
+
 -- ┌── db/162 (section 140) ─────────────────────────────────────────────
 -- A fixture's officials are read signed in only while Officials is on for
 -- the fixture's school (db/162; SCRBRD-144). Hilton's 1XI at home to
@@ -13399,7 +14666,6 @@ CREATE OR REPLACE FUNCTION _v162_duty(p_match uuid, p_person uuid) RETURNS uuid 
   RETURNING id
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/162 (section 140) ─────────────────────────────────────────────
-
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -37883,6 +39149,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   --               (and by a new date alone), postponed → abandoned; refused:
   --               postponed → live or complete, back on without a new date,
   --               live or complete → postponed, a scored match postponed
+  --               (live from its first ball since db/165, so refused as live)
   --   (back on)   going back on is held to the ground like any booking
   --   (told)      postponed, back on and called off each write one notice to
   --               the side: its pupil and his guardian read it (and its
@@ -37983,7 +39250,8 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
         format('§112 (moves): %s reads %s, not a refused move', want, at));
     END LOOP;
     PERFORM _assert((SELECT status FROM match WHERE id = F1) = 'postponed' AND (SELECT status FROM match WHERE id = F7) = 'live'
-                    AND (SELECT status FROM match WHERE id = F8) = 'scheduled', '§112 (moves): a refused move changed a status');
+                    -- f8 was scored at staging, so it is live from its first ball (db/165).
+                    AND (SELECT status FROM match WHERE id = F8) = 'live', '§112 (moves): a refused move changed a status');
 
     -- (told): one notice, to the side; nobody named, nobody addressed.
     PERFORM set_config('app.user_id', '', true);
@@ -38128,6 +39396,64 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 112
   -- └── db/133 (section 112) ──────────────────────────────────────────
+
+  -- ┌── db/165 (section 143) ─────────────────────────────────────────
+  -- ── 143. A fixture is live from its first ball ──
+  -- Placed after §112 (its neighbour: f8 there is live from its first
+  -- ball), not at the end: §140-§142 are taken by open branches that append
+  -- there, so this section merges beside whichever lands first.
+  -- The match-day bug of 18 Nov 2026: nothing moved a scored fixture to
+  -- live. The cases (each stages its own fixtures, _v165_case above):
+  --   (first)      the scorer's claim, and the toss's setup (innings_start),
+  --                leave the fixture scheduled; his first ball, written as
+  --                the write path writes it, makes
+  --                it live; nothing is told (no notice anywhere) or audited;
+  --                the second ball leaves it live
+  --   (statement)  one statement writing to two fixtures makes both live,
+  --                and a third it does not write to stays scheduled
+  --   (others)     only from scheduled: a postponed fixture refuses the
+  --                ball (db/133) and stays postponed; a ball written as a
+  --                definer to an abandoned or a complete fixture is written
+  --                and its status stays; a live one stays live
+  --   (quarantine) a ball held for review moves nothing
+  --   (scorer)     the scorer still cannot UPDATE a status himself, to live
+  --                or to complete: no row is his to change
+  --   (backfill)   a scored fixture staged back to scheduled (called off,
+  --                then put back on) is made live by match_live_backfill();
+  --                an unplayed one (its setup and no ball) and a called-off
+  --                one are left; a second
+  --                run finds nothing; no scheduled fixture has events
+  --   (grants)     the trigger's function a pinned definer, EXECUTE to
+  --                scrbrd_app alone; the backfill the owner's alone; the
+  --                trigger present, enabled, calling that function
+  --   (back)       Kameel, 18 Nov 2026, "Refuse it once there are balls":
+  --                live → scheduled refused once the log has a ball, for the
+  --                office and the owner alike (match_status_transition); a
+  --                live fixture with no log, or with only the toss's setup
+  --                and no ball, may go back; a scored match
+  --                called off still goes back on (abandoned → scheduled)
+  --
+  -- Falsified, each against this database in its own rolled-back run (the
+  -- cases called one by one, every failure caught and reported): the
+  -- trigger dropped → (first), (statement) and (grants) red. The trigger
+  -- made to move any status but live → (others) and (backfill) red (db/133
+  -- and db/132 refuse the move and take the ball with it). The backfill
+  -- made a no-op and granted to PUBLIC → (backfill) and (grants) red. The
+  -- trigger and the backfill made to count any event, not a ball (the rule
+  -- first prototyped, under which the toss's setup made a fixture live) →
+  -- (first) and (backfill) red. The refusal's trigger dropped → (back) and
+  -- (grants) red. The refusal made to count any row of the log (5df45d95's
+  -- cut) → (back) red at the setup-only fixture.
+  PERFORM _v165_case('first');
+  PERFORM _v165_case('statement');
+  PERFORM _v165_case('others');
+  PERFORM _v165_case('quarantine');
+  PERFORM _v165_case('scorer');
+  PERFORM _v165_case('backfill');
+  PERFORM _v165_case('grants');
+  PERFORM _v165_case('back');
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/165 (section 143) ─────────────────────────────────────────
 
   -- ┌── db/135 (section 113) ─────────────────────────────────────────
   -- ── 113. Two phones scoring one match: the second account is told ──
@@ -43736,6 +45062,976 @@ $m130$;
              coalesce(_v157_reach('anon'), '(nothing)')));
   END;
   -- └── db/157 (section 135) ──────────────────────────────────────────
+  -- ┌── db/158 (section 136) ─────────────────────────────────────────
+  -- ── 136. "Ask SCRBRD to add my school": an account with no school asks, with the school's name, its town and its job; the asker reads her own and the platform reads every one, and nobody else reads any; only the platform answers, once; the cap, the refusals and the ninety days hold; nothing is created or linked; and nothing reaches PUBLIC or a managed host's API roles (db/158, EXPERIENCE_PASS Q22) ──
+  -- Labels:
+  --   (standing) the table and its four functions exist; their ACLs hold
+  --              the owner's and the application's SELECT (the table) or
+  --              EXECUTE (each function), nothing else; the application
+  --              writes nothing directly
+  --   (ask)      an account with no school asks; the row holds who, the
+  --              school's name and town as trimmed, the job, when, open; no
+  --              school, role, request or link moves
+  --   (own)      each asker reads her own rows and nobody else's
+  --   (other)    another account, a coach, the office and nobody signed in
+  --              read none of them, by the table or by who asked
+  --   (platform) the platform administrator reads every request, and who
+  --              asked
+  --   (write)    nobody writes the table but through the two doors: not the
+  --              asker, not the platform
+  --   (anyone)   a coach and the office at a school, one whose role is
+  --              paused, the platform administrator and the owner's key may
+  --              each ask (Kameel, 15 Nov: any signed-in account)
+  --   (refused)  nobody signed in, a pad's credential, a blank or long name,
+  --              a short or long town, a job not on the list, the same school
+  --              asked twice: each refused with its code and nothing written;
+  --              somebody whose role has ended may ask; an 80-letter name is
+  --              taken
+  --   (pupil)    a pupil's account is refused, ask_a_teacher, and nothing
+  --              is written (Kameel, 15 Nov), by db/118's rule: a live
+  --              player role, an ended one, one that ran out, and a player
+  --              row with no role at all; and a pupil's row planted past the
+  --              ask gives the platform his name and no address
+  --   (unseen)   a name or town holding a bidi override or isolate, a
+  --              zero-width space, a soft hyphen or a byte-order mark, or no
+  --              two letters or digits, is refused; no-break spaces are folded
+  --              and trimmed; a name in another script is taken
+  --   (cap)      three open at once, and a fourth refused; an answered one
+  --              frees its place
+  --   (lapsed)   ninety days open reads "lapsed", frees its place, cannot be
+  --              answered; eighty-nine is still open
+  --   (decide)   the asker, a coach, the office, nobody signed in and the
+  --              platform under a pad's credential may not answer; a state
+  --              not "added" or "declined" and an unknown request are
+  --              refused; the platform answers once, with who and when; the
+  --              owner's key may too; the asker reads the answer; still no
+  --              school, role or link; a platform administrator whose
+  --              appointment ran out, or whose account is disabled, may not
+  --              answer
+  --   (self)     an asker made a platform administrator before the answer
+  --              may not answer her own (own_request), and the row is unmoved
+  --   (kept)     ninety days after its answer a request is gone from the
+  --              asker's read, the platform's and who asked; eighty-nine is
+  --              still read; the owner's purge deletes exactly the answered
+  --              rows past ninety days and the unanswered ones past 180, never
+  --              a younger open one, and a second purge
+  --              deletes nothing; the application may not call it (Kameel,
+  --              15 Nov: deleted 90 days after the answer); an unanswered
+  --              request 180 days old (90 past its lapse) is gone from both
+  --              reads and purged, and one of 179 days is still read and kept
+  --              (Kameel, 15 Nov: deleted 90 days after it lapses)
+  --   (ends)     an account removed outright takes its requests with it
+  --              (ON DELETE CASCADE); and, a tripwire for ACCOUNT_LIFECYCLE
+  --              section 6.3, once account_erase(uuid) exists an erased
+  --              account holds no request either
+  --   (support)  somebody whose only live role is a support session at a
+  --              school reads their own requests and nobody else's, and
+  --              answers none
+  --   (pad)      under a pad's credential the asker reads none of hers
+  --   (reach)    nothing of db/158's in what PUBLIC, anon, authenticated or
+  --              service_role may do in public (db/157's probe)
+  --
+  -- Falsified once each, the change made as the owner before the section
+  -- ran (the section alone, its _assert reporting rather than raising), and
+  -- red at its own label:
+  --   db/158 undone (table and functions dropped)  → (standing)
+  --   EXECUTE on the requester granted to PUBLIC   → (standing), (reach)
+  --   INSERT, UPDATE granted to the application,
+  --   with a policy admitting them                 → (standing), (write)
+  --   the read policy made `true`                  → (other)
+  --   the read policy without the platform's arm   → (platform)
+  --   the requester without its own-or-platform
+  --   test                                         → (other)
+  --   the ask without its duplicate test           → (refused)
+  --   the ask's cap raised to 99                   → (cap)
+  --   the ask filing the asker under a school      → (ask)
+  --   shown() without the ninety days              → (lapsed)
+  --   the decision without app_holds()             → (decide)
+  --   the decision without its "already" test      → (decide)
+  --   the decision filing the asker under a school → (decide)
+  --   the pad guard dropped                        → (pad)
+  --   the decision without its own_request test    → (self)
+  --   the ask without its hidden-character test    → (unseen)
+  --   the ask without its two-letters test         → (unseen)
+  --   the ask's has_school refusal put back        → (anyone)
+  --   the read policy without its ninety-day cut   → (kept)
+  --   the requester without its ninety-day cut     → (kept)
+  --   the purge deleting open rows too             → (kept)
+  --   the purge granted to the application         → (kept), (standing)
+  --   the decision without its disabled-account test → (decide)
+  --   the foreign key without ON DELETE CASCADE      → (ends)
+  --   the read policy open to any school role        → (support)
+  --   the ask without its pupil refusal              → (pupil)
+  --   the pupil test live roles only (as at 9eb2f90d) → (pupil)
+  --   the requester returning the raw address        → (pupil)
+  --   the ask without its disabled-account test      → (refused)
+  --   the read policy without its lapse cut          → (kept)
+  --   the requester without its lapse cut            → (kept)
+  --   the purge without its lapsed arm               → (kept)
+  DECLARE
+    ids jsonb;
+    A uuid; B uuid; C uuid; O uuid; L uuid; X uuid; P uuid; W uuid; S uuid;
+    r1 uuid; r2 uuid; r3 uuid; r4 uuid; r5 uuid; rb uuid; rl uuid; rx uuid; rs uuid; rx2 uuid;
+    v text; k int; n int; held text; heldb text; g text; ok_ boolean;
+    row_ jsonb;
+  BEGIN
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM set_config('app.scope', '', true);
+
+    -- (standing)
+    PERFORM _assert(to_regclass('public.school_add_request') IS NOT NULL
+                    AND to_regprocedure('school_add_request_ask(text,text,text)') IS NOT NULL
+                    AND to_regprocedure('school_add_request_decide(uuid,text)') IS NOT NULL
+                    AND to_regprocedure('school_add_requester(uuid)') IS NOT NULL
+                    AND to_regprocedure('school_add_request_shown(text,timestamp with time zone)') IS NOT NULL
+                    AND to_regprocedure('school_add_request_purge()') IS NOT NULL,
+      '§136 (standing): db/158''s table or one of its five functions is missing');
+    v := _v158_acl();
+    PERFORM _assert(v IS NULL, format('§136 (standing): db/158 grants beyond its owner and the application: %s', v));
+    PERFORM _assert(has_table_privilege('scrbrd_app', 'school_add_request', 'SELECT')
+                    AND NOT has_table_privilege('scrbrd_app', 'school_add_request', 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'),
+      '§136 (standing): the application cannot read school_add_request, or may write it');
+
+    ids := _v158_stage();
+    A := (ids->>'asker')::uuid;  B := (ids->>'other')::uuid;  C := (ids->>'coach')::uuid;
+    O := (ids->>'office')::uuid; L := (ids->>'left')::uuid;   X := (ids->>'lapsed')::uuid;
+    P := (ids->>'plat')::uuid;   W := (ids->>'owner')::uuid;   S := (ids->>'self')::uuid;
+    held := _v158_held(A);
+    heldb := _v158_held(B);
+
+    -- (ask)
+    PERFORM _as(A);
+    v := _v158_ask('  Verify   Onefiftyeight  High ', ' Howick ', 'coach');
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (ask): the account with no school was refused: %s', v));
+    r1 := nullif(split_part(v, ':', 2), '')::uuid;
+    SELECT count(*) INTO k FROM school_add_request
+     WHERE id = r1 AND person_id = A AND school_name = 'Verify Onefiftyeight High' AND town = 'Howick' AND job = 'coach'
+       AND state = 'open' AND decided_by IS NULL AND decided_at IS NULL AND requested_at = now();
+    PERFORM _assert(k = 1, '§136 (ask): the asker does not read her request as written (herself, the name and town trimmed, the job, now, open)');
+    PERFORM _assert(_v158_held(A) = held,
+      format('§136 (ask): asking moved a school, a role, a request, a link or the account''s school: %s, was %s', _v158_held(A), held));
+
+    -- (own)
+    PERFORM _as(B);
+    v := _v158_ask('Verify Other College', 'Pietermaritzburg', 'parent');
+    rb := nullif(split_part(v, ':', 2), '')::uuid;
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (own): the second account was refused: %s', v));
+    PERFORM _assert(_v158_all() >= 2, '§136 (own): the fixture is void, there are not two requests to keep apart');
+    SELECT count(*), count(*) FILTER (WHERE person_id = B AND id = rb) INTO k, n FROM school_add_request;
+    PERFORM _assert(k = 1 AND n = 1, format('§136 (own): the second account reads %s rows, %s of them hers', k, n));
+    PERFORM _as(A);
+    SELECT count(*), count(*) FILTER (WHERE person_id = A AND id = r1) INTO k, n FROM school_add_request;
+    PERFORM _assert(k = 1 AND n = 1, format('§136 (own): the asker reads %s rows, %s of them hers', k, n));
+    PERFORM _assert((SELECT count(*) FROM school_add_requester(r1) q WHERE q.email = 'v158.asker@example.invalid') = 1,
+      '§136 (own): the asker cannot read who asked her own request');
+    PERFORM _assert((SELECT count(*) FROM school_add_requester(rb)) = 0,
+      '§136 (own): the asker reads who asked the other account''s request');
+
+    -- (other)
+    FOREACH g IN ARRAY ARRAY['other', 'coach', 'office', ''] LOOP
+      PERFORM set_config('app.user_id', CASE WHEN g = '' THEN '' ELSE ids->>g END, true);
+      SELECT count(*) INTO k FROM school_add_request WHERE id = r1;
+      PERFORM _assert(k = 0, format('§136 (other): %s reads the asker''s request', coalesce(nullif(g, ''), 'nobody signed in')));
+      SELECT count(*) INTO k FROM school_add_requester(r1);
+      PERFORM _assert(k = 0, format('§136 (other): %s reads who asked the asker''s request', coalesce(nullif(g, ''), 'nobody signed in')));
+    END LOOP;
+    PERFORM _as(C);
+    PERFORM _assert((SELECT count(*) FROM school_add_request) = 0, '§136 (other): the coach reads a request to add a school');
+    PERFORM _as(O);
+    PERFORM _assert((SELECT count(*) FROM school_add_request) = 0, '§136 (other): the office reads a request to add a school');
+
+    -- (platform)
+    PERFORM _as(P);
+    SELECT count(*) INTO k FROM school_add_request WHERE id IN (r1, rb);
+    PERFORM _assert(k = 2, format('§136 (platform): the platform administrator reads %s of the two requests', k));
+    PERFORM _assert((SELECT count(*) FROM school_add_requester(r1) q
+                      WHERE q.name = 'V158 Asker' AND q.email = 'v158.asker@example.invalid') = 1,
+      '§136 (platform): the platform administrator cannot read who asked');
+
+    -- (write)
+    FOREACH g IN ARRAY ARRAY['asker', 'plat'] LOOP
+      PERFORM set_config('app.user_id', ids->>g, true);
+      ok_ := false;
+      BEGIN
+        INSERT INTO school_add_request (person_id, school_name, town, job) VALUES (A, 'Verify Direct', 'Howick', 'coach');
+      EXCEPTION WHEN insufficient_privilege THEN ok_ := true;
+      END;
+      PERFORM _assert(ok_, format('§136 (write): %s inserted a request past the door', g));
+      ok_ := false;
+      BEGIN
+        UPDATE school_add_request SET state = 'added', decided_at = now() WHERE id = r1;
+      EXCEPTION WHEN insufficient_privilege THEN ok_ := true;
+      END;
+      PERFORM _assert(ok_, format('§136 (write): %s updated a request past the door', g));
+      ok_ := false;
+      BEGIN
+        DELETE FROM school_add_request WHERE id = r1;
+      EXCEPTION WHEN insufficient_privilege THEN ok_ := true;
+      END;
+      PERFORM _assert(ok_, format('§136 (write): %s deleted a request', g));
+    END LOOP;
+    PERFORM _assert(_v158_row(r1)->>'state' = 'open' AND _v158_all() = 2, '§136 (write): a refused write moved a row');
+
+    -- (anyone) Kameel, 15 Nov: any signed-in account may ask, one at a school included.
+    k := _v158_all();
+    FOREACH g IN ARRAY ARRAY['coach', 'office', 'plat', 'owner', 'paused'] LOOP
+      PERFORM set_config('app.user_id', ids->>g, true);
+      v := _v158_ask('Verify Staff School', 'Howick', 'coach');
+      PERFORM _assert(v LIKE 'ok:%', format('§136 (anyone): %s, at a school or the platform''s, asked and was answered %s', g, v));
+    END LOOP;
+    PERFORM _assert(_v158_all() = k + 5, format('§136 (anyone): five asks wrote %s rows', _v158_all() - k));
+
+    -- (refused)
+    k := _v158_all();
+    PERFORM set_config('app.user_id', '', true);
+    v := _v158_ask('Verify Nobody School', 'Howick', 'coach');
+    PERFORM _assert(v = 'not_signed_in', format('§136 (refused): nobody signed in was answered %s', v));
+    PERFORM set_config('app.user_id', ids->>'platoff', true);
+    v := _v158_ask('Verify Disabled School', 'Howick', 'coach');
+    PERFORM _assert(v = 'not_signed_in' AND _v158_of((ids->>'platoff')::uuid) = 0,
+      format('§136 (refused): a disabled account asked and was answered %s', v));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _as(A);
+    PERFORM set_config('app.scope', 'pad', true);
+    v := _v158_ask('Verify Pad School', 'Howick', 'coach');
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(v = 'not_signed_in', format('§136 (refused): under a pad''s credential the asker was answered %s', v));
+    v := _v158_ask('   ', 'Howick', 'coach');
+    PERFORM _assert(v = 'name_required', format('§136 (refused): a blank name was answered %s', v));
+    v := _v158_ask(' V ', 'Howick', 'coach');
+    PERFORM _assert(v = 'name_required', format('§136 (refused): a one-letter name was answered %s', v));
+    v := _v158_ask(repeat('V', 81), 'Howick', 'coach');
+    PERFORM _assert(v = 'name_required', format('§136 (refused): an 81-letter name was answered %s', v));
+    v := _v158_ask('Verify ' || chr(1) || ' School', 'Howick', 'coach');
+    PERFORM _assert(v = 'name_required', format('§136 (refused): a name with a control character was answered %s', v));
+    v := _v158_ask('Verify Town School', ' H ', 'coach');
+    PERFORM _assert(v = 'town_required', format('§136 (refused): a one-letter town was answered %s', v));
+    v := _v158_ask('Verify Town School', repeat('T', 81), 'coach');
+    PERFORM _assert(v = 'town_required', format('§136 (refused): an 81-letter town was answered %s', v));
+
+    -- (unseen)
+    FOREACH g IN ARRAY ARRAY[U&'Verify \202Eloohcs', U&'\200B\200B', U&'Verify \2066High\2069', U&'Ver\00ADify High',
+                              U&'\FEFFVerify High', U&'Verify\200DHigh', '-- --', '..'] LOOP
+      v := _v158_ask(g, 'Howick', 'coach');
+      PERFORM _assert(v = 'name_required', format('§136 (unseen): the name %s was answered %s', to_json(g), v));
+    END LOOP;
+    v := _v158_ask('Verify Unseen Town', U&'Ho\200Bwick', 'coach');
+    PERFORM _assert(v = 'town_required', format('§136 (unseen): a town with a zero-width space was answered %s', v));
+    PERFORM _assert(_v158_all() = k, format('§136 (unseen): a refused name wrote a row (%s, was %s)', _v158_all(), k));
+    v := _v158_ask('Verify Job School', 'Howick', 'pupil');
+    PERFORM _assert(v = 'job_invalid', format('§136 (refused): the job "pupil" was answered %s', v));
+    v := _v158_ask('Verify Job School', 'Howick', NULL);
+    PERFORM _assert(v = 'job_invalid', format('§136 (refused): no job was answered %s', v));
+    v := _v158_ask(' verify onefiftyeight   HIGH', 'HOWICK', 'teacher');
+    PERFORM _assert(v = 'already_asked', format('§136 (refused): the same school and town asked again was answered %s', v));
+    PERFORM _assert(_v158_all() = k, format('§136 (refused): a refused ask wrote a row (%s, was %s)', _v158_all(), k));
+    PERFORM _as(L);
+    v := _v158_ask('Verify Left School', 'Howick', 'teacher');
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (refused): somebody whose one role has ended was answered %s', v));
+    rl := nullif(split_part(v, ':', 2), '')::uuid;
+    PERFORM _as(X);
+    v := _v158_ask('Verify Lapsed School', 'Howick', 'teacher');
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (refused): somebody whose role ran out yesterday was answered %s', v));
+    rx := nullif(split_part(v, ':', 2), '')::uuid;
+    PERFORM _as(L);
+    v := _v158_ask(repeat('V', 79) || 'W', 'Howick', 'teacher');
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (refused): an 80-letter name was answered %s', v));
+    -- (unseen) the no-break spaces folded and trimmed, and another script taken
+    v := _v158_ask(U&'\00A0 Verify\00A0\00A0Nobreak  High\202F', U&'\2007Howick', 'teacher');
+    PERFORM _assert(v LIKE 'ok:%' AND _v158_row(nullif(split_part(v, ':', 2), '')::uuid)->>'school_name' = 'Verify Nobreak High'
+                    AND _v158_row(nullif(split_part(v, ':', 2), '')::uuid)->>'town' = 'Howick',
+      format('§136 (unseen): a name padded with no-break spaces was answered %s, or kept them', v));
+    PERFORM _as(X);
+    v := _v158_ask('Hoërskool Ëlandskraal', 'eMkhondo', 'teacher');
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (unseen): a name with accented letters was answered %s', v));
+
+    -- (pupil)
+    k := _v158_all();
+    PERFORM set_config('app.user_id', ids->>'pupil', true);
+    v := _v158_ask('Verify Cousin School', 'Howick', 'other');
+    PERFORM _assert(v = 'ask_a_teacher', format('§136 (pupil): a pupil''s account asked and was answered %s', v));
+    PERFORM _assert(_v158_all() = k AND _v158_of((ids->>'pupil')::uuid) = 0, '§136 (pupil): a pupil''s refused ask wrote a row');
+    FOREACH g IN ARRAY ARRAY['pupilgone', 'pupilrun', 'pupillink'] LOOP
+      PERFORM set_config('app.user_id', ids->>g, true);
+      v := _v158_ask('Verify Cousin School', 'Howick', 'other');
+      PERFORM _assert(v = 'ask_a_teacher' AND _v158_of((ids->>g)::uuid) = 0,
+        format('§136 (pupil): %s, a pupil by db/118''s rule, asked and was answered %s', g, v));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    rx2 := _v158_plant((ids->>'pupillink')::uuid);
+    PERFORM _as(P);
+    PERFORM _assert((SELECT count(*) FROM school_add_requester(rx2) q WHERE q.name = 'V158 Pupillink' AND q.email IS NULL) = 1,
+      '§136 (pupil): the platform reads a pupil''s sign-in address through who asked');
+    PERFORM _as(A);
+    PERFORM _assert((SELECT count(*) FROM school_add_requester(r1) q WHERE q.email = 'v158.asker@example.invalid') = 1,
+      '§136 (pupil): the asker no longer reads her own address through who asked');
+
+    -- (cap)
+    PERFORM _as(A);
+    v := _v158_ask('Verify Second School', 'Durban', 'teacher');
+    r2 := nullif(split_part(v, ':', 2), '')::uuid;
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (cap): the asker''s second was answered %s', v));
+    v := _v158_ask('Verify Third School', 'Durban', 'office');
+    r3 := nullif(split_part(v, ':', 2), '')::uuid;
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (cap): the asker''s third was answered %s', v));
+    k := _v158_all();
+    v := _v158_ask('Verify Fourth School', 'Durban', 'other');
+    PERFORM _assert(v = 'too_many_open', format('§136 (cap): a fourth open request was answered %s', v));
+    PERFORM _assert(_v158_all() = k, '§136 (cap): the refused fourth wrote a row');
+    PERFORM _as(P);
+    v := _v158_decide(r2, 'declined');
+    PERFORM _assert(v = 'ok', format('§136 (cap): the platform could not decline the second: %s', v));
+    PERFORM _as(A);
+    v := _v158_ask('Verify Fourth School', 'Durban', 'other');
+    r4 := nullif(split_part(v, ':', 2), '')::uuid;
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (cap): an answered request did not free its place: %s', v));
+
+    -- (lapsed)
+    PERFORM _v158_age(r3, 90);
+    PERFORM _v158_age(r4, 89);
+    SELECT school_add_request_shown(r.state, r.requested_at) INTO v FROM school_add_request r WHERE r.id = r3;
+    PERFORM _assert(v = 'lapsed', format('§136 (lapsed): a request open ninety days reads %s', v));
+    SELECT school_add_request_shown(r.state, r.requested_at) INTO v FROM school_add_request r WHERE r.id = r4;
+    PERFORM _assert(v = 'open', format('§136 (lapsed): a request open eighty-nine days reads %s', v));
+    v := _v158_ask('Verify Fifth School', 'Durban', 'other');
+    r5 := nullif(split_part(v, ':', 2), '')::uuid;
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (lapsed): a lapsed request did not free its place: %s', v));
+    v := _v158_ask('Verify Sixth School', 'Durban', 'other');
+    PERFORM _assert(v = 'too_many_open', format('§136 (lapsed): with three open again a fourth was answered %s', v));
+    PERFORM _as(P);
+    v := _v158_decide(r3, 'added');
+    PERFORM _assert(v = 'lapsed' AND _v158_row(r3)->>'state' = 'open',
+      format('§136 (lapsed): the platform answered a lapsed request: %s', v));
+
+    -- (decide)
+    FOREACH g IN ARRAY ARRAY['asker', 'other', 'coach', 'office', ''] LOOP
+      PERFORM set_config('app.user_id', CASE WHEN g = '' THEN '' ELSE ids->>g END, true);
+      v := _v158_decide(r1, 'added');
+      PERFORM _assert(v = 'not_permitted', format('§136 (decide): %s answered a request: %s', coalesce(nullif(g, ''), 'nobody signed in'), v));
+    END LOOP;
+    PERFORM _as(P);
+    PERFORM set_config('app.scope', 'pad', true);
+    v := _v158_decide(r1, 'added');
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(v = 'not_permitted', format('§136 (decide): the platform under a pad''s credential answered: %s', v));
+    v := _v158_decide(r1, 'open');
+    PERFORM _assert(v = 'state_invalid', format('§136 (decide): the state "open" was answered %s', v));
+    v := _v158_decide(r1, 'lapsed');
+    PERFORM _assert(v = 'state_invalid', format('§136 (decide): the state "lapsed" was answered %s', v));
+    v := _v158_decide(gen_random_uuid(), 'added');
+    PERFORM _assert(v = 'no_such_request', format('§136 (decide): an unknown request was answered %s', v));
+    row_ := _v158_row(r1);
+    PERFORM _assert(row_->>'state' = 'open' AND row_->'decided_by' = 'null'::jsonb AND row_->'decided_at' = 'null'::jsonb,
+      '§136 (decide): a refused answer moved the request');
+    v := _v158_decide(r1, 'added');
+    PERFORM _assert(v = 'ok', format('§136 (decide): the platform could not answer: %s', v));
+    row_ := _v158_row(r1);
+    PERFORM _assert(row_->>'state' = 'added' AND (row_->>'decided_by')::uuid = P AND (row_->>'decided_at')::timestamptz = now(),
+      format('§136 (decide): the answer is not recorded with who and when: %s', row_));
+    v := _v158_decide(r1, 'declined');
+    PERFORM _assert(v = 'already_decided' AND _v158_row(r1)->>'state' = 'added',
+      format('§136 (decide): a second answer was taken: %s', v));
+    PERFORM _as(W);
+    v := _v158_decide(rb, 'declined');
+    PERFORM _assert(v = 'ok' AND (_v158_row(rb)->>'decided_by')::uuid = W,
+      format('§136 (decide): the owner''s key could not answer: %s', v));
+    PERFORM _as(A);
+    SELECT school_add_request_shown(r.state, r.requested_at) INTO v FROM school_add_request r WHERE r.id = r1;
+    PERFORM _assert(v = 'added', format('§136 (decide): the asker reads her answered request as %s', v));
+    PERFORM _assert(_v158_held(A) = held AND _v158_held(B) = heldb,
+      format('§136 (decide): an answer moved a school, a role, a request, a link or the account''s school: %s, was %s',
+             _v158_held(A), held));
+    PERFORM set_config('app.user_id', ids->>'platgone', true);
+    v := _v158_decide(rl, 'added');
+    PERFORM _assert(v = 'not_permitted' AND _v158_row(rl)->>'state' = 'open',
+      format('§136 (decide): a platform administrator whose appointment ran out answered: %s', v));
+    PERFORM set_config('app.user_id', ids->>'platoff', true);
+    v := _v158_decide(rl, 'added');
+    PERFORM _assert(v = 'not_permitted' AND _v158_row(rl)->>'state' = 'open',
+      format('§136 (decide): a platform administrator whose account is disabled answered: %s', v));
+
+    -- (self)
+    PERFORM _as(S);
+    v := _v158_ask('Verify Self School', 'Howick', 'other');
+    rs := nullif(split_part(v, ':', 2), '')::uuid;
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (self): the account that will be made a platform administrator could not ask: %s', v));
+    PERFORM _v158_make_platform(S);
+    v := _v158_decide(rs, 'added');
+    PERFORM _assert(v = 'own_request', format('§136 (self): the asker, now a platform administrator, answered her own: %s', v));
+    row_ := _v158_row(rs);
+    PERFORM _assert(row_->>'state' = 'open' AND row_->'decided_by' = 'null'::jsonb AND row_->'decided_at' = 'null'::jsonb,
+      format('§136 (self): her own refused answer moved the request: %s', row_));
+    PERFORM _as(P);
+    v := _v158_decide(rs, 'declined');
+    PERFORM _assert(v = 'ok', format('§136 (self): somebody else on the platform could not answer it: %s', v));
+
+    -- (kept)
+    PERFORM _v158_age_answer(r1, 90);
+    PERFORM _v158_age_answer(rb, 89);
+    PERFORM _as(A);
+    PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id = r1) = 0
+                    AND (SELECT count(*) FROM school_add_requester(r1)) = 0,
+      '§136 (kept): the asker still reads her request ninety days after its answer');
+    PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id IN (r3, r4, r5)) = 3,
+      '§136 (kept): the cut took the asker''s unanswered requests too (r3 lapsed only ninety days ago)');
+    PERFORM _as(P);
+    PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id = r1) = 0
+                    AND (SELECT count(*) FROM school_add_requester(r1)) = 0,
+      '§136 (kept): the platform still reads a request ninety days after its answer');
+    PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id = rb) = 1
+                    AND (SELECT count(*) FROM school_add_requester(rb)) = 1,
+      '§136 (kept): a request eighty-nine days after its answer is already gone');
+    PERFORM _assert(NOT has_function_privilege('scrbrd_app', 'school_add_request_purge()', 'EXECUTE'),
+      '§136 (kept): the application may call the purge');
+    k := _v158_all();
+    -- An unanswered request ninety days past its lapse (180 since it was
+    -- asked) is gone from both reads; one of 179 days is not.
+    PERFORM _v158_age(r3, 180);
+    PERFORM _v158_age(rx, 179);
+    PERFORM _as(A);
+    PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id = r3) = 0
+                    AND (SELECT count(*) FROM school_add_requester(r3)) = 0,
+      '§136 (kept): the asker still reads her request ninety days after it lapsed');
+    PERFORM _as(P);
+    PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id = r3) = 0
+                    AND (SELECT count(*) FROM school_add_requester(r3)) = 0,
+      '§136 (kept): the platform still reads a request ninety days after it lapsed');
+    PERFORM _assert((SELECT count(*) FROM school_add_request WHERE id = rx) = 1
+                    AND (SELECT count(*) FROM school_add_requester(rx)) = 1
+                    AND (SELECT school_add_request_shown(r.state, r.requested_at) FROM school_add_request r WHERE r.id = rx) = 'lapsed',
+      '§136 (kept): a request lapsed eighty-nine days ago is already gone, or does not read lapsed');
+    v := _v158_purge();
+    PERFORM _assert(v = '2' AND _v158_row(r1) IS NULL AND _v158_row(r3) IS NULL
+                    AND _v158_row(rb) IS NOT NULL AND _v158_row(rx) IS NOT NULL AND _v158_row(r4) IS NOT NULL
+                    AND _v158_all() = k - 2,
+      format('§136 (kept): the purge deleted %s rows (%s left of %s): not exactly the one answered ninety days ago and the one lapsed ninety days ago', v, _v158_all(), k));
+    v := _v158_purge();
+    PERFORM _assert(v = '0', format('§136 (kept): a second purge deleted %s', v));
+
+    -- (ends)
+    PERFORM set_config('app.user_id', ids->>'gone', true);
+    v := _v158_ask('Verify Gone School', 'Howick', 'other');
+    PERFORM _assert(v LIKE 'ok:%' AND _v158_of((ids->>'gone')::uuid) = 1,
+      format('§136 (ends): the account to be removed could not ask: %s', v));
+    PERFORM set_config('app.user_id', '', true);
+    k := _v158_all();
+    PERFORM _v158_remove((ids->>'gone')::uuid);
+    PERFORM _assert(_v158_of((ids->>'gone')::uuid) = 0 AND _v158_all() = k - 1,
+      '§136 (ends): an account removed outright left its request behind');
+    IF to_regprocedure('account_erase(uuid)') IS NOT NULL THEN
+      PERFORM set_config('app.user_id', ids->>'erased', true);
+      v := _v158_ask('Verify Erased School', 'Howick', 'other');
+      PERFORM _assert(v LIKE 'ok:%', format('§136 (ends): the account to be erased could not ask: %s', v));
+      EXECUTE 'SELECT account_erase($1)' USING (ids->>'erased')::uuid;
+      PERFORM set_config('app.user_id', '', true);
+      PERFORM _assert(_v158_of((ids->>'erased')::uuid) = 0,
+        '§136 (ends): account_erase() left the account''s requests to add a school (ACCOUNT_LIFECYCLE section 6.3)');
+    END IF;
+
+    -- (support)
+    PERFORM set_config('app.user_id', ids->>'support', true);
+    v := _v158_ask('Verify Support School', 'Howick', 'office');
+    PERFORM _assert(v LIKE 'ok:%', format('§136 (support): the support session could not ask: %s', v));
+    SELECT count(*), count(*) FILTER (WHERE person_id = (ids->>'support')::uuid) INTO k, n FROM school_add_request;
+    PERFORM _assert(k = 1 AND n = 1, format('§136 (support): a support session reads %s requests, %s its own', k, n));
+    PERFORM _assert((SELECT count(*) FROM school_add_requester(r4)) = 0,
+      '§136 (support): a support session reads who asked another''s request');
+    v := _v158_decide(r4, 'added');
+    PERFORM _assert(v = 'not_permitted', format('§136 (support): a support session answered: %s', v));
+
+    -- (pad)
+    PERFORM _as(A);
+    PERFORM set_config('app.scope', 'pad', true);
+    SELECT count(*) INTO k FROM school_add_request;
+    SELECT count(*) INTO n FROM school_add_requester(r4);
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(k = 0 AND n = 0, format('§136 (pad): under a pad''s credential the asker reads %s requests and %s askers', k, n));
+    PERFORM _assert((SELECT count(*) FROM school_add_request) > 0, '§136 (pad): the fixture is void, the asker reads nothing anyway');
+
+    -- (reach)
+    PERFORM set_config('app.user_id', '', true);
+    FOREACH g IN ARRAY ARRAY['public', 'anon', 'authenticated', 'service_role'] LOOP
+      CONTINUE WHEN g <> 'public' AND to_regrole(g) IS NULL;
+      v := _v158_reach(g);
+      PERFORM _assert(v IS NULL, format('§136 (reach): %s reaches %s', g, v));
+    END LOOP;
+  END;
+  -- └── db/158 (section 136) ──────────────────────────────────────────
+  -- ┌── db/159 (section 137) ─────────────────────────────────────────
+  -- ── 137. The home page's live read says the chase's target and whether the match was revised, and nothing else new: the old thirteen columns, and every row they gave, as db/133 left them (db/159; EXPERIENCE_PASS Q14) ──
+  -- _seed_159() builds Hilton's nine live fixtures today (header of the
+  -- helper); Hilton's director of sport publishes the home side of each and
+  -- lists the school. Every read signed out, as the API's public read is.
+  -- Labels:
+  --   (copy)     the verifier's copy of db/133's body is db/133's (its
+  --              folded md5), so (old) compares against the real thing
+  --   (columns)  public_live_fixtures() returns db/133's thirteen columns,
+  --              by name and type and in order, then target integer and
+  --              revised boolean, and nothing else
+  --   (old)      every row the read answers, its first thirteen columns,
+  --              is a row db/133's body answers, and the other way round;
+  --              Hilton's six are among them
+  --   (target)   c1 the first innings plus one, not revised; c2 the umpires'
+  --              revised target, revised; c3 a first innings, no target;
+  --              c4 a two-day match's fourth innings, the runs it trails by
+  --              plus one; c5 a super over, no target; c6 a chase opened on
+  --              a typed target other than the first innings plus one, that
+  --              target, revised; c7 the first innings' overs cut by a
+  --              revision event and the target left alone, the first innings
+  --              plus one, revised (the event's own mark, and nothing else
+  --              says so); c8 a follow-on's fourth innings, the runs it
+  --              trails by, by side and not by position; c9 a chase opened
+  --              on fifteen overs of the fixture's twenty with no event, the
+  --              first innings plus one, revised (the strip then counts no
+  --              balls from the fixture's overs)
+  --   (team)     the two columns are a number of runs and one bit: no
+  --              string, so no name can ride on them
+  --   (grants)   EXECUTE on the read: its owner and scrbrd_app, nobody
+  --              else; fixture_chase() the owner's alone (the application
+  --              cannot call it); and PUBLIC, read at the top of this file,
+  --              reaches neither (db/157's rule)
+  --
+  -- Falsified once each, on a database migrated through db/159, by a
+  -- change made as the owner just before the section ran, in its own
+  -- rolled-back run: db/133's function put back (DROP, db/133's body
+  -- re-made, its grants) → (columns) red; the new body's served_on written
+  -- 'YYYY/MM/DD' → (old) red, 12 rows; fixture_chase() made to ignore a
+  -- typed or revised target (own_target NULL) → (target) red at c2 (9, not
+  -- 7); the mark made NULL in the new body, with (target) skipped → (team)
+  -- red; GRANT EXECUTE on the read TO PUBLIC → (grants) red; GRANT EXECUTE on
+  -- fixture_chase() TO scrbrd_app → (grants) red; the copy's LIMIT 50 made
+  -- 49 → (copy) red. The revision event's own mark dropped from
+  -- fixture_chase() (its bool_or over `revised`) → (target) red at c7; the
+  -- overs test dropped → (target) red at c9; the fourth innings' sign taken
+  -- by position (an odd innings for, an even against) → (target) red at c8.
+  DECLARE
+    ids   jsonb;
+    U_DOS uuid := '88888888-0000-0000-0000-000000000007';   -- Hilton's director of sport (§61's U_SARAH)
+    k text; j jsonb; n int; n2 int; v text; v_ok boolean; v_reason text;
+    want  jsonb := '{"c1": [9, false], "c2": [7, true], "c3": [null, false], "c4": [5, false], "c5": [null, false], "c6": [12, true],
+                     "c7": [9, true], "c8": [15, false], "c9": [9, true]}';
+  BEGIN
+    -- (copy)
+    PERFORM _assert(_v159_md5('_v159_old_live()') = '6aa12abde90e18205821fb4b78ef7d26',
+      format('§137 (copy): the verifier''s copy of db/133''s body is not db/133''s (md5 %s)', _v159_md5('_v159_old_live()')));
+
+    -- (columns)
+    v := _v159_cols('public_live_fixtures()');
+    PERFORM _assert(v = _v159_cols('_v159_old_live()') || ', target integer, revised boolean',
+      format('§137 (columns): the live read returns %s', v));
+
+    ids := _seed_159();
+    PERFORM _as(U_DOS);
+    FOR k IN SELECT jsonb_object_keys(ids) LOOP
+      SELECT s.ok, s.reason INTO v_ok, v_reason FROM fixture_publish((ids->>k)::uuid, 'home', true) s;
+      PERFORM _assert(v_ok, format('§137: Hilton could not publish %s (%s)', k, v_reason));
+    END LOOP;
+    SELECT s.ok, s.reason INTO v_ok, v_reason FROM public_listing_set(HIL, true) s;
+    PERFORM _assert(v_ok, format('§137: Hilton''s director of sport could not list (%s)', v_reason));
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (old)
+    SELECT count(*) INTO n FROM (
+      (SELECT x.match_id, x.home_label, x.home_code, x.away_label, x.away_code, x.away_on_platform, x.status, x.format,
+              x.overs, x.starts_at, x.scores, x.result, x.served_on FROM public_live_fixtures() x
+       EXCEPT ALL SELECT * FROM _v159_old_live())
+      UNION ALL
+      (SELECT * FROM _v159_old_live()
+       EXCEPT ALL SELECT x.match_id, x.home_label, x.home_code, x.away_label, x.away_code, x.away_on_platform, x.status, x.format,
+              x.overs, x.starts_at, x.scores, x.result, x.served_on FROM public_live_fixtures() x)) d;
+    SELECT count(*) INTO n2 FROM public_live_fixtures() x
+     WHERE x.match_id IN (SELECT (ids->>q.key)::uuid FROM jsonb_object_keys(ids) q(key));
+    PERFORM _assert(n = 0 AND n2 = 9,
+      format('§137 (old): %s rows of the old thirteen columns differ from db/133''s body; %s of Hilton''s nine answered', n, n2));
+
+    -- (target)
+    FOR k IN SELECT jsonb_object_keys(want) LOOP
+      SELECT to_jsonb(x) INTO j FROM public_live_fixtures() x WHERE x.match_id = (ids->>k)::uuid;
+      PERFORM _assert(j IS NOT NULL AND j->'target' = want->k->0 AND j->'revised' = want->k->1,
+        format('§137 (target): %s reads target %s, revised %s (expected %s); scores %s', k, j->'target', j->'revised', want->k, j->'scores'));
+    END LOOP;
+
+    -- (team)
+    SELECT count(*) INTO n FROM public_live_fixtures() x
+     WHERE jsonb_typeof(to_jsonb(x)->'target') NOT IN ('number', 'null') OR jsonb_typeof(to_jsonb(x)->'revised') <> 'boolean';
+    PERFORM _assert(n = 0 AND _v159_cols('public_live_fixtures()') LIKE '%, target integer, revised boolean',
+      format('§137 (team): %s rows carry a target that is not a number, or a mark that is not a bit', n));
+
+    -- (grants)
+    v := array_to_string(_v156_acl('public_live_fixtures()'), ',');
+    PERFORM _assert(v = (SELECT proowner::regrole::text FROM pg_proc WHERE oid = 'public_live_fixtures()'::regprocedure)
+                        || ':EXECUTE,scrbrd_app:EXECUTE',
+      format('§137 (grants): the live read is granted %s', v));
+    v := array_to_string(_v156_acl('fixture_chase(jsonb,integer,integer)'), ',');
+    PERFORM _assert(v = (SELECT proowner::regrole::text FROM pg_proc WHERE oid = 'fixture_chase(jsonb,integer,integer)'::regprocedure) || ':EXECUTE'
+                    AND NOT has_function_privilege('scrbrd_app', 'fixture_chase(jsonb,integer,integer)', 'EXECUTE'),
+      format('§137 (grants): fixture_chase() is granted %s', v));
+    v := coalesce(_v157_public_at_start(), '');
+    PERFORM _assert(v !~ '(public_live_fixtures|fixture_chase)\(',
+      format('§137 (grants): PUBLIC reaches the live read or its helper: %s', left(v, 600)));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/159 (section 137) ─────────────────────────────────────────
+  -- ┌── db/160 (section 138) ─────────────────────────────────────────
+  -- ── 138. The follow list is its owner's alone, holds two ids and a date, goes with the account, and filters only what the public read already answers (db/160; EXPERIENCE_PASS Q8) ──
+  -- _seed_160() builds its own school (V160) and fixtures, an archived
+  -- school, fifty more, and four accounts with no school (A, B, D, L).
+  -- Labels:
+  --   (shape)    followed_school is the two ids and a date, removed with
+  --              its account and its school; row security on
+  --   (own)      A follows V160 and Westville through follow_school(): his
+  --              two rows, stamped today, are what he reads, directly and
+  --              through followed_schools() (with the names); following
+  --              again changes nothing
+  --   (others)   B, Hilton's director of sport and the owner's key read
+  --              none of A's rows, directly or through followed_schools(),
+  --              and B's DELETE of every row he may removes none of A's
+  --   (pupil)    a pupil's account follows Hilton: nobody else reads it,
+  --              not Hilton's director of sport, not his school's office;
+  --              and a staged pupil's verified guardian, who is his family
+  --              (is_family_of), reads none of his rows, by the table or by
+  --              followed_schools()
+  --   (unfollow) A stops following Westville: by the door, and by his own
+  --              DELETE of a row, which only his own rows answer
+  --   (door)     an unknown code, an archived school, no answer, signed out:
+  --              refused, nothing written
+  --   (pad)      under a pad's credential the doors answer nothing and the
+  --              table reads nothing
+  --   (limit)    L follows fifty schools; the fifty-first is too_many, and
+  --              one he already follows is still ok
+  --   (archived) a school archived after L followed it: following it again
+  --              is refused, and stopping it through the door is not; his
+  --              list no longer names it
+  --   (today)    A's Today, as the API makes it: the public read signed out,
+  --              kept to the schools on his own list by the match header's
+  --              school codes, is v1, v2 and v3, and every one of them is in
+  --              the public read. This is a SQL copy of the filter; the real
+  --              one, followedToday() in services/api/public/public-api.mjs,
+  --              is held by services/api/public/public.test.mjs ("db/160:
+  --              following Westville…" to "…its followers' Today is empty at
+  --              once": a school that stops listing, a typed opponent whose
+  --              label is a followed school's name, a name given as a code)
+  --              and by the walk browser-first-run (groups 5 and 6)
+  --   (delist)   V160 stops listing: its own fixtures leave A's Today at
+  --              once (v1, v2); v3, which Westville lists and publishes,
+  --              stays, as it stays on the home page for everyone
+  --   (removed)  D's account deleted: his rows go with it
+  --   (erased)   a tripwire: the day account_erase(uuid) exists (SCRBRD-140
+  --              §3.8, ACCOUNT_LIFECYCLE §6.3, which keeps the app_user
+  --              row), E's account erased through it holds no follow;
+  --              until then it is staged and skipped
+  --   (grants)   the table: SELECT and DELETE to scrbrd_app, nothing else,
+  --              PUBLIC included; each door EXECUTE to scrbrd_app alone; and
+  --              PUBLIC, read at the top of this file, reaches none of it
+  --              (db/157's rule)
+  --
+  -- Falsified once each in its own rolled-back run, by a change made as the
+  -- owner just before the section ran: db/160 undone (the table and both
+  -- doors dropped) → (shape) red; followed_school_read made USING (true) →
+  -- (others) red; the read policy made to admit Hilton's registrar too (OR
+  -- app_user_id() = his id) → (pupil) red; followed_school_delete made
+  -- USING (true) → (others) red, B's unqualified DELETE taking A's rows; the archived
+  -- test dropped from follow_school() → (door) red; the pad guard on
+  -- SELECT dropped → (pad) red; the limit raised to 51 → (limit) red; the
+  -- person's foreign key made ON DELETE NO ACTION → (shape) red;
+  -- followed_schools() made to answer every row → (others) red; INSERT
+  -- granted to scrbrd_app → (grants) red; EXECUTE on followed_schools()
+  -- granted to PUBLIC → (grants) red. (today) and (delist) were falsified by
+  -- the listing left on (delist red: v1 stays) and by an unpublished v1
+  -- (today red). The guardian's arm: the read policy made to admit a
+  -- caller for whom is_family_of() of the row's account's player is true →
+  -- (pupil) red at the mother. (erased): a stand-in account_erase(uuid)
+  -- that tombstones the account and keeps its rows → (erased) red; one that
+  -- deletes them as well → green. (archived): the archived test put back
+  -- on stopping (archived_at IS NULL alone) → (archived) red.
+  DECLARE
+    ids   jsonb;
+    U_DOS uuid := '88888888-0000-0000-0000-000000000007';   -- Hilton's director of sport (§61's U_SARAH)
+    U_KEY uuid := '88888888-0000-0000-0000-000000000022';   -- superadmin, every capability
+    U_KID uuid := '88888888-0000-0000-0000-000000000001';   -- a pupil: player at Hilton
+    U_OFF uuid := '88888888-0000-0000-0000-00000000000c';   -- Hilton's registrar (guardian.link.manage)
+    A uuid; Bu uuid; D uuid; L uuid; E uuid; KID uuid; MUM uuid;
+    v text; n int; r record; codes text[]; i int;
+  BEGIN
+    -- (shape)
+    PERFORM _assert(to_regclass('followed_school') IS NOT NULL
+                    AND (SELECT string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod), ', ' ORDER BY a.attnum)
+                           FROM pg_attribute a WHERE a.attrelid = to_regclass('followed_school') AND a.attnum > 0 AND NOT a.attisdropped)
+                        = 'person_id uuid, school_id uuid, followed_on date'
+                    AND (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('followed_school'))
+                    AND (SELECT count(*) FROM pg_constraint c
+                          WHERE c.conrelid = to_regclass('followed_school') AND c.contype = 'f' AND c.confdeltype = 'c'
+                            AND c.confrelid IN ('app_user'::regclass, 'school'::regclass)) = 2,
+      '§138 (shape): followed_school is missing, holds more than two ids and a date, has row security off, or outlives its account or school');
+
+    ids := _seed_160();
+    A := (ids->>'u_a')::uuid; Bu := (ids->>'u_b')::uuid; D := (ids->>'u_d')::uuid; L := (ids->>'u_l')::uuid;
+    E := (ids->>'u_e')::uuid; KID := (ids->>'u_kid')::uuid; MUM := (ids->>'u_mum')::uuid;
+
+    -- (own)
+    PERFORM _as(A);
+    SELECT f.ok, f.reason, f.school_name INTO r FROM follow_school('V160', true) f;
+    PERFORM _assert(r.ok AND r.school_name = 'Verify Onesixty College', format('§138 (own): A could not follow V160 (%s)', r.reason));
+    SELECT f.ok INTO r FROM follow_school('WES', true) f;
+    SELECT f.ok INTO r FROM follow_school('WES', true) f;
+    PERFORM _assert(r.ok, '§138 (own): following Westville again was refused');
+    SELECT string_agg(s.code, ',' ORDER BY s.code) INTO v FROM followed_school f JOIN public_schools() p ON p.id = f.school_id
+      CROSS JOIN LATERAL (SELECT CASE p.name WHEN 'Verify Onesixty College' THEN 'V160' WHEN 'Westville Boys'' High' THEN 'WES' END AS code) s;
+    SELECT count(*) INTO n FROM followed_school;
+    PERFORM _assert(n = 2 AND v = 'V160,WES' AND _v160_stored(A) = 'V160@' || sa_today() || ',WES@' || sa_today(),
+      format('§138 (own): A reads %s rows (%s); stored %s', n, v, _v160_stored(A)));
+    SELECT string_agg(x.code || ':' || x.name, ',' ORDER BY x.code) INTO v FROM followed_schools() x;
+    PERFORM _assert(v = 'V160:Verify Onesixty College,WES:Westville Boys'' High', format('§138 (own): followed_schools() answers %s', v));
+
+    -- (others)
+    FOREACH v IN ARRAY ARRAY[Bu::text, U_DOS::text, U_KEY::text] LOOP
+      PERFORM _as(v::uuid);
+      SELECT count(*) INTO n FROM followed_school f WHERE f.person_id = A;
+      PERFORM _assert(n = 0 AND NOT EXISTS (SELECT 1 FROM followed_schools() x WHERE x.code IN ('V160', 'WES')),
+        format('§138 (others): %s reads %s of A''s rows, or his list', v, n));
+    END LOOP;
+    -- Unqualified, so only the DELETE policy decides (a WHERE would bring
+    -- the read policy in as well).
+    PERFORM _as(Bu);
+    DELETE FROM followed_school;
+    PERFORM _assert(_v160_stored(A) = 'V160@' || sa_today() || ',WES@' || sa_today(),
+      format('§138 (others): B''s DELETE left A with %s', _v160_stored(A)));
+
+    -- (pupil)
+    PERFORM _as(U_KID);
+    SELECT f.ok, f.reason INTO r FROM follow_school('HIL', true) f;
+    PERFORM _assert(r.ok, format('§138 (pupil): the pupil could not follow Hilton (%s)', r.reason));
+    FOREACH v IN ARRAY ARRAY[U_DOS::text, U_OFF::text, U_KEY::text, A::text] LOOP
+      PERFORM _as(v::uuid);
+      SELECT count(*) INTO n FROM followed_school f WHERE f.person_id = U_KID;
+      PERFORM _assert(n = 0, format('§138 (pupil): %s reads %s of the pupil''s follow rows', v, n));
+    END LOOP;
+    PERFORM _assert(_v160_stored(U_KID) = 'HIL@' || sa_today(), format('§138 (pupil): the pupil''s list is stored as %s', _v160_stored(U_KID)));
+    -- The staged pupil, and his verified guardian.
+    PERFORM _as(KID);
+    SELECT f.ok, f.reason INTO r FROM follow_school('WES', true) f;
+    PERFORM _assert(r.ok AND _v160_stored(KID) = 'WES@' || sa_today(), format('§138 (pupil): the staged pupil could not follow Westville (%s)', r.reason));
+    PERFORM _as(MUM);
+    PERFORM _assert(is_family_of((ids->>'p_kid')::uuid), '§138 (pupil): the fixture is void, the mother is not the staged pupil''s family');
+    SELECT count(*) INTO n FROM followed_school f WHERE f.person_id = KID;
+    PERFORM _assert(n = 0 AND NOT EXISTS (SELECT 1 FROM followed_schools()),
+      format('§138 (pupil): his verified guardian reads %s of the pupil''s follow rows, or a list', n));
+
+    -- (unfollow)
+    PERFORM _as(A);
+    SELECT f.ok INTO r FROM follow_school('WES', false) f;
+    PERFORM _assert(r.ok AND _v160_stored(A) = 'V160@' || sa_today(), format('§138 (unfollow): A stopped Westville and holds %s', _v160_stored(A)));
+    PERFORM follow_school('WES', true);
+    DELETE FROM followed_school f WHERE f.school_id = '22222222-2222-2222-2222-222222222222';
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 1 AND _v160_stored(A) = 'V160@' || sa_today() AND _v160_stored(U_KID) = 'HIL@' || sa_today(),
+      format('§138 (unfollow): A''s own DELETE removed %s rows; A holds %s', n, _v160_stored(A)));
+
+    -- (door)
+    SELECT string_agg(coalesce(f.reason, 'ok'), ',') INTO v
+      FROM (SELECT * FROM follow_school('NOPE160', true) UNION ALL SELECT * FROM follow_school('V160X', true)
+            UNION ALL SELECT * FROM follow_school('V160', NULL)) f;
+    PERFORM _assert(v = 'no_such_school,no_such_school,no_answer' AND _v160_stored(A) = 'V160@' || sa_today(),
+      format('§138 (door): an unknown code, an archived school and no answer answered %s; A holds %s', v, _v160_stored(A)));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT f.reason INTO v FROM follow_school('V160', true) f;
+    PERFORM _assert(v = 'not_signed_in' AND NOT EXISTS (SELECT 1 FROM followed_schools()) AND NOT EXISTS (SELECT 1 FROM followed_school),
+      format('§138 (door): signed out, the door answered %s, or a list was read', v));
+
+    -- (pad)
+    PERFORM _as(A);
+    PERFORM set_config('app.scope', 'pad', true);
+    SELECT f.reason INTO v FROM follow_school('WES', true) f;
+    SELECT count(*) INTO n FROM followed_school;
+    PERFORM _assert(v = 'not_signed_in' AND n = 0 AND NOT EXISTS (SELECT 1 FROM followed_schools()),
+      format('§138 (pad): under a pad''s credential the door answered %s and the table %s rows', v, n));
+    PERFORM set_config('app.scope', '', true);
+
+    -- (limit)
+    PERFORM _as(L);
+    FOR i IN 1..50 LOOP
+      PERFORM follow_school('V160-' || lpad(i::text, 2, '0'), true);
+    END LOOP;
+    SELECT count(*) INTO n FROM followed_school;
+    SELECT f.reason INTO v FROM follow_school('V160', true) f;
+    PERFORM _assert(n = 50 AND v = 'too_many' AND (SELECT f.ok FROM follow_school('V160-07', true) f)
+                    AND (SELECT count(*) FROM followed_school) = 50,
+      format('§138 (limit): L holds %s and the fifty-first answered %s', n, v));
+
+    -- (archived)
+    PERFORM _v160_archive('V160-50');
+    SELECT f.reason INTO v FROM follow_school('V160-50', true) f;
+    SELECT f.ok INTO r FROM follow_school('V160-50', false) f;
+    PERFORM _assert(v = 'no_such_school' AND r.ok AND (SELECT count(*) FROM followed_school) = 49
+                    AND NOT EXISTS (SELECT 1 FROM followed_schools() x WHERE x.code = 'V160-50'),
+      format('§138 (archived): following an archived school answered %s; stopping it answered %s, leaving %s', v, r.ok,
+             (SELECT count(*) FROM followed_school)));
+
+    -- (today)
+    PERFORM _as(A);
+    SELECT array_agg(x.code) INTO codes FROM followed_schools() x;
+    PERFORM set_config('app.user_id', '', true);
+    SELECT string_agg(k, ',' ORDER BY k) INTO v FROM (
+      SELECT CASE x.match_id WHEN (ids->>'v1')::uuid THEN 'v1' WHEN (ids->>'v2')::uuid THEN 'v2' WHEN (ids->>'v3')::uuid THEN 'v3'
+                             ELSE x.match_id::text END AS k
+        FROM public_live_fixtures() x CROSS JOIN LATERAL public_match_header(x.match_id) h
+       WHERE h.home_code = ANY (codes) OR h.away_code = ANY (codes)) q;
+    PERFORM _assert(codes = ARRAY['V160'] AND v = 'v1,v2,v3', format('§138 (today): A (following %s) is shown %s', codes, v));
+
+    -- (delist)
+    PERFORM _v160_list((ids->>'school')::uuid, false);
+    SELECT string_agg(k, ',' ORDER BY k) INTO v FROM (
+      SELECT CASE x.match_id WHEN (ids->>'v1')::uuid THEN 'v1' WHEN (ids->>'v2')::uuid THEN 'v2' WHEN (ids->>'v3')::uuid THEN 'v3'
+                             ELSE x.match_id::text END AS k
+        FROM public_live_fixtures() x CROSS JOIN LATERAL public_match_header(x.match_id) h
+       WHERE h.home_code = ANY (codes) OR h.away_code = ANY (codes)) q;
+    PERFORM _assert(v = 'v3', format('§138 (delist): V160 unlisted, A is shown %s (expected v3 alone, Westville''s)', v));
+
+    -- (removed)
+    PERFORM _as(D);
+    PERFORM follow_school('V160', true);
+    PERFORM _assert(_v160_stored(D) = 'V160@' || sa_today(), '§138 (removed): D''s follow was not stored');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v160_delete_user(D);
+    PERFORM _assert(_v160_stored(D) IS NULL, format('§138 (removed): D''s rows outlived his account: %s', _v160_stored(D)));
+
+    -- (erased)
+    PERFORM _as(E);
+    PERFORM follow_school('V160', true);
+    PERFORM _assert(_v160_stored(E) = 'V160@' || sa_today(), '§138 (erased): E''s follow was not stored');
+    IF to_regprocedure('account_erase(uuid)') IS NOT NULL THEN
+      EXECUTE 'SELECT account_erase($1)' USING E;
+      PERFORM _assert(_v160_stored(E) IS NULL, format('§138 (erased): an erased account kept its follows: %s', _v160_stored(E)));
+    END IF;
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (grants)
+    v := _v160_table_acl('followed_school');
+    PERFORM _assert(v = 'scrbrd_app:DELETE,scrbrd_app:SELECT', format('§138 (grants): followed_school is granted %s', v));
+    FOREACH v IN ARRAY ARRAY['follow_school(text,boolean)', 'followed_schools()'] LOOP
+      PERFORM _assert(array_to_string(_v156_acl(v), ',')
+                      = (SELECT proowner::regrole::text FROM pg_proc WHERE oid = v::regprocedure) || ':EXECUTE,scrbrd_app:EXECUTE',
+        format('§138 (grants): %s is granted %s', v, array_to_string(_v156_acl(v), ',')));
+    END LOOP;
+    v := coalesce(_v157_public_at_start(), '');
+    PERFORM _assert(v !~ '(followed_school|follow_school|followed_schools)\M',
+      format('§138 (grants): PUBLIC reaches the follow list or its doors: %s', left(v, 600)));
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('app.scope', '', true);
+  -- └── db/160 (section 138) ─────────────────────────────────────────
+  -- ┌── db/161 (section 139) ─────────────────────────────────────────
+  -- ── 139. "The school has answered your request": one notice to the waiting parent, the same words for a yes and a no; never a pupil; nobody else reads it (db/161; EXPERIENCE_PASS Q15) ──
+  -- Each case seeds its own people (_seed_161: a Hilton office of its own,
+  -- an asker and a second adult with no school, a Hilton pupil with his own
+  -- account, and the child asked about) and runs as scrbrd_app under each
+  -- person's session (_v161_case, an invoker). Labels:
+  --   (yes)     the office grants her guardian request: before, she reads
+  --             nothing; after, one notice, the words exact, stored as
+  --             db/109's (system, medium, news.read, not public, the
+  --             request its subject, no child, no side); a second grant is
+  --             already_decided and writes none
+  --   (no)      the office declines: she reads the same one notice, and
+  --             db/93's notice to the DSOs is still written, one more, to
+  --             no one person (db/93 untouched)
+  --   (same)    a yes and a no read the same title and body, which say
+  --             neither the answer nor anything of the child
+  --   (verify)  a link the office established and she waited on, verified
+  --             through guardian_link_verify(): one notice, the same words,
+  --             the link its subject; a second verify is db/08's
+  --             no_pending_link and writes none
+  --   (ended)   a link the office never verified, ended through db/109's
+  --             guardian_link_revoke(): the waiting parent reads one
+  --             notice, the same words, the link its subject, and never
+  --             "A link to a child has ended"; a verified link ended beside
+  --             it keeps db/109's notice word for word
+  --   (role)    the office ends a parent's guardian role over a verified
+  --             link and one never verified (db/77): db/77's role notice,
+  --             shared by both links' ending rows, is never reworded; she
+  --             reads "A role of yours has ended" and no "answered" notice
+  --   (left)    a never-verified link already dated by his leaving
+  --             (db/109's 'majority' row), then revoked: the revoke's
+  --             upsert takes its UPDATE branch, and she reads the answered
+  --             notice in the same words, the whole row pinned
+  --   (pupilend) a pupil's pending link ended by the office (path (c)):
+  --             he keeps db/109's own words, no answered notice (red-team S1)
+  --   (disabled) a shut account is told nothing, declined or granted;
+  --             opened again, the next answer reaches her (red-team S2)
+  --   (allpending) a guardian role ended over links all never verified
+  --             keeps db/77's role notice (Kameel, 16 Nov)
+  --   (nonguardian) a scorer's request declined and a coach's granted
+  --             write no answered notice
+  --   (twoschools) two requests at two schools: one notice each, each its
+  --             own school and its own request; (same) pins the notice's
+  --             life (expires_at - published_at) with its words
+  --   (pupil)   a pupil's account, answered by both doors (a declined
+  --             request, a verified link), holds and reads none; the adult
+  --             answered beside him holds both
+  --   (others)  a withdrawn request writes nothing; nobody but the asker
+  --             reads hers, by the table, my_notifications or
+  --             notification_by_id(): not the office that answered, not
+  --             Hilton's director of sport, not the owner's key, not a
+  --             verified Hilton guardian, not another adult, not a pupil,
+  --             not signed out; she opens her own
+  --   (sheet)   Q10 (Kameel, 15 Nov: "eleven"), through db/131's
+  --             fixture_sheet(), the one narrow read over match_squad (no
+  --             new read: db/131 R-H already is STEP4 Q10's shape, and §109
+  --             proves its other readers): the verified, live guardian of a
+  --             boy on the eleven reads the eleven, names and batting
+  --             order, of his end only; the guardian of a boy on no sheet,
+  --             a link not yet verified, a link that ended yesterday, the
+  --             other school's guardian and a session signed out read
+  --             nothing; the other end's names never show to her
+  --   (grants)  the words, the read door and the verify door EXECUTE to
+  --             scrbrd_app alone; the writer and the triggers' functions
+  --             granted to nobody (PUBLIC included)
+  --
+  -- Falsified, each case in its own rolled-back run (the cases called one
+  -- by one, every failure caught and reported): db/161 undone (its trigger
+  -- and policy dropped, db/08's guardian_link_verify() put back, its
+  -- functions dropped) → every case red but (role) and (sheet): (sheet)
+  -- stands on db/131 alone, and (role) asks that a notice is NOT reworded,
+  -- which nothing does without db/161. The recipient
+  -- cut (db/57) dropped and the door made to admit any reader of the title
+  -- → (others) red, and (no), (same), (verify) and (pupil) with it. The
+  -- writer without its pupil test → (pupil) red. A decline told in other
+  -- words ("It was declined.") → (no) and (same) red.
+  -- (ended): db/161's trigger on guardian_link_ending dropped → red (she
+  -- reads "A link to a child has ended"); its test made "every ending" (the
+  -- verified_at test taken out) → red at the verified parent. (role) and (left), run against db/161 as it stood at
+  -- 183eb8fc (no subject test, AFTER INSERT only) → both red: the role's
+  -- notice reworded to "answered"; "A link to a child has ended" after the
+  -- upsert's UPDATE branch. Each red again with the fix taken back out
+  -- (the subject test; then UPDATE OF notice_id).
+  -- (pupilend), (disabled) red against db/161 at d0ce6187 (no pupil test in
+  -- the ending trigger; no active test in the writer), and red again with
+  -- each test taken back out; (allpending) red with the subject test out;
+  -- (nonguardian) red with the trigger's role test out; (twoschools) red
+  -- with db/161 undone.
+  -- (sheet), with fixture_sheet()'s gate taken out (every live row of the
+  -- fixture to anyone signed in) → red at the named guardian (fourteen rows,
+  -- both ends); with its family test widened to any guardian link of the
+  -- caller's, verified or not, live or ended → red at the pending link; with
+  -- its end test taken out (every end once one is open) → red at the other
+  -- end's names.
+  PERFORM _v161_case('yes');
+  PERFORM _v161_case('no');
+  PERFORM _v161_case('same');
+  PERFORM _v161_case('verify');
+  PERFORM _v161_case('ended');
+  PERFORM _v161_case('role');
+  PERFORM _v161_case('left');
+  PERFORM _v161_case('pupilend');
+  PERFORM _v161_case('disabled');
+  PERFORM _v161_case('allpending');
+  PERFORM _v161_case('nonguardian');
+  PERFORM _v161_case('twoschools');
+  PERFORM _v161_case('pupil');
+  PERFORM _v161_case('others');
+  PERFORM _v161_case('sheet');
+  PERFORM _v161_case('grants');
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/161 (section 139) ─────────────────────────────────────────
   -- ┌── db/162 (section 140) ─────────────────────────────────────────
   -- ── 140. A fixture's officials are read signed in only while Officials is on for the fixture's school, db/156's choice; whoever may appoint still reads and writes them at the table; the appointments stay stored (db/162; SCRBRD-144; Kameel 13 Nov 2026) ──
   -- Staged by _v162_stage(): Hilton's 1XI at home to Westville's, one

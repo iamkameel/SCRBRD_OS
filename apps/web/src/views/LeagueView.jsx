@@ -5,13 +5,15 @@ import { D } from "../design/tokens.js";
 // Hilton's navy: a kit colour, data rather than theme (data/institution.js).
 const HILTON_KIT = "#003366";
 import { SR } from "../scorer/format.js";
-import { stat } from "../lib/format.js";
+import { heldOutLine, rankable, rowRate } from "../lib/compare.js";
 import { Avatar, Badge, Btn, Card, Pill, SectionHeader } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
 import { SeasonHistory } from "./SeasonHistoryView.jsx";
 import { RecordBoards } from "./records.jsx";
 import { AddFixtureModal } from "./fixtures.jsx";
 import { PlayingConditions } from "./playingconditions.jsx";
+import { CompetitionBracket, KnockoutBracket } from "./bracket.jsx";
+import { demoBracket } from "../lib/bracket.js";
 
 // The fixture planner (SCRBRD-123) loads when its tab is first opened.
 const FixturePlanner = lazy(() => import("./planner.jsx").then((m) => ({ default: m.FixturePlanner })));
@@ -82,6 +84,12 @@ function LeagueView({ role, homeBar = null }) {
   // carries its table on the competition row; a live competition has none
   // there and this read is where it comes from — with its divisions.
   const LADDER = useLive("league", role, 0, comp?.live ? { competitionId: comp.id } : null).rows;
+  // SCRBRD-060: a knockout draws its bracket where a league draws its table.
+  // A competition on the platform says so by comp_type; the demonstration's
+  // cup by its own `bracket`. Its first tab is the bracket, so "table" (the
+  // tab a competition opens on) means the bracket for a cup.
+  const isCup = !!comp && (comp.type==="knockout" || (!comp.live && !!comp.bracket));
+  const view = tab==="table" && isCup ? "bracket" : tab;
   const canEdit = holdsCapability(role,"competition.manage");
   // Recognition D23 / A15 (R5b): a list of players ordered by a figure — the
   // Top Performers tab, the Season Awards tab and its MVP — is drawn for
@@ -118,7 +126,9 @@ function LeagueView({ role, homeBar = null }) {
   // Top performers from squad: the demonstration's own school; in a live
   // session the read is already this reader's school, so every row of it.
   const ours = (p) => live || p.school==="HIL";
-  const topBat = PLAYERS.filter(p=>ours(p)&&p.avg>0).sort((a,b)=>b.avg-a.avg).slice(0,5);
+  // Q12: an average under thirty balls faced is a guide, not a figure, and ranks nobody.
+  const topBat = PLAYERS.filter(p=>ours(p)&&p.avg>0&&rankable(p,"avg")).sort((a,b)=>b.avg-a.avg).slice(0,5);
+  const topBatHeld = heldOutLine(PLAYERS.filter(p=>ours(p)&&p.avg>0), "avg");
   const topBowl = PLAYERS.filter(p=>ours(p)&&p.wkts>0).sort((a,b)=>b.wkts-a.wkts).slice(0,5);
 
   // Every school and team this reader's career rows actually carry — never a
@@ -172,7 +182,7 @@ function LeagueView({ role, homeBar = null }) {
       {/* Competition selector */}
       <div style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap"}}>
         {COMPETITIONS.map(c=>(
-          <button key={c.id} onClick={()=>{setSelComp(c.id);setTab("table");}} className="pressBtn" style={{
+          <button key={c.id} onClick={()=>{setSelComp(c.id);setTab("table");}} data-testid={`league-comp-${c.id}`} aria-pressed={comp?.id===c.id} className="pressBtn" style={{
             padding:"8px 16px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
             border:`1px solid ${selComp===c.id?D.amber+"55":D.border}`,
             background:selComp===c.id?D.amber+"10":D.surf1,
@@ -191,8 +201,9 @@ function LeagueView({ role, homeBar = null }) {
         <>
           {/* Tab bar */}
           <div style={{display:"flex",gap:"6px",marginBottom:"16px",flexWrap:"wrap"}}>
-            {["table","fixtures","results","performers","awards","records","history","conditions","planner"].filter(t=>{
-              if(t==="table") return comp.table||comp.type==="league"||comp.type==="tournament";
+            {["bracket","table","fixtures","results","performers","awards","records","history","conditions","planner"].filter(t=>{
+              if(t==="bracket") return isCup;
+              if(t==="table") return !isCup&&(comp.table||comp.type==="league"||comp.type==="tournament");
               // SCRBRD-114: a competition on the platform has playing conditions; a demonstration row has none to read.
               if(t==="conditions") return !!comp.live;
               // SCRBRD-123: the competition's manager plans its fixtures; the API decides who that is, this offers the tab to those whose role can.
@@ -202,19 +213,19 @@ function LeagueView({ role, homeBar = null }) {
               if(t==="records") return signedIn();
               return true;
             }).map(t=>(
-              <button key={t} aria-pressed={tab===t} data-testid={`league-tab-${t}`} onClick={()=>setTab(t)} className="pressBtn" style={{
+              <button key={t} aria-pressed={view===t} data-testid={`league-tab-${t}`} onClick={()=>setTab(t)} className="pressBtn" style={{
                 padding:"6px 16px",minHeight:"44px",borderRadius:D.pill,cursor:"pointer",textTransform:t==="conditions"||t==="planner"?"none":"capitalize",
-                border:`1px solid ${tab===t?D.amber+"55":D.border}`,background:tab===t?D.amber+"14":"transparent",
-                fontFamily:D.body,fontSize:"12px",fontWeight:tab===t?600:400,color:tab===t?D.amber:D.textMuted,
+                border:`1px solid ${view===t?D.amber+"55":D.border}`,background:view===t?D.amber+"14":"transparent",
+                fontFamily:D.body,fontSize:"12px",fontWeight:view===t?600:400,color:view===t?D.amber:D.textMuted,
               }}>{t==="conditions"?"Playing conditions":t==="planner"?"Fixture planner":t}</button>
             ))}
           </div>
 
           {/* ── TABLE ── */}
-          {tab==="table"&&comp.live&&(LADDER.length?<LiveLadder rows={LADDER} comp={comp}/>:(
+          {view==="table"&&comp.live&&(LADDER.length?<LiveLadder rows={LADDER} comp={comp}/>:(
             <div style={{textAlign:"center",padding:"40px",color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>No standings yet.</div>
           ))}
-          {tab==="table"&&!comp.live&&(comp.table?(
+          {view==="table"&&!comp.live&&(comp.table?(
             <Card>
               <div style={{padding:"14px 16px",borderBottom:`1px solid ${D.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
@@ -293,30 +304,18 @@ function LeagueView({ role, homeBar = null }) {
             <div style={{textAlign:"center",padding:"40px",color:D.textMuted,fontFamily:D.body,fontSize:"13px"}}>No standings table for this competition format.</div>
           ))}
 
-          {/* ── CUP BRACKET ── */}
-          {tab==="table"&&comp.bracket&&(
-            <div style={{marginTop:"16px"}}>
-              <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary,marginBottom:"14px"}}>Cup Bracket</div>
-              <div style={{display:"flex",gap:"16px",overflowX:"auto",paddingBottom:"8px"}}>
-                {comp.bracket.map(round=>(
-                  <div key={round.round} style={{minWidth:"220px"}}>
-                    <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.amber,letterSpacing:"0.06em",marginBottom:"10px"}}>{round.round}</div>
-                    <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-                      {round.fixtures.map((f,i)=>(
-                        <div key={i} style={{padding:"10px 12px",background:D.surf2,borderRadius:D.md,border:`1px solid ${f.status==="complete"?D.emerald+"22":D.border}`}}>
-                          <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:f.status==="complete"?D.textPrimary:D.textSecondary,marginBottom:"4px"}}>{f.home}</div>
-                          <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,marginBottom:"4px"}}>VS</div>
-                          <div style={{fontFamily:D.body,fontSize:"12px",fontWeight:500,color:f.status==="complete"?D.textPrimary:D.textSecondary,marginBottom:"6px"}}>{f.away}</div>
-                          {f.result&&<div style={{fontFamily:D.body,fontSize:"12px",color:f.result.includes("Hilton")?D.emerald:D.amber,fontStyle:"italic"}}>{f.result}</div>}
-                          {!f.result&&f.status!=="pending"&&<Badge color={D.sky}>Upcoming</Badge>}
-                          {f.status==="pending"&&<Badge color={D.textMuted}>TBD</Badge>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {/* ── CUP BRACKET (SCRBRD-060) ── */}
+          {view==="bracket"&&(
+            <Card sx={{padding:"14px 16px"}}>
+              <div style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary,marginBottom:"4px"}}>{comp.name}</div>
+              {comp.live
+                ? <div style={{marginBottom:"10px"}}><CompetitionBracket competitionId={comp.id}/></div>
+                : <>
+                    <div style={{marginBottom:"14px"}}><SourceLine testid="source-line-bracket-demo" demo demoWhy="an invented cup"
+                      scope={`${comp.teams} teams, ${comp.region}`} window={comp.season ?? null}/></div>
+                    <KnockoutBracket bracket={demoBracket(comp.bracket ?? [])}/>
+                  </>}
+            </Card>
           )}
 
           {/* ── FIXTURES ── */}
@@ -388,6 +387,7 @@ function LeagueView({ role, homeBar = null }) {
                 <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`}}>
                   <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary}}><Icon name="bat"/> Top Batters — {comp.ageGroup}</div>
                   <div data-testid="performers-batting-method" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{rankingMethod("average", ALL_SEASONS)}</div>
+                  {topBatHeld&&<div data-testid="performers-batting-held" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,marginTop:"2px"}}>{topBatHeld}</div>}
                 </div>
                 {topBat.map((p,i)=>(
                   <div key={p.id} style={{padding:"10px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px"}}>
@@ -398,11 +398,11 @@ function LeagueView({ role, homeBar = null }) {
                       <div style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{p.team}</div>
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:700,color:p.avg>=40?D.emerald:D.sky}}>{p.avg}</div>
+                      <div style={{fontFamily:D.mono,fontSize:"14px",fontWeight:700,color:p.avg>=40?D.emerald:D.sky}}>{rowRate(p,"avg").text}</div>
                       <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>avg</div>
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:D.mono,fontSize:"13px",color:D.amber}}>{stat(p.sr)}</div>
+                      <div style={{fontFamily:D.mono,fontSize:rowRate(p,"sr").held?"12px":"13px",color:rowRate(p,"sr").held?D.textMuted:D.amber}}>{rowRate(p,"sr").text}</div>
                       <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>SR</div>
                     </div>
                   </div>
@@ -426,7 +426,7 @@ function LeagueView({ role, homeBar = null }) {
                       <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>wkts</div>
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:D.mono,fontSize:"13px",color:p.econ<=6.5?D.emerald:D.amber}}>{p.econ}</div>
+                      <div style={{fontFamily:D.mono,fontSize:rowRate(p,"econ").held?"12px":"13px",color:rowRate(p,"econ").held?D.textMuted:p.econ<=6.5?D.emerald:D.amber}}>{rowRate(p,"econ").text}</div>
                       <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>econ</div>
                     </div>
                   </div>
@@ -486,20 +486,20 @@ function LeagueView({ role, homeBar = null }) {
               <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px"}}>
                 <RankedList testId="awards-run-scorers" icon="bat" title="Top Run-Scorers" color={D.sky}
                   rows={topRunScorers(AWARD_PLAYERS, awardScope)}
-                  primary={p=>p.runs} primaryLabel="runs" secondary={p=>p.avg} secondaryLabel="avg"
+                  primary={p=>p.runs} primaryLabel="runs" secondary={p=>rowRate(p,"avg").text} secondaryLabel="avg"
                   method={rankingMethod("runs", activeSeason)}/>
                 <RankedList testId="awards-wicket-takers" icon="ball" title="Top Wicket-Takers" color={D.violet}
                   rows={topWicketTakers(AWARD_PLAYERS, awardScope)}
-                  primary={p=>p.wkts} primaryLabel="wkts" secondary={p=>p.econ} secondaryLabel="econ"
+                  primary={p=>p.wkts} primaryLabel="wkts" secondary={p=>rowRate(p,"econ").text} secondaryLabel="econ"
                   method={rankingMethod("wickets", activeSeason)}/>
                 <RankedList testId="awards-batting-index" icon="trending-up" title="Best Batting Index" color={D.emerald}
                   rows={bestBattingAverages(AWARD_PLAYERS, awardScope).map(x=>({...x.player,index:x.index.value}))}
-                  primary={p=>p.index} primaryLabel="index" secondary={p=>p.avg} secondaryLabel="avg"
+                  primary={p=>p.index} primaryLabel="index" secondary={p=>rowRate(p,"avg").text} secondaryLabel="avg"
                   empty="Nobody here has faced the 30 balls the index needs yet."
                   method={rankingMethod("batting", activeSeason)}/>
                 <RankedList testId="awards-bowling-index" icon="trending-down" title="Best Bowling Index" color={D.orange}
                   rows={bestBowlingEconomies(AWARD_PLAYERS, awardScope).map(x=>({...x.player,index:x.index.value}))}
-                  primary={p=>p.index} primaryLabel="index" secondary={p=>p.econ} secondaryLabel="econ"
+                  primary={p=>p.index} primaryLabel="index" secondary={p=>rowRate(p,"econ").text} secondaryLabel="econ"
                   empty="Nobody here has bowled the 36 balls the index needs yet."
                   method={rankingMethod("bowling", activeSeason)}/>
               </div>

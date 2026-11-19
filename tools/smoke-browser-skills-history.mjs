@@ -50,6 +50,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4398);
 const API_PORT = port(8998);
@@ -141,7 +142,7 @@ async function signIn(page, email) {
   try { await tid(page, "os-main").waitFor({ timeout: 12000 }); return true; } catch { return false; }
 }
 async function nav(page, id) {
-  const l = tid(page, `nav-${id}`).first();
+  const l = (await destLocator(page, id));
   try { await l.waitFor({ timeout: 8000 }); await l.click({ timeout: 6000 }); return true; } catch { return false; }
 }
 /** Click and wait for the response a write makes, so nothing is judged before it answers. */

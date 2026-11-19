@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { Suspense, lazy, useState, useEffect } from "react";
 import { ROLES } from "../design/roles.js";
 import { D, inkOn, textOn, themed } from "../design/tokens.js";
 import { atLeast, bookNote, fitnessColor, humanDate, stat } from "../lib/format.js";
@@ -19,6 +19,7 @@ import { Sourced } from "../ui/sourced.jsx";
 import { SRC_BALLS, SRC_RECORD, WINDOW_ALL, dateWindow } from "../lib/sourceWords.js";
 import { MIN_BALLS_BOWLED, MIN_BALLS_FACED } from "@scrbrd/scoring";
 import { SealMark } from "../ui/sealMark.jsx";
+import { rowRate } from "../lib/compare.js";
 import { honourWords, isSealed, isWithdrawn, provenanceOf } from "../lib/recognitionWords.js";
 
 // ══════════════════════════════════════════════════════
@@ -32,7 +33,12 @@ import { honourWords, isSealed, isWithdrawn, provenanceOf } from "../lib/recogni
 // ══════════════════════════════════════════════════════
 //  PROFILES VIEW  — universal rich profiles
 // ══════════════════════════════════════════════════════
-function ProfilesView({ role, profileTarget, onClearTarget }) {
+/**
+ * `addressed`: the player an address named (/app/players/:id, lib/things.js). Opened on him where the roster
+ * read holds him; where it does not, the page says it is not one this account can open, and shows nothing of
+ * him. `onSelectPlayer`: the shell keeps the address on the player in view.
+ */
+function ProfilesView({ role, profileTarget, onClearTarget, addressed = null, onSelectPlayer = null }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const COACHES = useRows("coaches", role);
@@ -77,7 +83,15 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
     setSelId(id);
     setCat(category);
     setTab("overview");
+    if (category === "players") onSelectPlayer?.(id);
   };
+  // An address the roster read does not hold: said, once that read has answered (Q11: the server refuses the rest).
+  // Only once the roster read has answered whole (a partial read may hold him in the part that failed), and only
+  // with nobody opened: an address that named a coach or a member of staff opens that profile, not this card.
+  const addressAnswered = ["ok", "empty"].includes(rosterRead.state);
+  const addressRefused = !!addressed && addressAnswered && !selEntity && !PLAYERS.some((p) => p.id === addressed);
+  // Back and forward between two players' addresses: the page follows the address.
+  useEffect(() => { if (addressed) setSelId(addressed); }, [addressed]);
 
   // ── MiniSparkline ──
   const Spark = ({ data, color=D.emerald, height=28 }) => {
@@ -163,6 +177,9 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
             nothing the reader may see, and either way no card. */}
         <RecognitionCard playerId={p.id} role={role}/>
         <PassportCard playerId={p.id} role={role}/>
+        {/* Where his record may travel, and whether scouts see him: Settings' Passport, moved whole to the boy it
+            is about (EXPERIENCE_PASS §1.4, §1.6). Read only once asked for. */}
+        <PassportConsentPart key={p.id} player={p} role={role}/>
 
         {/* Tab nav */}
         <div style={{display:"flex",gap:"4px",padding:"10px 16px",borderBottom:`1px solid ${D.border}`,overflowX:"auto"}}>
@@ -181,10 +198,11 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
             <>
               {/* Season stats row */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(90px,1fr))",gap:"8px",marginBottom:"18px"}}>
-                {p.avg>0&&<StatBox label="Batting Avg" value={p.avg} color={p.avg>=40?D.emerald:p.avg>=25?D.sky:D.amber} big/>}
-                {p.sr>0&&<StatBox label="Strike Rate" value={p.sr} color={p.sr>=130?D.emerald:p.sr>=100?D.sky:D.amber} big/>}
+                {/* Q12: a child's rate only from thirty balls; under that, the count and "a guide, not a figure". The count is always said. */}
+                {p.avg>0&&(()=>{const r=rowRate(p,"avg");return <StatBox label="Batting Avg" value={r.held?"—":r.text} sub={r.held?r.text:r.count} color={r.held?D.textMuted:p.avg>=40?D.emerald:p.avg>=25?D.sky:D.amber} big/>;})()}
+                {p.sr>0&&(()=>{const r=rowRate(p,"sr");return <StatBox label="Strike Rate" value={r.held?"—":r.text} sub={r.held?r.text:r.count} color={r.held?D.textMuted:p.sr>=130?D.emerald:p.sr>=100?D.sky:D.amber} big/>;})()}
                 {p.wkts>0&&<StatBox label="Wickets" value={p.wkts} color={p.wkts>=15?D.rose:D.violet} big/>}
-                {p.econ>0&&<StatBox label="Economy" value={p.econ} color={D.sky} big/>}
+                {p.econ>0&&(()=>{const r=rowRate(p,"econ");return <StatBox label="Economy" value={r.held?"—":r.text} sub={r.held?r.text:r.count} color={r.held?D.textMuted:D.sky} big/>;})()}
                 {p.careerTotals?.innings&&<StatBox label="Innings" value={p.careerTotals.innings} big/>}
                 {p.careerTotals?.runs&&<StatBox label="Career Runs" value={p.careerTotals.runs} color={D.sky} big/>}
                 {p.careerTotals?.hs&&<StatBox label="High Score" value={p.careerTotals.hs} color={D.amber} big/>}
@@ -270,8 +288,8 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     ["High Score",   p.careerTotals?.hs||"—"],
                     ["Fifties",      p.careerTotals?.fifties||0],
                     ["Hundreds",     p.careerTotals?.hundreds||0],
-                    ["Batting Avg",  stat(p.avg)],
-                    ["Strike Rate",  stat(p.sr)],
+                    ["Batting Avg",  rowRate(p,"avg").text],
+                    ["Strike Rate",  rowRate(p,"sr").text],
                     // Live figures only (the demo rows carry none of these). A
                     // count a scorebook did not record is a dash, never 0, and a
                     // boundary count is "at least N" when an innings left it out.
@@ -311,7 +329,7 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
                     {[
                       ["Career Wickets", p.careerTotals?.wktsTotal||"—"],
                       ["Season Wickets", p.wkts],
-                      ["Economy Rate",   stat(p.econ)],
+                      ["Economy Rate",   rowRate(p,"econ").text],
                       ["Balls Bowled",   p.careerTotals?.balls||"—"],
                       ...(p.live?[
                         ["Wides",    atLeast(p.wides,p.bowlingWithoutExtras>0)],
@@ -606,6 +624,11 @@ function ProfilesView({ role, profileTarget, onClearTarget }) {
   return (
     <div className="os-page">
       <SectionHeader title="Profiles" sub="Players · Coaches · Staff — in-depth profiles with stats and analysis" color={D.violet}/>
+      {addressRefused && (
+        <Card sx={{ padding: "14px 16px", marginBottom: "16px" }} data-testid="address-refused">
+          <span role="status" style={{ fontFamily: D.body, fontSize: "14px", color: D.textPrimary }}>This player&apos;s page is not one this account can open. The players below are the ones it can.</span>
+        </Card>
+      )}
 
       <div style={{display:"grid",gridTemplateColumns:"var(--g-side-l,220px 1fr)",gap:"16px",alignItems:"start"}}>
         {/* Left: entity list */}
@@ -882,6 +905,36 @@ function PassportCard({ playerId, role }) {
           </div>
         ))}
       </Card>
+    </div>
+  );
+}
+
+/**
+ * Settings' Passport part on the player page (EXPERIENCE_PASS §1.6, Slice 6):
+ * where his record may travel and whether scouts see him, the same part a
+ * family has on his file, narrowed to him. It was a tab of everybody's
+ * Settings; here it is offered to whoever opens his page, behind a tap, so
+ * opening a boy reads nothing of it. What it lists is the server's
+ * (passport_consent_read, scouting_consent: his family, the office of a
+ * school named, his own coach), as it always was.
+ */
+const PassportTab = lazy(() => import("./SettingsView.jsx").then((m) => ({ default: m.PassportTab })));
+function PassportConsentPart({ player, role }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{padding:"0 24px"}}>
+      <button type="button" onClick={()=>setOpen((o)=>!o)} aria-expanded={open} data-testid="player-passport-consent-open" className="pressBtn"
+        style={{marginTop:"12px",minHeight:"44px",padding:"0 16px",borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",cursor:"pointer",
+          fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>
+        {open ? "Hide where his record may travel" : "Where his record may travel"}
+      </button>
+      {open&&(
+        <div style={{marginTop:"12px"}} data-testid="player-passport-consent">
+          <Suspense fallback={<div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>Reading…</div>}>
+            <PassportTab role={role} only={[{ id: player.id, name: player.name }]}/>
+          </Suspense>
+        </div>
+      )}
     </div>
   );
 }

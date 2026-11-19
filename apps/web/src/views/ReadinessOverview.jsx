@@ -3,8 +3,8 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { ROLES } from "../design/roles.js";
 import { api, signedIn } from "../lib/api.js";
 import { holdsCapability } from "../rbac/index.js";
-import { cockpitGate } from "../lib/cockpit.js";
-import { requestCoach, requestCorrections, requestDuties, requestResult } from "../lib/cockpitNav.js";
+import { requestCorrections } from "../lib/cockpitNav.js";
+import { doorsFor } from "./queueDoors.js";
 import { useLive } from "../lib/live.js";
 import { clockTime, headerWords } from "../lib/queue.js";
 import { readState } from "../lib/readState.js";
@@ -230,27 +230,9 @@ function ReadinessOverview({ role, onNav }) {
   const byId = useMemo(() => new Map(matches.map((m) => [m.id, m])), [matches]);
   const schools = new Set((assignments ?? []).map((a) => a.school).filter(Boolean)).size;
 
-  // The one door of a row: the exact screen it opens, said on the row in its own words. A door the reader has no
-  // screen for falls back to the fixture, or to nothing (a row with no door is information).
-  const doorOf = (/** @type {import("../lib/queue.js").Row} */ row) => {
-    const a = row.action;
-    if (!a || a.kind === "retry") return null;
-    const m = a.matchId ? byId.get(a.matchId) : null;
-    const fixture = m ? { label: "Open the fixture", go: () => { requestDuties(m.id); onNav("matches"); } } : null;
-    const page = (/** @type {string} */ p, /** @type {string} */ label) => (nav.includes(p) ? { label, go: () => onNav(p) } : null);
-    switch (a.kind) {
-      case "side": return m && cockpitGate(assignments, m) ? { label: "Open the side", go: () => { requestCoach(m.id, false); onNav("matches"); } } : fixture;
-      case "duties": return m ? { label: "Open the duties", go: () => { requestDuties(m.id); onNav("matches"); } } : null;
-      case "bus": return page("logistics", "Open the bus") ?? fixture;
-      case "conditions": return page("competitions", "Open the conditions") ?? fixture;
-      case "fixture": return fixture;
-      case "requests": return page("management", "Decide");
-      case "claims": return page("settings", "Confirm");
-      case "register": return page("staff", "The register");
-      case "result": return a.matchId ? { label: a.label, go: () => { requestResult(/** @type {string} */ (a.matchId)); onNav("matches"); } } : null;
-      default: return null;
-    }
-  };
+  // The one door of a row: the exact screen it opens, and on it the row's own thing (views/queueDoors.js, shared
+  // with Today's "Needs you"). A door the reader has no screen for falls back to the fixture, or to nothing.
+  const doorOf = doorsFor({ nav, byId, assignments, onNav });
 
   const openCorrections = (id) => { requestCorrections(id); onNav("matches"); };
   const header = q.header;

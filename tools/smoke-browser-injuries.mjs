@@ -41,6 +41,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads } from "./walk-wait.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4397);
 const API_PORT = port(8998);
@@ -127,10 +128,10 @@ async function signIn(page, email) {
   if (!(await click(page, re, 3000))) await page.fill("#login-email", email);
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2200);
-  return /Match Centre|Dashboard/i.test(await page.$eval("body", (el) => el.innerText)) || (await tid(page, "persona-bar").count()) === 1;
+  return /Match Centre|Dashboard|Today|Matches/i.test(await page.$eval("body", (el) => el.innerText)) || (await tid(page, "persona-bar").count()) === 1;
 }
 async function go(page, key) {
-  const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
+  const l = (await destLocator(page, key));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1800);
@@ -210,8 +211,10 @@ try {
   ok("...nor on her Injuries list: a departed boy's record is the office's (READERS Q3, db/116)",
      await tid(P, `injury-${LEAVER_INJ}`).count() === 0 && await tid(P, `left-school-${LEAVER_INJ}`).count() === 0);
   ok("the old 'is coming' line is gone", await tid(P, "injury-writes-coming").count() === 0 && !/is coming/.test(await main(P)));
-  const navText = await P.locator('[data-testid="nav-injuries"]').first().innerText().catch(() => "?");
-  ok("no count on the Injuries nav item, not even for her", !/\d/.test(navText) && (await P.locator('[data-testid="nav-injuries"] [data-testid$="badge"]').count()) === 0, navText);
+  // Injuries is Team's "Who's out" section now (EXPERIENCE_PASS §1.3): no count on it, nor on the Team entry.
+  const navSel = '[data-testid="home-squad-section-injuries"], [data-testid="nav-squad"], [data-testid="nav-profiles"]';
+  const navText = (await P.locator(navSel).allInnerTexts().catch(() => ["?"])).join(" ");
+  ok("no count on the Injuries nav item, not even for her", !/\d/.test(navText) && (await P.locator('[data-testid="home-squad-section-injuries"] [data-testid$="badge"], [data-testid="nav-squad"] [data-testid$="badge"]').count()) === 0, navText);
   ok("the count sits in her list's own heading and nowhere else",
      (await tid(P, "reviews-due-count").count()) === 1 && (await P.locator('[data-testid="reviews-due-count"]').evaluate((e) => !!e.closest('[data-testid="reviews-due"]')).catch(() => false)));
   const tr = await P.$eval('[data-testid="record-injury-open"]', (b) => parseFloat(getComputedStyle(b).transitionDuration)).catch(() => 9);
@@ -340,9 +343,8 @@ try {
   const n = await open({ narrow: true });
   const N = n.page;
   ok("she signs in on a narrow phone", await signIn(N, "medical@example.invalid"));
-  await tid(N, "mnav-more").click({ timeout: 5000 }).catch(() => {});
-  await N.waitForTimeout(500);
-  const dr = N.locator('[data-testid="drawer-injuries"]');
+  // On the phone, Injuries is Team's "Who's out" (EXPERIENCE_PASS §1.3): Team on the bar, then the section.
+  const dr = await destLocator(N, "injuries");
   if (await dr.count()) await dr.click({ timeout: 5000 }).catch(() => {});
   await afterReads(N, 1800);
   ok("Injuries opens from the drawer", await tid(N, "reviews-due").count() === 1);
@@ -387,7 +389,7 @@ try {
     // (READERS Q3, db/116), so she still reads a departed boy's row, marked.
     if (who === "director") ok("...a boy who has left the school is marked so (the injuries read says it, status tier)", await tid(C, `left-school-${LEAVER_INJ}`).count() === 1);
     if (who === "coach") ok("...a coach's own side only: the boy who left is no longer in it, so no row and no mark", await tid(C, `injury-${LEAVER_INJ}`).count() === 0);
-    const nav = await C.locator('[data-testid="nav-injuries"]').first().innerText().catch(() => "?");
+    const nav = (await C.locator('[data-testid="home-squad-section-injuries"], [data-testid="nav-squad"]').allInnerTexts().catch(() => ["?"])).join(" ");
     ok("no count on the Injuries nav item", !/\d/.test(nav), nav);
     ok("no page error", c.errors.length === 0 && c.refusals.length === 0, [...c.errors, ...c.refusals].join(" | "));
     if (who === "coach") {

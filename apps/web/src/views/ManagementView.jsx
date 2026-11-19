@@ -21,7 +21,8 @@ import { ColoursPanel } from "./colours.jsx";
 //  `users` or a setter for them; `onDirectoryChanged` tells the app to re-read
 //  its copy (which Settings still draws from) after a write.
 // ══════════════════════════════════════════════════════
-function ManagementView({ role, onDirectoryChanged }) {
+/** `usersAfter`: drawn under the Users tab alone (Settings' Roles, as Access's reference; EXPERIENCE_PASS §1.6). */
+function ManagementView({ role, onDirectoryChanged, usersAfter = null }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   const MATCHES = useRows("matches", role);
@@ -85,7 +86,10 @@ function ManagementView({ role, onDirectoryChanged }) {
       {tab==="users"&&(
         <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
           <RequestsPanel role={role} players={PLAYERS}/>
+          {/* Q22 (db/158): the platform's list of schools people asked SCRBRD to add is the Platform home's
+              School requests now (EXPERIENCE_PASS §1.3, Slice 6; views/schoolRequests.jsx SchoolRequestsView). */}
           <PeoplePanel role={role} players={PLAYERS} onDirectoryChanged={onDirectoryChanged}/>
+          {usersAfter}
         </div>
       )}
 

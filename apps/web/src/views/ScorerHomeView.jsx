@@ -168,6 +168,14 @@ function savedAtWords(ts, now) {
 function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
   const [nonce, setNonce] = useState(0);
   const retry = () => setNonce((n) => n + 1);
+  // Signal back: count again, and read the server again (18 Nov 2026). Today
+  // sends nothing itself; only the pad does, which the count's words say.
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const back = () => setNonce((n) => n + 1);
+    window.addEventListener("online", back);
+    return () => window.removeEventListener("online", back);
+  }, []);
   // The clock, ticking, so "last observed 3 minutes ago" and a lease's end move without a read.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30e3); return () => clearInterval(t); }, []);

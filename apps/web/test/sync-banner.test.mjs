@@ -142,5 +142,17 @@ group("E. The match-day audit (Kameel, 30 Oct 2026): every stop says what to do,
      .every((m) => Number(m.match(/(\d+)/)[1]) >= 44));
 }
 
+group("F. An attached pad with no signal says so (18 Nov 2026: it said nothing beside \"Held 2\")");
+{
+  const off = bannerFor(st({ attached: true, reason: null, online: false, pendingList: [ball, ball] }), MATCH);
+  ok("attached, offline, two to send: \"No signal.\", the count saved", off?.reason === "offline" && off?.lead === "No signal."
+     && /2 balls are saved on this device and will send when there is a connection/.test(off?.text ?? ""), off);
+  const unreached = bannerFor(st({ attached: true, reason: "unreachable", online: true, pendingList: [ball] }), MATCH);
+  ok("attached, a signal that reaches nothing: could not reach the server", /Could not reach the server/.test(unreached?.lead ?? "")
+     && /1 ball is saved on this device/.test(unreached?.text ?? ""), unreached);
+  ok("attached, offline, nothing to send: nothing to say", bannerFor(st({ attached: true, reason: null, online: false }), MATCH) === null);
+  ok("attached and online with a send under way: nothing to say", bannerFor(st({ attached: true, reason: null, online: true, pendingList: [ball] }), MATCH) === null);
+}
+
 console.log(`\n${"─".repeat(52)}\nSYNC BANNER: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

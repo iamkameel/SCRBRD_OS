@@ -38,12 +38,30 @@ import { homeBody, homeHead, oversOfBalls, timeOfDay } from "./shared.jsx";
  * THE SENTENCE (EXPERIENCE_PASS §3.8). A live card says where the match
  * stands in words (statusSentence): "Westville Boys' High 1XI need 45 off 34".
  * The chase is said ONLY from a `target` the read gives. Working it out here
- * from the first innings would be wrong after a rain revision, and the read
- * cannot yet say whether there was one: `target` and `revised` arrive with
- * public_live_fixtures()'s re-emit (slice 3b, Q14). Until then the sentence
- * is the score and the overs, "Hilton College 1XI 86/3 after 12.4 overs".
- * With `revised` true, the balls left are not said either: a revision can
- * change the overs as well as the runs.
+ * from the first innings would be wrong after a rain revision, which only
+ * the server can see: `target` and `revised` come from public_live_fixtures()
+ * (db/159, slice 3b, Q14), and the target only while the innings being
+ * played is a chase (the second; a two-innings match's fourth; never a super
+ * over). Without one the sentence is the score and the overs, "Hilton
+ * College 1XI 86/3 after 12.4 overs". With `revised` true, the balls left
+ * are not said either: a revision can change the overs as well as the runs.
+ *
+ * An innings is named by its place in `scores`, never by its `innings`
+ * number: the log counts innings from 0 (ball_event.innings), so the second
+ * innings is innings 1. A limited-overs fixture plays two innings, so a
+ * third or fourth is a super over's, and is called one.
+ *
+ * WHEN THE CHASE IS OVER, IT IS NOT SAID (the Opus re-check, 15 Nov). The
+ * fixture stays `live` until the scorer finalises it, so the read can carry
+ * a target after the chase has ended. No "need" is said once the read sends
+ * the result's words, once the runs are reached, once ten wickets are down
+ * or the balls are gone, or while the chase's runs are not a number the
+ * fold could add: the score and the overs instead, which are true.
+ *
+ * WHAT WAS REVISED. "Revised target" only where the target moved: in a
+ * one-innings match, a target other than the first innings plus one. Where
+ * it did not, the overs did ("overs revised"); where the read cannot tell
+ * (two innings a side), only "revised".
  *
  * THE LOOK. Drawn as the ground's scoreboard (T.board: black in both themes,
  * painted-white figures, lime for a figure that just changed), because on a
@@ -80,6 +98,11 @@ const oversWords = (balls) => {
 };
 const count = (n) => Number.isFinite(n) && n >= 0 ? Math.trunc(n) : null;
 
+/** Is the score at place `i` a super over's? A limited-overs fixture's innings after its two. */
+const superOverAt = (f, i) => i >= 2 && (count(f?.overs) ?? 0) > 0;
+/** "1st innings", "2nd innings", or "Super over". */
+const inningsLabel = (f, i) => (superOverAt(f, i) ? "Super over" : `${ordinal(i + 1)} innings`);
+
 /**
  * Where a match stands, in one sentence (EXPERIENCE_PASS §3.8). Team facts
  * only: a side's name, its runs and wickets, the overs, the runs it needs.
@@ -98,19 +121,32 @@ export function statusSentence(f) {
   if (!cur) return "Under way, with no ball scored yet";
   const side = cur.side === "home" ? f.home : cur.side === "away" ? f.away : null;
   const who = side ? nameOf(side) : null;
-  const runs = count(cur.runs) ?? 0;
+  const known = count(cur.runs);
+  const runs = known ?? 0;
+  const wickets = count(cur.wickets) ?? 0;
   const target = count(f.target);
-  if ((cur.innings ?? 1) >= 2 && target && target > 0) {
-    const need = target - runs;
-    if (need <= 0) return `${who ?? "The side batting second"} ${who ? "have" : "has"} reached the target of ${target}`;
-    const overs = count(f.overs);
-    const left = overs && !f.revised ? overs * 6 - (count(cur.balls) ?? 0) : null;
+  const overs = count(f.overs);
+  const left = overs && !f.revised ? overs * 6 - (count(cur.balls) ?? 0) : null;
+  // The chase, only while it is on: see WHEN THE CHASE IS OVER above.
+  if (scores.length >= 2 && target && target > 0 && !f.result && known !== null
+      && target - known > 0 && wickets < 10 && !(left !== null && left <= 0)) {
+    const need = target - known;
     const ask = left && left > 0 ? `${need} off ${left}` : `${need} to win`;
     const lead = who ? `${who} need` : "Needed:";
-    return `${lead} ${ask}${f.revised ? `, revised target ${target}` : ""}`;
+    return `${lead} ${ask}${f.revised ? revisedWords(scores, target) : ""}`;
   }
-  const fig = `${runs}/${count(cur.wickets) ?? 0} after ${oversWords(cur.balls)}`;
-  return who ? `${who} ${fig}` : `${ordinal(cur.innings ?? 1)} innings ${fig}`;
+  const fig = `${runs}/${wickets} after ${oversWords(cur.balls)}`;
+  return who ? `${who} ${fig}` : `${inningsLabel(f, scores.length - 1)} ${fig}`;
+}
+
+/**
+ * What the umpires revised, as the read lets it be said (WHAT WAS REVISED).
+ * @param {any[]} scores @param {number} target
+ */
+function revisedWords(scores, target) {
+  const first = count(scores[0]?.runs);
+  if (scores.length !== 2 || first === null) return " (revised)";
+  return target !== first + 1 ? `, revised target ${target}` : ", overs revised";
 }
 
 // The board's own colours: fixed, as the board is (tokens.js `board`).
@@ -175,7 +211,7 @@ function Card({ f, rel }) {
       </div>
       {!bySide && scores.length > 0 && (
         <ul style={{ listStyle: "none", margin: `${T.space.md} 0 0`, padding: 0, ...homeBody(), ...mono(), fontSize: "14px", color: T.board.figure, display: "grid", gap: "4px" }}>
-          {scores.map((s) => <li key={s.innings}><span style={{ color: T.board.dim }}>{ordinal(s.innings)} innings</span> <Fig v={figure(s)} size="14px" /> <span style={{ color: T.board.dim }}>({oversOfBalls(s.balls)})</span></li>)}
+          {scores.map((s, i) => <li key={s.innings}><span style={{ color: T.board.dim }}>{inningsLabel(f, i)}</span> <Fig v={figure(s)} size="14px" /> <span style={{ color: T.board.dim }}>({oversOfBalls(s.balls)})</span></li>)}
         </ul>
       )}
       {live && (

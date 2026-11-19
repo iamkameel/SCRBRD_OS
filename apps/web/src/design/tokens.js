@@ -837,6 +837,11 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
 .os-news-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:16px}
 .os-news-lead{display:grid;grid-template-columns:minmax(0,1fr)}
 @media (min-width:900px){.os-news-lead{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}}
+/* A knockout's bracket (views/bracket.jsx, SCRBRD-060): one round after
+   another on a phone, the rounds as columns on a wide screen, never wider
+   than the page. Nothing in it moves. */
+.os-bracket{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+@media (min-width:1000px){.os-bracket{grid-template-columns:repeat(var(--rounds,1),minmax(0,1fr))}}
 .os-news-card{cursor:pointer;transition:transform .19s cubic-bezier(.4,0,.2,1),border-color .19s cubic-bezier(.4,0,.2,1)}
 .os-news-cover svg{transition:transform .42s cubic-bezier(.22,1,.36,1)}
 @media (hover:hover){.os-news-card:hover{transform:translateY(-2px)}.os-news-card:hover .os-news-cover svg{transform:scale(1.03)}}
@@ -1048,6 +1053,23 @@ button{touch-action:manipulation}
   /* The search is its icon on a phone, still named by its aria-label, so the bar's other three controls keep their 44px (I32). */
   .os-search{flex:0 0 auto!important;justify-content:center}
   .os-search-text{display:none}
+  /* The header carries the bell, "Raise a concern", the name and the role on every screen (EXPERIENCE_PASS §1.2). */
+  .os-topbar{gap:6px!important;padding:0 8px!important}
+  /* "Raise a concern" keeps its words on a phone, on two lines ("Raise a" over "concern"), so the bar still fits 320. */
+  .os-concern{padding:0 4px!important;gap:4px!important}
+  .os-concern-text{white-space:normal!important;width:min-content}
+}
+/* The narrower phones: the live chip is its pulsing dot alone, still named "Live matches", the role button its icon
+   (aria-haspopup still says it opens a menu), and the header's gaps close up, so its six 44px controls and the words
+   of "Raise a concern" keep their room. */
+@media(max-width:399px){
+  .os-topbar{gap:4px!important}
+  .os-topbar-live{padding:0!important;min-width:44px;justify-content:center}
+  .os-topbar-live-text,.os-role-caret{display:none}
+}
+@media(max-width:359px){
+  .os-topbar{gap:2px!important;padding:0 6px!important}
+  .os-concern{padding:0!important}
 }
 /* A phone at 200% zoom is under 200px wide: the bars wrap into a second row rather than run off the screen, and the
    page leaves room under the taller bottom bar (I32). */

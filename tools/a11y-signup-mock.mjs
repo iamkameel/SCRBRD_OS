@@ -31,6 +31,11 @@ export function signupApi() {
   /** @type {Record<string, () => any[]>} */
   const reads = {
     role_requests: () => requested,
+    // db/158 (Q22): the newcomer's own note asking SCRBRD to add a school, so
+    // the walk counts its row under Your requests. Invented.
+    school_add_requests: () => handle.who !== "newcomer" ? [] : [
+      { id: "5a000000-0000-0000-0000-000000000001", school_name: "Walk Unlisted High", town: "Howick", job: "coach", state: "open",
+        requested_at: "2026-10-02T09:00:00Z", decided_at: null, name: "Walk Newcomer", email: "walk.newcomer@example.invalid", mine: true, decidable: false }],
     my_sign_ins: () => [{ id: "51000000-0000-0000-0000-000000000001", provider: "google.com", email_at_link: "coach@example.invalid", linked_at: "2026-10-01T08:00:00Z",
       linked_how: "office_confirmed", last_sign_in_at: "2026-10-02T07:30:00Z", revoked_at: null },
       { id: "51000000-0000-0000-0000-000000000002", provider: "google.com", email_at_link: "old.address@example.invalid", linked_at: "2026-09-01T08:00:00Z",
@@ -67,6 +72,8 @@ export function signupApi() {
       return { status: 200, body: { id: "r1000000-0000-0000-0000-000000000001", state: "pending" } };
     }
     if (pathname === "/api/competition-invitations") return { status: 200, body: { invitations: [] } };
+    // The follow list (db/160): an account that follows nothing yet, as a new one does.
+    if (pathname === "/api/follows/today") return { status: 200, body: { asOf: "2026-11-15", fixtures: [], schools: [] } };
     const read = /^\/api\/read\/([a-z_]+)$/.exec(pathname);
     if (read) return { status: 200, body: { resource: read[1], rows: reads[read[1]]?.() ?? [] } };
     return { status: 404, body: { error: "not_found" } };

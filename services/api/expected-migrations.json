@@ -151,5 +151,10 @@
   "155_public_name_surfaces.sql",
   "156_switched_off_public_reads.sql",
   "157_managed_api_roles.sql",
-  "162_officials_signed_in_reads.sql"
+  "158_school_add_request.sql",
+  "159_live_read_target.sql",
+  "160_followed_schools.sql",
+  "161_school_answered_notice.sql",
+  "162_officials_signed_in_reads.sql",
+  "165_live_from_first_ball.sql"
 ]

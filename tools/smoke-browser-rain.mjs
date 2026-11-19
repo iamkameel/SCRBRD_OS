@@ -52,6 +52,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { openSettingsPart } from "./walk-nav.mjs";
 
 const WEB_PORT = port(5371);
 const API_PORT = port(8871);
@@ -260,10 +261,8 @@ try {
   // ── F ────────────────────────────────────────────────────────
   group("F. The operator's DLS table screen (the synthetic table only)");
   const ops = await openAs("platform@example.invalid");
-  await ptid(ops, "nav-settings").first().click({ timeout: 6000 });
-  await afterReads(ops, 1200);
-  ok("Settings offers the operator the DLS table tab", (await ops.locator("#settings-tab-dls").count()) === 1);
-  await ops.locator("#settings-tab-dls").click({ timeout: 4000 });
+  ok("the Platform home offers the operator the DLS table (Settings' tab before Slice 6)", await openSettingsPart(ops, "dls")
+     && (await ptid(ops, "home-pitchdeck-section-dls").count()) === 1);
   await afterReads(ops, 1200);
   ok("...whose list is drawn from the server", (await ptid(ops, "dls-tables").count()) === 1);
   const fillMeta = async () => {
@@ -307,8 +306,8 @@ try {
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
   await afterReads(page, 2200);
-  ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
-  await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  ok("a seeded scorer gets in", (await page.locator('[data-testid="os-main"]').count()) > 0);
+  await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(page, 1200);
   const opened = await page.evaluate(() => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
@@ -475,9 +474,9 @@ try {
      ? (await psaid(coach, "mc-rain-difference")) === after.differenceWords : (await ptid(coach, "mc-rain-difference").count()) === 0);
   rainWords.push(await psaid(coach, "mc-rain"));
   // Away and back: the tab remounts and reads the server's list again (published now).
-  await ops.locator("#settings-tab-me").click({ timeout: 4000 });
+  await ptid(ops, "home-pitchdeck-section-roadmap").click({ timeout: 4000 });
   await ops.waitForTimeout(600);
-  await ops.locator("#settings-tab-dls").click({ timeout: 4000 });
+  await ptid(ops, "home-pitchdeck-section-dls").click({ timeout: 4000 });
   ok("the operator's list reads it published", await waitWords(ops, `dls-table-${loadedRow?.version}`, /^published$/im));
   await ptid(ops, `dls-withdraw-note-${loadedRow?.version}`).fill("The walk is done with the synthetic table");
   await ptid(ops, `dls-withdraw-${loadedRow?.version}`).click({ timeout: 4000 });

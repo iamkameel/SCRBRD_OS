@@ -47,6 +47,7 @@ import { roleGrants } from "../packages/policy/src/roles.mjs";
 import { IMPORTS } from "../services/api/io/import-api.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator, openSettingsPart } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4386);
 const API_PORT = port(8917);
@@ -123,11 +124,11 @@ async function signIn(page, email, password = "") {
   if (password) await page.fill("#login-password", password);
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  return (await page.locator('[data-testid="os-main"]').count()) > 0;
 }
 /** To a sidebar destination, by the nav's own test id. */
 async function nav(page, key) {
-  const n = tid(page, `nav-${key}`).first();
+  const n = (await destLocator(page, key));
   if (!(await n.count())) {
     if (DEBUG) console.log(`  (no nav-${key}; there is: ${(await page.locator('[data-testid^="nav-"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")))).join(" ")})`);
     return false;
@@ -137,11 +138,10 @@ async function nav(page, key) {
   return true;
 }
 const tabsOf = (page) => page.locator('[role="tablist"][aria-label="Settings sections"] [role="tab"]').evaluateAll((els) => els.map((e) => e.id.replace("settings-tab-", "")));
+/** School, People: Settings' Import part, under the staff register's screen (EXPERIENCE_PASS §1.6, Slice 6). */
 async function toImport(page) {
-  if (!(await nav(page, "settings"))) return false;
-  const tab = page.locator("#settings-tab-import");
-  if (!(await tab.count())) return false;
-  await tab.click({ timeout: 5000 });
+  if (!(await openSettingsPart(page, "import"))) return false;
+  if (!(await tid(page, "settings-panel-import").count())) return false;
   try { await tid(page, "import-panel").waitFor({ timeout: 8000 }); } catch { return false; }
   return true;
 }
@@ -195,8 +195,10 @@ try {
   const co = await open();
   ok("the coach signs in", await signIn(co.page, COACH));
   ok("...and opens Settings", await nav(co.page, "settings"));
+  // Slice 6: Settings is his own (Me); Import is School, People's, which he does not reach.
   const coachTabs = await tabsOf(co.page);
-  ok("his tabs are drawn, and Import is not one of them", coachTabs.length > 0 && !coachTabs.includes("import"), coachTabs.join());
+  ok("his own Settings is drawn, and Import is not in it", (await tid(co.page, "own-settings").count()) === 1 && !coachTabs.includes("import")
+     && (await tid(co.page, "settings-panel-import").count()) === 0, coachTabs.join());
   ok("...and no Staff destination either (no user.read)", await tid(co.page, "nav-staff").count() === 0);
   ok("no console errors for the coach", co.errors.length === 0, co.errors.join(" | "));
   await co.ctx.close();
@@ -205,8 +207,9 @@ try {
   const posts = [];
   off.page.on("request", (r) => { if (r.method() === "POST" && /\/api\/import\//.test(r.url())) posts.push(r.url()); });
   ok("the office signs in", await signIn(off.page, OFFICE));
-  ok("...opens Settings → Import", await toImport(off.page));
-  ok("Import is among the office's tabs", (await tabsOf(off.page)).includes("import"));
+  ok("...opens School, People → Import", await toImport(off.page));
+  ok("Import is on the office's School, People", (await tid(off.page, "home-staff-section-staff").getAttribute("aria-pressed")) === "true"
+     && (await tid(off.page, "settings-panel-import").count()) === 1);
   // The office holds both kinds' capabilities, so it is offered a choice,
   // players first; the rest of this walk imports players.
   const kindOpts = await tid(off.page, "import-kind").locator("option").allInnerTexts().catch(() => []);
@@ -358,7 +361,7 @@ try {
   const demo = await open("http://127.0.0.1:9");
   demo.page.on("request", (r) => { if (r.method() === "POST") demoPosts.push(r.url()); });
   ok("the demonstration's super admin gets in", await signIn(demo.page, "admin@hilton.co.za", "admin123"));
-  ok("...and reaches Settings → Import", await toImport(demo.page));
+  ok("...and reaches School, People → Import", await toImport(demo.page));
   ok("it asks for a sign-in", /Sign in to the live platform to import/.test(await tid(demo.page, "import-panel").innerText()));
   ok("...and offers no file, Check or Import", await demo.page.locator('[data-testid="import-file"], [data-testid="import-check"], [data-testid="import-run"]').count() === 0);
   ok("nothing was posted", demoPosts.length === 0, demoPosts.join(","));

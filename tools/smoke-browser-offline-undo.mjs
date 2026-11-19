@@ -104,7 +104,7 @@ const click = async (re, ms = 3000) => {
   await page.waitForTimeout(300);
   return true;
 };
-/** The sync pill's word, from its accessible name: "Sent", "Held 2", "On device"… */
+/** The sync pill's word, from its accessible name: "Sent", "No signal · 2 to send", "On device"… */
 const pill = async () => {
   const l = page.locator('[aria-label^="Sync status:"]').first();
   if (!(await l.count())) return "";
@@ -202,7 +202,7 @@ const onPad = async () => {
 };
 /** Match Centre → the 1XI v Michaelhouse card → its scorer. */
 const openFixture = async () => {
-  await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(page, 1200);
   // Match Centre draws the fixture's card and its scoring button once its
   // reads answer, which on a first opening can take a while:
@@ -228,7 +228,7 @@ const signIn = async () => {
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
   await afterReads(page, 2200);
-  return /Match Centre|Dashboard/i.test(await text());
+  return (await page.locator('[data-testid="os-main"]').count()) > 0;
 };
 /**
  * After a reload: back on the pad. The API token lives in memory only and is

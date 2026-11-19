@@ -2439,6 +2439,30 @@ export const READ_QUERIES = {
             order by case r.state when 'pending' then 0 else 1 end, r.requested_at desc`,
   },
 
+  /*
+   * REQUESTS TO ADD A SCHOOL (db/158, EXPERIENCE_PASS Q22): the asker's own,
+   * and every one for the platform (platform.tenant.manage), by the table's
+   * row security alone. The state as read: an open request ninety days old
+   * is "lapsed" (school_add_request_shown()). Who asked comes through
+   * school_add_requester(), which answers the asker and the platform only.
+   * `decidable` is the server's word, the platform's door's own tests, so
+   * the list draws Added and Decline only where an answer would be taken.
+   */
+  school_add_requests: {
+    text: `select r.id, r.school_name, r.town, r.job,
+                  school_add_request_shown(r.state, r.requested_at) as state,
+                  r.requested_at, r.decided_at, q.name, q.email,
+                  r.person_id = app_user_id() as mine,
+                  (school_add_request_shown(r.state, r.requested_at) = 'open'
+                   and app_holds('platform.tenant.manage')
+                   -- Never one's own (db/158: own_request): no Added or Decline on it.
+                   and r.person_id <> app_user_id()) as decidable
+             from school_add_request r
+             left join lateral (select x.name, x.email from school_add_requester(r.id) x) q on true
+            order by case school_add_request_shown(r.state, r.requested_at) when 'open' then 0 else 1 end,
+                     r.requested_at desc`,
+  },
+
   /**
    * THE WAYS I SIGN IN (SCRBRD-140, db/81): Google accounts linked to this
    * account, live and revoked — never the provider's uid. my_sign_ins() reads

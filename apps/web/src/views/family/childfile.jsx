@@ -23,6 +23,7 @@ import { InjuryHistory } from "../injuryreview.jsx";
 import { PublicNameSwitch } from "../publicname.jsx";
 import { GUARDIAN_TERMS_VERSION, agreedWords } from "../../lib/guardianLink.js";
 import { AgreeTerms } from "./terms.jsx";
+import { HealthConsentPrompt, HealthConsentSection } from "../healthconsent.jsx";
 import { Action, Card, Line, OpenRow, Unread } from "./parts.jsx";
 
 /** Roles that never belong in "who else can see this": the break-glass keys and the platform. */
@@ -49,6 +50,8 @@ export function ChildFileCard({ child, role, w, todo = null, onAgreed }) {
   useEffect(() => { if (panel) opened.current?.scrollIntoView?.({ block: "start" }); }, []);  // eslint-disable-line react-hooks/exhaustive-deps -- on arrival only
   const name = child.knownAs || child.name;
   const toggle = (p) => setPanel((x) => (x === p ? null : p));
+  // The ask and the switch share one nonce, so an answer given in either redraws both.
+  const [consentNonce, setConsentNonce] = useState(0);
   return (
     <Card label={child.name} testid={`family-child-${child.id}`}>
       <Line quiet>{[child.schoolName, child.team, child.verification === "verified" ? "link verified" : null].filter(Boolean).join(" · ")}</Line>
@@ -60,10 +63,13 @@ export function ChildFileCard({ child, role, w, todo = null, onAgreed }) {
           : `The ${w.place}'s terms for ${name} are not agreed yet.`}</Line>
       )}
       <Line testid={`family-link-end-${child.id}`}>{linkEndWords(child, w)}</Line>
+      {/* Q16: health monitoring's one-time ask, on his own file (it was Settings → Me's). */}
+      <HealthConsentPrompt role={role} playerId={child.id} onChanged={() => setConsentNonce((n) => n + 1)}/>
       <div ref={opened} style={{ display: "grid", gap: T.space.xs }}>
         {/* GA-I20 A2 (N6, D7): the terms, read whole and agreed for her own link; agreed, the record's words. */}
         <OpenRow onClick={() => toggle("terms")} testid={`family-open-terms-${child.id}`}>
-          <span style={{ ...T.role.body, fontWeight: 600 }}>{child.consent === "granted" ? `The ${w.place}'s terms` : "Read and agree"}</span>
+          <span style={{ ...T.role.body, fontWeight: 600 }}>{child.consent === "granted" ? `The ${w.place}'s terms`
+            : child.verification && child.verification !== "verified" ? "Read the terms" : "Read and agree"}</span>
           <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>
             {child.consent === "granted" ? agreedWords(child.consentAt, child.consentVersion) : `The ${w.place}'s terms for ${name}, version ${GUARDIAN_TERMS_VERSION}`}
           </span>
@@ -86,9 +92,9 @@ export function ChildFileCard({ child, role, w, todo = null, onAgreed }) {
         {panel === "health" && <Health child={child} role={role}/>}
         <OpenRow onClick={() => toggle("consents")} testid={`family-open-consents-${child.id}`}>
           <span style={{ ...T.role.body, fontWeight: 600 }}>Consents</span>
-          <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>Public match pages, where {name}&apos;s {w.record} may travel, and scouts</span>
+          <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>Public match pages, health monitoring, where {name}&apos;s {w.record} may travel, and scouts</span>
         </OpenRow>
-        {panel === "consents" && <Consents child={child} role={role}/>}
+        {panel === "consents" && <Consents child={child} role={role} nonce={consentNonce} onChanged={() => setConsentNonce((n) => n + 1)}/>}
       </div>
     </Card>
   );
@@ -292,10 +298,12 @@ export function Health({ child, role, self = false }) {
  * (PUBLIC_DATA C1, publicname.jsx). The consents read and the terms are
  * phase B.
  */
-export function Consents({ child, role }) {
+export function Consents({ child, role, nonce = 0, onChanged }) {
   return (
     <div data-testid="family-consents" style={{ display: "grid", gap: T.space.sm }}>
       <PublicNameSwitch child={child}/>
+      {/* Q16: health monitoring, moved whole from Settings → Me; the wording, version and rules are healthconsent.jsx's. */}
+      <HealthConsentSection role={role} playerId={child.id} nonce={nonce} onChanged={onChanged}/>
       <PassportTab role={role} only={[child]}/>
     </div>
   );

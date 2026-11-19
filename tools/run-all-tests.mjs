@@ -340,6 +340,9 @@ const SUITES = [
   // posts, shows refusals in the route's words; every code db/77 answers has them.
   ["end-role", "apps/web/test/end-role.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["decide-words", "apps/web/test/decide-words.test.mjs"],
+  // Q22 (db/158): "Ask SCRBRD to add my school": every refusal's status and
+  // words, one job list, the note's three fields, and where the screens draw it.
+  ["school-ask", "apps/web/test/school-ask.test.mjs"],
   // GA-I21: one label for demo / practice / read only — and, with the official
   // result (db/114), provisional / under review / official, the state the
   // server gives — and the bowling-ceiling refusal in words.
@@ -437,11 +440,16 @@ const SUITES = [
   // source destination, and a role that reaches none of a home's parts has no
   // entry for it; modules; the bar drawn; the 12px and 44px floors.
   ["homes", "apps/web/test/homes.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["shell-homes", "apps/web/test/shell-homes.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["office", "apps/web/test/office.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["icons",    "apps/web/test/icons.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The public home page's sections (SCRBRD-142 phase 1): signed out, the
   // strip and news hidden on a 404, the analytics toggle writes the pref and
   // starts nothing, the 12px and 44px floors, the copy.
   ["home-page", "apps/web/test/home-page.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // EXPERIENCE_PASS Q8 (db/160): the public page's offer at a pause, the app's
+  // follow hint, and the Followed schools block.
+  ["follow-screens", "apps/web/test/follow.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The home page's arena (Kameel, 6 Nov 2026): the rig's camera and ball, and which picture a device gets.
   ["home-arena", "apps/web/test/home-arena.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The newsfeed's kicker, standfirst, SA bands, per-viewer opened marks, and
@@ -481,6 +489,9 @@ const SUITES = [
   // SCRBRD-140 phase 2 (db/92): the staff register's words for every code
   // db/92 answers, and staff.csv read as the office's spreadsheet writes it.
   ["register-api", "services/api/write/register-api.test.mjs"],
+  // EXPERIENCE_PASS Q8 (db/160): the follow list's routes, as the caller and
+  // nobody else; its Today is the public list kept to his schools.
+  ["follow-api", "services/api/write/follow-api.test.mjs"],
   // Notifications S1 (D1, D2, D5, D17, D18): the lists and the per-kind
   // contract agree with db/89's CHECKs and functions; opening a notice and
   // "Mark all read" write the reader's own receipt and nothing else; one
@@ -508,6 +519,8 @@ const SUITES = [
   ["write",    "services/api/write/write.test.mjs"],
   // The planner's drafts through the fixture route's own validation (SCRBRD-123).
   ["planner-drafts", "services/api/write/planner-drafts.test.mjs"],
+  // SCRBRD-060: a knockout's bracket from the published draw, its fixtures and results.
+  ["bracket", "services/api/write/bracket.test.mjs"],
   ["migrate",  "tools/migrate.test.mjs"],
   // No file under tools/, services/ or packages/ hard-codes the database
   // address outside tools/db-url.mjs, which is what lets a worktree run

@@ -818,7 +818,8 @@ ok("the team manager's menu has Training, by team.training.run",
    ROLES.teammanager.nav.includes("training") && !roleGrants("teammanager", NAV_CAPABILITY.training)
    && roleGrants("teammanager", NAV_ALSO.training));
 ok("...the assistant coach keeps it, by player.development.read", ROLES.assistantcoach.nav.includes("training"));
-ok("...and the second capability opens Training alone", Object.keys(NAV_ALSO).join() === "training");
+// Slice 6: the school's Record, out of Settings, is also opened by the capability of any panel it carries.
+ok("...and the second capability opens Training and the school's Record alone", Object.keys(NAV_ALSO).join() === "training,record");
 ok("...and `also` names only real policy roles",
    Object.values(ROLE_IDENTITY).every((id) => (id.also ?? []).every((r) => POLICY_ROLES.includes(r))));
 // The team role does not read a team-mate's ratings; the boy's own screens
@@ -847,6 +848,14 @@ ok("each persona's bar is a group of its own, so the rail draws one section and 
 // A persona is the SET of roles held, never one badge.
 ok("a guardian, twice over (two schools), is the family persona", personaFor(["guardian", "guardian"]) === "family");
 ok("a player without his own record is not the pupil persona", personaFor(["player"]) === null);
+// EXPERIENCE_PASS Q2 (decided 13 Nov): appointed to score, a pupil or a parent keeps his own app.
+ok("a pupil who also scores keeps the pupil's app: the same four items, no fifth",
+   personaFor(["player", "selfaccess", "scorer"]) === "pupil"
+   && label(navForRoles(["player", "selfaccess", "scorer"])) === "Home · Matches · Passport · Me");
+ok("a parent who also scores keeps the family's app: the same four items",
+   personaFor(["guardian", "scorer"]) === "family" && label(navForRoles(["guardian", "scorer"])) === "Home · Matches · Notices · Family");
+ok("scoring alone is no persona, and a scorer who is also a coach keeps the staff menu",
+   personaFor(["scorer"]) === null && personaFor(["guardian", "scorer", "coach"]) === null && navForRoles(["scorer"]).length > 0);
 ok("a parent who is also staff is not a persona: she keeps the staff menu",
    personaFor(["directorofsport", "coach", "guardian"]) === null && navForRoles(["directorofsport", "coach", "guardian"]).includes("dashboard"));
 ok("...and gains the family's Home and Family beside it, and only those",

@@ -176,3 +176,14 @@ export function liveRefreshMs() {
   const asked = typeof window !== "undefined" ? Number(window.__SCRBRD_LIVE_MS__) : NaN;
   return Number.isFinite(asked) && asked >= 1000 ? asked : 15000;
 }
+
+/**
+ * How often a public page opened before the first ball asks again, while its
+ * fixture is near its start (19 Nov 2026): once a minute, the scheduled
+ * header's own cache life (public-api.mjs SETTLED_TTL_MS), so it turns live
+ * by itself. A walk shortens it as it shortens liveRefreshMs().
+ */
+export function soonRefreshMs() {
+  const asked = typeof window !== "undefined" ? Number(/** @type {any} */ (window).__SCRBRD_SOON_MS__) : NaN;
+  return Number.isFinite(asked) && asked >= 1000 ? asked : 60000;
+}

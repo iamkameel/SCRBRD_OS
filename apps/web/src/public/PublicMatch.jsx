@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react
 import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { boardInnings, boundaryCount, matchLine, revisionNotice, sidesOf, statusSentence, teamOf, tossWords } from "../lib/matchCentre.js";
+import { FollowOffer } from "./followOffer.jsx";
 import { humanDateTime } from "../lib/format.js";
 import { SummaryTab, CommentaryTab, PartnershipsTab, summaryIsResult } from "../views/matchcentre/tabs-core.jsx";
 import { SourcedLazy, ballsLine, shotsCaptured } from "../ui/sourcedLazy.jsx";
@@ -10,7 +11,7 @@ import { HeaderScores, StatusLine } from "../views/matchcentre/scores.jsx";
 import { matchInningsOf } from "../lib/superOver.js";
 import { Panel, Quiet } from "../views/matchcentre/bits.jsx";
 import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
-import { liveRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
+import { liveRefreshMs, soonRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { publicStory, read, readPar } from "./reads.js";
 import { publicOfficial } from "../lib/official.js";
@@ -86,12 +87,20 @@ function usePhone(px = 640) {
 function usePublicMatch(matchId) {
   const [state, setState] = useState({ loading: true, missing: false, error: null, header: null, fold: {}, events: [], people: {}, last: 0, par: null, okAt: null, stale: false, refreshing: false });
   const [tick, setTick] = useState(0);
-  const live = state.header?.status === "live";
+  const status = state.header?.status;
+  const live = status === "live";
+  // Opened before the first ball (19 Nov 2026): it asks again once a minute
+  // from an hour before the start until twelve hours after it, so it turns
+  // live by itself; then at the live pace. A tab out of view asks nothing.
+  const startsAt = state.header?.startsAt ? Date.parse(state.header.startsAt) : NaN;
+  const soon = status === "scheduled" && Number.isFinite(startsAt)
+    && Date.now() > startsAt - 3600e3 && Date.now() < startsAt + 12 * 3600e3;
+  const every = live ? Math.max(5000, liveRefreshMs()) : soon ? soonRefreshMs() : 0;
   useEffect(() => {
-    if (!live) return undefined;
-    const t = setInterval(() => { if (!document.hidden) setTick((x) => x + 1); }, Math.max(5000, liveRefreshMs()));
+    if (!every) return undefined;
+    const t = setInterval(() => { if (!document.hidden) setTick((x) => x + 1); }, every);
     return () => clearInterval(t);
-  }, [live]);
+  }, [every]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -280,7 +289,21 @@ export function PublicMatch({ matchId, view }) {
 
   if (data.loading) return <Frame><Quiet testid="public-loading">Loading the match…</Quiet></Frame>;
   if (data.missing) return <Frame><Quiet testid="public-missing">This page is not available. The link may be wrong, or the match may not be public.</Quiet></Frame>;
-  if (!match) return <Frame><Quiet testid="public-error">Could not load this match{data.error === "busy" ? " — too many requests; try again shortly" : ""}.</Quiet></Frame>;
+  // A ground with poor signal is where this page is opened: a failed read offers the same read again, and says nothing
+  // more than it did (glossary review item 5).
+  if (!match) return (
+    <Frame>
+      <div aria-live="polite">
+        <Quiet testid="public-error">Could not load this match{data.error === "busy" ? " — too many requests; try again shortly" : ""}.</Quiet>
+        <button type="button" data-testid="public-retry" onClick={() => { if (!data.refreshing) data.refresh(); }} className="pressBtn os-state"
+          style={{ minHeight: "44px", minWidth: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", background: "transparent",
+            border: `1px solid ${T.brand.accentText}`, borderRadius: T.radius.pill, cursor: "pointer", color: T.brand.accentText,
+            fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
+          {data.refreshing ? "Trying again…" : "Try again"}
+        </button>
+      </div>
+    </Frame>
+  );
 
   const sides = sidesOf(match);
   const isLive = match.status === "live";
@@ -354,6 +377,10 @@ export function PublicMatch({ matchId, view }) {
           {match.status === "upcoming" && played.length === 0 && <PreTossCard match={match} weather={null}/>}
           {notice && <RevisionBanner notice={notice}/>}
         </div>
+        </ErrorBoundary>
+        {/* EXPERIENCE_PASS §2.4 step 2, Q8: at a pause, "Follow Hilton College's matches". An offer, never a wall. */}
+        <ErrorBoundary name="follow offer" fallback={null}>
+          <FollowOffer header={data.header} state={st.state} matchId={matchId}/>
         </ErrorBoundary>
 
         <TabStrip tabs={TABS} tab={tab} setTab={setTab} narrow={phone} label="Match"/>

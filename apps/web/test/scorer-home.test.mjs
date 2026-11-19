@@ -173,7 +173,8 @@ group("Resume: what this device is mid-way through");
   ok("a fixture the server no longer lists him is shown, with no door back into it", f && f.openable === false && f.match === null, f);
   const unknown = resumeItems({ saved: [saved[1]], pending: new Map([["b", null]]), serverMatches: null });
   ok("an outbox that could not be read is not 'nothing to send'", unknown[0]?.pending === null && /Could not/.test(pendingWords(null)));
-  ok("the words: 3 to send, nothing waiting", pendingWords(3) === "3 to send" && pendingWords(0) === "Nothing waiting to send");
+  ok("the words: 3 to send and where from, nothing waiting", pendingWords(3) === "3 to send · open the pad to send them"
+     && pendingWords(1) === "1 to send · open the pad to send it" && pendingWords(0) === "Nothing waiting to send");
   ok("a practice id never reaches here (its log is under practice:)", resumeItems({ saved: [], pending: new Map(), serverMatches: null }).length === 0);
 }
 

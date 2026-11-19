@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { HomeBar, useHomeSection } from "../shell/HomeBar.jsx";
 import { D } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
@@ -13,6 +13,11 @@ import { holdsCapability } from "../rbac/index.js";
 import { BookBus } from "./transportbook.jsx";
 import { textOn } from "../design/tokens.js";
 import { Icon } from "../ui/icons.jsx";
+
+// The lift records due for purge (SCRBRD-124 phase 2, db/76), for whoever oversees lifts (transport.lift.oversee):
+// on Transport since review SF4 of Slice 6, where the transport coordinator's menu already reaches, as well as on the
+// school's Record for the office. Fetched only for a holder, so Transport reads and loads nothing of it for anyone else.
+const LiftPurgePanel = lazy(() => import("./lifts.jsx").then((m) => ({ default: m.LiftPurgePanel })));
 
 // A timestamp as a departure time. Absent renders as an em dash, never as a
 // time: a trip with no departure recorded has none, and "00:00" would be a
@@ -120,7 +125,7 @@ function LogisticsView({ role, section = null, onNav }) {
               const w        = WEATHER[m.id];
               const isManifest = manifest?.id===m.id;
               return (
-                <Card key={m.id} sx={{border:`1px solid ${D.border}`,overflow:"visible"}}>
+                <Card key={m.id} data-testid={`trip-card-${m.id}`} sx={{border:`1px solid ${D.border}`,overflow:"visible"}}>
                   <div style={{padding:"16px"}}>
                     <div style={{display:"flex",gap:"14px",alignItems:"flex-start",flexWrap:"wrap"}}>
                       {/* Trip info */}
@@ -237,6 +242,9 @@ function LogisticsView({ role, section = null, onNav }) {
               </Card>
             )}
           </div>
+          {signedIn()&&schoolsWhere("transport.lift.oversee").length>0&&(
+            <div data-testid="logistics-lift-purge"><Suspense fallback={null}><LiftPurgePanel/></Suspense></div>
+          )}
         </div>
       )}
 

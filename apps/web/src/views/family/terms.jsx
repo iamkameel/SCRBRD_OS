@@ -17,7 +17,7 @@ import { T } from "../../design/tokens.js";
 import { api } from "../../lib/api.js";
 import { profile } from "../../lib/session.js";
 import { AGREE_KEPT_WORDS, GUARDIAN_TERMS_VERSION, agreeRefusalWords, agreedWords } from "../../lib/guardianLink.js";
-import { TermsText } from "../terms.jsx";
+import { TermsText, WaitingTerms } from "../terms.jsx";
 import { Action, Line } from "./parts.jsx";
 
 /**
@@ -35,6 +35,10 @@ export function AgreeTerms({ child, w, onAgreed, onClose }) {
         <TermsText schoolName={child.schoolName} testid="family-terms-text"/>
       </div>
     );
+  }
+  // Q15: a link the office has not yet checked may read the terms, never agree to them.
+  if (child.verification && child.verification !== "verified") {
+    return <div data-testid={`family-terms-${child.id}`}><WaitingTerms schoolName={child.schoolName} testid="family-terms-waiting"/></div>;
   }
   const agree = async () => {
     if (busy || !read) return;

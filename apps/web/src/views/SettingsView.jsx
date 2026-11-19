@@ -7,7 +7,9 @@ import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Sele
 import { Metric, MetricGroup } from "../ui/data.jsx";
 import { useLive, useRows } from "../lib/live.js";
 import { profile, schoolsWhere } from "../lib/session.js";
-import { sportsOn, useSports } from "../lib/features.js";
+import { personaOf, sportsOn, useSports } from "../lib/features.js";
+import { keepsConsentInSettings } from "../lib/family.js";
+import { EighteenCard, HealthConsentSection } from "./healthconsent.jsx";
 import { holdsCapability } from "../rbac/index.js";
 import { ownRecordsOf, passportConsentReader, readsScoutingOf } from "../lib/held.js";
 import { unionReadLines, unionReadWords } from "../lib/unionReads.js";
@@ -25,7 +27,6 @@ import { StaffRegisterPanel, canSeeRegister } from "./staffRegister.jsx";
 // The enrolment form, its words and the one-time code card are shared with the
 // Management screen (views/enrol.jsx): one form, one set of refusals in words.
 import { ENROL_MESSAGE, EnrolModal, IssuedCodeModal, PUPILS_BY_OFFICE, grantableFor, issuedFrom, opensPupilAccounts } from "./enrol.jsx";
-import { EighteenCard, HealthConsentPrompt, HealthConsentSection } from "./healthconsent.jsx";
 // SCRBRD-140: the ways a person signs in (Me), and the office's Google claims (People).
 import { WaysToSignIn } from "./signins.jsx";
 // GA-I03 (db/85): ending every sign-in the person holds, this device's last.
@@ -42,38 +43,35 @@ import { Icon } from "../ui/icons.jsx";
 import { StateLabel } from "../ui/stateLabel.jsx";
 
 // ══════════════════════════════════════════════════════
-//  SETTINGS & ACCESS CONTROL
+//  SETTINGS, TAKEN APART  (EXPERIENCE_PASS §1.6, Slice 6)
 //
-//  Six tabs (seven for platform support), each answering one question the office actually asks:
-//    People    — who can sign in, and who on the roster cannot yet
-//    Roles     — what each role may do, read from the policy
-//    Me        — my own access, this device, my clearances
-//    Passport  — where a boy's record may travel
-//    School    — what is on record for each school I belong to
-//    Roadmap   — what is built, what is built underneath, what is planned
-//    Import    — for those who may import: a spreadsheet of boys, checked and then imported
-//    Support   — platform support holders only: an hour at one school
-//    DLS table — platform reference holders only: the rain rule's table (SCRBRD-130 R2)
+//  This screen held nine tabs for five audiences. Each part now lives where
+//  its readers look for it, moved whole, each under the gate it had or the
+//  narrower one of the home it moved to (design/roles.js, design/homes.js):
+//    People, Import   — School, People (the office), under the staff register
+//    Roles            — School, Access, under Management, as its reference
+//    School           — School, Record
+//    Roadmap          — Platform, What's built
+//    Support, DLS     — Platform, Support access and DLS table
+//    Passport         — the player page (the office, his coach), Family on the
+//                       child's file (a parent), and here for a pupil's own record
+//  What is left under the person's own name is theirs: Me, and the passport of
+//  their own record. `part` names one of the moved parts, drawn where it now
+//  lives; with none, this is the person's own Settings.
 //
 //  Everything drawn here is live and row-scoped: the reads go through the
 //  same choke point as every other screen, and the client decides nothing
 //  about authority. The one exception is the roadmap, which is a list about
-//  the codebase and is kept honest against it by hand.
+//  the codebase and is kept honest against it by hand. A part's reads are its
+//  own: opening your own Settings reads nobody else's accounts.
 // ══════════════════════════════════════════════════════
 
-const TABS = [
-  { id: "users",    label: "People",   hint: "Accounts, and who is missing one" },
-  { id: "roles",    label: "Roles",    hint: "What each role may do" },
+// The person's own Settings: Me, and where his own record may travel when he
+// has one (a pupil's self-access link; under eighteen his guardian decides,
+// and he may take a school's name back himself).
+const OWN_TABS = [
   { id: "me",       label: "Me",       hint: "My access, this device, my clearances" },
-  { id: "passport", label: "Passport", hint: "Where a record may travel" },
-  { id: "school",   label: "School",   hint: "What is on record for each school" },
-  { id: "upgrades", label: "Roadmap",  hint: "Built, built underneath, planned" },
-  // Drawn for a role that holds an import kind's capability (views/importer.jsx canImport).
-  { id: "import",   label: "Import",   hint: "Bring a spreadsheet in, checked first", offeredTo: (r) => canImport(r) || canSeeRegister(r) },
-  // The platform side of support access (support.jsx); drawn only for a holder.
-  { id: "support",  label: "Support",  hint: "Reach one school, for an hour, on the record", cap: "platform.support.impersonate" },
-  // SCRBRD-130 R2: the DLS resource table (dlsTables.jsx); platform reference data.
-  { id: "dls",      label: "DLS table", hint: "Load, publish and withdraw the rain rule's table", cap: "platform.reference.manage" },
+  { id: "passport", label: "Passport", hint: "Where my record may travel", offered: () => ownRecordsOf().size > 0 },
 ];
 
 // ── Small shared pieces ────────────────────────────────
@@ -129,7 +127,99 @@ const ago = (t) => {
 };
 const day = (t) => (t ? String(t).slice(0, 10) : "—");
 
-function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, onDirectoryChanged, onSignOut }) {
+/**
+ * Settings, or one of the parts it held (EXPERIENCE_PASS §1.6). No hooks here:
+ * each part holds its own, so a part reads only what it draws.
+ * @param {{ role: string, part?: "people" | "roles" | "record" | "roadmap" | "support" | "dls" | null,
+ *           users?: any[], setUsers?: Function, onDirectoryChanged?: Function, onSignOut?: Function }} props
+ */
+function SettingsView({ part = null, ...props }) {
+  if (part === "people") return <PeoplePart {...props}/>;
+  if (part === "roles") return <RolesPart {...props}/>;
+  if (part === "record") return <RecordPart {...props}/>;
+  if (part === "roadmap") return <PartPage title="What's built" sub="Built, built underneath, and planned, against the walks that prove each." testid="part-roadmap"><RoadmapTab/></PartPage>;
+  if (part === "support") return <PartPage title="Support access" sub="Reach one school, for an hour, on the record." testid="part-support"><SupportAccessPanel role={props.role}/></PartPage>;
+  if (part === "dls") return <PartPage title="DLS table" sub="Load, publish and withdraw the rain rule's table." testid="part-dls"><DlsTablesPanel role={props.role}/></PartPage>;
+  return <OwnSettings role={props.role} onSignOut={props.onSignOut}/>;
+}
+
+/** A moved part, under a header of its own, as a section of its home. */
+function PartPage({ title, sub, testid, children }) {
+  return (
+    <div className="os-page" data-testid={testid}>
+      <SectionHeader title={title} sub={sub} color={D.violet}/>
+      {children}
+    </div>
+  );
+}
+
+/** The person's own Settings: under their name in the header, and only what is theirs. */
+function OwnSettings({ role, onSignOut }) {
+  const tabs = OWN_TABS.filter((t) => !t.offered || t.offered());
+  const [tab, setTab] = useState("me");
+  const shown = tabs.some((t) => t.id === tab) ? tab : "me";
+  return (
+    <div className="os-page" data-testid="own-settings">
+      <SectionHeader title="Settings"
+        sub="Yours: who you are here, this device, how you sign in, and what reaches you."
+        color={D.violet}/>
+      {tabs.length > 1 && (
+        <div role="tablist" aria-label="Settings sections"
+             style={{ display: "flex", gap: "6px", marginBottom: "18px", flexWrap: "wrap" }}>
+          {tabs.map((t) => {
+            const on = shown === t.id;
+            return (
+              <button key={t.id} role="tab" aria-selected={on} aria-controls={`settings-panel-${t.id}`}
+                      id={`settings-tab-${t.id}`} title={t.hint} onClick={() => setTab(t.id)} className="pressBtn"
+                      style={{ display: "inline-flex", alignItems: "center", gap: "7px", minHeight: "44px",
+                        padding: "6px 16px", borderRadius: D.pill, cursor: "pointer",
+                        border: `1px solid ${on ? D.violet + "55" : D.border}`, background: on ? D.violet + "14" : "transparent",
+                        fontFamily: D.body, fontSize: "12px", fontWeight: on ? 700 : 400, color: on ? D.violetText : D.textMuted }}>
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div {...(tabs.length > 1 ? { role: "tabpanel", "aria-labelledby": `settings-tab-${shown}` } : {})} id={`settings-panel-${shown}`}>
+        {shown === "me" && <MeTab role={role} onSignOut={onSignOut}/>}
+        {shown === "passport" && <PassportTab role={role}/>}
+      </div>
+    </div>
+  );
+}
+
+/** Settings' Roles, as Access's reference (School, Access). */
+function RolesPart({ role, users: usersFromApp }) {
+  const read = useRows("users", role);
+  const users = usersFromApp || read;
+  return (
+    <div data-testid="part-roles">
+      <RolesTab users={users} grantable={grantableFor(role)}/>
+    </div>
+  );
+}
+
+/** Settings' School, as the School home's Record. */
+function RecordPart({ role, users: usersFromApp }) {
+  const COACHES = useRows("coaches", role);
+  const PLAYERS = useRows("players", role);
+  const STAFF = useRows("staff", role);
+  const read = useRows("users", role);
+  const users = usersFromApp || read;
+  return (
+    <PartPage title="Record" sub="What is on record for each school you belong to, what is public, and who read what." testid="part-record">
+      <SchoolTab role={role} users={users} players={PLAYERS} staff={STAFF} coaches={COACHES} canAudit={holdsCapability(role, "audit.read")}/>
+    </PartPage>
+  );
+}
+
+/**
+ * Settings' People and Import, under the staff register's screen (School,
+ * People): who can sign in, who on the roster cannot yet, the Google sign-ins
+ * waiting for the office, and the spreadsheet and staff register.
+ */
+function PeoplePart({ role, users: usersFromApp, setUsers: setUsersFromApp, onDirectoryChanged }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
   // Bumped after a write so the accounts table re-reads instead of showing the
@@ -140,7 +230,6 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
   const PLAYERS = useRows("players", role);
   const STAFF = useRows("staff", role);
   const USERS_INITIAL = useRows("users", role, nonce);
-  const [tab, setTab] = useState("users");
   // `useState(USERS_INITIAL)` captured the directory on the first render,
   // which is now the empty array before the read resolves — the same stale
   // copy that blanked the notifications feed. Local edits are held separately
@@ -161,7 +250,6 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
   // — the demonstration alias and the real role name — because the alias
   // resolves through the same assignments the real name does.
   const canEdit = holdsCapability(role, "user.role.assign");
-  const canAudit = holdsCapability(role, "audit.read");
   // A pupil's account is opened, and his code issued, by the office alone
   // (db/122 §1d): the readers shown a pupil's address. Everyone on the
   // no-account card is a pupil, so the director of sport is told who enrols
@@ -243,9 +331,6 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
     }
   };
 
-  // The roles THIS person may actually grant, from the policy's own table.
-  const grantable = grantableFor(role);
-
   // The number on the People tab: things to fix, not things to read.
   // Google sign-ins waiting for the office to look at (SCRBRD-140 §3.3). The
   // read returns only claims on accounts this caller may issue a code to.
@@ -254,58 +339,30 @@ function SettingsView({ role, users: usersFromApp, setUsers: setUsersFromApp, on
   const attention = noAccount.length + noDob.length + linkEnded.length + (canClaims ? claims.rows.length : 0);
 
   return (
-    <div className="os-page">
-      <SectionHeader title="Settings & Access Control"
-        sub="Who can sign in, what each role may do, this device, and what each school has on record."
-        color={D.violet}/>
-
-      {/* A real tab strip: keyboard-reachable, announced as tabs, and each
-          one says what it is for on hover. Emoji in the labels are gone —
-          a screen reader read "rocket Upgrades" and a walk that clicks by
-          text had to know the icon. */}
-      <div role="tablist" aria-label="Settings sections"
-           style={{ display: "flex", gap: "6px", marginBottom: "18px", flexWrap: "wrap" }}>
-        {TABS.filter((t) => (!t.cap || holdsCapability(role, t.cap)) && (!t.offeredTo || t.offeredTo(role))).map((t) => {
-          const on = tab === t.id;
-          const n = t.id === "users" ? attention : 0;
-          return (
-            <button key={t.id} role="tab" aria-selected={on} aria-controls={`settings-panel-${t.id}`}
-                    id={`settings-tab-${t.id}`} title={t.hint} onClick={() => setTab(t.id)} className="pressBtn"
-                    style={{ display: "inline-flex", alignItems: "center", gap: "7px",
-                      padding: "6px 16px", borderRadius: D.pill, cursor: "pointer",
-                      border: `1px solid ${on ? D.violet + "55" : D.border}`, background: on ? D.violet + "14" : "transparent",
-                      fontFamily: D.body, fontSize: "12px", fontWeight: on ? 700 : 400, color: on ? D.violet : D.textMuted }}>
-              {t.label}
-              {n > 0 && (
-                <span aria-label={`${n} to attend to`} style={{ fontFamily: D.mono, fontSize: "12px", fontWeight: 700,
-                  padding: "1px 6px", borderRadius: D.pill, background: D.amber + "22", color: textOn(D.amber) }}>{n}</span>
-              )}
-            </button>
-          );
-        })}
+    <div className="os-page" data-testid="part-people" style={{ paddingTop: 0 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: "10px", flexWrap: "wrap", margin: "8px 0 12px" }}>
+        <h2 style={{ ...H(), fontSize: "15px", margin: 0 }}>Accounts</h2>
+        {attention > 0 && (
+          <span data-testid="people-attention" style={{ fontFamily: D.mono, fontSize: "12px", fontWeight: 700,
+            padding: "1px 8px", borderRadius: D.pill, background: D.amber + "22", color: textOn(D.amber) }}>{attention} to attend to</span>
+        )}
       </div>
-
-      <div role="tabpanel" id={`settings-panel-${tab}`} aria-labelledby={`settings-tab-${tab}`}>
-        {tab === "users" && canClaims && signedIn() && (
+      <div data-testid="settings-panel-users">
+        {canClaims && signedIn() && (
           <ClaimsPanel rows={claims.rows} loading={claims.loading} onChanged={() => setNonce((n) => n + 1)} onIssueCode={issueCodeFor}/>
         )}
-        {tab === "users" && (
-          <PeopleTab users={users} players={PLAYERS} staff={STAFF} coaches={COACHES}
-                     noAccount={noAccount} noDob={noDob} linkEnded={linkEnded}
-                     canEdit={canEdit} pupilsHere={pupilsHere} coding={coding}
-                     onEnrol={() => setEnrolWith({ role: pupilsHere ? "player" : "" })}
-                     onEnrolFor={(p) => setEnrolWith({ name: p.name, role: "player", player: p.id })}
-                     onCapture={openCapture} onIssueCode={issueCodeFor}/>
-        )}
-        {tab === "roles"    && <RolesTab users={users} grantable={grantable}/>}
-        {tab === "me"       && <MeTab role={role} onSignOut={onSignOut}/>}
-        {tab === "passport" && <PassportTab role={role}/>}
-        {tab === "school"   && <SchoolTab role={role} users={users} players={PLAYERS} staff={STAFF} coaches={COACHES} canAudit={canAudit}/>}
-        {tab === "upgrades" && <RoadmapTab/>}
-        {tab === "import"   && <><ImportPanel role={role}/><StaffRegisterPanel role={role}/></>}
-        {tab === "support"  && <SupportAccessPanel role={role}/>}
-        {tab === "dls"      && <DlsTablesPanel role={role}/>}
+        <PeopleTab users={users} players={PLAYERS} staff={STAFF} coaches={COACHES}
+                   noAccount={noAccount} noDob={noDob} linkEnded={linkEnded}
+                   canEdit={canEdit} pupilsHere={pupilsHere} coding={coding}
+                   onEnrol={() => setEnrolWith({ role: pupilsHere ? "player" : "" })}
+                   onEnrolFor={(p) => setEnrolWith({ name: p.name, role: "player", player: p.id })}
+                   onCapture={openCapture} onIssueCode={issueCodeFor}/>
       </div>
+      {(canImport(role) || canSeeRegister(role)) && (
+        <div data-testid="settings-panel-import" style={{ display: "grid", gap: "16px", marginTop: "16px" }}>
+          <ImportPanel role={role}/><StaffRegisterPanel role={role}/>
+        </div>
+      )}
 
       {/* ── ENROL MODAL ── views/enrol.jsx. The fields are the ones
           enrol_person() takes and no others: a form that collects something
@@ -391,7 +448,7 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
       <MetricGroup min={150} sx={{ marginBottom: "16px" }}>
         <Metric label="Accounts" value={users.length} sub={`${active} active`}/>
         <Metric label="On the roster" value={players.length} sub="people with a record"/>
-        <Metric label="Without an account" value={noAccount.length} tone={noAccount.length ? D.amber : undefined} sub="cannot sign in"/>
+        <Metric label="Without an account" value={noAccount.length} tone={noAccount.length ? D.amber : undefined} sub={`of ${players.length} cannot sign in yet`}/>
         <Metric label="No date of birth" value={noDob.length} tone={noDob.length ? D.rose : undefined} sub={linkEnded.length ? `${linkEnded.length} guardian link${linkEnded.length === 1 ? "" : "s"} ended` : "family access depends on it"}/>
       </MetricGroup>
 
@@ -722,7 +779,9 @@ function BoundariesSection({ role }) {
 
 function MeTab({ role, onSignOut }) {
   const me = profile();
-  // One answer, two places: the eighteen card and the consent section redraw together.
+  // Q16's one exception: a pupil outside the pupil's app (he also holds a staff
+  // role) keeps his own row and the eighteen card here, or he would lose them.
+  const keepConsent = keepsConsentInSettings(me?.assignments, personaOf(role));
   const [consentNonce, setConsentNonce] = useState(0);
   const consentChanged = () => setConsentNonce((n) => n + 1);
   const live = signedIn();
@@ -740,13 +799,13 @@ function MeTab({ role, onSignOut }) {
         </div>
       </Panel>
 
-      {/* SCRBRD-110 §7.4: asked once, from his eighteenth birthday, when a
-          parent had said yes to health monitoring for him. Drawn only then. */}
-      <EighteenCard role={role} nonce={consentNonce} onChanged={consentChanged}/>
-
-      {/* SCRBRD-110 §9.1, Decided 1: the one-time ask, once a guardian's link
-          to a child is verified and nobody has answered for him yet. */}
-      <HealthConsentPrompt role={role} nonce={consentNonce} onChanged={consentChanged}/>
+      {/* Health monitoring's consent, its one-time ask and the eighteen card
+          moved whole to Family, on each child's file, and to the pupil's Me
+          (EXPERIENCE_PASS Q16, §1.6, decided 13 Nov). Nothing about them
+          changed but where they are found. A pupil who is not in the pupil's
+          app keeps his own here. */}
+      {keepConsent && <EighteenCard role={role} nonce={consentNonce} onChanged={consentChanged}/>}
+      {keepConsent && <HealthConsentSection role={role} selfOnly nonce={consentNonce} onChanged={consentChanged}/>}
 
       {/* This device's theme (DESIGN_DIRECTION §3.1): second, under who you
           are, because it is the one setting here somebody changes standing
@@ -793,10 +852,6 @@ function MeTab({ role, onSignOut }) {
             </div>
           )}
       </Panel>
-
-      {/* Health monitoring's own consent (SCRBRD-110 §7): a row per child
-          this person answers for, and his own. Nothing for staff. */}
-      <HealthConsentSection role={role} nonce={consentNonce} onChanged={consentChanged}/>
 
       {/* SCRBRD-124: lift clubs — where she stands, and her yearly
           declaration. The family's own page until STEP 4's Family exists.

@@ -1,4 +1,4 @@
-import { roleGrants } from "@scrbrd/policy/roles";
+import { SUBJECT_SCOPED_ROLES, roleGrants } from "@scrbrd/policy/roles";
 import { themeName } from "./tokens.js";
 
 /* ═══════════════════════════════════════════════════════
@@ -243,6 +243,24 @@ const NAV_CAPABILITY = {
   modules:       "school.feature.manage",
   rulebook:      null,
   pitchdeck:     "platform.tenant.manage",
+  // ── Settings, taken apart (EXPERIENCE_PASS §1.6, Slice 6). Each was a tab of
+  // the one Settings screen; each is now a section of the home it belongs to,
+  // and Settings is the person's own. A tab drawn for everybody (Record, What's
+  // built) takes the gate of the home it moved to: the move only ever narrows
+  // who is offered it, and every read inside is the server's, as it was.
+  // The school's record: its figures, the names-off and listing switches, the
+  // lift policy and purge, who read what. The office's (user.read), and anyone
+  // who acts on a panel in it (NAV_ALSO below), so nobody loses a switch; the
+  // lift purge's holders find it on Logistics, Transport as well.
+  record:        "user.read",
+  // The platform's own (the Platform home): schools asking to be added (db/158),
+  // an hour's support access at one school, the rain rule's table, and what is
+  // built. Each under the capability its panel was drawn for; "What's built"
+  // was everybody's tab and is the platform's now, beside the pitch deck.
+  requests:      "platform.tenant.manage",
+  support:       "platform.support.impersonate",
+  dls:           "platform.reference.manage",
+  roadmap:       "platform.tenant.manage",
   // A union selector's list of the boys whose families named his union
   // (UNION_SELECTOR_FIND S3, db/125). The passport's own capability: the
   // role holds nothing else of a boy, and the definers decide every row.
@@ -283,10 +301,13 @@ const NAV_GROUPS = [
   // but the menu draws it inside the Competitions home, not as a second entry
   // (design/homes.js, lib/homeNav.js).
   { key:"play",    label:"Play",       items:["dashboard","news","matches","calendar","competitions","leagues","officials"] },
-  { key:"people",  label:"People",     items:["squad","profiles","selection","injuries","staff"] },
+  { key:"people",  label:"People",     items:["squad","profiles","selection","injuries"] },
   { key:"develop", label:"Develop",    items:["analytics","skills","training"] },
   { key:"operate", label:"Operate",    items:["logistics","fields","sponsors","readiness"] },
-  { key:"admin",   label:"Administer", items:["management","modules","pitchdeck"] },
+  // The School home (staff, with Access, Record, Modules and Sponsors) and the
+  // Platform home (pitchdeck), after Logistics: the office's work after the
+  // match day's (EXPERIENCE_PASS §1.7).
+  { key:"admin",   label:"Administer", items:["staff","management","record","modules","pitchdeck","requests","support","dls","roadmap"] },
   // The persona apps' destinations (step 4). Drawn as the one section of a
   // persona's own rail, and — the family's Home and Family only — as a
   // section of the staff menu of somebody who is also a parent.
@@ -328,11 +349,18 @@ const groupNav = (keys) =>
 
    Presentation only, like everything in this file: each screen's reads are
    re-authorised server-side, and a wrong answer here draws the wrong menu,
-   never the wrong data. */
+   never the wrong data.
+
+   `keeps` (EXPERIENCE_PASS Q2, decided 13 Nov): a role held BESIDE the
+   persona's own that leaves the persona's app as it is. A pupil or a parent
+   who is also appointed to score keeps the four-item bar; scoring is a block
+   on his Home ("Appointed to score") and on the appointed match, never a
+   fifth item. What he may read as a scorer is unchanged and the server's. */
+const PERSONA_KEEPS = Object.freeze(["scorer"]);
 const PERSONA_NAV = {
-  family: { roles:["guardian"], needs:["guardian"],
+  family: { roles:["guardian"], needs:["guardian"], keeps:PERSONA_KEEPS,
             bar:["children","fixtures","notices","family"], alongside:["children","family"] },
-  pupil:  { roles:["player","selfaccess"], needs:["player","selfaccess"],
+  pupil:  { roles:["player","selfaccess"], needs:["player","selfaccess"], keeps:PERSONA_KEEPS,
             bar:["myhome","mymatches","passport","me"], alongside:[] },
 };
 /** Destinations that belong to a persona's app and never to a staff menu on capability alone. */
@@ -345,7 +373,7 @@ const personaFor = (roles) => {
   const held = [...new Set(roles ?? [])];
   if (!held.length) return null;
   const hit = Object.entries(PERSONA_NAV).find(([, p]) =>
-    held.every((r) => p.roles.includes(r)) && p.needs.every((r) => held.includes(r)));
+    held.every((r) => p.roles.includes(r) || p.keeps.includes(r)) && p.needs.every((r) => held.includes(r)));
   return hit ? hit[0] : null;
 };
 
@@ -355,12 +383,47 @@ const personaFor = (roles) => {
  * session runner's: the team manager runs the session, its plan and its
  * register (team.training.run, GA-I26a AH-D8), and reads no development.
  */
-const NAV_ALSO = { training: "team.training.run" };
+const NAV_ALSO = {
+  training: "team.training.run",
+  // The school's record (Slice 6): the panels it carries are each drawn under
+  // their own capability; whoever holds one is offered the section, so the
+  // move out of Settings takes no switch from anybody. The lift purge
+  // (transport.lift.oversee) is on Logistics, Transport too (review SF4), which
+  // every holder of it reaches, so the transport coordinator keeps §1.8's menu.
+  record: Object.freeze(["broadcast.publish", "transport.lift.policy", "audit.read"]),
+};
+/** The capabilities NAV_ALSO adds for destination `k` (none, one or several). @param {string} k @returns {string[]} */
+const navAlso = (k) => (Object.hasOwn(NAV_ALSO, k) ? [NAV_ALSO[k]].flat() : []);
 
-/** Does this role open destination `k`: its capability, or the one NAV_ALSO adds. */
+/**
+ * A destination drawn only for a role that can ACT on what it lists, beside
+ * reading it (EXPERIENCE_PASS Q17, decided 13 Nov). "To resolve" is read under
+ * fixture.read, which a spectator, an official and a scorer hold, and none of
+ * them owns a row on it. It is drawn for a role that holds fixture.read AND
+ * one of the capabilities a row is acted on with, and that is no guardian's,
+ * pupil's or enquirer's (they are scoped to one child): the queue's own
+ * reader rule (lib/queue.js isQueueReader), said per role —
+ *   team.select, player.workload.read   the cockpit's entry: a side's rows
+ *   clearance.read, user.role.assign, user.invite, guardian.link.manage,
+ *   transport.lift.oversee              the office's rows (OFFICE_CAPS)
+ *   result.confirm                      results to confirm (OFFICIAL_RESULT)
+ *   scoring.amend.approve               corrections waiting (O7)
+ *   recognition.match.award             Player of the Match to decide (R7)
+ * ONLY EVER NARROWS: it is asked after the capability above, and a role this
+ * removes the entry from keeps every read it had (apps/web/test/design.test.mjs
+ * holds it to the queue's rule for every role).
+ */
+const NAV_ACTS = Object.freeze({
+  readiness: Object.freeze(["team.select", "player.workload.read", "clearance.read", "user.role.assign", "user.invite",
+    "guardian.link.manage", "transport.lift.oversee", "result.confirm", "scoring.amend.approve", "recognition.match.award"]),
+});
+
+/** Does this role open destination `k`: its capability, or the one NAV_ALSO adds; and, where NAV_ACTS names some, one it acts with. */
 const navGrants = (role, k) => {
   const cap = NAV_CAPABILITY[k];
-  return cap === null || roleGrants(role, cap) || (Object.hasOwn(NAV_ALSO, k) && roleGrants(role, NAV_ALSO[k]));
+  const reads = cap === null || roleGrants(role, cap) || navAlso(k).some((c) => roleGrants(role, c));
+  if (!reads || !Object.hasOwn(NAV_ACTS, k)) return reads;
+  return !SUBJECT_SCOPED_ROLES.includes(role) && NAV_ACTS[k].some((c) => roleGrants(role, c));
 };
 
 /** The destinations a SET of roles reaches: what any of them holds. */
@@ -412,11 +475,13 @@ const ROLE_FAMILIES = Object.entries(ROLE_IDENTITY).reduce((acc, [r, id]) => {
 }, {});
 
 const NAV_META = {
-  dashboard:    { icon:"layout-dashboard", label:"Dashboard"    },
-  matches:      { icon:"stumps", label:"Match Centre" },
+  // The homes keep the keys of the destinations they grew from (EXPERIENCE_PASS
+  // §1.2, Q4): Dashboard is Today, Match Centre is Matches, Squad is Team.
+  dashboard:    { icon:"layout-dashboard", label:"Today"        },
+  matches:      { icon:"stumps", label:"Matches"      },
   competitions: { icon:"trophy", label:"Competitions" },
   leagues:      { icon:"clipboard-list", label:"Leagues"      },
-  squad:        { icon:"users", label:"Squad"        },
+  squad:        { icon:"users", label:"Team"         },
   profiles:     { icon:"user", label:"Profiles"     },
   analytics:    { icon:"chart-column", label:"Analytics"    },
   skills:       { icon:"target", label:"Skills"       },
@@ -427,7 +492,8 @@ const NAV_META = {
   fields:       { icon:"ground", label:"Fields"       },
   readiness:    { icon:"shield-check", label:"To resolve"   },
   officials:    { icon:"hand", label:"Officials"    },
-  staff:        { icon:"wrench", label:"Staff"        },
+  // The School home keeps Staff's key; its first section is People.
+  staff:        { icon:"school", label:"People"       },
   sponsors:     { icon:"handshake", label:"Sponsors"     },
   news:         { icon:"newspaper", label:"Newsfeed"     },
   notifications:{ icon:"bell", label:"Alerts"       },
@@ -436,7 +502,12 @@ const NAV_META = {
   management:   { icon:"user-cog", label:"Management"   },
   modules:      { icon:"sliders-horizontal", label:"Modules"      },
   rulebook:     { icon:"book-open", label:"Rulebook"     },
-  pitchdeck:    { icon:"presentation", label:"Pitch Deck"   },
+  pitchdeck:    { icon:"presentation", label:"Pitch deck"   },
+  record:       { icon:"landmark", label:"Record"       },
+  requests:     { icon:"school", label:"School requests" },
+  support:      { icon:"life-buoy", label:"Support access" },
+  dls:          { icon:"clipboard-list", label:"DLS table" },
+  roadmap:      { icon:"map", label:"What's built" },
   selection:    { icon:"clipboard-list", label:"Selection"    },
   // The persona apps (step 4 §2.0, Q11): the same four words at a school and
   // a club; the nouns inside the screens come from lib/words.js (G15).
@@ -450,4 +521,4 @@ const NAV_META = {
   me:           { icon:"id-card", label:"Me"           },
 };
 
-export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, PERSONA_ASIDE, PERSONA_NAV, PERSONA_ONLY, ROLES, ROLE_DAYLIGHT, ROLE_IDENTITY, ROLE_FAMILIES, NAV_ALSO, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles, navGrants, personaFor };
+export { NAV_META, NAV_GROUPS, NAV_GROUP, NAV_ORDER, PERSONA_ASIDE, PERSONA_KEEPS, PERSONA_NAV, PERSONA_ONLY, ROLES, ROLE_DAYLIGHT, ROLE_IDENTITY, ROLE_FAMILIES, NAV_ACTS, NAV_ALSO, NAV_CAPABILITY, canonicalRole, groupNav, navFor, navForRoles, navGrants, personaFor };
