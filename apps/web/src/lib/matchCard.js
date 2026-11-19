@@ -113,6 +113,24 @@ export function demoScore(line) {
   return ov ? `${line.score} · ${ov}` : String(line.score);
 }
 
+/**
+ * The result read's words (GET /api/matches/:id/result), only where they say
+ * what the data says. "No result" is a cricket outcome (play started and could
+ * not finish): it is said only where something on record decided it, a decision
+ * on the result or an innings that ended for a reason (rain, bad light). A match
+ * marked over whose log simply does not decide it (an innings never finished,
+ * nothing scored) has its result to confirm, and this answers null for it.
+ * @param {any} route  the read's answer, or null when it failed
+ * @returns {string | null}
+ */
+export function resultSaidOf(route) {
+  const r = route?.result;
+  if (!r?.text) return null;
+  if (r.outcome !== "no_result") return r.text;
+  if (r.decision || r.decidedBy) return r.text;
+  return (route.innings ?? []).some((/** @type {any} */ i) => i?.endReason || i?.stopped) ? r.text : null;
+}
+
 /** When the match starts, as an instant: the read's own `startsAt`, else its SA day and time. @param {any} m */
 function startOf(m) {
   if (m?.startsAt) { const t = Date.parse(m.startsAt); if (Number.isFinite(t)) return t; }
@@ -175,7 +193,11 @@ export function stateOf(match, sentence, official = null) {
 export function cardModel({ match, fold = null, innings = null, resultSaid = null, scores = null, ownEnd = null, official = null, now = Date.now() }) {
   const sentence = statusSentence(match, fold && fold.innings?.length ? fold : null, { result: resultSaid });
   const state = stateOf(match, sentence, official);
-  const got = scores ?? scoresOf(match, fold?.innings?.length ? fold.innings : innings);
+  const raw = scores ?? scoresOf(match, fold?.innings?.length ? fold.innings : innings);
+  // Both sides' scores or none (the lead, 19 Nov): a match not in play with one side's total alone is a log that does
+  // not hold the match, and half a score reads as the whole of it. In play, the side yet to bat has none yet.
+  const half = raw && state.kind !== "live" && !raw.home !== !raw.away;
+  const got = half ? null : raw;
   const names = sidesOf(match);
   const first = ownEnd ?? (match?.mySide === "away" ? "away" : "home");
   const order = first === "away" ? ["away", "home"] : ["home", "away"];
@@ -185,7 +207,9 @@ export function cardModel({ match, fold = null, innings = null, resultSaid = nul
     batting: state.kind === "live" && got?.batting === end,
   }));
   // §2.2's table: an upcoming match says where, "Starts at 17:25 · Hilton Oval", the ground being the read's own.
-  const text = state.kind === "provisional" && sentence.state === "result" && !/provisional/i.test(sentence.text)
+  // A match over with no result in words claims none: "Result to confirm", never "No result" (an outcome) by default.
+  const text = sentence.state === "complete" ? "Result to confirm"
+    : state.kind === "provisional" && sentence.state === "result" && !/provisional/i.test(sentence.text)
     ? `${sentence.text} · provisional`
     : sentence.state === "upcoming" && match?.venue ? `${sentence.text} · ${match.venue}` : sentence.text;
   // A match played or called off keeps its day, on the state line's right ("Result · Thu 12 Nov"): the left says

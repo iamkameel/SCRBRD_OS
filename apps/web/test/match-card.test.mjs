@@ -7,7 +7,7 @@
  *   node apps/web/test/match-card.test.mjs
  */
 import { inningsStart, batters, bowler, ball, deriveInnings } from "@scrbrd/scoring";
-import { cardModel, demoScore, openWords, oversWords, scoreWords, scoresOf, startsIn, stateOf } from "../src/lib/matchCard.js";
+import { cardModel, demoScore, openWords, oversWords, resultSaidOf, scoreWords, scoresOf, startsIn, stateOf } from "../src/lib/matchCard.js";
 import { statusSentence } from "../src/lib/matchCentre.js";
 
 let pass = 0, fail = 0;
@@ -85,6 +85,25 @@ group("The card, in order");
   ok("...with its day on the right of the state line", r.day === "Sat 21 Nov" && a.day === null, [r.day, a.day]);
   const d = cardModel({ match: { ...M, status: "live" }, scores: { home: "142/6 · 20 overs", away: null, batting: "home" } });
   ok("the demo's scores, handed in", d.sides[0].score === "142/6 · 20 overs" && d.sides[0].batting);
+}
+
+group("A result is said only where the data says it (the lead, 19 Nov)");
+{
+  const won = { result: { outcome: "won", text: "Hilton College 1XI won by 12 runs" }, innings: [] };
+  ok("a win is the read's words", resultSaidOf(won) === "Hilton College 1XI won by 12 runs");
+  const undecided = { result: { outcome: "no_result", text: "No result" }, innings: [{ side: "away", runs: 172, wickets: 2, balls: 96, complete: false, endReason: null }] };
+  ok("a log that does not decide it is not \"No result\"", resultSaidOf(undecided) === null);
+  ok("...nor is a match with nothing scored", resultSaidOf({ result: { outcome: "no_result", text: "No result" }, innings: [] }) === null);
+  ok("rain that ended an innings is a real no result", resultSaidOf({ ...undecided, innings: [{ ...undecided.innings[0], endReason: "weather" }] }) === "No result");
+  ok("...as is a decision on the result", resultSaidOf({ result: { outcome: "no_result", text: "No result", decidedBy: "decision" }, innings: [] }) === "No result");
+  ok("a failed read says nothing", resultSaidOf(null) === null);
+  const c = cardModel({ match: { ...M, status: "complete" }, innings: undecided.innings, resultSaid: resultSaidOf(undecided) });
+  ok("the card: \"Result to confirm\"", c.sentence.text === "Result to confirm", c.sentence.text);
+  ok("...and one side's total alone is no score at all", c.sides.every((s) => s.score === null), c.sides);
+  const both = cardModel({ match: { ...M, status: "complete" }, innings: [{ side: "home", runs: 120, wickets: 6, balls: 120, complete: true }, { side: "away", runs: 98, wickets: 10, balls: 100, complete: true }] });
+  ok("both innings, both scores", both.sides[0].score === "120/6 · 20 overs" && both.sides[1].score === "98/10 · 16.4 overs", both.sides);
+  const first = cardModel({ match: { ...M, status: "live" }, fold: { innings: [inn1], result: null } });
+  ok("in play, the side yet to bat has none and the other keeps his", first.sides[0].score === "8/0 · 1.1 overs" && first.sides[1].score === null);
 }
 
 group("The action is named for the match");

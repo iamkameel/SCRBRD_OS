@@ -10,7 +10,7 @@ import { battingWords, bowlingWords, insights, lastMatchWords, leaders, LEADERS,
 import { SeasonLine } from "../seasonline.jsx";
 import { BentoCard } from "../../ui/surfaces.jsx";
 import { MatchCard } from "../../ui/matchCard.jsx";
-import { openWords } from "../../lib/matchCard.js";
+import { openWords, resultSaidOf } from "../../lib/matchCard.js";
 
 /**
  * RECENT MATCHES (pilot item 5): on the coach's Dashboard, beside the
@@ -117,7 +117,7 @@ function SideCard({ side, named, onNav }) {
                 return (
                   // The match card's row (slice 1): his side first, both totals from the fold, the result's words.
                   <li key={match.id} data-testid={`recent-match-${match.id}`} data-result={l.result ?? ""} data-ours={l.ours ?? ""} data-theirs={l.theirs ?? ""}>
-                    <MatchCard size="row" last={i === n - 1} match={match} ownEnd={gate.end} fold={fold} resultSaid={l.resultRead ? l.result ?? null : null}
+                    <MatchCard size="row" last={i === n - 1} match={match} ownEnd={gate.end} fold={fold} resultSaid={resultSaidOf(rows[i]?.route)}
                       statusTestid="recent-result"
                       line={!l.resultRead ? "The result could not be read just now. That is not the same as there being none."
                         : l.ours == null && l.theirs == null ? "No innings on the log." : null}
@@ -197,7 +197,7 @@ function LastMatchRead({ side, role, onNav }) {
         // The match card (slice 1): his side first, both totals, the result; then his side's best, and the season.
         <MatchCard size="card" match={match} ownEnd={gate.end} statusTestid="day-last-result"
           fold={rows[0]?.innings?.length ? { innings: rows[0].innings, result: null } : null}
-          resultSaid={w?.result ?? null}
+          resultSaid={resultSaidOf(rows[0]?.route)}
           line={w?.result == null ? "The result could not be read just now. That is not the same as there being none." : null} lineTestid="day-last-unread"
           action={{ label: openWords(match, gate.end), aria: `Open the match against ${them}`, testid: "day-last-open", onClick: () => { requestResult(match.id); onNav("matches"); } }}>
           {w?.top && <p data-testid="day-last-top" style={quiet()}>{w.top}</p>}

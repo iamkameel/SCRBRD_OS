@@ -25,7 +25,7 @@ import { observedStamp } from "../lib/weatherStamp.js";
 import { saClock } from "../lib/saTime.js";
 import { MatchCard } from "../ui/matchCard.jsx";
 import { sideOfTeam } from "../lib/matchCentre.js";
-import { openWords } from "../lib/matchCard.js";
+import { openWords, resultSaidOf } from "../lib/matchCard.js";
 import { cockpitGate } from "../lib/cockpit.js";
 import { requestCoach, requestDuties, requestResult } from "../lib/cockpitNav.js";
 import { fixFor, requestFix } from "../lib/fixNote.js";
@@ -151,16 +151,16 @@ function useLiveScore(matchId) {
  * Match Centre makes) and each innings' total by side from the same answer (the row's two scores, slice 1), null
  * for a read that failed, absent while asking. Signed in only; the demo has none.
  * @param {string[]} ids
- * @returns {Record<string, {text: string, innings: any[]} | null>}
+ * @returns {Record<string, {text: string | null, innings: any[]} | null>}
  */
 function useWeekResults(ids) {
   const key = ids.join(",");
-  const [got, setGot] = useState(/** @type {Record<string, {text: string, innings: any[]} | null>} */ ({}));
+  const [got, setGot] = useState(/** @type {Record<string, {text: string | null, innings: any[]} | null>} */ ({}));
   useEffect(() => {
     if (!signedIn() || !key) return undefined;
     let off = false;
     Promise.all(key.split(",").map((id) => api(`/api/matches/${id}/result`)
-      .then((r) => [id, { text: r?.result?.text ?? "No result recorded", innings: Array.isArray(r?.innings) ? r.innings : [] }], () => [id, null])))
+      .then((r) => [id, { text: resultSaidOf(r), innings: Array.isArray(r?.innings) ? r.innings : [] }], () => [id, null])))
       .then((pairs) => { if (!off) setGot(Object.fromEntries(pairs)); });
     return () => { off = true; };
   }, [key]);
@@ -356,7 +356,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                   return (
                     <div key={m.id} data-testid={`week-fixture-${m.id}`} data-played={played ? "true" : "false"}>
                       <MatchCard size="row" last match={m} statusTestid={`week-said-${m.id}`}
-                        resultSaid={typeof m.weekResult === "string" ? m.weekResult : null}
+                        resultSaid={typeof m.weekResult === "string" && m.weekResult ? m.weekResult : null}
                         innings={Array.isArray(m.weekInnings) ? m.weekInnings : null}
                         // The result read did not answer: said, never "Match over" alone.
                         line={m.weekResult === null ? "The result could not be read just now." : null}
@@ -451,7 +451,8 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   const weekPlain = weekOf(MATCHES, today);
   const weekResults = useWeekResults(weekPlain.filter((m) => m.status !== "upcoming" && !m.calledOff).map((m) => m.id));
   const weekMatches = weekPlain.map((m) => (weekResults[m.id] === undefined ? m
-    : { ...m, weekResult: weekResults[m.id]?.text ?? null, weekInnings: weekResults[m.id]?.innings ?? null }));
+    // The result's words where the read said them, "" where it answered without one, null where it failed.
+    : { ...m, weekResult: weekResults[m.id] === null ? null : weekResults[m.id].text ?? "", weekInnings: weekResults[m.id]?.innings ?? null }));
   const weekTraining = TRAINING.filter((s) => s.date && s.date >= weekStart && s.date <= weekEnd)
     .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
 
