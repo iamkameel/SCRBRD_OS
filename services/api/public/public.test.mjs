@@ -1167,6 +1167,14 @@ console.log("\n── The shell ──");
      !/name="robots"/.test(home) && /og:title" content="SCRBRD/.test(home));
   const html = shellHtml({ view: "live", matchId: M1, header: { homeLabel: "<script>x</script>", awayLabel: "A\"B", scores: [] } });
   ok("a team name is escaped in the shell", !html.includes("<script>x</script>") && html.includes("&lt;script&gt;") && html.includes("A&quot;B"));
+  // CRI-2.4: until the bundle draws, #root holds the title's own words — the sides and the score — and nothing else.
+  const live = shellHtml({ view: "live", matchId: M1, header: { homeLabel: "Hilton College 1XI", awayLabel: "Michaelhouse 1XI",
+    scores: [{ innings: 0, runs: 52, wickets: 1, balls: 9 }] } });
+  const root = live.match(/<div id="root"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? "";
+  ok("the shell's root holds the sides and the score before the bundle draws", /Hilton College 1XI v Michaelhouse 1XI/.test(root)
+     && /data-testid="public-shell-score"[^>]*>52\/1</.test(root) && /Live score · loading…/.test(root), root);
+  ok("...in words the title already says", (live.match(/<title>([^<]*)<\/title>/)?.[1] ?? "").startsWith("Hilton College 1XI v Michaelhouse 1XI · 52/1"));
+  ok("...and no score line before a ball", !/public-shell-score/.test(shellHtml({ view: "live", matchId: M1, header: { homeLabel: "H", awayLabel: "A", scores: [] } })));
 }
 
 console.log(`\nPUBLIC: ${passes} passed, ${fails} failed`);
