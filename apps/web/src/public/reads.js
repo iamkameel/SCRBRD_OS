@@ -71,7 +71,7 @@ export async function readPar(base) {
 }
 
 /** The same names for the same pseudonyms? @param {Record<string, string>} a @param {Record<string, string>} b */
-const samePeople = (a = {}, b = {}) => {
+export const samePeople = (a = {}, b = {}) => {
   const ka = Object.keys(a), kb = Object.keys(b);
   return ka.length === kb.length && ka.every((k) => a[k] === b[k]);
 };
