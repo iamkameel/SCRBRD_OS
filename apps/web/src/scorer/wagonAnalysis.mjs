@@ -27,7 +27,7 @@
  * point-era ball needs no hand at all) and why a sector-era ball's stored
  * `seg` does (it is the screen sector, read back through batterSector()).
  */
-import { SECTORS, boundaryHit, sectorOf } from "@scrbrd/scoring";
+import { SECTORS, boundaryHit, runsOffBat, sectorOf } from "@scrbrd/scoring";
 import { RIM } from "./field.js";
 
 /**
@@ -72,6 +72,29 @@ export function chipKeyOf(ball) {
 /** Whether a ball carries any placement at all — a captured point, or a
  *  sector-era seg — the same admission test the wheel itself draws by. */
 export const isPlaced = (b) => b?.theta != null || b?.seg != null;
+
+/**
+ * B0: what a wheel may say about itself. A shot is drawn only where the scorer
+ * recorded a direction (isPlaced); the count is of real balls, never padded.
+ * A "scoring ball" is one with runs off the bat; `placedScoring` of them were
+ * placed, and `placedOther` are placed dots or wickets that are drawn too.
+ * @param {object[]} balls
+ */
+export function shotCoverage(balls = []) {
+  let scoring = 0, placedScoring = 0, placedOther = 0;
+  for (const b of balls) {
+    const sc = runsOffBat(b) > 0, pl = isPlaced(b);
+    if (sc) { scoring += 1; if (pl) placedScoring += 1; } else if (pl) placedOther += 1;
+  }
+  return { scoring, placedScoring, placedOther, drawn: placedScoring + placedOther };
+}
+
+/** "Shots placed for 23 of 41 scoring balls." (+ other placed balls); the empty state when none drawn. */
+export function coverageWords(c) {
+  if (c.drawn === 0) return c.scoring > 0 ? `No shots placed: the scorer recorded no direction for ${c.scoring} scoring ball${c.scoring === 1 ? "" : "s"}.` : "No shots placed.";
+  return `Shots placed for ${c.placedScoring} of ${c.scoring} scoring ball${c.scoring === 1 ? "" : "s"}.`
+    + (c.placedOther > 0 ? ` ${c.placedOther} placed dot or wicket ball${c.placedOther === 1 ? "" : "s"} also drawn.` : "");
+}
 
 /**
  * A ball's area and side, from its batter-relative sector.

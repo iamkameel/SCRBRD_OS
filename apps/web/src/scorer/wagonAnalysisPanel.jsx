@@ -2,7 +2,7 @@ import { useState } from "react";
 import { T } from "../design/tokens.js";
 import { CX, CY, LK_COLS, R_BND, R_IN, R_MID, R_PITCH, SEGS, areaWords, ballAngle, frameOf, lineKey, toXY, wagEnd } from "./field.js";
 import { FieldLabels, MIRROR_NOTE, fieldSentence } from "./fieldLabels.jsx";
-import { CHIP_VALUES, filterBalls, isPlaced, wagonAnalysis } from "./wagonAnalysis.mjs";
+import { CHIP_VALUES, coverageWords, filterBalls, isPlaced, shotCoverage, wagonAnalysis } from "./wagonAnalysis.mjs";
 import { Card } from "./ui.jsx";
 import { isOut } from "./format.js";
 
@@ -135,7 +135,7 @@ function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fi
 
   const offAreas = a.areas.filter((x) => x.side === "off");
   const legAreas = a.areas.filter((x) => x.side === "leg");
-  const excludedTotal = a.excluded.unplaced + a.excluded.straight;
+  const cover = shotCoverage(filtered);
 
   return (
     <div data-testid="wagon-analysis" aria-label={title} style={{ display: "flex", flexDirection: "column", gap: T.space.md }}>
@@ -177,7 +177,7 @@ function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fi
 
       {a.chips.all === 0 ? (
         <p style={{ ...T.role.body, color: T.content.secondary, margin: 0, padding: `${T.space.lg} 0`, textAlign: "center" }}>
-          No placed shots for this filter.
+          {coverageWords(cover)}
         </p>
       ) : (
         <Card style={{ padding: "14px 16px" }}>
@@ -232,9 +232,9 @@ function WagonAnalysisPanel({ balls = [], handOf = () => "R", batters = null, fi
             </div>
           </div>
 
-          {excludedTotal > 0 && (
+          <p data-testid="wagon-analysis-coverage" style={{ ...T.role.body, fontSize: "12px", color: T.content.secondary, marginTop: T.space.md, marginBottom: 0, lineHeight: 1.5 }}>{coverageWords(cover)}</p>
+          {a.excluded.straight > 0 && (
             <p data-testid="wagon-analysis-excluded" style={{ ...T.role.body, fontSize: "12px", color: T.content.secondary, marginTop: T.space.md, marginBottom: 0, lineHeight: 1.5 }}>
-              {a.excluded.unplaced > 0 && `${a.excluded.unplaced} ball${a.excluded.unplaced === 1 ? "" : "s"} carried no placement at all. `}
               {a.excluded.straight > 0 && `${a.excluded.straight} ball${a.excluded.straight === 1 ? "" : "s"} went dead straight or dead behind the stumps — neither off nor on, and left out of the sides and areas above.`}
             </p>
           )}

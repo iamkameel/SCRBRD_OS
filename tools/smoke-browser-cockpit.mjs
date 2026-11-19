@@ -1020,7 +1020,7 @@ try {
     ok(`...a bowler narrows the wheel: Naidoo's ${placedBy("naidoo")} placed shots of ${placed}`, await spokes() === placedBy("naidoo"), await spokes());
     await wheel.locator(`[data-testid="wagon-bowler-${WHITFIELD}"]`).click({ timeout: 3000 });
     ok("...a bowler with no placed shot says so, in words, and draws no wheel",
-      await spokes() === 0 && await wheel.locator('[data-testid="wagon-analysis-wheel"]').count() === 0 && /No placed shots for this filter/.test(await wheel.innerText()));
+      await spokes() === 0 && await wheel.locator('[data-testid="wagon-analysis-wheel"]').count() === 0 && /No shots placed/.test(await wheel.innerText()));
     await wheel.locator('[data-testid="wagon-bowler-all"]').click({ timeout: 3000 });
     ok("...off side against on side, and the eight named areas",
       /off side/i.test(await wheel.innerText()) && /on side/i.test(await wheel.innerText()) && await wheel.locator('[data-testid^="wagon-area-"]').count() === 8,
