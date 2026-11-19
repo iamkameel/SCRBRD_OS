@@ -14679,8 +14679,8 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 --   _v167_left()     (live) the pupil's account with two ended appointments at
 --                    Westville (revoked; past its date) and an ended
 --                    self-access link to Westville's boy; and a platform
---                    assignment the league account held for five days, ten
---                    days ago.
+--                    assignment for the league account, made now, for five
+--                    days.
 --   access_log_v167_refuse  (strict) a row of resource 'v167_fail' cannot be
 --                    written; every other row is written as before. Gone at
 --                    this file's ROLLBACK.
@@ -14713,12 +14713,9 @@ BEGIN
   INSERT INTO assignment_subject (assignment_id, player_id, valid_from, valid_until, relationship, verification_state, verified_by, verified_at)
   SELECT a.id, 'bbbbbbbb-0000-0000-0000-000000000001', sa_today() - 30, sa_today() - 1, 'self', 'verified',
          '88888888-0000-0000-0000-00000000000c', now() FROM a;
-  -- The granter's stamp (created_at, revoked_at: now) held off for this one
-  -- row, so it can say when it was made and when it ended.
-  ALTER TABLE role_assignment DISABLE TRIGGER role_assignment_granter;
-  INSERT INTO role_assignment (person_id, role, school_id, created_at, active, revoked_at)
-  VALUES ('88888888-0000-0000-0000-000000000021', 'platformadmin', NULL, now() - interval '10 days', false, now() - interval '5 days');
-  ALTER TABLE role_assignment ENABLE TRIGGER role_assignment_granter;
+  -- Made now (the granter stamps created_at), for five days.
+  INSERT INTO role_assignment (person_id, role, school_id, valid_until)
+  VALUES ('88888888-0000-0000-0000-000000000021', 'platformadmin', NULL, sa_today() + 5);
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 CREATE OR REPLACE FUNCTION _v167_refuse() RETURNS trigger AS $$
@@ -46317,9 +46314,10 @@ $m130$;
   --              read of a boy it cannot read is filed under no school;
   --              Westville's office finds none of Hilton's
   --   (label)    the label asks of the row's own instant: the league account,
-  --              a platform administrator for five days ten days ago, is the
-  --              platform a week ago and not now; the key is not the platform
-  --              before his assignment was made
+  --              made a platform administrator now for five days, is the
+  --              platform in two days' time, not in ten (its date is past)
+  --              nor yesterday (it was not yet made); the key is not the
+  --              platform before his assignment was made
   --   (grants)   the label and the writer pinned definers, the reader a pinned
   --              invoker, each executable by scrbrd_app and not by PUBLIC; the
   --              writer catches no exception
@@ -46437,11 +46435,11 @@ $m130$;
       PERFORM _assert(got = HILS::text || ':{' || least(PUPL, KID)::text || ',' || greatest(PUPL, KID)::text || '}',
         format('§144 (live): the key''s read of an account with ended appointments and an ended link was filed as %s', got));
       -- (label)
-      PERFORM _assert(access_log_platform_reader(LEAG, now() - interval '7 days'),
-        '§144 (label): the league account was a platform administrator a week ago and is not named so for then');
-      PERFORM _assert(NOT access_log_platform_reader(LEAG, now()) AND NOT access_log_platform_reader(LEAG, now() - interval '3 days')
-                      AND NOT access_log_platform_reader(LEAG, now() - interval '12 days'),
-        '§144 (label): the league account is named the platform outside the five days it was');
+      PERFORM _assert(access_log_platform_reader(LEAG, now() + interval '2 days'),
+        '§144 (label): the league account, a platform administrator for five days from now, is not named so in two');
+      PERFORM _assert(NOT access_log_platform_reader(LEAG, now() + interval '10 days')
+                      AND NOT access_log_platform_reader(LEAG, now() - interval '1 day'),
+        '§144 (label): the league account is named the platform outside the five days it is');
       PERFORM _assert(access_log_platform_reader(OWNR, now()) AND NOT access_log_platform_reader(OWNR, now() - interval '100 years'),
         '§144 (label): the key is not the platform now, or was before his assignment was made');
       RAISE EXCEPTION 'v167-undo';
