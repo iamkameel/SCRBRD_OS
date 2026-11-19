@@ -9,7 +9,8 @@ import { SegmentedControl } from "../ui/data.jsx";
 import { usePlayersWithCareerState, useSkills } from "../lib/live.js";
 import { readStateFor } from "../lib/readState.js";
 import { api, signedIn } from "../lib/api.js";
-import { schoolsWhere } from "../lib/session.js";
+import { profile, schoolsWhere } from "../lib/session.js";
+import { sideSchool } from "../lib/sideSeason.js";
 import { holdsCapability } from "../rbac/index.js";
 import { heldTeams, holdsAsHeld } from "../lib/held.js";
 import { pickTeam, teamsOf } from "../lib/teamContext.js";
@@ -42,7 +43,8 @@ function schoolBand(age) {
 // ══════════════════════════════════════════════════════
 //  SQUAD VIEW
 // ══════════════════════════════════════════════════════
-function SquadView({ role }) {
+/** `onOpenTeam(school, code)`: the side's own page, by its address (EXPERIENCE_PASS Q11, review S4). */
+function SquadView({ role, onOpenTeam = null }) {
   const [rosterNonce, setRosterNonce] = useState(0);
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
@@ -138,7 +140,8 @@ function SquadView({ role }) {
     <div className="os-page">
       <SectionHeader title="Squad Management" sub="Player rosters, profiles and availability" color={D.sky}
         actions={canEdit&&<Btn size="sm" onClick={()=>{setNp(n=>({...n,teamCode:""}));setAddModal(true);}}>+ Add Player</Btn>}/>
-      <div role="group" aria-label="Team" data-testid="squad-teams" style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:"8px",marginBottom:"20px",flexWrap:"wrap",alignItems:"center"}}>
+      <div role="group" aria-label="Team" data-testid="squad-teams" style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
         {teams.map(t=>(
           <button key={t} onClick={()=>chooseTeam(t)} className="pressBtn" aria-pressed={team===t} data-testid={`squad-team-${t}`} style={{
             minHeight:"44px",padding:"7px 18px",borderRadius:D.pill,border:`1px solid ${team===t?D.sky+"55":D.border}`,
@@ -146,6 +149,15 @@ function SquadView({ role }) {
             fontFamily:D.head,fontSize:"12px",fontWeight:700,color:team===t?D.sky:D.textMuted,
           }}>{t}</button>
         ))}
+      </div>
+        {/* Beside the side switch, not in it: the switch is the sides alone. The side's name leads to its page (§3.5: "one page, from any side's name"): results and season. */}
+        {onOpenTeam && team && sideSchool(PLAYERS, team, profile()?.assignments ?? []) && (
+          <button type="button" onClick={()=>onOpenTeam(sideSchool(PLAYERS, team, profile()?.assignments ?? []), team)} className="pressBtn os-state" data-testid="squad-team-page"
+            style={{minHeight:"44px",padding:"7px 18px",borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",cursor:"pointer",
+              fontFamily:D.body,fontSize:"12px",fontWeight:600,color:D.textPrimary,marginLeft:"auto"}}>
+            {team} team page <span aria-hidden="true">›</span>
+          </button>
+        )}
       </div>
       {/* The side's next fixture: who has answered, who has not, and who is
           asked again because the fixture moved (SCRBRD-122). A guardian's

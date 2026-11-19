@@ -35,6 +35,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator, openSettingsPart } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4362);
 const API_PORT = port(8899);
@@ -116,7 +117,7 @@ async function signIn(page, email) {
 }
 async function go(page, nav) {
   // The rail, or at phone width the bottom bar.
-  const rail = page.locator(`[data-testid="nav-${nav}"]:visible`).first();
+  const rail = (await destLocator(page, nav));
   const l = (await rail.count()) ? rail : page.locator(`[data-testid="mnav-${nav}"]:visible`).first();
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
@@ -270,8 +271,7 @@ try {
   group("3. The director of sport: names off per age group");
   const dos = await open();
   ok("the director of sport signs in", await signIn(dos.page, "sarah@example.invalid"));
-  ok("Settings → School", await go(dos.page, "settings")
-     && await dos.page.locator("#settings-tab-school").click({ timeout: 4000 }).then(() => true, () => false));
+  ok("School, Record (Settings → School before Slice 6)", await openSettingsPart(dos.page, "school"));
   await dos.page.waitForTimeout(1500);
   const panel = tid(dos.page, `names-off-${HIL}`);
   ok("Hilton's names-off switches are there", await panel.count() === 1);

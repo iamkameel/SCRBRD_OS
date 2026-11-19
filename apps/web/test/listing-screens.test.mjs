@@ -52,8 +52,8 @@ group("The line under the Publish switch");
      && !/will appear/.test(listingLine({ listed: true, published: true, pagesOn: false })));
   ok("pages state unknown is read as on", /will appear there/.test(listingLine({ listed: true, published: true, pagesOn: null })));
   const off = listingLine({ listed: false, published: true, pagesOn: true });
-  ok("does not list: says so, that it will not appear, and points to Settings → School",
-    /does not list its matches on the SCRBRD home page/.test(off) && /will not appear there/.test(off) && /Settings → School/.test(off), off);
+  ok("does not list: says so, that it will not appear, and points to School, Record (Settings → School before Slice 6)",
+    /does not list its matches on the SCRBRD home page/.test(off) && /will not appear there/.test(off) && /School, Record/.test(off), off);
 }
 
 group("Every refusal the routes name has its own words");

@@ -53,7 +53,7 @@ export const listingRefusal = (e) => LISTING_REFUSAL[e?.code]
  */
 export function listingLine({ listed, published, pagesOn }) {
   if (listed == null) return null;
-  if (!listed) return "Your school does not list its matches on the SCRBRD home page: this fixture will not appear there. You can change that in Settings → School.";
+  if (!listed) return "Your school does not list its matches on the SCRBRD home page: this fixture will not appear there. You can change that on School, Record.";
   const head = "Your school lists its matches on the SCRBRD home page";
   if (pagesOn === false) return `${head}. Public pages are switched off on this deployment, so nothing appears there yet.`;
   return published ? `${head}: this fixture will appear there.` : `${head}: this fixture will appear there once you publish it.`;

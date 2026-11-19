@@ -9,7 +9,7 @@
  * `--list` prints the slice and runs nothing.
  */
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -102,6 +102,17 @@ check("every browser walk on disk is in the browser set",
 const expected = onDisk.filter((w) => !NOT_HERE.includes(w)).sort();
 check("the API set and the browser set are every runnable walk on disk", JSON.stringify([...both].sort()) === JSON.stringify(expected),
   `on disk but in neither: ${expected.filter((w) => !both.includes(w)).join(",") || "none"}; in a set but not on disk: ${both.filter((w) => !expected.includes(w)).join(",") || "none"}`);
+
+// db/165 (18 Nov 2026): the walk that proves a fixture goes live from the pad
+// writes no status and no fixture in SQL. Every walk before it wrote 'live'
+// itself, and so hid that nothing in the app ever did.
+console.log("\nlive from the pad");
+{
+  const src = readFileSync(join(ROOT, "tools", "smoke-browser-live-from-pad.mjs"), "utf8");
+  check("smoke-browser-live-from-pad writes no match row in SQL (no update match, no insert into match)",
+    !/\b(update\s+match|insert\s+into\s+match)\b/i.test(src));
+  check("...and sets no status in SQL", !/\bset\s+status\b/i.test(src));
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -818,7 +818,8 @@ ok("the team manager's menu has Training, by team.training.run",
    ROLES.teammanager.nav.includes("training") && !roleGrants("teammanager", NAV_CAPABILITY.training)
    && roleGrants("teammanager", NAV_ALSO.training));
 ok("...the assistant coach keeps it, by player.development.read", ROLES.assistantcoach.nav.includes("training"));
-ok("...and the second capability opens Training alone", Object.keys(NAV_ALSO).join() === "training");
+// Slice 6: the school's Record, out of Settings, is also opened by the capability of any panel it carries.
+ok("...and the second capability opens Training and the school's Record alone", Object.keys(NAV_ALSO).join() === "training,record");
 ok("...and `also` names only real policy roles",
    Object.values(ROLE_IDENTITY).every((id) => (id.also ?? []).every((r) => POLICY_ROLES.includes(r))));
 // The team role does not read a team-mate's ratings; the boy's own screens

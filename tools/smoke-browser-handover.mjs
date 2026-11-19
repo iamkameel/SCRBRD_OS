@@ -192,8 +192,8 @@ try {
 
   group("Outgoing device: the scorer opens and plays a few balls");
   outgoing = await openAs(/Scorer/);
-  ok("the scorer signs in", /Match Centre|Dashboard/i.test(await outgoing.text()));
-  await outgoing.page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  ok("the scorer signs in", (await outgoing.page.locator('[data-testid="os-main"]').count()) > 0);
+  await outgoing.page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(outgoing.page, 1200);
   ok("opened the real fixture", await openMichaelhouse(outgoing.page));
   await outgoing.page.waitForTimeout(2000);
@@ -264,8 +264,8 @@ try {
 
   group("Incoming device: opens the same match cold");
   incoming = await openAs(/Director of Sport/);
-  ok("the director of sport signs in", /Match Centre|Dashboard/i.test(await incoming.text()));
-  await incoming.page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  ok("the director of sport signs in", (await incoming.page.locator('[data-testid="os-main"]').count()) > 0);
+  await incoming.page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(incoming.page, 1200);
   ok("opened the same fixture", await openMichaelhouse(incoming.page));
   await afterReads(incoming.page, 2000);
@@ -362,8 +362,8 @@ try {
   // and says why.
   group("A device that has never opened this fixture replays what the server has (SCRBRD-075)");
   third = await openAs(/Head Coach/);
-  ok("the coach signs in", /Match Centre|Dashboard/i.test(await third.text()));
-  await third.page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  ok("the coach signs in", (await third.page.locator('[data-testid="os-main"]').count()) > 0);
+  await third.page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(third.page, 1200);
   ok("opens the same fixture", await openMichaelhouse(third.page));
   await afterReads(third.page, 3000);

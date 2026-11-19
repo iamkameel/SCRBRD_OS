@@ -50,7 +50,7 @@ function StaffView({ role }) {
     <div className="os-page" data-testid="staff-view">
       <SectionHeader title="Staff" sub="Everyone at the school who holds a staff role" color={D.cyan}/>
       <p data-testid="staff-source" style={{ ...T.role.body, color: T.content.secondary, margin: `0 0 ${T.space.lg}`, maxWidth: "72ch" }}>
-        This is the school's role assignments. To add someone, or to give them another role, use Settings → People.
+        This is the school's role assignments. To add someone, or to give them another role, use Accounts, below.
       </p>
 
       {present.length > 1 && (
@@ -73,7 +73,7 @@ function StaffView({ role }) {
       ) : filtered.length === 0 ? (
         <Card sx={{ padding: T.space.lg }}>
           <div data-testid="staff-none" style={{ ...T.role.body, color: T.content.secondary }}>
-            {STAFF.length === 0 ? "No one holds a staff role at this school yet. Add people in Settings → People." : "No one holds that role."}
+            {STAFF.length === 0 ? "No one holds a staff role at this school yet. Add people under Accounts, below." : "No one holds that role."}
           </div>
         </Card>
       ) : (

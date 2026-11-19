@@ -76,6 +76,7 @@ import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator, destByWord } from "./walk-nav.mjs";
 
 const PORT = port(8852);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -545,8 +546,8 @@ try {
       await page.goto(`${BASE}/app`, { waitUntil: "networkidle" });
       await page.locator("#login-email").fill(email, { timeout: 8000 });
       await page.locator("button", { hasText: /^Sign In$/ }).first().click({ timeout: 4000 });
-      await page.waitForFunction(() => /Match Centre|Dashboard/i.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
-      await page.locator("nav button", { hasText: /Newsfeed/ }).first().click({ timeout: 6000 }).catch(() => {});
+      await page.waitForFunction(() => /Match Centre|Dashboard|Today|Matches/i.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+      await (await destByWord(page, /Newsfeed/)).click({ timeout: 6000 }).catch(() => {});
       await page.waitForSelector('[data-testid="news-list"]', { timeout: 10000 }).catch(() => {});
       if (DEBUG) console.log(email, page.url(), (await text(page)).slice(0, 1500));
       return { ctx, page, errors };
@@ -648,11 +649,11 @@ try {
       await page.goto(`${BASE}/app`, { waitUntil: "networkidle" });
       await page.locator("#login-email").fill(email, { timeout: 8000 });
       await page.locator("button", { hasText: /^Sign In$/ }).first().click({ timeout: 4000 });
-      await page.waitForFunction(() => /Match Centre|Dashboard|Newsfeed/i.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+      await page.waitForFunction(() => /Match Centre|Dashboard|Newsfeed|Today|Matches/i.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
       return { ctx, page, errors };
     };
     const toFeed = async (/** @type {any} */ page) => {
-      const bar = page.locator('[data-testid="nav-news"]:visible, [data-testid="mnav-news"]:visible').first();
+      const bar = await destLocator(page, "news");
       if (await bar.count()) await bar.click({ timeout: 6000 }).catch(() => {});
       else {
         await page.locator('[data-testid="mnav-more"]').click({ timeout: 5000 }).catch(() => {});

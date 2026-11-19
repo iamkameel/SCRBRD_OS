@@ -82,6 +82,7 @@ import { afterReads, watchReads } from "./walk-wait.mjs";
 import { pickTab, tabIds } from "./walk-tabs.mjs";
 import { rankingsOnScreen } from "./walk-rankings.mjs";
 import { rowLinks, sheetChecks } from "./walk-passport.mjs";
+import { destLocator, destByWord } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4366);
 const API_PORT = port(8966);
@@ -233,7 +234,7 @@ async function signIn(page) {
   return (await tid(page, "persona-bar").count()) === 1;
 }
 async function go(page, key) {
-  const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
+  const l = (await destLocator(page, key));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1800);
@@ -429,7 +430,7 @@ try {
   const runsSaid = await inner(s.page, "passport-runs");
   ok("the board: his 34 runs from the scorebook innings", runsSaid.trim() === "34", `${runsSaid} · ${(await inner(s.page, "passport-board")).replace(/\n/g, " / ")}`);
   const boardSaid = await inner(s.page, "passport-board");
-  ok("...and his average, figures first", /AVG 34/.test(boardSaid), boardSaid.replace(/\n/g, " / "));
+  ok("...and his average, figures first", /Average 34/.test(boardSaid), boardSaid.replace(/\n/g, " / "));
   const seasonSaid = await inner(s.page, "passport-panel-season");
   ok("the season tab carries his season", /34 runs/.test(seasonSaid), seasonSaid.replace(/\n/g, " / "));
   {
@@ -541,9 +542,9 @@ try {
     await r.page.locator('input[type="email"]').first().fill("spectator@example.invalid").catch(() => {});
     await click(r.page, /^Sign In$/, 5000);
     await afterReads(r.page, 2200);
-    const comps = r.page.locator("nav button", { hasText: /^Competitions\d*$/ }).first();
+    const comps = await destByWord(r.page, /^Competitions\d*$/);
     ok("he signs in, to the staff shell (no persona bar, the staff menu)", (await tid(r.page, "os-main").count()) === 1
-       && (await tid(r.page, "persona-bar").count()) === 0 && (await r.page.locator("nav button", { hasText: /^Dashboard$/ }).count()) > 0);
+       && (await tid(r.page, "persona-bar").count()) === 0 && (await r.page.locator("nav button", { hasText: /^\s*(Dashboard|Today)$/ }).count()) > 0);
     const reached = (await comps.count()) > 0 && await comps.click({ timeout: 6000 }).then(() => true, () => false);
     await afterReads(r.page, 1800);
     ok("Competitions is on his menu, and opens", reached && await tid(r.page, "os-main").getAttribute("data-page") === "competitions");

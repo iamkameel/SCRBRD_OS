@@ -7,7 +7,8 @@ import { requestResult } from "../../lib/cockpitNav.js";
 import { shortDate } from "../../lib/cockpit.js";
 import { clockWords, correctedAt, correctionsOf } from "../../lib/corrections.js";
 import { sidesOf } from "../../lib/matchCentre.js";
-import { battingWords, bowlingWords, insights, leaders, LEADERS, matchSummary, recentSides } from "../../lib/recentMatches.js";
+import { battingWords, bowlingWords, insights, lastMatchWords, leaders, LEADERS, matchSummary, recentSides } from "../../lib/recentMatches.js";
+import { SeasonLine } from "../seasonline.jsx";
 import { BentoCard } from "../../ui/surfaces.jsx";
 
 /**
@@ -96,6 +97,10 @@ function SideCard({ side, named, onNav }) {
   const unreadAny = unreadLogs > 0 || (!loading && rows.some((r) => r.route == null));
   const open = (/** @type {string} */ id) => { requestResult(id); onNav("matches"); };
   const title = named ? `Recent matches · ${ourName(first.match, first.gate.end).full}` : "Recent matches";
+  // Drawn only when a match has figures (EXPERIENCE_PASS C13): a total, or a scorecard of ours. A read that failed
+  // is still said, since that is not the same as there being nothing.
+  const anyFigures = summaries.some((s) => s.line.carded || s.line.ours != null || s.line.theirs != null);
+  if (!loading && !anyFigures && !unreadAny) return null;
 
   return (
     <BentoCard level="b" title={title} data-testid="day-recent" data-side={side.key}>
@@ -170,6 +175,51 @@ function SideCard({ side, named, onNav }) {
             )}
           </>
         )}
+      </div>
+    </BentoCard>
+  );
+}
+
+/**
+ * LAST MATCH (EXPERIENCE_PASS §3.10): on the coach's day sheet, his side's last finished match in one line, the
+ * result and the totals, then our side's top score and best bowling by name where the card's own gate lets him
+ * count our boys (lib/recentMatches.js lastMatchWords; a strike rate under the floor is not drawn, Q12), and the
+ * side's season in one line under it (views/sideseason.jsx SeasonLine). The same reads as Recent matches, for one
+ * match; the same gate. Nothing for anyone the gate does not admit, and nothing signed out.
+ * @param {{matches: any[], role: string, onNav: (page: string) => void}} p
+ */
+export function LastMatch({ matches, role, onNav }) {
+  const assignments = signedIn() ? profile()?.assignments : null;
+  const side = useMemo(() => recentSides(matches, assignments, { limit: 1 })[0] ?? null, [matches, assignments]);
+  if (!side) return null;
+  return <LastMatchRead side={side} role={role} onNav={onNav}/>;
+}
+
+/** @param {{side: import("../../lib/recentMatches.js").Side, role: string, onNav: (page: string) => void}} p */
+function LastMatchRead({ side, role, onNav }) {
+  const { loading, rows } = useRecent(side);
+  const { match, gate } = side.picks[0];
+  const them = sidesOf(match)[gate.end === "home" ? "away" : "home"].full;
+  const s = loading ? null : matchSummary({ match, end: gate.end, theirName: them, route: rows[0]?.route ?? null,
+    innings: rows[0]?.innings ?? null, correctedAt: rows[0]?.correctedAt ?? null });
+  const w = s ? lastMatchWords(s, side.figures) : null;
+  return (
+    <BentoCard level="c" title="Last match" data-testid="day-last" data-match={match.id}>
+      <div style={{ display: "grid", gap: T.space.xs }}>
+        <p style={{ ...body(), fontWeight: 600, overflowWrap: "anywhere" }}>v {them}{match.date ? ` · ${shortDate(match.date)}` : ""}</p>
+        {loading ? <p style={quiet()}>Reading the scorecard…</p> : (
+          <>
+            {w?.result != null
+              ? <p data-testid="day-last-result" style={body()}>{w.result}{w.totals ? <span style={quiet()}> · {w.totals}</span> : null}</p>
+              : <p data-testid="day-last-unread" style={quiet()}>The result could not be read just now. That is not the same as there being none.</p>}
+            {w?.top && <p data-testid="day-last-top" style={quiet()}>{w.top}</p>}
+            {w?.best && <p data-testid="day-last-best" style={quiet()}>{w.best}</p>}
+            {s?.line.correctedAt != null && <p data-testid="day-last-corrected" style={quiet()}>Corrected {clockWords(s.line.correctedAt)}: these are the corrected figures.</p>}
+          </>
+        )}
+        {side.teamCode && <SeasonLine role={role} school={side.school} team={side.teamCode}/>}
+        <button type="button" className="os-state" data-testid="day-last-open" onClick={() => { requestResult(match.id); onNav("matches"); }}
+                aria-label={`Open the match against ${them}`} style={{ ...btn(), justifySelf: "start", marginTop: T.space.xs }}>Open the match</button>
       </div>
     </BentoCard>
   );

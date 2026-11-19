@@ -52,6 +52,7 @@ import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { fixConditions } from "./fixture-captain.mjs";
 import { NEVER_ON_THE_COCKPIT } from "../apps/web/src/lib/cockpitNever.js";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4396);
 const API_PORT = port(8996);
@@ -146,7 +147,7 @@ async function signIn(page, email) {
   return (await tid(page, "os-main").count()) === 1;
 }
 async function go(page, key) {
-  const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
+  const l = (await destLocator(page, key));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1200);
@@ -298,7 +299,8 @@ try {
   group("The director's To resolve: tomorrow's fixtures under one date, then by team, each row a count with its owner, clock and door");
   const d = await open({ viewport: DESK });
   ok("the director of sport signs in", await signIn(d.page, "sarah@example.invalid"));
-  ok("the destination is called To resolve", /To resolve/.test(await tid(d.page, "nav-readiness").innerText({ timeout: 3000 }).catch(() => "")) && !/Readiness/.test(await tid(d.page, "nav-readiness").innerText().catch(() => "")));
+  // A section of Today now (EXPERIENCE_PASS §1.3), still called To resolve.
+  ok("the destination is called To resolve", /To resolve/.test(await tid(d.page, "home-dashboard-section-readiness").innerText({ timeout: 3000 }).catch(() => "")) && !/Readiness/.test(await tid(d.page, "home-dashboard-section-readiness").innerText().catch(() => "")));
   ok("he reaches it", await queue(d.page) && await tid(d.page, "os-main").getAttribute("data-page") === "readiness");
   const days = await d.page.$$eval('[data-testid^="queue-day-"]', (els) => els.map((e) => ({ id: e.getAttribute("data-testid").replace("queue-day-", ""), groups: [...e.querySelectorAll('[data-testid="queue-group"]')].map((g) => g.getAttribute("data-match")) })));
   const tomorrow = days.find((x) => x.groups.includes(A));
@@ -454,7 +456,7 @@ try {
   await queue(o.page);
   await tid(o.page, `queue-open-office:${HIL}:O2`).click({ timeout: 4000 });
   await afterReads(o.page, 1500);
-  ok("O2 opens Settings, People, with the claim to confirm", await tid(o.page, "os-main").getAttribute("data-page") === "settings" && await tid(o.page, "claim").count() >= 1);
+  ok("O2 opens School, People (Settings, People before Slice 6), with the claim to confirm", await tid(o.page, "os-main").getAttribute("data-page") === "staff" && await tid(o.page, "claim").count() >= 1);
   ok("no page errors on the office's screens", o.errors.length === 0 && o.refusals.length === 0, [...o.errors, ...o.refusals].join(" | "));
   await o.ctx.close();
 
@@ -533,13 +535,13 @@ try {
     const reach = await go(sc.page, "readiness");
     await sc.page.waitForTimeout(1500);
     const stext = reach ? await inner(sc.page, "queue") : "";
-    ok("a scorer is not a reader: if the destination is there it draws no group and no office list, and says nothing is his to resolve",
-       !reach || (/Nothing here is yours to resolve/.test(stext) && await tid(sc.page, "queue-group").count() === 0 && await tid(sc.page, "queue-office").count() === 0), stext.slice(0, 200));
+    // Q17 (EXPERIENCE_PASS, decided 13 Nov): To resolve is drawn only for someone who can act on a row, so a scorer is not offered it.
+    ok("a scorer is not a reader, and is not offered To resolve (Q17)", !reach && await tid(sc.page, "home-dashboard-section-readiness").count() === 0, stext.slice(0, 200));
     await sc.ctx.close();
     for (const [who, email] of [["a parent", "parent.whitfield@example.invalid"], ["a pupil", "pillay@example.invalid"]]) {
       const g = await open({ viewport: DESK });
       await signIn(g.page, email);
-      ok(`${who} is not offered the destination`, await g.page.locator('[data-testid="nav-readiness"], [data-testid="mnav-readiness"]').count() === 0);
+      ok(`${who} is not offered the destination`, await g.page.locator('[data-testid="nav-readiness"], [data-testid="mnav-readiness"], [data-testid="home-dashboard-section-readiness"]').count() === 0);
       await g.ctx.close();
     }
   }

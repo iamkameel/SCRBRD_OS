@@ -382,9 +382,31 @@ const DISPLAY_BOOT = `
  * @param {any} h  the header
  */
 export function shellTitle(h) {
+  const { sides, score } = shellParts(h);
+  return score ? `${sides} · ${score}` : sides;
+}
+
+/** The title's two halves: the sides by their public labels, and the score by innings ("" before a ball). @param {any} h */
+function shellParts(h) {
   const sides = `${h.homeLabel ?? h.homeTeam ?? "Home"} v ${h.awayLabel ?? "Away"}`;
   const score = (h.scores ?? []).map((/** @type {any} */ s) => `${s.runs ?? 0}/${s.wickets ?? 0}`).join(" & ");
-  return score ? `${sides} · ${score}` : sides;
+  return { sides, score };
+}
+
+/**
+ * What #root holds until the bundle draws (CRI-2.4): the title's own words —
+ * the sides and the score by innings, team facts only, nothing the title does
+ * not already say — so a phone on a weak signal has the score as soon as the
+ * page arrives and never a blank screen while the bundle downloads. React's
+ * first render replaces it. The phone's own type: no web font is waited for.
+ * @param {any} h  @param {string} what  "Live score", "Scorecard", "Ground display"
+ */
+export function shellPlaceholder(h, what) {
+  const { sides, score } = shellParts(h);
+  return `<main data-testid="public-shell" style="max-width:960px;margin:0 auto;padding:24px 16px;font-family:system-ui,sans-serif">`
+    + `<p style="font-size:16px;margin:0">${esc(sides)}</p>`
+    + (score ? `<p data-testid="public-shell-score" style="font-size:28px;font-weight:700;margin:8px 0 0">${esc(score)}</p>` : "")
+    + `<p style="font-size:14px;margin:8px 0 0">${esc(what)} · loading…</p></main>`;
 }
 
 /**
@@ -392,6 +414,8 @@ export function shellTitle(h) {
  * view, and nothing about any child.
  * @param {{view: string, matchId: string, header: any}} o
  */
+// CRI-2.4: the web fonts' sheet does not hold up the first paint (media="print" until it loads): on a weak
+// signal a third party's stylesheet would keep the score below off the screen for seconds.
 export function shellHtml({ view, matchId, header }) {
   const title = shellTitle(header);
   const what = view === "scorecard" ? "Scorecard" : view === "display" ? "Ground display" : "Live score";
@@ -413,10 +437,10 @@ export function shellHtml({ view, matchId, header }) {
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   </head>
   <body>
-    <div id="root" data-view="${esc(view)}" data-match="${esc(matchId)}"></div>
+    <div id="root" data-view="${esc(view)}" data-match="${esc(matchId)}">${shellPlaceholder(header, what)}</div>
     <script type="module" src="/public-app.js"></script>
   </body>
 </html>

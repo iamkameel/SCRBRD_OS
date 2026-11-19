@@ -35,9 +35,11 @@ function PersonaBar({ active, onNav, onSignOut, userName }) {
         <Icon name="user"/>
         <span className="os-username" style={{ maxWidth: "140px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{userName}</span>
       </button>
-      <button type="button" onClick={() => onNav("safeguarding")} data-testid="nav-safeguarding" className="pressBtn os-state"
+      <button type="button" onClick={() => onNav("safeguarding")} data-testid="nav-safeguarding" className="pressBtn os-state os-concern"
         aria-label="Raise a concern" aria-current={active === "safeguarding" ? "page" : undefined} style={btn(active === "safeguarding")}>
-        <Icon name="hand-heart"/>
+        <span aria-hidden="true" style={{ display: "flex" }}><Icon name="hand-heart"/></span>
+        {/* In words, as on the staff header (TopBar.jsx): a child's one way of telling an adult is never an icon alone. */}
+        <span className="os-concern-text" style={{ lineHeight: 1.15, textAlign: "left", whiteSpace: "nowrap" }}>Raise{"\u00a0"}a concern</span>
       </button>
       <button type="button" onClick={onSignOut} data-testid="persona-signout" className="pressBtn os-state" aria-label="Sign out" style={btn(false)}>
         <Icon name="log-out"/>

@@ -312,8 +312,8 @@ try {
   await click(/Scorer/, 4000);
   await click(/^Sign In$/, 5000);
   await afterReads(page, 2200);
-  ok("a seeded scorer gets in", /Match Centre|Dashboard/i.test(await text()));
-  await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  ok("a seeded scorer gets in", (await page.locator('[data-testid="os-main"]').count()) > 0);
+  await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(page, 1200);
   const opened = await page.evaluate(() => {
     const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");

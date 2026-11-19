@@ -136,10 +136,10 @@ async function signIn(page, who) {
   await click(page, who, 4000);
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
-  return /Match Centre|Dashboard/i.test(await text(page));
+  return (await page.locator('[data-testid="os-main"]').count()) > 0;
 }
 async function toMatchCentre(page) {
-  await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await page.waitForTimeout(1200);
 }
 const matchCard = (page) => page.locator(`[data-testid="match-card-${MATCH}"]`).first();

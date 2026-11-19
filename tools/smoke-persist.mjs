@@ -92,7 +92,7 @@ const clearBlockers = async () => {
   }
 };
 const intoScorer = async () => {
-  await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await page.waitForTimeout(700);
   await click(/^Live$/, 2500);
   await click(/Open Live Scorer/i, 5000);
@@ -154,7 +154,7 @@ try {
 
   // The session should have put us back inside the app rather than the landing
   // page — a scorer should not have to log in again mid-over.
-  const backInApp = /Match Centre|Dashboard|DOT|UNDO/i.test(await text());
+  const backInApp = /Match Centre|Dashboard|Today|Matches|DOT|UNDO/i.test(await text());
   ok("reload lands back in the app, not the landing page", backInApp);
 
   // Did the session put the scorer straight back on the pad, or only back
@@ -173,7 +173,7 @@ try {
     if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }
   } else {
     // Session restored the shell but not the scorer: walk back in.
-    if (!/Match Centre/i.test(await text())) await click(/Get Started|Log In/, 3000);
+    if (!/Match Centre|Today|Matches/i.test(await text())) await click(/Get Started|Log In/, 3000);
     if (/Head Coach/i.test(await text())) { await click("Head Coach", 3000); await click(/^Sign In$/, 3000); await page.waitForTimeout(1200); }
     await intoScorer();
   }
@@ -197,7 +197,7 @@ try {
   await page.waitForTimeout(1500);
   ok("the app comes back after the browser was closed", (await page.$eval("#root", (el) => el.innerHTML.length)) > 500);
   if (!/UNDO|OUTCOME|Phase|\bDOT\b/i.test(await text())) {
-    if (!/Match Centre/i.test(await text())) await click(/Get Started|Log In/, 3000);
+    if (!/Match Centre|Today|Matches/i.test(await text())) await click(/Get Started|Log In/, 3000);
     if (/Head Coach/i.test(await text())) { await click("Head Coach", 3000); await click(/^Sign In$/, 3000); await page.waitForTimeout(1200); }
     await intoScorer();
   }

@@ -20,17 +20,17 @@ Steps marked S need a fixture on a server. Production has no seed, and its roste
 
 ☐ Phone A: tap **Continue with Google**. Phone B: type your email and a fresh office code in **Sign-in code**, tap **Sign In**. Phone C: either. You should reach the app, not **Waiting for your school office**. A code works once: note who issued it.
 
-☐ Tap **Match Centre** (bottom bar, or under **More**). The Saturday 31 October 2026 fixture is listed with **Start scoring →** (or **Open live scorer →** once live). Do not open it.
+☐ Tap **Matches** (in the menu, or on the bottom bar of a phone). The Saturday 31 October 2026 fixture is listed with **Start scoring →** (or **Open live scorer →** once live). Do not open it.
 
 ## 3. Pick the side (look only)
 
 The coach steps are not rehearsed with a real save. **Pick the side** lists the team's real boys, and **Save the side** writes them to the real fixture. A practice match has no side to pick. So look, and do not save.
 
-☐ Coach's phone: **Match Centre**, tap the fixture's card. Under **Match Details** you should see **Pick the side**. Tap it, read the list, tap **Close**. Never tap **Save the side**. No button means this account does not hold that side: log it.
+☐ Coach's phone: **Matches**, tap the fixture's card. Under **Match Details** you should see **Pick the side**. Tap it, read the list, tap **Close**. Never tap **Save the side**. No button means this account does not hold that side: log it.
 
 ## 4. Toss, openers, an over, a wicket, undo (P)
 
-☐ **Match Centre**, **Open SCRBRD Scorer**, **Start Practice Match**. Choose Custom overs, 2. Type two made-up teams and eleven made-up names each ("Test Batter 1").
+☐ **Matches**, **Open SCRBRD Scorer**, **Start Practice Match**. Choose Custom overs, 2. Type two made-up teams and eleven made-up names each ("Test Batter 1").
 
 ☐ At **The toss** pick a winner, then **Bat**. Name the openers and the **Opening bowler**. The pad shows the practice label "Practice match · kept on this phone".
 
@@ -44,7 +44,7 @@ The coach steps are not rehearsed with a real save. **Pick the side** lists the 
 
 ☐ (P) Airplane mode on. Score one over. See the pill read **On device**: that is right for a practice match. Airplane mode off. Reopen `https://scrbrd.onrender.com/app`, then on "Practice match in progress" tap Resume. The score is as you left it.
 
-☐ (S) Demonstration copy: airplane mode on, score an over. See **Held** with a count. Airplane mode off. See the count fall, then **Sent**.
+☐ (S) Demonstration copy: airplane mode on, score an over. See **No signal** with a count. Airplane mode off. See the count fall, then **Sent**.
 
 ## 6. Hand over and take over (S)
 

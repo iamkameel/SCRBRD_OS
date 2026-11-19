@@ -4,7 +4,7 @@ Saturday 31 October 2026. Westville Boys' High School v [opponent]. One fixture 
 
 Pilot date: Saturday 31 October 2026 (Kameel, 15 Oct 2026). Schedule: wave 3 pasted and merged by 17 Oct; solo run 1 on 22 Oct; feature freeze from 26 Oct; solo run 2 on 27 Oct; production verify on 28 Oct; go/no-go on 29 Oct.
 
-Fill in before the day: [opponent], [match link from the Match Centre]. The people to call are under Who to call.
+Fill in before the day: [opponent], [match link from Matches]. The people to call are under Who to call.
 
 Every button name below is written as the app shows it. The scorers' own one-page guide is `docs/pilot/SCORER_HELP.md`.
 
@@ -38,15 +38,15 @@ These are roles, not names. The numbers for each role are on the printed card ea
 1. Charge both scorers' phones and restart them.
 2. Each scorer opens `https://scrbrd.onrender.com/app` on their own phone (the home page at `https://scrbrd.onrender.com` has a **Log in** link to it). They tap **Continue with Google**, or type their email and the code from Kameel in **Sign-in code** and tap **Sign In**. A code works once and expires, so phone Kameel for a fresh one on the morning if it was used.
 3. If the screen says **Waiting for your school office**, the office has not linked that account yet. Ask the school office.
-4. Tap **Match Centre** (the bottom bar on a phone, or under **More**). The fixture must be listed. While it is upcoming its button reads **Start scoring →**; once live it reads **Open live scorer →**. If there is no button, that account is not offered scoring: tell the school office.
+4. Tap **Matches** (in the menu, or on the bottom bar of a phone). The fixture must be listed. While it is upcoming its button reads **Start scoring →**; once live it reads **Open live scorer →**. If there is no button, that account is not offered scoring: tell the school office.
 5. Rehearse on a practice match, not the real fixture: **Open SCRBRD Scorer**, then **Start Practice Match**. Score a few balls, a **Wicket** and an **Undo**. A practice match stays on the phone and is never counted.
 6. **Do not** score balls on the real fixture before the match.
 
 ### Pavilion screen
 
-1. Someone who may publish Westville Boys' High School's side (the director of sport or the office) taps the fixture's card in the Match Centre to open **Match Details**. Under **Public page** they tap **Publish** for the home side. If Westville Boys' High School is the away side, the home school publishes its own side.
+1. Someone who may publish Westville Boys' High School's side (the director of sport or the office) taps the fixture's card on Matches to open **Match Details**. Under **Public page** they tap **Publish** for the home side. If Westville Boys' High School is the away side, the home school publishes its own side.
 2. A **Ground display** section appears with a link and a QR code. Choose **Floodlit** or **Daylight**, **Normal (12 s)** or **Long (24 s)**, and tick **Reduce motion** if wanted. The choices travel in the link.
-3. Open that link in the pavilion screen's browser: [match link from the Match Centre]. Nobody signs in on it and nothing on it can be pressed.
+3. Open that link in the pavilion screen's browser: [match link from Matches]. Nobody signs in on it and nothing on it can be pressed.
 4. Before the toss it shows **Before the toss** and "The board opens with the first ball."
 5. If it says "This page is not available", the link is wrong or the match is not public (the side is not published, or public pages are off).
 6. Test the Wi-Fi where the screen sits.
@@ -57,7 +57,7 @@ These are roles, not names. The numbers for each role are on the printed card ea
 
 1. Agree who scores first and who stands by.
 2. Both scorers sign in again, at the gate where there is signal.
-3. The first scorer opens the fixture from **Match Centre** (**Open live scorer →** or **Start scoring →**). If no toss is recorded, the pad shows **The toss**. Answer it only when the umpires have told you the result: the side batting first opens the innings and that cannot be undone on the pad.
+3. The first scorer opens the fixture from **Matches** (**Open live scorer →** or **Start scoring →**). If no toss is recorded, the pad shows **The toss**. Answer it only when the umpires have told you the result: the side batting first opens the innings and that cannot be undone on the pad.
 4. The standby opens the same fixture afterwards. Their pad should say **Someone else is scoring this match**. Leave it. If it says **Another phone was scoring this match** with **Take over scoring**, do not press it: the scoring phone is still the scoring phone unless the lead says it is dead (see "If the scoring phone dies").
 5. Check the pavilion screen still shows **Before the toss**.
 6. Open the health address again.
@@ -73,7 +73,7 @@ These are roles, not names. The numbers for each role are on the printed card ea
 
 ### Through the innings
 
-- The pavilion screen shows only what has been sent. If the pill says **Held** or **On device**, the screen is behind until the balls go.
+- The pavilion screen shows only what has been sent. If the pill says **No signal** or **On device**, the screen is behind until the balls go.
 - At the end of each innings the check sheet opens. Compare it with the umpires' book, then tap **That is right — close the innings**. If it is wrong, tap **Take back the last ball**. After the first innings tap **Start 2nd Innings →**.
 - A handover needs signal on both phones, because arming and claiming both call the server. The sheet will not arm while balls are unsent or a ball is half entered. Do it between balls, ideally at the end of an over. The steps are in the scorers' guide: **Hand over**, **Hand over scoring**, the six-digit code, **Take over**, **Claim this match**, then the second scorer types the physical scoreboard's figures and taps **Confirm and take over**.
 
@@ -103,7 +103,7 @@ For the pilot (Kameel, 30 Oct 2026) the lead taps **Discard** and the scorer rec
 
 ### No signal at the ground
 
-1. Scoring carries on. The pill says **Held** or **On device**, and the balls are saved on the phone.
+1. Scoring carries on. The pill says **No signal** or **On device**, and the balls are saved on the phone.
 2. If the page reloads or the phone restarts, the pad reopens with its score. If a bar says **Sign in**, tap it and sign in again. If the old code has been used, phone Kameel for a new one (the number is on the day sheet).
 3. When signal returns the balls send by themselves. Wait for **Sent**.
 4. There is no handover without signal.
@@ -127,7 +127,7 @@ The scoring phone keeps its screen awake while it holds the match, where the pho
 
 ### The server or the database is down
 
-Signs: the pill stays **Held** or **On device** although the phone has signal; the health address does not answer, or shows `"db":"unreachable"`; the pavilion screen says "reconnecting".
+Signs: the pill stays **No signal** or **On device** although the phone has signal; the health address does not answer, or shows `"db":"unreachable"`; the pavilion screen says "reconnecting".
 
 1. Keep scoring on the pad. Every ball is saved on the phone before it counts. Nothing is lost while the phone works. Do not reload, clear the match or sign out.
 2. The paper scorebook is kept as always, ball by ball. Today it is the second record: check it against the pad at the end of every over, not only at the innings.
@@ -167,7 +167,7 @@ Another school's boy's details, a name on the pavilion screen where a position s
 1. After the second innings the scorer's screen says **Match Complete**. The scorer stays until the pill says **Sent**, moving to where there is signal if needed.
 2. During play only the pad's own end of the second innings marks the match complete (Kameel, 30 Oct 2026). Nobody records the result anywhere else (**Match Details**, the office) until both phones say **Sent**. A pad that still had balls when a result was recorded sends them **For review** when it next has signal, and lists them; they never go into the finished scorebook.
 3. In the Match Centre tap **Open match**, then **Scorecard**, and compare with the umpires' book.
-4. The public page is at the link in the **Public page** panel: [match link from the Match Centre]. Only players whose family has consented are named; everyone else is shown by position.
+4. The public page is at the link in the **Public page** panel: [match link from Matches]. Only players whose family has consented are named; everyone else is shown by position.
 5. To take the public page down, tap **Withdraw** in the same panel.
 
 ---
@@ -184,8 +184,8 @@ Another school's boy's details, a name on the pavilion screen where a position s
 
 ### For solo run 2 (27 October) and the production verify (28 October)
 
-- [ ] With the API stopped (or suspended on Render), score six balls on a practice match: the pill says **Held**, not **Refused**; on resume they go to **Sent**.
-- [ ] With the API up and the database string wrong (a test server), the same: the server's 5xx leaves balls **Held**.
+- [ ] With the API stopped (or suspended on Render), score six balls on a practice match: the pill says **No signal** with the count, not **Refused**; on resume they go to **Sent**.
+- [ ] With the API up and the database string wrong (a test server), the same: the server's 5xx leaves balls waiting on the phone, never **Refused**.
 - [ ] `PUBLIC_PAGES` off and on again: the pavilion page 404s, then returns, within a few minutes; note the time it took.
 - [ ] `account_set_active(false)` on a test scorer mid-practice: the pad stops sending and holds; enabled again and signed in, it sends.
 - [ ] A parent's question "who read my child's record" can be answered from "On the record: who read what" by the office in under five minutes.

@@ -163,7 +163,7 @@ const openMichaelhouse = async (page) => page.evaluate(() => {
 
 /** Open the Michaelhouse fixture's pad from the dashboard, as the handover walk does. */
 async function openPad(who) {
-  await who.page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+  await who.page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(who.page, 1200);
   const opened = await openMichaelhouse(who.page);
   await afterReads(who.page, 2000);
@@ -194,7 +194,7 @@ const banner = async (page) => ({
   reason: (await tid(page, "sync-banner").first().getAttribute("data-reason", { timeout: 800 }).catch(() => null)) ?? null,
   text: ((await tid(page, "sync-banner").first().innerText({ timeout: 800 }).catch(() => "")) || "").replace(/\s+/g, " ").trim(),
 });
-/** The sync pill's word, from its accessible name: "Sent", "Held 2", "On device"… */
+/** The sync pill's word, from its accessible name: "Sent", "No signal · 2 to send", "On device"… */
 const pill = async (page) => {
   const l = page.locator('[aria-label^="Sync status:"]').first();
   if (!(await l.count())) return "";
@@ -261,7 +261,7 @@ try {
 
   group("A scores two balls with signal; they reach the server");
   A = await openAs(/Scorer/);
-  ok("the scorer signs in", /Match Centre|Dashboard/i.test(await A.text()));
+  ok("the scorer signs in", (await A.page.locator('[data-testid="os-main"]').count()) > 0);
   ok("opened the real fixture", await openPad(A));
   await clearBlockers(A.page);
   // The first tap on a pad that has only just opened can be spent on a sheet
@@ -317,7 +317,7 @@ try {
 
   group("B takes the match over with the code, while A is offline");
   B = await openAs(/Director of Sport/);
-  ok("the director of sport signs in", /Match Centre|Dashboard/i.test(await B.text()));
+  ok("the director of sport signs in", (await B.page.locator('[data-testid="os-main"]').count()) > 0);
   ok("opened the same fixture", await openPad(B));
   ok("B is offered Take over: A's handover is pending", /Take over/i.test(await B.text()));
   await tid(B.page, "open-handover").first().click({ timeout: 3000 });

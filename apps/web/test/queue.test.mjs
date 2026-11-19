@@ -356,6 +356,14 @@ group("The office list: who holds which row, and O1, O2, O3 (§2.3, §3.3)");
   ok("...a request asked before the email was verified is a request all the same: one such alone is a row",
      officeRows({ school: HIL, may, requests: [req({ askedUnverified: true })], now: NOW }).rows[0]?.fact === "1 request waiting · 1 asked before the email was verified");
   ok("...nothing waiting is no row, and a request none of which is decidable by this reader is no row", officeRows({ school: HIL, may, requests: [] , now: NOW }).rows.length === 0 && officeRows({ school: HIL, may, requests: [req({ decidable: false })], now: NOW }).rows.length === 0);
+  // Slice 6 (EXPERIENCE_PASS §1.10): a parent asking to be linked to a child is its own row, the office's first.
+  const op = officeRows({ school: HIL, may, requests: [req({ id: "g1", role: "guardian", requestedAt: new Date(NOW - 2 * day).toISOString() }),
+    req({ id: "g2", role: "guardian", requestedAt: new Date(NOW - 5 * day).toISOString() }), req({ id: "c1", role: "coach" }), req({ id: "g3", role: "guardian", school: KES })], now: NOW });
+  ok("'2 parents are waiting' is the office's first row, apart from the other requests, oldest 5 days",
+     op.rows[0]?.fact === "2 parents are waiting" && op.rows[0].count === 2 && op.rows[0].age === "oldest 5 days" && op.rows[1]?.fact === "1 request waiting", op.rows.map((r) => r.fact));
+  ok("...its door is Decide, landing on the oldest parent's request, and it names nobody",
+     op.rows[0].action.kind === "requests" && op.rows[0].action.requestId === "g2" && !/coach|guardian|g1|g2/.test(op.rows[0].fact));
+  ok("...one parent is 'A parent is waiting'", officeRows({ school: HIL, may, requests: [req({ role: "guardian" })], now: NOW }).rows[0]?.fact === "A parent is waiting");
   const claim = (o) => ({ school_id: HIL, requested_at: new Date(NOW - 2 * day).toISOString(), ...o });
   const o2 = officeRows({ school: HIL, may, claims: [claim({}), claim({ requested_at: new Date(NOW - 3 * day).toISOString() }), claim({ school_id: KES })], now: NOW });
   ok("O2: '2 Google sign-ins match an enrolled account', oldest 3 days, door Confirm", o2.rows[0]?.fact === "2 Google sign-ins match an enrolled account" && o2.rows[0].age === "oldest 3 days" && o2.rows[0].action.label === "Confirm", o2.rows[0]);

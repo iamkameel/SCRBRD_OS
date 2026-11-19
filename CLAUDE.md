@@ -83,7 +83,14 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   the importer; and what the audit log must keep to answer for it) and who
   sees a child's data (added 2026-10-21: one map, across every design, of who
   may read each piece of a child's data and under what condition; where two
-  designs disagree; and the questions for Kameel that settle each one).
+  designs disagree; and the questions for Kameel that settle each one)
+  and the pilot-role design review (added 2026-11-18, Kameel: "can we use fable
+  and opus in tandem"; one Fable pass turning five Opus role reviews, Player,
+  Coach, Scorer, Parent and Spectator, into one cross-role design direction)
+  and a pupil's photo on a public profile (added 2026-11-18, Kameel: "Change the
+  rule: public profile shows a photo"; a design pass on where a family sets the
+  profile public, changing docs/policy/PUBLIC_DATA.md A8, the terms and the
+  consent; counsel reads it; after the 25 Nov reset).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from

@@ -77,17 +77,27 @@ const POOL = 4;
 /**
  * The school-wide queue.
  *
- * @param {{matches: any[], assignments: any[] | null | undefined, now: number}} o
+ * `onOpen`: the queue as Today draws it, on opening the app, when nobody has tapped for it (EXPERIENCE_PASS Slice 5,
+ * review S2). It leaves out the two reads the server logs against the people they name: the lifts expected on a
+ * match day (lift_expected() logs each child's name, db/76) and the clearance register (its reference is a
+ * restricted field). Their rows are reached by a tap, on To resolve, as before. A lift holder's bus row then says
+ * the lifts are not counted (ruleS1), never a count it did not read; `registerOnTap` names the schools whose
+ * register would have been read.
+ *
+ * @param {{matches: any[], assignments: any[] | null | undefined, now: number, onOpen?: boolean}} o
  */
-export function useQueue({ matches, assignments, now }) {
+export function useQueue({ matches, assignments, now, onOpen = false }) {
   // A panel whose module is switched off for this person is neither read nor drawn (lib/cockpit.js withSwitches).
   const { features } = useFeatures();
   const picks = useMemo(() => {
     const c = chooseSchoolFixtures(matches, assignments, now);
-    const sw = (/** @type {{match: any, gate: any}} */ p) => ({ ...p, gate: withSwitches(p.gate, features) });
+    const noTap = (/** @type {any} */ g) => (onOpen && g ? { ...g, panels: { ...g.panels, lifts: false, liftOffice: false } } : g);
+    const sw = (/** @type {{match: any, gate: any}} */ p) => ({ ...p, gate: noTap(withSwitches(p.gate, features)) });
     return { inWindow: c.inWindow.map(sw), later: c.later.map(sw) };
-  }, [matches, assignments, now, features]);
-  const offices = useMemo(() => officeReader(assignments), [assignments]);
+  }, [matches, assignments, now, features, onOpen]);
+  const officesHeld = useMemo(() => officeReader(assignments), [assignments]);
+  const offices = useMemo(() => (onOpen ? officesHeld.map((o) => ({ ...o, may: { ...o.may, register: false } })) : officesHeld), [officesHeld, onOpen]);
+  const registerOnTap = useMemo(() => (onOpen ? officesHeld.filter((o) => o.may.register).map((o) => o.school) : []), [officesHeld, onOpen]);
   const [laterShown, setLaterShown] = useState(0);
   const wanted = useMemo(() => [...picks.inWindow, ...picks.later.slice(0, laterShown)], [picks, laterShown]);
 
@@ -231,6 +241,8 @@ export function useQueue({ matches, assignments, now }) {
     showLater: () => setLaterShown((n) => Math.min(picks.later.length, n + LATER_STEP)),
     hideLater: () => setLaterShown(0),
     offices: officeLists,
+    /** Today's no-tap mode: the schools whose clearance register is read on To resolve, not here. */
+    registerOnTap,
     header,
     retry,
     retryOffice: () => setOfficeAgain((n) => n + 1),

@@ -211,7 +211,7 @@ group("Joining a school never says found or not found, and never looks a child u
      && !/Test Child|Child:/.test(sentWords("parent", "Test School")));
   ok("...which says nothing is linked automatically", /nothing is linked automatically/.test(sentWords("parent", "Test School")));
   ok("a request the server refused is told in words", joinWords(apiError(422, "already_pending")) === JOIN_WORDS.already_pending);
-  ok("a request that never arrived says nothing was sent", /nothing was sent/.test(joinWords(new TypeError("x"))));
+  ok("a request that never arrived says nothing was sent", /Nothing was sent/.test(joinWords(new TypeError("x"))));
   // db/86: the server refuses a platform role when it is filed, with the
   // enrol path's code. Its own words, not the fallback.
   ok("a platform role refused at filing is told in its own words",
@@ -319,7 +319,7 @@ group("The join screen as drawn");
   ok("no list of pupils is drawn", !/pupil-list|child-list|Whitfield|Pillay/.test(html));
   ok("none of the screen's words is an oracle", !FOUND.test(html.replace(/<[^>]+>/g, " ")), html.replace(/<[^>]+>/g, " ").match(FOUND)?.[0]);
   html = renderToStaticMarkup(h(JoinSchool, { schools: [], onSent() {} }));
-  ok("with no schools it says so", /No school is listed/.test(html));
+  ok("with no schools it says so", /No schools are on SCRBRD yet/.test(html));
 }
 
 group("The ways to sign in");
@@ -391,7 +391,7 @@ group("Where it sits in the app");
 {
   const settings = src("../src/views/SettingsView.jsx");
   ok("Me carries the ways to sign in only when signed in for real", /\{live && <Panel><WaysToSignIn\/><\/Panel>\}/.test(settings));
-  ok("People carries the Claims list only for those who may issue a code", /canClaims\s*=\s*holdsCapability\(role,\s*"user\.invite"\)/.test(settings) && /tab === "users" && canClaims && signedIn\(\)/.test(settings));
+  ok("People carries the Claims list only for those who may issue a code", /canClaims\s*=\s*holdsCapability\(role,\s*"user\.invite"\)/.test(settings) && /\{canClaims && signedIn\(\) && \(\s*<ClaimsPanel/.test(settings) && /function PeoplePart\(/.test(settings));  // Slice 6: People is School, People's part
   ok("...and counts it on the People tab", /\(canClaims \? claims\.rows\.length : 0\)/.test(settings));
   const app = src("../src/App.jsx");
   ok("a signed-in account with no assignment goes to the no-school screen", /assignments\.length === 0/.test(app) && /<NoSchool /.test(app) && !/PendingRequests/.test(app));

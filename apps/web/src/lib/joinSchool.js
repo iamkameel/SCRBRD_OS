@@ -105,7 +105,7 @@ export function buildRequest(kind, schoolId, f = {}) {
  * None says anything about a child or an account.
  */
 export const JOIN_WORDS = {
-  already_pending: "Your request is already with the school office. You do not need to send it again: the answer will show on this page.",
+  already_pending: "Your request is already with the school office. No need to send it again. The answer will show on this page.",
   // db/93: the account's own state, said as that and nothing more. It never
   // says why and never names anyone (design SCRBRD-140 phase 2 §4.2).
   request_cooldown: "This account can't send a request yet. The school's safeguarding lead can lift that. Ask the school office to put you in touch.",
@@ -120,7 +120,7 @@ export const JOIN_WORDS = {
   token_expired: "You were signed out. Sign in again to ask.",
 };
 const JOIN_FALLBACK = "That request was not sent. Try again, or ask your school office.";
-const JOIN_UNREACHABLE = "Could not reach SCRBRD. Check your connection and try again; nothing was sent.";
+const JOIN_UNREACHABLE = "Could not reach SCRBRD. Check your connection and try again. Nothing was sent.";
 
 /** @param {any} e */
 export function joinWords(e) {
@@ -182,7 +182,7 @@ export const spectatorAsk = (schoolId) => ({ role: "spectator", schoolId, note: 
  */
 export const REQUEST_STATE_WORDS = Object.freeze({
   pending: "waiting for an answer",
-  granted: "granted",
-  declined: "declined",
+  granted: "the school said yes",
+  declined: "the school said no",
   withdrawn: "withdrawn",
 });

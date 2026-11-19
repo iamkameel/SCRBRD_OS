@@ -33,6 +33,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4391);
 const API_PORT = port(8991);
@@ -116,7 +117,7 @@ async function signIn(page, email) {
 }
 /** Open a destination from the sidebar, the phone's bar, or the phone's More drawer. */
 async function go(page, key) {
-  let l = page.locator(`[data-testid="nav-${key}"], [data-testid="mnav-${key}"]`).first();
+  let l = (await destLocator(page, key));
   if (!(await l.count()) && await tid(page, "mnav-more").count()) {
     await tid(page, "mnav-more").click({ timeout: 4000 }).catch(() => {});
     await page.waitForTimeout(400);

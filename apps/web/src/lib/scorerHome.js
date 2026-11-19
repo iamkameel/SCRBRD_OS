@@ -247,6 +247,7 @@ export function resumeItems({ saved, pending, serverMatches }) {
     if (!(n == null || n > 0) && finished) continue;
     const openable = !serverMatches || !!server;
     const m = server ?? { id: s.matchId, homeTeam: cfg.team1, awayTeam: cfg.team2, overs: cfg.overs, live: true,
+                          ...(cfg.schoolId ? { schoolId: cfg.schoolId } : {}),
                           startsAt: cfg.startsAt ?? null, format: cfg.format ?? null };
     out.push({ matchId: s.matchId, title: `${m.homeTeam ?? cfg.team1 ?? "Home"} v ${m.awayTeam ?? cfg.team2 ?? "Away"}`,
                pending: n, savedAt: s.savedAt ?? null, finished, openable, match: openable ? { ...m, live: true } : null,
@@ -256,11 +257,16 @@ export function resumeItems({ saved, pending, serverMatches }) {
   return out.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
 }
 
-/** "3 to send", "Everything sent", or a count this device could not read. @param {number|null} n */
+/**
+ * "3 to send · open the pad to send them", "Nothing waiting to send", or a
+ * count this device could not read. Only the pad sends (lib/sync.js PadSync),
+ * so the home says where they go from (18 Nov 2026), as P0's note does.
+ * @param {number|null} n
+ */
 export function pendingWords(n) {
   if (n == null) return "Could not count what is still to send";
   if (n === 0) return "Nothing waiting to send";
-  return `${n} to send`;
+  return `${n} to send · open the pad to send ${n === 1 ? "it" : "them"}`;
 }
 
 // ── Preparation for the next fixture ─────────────────────────────────

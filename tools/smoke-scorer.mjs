@@ -81,7 +81,7 @@ try {
   await click("Head Coach", 5000);
   await click(/^Sign In$/, 5000);
   await page.waitForTimeout(1400);
-  await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 5000 });
+  await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 5000 });
   await page.waitForTimeout(700);
   await click(/^Live$/, 2500);
 

@@ -55,6 +55,7 @@ import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 import { moreMenuKeys, pickTab } from "./walk-tabs.mjs";
 import { afterReads } from "./walk-wait.mjs";
+import { destLocator, destByWord, openSettingsPart } from "./walk-nav.mjs";
 
 const PORT = port(4331);
 const SIGNUP_PORT = port(4332);   // the walk's own build for the sign-in screens (tools/web-test-build.mjs)
@@ -1027,10 +1028,9 @@ async function importWalk(theme) {
     await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(2400);
     ok("the office signs in", await tid("os-main").count() === 1);
-    await tid("nav-settings").click({ timeout: 5000 }).catch(() => {});
-    await page.locator("#settings-tab-import").click({ timeout: 5000 }).catch(() => {});
+    await openSettingsPart(page, "import").catch(() => false);
     await page.waitForSelector('[data-testid="import-panel"]', { timeout: 8000 }).catch(() => {});
-    ok("the office has Settings → Import", await tid("import-panel").count() === 1);
+    ok("the office has School, People → Import", await tid("import-panel").count() === 1);
     await check("importidle", '[data-testid="import-panel"]');
 
     await tid("import-file").setInputFiles(csv("full_name,born\r\nA,2012-05-05\r\nB,09/08/2012\r\nC,2012-11-23\r\n"));
@@ -1092,7 +1092,7 @@ async function listingWalk(theme, width) {
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = "http://localhost:${PORT}";`);
   const tid = (id) => page.locator(`[data-testid="${id}"]`);
   const goTo = async (nav) => {
-    const bar = page.locator(`[data-testid="nav-${nav}"]:visible, [data-testid="mnav-${nav}"]:visible`).first();
+    const bar = (await destLocator(page, nav));
     if (await bar.count()) await bar.click({ timeout: 5000 }).catch(() => {});
     else {
       await page.locator('[data-testid="mnav-more"]').click({ timeout: 5000 }).catch(() => {});
@@ -1126,10 +1126,9 @@ async function listingWalk(theme, width) {
     ok("the fixture's panel carries the listing line, the does-not-list form", /does not list/.test(await tid("publish-listing").innerText().catch(() => "")));
     await check("listingline", '[data-testid="publish-listing"]');
 
-    await goTo("settings");
-    await page.locator("#settings-tab-school").click({ timeout: 5000 }).catch(() => {});
+    await openSettingsPart(page, "school").catch(() => false);
     await page.waitForSelector(`[data-testid="listing-${HIL}"]`, { timeout: 6000 }).catch(() => {});
-    ok("Settings → School has the listing switch, off", await tid("listing-switch").getAttribute("aria-checked") === "false");
+    ok("School, Record has the listing switch, off", await tid("listing-switch").getAttribute("aria-checked") === "false");
     await check("listing", `[data-testid="listing-${HIL}"]`);
     await tid("listing-switch").click({ timeout: 4000 }).catch(() => {});
     await page.waitForTimeout(800);
@@ -1137,9 +1136,9 @@ async function listingWalk(theme, width) {
     await check("listingon", `[data-testid="listing-${HIL}"]`);
 
     state.mayChange = false;
-    await page.locator("#settings-tab-users").click({ timeout: 5000 }).catch(() => {});
+    await tid("home-staff-section-staff").click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(500);
-    await page.locator("#settings-tab-school").click({ timeout: 5000 }).catch(() => {});
+    await tid("home-staff-section-record").click({ timeout: 5000 }).catch(() => {});
     await page.waitForSelector('[data-testid="listing-why"]', { timeout: 6000 }).catch(() => {});
     ok("a reader who may not change it: the switch is disabled, with the reason", await tid("listing-switch").isDisabled() && await tid("listing-why").count() === 1);
     await check("listingro", `[data-testid="listing-${HIL}"]`);
@@ -1188,7 +1187,7 @@ async function selectionWalk(theme, width) {
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = "http://localhost:${PORT}";`);
   const tid = (id) => page.locator(`[data-testid="${id}"]`);
   const goTo = async (nav) => {
-    const bar = page.locator(`[data-testid="nav-${nav}"]:visible, [data-testid="mnav-${nav}"]:visible`).first();
+    const bar = (await destLocator(page, nav));
     if (await bar.count()) await bar.click({ timeout: 5000 }).catch(() => {});
     else {
       await page.locator('[data-testid="mnav-more"]').click({ timeout: 5000 }).catch(() => {});
@@ -1301,17 +1300,9 @@ async function signupWalk(theme) {
     await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(2400);
   };
+  // What was Settings' tab `tab`, where it lives now (Slice 6): Me under the person's name, People on School.
   const toSettings = async (page, tab) => {
-    // On a phone Settings is in the More drawer.
-    const direct = page.locator('[data-testid="mnav-settings"], [data-testid="nav-settings"]').first();
-    if (await direct.count()) await direct.click({ timeout: 6000 }).catch(() => {});
-    else {
-      await page.locator('[data-testid="mnav-more"]').click({ timeout: 6000 }).catch(() => {});
-      await page.waitForTimeout(500);
-      await page.locator('[data-testid="drawer-settings"]').click({ timeout: 6000 }).catch(() => {});
-    }
-    await page.waitForTimeout(1200);
-    await page.locator(`#settings-tab-${tab}`).click({ timeout: 4000 }).catch(() => {});
+    await openSettingsPart(page, tab, 1200).catch(() => false);
     await page.waitForTimeout(1200);
   };
   try {
@@ -1420,7 +1411,7 @@ async function practiceWalk(theme) {
     await click("Head Coach", 4000);
     await click(/^Sign In$/, 5000);
     await page.waitForTimeout(1600);
-    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+    await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(1000);
     await page.locator("button", { hasText: /Open SCRBRD Scorer/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(1500);
@@ -1518,7 +1509,7 @@ async function practiceWalk(theme) {
 
     await tap("exit-scorer", 800);
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 }).catch(() => {});
+    await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 }).catch(() => {});
     await page.waitForTimeout(600);
     await page.locator("button", { hasText: /Open SCRBRD Scorer/ }).first().click({ timeout: 6000 }).catch(() => {});
     await page.waitForTimeout(1200);
@@ -1648,16 +1639,16 @@ async function narrowStaffWalk(theme) {
     await page.waitForTimeout(1200);
     ok(`${T_} @${W}: signed in, with the bar at the bottom`, await tid("mnav").count() === 1);
     await measure(page, theme, "staffdash");
-    await overlay("mnav-more", '[data-testid="drawer"]', "staffdrawer", "More");
+    // A coach's menu is his four homes, all on the bar, with no More (EXPERIENCE_PASS §1.2, Q1).
+    ok(`${T_} @${W}: the coach's bar has no More`, await tid("mnav-more").count() === 0);
+    if (await tid("mnav-more").count()) await overlay("mnav-more", '[data-testid="drawer"]', "staffdrawer", "More");
     await overlay("topbar-role", '[role="menu"]', "staffrolemenu", "the role menu");
     await overlay("topbar-search", '[role="dialog"][aria-label="Search"]', "staffsearch", "search");
 
     // The KPI tiles (ui/primitives.jsx's KPICard: Injuries, Logistics): a label, a figure and a note, each 12px at the least,
-    // and the screens that draw them fit the width. Reached by the More drawer, as a coach reaches them.
+    // and the screens that draw them fit the width. Reached as a coach reaches them: Team, then Who's out; Logistics on the bar.
     for (const [dest, screen] of [["injuries", "staffinjuries"], ["logistics", "stafflogistics"]]) {
-      await tid("mnav-more").click({ timeout: 4000 }).catch(() => {});
-      await page.waitForTimeout(300);
-      await tid(`drawer-${dest}`).click({ timeout: 4000 }).catch(() => {});
+      await (await destLocator(page, dest)).click({ timeout: 4000 }).catch(() => {});
       await page.waitForTimeout(900);
       const kpi = await page.evaluate(() => [...document.querySelectorAll('[data-testid="kpi-card"] *')]
         .filter((e) => [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim()))
@@ -1679,6 +1670,17 @@ async function narrowStaffWalk(theme) {
     // the arrows move within it, Escape gives focus back to More, Tab and Shift+Tab leave it and close it.
     ok(`${T_} @${W}: the fixture's tab strip has a More at this width`, await tid("mc-more").count() === 1);
     for (const c of await moreMenuKeys(page)) ok(`${T_} @${W}: More — ${c.name}`, c.pass, c.detail);
+    // Slice 6 (Q1): with the School home the director's five homes are all on the bar, and there is no More.
+    await tid("topbar-role").click({ timeout: 4000 }).catch(() => {});
+    await tid("role-option-directorofsport").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    ok(`${T_} @${W}: the director's bar is his five homes, and no More`, await tid("mnav-more").count() === 0 && await tid("mnav-staff").count() === 1);
+    // The superadmin's recovery key reaches six homes, so his phone keeps More: the drawer, by keyboard, measured.
+    await tid("topbar-role").click({ timeout: 4000 }).catch(() => {});
+    await tid("role-option-superadmin").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    ok(`${T_} @${W}: the superadmin's bar keeps More for the sixth home`, await tid("mnav-more").count() === 1);
+    if (await tid("mnav-more").count()) await overlay("mnav-more", '[data-testid="drawer"]', "staffdrawer", "More");
     ok(`${T_} @${W}: no page errors`, errors.length === 0, errors.slice(0, 2).join(" | "));
   } catch (e) {
     ok(`the ${T_} @${W} staff shell walk threw: ${/** @type {any} */ (e).message?.slice(0, 120)}`, false);
@@ -1864,10 +1866,11 @@ async function walk(theme) {
     await click("Head Coach", 4000);
     await click(/^Sign In$/, 5000);
     await page.waitForTimeout(1600);
-    ok("signed in", /Dashboard|Match Centre/i.test(await page.$eval("body", (e) => e.innerText)));
+    ok("signed in", /Dashboard|Match Centre|Today|Matches/i.test(await page.$eval("body", (e) => e.innerText)));
     await measure(page, theme, "dashboard");
     // SCRBRD-131: the bell's count was 9px, under the floor, and the ratchet let it by.
-    const bell = page.locator('[data-testid="nav-alerts-badge"]');
+    // The bell is in the header now, on every screen (EXPERIENCE_PASS §1.2).
+    const bell = page.locator('[data-testid="nav-alerts-badge"], [data-testid="topbar-alerts-badge"]');
     ok("the notification bell shows its unread count", (await bell.count()) === 1);
     if (await bell.count()) {
       const size = await bell.evaluate((n) => parseFloat(getComputedStyle(n).fontSize));
@@ -1933,7 +1936,8 @@ async function walk(theme) {
       return { isMain: a === m, tag: a?.tagName, inside: !!m && m.contains(a), landmark: m?.tagName }; });
 
     // Settings → Me carries the theme control (DESIGN_DIRECTION §3.1).
-    await page.locator("nav button", { hasText: /Settings/ }).first().click({ timeout: 6000 });
+    // Settings is under the person's name in the header now (EXPERIENCE_PASS §1.2, Slice 5).
+    await page.locator('[data-testid="nav-settings"]').first().click({ timeout: 6000 });
     // Waits for the view's own words, not a clock: the view is a lazy chunk, slower than any sleep on a loaded machine.
     const saidSo = (/** @type {string} */ words) => page.waitForFunction((w) => document.querySelector('[data-testid="view-announcer"]')?.textContent === w,
       words, { timeout: 8000 }).catch(() => {});
@@ -1944,14 +1948,22 @@ async function walk(theme) {
     await page.keyboard.press("Tab");
     const afterTab = await inMain();
     ok("...so the next Tab lands on the page's first control", afterTab.inside && !afterTab.isMain, JSON.stringify(afterTab));
-    await page.locator('[role="tab"]', { hasText: /^Me$/ }).first().click({ timeout: 4000 }).catch(() => {});
-    await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "tab" && document.activeElement?.textContent?.trim() === "Me",
-      null, { timeout: 4000 }).catch(() => {});
-    const onTab = await page.evaluate(() => document.activeElement?.getAttribute("role") + ":" + document.activeElement?.textContent?.trim());
+    // Slice 6 (EXPERIENCE_PASS §1.6): Settings is the person's own, and with Me its only tab no tab strip is drawn, so
+    // the control the person is on is the one the Tab above reached; where a strip is drawn, it is the Me tab.
+    const meTab = page.locator('[role="tab"]', { hasText: /^Me$/ }).first();
+    if (await meTab.count()) {
+      await meTab.click({ timeout: 4000 }).catch(() => {});
+      await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "tab" && document.activeElement?.textContent?.trim() === "Me",
+        null, { timeout: 4000 }).catch(() => {});
+    }
+    const focusNow = () => page.evaluate(() => {
+      const a = document.activeElement;
+      return a && a !== document.body && document.querySelector("main")?.contains(a) ? `${a.getAttribute("role") ?? a.tagName.toLowerCase()}:${a.textContent?.trim()}` : "";
+    });
+    const onTab = await focusNow();
     await page.waitForTimeout(2500);
     ok("a background refresh of the data moves nothing: focus is where the person left it",
-       await page.evaluate(() => document.activeElement?.getAttribute("role") + ":" + document.activeElement?.textContent?.trim()) === onTab
-       && onTab === "tab:Me", onTab);
+       /^(radio:System|tab:Me)$/.test(onTab) && (await focusNow()) === onTab, onTab);
     ok("...and says nothing more", await announcer.textContent() === "Settings, page loaded");
     const settingsChoice = await page.evaluate(() => {
       const g = document.querySelector('[data-testid="theme-choice"]');
@@ -1961,9 +1973,10 @@ async function walk(theme) {
        settingsChoice?.role === "radiogroup" && settingsChoice.radios.map((r) => r[0]).join() === "System,Daylight,Floodlit", JSON.stringify(settingsChoice));
     ok("...with System chosen on a device that has chosen nothing", settingsChoice?.radios.find((r) => r[0] === "System")?.[1] === "true");
 
-    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
-    await saidSo("Match Centre, page loaded");
-    ok("a second view change: the words change to \"Match Centre, page loaded\"", await announcer.textContent() === "Match Centre, page loaded", await announcer.textContent());
+    await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
+    // The menu word is Matches now (EXPERIENCE_PASS Q4).
+    await saidSo("Matches, page loaded");
+    ok("a second view change: the words change to \"Matches, page loaded\"", await announcer.textContent() === "Matches, page loaded", await announcer.textContent());
     ok("...and focus is on the main landmark again", (await inMain()).isMain);
     await measure(page, theme, "matchcentre");
     // The fixture's own view (step 3c): its Scorecard, the densest tab.
@@ -2007,7 +2020,7 @@ async function walk(theme) {
     // and wicket breakdowns, and the career wagon wheel — never opened by
     // this walk before either.
     group(`${T_} — a player profile's Career tab`);
-    await page.locator("nav button", { hasText: /Profiles/ }).first().click({ timeout: 6000 });
+    await (await destByWord(page, /Profiles/)).click({ timeout: 6000 });
     await page.waitForTimeout(700);
     await page.locator('[data-testid^="roster-player-"]').first().click({ timeout: 4000 }).catch(() => {});
     await page.waitForTimeout(500);
@@ -2030,7 +2043,7 @@ async function walk(theme) {
     ok("...and an emoji in a control is seen", careerProbeEmoji.length > 0, careerProbeEmoji.join(" · "));
     await measure(page, theme, "career");
 
-    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+    await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(800);
     await click(/^Live$/, 2500);
     await click(/Open Live Scorer|Start Scoring/i, 5000);
@@ -2164,7 +2177,8 @@ async function walk(theme) {
     // surfaces or inks. A colour copied into a constant when its module
     // loaded is exactly what this finds.
     await page.emulateMedia({ colorScheme: flipTo === "daylight" ? "light" : "dark" });
-    await page.waitForTimeout(800);
+    await page.waitForFunction((t) => document.documentElement.dataset.theme === t, flipTo, { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(300);
     const stale = theme === "floodlit" ? FLOODLIT_ONLY : DAYLIGHT_ONLY;
     const pad = await staleOn(page, stale);
     ok("the device's switch applies without a reload", pad.theme === flipTo, pad.theme);
@@ -2175,16 +2189,19 @@ async function walk(theme) {
     // Out of the pad and through the screens the walk has already loaded.
     await page.locator(".os-exit-scorer").click({ timeout: 3000 }).catch(() => {});
     await page.waitForTimeout(900);
-    for (const [label, to] of [["Match Centre", /Match Centre/], ["Settings", /Settings/], ["Dashboard", /Dashboard/]]) {
-      await page.locator("nav button", { hasText: to }).first().click({ timeout: 6000 }).catch(() => {});
+    // Matches and Today in the menu, Settings under the name in the header (EXPERIENCE_PASS §1.2, Q4).
+    for (const [label, sel] of [["Matches", page.locator("nav button", { hasText: /^\s*Matches/ })], ["Settings", page.locator('[data-testid="nav-settings"]')], ["Today", page.locator("nav button", { hasText: /^\s*Today/ })]]) {
+      await sel.first().click({ timeout: 6000 }).catch(() => {});
       await page.waitForTimeout(800);
       const s = await staleOn(page, stale);
       ok(`...nor on ${label}`, s.hits.length === 0, s.hits.slice(0, 4).join(" · "));
     }
     await page.emulateMedia({ colorScheme: scheme });
-    await page.waitForTimeout(500);
-    ok("...and back again", await page.evaluate(() => document.documentElement.dataset.theme) === theme);
-    await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+    // Back again, waited for as a state: the theme the device now asks for, within 8s, never a fixed half second.
+    await page.waitForFunction((t) => document.documentElement.dataset.theme === t, theme, { timeout: 8000 }).catch(() => {});
+    ok("...and back again", await page.evaluate(() => document.documentElement.dataset.theme) === theme,
+       await page.evaluate(() => `${document.documentElement.dataset.theme} stored=${(() => { try { return localStorage.getItem("scrbrd:theme"); } catch { return "x"; } })()}`));
+    await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(800);
     await click(/^Live$/, 2500);
     await click(/Open Live Scorer|Start Scoring/i, 5000);
@@ -2227,7 +2244,7 @@ async function walk(theme) {
       await page.evaluate(() => { try { localStorage.removeItem("scrbrd:theme"); } catch { /* nothing to remove */ } });
       await page.reload({ waitUntil: "networkidle" });
     }
-    await page.waitForTimeout(600);
+    await page.waitForFunction((t) => document.documentElement.dataset.theme === t, theme, { timeout: 8000 }).catch(() => {});
     ok("choosing System hands the decision back to the device",
        await page.evaluate(() => document.documentElement.dataset.theme) === theme
        && await page.evaluate(() => { try { return localStorage.getItem("scrbrd:theme"); } catch { return null; } }) === null);
@@ -2237,10 +2254,10 @@ async function walk(theme) {
     const chipFills = () => page.evaluate(() => [...document.querySelectorAll('[data-testid="board-over"] [data-chip]')]
       .filter((c) => c.dataset.chip !== "dot").map((c) => `${c.dataset.chip}:${getComputedStyle(c).backgroundColor}`).join("|"));
     const standardFills = await chipFills();
-    if (!(await page.locator('[data-testid="pad-vision-choice"]').count())) {
-      await page.locator('[data-testid="pad-menu"]').click({ timeout: 3000 }).catch(() => {});
-      await page.waitForTimeout(300);
-    }
+    const padMenu = page.locator('[data-testid="pad-menu"]');
+    await page.waitForTimeout(300);
+    if ((await padMenu.getAttribute("aria-expanded").catch(() => null)) !== "true") await padMenu.click({ timeout: 3000 }).catch(() => {});
+    await page.locator('[data-testid="pad-vision-choice"][role="radiogroup"]').waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
     ok("the menu offers Colours as one radiogroup: Standard, Red-green safe, Blue-yellow safe",
        await page.evaluate(() => [...document.querySelectorAll('[data-testid="pad-vision-choice"][role="radiogroup"] [role="radio"]')]
          .map((b) => b.textContent.trim()).join()) === "Standard,Red-green safe,Blue-yellow safe");
@@ -2261,7 +2278,7 @@ async function walk(theme) {
     ok("Colours survives a reload", await page.evaluate(() => document.documentElement.dataset.vision) === "redgreen");
     if (await page.locator('[data-testid="pad-menu"]').count()) {
       await page.locator('[data-testid="pad-menu"]').click({ timeout: 3000 });
-      await page.waitForTimeout(300);
+      await page.locator('[data-testid="pad-vision-choice-standard"]').waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
       await page.locator('[data-testid="pad-vision-choice-standard"]').click({ timeout: 3000 });
     } else {
       await page.evaluate(() => { try { localStorage.removeItem("scrbrd:vision"); } catch { /* nothing to remove */ } });
@@ -2307,7 +2324,7 @@ async function padFit() {
       await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
       const click = async (re) => { const l = page.locator("button:not([disabled])", { hasText: re }).first(); if (await l.count()) { await l.click({ timeout: 4000 }).catch(() => {}); await page.waitForTimeout(400); } };
       await click(/Get Started|Log In/); await click("Head Coach"); await click(/^Sign In$/); await page.waitForTimeout(1500);
-      await page.locator("nav button", { hasText: /Match Centre/ }).first().click({ timeout: 6000 });
+      await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
       await page.waitForTimeout(800); await click(/^Live$/); await click(/Open Live Scorer|Start Scoring/i); await page.waitForTimeout(1600);
       const basic = async (on) => {
         if (((await page.locator('[data-testid="basic-pad"]').count()) > 0) === on) return;

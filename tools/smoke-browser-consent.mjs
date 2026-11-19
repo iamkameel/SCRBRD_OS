@@ -129,7 +129,7 @@ async function signIn(page, email) {
   await click(page, /^Sign In$/, 5000);
   await afterReads(page, 2000);
   // A shell: the staff one, or a parent's or a pupil's app (step 4), whose header is the persona bar.
-  return /Match Centre|Dashboard/i.test(await text(page)) || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
+  return (await page.locator('[data-testid="os-main"]').count()) > 0 || (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
 /**
  * His file under Family, its Consents open (EXPERIENCE_PASS Q16, decided 13
@@ -157,9 +157,11 @@ async function toMe(page) {
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await page.waitForTimeout(1000);
-  try { await page.locator("#settings-tab-me").click({ timeout: 4000 }); } catch { return false; }
+  // Slice 6: Settings is the person's own; Me is its first (often its only) tab, so the strip may not be drawn.
+  const me = page.locator("#settings-tab-me");
+  if (await me.count()) { try { await me.click({ timeout: 4000 }); } catch { return false; } }
   await afterReads(page, 1500);
-  return true;
+  return (await tid(page, "own-settings").count()) === 1;
 }
 /** Every text node under the element, and every control, measured as drawn. */
 async function floors(page, root) {

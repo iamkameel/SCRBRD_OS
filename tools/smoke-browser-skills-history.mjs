@@ -50,6 +50,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4398);
 const API_PORT = port(8998);
@@ -141,7 +142,7 @@ async function signIn(page, email) {
   try { await tid(page, "os-main").waitFor({ timeout: 12000 }); return true; } catch { return false; }
 }
 async function nav(page, id) {
-  const l = tid(page, `nav-${id}`).first();
+  const l = (await destLocator(page, id));
   try { await l.waitFor({ timeout: 8000 }); await l.click({ timeout: 6000 }); return true; } catch { return false; }
 }
 /** Click and wait for the response a write makes, so nothing is judged before it answers. */
@@ -298,11 +299,18 @@ try {
   const [pt] = await q(`select evidence_read, evidence_params->>'skillId' as sk, body from development_note where id = $1`, [tgt?.note_id]);
   ok("...and the reason is a coaching point standing on a score of his", pt?.evidence_read === "skills" && !!pt?.sk);
 
-  // A dot's sheet shows the point to staff.
-  await dots.last().click();
-  await tid(c.page, "dot-sheet").waitFor({ timeout: 8000 });
+  // A dot's sheet shows the point to staff. The save re-reads the boy's notes
+  // in parallel; a loaded runner (CI shard 3/4, 19 Nov) opened the sheet off
+  // the old read and found no point. So reopen it until the new read lands.
+  let sheetTxt = "";
+  for (let i = 0; i < 8 && !/Gets squared up early/.test(sheetTxt); i++) {
+    if (i) { await c.page.keyboard.press("Escape"); await c.page.waitForTimeout(1500); }
+    await dots.last().click();
+    await tid(c.page, "dot-sheet").waitFor({ timeout: 8000 });
+    sheetTxt = await tid(c.page, "dot-sheet").innerText();
+  }
   ok("the newest score's sheet shows the coaching point that stood on it, to staff",
-     /Gets squared up early/.test(await tid(c.page, "dot-sheet").innerText()), await tid(c.page, "dot-sheet").innerText());
+     /Gets squared up early/.test(sheetTxt), sheetTxt);
   await c.page.keyboard.press("Escape");
 
   group("Since the last look");
@@ -473,6 +481,9 @@ try {
   ok("...with Plan and Register on a session", await tid(d.page, `plan-open-${sess[0]}`).count() === 1 && await tid(d.page, `register-open-${sess[0]}`).count() === 1);
   await tid(d.page, `register-open-${sess[0]}`).click();
   await tid(d.page, "register-sheet").waitFor({ timeout: 8000 });
+  // The rows come from the register's own read: wait for one with its four
+  // radios before reading them (CI shard 3/4, 19 Nov, read an empty list).
+  await d.page.locator('[data-testid^="register-row-"] [role="radio"]').nth(3).waitFor({ state: "attached", timeout: 12000 }).catch(() => {});
   const states = await d.page.locator('[data-testid^="register-row-"]').first().locator('[role="radio"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-state")));
   ok("the register has four states and no fifth", states.join() === "present,late,excused,absent", states.join());
   ok("...and no injured anywhere on it", !/injur/i.test(await tid(d.page, "register-sheet").innerText()));
