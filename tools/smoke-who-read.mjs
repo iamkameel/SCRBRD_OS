@@ -24,6 +24,11 @@
  *      fixture's availability and readiness) is on the same list: a row for
  *      each, naming him, under Hilton, as the key, marked platform-wide
  *      (Kameel, 5 Nov 2026, the guardian's terms Q6; db/139)
+ *  10. off the read path too (PLATFORM_CONTROLS slice 6a, db/166): the key
+ *      opening his public name and his guardians' answers, the team sheet,
+ *      his own account and a notice about him is on the same list, and every
+ *      read the key made reads "SCRBRD platform", never a person's name; a
+ *      school reader's same reads write nothing new
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-who-read.mjs
@@ -101,6 +106,22 @@ try {
   }
   const [ownerRow] = await q(`select id from app_user where lower(email) = 'owner@example.invalid'`);
 
+  group("The owner's key opens his record off the read path (slice 6a, db/166)");
+  const PUPIL = "88888888-0000-0000-0000-000000000009";   // his own account (self-access to him)
+  const OFF_PATH = [[`/api/players/${P_INJURED}/public-name`, "public_name"], [`/api/matches/${MATCH}/sheet`, "fixture_sheet"],
+                    [`/api/auth/users/${PUPIL}/preview`, "account_preview"], ["/api/read/notifications", "notifications"]];
+  for (const [path] of OFF_PATH) {
+    const r = await api(path, { token: owner });
+    ok(`the key opens ${path.replace(/[0-9a-f-]{36}/g, ":id")}`, r.status === 200 && r.body != null, r.status);
+  }
+  // A school reader's same reads off the read path are not logged (unchanged).
+  const [{ n: before }] = await q(`select count(*)::int n from access_log`);
+  const offOwn = await api(`/api/players/${P_INJURED}/public-name`, { token: office });
+  const sheetOwn = await api(`/api/matches/${MATCH}/sheet`, { token: office });
+  const [{ n: after }] = await q(`select count(*)::int n from access_log`);
+  ok("the office's own reads of the same pages write nothing", offOwn.status === 200 && sheetOwn.status === 200 && after === before,
+     { before, after, a: offOwn.status, b: sheetOwn.status });
+
   group("The office asks about ONE child");
   const ans = await aboutChild(office, P_INJURED);
   const rows = ans.body?.rows ?? [];
@@ -128,6 +149,19 @@ try {
        theirs);
   }
   ok("...and the medic's read is still logged as a school reader's", mine?.platform_wide === false, mine);
+  for (const [, res] of OFF_PATH) {
+    const theirs = rows.filter((r) => r.resource === res && r.person_id === ownerRow.id);
+    ok(`the key's ${res} read, off the read path, is on his list at Hilton, platform-wide`,
+       theirs.length === 1 && theirs[0].platform_wide === true && theirs[0].school_id === HIL, theirs);
+  }
+  const theKey = rows.filter((r) => r.person_id === ownerRow.id);
+  ok(`every read the key made (${theKey.length}) reads "SCRBRD platform", the platform as the reader`,
+     theKey.length >= OWNER_READS.length + OFF_PATH.length
+       && theKey.every((r) => r.person_name === "SCRBRD platform" && r.reader_role === "SCRBRD platform"), theKey.map((r) => r.person_name));
+  const [ownerName] = await q(`select name, email from app_user where id = $1`, [ownerRow.id]);
+  ok("...and his name and email are nowhere in the answer",
+     !JSON.stringify(rows).includes(ownerName.name) && !JSON.stringify(rows).toLowerCase().includes(ownerName.email.toLowerCase()));
+  ok("...while the medic is named as herself, not the platform", mine?.person_name && mine.person_name !== "SCRBRD platform" && mine.reader_role == null, mine);
 
   group("What it never shows");
   ok("no safeguarding read, though one names him", rows.every((r) => !String(r.resource).startsWith("safeguarding")), rows.map((r) => r.resource));

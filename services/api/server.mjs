@@ -121,6 +121,7 @@ import { trainingRoutes } from "./write/training-api.mjs";
 import { officialRegisterRoutes } from "./write/officials-register-api.mjs";
 import { publicationRoutes } from "./write/publication-api.mjs";
 import { sheetRoutes } from "./read/sheet-api.mjs";
+import { logPlatformRead } from "./read/platform-reads.mjs";
 import { groundNamesRoutes } from "./read/ground-names-api.mjs";
 import { listingRoutes } from "./write/listing-api.mjs";
 import { publicNameRoutes } from "./write/public-name-api.mjs";
@@ -1420,6 +1421,70 @@ async function servePad(req, res) {
  */
 const OWN_DEDUP = new Set([events.append, pilotMatch.append]);
 
+/**
+ * THE OWNER'S KEY OFF THE READ PATH (PLATFORM_CONTROLS slice 6a, db/166).
+ * The GET routes outside /api/read/ whose answer is about children or their
+ * fixtures: after one answers the key, a platform administrator or a support
+ * session, the answer is on each school's record before it leaves
+ * (read/platform-reads.mjs). For anybody else log_platform_read() writes
+ * nothing. Every GET route in the tables above is in this map or in
+ * NOT_PLATFORM_LOGGED below, and platform-reads.test.mjs fails on one that
+ * is in neither, so a new route is decided, not forgotten.
+ * @type {Map<unknown, import("./read/platform-reads.mjs").PlatformRead>}
+ */
+const PLATFORM_LOGGED = new Map(/** @type {[unknown, import("./read/platform-reads.mjs").PlatformRead][]} */ ([
+  [events.list,               { resource: "match_events",        subject: "match" }],
+  [quarantine.list,           { resource: "match_quarantine",    subject: "match" }],
+  [secondAccount.read,        { resource: "match_second_account", subject: "match" }],
+  [corrections.forMatch,      { resource: "match_corrections",   subject: "match" }],
+  [corrections.open,          { resource: "corrections" }],
+  [publication.read,          { resource: "match_publication",   subject: "match" }],
+  [sheet.read,                { resource: "fixture_sheet",       subject: "match", squad: true }],
+  [groundNames.read,          { resource: "ground_names",        subject: "match", squad: true }],
+  [publicName.read,           { resource: "public_name" }],
+  [potm.state,                { resource: "player_of_match",     subject: "match" }],
+  [nomination.state,          { resource: "potm_nomination",     subject: "match" }],
+  [nomination.toDecide,       { resource: "potm_to_decide" }],
+  [recognition.toReview,      { resource: "potm_to_review" }],
+  [colours.list,              { resource: "colours_nominations" }],
+  [signIn.accountSignIns,     { resource: "account_sign_ins",    subject: "account" }],
+  [signIn.preview,            { resource: "account_preview",     subject: "account" }],
+  [results.result,            { resource: "match_result",        subject: "match" }],
+  [results.official,          { resource: "match_official",      subject: "match" }],
+  [results.toConfirm,         { resource: "results_to_confirm" }],
+  [scorebook.list,            { resource: "scorebook_imports",   subject: "match" }],
+  [scorebook.get,             { resource: "scorebook_import" }],
+  [pilotMatch.header,         { resource: "pilot_match",         subject: "match" }],
+  [pilotMatch.names,          { resource: "pilot_names",         subject: "match" }],
+  [pilotMatch.list,           { resource: "pilot_events",        subject: "match" }],
+]));
+/**
+ * The GET routes that are not: no child in the answer (a school's settings,
+ * a competition's, the toss, the weather of a ground), a read that writes its
+ * own row (rewards, the lifts), or one the key cannot open (safeguarding).
+ * @type {Set<unknown>}
+ */
+const NOT_PLATFORM_LOGGED = new Set([
+  toss.read, listing.read, publicName.namesOff, rewards.figures, requests.schools,
+  staffRegister.list, staffRegister.redactDue,
+  playing.catalogue, playing.entered, playing.list, playing.preview, playing.match,
+  planner.inputs, planner.list, planner.get, planner.blackouts, planner.windows, planner.closures,
+  league.entrants, league.schools, league.invitations,
+  results.standings, results.progression, results.bracket,
+  rain.groundVenuePar, rain.matchVenuePar, rain.matchDls, rain.matchPar, rain.dlsTables,
+  safeguarding.contacts, safeguarding.receipts, safeguarding.inbox, safeguarding.open, safeguarding.family,
+  safeguarding.shares, safeguarding.shareOpen,
+  lifts.standing, lifts.policy, lifts.offers, lifts.summary, lifts.passengers, lifts.contacts,
+  lifts.day, lifts.expected, lifts.exceptions, lifts.mine, lifts.requestsMine, lifts.purgeDue,
+  pilotMatch.status, pilotMatch.mine, follows.list, follows.today,
+]);
+// Decided, not forgotten: a GET route in neither stops the server at boot,
+// so the first walk that starts it says which.
+for (const [pattern, method, handler] of [...MATCH_ROUTES, ...PLAYER_ROUTES, ...SCOUT_ROUTES, ...SAFEGUARDING_ROUTES, ...LIFT_ROUTES, ...PILOT_ROUTES, ...FOLLOW_ROUTES]) {
+  if (method === "GET" && !PLATFORM_LOGGED.has(handler) && !NOT_PLATFORM_LOGGED.has(handler))
+    throw new Error(`server.mjs: GET ${pattern.source} is in neither PLATFORM_LOGGED nor NOT_PLATFORM_LOGGED (PLATFORM_CONTROLS slice 6a)`);
+}
+
 const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return json(res, 204, {});
 
@@ -1619,6 +1684,21 @@ const server = createServer(async (req, res) => {
       }
 
       await handler(request, out);
+      // THE KEY'S READ IS ON THE RECORD BEFORE IT LEAVES (slice 6a, db/166):
+      // a 2xx answer from a route PLATFORM_LOGGED names, for the key, a
+      // platform administrator or a support session; nothing for anybody
+      // else. A row that cannot be written refuses the answer rather than
+      // sending it unrecorded.
+      const asPlatform = PLATFORM_LOGGED.get(handler);
+      if (asPlatform && out._pending && out._pending.status < 300 && req.headers.authorization) {
+        try {
+          await logPlatformRead(pool, SECRET, req.headers.authorization, asPlatform, m[1], out._pending.body);
+        } catch (/** @type {any} */ e) {
+          console.error(`${req.method} ${url.pathname} → not_logged`, safeErr(e));
+          out._pending = null;
+          return json(res, 503, { error: "not_logged" });
+        }
+      }
       out.flush();
       return;
     }

@@ -3689,7 +3689,18 @@ export const READ_QUERIES = {
             order by s.started_at desc`,
   },
   access_log: {
-    text: `select l.id, l.school_id, l.person_id, u.name as person_name,
+    // THE PLATFORM IS NAMED AS THE PLATFORM (PLATFORM_CONTROLS slice 6a,
+    // db/166): a read made with the owner's key or by a platform
+    // administrator, outside a support session, reads "SCRBRD platform",
+    // never a person's name, whatever app_user's own policy would show.
+    // A support session's row keeps its reader: support_access names him.
+    text: `select l.id, l.school_id, l.person_id,
+                  case when l.platform_wide and l.support_access_id is null
+                            and access_log_platform_reader(l.person_id)
+                       then 'SCRBRD platform' else u.name end as person_name,
+                  case when l.platform_wide and l.support_access_id is null
+                            and access_log_platform_reader(l.person_id)
+                       then 'SCRBRD platform' end as reader_role,
                   l.resource, l.record_ids, l.record_count, l.fields,
                   l.device_id, l.occurred_at,
                   -- Whether the reader reached this school from outside it.
@@ -4330,7 +4341,7 @@ const SUBJECT_ID = { players: "id", injuries: "player_id", skills: "player_id",
  * child's school. An ordinary school reader's log is not changed.
  */
 /** @type {Record<string, string>} */
-const PLATFORM_SUBJECT_ID = { bowling_breaches: "bowler_id" };
+const PLATFORM_SUBJECT_ID = { bowling_breaches: "bowler_id", notifications: "subject_person_id" };
 /** @type {Record<string, string>} */
 const ABOUT_ONE = { passport: "playerId", passport_name: "playerId", passport_recipients: "playerId",
                     load_weeks: "playerId", recognition: "playerId" };

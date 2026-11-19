@@ -155,5 +155,6 @@
   "159_live_read_target.sql",
   "160_followed_schools.sql",
   "161_school_answered_notice.sql",
-  "165_live_from_first_ball.sql"
+  "165_live_from_first_ball.sql",
+  "166_owner_key_logged.sql"
 ]
