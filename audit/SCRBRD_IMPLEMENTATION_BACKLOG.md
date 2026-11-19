@@ -35,6 +35,8 @@
 
 14 Nov 2026 (night) and 15 Nov 2026: three merges recorded. #339 (squash 94f282ea): experience slice 3a. One door (Google or a code); the role-tile sign-up is retired (Q13); the no-school home is in the day sheet's order; the public home page's first screen is chosen by state (Q6), with three doors; the strip's status sentence is without the target; `POST /api/onboard` is retired. No migration. Slice 3 is partly done (3a); 3b is in progress. #341 (db/156, head 1f2647aa, merged 15 Nov through #342's merge commit 148e3083): a switched-off feature is hidden on the public reads. Officials are named on the overlay only while Officials is on; the overlay serves nothing while Broadcast is off; the sponsor's board leaves while Sponsors is off; a DRS review stored while its school had DRS off is not shown to the other school. Pasted on the demo and production on 15 Nov (Kameel's go), from a3a3101c, `sha256 d29c67e490df8a06bb993e69d0ab8894edcbea19fe79c73f8ccce1bf7dbcb80f`. #342 (db/157, merge commit 148e3083, merged 15 Nov): Supabase's API roles (`anon`, `authenticated`, `service_role`) and PUBLIC reach nothing SCRBRD owns in schema public; `scrbrd_app` was given explicit grants. It is Kameel's "both" of 14 Nov, beside his own Data API switch-off in Supabase's dashboard, which is still to do. Pasted on both databases on 15 Nov from 114d2803, `sha256 57ea0012552facfc54be26bdc6672ce893a1a17b6ac8235a604481cfb29bc6ef`.
 
+18 and 19 Nov 2026: seven merges recorded. #350 (merge 0e177065, 18 Nov): experience slice 4, parent and pupil (db/161, the waiting parent's notice). #351 (merge 46fa434c, 18 Nov): slice 5, the coach's day sheet, and the homes. #352 (merge 9a6d5066, 19 Nov): slice 6, the office. #354 (merge a950dfc5, 19 Nov): "UI/UX: five small fixes from the principles review". #355 (merge cc1b2e44, 19 Nov): "Copy pass: the pupil's screens, sign-in and the no-school home, at a child's reading age". With them the experience pass (slices 1 to 6, #354 and #355 as its small fixes and copy pass) is complete; its named follow-ups stay open. #356 (merge 7e4e8b05, 19 Nov): "Match lifecycle: a fixture goes live at its first ball; the scorer can always finish (db/165)". #357 (commit 43055f80, 19 Nov): SHIPPED, db/165 pasted on demo and production 19 Nov from a5fb7d97, both counts read 0 fixtures to move before the paste; the ledger, both triggers, the API roles' reach and lock_timeout were checked after it on each database. The match lifecycle is closed. #358 (merge 84833659, 19 Nov): "CRI-2.4: low-data mode for the public match page, and a score before the page loads" (steps 1 to 3: 8c094373, 06232b7e, 951fef7c). CRI-2.4 is closed. #353 was recorded earlier (c94bd612).
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -814,11 +816,13 @@ one duplicates an existing entry, strike the `CRI-*` line and point at the older
 **Sprint 1 complete 2026-11-11** (#266, merge commit 060e0a2b): CRI-1.4 to CRI-1.8 are done.
 
 **Sprint 2:** ~~CRI-2.1 commentary chips and over jump~~ · ~~CRI-2.2 `sourceLine` and capture coverage on every chart~~ ·
-~~CRI-2.3 chart-to-delivery drill-down~~ · CRI-2.4 reader freshness and low-bandwidth mode · ~~CRI-2.5 three spectator charts~~.
+~~CRI-2.3 chart-to-delivery drill-down~~ · ~~CRI-2.4 reader freshness and low-bandwidth mode~~ · ~~CRI-2.5 three spectator charts~~.
 
 **Done 2026-11-12** (#305, merge 4309f6f0): CRI-2.1, commentary chips and a jump to any over.
 
 **Done 2026-11-12** (#306, merge bfb4a681): CRI-2.3, tap a chart to see the balls behind it.
+
+**Done 2026-11-19** (#358, merge 84833659): CRI-2.4, low-data mode for the public match page, and a score before the page loads.
 
 - **CRI-2.2** — **Done 2026-11-12** (#311, merge 16d79dea): a source line on every chart, with "Shots captured for N of M balls".
 - **CRI-2.5** — **Done 2026-11-12** (#309, merge 050ccf15): three spectator charts.
@@ -5348,14 +5352,23 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - [x] ~~Slice 1 · The scorer's home and starting a Pilot Match~~ **Done 14 Nov 2026** (#327, 660a5630)
 - [x] ~~Slice 2 · The spectator's match page~~ **Done 14 Nov 2026** (#334, #336)
 - [x] ~~Slice 3 · First run (migrations)~~ **Done 16 Nov 2026.** 3a merged 14 Nov (#339, 94f282ea: one door, the no-school home, the home page by state, the strip's status sentence without the target, `POST /api/onboard` retired). 3b merged 15 and 16 Nov: #344 (15 Nov, aa33836e, "Ask SCRBRD to add my school", db/158) and #345 (16 Nov, 9d6b287d, the live strip's target db/159 and the follow list db/160). db/158, db/159 and db/160 are live on both databases.
-- [ ] Slice 4 · Parent and pupil (migrations): partly done: built and reviewed, PR #350 open
-- [ ] Slice 5 · The coach's day sheet, and the homes: partly done: built and reviewed, PR #351 open
-- [ ] Slice 6 · The office: partly done: built and reviewed, PR #352 open
+- [x] ~~Slice 4 · Parent and pupil (migrations)~~ **Done 18 Nov 2026** (#350, merge 0e177065; db/161, the waiting parent's notice)
+- [x] ~~Slice 5 · The coach's day sheet, and the homes~~ **Done 18 Nov 2026** (#351, merge 46fa434c)
+- [x] ~~Slice 6 · The office~~ **Done 19 Nov 2026** (#352, merge 9a6d5066)
+- [x] ~~UI/UX: five small fixes from the principles review~~ **Done 19 Nov 2026** (#354, merge a950dfc5)
+- [x] ~~Copy pass: the pupil's screens, sign-in and the no-school home, at a child's reading age~~ **Done 19 Nov 2026** (#355, merge cc1b2e44)
+
+**The experience pass is complete 19 Nov 2026** (slices 1 to 6, #354 and #355). The follow-ups below stay open.
+
 - [ ] Slice 5 follow-up: §3.5's competition tables, records, caps and head to head on the team page
 - [ ] Slice 5 follow-up: §1.4's links from a match to its sides and its ground
 - [ ] Slice 5 follow-up: corrections waiting (O7) in Needs you
 - [ ] Slice 5 follow-up: the Rulebook under the person's name
 - [ ] Slice 6 follow-up: a parent's own-name edit; it needs a server write that does not exist (open with Kameel)
+
+### Match lifecycle — a fixture goes live at its first ball; the scorer can always finish (2026-11-19)
+**Domain:** Scoring / Schema
+- [x] ~~db/165, the match lifecycle~~ **Done 19 Nov 2026** (#356, merge 7e4e8b05; SHIPPED #357, commit 43055f80: pasted on demo and production 19 Nov from a5fb7d97)
 
 ### SCRBRD-143 — Account erasure must delete the slice 3b tables (2026-11-15)
 **Priority:** P2 · **Domain:** Privacy / Account lifecycle · **Type:** build, Opus (rides on `account_erase()`)
