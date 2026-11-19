@@ -6,6 +6,7 @@ import { RR, SR, isOut } from "./format.js";
 import { IntelPanel } from "./panels.jsx";
 import { buildSignals } from "./signals.js";
 import { Badge, Card, Lbl, SignalBar } from "./ui.jsx";
+import { coverageWords, shotCoverage } from "./wagonAnalysis.mjs";
 import { batHandOf, hasPoint, positionName, screenAngle, shotDensity, directionalProfile, placementEvidence, NOT_CAPTURED, PLACEMENT_FIELD, runsOffBat } from "@scrbrd/scoring";
 import { Icon } from "../ui/icons.jsx";
 import { ChartTable } from "../ui/ChartTable.jsx";
@@ -383,7 +384,7 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel",table=true}){
   // — a leave, a pad, an unassessed delivery — has no position at all.
   const drawn=mine.filter(b=>b.theta!=null||b.seg!=null);
   const exact=drawn.filter(hasPoint).length;
-  const missing=mine.length-drawn.length;
+  const cover=shotCoverage(mine);
   const handOf=b=>batHandOf(inn,b.strikerId);
   const frame=playerId?{hand:batHandOf(inn,playerId),mixed:false}:frameOf(drawn.map(handOf));
   const angleOf=b=>ballAngle(b,handOf(b),frame.hand);
@@ -408,9 +409,7 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel",table=true}){
       </div>
       {drawn.length===0?(
         <div style={{color:D.textMuted,fontFamily:D.body,fontSize:"13px",padding:"18px 0",textAlign:"center"}}>
-          {mine.length
-            ?`No placements recorded for ${mine.length} ball${mine.length===1?"":"s"}.`
-            :"No balls faced."}
+          {mine.length?coverageWords(cover):"No balls faced."}
         </div>
       ):(
         <div data-testid="shot-wheel" data-frame={frame.hand} style={{position:"relative",width:"100%",maxWidth:"260px",margin:"0 auto",aspectRatio:"1"}}>
@@ -472,7 +471,7 @@ function ShotWheel({inn,playerId=null,title="Wagon wheel",table=true}){
             :exact===0
               ?"Sector-era: direction recorded, distance never was — dashed."
               :`${exact} of ${drawn.length} placed exactly; the dashed spokes carry direction only.`}
-          {missing>0&&` ${missing} ball${missing===1?"":"s"} carried no placement.`}
+          <span data-testid="wheel-coverage">{" "+coverageWords(cover)}</span>
         </div>
       )}
       {table&&<ChartTable testid="wheel-table" tables={wheelTable}/>}
