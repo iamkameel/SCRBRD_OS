@@ -32,7 +32,8 @@ const CHARTS = ["Worm", "RateTrack", "WormChart", "ManhattanChart", "RunRateChar
 /** The files, and the least number of charts each draws (so a file whose charts are renamed cannot pass empty). */
 const FILES = {
   "views/matchcentre/tabs.jsx": 9,
-  "views/matchcentre/tabs-core.jsx": 3,
+  "views/matchcentre/tabs-core.jsx": 1,
+  "views/matchcentre/summaryWorm.jsx": 1,   // CRI-2.4: the Summary's worm, a chunk of its own
   "public/PublicMatch.jsx": 1,
   "views/matchcentre/captainTab.jsx": 1,
   "views/cockpit/CoachTab.jsx": 1,

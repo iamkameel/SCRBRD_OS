@@ -12,9 +12,7 @@ import { StatusLine } from "./scores.jsx";
 import { boardTags } from "../../lib/moments.js";
 import { matchChaseOf, superOverTitle, twoInningsPlayed } from "../../lib/superOver.js";
 import { chaseRates, estimateLine, rainTouched, rateTrack, reportFor } from "../../lib/par.js";
-import { wormOf } from "../../lib/chartSeries.js";
 import { RateTrack } from "../../ui/parTrack.jsx";
-import { Worm } from "../../ui/charts/worm.jsx";
 import { shownFor } from "../../lib/toBall.js";
 import { ErrorBoundary } from "../../ui/ErrorBoundary.jsx";
 import { SourcedLazy, ballsLine } from "../../ui/sourcedLazy.jsx";
@@ -39,6 +37,13 @@ import { SourcedLazy, ballsLine } from "../../ui/sourcedLazy.jsx";
 const ScenarioPanel = lazy(() => import("./scenario.jsx").then((m) => ({ default: m.ScenarioPanel })));
 // EXPERIENCE_PASS Slice 2: the over story, lifted from the ground display, its own chunk for the same reason.
 const OverStory = lazy(() => import("./overStory.jsx"));
+// CRI-2.4: the worm, its series and the projection under it, a chunk of their own for the same reason; a public
+// page in Low data draws no chart and never fetches it.
+const SummaryWorm = lazy(() => import("./summaryWorm.jsx"));
+/** The worm panel, once an over is complete; nothing while its chunk loads or if it cannot be fetched. */
+const WormPanel = (/** @type {any} */ p) => (
+  <ErrorBoundary name="worm" fallback={null}><Suspense fallback={null}><SummaryWorm {...p}/></Suspense></ErrorBoundary>
+);
 
 
 /** The innings break (§10 item 10, p2): the first innings in four facts. */
@@ -160,7 +165,7 @@ export const summaryIsResult = ({ match, innings, result = null, settled = false
 // only the lines about nobody and about its own boy.
 export function SummaryTab({ match, innings, result, commentary, overs, phone, setTab, moment, overSummary, shownRuns, quietMoments = false,
                              venueLine = null, rainLine = null, par = null, events = null, fold = null, settled = false, okAt = null,
-                             status = null, focus = null }) {
+                             status = null, focus = null, lowData = false }) {
   const said = status && <StatusLine st={status} except={["upcoming"]}/>;
   const { index, atBreak } = boardInnings(innings, result ? {} : null);
   const inn = innings[index];
@@ -170,10 +175,9 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
   // The chase's two required rates and their direction: the log's own
   // arithmetic, folded when the log moves, not on every tick of the board.
   const rates = useMemo(() => (chasing ? chaseRates(events ?? [], fold ?? {}, index) : null), [chasing, events, fold, index]);
-  const worm = useMemo(() => (inn ? wormOf({ match, played: innings, index, events, overs, report: par }) : null),
-    [inn, match, innings, index, events, overs, par]);
-  // CRI-2.2: what the worm stands on — every innings it draws, by the fold's balls.
-  const wormLine = ballsLine(innings.filter(Boolean).length > 1 ? "Both innings" : "This innings", innings.reduce((n, x) => n + (x?.balls ?? 0), 0));
+  // CRI-2.4: no chart in Low data (public/lowData.js); else the worm from the first completed over (summaryWorm.jsx).
+  const worm = !lowData && (inn?.balls ?? 0) >= 6
+    ? <WormPanel match={match} innings={innings} index={index} events={events} overs={overs} par={par}/> : null;
   // SCRBRD-130 R2: the calculator beside the umpires' figure, the server's; the signed-in page passes it.
   // A rain-decided match keeps it in its result view: the umpires' par and SCRBRD's are the result's own story.
   const rainPanel = rainLine && (
@@ -195,18 +199,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
           <MomentMark moment={moment} announce={!quietMoments}/>
         </div>
         {rainPanel}
-        {worm && (
-          <Panel testid="mc-worm-panel">
-            <CardHead icon="trending-up">Worm</CardHead>
-            <SourcedLazy line={wormLine} testid="source-line-worm" style={{ padding: `${T.space.sm} ${T.space.lg} ${T.space.md}` }}>
-              <Worm lines={worm.lines} balls={worm.balls} target={worm.target} par={worm.par} revised={worm.revised}
-                umpiresPar={worm.umpiresPar} said={worm.said} height="160px" testid="mc-worm"
-                textStyle={{ fontFamily: T.type.body, fontSize: "12px" }}
-                palette={{ main: T.content.primary, dim: T.content.tertiary, target: T.brand.accentText, par: T.brand.accentText,
-                           rule: T.line.normal, text: T.content.secondary, label: T.content.primary }}/>
-            </SourcedLazy>
-          </Panel>
-        )}
+        {worm}
         <ResultFacts match={match} innings={innings}/>
         {commentary.length > 0 && (
           <div>
@@ -255,7 +248,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
         <div style={{ position: "relative" }}>
           <Board {...props} total={shownRuns ?? props.total} team={phone ? side.short : side.full} size="card" testid="mc-board"
             insight={insight.length ? insight : undefined} updated={updated} estimate={estimate} tags={boardTags(inn, commentary, index)}
-            extra={track ? <RateTrack track={track} testid="mc-rate-track" textStyle={{ fontFamily: T.type.body, fontSize: "13px" }}
+            extra={track && !lowData ? <RateTrack track={track} testid="mc-rate-track" textStyle={{ fontFamily: T.type.body, fontSize: "13px" }}
               palette={{ line: T.board.dim, bar: T.board.lime, dot: T.board.figure, text: T.board.dim, gap: T.board.lime }}/> : null}/>
           <MomentMark moment={moment} announce={!quietMoments}/>
         </div>
@@ -277,18 +270,7 @@ export function SummaryTab({ match, innings, result, commentary, overs, phone, s
           ground's par or the DLS par dashed — the server's figures. The chart
           comes before the scenarios (EXPERIENCE_PASS C14): a screen-tall
           stepper no longer pushes the worm and the latest balls down. */}
-      {worm && (
-        <Panel testid="mc-worm-panel">
-          <CardHead icon="trending-up">Worm</CardHead>
-          <SourcedLazy line={wormLine} testid="source-line-worm" style={{ padding: `${T.space.sm} ${T.space.lg} ${T.space.md}` }}>
-            <Worm lines={worm.lines} balls={worm.balls} target={worm.target} par={worm.par} revised={worm.revised}
-              umpiresPar={worm.umpiresPar} said={worm.said} height="160px" testid="mc-worm"
-              textStyle={{ fontFamily: T.type.body, fontSize: "12px" }}
-              palette={{ main: T.content.primary, dim: T.content.tertiary, target: T.brand.accentText, par: T.brand.accentText,
-                         rule: T.line.normal, text: T.content.secondary, label: T.content.primary }}/>
-          </SourcedLazy>
-        </Panel>
-      )}
+      {worm}
       {/* §3.3: the over story, one row an over, newest first; a row opens to its lines. */}
       <ErrorBoundary name="over story" fallback={null}>
         <Suspense fallback={null}>

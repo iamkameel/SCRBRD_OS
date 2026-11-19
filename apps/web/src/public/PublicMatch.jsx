@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { boardInnings, boundaryCount, matchLine, revisionNotice, sidesOf, statusSentence, teamOf, tossWords } from "../lib/matchCentre.js";
@@ -13,7 +13,8 @@ import { Panel, Quiet } from "../views/matchcentre/bits.jsx";
 import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
 import { liveRefreshMs, soonRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
-import { publicStory, read, readPar } from "./reads.js";
+import { publicStory, read, readPar, samePeople } from "./reads.js";
+import { LOW_LIVE_FACTOR, LOW_SOON_FACTOR, useLowData } from "./lowData.js";
 import { publicOfficial } from "../lib/official.js";
 import { StateLabel } from "../ui/stateLabel.jsx";
 import { TabStrip, panelLabel } from "../views/matchcentre/tabStrip.jsx";
@@ -83,10 +84,25 @@ function usePhone(px = 640) {
  * read after the log (SCRBRD-133 G2). Once it is not live, the corrections
  * half (./corrections.jsx, on demand) asks after the head and `note`s what it
  * saw; the figures change only on `refresh` (GA-I36 §7).
+ *
+ * `low` (CRI-2.4, ./lowData.js): a quarter of the live pace and half the
+ * pre-start pace; no par read (the Board then says what it says without
+ * one); and while live, after a whole read, only the log's new events
+ * (`?since=`) — a whole read again whenever the names the server gives
+ * change, the match changes state, or the reader asks, as the ground display
+ * does (reads.js usePublicFeed), so a label is never drawn from memory.
  */
-function usePublicMatch(matchId) {
+/** Events after which a Low data read is a whole one. */
+const WHOLE_AFTER = new Set(["void", "revision", "amendment"]);
+
+function usePublicMatch(matchId, low = false) {
   const [state, setState] = useState({ loading: true, missing: false, error: null, header: null, fold: {}, events: [], people: {}, last: 0, par: null, okAt: null, stale: false, refreshing: false });
   const [tick, setTick] = useState(0);
+  const held = useRef(state);
+  held.current = state;
+  /** The next read is a whole one: the first, the reader's own, and after Low data is switched. */
+  const whole = useRef(true);
+  useEffect(() => { whole.current = true; }, [low]);
   const status = state.header?.status;
   const live = status === "live";
   // Opened before the first ball (19 Nov 2026): it asks again once a minute
@@ -95,7 +111,7 @@ function usePublicMatch(matchId) {
   const startsAt = state.header?.startsAt ? Date.parse(state.header.startsAt) : NaN;
   const soon = status === "scheduled" && Number.isFinite(startsAt)
     && Date.now() > startsAt - 3600e3 && Date.now() < startsAt + 12 * 3600e3;
-  const every = live ? Math.max(5000, liveRefreshMs()) : soon ? soonRefreshMs() : 0;
+  const every = live ? Math.max(5000, liveRefreshMs()) * (low ? LOW_LIVE_FACTOR : 1) : soon ? soonRefreshMs() * (low ? LOW_SOON_FACTOR : 1) : 0;
   useEffect(() => {
     if (!every) return undefined;
     const t = setInterval(() => { if (!document.hidden) setTick((x) => x + 1); }, every);
@@ -105,12 +121,26 @@ function usePublicMatch(matchId) {
     let cancelled = false;
     (async () => {
       try {
-        const [{ match, fold }, log] = await Promise.all([
-          read(`/api/public/matches/${matchId}`),
-          read(`/api/public/matches/${matchId}/log`),
-        ]);
-        const par = await readPar(`/api/public/matches/${matchId}`);
-        if (!cancelled) setState({ loading: false, missing: false, error: null, header: match, fold: fold ?? {}, events: log.events ?? [], people: log.people ?? {}, last: log.last ?? 0, par,
+        const base = `/api/public/matches/${matchId}`;
+        const cur = held.current;
+        const since = low && !whole.current && cur.header?.status === "live" && !cur.error ? cur.last : null;
+        whole.current = false;
+        const [{ match, fold }, part] = await Promise.all([read(base), read(since != null ? `${base}/log?since=${since}` : `${base}/log`)]);
+        let log = part, events = part.events ?? [];
+        if (since != null) {
+          // A correction (a void, a revision, an amendment) is read in the whole log's terms, never stitched on.
+          if (match.status !== cur.header.status || !samePeople(part.people ?? {}, cur.people)
+              || events.some((/** @type {any} */ e) => e.seq > cur.last && WHOLE_AFTER.has(e.kind))) {
+            log = await read(`${base}/log`);
+            events = log.events ?? [];
+          } else {
+            const fresh = events.filter((/** @type {any} */ e) => e.seq > cur.last);
+            events = fresh.length ? [...cur.events, ...fresh] : cur.events;
+            log = { ...part, last: Math.max(cur.last, part.last ?? 0, ...fresh.map((/** @type {any} */ e) => e.seq)) };
+          }
+        }
+        const par = low ? null : await readPar(base);
+        if (!cancelled) setState({ loading: false, missing: false, error: null, header: match, fold: fold ?? {}, events, people: log.people ?? {}, last: log.last ?? 0, par,
           okAt: Date.now(), stale: false, refreshing: false });
       } catch (e) {
         if (cancelled) return;
@@ -120,8 +150,8 @@ function usePublicMatch(matchId) {
       }
     })();
     return () => { cancelled = true; };
-  }, [matchId, tick]);
-  const refresh = () => { setState((s) => ({ ...s, refreshing: true })); setTick((x) => x + 1); };
+  }, [matchId, tick, low]);
+  const refresh = () => { whole.current = true; setState((s) => ({ ...s, refreshing: true })); setTick((x) => x + 1); };
   const note = useCallback((/** @type {any} */ r) => setState((s) => ({ ...s, ...r })), []);
   return { ...state, refresh, note };
 }
@@ -143,7 +173,7 @@ function useSectors(matchId, on) {
  * where the side scored its runs, by sector, from the server's aggregate.
  * Nothing keyed to one boy.
  */
-function TeamAnalyticsTab({ match, innings, inningsSel, setInningsSel, sectors }) {
+function TeamAnalyticsTab({ match, innings, inningsSel, setInningsSel, sectors, lowData = false }) {
   const inn = innings[inningsSel];
   if (!inn) return <Quiet testid="mc-analytics-empty">Nothing has been scored yet.</Quiet>;
   const legal = inn.ballLog.filter((b) => b.type !== "Wd" && b.type !== "Nb");
@@ -169,7 +199,7 @@ function TeamAnalyticsTab({ match, innings, inningsSel, setInningsSel, sectors }
         <Kpi l="Extras" v={Object.values(inn.extras).reduce((a, b) => a + b, 0)}/>
       </div>
       <H>Where the runs went — the side, by sector</H>
-      {sectors == null ? <Quiet>Loading…</Quiet> : !mine.length ? <Quiet testid="mc-sectors-none">No placement was recorded for this innings.</Quiet> : (
+      {lowData ? <Quiet testid="mc-sectors-low-data">Charts are off in Low data.</Quiet> : sectors == null ? <Quiet>Loading…</Quiet> : !mine.length ? <Quiet testid="mc-sectors-none">No placement was recorded for this innings.</Quiet> : (
         // CRI-2.2: the side's innings, and how many of its balls carried a placement (a scoring shot placed).
         <SourcedLazy line={ballsLine(`${teamOf(match, inn.battingTeam).full} innings`, inn.balls ?? 0,
           shotsCaptured(mine.reduce((a, s) => a + s.shots, 0), inn.ballLog.length))} testid="source-line-sectors">
@@ -234,7 +264,8 @@ function PublicDetailsTab({ match, result }) {
 
 export function PublicMatch({ matchId, view }) {
   useTheme();
-  const data = usePublicMatch(matchId);
+  const low = useLowData();
+  const data = usePublicMatch(matchId, low.on);
   const phone = usePhone(NARROW_PX);
   // CRI-1.3: the tab is the address's — /live/:id the Summary, /scorecard/:id the Scorecard, /live/:id/commentary
   // and the like the rest (lib/matchTabs.js) — so a link opens it and the back button goes back a tab.
@@ -243,7 +274,7 @@ export function PublicMatch({ matchId, view }) {
   const tab = tabOr(TABS, asked && asked.matchId.toLowerCase() === String(matchId).toLowerCase() ? asked.tab : view === "scorecard" ? "scorecard" : "summary");
   const setTab = useCallback((/** @type {string} */ t) => navigate(publicPath(matchId, t)), [matchId]);
   const [picked, setPicked] = useState(null);
-  const sectors = useSectors(matchId, tab === "analytics" && !data.missing);
+  const sectors = useSectors(matchId, tab === "analytics" && !data.missing && !low.on);
 
   // The match folded and told (public/reads.js, shared with the ground
   // display): the log made foldable, the fold, the shared generator named by
@@ -287,12 +318,12 @@ export function PublicMatch({ matchId, view }) {
   useEffect(() => { if (need && !fx) import("./corrections.jsx").then(setFx, () => {}); }, [need, fx]);
   const fixes = useMemo(() => (fx && story ? fx.publicFixes(data.events, story) : null), [fx, story, data.events]);
 
-  if (data.loading) return <Frame><Quiet testid="public-loading">Loading the match…</Quiet></Frame>;
-  if (data.missing) return <Frame><Quiet testid="public-missing">This page is not available. The link may be wrong, or the match may not be public.</Quiet></Frame>;
+  if (data.loading) return <Frame low={low.on}><Quiet testid="public-loading">Loading the match…</Quiet></Frame>;
+  if (data.missing) return <Frame low={low.on}><Quiet testid="public-missing">This page is not available. The link may be wrong, or the match may not be public.</Quiet></Frame>;
   // A ground with poor signal is where this page is opened: a failed read offers the same read again, and says nothing
   // more than it did (glossary review item 5).
   if (!match) return (
-    <Frame>
+    <Frame low={low.on}>
       <div aria-live="polite">
         <Quiet testid="public-error">Could not load this match{data.error === "busy" ? " — too many requests; try again shortly" : ""}.</Quiet>
         <button type="button" data-testid="public-retry" onClick={() => { if (!data.refreshing) data.refresh(); }} className="pressBtn os-state"
@@ -319,10 +350,11 @@ export function PublicMatch({ matchId, view }) {
     inningsSel, setInningsSel: setPicked, phone, setTab, moment, overSummary, shownRuns,
     status: st,             // EXPERIENCE_PASS §3.3: the Summary says it under the board; the header, on every other tab
     okAt: data.okAt,        // CRI-1.1: the board's "Updated 4 s ago · Live"
-    quietMoments: true };   // the region below says it; the moment is drawn, not said twice
+    quietMoments: true,     // the region below says it; the moment is drawn, not said twice
+    lowData: low.on };      // CRI-2.4: no chart, no chunk fetched for one
 
   return (
-    <Frame>
+    <Frame low={low.on}>
       <div className="os-page" data-testid="public-match" data-match={matchId}>
         {/* The ball, said (WCAG 4.1.3): "Four runs", "Wicket — bowled", "Wide",
             "End of over 5: 8 runs…". Empty on first load and on a reconnect;
@@ -367,6 +399,7 @@ export function PublicMatch({ matchId, view }) {
             </Suspense>
           </ErrorBoundary>
           {fx && !isLive && <fx.SettledWatch matchId={matchId} last={data.last} note={data.note}/>}
+          <LowDataSwitch low={low} live={isLive}/>
           <div role="status" aria-live="polite" data-testid="mc-stale-region">
             {fx && <fx.StaleLine bare stale={data.stale} refreshing={data.refreshing} failed={!!data.error} okAt={data.okAt} onRefresh={data.refresh}/>}
           </div>
@@ -402,12 +435,49 @@ export function PublicMatch({ matchId, view }) {
   );
 }
 
+/**
+ * Low data's switch (CRI-2.4): a toggle button (aria-pressed), 44px tall; while
+ * it is on, one line says why, when the browser turned it on, and what it
+ * changes. Pressing it is the device's choice, remembered, so it always turns
+ * Low data off, Save-Data or not. Team-level words
+ * only; nothing here names anyone.
+ * @param {{low: {on: boolean, why: string | null, set: (on: boolean) => void}, live: boolean}} p
+ */
+function LowDataSwitch({ low, live }) {
+  const why = low.on && low.why === "save-data" ? "On because this phone asked to save data."
+    : low.on && low.why === "slow" ? "On because the connection is slow." : null;
+  return (
+    <div data-testid="public-low-data" data-on={low.on ? "true" : "false"} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: T.space.sm }}>
+      <button type="button" data-testid="public-low-data-switch" aria-pressed={low.on} aria-describedby={low.on ? "public-low-data-says" : undefined}
+        onClick={() => low.set(!low.on)} className="pressBtn os-state"
+        style={{ minHeight: "44px", minWidth: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
+          background: low.on ? T.surface.raised : "transparent", border: `1px solid ${low.on ? T.brand.accentText : T.line.normal}`,
+          borderRadius: T.radius.pill, cursor: "pointer", color: low.on ? T.brand.accentText : T.content.primary,
+          fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
+        Low data<span aria-hidden="true">{low.on ? " · On" : " · Off"}</span>
+      </button>
+      {low.on && (
+        <span id="public-low-data-says" data-testid="public-low-data-says" style={{ ...T.role.body, fontSize: "13px", color: T.content.secondary }}>
+          {why ? `${why} ` : ""}No charts; the score is checked {live ? "about once a minute" : "less often"}.
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Low data keeps to the phone's own type (CRI-2.4): with every element's
+ * family the system's, no web font is ever used, so none is downloaded.
+ */
+const LOW_DATA_CSS = `main[data-low-data] *{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif!important;font-variant-numeric:tabular-nums}`;
+
 /** The page around it: the global sheet, a readable width, the gutters. */
-function Frame({ children }) {
+function Frame({ children, low = false }) {
   return (
     <>
       <style>{GLOBAL_CSS}</style>
-      <main style={{ maxWidth: "960px", margin: "0 auto", padding: `${T.space.lg} ${T.space.md}`, minHeight: "100vh" }}>
+      {low && <style>{LOW_DATA_CSS}</style>}
+      <main data-low-data={low ? "" : undefined} style={{ maxWidth: "960px", margin: "0 auto", padding: `${T.space.lg} ${T.space.md}`, minHeight: "100vh" }}>
         {children}
       </main>
     </>

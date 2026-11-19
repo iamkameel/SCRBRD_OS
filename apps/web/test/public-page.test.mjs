@@ -5,6 +5,7 @@
 // figures as the log it was given.
 import { deriveMatch, deriveCommentary } from "@scrbrd/scoring";
 import { foldable, unnamedToPositions, asPublicMatch } from "../src/public/publicLog.js";
+import { LOW_DATA_KEY, connectionAsks, lowDataState, storedChoice } from "../src/public/lowData.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { console.log(`${c ? "✓" : "✗"} ${n}${c || !d ? "" : `\n    ${typeof d === "string" ? d : JSON.stringify(d)}`}`); if (c) pass++; else fail++; };
@@ -67,6 +68,17 @@ ok("status, ground and start carried, the start on the SA clock (08:00Z is 10:00
 const late = asPublicMatch({ id: "m", status: "live", startsAt: "2026-11-06T22:30:00.000Z" });
 ok("...and a start after 22:00 UTC is the next SA day", late.date === "2026-11-07" && late.time === "00:30");
 ok("a scheduled fixture is 'upcoming'", asPublicMatch({ id: "m", status: "scheduled" }).status === "upcoming");
+
+// CRI-2.4: Low data — the browser's word, the device's choice, and which wins.
+ok("Save-Data asks for Low data", connectionAsks({ saveData: true, effectiveType: "4g" }) === "save-data");
+ok("...so do 2g, slow-2g and 3g", ["2g", "slow-2g", "3g"].every((t) => connectionAsks({ effectiveType: t }) === "slow"));
+ok("...not 4g, and not a browser that says nothing", connectionAsks({ effectiveType: "4g" }) === null && connectionAsks(null) === null);
+const store = (v) => ({ getItem: (k) => (k === LOW_DATA_KEY ? v : null) });
+ok("a remembered choice reads back, either way", storedChoice(store("on")) === true && storedChoice(store("off")) === false && storedChoice(store(null)) === null);
+ok("...and blocked storage is no choice, not a throw", storedChoice({ getItem: () => { throw new Error("blocked"); } }) === null);
+ok("the browser's word turns it on, and says why", JSON.stringify(lowDataState(null, "save-data")) === JSON.stringify({ on: true, why: "save-data" }));
+ok("...but the device's choice wins, so the switch always turns it off", lowDataState(false, "save-data").on === false && lowDataState(true, null).on === true);
+ok("with neither, it is off", lowDataState(null, null).on === false);
 
 console.log(`\nPUBLIC PAGE: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
