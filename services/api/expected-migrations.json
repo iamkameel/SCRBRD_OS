@@ -154,5 +154,6 @@
   "158_school_add_request.sql",
   "159_live_read_target.sql",
   "160_followed_schools.sql",
-  "161_school_answered_notice.sql"
+  "161_school_answered_notice.sql",
+  "165_live_from_first_ball.sql"
 ]

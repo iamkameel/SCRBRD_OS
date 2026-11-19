@@ -124,7 +124,7 @@ const tap = async (id, ms = 4000) => {
   await page.waitForTimeout(350);
   return true;
 };
-/** The sync pill's word, from its accessible name: "Sent", "Held 2", "On device"… */
+/** The sync pill's word, from its accessible name: "Sent", "No signal · 2 to send", "On device"… */
 const pill = async () => {
   const l = page.locator('[aria-label^="Sync status:"]').first();
   if (!(await l.count())) return "";
@@ -400,7 +400,12 @@ try {
   await page.waitForTimeout(300);
   // One ball: the fifth of the over, so F's one-over cut still has one to play.
   ok("a ball with no signal, on a pad that holds the token", await score("1"));
-  ok("...waiting on the pad", /^Held 1$/.test(await pill()), await pill());
+  ok("...waiting on the pad: \"No signal · 1 to send\"", /^No signal · 1 to send$/.test(await pill()), await pill());
+  // 18 Nov 2026: the attached pad said nothing beside its amber pill.
+  ok("...and the banner says \"No signal.\", with what is saved", await until(async () => {
+       const b = tid("sync-banner").first();
+       return (await b.count()) > 0 && (await b.getAttribute("data-reason")) === "offline" && /No signal\./.test(await b.innerText());
+     }, 5000), await tid("sync-banner").first().innerText().catch(() => "(no banner)"));
   // Ninety seconds without a write, as smoke-handover-crash moves the clock.
   await dbq(`update scoring_session set lease_until = now() - interval '1 minute' where match_id = $1`, [MATCH]);
   await ctx.setOffline(false);

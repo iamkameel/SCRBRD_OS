@@ -80,7 +80,7 @@ export function PadBoard({ inn, match, target, flash = null, onFlashDone }) {
           under the bottom bar (§4 rule 1), and the scorer recorded that wicket
           himself; the pad's Scorecard tab has it. Nothing else of the board is
           dropped, and no freshness row is passed either: the sync pill under
-          the board says Held N. */}
+          the board says how many are still to send. */}
       <Board {...props} lastWicket={undefined} compact/>
       <BoardFlash event={flash} onDone={onFlashDone}/>
     </div>

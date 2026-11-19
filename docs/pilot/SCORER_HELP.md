@@ -22,7 +22,7 @@ Under the keys: **Dot**, **Wide**, **No ball**, **Bye**, **Leg bye**. Tap an ext
 
 ## The sync pill (under the scoreboard)
 
-**Sent**: all on the server. **Sending**: on their way. **Held**: no signal; saved, sent later. **Refused**: the server turned balls down; tap the pill, read the reason, then **Record again** or **Discard**. **On device**: saved here only.
+**Sent**: all on the server. **Sending**: on their way. **No signal**: saved here, sent later. **Refused**: the server turned balls down; tap the pill, read the reason, then **Record again** or **Discard**. **On device**: saved here only.
 
 ## No signal, or the phone dies
 

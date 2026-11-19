@@ -25,8 +25,8 @@
  *    stand for.
  *  - Case counts: "Sign In" (the sign-in screen) is not "Sign in" (the pad's
  *    banner), and the docs use each where the app does.
- *  - A label built from a template, such as `Held ${n}`, is quoted by its
- *    fixed words only ("Held"), never with the number.
+ *  - A label built from a template, such as `Sending ${n}`, is quoted by its
+ *    fixed words only ("Sending"), never with the number.
  *
  * Also checked: banned phrases that an earlier draft invented, and each
  * one-page help sheet (scorer, coach, parent, office) staying under its word
@@ -81,10 +81,10 @@ const PIN = new Map([
   ["Basic Scoring", { in: ["scorer/engine.jsx"] }],           // menu item
   ["Hand over", { in: ["scorer/engine.jsx"] }],               // title-bar button
   ["Take over", { in: ["scorer/engine.jsx"] }],               // title-bar button when a handover is pending
-  // The sync pill (scorer/engine.jsx SyncPill). Held, Sending, Refused carry a count.
+  // The sync pill (scorer/engine.jsx SyncPill). No signal, Sending, Refused carry a count.
   ["Sent", { in: ["scorer/engine.jsx"] }],
   ["Sending", { in: ["scorer/engine.jsx"], part: "label: `Sending \\$\\{" }],
-  ["Held", { in: ["scorer/engine.jsx"], part: "label: `Held \\$\\{" }],
+  ["No signal", { in: ["scorer/engine.jsx"], part: "label: `No signal · \\$\\{" }],
   ["Refused", { in: ["scorer/engine.jsx"], part: "label: `Refused \\$\\{" }],
   ["For review", { in: ["scorer/engine.jsx"], part: "label: `For review \\$\\{" }],
   ["On device", { in: ["scorer/engine.jsx"] }],

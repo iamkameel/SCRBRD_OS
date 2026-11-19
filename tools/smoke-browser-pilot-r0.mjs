@@ -367,7 +367,7 @@ try {
   const offAt = Date.now();
   for (const k of ["run-4", "run-0", "run-6"]) await P.tap(k);
   ok("three more offline: the board has them (13 for 0)", /13 for 0/.test(await P.board()), await P.board());
-  ok("...the pad counts them as held: 'Held 3', not Sent", await waitPill(P, /Held 3/, 8000) && !/Sent/.test(await pill(P)), await pill(P));
+  ok("...the pad counts them waiting: 'No signal · 3 to send', not Sent", await waitPill(P, /No signal · 3 to send/, 8000) && !/Sent/.test(await pill(P)), await pill(P));
   ok("...and says nothing is confirmed: no 'Every ball is on the server'", !/Every ball is on the server/.test(await P.text()));
   ok("...nothing reached the server meanwhile", (await count(uuid2)) === before2);
   await P.shot("2-offline");

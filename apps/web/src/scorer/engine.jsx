@@ -33,8 +33,8 @@ import { PILOT_WORDS, createBody, namesBody, demoteToPractice, listPilot, loadPi
 import { PilotList, PilotFinish, PilotCallOff } from "./pilotList.jsx";
 import { scorecardFileName, scorecardText, saveTextFile } from "../lib/practiceExport.js";
 import { api, signedIn } from "../lib/api.js";
-import { couldFinalise, profile } from "../lib/session.js";
-import { FinishMatch } from "./finishMatch.jsx";
+import { profile } from "../lib/session.js";
+import { FinishGate, FinishMatch, finishOffer } from "./finishMatch.jsx";
 import { PadSync } from "../lib/sync.js";
 import { refusalWords } from "../lib/handover.js";
 import { withoutEvents, recordAgain, recordAgainRefusal, heldInOrder, undoOnPad, reconcile, padLogFrom, withOrphans, describeEvent } from "@scrbrd/sync";
@@ -265,7 +265,9 @@ function SyncPill({ sync, storage, onOpenHeld }) {
     quarantined: { dot: D.rose, label: `For review ${sync.rejected}`,
                title: `The server held ${sync.rejected === 1 ? "one event" : `${sync.rejected} events`} for a supervisor to review. They are not in the scorebook.` },
     syncing: { dot: D.amber, label: `Sending ${sync.pending}`, title: "Balls still on their way" },
-    waiting: { dot: D.amber, label: `Held ${sync.pending}`, title: "No connection — balls are saved and will send when there is one" },
+    // The last send got no answer (18 Nov 2026: it read "Held N", and "held"
+    // means refused everywhere else on the pad).
+    waiting: { dot: D.amber, label: `No signal · ${sync.pending} to send`, title: "No connection — balls are saved and will send when there is one" },
     local:   sync.reason === "handed_over"
       ? { dot: D.sky, label: "Handed over", title: "You gave the scoring token to someone else" }
       : sync.reason === "handover_pending" || sync.reason === "verifying"
@@ -1034,6 +1036,19 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   // second innings' seal: the pair is still to come, or in play.
   // A Pilot Match called off is over too, in either innings (re-check 1).
   const matchOver = (innings[1]?.sealed === true && offer.state !== "available" && !superOverInPlay(innings)) || (pilotMode && !!callOffNow);
+  // A fixture reopened on a log that is already decided (a reload, or the
+  // sign-in from the result screen's "Sign in to finish this match") opens on
+  // its result, where Finish is, not on a closed innings (18 Nov 2026). Asked
+  // once, at the first look after the log is loaded; never during play.
+  const landedRef = useRef(false);
+  useEffect(() => {
+    if (landedRef.current || !hydratedRef.current || !fixtureLive) return;
+    landedRef.current = true;
+    const decided = twoInn
+      ? (innings[3]?.sealed === true || (innings[2]?.sealed === true && inningsDecided(innings))) && offer.state !== "available" && !superOverInPlay(innings)
+      : matchOver;
+    if (decided && screen === "match" && !modal) setScreen("result");
+  }, [innings, matchOver, twoInn, offer.state, fixtureLive, screen, modal]);
   useEffect(() => {
     const ps = syncRef.current, engine = ps?.engine, st = padStatus;
     if (!engine || !st || engine.cleared || !hydratedRef.current) return;
@@ -2715,10 +2730,18 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
               done={practice?.pilot?.finished===true}
               onDone={async()=>{const r=await recordWrite(matchId,"that it was finished",()=>updatePilotState(matchId,{finished:true,finishedAt:Date.now()}));if(r)setPractice(r);}}/>
           )}
-          {live&&matchId&&!practiceMode&&signedIn()&&offer.state!=="available"&&couldFinalise(match?.schoolId,match?.teamCode)&&(
-            <FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}
-              left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}/>
-          )}
+          {/* Always a panel on a fixture's result screen (18 Nov 2026): Finish,
+              or the sign-in that returns here, or who may finish it. It was
+              hidden in silence after any reload, which drops the token and,
+              before this, the home school. */}
+          {live&&matchId&&!practiceMode&&offer.state!=="available"&&(()=>{
+            const finishAs=finishOffer(match?.schoolId,match?.teamCode);
+            return finishAs==="finish"
+              ?<FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}
+                 left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}
+                 attached={!!padStatus?.attached} reason={padStatus?.reason??null}/>
+              :<FinishGate offer={finishAs} onSignIn={onSignIn??null} online={padStatus?.online!==false}/>;
+          })()}
           {/* §2.5 step 6: at the result of a Practice or Pilot Match, an
               account with no school is asked once; never during play. */}
           {practiceMode&&onJoinSchool&&offer.state!=="available"&&(
