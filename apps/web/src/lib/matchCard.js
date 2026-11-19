@@ -184,8 +184,10 @@ export function cardModel({ match, fold = null, innings = null, resultWords = nu
     score: got?.[/** @type {"home" | "away"} */ (end)] ?? null,
     batting: state.kind === "live" && got?.batting === end,
   }));
+  // §2.2's table: an upcoming match says where, "Starts at 17:25 · Hilton Oval", the ground being the read's own.
   const text = state.kind === "provisional" && sentence.state === "result" && !/provisional/i.test(sentence.text)
-    ? `${sentence.text} · provisional` : sentence.text;
+    ? `${sentence.text} · provisional`
+    : sentence.state === "upcoming" && match?.venue ? `${sentence.text} · ${match.venue}` : sentence.text;
   return { state, soon: startsIn(match, now), sides, sentence: { state: sentence.state, text } };
 }
 

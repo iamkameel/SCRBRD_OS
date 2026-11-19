@@ -75,6 +75,8 @@ group("The card, in order");
   ok("...or the end a screen names", cardModel({ match: { ...M, status: "upcoming" }, ownEnd: "away" }).sides[0].end === "away");
   ok("nobody is batting before the first ball", a.sides.every((s) => !s.batting));
   ok("soon says the minutes", a.soon === "in 10 min");
+  ok("an upcoming match says where", a.sentence.text === "Starts at 17:25 · Gordon Sherwood Oval", a.sentence.text);
+  ok("...and only the start where there is no ground", cardModel({ match: { ...M, status: "upcoming", venue: null } }).sentence.text === "Starts at 17:25");
   ok("names in full, never 1XI alone", a.sides.every((s) => s.name.full !== "1XI"), a.sides.map((s) => s.name.full));
   const p = cardModel({ match: { ...M, status: "complete" }, resultWords: "Hilton College 1XI won by 12 runs", official: "provisional" });
   ok("a provisional result says so in the sentence", p.sentence.text === "Hilton College 1XI won by 12 runs · provisional", p.sentence.text);

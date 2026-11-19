@@ -247,7 +247,7 @@ try {
      && (await tid(`now-live-${OTHER}-sentence`).innerText().catch(() => "")).trim().length > 0
      && /^Open the pad$/.test((await tid(`now-live-${OTHER}-open`).innerText().catch(() => "")).trim()), (await tid("scorer-resume").innerText().catch(() => "")).slice(0, 300));
   ok("...in place of Nothing on this phone to resume", (await tid("scorer-resume-empty").count()) === 0 && (await tid(`resume-${OTHER}`).count()) === 0);
-  ok("...and only the live one: a fixture not started stays in This week", (await page.locator('[data-testid^="now-live-"][data-state]').count()) === 1);
+  ok("...and only the live one: a fixture not started stays in This week", (await page.locator('[data-testid^="now-live-"][data-state]:not([data-testid$="-sentence"])').count()) === 1);
   // The day sheet (R0): with no session, nothing on the P0 card; Pilot Matches are switched off, so that section is not drawn.
   const sectionsOf = async () => (await tid("scorer-home").first().getAttribute("data-sections").catch(() => "")) ?? "";
   ok("no session: the sections are Now, Start and This week, in that order (no P0, no Pilot Matches)",
@@ -501,7 +501,7 @@ try {
   ok("...and nothing that ranks it", !/point|streak|rank|best|leader/i.test(await tG("scorer-record").innerText().catch(() => "")));
   // Now says it has nothing to resume, or holds his side's live fixture in its place (slice 1, d).
   ok("...and it is no longer on Now", (await tG(`resume-${pid}`).count()) === 0
-     && ((await tG("scorer-resume-empty").count()) === 1 || (await g.locator('[data-testid^="now-live-"][data-state]').count()) > 0));
+     && ((await tG("scorer-resume-empty").count()) === 1 || (await g.locator('[data-testid^="now-live-"][data-state]:not([data-testid$="-sentence"])').count()) > 0));
   ok("no sponsor slot on the home (a work mode)", !/sponsor/i.test(await tG("scorer-home").innerHTML().catch(() => "")));
 
 

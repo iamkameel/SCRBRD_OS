@@ -6,11 +6,13 @@ import { useLive } from "../lib/live.js";
 import { canScore, holdsCapability } from "../rbac/index.js";
 import { profile, schoolsWhere } from "../lib/session.js";
 import { ENTERABLE, mayEnterScoring } from "../lib/enterScoring.js";
-import { Btn, Card, ReadState, SectionHeader, StatusDot } from "../ui/primitives.jsx";
+import { Btn, Card, ReadState, SectionHeader } from "../ui/primitives.jsx";
+import { MatchCard } from "../ui/matchCard.jsx";
+import { demoScore, openWords } from "../lib/matchCard.js";
 import { WeatherChip } from "./shared.jsx";
 import { MatchView } from "./matchcentre/MatchView.jsx";
 import { SideName } from "./matchcentre/bits.jsx";
-import { sidesOf, statusSentence, upcomingAndRecent } from "../lib/matchCentre.js";
+import { sidesOf, upcomingAndRecent } from "../lib/matchCentre.js";
 import { PostMatchReport } from "./postmatch.jsx";
 import { OppositionDossier } from "./dossier.jsx";
 import { DutyRoster } from "./duties.jsx";
@@ -176,16 +178,18 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
     .map(({ m }) => m);
   // A finished match's result in words, from the same route the match's own
   // page reads (GET /api/matches/:id/result): without it every finished card
-  // said only "Match over". Asked once per match, for the cards on screen.
-  const [resultsSaid, setResultsSaid] = useState(/** @type {Record<string, string | null>} */ ({}));
+  // said only "Match over". Asked once per match, for the cards on screen. The same answer carries each
+  // innings' total by side, which the row draws as the two scores (slice 1): no second read.
+  const [results, setResults] = useState(/** @type {Record<string, {text: string | null, innings: any[]} | null>} */ ({}));
   const doneIds = signedIn() ? filtered.filter((m) => m.status === "complete" && !m.calledOff).map((m) => m.id) : [];
   const doneKey = doneIds.join(",");
   useEffect(() => {
-    const want = doneIds.filter((id) => !(id in resultsSaid));
+    const want = doneIds.filter((id) => !(id in results));
     if (!want.length) return undefined;
     let off = false;
-    Promise.all(want.map((id) => api(`/api/matches/${id}/result`).then((r) => [id, r?.result?.text ?? null], () => [id, null])))
-      .then((pairs) => { if (!off) setResultsSaid((w) => ({ ...w, ...Object.fromEntries(pairs) })); });
+    Promise.all(want.map((id) => api(`/api/matches/${id}/result`)
+      .then((r) => [id, { text: r?.result?.text ?? null, innings: Array.isArray(r?.innings) ? r.innings : [] }], () => [id, null])))
+      .then((pairs) => { if (!off) setResults((w) => ({ ...w, ...Object.fromEntries(pairs) })); });
     return () => { off = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doneKey]);
@@ -262,81 +266,37 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
       )}
       <div style={{display:"grid",gridTemplateColumns:selMatch?"var(--g-side-r,1fr 340px)":"1fr",gap:"16px",alignItems:"start"}}>
         <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-          {filtered.map(m=>{
-            const comp = COMPETITIONS.find(c=>c.id===m.competition);
-            const w = WEATHER[m.id];
-            const isLive = m.status==="live";
-            const isSel = selMatch?.id===m.id;
-            const sides = sidesOf(m);
-            const status = statusSentence(m, null, { result: resultsSaid[m.id] ?? null });
-            return (
-              <Card key={m.id} data-testid={`match-card-${m.id}`} onClick={()=>setSelMatch(isSel?null:m)}
-                label={`Match details: ${sides.home.full} v ${sides.away.full}, ${humanDate(m.date)}`}
-                expanded={isSel} controls={isSel?"match-details":undefined} sx={{
-                background:isLive?`linear-gradient(135deg,${D.emerald}08,${D.surf1})`:D.surf1,
-                border:`1px solid ${isSel?D.sky+"55":isLive?D.emerald+"22":D.border}`,cursor:"pointer",
-              }}>
-                <div style={{padding:"14px 16px"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"10px",flexWrap:"wrap"}}>
-                    <StatusDot status={m.status}/>
-                    <span style={{...T.role.label,color:isLive?T.brand.accentText:T.content.secondary}}>{m.status}</span>
-                    {comp&&<span style={{...T.role.body,fontSize:"12px",color:T.content.secondary}}>{comp.name}</span>}
-                    {w&&<WeatherChip w={w} status={m.status} compact/>}
-                    <span style={{marginLeft:"auto",fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{humanDate(m.date)}</span>
+          {/* Redesign slice 1 (DESIGN_DIRECTION §2.2, §2.3): each fixture is the match card's row, on one panel with
+              hairlines between, not a card each. A tap on the row opens its Match Details; its one action is named
+              for the match and the role: the scorer's "Resume scoring" (with "Open v …" beside it), everyone
+              else's "Open v …". The post-match report and the dossier are in the details. */}
+          {filtered.length>0&&(
+            <div data-testid="mc-list" style={{background:T.surface.raised,border:`1px solid ${T.line.normal}`,borderRadius:T.radius.lg,overflow:"hidden"}}>
+              {filtered.map((m,n)=>{
+                const isLive = m.status==="live";
+                const isSel = selMatch?.id===m.id;
+                const sides = sidesOf(m);
+                const said = results[m.id] ?? null;
+                const scores = !signedIn() && m.scorecard ? { home: demoScore(m.scorecard.home), away: demoScore(m.scorecard.away), batting: isLive && m.scorecard.home ? "home" : null } : null;
+                const open = { label: openWords(m), testid: `mc-open-${m.id}`, onClick: () => setOpenM(m) };
+                // A scheduled fixture is offered too, because that is when scoring actually begins — you open the pad
+                // at the toss. Whether this person MAY score it is decided by the database when the scorer claims it;
+                // scoresHere() only decides whether to offer the button (over this fixture, by the routes' own
+                // capability), and being wrong shows a button that then says no, never the wrong data.
+                const scoring = (isLive||m.status==="upcoming")&&scoresHere(m)
+                  ? { label: isLive ? "Resume scoring" : "Start scoring", testid: `mc-score-${m.id}`, onClick: () => onOpenScorer&&onOpenScorer(m) } : null;
+                return (
+                  <div key={m.id} style={{background:isSel?T.surface.interactive:"transparent",boxShadow:isSel?`inset 3px 0 0 ${D.sky}`:"none"}}>
+                    <MatchCard size="row" match={m} innings={said?.innings ?? null} resultWords={said?.text ?? null} scores={scores}
+                      testid={`match-card-${m.id}`} statusTestid={`mc-card-status-${m.id}`} last={n===filtered.length-1}
+                      onOpen={()=>setSelMatch(isSel?null:m)} openLabel={`Match details: ${sides.home.full} v ${sides.away.full}, ${humanDate(m.date)}`}
+                      expanded={isSel} controls={isSel?"match-details":undefined}
+                      action={scoring ?? open} also={scoring ? open : null}/>
                   </div>
-                  <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto minmax(0,1fr)",gap:"12px",alignItems:"center"}}>
-                    <div>
-                      <div style={{fontFamily:D.body,fontSize:"15px",fontWeight:700,color:D.textPrimary,overflowWrap:"anywhere"}}><SideName side={sides.home}/></div>
-                      {m.scorecard?.home&&<div style={{...T.role.figure.md,color:isLive?D.emerald:D.textPrimary,marginTop:"4px"}}>{m.scorecard.home.score} <span style={{fontSize:"12px",color:D.textMuted}}>({m.scorecard.home.overs})</span></div>}
-                    </div>
-                    <div style={{textAlign:"center"}}>
-                      <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:800,color:D.textMuted,letterSpacing:"0.06em"}}>VS</div>
-                    </div>
-                    <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:D.body,fontSize:"15px",fontWeight:700,color:D.textPrimary,overflowWrap:"anywhere"}}><SideName side={sides.away}/></div>
-                      {m.scorecard?.away&&<div style={{...T.role.figure.md,color:D.textPrimary,marginTop:"4px"}}>{m.scorecard.away.score} <span style={{fontSize:"12px",color:D.textMuted}}>({m.scorecard.away.overs})</span></div>}
-                    </div>
-                  </div>
-                  {/* CRI-1.2: where the fixture stands, in the sentence its own header says. */}
-                  <p data-testid={`mc-card-status-${m.id}`} data-state={status.state}
-                    style={{...T.role.body,fontSize:"14px",fontWeight:600,color:isLive?T.brand.accentText:T.content.primary,margin:"10px 0 0"}}>
-                    {status.text}
-                  </p>
-                  <div style={{marginTop:"10px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"6px"}}>
-                    <span style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}><Icon name="map-pin"/> {m.venue}</span>
-                    <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-                      {m.transport?.bus&&<span style={{display:"inline-flex",alignItems:"center",gap:T.space.xs,...T.role.body,fontSize:"12px",color:T.content.secondary}}><Icon name="bus"/> Bus {m.transport.depart}</span>}
-                      {/* A scheduled fixture is offered too, because that is
-                          when scoring actually begins — you open the pad at
-                          the toss, not once someone has already marked the
-                          match live. Whether this person MAY score it is
-                          decided by the database when the scorer claims it;
-                          scoresHere() only decides whether to offer the button
-                          — over this fixture, by the routes' own capability —
-                          and being wrong here shows a button that then says
-                          no, never the wrong data. */}
-                      {(isLive||m.status==="upcoming")&&scoresHere(m)&&<Btn variant="success" data-testid={`mc-score-${m.id}`} onClick={e=>{e.stopPropagation();onOpenScorer&&onOpenScorer(m);}}>{isLive?"Open live scorer →":"Start scoring →"}</Btn>}
-                      {/* The fixture's own Match Centre (step 3c), for every
-                          fixture — NOT gated on `m.scorecard`, which is a mock-only
-                          field: asMatch() sets it null for every live row because
-                          a score is derived from the ball log rather than stored.
-                          The view reads the log itself and says so honestly when
-                          a match has not been scored yet, and a fixture still to
-                          be played has its match details to show. */}
-                      <Btn variant="ghost" data-testid={`mc-open-${m.id}`} onClick={e=>{e.stopPropagation();setOpenM(m);}}>Open match</Btn>
-                      {/* SCRBRD-082. Only once the match is complete — the
-                          same reasoning canScore()'s own comment gives for
-                          every other offered-but-checked-server-side button:
-                          a report on a match still being played would be
-                          reporting on the wrong thing, not merely early. */}
-                      {m.status==="complete"&&<Btn variant="ghost" onClick={e=>{e.stopPropagation();setReportM(m);}} data-testid={`report-open-${m.id}`}>Post-match report</Btn>}
-                      {m.status==="upcoming"&&dossierOn&&holdsCapability(role,"opposition.read")&&<Btn variant="ghost" onClick={e=>{e.stopPropagation();setDossierM(m);}} data-testid={`dossier-open-${m.id}`}>Dossier</Btn>}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
+                );
+              })}
+            </div>
+          )}
           {/* SCRBRD-100 item 1: never a blank panel. Whatever emptied this
               list — no live match, no fixture of this status, or a team
               filter with nothing to show — it points at what the list's own
@@ -367,6 +327,24 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                 </button>
               </div>
               {w&&<div style={{marginBottom:"12px"}}><WeatherChip w={w} status={selMatch.status}/></div>}
+              {/* Where and when, and what the row no longer carries (slice 1: the row says the match; its
+                  details say the rest): the competition, the ground, the bus, the report and the dossier. */}
+              {(()=>{ const comp = COMPETITIONS.find(c=>c.id===selMatch.competition);
+                return (
+                  <div data-testid="match-details-where" style={{display:"grid",gap:T.space.xs,marginBottom:"12px"}}>
+                    {comp&&<span style={{...T.role.body,color:T.content.secondary}}>{comp.name}</span>}
+                    {selMatch.venue&&<span style={{...T.role.body,color:T.content.secondary}}><Icon name="map-pin"/> {selMatch.venue}</span>}
+                    {selMatch.transport?.bus&&<span style={{...T.role.body,color:T.content.secondary}}><Icon name="bus"/> Bus {selMatch.transport.depart}</span>}
+                    {(selMatch.status==="complete"||(selMatch.status==="upcoming"&&dossierOn&&holdsCapability(role,"opposition.read")))&&(
+                      <div style={{display:"flex",gap:T.space.sm,flexWrap:"wrap",marginTop:T.space.xs}}>
+                        {/* SCRBRD-082. Only once the match is complete: a report on a match still being played would be
+                            reporting on the wrong thing, not merely early. */}
+                        {selMatch.status==="complete"&&<Btn variant="ghost" onClick={()=>setReportM(selMatch)} data-testid={`report-open-${selMatch.id}`}>Post-match report</Btn>}
+                        {selMatch.status==="upcoming"&&dossierOn&&holdsCapability(role,"opposition.read")&&<Btn variant="ghost" onClick={()=>setDossierM(selMatch)} data-testid={`dossier-open-${selMatch.id}`}>Dossier</Btn>}
+                      </div>
+                    )}
+                  </div>
+                ); })()}
               {/* Rescheduling and calling off — fixture.update, at the HOST's
                   own school. amendSchools is a courtesy filter, not the gate:
                   match_update() in db/09 refuses an away school's attempt

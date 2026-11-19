@@ -16,11 +16,11 @@ import {
   SANDBOX_WORDS, finishedPilots, homeSections, lastRecord, liveOffPhone, nowItems, p0Items, scoreLine, startWords, weekOf,
 } from "../lib/scorerDay.js";
 // The one status sentence (CRI-1.2): what the Match Centre's card says of a fixture, said here too.
-import { statusSentence } from "../lib/matchCentre.js";
 import { PlainRecord } from "./ScoringBlock.jsx";
 import { ReadState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
 import { Board } from "../ui/board.jsx";
+import { MatchCard } from "../ui/matchCard.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { StateLabel } from "../ui/stateLabel.jsx";
 
@@ -259,8 +259,6 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                                  { what: "this phone's Pilot Matches" });
 
   const sections = homeSections({ p0: p0.length, pilotOffer, pilotsKnown, week: week.length, weekRead: fixturesRead?.state ?? null, record: !!record });
-  /** A fixture's status sentence, as the Match Centre's list card says it: no fold here, the fixture's own facts. @param {any} m */
-  const sentenceOf = (m) => statusSentence(m, null).text;
   const start = startWords(pilotNow.status, pilotNow.loading);
 
   const open = (m) => onOpenScorer && onOpenScorer(m);
@@ -317,39 +315,58 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                 {liveElsewhere.map(({ match: m, state }) => {
                   const w = STATE_WORDS[state];
                   return (
-                    <div key={`live-${m.id}`} data-testid={`now-live-${m.id}`} data-state={state} style={stack(T.space.sm)}>
-                      <p style={strong()}>{sidesOf(m)}</p>
-                      <p style={{ ...line(), color: T.content.primary, fontWeight: 600 }} data-testid={`now-live-${m.id}-sentence`}>{sentenceOf(m)}</p>
-                      {w?.label && <p style={line()} data-testid={`now-live-${m.id}-state`}>{w.label}{w.note ? `. ${w.note}` : ""}</p>}
-                      <Act testId={`now-live-${m.id}-open`} label={`Open the pad: ${sidesOf(m)}`} onClick={() => open(m)}>Open the pad</Act>
+                    // The match card (slice 1): both sides, where it stands, who holds it, and the pad.
+                    <div key={`live-${m.id}`} data-testid={`now-live-${m.id}`} data-state={state}>
+                      <MatchCard size="card" match={m} now={now} statusTestid={`now-live-${m.id}-sentence`}
+                        line={w?.label ? `${w.label}${w.note ? `. ${w.note}` : ""}` : null} lineTestid={`now-live-${m.id}-state`}
+                        action={{ label: "Open the pad", aria: `Open the pad: ${sidesOf(m)}`, testid: `now-live-${m.id}-open`, onClick: () => open(m) }}/>
                     </div>
                   );
                 })}
                 {leaseRead && leaseRead.state !== "ok" && leaseRead.state !== "empty" && (
                   <ReadState read={leaseRead} onRetry={retry} compact testId="scorer-lease-read"/>
                 )}
-                {nowShown.map((it) => (
-                  <div key={it.key} data-testid={`resume-${it.matchId}`} data-kind={it.kind} data-pending={it.pending ?? "unknown"} style={stack(T.space.sm)}>
-                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: `0 ${T.space.sm}` }}>
-                      <p style={strong()}>{it.title}</p>
-                      {labelFor(it)}
-                    </div>
-                    {it.error
-                      ? <p role="alert" style={{ ...line(), color: T.semantic.criticalText }} data-testid={`resume-${it.matchId}-unread`}>Could not read this match's balls on this phone. Nothing is deleted.</p>
-                      : it.board
-                      ? <Board {...it.board} size="card" compact testid={`resume-${it.matchId}-board`}/>
-                      : <p style={line()} data-testid={`resume-${it.matchId}-noboard`}>No ball on the board yet.</p>}
-                    <p style={line()} data-testid={`resume-${it.matchId}-pending`}>
+                {nowShown.map((it) => {
+                  const shown = it.error
+                    ? <p role="alert" style={{ ...line(), color: T.semantic.criticalText }} data-testid={`resume-${it.matchId}-unread`}>Could not read this match's balls on this phone. Nothing is deleted.</p>
+                    : it.board
+                    ? <Board {...it.board} size="card" compact testid={`resume-${it.matchId}-board`}/>
+                    : <p style={line()} data-testid={`resume-${it.matchId}-noboard`}>No ball on the board yet.</p>;
+                  const pending = (
+                    <>
                       {it.kind === "practice" ? "Kept on this phone only: nothing is sent" : pendingWords(it.pending)}
                       {it.savedAt ? ` · saved ${savedAtWords(it.savedAt, now)}` : ""}
+                    </>
+                  );
+                  const resumeAct = { label: "Resume scoring", aria: `Resume scoring: ${it.title}`, testid: `resume-${it.matchId}-open`, onClick: () => openItem(it) };
+                  const closed = (
+                    <p style={line()} data-testid={`resume-${it.matchId}-closed`}>
+                      This match is no longer on your fixture list, so it does not open here. What is saved stays on this phone; the school office can help.
                     </p>
-                    {it.openable
-                      ? <Act testId={`resume-${it.matchId}-open`} label={`Resume scoring: ${it.title}`} onClick={() => openItem(it)}>Resume scoring</Act>
-                      : <p style={line()} data-testid={`resume-${it.matchId}-closed`}>
-                          This match is no longer on your fixture list, so it does not open here. What is saved stays on this phone; the school office can help.
-                        </p>}
-                  </div>
-                ))}
+                  );
+                  return (
+                    <div key={it.key} data-testid={`resume-${it.matchId}`} data-kind={it.kind} data-pending={it.pending ?? "unknown"} style={stack(T.space.sm)}>
+                      {it.kind === "fixture" && it.match ? (
+                        // A fixture of his side's (slice 1): the match card at its board size, the board under both sides,
+                        // the sentence, what is still to send, and one button.
+                        <MatchCard size="board" match={it.match} now={now} board={shown} line={pending} lineTestid={`resume-${it.matchId}-pending`}
+                          action={it.openable ? resumeAct : null}>{!it.openable && closed}</MatchCard>
+                      ) : (
+                        // A Pilot or Practice Match is this phone's own sandbox, not a fixture: it has no status to say
+                        // "Live" from (db/165), so it keeps its title and its label over the board.
+                        <>
+                          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: `0 ${T.space.sm}` }}>
+                            <p style={strong()}>{it.title}</p>
+                            {labelFor(it)}
+                          </div>
+                          {shown}
+                          <p style={line()} data-testid={`resume-${it.matchId}-pending`}>{pending}</p>
+                          {it.openable ? <Act testId={resumeAct.testid} label={resumeAct.aria} onClick={resumeAct.onClick}>Resume scoring</Act> : closed}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
         </BentoCard>
@@ -414,40 +431,35 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
               <div style={stack(T.space.lg)}>
                 {fixturesRead?.state === "partial" && <ReadState read={fixturesRead} onRetry={retry} compact testId="scorer-fixtures-read"/>}
                 {sessionsRead && sessionsRead.state === "stale" && <ReadState read={sessionsRead} onRetry={retry} compact testId="scorer-sessions-read"/>}
-                <ol style={{ listStyle: "none", margin: 0, padding: 0, ...stack(T.space.lg) }} data-testid="scorer-fixture-list">
-                  {week.map(({ match: m, appointment: a, group, state, sessionError }) => {
+                <ol style={{ listStyle: "none", margin: 0, padding: 0 }} data-testid="scorer-fixture-list">
+                  {week.map(({ match: m, appointment: a, group, state, sessionError }, n) => {
                     const w = STATE_WORDS[state];
+                    const act = w.action
+                      ? { label: w.action, aria: `${w.action}: ${sidesOf(m)}`, testid: `fixture-${m.id}-open`, onClick: () => open(m) }
+                      : { label: "Match Centre", aria: `Match Centre: ${sidesOf(m)}`, testid: `fixture-${m.id}-centre`, onClick: () => onNav && onNav("matches") };
                     return (
-                      <li key={m.id} data-testid={`fixture-${m.id}`} data-group={group} data-state={state}
-                        style={{ ...stack(T.space.xs), paddingBottom: T.space.md, borderBottom: `1px solid ${T.line.subtle}` }}>
-                        {a ? (
-                          <p data-testid={`fixture-${m.id}-appointed`} style={{ ...T.role.label, color: T.brand.accentText, margin: 0 }}>
-                            Appointed to score{a.appointedAt ? ` · named ${humanDate(a.appointedAt)}` : ""}
-                          </p>
-                        ) : (
-                          <p style={{ ...T.role.label, color: T.content.tertiary, margin: 0 }}>Your side's fixture</p>
-                        )}
-                        <p style={strong()}>{sidesOf(m)}</p>
-                        <p style={line()}>{humanDateTime(m.date, m.time)}{m.venue ? ` · ${m.venue}` : ""}</p>
-                        {a?.paused && (
-                          <p data-testid={`fixture-${m.id}-paused`} style={{ ...line(), color: T.semantic.warningText }}>
-                            The school office has paused your appointment to this match. They can tell you more.
-                          </p>
-                        )}
-                        {/* The status sentence (§3.9), once: where it says what the state says ("Not started"), the state alone. */}
-                        {sentenceOf(m) !== w.label && <p data-testid={`fixture-${m.id}-sentence`} style={{ ...line(), color: T.content.primary }}>{sentenceOf(m)}</p>}
-                        <p data-testid={`fixture-${m.id}-state`} style={{ ...line(), color: T.content.primary, fontWeight: 600 }}>{w.label}</p>
-                        {sessionError && (
-                          <p data-testid={`fixture-${m.id}-session-read`} role="alert" style={{ ...line(), color: T.semantic.criticalText }}>
-                            Could not read who is scoring this match.
-                          </p>
-                        )}
-                        {w.note && <p style={line()}>{w.note}</p>}
-                        {w.action
-                          ? <Act testId={`fixture-${m.id}-open`} tone={state === "not_started" || state === "held_here" ? "primary" : "secondary"}
-                              label={`${w.action}: ${sidesOf(m)}`} onClick={() => open(m)}>{w.action}</Act>
-                          : <Act testId={`fixture-${m.id}-centre`} tone="secondary" label={`Match Centre: ${sidesOf(m)}`}
-                              onClick={() => onNav && onNav("matches")}>Match Centre</Act>}
+                      // The match card's row (slice 1): the day, both sides, where it stands, then his part in it.
+                      <li key={m.id} data-testid={`fixture-${m.id}`} data-group={group} data-state={state}>
+                        <MatchCard size="row" last={n === week.length - 1} match={m} now={now} statusTestid={`fixture-${m.id}-sentence`}
+                          aside={a ? (
+                            <span data-testid={`fixture-${m.id}-appointed`} style={{ ...T.role.label, color: T.brand.accentText }}>
+                              Appointed to score{a.appointedAt ? ` · named ${humanDate(a.appointedAt)}` : ""}
+                            </span>
+                          ) : <span style={{ ...T.role.label, color: T.content.tertiary }}>Your side's fixture</span>}
+                          line={<span style={{ color: T.content.primary, fontWeight: 600 }}>{w.label}</span>} lineTestid={`fixture-${m.id}-state`}
+                          action={act}>
+                          {a?.paused && (
+                            <p data-testid={`fixture-${m.id}-paused`} style={{ ...line(), color: T.semantic.warningText }}>
+                              The school office has paused your appointment to this match. They can tell you more.
+                            </p>
+                          )}
+                          {sessionError && (
+                            <p data-testid={`fixture-${m.id}-session-read`} role="alert" style={{ ...line(), color: T.semantic.criticalText }}>
+                              Could not read who is scoring this match.
+                            </p>
+                          )}
+                          {w.note && <p style={line()}>{w.note}</p>}
+                        </MatchCard>
                       </li>
                     );
                   })}

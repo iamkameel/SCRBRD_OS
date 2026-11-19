@@ -68,10 +68,10 @@ function ActionButton({ a, primary }) {
 }
 
 /** The state line's left half: the dot and the word for a live match, never the colour alone. */
-function StateWords({ state, testid }) {
+function StateWords({ state }) {
   const live = state.kind === "live";
   return (
-    <span data-testid={testid} data-kind={state.kind} style={{ ...T.role.label, display: "inline-flex", alignItems: "center", gap: T.space.xs,
+    <span data-part="state" data-kind={state.kind} style={{ ...T.role.label, display: "inline-flex", alignItems: "center", gap: T.space.xs,
       color: live ? T.brand.accentText : state.kind === "upcoming" ? T.content.secondary : T.content.primary }}>
       {live && <span className="live-dot" aria-hidden="true"/>}
       {state.kind === "upcoming" ? <span style={{ textTransform: "none", letterSpacing: 0 }}>{state.words}</span> : state.words}
@@ -89,16 +89,16 @@ function SideRow({ side, size, testid }) {
         <span>{side.name.full}</span>
         {side.batting && <span style={{ color: T.brand.accentText, display: "inline-flex", alignSelf: "center" }}><Icon name="bat"/><span className="sr-only">batting</span></span>}
       </span>
-      {side.score && <span data-testid={testid ? `${testid}-score` : undefined} style={{ ...s.score(), color: T.content.primary, whiteSpace: "nowrap", flexShrink: 0 }}>{side.score}</span>}
+      {side.score && <span data-part="score" style={{ ...s.score(), color: T.content.primary, whiteSpace: "nowrap", flexShrink: 0 }}>{side.score}</span>}
     </div>
   );
 }
 
 /** The skeleton: the card's own shape, still. @param {{size: string, testid?: string}} p */
-export function MatchCardSkeleton({ size = "card", testid = "match-card-loading" }) {
+export function MatchCardSkeleton({ size = "card", testid }) {
   const bar = (/** @type {string} */ w, /** @type {string} */ h) => <span style={{ display: "block", width: w, height: h, borderRadius: T.radius.sm, background: T.surface.interactive }}/>;
   return (
-    <div data-testid={testid} role="status" aria-label="Loading the match" style={{ display: "grid", gap: SIZE[size].gap(), padding: SIZE[size].pad() }}>
+    <div data-testid={testid} data-part="skeleton" role="status" aria-label="Loading the match" style={{ display: "grid", gap: SIZE[size].gap(), padding: SIZE[size].pad() }}>
       {bar("30%", "12px")}{bar("70%", size === "row" ? "16px" : "20px")}{bar("60%", size === "row" ? "16px" : "20px")}{bar("80%", "14px")}
     </div>
   );
@@ -123,14 +123,14 @@ export function MatchCard({ size = "card", match, fold = null, innings = null, r
   const s = SIZE[size];
   const row = size === "row";
   const frame = { position: "relative", padding: s.pad(), borderBottom: row && !last ? `1px solid ${T.line.subtle}` : "none", minHeight: "44px" };
-  if (loading) return <div data-testid={testid} style={frame}><MatchCardSkeleton size={size} testid={testid ? `${testid}-loading` : undefined}/></div>;
+  if (loading) return <div data-testid={testid} data-state="loading" style={frame}><MatchCardSkeleton size={size}/></div>;
   if (error) {
     return (
       <div data-testid={testid} data-state="failed" role="alert" style={{ ...frame, display: "flex", flexWrap: "wrap", alignItems: "center", gap: T.space.sm }}>
         <span style={{ ...T.role.body, color: T.content.primary, display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
           <Icon name="triangle-alert" style={{ color: T.semantic.criticalText }}/>Couldn't load this match.
         </span>
-        {onRetry && <ActionButton a={{ label: "Retry", onClick: onRetry, testid: testid ? `${testid}-retry` : undefined }} primary={false}/>}
+        {onRetry && <ActionButton a={{ label: "Retry", onClick: onRetry, aria: "Retry loading this match" }} primary={false}/>}
       </div>
     );
   }
@@ -139,10 +139,10 @@ export function MatchCard({ size = "card", match, fold = null, innings = null, r
   const body = (
     <div style={{ display: "grid", gap: s.gap() }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: T.space.sm, flexWrap: "wrap" }}>
-        <StateWords state={m.state} testid={testid ? `${testid}-state` : undefined}/>
+        <StateWords state={m.state}/>
         {(right || aside) && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: T.space.sm, marginLeft: "auto" }}>
-            {right && <span data-testid={testid ? `${testid}-fresh` : undefined} style={small()}>{right}</span>}
+            {right && <span data-part="fresh" style={small()}>{right}</span>}
             {aside}
           </span>
         )}
