@@ -724,8 +724,9 @@ try {
   dbg("CARD", cardText);
   ok("the coach's Dashboard carries the card for the fixture today", await tid(d.page, "day-matchday").count() === 1 && /Verify Cockpit XI/.test(cardText), cardText);
   ok("...one card is exactly one card: titled Match day, no 'n of m', named 'v the opponent' as it always was, nothing folded under Later",
-     // Slice 1: the fixture is the match card, both sides named in full, his first.
-     /^MATCH DAY\s/i.test(cardText) && !/\d of \d/.test(cardText) && /\nVerify Cockpit XI\b/.test(await inner(d.page, "matchday-line")) && await tid(d.page, "matchday-later").count() === 0, cardText);
+     // Folded into the next fixture's card it is still "v the opponent"; on its own (slice 1) it is the match card,
+     // both sides named in full, his first.
+     /^MATCH DAY\s/i.test(cardText) && !/\d of \d/.test(cardText) && /(^v |\n)Verify Cockpit XI\b/.test(await inner(d.page, "matchday-line")) && await tid(d.page, "matchday-later").count() === 0, cardText);
   ok("...the count is 'N to resolve' and every read the card asked for answered, so no 'Could not read'",
      /^\d+ to resolve$/.test((await inner(d.page, "matchday-count")).trim()) && await tid(d.page, "matchday-unread").count() === 0, `${await inner(d.page, "matchday-count")} | ${await tid(d.page, "matchday-unread").count()}`);
   const cardCount = Number((await inner(d.page, "matchday-count")).match(/\d+/)?.[0]);

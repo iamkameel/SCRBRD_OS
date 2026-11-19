@@ -83,13 +83,19 @@ function StateWords({ state }) {
 function SideRow({ side, size, testid }) {
   const s = SIZE[size];
   return (
+    // The score wraps under the name, never off the screen: at 200% zoom a phone is 188px wide (browser-narrow).
     <div data-testid={testid} data-end={side.end} data-batting={side.batting ? "true" : "false"}
-      style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: T.space.md }}>
-      <span style={{ ...s.name(), color: T.content.primary, minWidth: 0, overflowWrap: "anywhere", display: "inline-flex", alignItems: "baseline", gap: T.space.xs }}>
+      style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: `0 ${T.space.md}` }}>
+      <span style={{ ...s.name(), color: T.content.primary, minWidth: 0, flex: "1 1 8em", overflowWrap: "anywhere", display: "inline-flex", alignItems: "baseline", gap: T.space.xs }}>
         <span>{side.name.full}</span>
         {side.batting && <span style={{ color: T.brand.accentText, display: "inline-flex", alignSelf: "center" }}><Icon name="bat"/><span className="sr-only">batting</span></span>}
       </span>
-      {side.score && <span data-part="score" style={{ ...s.score(), color: T.content.primary, whiteSpace: "nowrap", flexShrink: 0 }}>{side.score}</span>}
+      {side.score && (
+        // Each part of the score holds together ("116/4", "· 10 overs"); the line may break between them.
+        <span data-part="score" style={{ ...s.score(), color: T.content.primary, marginLeft: "auto", textAlign: "right", minWidth: 0 }}>
+          {side.score.split(" · ").map((part, i) => <span key={i} style={{ whiteSpace: "nowrap" }}>{i ? ` · ${part}` : part}</span>)}
+        </span>
+      )}
     </div>
   );
 }
@@ -138,7 +144,7 @@ export function MatchCard({ size = "card", match, fold = null, innings = null, r
   const right = updated ?? m.soon ?? m.day;
   const body = (
     // A measure, not the panel's width: on a desktop a score sits beside its side's name, not a screen away.
-    <div style={{ display: "grid", gap: s.gap(), maxWidth: "40rem" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: s.gap(), maxWidth: "40rem" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: T.space.sm, flexWrap: "wrap" }}>
         <StateWords state={m.state}/>
         {(right || aside) && (
