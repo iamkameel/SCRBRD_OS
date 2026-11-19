@@ -89,3 +89,25 @@ export function reviewRows({ rows, error = null }) {
   }));
   return { rows: out, unread: [], open: out.length, failed: 0 };
 }
+
+/**
+ * CRI-3.3 (Kameel, 19 Nov 2026): the suggestion card's own sentences. The
+ * points and their working come from the server (packages/scoring
+ * potmCard()); these say what they are, to the person choosing only.
+ */
+export const SUGGESTION_WORDS = "Suggestions from the scorecard, with their working. They decide nothing: the choice is yours.";
+
+/** A boy level on points with another: said, never broken. @param {number} points */
+export const tieWords = (points) => `Tied on ${points} ${points === 1 ? "point" : "points"}`;
+
+/**
+ * The boys level with the last suggestion who did not fit the list: named,
+ * never dropped. Null when there are none.
+ * @param {{name?: string | null, points: number}[] | null | undefined} list
+ * @returns {string | null}
+ */
+export function alsoTiedWords(list) {
+  if (!list?.length) return null;
+  const names = list.map((x) => potmShortName(x.name ?? "a player")).join(", ");
+  return `Also tied on ${list[0].points} ${list[0].points === 1 ? "point" : "points"}: ${names}. Find ${list.length === 1 ? "him" : "them"} under Someone else.`;
+}
