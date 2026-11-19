@@ -509,6 +509,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // /api/public/ body) scanned for a seeded pupil's name, date of birth,
   // contact or home, a typed name, a mark's reason, health words, coordinates.
   "browser-public-live",
+  // CRI-2.4: Low data on the public match page — on by itself with Save-Data
+  // and always switched off by the reader, remembered on the device; no chart,
+  // no chart chunk, no /par or /shots; the score still updates from ?since=
+  // reads at a quarter of the pace; on 3G, never blank and the score in 3 s.
+  "browser-public-lowdata",
   // SCRBRD-142 phase 2's switch and Fields → Add ground: the director of sport lists
   // the school and the public list carries (then drops) a published fixture, the
   // panel's line follows; a one-side publisher's switch is disabled with its

@@ -10192,19 +10192,6 @@ BEGIN
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- └── db/165 (section 143) ─────────────────────────────────────────────
 
--- ┌── db/167 (section 144) ─────────────────────────────────────────────
--- A fixture between two schools, invented, as the owner: Hilton's 1XI at
--- home to Westville's, far from any date the seed or another section books,
--- on no ground. For §144 (match): a read of it is in BOTH schools' logs.
-CREATE OR REPLACE FUNCTION _v167_fixture() RETURNS uuid AS $$
-  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
-  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', '22222222-2222-2222-2222-222222222222', '1XI', 'V166 Westville',
-          ((sa_today() + 433)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
-          'cricket', 'T20', 20, 'scheduled')
-  RETURNING id
-$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- └── db/167 (section 144) ─────────────────────────────────────────────
-
 -- ┌── db/135 (section 113). Two phones scoring one match, slice 1 ─────────
 -- Invented, as the owner. Hilton's U13F at home to Westville's 1XI, live,
 -- one over in the log (MP), with the pen held by the U13F scorer (sc) on
@@ -14653,6 +14640,45 @@ BEGIN
   PERFORM set_config('app.user_id', '', true);
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- └── db/161 (section 139) ─────────────────────────────────────────────
+
+-- ┌── db/166 (section 140) ─────────────────────────────────────────────
+-- A fixture's officials are read signed in only while Officials is on for
+-- the fixture's school (db/166; SCRBRD-144). Hilton's 1XI at home to
+-- Westville's 1XI, one umpire appointed. The readers are section 134's
+-- kind (_v156_person()), made afresh here.
+CREATE OR REPLACE FUNCTION _v166_stage() RETURNS uuid AS $$
+DECLARE v_m uuid;
+BEGIN
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', '22222222-2222-2222-2222-222222222222', '1XI',
+          'Westville Boys'' High 1XI (V162)', now() + interval '2 days', 'cricket', 'T20', 20, 'scheduled')
+  RETURNING id INTO v_m;
+  INSERT INTO match_official (match_id, school_id, duty, person_name, panel, appointed_by)
+  VALUES (v_m, '11111111-1111-1111-1111-111111111111', 'umpire', 'Adult Umpire Sibiya V162', 'KZN Cricket Umpires',
+          '88888888-0000-0000-0000-000000000006');
+  RETURN v_m;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A scorer's duty on that fixture naming p_person, as the appointment sheet
+-- stores it, not yet linked to any assignment.
+CREATE OR REPLACE FUNCTION _v166_duty(p_match uuid, p_person uuid) RETURNS uuid AS $$
+  INSERT INTO match_official (match_id, school_id, duty, person_name, person_id, appointed_by)
+  VALUES (p_match, match_school(p_match), 'scorer', 'V162 Scorer', p_person, '88888888-0000-0000-0000-000000000006')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/166 (section 140) ─────────────────────────────────────────────
+
+-- ┌── db/167 (section 144) ─────────────────────────────────────────────
+-- A fixture between two schools, invented, as the owner: Hilton's 1XI at
+-- home to Westville's, far from any date the seed or another section books,
+-- on no ground. For §144 (match): a read of it is in BOTH schools' logs.
+CREATE OR REPLACE FUNCTION _v167_fixture() RETURNS uuid AS $$
+  INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', '22222222-2222-2222-2222-222222222222', '1XI', 'V166 Westville',
+          ((sa_today() + 433)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/167 (section 144) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -39442,172 +39468,6 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   PERFORM set_config('app.user_id', '', true);
   -- └── db/165 (section 143) ─────────────────────────────────────────
 
-  -- ┌── db/167 (section 144) ─────────────────────────────────────────
-  -- ── 144. The owner's key is logged off the read path, named the platform ──
-  -- PLATFORM_CONTROLS slice 6a (Q7, Kameel, 31 Oct 2026; fast-tracked 19
-  -- Nov). Placed after §143, not at the end: §140-§142 are taken by open
-  -- branches that append there. log_platform_read() is the statement the
-  -- dispatcher runs after a GET route outside /api/read/ answers; the
-  -- office's list names a platform reader by access_log_platform_reader().
-  -- What each label holds:
-  --   (school)   a school reader (Hilton's office, a coach) writes nothing
-  --   (child)    the key, given the ids in an answer, writes one row per
-  --              school naming each child whose id came back, under his
-  --              school, stamped platform-wide; an id that is no child is
-  --              not named
-  --   (squad)    the key reading a fixture's sheet by name: the row at the
-  --              fixture's school names the boys on it
-  --   (match)    the key reading a fixture between two schools that names
-  --              no child: a row in each school's log, naming nobody
-  --   (account)  the key reading a pupil's account: the row at his school
-  --              names the account and the child it is his own access to
-  --   (nowhere)  nothing resolvable: still one row, under no school
-  --   (support)  a support session at Hilton writes its row with the session
-  --   (office)   Hilton's office finds the key's rows about the boy, each
-  --              named the platform; the league account (platform-wide, not
-  --              the platform) is not named so, nor is the office, and its
-  --              read of a boy it cannot read is filed under no school;
-  --              Westville's office finds none of Hilton's
-  --   (grants)   the label a pinned definer, the writer a pinned invoker,
-  --              each executable by scrbrd_app and not by PUBLIC
-  -- Falsified against a fresh pc6a, each mutation in its own rolled-back run
-  -- of this section: log_platform_read() made to write for every caller →
-  -- (school) red; its player branch dropped → (child) red; its squad branch
-  -- dropped → (squad) red; the fixture's away school dropped → (match) red;
-  -- its self-access branch dropped → (account) red; the "no row at all"
-  -- fallback dropped → (nowhere) red; the label made true for any
-  -- platform-wide assignment → (office) red at the league account. Without
-  -- db/167 every case is red: neither function exists.
-  DECLARE
-    OWNR uuid := '88888888-0000-0000-0000-000000000022';
-    PLAT uuid := '88888888-0000-0000-0000-000000000014';
-    LEAG uuid := '88888888-0000-0000-0000-000000000021';
-    OFFH uuid := '88888888-0000-0000-0000-00000000000c';
-    OFFW uuid := '88888888-0000-0000-0000-00000000000d';
-    COCH uuid := '88888888-0000-0000-0000-00000000000a';
-    PUPL uuid := '88888888-0000-0000-0000-000000000009';
-    KID  uuid := 'aaaaaaaa-0000-0000-0000-000000000005';
-    WKID uuid := 'bbbbbbbb-0000-0000-0000-000000000001';
-    MTCH uuid := '77777777-0000-0000-0000-000000000001';
-    HILS uuid := '11111111-1111-1111-1111-111111111111';
-    WESS uuid := '22222222-2222-2222-2222-222222222222';
-    TWO  uuid;
-    v_ok boolean; v_sess uuid; n int; got text; sheet uuid[];
-  BEGIN
-    -- The fixture is staged as the owner before anybody reads it.
-    PERFORM set_config('app.user_id', '', true);
-    TWO := _v167_fixture();
-
-    -- (school)
-    FOREACH v_sess IN ARRAY ARRAY[OFFH, COCH] LOOP
-      PERFORM _as(v_sess);
-      PERFORM log_platform_read('v167_school', ARRAY[KID], MTCH, PUPL, true);
-    END LOOP;
-    PERFORM _as(OFFH);
-    SELECT count(*) INTO n FROM access_log WHERE resource = 'v167_school';
-    PERFORM _assert(n = 0, format('§144 (school): a school reader''s read off the read path wrote %s rows', n));
-
-    -- (child)
-    PERFORM _as(OWNR);
-    PERFORM log_platform_read('v167_child', ARRAY[KID, WKID, MTCH, gen_random_uuid()]);
-    PERFORM _as(OFFH);
-    SELECT string_agg(l.record_ids::text || ':' || l.platform_wide::text || ':' || (l.person_id = OWNR)::text, ' ')
-      INTO got FROM access_log l WHERE l.resource = 'v167_child' AND l.school_id = HILS;
-    PERFORM _assert(got = '{' || KID || '}:true:true', format('§144 (child): Hilton''s row of the key''s read is %s', got));
-    PERFORM _as(OFFW);
-    SELECT string_agg(l.record_ids::text || ':' || l.platform_wide::text, ' ')
-      INTO got FROM access_log l WHERE l.resource = 'v167_child' AND l.school_id = WESS;
-    PERFORM _assert(got = '{' || WKID || '}:true', format('§144 (child): Westville''s row of the key''s read is %s', got));
-
-    -- (squad)
-    PERFORM _as(OWNR);
-    SELECT array_agg(s.player_id ORDER BY s.player_id) INTO sheet FROM match_squad s WHERE s.match_id = MTCH AND NOT s.withdrawn;
-    PERFORM _assert(coalesce(array_length(sheet, 1), 0) > 0, '§144 (squad): the seed''s fixture has no side to read');
-    PERFORM log_platform_read('v167_squad', ARRAY[MTCH], MTCH, NULL, true);
-    PERFORM log_platform_read('v167_nosquad', ARRAY[MTCH], MTCH, NULL, false);
-    PERFORM _as(OFFH);
-    PERFORM _assert((SELECT array_agg(x ORDER BY x) FROM access_log l, unnest(l.record_ids) x
-                      WHERE l.resource = 'v167_squad' AND l.school_id = HILS) = sheet,
-      '§144 (squad): the key''s read of the sheet does not name the boys on it');
-    PERFORM _assert((SELECT count(*) FROM access_log l WHERE l.resource = 'v167_nosquad' AND l.school_id = HILS
-                        AND l.record_ids = '{}' AND l.platform_wide) = 1,
-      '§144 (squad): a fixture read with no names is not one unnamed row at its school');
-
-    -- (match)
-    PERFORM _as(OWNR);
-    PERFORM log_platform_read('v167_match', ARRAY[TWO], TWO, NULL, false);
-    PERFORM _as(OFFH);
-    SELECT count(*) INTO n FROM access_log l WHERE l.resource = 'v167_match' AND l.school_id = HILS AND l.record_ids = '{}' AND l.platform_wide;
-    PERFORM _assert(n = 1, format('§144 (match): the home school''s log holds %s rows of the key''s read, not 1', n));
-    PERFORM _as(OFFW);
-    SELECT count(*) INTO n FROM access_log l WHERE l.resource = 'v167_match' AND l.school_id = WESS AND l.record_ids = '{}' AND l.platform_wide;
-    PERFORM _assert(n = 1, format('§144 (match): the away school''s log holds %s rows of the key''s read, not 1', n));
-
-    -- (account)
-    PERFORM _as(OWNR);
-    PERFORM log_platform_read('v167_account', ARRAY[PUPL], NULL, PUPL, false);
-    PERFORM _as(OFFH);
-    SELECT string_agg(x::text, ',' ORDER BY x) INTO got
-      FROM access_log l, unnest(l.record_ids) x WHERE l.resource = 'v167_account' AND l.school_id = HILS AND l.platform_wide;
-    PERFORM _assert(got = least(PUPL, KID)::text || ',' || greatest(PUPL, KID)::text,
-      format('§144 (account): the key''s read of the pupil''s account names %s', got));
-
-    -- (nowhere)
-    PERFORM _as(OWNR);
-    PERFORM log_platform_read('v167_nowhere', ARRAY[gen_random_uuid()]);
-    PERFORM log_platform_read('v167_nowhere', NULL);
-    SELECT count(*) INTO n FROM access_log l WHERE l.resource = 'v167_nowhere' AND l.school_id IS NULL AND l.platform_wide AND l.person_id = OWNR;
-    PERFORM _assert(n = 2, format('§144 (nowhere): the key''s reads that name nothing wrote %s rows, not 2', n));
-
-    -- (support)
-    PERFORM _as(PLAT);
-    SELECT r.ok, r.id INTO v_ok, v_sess
-      FROM support_access_begin(HILS, 'schooladmin', 'V166: Hilton asked the platform to look', NULL, 60) r;
-    PERFORM _assert(v_ok, '§144 (support): a support session at Hilton could not be begun');
-    PERFORM log_platform_read('v167_support', ARRAY[KID]);
-    PERFORM support_access_end(v_sess);
-    PERFORM _as(OFFH);
-    SELECT count(*) INTO n FROM access_log l WHERE l.resource = 'v167_support' AND l.school_id = HILS
-       AND l.support_access_id = v_sess AND l.record_ids = ARRAY[KID];
-    PERFORM _assert(n = 1, format('§144 (support): the session''s read wrote %s rows with the session, not 1', n));
-
-    -- (office)
-    -- The league account is platform-wide and not the platform, and reads no
-    -- Hilton boy: its read naming him is filed under no school (no new reach).
-    PERFORM _as(LEAG);
-    PERFORM log_platform_read('v167_league', ARRAY[KID]);
-    PERFORM _as(OWNR);    -- the league reads no log; the platform reads the unfiled rows
-    SELECT count(*) INTO n FROM access_log l WHERE l.resource = 'v167_league' AND l.person_id = LEAG
-       AND l.school_id IS NULL AND l.record_ids = '{}' AND l.platform_wide;
-    PERFORM _assert(n = 1, format('§144 (office): the league account''s read of a boy it cannot read wrote %s unfiled rows, not 1', n));
-    PERFORM _as(OFFH);
-    SELECT string_agg(l.resource || ':' || access_log_platform_reader(l.person_id)::text, ' ' ORDER BY l.resource)
-      INTO got FROM access_log l
-     WHERE l.record_ids @> ARRAY[KID] AND l.resource IN ('v167_child', 'v167_account', 'v167_league', 'v167_squad');
-    PERFORM _assert(got = 'v167_account:true v167_child:true v167_squad:true',
-      format('§144 (office): Hilton''s office reads the reads of the boy as %s', got));
-    PERFORM _assert(NOT access_log_platform_reader(OFFH) AND NOT access_log_platform_reader(LEAG)
-                    AND access_log_platform_reader(OWNR) AND access_log_platform_reader(PLAT),
-      '§144 (office): the label names the wrong readers the platform');
-    PERFORM _as(OFFW);
-    SELECT count(*) INTO n FROM access_log l WHERE l.school_id = HILS AND l.resource LIKE 'v167_%';
-    PERFORM _assert(n = 0, format('§144 (office): Westville''s office reads %s of Hilton''s rows', n));
-    PERFORM set_config('app.user_id', '', true);
-
-    -- (grants)
-    PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'access_log_platform_reader(uuid)'::regprocedure
-                              AND p.prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
-                    AND EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'log_platform_read(text, uuid[], uuid, uuid, boolean)'::regprocedure
-                              AND NOT p.prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
-                    AND has_function_privilege('scrbrd_app', 'access_log_platform_reader(uuid)', 'EXECUTE')
-                    AND has_function_privilege('scrbrd_app', 'log_platform_read(text, uuid[], uuid, uuid, boolean)', 'EXECUTE')
-                    AND NOT has_function_privilege('public', 'access_log_platform_reader(uuid)', 'EXECUTE')
-                    AND NOT has_function_privilege('public', 'log_platform_read(text, uuid[], uuid, uuid, boolean)', 'EXECUTE'),
-      '§144 (grants): db/167''s functions are not pinned, or are callable by PUBLIC, or not by the app');
-  END;
-  PERFORM set_config('app.user_id', '', true);
-  -- └── db/167 (section 144) ─────────────────────────────────────────
-
   -- ┌── db/135 (section 113) ─────────────────────────────────────────
   -- ── 113. Two phones scoring one match: the second account is told ──
   -- docs/design/TWO_PHONES.md slice 1 (Kameel, 5 Nov 2026, all seven as
@@ -46185,6 +46045,354 @@ $m130$;
   PERFORM _v161_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/161 (section 139) ─────────────────────────────────────────
+  -- ┌── db/166 (section 140) ─────────────────────────────────────────
+  -- ── 140. A fixture's officials are read signed in only while Officials is on for the fixture's school, db/156's choice; whoever may appoint still reads and writes them at the table; the appointments stay stored (db/166; SCRBRD-144; Kameel 13 Nov 2026) ──
+  -- Staged by _v166_stage(): Hilton's 1XI at home to Westville's, one
+  -- umpire. Every read through scrbrd_app at the table; each switch hidden
+  -- by a school's own suppression (_v156_hide()) or plan (_v156_grant())
+  -- and lifted again. Readers made here: Westville's administrator, a 1XI
+  -- coach (fixture.read alone) and Hilton's director of sport
+  -- (officiating.assign).
+  -- Labels:
+  --   (on)       with Officials on at Hilton, Westville's administrator and
+  --              the coach each read the umpire
+  --   (off)      Officials hidden at Hilton: neither reads a row, the
+  --              appointment still stored
+  --   (writer)   while it is off, the director, who may appoint, reads the
+  --              row at the table, withdraws the panel (an UPDATE) and
+  --              stores a new umpire (an INSERT … RETURNING read back)
+  --   (back)     Officials on again: Westville's administrator and the
+  --              coach read the umpire stored while it was off
+  --   (away)     Officials hidden at Westville only, not the fixture's
+  --              school: the table still serves Hilton's umpire to both
+  --   (grant)    Hilton's plan granted false: neither reads him; the
+  --              grant gone, both do
+  --   (link)     a scorer's duty stored on the fixture: with Officials off
+  --              at Hilton, the school office's duty_link() is refused
+  --              'officials_off' and no assignment is made; a coach, who
+  --              may not link, is told 'not_permitted' (the switch is not
+  --              his to learn); on again, the office links it, and the
+  --              assignment is the duty's
+  --   (body)     official_shown() a stable definer with its path pinned,
+  --              EXECUTE to its owner and scrbrd_app exactly (aclexplode);
+  --              match_official_shown_while_on one RESTRICTIVE SELECT
+  --              policy asking it, beside match_official_read
+  --
+  -- Falsified (15 Nov 2026, on a migrated database, the section run alone;
+  -- unchanged it passed): the policy's USING made true → (off); official_shown()
+  -- without its officiating.assign leg → (writer); duty_link() as it was
+  -- before db/166 → (link).
+  DECLARE
+    M uuid;
+    v_coach uuid;
+    V_DIRECTOR uuid;
+    V_WESADM uuid;
+    V_OFFICE uuid;
+    V_SCORER uuid;
+    D uuid;
+    v_id uuid;
+    v_ok boolean;
+    v_reason text;
+    n int;
+    u uuid;
+  BEGIN
+    PERFORM set_config('app.user_id', '', true);
+    M := _v166_stage();
+    v_coach := _v156_person('v166coach', 'coach', HIL, '1XI');
+    V_DIRECTOR := _v156_person('v166director', 'directorofsport', HIL, NULL);
+    V_WESADM := _v156_person('v166wesadmin', 'schooladmin', WES, NULL);
+
+    -- (on)
+    PERFORM _assert(feature_enabled('officials', HIL, NULL) AND feature_enabled('officials', WES, NULL),
+      '§140 (on): Officials is not on for Hilton and Westville to begin with');
+    FOREACH u IN ARRAY ARRAY[V_WESADM, v_coach]::uuid[] LOOP
+      PERFORM _as(u);
+      PERFORM _assert(fixture_reach('fixture.read', M), format('§140 (on): %s does not reach the fixture: it proves nothing', u));
+      SELECT count(*) INTO n FROM match_official WHERE match_id = M AND NOT withdrawn AND person_name = 'Adult Umpire Sibiya V162';
+      PERFORM _assert(n = 1, format('§140 (on): with Officials on at Hilton, %s reads %s umpire(s), not the one', u, n));
+    END LOOP;
+
+    -- (off)
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v156_hide('officials', HIL, NULL, true);
+    PERFORM _assert(NOT feature_enabled('officials', HIL, NULL) AND feature_enabled('officials', WES, NULL),
+      '§140 (off): Officials is not off at Hilton and on at Westville');
+    FOREACH u IN ARRAY ARRAY[V_WESADM, v_coach]::uuid[] LOOP
+      PERFORM _as(u);
+      SELECT count(*) INTO n FROM match_official WHERE match_id = M;
+      PERFORM _assert(n = 0, format('§140 (off): with Officials off at Hilton, %s reads %s appointment(s) of its fixture', u, n));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v156_count(format('SELECT count(*)::int FROM match_official WHERE match_id = %L AND NOT withdrawn', M)) = 1,
+      '§140 (off): the appointment is not still stored while Officials is off');
+
+    -- (writer)
+    PERFORM _as(V_DIRECTOR);
+    PERFORM _assert(app_can('officiating.assign', HIL, '1XI', '00000000-0000-0000-0000-000000000000'::uuid, M),
+      '§140 (writer): Hilton''s director of sport does not hold officiating.assign over the fixture: it proves nothing');
+    SELECT count(*) INTO n FROM match_official WHERE match_id = M AND NOT withdrawn;
+    PERFORM _assert(n = 1, format('§140 (writer): the director, who may appoint, reads %s appointment(s) at the table while Officials is off', n));
+    UPDATE match_official SET withdrawn = true WHERE match_id = M AND NOT withdrawn;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 1, format('§140 (writer): the director withdrew %s appointment(s) while Officials is off, not one', n));
+    INSERT INTO match_official (match_id, school_id, duty, person_name, panel, appointed_by, appointed_at)
+    VALUES (M, match_school(M), 'umpire', 'Adult Umpire Mthembu V162', 'KZN Cricket Umpires', V_DIRECTOR, now())
+    RETURNING id INTO v_id;
+    PERFORM _assert(v_id IS NOT NULL, '§140 (writer): the director''s appointment did not read back while Officials is off');
+    PERFORM _as(V_WESADM);
+    SELECT count(*) INTO n FROM match_official WHERE match_id = M;
+    PERFORM _assert(n = 0, format('§140 (writer): after the new sheet Westville''s administrator reads %s appointment(s) while Officials is off', n));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v156_count(format('SELECT count(*)::int FROM match_official WHERE match_id = %L AND NOT withdrawn AND person_name = ''Adult Umpire Mthembu V162''', M)) = 1,
+      '§140 (writer): the sheet made while Officials is off is not stored');
+
+    -- (back)
+    PERFORM _v156_hide('officials', HIL, NULL, false);
+    FOREACH u IN ARRAY ARRAY[V_WESADM, v_coach]::uuid[] LOOP
+      PERFORM _as(u);
+      SELECT count(*) INTO n FROM match_official WHERE match_id = M AND NOT withdrawn AND person_name = 'Adult Umpire Mthembu V162';
+      PERFORM _assert(n = 1, format('§140 (back): with Officials on again at Hilton, %s reads %s umpire(s), not the one stored while off', u, n));
+    END LOOP;
+
+    -- (away)
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v156_hide('officials', WES, NULL, true);
+    FOREACH u IN ARRAY ARRAY[V_WESADM, v_coach]::uuid[] LOOP
+      PERFORM _as(u);
+      SELECT count(*) INTO n FROM match_official WHERE match_id = M AND NOT withdrawn;
+      PERFORM _assert(n = 1, format('§140 (away): Officials off at Westville, the away school, hid Hilton''s umpire from %s at the table (%s)', u, n));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v156_hide('officials', WES, NULL, false);
+
+    -- (grant)
+    PERFORM _v156_grant('officials', HIL, false);
+    PERFORM _assert(NOT feature_enabled('officials', HIL, NULL), '§140 (grant): a grant false leaves Officials on for Hilton');
+    FOREACH u IN ARRAY ARRAY[V_WESADM, v_coach]::uuid[] LOOP
+      PERFORM _as(u);
+      SELECT count(*) INTO n FROM match_official WHERE match_id = M;
+      PERFORM _assert(n = 0, format('§140 (grant): with Hilton''s Officials granted false, %s reads %s appointment(s)', u, n));
+    END LOOP;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v156_grant('officials', HIL, NULL);
+    FOREACH u IN ARRAY ARRAY[V_WESADM, v_coach]::uuid[] LOOP
+      PERFORM _as(u);
+      SELECT count(*) INTO n FROM match_official WHERE match_id = M AND NOT withdrawn;
+      PERFORM _assert(n = 1, format('§140 (grant): with the grant gone, %s reads %s umpire(s), not the one', u, n));
+    END LOOP;
+
+    -- (link)
+    PERFORM set_config('app.user_id', '', true);
+    V_OFFICE := _v156_person('v166office', 'schooladmin', HIL, NULL);
+    V_SCORER := _v156_person('v166scorer', 'scorer', HIL, NULL);
+    D := _v166_duty(M, V_SCORER);
+    PERFORM _v156_hide('officials', HIL, NULL, true);
+    PERFORM _as(V_OFFICE);
+    SELECT l.ok, l.reason INTO v_ok, v_reason FROM duty_link(D) l;
+    PERFORM _assert(NOT v_ok AND v_reason = 'officials_off',
+      format('§140 (link): with Officials off at Hilton the office linked the duty (ok=%s reason=%s)', v_ok, v_reason));
+    PERFORM _as(v_coach);
+    SELECT l.ok, l.reason INTO v_ok, v_reason FROM duty_link(D) l;
+    PERFORM _assert(NOT v_ok AND v_reason = 'not_permitted',
+      format('§140 (link): the coach, who may not link, was answered ok=%s reason=%s', v_ok, v_reason));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v156_count(format('SELECT count(*)::int FROM role_assignment WHERE person_id = %L AND fixture_id = %L', V_SCORER, M)) = 0
+                    AND _v156_count(format('SELECT count(*)::int FROM match_official WHERE id = %L AND assignment_id IS NULL', D)) = 1,
+      '§140 (link): a refused link made an assignment, or linked the duty, while Officials is off');
+    PERFORM _v156_hide('officials', HIL, NULL, false);
+    PERFORM _as(V_OFFICE);
+    SELECT l.ok, l.assignment_id INTO v_ok, v_id FROM duty_link(D) l;
+    PERFORM _assert(v_ok AND v_id IS NOT NULL, '§140 (link): with Officials on again the office could not link the duty');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v156_count(format('SELECT count(*)::int FROM role_assignment WHERE id = %L AND person_id = %L AND fixture_id = %L AND role = ''scorer'' AND active', v_id, V_SCORER, M)) = 1,
+      '§140 (link): the assignment made once Officials is on is not the duty''s');
+
+    -- (body)
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = to_regprocedure('official_shown(uuid)') AND p.prosecdef
+                              AND p.provolatile = 's' AND p.proconfig = ARRAY['search_path=pg_catalog, public, pg_temp']),
+      '§140 (body): official_shown() is missing, or not a stable definer with its search path pinned');
+    PERFORM _assert((SELECT array_agg(coalesce(nullif(a.grantee, 0)::regrole::text, 'PUBLIC') || ':' || a.privilege_type
+                                      ORDER BY a.grantee <> p.proowner, a.grantee::regrole::text)
+                       FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                      WHERE p.oid = to_regprocedure('official_shown(uuid)'))
+                    = (SELECT ARRAY[p.proowner::regrole::text || ':EXECUTE', 'scrbrd_app:EXECUTE']
+                         FROM pg_proc p WHERE p.oid = to_regprocedure('official_shown(uuid)')),
+      format('§140 (body): official_shown() is not EXECUTE to its owner and scrbrd_app exactly: %s', _v156_acl('official_shown(uuid)')));
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = 'match_official'::regclass
+                              AND p.polname = 'match_official_shown_while_on' AND p.polcmd = 'r' AND NOT p.polpermissive
+                              AND p.polroles = '{0}' AND p.polwithcheck IS NULL
+                              AND pg_get_expr(p.polqual, p.polrelid) = 'official_shown(match_id)')
+                    AND EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = 'match_official'::regclass
+                                  AND p.polname = 'match_official_read' AND p.polcmd = 'r' AND p.polpermissive),
+      '§140 (body): match_official_shown_while_on is not one RESTRICTIVE SELECT policy asking official_shown(match_id) beside match_official_read');
+  END;
+  -- └── db/166 (section 140) ──────────────────────────────────────────
+  -- ┌── db/167 (section 144) ─────────────────────────────────────────
+  -- ── 144. The owner's key is logged off the read path, named the platform ──
+  -- PLATFORM_CONTROLS slice 6a (Q7, Kameel, 31 Oct 2026; fast-tracked 19
+  -- Nov). Placed after §143, not at the end: §140-§142 are taken by open
+  -- branches that append there. log_platform_read() is the statement the
+  -- dispatcher runs after a GET route outside /api/read/ answers; the
+  -- office's list names a platform reader by access_log_platform_reader().
+  -- What each label holds:
+  --   (school)   a school reader (Hilton's office, a coach) writes nothing
+  --   (child)    the key, given the ids in an answer, writes one row per
+  --              school naming each child whose id came back, under his
+  --              school, stamped platform-wide; an id that is no child is
+  --              not named
+  --   (squad)    the key reading a fixture's sheet by name: the row at the
+  --              fixture's school names the boys on it
+  --   (match)    the key reading a fixture between two schools that names
+  --              no child: a row in each school's log, naming nobody
+  --   (account)  the key reading a pupil's account: the row at his school
+  --              names the account and the child it is his own access to
+  --   (nowhere)  nothing resolvable: still one row, under no school
+  --   (support)  a support session at Hilton writes its row with the session
+  --   (office)   Hilton's office finds the key's rows about the boy, each
+  --              named the platform; the league account (platform-wide, not
+  --              the platform) is not named so, nor is the office, and its
+  --              read of a boy it cannot read is filed under no school;
+  --              Westville's office finds none of Hilton's
+  --   (grants)   the label a pinned definer, the writer a pinned invoker,
+  --              each executable by scrbrd_app and not by PUBLIC
+  -- Falsified against a fresh pc6a, each mutation in its own rolled-back run
+  -- of this section: log_platform_read() made to write for every caller →
+  -- (school) red; its player branch dropped → (child) red; its squad branch
+  -- dropped → (squad) red; the fixture's away school dropped → (match) red;
+  -- its self-access branch dropped → (account) red; the "no row at all"
+  -- fallback dropped → (nowhere) red; the label made true for any
+  -- platform-wide assignment → (office) red at the league account. Without
+  -- db/167 every case is red: neither function exists.
+  DECLARE
+    OWNR uuid := '88888888-0000-0000-0000-000000000022';
+    PLAT uuid := '88888888-0000-0000-0000-000000000014';
+    LEAG uuid := '88888888-0000-0000-0000-000000000021';
+    OFFH uuid := '88888888-0000-0000-0000-00000000000c';
+    OFFW uuid := '88888888-0000-0000-0000-00000000000d';
+    COCH uuid := '88888888-0000-0000-0000-00000000000a';
+    PUPL uuid := '88888888-0000-0000-0000-000000000009';
+    KID  uuid := 'aaaaaaaa-0000-0000-0000-000000000005';
+    WKID uuid := 'bbbbbbbb-0000-0000-0000-000000000001';
+    MTCH uuid := '77777777-0000-0000-0000-000000000001';
+    HILS uuid := '11111111-1111-1111-1111-111111111111';
+    WESS uuid := '22222222-2222-2222-2222-222222222222';
+    TWO  uuid;
+    v_ok boolean; v_sess uuid; n int; got text; sheet uuid[];
+  BEGIN
+    -- The fixture is staged as the owner before anybody reads it.
+    PERFORM set_config('app.user_id', '', true);
+    TWO := _v167_fixture();
+
+    -- (school)
+    FOREACH v_sess IN ARRAY ARRAY[OFFH, COCH] LOOP
+      PERFORM _as(v_sess);
+      PERFORM log_platform_read('v167_school', ARRAY[KID], MTCH, PUPL, true);
+    END LOOP;
+    PERFORM _as(OFFH);
+    SELECT count(*) INTO n FROM access_log WHERE resource = 'v167_school';
+    PERFORM _assert(n = 0, format('§144 (school): a school reader''s read off the read path wrote %s rows', n));
+
+    -- (child)
+    PERFORM _as(OWNR);
+    PERFORM log_platform_read('v167_child', ARRAY[KID, WKID, MTCH, gen_random_uuid()]);
+    PERFORM _as(OFFH);
+    SELECT string_agg(l.record_ids::text || ':' || l.platform_wide::text || ':' || (l.person_id = OWNR)::text, ' ')
+      INTO got FROM access_log l WHERE l.resource = 'v167_child' AND l.school_id = HILS;
+    PERFORM _assert(got = '{' || KID || '}:true:true', format('§144 (child): Hilton''s row of the key''s read is %s', got));
+    PERFORM _as(OFFW);
+    SELECT string_agg(l.record_ids::text || ':' || l.platform_wide::text, ' ')
+      INTO got FROM access_log l WHERE l.resource = 'v167_child' AND l.school_id = WESS;
+    PERFORM _assert(got = '{' || WKID || '}:true', format('§144 (child): Westville''s row of the key''s read is %s', got));
+
+    -- (squad)
+    PERFORM _as(OWNR);
+    SELECT array_agg(s.player_id ORDER BY s.player_id) INTO sheet FROM match_squad s WHERE s.match_id = MTCH AND NOT s.withdrawn;
+    PERFORM _assert(coalesce(array_length(sheet, 1), 0) > 0, '§144 (squad): the seed''s fixture has no side to read');
+    PERFORM log_platform_read('v167_squad', ARRAY[MTCH], MTCH, NULL, true);
+    PERFORM log_platform_read('v167_nosquad', ARRAY[MTCH], MTCH, NULL, false);
+    PERFORM _as(OFFH);
+    PERFORM _assert((SELECT array_agg(x ORDER BY x) FROM access_log l, unnest(l.record_ids) x
+                      WHERE l.resource = 'v167_squad' AND l.school_id = HILS) = sheet,
+      '§144 (squad): the key''s read of the sheet does not name the boys on it');
+    PERFORM _assert((SELECT count(*) FROM access_log l WHERE l.resource = 'v167_nosquad' AND l.school_id = HILS
+                        AND l.record_ids = '{}' AND l.platform_wide) = 1,
+      '§144 (squad): a fixture read with no names is not one unnamed row at its school');
+
+    -- (match)
+    PERFORM _as(OWNR);
+    PERFORM log_platform_read('v167_match', ARRAY[TWO], TWO, NULL, false);
+    PERFORM _as(OFFH);
+    SELECT count(*) INTO n FROM access_log l WHERE l.resource = 'v167_match' AND l.school_id = HILS AND l.record_ids = '{}' AND l.platform_wide;
+    PERFORM _assert(n = 1, format('§144 (match): the home school''s log holds %s rows of the key''s read, not 1', n));
+    PERFORM _as(OFFW);
+    SELECT count(*) INTO n FROM access_log l WHERE l.resource = 'v167_match' AND l.school_id = WESS AND l.record_ids = '{}' AND l.platform_wide;
+    PERFORM _assert(n = 1, format('§144 (match): the away school''s log holds %s rows of the key''s read, not 1', n));
+
+    -- (account)
+    PERFORM _as(OWNR);
+    PERFORM log_platform_read('v167_account', ARRAY[PUPL], NULL, PUPL, false);
+    PERFORM _as(OFFH);
+    SELECT string_agg(x::text, ',' ORDER BY x) INTO got
+      FROM access_log l, unnest(l.record_ids) x WHERE l.resource = 'v167_account' AND l.school_id = HILS AND l.platform_wide;
+    PERFORM _assert(got = least(PUPL, KID)::text || ',' || greatest(PUPL, KID)::text,
+      format('§144 (account): the key''s read of the pupil''s account names %s', got));
+
+    -- (nowhere)
+    PERFORM _as(OWNR);
+    PERFORM log_platform_read('v167_nowhere', ARRAY[gen_random_uuid()]);
+    PERFORM log_platform_read('v167_nowhere', NULL);
+    SELECT count(*) INTO n FROM access_log l WHERE l.resource = 'v167_nowhere' AND l.school_id IS NULL AND l.platform_wide AND l.person_id = OWNR;
+    PERFORM _assert(n = 2, format('§144 (nowhere): the key''s reads that name nothing wrote %s rows, not 2', n));
+
+    -- (support)
+    PERFORM _as(PLAT);
+    SELECT r.ok, r.id INTO v_ok, v_sess
+      FROM support_access_begin(HILS, 'schooladmin', 'V166: Hilton asked the platform to look', NULL, 60) r;
+    PERFORM _assert(v_ok, '§144 (support): a support session at Hilton could not be begun');
+    PERFORM log_platform_read('v167_support', ARRAY[KID]);
+    PERFORM support_access_end(v_sess);
+    PERFORM _as(OFFH);
+    SELECT count(*) INTO n FROM access_log l WHERE l.resource = 'v167_support' AND l.school_id = HILS
+       AND l.support_access_id = v_sess AND l.record_ids = ARRAY[KID];
+    PERFORM _assert(n = 1, format('§144 (support): the session''s read wrote %s rows with the session, not 1', n));
+
+    -- (office)
+    -- The league account is platform-wide and not the platform, and reads no
+    -- Hilton boy: its read naming him is filed under no school (no new reach).
+    PERFORM _as(LEAG);
+    PERFORM log_platform_read('v167_league', ARRAY[KID]);
+    PERFORM _as(OWNR);    -- the league reads no log; the platform reads the unfiled rows
+    SELECT count(*) INTO n FROM access_log l WHERE l.resource = 'v167_league' AND l.person_id = LEAG
+       AND l.school_id IS NULL AND l.record_ids = '{}' AND l.platform_wide;
+    PERFORM _assert(n = 1, format('§144 (office): the league account''s read of a boy it cannot read wrote %s unfiled rows, not 1', n));
+    PERFORM _as(OFFH);
+    SELECT string_agg(l.resource || ':' || access_log_platform_reader(l.person_id)::text, ' ' ORDER BY l.resource)
+      INTO got FROM access_log l
+     WHERE l.record_ids @> ARRAY[KID] AND l.resource IN ('v167_child', 'v167_account', 'v167_league', 'v167_squad');
+    PERFORM _assert(got = 'v167_account:true v167_child:true v167_squad:true',
+      format('§144 (office): Hilton''s office reads the reads of the boy as %s', got));
+    PERFORM _assert(NOT access_log_platform_reader(OFFH) AND NOT access_log_platform_reader(LEAG)
+                    AND access_log_platform_reader(OWNR) AND access_log_platform_reader(PLAT),
+      '§144 (office): the label names the wrong readers the platform');
+    PERFORM _as(OFFW);
+    SELECT count(*) INTO n FROM access_log l WHERE l.school_id = HILS AND l.resource LIKE 'v167_%';
+    PERFORM _assert(n = 0, format('§144 (office): Westville''s office reads %s of Hilton''s rows', n));
+    PERFORM set_config('app.user_id', '', true);
+
+    -- (grants)
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'access_log_platform_reader(uuid)'::regprocedure
+                              AND p.prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
+                    AND EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'log_platform_read(text, uuid[], uuid, uuid, boolean)'::regprocedure
+                              AND NOT p.prosecdef AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
+                    AND has_function_privilege('scrbrd_app', 'access_log_platform_reader(uuid)', 'EXECUTE')
+                    AND has_function_privilege('scrbrd_app', 'log_platform_read(text, uuid[], uuid, uuid, boolean)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'access_log_platform_reader(uuid)', 'EXECUTE')
+                    AND NOT has_function_privilege('public', 'log_platform_read(text, uuid[], uuid, uuid, boolean)', 'EXECUTE'),
+      '§144 (grants): db/167''s functions are not pinned, or are callable by PUBLIC, or not by the app');
+  END;
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/167 (section 144) ─────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

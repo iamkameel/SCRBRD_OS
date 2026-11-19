@@ -216,6 +216,79 @@ try {
     ok("...and needs a fixture named", [400, 404, 500].includes((await api("/api/read/match_duties", { token: head })).status));
   }
 
+  // SCRBRD-144 (Kameel, 13 Nov 2026: "Anything that's Switched Off for a
+  // user should be hidden for that user but still record data"). db/156 hid
+  // the umpires on the overlay; signed in, Westville's administrator still
+  // read Hilton's umpire with Hilton's Officials off (Fable, db/156 S4). The
+  // fixture's school decides, as db/156 does (match_school(), the home
+  // side's); the reader's own switch hides them from him as well.
+  group("Officials switched off: named in no signed-in read, still appointed (SCRBRD-144)");
+  {
+    const WES = "22222222-2222-2222-2222-222222222222";
+    const wesAdmin = await login("registrar.wes@example.invalid");   // schooladmin at Westville
+    const suppress = (key, token, body) => api(`/api/admin/modules/${key}/suppress`, { method: "POST", token, body });
+    const duties = async (token, matchId) => (await api(`/api/read/match_duties?matchId=${matchId}`, { token })).body?.rows ?? [];
+    const umpires = (rows) => rows.filter((r) => r.duty === "umpire").map((r) => r.person_name ?? r.who);
+    const away = (await q(
+      `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, format, overs, status)
+       values ($1,'1XI',$2,'1XI','Westville Boys'' High 1XI', now() + interval '3 days','T20',20,'scheduled') returning id`,
+      [HIL, WES]))[0].id;
+    ok("the director appoints an umpire to Hilton's home fixture against Westville",
+       (await appoint(away, head, [{ duty: "umpire", name: "S Sibiya" }])).status === 200);
+    ok("with Officials on, Westville's administrator reads him",
+       umpires(await standing(away, wesAdmin)).join() === "S Sibiya", JSON.stringify(await standing(away, wesAdmin)));
+    ok("...and a Hilton guardian reads him on the duty roster", umpires(await duties(parent, away)).join() === "S Sibiya");
+
+    ok("Hilton's administrator switches Officials off",
+       (await suppress("officials", registrar, { schoolId: HIL, hidden: true, reason: "Smoke: SCRBRD-144" })).status === 200);
+    const wesRead = await api(`/api/read/officials?matchId=${away}`, { token: wesAdmin });
+    ok("Westville's administrator, Officials on for him, reads no official of Hilton's fixture",
+       wesRead.status === 200 && umpires(wesRead.body?.rows ?? []).length === 0, `${wesRead.status} ${JSON.stringify(wesRead.body)}`);
+    ok("...nor on its duty roster", umpires(await duties(wesAdmin, away)).length === 0, JSON.stringify(await duties(wesAdmin, away)));
+    ok("a Hilton guardian reads none on the roster", umpires(await duties(parent, away)).length === 0);
+    ok("the director, who may appoint, is shown none on the roster either", umpires(await duties(head, away)).length === 0);
+    ok("...and is refused the officials read itself (his own switch)",
+       (await api(`/api/read/officials?matchId=${away}`, { token: head })).status === 403);
+    const whileOff = await appoint(away, head, [{ duty: "umpire", name: "T Off-Switch" }]);
+    ok("an appointment made while Officials is off is stored (switched off records)",
+       whileOff.status === 200
+         && (await q(`select count(*)::int c from match_official where match_id = $1 and person_name = 'T Off-Switch' and not withdrawn`, [away]))[0].c === 1,
+       `${whileOff.status} ${JSON.stringify(whileOff.body)}`);
+    ok("...and named to nobody", umpires((await api(`/api/read/officials?matchId=${away}`, { token: wesAdmin })).body?.rows ?? []).length === 0
+         && umpires(await duties(parent, away)).length === 0);
+
+    ok("Hilton switches Officials back on, and Westville reads the umpire appointed while it was off",
+       (await suppress("officials", registrar, { schoolId: HIL, hidden: false })).status === 200
+         && umpires(await standing(away, wesAdmin)).join() === "T Off-Switch");
+    ok("...as does the Hilton guardian on the roster", umpires(await duties(parent, away)).join() === "T Off-Switch");
+
+    ok("Officials off at Westville only: Hilton's guardian still reads the umpire",
+       (await suppress("officials", wesAdmin, { schoolId: WES, hidden: true, reason: "Smoke: SCRBRD-144" })).status === 200
+         && umpires(await duties(parent, away)).join() === "T Off-Switch");
+    ok("...while Westville's administrator, his own switch off, is refused the read and shown none on the roster",
+       (await api(`/api/read/officials?matchId=${away}`, { token: wesAdmin })).status === 403
+         && umpires(await duties(wesAdmin, away)).length === 0);
+    await suppress("officials", wesAdmin, { schoolId: WES, hidden: false });
+
+    // Fail closed: a duty stored while Officials is off grants nothing
+    // (db/166 duty_link()). The office's link is refused while it is off,
+    // and works once it is on.
+    const SCORER = (await q(`select id from app_user where email = 'scorer@example.invalid'`))[0].id;
+    await suppress("officials", registrar, { schoolId: HIL, hidden: true, reason: "Smoke: SCRBRD-144 link" });
+    ok("with Officials off, the director stores a scorer's duty naming an account",
+       (await appoint(away, head, [{ duty: "scorer", name: "Seed Scorer", personId: SCORER }])).status === 200);
+    const duty = (await q(`select id from match_official where match_id = $1 and duty = 'scorer' and not withdrawn`, [away]))[0]?.id;
+    const refused = await api(`/api/duties/${duty}/link`, { method: "POST", token: registrar, body: {} });
+    ok("...and the office's link is refused while Officials is off, granting nothing",
+       refused.status === 409 && refused.body?.error === "officials_off"
+         && (await q(`select count(*)::int c from role_assignment where fixture_id = $1 and person_id = $2`, [away, SCORER]))[0].c === 0,
+       `${refused.status} ${JSON.stringify(refused.body)}`);
+    await suppress("officials", registrar, { schoolId: HIL, hidden: false });
+    const linked = await api(`/api/duties/${duty}/link`, { method: "POST", token: registrar, body: {} });
+    ok("with Officials on again, the office links it",
+       linked.status === 200 && !!linked.body?.assignmentId, `${linked.status} ${JSON.stringify(linked.body)}`);
+  }
+
   group("An appointment to a match that does not exist is refused");
   const ghost = "00000000-0000-0000-0000-0000000000ff";
   ok("no such match", [404, 403].includes((await appoint(ghost, head, [{ duty: "umpire", name: "N O" }])).status));
