@@ -40,7 +40,7 @@ export const STAFF_ROLES = SELF_REGISTRABLE_STAFF_ROLES;
 export const KINDS = Object.freeze([
   { id: "staff",    label: "I work at the school",         hint: "A coach, scorer, manager, physio or the office." },
   { id: "parent",   label: "I am a parent or guardian",    hint: "To follow your child's matches and answers." },
-  { id: "pupil",    label: "I am a pupil",                 hint: "Your school office sets up a pupil's account." },
+  { id: "pupil",    label: "I am a pupil",                 hint: "Your school office sets up your account." },
   { id: "follower", label: "I just want to follow matches", hint: "Scores, fixtures and results." },
 ]);
 
@@ -96,7 +96,7 @@ export function buildRequest(kind, schoolId, f = {}) {
  * None says anything about a child or an account.
  */
 export const JOIN_WORDS = {
-  already_pending: "Your request is already with the school office. You do not need to send it again: the answer will show on this page.",
+  already_pending: "Your request is already with the school office. No need to send it again. The answer will show on this page.",
   // db/93: the account's own state, said as that and nothing more. It never
   // says why and never names anyone (design SCRBRD-140 phase 2 §4.2).
   request_cooldown: "This account can't send a request yet. The school's safeguarding lead can lift that. Ask the school office to put you in touch.",
@@ -111,7 +111,7 @@ export const JOIN_WORDS = {
   token_expired: "You were signed out. Sign in again to ask.",
 };
 const JOIN_FALLBACK = "That request was not sent. Try again, or ask your school office.";
-const JOIN_UNREACHABLE = "Could not reach SCRBRD. Check your connection and try again; nothing was sent.";
+const JOIN_UNREACHABLE = "Could not reach SCRBRD. Check your connection and try again. Nothing was sent.";
 
 /** @param {any} e */
 export function joinWords(e) {
@@ -163,11 +163,11 @@ export function sentWords(kind, schoolName) {
  * What a pupil under eighteen is told instead of a form.
  */
 export const PUPIL_UNDER_18 = Object.freeze({
-  title: "A pupil's account is set up by the school office",
+  title: "Your school office sets up your account",
   lines: [
     "Ask your school office for a sign-in code. They set up a pupil's account, with a parent's consent where you are under 18.",
     "If you are under 13 you sign in with a code, not with Google.",
-    "A parent who already has an account here can also ask the office to set you up.",
+    "A parent with an account here can also ask the office to set you up.",
   ],
 });
 
@@ -177,7 +177,7 @@ export const PUPIL_UNDER_18 = Object.freeze({
  */
 export const REQUEST_STATE_WORDS = Object.freeze({
   pending: "waiting for an answer",
-  granted: "granted",
-  declined: "declined",
+  granted: "the school said yes",
+  declined: "the school said no",
   withdrawn: "withdrawn",
 });

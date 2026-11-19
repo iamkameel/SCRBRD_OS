@@ -246,7 +246,7 @@ try {
     await signIn(s.page, "slice4.threemum@example.invalid");
     await tid(s.page, "season-line").first().waitFor({ timeout: 12000 }).catch(() => {});
     const line = await inner(s.page, "season-line");
-    ok("his season card says his runs and \"average: 3 balls: a guide, not a figure\"", /3 runs in 1 innings/.test(line) && /average: 3 balls: a guide, not a figure/.test(line), line);
+    ok("his season card says his runs and \"average (3 balls: a guide, not a figure)\"", /3 runs in 1 innings/.test(line) && /average \(3 balls: a guide, not a figure\)/.test(line), line);
     ok("...and no average figure", !/average \d/.test(line) && !/\b3\.0\b/.test(line), line);
     const avg = await s.page.locator('[data-testid="family-trend"] dd[data-figure="Average"]').first().innerText({ timeout: 6000 }).catch(() => "");
     ok("the innings-by-innings panel draws the same in place of the average", /3 balls: a guide, not a figure/.test(avg), avg);

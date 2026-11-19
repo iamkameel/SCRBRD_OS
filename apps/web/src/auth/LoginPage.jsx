@@ -130,12 +130,12 @@ function LoginPage({ onLogin, liveOnly = false, onBack }) {
           e.code === "code_required"
             ? "Enter the sign-in code your school office gave you."
           : e.code === "invalid_or_expired_code"
-            ? "That code is not valid any more. Ask the office for a new one."
+            ? "That code has stopped working. Ask the office for a new one."
           : e.code === "no_such_user"
-            ? "No account for that address on this server."
+            ? "We have no account for that email. Check it, or ask your school office."
           : e.code === "dev_login_disabled"
             ? "This server does not accept development sign-in."
-            : "Could not sign in. The server may be unreachable.");
+            : "Could not sign in. Check your connection and try again.");
       }
       setLoading(false);
       return;
@@ -146,9 +146,9 @@ function LoginPage({ onLogin, liveOnly = false, onBack }) {
     if (user && user.pw === password) {
       onLogin(user.role, user.name);
     } else if (user) {
-      setError("Incorrect password. Try: " + user.pw);
+      setError("Wrong password. Try: " + user.pw);
     } else {
-      setError("No account found. Sign up or try a demo account below.");
+      setError("No account for that email. Try a demo account below.");
     }
     setLoading(false);
   };
@@ -222,7 +222,7 @@ function LoginPage({ onLogin, liveOnly = false, onBack }) {
           <h1 data-testid="login-title" style={{fontFamily:"'Syne',sans-serif",fontSize:"22px",fontWeight:800,color:T.content.primary,margin:"0 0 6px"}}>Sign in to SCRBRD</h1>
           {liveOnly && (
             <div data-testid="login-subtitle" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"13px",color:T.content.tertiary}}>
-              Sign in to send what the scorer has saved on this device. Nothing is lost while you do.
+              Sign in to send the scores saved on this phone. Nothing is lost.
             </div>
           )}
           {/* One door (EXPERIENCE_PASS §2.2, Q13, 13 Nov 2026): a new person
@@ -235,14 +235,14 @@ function LoginPage({ onLogin, liveOnly = false, onBack }) {
           {live === true && !liveOnly && (
             <p data-testid="login-new-here" style={{fontFamily:"'DM Sans',sans-serif",fontSize:"14px",lineHeight:1.5,color:T.content.secondary,margin:"8px 0 0"}}>
               {googleOn
-                ? "New to SCRBRD? Continue with Google. Your account starts with no school: you can score a match on this phone, and ask a school to let you in."
-                : "New to SCRBRD? Ask your school office for a sign-in code."}
+                ? "New here? Tap Continue with Google. You start with no school. You can score a match on this phone, or ask a school to let you in."
+                : "New here? Ask your school office for a sign-in code."}
             </p>
           )}
           {onBack&&(
             <button onClick={onBack} className="pressBtn" data-testid="login-back-to-pad"
               style={{marginTop:"10px",background:"none",border:"none",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:"12px",color:T.brand.blueText}}>
-              ‹ Back to the scorer
+              ‹ Back to scoring
             </button>
           )}
         </div>
@@ -252,7 +252,7 @@ function LoginPage({ onLogin, liveOnly = false, onBack }) {
           {live === false && <>
           <button onClick={handleDemoEntry} disabled={oauthLoading} data-testid="login-demo" className="pressBtn" style={{width:"100%",padding:"12px",borderRadius:"12px",cursor:"pointer",background:T.fill.field,border:`1px solid ${T.line.normal}`,display:"flex",alignItems:"center",justifyContent:"center",gap:"10px",marginBottom:"20px",transition:"background-color .2s, border-color .2s, color .2s, transform 150ms ease-out"}}>
             <span aria-hidden="true" style={{color:T.content.secondary,fontSize:"16px"}}><Icon name="play"/></span>
-            <span style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:T.content.primary}}>{oauthLoading?"Opening the demo…":"Explore the demo — nothing is saved"}</span>
+            <span style={{fontFamily:"'Syne',sans-serif",fontSize:"13px",fontWeight:700,color:T.content.primary}}>{oauthLoading?"Opening the demo…":"Try the demo. Nothing is saved."}</span>
           </button>
 
           <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"20px"}}>
@@ -276,7 +276,7 @@ function LoginPage({ onLogin, liveOnly = false, onBack }) {
                   <path fill="#FBBC05" d="M10.5 28.7a14.5 14.5 0 0 1 0-9.4l-7.9-6.1a24 24 0 0 0 0 21.6l7.9-6.1z"/>
                   <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.7-6c-2.1 1.4-4.9 2.3-8.2 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/>
                 </svg>
-                <span style={{fontFamily:"'Syne',sans-serif",fontSize:"14px",fontWeight:700,color:T.content.primary}}>{google.phase==="working"?"Waiting for Google…":"Continue with Google"}</span>
+                <span style={{fontFamily:"'Syne',sans-serif",fontSize:"14px",fontWeight:700,color:T.content.primary}}>{google.phase==="working"?"Opening Google…":"Continue with Google"}</span>
               </button>
 
               {google.message && (
@@ -311,7 +311,7 @@ function LoginPage({ onLogin, liveOnly = false, onBack }) {
             live
               ? { id:"login-password", label:"Sign-in code", type:"password", autoComplete:"one-time-code",
                   value:password, onChange:setPassword,
-                  placeholder: devLogin ? "from your school office — or leave blank for a demo account"
+                  placeholder: devLogin ? "from your school office, or leave blank to try a demo"
                                         : "from your school office" }
               : { id:"login-password", label:"Password", type:"password", autoComplete:"current-password", value:password, onChange:setPassword, placeholder:"••••••••" },
           ].map(f=>(

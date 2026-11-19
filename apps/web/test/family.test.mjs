@@ -492,9 +492,9 @@ group("Q10 (Kameel, 15 Nov): the eleven, her child's row marked");
 group("Q12: the passport board's source line (§3.4)");
 {
   ok("the counts are always said", basisWords({ innings: 1, ballsFaced: 3, ballsBowled: 0, bookInnings: 0, inningsWithoutBalls: 0 })
-     === "From 1 innings: 3 balls faced, 0 balls bowled.");
+     === "Worked out from 1 innings: 3 balls faced, 0 balls bowled.");
   ok("a scorebook innings is said, with what it lacks", basisWords({ innings: 14, ballsFaced: 212, ballsBowled: 96, bookInnings: 2, inningsWithoutBalls: 2 })
-     === "From 14 innings: 212 balls faced, 96 balls bowled. 2 of 14 innings from a scorebook; 2 have no balls recorded.");
+     === "Worked out from 14 innings: 212 balls faced, 96 balls bowled. 2 of 14 innings came from a scorebook; for 2 of them the balls were not recorded.");
   ok("no career row: no line", basisWords(null) === null);
 }
 
