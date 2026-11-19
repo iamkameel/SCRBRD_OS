@@ -220,7 +220,7 @@ try {
 
   ok("Match Centre → the fixture's Public page panel", await toPanel(dos.page, today));
   ok("her school does not list: the line says so, that the fixture will not appear, and where to change it",
-     /^Your school does not list its matches on the SCRBRD home page: this fixture will not appear there\. You can change that in Settings → School\.$/.test(await line(dos.page)), await line(dos.page));
+     /^Your school does not list its matches on the SCRBRD home page: this fixture will not appear there\. You can change that on School, Record\.$/.test(await line(dos.page)), await line(dos.page));
   await tid(dos.page, "publish-home-toggle").click();
   await afterReads(dos.page, 1500);
   ok("she publishes the home side", /published/.test(await tid(dos.page, "publish-home-state").innerText()) && !/not published/.test(await tid(dos.page, "publish-home-state").innerText()));

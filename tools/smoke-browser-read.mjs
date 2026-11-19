@@ -2775,9 +2775,9 @@ try {
       await c.page.locator("button", { hasText: /^career$/i }).first().click({ timeout: 4000 }).catch(() => {});
       await afterReads(c.page, 1400);
       const fig = async (k) => (await c.page.locator(`[data-testid="career-${k}"]`).first().innerText({ timeout: 3000 }).catch(() => null))?.trim() ?? null;
-      // Held (review S3): with no ball recorded, Kameel decides whether the average is held ("balls not
-      // recorded", as built) or drawn with its innings and dismissals (34). Either reading passes until he does.
-      ok("his average is one of the two readings put to Kameel: held, or 34", ["balls not recorded", "34"].includes(await fig("batting-avg") ?? ""));
+      // Kameel, 16 Nov: "Show the average with its innings and dismissals, and 'balls not recorded'".
+      ok("his 34 runs are counted: an average of 34 over his one dismissal, with its counts and the note",
+         await fig("batting-avg") === "34.00 · 1 inns, 1 out · balls not recorded", await fig("batting-avg"));
       ok("balls faced is an em dash, not 0", await fig("balls-faced") === "—");
       ok("fours and sixes are em dashes, not 0", await fig("fours") === "—" && await fig("sixes") === "—");
       ok("the strike rate is not drawn either: no ball is recorded to divide by", await fig("strike-rate") === "balls not recorded");

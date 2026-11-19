@@ -14,7 +14,7 @@ import { humanDate } from "../../lib/format.js";
 import { fixturesOf, lineFor, noticesFor, opponentOf, endOf } from "../../lib/family.js";
 import { Board } from "../../ui/board.jsx";
 import { Action, AvailabilityBlock, BusLine, Card, Line, TeamSheetLine, WeatherLine, answerVerb, whenOf } from "./parts.jsx";
-import { childRate } from "../../lib/compare.js";
+import { careerAverage } from "../../lib/compare.js";
 import { useFold } from "./useFold.js";
 import { SealMark } from "../../ui/sealMark.jsx";
 import { familyMilestoneLine, familyName, honourWords, isFirst, isSealed, isWithdrawn, provenanceOf } from "../../lib/recognitionWords.js";
@@ -141,10 +141,10 @@ export function SeasonCard({ child, role, self = false }) {
   const honours = self ? [] : rec.filter((x) => x.family === "honour");
   if (!s && !m && !honours.length) return null;
   // Q12: his average only from thirty balls faced; under that, the count and "a guide, not a figure".
-  const avg = s?.innings ? childRate(s.avg, s.ballsFaced) : null;
+  const avg = s?.innings ? careerAverage(s) : null;
   const bits = s ? [
     s.innings ? `${s.runs} runs in ${s.innings} innings` : null,
-    avg ? (avg.held ? `average (${avg.text})` : s.avg != null ? `average ${avg.text} from ${avg.count}` : avg.count) : null,
+    avg ? (avg.held ? `average (${avg.text})` : /balls not recorded/.test(avg.text) ? `average ${avg.text}` : s.avg != null ? `average ${avg.text} from ${avg.count}` : avg.count) : null,
     s.ballsBowled ? `${s.wkts} wicket${s.wkts === 1 ? "" : "s"}` : null,
   ].filter(Boolean) : [];
   const said = m && !self ? familyMilestoneLine(m, familyName(child), isFirst(miles, m)) : null;

@@ -7,7 +7,7 @@ import { signedIn } from "../lib/api.js";
 import { useBoyRead } from "../lib/live.js";
 import { readState } from "../lib/readState.js";
 import { SRC_RECORD, seasonWindow } from "../lib/sourceWords.js";
-import { childRate } from "../lib/compare.js";
+import { childAverage, childRate } from "../lib/compare.js";
 import {
   LINE_LABEL, chartGeometry, lineState, rollingFive, runsLabel, seasonChoice, seasonFigures, seasonPoints, spokenSummary,
   trendNotes, trendTable,
@@ -148,7 +148,8 @@ export function SeasonTrendView({ rows, said, who, self = false, onRetry, testid
   const st = lineState(points, { self });
   const figs = seasonFigures(points);
   // Q12: a child's average and strike rate only from thirty balls faced; under that, the count and the word.
-  const avgR = childRate(figs.average, figs.ballsFaced), srR = childRate(figs.strikeRate, figs.ballsFaced);
+  const avgR = childAverage(figs.average, { balls: figs.ballsFaced, innings: figs.innings, dismissals: figs.dismissals, withoutBalls: figs.bookNoBalls });
+  const srR = childRate(figs.strikeRate, figs.ballsFaced);
   const notes = trendNotes(points, { self, current });
   const g = chartGeometry(points, { w: W, h: H, pad: PAD, draw: st.draw });
   const line = st.draw ? rollingFive(points) : [];
@@ -192,7 +193,7 @@ export function SeasonTrendView({ rows, said, who, self = false, onRetry, testid
                   ["Innings", figs.innings],
                   ["Not out", figs.notOuts],
                   ["Balls faced", childRate(null, figs.ballsFaced).count],
-                  ["Average", figs.average == null ? (current ? "no average yet" : "no average") : avgR.held ? avgR.text : figs.average],
+                  ["Average", figs.average == null ? (current ? "no average yet" : "no average") : avgR.held || /balls not recorded/.test(avgR.text) ? avgR.text : figs.average],
                   ["Strike rate", figs.strikeRate == null ? "no balls recorded" : srR.held ? srR.text : figs.strikeRate],
                 ].map(([k, v]) => (
                   <div key={k}>
