@@ -198,8 +198,13 @@ const PIN = new Map([
   ["Your DSO", { in: ["views/SafeguardingView.jsx"] }],
   // The office's sheet: Settings, the importer, enrolment, claims, Staff, the public-name and publication panels.
   ["Settings", { in: ["design/roles.js"] }],                  // the nav label
-  ["Import", { in: ["views/SettingsView.jsx"] }],             // a tab of Settings
-  ["People", { in: ["views/SettingsView.jsx"] }],             // a tab of Settings
+  // Slice 6 (EXPERIENCE_PASS §1.6): Settings' People and Import are School, People's.
+  ["School", { in: ["design/homes.js"] }],                    // the home's title, the menu's word
+  ["People", { in: ["design/homes.js"] }],                    // School's first section
+  ["Record", { in: ["design/homes.js"] }],                    // School's section with the school's record
+  ["Accounts", { in: ["views/SettingsView.jsx"] }],           // the People part's heading
+  ["Import from a spreadsheet", { in: ["views/importer.jsx"] }],
+  ["Import", { in: ["views/importer.jsx"] }],                 // the importer's button
   ["What are you importing", { in: ["views/importer.jsx"] }],
   ["Players", { in: ["lib/importScreen.js"] }],
   ["Guardians", { in: ["lib/importScreen.js"] }],
@@ -218,7 +223,6 @@ const PIN = new Map([
   ["Confirm it is them", { in: ["views/claims.jsx"] }],
   ["Issue a code instead", { in: ["views/claims.jsx"] }],
   ["Decline", { in: ["views/claims.jsx"] }],
-  ["Staff", { in: ["design/roles.js"] }],                     // the nav label
   ["Everyone", { in: ["views/StaffView.jsx"] }],
   ["Clearance register", { in: ["views/StaffView.jsx"] }],
   ["Hide", { in: ["views/StaffView.jsx"] }],

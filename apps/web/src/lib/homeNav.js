@@ -9,7 +9,7 @@
  * from lib/features.js, which the public pages' graph reaches.
  */
 import { collapseHomes, entryFor, entryLabel, homeParts } from "../design/homes.js";
-import { useNav } from "./features.js";
+import { useFeatures, useNav } from "./features.js";
 
 /** The destinations to draw: each home once, a home only if one of its sections is reached. */
 export function useMenu(role) {
@@ -21,12 +21,15 @@ export function useMenu(role) {
  * names it (null: the destination's own, NAV_META), and which entry is lit
  * while `page` is open.
  * @param {string} role @param {string | null} page
- * @returns {{ keys: string[], label: (k: string) => string | null, active: string | null }}
+ * `ready`: the school's module switches have answered, so the menu drawn is the one it will stay. Until then it is
+ * drawn whole (an unknown module is on, lib/features.js) and can only lose an entry a switch turns off, never gain one.
+ * @returns {{ keys: string[], label: (k: string) => string | null, active: string | null, ready: boolean }}
  */
 export function useMenuItems(role, page) {
   const reach = useNav(role);
+  const { ready } = useFeatures();
   const keys = collapseHomes(reach);
-  return { keys, label: (k) => entryLabel(k, reach), active: page ? entryFor(page, keys) : null };
+  return { keys, label: (k) => entryLabel(k, reach), active: page ? entryFor(page, keys) : null, ready };
 }
 
 /** `{ sections, links }` this reader is shown of one home, from the same reach as the menu. */

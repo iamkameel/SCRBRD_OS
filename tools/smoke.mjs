@@ -114,6 +114,14 @@ try {
       await page.waitForTimeout(280);
       const body = await page.$eval("#root", (el) => el.innerHTML.length);
       if (body > 500) visited++;
+      // The menu is the homes (EXPERIENCE_PASS §1.2): a home's other destinations are the sections on its bar.
+      const sections = page.locator('[data-testid="home-frame"] [data-testid*="-section-"]');
+      const n = await sections.count();
+      for (let i = 1; i < n; i++) {
+        await sections.nth(i).click({ timeout: 2500 });
+        await page.waitForTimeout(280);
+        if ((await page.$eval("#root", (el) => el.innerHTML.length)) > 500) visited++;
+      }
     } catch { /* not a destination */ }
   }
   deep.push([`rendered ${visited} navigation destinations`, visited >= 10]);

@@ -323,7 +323,7 @@ try {
     parentReqs = h.posts.length;
     const reads = h.requests.filter((r) => /\/api\//.test(r)).map((r) => r.replace(/^\w+ /, ""));
     // ...and, since the experience pass's slice 1, whether her own account may send a Pilot Match (Start a match's words).
-    ok("the only things the screen asked for: schools, her own requests (to a school, and to SCRBRD to add one, db/158), the help link, the sessions, her requests, her Pilot status, and her own follow list's Today (db/160: the public list kept to the schools she follows)", reads.every((r) => /^\/api\/(schools|session|read\/role_requests|read\/school_add_requests|safeguarding\/contacts|requests|pilot\/status|follows\/today)$/.test(r)), [...new Set(reads)]);
+    ok("the only things the screen asked for: schools, her own requests (to a school, and to SCRBRD to add one, db/158), the help link, the sessions, her requests, her Pilot status, her own follow list's Today (db/160: the public list kept to the schools she follows), and her own links (slice 4, Fable's S4: a link the office set up and ended is said on this home)", reads.every((r) => /^\/api\/(schools|session|read\/role_requests|read\/school_add_requests|read\/my_links|safeguarding\/contacts|requests|pilot\/status|follows\/today)$/.test(r)), [...new Set(reads)]);
     ok("...and never a pupil, a child, a squad or a roster", !reads.some((r) => /players|pupils|children|squad|roster|guardians/.test(r)));
     // The list of her requests is re-read from the server after each send, so
     // the second row arrives a moment after "sent" is drawn (CI saw 1).

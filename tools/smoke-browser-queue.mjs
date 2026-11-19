@@ -456,7 +456,7 @@ try {
   await queue(o.page);
   await tid(o.page, `queue-open-office:${HIL}:O2`).click({ timeout: 4000 });
   await afterReads(o.page, 1500);
-  ok("O2 opens Settings, People, with the claim to confirm", await tid(o.page, "os-main").getAttribute("data-page") === "settings" && await tid(o.page, "claim").count() >= 1);
+  ok("O2 opens School, People (Settings, People before Slice 6), with the claim to confirm", await tid(o.page, "os-main").getAttribute("data-page") === "staff" && await tid(o.page, "claim").count() >= 1);
   ok("no page errors on the office's screens", o.errors.length === 0 && o.refusals.length === 0, [...o.errors, ...o.refusals].join(" | "));
   await o.ctx.close();
 
