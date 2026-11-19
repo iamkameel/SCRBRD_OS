@@ -532,15 +532,14 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   // A fixture opens on its own page, the Match Centre's (lib/cockpitNav.js: the fixture on its first tab).
   const openMatch = (/** @type {any} */ m) => { requestResult(m.id); onNav("matches"); };
   // The live match's lead (§2.2): for his side's coach, "We're batting" or "We're bowling", from the fold the board
-  // is drawn from, and the Coach tab; for a scorer, Resume scoring (DaySheet's own); for anyone else, the match.
+  // is drawn from, and the Coach tab; for a scorer, Resume scoring (DaySheet's own); for anyone else, "Open v …".
   const liveGate = liveMatch && signedIn() ? cockpitGate(assignments, liveMatch) : null;
   const atCrease = liveInnings?.length ? liveInnings[liveInnings.length - 1] : null;
   const ourEnd = liveGate?.end ?? liveMatch?.mySide ?? null;
   const batEnd = atCrease && !atCrease.complete && liveMatch ? sideOfTeam(liveMatch, atCrease.battingTeam) : null;
   const nowLine = ourEnd && batEnd ? (batEnd === ourEnd ? "We're batting" : "We're bowling") : null;
   const nowAction = liveMatch && liveGate && !holdsAsHeld(role, "scoring.edit")
-    ? { label: "Coach tab", testid: "day-now-open", onClick: () => { requestCoach(liveMatch.id, false); onNav("matches"); } }
-    : liveMatch && role === "spectator" ? { label: "Watch", testid: "day-now-open", onClick: () => openMatch(liveMatch) } : null;
+    ? { label: "Coach tab", testid: "day-now-open", onClick: () => { requestCoach(liveMatch.id, false); onNav("matches"); } } : null;
 
   const followedBlock = showFollowed
     ? <div className="os-page" data-testid="today-followed"><FollowedSchools followed={followed} lead={followedFirst}/></div> : null;
