@@ -67,7 +67,7 @@ ok("the To-resolve row, its deadline and its one door", q.rows.length === 1 && q
    && q.rows[0].action?.kind === "result" && q.rows[0].action.matchId === "m1" && q.rows[0].owner === "you", JSON.stringify(q.rows[0]));
 const f = nominationRows({ rows: null, now: NOW, error: "unreachable" });
 ok("a failed read is a row that says so, never an empty list", f.rows.length === 0 && f.unread.length === 1 && f.failed === 1
-   && f.unread[0].state === "could_not_read" && /Could not read the nominations to decide/.test(f.unread[0].fact));
+   && f.unread[0].state === "could_not_read" && /Couldn't load the nominations to decide/.test(f.unread[0].fact));
 ok("the no-award sheet says the side is not told", /The side is not told/.test(NO_AWARD_WORDS));
 
 group("Every refusal has words");

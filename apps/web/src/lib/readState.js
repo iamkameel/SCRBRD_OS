@@ -38,7 +38,7 @@
  * WORDS. Each sentence is built from the reader's own `what` ("skills
  * assessments", "career figures"), never from a row: no name of a child can
  * reach one because no row is ever read here beyond its count. Loading is
- * "Reading …", a failure is "Could not read …", and an empty answer is
+ * "Reading …", a failure is "Couldn't load …", and an empty answer is
  * "No … on record". None of them says "done" or "ready", or prints a
  * percentage.
  *
@@ -115,10 +115,10 @@ export function agoWords(ms) {
 /**
  * The two phrases the list modules (lib/todo.js, lib/queue.js) put inside a
  * row or a count, with no full stop, in the forms this file's sentences use:
- * "Could not read the fixtures" and "2 reads failed". One wording, here.
+ * "Couldn't load the fixtures" and "2 reads failed". One wording, here.
  * @param {string} what
  */
-export const couldNotRead = (what) => `Could not read ${lower(what) || "this"}`;
+export const couldNotRead = (what) => `Couldn't load ${lower(what) || "this"}`;
 /** @param {number} n */
 export const readsFailed = (n) => `${n} read${n === 1 ? "" : "s"} failed`;
 
@@ -136,7 +136,7 @@ export function sentenceFor(state, what, extra = {}) {
       ? `${couldNotRead(w)}: sign in again.`
       : `${couldNotRead(w)}.`;
     case "stale":      return `${cap(w)} last observed ${agoWords(extra.ageMs ?? 0)}; it may be out of date.`;
-    case "partial":    return `Could not read ${(extra.failed ?? [w]).join(" and ")}, so what is shown is incomplete.`;
+    case "partial":    return `Couldn't load ${(extra.failed ?? [w]).join(" and ")}, so what is shown is incomplete.`;
     default:           return null;
   }
 }

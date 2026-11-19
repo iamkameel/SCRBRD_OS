@@ -851,6 +851,12 @@ body{background:${T.surface.canvas};color:${T.content.primary};font-family:${T.t
    lives behind (hover: hover): on a phone :hover latches after a tap and
    reads as "selected". */
 .pressBtn{transition:transform 150ms ease-out;transform-origin:center}
+/* A skeleton (ui/primitives.jsx Skeleton): still by default; it shimmers only
+   when the person has not asked for reduced motion. */
+@media (prefers-reduced-motion: no-preference){
+  .os-skel{background-image:linear-gradient(90deg,transparent,rgba(127,127,127,.18),transparent)!important;background-size:200% 100%;animation:os-skel 1.4s ease-in-out infinite}
+  @keyframes os-skel{from{background-position:200% 0}to{background-position:-200% 0}}
+}
 .pressBtn:not(:disabled):active{transform:scale(0.96)}
 .card-hover{transition:transform .2s ease,box-shadow .2s ease}
 @media (hover: hover){.card-hover:hover{transform:translateY(-1px);box-shadow:${T.elevation.lg}!important}}

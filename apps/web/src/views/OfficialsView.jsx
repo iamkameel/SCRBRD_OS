@@ -262,18 +262,8 @@ function OfficialsView({ role }) {
       {/* Loading and failure are stated, never rendered as an empty directory.
           "No officials" and "we could not ask" are different sentences and only
           one of them is true at a time. */}
-      {loading && (
-        <Card style={{ padding: "28px", textAlign: "center" }}>
-          <span style={{ color: D.textMuted, fontFamily: D.body, fontSize: "13px" }}>Loading appointments…</span>
-        </Card>
-      )}
-      {!loading && error && (
-        <Card style={{ padding: "28px", textAlign: "center" }}>
-          <span style={{ color: D.textMuted, fontFamily: D.body, fontSize: "13px" }}>
-            Could not load appointments ({error}).
-          </span>
-        </Card>
-      )}
+      {loading && <Card><EmptyState loading what="appointments"/></Card>}
+      {!loading && error && <Card><EmptyState error={error} what="appointments" onRetry={() => setNonce((n) => n + 1)}/></Card>}
 
       {!loading && !error && (
         <>

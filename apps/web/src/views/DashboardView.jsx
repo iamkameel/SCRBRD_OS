@@ -256,7 +256,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                 </div>
               </>
             ) : (
-              <EmptyState loading={boardState.loading} error={boardState.error} message="The live score is not available yet." icon="scorebook"/>
+              <EmptyState loading={boardState.loading} error={boardState.error} what="the live score" onRetry={onRetry} message="The live score is not available yet." icon="scorebook"/>
             )}
           </BentoCard>
         )}

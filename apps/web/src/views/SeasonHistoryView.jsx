@@ -44,9 +44,10 @@ function SeasonHistory({ role }) {
 // they would only report "no adapter"/loading forever for a session that was
 // never going to fetch anything.
 function SignedInSeasonHistory({ role, selected, setSelected }) {
-  const seasonsState = useLive("seasons", role);
-  const compsState = useLive("competitions", role);
-  const matchesState = useLive("matches", role);
+  const [nonce, setNonce] = useState(0);
+  const seasonsState = useLive("seasons", role, nonce);
+  const compsState = useLive("competitions", role, nonce);
+  const matchesState = useLive("matches", role, nonce);
 
   // The archive is about school seasons specifically — every fixture's own
   // season is always computed at the 'school' level (see season_for() in
@@ -64,7 +65,7 @@ function SignedInSeasonHistory({ role, selected, setSelected }) {
   if (loading || error || seasons.length === 0) {
     return (
       <Card data-testid="season-history">
-        <EmptyState loading={loading} error={error} message="No seasons on record." icon="calendar" />
+        <EmptyState loading={loading} error={error} what="the seasons" onRetry={() => setNonce((n) => n + 1)} message="No seasons on record." icon="calendar" />
       </Card>
     );
   }

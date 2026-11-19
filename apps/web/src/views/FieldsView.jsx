@@ -145,7 +145,7 @@ function FieldsView({ role, onNav, groundId = null, onSelectGround = null }) {
       <SectionHeader title="Fields & Pitch Profiles" sub="Ground management, pitch preparation and surface data" color={D.teal} actions={addControl}/>
       <HomeBar home="fields" role={role} onNav={onNav}/>
       {addForm}
-      <EmptyState loading={loading} error={error} icon="ground" message="No grounds are in scope for you." />
+      <EmptyState loading={loading} error={error} what="the grounds" onRetry={()=>setGroundsNonce(n=>n+1)} icon="ground" message="No grounds are in scope for you." />
     </div>
   );
 

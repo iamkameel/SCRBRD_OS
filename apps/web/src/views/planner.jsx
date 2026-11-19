@@ -96,8 +96,8 @@ function Inputs({ competitionId, from, to, nonce, canManage, onChanged, say }) {
           schools add their own blackouts. You add days that are blacked out for the whole league.
         </p>
       </div>
-      {state.loading && <EmptyState loading/>}
-      <Alert words={state.error} testid="pl-inputs-error"/>
+      {state.loading && <EmptyState loading what="the planner inputs"/>}
+      {state.error && <EmptyState error={state.error} what="the planner inputs" onRetry={() => setLocal((n) => n + 1)}/>}
       {d && (
         <>
           <div data-testid="pl-windows">
@@ -512,7 +512,7 @@ export function FixturePlanner({ competition, onBack }) {
       </div>
     );
   }
-  if (listing.loading) return <div data-testid="pl-root" style={S.card}><EmptyState loading error={false}/></div>;
+  if (listing.loading) return <div data-testid="pl-root" style={S.card}><EmptyState loading what="the plans"/></div>;
 
   const accepted = inputs?.entrants?.length;
   return (

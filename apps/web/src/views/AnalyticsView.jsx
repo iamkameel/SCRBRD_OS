@@ -29,7 +29,8 @@ const HeldOut = ({ rows, kind, testid }) => {
 function AnalyticsView({ role }) {
   // Read through the choke point: row-scoped and column-masked for this
   // principal. Importing the raw constant here would bypass both.
-  const CAREER = usePlayersWithCareerState(role);
+  const [nonce, setNonce] = useState(0);
+  const CAREER = usePlayersWithCareerState(role, nonce);
   const PLAYERS = CAREER.rows;
   // The figures are a second read beside the roster, and on a played season it
   // takes seconds (PERF.md). Until it answers, or if it fails, the bars and the
@@ -108,7 +109,7 @@ function AnalyticsView({ role }) {
             <SourceLine testid="source-line-performance" demo={!signedIn()} demoWhy="sample players"
               source={SRC_RECORD} scope={`${teamFilter ?? "No side in view"}, one bar per player`} window={WINDOW_ALL}
               denominator={ballsFacedBasis(players)}/>
-            {figuresRead&&<ReadState testId="analytics-figures-read-state" read={figuresRead} compact icon="bat"/>}
+            {figuresRead&&<ReadState testId="analytics-figures-read-state" read={figuresRead} onRetry={() => setNonce((n) => n + 1)} compact icon="bat"/>}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"var(--g-2,1fr 1fr)",gap:"14px",marginBottom:"14px"}}>
             <Card sx={{padding:"16px"}}>
@@ -158,7 +159,7 @@ function AnalyticsView({ role }) {
                 source={SRC_RECORD} scope={`${teamFilter ?? "No side in view"}, one row per player`} window={WINDOW_ALL}
                 denominator={ballsFacedBasis(players)}/>
             </div>
-            {figuresRead&&<ReadState testId="analytics-table-read-state" read={figuresRead} compact icon="bat"/>}
+            {figuresRead&&<ReadState testId="analytics-table-read-state" read={figuresRead} onRetry={() => setNonce((n) => n + 1)} compact icon="bat"/>}
           </div>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse"}}>
@@ -249,10 +250,11 @@ const h2hWindow = (rows) => {
 const day = (t) => (t ? new Date(t).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" }) : "—");
 
 function HeadToHead({ role, teamFilter }) {
-  const { rows, live, loading, error, disabled } = useLive("derby_record", role, 0, { teamCode: teamFilter });
-  if (loading) return <EmptyState loading/>;
+  const [nonce, setNonce] = useState(0);
+  const { rows, live, loading, error, disabled } = useLive("derby_record", role, nonce, { teamCode: teamFilter });
+  if (loading) return <EmptyState loading what="the head-to-head record"/>;
   if (disabled) return <EmptyState icon="ban" message="Analytics is switched off for this school."/>;
-  if (error) return <EmptyState error/>;
+  if (error) return <EmptyState error={error} what="the head-to-head record" onRetry={() => setNonce((n) => n + 1)}/>;
   if (!rows.length) return <EmptyState icon="bat" message={`No completed fixtures for ${teamFilter ?? "your sides"} that you may see — a record is derived from them, so there is nothing to derive one from yet.`}/>;
 
   return (
@@ -349,15 +351,16 @@ function HeadToHead({ role, teamFilter }) {
 // ══════════════════════════════════════════════════════
 function Matchups({ role }) {
   const [batter, setBatter] = useState("");
-  const pairs = useLive("matchups", role, 0, batter ? { batterId: batter } : null);
-  const cover = useLive("matchup_coverage", role, 0, batter ? { batterId: batter } : null);
+  const [nonce, setNonce] = useState(0);
+  const pairs = useLive("matchups", role, nonce, batter ? { batterId: batter } : null);
+  const cover = useLive("matchup_coverage", role, nonce, batter ? { batterId: batter } : null);
   const cov = cover.rows[0] ?? null;
   const batters = [...new Map(pairs.rows.map(p=>[p.batterId,p.batterName])).entries()];
   const batterName = batter ? (batters.find(([id])=>id===batter)?.[1] ?? null) : null;
 
-  if (pairs.loading) return <EmptyState loading/>;
+  if (pairs.loading) return <EmptyState loading what="the matchups"/>;
   if (pairs.disabled) return <EmptyState icon="ban" message="Analytics is switched off for this school."/>;
-  if (pairs.error) return <EmptyState error/>;
+  if (pairs.error) return <EmptyState error={pairs.error} what="the matchups" onRetry={() => setNonce((n) => n + 1)}/>;
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:"12px"}} data-testid="matchups">
@@ -503,11 +506,12 @@ function Phases({ role }) {
   // default to land on.
   const played = MATCHES.filter((m) => m.status === "complete" || m.status === "live");
   const [matchId, setMatchId] = useState("");
+  const [nonce, setNonce] = useState(0);
   const chosen = matchId || played[0]?.id || "";
   // The read is one fixture's (req(q, "matchId")): until the fixtures have
   // come back there is none to name, and asking anyway was a 400 on every
   // visit. Signed in with none chosen, nothing is asked.
-  const { rows, loading, error, disabled } = useLive(signedIn() && !chosen ? "" : "phases", role, 0, chosen ? { matchId: chosen } : null);
+  const { rows, loading, error, disabled } = useLive(signedIn() && !chosen ? "" : "phases", role, nonce, chosen ? { matchId: chosen } : null);
   const match = played.find((m) => m.id === chosen);
 
   if (!played.length) {
@@ -541,9 +545,9 @@ function Phases({ role }) {
         </SourceLine>
       )}
 
-      {loading&&<EmptyState loading/>}
+      {loading&&<EmptyState loading what="the phases"/>}
       {disabled&&<EmptyState icon="ban" message="Analytics is switched off for this school."/>}
-      {error&&<EmptyState error/>}
+      {error&&<EmptyState error={error} what="the phases" onRetry={()=>setNonce(n=>n+1)}/>}
 
       {!loading&&!error&&!disabled&&rows.length===0&&(
         <EmptyState icon="scorebook" message={`${match?.awayTeam ?? "This fixture"} has no deliveries on record — it has not been scored, which is not the same as nobody scoring.`}/>

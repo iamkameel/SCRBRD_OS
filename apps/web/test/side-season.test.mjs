@@ -149,7 +149,7 @@ group("An empty or refused read says so in words");
   const refused = view([], readState({ rows: [], error: "forbidden", status: 403 }, { what: "the side’s completed matches" }));
   ok("refused: said, no chart, no retry to press", /may not read/.test(text(refused)) && !/side-season-chart/.test(refused), text(refused));
   const failed = view([], readState({ rows: [], error: "network" }, { what: "the side’s completed matches" }), { onRetry: () => {} });
-  ok("failed: said, and a retry", /Could not read/.test(text(failed)) && /Retry|Try again/i.test(text(failed)) && !/side-season-chart/.test(failed), text(failed));
+  ok("failed: said, and a retry", /Couldn't load/.test(text(failed)) && /Retry|Try again/i.test(text(failed)) && !/side-season-chart/.test(failed), text(failed));
   const noSeason = view(rows(2).map((r) => ({ ...r, season: "2025", currentSeason: false })), null, { initial: { season: "1999" } });
   ok("a chosen season the rows lack falls back to one they have", /2025/.test(text(noSeason)) && (noSeason.match(/data-testid="side-season-point"/g) ?? []).length === 2);
 }

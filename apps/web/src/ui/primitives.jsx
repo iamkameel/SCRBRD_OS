@@ -342,30 +342,52 @@ const ReadState = ({ read, onRetry, icon, compact = false, onBoard = false, test
   // fixed and clear 4.5:1 in both themes: dim (6.34:1) for a read still on
   // the wire, the painted figure (17.86:1) for a failure, which still says
   // so in words and as role="alert".
-  const ink = onBoard ? (bad ? T.board.figure : T.board.dim) : (bad ? D.roseText : D.textMuted);
+  const ink = onBoard ? (bad ? T.board.figure : T.board.dim) : D.textMuted;
   const glyph = READ_ICON[state] ?? icon ?? "—";
+  // One style (redesign slice 7): the body face, quiet, left-aligned. The danger
+  // token is on the icon of a failure and nowhere else. Loading is a skeleton in
+  // the shape of what is coming (a lead line and rows), never a spinner.
+  const iconInk = onBoard ? ink : (bad ? D.roseText : D.textMuted);
   return (
     <div data-testid={testId} data-state={state}
       role={bad ? "alert" : state === "loading" ? "status" : undefined}
-      style={{ padding: compact ? "10px 14px" : "32px 16px", textAlign: "center",
-               fontFamily: D.body, fontSize: "13px", lineHeight: 1.5,
-               color: ink,
-               display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
-      {!compact && (
-        <div style={{ fontSize: "20px", opacity: 0.7 }} aria-hidden="true">
-          {isIcon(glyph) ? <Icon name={glyph}/> : glyph}
-        </div>
-      )}
-      <div data-testid={`${testId}-sentence`}>{sentence}</div>
-      {retry && onRetry && (
-        <button type="button" onClick={onRetry} data-testid={`${testId}-retry`} className="pressBtn" style={{
-          minHeight: "44px", minWidth: "44px", padding: "0 20px", borderRadius: D.pill,
-          border: `1px solid ${D.border}`, background: D.surf3, color: D.textPrimary,
-          fontFamily: D.head, fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>Retry</button>
-      )}
+      style={{ padding: compact ? "10px 14px" : "16px", textAlign: "left",
+               fontFamily: D.body, fontSize: "13px", lineHeight: 1.5, color: ink,
+               display: "flex", flexDirection: "column", alignItems: "stretch", gap: "10px" }}>
+      {state === "loading" && <Skeleton rows={compact ? 1 : 3} onBoard={onBoard}/>}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "10px" }}>
+        {!compact && state !== "loading" && (
+          <span style={{ fontSize: "18px", color: iconInk, display: "inline-flex" }} aria-hidden="true">
+            {isIcon(glyph) ? <Icon name={glyph}/> : glyph}
+          </span>
+        )}
+        <span data-testid={`${testId}-sentence`}>{sentence}</span>
+        {retry && onRetry && (
+          <button type="button" onClick={onRetry} data-testid={`${testId}-retry`} className="pressBtn" style={{
+            minHeight: "44px", minWidth: "44px", padding: "0 20px", borderRadius: D.pill,
+            border: `1px solid ${D.border}`, background: D.surf3, color: D.textPrimary,
+            fontFamily: D.head, fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>Retry</button>
+        )}
+      </div>
     </div>
   );
 };
+
+/**
+ * A skeleton in the shape of what is coming: a lead block, then rows. Drawn
+ * still. The shimmer is the `.os-skel` class in GLOBAL_CSS and runs only under
+ * prefers-reduced-motion: no-preference. aria-hidden: the sentence beside it
+ * (role="status" on its region) is what is announced.
+ */
+const Skeleton = ({ rows = 3, onBoard = false, lead = false }) => (
+  <div aria-hidden="true" data-testid="skeleton" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+    {lead && <div className="os-skel" style={{ height: "64px", borderRadius: D.lg, background: onBoard ? T.board.dim : D.surf2, opacity: 0.5 }}/>}
+    {Array.from({ length: rows }, (_, i) => (
+      <div key={i} className="os-skel" style={{ height: "14px", width: i === rows - 1 && rows > 1 ? "60%" : "100%",
+        borderRadius: D.sm ?? "6px", background: onBoard ? T.board.dim : D.surf2, opacity: onBoard ? 0.35 : 1 }}/>
+    ))}
+  </div>
+);
 
 /**
  * Nothing to show — and WHICH nothing.
@@ -384,25 +406,24 @@ const ReadState = ({ read, onRetry, icon, compact = false, onBoard = false, test
  *             that draws `message`.
  *
  * `what` names the thing in the reader's own words ("the injury list"): the
- * failure then reads "Could not read the injury list." `onRetry` adds the Retry
+ * failure then reads "Couldn't load the injury list." `onRetry` adds the Retry
  * button to a failure and to nothing else.
  *
  * The read path never falls back to mock rows in a live session, so an empty
  * list is a real answer rather than a hidden failure — which is precisely why
  * it has to be possible to tell an empty answer from an absent one.
  */
-const EmptyState = ({ loading, error, status, disabled, message = "Nothing here yet", icon = "—", what, onRetry }) => {
+const EmptyState = ({ loading, error, status, disabled, message = "Nothing here yet", icon: _icon, what, onRetry }) => {
   const read = readState({ rows: [], loading, error, status, disabled, live: true }, { what });
   if (read.state !== "empty") return <ReadState read={read} onRetry={onRetry}/>;
+  // Empty: one sentence, what is not here yet and what to do. One style, no
+  // centred icon (redesign slice 7). `icon` is kept for callers and not drawn.
   return (
-    <div style={{ padding: "32px 16px", textAlign: "center",
-                  fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>
-      <div style={{ fontSize: "20px", marginBottom: "8px", opacity: 0.6 }} aria-hidden="true">
-        {isIcon(icon) ? <Icon name={icon}/> : icon}
-      </div>
+    <div role="status" data-testid="empty-state" style={{ padding: "16px", textAlign: "left",
+                  fontFamily: D.body, fontSize: "13px", lineHeight: 1.5, color: D.textMuted }}>
       {message}
     </div>
   );
 };
 
-export { Avatar, Badge, Btn, Card, EmptyState, Input, KPICard, Modal, Pill, ProgressBar, RadarChart, ReadState, SectionHeader, Select, SkillBar, StatusDot };
+export { Avatar, Badge, Btn, Card, EmptyState, Input, KPICard, Modal, Pill, ProgressBar, RadarChart, ReadState, SectionHeader, Select, SkillBar, Skeleton, StatusDot };

@@ -176,7 +176,7 @@ function CorrectionsWaiting({ role, matches, onOpen }) {
   if (read.error) {
     return (
       <Card sx={{ padding: "14px 16px", marginBottom: "10px" }} data-testid="o7-error">
-        <span style={{ fontFamily: D.body, fontSize: "12px", color: D.roseText }}>Could not read the corrections waiting ({read.error}).</span>{" "}
+        <span style={{ fontFamily: D.body, fontSize: "12px", color: D.roseText }}>Couldn't load the corrections waiting ({read.error}).</span>{" "}
         <button type="button" className="os-state" onClick={() => setNonce((n) => n + 1)}
           style={{ minHeight: "44px", padding: "0 12px", border: `1px solid ${D.border}`, borderRadius: D.pill, background: "transparent",
                    color: D.textPrimary, fontFamily: D.body, fontSize: "12px", cursor: "pointer" }}>Try again</button>
@@ -344,7 +344,7 @@ function ReadinessOverview({ role, onNav }) {
                             </button>
                             {state && !state.loading && (
                               <div data-testid="queue-lifts" style={{ marginTop: "8px" }}>
-                                {state.error ? <p role="alert" style={{ ...body, margin: 0, color: D.roseText }}>Could not read the lift exceptions ({state.error})</p>
+                                {state.error ? <p role="alert" style={{ ...body, margin: 0, color: D.roseText }}>Couldn't load the lift exceptions ({state.error})</p>
                                   : state.rows?.length ? (
                                     <ul style={{ margin: 0, padding: 0 }}>
                                       {state.rows.map((r) => (

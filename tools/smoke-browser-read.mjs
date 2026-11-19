@@ -3236,7 +3236,7 @@ try {
       await A.ctx.close(); await B.ctx.close();
 
       // ── With the answers read killed, it never says nothing is owed ──
-      for (const [what, glob, words] of [["availability", "**/api/read/availability*", /Could not read the answers for/], ["fixtures", "**/api/read/matches*", /Could not read the fixtures/]]) {
+      for (const [what, glob, words] of [["availability", "**/api/read/availability*", /Couldn't load the answers for/], ["fixtures", "**/api/read/matches*", /Couldn't load the fixtures/]]) {
         const C = await open();
         await C.page.route(glob, (r) => r.abort());
         ok(`${what} read killed: the guardian signs in`, await signIn(C.page, /parent@example\.invalid/));
@@ -3542,7 +3542,7 @@ try {
 
   // ── GA-I08: one read-state contract ─────────────────────────────
   // A read that fails is not an empty answer. These two walks abort a read from
-  // the browser, see the sentence for it ("Could not read …") where an empty
+  // the browser, see the sentence for it ("Couldn't load …") where an empty
   // radar and "No fixture is arranged" used to be, press Retry, and see it
   // recover with the SAME request (same path and params). Each was seen red
   // against the code before the change (the report records the counts).
@@ -3560,7 +3560,7 @@ try {
     const said = async () => (await at("skills-read-state").innerText({ timeout: 4000 }).catch(() => "")).trim();
     await afterReads(C.page, 800);
     const body = await text(C.page);
-    ok("the detail says 'Could not read skills assessments.'", /Could not read skills assessments\./.test(await said()), await said());
+    ok("the detail says 'Couldn't load skills assessments.'", /Couldn't load skills assessments\./.test(await said()), await said());
     ok("...it is an alert, and says which state it is", await attr(at("skills-read-state"), "data-state") === "failed" && await attr(at("skills-read-state"), "role") === "alert");
     ok("...no radar is drawn, empty or otherwise", await C.page.locator('[data-testid="radar"], [data-testid="radar-too-few"]').count() === 0);
     ok("...and it does not say there are no assessments, or that anyone is not assessed",
@@ -3571,13 +3571,13 @@ try {
     const before = asked.length;
     await retry.click({ timeout: 4000 }).catch(() => {});
     await afterReads(C.page, 1200);
-    ok("a retry while it still fails asks again and still says so", asked.length > before && /Could not read skills assessments\./.test(await said()), asked.length - before);
+    ok("a retry while it still fails asks again and still says so", asked.length > before && /Couldn't load skills assessments\./.test(await said()), asked.length - before);
     failing = false;
     await at("skills-read-state-retry").click({ timeout: 4000 }).catch(() => {});
     await C.page.waitForTimeout(1800);
     const firstUrl = asked[0], lastUrl = asked.at(-1);
     ok("RETRY KEEPS THE QUESTION: the request that recovered is the first one, path and params", !!firstUrl && firstUrl === lastUrl, [firstUrl, lastUrl]);
-    ok("...the failure sentence is gone", !/Could not read skills assessments/.test(await text(C.page)));
+    ok("...the failure sentence is gone", !/Couldn't load skills assessments/.test(await text(C.page)));
     ok("...and the screen now draws what was read: the seeded assessments (RATING)", /RATING|Not assessed yet/.test(await text(C.page)) && await at("skills-read-state").count() <= 1);
     // A boy with no assessment is 'Not assessed yet', not a zero and not an empty radar.
     const un = C.page.locator('[data-testid^="unassessed-"]').first();
@@ -3587,7 +3587,7 @@ try {
     await row.click({ timeout: 4000 }).catch(() => {});
     await C.page.waitForTimeout(600);
     ok("...and his detail says 'Not assessed yet.' with no radar, no failure",
-       /^Not assessed yet\.$/.test(await said()) && await C.page.locator('[data-testid="radar"]').count() === 0 && !/Could not read/.test(await text(C.page)), await said());
+       /^Not assessed yet\.$/.test(await said()) && await C.page.locator('[data-testid="radar"]').count() === 0 && !/Couldn't load/.test(await text(C.page)), await said());
     ok("...nor Retry, which could not change that", await at("skills-read-state-retry").count() === 0);
     const fl = await floors(C.page);
     ok(`nothing in the read states under 12px (${fl.small.filter((x) => /Not assessed|Could not|Reading/.test(x)).length}) or tapped under 44px (${fl.tiny.filter((x) => /Retry/.test(x)).length})`,
@@ -3607,7 +3607,7 @@ try {
     const card = C.page.locator('[data-testid="next-fixture"]');
     const cardText = async () => (await card.innerText({ timeout: 4000 }).catch(() => "")).trim();
     const t0 = await cardText();
-    ok("the next-fixture card says 'Could not read the fixtures.'", /Could not read the fixtures\./.test(t0), t0);
+    ok("the next-fixture card says 'Couldn't load the fixtures.'", /Couldn't load the fixtures\./.test(t0), t0);
     ok("...and not 'No fixture is arranged'", !/No fixture is arranged/.test(t0) && await C.page.locator('[data-testid="next-fixture-none"]').count() === 0, t0);
     const rs = C.page.locator('[data-testid="next-fixture-read-state"]');
     ok("...as an alert, in the state 'failed'", await attr(rs, "data-state") === "failed" && await attr(rs, "role") === "alert");
@@ -3618,9 +3618,9 @@ try {
     await retry.click({ timeout: 4000 }).catch(() => {});
     await afterReads(C.page, 1800);
     const t1 = await cardText();
-    ok("after Retry the card draws the fixture it read (no failure sentence, no 'none')", !/Could not read/.test(t1) && !/No fixture is arranged/.test(t1) && /\bv\b|Verify|vs/i.test(t1), t1);
+    ok("after Retry the card draws the fixture it read (no failure sentence, no 'none')", !/Couldn't load/.test(t1) && !/No fixture is arranged/.test(t1) && /\bv\b|Verify|vs/i.test(t1), t1);
     ok("...the retried read is the first one, same path and params", asked.length >= 2 && asked[0] === asked.at(-1), asked.slice(0, 2));
-    ok("the To-do card, which shares the fixtures read, now reads too: no failed-read row", !/Could not read the fixtures/.test(await C.page.locator('[data-testid="todo-card"]').innerText({ timeout: 3000 }).catch(() => "")));
+    ok("the To-do card, which shares the fixtures read, now reads too: no failed-read row", !/Couldn't load the fixtures/.test(await C.page.locator('[data-testid="todo-card"]').innerText({ timeout: 3000 }).catch(() => "")));
     ok("no page errors", C.errors.length === 0, C.errors.join(" | ").slice(0, 300));
     await C.ctx.close();
   }
@@ -3633,8 +3633,8 @@ try {
       const words = [...document.querySelectorAll('[data-testid^="fixture-chip-"]')].map((e) => e.innerText.trim());
       if (words.length === 0) return false;
       return m === "failed"
-        ? words.every((t) => /^Could not read the answer$/.test(t))
-        : !words.some((t) => /Could not read/.test(t));
+        ? words.every((t) => /^Couldn't load the answer$/.test(t))
+        : !words.some((t) => /Couldn't load/.test(t));
     },
     mode, { timeout: 15000 }).catch(() => {});
 
@@ -3653,14 +3653,14 @@ try {
     const words = [];
     for (let i = 0; i < n; i++) words.push((await chips.nth(i).innerText().catch(() => "")).trim());
     ok(`the coming fixtures are listed (${n}), each with a chip`, n > 0, n);
-    ok("...every chip says 'Could not read the answer', and none says 'No answer'", words.length > 0 && words.every((w) => /^Could not read the answer$/.test(w)) && !words.some((w) => /No answer/i.test(w)), words);
+    ok("...every chip says 'Couldn't load the answer', and none says 'No answer'", words.length > 0 && words.every((w) => /^Couldn't load the answer$/.test(w)) && !words.some((w) => /No answer/i.test(w)), words);
     failing = false;
     await C.page.locator('[data-testid="nav-children"]').first().click({ timeout: 6000 }).catch(() => {});
     await C.page.locator('[data-testid="nav-fixtures"]').first().click({ timeout: 6000 }).catch(() => {});
     await chipsSettle(C.page, "answered");
     const after = [];
     for (let i = 0; i < await chips.count(); i++) after.push((await chips.nth(i).innerText().catch(() => "")).trim());
-    ok("read again (the same path), the chips say what was answered, and none says 'Could not read'", after.length > 0 && !after.some((w) => /Could not read/.test(w)), after);
+    ok("read again (the same path), the chips say what was answered, and none says 'Couldn't load'", after.length > 0 && !after.some((w) => /Couldn't load/.test(w)), after);
     await C.ctx.close();
   }
 
