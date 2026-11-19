@@ -92,6 +92,9 @@ function usePhone(px = 640) {
  * change, the match changes state, or the reader asks, as the ground display
  * does (reads.js usePublicFeed), so a label is never drawn from memory.
  */
+/** Events after which a Low data read is a whole one. */
+const WHOLE_AFTER = new Set(["void", "revision", "amendment"]);
+
 function usePublicMatch(matchId, low = false) {
   const [state, setState] = useState({ loading: true, missing: false, error: null, header: null, fold: {}, events: [], people: {}, last: 0, par: null, okAt: null, stale: false, refreshing: false });
   const [tick, setTick] = useState(0);
@@ -125,7 +128,9 @@ function usePublicMatch(matchId, low = false) {
         const [{ match, fold }, part] = await Promise.all([read(base), read(since != null ? `${base}/log?since=${since}` : `${base}/log`)]);
         let log = part, events = part.events ?? [];
         if (since != null) {
-          if (match.status !== cur.header.status || !samePeople(part.people ?? {}, cur.people)) {
+          // A correction (a void, a revision, an amendment) is read in the whole log's terms, never stitched on.
+          if (match.status !== cur.header.status || !samePeople(part.people ?? {}, cur.people)
+              || events.some((/** @type {any} */ e) => e.seq > cur.last && WHOLE_AFTER.has(e.kind))) {
             log = await read(`${base}/log`);
             events = log.events ?? [];
           } else {
