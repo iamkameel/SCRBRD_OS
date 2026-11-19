@@ -330,7 +330,7 @@ try {
     // lead's call and keeps refusing until it is made. Fields keeps its gate:
     // it was not among the seven. Officials records too (SCRBRD-144): its
     // gate went once every read that names an appointment asked the switch
-    // (db/156 the overlay, db/162 the table, read-api.mjs OFFICIALS_ON).
+    // (db/156 the overlay, db/166 the table, read-api.mjs OFFICIALS_ON).
     // A module that refused reads while still accepting writes would be the
     // worst kind of half-working setting: the half that works is the half
     // nobody checks.

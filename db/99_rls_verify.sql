@@ -14641,12 +14641,12 @@ BEGIN
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- └── db/161 (section 139) ─────────────────────────────────────────────
 
--- ┌── db/162 (section 140) ─────────────────────────────────────────────
+-- ┌── db/166 (section 140) ─────────────────────────────────────────────
 -- A fixture's officials are read signed in only while Officials is on for
--- the fixture's school (db/162; SCRBRD-144). Hilton's 1XI at home to
+-- the fixture's school (db/166; SCRBRD-144). Hilton's 1XI at home to
 -- Westville's 1XI, one umpire appointed. The readers are section 134's
 -- kind (_v156_person()), made afresh here.
-CREATE OR REPLACE FUNCTION _v162_stage() RETURNS uuid AS $$
+CREATE OR REPLACE FUNCTION _v166_stage() RETURNS uuid AS $$
 DECLARE v_m uuid;
 BEGIN
   INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
@@ -14660,12 +14660,12 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A scorer's duty on that fixture naming p_person, as the appointment sheet
 -- stores it, not yet linked to any assignment.
-CREATE OR REPLACE FUNCTION _v162_duty(p_match uuid, p_person uuid) RETURNS uuid AS $$
+CREATE OR REPLACE FUNCTION _v166_duty(p_match uuid, p_person uuid) RETURNS uuid AS $$
   INSERT INTO match_official (match_id, school_id, duty, person_name, person_id, appointed_by)
   VALUES (p_match, match_school(p_match), 'scorer', 'V162 Scorer', p_person, '88888888-0000-0000-0000-000000000006')
   RETURNING id
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- └── db/162 (section 140) ─────────────────────────────────────────────
+-- └── db/166 (section 140) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -46032,9 +46032,9 @@ $m130$;
   PERFORM _v161_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/161 (section 139) ─────────────────────────────────────────
-  -- ┌── db/162 (section 140) ─────────────────────────────────────────
-  -- ── 140. A fixture's officials are read signed in only while Officials is on for the fixture's school, db/156's choice; whoever may appoint still reads and writes them at the table; the appointments stay stored (db/162; SCRBRD-144; Kameel 13 Nov 2026) ──
-  -- Staged by _v162_stage(): Hilton's 1XI at home to Westville's, one
+  -- ┌── db/166 (section 140) ─────────────────────────────────────────
+  -- ── 140. A fixture's officials are read signed in only while Officials is on for the fixture's school, db/156's choice; whoever may appoint still reads and writes them at the table; the appointments stay stored (db/166; SCRBRD-144; Kameel 13 Nov 2026) ──
+  -- Staged by _v166_stage(): Hilton's 1XI at home to Westville's, one
   -- umpire. Every read through scrbrd_app at the table; each switch hidden
   -- by a school's own suppression (_v156_hide()) or plan (_v156_grant())
   -- and lifted again. Readers made here: Westville's administrator, a 1XI
@@ -46068,7 +46068,7 @@ $m130$;
   -- Falsified (15 Nov 2026, on a migrated database, the section run alone;
   -- unchanged it passed): the policy's USING made true → (off); official_shown()
   -- without its officiating.assign leg → (writer); duty_link() as it was
-  -- before db/162 → (link).
+  -- before db/166 → (link).
   DECLARE
     M uuid;
     v_coach uuid;
@@ -46084,10 +46084,10 @@ $m130$;
     u uuid;
   BEGIN
     PERFORM set_config('app.user_id', '', true);
-    M := _v162_stage();
-    v_coach := _v156_person('v162coach', 'coach', HIL, '1XI');
-    V_DIRECTOR := _v156_person('v162director', 'directorofsport', HIL, NULL);
-    V_WESADM := _v156_person('v162wesadmin', 'schooladmin', WES, NULL);
+    M := _v166_stage();
+    v_coach := _v156_person('v166coach', 'coach', HIL, '1XI');
+    V_DIRECTOR := _v156_person('v166director', 'directorofsport', HIL, NULL);
+    V_WESADM := _v156_person('v166wesadmin', 'schooladmin', WES, NULL);
 
     -- (on)
     PERFORM _assert(feature_enabled('officials', HIL, NULL) AND feature_enabled('officials', WES, NULL),
@@ -46170,9 +46170,9 @@ $m130$;
 
     -- (link)
     PERFORM set_config('app.user_id', '', true);
-    V_OFFICE := _v156_person('v162office', 'schooladmin', HIL, NULL);
-    V_SCORER := _v156_person('v162scorer', 'scorer', HIL, NULL);
-    D := _v162_duty(M, V_SCORER);
+    V_OFFICE := _v156_person('v166office', 'schooladmin', HIL, NULL);
+    V_SCORER := _v156_person('v166scorer', 'scorer', HIL, NULL);
+    D := _v166_duty(M, V_SCORER);
     PERFORM _v156_hide('officials', HIL, NULL, true);
     PERFORM _as(V_OFFICE);
     SELECT l.ok, l.reason INTO v_ok, v_reason FROM duty_link(D) l;
@@ -46214,7 +46214,7 @@ $m130$;
                                   AND p.polname = 'match_official_read' AND p.polcmd = 'r' AND p.polpermissive),
       '§140 (body): match_official_shown_while_on is not one RESTRICTIVE SELECT policy asking official_shown(match_id) beside match_official_read');
   END;
-  -- └── db/162 (section 140) ──────────────────────────────────────────
+  -- └── db/166 (section 140) ──────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

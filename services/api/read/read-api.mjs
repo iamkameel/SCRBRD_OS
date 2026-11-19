@@ -186,17 +186,17 @@ export const reachOneMate = (n) => REACH_ONE_MATE.replaceAll("$2::uuid", `$${n}:
  * Two switches, both asked for every appointment a read names:
  *  - the FIXTURE's school, match_school(), the home side's: db/156's choice
  *    for the overlay (broadcast_state(), feature_enabled('officials',
- *    m.school_id, NULL)) and db/162's at the table (official_shown()). So
+ *    m.school_id, NULL)) and db/166's at the table (official_shown()). So
  *    Westville's administrator, with Officials on, reads no umpire of
  *    Hilton's fixture while Hilton has it off.
  *  - the READER's own, my_feature_enabled(): what the module gate asks of
  *    the `officials` read, asked here of the reads it does not gate
  *    (match_duties, duty_suspensions), so one switch hides one thing
  *    everywhere.
- * db/162's policy lets whoever may appoint read the row at the table, so
+ * db/166's policy lets whoever may appoint read the row at the table, so
  * that the sheet can be stored while Officials is off; this is what keeps
  * him from being SHOWN it. Written inline rather than through
- * official_shown(), so the read stands with or without db/162 pasted.
+ * official_shown(), so the read stands with or without db/166 pasted.
  * @param {string} matchCol  the SQL column holding the appointment's match
  */
 const OFFICIALS_ON = (matchCol) =>
@@ -1521,7 +1521,7 @@ export const READ_QUERIES = {
     // on the duty follows the Officials switch like every other read of it.
     // While Officials is off, an office that may not appoint (a registrar, a
     // school administrator without officiating.assign) reads no row of
-    // match_official at all (db/162's policy), so the join leaves match_id and
+    // match_official at all (db/166's policy), so the join leaves match_id and
     // duty NULL too: the suspension is listed, but anonymous. That fails closed.
     text: `select s.id, s.duty_id, o.match_id, o.duty,
                   case when ${OFFICIALS_ON("o.match_id")} then o.person_name end as person_name,

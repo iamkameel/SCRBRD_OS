@@ -17,7 +17,7 @@
  *
  * Deliberately NOT module-gated. Taking a scorer's authority away must never
  * depend on whether somebody switched the officials module off. GIVING it
- * does (db/162, SCRBRD-144, fail closed): duty_link() refuses
+ * does (db/166, SCRBRD-144, fail closed): duty_link() refuses
  * 'officials_off' while Officials is off for the fixture's school, so an
  * appointment stored while it is off grants nobody anything.
  */
@@ -34,7 +34,7 @@ const STATUS = {
   duty_withdrawn: 409, already_linked: 409, already_suspended: 409, not_suspended: 409,
   duty_suspended: 409, not_linked: 409, assignment_not_live: 409, own_duty: 403,
   no_account: 422,
-  // db/162 (SCRBRD-144): an appointment is stored while Officials is off for
+  // db/166 (SCRBRD-144): an appointment is stored while Officials is off for
   // the fixture's school, and linked to nothing until it is on.
   officials_off: 409,
 };

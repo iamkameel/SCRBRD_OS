@@ -20,7 +20,7 @@
  *   lift_club, scorebook_import) keep every tag they had; training keeps its
  *   tags (the lead's call); a sponsor's placement keeps its tag (an outward
  *   act); officials lost its tag once every read naming an appointment asked
- *   the switch (SCRBRD-144: db/156, db/162, read-api.mjs OFFICIALS_ON). tools/smoke-modules.mjs proves the same against a real server, and
+ *   the switch (SCRBRD-144: db/156, db/166, read-api.mjs OFFICIALS_ON). tools/smoke-modules.mjs proves the same against a real server, and
  *   db/99 §132 the database's half.
  *
  *   node --import ./tools/register-jsx.mjs apps/web/test/switched-off.test.mjs

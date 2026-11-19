@@ -271,7 +271,7 @@ try {
     await suppress("officials", wesAdmin, { schoolId: WES, hidden: false });
 
     // Fail closed: a duty stored while Officials is off grants nothing
-    // (db/162 duty_link()). The office's link is refused while it is off,
+    // (db/166 duty_link()). The office's link is refused while it is off,
     // and works once it is on.
     const SCORER = (await q(`select id from app_user where email = 'scorer@example.invalid'`))[0].id;
     await suppress("officials", registrar, { schoolId: HIL, hidden: true, reason: "Smoke: SCRBRD-144 link" });

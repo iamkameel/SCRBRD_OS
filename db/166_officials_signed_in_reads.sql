@@ -1,5 +1,5 @@
 -- ══════════════════════════════════════════════════════════════════
---  162 · Switched off is hidden signed in as well: a fixture's officials
+--  166 · Switched off is hidden signed in as well: a fixture's officials
 --        are read only while Officials is on for the fixture's school
 -- ══════════════════════════════════════════════════════════════════
 --
@@ -82,7 +82,7 @@
 -- rather than queueing the overlay and the scorer's home behind an open
 -- appointment sheet. Paste it outside a match; on lock_timeout, paste again.
 
-CREATE OR REPLACE FUNCTION pg_temp._v162_fold(t text) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION pg_temp._v166_fold(t text) RETURNS text AS $$
   SELECT md5(regexp_replace(btrim(t), '\s+', ' ', 'g'))
 $$ LANGUAGE sql IMMUTABLE;
 
@@ -95,30 +95,30 @@ BEGIN
      OR to_regprocedure('match_team(uuid)') IS NULL
      OR to_regprocedure('app_can(text,uuid,text,uuid,uuid)') IS NULL
      OR NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'scrbrd_app') THEN
-    RAISE EXCEPTION 'db/162: match_official, feature_enabled(), match_school(), match_team(), app_can() or the role scrbrd_app is missing; apply every file before this one first';
+    RAISE EXCEPTION 'db/166: match_official, feature_enabled(), match_school(), match_team(), app_can() or the role scrbrd_app is missing; apply every file before this one first';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM feature_flag WHERE key = 'officials') THEN
-    RAISE EXCEPTION 'db/162: the switch officials is not in feature_flag; apply db/08 first';
+    RAISE EXCEPTION 'db/166: the switch officials is not in feature_flag; apply db/08 first';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = 'match_official'::regclass AND p.polname = 'match_official_read'
                     AND p.polcmd = 'r' AND p.polpermissive) THEN
-    RAISE EXCEPTION 'db/162: match_official_read is not a permissive SELECT policy on match_official; look before narrowing it';
+    RAISE EXCEPTION 'db/166: match_official_read is not a permissive SELECT policy on match_official; look before narrowing it';
   END IF;
   IF to_regprocedure('official_shown(uuid)') IS NOT NULL THEN
-    SELECT pg_temp._v162_fold(p.prosrc) INTO v FROM pg_proc p WHERE p.oid = 'official_shown(uuid)'::regprocedure;
+    SELECT pg_temp._v166_fold(p.prosrc) INTO v FROM pg_proc p WHERE p.oid = 'official_shown(uuid)'::regprocedure;
     IF v <> 'da65391be3ed1e936103d1dfd9825037' THEN
-      RAISE EXCEPTION 'db/162: official_shown(uuid) is there and is not this file''s (md5 % of its folded body); look before replacing it', v;
+      RAISE EXCEPTION 'db/166: official_shown(uuid) is there and is not this file''s (md5 % of its folded body); look before replacing it', v;
     END IF;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = 'match_official'::regclass AND p.polname = 'match_official_shown_while_on'
                 AND NOT (p.polcmd = 'r' AND NOT p.polpermissive AND p.polroles = '{0}'
                          AND pg_get_expr(p.polqual, p.polrelid) = 'official_shown(match_id)' AND p.polwithcheck IS NULL)) THEN
-    RAISE EXCEPTION 'db/162: match_official_shown_while_on is there and is not this file''s policy; look before replacing it';
+    RAISE EXCEPTION 'db/166: match_official_shown_while_on is there and is not this file''s policy; look before replacing it';
   END IF;
-  SELECT pg_temp._v162_fold(p.prosrc) INTO v FROM pg_proc p WHERE p.oid = to_regprocedure('duty_link(uuid)');
+  SELECT pg_temp._v166_fold(p.prosrc) INTO v FROM pg_proc p WHERE p.oid = to_regprocedure('duty_link(uuid)');
   IF v IS NULL OR v NOT IN ('cbe2d29e2ee1315f239fa8814b5d404d',   -- the live body before this file (db/34, db/77)
                             '19ba09e6582a08dbe0dddd094db412e4') THEN                 -- this file's
-    RAISE EXCEPTION 'db/162: duty_link(uuid) is missing or not the body this file was written against (md5 % of its folded body); look before replacing it', v;
+    RAISE EXCEPTION 'db/166: duty_link(uuid) is missing or not the body this file was written against (md5 % of its folded body); look before replacing it', v;
   END IF;
 END $guard$;
 
@@ -218,18 +218,18 @@ DO $after$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'duty_link(uuid)'::regprocedure AND p.prosecdef
                     AND p.proconfig = ARRAY['search_path=pg_catalog, public, pg_temp']
-                    AND pg_temp._v162_fold(p.prosrc) = '19ba09e6582a08dbe0dddd094db412e4') THEN
-    RAISE EXCEPTION 'db/162: duty_link() is not this file''s body, or not a definer with its search path pinned';
+                    AND pg_temp._v166_fold(p.prosrc) = '19ba09e6582a08dbe0dddd094db412e4') THEN
+    RAISE EXCEPTION 'db/166: duty_link() is not this file''s body, or not a definer with its search path pinned';
   END IF;
   IF has_function_privilege('public', 'duty_link(uuid)', 'EXECUTE')
      OR NOT has_function_privilege('scrbrd_app', 'duty_link(uuid)', 'EXECUTE') THEN
-    RAISE EXCEPTION 'db/162: duty_link() is callable by PUBLIC, or not by the application (db/157 left it to scrbrd_app)';
+    RAISE EXCEPTION 'db/166: duty_link() is callable by PUBLIC, or not by the application (db/157 left it to scrbrd_app)';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'official_shown(uuid)'::regprocedure AND p.prosecdef
                     AND p.provolatile = 's'
                     AND p.proconfig = ARRAY['search_path=pg_catalog, public, pg_temp']
-                    AND pg_temp._v162_fold(p.prosrc) = 'da65391be3ed1e936103d1dfd9825037') THEN
-    RAISE EXCEPTION 'db/162: official_shown() is not this file''s body, or not a stable definer with its search path pinned';
+                    AND pg_temp._v166_fold(p.prosrc) = 'da65391be3ed1e936103d1dfd9825037') THEN
+    RAISE EXCEPTION 'db/166: official_shown() is not this file''s body, or not a stable definer with its search path pinned';
   END IF;
   -- EXECUTE to its owner and the application exactly, by aclexplode.
   IF (SELECT array_agg(coalesce(nullif(a.grantee, 0)::regrole::text, 'PUBLIC') || ':' || a.privilege_type
@@ -239,7 +239,7 @@ BEGIN
      IS DISTINCT FROM
      (SELECT ARRAY[p.proowner::regrole::text || ':EXECUTE', 'scrbrd_app:EXECUTE']
         FROM pg_proc p WHERE p.oid = 'official_shown(uuid)'::regprocedure) THEN
-    RAISE EXCEPTION 'db/162: official_shown() is not EXECUTE to its owner and scrbrd_app exactly';
+    RAISE EXCEPTION 'db/166: official_shown() is not EXECUTE to its owner and scrbrd_app exactly';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = 'match_official'::regclass AND p.polname = 'match_official_shown_while_on'
                     AND p.polcmd = 'r' AND NOT p.polpermissive AND p.polroles = '{0}' AND p.polwithcheck IS NULL
@@ -247,11 +247,11 @@ BEGIN
      OR NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = 'match_official'::regclass AND p.polname = 'match_official_read'
                        AND p.polcmd = 'r' AND p.polpermissive)
      OR NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'match_official'::regclass) THEN
-    RAISE EXCEPTION 'db/162: match_official_shown_while_on is not one RESTRICTIVE SELECT policy asking official_shown(match_id), or match_official_read or row security is gone';
+    RAISE EXCEPTION 'db/166: match_official_shown_while_on is not one RESTRICTIVE SELECT policy asking official_shown(match_id), or match_official_read or row security is gone';
   END IF;
 END $after$;
 
-DROP FUNCTION pg_temp._v162_fold(text);
+DROP FUNCTION pg_temp._v166_fold(text);
 
 -- ── 4 · The lock limit back as it was: a pooled connection is handed back as it came ──
 RESET lock_timeout;
